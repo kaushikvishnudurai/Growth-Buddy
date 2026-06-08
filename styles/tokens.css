@@ -1,0 +1,349 @@
+/* =====================================================================
+   GROWTH BUDDY — Design Tokens
+   colors_and_type.css
+   ---------------------------------------------------------------------
+   Single source of truth for color, type, spacing, radius, shadow,
+   motion. Light + dark themes via [data-theme="light|dark"] on <html>.
+   Fonts: Bricolage Grotesque (display) + Hanken Grotesk (body/UI),
+   loaded from Google Fonts — see the @import below.
+   ===================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Hanken+Grotesk:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap');
+
+:root {
+  /* ---- Brand font families ---- */
+  --font-display: 'Bricolage Grotesque', 'Hanken Grotesk', system-ui, sans-serif;
+  --font-body: 'Hanken Grotesk', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Space Mono', ui-monospace, 'SF Mono', monospace;
+
+  /* =================================================================
+     RAW COLOR RAMPS  (theme-independent)
+     ================================================================= */
+
+  /* Coral — primary brand (motivation, warmth, energy) */
+  /* Warm orange, intentionally clear of "danger red" */
+  --coral-50:  #FFF4EB;
+  --coral-100: #FFE3CC;
+  --coral-200: #FFC799;
+  --coral-300: #FFA85E;
+  --coral-400: #FF8C33;
+  --coral-500: #F97316;   /* PRIMARY */
+  --coral-600: #E45D08;
+  --coral-700: #BE4A0A;
+  --coral-800: #93390D;
+  --coral-900: #5E2408;
+
+  /* Leaf — growth, streaks, success */
+  --leaf-50:  #E9FBF0;
+  --leaf-100: #C9F5DA;
+  --leaf-300: #6FE0A0;
+  --leaf-500: #18BF6E;
+  --leaf-600: #0E9E59;
+  --leaf-700: #0B7C46;
+
+  /* Sun — XP, achievements, rewards */
+  --sun-50:  #FFF7E0;
+  --sun-100: #FFEDBA;
+  --sun-300: #FFD45C;
+  --sun-500: #FFB020;
+  --sun-600: #E8960A;
+  --sun-700: #B97505;
+
+  /* Iris — AI mentor, focus, intelligence */
+  --iris-50:  #EEEBFF;
+  --iris-100: #DAD3FF;
+  --iris-300: #A89CF5;
+  --iris-500: #6C5CE7;
+  --iris-600: #5746D6;
+  --iris-700: #4536B0;
+
+  /* Sky — info, calm, journal */
+  --sky-50:  #E5F4FF;
+  --sky-100: #C3E6FF;
+  --sky-300: #6FC4FF;
+  --sky-500: #2BA6FF;
+  --sky-600: #1184E0;
+  --sky-700: #0A66B0;
+
+  /* Bloom — social, friends, Growth Circle */
+  --bloom-50:  #FFEAF4;
+  --bloom-100: #FFCDE4;
+  --bloom-300: #FF8BC0;
+  --bloom-500: #FF4F9E;
+  --bloom-600: #E62D83;
+  --bloom-700: #B71E66;
+
+  /* Warm neutral ramp (slightly toasted greys — never pure grey) */
+  --warm-0:   #FFFFFF;
+  --warm-25:  #FFFCFA;
+  --warm-50:  #FBF5F0;
+  --warm-100: #F4ECE5;
+  --warm-200: #E9DDD3;
+  --warm-300: #D8C7BA;
+  --warm-400: #B6A294;
+  --warm-500: #8C7A6D;
+  --warm-600: #6B5C50;
+  --warm-700: #4D413A;
+  --warm-800: #332A25;
+  --warm-900: #201915;
+  --warm-925: #1B1512;
+  --warm-950: #14100D;
+
+  /* =================================================================
+     TYPE SCALE  (theme-independent)
+     fluid-ish but fixed here for tokens; clamp in product as needed
+     ================================================================= */
+  --text-display: 3.25rem;   /* 52px hero numbers / splash */
+  --text-h1: 2.25rem;        /* 36 */
+  --text-h2: 1.75rem;        /* 28 */
+  --text-h3: 1.375rem;       /* 22 */
+  --text-h4: 1.125rem;       /* 18 */
+  --text-body: 1rem;         /* 16 */
+  --text-sm: 0.875rem;       /* 14 */
+  --text-xs: 0.75rem;        /* 12 */
+  --text-2xs: 0.6875rem;     /* 11 — labels / pills */
+
+  --leading-tight: 1.05;
+  --leading-snug: 1.2;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.65;
+
+  --tracking-tight: -0.02em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.04em;
+  --tracking-caps: 0.08em;
+
+  /* =================================================================
+     SPACING  (4px base)
+     ================================================================= */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* =================================================================
+     RADIUS  (generous & rounded — playful)
+     ================================================================= */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
+  --radius-2xl: 28px;
+  --radius-3xl: 36px;
+  --radius-pill: 999px;
+
+  /* =================================================================
+     MOTION
+     ================================================================= */
+  --ease-bounce: cubic-bezier(.34, 1.56, .64, 1);   /* signature pop */
+  --ease-out: cubic-bezier(.16, 1, .3, 1);
+  --ease-standard: cubic-bezier(.4, 0, .2, 1);
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --dur-slow: 360ms;
+}
+
+/* =====================================================================
+   LIGHT THEME (default)
+   ===================================================================== */
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+
+  /* Surfaces */
+  --bg: var(--warm-25);            /* app canvas */
+  --bg-subtle: var(--warm-50);     /* sunken areas */
+  --surface: var(--warm-0);        /* cards */
+  --surface-2: var(--warm-50);     /* nested cards / inputs */
+  --surface-3: var(--warm-100);    /* hover fill / chips */
+
+  /* Foreground */
+  --fg1: #1E1713;                  /* primary ink (warm near-black) */
+  --fg2: #6B5C50;                  /* secondary text */
+  --fg3: #9C8B7E;                  /* muted / placeholder */
+  --fg-on-brand: #FFFFFF;          /* text on coral / saturated fills */
+
+  /* Lines */
+  --border: #ECE0D6;
+  --border-strong: #DFCFC1;
+  --ring: var(--coral-500);        /* focus ring */
+
+  /* Brand semantics */
+  --brand: var(--coral-500);
+  --brand-hover: var(--coral-600);
+  --brand-press: var(--coral-700);
+  --brand-edge: var(--coral-700);  /* chunky button bottom edge */
+  --brand-soft: var(--coral-50);
+  --brand-soft-fg: var(--coral-700);
+
+  --success: var(--leaf-600);
+  --success-soft: var(--leaf-50);
+  --success-soft-fg: var(--leaf-700);
+  --warning: var(--sun-600);
+  --warning-soft: var(--sun-50);
+  --warning-soft-fg: var(--sun-700);
+  --info: var(--sky-600);
+  --info-soft: var(--sky-50);
+  --info-soft-fg: var(--sky-700);
+  --ai: var(--iris-500);
+  --ai-soft: var(--iris-50);
+  --ai-soft-fg: var(--iris-700);
+  --social: var(--bloom-500);
+  --social-soft: var(--bloom-50);
+  --social-soft-fg: var(--bloom-700);
+
+  /* Elevation — soft, warm-tinted */
+  --shadow-xs: 0 1px 2px rgba(60, 40, 28, 0.06);
+  --shadow-sm: 0 1px 3px rgba(60, 40, 28, 0.08), 0 1px 2px rgba(60, 40, 28, 0.04);
+  --shadow-md: 0 4px 14px rgba(60, 40, 28, 0.10), 0 2px 4px rgba(60, 40, 28, 0.05);
+  --shadow-lg: 0 12px 32px rgba(60, 40, 28, 0.14), 0 4px 8px rgba(60, 40, 28, 0.06);
+  --shadow-brand: 0 8px 22px rgba(249, 115, 22, 0.30);
+
+  /* translucent / hairline helpers (avoid color-mix for capture safety) */
+  --nav-bg: rgba(255, 255, 255, 0.82);
+  --hairline-ai: rgba(108, 92, 231, 0.22);
+}
+
+/* =====================================================================
+   DARK THEME
+   ===================================================================== */
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #16110E;
+  --bg-subtle: #120D0B;
+  --surface: #211A16;
+  --surface-2: #2A211C;
+  --surface-3: #352A24;
+
+  --fg1: #FBF4EE;
+  --fg2: #C3B2A6;
+  --fg3: #8A7A6E;
+  --fg-on-brand: #FFFFFF;
+
+  --border: #382C25;
+  --border-strong: #4A3B32;
+  --ring: var(--coral-400);
+
+  --brand: var(--coral-500);
+  --brand-hover: var(--coral-400);
+  --brand-press: var(--coral-300);
+  --brand-edge: var(--coral-700);
+  --brand-soft: rgba(249, 115, 22, 0.15);
+  --brand-soft-fg: var(--coral-300);
+
+  --success: var(--leaf-500);
+  --success-soft: rgba(24, 191, 110, 0.14);
+  --success-soft-fg: var(--leaf-300);
+  --warning: var(--sun-500);
+  --warning-soft: rgba(255, 176, 32, 0.14);
+  --warning-soft-fg: var(--sun-300);
+  --info: var(--sky-500);
+  --info-soft: rgba(43, 166, 255, 0.14);
+  --info-soft-fg: var(--sky-300);
+  --ai: var(--iris-300);
+  --ai-soft: rgba(108, 92, 231, 0.18);
+  --ai-soft-fg: var(--iris-300);
+  --social: var(--bloom-300);
+  --social-soft: rgba(255, 79, 158, 0.16);
+  --social-soft-fg: var(--bloom-300);
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 14px 36px rgba(0, 0, 0, 0.6), 0 4px 10px rgba(0, 0, 0, 0.4);
+  --shadow-brand: 0 8px 24px rgba(249, 115, 22, 0.40);
+  --nav-bg: rgba(33, 26, 22, 0.82);
+  --hairline-ai: rgba(108, 92, 231, 0.40);
+}
+
+/* =====================================================================
+   SEMANTIC TYPOGRAPHY ROLES
+   Apply as classes (.gb-h1) or copy the rules into product CSS.
+   ===================================================================== */
+.gb-display {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--text-display);
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-tight);
+  color: var(--fg1);
+}
+.gb-h1 {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--text-h1);
+  line-height: var(--leading-snug);
+  letter-spacing: var(--tracking-tight);
+  color: var(--fg1);
+}
+.gb-h2 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-h2);
+  line-height: var(--leading-snug);
+  letter-spacing: var(--tracking-tight);
+  color: var(--fg1);
+}
+.gb-h3 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-h3);
+  line-height: var(--leading-snug);
+  color: var(--fg1);
+}
+.gb-h4 {
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: var(--text-h4);
+  line-height: var(--leading-normal);
+  color: var(--fg1);
+}
+.gb-body {
+  font-family: var(--font-body);
+  font-weight: 400;
+  font-size: var(--text-body);
+  line-height: var(--leading-relaxed);
+  color: var(--fg2);
+}
+.gb-body-strong {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: var(--text-body);
+  line-height: var(--leading-normal);
+  color: var(--fg1);
+}
+.gb-sm {
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  color: var(--fg2);
+}
+.gb-label {
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: var(--text-2xs);
+  line-height: 1;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--fg3);
+}
+.gb-stat {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tracking-tight);
+  color: var(--fg1);
+}
+.gb-mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--fg2);
+}
