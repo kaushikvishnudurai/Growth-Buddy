@@ -17,6 +17,7 @@ import {
   DOMAIN,
   Logo,
   CrashCard,
+  GOOGLE_G_SVG,
 } from './gb-kit.js';
 import {
   ScreenDashboard,
@@ -3367,13 +3368,90 @@ function openProfileSettings(initialTab) {
   buildWaSection();
 
   // ---- Google Calendar integration (read-only) ----
+  // One card, four honest states: needs setup (dashed), ready, waiting for
+  // Google, connected. The four-color G doubles as the status lamp —
+  // greyscale until the sync is live, full color once it is.
   const gcalBody = h('div', null, h('div', { class: 'gb-field-hint' }, 'Checking…'));
   let gcalPollTimer = 0;
 
-  function renderGcal(status) {
+  function startGcalPoll() {
+    clearTimeout(gcalPollTimer);
+    const poll = async () => {
+      if (!gcalBody.isConnected) return; // settings modal closed
+      try {
+        const s = await api('/api/google/calendar/status');
+        if (s.connected) {
+          state.googleEventsByMonth = {};
+          loadGoogleEventsForMonth(state.calYear, state.calMonth, { force: true });
+          renderGcal(s);
+          toastSuccess('Google Calendar connected.');
+          return;
+        }
+      } catch (_) {
+        /* keep polling */
+      }
+      gcalPollTimer = setTimeout(poll, 2500);
+    };
+    gcalPollTimer = setTimeout(poll, 2500);
+  }
+
+  // mode 'waiting': the consent tab is open, the poll is watching for it to land.
+  function renderGcal(status, mode) {
     clearTimeout(gcalPollTimer);
     gcalBody.replaceChildren();
-    if (status && status.connected) {
+    const connected = !!(status && status.connected);
+    const configured = !status || status.configured !== false;
+    const waiting = mode === 'waiting';
+
+    const glyph = h('span', { class: 'gb-integration-glyph', 'aria-hidden': 'true' });
+    glyph.innerHTML = GOOGLE_G_SVG;
+    const statusChip = h(
+      'span',
+      {
+        class:
+          'gb-integration-status' + (connected ? ' is-on' : '') + (waiting ? ' is-waiting' : ''),
+      },
+      h('span', { class: 'gb-integration-dot' }),
+      connected
+        ? 'Connected'
+        : waiting
+          ? 'Waiting for Google…'
+          : configured
+            ? 'Not connected'
+            : 'Needs setup'
+    );
+    const body = h('div', { class: 'gb-integration-body' });
+    const card = h(
+      'div',
+      {
+        class:
+          'gb-integration-card' +
+          (connected || waiting ? '' : ' is-off') +
+          (configured ? '' : ' is-setup'),
+      },
+      h(
+        'div',
+        { class: 'gb-integration-head' },
+        glyph,
+        h(
+          'div',
+          { class: 'gb-integration-title' },
+          h('div', { class: 'gb-integration-name' }, 'Google Calendar'),
+          h(
+            'div',
+            { class: 'gb-integration-sub' },
+            connected
+              ? status.email || 'Your Google events show on the calendar.'
+              : 'Shows your Google events. Never changes them.'
+          )
+        ),
+        statusChip
+      ),
+      body
+    );
+    gcalBody.appendChild(card);
+
+    if (connected) {
       const disconnectBtn = h(
         'button',
         {
@@ -3384,7 +3462,7 @@ function openProfileSettings(initialTab) {
             try {
               await api('/api/google/calendar', { method: 'DELETE' });
               state.googleEventsByMonth = {};
-              renderGcal({ connected: false });
+              renderGcal({ configured: true, connected: false });
               toastSuccess('Google Calendar disconnected.');
             } catch (err) {
               disconnectBtn.disabled = false;
@@ -3394,21 +3472,33 @@ function openProfileSettings(initialTab) {
         },
         'Disconnect'
       );
-      gcalBody.appendChild(
+      body.appendChild(h('div', { class: 'gb-integration-actions' }, disconnectBtn));
+    } else if (waiting) {
+      body.appendChild(
         h(
           'div',
-          { class: 'gb-account-row' },
-          h(
-            'span',
-            { class: 'gb-pill', style: { background: 'var(--leaf-50)', color: 'var(--leaf-700)' } },
-            'Connected' + (status.email ? ' · ' + status.email : '')
-          ),
-          disconnectBtn
+          { class: 'gb-field-hint' },
+          'Finish sign-in in the tab that just opened — this updates by itself.'
         )
       );
-    } else if (status && status.configured === false) {
-      // No Google OAuth client yet — guided one-time setup, right here in the UI.
-      const stepStyle = { margin: '0 0 8px', paddingLeft: '18px' };
+      body.appendChild(
+        h(
+          'div',
+          { class: 'gb-integration-actions' },
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-btn gb-btn--ghost gb-btn--compact',
+              onclick: () => renderGcal({ configured: true, connected: false }),
+            },
+            'Cancel'
+          )
+        )
+      );
+      startGcalPoll();
+    } else if (!configured) {
+      // No Google OAuth client yet — guided one-time setup, right in the card.
       const clientIdInput = h('input', {
         type: 'text',
         class: 'gb-input',
@@ -3422,18 +3512,7 @@ function openProfileSettings(initialTab) {
         placeholder: 'starts with GOCSPX-',
         autocomplete: 'new-password',
       });
-      const uriCode = h(
-        'code',
-        {
-          style: {
-            font: '12px/1.6 ui-monospace, monospace',
-            wordBreak: 'break-all',
-            flex: '1',
-            minWidth: 0,
-          },
-        },
-        'Loading…'
-      );
+      const uriCode = h('code', null, 'Loading…');
       const copyBtn = h(
         'button',
         {
@@ -3456,7 +3535,7 @@ function openProfileSettings(initialTab) {
         {
           type: 'button',
           class: 'gb-btn gb-btn--primary',
-          style: { marginTop: '10px' },
+          style: { marginTop: '12px' },
           onclick: async () => {
             const clientId = clientIdInput.value.trim();
             const clientSecret = secretInput.value.trim();
@@ -3472,7 +3551,7 @@ function openProfileSettings(initialTab) {
                 method: 'PUT',
                 body: JSON.stringify({ clientId, clientSecret }),
               });
-              toastSuccess('Google Calendar is switched on for everyone.');
+              toastSuccess('Switched on. Anyone can connect now.');
               renderGcal({ configured: true, connected: false });
             } catch (err) {
               saveBtn.disabled = false;
@@ -3491,45 +3570,26 @@ function openProfileSettings(initialTab) {
         .catch(() => {
           uriCode.textContent = 'Could not load — is the server running?';
         });
-      gcalBody.appendChild(
+      body.appendChild(
         h(
           'div',
           null,
           h(
             'div',
             { class: 'gb-field-hint', style: { marginBottom: '10px' } },
-            'One-time setup by whoever runs this app. After this, everyone just taps “Connect”.'
+            'One-time setup by the app owner. After this, everyone just taps Connect.'
           ),
           h(
             'ol',
-            { class: 'gb-field-hint', style: stepStyle },
+            { class: 'gb-gcal-steps' },
+            h('li', null, 'At console.cloud.google.com, enable the “Google Calendar API”.'),
             h(
               'li',
-              { style: { marginBottom: '6px' } },
-              'Open console.cloud.google.com and enable the “Google Calendar API”.'
+              null,
+              'In “Credentials”, create an OAuth client ID (Web application) and add this redirect URI:',
+              h('span', { class: 'gb-gcal-uri' }, uriCode, copyBtn)
             ),
-            h(
-              'li',
-              { style: { marginBottom: '6px' } },
-              'Under Credentials, create an OAuth client ID (type: Web application) and paste this redirect URI into “Authorized redirect URIs”:',
-              h(
-                'span',
-                {
-                  style: {
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    padding: '8px 10px',
-                    background: 'var(--surface-2)',
-                    borderRadius: '10px',
-                    margin: '6px 0 2px',
-                  },
-                },
-                uriCode,
-                copyBtn
-              )
-            ),
-            h('li', null, 'Copy the two keys Google shows you into these boxes:')
+            h('li', null, 'Paste the two keys Google gives you:')
           ),
           h('div', { class: 'gb-field-label' }, 'Client ID'),
           clientIdInput,
@@ -3543,10 +3603,9 @@ function openProfileSettings(initialTab) {
         'button',
         {
           type: 'button',
-          class: 'gb-btn gb-btn--soft gb-btn--compact',
+          class: 'gb-btn gb-btn--primary',
           onclick: async () => {
             connectBtn.disabled = true;
-            clearTimeout(gcalPollTimer); // a second click must not stack poll loops
             try {
               const r = await api('/api/google/calendar/connect', { method: 'POST' });
               // Google refuses OAuth inside a WebView, so the Capacitor app must
@@ -3558,37 +3617,19 @@ function openProfileSettings(initialTab) {
               } else {
                 window.open(r.url, '_blank', 'noopener');
               }
-              // Consent happens in another tab; poll until it lands (or the modal closes).
-              const poll = async () => {
-                if (!gcalBody.isConnected) return;
-                try {
-                  const s = await api('/api/google/calendar/status');
-                  if (s.connected) {
-                    state.googleEventsByMonth = {};
-                    loadGoogleEventsForMonth(state.calYear, state.calMonth, { force: true });
-                    renderGcal(s);
-                    toastSuccess('Google Calendar connected.');
-                    return;
-                  }
-                } catch (_) {
-                  /* keep polling */
-                }
-                gcalPollTimer = setTimeout(poll, 2500);
-              };
-              gcalPollTimer = setTimeout(poll, 2500);
+              renderGcal({ configured: true, connected: false }, 'waiting');
             } catch (err) {
-              toastError(err, 'Could not start the Google connection.');
-            } finally {
               connectBtn.disabled = false;
+              toastError(err, 'Could not reach Google. Try again.');
             }
           },
         },
         'Connect Google Calendar'
       );
-      gcalBody.appendChild(
+      body.appendChild(
         h(
           'div',
-          { class: 'gb-quickadd-row', style: { flexWrap: 'wrap' } },
+          { class: 'gb-integration-actions' },
           connectBtn,
           h(
             'button',
@@ -3597,8 +3638,15 @@ function openProfileSettings(initialTab) {
               class: 'gb-btn gb-btn--ghost gb-btn--compact',
               onclick: () => renderGcal({ configured: false, connected: false }),
             },
-            'Change setup keys'
+            'Change keys'
           )
+        )
+      );
+      body.appendChild(
+        h(
+          'div',
+          { class: 'gb-field-hint', style: { marginTop: '8px' } },
+          'Takes ~15 seconds: choose your account, tap Allow.'
         )
       );
     }
@@ -3848,26 +3896,28 @@ function openProfileSettings(initialTab) {
           'aria-label': 'What is Google Calendar sync?',
           onclick: () =>
             openModal({
-              title: 'What is Google Calendar sync?',
+              title: 'Google Calendar sync',
               body: h(
                 'div',
                 { class: 'gb-settings-pane' },
                 h(
                   'div',
                   { class: 'gb-field-hint', style: { marginBottom: '10px' } },
-                  'It shows the events from your own Google Calendar inside the Growth Buddy calendar, so everything is in one place.'
+                  'Your Google Calendar events show up inside Growth Buddy — everything in one place.'
                 ),
-                h('div', { class: 'gb-field-label' }, 'How to turn it on'),
+                h('div', { class: 'gb-field-label' }, 'Turn it on'),
                 h(
-                  'div',
-                  { class: 'gb-field-hint', style: { marginBottom: '10px' } },
-                  '1. Tap “Connect Google Calendar”.  2. Choose your Google account.  3. Tap “Allow”. That’s all — your events appear on the Calendar screen with a blue “Google” label.'
+                  'ol',
+                  { class: 'gb-gcal-steps', style: { marginBottom: '10px' } },
+                  h('li', null, 'Tap “Connect Google Calendar”.'),
+                  h('li', null, 'Choose your Google account.'),
+                  h('li', null, 'Tap “Allow”.')
                 ),
                 h('div', { class: 'gb-field-label' }, 'Is it safe?'),
                 h(
                   'div',
                   { class: 'gb-field-hint' },
-                  'Yes. Growth Buddy can only read your events — it can never change, add or delete anything in your Google Calendar. You can tap “Disconnect” here at any time to stop sharing.'
+                  'Yes — Growth Buddy can only read your events, never change them. Tap “Disconnect” any time.'
                 )
               ),
               primary: 'Got it',
@@ -3876,11 +3926,6 @@ function openProfileSettings(initialTab) {
         },
         Icon('info', { size: 15 })
       )
-    ),
-    h(
-      'div',
-      { class: 'gb-field-hint', style: { marginBottom: '10px' } },
-      'Show your Google Calendar events in the Growth Buddy calendar. Read-only — we never change your Google Calendar.'
     ),
     gcalBody,
     h('div', { class: 'gb-settings-sec-label', style: { marginTop: '20px' } }, 'Danger zone'),

@@ -1,7 +1,16 @@
 /* =====================================================================
    Growth Buddy — Calendar screen (reminders + tags + recurrence)
    ===================================================================== */
-import { h, Card, SectionTitle, Icon, Pill, plural, refreshIcons } from './gb-kit.js';
+import {
+  h,
+  Card,
+  SectionTitle,
+  Icon,
+  Pill,
+  plural,
+  refreshIcons,
+  GOOGLE_G_SVG,
+} from './gb-kit.js';
 
 const MONTHS = [
   'January',
@@ -461,6 +470,20 @@ function ReminderRow(rem, occKey, onDelete, whatsappEnabled) {
     }
   }
 
+  const tagPill = h(
+    'span',
+    {
+      class: 'gb-tag-pill' + (rem.google ? ' gb-tag-pill--google' : ''),
+      style: { background: t.soft, color: t.softFg },
+    },
+    rem.google ? null : t.label
+  );
+  if (rem.google) {
+    // Synced events wear the mini G so they're recognizable at a glance.
+    tagPill.innerHTML = GOOGLE_G_SVG;
+    tagPill.appendChild(document.createTextNode('Google'));
+  }
+
   return h(
     'div',
     { class: 'gb-rem-row', style: { '--tag-color': t.color } },
@@ -469,16 +492,7 @@ function ReminderRow(rem, occKey, onDelete, whatsappEnabled) {
       'div',
       { style: { flex: 1, minWidth: 0 } },
       h('div', { class: 'gb-rem-text' }, rem.text),
-      h(
-        'div',
-        { class: 'gb-rem-meta' },
-        h(
-          'span',
-          { class: 'gb-tag-pill', style: { background: t.soft, color: t.softFg } },
-          t.label
-        ),
-        meta
-      )
+      h('div', { class: 'gb-rem-meta' }, tagPill, meta)
     ),
     rem.google
       ? null // Google events are read-only mirrors; manage them in Google Calendar.
