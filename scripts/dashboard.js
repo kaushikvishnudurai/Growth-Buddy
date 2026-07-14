@@ -305,7 +305,7 @@ function TodayPlanCard({ tasks, habits, water, wellness, onPlanToday }) {
           'button',
           { type: 'button', class: 'gb-btn gb-btn--primary gb-btn--compact', onclick: onPlanToday },
           Icon('sparkles', { size: 16, sw: 2.5 }),
-          'Plan'
+          'Plan my day'
         )
       ),
       h(
@@ -333,16 +333,16 @@ function WellnessCard({ wellness, onAddSleep, onAddMood }) {
           { type: 'button', class: 'gb-wellness-tile', onclick: onAddSleep },
           h('span', { class: 'gb-wellness-icon' }, Icon('moon', { size: 18, sw: 2.4 })),
           h('span', { class: 'gb-wellness-label' }, 'Sleep'),
-          h('strong', null, hours == null ? 'Add' : hours + 'h'),
-          h('small', null, sleep ? sleep.quality : 'schedule')
+          h('strong', null, hours == null ? 'Log' : hours + 'h'),
+          h('small', null, sleep ? sleep.quality : 'hours slept')
         ),
         h(
           'button',
           { type: 'button', class: 'gb-wellness-tile', onclick: onAddMood },
           h('span', { class: 'gb-wellness-icon' }, Icon('smile-plus', { size: 18, sw: 2.4 })),
           h('span', { class: 'gb-wellness-label' }, 'Mood'),
-          h('strong', null, mood ? mood.mood : 'Add'),
-          h('small', null, mood ? mood.energy + ' energy' : 'check-in')
+          h('strong', null, mood ? mood.mood : 'Log'),
+          h('small', null, mood ? mood.energy + ' energy' : 'how you feel')
         )
       ),
     ],
@@ -463,7 +463,7 @@ function ReminderSuggestionsCard({ habits, water, wellness, onAddSuggestedRemind
                 onclick: () =>
                   onAddSuggestedReminder && onAddSuggestedReminder(item.text, item.time, item.tag),
               },
-              'Add'
+              'Add reminder'
             )
           )
         )
@@ -510,7 +510,11 @@ function GoalTimelineCard({ goals }) {
               )
             )
           )
-        : h('div', { class: 'gb-empty-slim' }, 'Log one goal action to start the timeline.'),
+        : h(
+            'div',
+            { class: 'gb-empty-slim' },
+            'Log an action on the Goals tab and your timeline starts here.'
+          ),
     ],
   });
 }
@@ -809,7 +813,7 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater })
             'aria-label': 'Add 750 millilitres of water',
             onclick: () => onQuickAddWater && onQuickAddWater(750),
           },
-          'Hydration boost'
+          '+750 ml'
         )
       ),
 
@@ -823,7 +827,7 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater })
             class: 'gb-water-add gb-water-add--custom',
             onclick: addCustomAmount,
           },
-          'Custom amount'
+          'Custom…'
         ),
         h(
           'button',
@@ -861,6 +865,7 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater })
                     class: 'gb-btn gb-btn--icon',
                     onclick: () => onDeleteWater && onDeleteWater(item.id),
                     title: 'Delete',
+                    'aria-label': 'Delete water entry',
                   },
                   Icon('x', { size: 16, sw: 2.4 })
                 )
@@ -921,6 +926,7 @@ function FoodCard({ food, onAddFood, onDeleteFood }) {
                     class: 'gb-btn gb-btn--icon',
                     onclick: () => onDeleteFood && onDeleteFood(item.id),
                     title: 'Delete',
+                    'aria-label': 'Delete food entry',
                   },
                   Icon('x', { size: 16, sw: 2.4 })
                 )
@@ -993,7 +999,7 @@ function PhotoHistoryCard({ photoHistory }) {
         : h(
             'p',
             { class: 'gb-water-quote', style: { marginTop: '8px' } },
-            'Analyze a plate photo while logging food to build history.'
+            'Add a photo when you log food — your plate history builds here.'
           ),
     ],
   });
@@ -1265,6 +1271,7 @@ function MiniCalendarCard({
             class: 'gb-mini-cal-nav-btn',
             onclick: onPrevMonth,
             title: 'Previous month',
+            'aria-label': 'Previous month',
           },
           Icon('chevron-left', { size: 16 })
         ),
@@ -1276,6 +1283,7 @@ function MiniCalendarCard({
             class: 'gb-mini-cal-nav-btn',
             onclick: onNextMonth,
             title: 'Next month',
+            'aria-label': 'Next month',
           },
           Icon('chevron-right', { size: 16 })
         )

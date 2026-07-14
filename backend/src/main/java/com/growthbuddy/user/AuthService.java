@@ -56,6 +56,7 @@ public class AuthService {
     private final SessionService sessions;
     private final OpenAIClient openai;
     private final RateLimiter rateLimiter;
+    private final String adminEmail;
     private final boolean prod;
     private final ObjectMapper json = new ObjectMapper();
     private final BCryptPasswordEncoder bcrypt = new BCryptPasswordEncoder();
@@ -90,6 +91,7 @@ public class AuthService {
                        SessionService sessions,
                        OpenAIClient openai,
                        RateLimiter rateLimiter,
+                       @org.springframework.beans.factory.annotation.Value("${growthbuddy.admin-email:}") String adminEmail,
                        @org.springframework.beans.factory.annotation.Value("${spring.profiles.active:}") String activeProfiles) {
         this.users = users;
         this.creds = creds;
@@ -100,7 +102,24 @@ public class AuthService {
         this.sessions = sessions;
         this.openai = openai;
         this.rateLimiter = rateLimiter;
+        this.adminEmail = adminEmail == null ? "" : adminEmail.trim();
         this.prod = activeProfiles != null && activeProfiles.toLowerCase().contains("prod");
+    }
+
+    /**
+     * The very first account and the ADMIN_EMAIL account (if configured) get
+     * the admin flag, which gates server-wide settings like the Google OAuth
+     * keys. Called on signup and sign-in so an existing account picks the flag
+     * up as soon as ADMIN_EMAIL is set — no manual SQL needed.
+     */
+    private void grantAdminIfEligible(User user, boolean firstUser) {
+        if (user.isAdmin()) {
+            return;
+        }
+        if (firstUser || (!adminEmail.isEmpty() && adminEmail.equalsIgnoreCase(user.getEmail()))) {
+            user.setAdmin(true);
+            users.save(user);
+        }
     }
 
     @Transactional
@@ -110,12 +129,14 @@ public class AuthService {
             throw new ApiException(org.springframework.http.HttpStatus.CONFLICT,
                     "An account with this email already exists. Try signing in.");
         });
+        boolean firstUser = users.count() == 0;
         User user = new User();
         user.setEmail(email);
         user.setDisplayName(resolveDisplayName(req.displayName(), email));
         user.setTimezone(resolveTimezone(req.timezone()));
         user.setEmailVerified(false);
         users.save(user);
+        grantAdminIfEligible(user, firstUser);
 
         PasswordCredential c = new PasswordCredential();
         c.setUserId(user.getId());
@@ -149,6 +170,7 @@ public class AuthService {
             // bad credential.
             throw ApiException.badRequest("Wrong email or password");
         }
+        grantAdminIfEligible(user, false);
         return AuthUserResponse.withToken(user, sessions.issue(user.getId(), http).token());
     }
 

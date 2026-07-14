@@ -321,12 +321,14 @@ function Avatar({
 const NAV_PRIMARY = [
   { id: 'home', icon: 'house', label: 'Home', feature: null },
   { id: 'habits', icon: 'repeat', label: 'Habits', feature: 'habits' },
-  { id: 'mentor', icon: 'sparkles', label: 'Mentor', feature: 'mentor' },
-  { id: 'report', icon: 'chart-column', label: 'Report', feature: 'report' },
+  // Labels match each screen's own header, so the tab name and the page
+  // title never disagree ("Mentor" used to open a screen called "Buddy").
+  { id: 'mentor', icon: 'sparkles', label: 'Buddy', feature: 'mentor' },
+  { id: 'report', icon: 'chart-column', label: 'Progress', feature: 'report' },
 ];
 const NAV_OVERFLOW = [
   { id: 'calendar', icon: 'calendar-days', label: 'Calendar', feature: 'calendar' },
-  { id: 'focus', icon: 'timer', label: 'Focus', feature: 'focus' },
+  { id: 'focus', icon: 'timer', label: 'Timer', feature: 'focus' },
   { id: 'goals', icon: 'target', label: 'Goals', feature: 'goals' },
   { id: 'food', icon: 'utensils-crossed', label: 'Food', feature: 'food|water' },
   { id: 'money', icon: 'wallet', label: 'Money', feature: 'money' },
@@ -455,6 +457,65 @@ function BottomNav({ active, onNav, onMore, features, moreOpen, layout } = {}) {
 
   // Wrap so the More sheet can anchor above the bar.
   return h('div', { class: 'gb-nav-wrap' }, ...children);
+}
+
+/* ---- Confirm dialog ----
+   Replaces window.confirm: the buttons carry the verbs ("Remove" / "Keep")
+   so the choice reads at a glance instead of mapping OK/Cancel to a question.
+   Cancel gets focus by default — Enter never destroys anything by accident. */
+function confirmDialog({ title, message, confirmLabel, cancelLabel = 'Cancel', danger = false }) {
+  return new Promise((resolve) => {
+    function close(result) {
+      document.removeEventListener('keydown', onKey);
+      overlay.classList.remove('is-open');
+      setTimeout(() => overlay.remove(), 180);
+      resolve(result);
+    }
+    function onKey(e) {
+      if (e.key === 'Escape') close(false);
+    }
+    const confirmBtn = h(
+      'button',
+      {
+        type: 'button',
+        class: 'gb-btn ' + (danger ? 'gb-btn--danger' : 'gb-btn--primary'),
+        style: { width: '100%', marginTop: '14px' },
+        onclick: () => close(true),
+      },
+      confirmLabel
+    );
+    const cancelBtn = h(
+      'button',
+      { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel', onclick: () => close(false) },
+      cancelLabel
+    );
+    const sheet = h(
+      'div',
+      { class: 'gb-modal', role: 'alertdialog', 'aria-modal': 'true', 'aria-label': title },
+      h(
+        'div',
+        { class: 'gb-modal-head' },
+        h('div', { class: 'gb-modal-title' }, title),
+        message ? h('div', { class: 'gb-modal-sub' }, message) : null
+      ),
+      confirmBtn,
+      cancelBtn
+    );
+    const overlay = h(
+      'div',
+      {
+        class: 'gb-modal-overlay',
+        onclick: (e) => {
+          if (e.target === overlay) close(false);
+        },
+      },
+      sheet
+    );
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(overlay);
+    requestAnimationFrame(() => overlay.classList.add('is-open'));
+    cancelBtn.focus();
+  });
 }
 
 /* ---- Google "G" mark (inline SVG string; set via innerHTML) ----
@@ -636,4 +697,5 @@ export {
   CrashCard,
   Logo,
   GOOGLE_G_SVG,
+  confirmDialog,
 };

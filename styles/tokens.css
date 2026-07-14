@@ -5,10 +5,20 @@
    Single source of truth for color, type, spacing, radius, shadow,
    motion. Light + dark themes via [data-theme="light|dark"] on <html>.
    Fonts: Bricolage Grotesque (display) + Hanken Grotesk (body/UI),
-   loaded from Google Fonts — see the @import below.
+   self-hosted via @fontsource packages (bundled by Vite) so the offline
+   PWA and the Capacitor app keep their typography with no network.
    ===================================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Hanken+Grotesk:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap');
+@import '@fontsource/bricolage-grotesque/600.css';
+@import '@fontsource/bricolage-grotesque/700.css';
+@import '@fontsource/bricolage-grotesque/800.css';
+@import '@fontsource/hanken-grotesk/400.css';
+@import '@fontsource/hanken-grotesk/500.css';
+@import '@fontsource/hanken-grotesk/600.css';
+@import '@fontsource/hanken-grotesk/700.css';
+@import '@fontsource/hanken-grotesk/800.css';
+@import '@fontsource/space-mono/400.css';
+@import '@fontsource/space-mono/700.css';
 
 :root {
   /* ---- Brand font families ---- */
@@ -166,7 +176,7 @@
   /* Foreground */
   --fg1: #1E1713;                  /* primary ink (warm near-black) */
   --fg2: #6B5C50;                  /* secondary text */
-  --fg3: #9C8B7E;                  /* muted / placeholder */
+  --fg3: #80705F;                  /* muted / placeholder — AA (~4.8:1) on white */
   --fg-on-brand: #FFFFFF;          /* text on coral / saturated fills */
 
   /* Lines */

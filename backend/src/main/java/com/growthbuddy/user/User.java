@@ -33,6 +33,10 @@ public class User {
     @Column(name = "email_verified", nullable = false)
     private boolean emailVerified = false;
 
+    /** Gates server-wide settings (e.g. the Google OAuth client keys). */
+    @Column(name = "is_admin", nullable = false, columnDefinition = "BOOLEAN DEFAULT FALSE")
+    private boolean admin = false;
+
     @Column(name = "display_name", nullable = false, length = 120)
     private String displayName;
 

@@ -432,7 +432,7 @@ function openCustomMinutesModal() {
       h(
         'button',
         { type: 'button', class: 'gb-btn gb-btn--primary', onclick: submit },
-        'Use minutes'
+        'Set timer'
       )
     )
   );
@@ -503,9 +503,9 @@ function TimerCard() {
     btn.dataset.key = mode + ':' + mins;
     return btn;
   }
-  const chipFocus25 = modeChip('25m', 'focus', 25);
-  const chipFocus50 = modeChip('50m', 'focus', 50);
-  const chipBreak5 = modeChip('Break 5', 'break', 5);
+  const chipFocus25 = modeChip('Focus 25m', 'focus', 25);
+  const chipFocus50 = modeChip('Focus 50m', 'focus', 50);
+  const chipBreak5 = modeChip('Break 5m', 'break', 5);
   const chipCustom = h(
     'button',
     { type: 'button', class: 'gb-seg', onclick: openCustomMinutesModal },

@@ -558,7 +558,7 @@ function ScreenGoals({
       durationInput
     );
     openGoalModal({
-      title: 'Add goal',
+      title: 'New goal',
       sub: 'Choose short, mid, or long term and keep the wording simple.',
       body,
       primary: 'Save goal',

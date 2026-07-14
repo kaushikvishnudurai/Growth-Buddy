@@ -34,15 +34,17 @@ public class GoogleCalendarController {
 
     public record SaveConfigRequest(@NotBlank String clientId, @NotBlank String clientSecret) {}
 
-    /** Current OAuth client setup (never includes the secret). */
+    /** Current OAuth client setup (never includes the secret). Admin-only. */
     @GetMapping("/config")
     public GoogleCalendarService.Config config() {
+        service.requireAdmin(CurrentUser.id());
         return service.config();
     }
 
-    /** One-time app setup: save the Google OAuth client keys entered in Settings. */
+    /** One-time app setup: save the Google OAuth client keys. Admin-only. */
     @PutMapping("/config")
     public GoogleCalendarService.Config saveConfig(@Valid @RequestBody SaveConfigRequest req) {
+        service.requireAdmin(CurrentUser.id());
         return service.saveConfig(CurrentUser.id(), req.clientId(), req.clientSecret());
     }
 

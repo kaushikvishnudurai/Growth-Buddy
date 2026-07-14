@@ -1,0 +1,30 @@
+#!/bin/sh
+# Blocks committing secrets. Activate once with:  git config core.hooksPath .githooks
+# ponytail: regex scan, not a vault. Catches the common leaks; rotate real keys in the provider dashboards.
+
+staged=$(git diff --cached --name-only)
+
+# 1. Never commit env files (even via `git add -f`).
+for f in $staged; do
+  case "$f" in
+    .env.example|*/.env.example)
+      ;; # placeholders only — the file this hook itself points people to
+    .env|.env.*|*/.env|*/.env.*)
+      echo "✖ pre-commit: refusing to commit env file: $f"
+      echo "  These hold live secrets. Use .env.example for placeholders."
+      exit 1
+      ;;
+  esac
+done
+
+# 2. Scan staged content for high-signal secret patterns.
+#    sk-... OpenAI, AC+32hex Twilio SID, AKIA... AWS, generic 'app password' 16-char Gmail.
+if git diff --cached -U0 | grep -nE \
+  'sk-[A-Za-z0-9_-]{20,}|AC[0-9a-f]{32}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----' \
+  >/dev/null; then
+  echo "✖ pre-commit: a staged change looks like a hardcoded secret (API key / token / private key)."
+  echo "  Move it to .env (gitignored) and read it from the environment. Override with: git commit --no-verify"
+  exit 1
+fi
+
+exit 0

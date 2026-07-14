@@ -90,6 +90,9 @@ growthbuddy:
     hmac-secret: ${SESSION_HMAC_SECRET:growth-buddy-dev-hmac-secret-replace-in-production}
   # Demo user used when no X-User-Id header is supplied (no auth layer yet).
   demo-user-id: "00000000-0000-0000-0000-000000000001"
+  # This email gets the admin flag on next sign-in (gates server-wide settings
+  # like the Google OAuth keys). The very first signup is admin automatically.
+  admin-email: ${ADMIN_EMAIL:}
   mail:
     # Public-facing name in the From header.
     from-name: ${MAIL_FROM_NAME:Growth Buddy}

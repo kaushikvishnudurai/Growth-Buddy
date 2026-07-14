@@ -5,7 +5,7 @@
    state and repaints its own subtree, so the parent only has to pass an
    `api` object of thin fetch wrappers. See SCREENS.family in app.js.
    ===================================================================== */
-import { h, Icon, CrashCard } from './gb-kit.js';
+import { h, Icon, CrashCard, confirmDialog } from './gb-kit.js';
 
 const RELATIONSHIPS = [
   'mother',
@@ -213,7 +213,7 @@ function ScreenFamily({ api }) {
     if (m.status === 'invited') {
       return h('span', { class: 'gb-pill gb-pill--soft' }, 'Invite pending');
     }
-    return h('span', { class: 'gb-pill gb-pill--muted' }, 'Unmapped');
+    return h('span', { class: 'gb-pill gb-pill--muted' }, 'Not linked yet');
   }
 
   function memberCard(m) {
@@ -319,8 +319,14 @@ function ScreenFamily({ api }) {
     );
   }
 
-  function removeMember(m) {
-    if (!window.confirm('Remove ' + m.name + ' from your family?')) return;
+  async function removeMember(m) {
+    const ok = await confirmDialog({
+      title: 'Remove ' + m.name + ' from your family?',
+      confirmLabel: 'Remove',
+      cancelLabel: 'Keep',
+      danger: true,
+    });
+    if (!ok) return;
     run(api.removeMember(m.id), applyFamily);
   }
 
@@ -911,7 +917,7 @@ function ScreenFamily({ api }) {
               onclick: () => photoInput.click(),
             },
             Icon('camera', { size: 16 }),
-            model.scanBusy ? 'Scanning…' : 'Scan grocery photo'
+            model.scanBusy ? 'Scanning…' : 'Scan groceries'
           ),
           photoInput
         ),
@@ -1166,9 +1172,15 @@ function ScreenFamily({ api }) {
     );
   }
 
-  function leaveFamily() {
-    if (!window.confirm("Leave this family? You'll lose access to its profiles and meal plans."))
-      return;
+  async function leaveFamily() {
+    const ok = await confirmDialog({
+      title: 'Leave this family?',
+      message: "You'll lose access to its profiles and meal plans.",
+      confirmLabel: 'Leave family',
+      cancelLabel: 'Stay',
+      danger: true,
+    });
+    if (!ok) return;
     run(api.leaveFamily(), () => load());
   }
 
@@ -1669,7 +1681,7 @@ function ScreenFamily({ api }) {
             onclick: () => scanInput.click(),
           },
           Icon('camera', { size: 16 }),
-          model.pantryScanBusy ? 'Scanning…' : 'Scan groceries / receipt'
+          model.pantryScanBusy ? 'Scanning…' : 'Scan groceries'
         ),
         scanInput,
         model.pantryScanMsg ? h('p', { class: 'gb-family-scan-msg' }, model.pantryScanMsg) : null,
@@ -1951,8 +1963,14 @@ function ScreenFamily({ api }) {
             class: 'gb-iconbtn gb-iconbtn--danger',
             'aria-label': 'Delete menu',
             disabled: model.busy,
-            onclick: () => {
-              if (!window.confirm('Delete “' + f.name + '”?')) return;
+            onclick: async () => {
+              const ok = await confirmDialog({
+                title: 'Delete “' + f.name + '”?',
+                confirmLabel: 'Delete',
+                cancelLabel: 'Keep',
+                danger: true,
+              });
+              if (!ok) return;
               run(api.deleteFavourite(f.id), () => {
                 model.favourites = (model.favourites || []).filter((x) => x.id !== f.id);
               });

@@ -354,8 +354,8 @@ function openDeleteDialog(rem, occKey, onDelete) {
     {
       scope: 'before',
       icon: 'history',
-      label: 'All before this day',
-      sub: 'Keep ' + prettyDate(occKey) + ' & later',
+      label: 'Only past days',
+      sub: 'Delete everything before ' + prettyDate(occKey),
     },
     { scope: 'all', icon: 'trash-2', label: 'Delete whole series', sub: 'Every occurrence' },
   ];

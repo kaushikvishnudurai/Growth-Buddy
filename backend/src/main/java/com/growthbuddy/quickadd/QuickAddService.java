@@ -38,9 +38,9 @@ public class QuickAddService {
               {"type":"expense","amount":<int>,"note":"<short label>"}   money spent, integer, user's currency
             Only include intents clearly present in the text. If nothing maps, return
             {"intents":[],"note":"..."}. Never invent numbers that weren't stated.
-            The text may be in English, Tamil, or a mix (Tanglish) — understand all
-            three. Keep task titles in the user's language; write "note" in the same
-            language the user wrote in.
+            The text may be in ANY language, or a mix of languages (e.g. Tanglish,
+            Hinglish) — understand it regardless. Keep task titles in the user's
+            language; write "note" in the same language the user wrote in.
             """;
 
     private final OpenAIClient openai;

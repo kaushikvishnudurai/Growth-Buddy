@@ -52,6 +52,9 @@ public class GoogleCalendarService {
     private final String redirectUri;
     private final GoogleCalendarLinkRepository links;
     private final GoogleOauthSettingsRepository oauthSettings;
+    private final com.growthbuddy.user.UserRepository userRepo;
+    /** Encrypts refresh tokens + client secret at rest; keyed off the session HMAC secret. */
+    private final org.springframework.security.crypto.encrypt.TextEncryptor cryptor;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(8)).build();
     private final ObjectMapper json = new ObjectMapper();
 
@@ -75,13 +78,43 @@ public class GoogleCalendarService {
             @Value("${growthbuddy.google.client-id:}") String clientId,
             @Value("${growthbuddy.google.client-secret:}") String clientSecret,
             @Value("${growthbuddy.google.redirect-uri:}") String redirectUri,
+            @Value("${growthbuddy.session.hmac-secret}") String hmacSecret,
             GoogleCalendarLinkRepository links,
-            GoogleOauthSettingsRepository oauthSettings) {
+            GoogleOauthSettingsRepository oauthSettings,
+            com.growthbuddy.user.UserRepository userRepo) {
         this.envClientId = clientId;
         this.envClientSecret = clientSecret;
         this.redirectUri = redirectUri;
         this.links = links;
         this.oauthSettings = oauthSettings;
+        this.userRepo = userRepo;
+        // ponytail: fixed salt — the HMAC secret carries the entropy. Rotating
+        // that secret invalidates stored tokens; users just reconnect Google.
+        this.cryptor = org.springframework.security.crypto.encrypt.Encryptors.text(hmacSecret, "67726f77");
+    }
+
+    /* ---- Secrets at rest: AES-encrypted; pre-encryption plaintext rows still read ---- */
+
+    private String encrypt(String plain) {
+        return cryptor.encrypt(plain);
+    }
+
+    private String decrypt(String stored) {
+        try {
+            return cryptor.decrypt(stored);
+        } catch (Exception ex) {
+            return stored; // row written before encryption existed — re-encrypted on next save
+        }
+    }
+
+    /** Server-wide Google settings are admin-only; connections stay per-user. */
+    public void requireAdmin(UUID userId) {
+        boolean admin = userRepo.findById(userId)
+                .map(com.growthbuddy.user.User::isAdmin)
+                .orElse(false);
+        if (!admin) {
+            throw ApiException.forbidden("Only the app admin can change Google settings.");
+        }
     }
 
     /* ---- OAuth client credentials: the DB row (set from Settings) wins, env vars are the fallback ---- */
@@ -97,6 +130,7 @@ public class GoogleCalendarService {
         return oauthSettings.findById(GoogleOauthSettings.SINGLETON_ID)
                 .map(GoogleOauthSettings::getClientSecret)
                 .filter(StringUtils::hasText)
+                .map(this::decrypt)
                 .orElse(envClientSecret);
     }
 
@@ -122,7 +156,7 @@ public class GoogleCalendarService {
                 .orElseGet(GoogleOauthSettings::new);
         row.setId(GoogleOauthSettings.SINGLETON_ID);
         row.setClientId(id);
-        row.setClientSecret(secret);
+        row.setClientSecret(encrypt(secret));
         row.setUpdatedAt(Instant.now());
         oauthSettings.save(row);
         accessTokens.clear(); // old tokens were minted by the previous client
@@ -171,7 +205,7 @@ public class GoogleCalendarService {
         }
         GoogleCalendarLink link = links.findById(pending.userId()).orElseGet(GoogleCalendarLink::new);
         link.setUserId(pending.userId());
-        link.setRefreshToken(refresh);
+        link.setRefreshToken(encrypt(refresh));
         link.setGoogleEmail(emailFromIdToken(tok.path("id_token").asText(null)));
         links.save(link);
         cacheAccessToken(pending.userId(), tok);
@@ -186,7 +220,7 @@ public class GoogleCalendarService {
     public void disconnect(UUID userId) {
         links.findById(userId).ifPresent(link -> {
             try {
-                postForm(REVOKE_URL, Map.of("token", link.getRefreshToken()));
+                postForm(REVOKE_URL, Map.of("token", decrypt(link.getRefreshToken())));
             } catch (Exception ex) {
                 log.debug("Google token revoke failed (probably already revoked)", ex);
             }
@@ -288,7 +322,7 @@ public class GoogleCalendarService {
             return cached.token();
         }
         JsonNode tok = postForm(TOKEN_URL, Map.of(
-                "refresh_token", link.getRefreshToken(),
+                "refresh_token", decrypt(link.getRefreshToken()),
                 "client_id", clientId(),
                 "client_secret", clientSecret(),
                 "grant_type", "refresh_token"));

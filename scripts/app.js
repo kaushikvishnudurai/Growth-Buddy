@@ -1282,7 +1282,7 @@ async function createGoal(body) {
     body: JSON.stringify(body),
   });
   await loadGoals();
-  toastSuccess('Goal added.');
+  toastSuccess('Goal saved.');
   return created;
 }
 
@@ -1323,7 +1323,7 @@ async function deleteGoalAction(goalId, actionId) {
     { method: 'DELETE' }
   );
   await loadGoals();
-  toastSuccess('Action removed.');
+  toastSuccess('Action deleted.');
 }
 
 async function deleteHabit(id) {
@@ -2273,7 +2273,7 @@ async function saveProfileDetails(payload) {
     body: JSON.stringify(payload),
   });
   syncUserSession(updated);
-  toastSuccess('Profile updated.');
+  toastSuccess('Changes saved.');
   render();
   return updated;
 }
@@ -2647,7 +2647,7 @@ function openCustomise(initialTab) {
       featuresPane,
       ...(moneyPane ? [moneyPane] : [])
     ),
-    primary: 'Done',
+    primary: 'Close',
     onPrimary: async () => {},
     modalClass: 'gb-modal--settings',
   });
@@ -3299,7 +3299,7 @@ function openProfileSettings(initialTab) {
           class: 'gb-btn gb-btn--ghost gb-wa-change-link',
           style: { marginLeft: 'auto' },
         },
-        'Change'
+        'Change number'
       );
       changeBtn.onclick = () => {
         waStage = 'idle';
@@ -3497,6 +3497,15 @@ function openProfileSettings(initialTab) {
         )
       );
       startGcalPoll();
+    } else if (!configured && !(state.user && state.user.isAdmin)) {
+      // Only the app admin holds the keys — everyone else gets a plain answer.
+      body.appendChild(
+        h(
+          'div',
+          { class: 'gb-field-hint' },
+          'Google Calendar sync isn’t switched on yet. The app owner can turn it on from their Settings.'
+        )
+      );
     } else if (!configured) {
       // No Google OAuth client yet — guided one-time setup, right in the card.
       const clientIdInput = h('input', {
@@ -3631,15 +3640,17 @@ function openProfileSettings(initialTab) {
           'div',
           { class: 'gb-integration-actions' },
           connectBtn,
-          h(
-            'button',
-            {
-              type: 'button',
-              class: 'gb-btn gb-btn--ghost gb-btn--compact',
-              onclick: () => renderGcal({ configured: false, connected: false }),
-            },
-            'Change keys'
-          )
+          state.user && state.user.isAdmin
+            ? h(
+                'button',
+                {
+                  type: 'button',
+                  class: 'gb-btn gb-btn--ghost gb-btn--compact',
+                  onclick: () => renderGcal({ configured: false, connected: false }),
+                },
+                'Change keys'
+              )
+            : null
         )
       );
       body.appendChild(
@@ -4390,58 +4401,141 @@ function openAddSheet() {
     }
   });
 
-  // Voice input via the native Web Speech API — recognizes one language at a
-  // time, so a small chip toggles English / Tamil (choice remembered).
+  // Voice input. Speech-to-text transcribes one language at a time, so we
+  // default to the device's own language — people just talk the way they talk —
+  // with a picker for the rest (choice remembered). Browsers use the Web
+  // Speech API; the Capacitor app's WebView doesn't ship it, so there the
+  // native SpeechRecognition plugin takes over.
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const capSR =
+    window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SpeechRecognition;
   let micBtn = null;
   let langBtn = null;
-  if (SR) {
+  if (SR || capSR) {
     const LANGS = [
-      { code: 'en-IN', label: 'EN' },
+      { code: 'en-IN', label: 'English' },
+      { code: 'hi-IN', label: 'हिन्दी' },
       { code: 'ta-IN', label: 'தமிழ்' },
+      { code: 'te-IN', label: 'తెలుగు' },
+      { code: 'kn-IN', label: 'ಕನ್ನಡ' },
+      { code: 'ml-IN', label: 'മലയാളം' },
+      { code: 'bn-IN', label: 'বাংলা' },
+      { code: 'mr-IN', label: 'मराठी' },
+      { code: 'gu-IN', label: 'ગુજરાતી' },
+      { code: 'pa-IN', label: 'ਪੰਜਾਬੀ' },
     ];
-    let langIdx = localStorage.getItem('gb.qa.lang') === 'ta-IN' ? 1 : 0;
-    langBtn = h(
-      'button',
-      { type: 'button', class: 'gb-btn gb-btn--compact', 'aria-label': 'Voice language' },
-      LANGS[langIdx].label
-    );
+    const device = navigator.language || 'en-IN';
+    const sameBase = (a, b) => a.split('-')[0] === b.split('-')[0];
+    let langCode =
+      localStorage.getItem('gb.qa.lang') ||
+      (LANGS.find((l) => l.code === device) || LANGS.find((l) => sameBase(l.code, device)) || {})
+        .code ||
+      device;
+    if (!LANGS.some((l) => l.code === langCode)) {
+      // Device speaks something we didn't list — offer it anyway, by name.
+      let label = langCode;
+      try {
+        label = new Intl.DisplayNames([langCode], { type: 'language' }).of(langCode) || langCode;
+      } catch (_) {
+        /* keep the raw code */
+      }
+      LANGS.unshift({ code: langCode, label });
+    }
+    langBtn = h('select', {
+      class: 'gb-input',
+      style: { width: 'auto', flex: 'none', padding: '8px 10px' },
+      'aria-label': 'Language you speak',
+      title: 'Language you speak',
+    });
+    LANGS.forEach((l) => {
+      const o = h('option', { value: l.code }, l.label);
+      if (l.code === langCode) o.selected = true;
+      langBtn.appendChild(o);
+    });
+    langBtn.addEventListener('change', () => {
+      langCode = langBtn.value;
+      localStorage.setItem('gb.qa.lang', langCode);
+      saveUiPrefs({ qaLang: langCode });
+    });
     micBtn = h(
       'button',
       { type: 'button', class: 'gb-btn gb-btn--compact gb-mic', 'aria-label': 'Speak instead of typing' },
       Icon('mic', { size: 18 })
     );
-    let rec = null;
-    langBtn.addEventListener('click', () => {
-      langIdx = (langIdx + 1) % LANGS.length;
-      localStorage.setItem('gb.qa.lang', LANGS[langIdx].code);
-      saveUiPrefs({ qaLang: LANGS[langIdx].code });
-      langBtn.textContent = LANGS[langIdx].label;
-      if (rec) rec.stop();
-    });
-    micBtn.addEventListener('click', () => {
-      if (rec) {
-        rec.stop();
-        return;
-      }
-      rec = new SR();
-      rec.lang = LANGS[langIdx].code;
-      rec.interimResults = false;
-      micBtn.classList.add('is-listening');
-      rec.onresult = (e) => {
-        const said = Array.from(e.results).map((r) => r[0].transcript).join(' ').trim();
-        if (said) qaInput.value = (qaInput.value ? qaInput.value + ' ' : '') + said;
-      };
-      rec.onerror = (e) => {
-        if (e.error === 'not-allowed') pushToast('Microphone access was blocked.', 'error', 3600);
-      };
-      rec.onend = () => {
-        micBtn.classList.remove('is-listening');
-        rec = null;
-        qaInput.focus();
-      };
-      rec.start();
-    });
+    const gotSpeech = (said) => {
+      if (said) qaInput.value = (qaInput.value ? qaInput.value + ' ' : '') + said;
+      qaInput.focus();
+    };
+
+    if (capSR) {
+      // Native path (mobile app): promise-based one-shot recognition.
+      let listening = false;
+      micBtn.addEventListener('click', async () => {
+        if (listening) {
+          try {
+            await capSR.stop();
+          } catch (_) {
+            /* already stopped */
+          }
+          return;
+        }
+        try {
+          const perm = await capSR.requestPermissions();
+          if (perm && perm.speechRecognition && perm.speechRecognition !== 'granted') {
+            pushToast('Microphone access was blocked — allow it in Settings.', 'error', 3600);
+            return;
+          }
+          listening = true;
+          micBtn.classList.add('is-listening');
+          const res = await capSR.start({
+            language: langCode,
+            maxResults: 1,
+            partialResults: false,
+            popup: false,
+          });
+          const said = res && res.matches && res.matches[0] ? res.matches[0].trim() : '';
+          if (said) gotSpeech(said);
+          else pushToast('Didn’t catch that — try speaking again.', 'error', 3000);
+        } catch (_) {
+          pushToast('Didn’t catch that — try speaking again.', 'error', 3000);
+        } finally {
+          listening = false;
+          micBtn.classList.remove('is-listening');
+        }
+      });
+    } else {
+      // Browser path: Web Speech API.
+      let rec = null;
+      langBtn.addEventListener('change', () => {
+        if (rec) rec.stop();
+      });
+      micBtn.addEventListener('click', () => {
+        if (rec) {
+          rec.stop();
+          return;
+        }
+        rec = new SR();
+        rec.lang = langCode;
+        rec.interimResults = false;
+        micBtn.classList.add('is-listening');
+        rec.onresult = (e) => {
+          const said = Array.from(e.results).map((r) => r[0].transcript).join(' ').trim();
+          gotSpeech(said);
+        };
+        rec.onerror = (e) => {
+          if (e.error === 'not-allowed') {
+            pushToast('Microphone access was blocked — allow it in your browser.', 'error', 3600);
+          } else {
+            pushToast('Didn’t catch that — try speaking again.', 'error', 3000);
+          }
+        };
+        rec.onend = () => {
+          micBtn.classList.remove('is-listening');
+          rec = null;
+        };
+        rec.start();
+      });
+    }
   }
 
   const quickAddBox = h(
@@ -4451,9 +4545,9 @@ function openAddSheet() {
     h(
       'div',
       { class: 'gb-quickadd-hint' },
-      SR
-        ? 'Type or speak it naturally — English or Tamil — I’ll file it into the right place.'
-        : 'Type it naturally — English or Tamil — I’ll file it into the right place.'
+      micBtn
+        ? 'Type or speak in your own language — I’ll file it into the right place.'
+        : 'Type in your own language — I’ll file it into the right place.'
     )
   );
 
@@ -4482,7 +4576,7 @@ function openAddSheet() {
       key: 'reminder',
       icon: 'calendar-plus',
       label: 'Reminder',
-      sub: 'On a specific day or time',
+      sub: 'Opens your calendar to pick a day',
       action: () => {
         close();
         calToday();
@@ -4830,10 +4924,10 @@ function toastStack() {
 }
 
 function confirmDelete(message, onYes) {
-  const body = h('div', { class: 'gb-form' }, h('p', { class: 'gb-confirm-text' }, message));
   openModal({
-    title: 'Please confirm',
-    body,
+    // The question IS the heading — "Please confirm" told the user nothing.
+    title: message,
+    body: null,
     primary: 'Delete',
     onPrimary: async () => {
       await onYes();
@@ -5203,7 +5297,7 @@ const SCREENS = {
   },
   report: {
     headerLabel: () => 'Your progress',
-    headerName: () => 'Report',
+    headerName: () => 'Progress',
     render: () =>
       ScreenReport({
         features: (state.user && state.user.features) || null,
@@ -5233,7 +5327,7 @@ const SCREENS = {
   },
   focus: {
     headerLabel: () => 'Deep work',
-    headerName: () => 'Focus',
+    headerName: () => 'Timer',
     render: () =>
       ScreenFocus({
         onFocusSession: (mode, durationSec) =>
@@ -5625,11 +5719,16 @@ function viewSignin() {
   function submit() {
     const email = emailInput.value.trim();
     const password = pwInput.value;
+    // Silent returns made the button feel dead — always say what's missing.
     if (!email) {
+      state.error = 'Enter your email to sign in.';
+      render();
       emailInput.focus();
       return;
     }
     if (!password) {
+      state.error = 'Enter your password to sign in.';
+      render();
       pwInput.focus();
       return;
     }
@@ -5700,6 +5799,8 @@ function viewSignup() {
     const displayName = nameInput.value.trim();
     const password = pwInput.value;
     if (!email) {
+      state.error = 'Enter your email to create the account.';
+      render();
       emailInput.focus();
       return;
     }
@@ -5824,6 +5925,8 @@ function viewForgot() {
   function submit() {
     const email = emailInput.value.trim();
     if (!email) {
+      state.error = 'Enter your email and we’ll send the code there.';
+      render();
       emailInput.focus();
       return;
     }
@@ -5842,7 +5945,7 @@ function viewForgot() {
     }
   });
 
-  return authShell('Reset password', 'Enter your email and we’ll send you a code.', [
+  return authShell('Forgot password', 'Enter your email and we’ll send you a code.', [
     ...field('Email', emailInput),
     primaryBtn('Send code', submit),
     h(
