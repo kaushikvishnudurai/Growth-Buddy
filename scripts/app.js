@@ -2517,7 +2517,7 @@ function openCustomise(initialTab) {
     h(
       'div',
       { class: 'gb-field-hint', style: { marginBottom: '10px' } },
-      'Choose which cards appear on Home and reorder them with the arrows. Changes save automatically.'
+      'Pick your Home cards and reorder with the arrows. Saves as you go.'
     ),
     homeListEl
   );
@@ -2613,9 +2613,9 @@ function openCustomise(initialTab) {
     h(
       'div',
       { class: 'gb-field-hint', style: { marginBottom: '10px' } },
-      'Pick which destinations sit in the bottom bar (up to ' +
+      'Pick up to ' +
         NAV_BAR_MAX +
-        ') and reorder them with the arrows. The rest live under “More”. Changes save automatically.'
+        ' tabs for the bottom bar; the rest go under “More”. Saves as you go.'
     ),
     navListEl
   );
@@ -3681,7 +3681,7 @@ function openProfileSettings(initialTab) {
     h('div', { class: 'gb-field-label' }, 'Gender'),
     genderSel,
     h('div', { class: 'gb-field-label' }, 'Timezone'),
-    h('div', { class: 'gb-field-hint' }, 'IANA format — e.g. Asia/Kolkata, America/New_York'),
+    h('div', { class: 'gb-field-hint' }, 'e.g. Asia/Kolkata or America/New_York'),
     timezoneInput,
     h('div', { class: 'gb-settings-sec-label' }, 'Diet & Goals'),
     h('div', { class: 'gb-field-label' }, 'Fitness goal'),
@@ -3753,7 +3753,7 @@ function openProfileSettings(initialTab) {
     h(
       'div',
       { class: 'gb-field-hint', style: { margin: '6px 0 12px' } },
-      'Weekly digests arrive on Mondays. Delivered by email and as an in-app notification.'
+      'Weekly digests arrive Mondays — by email and in-app.'
     ),
     digestSaveBtn
   );
@@ -3827,7 +3827,7 @@ function openProfileSettings(initialTab) {
     h(
       'div',
       { class: 'gb-field-hint', style: { marginBottom: '14px' } },
-      'Verify your WhatsApp number once. After that, calendar reminders with a set time will be delivered to WhatsApp.'
+      'Verify your number once — timed reminders then arrive on WhatsApp.'
     ),
     waSectionBody,
     h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Progress digest'),

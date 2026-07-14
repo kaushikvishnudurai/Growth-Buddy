@@ -6,6 +6,8 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  /* .gb-card ships without padding; without this the grid sat flush on the card edges. */
+  padding: 14px;
 }
 
 .gb-mini-cal-header {
@@ -119,8 +121,8 @@
 }
 
 .gb-mini-cal-day.has-tasks {
-  background: var(--sky-50);
-  color: var(--sky-700);
+  background: var(--info-soft);
+  color: var(--info-soft-fg);
   border-color: var(--sky-500);
 }
 
@@ -129,8 +131,8 @@
 }
 
 .gb-mini-cal-day.is-free {
-  background: var(--leaf-50);
-  color: var(--leaf-700);
+  background: var(--success-soft);
+  color: var(--success-soft-fg);
   border-color: var(--leaf-500);
 }
 
@@ -283,13 +285,13 @@
 }
 
 .gb-mini-cal-pill.is-done {
-  background: var(--leaf-50);
-  color: var(--leaf-700);
+  background: var(--success-soft);
+  color: var(--success-soft-fg);
 }
 
 .gb-mini-cal-pill.is-tag {
-  background: var(--iris-50);
-  color: var(--iris-700);
+  background: var(--ai-soft);
+  color: var(--ai-soft-fg);
 }
 
 .gb-mini-cal-empty {
@@ -306,6 +308,27 @@
   flex-direction: column;
   gap: 10px;
   align-items: center;
+}
+
+.gb-mini-cal-empty--loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* Small inline spinner for loading states */
+.gb-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid color-mix(in srgb, var(--fg3) 35%, transparent);
+  border-top-color: var(--brand);
+  border-radius: 50%;
+  display: inline-block;
+  animation: gb-spin 0.7s linear infinite;
+}
+@keyframes gb-spin {
+  to { transform: rotate(360deg); }
 }
 
 .gb-mini-cal-retry {

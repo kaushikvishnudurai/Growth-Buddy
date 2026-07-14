@@ -1,0 +1,1502 @@
+/* =====================================================================
+   Growth Buddy — Money Buddy
+   Calm, encouraging money UI. Reuses the app's tokens, cards, buttons.
+   Signature: the "safe to spend" hero ring + the growth/sprout motif for
+   savings — money reframed as growth, never guilt.
+   ===================================================================== */
+
+.gb-money {
+  padding: var(--space-4) var(--space-5) var(--space-12);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* ---- Sub-tabs ---- */
+.gb-money-tabs {
+  display: flex;
+  gap: var(--space-2);
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+}
+.gb-money-tabs::-webkit-scrollbar {
+  display: none;
+}
+.gb-money-tab {
+  flex: 1 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg2);
+  border-radius: var(--radius-pill);
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: all var(--dur-fast) var(--ease-standard);
+}
+.gb-money-tab:hover {
+  border-color: var(--border-strong);
+  color: var(--fg1);
+}
+.gb-money-tab.is-active {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: var(--fg-on-brand);
+  box-shadow: var(--shadow-brand);
+}
+.gb-money-tabpanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.gb-money-card {
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.gb-money-intro {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  color: var(--fg2);
+  line-height: var(--leading-normal);
+}
+
+/* ---- Hero: safe-to-spend ---- */
+.gb-money-hero {
+  display: flex;
+  gap: var(--space-5);
+  align-items: center;
+  padding: var(--space-5);
+  border-radius: var(--radius-2xl);
+  background: linear-gradient(135deg, var(--ai-soft), var(--surface) 70%);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+.gb-money-hero-side {
+  flex: 1;
+  min-width: 0;
+}
+.gb-money-hero-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-body);
+  font-weight: 800;
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--ai);
+  margin-bottom: var(--space-2);
+}
+.gb-money-hero-say {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-h3);
+  line-height: var(--leading-snug);
+  letter-spacing: var(--tracking-tight);
+  color: var(--fg1);
+  margin-bottom: var(--space-4);
+}
+.gb-money-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.gb-money-hero-actions .gb-btn {
+  width: auto;
+}
+.gb-money-hero-figure {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.gb-money-hero-figure--empty {
+  justify-content: center;
+}
+.gb-money-hero-meta {
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  color: var(--fg3);
+  text-align: center;
+  max-width: 150px;
+}
+.gb-money-hero-spent {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--text-h1);
+  color: var(--fg1);
+  letter-spacing: var(--tracking-tight);
+}
+.gb-money-ring-val {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--text-h3);
+  letter-spacing: var(--tracking-tight);
+  font-variant-numeric: tabular-nums;
+}
+.gb-money-ring-lbl {
+  font-family: var(--font-body);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--fg3);
+}
+
+/* ---- Insights ---- */
+.gb-money-insights {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.gb-money-insight {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  color: var(--fg1);
+}
+.gb-money-insight-ic {
+  flex: none;
+  display: inline-flex;
+  color: var(--fg3);
+  margin-top: 1px;
+}
+.gb-money-insight.is-up {
+  background: var(--warning-soft);
+}
+.gb-money-insight.is-up .gb-money-insight-ic {
+  color: var(--warning);
+}
+.gb-money-insight.is-down {
+  background: var(--success-soft);
+}
+.gb-money-insight.is-down .gb-money-insight-ic {
+  color: var(--success);
+}
+.gb-money-insight.is-info .gb-money-insight-ic {
+  color: var(--ai);
+}
+
+/* ---- Donut ---- */
+.gb-money-donut-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+}
+.gb-money-donut-wrap {
+  position: relative;
+  flex: none;
+}
+.gb-money-donut {
+  display: block;
+}
+.gb-money-donut-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.gb-money-donut-val {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--text-h3);
+  color: var(--fg1);
+  letter-spacing: var(--tracking-tight);
+  font-variant-numeric: tabular-nums;
+}
+.gb-money-donut-sub {
+  font-family: var(--font-body);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--fg3);
+}
+.gb-money-legend {
+  flex: 1;
+  min-width: 160px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.gb-money-legend-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+}
+.gb-money-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-pill);
+  flex: none;
+}
+.gb-money-legend-label {
+  flex: 1;
+  color: var(--fg2);
+}
+.gb-money-legend-val {
+  font-weight: 700;
+  color: var(--fg1);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Coach callouts ---- */
+.gb-money-coach {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--ai-soft);
+  border: 1px solid var(--hairline-ai);
+}
+.gb-money-coach.is-good {
+  background: var(--success-soft);
+  border-color: transparent;
+}
+.gb-money-coach.is-warn {
+  background: var(--warning-soft);
+  border-color: transparent;
+}
+.gb-money-coach-ic {
+  flex: none;
+  display: inline-flex;
+  color: var(--ai);
+  margin-top: 1px;
+}
+.gb-money-coach.is-good .gb-money-coach-ic {
+  color: var(--success);
+}
+.gb-money-coach.is-warn .gb-money-coach-ic {
+  color: var(--warning);
+}
+.gb-money-coach-title {
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: var(--text-sm);
+  color: var(--fg1);
+  margin-bottom: 2px;
+}
+.gb-money-coach-text {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  color: var(--fg2);
+}
+
+/* ---- Gamification ---- */
+.gb-money-game-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+.gb-money-level {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 1;
+  min-width: 0;
+}
+.gb-money-level-badge {
+  flex: none;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--text-sm);
+  color: var(--warning-soft-fg);
+  background: var(--warning-soft);
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+}
+.gb-money-level-bar {
+  flex: 1;
+  height: 8px;
+  background: var(--surface-3);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+.gb-money-level-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--sun-500), var(--coral-500));
+  border-radius: var(--radius-pill);
+  transition: width var(--dur-slow) var(--ease-out);
+}
+.gb-money-streak {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: var(--text-sm);
+  color: var(--fg1);
+}
+.gb-money-badges {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-2);
+}
+.gb-money-badge {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  opacity: 0.55;
+  transition: all var(--dur-base) var(--ease-standard);
+}
+.gb-money-badge.is-earned {
+  opacity: 1;
+  background: var(--success-soft);
+  border-color: transparent;
+}
+.gb-money-badge-ic {
+  flex: none;
+  display: inline-flex;
+  color: var(--fg3);
+}
+.gb-money-badge.is-earned .gb-money-badge-ic {
+  color: var(--success);
+}
+.gb-money-badge-lbl {
+  flex: 1;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: var(--text-xs);
+  color: var(--fg1);
+  line-height: 1.2;
+}
+.gb-money-badge-prog {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--fg3);
+}
+
+/* ---- Stat rows ---- */
+.gb-money-review-stats,
+.gb-money-bsummary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-2);
+}
+.gb-money-bsummary {
+  grid-template-columns: repeat(3, 1fr);
+}
+.gb-money-stat {
+  background: var(--surface-2);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3);
+  text-align: center;
+}
+.gb-money-stat-val {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--text-h4);
+  color: var(--fg1);
+  letter-spacing: var(--tracking-tight);
+  line-height: 1.1;
+}
+.gb-money-stat-lbl {
+  font-family: var(--font-body);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--fg3);
+  margin-top: 4px;
+}
+
+/* ---- Forecast ---- */
+.gb-money-forecast-top {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.gb-money-forecast-num {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--text-h2);
+  color: var(--fg1);
+  letter-spacing: var(--tracking-tight);
+}
+.gb-money-forecast-lbl {
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  color: var(--fg3);
+}
+.gb-money-forecast-save {
+  text-align: right;
+}
+.gb-money-forecast-warn,
+.gb-money-forecast-ok {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  color: var(--fg2);
+}
+.gb-money-forecast-warn {
+  color: var(--warning-soft-fg);
+}
+.gb-money-forecast-ok {
+  color: var(--success-soft-fg);
+}
+
+/* ---- Personality ---- */
+.gb-money-personality-head {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+.gb-money-personality-ic {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-lg);
+  background: var(--ai-soft);
+  color: var(--iris-600);
+}
+.gb-money-personality-type {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--text-h4);
+  color: var(--fg1);
+}
+.gb-money-personality-blurb {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  color: var(--fg2);
+  line-height: var(--leading-normal);
+}
+.gb-money-personality-tips {
+  margin: var(--space-3) 0 0;
+  padding-left: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.gb-money-personality-tips li {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  color: var(--fg2);
+}
+
+/* ---- Actions row ---- */
+.gb-money-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+.gb-money-actions .gb-btn {
+  flex: 1;
+}
+.gb-money-week-total {
+  font-family: var(--font-display);
+  font-weight: 800;
+  color: var(--fg1);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Week bars ---- */
+.gb-money-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  height: 110px;
+}
+.gb-money-bar-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+}
+.gb-money-bar-track {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.gb-money-bar-fill {
+  width: 70%;
+  max-width: 22px;
+  background: var(--coral-200);
+  border-radius: var(--radius-sm);
+  transition: height var(--dur-slow) var(--ease-out);
+}
+.gb-money-bar-fill.is-today {
+  background: var(--coral-500);
+}
+.gb-money-bar-day {
+  font-family: var(--font-body);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  color: var(--fg3);
+}
+
+/* ---- Category list / breakdown ---- */
+.gb-money-catlist,
+.gb-money-exp-list,
+.gb-money-bcards,
+.gb-money-goals {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.gb-money-catrow,
+.gb-money-exp-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.gb-money-cat-ic {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+}
+.gb-money-cat-main {
+  flex: 1;
+  min-width: 0;
+}
+.gb-money-cat-top {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: var(--text-sm);
+  color: var(--fg1);
+  margin-bottom: 4px;
+}
+.gb-money-cat-amt {
+  font-variant-numeric: tabular-nums;
+}
+.gb-money-cat-track {
+  height: 8px;
+  background: var(--surface-3);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+.gb-money-cat-fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  transition: width var(--dur-slow) var(--ease-out);
+}
+
+/* ---- History list ---- */
+.gb-money-filter {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.gb-money-filter::-webkit-scrollbar {
+  display: none;
+}
+.gb-money-filter .gb-segmented {
+  width: max-content;
+  min-width: 100%;
+}
+.gb-money-exp-main {
+  flex: 1;
+  min-width: 0;
+}
+.gb-money-exp-note {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: var(--text-sm);
+  color: var(--fg1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gb-money-exp-meta {
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  color: var(--fg3);
+}
+.gb-money-exp-amt {
+  flex: none;
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--fg1);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Income / loans: settled row dims, amount struck through ---- */
+.gb-money-exp-row.is-settled {
+  opacity: 0.6;
+}
+.gb-money-exp-row.is-settled .gb-money-exp-amt {
+  text-decoration: line-through;
+}
+
+/* ---- Budget cards ---- */
+.gb-money-bcard {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+}
+.gb-money-bcard-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+.gb-money-bcard-name {
+  flex: 1;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: var(--text-sm);
+  color: var(--fg1);
+}
+.gb-money-bcard-pct {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--text-sm);
+  color: var(--success);
+  font-variant-numeric: tabular-nums;
+}
+.gb-money-bcard-pct.is-near {
+  color: var(--warning);
+}
+.gb-money-bcard-pct.is-over {
+  color: var(--brand);
+}
+.gb-money-bcard-track {
+  height: 10px;
+  background: var(--surface-3);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+.gb-money-bcard-fill {
+  height: 100%;
+  background: var(--success);
+  border-radius: var(--radius-pill);
+  transition: width var(--dur-slow) var(--ease-out);
+}
+.gb-money-bcard-fill.is-near {
+  background: var(--warning);
+}
+.gb-money-bcard-fill.is-over {
+  background: var(--brand);
+}
+.gb-money-bcard-meta {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  color: var(--fg2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Budget modal fields ---- */
+.gb-money-budget-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+.gb-money-budget-field-ic {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+}
+.gb-money-budget-field-label {
+  flex: 1;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: var(--text-sm);
+  color: var(--fg1);
+}
+.gb-money-budget-field .gb-input {
+  flex: none;
+  width: 120px;
+}
+
+/* ---- Purchase advisor ---- */
+.gb-money-advice {
+  margin-top: var(--space-3);
+}
+.gb-money-advice-verdict {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--text-h4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+}
+.gb-money-advice-verdict.is-good {
+  color: var(--success-soft-fg);
+  background: var(--success-soft);
+}
+.gb-money-advice-verdict.is-info {
+  color: var(--ai-soft-fg);
+  background: var(--ai-soft);
+}
+.gb-money-advice-verdict.is-warn {
+  color: var(--warning-soft-fg);
+  background: var(--warning-soft);
+}
+.gb-money-advice-list {
+  margin: var(--space-3) 0;
+  padding-left: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.gb-money-advice-list li {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  color: var(--fg2);
+  line-height: var(--leading-normal);
+}
+.gb-money-advice-closer {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-style: italic;
+  color: var(--fg1);
+}
+
+/* ---- Goal chips (modal) ---- */
+.gb-money-goal-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+.gb-money-chip {
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--fg2);
+}
+.gb-money-chip:hover {
+  border-color: var(--leaf-500);
+  color: var(--success-soft-fg);
+}
+
+/* ---- Savings goals ---- */
+.gb-money-goal {
+  padding: var(--space-4);
+  border-radius: var(--radius-xl);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.gb-money-goal.is-done {
+  background: var(--success-soft);
+  border-color: transparent;
+}
+.gb-money-goal-top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+.gb-money-goal-ring-pct {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--text-sm);
+  color: var(--fg1);
+  font-variant-numeric: tabular-nums;
+}
+.gb-money-goal-info {
+  flex: 1;
+  min-width: 0;
+}
+.gb-money-goal-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-h4);
+  color: var(--fg1);
+}
+.gb-money-goal-nums {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: var(--text-sm);
+  color: var(--fg2);
+  font-variant-numeric: tabular-nums;
+  margin: 2px 0;
+}
+.gb-money-goal-plan {
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  color: var(--success-soft-fg);
+}
+.gb-money-goal.is-done .gb-money-goal-plan {
+  color: var(--success-soft-fg);
+  font-weight: 700;
+}
+.gb-money-goal-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.gb-money-goal-actions .gb-btn {
+  width: auto;
+}
+
+/* ---- Receipt scanner ---- */
+.gb-money-receipt-preview {
+  height: 0;
+  border-radius: var(--radius-lg);
+  background-size: cover;
+  background-position: center;
+  transition: height var(--dur-base) var(--ease-out);
+}
+.gb-money-receipt-preview.has-img {
+  height: 160px;
+  margin-bottom: var(--space-2);
+  border: 1px solid var(--border);
+}
+.gb-money-receipt-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.gb-money-receipt-row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+.gb-money-receipt-total {
+  margin-top: var(--space-3);
+  text-align: right;
+  font-family: var(--font-display);
+  font-weight: 800;
+  color: var(--fg1);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Empty state ---- */
+.gb-money-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  text-align: center;
+  padding: var(--space-6) var(--space-4);
+  color: var(--fg3);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+}
+
+/* ---- Section head with multiple actions ---- */
+.gb-money-head-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* ---- Financial health (14) ---- */
+.gb-money-health {
+  display: flex;
+  gap: var(--space-5);
+  align-items: center;
+  flex-wrap: wrap;
+}
+.gb-money-health-score {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--text-h2);
+  letter-spacing: var(--tracking-tight);
+  font-variant-numeric: tabular-nums;
+}
+.gb-money-health-parts {
+  flex: 1;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.gb-money-health-part-top {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--fg1);
+}
+.gb-money-health-part-val {
+  font-variant-numeric: tabular-nums;
+  color: var(--fg2);
+}
+.gb-money-health-track {
+  height: 7px;
+  background: var(--surface-3);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  margin: 4px 0 2px;
+}
+.gb-money-health-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--leaf-500), var(--success));
+  border-radius: var(--radius-pill);
+  transition: width var(--dur-slow) var(--ease-out);
+}
+.gb-money-health-note {
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  color: var(--fg3);
+}
+
+/* ---- Daily tip (13) ---- */
+.gb-money-tip {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-xl);
+  /* Theme-aware soft surface: stays light in light mode, dark-translucent in
+     dark mode, so --fg1 body text below is readable in both. Raw --sun-50
+     never flipped for dark, leaving near-white text on a light pastel. */
+  background: var(--warning-soft);
+  border: 1px solid transparent;
+}
+.gb-money-tip-ic {
+  flex: none;
+  display: inline-flex;
+  color: var(--warning-soft-fg);
+  margin-top: 1px;
+}
+.gb-money-tip-label {
+  font-family: var(--font-body);
+  font-weight: 800;
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--warning-soft-fg);
+  margin-bottom: 2px;
+}
+.gb-money-tip-text {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  color: var(--fg1);
+  line-height: var(--leading-normal);
+}
+
+/* ---- Recovery plan (20) ---- */
+.gb-money-recovery-sum {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: var(--text-sm);
+  color: var(--warning-soft-fg);
+}
+.gb-money-recovery-steps {
+  margin: 0;
+  padding-left: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.gb-money-recovery-steps li {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  color: var(--fg2);
+  line-height: var(--leading-normal);
+}
+
+/* ---- Search (16) ---- */
+.gb-money-searchbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--fg3);
+}
+.gb-money-searchbar .gb-input {
+  flex: 1;
+}
+.gb-money-searchbar .gb-btn {
+  width: auto;
+}
+.gb-money-search-answer {
+  margin: var(--space-3) 0 var(--space-2);
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: var(--text-sm);
+  color: var(--fg1);
+}
+
+/* ---- Subscriptions (24) ---- */
+.gb-money-sub-total {
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: var(--text-sm);
+  color: var(--fg1);
+}
+.gb-money-sub-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* ---- Wishlist (18) ---- */
+.gb-money-wish-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.gb-money-wish {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.gb-money-wish-main {
+  flex: 1;
+  min-width: 0;
+}
+.gb-money-wish .gb-btn {
+  width: auto;
+}
+
+/* ---- Challenges (11 / 15) ---- */
+.gb-money-chal-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.gb-money-chal {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+}
+.gb-money-chal.is-won {
+  background: var(--success-soft);
+}
+.gb-money-chal.is-broken {
+  background: var(--brand-soft);
+}
+.gb-money-chal-top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+.gb-money-chal-ic {
+  flex: none;
+  display: inline-flex;
+}
+.gb-money-chal-title {
+  flex: 1;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: var(--text-sm);
+  color: var(--fg1);
+}
+.gb-money-chal-track {
+  height: 8px;
+  background: var(--surface-3);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+.gb-money-chal-fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  transition: width var(--dur-slow) var(--ease-out);
+}
+.gb-money-chal-detail {
+  margin-top: 6px;
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  color: var(--fg2);
+  font-variant-numeric: tabular-nums;
+}
+.gb-money-preset-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.gb-money-preset {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  width: 100%;
+  text-align: left;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg1);
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: all var(--dur-fast) var(--ease-standard);
+}
+.gb-money-preset:hover {
+  border-color: var(--iris-500);
+  background: var(--ai-soft);
+}
+.gb-money-preset .gb-icon {
+  color: var(--ai);
+  flex: none;
+  margin-top: 1px;
+}
+.gb-money-preset-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.gb-money-preset-label {
+  font-weight: 700;
+  color: var(--fg1);
+}
+.gb-money-preset-sub {
+  font-weight: 500;
+  font-size: var(--text-xs);
+  color: var(--fg3);
+  line-height: var(--leading-snug);
+}
+
+/* ---- Timeline (19) ---- */
+.gb-money-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.gb-money-tl-row {
+  display: flex;
+  gap: var(--space-3);
+  padding-bottom: var(--space-4);
+  position: relative;
+}
+.gb-money-tl-row::before {
+  content: '';
+  position: absolute;
+  left: 15px;
+  top: 32px;
+  bottom: 0;
+  width: 2px;
+  background: var(--border);
+}
+.gb-money-tl-row:last-child::before {
+  display: none;
+}
+.gb-money-tl-ic {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+  background: var(--success-soft);
+  color: var(--success-soft-fg);
+  z-index: 1;
+}
+.gb-money-tl-title {
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: var(--text-sm);
+  color: var(--fg1);
+}
+.gb-money-tl-desc {
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  color: var(--fg3);
+}
+
+/* ---- Tag chip picker (wraps — no overflow; replaces the segmented bar) ---- */
+.gb-money-tagpick {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.gb-money-tagpick-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.gb-money-tagchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 13px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg2);
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: all var(--dur-fast) var(--ease-standard);
+}
+.gb-money-tagchip:hover {
+  border-color: var(--border-strong);
+  color: var(--fg1);
+}
+.gb-money-tagchip.is-on {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: var(--fg-on-brand);
+}
+.gb-money-tagchip-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: var(--radius-pill);
+  flex: none;
+}
+.gb-money-tagchip.is-on .gb-money-tagchip-dot {
+  display: none;
+}
+.gb-money-tagchip--add {
+  border-style: dashed;
+  color: var(--fg3);
+}
+.gb-money-tagchip--add:hover {
+  color: var(--brand);
+  border-color: var(--brand);
+}
+.gb-money-tagpick-create {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+}
+.gb-money-tagpick-create-row {
+  display: flex;
+  gap: var(--space-2);
+}
+.gb-money-tagpick-create-row .gb-btn {
+  width: auto;
+}
+.gb-money-custom-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-body);
+  font-weight: 800;
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--fg3);
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* ---- Tag manager (custom tags) ---- */
+.gb-money-tag-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+.gb-money-tag-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.gb-money-tag-name {
+  flex: 1;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: var(--text-sm);
+  color: var(--fg1);
+}
+.gb-money-swatches {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.gb-money-swatch {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-pill);
+  border: 3px solid transparent;
+  cursor: pointer;
+  padding: 0;
+}
+.gb-money-swatch.is-on {
+  border-color: var(--fg1);
+}
+
+/* ---- Simulator (23) ---- */
+.gb-money-sim-out {
+  margin-top: var(--space-3);
+}
+.gb-money-sim-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-3);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  color: var(--fg2);
+  margin-bottom: var(--space-2);
+}
+.gb-money-sim-total strong {
+  font-family: var(--font-display);
+  font-size: var(--text-h3);
+  color: var(--success-soft-fg);
+}
+.gb-money-line {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* ---- Reflection dot (12) ---- */
+.gb-money-reflect-dot {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 6px;
+  color: var(--bloom-500);
+}
+
+/* ---- Home widget (mini card) ---- */
+.gb-money-mini {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  /* .gb-card ships without padding; without this the widget sat flush on the card edges. */
+  padding: var(--space-4);
+  background: linear-gradient(135deg, var(--ai-soft), var(--surface) 70%);
+}
+.gb-money-mini-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--fg3);
+}
+.gb-money-mini-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-body);
+  font-weight: 800;
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--ai);
+}
+.gb-money-mini-body {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+.gb-money-mini-figure {
+  flex: none;
+  width: 72px;
+  text-align: center;
+}
+.gb-money-mini-spent {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--text-h4);
+  color: var(--fg1);
+  letter-spacing: var(--tracking-tight);
+}
+.gb-money-mini-lbl,
+.gb-money-mini-cap {
+  font-family: var(--font-body);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--fg3);
+}
+.gb-money-mini-ring-val {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--text-sm);
+  letter-spacing: var(--tracking-tight);
+  font-variant-numeric: tabular-nums;
+}
+.gb-money-mini-main {
+  flex: 1;
+  min-width: 0;
+}
+.gb-money-mini-say {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  color: var(--fg1);
+  line-height: var(--leading-normal);
+  margin-top: 2px;
+}
+.gb-money-mini-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+.gb-money-mini-actions .gb-btn {
+  width: auto;
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 540px) {
+  .gb-money {
+    padding: var(--space-3) var(--space-4) var(--space-12);
+  }
+  .gb-money-hero {
+    flex-direction: column-reverse;
+    align-items: stretch;
+    text-align: center;
+  }
+  .gb-money-hero-actions {
+    justify-content: center;
+  }
+  .gb-money-review-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .gb-money-tab span:not(.gb-icon) {
+    display: none;
+  }
+  .gb-money-tab {
+    flex: 1;
+    padding: 10px;
+  }
+}

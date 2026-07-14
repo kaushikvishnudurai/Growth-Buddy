@@ -1955,7 +1955,9 @@ body {
 .gb-badge-card,
 .gb-suggest-card,
 .gb-timeline-card,
-.gb-photo-history-card {
+.gb-photo-history-card,
+.gb-ach-summary,
+.gb-focus-statscard {
   padding: 16px;
 }
 .gb-coach-head,
@@ -3884,6 +3886,11 @@ body {
 }
 
 /* ---- First-run onboarding checklist ---- */
+/* .gb-card ships without padding by design (each widget sets its own);
+   this one was missing it, so the checklist sat flush on the card edges. */
+.gb-onboard {
+  padding: 16px;
+}
 .gb-onboard-head {
   display: flex;
   align-items: flex-start;
