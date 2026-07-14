@@ -2,3 +2,7 @@
 .env.local
 /backend/target/
 *.log
+node_modules/
+dist/
+dev-dist/
+backend/.settings/
