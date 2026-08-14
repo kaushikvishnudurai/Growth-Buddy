@@ -3655,7 +3655,9 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice }) {
         paint();
       }
     );
-    let list = money.expenses
+    // ponytail: the list resets with the month. Older months are reachable through
+    // the search card above ("how much on food last month"), so no month picker.
+    let list = mExp
       .slice()
       .sort((a, b) =>
         b.date < a.date ? -1 : b.date > a.date ? 1 : (b.createdAt || 0) - (a.createdAt || 0)
@@ -3664,7 +3666,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice }) {
     const recent = Card({
       className: 'gb-money-card',
       children: [
-        h('div', { class: 'gb-sectiontitle' }, h('h3', null, 'History')),
+        h('div', { class: 'gb-sectiontitle' }, h('h3', null, 'This month')),
         h('div', { class: 'gb-money-filter' }, filterSeg.node),
         list.length
           ? h(
@@ -3675,8 +3677,8 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice }) {
           : emptyHint(
               'wallet',
               spendFilter === 'all'
-                ? 'No expenses yet. Add your first above.'
-                : 'Nothing in ' + catOf(spendFilter, money).label + ' yet.'
+                ? 'Nothing logged this month yet. Add your first above.'
+                : 'Nothing in ' + catOf(spendFilter, money).label + ' this month.'
             ),
       ],
     });

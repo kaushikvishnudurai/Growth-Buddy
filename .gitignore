@@ -1,5 +1,7 @@
 .env
 .env.local
+.git-credentials
+.vscode/
 /backend/target/
 *.log
 node_modules/
