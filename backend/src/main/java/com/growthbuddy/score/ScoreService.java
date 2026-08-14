@@ -1,6 +1,7 @@
 package com.growthbuddy.score;
 
 import com.growthbuddy.habit.HabitService;
+import com.growthbuddy.user.UserClock;
 import com.growthbuddy.task.TaskRepository;
 import java.time.LocalDate;
 import java.util.UUID;
@@ -19,11 +20,14 @@ public class ScoreService {
     private final TaskRepository tasks;
     private final HabitService habits;
     private final DailyScoreRepository scores;
+    private final UserClock clock;
 
-    public ScoreService(TaskRepository tasks, HabitService habits, DailyScoreRepository scores) {
+    public ScoreService(TaskRepository tasks, HabitService habits, DailyScoreRepository scores,
+                        UserClock clock) {
         this.tasks = tasks;
         this.habits = habits;
         this.scores = scores;
+        this.clock = clock;
     }
 
     public record ScoreResponse(
@@ -50,7 +54,7 @@ public class ScoreService {
         }
         int score = parts == 0 ? 0 : (int) Math.round((sum / parts) * 100);
 
-        return new ScoreResponse(LocalDate.now(), score,
+        return new ScoreResponse(clock.today(userId), score,
                 (int) taskDone, (int) taskTotal, hc.done(), hc.total());
     }
 

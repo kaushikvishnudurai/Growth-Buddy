@@ -2,6 +2,7 @@ package com.growthbuddy.reminder;
 
 import com.growthbuddy.user.User;
 import com.growthbuddy.user.UserRepository;
+import com.growthbuddy.common.UserZone;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -90,7 +91,7 @@ public class ReminderDeliveryScheduler {
                 continue;
             }
 
-            ZoneId zone = parseZone(user.getTimezone());
+            ZoneId zone = UserZone.of(user.getTimezone());
             LocalDateTime now = LocalDateTime.ofInstant(tick, zone);
             LocalDate day = now.toLocalDate();
             if (!reminderService.occursOn(rem, day)) {
@@ -147,13 +148,6 @@ public class ReminderDeliveryScheduler {
         return users.findById(userId).orElse(null);
     }
 
-    private static ZoneId parseZone(String id) {
-        try {
-            return ZoneId.of(id);
-        } catch (Exception ex) {
-            return ZoneId.of("UTC");
-        }
-    }
 
     private static String buildMessage(User user, CalendarReminder rem, LocalDate day) {
         String name = (user.getDisplayName() == null || user.getDisplayName().isBlank()) ? "Buddy" : user.getDisplayName();

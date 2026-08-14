@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
+import com.growthbuddy.user.UserClock;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -23,9 +24,12 @@ class WellnessServiceTest {
     private static final UUID USER = UUID.randomUUID();
 
     @Mock DailyLogRepository logs;
+    @Mock UserClock clock;
 
+    /** range() now ends on the user's own today, so the clock has to answer. */
     private WellnessService service() {
-        return new WellnessService(logs);
+        when(clock.today(USER)).thenReturn(LocalDate.of(2026, 6, 30));
+        return new WellnessService(logs, clock);
     }
 
     private DailyLog row(LocalDate date) {

@@ -1,9 +1,9 @@
 package com.growthbuddy.water;
 
 import com.growthbuddy.common.ApiException;
+import com.growthbuddy.user.UserClock;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -17,15 +17,17 @@ public class WaterService {
 
     private final WaterEntryRepository entries;
     private final WaterGoalRepository goals;
+    private final UserClock clock;
 
-    public WaterService(WaterEntryRepository entries, WaterGoalRepository goals) {
+    public WaterService(WaterEntryRepository entries, WaterGoalRepository goals, UserClock clock) {
         this.entries = entries;
         this.goals = goals;
+        this.clock = clock;
     }
 
     @Transactional(readOnly = true)
     public WaterSummaryResponse summary(UUID userId, LocalDate date) {
-        LocalDate day = date != null ? date : LocalDate.now();
+        LocalDate day = date != null ? date : clock.today(userId);
         int goalMl = goal(userId);
         int consumed = entries.totalForDay(userId, day);
         int remaining = Math.max(goalMl - consumed, 0);
@@ -45,11 +47,12 @@ public class WaterService {
         e.setUserId(userId);
         e.setAmountMl(req.amountMl());
         e.setNote(StringUtils.hasText(req.note()) ? req.note().trim() : null);
-        if (req.loggedAt() != null) {
-            Instant ts = req.loggedAt();
-            e.setLoggedAt(ts);
-            e.setLogDate(ts.atZone(ZoneId.systemDefault()).toLocalDate());
-        }
+        // Always bucket the entry by the drinker's own calendar day. The entity's
+        // @PrePersist fallback can only guess a zone, and guessing wrong filed
+        // early-morning glasses under yesterday for anyone east of UTC.
+        Instant ts = req.loggedAt() != null ? req.loggedAt() : Instant.now();
+        e.setLoggedAt(ts);
+        e.setLogDate(ts.atZone(clock.zoneOf(userId)).toLocalDate());
         WaterEntry saved = entries.save(e);
         return summary(userId, saved.getLogDate());
     }
@@ -76,7 +79,7 @@ public class WaterService {
         g.setGoalMl(req.goalMl());
         g.setUpdatedAt(Instant.now());
         goals.save(g);
-        return summary(userId, LocalDate.now());
+        return summary(userId, clock.today(userId));
     }
 
     private int goal(UUID userId) {

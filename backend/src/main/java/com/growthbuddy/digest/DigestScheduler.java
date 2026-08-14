@@ -2,6 +2,7 @@ package com.growthbuddy.digest;
 
 import com.growthbuddy.user.User;
 import com.growthbuddy.user.UserRepository;
+import com.growthbuddy.common.UserZone;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -42,7 +43,7 @@ public class DigestScheduler {
             if (!StringUtils.hasText(user.getEmail()) || !StringUtils.hasText(freq)) {
                 continue;
             }
-            ZoneId zone = parseZone(user.getTimezone());
+            ZoneId zone = UserZone.of(user.getTimezone());
             LocalDateTime now = LocalDateTime.now(zone);
             if (now.getHour() != user.getDigestHour()) {
                 continue;
@@ -65,11 +66,4 @@ public class DigestScheduler {
         }
     }
 
-    private static ZoneId parseZone(String id) {
-        try {
-            return ZoneId.of(id);
-        } catch (Exception ex) {
-            return ZoneId.of("UTC");
-        }
-    }
 }

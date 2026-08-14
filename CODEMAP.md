@@ -142,6 +142,12 @@ the OTP only, never the code**).
 2. **Lowercase Java enum constants are DB values** (`Cadence`, `HabitDomain`, `MessageRole`,
    `ReminderTag`, `RepeatFreq`, `NotificationKind`). `Priority` is `Low/Medium/High` on purpose.
 3. **`./run.sh`**, not bare Maven — otherwise `.env` is unloaded and OTP email silently no-ops.
+3b. **Never call `LocalDate.now()` for anything a user sees dated.** "Today" belongs to the
+   user, not the server: resolve it through `UserClock.today(userId)` (their
+   `users.timezone`, the same field the schedulers use) and resolve it **once** per
+   operation, then pass it down — a loop costs a lookup each time and a request
+   straddling midnight would compute rows against different days. `UserZone.of()` parses
+   a stored zone and falls back to UTC. Covered by `UserZoneTest` / `UserClockTest`.
 4. **Secrets are never stored in plain form** — OTPs bcrypt-hashed, session tokens HMAC'd, passwords
    bcrypt, the Google client secret encrypted. Keep it that way.
 5. **Date keys are `YYYY-MM-DD` strings** on the frontend; ranges are string comparisons.

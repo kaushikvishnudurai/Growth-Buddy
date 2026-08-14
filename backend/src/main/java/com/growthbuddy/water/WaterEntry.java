@@ -1,5 +1,6 @@
 package com.growthbuddy.water;
 
+import com.growthbuddy.common.UserZone;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -8,7 +9,6 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneId;
 import java.util.UUID;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -54,10 +54,10 @@ public class WaterEntry {
             loggedAt = Instant.now();
         }
         if (logDate == null) {
-            // Same clock the reads use (WaterService calls LocalDate.now()). Bucketing the
-            // write by UTC while reading by the app's zone filed early-morning glasses under
-            // the previous day for any user east of UTC.
-            logDate = loggedAt.atZone(ZoneId.systemDefault()).toLocalDate();
+            // Defensive only: WaterService always sets logDate from the drinker's own zone
+            // (UserClock), because an entity can't know whose day this belongs to. UTC to
+            // match UserZone.FALLBACK, so the two never disagree.
+            logDate = loggedAt.atZone(UserZone.FALLBACK).toLocalDate();
         }
         if (createdAt == null) {
             createdAt = Instant.now();

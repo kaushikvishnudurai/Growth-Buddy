@@ -15,8 +15,9 @@ class HabitStreakFreezeTest {
 
     private static final LocalDate TODAY = LocalDate.of(2026, 6, 27);
 
-    // Repos are never touched by the pure date math, so nulls are fine here.
-    private final HabitService service = new HabitService(null, null, null, null, null);
+    // Repos and the clock are never touched by the pure date math (today is passed
+    // in explicitly), so nulls are fine here.
+    private final HabitService service = new HabitService(null, null, null, null, null, null);
 
     private Set<LocalDate> days(int... daysAgo) {
         Set<LocalDate> s = new java.util.HashSet<>();

@@ -2,6 +2,7 @@ package com.growthbuddy.habit;
 
 import com.growthbuddy.common.ApiException;
 import com.growthbuddy.user.ProgressService;
+import com.growthbuddy.user.UserClock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.WeekFields;
@@ -27,23 +28,26 @@ public class HabitService {
     private final HabitStreakRepository streaks;
     private final StreakFreezeWalletRepository wallets;
     private final ProgressService progress;
+    private final UserClock clock;
 
     public HabitService(HabitRepository habits, HabitCheckinRepository checkins,
                         HabitStreakRepository streaks,
                         StreakFreezeWalletRepository wallets,
-                        ProgressService progress) {
+                        ProgressService progress,
+                        UserClock clock) {
         this.habits = habits;
         this.checkins = checkins;
         this.streaks = streaks;
         this.wallets = wallets;
         this.progress = progress;
+        this.clock = clock;
     }
 
     /* ---- Freeze-token wallet (weekly grant) ---- */
 
     /** Load (or create) the wallet, topping it up if a new ISO week has started. */
-    private StreakFreezeWallet wallet(UUID userId) {
-        LocalDate thisWeek = weekStart(LocalDate.now());
+    private StreakFreezeWallet wallet(UUID userId, LocalDate today) {
+        LocalDate thisWeek = weekStart(today);
         StreakFreezeWallet[] created = {null};
         StreakFreezeWallet w = wallets.findById(userId).orElseGet(() -> {
             StreakFreezeWallet n = new StreakFreezeWallet();
@@ -69,15 +73,16 @@ public class HabitService {
 
     @Transactional
     public FreezeStatus freezeStatus(UUID userId) {
-        return new FreezeStatus(wallet(userId).getTokens(), FREEZE_CAP);
+        return new FreezeStatus(wallet(userId, clock.today(userId)).getTokens(), FREEZE_CAP);
     }
 
     /** Protect a day (rest/freeze): spend a token, mark the day, recompute. */
     @Transactional
     public HabitResponse protect(UUID userId, UUID id, LocalDate date) {
         Habit h = require(userId, id);
-        LocalDate day = date != null ? date : LocalDate.now();
-        if (day.isAfter(LocalDate.now())) {
+        LocalDate today = clock.today(userId);
+        LocalDate day = date != null ? date : today;
+        if (day.isAfter(today)) {
             throw ApiException.badRequest("Cannot protect a future day");
         }
         HabitCheckin c = checkins.findByHabitIdAndLogDate(id, day).orElse(null);
@@ -85,7 +90,7 @@ public class HabitService {
             throw ApiException.badRequest("That day is already completed");
         }
         if (c == null || !c.isProtectedDay()) {
-            StreakFreezeWallet w = wallet(userId);
+            StreakFreezeWallet w = wallet(userId, today);
             if (w.getTokens() <= 0) {
                 throw ApiException.badRequest("No freezes left this week");
             }
@@ -100,32 +105,33 @@ public class HabitService {
             c.setDone(false);
             c.setProtectedDay(true);
             checkins.save(c);
-            recomputeStreak(h);
+            recomputeStreak(h, today);
         }
-        return toResponse(h, LocalDate.now(), userId);
+        return toResponse(h, today, userId);
     }
 
     /** Undo a protected day and refund the token. */
     @Transactional
     public HabitResponse unprotect(UUID userId, UUID id, LocalDate date) {
         Habit h = require(userId, id);
-        LocalDate day = date != null ? date : LocalDate.now();
+        LocalDate today = clock.today(userId);
+        LocalDate day = date != null ? date : today;
         HabitCheckin c = checkins.findByHabitIdAndLogDate(id, day).orElse(null);
         if (c != null && c.isProtectedDay()) {
             c.setProtectedDay(false);
             checkins.save(c);
-            StreakFreezeWallet w = wallet(userId);
+            StreakFreezeWallet w = wallet(userId, today);
             w.setTokens(Math.min(FREEZE_CAP, w.getTokens() + 1));
             wallets.save(w);
-            recomputeStreak(h);
+            recomputeStreak(h, today);
         }
-        return toResponse(h, LocalDate.now(), userId);
+        return toResponse(h, today, userId);
     }
 
     // Read-write (not readOnly): wallet() may persist a weekly token grant.
     @Transactional
     public List<HabitResponse> list(UUID userId) {
-        LocalDate today = LocalDate.now();
+        LocalDate today = clock.today(userId);
         List<Habit> rows = habits.findByUserIdAndDeletedAtIsNullOrderByCreatedAtAsc(userId);
         if (rows.isEmpty()) {
             return List.of();
@@ -145,7 +151,7 @@ public class HabitService {
         for (HabitStreak s : streaks.findAllById(rows.stream().map(Habit::getId).toList())) {
             streakById.put(s.getHabitId(), s);
         }
-        int tokens = wallet(userId).getTokens();
+        int tokens = wallet(userId, today).getTokens();
         return rows.stream()
                 .map(h -> toResponse(h, today,
                         byHabit.getOrDefault(h.getId(), List.of()),
@@ -162,7 +168,7 @@ public class HabitService {
     public String contextSummary(UUID userId) {
         List<Habit> hs = habits.findByUserIdAndDeletedAtIsNullOrderByCreatedAtAsc(userId);
         if (hs.isEmpty()) return "Habits: none tracked.\n";
-        LocalDate today = LocalDate.now();
+        LocalDate today = clock.today(userId);
         StringBuilder sb = new StringBuilder("Habits:\n");
         for (Habit h : hs) {
             boolean done = checkins.existsByHabitIdAndLogDateAndDoneTrue(h.getId(), today);
@@ -198,7 +204,7 @@ public class HabitService {
     @Transactional(readOnly = true)
     public TodayCounts todayCounts(UUID userId) {
         List<Habit> list = habits.findByUserIdAndDeletedAtIsNullOrderByCreatedAtAsc(userId);
-        LocalDate today = LocalDate.now();
+        LocalDate today = clock.today(userId);
         // Two queries instead of one-exists-per-habit: pull today's done check-ins
         // once and count those belonging to a still-active habit (a soft-deleted
         // habit keeps its old check-ins, so filter by the active set).
@@ -228,7 +234,7 @@ public class HabitService {
         h.setTargetPerWeek(req.targetPerWeek() != null ? req.targetPerWeek() : 7);
         h.setReminderTime(req.reminderTime());
         habits.save(h);
-        return toResponse(h, LocalDate.now(), userId);
+        return toResponse(h, clock.today(userId), userId);
     }
 
     @Transactional
@@ -259,7 +265,7 @@ public class HabitService {
             h.setActive(req.active());
         }
         habits.save(h);
-        return toResponse(h, LocalDate.now(), userId);
+        return toResponse(h, clock.today(userId), userId);
     }
 
     @Transactional
@@ -273,7 +279,8 @@ public class HabitService {
     @Transactional
     public HabitResponse checkin(UUID userId, UUID id, CheckinRequest req) {
         Habit h = require(userId, id);
-        LocalDate date = req.date() != null ? req.date() : LocalDate.now();
+        LocalDate today = clock.today(userId);
+        LocalDate date = req.date() != null ? req.date() : today;
         boolean done = req.done() == null || req.done();
 
         HabitCheckin c = checkins.findByHabitIdAndLogDate(h.getId(), date)
@@ -298,22 +305,23 @@ public class HabitService {
             progress.awardHabitCheckin(userId);
         }
 
-        recomputeStreak(h);
-        return toResponse(h, LocalDate.now(), userId);
+        recomputeStreak(h, today);
+        return toResponse(h, today, userId);
     }
 
     /** Toggle today's check-in (used by the dashboard "done today" tap). */
     @Transactional
     public HabitResponse toggleToday(UUID userId, UUID id) {
-        boolean doneNow = checkins.existsByHabitIdAndLogDateAndDoneTrue(id, LocalDate.now());
-        return checkin(userId, id, new CheckinRequest(LocalDate.now(), !doneNow, null));
+        LocalDate today = clock.today(userId);
+        boolean doneNow = checkins.existsByHabitIdAndLogDateAndDoneTrue(id, today);
+        return checkin(userId, id, new CheckinRequest(today, !doneNow, null));
     }
 
     /**
      * Rebuild the streak counters by walking consecutive completed days backward
      * from the most recent check-in.
      */
-    private void recomputeStreak(Habit habit) {
+    private void recomputeStreak(Habit habit, LocalDate today) {
         List<HabitCheckin> all = checkins.findByHabitIdOrderByLogDateDesc(habit.getId());
         List<HabitCheckin> done = all.stream().filter(HabitCheckin::isDone).toList();
         Set<LocalDate> doneDates = new HashSet<>();
@@ -343,14 +351,14 @@ public class HabitService {
         int current;
         int longest;
         if (habit.getCadence() == Cadence.daily) {
-            current = currentDailyRun(doneDates, protectedDates);
+            current = currentDailyRun(today, doneDates, protectedDates);
             longest = longestDailyRun(doneDates, protectedDates);
         } else {
             int required = habit.getCadence() == Cadence.weekly
                     ? 1
                     : Math.max(1, habit.getTargetPerWeek());
             List<LocalDate> completedWeeks = completedWeekBuckets(done, required);
-            current = currentWeeklyRun(completedWeeks);
+            current = currentWeeklyRun(today, completedWeeks);
             longest = longestWeeklyRun(completedWeeks);
         }
 
@@ -369,10 +377,6 @@ public class HabitService {
      * Current daily streak: walk back from today (or yesterday) over active days.
      * Done days increment the count; protected days hold it (bridge the gap).
      */
-    private int currentDailyRun(Set<LocalDate> done, Set<LocalDate> prot) {
-        return currentDailyRun(LocalDate.now(), done, prot);
-    }
-
     /** Package-private + date-injected so the streak math is unit-testable. */
     int currentDailyRun(LocalDate today, Set<LocalDate> done, Set<LocalDate> prot) {
         LocalDate cursor;
@@ -436,11 +440,11 @@ public class HabitService {
         return completed;
     }
 
-    private int currentWeeklyRun(List<LocalDate> completedWeeksDesc) {
+    private int currentWeeklyRun(LocalDate today, List<LocalDate> completedWeeksDesc) {
         if (completedWeeksDesc.isEmpty()) {
             return 0;
         }
-        LocalDate currentWeek = weekStart(LocalDate.now());
+        LocalDate currentWeek = weekStart(today);
         LocalDate mostRecent = completedWeeksDesc.get(0);
         // Weekly/custom streak is still current if the latest completed week is
         // this week or last week.
@@ -486,7 +490,7 @@ public class HabitService {
         return toResponse(h, today,
                 checkins.findByHabitIdOrderByLogDateDesc(h.getId()),
                 streaks.findById(h.getId()).orElse(null),
-                wallet(userId).getTokens());
+                wallet(userId, today).getTokens());
     }
 
     /** Core: builds the response from already-loaded check-ins, streak, and token count. */
@@ -521,7 +525,7 @@ public class HabitService {
                 if (e.getValue() >= required) completedWeeks.add(e.getKey());
             }
             completedWeeks.sort((a, b) -> b.compareTo(a));
-            currentStreak = currentWeeklyRun(completedWeeks);
+            currentStreak = currentWeeklyRun(today, completedWeeks);
         }
 
         // "At risk" = a daily streak that survives only if yesterday's gap is

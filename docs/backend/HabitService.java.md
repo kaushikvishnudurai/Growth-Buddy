@@ -22,6 +22,15 @@ protect/unprotect).
 | `countDoneBetween(List<UUID>, start, end)` | 186 | batched — **use this for leaderboards**, not the single-user version in a loop (Circle challenge ranking depends on it) |
 | `todayCounts(userId)` | 199 | `record TodayCounts(int done, int total)` (216), used by the score |
 
+## Timezone
+
+Every method resolves the user's own today **once** via `UserClock.today(userId)` and threads
+it through (`wallet(userId, today)`, `recomputeStreak(habit, today)`, `currentDailyRun(today, …)`,
+`currentWeeklyRun(today, …)`). Do not reintroduce `LocalDate.now()` here: on a UTC container an
+IST user's 1am check-in would file under yesterday and break the streak. `UserClock` takes the
+user id rather than reading `CurrentUser` because the digest scheduler reaches this service
+(via `ScoreService`) outside any request.
+
 ## Model notes
 
 - `HabitCheckin` has a **composite PK (habit_id, log_date)** — one check-in per habit per day. Insert

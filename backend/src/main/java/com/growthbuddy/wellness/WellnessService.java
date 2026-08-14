@@ -1,5 +1,6 @@
 package com.growthbuddy.wellness;
 
+import com.growthbuddy.user.UserClock;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -13,9 +14,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class WellnessService {
 
     private final DailyLogRepository logs;
+    private final UserClock clock;
 
-    public WellnessService(DailyLogRepository logs) {
+    public WellnessService(DailyLogRepository logs, UserClock clock) {
         this.logs = logs;
+        this.clock = clock;
     }
 
     private DailyLog upsert(UUID userId, LocalDate date) {
@@ -30,13 +33,14 @@ public class WellnessService {
         });
     }
 
-    private static LocalDate orToday(LocalDate d) {
-        return d != null ? d : LocalDate.now();
+    /** The user's own today — not the server's — when the client sends no date. */
+    private LocalDate orToday(UUID userId, LocalDate d) {
+        return d != null ? d : clock.today(userId);
     }
 
     @Transactional
     public void saveSleep(UUID userId, SleepRequest req) {
-        DailyLog d = upsert(userId, orToday(req.date()));
+        DailyLog d = upsert(userId, orToday(userId, req.date()));
         d.setBedtime(req.bedtime());
         d.setWakeTime(req.wakeTime());
         d.setSleepQuality(req.quality() != null ? req.quality() : "okay");
@@ -46,7 +50,7 @@ public class WellnessService {
 
     @Transactional
     public void saveMood(UUID userId, MoodRequest req) {
-        DailyLog d = upsert(userId, orToday(req.date()));
+        DailyLog d = upsert(userId, orToday(userId, req.date()));
         d.setMood(req.mood() != null ? req.mood() : "okay");
         d.setEnergy(req.energy() != null ? req.energy() : "medium");
         d.setStress(req.stress() != null ? req.stress() : "normal");
@@ -56,7 +60,7 @@ public class WellnessService {
 
     @Transactional
     public void snapshot(UUID userId, SnapshotRequest req) {
-        DailyLog d = upsert(userId, orToday(req.date()));
+        DailyLog d = upsert(userId, orToday(userId, req.date()));
         d.setScore(req.score() != null ? req.score() : 0);
         d.setWaterMl(req.waterMl() != null ? req.waterMl() : 0);
         d.setWaterGoalMl(req.waterGoalMl() != null ? req.waterGoalMl() : 0);
@@ -68,7 +72,7 @@ public class WellnessService {
     @Transactional(readOnly = true)
     public DailyLogsResponse range(UUID userId, int days) {
         int span = Math.max(1, Math.min(366, days));
-        LocalDate end = LocalDate.now();
+        LocalDate end = clock.today(userId);
         LocalDate start = end.minusDays(span - 1L);
 
         Map<String, SleepEntry> sleep = new LinkedHashMap<>();

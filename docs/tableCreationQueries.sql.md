@@ -36,6 +36,12 @@ immediately and prod breaks later. Add the table to the SQL file in the same cha
 | 762 money_state | **the whole Money doc: `user_id`, `data` JSON, `updated_at`** |
 | 776 google_calendar_links · 789 google_oauth_settings | Google integration |
 
+## `users.timezone` is load-bearing
+
+It decides which calendar day a user's check-ins, streaks, scores, wellness rows and water
+entries land on (`UserClock`), as well as when reminders and digests are delivered. Populated
+from the browser at signup and editable in Settings; validated on write, defaults to `'UTC'`.
+
 ## Conventions
 
 - **UUID PKs are `char(36)` text**, not `BINARY(16)`. That is why

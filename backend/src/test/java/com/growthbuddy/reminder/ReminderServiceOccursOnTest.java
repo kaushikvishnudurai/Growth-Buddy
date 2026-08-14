@@ -82,4 +82,58 @@ class ReminderServiceOccursOnTest {
         assertThat(service.occursOn(r, LocalDate.of(2026, 6, 16))).isFalse();
         assertThat(service.occursOn(r, LocalDate.of(2026, 6, 17))).isTrue();
     }
+
+    /* ---- Month-end anchors ----
+       The cases the day-15 anchors above can't reach: a naive day-of-month match
+       silently skipped every month too short to contain the anchor day. ---- */
+
+    @Test
+    void monthlyAnchorOnThe31stClampsToShorterMonths() {
+        CalendarReminder rent = reminder(LocalDate.of(2026, 1, 31), RepeatFreq.monthly);
+        assertThat(service.occursOn(rent, LocalDate.of(2026, 1, 31))).isTrue();
+        assertThat(service.occursOn(rent, LocalDate.of(2026, 3, 31))).isTrue();
+        // February has no 31st — clamp to its last day instead of never firing.
+        assertThat(service.occursOn(rent, LocalDate.of(2026, 2, 28))).isTrue();
+        assertThat(service.occursOn(rent, LocalDate.of(2026, 4, 30))).isTrue();
+        // ...but only once, and only where the anchor day is genuinely missing.
+        assertThat(service.occursOn(rent, LocalDate.of(2026, 2, 27))).isFalse();
+        assertThat(service.occursOn(rent, LocalDate.of(2026, 3, 30))).isFalse();
+    }
+
+    @Test
+    void monthlyClampsToTheLastDayOfALeapFebruary() {
+        CalendarReminder r = reminder(LocalDate.of(2024, 1, 30), RepeatFreq.monthly);
+        assertThat(service.occursOn(r, LocalDate.of(2024, 2, 29))).isTrue();
+        assertThat(service.occursOn(r, LocalDate.of(2024, 2, 28))).isFalse();
+    }
+
+    @Test
+    void yearlyLeapDayFallsBackToFeb28InCommonYears() {
+        CalendarReminder anniversary = reminder(LocalDate.of(2024, 2, 29), RepeatFreq.yearly);
+        assertThat(service.occursOn(anniversary, LocalDate.of(2028, 2, 29))).isTrue();
+        assertThat(service.occursOn(anniversary, LocalDate.of(2026, 2, 28))).isTrue();
+        assertThat(service.occursOn(anniversary, LocalDate.of(2026, 3, 1))).isFalse();
+    }
+
+    @Test
+    void boundsAndSkipsStillWinOverAClampedDay() {
+        CalendarReminder r = reminder(LocalDate.of(2026, 1, 31), RepeatFreq.monthly);
+
+        r.setUntilDate(LocalDate.of(2026, 2, 1));
+        assertThat(service.occursOn(r, LocalDate.of(2026, 2, 28))).isFalse();
+
+        r.setUntilDate(null);
+        r.setSkipDays(Set.of(LocalDate.of(2026, 2, 28)));
+        assertThat(service.occursOn(r, LocalDate.of(2026, 2, 28))).isFalse();
+
+        r.setSkipDays(new java.util.HashSet<>());
+        r.setFromDate(LocalDate.of(2026, 3, 1));
+        assertThat(service.occursOn(r, LocalDate.of(2026, 2, 28))).isFalse();
+    }
+
+    @Test
+    void neverFiresBeforeItsAnchor() {
+        CalendarReminder r = reminder(LocalDate.of(2026, 1, 31), RepeatFreq.monthly);
+        assertThat(service.occursOn(r, LocalDate.of(2025, 12, 31))).isFalse();
+    }
 }

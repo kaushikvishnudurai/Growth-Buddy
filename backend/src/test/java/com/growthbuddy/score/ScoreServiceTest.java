@@ -5,6 +5,7 @@ import static org.mockito.Mockito.when;
 
 import com.growthbuddy.habit.HabitService;
 import com.growthbuddy.task.TaskRepository;
+import com.growthbuddy.user.UserClock;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -24,9 +25,10 @@ class ScoreServiceTest {
     @Mock TaskRepository tasks;
     @Mock HabitService habits;
     @Mock DailyScoreRepository scores;
+    @Mock UserClock clock;
 
     private ScoreService service() {
-        return new ScoreService(tasks, habits, scores);
+        return new ScoreService(tasks, habits, scores, clock);
     }
 
     private void stub(long taskTotal, long taskDone, int habitDone, int habitTotal) {

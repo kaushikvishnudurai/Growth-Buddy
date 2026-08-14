@@ -432,7 +432,7 @@ public class AuthService {
             user.setDisplayName(req.displayName().trim());
         }
         if (req.timezone() != null && !req.timezone().isBlank()) {
-            user.setTimezone(req.timezone().trim());
+            user.setTimezone(requireValidTimezone(req.timezone()));
         }
         if (req.gender() != null) user.setGender(clean(req.gender()));
         if (req.fitnessGoal() != null) user.setFitnessGoal(clean(req.fitnessGoal()));
@@ -663,7 +663,33 @@ public class AuthService {
     }
 
     private String resolveTimezone(String tz) {
-        return (tz == null || tz.isBlank()) ? "UTC" : tz.trim();
+        if (tz == null || tz.isBlank()) {
+            return "UTC";
+        }
+        // Signup comes from the browser's Intl zone, so a bad value means a broken
+        // client, not a broken user — take UTC rather than blocking the signup.
+        return isKnownZone(tz) ? tz.trim() : "UTC";
+    }
+
+    /**
+     * The timezone decides which calendar day a user's check-ins, streaks and water
+     * totals land on (see {@code UserClock}), so an unparseable value would quietly
+     * demote them to UTC. Say so instead.
+     */
+    private String requireValidTimezone(String tz) {
+        if (!isKnownZone(tz)) {
+            throw ApiException.badRequest("Unknown timezone: " + tz.trim());
+        }
+        return tz.trim();
+    }
+
+    private static boolean isKnownZone(String tz) {
+        try {
+            java.time.ZoneId.of(tz.trim());
+            return true;
+        } catch (RuntimeException ex) {
+            return false;
+        }
     }
 
     private String resolveDisplayName(String requested, String email) {
