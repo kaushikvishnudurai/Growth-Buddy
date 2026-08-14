@@ -94,6 +94,35 @@ function loadTheme() {
     return 'light';
   }
 }
+
+/* ---- Text size ----
+   Every font-size in the app is in rem, so setting the root size scales the whole
+   interface — type, buttons, rows — in one move. This is the control an older user
+   needs and the OS text-size setting alone can't give them inside a PWA. */
+const TEXT_SCALE_KEY = 'gb.textScale';
+const TEXT_SCALES = { normal: '100%', large: '112.5%', larger: '125%' };
+function loadTextScale() {
+  try {
+    const v = CacheStorage.getItem(TEXT_SCALE_KEY);
+    return TEXT_SCALES[v] ? v : 'normal';
+  } catch (_) {
+    return 'normal';
+  }
+}
+function applyTextScale(scale) {
+  const key = TEXT_SCALES[scale] ? scale : 'normal';
+  // 100% means "whatever the browser/OS is set to" — don't pin it to 16px.
+  document.documentElement.style.fontSize = key === 'normal' ? '' : TEXT_SCALES[key];
+  return key;
+}
+function setTextScale(scale) {
+  state.textScale = applyTextScale(scale);
+  try {
+    CacheStorage.setItem(TEXT_SCALE_KEY, state.textScale);
+  } catch (_) {}
+  saveUiPrefs({ textScale: state.textScale });
+  render();
+}
 /* ---- Daily quote cache ----
    The "quote of the day" is stable per day, so cache the last one and show it
    instantly on reload instead of flashing the generic placeholder while the
@@ -124,6 +153,7 @@ function cacheQuote(quote) {
 const _now = new Date();
 const state = {
   theme: loadTheme(),
+  textScale: loadTextScale(),
   screen: 'home',
   loading: false,
   error: '',
@@ -357,17 +387,25 @@ function cacheMoney() {
   }
 }
 
+// The whole money doc is PUT on every edit, so two writes in flight at once can land
+// out of order and leave the server holding the older blob — losing the newer expense.
+// Chaining them keeps the last write on the wire the last write to the database.
+let moneySaveQueue = Promise.resolve();
+
 function saveMoney(next) {
   // Optimistic: update local + cache + repaint immediately, then persist to the
   // server (mirrors saveHomeLayout). Offline writes still land in the cache.
   state.money = normalizeMoney(next);
   cacheMoney();
   render();
+  const body = JSON.stringify(state.money);
   // CRITICAL: This MUST reach the database. Log all failures prominently.
-  api('/api/money', { method: 'PUT', body: JSON.stringify(state.money) }).catch((err) => {
-    console.error('❌ CRITICAL: saveMoney failed to reach database:', err);
-    toastError(err, '❌ Money data NOT saved to database. Check your connection and try again.');
-  });
+  moneySaveQueue = moneySaveQueue.then(() =>
+    api('/api/money', { method: 'PUT', body }).catch((err) => {
+      console.error('❌ CRITICAL: saveMoney failed to reach database:', err);
+      toastError(err, '❌ Money data NOT saved to database. Check your connection and try again.');
+    })
+  );
 }
 
 /* ---- UI preferences (theme, quick-add language, onboarding-dismissed,
@@ -398,6 +436,10 @@ function hydrateUiPrefs() {
       state.theme = p.theme;
       CacheStorage.setItem(THEME_KEY, p.theme);
       document.documentElement.setAttribute('data-theme', p.theme);
+    }
+    if (TEXT_SCALES[p.textScale]) {
+      state.textScale = applyTextScale(p.textScale);
+      CacheStorage.setItem(TEXT_SCALE_KEY, p.textScale);
     }
     if (typeof p.qaLang === 'string') localStorage.setItem('gb.qa.lang', p.qaLang);
     if (p.onboardingDone) CacheStorage.setItem('gb.onboardDismissed', '1');
@@ -1707,7 +1749,7 @@ function openAddFood() {
 
   const photoHint = h(
     'div',
-    { style: { fontSize: '12px', color: 'var(--fg3)' } },
+    { style: { fontSize: '0.75rem', color: 'var(--fg3)' } },
     'Optional: upload a plate photo to detect multiple items automatically.'
   );
 
@@ -1746,7 +1788,7 @@ function openAddFood() {
         style: {
           width: '80px',
           paddingRight: '8px',
-          fontSize: '13px',
+          fontSize: '0.8125rem',
           fontWeight: '500',
           alignSelf: 'center',
         },
@@ -1812,7 +1854,7 @@ function openAddFood() {
       'div',
       {
         style: {
-          fontSize: '12px',
+          fontSize: '0.75rem',
           fontWeight: '600',
           marginBottom: '12px',
           color: 'var(--fg2)',
@@ -1919,7 +1961,7 @@ function openAddFood() {
     itemsContainer,
     h(
       'div',
-      { style: { fontSize: '12px', color: 'var(--fg3)', marginTop: '8px' } },
+      { style: { fontSize: '0.75rem', color: 'var(--fg3)', marginTop: '8px' } },
       'No grams needed. We estimate from food name and optional plate photo.'
     )
   );
@@ -2625,8 +2667,52 @@ function openCustomise(initialTab) {
     ? h('div', { class: 'gb-settings-pane' }, MoneyCustomisePane(state.money, saveMoney))
     : null;
 
+  // Display tab — text size and theme. Text size scales every rem in the app.
+  const displayPane = h(
+    'div',
+    { class: 'gb-settings-pane' },
+    h('div', { class: 'gb-settings-sec-label' }, 'Text size'),
+    h(
+      'div',
+      { class: 'gb-field-hint', style: { marginBottom: '8px' } },
+      'Makes everything bigger — words, buttons and rows. Pick whatever is easiest to read.'
+    ),
+    segmented(
+      [
+        { value: 'normal', label: 'Normal' },
+        { value: 'large', label: 'Large' },
+        { value: 'larger', label: 'Largest' },
+      ],
+      state.textScale,
+      (v) => setTextScale(v)
+    ).node,
+    h(
+      'div',
+      { class: 'gb-textsize-sample' },
+      h('div', { class: 'gb-textsize-sample-title' }, 'Sample'),
+      h('div', { class: 'gb-textsize-sample-body' }, 'Drink a glass of water · 8:00 in the morning')
+    ),
+    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '18px' } }, 'Theme'),
+    h(
+      'div',
+      { class: 'gb-field-hint', style: { marginBottom: '8px' } },
+      'Light is easier to read in daylight. Dark is easier at night.'
+    ),
+    segmented(
+      [
+        { value: 'light', label: 'Light' },
+        { value: 'dark', label: 'Dark' },
+      ],
+      state.theme,
+      (v) => {
+        if (v !== state.theme) toggleTheme();
+      }
+    ).node
+  );
+
   // Tabs share one segmented slider; Money joins when enabled.
   const tabs = [
+    { id: 'display', label: 'Display', pane: displayPane },
     { id: 'home', label: 'Home', pane: homePane },
     { id: 'nav', label: 'Navigation', pane: navPane },
     { id: 'features', label: 'Features', pane: featuresPane },
@@ -4866,7 +4952,7 @@ function notificationDropdown() {
                 {
                   type: 'button',
                   class: 'gb-btn gb-btn--primary',
-                  style: { width: 'auto', padding: '6px 12px', fontSize: '12px' },
+                  style: { width: 'auto', padding: '6px 12px', fontSize: '0.75rem' },
                   onclick: () => respondMentorshipRequest(n.relatedId, n.id, true),
                 },
                 'Accept'
@@ -4876,7 +4962,7 @@ function notificationDropdown() {
                 {
                   type: 'button',
                   class: 'gb-btn gb-btn--ghost',
-                  style: { width: 'auto', padding: '6px 12px', fontSize: '12px' },
+                  style: { width: 'auto', padding: '6px 12px', fontSize: '0.75rem' },
                   onclick: () => respondMentorshipRequest(n.relatedId, n.id, false),
                 },
                 'Reject'
@@ -5109,7 +5195,7 @@ function ScreenHabits() {
               style: {
                 fontFamily: 'var(--font-display)',
                 fontWeight: 800,
-                fontSize: '18px',
+                fontSize: '1.125rem',
                 margin: 0,
               },
             },
@@ -6289,6 +6375,7 @@ if (window.CacheStorage && window.CacheStorage.init) {
 }
 initA11y();
 document.documentElement.setAttribute('data-theme', state.theme);
+applyTextScale(state.textScale);
 if (state.user) {
   // Restore the screen from the URL fragment, so refreshing on /circle stays there.
   state.screen = screenFromHash();

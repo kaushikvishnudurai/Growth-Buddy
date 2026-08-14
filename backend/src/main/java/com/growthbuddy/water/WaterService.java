@@ -3,7 +3,7 @@ package com.growthbuddy.water;
 import com.growthbuddy.common.ApiException;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -48,7 +48,7 @@ public class WaterService {
         if (req.loggedAt() != null) {
             Instant ts = req.loggedAt();
             e.setLoggedAt(ts);
-            e.setLogDate(ts.atZone(ZoneOffset.UTC).toLocalDate());
+            e.setLogDate(ts.atZone(ZoneId.systemDefault()).toLocalDate());
         }
         WaterEntry saved = entries.save(e);
         return summary(userId, saved.getLogDate());

@@ -132,15 +132,20 @@ function occursOn(rem, key) {
     if (day > new Date(u.y, u.m, u.d)) return false;
   }
   if (rem.skip && rem.skip.indexOf(key) !== -1) return false;
+  // An anchor on the 29th-31st clamps to the last day of a shorter month, so a monthly
+  // reminder set for the 31st still fires in February, April, and friends. Must stay in
+  // step with ReminderService.occursOn (backend) — that side drives WhatsApp delivery.
+  const lastOfMonth = new Date(t.y, t.m + 1, 0).getDate();
+  const dayMatches = t.d === a.d || (a.d > lastOfMonth && t.d === lastOfMonth);
   switch (rem.repeat) {
     case 'daily':
       return true;
     case 'weekly':
       return day.getDay() === anchor.getDay();
     case 'monthly':
-      return t.d === a.d;
+      return dayMatches;
     case 'yearly':
-      return t.m === a.m && t.d === a.d;
+      return t.m === a.m && dayMatches;
     default:
       return day.getTime() === anchor.getTime();
   }

@@ -90,7 +90,7 @@ body {
   min-width: 0;
 }
 .gb-head .greet-label {
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
   color: var(--fg3);
   margin-bottom: 2px;
@@ -98,7 +98,7 @@ body {
 .gb-head .greet-name {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 24px;
+  font-size: 1.5rem;
   letter-spacing: -0.02em;
   color: var(--fg1);
   line-height: 1.15;
@@ -173,13 +173,13 @@ body {
 .gb-sectiontitle h3 {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 18px;
+  font-size: 1.125rem;
   letter-spacing: -0.01em;
   color: var(--fg1);
   margin: 0;
 }
 .gb-sectiontitle a {
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
   color: var(--brand);
   text-decoration: none;
@@ -203,7 +203,7 @@ body {
 .gb-btn {
   font-family: var(--font-body);
   font-weight: 700;
-  font-size: 16px;
+  font-size: 1rem;
   border: none;
   cursor: pointer;
   display: inline-flex;
@@ -278,14 +278,16 @@ body {
 }
 .gb-btn--compact {
   width: auto;
+  /* Compact is about width, not about being hard to hit: keep the 44px floor. */
+  min-height: 44px;
   padding: 10px 14px;
-  font-size: 14px;
+  font-size: 0.875rem;
   border-radius: var(--radius-md);
 }
 .gb-btn--icon {
   width: auto;
   padding: 4px 6px;
-  min-height: 30px;
+  min-height: 44px;
   background: transparent;
   color: var(--fg3);
   border-radius: var(--radius-sm);
@@ -314,7 +316,7 @@ body {
   align-items: center;
   gap: 6px;
   font-weight: 700;
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   padding: 6px 11px;
   border-radius: var(--radius-pill);
   white-space: nowrap;
@@ -366,7 +368,7 @@ body {
   font-family: var(--font-body);
 }
 .gb-nav-tab span {
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
 }
 /* Mobile: overflow destinations live behind "More", not inline. */
@@ -490,7 +492,7 @@ body {
 .gb-login-title {
   margin: 6px 0 0;
   font-family: var(--font-display);
-  font-size: 30px;
+  font-size: 1.875rem;
   line-height: 1.1;
 }
 
@@ -501,7 +503,7 @@ body {
 
 .gb-login-label {
   margin-top: 6px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
   color: var(--fg2);
 }
@@ -517,14 +519,14 @@ body {
 .gb-login-error {
   margin: 4px 0 0;
   color: var(--danger);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
 }
 
 .gb-login-hint {
   margin: 6px 0 0;
   color: var(--fg3);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .gb-login-notice {
@@ -533,7 +535,7 @@ body {
   border-radius: var(--radius-md);
   background: var(--brand-soft);
   color: var(--brand-soft-fg);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
 }
 
@@ -546,7 +548,7 @@ body {
 }
 
 .gb-login-link {
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
   color: var(--brand);
   cursor: pointer;
@@ -564,7 +566,7 @@ body {
 .gb-otp-input {
   letter-spacing: 0.5em;
   text-align: center;
-  font-size: 22px;
+  font-size: 1.375rem;
   font-weight: 800;
   font-family: var(--font-display, var(--font-body));
 }
@@ -598,7 +600,7 @@ body {
   border-radius: 9px;
   background: var(--coral-500);
   color: #fff;
-  font-size: 10.5px;
+  font-size: 0.65625rem;
   font-weight: 800;
   display: inline-flex;
   align-items: center;
@@ -627,13 +629,13 @@ body {
   border-bottom: 1px solid var(--border);
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 .gb-notif-empty {
   padding: 24px;
   text-align: center;
   color: var(--fg3);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .gb-notif-row {
   display: flex;
@@ -665,18 +667,18 @@ body {
   cursor: pointer;
 }
 .gb-notif-title {
-  font-size: 13.5px;
+  font-size: 0.84375rem;
   font-weight: 700;
   color: var(--fg1);
 }
 .gb-notif-sub {
   margin-top: 2px;
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   color: var(--fg2);
 }
 .gb-notif-time {
   margin-top: 4px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--fg3);
   font-weight: 600;
 }
@@ -714,7 +716,7 @@ body {
 }
 .gb-mentor-empty p {
   color: var(--fg3);
-  font-size: 13.5px;
+  font-size: 0.84375rem;
   margin: 0 0 14px;
 }
 .gb-mentor-suggestions {
@@ -724,7 +726,7 @@ body {
 }
 .gb-mentor-suggestion {
   width: auto !important;
-  font-size: 13px;
+  font-size: 0.8125rem;
   padding: 10px 14px;
 }
 
@@ -750,7 +752,7 @@ body {
   max-width: 78%;
   padding: 11px 14px;
   border-radius: 16px;
-  font-size: 15px;
+  font-size: 0.9375rem;
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
@@ -798,7 +800,7 @@ body {
 }
 .gb-msg-error {
   color: var(--danger);
-  font-size: 13px;
+  font-size: 0.8125rem;
   padding: 0 14px;
 }
 
@@ -816,7 +818,7 @@ body {
   min-height: 46px;
   max-height: 120px;
   font-family: var(--font-body);
-  font-size: 14.5px;
+  font-size: 0.90625rem;
   padding: 10px 12px;
   border: 1.5px solid var(--border-strong);
   border-radius: var(--radius-lg);
@@ -929,11 +931,11 @@ body {
   }
 
   .gb-head .greet-label {
-    font-size: 12px;
+    font-size: 0.75rem;
   }
 
   .gb-head .greet-name {
-    font-size: 18px;
+    font-size: 1.125rem;
     line-height: 1.15;
   }
 
@@ -949,7 +951,7 @@ body {
   .gb-avatar {
     width: 38px !important;
     height: 38px !important;
-    font-size: 11px !important;
+    font-size: 0.6875rem !important;
   }
 
   .gb-dash-block,
@@ -993,11 +995,22 @@ body {
   cursor: pointer;
   color: var(--fg3);
   margin-left: 6px;
+  position: relative;
   transition:
     background var(--dur-fast),
     color var(--dur-fast),
     border-color var(--dur-fast),
     transform var(--dur-fast);
+}
+/* 28px of ink, 44px of target — see .gb-icon-btn::after. */
+.gb-revoke-btn::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
 }
 .gb-revoke-btn:hover {
   background: var(--brand-soft);
@@ -1014,7 +1027,7 @@ body {
 .gb-circle-empty {
   text-align: center;
   color: var(--fg3);
-  font-size: 13px;
+  font-size: 0.8125rem;
   padding: 14px;
 }
 .gb-tag-pill.is-pending {
@@ -1075,7 +1088,7 @@ body {
 .gb-timer-actions .gb-btn {
   width: auto;
   padding: 9px 14px;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 
 /* Ambient sound card */
@@ -1127,7 +1140,7 @@ body {
   box-shadow: var(--shadow-xs);
 }
 .gb-sound-tile-label {
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
   text-align: center;
 }
@@ -1144,7 +1157,7 @@ body {
 }
 .gb-sound-hint {
   margin-top: 12px;
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.5;
   color: var(--fg3);
 }
@@ -1236,7 +1249,7 @@ body {
   color: var(--fg1);
 }
 .gb-feature-row-desc {
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--fg3);
   margin-top: 2px;
 }
@@ -1355,7 +1368,7 @@ body {
 .gb-report .gb-sectiontitle h3 {
   font-family: var(--font-body);
   font-weight: 700;
-  font-size: 12px;
+  font-size: 0.75rem;
   letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
   color: var(--fg3);
@@ -1376,7 +1389,7 @@ body {
 .gb-report-stat-value {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 26px;
+  font-size: 1.625rem;
   line-height: 1.05;
   color: var(--fg1);
   letter-spacing: -0.01em;
@@ -1384,12 +1397,12 @@ body {
 .gb-report-stat-label {
   margin-top: 4px;
   font-weight: 600;
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--fg2);
 }
 .gb-report-stat-sub {
   margin-top: 1px;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--fg3);
 }
 .gb-report-off {
@@ -1420,7 +1433,7 @@ body {
   color: var(--fg1);
 }
 .gb-report-off-sub {
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--fg3);
   margin-top: 2px;
 }
@@ -1429,7 +1442,7 @@ body {
     padding: 13px 12px;
   }
   .gb-report-stat-value {
-    font-size: 22px;
+    font-size: 1.375rem;
   }
 }
 
@@ -1456,10 +1469,10 @@ body {
 .gb-insight-title {
   font-weight: 700;
   color: var(--fg1);
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 .gb-insight-text {
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--fg2);
   margin-top: 2px;
   line-height: 1.45;
@@ -1469,7 +1482,7 @@ body {
   align-items: center;
   gap: 10px;
   padding: 16px 18px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--fg3);
 }
 
@@ -1496,10 +1509,10 @@ body {
 .gb-circle-name {
   font-weight: 800;
   color: var(--fg1);
-  font-size: 15px;
+  font-size: 0.9375rem;
 }
 .gb-circle-sub {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--fg3);
   margin-top: 2px;
 }
@@ -1518,10 +1531,10 @@ body {
 .gb-challenge-title {
   font-weight: 700;
   color: var(--fg1);
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 .gb-challenge-badge {
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
   padding: 2px 8px;
   border-radius: 999px;
@@ -1533,7 +1546,7 @@ body {
   color: var(--leaf-600, var(--brand));
 }
 .gb-challenge-dates {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--fg3);
   margin: 2px 0 8px;
 }
@@ -1543,7 +1556,7 @@ body {
   gap: 10px;
   padding: 6px 8px;
   border-radius: 9px;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .gb-lb-row.is-me {
   background: var(--brand-50, var(--surface-2));
@@ -1569,7 +1582,7 @@ body {
 }
 .gb-empty-sm {
   padding: 10px 8px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--fg3);
 }
 .gb-browse-row {
@@ -1591,7 +1604,7 @@ body {
   min-width: 86px;
   border-radius: 999px;
   padding: 6px 12px;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 800;
   color: var(--info-soft-fg);
   background: color-mix(in srgb, var(--sky-100) 80%, white 20%);
@@ -1618,7 +1631,7 @@ body {
 .gb-msg-chip {
   flex: none;
   font-family: var(--font-body);
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   font-weight: 700;
   color: var(--brand-soft-fg);
   background: var(--brand-soft);
@@ -1704,7 +1717,7 @@ body {
   justify-content: center;
   font-family: var(--font-display);
   font-weight: 900;
-  font-size: 18px;
+  font-size: 1.125rem;
   flex-shrink: 0;
 }
 .gb-profile-pop-info {
@@ -1714,14 +1727,14 @@ body {
 .gb-profile-pop-name {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 14px;
+  font-size: 0.875rem;
   color: var(--fg1);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .gb-profile-pop-email {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--fg2);
   margin-top: 1px;
   overflow: hidden;
@@ -1730,7 +1743,7 @@ body {
 }
 .gb-profile-pop-meta {
   margin-top: 3px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--fg3);
   font-weight: 700;
 }
@@ -1750,7 +1763,7 @@ body {
   transition: width 0.4s;
 }
 .gb-profile-pop-xp-label {
-  font-size: 10.5px;
+  font-size: 0.65625rem;
   color: var(--fg3);
   margin-top: 4px;
 }
@@ -1770,7 +1783,7 @@ body {
   cursor: pointer;
   font-family: var(--font-body);
   font-weight: 600;
-  font-size: 13.5px;
+  font-size: 0.84375rem;
   color: var(--fg1);
   text-align: left;
 }
@@ -1799,7 +1812,7 @@ body {
 .gb-status-label {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   margin: 0 0 6px;
   text-transform: uppercase;
   color: var(--fg3);
@@ -1807,7 +1820,7 @@ body {
 }
 .gb-status-summary {
   margin: 0 0 8px;
-  font-size: 14px;
+  font-size: 0.875rem;
   color: var(--fg1);
   font-weight: 600;
 }
@@ -1815,7 +1828,7 @@ body {
   list-style: none;
   padding: 0;
   margin: 0;
-  font-size: 13.5px;
+  font-size: 0.84375rem;
   color: var(--fg2);
 }
 .gb-status-list li {
@@ -1831,7 +1844,7 @@ body {
   background: var(--surface-2);
   border-radius: var(--radius-md);
   font-family: var(--font-body);
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   white-space: pre-wrap;
   color: var(--fg2);
   border: 1px solid var(--border);
@@ -1877,7 +1890,7 @@ body {
 }
 .gb-row .title {
   font-weight: 700;
-  font-size: 15px;
+  font-size: 0.9375rem;
   color: var(--fg1);
 }
 .gb-row.is-done .title {
@@ -1885,7 +1898,7 @@ body {
   color: var(--fg3);
 }
 .gb-row .sub {
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   color: var(--fg2);
   margin-top: 2px;
   display: flex;
@@ -1933,12 +1946,12 @@ body {
 .gb-score-heading {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 18px;
+  font-size: 1.125rem;
   color: var(--fg1);
   margin-bottom: 4px;
 }
 .gb-score-sub {
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--fg2);
   line-height: 1.45;
   margin-bottom: 12px;
@@ -1974,7 +1987,7 @@ body {
   margin-bottom: 12px;
 }
 .gb-coach-kicker {
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 800;
   color: var(--brand);
   text-transform: uppercase;
@@ -1983,7 +1996,7 @@ body {
 .gb-coach-title {
   margin-top: 2px;
   font-family: var(--font-display);
-  font-size: 18px;
+  font-size: 1.125rem;
   font-weight: 800;
   color: var(--fg1);
 }
@@ -1999,7 +2012,7 @@ body {
   border-radius: var(--radius-sm);
   background: var(--surface-2);
   color: var(--fg2);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 800;
   padding: 7px 9px;
 }
@@ -2043,12 +2056,12 @@ body {
 .gb-wellness-label,
 .gb-wellness-tile small {
   color: var(--fg3);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
   text-transform: capitalize;
 }
 .gb-wellness-tile strong {
-  font-size: 20px;
+  font-size: 1.25rem;
   font-weight: 850;
   text-transform: capitalize;
 }
@@ -2063,7 +2076,7 @@ body {
 }
 .gb-reflect-row {
   color: var(--fg2);
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.35;
 }
 .gb-badge {
@@ -2101,7 +2114,7 @@ body {
 .gb-photo-history-copy strong,
 .gb-plan-copy strong {
   color: var(--fg1);
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.3;
   overflow-wrap: anywhere;
 }
@@ -2110,7 +2123,7 @@ body {
 .gb-photo-history-copy small,
 .gb-plan-copy span {
   color: var(--fg3);
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.35;
 }
 .gb-timeline-dot {
@@ -2123,14 +2136,14 @@ body {
 }
 .gb-empty-slim {
   color: var(--fg2);
-  font-size: 13.5px;
+  font-size: 0.84375rem;
   line-height: 1.5;
 }
 .gb-photo-history-pill {
   flex: none;
   border-radius: 999px;
   padding: 5px 8px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 800;
   color: var(--warning-soft-fg);
   background: var(--warning-soft);
@@ -2170,7 +2183,7 @@ body {
 }
 .gb-habit-card .name {
   font-weight: 700;
-  font-size: 13.5px;
+  font-size: 0.84375rem;
   color: var(--fg1);
   margin: 10px 0 2px;
   display: -webkit-box;
@@ -2185,7 +2198,7 @@ body {
   gap: 4px;
   color: var(--coral-600);
   font-weight: 800;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .gb-habit-card .gb-check {
   position: absolute;
@@ -2204,7 +2217,7 @@ body {
   align-items: center;
   gap: 7px;
   margin-bottom: 8px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 800;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -2214,7 +2227,7 @@ body {
   margin: 0;
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 17px;
+  font-size: 1.0625rem;
   line-height: 1.35;
   color: var(--fg1);
 }
@@ -2248,13 +2261,13 @@ body {
 }
 .gb-water-title {
   font-family: var(--font-display);
-  font-size: 18px;
+  font-size: 1.125rem;
   font-weight: 800;
   letter-spacing: -0.01em;
 }
 .gb-water-meta {
   color: var(--fg2);
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   font-weight: 700;
 }
 .gb-water-chip {
@@ -2262,7 +2275,7 @@ body {
   color: #fff;
   border-radius: var(--radius-pill);
   padding: 6px 10px;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 800;
   box-shadow: 0 5px 12px rgba(17, 132, 224, 0.28);
 }
@@ -2406,20 +2419,20 @@ body {
 }
 .gb-water-big {
   font-family: var(--font-display);
-  font-size: 28px;
+  font-size: 1.75rem;
   font-weight: 800;
   line-height: 1;
   margin-bottom: 4px;
 }
 .gb-water-sub {
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   font-weight: 700;
   color: var(--fg2);
   margin-bottom: 9px;
 }
 .gb-water-quote {
   margin: 0;
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--info-soft-fg);
   font-weight: 700;
   line-height: 1.35;
@@ -2440,7 +2453,7 @@ body {
   border: none;
   border-radius: 12px;
   padding: 9px 8px;
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   font-weight: 800;
   font-family: var(--font-body);
   background: color-mix(in srgb, var(--sky-100) 78%, white 22%);
@@ -2485,7 +2498,7 @@ body {
 .gb-water-log-row {
   display: flex;
   justify-content: space-between;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--fg2);
   padding: 3px 0;
 }
@@ -2506,7 +2519,7 @@ body {
 }
 .gb-water-prompt-error {
   min-height: 18px;
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   font-weight: 700;
   color: var(--coral-600);
 }
@@ -2592,7 +2605,7 @@ body {
   }
   .gb-msg-bubble {
     max-width: 84%;
-    font-size: 14.5px;
+    font-size: 0.90625rem;
   }
 }
 
@@ -2707,7 +2720,7 @@ body {
 }
 .gb-workout-card .title {
   font-weight: 700;
-  font-size: 15px;
+  font-size: 0.9375rem;
   color: var(--fg1);
 }
 .gb-workout-card .bar {
@@ -2722,7 +2735,7 @@ body {
   padding-bottom: 18px;
 }
 .gb-goal-intro {
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--fg2);
   line-height: 1.45;
   padding: 0 20px;
@@ -2741,7 +2754,7 @@ body {
 }
 .gb-goal-section-title {
   font-family: var(--font-display);
-  font-size: 16px;
+  font-size: 1rem;
   font-weight: 800;
   color: var(--fg1);
 }
@@ -2752,7 +2765,7 @@ body {
   border-radius: 999px;
   background: var(--surface-2);
   color: var(--fg2);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
   display: inline-flex;
   align-items: center;
@@ -2764,7 +2777,7 @@ body {
   background: var(--surface);
   border: 1px dashed var(--border);
   color: var(--fg3);
-  font-size: 13px;
+  font-size: 0.8125rem;
   display: flex;
   align-items: center;
   gap: 9px;
@@ -2791,12 +2804,12 @@ body {
 }
 .gb-goal-title {
   font-weight: 800;
-  font-size: 15px;
+  font-size: 0.9375rem;
   color: var(--fg1);
 }
 .gb-goal-desc {
   margin-top: 4px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--fg2);
   line-height: 1.45;
 }
@@ -2805,7 +2818,7 @@ body {
   flex-wrap: wrap;
   gap: 8px 10px;
   margin-top: 10px;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--fg3);
   align-items: center;
 }
@@ -2860,7 +2873,7 @@ body {
   min-width: 0;
 }
 .gb-goal-status-chip {
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -2937,14 +2950,14 @@ body {
 .gb-goal-action-note,
 .gb-gratitude-note {
   color: var(--fg1);
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
 .gb-goal-action-date {
   margin-top: 3px;
   color: var(--fg3);
-  font-size: 11px;
+  font-size: 0.6875rem;
 }
 .gb-goal-action-tools {
   display: flex;
@@ -2962,10 +2975,22 @@ body {
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  /* The button that deletes a row is 30px of ink but must be 44px of target —
+     an overlay grows the tap area without moving anything around it. */
+  position: relative;
   transition:
     color var(--dur-fast),
     border-color var(--dur-fast),
     transform var(--dur-fast);
+}
+.gb-icon-btn::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
 }
 .gb-icon-btn:hover {
   color: var(--fg1);
@@ -3003,7 +3028,7 @@ body {
   gap: 8px;
 }
 .gb-note-hint {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--fg3);
 }
 
@@ -3054,13 +3079,13 @@ body {
 .gb-cal-monthlabel .m {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 20px;
+  font-size: 1.25rem;
   letter-spacing: -0.01em;
   color: var(--fg1);
 }
 .gb-cal-monthlabel .y {
   font-weight: 700;
-  font-size: 15px;
+  font-size: 0.9375rem;
   color: var(--fg3);
 }
 .gb-cal-toolbar-actions {
@@ -3071,7 +3096,7 @@ body {
 .gb-btn.gb-cal-today {
   width: auto;
   padding: 9px 16px;
-  font-size: 13.5px;
+  font-size: 0.84375rem;
 }
 
 /* Month grid card */
@@ -3085,7 +3110,7 @@ body {
 }
 .gb-cal-dow span {
   text-align: center;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 800;
   letter-spacing: 0.04em;
   color: var(--fg3);
@@ -3108,7 +3133,7 @@ body {
   justify-content: center;
   font-family: var(--font-body);
   font-weight: 700;
-  font-size: 14.5px;
+  font-size: 0.90625rem;
   color: var(--fg1);
   transition:
     background var(--dur-fast),
@@ -3193,13 +3218,13 @@ body {
 .gb-wins-number {
   font-family: var(--font-display);
   font-weight: 900;
-  font-size: 30px;
+  font-size: 1.875rem;
   line-height: 1;
   color: var(--brand);
 }
 .gb-wins-copy {
   color: var(--fg2);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
 }
 .gb-wins-list {
@@ -3234,14 +3259,14 @@ body {
 }
 .gb-wins-title {
   color: var(--fg1);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
   line-height: 1.35;
   overflow-wrap: anywhere;
 }
 .gb-wins-sub {
   color: var(--fg3);
-  font-size: 11.5px;
+  font-size: 0.71875rem;
 }
 .gb-wins-empty {
   padding: 16px;
@@ -3249,7 +3274,7 @@ body {
   border-radius: var(--radius-xl);
   background: var(--surface);
   color: var(--fg3);
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.4;
   display: flex;
   align-items: center;
@@ -3265,7 +3290,7 @@ body {
   border-radius: var(--radius-xl);
   background: var(--surface);
   color: var(--fg2);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
   line-height: 1.4;
   display: flex;
@@ -3279,14 +3304,14 @@ body {
   gap: 10px;
 }
 .gb-day-head-title {
-  font-size: 12px;
+  font-size: 0.75rem;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--fg3);
   font-weight: 800;
 }
 .gb-day-head-count {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--fg2);
   font-weight: 700;
 }
@@ -3306,7 +3331,7 @@ body {
   flex: 1;
 }
 .gb-day-row-title {
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 700;
   color: var(--fg1);
   line-height: 1.35;
@@ -3315,7 +3340,7 @@ body {
 }
 .gb-day-row-sub {
   margin-top: 4px;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   color: var(--fg2);
 }
@@ -3327,7 +3352,7 @@ body {
   background: var(--surface-2);
   border: 1px solid var(--border);
   color: var(--fg2);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
   text-transform: capitalize;
   white-space: nowrap;
@@ -3343,7 +3368,7 @@ body {
   border-radius: var(--radius-xl);
   background: var(--surface);
   color: var(--fg2);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
   box-shadow: var(--shadow-md);
 }
@@ -3362,10 +3387,10 @@ body {
   width: auto;
   align-self: flex-start;
   padding: 8px 12px;
-  font-size: 12.5px;
+  font-size: 0.78125rem;
 }
 .gb-day-total {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--fg2);
   font-weight: 700;
   text-align: right;
@@ -3387,7 +3412,7 @@ body {
 }
 .gb-rem-empty p {
   margin: 0;
-  font-size: 13.5px;
+  font-size: 0.84375rem;
   color: var(--fg2);
 }
 .gb-rem-row {
@@ -3409,7 +3434,7 @@ body {
 }
 .gb-rem-text {
   font-weight: 700;
-  font-size: 14.5px;
+  font-size: 0.90625rem;
   color: var(--fg1);
   line-height: 1.35;
   white-space: normal;
@@ -3426,14 +3451,14 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   font-weight: 600;
   color: var(--fg2);
 }
 .gb-tag-pill {
   display: inline-flex;
   align-items: center;
-  font-size: 11.5px;
+  font-size: 0.71875rem;
   font-weight: 800;
   letter-spacing: 0.02em;
   padding: 3px 9px;
@@ -3502,7 +3527,7 @@ body {
 .gb-empty p {
   margin: 0;
   color: var(--fg2);
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 600;
   max-width: 30ch;
 }
@@ -3510,7 +3535,7 @@ body {
   width: auto;
   min-height: 44px;
   padding: 11px 18px;
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 
 /* Add-reminder form */
@@ -3521,7 +3546,7 @@ body {
   padding: 16px;
 }
 .gb-field-label {
-  font-size: 11.5px;
+  font-size: 0.71875rem;
   font-weight: 800;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -3537,7 +3562,7 @@ body {
 }
 .gb-input {
   font-family: var(--font-body);
-  font-size: 15px;
+  font-size: 0.9375rem;
   font-weight: 500;
   color: var(--fg1);
   background: var(--surface-2);
@@ -3603,7 +3628,7 @@ body {
   margin-bottom: 0;
 }
 .gb-input--inline {
-  font-size: 14px;
+  font-size: 0.875rem;
   padding: 10px 12px;
   min-height: 36px;
   border-radius: var(--radius-md);
@@ -3613,7 +3638,7 @@ body {
   color: var(--fg2);
   border: none;
   border-radius: var(--radius-md);
-  font-size: 14px;
+  font-size: 0.875rem;
   padding: 6px 10px;
   min-width: 36px;
   min-height: 36px;
@@ -3657,12 +3682,12 @@ body {
 .gb-profile-suggest-title {
   font-weight: 800;
   color: var(--fg1);
-  font-size: 13.5px;
+  font-size: 0.84375rem;
   margin-bottom: 8px;
 }
 
 .gb-profile-suggest-line {
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   color: var(--fg2);
   margin-bottom: 6px;
 }
@@ -3671,7 +3696,7 @@ body {
   margin: 8px 0 0;
   padding-left: 18px;
   color: var(--fg1);
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   line-height: 1.45;
 }
 
@@ -3693,7 +3718,7 @@ body {
   gap: 7px;
   font-family: var(--font-body);
   font-weight: 700;
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--fg2);
   background: var(--surface-2);
   border: 1.5px solid var(--border);
@@ -3738,7 +3763,7 @@ body {
   flex: 1;
   font-family: var(--font-body);
   font-weight: 700;
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--fg2);
   background: transparent;
   border: none;
@@ -3773,7 +3798,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   color: var(--fg2);
 }
@@ -3847,12 +3872,12 @@ body {
 .gb-modal-title {
   font-family: var(--font-display, var(--font-body));
   font-weight: 800;
-  font-size: 17px;
+  font-size: 1.0625rem;
   color: var(--fg1);
 }
 .gb-modal-sub {
   margin-top: 4px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--fg2);
   line-height: 1.4;
 }
@@ -3875,12 +3900,12 @@ body {
 .gb-focus-stat-val {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 22px;
+  font-size: 1.375rem;
   color: var(--fg1);
   letter-spacing: -0.02em;
 }
 .gb-focus-stat-lbl {
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--fg3);
   margin-top: 3px;
 }
@@ -3908,7 +3933,7 @@ body {
 .gb-onboard-title {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 18px;
+  font-size: 1.125rem;
   color: var(--fg1);
   letter-spacing: -0.01em;
   margin-top: 2px;
@@ -3972,7 +3997,7 @@ body {
 }
 .gb-onboard-step-l {
   font-weight: 700;
-  font-size: 14px;
+  font-size: 0.875rem;
   color: var(--fg1);
 }
 .gb-onboard-step.is-done .gb-onboard-step-l {
@@ -3980,7 +4005,7 @@ body {
   color: var(--fg2);
 }
 .gb-onboard-step-h {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--fg3);
 }
 .gb-onboard-step > svg {
@@ -4002,7 +4027,7 @@ body {
   color: var(--brand-soft-fg);
   font-family: var(--font-body);
   font-weight: 700;
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 .gb-week-nudge span {
   flex: 1;
@@ -4022,12 +4047,12 @@ body {
 .gb-wr-tile-val {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 20px;
+  font-size: 1.25rem;
   color: var(--fg1);
   letter-spacing: -0.02em;
 }
 .gb-wr-tile-lbl {
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--fg3);
   margin-top: 2px;
 }
@@ -4053,17 +4078,17 @@ body {
 }
 .gb-sec-row-device {
   font-weight: 700;
-  font-size: 14px;
+  font-size: 0.875rem;
   color: var(--fg1);
 }
 .gb-sec-row-meta {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--fg3);
   margin-top: 2px;
 }
 .gb-sec-badge {
   flex: none;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
   letter-spacing: 0.02em;
   color: var(--success-soft-fg);
@@ -4079,7 +4104,7 @@ body {
 .gb-field-label--sub {
   text-transform: none;
   letter-spacing: 0;
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--fg2);
 }
 
@@ -4102,7 +4127,7 @@ body {
 }
 .gb-quickadd-hint {
   margin-top: 6px;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--fg3);
 }
 .gb-mic.is-listening {
@@ -4117,7 +4142,7 @@ body {
 }
 .gb-quickadd-or {
   text-align: center;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
@@ -4178,10 +4203,10 @@ body {
 }
 .gb-modal-opt-l {
   font-weight: 700;
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 .gb-modal-opt-s {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--fg2);
 }
 .gb-modal-opt.is-danger .gb-modal-opt-ic {
@@ -4201,7 +4226,7 @@ body {
 
 .gb-confirm-text {
   margin: 0;
-  font-size: 14px;
+  font-size: 0.875rem;
   color: var(--fg2);
   line-height: 1.45;
 }
@@ -4260,7 +4285,7 @@ body {
 }
 
 .gb-toast-msg {
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
   line-height: 1.4;
   flex: 1;
@@ -4329,7 +4354,7 @@ body {
   }
 
   .gb-cal-monthlabel .m {
-    font-size: 18px;
+    font-size: 1.125rem;
   }
 
   .gb-cal-toolbar-actions {
@@ -4339,7 +4364,7 @@ body {
 
   .gb-btn.gb-cal-today {
     padding: 8px 13px;
-    font-size: 13px;
+    font-size: 0.8125rem;
   }
 
   .gb-day-row {
@@ -4349,15 +4374,15 @@ body {
   }
 
   .gb-day-row-title {
-    font-size: 13.5px;
+    font-size: 0.84375rem;
   }
 
   .gb-day-row-sub {
-    font-size: 11.5px;
+    font-size: 0.71875rem;
   }
 
   .gb-day-pill {
-    font-size: 10.5px;
+    font-size: 0.65625rem;
     padding: 2px 8px;
   }
 
@@ -4366,7 +4391,7 @@ body {
   }
 
   .gb-rem-text {
-    font-size: 14px;
+    font-size: 0.875rem;
   }
 }
 
@@ -4394,14 +4419,14 @@ body {
 .gb-placeholder h2 {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 24px;
+  font-size: 1.5rem;
   color: var(--fg1);
   margin: 0;
   letter-spacing: -0.02em;
 }
 .gb-placeholder p {
   margin: 0;
-  font-size: 14.5px;
+  font-size: 0.90625rem;
   color: var(--fg2);
   line-height: 1.55;
   max-width: 28ch;
@@ -4553,7 +4578,7 @@ body {
 /* Raw error text: present for support, but quiet so it never reads as "500 in your face". */
 .gb-crash-detail {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--fg3);
   background: var(--surface-2);
   padding: 4px 10px;
@@ -4660,7 +4685,7 @@ body {
     background: var(--surface);
   }
   .gb-head .greet-name {
-    font-size: 22px;
+    font-size: 1.375rem;
   }
 
   /* ---- Main content ---- */
@@ -4730,7 +4755,7 @@ body {
     padding: 18px;
   }
   .gb-cal-day {
-    font-size: 15.5px;
+    font-size: 0.96875rem;
   }
 
   /* Placeholder (non-home tabs) fills & centers the whole canvas. */
@@ -4774,7 +4799,7 @@ body {
     color: var(--brand-soft-fg);
   }
   .gb-nav-tab span {
-    font-size: 14px;
+    font-size: 0.875rem;
   }
 
   /* The nav is wrapped in .gb-nav-wrap, so the WRAPPER is the real grid child —
@@ -4836,14 +4861,14 @@ body {
   margin-bottom: 8px;
 }
 .gb-goal-progress-label {
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
   color: var(--fg3);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 .gb-goal-progress-pct {
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 800;
   color: var(--brand);
 }
@@ -4868,7 +4893,7 @@ body {
   justify-content: space-between;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--fg2);
   margin-bottom: 10px;
 }
@@ -4877,7 +4902,7 @@ body {
   color: var(--fg1);
 }
 .gb-goal-progress-done-chip {
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
   color: var(--leaf-700, #15803d);
   background: var(--leaf-50, #f0fdf4);
@@ -4909,13 +4934,13 @@ body {
 }
 .gb-habit-sleep-metric-val {
   font-family: var(--font-display);
-  font-size: 20px;
+  font-size: 1.25rem;
   font-weight: 800;
   color: var(--fg1);
   line-height: 1.1;
 }
 .gb-habit-sleep-metric-label {
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--fg3);
   margin-top: 3px;
 }
@@ -4924,7 +4949,7 @@ body {
   color: var(--brand-soft-fg, #9a3412);
   border-radius: var(--radius-lg, 12px);
   padding: 10px 14px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.5;
 }
 
@@ -5039,15 +5064,15 @@ body {
     gap: 5px;
   }
   .gb-goal-actions .gb-btn {
-    font-size: 12px;
+    font-size: 0.75rem;
     padding: 7px 10px;
   }
   .gb-goal-card-footer .gb-btn {
-    font-size: 12px;
+    font-size: 0.75rem;
     padding: 7px 10px;
   }
   .gb-goal-progress-stats {
-    font-size: 11px;
+    font-size: 0.6875rem;
   }
 }
 
@@ -5105,7 +5130,7 @@ body {
 
 /* Connection status line */
 .gb-wa-status-line {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--fg3);
   margin-bottom: 14px;
   padding: 6px 10px;
@@ -5120,7 +5145,7 @@ body {
 
 /* Small hint text under labels */
 .gb-field-hint {
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--fg3);
   margin-bottom: 6px;
   margin-top: -4px;
@@ -5146,7 +5171,7 @@ body {
   background: var(--gb-wa-green-soft);
   border-radius: 999px;
   padding: 0 6px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
   display: inline-flex;
   align-items: center;
@@ -5188,7 +5213,7 @@ body {
   justify-content: center;
   font-family: var(--font-display);
   font-weight: 900;
-  font-size: 24px;
+  font-size: 1.5rem;
   flex-shrink: 0;
 }
 .gb-settings-profile-info {
@@ -5198,14 +5223,14 @@ body {
 .gb-settings-profile-name {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 16px;
+  font-size: 1rem;
   color: var(--fg1);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .gb-settings-profile-email {
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--fg2);
   margin-top: 2px;
   overflow: hidden;
@@ -5217,7 +5242,7 @@ body {
   margin-top: 5px;
   background: var(--brand-soft, #e8f4fd);
   color: var(--brand);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
   padding: 2px 8px;
   border-radius: 999px;
@@ -5249,7 +5274,7 @@ body {
   flex: 1 1 0;
   min-width: 0;
   padding: 8px 4px;
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   font-weight: 700;
   color: var(--fg2);
   background: none;
@@ -5282,7 +5307,7 @@ body {
 .gb-settings-sec-label {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 11px;
+  font-size: 0.6875rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--fg3);
@@ -5334,7 +5359,7 @@ select.gb-input {
   gap: 6px;
   background: var(--gb-wa-green-soft);
   color: var(--gb-wa-green-fg);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
   padding: 6px 12px;
   border-radius: 999px;
@@ -5343,7 +5368,7 @@ select.gb-input {
 
 /* OTP digit input — wider, centered digits */
 .gb-input--otp {
-  font-size: 20px;
+  font-size: 1.25rem;
   font-weight: 700;
   letter-spacing: 0.25em;
   text-align: center;
@@ -5361,7 +5386,7 @@ select.gb-input {
 
 /* "Change number" as a subtle link-style button */
 .gb-wa-change-link {
-  font-size: 12px;
+  font-size: 0.75rem;
   padding: 4px 0;
   color: var(--fg3);
   margin-top: 6px;
@@ -5378,7 +5403,7 @@ select.gb-input {
   gap: 6px;
   background: var(--gb-wa-green-soft);
   color: var(--gb-wa-green-fg);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
   padding: 6px 12px;
   border-radius: 999px;
@@ -5391,7 +5416,7 @@ select.gb-input {
 .gb-wa-verified-label {
   background: var(--gb-wa-green);
   color: #fff;
-  font-size: 10px;
+  font-size: 0.625rem;
   padding: 1px 6px;
   border-radius: 999px;
   margin-left: 4px;
@@ -5426,7 +5451,7 @@ select.gb-input {
 .gb-btn--sm {
   width: auto;
   padding: 9px 13px;
-  font-size: 14px;
+  font-size: 0.875rem;
   min-height: 38px;
   border-radius: var(--radius-md);
 }
@@ -5444,11 +5469,11 @@ select.gb-input {
 }
 .gb-field-label {
   font-weight: 700;
-  font-size: 13.5px;
+  font-size: 0.84375rem;
   color: var(--fg2);
 }
 .gb-field-hint {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--fg3);
 }
 .gb-section-head {
@@ -5474,7 +5499,7 @@ select.gb-input {
 }
 .gb-family-subhead {
   font-weight: 800;
-  font-size: 14px;
+  font-size: 0.875rem;
   color: var(--fg2);
   margin-bottom: 10px;
 }
@@ -5511,14 +5536,14 @@ select.gb-input {
   justify-content: center;
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 16px;
+  font-size: 1rem;
   background: var(--social-soft);
   color: var(--social-soft-fg);
 }
 .gb-family-avatar--sm {
   width: 38px;
   height: 38px;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .gb-family-card-id {
   flex: 1;
@@ -5529,23 +5554,23 @@ select.gb-input {
   align-items: center;
   gap: 7px;
   font-weight: 800;
-  font-size: 15.5px;
+  font-size: 0.96875rem;
   color: var(--fg1);
 }
 .gb-family-card-rel {
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
   color: var(--brand);
 }
 .gb-family-card-meta {
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   color: var(--fg3);
 }
 .gb-family-card-tags {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   color: var(--brand-soft-fg);
   background: var(--brand-soft);
   padding: 6px 10px;
@@ -5583,7 +5608,7 @@ select.gb-input {
   color: var(--fg1);
 }
 .gb-family-panel-sub {
-  font-size: 13.5px;
+  font-size: 0.84375rem;
   color: var(--fg3);
   margin: 0 2px 16px;
 }
@@ -5610,7 +5635,7 @@ select.gb-input {
   min-width: 0;
 }
 .gb-family-empty-note {
-  font-size: 13.5px;
+  font-size: 0.84375rem;
   color: var(--fg3);
   padding: 6px 2px;
 }
@@ -5635,7 +5660,7 @@ select.gb-input {
   width: 100%;
 }
 .gb-family-scan-msg {
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   color: var(--fg3);
   margin: -4px 0 12px;
 }
@@ -5653,7 +5678,7 @@ select.gb-input {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
   padding: 7px 11px;
   border-radius: var(--radius-pill);
@@ -5709,7 +5734,7 @@ select.gb-input {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--warning-soft-fg);
   background: var(--warning-soft);
   padding: 10px 12px;
@@ -5733,7 +5758,7 @@ select.gb-input {
 }
 .gb-family-meal-head h4 {
   font-weight: 800;
-  font-size: 14px;
+  font-size: 0.875rem;
   color: var(--fg1);
 }
 .gb-family-meal-list {
@@ -5745,7 +5770,7 @@ select.gb-input {
   gap: 4px;
 }
 .gb-family-meal-list li {
-  font-size: 14px;
+  font-size: 0.875rem;
   color: var(--fg2);
   padding-left: 14px;
   position: relative;
@@ -5775,17 +5800,17 @@ select.gb-input {
 .gb-family-stat-value {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 18px;
+  font-size: 1.125rem;
   color: var(--fg1);
 }
 .gb-family-stat-label {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--fg3);
   margin-top: 2px;
 }
 .gb-family-plan-aside h4 {
   font-weight: 800;
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--fg2);
   margin-bottom: 8px;
 }
@@ -5839,7 +5864,7 @@ select.gb-input {
 .gb-family-summary-count {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 17px;
+  font-size: 1.0625rem;
   color: var(--fg1);
 }
 
@@ -5904,7 +5929,7 @@ select.gb-input {
   background: var(--surface-2);
   color: var(--fg2);
   font-weight: 700;
-  font-size: 13.5px;
+  font-size: 0.84375rem;
   padding: 9px 14px;
   border-radius: var(--radius-pill);
   transition:
@@ -5919,7 +5944,7 @@ select.gb-input {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 14px;
+  font-size: 0.875rem;
   color: var(--fg2);
   margin-bottom: 14px;
 }
@@ -5946,14 +5971,14 @@ select.gb-input {
 }
 .gb-family-weekday-label {
   font-weight: 800;
-  font-size: 14px;
+  font-size: 0.875rem;
   color: var(--fg1);
   margin-bottom: 8px;
 }
 .gb-family-weekday-meal {
   display: flex;
   gap: 8px;
-  font-size: 13.5px;
+  font-size: 0.84375rem;
   color: var(--fg2);
   padding: 3px 0;
 }
@@ -5996,7 +6021,7 @@ select.gb-input {
 }
 .gb-family-shop-cost {
   font-weight: 800;
-  font-size: 14px;
+  font-size: 0.875rem;
   color: var(--fg1);
 }
 .gb-family-shop-total {
@@ -6004,12 +6029,12 @@ select.gb-input {
   align-items: center;
   justify-content: space-between;
   padding: 14px 16px;
-  font-size: 14px;
+  font-size: 0.875rem;
   color: var(--fg2);
 }
 .gb-family-shop-total strong {
   font-family: var(--font-display);
-  font-size: 18px;
+  font-size: 1.125rem;
   color: var(--fg1);
 }
 
@@ -6108,7 +6133,7 @@ select.gb-input {
   height: 18px;
   padding: 0 5px;
   border-radius: var(--radius-pill);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 800;
   background: var(--surface-3);
   color: var(--fg2);
@@ -6328,7 +6353,7 @@ select.gb-input {
 .gb-trend-latest {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 18px;
+  font-size: 1.125rem;
 }
 .gb-trend-svg {
   display: block;
@@ -6374,7 +6399,7 @@ select.gb-input {
 .gb-ach-summary-title {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 18px;
+  font-size: 1.125rem;
   color: var(--fg1);
 }
 .gb-ach-summary-sub {
@@ -6384,7 +6409,7 @@ select.gb-input {
 .gb-ach-summary-pct {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 20px;
+  font-size: 1.25rem;
   color: var(--brand);
 }
 .gb-ach-summary-bar,
@@ -6859,11 +6884,11 @@ textarea:focus-visible,
 }
 .gb-integration-name {
   font-weight: 700;
-  font-size: 14.5px;
+  font-size: 0.90625rem;
   color: var(--fg1);
 }
 .gb-integration-sub {
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   color: var(--fg3);
   margin-top: 1px;
   overflow: hidden;
@@ -6875,7 +6900,7 @@ textarea:focus-visible,
   align-items: center;
   gap: 6px;
   flex: none;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   color: var(--fg2);
 }
@@ -6918,7 +6943,7 @@ textarea:focus-visible,
   padding-left: 20px;
   display: grid;
   gap: 8px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.5;
   color: var(--fg2);
 }
@@ -6949,4 +6974,33 @@ textarea:focus-visible,
   width: 11px;
   height: 11px;
   flex: none;
+}
+
+/* =====================================================================
+   Settings — Display (text size preview)
+   The sample scales with the choice, so the effect is visible before the
+   user leaves the modal.
+   ===================================================================== */
+.gb-textsize-sample {
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+}
+.gb-textsize-sample-title {
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 0.6875rem;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--fg3);
+  margin-bottom: 6px;
+}
+.gb-textsize-sample-body {
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 1rem;
+  line-height: var(--leading-relaxed);
+  color: var(--fg1);
 }

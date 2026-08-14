@@ -112,7 +112,7 @@ function ScoreCard({ score, tasks, habits, level }) {
       style: {
         fontFamily: 'var(--font-display)',
         fontWeight: 800,
-        fontSize: '26px',
+        fontSize: '1.625rem',
         color: 'var(--fg1)',
         lineHeight: 1,
       },
@@ -121,7 +121,7 @@ function ScoreCard({ score, tasks, habits, level }) {
   );
   const ringLabel = h(
     'span',
-    { style: { fontSize: '10px', fontWeight: 700, color: 'var(--fg3)' } },
+    { style: { fontSize: '0.625rem', fontWeight: 700, color: 'var(--fg3)' } },
     'SCORE'
   );
 
@@ -854,7 +854,7 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater })
                   h('span', null, (item.amountMl || 0) + ' ml'),
                   h(
                     'span',
-                    { style: { marginLeft: '8px', fontSize: '12px', color: 'var(--fg3)' } },
+                    { style: { marginLeft: '8px', fontSize: '0.75rem', color: 'var(--fg3)' } },
                     timeLabel(item.loggedAt)
                   )
                 ),

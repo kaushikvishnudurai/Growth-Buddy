@@ -131,12 +131,16 @@ public class ReminderService {
         if (r.getSkipDays().contains(day)) {
             return false;
         }
+        // An anchor on the 29th-31st clamps to the last day of a shorter month, so a
+        // monthly reminder set for the 31st still fires in February, April, and friends.
+        int lastOfMonth = day.lengthOfMonth();
+        boolean dayMatches = day.getDayOfMonth() == anchor.getDayOfMonth()
+                || (anchor.getDayOfMonth() > lastOfMonth && day.getDayOfMonth() == lastOfMonth);
         return switch (r.getRepeat()) {
             case daily -> true;
             case weekly -> day.getDayOfWeek() == anchor.getDayOfWeek();
-            case monthly -> day.getDayOfMonth() == anchor.getDayOfMonth();
-            case yearly -> day.getMonth() == anchor.getMonth()
-                    && day.getDayOfMonth() == anchor.getDayOfMonth();
+            case monthly -> dayMatches;
+            case yearly -> day.getMonth() == anchor.getMonth() && dayMatches;
             case none -> day.isEqual(anchor);
         };
     }

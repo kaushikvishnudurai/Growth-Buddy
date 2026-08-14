@@ -2,6 +2,8 @@ package com.growthbuddy.reminder;
 
 import com.growthbuddy.user.User;
 import com.growthbuddy.user.UserRepository;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -23,6 +25,14 @@ import org.springframework.util.StringUtils;
 public class ReminderDeliveryScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(ReminderDeliveryScheduler.class);
+
+    /**
+     * How late a reminder may still be delivered. The minute-wide window it replaces
+     * dropped anything a slow run, a restart, or a paused container stepped over.
+     * ponytail: a fixed grace period, safe because the dispatch log de-dupes on
+     * (reminder, day); widen it only if missed deliveries show up in the log.
+     */
+    private static final Duration CATCH_UP = Duration.ofMinutes(5);
 
     private final CalendarReminderRepository reminders;
     private final ReminderDispatchLogRepository dispatchLog;
@@ -62,6 +72,11 @@ public class ReminderDeliveryScheduler {
             return;
         }
 
+        // One wall-clock reading for the whole run. Read per-reminder, it drifts forward
+        // as the blocking sends below take time, so late entries in a long run would miss
+        // their own delivery window and never fire that day.
+        Instant tick = Instant.now();
+
         Map<UUID, User> userCache = new HashMap<>();
         for (CalendarReminder rem : candidates) {
             User user = userCache.computeIfAbsent(rem.getUserId(), this::loadUser);
@@ -76,18 +91,20 @@ public class ReminderDeliveryScheduler {
             }
 
             ZoneId zone = parseZone(user.getTimezone());
-            LocalDateTime now = LocalDateTime.now(zone);
+            LocalDateTime now = LocalDateTime.ofInstant(tick, zone);
             LocalDate day = now.toLocalDate();
             if (!reminderService.occursOn(rem, day)) {
                 continue;
             }
 
             LocalDateTime scheduledAt = LocalDateTime.of(day, rem.getTime());
-            if (now.isBefore(scheduledAt) || now.isAfter(scheduledAt.plusMinutes(1))) {
+            if (now.isBefore(scheduledAt) || now.isAfter(scheduledAt.plus(CATCH_UP))) {
                 continue;
             }
 
-            if (dispatchLog.existsByReminderIdAndOccurrenceDate(rem.getId(), day)) {
+            // Only a delivered occurrence blocks a resend; a failed one is retried on a
+            // later tick while the window is open.
+            if (dispatchLog.existsByReminderIdAndOccurrenceDateAndStatus(rem.getId(), day, "sent")) {
                 continue;
             }
 

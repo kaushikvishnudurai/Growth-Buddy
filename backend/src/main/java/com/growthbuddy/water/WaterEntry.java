@@ -8,7 +8,7 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.UUID;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -54,7 +54,10 @@ public class WaterEntry {
             loggedAt = Instant.now();
         }
         if (logDate == null) {
-            logDate = loggedAt.atZone(ZoneOffset.UTC).toLocalDate();
+            // Same clock the reads use (WaterService calls LocalDate.now()). Bucketing the
+            // write by UTC while reading by the app's zone filed early-morning glasses under
+            // the previous day for any user east of UTC.
+            logDate = loggedAt.atZone(ZoneId.systemDefault()).toLocalDate();
         }
         if (createdAt == null) {
             createdAt = Instant.now();

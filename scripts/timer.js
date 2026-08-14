@@ -463,7 +463,7 @@ function TimerCard() {
       style: {
         fontFamily: 'var(--font-display)',
         fontWeight: 800,
-        fontSize: '34px',
+        fontSize: '2.125rem',
         color: 'var(--fg1)',
       },
     },
@@ -473,7 +473,7 @@ function TimerCard() {
     'span',
     {
       style: {
-        fontSize: '11px',
+        fontSize: '0.6875rem',
         fontWeight: 700,
         color: 'var(--fg3)',
         textTransform: 'uppercase',

@@ -30,7 +30,7 @@ function PersonRow(person, onOffer, onRequest, onView) {
         {
           type: 'button',
           class: 'gb-btn gb-btn--soft',
-          style: { width: 'auto', padding: '8px 12px', fontSize: '12.5px' },
+          style: { width: 'auto', padding: '8px 12px', fontSize: '0.78125rem' },
           onclick: () => onOffer(person),
         },
         Icon('hand-helping', { size: 14, sw: 2.4 }),
@@ -41,7 +41,7 @@ function PersonRow(person, onOffer, onRequest, onView) {
         {
           type: 'button',
           class: 'gb-btn gb-btn--primary',
-          style: { width: 'auto', padding: '8px 12px', fontSize: '12.5px' },
+          style: { width: 'auto', padding: '8px 12px', fontSize: '0.78125rem' },
           onclick: () => onRequest(person),
         },
         Icon('user-plus', { size: 14, sw: 2.4 }),
@@ -466,6 +466,28 @@ function openFormModal({ title, sub, fields, submitLabel, onSubmit }) {
     fieldNodes.push(h('div', { class: 'gb-field-label' }, f.label), input);
   });
 
+  // Disabled while submitting — a second tap here used to send a duplicate invite
+  // (matches openModal in app.js).
+  const submitBtn = h(
+    'button',
+    {
+      type: 'button',
+      class: 'gb-btn gb-btn--primary',
+      onclick: async () => {
+        const values = {};
+        for (const k in inputs) values[k] = inputs[k].value.trim();
+        try {
+          submitBtn.disabled = true;
+          await onSubmit(values, close);
+        } catch (err) {
+          toast.error(err, 'Something went wrong.');
+        } finally {
+          submitBtn.disabled = false;
+        }
+      },
+    },
+    submitLabel || 'Save'
+  );
   const sheet = h(
     'div',
     { class: 'gb-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
@@ -480,23 +502,7 @@ function openFormModal({ title, sub, fields, submitLabel, onSubmit }) {
       'div',
       { class: 'gb-water-prompt-actions' },
       h('button', { type: 'button', class: 'gb-btn gb-btn--ghost', onclick: close }, 'Cancel'),
-      h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-btn gb-btn--primary',
-          onclick: async () => {
-            const values = {};
-            for (const k in inputs) values[k] = inputs[k].value.trim();
-            try {
-              await onSubmit(values, close);
-            } catch (err) {
-              toast.error(err, 'Something went wrong.');
-            }
-          },
-        },
-        submitLabel || 'Save'
-      )
+      submitBtn
     )
   );
   overlay = h(
@@ -1045,7 +1051,7 @@ function ScreenCircle({
     {
       type: 'button',
       class: 'gb-btn gb-btn--primary',
-      style: { width: 'auto', padding: '8px 14px', fontSize: '13px' },
+      style: { width: 'auto', padding: '8px 14px', fontSize: '0.8125rem' },
       onclick: launchSearch,
     },
     Icon('plus', { size: 14, sw: 2.6 }),
@@ -1079,7 +1085,7 @@ function ScreenCircle({
             style: {
               fontFamily: 'var(--font-display)',
               fontWeight: 800,
-              fontSize: '18px',
+              fontSize: '1.125rem',
               margin: '0 0 4px',
             },
           },
@@ -1087,7 +1093,7 @@ function ScreenCircle({
         ),
         h(
           'p',
-          { style: { color: 'var(--fg3)', fontSize: '13px', margin: 0 } },
+          { style: { color: 'var(--fg3)', fontSize: '0.8125rem', margin: 0 } },
           'Your mentors, your mentees, and your sent invites.'
         )
       ),
@@ -1102,7 +1108,7 @@ function ScreenCircle({
           style: {
             fontFamily: 'var(--font-display)',
             fontWeight: 800,
-            fontSize: '15px',
+            fontSize: '0.9375rem',
             margin: '0 0 10px',
           },
         },
@@ -1119,7 +1125,7 @@ function ScreenCircle({
           style: {
             fontFamily: 'var(--font-display)',
             fontWeight: 800,
-            fontSize: '15px',
+            fontSize: '0.9375rem',
             margin: '0 0 10px',
           },
         },
@@ -1148,7 +1154,7 @@ function ScreenCircle({
                 style: {
                   fontFamily: 'var(--font-display)',
                   fontWeight: 800,
-                  fontSize: '15px',
+                  fontSize: '0.9375rem',
                   margin: 0,
                 },
               },
