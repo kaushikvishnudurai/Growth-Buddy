@@ -95,6 +95,22 @@ function loadTheme() {
   }
 }
 
+/* ---- Premium skin ----
+   One attribute on <html> swaps the whole look; styles/premium.css is scoped
+   to it and loads last. Nothing else in the app branches on this — keep it
+   that way, a skin that needs JS forks is not a skin. */
+const PREMIUM_KEY = 'gb.premium';
+function loadPremium() {
+  try {
+    return CacheStorage.getItem(PREMIUM_KEY) === '1';
+  } catch (_) {
+    return false;
+  }
+}
+function applyPremium(on) {
+  document.documentElement.setAttribute('data-premium', on ? 'on' : 'off');
+}
+
 /* ---- Text size ----
    Every font-size in the app is in rem, so setting the root size scales the whole
    interface — type, buttons, rows — in one move. This is the control an older user
@@ -153,6 +169,7 @@ function cacheQuote(quote) {
 const _now = new Date();
 const state = {
   theme: loadTheme(),
+  premium: loadPremium(),
   textScale: loadTextScale(),
   screen: 'home',
   loading: false,
@@ -440,6 +457,11 @@ function hydrateUiPrefs() {
     if (TEXT_SCALES[p.textScale]) {
       state.textScale = applyTextScale(p.textScale);
       CacheStorage.setItem(TEXT_SCALE_KEY, p.textScale);
+    }
+    if (typeof p.premium === 'boolean') {
+      state.premium = p.premium;
+      CacheStorage.setItem(PREMIUM_KEY, p.premium ? '1' : '0');
+      applyPremium(p.premium);
     }
     if (typeof p.qaLang === 'string') localStorage.setItem('gb.qa.lang', p.qaLang);
     if (p.onboardingDone) CacheStorage.setItem('gb.onboardDismissed', '1');
@@ -2309,6 +2331,25 @@ function toggleTheme() {
   render();
 }
 
+function togglePremium() {
+  const apply = () => {
+    state.premium = !state.premium;
+    applyPremium(state.premium);
+    try {
+      CacheStorage.setItem(PREMIUM_KEY, state.premium ? '1' : '0');
+    } catch (_) {}
+    saveUiPrefs({ premium: state.premium });
+    toastSuccess(state.premium ? 'Premium look on.' : 'Back to the classic look.');
+    render();
+  };
+  // Every surface changes at once, so cut-to-black reads as a glitch. A view
+  // transition cross-fades the old frame into the new one; browsers without it
+  // just get the instant swap. ponytail: no library, no manual snapshotting.
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (document.startViewTransition && !reduce) document.startViewTransition(apply);
+  else apply();
+}
+
 async function saveProfileDetails(payload) {
   const updated = await api('/api/auth/profile', {
     method: 'PUT',
@@ -2707,6 +2748,22 @@ function openCustomise(initialTab) {
       (v) => {
         if (v !== state.theme) toggleTheme();
       }
+    ).node,
+    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '18px' } }, 'Look'),
+    h(
+      'div',
+      { class: 'gb-field-hint', style: { marginBottom: '8px' } },
+      'Premium adds softer shadows, frosted glass and a bit more life to every tap.'
+    ),
+    segmented(
+      [
+        { value: 'classic', label: 'Classic' },
+        { value: 'premium', label: 'Premium' },
+      ],
+      state.premium ? 'premium' : 'classic',
+      (v) => {
+        if ((v === 'premium') !== state.premium) togglePremium();
+      }
     ).node
   );
 
@@ -2728,6 +2785,9 @@ function openCustomise(initialTab) {
       'div',
       { class: 'gb-settings-body' },
       bar,
+      // Panes must be mounted in tab order — displayPane was registered in
+      // `tabs` but never appended here, so the Display tab rendered empty.
+      displayPane,
       homePane,
       navPane,
       featuresPane,
@@ -5770,19 +5830,40 @@ function field(label, input) {
   return [h('label', { class: 'gb-login-label' }, label), input];
 }
 
+/* Face ID doesn't just print "incorrect" — it shakes its head at you. Same
+   here: a rejected sign-in makes the card refuse with a decaying head-shake
+   and a short double-buzz. Premium skin only; the keyframes live in
+   styles/premium.css and reduced-motion swaps the shake for a red ring. */
+function shakeAuthCard() {
+  if (!state.premium) return;
+  const card = document.querySelector('.gb-login-card');
+  if (!card) return;
+  card.classList.remove('gb-shake');
+  void card.offsetWidth; // restart the animation when the same card fails twice
+  card.classList.add('gb-shake');
+  card.addEventListener('animationend', () => card.classList.remove('gb-shake'), { once: true });
+  try {
+    if (navigator.vibrate) navigator.vibrate([14, 70, 14]);
+  } catch (_) {}
+}
+
 function runAuth(action) {
   state.loading = true;
   state.error = '';
   render();
+  let rejected = false;
   return action()
     .catch((err) => {
       // Surface auth/connection failures as a toast rather than an inline
       // line buried in the card.
+      rejected = true;
       toastError(err, 'Something went wrong.');
     })
     .finally(() => {
       state.loading = false;
       render();
+      // After render(): the card node it shakes is the freshly built one.
+      if (rejected) shakeAuthCard();
     });
 }
 
@@ -6277,6 +6358,8 @@ function render() {
       name: cfg.headerName(),
       userName: state.user.displayName || 'Buddy',
       theme: state.theme,
+      premium: state.premium,
+      onPremium: togglePremium,
       onAdd: openAddSheet,
       onTheme: toggleTheme,
       onAccount: toggleProfileOpen,
@@ -6375,6 +6458,7 @@ if (window.CacheStorage && window.CacheStorage.init) {
 }
 initA11y();
 document.documentElement.setAttribute('data-theme', state.theme);
+applyPremium(state.premium);
 applyTextScale(state.textScale);
 if (state.user) {
   // Restore the screen from the URL fragment, so refreshing on /circle stays there.

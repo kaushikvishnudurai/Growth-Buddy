@@ -1,0 +1,434 @@
+/* =====================================================================
+   Growth Buddy — Premium skin
+   ---------------------------------------------------------------------
+   Everything here is scoped to html[data-premium='on'] and loads LAST, so
+   flipping one attribute swaps the whole look and flipping it back leaves
+   the classic UI byte-identical. No component markup changes.
+
+   The classic skin is flat and playful: near-white canvas, chunky 4px
+   button edges, an edge-to-edge nav bar. Premium rebuilds the same screens
+   as layers of glass over a lit canvas:
+
+     · canvas    — a warm mesh instead of near-white, so cards actually float
+     · surfaces  — translucent, blurred, hairlined, larger radii
+     · nav       — detached floating pill, not a bar welded to the edge
+     · controls  — circular icon buttons, pill primary buttons with a sheen
+     · type      — size-specific tracking: tight on display, open on caps
+     · motion    — one strong ease-out curve, press feedback under 160ms
+     · a human   — the sign-in card shakes its head when you're wrong,
+                   the way Face ID does. See .gb-shake / shakeAuthCard().
+
+   ponytail: a skin, not a second design system. Token overrides first,
+   component overrides only where a token can't reach.
+   ===================================================================== */
+
+/* ---------------------------------------------------------------------
+   1. Tokens
+   html[data-premium='on'] is (0,1,1) — it outranks [data-theme='dark'],
+   so these win in both themes without duplicating the ramp.
+   --------------------------------------------------------------------- */
+html[data-premium='on'] {
+  /* Motion: the built-in curves are too weak to read as deliberate. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-standard: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-bounce: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --dur-fast: 140ms;
+  --dur-base: 220ms;
+
+  /* Geometry: everything rounder. Small bumps read as sloppy; commit. */
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --radius-xl: 26px;
+  --radius-2xl: 32px;
+  --radius-3xl: 40px;
+
+  /* Elevation: many soft layers instead of one heavy blur. Negative spread
+     keeps the near-shadow tight so cards look placed, not floating. */
+  --shadow-xs: 0 1px 2px rgba(38, 24, 16, 0.05);
+  --shadow-sm:
+    0 1px 2px rgba(38, 24, 16, 0.06),
+    0 2px 6px -1px rgba(38, 24, 16, 0.05);
+  --shadow-md:
+    0 1px 2px rgba(38, 24, 16, 0.04),
+    0 10px 24px -8px rgba(38, 24, 16, 0.14),
+    0 24px 48px -18px rgba(38, 24, 16, 0.10);
+  --shadow-lg:
+    0 2px 4px rgba(38, 24, 16, 0.06),
+    0 14px 32px -8px rgba(38, 24, 16, 0.16),
+    0 40px 72px -20px rgba(38, 24, 16, 0.20);
+  --shadow-brand:
+    0 2px 4px rgba(150, 60, 8, 0.22),
+    0 12px 26px -8px rgba(249, 115, 22, 0.48);
+
+  --nav-bg: rgba(255, 255, 255, 0.62);
+
+  /* Glass recipe, named once so every surface stays the same material. */
+  --glass-face: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.86));
+  --glass-edge: rgba(255, 255, 255, 0.72);
+  --glass-top: rgba(255, 255, 255, 0.55);
+}
+
+html[data-premium='on'][data-theme='dark'] {
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-sm:
+    0 1px 2px rgba(0, 0, 0, 0.55),
+    0 2px 6px -1px rgba(0, 0, 0, 0.4);
+  --shadow-md:
+    0 1px 2px rgba(0, 0, 0, 0.5),
+    0 10px 24px -8px rgba(0, 0, 0, 0.6),
+    0 24px 48px -18px rgba(0, 0, 0, 0.5);
+  --shadow-lg:
+    0 2px 4px rgba(0, 0, 0, 0.5),
+    0 16px 34px -8px rgba(0, 0, 0, 0.65),
+    0 44px 80px -22px rgba(0, 0, 0, 0.7);
+  --nav-bg: rgba(28, 22, 18, 0.66);
+
+  --glass-face: linear-gradient(180deg, rgba(56, 45, 38, 0.88), rgba(40, 32, 27, 0.82));
+  --glass-edge: rgba(255, 255, 255, 0.10);
+  --glass-top: rgba(255, 255, 255, 0.07);
+}
+
+/* ---------------------------------------------------------------------
+   2. The canvas
+   The single biggest difference. Classic is a near-white sheet, so white
+   cards sit ON it invisibly. Premium lights the canvas from the corners so
+   every surface above it reads as a separate, floating layer.
+   --------------------------------------------------------------------- */
+html[data-premium='on'] .gb-app {
+  background:
+    radial-gradient(120% 68% at 0% 0%, rgba(249, 115, 22, 0.13) 0%, transparent 56%),
+    radial-gradient(100% 58% at 100% 6%, rgba(108, 92, 231, 0.11) 0%, transparent 52%),
+    radial-gradient(90% 50% at 50% 100%, rgba(255, 176, 32, 0.10) 0%, transparent 55%),
+    linear-gradient(180deg, var(--warm-50) 0%, var(--warm-100) 100%);
+}
+html[data-premium='on'][data-theme='dark'] .gb-app {
+  background:
+    radial-gradient(120% 68% at 0% 0%, rgba(249, 115, 22, 0.16) 0%, transparent 56%),
+    radial-gradient(100% 58% at 100% 6%, rgba(108, 92, 231, 0.16) 0%, transparent 52%),
+    radial-gradient(90% 50% at 50% 100%, rgba(255, 176, 32, 0.08) 0%, transparent 55%),
+    linear-gradient(180deg, #1B1410 0%, #0D0907 100%);
+}
+
+/* Desktop page frame gets the same treatment, one step deeper. */
+html[data-premium='on'] .gb-page {
+  background:
+    radial-gradient(90% 70% at 8% -6%, rgba(249, 115, 22, 0.16) 0%, transparent 55%),
+    radial-gradient(80% 60% at 96% 104%, rgba(108, 92, 231, 0.18) 0%, transparent 55%),
+    radial-gradient(120% 120% at 50% 40%, var(--warm-50) 0%, var(--warm-200) 100%);
+}
+html[data-premium='on'][data-theme='dark'] .gb-page {
+  background:
+    radial-gradient(90% 70% at 8% -6%, rgba(249, 115, 22, 0.22) 0%, transparent 55%),
+    radial-gradient(80% 60% at 96% 104%, rgba(108, 92, 231, 0.24) 0%, transparent 55%),
+    radial-gradient(120% 120% at 50% 40%, #17110D 0%, #090705 100%);
+}
+
+/* ---------------------------------------------------------------------
+   3. Surfaces — glass, hairline, light-catching top edge
+   --------------------------------------------------------------------- */
+html[data-premium='on'] .gb-card,
+html[data-premium='on'] .gb-login-card {
+  background: var(--glass-face);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  border: 1px solid var(--glass-edge);
+  box-shadow:
+    inset 0 1px 0 var(--glass-top),
+    var(--shadow-md);
+}
+html[data-premium='on'] .gb-login-card {
+  box-shadow:
+    inset 0 1px 0 var(--glass-top),
+    var(--shadow-lg);
+}
+
+/* The weekly-review nudge is full-bleed in classic — a coloured stripe across
+   the app. Premium insets it so it reads as a card among cards. */
+html[data-premium='on'] .gb-week-nudge {
+  /* It's a <button>: width:auto means intrinsic (shrink-to-fit), not "fill".
+     Subtract the margins explicitly instead. */
+  width: calc(100% - 32px);
+  margin: 12px 16px 2px;
+  padding: 14px 16px;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, rgba(249, 115, 22, 0.16), rgba(255, 176, 32, 0.10));
+  border: 1px solid rgba(249, 115, 22, 0.24);
+  box-shadow: var(--shadow-xs);
+}
+
+/* ---------------------------------------------------------------------
+   4. Chrome — the nav detaches from the edge and floats
+   Below 1024px only; at ≥1024px the nav becomes a left sidebar and a
+   floating pill there would be wrong.
+   --------------------------------------------------------------------- */
+@media (max-width: 1023.98px) {
+  html[data-premium='on'] .gb-nav {
+    margin: 0 10px calc(10px + env(safe-area-inset-bottom, 0px));
+    padding: 8px 6px 10px;
+    border: 1px solid var(--glass-edge);
+    border-radius: var(--radius-3xl);
+    backdrop-filter: blur(28px) saturate(190%);
+    -webkit-backdrop-filter: blur(28px) saturate(190%);
+    box-shadow:
+      inset 0 1px 0 var(--glass-top),
+      0 12px 32px -10px rgba(38, 24, 16, 0.32),
+      0 2px 6px rgba(38, 24, 16, 0.10);
+  }
+  html[data-premium='on'][data-theme='dark'] .gb-nav {
+    box-shadow:
+      inset 0 1px 0 var(--glass-top),
+      0 12px 32px -10px rgba(0, 0, 0, 0.7);
+  }
+  /* The active destination gets a filled pill — position without a label is
+     hard to read at a glance on a 5-tab bar. */
+  html[data-premium='on'] .gb-nav-tab.is-active {
+    /* --brand-soft is near-white in light theme and vanishes against the
+       nav's own glass — this needs its own, stronger tint. */
+    background: rgba(249, 115, 22, 0.15);
+    border-radius: var(--radius-lg);
+    padding: 6px 0 5px;
+  }
+  html[data-premium='on'][data-theme='dark'] .gb-nav-tab.is-active {
+    background: rgba(249, 115, 22, 0.22);
+  }
+}
+
+/* Desktop sidebar: keep it opaque (it's a structural region, not floating
+   chrome) but give it the premium hairline and rounding. */
+@media (min-width: 1024px) {
+  html[data-premium='on'] .gb-nav-tab {
+    border-radius: var(--radius-md);
+  }
+}
+
+/* ---------------------------------------------------------------------
+   5. Controls
+   --------------------------------------------------------------------- */
+html[data-premium='on'] .gb-btn {
+  transition:
+    transform 120ms var(--ease-out),
+    box-shadow 160ms var(--ease-out),
+    background 160ms var(--ease-out);
+}
+/* Pill buttons. The chunky 4px bottom edge is the playful skin's signature;
+   premium trades it for a lit gradient face and a shorter, tighter press. */
+html[data-premium='on'] .gb-btn,
+html[data-premium='on'] .gb-btn--compact {
+  border-radius: var(--radius-pill);
+}
+html[data-premium='on'] .gb-btn--primary {
+  background: linear-gradient(180deg, var(--coral-400) 0%, var(--coral-600) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.38),
+    inset 0 -1px 0 rgba(120, 50, 5, 0.25),
+    var(--shadow-brand);
+}
+html[data-premium='on'] .gb-btn--primary:active {
+  transform: translateY(1px) scale(0.985);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 1px 2px rgba(150, 60, 8, 0.3);
+}
+html[data-premium='on'] .gb-btn--secondary {
+  background: var(--glass-face);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow:
+    inset 0 0 0 1px var(--border-strong),
+    inset 0 1px 0 var(--glass-top),
+    var(--shadow-xs);
+}
+html[data-premium='on'] .gb-btn--secondary:active,
+html[data-premium='on'] .gb-btn--soft:active,
+html[data-premium='on'] .gb-btn--ghost:active {
+  transform: scale(0.975);
+}
+
+/* Header buttons go circular — the clearest single-glance signal that the
+   skin changed, and it matches the avatar already sitting beside them. */
+html[data-premium='on'] .gb-iconbtn {
+  border-radius: 50%;
+  background: var(--glass-face);
+  backdrop-filter: blur(10px) saturate(140%);
+  -webkit-backdrop-filter: blur(10px) saturate(140%);
+  border: 1px solid var(--glass-edge);
+  box-shadow:
+    inset 0 1px 0 var(--glass-top),
+    var(--shadow-sm);
+  transition:
+    transform 140ms var(--ease-out),
+    background 140ms var(--ease-out);
+}
+html[data-premium='on'] .gb-iconbtn:active,
+html[data-premium='on'] .gb-avatar:active {
+  transform: scale(0.9);
+}
+html[data-premium='on'] .gb-avatar {
+  transition: transform 140ms var(--ease-out);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    var(--shadow-sm);
+}
+html[data-premium='on'] .gb-nav-tab {
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out),
+    transform 140ms var(--ease-out);
+}
+html[data-premium='on'] .gb-nav-tab:active {
+  transform: scale(0.9);
+}
+
+/* Inputs: recessed rather than outlined, so the glass reads as a surface
+   with things pressed into it. */
+html[data-premium='on'] .gb-input {
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid var(--border-strong);
+  box-shadow: inset 0 1px 2px rgba(38, 24, 16, 0.06);
+}
+html[data-premium='on'][data-theme='dark'] .gb-input {
+  background: rgba(0, 0, 0, 0.22);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+html[data-premium='on'] .gb-input:focus {
+  border-color: var(--brand);
+  box-shadow:
+    inset 0 1px 2px rgba(38, 24, 16, 0.06),
+    0 0 0 3px var(--brand-soft);
+}
+
+/* Touch fires a phantom :hover on tap, so lift is pointer-gated. */
+@media (hover: hover) and (pointer: fine) {
+  html[data-premium='on'] .gb-iconbtn:hover {
+    transform: translateY(-1px);
+  }
+}
+
+/* The premium toggle itself, lit when it's on. */
+.gb-iconbtn.is-premium {
+  color: var(--brand);
+  background: var(--brand-soft);
+}
+
+/* ---------------------------------------------------------------------
+   6. Typography — tracking is size-specific, never one value for all
+   Large type reads too loose as it grows; tiny caps read too tight.
+   --------------------------------------------------------------------- */
+html[data-premium='on'] body {
+  font-optical-sizing: auto;
+}
+html[data-premium='on'] .greet-name,
+html[data-premium='on'] .gb-login-title,
+html[data-premium='on'] .gb-display,
+html[data-premium='on'] .gb-h1,
+html[data-premium='on'] .gb-stat {
+  letter-spacing: -0.032em;
+}
+html[data-premium='on'] .gb-h2,
+html[data-premium='on'] .gb-sectiontitle h3 {
+  letter-spacing: -0.022em;
+}
+html[data-premium='on'] .gb-label,
+html[data-premium='on'] .gb-settings-sec-label {
+  letter-spacing: 0.09em;
+}
+/* Numbers in a column should line up; they never do with proportional figures. */
+html[data-premium='on'] .gb-stat,
+html[data-premium='on'] .gb-mono {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------------
+   7. The human touch — "no"
+   Face ID doesn't print an error and stop; it shakes its head at you. Same
+   here: wrong password, wrong code, and the card refuses with a decaying
+   head-shake plus a short double haptic (shakeAuthCard() in app.js).
+   Amplitude decays 9 → 1px because a real head settles, and the ±1deg tilt
+   is what turns a horizontal jitter into a gesture.
+   --------------------------------------------------------------------- */
+@keyframes gb-shake {
+  0%,
+  100% {
+    transform: translateX(0) rotate(0deg);
+  }
+  12% {
+    transform: translateX(-9px) rotate(-1.1deg);
+  }
+  26% {
+    transform: translateX(8px) rotate(0.9deg);
+  }
+  40% {
+    transform: translateX(-6px) rotate(-0.7deg);
+  }
+  54% {
+    transform: translateX(4px) rotate(0.5deg);
+  }
+  68% {
+    transform: translateX(-2.5px) rotate(-0.3deg);
+  }
+  84% {
+    transform: translateX(1px) rotate(0deg);
+  }
+}
+/* Two classes deep so it beats the .gb-rise entrance on the same element. */
+html[data-premium='on'] .gb-shake {
+  animation: gb-shake 520ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+/* Flipping the skin cross-fades rather than cutting — see togglePremium(). */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 260ms;
+  animation-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* ---------------------------------------------------------------------
+   8. Accessibility — gentler, not gone
+   --------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  /* The refusal still has to read as a refusal: keep the meaning, drop the
+     movement — a red ring pulses instead of the head-shake. */
+  @keyframes gb-refuse-ring {
+    0%,
+    100% {
+      box-shadow: var(--shadow-lg);
+    }
+    45% {
+      box-shadow:
+        0 0 0 3px rgba(229, 72, 77, 0.55),
+        var(--shadow-lg);
+    }
+  }
+  html[data-premium='on'] .gb-shake {
+    animation: gb-refuse-ring 420ms ease both;
+    transform: none;
+  }
+  html[data-premium='on'] .gb-iconbtn:hover {
+    transform: none;
+  }
+}
+
+/* Frosted surfaces go solid — legibility beats material every time. */
+@media (prefers-reduced-transparency: reduce) {
+  html[data-premium='on'] .gb-nav,
+  html[data-premium='on'] .gb-card,
+  html[data-premium='on'] .gb-login-card,
+  html[data-premium='on'] .gb-iconbtn,
+  html[data-premium='on'] .gb-btn--secondary {
+    background: var(--surface);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  html[data-premium='on'] .gb-nav,
+  html[data-premium='on'] .gb-card,
+  html[data-premium='on'] .gb-login-card {
+    background: var(--surface);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border-color: var(--border-strong);
+  }
+}

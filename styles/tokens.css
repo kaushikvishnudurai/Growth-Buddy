@@ -192,6 +192,7 @@
   --brand-soft: var(--coral-50);
   --brand-soft-fg: var(--coral-700);
 
+  --danger: #C93B40;               /* error text — matches .gb-btn--danger */
   --success: var(--leaf-600);
   --success-soft: var(--leaf-50);
   --success-soft-fg: var(--leaf-700);
@@ -248,6 +249,7 @@
   --brand-soft: rgba(249, 115, 22, 0.15);
   --brand-soft-fg: var(--coral-300);
 
+  --danger: #FF6369;
   --success: var(--leaf-500);
   --success-soft: rgba(24, 191, 110, 0.14);
   --success-soft-fg: var(--leaf-300);

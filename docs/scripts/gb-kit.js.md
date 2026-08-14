@@ -30,7 +30,7 @@ Every screen builds DOM from these. Element-returning factories, no framework, n
 | `confirmDialog({title, message, confirmLabel, cancelLabel, danger})` | 466 | returns a promise |
 | `GOOGLE_G_SVG` | 524 | inline SVG **string** — set via `innerHTML` |
 | `Logo({size, radius})` | 532 | theme-aware inline SVG |
-| `AppHeader({...})` | 566 | |
+| `AppHeader({...})` | 566 | Also takes `premium` + `onPremium` — the gem button that toggles the premium skin (`styles/premium.css`). |
 | `CrashCard(onRetry)` | 639 | render-error fallback |
 
 ## Notes

@@ -569,6 +569,8 @@ function AppHeader({
   userName,
   theme,
   onTheme,
+  premium,
+  onPremium,
   onAccount,
   unreadCount,
   onBell,
@@ -614,6 +616,22 @@ function AppHeader({
         },
         Icon(theme === 'dark' ? 'sun' : 'moon', { size: 20 })
       ),
+      // Premium skin switch. Lit when on; the whole look lives in premium.css.
+      onPremium
+        ? h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-iconbtn' + (premium ? ' is-premium' : ''),
+              'aria-label': premium ? 'Switch to the classic look' : 'Switch to the premium look',
+              'aria-pressed': premium ? 'true' : 'false',
+              onclick: onPremium,
+            },
+            // Gem, not sparkles — the nav's "Buddy" tab already owns sparkles,
+            // and one glyph must not mean two things.
+            Icon('gem', { size: 20 })
+          )
+        : null,
       h(
         'button',
         {

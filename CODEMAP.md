@@ -123,6 +123,7 @@ the OTP only, never the code**).
 | File | What |
 |---|---|
 | `index.html` | single-page shell; module entry `scripts/app.js` |
+| `styles/premium.css` | the **premium skin** (434). Every rule scoped to `html[data-premium='on']` and loaded last, so it overrides tokens and is fully inert when off. Lit canvas on `.gb-app`, glass cards, floating pill nav (`<1024px` only — it's a sidebar above that), circular icon buttons, pill buttons, size-specific tracking, and `@keyframes gb-shake` — the Face-ID-style "no" the sign-in card does on a rejected login (`shakeAuthCard()` in `app.js`). Toggle: header gem button + Customise → Display → Look. |
 | `vite.config.js` | dev server :5173, proxies `/api` + `/ws` to :8080 **rewriting the Origin header** (the backend's CORS allow-list excludes :5173); `vite-plugin-pwa` for manifest, offline precache, NetworkFirst on API GETs, and it pulls in `public/push-handlers.js`. Target override: `API_PROXY_TARGET`. |
 | `run.sh` | **start the backend with this** — loads `.env`, frees port 8080 |
 | `.env.example` | required env: DB, mail, OpenAI, VAPID, Google OAuth, WhatsApp |

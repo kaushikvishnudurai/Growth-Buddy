@@ -19,7 +19,8 @@ via `@fontsource` — plus Space Mono for `--font-mono`.
   `--ring`, `--nav-bg`.
 - **Brand:** `--brand`, `--brand-hover`, `--brand-press`, `--brand-edge`, `--brand-soft`,
   `--brand-soft-fg`, `--fg-on-brand`, `--shadow-brand`.
-- **Status:** `--success`, `--warning`, `--danger`, `--info` (each with `-soft` / `-soft-fg` variants).
+- **Status:** `--success`, `--warning`, `--danger`, `--info`. All but `--danger` also have
+  `-soft` / `-soft-fg` variants; `--danger` is text-only (the two error lines in `app.css`).
 - **AI accent:** `--ai`, `--ai-soft`, `--ai-soft-fg`, `--hairline-ai` — used for Buddy/AI surfaces.
 - **Type:** `--font-display`, `--font-body`, `--font-mono`; `--leading-tight|snug|normal|relaxed`.
 - **Shape:** `--radius-sm|md|lg|xl|2xl|3xl|pill`.
