@@ -328,8 +328,8 @@ function persistWellness() {
       method: 'PUT',
       body: JSON.stringify({
         sleepByDate: state.wellness.sleepByDate || {},
-        moodByDate: state.wellness.moodByDate || {}
-      })
+        moodByDate: state.wellness.moodByDate || {},
+      }),
     }).catch((err) => {
       console.error('❌ CRITICAL: persistWellness failed to reach database:', err);
     });
@@ -1059,7 +1059,10 @@ async function loadData() {
       }),
       // CRITICAL: Sleep/mood + trends MUST come from DB. Fail loudly if unavailable.
       api('/api/daily-logs?days=60').catch((err) => {
-        console.error('⚠️ CRITICAL: Daily logs API failed - sleep/mood data will NOT persist!', err);
+        console.error(
+          '⚠️ CRITICAL: Daily logs API failed - sleep/mood data will NOT persist!',
+          err
+        );
         return null;
       }),
       // CRITICAL: Photo history MUST come from DB. Fail loudly if unavailable.
@@ -1130,7 +1133,7 @@ async function loadData() {
     recordTrendsToday();
     // Data is now complete, so achievement detection can baseline/fire safely.
     state.achReady = true;
-    
+
     // CRITICAL: On app startup, force-sync money and wellness from cache to DB
     // in case they were only updated locally before. Do this async to not block render.
     setTimeout(() => {
@@ -1140,20 +1143,24 @@ async function loadData() {
           .then(() => console.log('✅ [Startup] Money data verified in database'))
           .catch((err) => console.error('❌ [Startup] Money sync failed:', err));
       }
-      if (state.wellness && (Object.keys(state.wellness.sleepByDate || {}).length > 0 || 
-                              Object.keys(state.wellness.moodByDate || {}).length > 0)) {
+      if (
+        state.wellness &&
+        (Object.keys(state.wellness.sleepByDate || {}).length > 0 ||
+          Object.keys(state.wellness.moodByDate || {}).length > 0)
+      ) {
         console.log('🔄 [Startup] Force-syncing wellness data to database...');
         api('/api/daily-logs', {
           method: 'PUT',
           body: JSON.stringify({
             sleepByDate: state.wellness.sleepByDate || {},
-            moodByDate: state.wellness.moodByDate || {}
-          })
-        }).then(() => console.log('✅ [Startup] Wellness data verified in database'))
+            moodByDate: state.wellness.moodByDate || {},
+          }),
+        })
+          .then(() => console.log('✅ [Startup] Wellness data verified in database'))
           .catch((err) => console.error('❌ [Startup] Wellness sync failed:', err));
       }
     }, 100);
-    
+
     connectWebSocket();
   } catch (err) {
     state.error = err.message || 'Failed to load data from backend.';
@@ -1276,7 +1283,8 @@ function sleepPayloadFromHours(hours, quality) {
   // Synthesize a bedtime/wake around a 07:00 wake so the logged duration is right.
   const wake = 7 * 60;
   let bed = (((wake - Math.round(hours * 60)) % 1440) + 1440) % 1440;
-  const fmt = (m) => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+  const fmt = (m) =>
+    String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
   return {
     bedtime: fmt(bed),
     wakeTime: '07:00',
@@ -1287,7 +1295,8 @@ function sleepPayloadFromHours(hours, quality) {
 function addQuickExpense(amount, note) {
   const next = normalizeMoney(state.money);
   next.expenses.unshift({
-    id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+    id:
+      typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
     amount: Math.round(amount),
     category: 'others',
     date: todayKeyNow(),
@@ -1297,8 +1306,14 @@ function addQuickExpense(amount, note) {
   saveMoney(next);
 }
 async function runQuickAdd(text) {
-  const habits = (state.habits || []).map((hb) => hb.name).filter(Boolean).slice(0, 100);
-  const res = await api('/api/quick-add', { method: 'POST', body: JSON.stringify({ text, habits }) });
+  const habits = (state.habits || [])
+    .map((hb) => hb.name)
+    .filter(Boolean)
+    .slice(0, 100);
+  const res = await api('/api/quick-add', {
+    method: 'POST',
+    body: JSON.stringify({ text, habits }),
+  });
   if (!res || res.configured === false) return { configured: false, applied: 0 };
   const intents = res.intents || [];
   let applied = 0;
@@ -1308,7 +1323,9 @@ async function runQuickAdd(text) {
         await createTask({ title: it.title });
         applied++;
       } else if (it.type === 'habit' && it.name) {
-        const hb = (state.habits || []).find((x) => (x.name || '').toLowerCase() === it.name.toLowerCase());
+        const hb = (state.habits || []).find(
+          (x) => (x.name || '').toLowerCase() === it.name.toLowerCase()
+        );
         if (hb && !hb.doneToday) await toggleHabit(hb.id);
         if (hb) applied++;
       } else if (it.type === 'water' && it.amountMl) {
@@ -2610,8 +2627,7 @@ function openCustomise(initialTab) {
   const NAV_BAR_MAX = 5;
   let navWorking = resolveNavLayout((u && u.navLayout) || null);
   const navListEl = h('div', { class: 'gb-home-cust-list' });
-  const persistNav = () =>
-    saveNavLayout(navWorking.map((x) => ({ id: x.id, primary: x.primary })));
+  const persistNav = () => saveNavLayout(navWorking.map((x) => ({ id: x.id, primary: x.primary })));
   const renderNavList = () => {
     navListEl.replaceChildren();
     const barCount = navWorking.filter((x) => x.primary).length;
@@ -2833,8 +2849,12 @@ function weeklyReviewDue() {
 function weeklyReviewStats() {
   const days = last7Keys();
   const byDate = (state.trends && state.trends.byDate) || {};
-  const scores = days.map((k) => byDate[k] && Number(byDate[k].score)).filter((n) => Number.isFinite(n) && n > 0);
-  const avgScore = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+  const scores = days
+    .map((k) => byDate[k] && Number(byDate[k].score))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  const avgScore = scores.length
+    ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
+    : 0;
   const activeDays = days.filter((k) => byDate[k]).length;
   const set7 = new Set(days);
   const spend = ((state.money && state.money.expenses) || [])
@@ -2857,32 +2877,51 @@ function openWeeklyReview() {
   const cur = () => (state.money && state.money.currency) || '₹';
 
   const tile = (value, label) =>
-    h('div', { class: 'gb-wr-tile' },
+    h(
+      'div',
+      { class: 'gb-wr-tile' },
       h('div', { class: 'gb-wr-tile-val' }, value),
-      h('div', { class: 'gb-wr-tile-lbl' }, label));
+      h('div', { class: 'gb-wr-tile-lbl' }, label)
+    );
 
   const wins = h('textarea', {
-    class: 'gb-input', rows: '2', maxlength: '400',
+    class: 'gb-input',
+    rows: '2',
+    maxlength: '400',
     placeholder: 'One thing that went well…',
   });
   // A <textarea>'s initial text can't be set via the value attribute — set the
   // property so an existing review's wins prefill when re-opened.
   wins.value = prev.wins || '';
   const focus = h('input', {
-    type: 'text', class: 'gb-input', maxlength: '120',
-    placeholder: 'e.g. Protect my mornings for deep work', value: prev.focus || '',
+    type: 'text',
+    class: 'gb-input',
+    maxlength: '120',
+    placeholder: 'e.g. Protect my mornings for deep work',
+    value: prev.focus || '',
   });
-  const saveBtn = h('button', { type: 'button', class: 'gb-btn gb-btn--primary' }, prev.focus ? 'Update review' : 'Save review');
+  const saveBtn = h(
+    'button',
+    { type: 'button', class: 'gb-btn gb-btn--primary' },
+    prev.focus ? 'Update review' : 'Save review'
+  );
   saveBtn.addEventListener('click', async () => {
     const weekStart = weekStartKey(new Date());
     const payload = { weekStart, wins: wins.value.trim(), focus: focus.value.trim() };
     saveBtn.disabled = true;
     saveBtn.textContent = 'Saving…';
     try {
-      const saved = await api('/api/weekly-review', { method: 'PUT', body: JSON.stringify(payload) });
+      const saved = await api('/api/weekly-review', {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      });
       // Mirror into state so the nudge/prefill update without a reload.
       if (!state.weeklyReviews) state.weeklyReviews = {};
-      state.weeklyReviews[weekStart] = { wins: saved.wins, focus: saved.focus, savedAt: saved.savedAt };
+      state.weeklyReviews[weekStart] = {
+        wins: saved.wins,
+        focus: saved.focus,
+        savedAt: saved.savedAt,
+      };
       toastSuccess('Weekly review saved. Here’s to next week.');
       close();
       render();
@@ -2896,23 +2935,46 @@ function openWeeklyReview() {
   const sheet = h(
     'div',
     { class: 'gb-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Weekly review' },
-    h('div', { class: 'gb-modal-head' },
+    h(
+      'div',
+      { class: 'gb-modal-head' },
       h('div', { class: 'gb-modal-title' }, 'Your week in review'),
-      h('div', { class: 'gb-modal-sub' }, 'A quick look back, then set one focus for the week ahead.')),
-    h('div', { class: 'gb-wr-tiles' },
+      h(
+        'div',
+        { class: 'gb-modal-sub' },
+        'A quick look back, then set one focus for the week ahead.'
+      )
+    ),
+    h(
+      'div',
+      { class: 'gb-wr-tiles' },
       tile(s.avgScore + '%', 'avg score'),
       tile(String(s.activeDays) + '/7', 'active days'),
       tile(String(s.topStreak), 'best streak'),
       tile(cur() + s.spend, 'spent'),
-      tile(String(s.moodLogs), 'mood logs')),
+      tile(String(s.moodLogs), 'mood logs')
+    ),
     h('div', { class: 'gb-field-label' }, 'What went well?'),
     wins,
     h('div', { class: 'gb-field-label' }, 'Your one focus for next week'),
     focus,
     saveBtn,
-    h('button', { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel', onclick: () => close() }, 'Maybe later')
+    h(
+      'button',
+      { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel', onclick: () => close() },
+      'Maybe later'
+    )
   );
-  overlay = h('div', { class: 'gb-modal-overlay', onclick: (e) => { if (e.target === overlay) close(); } }, sheet);
+  overlay = h(
+    'div',
+    {
+      class: 'gb-modal-overlay',
+      onclick: (e) => {
+        if (e.target === overlay) close();
+      },
+    },
+    sheet
+  );
   document.body.appendChild(overlay);
   refreshIcons();
   requestAnimationFrame(() => overlay.classList.add('is-open'));
@@ -2926,8 +2988,17 @@ function openDeleteAccount() {
     overlay.classList.remove('is-open');
     setTimeout(() => overlay.remove(), 180);
   };
-  const pw = h('input', { type: 'password', class: 'gb-input', autocomplete: 'current-password', placeholder: 'Your password' });
-  const confirmBtn = h('button', { type: 'button', class: 'gb-btn gb-btn--danger' }, 'Delete my account');
+  const pw = h('input', {
+    type: 'password',
+    class: 'gb-input',
+    autocomplete: 'current-password',
+    placeholder: 'Your password',
+  });
+  const confirmBtn = h(
+    'button',
+    { type: 'button', class: 'gb-btn gb-btn--danger' },
+    'Delete my account'
+  );
   confirmBtn.addEventListener('click', async () => {
     if (!pw.value) {
       pushToast('Enter your password to confirm.', 'error', 3000);
@@ -2936,7 +3007,10 @@ function openDeleteAccount() {
     confirmBtn.disabled = true;
     confirmBtn.textContent = 'Deleting…';
     try {
-      await api('/api/auth/delete-account', { method: 'POST', body: JSON.stringify({ password: pw.value }) });
+      await api('/api/auth/delete-account', {
+        method: 'POST',
+        body: JSON.stringify({ password: pw.value }),
+      });
       // Account is gone — drop the local session and return to the login screen.
       clearSession();
       state.user = null;
@@ -2951,16 +3025,39 @@ function openDeleteAccount() {
   const sheet = h(
     'div',
     { class: 'gb-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Delete account' },
-    h('div', { class: 'gb-modal-head' },
+    h(
+      'div',
+      { class: 'gb-modal-head' },
       h('div', { class: 'gb-modal-title' }, 'Delete your account?'),
-      h('div', { class: 'gb-modal-sub' }, 'This permanently erases your habits, tasks, goals, logs and money data. It can’t be undone.')),
-    h('div', { class: 'gb-form' },
+      h(
+        'div',
+        { class: 'gb-modal-sub' },
+        'This permanently erases your habits, tasks, goals, logs and money data. It can’t be undone.'
+      )
+    ),
+    h(
+      'div',
+      { class: 'gb-form' },
       h('label', { class: 'gb-field-label gb-field-label--sub' }, 'Confirm with your password'),
       pw,
-      confirmBtn),
-    h('button', { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel', onclick: () => close() }, 'Keep my account')
+      confirmBtn
+    ),
+    h(
+      'button',
+      { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel', onclick: () => close() },
+      'Keep my account'
+    )
   );
-  overlay = h('div', { class: 'gb-modal-overlay', onclick: (e) => { if (e.target === overlay) close(); } }, sheet);
+  overlay = h(
+    'div',
+    {
+      class: 'gb-modal-overlay',
+      onclick: (e) => {
+        if (e.target === overlay) close();
+      },
+    },
+    sheet
+  );
   document.body.appendChild(overlay);
   refreshIcons();
   requestAnimationFrame(() => overlay.classList.add('is-open'));
@@ -2975,7 +3072,11 @@ function openSecurity() {
     setTimeout(() => overlay.remove(), 180);
   };
 
-  const sessionsWrap = h('div', { class: 'gb-sec-sessions' }, h('div', { class: 'gb-empty-sm' }, 'Loading…'));
+  const sessionsWrap = h(
+    'div',
+    { class: 'gb-sec-sessions' },
+    h('div', { class: 'gb-empty-sm' }, 'Loading…')
+  );
 
   async function loadSessions() {
     try {
@@ -3009,7 +3110,9 @@ function openSecurity() {
                     onclick: async (e) => {
                       e.target.disabled = true;
                       try {
-                        await api('/api/auth/sessions/' + encodeURIComponent(s.id), { method: 'DELETE' });
+                        await api('/api/auth/sessions/' + encodeURIComponent(s.id), {
+                          method: 'DELETE',
+                        });
                         toastSuccess('Signed out that device.');
                         loadSessions();
                       } catch (err) {
@@ -3027,7 +3130,11 @@ function openSecurity() {
     }
   }
 
-  const curPw = h('input', { type: 'password', class: 'gb-input', autocomplete: 'current-password' });
+  const curPw = h('input', {
+    type: 'password',
+    class: 'gb-input',
+    autocomplete: 'current-password',
+  });
   const newPw = h('input', { type: 'password', class: 'gb-input', autocomplete: 'new-password' });
   const pwBtn = h('button', { type: 'button', class: 'gb-btn gb-btn--primary' }, 'Update password');
   async function changePassword() {
@@ -3080,11 +3187,20 @@ function openSecurity() {
       newPw,
       pwBtn
     ),
-    h('button', { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel', onclick: () => close() }, 'Close')
+    h(
+      'button',
+      { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel', onclick: () => close() },
+      'Close'
+    )
   );
   overlay = h(
     'div',
-    { class: 'gb-modal-overlay', onclick: (e) => { if (e.target === overlay) close(); } },
+    {
+      class: 'gb-modal-overlay',
+      onclick: (e) => {
+        if (e.target === overlay) close();
+      },
+    },
     sheet
   );
   document.body.appendChild(overlay);
@@ -3916,15 +4032,27 @@ function openProfileSettings(initialTab) {
   );
 
   // ---- Push notifications ----
-  const pushBtn = h('button', { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--compact' }, 'Enable push notifications');
-  const pushTestBtn = h('button', { type: 'button', class: 'gb-btn gb-btn--ghost gb-btn--compact' }, 'Send test');
+  const pushBtn = h(
+    'button',
+    { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--compact' },
+    'Enable push notifications'
+  );
+  const pushTestBtn = h(
+    'button',
+    { type: 'button', class: 'gb-btn gb-btn--ghost gb-btn--compact' },
+    'Send test'
+  );
   let pushOn = false;
   const syncPushUi = () => {
     pushBtn.textContent = pushOn ? 'Turn off push notifications' : 'Enable push notifications';
     pushTestBtn.style.display = pushOn ? '' : 'none';
   };
   syncPushUi();
-  if (pushSupported()) pushSubscribed().then((on) => { pushOn = on; syncPushUi(); });
+  if (pushSupported())
+    pushSubscribed().then((on) => {
+      pushOn = on;
+      syncPushUi();
+    });
   pushBtn.onclick = async () => {
     if (!pushSupported()) {
       pushToast('This browser doesn’t support push notifications.', 'error', 3600);
@@ -3944,7 +4072,11 @@ function openProfileSettings(initialTab) {
         } else if (r === 'unconfigured') {
           pushToast('Push isn’t set up on the server yet (no VAPID keys).', 'error', 4200);
         } else if (r === 'denied') {
-          pushToast('Notifications are blocked — enable them in your browser settings.', 'error', 4200);
+          pushToast(
+            'Notifications are blocked — enable them in your browser settings.',
+            'error',
+            4200
+          );
         } else if (r === 'unsupported') {
           pushToast('This browser doesn’t support push notifications.', 'error', 4200);
         } else {
@@ -3968,7 +4100,12 @@ function openProfileSettings(initialTab) {
       toastError(err, 'Could not send a test notification.');
     }
   };
-  const pushSectionBody = h('div', { class: 'gb-quickadd-row', style: { flexWrap: 'wrap' } }, pushBtn, pushTestBtn);
+  const pushSectionBody = h(
+    'div',
+    { class: 'gb-quickadd-row', style: { flexWrap: 'wrap' } },
+    pushBtn,
+    pushTestBtn
+  );
 
   const notifPane = h(
     'div',
@@ -3980,7 +4117,11 @@ function openProfileSettings(initialTab) {
       'Get reminders and nudges on this device, even when the app is closed.'
     ),
     pushSectionBody,
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'WhatsApp reminders'),
+    h(
+      'div',
+      { class: 'gb-settings-sec-label', style: { marginTop: '22px' } },
+      'WhatsApp reminders'
+    ),
     h(
       'div',
       { class: 'gb-field-hint', style: { marginBottom: '14px' } },
@@ -4514,7 +4655,11 @@ function openAddSheet() {
     placeholder: 'e.g. spent 200 on lunch, slept 7h, drank a bottle of water',
     'aria-label': 'Quick log in your own words',
   });
-  const qaBtn = h('button', { type: 'button', class: 'gb-btn gb-btn--primary gb-btn--compact' }, 'Log it');
+  const qaBtn = h(
+    'button',
+    { type: 'button', class: 'gb-btn gb-btn--primary gb-btn--compact' },
+    'Log it'
+  );
   async function submitQuickAdd() {
     const text = qaInput.value.trim();
     if (!text) return;
@@ -4605,7 +4750,11 @@ function openAddSheet() {
     });
     micBtn = h(
       'button',
-      { type: 'button', class: 'gb-btn gb-btn--compact gb-mic', 'aria-label': 'Speak instead of typing' },
+      {
+        type: 'button',
+        class: 'gb-btn gb-btn--compact gb-mic',
+        'aria-label': 'Speak instead of typing',
+      },
       Icon('mic', { size: 18 })
     );
     const gotSpeech = (said) => {
@@ -4665,7 +4814,10 @@ function openAddSheet() {
         rec.interimResults = false;
         micBtn.classList.add('is-listening');
         rec.onresult = (e) => {
-          const said = Array.from(e.results).map((r) => r[0].transcript).join(' ').trim();
+          const said = Array.from(e.results)
+            .map((r) => r[0].transcript)
+            .join(' ')
+            .trim();
           gotSpeech(said);
         };
         rec.onerror = (e) => {
@@ -5477,7 +5629,10 @@ const SCREENS = {
     render: () =>
       ScreenFocus({
         onFocusSession: (mode, durationSec) =>
-          api('/api/focus/sessions', { method: 'POST', body: JSON.stringify({ mode, durationSec }) }),
+          api('/api/focus/sessions', {
+            method: 'POST',
+            body: JSON.stringify({ mode, durationSec }),
+          }),
         getFocusStats: () => api('/api/focus/stats'),
       }),
   },
@@ -6464,30 +6619,37 @@ if (state.user) {
   // Restore the screen from the URL fragment, so refreshing on /circle stays there.
   state.screen = screenFromHash();
   loadData();
-  
+
   // CRITICAL: Periodic sync of local-cached data to database every 5 minutes.
   // This ensures money/wellness data persists even if initial sync failed or connection dropped.
-  setInterval(() => {
-    if (!state.user) return; // Skip if logged out
-    
-    // Sync money data every 5 minutes
-    if (state.money && (state.money.expenses || []).length > 0) {
-      api('/api/money', { method: 'PUT', body: JSON.stringify(state.money) })
-        .catch((err) => console.warn('⚠️ [5min sync] Money sync failed:', err));
-    }
-    
-    // Sync wellness data every 5 minutes
-    if (state.wellness && (Object.keys(state.wellness.sleepByDate || {}).length > 0 || 
-                            Object.keys(state.wellness.moodByDate || {}).length > 0)) {
-      api('/api/daily-logs', {
-        method: 'PUT',
-        body: JSON.stringify({
-          sleepByDate: state.wellness.sleepByDate || {},
-          moodByDate: state.wellness.moodByDate || {}
-        })
-      }).catch((err) => console.warn('⚠️ [5min sync] Wellness sync failed:', err));
-    }
-  }, 5 * 60 * 1000); // 5 minutes
+  setInterval(
+    () => {
+      if (!state.user) return; // Skip if logged out
+
+      // Sync money data every 5 minutes
+      if (state.money && (state.money.expenses || []).length > 0) {
+        api('/api/money', { method: 'PUT', body: JSON.stringify(state.money) }).catch((err) =>
+          console.warn('⚠️ [5min sync] Money sync failed:', err)
+        );
+      }
+
+      // Sync wellness data every 5 minutes
+      if (
+        state.wellness &&
+        (Object.keys(state.wellness.sleepByDate || {}).length > 0 ||
+          Object.keys(state.wellness.moodByDate || {}).length > 0)
+      ) {
+        api('/api/daily-logs', {
+          method: 'PUT',
+          body: JSON.stringify({
+            sleepByDate: state.wellness.sleepByDate || {},
+            moodByDate: state.wellness.moodByDate || {},
+          }),
+        }).catch((err) => console.warn('⚠️ [5min sync] Wellness sync failed:', err));
+      }
+    },
+    5 * 60 * 1000
+  ); // 5 minutes
 }
 render();
 window.addEventListener('load', refreshIcons);
