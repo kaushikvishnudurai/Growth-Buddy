@@ -85,7 +85,12 @@ body {
   padding: max(env(safe-area-inset-top, 0px), 22px) 20px 12px;
   flex: none;
 }
-.gb-head > div:first-child {
+/* The live seedling ships in the markup on every screen but only the premium
+   skin shows it (styles/premium.css §9), so the skin stays CSS, not a JS fork. */
+.gb-head .gb-sprout {
+  display: none;
+}
+.gb-head > div:first-of-type {
   flex: 1;
   min-width: 0;
 }
@@ -4029,7 +4034,11 @@ body {
   font-weight: 700;
   font-size: 0.875rem;
 }
-.gb-week-nudge span {
+/* Only the label stretches. `Icon()` also renders a <span>, so a bare
+   `span` selector gave flex:1 to the calendar and chevron too — all three
+   children took a third of the row each and the content smeared across the
+   full width, which is very visible on desktop. */
+.gb-week-nudge > span:not(.gb-icon) {
   flex: 1;
 }
 .gb-wr-tiles {

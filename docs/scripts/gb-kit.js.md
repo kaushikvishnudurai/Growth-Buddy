@@ -29,8 +29,8 @@ Every screen builds DOM from these. Element-returning factories, no framework, n
 | `NAV_CATALOG` / `resolveNavLayout(saved)` | 342 / 361 | `NAV_PRIMARY` + `NAV_OVERFLOW`, `NAV_MAX_PRIMARY = 5`. `resolveNavLayout` reconciles a saved layout against the catalog and drops entries whose feature is off (`navFeatureOn`) |
 | `confirmDialog({title, message, confirmLabel, cancelLabel, danger})` | 466 | returns a promise |
 | `GOOGLE_G_SVG` | 524 | inline SVG **string** — set via `innerHTML` |
-| `Logo({size, radius})` | 532 | theme-aware inline SVG |
-| `AppHeader({...})` | 566 | Also takes `premium` + `onPremium` — the gem button that toggles the premium skin (`styles/premium.css`). |
+| `Logo({size, radius, alive})` | 537 | theme-aware inline SVG. `alive: true` returns the same mark as the header's live seedling — adds `.gb-sprout`, drops the img role, and leaves `display` to CSS (an inline value would leak it into the classic skin). |
+| `AppHeader({...})` | 576 | Also takes `premium` + `onPremium` — the gem button that toggles the premium skin (`styles/premium.css`). Always renders `Logo({alive:true})` as its first child; CSS decides whether it shows, so the skin stays a stylesheet. |
 | `CrashCard(onRetry)` | 639 | render-error fallback |
 
 ## Notes

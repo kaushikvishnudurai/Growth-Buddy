@@ -143,18 +143,16 @@ html[data-premium='on'] .gb-login-card {
     var(--shadow-lg);
 }
 
-/* The weekly-review nudge is full-bleed in classic — a coloured stripe across
-   the app. Premium insets it so it reads as a card among cards. */
+/* The weekly-review nudge stays full-bleed, as in classic — it is chrome, not
+   content. Insetting it into a card was a mistake worth recording: a card
+   reads as content and so has to line up with the content under it, but every
+   screen sets its own width (dashboard 1180, family 900, placeholder 640), so
+   it overhung whatever it sat above. Spanning edge to edge has nothing to
+   align to. Premium just gives it a warmer face and a hairline to sit on. */
 html[data-premium='on'] .gb-week-nudge {
-  /* It's a <button>: width:auto means intrinsic (shrink-to-fit), not "fill".
-     Subtract the margins explicitly instead. */
-  width: calc(100% - 32px);
-  margin: 12px 16px 2px;
-  padding: 14px 16px;
-  border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, rgba(249, 115, 22, 0.16), rgba(255, 176, 32, 0.10));
-  border: 1px solid rgba(249, 115, 22, 0.24);
-  box-shadow: var(--shadow-xs);
+  padding: 13px 16px;
+  background: linear-gradient(135deg, rgba(249, 115, 22, 0.15), rgba(255, 176, 32, 0.08));
+  border-bottom: 1px solid rgba(249, 115, 22, 0.22);
 }
 
 /* ---------------------------------------------------------------------
@@ -376,6 +374,161 @@ html[data-premium='on'] .gb-shake {
   animation: gb-shake 520ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
 }
 
+/* ---------------------------------------------------------------------
+   9. The signature — a seedling that's actually there
+   The brand mark is a sprout, so the companion is that same sprout rather
+   than a mascot invented for the header. It has no eyes: a plant expresses
+   with its leaves and its lean, and googly eyes would turn the identity
+   mark into a cartoon. It pivots at the base of the stem, because that's
+   where a real seedling is rooted.
+
+   It reacts to what you did, not to the clock — buddyReact() in app.js is
+   hooked to pushToast, so it nods at every success and shakes its head at
+   every error in the app. The refusal reuses the sign-in card's rhythm, so
+   "no" is one gesture across the whole product, not two.
+
+   This is the one place the premium skin spends boldness. Everything above
+   is deliberately quiet so this reads as the memorable thing.
+   --------------------------------------------------------------------- */
+/* The seedling costs horizontal room in an already-full header, so premium
+   pays for it by making the chrome quieter rather than by squeezing the
+   greeting — a truncated name ("Kaush…") is a worse header than no sprout.
+   Circular glass buttons carry their weight at 36px; the classic skin needs
+   42 because its flat squares have less presence. */
+html[data-premium='on'] .gb-head-actions {
+  gap: 7px;
+}
+html[data-premium='on'] .gb-head-actions .gb-iconbtn {
+  width: 36px;
+  height: 36px;
+}
+
+html[data-premium='on'] .gb-head .gb-sprout {
+  display: block;
+  /* CSS wins over the SVG's width/height attributes, so the size is tuned
+     here with the rest of the header rather than in the markup. */
+  width: 32px;
+  height: 32px;
+  margin-right: 10px;
+  transform-origin: 50% 100%; /* rooted at the base of the stem */
+  filter: drop-shadow(0 4px 10px rgba(249, 115, 22, 0.32));
+  /* Rest, then a brief settle. NOT a continuous sway — a slow oscillation in
+     persistent chrome is exactly the vestibular trigger to avoid, and it would
+     read as fidgeting on a header you see all day. 13.5s apart, ~600ms long. */
+  animation: gb-sprout-settle 13.5s ease-in-out infinite;
+}
+@keyframes gb-sprout-settle {
+  0%,
+  95.5%,
+  100% {
+    transform: rotate(0deg) translateY(0);
+  }
+  97% {
+    transform: rotate(-3.5deg) translateY(-1px);
+  }
+  98.6% {
+    transform: rotate(2deg) translateY(0);
+  }
+}
+
+/* Good news: it perks up. Overshoot is earned here — something just landed. */
+html[data-premium='on'] .gb-head .gb-sprout[data-mood='yes'] {
+  animation: gb-sprout-yes 560ms cubic-bezier(0.34, 1.4, 0.64, 1) both;
+}
+@keyframes gb-sprout-yes {
+  0% {
+    transform: rotate(0deg) translateY(0) scale(1);
+  }
+  35% {
+    transform: rotate(-7deg) translateY(-5px) scale(1.1);
+  }
+  65% {
+    transform: rotate(4deg) translateY(0) scale(0.98);
+  }
+  100% {
+    transform: rotate(0deg) translateY(0) scale(1);
+  }
+}
+
+/* Bad news: the same head-shake the sign-in card does. One refusal, one
+   gesture — decaying amplitude, because a real head settles. */
+html[data-premium='on'] .gb-head .gb-sprout[data-mood='no'] {
+  animation: gb-sprout-no 520ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+@keyframes gb-sprout-no {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  14% {
+    transform: rotate(-11deg);
+  }
+  30% {
+    transform: rotate(9deg);
+  }
+  46% {
+    transform: rotate(-6.5deg);
+  }
+  62% {
+    transform: rotate(4deg);
+  }
+  80% {
+    transform: rotate(-2deg);
+  }
+}
+
+/* Chanel's rule: take one thing off. The live seedling does what the waving
+   emoji was doing, and better — so the emoji goes. */
+html[data-premium='on'] .gb-greet-wave {
+  display: none;
+}
+
+/* ---------------------------------------------------------------------
+   10. Toasts arrive instead of appearing
+   The classic toast has no motion at all — it snaps into existence, which
+   reads as broken, and it does so on the same frame the seedling starts a
+   560ms nod. Two halves of one moment moving at different speeds is the
+   incoherence worth fixing.
+
+   It enters from the right, because that's the edge the stack is pinned to
+   — a thing should come from where it lives. Scale starts at 0.96, never 0:
+   nothing in the real world appears from nothing.
+
+   Keyframes rather than a transition, which is normally the wrong call for
+   something fired this often — but `is-settled` (see toastStack) guarantees
+   each toast animates exactly once, so there is no interruption to retarget.
+   --------------------------------------------------------------------- */
+html[data-premium='on'] .gb-toast:not(.is-settled) {
+  animation: gb-toast-in 260ms var(--ease-out) both;
+}
+@keyframes gb-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(18px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+/* Stacked toasts cascade rather than landing as a block. */
+html[data-premium='on'] .gb-toast:not(.is-settled):nth-child(2) {
+  animation-delay: 40ms;
+}
+html[data-premium='on'] .gb-toast:not(.is-settled):nth-child(3) {
+  animation-delay: 80ms;
+}
+html[data-premium='on'] .gb-toast:not(.is-settled):nth-child(4) {
+  animation-delay: 120ms;
+}
+/* The dismiss X is pressable, so it has to answer to a press. */
+html[data-premium='on'] .gb-toast-close {
+  transition: transform 140ms var(--ease-out);
+}
+html[data-premium='on'] .gb-toast-close:active {
+  transform: scale(0.88);
+}
+
 /* Flipping the skin cross-fades rather than cutting — see togglePremium(). */
 ::view-transition-old(root),
 ::view-transition-new(root) {
@@ -406,6 +559,38 @@ html[data-premium='on'] .gb-shake {
   }
   html[data-premium='on'] .gb-iconbtn:hover {
     transform: none;
+  }
+  /* The seedling stops moving but doesn't go mute: it dims and brightens, so
+     the reaction still registers without anything travelling across the screen.
+     The idle settle is dropped entirely — nothing should move unprompted. */
+  html[data-premium='on'] .gb-head .gb-sprout {
+    animation: none;
+  }
+  html[data-premium='on'] .gb-head .gb-sprout[data-mood='yes'],
+  html[data-premium='on'] .gb-head .gb-sprout[data-mood='no'] {
+    animation: gb-sprout-pulse 420ms ease both;
+  }
+  /* Toasts still arrive rather than snapping in — they just fade instead of
+     travelling. Reduced motion means gentler, not nothing. */
+  html[data-premium='on'] .gb-toast:not(.is-settled) {
+    animation: gb-toast-fade 200ms ease both;
+  }
+  @keyframes gb-toast-fade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes gb-sprout-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    45% {
+      opacity: 0.45;
+    }
   }
 }
 

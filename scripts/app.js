@@ -79,6 +79,51 @@ function todayLabel() {
   }
 }
 
+/* ---- Greeting that knows what time it is ----
+   "Hey," read identically at 6am and at midnight, which is the one thing a
+   real accountability buddy would never do. This is the client's own clock, so
+   it's the user's actual local time with no timezone plumbing.
+
+   The late slot is deliberately not a greeting: past 11pm "Good evening" is
+   wrong, and noticing that someone is still awake is the point. It stays warm
+   rather than scolding — this app is a buddy, not a nag.
+
+   Kept short on purpose: the home header is narrow and the name has to fit
+   beside it (see .greet-name's 2-line clamp). "Good afternoon, <name>" wraps
+   to three lines and truncates. */
+function greetingFor(hour) {
+  if (hour >= 5 && hour < 12) return 'Morning';
+  if (hour >= 12 && hour < 17) return 'Afternoon';
+  if (hour >= 17 && hour < 23) return 'Evening';
+  return 'Still up';
+}
+/* People are greeted by their first name — "Morning, Kaushik", not
+   "Morning, Kaushik Vishnudurai". It reads the way a person would say it, and
+   it buys back the width the longer greeting costs.
+   (A single long name can still hit .greet-name's 2-line clamp, exactly as it
+   did with "Hey," — same second line, same break. Not made worse here.) */
+function firstName() {
+  const full = (state.user && state.user.displayName) || '';
+  return full.trim().split(/\s+/)[0] || 'Buddy';
+}
+
+// Same dev-only self-check shape money.js uses. The wrap-around past midnight
+// is the bit worth pinning: every one of the 24 hours must land somewhere.
+if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.DEV) {
+  try {
+    const expect = (h, want) => {
+      if (greetingFor(h) !== want)
+        throw new Error(h + ':00 → ' + greetingFor(h) + ', want ' + want);
+    };
+    [0, 3, 4, 23].forEach((h) => expect(h, 'Still up'));
+    [5, 9, 11].forEach((h) => expect(h, 'Morning'));
+    [12, 16].forEach((h) => expect(h, 'Afternoon'));
+    [17, 22].forEach((h) => expect(h, 'Evening'));
+  } catch (err) {
+    console.error('[greeting] self-check failed:', err.message);
+  }
+}
+
 /* ---- Build a 'YYYY-MM-DD' key from y / m(0-11) / d ---- */
 function dateKey(y, m, d) {
   const pad = (n) => (n < 10 ? '0' + n : String(n));
@@ -236,11 +281,31 @@ function pushToast(message, kind, durationMs) {
     id: ++toastSeq,
     message: text,
     kind: kind || 'error',
+    at: Date.now(), // when it arrived — toastStack resumes its entrance from here
   };
   state.toasts = [...state.toasts.filter((t) => t.message !== text), toast].slice(-4);
   render();
+  buddyReact(toast.kind === 'success' ? 'yes' : 'no');
   const duration = typeof durationMs === 'number' ? durationMs : 2800;
   setTimeout(() => dismissToast(toast.id), duration);
+}
+
+/* The header seedling nods at good news and shakes its head at bad. Hooked
+   here rather than at each call site because every toast in the app — screen
+   modules included, via the late-bound bridge — funnels through pushToast, so
+   one hook covers all of them and none can drift out of sync.
+   Must run after render(), which rebuilds the header node. */
+let buddyMoodTimer = 0;
+function buddyReact(mood) {
+  const sprout = document.querySelector('.gb-sprout');
+  if (!sprout) return;
+  clearTimeout(buddyMoodTimer);
+  sprout.removeAttribute('data-mood');
+  void sprout.offsetWidth; // restart if the same mood fires twice in a row
+  sprout.setAttribute('data-mood', mood);
+  // Cleared on a timer, not animationend — in the classic skin there's no
+  // animation to end, and a stuck attribute would block the next reaction.
+  buddyMoodTimer = setTimeout(() => sprout.removeAttribute('data-mood'), 700);
 }
 
 function toastError(err, fallback) {
@@ -5188,37 +5253,53 @@ function notificationDropdown() {
   return card;
 }
 
+/* render() rebuilds the whole tree, so a toast that's merely still on screen
+   gets a brand-new node on every unrelated render. Two things follow: its
+   entrance must not replay, and it must not be cut off either — several call
+   sites do `toastSuccess(...); render();`, which replaces the node while the
+   entrance is still playing.
+
+   Both are solved by driving the animation off the toast's age rather than off
+   node identity: past the entrance it's `is-settled` (no animation at all),
+   during it a negative animation-delay resumes at the point it had reached.
+   Rebuild it as often as you like — the motion looks continuous.
+
+   Keep in step with gb-toast-in's duration in styles/premium.css. */
+const TOAST_IN_MS = 260;
 function toastStack() {
   if (!state.toasts.length) return null;
-  return h(
-    'div',
-    { class: 'gb-toast-stack', role: 'status', 'aria-live': 'polite' },
-    state.toasts.map((t) =>
+  const now = Date.now();
+  const nodes = state.toasts.map((t) => {
+    const age = now - (t.at || 0);
+    const entering = age >= 0 && age < TOAST_IN_MS;
+    return h(
+      'div',
+      {
+        class: 'gb-toast is-' + (t.kind || 'error') + (entering ? '' : ' is-settled'),
+        style: entering ? { animationDelay: '-' + age + 'ms' } : null,
+      },
       h(
-        'div',
-        { class: 'gb-toast is-' + (t.kind || 'error') },
-        h(
-          'span',
-          { class: 'gb-toast-icon', 'aria-hidden': 'true' },
-          Icon((t.kind || 'error') === 'success' ? 'check-circle-2' : 'circle-alert', {
-            size: 15,
-            sw: 2.4,
-          })
-        ),
-        h('span', { class: 'gb-toast-msg' }, t.message),
-        h(
-          'button',
-          {
-            type: 'button',
-            class: 'gb-toast-close',
-            'aria-label': 'Dismiss message',
-            onclick: () => dismissToast(t.id),
-          },
-          Icon('x', { size: 14 })
-        )
+        'span',
+        { class: 'gb-toast-icon', 'aria-hidden': 'true' },
+        Icon((t.kind || 'error') === 'success' ? 'check-circle-2' : 'circle-alert', {
+          size: 15,
+          sw: 2.4,
+        })
+      ),
+      h('span', { class: 'gb-toast-msg' }, t.message),
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-toast-close',
+          'aria-label': 'Dismiss message',
+          onclick: () => dismissToast(t.id),
+        },
+        Icon('x', { size: 14 })
       )
-    )
-  );
+    );
+  });
+  return h('div', { class: 'gb-toast-stack', role: 'status', 'aria-live': 'polite' }, nodes);
 }
 
 function confirmDelete(message, onYes) {
@@ -5554,8 +5635,15 @@ async function saveNavLayout(layout) {
 const SCREENS = {
   home: {
     headerLabel: () => todayLabel(),
+    // The wave is its own element so premium can drop it — the live seedling
+    // beside the greeting already does that job, and two mascots is one too many.
     headerName: () =>
-      'Hey, ' + (state.user && state.user.displayName ? state.user.displayName : 'Buddy') + ' 👋',
+      h(
+        'span',
+        null,
+        greetingFor(new Date().getHours()) + ', ' + firstName() + ' ',
+        h('span', { class: 'gb-greet-wave' }, '👋')
+      ),
     render: () =>
       ScreenDashboard({
         features: (state.user && state.user.features) || null,

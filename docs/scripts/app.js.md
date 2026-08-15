@@ -7,7 +7,7 @@ Screen modules are leaves it calls into; they get thin `api` wrapper objects, ne
 
 | Lines | Region |
 |---|---|
-| 1–230 | imports, date helpers (`todayLabel`, `dateKey`), `loadTheme`, quote-of-day cache (`quoteDateStr`, `loadCachedQuote`, `cacheQuote`), toasts (`pushToast`, `toastError`, `toastSuccess`, `dismissToast`) |
+| 1–230 | imports, date helpers (`todayLabel`, `greetingFor` + its dev self-check, `firstName`, `dateKey`), `loadTheme`, quote-of-day cache (`quoteDateStr`, `loadCachedQuote`, `cacheQuote`), toasts (`pushToast`, `toastError`, `toastSuccess`, `dismissToast`) |
 | 210–250 | `score()`, `loadSession`, `loadToken`, `saveSession` |
 | 249–336 | wellness store (`emptyWellness`, `loadWellness`, `persistWellness`), goal progress (`loadGoalProgress`, `persistGoalProgress`, `updateGoalProgress`) |
 | 337–412 | **money store**: `moneyStorageKey`, `loadMoney`, `cacheMoney`, `saveMoney(next)`; UI prefs `saveUiPrefs(patch)` → `PUT /api/auth/ui-prefs`, `hydrateUiPrefs` |
@@ -21,7 +21,7 @@ Screen modules are leaves it calls into; they get thin `api` wrapper objects, ne
 | 2014–2260 | notifications (`refreshNotifications`, `markNotificationRead`, `respondMentorshipRequest`, `unreadNotifs`), header popovers (`toggleNotifOpen`, `toggleProfileOpen`, `toggleMoreOpen`, `profileDropdown`), routing (`screenFromHash`, `setScreen`), `toggleTheme`, `togglePremium` |
 | 2270–4070 | profile + settings (biggest block): `saveProfileDetails`, `CountryPhoneInput`, `buildSegSlider`, `openSecurity` (~2825), **`openProfileSettings(initialTab)`** (~2951), `getNutritionSuggestion` |
 | 4071–4262 | calendar: `syncSelectedDateToVisibleMonth`, `rerenderCalendarToolbarIfActive`, `rerenderCalendarMonthInPlace`, `calPrevMonth`/`calNextMonth`/`calToday`, `selectDate`, `retryCalendarFoodDate`, `addReminder`, `repaintCalendarGrid`, `deleteReminder` |
-| 4264–4940 | shared UI: `openModal`, `segmented`, `openAddSheet`, `openAddTask`, `colorPicker`, `openAddHabit`, `relativeTime`, `notificationDropdown`, `toastStack`, `confirmDelete` |
+| 4264–4940 | shared UI: `openModal`, `segmented`, `openAddSheet`, `openAddTask`, `colorPicker`, `openAddHabit`, `relativeTime`, `notificationDropdown`, `toastStack` (+ `TOAST_IN_MS`), `confirmDelete` |
 | 4940–5256 | `ScreenHabits`, `featureOn` / `screenEnabled` / `setFeature`, `saveDigestPrefs`, `saveHomeLayout`, `saveNavLayout` |
 | **5256–5552** | **`SCREENS` registry** — screen id → render fn. Start here to find a screen. |
 | 5552–5575 | `captureScrollPosition` / `restoreScrollPosition` |
@@ -40,7 +40,19 @@ Screen modules are leaves it calls into; they get thin `api` wrapper objects, ne
   is wasteful and can drop their local view state.
 - **The premium skin is CSS-only.** `togglePremium` flips `data-premium` on `<html>` and nothing
   else branches on `state.premium` — keep it that way; the whole look lives in `styles/premium.css`.
-  The one exception is `shakeAuthCard()`, which gates its haptic buzz on it.
+  Even the header seedling ships in the markup on every screen and is shown by CSS. The one
+  exception is `shakeAuthCard()`, which gates its haptic buzz on it.
+- **`buddyReact(mood)` is hooked to `pushToast`, not to call sites.** Every toast in the app —
+  screen modules included, via the late-bound bridge — funnels through `pushToast`, so hooking it
+  there is what keeps the seedling's reactions from drifting out of sync with what actually
+  happened. Add nothing per-feature.
+- **The home greeting is time-aware** (`greetingFor`) and uses `firstName()`. Both are kept short
+  on purpose: `.greet-name` clamps to 2 lines at ~134px, so a long greeting + full name clips.
+- **Toast entrances are age-driven, not identity-driven.** `render()` rebuilds every toast node, and
+  several call sites do `toastSuccess(...); render();` — which replaces the node mid-entrance. So
+  `toastStack` compares `Date.now()` to the toast's `at` and resumes the animation with a negative
+  `animation-delay`; past `TOAST_IN_MS` it stamps `is-settled` and the animation is dropped. Keep
+  `TOAST_IN_MS` in step with `gb-toast-in` in `styles/premium.css`.
 - **`openCustomise` mounts panes twice:** once in the `tabs` array (for the tab bar) and once as a
   child of `.gb-settings-body`. Miss the second and the tab renders empty — that's how the Display
   tab was dead until Aug 2026.

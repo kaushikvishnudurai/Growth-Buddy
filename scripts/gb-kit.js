@@ -529,16 +529,28 @@ const GOOGLE_G_SVG =
   '<path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>';
 
 /* ---- Logo (inline SVG, theme-aware) ---- */
-function Logo({ size = 48, radius = 14 } = {}) {
+/* `alive: true` returns the same mark wired for motion — the seedling in the
+   header that settles, perks up and shakes its head. It's the brand mark, not
+   a second mascot, so the thing you meet on the login screen is the thing that
+   reacts to you all day. Decorative there (the greeting carries the name), so
+   it drops the img role. Motion lives in styles/premium.css. */
+function Logo({ size = 48, radius = 14, alive = false } = {}) {
   const NS = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(NS, 'svg');
   svg.setAttribute('width', String(size));
   svg.setAttribute('height', String(size));
   svg.setAttribute('viewBox', '0 0 64 64');
-  svg.setAttribute('role', 'img');
-  svg.setAttribute('aria-label', 'Growth Buddy');
+  if (alive) {
+    svg.setAttribute('class', 'gb-sprout');
+    svg.setAttribute('aria-hidden', 'true');
+  } else {
+    svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', 'Growth Buddy');
+  }
   svg.style.borderRadius = radius + 'px';
-  svg.style.display = 'block';
+  // The alive variant leaves `display` to CSS — an inline value would outrank
+  // the stylesheet and leak the seedling into the classic skin.
+  if (!alive) svg.style.display = 'block';
   svg.style.flex = 'none';
 
   const make = (tag, attrs) => {
@@ -585,6 +597,9 @@ function AppHeader({
   return h(
     'header',
     { class: 'gb-head' },
+    // Always in the DOM, shown by CSS in premium only — so the skin stays a
+    // stylesheet rather than a JS fork. See styles/premium.css §9.
+    Logo({ size: 38, radius: 12, alive: true }),
     h(
       'div',
       null,
