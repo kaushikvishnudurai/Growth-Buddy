@@ -253,7 +253,6 @@ CREATE TABLE water_entries (
   created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY ix_water_entry_user_date (user_id, log_date),
-  KEY ix_water_entry_user_time (user_id, logged_at),
   CONSTRAINT fk_water_entry_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   CONSTRAINT ck_water_amount_range CHECK (amount_ml BETWEEN 1 AND 5000)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -276,7 +275,6 @@ CREATE TABLE food_entries (
   created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY ix_food_entry_user_date (user_id, log_date),
-  KEY ix_food_entry_user_time (user_id, logged_at),
   CONSTRAINT fk_food_entry_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   CONSTRAINT ck_food_qty_range CHECK (quantity_grams BETWEEN 10 AND 2000),
   CONSTRAINT ck_food_kcal_range CHECK (kcal_estimated BETWEEN 1 AND 5000),

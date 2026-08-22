@@ -26,10 +26,12 @@ spring:
     password: ${DB_PASSWORD:}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
-      # MySQL throughput peaks at a few dozen active connections — a huge pool
-      # just makes the DB slower. Ensure MySQL max_connections comfortably exceeds this.
-      maximum-pool-size: ${DB_POOL_SIZE:40}
-      minimum-idle: 10
+      # Sized for a free/small MySQL tier, where the binding limit is the
+      # server's max_connections (often 20-60 shared) and the RAM each idle
+      # connection holds — not throughput. Raise DB_POOL_SIZE on real hardware;
+      # MySQL max_connections must comfortably exceed it.
+      maximum-pool-size: ${DB_POOL_SIZE:8}
+      minimum-idle: 2
       connection-timeout: 3000   # fail fast instead of a 30s pile-up
       max-lifetime: 600000       # must be < MySQL wait_timeout
       leak-detection-threshold: 30000

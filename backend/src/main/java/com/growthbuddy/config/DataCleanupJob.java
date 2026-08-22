@@ -30,6 +30,9 @@ public class DataCleanupJob {
         total += jdbc.update("DELETE FROM password_reset_tokens WHERE expires_at < NOW()");
         total += jdbc.update("DELETE FROM whatsapp_otp_tokens WHERE expires_at < NOW()");
         total += jdbc.update("DELETE FROM notifications WHERE read_at IS NOT NULL AND read_at < NOW() - INTERVAL 90 DAY");
+        // Dedupe guard only ever reads today's row; older ones are pure ballast.
+        total += jdbc.update(
+                "DELETE FROM reminder_dispatch_log WHERE occurrence_date < CURDATE() - INTERVAL 30 DAY");
         log.info("Data cleanup removed {} expired rows", total);
     }
 }

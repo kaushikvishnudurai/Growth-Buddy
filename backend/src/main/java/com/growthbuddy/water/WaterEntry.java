@@ -15,10 +15,9 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 @Entity
-@Table(name = "water_entries", indexes = {
-        @Index(name = "ix_water_entry_user_date", columnList = "user_id, log_date"),
-        @Index(name = "ix_water_entry_user_time", columnList = "user_id, logged_at")
-})
+// Only (user_id, log_date) is queried; the day's rows are then sorted by
+// logged_at in memory. A (user_id, logged_at) index was dead weight on insert.
+@Table(name = "water_entries", indexes = @Index(name = "ix_water_entry_user_date", columnList = "user_id, log_date"))
 @Getter
 @Setter
 @NoArgsConstructor

@@ -50,6 +50,8 @@ from the browser at signup and editable in Settings; validated on write, default
 - Several columns are MySQL `ENUM`s whose values are matched by **lowercase Java enum constant
   names** (`Cadence`, `HabitDomain`, `MessageRole`, `ReminderTag`, `RepeatFreq`, `NotificationKind`).
   `Priority` is the exception: `'Low','Medium','High'`, capitalized.
-- Append-only tables (`task_completion_history`, `xp_events`, `reminder_dispatch_log`,
-  `focus_sessions`) are trimmed by `config/DataCleanupJob` nightly to stay inside a small hosting
-  quota. Don't start reading old rows from them without revisiting that job.
+- `config/DataCleanupJob` runs nightly to stay inside a small hosting quota, but it only trims rows
+  nothing reads again: expired/revoked `sessions`, spent auth tokens, read `notifications` older than
+  90 days, and `reminder_dispatch_log` older than 30 days. The other append-only tables
+  (`task_completion_history`, `focus_sessions`) are **not** trimmed — they back
+  user-visible history. Add one to the job only once you're sure nothing reads its old rows.
