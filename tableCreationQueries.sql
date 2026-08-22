@@ -765,33 +765,6 @@ CREATE TABLE money_state (
   CONSTRAINT fk_money_state_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- =========================================================
--- GOOGLE CALENDAR LINKS  (v5)
--- One row per user who connected Google Calendar (read-only). Stores the
--- OAuth refresh token; access tokens are minted on demand and never persisted.
--- ddl-auto: update creates this automatically; listed for fresh installs.
--- =========================================================
-CREATE TABLE google_calendar_links (
-  user_id       CHAR(36)   NOT NULL,
-  google_email  VARCHAR(254) NULL,
-  refresh_token VARCHAR(512) NOT NULL,
-  created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (user_id),
-  CONSTRAINT fk_gcal_link_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Google OAuth client for Calendar sync (v5.1): entered once from Settings ->
--- Integrations instead of env vars. Single row (id = 1); GOOGLE_CLIENT_ID /
--- GOOGLE_CLIENT_SECRET env vars remain the fallback when this table is empty.
--- ddl-auto: update creates this automatically; listed for fresh installs.
-CREATE TABLE google_oauth_settings (
-  id            INT          NOT NULL,
-  client_id     VARCHAR(200) NOT NULL,
-  client_secret VARCHAR(200) NOT NULL,
-  updated_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 -- Admin flag (v5.2): gates server-wide settings (e.g. Google OAuth keys).
 -- Granted automatically to the first signup and to ADMIN_EMAIL on sign-in;
 -- grant manually with: UPDATE users SET is_admin = TRUE WHERE email = '...';

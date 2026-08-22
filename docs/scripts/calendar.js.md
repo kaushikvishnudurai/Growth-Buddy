@@ -4,7 +4,7 @@ Exports (~1016): `ScreenCalendar`, `CalendarToolbar`, `MonthGrid`, `ReminderPane
 `resetCalendarForm` (confirm the exact list in the export block).
 
 Shows reminders (with color tags + recurrence), tasks due, completed tasks, goal action dates,
-per-day food, and read-only Google Calendar events. app.js drives month navigation and does
+and per-day food. app.js drives month navigation and does
 **in-place repaints** (`rerenderCalendarMonthInPlace`, `repaintCalendarGrid`,
 `rerenderCalendarToolbarIfActive`, `updateCalendarDaySelection`) instead of a full render.
 
@@ -39,5 +39,5 @@ Day-key helpers: `pad`, `keyOf(y,m,d)`, `parseKey`, `todayKey`, `isFutureKey`, `
 | `ScreenCalendar` | 884 | assembles grid + panel |
 | `CalendarToolbar` | 956 | month nav + counts |
 
-Backend: `/api/reminders` (CRUD, `occurrences`, `day/{date}`), `/api/google/calendar/events`.
+Backend: `/api/reminders` (CRUD, `occurrences`, `day/{date}`).
 Styles: `app.css` §"Calendar screen" (~3010) and §"Delete-scope modal" (~3797).

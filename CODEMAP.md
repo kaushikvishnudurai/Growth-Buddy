@@ -77,7 +77,6 @@ routes (mentor, quick-add, money, food photos). `ApiException` (status + message
 | `/api/notifications` | list, `unread-count`, `{id}/read`, `read-all`, `{id}` DELETE |
 | `/api/push` | `public-key`, `subscribe`, `unsubscribe`, `test` |
 | `/api/reminders` | CRUD, `occurrences`, `day/{date}` |
-| `/api/google/calendar` | `status`, `config` GET/PUT, `connect`, `events`, `callback` (HTML) |
 | `/api/quick-add` | POST — free text ("ran 3km, spent 200 on lunch, slept 7h") → writes across features |
 
 ### Notable services (the ones without their own doc)
@@ -112,9 +111,8 @@ routes (mentor, quick-add, money, food photos). `ApiException` (status + message
 `HabitCheckin` (composite PK habit_id+log_date), `HabitStreak` (cache, recomputed per check-in),
 `StreakFreezeWallet` (1 token/ISO week, cap 2), `DailyLog` (one row per user+day),
 `FamilyMember` (may be unmapped — a profile with no account), `FocusSession` and
-`FoodPhotoLog` (retention-capped), `GoogleOauthSettings` (app-wide client) vs `GoogleCalendarLink`
-(per user), `EmailVerificationToken` / `PasswordResetToken` / `WhatsAppOtpToken` (**bcrypt hash of
-the OTP only, never the code**).
+`FoodPhotoLog` (retention-capped), `EmailVerificationToken` / `PasswordResetToken` /
+`WhatsAppOtpToken` (**bcrypt hash of the OTP only, never the code**).
 
 ---
 
@@ -126,7 +124,7 @@ the OTP only, never the code**).
 | `styles/premium.css` | the **premium skin** (621). Every rule scoped to `html[data-premium='on']` and loaded last, so it overrides tokens and is fully inert when off. Lit canvas on `.gb-app`, glass cards, floating pill nav (`<1024px` only — it's a sidebar above that), circular icon buttons, pill buttons, size-specific tracking. §9 is the signature: the **live seedling** in the header — the brand mark itself, nodding on success and shaking its head on error via `buddyReact()`, which is hooked to `pushToast` so every toast in the app drives it. Shares its refusal rhythm with `@keyframes gb-shake`, the sign-in card's Face-ID-style "no" (`shakeAuthCard()`). §10 gives toasts an entrance they never had (they used to snap in). Toggle: header gem button + Customise → Display → Look. |
 | `vite.config.js` | dev server :5173, proxies `/api` + `/ws` to :8080 **rewriting the Origin header** (the backend's CORS allow-list excludes :5173); `vite-plugin-pwa` for manifest, offline precache, NetworkFirst on API GETs, and it pulls in `public/push-handlers.js`. Target override: `API_PROXY_TARGET`. |
 | `run.sh` | **start the backend with this** — loads `.env`, frees port 8080 |
-| `.env.example` | required env: DB, mail, OpenAI, VAPID, Google OAuth, WhatsApp |
+| `.env.example` | required env: DB, mail, OpenAI, VAPID, WhatsApp |
 | `backend/src/main/resources/application.yml` | Spring config. `ddl-auto: ${SPRING_JPA_DDL_AUTO:update}` and `preferred_uuid_jdbc_type: CHAR` are both load-bearing |
 | `backend/pom.xml`, `backend/README.md`, `backend/mvnw*` | Java build |
 | `package.json` | `dev`, `build`, `preview`, `lint`, `lint:fix`, `format`, `format:check` |
@@ -150,7 +148,7 @@ the OTP only, never the code**).
    straddling midnight would compute rows against different days. `UserZone.of()` parses
    a stored zone and falls back to UTC. Covered by `UserZoneTest` / `UserClockTest`.
 4. **Secrets are never stored in plain form** — OTPs bcrypt-hashed, session tokens HMAC'd, passwords
-   bcrypt, the Google client secret encrypted. Keep it that way.
+   bcrypt. Keep it that way.
 5. **Date keys are `YYYY-MM-DD` strings** on the frontend; ranges are string comparisons.
 6. **Every AI feature must degrade** when `OpenAIClient.isConfigured()` is false — there's a
    heuristic or fallback path for each one. Don't add an AI call without one.

@@ -112,14 +112,6 @@ growthbuddy:
     public-key: ${VAPID_PUBLIC_KEY:}
     private-key: ${VAPID_PRIVATE_KEY:}
     subject: ${VAPID_SUBJECT:mailto:hello@growthbuddy.app}
-  google:
-    # Google Calendar (read-only) OAuth. Create a "Web application" OAuth client
-    # at https://console.cloud.google.com/apis/credentials, enable the Google
-    # Calendar API, and register redirect-uri below. Left empty, the Settings
-    # section reports "not configured" and everything else still works.
-    client-id: ${GOOGLE_CLIENT_ID:}
-    client-secret: ${GOOGLE_CLIENT_SECRET:}
-    redirect-uri: ${GOOGLE_REDIRECT_URI:http://localhost:8080/api/google/calendar/callback}
   whatsapp:
     # Set enabled=true + Meta WhatsApp Cloud API credentials to send reminder messages.
     enabled: ${WHATSAPP_ENABLED:false}

@@ -17,7 +17,6 @@ import {
   DOMAIN,
   Logo,
   CrashCard,
-  GOOGLE_G_SVG,
 } from './gb-kit.js';
 import {
   ScreenDashboard,
@@ -248,9 +247,6 @@ const state = {
   // Flat list so recurring reminders can surface on many days.
   // { id, date:'YYYY-MM-DD', time, text, tag, repeat }
   reminders: [],
-  // Read-only Google Calendar events, reminder-shaped, cached per visible
-  // month ('YYYY-MM' → [{ id, date, time, text, tag:'google', google:true }]).
-  googleEventsByMonth: {},
   // Cached food summaries by day key ('YYYY-MM-DD').
   calendarFoodByDate: {},
   // Per-day fetch errors for food summary panel.
@@ -838,7 +834,6 @@ function handleAuthExpired() {
   state.habits = [];
   state.goals = [];
   state.reminders = [];
-  state.googleEventsByMonth = {};
   state.goals = [];
   state.wellness = emptyWellness();
   state.goalProgress = {};
@@ -936,61 +931,6 @@ async function loadCalendarFoodForDate(dayKey, options) {
   }
 }
 
-/* ---- Google Calendar (read-only) ---- */
-
-/** Reminders plus the cached read-only Google events, for calendar views. */
-function calendarReminders() {
-  const google = Object.values(state.googleEventsByMonth).flat();
-  return google.length ? state.reminders.concat(google) : state.reminders;
-}
-
-/** Refetch a month once its cache is this old, so edits made in Google show up. */
-const GCAL_FRESH_MS = 60 * 1000;
-const gcalFetchedAt = {};
-
-/** Fetch the user's Google events for one month (no-op if not connected). */
-async function loadGoogleEventsForMonth(year, month, opts) {
-  if (!state.user) return;
-  const key = dateKey(year, month, 1).slice(0, 7); // 'YYYY-MM'
-  const fresh = gcalFetchedAt[key] && Date.now() - gcalFetchedAt[key] < GCAL_FRESH_MS;
-  if (fresh && !(opts && opts.force)) return;
-  gcalFetchedAt[key] = Date.now(); // stamp up front so overlapping calls don't double-fetch
-  try {
-    const r = await api('/api/google/calendar/events?month=' + key);
-    if (!r || !r.connected) return;
-    const events = (r.events || []).map((ev) => ({
-      id: 'gcal:' + ev.id,
-      date: ev.date,
-      time: ev.time || '',
-      text: ev.title || '(no title)',
-      tag: 'google',
-      repeat: 'none',
-      google: true,
-    }));
-    // Skip the repaint when nothing changed (refetches happen on every tab focus).
-    if (JSON.stringify(state.googleEventsByMonth[key]) === JSON.stringify(events)) return;
-    state.googleEventsByMonth[key] = events;
-    if (state.screen === 'calendar') {
-      repaintCalendarGrid();
-      rerenderCalendarSideIfActive();
-    } else {
-      rerenderHomeMiniCalendarIfActive();
-    }
-  } catch (_) {
-    delete gcalFetchedAt[key]; // retry on the next trigger
-  }
-}
-
-/**
- * The month grid renders 42 cells, so its first and last rows show days from
- * the neighbouring months — load those too so their dots aren't missing.
- */
-function loadGoogleEventsAroundMonth(year, month) {
-  loadGoogleEventsForMonth(year, month);
-  loadGoogleEventsForMonth(month === 0 ? year - 1 : year, month === 0 ? 11 : month - 1);
-  loadGoogleEventsForMonth(month === 11 ? year + 1 : year, month === 11 ? 0 : month + 1);
-}
-
 /**
  * Replace only the right-hand calendar side panel in place. The form
  * DOM is module-cached inside calendar.js, so the user's in-progress
@@ -1006,7 +946,7 @@ function rerenderCalendarSideIfActive() {
   }
   const newSide = RenderCalendarSide({
     selectedDate: state.selectedDate,
-    reminders: calendarReminders(),
+    reminders: state.reminders,
     tasks: state.tasks,
     goals: state.goals,
     wellness: state.wellness,
@@ -1029,7 +969,7 @@ function rerenderHomeMiniCalendarIfActive() {
   }
   const fresh = RenderMiniCalendarCard({
     tasks: state.tasks,
-    reminders: calendarReminders(),
+    reminders: state.reminders,
     foodSummary: state.calendarFoodByDate[state.selectedDate] || null,
     dayFoodLoading: state.calendarFoodLoadingFor === state.selectedDate,
     dayFoodError: state.calendarFoodErrorByDate[state.selectedDate] || '',
@@ -1181,7 +1121,6 @@ async function loadData() {
       persistWellness();
     }
     loadCalendarFoodForDate(state.selectedDate);
-    loadGoogleEventsForMonth(state.calYear, state.calMonth);
     state.score = todayScore && typeof todayScore.score === 'number' ? todayScore.score : 0;
     state.notifications = notifications || [];
     // Weekly reviews (backend-backed) → { weekStart: {wins,focus,savedAt} } map.
@@ -2384,9 +2323,6 @@ function setScreen(id, opts) {
   state.notifOpen = false;
   state.profileOpen = false;
   state.moreOpen = false;
-  if (id === 'calendar') {
-    loadGoogleEventsAroundMonth(state.calYear, state.calMonth);
-  }
   if (!opts.fromHash) {
     const target = '#/' + id;
     if (window.location.hash !== target) {
@@ -3694,310 +3630,6 @@ function openProfileSettings(initialTab) {
   }
   buildWaSection();
 
-  // ---- Google Calendar integration (read-only) ----
-  // One card, four honest states: needs setup (dashed), ready, waiting for
-  // Google, connected. The four-color G doubles as the status lamp —
-  // greyscale until the sync is live, full color once it is.
-  const gcalBody = h('div', null, h('div', { class: 'gb-field-hint' }, 'Checking…'));
-  let gcalPollTimer = 0;
-
-  function startGcalPoll() {
-    clearTimeout(gcalPollTimer);
-    const poll = async () => {
-      if (!gcalBody.isConnected) return; // settings modal closed
-      try {
-        const s = await api('/api/google/calendar/status');
-        if (s.connected) {
-          state.googleEventsByMonth = {};
-          loadGoogleEventsForMonth(state.calYear, state.calMonth, { force: true });
-          renderGcal(s);
-          toastSuccess('Google Calendar connected.');
-          return;
-        }
-      } catch (_) {
-        /* keep polling */
-      }
-      gcalPollTimer = setTimeout(poll, 2500);
-    };
-    gcalPollTimer = setTimeout(poll, 2500);
-  }
-
-  // mode 'waiting': the consent tab is open, the poll is watching for it to land.
-  function renderGcal(status, mode) {
-    clearTimeout(gcalPollTimer);
-    gcalBody.replaceChildren();
-    const connected = !!(status && status.connected);
-    const configured = !status || status.configured !== false;
-    const waiting = mode === 'waiting';
-
-    const glyph = h('span', { class: 'gb-integration-glyph', 'aria-hidden': 'true' });
-    glyph.innerHTML = GOOGLE_G_SVG;
-    const statusChip = h(
-      'span',
-      {
-        class:
-          'gb-integration-status' + (connected ? ' is-on' : '') + (waiting ? ' is-waiting' : ''),
-      },
-      h('span', { class: 'gb-integration-dot' }),
-      connected
-        ? 'Connected'
-        : waiting
-          ? 'Waiting for Google…'
-          : configured
-            ? 'Not connected'
-            : 'Needs setup'
-    );
-    const body = h('div', { class: 'gb-integration-body' });
-    const card = h(
-      'div',
-      {
-        class:
-          'gb-integration-card' +
-          (connected || waiting ? '' : ' is-off') +
-          (configured ? '' : ' is-setup'),
-      },
-      h(
-        'div',
-        { class: 'gb-integration-head' },
-        glyph,
-        h(
-          'div',
-          { class: 'gb-integration-title' },
-          h('div', { class: 'gb-integration-name' }, 'Google Calendar'),
-          h(
-            'div',
-            { class: 'gb-integration-sub' },
-            connected
-              ? status.email || 'Your Google events show on the calendar.'
-              : 'Shows your Google events. Never changes them.'
-          )
-        ),
-        statusChip
-      ),
-      body
-    );
-    gcalBody.appendChild(card);
-
-    if (connected) {
-      const disconnectBtn = h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-btn gb-btn--ghost gb-btn--compact',
-          onclick: async () => {
-            disconnectBtn.disabled = true;
-            try {
-              await api('/api/google/calendar', { method: 'DELETE' });
-              state.googleEventsByMonth = {};
-              renderGcal({ configured: true, connected: false });
-              toastSuccess('Google Calendar disconnected.');
-            } catch (err) {
-              disconnectBtn.disabled = false;
-              toastError(err, 'Could not disconnect Google Calendar.');
-            }
-          },
-        },
-        'Disconnect'
-      );
-      body.appendChild(h('div', { class: 'gb-integration-actions' }, disconnectBtn));
-    } else if (waiting) {
-      body.appendChild(
-        h(
-          'div',
-          { class: 'gb-field-hint' },
-          'Finish sign-in in the tab that just opened — this updates by itself.'
-        )
-      );
-      body.appendChild(
-        h(
-          'div',
-          { class: 'gb-integration-actions' },
-          h(
-            'button',
-            {
-              type: 'button',
-              class: 'gb-btn gb-btn--ghost gb-btn--compact',
-              onclick: () => renderGcal({ configured: true, connected: false }),
-            },
-            'Cancel'
-          )
-        )
-      );
-      startGcalPoll();
-    } else if (!configured && !(state.user && state.user.isAdmin)) {
-      // Only the app admin holds the keys — everyone else gets a plain answer.
-      body.appendChild(
-        h(
-          'div',
-          { class: 'gb-field-hint' },
-          'Google Calendar sync isn’t switched on yet. The app owner can turn it on from their Settings.'
-        )
-      );
-    } else if (!configured) {
-      // No Google OAuth client yet — guided one-time setup, right in the card.
-      const clientIdInput = h('input', {
-        type: 'text',
-        class: 'gb-input',
-        placeholder: 'ends with .apps.googleusercontent.com',
-        autocomplete: 'off',
-        spellcheck: 'false',
-      });
-      const secretInput = h('input', {
-        type: 'password',
-        class: 'gb-input',
-        placeholder: 'starts with GOCSPX-',
-        autocomplete: 'new-password',
-      });
-      const uriCode = h('code', null, 'Loading…');
-      const copyBtn = h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-btn gb-btn--ghost gb-btn--compact',
-          onclick: async () => {
-            try {
-              await navigator.clipboard.writeText(uriCode.textContent);
-              copyBtn.textContent = 'Copied';
-              setTimeout(() => (copyBtn.textContent = 'Copy'), 1600);
-            } catch (_) {
-              toastError(new Error('Copy failed — select the text and copy it by hand.'));
-            }
-          },
-        },
-        'Copy'
-      );
-      const saveBtn = h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-btn gb-btn--primary',
-          style: { marginTop: '12px' },
-          onclick: async () => {
-            const clientId = clientIdInput.value.trim();
-            const clientSecret = secretInput.value.trim();
-            if (!clientId || !clientSecret) {
-              (clientId ? secretInput : clientIdInput).focus();
-              toastError(new Error('Paste both keys from Google first.'));
-              return;
-            }
-            saveBtn.disabled = true;
-            saveBtn.textContent = 'Saving…';
-            try {
-              await api('/api/google/calendar/config', {
-                method: 'PUT',
-                body: JSON.stringify({ clientId, clientSecret }),
-              });
-              toastSuccess('Switched on. Anyone can connect now.');
-              renderGcal({ configured: true, connected: false });
-            } catch (err) {
-              saveBtn.disabled = false;
-              saveBtn.textContent = 'Save & switch on';
-              toastError(err, 'Could not save the Google keys.');
-            }
-          },
-        },
-        'Save & switch on'
-      );
-      api('/api/google/calendar/config')
-        .then((c) => {
-          uriCode.textContent = c.redirectUri || '';
-          if (c.clientId) clientIdInput.value = c.clientId;
-        })
-        .catch(() => {
-          uriCode.textContent = 'Could not load — is the server running?';
-        });
-      body.appendChild(
-        h(
-          'div',
-          null,
-          h(
-            'div',
-            { class: 'gb-field-hint', style: { marginBottom: '10px' } },
-            'One-time setup by the app owner. After this, everyone just taps Connect.'
-          ),
-          h(
-            'ol',
-            { class: 'gb-gcal-steps' },
-            h('li', null, 'At console.cloud.google.com, enable the “Google Calendar API”.'),
-            h(
-              'li',
-              null,
-              'In “Credentials”, create an OAuth client ID (Web application) and add this redirect URI:',
-              h('span', { class: 'gb-gcal-uri' }, uriCode, copyBtn)
-            ),
-            h('li', null, 'Paste the two keys Google gives you:')
-          ),
-          h('div', { class: 'gb-field-label' }, 'Client ID'),
-          clientIdInput,
-          h('div', { class: 'gb-field-label' }, 'Client secret'),
-          secretInput,
-          saveBtn
-        )
-      );
-    } else {
-      const connectBtn = h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-btn gb-btn--primary',
-          onclick: async () => {
-            connectBtn.disabled = true;
-            try {
-              const r = await api('/api/google/calendar/connect', { method: 'POST' });
-              // Google refuses OAuth inside a WebView, so the Capacitor app must
-              // hand the consent page to the system browser (Custom Tab / Safari VC).
-              const capBrowser =
-                window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser;
-              if (capBrowser) {
-                capBrowser.open({ url: r.url });
-              } else {
-                window.open(r.url, '_blank', 'noopener');
-              }
-              renderGcal({ configured: true, connected: false }, 'waiting');
-            } catch (err) {
-              connectBtn.disabled = false;
-              toastError(err, 'Could not reach Google. Try again.');
-            }
-          },
-        },
-        'Connect Google Calendar'
-      );
-      body.appendChild(
-        h(
-          'div',
-          { class: 'gb-integration-actions' },
-          connectBtn,
-          state.user && state.user.isAdmin
-            ? h(
-                'button',
-                {
-                  type: 'button',
-                  class: 'gb-btn gb-btn--ghost gb-btn--compact',
-                  onclick: () => renderGcal({ configured: false, connected: false }),
-                },
-                'Change keys'
-              )
-            : null
-        )
-      );
-      body.appendChild(
-        h(
-          'div',
-          { class: 'gb-field-hint', style: { marginTop: '8px' } },
-          'Takes ~15 seconds: choose your account, tap Allow.'
-        )
-      );
-    }
-    refreshIcons();
-  }
-  api('/api/google/calendar/status')
-    .then(renderGcal)
-    .catch(() => {
-      gcalBody.replaceChildren(
-        h('div', { class: 'gb-field-hint' }, 'Could not check Google Calendar status.')
-      );
-    });
-
   // ---- Avatar header ----
   const initials = (u.displayName || u.email || 'B')[0].toUpperCase();
 
@@ -4243,54 +3875,6 @@ function openProfileSettings(initialTab) {
       Icon('log-out', { size: 16 }),
       'Sign out'
     ),
-    h(
-      'div',
-      {
-        class: 'gb-settings-sec-label',
-        style: { marginTop: '20px', display: 'flex', alignItems: 'center', gap: '4px' },
-      },
-      'Integrations',
-      h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-iconbtn',
-          style: { width: '26px', height: '26px', boxShadow: 'none' },
-          'aria-label': 'What is Google Calendar sync?',
-          onclick: () =>
-            openModal({
-              title: 'Google Calendar sync',
-              body: h(
-                'div',
-                { class: 'gb-settings-pane' },
-                h(
-                  'div',
-                  { class: 'gb-field-hint', style: { marginBottom: '10px' } },
-                  'Your Google Calendar events show up inside Growth Buddy — everything in one place.'
-                ),
-                h('div', { class: 'gb-field-label' }, 'Turn it on'),
-                h(
-                  'ol',
-                  { class: 'gb-gcal-steps', style: { marginBottom: '10px' } },
-                  h('li', null, 'Tap “Connect Google Calendar”.'),
-                  h('li', null, 'Choose your Google account.'),
-                  h('li', null, 'Tap “Allow”.')
-                ),
-                h('div', { class: 'gb-field-label' }, 'Is it safe?'),
-                h(
-                  'div',
-                  { class: 'gb-field-hint' },
-                  'Yes — Growth Buddy can only read your events, never change them. Tap “Disconnect” any time.'
-                )
-              ),
-              primary: 'Got it',
-              onPrimary: () => {},
-            }),
-        },
-        Icon('info', { size: 15 })
-      )
-    ),
-    gcalBody,
     h('div', { class: 'gb-settings-sec-label', style: { marginTop: '20px' } }, 'Danger zone'),
     h(
       'div',
@@ -4438,7 +4022,7 @@ function rerenderCalendarToolbarIfActive() {
   const fresh = RenderCalendarToolbar({
     year: state.calYear,
     month: state.calMonth,
-    reminders: calendarReminders(),
+    reminders: state.reminders,
     tasks: state.tasks,
     onPrevMonth: calPrevMonth,
     onNextMonth: calNextMonth,
@@ -4455,7 +4039,6 @@ function rerenderCalendarMonthInPlace() {
   repaintCalendarGrid();
   rerenderCalendarSideIfActive();
   loadCalendarFoodForDate(state.selectedDate);
-  loadGoogleEventsAroundMonth(state.calYear, state.calMonth);
   if (!updated) render();
 }
 
@@ -4507,7 +4090,6 @@ function calToday() {
     render();
   }
   loadCalendarFoodForDate(state.selectedDate);
-  loadGoogleEventsForMonth(state.calYear, state.calMonth);
 }
 
 /**
@@ -4581,7 +4163,7 @@ function repaintCalendarGrid() {
     year: state.calYear,
     month: state.calMonth,
     selectedDate: state.selectedDate,
-    reminders: calendarReminders(),
+    reminders: state.reminders,
     onSelectDate: selectDate,
   });
   grid.replaceWith(fresh);
@@ -5649,7 +5231,7 @@ const SCREENS = {
         features: (state.user && state.user.features) || null,
         tasks: state.tasks,
         toggleTask,
-        reminders: calendarReminders(),
+        reminders: state.reminders,
         habits: state.habits,
         toggleHabit,
         score: score(),
@@ -5753,7 +5335,7 @@ const SCREENS = {
         year: state.calYear,
         month: state.calMonth,
         selectedDate: state.selectedDate,
-        reminders: calendarReminders(),
+        reminders: state.reminders,
         tasks: state.tasks,
         goals: state.goals,
         wellness: state.wellness,
@@ -6467,7 +6049,6 @@ function logout() {
   state.tasks = [];
   state.habits = [];
   state.reminders = [];
-  state.googleEventsByMonth = {};
   state.quote = null;
   state.score = 0;
   state.error = '';
@@ -6743,15 +6324,3 @@ render();
 window.addEventListener('load', refreshIcons);
 window.addEventListener('online', handleOnline);
 window.addEventListener('offline', handleOffline);
-// Coming back from another tab (often Google Calendar itself) — pull fresh
-// events. The visibilitychange twin covers the mobile WebView, where returning
-// from the system browser or app switcher doesn't fire window focus.
-function refreshGoogleEventsOnReturn() {
-  if (state.user) {
-    loadGoogleEventsForMonth(state.calYear, state.calMonth, { force: true });
-  }
-}
-window.addEventListener('focus', refreshGoogleEventsOnReturn);
-document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) refreshGoogleEventsOnReturn();
-});

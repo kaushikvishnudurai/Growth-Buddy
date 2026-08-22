@@ -14,7 +14,7 @@ Screen modules are leaves it calls into; they get thin `api` wrapper objects, ne
 | 413–560 | streak freeze: `emptyStreakFreeze`, `loadStreakFreeze`, `reconcileStreakFreeze`, `effectiveStreak`, `habitFreezeState`, `freezeTokensLeft`, `protectStreak`, `declineStreakBreak`, `toggleRestDay`. Backend owns the tokens; this only reads fields + calls protect/unprotect. Achievements: `achievementProps`, `checkAchievements` (fires `celebrate()` on first unlock) |
 | 559–625 | local trends: `emptyTrends`, `loadTrends`, `persistTrends`, `recordTrendsToday` |
 | 625–740 | `clearSession`, `syncUserSession`, **`api(path, options)` / `apiFetch`** — the single network chokepoint — `handleAuthExpired` |
-| 744–935 | `mapTask`, `formatTaskTime`, `cacheFoodSummary`, `loadCalendarFoodForDate`, `calendarReminders`, `loadGoogleEventsForMonth` / `…AroundMonth`, in-place repaints (`rerenderCalendarSideIfActive`, `rerenderHomeMiniCalendarIfActive`, `updateCalendarDaySelection`) |
+| 744–935 | `mapTask`, `formatTaskTime`, `cacheFoodSummary`, `loadCalendarFoodForDate`, in-place repaints (`rerenderCalendarSideIfActive`, `rerenderHomeMiniCalendarIfActive`, `updateCalendarDaySelection`) |
 | 934–1140 | `resetStaleCompletedTasks`, **`loadData()`** (boot fetch fan-out), `connectWebSocket` / `disconnectWebSocket` |
 | 1140–1470 | mutations: `toggleTask`, `toggleHabit`, `refreshScore`, `refreshCurrentUser`, `createTask`, `createHabit`, `createGoal`, goal actions CRUD, `deleteHabit`, `quickAddWater`, `updateWaterGoal`, `logFoodEntry`, `saveSleepEntry`, `saveMoodEntry`, `addQuickExpense`, **`runQuickAdd(text)`**, `rememberPhotoFood` |
 | 1481–2010 | modals: `openSleepSchedule`, `openMoodCheckin`, `openDailyPlan`, `openAddFood`, `addSuggestedReminder`, `deleteWaterEntry`, `deleteFoodEntry` |
@@ -26,7 +26,7 @@ Screen modules are leaves it calls into; they get thin `api` wrapper objects, ne
 | **5256–5552** | **`SCREENS` registry** — screen id → render fn. Start here to find a screen. |
 | 5552–5575 | `captureScrollPosition` / `restoreScrollPosition` |
 | 5576–6040 | auth: `authPost`, `loadAuthDraft`, `setAuthMode`, `authShell`, `runAuth`, `shakeAuthCard`, `viewSignin`, `viewSignup`, `viewVerify` (OTP), `viewForgot`, `viewReset`, `loginCard` |
-| 6043–6336 | `logout`, `loadingSplash`, `offlineBanner`, `weeklyReviewNudge`, `handleOnline`/`handleOffline`, **`render()`** (~6143), `installOutsideClickToCloseHeaderPopovers`, `refreshGoogleEventsOnReturn` |
+| 6043–6336 | `logout`, `loadingSplash`, `offlineBanner`, `weeklyReviewNudge`, `handleOnline`/`handleOffline`, **`render()`** (~6143), `installOutsideClickToCloseHeaderPopovers` |
 
 ## Rules when editing
 

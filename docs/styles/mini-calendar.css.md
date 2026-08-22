@@ -15,6 +15,6 @@ Class map — all `gb-mini-cal-*`:
 | states | `-empty`, `-empty--loading`, `-empty--error`, `-retry` |
 | legend | `-legend`, `-legend-item` |
 
-The `--loading` / `--error` / `-retry` states exist because the card fetches per-day food and Google
-Calendar events asynchronously (`loadCalendarFoodForDate`, `loadGoogleEventsForMonth`) and must show
+The `--loading` / `--error` / `-retry` states exist because the card fetches per-day food
+asynchronously (`loadCalendarFoodForDate`) and must show
 a retry affordance rather than an empty day.

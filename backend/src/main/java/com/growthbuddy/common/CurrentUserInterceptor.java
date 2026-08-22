@@ -32,10 +32,7 @@ public class CurrentUserInterceptor implements HandlerInterceptor {
             "/api/auth/resend-verification",
             "/api/auth/forgot-password",
             "/api/auth/reset-password",
-            "/api/auth/logout", // idempotent: works without a session too
-            // Google's browser redirect after calendar consent; carries no bearer
-            // token — the user is identified by the short-lived `state` param.
-            "/api/google/calendar/callback"
+            "/api/auth/logout" // idempotent: works without a session too
     );
 
     private final SessionService sessions;

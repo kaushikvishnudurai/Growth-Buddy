@@ -29,7 +29,6 @@ open — don't go looking for a doc that isn't in this list.
 | auth, sessions, user settings | `docs/backend/AuthService.java.md` | 754 |
 | habits, streaks, freeze tokens | `docs/backend/HabitService.java.md` | 546 |
 | food logging, photo estimates | `docs/backend/FoodService.java.md` | 481 |
-| Google Calendar sync | `docs/backend/GoogleCalendarService.java.md` | 393 |
 | the DB schema | `docs/tableCreationQueries.sql.md` | 801 |
 
 **[CODEMAP.md](CODEMAP.md)** covers everything else in one pass: every small frontend module, every
@@ -44,7 +43,7 @@ fix the doc line if it was wrong. A doc you touch and don't update is worse than
 - Backend: **`./run.sh`** (loads `.env`, frees port 8080). Bare `mvnw spring-boot:run` breaks OTP email.
 - Frontend: `npm run dev` (:5173, proxies `/api` + `/ws` to :8080). `npm run lint` before committing.
 - Checks that exist: `node scripts/insights.test.mjs`, `money.js` `_demo()` on Vite DEV,
-  `GoogleCalendarEventParsingTest`.
+  `WellnessServiceTest`, `UserClockTest`.
 - After web changes, the Capacitor app needs `npm run sync` in `../Growth-Buddy-Mobile`.
 - `grep 'ponytail:'` for deliberate simplifications and their upgrade paths.
 - New icon → add it to `scripts/icons.js`. New screen → `SCREENS` in `app.js` (+ `NAV_CATALOG` in
