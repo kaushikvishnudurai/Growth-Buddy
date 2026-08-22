@@ -27,7 +27,7 @@ CREATE TABLE users (
   avatar_url      TEXT,
   timezone        VARCHAR(64)  NOT NULL DEFAULT 'UTC',
   dob             DATE         NULL,
-  level           INT          NOT NULL DEFAULT 1,        -- derived from xp_events, cached
+  level           INT          NOT NULL DEFAULT 1,        -- cached XP level
   xp_total       INT          NOT NULL DEFAULT 0,        -- derived, cached
   digest_frequency VARCHAR(16) NOT NULL DEFAULT 'off',    -- off | daily | weekly progress digest
   digest_hour     INT          NOT NULL DEFAULT 8,        -- local hour (0-23) to send the digest
@@ -41,29 +41,7 @@ CREATE TABLE users (
   UNIQUE KEY uq_users_email (email)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE user_preferences (
-  user_id         CHAR(36)     NOT NULL,
-  theme           ENUM('light','dark') NOT NULL DEFAULT 'light',
-  daily_reminder  TIME         NULL,
-  notifications   JSON         NOT NULL,
-  PRIMARY KEY (user_id),
-  CONSTRAINT fk_user_prefs_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- =========================================================
--- AUTH
--- =========================================================
-CREATE TABLE auth_identities (
-  id               CHAR(36)     NOT NULL,
-  user_id          CHAR(36)     NOT NULL,
-  provider         ENUM('password','google','apple','github') NOT NULL,
-  provider_user_id VARCHAR(255) NOT NULL,                 -- 'sub' from OIDC, or email for password
-  created_at       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  UNIQUE KEY uq_auth_identity (provider, provider_user_id),
-  KEY ix_auth_identity_user (user_id),
-  CONSTRAINT fk_auth_identity_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE password_credentials (
   user_id          CHAR(36)     NOT NULL,
@@ -111,44 +89,11 @@ CREATE TABLE password_reset_tokens (
   CONSTRAINT fk_prt_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- =========================================================
--- TASKS  (+ recurrence)
--- =========================================================
--- A recurring task is a template; instances live in `tasks` with `template_id` set.
-CREATE TABLE task_templates (
-  id              CHAR(36)     NOT NULL,
-  user_id         CHAR(36)     NOT NULL,
-  title           VARCHAR(255) NOT NULL,
-  notes           TEXT,
-  priority        ENUM('Low','Medium','High') NOT NULL DEFAULT 'Medium',
-  default_time    TIME         NULL,                      -- e.g. 21:00 for "9:00 PM"
-  active          BOOLEAN      NOT NULL DEFAULT TRUE,
-  created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  deleted_at      TIMESTAMP    NULL,
-  PRIMARY KEY (id),
-  KEY ix_task_template_user (user_id),
-  CONSTRAINT fk_task_template_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE recurrences (
-  id              CHAR(36)     NOT NULL,
-  owner_type      ENUM('task_template','habit') NOT NULL,
-  owner_id        CHAR(36)     NOT NULL,
-  freq            ENUM('daily','weekly','monthly','yearly') NOT NULL,
-  `interval`      INT          NOT NULL DEFAULT 1,        -- every N units; backticked (reserved word)
-  by_weekday      JSON         NULL,                      -- e.g. [1,3,5]  (0=Sun..6=Sat)
-  by_month_day    JSON         NULL,                      -- e.g. [1,15]
-  start_date      DATE         NOT NULL,
-  end_date        DATE         NULL,
-  occurrence_cap  INT          NULL,                      -- optional max occurrences (was "count")
-  PRIMARY KEY (id),
-  UNIQUE KEY uq_recurrence_owner (owner_type, owner_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE tasks (
   id              CHAR(36)     NOT NULL,
   user_id         CHAR(36)     NOT NULL,
-  template_id     CHAR(36)     NULL,
   title           VARCHAR(255) NOT NULL,
   notes           TEXT,
   priority        ENUM('Low','Medium','High') NOT NULL DEFAULT 'Medium',
@@ -161,9 +106,7 @@ CREATE TABLE tasks (
   PRIMARY KEY (id),
   KEY ix_tasks_user_due (user_id, due_at),
   KEY ix_tasks_user_done (user_id, done),
-  KEY ix_tasks_template (template_id),
-  CONSTRAINT fk_tasks_user     FOREIGN KEY (user_id)     REFERENCES users(id) ON DELETE CASCADE,
-  CONSTRAINT fk_tasks_template FOREIGN KEY (template_id) REFERENCES task_templates(id) ON DELETE SET NULL
+  CONSTRAINT fk_tasks_user     FOREIGN KEY (user_id)     REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE task_completion_history (
@@ -180,7 +123,7 @@ CREATE TABLE task_completion_history (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =========================================================
--- HABITS  (recurrence lives in `recurrences` with owner_type='habit')
+-- HABITS  (recurrence is a column on the habit itself)
 -- =========================================================
 CREATE TABLE habits (
   id              CHAR(36)     NOT NULL,
@@ -332,66 +275,9 @@ CREATE TABLE goal_actions (
   CONSTRAINT fk_goal_action_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE gratitude_entries (
-  id              CHAR(36)    NOT NULL,
-  user_id         CHAR(36)    NOT NULL,
-  note            VARCHAR(1000) NOT NULL,
-  entry_date      DATE          NOT NULL,
-  created_at      TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at      TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  KEY ix_gratitude_user_date (user_id, entry_date),
-  CONSTRAINT fk_gratitude_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- =========================================================
--- FITNESS / WORKOUTS
--- =========================================================
-CREATE TABLE workouts (
-  id              CHAR(36)     NOT NULL,
-  user_id         CHAR(36)     NOT NULL,
-  title           VARCHAR(255) NOT NULL,
-  scheduled_for   DATE         NOT NULL,
-  duration_min    INT          NULL,
-  progress_pct    INT          NOT NULL DEFAULT 0,
-  completed_at    TIMESTAMP    NULL,
-  created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  deleted_at      TIMESTAMP    NULL,
-  PRIMARY KEY (id),
-  KEY ix_workouts_user_date (user_id, scheduled_for),
-  CONSTRAINT fk_workouts_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-  CONSTRAINT ck_workouts_progress CHECK (progress_pct BETWEEN 0 AND 100)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE workout_exercises (
-  id              CHAR(36)     NOT NULL,
-  workout_id      CHAR(36)     NOT NULL,
-  name            VARCHAR(120) NOT NULL,
-  sets            INT          NULL,
-  reps            INT          NULL,
-  weight_kg       DECIMAL(6,2) NULL,
-  position        INT          NOT NULL,
-  PRIMARY KEY (id),
-  KEY ix_workout_exercise_workout (workout_id),
-  CONSTRAINT fk_workout_exercise_workout FOREIGN KEY (workout_id) REFERENCES workouts(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- =========================================================
--- JOURNAL
--- =========================================================
-CREATE TABLE journal_entries (
-  id              CHAR(36)     NOT NULL,
-  user_id         CHAR(36)     NOT NULL,
-  entry_date      DATE         NOT NULL,
-  mood            TINYINT      NULL,
-  body            TEXT         NOT NULL,
-  created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  deleted_at      TIMESTAMP    NULL,
-  PRIMARY KEY (id),
-  UNIQUE KEY uq_journal_user_date (user_id, entry_date),
-  CONSTRAINT fk_journal_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-  CONSTRAINT ck_journal_mood CHECK (mood IS NULL OR mood BETWEEN 1 AND 5)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =========================================================
 -- DAILY SCORE
@@ -521,64 +407,8 @@ CREATE TABLE circle_challenges (
   CONSTRAINT fk_circle_challenge_user   FOREIGN KEY (created_by) REFERENCES users(id)  ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- =========================================================
--- REMINDERS / PUSH
--- =========================================================
-CREATE TABLE device_tokens (
-  id              CHAR(36)     NOT NULL,
-  user_id         CHAR(36)     NOT NULL,
-  platform        ENUM('ios','android','web') NOT NULL,
-  token           VARCHAR(512) NOT NULL,
-  last_seen_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  revoked_at      TIMESTAMP    NULL,
-  PRIMARY KEY (id),
-  UNIQUE KEY uq_device_token (platform, token),
-  KEY ix_device_token_user (user_id),
-  CONSTRAINT fk_device_token_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE reminders (
-  id              CHAR(36)     NOT NULL,
-  user_id         CHAR(36)     NOT NULL,
-  entity_type     ENUM('task','habit','workout','journal','custom') NOT NULL,
-  entity_id       CHAR(36)     NULL,                       -- nullable for 'custom'
-  title           VARCHAR(255) NOT NULL,
-  body            TEXT         NULL,
-  fire_at         TIMESTAMP    NOT NULL,
-  status          ENUM('pending','sent','failed','cancelled') NOT NULL DEFAULT 'pending',
-  sent_at         TIMESTAMP    NULL,
-  error           TEXT         NULL,
-  created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  KEY ix_reminders_status_fire (status, fire_at),
-  KEY ix_reminders_user_fire (user_id, fire_at),
-  CONSTRAINT fk_reminders_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- =========================================================
--- XP EVENTS  (append-only ledger; users.xp_total/level are caches)
--- =========================================================
-CREATE TABLE xp_events (
-  id              CHAR(36)    NOT NULL,
-  user_id         CHAR(36)  NOT NULL,
-  source          ENUM(
-                    'task_done','habit_checkin','habit_streak_bonus',
-                    'workout_done','journal_entry','circle_post','achievement','admin_adjust'
-                  ) NOT NULL,
-  delta           INT       NOT NULL,                      -- positive or negative
-  ref_type        VARCHAR(32) NULL,                        -- e.g. 'task','habit','workout'
-  ref_id          CHAR(36)  NULL,
-  occurred_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  metadata        JSON      NOT NULL,
-  PRIMARY KEY (id),
-  KEY ix_xp_user_time (user_id, occurred_at),
-  KEY ix_xp_ref (ref_type, ref_id),
-  -- Idempotency: prevent double-awarding XP for the same action.
-  -- NULL ref_id rows are allowed to repeat (MySQL treats NULLs as distinct in UNIQUE).
-  UNIQUE KEY uq_xp_award (user_id, source, ref_type, ref_id),
-  CONSTRAINT fk_xp_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =====================================================================
 -- v2 additions: customisable habits, notifications bell, mentorship invites

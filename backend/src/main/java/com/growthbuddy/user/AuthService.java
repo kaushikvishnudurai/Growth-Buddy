@@ -283,28 +283,25 @@ public class AuthService {
         // Children keyed by a parent id → delete via the user's parent rows first.
         String[][] childDeletes = {
             {"habit_streaks", "habit_id", "habits"},
-            {"workout_exercises", "workout_id", "workouts"},
             {"mentor_messages", "thread_id", "mentor_threads"},
             {"calendar_reminder_skips", "reminder_id", "calendar_reminders"},
             {"reminder_dispatch_log", "reminder_id", "calendar_reminders"},
         };
         // Tables owning a direct user_id column.
         String[] userTables = {
-            "user_preferences", "auth_identities", "password_credentials",
+            "password_credentials",
             "email_verification_tokens", "password_reset_tokens", "whatsapp_otp_tokens",
-            "task_templates", "task_completion_history", "tasks",
+            "task_completion_history", "tasks",
             "habit_checkins", "habits", "streak_freeze_wallets",
             "water_entries", "water_goals", "food_entries", "food_photo_logs",
-            "goal_actions", "goals", "gratitude_entries", "journal_entries",
-            "workouts", "daily_scores", "daily_logs",
+            "goal_actions", "goals", "daily_scores", "daily_logs",
             "mentor_threads", "circle_members", "circle_posts",
-            "device_tokens", "push_subscriptions", "xp_events", "notifications",
-            "money_state", "reminders", "calendar_reminders", "sessions",
+            "push_subscriptions", "notifications",
+            "money_state", "calendar_reminders", "sessions",
         };
-        // Only touch tables that actually exist — the schema file lists some tables
-        // that were never created (no JPA entity), and a DELETE against a missing
-        // table throws a SQLException, which marks the whole transaction
-        // rollback-only and aborts the purge.
+        // Kept as a guard even though every table above now exists: a DELETE against
+        // a missing table throws, which marks the whole transaction rollback-only and
+        // aborts the purge — so a future rename fails safe instead of half-deleting.
         java.util.Set<String> existing = existingTables();
 
         exec("SET FOREIGN_KEY_CHECKS=0", null);
