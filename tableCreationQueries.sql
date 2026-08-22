@@ -22,7 +22,6 @@ CREATE TABLE users (
   id              CHAR(36)     NOT NULL,
   email           VARCHAR(254) NOT NULL,
   email_verified  BOOLEAN      NOT NULL DEFAULT FALSE,
-  is_admin        BOOLEAN      NOT NULL DEFAULT FALSE,  -- gates server-wide settings
   display_name    VARCHAR(120) NOT NULL,
   avatar_url      TEXT,
   timezone        VARCHAR(64)  NOT NULL DEFAULT 'UTC',
@@ -594,12 +593,6 @@ CREATE TABLE money_state (
   PRIMARY KEY (user_id),
   CONSTRAINT fk_money_state_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Admin flag (v5.2): gates server-wide settings (e.g. Google OAuth keys).
--- Granted automatically to the first signup and to ADMIN_EMAIL on sign-in;
--- grant manually with: UPDATE users SET is_admin = TRUE WHERE email = '...';
--- ddl-auto: update adds this automatically; listed for existing installs.
-ALTER TABLE users ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT FALSE AFTER email_verified;
 
 -- =========================================================
 -- TABLES CAPTURED FROM THE LIVE DB  (v6)
