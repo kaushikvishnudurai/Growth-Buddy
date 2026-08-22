@@ -600,3 +600,154 @@ CREATE TABLE money_state (
 -- grant manually with: UPDATE users SET is_admin = TRUE WHERE email = '...';
 -- ddl-auto: update adds this automatically; listed for existing installs.
 ALTER TABLE users ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT FALSE AFTER email_verified;
+
+-- =========================================================
+-- TABLES CAPTURED FROM THE LIVE DB  (v6)
+-- These were created by Hibernate ddl-auto and never written down here,
+-- so a fresh install from this file was missing them (fatal under
+-- SPRING_JPA_DDL_AUTO=validate). Pasted verbatim from SHOW CREATE TABLE,
+-- which is why the style differs from the hand-written sections above:
+-- ddl-auto emits no FK to users(id) and collates utf8mb4_0900_ai_ci.
+-- Match a section above if you ever normalise them.
+-- =========================================================
+CREATE TABLE `calendar_reminders` (
+  `id` varchar(36) NOT NULL,
+  `anchor_date` date NOT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `from_date` date DEFAULT NULL,
+  `repeat_freq` varchar(16) NOT NULL,
+  `tag` varchar(16) NOT NULL,
+  `text` varchar(255) NOT NULL,
+  `time_of_day` time(6) DEFAULT NULL,
+  `until_date` date DEFAULT NULL,
+  `user_id` char(36) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `ix_cal_rem_user_date` (`user_id`,`anchor_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+;
+
+CREATE TABLE `calendar_reminder_skips` (
+  `reminder_id` varchar(36) NOT NULL,
+  `skip_date` date NOT NULL,
+  PRIMARY KEY (`reminder_id`,`skip_date`),
+  CONSTRAINT `FK3fhfwht79vx2f490y2wxnsaeb` FOREIGN KEY (`reminder_id`) REFERENCES `calendar_reminders` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+;
+
+CREATE TABLE `reminder_dispatch_log` (
+  `id` char(36) NOT NULL,
+  `channel` varchar(16) NOT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `error_message` varchar(255) DEFAULT NULL,
+  `occurrence_date` date NOT NULL,
+  `reminder_id` char(36) NOT NULL,
+  `status` varchar(16) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `ux_rem_dispatch_unique` (`reminder_id`,`occurrence_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+;
+
+CREATE TABLE `push_subscriptions` (
+  `id` char(36) NOT NULL,
+  `auth` varchar(255) NOT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `endpoint` text NOT NULL,
+  `p256dh` varchar(255) NOT NULL,
+  `user_id` char(36) NOT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+;
+
+CREATE TABLE `focus_sessions` (
+  `id` char(36) NOT NULL,
+  `completed_at` datetime(6) NOT NULL,
+  `duration_sec` int NOT NULL,
+  `mode` varchar(16) NOT NULL,
+  `user_id` char(36) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `ix_focus_user_time` (`user_id`,`completed_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+;
+
+CREATE TABLE `weekly_reviews` (
+  `id` char(36) NOT NULL,
+  `focus` varchar(255) DEFAULT NULL,
+  `saved_at` datetime(6) NOT NULL,
+  `user_id` char(36) NOT NULL,
+  `week_start` date NOT NULL,
+  `wins` text,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `UKkehyqqd8f9e6ogi8aqmd1s3xa` (`user_id`,`week_start`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+;
+
+CREATE TABLE `family_dish_preferences` (
+  `id` char(36) NOT NULL,
+  `dish_name` varchar(160) NOT NULL,
+  `family_id` char(36) NOT NULL,
+  `last_seen` datetime(6) NOT NULL,
+  `score` int NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_family_dish` (`family_id`,`dish_name`),
+  KEY `ix_family_dish_family` (`family_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+;
+
+CREATE TABLE `family_pantry_items` (
+  `id` char(36) NOT NULL,
+  `category` varchar(32) DEFAULT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `deleted_at` datetime(6) DEFAULT NULL,
+  `expiry_date` date DEFAULT NULL,
+  `family_id` char(36) NOT NULL,
+  `is_leftover` bit(1) NOT NULL,
+  `name` varchar(120) NOT NULL,
+  `quantity` varchar(60) DEFAULT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `ix_family_pantry_family` (`family_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+;
+
+CREATE TABLE `family_shopping_items` (
+  `id` char(36) NOT NULL,
+  `checked` bit(1) NOT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `created_by_user_id` char(36) NOT NULL,
+  `estimated_cost` int DEFAULT NULL,
+  `family_id` char(36) NOT NULL,
+  `name` varchar(120) NOT NULL,
+  `quantity` varchar(60) DEFAULT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `ix_family_shopping_family` (`family_id`,`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+;
+
+CREATE TABLE `family_favourite_menus` (
+  `id` char(36) NOT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `created_by_user_id` char(36) NOT NULL,
+  `family_id` char(36) NOT NULL,
+  `name` varchar(120) NOT NULL,
+  `occasion` varchar(16) DEFAULT NULL,
+  `plan_json` text NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `ix_family_fav_family` (`family_id`,`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+;
+
+CREATE TABLE `family_multi_day_plans` (
+  `id` char(36) NOT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `days` int NOT NULL,
+  `family_id` char(36) NOT NULL,
+  `generated_by_user_id` char(36) NOT NULL,
+  `occasion` varchar(16) DEFAULT NULL,
+  `plan_json` text NOT NULL,
+  `source` varchar(24) DEFAULT NULL,
+  `start_date` date DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `ix_family_multiday_family` (`family_id`,`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+;
