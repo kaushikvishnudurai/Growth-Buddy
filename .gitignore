@@ -8,3 +8,7 @@ node_modules/
 dist/
 dev-dist/
 backend/.settings/
+
+# scripts/ui-audit.mjs output — regenerate it, don't version it
+assets/ui-audit/
+assets/ui-audit-*.png
