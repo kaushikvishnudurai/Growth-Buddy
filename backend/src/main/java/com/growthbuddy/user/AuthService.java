@@ -357,10 +357,8 @@ public class AuthService {
         t.setExpiresAt(Instant.now().plus(OTP_TTL_MINUTES, ChronoUnit.MINUTES));
         waOtpTokens.save(t);
 
-        String message = "Your Growth Buddy verification code: " + otp
-                + "\nDo not share this code.";
         if (whatsApp != null && whatsApp.isConfigured()) {
-            whatsApp.sendReminder(normalized, message);
+            whatsApp.sendOtp(normalized, otp);
         } else if (prod) {
             log.error("WhatsApp not configured — cannot deliver OTP to {}.", normalized);
         } else {

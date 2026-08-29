@@ -8,10 +8,14 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -34,6 +38,15 @@ public class ReminderDeliveryScheduler {
      * (reminder, day); widen it only if missed deliveries show up in the log.
      */
     private static final Duration CATCH_UP = Duration.ofMinutes(5);
+
+    /**
+     * Sends run concurrently: one blocking Cloud API call each, serialised, meant a
+     * batch of ~1000 due reminders overran its own minute — and once a run overruns
+     * by more than CATCH_UP, reminders due in the minutes it skipped are never sent.
+     * ponytail: fixed 16, well under Meta's 80 msg/s default and tolerable against the
+     * 8-connection DB pool the log writes share. Raise both together if a run overruns.
+     */
+    private final ExecutorService senders = Executors.newFixedThreadPool(16);
 
     private final CalendarReminderRepository reminders;
     private final ReminderDispatchLogRepository dispatchLog;
@@ -79,6 +92,7 @@ public class ReminderDeliveryScheduler {
         Instant tick = Instant.now();
 
         Map<UUID, User> userCache = new HashMap<>();
+        List<Callable<Void>> sends = new ArrayList<>();
         for (CalendarReminder rem : candidates) {
             User user = userCache.computeIfAbsent(rem.getUserId(), this::loadUser);
             if (user == null) {
@@ -109,50 +123,64 @@ public class ReminderDeliveryScheduler {
                 continue;
             }
 
-            ReminderDispatchLog row = new ReminderDispatchLog();
-            row.setReminderId(rem.getId());
-            row.setOccurrenceDate(day);
-            StringBuilder channels = new StringBuilder();
-            boolean sent = false;
-
-            if (waEligible) {
-                try {
-                    whatsapp.sendReminder(user.getWhatsappNumber(), buildMessage(user, rem, day));
-                    channels.append("whatsapp");
-                    sent = true;
-                } catch (Exception ex) {
-                    row.setErrorMessage(truncate(ex.getMessage(), 250));
-                    log.warn("WhatsApp reminder {} for {} failed: {}", rem.getId(), user.getId(), ex.getMessage());
-                }
-            }
-            if (pushEligible) {
-                try {
-                    int n = push.sendToUser(user.getId(), "Reminder",
-                            rem.getText(), "/#calendar");
-                    if (n > 0) {
-                        channels.append(channels.length() > 0 ? "+push" : "push");
-                        sent = true;
-                    }
-                } catch (Exception ex) {
-                    log.warn("Push reminder {} for {} failed: {}", rem.getId(), user.getId(), ex.getMessage());
-                }
-            }
-
-            row.setChannel(channels.length() > 0 ? channels.toString() : "none");
-            row.setStatus(sent ? "sent" : "failed");
-            dispatchLog.save(row);
+            boolean wa = waEligible;
+            sends.add(() -> {
+                deliver(user, rem, day, wa);
+                return null;
+            });
         }
+
+        if (sends.isEmpty()) {
+            return;
+        }
+        try {
+            // Blocks until the batch drains, so every dispatch-log row for this tick is
+            // written before the next one reads it back for de-duplication.
+            senders.invokeAll(sends);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private void deliver(User user, CalendarReminder rem, LocalDate day, boolean waEligible) {
+        ReminderDispatchLog row = new ReminderDispatchLog();
+        row.setReminderId(rem.getId());
+        row.setOccurrenceDate(day);
+        StringBuilder channels = new StringBuilder();
+        boolean sent = false;
+
+        if (waEligible) {
+            try {
+                whatsapp.sendReminder(user.getWhatsappNumber(), rem.getText());
+                channels.append("whatsapp");
+                sent = true;
+            } catch (Exception ex) {
+                row.setErrorMessage(truncate(ex.getMessage(), 250));
+                log.warn("WhatsApp reminder {} for {} failed: {}", rem.getId(), user.getId(), ex.getMessage());
+            }
+        }
+        if (push.isConfigured()) {
+            try {
+                int n = push.sendToUser(user.getId(), "Reminder",
+                        rem.getText(), "/#calendar");
+                if (n > 0) {
+                    channels.append(channels.length() > 0 ? "+push" : "push");
+                    sent = true;
+                }
+            } catch (Exception ex) {
+                log.warn("Push reminder {} for {} failed: {}", rem.getId(), user.getId(), ex.getMessage());
+            }
+        }
+
+        row.setChannel(channels.length() > 0 ? channels.toString() : "none");
+        row.setStatus(sent ? "sent" : "failed");
+        dispatchLog.save(row);
     }
 
     private User loadUser(UUID userId) {
         return users.findById(userId).orElse(null);
     }
 
-
-    private static String buildMessage(User user, CalendarReminder rem, LocalDate day) {
-        String name = (user.getDisplayName() == null || user.getDisplayName().isBlank()) ? "Buddy" : user.getDisplayName();
-        return "Hi " + name + ", reminder for " + day + ": " + rem.getText();
-    }
 
     private static String truncate(String input, int max) {
         if (input == null || input.length() <= max) {

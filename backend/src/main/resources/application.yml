@@ -116,6 +116,14 @@ growthbuddy:
       phone-number-id: ${WHATSAPP_PHONE_NUMBER_ID:}
       access-token: ${WHATSAPP_ACCESS_TOKEN:}
       api-version: ${WHATSAPP_API_VERSION:v21.0}
+      # Name of an approved template whose body is a single {{1}} variable. Required for
+      # scheduled reminders; left empty, sends fall back to free-form text, which Meta
+      # only delivers inside a user's 24h customer-service window.
+      template: ${WHATSAPP_TEMPLATE:}
+      # AUTHENTICATION-category template for login codes. Needs a verified business to
+      # create; empty => OTPs fall back to the reminder template above.
+      auth-template: ${WHATSAPP_AUTH_TEMPLATE:}
+      template-lang: ${WHATSAPP_TEMPLATE_LANG:en}
 
 logging:
   level:
