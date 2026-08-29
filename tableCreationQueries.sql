@@ -3,6 +3,12 @@
 -- Growth Buddy — Database Schema
 -- MySQL 8.0+
 --
+-- One collation throughout (utf8mb4_unicode_ci, matching the database default).
+-- Mixing it with utf8mb4_0900_ai_ci made every cross-table join on a char(36)
+-- id fail outright with "Illegal mix of collations" — invisible for as long as
+-- the code looked rows up one id at a time from Java, fatal the moment a query
+-- joined two tables.
+--
 -- UUIDs are stored as CHAR(36) text, matching what Hibernate actually
 -- creates (application.yml sets preferred_uuid_jdbc_type: CHAR). This file
 -- previously declared BINARY(16)/UUID_TO_BIN, which the app never used —
@@ -606,7 +612,7 @@ CREATE TABLE money_state (
 -- so a fresh install from this file was missing them (fatal under
 -- SPRING_JPA_DDL_AUTO=validate). Pasted verbatim from SHOW CREATE TABLE,
 -- which is why the style differs from the hand-written sections above:
--- ddl-auto emits no FK to users(id) and collates utf8mb4_0900_ai_ci.
+-- ddl-auto emits no FK to users(id) and collates utf8mb4_unicode_ci.
 -- Match a section above if you ever normalise them.
 -- =========================================================
 CREATE TABLE `calendar_reminders` (
@@ -622,7 +628,7 @@ CREATE TABLE `calendar_reminders` (
   `user_id` char(36) NOT NULL,
   PRIMARY KEY (`id`),
   KEY `ix_cal_rem_user_date` (`user_id`,`anchor_date`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ;
 
 CREATE TABLE `calendar_reminder_skips` (
@@ -630,7 +636,7 @@ CREATE TABLE `calendar_reminder_skips` (
   `skip_date` date NOT NULL,
   PRIMARY KEY (`reminder_id`,`skip_date`),
   CONSTRAINT `FK3fhfwht79vx2f490y2wxnsaeb` FOREIGN KEY (`reminder_id`) REFERENCES `calendar_reminders` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ;
 
 CREATE TABLE `reminder_dispatch_log` (
@@ -643,7 +649,7 @@ CREATE TABLE `reminder_dispatch_log` (
   `status` varchar(16) NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `ux_rem_dispatch_unique` (`reminder_id`,`occurrence_date`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ;
 
 CREATE TABLE `push_subscriptions` (
@@ -654,7 +660,7 @@ CREATE TABLE `push_subscriptions` (
   `p256dh` varchar(255) NOT NULL,
   `user_id` char(36) NOT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ;
 
 CREATE TABLE `focus_sessions` (
@@ -665,7 +671,7 @@ CREATE TABLE `focus_sessions` (
   `user_id` char(36) NOT NULL,
   PRIMARY KEY (`id`),
   KEY `ix_focus_user_time` (`user_id`,`completed_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ;
 
 CREATE TABLE `weekly_reviews` (
@@ -677,7 +683,7 @@ CREATE TABLE `weekly_reviews` (
   `wins` text,
   PRIMARY KEY (`id`),
   UNIQUE KEY `UKkehyqqd8f9e6ogi8aqmd1s3xa` (`user_id`,`week_start`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ;
 
 CREATE TABLE `family_dish_preferences` (
@@ -689,7 +695,7 @@ CREATE TABLE `family_dish_preferences` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_family_dish` (`family_id`,`dish_name`),
   KEY `ix_family_dish_family` (`family_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ;
 
 CREATE TABLE `family_pantry_items` (
@@ -705,7 +711,7 @@ CREATE TABLE `family_pantry_items` (
   `updated_at` datetime(6) NOT NULL,
   PRIMARY KEY (`id`),
   KEY `ix_family_pantry_family` (`family_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ;
 
 CREATE TABLE `family_shopping_items` (
@@ -720,7 +726,7 @@ CREATE TABLE `family_shopping_items` (
   `updated_at` datetime(6) NOT NULL,
   PRIMARY KEY (`id`),
   KEY `ix_family_shopping_family` (`family_id`,`created_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ;
 
 CREATE TABLE `family_favourite_menus` (
@@ -733,7 +739,7 @@ CREATE TABLE `family_favourite_menus` (
   `plan_json` text NOT NULL,
   PRIMARY KEY (`id`),
   KEY `ix_family_fav_family` (`family_id`,`created_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ;
 
 CREATE TABLE `family_multi_day_plans` (
@@ -748,5 +754,5 @@ CREATE TABLE `family_multi_day_plans` (
   `start_date` date DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `ix_family_multiday_family` (`family_id`,`created_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ;

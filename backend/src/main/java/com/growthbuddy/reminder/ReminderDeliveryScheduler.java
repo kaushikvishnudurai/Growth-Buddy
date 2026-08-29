@@ -10,8 +10,10 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
@@ -81,9 +83,21 @@ public class ReminderDeliveryScheduler {
             return;
         }
 
-        List<CalendarReminder> candidates = reminders.findByTimeIsNotNull();
+        // Filtered in SQL rather than in Java: this used to pull every timed
+        // reminder in the system each minute and drop most of them, so the work
+        // per tick tracked the whole user base instead of the reachable part.
+        List<CalendarReminder> candidates =
+                reminders.findDeliverable(whatsapp.isConfigured(), push.isConfigured());
         if (candidates.isEmpty()) {
             return;
+        }
+
+        // Two batch reads replace a per-reminder lookup each. Everything below is
+        // then in-memory, so a tick costs three queries whatever the user count.
+        Map<UUID, User> userCache = new HashMap<>();
+        for (User u : users.findAllById(
+                candidates.stream().map(CalendarReminder::getUserId).distinct().toList())) {
+            userCache.put(u.getId(), u);
         }
 
         // One wall-clock reading for the whole run. Read per-reminder, it drifts forward
@@ -91,10 +105,26 @@ public class ReminderDeliveryScheduler {
         // their own delivery window and never fire that day.
         Instant tick = Instant.now();
 
-        Map<UUID, User> userCache = new HashMap<>();
+        // A tick can straddle two calendar dates because users sit in different
+        // zones, so ask for the days actually in play rather than just "today".
+        Set<LocalDate> days = new HashSet<>();
+        for (CalendarReminder rem : candidates) {
+            User u = userCache.get(rem.getUserId());
+            if (u != null) {
+                days.add(LocalDateTime.ofInstant(tick, UserZone.of(u.getTimezone())).toLocalDate());
+            }
+        }
+        Set<String> alreadySent = new HashSet<>();
+        if (!days.isEmpty()) {
+            for (Object[] row : dispatchLog.findDelivered(
+                    candidates.stream().map(CalendarReminder::getId).toList(), days)) {
+                alreadySent.add(sentKey((UUID) row[0], (LocalDate) row[1]));
+            }
+        }
+
         List<Callable<Void>> sends = new ArrayList<>();
         for (CalendarReminder rem : candidates) {
-            User user = userCache.computeIfAbsent(rem.getUserId(), this::loadUser);
+            User user = userCache.get(rem.getUserId());
             if (user == null) {
                 continue;
             }
@@ -118,8 +148,8 @@ public class ReminderDeliveryScheduler {
             }
 
             // Only a delivered occurrence blocks a resend; a failed one is retried on a
-            // later tick while the window is open.
-            if (dispatchLog.existsByReminderIdAndOccurrenceDateAndStatus(rem.getId(), day, "sent")) {
+            // later tick while the window is open. Read from the batch above.
+            if (alreadySent.contains(sentKey(rem.getId(), day))) {
                 continue;
             }
 
@@ -140,6 +170,11 @@ public class ReminderDeliveryScheduler {
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
         }
+    }
+
+    /** Matches the dispatch-log row for one reminder on one occurrence date. */
+    private static String sentKey(UUID reminderId, LocalDate day) {
+        return reminderId + "|" + day;
     }
 
     private void deliver(User user, CalendarReminder rem, LocalDate day, boolean waEligible) {
@@ -175,10 +210,6 @@ public class ReminderDeliveryScheduler {
         row.setChannel(channels.length() > 0 ? channels.toString() : "none");
         row.setStatus(sent ? "sent" : "failed");
         dispatchLog.save(row);
-    }
-
-    private User loadUser(UUID userId) {
-        return users.findById(userId).orElse(null);
     }
 
 
