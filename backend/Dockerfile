@@ -1,9 +1,25 @@
-# Build and run the Spring Boot API. Build from the repo root so the context
-# includes tableCreationQueries.sql:  docker build -f backend/Dockerfile .
+# Build and run the whole app: the Spring API plus the built frontend it serves.
+# Build from the repo root so the context includes the web sources:
+#   docker build -f backend/Dockerfile -t growth-buddy .
+FROM node:22-slim AS web
+WORKDIR /web
+# Dependencies first so an ordinary source edit doesn't re-run npm ci.
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY index.html vite.config.js ./
+COPY scripts ./scripts
+COPY styles ./styles
+COPY public ./public
+# Empty on purpose: the API serves this bundle, so relative paths are correct and
+# CORS never enters into it. An *absent* VITE_API_BASE is what the app rejects at
+# startup — set-but-empty is the same-origin answer. Override at build time
+# (--build-arg) only if you host the frontend somewhere else.
+ARG VITE_API_BASE=""
+RUN VITE_API_BASE="$VITE_API_BASE" npm run build
+
 FROM maven:3.9-eclipse-temurin-17 AS build
 WORKDIR /src
-# Dependencies first: this layer is cached until pom.xml itself changes, so an
-# ordinary code edit doesn't re-download the world.
+# Same trick: this layer is cached until pom.xml itself changes.
 COPY backend/pom.xml .
 RUN mvn -q -B dependency:go-offline
 COPY backend/src ./src
@@ -14,6 +30,9 @@ WORKDIR /app
 # Unprivileged: nothing here needs root, and the app writes no files.
 RUN useradd --create-home --shell /usr/sbin/nologin app
 COPY --from=build /src/target/*.jar app.jar
+# WebConfig prefers ./dist over the raw source tree, and serves its hashed assets
+# with a one-year immutable cache.
+COPY --from=web /web/dist ./dist
 USER app
 EXPOSE 8080
 

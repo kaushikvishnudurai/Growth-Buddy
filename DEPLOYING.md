@@ -19,12 +19,22 @@ wrong and the app calls the visitor's own machine. The app now throws on
 startup rather than doing that quietly, but the only fix is a rebuild — and for
 a published mobile binary, an app store update.
 
-## API
+## One container, both halves (simplest)
+
+The image builds the frontend and the API together, and the API serves the
+bundle. Because both come off one origin the app uses relative paths, so
+`VITE_API_BASE` is empty and CORS never applies.
 
 ```bash
-docker build -f backend/Dockerfile -t growth-buddy-api .
-docker run -p 8080:8080 --env-file prod.env growth-buddy-api
+docker build -f backend/Dockerfile -t growth-buddy .
+docker run -p 8080:8080 --env-file prod.env growth-buddy
 ```
+
+Hosting the frontend separately instead? Build with an explicit
+`VITE_API_BASE=https://api.example.com`, deploy `dist/` to a static host, and
+set `CORS_ALLOWED_ORIGINS` to that host's origin.
+
+## API
 
 Required (no defaults under the `prod` profile — the app won't start without them):
 
@@ -51,10 +61,11 @@ VITE_API_BASE=https://api.example.com npm run build
 # deploy dist/ to any static host
 ```
 
-Do **not** serve the frontend from Spring. It serves raw `scripts/` and
-`styles/` from the working directory with `Cache-Control: no-store` — no
-bundling, no content hashing, and no service worker, so the PWA and offline
-support are lost. That path exists for local development only.
+Spring serves `dist/` when it finds one, with a one-year immutable cache on the
+content-hashed assets and `no-cache` on `sw.js` (a hard-cached service worker
+pins clients to a dead build). With no `dist/` it falls back to the raw source
+tree with caching off — that fallback is what `./run.sh` uses for local
+development, and it has no service worker or bundling.
 
 Source maps are emitted as `hidden`: they land in `dist/` but nothing links to
 them. Upload them to your error tracker, don't publish them.

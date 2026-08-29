@@ -10,7 +10,10 @@ import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.Arrays;
+import java.util.concurrent.TimeUnit;
 
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
@@ -73,9 +76,44 @@ public class WebConfig implements WebMvcConfigurer {
                 .allowedHeaders("*");
     }
 
-    /** Serve the static frontend (index.html, scripts/, styles/, assets/) from the repo root. */
+    /**
+     * Serve the frontend. A built {@code dist/} is preferred and, when present, is
+     * the only thing served: its filenames are content-hashed, so they can be
+     * cached for a year, and it carries the service worker and PWA manifest that
+     * the raw source has no equivalent of. Without a build we fall back to the
+     * source tree with caching off, which is what local development wants.
+     *
+     * <p>Serving the bundle from the API's own origin is also what lets the
+     * frontend use relative paths, which removes CORS from the deployment.
+     */
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
+        String[] dist = existingRoots("dist/");
+        if (dist.length > 0) {
+            // Vite hashes every filename, so a changed file is a different URL and a
+            // stale cache entry is unreachable — immutable is safe and skips revalidation.
+            CacheControl immutable = CacheControl.maxAge(365, TimeUnit.DAYS).cachePublic().immutable();
+            log.info("Serving the built frontend from {}", String.join(", ", dist));
+
+            // A "/prefix/**" handler resolves only the part *after* the prefix against
+            // its locations, so each prefixed handler needs the matching subdirectory —
+            // pointing them all at dist/ turns /assets/x.js into a lookup for dist/x.js.
+            registry.addResourceHandler("/assets/**").addResourceLocations(existingRoots("dist/assets/"))
+                    .setCacheControl(immutable).resourceChain(false);
+            registry.addResourceHandler("/icons/**").addResourceLocations(existingRoots("dist/icons/"))
+                    .setCacheControl(immutable).resourceChain(false);
+
+            // Root-level files Vite emits unhashed: the service worker, the manifest,
+            // favicons. The SW must never be cached hard or clients pin a dead build.
+            registry.addResourceHandler("/*.js", "/*.css", "/*.png", "/*.svg", "/*.ico",
+                            "/*.webmanifest", "/*.woff2", "/*.json", "/*.txt")
+                    .addResourceLocations(dist)
+                    .setCacheControl(CacheControl.noCache()).resourceChain(false);
+            return;
+        }
+
+        log.info("No dist/ build found — serving raw source (development). "
+               + "Run 'npm run build' for the bundled app with offline support.");
         String[] roots = { "file:./", "file:../" };
         // Disable browser + server resource caching so JS/CSS edits are picked up immediately.
         CacheControl noStore = CacheControl.noStore();
@@ -86,6 +124,18 @@ public class WebConfig implements WebMvcConfigurer {
         registry.addResourceHandler("/assets/**").addResourceLocations(prefixed(roots, "assets/"))
                 .setCacheControl(noStore).resourceChain(false);
         // index.html is served by IndexController (single-file mapping).
+    }
+
+    /**
+     * Resource locations are resolved lazily, so a path that does not exist yields
+     * 404s rather than falling through to the next handler. Filter up front.
+     */
+    private static String[] existingRoots(String suffix) {
+        return Arrays.stream(new String[] { "./", "../" })
+                .map(root -> root + suffix)
+                .filter(path -> Files.isDirectory(Paths.get(path)))
+                .map(path -> "file:" + path)
+                .toArray(String[]::new);
     }
 
     // The "/" → index.html mapping lives in IndexController so it can return
