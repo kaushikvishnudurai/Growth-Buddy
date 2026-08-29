@@ -55,13 +55,35 @@ public class SessionService {
                           @Value("${growthbuddy.session.hmac-secret}") String hmacSecret,
                           @Value("${spring.profiles.active:}") String activeProfiles) {
         boolean prod = activeProfiles != null && activeProfiles.toLowerCase().contains("prod");
-        if (prod && DEFAULT_DEV_SECRET.equals(hmacSecret)) {
-            // A publicly-known signing key would let anyone forge session tokens.
-            throw new IllegalStateException(
-                    "SESSION_HMAC_SECRET must be set to a private value in production.");
+        if (prod) {
+            rejectWeakSecret(hmacSecret);
         }
         this.sessions   = sessions;
         this.hmacSecret = hmacSecret;
+    }
+
+    /**
+     * A forgeable signing key lets anyone mint session tokens for any account, so
+     * this refuses to start rather than degrade. It checks more than the dev
+     * default: an unset {@code ${SESSION_HMAC_SECRET}} arrives here as that literal
+     * string rather than as a resolution failure, which is every bit as public as
+     * the dev secret and would otherwise pass an equality check.
+     */
+    static void rejectWeakSecret(String secret) {
+        String problem = null;
+        if (secret == null || secret.isBlank()) {
+            problem = "is empty";
+        } else if (secret.startsWith("${")) {
+            problem = "is an unresolved placeholder (" + secret + "), so the env var is not set";
+        } else if (DEFAULT_DEV_SECRET.equals(secret)) {
+            problem = "is the built-in development default";
+        } else if (secret.length() < 32) {
+            problem = "is only " + secret.length() + " characters; use at least 32";
+        }
+        if (problem != null) {
+            throw new IllegalStateException(
+                    "SESSION_HMAC_SECRET " + problem + ". Generate one with: openssl rand -base64 48");
+        }
     }
 
     public record IssuedToken(String token, Session session) {}

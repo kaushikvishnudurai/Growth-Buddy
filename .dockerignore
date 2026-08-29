@@ -1,0 +1,9 @@
+.git
+.env
+.env.local
+node_modules
+dist
+dev-dist
+backend/target
+assets/ui-audit-*
+*.log

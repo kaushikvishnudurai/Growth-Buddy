@@ -21,7 +21,7 @@ spring:
     name: growth-buddy-backend
 
   datasource:
-    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:growth_buddy}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:growth_buddy}?sslMode=${DB_SSL_MODE:DISABLED}&allowPublicKeyRetrieval=true&serverTimezone=UTC
     username: ${DB_USER:root}
     password: ${DB_PASSWORD:}
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -90,7 +90,8 @@ growthbuddy:
     # A DB dump alone cannot validate tokens without this secret.
     # MUST be overridden in production via SESSION_HMAC_SECRET env var.
     hmac-secret: ${SESSION_HMAC_SECRET:growth-buddy-dev-hmac-secret-replace-in-production}
-  # Demo user used when no X-User-Id header is supplied (no auth layer yet).
+  # Seeded demo account for local development only; DataSeeder skips it under
+  # the prod profile. Identity comes from the bearer token, never a header.
   demo-user-id: "00000000-0000-0000-0000-000000000001"
   mail:
     # Public-facing name in the From header.

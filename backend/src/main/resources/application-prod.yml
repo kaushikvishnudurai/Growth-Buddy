@@ -1,0 +1,36 @@
+# Production overrides. Activate with SPRING_PROFILES_ACTIVE=prod.
+#
+# Every value below is ${VAR} with NO default: Spring fails to start if one is
+# missing, which is the point. The base application.yml has development
+# defaults for all of these, and a default that silently works in production is
+# how you end up serving real traffic on a public dev secret.
+spring:
+  datasource:
+    url: jdbc:mysql://${DB_HOST}:${DB_PORT:3306}/${DB_NAME}?sslMode=${DB_SSL_MODE:REQUIRED}&serverTimezone=UTC
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+
+  jpa:
+    hibernate:
+      # The schema is owned by tableCreationQueries.sql. 'validate' fails the
+      # deploy on drift instead of ALTERing a live table under load — and
+      # 'update' cannot apply column changes to FK-referenced columns anyway,
+      # so it fails halfway and leaves the schema part-migrated.
+      ddl-auto: validate
+
+growthbuddy:
+  # No fallback: SessionService refuses to boot on the dev secret under this
+  # profile, but only if the profile is active. Requiring the var here means a
+  # missing secret fails at startup rather than depending on that one check.
+  session:
+    hmac-secret: ${SESSION_HMAC_SECRET}
+  # Comma-separated production frontend origins. Never localhost.
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS}
+
+logging:
+  level:
+    org.hibernate.SQL: warn
+    # Request bodies can carry OTPs and passwords; keep Spring's own debug
+    # logging off regardless of what the base config or an env var says.
+    org.springframework.web: warn
