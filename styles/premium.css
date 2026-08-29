@@ -303,12 +303,6 @@ html[data-premium='on'] .gb-input:focus {
   }
 }
 
-/* The premium toggle itself, lit when it's on. */
-.gb-iconbtn.is-premium {
-  color: var(--brand);
-  background: var(--brand-soft);
-}
-
 /* ---------------------------------------------------------------------
    6. Typography — tracking is size-specific, never one value for all
    Large type reads too loose as it grows; tiny caps read too tight.

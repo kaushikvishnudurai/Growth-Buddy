@@ -320,20 +320,30 @@ function Avatar({
 // front — backwards for this product.
 const NAV_PRIMARY = [
   { id: 'home', icon: 'house', label: 'Home', feature: null },
-  { id: 'habits', icon: 'repeat', label: 'Habits', feature: 'habits' },
+  { id: 'habits', icon: 'repeat', label: 'Habits', feature: 'habits', group: 'plan' },
   // Labels match each screen's own header, so the tab name and the page
   // title never disagree ("Mentor" used to open a screen called "Buddy").
-  { id: 'mentor', icon: 'sparkles', label: 'Buddy', feature: 'mentor' },
-  { id: 'report', icon: 'chart-column', label: 'Progress', feature: 'report' },
+  { id: 'mentor', icon: 'sparkles', label: 'Buddy', feature: 'mentor', group: 'people' },
+  { id: 'report', icon: 'chart-column', label: 'Progress', feature: 'report', group: 'track' },
 ];
 const NAV_OVERFLOW = [
-  { id: 'calendar', icon: 'calendar-days', label: 'Calendar', feature: 'calendar' },
-  { id: 'focus', icon: 'timer', label: 'Timer', feature: 'focus' },
-  { id: 'goals', icon: 'target', label: 'Goals', feature: 'goals' },
-  { id: 'food', icon: 'utensils-crossed', label: 'Food', feature: 'food|water' },
-  { id: 'money', icon: 'wallet', label: 'Money', feature: 'money' },
-  { id: 'circle', icon: 'users-round', label: 'Circle', feature: 'circle' },
-  { id: 'family', icon: 'users', label: 'Family', feature: 'family' },
+  { id: 'calendar', icon: 'calendar-days', label: 'Calendar', feature: 'calendar', group: 'plan' },
+  { id: 'focus', icon: 'timer', label: 'Timer', feature: 'focus', group: 'plan' },
+  { id: 'goals', icon: 'target', label: 'Goals', feature: 'goals', group: 'plan' },
+  { id: 'food', icon: 'utensils-crossed', label: 'Food', feature: 'food|water', group: 'track' },
+  { id: 'money', icon: 'wallet', label: 'Money', feature: 'money', group: 'track' },
+  { id: 'circle', icon: 'users-round', label: 'Circle', feature: 'circle', group: 'people' },
+  { id: 'family', icon: 'users', label: 'Family', feature: 'family', group: 'people' },
+];
+
+// "More" held seven unrelated destinations in one flat grid, which read as
+// "this app has eleven sections" rather than as a place with a shape. The
+// headings name what you go there to do. An entry with no group (Home) renders
+// first, ungrouped — a heading over a single stray item is worse than none.
+const NAV_GROUPS = [
+  { id: 'plan', label: 'Plan your day' },
+  { id: 'track', label: 'Track & log' },
+  { id: 'people', label: 'People' },
 ];
 
 // Full catalog of nav destinations. The `primary` flag here is the DEFAULT
@@ -374,6 +384,33 @@ function resolveNavLayout(saved) {
   return out;
 }
 
+/* Build the "More" sheet body: ungrouped items first, then one headed grid per
+   group that still has items. Keeps each user's own ordering inside a group. */
+function moreSections(overflow, active, onNav) {
+  const item = (i) =>
+    h(
+      'button',
+      {
+        type: 'button',
+        role: 'menuitem',
+        class: 'gb-more-item' + (active === i.id ? ' is-active' : ''),
+        onclick: () => onNav && onNav(i.id),
+      },
+      h('span', { class: 'gb-more-item-ic' }, Icon(i.icon, { size: 22, sw: 2.2 })),
+      h('span', null, i.label)
+    );
+  const out = [];
+  const loose = overflow.filter((i) => !i.group);
+  if (loose.length) out.push(h('div', { class: 'gb-more-grid' }, loose.map(item)));
+  NAV_GROUPS.forEach((g) => {
+    const members = overflow.filter((i) => i.group === g.id);
+    if (!members.length) return;
+    out.push(h('div', { class: 'gb-more-group-label' }, g.label));
+    out.push(h('div', { class: 'gb-more-grid' }, members.map(item)));
+  });
+  return out;
+}
+
 function BottomNav({ active, onNav, onMore, features, moreOpen, layout } = {}) {
   const tab = (item, opts) =>
     h(
@@ -385,6 +422,9 @@ function BottomNav({ active, onNav, onMore, features, moreOpen, layout } = {}) {
           ((opts && opts.active) || active === item.id ? ' is-active' : '') +
           (opts && opts.overflow ? ' gb-nav-tab--overflow' : '') +
           (opts && opts.more ? ' gb-nav-tab--more' : ''),
+        // Below 360px .gb-nav-tab span is display:none (app.css) and the icon is
+        // aria-hidden — without this the whole nav is unnamed buttons.
+        'aria-label': item.label,
         'aria-current': active === item.id ? 'page' : null,
         'aria-haspopup': opts && opts.more ? 'true' : null,
         'aria-expanded': opts && opts.more ? (moreOpen ? 'true' : 'false') : null,
@@ -434,23 +474,7 @@ function BottomNav({ active, onNav, onMore, features, moreOpen, layout } = {}) {
       h(
         'div',
         { class: 'gb-more-sheet', role: 'menu', 'aria-label': 'More destinations' },
-        h(
-          'div',
-          { class: 'gb-more-grid' },
-          overflow.map((i) =>
-            h(
-              'button',
-              {
-                type: 'button',
-                role: 'menuitem',
-                class: 'gb-more-item' + (active === i.id ? ' is-active' : ''),
-                onclick: () => onNav && onNav(i.id),
-              },
-              h('span', { class: 'gb-more-item-ic' }, Icon(i.icon, { size: 22, sw: 2.2 })),
-              h('span', null, i.label)
-            )
-          )
-        )
+        ...moreSections(overflow, active, onNav)
       )
     );
   }
@@ -565,19 +589,10 @@ function Logo({ size = 48, radius = 14, alive = false } = {}) {
 }
 
 /* ---- App header ---- */
-function AppHeader({
-  label,
-  name,
-  userName,
-  theme,
-  onTheme,
-  premium,
-  onPremium,
-  onAccount,
-  unreadCount,
-  onBell,
-  onAdd,
-} = {}) {
+// Theme and the premium skin used to sit here as two more icon buttons. They
+// are preferences, not daily actions — they live in Settings → Display now, so
+// the bar holds only what you reach for while using the app.
+function AppHeader({ label, name, userName, onAccount, unreadCount, onBell, onAdd } = {}) {
   const bellChildren = [Icon('bell', { size: 20 })];
   if (unreadCount > 0) {
     bellChildren.push(
@@ -609,32 +624,6 @@ function AppHeader({
               onclick: onAdd,
             },
             Icon('plus', { size: 20 })
-          )
-        : null,
-      h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-iconbtn',
-          'aria-label': 'Toggle theme',
-          onclick: onTheme,
-        },
-        Icon(theme === 'dark' ? 'sun' : 'moon', { size: 20 })
-      ),
-      // Premium skin switch. Lit when on; the whole look lives in premium.css.
-      onPremium
-        ? h(
-            'button',
-            {
-              type: 'button',
-              class: 'gb-iconbtn' + (premium ? ' is-premium' : ''),
-              'aria-label': premium ? 'Switch to the classic look' : 'Switch to the premium look',
-              'aria-pressed': premium ? 'true' : 'false',
-              onclick: onPremium,
-            },
-            // Gem, not sparkles — the nav's "Buddy" tab already owns sparkles,
-            // and one glyph must not mean two things.
-            Icon('gem', { size: 20 })
           )
         : null,
       h(

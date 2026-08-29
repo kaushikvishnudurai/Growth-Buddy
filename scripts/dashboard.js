@@ -101,7 +101,7 @@ function allGoals(sections) {
   return (sections || []).flatMap((section) => section.goals || []);
 }
 
-function ScoreCard({ score, tasks, habits, level }) {
+function ScoreCard({ score, tasks, habits }) {
   const doneTasks = tasks.filter((t) => t.done).length;
   const doneHabits = habits.filter((h) => h.doneToday).length;
   const topStreak = habits.reduce((m, h) => Math.max(m, h.streak || 0), 0);
@@ -117,8 +117,13 @@ function ScoreCard({ score, tasks, habits, level }) {
         lineHeight: 1,
       },
     },
-    String(score)
+    score + '%'
   );
+  // The unit lives in the number ("17%"), not in the label. "17" over "SCORE"
+  // named a currency nobody could price; the percent sign says it's a share of
+  // something, and the sub-line beside it ("0/4 tasks · 1/3 habits") says of
+  // what. The word stays "score" because Progress calls it that too, in the
+  // summary tile and in the "Daily score" trend — one number, one name.
   const ringLabel = h(
     'span',
     { style: { fontSize: '0.625rem', fontWeight: 700, color: 'var(--fg3)' } },
@@ -143,16 +148,6 @@ function ScoreCard({ score, tasks, habits, level }) {
         label: topStreak + '-day',
         bg: 'var(--coral-50)',
         fg: 'var(--coral-700)',
-      })
-    );
-  }
-  if (level && level > 0) {
-    pills.push(
-      Pill({
-        icon: 'zap',
-        label: 'Lvl ' + level,
-        bg: 'var(--sun-50)',
-        fg: 'var(--sun-700)',
       })
     );
   }
@@ -259,36 +254,27 @@ function QuoteCard({ quote }) {
   });
 }
 
-function TodayPlanCard({ tasks, habits, water, wellness, onPlanToday }) {
+function TodayPlanCard({ water, wellness, onPlanToday }) {
   const key = todayKey();
   const sleep = wellness && wellness.sleepByDate ? wellness.sleepByDate[key] : null;
   const mood = wellness && wellness.moodByDate ? wellness.moodByDate[key] : null;
-  const pendingTasks = (tasks || []).filter((t) => !t.done).length;
-  const pendingHabits = (habits || []).filter((habit) => !habit.doneToday).length;
   const waterGoal = Math.max(1, (water && water.goalMl) || 2000);
   const waterPct = Math.min(
     100,
     Math.round((((water && water.consumedMl) || 0) / waterGoal) * 100)
   );
-  const totalTasks = (tasks || []).length;
-  const totalHabits = (habits || []).length;
-  // Each chip carries a tone so the brief is scannable at a glance: finished
-  // items read green, anything still needing attention stays quiet/neutral.
-  const chips = [
-    totalTasks === 0
-      ? { label: 'No tasks yet', tone: 'todo' }
-      : pendingTasks === 0
-        ? { label: 'Tasks done', tone: 'done' }
-        : { label: plural(pendingTasks, 'task') + ' left', tone: 'todo' },
-    totalHabits === 0
-      ? { label: 'No habits yet', tone: 'todo' }
-      : pendingHabits === 0
-        ? { label: 'Habits done', tone: 'done' }
-        : { label: plural(pendingHabits, 'habit') + ' left', tone: 'todo' },
-    { label: waterPct + '% water', tone: waterPct >= 100 ? 'done' : 'todo' },
-    sleep ? { label: 'Sleep logged', tone: 'done' } : { label: 'Sleep not logged', tone: 'todo' },
-    mood ? { label: 'Mood logged', tone: 'done' } : { label: 'Mood not logged', tone: 'todo' },
-  ];
+  // The brief lists what's still open. Two rules got it here:
+  //   - It doesn't repeat the ring. The score card above measures exactly tasks
+  //     and habits and already reads "0/4 tasks · 1/3 habits"; the brief used to
+  //     restate that as "4 tasks left · 2 habits left" — the same two facts, in
+  //     opposite polarity, one card apart.
+  //   - It doesn't congratulate. "Sleep logged" sat directly above a card
+  //     showing "7.5h · Good", so the chip said less than the thing beneath it.
+  // Finish everything and the row empties out, which is the point.
+  const chips = [];
+  if (waterPct < 100) chips.push({ label: waterPct + '% water' });
+  if (!sleep) chips.push({ label: 'Sleep not logged' });
+  if (!mood) chips.push({ label: 'Mood not logged' });
   return Card({
     className: 'gb-coach-card',
     children: [
@@ -308,11 +294,15 @@ function TodayPlanCard({ tasks, habits, water, wellness, onPlanToday }) {
           'Plan my day'
         )
       ),
-      h(
-        'div',
-        { class: 'gb-coach-chiprow' },
-        chips.map((chip) => h('span', { class: 'gb-coach-chip gb-coach-chip--' + chip.tone }, chip.label))
-      ),
+      chips.length
+        ? h(
+            'div',
+            { class: 'gb-coach-chiprow' },
+            chips.map((chip) =>
+              h('span', { class: 'gb-coach-chip gb-coach-chip--todo' }, chip.label)
+            )
+          )
+        : null,
     ],
   });
 }
@@ -1470,7 +1460,6 @@ function ScreenDashboard({
   foodSummary,
   dayFoodLoading,
   dayFoodError,
-  level,
   onAddTask,
   onAddHabit,
   calYear,
@@ -1494,8 +1483,8 @@ function ScreenDashboard({
 
   // One renderer per widget id. Each returns the card node(s) for that widget.
   const renderers = {
-    score: () => ScoreCard({ score, tasks, habits, level }),
-    plan: () => TodayPlanCard({ tasks, habits, water, wellness, onPlanToday }),
+    score: () => ScoreCard({ score, tasks, habits }),
+    plan: () => TodayPlanCard({ water, wellness, onPlanToday }),
     wellness: () => WellnessCard({ wellness, onAddSleep, onAddMood }),
     tasks: () => [
       SectionTitle({ title: "Today's tasks", action: '+ Add', onAction: onAddTask }),
@@ -1537,6 +1526,20 @@ function ScreenDashboard({
     .filter(Boolean);
 
   const onboard = OnboardingCard({ tasks, habits, wellness, onAddHabit, onAddTask, onAddMood, onOnboardDismiss });
+
+  // Before you've added anything, the checklist IS the screen. Every widget
+  // below it renders its own "nothing yet" state, so a new account used to open
+  // on nine empty cards saying the same thing three ways — a checklist, a zero
+  // score and a row of grey chips. One instruction beats nine blanks. Dismissing
+  // the checklist (or adding a task or habit) brings the full Home back.
+  const started = (tasks || []).length > 0 || (habits || []).length > 0;
+  if (onboard && !started) {
+    return h(
+      'div',
+      { class: 'gb-rise gb-dash gb-dash--single gb-dash--onboarding' },
+      h('div', { class: 'gb-dash-block' }, onboard)
+    );
+  }
   if (onboard) blocks.unshift(h('div', { class: 'gb-dash-block' }, onboard));
 
   return h('div', { class: 'gb-rise gb-dash gb-dash--single' }, ...blocks);
@@ -1579,6 +1582,13 @@ function HabitSleepInsightCard({ habits, wellness }) {
     String(b.date || '').localeCompare(String(a.date || ''))
   );
 
+  // This card correlates two things. Without both it has no correlation to
+  // report, and it used to say so at full size: a "Fitness streak —" tile, three
+  // tiles repeating numbers Home already shows, and a line asking you to add a
+  // fitness habit. A card with nothing to say shouldn't take a card's worth of
+  // room; it renders once there's something to correlate.
+  if (!fitnessHabits.length || !sleepEntries.length) return null;
+
   const QUALITY_SCORE = { great: 4, good: 3, okay: 2, low: 1 };
   const avgQualityScore = sleepEntries.length
     ? sleepEntries.reduce((s, e) => s + (QUALITY_SCORE[e.quality] || 2), 0) / sleepEntries.length
@@ -1600,9 +1610,7 @@ function HabitSleepInsightCard({ habits, wellness }) {
             : 'Low';
 
   let insightText = '';
-  if (fitnessHabits.length === 0) {
-    insightText = 'Add a fitness habit to see how exercise affects your sleep.';
-  } else if (fitnessStreak >= 5 && avgQualityScore != null && avgQualityScore >= 3) {
+  if (fitnessStreak >= 5 && avgQualityScore != null && avgQualityScore >= 3) {
     insightText =
       'Your ' +
       fitnessStreak +

@@ -1,8 +1,6 @@
 /* =====================================================================
    Growth Buddy — App shell: state, routing, render
    ===================================================================== */
-import SockJS from 'sockjs-client';
-import { Client as StompClient } from '@stomp/stompjs';
 import {
   h,
   activate,
@@ -27,7 +25,6 @@ import {
   HOME_WIDGETS,
   resolveHomeLayout,
 } from './dashboard.js';
-import { ScreenGoals } from './goals.js';
 import { ScreenMoney, emptyMoney, normalizeMoney, MoneyCustomisePane } from './money.js';
 import {
   ScreenCalendar,
@@ -36,29 +33,45 @@ import {
   RenderCalendarGrid,
   resetCalendarForm,
 } from './calendar.js';
-import { ScreenMentor } from './mentor.js';
-import { ScreenFamily } from './family.js';
-import { ScreenCircle } from './circle.js';
-import { ScreenReport } from './report.js';
 import { ScreenAchievements, computeAchievements } from './achievements.js';
 import { celebrate } from './celebrate.js';
 import { enablePush, disablePush, pushSubscribed, pushSupported } from './push.js';
-import { ScreenFocus } from './timer.js';
 import { CacheStorage } from './cache-storage.js';
 import { registerToast } from './toast.js';
 import { initA11y } from './a11y.js';
 
 // Prefer the build-time env (VITE_API_BASE). In dev, fall back to '' so requests
-// are same-origin (relative) and flow through the Vite proxy to the backend. In a
-// non-dev build with nothing configured, use the local backend default.
+// are same-origin (relative) and flow through the Vite proxy to the backend.
 // NOTE: no runtime (cookie-backed) override — a planted `gb.apiBase` cookie could
 // otherwise redirect every API call, bearer token attached, to an attacker host.
 // In dev only, still honor it for convenience.
-const API_BASE =
-  (import.meta.env && import.meta.env.VITE_API_BASE) ||
-  (import.meta.env && import.meta.env.DEV
-    ? CacheStorage.getItem('gb.apiBase') || ''
-    : 'http://localhost:8080');
+const API_BASE = resolveApiBase();
+
+function resolveApiBase() {
+  const env = (typeof import.meta !== 'undefined' && import.meta.env) || {};
+  // Set-but-empty is a real answer, not a missing one: it means the API is served
+  // from this same origin (the backend serving dist/), so relative paths are
+  // correct and CORS never enters into it. Only an *absent* var is a mistake.
+  if (env.VITE_API_BASE !== undefined && env.VITE_API_BASE !== null) {
+    return env.VITE_API_BASE;
+  }
+  if (env.DEV) return CacheStorage.getItem('gb.apiBase') || '';
+
+  // Production build with nothing baked in. VITE_API_BASE is read at BUILD time,
+  // so there is no way to fix this after the fact — a shipped mobile binary would
+  // point at the wrong host until users update. Fail where someone will see it
+  // rather than sending every call, bearer token attached, to the device itself.
+  const nativeShell = typeof window !== 'undefined' && !!window.Capacitor;
+  const host = typeof location !== 'undefined' ? location.hostname : '';
+  if (!nativeShell && (host === 'localhost' || host === '127.0.0.1')) {
+    return ''; // `vite preview`, which proxies /api to the backend
+  }
+  throw new Error(
+    'VITE_API_BASE was not set when this bundle was built. Rebuild with ' +
+      'VITE_API_BASE=https://your-api-host, or VITE_API_BASE= (empty) if the ' +
+      'backend serves this bundle itself. See DEPLOYING.md.'
+  );
+}
 const SESSION_KEY = 'gb.session';
 const TOKEN_KEY = 'gb.token';
 const WELLNESS_KEY_PREFIX = 'gb.wellness.';
@@ -281,7 +294,11 @@ function pushToast(message, kind, durationMs) {
   };
   state.toasts = [...state.toasts.filter((t) => t.message !== text), toast].slice(-4);
   render();
-  buddyReact(toast.kind === 'success' ? 'yes' : 'no');
+  // Errors only. A nod has to mean "you got something done" — wiring it to
+  // every success toast made it fire for "Changes saved" and even for the
+  // skin toggle, which is feedback about nothing. The nod now lives on the
+  // actual accomplishments (toggleTask / toggleHabit).
+  if (toast.kind !== 'success') buddyReact('no');
   const duration = typeof durationMs === 'number' ? durationMs : 2800;
   setTimeout(() => dismissToast(toast.id), duration);
 }
@@ -374,6 +391,13 @@ function loadWellness() {
   }
 }
 
+/* Local cache only — the name is the whole contract. This used to also fire
+   PUT /api/daily-logs, an endpoint that has never existed (WellnessController
+   exposes GET plus POST /sleep, /mood, /snapshot), so every wellness write
+   logged "CRITICAL: failed to reach database" and looked like data loss. It
+   wasn't: every caller already has its own working sync — saveSleepEntry POSTs
+   /sleep, saveMoodEntry POSTs /mood, rememberPhotoFood POSTs /food/photo-history,
+   and loadData() only writes the cache after reading from the server. */
 function persistWellness() {
   try {
     CacheStorage.setItem(
@@ -382,18 +406,6 @@ function persistWellness() {
     );
   } catch (err) {
     console.error('⚠️ Failed to cache wellness data locally:', err);
-  }
-  // CRITICAL: Also sync to database immediately (not just cache)
-  if (state.user && state.wellness) {
-    api('/api/daily-logs', {
-      method: 'PUT',
-      body: JSON.stringify({
-        sleepByDate: state.wellness.sleepByDate || {},
-        moodByDate: state.wellness.moodByDate || {},
-      }),
-    }).catch((err) => {
-      console.error('❌ CRITICAL: persistWellness failed to reach database:', err);
-    });
   }
 }
 
@@ -867,7 +879,10 @@ function handleAuthExpired() {
 
 function formatTaskTime(task) {
   const isOverdue = !task.done && task.dueAt && new Date(task.dueAt).getTime() < Date.now();
-  const suffix = task.completionCount > 0 ? ' - done ' + task.completionCount + 'x' : '';
+  // Only worth saying for a task finished more than once (a recurring one that
+  // has come round again). "Completed - done 1x" told you the same thing twice
+  // and used a hyphen where every other line in the app uses a middot.
+  const suffix = task.completionCount > 1 ? ' · done ' + task.completionCount + '×' : '';
   if (task.dueAt) {
     try {
       const dt = new Date(task.dueAt);
@@ -875,7 +890,7 @@ function formatTaskTime(task) {
         dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) +
         ' · ' +
         dt.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-      return (isOverdue ? 'Overdue - ' : '') + base + suffix;
+      return (isOverdue ? 'Overdue · ' : '') + base + suffix;
     } catch (_) {
       return (isOverdue ? 'Overdue' : 'Scheduled') + suffix;
     }
@@ -1026,6 +1041,19 @@ async function resetStaleCompletedTasks(tasks) {
   return tasks.map((t) => byId[t.id] || t);
 }
 
+/* Boot in two waves.
+
+   Every one of the twelve calls used to sit in one Promise.all behind the
+   loading splash, so the slowest gated first paint — including `/api/money`
+   (a blob up to 512 kB) and `/api/daily-logs?days=60`, neither of which Home
+   needs to draw. `/api/weekly-review` was worse: awaited *after* the
+   Promise.all, a whole extra round trip in series.
+
+   Wave 1 is only what Home can't paint without. Wave 2 is everything else,
+   fired in parallel and folded in when it lands — safe because every state
+   field has a cache-backed or empty default (see the `state` initialiser), so
+   the first paint shows cached values and corrects itself rather than
+   rendering blanks. */
 async function loadData() {
   if (!state.user) {
     return;
@@ -1034,83 +1062,95 @@ async function loadData() {
   state.error = '';
   render();
   try {
-    const [
-      tasksRaw,
-      habits,
-      goals,
-      reminders,
-      quote,
-      todayScore,
-      notifications,
-      water,
-      food,
-      money,
-      dailyLogs,
-      photoHistory,
-    ] = await Promise.all([
+    const [tasksRaw, habits, todayScore, water, reminders] = await Promise.all([
       api('/api/tasks'),
       api('/api/habits'),
-      api('/api/goals'),
-      api('/api/reminders'),
-      api('/api/quotes/today'),
       api('/api/score/today'),
-      api('/api/notifications'),
       api('/api/water'),
-      api('/api/food'),
-      // CRITICAL: Money MUST come from DB, not cache. Fail loudly if unavailable.
-      api('/api/money').catch((err) => {
-        console.error('⚠️ CRITICAL: Money API failed - data will NOT persist!', err);
-        return null;
-      }),
-      // CRITICAL: Sleep/mood + trends MUST come from DB. Fail loudly if unavailable.
-      api('/api/daily-logs?days=60').catch((err) => {
-        console.error(
-          '⚠️ CRITICAL: Daily logs API failed - sleep/mood data will NOT persist!',
-          err
-        );
-        return null;
-      }),
-      // CRITICAL: Photo history MUST come from DB. Fail loudly if unavailable.
-      api('/api/food/photo-history').catch((err) => {
-        console.error('⚠️ CRITICAL: Photo history API failed - photos will NOT persist!', err);
-        return null;
-      }),
+      api('/api/reminders'),
     ]);
-
     const tasks = await resetStaleCompletedTasks(tasksRaw);
-
     state.tasks = tasks.map(mapTask);
     state.habits = habits;
     reconcileStreakFreeze();
-    state.goals = goals || [];
-    // Per-goal progress (milestones, day-tracker) now rides on each goal from
-    // the backend; rebuild the id-keyed map and mirror it to the local cache.
-    const gp = {};
-    (goals || []).forEach((sec) =>
-      (sec.goals || []).forEach((g) => {
-        if (g && g.progress) gp[String(g.id)] = g.progress;
-      })
-    );
-    state.goalProgress = gp;
-    persistGoalProgress();
-    state.reminders = reminders;
-    state.quote = quote;
-    cacheQuote(quote);
+    state.score = todayScore && typeof todayScore.score === 'number' ? todayScore.score : 0;
     state.water = water;
-    state.food = food;
-    cacheFoodSummary(food);
+    state.reminders = reminders;
+  } catch (err) {
+    state.error = err.message || 'Failed to load data from backend.';
+    state.loading = false;
+    render();
+    return;
+  }
+  state.loading = false;
+  render(); // <- first paint happens here, on five calls instead of twelve
+  loadSecondaryData();
+}
+
+/* Wave 2: nothing here gates first paint. Never throws into the UI — a failure
+   leaves Home standing on wave-1 data rather than replacing it with a crash. */
+async function loadSecondaryData() {
+  // The screen we painted. If the user has navigated by the time this resolves,
+  // skip the repaint: their screen was built with this data already in state,
+  // and re-rendering would rebuild screens that own their subtree (family,
+  // money, mentor, circle) and throw away their local view state.
+  const bootScreen = state.screen;
+  connectWebSocket();
+  try {
+    const [goals, quote, notifications, food, money, dailyLogs, photoHistory, weekly] =
+      await Promise.all([
+        api('/api/goals').catch(() => null),
+        api('/api/quotes/today').catch(() => null),
+        api('/api/notifications').catch(() => null),
+        api('/api/food').catch(() => null),
+        api('/api/money').catch((err) => {
+          console.error('Money API failed - data will NOT persist!', err);
+          return null;
+        }),
+        api('/api/daily-logs?days=60').catch((err) => {
+          console.error('Daily logs API failed - sleep/mood data will NOT persist!', err);
+          return null;
+        }),
+        api('/api/food/photo-history').catch((err) => {
+          console.error('Photo history API failed - photos will NOT persist!', err);
+          return null;
+        }),
+        api('/api/weekly-review').catch(() => null),
+      ]);
+
+    if (goals) {
+      state.goals = goals;
+      // Per-goal progress (milestones, day-tracker) rides on each goal from the
+      // backend; rebuild the id-keyed map and mirror it to the local cache.
+      const gp = {};
+      goals.forEach((sec) =>
+        (sec.goals || []).forEach((g) => {
+          if (g && g.progress) gp[String(g.id)] = g.progress;
+        })
+      );
+      state.goalProgress = gp;
+      persistGoalProgress();
+    }
+    if (quote) {
+      state.quote = quote;
+      cacheQuote(quote);
+    }
+    if (notifications) state.notifications = notifications;
+    if (food) {
+      state.food = food;
+      cacheFoodSummary(food);
+    }
     if (money) {
       state.money = normalizeMoney(money);
       cacheMoney();
     }
-    // Sleep/mood + trends now live on the backend. Merge in the server data,
-    // keep the local-only photo history, and mirror to cache for offline paint.
+    // Sleep/mood + trends live on the backend. Merge in the server data, keep
+    // the local-only photo history, and mirror to cache for offline paint.
     if (dailyLogs) {
       const localWell = loadWellness();
       state.wellness = {
         sleepByDate: dailyLogs.sleepByDate || {},
         moodByDate: dailyLogs.moodByDate || {},
-        // Photo history comes from its own endpoint; fall back to the cache.
         photoHistory: photoHistory != null ? photoHistory : localWell.photoHistory || [],
       };
       state.trends = { byDate: dailyLogs.byDate || {} };
@@ -1120,66 +1160,60 @@ async function loadData() {
       state.wellness = Object.assign(emptyWellness(), state.wellness || {}, { photoHistory });
       persistWellness();
     }
-    loadCalendarFoodForDate(state.selectedDate);
-    state.score = todayScore && typeof todayScore.score === 'number' ? todayScore.score : 0;
-    state.notifications = notifications || [];
-    // Weekly reviews (backend-backed) → { weekStart: {wins,focus,savedAt} } map.
-    try {
-      const weekly = await api('/api/weekly-review');
+    if (weekly) {
       const map = {};
-      (weekly || []).forEach((w) => {
+      weekly.forEach((w) => {
         map[w.weekStart] = { wins: w.wins, focus: w.focus, savedAt: w.savedAt };
       });
       state.weeklyReviews = map;
-    } catch (_) {
-      /* keep whatever we had */
     }
+
+    loadCalendarFoodForDate(state.selectedDate);
+    // Needs state.food, so it can only run once wave 2 has landed.
     recordTrendsToday();
-    // Data is now complete, so achievement detection can baseline/fire safely.
+    // Data is complete now, so achievement detection can baseline/fire safely.
     state.achReady = true;
 
-    // CRITICAL: On app startup, force-sync money and wellness from cache to DB
-    // in case they were only updated locally before. Do this async to not block render.
+    // Push the cached money blob up in case it was only ever saved locally. The
+    // wellness half of this used to sit here and did nothing but fail: it PUT to
+    // /api/daily-logs, which doesn't exist, and sent data the server had just
+    // returned.
     setTimeout(() => {
       if (state.money) {
-        console.log('🔄 [Startup] Force-syncing money data to database...');
-        api('/api/money', { method: 'PUT', body: JSON.stringify(state.money) })
-          .then(() => console.log('✅ [Startup] Money data verified in database'))
-          .catch((err) => console.error('❌ [Startup] Money sync failed:', err));
-      }
-      if (
-        state.wellness &&
-        (Object.keys(state.wellness.sleepByDate || {}).length > 0 ||
-          Object.keys(state.wellness.moodByDate || {}).length > 0)
-      ) {
-        console.log('🔄 [Startup] Force-syncing wellness data to database...');
-        api('/api/daily-logs', {
-          method: 'PUT',
-          body: JSON.stringify({
-            sleepByDate: state.wellness.sleepByDate || {},
-            moodByDate: state.wellness.moodByDate || {},
-          }),
-        })
-          .then(() => console.log('✅ [Startup] Wellness data verified in database'))
-          .catch((err) => console.error('❌ [Startup] Wellness sync failed:', err));
+        api('/api/money', { method: 'PUT', body: JSON.stringify(state.money) }).catch((err) =>
+          console.error('Money sync failed:', err)
+        );
       }
     }, 100);
 
-    connectWebSocket();
+    if (state.screen === bootScreen) render();
   } catch (err) {
-    state.error = err.message || 'Failed to load data from backend.';
-  } finally {
-    state.loading = false;
-    render();
+    console.error('Secondary data load failed', err);
   }
 }
 
 /* ---- WebSocket: realtime notification push ---- */
-function connectWebSocket() {
-  if (!state.user || stomp) return;
+/* Realtime bell notifications. `sockjs-client` + `@stomp/stompjs` + their
+   `url-parse` dependency are ~155 KB of source — 15% of the bundle — and they
+   exist for this one channel. They're imported dynamically so they land after
+   first paint instead of blocking it: nothing awaits this call, and a channel
+   that opens a few hundred ms late is invisible.
+   `connecting` guards the await window — without it two calls in quick
+   succession both pass the `stomp` check before either has assigned it. */
+let wsConnecting = false;
+
+async function connectWebSocket() {
+  if (!state.user || stomp || wsConnecting) return;
   const token = loadToken();
   if (!token) return;
+  wsConnecting = true;
   try {
+    const [{ default: SockJS }, { Client: StompClient }] = await Promise.all([
+      import('sockjs-client'),
+      import('@stomp/stompjs'),
+    ]);
+    // Logged out (or already connected) while the chunks were in flight.
+    if (!state.user || stomp) return;
     stomp = new StompClient({
       webSocketFactory: () => new SockJS(API_BASE + '/ws'),
       connectHeaders: { Authorization: 'Bearer ' + token },
@@ -1200,6 +1234,8 @@ function connectWebSocket() {
     stomp.activate();
   } catch (err) {
     console.warn('WebSocket setup failed', err);
+  } finally {
+    wsConnecting = false;
   }
 }
 
@@ -1222,6 +1258,9 @@ async function toggleTask(id) {
     state.score = todayScore && typeof todayScore.score === 'number' ? todayScore.score : score();
     await refreshCurrentUser();
     render();
+    // Only on the way to done. Un-ticking something is a correction, not an
+    // achievement, and nodding at it would make the nod meaningless.
+    if (updated.done) buddyReact('yes');
   } catch (err) {
     toastError(err, 'Could not toggle task.');
   }
@@ -1238,6 +1277,7 @@ async function toggleHabit(id) {
     state.score = todayScore && typeof todayScore.score === 'number' ? todayScore.score : score();
     await refreshCurrentUser();
     render();
+    if (updated.doneToday) buddyReact('yes');
   } catch (err) {
     toastError(err, 'Could not toggle habit.');
   }
@@ -2144,21 +2184,21 @@ function toggleNotifOpen() {
   state.notifOpen = !state.notifOpen;
   state.profileOpen = false;
   state.moreOpen = false;
-  render();
+  repaintOverlays();
 }
 
 function toggleProfileOpen() {
   state.profileOpen = !state.profileOpen;
   state.notifOpen = false;
   state.moreOpen = false;
-  render();
+  repaintOverlays();
 }
 
 function toggleMoreOpen() {
   state.moreOpen = !state.moreOpen;
   state.notifOpen = false;
   state.profileOpen = false;
-  render();
+  repaintOverlays();
 }
 
 function profileDropdown() {
@@ -2224,7 +2264,7 @@ function profileDropdown() {
         class: 'gb-profile-pop-item',
         onclick: () => {
           state.profileOpen = false;
-          render();
+          repaintOverlays();
           openWeeklyReview();
         },
       },
@@ -2238,40 +2278,12 @@ function profileDropdown() {
         class: 'gb-profile-pop-item',
         onclick: () => {
           state.profileOpen = false;
-          render();
+          repaintOverlays();
           openProfileSettings();
         },
       },
       Icon('settings', { size: 16 }),
       'Settings'
-    ),
-    h(
-      'button',
-      {
-        type: 'button',
-        class: 'gb-profile-pop-item',
-        onclick: () => {
-          state.profileOpen = false;
-          render();
-          openSecurity();
-        },
-      },
-      Icon('shield', { size: 16 }),
-      'Security'
-    ),
-    h(
-      'button',
-      {
-        type: 'button',
-        class: 'gb-profile-pop-item',
-        onclick: () => {
-          state.profileOpen = false;
-          render();
-          openCustomise();
-        },
-      },
-      Icon('pencil', { size: 16 }),
-      'Customise'
     ),
     h(
       'button',
@@ -2289,24 +2301,15 @@ function profileDropdown() {
   );
 }
 
-const SCREEN_IDS = [
-  'home',
-  'achievements',
-  'focus',
-  'habits',
-  'food',
-  'goals',
-  'money',
-  'calendar',
-  'mentor',
-  'circle',
-  'family',
-];
-
-/** Parse the current location hash → screen id. Defaults to home. */
+/** Parse the current location hash → screen id. Defaults to home.
+    Reads `SCREENS` directly rather than a hand-kept id list. There used to be a
+    parallel `SCREEN_IDS` array, and it was missing 'report' — so refreshing on
+    Progress, or opening any link to it, silently bounced you to Home. A second
+    list of the same thing will drift; this one can't. Safe despite `SCREENS`
+    being declared further down: nothing calls this until after boot. */
 function screenFromHash() {
   const raw = (window.location.hash || '').replace(/^#\/?/, '').toLowerCase();
-  return SCREEN_IDS.includes(raw) ? raw : 'home';
+  return Object.prototype.hasOwnProperty.call(SCREENS, raw) ? raw : 'home';
 }
 
 function setScreen(id, opts) {
@@ -2315,7 +2318,7 @@ function setScreen(id, opts) {
   if (state.screen === id && !opts.force) {
     if (state.moreOpen) {
       state.moreOpen = false;
-      render();
+      repaintOverlays();
     }
     return;
   }
@@ -2489,8 +2492,12 @@ function buildSegSlider(slides, initialId) {
   return bar;
 }
 
-/* ---- Customise: standalone modal with Home + Features tabs ---- */
-function openCustomise(initialTab) {
+/* ---- Settings panes that shape the app itself ----
+   These used to be their own "Customise" modal, so the app had two settings
+   doors and no way to guess which held what (dark mode behind one, notification
+   prefs behind the other). Now they're just panes; `openProfileSettings` mounts
+   them as the Display and Layout tabs of the single Settings modal. */
+function customisePanes() {
   const u = state.user || {};
 
   // Features tab — on/off toggles, persisted instantly.
@@ -2784,36 +2791,23 @@ function openCustomise(initialTab) {
     ).node
   );
 
-  // Tabs share one segmented slider; Money joins when enabled.
-  const tabs = [
-    { id: 'display', label: 'Display', pane: displayPane },
-    { id: 'home', label: 'Home', pane: homePane },
-    { id: 'nav', label: 'Navigation', pane: navPane },
-    { id: 'features', label: 'Features', pane: featuresPane },
-  ];
-  if (moneyPane) tabs.push({ id: 'money', label: 'Money', pane: moneyPane });
-  const initial = tabs.some((t) => t.id === initialTab) ? initialTab : 'home';
-  const bar = buildSegSlider(tabs, initial);
+  // Features, Home cards and the bottom bar were three separate tabs; they all
+  // answer one question — what's in the app and where does it sit — so they're
+  // one scrollable Layout pane with section headings instead.
+  const layoutPane = h(
+    'div',
+    { class: 'gb-settings-pane', style: { display: 'none' } },
+    h('div', { class: 'gb-settings-sec-label' }, 'Features'),
+    featuresPane,
+    h('div', { class: 'gb-settings-sec-label' }, 'Home cards'),
+    homePane,
+    h('div', { class: 'gb-settings-sec-label' }, 'Bottom bar'),
+    navPane,
+    ...(moneyPane ? [h('div', { class: 'gb-settings-sec-label' }, 'Money'), moneyPane] : [])
+  );
+  displayPane.style.display = 'none';
 
-  openModal({
-    title: 'Customise',
-    sub: 'Personalise your home screen, navigation and features',
-    body: h(
-      'div',
-      { class: 'gb-settings-body' },
-      bar,
-      // Panes must be mounted in tab order — displayPane was registered in
-      // `tabs` but never appended here, so the Display tab rendered empty.
-      displayPane,
-      homePane,
-      navPane,
-      featuresPane,
-      ...(moneyPane ? [moneyPane] : [])
-    ),
-    primary: 'Close',
-    onPrimary: async () => {},
-    modalClass: 'gb-modal--settings',
-  });
+  return { displayPane, layoutPane };
 }
 
 /* ---- Weekly review ritual ----
@@ -2840,12 +2834,19 @@ function last7Keys() {
   }
   return out;
 }
-/** Is a weekly review due? (weekend/Monday, and not yet done this week.) */
+/** Is a weekly review due? (weekend/Monday, not yet done, and there's something
+    to actually look back on — the nudge used to greet a brand-new account on its
+    first Saturday and offer to review a week that never happened.) */
 function weeklyReviewDue() {
   const dow = new Date().getDay(); // 0 Sun, 1 Mon, 6 Sat
   const isWindow = dow === 0 || dow === 1 || dow === 6;
   const done = !!loadWeekly()[weekStartKey(new Date())];
-  return isWindow && !done && !!state.user;
+  if (!isWindow || done || !state.user) return false;
+  // "Something to review" means at least one number the review will actually
+  // show is non-zero. Don't test activeDays — recordTrendsToday() writes a
+  // zero-filled entry on every boot, so that only proves the app was opened.
+  const s = weeklyReviewStats();
+  return s.avgScore > 0 || s.topStreak > 0 || s.moodLogs > 0 || s.spend > 0;
 }
 function weeklyReviewStats() {
   const days = last7Keys();
@@ -3066,13 +3067,11 @@ function openDeleteAccount() {
 }
 
 /* ---- Security modal: active sessions + change password ---- */
-function openSecurity() {
-  let overlay;
-  const close = () => {
-    overlay.classList.remove('is-open');
-    setTimeout(() => overlay.remove(), 180);
-  };
-
+/* ---- Security section ----
+   Signed-in devices + password change. Used to be its own modal reachable from
+   a third "Security" item in the account menu; it's a section of Settings →
+   Account now. Returns the nodes; the caller mounts them. */
+function securitySection() {
   const sessionsWrap = h(
     'div',
     { class: 'gb-sec-sessions' },
@@ -3157,7 +3156,11 @@ function openSecurity() {
       state.user = resp;
       saveSession(resp, resp.token);
       toastSuccess('Password updated. Other devices were signed out.');
-      close();
+      curPw.value = '';
+      newPw.value = '';
+      pwBtn.disabled = false;
+      pwBtn.textContent = 'Update password';
+      loadSessions();
     } catch (err) {
       pwBtn.disabled = false;
       pwBtn.textContent = 'Update password';
@@ -3166,19 +3169,16 @@ function openSecurity() {
   }
   pwBtn.addEventListener('click', changePassword);
 
-  const sheet = h(
-    'div',
-    { class: 'gb-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Security' },
+  loadSessions();
+  return [
+    h('div', { class: 'gb-settings-sec-label' }, 'Signed-in devices'),
     h(
       'div',
-      { class: 'gb-modal-head' },
-      h('div', { class: 'gb-modal-title' }, 'Security'),
-      h('div', { class: 'gb-modal-sub' }, 'Devices signed in to your account, and your password.')
+      { class: 'gb-field-hint', style: { marginBottom: '10px' } },
+      'Sign out any device you no longer use.'
     ),
-    h('div', { class: 'gb-field-label' }, 'Signed-in devices'),
     sessionsWrap,
-    h('div', { class: 'gb-sec-divider' }),
-    h('div', { class: 'gb-field-label' }, 'Change password'),
+    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '20px' } }, 'Change password'),
     h(
       'div',
       { class: 'gb-form' },
@@ -3188,26 +3188,7 @@ function openSecurity() {
       newPw,
       pwBtn
     ),
-    h(
-      'button',
-      { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel', onclick: () => close() },
-      'Close'
-    )
-  );
-  overlay = h(
-    'div',
-    {
-      class: 'gb-modal-overlay',
-      onclick: (e) => {
-        if (e.target === overlay) close();
-      },
-    },
-    sheet
-  );
-  document.body.appendChild(overlay);
-  refreshIcons();
-  requestAnimationFrame(() => overlay.classList.add('is-open'));
-  loadSessions();
+  ];
 }
 
 /* ---- Settings modal (Profile / Alerts / Account) ---- */
@@ -3875,6 +3856,7 @@ function openProfileSettings(initialTab) {
       Icon('log-out', { size: 16 }),
       'Sign out'
     ),
+    ...securitySection(),
     h('div', { class: 'gb-settings-sec-label', style: { marginTop: '20px' } }, 'Danger zone'),
     h(
       'div',
@@ -3896,9 +3878,14 @@ function openProfileSettings(initialTab) {
   );
 
   // ---- Top-level segmented slider nav ----
+  // One door for everything a person can change about the app. Display and
+  // Layout came from the old Customise modal; Security folded into Account.
+  const { displayPane, layoutPane } = customisePanes();
   const tabDefs = [
     { id: 'profile', label: 'Profile', pane: profilePane },
+    { id: 'display', label: 'Display', pane: displayPane },
     { id: 'notifications', label: 'Alerts', pane: notifPane },
+    { id: 'layout', label: 'Layout', pane: layoutPane },
     { id: 'account', label: 'Account', pane: accountPane },
   ];
   const activeTab = tabDefs.some((t) => t.id === initialTab) ? initialTab : 'profile';
@@ -3924,16 +3911,23 @@ function openProfileSettings(initialTab) {
       )
     ),
     tabBar,
+    // Panes must be mounted in tab order — buildSegSlider only toggles display.
     profilePane,
+    displayPane,
     notifPane,
+    layoutPane,
     accountPane
   );
 
   openModal({
+    // "Done", not "Save changes": every tab but Profile saves the moment you
+    // touch it, so a Save button that only commits the Profile fields would be
+    // lying on the other four. It still saves them — it just doesn't claim to
+    // be the reason anything else stuck.
     title: 'Settings',
     sub: null,
     body,
-    primary: 'Save changes',
+    primary: 'Done',
     modalClass: 'gb-modal--settings',
     onPrimary: async () => {
       const parseDobToAge = (raw, ref) => {
@@ -4215,6 +4209,9 @@ function openModal({ title, sub, body, primary, onPrimary, modalClass }) {
           render();
         } catch (err) {
           primaryBtn.disabled = false;
+          // The modal refused what you gave it, so the modal is what shakes —
+          // the same head-shake the sign-in card does.
+          shakeRefusal(sheet);
           toastError(err, 'Something went wrong.');
         }
       },
@@ -4556,10 +4553,11 @@ function openAddSheet() {
       'div',
       { class: 'gb-modal-head' },
       h('div', { class: 'gb-modal-title' }, 'What would you like to add?'),
-      h('div', { class: 'gb-modal-sub' }, 'Type it in one line, or pick below.')
+      h('div', { class: 'gb-modal-sub' }, 'Pick one, or type it in your own words.')
     ),
-    quickAddBox,
-    h('div', { class: 'gb-quickadd-or' }, 'or add manually'),
+    // The explicit five come first. Quick add is an AI shortcut that needs a key
+    // configured on the server — leading with it meant the most prominent path
+    // was the one that could fail after you'd already typed a sentence.
     h(
       'div',
       { class: 'gb-modal-opts' },
@@ -4577,6 +4575,8 @@ function openAddSheet() {
         )
       )
     ),
+    h('div', { class: 'gb-quickadd-or' }, 'or describe it in one line'),
+    quickAddBox,
     h(
       'button',
       { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel', onclick: close },
@@ -4991,7 +4991,7 @@ function ScreenHabits() {
         'button',
         {
           type: 'button',
-          class: 'gb-rem-del',
+          class: 'gb-rem-del gb-rem-del--danger',
           'aria-label': 'Delete habit',
           onclick: () => confirmDelete('Delete this habit?', () => deleteHabit(habit.id)),
         },
@@ -5105,13 +5105,12 @@ function ScreenHabits() {
       { style: { padding: '0 20px' } },
       h('div', { class: 'gb-card', style: { padding: '4px 0' } }, rows)
     ),
-    HabitSleepInsightCard
-      ? h(
-          'div',
-          { style: { padding: '0 20px', marginTop: '12px' } },
-          HabitSleepInsightCard({ habits: state.habits, wellness: state.wellness })
-        )
-      : null
+    // Guard on the card, not on the function: it returns null when there's no
+    // fitness habit or no sleep logged, and an empty padded div is still a gap.
+    (() => {
+      const card = HabitSleepInsightCard({ habits: state.habits, wellness: state.wellness });
+      return card ? h('div', { style: { padding: '0 20px', marginTop: '12px' } }, card) : null;
+    })()
   );
 }
 
@@ -5242,7 +5241,6 @@ const SCREENS = {
         foodSummary: state.calendarFoodByDate[state.selectedDate] || null,
         dayFoodLoading: state.calendarFoodLoadingFor === state.selectedDate,
         dayFoodError: state.calendarFoodErrorByDate[state.selectedDate] || '',
-        level: (state.user && state.user.level) || 1,
         onAddTask: openAddTask,
         onAddHabit: openAddHabit,
         calYear: state.calYear,
@@ -5267,26 +5265,30 @@ const SCREENS = {
     headerLabel: () => 'Your progress',
     headerName: () => 'Progress',
     render: () =>
-      ScreenReport({
-        features: (state.user && state.user.features) || null,
-        score: score(),
-        tasks: state.tasks,
-        habits: state.habits,
-        goals: state.goals,
-        water: state.water,
-        food: state.food,
-        wellness: state.wellness,
-        trends: state.trends,
-        money: state.money,
-        range: state.reportRange,
-        onRange: (days) => {
-          state.reportRange = days;
-          render();
-        },
-        onEnableFeature: (key) => {
-          setFeature(key, true).catch((err) => toastError(err, 'Could not turn on feature.'));
-        },
-      }),
+      lazyScreen(
+        () => import('./report.js'),
+        (m) =>
+          m.ScreenReport({
+            features: (state.user && state.user.features) || null,
+            score: score(),
+            tasks: state.tasks,
+            habits: state.habits,
+            goals: state.goals,
+            water: state.water,
+            food: state.food,
+            wellness: state.wellness,
+            trends: state.trends,
+            money: state.money,
+            range: state.reportRange,
+            onRange: (days) => {
+              state.reportRange = days;
+              render();
+            },
+            onEnableFeature: (key) => {
+              setFeature(key, true).catch((err) => toastError(err, 'Could not turn on feature.'));
+            },
+          })
+      ),
   },
   achievements: {
     headerLabel: () => 'Your badges',
@@ -5297,17 +5299,21 @@ const SCREENS = {
     headerLabel: () => 'Deep work',
     headerName: () => 'Timer',
     render: () =>
-      ScreenFocus({
-        onFocusSession: (mode, durationSec) =>
-          api('/api/focus/sessions', {
-            method: 'POST',
-            body: JSON.stringify({ mode, durationSec }),
-          }),
-        getFocusStats: () => api('/api/focus/stats'),
-      }),
+      lazyScreen(
+        () => import('./timer.js'),
+        (m) =>
+          m.ScreenFocus({
+            onFocusSession: (mode, durationSec) =>
+              api('/api/focus/sessions', {
+                method: 'POST',
+                body: JSON.stringify({ mode, durationSec }),
+              }),
+            getFocusStats: () => api('/api/focus/stats'),
+          })
+      ),
   },
   habits: {
-    headerLabel: () => '',
+    headerLabel: () => 'Build your streaks',
     headerName: () => 'Habits',
     render: () => ScreenHabits(),
   },
@@ -5356,136 +5362,151 @@ const SCREENS = {
     headerLabel: () => 'Your AI mentor',
     headerName: () => 'Buddy',
     render: () =>
-      ScreenMentor({
-        api: {
-          get: () => api('/api/mentor/chat'),
-          post: (text) =>
-            api('/api/mentor/chat/messages', {
-              method: 'POST',
-              body: JSON.stringify({ content: text }),
-            }),
-          clear: () => api('/api/mentor/chat/messages', { method: 'DELETE' }),
-        },
-      }),
+      lazyScreen(
+        () => import('./mentor.js'),
+        (m) =>
+          m.ScreenMentor({
+            api: {
+              get: () => api('/api/mentor/chat'),
+              post: (text) =>
+                api('/api/mentor/chat/messages', {
+                  method: 'POST',
+                  body: JSON.stringify({ content: text }),
+                }),
+              clear: () => api('/api/mentor/chat/messages', { method: 'DELETE' }),
+            },
+          })
+      ),
   },
   circle: {
     headerLabel: () => 'Grow together',
     headerName: () => 'Growth Circle',
     render: () =>
-      ScreenCircle({
-        onSearch: (q) => api('/api/users/search?q=' + encodeURIComponent(q)),
-        onBrowse: () => api('/api/users/browse'),
-        onSendInvite: (toUserId, direction, note) =>
-          api('/api/mentorship/requests', {
-            method: 'POST',
-            body: JSON.stringify({ toUserId, direction, note }),
-          }),
-        onLoadOutgoing: () => api('/api/mentorship/requests/outgoing'),
-        onLoadIncoming: () => api('/api/mentorship/requests/incoming'),
-        onLoadStatus: (partnerId) =>
-          api('/api/mentorship/connections/' + encodeURIComponent(partnerId) + '/status'),
-        onRevoke: (requestId) =>
-          api('/api/mentorship/requests/' + encodeURIComponent(requestId) + '/revoke', {
-            method: 'POST',
-          }),
-        currentUserId: state.user && state.user.id,
-        challengesApi: {
-          listMine: () => api('/api/circles/mine'),
-          listAll: () => api('/api/circles'),
-          createCircle: (body) =>
-            api('/api/circles', { method: 'POST', body: JSON.stringify(body) }),
-          join: (id) => api('/api/circles/' + encodeURIComponent(id) + '/join', { method: 'POST' }),
-          listChallenges: (id) => api('/api/circles/' + encodeURIComponent(id) + '/challenges'),
-          createChallenge: (id, body) =>
-            api('/api/circles/' + encodeURIComponent(id) + '/challenges', {
-              method: 'POST',
-              body: JSON.stringify(body),
-            }),
-        },
-      }),
+      lazyScreen(
+        () => import('./circle.js'),
+        (m) =>
+          m.ScreenCircle({
+            onSearch: (q) => api('/api/users/search?q=' + encodeURIComponent(q)),
+            onBrowse: () => api('/api/users/browse'),
+            onSendInvite: (toUserId, direction, note) =>
+              api('/api/mentorship/requests', {
+                method: 'POST',
+                body: JSON.stringify({ toUserId, direction, note }),
+              }),
+            onLoadOutgoing: () => api('/api/mentorship/requests/outgoing'),
+            onLoadIncoming: () => api('/api/mentorship/requests/incoming'),
+            onLoadStatus: (partnerId) =>
+              api('/api/mentorship/connections/' + encodeURIComponent(partnerId) + '/status'),
+            onRevoke: (requestId) =>
+              api('/api/mentorship/requests/' + encodeURIComponent(requestId) + '/revoke', {
+                method: 'POST',
+              }),
+            currentUserId: state.user && state.user.id,
+            challengesApi: {
+              listMine: () => api('/api/circles/mine'),
+              listAll: () => api('/api/circles'),
+              createCircle: (body) =>
+                api('/api/circles', { method: 'POST', body: JSON.stringify(body) }),
+              join: (id) =>
+                api('/api/circles/' + encodeURIComponent(id) + '/join', { method: 'POST' }),
+              listChallenges: (id) => api('/api/circles/' + encodeURIComponent(id) + '/challenges'),
+              createChallenge: (id, body) =>
+                api('/api/circles/' + encodeURIComponent(id) + '/challenges', {
+                  method: 'POST',
+                  body: JSON.stringify(body),
+                }),
+            },
+          })
+      ),
   },
   family: {
     headerLabel: () => 'Cook for everyone',
     headerName: () => 'Family',
     render: () =>
-      ScreenFamily({
-        api: {
-          getFamily: () => api('/api/family'),
-          addMember: (body) =>
-            api('/api/family/members', { method: 'POST', body: JSON.stringify(body) }),
-          updateMember: (id, body) =>
-            api('/api/family/members/' + encodeURIComponent(id), {
-              method: 'PUT',
-              body: JSON.stringify(body),
-            }),
-          updateProfile: (id, profile) =>
-            api('/api/family/members/' + encodeURIComponent(id) + '/profile', {
-              method: 'PUT',
-              body: JSON.stringify(profile),
-            }),
-          removeMember: (id) =>
-            api('/api/family/members/' + encodeURIComponent(id), { method: 'DELETE' }),
-          leaveFamily: () => api('/api/family/leave', { method: 'POST' }),
-          searchUsers: (q) => api('/api/family/search?q=' + encodeURIComponent(q)),
-          linkMember: (body) =>
-            api('/api/family/members/link', { method: 'POST', body: JSON.stringify(body) }),
-          getInvites: () => api('/api/family/invites'),
-          acceptInvite: (memberId) =>
-            api('/api/family/invites/' + encodeURIComponent(memberId) + '/accept', {
-              method: 'POST',
-            }),
-          declineInvite: (memberId) =>
-            api('/api/family/invites/' + encodeURIComponent(memberId) + '/decline', {
-              method: 'POST',
-            }),
-          scanGrocery: (imageDataUrl) =>
-            api('/api/family/grocery-scan', {
-              method: 'POST',
-              body: JSON.stringify({ imageDataUrl }),
-            }),
-          generateMealPlan: (body) =>
-            api('/api/family/meal-plan', { method: 'POST', body: JSON.stringify(body) }),
-          getMealPlan: () => api('/api/family/meal-plan'),
-          markCooked: (planId) =>
-            api('/api/family/meal-plan/' + encodeURIComponent(planId) + '/cooked', {
-              method: 'POST',
-            }),
-          // Favourites
-          listFavourites: () => api('/api/family/favourites'),
-          saveFavourite: (body) =>
-            api('/api/family/favourites', { method: 'POST', body: JSON.stringify(body) }),
-          deleteFavourite: (id) =>
-            api('/api/family/favourites/' + encodeURIComponent(id), { method: 'DELETE' }),
-          // Weekly / monthly + occasions
-          generateWeekly: (body) =>
-            api('/api/family/meal-plan/multi', { method: 'POST', body: JSON.stringify(body) }),
-          getWeekly: () => api('/api/family/meal-plan/multi'),
-          // Pantry
-          listPantry: () => api('/api/family/pantry'),
-          addPantry: (body) =>
-            api('/api/family/pantry', { method: 'POST', body: JSON.stringify(body) }),
-          scanPantry: (imageDataUrl) =>
-            api('/api/family/pantry/scan', {
-              method: 'POST',
-              body: JSON.stringify({ imageDataUrl }),
-            }),
-          deletePantry: (id) =>
-            api('/api/family/pantry/' + encodeURIComponent(id), { method: 'DELETE' }),
-          // Shopping list
-          listShopping: () => api('/api/family/shopping'),
-          addShopping: (body) =>
-            api('/api/family/shopping', { method: 'POST', body: JSON.stringify(body) }),
-          generateShopping: (body) =>
-            api('/api/family/shopping/generate', {
-              method: 'POST',
-              body: JSON.stringify(body || {}),
-            }),
-          toggleShopping: (id) =>
-            api('/api/family/shopping/' + encodeURIComponent(id) + '/toggle', { method: 'POST' }),
-          deleteShopping: (id) =>
-            api('/api/family/shopping/' + encodeURIComponent(id), { method: 'DELETE' }),
-        },
-      }),
+      lazyScreen(
+        () => import('./family.js'),
+        (m) =>
+          m.ScreenFamily({
+            api: {
+              getFamily: () => api('/api/family'),
+              addMember: (body) =>
+                api('/api/family/members', { method: 'POST', body: JSON.stringify(body) }),
+              updateMember: (id, body) =>
+                api('/api/family/members/' + encodeURIComponent(id), {
+                  method: 'PUT',
+                  body: JSON.stringify(body),
+                }),
+              updateProfile: (id, profile) =>
+                api('/api/family/members/' + encodeURIComponent(id) + '/profile', {
+                  method: 'PUT',
+                  body: JSON.stringify(profile),
+                }),
+              removeMember: (id) =>
+                api('/api/family/members/' + encodeURIComponent(id), { method: 'DELETE' }),
+              leaveFamily: () => api('/api/family/leave', { method: 'POST' }),
+              searchUsers: (q) => api('/api/family/search?q=' + encodeURIComponent(q)),
+              linkMember: (body) =>
+                api('/api/family/members/link', { method: 'POST', body: JSON.stringify(body) }),
+              getInvites: () => api('/api/family/invites'),
+              acceptInvite: (memberId) =>
+                api('/api/family/invites/' + encodeURIComponent(memberId) + '/accept', {
+                  method: 'POST',
+                }),
+              declineInvite: (memberId) =>
+                api('/api/family/invites/' + encodeURIComponent(memberId) + '/decline', {
+                  method: 'POST',
+                }),
+              scanGrocery: (imageDataUrl) =>
+                api('/api/family/grocery-scan', {
+                  method: 'POST',
+                  body: JSON.stringify({ imageDataUrl }),
+                }),
+              generateMealPlan: (body) =>
+                api('/api/family/meal-plan', { method: 'POST', body: JSON.stringify(body) }),
+              getMealPlan: () => api('/api/family/meal-plan'),
+              markCooked: (planId) =>
+                api('/api/family/meal-plan/' + encodeURIComponent(planId) + '/cooked', {
+                  method: 'POST',
+                }),
+              // Favourites
+              listFavourites: () => api('/api/family/favourites'),
+              saveFavourite: (body) =>
+                api('/api/family/favourites', { method: 'POST', body: JSON.stringify(body) }),
+              deleteFavourite: (id) =>
+                api('/api/family/favourites/' + encodeURIComponent(id), { method: 'DELETE' }),
+              // Weekly / monthly + occasions
+              generateWeekly: (body) =>
+                api('/api/family/meal-plan/multi', { method: 'POST', body: JSON.stringify(body) }),
+              getWeekly: () => api('/api/family/meal-plan/multi'),
+              // Pantry
+              listPantry: () => api('/api/family/pantry'),
+              addPantry: (body) =>
+                api('/api/family/pantry', { method: 'POST', body: JSON.stringify(body) }),
+              scanPantry: (imageDataUrl) =>
+                api('/api/family/pantry/scan', {
+                  method: 'POST',
+                  body: JSON.stringify({ imageDataUrl }),
+                }),
+              deletePantry: (id) =>
+                api('/api/family/pantry/' + encodeURIComponent(id), { method: 'DELETE' }),
+              // Shopping list
+              listShopping: () => api('/api/family/shopping'),
+              addShopping: (body) =>
+                api('/api/family/shopping', { method: 'POST', body: JSON.stringify(body) }),
+              generateShopping: (body) =>
+                api('/api/family/shopping/generate', {
+                  method: 'POST',
+                  body: JSON.stringify(body || {}),
+                }),
+              toggleShopping: (id) =>
+                api('/api/family/shopping/' + encodeURIComponent(id) + '/toggle', {
+                  method: 'POST',
+                }),
+              deleteShopping: (id) =>
+                api('/api/family/shopping/' + encodeURIComponent(id), { method: 'DELETE' }),
+            },
+          })
+      ),
   },
   money: {
     headerLabel: () => 'Spend & save well',
@@ -5502,23 +5523,106 @@ const SCREENS = {
     headerLabel: () => 'Track progress',
     headerName: () => 'Goals',
     render: () =>
-      ScreenGoals({
-        sections: state.goals,
-        onCreateGoal: createGoal,
-        onToggleGoal: toggleGoal,
-        onDeleteGoal: deleteGoal,
-        onAddAction: addGoalAction,
-        onUpdateAction: updateGoalAction,
-        onDeleteAction: deleteGoalAction,
-        goalProgress: state.goalProgress || {},
-        onUpdateGoalProgress: updateGoalProgress,
-      }),
+      lazyScreen(
+        () => import('./goals.js'),
+        (m) =>
+          m.ScreenGoals({
+            sections: state.goals,
+            onCreateGoal: createGoal,
+            onToggleGoal: toggleGoal,
+            onDeleteGoal: deleteGoal,
+            onAddAction: addGoalAction,
+            onUpdateAction: updateGoalAction,
+            onDeleteAction: deleteGoalAction,
+            goalProgress: state.goalProgress || {},
+            onUpdateGoalProgress: updateGoalProgress,
+          })
+      ),
   },
 };
 
 /* ---- Render ---- */
 const root = document.getElementById('root');
 let renderedScreen = '';
+
+/* ---- Lazy screens ----
+   Six screens export nothing but their own `Screen*` to app.js and nothing else
+   imports them, so they don't belong in the boot chunk: family, circle, timer,
+   goals, report and mentor are ~151 KB of source that a user landing on Home
+   never touches. (money.js can't join them yet — Home's Money card and
+   `normalizeMoney` pull it in eagerly; see the note in docs.)
+
+   `SCREENS[x].render()` has to stay synchronous because render() uses its return
+   value as a child directly. So return a placeholder now and `replaceWith` the
+   real root when the chunk lands — replace, not append, because the real root
+   must end up a direct child of `.gb-scroll`: the desktop width cap is
+   `.gb-scroll > .gb-rise:not(.gb-goals):not(.gb-mentor)`, and wrapping it in a
+   container would both steal the cap and break those two exceptions.
+   Modules cache after first import, so this costs one round trip per session. */
+function screenSkeleton() {
+  const bar = (w) => h('div', { class: 'gb-skel-line', style: { width: w } });
+  const card = () =>
+    h(
+      'div',
+      { class: 'gb-card gb-skel-card' },
+      h('div', { class: 'gb-skel-avatar' }),
+      h('div', { class: 'gb-skel-lines' }, bar('60%'), bar('40%'))
+    );
+  return h('div', { class: 'gb-rise gb-lazy-skeleton' }, card(), card(), card());
+}
+
+function lazyScreen(loader, build) {
+  const placeholder = screenSkeleton();
+  loader()
+    .then((mod) => {
+      // A later render() may have swapped this placeholder out already; that
+      // render made its own, so this one is stale and must not resurrect itself.
+      if (!placeholder.isConnected) return;
+      placeholder.replaceWith(build(mod));
+      refreshIcons();
+    })
+    .catch((err) => {
+      console.error('Screen failed to load', err);
+      if (!placeholder.isConnected) return;
+      placeholder.replaceWith(CrashCard(() => render()));
+      refreshIcons();
+    });
+  return placeholder;
+}
+
+function bottomNav() {
+  return BottomNav({
+    active: state.screen,
+    onNav: setScreen,
+    onMore: toggleMoreOpen,
+    moreOpen: state.moreOpen,
+    features: (state.user && state.user.features) || null,
+    layout: (state.user && state.user.navLayout) || null,
+  });
+}
+
+/* Repaint only the header popovers and the nav — never the screen.
+   These three are siblings of the active screen, so opening the bell or the
+   account menu has no business rebuilding it. `render()` calls `cfg.render()`,
+   which constructs a brand-new screen and discards whatever state that screen
+   owned internally: on Family, tapping the bell while the Pantry tab was open
+   dumped you back on Members. Same for Money, Mentor and Circle, which also
+   manage their own subtrees (see docs/scripts/app.js.md).
+   Falls back to a full render before first paint, when the slots don't exist. */
+function repaintOverlays() {
+  const notif = document.getElementById('gb-notif-slot');
+  const profile = document.getElementById('gb-profile-slot');
+  const nav = document.querySelector('.gb-nav-wrap');
+  if (!notif || !profile || !nav) {
+    render();
+    return;
+  }
+  notif.replaceChildren(...[notificationDropdown()].filter(Boolean));
+  profile.replaceChildren(...[profileDropdown()].filter(Boolean));
+  nav.replaceWith(bottomNav());
+  refreshIcons();
+  installOutsideClickToCloseHeaderPopovers();
+}
 
 function captureScrollPosition() {
   const scroll = document.querySelector('.gb-scroll');
@@ -5655,18 +5759,21 @@ function field(label, input) {
   return [h('label', { class: 'gb-login-label' }, label), input];
 }
 
-/* Face ID doesn't just print "incorrect" — it shakes its head at you. Same
-   here: a rejected sign-in makes the card refuse with a decaying head-shake
-   and a short double-buzz. Premium skin only; the keyframes live in
-   styles/premium.css and reduced-motion swaps the shake for a red ring. */
-function shakeAuthCard() {
-  if (!state.premium) return;
-  const card = document.querySelector('.gb-login-card');
-  if (!card) return;
-  card.classList.remove('gb-shake');
-  void card.offsetWidth; // restart the animation when the same card fails twice
-  card.classList.add('gb-shake');
-  card.addEventListener('animationend', () => card.classList.remove('gb-shake'), { once: true });
+/* Face ID doesn't just print "incorrect" — it shakes its head at you.
+   This is that gesture, and it belongs to the whole interface rather than to
+   one screen: whatever surface just refused the user is what shakes. Wrong
+   password shakes the sign-in card; a modal that rejects what you typed
+   shakes the modal. One refusal, one gesture, so it reads as the product's
+   own body language instead of a trick on the login page.
+
+   Premium skin only; the keyframes live in styles/premium.css, where
+   reduced-motion swaps the shake for a red ring. */
+function shakeRefusal(el) {
+  if (!state.premium || !el) return;
+  el.classList.remove('gb-shake');
+  void el.offsetWidth; // restart the animation when the same surface fails twice
+  el.classList.add('gb-shake');
+  el.addEventListener('animationend', () => el.classList.remove('gb-shake'), { once: true });
   try {
     if (navigator.vibrate) navigator.vibrate([14, 70, 14]);
   } catch (_) {}
@@ -5688,7 +5795,7 @@ function runAuth(action) {
       state.loading = false;
       render();
       // After render(): the card node it shakes is the freshly built one.
-      if (rejected) shakeAuthCard();
+      if (rejected) shakeRefusal(document.querySelector('.gb-login-card'));
     });
 }
 
@@ -6181,17 +6288,16 @@ function render() {
       label: cfg.headerLabel(),
       name: cfg.headerName(),
       userName: state.user.displayName || 'Buddy',
-      theme: state.theme,
-      premium: state.premium,
-      onPremium: togglePremium,
       onAdd: openAddSheet,
-      onTheme: toggleTheme,
       onAccount: toggleProfileOpen,
       unreadCount: unreadNotifs(),
       onBell: toggleNotifOpen,
     }),
-    notificationDropdown(),
-    profileDropdown(),
+    // Stable wrappers so the popovers can be repainted without rebuilding the
+    // app. Both are layout-neutral: `.gb-app` is a flex column with no gap and
+    // the popovers are absolutely positioned, so an empty slot is 0px tall.
+    h('div', { id: 'gb-notif-slot' }, notificationDropdown()),
+    h('div', { id: 'gb-profile-slot' }, profileDropdown()),
     toastStack(),
     h(
       'div',
@@ -6207,14 +6313,7 @@ function render() {
           })
         : cfg.render()
     ),
-    BottomNav({
-      active: state.screen,
-      onNav: setScreen,
-      onMore: toggleMoreOpen,
-      moreOpen: state.moreOpen,
-      features: (state.user && state.user.features) || null,
-      layout: (state.user && state.user.navLayout) || null,
-    })
+    bottomNav()
   );
 
   root.replaceChildren(app);
@@ -6232,17 +6331,28 @@ function render() {
  * mousedown anywhere outside of it, or when Escape is pressed. The handlers
  * self-remove after one fire so we don't pile up listeners across renders.
  */
+/* Handle on the listeners the last install attached, so re-installing can tear
+   them down first. Without it every toggle added a fresh pair of closures and
+   only the pair that happened to fire got removed — bell, avatar, bell left two
+   orphaned sets on `document` for the life of the session. */
+let popoverCleanup = null;
+
 function installOutsideClickToCloseHeaderPopovers() {
+  if (popoverCleanup) {
+    popoverCleanup();
+    popoverCleanup = null;
+  }
   if (!state.notifOpen && !state.profileOpen) return;
   function cleanup() {
     document.removeEventListener('mousedown', onDocDown, true);
     document.removeEventListener('keydown', onKeyDown, true);
+    popoverCleanup = null;
   }
   function closePopovers() {
     cleanup();
     state.notifOpen = false;
     state.profileOpen = false;
-    render();
+    repaintOverlays();
   }
   function onDocDown(ev) {
     const pop = ev.target.closest('.gb-notif-pop, .gb-profile-pop, .gb-bell, .gb-avatar');
@@ -6255,6 +6365,7 @@ function installOutsideClickToCloseHeaderPopovers() {
       closePopovers();
     }
   }
+  popoverCleanup = cleanup;
   // Defer so the click that opened the popover doesn't immediately close it.
   setTimeout(() => {
     document.addEventListener('mousedown', onDocDown, true);
@@ -6289,36 +6400,21 @@ if (state.user) {
   state.screen = screenFromHash();
   loadData();
 
-  // CRITICAL: Periodic sync of local-cached data to database every 5 minutes.
-  // This ensures money/wellness data persists even if initial sync failed or connection dropped.
+  // Re-push the money blob every 5 minutes in case a save was lost to a dropped
+  // connection. Wellness rode along here too, PUTting to an endpoint that has
+  // never existed — a failure on a timer, forever. Sleep and mood are saved by
+  // their own POSTs at the moment you enter them.
   setInterval(
     () => {
-      if (!state.user) return; // Skip if logged out
-
-      // Sync money data every 5 minutes
+      if (!state.user) return;
       if (state.money && (state.money.expenses || []).length > 0) {
         api('/api/money', { method: 'PUT', body: JSON.stringify(state.money) }).catch((err) =>
-          console.warn('⚠️ [5min sync] Money sync failed:', err)
+          console.warn('Money sync failed:', err)
         );
-      }
-
-      // Sync wellness data every 5 minutes
-      if (
-        state.wellness &&
-        (Object.keys(state.wellness.sleepByDate || {}).length > 0 ||
-          Object.keys(state.wellness.moodByDate || {}).length > 0)
-      ) {
-        api('/api/daily-logs', {
-          method: 'PUT',
-          body: JSON.stringify({
-            sleepByDate: state.wellness.sleepByDate || {},
-            moodByDate: state.wellness.moodByDate || {},
-          }),
-        }).catch((err) => console.warn('⚠️ [5min sync] Wellness sync failed:', err));
       }
     },
     5 * 60 * 1000
-  ); // 5 minutes
+  );
 }
 render();
 window.addEventListener('load', refreshIcons);
