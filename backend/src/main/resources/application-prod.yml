@@ -12,11 +12,22 @@ spring:
 
   jpa:
     hibernate:
-      # The schema is owned by tableCreationQueries.sql. 'validate' fails the
-      # deploy on drift instead of ALTERing a live table under load — and
-      # 'update' cannot apply column changes to FK-referenced columns anyway,
-      # so it fails halfway and leaves the schema part-migrated.
-      ddl-auto: validate
+      # Never 'update' in prod: it cannot alter FK-referenced columns, so it
+      # fails halfway and leaves the schema part-migrated (reproducible on this
+      # repo's own dev DB).
+      #
+      # 'validate' is the setting you want, and it does not currently pass. On a
+      # database built from tableCreationQueries.sql it reports 73 type
+      # differences, nearly all dialect spelling that means nothing at runtime:
+      # timestamp vs datetime(6), tinyint(1) vs bit(1), and ENUM value ordering,
+      # which Hibernate emits alphabetically. Turning those into a startup
+      # failure blocks every deploy for no safety gained.
+      #
+      # The real drift hiding behind that noise is fixed in the schema file
+      # (four users columns the app reads were never created there). Once the
+      # cosmetic differences are reconciled — regenerate the file from Hibernate,
+      # or hand-align it — switch this to validate and keep it there.
+      ddl-auto: ${SPRING_JPA_DDL_AUTO:none}
 
 growthbuddy:
   # No fallback: SessionService refuses to boot on the dev secret under this

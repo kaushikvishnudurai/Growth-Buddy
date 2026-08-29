@@ -23,7 +23,7 @@ CREATE TABLE users (
   email           VARCHAR(254) NOT NULL,
   email_verified  BOOLEAN      NOT NULL DEFAULT FALSE,
   display_name    VARCHAR(120) NOT NULL,
-  avatar_url      TEXT,
+  avatar_url      VARCHAR(255),
   timezone        VARCHAR(64)  NOT NULL DEFAULT 'UTC',
   dob             DATE         NULL,
   level           INT          NOT NULL DEFAULT 1,        -- cached XP level
@@ -95,7 +95,7 @@ CREATE TABLE tasks (
   user_id         CHAR(36)     NOT NULL,
   title           VARCHAR(255) NOT NULL,
   notes           TEXT,
-  priority        ENUM('Low','Medium','High') NOT NULL DEFAULT 'Medium',
+  priority        VARCHAR(8)  NOT NULL DEFAULT 'Medium',
   due_at          TIMESTAMP    NULL,
   done            BOOLEAN      NOT NULL DEFAULT FALSE,
   done_at         TIMESTAMP    NULL,
@@ -246,7 +246,7 @@ CREATE TABLE goals (
   id              CHAR(36)   NOT NULL,
   user_id         CHAR(36)   NOT NULL,
   title           VARCHAR(255) NOT NULL,
-  description     TEXT,
+  description     VARCHAR(1000),
   horizon         ENUM('short_term','mid_term','long_term') NOT NULL DEFAULT 'short_term',
   target_date     DATE         NULL,
   completed       BOOLEAN      NOT NULL DEFAULT FALSE,
@@ -490,11 +490,17 @@ ALTER TABLE users ADD COLUMN gender               VARCHAR(20) NULL;
 ALTER TABLE users ADD COLUMN fitness_goal         VARCHAR(100) NULL;
 ALTER TABLE users ADD COLUMN whatsapp_verified    BOOLEAN NOT NULL DEFAULT FALSE;
 
--- Customizable bottom-navigation layout (v4). Mirrors home_layout: a per-user
--- JSON array [{"id":"home","primary":true}, ...] where order is display order
--- and `primary` puts a destination in the bar (true) vs the "More" sheet.
--- ddl-auto: update auto-adds this nullable column; listed for fresh installs.
-ALTER TABLE users ADD COLUMN nav_layout JSON NULL;
+-- Present in the entity and read in 24 places, but never in this file: a fresh
+-- database built from it produced a users table the app could not query at all.
+ALTER TABLE users ADD COLUMN favourite_dish   VARCHAR(120) NULL;
+ALTER TABLE users ADD COLUMN allergic_to      VARCHAR(255) NULL;
+ALTER TABLE users ADD COLUMN feature_prefs    JSON         NULL;
+ALTER TABLE users ADD COLUMN ui_prefs         JSON         NULL;
+
+-- nav_layout is declared in the users CREATE TABLE above, so it needs no ALTER
+-- here: adding it twice made this file abort mid-load on a fresh database,
+-- leaving 28 of 45 tables. Upgrading an older DB that predates the column?
+-- Run the ALTER by hand, or let dev's ddl-auto: update add it.
 
 CREATE TABLE IF NOT EXISTS whatsapp_otp_tokens (
   token_hash  VARCHAR(255) NOT NULL,
@@ -604,7 +610,7 @@ CREATE TABLE money_state (
 -- Match a section above if you ever normalise them.
 -- =========================================================
 CREATE TABLE `calendar_reminders` (
-  `id` varchar(36) NOT NULL,
+  `id` char(36) NOT NULL,
   `anchor_date` date NOT NULL,
   `created_at` datetime(6) NOT NULL,
   `from_date` date DEFAULT NULL,
@@ -620,7 +626,7 @@ CREATE TABLE `calendar_reminders` (
 ;
 
 CREATE TABLE `calendar_reminder_skips` (
-  `reminder_id` varchar(36) NOT NULL,
+  `reminder_id` char(36) NOT NULL,
   `skip_date` date NOT NULL,
   PRIMARY KEY (`reminder_id`,`skip_date`),
   CONSTRAINT `FK3fhfwht79vx2f490y2wxnsaeb` FOREIGN KEY (`reminder_id`) REFERENCES `calendar_reminders` (`id`)
