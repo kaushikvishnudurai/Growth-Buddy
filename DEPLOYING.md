@@ -63,6 +63,61 @@ A host that sleeps the container on idle still answers web requests (it wakes on
 HTTP) while firing no crons at all, so reminders and digests simply never send.
 Nothing errors. That is what rules out the free tiers that would otherwise fit.
 
+## Render + TiDB (free, no card)
+
+The fallback when no card is available for Oracle. Weaker than a VM — the free
+web service sleeps after 15 minutes and has 512MB — but it needs no payment
+method and the database is permanent.
+
+**TiDB first**, because the API will not boot without its connection details.
+TiDB Cloud Starter is MySQL wire-compatible and free permanently. Create the
+cluster, then apply `tableCreationQueries.sql` to it. `ddl-auto: none` means
+Hibernate only ever issues DML against it, so the usual MySQL-vs-compatible
+risk (schema generation, validation) never comes into play.
+
+**Then the web service.** Render builds the Dockerfile on its own builder, not
+on the 512MB instance, so the build has room even though the runtime does not.
+
+| Setting | Value |
+|---|---|
+| Service type | Web Service |
+| Runtime | Docker |
+| Dockerfile path | `backend/Dockerfile` |
+| Docker build context | `.` — the repo root, **not** `backend/` |
+| Instance type | Free |
+
+The context directory is the one people get wrong: the Dockerfile copies
+`package.json`, `scripts/` and `styles/` from the repo root to build the
+frontend, and fails immediately if pointed at `backend/`.
+
+Environment variables, beyond the ones in `prod.env.example`:
+
+| Variable | Value |
+|---|---|
+| `DB_HOST` `DB_PORT` `DB_NAME` `DB_USER` `DB_PASSWORD` | from TiDB |
+| `DB_SSL_MODE` | `REQUIRED` — TiDB mandates TLS, the opposite of the compose setup |
+| `JAVA_OPTS` | `-XX:MaxRAMPercentage=50 -XX:MaxMetaspaceSize=96m -XX:+UseSerialGC` |
+| `CORS_ALLOWED_ORIGINS` | `https://<service-name>.onrender.com` |
+| `PORT` | `8080` |
+
+`JAVA_OPTS` overrides the Dockerfile's default, which assumes a real machine:
+75% of 512MB is a 384MB heap, and metaspace plus threads plus code cache then
+push the container past its limit and it gets OOM-killed. SerialGC is chosen
+because G1's own bookkeeping is not worth it at this size.
+
+`CORS_ALLOWED_ORIGINS` is a chicken-and-egg: the app refuses to start without
+it, and you do not know the URL until the service exists. The URL is
+`https://<the name you typed>.onrender.com`, so set it from the name up front.
+
+`VITE_API_BASE` needs no build arg — the Dockerfile defaults it to empty, which
+is the same-origin answer, and Render serves the API and frontend on one URL.
+
+**Reminders will be unreliable here.** The schedulers only run while the
+container is awake, and a free service sleeps after 15 minutes idle. An
+external pinger keeps it up, but that is explicitly discouraged by most free
+hosts. Treat reminders as degraded until this moves to a VM — the move is env
+vars only, the image is identical.
+
 ## API
 
 Required (no defaults under the `prod` profile — the app won't start without them):
