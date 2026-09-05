@@ -118,6 +118,27 @@ external pinger keeps it up, but that is explicitly discouraged by most free
 hosts. Treat reminders as degraded until this moves to a VM — the move is env
 vars only, the image is identical.
 
+### Keeping it awake
+
+The free service sleeps after 15 minutes idle, and the schedulers only run while
+the container is up. An external pinger is the workaround:
+
+- **Target `/actuator/health`**, not `/`. It is already public and unauthenticated,
+  and Boot's health aggregate includes the datasource check — so a TiDB outage
+  returns 503 and the pinger doubles as real monitoring.
+- **5-minute interval** (UptimeRobot's free floor) is well under the 15-minute
+  sleep threshold.
+
+Budget it: Render allows **750 instance-hours/month** across all free services and
+a month is ~730 hours, so pinging 24/7 leaves ~20 hours of headroom and no room
+for a second free service. Pinging only 06:00–24:00 local drops it to ~540 hours
+and costs nothing real — a reminder that fires at 3am is not read at 3am.
+`DataCleanupJob` (03:30) then runs whenever the service is next awake, which is
+fine for a nightly tidy-up.
+
+Keep-alive pinging is discouraged by most free hosts. It is a stopgap until this
+moves to an always-on VM, where the schedulers just work and none of this applies.
+
 ## API
 
 Required (no defaults under the `prod` profile — the app won't start without them):
