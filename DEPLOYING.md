@@ -96,7 +96,7 @@ Environment variables, beyond the ones in `prod.env.example`:
 |---|---|
 | `DB_HOST` `DB_PORT` `DB_NAME` `DB_USER` `DB_PASSWORD` | from TiDB |
 | `DB_SSL_MODE` | `REQUIRED` — TiDB mandates TLS, the opposite of the compose setup |
-| `JAVA_OPTS` | `-XX:MaxRAMPercentage=50 -XX:MaxMetaspaceSize=96m -XX:+UseSerialGC` |
+| `JAVA_OPTS` | `-XX:MaxRAMPercentage=50 -XX:+UseSerialGC` |
 | `CORS_ALLOWED_ORIGINS` | `https://<service-name>.onrender.com` |
 | `PORT` | `8080` |
 
@@ -110,9 +110,17 @@ blocked too. Moving to a VM fixes the sleeping schedulers, not email. Treat the
 API path as the permanent one and SMTP as the local-development convenience.
 
 `JAVA_OPTS` overrides the Dockerfile's default, which assumes a real machine:
-75% of 512MB is a 384MB heap, and metaspace plus threads plus code cache then
-push the container past its limit and it gets OOM-killed. SerialGC is chosen
-because G1's own bookkeeping is not worth it at this size.
+75% of 512MB is a 384MB heap, leaving too little for everything that is not
+heap. SerialGC is chosen because G1's own bookkeeping is not worth it at this
+size.
+
+**Do not cap metaspace.** An earlier version of this file suggested
+`-XX:MaxMetaspaceSize=96m`; Spring Boot with JPA and 44 entities loads more
+class metadata than that, and the cap turns into
+`OutOfMemoryError: Metaspace` on the first real request — the app serves static
+files, then 500s on anything that touches a controller. Cap the heap, which is
+the part that actually scales with load, and let metaspace settle where it
+needs to (~130MB here).
 
 `CORS_ALLOWED_ORIGINS` is a chicken-and-egg: the app refuses to start without
 it, and you do not know the URL until the service exists. The URL is
