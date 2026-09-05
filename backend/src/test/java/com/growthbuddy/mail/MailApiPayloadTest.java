@@ -13,18 +13,20 @@ class MailApiPayloadTest {
     private final ObjectMapper json = new ObjectMapper();
 
     @Test
-    void buildsBrevoShape() throws Exception {
+    void buildsMailjetShape() throws Exception {
         JsonNode n = json.readTree(MailService.buildApiPayload(
                 json, "me@gmail.com", "Growth Buddy", "you@example.com",
                 "Your Growth Buddy code: 123456", "Hi,\n\n123456"));
 
-        assertEquals("me@gmail.com", n.path("sender").path("email").asText());
-        assertEquals("Growth Buddy", n.path("sender").path("name").asText());
-        // `to` is an array of objects, not a bare string — Brevo 400s otherwise.
-        assertTrue(n.path("to").isArray());
-        assertEquals("you@example.com", n.path("to").get(0).path("email").asText());
-        assertEquals("Your Growth Buddy code: 123456", n.path("subject").asText());
-        assertEquals("Hi,\n\n123456", n.path("textContent").asText());
+        // Mailjet batches even a single message, and capitalises every key.
+        assertTrue(n.path("Messages").isArray());
+        JsonNode m = n.path("Messages").get(0);
+        assertEquals("me@gmail.com", m.path("From").path("Email").asText());
+        assertEquals("Growth Buddy", m.path("From").path("Name").asText());
+        assertTrue(m.path("To").isArray());
+        assertEquals("you@example.com", m.path("To").get(0).path("Email").asText());
+        assertEquals("Your Growth Buddy code: 123456", m.path("Subject").asText());
+        assertEquals("Hi,\n\n123456", m.path("TextPart").asText());
     }
 
     @Test
@@ -33,6 +35,6 @@ class MailApiPayloadTest {
         JsonNode n = json.readTree(MailService.buildApiPayload(
                 json, "me@gmail.com", nasty, "you@example.com", "s", "b"));
         // Round-trips intact: proves escaping happened rather than corrupting the doc.
-        assertEquals(nasty, n.path("sender").path("name").asText());
+        assertEquals(nasty, n.path("Messages").get(0).path("From").path("Name").asText());
     }
 }

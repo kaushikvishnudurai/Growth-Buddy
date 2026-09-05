@@ -11,6 +11,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.time.Duration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,6 +45,7 @@ public class MailService {
     private final String fromName;
     private final boolean prod;
     private final String apiKey;
+    private final String apiSecret;
     private final String apiUrl;
     private final HttpClient http;
     private final ObjectMapper json = new ObjectMapper();
@@ -53,18 +55,19 @@ public class MailService {
                        @Value("${growthbuddy.mail.from-address:}") String fromAddress,
                        @Value("${growthbuddy.mail.from-name:Growth Buddy}") String fromName,
                        @Value("${growthbuddy.mail.api-key:}") String apiKey,
-                       @Value("${growthbuddy.mail.api-url:https://api.brevo.com/v3/smtp/email}") String apiUrl,
+                       @Value("${growthbuddy.mail.api-secret:}") String apiSecret,
+                       @Value("${growthbuddy.mail.api-url:https://api.mailjet.com/v3.1/send}") String apiUrl,
                        @Value("${spring.profiles.active:}") String activeProfiles) {
         this.sender = sender;
         this.smtpUsername = smtpUsername;
         this.fromAddress = fromAddress;
         this.fromName = fromName;
         this.apiKey = apiKey;
+        this.apiSecret = apiSecret;
         this.apiUrl = apiUrl;
         // HTTP/1.1 explicitly: the JDK client negotiates HTTP/2 via ALPN by default,
-        // and Brevo's edge terminates that handshake outright — "Remote host
-        // terminated the handshake", which reads like a certificate problem and is
-        // not one. curl reaches the same endpoint fine over 1.1.
+        // which some API edges reject outright. 1.1 is universally accepted here and
+        // costs nothing for one small request at a time.
         this.http = HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_1_1)
                 .connectTimeout(Duration.ofSeconds(8))
@@ -137,10 +140,12 @@ public class MailService {
                     "Mail API key set but no sender address: set MAIL_FROM or MAIL_USER");
         }
         try {
+            String basic = Base64.getEncoder().encodeToString(
+                    (apiKey + ":" + apiSecret).getBytes(StandardCharsets.UTF_8));
             HttpRequest req = HttpRequest.newBuilder()
                     .uri(URI.create(apiUrl))
                     .timeout(Duration.ofSeconds(15))
-                    .header("api-key", apiKey)
+                    .header("authorization", "Basic " + basic)
                     .header("content-type", "application/json")
                     .header("accept", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(
@@ -150,9 +155,17 @@ public class MailService {
 
             HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
             if (res.statusCode() / 100 != 2) {
-                // Never log the body: it carries the OTP.
                 throw new IllegalStateException("Mail API send failed: HTTP "
                         + res.statusCode() + " " + res.body());
+            }
+            // Mailjet reports per-message failures inside a 200. Treating the status
+            // code alone as success drops OTPs silently, which is the one outcome
+            // this path must never have.
+            String status = json.readTree(res.body())
+                    .path("Messages").path(0).path("Status").asText("");
+            if (!"success".equals(status)) {
+                throw new IllegalStateException(
+                        "Mail API send rejected: " + res.body());
             }
             log.info("Sent email to {} (subject: {})", to, subject);
         } catch (InterruptedException ex) {
@@ -165,17 +178,21 @@ public class MailService {
     }
 
     /**
-     * Brevo's payload shape. Jackson does the escaping — an OTP subject is
-     * attacker-influenced only via a display name, but hand-rolled quoting is
-     * how that becomes a header-injection bug later.
+     * Mailjet's v3.1 payload shape — capitalised keys, and messages batched in an
+     * array even when there is one. Jackson does the escaping: an OTP subject is
+     * attacker-influenced via the display name, and hand-rolled quoting is how that
+     * becomes a header-injection bug later.
      */
     static String buildApiPayload(ObjectMapper json, String from, String fromName,
                                   String to, String subject, String body) throws Exception {
+        ObjectNode message = json.createObjectNode();
+        message.set("From", json.createObjectNode().put("Email", from).put("Name", fromName));
+        message.putArray("To").addObject().put("Email", to);
+        message.put("Subject", subject);
+        message.put("TextPart", body);
+
         ObjectNode payload = json.createObjectNode();
-        payload.set("sender", json.createObjectNode().put("email", from).put("name", fromName));
-        payload.putArray("to").addObject().put("email", to);
-        payload.put("subject", subject);
-        payload.put("textContent", body);
+        payload.putArray("Messages").add(message);
         return json.writeValueAsString(payload);
     }
 }

@@ -109,11 +109,16 @@ growthbuddy:
     from-name: ${MAIL_FROM_NAME:Growth Buddy}
     # From address. If empty, falls back to spring.mail.username (gmail account).
     from-address: ${MAIL_FROM:}
-    # Brevo REST API. Set this and mail goes over HTTPS instead of SMTP.
+    # Mailjet REST API. Set these and mail goes over HTTPS instead of SMTP.
     # Required on hosts that block outbound SMTP ports (Render's free tier
     # blocks 25/465/587), where JavaMailSender can only ever time out.
-    api-key: ${BREVO_API_KEY:}
-    api-url: ${BREVO_API_URL:https://api.brevo.com/v3/smtp/email}
+    #
+    # Mailjet rather than Brevo because api.brevo.com sits behind Cloudflare,
+    # which terminates the TLS handshake from Render's shared egress IPs before
+    # any request is sent. api.mailjet.com is not fronted that way.
+    api-key: ${MAILJET_API_KEY:}
+    api-secret: ${MAILJET_SECRET_KEY:}
+    api-url: ${MAILJET_API_URL:https://api.mailjet.com/v3.1/send}
   mentor:
     # OpenAI integration. If api-key is empty the mentor falls back to a
     # canned encouraging reply so the feature still loads end-to-end.

@@ -97,12 +97,22 @@ Environment variables, beyond the ones in `prod.env.example`:
 | `DB_HOST` `DB_PORT` `DB_NAME` `DB_USER` `DB_PASSWORD` | from TiDB |
 | `DB_SSL_MODE` | `REQUIRED` — TiDB mandates TLS, the opposite of the compose setup |
 | `JAVA_OPTS` | `-XX:MaxRAMPercentage=50 -XX:+UseSerialGC` |
+| `MAILJET_API_KEY` / `MAILJET_SECRET_KEY` | from Mailjet — see above |
 | `CORS_ALLOWED_ORIGINS` | `https://<service-name>.onrender.com` |
 | `PORT` | `8080` |
 
-**`BREVO_API_KEY` is not optional here.** Render's free tier blocks outbound
-SMTP (25/465/587), so Gmail can only time out and signup returns 500 — no
-account can be created. `MailService` sends over HTTPS when this is set.
+**`MAILJET_API_KEY` / `MAILJET_SECRET_KEY` are not optional here.** Render's
+free tier blocks outbound SMTP (25/465/587), so Gmail can only time out and
+signup returns 500 — no account can be created. `MailService` sends over HTTPS
+when these are set.
+
+Mailjet rather than Brevo, which was tried first: `api.brevo.com` resolves into
+Cloudflare, and Cloudflare terminates the TLS handshake from Render's shared
+egress IPs before a request is ever sent — `SSLHandshakeException: Remote host
+terminated the handshake`, which looks like a certificate fault and is not one.
+Forcing HTTP/1.1 does not help; nothing client-side does. `api.mailjet.com` is
+not fronted that way. Check `dig` before picking a replacement: `api.resend.com`
+is behind Cloudflare too.
 
 This is not only a Render problem: **OCI blocks outbound port 25 for every
 tenancy created after 2021-06-23**, and Always Free instances report 587/2525
