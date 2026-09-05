@@ -1,0 +1,55 @@
+# Growth Buddy on a single box: the app container (API + built frontend) and
+# MySQL beside it. Sized for an always-free VM.
+#
+#   cp prod.env.example prod.env   # fill it in
+#   docker compose up -d --build
+#
+# Both services read the same prod.env — MySQL uses the MYSQL_* names, the app
+# uses the DB_* ones, and each ignores the other's. That is deliberate: compose
+# ${VAR} substitution would read .env (the dev file) instead, which is exactly
+# the kind of silent cross-wiring this repo already fails loudly on elsewhere.
+#
+# MySQL is not published to the host — only the app reaches it, over the private
+# compose network — so DB_SSL_MODE=DISABLED is correct here.
+
+services:
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    env_file: prod.env
+    # Defaults assume a machine that isn't also running a JVM. On a 1GB box the
+    # stock buffer pool alone will OOM the pair; raise it if the box is bigger.
+    command: >-
+      --innodb-buffer-pool-size=128M
+      --performance-schema=OFF
+      --max-connections=32
+    volumes:
+      - db-data:/var/lib/mysql
+      # Runs once, only while db-data is empty. The schema is never created for
+      # you: prod is ddl-auto:none, so this file is the only thing that builds it.
+      - ./tableCreationQueries.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      # $$ so compose passes the literal through and the container's shell expands it.
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+
+  app:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    env_file: prod.env
+    environment:
+      DB_HOST: db
+      DB_SSL_MODE: DISABLED
+    ports:
+      - "80:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db-data:

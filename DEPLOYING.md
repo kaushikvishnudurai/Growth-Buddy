@@ -48,11 +48,17 @@ Optional: `DB_SSL_MODE` (defaults to `REQUIRED` in prod — set `DISABLED` only
 for a socket-local MySQL), `DB_POOL_SIZE`, `MAIL_USER`/`MAIL_PASS`,
 `OPENAI_API_KEY`, `VAPID_*`, `WHATSAPP_*`.
 
-**Schema is not auto-created.** `prod` runs `ddl-auto: validate`; apply
+**Schema is not auto-created, and not checked either.** `prod` runs
+`ddl-auto: none` (`SPRING_JPA_DDL_AUTO` overrides it). Apply
 `tableCreationQueries.sql` before the first deploy and before any release that
-adds a table. `validate` fails the deploy on drift, which is the intended
-behaviour — `update` cannot alter FK-referenced columns and leaves the schema
-half-migrated when it tries.
+adds a table — nothing will remind you. A missing column surfaces as a runtime
+500 on the first request that touches it, not as a failed boot.
+
+`validate` is the setting you want and it does not pass yet: against a database
+built from the schema file it reports 73 type differences, nearly all dialect
+spelling (`timestamp` vs `datetime(6)`, `tinyint(1)` vs `bit(1)`, ENUM ordering).
+Reconcile those and switch it on. Never `update` — it cannot alter FK-referenced
+columns, so it fails halfway and leaves the schema part-migrated.
 
 ## Web app
 
