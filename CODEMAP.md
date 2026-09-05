@@ -92,11 +92,11 @@ routes (mentor, quick-add, money, food photos). `ApiException` (status + message
 - `mentor/OpenAIClient` (188) — minimal Chat Completions client on the JDK `HttpClient`, no SDK.
   Stateless: each call sends the whole rolling context. `isConfigured()` gates every AI feature.
 - `score/ScoreService` (78) — today's score = average completion rate across enabled features.
-- `reminder/ReminderService` (143) — recurrence expansion + scoped deletes; **mirrors the client-side
+- `reminder/ReminderService` (147) — recurrence expansion + scoped deletes; **mirrors the client-side
   expansion in `scripts/calendar.js` — keep both in step.**
-  `ReminderDeliveryScheduler` (196) polls and sends WhatsApp + push near the user's local
+  `ReminderDeliveryScheduler` (222) polls and sends WhatsApp + push near the user's local
   time, dispatching a tick's batch across a 16-thread pool; `ReminderDispatchLog` prevents
-  double sends; `WhatsAppService` (123) = Meta WhatsApp Cloud API. Scheduled sends need
+  double sends; `WhatsAppService` (161) = Meta WhatsApp Cloud API. Scheduled sends need
   `WHATSAPP_TEMPLATE` (an approved template, body = one `{{1}}`) — free-form text is only
   deliverable inside a user's 24h window.
 - `digest/DigestScheduler` (75) + `DigestService` (88) — progress digest near each user's preferred

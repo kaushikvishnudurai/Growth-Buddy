@@ -99,7 +99,13 @@ it is still `1`.
 
 ## WhatsApp reminders
 
-Dark until Meta approves the template and you leave the free test number. The
-scheduler no-ops cleanly when unconfigured, so this never blocks a deploy. See
-`.env.example` for the variables and the constraints (authentication-category
-templates need a verified business).
+Live on Meta's free test number with the approved `gb_reminder_v2` UTILITY
+template, which means delivery only to the 5 allow-listed recipients. Going
+wider needs a real business phone number on a verified business. The scheduler
+no-ops cleanly when unconfigured, so this never blocks a deploy.
+
+WhatsApp OTP still rides the reminder template: AUTHENTICATION-category
+templates are refused until Meta Business Verification completes. Once it does,
+create the auth template and set `WHATSAPP_AUTH_TEMPLATE` — `WhatsAppService`
+switches to the copy-code shape with no code change. See `.env.example` for the
+variables.
