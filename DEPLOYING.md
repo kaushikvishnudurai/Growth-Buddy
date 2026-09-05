@@ -100,6 +100,15 @@ Environment variables, beyond the ones in `prod.env.example`:
 | `CORS_ALLOWED_ORIGINS` | `https://<service-name>.onrender.com` |
 | `PORT` | `8080` |
 
+**`BREVO_API_KEY` is not optional here.** Render's free tier blocks outbound
+SMTP (25/465/587), so Gmail can only time out and signup returns 500 — no
+account can be created. `MailService` sends over HTTPS when this is set.
+
+This is not only a Render problem: **OCI blocks outbound port 25 for every
+tenancy created after 2021-06-23**, and Always Free instances report 587/2525
+blocked too. Moving to a VM fixes the sleeping schedulers, not email. Treat the
+API path as the permanent one and SMTP as the local-development convenience.
+
 `JAVA_OPTS` overrides the Dockerfile's default, which assumes a real machine:
 75% of 512MB is a 384MB heap, and metaspace plus threads plus code cache then
 push the container past its limit and it gets OOM-killed. SerialGC is chosen
