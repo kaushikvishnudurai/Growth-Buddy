@@ -34,6 +34,35 @@ Hosting the frontend separately instead? Build with an explicit
 `VITE_API_BASE=https://api.example.com`, deploy `dist/` to a static host, and
 set `CORS_ALLOWED_ORIGINS` to that host's origin.
 
+## Free hosting, end to end
+
+Runs at no cost on an always-free VM. Every managed option was rejected for one
+of two reasons: free MySQL tiers cap near 1GB, and free container tiers sleep —
+which silently kills the schedulers (see below).
+
+1. **Oracle Cloud Always Free**, Ampere A1 (ARM). The image builds on arm64.
+   Always Free also includes 200GB of block storage, so give the boot volume
+   most of it: MySQL is just files on that disk, which is how this ends up with
+   far more database room than any free managed tier.
+   Google Cloud's always-free `e2-micro` is the fallback if A1 capacity is
+   unavailable — 1GB RAM, so build the image elsewhere and only run it there.
+2. **A free DuckDNS subdomain** pointed at the instance's public IP. Any stable
+   hostname works; the requirement is *stable*, see the warning up top about
+   `VITE_API_BASE` being baked in at build time.
+3. Open 80 and 443 in **both** the VCN security list and the instance firewall.
+   Oracle images ship with iptables rules that drop traffic the security list
+   already allowed — a box unreachable despite correct cloud config is almost
+   always this.
+4. `cp prod.env.example prod.env`, fill it in, then `docker compose up -d --build`.
+
+Caddy issues and renews the certificate; port 80 must stay open for renewal.
+
+**Nothing here may scale to zero.** `ReminderDeliveryScheduler` runs every
+minute, `DigestScheduler` hourly, `DataCleanupJob` nightly — all inside the JVM.
+A host that sleeps the container on idle still answers web requests (it wakes on
+HTTP) while firing no crons at all, so reminders and digests simply never send.
+Nothing errors. That is what rules out the free tiers that would otherwise fit.
+
 ## API
 
 Required (no defaults under the `prod` profile — the app won't start without them):

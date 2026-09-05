@@ -1,0 +1,25 @@
+# Terminates HTTPS and proxies to the app container.
+#
+# Caddy gets a Let's Encrypt certificate automatically on first boot and renews
+# it forever, provided ports 80 and 443 reach this box from the internet. The
+# HTTP-01 challenge needs port 80 specifically — closing it breaks renewal 60
+# days later, long after you have stopped thinking about it.
+#
+# PUBLIC_HOSTNAME and ACME_EMAIL come from prod.env.
+
+{
+	email {$ACME_EMAIL}
+}
+
+{$PUBLIC_HOSTNAME} {
+	# WebSockets need no special handling here: reverse_proxy upgrades them
+	# automatically, which the notification socket at /ws depends on.
+	reverse_proxy app:8080
+
+	encode gzip zstd
+
+	log {
+		output stdout
+		format console
+	}
+}
