@@ -18,7 +18,7 @@
 
 -- Use utf8mb4 across the board for emoji + full Unicode support.
 -- Run this DB-creation line yourself if needed:
-CREATE DATABASE growth_buddy CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE IF NOT EXISTS growth_buddy CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE growth_buddy;
 
 -- =========================================================
