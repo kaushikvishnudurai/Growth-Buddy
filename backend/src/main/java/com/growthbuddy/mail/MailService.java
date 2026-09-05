@@ -61,7 +61,14 @@ public class MailService {
         this.fromName = fromName;
         this.apiKey = apiKey;
         this.apiUrl = apiUrl;
-        this.http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(8)).build();
+        // HTTP/1.1 explicitly: the JDK client negotiates HTTP/2 via ALPN by default,
+        // and Brevo's edge terminates that handshake outright — "Remote host
+        // terminated the handshake", which reads like a certificate problem and is
+        // not one. curl reaches the same endpoint fine over 1.1.
+        this.http = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
+                .connectTimeout(Duration.ofSeconds(8))
+                .build();
         this.prod = activeProfiles != null && activeProfiles.toLowerCase().contains("prod");
     }
 
