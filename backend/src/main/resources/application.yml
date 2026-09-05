@@ -79,6 +79,17 @@ spring:
           timeout: 5000
           writetimeout: 5000
 
+# The mail health indicator opens an SMTP socket on every /actuator/health call.
+# That is the wrong liveness signal twice over: transactional email being down
+# does not make the app unable to serve, and on a host that blocks SMTP ports it
+# can never pass — so the endpoint reports DOWN forever and any uptime monitor
+# pointed at it alerts continuously. The datasource check, which does matter,
+# stays on.
+management:
+  health:
+    mail:
+      enabled: false
+
 # Cross-origin so the static file:// / localhost frontend can call the API.
 growthbuddy:
   cors:
@@ -98,6 +109,11 @@ growthbuddy:
     from-name: ${MAIL_FROM_NAME:Growth Buddy}
     # From address. If empty, falls back to spring.mail.username (gmail account).
     from-address: ${MAIL_FROM:}
+    # Brevo REST API. Set this and mail goes over HTTPS instead of SMTP.
+    # Required on hosts that block outbound SMTP ports (Render's free tier
+    # blocks 25/465/587), where JavaMailSender can only ever time out.
+    api-key: ${BREVO_API_KEY:}
+    api-url: ${BREVO_API_URL:https://api.brevo.com/v3/smtp/email}
   mentor:
     # OpenAI integration. If api-key is empty the mentor falls back to a
     # canned encouraging reply so the feature still loads end-to-end.
