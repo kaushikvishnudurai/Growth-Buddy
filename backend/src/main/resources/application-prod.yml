@@ -28,6 +28,18 @@ spring:
       # cosmetic differences are reconciled — regenerate the file from Hibernate,
       # or hand-align it — switch this to validate and keep it there.
       ddl-auto: ${SPRING_JPA_DDL_AUTO:none}
+    properties:
+      hibernate:
+        boot:
+          # Hibernate opens one connection at startup purely to read JDBC
+          # metadata and infer the dialect. TiDB Starter is usually cold at that
+          # moment, so the probe times out and logs a full
+          # "Communications link failure" stack trace at ERROR — from a boot
+          # that then succeeds, because Hikari connects fine on the first real
+          # request. The dialect is already pinned in application.yml, so the
+          # probe only buys the server version (8.0, which is what MySQLDialect
+          # assumes anyway) and charset details that ddl-auto: none never uses.
+          allow_jdbc_metadata_access: false
 
 growthbuddy:
   # No fallback: SessionService refuses to boot on the dev secret under this
