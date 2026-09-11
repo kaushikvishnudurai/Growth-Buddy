@@ -44,6 +44,19 @@ ENV SPRING_PROFILES_ACTIVE=prod
 
 # Container memory is the limit, not the host's. Without this the JVM sizes its
 # heap from the machine and gets OOM-killed by the orchestrator.
-ENV JAVA_OPTS="-XX:MaxRAMPercentage=75"
+#
+# 40%, not 75%: the target is a 512MB instance, and the heap is only one of the
+# things that has to fit. Spring + JPA with 44 entities settles around 130MB of
+# class metadata, and metaspace grows from native memory the heap has already
+# claimed. At 75% (384MB heap) the first email send is where it breaks — sending
+# lazily loads java.net.http's whole TLS/selector stack, metaspace can't commit,
+# and signup dies with OutOfMemoryError: Metaspace while the app otherwise looks
+# healthy. Capping metaspace does not fix that; leaving it room does.
+#
+# SerialGC because G1's bookkeeping isn't worth it at this size, 512k stacks
+# because Tomcat's worker threads don't recurse, and ExitOnOutOfMemoryError
+# because a JVM that has hit OOM is wedged — every later request fails the same
+# way — and a restart is the only thing that helps.
+ENV JAVA_OPTS="-XX:MaxRAMPercentage=40 -XX:+UseSerialGC -Xss512k -XX:+ExitOnOutOfMemoryError"
 
 ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar app.jar"]

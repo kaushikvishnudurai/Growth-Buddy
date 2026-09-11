@@ -7,10 +7,12 @@ server:
   max-http-request-header-size: 65536
   tomcat:
     threads:
-      # Worker threads. Fine once no request holds a DB connection for a slow
-      # external call (see MentorService / schedulers). Tune under load test.
-      max: ${TOMCAT_MAX_THREADS:300}
-      min-spare: 25
+      # Worker threads. Sized for the 512MB instance this actually deploys to,
+      # where every started thread is a stack the JVM cannot give to metaspace;
+      # the DB pool is 8 anyway, so 300 workers only queue harder on Hikari.
+      # Raise both on real hardware. Tune under load test.
+      max: ${TOMCAT_MAX_THREADS:50}
+      min-spare: ${TOMCAT_MIN_SPARE_THREADS:5}
     # Keep-alive sockets from ~10k concurrent clients.
     max-connections: ${TOMCAT_MAX_CONNECTIONS:10000}
     accept-count: 200

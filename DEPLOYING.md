@@ -96,7 +96,7 @@ Environment variables, beyond the ones in `prod.env.example`:
 |---|---|
 | `DB_HOST` `DB_PORT` `DB_NAME` `DB_USER` `DB_PASSWORD` | from TiDB |
 | `DB_SSL_MODE` | `REQUIRED` — TiDB mandates TLS, the opposite of the compose setup |
-| `JAVA_OPTS` | `-XX:MaxRAMPercentage=50 -XX:+UseSerialGC` |
+| `JAVA_OPTS` | leave unset — the image's own default is already sized for 512MB |
 | `MAILJET_API_KEY` / `MAILJET_SECRET_KEY` | from Mailjet — see above |
 | `CORS_ALLOWED_ORIGINS` | `https://<service-name>.onrender.com` |
 | `PORT` | `8080` |
@@ -119,18 +119,27 @@ tenancy created after 2021-06-23**, and Always Free instances report 587/2525
 blocked too. Moving to a VM fixes the sleeping schedulers, not email. Treat the
 API path as the permanent one and SMTP as the local-development convenience.
 
-`JAVA_OPTS` overrides the Dockerfile's default, which assumes a real machine:
-75% of 512MB is a 384MB heap, leaving too little for everything that is not
-heap. SerialGC is chosen because G1's own bookkeeping is not worth it at this
-size.
+The image now defaults to `-XX:MaxRAMPercentage=40 -XX:+UseSerialGC -Xss512k
+-XX:+ExitOnOutOfMemoryError`, which is the 512MB budget; set `JAVA_OPTS` only to
+override it on bigger hardware. **A heap over ~200MB here breaks email**, not
+memorably at boot but later: sending an OTP is the first thing that touches
+`java.net.http`, which lazily loads its TLS and selector classes, metaspace
+fails to commit against a heap that already took the container's memory, and
+signup returns 500 with `OutOfMemoryError: Metaspace` from inside
+`MailService.sendViaApi`. Everything that does not send email keeps working,
+which is what makes it look like a mail bug. 50% was still too tight.
 
 **Do not cap metaspace.** An earlier version of this file suggested
 `-XX:MaxMetaspaceSize=96m`; Spring Boot with JPA and 44 entities loads more
-class metadata than that, and the cap turns into
-`OutOfMemoryError: Metaspace` on the first real request — the app serves static
-files, then 500s on anything that touches a controller. Cap the heap, which is
+class metadata than that, and the cap turns into the same
+`OutOfMemoryError: Metaspace` on the first real request. Cap the heap, which is
 the part that actually scales with load, and let metaspace settle where it
 needs to (~130MB here).
+
+Worker threads matter for the same reason: `TOMCAT_MAX_THREADS` defaults to 50
+(was 300) and `TOMCAT_MIN_SPARE_THREADS` to 5, because thread stacks come out of
+the same native memory metaspace needs, and the DB pool is 8 — 300 workers only
+queue harder on Hikari. Raise both on a real instance.
 
 `CORS_ALLOWED_ORIGINS` is a chicken-and-egg: the app refuses to start without
 it, and you do not know the URL until the service exists. The URL is
