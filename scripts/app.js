@@ -3325,6 +3325,7 @@ function openProfileSettings(initialTab) {
             ageYears: ageFromDob(dobInput.value),
             heightCm: numOrNull(heightInput.value, 100, 250),
             weightKg: numOrNull(weightInput.value, 25, 300),
+            fitnessGoal: (fitnessGoalInput.value || '').trim() || null,
             dietPreference: (dietInput.value || '').trim() || null,
             aboutMe: (aboutInput.value || '').trim() || null,
             allergicTo: (allergicInput.value || '').trim() || null,

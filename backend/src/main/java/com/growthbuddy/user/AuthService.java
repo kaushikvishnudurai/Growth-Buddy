@@ -76,6 +76,8 @@ public class AuthService {
             Respond with strict JSON only using keys:
             waterMl (integer), foodGoalKcal (integer), indianFoods (array of 6 strings), guidance (string under 220 chars).
             Keep food suggestions common in South Indian homes (idli, dosa, sambar, rasam, upma, pongal, curd rice, avial, etc.) and honour the diet preference.
+            "non vegetarian" means meat, fish and eggs are wanted — do not return an all-vegetarian list for it.
+            Point foodGoalKcal in the direction of the fitness goal: a surplus to gain weight or bulk, a deficit to lose weight, maintenance otherwise.
             NEVER suggest any food that contains an ingredient listed under allergic, and do not mention that ingredient.
             If a favourite dish is given, work in a healthier take on it when it fits.
             Use whatever profile fields are provided; do not ask the user for more details.
@@ -539,6 +541,7 @@ public class AuthService {
         Integer age = pick(form == null ? null : form.ageYears(), user.getAgeYears());
         Integer heightCm = pick(form == null ? null : form.heightCm(), user.getHeightCm());
         Integer weightKg = pick(form == null ? null : form.weightKg(), user.getWeightKg());
+        String fitnessGoal = pick(form == null ? null : form.fitnessGoal(), user.getFitnessGoal());
         String diet = pick(form == null ? null : form.dietPreference(), user.getDietPreference());
         String about = pick(form == null ? null : form.aboutMe(), user.getAboutMe());
         String allergicTo = pick(form == null ? null : form.allergicTo(), user.getAllergicTo());
@@ -546,7 +549,8 @@ public class AuthService {
         Integer foodGoal = pick(form == null ? null : form.dailyFoodGoalKcal(), user.getDailyFoodGoalKcal());
         Integer waterGoal = pick(form == null ? null : form.dailyWaterGoalMl(), user.getDailyWaterGoalMl());
 
-        NutritionSuggestionResponse base = heuristicSuggestion(weightKg, diet, allergicTo, foodGoal, waterGoal);
+        NutritionSuggestionResponse base =
+                heuristicSuggestion(weightKg, fitnessGoal, diet, allergicTo, foodGoal, waterGoal);
         if (!openai.isConfigured()) {
             return base;
         }
@@ -554,6 +558,7 @@ public class AuthService {
             String profile = "age=" + safe(age)
                     + ", heightCm=" + safe(heightCm)
                     + ", weightKg=" + safe(weightKg)
+                    + ", fitnessGoal=" + safe(fitnessGoal)
                     + ", diet=" + safe(diet)
                     + ", allergic=" + safe(allergicTo)
                     + ", favouriteDish=" + safe(favouriteDish)
@@ -674,18 +679,18 @@ public class AuthService {
     }
 
     private NutritionSuggestionResponse heuristicSuggestion(
-            Integer weightKg, String dietPref, String allergicTo, Integer foodGoalKcal, Integer waterGoalMl) {
+            Integer weightKg, String fitnessGoal, String dietPref,
+            String allergicTo, Integer foodGoalKcal, Integer waterGoalMl) {
         int weight = weightKg != null ? weightKg : 70;
         int water = clamp(weight * 35, 1800, 4200);
-        int kcal = clamp((int) Math.round(weight * 30.0), 1500, 3200);
+        int kcal = clamp((int) Math.round(weight * 30.0 * goalFactor(fitnessGoal)), 1500, 3600);
         if (waterGoalMl != null) {
             water = clamp(waterGoalMl, 1500, 6000);
         }
         if (foodGoalKcal != null) {
             kcal = clamp(foodGoalKcal, 1200, 4200);
         }
-        String diet = textOr(dietPref, "balanced Indian").toLowerCase(Locale.ROOT);
-        List<String> foods = diet.contains("veg")
+        List<String> foods = vegetarian(dietPref)
                 ? List.of("Idli + sambar", "Vegetable upma", "Ven pongal + chutney",
                           "Curd rice with cucumber", "Rasam + rice + sabzi", "Dosa + tomato chutney")
                 : List.of("Egg dosa + sambar", "Grilled fish + rice + rasam", "Chicken curry + idiyappam",
@@ -693,6 +698,33 @@ public class AuthService {
         foods = withoutAllergens(foods, allergicTo);
         String guidance = "Spread meals through the day, keep protein in each meal, and limit deep-fried foods to occasional portions.";
         return new NutritionSuggestionResponse(water, kcal, foods, guidance);
+    }
+
+    /* "non vegetarian" contains "veg", so a plain substring test hands a
+       non-vegetarian the vegetarian menu. Rule out the negations first. */
+    static boolean vegetarian(String dietPref) {
+        String diet = textOr(dietPref, "balanced Indian").toLowerCase(Locale.ROOT);
+        if (diet.contains("non") || diet.contains("egg") || diet.contains("meat")
+                || diet.contains("chicken") || diet.contains("fish")) {
+            return false;
+        }
+        return diet.contains("veg");
+    }
+
+    /* ponytail: keyword match on a free-text goal, not a calorie model. A
+       surplus/deficit in the right direction beats a precise number aimed the
+       wrong way; swap in Mifflin-St Jeor if the goal field ever gets structured. */
+    static double goalFactor(String fitnessGoal) {
+        String goal = textOr(fitnessGoal, "").toLowerCase(Locale.ROOT);
+        if (goal.contains("gain") || goal.contains("bulk") || goal.contains("muscle")
+                || goal.contains("weight up")) {
+            return 1.2;
+        }
+        if (goal.contains("lose") || goal.contains("loss") || goal.contains("cut")
+                || goal.contains("slim") || goal.contains("lean")) {
+            return 0.85;
+        }
+        return 1.0;
     }
 
     // Drop any suggestion that mentions an allergen (comma/space separated tokens).
