@@ -105,7 +105,9 @@ it silently landed on Home. Don't reintroduce a second list.
   keyboard; the one field keeps all of that (plus `autocomplete=one-time-code`) and just goes
   transparent, with `.gb-otp-box` painted from its value. Anything that writes the value from
   outside must fire an `input` event or the boxes go stale — `renderAuth` does. `field()` therefore
-  takes the node to render and finds the `<input>` inside it.
+  takes the node to render and finds the `<input>` inside it. The WhatsApp number verification in
+  Settings → Alerts uses the same helper; it drives `.is-busy` itself (`otpBoxes(input, busy)`)
+  because that flow has no `state.loading`.
 - **Re-render auth screens with `renderAuth()`, never bare `render()`.** The views build their
   inputs fresh on every render, so a plain `render()` throws away whatever the user had typed —
   fail on the password and the email vanishes too. `renderAuth` carries the values across by

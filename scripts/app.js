@@ -3432,12 +3432,13 @@ function openProfileSettings(initialTab) {
     } else if (waStage === 'otp_sent') {
       const otpIn = h('input', {
         type: 'text',
-        class: 'gb-input gb-input--otp',
+        class: 'gb-input',
         maxlength: '6',
-        placeholder: '6-digit code',
         inputmode: 'numeric',
         autocomplete: 'one-time-code',
       });
+      const otpField = otpBoxes(otpIn);
+      otpIn.addEventListener('input', () => otpIn.classList.remove('is-invalid'));
       const verifyBtn = h(
         'button',
         {
@@ -3450,12 +3451,15 @@ function openProfileSettings(initialTab) {
       verifyBtn.onclick = async () => {
         const otp = (otpIn.value || '').trim();
         if (!/^\d{6}$/.test(otp)) {
+          otpIn.classList.add('is-invalid');
           otpIn.focus();
+          shakeRefusal(otpField);
           toastError(new Error('Enter the 6-digit code from WhatsApp'), 'Invalid code');
           return;
         }
         verifyBtn.disabled = true;
         verifyBtn.textContent = 'Verifying…';
+        otpField.classList.add('is-busy');
         try {
           const updated = await api('/api/auth/whatsapp/verify-otp', {
             method: 'POST',
@@ -3466,6 +3470,9 @@ function openProfileSettings(initialTab) {
           buildWaSection();
           toastSuccess('WhatsApp number verified! Reminders are now active.');
         } catch (err) {
+          otpField.classList.remove('is-busy');
+          otpIn.classList.add('is-invalid');
+          shakeRefusal(otpField);
           toastError(err, 'Verification failed');
           verifyBtn.disabled = false;
           verifyBtn.textContent = 'Verify';
@@ -3523,7 +3530,7 @@ function openProfileSettings(initialTab) {
           'Enter the 6-digit code'
         )
       );
-      waSectionBody.appendChild(otpIn);
+      waSectionBody.appendChild(otpField);
       waSectionBody.appendChild(h('div', { class: 'gb-wa-otp-actions' }, verifyBtn, resendBtn));
       waSectionBody.appendChild(changeBtn);
       setTimeout(() => {
@@ -5779,14 +5786,14 @@ function field(label, node, key) {
    keyboard — the browser already does all of that for one field, so the field
    stays and only goes transparent, stretched across the row. The boxes are
    painted from its value. autocomplete=one-time-code still fills it. */
-function otpBoxes(input) {
+function otpBoxes(input, busy) {
   input.classList.add('gb-otp-field');
   const boxes = Array.from({ length: 6 }, (_, i) =>
     h('div', { class: 'gb-otp-box', style: { '--i': String(i) } })
   );
   const wrap = h(
     'div',
-    { class: 'gb-otp' + (state.loading ? ' is-busy' : '') },
+    { class: 'gb-otp' + (busy ? ' is-busy' : '') },
     input,
     h('div', { class: 'gb-otp-boxes' }, boxes)
   );
@@ -6032,7 +6039,7 @@ function viewVerify() {
     maxlength: 6,
     autocomplete: 'one-time-code',
   });
-  const otpField = otpBoxes(otpInput);
+  const otpField = otpBoxes(otpInput, state.loading);
   function submit() {
     const otp = (otpInput.value || '').replace(/\D/g, '');
     if (otp.length !== 6) return authFail('Enter the 6-digit code (must be exactly 6 digits).', 'otp');
@@ -6131,7 +6138,7 @@ function viewReset() {
     maxlength: 6,
     autocomplete: 'one-time-code',
   });
-  const otpField = otpBoxes(otpInput);
+  const otpField = otpBoxes(otpInput, state.loading);
   const pwInput = h('input', {
     type: 'password',
     class: 'gb-input gb-login-input',

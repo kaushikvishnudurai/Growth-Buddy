@@ -1,4 +1,4 @@
-# styles/app.css — app styles (7166 lines)
+# styles/app.css — app styles (7156 lines)
 
 Consumes tokens from `tokens.css`. Mobile-first: full-screen on phones, an iPhone-style frame on
 desktop, sidebar + multi-column grid at ≥1024px. Money has its own file (`money.css`).
@@ -53,16 +53,16 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
 | 5304 | WhatsApp reminders |
 | 5406 | Profile Settings modal |
 | 5581 | WhatsApp OTP verification |
-| 5663 | **Family tab & AI meal planner** (+ polish at 6119) |
-| 6459 | Streak freeze / protection |
-| 6569 | Report — trends drill-down |
-| 6652 | Achievements gallery |
-| 6821 | Goal milestones / sub-tasks |
-| 6919 | Offline-first PWA — connectivity banner |
-| 6935 | Accessibility — skip link, focus-visible, reduced motion |
-| 6974 | Bottom nav — "More" overflow sheet |
-| 7069 | Settings — Home screen customizer |
-| 7133 | Settings — Display (text size preview) |
+| 5653 | **Family tab & AI meal planner** (+ polish at 6119) |
+| 6449 | Streak freeze / protection |
+| 6559 | Report — trends drill-down |
+| 6642 | Achievements gallery |
+| 6811 | Goal milestones / sub-tasks |
+| 6909 | Offline-first PWA — connectivity banner |
+| 6925 | Accessibility — skip link, focus-visible, reduced motion |
+| 6964 | Bottom nav — "More" overflow sheet |
+| 7059 | Settings — Home screen customizer |
+| 7123 | Settings — Display (text size preview) |
 
 ## Editing rules
 

@@ -5599,16 +5599,6 @@ select.gb-input {
   width: fit-content;
 }
 
-/* OTP digit input — wider, centered digits */
-.gb-input--otp {
-  font-size: 1.25rem;
-  font-weight: 700;
-  letter-spacing: 0.25em;
-  text-align: center;
-  font-family: var(--font-display);
-  margin-top: 6px;
-}
-
 /* Verify + Resend action row */
 .gb-wa-otp-actions {
   display: flex;
