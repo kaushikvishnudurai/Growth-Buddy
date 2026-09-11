@@ -800,6 +800,23 @@ async function api(path, options) {
   return apiFetch(path, opts);
 }
 
+/* Fallback when a failed response carries no JSON message of its own — a
+   gateway's HTML page, an empty body. A bare status code is not an error
+   message; 502/503/504 from Render's proxy specifically mean the free instance
+   is asleep and waking, which is a "try again in a moment", not a fault. */
+function statusMessage(status) {
+  if (status === 502 || status === 503 || status === 504) {
+    return 'The server is waking up. Give it a moment and try again.';
+  }
+  if (status === 429) {
+    return 'Too many attempts. Please wait a minute and try again.';
+  }
+  if (status >= 500) {
+    return 'Something went wrong. Please try again.';
+  }
+  return "That didn't work. Please try again.";
+}
+
 async function apiFetch(path, options) {
   const opts = options || {};
   const headers = Object.assign({ Accept: 'application/json' }, opts.headers || {});
@@ -824,14 +841,16 @@ async function apiFetch(path, options) {
     throw new Error('Your session expired. Please sign in again.');
   }
   if (!res.ok) {
-    let msg = 'Request failed (' + res.status + ')';
+    let msg = statusMessage(res.status);
     try {
       const err = await res.json();
       msg = err.message || msg;
     } catch (_) {
       // ignored
     }
-    throw new Error(msg);
+    const err = new Error(msg);
+    err.status = res.status;
+    throw err;
   }
   if (res.status === 204) {
     return null;
@@ -5675,7 +5694,7 @@ async function authPost(path, body) {
     /* 204s */
   }
   if (!res.ok) {
-    const msg = (payload && payload.message) || 'Request failed (' + res.status + ')';
+    const msg = (payload && payload.message) || statusMessage(res.status);
     const err = new Error(msg);
     err.status = res.status;
     throw err;
