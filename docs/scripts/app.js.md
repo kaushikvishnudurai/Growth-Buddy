@@ -100,6 +100,12 @@ it silently landed on Home. Don't reintroduce a second list.
   only when no field owns the error. Both the client-side checks (`authFail`) and server refusals
   (`runAuth(action, errField)`) route through it — a `runAuth` without an `errField` is for failures
   that are nobody's field, like a dropped connection, and stays a toast.
+- **The 6-digit code is six boxes over one real input** (`otpBoxes`). Six real inputs would mean
+  hand-rolling focus hops, paste-splitting, backspace-into-the-previous-box and the numeric
+  keyboard; the one field keeps all of that (plus `autocomplete=one-time-code`) and just goes
+  transparent, with `.gb-otp-box` painted from its value. Anything that writes the value from
+  outside must fire an `input` event or the boxes go stale — `renderAuth` does. `field()` therefore
+  takes the node to render and finds the `<input>` inside it.
 - **Re-render auth screens with `renderAuth()`, never bare `render()`.** The views build their
   inputs fresh on every render, so a plain `render()` throws away whatever the user had typed —
   fail on the password and the email vanishes too. `renderAuth` carries the values across by

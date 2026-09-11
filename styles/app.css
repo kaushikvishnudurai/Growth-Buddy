@@ -581,6 +581,103 @@ body {
   animation: gb-shake 520ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
 }
 
+/* ---- OTP: six boxes over one real input ----
+   The input keeps every browser behaviour worth having (paste, one-time-code
+   autofill, backspace, the numeric keyboard) and is simply invisible; the
+   boxes below are painted from its value by otpBoxes() in app.js. */
+.gb-otp {
+  position: relative;
+}
+.gb-otp-field.gb-otp-field {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+  color: transparent;
+  caret-color: transparent;
+  z-index: 1;
+  cursor: text;
+}
+/* The text is transparent but a selection would still paint its band. */
+.gb-otp-field::selection {
+  background: transparent;
+}
+.gb-otp-boxes {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+}
+.gb-otp-box {
+  height: 56px;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--fg1);
+  background: var(--surface-2);
+  border: 1.5px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  transition:
+    border-color var(--dur-fast),
+    box-shadow var(--dur-fast),
+    transform var(--dur-fast) var(--ease-bounce);
+}
+.gb-otp-box.is-filled {
+  border-color: var(--brand);
+  transform: translateY(-1px);
+}
+.gb-otp-box.is-active {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-soft);
+}
+/* The real caret is hidden, so the empty box being typed into grows one. */
+.gb-otp-box.is-active:empty::after {
+  content: '';
+  width: 2px;
+  height: 26px;
+  border-radius: 1px;
+  background: var(--brand);
+  animation: gb-otp-caret 1.06s steps(1) infinite;
+}
+@keyframes gb-otp-caret {
+  50% {
+    opacity: 0;
+  }
+}
+.gb-otp-field.is-invalid ~ .gb-otp-boxes .gb-otp-box {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 6%, var(--surface-2));
+}
+
+/* Verifying: the six boxes close the gaps between them and press together,
+   then spring back — the waiting is the code gathering itself up. Each box
+   travels exactly its distance from the row's centre, so they meet at once. */
+@keyframes gb-otp-collide {
+  0%,
+  100% {
+    transform: translateX(0) scale(1);
+  }
+  38% {
+    transform: translateX(var(--dx)) scale(0.97);
+  }
+  48% {
+    transform: translateX(calc(var(--dx) * 1.08)) scale(0.94);
+  }
+  62% {
+    transform: translateX(var(--dx)) scale(0.97);
+  }
+}
+.gb-otp.is-busy .gb-otp-box {
+  --dx: calc((2.5 - var(--i)) * 9px);
+  animation: gb-otp-collide 900ms var(--ease-out) infinite;
+  border-color: var(--brand);
+}
+
 /* Waiting has to look like waiting: a disabled button at 58% reads as broken,
    not busy. Full opacity + a moving ring while the request is in flight. */
 .gb-btn.is-loading,
@@ -645,14 +742,6 @@ body {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
   border-radius: 4px;
-}
-
-.gb-otp-input {
-  letter-spacing: 0.5em;
-  text-align: center;
-  font-size: 1.375rem;
-  font-weight: 800;
-  font-family: var(--font-display, var(--font-body));
 }
 
 @keyframes gb-pop {

@@ -5761,15 +5761,49 @@ function primaryBtn(label, onClick) {
 
 /* `key` ties this input to state.errorField, so the message lands under the
    field that's actually wrong instead of at the bottom of the card. */
-function field(label, input, key) {
+function field(label, node, key) {
+  // `node` is the input itself, or a wrapper around it (the OTP boxes).
+  const input = node.tagName === 'INPUT' ? node : node.querySelector('input');
   const bad = !!key && state.errorField === key && !!state.error;
   if (bad) input.classList.add('is-invalid');
   input.setAttribute('aria-invalid', bad ? 'true' : 'false');
   return [
     h('label', { class: 'gb-login-label' }, label),
-    input,
+    node,
     bad ? h('p', { class: 'gb-login-fielderr' }, state.error) : null,
   ];
+}
+
+/* Six boxes, one real input. Six real inputs would mean hand-rolling focus
+   hops, paste-splitting, backspace-into-the-previous-box and the numeric
+   keyboard — the browser already does all of that for one field, so the field
+   stays and only goes transparent, stretched across the row. The boxes are
+   painted from its value. autocomplete=one-time-code still fills it. */
+function otpBoxes(input) {
+  input.classList.add('gb-otp-field');
+  const boxes = Array.from({ length: 6 }, (_, i) =>
+    h('div', { class: 'gb-otp-box', style: { '--i': String(i) } })
+  );
+  const wrap = h(
+    'div',
+    { class: 'gb-otp' + (state.loading ? ' is-busy' : '') },
+    input,
+    h('div', { class: 'gb-otp-boxes' }, boxes)
+  );
+  function paint() {
+    const digits = (input.value || '').replace(/\D/g, '').slice(0, 6);
+    if (digits !== input.value) input.value = digits;
+    const caret = document.activeElement === input ? Math.min(digits.length, 5) : -1;
+    boxes.forEach((box, i) => {
+      box.textContent = digits[i] || '';
+      box.classList.toggle('is-filled', !!digits[i]);
+      box.classList.toggle('is-active', i === caret);
+    });
+  }
+  // 'keyup' catches arrow keys and backspace-at-the-end, which fire no 'input'.
+  ['input', 'keyup', 'focus', 'blur', 'click'].forEach((e) => input.addEventListener(e, paint));
+  paint();
+  return wrap;
 }
 
 /* render() builds the auth inputs from scratch, so anything typed into them is
@@ -5780,7 +5814,10 @@ function renderAuth() {
   const values = Array.from(document.querySelectorAll('.gb-login-input'), (i) => i.value);
   render();
   document.querySelectorAll('.gb-login-input').forEach((input, i) => {
-    if (values[i]) input.value = values[i];
+    if (!values[i]) return;
+    input.value = values[i];
+    // Anything painted from the value — the OTP boxes — repaints off this.
+    input.dispatchEvent(new Event('input'));
   });
 }
 
@@ -5801,9 +5838,13 @@ function refuseFocus() {
   const bad = document.querySelector('.gb-login-input.is-invalid');
   if (bad) {
     bad.focus();
-    if (bad.value) bad.select();
+    // Select so retyping replaces — except a code, where the digits already
+    // entered are still the ones the user wants to keep typing after.
+    if (bad.value && !bad.classList.contains('gb-otp-field')) bad.select();
   }
-  shakeRefusal(bad || document.querySelector('.gb-login-card'));
+  // The OTP field itself is transparent — shake the boxes the user can see.
+  const surface = bad && (bad.closest('.gb-otp') || bad);
+  shakeRefusal(surface || document.querySelector('.gb-login-card'));
 }
 
 /* Face ID doesn't just print "incorrect" — it shakes its head at you.
@@ -5987,10 +6028,11 @@ function viewVerify() {
     type: 'text',
     inputmode: 'numeric',
     pattern: '\\d{6}',
-    class: 'gb-input gb-login-input gb-otp-input',
-    placeholder: '••••••',
+    class: 'gb-input gb-login-input',
     maxlength: 6,
+    autocomplete: 'one-time-code',
   });
+  const otpField = otpBoxes(otpInput);
   function submit() {
     const otp = (otpInput.value || '').replace(/\D/g, '');
     if (otp.length !== 6) return authFail('Enter the 6-digit code (must be exactly 6 digits).', 'otp');
@@ -6030,7 +6072,7 @@ function viewVerify() {
       state.authEmail +
       '. Check your inbox (and spam folder) for the 6-digit code.',
     [
-      ...field('6-digit code', otpInput, 'otp'),
+      ...field('6-digit code', otpField, 'otp'),
       primaryBtn('Verify & continue', submit),
       h(
         'div',
@@ -6085,10 +6127,11 @@ function viewReset() {
     type: 'text',
     inputmode: 'numeric',
     pattern: '\\d{6}',
-    class: 'gb-input gb-login-input gb-otp-input',
-    placeholder: '••••••',
+    class: 'gb-input gb-login-input',
     maxlength: 6,
+    autocomplete: 'one-time-code',
   });
+  const otpField = otpBoxes(otpInput);
   const pwInput = h('input', {
     type: 'password',
     class: 'gb-input gb-login-input',
@@ -6127,7 +6170,7 @@ function viewReset() {
   );
 
   return authShell('Set a new password', 'Code sent to ' + state.authEmail + '.', [
-    ...field('6-digit code', otpInput, 'otp'),
+    ...field('6-digit code', otpField, 'otp'),
     ...field('New password', pwInput, 'password'),
     primaryBtn('Reset password', submit),
     h(
