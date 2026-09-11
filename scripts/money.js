@@ -1097,18 +1097,26 @@ function dailyTip(money) {
 /* 14 — financial health score (0–100) with component breakdown. */
 function financialHealth(money) {
   const parts = [];
+  const mExp = inRange(money.expenses, thisMonthPrefix() + '-01', todayKey());
   const st = budgetStatus(money).filter((s) => s.budget > 0);
   // No budgets set => nothing to adhere to yet (the note says as much). Earlier
   // this defaulted to 12, inflating the score with points the user hadn't earned.
+  // An unlogged month is not adherence either: every category sits at 0% spent,
+  // which scored a perfect 25/25 and got announced as the user's strongest area
+  // right next to "0/14 recent days logged".
   let adherence = 0;
-  if (st.length) adherence = Math.round((st.filter((s) => s.pct <= 100).length / st.length) * 25);
+  if (st.length && mExp.length) {
+    adherence = Math.round((st.filter((s) => s.pct <= 100).length / st.length) * 25);
+  }
   parts.push({
     label: 'Budget adherence',
     score: adherence,
     max: 25,
-    note: st.length
-      ? `${st.filter((s) => s.pct <= 100).length}/${st.length} within budget`
-      : 'Set budgets to score this',
+    note: !st.length
+      ? 'Set budgets to score this'
+      : mExp.length
+        ? `${st.filter((s) => s.pct <= 100).length}/${st.length} within budget`
+        : 'Log an expense to score this',
   });
   const recentSave = setAsideInRange(money, dkey(addDays(new Date(), -28)), todayKey());
   const sav = money.goals.length
@@ -1129,7 +1137,6 @@ function financialHealth(money) {
     max: 20,
     note: `${logged14}/14 recent days logged`,
   });
-  const mExp = inRange(money.expenses, thisMonthPrefix() + '-01', todayKey());
   const cc = byCategory(mExp, money);
   const tot = sumAmt(mExp) || 1;
   const wantShare = ((cc.shopping || 0) + (cc.entertainment || 0)) / tot;
@@ -4752,6 +4759,9 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice }) {
             type: 'button',
             role: 'tab',
             'aria-selected': String(activeTab === t.key),
+            // Below 540px the label span is display:none (money.css) and the icon is
+            // aria-hidden, which left every tab with no accessible name at all.
+            'aria-label': t.label,
             class: 'gb-money-tab' + (activeTab === t.key ? ' is-active' : ''),
             onclick: () => {
               if (activeTab === t.key) return;
@@ -4831,6 +4841,19 @@ function _demo() {
   // An empty account must score 0 — no phantom budget-adherence / spending-habit
   // points before the user has logged anything.
   a(financialHealth(emptyMoney()).score === 0, 'empty account scores 0');
+  // Budgets set but nothing logged this month: every category sits at 0% spent,
+  // which used to score a full 25/25 and read as the user's strongest area.
+  const mNoLog = normalizeMoney({ budgets: { food: 1000, transport: 500 }, expenses: [] });
+  const adhNoLog = financialHealth(mNoLog).parts.find((p) => p.label === 'Budget adherence');
+  a(adhNoLog.score === 0, 'no expenses this month => no adherence points');
+  const mLogged = normalizeMoney({
+    budgets: { food: 1000, transport: 500 },
+    expenses: [{ id: 'e1', amount: 100, category: 'food', date: todayKey() }],
+  });
+  a(
+    financialHealth(mLogged).parts.find((p) => p.label === 'Budget adherence').score === 25,
+    'within budget with logged spend => full adherence'
+  );
   // Income + loans: outstanding excludes settled rows.
   const m2 = normalizeMoney({
     income: [{ id: 'i1', amount: 1000, source: 'salary', label: 'Pay', date: todayKey() }],

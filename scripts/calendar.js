@@ -9,7 +9,6 @@ import {
   Pill,
   plural,
   refreshIcons,
-  GOOGLE_G_SVG,
 } from './gb-kit.js';
 
 const MONTHS = [
@@ -54,14 +53,6 @@ const TAGS = {
     color: 'var(--sun-500)',
     soft: 'var(--sun-50)',
     softFg: 'var(--sun-700)',
-  },
-  // Read-only events pulled from the user's Google Calendar (not in TAG_ORDER,
-  // so it never appears in the tag picker).
-  google: {
-    label: 'Google',
-    color: 'var(--sky-700)',
-    soft: 'var(--sky-50)',
-    softFg: 'var(--sky-700)',
   },
 };
 const TAG_ORDER = ['work', 'personal', 'health', 'urgent', 'other'];
@@ -448,7 +439,7 @@ function ReminderRow(rem, occKey, onDelete, whatsappEnabled) {
         formatTime(rem.time)
       )
     );
-    if (whatsappEnabled && !rem.google) {
+    if (whatsappEnabled) {
       meta.push(
         h(
           'span',
@@ -477,17 +468,9 @@ function ReminderRow(rem, occKey, onDelete, whatsappEnabled) {
 
   const tagPill = h(
     'span',
-    {
-      class: 'gb-tag-pill' + (rem.google ? ' gb-tag-pill--google' : ''),
-      style: { background: t.soft, color: t.softFg },
-    },
-    rem.google ? null : t.label
+    { class: 'gb-tag-pill', style: { background: t.soft, color: t.softFg } },
+    t.label
   );
-  if (rem.google) {
-    // Synced events wear the mini G so they're recognizable at a glance.
-    tagPill.innerHTML = GOOGLE_G_SVG;
-    tagPill.appendChild(document.createTextNode('Google'));
-  }
 
   return h(
     'div',
@@ -499,18 +482,16 @@ function ReminderRow(rem, occKey, onDelete, whatsappEnabled) {
       h('div', { class: 'gb-rem-text' }, rem.text),
       h('div', { class: 'gb-rem-meta' }, tagPill, meta)
     ),
-    rem.google
-      ? null // Google events are read-only mirrors; manage them in Google Calendar.
-      : h(
-          'button',
-          {
-            type: 'button',
-            class: 'gb-rem-del',
-            'aria-label': 'Delete reminder',
-            onclick: handleDelete,
-          },
-          Icon('trash-2', { size: 16 })
-        )
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'gb-rem-del',
+        'aria-label': 'Delete reminder',
+        onclick: handleDelete,
+      },
+      Icon('trash-2', { size: 16 })
+    )
   );
 }
 

@@ -24,17 +24,26 @@ public class WhatsAppService {
     private final String phoneNumberId;
     private final String accessToken;
     private final String apiVersion;
+    private final String template;
+    private final String authTemplate;
+    private final String templateLang;
     private final HttpClient http;
 
     public WhatsAppService(
             @Value("${growthbuddy.whatsapp.enabled:false}") boolean enabled,
             @Value("${growthbuddy.whatsapp.meta.phone-number-id:}") String phoneNumberId,
             @Value("${growthbuddy.whatsapp.meta.access-token:}") String accessToken,
-            @Value("${growthbuddy.whatsapp.meta.api-version:v21.0}") String apiVersion) {
+            @Value("${growthbuddy.whatsapp.meta.api-version:v21.0}") String apiVersion,
+            @Value("${growthbuddy.whatsapp.meta.template:}") String template,
+            @Value("${growthbuddy.whatsapp.meta.auth-template:}") String authTemplate,
+            @Value("${growthbuddy.whatsapp.meta.template-lang:en}") String templateLang) {
         this.enabled = enabled;
         this.phoneNumberId = phoneNumberId;
         this.accessToken = accessToken;
         this.apiVersion = apiVersion;
+        this.template = template;
+        this.authTemplate = authTemplate;
+        this.templateLang = templateLang;
         this.http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(8)).build();
     }
 
@@ -45,6 +54,24 @@ public class WhatsAppService {
     }
 
     public void sendReminder(String toNumber, String message) {
+        send(toNumber, message, false);
+    }
+
+    /**
+     * Meta puts verification codes in their own AUTHENTICATION category: the copy-code
+     * button exists nowhere else, and a code sent through a utility body reads as a
+     * category mismatch on review. That category needs a verified business, so until
+     * one is approved this falls back to the ordinary reminder template.
+     */
+    public void sendOtp(String toNumber, String code) {
+        send(toNumber, code, true);
+    }
+
+    static String otpText(String code) {
+        return "Your Growth Buddy verification code: " + code + ". Do not share it.";
+    }
+
+    private void send(String toNumber, String text, boolean auth) {
         if (!isConfigured()) {
             log.debug("WhatsApp disabled/not configured; skipping send to {}", toNumber);
             return;
@@ -57,10 +84,10 @@ public class WhatsAppService {
             // Meta wants the E.164 number without a leading "+".
             String to = toNumber.startsWith("+") ? toNumber.substring(1) : toNumber;
             String endpoint = "https://graph.facebook.com/" + apiVersion + "/" + phoneNumberId + "/messages";
-            // ponytail: free-form text only works inside WhatsApp's 24h customer-service window.
-            // Proactive reminders outside it need an approved template message — switch type to "template" then.
-            String body = "{\"messaging_product\":\"whatsapp\",\"to\":\"" + jsonEscape(to)
-                    + "\",\"type\":\"text\",\"text\":{\"body\":\"" + jsonEscape(message) + "\"}}";
+            boolean useAuth = auth && StringUtils.hasText(authTemplate);
+            String body = useAuth
+                    ? buildAuthBody(to, authTemplate, templateLang, text)
+                    : buildBody(to, template, templateLang, auth ? otpText(text) : text);
 
             HttpRequest req = HttpRequest.newBuilder()
                     .uri(URI.create(endpoint))
@@ -78,6 +105,36 @@ public class WhatsAppService {
         } catch (Exception ex) {
             throw new IllegalStateException("Could not send WhatsApp reminder", ex);
         }
+    }
+
+    /**
+     * Free-form text only reaches a user inside WhatsApp's 24h customer-service window.
+     * A scheduled reminder is by definition outside it, so an approved template is
+     * required; the text path stays for replies sent while that window is open.
+     */
+    static String buildBody(String to, String template, String templateLang, String message) {
+        String head = "{\"messaging_product\":\"whatsapp\",\"to\":\"" + jsonEscape(to) + "\",";
+        if (!StringUtils.hasText(template)) {
+            return head + "\"type\":\"text\",\"text\":{\"body\":\"" + jsonEscape(message) + "\"}}";
+        }
+        return head + "\"type\":\"template\",\"template\":{\"name\":\"" + jsonEscape(template)
+                + "\",\"language\":{\"code\":\"" + jsonEscape(templateLang)
+                + "\"},\"components\":[{\"type\":\"body\",\"parameters\":[{\"type\":\"text\",\"text\":\""
+                + jsonEscape(message) + "\"}]}]}}";
+    }
+
+    /**
+     * An authentication template repeats the code twice: once in the body, once in the
+     * copy-code button, which is a separate component Meta requires you to fill.
+     */
+    static String buildAuthBody(String to, String template, String templateLang, String code) {
+        String c = jsonEscape(code);
+        return "{\"messaging_product\":\"whatsapp\",\"to\":\"" + jsonEscape(to) + "\","
+                + "\"type\":\"template\",\"template\":{\"name\":\"" + jsonEscape(template)
+                + "\",\"language\":{\"code\":\"" + jsonEscape(templateLang) + "\"},\"components\":["
+                + "{\"type\":\"body\",\"parameters\":[{\"type\":\"text\",\"text\":\"" + c + "\"}]},"
+                + "{\"type\":\"button\",\"sub_type\":\"url\",\"index\":\"0\","
+                + "\"parameters\":[{\"type\":\"text\",\"text\":\"" + c + "\"}]}]}}";
     }
 
     private static String jsonEscape(String value) {

@@ -25,16 +25,18 @@ Every screen builds DOM from these. Element-returning factories, no framework, n
 | `ProgressRing({value, size, stroke, color, children})` | 195 | SVG ring; children go in the middle |
 | `Check({done, onToggle, color})` | 254 | habit/task toggle |
 | `Avatar({...})` | 277 | |
-| `BottomNav({active, onNav, onMore, features, moreOpen, layout})` | 377 | |
-| `NAV_CATALOG` / `resolveNavLayout(saved)` | 342 / 361 | `NAV_PRIMARY` + `NAV_OVERFLOW`, `NAV_MAX_PRIMARY = 5`. `resolveNavLayout` reconciles a saved layout against the catalog and drops entries whose feature is off (`navFeatureOn`) |
+| `BottomNav({active, onNav, onMore, features, moreOpen, layout})` | 414 | |
+| `moreSections(overflow, active, onNav)` | 389 | Body of the "More" sheet: ungrouped items first, then one headed grid per `NAV_GROUPS` entry that still has members. Preserves the user's own order within a group. |
+| `NAV_CATALOG` / `resolveNavLayout(saved)` | 352 / 371 | `NAV_PRIMARY` + `NAV_OVERFLOW`, `NAV_MAX_PRIMARY = 5`. `resolveNavLayout` reconciles a saved layout against the catalog and drops entries whose feature is off (`navFeatureOn`) |
+| `NAV_GROUPS` | 343 | Headings for the "More" sheet. Every catalog entry carries a `group` (`plan` / `track` / `people`); an entry with none renders ungrouped and first. |
 | `confirmDialog({title, message, confirmLabel, cancelLabel, danger})` | 466 | returns a promise |
-| `GOOGLE_G_SVG` | 524 | inline SVG **string** — set via `innerHTML` |
 | `Logo({size, radius, alive})` | 537 | theme-aware inline SVG. `alive: true` returns the same mark as the header's live seedling — adds `.gb-sprout`, drops the img role, and leaves `display` to CSS (an inline value would leak it into the classic skin). |
-| `AppHeader({...})` | 576 | Also takes `premium` + `onPremium` — the gem button that toggles the premium skin (`styles/premium.css`). Always renders `Logo({alive:true})` as its first child; CSS decides whether it shows, so the skin stays a stylesheet. |
+| `AppHeader({...})` | 602 | Three actions only — quick add, notifications, avatar. Theme and the premium skin were icon buttons here; they're preferences, not daily actions, and live in Settings → Display. Always renders `Logo({alive:true})` as its first child; CSS decides whether it shows, so the skin stays a stylesheet. |
 | `CrashCard(onRetry)` | 639 | render-error fallback |
 
 ## Notes
 
 - Top of file shims `window.lucide.createIcons` over the icon **subset** so the old call shape keeps
   working off-CDN; `timer.js` relies on it too.
-- Adding a nav destination = `NAV_CATALOG` here **and** a `SCREENS` entry in `app.js`.
+- Adding a nav destination = `NAV_CATALOG` here **and** a `SCREENS` entry in `app.js`. Give it a
+  `group` too, or it lands ungrouped at the top of the "More" sheet.

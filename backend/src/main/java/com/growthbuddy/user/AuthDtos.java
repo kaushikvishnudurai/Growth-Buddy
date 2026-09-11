@@ -141,7 +141,6 @@ record AuthUserResponse(
         int level,
         int xpTotal,
         boolean emailVerified,
-        boolean isAdmin,
         Map<String, Boolean> features,
         String digestFrequency,
         int digestHour,
@@ -166,7 +165,7 @@ record AuthUserResponse(
                 user.getDietPreference(), user.getAboutMe(),
                 user.getAllergicTo(), user.getFavouriteDish(),
                 user.getDailyFoodGoalKcal(), user.getDailyWaterGoalMl(),
-                user.getLevel(), user.getXpTotal(), user.isEmailVerified(), user.isAdmin(),
+                user.getLevel(), user.getXpTotal(), user.isEmailVerified(),
                 user.getFeaturePrefs(), user.getDigestFrequency(), user.getDigestHour(),
                 user.getHomeLayout(), user.getNavLayout(), user.getUiPrefs(), token);
     }

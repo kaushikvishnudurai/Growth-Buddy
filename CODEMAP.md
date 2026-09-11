@@ -20,6 +20,12 @@ don't yet know which file you need. Files with their own doc are listed in
 - **Frontend-first bias:** wellness, mood, trends, insights and goal progress are computed and stored
   client-side. The server holds what must sync. Money is one JSON blob per user.
 - **Mobile:** `../Growth-Buddy-Mobile` is a Capacitor wrapper around this repo's build.
+- **Loading:** the boot chunk is Home only. Six screens (family, circle, timer, goals, report,
+  mentor) and the realtime stack (sockjs + stompjs) are dynamic imports, kept out of the service
+  worker precache via `globIgnores` and cached on first use by a CacheFirst rule. Fonts are
+  latin-subset only. Boot chunk 449 kB -> 298 kB (gzip 129 -> 85); precache 992 kB -> 659 kB.
+  Boot fetches run in two waves (`loadData` -> `loadSecondaryData`): five calls gate first paint,
+  eight follow. Throttled Home paint 1448 ms -> 900 ms.
 
 ---
 
@@ -66,7 +72,7 @@ routes (mentor, quick-add, money, food photos). `ApiException` (status + message
 | `/api/family` | `members` CRUD + `{id}/profile`, `search`, `members/link`, `invites` (+accept/decline), `leave`, `grocery-scan`, `meal-plan` GET/POST, `pantry` (+`/scan`, `{id}` PUT/DELETE), `shopping` (+`/generate`, `{id}/toggle`, `{id}` DELETE) |
 | `/api/food` | `search`, `entries` POST/DELETE, `photo-estimate`, `photo-estimate-multi`, `photo-history` GET/POST |
 | `/api/water` | `entries` POST/DELETE, `goal` PUT |
-| `/api/daily-logs` | `sleep`, `mood`, `snapshot` |
+| `/api/daily-logs` | GET, `sleep`, `mood`, `snapshot` — **there is no PUT.** The client used to call one from three places (`persistWellness`, a boot "force-sync", a 5-minute timer); all three 405'd forever and logged `CRITICAL: failed to reach database`. Sleep and mood are saved by their own POSTs as you enter them. |
 | `/api/score` | `today`, `today/snapshot` |
 | `/api/focus` | `stats`, `sessions` |
 | `/api/weekly-review` | GET/POST (wins + one focus, keyed by ISO week start) |
@@ -77,7 +83,6 @@ routes (mentor, quick-add, money, food photos). `ApiException` (status + message
 | `/api/notifications` | list, `unread-count`, `{id}/read`, `read-all`, `{id}` DELETE |
 | `/api/push` | `public-key`, `subscribe`, `unsubscribe`, `test` |
 | `/api/reminders` | CRUD, `occurrences`, `day/{date}` |
-| `/api/google/calendar` | `status`, `config` GET/PUT, `connect`, `events`, `callback` (HTML) |
 | `/api/quick-add` | POST — free text ("ran 3km, spent 200 on lunch, slept 7h") → writes across features |
 
 ### Notable services (the ones without their own doc)
@@ -87,10 +92,13 @@ routes (mentor, quick-add, money, food photos). `ApiException` (status + message
 - `mentor/OpenAIClient` (188) — minimal Chat Completions client on the JDK `HttpClient`, no SDK.
   Stateless: each call sends the whole rolling context. `isConfigured()` gates every AI feature.
 - `score/ScoreService` (78) — today's score = average completion rate across enabled features.
-- `reminder/ReminderService` (143) — recurrence expansion + scoped deletes; **mirrors the client-side
+- `reminder/ReminderService` (147) — recurrence expansion + scoped deletes; **mirrors the client-side
   expansion in `scripts/calendar.js` — keep both in step.**
-  `ReminderDeliveryScheduler` (152) polls and sends WhatsApp near the user's local time;
-  `ReminderDispatchLog` prevents double sends; `WhatsAppService` (104) = Meta WhatsApp Cloud API.
+  `ReminderDeliveryScheduler` (222) polls and sends WhatsApp + push near the user's local
+  time, dispatching a tick's batch across a 16-thread pool; `ReminderDispatchLog` prevents
+  double sends; `WhatsAppService` (161) = Meta WhatsApp Cloud API. Scheduled sends need
+  `WHATSAPP_TEMPLATE` (an approved template, body = one `{{1}}`) — free-form text is only
+  deliverable inside a user's 24h window.
 - `digest/DigestScheduler` (75) + `DigestService` (88) — progress digest near each user's preferred
   local hour, honouring their timezone; content derived from the live score.
 - `push/PushService` (135) — Web Push (VAPID); inert until keys are set.
@@ -112,9 +120,8 @@ routes (mentor, quick-add, money, food photos). `ApiException` (status + message
 `HabitCheckin` (composite PK habit_id+log_date), `HabitStreak` (cache, recomputed per check-in),
 `StreakFreezeWallet` (1 token/ISO week, cap 2), `DailyLog` (one row per user+day),
 `FamilyMember` (may be unmapped — a profile with no account), `FocusSession` and
-`FoodPhotoLog` (retention-capped), `GoogleOauthSettings` (app-wide client) vs `GoogleCalendarLink`
-(per user), `EmailVerificationToken` / `PasswordResetToken` / `WhatsAppOtpToken` (**bcrypt hash of
-the OTP only, never the code**).
+`FoodPhotoLog` (retention-capped), `EmailVerificationToken` / `PasswordResetToken` /
+`WhatsAppOtpToken` (**bcrypt hash of the OTP only, never the code**).
 
 ---
 
@@ -123,11 +130,14 @@ the OTP only, never the code**).
 | File | What |
 |---|---|
 | `index.html` | single-page shell; module entry `scripts/app.js` |
-| `styles/premium.css` | the **premium skin** (621). Every rule scoped to `html[data-premium='on']` and loaded last, so it overrides tokens and is fully inert when off. Lit canvas on `.gb-app`, glass cards, floating pill nav (`<1024px` only — it's a sidebar above that), circular icon buttons, pill buttons, size-specific tracking. §9 is the signature: the **live seedling** in the header — the brand mark itself, nodding on success and shaking its head on error via `buddyReact()`, which is hooked to `pushToast` so every toast in the app drives it. Shares its refusal rhythm with `@keyframes gb-shake`, the sign-in card's Face-ID-style "no" (`shakeAuthCard()`). §10 gives toasts an entrance they never had (they used to snap in). Toggle: header gem button + Customise → Display → Look. |
+| `styles/premium.css` | the **premium skin** (621). Every rule scoped to `html[data-premium='on']` and loaded last, so it overrides tokens and is fully inert when off. Lit canvas on `.gb-app`, glass cards, floating pill nav (`<1024px` only — it's a sidebar above that), circular icon buttons, pill buttons, size-specific tracking. §9 is the signature: the **live seedling** in the header — the brand mark itself, nodding when you actually finish a task or habit (`buddyReact()` from `toggleTask`/`toggleHabit`) and shaking its head on errors. Shares its refusal rhythm with `@keyframes gb-shake`, the Face-ID-style "no" any refusing surface does (`shakeRefusal()` — sign-in card, modal sheets). §10 gives toasts an entrance they never had (they used to snap in). Toggle: Settings → Display → Look (the header gem button is gone — a skin switch isn't a daily action). |
 | `vite.config.js` | dev server :5173, proxies `/api` + `/ws` to :8080 **rewriting the Origin header** (the backend's CORS allow-list excludes :5173); `vite-plugin-pwa` for manifest, offline precache, NetworkFirst on API GETs, and it pulls in `public/push-handlers.js`. Target override: `API_PROXY_TARGET`. |
 | `run.sh` | **start the backend with this** — loads `.env`, frees port 8080 |
-| `.env.example` | required env: DB, mail, OpenAI, VAPID, Google OAuth, WhatsApp |
-| `backend/src/main/resources/application.yml` | Spring config. `ddl-auto: ${SPRING_JPA_DDL_AUTO:update}` and `preferred_uuid_jdbc_type: CHAR` are both load-bearing |
+| `DEPLOYING.md` | how to ship it. The two variables that fail *silently* are `SPRING_PROFILES_ACTIVE=prod` and `VITE_API_BASE` — read it before any deploy |
+| `backend/Dockerfile` | 3-stage build (Vite → Maven → JRE). Serves the API **and** `dist/` from one origin, which is why the bundle can use relative paths and CORS drops out of the deployment. Bakes `SPRING_PROFILES_ACTIVE=prod` in so a deploy can't omit it |
+| `backend/src/main/resources/application-prod.yml` | prod overrides. Every value is `${VAR}` with **no default**, so a missing one fails startup instead of booting on a dev fallback. Pins `ddl-auto: validate` |
+| `.env.example` | required env: DB, mail, OpenAI, VAPID, WhatsApp |
+| `backend/src/main/resources/application.yml` | Spring config (**dev defaults**; `application-prod.yml` overrides). `ddl-auto: ${SPRING_JPA_DDL_AUTO:update}` and `preferred_uuid_jdbc_type: CHAR` are both load-bearing |
 | `backend/pom.xml`, `backend/README.md`, `backend/mvnw*` | Java build |
 | `package.json` | `dev`, `build`, `preview`, `lint`, `lint:fix`, `format`, `format:check` |
 | `eslint.config.js`, `.prettierrc.json`, `.prettierignore` | lint/format |
@@ -150,7 +160,7 @@ the OTP only, never the code**).
    straddling midnight would compute rows against different days. `UserZone.of()` parses
    a stored zone and falls back to UTC. Covered by `UserZoneTest` / `UserClockTest`.
 4. **Secrets are never stored in plain form** — OTPs bcrypt-hashed, session tokens HMAC'd, passwords
-   bcrypt, the Google client secret encrypted. Keep it that way.
+   bcrypt. Keep it that way.
 5. **Date keys are `YYYY-MM-DD` strings** on the frontend; ranges are string comparisons.
 6. **Every AI feature must degrade** when `OpenAIClient.isConfigured()` is false — there's a
    heuristic or fallback path for each one. Don't add an AI call without one.

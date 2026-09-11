@@ -2,6 +2,8 @@ package com.growthbuddy.goal;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
@@ -32,6 +34,11 @@ public class Goal {
     @Column(length = 1000)
     private String description;
 
+    // Without @Enumerated this defaults to ORDINAL, which stored 0/1/2 in a
+    // tinyint while the schema declared ENUM('short_term',...) — the mismatch
+    // that made ddl-auto: validate refuse to start. Ordinal is also a trap:
+    // reordering the constants silently rewrites the meaning of stored rows.
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
     private GoalHorizon horizon = GoalHorizon.short_term;
 

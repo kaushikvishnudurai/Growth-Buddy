@@ -10,9 +10,16 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Serves the frontend's index.html. Looks first in the JVM working directory,
- * then one level up — so both {@code java -jar backend/target/*.jar} (run from
- * backend/) and {@code ./run.sh} (run from repo root) work without arguments.
+ * Serves the frontend's index.html.
+ *
+ * <p>A built {@code dist/} wins over the raw source, so one container can serve
+ * the API and the real bundle on a single origin — which is also what makes
+ * relative API paths work, taking CORS out of the deployment entirely. Falling
+ * back to the source tree keeps {@code ./run.sh} usable without a build.
+ *
+ * <p>Both the working directory and its parent are searched, so {@code java -jar
+ * backend/target/*.jar} (run from backend/) and {@code ./run.sh} (run from the
+ * repo root) both work without arguments.
  */
 @RestController
 public class IndexController {
@@ -31,6 +38,8 @@ public class IndexController {
 
     private Path locate() {
         for (Path candidate : new Path[] {
+                Paths.get("dist", "index.html"),
+                Paths.get("..", "dist", "index.html"),
                 Paths.get("index.html"),
                 Paths.get("..", "index.html"),
         }) {

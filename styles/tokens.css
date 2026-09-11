@@ -9,16 +9,23 @@
    PWA and the Capacitor app keep their typography with no network.
    ===================================================================== */
 
-@import '@fontsource/bricolage-grotesque/600.css';
-@import '@fontsource/bricolage-grotesque/700.css';
-@import '@fontsource/bricolage-grotesque/800.css';
-@import '@fontsource/hanken-grotesk/400.css';
-@import '@fontsource/hanken-grotesk/500.css';
-@import '@fontsource/hanken-grotesk/600.css';
-@import '@fontsource/hanken-grotesk/700.css';
-@import '@fontsource/hanken-grotesk/800.css';
-@import '@fontsource/space-mono/400.css';
-@import '@fontsource/space-mono/700.css';
+/* latin-* , not the bare weight files. `@fontsource/x/700.css` declares every
+   subset the family ships — latin, latin-ext, vietnamese — and the service
+   worker's globPatterns precache every woff2 it finds, so a first visit
+   downloaded all three for all ten faces. The UI is English; none of these
+   faces covers Devanagari or Tamil, so the Indic text a user types already
+   falls back to a system font either way. Only latin is ever rendered.
+   Add a subset back by importing e.g. `latin-ext-700.css` alongside. */
+@import '@fontsource/bricolage-grotesque/latin-600.css';
+@import '@fontsource/bricolage-grotesque/latin-700.css';
+@import '@fontsource/bricolage-grotesque/latin-800.css';
+@import '@fontsource/hanken-grotesk/latin-400.css';
+@import '@fontsource/hanken-grotesk/latin-500.css';
+@import '@fontsource/hanken-grotesk/latin-600.css';
+@import '@fontsource/hanken-grotesk/latin-700.css';
+@import '@fontsource/hanken-grotesk/latin-800.css';
+@import '@fontsource/space-mono/latin-400.css';
+@import '@fontsource/space-mono/latin-700.css';
 
 :root {
   /* ---- Brand font families ---- */

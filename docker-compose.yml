@@ -1,0 +1,74 @@
+# Growth Buddy on a single always-free VM: Caddy terminates HTTPS, the app
+# container serves the API and the built frontend, MySQL sits behind both.
+#
+#   cp prod.env.example prod.env   # fill it in
+#   docker compose up -d --build
+#
+# Every service reads the same prod.env — MySQL uses the MYSQL_* names, the app
+# uses DB_*, Caddy uses PUBLIC_HOSTNAME/ACME_EMAIL, and each ignores the others.
+# That is deliberate: compose ${VAR} substitution reads .env (the dev file)
+# instead, which is exactly the silent cross-wiring to avoid here.
+#
+# Only Caddy publishes ports. MySQL and the app are reachable solely on the
+# private compose network, so DB_SSL_MODE=DISABLED is correct.
+
+services:
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    env_file: prod.env
+    # Tuned to coexist with a JVM on a 1GB box. On the 24GB Ampere instance
+    # raise the buffer pool to 2G — it is the single knob that matters for
+    # MySQL performance, and 128M is deliberately timid.
+    command: >-
+      --innodb-buffer-pool-size=128M
+      --performance-schema=OFF
+      --max-connections=32
+    volumes:
+      - db-data:/var/lib/mysql
+      # Runs once, only while db-data is empty. The schema is never created for
+      # you: prod is ddl-auto:none, so this file is the only thing that builds it.
+      - ./tableCreationQueries.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      # $$ so compose passes the literal through and the container's shell expands it.
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+
+  app:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    env_file: prod.env
+    environment:
+      DB_HOST: db
+      DB_SSL_MODE: DISABLED
+    expose:
+      - "8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    env_file: prod.env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates live here. Losing this volume re-issues on every restart
+      # and will hit Let's Encrypt's rate limit (5 per domain per week).
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - app
+
+volumes:
+  db-data:
+  caddy-data:
+  caddy-config:

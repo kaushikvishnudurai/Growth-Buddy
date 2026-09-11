@@ -28,6 +28,13 @@ function cookieEligible(key) {
     key === 'gb.token' ||
     key === 'gb.session' ||
     key === 'gb.theme' ||
+    // Same reason as the theme: these decide the first paint, and `state` reads
+    // them synchronously at module init — long before init() hydrates the Cache
+    // API. Left out, they always booted at their defaults, so the premium skin
+    // and a larger text size silently reverted on every reload. Both are a
+    // handful of bytes.
+    key === 'gb.premium' ||
+    key === 'gb.textScale' ||
     key === 'gb.apiBase' ||
     key.startsWith('gb.achSeen.') // small, needed synchronously for unlock timing
   );

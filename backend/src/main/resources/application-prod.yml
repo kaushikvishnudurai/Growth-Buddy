@@ -1,0 +1,47 @@
+# Production overrides. Activate with SPRING_PROFILES_ACTIVE=prod.
+#
+# Every value below is ${VAR} with NO default: Spring fails to start if one is
+# missing, which is the point. The base application.yml has development
+# defaults for all of these, and a default that silently works in production is
+# how you end up serving real traffic on a public dev secret.
+spring:
+  datasource:
+    url: jdbc:mysql://${DB_HOST}:${DB_PORT:3306}/${DB_NAME}?sslMode=${DB_SSL_MODE:REQUIRED}&serverTimezone=UTC
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+
+  jpa:
+    hibernate:
+      # Never 'update' in prod: it cannot alter FK-referenced columns, so it
+      # fails halfway and leaves the schema part-migrated (reproducible on this
+      # repo's own dev DB).
+      #
+      # 'validate' is the setting you want, and it does not currently pass. On a
+      # database built from tableCreationQueries.sql it reports 73 type
+      # differences, nearly all dialect spelling that means nothing at runtime:
+      # timestamp vs datetime(6), tinyint(1) vs bit(1), and ENUM value ordering,
+      # which Hibernate emits alphabetically. Turning those into a startup
+      # failure blocks every deploy for no safety gained.
+      #
+      # The real drift hiding behind that noise is fixed in the schema file
+      # (four users columns the app reads were never created there). Once the
+      # cosmetic differences are reconciled — regenerate the file from Hibernate,
+      # or hand-align it — switch this to validate and keep it there.
+      ddl-auto: ${SPRING_JPA_DDL_AUTO:none}
+
+growthbuddy:
+  # No fallback: SessionService refuses to boot on the dev secret under this
+  # profile, but only if the profile is active. Requiring the var here means a
+  # missing secret fails at startup rather than depending on that one check.
+  session:
+    hmac-secret: ${SESSION_HMAC_SECRET}
+  # Comma-separated production frontend origins. Never localhost.
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS}
+
+logging:
+  level:
+    org.hibernate.SQL: warn
+    # Request bodies can carry OTPs and passwords; keep Spring's own debug
+    # logging off regardless of what the base config or an env var says.
+    org.springframework.web: warn

@@ -56,7 +56,6 @@ public class AuthService {
     private final SessionService sessions;
     private final OpenAIClient openai;
     private final RateLimiter rateLimiter;
-    private final String adminEmail;
     private final boolean prod;
     private final ObjectMapper json = new ObjectMapper();
     private final BCryptPasswordEncoder bcrypt = new BCryptPasswordEncoder();
@@ -91,7 +90,6 @@ public class AuthService {
                        SessionService sessions,
                        OpenAIClient openai,
                        RateLimiter rateLimiter,
-                       @org.springframework.beans.factory.annotation.Value("${growthbuddy.admin-email:}") String adminEmail,
                        @org.springframework.beans.factory.annotation.Value("${spring.profiles.active:}") String activeProfiles) {
         this.users = users;
         this.creds = creds;
@@ -102,24 +100,7 @@ public class AuthService {
         this.sessions = sessions;
         this.openai = openai;
         this.rateLimiter = rateLimiter;
-        this.adminEmail = adminEmail == null ? "" : adminEmail.trim();
         this.prod = activeProfiles != null && activeProfiles.toLowerCase().contains("prod");
-    }
-
-    /**
-     * The very first account and the ADMIN_EMAIL account (if configured) get
-     * the admin flag, which gates server-wide settings like the Google OAuth
-     * keys. Called on signup and sign-in so an existing account picks the flag
-     * up as soon as ADMIN_EMAIL is set — no manual SQL needed.
-     */
-    private void grantAdminIfEligible(User user, boolean firstUser) {
-        if (user.isAdmin()) {
-            return;
-        }
-        if (firstUser || (!adminEmail.isEmpty() && adminEmail.equalsIgnoreCase(user.getEmail()))) {
-            user.setAdmin(true);
-            users.save(user);
-        }
     }
 
     @Transactional
@@ -129,14 +110,12 @@ public class AuthService {
             throw new ApiException(org.springframework.http.HttpStatus.CONFLICT,
                     "An account with this email already exists. Try signing in.");
         });
-        boolean firstUser = users.count() == 0;
         User user = new User();
         user.setEmail(email);
         user.setDisplayName(resolveDisplayName(req.displayName(), email));
         user.setTimezone(resolveTimezone(req.timezone()));
         user.setEmailVerified(false);
         users.save(user);
-        grantAdminIfEligible(user, firstUser);
 
         PasswordCredential c = new PasswordCredential();
         c.setUserId(user.getId());
@@ -170,7 +149,6 @@ public class AuthService {
             // bad credential.
             throw ApiException.badRequest("Wrong email or password");
         }
-        grantAdminIfEligible(user, false);
         return AuthUserResponse.withToken(user, sessions.issue(user.getId(), http).token());
     }
 
@@ -283,28 +261,25 @@ public class AuthService {
         // Children keyed by a parent id → delete via the user's parent rows first.
         String[][] childDeletes = {
             {"habit_streaks", "habit_id", "habits"},
-            {"workout_exercises", "workout_id", "workouts"},
             {"mentor_messages", "thread_id", "mentor_threads"},
             {"calendar_reminder_skips", "reminder_id", "calendar_reminders"},
             {"reminder_dispatch_log", "reminder_id", "calendar_reminders"},
         };
         // Tables owning a direct user_id column.
         String[] userTables = {
-            "user_preferences", "auth_identities", "password_credentials",
+            "password_credentials",
             "email_verification_tokens", "password_reset_tokens", "whatsapp_otp_tokens",
-            "task_templates", "task_completion_history", "tasks",
+            "task_completion_history", "tasks",
             "habit_checkins", "habits", "streak_freeze_wallets",
             "water_entries", "water_goals", "food_entries", "food_photo_logs",
-            "goal_actions", "goals", "gratitude_entries", "journal_entries",
-            "workouts", "daily_scores", "daily_logs",
+            "goal_actions", "goals", "daily_scores", "daily_logs",
             "mentor_threads", "circle_members", "circle_posts",
-            "device_tokens", "push_subscriptions", "xp_events", "notifications",
-            "money_state", "reminders", "calendar_reminders", "sessions",
+            "push_subscriptions", "notifications",
+            "money_state", "calendar_reminders", "sessions",
         };
-        // Only touch tables that actually exist — the schema file lists some tables
-        // that were never created (no JPA entity), and a DELETE against a missing
-        // table throws a SQLException, which marks the whole transaction
-        // rollback-only and aborts the purge.
+        // Kept as a guard even though every table above now exists: a DELETE against
+        // a missing table throws, which marks the whole transaction rollback-only and
+        // aborts the purge — so a future rename fails safe instead of half-deleting.
         java.util.Set<String> existing = existingTables();
 
         exec("SET FOREIGN_KEY_CHECKS=0", null);
@@ -382,10 +357,8 @@ public class AuthService {
         t.setExpiresAt(Instant.now().plus(OTP_TTL_MINUTES, ChronoUnit.MINUTES));
         waOtpTokens.save(t);
 
-        String message = "Your Growth Buddy verification code: " + otp
-                + "\nDo not share this code.";
         if (whatsApp != null && whatsApp.isConfigured()) {
-            whatsApp.sendReminder(normalized, message);
+            whatsApp.sendOtp(normalized, otp);
         } else if (prod) {
             log.error("WhatsApp not configured — cannot deliver OTP to {}.", normalized);
         } else {

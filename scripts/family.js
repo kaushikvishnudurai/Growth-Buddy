@@ -53,14 +53,11 @@ function cap(s) {
   return s ? s[0].toUpperCase() + s.slice(1) : s;
 }
 
-// Age-category → avatar accent + pluralised label for the summary strip.
-const AGE_ACCENT = {
-  Infant: 'infant',
-  Child: 'child',
-  Teenager: 'teen',
-  Adult: 'adult',
-  'Senior Citizen': 'senior',
-};
+// Pluralised age labels for the summary strip. There was an AGE_ACCENT map here
+// too, colouring each avatar by age band — but the band is already written on
+// every card ("19 yrs · Adult · Male"), so the colour repeated it, and a family
+// of four adults just got four identical pink circles competing with the orange
+// everything else on the screen uses.
 const AGE_PLURAL = {
   Infant: 'Infants',
   Child: 'Children',
@@ -69,11 +66,6 @@ const AGE_PLURAL = {
   'Senior Citizen': 'Seniors',
   Unknown: 'Unknown',
 };
-function accentClass(cat) {
-  const k = AGE_ACCENT[cat];
-  return k ? ' gb-family-avatar--' + k : '';
-}
-
 /** Comma-separated string <-> trimmed list. */
 function toList(str) {
   return String(str || '')
@@ -292,7 +284,7 @@ function ScreenFamily({ api }) {
       h(
         'div',
         { class: 'gb-family-card-head' },
-        h('div', { class: 'gb-family-avatar' + accentClass(m.ageCategory) }, initials(m.name)),
+        h('div', { class: 'gb-family-avatar' }, initials(m.name)),
         h(
           'div',
           { class: 'gb-family-card-id' },
@@ -1388,26 +1380,37 @@ function ScreenFamily({ api }) {
       ['shopping', 'Shopping', 'list-checks'],
       ['favourites', 'Saved', 'heart'],
     ];
+    // Two elements on purpose: the outer one is the sticky opaque backdrop, the
+    // inner one scrolls and carries the fade mask. A mask applied to the sticky
+    // element would fade its own background too, letting the page show through.
     return h(
       'div',
       { class: 'gb-family-sectionnav' },
-      items.map(([id, label, icon]) => {
-        const n = sectionBadge(id);
-        const danger = id === 'pantry' && n > 0;
-        return h(
-          'button',
-          {
-            type: 'button',
-            class: 'gb-family-sectiontab' + (model.section === id ? ' is-active' : ''),
-            onclick: () => switchSection(id),
-          },
-          Icon(icon, { size: 16 }),
-          h('span', null, label),
-          n > 0
-            ? h('span', { class: 'gb-family-tab-badge' + (danger ? ' is-danger' : '') }, String(n))
-            : null
-        );
-      })
+      h(
+        'div',
+        { class: 'gb-family-sectionnav-strip' },
+        items.map(([id, label, icon]) => {
+          const n = sectionBadge(id);
+          const danger = id === 'pantry' && n > 0;
+          return h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-family-sectiontab' + (model.section === id ? ' is-active' : ''),
+              onclick: () => switchSection(id),
+            },
+            Icon(icon, { size: 16 }),
+            h('span', null, label),
+            n > 0
+              ? h(
+                  'span',
+                  { class: 'gb-family-tab-badge' + (danger ? ' is-danger' : '') },
+                  String(n)
+                )
+              : null
+          );
+        })
+      )
     );
   }
 

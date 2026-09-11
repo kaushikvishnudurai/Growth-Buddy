@@ -5,6 +5,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import java.time.Instant;
@@ -14,7 +15,9 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 @Entity
-@Table(name = "notifications")
+// Mirrors tableCreationQueries.sql — without it here, ddl-auto builds the table
+// with no index and both bell queries (list by user, count unread) full-scan.
+@Table(name = "notifications", indexes = @Index(name = "ix_notifications_user", columnList = "user_id, read_at, created_at"))
 @Getter
 @Setter
 @NoArgsConstructor

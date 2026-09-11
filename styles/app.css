@@ -528,6 +528,215 @@ body {
   font-weight: 700;
 }
 
+/* The refusal belongs to the field that caused it, so it sits right under
+   that input — a toast alone leaves you hunting for which box was wrong. */
+.gb-login-fielderr {
+  margin: 6px 0 0;
+  color: var(--danger);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.gb-input.is-invalid {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 6%, var(--surface-2));
+}
+.gb-input.is-invalid:focus {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 22%, transparent);
+}
+
+/* Face ID doesn't print "incorrect" and stop; it shakes its head. Same here,
+   on whatever surface just refused you — the wrong field, or the whole card
+   when the failure has no field. Amplitude decays 9 → 1px because a real
+   head settles, and the ±1deg tilt is what makes it a gesture, not a jitter.
+   Under prefers-reduced-motion the global kill switch stills it and the red
+   field ring carries the meaning. */
+@keyframes gb-shake {
+  0%,
+  100% {
+    transform: translateX(0) rotate(0deg);
+  }
+  12% {
+    transform: translateX(-9px) rotate(-1.1deg);
+  }
+  26% {
+    transform: translateX(8px) rotate(0.9deg);
+  }
+  40% {
+    transform: translateX(-6px) rotate(-0.7deg);
+  }
+  54% {
+    transform: translateX(4px) rotate(0.5deg);
+  }
+  68% {
+    transform: translateX(-2.5px) rotate(-0.3deg);
+  }
+  84% {
+    transform: translateX(1px) rotate(0deg);
+  }
+}
+/* Two classes deep so it beats the .gb-rise entrance on the same element. */
+.gb-shake.gb-shake {
+  animation: gb-shake 520ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+/* Reveal toggle. The button sits inside the field's box, so the input keeps
+   room for it rather than running its text underneath. */
+.gb-pw {
+  position: relative;
+  display: flex;
+}
+.gb-pw .gb-input {
+  padding-right: 46px;
+}
+.gb-pw-toggle {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: none;
+  background: none;
+  border-radius: var(--radius-md);
+  color: var(--fg3);
+  cursor: pointer;
+}
+.gb-pw-toggle:hover {
+  color: var(--fg1);
+  background: var(--surface-3, var(--surface-2));
+}
+.gb-pw-toggle:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+/* ---- OTP: six boxes over one real input ----
+   The input keeps every browser behaviour worth having (paste, one-time-code
+   autofill, backspace, the numeric keyboard) and is simply invisible; the
+   boxes below are painted from its value by otpBoxes() in app.js. */
+.gb-otp {
+  position: relative;
+}
+.gb-otp-field.gb-otp-field {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+  color: transparent;
+  caret-color: transparent;
+  z-index: 1;
+  cursor: text;
+}
+/* The text is transparent but a selection would still paint its band. */
+.gb-otp-field::selection {
+  background: transparent;
+}
+.gb-otp-boxes {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+}
+.gb-otp-box {
+  height: 56px;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--fg1);
+  background: var(--surface-2);
+  border: 1.5px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  transition:
+    border-color var(--dur-fast),
+    box-shadow var(--dur-fast),
+    transform var(--dur-fast) var(--ease-bounce);
+}
+.gb-otp-box.is-filled {
+  border-color: var(--brand);
+  transform: translateY(-1px);
+}
+.gb-otp-box.is-active {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-soft);
+}
+/* The real caret is hidden, so the empty box being typed into grows one. */
+.gb-otp-box.is-active:empty::after {
+  content: '';
+  width: 2px;
+  height: 26px;
+  border-radius: 1px;
+  background: var(--brand);
+  animation: gb-otp-caret 1.06s steps(1) infinite;
+}
+@keyframes gb-otp-caret {
+  50% {
+    opacity: 0;
+  }
+}
+.gb-otp-field.is-invalid ~ .gb-otp-boxes .gb-otp-box {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 6%, var(--surface-2));
+}
+
+/* Verifying: the six boxes close the gaps between them and press together,
+   then spring back — the waiting is the code gathering itself up. Each box
+   travels exactly its distance from the row's centre, so they meet at once. */
+@keyframes gb-otp-collide {
+  0%,
+  100% {
+    transform: translateX(0) scale(1);
+  }
+  38% {
+    transform: translateX(var(--dx)) scale(0.97);
+  }
+  48% {
+    transform: translateX(calc(var(--dx) * 1.08)) scale(0.94);
+  }
+  62% {
+    transform: translateX(var(--dx)) scale(0.97);
+  }
+}
+.gb-otp.is-busy .gb-otp-box {
+  --dx: calc((2.5 - var(--i)) * 9px);
+  animation: gb-otp-collide 900ms var(--ease-out) infinite;
+  border-color: var(--brand);
+}
+
+/* Waiting has to look like waiting: a disabled button at 58% reads as broken,
+   not busy. Full opacity + a moving ring while the request is in flight. */
+.gb-btn.is-loading,
+.gb-btn.is-loading[disabled] {
+  opacity: 1;
+  cursor: progress;
+  background: var(--brand);
+  box-shadow:
+    0 4px 0 var(--brand-edge),
+    var(--shadow-brand);
+}
+.gb-spinner {
+  width: 17px;
+  height: 17px;
+  border: 2.5px solid color-mix(in srgb, currentColor 35%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: gb-spin 0.7s linear infinite;
+  flex: none;
+}
+@keyframes gb-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .gb-login-hint {
   margin: 6px 0 0;
   color: var(--fg3);
@@ -566,14 +775,6 @@ body {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
   border-radius: 4px;
-}
-
-.gb-otp-input {
-  letter-spacing: 0.5em;
-  text-align: center;
-  font-size: 1.375rem;
-  font-weight: 800;
-  font-family: var(--font-display, var(--font-body));
 }
 
 @keyframes gb-pop {
@@ -694,10 +895,19 @@ body {
 }
 
 /* ---- Mentor chat ---- */
+/* The chat column must fill what is LEFT of the scroll box, not all of it. The
+   week-review nudge is a sibling inside the same .gb-scroll, so height:100% made
+   the column 42px too tall and pushed the composer — and the bottom half of the
+   send button — under the bottom nav. :has() keeps the flex context scoped to
+   this screen so the other eleven keep plain block flow. */
+.gb-scroll:has(> .gb-mentor) {
+  display: flex;
+  flex-direction: column;
+}
 .gb-mentor {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1;
   min-height: 0;
 }
 .gb-msg-list {
@@ -1292,6 +1502,7 @@ body {
 
 /* ---- Loading splash: quote of the day shown during reload ---- */
 .gb-splash {
+  width: 100%;
   min-height: 100vh;
   min-height: 100dvh;
   display: flex;
@@ -1936,6 +2147,18 @@ body {
 /* Customizable single-column home: blocks are direct children (no column wrap). */
 .gb-dash--single > .gb-dash-block:first-child {
   margin-top: 8px;
+}
+
+/* First run: the setup checklist is the only card on Home. Centre it in the
+   viewport instead of leaving it stranded at the top of a blank screen — the
+   emptiness is real, so make it read as a deliberate first screen. */
+.gb-dash--onboarding {
+  min-height: 100%;
+  justify-content: center;
+  padding-bottom: 0;
+}
+.gb-dash--onboarding > .gb-dash-block:first-child {
+  margin-top: 0;
 }
 .gb-dash-block > .gb-sectiontitle {
   padding-left: 0;
@@ -3470,6 +3693,7 @@ body {
   border-radius: var(--radius-pill);
 }
 .gb-rem-del {
+  position: relative;
   width: 34px;
   height: 34px;
   border-radius: var(--radius-md);
@@ -3486,9 +3710,24 @@ body {
     background var(--dur-fast),
     color var(--dur-fast);
 }
+/* The visual box stays 34px so the row keeps its rhythm, but the tap target
+   grows to 42x44 — measured gaps between these buttons are 13px, so this leaves
+   ~5px of dead space between neighbours rather than overlapping them. */
+.gb-rem-del::after {
+  content: '';
+  position: absolute;
+  inset: -5px -4px;
+}
 .gb-rem-del:hover {
   background: var(--surface-3);
-  color: var(--coral-600);
+  color: var(--fg1);
+}
+/* Only the destructive one reads destructive. This class is shared with the
+   rest-day toggle, which used to turn coral on hover too — danger colouring on
+   an action that just protects a streak. */
+.gb-rem-del--danger:hover,
+.gb-rem-del--danger:focus-visible {
+  color: var(--danger);
 }
 .gb-rem-del:focus-visible {
   outline: 2px solid var(--ring);
@@ -4121,17 +4360,28 @@ body {
 .gb-quickadd {
   margin-bottom: 12px;
 }
+/* Input on its own line, controls beneath. Four things abreast squeezed the
+   text field to about ten visible characters on a 390px phone — unusable for a
+   control whose whole job is a typed sentence. */
 .gb-quickadd-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: stretch;
 }
 .gb-quickadd-row .gb-input {
-  flex: 1;
+  flex: 1 1 100%;
   min-width: 0;
 }
-.gb-quickadd-row .gb-btn {
+.gb-quickadd-row .gb-mic {
   flex: none;
+}
+.gb-quickadd-row select.gb-input {
+  flex: 1 1 auto;
+}
+.gb-quickadd-row .gb-btn:not(.gb-mic) {
+  flex: none;
+  margin-left: auto;
   white-space: nowrap;
 }
 .gb-quickadd-hint {
@@ -5293,6 +5543,14 @@ body {
   white-space: nowrap;
   transition: color var(--dur-fast);
 }
+/* Five sections don't fit at the default size on a 390px phone. Tighten the
+   whole bar rather than let a label clip — half a word is worse than small
+   type. Thumb is child 1, so :nth-child(6) means "5 buttons or more". */
+.gb-segnav:has(> .gb-segnav-btn:nth-child(6)) .gb-segnav-btn {
+  font-size: 0.6875rem;
+  padding: 8px 2px;
+  letter-spacing: -0.01em;
+}
 .gb-segnav-btn:hover:not(.is-active) {
   color: var(--fg1);
 }
@@ -5373,16 +5631,6 @@ select.gb-input {
   padding: 6px 12px;
   border-radius: 999px;
   width: fit-content;
-}
-
-/* OTP digit input — wider, centered digits */
-.gb-input--otp {
-  font-size: 1.25rem;
-  font-weight: 700;
-  letter-spacing: 0.25em;
-  text-align: center;
-  font-family: var(--font-display);
-  margin-top: 6px;
 }
 
 /* Verify + Resend action row */
@@ -5485,12 +5733,15 @@ select.gb-input {
   font-size: 0.75rem;
   color: var(--fg3);
 }
+/* Family-only despite the generic name (six uses, all in family.js). The 2px
+   side margin was a nudge from when the screen had no padding of its own; now
+   that it does, it just pushes every heading 2px off the cards beneath it. */
 .gb-section-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin: 4px 2px 12px;
+  margin: 4px 0 12px;
 }
 .gb-section-head h2 {
   font-family: var(--font-display);
@@ -5506,6 +5757,20 @@ select.gb-input {
   gap: 26px;
   padding-bottom: 16px;
 }
+/* Every other screen root insets its content by 20px — `.gb-dash-block`,
+   `.gb-goal-section`, `.gb-cal-block`, the achievements grid's parent. Family
+   was the one screen running flush to the edge of the scroll column, which is
+   why its cards read as cramped next to the same cards on Achievements.
+   The sticky tab strip is excluded on purpose: it has to stay full-bleed or
+   content scrolls visibly through the 20px gutters beside its backdrop. */
+.gb-family > *:not(.gb-family-sectionnav) {
+  padding-left: 20px;
+  padding-right: 20px;
+}
+.gb-family-sectionnav {
+  padding-left: 20px;
+  padding-right: 20px;
+}
 .gb-family-subhead {
   font-weight: 800;
   font-size: 0.875rem;
@@ -5520,8 +5785,13 @@ select.gb-input {
   gap: 12px;
 }
 @media (min-width: 620px) {
+  /* minmax(0, 1fr), not 1fr. A bare `1fr` is `minmax(auto, 1fr)`, so a column
+     refuses to shrink below its content's min-content width — the left card
+     measured 331px against the right's 291px, and the grid overflowed its own
+     container by 36px, leaving the right column misaligned with the summary
+     card above it. minmax(0, …) lets both columns be genuinely equal. */
   .gb-family-card-grid {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 }
 .gb-family-card {
@@ -5546,8 +5816,8 @@ select.gb-input {
   font-family: var(--font-display);
   font-weight: 800;
   font-size: 1rem;
-  background: var(--social-soft);
-  color: var(--social-soft-fg);
+  background: var(--brand-soft);
+  color: var(--brand-soft-fg);
 }
 .gb-family-avatar--sm {
   width: 38px;
@@ -5856,7 +6126,11 @@ select.gb-input {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  margin-bottom: 12px;
+  /* 18px, not the grid's 12px. This card summarises the ones below it, so it
+     needs the app's block separation (`.gb-dash-block`), not its item spacing —
+     at 12px it sat exactly as far from the cards as they sit from each other,
+     and read as a fourth card rather than the header for them. */
+  margin-bottom: 18px;
 }
 .gb-family-summary-top {
   display: flex;
@@ -5878,27 +6152,6 @@ select.gb-input {
 }
 
 /* Age-category avatar accents */
-.gb-family-avatar--infant {
-  background: var(--warning-soft);
-  color: var(--warning-soft-fg);
-}
-.gb-family-avatar--child {
-  background: var(--success-soft);
-  color: var(--success-soft-fg);
-}
-.gb-family-avatar--teen {
-  background: var(--info-soft);
-  color: var(--info-soft-fg);
-}
-.gb-family-avatar--adult {
-  background: var(--social-soft);
-  color: var(--social-soft-fg);
-}
-.gb-family-avatar--senior {
-  background: var(--ai-soft);
-  color: var(--ai-soft-fg);
-}
-
 /* Leave family */
 .gb-family-leave-btn {
   margin-top: 4px;
@@ -5918,14 +6171,25 @@ select.gb-input {
   color: var(--warning-soft-fg);
 }
 .gb-family-sectionnav {
+  margin-bottom: 4px;
+}
+/* The strip scrolls; the wrapper above stays put and stays opaque. The last tab
+   used to be sliced mid-glyph with the scrollbar hidden, which reads as broken
+   rather than as "there's more". The mask fades the final 28px instead.
+   It's unconditional on purpose: the tabs are `flex: none` and left-packed, so
+   when they all fit, the faded strip is empty background and the mask is
+   invisible. It only ever shows up over a tab that is genuinely cut off. */
+.gb-family-sectionnav-strip {
   display: flex;
   gap: 6px;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
   padding-bottom: 4px;
-  margin-bottom: 4px;
   scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
 }
-.gb-family-sectionnav::-webkit-scrollbar {
+.gb-family-sectionnav-strip::-webkit-scrollbar {
   display: none;
 }
 .gb-family-sectiontab {
@@ -6090,6 +6354,15 @@ select.gb-input {
   background: var(--surface-3);
   flex: none;
 }
+/* Placeholder a lazily-imported screen shows while its chunk is in flight.
+   Reuses the skeleton primitives below; the family skeleton got its inset from
+   `.gb-family`, and this one has no screen class to inherit from. */
+.gb-lazy-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 20px 0;
+}
 .gb-skel-lines {
   flex: 1;
   display: flex;
@@ -6126,10 +6399,32 @@ select.gb-input {
   position: sticky;
   top: 0;
   z-index: 5;
-  background: var(--bg);
+  /* Same treatment as the app's other sticky bar, `.gb-nav`: translucent plus a
+     blur, not a flat fill. A flat `var(--bg)` is only invisible over a flat
+     background — the premium skin paints `.gb-app` with three radial gradients,
+     so the strip showed up as a dark rectangle with hard edges either side of
+     it. The border makes the boundary deliberate instead of a colour seam. */
+  background: var(--nav-bg);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--border);
   padding-top: 4px;
   padding-bottom: 10px;
   margin-bottom: 0;
+}
+/* Must come after the rule above, not up in the 1024px block earlier in this
+   file — same specificity, so source order decides.
+   At >=1024px the screen content is capped at 900px while the header and review
+   banner span the whole column, so an edge-to-edge bar treatment stops dead in
+   the middle of the canvas and reads as clipped. Round the bottom corners and
+   drop the rule: at that width it's a toolbar hanging off the header, which is
+   what it is. Below 1024px the strip really is full-bleed, so the bar stays. */
+@media (min-width: 1024px) {
+  .gb-family-sectionnav {
+    border-bottom: none;
+    border-bottom-left-radius: var(--radius-lg);
+    border-bottom-right-radius: var(--radius-lg);
+  }
 }
 .gb-family-sectiontab.is-active {
   box-shadow: var(--shadow-sm);
@@ -6736,6 +7031,23 @@ textarea:focus-visible,
   grid-template-columns: repeat(3, 1fr);
   gap: 10px;
 }
+/* Heading over each group in the More sheet. Same caps treatment as the
+   settings section labels, so the two sheets read as one system. */
+.gb-more-group-label {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg3);
+  padding: 14px 2px 8px;
+}
+.gb-more-group-label:first-child {
+  padding-top: 2px;
+}
+.gb-more-grid + .gb-more-group-label {
+  padding-top: 16px;
+}
 .gb-more-item {
   display: flex;
   flex-direction: column;
@@ -6845,144 +7157,6 @@ textarea:focus-visible,
   font-size: var(--text-xs);
   color: var(--fg3);
   line-height: 1.35;
-}
-
-/* =====================================================================
-   Integration card (Settings → Account → Integrations)
-   One card, four states: setup (dashed border), ready, waiting, connected.
-   The Google G is the status lamp — greyscale off, full color on.
-   ===================================================================== */
-.gb-integration-card {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--surface-2);
-  padding: 14px;
-}
-.gb-integration-card.is-setup {
-  border-style: dashed;
-  border-color: var(--border-strong);
-}
-.gb-integration-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-.gb-integration-glyph {
-  width: 36px;
-  height: 36px;
-  flex: none;
-  border-radius: var(--radius-md);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  display: grid;
-  place-items: center;
-}
-.gb-integration-glyph svg {
-  width: 18px;
-  height: 18px;
-  display: block;
-}
-/* Off = greyscale lamp; on = Google's own colors. */
-.gb-integration-card.is-off .gb-integration-glyph svg path {
-  fill: var(--fg3);
-}
-.gb-integration-title {
-  flex: 1;
-  min-width: 0;
-}
-.gb-integration-name {
-  font-weight: 700;
-  font-size: 0.90625rem;
-  color: var(--fg1);
-}
-.gb-integration-sub {
-  font-size: 0.78125rem;
-  color: var(--fg3);
-  margin-top: 1px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.gb-integration-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex: none;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--fg2);
-}
-.gb-integration-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--fg3);
-  flex: none;
-}
-.gb-integration-status.is-on .gb-integration-dot {
-  background: var(--leaf-500);
-}
-.gb-integration-status.is-waiting .gb-integration-dot {
-  background: var(--sun-500);
-  animation: gb-integration-pulse 1.2s ease-in-out infinite;
-}
-@keyframes gb-integration-pulse {
-  50% {
-    opacity: 0.25;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .gb-integration-status.is-waiting .gb-integration-dot {
-    animation: none;
-  }
-}
-.gb-integration-body:not(:empty) {
-  margin-top: 12px;
-}
-.gb-integration-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-top: 10px;
-}
-.gb-gcal-steps {
-  margin: 0 0 6px;
-  padding-left: 20px;
-  display: grid;
-  gap: 8px;
-  font-size: 0.8125rem;
-  line-height: 1.5;
-  color: var(--fg2);
-}
-.gb-gcal-uri {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  margin: 6px 0 2px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-}
-.gb-gcal-uri code {
-  font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
-  word-break: break-all;
-  flex: 1;
-  min-width: 0;
-  color: var(--fg2);
-}
-/* Calendar rows: synced Google events wear the mini G in their pill. */
-.gb-tag-pill--google {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-.gb-tag-pill--google svg {
-  width: 11px;
-  height: 11px;
-  flex: none;
 }
 
 /* =====================================================================

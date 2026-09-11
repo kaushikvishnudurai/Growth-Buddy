@@ -7,10 +7,12 @@ server:
   max-http-request-header-size: 65536
   tomcat:
     threads:
-      # Worker threads. Fine once no request holds a DB connection for a slow
-      # external call (see MentorService / schedulers). Tune under load test.
-      max: ${TOMCAT_MAX_THREADS:300}
-      min-spare: 25
+      # Worker threads. Sized for the 512MB instance this actually deploys to,
+      # where every started thread is a stack the JVM cannot give to metaspace;
+      # the DB pool is 8 anyway, so 300 workers only queue harder on Hikari.
+      # Raise both on real hardware. Tune under load test.
+      max: ${TOMCAT_MAX_THREADS:50}
+      min-spare: ${TOMCAT_MIN_SPARE_THREADS:5}
     # Keep-alive sockets from ~10k concurrent clients.
     max-connections: ${TOMCAT_MAX_CONNECTIONS:10000}
     accept-count: 200
@@ -21,15 +23,17 @@ spring:
     name: growth-buddy-backend
 
   datasource:
-    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:growth_buddy}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:growth_buddy}?sslMode=${DB_SSL_MODE:DISABLED}&allowPublicKeyRetrieval=true&serverTimezone=UTC
     username: ${DB_USER:root}
     password: ${DB_PASSWORD:}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
-      # MySQL throughput peaks at a few dozen active connections — a huge pool
-      # just makes the DB slower. Ensure MySQL max_connections comfortably exceeds this.
-      maximum-pool-size: ${DB_POOL_SIZE:40}
-      minimum-idle: 10
+      # Sized for a free/small MySQL tier, where the binding limit is the
+      # server's max_connections (often 20-60 shared) and the RAM each idle
+      # connection holds — not throughput. Raise DB_POOL_SIZE on real hardware;
+      # MySQL max_connections must comfortably exceed it.
+      maximum-pool-size: ${DB_POOL_SIZE:8}
+      minimum-idle: 2
       connection-timeout: 3000   # fail fast instead of a 30s pile-up
       max-lifetime: 600000       # must be < MySQL wait_timeout
       leak-detection-threshold: 30000
@@ -77,6 +81,17 @@ spring:
           timeout: 5000
           writetimeout: 5000
 
+# The mail health indicator opens an SMTP socket on every /actuator/health call.
+# That is the wrong liveness signal twice over: transactional email being down
+# does not make the app unable to serve, and on a host that blocks SMTP ports it
+# can never pass — so the endpoint reports DOWN forever and any uptime monitor
+# pointed at it alerts continuously. The datasource check, which does matter,
+# stays on.
+management:
+  health:
+    mail:
+      enabled: false
+
 # Cross-origin so the static file:// / localhost frontend can call the API.
 growthbuddy:
   cors:
@@ -88,16 +103,24 @@ growthbuddy:
     # A DB dump alone cannot validate tokens without this secret.
     # MUST be overridden in production via SESSION_HMAC_SECRET env var.
     hmac-secret: ${SESSION_HMAC_SECRET:growth-buddy-dev-hmac-secret-replace-in-production}
-  # Demo user used when no X-User-Id header is supplied (no auth layer yet).
+  # Seeded demo account for local development only; DataSeeder skips it under
+  # the prod profile. Identity comes from the bearer token, never a header.
   demo-user-id: "00000000-0000-0000-0000-000000000001"
-  # This email gets the admin flag on next sign-in (gates server-wide settings
-  # like the Google OAuth keys). The very first signup is admin automatically.
-  admin-email: ${ADMIN_EMAIL:}
   mail:
     # Public-facing name in the From header.
     from-name: ${MAIL_FROM_NAME:Growth Buddy}
     # From address. If empty, falls back to spring.mail.username (gmail account).
     from-address: ${MAIL_FROM:}
+    # Mailjet REST API. Set these and mail goes over HTTPS instead of SMTP.
+    # Required on hosts that block outbound SMTP ports (Render's free tier
+    # blocks 25/465/587), where JavaMailSender can only ever time out.
+    #
+    # Mailjet rather than Brevo because api.brevo.com sits behind Cloudflare,
+    # which terminates the TLS handshake from Render's shared egress IPs before
+    # any request is sent. api.mailjet.com is not fronted that way.
+    api-key: ${MAILJET_API_KEY:}
+    api-secret: ${MAILJET_SECRET_KEY:}
+    api-url: ${MAILJET_API_URL:https://api.mailjet.com/v3.1/send}
   mentor:
     # OpenAI integration. If api-key is empty the mentor falls back to a
     # canned encouraging reply so the feature still loads end-to-end.
@@ -110,14 +133,6 @@ growthbuddy:
     public-key: ${VAPID_PUBLIC_KEY:}
     private-key: ${VAPID_PRIVATE_KEY:}
     subject: ${VAPID_SUBJECT:mailto:hello@growthbuddy.app}
-  google:
-    # Google Calendar (read-only) OAuth. Create a "Web application" OAuth client
-    # at https://console.cloud.google.com/apis/credentials, enable the Google
-    # Calendar API, and register redirect-uri below. Left empty, the Settings
-    # section reports "not configured" and everything else still works.
-    client-id: ${GOOGLE_CLIENT_ID:}
-    client-secret: ${GOOGLE_CLIENT_SECRET:}
-    redirect-uri: ${GOOGLE_REDIRECT_URI:http://localhost:8080/api/google/calendar/callback}
   whatsapp:
     # Set enabled=true + Meta WhatsApp Cloud API credentials to send reminder messages.
     enabled: ${WHATSAPP_ENABLED:false}
@@ -125,6 +140,14 @@ growthbuddy:
       phone-number-id: ${WHATSAPP_PHONE_NUMBER_ID:}
       access-token: ${WHATSAPP_ACCESS_TOKEN:}
       api-version: ${WHATSAPP_API_VERSION:v21.0}
+      # Name of an approved template whose body is a single {{1}} variable. Required for
+      # scheduled reminders; left empty, sends fall back to free-form text, which Meta
+      # only delivers inside a user's 24h customer-service window.
+      template: ${WHATSAPP_TEMPLATE:}
+      # AUTHENTICATION-category template for login codes. Needs a verified business to
+      # create; empty => OTPs fall back to the reminder template above.
+      auth-template: ${WHATSAPP_AUTH_TEMPLATE:}
+      template-lang: ${WHATSAPP_TEMPLATE_LANG:en}
 
 logging:
   level:

@@ -1051,7 +1051,13 @@ function ScreenCircle({
     {
       type: 'button',
       class: 'gb-btn gb-btn--primary',
-      style: { width: 'auto', padding: '8px 14px', fontSize: '0.8125rem' },
+      style: {
+        width: 'auto',
+        flex: 'none',
+        whiteSpace: 'nowrap',
+        padding: '8px 14px',
+        fontSize: '0.8125rem',
+      },
       onclick: launchSearch,
     },
     Icon('plus', { size: 14, sw: 2.6 }),
