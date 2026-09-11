@@ -231,6 +231,7 @@ const state = {
   screen: 'home',
   loading: false,
   error: '',
+  errorField: '', // which auth input the error belongs under ('' = card-level)
   user: loadSession(),
   tasks: [],
   habits: [],
@@ -5690,6 +5691,7 @@ function setAuthMode(mode, opts) {
   opts = opts || {};
   state.authMode = mode;
   state.error = '';
+  state.errorField = '';
   state.authNotice = opts.notice || '';
   if (opts.email !== undefined) state.authEmail = opts.email;
   try {
@@ -5737,7 +5739,7 @@ function authShell(title, subtitle, children) {
       h('p', { class: 'gb-login-sub' }, subtitle),
       state.authNotice ? h('p', { class: 'gb-login-notice' }, state.authNotice) : null,
       children,
-      state.error ? h('p', { class: 'gb-login-error' }, state.error) : null
+      state.error && !state.errorField ? h('p', { class: 'gb-login-error' }, state.error) : null
     )
   );
 }
@@ -5747,16 +5749,61 @@ function primaryBtn(label, onClick) {
     'button',
     {
       type: 'button',
-      class: 'gb-btn gb-btn--primary gb-login-btn',
+      class: 'gb-btn gb-btn--primary gb-login-btn' + (state.loading ? ' is-loading' : ''),
       onclick: onClick,
       disabled: state.loading ? true : null,
+      'aria-busy': state.loading ? 'true' : null,
     },
+    state.loading ? h('span', { class: 'gb-spinner', 'aria-hidden': 'true' }) : null,
     state.loading ? 'Please wait…' : label
   );
 }
 
-function field(label, input) {
-  return [h('label', { class: 'gb-login-label' }, label), input];
+/* `key` ties this input to state.errorField, so the message lands under the
+   field that's actually wrong instead of at the bottom of the card. */
+function field(label, input, key) {
+  const bad = !!key && state.errorField === key && !!state.error;
+  if (bad) input.classList.add('is-invalid');
+  input.setAttribute('aria-invalid', bad ? 'true' : 'false');
+  return [
+    h('label', { class: 'gb-login-label' }, label),
+    input,
+    bad ? h('p', { class: 'gb-login-fielderr' }, state.error) : null,
+  ];
+}
+
+/* render() builds the auth inputs from scratch, so anything typed into them is
+   gone the moment we re-render to show an error — you fail on the password and
+   lose the email you just typed. Carry the values across by position: a refusal
+   or a spinner never changes which view is on screen. */
+function renderAuth() {
+  const values = Array.from(document.querySelectorAll('.gb-login-input'), (i) => i.value);
+  render();
+  document.querySelectorAll('.gb-login-input').forEach((input, i) => {
+    if (values[i]) input.value = values[i];
+  });
+}
+
+/* One refusal path for every auth screen: mark the field, say why under it,
+   shake it, focus it. The nodes are looked up after the render — the ones the
+   view closed over are detached by then. */
+function authFail(message, key) {
+  state.error = message;
+  state.errorField = key || '';
+  renderAuth();
+  refuseFocus();
+}
+
+/* Shake whatever just said no — the offending field, or the card when the
+   failure belongs to no field — and put the cursor in it with the bad value
+   selected, so retyping replaces instead of appending. */
+function refuseFocus() {
+  const bad = document.querySelector('.gb-login-input.is-invalid');
+  if (bad) {
+    bad.focus();
+    if (bad.value) bad.select();
+  }
+  shakeRefusal(bad || document.querySelector('.gb-login-card'));
 }
 
 /* Face ID doesn't just print "incorrect" — it shakes its head at you.
@@ -5766,10 +5813,10 @@ function field(label, input) {
    shakes the modal. One refusal, one gesture, so it reads as the product's
    own body language instead of a trick on the login page.
 
-   Premium skin only; the keyframes live in styles/premium.css, where
-   reduced-motion swaps the shake for a red ring. */
+   Keyframes live in styles/app.css; under reduced-motion the global kill
+   switch drops the movement and the red field ring carries the meaning. */
 function shakeRefusal(el) {
-  if (!state.premium || !el) return;
+  if (!el) return;
   el.classList.remove('gb-shake');
   void el.offsetWidth; // restart the animation when the same surface fails twice
   el.classList.add('gb-shake');
@@ -5779,23 +5826,30 @@ function shakeRefusal(el) {
   } catch (_) {}
 }
 
-function runAuth(action) {
+/* `errField` names the input a server refusal belongs under ('password' for a
+   bad sign-in, 'otp' for a bad code). Without one the failure is nobody's
+   field — a dropped connection, say — and stays a toast. */
+function runAuth(action, errField) {
   state.loading = true;
   state.error = '';
-  render();
+  state.errorField = '';
+  renderAuth();
   let rejected = false;
   return action()
     .catch((err) => {
-      // Surface auth/connection failures as a toast rather than an inline
-      // line buried in the card.
       rejected = true;
-      toastError(err, 'Something went wrong.');
+      const message = (err && err.message) || 'Something went wrong.';
+      if (errField) {
+        state.error = message;
+        state.errorField = errField;
+      } else {
+        toastError(err, 'Something went wrong.');
+      }
     })
     .finally(() => {
       state.loading = false;
-      render();
-      // After render(): the card node it shakes is the freshly built one.
-      if (rejected) shakeRefusal(document.querySelector('.gb-login-card'));
+      renderAuth();
+      if (rejected) refuseFocus();
     });
 }
 
@@ -5819,18 +5873,8 @@ function viewSignin() {
     const email = emailInput.value.trim();
     const password = pwInput.value;
     // Silent returns made the button feel dead — always say what's missing.
-    if (!email) {
-      state.error = 'Enter your email to sign in.';
-      render();
-      emailInput.focus();
-      return;
-    }
-    if (!password) {
-      state.error = 'Enter your password to sign in.';
-      render();
-      pwInput.focus();
-      return;
-    }
+    if (!email) return authFail('Enter your email to sign in.', 'email');
+    if (!password) return authFail('Enter your password to sign in.', 'password');
     runAuth(async () => {
       // Sign-in is a plain credential check: it never routes to the OTP/verify
       // screen and never sends email. Any failure (wrong credentials, or an
@@ -5846,7 +5890,7 @@ function viewSignin() {
       state.screen = 'home';
       history.replaceState(null, '', '#/home');
       await loadData();
-    });
+    }, 'password');
   }
 
   [emailInput, pwInput].forEach((el) =>
@@ -5859,8 +5903,8 @@ function viewSignin() {
   );
 
   return authShell('Welcome back', 'Sign in to sync your habits, tasks, reminders, and score.', [
-    ...field('Email', emailInput),
-    ...field('Password', pwInput),
+    ...field('Email', emailInput, 'email'),
+    ...field('Password', pwInput, 'password'),
     primaryBtn('Sign in', submit),
     h(
       'div',
@@ -5897,18 +5941,8 @@ function viewSignup() {
     const email = emailInput.value.trim();
     const displayName = nameInput.value.trim();
     const password = pwInput.value;
-    if (!email) {
-      state.error = 'Enter your email to create the account.';
-      render();
-      emailInput.focus();
-      return;
-    }
-    if (password.length < 8) {
-      state.error = 'Password must be at least 8 characters.';
-      render();
-      pwInput.focus();
-      return;
-    }
+    if (!email) return authFail('Enter your email to create the account.', 'email');
+    if (password.length < 8) return authFail('Password must be at least 8 characters.', 'password');
     runAuth(async () => {
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
       await authPost('/api/auth/signup', { email, password, displayName, timezone: tz });
@@ -5916,7 +5950,7 @@ function viewSignup() {
         email,
         notice: 'We sent a 6-digit code to ' + email + '. Enter it below to finish signing up.',
       });
-    });
+    }, 'email');
   }
 
   [emailInput, nameInput, pwInput].forEach((el) =>
@@ -5932,9 +5966,9 @@ function viewSignup() {
     'Create your account',
     'We’ll email you a 6-digit code to confirm your address.',
     [
-      ...field('Email', emailInput),
-      ...field('Name', nameInput),
-      ...field('Password', pwInput),
+      ...field('Email', emailInput, 'email'),
+      ...field('Name', nameInput, 'name'),
+      ...field('Password', pwInput, 'password'),
       primaryBtn('Create account', submit),
       h(
         'div',
@@ -5959,12 +5993,7 @@ function viewVerify() {
   });
   function submit() {
     const otp = (otpInput.value || '').replace(/\D/g, '');
-    if (otp.length !== 6) {
-      otpInput.focus();
-      state.error = 'Enter the 6-digit code (must be exactly 6 digits).';
-      render();
-      return;
-    }
+    if (otp.length !== 6) return authFail('Enter the 6-digit code (must be exactly 6 digits).', 'otp');
     runAuth(async () => {
       const user = await authPost('/api/auth/verify', { email: state.authEmail, otp });
       state.user = user;
@@ -5977,7 +6006,7 @@ function viewVerify() {
       state.screen = 'home';
       history.replaceState(null, '', '#/home');
       await loadData();
-    });
+    }, 'otp');
   }
   function resend() {
     runAuth(async () => {
@@ -6001,7 +6030,7 @@ function viewVerify() {
       state.authEmail +
       '. Check your inbox (and spam folder) for the 6-digit code.',
     [
-      ...field('6-digit code', otpInput),
+      ...field('6-digit code', otpInput, 'otp'),
       primaryBtn('Verify & continue', submit),
       h(
         'div',
@@ -6023,19 +6052,14 @@ function viewForgot() {
   });
   function submit() {
     const email = emailInput.value.trim();
-    if (!email) {
-      state.error = 'Enter your email and we’ll send the code there.';
-      render();
-      emailInput.focus();
-      return;
-    }
+    if (!email) return authFail('Enter your email and we’ll send the code there.', 'email');
     runAuth(async () => {
       await authPost('/api/auth/forgot-password', { email });
       setAuthMode('reset', {
         email,
         notice: 'If that email is registered, we just sent a 6-digit code to it.',
       });
-    });
+    }, 'email');
   }
   emailInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
@@ -6045,7 +6069,7 @@ function viewForgot() {
   });
 
   return authShell('Forgot password', 'Enter your email and we’ll send you a code.', [
-    ...field('Email', emailInput),
+    ...field('Email', emailInput, 'email'),
     primaryBtn('Send code', submit),
     h(
       'div',
@@ -6073,18 +6097,8 @@ function viewReset() {
   });
   function submit() {
     const otp = (otpInput.value || '').replace(/\D/g, '');
-    if (otp.length !== 6) {
-      otpInput.focus();
-      state.error = 'Enter the 6-digit code.';
-      render();
-      return;
-    }
-    if (pwInput.value.length < 8) {
-      pwInput.focus();
-      state.error = 'Password must be at least 8 characters.';
-      render();
-      return;
-    }
+    if (otp.length !== 6) return authFail('Enter the 6-digit code.', 'otp');
+    if (pwInput.value.length < 8) return authFail('Password must be at least 8 characters.', 'password');
     runAuth(async () => {
       const user = await authPost('/api/auth/reset-password', {
         email: state.authEmail,
@@ -6101,7 +6115,7 @@ function viewReset() {
       state.screen = 'home';
       history.replaceState(null, '', '#/home');
       await loadData();
-    });
+    }, 'otp');
   }
   [otpInput, pwInput].forEach((el) =>
     el.addEventListener('keydown', (e) => {
@@ -6113,8 +6127,8 @@ function viewReset() {
   );
 
   return authShell('Set a new password', 'Code sent to ' + state.authEmail + '.', [
-    ...field('6-digit code', otpInput),
-    ...field('New password', pwInput),
+    ...field('6-digit code', otpInput, 'otp'),
+    ...field('New password', pwInput, 'password'),
     primaryBtn('Reset password', submit),
     h(
       'div',

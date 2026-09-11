@@ -29,7 +29,7 @@ it silently landed on Home. Don't reintroduce a second list.
 | 4940–5256 | `ScreenHabits`, `featureOn` / `screenEnabled` / `setFeature`, `saveDigestPrefs`, `saveHomeLayout`, `saveNavLayout` |
 | **5256–5552** | **`SCREENS` registry** — screen id → render fn. Start here to find a screen. |
 | 5552–5575 | `captureScrollPosition` / `restoreScrollPosition` |
-| 5576–6040 | auth: `authPost`, `loadAuthDraft`, `setAuthMode`, `authShell`, `runAuth`, `shakeAuthCard`, `viewSignin`, `viewSignup`, `viewVerify` (OTP), `viewForgot`, `viewReset`, `loginCard` |
+| 5576–6100 | auth: `authPost`, `loadAuthDraft`, `setAuthMode`, `authShell`, `field`, `renderAuth`, `authFail`, `refuseFocus`, `runAuth`, `shakeRefusal`, `viewSignin`, `viewSignup`, `viewVerify` (OTP), `viewForgot`, `viewReset`, `loginCard` |
 | 6043–6336 | `logout`, `loadingSplash`, `offlineBanner`, `weeklyReviewNudge`, `handleOnline`/`handleOffline`, **`render()`** (~6143), `installOutsideClickToCloseHeaderPopovers` |
 
 ## Rules when editing
@@ -89,9 +89,21 @@ it silently landed on Home. Don't reintroduce a second list.
   achievement. The head-shake fires from `pushToast` for errors only. Hooking the nod to every
   success toast (the first attempt) made it celebrate "Changes saved" and the skin toggle, which
   is feedback about nothing. Don't widen it back for coverage's sake.
-- **`shakeRefusal(el)` belongs to the whole UI, not the login page.** Whatever surface refused the
-  user is what shakes: the sign-in card on bad credentials, the modal sheet when `openModal`'s
-  `onPrimary` throws. One refusal, one gesture — pass the element, don't add a second animation.
+- **`shakeRefusal(el)` belongs to the whole UI, not the login page**, and not to the premium skin
+  either (`.gb-shake` lives in `styles/app.css`). Whatever surface refused the user is what shakes:
+  the offending auth input, the sign-in card when the failure names no field, the modal sheet when
+  `openModal`'s `onPrimary` throws. One refusal, one gesture — pass the element, don't add a second
+  animation.
+- **An auth error belongs under its field, not only in a toast.** `state.errorField` names the input
+  (`'email'`, `'password'`, `'name'`, `'otp'`); `field(label, input, key)` marks that input
+  `.is-invalid` and prints the message under it, and `authShell` falls back to the card-level line
+  only when no field owns the error. Both the client-side checks (`authFail`) and server refusals
+  (`runAuth(action, errField)`) route through it — a `runAuth` without an `errField` is for failures
+  that are nobody's field, like a dropped connection, and stays a toast.
+- **Re-render auth screens with `renderAuth()`, never bare `render()`.** The views build their
+  inputs fresh on every render, so a plain `render()` throws away whatever the user had typed —
+  fail on the password and the email vanishes too. `renderAuth` carries the values across by
+  position, which is safe because a refusal never changes which view is on screen.
 - **The home greeting is time-aware** (`greetingFor`) and uses `firstName()`. Both are kept short
   on purpose: `.greet-name` clamps to 2 lines at ~134px, so a long greeting + full name clips.
 - **Toast entrances are age-driven, not identity-driven.** `render()` rebuilds every toast node, and

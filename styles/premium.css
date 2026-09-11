@@ -16,7 +16,7 @@
      · type      — size-specific tracking: tight on display, open on caps
      · motion    — one strong ease-out curve, press feedback under 160ms
      · a human   — the sign-in card shakes its head when you're wrong,
-                   the way Face ID does. See .gb-shake / shakeAuthCard().
+                   the way Face ID does. See .gb-shake in styles/app.css.
 
    ponytail: a skin, not a second design system. Token overrides first,
    component overrides only where a token can't reach.
@@ -333,40 +333,9 @@ html[data-premium='on'] .gb-mono {
 
 /* ---------------------------------------------------------------------
    7. The human touch — "no"
-   Face ID doesn't print an error and stop; it shakes its head at you. Same
-   here: wrong password, wrong code, and the card refuses with a decaying
-   head-shake plus a short double haptic (shakeAuthCard() in app.js).
-   Amplitude decays 9 → 1px because a real head settles, and the ±1deg tilt
-   is what turns a horizontal jitter into a gesture.
+   The refusal head-shake (.gb-shake) moved to styles/app.css: refusing the
+   user is the product's manners, not a paid skin.
    --------------------------------------------------------------------- */
-@keyframes gb-shake {
-  0%,
-  100% {
-    transform: translateX(0) rotate(0deg);
-  }
-  12% {
-    transform: translateX(-9px) rotate(-1.1deg);
-  }
-  26% {
-    transform: translateX(8px) rotate(0.9deg);
-  }
-  40% {
-    transform: translateX(-6px) rotate(-0.7deg);
-  }
-  54% {
-    transform: translateX(4px) rotate(0.5deg);
-  }
-  68% {
-    transform: translateX(-2.5px) rotate(-0.3deg);
-  }
-  84% {
-    transform: translateX(1px) rotate(0deg);
-  }
-}
-/* Two classes deep so it beats the .gb-rise entrance on the same element. */
-html[data-premium='on'] .gb-shake {
-  animation: gb-shake 520ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
-}
 
 /* ---------------------------------------------------------------------
    9. The signature — a seedling that's actually there
@@ -534,23 +503,6 @@ html[data-premium='on'] .gb-toast-close:active {
    8. Accessibility — gentler, not gone
    --------------------------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {
-  /* The refusal still has to read as a refusal: keep the meaning, drop the
-     movement — a red ring pulses instead of the head-shake. */
-  @keyframes gb-refuse-ring {
-    0%,
-    100% {
-      box-shadow: var(--shadow-lg);
-    }
-    45% {
-      box-shadow:
-        0 0 0 3px rgba(229, 72, 77, 0.55),
-        var(--shadow-lg);
-    }
-  }
-  html[data-premium='on'] .gb-shake {
-    animation: gb-refuse-ring 420ms ease both;
-    transform: none;
-  }
   html[data-premium='on'] .gb-iconbtn:hover {
     transform: none;
   }
