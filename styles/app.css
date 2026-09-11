@@ -1502,6 +1502,7 @@ body {
 
 /* ---- Loading splash: quote of the day shown during reload ---- */
 .gb-splash {
+  width: 100%;
   min-height: 100vh;
   min-height: 100dvh;
   display: flex;
