@@ -5743,7 +5743,7 @@ function authShell(title, subtitle, children) {
         h('span', null, 'Growth Buddy')
       ),
       h('h1', { class: 'gb-login-title' }, title),
-      h('p', { class: 'gb-login-sub' }, subtitle),
+      subtitle ? h('p', { class: 'gb-login-sub' }, subtitle) : null,
       state.authNotice ? h('p', { class: 'gb-login-notice' }, state.authNotice) : null,
       children,
       state.error && !state.errorField ? h('p', { class: 'gb-login-error' }, state.error) : null
@@ -5779,6 +5779,40 @@ function field(label, node, key) {
     node,
     bad ? h('p', { class: 'gb-login-fielderr' }, state.error) : null,
   ];
+}
+
+/* A password you can't read is a password you mistype — and retyping it into a
+   confirm field doesn't tell you which of the two was wrong. Every hidden
+   field gets a reveal. */
+function passwordField(input) {
+  // Revealed-ness lives on the input's own type, not in a closure flag, so a
+  // re-render that restores the type (renderAuth) restores the eye with it.
+  const paint = () => {
+    const hidden = String(input.type === 'password');
+    if (toggle.dataset.hidden === hidden) return; // cheap: this also runs per keystroke
+    toggle.dataset.hidden = hidden;
+    toggle.setAttribute('aria-label', hidden === 'true' ? 'Show password' : 'Hide password');
+    toggle.replaceChildren(Icon(hidden === 'true' ? 'eye' : 'eye-off', { size: 18 }));
+  };
+  const toggle = h('button', {
+    type: 'button',
+    class: 'gb-pw-toggle',
+    tabindex: '-1', // the field, not its decoration, is what Tab should reach
+    onclick: () => {
+      input.type = input.type === 'password' ? 'text' : 'password';
+      paint();
+      input.focus();
+      // Caret to the end: focus() alone would select the whole value, and the
+      // next keystroke would wipe the password the user is checking.
+      const end = input.value.length;
+      input.setSelectionRange(end, end);
+    },
+  });
+  paint();
+  // renderAuth restores the type after this node is built, and says so with an
+  // input event — without this the eye would disagree with the field.
+  input.addEventListener('input', paint);
+  return h('div', { class: 'gb-pw' }, input, toggle);
 }
 
 /* Six boxes, one real input. Six real inputs would mean hand-rolling focus
@@ -5818,12 +5852,18 @@ function otpBoxes(input, busy) {
    lose the email you just typed. Carry the values across by position: a refusal
    or a spinner never changes which view is on screen. */
 function renderAuth() {
-  const values = Array.from(document.querySelectorAll('.gb-login-input'), (i) => i.value);
+  const before = Array.from(document.querySelectorAll('.gb-login-input'), (i) => ({
+    value: i.value,
+    type: i.type,
+  }));
   render();
   document.querySelectorAll('.gb-login-input').forEach((input, i) => {
-    if (!values[i]) return;
-    input.value = values[i];
-    // Anything painted from the value — the OTP boxes — repaints off this.
+    const was = before[i];
+    if (!was) return;
+    // A revealed password stays revealed across the render that shows the error.
+    if (was.type === 'text' && input.type === 'password') input.type = 'text';
+    if (was.value) input.value = was.value;
+    // Anything painted from the input — OTP boxes, the reveal eye — repaints off this.
     input.dispatchEvent(new Event('input'));
   });
 }
@@ -5915,7 +5955,9 @@ function viewSignin() {
     class: 'gb-input gb-login-input',
     placeholder: '••••••••',
     maxlength: 128,
+    autocomplete: 'current-password',
   });
+  const pwField = passwordField(pwInput);
 
   function submit() {
     const email = emailInput.value.trim();
@@ -5952,7 +5994,7 @@ function viewSignin() {
 
   return authShell('Welcome back', 'Sign in to sync your habits, tasks, reminders, and score.', [
     ...field('Email', emailInput, 'email'),
-    ...field('Password', pwInput, 'password'),
+    ...field('Password', pwField, 'password'),
     primaryBtn('Sign in', submit),
     h(
       'div',
@@ -5983,7 +6025,17 @@ function viewSignup() {
     class: 'gb-input gb-login-input',
     placeholder: 'At least 8 characters',
     maxlength: 128,
+    autocomplete: 'new-password',
   });
+  const pwField = passwordField(pwInput);
+  const pw2Input = h('input', {
+    type: 'password',
+    class: 'gb-input gb-login-input',
+    placeholder: 'Type it again',
+    maxlength: 128,
+    autocomplete: 'new-password',
+  });
+  const pw2Field = passwordField(pw2Input);
 
   function submit() {
     const email = emailInput.value.trim();
@@ -5991,6 +6043,7 @@ function viewSignup() {
     const password = pwInput.value;
     if (!email) return authFail('Enter your email to create the account.', 'email');
     if (password.length < 8) return authFail('Password must be at least 8 characters.', 'password');
+    if (pw2Input.value !== password) return authFail('The two passwords don’t match.', 'confirm');
     runAuth(async () => {
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
       await authPost('/api/auth/signup', { email, password, displayName, timezone: tz });
@@ -6001,7 +6054,7 @@ function viewSignup() {
     }, 'email');
   }
 
-  [emailInput, nameInput, pwInput].forEach((el) =>
+  [emailInput, nameInput, pwInput, pw2Input].forEach((el) =>
     el.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
@@ -6010,13 +6063,12 @@ function viewSignup() {
     })
   );
 
-  return authShell(
-    'Create your account',
-    'We’ll email you a 6-digit code to confirm your address.',
-    [
+  // No subtitle: the next screen is the code screen and explains itself there.
+  return authShell('Create your account', '', [
       ...field('Email', emailInput, 'email'),
       ...field('Name', nameInput, 'name'),
-      ...field('Password', pwInput, 'password'),
+      ...field('Password', pwField, 'password'),
+      ...field('Confirm password', pw2Field, 'confirm'),
       primaryBtn('Create account', submit),
       h(
         'div',
@@ -6144,11 +6196,22 @@ function viewReset() {
     class: 'gb-input gb-login-input',
     placeholder: 'At least 8 characters',
     maxlength: 128,
+    autocomplete: 'new-password',
   });
+  const pwField = passwordField(pwInput);
+  const pw2Input = h('input', {
+    type: 'password',
+    class: 'gb-input gb-login-input',
+    placeholder: 'Type it again',
+    maxlength: 128,
+    autocomplete: 'new-password',
+  });
+  const pw2Field = passwordField(pw2Input);
   function submit() {
     const otp = (otpInput.value || '').replace(/\D/g, '');
     if (otp.length !== 6) return authFail('Enter the 6-digit code.', 'otp');
     if (pwInput.value.length < 8) return authFail('Password must be at least 8 characters.', 'password');
+    if (pw2Input.value !== pwInput.value) return authFail('The two passwords don’t match.', 'confirm');
     runAuth(async () => {
       const user = await authPost('/api/auth/reset-password', {
         email: state.authEmail,
@@ -6167,7 +6230,7 @@ function viewReset() {
       await loadData();
     }, 'otp');
   }
-  [otpInput, pwInput].forEach((el) =>
+  [otpInput, pwInput, pw2Input].forEach((el) =>
     el.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
@@ -6178,7 +6241,8 @@ function viewReset() {
 
   return authShell('Set a new password', 'Code sent to ' + state.authEmail + '.', [
     ...field('6-digit code', otpField, 'otp'),
-    ...field('New password', pwInput, 'password'),
+    ...field('New password', pwField, 'password'),
+    ...field('Confirm password', pw2Field, 'confirm'),
     primaryBtn('Reset password', submit),
     h(
       'div',

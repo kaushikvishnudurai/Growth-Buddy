@@ -1,4 +1,4 @@
-# styles/app.css — app styles (7156 lines)
+# styles/app.css — app styles (7189 lines)
 
 Consumes tokens from `tokens.css`. Mobile-first: full-screen on phones, an iPhone-style frame on
 desktop, sidebar + multi-column grid at ≥1024px. Money has its own file (`money.css`).
@@ -23,51 +23,51 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
 | 347 | Bottom nav |
 | 426 | Habit / task check |
 | 465 | Login |
-| 762 | Notification bell |
-| 864 | Mentor chat |
-| 1058 | Search modal (Find someone) |
-| 1159 | Circle (person rows + status pills) |
-| 1228 | Focus screen |
-| 1414 | Feature on/off rows |
-| 1439 | Settings: Account pane |
-| 1470 | Loading splash (quote of the day) |
-| 1533 | Report screen |
-| 1631 | Insights |
-| 1671 | Circle challenges + leaderboard |
-| 1798 | Mentor prompt chips |
-| 2035 | Color picker (habit customize) |
-| 2062 | List rows |
-| 2091 | Dashboard blocks — `.gb-dash-main` / `.gb-dash-side`, stack on phones |
-| 2924 | Goals screen |
-| 3031 | Enhanced goal card UI |
-| 3106 | Tasks scrollable list |
-| 3225 | **Calendar screen** (large) |
-| 4032 | Delete-scope modal |
-| 4094 | Focus stats card |
-| 4868 | **Laptop / desktop layout (≥1024px)** |
-| 5070 | Goal day-tracker progress bar |
-| 5139 | Fitness × Sleep insight card |
-| 5177 | Responsive improvements — tablet + desktop widths |
-| 5192 | Desktop content-screen layout |
-| 5269 | Small phones (≤380px) |
-| 5304 | WhatsApp reminders |
-| 5406 | Profile Settings modal |
-| 5581 | WhatsApp OTP verification |
-| 5653 | **Family tab & AI meal planner** (+ polish at 6119) |
-| 6449 | Streak freeze / protection |
-| 6559 | Report — trends drill-down |
-| 6642 | Achievements gallery |
-| 6811 | Goal milestones / sub-tasks |
-| 6909 | Offline-first PWA — connectivity banner |
-| 6925 | Accessibility — skip link, focus-visible, reduced motion |
-| 6964 | Bottom nav — "More" overflow sheet |
-| 7059 | Settings — Home screen customizer |
-| 7123 | Settings — Display (text size preview) |
+| 795 | Notification bell |
+| 897 | Mentor chat |
+| 1091 | Search modal (Find someone) |
+| 1192 | Circle (person rows + status pills) |
+| 1261 | Focus screen |
+| 1447 | Feature on/off rows |
+| 1472 | Settings: Account pane |
+| 1503 | Loading splash (quote of the day) |
+| 1566 | Report screen |
+| 1664 | Insights |
+| 1704 | Circle challenges + leaderboard |
+| 1831 | Mentor prompt chips |
+| 2068 | Color picker (habit customize) |
+| 2095 | List rows |
+| 2124 | Dashboard blocks — `.gb-dash-main` / `.gb-dash-side`, stack on phones |
+| 2957 | Goals screen |
+| 3064 | Enhanced goal card UI |
+| 3139 | Tasks scrollable list |
+| 3258 | **Calendar screen** (large) |
+| 4065 | Delete-scope modal |
+| 4127 | Focus stats card |
+| 4901 | **Laptop / desktop layout (≥1024px)** |
+| 5103 | Goal day-tracker progress bar |
+| 5172 | Fitness × Sleep insight card |
+| 5210 | Responsive improvements — tablet + desktop widths |
+| 5225 | Desktop content-screen layout |
+| 5302 | Small phones (≤380px) |
+| 5337 | WhatsApp reminders |
+| 5439 | Profile Settings modal |
+| 5614 | WhatsApp OTP verification |
+| 5686 | **Family tab & AI meal planner** (+ polish at 6119) |
+| 6482 | Streak freeze / protection |
+| 6592 | Report — trends drill-down |
+| 6675 | Achievements gallery |
+| 6844 | Goal milestones / sub-tasks |
+| 6942 | Offline-first PWA — connectivity banner |
+| 6958 | Accessibility — skip link, focus-visible, reduced motion |
+| 6997 | Bottom nav — "More" overflow sheet |
+| 7092 | Settings — Home screen customizer |
+| 7156 | Settings — Display (text size preview) |
 
 ## Editing rules
 
 - Colors come from tokens (`var(--coral-500)`, `var(--leaf-50)`, …) — no raw hex here.
-- Responsive breakpoints are grouped at 4853 / 5193 / 5270, **not** inline per component. Put media
+- Responsive breakpoints are grouped at 4886 / 5226 / 5303, **not** inline per component. Put media
   queries there so the phone-first base stays readable.
 - Modal markup is fixed (`.gb-modal-overlay > .gb-modal[role=dialog]`) because `scripts/a11y.js`
   keys off it for focus trapping. Don't restyle it into a different structure.

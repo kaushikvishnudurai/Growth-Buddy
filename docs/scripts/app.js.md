@@ -100,6 +100,10 @@ it silently landed on Home. Don't reintroduce a second list.
   only when no field owns the error. Both the client-side checks (`authFail`) and server refusals
   (`runAuth(action, errField)`) route through it — a `runAuth` without an `errField` is for failures
   that are nobody's field, like a dropped connection, and stays a toast.
+- **Every hidden password has a reveal** (`passwordField`), and whether it is revealed lives on the
+  input's own `type` — never a closure flag — so `renderAuth` restoring the type after an error
+  restores the eye with it. Sign-up and reset also carry a confirm field (`errorField` key
+  `'confirm'`).
 - **The 6-digit code is six boxes over one real input** (`otpBoxes`). Six real inputs would mean
   hand-rolling focus hops, paste-splitting, backspace-into-the-previous-box and the numeric
   keyboard; the one field keeps all of that (plus `autocomplete=one-time-code`) and just goes
