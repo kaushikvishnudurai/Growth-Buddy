@@ -27,4 +27,29 @@ if git diff --cached -U0 | grep -nE \
   exit 1
 fi
 
+# 3. Stamp the build number into vite.config.js.
+#    It is a committed literal because the production image has no git: .dockerignore
+#    excludes .git, the Dockerfile's web stage copies four paths and none is a repo,
+#    and node:22-slim ships no git binary. Deriving it at build time gave every prod
+#    image build 0. Deriving it HERE, where git certainly exists, and committing the
+#    result gets both halves: nobody has to remember, and every build can read it.
+#
+#    OFFSET keeps the sequence continuous with the numbers already on people's
+#    phones (commit 73 was build 10).
+if [ -f vite.config.js ]; then
+  OFFSET=63
+  # The commit being made is not counted yet, hence +1.
+  next=$(( $(git rev-list --count HEAD 2>/dev/null || echo "$OFFSET") + 1 - OFFSET ))
+  if [ "$next" -gt 0 ] 2>/dev/null; then
+    current=$(sed -n 's/^const BUILD = \([0-9]*\);.*/\1/p' vite.config.js)
+    if [ "$current" != "$next" ]; then
+      # A literal edit, not a template: the file stays valid JS that anyone can read.
+      sed -i.bak "s/^const BUILD = [0-9]*;/const BUILD = $next;/" vite.config.js
+      rm -f vite.config.js.bak
+      git add vite.config.js
+      echo "• pre-commit: build number → $next"
+    fi
+  fi
+fi
+
 exit 0

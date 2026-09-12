@@ -1,35 +1,28 @@
-import { execSync } from 'node:child_process';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
-/* Build number, printed to the console at boot (window.GB_BUILD). Derived from
-   the commit count so it cannot be forgotten — which is what finally happened to
-   the hand-cranked version. The offset keeps the sequence continuous with the
-   numbers already in the wild (commit 72 was build 9).
+/* Build number, printed to the console at boot (window.GB_BUILD). A phone
+   logging a smaller number than the latest deploy is running a cached build.
 
-   It moves when a commit lands, not when someone remembers, so it is monotonic
-   and never repeats. A phone logging a smaller number than the latest deploy is
-   running a cached build — same contract as before, one less thing to do.
+   A COMMITTED LITERAL, on purpose. It was briefly derived from
+   `git rev-list --count HEAD` at config time, which is correct on a laptop and
+   wrong everywhere that matters: `.dockerignore` excludes `.git`, the web stage
+   of backend/Dockerfile copies four paths and none of them is a repo, and
+   node:22-slim has no git binary anyway. Every production image built that way
+   reported build 0 — strictly worse than the hand-cranked number it replaced,
+   because 0 is indistinguishable from the next 0.
 
-   ponytail: falls back to 0 outside a git checkout (a tarball, a shallow CI
-   clone with no history). 0 reads as "unknown", which is honest and hard to
-   mistake for a real build; if a deploy ever runs from a tarball, pass the
-   number in as an env var instead. */
-const BUILD_OFFSET = 63;
-function buildNumber() {
-  if (process.env.GB_BUILD) return Number(process.env.GB_BUILD);
-  try {
-    const commits = Number(execSync('git rev-list --count HEAD', { stdio: ['ignore', 'pipe', 'ignore'] })
-      .toString()
-      .trim());
-    return Number.isFinite(commits) && commits > 0 ? commits - BUILD_OFFSET : 0;
-  } catch {
-    return 0;
-  }
-}
+   It still isn't hand-cranked: .githooks/pre-commit rewrites the number below on
+   every commit, so forgetting is not an available move. Without the hook
+   installed (`git config core.hooksPath .githooks`) the number simply goes stale
+   — which is the old failure mode, not a new one, and never 0.
 
+   GB_BUILD=<n> in the environment overrides it for a one-off build. */
 // Backend dev server (Spring Boot). Override with VITE_API_BASE / API_PROXY_TARGET.
 const API_TARGET = process.env.API_PROXY_TARGET || 'http://localhost:8080';
+
+const BUILD = 11; // managed by .githooks/pre-commit — do not edit by hand
+const buildNumber = () => Number(process.env.GB_BUILD) || BUILD;
 
 export default defineConfig({
   plugins: [
