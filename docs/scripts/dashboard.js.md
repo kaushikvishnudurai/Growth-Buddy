@@ -1,4 +1,4 @@
-# scripts/dashboard.js — Home screen (1691 lines)
+# scripts/dashboard.js — Home screen (1712 lines)
 
 Exports (~1680): `ScreenDashboard`, `ScreenFood`, `MiniCalendarCard`, `HOME_WIDGETS`,
 `resolveHomeLayout` (check the export block for the exact list).
@@ -17,7 +17,7 @@ ways. Adding a task or habit — or dismissing the checklist — brings the full
 |---|---|---|
 | `OnboardingCard` | 22 | first-run checklist; each step marks itself done from real data, so it doubles as live progress. Dismissal key `gb.onboardDismissed` |
 | `ScoreCard` | 104 | today's completion ring. The `%` lives in the number (`100%` over `SCORE`), matching Progress's summary tile and its "Daily score" trend — one number, one name. The sub-line (`4/4 tasks · 3/3 habits`) is the percentage's own arithmetic. No level/XP pill: different currency, lives in the profile menu. |
-| `TaskRow` / `TasksCard` | 180 / 196 | today's tasks, `PRIORITY` colors (~77) |
+| `TaskRow` / `TasksCard` | 175 / 203 | today's tasks, `PRIORITY` colors (~77). The trailing `.gb-icon-btn` pencil is the only way to edit a task — it calls `onEditTask` (app.js `openEditTask`) and is skipped when that prop is absent |
 | `HabitCard` / `HabitStrip` | 226 / 1008 | habit check-ins |
 | `QuoteCard` | 245 | quote of the day (cached per day in app.js) |
 | `TodayPlanCard` | 262 | the "Plan my day" action plus chips for **what's still open**. Two rules: it never repeats the score ring (which owns tasks + habits), and it never congratulates — a "Sleep logged" chip sitting above a card reading "7.5h · Good" said less than the thing beneath it. Everything done → the chip row doesn't render. |

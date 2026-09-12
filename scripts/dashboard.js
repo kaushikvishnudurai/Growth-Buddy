@@ -172,7 +172,7 @@ function ScoreCard({ score, tasks, habits }) {
   });
 }
 
-function TaskRow(task, toggleTask) {
+function TaskRow(task, toggleTask, onEdit) {
   const p = PRIORITY[task.priority] || PRIORITY.Low;
   return h(
     'div',
@@ -184,11 +184,23 @@ function TaskRow(task, toggleTask) {
       h('div', { class: 'title' }, task.title),
       h('div', { class: 'sub' }, task.time)
     ),
-    Pill({ label: task.priority, bg: p.bg, fg: p.fg, dot: p.dot })
+    Pill({ label: task.priority, bg: p.bg, fg: p.fg, dot: p.dot }),
+    onEdit
+      ? h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-icon-btn',
+            'aria-label': 'Edit ' + task.title,
+            onclick: () => onEdit(task),
+          },
+          Icon('pencil', { size: 15, sw: 2.4 })
+        )
+      : null
   );
 }
 
-function TasksCard({ tasks, toggleTask, onAdd }) {
+function TasksCard({ tasks, toggleTask, onAdd, onEdit }) {
   if (!tasks.length) {
     return Card({
       children: [
@@ -212,7 +224,7 @@ function TasksCard({ tasks, toggleTask, onAdd }) {
       h(
         'div',
         { class: 'gb-tasks-scroll' },
-        tasks.map((t) => TaskRow(t, toggleTask))
+        tasks.map((t) => TaskRow(t, toggleTask, onEdit))
       ),
     ],
   });
@@ -1461,6 +1473,7 @@ function ScreenDashboard({
   dayFoodLoading,
   dayFoodError,
   onAddTask,
+  onEditTask,
   onAddHabit,
   calYear,
   calMonth,
@@ -1488,7 +1501,7 @@ function ScreenDashboard({
     wellness: () => WellnessCard({ wellness, onAddSleep, onAddMood }),
     tasks: () => [
       SectionTitle({ title: "Today's tasks", action: '+ Add', onAction: onAddTask }),
-      TasksCard({ tasks, toggleTask, onAdd: onAddTask }),
+      TasksCard({ tasks, toggleTask, onAdd: onAddTask, onEdit: onEditTask }),
     ],
     calendar: () =>
       MiniCalendarCard({

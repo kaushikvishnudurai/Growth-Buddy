@@ -11,11 +11,11 @@ open — don't go looking for a doc that isn't in this list.
 
 | Need to work on | Read first | Instead of |
 |---|---|---|
-| app shell, state, routing, any API call, settings, auth views | `docs/scripts/app.js.md` | 6336 lines |
+| app shell, state, routing, any API call, settings, auth views | `docs/scripts/app.js.md` | 6727 lines |
 | Money Buddy | `docs/scripts/money.js.md` | 4872 |
-| Home screen / widgets / mini calendar | `docs/scripts/dashboard.js.md` | 1691 |
+| Home screen / widgets / mini calendar | `docs/scripts/dashboard.js.md` | 1712 |
 | Family tab, meal planner | `docs/scripts/family.js.md` | 2032 |
-| Growth Circle, mentorship | `docs/scripts/circle.js.md` | 1164 |
+| Growth Circle, mentorship | `docs/scripts/circle.js.md` | 1210 |
 | Calendar, reminders, recurrence | `docs/scripts/calendar.js.md` | 1022 |
 | Focus timer, ambient sound | `docs/scripts/timer.js.md` | 733 |
 | UI primitives (`h`, `Card`, `Icon`, nav) | `docs/scripts/gb-kit.js.md` | 701 |

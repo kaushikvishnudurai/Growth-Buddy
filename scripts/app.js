@@ -13,7 +13,6 @@ import {
   IconChip,
   Check,
   DOMAIN,
-  Logo,
   CrashCard,
 } from './gb-kit.js';
 import {
@@ -349,6 +348,17 @@ function score() {
     parts++;
   }
   return parts === 0 ? 0 : Math.round((sum / parts) * 100);
+}
+
+/* score() prefers the server's number, which is exactly wrong in the moment
+   after a local tick — so recompute from state with that preference switched
+   off. The server's number overwrites this again a beat later. */
+function optimisticScore() {
+  const server = state.score;
+  state.score = 0;
+  const local = score();
+  state.score = server;
+  return local;
 }
 
 function loadSession() {
@@ -1269,7 +1279,18 @@ function disconnectWebSocket() {
   }
 }
 
+/* Paint the tick, then tell the server. The round trip is three calls deep
+   (toggle -> score -> /me), so awaiting it left the checkbox looking dead for
+   most of a second. `before` is the rollback if any of them fails. */
 async function toggleTask(id) {
+  const before = { tasks: state.tasks, score: state.score };
+  state.tasks = state.tasks.map((t) => (t.id === id ? { ...t, done: !t.done } : t));
+  state.score = optimisticScore();
+  render();
+  const nowDone = state.tasks.some((t) => t.id === id && t.done);
+  // Only on the way to done. Un-ticking something is a correction, not an
+  // achievement, and nodding at it would make the nod meaningless.
+  if (nowDone) buddyReact('yes');
   try {
     const updated = await api('/api/tasks/' + encodeURIComponent(id) + '/toggle', {
       method: 'PATCH',
@@ -1279,15 +1300,22 @@ async function toggleTask(id) {
     state.score = todayScore && typeof todayScore.score === 'number' ? todayScore.score : score();
     await refreshCurrentUser();
     render();
-    // Only on the way to done. Un-ticking something is a correction, not an
-    // achievement, and nodding at it would make the nod meaningless.
-    if (updated.done) buddyReact('yes');
   } catch (err) {
+    state.tasks = before.tasks;
+    state.score = before.score;
+    render();
     toastError(err, 'Could not toggle task.');
   }
 }
 
+/* Same optimistic paint as toggleTask — same three-call round trip. Streak
+   numbers are the server's to decide, so only `doneToday` flips locally. */
 async function toggleHabit(id) {
+  const before = { habits: state.habits, score: state.score };
+  state.habits = state.habits.map((h) => (h.id === id ? { ...h, doneToday: !h.doneToday } : h));
+  state.score = optimisticScore();
+  render();
+  if (state.habits.some((h) => h.id === id && h.doneToday)) buddyReact('yes');
   try {
     const updated = await api('/api/habits/' + encodeURIComponent(id) + '/toggle', {
       method: 'PATCH',
@@ -1298,8 +1326,10 @@ async function toggleHabit(id) {
     state.score = todayScore && typeof todayScore.score === 'number' ? todayScore.score : score();
     await refreshCurrentUser();
     render();
-    if (updated.doneToday) buddyReact('yes');
   } catch (err) {
+    state.habits = before.habits;
+    state.score = before.score;
+    render();
     toastError(err, 'Could not toggle habit.');
   }
 }
@@ -1328,6 +1358,15 @@ async function createTask(body) {
     body: JSON.stringify(body),
   });
   state.tasks = [mapTask(created), ...state.tasks];
+  await refreshScore();
+}
+
+async function updateTask(id, body) {
+  const updated = await api('/api/tasks/' + encodeURIComponent(id), {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  });
+  state.tasks = state.tasks.map((t) => (t.id === updated.id ? mapTask(updated) : t));
   await refreshScore();
 }
 
@@ -4679,12 +4718,34 @@ function openAddSheet() {
   requestAnimationFrame(() => overlay.classList.add('is-open'));
 }
 
-function openAddTask() {
+/* `<input type="datetime-local">` wants wall-clock local time, not the UTC an
+   ISO string carries — toISOString() here would prefill the wrong hour. */
+function toDateTimeLocal(iso) {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  return (
+    d.getFullYear() +
+    '-' +
+    pad(d.getMonth() + 1) +
+    '-' +
+    pad(d.getDate()) +
+    'T' +
+    pad(d.getHours()) +
+    ':' +
+    pad(d.getMinutes())
+  );
+}
+
+/* Title / priority / due — the same three fields whether you're adding a task
+   or editing one, so both modals build the form from here. */
+function taskForm(task) {
   const titleInput = h('input', {
     type: 'text',
     class: 'gb-input',
     placeholder: 'e.g. Finish the design review',
     maxlength: 255,
+    value: (task && task.title) || '',
   });
   const priority = segmented(
     [
@@ -4692,36 +4753,64 @@ function openAddTask() {
       { value: 'Medium', label: 'Medium' },
       { value: 'High', label: 'High' },
     ],
-    'Medium'
+    (task && task.priority) || 'Medium'
   );
-  const dueInput = h('input', { type: 'datetime-local', class: 'gb-input' });
+  const dueInput = h('input', {
+    type: 'datetime-local',
+    class: 'gb-input',
+    value: task && task.dueAt ? toDateTimeLocal(task.dueAt) : '',
+  });
 
-  const body = h(
-    'div',
-    { class: 'gb-form' },
-    h('div', { class: 'gb-field-label' }, 'Title'),
-    titleInput,
-    h('div', { class: 'gb-field-label' }, 'Priority'),
-    priority.node,
-    h('div', { class: 'gb-field-label' }, 'Due (optional)'),
-    dueInput
-  );
-
-  openModal({
-    title: 'New task',
-    body,
-    primary: 'Add task',
-    onPrimary: async () => {
+  return {
+    node: h(
+      'div',
+      { class: 'gb-form' },
+      h('div', { class: 'gb-field-label' }, 'Title'),
+      titleInput,
+      h('div', { class: 'gb-field-label' }, 'Priority'),
+      priority.node,
+      h('div', { class: 'gb-field-label' }, 'Due (optional)'),
+      dueInput
+    ),
+    focus: () => setTimeout(() => titleInput.focus(), 60),
+    read: () => {
       const title = titleInput.value.trim();
       if (!title) {
         titleInput.focus();
         throw new Error('Title is required');
       }
-      const due = dueInput.value ? new Date(dueInput.value).toISOString() : null;
-      await createTask({ title, priority: priority.get(), dueAt: due });
+      return {
+        title,
+        priority: priority.get(),
+        dueAt: dueInput.value ? new Date(dueInput.value).toISOString() : null,
+      };
     },
+  };
+}
+
+function openAddTask() {
+  const form = taskForm();
+  openModal({
+    title: 'New task',
+    body: form.node,
+    primary: 'Add task',
+    onPrimary: () => createTask(form.read()),
   });
-  setTimeout(() => titleInput.focus(), 60);
+  form.focus();
+}
+
+function openEditTask(task) {
+  const form = taskForm(task);
+  openModal({
+    title: 'Edit task',
+    sub: task.title,
+    body: form.node,
+    primary: 'Save changes',
+    // ponytail: a null dueAt means "leave it alone" to UpdateTaskRequest, so
+    // you can move a due date but not remove one. Needs a backend flag to fix.
+    onPrimary: () => updateTask(task.id, form.read()),
+  });
+  form.focus();
 }
 
 function colorPicker(initial) {
@@ -5323,6 +5412,7 @@ const SCREENS = {
         dayFoodLoading: state.calendarFoodLoadingFor === state.selectedDate,
         dayFoodError: state.calendarFoodErrorByDate[state.selectedDate] || '',
         onAddTask: openAddTask,
+        onEditTask: openEditTask,
         onAddHabit: openAddHabit,
         calYear: state.calYear,
         calMonth: state.calMonth,
@@ -6374,24 +6464,21 @@ function logout() {
 
 /* ---- Loading splash (shown while data loads, e.g. on reload) ----
    Surfaces the quote of the day during the load instead of an empty screen. */
-function loadingSplash() {
-  return h(
-    'div',
-    { class: 'gb-splash', role: 'status', 'aria-live': 'polite' },
-    h(
-      'div',
-      { class: 'gb-splash-inner' },
-      Logo({ size: 56 }),
-      QuoteCard({ quote: state.quote }),
-      h(
-        'div',
-        { class: 'gb-splash-loading', 'aria-label': 'Loading' },
-        h('span', { class: 'gb-splash-dot' }),
-        h('span', { class: 'gb-splash-dot' }),
-        h('span', { class: 'gb-splash-dot' })
-      )
-    )
-  );
+/* Placeholder the CONTENT COLUMN shows while wave-1 data is in flight.
+   This used to be a full-screen splash that replaced the entire app, so the
+   header, the nav and the screen all appeared together only once the fetch
+   landed — and every list screen flashed its "nothing here yet" empty state on
+   the way (`state.habits` and friends start as []). The shell needs nothing
+   from the API, so it paints immediately and only this column waits. Reuses
+   the lazy-import skeleton, with the quote-of-the-day on top: the splash was
+   its only home. */
+function loadingContent() {
+  const skel = screenSkeleton();
+  skel.prepend(QuoteCard({ quote: state.quote }));
+  skel.setAttribute('role', 'status');
+  skel.setAttribute('aria-live', 'polite');
+  skel.setAttribute('aria-label', 'Loading');
+  return skel;
 }
 
 /* ---- Offline banner (offline-first PWA) ----
@@ -6452,15 +6539,6 @@ function render() {
     return;
   }
 
-  // While the initial data load is in flight (e.g. a page reload), show the
-  // quote-of-the-day splash instead of an empty dashboard.
-  if (state.loading) {
-    root.replaceChildren(loadingSplash());
-    refreshIcons();
-    renderedScreen = '';
-    return;
-  }
-
   // If the active screen belongs to a disabled feature, fall back to home.
   if (!screenEnabled(state.screen)) {
     state.screen = 'home';
@@ -6512,7 +6590,9 @@ function render() {
             state.error = '';
             loadData();
           })
-        : cfg.render()
+        : state.loading
+          ? loadingContent()
+          : cfg.render()
     ),
     bottomNav()
   );
@@ -6621,3 +6701,27 @@ render();
 window.addEventListener('load', refreshIcons);
 window.addEventListener('online', handleOnline);
 window.addEventListener('offline', handleOffline);
+
+/* Dev self-check for the two things here that would be wrong silently:
+   toDateTimeLocal drifting by a timezone prefills the edit modal with the
+   wrong hour, and optimisticScore forgetting to put the server's number back
+   blanks the ring on the next render. Mirrors money.js `_demo()`. */
+function _demo() {
+  const a = console.assert;
+  const iso = new Date(2026, 0, 5, 9, 7).toISOString();
+  a(toDateTimeLocal(iso) === '2026-01-05T09:07', 'datetime-local keeps local wall clock');
+  a(toDateTimeLocal('not a date') === '', 'unparseable date → empty');
+  const server = state.score;
+  state.score = 42;
+  optimisticScore();
+  a(state.score === 42, 'optimisticScore leaves the server score alone');
+  state.score = server;
+  console.log('[app] self-check ran');
+}
+if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.DEV) {
+  try {
+    _demo();
+  } catch (_) {
+    /* never block the app */
+  }
+}

@@ -1,4 +1,4 @@
-# scripts/app.js — app shell (6336 lines)
+# scripts/app.js — app shell (6727 lines)
 
 The hub: owns all state, routing, rendering, and **every** backend call. No exports (entry module).
 Screen modules are leaves it calls into; they get thin `api` wrapper objects, never the state.
@@ -8,7 +8,7 @@ Screen modules are leaves it calls into; they get thin `api` wrapper objects, ne
 | Lines | Region |
 |---|---|
 | 1–230 | imports, date helpers (`todayLabel`, `greetingFor` + its dev self-check, `firstName`, `dateKey`), `loadTheme`, quote-of-day cache (`quoteDateStr`, `loadCachedQuote`, `cacheQuote`), toasts (`pushToast`, `toastError`, `toastSuccess`, `dismissToast`) |
-| 210–250 | `score()`, `loadSession`, `loadToken`, `saveSession` |
+| 210–250 | `score()` (+ `optimisticScore()`, the same sum with the server's number ignored), `loadSession`, `loadToken`, `saveSession` |
 | 249–336 | wellness store (`emptyWellness`, `loadWellness`, `persistWellness`), goal progress (`loadGoalProgress`, `persistGoalProgress`, `updateGoalProgress`) |
 | 337–412 | **money store**: `moneyStorageKey`, `loadMoney`, `cacheMoney`, `saveMoney(next)`; UI prefs `saveUiPrefs(patch)` → `PUT /api/auth/ui-prefs`, `hydrateUiPrefs` |
 | 413–560 | streak freeze: `emptyStreakFreeze`, `loadStreakFreeze`, `reconcileStreakFreeze`, `effectiveStreak`, `habitFreezeState`, `freezeTokensLeft`, `protectStreak`, `declineStreakBreak`, `toggleRestDay`. Backend owns the tokens; this only reads fields + calls protect/unprotect. Achievements: `achievementProps`, `checkAchievements` (fires `celebrate()` on first unlock) |
@@ -16,7 +16,7 @@ Screen modules are leaves it calls into; they get thin `api` wrapper objects, ne
 | 625–740 | `clearSession`, `syncUserSession`, **`api(path, options)` / `apiFetch`** — the single network chokepoint — `handleAuthExpired` |
 | 744–935 | `mapTask`, `formatTaskTime`, `cacheFoodSummary`, `loadCalendarFoodForDate`, in-place repaints (`rerenderCalendarSideIfActive`, `rerenderHomeMiniCalendarIfActive`, `updateCalendarDaySelection`) |
 | 934–1140 | `resetStaleCompletedTasks`, **`loadData()`** (boot fetch fan-out), `connectWebSocket` / `disconnectWebSocket` |
-| 1140–1470 | mutations: `toggleTask`, `toggleHabit`, `refreshScore`, `refreshCurrentUser`, `createTask`, `createHabit`, `createGoal`, goal actions CRUD, `deleteHabit`, `quickAddWater`, `updateWaterGoal`, `logFoodEntry`, `saveSleepEntry`, `saveMoodEntry`, `addQuickExpense`, **`runQuickAdd(text)`**, `rememberPhotoFood` |
+| 1140–1470 | mutations: `toggleTask`, `toggleHabit`, `refreshScore`, `refreshCurrentUser`, `createTask`, `updateTask`, `createHabit`, `createGoal`, goal actions CRUD, `deleteHabit`, `quickAddWater`, `updateWaterGoal`, `logFoodEntry`, `saveSleepEntry`, `saveMoodEntry`, `addQuickExpense`, **`runQuickAdd(text)`**, `rememberPhotoFood` |
 | 1481–2010 | modals: `openSleepSchedule`, `openMoodCheckin`, `openDailyPlan`, `openAddFood`, `addSuggestedReminder`, `deleteWaterEntry`, `deleteFoodEntry` |
 | 2014–2260 | notifications (`refreshNotifications`, `markNotificationRead`, `respondMentorshipRequest`, `unreadNotifs`), header popovers (`toggleNotifOpen`, `toggleProfileOpen`, `toggleMoreOpen`, `profileDropdown`), routing (`screenFromHash`, `setScreen`), `toggleTheme`, `togglePremium` |
 
@@ -25,12 +25,12 @@ array that used to live here was missing `report`, so refreshing on Progress or 
 it silently landed on Home. Don't reintroduce a second list.
 | 2270–4070 | profile + settings (biggest block): `saveProfileDetails`, `CountryPhoneInput`, `buildSegSlider`, `customisePanes()` (~2541, builds the Display + Layout panes), `securitySection()` (~3108, devices + password), **`openProfileSettings(initialTab)`** (~3229 — the one Settings modal), `getNutritionSuggestion` |
 | 4071–4262 | calendar: `syncSelectedDateToVisibleMonth`, `rerenderCalendarToolbarIfActive`, `rerenderCalendarMonthInPlace`, `calPrevMonth`/`calNextMonth`/`calToday`, `selectDate`, `retryCalendarFoodDate`, `addReminder`, `repaintCalendarGrid`, `deleteReminder` |
-| 4264–4940 | shared UI: `openModal`, `segmented`, `openAddSheet`, `openAddTask`, `colorPicker`, `openAddHabit`, `relativeTime`, `notificationDropdown`, `toastStack` (+ `TOAST_IN_MS`), `confirmDelete` |
+| 4264–4940 | shared UI: `openModal`, `segmented`, `openAddSheet`, `toDateTimeLocal`, `taskForm` (shared by `openAddTask` / `openEditTask`), `colorPicker`, `openAddHabit`, `relativeTime`, `notificationDropdown`, `toastStack` (+ `TOAST_IN_MS`), `confirmDelete` |
 | 4940–5256 | `ScreenHabits`, `featureOn` / `screenEnabled` / `setFeature`, `saveDigestPrefs`, `saveHomeLayout`, `saveNavLayout` |
 | **5256–5552** | **`SCREENS` registry** — screen id → render fn. Start here to find a screen. |
 | 5552–5575 | `captureScrollPosition` / `restoreScrollPosition` |
 | 5576–6100 | auth: `authPost`, `loadAuthDraft`, `setAuthMode`, `authShell`, `field`, `renderAuth`, `authFail`, `refuseFocus`, `runAuth`, `shakeRefusal`, `viewSignin`, `viewSignup`, `viewVerify` (OTP), `viewForgot`, `viewReset`, `loginCard` |
-| 6043–6336 | `logout`, `loadingSplash`, `offlineBanner`, `weeklyReviewNudge`, `handleOnline`/`handleOffline`, **`render()`** (~6143), `installOutsideClickToCloseHeaderPopovers` |
+| 6043–6336 | `logout`, `loadingContent`, `offlineBanner`, `weeklyReviewNudge`, `handleOnline`/`handleOffline`, **`render()`** (~6143), `installOutsideClickToCloseHeaderPopovers` |
 
 ## Rules when editing
 
@@ -60,12 +60,18 @@ it silently landed on Home. Don't reintroduce a second list.
   old bundle, for the notification channel alone). Nothing awaits it. `wsConnecting` guards the await
   window, and it re-checks `state.user`/`stomp` after the import in case you logged out meanwhile.
 - **Boot is two waves: `loadData()` then `loadSecondaryData()`.** All twelve calls used to sit in one
-  `Promise.all` behind the loading splash, so the slowest gated first paint — including `/api/money`
+  `Promise.all` behind a full-screen splash, so the slowest gated first paint — including `/api/money`
   (a blob up to 512 kB) and `/api/daily-logs?days=60`, neither of which Home draws. `/api/weekly-review`
   was worse: awaited *after* that Promise.all, a whole extra round trip in series.
   Wave 1 is the five calls Home can't paint without (tasks, habits, score, water, reminders); wave 2
   is the other eight in parallel. Safe only because every `state` field has a cache-backed or empty
-  default — first paint shows cached values and corrects itself. Measured on a throttled link,
+  default — first paint shows cached values and corrects itself.
+  **While wave 1 is in flight only the CONTENT COLUMN waits**: `render()` paints the real shell
+  (header, nav — neither needs the API) and puts `loadingContent()` in `.gb-scroll`. That replaced a
+  full-screen splash which threw the whole app away, so everything appeared at once when the fetch
+  landed. It also hid a worse bug: `tasks`/`habits`/`goals` are NOT cache-backed, so a `[]` first
+  paint flashed each list screen's "nothing here yet" empty state. Don't render a screen off wave-1
+  state before `state.loading` clears. Measured on a throttled link,
   Home went from 1448 ms to 900 ms.
   Two ordering constraints in wave 2: `recordTrendsToday()` reads `state.food`, and `state.achReady`
   must stay last so achievements never fire on partial data. Wave 2 never throws into the UI — a
@@ -84,6 +90,12 @@ it silently landed on Home. Don't reintroduce a second list.
   else branches on `state.premium` — keep it that way; the whole look lives in `styles/premium.css`.
   Even the header seedling ships in the markup on every screen and is shown by CSS. The one
   exception is `shakeAuthCard()`, which gates its haptic buzz on it.
+- **`toggleTask` / `toggleHabit` paint before they fetch.** They flip `done` in `state`, recompute
+  the ring with `optimisticScore()` and `render()` immediately, then reconcile with the server's
+  version; a failure restores the snapshot taken first. The round trip is three calls deep
+  (toggle → `/api/score/today` → `/api/auth/me`), which is why awaiting it made the checkbox feel
+  broken. `score()` prefers `state.score` when it is non-zero, so a local tick alone does NOT move
+  the ring — that is what `optimisticScore()` is for. Don't re-add an `await` before the paint.
 - **`buddyReact(mood)` is hooked to meaning, not to convenience.** The nod fires from
   `toggleTask` / `toggleHabit`, and only on the way to done — un-ticking is a correction, not an
   achievement. The head-shake fires from `pushToast` for errors only. Hooking the nod to every
