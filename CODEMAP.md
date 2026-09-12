@@ -55,7 +55,7 @@ Per feature: `XController` (routes only) → `XService` (logic, `@Transactional`
 `CurrentUserInterceptor` validates the bearer token and puts the user id in `CurrentUser`
 (ThreadLocal). `RateLimiter` is an in-memory sliding window, no deps, per-bucket synchronized;
 `RateLimitInterceptor` = per-IP on auth routes, `AiRateLimitInterceptor` = per-user on OpenAI-backed
-routes (mentor, quick-add, money, food photos). `ApiException` (status + message),
+routes (mentor, quick-add, money, food photos). `LoginAttemptGuard` = per-**account** exponential lockout on wrong passwords and OTPs (5 free, then 1→2→4… min, capped at 1h, cleared on success) — the per-IP limiter alone does nothing against a botnet. `ApiException` (status + message),
 `GlobalExceptionHandler`, `ClientIp` (must not blindly trust forwarded headers), `WebConfig`
 (interceptors + CORS), `IndexController` (serves `index.html`).
 

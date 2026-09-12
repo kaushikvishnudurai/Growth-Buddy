@@ -3,6 +3,7 @@ package com.growthbuddy.user;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.growthbuddy.common.ApiException;
+import com.growthbuddy.common.LoginAttemptGuard;
 import com.growthbuddy.common.RateLimiter;
 import com.growthbuddy.mail.MailService;
 import com.growthbuddy.mentor.OpenAIClient;
@@ -56,6 +57,7 @@ public class AuthService {
     private final SessionService sessions;
     private final OpenAIClient openai;
     private final RateLimiter rateLimiter;
+    private final LoginAttemptGuard loginGuard;
     private final boolean prod;
     private final ObjectMapper json = new ObjectMapper();
     private final BCryptPasswordEncoder bcrypt = new BCryptPasswordEncoder();
@@ -92,6 +94,7 @@ public class AuthService {
                        SessionService sessions,
                        OpenAIClient openai,
                        RateLimiter rateLimiter,
+                       LoginAttemptGuard loginGuard,
                        @org.springframework.beans.factory.annotation.Value("${spring.profiles.active:}") String activeProfiles) {
         this.users = users;
         this.creds = creds;
@@ -102,6 +105,7 @@ public class AuthService {
         this.sessions = sessions;
         this.openai = openai;
         this.rateLimiter = rateLimiter;
+        this.loginGuard = loginGuard;
         this.prod = activeProfiles != null && activeProfiles.toLowerCase().contains("prod");
     }
 
@@ -137,13 +141,19 @@ public class AuthService {
     @Transactional
     public AuthUserResponse login(LoginRequest req, HttpServletRequest http) {
         String email = normalize(req.email());
-        User user = users.findByEmailIgnoreCase(email)
-                .orElseThrow(() -> ApiException.badRequest("Wrong email or password"));
-        PasswordCredential c = creds.findById(user.getId())
-                .orElseThrow(() -> ApiException.badRequest("Wrong email or password"));
-        if (!bcrypt.matches(req.password(), c.getPasswordHash())) {
+        // Before the lookup, and keyed on the typed email rather than on a user
+        // row — so an unknown address is throttled exactly like a real one and
+        // the lockout can't be used to ask which emails have accounts.
+        loginGuard.check("login:" + email);
+        User user = users.findByEmailIgnoreCase(email).orElse(null);
+        PasswordCredential c = user == null ? null : creds.findById(user.getId()).orElse(null);
+        if (c == null || !bcrypt.matches(req.password(), c.getPasswordHash())) {
+            loginGuard.recordFailure("login:" + email);
             throw ApiException.badRequest("Wrong email or password");
         }
+        // The password was right, so this is the owner typing — clear the count
+        // even if the unverified check below still turns them away.
+        loginGuard.recordSuccess("login:" + email);
         if (!user.isEmailVerified()) {
             // Sign-in must NOT send a verification email and must NOT reveal that
             // the account exists-but-unverified. Verification only happens during
@@ -159,14 +169,18 @@ public class AuthService {
         String email = normalize(req.email());
         // Same generic error whether the email is unknown or the code is wrong,
         // so verify can't be used to enumerate which emails have accounts.
-        User user = users.findByEmailIgnoreCase(email)
-                .orElseThrow(() -> ApiException.badRequest("Invalid or expired code. Try resending."));
-        EmailVerificationToken match = findMatchingToken(
+        // An OTP is six digits and this endpoint hands back a session, so it is a
+        // login by another name — same backoff.
+        loginGuard.check("otp:" + email);
+        User user = users.findByEmailIgnoreCase(email).orElse(null);
+        EmailVerificationToken match = user == null ? null : findMatchingToken(
                 verifyTokens.findByUserIdAndConsumedAtIsNull(user.getId()),
                 req.otp(), EmailVerificationToken::getExpiresAt, EmailVerificationToken::getTokenHash);
         if (match == null) {
+            loginGuard.recordFailure("otp:" + email);
             throw ApiException.badRequest("Invalid or expired code. Try resending.");
         }
+        loginGuard.recordSuccess("otp:" + email);
         match.setConsumedAt(Instant.now());
         verifyTokens.save(match);
         user.setEmailVerified(true);
@@ -196,14 +210,16 @@ public class AuthService {
     public AuthUserResponse resetPassword(ResetPasswordRequest req, HttpServletRequest http) {
         String email = normalize(req.email());
         // Generic error for unknown email or wrong code (no enumeration oracle).
-        User user = users.findByEmailIgnoreCase(email)
-                .orElseThrow(() -> ApiException.badRequest("Invalid or expired code. Request a new one."));
-        PasswordResetToken match = findMatchingToken(
+        loginGuard.check("reset:" + email);
+        User user = users.findByEmailIgnoreCase(email).orElse(null);
+        PasswordResetToken match = user == null ? null : findMatchingToken(
                 resetTokens.findByUserIdAndConsumedAtIsNull(user.getId()),
                 req.otp(), PasswordResetToken::getExpiresAt, PasswordResetToken::getTokenHash);
         if (match == null) {
+            loginGuard.recordFailure("reset:" + email);
             throw ApiException.badRequest("Invalid or expired code. Request a new one.");
         }
+        loginGuard.recordSuccess("reset:" + email);
         match.setConsumedAt(Instant.now());
         resetTokens.save(match);
 
