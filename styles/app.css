@@ -1095,30 +1095,47 @@ body {
 }
 .gb-search-results {
   padding: 4px 0;
-  margin-top: 12px;
-  max-height: 55vh;
+  margin: 12px 0 14px;
+  max-height: 46vh;
   overflow-y: auto;
+  /* The list scrolls, and with two or three people it ends flush with the card
+     edge — which reads as "that's everyone". A hairline inset at the bottom
+     keeps the cut visible so it's obvious there is more to scroll to. */
+  scrollbar-gutter: stable;
 }
 
 /* Inside the modal, the row is narrow enough that buttons next to the name
    collide with it. Force the action cluster onto its own line below. */
 .gb-search-results .gb-person-row {
   flex-wrap: wrap;
-  row-gap: 6px;
+  row-gap: 10px;
   align-items: center;
+  padding: 14px 16px 16px;
+}
+/* Rows ran together with nothing between them — a separator is what makes a
+   list of people scannable rather than one block of text. */
+.gb-search-results .gb-person-row + .gb-person-row {
+  border-top: 1px solid var(--border);
 }
 .gb-search-results .gb-person-actions {
   width: 100%;
-  margin-top: 4px;
   justify-content: flex-end;
   flex-wrap: wrap;
+  align-items: stretch;
+  gap: 8px;
+}
+/* Both mentorship directions always occupy a slot, and a slot is either a
+   button or a status pill. Give them a common height so a row with one of
+   each doesn't look ragged. */
+.gb-search-results .gb-person-actions > * {
+  min-height: 34px;
+  flex: 0 0 auto;
 }
 .gb-search-results .gb-person-actions .gb-btn {
   width: auto;
-  flex: 0 0 auto;
 }
-.gb-search-results .gb-tag-pill {
-  margin-left: auto;
+.gb-search-results .gb-person-actions .gb-tag-pill {
+  padding: 0 12px;
 }
 
 @media (max-width: 520px) {
@@ -1126,7 +1143,17 @@ body {
     max-width: none;
   }
   .gb-search-results {
-    max-height: 60vh;
+    max-height: 50vh;
+  }
+  /* Both actions stay side by side — stacking them made each row ~230px tall,
+     so only two people fit on screen. They share the row instead, which keeps
+     the 44px touch floor and still shows four or five people at a time. */
+  .gb-search-results .gb-person-actions > * {
+    min-height: 44px;
+    flex: 1 1 0;
+    justify-content: center;
+    padding-left: 8px;
+    padding-right: 8px;
   }
   .gb-person-row {
     flex-wrap: wrap;
@@ -1192,6 +1219,16 @@ body {
 /* ---- Circle (person rows + status pills) ---- */
 .gb-person-row {
   gap: 12px !important;
+}
+.gb-person-id {
+  flex: 1;
+  min-width: 0;
+}
+/* Connections and Your-invites both start empty and fill in after the fetch.
+   Reserving roughly an empty-card's height stops the sections below from
+   being shoved down as the data lands (see refreshAll in circle.js). */
+.gb-circle-section {
+  min-height: 112px;
 }
 .gb-person-actions {
   display: flex;
@@ -1498,70 +1535,6 @@ body {
 .gb-account-signout {
   margin-top: 16px;
   width: 100%;
-}
-
-/* ---- Loading splash: quote of the day shown during reload ---- */
-.gb-splash {
-  width: 100%;
-  min-height: 100vh;
-  min-height: 100dvh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: var(--surface);
-}
-.gb-splash-inner {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 22px;
-  width: 100%;
-  max-width: 440px;
-  animation: gb-splash-fade 0.35s ease;
-}
-.gb-splash-inner .gb-quote-card {
-  width: 100%;
-}
-.gb-splash-loading {
-  display: flex;
-  gap: 7px;
-  align-items: center;
-}
-.gb-splash-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--brand);
-  animation: gb-splash-bounce 1.2s infinite ease-in-out;
-}
-.gb-splash-dot:nth-child(2) {
-  animation-delay: 0.18s;
-}
-.gb-splash-dot:nth-child(3) {
-  animation-delay: 0.36s;
-}
-@keyframes gb-splash-bounce {
-  0%,
-  80%,
-  100% {
-    opacity: 0.3;
-    transform: translateY(0);
-  }
-  40% {
-    opacity: 1;
-    transform: translateY(-5px);
-  }
-}
-@keyframes gb-splash-fade {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }
 
 /* ---- Report screen ----
@@ -3195,6 +3168,8 @@ body {
 .gb-icon-btn {
   width: 30px;
   height: 30px;
+  /* Never let a tight flex row (a task row on a narrow phone) squash it. */
+  flex: none;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
@@ -6362,6 +6337,10 @@ select.gb-input {
   flex-direction: column;
   gap: 12px;
   padding: 12px 20px 0;
+}
+/* The quote rides on top of the initial-load skeleton (see loadingContent). */
+.gb-lazy-skeleton > .gb-quote-card {
+  margin: 0;
 }
 .gb-skel-lines {
   flex: 1;

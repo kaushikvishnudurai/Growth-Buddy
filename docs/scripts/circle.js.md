@@ -1,22 +1,24 @@
-# scripts/circle.js — Growth Circle (1164 lines)
+# scripts/circle.js — Growth Circle (1210 lines)
 
-Exports `ScreenCircle` (~824). People search + mentorship invites + circle challenges. Repaints its
-own subtree (`paint()` ~929); refresh helpers `refreshOutgoing` (1004), `refreshIncoming` (1014),
-`refreshAll` (1028).
+Exports `ScreenCircle` (~855). People search + mentorship invites + circle challenges. Repaints its
+own subtree (`paint()` ~962). `refreshAll` (~1041) is the ONLY loader: it awaits outgoing and
+incoming together and paints once. Loading them separately made the screen paint twice with half
+the data and visibly jump, so don't reintroduce per-list refreshers.
 
 | Piece | Line | What |
 |---|---|---|
-| `PersonRow` | 7 | one person; trailing control depends on `person.relationship`: `mentoring` / `mentee` → status pill (clickable, opens status), `pending` → pending state, `none` → offer/request buttons |
-| `showPartnerStatus` | 75 | partner's shared progress sheet |
-| `statusLabel` / `STATUS_LABELS` | 153 | `pending` → "Invite pending", `accepted` → "Connected", `rejected` → "Declined" |
-| `OutgoingRow` / `IncomingRow` | 158 / 218 | request rows with revoke / accept |
-| `openSearchModal` | 288 | find-someone modal: `paintLoading` / `paintEmpty(msg, onRetry)` / `paintList` / `loadPeople`, plus browse |
-| `openFormModal` | 447 | generic field-list modal |
-| `ChallengesPanel` | 526 | circle challenges: `leaderboardRows` (529), `challengeBlock` (547), `startChallenge` (566), `newCircle` (593), `circleCard` (612), `refresh` (674), `openBrowse` (741) |
-| `openSheet` | 792 | bottom sheet wrapper |
-| `openNoteModal` / `promptAndSend` | 839 / 913 | send an invite with a note |
-| `revokeAndRefresh` | 917 | revoke an outgoing request |
-| `launchSearch` | 1033 | entry point from the header |
+| `sectionSkeleton(rows)` | 16 | shimmer rows every section starts with. All three (Connections, Your invites, Challenges) used to render empty and then jump when their fetch landed |
+| `PersonRow` | 35 | one person; returns `null` for `relationship: 'self'`. The two mentorship directions are INDEPENDENT, so it renders a slot each from `person.mentorLink` / `person.menteeLink` (`active` → clickable status pill, `pending` → pending pill, `none` → invite button). You can mentor someone *and* be mentored by them. |
+| `showPartnerStatus` | 96 | partner's shared progress sheet |
+| `statusLabel` / `STATUS_LABELS` | 174 | `pending` → "Invite pending", `accepted` → "Connected", `rejected` → "Declined" |
+| `OutgoingRow` / `IncomingRow` | 179 / 239 | request rows with revoke / accept |
+| `openSearchModal` | 309 | find-someone modal: `paintLoading` / `paintEmpty(msg, onRetry)` / `paintList` / `loadPeople`, plus browse. `paintList` drops `currentUserId` — the single choke point every list passes through, so you can never invite yourself |
+| `openFormModal` | 472 | generic field-list modal |
+| `ChallengesPanel` | 557 | circle challenges: `leaderboardRows` (560), `challengeBlock` (578), `startChallenge` (597), `newCircle` (624), `circleCard` (643), `refresh` (705), `openBrowse` (772) |
+| `openSheet` | 823 | bottom sheet wrapper |
+| `openNoteModal` / `promptAndSend` | 870 / 944 | send an invite with a note |
+| `revokeAndRefresh` | 948 | revoke an outgoing request |
+| `launchSearch` | 1053 | entry point from the header |
 
 Backend: `/api/mentorship` (requests, accept/reject/revoke, incoming/outgoing, connection status),
 `/api/circles` (mine, join/leave, posts, challenges), `/api/users/search|browse` for the people list.

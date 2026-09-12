@@ -4,66 +4,106 @@
 import { h, activate, Icon, Avatar, plural, refreshIcons, confirmDialog } from './gb-kit.js';
 import { toast } from './toast.js';
 
-function PersonRow(person, onOffer, onRequest, onView) {
-  const rel = person.relationship || 'none';
-  let trailing;
-  if (rel === 'mentoring' || rel === 'mentee') {
-    const label = rel === 'mentoring' ? 'You mentor them' : 'They mentor you';
-    // The pill opens their status — say so instead of relying on the cursor.
-    trailing = h(
-      'span',
-      {
-        class: 'gb-tag-pill is-accepted',
-        style: { cursor: 'pointer' },
-        ...activate(() => onView(person)),
-      },
-      label + ' ›'
-    );
-  } else if (rel === 'pending') {
-    trailing = h('span', { class: 'gb-tag-pill is-pending' }, 'Invite pending');
-  } else {
-    trailing = h(
-      'div',
-      { class: 'gb-person-actions' },
+/* Placeholder rows, so a section has its real height before the data lands.
+   Every section on this screen used to start empty: the page rendered as three
+   headings over nothing and then jumped as each card arrived. */
+function sectionSkeleton(rows) {
+  const line = (w) => h('div', { class: 'gb-skel-line', style: { width: w } });
+  const card = h('div', { class: 'gb-card', style: { padding: '4px 0' } });
+  for (let i = 0; i < rows; i++) {
+    card.appendChild(
       h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-btn gb-btn--soft',
-          style: { width: 'auto', padding: '8px 12px', fontSize: '0.78125rem' },
-          onclick: () => onOffer(person),
-        },
-        Icon('hand-helping', { size: 14, sw: 2.4 }),
-        'Mentor them'
-      ),
-      h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-btn gb-btn--primary',
-          style: { width: 'auto', padding: '8px 12px', fontSize: '0.78125rem' },
-          onclick: () => onRequest(person),
-        },
-        Icon('user-plus', { size: 14, sw: 2.4 }),
-        'Ask to mentor me'
+        'div',
+        { class: 'gb-row' },
+        h('div', { class: 'gb-skel-avatar' }),
+        h('div', { class: 'gb-skel-lines' }, line('55%'), line('35%'))
       )
     );
   }
+  return card;
+}
+
+/**
+ * One person in "Find someone".
+ *
+ * The two mentorship directions are INDEPENDENT — you can mentor someone and
+ * be mentored by them at the same time — so each direction gets its own
+ * control instead of the pair collapsing into a single status pill. Both slots
+ * always render, which also keeps every row the same height while the list
+ * loads (see the note on `.gb-person-actions` in app.css).
+ */
+function PersonRow(person, onOffer, onRequest, onView) {
+  // Defensive: the browse/search endpoints already exclude the caller, but a
+  // stale cached payload must never offer you an invite to yourself.
+  if ((person.relationship || 'none') === 'self') return null;
+
+  const link = (which) =>
+    person[which] || (person.relationship === (which === 'mentorLink' ? 'mentoring' : 'mentee') ? 'active' : 'none');
+
+  function slot(state, activeLabel, pendingLabel, actionLabel, icon, btnClass, onAct) {
+    if (state === 'active') {
+      return h(
+        'span',
+        {
+          class: 'gb-tag-pill is-accepted',
+          style: { cursor: 'pointer' },
+          ...activate(() => onView(person)),
+        },
+        activeLabel + ' \u203a'
+      );
+    }
+    if (state === 'pending') {
+      return h('span', { class: 'gb-tag-pill is-pending' }, pendingLabel);
+    }
+    return h(
+      'button',
+      {
+        type: 'button',
+        class: 'gb-btn ' + btnClass,
+        style: { width: 'auto', padding: '8px 12px', fontSize: '0.78125rem' },
+        onclick: () => onAct(person),
+      },
+      Icon(icon, { size: 14, sw: 2.4 }),
+      actionLabel
+    );
+  }
+
   return h(
     'div',
     { class: 'gb-row gb-person-row' },
     Avatar({ name: person.displayName, bg: 'var(--iris-100)', fg: 'var(--iris-700)' }),
     h(
       'div',
-      { style: { flex: 1, minWidth: 0 } },
+      { class: 'gb-person-id' },
       h('div', { class: 'title' }, person.displayName),
       h(
         'div',
         { class: 'sub' },
-        (person.email ? person.email + ' · ' : '') + 'Level ' + person.level
+        (person.email ? person.email + ' \u00b7 ' : '') + 'Level ' + person.level
       )
     ),
-    trailing
+    h(
+      'div',
+      { class: 'gb-person-actions' },
+      slot(
+        link('mentorLink'),
+        'You mentor them',
+        'Offer sent',
+        'Mentor them',
+        'hand-helping',
+        'gb-btn--soft',
+        onOffer
+      ),
+      slot(
+        link('menteeLink'),
+        'They mentor you',
+        'Request sent',
+        'Get mentored',
+        'user-plus',
+        'gb-btn--secondary',
+        onRequest
+      )
+    )
   );
 }
 
@@ -285,7 +325,7 @@ function IncomingRow(req, statusApi, onRevoke) {
  * narrows the list either client-side (fast, on substrings) or via the
  * server search endpoint (which also surfaces users not in the recent list).
  */
-function openSearchModal({ onBrowse, onSearch, onOffer, onRequest, onView }) {
+function openSearchModal({ onBrowse, onSearch, onOffer, onRequest, onView, currentUserId }) {
   let overlay;
   function close() {
     overlay.classList.remove('is-open');
@@ -325,30 +365,34 @@ function openSearchModal({ onBrowse, onSearch, onOffer, onRequest, onView }) {
     );
   }
   function paintList(list) {
-    if (!list.length) {
+    // You are never a person you can invite. The endpoints already exclude the
+    // caller, so this only catches a stale cached payload — but it is the one
+    // place every list (browse, local filter, merged server search) passes
+    // through, so one guard here covers all three.
+    const people = (list || []).filter((p) => p && p.id !== currentUserId);
+    if (!people.length) {
       paintEmpty('No matches.');
       return;
     }
     resultsEl.replaceChildren();
-    list.forEach((p) =>
-      resultsEl.appendChild(
-        PersonRow(
-          p,
-          (person) => {
-            onOffer(person);
-            close();
-          },
-          (person) => {
-            onRequest(person);
-            close();
-          },
-          (person) => {
-            onView(person);
-            close();
-          }
-        )
-      )
-    );
+    people.forEach((p) => {
+      const row = PersonRow(
+        p,
+        (person) => {
+          onOffer(person);
+          close();
+        },
+        (person) => {
+          onRequest(person);
+          close();
+        },
+        (person) => {
+          onView(person);
+          close();
+        }
+      );
+      if (row) resultsEl.appendChild(row);
+    });
   }
 
   let allPeople = [];
@@ -530,7 +574,7 @@ function openFormModal({ title, sub, fields, submitLabel, onSubmit }) {
  * leaderboard (members ranked by habit check-ins completed in the window).
  */
 function ChallengesPanel({ api, currentUserId }) {
-  const el = h('div', { class: 'gb-challenges' });
+  const el = h('div', { class: 'gb-challenges' }, sectionSkeleton(1));
 
   function leaderboardRows(entries) {
     if (!entries || !entries.length) {
@@ -838,9 +882,9 @@ function ScreenCircle({
   challengesApi,
   currentUserId,
 }) {
-  const outgoingEl = h('div');
+  const outgoingEl = h('div', { class: 'gb-circle-section' }, sectionSkeleton(1));
 
-  const incomingEl = h('div');
+  const incomingEl = h('div', { class: 'gb-circle-section' }, sectionSkeleton(2));
 
   function openNoteModal(person, direction) {
     const verb = direction === 'offer' ? 'mentor them' : 'ask them to mentor you';
@@ -889,7 +933,7 @@ function ScreenCircle({
               try {
                 await onSendInvite(person.id, direction, noteInput.value.trim() || null);
                 toast.success('Invite sent to ' + person.displayName + '.');
-                refreshOutgoing();
+                refreshAll();
                 close();
               } catch (err) {
                 toast.error(err, 'Could not send invite.');
@@ -923,8 +967,7 @@ function ScreenCircle({
   function revokeAndRefresh(reqId) {
     onRevoke(reqId)
       .then(() => {
-        refreshOutgoing();
-        refreshIncoming();
+        refreshAll();
       })
       .catch((err) => toast.error(err, 'Could not revoke.'));
   }
@@ -1007,39 +1050,30 @@ function ScreenCircle({
     refreshIcons();
   }
 
-  function refreshOutgoing() {
-    onLoadOutgoing()
-      .then((list) => {
-        cachedOutgoing = list || [];
-        paint();
-      })
-      .catch(() => {
-        /* silent */
-      });
-  }
-  function refreshIncoming() {
-    if (!onLoadIncoming) return;
-    onLoadIncoming()
-      .then((list) => {
-        cachedIncoming = list || [];
-        paint();
-      })
-      .catch(() => {
-        /* silent */
-      });
+  /**
+   * ONE paint per load. Outgoing and incoming used to resolve independently and
+   * each called paint(), so the screen rendered twice with half the data — the
+   * Connections card flipped from "No connections yet" to the real list as the
+   * second response landed, and the page visibly jumped. Waiting for both means
+   * the first paint is the final one.
+   */
+  function refreshAll() {
+    const outgoing = onLoadOutgoing().catch(() => cachedOutgoing);
+    const incoming = onLoadIncoming ? onLoadIncoming().catch(() => cachedIncoming) : Promise.resolve([]);
+    return Promise.all([outgoing, incoming]).then(([out, inc]) => {
+      cachedOutgoing = out || [];
+      cachedIncoming = inc || [];
+      paint();
+    });
   }
 
   refreshAll();
-
-  function refreshAll() {
-    refreshOutgoing();
-    refreshIncoming();
-  }
 
   function launchSearch() {
     openSearchModal({
       onBrowse,
       onSearch,
+      currentUserId,
       onOffer: (person) => promptAndSend(person, 'offer'),
       onRequest: (person) => promptAndSend(person, 'request'),
       onView: (person) => showPartnerStatus(person.id, person.displayName, onLoadStatus),
