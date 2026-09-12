@@ -1,4 +1,4 @@
-# scripts/app.js — app shell (6766 lines)
+# scripts/app.js — app shell (6799 lines)
 
 The hub: owns all state, routing, rendering, and **every** backend call. No exports (entry module).
 Screen modules are leaves it calls into; they get thin `api` wrapper objects, never the state.
@@ -15,7 +15,7 @@ Screen modules are leaves it calls into; they get thin `api` wrapper objects, ne
 | 559–625 | local trends: `emptyTrends`, `loadTrends`, `persistTrends`, `recordTrendsToday` |
 | 625–740 | `clearSession`, `syncUserSession`, **`api(path, options)` / `apiFetch`** — the single network chokepoint — `handleAuthExpired` |
 | 744–935 | `mapTask`, `formatTaskTime`, `cacheFoodSummary`, `loadCalendarFoodForDate`, in-place repaints (`rerenderCalendarSideIfActive`, `rerenderHomeMiniCalendarIfActive`, `updateCalendarDaySelection`) |
-| 934–1140 | `resetStaleCompletedTasks`, **`loadData()`** (boot fetch fan-out), `connectWebSocket` / `disconnectWebSocket` |
+| 934–1140 | `resetStaleCompletedTasks`, **`loadData()`** (boot fetch fan-out), `loadQuote()`, `connectWebSocket` / `disconnectWebSocket` |
 | 1140–1470 | mutations: `toggleTask`, `toggleHabit`, `refreshScore`, `refreshCurrentUser`, `createTask`, `updateTask`, `createHabit`, `createGoal`, goal actions CRUD, `deleteHabit`, `quickAddWater`, `updateWaterGoal`, `logFoodEntry`, `saveSleepEntry`, `saveMoodEntry`, `addQuickExpense`, **`runQuickAdd(text)`**, `rememberPhotoFood` |
 | 1481–2010 | modals: `openSleepSchedule`, `openMoodCheckin`, `openDailyPlan`, `openAddFood`, `addSuggestedReminder`, `deleteWaterEntry`, `deleteFoodEntry` |
 | 2014–2260 | notifications (`refreshNotifications`, `markNotificationRead`, `respondMentorshipRequest`, `unreadNotifs`), header popovers (`toggleNotifOpen`, `toggleProfileOpen`, `toggleMoreOpen`, `profileDropdown`), routing (`screenFromHash`, `setScreen`), `toggleTheme`, `togglePremium` |
@@ -64,7 +64,10 @@ it silently landed on Home. Don't reintroduce a second list.
   (a blob up to 512 kB) and `/api/daily-logs?days=60`, neither of which Home draws. `/api/weekly-review`
   was worse: awaited *after* that Promise.all, a whole extra round trip in series.
   Wave 1 is the five calls Home can't paint without (tasks, habits, score, water, reminders); wave 2
-  is the other eight in parallel. Safe only because every `state` field has a cache-backed or empty
+  is the other seven in parallel. `/api/quotes/today` is the odd one out — `loadQuote()` fires it
+  un-awaited *beside* wave 1, because wave 2 doesn't begin until wave 1 has fully landed and the
+  quote is the one thing on the loading screen that isn't a grey box. Anything else the placeholder
+  starts showing belongs there too, not in wave 2. Safe only because every `state` field has a cache-backed or empty
   default — first paint shows cached values and corrects itself.
   **While wave 1 is in flight only the CONTENT COLUMN waits**: `render()` paints the real shell
   (header, nav — neither needs the API) and puts `loadingContent()` in `.gb-scroll`.
@@ -95,7 +98,15 @@ it silently landed on Home. Don't reintroduce a second list.
   review nudge does not, and `weeklyReviewNudge()` gates on `state.screen === 'home'` itself. It
   used to sit above all twelve screens, including the Buddy chat, where it stole a row from the
   message list and read as part of the conversation. Keep a new banner's "where" beside its "when",
-  not at the call site in `render()`.
+  not at the call site in `render()`. It also gates on `!state.loading` — its answer depends on
+  `state.trends`, which isn't there yet mid-boot (next rule).
+- **Only cookie-eligible keys are readable synchronously at module load.** `CacheStorage` seeds its
+  in-memory map from cookies, and `cookieEligible()` is a short allowlist (token, session, theme,
+  premium, textScale, apiBase, achSeen). Everything else — quote, trends, money, wellness — lives in
+  the Cache API and arrives when `CacheStorage.init()` resolves. A `loadFooCache()` called at module
+  init therefore always returns null; re-read it in the `init().then()` block at the bottom of the
+  file, which then `render()`s. The quote-of-day cache sat unused for exactly this reason, so every
+  boot showed the generic "Do one small thing today." until the network answered.
 - **`syncUserSession(user)` is the only way a signed-in user may reach `state`.** It is where
   `hydrateUiPrefs()` runs, which mirrors the account's server-side theme / text scale / premium
   skin / onboarding flag into the local cache keys the views read synchronously. Sign-in, OTP

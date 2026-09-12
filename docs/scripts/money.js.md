@@ -1,4 +1,4 @@
-# scripts/money.js — Money Buddy (4964 lines)
+# scripts/money.js — Money Buddy (5001 lines)
 
 Exports: `emptyMoney()`, `normalizeMoney(m)`, `MoneyCustomisePane(money, save)`, `ScreenMoney`, `MoneyHomeCard`.
 
@@ -65,6 +65,12 @@ All keys are `YYYY-MM-DD` strings; **all range filtering is string comparison**:
 Shared row/card builders: `expRow(e, withDelete)` (~3690), `subscriptionsCard`, `coachCard`,
 `emptyHint`, `stat`, `weekBars`, `openMoneyModal`, `confirmDelete`.
 
+**Share summary** (~3049) is the only place `share-card.js` is used. `shareSummary()` draws the week
+as a 1080×1920 PNG and opens the OS share sheet (Instagram Stories lives in there); `summaryText()` /
+`shareSummaryText()` are the original text path, kept as the fallback for anything that can't take a
+file — old WebViews, desktop Firefox, and the Capacitor wrapper. Both share buttons (`weeklyReviewCard`
+~3421, the Coach tab ~4791) call `shareSummary`.
+
 ## Gotchas
 
 - **Everything month-scoped derives from dates**, so it self-clears when the month rolls over. If a
@@ -74,4 +80,5 @@ Shared row/card builders: `expRow(e, withDelete)` (~3690), `subscriptionsCard`, 
 - `commit(fn)` mutates the doc then persists via the injected `save`; `money` is the live object.
 - Self-check `_demo()` at the bottom runs **only on Vite DEV**, wrapped in try/catch so it never
   blocks boot. It covers: challenge progress, empty-account health = 0, income/loan sums,
-  challenge suggestions. Add an assert here when you touch an engine.
+  challenge suggestions. Add an assert here when you touch an engine. It also calls `share-card.js`'s
+  `_demo()`, which has no DEV hook of its own.

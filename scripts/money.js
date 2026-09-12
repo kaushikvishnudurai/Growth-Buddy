@@ -9,6 +9,7 @@
    ===================================================================== */
 import { h, Icon, Card, ProgressRing, refreshIcons } from './gb-kit.js';
 import { toast } from './toast.js';
+import { shareStoryCard, _demo as _shareCardDemo } from './share-card.js';
 
 const CUR = '₹';
 // Display currency symbol — customizable via settings.currency; applied from
@@ -3045,11 +3046,15 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice }) {
     setTimeout(run, 60);
   }
 
-  // 22 — share a summary card (Web Share API → clipboard fallback).
-  function shareSummary() {
+  // 22 — share the week as a 9:16 image (story-shaped), text as the fallback.
+  function summaryText() {
     const hsc = financialHealth(money).score;
     const r = weeklyReview(money);
-    const text = `My Money Buddy week 💪\n• Spent: ${fmt(r.total)}\n• Set aside: ${fmt(r.setAside)}\n• Logging streak: ${logStreak(money.expenses)} days\n• Financial health: ${hsc}/100\n${r.motivation}`;
+    return `My Money Buddy week 💪\n• Spent: ${fmt(r.total)}\n• Set aside: ${fmt(r.setAside)}\n• Logging streak: ${logStreak(money.expenses)} days\n• Financial health: ${hsc}/100\n${r.motivation}`;
+  }
+
+  function shareSummaryText() {
+    const text = summaryText();
     if (navigator.share) navigator.share({ title: 'My Money Buddy', text }).catch(() => {});
     else if (navigator.clipboard)
       navigator.clipboard
@@ -3057,6 +3062,35 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice }) {
         .then(() => toast.success('Summary copied to clipboard.'))
         .catch(() => toast.error({ message: 'Could not copy.' }, 'Could not copy.'));
     else toast.error({ message: 'Sharing not supported here.' }, 'Sharing not supported here.');
+  }
+
+  async function shareSummary() {
+    const r = weeklyReview(money);
+    const streak = logStreak(money.expenses);
+    try {
+      const result = await shareStoryCard(
+        {
+          eyebrow: 'My money week',
+          headline: fmt(r.total),
+          sub: 'spent this week',
+          stats: [
+            { label: 'Set aside', value: fmt(r.setAside) },
+            { label: 'Logging streak', value: streak + (streak === 1 ? ' day' : ' days') },
+            { label: 'Financial health', value: financialHealth(money).score + '/100' },
+          ],
+          note: r.motivation,
+          footer: 'Tracked with Growth Buddy',
+        },
+        { filename: 'money-week.png', title: 'My Money Buddy week' }
+      );
+      if (result === 'saved') toast.success('Image saved — add it to your story.');
+      if (result === 'unsupported') shareSummaryText();
+    } catch (err) {
+      // Canvas or Blob unavailable (old WebView, a locked-down browser). The
+      // text share has been the behaviour since day one; keep it as the floor.
+      console.warn('Story card failed, sharing text instead:', err);
+      shareSummaryText();
+    }
   }
 
   function confirmDelete(title, body, onConfirm) {
@@ -4956,6 +4990,9 @@ function _demo() {
 if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.DEV) {
   try {
     _demo();
+    // share-card.js has no DEV hook of its own; it rides along with the one
+    // screen that uses it.
+    _shareCardDemo();
   } catch (_) {
     /* never block the app */
   }

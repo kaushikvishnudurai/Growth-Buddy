@@ -11,8 +11,8 @@ open — don't go looking for a doc that isn't in this list.
 
 | Need to work on | Read first | Instead of |
 |---|---|---|
-| app shell, state, routing, any API call, settings, auth views | `docs/scripts/app.js.md` | 6766 lines |
-| Money Buddy | `docs/scripts/money.js.md` | 4964 |
+| app shell, state, routing, any API call, settings, auth views | `docs/scripts/app.js.md` | 6799 lines |
+| Money Buddy | `docs/scripts/money.js.md` | 5001 |
 | Home screen / widgets / mini calendar | `docs/scripts/dashboard.js.md` | 1712 |
 | Family tab, meal planner | `docs/scripts/family.js.md` | 2032 |
 | Growth Circle, mentorship | `docs/scripts/circle.js.md` | 1210 |

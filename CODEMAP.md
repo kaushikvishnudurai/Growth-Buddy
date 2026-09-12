@@ -41,6 +41,7 @@ don't yet know which file you need. Files with their own doc are listed in
 | `mentor.js` | 256 | Buddy chat screen. `renderRich()` = tiny markdown (`**bold**`, `*italic*`, newlines). Exports `ScreenMentor`. |
 | `celebrate.js` | 119 | One-off unlock celebration: badge pop + hand-rolled confetti, queued one at a time, respects `prefers-reduced-motion`. |
 | `a11y.js` | 111 | Global modal a11y. Every modal is `.gb-modal-overlay > .gb-modal[role=dialog]`; a MutationObserver on `<body>` adds Escape-to-close, Tab trapping and focus in/out **centrally**, so individual modals need no a11y code. `initA11y()`. |
+| `share-card.js` | 255 | Draws a 1080×1920 story card on a canvas and hands the PNG to the OS share sheet (where Instagram's "Add to story" lives — there is no web API that posts to Instagram directly). `shareStoryCard(card, opts)` → `'shared'｜'saved'｜'unsupported'`; `renderStoryCard(card)` for the raw blob. Canvas text does NOT trigger font loading — it calls `document.fonts.load()` per face first. No deps. |
 | `push.js` | 98 | Web Push client: `pushSupported`, `pushPermission`, `pushSubscribed`, `enablePush(api)`, `disablePush(api)`. Inert when unsupported or VAPID keys are missing. |
 | `toast.js` | 22 | Late-bound toast registry. Breaks the app.js ↔ screens import cycle: app.js calls `registerToast(impl)` at boot, screens `import { toast }`. |
 

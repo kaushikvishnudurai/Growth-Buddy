@@ -1104,6 +1104,12 @@ async function loadData() {
   state.loading = true;
   state.error = '';
   render();
+  // Not awaited, and deliberately not in wave 2: the quote is the only thing on
+  // the loading screen that isn't a grey box, and wave 2 doesn't start until all
+  // five wave-1 calls have landed — so on a slow connection the request wasn't
+  // even in flight while the skeleton was up, and the card sat on its hardcoded
+  // fallback every time. It's a tiny payload; let it race.
+  loadQuote();
   try {
     const [tasksRaw, habits, todayScore, water, reminders] = await Promise.all([
       api('/api/tasks'),
@@ -1130,6 +1136,24 @@ async function loadData() {
   loadSecondaryData();
 }
 
+/* Quote of the day. Own function because it's the one call that starts before
+   wave 1 rather than after it. */
+function loadQuote() {
+  api('/api/quotes/today')
+    .then((quote) => {
+      if (!quote) return;
+      state.quote = quote;
+      cacheQuote(quote);
+      // Repaint only where the quote is on screen. A blind render() here would
+      // rebuild screens that own their subtree (money, family, mentor, circle)
+      // and throw away their local view state.
+      if (state.loading || state.screen === 'home') render();
+    })
+    .catch(() => {
+      /* the card falls back to its own copy */
+    });
+}
+
 /* Wave 2: nothing here gates first paint. Never throws into the UI — a failure
    leaves Home standing on wave-1 data rather than replacing it with a crash. */
 async function loadSecondaryData() {
@@ -1140,10 +1164,9 @@ async function loadSecondaryData() {
   const bootScreen = state.screen;
   connectWebSocket();
   try {
-    const [goals, quote, notifications, food, money, dailyLogs, photoHistory, weekly] =
+    const [goals, notifications, food, money, dailyLogs, photoHistory, weekly] =
       await Promise.all([
         api('/api/goals').catch(() => null),
-        api('/api/quotes/today').catch(() => null),
         api('/api/notifications').catch(() => null),
         api('/api/food').catch(() => null),
         api('/api/money').catch((err) => {
@@ -1173,10 +1196,6 @@ async function loadSecondaryData() {
       );
       state.goalProgress = gp;
       persistGoalProgress();
-    }
-    if (quote) {
-      state.quote = quote;
-      cacheQuote(quote);
     }
     if (notifications) state.notifications = notifications;
     if (food) {
@@ -6539,7 +6558,11 @@ function offlineBanner() {
    conversation. The review is a Home concern; keep the "where" next to the
    "when" rather than at the call site, or the next banner repeats this. */
 function weeklyReviewNudge() {
-  if (state.screen !== 'home' || !weeklyReviewDue()) return null;
+  // Not while the screen is still loading: weeklyReviewDue() reads state.trends,
+  // which arrives from the Cache API a beat after boot, so mid-load the answer is
+  // computed from data that isn't there yet — and a nudge to review your week
+  // reads as noise stacked on a skeleton either way.
+  if (state.loading || state.screen !== 'home' || !weeklyReviewDue()) return null;
   return h(
     'button',
     { type: 'button', class: 'gb-week-nudge', onclick: openWeeklyReview },
@@ -6709,6 +6732,12 @@ if (window.CacheStorage && window.CacheStorage.init) {
         state.money = loadMoney();
         state.streakFreeze = loadStreakFreeze();
         state.trends = loadTrends();
+        // `gb.quote` isn't cookie-eligible, so it lives in the Cache API only and
+        // the synchronous read at module load always came back null — the cache
+        // above never once survived a reload, and every boot showed the generic
+        // "Do one small thing today." until the network answered. Don't clobber a
+        // fresher quote if loadData() already won the race.
+        state.quote = state.quote || loadCachedQuote();
         reconcileStreakFreeze();
         render();
       }
