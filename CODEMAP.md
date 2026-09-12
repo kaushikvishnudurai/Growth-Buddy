@@ -81,6 +81,12 @@ chunked write too (411), since that is the one shape a Content-Length check cann
 used to 400 with no detail to the client and no line in the log, so a wrong enum value was
 undebuggable from either end.
 
+**Money is versioned, not last-write-wins.** `GET /api/money` returns an `ETag`; `PUT` sends it back
+as `If-Match` and is refused with **409** if someone else wrote first. The client then refetches,
+`mergeMoney` (in `money.js`, checked by `money-merge.test.mjs`) unions the two documents by item id,
+and it writes once more unconditionally. A phone and a laptop editing the same evening used to mean
+one of them silently lost its expenses. Deletions still lose to additions — see the `ponytail:` note.
+
 **A "working days" reminder follows the user's week** (`WorkWeek` + `WORK_WEEKS` in
 `scripts/recurrence.js`): Mon–Fri, Sun–Thu or Mon–Sat, stored in the user's `ui_prefs` blob under
 `workWeek` — not its own column, because prod runs `ddl-auto: none`. It is the one `ui_prefs` key

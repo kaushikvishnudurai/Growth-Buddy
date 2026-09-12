@@ -5,7 +5,9 @@ import com.growthbuddy.common.CurrentUser;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -19,14 +21,36 @@ public class MoneyController {
         this.service = service;
     }
 
+    /**
+     * The version rides in ETag / If-Match rather than inside the document,
+     * because the document is the user's data and this is bookkeeping about it.
+     */
     @GetMapping
-    public JsonNode get() {
-        return service.get(CurrentUser.id());
+    public ResponseEntity<JsonNode> get() {
+        MoneyService.Versioned v = service.get(CurrentUser.id());
+        return ResponseEntity.ok().eTag("\"" + v.version() + "\"").body(v.data());
     }
 
     @PutMapping
-    public JsonNode save(@RequestBody JsonNode body) {
-        return service.save(CurrentUser.id(), body);
+    public ResponseEntity<JsonNode> save(@RequestBody JsonNode body,
+                                         @RequestHeader(value = "If-Match", required = false)
+                                         String ifMatch) {
+        MoneyService.Versioned v = service.save(CurrentUser.id(), body, unquote(ifMatch));
+        return ResponseEntity.ok().eTag("\"" + v.version() + "\"").body(v.data());
+    }
+
+    /** ETags travel quoted; the version we compare is the bare value. */
+    private static String unquote(String etag) {
+        if (etag == null) {
+            return null;
+        }
+        String t = etag.trim();
+        if (t.startsWith("W/")) {
+            t = t.substring(2);
+        }
+        return t.length() >= 2 && t.startsWith("\"") && t.endsWith("\"")
+                ? t.substring(1, t.length() - 1)
+                : t;
     }
 
     /**

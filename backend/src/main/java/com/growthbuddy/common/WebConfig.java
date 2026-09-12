@@ -14,6 +14,7 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
@@ -167,10 +168,30 @@ public class WebConfig implements WebMvcConfigurer {
         return out;
     }
 
+    /**
+     * The origins the Capacitor shell serves itself from. Always allowed, rather
+     * than left to {@code CORS_ALLOWED_ORIGINS}.
+     *
+     * <p>A native build is not a website: it loads from {@code https://localhost}
+     * (Android, {@code androidScheme: "https"}) or {@code capacitor://localhost}
+     * (iOS), and nothing about the deploy hints that those belong in an origins
+     * list. Forget them and the app talks to nothing — with a CORS error in a
+     * WebView console nobody is looking at.
+     *
+     * <p>Safe to pin here because this API does not authenticate with cookies. It
+     * takes a bearer token the caller has to already hold, and {@code
+     * allowCredentials} is off, so a page that happens to be served from
+     * localhost gains nothing by being allowed to ask.
+     */
+    private static final String[] NATIVE_SHELL_ORIGINS = {
+        "https://localhost", "capacitor://localhost", "ionic://localhost"
+    };
+
     private String[] parseAllowedOrigins() {
-        return Arrays.stream(allowedOrigins.split(","))
-                .map(String::trim)
-                .filter(s -> !s.isEmpty())
+        return Stream.concat(
+                        Arrays.stream(allowedOrigins.split(",")).map(String::trim).filter(s -> !s.isEmpty()),
+                        Arrays.stream(NATIVE_SHELL_ORIGINS))
+                .distinct()
                 .toArray(String[]::new);
     }
 }

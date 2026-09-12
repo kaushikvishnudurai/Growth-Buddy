@@ -291,6 +291,40 @@ export function normalizeMoney(m) {
     currency: CUR,
   };
 }
+/* Union two money documents by item id.
+
+   Reached only after the server refuses a write as stale, and it is the right
+   shape for what actually collides: both sides have been ADDING things — an
+   expense here, an income row there — to a document they both loaded from the
+   same place. Union keeps both.
+
+   ponytail: a deletion on one side loses to an addition-era copy on the other,
+   so an expense deleted on the laptop can reappear from the phone. That is the
+   deliberate trade — a row you have to delete twice is a nuisance, a row that
+   vanishes without being deleted is lost money. Deletions that must stick need
+   tombstones, which need the normalized tables this blob doesn't have. */
+export function mergeMoney(mine, theirs) {
+  const out = normalizeMoney(theirs);
+  const local = normalizeMoney(mine);
+  for (const key of Object.keys(out)) {
+    if (!Array.isArray(out[key]) || !Array.isArray(local[key])) continue;
+    const seen = new Set(out[key].map((x) => (x && x.id) || JSON.stringify(x)));
+    for (const item of local[key]) {
+      const id = (item && item.id) || JSON.stringify(item);
+      if (!seen.has(id)) {
+        out[key].push(item);
+        seen.add(id);
+      }
+    }
+  }
+  // Objects (budgets) and settings are last-writer-wins on purpose: they are
+  // single values a person sets, not a log they append to.
+  out.budgets = Object.assign({}, out.budgets, local.budgets);
+  out.settings = Object.assign({}, out.settings, local.settings);
+  return out;
+}
+
+
 const goalSaved = (g) => (g.contribs || []).reduce((a, c) => a + (Number(c.amount) || 0), 0);
 
 /* ---- Categories (built-in + custom tags) ---- */

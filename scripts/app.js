@@ -24,7 +24,13 @@ import {
   HOME_WIDGETS,
   resolveHomeLayout,
 } from './dashboard.js';
-import { ScreenMoney, emptyMoney, normalizeMoney, MoneyCustomisePane } from './money.js';
+import {
+  ScreenMoney,
+  emptyMoney,
+  normalizeMoney,
+  mergeMoney,
+  MoneyCustomisePane,
+} from './money.js';
 import {
   ScreenCalendar,
   RenderCalendarToolbar,
@@ -508,6 +514,26 @@ function cacheMoney() {
 // Chaining them keeps the last write on the wire the last write to the database.
 let moneySaveQueue = Promise.resolve();
 
+/* The version of the money document this tab last saw, from the ETag. Sent back
+   as If-Match so the server can refuse a write based on a copy someone else has
+   already replaced. The queue above only ever ordered THIS tab's writes; a phone
+   and a laptop editing the same evening had nothing between them. */
+let moneyVersion = null;
+
+function rememberMoneyVersion(res) {
+  const tag = res && res.headers && res.headers.get('ETag');
+  if (tag) moneyVersion = tag;
+}
+
+async function putMoney(body, version) {
+  return api('/api/money', {
+    method: 'PUT',
+    body,
+    headers: version ? { 'If-Match': version } : {},
+    onResponse: rememberMoneyVersion,
+  });
+}
+
 function saveMoney(next) {
   // Optimistic: update local + cache + repaint immediately, then persist to the
   // server (mirrors saveHomeLayout). Offline writes still land in the cache.
@@ -517,7 +543,21 @@ function saveMoney(next) {
   const body = JSON.stringify(state.money);
   // CRITICAL: This MUST reach the database. Log all failures prominently.
   moneySaveQueue = moneySaveQueue.then(() =>
-    api('/api/money', { method: 'PUT', body }).catch((err) => {
+    putMoney(body, moneyVersion)
+      .catch(async (err) => {
+        if (err && err.status === 409) {
+          // Someone else wrote first. Take their copy, fold ours into it, and
+          // write once more — unconditionally, so a third writer can't spin this.
+          const theirs = await api('/api/money', { onResponse: rememberMoneyVersion });
+          state.money = mergeMoney(state.money, theirs);
+          cacheMoney();
+          render();
+          toastSuccess('Merged money changes from your other device.');
+          return putMoney(JSON.stringify(state.money), null);
+        }
+        throw err;
+      })
+      .catch((err) => {
       console.error('❌ CRITICAL: saveMoney failed to reach database:', err);
       toastError(err, '❌ Money data NOT saved to database. Check your connection and try again.');
     })
@@ -894,6 +934,9 @@ async function apiFetch(path, options) {
     err.status = res.status;
     throw err;
   }
+  if (typeof opts.onResponse === 'function') {
+    opts.onResponse(res);
+  }
   if (res.status === 204) {
     return null;
   }
@@ -1188,7 +1231,7 @@ async function loadSecondaryData() {
         api('/api/goals').catch(() => null),
         api('/api/notifications').catch(() => null),
         api('/api/food').catch(() => null),
-        api('/api/money').catch((err) => {
+        api('/api/money', { onResponse: rememberMoneyVersion }).catch((err) => {
           console.error('Money API failed - data will NOT persist!', err);
           return null;
         }),

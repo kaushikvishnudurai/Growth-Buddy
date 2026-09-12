@@ -74,15 +74,43 @@ public class MoneyService {
 
     public record AdviceResult(boolean configured, String advice) {}
 
-    @Transactional(readOnly = true)
-    public JsonNode get(UUID userId) {
-        return repo.findById(userId)
-                .map(MoneyState::getData)
-                .orElseGet(json::createObjectNode);
+    /** The whole document plus the version a later write must match. */
+    public record Versioned(JsonNode data, String version) {}
+
+    /**
+     * A version tag for the stored document. {@code updatedAt} is set on every
+     * persist, so it changes exactly when the document does; "0" means nothing is
+     * stored yet, which a first write can legitimately match.
+     */
+    private static String versionOf(MoneyState state) {
+        return state == null || state.getUpdatedAt() == null
+                ? "0"
+                : String.valueOf(state.getUpdatedAt().toEpochMilli());
     }
 
+    @Transactional(readOnly = true)
+    public Versioned get(UUID userId) {
+        return repo.findById(userId)
+                .map(s -> new Versioned(s.getData(), versionOf(s)))
+                .orElseGet(() -> new Versioned(json.createObjectNode(), "0"));
+    }
+
+    /**
+     * Replace the document, optionally only if it still looks the way the caller
+     * last saw it.
+     *
+     * <p>This endpoint takes the WHOLE money document on every edit, so two
+     * clients editing at once — a phone and a laptop, or two tabs — meant the
+     * slower save silently overwrote the faster one's expenses. In-tab ordering
+     * was already handled by a promise queue on the client; nothing covered two
+     * of them.
+     *
+     * <p>{@code expectedVersion} comes from the caller's {@code If-Match}. Absent,
+     * the write goes through unconditionally — old clients keep working. Present
+     * and stale, it is refused with 409 and the caller merges and retries.
+     */
     @Transactional
-    public JsonNode save(UUID userId, JsonNode body) {
+    public Versioned save(UUID userId, JsonNode body, String expectedVersion) {
         if (body == null || !body.isObject()) {
             throw ApiException.badRequest("Money data must be a JSON object.");
         }
@@ -90,8 +118,14 @@ public class MoneyService {
             throw ApiException.badRequest("Money data is too large.");
         }
         MoneyState state = repo.findById(userId).orElseGet(MoneyState::new);
+        if (expectedVersion != null && !expectedVersion.isBlank()
+                && !expectedVersion.equals(versionOf(state))) {
+            throw new ApiException(org.springframework.http.HttpStatus.CONFLICT,
+                    "Your money data changed somewhere else.");
+        }
         state.setUserId(userId);
         state.setData(body);
-        return repo.save(state).getData();
+        MoneyState saved = repo.save(state);
+        return new Versioned(saved.getData(), versionOf(saved));
     }
 }

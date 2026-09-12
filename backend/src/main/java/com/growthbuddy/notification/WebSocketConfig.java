@@ -109,10 +109,16 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         return (values == null || values.isEmpty()) ? null : values.get(0);
     }
 
+    /** Same reason as {@code WebConfig.NATIVE_SHELL_ORIGINS}: the app is not a website. */
+    private static final String[] NATIVE_SHELL_ORIGINS = {
+        "https://localhost", "capacitor://localhost", "ionic://localhost"
+    };
+
     private String[] parseAllowedOrigins() {
-        return Arrays.stream(allowedOrigins.split(","))
-                .map(String::trim)
-                .filter(s -> !s.isEmpty())
+        return java.util.stream.Stream.concat(
+                        Arrays.stream(allowedOrigins.split(",")).map(String::trim).filter(s -> !s.isEmpty()),
+                        Arrays.stream(NATIVE_SHELL_ORIGINS))
+                .distinct()
                 .toArray(String[]::new);
     }
 
