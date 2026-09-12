@@ -2421,24 +2421,41 @@ const COUNTRY_CODES = [
   { d: '94', flag: '🇱🇰', name: 'Sri Lanka' },
 ];
 
+/** Split an E.164 string into (dial, local) by longest-prefix match. */
+function splitDial(number) {
+  const digits = String(number || '').replace(/\D/g, '');
+  if (digits) {
+    const byLen = COUNTRY_CODES.slice().sort((a, b) => b.d.length - a.d.length);
+    const hit = byLen.find((co) => digits.startsWith(co.d) && digits.length > co.d.length);
+    if (hit) {
+      return { dial: hit.d, local: digits.slice(hit.d.length) };
+    }
+  }
+  return { dial: '91', local: digits };
+}
+
+/**
+ * Country code and last four digits; the middle masked. Enough to recognise
+ * your own number, not enough for someone reading over your shoulder — the
+ * settings panel is open on a screen far more often than it is edited.
+ */
+function maskPhone(number) {
+  const { dial, local } = splitDial(number);
+  if (local.length <= 4) {
+    return '+' + dial + ' ' + local;
+  }
+  return '+' + dial + ' ' + '\u2022'.repeat(local.length - 4) + local.slice(-4);
+}
+
 /**
  * A country-code dropdown + local-number field. Users pick their country
  * so they can't forget the dial code (which previously produced broken
  * numbers like +6374044117). `getValue()` returns a full E.164 string.
  */
 function CountryPhoneInput(prefill) {
-  // Split any existing number into (dial, local) by longest-prefix match.
-  const digits = String(prefill || '').replace(/\D/g, '');
-  let dial = '91',
-    local = digits;
-  if (digits) {
-    const byLen = COUNTRY_CODES.slice().sort((a, b) => b.d.length - a.d.length);
-    const hit = byLen.find((co) => digits.startsWith(co.d) && digits.length > co.d.length);
-    if (hit) {
-      dial = hit.d;
-      local = digits.slice(hit.d.length);
-    }
-  }
+  const { dial: dial0, local: local0 } = splitDial(prefill);
+  let dial = dial0,
+    local = local0;
 
   const sel = h('select', { class: 'gb-input gb-phone-cc', 'aria-label': 'Country code' });
   COUNTRY_CODES.forEach((co) => {
@@ -3561,7 +3578,7 @@ function openProfileSettings(initialTab) {
         'div',
         { class: 'gb-wa-verified-chip' },
         Icon('check-circle-2', { size: 14, color: 'var(--gb-wa-green)' }),
-        cu.whatsappNumber || '',
+        maskPhone(cu.whatsappNumber),
         h('span', { class: 'gb-wa-verified-label' }, 'Verified')
       );
       const changeBtn = h(
@@ -3706,22 +3723,24 @@ function openProfileSettings(initialTab) {
     if ((u.digestHour != null ? u.digestHour : 8) === hr) o.selected = true;
     digestHourSel.appendChild(o);
   }
-  const digestSaveBtn = h(
-    'button',
-    { type: 'button', class: 'gb-btn gb-btn--soft', style: { marginTop: '4px' } },
-    'Save digest preferences'
-  );
-  digestSaveBtn.onclick = async () => {
+  // Saves on change, like the WhatsApp toggle above it and every other control
+  // outside the Profile tab. A Save button here was the one thing in Settings
+  // that made you press something twice, and "Done" doesn't commit it.
+  const saveDigest = async () => {
+    digestFreqSel.disabled = true;
+    digestHourSel.disabled = true;
     try {
-      digestSaveBtn.disabled = true;
       await saveDigestPrefs(digestFreqSel.value, parseInt(digestHourSel.value, 10));
       toastSuccess('Digest preferences saved.');
     } catch (err) {
       toastError(err, 'Could not save digest preferences.');
     } finally {
-      digestSaveBtn.disabled = false;
+      digestFreqSel.disabled = false;
+      digestHourSel.disabled = false;
     }
   };
+  digestFreqSel.onchange = saveDigest;
+  digestHourSel.onchange = saveDigest;
   const digestSectionBody = h(
     'div',
     null,
@@ -3731,10 +3750,9 @@ function openProfileSettings(initialTab) {
     digestHourSel,
     h(
       'div',
-      { class: 'gb-field-hint', style: { margin: '6px 0 12px' } },
-      'Weekly digests arrive Mondays — by email and in-app.'
-    ),
-    digestSaveBtn
+      { class: 'gb-field-hint', style: { marginTop: '6px' } },
+      'Weekly digests arrive Mondays — by email, in-app and push.'
+    )
   );
 
   // ---- Push notifications ----
