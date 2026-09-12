@@ -175,4 +175,24 @@ class ReminderServiceOccursOnTest {
                 null, ReminderTag.personal, RepeatFreq.none, LocalDate.of(2007, 6, 19));
         assertThat(new ReminderService(repo).create(UUID.randomUUID(), req).until()).isNull();
     }
+
+    /* Mon-Fri. Mirrors scripts/recurrence.test.mjs — if you change one, change
+       both, or Home's dots and WhatsApp delivery start disagreeing. */
+    @Test
+    void weekdaysFireMondayToFridayAndSkipTheWeekend() {
+        CalendarReminder r = reminder(LocalDate.of(2026, 9, 14), RepeatFreq.weekdays); // a Monday
+        for (int d = 14; d <= 18; d++) {
+            assertThat(service.occursOn(r, LocalDate.of(2026, 9, d)))
+                    .as("2026-09-%02d should fire", d).isTrue();
+        }
+        assertThat(service.occursOn(r, LocalDate.of(2026, 9, 19))).as("Saturday").isFalse();
+        assertThat(service.occursOn(r, LocalDate.of(2026, 9, 20))).as("Sunday").isFalse();
+    }
+
+    @Test
+    void weekdaysAnchoredOnASaturdayFirstFireOnTheMonday() {
+        CalendarReminder r = reminder(LocalDate.of(2026, 9, 12), RepeatFreq.weekdays); // a Saturday
+        assertThat(service.occursOn(r, LocalDate.of(2026, 9, 12))).isFalse();
+        assertThat(service.occursOn(r, LocalDate.of(2026, 9, 14))).isTrue();
+    }
 }

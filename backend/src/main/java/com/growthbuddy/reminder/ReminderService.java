@@ -146,6 +146,10 @@ public class ReminderService {
                 || (anchor.getDayOfMonth() > lastOfMonth && day.getDayOfMonth() == lastOfMonth);
         return switch (r.getRepeat()) {
             case daily -> true;
+            // Mon-Fri. Deliberately not "whatever the user calls a work week" —
+            // see the note in scripts/recurrence.js, which must agree with this
+            // switch day for day.
+            case weekdays -> day.getDayOfWeek().getValue() <= 5;
             case weekly -> day.getDayOfWeek() == anchor.getDayOfWeek();
             case monthly -> dayMatches;
             case yearly -> day.getMonth() == anchor.getMonth() && dayMatches;

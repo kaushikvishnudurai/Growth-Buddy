@@ -14,6 +14,7 @@ import {
 } from './gb-kit.js';
 import { MoneyHomeCard } from './money.js';
 import { CacheStorage } from './cache-storage.js';
+import { occursOn } from './recurrence.js';
 
 const ONBOARD_KEY = 'gb.onboardDismissed';
 
@@ -1118,32 +1119,6 @@ function MiniCalendarCard({
     return (tasks || [])
       .filter((t) => !!t.done && keyFromInstant(t.doneAt) === key)
       .sort((a, b) => String(a.doneAt || '').localeCompare(String(b.doneAt || '')));
-  }
-  function occursOn(rem, key) {
-    const anchorBits = parseKey(rem.date);
-    const targetBits = parseKey(key);
-    const anchor = new Date(anchorBits.y, anchorBits.m, anchorBits.d);
-    const target = new Date(targetBits.y, targetBits.m, targetBits.d);
-    if (Number.isNaN(anchor.getTime()) || Number.isNaN(target.getTime())) return false;
-    if (target < anchor) return false;
-    if (rem.until) {
-      const endBits = parseKey(rem.until);
-      const end = new Date(endBits.y, endBits.m, endBits.d);
-      if (target > end) return false;
-    }
-    if (Array.isArray(rem.skip) && rem.skip.indexOf(key) !== -1) return false;
-    switch (rem.repeat) {
-      case 'daily':
-        return true;
-      case 'weekly':
-        return target.getDay() === anchor.getDay();
-      case 'monthly':
-        return targetBits.d === anchorBits.d;
-      case 'yearly':
-        return targetBits.m === anchorBits.m && targetBits.d === anchorBits.d;
-      default:
-        return target.getTime() === anchor.getTime();
-    }
   }
   function remindersOn(key) {
     return (reminders || [])

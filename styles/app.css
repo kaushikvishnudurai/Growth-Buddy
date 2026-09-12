@@ -3999,6 +3999,12 @@ body {
 /* Segmented control (repeat) */
 .gb-segmented {
   display: flex;
+  /* Six repeat options don't fit a 360px phone on one line. Flex items refuse
+     to shrink past their min-content width, so without this the row overflowed
+     the card sideways (which is exactly what scripts/ui-audit.mjs fails on)
+     rather than wrapping. Basis is 0, so whatever lands on a line splits it
+     evenly. */
+  flex-wrap: wrap;
   gap: 4px;
   background: var(--surface-2);
   border: 1.5px solid var(--border);

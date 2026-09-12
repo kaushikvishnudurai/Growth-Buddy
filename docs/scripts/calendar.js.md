@@ -23,6 +23,16 @@ Day-key helpers: `pad`, `keyOf(y,m,d)`, `parseKey`, `todayKey`, `isFutureKey`, `
 
 - `occursOn(rem, key)` (120) — expands recurrence client-side for display; the backend has its own
   expansion (`ReminderService`) for delivery. **Keep the two consistent.**
+- `occursOn` no longer lives here — it is `scripts/recurrence.js`, shared with the Home mini
+  calendar. There were three copies and the dashboard's had already drifted (no end-of-month
+  clamp, so a monthly reminder anchored to the 31st vanished from Home's dots in February).
+  Two remain by necessity: this module's import and `ReminderService.occursOn`, which drives
+  WhatsApp delivery and can't import JS. `scripts/recurrence.test.mjs` and
+  `ReminderServiceOccursOnTest` are mirrors of each other — change one, change both.
+- Repeat options: `none`, `daily`, `weekdays` (Mon-Fri), `weekly`, `monthly`, `yearly`. The
+  column is `varchar(16)`, so a new value needs no migration. `REPEATS[x].phrase` exists only
+  for the delete dialog's "repeats ___" sentence, where `label.toLowerCase()` would read
+  "repeats mon-fri".
 - `remindersOn` (149), `tasksOn` (162), `completedTasksOn` (179), `goalActionsOn` (185), `dueKey` (155).
 - **"Repeat until" before the start date makes a reminder that can never fire.** `occursOn` returns
   false for every day, so it sits in the list forever advertising an end date in the past. The form

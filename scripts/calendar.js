@@ -10,6 +10,7 @@ import {
   plural,
   refreshIcons,
 } from './gb-kit.js';
+import { occursOn } from './recurrence.js';
 
 const MONTHS = [
   'January',
@@ -58,14 +59,17 @@ const TAGS = {
 const TAG_ORDER = ['work', 'personal', 'health', 'urgent', 'other'];
 
 /* ---- Recurrence options ---- */
+/* `phrase` is only for the "X repeats ___." sentence in the delete dialog,
+   where lowercasing the button label would read "repeats mon-fri". */
 const REPEATS = {
   none: { label: 'Once' },
   daily: { label: 'Daily' },
+  weekdays: { label: 'Mon\u2013Fri', phrase: 'every weekday' },
   weekly: { label: 'Weekly' },
   monthly: { label: 'Monthly' },
   yearly: { label: 'Yearly' },
 };
-const REPEAT_ORDER = ['none', 'daily', 'weekly', 'monthly', 'yearly'];
+const REPEAT_ORDER = ['none', 'daily', 'weekdays', 'weekly', 'monthly', 'yearly'];
 
 function pad(n) {
   return n < 10 ? '0' + n : String(n);
@@ -118,41 +122,6 @@ function formatTime(t) {
   hh = hh % 12;
   if (hh === 0) hh = 12;
   return hh + ':' + mStr + ' ' + ampm;
-}
-
-/* Does reminder `rem` occur on date `key`? Honors recurrence + bounds. */
-function occursOn(rem, key) {
-  const a = parseKey(rem.date);
-  const t = parseKey(key);
-  const anchor = new Date(a.y, a.m, a.d);
-  const day = new Date(t.y, t.m, t.d);
-  if (day < anchor) return false;
-  if (rem.from) {
-    const f = parseKey(rem.from);
-    if (day < new Date(f.y, f.m, f.d)) return false;
-  }
-  if (rem.until) {
-    const u = parseKey(rem.until);
-    if (day > new Date(u.y, u.m, u.d)) return false;
-  }
-  if (rem.skip && rem.skip.indexOf(key) !== -1) return false;
-  // An anchor on the 29th-31st clamps to the last day of a shorter month, so a monthly
-  // reminder set for the 31st still fires in February, April, and friends. Must stay in
-  // step with ReminderService.occursOn (backend) — that side drives WhatsApp delivery.
-  const lastOfMonth = new Date(t.y, t.m + 1, 0).getDate();
-  const dayMatches = t.d === a.d || (a.d > lastOfMonth && t.d === lastOfMonth);
-  switch (rem.repeat) {
-    case 'daily':
-      return true;
-    case 'weekly':
-      return day.getDay() === anchor.getDay();
-    case 'monthly':
-      return dayMatches;
-    case 'yearly':
-      return t.m === a.m && dayMatches;
-    default:
-      return day.getTime() === anchor.getTime();
-  }
 }
 
 function remindersOn(reminders, key) {
@@ -389,7 +358,8 @@ function openDeleteDialog(rem, occKey, onDelete) {
       h(
         'div',
         { class: 'gb-modal-sub' },
-        '“' + rem.text + '” repeats ' + REPEATS[rem.repeat].label.toLowerCase() + '.'
+        '“' + rem.text + '” repeats ' +
+          (REPEATS[rem.repeat].phrase || REPEATS[rem.repeat].label.toLowerCase()) + '.'
       )
     ),
     h(

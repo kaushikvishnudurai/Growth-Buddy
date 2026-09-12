@@ -42,7 +42,8 @@ fix the doc line if it was wrong. A doc you touch and don't update is worse than
 
 - Backend: **`./run.sh`** (loads `.env`, frees port 8080). Bare `mvnw spring-boot:run` breaks OTP email.
 - Frontend: `npm run dev` (:5173, proxies `/api` + `/ws` to :8080). `npm run lint` before committing.
-- Checks that exist: `node scripts/insights.test.mjs`, `money.js` `_demo()` on Vite DEV,
+- Checks that exist: `node scripts/insights.test.mjs`, `node scripts/recurrence.test.mjs`,
+  `money.js` `_demo()` on Vite DEV,
   `WellnessServiceTest`, `UserClockTest`, and `scripts/ui-audit.mjs` — walks every screen at
   phone + desktop widths, screenshots each, and fails on horizontal overflow or a console
   error. Needs `npm run dev` plus a Chrome started with `--remote-debugging-port=9222`
