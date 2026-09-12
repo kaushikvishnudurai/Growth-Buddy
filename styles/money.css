@@ -1476,6 +1476,119 @@
   width: auto;
 }
 
+/* ---- Star rating (reflection, 12) ---- */
+.gb-stars-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0 4px;
+}
+.gb-stars {
+  position: relative;
+  display: flex;
+  gap: 2px;
+  /* Keeps the five-star glow (::after, z-index -1) behind the stars without
+     letting it fall behind the modal itself. */
+  isolation: isolate;
+}
+.gb-star {
+  /* 28px of glyph + 8px a side = a 44px target without 44px of ink. */
+  padding: 8px;
+  border: 0;
+  background: none;
+  line-height: 0;
+  border-radius: 50%;
+  color: var(--fg3);
+  cursor: pointer;
+  position: relative;
+  transition:
+    color var(--dur-fast),
+    transform var(--dur-fast);
+}
+.gb-star:active {
+  transform: scale(0.9);
+}
+.gb-star:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+.gb-star.is-on {
+  color: var(--sun-500);
+}
+.gb-star.is-on svg {
+  fill: currentColor;
+}
+.gb-stars.just-picked .gb-star.is-on {
+  animation: gb-star-pop var(--dur-base) var(--ease-bounce) both;
+  animation-delay: var(--gb-star-delay, 0ms);
+}
+@keyframes gb-star-pop {
+  0% {
+    transform: scale(0.55);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+/* Five stars earns one warm flare behind the row. */
+.gb-stars.is-full.just-picked::after {
+  content: '';
+  position: absolute;
+  inset: -12px -18px;
+  z-index: -1;
+  border-radius: var(--radius-pill);
+  background: radial-gradient(closest-side, rgba(255, 176, 32, 0.32), transparent);
+  animation: gb-star-flare 620ms var(--ease-out) both;
+  pointer-events: none;
+}
+@keyframes gb-star-flare {
+  0% {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  45% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.18);
+  }
+}
+.gb-stars-caption {
+  font-weight: 800;
+  font-size: 0.875rem;
+  color: var(--fg2);
+  min-height: 1.3em;
+}
+.gb-stars-caption[data-level='low'] {
+  color: var(--coral-600);
+}
+.gb-stars-caption[data-level='high'] {
+  color: var(--leaf-600);
+}
+.gb-stars-caption.just-swapped {
+  animation: gb-star-caption-in var(--dur-base) var(--ease-out) both;
+}
+@keyframes gb-star-caption-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gb-stars.just-picked .gb-star.is-on,
+  .gb-stars.is-full.just-picked::after,
+  .gb-stars-caption.just-swapped {
+    animation: none;
+  }
+}
+
 /* ---- Responsive ---- */
 @media (max-width: 540px) {
   .gb-money {

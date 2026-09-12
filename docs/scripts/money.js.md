@@ -1,4 +1,4 @@
-# scripts/money.js — Money Buddy (4872 lines)
+# scripts/money.js — Money Buddy (4964 lines)
 
 Exports: `emptyMoney()`, `normalizeMoney(m)`, `MoneyCustomisePane(money, save)`, `ScreenMoney`, `MoneyHomeCard`.
 

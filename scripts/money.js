@@ -1983,6 +1983,78 @@ function commitOn(money, save, mutator) {
   save(next);
 }
 
+/* Five stars instead of a 1–5 number strip: same { node, get() } contract as
+   segmented(), so the caller can't tell which control it got.
+
+   The caption is not decoration — it is the accessible half of the rating.
+   Amber-on-grey alone never says what a 2 means, and the old label had to
+   spell out "1 = regret, 5 = glad I bought it" for exactly that reason. */
+const SAT_WORDS = {
+  1: 'Regret it',
+  2: 'Could have skipped it',
+  3: 'It’s fine',
+  4: 'Glad I bought it',
+  5: 'Worth every bit',
+};
+
+function starRating(initial) {
+  let value = Number(initial) || 4;
+  const caption = h('div', { class: 'gb-stars-caption', 'aria-live': 'polite' });
+  const stars = [];
+  const row = h('div', {
+    class: 'gb-stars',
+    role: 'radiogroup',
+    'aria-label': 'How satisfied, 1 to 5',
+  });
+
+  function paint(picked) {
+    stars.forEach((btn, i) => {
+      const on = i < value;
+      btn.classList.toggle('is-on', on);
+      btn.setAttribute('aria-checked', String(i + 1 === value));
+      // Light up left to right, 40ms a star — all five popping at once reads
+      // as a flicker rather than a fill.
+      btn.style.setProperty('--gb-star-delay', picked && on ? i * 40 + 'ms' : '0ms');
+    });
+    caption.textContent = SAT_WORDS[value];
+    caption.dataset.level = value <= 2 ? 'low' : value >= 4 ? 'high' : 'mid';
+    if (!picked) return;
+    // Re-tapping the same rating has to replay the pop, so restart the
+    // animations by hand instead of relying on the class changing.
+    row.classList.remove('just-picked');
+    caption.classList.remove('just-swapped');
+    void row.offsetWidth;
+    row.classList.toggle('is-full', value === 5);
+    row.classList.add('just-picked');
+    caption.classList.add('just-swapped');
+  }
+
+  [1, 2, 3, 4, 5].forEach((n) => {
+    const btn = h(
+      'button',
+      {
+        type: 'button',
+        class: 'gb-star',
+        role: 'radio',
+        'aria-label': n + ' out of 5 — ' + SAT_WORDS[n],
+        onclick: () => {
+          value = n;
+          paint(true);
+        },
+      },
+      Icon('star', { size: 28, sw: 2 })
+    );
+    stars.push(btn);
+    row.appendChild(btn);
+  });
+  paint(false);
+
+  return {
+    node: h('div', { class: 'gb-stars-wrap' }, row, caption),
+    get: () => String(value),
+  };
+}
+
 function openReflection(money, save, expenseId) {
   const reason = h('input', {
     type: 'text',
@@ -1997,10 +2069,7 @@ function openReflection(money, save, expenseId) {
     ],
     'yes'
   );
-  const sat = segmented(
-    [1, 2, 3, 4, 5].map((n) => ({ value: String(n), label: String(n) })),
-    '4'
-  );
+  const sat = starRating(4);
   openMoneyModal({
     title: 'Quick reflection',
     sub: 'A quick note on why you bought it. Helps you spot patterns later.',
@@ -2011,7 +2080,7 @@ function openReflection(money, save, expenseId) {
       reason,
       h('div', { class: 'gb-field-label' }, 'Planned buy or impulse?'),
       planned.node,
-      h('div', { class: 'gb-field-label' }, 'How satisfied? 1 = regret, 5 = glad I bought it'),
+      h('div', { class: 'gb-field-label' }, 'How do you feel about it?'),
       sat.node
     ),
     primary: 'Save reflection',

@@ -1,4 +1,4 @@
-# styles/money.css — Money Buddy styles (1502 lines)
+# styles/money.css — Money Buddy styles (1615 lines)
 
 Reuses the app's tokens, cards and buttons. Signature elements: the "safe to spend" hero ring and a
 growth/sprout motif. All classes are `gb-money-*`. Numbers in the banners map to the Money feature
@@ -41,7 +41,8 @@ list (e.g. "(14)" = financial health).
 | 1363 | Simulator (23) | coach |
 | 1388 | Reflection dot (12) | expense rows |
 | 1396 | Home widget (mini card) | `MoneyHomeCard` |
-| 1479 | Responsive | — |
+| 1479 | Star rating (reflection, 12) — `.gb-stars` + its caption; the amber fill is decoration, the caption carries the meaning | reflection modal |
+| 1592 | Responsive | — |
 
 Threshold colours: `is-near` at ≥80% of a budget, `is-over` above 100% — the JS in
 `scripts/money.js` (`tabBudgets`) picks these class names, so keep the names in sync.

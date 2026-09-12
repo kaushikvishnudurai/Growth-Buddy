@@ -12,7 +12,7 @@ open — don't go looking for a doc that isn't in this list.
 | Need to work on | Read first | Instead of |
 |---|---|---|
 | app shell, state, routing, any API call, settings, auth views | `docs/scripts/app.js.md` | 6727 lines |
-| Money Buddy | `docs/scripts/money.js.md` | 4872 |
+| Money Buddy | `docs/scripts/money.js.md` | 4964 |
 | Home screen / widgets / mini calendar | `docs/scripts/dashboard.js.md` | 1712 |
 | Family tab, meal planner | `docs/scripts/family.js.md` | 2032 |
 | Growth Circle, mentorship | `docs/scripts/circle.js.md` | 1210 |
@@ -22,7 +22,7 @@ open — don't go looking for a doc that isn't in this list.
 | Goals | `docs/scripts/goals.js.md` | 690 |
 | Report screen, charts | `docs/scripts/report.js.md` | 462 |
 | any styling | `docs/styles/app.css.md` | 6952 |
-| Money styling | `docs/styles/money.css.md` | 1502 |
+| Money styling | `docs/styles/money.css.md` | 1615 |
 | colors, type, theming | `docs/styles/tokens.css.md` | 359 |
 | the Home mini calendar's CSS | `docs/styles/mini-calendar.css.md` | 375 |
 | family/meal-plan backend | `docs/backend/FamilyService.java.md` | 1492 |
