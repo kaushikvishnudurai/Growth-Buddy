@@ -5254,8 +5254,19 @@ body {
 
   /* Habits, Food, Circle — single-column screens. Cap the width for readability
      but LEFT-align to the header's 40px inset (not centered) so the content sits
-     under the title instead of floating in the middle of a wide canvas. */
-  .gb-scroll > .gb-rise:not(.gb-goals):not(.gb-mentor) {
+     under the title instead of floating in the middle of a wide canvas.
+
+     Wrapped in :where() so the whole selector weighs ZERO. It is a fallback for
+     screens that declare no desktop width of their own, and it was written as a
+     plain selector with two :not()s — which made it (0,4,0) and quietly beat
+     every screen that DID declare one. Home asks for `max-width: 1600px` and a
+     440px column flow; it was rendering at 900px hard against the left edge with
+     324px of dead canvas beside it, under a week-review banner that spans the
+     full 1264px because it isn't a .gb-rise. Calendar's 1180px lost the same way.
+     Excluding one more class by name would have fixed Home and left Calendar
+     broken — a fallback has to lose to anything specific, not to a list of
+     names someone remembered. */
+  :where(.gb-scroll) > :where(.gb-rise:not(.gb-goals):not(.gb-mentor)) {
     max-width: 900px;
     margin-left: 40px;
     margin-right: auto;
