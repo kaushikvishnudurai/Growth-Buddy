@@ -47,6 +47,7 @@ public class DataSeeder implements CommandLineRunner {
     @Transactional
     public void run(String... args) {
         ensureReminderTables();
+        ensureThrottleTables();
         // Don't plant a predictable demo account (well-known id + email) in prod.
         if (!prod) {
             seedDemoUser();
@@ -87,6 +88,35 @@ public class DataSeeder implements CommandLineRunner {
                 alter table calendar_reminders
                     modify column repeat_freq varchar(16) not null,
                     modify column tag varchar(16) not null
+                """).executeUpdate();
+    }
+
+    /**
+     * The throttle counters. Created here for the same reason the reminder tables
+     * are: they are plain JDBC, not JPA entities, so {@code ddl-auto: update}
+     * never sees them and a fresh database would have the limiters throwing on
+     * every login instead of limiting anything.
+     */
+    private void ensureThrottleTables() {
+        em.createNativeQuery("""
+                create table if not exists rate_limit_counters (
+                    bucket_key char(64) not null,
+                    window_start bigint not null,
+                    hits int not null default 0,
+                    primary key (bucket_key, window_start),
+                    index ix_rate_limit_window (window_start)
+                ) engine=InnoDB default charset=utf8mb4 collate=utf8mb4_unicode_ci
+                """).executeUpdate();
+
+        em.createNativeQuery("""
+                create table if not exists login_attempts (
+                    attempt_key char(64) not null,
+                    failures int not null default 0,
+                    locked_until_ms bigint not null default 0,
+                    updated_at_ms bigint not null default 0,
+                    primary key (attempt_key),
+                    index ix_login_attempts_idle (updated_at_ms)
+                ) engine=InnoDB default charset=utf8mb4 collate=utf8mb4_unicode_ci
                 """).executeUpdate();
     }
 

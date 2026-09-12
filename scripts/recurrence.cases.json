@@ -1,0 +1,45 @@
+{
+  "_comment": [
+    "The one list of recurrence cases BOTH implementations are tested against.",
+    "scripts/recurrence.test.mjs reads it, and so does ReminderServiceOccursOnTest",
+    "on the Java side — which exists only because the WhatsApp scheduler cannot",
+    "import JavaScript. Add a case here and both sides have to satisfy it, so the",
+    "two can no longer drift in silence the way they did before.",
+    "",
+    "reminder.date is the anchor. workWeek applies only to the 'weekdays' repeat;",
+    "omitted means the default, Mon-Fri."
+  ],
+  "cases": [
+    { "why": "one-off fires on its own day", "reminder": { "date": "2026-09-14", "repeat": "none" }, "day": "2026-09-14", "expect": true },
+    { "why": "one-off, the next day", "reminder": { "date": "2026-09-14", "repeat": "none" }, "day": "2026-09-15", "expect": false },
+    { "why": "daily covers the weekend", "reminder": { "date": "2026-09-14", "repeat": "daily" }, "day": "2026-09-19", "expect": true },
+    { "why": "weekly = the same weekday", "reminder": { "date": "2026-09-14", "repeat": "weekly" }, "day": "2026-09-21", "expect": true },
+    { "why": "weekly, a different weekday", "reminder": { "date": "2026-09-14", "repeat": "weekly" }, "day": "2026-09-22", "expect": false },
+
+    { "why": "Mon-Fri: Monday", "reminder": { "date": "2026-09-14", "repeat": "weekdays" }, "day": "2026-09-14", "expect": true },
+    { "why": "Mon-Fri: Friday", "reminder": { "date": "2026-09-14", "repeat": "weekdays" }, "day": "2026-09-18", "expect": true },
+    { "why": "Mon-Fri: Saturday is off", "reminder": { "date": "2026-09-14", "repeat": "weekdays" }, "day": "2026-09-19", "expect": false },
+    { "why": "Mon-Fri: Sunday is off", "reminder": { "date": "2026-09-14", "repeat": "weekdays" }, "day": "2026-09-20", "expect": false },
+    { "why": "anchored on a Saturday, its own day does not fire", "reminder": { "date": "2026-09-12", "repeat": "weekdays" }, "day": "2026-09-12", "expect": false },
+    { "why": "anchored on a Saturday, the Monday after does", "reminder": { "date": "2026-09-12", "repeat": "weekdays" }, "day": "2026-09-14", "expect": true },
+
+    { "why": "Sun-Thu: Sunday is a working day", "reminder": { "date": "2026-09-13", "repeat": "weekdays" }, "day": "2026-09-13", "workWeek": "sun_thu", "expect": true },
+    { "why": "Sun-Thu: Thursday", "reminder": { "date": "2026-09-13", "repeat": "weekdays" }, "day": "2026-09-17", "workWeek": "sun_thu", "expect": true },
+    { "why": "Sun-Thu: Friday is the weekend", "reminder": { "date": "2026-09-13", "repeat": "weekdays" }, "day": "2026-09-18", "workWeek": "sun_thu", "expect": false },
+    { "why": "Sun-Thu: Saturday is the weekend", "reminder": { "date": "2026-09-13", "repeat": "weekdays" }, "day": "2026-09-19", "workWeek": "sun_thu", "expect": false },
+    { "why": "Mon-Sat: Saturday is a working day", "reminder": { "date": "2026-09-14", "repeat": "weekdays" }, "day": "2026-09-19", "workWeek": "mon_sat", "expect": true },
+    { "why": "Mon-Sat: Sunday is still off", "reminder": { "date": "2026-09-14", "repeat": "weekdays" }, "day": "2026-09-20", "workWeek": "mon_sat", "expect": false },
+    { "why": "an unknown work week falls back to Mon-Fri", "reminder": { "date": "2026-09-14", "repeat": "weekdays" }, "day": "2026-09-19", "workWeek": "nonsense", "expect": false },
+
+    { "why": "until stops a weekdays series", "reminder": { "date": "2026-09-14", "repeat": "weekdays", "until": "2026-09-16" }, "day": "2026-09-17", "expect": false },
+    { "why": "a skipped occurrence does not fire", "reminder": { "date": "2026-09-14", "repeat": "weekdays", "skip": ["2026-09-16"] }, "day": "2026-09-16", "expect": false },
+    { "why": "nothing fires before the anchor", "reminder": { "date": "2026-09-14", "repeat": "weekdays" }, "day": "2026-09-11", "expect": false },
+    { "why": "from trims the front of a series", "reminder": { "date": "2026-09-14", "repeat": "daily", "from": "2026-09-16" }, "day": "2026-09-15", "expect": false },
+
+    { "why": "monthly anchored on the 31st clamps to Feb 28", "reminder": { "date": "2026-01-31", "repeat": "monthly" }, "day": "2026-02-28", "expect": true },
+    { "why": "...and not to Feb 27", "reminder": { "date": "2026-01-31", "repeat": "monthly" }, "day": "2026-02-27", "expect": false },
+    { "why": "...and still lands on a real 31st", "reminder": { "date": "2026-01-31", "repeat": "monthly" }, "day": "2026-03-31", "expect": true },
+    { "why": "a leap-day yearly falls back to Feb 28 in a common year", "reminder": { "date": "2028-02-29", "repeat": "yearly" }, "day": "2029-02-28", "expect": true },
+    { "why": "...and still lands on a real Feb 29", "reminder": { "date": "2028-02-29", "repeat": "yearly" }, "day": "2032-02-29", "expect": true }
+  ]
+}

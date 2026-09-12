@@ -7,11 +7,13 @@ import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Collections;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import org.springframework.beans.factory.annotation.Value;
@@ -37,12 +39,33 @@ public class SessionService {
     private static final long CACHE_TTL_MS = 60_000L;
     /** Only persist lastUsedAt when it's older than this — kills per-request writes. */
     private static final Duration LAST_USED_WRITE_INTERVAL = Duration.ofMinutes(10);
-    /** Crude bound on the cache; on overflow we clear it (entries rebuild in one TTL). */
+    /** Hard bound on the cache; past it the least-recently-used entry is evicted. */
     private static final int CACHE_MAX = 100_000;
 
     private record CacheEntry(UUID userId, long cachedAtMs) {}
 
-    private final ConcurrentHashMap<String, CacheEntry> tokenCache = new ConcurrentHashMap<>();
+    /**
+     * Token hash to user, bounded LRU.
+     *
+     * <p>This was a ConcurrentHashMap that {@code clear()}ed itself whole on
+     * overflow. It rebuilt within one TTL, so nothing broke — but it threw away
+     * 100,000 live entries to make room for one, and the instant it did, every
+     * request in flight went back to the database at once. An LRU evicts the one
+     * entry nobody has asked for instead.
+     *
+     * <p>{@code LinkedHashMap} in access order is the LRU the JDK already ships;
+     * it is not thread-safe, so every read and write goes through the map's own
+     * monitor via {@link Collections#synchronizedMap}. A hit is a hash lookup
+     * inside a lock that no I/O ever runs under, which is cheaper than the
+     * database round trip it replaces.
+     */
+    private final Map<String, CacheEntry> tokenCache = Collections.synchronizedMap(
+            new LinkedHashMap<>(1024, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, CacheEntry> eldest) {
+                    return size() > CACHE_MAX;
+                }
+            });
 
     private final SessionRepository sessions;
     private final String hmacSecret;
@@ -138,9 +161,6 @@ public class SessionService {
         if (s.getLastUsedAt() == null || s.getLastUsedAt().isBefore(now.minus(LAST_USED_WRITE_INTERVAL))) {
             s.setLastUsedAt(now);
             sessions.save(s);
-        }
-        if (tokenCache.size() > CACHE_MAX) {
-            tokenCache.clear(); // ponytail: crude bound; entries rebuild within one TTL
         }
         tokenCache.put(hash, new CacheEntry(s.getUserId(), nowMs));
         return Optional.of(s.getUserId());

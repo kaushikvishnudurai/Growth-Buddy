@@ -43,16 +43,24 @@ fix the doc line if it was wrong. A doc you touch and don't update is worse than
 - Backend: **`./run.sh`** (loads `.env`, frees port 8080). Bare `mvnw spring-boot:run` breaks OTP email.
 - Frontend: `npm run dev` (:5173, proxies `/api` + `/ws` to :8080). `npm run lint` before committing.
 - Checks that exist: `node scripts/insights.test.mjs`, `node scripts/recurrence.test.mjs`,
-  `money.js` `_demo()` on Vite DEV,
-  `WellnessServiceTest`, `UserClockTest`, and `scripts/ui-audit.mjs` — walks every screen at
+  `money.js` `_demo()` on Vite DEV, `./mvnw test` (115 tests — including the three that guard
+  invariants rather than code: `SchemaCoverageTest`, `AccountDeletionCoverageTest`,
+  `SharedRecurrenceCasesTest`), and `scripts/ui-audit.mjs` — walks every screen at
   phone + desktop widths, screenshots each, and fails on horizontal overflow or a console
   error. Needs `npm run dev` plus a Chrome started with `--remote-debugging-port=9222`
   (`puppeteer.launch()` dies here with an empty stderr; attaching works).
 - After web changes, the Capacitor app needs `npm run sync` in `../Growth-Buddy-Mobile`.
-- **Bump `__GB_BUILD__` in `vite.config.js` by one before every push.** It's what the
-  console prints at boot (`window.GB_BUILD`), and the only way to tell a live build from a
-  cached one on someone's phone.
+- **`__GB_BUILD__` derives itself** from `git rev-list --count HEAD` minus an offset — no
+  bumping. It's what the console prints at boot (`window.GB_BUILD`), and the only way to tell a
+  live build from a cached one on someone's phone. Outside a git checkout it reports 0
+  ("unknown"); override with `GB_BUILD=<n> npm run build`.
 - `grep 'ponytail:'` for deliberate simplifications and their upgrade paths.
 - New icon → add it to `scripts/icons.js`. New screen → `SCREENS` in `app.js` (+ `NAV_CATALOG` in
   `gb-kit.js` for a nav slot). New entity → add the table to `tableCreationQueries.sql` too;
-  `ddl-auto: update` hides the omission in dev and breaks prod.
+  `ddl-auto: update` hides the omission in dev and breaks prod, and `SchemaCoverageTest` now
+  fails the build if you forget. A table that holds a `user_id` also belongs in
+  `AuthService.USER_OWNED_TABLES`, or a deleted account leaves its rows behind —
+  `AccountDeletionCoverageTest` checks that one.
+- **Recurrence lives twice** (`scripts/recurrence.js` + `ReminderService.occursOn`, because the
+  WhatsApp scheduler can't import JS). Add cases to **`scripts/recurrence.cases.json`** — both
+  test suites read it, so neither side can drift alone.

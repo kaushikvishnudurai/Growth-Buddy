@@ -1,29 +1,37 @@
 package com.growthbuddy.common;
 
-import java.util.ArrayDeque;
-import java.util.Deque;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * In-memory sliding-window rate limiter. No external dependencies.
- * Thread-safe: each bucket is synchronized individually so unrelated
- * keys don't block each other.
+ * Fixed-window rate limiter backed by {@link ThrottleStore}, so the limit is the
+ * limit across every instance rather than per process.
  *
- * <p>A periodic sweep drops idle buckets so the map can't grow without bound —
- * one entry per client IP would otherwise be a slow memory leak (and a
- * spoofed-IP memory-DoS vector).
+ * <p>This was a sliding window held in a {@code ConcurrentHashMap}. Sliding is
+ * the more precise shape, but it needs every timestamp kept, and keeping them in
+ * a shared table costs a row per request. A fixed window needs one counter per
+ * key per window, which an atomic {@code INSERT … ON DUPLICATE KEY UPDATE} does
+ * in a single statement.
+ *
+ * <p>ponytail: the trade is the window boundary. A caller can spend its whole
+ * allowance at the end of one window and again at the start of the next, so the
+ * true worst case is 2x the limit over a straddling interval — 20 login attempts
+ * in a moment rather than 10. That is well inside what the per-account
+ * {@link LoginAttemptGuard} is there to stop, which is why it is acceptable
+ * here. If a burst at the boundary ever matters, keep two adjacent counters and
+ * weight the older one by how much of it the window still covers.
  */
 @Component
 public class RateLimiter {
 
-    /** Buckets with no timestamp newer than this are evicted by the sweep. */
-    private static final long IDLE_EVICT_MS = 10 * 60_000L;
+    /** Windows that closed more than this long ago are dropped by the sweep. */
+    private static final long RETAIN_MS = 60 * 60_000L;
 
-    private final ConcurrentHashMap<String, Deque<Long>> buckets = new ConcurrentHashMap<>();
+    private final ThrottleStore store;
+
+    public RateLimiter(ThrottleStore store) {
+        this.store = store;
+    }
 
     /**
      * Returns {@code true} when the request is within the allowed rate;
@@ -34,32 +42,21 @@ public class RateLimiter {
      * @param windowMs sliding window width in milliseconds
      */
     public boolean allow(String key, int limit, long windowMs) {
-        long now = System.currentTimeMillis();
-        Deque<Long> bucket = buckets.computeIfAbsent(key, k -> new ArrayDeque<>());
-        synchronized (bucket) {
-            while (!bucket.isEmpty() && now - bucket.peekFirst() > windowMs) {
-                bucket.pollFirst();
-            }
-            if (bucket.size() >= limit) {
-                return false;
-            }
-            bucket.addLast(now);
-            return true;
-        }
+        long windowStart = windowStartFor(System.currentTimeMillis(), windowMs);
+        return store.countHit(key, windowStart) <= limit;
     }
 
-    /** Evict buckets whose newest entry is older than the idle threshold. */
-    @Scheduled(fixedDelay = IDLE_EVICT_MS)
+    /** The window a moment falls in. Pure, so the bucketing is testable on its own. */
+    static long windowStartFor(long nowMs, long windowMs) {
+        return nowMs - Math.floorMod(nowMs, windowMs);
+    }
+
+    // initialDelay, not just fixedDelay: a scheduled task fires the moment the
+    // context is up, which on a fresh database is BEFORE DataSeeder has created
+    // the table — a stack trace at every first boot, sweeping nothing. There is
+    // never anything to sweep at startup anyway.
+    @Scheduled(fixedDelay = RETAIN_MS, initialDelay = RETAIN_MS)
     void sweep() {
-        long cutoff = System.currentTimeMillis() - IDLE_EVICT_MS;
-        for (Iterator<Map.Entry<String, Deque<Long>>> it = buckets.entrySet().iterator(); it.hasNext();) {
-            Deque<Long> bucket = it.next().getValue();
-            synchronized (bucket) {
-                Long last = bucket.peekLast();
-                if (last == null || last < cutoff) {
-                    it.remove();
-                }
-            }
-        }
+        store.sweepCounters(System.currentTimeMillis() - RETAIN_MS);
     }
 }

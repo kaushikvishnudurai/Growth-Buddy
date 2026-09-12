@@ -58,7 +58,12 @@ Per feature: `XController` (routes only) → `XService` (logic, `@Transactional`
 (ThreadLocal). It is registered on `/api/**` and **the only way past it is an exact match in
 `ANONYMOUS_PATHS`** — don't add a second escape based on the raw URI, which is spelled differently
 from the path Spring routed on and once let `/%61pi/…` through unauthenticated.
-`RateLimiter` is an in-memory sliding window, no deps, per-bucket synchronized;
+`RateLimiter` is a fixed-window counter in the **shared database** (`ThrottleStore` →
+`JdbcThrottleStore`), not a HashMap — it and `LoginAttemptGuard` were both per-process, which made
+every limit per-instance and forgave every account lockout on restart.
+`LoginAttemptGuard.recordFailure` commits in `REQUIRES_NEW`, load-bearing: `AuthService.login` is
+`@Transactional` and records the failure immediately before throwing, so on the caller's
+transaction the count would roll back with the rejection it exists to count.
 `RateLimitInterceptor` = per-IP on auth routes, `AiRateLimitInterceptor` = 40/hour per user on the
 OpenAI-backed routes. That last one is an **allowlist of paths in `WebConfig`, and a new AI endpoint
 is unmetered until it is added** — the four vision endpoints (food photo-estimate ×2, family
@@ -73,6 +78,12 @@ chunked write too (411), since that is the one shape a Content-Length check cann
 `GlobalExceptionHandler` keeps Jackson's message off the wire but **logs it** — a malformed body
 used to 400 with no detail to the client and no line in the log, so a wrong enum value was
 undebuggable from either end.
+
+**A "working days" reminder follows the user's week** (`WorkWeek` + `WORK_WEEKS` in
+`scripts/recurrence.js`): Mon–Fri, Sun–Thu or Mon–Sat, stored in the user's `ui_prefs` blob under
+`workWeek` — not its own column, because prod runs `ddl-auto: none`. It is the one `ui_prefs` key
+the **server** reads (the WhatsApp scheduler needs it). On the client it is module state in
+`recurrence.js`, seeded at boot from the cached session and again by `hydrateUiPrefs()`.
 
 **Deleting an account** runs off `AuthService.USER_OWNED_TABLES`, a hand-written list — every table
 with a plain `user_id` column must be in it, and `AccountDeletionCoverageTest` reads

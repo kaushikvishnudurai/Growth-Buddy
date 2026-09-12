@@ -12,12 +12,15 @@ import org.springframework.http.HttpStatus;
  * unlimited number of password guesses, so the three ways it could quietly stop
  * working each get a line here: letting the 6th guess through, never escalating,
  * and never letting the real owner back in.
+ *
+ * <p>Driven through {@link FakeThrottleStore}: the counters live in the database
+ * now, and the policy these tests pin down is the same either way.
  */
 class LoginAttemptGuardTest {
 
     @Test
     void fiveGuessesAreFreeAndTheSixthLocks() {
-        LoginAttemptGuard guard = new LoginAttemptGuard();
+        LoginAttemptGuard guard = new LoginAttemptGuard(new FakeThrottleStore());
         for (int i = 0; i < 5; i++) {
             guard.check("login:ada@example.com");   // must not throw
             guard.recordFailure("login:ada@example.com");
@@ -32,7 +35,7 @@ class LoginAttemptGuardTest {
 
     @Test
     void eachFurtherGuessDoublesTheWait() {
-        LoginAttemptGuard guard = new LoginAttemptGuard();
+        LoginAttemptGuard guard = new LoginAttemptGuard(new FakeThrottleStore());
         for (int i = 0; i < 6; i++) guard.recordFailure("login:ada@example.com");
         long first = guard.retryAfterMs("login:ada@example.com");
         guard.recordFailure("login:ada@example.com");
@@ -46,7 +49,7 @@ class LoginAttemptGuardTest {
 
     @Test
     void gettingItRightClearsTheCount() {
-        LoginAttemptGuard guard = new LoginAttemptGuard();
+        LoginAttemptGuard guard = new LoginAttemptGuard(new FakeThrottleStore());
         for (int i = 0; i < 5; i++) guard.recordFailure("login:ada@example.com");
         guard.recordSuccess("login:ada@example.com");
         for (int i = 0; i < 5; i++) {
@@ -58,7 +61,7 @@ class LoginAttemptGuardTest {
 
     @Test
     void oneAccountsLockoutDoesNotTouchAnother() {
-        LoginAttemptGuard guard = new LoginAttemptGuard();
+        LoginAttemptGuard guard = new LoginAttemptGuard(new FakeThrottleStore());
         for (int i = 0; i < 10; i++) guard.recordFailure("login:ada@example.com");
         guard.check("login:grace@example.com");   // must not throw
         assertEquals(0, guard.retryAfterMs("login:grace@example.com"));

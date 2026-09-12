@@ -1,7 +1,9 @@
 package com.growthbuddy.reminder;
 
 import com.growthbuddy.common.ApiException;
+import com.growthbuddy.common.WorkWeek;
 import com.growthbuddy.user.UserClock;
+import com.growthbuddy.user.UserRepository;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -19,10 +21,12 @@ public class ReminderService {
 
     private final CalendarReminderRepository repo;
     private final UserClock clock;
+    private final UserRepository users;
 
-    public ReminderService(CalendarReminderRepository repo, UserClock clock) {
+    public ReminderService(CalendarReminderRepository repo, UserClock clock, UserRepository users) {
         this.repo = repo;
         this.clock = clock;
+        this.users = users;
     }
 
     @Transactional(readOnly = true)
@@ -74,10 +78,13 @@ public class ReminderService {
             throw ApiException.badRequest("valid 'from' and 'to' dates are required");
         }
         List<CalendarReminder> reminders = repo.findByUserId(userId);
+        // Resolved once for the whole expansion: it is the same answer for every
+        // reminder and every day, and a lookup per cell would be thousands.
+        WorkWeek workWeek = workWeekOf(userId);
         List<OccurrenceResponse> out = new ArrayList<>();
         for (LocalDate day = from; !day.isAfter(to); day = day.plusDays(1)) {
             for (CalendarReminder r : reminders) {
-                if (occursOn(r, day)) {
+                if (occursOn(r, day, workWeek)) {
                     out.add(OccurrenceResponse.of(r, day));
                 }
             }
@@ -137,8 +144,13 @@ public class ReminderService {
         }
     }
 
+    /** The acting user's working week, or the default when they never chose one. */
+    public WorkWeek workWeekOf(UUID userId) {
+        return users.findById(userId).map(u -> WorkWeek.fromPrefs(u.getUiPrefs())).orElse(WorkWeek.DEFAULT);
+    }
+
     /** Does {@code r} occur on {@code day}? Honors recurrence, bounds, and skips. */
-    boolean occursOn(CalendarReminder r, LocalDate day) {
+    public boolean occursOn(CalendarReminder r, LocalDate day, WorkWeek workWeek) {
         LocalDate anchor = r.getAnchorDate();
         if (day.isBefore(anchor)) {
             return false;
@@ -159,10 +171,10 @@ public class ReminderService {
                 || (anchor.getDayOfMonth() > lastOfMonth && day.getDayOfMonth() == lastOfMonth);
         return switch (r.getRepeat()) {
             case daily -> true;
-            // Mon-Fri. Deliberately not "whatever the user calls a work week" —
-            // see the note in scripts/recurrence.js, which must agree with this
-            // switch day for day.
-            case weekdays -> day.getDayOfWeek().getValue() <= 5;
+            // The user's working week, not a hardcoded Mon-Fri. scripts/recurrence.js
+            // must agree with this switch day for day; scripts/recurrence.cases.json
+            // is the shared list of cases both sides are tested against.
+            case weekdays -> workWeek.includes(day.getDayOfWeek());
             case weekly -> day.getDayOfWeek() == anchor.getDayOfWeek();
             case monthly -> dayMatches;
             case yearly -> day.getMonth() == anchor.getMonth() && dayMatches;

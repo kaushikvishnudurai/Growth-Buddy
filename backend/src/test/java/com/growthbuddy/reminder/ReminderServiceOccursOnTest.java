@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.growthbuddy.common.WorkWeek;
 import com.growthbuddy.user.UserClock;
 import java.time.LocalDate;
 import java.util.UUID;
@@ -19,7 +20,7 @@ import org.junit.jupiter.api.Test;
  */
 class ReminderServiceOccursOnTest {
 
-    private final ReminderService service = new ReminderService(null, null);
+    private final ReminderService service = new ReminderService(null, null, null);
 
     /* create() asks the clock what day it is for this user, so every create test
        pins "today" instead of hardcoding a date that quietly becomes the past. */
@@ -28,13 +29,18 @@ class ReminderServiceOccursOnTest {
     private static ReminderService serviceWith(CalendarReminderRepository repo) {
         UserClock clock = mock(UserClock.class);
         when(clock.today(any())).thenReturn(TODAY);
-        return new ReminderService(repo, clock);
+        return new ReminderService(repo, clock, null);
     }
 
     private static CalendarReminderRepository savingRepo() {
         CalendarReminderRepository repo = mock(CalendarReminderRepository.class);
         when(repo.save(any())).thenAnswer(i -> i.getArgument(0));
         return repo;
+    }
+
+    /** Every case below is Mon-Fri unless it is about the work week itself. */
+    private boolean occurs(CalendarReminder r, LocalDate day) {
+        return service.occursOn(r, day, WorkWeek.DEFAULT);
     }
 
     private CalendarReminder reminder(LocalDate anchor, RepeatFreq repeat) {
@@ -47,62 +53,62 @@ class ReminderServiceOccursOnTest {
     @Test
     void nonRepeatingOccursOnlyOnAnchor() {
         CalendarReminder r = reminder(LocalDate.of(2026, 6, 15), RepeatFreq.none);
-        assertThat(service.occursOn(r, LocalDate.of(2026, 6, 15))).isTrue();
-        assertThat(service.occursOn(r, LocalDate.of(2026, 6, 16))).isFalse();
+        assertThat(occurs(r, LocalDate.of(2026, 6, 15))).isTrue();
+        assertThat(occurs(r, LocalDate.of(2026, 6, 16))).isFalse();
     }
 
     @Test
     void dailyOccursEveryDayFromAnchor() {
         CalendarReminder r = reminder(LocalDate.of(2026, 6, 15), RepeatFreq.daily);
-        assertThat(service.occursOn(r, LocalDate.of(2026, 6, 15))).isTrue();
-        assertThat(service.occursOn(r, LocalDate.of(2026, 6, 20))).isTrue();
-        assertThat(service.occursOn(r, LocalDate.of(2026, 6, 14))).isFalse(); // before anchor
+        assertThat(occurs(r, LocalDate.of(2026, 6, 15))).isTrue();
+        assertThat(occurs(r, LocalDate.of(2026, 6, 20))).isTrue();
+        assertThat(occurs(r, LocalDate.of(2026, 6, 14))).isFalse(); // before anchor
     }
 
     @Test
     void weeklyMatchesDayOfWeek() {
         // 2026-06-15 is a Monday.
         CalendarReminder r = reminder(LocalDate.of(2026, 6, 15), RepeatFreq.weekly);
-        assertThat(service.occursOn(r, LocalDate.of(2026, 6, 22))).isTrue(); // next Monday
-        assertThat(service.occursOn(r, LocalDate.of(2026, 6, 23))).isFalse(); // Tuesday
+        assertThat(occurs(r, LocalDate.of(2026, 6, 22))).isTrue(); // next Monday
+        assertThat(occurs(r, LocalDate.of(2026, 6, 23))).isFalse(); // Tuesday
     }
 
     @Test
     void monthlyMatchesDayOfMonth() {
         CalendarReminder r = reminder(LocalDate.of(2026, 6, 15), RepeatFreq.monthly);
-        assertThat(service.occursOn(r, LocalDate.of(2026, 7, 15))).isTrue();
-        assertThat(service.occursOn(r, LocalDate.of(2026, 7, 16))).isFalse();
+        assertThat(occurs(r, LocalDate.of(2026, 7, 15))).isTrue();
+        assertThat(occurs(r, LocalDate.of(2026, 7, 16))).isFalse();
     }
 
     @Test
     void yearlyMatchesMonthAndDay() {
         CalendarReminder r = reminder(LocalDate.of(2026, 6, 15), RepeatFreq.yearly);
-        assertThat(service.occursOn(r, LocalDate.of(2027, 6, 15))).isTrue();
-        assertThat(service.occursOn(r, LocalDate.of(2027, 7, 15))).isFalse();
+        assertThat(occurs(r, LocalDate.of(2027, 6, 15))).isTrue();
+        assertThat(occurs(r, LocalDate.of(2027, 7, 15))).isFalse();
     }
 
     @Test
     void untilDateEndsTheSeries() {
         CalendarReminder r = reminder(LocalDate.of(2026, 6, 15), RepeatFreq.daily);
         r.setUntilDate(LocalDate.of(2026, 6, 17));
-        assertThat(service.occursOn(r, LocalDate.of(2026, 6, 17))).isTrue();
-        assertThat(service.occursOn(r, LocalDate.of(2026, 6, 18))).isFalse();
+        assertThat(occurs(r, LocalDate.of(2026, 6, 17))).isTrue();
+        assertThat(occurs(r, LocalDate.of(2026, 6, 18))).isFalse();
     }
 
     @Test
     void fromDateDelaysTheSeries() {
         CalendarReminder r = reminder(LocalDate.of(2026, 6, 15), RepeatFreq.daily);
         r.setFromDate(LocalDate.of(2026, 6, 18));
-        assertThat(service.occursOn(r, LocalDate.of(2026, 6, 17))).isFalse();
-        assertThat(service.occursOn(r, LocalDate.of(2026, 6, 18))).isTrue();
+        assertThat(occurs(r, LocalDate.of(2026, 6, 17))).isFalse();
+        assertThat(occurs(r, LocalDate.of(2026, 6, 18))).isTrue();
     }
 
     @Test
     void skipDaysAreExcluded() {
         CalendarReminder r = reminder(LocalDate.of(2026, 6, 15), RepeatFreq.daily);
         r.setSkipDays(Set.of(LocalDate.of(2026, 6, 16)));
-        assertThat(service.occursOn(r, LocalDate.of(2026, 6, 16))).isFalse();
-        assertThat(service.occursOn(r, LocalDate.of(2026, 6, 17))).isTrue();
+        assertThat(occurs(r, LocalDate.of(2026, 6, 16))).isFalse();
+        assertThat(occurs(r, LocalDate.of(2026, 6, 17))).isTrue();
     }
 
     /* ---- Month-end anchors ----
@@ -112,29 +118,29 @@ class ReminderServiceOccursOnTest {
     @Test
     void monthlyAnchorOnThe31stClampsToShorterMonths() {
         CalendarReminder rent = reminder(LocalDate.of(2026, 1, 31), RepeatFreq.monthly);
-        assertThat(service.occursOn(rent, LocalDate.of(2026, 1, 31))).isTrue();
-        assertThat(service.occursOn(rent, LocalDate.of(2026, 3, 31))).isTrue();
+        assertThat(occurs(rent, LocalDate.of(2026, 1, 31))).isTrue();
+        assertThat(occurs(rent, LocalDate.of(2026, 3, 31))).isTrue();
         // February has no 31st — clamp to its last day instead of never firing.
-        assertThat(service.occursOn(rent, LocalDate.of(2026, 2, 28))).isTrue();
-        assertThat(service.occursOn(rent, LocalDate.of(2026, 4, 30))).isTrue();
+        assertThat(occurs(rent, LocalDate.of(2026, 2, 28))).isTrue();
+        assertThat(occurs(rent, LocalDate.of(2026, 4, 30))).isTrue();
         // ...but only once, and only where the anchor day is genuinely missing.
-        assertThat(service.occursOn(rent, LocalDate.of(2026, 2, 27))).isFalse();
-        assertThat(service.occursOn(rent, LocalDate.of(2026, 3, 30))).isFalse();
+        assertThat(occurs(rent, LocalDate.of(2026, 2, 27))).isFalse();
+        assertThat(occurs(rent, LocalDate.of(2026, 3, 30))).isFalse();
     }
 
     @Test
     void monthlyClampsToTheLastDayOfALeapFebruary() {
         CalendarReminder r = reminder(LocalDate.of(2024, 1, 30), RepeatFreq.monthly);
-        assertThat(service.occursOn(r, LocalDate.of(2024, 2, 29))).isTrue();
-        assertThat(service.occursOn(r, LocalDate.of(2024, 2, 28))).isFalse();
+        assertThat(occurs(r, LocalDate.of(2024, 2, 29))).isTrue();
+        assertThat(occurs(r, LocalDate.of(2024, 2, 28))).isFalse();
     }
 
     @Test
     void yearlyLeapDayFallsBackToFeb28InCommonYears() {
         CalendarReminder anniversary = reminder(LocalDate.of(2024, 2, 29), RepeatFreq.yearly);
-        assertThat(service.occursOn(anniversary, LocalDate.of(2028, 2, 29))).isTrue();
-        assertThat(service.occursOn(anniversary, LocalDate.of(2026, 2, 28))).isTrue();
-        assertThat(service.occursOn(anniversary, LocalDate.of(2026, 3, 1))).isFalse();
+        assertThat(occurs(anniversary, LocalDate.of(2028, 2, 29))).isTrue();
+        assertThat(occurs(anniversary, LocalDate.of(2026, 2, 28))).isTrue();
+        assertThat(occurs(anniversary, LocalDate.of(2026, 3, 1))).isFalse();
     }
 
     @Test
@@ -142,21 +148,21 @@ class ReminderServiceOccursOnTest {
         CalendarReminder r = reminder(LocalDate.of(2026, 1, 31), RepeatFreq.monthly);
 
         r.setUntilDate(LocalDate.of(2026, 2, 1));
-        assertThat(service.occursOn(r, LocalDate.of(2026, 2, 28))).isFalse();
+        assertThat(occurs(r, LocalDate.of(2026, 2, 28))).isFalse();
 
         r.setUntilDate(null);
         r.setSkipDays(Set.of(LocalDate.of(2026, 2, 28)));
-        assertThat(service.occursOn(r, LocalDate.of(2026, 2, 28))).isFalse();
+        assertThat(occurs(r, LocalDate.of(2026, 2, 28))).isFalse();
 
         r.setSkipDays(new java.util.HashSet<>());
         r.setFromDate(LocalDate.of(2026, 3, 1));
-        assertThat(service.occursOn(r, LocalDate.of(2026, 2, 28))).isFalse();
+        assertThat(occurs(r, LocalDate.of(2026, 2, 28))).isFalse();
     }
 
     @Test
     void neverFiresBeforeItsAnchor() {
         CalendarReminder r = reminder(LocalDate.of(2026, 1, 31), RepeatFreq.monthly);
-        assertThat(service.occursOn(r, LocalDate.of(2025, 12, 31))).isFalse();
+        assertThat(occurs(r, LocalDate.of(2025, 12, 31))).isFalse();
     }
 
     /* A "repeat until" before the first date makes a reminder that can never
@@ -195,18 +201,18 @@ class ReminderServiceOccursOnTest {
     void weekdaysFireMondayToFridayAndSkipTheWeekend() {
         CalendarReminder r = reminder(LocalDate.of(2026, 9, 14), RepeatFreq.weekdays); // a Monday
         for (int d = 14; d <= 18; d++) {
-            assertThat(service.occursOn(r, LocalDate.of(2026, 9, d)))
+            assertThat(occurs(r, LocalDate.of(2026, 9, d)))
                     .as("2026-09-%02d should fire", d).isTrue();
         }
-        assertThat(service.occursOn(r, LocalDate.of(2026, 9, 19))).as("Saturday").isFalse();
-        assertThat(service.occursOn(r, LocalDate.of(2026, 9, 20))).as("Sunday").isFalse();
+        assertThat(occurs(r, LocalDate.of(2026, 9, 19))).as("Saturday").isFalse();
+        assertThat(occurs(r, LocalDate.of(2026, 9, 20))).as("Sunday").isFalse();
     }
 
     @Test
     void weekdaysAnchoredOnASaturdayFirstFireOnTheMonday() {
         CalendarReminder r = reminder(LocalDate.of(2026, 9, 12), RepeatFreq.weekdays); // a Saturday
-        assertThat(service.occursOn(r, LocalDate.of(2026, 9, 12))).isFalse();
-        assertThat(service.occursOn(r, LocalDate.of(2026, 9, 14))).isTrue();
+        assertThat(occurs(r, LocalDate.of(2026, 9, 12))).isFalse();
+        assertThat(occurs(r, LocalDate.of(2026, 9, 14))).isTrue();
     }
 
     /* The calendar hides the form on past days. This is the same rule for the

@@ -10,7 +10,12 @@ import {
   plural,
   refreshIcons,
 } from './gb-kit.js';
-import { occursOn } from './recurrence.js';
+import {
+  occursOn,
+  getWorkWeek,
+  WORK_WEEKS,
+  DEFAULT_WORK_WEEK,
+} from './recurrence.js';
 
 const MONTHS = [
   'January',
@@ -64,7 +69,14 @@ const TAG_ORDER = ['work', 'personal', 'health', 'urgent', 'other'];
 const REPEATS = {
   none: { label: 'Once' },
   daily: { label: 'Daily' },
-  weekdays: { label: 'Mon\u2013Fri', phrase: 'every weekday' },
+  // A getter, not a string: the label has to say which days this user's working
+  // week actually covers, and Settings can change that without a reload.
+  weekdays: {
+    get label() {
+      return (WORK_WEEKS[getWorkWeek()] || WORK_WEEKS[DEFAULT_WORK_WEEK]).label;
+    },
+    phrase: 'every working day',
+  },
   weekly: { label: 'Weekly' },
   monthly: { label: 'Monthly' },
   yearly: { label: 'Yearly' },

@@ -3,6 +3,7 @@ package com.growthbuddy.reminder;
 import com.growthbuddy.user.User;
 import com.growthbuddy.user.UserRepository;
 import com.growthbuddy.common.UserZone;
+import com.growthbuddy.common.WorkWeek;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -138,7 +139,9 @@ public class ReminderDeliveryScheduler {
             ZoneId zone = UserZone.of(user.getTimezone());
             LocalDateTime now = LocalDateTime.ofInstant(tick, zone);
             LocalDate day = now.toLocalDate();
-            if (!reminderService.occursOn(rem, day)) {
+            // The user object is already in hand from the batch read above, so the
+            // working week costs nothing extra here.
+            if (!reminderService.occursOn(rem, day, WorkWeek.fromPrefs(user.getUiPrefs()))) {
                 continue;
             }
 

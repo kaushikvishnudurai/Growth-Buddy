@@ -756,3 +756,29 @@ CREATE TABLE `family_multi_day_plans` (
   KEY `ix_family_multiday_family` (`family_id`,`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ;
+
+-- ---------------------------------------------------------------------------
+-- Throttle counters. Shared deliberately: both of these used to be in-process
+-- HashMaps, which made every limit per-instance and forgave every account
+-- lockout on restart. They hold no user data — the key is a SHA-256 of
+-- "flow:identity", so the table can never accumulate raw email addresses.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE `rate_limit_counters` (
+  `bucket_key` char(64) NOT NULL,
+  `window_start` bigint NOT NULL,
+  `hits` int NOT NULL DEFAULT 0,
+  PRIMARY KEY (`bucket_key`,`window_start`),
+  KEY `ix_rate_limit_window` (`window_start`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+;
+
+CREATE TABLE `login_attempts` (
+  `attempt_key` char(64) NOT NULL,
+  `failures` int NOT NULL DEFAULT 0,
+  `locked_until_ms` bigint NOT NULL DEFAULT 0,
+  `updated_at_ms` bigint NOT NULL DEFAULT 0,
+  PRIMARY KEY (`attempt_key`),
+  KEY `ix_login_attempts_idle` (`updated_at_ms`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+;

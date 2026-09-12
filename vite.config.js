@@ -1,5 +1,32 @@
+import { execSync } from 'node:child_process';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+
+/* Build number, printed to the console at boot (window.GB_BUILD). Derived from
+   the commit count so it cannot be forgotten — which is what finally happened to
+   the hand-cranked version. The offset keeps the sequence continuous with the
+   numbers already in the wild (commit 72 was build 9).
+
+   It moves when a commit lands, not when someone remembers, so it is monotonic
+   and never repeats. A phone logging a smaller number than the latest deploy is
+   running a cached build — same contract as before, one less thing to do.
+
+   ponytail: falls back to 0 outside a git checkout (a tarball, a shallow CI
+   clone with no history). 0 reads as "unknown", which is honest and hard to
+   mistake for a real build; if a deploy ever runs from a tarball, pass the
+   number in as an env var instead. */
+const BUILD_OFFSET = 63;
+function buildNumber() {
+  if (process.env.GB_BUILD) return Number(process.env.GB_BUILD);
+  try {
+    const commits = Number(execSync('git rev-list --count HEAD', { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString()
+      .trim());
+    return Number.isFinite(commits) && commits > 0 ? commits - BUILD_OFFSET : 0;
+  } catch {
+    return 0;
+  }
+}
 
 // Backend dev server (Spring Boot). Override with VITE_API_BASE / API_PROXY_TARGET.
 const API_TARGET = process.env.API_PROXY_TARGET || 'http://localhost:8080';
@@ -91,14 +118,7 @@ export default defineConfig({
       devOptions: { enabled: false },
     }),
   ],
-  /* Build number, printed to the console at boot (window.GB_BUILD). BUMP IT BY
-     ONE before every push — that is the whole mechanism. A phone logging a
-     smaller number than the latest push is running a cached build.
-     ponytail: deliberately hand-cranked. Deriving it from the clock or the git
-     history needs no discipline but gives you a number nobody can recite; this
-     one you can. If it starts drifting because someone forgets, move it to
-     `git rev-list --count HEAD` minus an offset. */
-  define: { __GB_BUILD__: 9 },
+  define: { __GB_BUILD__: buildNumber() },
   // index.html at the project root is the entry; it pulls in scripts/app.js as a module.
   root: '.',
   // The repo's assets/ holds dev screenshots we don't want copied verbatim;

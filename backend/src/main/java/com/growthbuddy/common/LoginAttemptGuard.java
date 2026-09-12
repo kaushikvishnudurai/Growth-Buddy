@@ -1,8 +1,5 @@
 package com.growthbuddy.common;
 
-import java.util.Iterator;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -25,10 +22,10 @@ import org.springframework.stereotype.Component;
  * <p>A success clears the counter, so a legitimate user who finally remembers
  * their password starts fresh.
  *
- * <p>State is in-memory, like {@link RateLimiter}. ponytail: a restart forgives
- * everyone. That is survivable while this runs as a single instance — move it
- * to the DB or Redis the day a second one starts up, or the lock is only ever
- * as strong as 1/N.
+ * <p>State lives in {@link ThrottleStore} — the shared database — not in this
+ * process. It used to be a {@code ConcurrentHashMap}, which made the lock only
+ * ever as strong as 1/N across N instances and forgave everyone on restart.
+ * A lockout that a deploy clears is not a lockout.
  */
 @Component
 public class LoginAttemptGuard {
@@ -41,9 +38,28 @@ public class LoginAttemptGuard {
     /** Entries untouched for this long are dropped by the sweep. */
     private static final long IDLE_EVICT_MS = 2 * 60 * 60_000L;
 
-    private record Attempt(int failures, long lockedUntil, long updatedAt) {}
+    private final ThrottleStore store;
 
-    private final ConcurrentHashMap<String, Attempt> attempts = new ConcurrentHashMap<>();
+    public LoginAttemptGuard(ThrottleStore store) {
+        this.store = store;
+    }
+
+    /**
+     * The whole policy, as one pure function: how long failure number {@code n}
+     * locks the identity for. Zero while the free attempts last.
+     *
+     * <p>Kept separate from the storage so the escalation and the cap — the two
+     * things an attacker cares about — can be tested without a database.
+     */
+    static long lockMsForFailures(int failures) {
+        if (failures <= FREE_ATTEMPTS) {
+            return 0;
+        }
+        // 6th failure -> 1 min, 7th -> 2, 8th -> 4 ... shift, not pow, and
+        // clamped before it can overflow a long.
+        int steps = Math.min(failures - FREE_ATTEMPTS - 1, 20);
+        return Math.min(BASE_LOCK_MS << steps, MAX_LOCK_MS);
+    }
 
     /**
      * Milliseconds the caller must wait before this identity may try again;
@@ -53,9 +69,7 @@ public class LoginAttemptGuard {
      *            the flow, e.g. {@code "login:ada@example.com"}
      */
     public long retryAfterMs(String key) {
-        Attempt a = attempts.get(key);
-        if (a == null) return 0;
-        long left = a.lockedUntil() - System.currentTimeMillis();
+        long left = store.attempt(key).lockedUntilMs() - System.currentTimeMillis();
         return left > 0 ? left : 0;
     }
 
@@ -70,34 +84,20 @@ public class LoginAttemptGuard {
 
     /** Record a wrong password/OTP and extend the lock if the free attempts are spent. */
     public void recordFailure(String key) {
-        long now = System.currentTimeMillis();
-        attempts.compute(key, (k, prev) -> {
-            int failures = (prev == null ? 0 : prev.failures()) + 1;
-            long lockedUntil = prev == null ? 0 : prev.lockedUntil();
-            if (failures > FREE_ATTEMPTS) {
-                // 6th failure → 1 min, 7th → 2, 8th → 4 … shift, not pow, and
-                // clamped before it can overflow a long.
-                int steps = Math.min(failures - FREE_ATTEMPTS - 1, 20);
-                lockedUntil = now + Math.min(BASE_LOCK_MS << steps, MAX_LOCK_MS);
-            }
-            return new Attempt(failures, lockedUntil, now);
-        });
+        store.recordFailure(key, n -> (int) Math.min(lockMsForFailures(n), Integer.MAX_VALUE));
     }
 
     /** Forget this identity's failures — called on a successful sign-in. */
     public void recordSuccess(String key) {
-        attempts.remove(key);
+        store.clearAttempt(key);
     }
 
-    @Scheduled(fixedDelay = IDLE_EVICT_MS)
+    // initialDelay, not just fixedDelay: a scheduled task fires the moment the
+    // context is up, which on a fresh database is BEFORE DataSeeder has created
+    // the table — a stack trace at every first boot, sweeping nothing. There is
+    // never anything to sweep at startup anyway.
+    @Scheduled(fixedDelay = IDLE_EVICT_MS, initialDelay = IDLE_EVICT_MS)
     void sweep() {
-        long cutoff = System.currentTimeMillis() - IDLE_EVICT_MS;
-        for (Iterator<Map.Entry<String, Attempt>> it = attempts.entrySet().iterator(); it.hasNext();) {
-            Attempt a = it.next().getValue();
-            // Never evict a live lock, however stale it looks.
-            if (a.updatedAt() < cutoff && a.lockedUntil() < System.currentTimeMillis()) {
-                it.remove();
-            }
-        }
+        store.sweepAttempts(System.currentTimeMillis() - IDLE_EVICT_MS);
     }
 }

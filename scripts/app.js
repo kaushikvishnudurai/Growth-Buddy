@@ -33,6 +33,7 @@ import {
   resetCalendarForm,
   isPastSlot,
 } from './calendar.js';
+import { WORK_WEEKS, getWorkWeek, setWorkWeek } from './recurrence.js';
 import { ScreenAchievements, computeAchievements } from './achievements.js';
 import { celebrate } from './celebrate.js';
 import { enablePush, disablePush, pushSubscribed, pushSupported } from './push.js';
@@ -281,6 +282,15 @@ const state = {
   // GET requests still resolve from the service-worker cache while offline.
   online: typeof navigator === 'undefined' || navigator.onLine !== false,
 };
+
+/* The working week decides which days a "working days" reminder lands on, so it
+   has to be right for the FIRST paint — not after /api/auth/me comes back, by
+   which time the calendar and Home's dots have already been drawn from the
+   default. The session cache carries uiPrefs and `gb.session` is cookie-backed
+   (read synchronously at module init), so it is available here. hydrateUiPrefs()
+   sets it again on every refresh; this is the same value, earlier. */
+setWorkWeek(state.user && state.user.uiPrefs && state.user.uiPrefs.workWeek);
+
 let stomp = null;
 let toastSeq = 0;
 
@@ -523,6 +533,12 @@ function saveMoney(next) {
 function saveUiPrefs(patch) {
   if (!state.user || !patch) return;
   state.user.uiPrefs = Object.assign({}, state.user.uiPrefs || {}, patch);
+  // Mirror into the cached session too. That cache is what the app boots from,
+  // and it was only ever refreshed by /api/auth/me — so a pref saved here read
+  // back at its OLD value on the next reload, until some later request happened
+  // to refresh the user. Caught by the working week, where a stale value means
+  // the calendar draws the wrong days; it was equally wrong for the rest.
+  saveSession(state.user, state.user.token);
   api('/api/auth/ui-prefs', {
     method: 'PUT',
     body: JSON.stringify({ prefs: state.user.uiPrefs }),
@@ -553,6 +569,9 @@ function hydrateUiPrefs() {
       applyPremium(p.premium);
     }
     if (typeof p.qaLang === 'string') localStorage.setItem('gb.qa.lang', p.qaLang);
+    // Before this runs, every "Mon-Fri" reminder answers with the default —
+    // so it has to happen before the calendar or Home paints their dots.
+    setWorkWeek(p.workWeek);
     if (p.onboardingDone) CacheStorage.setItem('gb.onboardDismissed', '1');
     if (Array.isArray(p.achSeen)) {
       CacheStorage.setItem('gb.achSeen.' + (state.user.id || 'me'), JSON.stringify(p.achSeen));
@@ -3825,6 +3844,39 @@ function openProfileSettings(initialTab) {
     )
   );
 
+  // ---- Working week ----
+  // Decides which days a "Mon-Fri" reminder actually fires on. It was hardcoded
+  // Mon-Fri on both sides, which is simply wrong for Sun-Thu in the Gulf and for
+  // the Mon-Sat offices plenty of people here work. Lives in ui_prefs rather than
+  // its own column because prod runs ddl-auto: none.
+  const workWeekSel = h(
+    'select',
+    { class: 'gb-input', 'aria-label': 'Working week' },
+    Object.keys(WORK_WEEKS).map((key) => {
+      const o = h('option', { value: key }, WORK_WEEKS[key].label);
+      if (getWorkWeek() === key) o.selected = true;
+      return o;
+    })
+  );
+  workWeekSel.onchange = () => {
+    setWorkWeek(workWeekSel.value);
+    saveUiPrefs({ workWeek: workWeekSel.value });
+    toastSuccess('Working week saved.');
+    // Every "Mon-Fri" reminder now lands on different days, so anything already
+    // painted from the old answer is stale.
+    if (state.screen === 'calendar' || state.screen === 'home') render();
+  };
+  const workWeekBody = h(
+    'div',
+    null,
+    workWeekSel,
+    h(
+      'div',
+      { class: 'gb-field-hint', style: { marginTop: '6px' } },
+      'Reminders set to repeat on working days follow this.'
+    )
+  );
+
   // ---- Push notifications ----
   const pushBtn = h(
     'button',
@@ -3928,7 +3980,9 @@ function openProfileSettings(initialTab) {
       { class: 'gb-field-hint', style: { marginBottom: '12px' } },
       'Get a short recap of your score, tasks and habits to stay on track.'
     ),
-    digestSectionBody
+    digestSectionBody,
+    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Working week'),
+    workWeekBody
   );
 
   // ---- Account pane ----
