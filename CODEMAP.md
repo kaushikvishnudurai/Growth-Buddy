@@ -81,6 +81,22 @@ chunked write too (411), since that is the one shape a Content-Length check cann
 used to 400 with no detail to the client and no line in the log, so a wrong enum value was
 undebuggable from either end.
 
+**The session token is a bearer header, and stays one.** It lives in a JS-readable cookie, which
+looks like debt until you notice the app runs from `https://localhost` and calls the API
+cross-origin: an httpOnly cookie there is a third-party cookie, which WKWebView blocks outright. A
+bearer header is the correct transport for a Capacitor app. **Closed, not deferred** — what keeps it
+safe is that there is no XSS sink (one `innerHTML`, a static SVG literal), so keep it that way.
+
+**Food is dated in the user's zone.** `FoodService` takes `UserClock` like every other dated
+feature. `logDate` used to be derived in UTC while the summary read the day somewhere else, so in
+IST every meal logged after 5:30pm — dinner — was filed under yesterday and vanished from the Food
+screen on save. Rows written before the fix keep their old dates.
+
+**Calories can be typed.** `AddFoodEntryRequest.kcal` means "use this, don't guess": the estimator,
+the OpenFoodFacts lookup and the AI call are all skipped, and `estimateSource` reads `manual`. The
+per-100g figure is back-derived and clamped, because that column CHECKs 40..900 while the typed
+total does not.
+
 **Money is versioned, not last-write-wins.** `GET /api/money` returns an `ETag`; `PUT` sends it back
 as `If-Match` and is refused with **409** if someone else wrote first. The client then refetches,
 `mergeMoney` (in `money.js`, checked by `money-merge.test.mjs`) unions the two documents by item id,

@@ -3,6 +3,7 @@ package com.growthbuddy.food;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.growthbuddy.common.ApiException;
+import com.growthbuddy.user.UserClock;
 import com.growthbuddy.mentor.OpenAIClient;
 import com.growthbuddy.mentor.OpenAIClient.ChatTurn;
 import java.net.URI;
@@ -158,12 +159,16 @@ public class FoodService {
     private final ObjectMapper json;
     private final HttpClient http;
 
-    public FoodService(FoodEntryRepository entries, FoodPhotoLogRepository photoLogs, OpenAIClient openai) {
+    private final UserClock clock;
+
+    public FoodService(FoodEntryRepository entries, FoodPhotoLogRepository photoLogs, OpenAIClient openai,
+                       UserClock clock) {
         this.entries = entries;
         this.photoLogs = photoLogs;
         this.openai = openai;
         this.json = new ObjectMapper();
         this.http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(8)).build();
+        this.clock = clock;
     }
 
     /** Recent food-photo analyses, newest first (capped at 12). */
@@ -189,7 +194,9 @@ public class FoodService {
 
     @Transactional(readOnly = true)
     public FoodSummaryResponse summary(UUID userId, LocalDate date) {
-        LocalDate day = date != null ? date : LocalDate.now();
+        // LocalDate.now() here was the SERVER's day. Food is something a user sees
+        // dated, so it belongs to UserClock like habits, water and the daily score.
+        LocalDate day = date != null ? date : clock.today(userId);
         int total = entries.totalCaloriesForDay(userId, day);
         List<FoodEntryResponse> row = entries.findByUserIdAndLogDateOrderByLoggedAtDesc(userId, day)
                 .stream().map(FoodEntryResponse::from).toList();
@@ -223,8 +230,26 @@ public class FoodService {
                 ? req.quantityGrams()
                 : estimateQuantityGrams(input);
 
-        CalorieEstimate estimate = estimateCalories(input);
-        int kcal = Math.max(1, (int) Math.round((estimate.kcalPer100g() * quantity) / 100.0));
+        // A typed number beats every estimate we could produce, and the user has
+        // the packet in their hand. Taking it also means this entry costs no
+        // OpenFoodFacts lookup and no AI call — so someone logging from a label
+        // never spends their AI budget on a number they already knew.
+        int kcal;
+        CalorieEstimate estimate;
+        if (req.kcal() != null) {
+            kcal = req.kcal();
+            // Back-derive the per-100g figure so the entry still reports in the same
+            // unit as every other row (the Food screen shows both). Clamped through
+            // the estimator's own clamp because the column is CHECKed to 40..900 —
+            // 90 kcal of coffee over a 300g default works out at 30, which the
+            // database refuses. The typed number itself is never adjusted; only this
+            // derived display figure is.
+            estimate = new CalorieEstimate(
+                    clamp((int) Math.round((kcal * 100.0) / Math.max(1, quantity))), "manual");
+        } else {
+            estimate = estimateCalories(input);
+            kcal = Math.max(1, (int) Math.round((estimate.kcalPer100g() * quantity) / 100.0));
+        }
 
         FoodEntry e = new FoodEntry();
         e.setUserId(userId);
@@ -235,11 +260,14 @@ public class FoodService {
         e.setKcalEstimated(kcal);
         e.setEstimateSource(estimate.source());
         e.setNote(StringUtils.hasText(req.note()) ? req.note().trim() : null);
-        if (req.loggedAt() != null) {
-            Instant ts = req.loggedAt();
-            e.setLoggedAt(ts);
-            e.setLogDate(ts.atZone(ZoneOffset.UTC).toLocalDate());
-        }
+        // The day this entry counts towards, in the zone the user lives in. It used
+        // to be derived in UTC while summary() read the day in another zone
+        // entirely, so in IST every meal logged after 5:30pm — dinner, the most
+        // logged meal there is — was filed under yesterday and vanished from the
+        // Food screen the moment it was saved.
+        Instant ts = req.loggedAt() != null ? req.loggedAt() : Instant.now();
+        e.setLoggedAt(ts);
+        e.setLogDate(ts.atZone(clock.zoneOf(userId)).toLocalDate());
 
         FoodEntry saved = entries.save(e);
         return summary(userId, saved.getLogDate());

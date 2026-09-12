@@ -71,7 +71,17 @@ record AddFoodEntryRequest(
                 PortionSize portionSize,
                 RiceBase riceBase,
         @Size(max = 255) String note,
-        Instant loggedAt) {
+        Instant loggedAt,
+        /**
+         * Calories the user typed in themselves. Present means "use this number,
+         * don't guess" — the estimator is skipped entirely, which also means the
+         * entry costs no OpenFoodFacts lookup and no AI call.
+         *
+         * <p>Bounds match the column's own CHECK (1..5000), so a slipped finger is
+         * a clear 400 rather than a constraint violation surfacing as a 500. It is
+         * a ceiling for one entry, not for a day.
+         */
+        @Min(1) @Max(5000) Integer kcal) {
 }
 
 record PhotoFoodEstimateRequest(

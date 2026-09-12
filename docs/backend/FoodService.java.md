@@ -27,3 +27,17 @@ GET after a write.
 
 DTOs: `FoodDtos`. Frontend: `openAddFood` in `scripts/app.js` (~1669), `FoodCard` / `ScreenFood` /
 `PhotoHistoryCard` in `scripts/dashboard.js`.
+
+## Dating and manual calories
+
+- **`UserClock`, not `LocalDate.now()` or UTC.** `summary()` defaults to the user's day and
+  `addEntry` derives `logDate` from the user's zone. Before that the write used UTC and the read
+  used the server's zone, so an IST user's dinner was filed under yesterday and disappeared from the
+  Food screen the moment it saved. `FoodEntryTest` pins both directions.
+- **`AddFoodEntryRequest.kcal` overrides everything.** Present means the user typed it: no
+  OpenFoodFacts lookup, no AI call, no estimate, and `estimateSource` is `manual`. The bound is
+  1..5000 to match the column's own CHECK, so a slipped finger is a 400 rather than a constraint
+  violation surfacing as a 500.
+- The per-100g figure is back-derived from the typed total so every row reports in the same unit,
+  and **clamped to 40..900** because that column is CHECKed too. 90 kcal of coffee over a 250g
+  default is 36, which the database refuses. The typed total is never adjusted.

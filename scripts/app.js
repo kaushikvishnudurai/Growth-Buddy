@@ -1971,6 +1971,19 @@ function openAddFood() {
     max: '2000',
     step: '1',
   });
+  // Calories, typed. Everything else on this form feeds an estimator; this one
+  // overrides it. Someone holding the packet knows the number better than any
+  // guess we can make from a food name, and a manual entry costs no lookup and
+  // no AI call.
+  const kcalInput = h('input', {
+    type: 'number',
+    class: 'gb-input',
+    placeholder: 'e.g. 320 — leave blank to estimate',
+    min: '1',
+    max: '5000',
+    step: '1',
+    'aria-label': 'Calories (optional)',
+  });
   const platePhotoInput = h('input', {
     type: 'file',
     class: 'gb-input',
@@ -2175,6 +2188,13 @@ function openAddFood() {
     foodNameInput,
     h('div', { class: 'gb-field-label' }, 'Quantity (grams, optional)'),
     quantityInput,
+    h('div', { class: 'gb-field-label' }, 'Calories (optional)'),
+    kcalInput,
+    h(
+      'div',
+      { class: 'gb-field-hint' },
+      'Know the number? Type it and we\u2019ll use it exactly. Leave it blank and we\u2019ll estimate.'
+    ),
     h('div', { class: 'gb-field-label' }, 'Plate photo (optional)'),
     platePhotoInput,
     h(
@@ -2198,7 +2218,7 @@ function openAddFood() {
     h(
       'div',
       { style: { fontSize: '0.75rem', color: 'var(--fg3)', marginTop: '8px' } },
-      'No grams needed. We estimate from food name and optional plate photo.'
+      'No grams needed \u2014 we estimate from the food name and an optional photo. Typed calories always win.'
     )
   );
 
@@ -2235,11 +2255,19 @@ function openAddFood() {
           quantityInput.focus();
           throw new Error('Quantity must be between 10 and 2000 grams.');
         }
+        const kcalRaw = kcalInput.value ? Number(kcalInput.value) : null;
+        // The ceiling is one meal, not one day — a typed 50,000 is a slipped
+        // finger. Say so here rather than letting the server answer 400.
+        if (kcalRaw != null && (!Number.isFinite(kcalRaw) || kcalRaw < 1 || kcalRaw > 5000)) {
+          kcalInput.focus();
+          throw new Error('Calories must be between 1 and 5,000 for a single entry.');
+        }
         entriesToAdd = [
           {
             foodName: foodName,
             quantityGrams: quantityRaw != null ? Math.round(quantityRaw) : null,
             mealType: mealType,
+            kcal: kcalRaw != null ? Math.round(kcalRaw) : null,
             loggedAt: new Date().toISOString(),
             note: null,
           },
