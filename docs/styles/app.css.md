@@ -1,4 +1,4 @@
-# styles/app.css — app styles (7189 lines)
+# styles/app.css — app styles (7190 lines)
 
 Consumes tokens from `tokens.css`. Mobile-first: full-screen on phones, an iPhone-style frame on
 desktop, sidebar + multi-column grid at ≥1024px. Money has its own file (`money.css`).
@@ -24,7 +24,7 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
 | 426 | Habit / task check |
 | 465 | Login |
 | 795 | Notification bell |
-| 897 | Mentor chat |
+| 897 | Mentor chat — incl. the boot skeleton (`.gb-msg-skel`, two-class selectors so they beat `.gb-skel-line`). On desktop `.gb-mentor` needs `width: 100%` beside its `max-width`: it is a flex item in a column container, and auto inline margins opt an item out of stretch, so the screen collapsed to fit-content (392px at 1512px wide) |
 | 1091 | Search modal (Find someone) |
 | 1192 | Circle (person rows + status pills) |
 | 1261 | Focus screen |

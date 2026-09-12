@@ -1,4 +1,4 @@
-# scripts/app.js — app shell (6727 lines)
+# scripts/app.js — app shell (6766 lines)
 
 The hub: owns all state, routing, rendering, and **every** backend call. No exports (entry module).
 Screen modules are leaves it calls into; they get thin `api` wrapper objects, never the state.
@@ -30,7 +30,7 @@ it silently landed on Home. Don't reintroduce a second list.
 | **5256–5552** | **`SCREENS` registry** — screen id → render fn. Start here to find a screen. |
 | 5552–5575 | `captureScrollPosition` / `restoreScrollPosition` |
 | 5576–6100 | auth: `authPost`, `loadAuthDraft`, `setAuthMode`, `authShell`, `field`, `renderAuth`, `authFail`, `refuseFocus`, `runAuth`, `shakeRefusal`, `viewSignin`, `viewSignup`, `viewVerify` (OTP), `viewForgot`, `viewReset`, `loginCard` |
-| 6043–6336 | `logout`, `loadingContent`, `offlineBanner`, `weeklyReviewNudge`, `handleOnline`/`handleOffline`, **`render()`** (~6143), `installOutsideClickToCloseHeaderPopovers` |
+| 6043–6336 | `logout`, `mentorSkeleton` / `loadingContent`, `offlineBanner`, `weeklyReviewNudge` (Home only), `handleOnline`/`handleOffline`, **`render()`** (~6143), `installOutsideClickToCloseHeaderPopovers` |
 
 ## Rules when editing
 
@@ -67,7 +67,12 @@ it silently landed on Home. Don't reintroduce a second list.
   is the other eight in parallel. Safe only because every `state` field has a cache-backed or empty
   default — first paint shows cached values and corrects itself.
   **While wave 1 is in flight only the CONTENT COLUMN waits**: `render()` paints the real shell
-  (header, nav — neither needs the API) and puts `loadingContent()` in `.gb-scroll`. That replaced a
+  (header, nav — neither needs the API) and puts `loadingContent()` in `.gb-scroll`.
+  **The placeholder has to resemble the screen it stands in for**: `loadingContent()` returns
+  `mentorSkeleton()` (chat bubbles + a composer bar) on the Buddy screen and the generic quote +
+  card stack everywhere else. Bubbles, not cards, because a boot on `#/mentor` otherwise looked
+  like Home had loaded and then rearranged completely. Add a branch here for any other screen whose
+  shape is nothing like a card list. That replaced a
   full-screen splash which threw the whole app away, so everything appeared at once when the fetch
   landed. It also hid a worse bug: `tasks`/`habits`/`goals` are NOT cache-backed, so a `[]` first
   paint flashed each list screen's "nothing here yet" empty state. Don't render a screen off wave-1
@@ -86,6 +91,11 @@ it silently landed on Home. Don't reintroduce a second list.
   modules can fire toasts without importing app.js (cycle).
 - Some screens (money, family, mentor, circle) repaint their own subtree; calling `render()` for them
   is wasteful and can drop their local view state.
+- **Banners in `.gb-scroll` render on EVERY screen.** `offlineBanner()` earns that; the weekly
+  review nudge does not, and `weeklyReviewNudge()` gates on `state.screen === 'home'` itself. It
+  used to sit above all twelve screens, including the Buddy chat, where it stole a row from the
+  message list and read as part of the conversation. Keep a new banner's "where" beside its "when",
+  not at the call site in `render()`.
 - **`syncUserSession(user)` is the only way a signed-in user may reach `state`.** It is where
   `hydrateUiPrefs()` runs, which mirrors the account's server-side theme / text scale / premium
   skin / onboarding flag into the local cache keys the views read synchronously. Sign-in, OTP

@@ -6476,7 +6476,37 @@ function logout() {
    from the API, so it paints immediately and only this column waits. Reuses
    the lazy-import skeleton, with the quote-of-the-day on top: the splash was
    its only home. */
+/* Bubble-shaped stand-in for the chat. The generic card skeleton under the
+   Buddy header looked like the wrong screen had loaded, and then the layout
+   rearranged completely when the thread landed. */
+function mentorSkeleton() {
+  const line = (w) => h('div', { class: 'gb-skel-line gb-msg-skel', style: { width: w } });
+  const row = (user, w) =>
+    h(
+      'div',
+      { class: 'gb-msg-row' + (user ? ' is-user' : ' is-bot') },
+      user ? null : h('div', { class: 'gb-msg-avatar gb-msg-avatar--skel' }),
+      line(w)
+    );
+  return h(
+    'div',
+    {
+      class: 'gb-mentor gb-rise',
+      role: 'status',
+      'aria-live': 'polite',
+      'aria-label': 'Loading the conversation',
+    },
+    h('div', { class: 'gb-msg-list' }, row(false, '58%'), row(true, '42%'), row(false, '70%')),
+    h(
+      'div',
+      { class: 'gb-msg-bar' },
+      h('div', { class: 'gb-skel-line gb-msg-input-skel' })
+    )
+  );
+}
+
 function loadingContent() {
+  if (state.screen === 'mentor') return mentorSkeleton();
   const skel = screenSkeleton();
   skel.prepend(QuoteCard({ quote: state.quote }));
   skel.setAttribute('role', 'status');
@@ -6498,9 +6528,14 @@ function offlineBanner() {
   );
 }
 
-/** A gentle prompt (weekend/Monday) to do the weekly review, once per week. */
+/* A gentle prompt (weekend/Monday) to do the weekly review, once per week.
+   HOME ONLY. It renders in the shared `.gb-scroll` column, which every screen
+   paints into, so it used to sit above all twelve of them — including the Buddy
+   chat, where it stole a row from the message list and read as part of the
+   conversation. The review is a Home concern; keep the "where" next to the
+   "when" rather than at the call site, or the next banner repeats this. */
 function weeklyReviewNudge() {
-  if (!weeklyReviewDue()) return null;
+  if (state.screen !== 'home' || !weeklyReviewDue()) return null;
   return h(
     'button',
     { type: 'button', class: 'gb-week-nudge', onclick: openWeeklyReview },

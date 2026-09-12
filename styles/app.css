@@ -983,6 +983,23 @@ body {
   border: 1px solid var(--border);
   border-bottom-left-radius: 4px;
 }
+/* Boot placeholder for the thread (app.js mentorSkeleton). Two-class selectors
+   so they win over `.gb-skel-line`'s own height/radius wherever it is defined. */
+.gb-skel-line.gb-msg-skel {
+  height: 42px;
+  width: 58%;
+  max-width: 78%;
+  border-radius: 16px;
+}
+.gb-msg-avatar.gb-msg-avatar--skel {
+  background: var(--surface-3);
+}
+.gb-skel-line.gb-msg-input-skel {
+  flex: 1;
+  height: 46px;
+  border-radius: var(--radius-lg);
+}
+
 .gb-msg-typing {
   display: inline-flex;
   gap: 4px;
@@ -5224,8 +5241,13 @@ body {
     break-inside: avoid;
   }
 
-  /* Mentor chat screen */
+  /* Mentor chat screen. `width: 100%` is load-bearing: .gb-mentor is a flex item
+     in a column container (see `.gb-scroll:has(> .gb-mentor)`), and auto inline
+     margins opt an item OUT of the default stretch — so max-width + margin auto
+     alone collapsed the whole screen to its fit-content width (392px at 1512px
+     of viewport), stranding a tiny composer in the middle of the canvas. */
   .gb-mentor {
+    width: 100%;
     max-width: 800px;
     margin: 0 auto;
   }
