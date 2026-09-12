@@ -34,7 +34,10 @@ spring:
       # MySQL max_connections must comfortably exceed it.
       maximum-pool-size: ${DB_POOL_SIZE:8}
       minimum-idle: 2
-      connection-timeout: 3000   # fail fast instead of a 30s pile-up
+      # Fail fast instead of a 30s pile-up. This is the driver's LOGIN budget,
+      # not just the TCP connect, so it only suits a MySQL on localhost —
+      # application-prod.yml raises it for a remote TLS database.
+      connection-timeout: ${DB_CONNECTION_TIMEOUT_MS:3000}
       max-lifetime: 600000       # must be < MySQL wait_timeout
       leak-detection-threshold: 30000
 

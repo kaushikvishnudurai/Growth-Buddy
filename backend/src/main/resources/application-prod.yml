@@ -9,6 +9,15 @@ spring:
     url: jdbc:mysql://${DB_HOST}:${DB_PORT:3306}/${DB_NAME}?sslMode=${DB_SSL_MODE:REQUIRED}&serverTimezone=UTC
     username: ${DB_USER}
     password: ${DB_PASSWORD}
+    hikari:
+      # Hikari hands this to the driver as its LOGIN timeout, so it has to cover
+      # TCP connect + TLS handshake + auth, not just the connect. The base 3s is
+      # sized for a MySQL on localhost; against a TiDB Starter cluster that is
+      # asleep and resuming, the handshake finishes but overruns the budget, and
+      # the driver throws "Connection attempt exceeded defined timeout" from
+      # afterHandshake. DataSeeder is the first thing to ask for a connection, so
+      # that lands as APPLICATION FAILED TO START rather than as one slow request.
+      connection-timeout: ${DB_CONNECTION_TIMEOUT_MS:20000}
 
   jpa:
     hibernate:
