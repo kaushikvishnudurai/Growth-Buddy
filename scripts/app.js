@@ -4241,7 +4241,18 @@ let addingReminder = false;
 
 async function addReminder(key, text, time, tag, repeat, until) {
   if (!text || addingReminder) return;
-  // A one-off in the past can never fire. A recurring one still can — "daily at
+  // A day that has already gone takes no reminders at all — the calendar hides
+  // the form on past days, and this is the same rule for every other caller.
+  // The anchor date is what a recurrence counts from, so an anchor in the past
+  // is a series the user never got to choose the start of.
+  if (key < todayKeyNow()) {
+    toastError(
+      new Error('That day has already passed — pick today or later.'),
+      'Could not add reminder.'
+    );
+    return;
+  }
+  // Today, but at an hour that has gone. A recurring one still fires — "daily at
   // 8am" set up at 10am has tomorrow — so only the single occurrence is refused.
   if ((repeat || 'none') === 'none' && isPastSlot(key, time)) {
     toastError(

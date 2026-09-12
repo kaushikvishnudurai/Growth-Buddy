@@ -650,6 +650,9 @@ function ReminderPanel({
   const winCount =
     dayCompletedTasks.length + dayGoalActions.length + dayFood.length + wellnessCount;
   const futureDate = isFutureKey(selectedDate);
+  // A day that has already gone is read-only. The form used to sit under every
+  // day, so a reminder could be filed against last Tuesday and then never fire.
+  const pastDate = selectedDate < todayKey();
 
   // Rebind the form to the latest date + callback (DOM stays the same).
   formBinding.selectedDate = selectedDate;
@@ -674,7 +677,7 @@ function ReminderPanel({
           'div',
           { class: 'gb-rem-empty' },
           Icon('calendar-check', { size: 28, color: 'var(--fg3)' }),
-          h('p', null, 'No reminders yet. Add one below.')
+          h('p', null, pastDate ? 'No reminders on this day.' : 'No reminders yet. Add one below.')
         );
   }
 
@@ -890,7 +893,7 @@ function ReminderPanel({
       ),
       listNode
     ),
-    h('div', { class: 'gb-cal-block' }, form)
+    pastDate ? null : h('div', { class: 'gb-cal-block' }, form)
   );
 }
 

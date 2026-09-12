@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.growthbuddy.user.UserClock;
 import java.time.LocalDate;
 import java.util.UUID;
 import java.util.Set;
@@ -18,7 +19,23 @@ import org.junit.jupiter.api.Test;
  */
 class ReminderServiceOccursOnTest {
 
-    private final ReminderService service = new ReminderService(null);
+    private final ReminderService service = new ReminderService(null, null);
+
+    /* create() asks the clock what day it is for this user, so every create test
+       pins "today" instead of hardcoding a date that quietly becomes the past. */
+    private static final LocalDate TODAY = LocalDate.of(2026, 9, 14); // a Monday
+
+    private static ReminderService serviceWith(CalendarReminderRepository repo) {
+        UserClock clock = mock(UserClock.class);
+        when(clock.today(any())).thenReturn(TODAY);
+        return new ReminderService(repo, clock);
+    }
+
+    private static CalendarReminderRepository savingRepo() {
+        CalendarReminderRepository repo = mock(CalendarReminderRepository.class);
+        when(repo.save(any())).thenAnswer(i -> i.getArgument(0));
+        return repo;
+    }
 
     private CalendarReminder reminder(LocalDate anchor, RepeatFreq repeat) {
         CalendarReminder r = new CalendarReminder();
@@ -148,8 +165,8 @@ class ReminderServiceOccursOnTest {
        isn't the authority. */
     @Test
     void rejectsAnUntilDateBeforeTheStart() {
-        ReminderService svc = new ReminderService(null); // never reaches the repo
-        CreateReminderRequest req = new CreateReminderRequest("Test", LocalDate.of(2026, 9, 14),
+        ReminderService svc = serviceWith(null); // never reaches the repo
+        CreateReminderRequest req = new CreateReminderRequest("Test", TODAY,
                 null, ReminderTag.personal, RepeatFreq.daily, LocalDate.of(2007, 6, 19));
         assertThatThrownBy(() -> svc.create(UUID.randomUUID(), req))
                 .hasMessageContaining("can't be before");
@@ -157,23 +174,19 @@ class ReminderServiceOccursOnTest {
 
     @Test
     void acceptsAnUntilDateOnTheStartItself() {
-        CalendarReminderRepository repo = mock(CalendarReminderRepository.class);
-        when(repo.save(any())).thenAnswer(i -> i.getArgument(0));
-        LocalDate start = LocalDate.of(2026, 9, 14);
+        LocalDate start = TODAY;
         CreateReminderRequest req = new CreateReminderRequest("Test", start, null,
                 ReminderTag.personal, RepeatFreq.daily, start);
-        assertThat(new ReminderService(repo).create(UUID.randomUUID(), req).until()).isEqualTo(start);
+        assertThat(serviceWith(savingRepo()).create(UUID.randomUUID(), req).until()).isEqualTo(start);
     }
 
     /* Non-repeating reminders drop `until` entirely, so a stale value in the
        payload must not be able to trip the new guard. */
     @Test
     void ignoresUntilWhenTheReminderDoesNotRepeat() {
-        CalendarReminderRepository repo = mock(CalendarReminderRepository.class);
-        when(repo.save(any())).thenAnswer(i -> i.getArgument(0));
-        CreateReminderRequest req = new CreateReminderRequest("Test", LocalDate.of(2026, 9, 14),
+        CreateReminderRequest req = new CreateReminderRequest("Test", TODAY,
                 null, ReminderTag.personal, RepeatFreq.none, LocalDate.of(2007, 6, 19));
-        assertThat(new ReminderService(repo).create(UUID.randomUUID(), req).until()).isNull();
+        assertThat(serviceWith(savingRepo()).create(UUID.randomUUID(), req).until()).isNull();
     }
 
     /* Mon-Fri. Mirrors scripts/recurrence.test.mjs — if you change one, change
@@ -194,5 +207,28 @@ class ReminderServiceOccursOnTest {
         CalendarReminder r = reminder(LocalDate.of(2026, 9, 12), RepeatFreq.weekdays); // a Saturday
         assertThat(service.occursOn(r, LocalDate.of(2026, 9, 12))).isFalse();
         assertThat(service.occursOn(r, LocalDate.of(2026, 9, 14))).isTrue();
+    }
+
+    /* The calendar hides the form on past days. This is the same rule for the
+       API, which anyone can POST to — a one-off back there can never fire, and a
+       recurrence anchored back there starts before the user chose to. */
+    @Test
+    void refusesADateInThePast() {
+        CreateReminderRequest req = new CreateReminderRequest("Test", TODAY.minusDays(2),
+                null, ReminderTag.personal, RepeatFreq.daily, null);
+        assertThatThrownBy(() -> serviceWith(savingRepo()).create(UUID.randomUUID(), req))
+                .hasMessageContaining("already passed");
+    }
+
+    /* One day of slack, on purpose: a user whose timezone was never captured is
+       compared against UTC, which is already on tomorrow for half the planet. */
+    @Test
+    void acceptsTodayAndTheDayBeforeIt() {
+        for (LocalDate d : new LocalDate[] { TODAY, TODAY.minusDays(1), TODAY.plusDays(30) }) {
+            CreateReminderRequest req = new CreateReminderRequest("Test", d, null,
+                    ReminderTag.personal, RepeatFreq.none, null);
+            assertThat(serviceWith(savingRepo()).create(UUID.randomUUID(), req).date())
+                    .as("create on %s", d).isEqualTo(d);
+        }
     }
 }

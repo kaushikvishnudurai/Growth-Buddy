@@ -1,6 +1,7 @@
 package com.growthbuddy.reminder;
 
 import com.growthbuddy.common.ApiException;
+import com.growthbuddy.user.UserClock;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -17,9 +18,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class ReminderService {
 
     private final CalendarReminderRepository repo;
+    private final UserClock clock;
 
-    public ReminderService(CalendarReminderRepository repo) {
+    public ReminderService(CalendarReminderRepository repo, UserClock clock) {
         this.repo = repo;
+        this.clock = clock;
     }
 
     @Transactional(readOnly = true)
@@ -31,6 +34,16 @@ public class ReminderService {
     public ReminderResponse create(UUID userId, CreateReminderRequest req) {
         if (req.date() == null) {
             throw ApiException.badRequest("date is required");
+        }
+        // A past day takes no reminders: a one-off there can never fire, and a
+        // recurrence anchored there is a series whose start the user never picked.
+        // The calendar hides the form on past days; this is the same rule for the API.
+        // ponytail: one day of slack, deliberately. "Today" here is the user's stored
+        // timezone, which falls back to UTC when they never set one — and a UTC server
+        // is already on tomorrow while a user in the Americas is still on today. Drop
+        // the minusDays(1) once the timezone is reliably captured at signup.
+        if (req.date().isBefore(clock.today(userId).minusDays(1))) {
+            throw ApiException.badRequest("That day has already passed — pick today or later.");
         }
         CalendarReminder r = new CalendarReminder();
         r.setUserId(userId);
