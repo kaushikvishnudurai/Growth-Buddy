@@ -573,6 +573,16 @@ function buildForm() {
       return;
     }
     const repeat = repeatPicker.get();
+    // untilInput.min is set to the selected date on every render, but `min` on a
+    // date input is only a *declared* constraint: nothing checks it unless the
+    // input is inside a <form> that submits, and this one isn't. So an end date
+    // before the start — a mistyped year, usually — sailed through to the API and
+    // was stored as a recurring reminder that can never occur. reportValidity()
+    // is the check, and it draws the browser's own message for free.
+    if (repeat !== 'none' && untilInput.value && !untilInput.reportValidity()) {
+      untilInput.focus();
+      return;
+    }
     const until = repeat !== 'none' ? untilInput.value || '' : '';
     const cb = formBinding.onAddReminder;
     if (typeof cb !== 'function') {

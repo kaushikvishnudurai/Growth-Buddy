@@ -1,8 +1,13 @@
 package com.growthbuddy.reminder;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.time.LocalDate;
+import java.util.UUID;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
@@ -135,5 +140,39 @@ class ReminderServiceOccursOnTest {
     void neverFiresBeforeItsAnchor() {
         CalendarReminder r = reminder(LocalDate.of(2026, 1, 31), RepeatFreq.monthly);
         assertThat(service.occursOn(r, LocalDate.of(2025, 12, 31))).isFalse();
+    }
+
+    /* A "repeat until" before the first date makes a reminder that can never
+       fire — occursOn() says false for every day — so it sits in the list
+       forever advertising an end date in 2007. The form guards it, but the form
+       isn't the authority. */
+    @Test
+    void rejectsAnUntilDateBeforeTheStart() {
+        ReminderService svc = new ReminderService(null); // never reaches the repo
+        CreateReminderRequest req = new CreateReminderRequest("Test", LocalDate.of(2026, 9, 14),
+                null, ReminderTag.personal, RepeatFreq.daily, LocalDate.of(2007, 6, 19));
+        assertThatThrownBy(() -> svc.create(UUID.randomUUID(), req))
+                .hasMessageContaining("can't be before");
+    }
+
+    @Test
+    void acceptsAnUntilDateOnTheStartItself() {
+        CalendarReminderRepository repo = mock(CalendarReminderRepository.class);
+        when(repo.save(any())).thenAnswer(i -> i.getArgument(0));
+        LocalDate start = LocalDate.of(2026, 9, 14);
+        CreateReminderRequest req = new CreateReminderRequest("Test", start, null,
+                ReminderTag.personal, RepeatFreq.daily, start);
+        assertThat(new ReminderService(repo).create(UUID.randomUUID(), req).until()).isEqualTo(start);
+    }
+
+    /* Non-repeating reminders drop `until` entirely, so a stale value in the
+       payload must not be able to trip the new guard. */
+    @Test
+    void ignoresUntilWhenTheReminderDoesNotRepeat() {
+        CalendarReminderRepository repo = mock(CalendarReminderRepository.class);
+        when(repo.save(any())).thenAnswer(i -> i.getArgument(0));
+        CreateReminderRequest req = new CreateReminderRequest("Test", LocalDate.of(2026, 9, 14),
+                null, ReminderTag.personal, RepeatFreq.none, LocalDate.of(2007, 6, 19));
+        assertThat(new ReminderService(repo).create(UUID.randomUUID(), req).until()).isNull();
     }
 }

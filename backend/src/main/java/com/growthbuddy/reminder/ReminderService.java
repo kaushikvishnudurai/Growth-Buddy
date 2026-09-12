@@ -41,6 +41,14 @@ public class ReminderService {
         r.setRepeat(req.repeat() != null ? req.repeat() : RepeatFreq.none);
         // "until" only applies to recurring reminders.
         if (r.getRepeat() != RepeatFreq.none) {
+            // An end date before the start makes a reminder that can never fire —
+            // occursOn() rejects every day, so it sits in the list forever showing
+            // "until 19 Jun 2007". The form guards this too, but the form is not
+            // the authority: this is an API anyone can POST to.
+            if (req.until() != null && req.until().isBefore(req.date())) {
+                throw ApiException.badRequest(
+                        "\"Repeat until\" can't be before the reminder's first date.");
+            }
             r.setUntilDate(req.until());
         }
         return ReminderResponse.from(repo.save(r));

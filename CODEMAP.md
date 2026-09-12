@@ -93,8 +93,9 @@ routes (mentor, quick-add, money, food photos). `LoginAttemptGuard` = per-**acco
 - `mentor/OpenAIClient` (188) — minimal Chat Completions client on the JDK `HttpClient`, no SDK.
   Stateless: each call sends the whole rolling context. `isConfigured()` gates every AI feature.
 - `score/ScoreService` (78) — today's score = average completion rate across enabled features.
-- `reminder/ReminderService` (147) — recurrence expansion + scoped deletes; **mirrors the client-side
-  expansion in `scripts/calendar.js` — keep both in step.**
+- `reminder/ReminderService` (155) — recurrence expansion + scoped deletes; **mirrors the client-side
+  expansion in `scripts/calendar.js` — keep both in step.** `create` rejects an `until` before the
+  start date (a reminder that could never fire).
   `ReminderDeliveryScheduler` (222) polls and sends WhatsApp + push near the user's local
   time, dispatching a tick's batch across a 16-thread pool; `ReminderDispatchLog` prevents
   double sends; `WhatsAppService` (161) = Meta WhatsApp Cloud API. Scheduled sends need

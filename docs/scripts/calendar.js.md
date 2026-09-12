@@ -24,6 +24,11 @@ Day-key helpers: `pad`, `keyOf(y,m,d)`, `parseKey`, `todayKey`, `isFutureKey`, `
 - `occursOn(rem, key)` (120) — expands recurrence client-side for display; the backend has its own
   expansion (`ReminderService`) for delivery. **Keep the two consistent.**
 - `remindersOn` (149), `tasksOn` (162), `completedTasksOn` (179), `goalActionsOn` (185), `dueKey` (155).
+- **"Repeat until" before the start date makes a reminder that can never fire.** `occursOn` returns
+  false for every day, so it sits in the list forever advertising an end date in the past. The form
+  sets `untilInput.min = selectedDate`, but `min` on a date input is only a *declared* constraint —
+  nothing checks it unless the input is inside a submitting `<form>`, and this one isn't. `submit()`
+  calls `reportValidity()` for the real check; `ReminderService.create` rejects it server-side too.
 
 ## Components
 
