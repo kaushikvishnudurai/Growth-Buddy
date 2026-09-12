@@ -4192,9 +4192,16 @@ function calToday() {
   state.calMonth = t.getMonth();
   state.selectedDate = dateKey(t.getFullYear(), t.getMonth(), t.getDate());
   if (state.screen === 'calendar') {
-    repaintCalendarGrid();
-    rerenderCalendarSideIfActive();
-  } else if (state.screen === 'home' && rerenderHomeMiniCalendarIfActive()) {
+    // Today CHANGES THE MONTH, so it needs the month-level repaint — the same
+    // one the < > arrows use. It used to call repaintCalendarGrid(), which
+    // replaces `.gb-cal-card` and nothing else: browse to March, hit Today, and
+    // you got September's grid under a "March 2026" toolbar, with the days
+    // landing on the right weekdays so the only wrong thing on screen was the
+    // title. Anything that moves calYear/calMonth goes through here.
+    rerenderCalendarMonthInPlace();
+    return;
+  }
+  if (state.screen === 'home' && rerenderHomeMiniCalendarIfActive()) {
     // mini calendar updated in place
   } else {
     render();
