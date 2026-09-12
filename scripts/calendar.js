@@ -554,16 +554,33 @@ function buildForm() {
     class: 'gb-input gb-input--until',
     'aria-label': 'Repeat until (optional)',
   });
+  const untilError = h('p', {
+    class: 'gb-field-error',
+    role: 'alert',
+    style: { display: 'none' },
+  });
+  const setUntilError = (msg) => {
+    untilError.textContent = msg || '';
+    untilError.style.display = msg ? '' : 'none';
+    untilInput.setAttribute('aria-invalid', msg ? 'true' : 'false');
+  };
+  // Typing a new date is the user answering the complaint; drop it then rather
+  // than leaving a stale red line under a value that's now fine.
+  untilInput.addEventListener('input', () => setUntilError(''));
   const untilField = h(
     'div',
     { class: 'gb-until-field', style: { display: 'none' } },
     h('div', { class: 'gb-field-label' }, 'Repeat until (optional)'),
-    untilInput
+    untilInput,
+    untilError
   );
 
   const repeatPicker = RepeatPicker('none', (rep) => {
     untilField.style.display = rep === 'none' ? 'none' : '';
-    if (rep === 'none') untilInput.value = '';
+    if (rep === 'none') {
+      untilInput.value = '';
+      setUntilError('');
+    }
   });
 
   async function submit() {
@@ -575,11 +592,18 @@ function buildForm() {
     const repeat = repeatPicker.get();
     // untilInput.min is set to the selected date on every render, but `min` on a
     // date input is only a *declared* constraint: nothing checks it unless the
-    // input is inside a <form> that submits, and this one isn't. So an end date
-    // before the start — a mistyped year, usually — sailed through to the API and
-    // was stored as a recurring reminder that can never occur. reportValidity()
-    // is the check, and it draws the browser's own message for free.
-    if (repeat !== 'none' && untilInput.value && !untilInput.reportValidity()) {
+    // input sits in a <form> that submits, and this one doesn't. So an end date
+    // before the start — a mistyped year, usually — reached the API and was
+    // stored as a recurring reminder that can never occur.
+    // This was reportValidity(), which does enforce `min` and returns false, so
+    // the reminder was correctly refused — silently. The native bubble it draws
+    // needs the input focused and dismisses itself the moment anything else
+    // takes focus, so from the outside the button just did nothing, which reads
+    // as a dead button rather than a rejected date. Say it in the page instead.
+    // Both are YYYY-MM-DD, so < is a date comparison (same trick as money.js).
+    setUntilError('');
+    if (repeat !== 'none' && untilInput.value && untilInput.value < formBinding.selectedDate) {
+      setUntilError('This is before the reminder starts on ' + prettyDate(formBinding.selectedDate) + '.');
       untilInput.focus();
       return;
     }

@@ -28,7 +28,11 @@ Day-key helpers: `pad`, `keyOf(y,m,d)`, `parseKey`, `todayKey`, `isFutureKey`, `
   false for every day, so it sits in the list forever advertising an end date in the past. The form
   sets `untilInput.min = selectedDate`, but `min` on a date input is only a *declared* constraint —
   nothing checks it unless the input is inside a submitting `<form>`, and this one isn't. `submit()`
-  calls `reportValidity()` for the real check; `ReminderService.create` rejects it server-side too.
+  compares the two `YYYY-MM-DD` strings itself and writes the reason into `.gb-field-error` under
+  the input; `ReminderService.create` rejects it server-side too.
+  **Don't go back to `reportValidity()` here.** It does enforce `min` and does return false, so the
+  reminder was refused correctly — but the bubble it draws needs the input focused and vanishes as
+  soon as anything else takes focus, so the only thing a user saw was a button that did nothing.
 
 ## Components
 

@@ -3781,6 +3781,16 @@ body {
   gap: 10px;
   padding: 16px;
 }
+/* Inline field error. The reminder form's "repeat until" uses it instead of the
+   browser's native validation bubble, which needs focus to appear and vanishes
+   the instant anything else takes it — a refusal nobody saw. */
+.gb-field-error {
+  margin: 6px 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--danger);
+}
+
 .gb-field-label {
   font-size: 0.71875rem;
   font-weight: 800;
