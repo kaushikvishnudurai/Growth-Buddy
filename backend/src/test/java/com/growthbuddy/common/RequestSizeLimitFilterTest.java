@@ -20,10 +20,16 @@ class RequestSizeLimitFilterTest {
     private final RequestSizeLimitFilter filter = new RequestSizeLimitFilter();
 
     private static HttpServletRequest request(String method, String uri, long contentLength) {
+        return request(method, uri, contentLength, null);
+    }
+
+    private static HttpServletRequest request(String method, String uri, long contentLength,
+                                              String transferEncoding) {
         HttpServletRequest r = mock(HttpServletRequest.class);
         when(r.getRequestURI()).thenReturn(uri);
         when(r.getMethod()).thenReturn(method);
         when(r.getContentLengthLong()).thenReturn(contentLength);
+        when(r.getHeader("Transfer-Encoding")).thenReturn(transferEncoding);
         return r;
     }
 
@@ -39,17 +45,33 @@ class RequestSizeLimitFilterTest {
                 org.mockito.ArgumentMatchers.any());
     }
 
-    /* The hole a Content-Length check alone leaves: declare no length and the
+    /* The hole a Content-Length check alone leaves: send the body chunked and the
        comparison above can never fire. */
     @Test
-    void refusesAWriteThatDeclaresNoLength() throws Exception {
+    void refusesAChunkedWriteThatDeclaresNoLength() throws Exception {
         for (String method : new String[] { "POST", "PUT", "PATCH" }) {
             MockHttpServletResponse res = new MockHttpServletResponse();
             FilterChain chain = mock(FilterChain.class);
-            filter.doFilterInternal(request(method, "/api/money", -1), res, chain);
-            assertThat(res.getStatus()).as("%s with no Content-Length", method).isEqualTo(411);
+            filter.doFilterInternal(request(method, "/api/money", -1, "chunked"), res, chain);
+            assertThat(res.getStatus()).as("%s chunked", method).isEqualTo(411);
             verify(chain, never()).doFilter(org.mockito.ArgumentMatchers.any(),
                     org.mockito.ArgumentMatchers.any());
+        }
+    }
+
+    /* A POST with NEITHER Content-Length nor Transfer-Encoding has no body at all,
+       and that is most of this API: accept an invite, check in a habit, toggle a
+       task. The first cut of this filter refused them all. */
+    @Test
+    void letsABodylessActionPostThrough() throws Exception {
+        for (String uri : new String[] { "/api/family/invites/abc/accept",
+                                         "/api/habits/abc/checkin", "/api/tasks/abc/toggle" }) {
+            MockHttpServletResponse res = new MockHttpServletResponse();
+            FilterChain chain = mock(FilterChain.class);
+            filter.doFilterInternal(request("POST", uri, -1), res, chain);
+            verify(chain).doFilter(org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.any());
+            assertThat(res.getStatus()).as("%s must not be refused", uri).isEqualTo(200);
         }
     }
 

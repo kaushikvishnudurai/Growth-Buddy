@@ -42,20 +42,26 @@ public class RequestSizeLimitFilter extends OncePerRequestFilter {
             deny(response, HttpStatus.PAYLOAD_TOO_LARGE, "That upload is too large.");
             return;
         }
-        // A chunked body declares no length, so the check above can't see it — and
+        // A chunked body declares no length, so the check above cannot see it — and
         // that is exactly the shape a hand-rolled client would use to walk around
-        // the cap. No browser or Capacitor client sends one (fetch sets
-        // Content-Length for a string body), so refusing it costs us nothing.
-        if (declared < 0 && hasBody(request)) {
+        // the cap. No browser or Capacitor client sends one, so refusing it costs
+        // nothing.
+        //
+        // Only when Transfer-Encoding is actually present, though. A POST with
+        // NEITHER header has no body at all (RFC 9112 §6), which is every
+        // action-style endpoint in this API — accept an invite, check in a habit,
+        // toggle a task. Refusing those broke `curl -X POST` with no -d, and would
+        // have broken any client that omits Content-Length on an empty body.
+        if (declared < 0 && isChunked(request)) {
             deny(response, HttpStatus.LENGTH_REQUIRED, "Content-Length is required.");
             return;
         }
         chain.doFilter(request, response);
     }
 
-    private static boolean hasBody(HttpServletRequest request) {
-        String method = request.getMethod();
-        return "POST".equals(method) || "PUT".equals(method) || "PATCH".equals(method);
+    private static boolean isChunked(HttpServletRequest request) {
+        String te = request.getHeader("Transfer-Encoding");
+        return te != null && !te.isBlank();
     }
 
     private static void deny(HttpServletResponse response, HttpStatus status, String message)

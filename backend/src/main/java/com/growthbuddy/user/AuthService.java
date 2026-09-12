@@ -86,6 +86,16 @@ public class AuthService {
      * family or a conversation rather than to one account, and unpicking them is a
      * product decision (transfer the family? delete it?), not a cascade.
      */
+    /**
+     * Everything a family owns, child-first. Only ever deleted when a family is
+     * being removed outright — see {@link #handOverOrRemoveFamilies}.
+     */
+    private static final String[] FAMILY_OWNED_TABLES = {
+        "family_dish_preferences", "family_pantry_items", "family_shopping_items",
+        "family_favourite_menus", "family_multi_day_plans", "family_meal_plans",
+        "family_members",
+    };
+
     static final String[] USER_OWNED_TABLES = {
         "password_credentials",
         "email_verification_tokens", "password_reset_tokens", "whatsapp_otp_tokens",
@@ -324,6 +334,14 @@ public class AuthService {
         // every request that borrowed it afterwards, until the pool recycled it.
         exec("SET FOREIGN_KEY_CHECKS=0", null);
         try {
+            handOverOrRemoveFamilies(userId);
+            // A request is addressed to a person, so it cannot outlive either end.
+            em.createNativeQuery(
+                    "DELETE FROM mentorship_requests WHERE from_user_id = ?1 OR to_user_id = ?1")
+                    .setParameter(1, userId).executeUpdate();
+            // This account's own membership of someone ELSE's family.
+            em.createNativeQuery("DELETE FROM family_members WHERE linked_user_id = ?1")
+                    .setParameter(1, userId).executeUpdate();
             for (String[] cd : childDeletes) {
                 if (existing.contains(cd[0]) && existing.contains(cd[2])) {
                     exec("DELETE FROM " + cd[0] + " WHERE " + cd[1]
@@ -340,6 +358,46 @@ public class AuthService {
             exec("SET FOREIGN_KEY_CHECKS=1", null);
         }
         sessions.revokeAllForUser(userId);
+    }
+
+    /**
+     * Deal with families this account owns before the account goes.
+     *
+     * <p>A family is not the owner's private data — the other members have their
+     * own accounts, their own food profiles, and a shared meal history. Deleting
+     * it because one person left would take all of that with it. So: hand the
+     * family to the longest-standing other member, and only delete it outright
+     * when there is nobody left to hand it to.
+     *
+     * <p>Leaving {@code owner_user_id} pointing at a deleted row, which is what
+     * happened before, is the one option that is wrong either way.
+     */
+    @SuppressWarnings("unchecked")
+    private void handOverOrRemoveFamilies(UUID userId) {
+        List<?> owned = em.createNativeQuery("SELECT id FROM families WHERE owner_user_id = ?1")
+                .setParameter(1, userId).getResultList();
+        for (Object raw : owned) {
+            String familyId = String.valueOf(raw);
+            List<?> heirs = em.createNativeQuery(
+                    "SELECT linked_user_id FROM family_members WHERE family_id = ?1"
+                            + " AND linked_user_id IS NOT NULL AND linked_user_id <> ?2"
+                            + " AND deleted_at IS NULL AND status = 'mapped'"
+                            + " ORDER BY created_at ASC LIMIT 1")
+                    .setParameter(1, familyId).setParameter(2, userId).getResultList();
+            if (!heirs.isEmpty()) {
+                em.createNativeQuery("UPDATE families SET owner_user_id = ?1 WHERE id = ?2")
+                        .setParameter(1, String.valueOf(heirs.get(0)))
+                        .setParameter(2, familyId).executeUpdate();
+                log.info("Family {} handed to another member as its owner deleted their account", familyId);
+                continue;
+            }
+            for (String t : FAMILY_OWNED_TABLES) {
+                em.createNativeQuery("DELETE FROM " + t + " WHERE family_id = ?1")
+                        .setParameter(1, familyId).executeUpdate();
+            }
+            em.createNativeQuery("DELETE FROM families WHERE id = ?1")
+                    .setParameter(1, familyId).executeUpdate();
+        }
     }
 
     /** Lowercased set of tables present in the current schema. */

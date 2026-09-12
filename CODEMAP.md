@@ -64,11 +64,13 @@ every limit per-instance and forgave every account lockout on restart.
 `LoginAttemptGuard.recordFailure` commits in `REQUIRES_NEW`, load-bearing: `AuthService.login` is
 `@Transactional` and records the failure immediately before throwing, so on the caller's
 transaction the count would roll back with the rejection it exists to count.
-`RateLimitInterceptor` = per-IP on auth routes, `AiRateLimitInterceptor` = 40/hour per user on the
-OpenAI-backed routes. That last one is an **allowlist of paths in `WebConfig`, and a new AI endpoint
-is unmetered until it is added** — the four vision endpoints (food photo-estimate ×2, family
-grocery-scan, pantry/scan) were missing it, which is the most expensive call in the app running
-uncapped. `LoginAttemptGuard` = per-**account** exponential lockout on wrong passwords and OTPs (5 free, then 1→2→4… min, capped at 1h, cleared on success) — the per-IP limiter alone does nothing against a botnet. `ApiException` (status + message),
+`RateLimitInterceptor` = per-IP on auth routes, `AiRateLimitInterceptor` = 40/hour per user on an
+**allowlist of paths in `WebConfig`** — the four vision endpoints were missing from it for months,
+the most expensive call in the app running uncapped. The allowlist is no longer the only line:
+**`OpenAIClient` charges every call against its own 60/hour per-user budget**, so a forgotten path
+is still bounded and the request never reaches OpenAI. The interceptor stays because only it can
+answer 429 *before* the handler runs — inside the client, a caller's catch block turns the refusal
+into a silent fallback. `LoginAttemptGuard` = per-**account** exponential lockout on wrong passwords and OTPs (5 free, then 1→2→4… min, capped at 1h, cleared on success) — the per-IP limiter alone does nothing against a botnet. `ApiException` (status + message),
 `GlobalExceptionHandler`, `ClientIp` (must not blindly trust forwarded headers), `WebConfig`
 (interceptors + CORS), `IndexController` (serves `index.html`).
 `RequestSizeLimitFilter` caps an `/api/**` body at 8 MB — `@Size` on a DTO field runs *after*
@@ -84,6 +86,12 @@ undebuggable from either end.
 `workWeek` — not its own column, because prod runs `ddl-auto: none`. It is the one `ui_prefs` key
 the **server** reads (the WhatsApp scheduler needs it). On the client it is module state in
 `recurrence.js`, seeded at boot from the cached session and again by `hydrateUiPrefs()`.
+
+**Deleting an account hands over the family first.** A family is not the owner's private data —
+other members have their own accounts and a shared history — so `handOverOrRemoveFamilies` passes it
+to the longest-standing mapped member and only deletes it outright when there is nobody left.
+Leaving `families.owner_user_id` pointing at a deleted row, which is what happened before, is the
+one option that is wrong either way.
 
 **Deleting an account** runs off `AuthService.USER_OWNED_TABLES`, a hand-written list — every table
 with a plain `user_id` column must be in it, and `AccountDeletionCoverageTest` reads

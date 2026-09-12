@@ -63,12 +63,12 @@ public class WebConfig implements WebMvcConfigurer {
         // photo-estimate-multi, grocery-scan, pantry/scan) were missing, which left
         // the most expensive calls in the app — a whole image per request — with no
         // ceiling at all beyond the account being logged in.
-        // ponytail: an allowlist you have to remember to extend. The next AI endpoint
-        // that forgets this line is unmetered again; when that happens, move the
-        // budget check inside OpenAIClient, which every one of them already goes
-        // through. Kept here for now because only an interceptor can answer 429
-        // before the handler runs — inside the client the callers' catch blocks
-        // would swallow it into a silent fallback.
+        // Still an allowlist you have to remember to extend, but no longer the only
+        // thing standing between a forgotten endpoint and an unbounded bill:
+        // OpenAIClient now charges every call against its own per-user budget, so a
+        // path missing from this list is capped anyway. This layer stays because
+        // only an interceptor can answer 429 BEFORE the handler runs, which is the
+        // difference between a clean refusal and a silent fallback.
         registry.addInterceptor(aiRateLimitInterceptor)
                 .addPathPatterns(
                     "/api/mentor/chat/messages",

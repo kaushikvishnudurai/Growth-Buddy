@@ -22,7 +22,7 @@ public interface ThrottleStore {
 
     /** One identity's failure history. */
     record Attempt(int failures, long lockedUntilMs, long updatedAtMs) {
-        static final Attempt NONE = new Attempt(0, 0, 0);
+        public static final Attempt NONE = new Attempt(0, 0, 0);
     }
 
     /**
