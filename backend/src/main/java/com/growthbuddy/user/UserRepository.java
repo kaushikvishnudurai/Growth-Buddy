@@ -16,12 +16,18 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     Optional<User> findByEmailIgnoreCase(String email);
 
+    /* Only VERIFIED accounts are discoverable. signup() writes a users row before
+       the OTP is checked, so a typo'd or abandoned signup leaves a ghost account
+       that can never log in — and inviting one produces an invite nobody can
+       ever accept. Same reason browseExcluding and searchForFamily filter it. */
     @Query("select u from User u where (lower(u.displayName) like lower(concat('%', :q, '%')) "
             + "or lower(u.email) like lower(concat('%', :q, '%'))) and u.id <> :excludeId "
+            + "and u.emailVerified = true "
             + "order by u.displayName")
     List<User> search(@Param("q") String q, @Param("excludeId") UUID excludeId, Pageable pageable);
 
-    @Query("select u from User u where u.id <> :excludeId order by u.createdAt desc")
+    @Query("select u from User u where u.id <> :excludeId and u.emailVerified = true "
+            + "order by u.createdAt desc")
     List<User> browseExcluding(@Param("excludeId") UUID excludeId, Pageable pageable);
 
     /**
@@ -42,6 +48,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
             + "or lower(u.displayName) like lower(concat('%', :q, '%')) "
             + "or lower(u.email) like lower(concat('%', :q, '%')) "
             + "or u.whatsappNumber like concat('%', :q, '%')) and u.id <> :excludeId "
+            + "and u.emailVerified = true "
             + "order by u.displayName")
     List<User> searchForFamily(@Param("q") String q, @Param("idMatch") UUID idMatch,
             @Param("excludeId") UUID excludeId, Pageable pageable);

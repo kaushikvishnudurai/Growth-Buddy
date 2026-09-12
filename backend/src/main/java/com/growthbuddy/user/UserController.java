@@ -35,9 +35,15 @@ public class UserController {
      *   <li>mentoring — show "You mentor them" pill (tappable for status)</li>
      *   <li>mentee — show "They mentor you" pill</li>
      * </ul>
+     *
+     * <p>{@code relationship} collapses both directions into one word, so the UI
+     * uses {@code mentorLink} / {@code menteeLink} instead — each is
+     * none/pending/active for that direction on its own, which is what lets the
+     * pair mentor each other at the same time.
      */
     public record PublicUser(
-            UUID id, String displayName, String email, int level, String relationship) {
+            UUID id, String displayName, String email, int level, String relationship,
+            String mentorLink, String menteeLink) {
     }
 
     /**
@@ -67,10 +73,11 @@ public class UserController {
     }
 
     private PublicUser toPublic(UUID me, User u) {
-        String relationship = mentorship.relationship(me, u.getId()).state();
-        boolean connected = "mentoring".equals(relationship) || "mentee".equals(relationship);
+        var rel = mentorship.relationship(me, u.getId());
+        boolean connected = "active".equals(rel.mentorLink()) || "active".equals(rel.menteeLink());
         String email = connected ? u.getEmail() : maskEmail(u.getEmail());
-        return new PublicUser(u.getId(), u.getDisplayName(), email, u.getLevel(), relationship);
+        return new PublicUser(u.getId(), u.getDisplayName(), email, u.getLevel(),
+                rel.state(), rel.mentorLink(), rel.menteeLink());
     }
 
     /** {@code alice@example.com} → {@code a***e@example.com}. */

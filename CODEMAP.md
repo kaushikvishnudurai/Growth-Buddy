@@ -107,10 +107,19 @@ routes (mentor, quick-add, money, food photos). `ApiException` (status + message
 - `quickadd/QuickAddService` (142) — free text → structured writes across features.
 - `notification/NotificationService` (99) + `WebSocketConfig` (123) — realtime channel
   (STOMP/SockJS; the frontend uses `@stomp/stompjs`).
-- `mentorship/MentorshipService` (191), `circle/CircleService` (196) — invites and circles;
+- `mentorship/MentorshipService` (222), `circle/CircleService` (196) — invites and circles;
   `CircleChallenge` is a time-boxed habit challenge, members ranked by check-ins completed.
+  The two mentorship directions are INDEPENDENT — A can mentor B while B mentors A — so
+  `relationship()` returns `mentorLink` / `menteeLink` (none|pending|active) per side and `revoke()`
+  cancels only the side it was handed. The single `state()` word is a legacy summary; UI uses the
+  two links. Covered by `MentorshipRelationshipTest`.
 - `config/DataSeeder` (152) — demo user + starter data, keyed on `growthbuddy.demo-user-id`.
-- `config/DataCleanupJob` (35) — nightly purge of append-only tables never read again (hosting quota).
+- `config/DataCleanupJob` (85) — nightly purge of append-only tables never read again (hosting
+  quota), plus abandoned signups: `signup()` writes the users row BEFORE the OTP is checked, so a
+  mistyped email leaves an account that can never sign in but still holds the unique email.
+  Unverified + older than 7 days is deleted, children first (TiDB may not enforce FK cascade).
+  The three people-lookup queries in `UserRepository` also require `emailVerified = true`, so a
+  ghost is undiscoverable the moment it exists rather than only after the nightly sweep.
 - `user/ProgressService` (47), `wellness/WellnessService` (99), `water/WaterService` (87),
   `task/TaskService` (132), `goal/GoalService` (151), `focus/FocusService` (81),
   `money/MoneyService` (97 — 512 kB blob cap + the purchase advisor).

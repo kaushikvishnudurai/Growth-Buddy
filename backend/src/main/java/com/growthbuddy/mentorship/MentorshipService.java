@@ -124,41 +124,70 @@ public class MentorshipService {
     /**
      * What is {@code currentUser}'s relationship with {@code other}?
      *
-     * <ul>
-     *   <li>{@code mentoring} — current user is the mentor of other (accepted).</li>
-     *   <li>{@code mentee}   — other is mentoring current user (accepted).</li>
-     *   <li>{@code pending}  — there's an open invite either way.</li>
-     *   <li>{@code none}     — no active connection.</li>
-     * </ul>
+     * <p>The two directions are INDEPENDENT: A can mentor B while B mentors A.
+     * {@code mentorLink} is the caller's standing as the other's mentor;
+     * {@code menteeLink} is their standing as the other's mentee. Each is
+     * {@code none} / {@code pending} / {@code active}.
+     *
+     * <p>{@code state} is the legacy single-value summary kept for callers that
+     * only need "are we connected at all" — accepted wins, then pending.
      */
     @Transactional(readOnly = true)
     public Relationship relationship(UUID currentUserId, UUID otherUserId) {
         if (currentUserId.equals(otherUserId)) {
-            return new Relationship("self", null);
+            return new Relationship("self", null, "none", null, "none", null);
         }
-        List<MentorshipRequest> between = requests.findAllBetween(currentUserId, otherUserId);
-        // Accepted wins; if none, surface pending.
-        MentorshipRequest acceptedAsMentor = null, acceptedAsMentee = null, pending = null;
-        for (MentorshipRequest r : between) {
-            boolean curIsFrom = r.getFromUserId().equals(currentUserId);
+        UUID mentorActive = null, menteeActive = null, mentorPending = null, menteePending = null;
+        for (MentorshipRequest r : requests.findAllBetween(currentUserId, otherUserId)) {
+            boolean curIsMentor = makesMentor(r, currentUserId);
             switch (r.getStatus()) {
                 case accepted -> {
-                    boolean curIsMentor = (curIsFrom && r.getDirection() == Direction.offer)
-                            || (!curIsFrom && r.getDirection() == Direction.request);
-                    if (curIsMentor) acceptedAsMentor = r;
-                    else acceptedAsMentee = r;
+                    if (curIsMentor) mentorActive = r.getId();
+                    else menteeActive = r.getId();
                 }
-                case pending -> { if (pending == null) pending = r; }
+                case pending -> {
+                    if (curIsMentor) {
+                        if (mentorPending == null) mentorPending = r.getId();
+                    } else if (menteePending == null) {
+                        menteePending = r.getId();
+                    }
+                }
                 default -> { /* rejected/cancelled don't constrain re-invites */ }
             }
         }
-        if (acceptedAsMentor != null) return new Relationship("mentoring", acceptedAsMentor.getId());
-        if (acceptedAsMentee != null) return new Relationship("mentee", acceptedAsMentee.getId());
-        if (pending != null) return new Relationship("pending", pending.getId());
-        return new Relationship("none", null);
+        String mentorLink = mentorActive != null ? "active" : mentorPending != null ? "pending" : "none";
+        String menteeLink = menteeActive != null ? "active" : menteePending != null ? "pending" : "none";
+        UUID mentorId = mentorActive != null ? mentorActive : mentorPending;
+        UUID menteeId = menteeActive != null ? menteeActive : menteePending;
+
+        String state;
+        UUID reqId;
+        if (mentorActive != null) {
+            state = "mentoring";
+            reqId = mentorActive;
+        } else if (menteeActive != null) {
+            state = "mentee";
+            reqId = menteeActive;
+        } else if (mentorPending != null || menteePending != null) {
+            state = "pending";
+            reqId = mentorPending != null ? mentorPending : menteePending;
+        } else {
+            state = "none";
+            reqId = null;
+        }
+        return new Relationship(state, reqId, mentorLink, mentorId, menteeLink, menteeId);
     }
 
-    public record Relationship(String state, UUID requestId) {}
+    /** Would {@code userId} be the MENTOR if this request were accepted? */
+    private static boolean makesMentor(MentorshipRequest r, UUID userId) {
+        boolean isFrom = r.getFromUserId().equals(userId);
+        return (isFrom && r.getDirection() == Direction.offer)
+                || (!isFrom && r.getDirection() == Direction.request);
+    }
+
+    public record Relationship(String state, UUID requestId,
+            String mentorLink, UUID mentorRequestId,
+            String menteeLink, UUID menteeRequestId) {}
 
     /**
      * Revoke (cancel) an existing connection. Either user in the pair may
@@ -175,17 +204,19 @@ public class MentorshipService {
         UUID partnerId = seed.getFromUserId().equals(currentUserId)
                 ? seed.getToUserId() : seed.getFromUserId();
 
-        // Cancel every active (pending/accepted) row between the pair, both
-        // directions. A single revoke breaks the connection completely so the
-        // searcher can re-invite cleanly and the relationship resolves to none.
+        // Cancel only the DIRECTION being revoked. The two directions are
+        // independent (I mentor you, you mentor me), so dropping "I mentor you"
+        // must leave "you mentor me" standing. Duplicate rows on the same side
+        // go together, which keeps that side resolving cleanly to none.
+        boolean revokingMentorSide = makesMentor(seed, currentUserId);
         Instant now = Instant.now();
         for (MentorshipRequest r : requests.findAllBetween(currentUserId, partnerId)) {
-            if (r.getStatus() == Status.pending || r.getStatus() == Status.accepted) {
-                r.setStatus(Status.cancelled);
-                r.setRespondedAt(now);
-                requests.save(r);
-                notifications.deleteByRelated(r.getId());
-            }
+            if (r.getStatus() != Status.pending && r.getStatus() != Status.accepted) continue;
+            if (makesMentor(r, currentUserId) != revokingMentorSide) continue;
+            r.setStatus(Status.cancelled);
+            r.setRespondedAt(now);
+            requests.save(r);
+            notifications.deleteByRelated(r.getId());
         }
     }
 }
