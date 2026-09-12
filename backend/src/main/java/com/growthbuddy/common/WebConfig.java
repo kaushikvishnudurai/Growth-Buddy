@@ -58,13 +58,31 @@ public class WebConfig implements WebMvcConfigurer {
                     "/api/auth/whatsapp/send-otp",
                     "/api/auth/whatsapp/verify-otp"
                 );
-        // Per-user cap on the pricey OpenAI-backed endpoints.
+        // Per-user cap on the pricey OpenAI-backed endpoints. EVERY path that can
+        // reach OpenAIClient belongs here; the four vision ones (photo-estimate,
+        // photo-estimate-multi, grocery-scan, pantry/scan) were missing, which left
+        // the most expensive calls in the app — a whole image per request — with no
+        // ceiling at all beyond the account being logged in.
+        // ponytail: an allowlist you have to remember to extend. The next AI endpoint
+        // that forgets this line is unmetered again; when that happens, move the
+        // budget check inside OpenAIClient, which every one of them already goes
+        // through. Kept here for now because only an interceptor can answer 429
+        // before the handler runs — inside the client the callers' catch blocks
+        // would swallow it into a silent fallback.
         registry.addInterceptor(aiRateLimitInterceptor)
                 .addPathPatterns(
                     "/api/mentor/chat/messages",
                     "/api/quick-add",
                     "/api/money/advice",
-                    "/api/auth/nutrition-suggestion"
+                    "/api/auth/nutrition-suggestion",
+                    "/api/food/photo-estimate",
+                    "/api/food/photo-estimate-multi",
+                    "/api/food/entries",
+                    "/api/family/grocery-scan",
+                    "/api/family/pantry/scan",
+                    "/api/family/meal-plan",
+                    "/api/family/meal-plan/multi",
+                    "/api/family/shopping/generate"
                 );
     }
 

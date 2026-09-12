@@ -54,9 +54,15 @@ Per feature: `XController` (routes only) → `XService` (logic, `@Transactional`
 
 ### `common/` — cross-cutting
 `CurrentUserInterceptor` validates the bearer token and puts the user id in `CurrentUser`
-(ThreadLocal). `RateLimiter` is an in-memory sliding window, no deps, per-bucket synchronized;
-`RateLimitInterceptor` = per-IP on auth routes, `AiRateLimitInterceptor` = per-user on OpenAI-backed
-routes (mentor, quick-add, money, food photos). `LoginAttemptGuard` = per-**account** exponential lockout on wrong passwords and OTPs (5 free, then 1→2→4… min, capped at 1h, cleared on success) — the per-IP limiter alone does nothing against a botnet. `ApiException` (status + message),
+(ThreadLocal). It is registered on `/api/**` and **the only way past it is an exact match in
+`ANONYMOUS_PATHS`** — don't add a second escape based on the raw URI, which is spelled differently
+from the path Spring routed on and once let `/%61pi/…` through unauthenticated.
+`RateLimiter` is an in-memory sliding window, no deps, per-bucket synchronized;
+`RateLimitInterceptor` = per-IP on auth routes, `AiRateLimitInterceptor` = 40/hour per user on the
+OpenAI-backed routes. That last one is an **allowlist of paths in `WebConfig`, and a new AI endpoint
+is unmetered until it is added** — the four vision endpoints (food photo-estimate ×2, family
+grocery-scan, pantry/scan) were missing it, which is the most expensive call in the app running
+uncapped. `LoginAttemptGuard` = per-**account** exponential lockout on wrong passwords and OTPs (5 free, then 1→2→4… min, capped at 1h, cleared on success) — the per-IP limiter alone does nothing against a botnet. `ApiException` (status + message),
 `GlobalExceptionHandler`, `ClientIp` (must not blindly trust forwarded headers), `WebConfig`
 (interceptors + CORS), `IndexController` (serves `index.html`).
 

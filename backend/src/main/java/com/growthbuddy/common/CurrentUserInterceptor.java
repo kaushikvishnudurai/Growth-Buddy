@@ -45,7 +45,15 @@ public class CurrentUserInterceptor implements HandlerInterceptor {
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
             throws java.io.IOException {
         String path = request.getRequestURI();
-        if (ANONYMOUS_PATHS.contains(path) || !path.startsWith("/api/")) {
+        // Only ANONYMOUS_PATHS skips the check. There used to be a second escape
+        // here — `|| !path.startsWith("/api/")` — and it could only ever fire when
+        // the raw URI spelled the path differently from the one Spring matched to
+        // route the request (a percent-encoded letter, a doubled slash). This
+        // interceptor is registered on "/api/**" and nothing else, so the framework
+        // has already decided we are on an API path; re-deciding it from the raw
+        // string could only disagree, and it disagreed by letting the request
+        // through unauthenticated. An auth gate must fail closed.
+        if (ANONYMOUS_PATHS.contains(path)) {
             return true;
         }
         String header = request.getHeader("Authorization");
