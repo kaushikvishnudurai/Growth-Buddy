@@ -701,10 +701,14 @@ public class AuthService {
     }
 
     /* "non vegetarian" contains "veg", so a plain substring test hands a
-       non-vegetarian the vegetarian menu. Rule out the negations first. */
+       non-vegetarian the vegetarian menu. Rule out the negations first.
+       "egg" is deliberately not one of them: it has to leave "vegetarian, no
+       egg" vegetarian, and "eggetarian" resolves without it anyway by having no
+       "veg" to match. Suggesting chicken to a vegetarian is the bad direction
+       to fail in. */
     static boolean vegetarian(String dietPref) {
         String diet = textOr(dietPref, "balanced Indian").toLowerCase(Locale.ROOT);
-        if (diet.contains("non") || diet.contains("egg") || diet.contains("meat")
+        if (diet.contains("non") || diet.contains("meat")
                 || diet.contains("chicken") || diet.contains("fish")) {
             return false;
         }

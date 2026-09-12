@@ -27,6 +27,13 @@ class NutritionHeuristicTest {
         assertTrue(AuthService.vegetarian("pure veg"));
     }
 
+    /** Failing the other way suggests chicken to a vegetarian, which is worse. */
+    @Test
+    void aVegetarianWhoAvoidsEggIsStillVegetarian() {
+        assertTrue(AuthService.vegetarian("vegetarian, no egg"));
+        assertTrue(AuthService.vegetarian("eggless veg"));
+    }
+
     @Test
     void unsetDietIsNotAssumedVegetarian() {
         assertFalse(AuthService.vegetarian(null));

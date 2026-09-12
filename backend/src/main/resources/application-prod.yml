@@ -48,6 +48,12 @@ spring:
           # request. The dialect is already pinned in application.yml, so the
           # probe only buys the server version (8.0, which is what MySQLDialect
           # assumes anyway) and charset details that ddl-auto: none never uses.
+          #
+          # Tied to ddl-auto: none, though — it switches off ALL JDBC metadata,
+          # schema validation included. Measured: with SPRING_JPA_DDL_AUTO=validate
+          # the boot dies on "wrong column type ... found [varchar], but expecting
+          # [char(36)]" that it does not report with metadata access on. Remove
+          # this line in the same change that turns validate on.
           allow_jdbc_metadata_access: false
 
 growthbuddy:
