@@ -24,6 +24,8 @@ export default [
         SockJS: 'readonly',
         StompJs: 'readonly',
         lucide: 'readonly',
+        // Vite `define` substitutes this at build time.
+        __GB_BUILD__: 'readonly',
       },
     },
     rules: {

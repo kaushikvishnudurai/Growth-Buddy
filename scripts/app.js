@@ -40,6 +40,10 @@ import { CacheStorage } from './cache-storage.js';
 import { registerToast } from './toast.js';
 import { initA11y } from './a11y.js';
 
+// Replaced by Vite's `define` at build time — see vite.config.js.
+window.GB_BUILD = __GB_BUILD__;
+console.log('[gb] build', __GB_BUILD__);
+
 // Prefer the build-time env (VITE_API_BASE). In dev, fall back to '' so requests
 // are same-origin (relative) and flow through the Vite proxy to the backend.
 // NOTE: no runtime (cookie-backed) override — a planted `gb.apiBase` cookie could

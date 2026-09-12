@@ -91,6 +91,14 @@ export default defineConfig({
       devOptions: { enabled: false },
     }),
   ],
+  /* Build number, printed to the console at boot (window.GB_BUILD). BUMP IT BY
+     ONE before every push — that is the whole mechanism. A phone logging a
+     smaller number than the latest push is running a cached build.
+     ponytail: deliberately hand-cranked. Deriving it from the clock or the git
+     history needs no discipline but gives you a number nobody can recite; this
+     one you can. If it starts drifting because someone forgets, move it to
+     `git rev-list --count HEAD` minus an offset. */
+  define: { __GB_BUILD__: 0 },
   // index.html at the project root is the entry; it pulls in scripts/app.js as a module.
   root: '.',
   // The repo's assets/ holds dev screenshots we don't want copied verbatim;
