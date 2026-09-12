@@ -50,10 +50,10 @@ fix the doc line if it was wrong. A doc you touch and don't update is worse than
   error. Needs `npm run dev` plus a Chrome started with `--remote-debugging-port=9222`
   (`puppeteer.launch()` dies here with an empty stderr; attaching works).
 - After web changes, the Capacitor app needs `npm run sync` in `../Growth-Buddy-Mobile`.
-- **`__GB_BUILD__` derives itself** from `git rev-list --count HEAD` minus an offset — no
-  bumping. It's what the console prints at boot (`window.GB_BUILD`), and the only way to tell a
-  live build from a cached one on someone's phone. Outside a git checkout it reports 0
-  ("unknown"); override with `GB_BUILD=<n> npm run build`.
+- **Bump `BUILD` in `vite.config.js` by one before every push.** It's what the console prints
+  at boot (`window.GB_BUILD`), and the only way to tell a live build from a cached one on
+  someone's phone. Deriving it from git was tried and reverted: the prod image has no `.git`
+  and no git binary, so every build reported 0.
 - `grep 'ponytail:'` for deliberate simplifications and their upgrade paths.
 - New icon → add it to `scripts/icons.js`. New screen → `SCREENS` in `app.js` (+ `NAV_CATALOG` in
   `gb-kit.js` for a nav slot). New entity → add the table to `tableCreationQueries.sql` too;
