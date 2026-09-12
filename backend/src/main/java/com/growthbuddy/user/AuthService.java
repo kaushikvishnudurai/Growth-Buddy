@@ -70,6 +70,34 @@ public class AuthService {
     private WhatsAppService whatsApp;
     private final SecureRandom rng = new SecureRandom();
 
+    /**
+     * Every table owning a direct {@code user_id} column — what a deleted account
+     * has to take with it. Hoisted out of {@code deleteAccount} so a test can hold
+     * it against the schema: this list is hand-written, and the two tables added
+     * after it (focus_sessions, weekly_reviews) were simply never added to it, so
+     * a deleted account left its focus history and weekly reviews behind, keyed to
+     * a user row that no longer existed. {@code AccountDeletionCoverageTest} now
+     * fails the build when a new user-owned table forgets this line.
+     *
+     * <p>Columns spelled differently — {@code owner_user_id} (families),
+     * {@code linked_user_id} (family_members), {@code from_user_id}/{@code to_user_id}
+     * (mentorship_requests), {@code created_by_user_id}/{@code generated_by_user_id}
+     * (the family_* tables) — are deliberately NOT here. Those rows belong to a
+     * family or a conversation rather than to one account, and unpicking them is a
+     * product decision (transfer the family? delete it?), not a cascade.
+     */
+    static final String[] USER_OWNED_TABLES = {
+        "password_credentials",
+        "email_verification_tokens", "password_reset_tokens", "whatsapp_otp_tokens",
+        "task_completion_history", "tasks",
+        "habit_checkins", "habits", "streak_freeze_wallets",
+        "water_entries", "water_goals", "food_entries", "food_photo_logs",
+        "goal_actions", "goals", "daily_scores", "daily_logs",
+        "mentor_threads", "circle_members", "circle_posts",
+        "push_subscriptions", "notifications", "focus_sessions", "weekly_reviews",
+        "money_state", "calendar_reminders", "sessions",
+    };
+
     @PersistenceContext
     private EntityManager em;
 
@@ -283,37 +311,34 @@ public class AuthService {
             {"calendar_reminder_skips", "reminder_id", "calendar_reminders"},
             {"reminder_dispatch_log", "reminder_id", "calendar_reminders"},
         };
-        // Tables owning a direct user_id column.
-        String[] userTables = {
-            "password_credentials",
-            "email_verification_tokens", "password_reset_tokens", "whatsapp_otp_tokens",
-            "task_completion_history", "tasks",
-            "habit_checkins", "habits", "streak_freeze_wallets",
-            "water_entries", "water_goals", "food_entries", "food_photo_logs",
-            "goal_actions", "goals", "daily_scores", "daily_logs",
-            "mentor_threads", "circle_members", "circle_posts",
-            "push_subscriptions", "notifications",
-            "money_state", "calendar_reminders", "sessions",
-        };
         // Kept as a guard even though every table above now exists: a DELETE against
         // a missing table throws, which marks the whole transaction rollback-only and
         // aborts the purge — so a future rename fails safe instead of half-deleting.
         java.util.Set<String> existing = existingTables();
 
+        // FOREIGN_KEY_CHECKS is a SESSION variable, and the session here is a pooled
+        // connection that goes straight back to Hikari for the next request to use.
+        // The restore therefore belongs in a finally: any throw between the two
+        // statements — a renamed table, a lock timeout, a dropped connection — used
+        // to hand back a connection with referential integrity switched OFF, for
+        // every request that borrowed it afterwards, until the pool recycled it.
         exec("SET FOREIGN_KEY_CHECKS=0", null);
-        for (String[] cd : childDeletes) {
-            if (existing.contains(cd[0]) && existing.contains(cd[2])) {
-                exec("DELETE FROM " + cd[0] + " WHERE " + cd[1]
-                        + " IN (SELECT id FROM " + cd[2] + " WHERE user_id = ?1)", userId);
+        try {
+            for (String[] cd : childDeletes) {
+                if (existing.contains(cd[0]) && existing.contains(cd[2])) {
+                    exec("DELETE FROM " + cd[0] + " WHERE " + cd[1]
+                            + " IN (SELECT id FROM " + cd[2] + " WHERE user_id = ?1)", userId);
+                }
             }
-        }
-        for (String t : userTables) {
-            if (existing.contains(t)) {
-                exec("DELETE FROM " + t + " WHERE user_id = ?1", userId);
+            for (String t : USER_OWNED_TABLES) {
+                if (existing.contains(t)) {
+                    exec("DELETE FROM " + t + " WHERE user_id = ?1", userId);
+                }
             }
+            exec("DELETE FROM users WHERE id = ?1", userId);
+        } finally {
+            exec("SET FOREIGN_KEY_CHECKS=1", null);
         }
-        exec("DELETE FROM users WHERE id = ?1", userId);
-        exec("SET FOREIGN_KEY_CHECKS=1", null);
         sessions.revokeAllForUser(userId);
     }
 

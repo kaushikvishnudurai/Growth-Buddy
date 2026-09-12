@@ -59,7 +59,13 @@ public class DigestScheduler {
             try {
                 digest.sendDigest(user, weekly);
             } catch (Exception ex) {
+                // Don't stamp lastDigestOn on a failure: that records a digest as
+                // delivered when it never left the building, and the `already sent
+                // today` check above then skips the retry for good. Leaving the
+                // stamp alone lets the next tick inside the user's digest hour try
+                // again, and cannot spam — the send is gated on the hour matching.
                 log.warn("Failed to send digest for user {}: {}", user.getId(), ex.getMessage());
+                continue;
             }
             user.setLastDigestOn(today);
             users.save(user);

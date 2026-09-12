@@ -98,7 +98,7 @@ export default defineConfig({
      history needs no discipline but gives you a number nobody can recite; this
      one you can. If it starts drifting because someone forgets, move it to
      `git rev-list --count HEAD` minus an offset. */
-  define: { __GB_BUILD__: 8 },
+  define: { __GB_BUILD__: 9 },
   // index.html at the project root is the entry; it pulls in scripts/app.js as a module.
   root: '.',
   // The repo's assets/ holds dev screenshots we don't want copied verbatim;

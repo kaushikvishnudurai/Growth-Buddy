@@ -66,6 +66,21 @@ grocery-scan, pantry/scan) were missing it, which is the most expensive call in 
 uncapped. `LoginAttemptGuard` = per-**account** exponential lockout on wrong passwords and OTPs (5 free, then 1→2→4… min, capped at 1h, cleared on success) — the per-IP limiter alone does nothing against a botnet. `ApiException` (status + message),
 `GlobalExceptionHandler`, `ClientIp` (must not blindly trust forwarded headers), `WebConfig`
 (interceptors + CORS), `IndexController` (serves `index.html`).
+`RequestSizeLimitFilter` caps an `/api/**` body at 8 MB — `@Size` on a DTO field runs *after*
+Jackson has already buffered the body, and nothing else bounds a JSON request (Tomcat's
+`maxPostSize` is form-encoding only, `spring.servlet.multipart.*` is multipart only). It refuses a
+chunked write too (411), since that is the one shape a Content-Length check cannot see.
+`GlobalExceptionHandler` keeps Jackson's message off the wire but **logs it** — a malformed body
+used to 400 with no detail to the client and no line in the log, so a wrong enum value was
+undebuggable from either end.
+
+**Deleting an account** runs off `AuthService.USER_OWNED_TABLES`, a hand-written list — every table
+with a plain `user_id` column must be in it, and `AccountDeletionCoverageTest` reads
+`tableCreationQueries.sql` and fails the build when one isn't. (`focus_sessions` and
+`weekly_reviews` were both missing, so a deleted account left those rows behind.) It brackets the
+purge with `SET FOREIGN_KEY_CHECKS=0/1` in a **try/finally** — that is a session variable on a
+pooled connection, so a throw in between handed the next request a connection with integrity
+checks off.
 
 ### Endpoint index
 

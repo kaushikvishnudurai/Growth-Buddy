@@ -69,7 +69,22 @@ public class GlobalExceptionHandler {
         if (status == null) {
             status = HttpStatus.BAD_REQUEST;
         }
+        // The reason phrase is all the client gets, on purpose: Jackson's message
+        // names DTO classes and enum constants, which is internal shape. But it was
+        // all ANYONE got — this branch swallowed the cause without logging it, so an
+        // unknown enum value or a trailing comma came back as a bare "Bad Request"
+        // with no trace on either side and nothing to debug from. Log the cause.
+        log.warn("Rejected request: {}: {}", ex.getClass().getSimpleName(), rootMessage(ex));
         return ResponseEntity.status(status).body(ApiError.of(status, status.getReasonPhrase()));
+    }
+
+    /** Jackson nests the useful detail (which field, which value) in the cause. */
+    private static String rootMessage(Throwable ex) {
+        Throwable t = ex;
+        while (t.getCause() != null && t.getCause() != t) {
+            t = t.getCause();
+        }
+        return t.getMessage();
     }
 
     @ExceptionHandler(Exception.class)
