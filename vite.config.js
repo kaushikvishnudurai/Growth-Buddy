@@ -37,30 +37,32 @@ export default defineConfig({
         ],
       },
       workbox: {
-        // Precache the built app shell so the app opens offline.
+        // Precache the built app shell so the app opens offline — lazy chunks
+        // included, deliberately.
+        //
+        // They were excluded once, to save pulling every screen on first visit.
+        // What that actually bought was ~27KB gzipped; what it cost was every
+        // screen you had not already opened, on every deploy. The service worker
+        // serves the previous build's index.html and entry bundle from the
+        // precache, that bundle asks for assets/circle-<oldhash>.js, and the new
+        // deploy replaced dist/ wholesale — so the chunk 404s, the dynamic import
+        // rejects, and lazyScreen() paints the crash card. Six screens dead until
+        // the worker happens to update.
+        //
+        // Precached, the shell and its chunks version together and cannot skew.
+        // Code-splitting still earns its keep: it keeps first paint from blocking
+        // on screens you may never open.
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
-        // ...but not the lazy chunks. Splitting them out of the main bundle only
-        // stops the browser *blocking* on them; the precache still pulled every
-        // one on first visit, so nothing was actually saved on the wire. These
-        // are fetched the first time you open the screen that needs them and
-        // cached from then on (see the CacheFirst rule below).
-        // Trade-off: a screen you have never opened won't work offline until you
-        // do. The shell, Home and everything you've visited still will.
-        // Adding a lazy screen? Add its chunk name here too.
-        globIgnores: [
-          'assets/{family,circle,timer,goals,report,mentor}-*.js',
-          'assets/entry-*.js', // sockjs-client
-          'assets/stomp.umd-*.js',
-        ],
         navigateFallback: '/index.html',
         // Pull our Web Push 'push' / 'notificationclick' handlers into the
         // generated service worker (keeps Workbox precaching intact).
         importScripts: ['/push-handlers.js'],
         runtimeCaching: [
           {
-            // Lazy chunks: cache on first use, serve from cache forever after.
-            // CacheFirst is safe because the filenames are content-hashed — a
-            // changed chunk is a different URL, so a stale entry can't be served.
+            // Anything hashed that escapes the precache (a chunk added by a
+            // dependency, a map). CacheFirst is safe because the filenames are
+            // content-hashed — a changed chunk is a different URL, so a stale
+            // entry can't be served.
             urlPattern: ({ url, request }) =>
               request.destination === 'script' && /\/assets\/.*\.js$/.test(url.pathname),
             handler: 'CacheFirst',
