@@ -32,6 +32,7 @@ import {
   RenderCalendarSide,
   RenderCalendarGrid,
   resetCalendarForm,
+  isPastSlot,
 } from './calendar.js';
 import { ScreenAchievements, computeAchievements } from './achievements.js';
 import { celebrate } from './celebrate.js';
@@ -4157,8 +4158,23 @@ function retryCalendarFoodDate(key) {
   loadCalendarFoodForDate(key, { force: true });
 }
 
+// One add at a time. The form's own button disables itself, but Enter-to-submit
+// and the quick-add path reach this too, and every caller wants the same answer
+// to a second click: nothing.
+let addingReminder = false;
+
 async function addReminder(key, text, time, tag, repeat, until) {
-  if (!text) return;
+  if (!text || addingReminder) return;
+  // A one-off in the past can never fire. A recurring one still can — "daily at
+  // 8am" set up at 10am has tomorrow — so only the single occurrence is refused.
+  if ((repeat || 'none') === 'none' && isPastSlot(key, time)) {
+    toastError(
+      new Error('That time has already passed — pick a later one.'),
+      'Could not add reminder.'
+    );
+    return;
+  }
+  addingReminder = true;
   try {
     const body = {
       text: text,
@@ -4184,6 +4200,8 @@ async function addReminder(key, text, time, tag, repeat, until) {
     toastSuccess('Reminder added.');
   } catch (err) {
     toastError(err, 'Could not add reminder.');
+  } finally {
+    addingReminder = false;
   }
 }
 
@@ -4212,6 +4230,23 @@ function repaintCalendarGrid() {
 
 // scope: 'all' | 'this' | 'future' | 'before'
 async function deleteReminder(scope, id, occKey) {
+  const repaint = () => {
+    if (state.screen === 'calendar') {
+      rerenderCalendarSideIfActive();
+      repaintCalendarGrid();
+    } else {
+      render();
+    }
+  };
+  const previous = state.reminders;
+  const whole = (scope || 'all') === 'all';
+  // Deleting the whole series is the one case whose outcome we can work out
+  // locally, so the row goes now and the request follows. The occurrence scopes
+  // depend on the server's skip list, so they still wait for the refetch.
+  if (whole) {
+    state.reminders = previous.filter((r) => r.id !== id);
+    repaint();
+  }
   try {
     const qs = new URLSearchParams();
     qs.set('scope', scope || 'all');
@@ -4221,15 +4256,15 @@ async function deleteReminder(scope, id, occKey) {
     await api('/api/reminders/' + encodeURIComponent(id) + '?' + qs.toString(), {
       method: 'DELETE',
     });
-    state.reminders = await api('/api/reminders');
-    if (state.screen === 'calendar') {
-      rerenderCalendarSideIfActive();
-      repaintCalendarGrid();
-    } else {
-      render();
+    if (!whole) {
+      state.reminders = await api('/api/reminders');
+      repaint();
     }
     toastSuccess('Reminder deleted.');
   } catch (err) {
+    // Put it back: the row is gone from the screen but not from the server.
+    state.reminders = previous;
+    repaint();
     toastError(err, 'Could not delete reminder.');
   }
 }

@@ -90,6 +90,19 @@ function isFutureKey(key) {
   return key > todayKey();
 }
 
+/* Has this slot already gone by? A past date, or today at a time that has
+   passed. No time means "sometime today", which has not. */
+function isPastSlot(key, time) {
+  const today = todayKey();
+  if (key < today) return true;
+  if (key > today) return false;
+  if (!time) return false;
+  const now = new Date();
+  const hhmm =
+    String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+  return time < hhmm;
+}
+
 /* Pretty label for a date key, e.g. "Mon, June 8". */
 function prettyDate(key) {
   const p = parseKey(key);
@@ -439,7 +452,9 @@ function ReminderRow(rem, occKey, onDelete, whatsappEnabled) {
         formatTime(rem.time)
       )
     );
-    if (whatsappEnabled) {
+    // Only where it is still true: the scheduler has already passed a slot in
+    // the past, so badging it "WhatsApp" promises a message that will never come.
+    if (whatsappEnabled && !isPastSlot(occKey, rem.time)) {
       meta.push(
         h(
           'span',
@@ -551,7 +566,7 @@ function buildForm() {
     if (rep === 'none') untilInput.value = '';
   });
 
-  function submit() {
+  async function submit() {
     const text = textInput.value.trim();
     if (!text) {
       textInput.focus();
@@ -560,8 +575,14 @@ function buildForm() {
     const repeat = repeatPicker.get();
     const until = repeat !== 'none' ? untilInput.value || '' : '';
     const cb = formBinding.onAddReminder;
-    if (typeof cb === 'function') {
-      cb(formBinding.selectedDate, text, timeInput.value || '', tagPicker.get(), repeat, until);
+    if (typeof cb !== 'function') {
+      return;
+    }
+    addBtn.disabled = true;
+    try {
+      await cb(formBinding.selectedDate, text, timeInput.value || '', tagPicker.get(), repeat, until);
+    } finally {
+      addBtn.disabled = false;
     }
   }
 
@@ -571,6 +592,13 @@ function buildForm() {
       submit();
     }
   });
+
+  const addBtn = h(
+    'button',
+    { type: 'button', class: 'gb-btn gb-btn--primary gb-rem-add', onclick: submit },
+    Icon('plus', { size: 18, sw: 2.6, color: 'var(--fg-on-brand)' }),
+    'Add reminder'
+  );
 
   const node = Card({
     className: 'gb-rem-form',
@@ -582,12 +610,7 @@ function buildForm() {
       h('div', { class: 'gb-field-label' }, 'Repeat'),
       repeatPicker.node,
       untilField,
-      h(
-        'button',
-        { type: 'button', class: 'gb-btn gb-btn--primary gb-rem-add', onclick: submit },
-        Icon('plus', { size: 18, sw: 2.6, color: 'var(--fg-on-brand)' }),
-        'Add reminder'
-      ),
+      addBtn,
     ],
   });
 
@@ -1000,6 +1023,7 @@ function CalendarToolbar({ year, month, reminders, tasks, onPrevMonth, onNextMon
 }
 
 export {
+  isPastSlot,
   ScreenCalendar,
   CalendarToolbar as RenderCalendarToolbar,
   ReminderPanel as RenderCalendarSide,
