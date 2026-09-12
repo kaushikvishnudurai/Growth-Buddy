@@ -71,11 +71,14 @@ it silently landed on Home. Don't reintroduce a second list.
   default — first paint shows cached values and corrects itself.
   **While wave 1 is in flight only the CONTENT COLUMN waits**: `render()` paints the real shell
   (header, nav — neither needs the API) and puts `loadingContent()` in `.gb-scroll`.
-  **The placeholder has to resemble the screen it stands in for**: `loadingContent()` returns
-  `mentorSkeleton()` (chat bubbles + a composer bar) on the Buddy screen and the generic quote +
-  card stack everywhere else. Bubbles, not cards, because a boot on `#/mentor` otherwise looked
-  like Home had loaded and then rearranged completely. Add a branch here for any other screen whose
-  shape is nothing like a card list. That replaced a
+  **A placeholder must not describe a screen that doesn't exist**: `loadingContent()` returns
+  `mentorSkeleton()` (chat bubbles + a composer bar) on the Buddy screen, and everywhere else the
+  quote card ALONE — `.gb-boot-quote`, no grey rows. Bubbles, not cards, because a boot on
+  `#/mentor` otherwise looked like Home had loaded and then rearranged completely; and no rows at
+  all on Home because the three identical grey cards promised a shape Home never takes (a score
+  ring, a brief, a mini calendar), which on a throttled link read as stuck rather than loading.
+  `screenSkeleton()` still backs `lazyScreen()`, where grey rows are honest — that one waits on a
+  chunk for a screen already on display. That replaced a
   full-screen splash which threw the whole app away, so everything appeared at once when the fetch
   landed. It also hid a worse bug: `tasks`/`habits`/`goals` are NOT cache-backed, so a `[]` first
   paint flashed each list screen's "nothing here yet" empty state. Don't render a screen off wave-1

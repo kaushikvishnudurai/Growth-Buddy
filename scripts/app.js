@@ -6530,12 +6530,25 @@ function mentorSkeleton() {
 
 function loadingContent() {
   if (state.screen === 'mentor') return mentorSkeleton();
-  const skel = screenSkeleton();
-  skel.prepend(QuoteCard({ quote: state.quote }));
-  skel.setAttribute('role', 'status');
-  skel.setAttribute('aria-live', 'polite');
-  skel.setAttribute('aria-label', 'Loading');
-  return skel;
+  // The boot screen is the quote and nothing else. Three grey cards used to sit
+  // under it, and they were describing a screen that doesn't exist: Home lands
+  // as a score ring, a daily brief and a mini calendar, never three identical
+  // rows. A placeholder that lies about its own shape doesn't read as "nearly
+  // there", it reads as stuck — which is exactly how it looked on a throttled
+  // connection. One real card, then the actual screen.
+  // screenSkeleton() still serves lazyScreen(), where the grey rows are honest:
+  // that one is waiting on a chunk for a screen already on display.
+  const wrap = h(
+    'div',
+    {
+      class: 'gb-rise gb-boot-quote',
+      role: 'status',
+      'aria-live': 'polite',
+      'aria-label': 'Loading',
+    },
+    QuoteCard({ quote: state.quote })
+  );
+  return wrap;
 }
 
 /* ---- Offline banner (offline-first PWA) ----

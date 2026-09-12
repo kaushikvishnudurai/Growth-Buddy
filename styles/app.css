@@ -6360,8 +6360,12 @@ select.gb-input {
   gap: 12px;
   padding: 12px 20px 0;
 }
-/* The quote rides on top of the initial-load skeleton (see loadingContent). */
-.gb-lazy-skeleton > .gb-quote-card {
+/* The whole boot screen: one quote card, same gutters the skeleton used, no
+   grey rows under it (see loadingContent). */
+.gb-boot-quote {
+  padding: 12px 20px 0;
+}
+.gb-boot-quote > .gb-quote-card {
   margin: 0;
 }
 .gb-skel-lines {
