@@ -86,6 +86,14 @@ it silently landed on Home. Don't reintroduce a second list.
   modules can fire toasts without importing app.js (cycle).
 - Some screens (money, family, mentor, circle) repaint their own subtree; calling `render()` for them
   is wasteful and can drop their local view state.
+- **`syncUserSession(user)` is the only way a signed-in user may reach `state`.** It is where
+  `hydrateUiPrefs()` runs, which mirrors the account's server-side theme / text scale / premium
+  skin / onboarding flag into the local cache keys the views read synchronously. Sign-in, OTP
+  verify, password reset and change-password each used to do `state.user = user; saveSession(...)`
+  instead, so a fresh device painted Home in this device's defaults and only snapped to the user's
+  real skin when something happened to call `/api/auth/me` (which only `toggleTask`/`toggleHabit`
+  do). A token on the payload wins over the stored one — at sign-in nothing is stored yet, and a
+  password change has just revoked what is.
 - **The premium skin is CSS-only.** `togglePremium` flips `data-premium` on `<html>` and nothing
   else branches on `state.premium` — keep it that way; the whole look lives in `styles/premium.css`.
   Even the header seedling ships in the markup on every screen and is shown by CSS. The one

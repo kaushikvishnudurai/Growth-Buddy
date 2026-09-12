@@ -776,8 +776,16 @@ function clearSession() {
   CacheStorage.removeItem(TOKEN_KEY);
 }
 
+/* The ONLY way a signed-in user reaches `state` — sign-in, OTP verify, password
+   reset and every profile save all come through here, because this is where
+   hydrateUiPrefs() runs. Set `state.user` directly and the account's theme, text
+   size and premium skin stay at this device's defaults until something else
+   happens to call /api/auth/me.
+
+   A token on the payload wins over the stored one: at sign-in nothing is stored
+   yet, and after a password change the stored one has just been revoked. */
 function syncUserSession(userPatch) {
-  const token = loadToken();
+  const token = (userPatch && userPatch.token) || loadToken();
   state.user = Object.assign({}, state.user || {}, userPatch || {});
   if (token) {
     state.user.token = token;
@@ -3230,8 +3238,7 @@ function securitySection() {
       });
       // Password change revoked all sessions and minted a fresh token — store it
       // so this device stays signed in.
-      state.user = resp;
-      saveSession(resp, resp.token);
+      syncUserSession(resp);
       toastSuccess('Password updated. Other devices were signed out.');
       curPw.value = '';
       newPw.value = '';
@@ -6133,8 +6140,7 @@ function viewSignin() {
       // screen and never sends email. Any failure (wrong credentials, or an
       // unverified account) surfaces as an error toast via runAuth.
       const user = await authPost('/api/auth/login', { email, password });
-      state.user = user;
-      saveSession(user, user.token);
+      syncUserSession(user);
       state.wellness = loadWellness();
       state.goalProgress = loadGoalProgress();
       state.money = loadMoney();
@@ -6260,8 +6266,7 @@ function viewVerify() {
     if (otp.length !== 6) return authFail('Enter the 6-digit code (must be exactly 6 digits).', 'otp');
     runAuth(async () => {
       const user = await authPost('/api/auth/verify', { email: state.authEmail, otp });
-      state.user = user;
-      saveSession(user, user.token);
+      syncUserSession(user);
       state.wellness = loadWellness();
       state.goalProgress = loadGoalProgress();
       state.money = loadMoney();
@@ -6381,8 +6386,7 @@ function viewReset() {
         otp,
         password: pwInput.value,
       });
-      state.user = user;
-      saveSession(user, user.token);
+      syncUserSession(user);
       state.wellness = loadWellness();
       state.goalProgress = loadGoalProgress();
       state.money = loadMoney();
