@@ -49,6 +49,17 @@ public class MentorshipRequest {
     @Column(name = "responded_at")
     private Instant respondedAt;
 
+    /**
+     * Last time the MENTOR opened this mentee's progress. Drives the "checked
+     * today" tick on the Circle screen; only ever set on the mentor's side of a
+     * pair, so the mentee's own row stays null.
+     *
+     * <p>An instant, not a date, on purpose: "today" is the reader's local day
+     * and the server has no idea what timezone they're in. The client compares.
+     */
+    @Column(name = "checked_at")
+    private Instant checkedAt;
+
     @PrePersist
     void prePersist() {
         if (id == null) id = UUID.randomUUID();

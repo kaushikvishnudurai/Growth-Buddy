@@ -106,6 +106,9 @@ public class MentorshipController {
                     u.getDisplayName() + " has turned off progress sharing.");
         }
 
+        // Opening the sheet IS the check-in — that's what the Circle tick shows.
+        service.markChecked(me, partnerId);
+
         List<Task> partnerTasks = tasks.findByUserIdAndDeletedAtIsNullOrderByCreatedAtAsc(partnerId);
         long done = partnerTasks.stream().filter(Task::isDone).count();
         List<Map<String, Object>> taskJson = partnerTasks.stream()

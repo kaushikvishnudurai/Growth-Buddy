@@ -32,12 +32,12 @@ public class MentorshipService {
             UUID id, UUID fromUserId, String fromName,
             UUID toUserId, String toName,
             Direction direction, Status status, String note,
-            Instant createdAt, Instant respondedAt) {
+            Instant createdAt, Instant respondedAt, Instant checkedAt) {
 
         static RequestDto from(MentorshipRequest r, String fromName, String toName) {
             return new RequestDto(r.getId(), r.getFromUserId(), fromName,
                     r.getToUserId(), toName, r.getDirection(), r.getStatus(),
-                    r.getNote(), r.getCreatedAt(), r.getRespondedAt());
+                    r.getNote(), r.getCreatedAt(), r.getRespondedAt(), r.getCheckedAt());
         }
     }
 
@@ -176,6 +176,27 @@ public class MentorshipService {
             reqId = null;
         }
         return new Relationship(state, reqId, mentorLink, mentorId, menteeLink, menteeId);
+    }
+
+    /**
+     * Stamp "the mentor looked" on the accepted link where {@code mentorId}
+     * mentors {@code menteeId}. Called when the progress sheet loads, so the
+     * tick means what it says — they opened it — rather than being a button you
+     * can tap without reading anything.
+     *
+     * <p>Silent no-op if the pair has no such link: the caller has already
+     * checked the relationship, and a bookkeeping stamp must never be the thing
+     * that fails someone's page load.
+     */
+    @Transactional
+    public void markChecked(UUID mentorId, UUID menteeId) {
+        Instant now = Instant.now();
+        for (MentorshipRequest r : requests.findAllBetween(mentorId, menteeId)) {
+            if (r.getStatus() == Status.accepted && makesMentor(r, mentorId)) {
+                r.setCheckedAt(now);
+                requests.save(r);
+            }
+        }
     }
 
     /** Would {@code userId} be the MENTOR if this request were accepted? */

@@ -1312,6 +1312,62 @@ body {
   color: var(--brand-soft-fg);
 }
 
+/* Connections, split into "You mentor" / "Who mentors you". */
+.gb-conn-group + .gb-conn-group {
+  margin-top: 14px;
+}
+.gb-conn-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 6px 2px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg3);
+}
+.gb-conn-group-head span {
+  font-size: 0.6875rem;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--fg3);
+}
+
+/* "Checked today" — the mentor's own tick, stamped when they open the mentee's
+   progress. Unchecked stays a dim outline rather than disappearing, so the row
+   reads as "still to do" instead of as nothing at all. */
+.gb-check-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  white-space: nowrap;
+  font-size: 0.71875rem;
+  font-weight: 800;
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  color: var(--fg3);
+  background: transparent;
+}
+.gb-check-pill.is-done {
+  border-color: transparent;
+  background: var(--success-soft);
+  color: var(--success-soft-fg);
+}
+@media (max-width: 420px) {
+  /* Phone rows already carry a chevron and a remove button — keep the tick,
+     drop its label. */
+  .gb-check-pill span {
+    display: none;
+  }
+  .gb-check-pill {
+    padding: 3px 6px;
+  }
+}
+
 /* ---- Focus screen ---- */
 .gb-focus {
   display: flex;

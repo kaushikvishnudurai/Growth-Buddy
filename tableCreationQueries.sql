@@ -460,6 +460,8 @@ CREATE TABLE IF NOT EXISTS mentorship_requests (
   note          VARCHAR(500) NULL,
   created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   responded_at  TIMESTAMP NULL,
+  -- Last time the mentor opened this mentee's progress ("checked today" tick).
+  checked_at    TIMESTAMP NULL,
   PRIMARY KEY (id),
   -- Don't put a unique key on (from, to, direction, status) — a 2nd
   -- accepted row legitimately shares that tuple once the pair has worked
@@ -507,6 +509,11 @@ ALTER TABLE users ADD COLUMN ui_prefs         JSON         NULL;
 -- here: adding it twice made this file abort mid-load on a fresh database,
 -- leaving 28 of 45 tables. Upgrading an older DB that predates the column?
 -- Run the ALTER by hand, or let dev's ddl-auto: update add it.
+
+-- "Checked today" tick on the Circle screen: when the mentor last opened this
+-- mentee's progress. Declared in the CREATE TABLE above too, so this ALTER is
+-- only for databases that predate it.
+ALTER TABLE mentorship_requests ADD COLUMN checked_at TIMESTAMP NULL;
 
 CREATE TABLE IF NOT EXISTS whatsapp_otp_tokens (
   token_hash  VARCHAR(255) NOT NULL,

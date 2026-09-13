@@ -119,7 +119,7 @@ function PersonRow(person, onOffer, onRequest, onView) {
  * the endpoint enforces it (403 for the mentee side), this is just the UI
  * not offering a tap that would fail.
  */
-function showPartnerStatus(partnerId, fallbackName, statusApi) {
+function showPartnerStatus(partnerId, fallbackName, statusApi, onChecked) {
   let overlay;
   function close() {
     overlay.classList.remove('is-open');
@@ -161,6 +161,7 @@ function showPartnerStatus(partnerId, fallbackName, statusApi) {
 
   statusApi(partnerId)
     .then((data) => {
+      if (onChecked) onChecked();
       subEl.textContent =
         'Level ' +
         data.level +
@@ -196,6 +197,43 @@ function showPartnerStatus(partnerId, fallbackName, statusApi) {
     });
 }
 
+/**
+ * "Did I check on this mentee today?"
+ *
+ * <p>The server stamps `checkedAt` when the mentee's progress sheet loads, so
+ * the tick means the mentor actually opened it — not that they tapped a button.
+ * It's an instant, compared against the reader's LOCAL day here: the backend
+ * has no idea what timezone the mentor is in, and "today" is their word.
+ * Nothing to expire, so there is no nightly job to get wrong.
+ */
+function checkedToday(iso) {
+  if (!iso) return false;
+  const then = new Date(iso);
+  const now = new Date();
+  return (
+    then.getFullYear() === now.getFullYear() &&
+    then.getMonth() === now.getMonth() &&
+    then.getDate() === now.getDate()
+  );
+}
+
+/* Paints in place so opening the sheet can flip the pill without a repaint. */
+function paintCheckPill(el, req) {
+  const done = checkedToday(req.checkedAt);
+  el.className = 'gb-check-pill' + (done ? ' is-done' : '');
+  el.title = done ? 'You checked on them today' : 'You have not checked on them today';
+  el.replaceChildren(
+    Icon('check', { size: 13, sw: 3 }),
+    h('span', null, done ? 'Checked today' : 'Not checked')
+  );
+}
+
+function CheckPill(req) {
+  const el = h('span', null);
+  paintCheckPill(el, req);
+  return el;
+}
+
 /* Raw status enums read as jargon — show plain words instead. */
 const STATUS_LABELS = { pending: 'Invite pending', accepted: 'Connected', rejected: 'Declined' };
 function statusLabel(status) {
@@ -218,6 +256,10 @@ function OutgoingRow(req, statusApi, onRevoke) {
       : isAccepted
         ? req.toName + ' mentors you'
         : 'You asked ' + req.toName + ' to mentor you';
+  // A mentee row lives in a card headed "You mentor" and every row in it is
+  // accepted — so "Connected" says nothing. The tick does: it's the one thing
+  // a mentor wants at a glance, which of their people they've looked in on today.
+  const checkPill = canViewStatus ? CheckPill(req) : null;
   const statusClass = 'gb-tag-pill is-' + req.status;
   const confirmOpts = isAccepted
     ? { title: 'Remove this connection?', confirmLabel: 'Remove', cancelLabel: 'Keep', danger: true }
@@ -234,7 +276,11 @@ function OutgoingRow(req, statusApi, onRevoke) {
       ...(canViewStatus
         ? activate((e) => {
             if (e.target.closest && e.target.closest('.gb-revoke-btn')) return;
-            showPartnerStatus(req.toUserId, req.toName, statusApi);
+            showPartnerStatus(req.toUserId, req.toName, statusApi, () => {
+              req.checkedAt = new Date().toISOString();
+              paintCheckPill(checkPill, req);
+              refreshIcons();
+            });
           })
         : {}),
     },
@@ -245,7 +291,7 @@ function OutgoingRow(req, statusApi, onRevoke) {
       h('div', { class: 'title' }, label),
       h('div', { class: 'sub' }, req.note ? '“' + req.note + '”' : '')
     ),
-    h('span', { class: statusClass }, statusLabel(req.status)),
+    checkPill || h('span', { class: statusClass }, statusLabel(req.status)),
     // The chevron promises a tap target, so it belongs only on rows that have one.
     canViewStatus ? Icon('chevron-right', { size: 16, sw: 2.4, color: 'var(--fg3)' }) : null,
     canRevoke
@@ -279,6 +325,7 @@ function IncomingRow(req, statusApi, onRevoke) {
       : isAccepted
         ? 'You mentor ' + req.fromName
         : req.fromName + ' asked you to mentor them';
+  const checkPill = canViewStatus ? CheckPill(req) : null;
   const statusClass = 'gb-tag-pill is-' + req.status;
   return h(
     'div',
@@ -287,7 +334,11 @@ function IncomingRow(req, statusApi, onRevoke) {
       ...(canViewStatus
         ? activate((e) => {
             if (e.target.closest && e.target.closest('.gb-revoke-btn')) return;
-            showPartnerStatus(req.fromUserId, req.fromName, statusApi);
+            showPartnerStatus(req.fromUserId, req.fromName, statusApi, () => {
+              req.checkedAt = new Date().toISOString();
+              paintCheckPill(checkPill, req);
+              refreshIcons();
+            });
           })
         : {}),
     },
@@ -298,7 +349,7 @@ function IncomingRow(req, statusApi, onRevoke) {
       h('div', { class: 'title' }, label),
       h('div', { class: 'sub' }, req.note ? '“' + req.note + '”' : '')
     ),
-    h('span', { class: statusClass }, statusLabel(req.status)),
+    checkPill || h('span', { class: statusClass }, statusLabel(req.status)),
     // The chevron promises a tap target, so it belongs only on rows that have one.
     canViewStatus ? Icon('chevron-right', { size: 16, sw: 2.4, color: 'var(--fg3)' }) : null,
     isAccepted && onRevoke
@@ -1008,6 +1059,17 @@ function ScreenCircle({
         })
       );
 
+    /* Which side of each link am I on? Same rule the rows use for the progress
+       window: an offer I sent, or a request sent to me, makes me the mentor.
+       One flat list read as a jumble of "You mentor X" / "Y mentors you" — the
+       two are different jobs, so they get different boxes. */
+    const iMentor = (item) =>
+      item.side === 'outgoing' ? item.req.direction === 'offer' : item.req.direction !== 'offer';
+    const row = (item) =>
+      item.side === 'incoming'
+        ? IncomingRow(item.req, onLoadStatus, onRevoke ? revokeAndRefresh : null)
+        : OutgoingRow(item.req, onLoadStatus, onRevoke ? revokeAndRefresh : null);
+
     incomingEl.replaceChildren();
     if (!accepted.length) {
       incomingEl.appendChild(
@@ -1023,15 +1085,23 @@ function ScreenCircle({
         )
       );
     } else {
-      const card = h('div', { class: 'gb-card', style: { padding: '4px 0' } });
-      accepted.forEach((item) =>
-        card.appendChild(
-          item.side === 'incoming'
-            ? IncomingRow(item.req, onLoadStatus, onRevoke ? revokeAndRefresh : null)
-            : OutgoingRow(item.req, onLoadStatus, onRevoke ? revokeAndRefresh : null)
-        )
-      );
-      incomingEl.appendChild(card);
+      [
+        { title: 'You mentor', items: accepted.filter(iMentor) },
+        { title: 'Who mentors you', items: accepted.filter((it) => !iMentor(it)) },
+      ]
+        .filter((g) => g.items.length)
+        .forEach((g) => {
+          const card = h('div', { class: 'gb-card', style: { padding: '4px 0' } });
+          g.items.forEach((item) => card.appendChild(row(item)));
+          incomingEl.appendChild(
+            h(
+              'div',
+              { class: 'gb-conn-group' },
+              h('h5', { class: 'gb-conn-group-head' }, g.title, h('span', null, g.items.length)),
+              card
+            )
+          );
+        });
     }
 
     // Your invites: only OUTGOING + still meaningful to show. Cancelled

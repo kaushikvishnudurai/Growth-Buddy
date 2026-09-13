@@ -2,7 +2,10 @@ package com.growthbuddy.mentorship;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.growthbuddy.common.ApiException;
@@ -99,6 +102,32 @@ class PartnerStatusAccessTest {
         when(tasks.findByUserIdAndDeletedAtIsNullOrderByCreatedAtAsc(THEM)).thenReturn(List.of());
         when(habits.contextSummary(THEM)).thenReturn("Habits: none");
         assertThat(controller.partnerStatus(THEM)).containsEntry("displayName", "Vivek");
+    }
+
+    /**
+     * The "checked today" tick means the mentor OPENED the sheet — so the stamp
+     * hangs off this load and nothing else. A tick you can set without reading
+     * anything is worth nothing to the mentee.
+     */
+    @Test
+    void openingTheSheetStampsTheCheck() {
+        asCaller("mentoring");
+        mentee(null);
+        when(tasks.findByUserIdAndDeletedAtIsNullOrderByCreatedAtAsc(THEM)).thenReturn(List.of());
+        when(habits.contextSummary(THEM)).thenReturn("Habits: none");
+
+        controller.partnerStatus(THEM);
+
+        verify(service).markChecked(ME, THEM);
+    }
+
+    /** A refused read is not a check — no peeking credit for a 403. */
+    @Test
+    void arefusedLoadStampsNothing() {
+        asCaller("mentoring");
+        mentee(false);
+        assertThatThrownBy(() -> controller.partnerStatus(THEM)).isInstanceOf(ApiException.class);
+        verify(service, never()).markChecked(any(), any());
     }
 
     @Test
