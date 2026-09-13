@@ -37,6 +37,7 @@ import {
   RenderCalendarSide,
   RenderCalendarGrid,
   resetCalendarForm,
+  prefillCalendarReminder,
   isPastSlot,
 } from './calendar.js';
 import { WORK_WEEKS, getWorkWeek, setWorkWeek } from './recurrence.js';
@@ -4925,6 +4926,16 @@ function openAddSheet() {
       },
     },
     {
+      key: 'note',
+      icon: 'notebook-pen',
+      label: 'Note',
+      sub: 'Jot something down',
+      action: () => {
+        close();
+        setScreen('notes');
+      },
+    },
+    {
       key: 'reminder',
       icon: 'calendar-plus',
       label: 'Reminder',
@@ -5587,6 +5598,7 @@ const FEATURE_DEFS = [
   { key: 'food', label: 'Food & meals', desc: 'Log meals and calories' },
   { key: 'water', label: 'Water tracking', desc: 'Track daily water intake' },
   { key: 'goals', label: 'Goals', desc: 'Short, mid & long-term goals' },
+  { key: 'notes', label: 'Notes', desc: 'Quick notes and jottings' },
   { key: 'money', label: 'Money Buddy', desc: 'Expenses, budgets & AI money coach' },
   { key: 'focus', label: 'Focus timer', desc: 'Pomodoro & ambient sounds' },
   { key: 'calendar', label: 'Calendar & reminders', desc: 'Plan ahead & get reminders' },
@@ -5600,6 +5612,7 @@ const SCREEN_FEATURE = {
   focus: 'focus',
   habits: 'habits',
   goals: 'goals',
+  notes: 'notes',
   money: 'money',
   calendar: 'calendar',
   mentor: 'mentor',
@@ -5983,6 +5996,38 @@ const SCREENS = {
         requestAdvice: (payload) =>
           api('/api/money/advice', { method: 'POST', body: JSON.stringify(payload) }),
       }),
+  },
+  notes: {
+    headerLabel: () => 'Think out loud',
+    headerName: () => 'Notes',
+    render: () =>
+      lazyScreen(
+        () => import('./notes.js'),
+        (m) =>
+          m.ScreenNotes({
+            // The screen owns its list rather than living in `state`: notes are
+            // read on one screen and nowhere else, so loading them at boot would
+            // buy nothing but a slower boot.
+            onList: () => api('/api/notes'),
+            onCreate: (body) =>
+              api('/api/notes', { method: 'POST', body: JSON.stringify(body) }),
+            onUpdate: (id, body) =>
+              api('/api/notes/' + encodeURIComponent(id), {
+                method: 'PATCH',
+                body: JSON.stringify(body),
+              }),
+            onDelete: (id) =>
+              api('/api/notes/' + encodeURIComponent(id), { method: 'DELETE' }),
+            onMakeTask: (title) => createTask({ title }),
+            onMakeReminder: (text) => {
+              // Hand it to the calendar rather than growing a second reminder
+              // form here — the date, repeat and tag pickers all live there.
+              prefillCalendarReminder(text);
+              calToday();
+              setScreen('calendar');
+            },
+          })
+      ),
   },
   goals: {
     headerLabel: () => 'Track progress',

@@ -520,6 +520,23 @@ const formBinding = {
 let cachedForm = null;
 let cachedFormRefs = null;
 
+/* Text handed over from another screen ("make a reminder" on a note), held
+   until the form exists — the caller switches screens, so the form is usually
+   built a tick AFTER the prefill lands. */
+let pendingReminderText = '';
+
+function prefillCalendarReminder(text) {
+  pendingReminderText = text || '';
+  applyPendingReminderText();
+}
+
+function applyPendingReminderText() {
+  if (!pendingReminderText || !cachedFormRefs) return;
+  cachedFormRefs.textInput.value = pendingReminderText;
+  pendingReminderText = '';
+  setTimeout(() => cachedFormRefs.textInput.focus(), 60);
+}
+
 function resetCalendarForm() {
   if (!cachedFormRefs) return;
   const { textInput, timeInput, untilInput, tagPicker, repeatPicker, untilField } = cachedFormRefs;
@@ -692,6 +709,7 @@ function ReminderPanel({
   }
   cachedFormRefs.untilInput.min = selectedDate;
   cachedFormRefs.repeatPicker.relabel();
+  applyPendingReminderText();
   const form = cachedForm;
 
   let listNode;
@@ -1065,4 +1083,5 @@ export {
   ReminderPanel as RenderCalendarSide,
   MonthGrid as RenderCalendarGrid,
   resetCalendarForm,
+  prefillCalendarReminder,
 };

@@ -472,6 +472,27 @@ CREATE TABLE IF NOT EXISTS mentorship_requests (
   CONSTRAINT fk_mr_to   FOREIGN KEY (to_user_id)   REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- =========================================================
+-- NOTES  (quick jottings — rich text, pinned, colour-tagged)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS notes (
+  id            CHAR(36)     NOT NULL,
+  user_id       CHAR(36)     NOT NULL,
+  title         VARCHAR(200) NULL,
+  -- Rich text as HTML. Sanitised against an allow-list where it is rendered
+  -- (sanitize() in scripts/notes.js) — never written to innerHTML raw.
+  body          MEDIUMTEXT   NULL,
+  color         VARCHAR(16)  NULL,
+  pinned        BOOLEAN      NOT NULL DEFAULT FALSE,
+  created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted_at    TIMESTAMP    NULL,
+  PRIMARY KEY (id),
+  -- The list's own order: pinned first, most recently touched next.
+  KEY ix_notes_user_pinned (user_id, pinned, updated_at),
+  CONSTRAINT fk_notes_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- =====================================================================
 -- Migrations (run once per environment that already has v1 schema).
 -- Wrap each ALTER in its own statement so a re-run that errors on the

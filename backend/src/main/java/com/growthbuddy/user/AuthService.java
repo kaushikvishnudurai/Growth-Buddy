@@ -105,7 +105,7 @@ public class AuthService {
         "goal_actions", "goals", "daily_scores", "daily_logs",
         "mentor_threads", "circle_members", "circle_posts",
         "push_subscriptions", "notifications", "focus_sessions", "weekly_reviews",
-        "money_state", "calendar_reminders", "sessions",
+        "money_state", "calendar_reminders", "notes", "sessions",
     };
 
     @PersistenceContext

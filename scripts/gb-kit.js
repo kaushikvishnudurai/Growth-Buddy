@@ -330,6 +330,7 @@ const NAV_OVERFLOW = [
   { id: 'calendar', icon: 'calendar-days', label: 'Calendar', feature: 'calendar', group: 'plan' },
   { id: 'focus', icon: 'timer', label: 'Timer', feature: 'focus', group: 'plan' },
   { id: 'goals', icon: 'target', label: 'Goals', feature: 'goals', group: 'plan' },
+  { id: 'notes', icon: 'notebook-pen', label: 'Notes', feature: 'notes', group: 'plan' },
   { id: 'food', icon: 'utensils-crossed', label: 'Food', feature: 'food|water', group: 'track' },
   { id: 'money', icon: 'wallet', label: 'Money', feature: 'money', group: 'track' },
   { id: 'circle', icon: 'users-round', label: 'Circle', feature: 'circle', group: 'people' },
