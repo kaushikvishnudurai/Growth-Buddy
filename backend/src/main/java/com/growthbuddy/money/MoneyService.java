@@ -78,14 +78,20 @@ public class MoneyService {
     public record Versioned(JsonNode data, String version) {}
 
     /**
-     * A version tag for the stored document. {@code updatedAt} is set on every
-     * persist, so it changes exactly when the document does; "0" means nothing is
-     * stored yet, which a first write can legitimately match.
+     * A version tag for the stored document: a hash of the document itself, so it
+     * changes exactly when the content does. "0" means nothing is stored yet (an
+     * empty object hashes to 0 too, which is the same thing to a first write).
+     *
+     * <p>ponytail: content hash, not {@code updatedAt}. That column is a MySQL
+     * TIMESTAMP — whole seconds — so the epoch-millis tag handed back after a
+     * write never matched the truncated value read back on the next one, and
+     * every conditional save 409'd with "changed somewhere else" against itself.
+     * A hash needs no column, no migration, and no clock. If 32 bits ever feels
+     * thin, move to a real @Version column.
      */
     private static String versionOf(MoneyState state) {
-        return state == null || state.getUpdatedAt() == null
-                ? "0"
-                : String.valueOf(state.getUpdatedAt().toEpochMilli());
+        JsonNode data = state == null ? null : state.getData();
+        return data == null ? "0" : Integer.toHexString(data.hashCode());
     }
 
     @Transactional(readOnly = true)
