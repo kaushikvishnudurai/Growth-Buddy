@@ -2343,7 +2343,7 @@ function unreadNotifs() {
 async function refreshNotifications() {
   try {
     state.notifications = await api('/api/notifications');
-    render();
+    repaintOverlays();
   } catch (_) {
     /* silent */
   }
@@ -2355,7 +2355,7 @@ async function markNotificationRead(id) {
     state.notifications = state.notifications.map((n) =>
       n.id === id ? { ...n, readAt: new Date().toISOString() } : n
     );
-    render();
+    repaintOverlays();
   } catch (err) {
     console.warn(err);
   }
@@ -5210,7 +5210,7 @@ function notificationDropdown() {
                   ...n,
                   readAt: n.readAt || new Date().toISOString(),
                 }));
-                render();
+                repaintOverlays();
               },
             },
             'Mark all read'
@@ -6053,8 +6053,27 @@ function repaintOverlays() {
   notif.replaceChildren(...[notificationDropdown()].filter(Boolean));
   profile.replaceChildren(...[profileDropdown()].filter(Boolean));
   nav.replaceWith(bottomNav());
+  paintBellBadge();
   refreshIcons();
   installOutsideClickToCloseHeaderPopovers();
+}
+
+/* The unread count on the bell. Lives here rather than in a full render()
+   because reading a notification changes nothing else on the page — and a
+   render() rebuilds the active screen from scratch, so Family/Circle visibly
+   reloaded (skeletons and all) every time you tapped "Mark all read". */
+function paintBellBadge() {
+  const bell = document.querySelector('.gb-bell');
+  if (!bell) return;
+  const n = unreadNotifs();
+  const badge = bell.querySelector('.gb-bell-badge');
+  if (!n) {
+    if (badge) badge.remove();
+    return;
+  }
+  const text = n > 99 ? '99+' : String(n);
+  if (badge) badge.textContent = text;
+  else bell.appendChild(h('span', { class: 'gb-bell-badge' }, text));
 }
 
 function captureScrollPosition() {
