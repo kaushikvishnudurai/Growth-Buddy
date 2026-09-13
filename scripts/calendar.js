@@ -312,7 +312,11 @@ function RepeatPicker(initial, onChange) {
     }
     if (fireChange && onChange) onChange(rep);
   }
-  const wrap = h('div', { class: 'gb-segmented', role: 'radiogroup', 'aria-label': 'Repeat' });
+  const wrap = h('div', {
+    class: 'gb-segmented gb-segmented--repeat',
+    role: 'radiogroup',
+    'aria-label': 'Repeat',
+  });
   REPEAT_ORDER.forEach((rep) => {
     const seg = h(
       'button',
@@ -328,7 +332,19 @@ function RepeatPicker(initial, onChange) {
     segs[rep] = seg;
     wrap.appendChild(seg);
   });
-  return { node: wrap, get: () => selected, set: (rep) => applySelection(rep, true) };
+  /* The form DOM is cached for the whole session, so these labels are a
+     snapshot — change the working week in Settings and the 'weekdays' segment
+     kept saying Mon-Fri while everything rebuilt per render said Mon-Sat.
+     Called on every side-panel render, which is cheap and catches every path. */
+  function relabel() {
+    for (const k in segs) segs[k].textContent = REPEATS[k].label;
+  }
+  return {
+    node: wrap,
+    get: () => selected,
+    set: (rep) => applySelection(rep, true),
+    relabel: relabel,
+  };
 }
 
 /* ---- Scoped delete dialog for recurring reminders ---- */
@@ -675,6 +691,7 @@ function ReminderPanel({
     cachedFormRefs = built.refs;
   }
   cachedFormRefs.untilInput.min = selectedDate;
+  cachedFormRefs.repeatPicker.relabel();
   const form = cachedForm;
 
   let listNode;

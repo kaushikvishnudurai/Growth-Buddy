@@ -31,8 +31,10 @@ Day-key helpers: `pad`, `keyOf(y,m,d)`, `parseKey`, `todayKey`, `isFutureKey`, `
   `ReminderServiceOccursOnTest` are mirrors of each other — change one, change both.
 - Repeat options: `none`, `daily`, `weekdays`, `weekly`, `monthly`, `yearly`. The column is
   `varchar(16)`, so a new value needs no migration. **`weekdays` means the user's working week**,
-  not Mon-Fri — `REPEATS.weekdays.label` is a *getter* reading `WORK_WEEKS[getWorkWeek()]`, so the
-  segmented control relabels itself when Settings changes. `REPEATS[x].phrase` exists only for the
+  not Mon-Fri — `REPEATS.weekdays.label` is a *getter* reading `WORK_WEEKS[getWorkWeek()]`. The
+  getter alone isn't enough for the segmented control: the form DOM is cached for the session, so
+  its button text is a snapshot. `ReminderPanel` calls `repeatPicker.relabel()` on every render to
+  re-read the getter. `REPEATS[x].phrase` exists only for the
   delete dialog's "repeats ___" sentence, where `label.toLowerCase()` would read "repeats mon-fri".
 - `remindersOn` (149), `tasksOn` (162), `completedTasksOn` (179), `goalActionsOn` (185), `dueKey` (155).
 - **"Repeat until" before the start date makes a reminder that can never fire.** `occursOn` returns

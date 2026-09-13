@@ -4039,6 +4039,15 @@ body {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
+/* Six repeat options never fit one line on a phone, and flex-wrap left five up
+   top with a lone orphan underneath. Two even rows of three read as a deliberate
+   grid. Fixed at three rather than breakpointed to six: the widest this control
+   ever gets is the desktop calendar's side column (~410px), where six equal
+   columns are still too narrow for "Monthly" without wrapping the word. */
+.gb-segmented--repeat {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
 
 /* Tag legend */
 .gb-cal-legend {
