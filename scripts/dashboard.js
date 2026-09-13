@@ -1030,7 +1030,9 @@ function HabitStrip({ habits, onAdd, toggleHabit }) {
   return h(
     'div',
     { class: 'gb-habit-strip' },
-    habits.slice(0, 4).map((h2) => HabitCard(h2, toggleHabit))
+    // All of them. The old slice(0, 4) meant a fifth habit simply didn't exist
+    // on Home — not scrolled off, not rendered.
+    habits.map((h2) => HabitCard(h2, toggleHabit))
   );
 }
 

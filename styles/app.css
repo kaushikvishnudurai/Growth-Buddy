@@ -2480,6 +2480,37 @@ body {
   right: 12px;
 }
 
+/* Desktop has the width to lay every habit out, so the strip wraps into rows
+   and scrolls down rather than running off to the right where the fifth habit
+   was never reachable. The phone keeps the horizontal snap strip — that one
+   already works. Scrollbar matches .gb-tasks-scroll. */
+@media (min-width: 1024px) {
+  .gb-habit-strip {
+    flex-wrap: wrap;
+    overflow-x: hidden;
+    overflow-y: auto;
+    max-height: 284px; /* ~2 rows; the third peeks, which is the scroll hint */
+    scroll-snap-type: none;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .gb-habit-strip::-webkit-scrollbar {
+    display: block;
+    width: 4px;
+  }
+  .gb-habit-strip::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .gb-habit-strip::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 2px;
+  }
+  .gb-habit-card {
+    flex: 1 1 150px;
+    max-width: 220px;
+  }
+}
+
 .gb-quote-card {
   padding: 18px;
   background: var(--ai-soft);
