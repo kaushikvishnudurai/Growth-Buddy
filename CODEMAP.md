@@ -106,9 +106,16 @@ one of them silently lost its expenses. Deletions still lose to additions — se
 
 **A "working days" reminder follows the user's week** (`WorkWeek` + `WORK_WEEKS` in
 `scripts/recurrence.js`): Mon–Fri, Sun–Thu or Mon–Sat, stored in the user's `ui_prefs` blob under
-`workWeek` — not its own column, because prod runs `ddl-auto: none`. It is the one `ui_prefs` key
-the **server** reads (the WhatsApp scheduler needs it). On the client it is module state in
+`workWeek` — not its own column, because prod runs `ddl-auto: none`. It is one of two `ui_prefs`
+keys the **server** reads (the WhatsApp scheduler needs it); the other is `shareProgress`, below. On the client it is module state in
 `recurrence.js`, seeded at boot from the cached session and again by `hydrateUiPrefs()`.
+
+**Mentorship progress flows one way.** A mentor opens their mentee's tasks and habit streaks via
+`GET /api/mentorship/connections/{id}/status`; the mentee gets no window back — the endpoint 403s
+that direction (`PartnerStatusAccessTest`), and `circle.js` only makes the mentor-side rows and
+pills tappable. The mentee can close the window entirely with Settings → Account → Privacy, which
+writes `shareProgress: false` into their `ui_prefs`; unset means shared, so accounts that predate
+the toggle are unaffected.
 
 **Deleting an account hands over the family first.** A family is not the owner's private data —
 other members have their own accounts and a shared history — so `handOverOrRemoveFamilies` passes it

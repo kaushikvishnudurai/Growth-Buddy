@@ -40,8 +40,11 @@ function PersonRow(person, onOffer, onRequest, onView) {
   const link = (which) =>
     person[which] || (person.relationship === (which === 'mentorLink' ? 'mentoring' : 'mentee') ? 'active' : 'none');
 
-  function slot(state, activeLabel, pendingLabel, actionLabel, icon, btnClass, onAct) {
+  /* `viewable` is the mentor side only. Progress flows one way — see
+     showPartnerStatus — so the "they mentor you" pill is a label, not a door. */
+  function slot(state, activeLabel, pendingLabel, actionLabel, icon, btnClass, onAct, viewable) {
     if (state === 'active') {
+      if (!viewable) return h('span', { class: 'gb-tag-pill is-accepted' }, activeLabel);
       return h(
         'span',
         {
@@ -92,7 +95,8 @@ function PersonRow(person, onOffer, onRequest, onView) {
         'Mentor them',
         'hand-helping',
         'gb-btn--soft',
-        onOffer
+        onOffer,
+        true
       ),
       slot(
         link('menteeLink'),
@@ -101,16 +105,19 @@ function PersonRow(person, onOffer, onRequest, onView) {
         'Get mentored',
         'user-plus',
         'gb-btn--secondary',
-        onRequest
+        onRequest,
+        false
       )
     )
   );
 }
 
 /**
- * Status window for a connected partner. Shows their level, current task
- * progress, and habit streaks. Only the mentee/mentor sees this — the
- * backend enforces it via the {@code /connections/{id}/status} endpoint.
+ * Status window for a MENTEE. Shows their level, current task progress, and
+ * habit streaks — for their mentor only, the way a manager sees a report's
+ * work and not the other way round. Callers must gate on being the mentor;
+ * the endpoint enforces it (403 for the mentee side), this is just the UI
+ * not offering a tap that would fail.
  */
 function showPartnerStatus(partnerId, fallbackName, statusApi) {
   let overlay;
@@ -198,6 +205,10 @@ function statusLabel(status) {
 function OutgoingRow(req, statusApi, onRevoke) {
   const isAccepted = req.status === 'accepted';
   const isPending = req.status === 'pending';
+  // I sent it, so an 'offer' makes me the mentor — and only a mentor may open
+  // the other side's progress. A 'request' I sent made them MY mentor: that row
+  // stays a plain row (the endpoint 403s that direction anyway).
+  const canViewStatus = isAccepted && req.direction === 'offer';
   const canRevoke = (isAccepted || isPending) && !!onRevoke;
   const label =
     req.direction === 'offer'
@@ -219,8 +230,8 @@ function OutgoingRow(req, statusApi, onRevoke) {
   return h(
     'div',
     {
-      class: 'gb-row' + (isAccepted ? ' is-clickable' : ''),
-      ...(isAccepted
+      class: 'gb-row' + (canViewStatus ? ' is-clickable' : ''),
+      ...(canViewStatus
         ? activate((e) => {
             if (e.target.closest && e.target.closest('.gb-revoke-btn')) return;
             showPartnerStatus(req.toUserId, req.toName, statusApi);
@@ -235,8 +246,8 @@ function OutgoingRow(req, statusApi, onRevoke) {
       h('div', { class: 'sub' }, req.note ? '“' + req.note + '”' : '')
     ),
     h('span', { class: statusClass }, statusLabel(req.status)),
-    // Accepted rows open the partner's status on tap — show that affordance.
-    isAccepted ? Icon('chevron-right', { size: 16, sw: 2.4, color: 'var(--fg3)' }) : null,
+    // The chevron promises a tap target, so it belongs only on rows that have one.
+    canViewStatus ? Icon('chevron-right', { size: 16, sw: 2.4, color: 'var(--fg3)' }) : null,
     canRevoke
       ? h(
           'button',
@@ -257,6 +268,9 @@ function OutgoingRow(req, statusApi, onRevoke) {
 
 function IncomingRow(req, statusApi, onRevoke) {
   const isAccepted = req.status === 'accepted';
+  // They sent it: a 'request' asked me to mentor them, so I'm the mentor. An
+  // 'offer' made them mine — no progress window back up the chain.
+  const canViewStatus = isAccepted && req.direction !== 'offer';
   const label =
     req.direction === 'offer'
       ? isAccepted
@@ -269,8 +283,8 @@ function IncomingRow(req, statusApi, onRevoke) {
   return h(
     'div',
     {
-      class: 'gb-row' + (isAccepted ? ' is-clickable' : ''),
-      ...(isAccepted
+      class: 'gb-row' + (canViewStatus ? ' is-clickable' : ''),
+      ...(canViewStatus
         ? activate((e) => {
             if (e.target.closest && e.target.closest('.gb-revoke-btn')) return;
             showPartnerStatus(req.fromUserId, req.fromName, statusApi);
@@ -285,8 +299,8 @@ function IncomingRow(req, statusApi, onRevoke) {
       h('div', { class: 'sub' }, req.note ? '“' + req.note + '”' : '')
     ),
     h('span', { class: statusClass }, statusLabel(req.status)),
-    // Accepted rows open the partner's status on tap — show that affordance.
-    isAccepted ? Icon('chevron-right', { size: 16, sw: 2.4, color: 'var(--fg3)' }) : null,
+    // The chevron promises a tap target, so it belongs only on rows that have one.
+    canViewStatus ? Icon('chevron-right', { size: 16, sw: 2.4, color: 'var(--fg3)' }) : null,
     isAccepted && onRevoke
       ? h(
           'button',

@@ -3417,6 +3417,47 @@ function securitySection() {
   ];
 }
 
+/* A mentor can open their mentee's tasks and habit streaks; the mentee sees
+   nothing back. This is the mentee's side of that: switch it off and the
+   endpoint answers 403 instead. Unset means on, so nobody's existing
+   connection quietly goes dark on the day this shipped. */
+function shareProgressRow() {
+  const isOn = () => !(state.user && state.user.uiPrefs && state.user.uiPrefs.shareProgress === false);
+  const sw = h(
+    'button',
+    {
+      type: 'button',
+      role: 'switch',
+      'aria-checked': isOn() ? 'true' : 'false',
+      'aria-label': 'Let my mentor see my progress',
+      class: 'gb-switch' + (isOn() ? ' is-on' : ''),
+    },
+    h('span', { class: 'gb-switch-knob' })
+  );
+  sw.onclick = () => {
+    const next = !isOn();
+    sw.classList.toggle('is-on', next);
+    sw.setAttribute('aria-checked', next ? 'true' : 'false');
+    saveUiPrefs({ shareProgress: next });
+    toastSuccess(next ? 'Your mentor can see your progress.' : 'Your progress is private now.');
+  };
+  return h(
+    'div',
+    { class: 'gb-feature-row' },
+    h(
+      'div',
+      { class: 'gb-feature-row-text' },
+      h('div', { class: 'gb-feature-row-label' }, 'Let my mentor see my progress'),
+      h(
+        'div',
+        { class: 'gb-feature-row-desc' },
+        'Your tasks and habit streaks. People you mentor never see yours.'
+      )
+    ),
+    sw
+  );
+}
+
 /* ---- Settings modal (Profile / Alerts / Account) ---- */
 function openProfileSettings(initialTab) {
   const u = state.user || {};
@@ -4143,6 +4184,8 @@ function openProfileSettings(initialTab) {
       Icon('log-out', { size: 16 }),
       'Sign out'
     ),
+    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '20px' } }, 'Privacy'),
+    shareProgressRow(),
     ...securitySection(),
     h('div', { class: 'gb-settings-sec-label', style: { marginTop: '20px' } }, 'Danger zone'),
     h(

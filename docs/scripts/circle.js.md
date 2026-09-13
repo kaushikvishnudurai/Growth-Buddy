@@ -8,8 +8,8 @@ the data and visibly jump, so don't reintroduce per-list refreshers.
 | Piece | Line | What |
 |---|---|---|
 | `sectionSkeleton(rows)` | 16 | shimmer rows every section starts with. All three (Connections, Your invites, Challenges) used to render empty and then jump when their fetch landed |
-| `PersonRow` | 35 | one person; returns `null` for `relationship: 'self'`. The two mentorship directions are INDEPENDENT, so it renders a slot each from `person.mentorLink` / `person.menteeLink` (`active` → clickable status pill, `pending` → pending pill, `none` → invite button). You can mentor someone *and* be mentored by them. |
-| `showPartnerStatus` | 96 | partner's shared progress sheet |
+| `PersonRow` | 35 | one person; returns `null` for `relationship: 'self'`. The two mentorship directions are INDEPENDENT, so it renders a slot each from `person.mentorLink` / `person.menteeLink` (`active` → status pill, clickable on the `mentorLink` side only, `pending` → pending pill, `none` → invite button). You can mentor someone *and* be mentored by them. |
+| `showPartnerStatus` | 96 | a MENTEE's progress sheet, for their mentor. **One direction only** — a mentee gets no window on their mentor, like a manager seeing a report's board and not the reverse. `/connections/{id}/status` 403s the mentee side (`PartnerStatusAccessTest`), and the mentee can switch it off entirely in Settings → Account → Privacy (`shareProgress` in ui_prefs). The rows and the `mentorLink` pill just don't offer the tap; a refused load prints the server's message in the sheet's subtitle |
 | `statusLabel` / `STATUS_LABELS` | 174 | `pending` → "Invite pending", `accepted` → "Connected", `rejected` → "Declined" |
 | `OutgoingRow` / `IncomingRow` | 179 / 239 | request rows with revoke / accept |
 | `openSearchModal` | 309 | find-someone modal: `paintLoading` / `paintEmpty(msg, onRetry)` / `paintList` / `loadPeople`, plus browse. `paintList` drops `currentUserId` — the single choke point every list passes through, so you can never invite yourself |

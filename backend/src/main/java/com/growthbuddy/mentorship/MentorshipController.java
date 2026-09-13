@@ -83,20 +83,28 @@ public class MentorshipController {
     }
 
     /**
-     * Snapshot of a connected partner's tasks + habit completion. Only
-     * accessible when the caller is already in an accepted relationship
-     * with the partner (either as mentor or mentee), so it doubles as a
-     * peer-progress window and a private accountability view.
+     * Snapshot of a mentee's tasks + habit completion, for their mentor.
+     *
+     * <p><b>One direction only.</b> Mentorship is not a peer link: a mentor
+     * watches their mentee the way a manager sees their report's work, and the
+     * mentee gets no window back. This used to accept {@code "mentee"} too, so
+     * anyone could read the tasks and habit streaks of the person mentoring
+     * them. The UI hides the tap target on the mentee side, but this check is
+     * the one that matters — the endpoint is the trust boundary.
      */
     @GetMapping("/connections/{partnerId}/status")
     public Map<String, Object> partnerStatus(@PathVariable UUID partnerId) {
         UUID me = CurrentUser.id();
         MentorshipService.Relationship rel = service.relationship(me, partnerId);
-        if (!"mentoring".equals(rel.state()) && !"mentee".equals(rel.state())) {
+        if (!"mentoring".equals(rel.state())) {
             throw new ApiException(org.springframework.http.HttpStatus.FORBIDDEN,
-                    "You're not connected with this person.");
+                    "Only a mentor can see their mentee's progress.");
         }
         User u = users.findById(partnerId).orElseThrow(() -> ApiException.notFound("User"));
+        if (!sharesProgress(u)) {
+            throw new ApiException(org.springframework.http.HttpStatus.FORBIDDEN,
+                    u.getDisplayName() + " has turned off progress sharing.");
+        }
 
         List<Task> partnerTasks = tasks.findByUserIdAndDeletedAtIsNullOrderByCreatedAtAsc(partnerId);
         long done = partnerTasks.stream().filter(Task::isDone).count();
@@ -118,5 +126,17 @@ public class MentorshipController {
                 "tasks", taskJson,
                 "habitsSummary", habits.contextSummary(partnerId)
         );
+    }
+
+    /**
+     * Has this mentee left their mentor's window open? Settings writes
+     * {@code shareProgress} into the ui_prefs blob; anything other than an
+     * explicit false means sharing, so every account that predates the toggle
+     * keeps working. Second {@code ui_prefs} key the server reads, after
+     * {@code workWeek} — see {@link com.growthbuddy.common.WorkWeek}.
+     */
+    private static boolean sharesProgress(User u) {
+        Object v = u.getUiPrefs() == null ? null : u.getUiPrefs().get("shareProgress");
+        return !Boolean.FALSE.equals(v) && !"false".equals(v);
     }
 }

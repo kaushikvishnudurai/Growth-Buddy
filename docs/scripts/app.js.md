@@ -169,7 +169,8 @@ it silently landed on Home. Don't reintroduce a second list.
   `TOAST_IN_MS` in step with `gb-toast-in` in `styles/premium.css`.
 - **There is exactly one Settings modal.** `openProfileSettings` owns all five tabs — Profile,
   Display, Alerts, Layout, Account. Display and Layout come from `customisePanes()`, Account absorbs
-  `securitySection()`. Don't add a second settings surface; the app had three (Settings / Security /
+  `securitySection()` plus `shareProgressRow()` (the Privacy switch — writes `shareProgress` to
+  ui_prefs, which the *server* reads to decide whether a mentor may open this user's progress). Don't add a second settings surface; the app had three (Settings / Security /
   Customise) and nobody could guess which held what.
 - **Panes mount twice:** once in the `tabDefs` array (for the tab bar) and once as a child of
   `.gb-settings-body`. Miss the second and the tab renders empty — that's how the Display tab was
