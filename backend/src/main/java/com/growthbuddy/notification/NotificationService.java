@@ -2,14 +2,23 @@ package com.growthbuddy.notification;
 
 import com.growthbuddy.common.ApiException;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class NotificationService {
+
+    private static final Logger log = LoggerFactory.getLogger(NotificationService.class);
+
+    static final int READ_TTL_DAYS = 30;
+    static final int ANY_TTL_DAYS = 90;
 
     private final NotificationRepository repo;
     private final SimpMessagingTemplate broker;
@@ -67,14 +76,36 @@ public class NotificationService {
         return NotificationDto.from(n);
     }
 
+    /**
+     * "Clear all": the user is done with the list, so the rows go.
+     *
+     * <p>It used to stamp readAt and keep every row, which meant the table only
+     * ever grew — a daily digest alone is 365 rows a year per user that nobody
+     * will ever read again. A notification is a nudge with a lifetime, not a
+     * record: acting on it is the end of it.
+     */
     @Transactional
-    public void markAllRead(UUID userId) {
+    public void clearAll(UUID userId) {
+        repo.deleteAllForUser(userId);
+    }
+
+    /**
+     * Retention sweep for the ones nobody clears by hand — read notifications
+     * after {@value #READ_TTL_DAYS} days, and anything at all after
+     * {@value #ANY_TTL_DAYS}, because an unread nudge from three months ago is
+     * not a nudge any more.
+     *
+     * <p>ponytail: fixed windows, no per-user setting. Deletes in two statements
+     * rather than loading rows to delete them one by one.
+     */
+    @Scheduled(cron = "0 20 3 * * *")
+    @Transactional
+    public void sweepOldNotifications() {
         Instant now = Instant.now();
-        for (Notification n : repo.findByUserIdOrderByCreatedAtDesc(userId)) {
-            if (n.getReadAt() == null) {
-                n.setReadAt(now);
-                repo.save(n);
-            }
+        int read = repo.deleteReadBefore(now.minus(READ_TTL_DAYS, ChronoUnit.DAYS));
+        int old = repo.deleteCreatedBefore(now.minus(ANY_TTL_DAYS, ChronoUnit.DAYS));
+        if (read + old > 0) {
+            log.info("Notification sweep removed {} read and {} expired rows", read, old);
         }
     }
 

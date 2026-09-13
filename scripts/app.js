@@ -314,9 +314,23 @@ setWorkWeek(state.user && state.user.uiPrefs && state.user.uiPrefs.workWeek);
 let stomp = null;
 let toastSeq = 0;
 
+/* The toast stack is `position: fixed` and lives in its own stable slot, so it
+   repaints without rebuilding the screen underneath — same reasoning as the
+   header popovers. A toast that reloaded the page you were reading was the
+   loudest possible way to say "saved". */
+function paintToasts() {
+  const slot = document.getElementById('gb-toast-slot');
+  if (!slot) {
+    render();
+    return;
+  }
+  slot.replaceChildren(...[toastStack()].filter(Boolean));
+  refreshIcons();
+}
+
 function dismissToast(id) {
   state.toasts = state.toasts.filter((t) => t.id !== id);
-  render();
+  paintToasts();
 }
 
 function pushToast(message, kind, durationMs) {
@@ -328,12 +342,12 @@ function pushToast(message, kind, durationMs) {
     at: Date.now(), // when it arrived — toastStack resumes its entrance from here
   };
   state.toasts = [...state.toasts.filter((t) => t.message !== text), toast].slice(-4);
-  render();
+  paintToasts();
   // Errors only. A nod has to mean "you got something done" — wiring it to
   // every success toast made it fire for "Changes saved" and even for the
   // skin toggle, which is feedback about nothing. The nod now lives on the
   // actual accomplishments (toggleTask / toggleHabit).
-  if (toast.kind !== 'success') buddyReact('no');
+  if (toast.kind !== 'success' && toast.kind !== 'info') buddyReact('no');
   const duration = typeof durationMs === 'number' ? durationMs : 2800;
   setTimeout(() => dismissToast(toast.id), duration);
 }
@@ -1371,7 +1385,12 @@ async function connectWebSocket() {
           try {
             const n = JSON.parse(frame.body);
             state.notifications = [n, ...state.notifications.filter((x) => x.id !== n.id)];
-            render();
+            // A card in a closed dropdown is not an alert, and a reminder that
+            // arrives while you're using the app should still say something. The
+            // toast is the "pop up"; repaintOverlays keeps the screen underneath
+            // (and whatever you were doing on it) alive.
+            repaintOverlays();
+            pushToast(n.title, n.kind === 'reminder' ? 'info' : 'success', 6000);
           } catch (e) {
             console.warn('Bad notification frame', e);
           }
@@ -5249,14 +5268,14 @@ function notificationDropdown() {
                 try {
                   await api('/api/notifications/read-all', { method: 'PATCH' });
                 } catch (_) {}
-                state.notifications = state.notifications.map((n) => ({
-                  ...n,
-                  readAt: n.readAt || new Date().toISOString(),
-                }));
+                // Clears server-side, so the list empties here too — a bell that
+                // still showed every notification it had ever received was a
+                // growing table on one end and a wall of read cards on the other.
+                state.notifications = [];
                 repaintOverlays();
               },
             },
-            'Mark all read'
+            'Clear all'
           )
         : null
     )
@@ -5323,6 +5342,10 @@ function notificationDropdown() {
 
    Keep in step with gb-toast-in's duration in styles/premium.css. */
 const TOAST_IN_MS = 260;
+/* 'info' is the neutral one: a reminder coming due is neither good news nor an
+   error, and the alert glyph on a nudge reads as something going wrong. */
+const TOAST_ICON = { success: 'check-circle-2', info: 'bell', error: 'circle-alert' };
+
 function toastStack() {
   if (!state.toasts.length) return null;
   const now = Date.now();
@@ -5338,7 +5361,7 @@ function toastStack() {
       h(
         'span',
         { class: 'gb-toast-icon', 'aria-hidden': 'true' },
-        Icon((t.kind || 'error') === 'success' ? 'check-circle-2' : 'circle-alert', {
+        Icon(TOAST_ICON[t.kind] || 'circle-alert', {
           size: 15,
           sw: 2.4,
         })
@@ -6989,7 +7012,7 @@ function render() {
     // the popovers are absolutely positioned, so an empty slot is 0px tall.
     h('div', { id: 'gb-notif-slot' }, notificationDropdown()),
     h('div', { id: 'gb-profile-slot' }, profileDropdown()),
-    toastStack(),
+    h('div', { id: 'gb-toast-slot' }, toastStack()),
     h(
       'div',
       { class: 'gb-scroll', id: 'gb-main', role: 'main', tabindex: '-1' },

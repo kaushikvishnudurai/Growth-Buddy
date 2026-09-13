@@ -5,5 +5,6 @@ public enum NotificationKind {
     mentorship_request,
     mentorship_accepted,
     mentorship_rejected,
+    reminder,
     system
 }

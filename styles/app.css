@@ -268,14 +268,14 @@ body {
 }
 /* Destructive action (delete account). */
 .gb-btn--danger {
-  background: #E5484D;
+  background: #e5484d;
   color: #fff;
 }
 .gb-btn--danger:hover {
-  background: #C93B40;
+  background: #c93b40;
 }
 .gb-account-signout.is-danger {
-  color: #C93B40;
+  color: #c93b40;
 }
 .gb-btn--ghost {
   background: transparent;
@@ -4495,7 +4495,7 @@ body {
 }
 .gb-mic.is-listening {
   color: #fff;
-  background: #E5484D;
+  background: #e5484d;
   animation: gb-mic-pulse 1.2s ease-in-out infinite;
 }
 @keyframes gb-mic-pulse {
@@ -4625,6 +4625,11 @@ body {
 .gb-toast.is-success {
   border-color: color-mix(in srgb, var(--leaf-500) 65%, var(--border-strong) 35%);
   background: color-mix(in srgb, var(--leaf-50) 64%, var(--surface) 36%);
+}
+/* Neutral: a reminder falling due, not a win and not a failure. */
+.gb-toast.is-info {
+  border-color: color-mix(in srgb, var(--sky-500) 60%, var(--border-strong) 40%);
+  background: color-mix(in srgb, var(--sky-50) 64%, var(--surface) 36%);
 }
 
 .gb-toast-icon {
@@ -4948,12 +4953,24 @@ body {
   border-radius: var(--radius-pill);
 }
 @keyframes gb-woozy {
-  0%, 100% { transform: rotate(-4deg); }
-  50% { transform: rotate(4deg); }
+  0%,
+  100% {
+    transform: rotate(-4deg);
+  }
+  50% {
+    transform: rotate(4deg);
+  }
 }
 @keyframes gb-twinkle {
-  0%, 100% { opacity: 0.35; transform: rotate(0deg); }
-  50% { opacity: 1; transform: rotate(20deg); }
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: rotate(0deg);
+  }
+  50% {
+    opacity: 1;
+    transform: rotate(20deg);
+  }
 }
 
 /* ---- Entrance (transform-only, capture-safe) ---- */
@@ -7314,4 +7331,271 @@ textarea:focus-visible,
   font-size: 1rem;
   line-height: var(--leading-relaxed);
   color: var(--fg1);
+}
+
+/* =====================================================================
+   Notes — composer, rich-text editor, sticky cards
+   ===================================================================== */
+.gb-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+/* Composer: one quiet line until you tap it. A permanently-open editor made
+   the screen look like a form; this looks like a place to jot. */
+.gb-note-composer {
+  padding: 6px;
+}
+.gb-note-opener {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 12px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--fg3);
+  font: inherit;
+  font-size: 0.9375rem;
+  text-align: left;
+  cursor: pointer;
+}
+.gb-note-opener:hover {
+  background: var(--surface-2);
+}
+.gb-note-composer-body {
+  display: none;
+  padding: 6px;
+}
+.gb-note-composer.is-open .gb-note-opener {
+  display: none;
+}
+.gb-note-composer.is-open .gb-note-composer-body {
+  display: block;
+}
+.gb-note-title-input {
+  margin-bottom: 8px;
+  font-weight: 700;
+}
+.gb-note-composer-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+/* ---- the editor ---- */
+.gb-editor-wrap {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  overflow: hidden;
+}
+.gb-editor-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  /* A long toolbar on a narrow phone scrolls rather than wrapping into a
+     second row that pushes the writing area off-screen. */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.gb-editor-bar::-webkit-scrollbar {
+  display: none;
+}
+.gb-editor-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg2);
+  cursor: pointer;
+}
+.gb-editor-btn:hover {
+  background: var(--surface);
+  color: var(--fg1);
+}
+.gb-editor-btn.is-on {
+  background: var(--brand-soft);
+  color: var(--brand-soft-fg);
+}
+.gb-editor-btn:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+.gb-editor {
+  min-height: 110px;
+  max-height: 45vh;
+  overflow-y: auto;
+  padding: 12px;
+  font-size: 0.9375rem;
+  line-height: var(--leading-relaxed);
+  color: var(--fg1);
+}
+.gb-editor:focus {
+  outline: none;
+}
+/* :empty alone lies — the browser leaves a stray <br> behind after you delete
+   everything, so the placeholder would vanish for good on the first edit. */
+.gb-editor:empty::before,
+.gb-editor:has(> br:only-child)::before {
+  content: attr(data-placeholder);
+  color: var(--fg3);
+  pointer-events: none;
+}
+.gb-editor h2 {
+  font-family: var(--font-display);
+  font-size: 1.0625rem;
+  font-weight: 800;
+  margin: 6px 0 4px;
+}
+.gb-editor ul,
+.gb-editor ol {
+  margin: 4px 0;
+  padding-left: 22px;
+}
+.gb-editor a {
+  color: var(--brand);
+  text-decoration: underline;
+}
+
+/* ---- colour swatches ---- */
+.gb-note-colors {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+.gb-note-swatch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 2px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--fg3);
+  cursor: pointer;
+}
+.gb-note-swatch.is-on {
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 4px var(--brand);
+}
+
+/* ---- the list ---- */
+.gb-note-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+@media (min-width: 640px) {
+  .gb-note-grid {
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    align-items: start;
+  }
+}
+.gb-note-card {
+  position: relative;
+  padding: 14px 14px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.12s ease;
+}
+.gb-note-card:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+.gb-note-card:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.gb-note-card.is-pinned {
+  border-color: var(--brand);
+}
+.gb-note-card-title {
+  font-family: var(--font-display);
+  font-size: 0.9375rem;
+  font-weight: 800;
+  margin: 0 26px 4px 0;
+  color: var(--fg1);
+}
+.gb-note-card-body {
+  font-size: 0.875rem;
+  line-height: var(--leading-relaxed);
+  color: var(--fg2);
+  /* Cards stay a card. The whole note is one tap away. */
+  max-height: 7.5em;
+  overflow: hidden;
+}
+.gb-note-card-body ul,
+.gb-note-card-body ol {
+  margin: 2px 0;
+  padding-left: 20px;
+}
+.gb-note-card-body h2 {
+  font-size: 0.9375rem;
+  font-weight: 800;
+  margin: 4px 0 2px;
+}
+.gb-note-card-time {
+  margin-top: 8px;
+  font-size: 0.71875rem;
+  font-weight: 600;
+  color: var(--fg3);
+}
+.gb-note-pin {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--fg3);
+  cursor: pointer;
+}
+.gb-note-pin:hover {
+  background: var(--surface-2);
+  color: var(--fg1);
+}
+.gb-note-pin.is-on {
+  color: var(--brand);
+}
+.gb-note-skel {
+  padding: 18px;
+}
+.gb-note-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.gb-note-modal .gb-note-title-input {
+  margin-bottom: 10px;
 }

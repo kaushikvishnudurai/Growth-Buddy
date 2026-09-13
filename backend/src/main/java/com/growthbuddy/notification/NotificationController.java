@@ -38,10 +38,15 @@ public class NotificationController {
         return service.markRead(CurrentUser.id(), id);
     }
 
+    /**
+     * Clear the list. Still PATCH /read-all because that is what shipped
+     * clients call; a phone running last week's bundle must not start leaving
+     * notifications behind because the server renamed a route.
+     */
     @PatchMapping("/read-all")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void readAll() {
-        service.markAllRead(CurrentUser.id());
+        service.clearAll(CurrentUser.id());
     }
 
     @DeleteMapping("/{id}")

@@ -1,5 +1,7 @@
 package com.growthbuddy.reminder;
 
+import com.growthbuddy.notification.NotificationKind;
+import com.growthbuddy.notification.NotificationService;
 import com.growthbuddy.user.User;
 import com.growthbuddy.user.UserRepository;
 import com.growthbuddy.common.UserZone;
@@ -26,8 +28,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 /**
- * Polls timed reminders and dispatches WhatsApp messages near their local
- * due-time in each user's timezone.
+ * Polls timed reminders and delivers them near their local due-time in each
+ * user's timezone: the in-app bell always, plus WhatsApp and Web Push for the
+ * users set up for those.
  */
 @Component
 public class ReminderDeliveryScheduler {
@@ -63,14 +66,18 @@ public class ReminderDeliveryScheduler {
             ReminderService reminderService,
             UserRepository users,
             WhatsAppService whatsapp,
-            com.growthbuddy.push.PushService push) {
+            com.growthbuddy.push.PushService push,
+            NotificationService notifications) {
         this.reminders = reminders;
         this.dispatchLog = dispatchLog;
         this.reminderService = reminderService;
         this.users = users;
         this.whatsapp = whatsapp;
         this.push = push;
+        this.notifications = notifications;
     }
+
+    private final NotificationService notifications;
 
     private final com.growthbuddy.push.PushService push;
 
@@ -79,16 +86,11 @@ public class ReminderDeliveryScheduler {
     // run. Each dispatchLog.save() is its own short transaction.
     @Scheduled(cron = "0 * * * * *")
     public void dispatchTimedWhatsAppReminders() {
-        // Nothing to deliver over if neither channel is set up.
-        if (!whatsapp.isConfigured() && !push.isConfigured()) {
-            return;
-        }
-
-        // Filtered in SQL rather than in Java: this used to pull every timed
-        // reminder in the system each minute and drop most of them, so the work
-        // per tick tracked the whole user base instead of the reachable part.
+        // No early exit on WhatsApp/push any more: the bell is a channel too, and
+        // it needs no configuration at all. A reminder set on a phone with
+        // notifications refused still turns up in the app.
         List<CalendarReminder> candidates =
-                reminders.findDeliverable(whatsapp.isConfigured(), push.isConfigured());
+                reminders.findDeliverable(true, whatsapp.isConfigured(), push.isConfigured());
         if (candidates.isEmpty()) {
             return;
         }
@@ -131,10 +133,6 @@ public class ReminderDeliveryScheduler {
             }
             boolean waEligible = whatsapp.isConfigured() && user.isWhatsappEnabled()
                     && StringUtils.hasText(user.getWhatsappNumber());
-            boolean pushEligible = push.isConfigured();
-            if (!waEligible && !pushEligible) {
-                continue;
-            }
 
             ZoneId zone = UserZone.of(user.getTimezone());
             LocalDateTime now = LocalDateTime.ofInstant(tick, zone);
@@ -187,10 +185,22 @@ public class ReminderDeliveryScheduler {
         StringBuilder channels = new StringBuilder();
         boolean sent = false;
 
+        // The bell first, and unconditionally: it is the only channel that works
+        // for every user, and publish() also pushes the card down the websocket,
+        // so an open app shows the reminder the minute it is due.
+        try {
+            notifications.publish(user.getId(), NotificationKind.reminder,
+                    rem.getText(), "Reminder for " + rem.getTime(), rem.getId());
+            channels.append("app");
+            sent = true;
+        } catch (Exception ex) {
+            log.warn("In-app reminder {} for {} failed: {}", rem.getId(), user.getId(), ex.getMessage());
+        }
+
         if (waEligible) {
             try {
                 whatsapp.sendReminder(user.getWhatsappNumber(), rem.getText());
-                channels.append("whatsapp");
+                channels.append(channels.length() > 0 ? "+whatsapp" : "whatsapp");
                 sent = true;
             } catch (Exception ex) {
                 row.setErrorMessage(truncate(ex.getMessage(), 250));
