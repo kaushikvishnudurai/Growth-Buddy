@@ -37,7 +37,7 @@ don't yet know which file you need. Files with their own doc are listed in
 | `insights.test.mjs` | 70 | Plain-assert check for the above. `node scripts/insights.test.mjs`. |
 | `cache-storage.js` | 214 | The storage layer. In-memory map (sync source of truth) + cookies (tiny boot-critical allowlist only, ~3.5 kB cap) + Cache API (`gb-store-v2`, hydrated async in `init()`). Migrates old localStorage once. Keys prefixed `gb.`. Exports `CacheStorage`. |
 | `recurrence.js` | 72 | The ONE answer to "does this reminder fall on this day?", shared by the Calendar screen and Home's mini calendar. There were three copies and the dashboard's had drifted. `ReminderService.occursOn` is the fourth-that-must-stay (WhatsApp delivery); keep them in step. Checked by `scripts/recurrence.test.mjs`. |
-| `icons.js` | 224 | The Lucide subset actually used (82 icons). Load-bearing for bundle size — the full set is ~600 kB. **Add new icon names here or they won't render.** |
+| `icons.js` | 234 | The Lucide subset actually used (121 icons). Load-bearing for bundle size — the full set is ~600 kB. **Add new icon names here or they won't render.** |
 | `achievements.js` | 269 | Badge gallery derived from data already tracked (XP/level, freeze-protected streaks, goals, wellness/trends). `XP_PER_LEVEL = 500`. Exports `ScreenAchievements`, `computeAchievements`. |
 | `mentor.js` | 256 | Buddy chat screen. `renderRich()` = tiny markdown (`**bold**`, `*italic*`, newlines). Exports `ScreenMentor`. |
 | `celebrate.js` | 119 | One-off unlock celebration: badge pop + hand-rolled confetti, queued one at a time, respects `prefers-reduced-motion`. |
@@ -45,6 +45,7 @@ don't yet know which file you need. Files with their own doc are listed in
 | `share-card.js` | 255 | Draws a 1080×1920 story card on a canvas and hands the PNG to the OS share sheet (where Instagram's "Add to story" lives — there is no web API that posts to Instagram directly). `shareStoryCard(card, opts)` → `'shared'｜'saved'｜'unsupported'`; `renderStoryCard(card)` for the raw blob. Canvas text does NOT trigger font loading — it calls `document.fonts.load()` per face first. No deps. |
 | `push.js` | 128 | Notification client. On the web: Web Push — `pushSupported`, `pushPermission`, `pushSubscribed`, `enablePush(api)`, `disablePush(api)`, inert when unsupported or VAPID keys are missing. Inside the Capacitor app the same calls route to on-device local notifications via `native.js` (an Android WebView has no `PushManager`), plus `pushTestLocal()`. |
 | `native.js` | 155 | Capacitor-only helpers, reached through `window.Capacitor.Plugins` rather than imported — the plugin packages live in `../Growth-Buddy-Mobile`, so an import would break the web build. Every export is a no-op on the web. `isNative()`, `initNative()` (device model at boot + the splash backstop), `deviceLabelHeader()` (the `X-GB-Device` value), the LocalNotifications wrappers, `applyNativeStatusBar(theme)` and `hideNativeSplash()`. |
+| `notes.js` | 687 | Notes screen — has its own doc (`docs/scripts/notes.js.md`). Listed here for one reason: `sanitize()` is the allow-list that makes storing rich text as HTML safe, and it runs on save AND on paint. |
 | `toast.js` | 22 | Late-bound toast registry. Breaks the app.js ↔ screens import cycle: app.js calls `registerToast(impl)` at boot, screens `import { toast }`. |
 
 ---
@@ -155,6 +156,7 @@ checks off.
 | `/api/notifications` | list, `unread-count`, `{id}/read`, `read-all`, `{id}` DELETE |
 | `/api/push` | `public-key`, `subscribe`, `unsubscribe`, `test` |
 | `/api/reminders` | CRUD, `occurrences`, `day/{date}` |
+| `/api/notes` | list, POST, `{id}` PATCH, `{id}` DELETE |
 | `/api/quick-add` | POST — free text ("ran 3km, spent 200 on lunch, slept 7h") → writes across features |
 
 ### Notable services (the ones without their own doc)
@@ -172,8 +174,9 @@ checks off.
 - `reminder/ReminderService` (155) — recurrence expansion + scoped deletes; **mirrors the client-side
   expansion in `scripts/calendar.js` — keep both in step.** `create` rejects an `until` before the
   start date (a reminder that could never fire).
-  `ReminderDeliveryScheduler` (222) polls and sends WhatsApp + push near the user's local
-  time, dispatching a tick's batch across a 16-thread pool; `ReminderDispatchLog` prevents
+  `ReminderDeliveryScheduler` (222) polls and delivers near the user's local time — the in-app
+  bell always (it needs no setup, and `NotificationService.publish` pushes it down the websocket so
+  an open app shows it immediately), plus WhatsApp + push for the users configured for them, dispatching a tick's batch across a 16-thread pool; `ReminderDispatchLog` prevents
   double sends; `WhatsAppService` (161) = Meta WhatsApp Cloud API. Scheduled sends need
   `WHATSAPP_TEMPLATE` (an approved template, body = one `{{1}}`) — free-form text is only
   deliverable inside a user's 24h window.
@@ -183,8 +186,14 @@ checks off.
 - `mail/MailService` (93) — transactional email; **no-ops with a log line when
   `spring.mail.username` is empty** (this is why local OTP flows need `./run.sh`).
 - `quickadd/QuickAddService` (142) — free text → structured writes across features.
-- `notification/NotificationService` (99) + `WebSocketConfig` (123) — realtime channel
-  (STOMP/SockJS; the frontend uses `@stomp/stompjs`).
+- `note/NoteService` (95) — quick notes: soft delete, `""` clears a colour where `null` means
+  "leave it alone", 64 kB body cap. The body is **HTML** from the editor on the Notes screen and is
+  sanitised where it is rendered (`sanitize()` in `scripts/notes.js`), never in Java.
+  `NoteServiceTest` covers the null-vs-empty branch.
+- `notification/NotificationService` (140) + `WebSocketConfig` (123) — realtime channel
+  (STOMP/SockJS; the frontend uses `@stomp/stompjs`). `clearAll` **deletes** rather than stamping
+  readAt — the bell is nudges with a lifetime, not a ledger — and `sweepOldNotifications`
+  (nightly) drops read rows after 30 days and anything after 90.
 - `mentorship/MentorshipService` (222), `circle/CircleService` (196) — invites and circles;
   `CircleChallenge` is a time-boxed habit challenge, members ranked by check-ins completed.
   The two mentorship directions are INDEPENDENT — A can mentor B while B mentors A — so

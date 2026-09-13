@@ -20,6 +20,7 @@ open — don't go looking for a doc that isn't in this list.
 | Focus timer, ambient sound | `docs/scripts/timer.js.md` | 733 |
 | UI primitives (`h`, `Card`, `Icon`, nav) | `docs/scripts/gb-kit.js.md` | 701 |
 | Goals | `docs/scripts/goals.js.md` | 690 |
+| Notes, the rich-text editor | `docs/scripts/notes.js.md` | 687 |
 | Report screen, charts | `docs/scripts/report.js.md` | 462 |
 | any styling | `docs/styles/app.css.md` | 7190 |
 | Money styling | `docs/styles/money.css.md` | 1615 |
@@ -44,7 +45,7 @@ fix the doc line if it was wrong. A doc you touch and don't update is worse than
 - Frontend: `npm run dev` (:5173, proxies `/api` + `/ws` to :8080). `npm run lint` before committing.
 - Checks that exist: `node scripts/insights.test.mjs`, `node scripts/recurrence.test.mjs`,
   `node scripts/money-merge.test.mjs`,
-  `money.js` `_demo()` on Vite DEV, `./mvnw test` (123 tests — including the three that guard
+  `money.js` `_demo()` on Vite DEV, `./mvnw test` (128 tests — including the three that guard
   invariants rather than code: `SchemaCoverageTest`, `AccountDeletionCoverageTest`,
   `SharedRecurrenceCasesTest`), and `scripts/ui-audit.mjs` — walks every screen at
   phone + desktop widths, screenshots each, and fails on horizontal overflow or a console
