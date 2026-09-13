@@ -1317,17 +1317,21 @@ async function loadSecondaryData() {
     // Data is complete now, so achievement detection can baseline/fire safely.
     state.achReady = true;
 
-    // Push the cached money blob up in case it was only ever saved locally. The
-    // wellness half of this used to sit here and did nothing but fail: it PUT to
-    // /api/daily-logs, which doesn't exist, and sent data the server had just
-    // returned.
-    setTimeout(() => {
-      if (state.money) {
-        api('/api/money', { method: 'PUT', body: JSON.stringify(state.money) }).catch((err) =>
+    // Push the cached money blob up ONLY when the server had none to give — the
+    // GET above overwrites state.money with the server copy whenever it lands, so
+    // pushing after a successful GET wrote back what we'd just been handed, bumped
+    // the stored version, and left this tab holding the pre-push ETag: the user's
+    // next expense 409'd "your money data changed somewhere else" against itself.
+    // putMoney (not a bare api call) so the new version is remembered either way.
+    // The wellness half of this used to sit here and did nothing but fail: it PUT
+    // to /api/daily-logs, which doesn't exist.
+    if (!money && state.money) {
+      setTimeout(() => {
+        putMoney(JSON.stringify(state.money), null).catch((err) =>
           console.error('Money sync failed:', err)
         );
-      }
-    }, 100);
+      }, 100);
+    }
 
     if (state.screen === bootScreen) render();
   } catch (err) {
