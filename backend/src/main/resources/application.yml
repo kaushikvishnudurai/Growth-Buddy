@@ -125,11 +125,19 @@ growthbuddy:
     api-secret: ${MAILJET_SECRET_KEY:}
     api-url: ${MAILJET_API_URL:https://api.mailjet.com/v3.1/send}
   mentor:
-    # OpenAI integration. If api-key is empty the mentor falls back to a
-    # canned encouraging reply so the feature still loads end-to-end.
-    api-key: ${OPENAI_API_KEY:${MENTOR_API_KEY:}}
-    model: ${OPENAI_MODEL:gpt-4o-mini}
-    base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
+    # Claude, reached through a Cloudflare AI Gateway. The gateway's
+    # /compat/chat/completions endpoint speaks the OpenAI wire format, so this is
+    # still one bearer token and one URL — the OPENAI_* names stay as fallbacks
+    # so an environment that has not been updated yet keeps working.
+    #
+    # base-url has NO default on purpose: it carries a Cloudflare account id and
+    # gateway name, which do not belong in a public repo, and an unauthenticated
+    # gateway URL is a spend anyone can point at. Set AI_GATEWAY_URL in .env (and
+    # in the Render dashboard for prod). Unset, every AI feature falls back to its
+    # canned path instead of failing.
+    api-key: ${AI_GATEWAY_TOKEN:${OPENAI_API_KEY:${MENTOR_API_KEY:}}}
+    model: ${AI_MODEL:${OPENAI_MODEL:anthropic/claude-sonnet-4-5}}
+    base-url: ${AI_GATEWAY_URL:${OPENAI_BASE_URL:}}
   # Web Push (VAPID). Generate a key pair once and set the env vars to enable
   # browser push notifications. Left empty, push is simply disabled.
   push:

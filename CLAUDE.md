@@ -44,7 +44,7 @@ fix the doc line if it was wrong. A doc you touch and don't update is worse than
 - Frontend: `npm run dev` (:5173, proxies `/api` + `/ws` to :8080). `npm run lint` before committing.
 - Checks that exist: `node scripts/insights.test.mjs`, `node scripts/recurrence.test.mjs`,
   `node scripts/money-merge.test.mjs`,
-  `money.js` `_demo()` on Vite DEV, `./mvnw test` (115 tests — including the three that guard
+  `money.js` `_demo()` on Vite DEV, `./mvnw test` (118 tests — including the three that guard
   invariants rather than code: `SchemaCoverageTest`, `AccountDeletionCoverageTest`,
   `SharedRecurrenceCasesTest`), and `scripts/ui-audit.mjs` — walks every screen at
   phone + desktop widths, screenshots each, and fails on horizontal overflow or a console

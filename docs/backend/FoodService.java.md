@@ -1,6 +1,6 @@
 # food/FoodService.java — 481 lines
 
-Backs `/api/food`: food logging, a food search, and **photo → nutrition estimation** via OpenAI.
+Backs `/api/food`: food logging, a food search, and **photo → nutrition estimation** via the AI gateway.
 
 | Method | Line | Notes |
 |---|---|---|
@@ -18,11 +18,11 @@ GET after a write.
 
 ## Notes
 
-- Photo estimation goes through `OpenAIClient`. When no API key is configured the estimate path must
+- Photo estimation goes through `OpenAIClient` (Claude via Cloudflare). When it is unconfigured the estimate path must
   degrade gracefully rather than 500 — check that before changing the response shape.
 - `FoodPhotoLog` is a lightweight log (not the image itself) powering `PhotoHistoryCard` in
   `scripts/dashboard.js`; the frontend also caches its own copy via `rememberPhotoFood` in app.js.
-- These endpoints are behind `AiRateLimitInterceptor` (per-user limit on OpenAI-backed routes).
+- These endpoints are behind `AiRateLimitInterceptor` (per-user limit on AI-backed routes).
 - Entries are per (user, date); `FoodEntry` holds the nutrition columns.
 
 DTOs: `FoodDtos`. Frontend: `openAddFood` in `scripts/app.js` (~1669), `FoodCard` / `ScreenFood` /

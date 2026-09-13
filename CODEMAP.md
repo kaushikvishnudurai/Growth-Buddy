@@ -69,7 +69,7 @@ transaction the count would roll back with the rejection it exists to count.
 **allowlist of paths in `WebConfig`** — the four vision endpoints were missing from it for months,
 the most expensive call in the app running uncapped. The allowlist is no longer the only line:
 **`OpenAIClient` charges every call against its own 60/hour per-user budget**, so a forgotten path
-is still bounded and the request never reaches OpenAI. The interceptor stays because only it can
+is still bounded and the request never reaches the model. The interceptor stays because only it can
 answer 429 *before* the handler runs — inside the client, a caller's catch block turns the refusal
 into a silent fallback. `LoginAttemptGuard` = per-**account** exponential lockout on wrong passwords and OTPs (5 free, then 1→2→4… min, capped at 1h, cleared on success) — the per-IP limiter alone does nothing against a botnet. `ApiException` (status + message),
 `GlobalExceptionHandler`, `ClientIp` (must not blindly trust forwarded headers), `WebConfig`
@@ -161,8 +161,13 @@ checks off.
 
 - `user/SessionService` (204) — mints/validates opaque tokens; stores
   `HMAC-SHA256(token, serverSecret)` so a DB dump alone can't validate a stolen token. 60-day life.
-- `mentor/OpenAIClient` (188) — minimal Chat Completions client on the JDK `HttpClient`, no SDK.
-  Stateless: each call sends the whole rolling context. `isConfigured()` gates every AI feature.
+- `mentor/OpenAIClient` (188) — minimal chat-completions client on the JDK `HttpClient`, no SDK.
+  Talks to **Claude through a Cloudflare AI Gateway**, whose `/compat/chat/completions` endpoint
+  speaks the OpenAI wire format, so the provider swap was config plus the payload shape. Class name
+  kept; `AiPayloadTest` pins the reply parser, the half that fails silently. Stateless: each call
+  sends the whole rolling context. `isConfigured()` — token **and** URL — gates every AI feature.
+  The gateway URL is account-specific and has no default in `application.yml`: set `AI_GATEWAY_URL`
+  in `.env` and in Render, never in the repo.
 - `score/ScoreService` (78) — today's score = average completion rate across enabled features.
 - `reminder/ReminderService` (155) — recurrence expansion + scoped deletes; **mirrors the client-side
   expansion in `scripts/calendar.js` — keep both in step.** `create` rejects an `until` before the
@@ -218,7 +223,7 @@ checks off.
 | `DEPLOYING.md` | how to ship it. The two variables that fail *silently* are `SPRING_PROFILES_ACTIVE=prod` and `VITE_API_BASE` — read it before any deploy |
 | `backend/Dockerfile` | 3-stage build (Vite → Maven → JRE). Serves the API **and** `dist/` from one origin, which is why the bundle can use relative paths and CORS drops out of the deployment. Bakes `SPRING_PROFILES_ACTIVE=prod` in so a deploy can't omit it |
 | `backend/src/main/resources/application-prod.yml` | prod overrides. Every value is `${VAR}` with **no default**, so a missing one fails startup instead of booting on a dev fallback. Pins `ddl-auto: validate` |
-| `.env.example` | required env: DB, mail, OpenAI, VAPID, WhatsApp |
+| `.env.example` | required env: DB, mail, AI gateway, VAPID, WhatsApp |
 | `backend/src/main/resources/application.yml` | Spring config (**dev defaults**; `application-prod.yml` overrides). `ddl-auto: ${SPRING_JPA_DDL_AUTO:update}` and `preferred_uuid_jdbc_type: CHAR` are both load-bearing |
 | `backend/pom.xml`, `backend/README.md`, `backend/mvnw*` | Java build |
 | `package.json` | `dev`, `build`, `preview`, `lint`, `lint:fix`, `format`, `format:check` |

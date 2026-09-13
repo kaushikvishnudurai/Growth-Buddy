@@ -1,7 +1,7 @@
 # family/FamilyService.java — 1492 lines (largest backend class)
 
 Backs everything under `/api/family` (`FamilyController`). Two halves: **household membership** and
-the **AI meal planner** (OpenAI, with a deterministic fallback).
+the **AI meal planner** (Claude via the Cloudflare gateway, with a deterministic fallback).
 
 ## Public API
 
@@ -42,7 +42,7 @@ the **AI meal planner** (OpenAI, with a deterministic fallback).
   `inferGender` (1276), `learnedDishesNote` (1007), `pantryNames` (960), `sanitize` (1402).
 - **LLM response handling:** `stripFences` (1440) strips ``` fences, `readJson` (1343),
   `extractDishNames` (966) + `collectMeals` (978), and **`fallbackPlan` (1422) / `fallbackMultiDay`
-  (1070)** — the deterministic plans returned when OpenAI is unconfigured or fails. Keep that path
+  (1070)** — the deterministic plans returned when the AI gateway is unconfigured or fails. Keep that path
   working; the UI must never hard-fail on a missing API key.
 - **Preference learning:** `bumpDishes(familyId, dishes, weight)` (988) writes
   `FamilyDishPreference` rows (accepted / cooked / favourited signal), read back via

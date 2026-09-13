@@ -21,17 +21,31 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 /**
- * Minimal OpenAI Chat Completions client built on the JDK HttpClient (no extra
- * SDK to keep dependencies thin). Stateless: each call sends the whole rolling
- * conversation. Callers cap history before sending.
+ * Minimal chat-completions client built on the JDK HttpClient (no SDK, to keep
+ * dependencies thin). Stateless: each call sends the whole rolling conversation.
+ * Callers cap history before sending.
+ *
+ * <p>It talks to Claude through a <b>Cloudflare AI Gateway</b>, whose
+ * {@code /compat/chat/completions} endpoint speaks the OpenAI wire format — same
+ * request shape, {@code provider/model} in the model field, one bearer token.
+ * That is why moving off OpenAI was config plus the payload shape below, and not
+ * a new dependency.
+ *
+ * <p>It used to call OpenAI's Responses API ({@code /responses}, {@code input},
+ * {@code output_text}), which the compat endpoint does not speak: requests now
+ * send {@code messages} and replies are read from
+ * {@code choices[0].message.content}.
  */
 @Component
 public class OpenAIClient {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAIClient.class);
 
+    /** Claude wants an explicit ceiling where OpenAI supplied a default. */
+    private static final int  MAX_TOKENS  = 2048;
+
     /**
-     * Per-user ceiling on actual OpenAI calls, counted here rather than at the
+     * Per-user ceiling on actual AI calls, counted here rather than at the
      * edge. {@link com.growthbuddy.common.AiRateLimitInterceptor} caps the same
      * spend at 40/hour, but only on the paths someone remembered to add to an
      * allowlist in WebConfig — and the four vision endpoints, the most expensive
@@ -58,50 +72,67 @@ public class OpenAIClient {
 
     public OpenAIClient(
             @Value("${growthbuddy.mentor.api-key:}") String apiKey,
-            @Value("${growthbuddy.mentor.model:gpt-4o-mini}") String model,
-            @Value("${growthbuddy.mentor.base-url:https://api.openai.com/v1}") String baseUrl,
+            @Value("${growthbuddy.mentor.model:anthropic/claude-sonnet-4-5}") String model,
+            @Value("${growthbuddy.mentor.base-url:}") String baseUrl,
             RateLimiter limiter) {
         this.apiKey = apiKey;
         this.model = model;
         this.baseUrl = baseUrl;
         this.limiter = limiter;
         if (isConfigured()) {
-            log.info("OpenAI client enabled (model={}, baseUrl={})", model, baseUrl);
+            log.info("AI client enabled (model={}, endpoint={})", model, endpoint());
         } else {
-            log.warn("OpenAI client disabled: OPENAI_API_KEY / MENTOR_API_KEY not found in process environment");
+            log.warn("AI client disabled: AI_GATEWAY_TOKEN / AI_GATEWAY_URL not found in process environment");
         }
     }
 
+    /**
+     * The full completions URL. Takes either the gateway root or the complete
+     * endpoint — the Cloudflare console hands you the long form, every
+     * OpenAI-shaped base URL is the short one, and guessing wrong is a 404 an
+     * hour after deploy. One endsWith buys both.
+     */
+    private String endpoint() {
+        String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
+        return base.endsWith("/chat/completions") ? base : base + "/chat/completions";
+    }
+
+    /**
+     * Both halves or nothing. The gateway URL is account-specific and lives in
+     * the environment, never in this repo, so a deploy that has the token but
+     * not the URL is a real possibility — and every AI feature already has a
+     * graceful "not configured" path. Taking it beats posting to a URL that is
+     * the empty string.
+     */
     public boolean isConfigured() {
-        return StringUtils.hasText(apiKey);
+        return StringUtils.hasText(apiKey) && StringUtils.hasText(baseUrl);
     }
 
     /**
      * Send the system prompt + chat history and return the assistant's text.
-     * Uses the Responses API (/v1/responses), which accepts a chat-style
-     * {@code input} array and supports newer models like gpt-5.x and gpt-4o.
      * Throws on transport errors / non-2xx responses so callers can fall back.
      */
     public String complete(String systemPrompt, List<ChatTurn> turns) {
         if (!isConfigured()) {
-            throw new IllegalStateException("OPENAI_API_KEY is not set");
+            throw new IllegalStateException("AI_GATEWAY_TOKEN is not set");
         }
         chargeBudget();
-        List<Map<String, String>> input = new ArrayList<>();
+        List<Map<String, String>> messages = new ArrayList<>();
         if (StringUtils.hasText(systemPrompt)) {
-            input.add(Map.of("role", "system", "content", systemPrompt));
+            messages.add(Map.of("role", "system", "content", systemPrompt));
         }
         for (ChatTurn t : turns) {
-            input.add(Map.of("role", t.role(), "content", t.content()));
+            messages.add(Map.of("role", t.role(), "content", t.content()));
         }
         Map<String, Object> body = Map.of(
                 "model", model,
-                "input", input
+                "max_tokens", MAX_TOKENS,
+                "messages", messages
         );
         try {
             String payload = json.writeValueAsString(body);
             HttpRequest req = HttpRequest.newBuilder()
-                    .uri(URI.create(baseUrl + "/responses"))
+                    .uri(URI.create(endpoint()))
                     .timeout(Duration.ofSeconds(45))
                     .header("Authorization", "Bearer " + apiKey)
                     .header("Content-Type", "application/json")
@@ -109,49 +140,53 @@ public class OpenAIClient {
                     .build();
             HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
             if (res.statusCode() / 100 != 2) {
-                log.warn("OpenAI returned {}: {}", res.statusCode(), res.body());
-                throw new IllegalStateException("OpenAI " + res.statusCode());
+                log.warn("AI gateway returned {}: {}", res.statusCode(), res.body());
+                throw new IllegalStateException("AI gateway " + res.statusCode());
             }
             return extractContent(res.body());
         } catch (JsonProcessingException ex) {
             throw new IllegalStateException("Bad request body", ex);
         } catch (java.io.IOException | InterruptedException ex) {
             Thread.currentThread().interrupt();
-            throw new IllegalStateException("OpenAI request failed", ex);
+            throw new IllegalStateException("AI gateway request failed", ex);
         }
     }
 
     /**
-     * Send one user turn with text + image using the Responses API.
+     * Send one user turn with text + image.
      */
     public String completeWithImage(String systemPrompt, String userPrompt, String imageDataUrl) {
         chargeBudget();
         if (!isConfigured()) {
-            throw new IllegalStateException("OPENAI_API_KEY is not set");
+            throw new IllegalStateException("AI_GATEWAY_TOKEN is not set");
         }
         if (!StringUtils.hasText(userPrompt) || !StringUtils.hasText(imageDataUrl)) {
             throw new IllegalArgumentException("userPrompt and imageDataUrl are required");
         }
 
-        List<Map<String, Object>> input = new ArrayList<>();
+        List<Map<String, Object>> messages = new ArrayList<>();
         if (StringUtils.hasText(systemPrompt)) {
-            input.add(Map.of("role", "system", "content", systemPrompt));
+            messages.add(Map.of("role", "system", "content", systemPrompt));
         }
 
+        // Chat-completions shape: image_url is an OBJECT holding a url, where the
+        // Responses API took a bare string. This is the one part of the payload
+        // the compat endpoint does not forgive.
         List<Map<String, Object>> content = new ArrayList<>();
-        content.add(Map.of("type", "input_text", "text", userPrompt));
-        content.add(Map.of("type", "input_image", "image_url", imageDataUrl));
-        input.add(Map.of("role", "user", "content", content));
+        content.add(Map.of("type", "text", "text", userPrompt));
+        content.add(Map.of("type", "image_url", "image_url", Map.of("url", imageDataUrl)));
+        messages.add(Map.of("role", "user", "content", content));
 
         Map<String, Object> body = Map.of(
                 "model", model,
-                "input", input
+                "max_tokens", MAX_TOKENS,
+                "messages", messages
         );
 
         try {
             String payload = json.writeValueAsString(body);
             HttpRequest req = HttpRequest.newBuilder()
-                    .uri(URI.create(baseUrl + "/responses"))
+                    .uri(URI.create(endpoint()))
                     .timeout(Duration.ofSeconds(45))
                     .header("Authorization", "Bearer " + apiKey)
                     .header("Content-Type", "application/json")
@@ -159,54 +194,45 @@ public class OpenAIClient {
                     .build();
             HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
             if (res.statusCode() / 100 != 2) {
-                log.warn("OpenAI (image) returned {}: {}", res.statusCode(), res.body());
-                throw new IllegalStateException("OpenAI " + res.statusCode());
+                log.warn("AI gateway (image) returned {}: {}", res.statusCode(), res.body());
+                throw new IllegalStateException("AI gateway " + res.statusCode());
             }
             return extractContent(res.body());
         } catch (JsonProcessingException ex) {
             throw new IllegalStateException("Bad request body", ex);
         } catch (java.io.IOException | InterruptedException ex) {
             Thread.currentThread().interrupt();
-            throw new IllegalStateException("OpenAI request failed", ex);
+            throw new IllegalStateException("AI gateway request failed", ex);
         }
     }
 
     /**
-     * Pull the assistant text out of a Responses API payload.
+     * Pull the assistant text out of a chat-completions payload:
+     * {@code {"choices":[{"message":{"content":"…"}}]}}.
      *
-     * <p>Responses API shape:
-     * <pre>{@code
-     * { "output": [
-     *     { "type": "message",
-     *       "content": [ { "type": "output_text", "text": "..." }, ... ] },
-     *     ... ] }
-     * }</pre>
-     *
-     * <p>Some SDK responses also include a flattened {@code output_text} field;
-     * we fall back to it if present.
+     * <p>Package-private so {@code AiPayloadTest} can hold it to that shape
+     * without a gateway. This is the half of the move off OpenAI that fails
+     * <em>silently</em> — a parser aimed at the old shape returns "" and every
+     * AI feature quietly serves its fallback — so it is the half with a test.
      */
-    private String extractContent(String body) {
+    String extractContent(String body) {
         try {
-            var root = json.readTree(body);
-            var flat = root.path("output_text");
-            if (flat.isTextual() && !flat.asText().isBlank()) {
-                return flat.asText();
+            var content = json.readTree(body).path("choices").path(0).path("message").path("content");
+            if (content.isTextual()) {
+                return content.asText();
             }
-            var output = root.path("output");
+            // Some providers answer with content as an array of typed parts.
             StringBuilder sb = new StringBuilder();
-            for (var item : output) {
-                if (!"message".equals(item.path("type").asText())) continue;
-                for (var part : item.path("content")) {
-                    String type = part.path("type").asText();
-                    if ("output_text".equals(type) || "text".equals(type)) {
-                        if (sb.length() > 0) sb.append("\n");
-                        sb.append(part.path("text").asText());
-                    }
+            for (var part : content) {
+                String text = part.path("text").asText("");
+                if (!text.isBlank()) {
+                    if (sb.length() > 0) sb.append("\n");
+                    sb.append(text);
                 }
             }
             return sb.toString();
         } catch (com.fasterxml.jackson.core.JsonProcessingException ex) {
-            throw new IllegalStateException("Could not parse OpenAI response", ex);
+            throw new IllegalStateException("Could not parse AI gateway response", ex);
         }
     }
 
