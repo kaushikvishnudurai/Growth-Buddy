@@ -246,7 +246,7 @@ function richEditor({ html, placeholder, onInput } = {}) {
    The screen
    ------------------------------------------------------------------ */
 
-function sheet({ title, body, primary, onPrimary, extras }) {
+function sheet({ title, body, primary, onPrimary, headActions }) {
   let overlay;
   function close() {
     overlay.classList.remove('is-open');
@@ -273,14 +273,20 @@ function sheet({ title, body, primary, onPrimary, extras }) {
   const card = h(
     'div',
     { class: 'gb-modal gb-note-modal', role: 'dialog', 'aria-modal': 'true' },
-    h('div', { class: 'gb-modal-title' }, title),
-    h('div', { class: 'gb-modal-body' }, body),
-    primaryBtn,
-    ...(extras || []),
     h(
-      'button',
-      { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel', onclick: close },
-      'Close'
+      'div',
+      { class: 'gb-note-modal-head' },
+      h('div', { class: 'gb-modal-title' }, title),
+      ...(headActions || [])
+    ),
+    h('div', { class: 'gb-modal-body' }, body),
+    /* One footer row, not a stack of full-width bars. Destructive actions live
+       in the head as an icon — a red slab shouted louder than Save. */
+    h(
+      'div',
+      { class: 'gb-note-foot' },
+      h('button', { type: 'button', class: 'gb-btn gb-btn--ghost', onclick: close }, 'Close'),
+      primaryBtn
     )
   );
   overlay = h(
@@ -548,8 +554,9 @@ function ScreenNotes({ onList, onCreate, onUpdate, onDelete, onMakeTask, onMakeR
       'button',
       {
         type: 'button',
-        class: 'gb-btn gb-btn--danger',
-        style: { width: '100%', marginTop: '8px' },
+        class: 'gb-iconbtn gb-iconbtn--danger gb-note-del',
+        'aria-label': 'Delete note',
+        title: 'Delete note',
         onclick: async () => {
           const ok = await confirmDialog({
             title: 'Delete this note?',
@@ -568,14 +575,14 @@ function ScreenNotes({ onList, onCreate, onUpdate, onDelete, onMakeTask, onMakeR
           }
         },
       },
-      'Delete note'
+      Icon('trash-2', { size: 16, sw: 2.2 })
     );
 
     const open = sheet({
       title: 'Note',
       body,
       primary: 'Save',
-      extras: [deleteBtn],
+      headActions: [deleteBtn],
       onPrimary: async () => {
         const saved = await onUpdate(note.id, {
           title: title.value.trim(),

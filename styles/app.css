@@ -7599,3 +7599,37 @@ textarea:focus-visible,
 .gb-note-modal .gb-note-title-input {
   margin-bottom: 10px;
 }
+/* Title on the left, delete as a quiet icon on the right. As a full-width red
+   bar it out-shouted Save and sat between Save and Close. */
+.gb-note-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.gb-note-del {
+  flex: none;
+  width: 36px;
+  height: 36px;
+}
+/* Secondary actions read as a group once they're off the swatch row. */
+.gb-note-modal .gb-note-actions {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+/* One footer row instead of three stacked full-width buttons. */
+.gb-note-foot {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+.gb-note-foot .gb-btn {
+  flex: 1 1 0;
+  width: auto;
+  margin-top: 0;
+}
+.gb-note-foot .gb-btn--primary {
+  flex: 2 1 0;
+}
