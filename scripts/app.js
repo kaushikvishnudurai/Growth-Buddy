@@ -1482,6 +1482,12 @@ async function updateTask(id, body) {
   await refreshScore();
 }
 
+async function deleteTask(id) {
+  await api('/api/tasks/' + encodeURIComponent(id), { method: 'DELETE' });
+  state.tasks = state.tasks.filter((t) => t.id !== id);
+  await refreshScore();
+}
+
 async function createHabit(body) {
   const created = await api('/api/habits', {
     method: 'POST',
@@ -4571,7 +4577,7 @@ async function deleteReminder(scope, id, occKey) {
 }
 
 /* ---- Modal scaffolding ---- */
-function openModal({ title, sub, body, primary, onPrimary, modalClass }) {
+function openModal({ title, sub, body, primary, onPrimary, modalClass, danger }) {
   let overlay;
   function close() {
     overlay.classList.remove('is-open');
@@ -4600,6 +4606,23 @@ function openModal({ title, sub, body, primary, onPrimary, modalClass }) {
     },
     primary || 'Save'
   );
+  // Destructive action, under the primary: close first, so what it opens (a
+  // confirm) isn't stacked on a sheet still showing the thing being deleted.
+  const dangerBtn = danger
+    ? h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--danger',
+          style: { width: '100%', marginTop: '8px' },
+          onclick: () => {
+            close();
+            danger.onClick();
+          },
+        },
+        danger.label
+      )
+    : null;
   const sheet = h(
     'div',
     {
@@ -4616,6 +4639,7 @@ function openModal({ title, sub, body, primary, onPrimary, modalClass }) {
     ),
     h('div', { class: 'gb-modal-body' }, body),
     primaryBtn,
+    dangerBtn,
     h(
       'button',
       { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel', onclick: close },
@@ -5071,6 +5095,10 @@ function openEditTask(task) {
     // ponytail: a null dueAt means "leave it alone" to UpdateTaskRequest, so
     // you can move a due date but not remove one. Needs a backend flag to fix.
     onPrimary: () => updateTask(task.id, form.read()),
+    danger: {
+      label: 'Delete task',
+      onClick: () => confirmDelete('Delete this task?', () => deleteTask(task.id)),
+    },
   });
   form.focus();
 }
