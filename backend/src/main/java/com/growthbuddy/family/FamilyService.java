@@ -375,7 +375,7 @@ public class FamilyService {
             throw ApiException.badRequest("imageDataUrl is required");
         }
         if (!openai.isConfigured()) {
-            log.warn("Grocery scan fallback: OpenAI not configured (OPENAI_API_KEY/MENTOR_API_KEY missing)");
+            log.warn("Grocery scan fallback: AI gateway not configured (AI_GATEWAY_TOKEN/AI_GATEWAY_URL missing)");
             return new GroceryScanResponse(
                     List.of(), 0.0, true,
                     "Photo scanning is unavailable. You can add ingredients manually.",

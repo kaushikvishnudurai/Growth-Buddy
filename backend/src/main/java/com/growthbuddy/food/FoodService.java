@@ -77,7 +77,7 @@ public class FoodService {
             throw ApiException.badRequest("imageDataUrl must be a data URL image");
         }
         if (!openai.isConfigured()) {
-            log.warn("Photo multi-analysis fallback: OpenAI is not configured in this backend process (OPENAI_API_KEY/MENTOR_API_KEY missing)");
+            log.warn("Photo multi-analysis fallback: AI gateway is not configured in this backend process (AI_GATEWAY_TOKEN/AI_GATEWAY_URL missing)");
             return new PhotoFoodEstimateMultiResponse(
                     List.of(),
                     0.0,
@@ -129,7 +129,7 @@ public class FoodService {
                     message,
                     "ai-photo-multi");
         } catch (Exception ex) {
-            log.warn("Photo multi-analysis fallback: OpenAI image analysis failed", ex);
+            log.warn("Photo multi-analysis fallback: AI image analysis failed", ex);
             return new PhotoFoodEstimateMultiResponse(
                     List.of(),
                     0.0,
@@ -294,7 +294,7 @@ public class FoodService {
             throw ApiException.badRequest("imageDataUrl must be a data URL image");
         }
         if (!openai.isConfigured()) {
-            log.warn("Photo analysis fallback: OpenAI is not configured in this backend process (OPENAI_API_KEY/MENTOR_API_KEY missing)");
+            log.warn("Photo analysis fallback: AI gateway is not configured in this backend process (AI_GATEWAY_TOKEN/AI_GATEWAY_URL missing)");
             return new PhotoFoodEstimateResponse(
                     null,
                     null,
@@ -335,7 +335,7 @@ public class FoodService {
                             : (fallbackNeeded ? "Image unclear. Please answer fallback questions." : "Estimated from photo."),
                     "ai-photo");
         } catch (Exception ex) {
-            log.warn("Photo analysis fallback: OpenAI image analysis failed", ex);
+            log.warn("Photo analysis fallback: AI image analysis failed", ex);
             return new PhotoFoodEstimateResponse(
                     null,
                     null,

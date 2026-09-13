@@ -197,7 +197,7 @@ public class MentorService {
         if (!openai.isConfigured()) {
             return "Mentor (offline mode): I hear you — \""
                     + truncate(lastUser)
-                    + "\". I'm not connected to OpenAI yet, but here's a nudge: "
+                    + "\". I'm not connected to my AI yet, but here's a nudge: "
                     + "break it into one small step you can do today, and check it off. "
                     + "You're doing better than you think. Start with one 10-minute action now, then come back and tell me how it went.";
         }
@@ -222,7 +222,7 @@ public class MentorService {
             String reply = openai.complete(systemPrompt, turns).trim();
             return StringUtils.hasText(reply) ? reply : "I'm here. Tell me a bit more about what's going on?";
         } catch (RuntimeException ex) {
-            log.warn("OpenAI call failed, falling back: {}", ex.getMessage());
+            log.warn("AI call failed, falling back: {}", ex.getMessage());
             return "I'm having trouble reaching my brain right now — give me a moment and try again. "
                     + "In the meantime, what's one small win you could go after today?";
         }
