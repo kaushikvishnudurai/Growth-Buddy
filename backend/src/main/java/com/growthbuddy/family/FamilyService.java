@@ -385,7 +385,7 @@ public class FamilyService {
             String userPrompt = "Identify all grocery/food items in this image. "
                     + "Return strict JSON only with 'items', 'confidence', 'fallbackNeeded'.";
             String raw = openai.completeWithImage(GROCERY_PROMPT, userPrompt, req.imageDataUrl());
-            JsonNode node = json.readTree(stripFences(raw));
+            JsonNode node = json.readTree(OpenAIClient.jsonOf(raw));
 
             List<GroceryItem> items = new ArrayList<>();
             for (JsonNode item : node.path("items")) {
@@ -491,7 +491,7 @@ public class FamilyService {
         } else {
             try {
                 String raw = openai.complete(MEAL_PLAN_PROMPT, List.of(new ChatTurn("user", context)));
-                plan = json.readTree(stripFences(raw));
+                plan = json.readTree(OpenAIClient.jsonOf(raw));
                 source = "ai";
             } catch (Exception ex) {
                 log.warn("Meal plan fallback: AI generation failed", ex);
@@ -663,7 +663,7 @@ public class FamilyService {
         } else {
             try {
                 String raw = openai.complete(MULTI_DAY_PROMPT, List.of(new ChatTurn("user", ctx.toString())));
-                plan = json.readTree(stripFences(raw));
+                plan = json.readTree(OpenAIClient.jsonOf(raw));
                 source = "ai";
             } catch (Exception ex) {
                 log.warn("Multi-day plan fallback: AI generation failed", ex);
@@ -766,7 +766,7 @@ public class FamilyService {
             String raw = openai.completeWithImage(PANTRY_SCAN_PROMPT,
                     "List all items with category, quantity and any printed expiry date. Strict JSON only.",
                     req.imageDataUrl());
-            JsonNode node = json.readTree(stripFences(raw));
+            JsonNode node = json.readTree(OpenAIClient.jsonOf(raw));
             List<PantryItemResponse> added = new ArrayList<>();
             for (JsonNode it : node.path("items")) {
                 String name = textOrNull(it, "name");
@@ -877,7 +877,7 @@ public class FamilyService {
                 }
                 ctx.append(estimateCost ? "\nInclude estimatedCost in INR." : "\nSet estimatedCost to 0.");
                 String raw = openai.complete(SHOPPING_PROMPT, List.of(new ChatTurn("user", ctx.toString())));
-                JsonNode node = json.readTree(stripFences(raw));
+                JsonNode node = json.readTree(OpenAIClient.jsonOf(raw));
                 for (JsonNode it : node.path("items")) {
                     String name = textOrNull(it, "name");
                     if (!StringUtils.hasText(name)) {
@@ -1437,22 +1437,6 @@ public class FamilyService {
         return root;
     }
 
-    private static String stripFences(String raw) {
-        if (raw == null) {
-            return "";
-        }
-        String s = raw.trim();
-        if (s.startsWith("```")) {
-            int firstNewline = s.indexOf('\n');
-            if (firstNewline >= 0) {
-                s = s.substring(firstNewline + 1);
-            }
-            if (s.endsWith("```")) {
-                s = s.substring(0, s.length() - 3);
-            }
-        }
-        return s.trim();
-    }
 
     private static String textOrNull(JsonNode node, String key) {
         JsonNode val = node.path(key);

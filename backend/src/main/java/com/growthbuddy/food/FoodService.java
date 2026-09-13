@@ -96,7 +96,7 @@ public class FoodService {
                     + "\nRice hint: " + rice.name()
                     + "\nReturn strict JSON only with 'items', 'confidence', 'fallbackNeeded' keys.";
             String raw = openai.completeWithImage(PHOTO_AI_MULTI_PROMPT, userPrompt, req.imageDataUrl());
-            JsonNode node = json.readTree(raw);
+            JsonNode node = json.readTree(OpenAIClient.jsonOf(raw));
 
             List<FoodItem> items = new ArrayList<>();
             JsonNode itemsNode = node.path("items");
@@ -315,7 +315,7 @@ public class FoodService {
                     + "\nRice hint: " + rice.name()
                     + "\nReturn strict JSON only.";
             String raw = openai.completeWithImage(PHOTO_AI_PROMPT, userPrompt, req.imageDataUrl());
-            JsonNode node = json.readTree(raw);
+            JsonNode node = json.readTree(OpenAIClient.jsonOf(raw));
 
             String foodName = textOrNull(node, "foodName");
             Integer kcalPer100g = numberAsInt(node, "kcalPer100g");
@@ -395,7 +395,7 @@ public class FoodService {
                     + "\nWhite rice base: " + input.riceBase().name()
                     + "\nNote: " + (input.note() != null ? input.note() : "");
             String raw = openai.complete(AI_PROMPT, List.of(new ChatTurn("user", userPrompt)));
-            JsonNode node = json.readTree(raw);
+            JsonNode node = json.readTree(OpenAIClient.jsonOf(raw));
             if (node.has("kcalPer100g") && node.get("kcalPer100g").isNumber()) {
                 return node.get("kcalPer100g").asInt();
             }
@@ -414,7 +414,7 @@ public class FoodService {
                     + "\nNote: " + (input.note() != null ? input.note() : "")
                     + "\nReturn quantityGrams only in JSON.";
             String raw = openai.complete(AI_PROMPT, List.of(new ChatTurn("user", userPrompt)));
-            JsonNode node = json.readTree(raw);
+            JsonNode node = json.readTree(OpenAIClient.jsonOf(raw));
             if (node.has("quantityGrams") && node.get("quantityGrams").isNumber()) {
                 return node.get("quantityGrams").asInt();
             }

@@ -236,6 +236,35 @@ public class OpenAIClient {
         }
     }
 
+    /**
+     * The JSON document inside a model reply.
+     *
+     * <p>OpenAI was asked for JSON and returned bare JSON. Claude answers the
+     * same prompts with ```json fences, and sometimes a "Here's the JSON:" line
+     * in front — so every caller that handed the raw text to {@code readTree}
+     * started throwing the day we moved gateways, and silently served its canned
+     * fallback instead. Nutrition suggestions, photo calorie estimates: all of
+     * them, all at once.
+     *
+     * <p>ponytail: first opening bracket to the last matching one, not a parser.
+     * Trailing prose containing a stray brace would trim wrong; no prompt here
+     * asks for prose. If one ever does, parse with {@code JsonParser} instead.
+     */
+    public static String jsonOf(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        String s = raw.trim();
+        int obj = s.indexOf('{');
+        int arr = s.indexOf('[');
+        int start = obj < 0 ? arr : (arr < 0 ? obj : Math.min(obj, arr));
+        if (start < 0) {
+            return s;
+        }
+        int end = s.lastIndexOf(s.charAt(start) == '{' ? '}' : ']');
+        return end > start ? s.substring(start, end + 1) : s;
+    }
+
     public record ChatTurn(String role, String content) {}
 
     /**

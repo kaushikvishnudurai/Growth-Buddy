@@ -665,13 +665,16 @@ public class AuthService {
                     + ", currentFoodGoalKcal=" + safe(foodGoal)
                     + ", currentWaterGoalMl=" + safe(waterGoal);
             String raw = openai.complete(NUTRITION_PROMPT, List.of(new ChatTurn("user", profile)));
-            JsonNode node = json.readTree(raw);
+            JsonNode node = json.readTree(OpenAIClient.jsonOf(raw));
             int water = clamp(node.path("waterMl").asInt(base.recommendedWaterMl()), 1500, 6000);
             int kcal = clamp(node.path("foodGoalKcal").asInt(base.recommendedFoodGoalKcal()), 1200, 4200);
             List<String> foods = parseFoods(node.path("indianFoods"), base.indianFoodSuggestions());
             String guidance = textOr(node.path("guidance").asText(), base.guidance());
             return new NutritionSuggestionResponse(water, kcal, foods, guidance);
         } catch (Exception ex) {
+            // Falling back is fine; doing it silently is not — this is exactly
+            // how the fenced-JSON breakage above went unnoticed.
+            log.warn("Nutrition suggestion fell back to the heuristic: {}", ex.toString());
             return base;
         }
     }

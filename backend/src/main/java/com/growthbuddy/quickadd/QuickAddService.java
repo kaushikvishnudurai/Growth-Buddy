@@ -66,7 +66,7 @@ public class QuickAddService {
                 + (habitNames == null || habitNames.isEmpty() ? "(none)" : String.join(", ", habitNames));
         try {
             String raw = openai.complete(context, List.of(new ChatTurn("user", clean)));
-            JsonNode root = json.readTree(stripFences(raw));
+            JsonNode root = json.readTree(OpenAIClient.jsonOf(raw));
             List<Intent> out = new ArrayList<>();
             for (JsonNode n : root.path("intents")) {
                 Intent it = toIntent(n);
@@ -110,15 +110,6 @@ public class QuickAddService {
         }
     }
 
-    private static String stripFences(String s) {
-        String t = s == null ? "" : s.trim();
-        if (t.startsWith("```")) {
-            int nl = t.indexOf('\n');
-            if (nl >= 0) t = t.substring(nl + 1);
-            if (t.endsWith("```")) t = t.substring(0, t.length() - 3);
-        }
-        return t.trim();
-    }
 
     private static String oneOf(String v, String fallback, String... allowed) {
         String s = v == null ? "" : v.trim().toLowerCase();

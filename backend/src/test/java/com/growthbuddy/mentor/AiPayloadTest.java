@@ -36,6 +36,22 @@ class AiPayloadTest {
         assertThat(client.extractContent(body)).isEqualTo("line one\nline two");
     }
 
+    /**
+     * Claude fences its JSON and sometimes introduces it; OpenAI's json_object
+     * mode never did. Every caller that parsed the raw reply broke on the day we
+     * switched, and broke the quiet way — canned fallback, no error.
+     */
+    @Test
+    void findsTheJsonDocumentInsideAFencedOrChattyReply() {
+        String doc = "{\"waterMl\":2000}";
+        assertThat(OpenAIClient.jsonOf("```json\n" + doc + "\n```")).isEqualTo(doc);
+        assertThat(OpenAIClient.jsonOf("```\n" + doc + "\n```")).isEqualTo(doc);
+        assertThat(OpenAIClient.jsonOf("Here is the JSON:\n\n" + doc)).isEqualTo(doc);
+        assertThat(OpenAIClient.jsonOf(doc)).isEqualTo(doc);
+        assertThat(OpenAIClient.jsonOf("```json\n[1,2]\n```")).isEqualTo("[1,2]");
+        assertThat(OpenAIClient.jsonOf(null)).isEmpty();
+    }
+
     /** The old shape must not quietly read as an empty answer. */
     @Test
     void anEmptyOrForeignPayloadReadsAsEmpty() {
