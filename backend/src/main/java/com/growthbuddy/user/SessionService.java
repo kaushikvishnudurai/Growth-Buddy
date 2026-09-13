@@ -123,6 +123,10 @@ public class SessionService {
         if (request != null) {
             s.setUserAgent(truncate(request.getHeader("User-Agent"), 4000));
             s.setIp(clientIp(request));
+            // The native shell knows its own model; a browser's UA no longer does
+            // (Chrome reduces Android to "Android 10; K"). Trust the client label
+            // when it sends one, fall back to parsing the UA when it doesn't.
+            s.setDeviceLabel(truncate(request.getHeader("X-GB-Device"), 120));
         }
         sessions.save(s);
         return new IssuedToken(token, s);

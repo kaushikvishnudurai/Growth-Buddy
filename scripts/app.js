@@ -42,8 +42,21 @@ import {
 import { WORK_WEEKS, getWorkWeek, setWorkWeek } from './recurrence.js';
 import { ScreenAchievements, computeAchievements } from './achievements.js';
 import { celebrate } from './celebrate.js';
-import { enablePush, disablePush, pushSubscribed, pushSupported } from './push.js';
+import {
+  enablePush,
+  disablePush,
+  pushSubscribed,
+  pushSupported,
+  pushTestLocal,
+} from './push.js';
 import { CacheStorage } from './cache-storage.js';
+import {
+  initNative,
+  deviceLabelHeader,
+  localNotificationsAvailable,
+  applyNativeStatusBar,
+  hideNativeSplash,
+} from './native.js';
 import { registerToast } from './toast.js';
 import { initA11y } from './a11y.js';
 
@@ -597,7 +610,7 @@ function hydrateUiPrefs() {
     if (p.theme === 'dark' || p.theme === 'light') {
       state.theme = p.theme;
       CacheStorage.setItem(THEME_KEY, p.theme);
-      document.documentElement.setAttribute('data-theme', p.theme);
+      applyTheme(p.theme);
     }
     if (TEXT_SCALES[p.textScale]) {
       state.textScale = applyTextScale(p.textScale);
@@ -905,6 +918,12 @@ async function apiFetch(path, options) {
   const token = loadToken();
   if (token) {
     headers['Authorization'] = 'Bearer ' + token;
+  }
+  // Lets the signed-in-devices list say "Growth Buddy on SM-S918B" instead of
+  // guessing from a User-Agent that no longer carries the model.
+  const device = deviceLabelHeader();
+  if (device) {
+    headers['X-GB-Device'] = device;
   }
   if (opts.body && !headers['Content-Type']) {
     headers['Content-Type'] = 'application/json';
@@ -2523,9 +2542,19 @@ window.addEventListener('hashchange', () => {
   setScreen(screenFromHash(), { fromHash: true });
 });
 
+/**
+ * Switch the theme. The only writer of data-theme: inside the app the status bar
+ * is painted by Android and has to be repainted alongside it, and three separate
+ * call sites setting the attribute by hand is three chances to forget.
+ */
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  applyNativeStatusBar(theme);
+}
+
 function toggleTheme() {
   state.theme = state.theme === 'dark' ? 'light' : 'dark';
-  document.documentElement.setAttribute('data-theme', state.theme);
+  applyTheme(state.theme);
   try {
     CacheStorage.setItem(THEME_KEY, state.theme);
   } catch (_) {}
@@ -3960,8 +3989,16 @@ function openProfileSettings(initialTab) {
     'Send test'
   );
   let pushOn = false;
+  // In the app the switch is Android's, not ours: we can ask for permission but
+  // never take it back, so the "off" button points at system settings instead.
+  const native = localNotificationsAvailable();
   const syncPushUi = () => {
-    pushBtn.textContent = pushOn ? 'Turn off push notifications' : 'Enable push notifications';
+    pushBtn.textContent = pushOn
+      ? native
+        ? 'Notifications on — manage in system settings'
+        : 'Turn off push notifications'
+      : 'Enable notifications';
+    pushBtn.disabled = pushOn && native;
     pushTestBtn.style.display = pushOn ? '' : 'none';
   };
   syncPushUi();
@@ -3990,7 +4027,9 @@ function openProfileSettings(initialTab) {
           pushToast('Push isn’t set up on the server yet (no VAPID keys).', 'error', 4200);
         } else if (r === 'denied') {
           pushToast(
-            'Notifications are blocked — enable them in your browser settings.',
+            native
+              ? 'Notifications are blocked — turn them on in Settings › Apps › Growth Buddy.'
+              : 'Notifications are blocked — enable them in your browser settings.',
             'error',
             4200
           );
@@ -4001,12 +4040,19 @@ function openProfileSettings(initialTab) {
         }
       }
     } finally {
-      pushBtn.disabled = false;
       syncPushUi();
     }
   };
   pushTestBtn.onclick = async () => {
     try {
+      if (native) {
+        toastSuccess(
+          (await pushTestLocal())
+            ? 'Test notification sent.'
+            : 'Could not post the notification.'
+        );
+        return;
+      }
       const r = await api('/api/push/test', { method: 'POST' });
       toastSuccess(
         r.delivered > 0
@@ -6901,7 +6947,7 @@ if (window.CacheStorage && window.CacheStorage.init) {
     .catch((err) => console.warn('CacheStorage init failed:', err));
 }
 initA11y();
-document.documentElement.setAttribute('data-theme', state.theme);
+applyTheme(state.theme);
 applyPremium(state.premium);
 applyTextScale(state.textScale);
 if (state.user) {
@@ -6925,7 +6971,12 @@ if (state.user) {
     5 * 60 * 1000
   );
 }
+// Resolve the device model before anything signs in — the label rides along on
+// the request that creates the session.
+initNative();
 render();
+// The splash is held open by launchAutoHide:false — nothing else drops it.
+hideNativeSplash();
 window.addEventListener('load', refreshIcons);
 window.addEventListener('online', handleOnline);
 window.addEventListener('offline', handleOffline);

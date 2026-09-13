@@ -122,20 +122,54 @@ public class AuthController {
                 ? header.substring(7).trim() : null;
     }
 
-    /** Compress a raw User-Agent into a short, human label like "Chrome on macOS". */
-    private static String shortenAgent(String ua) {
+    /**
+     * Compress a raw User-Agent into a short, human label like "Chrome on macOS"
+     * or "Growth Buddy on SM-S918B".
+     *
+     * <p>Only a fallback: sessions created since the client started sending
+     * {@code X-GB-Device} carry a real {@code deviceLabel} and never reach here.
+     */
+    static String shortenAgent(String ua) {
         if (ua == null || ua.isBlank()) return "Unknown device";
         String s = ua;
-        String browser = s.contains("Edg") ? "Edge"
+        String app = s.contains("GrowthBuddyApp") ? "Growth Buddy"
+                : s.contains("Edg") ? "Edge"
                 : s.contains("Chrome") ? "Chrome"
                 : s.contains("Firefox") ? "Firefox"
-                : s.contains("Safari") ? "Safari" : "Browser";
-        String os = s.contains("iPhone") || s.contains("iPad") ? "iOS"
+                : s.contains("Safari") ? "Safari"
+                : s.contains("Dalvik") || s.contains("okhttp") ? "Growth Buddy"
+                : "Browser";
+        String model = androidModel(s);
+        String where = model != null ? model
+                : s.contains("iPhone") ? "iPhone"
+                : s.contains("iPad") ? "iPad"
                 : s.contains("Android") ? "Android"
                 : s.contains("Mac OS") || s.contains("Macintosh") ? "macOS"
                 : s.contains("Windows") ? "Windows"
                 : s.contains("Linux") ? "Linux" : "device";
-        return browser + " on " + os;
+        return app + " on " + where;
+    }
+
+    /**
+     * Pull the handset model out of an Android UA:
+     * {@code "(Linux; Android 14; SM-S918B Build/UP1A)"} to {@code "SM-S918B"}.
+     *
+     * <p>Returns null when there is nothing usable — notably modern Chrome, which
+     * freezes the segment to the literal {@code "K"}, and WebView's bare {@code "wv"}.
+     */
+    static String androidModel(String ua) {
+        int start = ua.indexOf("Android");
+        if (start < 0) return null;
+        int semi = ua.indexOf(';', start);
+        int end = ua.indexOf(')', start);
+        if (semi < 0 || end < 0 || semi > end) return null;
+        String model = ua.substring(semi + 1, end).trim();
+        int build = model.indexOf("Build/");
+        if (build >= 0) model = model.substring(0, build);
+        model = model.replace(";wv", "").replace("; wv", "").trim();
+        if (model.endsWith(";")) model = model.substring(0, model.length() - 1).trim();
+        // "K" is Chrome's redacted placeholder; "wv" is a WebView with no model.
+        return model.isBlank() || model.equals("K") || model.equals("wv") ? null : model;
     }
 
     @PutMapping("/whatsapp")
