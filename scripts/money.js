@@ -3689,15 +3689,19 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice }) {
     const runSearch = () => {
       lastSearch = searchInput.value;
       const r = searchExpenses(money, searchInput.value);
+      // replaceChildren is native DOM: a null child stringifies into the literal
+      // text "null" under the answer. Drop it instead.
       searchOut.replaceChildren(
-        h('div', { class: 'gb-money-search-answer' }, r.answer),
-        r.results.length
-          ? h(
-              'div',
-              { class: 'gb-money-exp-list' },
-              r.results.slice(0, 12).map((e) => expRow(e))
-            )
-          : null
+        ...[
+          h('div', { class: 'gb-money-search-answer' }, r.answer),
+          r.results.length
+            ? h(
+                'div',
+                { class: 'gb-money-exp-list' },
+                r.results.slice(0, 12).map((e) => expRow(e))
+              )
+            : null,
+        ].filter(Boolean)
       );
       refreshIcons();
     };

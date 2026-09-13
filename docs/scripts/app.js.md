@@ -81,7 +81,14 @@ it silently landed on Home. Don't reintroduce a second list.
   all on Home because the three identical grey cards promised a shape Home never takes (a score
   ring, a brief, a mini calendar), which on a throttled link read as stuck rather than loading.
   `screenSkeleton()` still backs `lazyScreen()`, where grey rows are honest — that one waits on a
-  chunk for a screen already on display. That replaced a
+  chunk for a screen already on display.
+  **`SELF_LOADING_SCREENS` (`family`, `circle`) skip the boot screen entirely**: they fetch through
+  their own `api` callbacks and paint their own loading state, so refreshing on `#/family` used to
+  mean quote card → family skeleton → family, two placeholders deep, with wave 1 gating a screen
+  that reads none of it. `loadData()` leaves `state.loading` false for them and — crucially — skips
+  its closing `render()` while you're still on one, because that render would rebuild the subtree
+  and restart the screen's own fetch. Membership requires BOTH properties; mentor has the api
+  callbacks but no loading paint, so it stays on `mentorSkeleton()`. That replaced a
   full-screen splash which threw the whole app away, so everything appeared at once when the fetch
   landed. It also hid a worse bug: `tasks`/`habits`/`goals` are NOT cache-backed, so a `[]` first
   paint flashed each list screen's "nothing here yet" empty state. Don't render a screen off wave-1

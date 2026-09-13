@@ -1197,7 +1197,11 @@ async function loadData() {
   if (!state.user) {
     return;
   }
-  state.loading = true;
+  // Refreshing on /family used to run quote card -> family skeleton -> family:
+  // the boot screen was waiting on five calls that screen never reads. Screens
+  // that fetch their own data paint immediately instead, and wave 1 lands
+  // behind them.
+  state.loading = !SELF_LOADING_SCREENS.has(state.screen);
   state.error = '';
   render();
   // Not awaited, and deliberately not in wave 2: the quote is the only thing on
@@ -1228,9 +1232,18 @@ async function loadData() {
     return;
   }
   state.loading = false;
-  render(); // <- first paint happens here, on five calls instead of twelve
+  // <- first paint happens here, on five calls instead of twelve. Unless we're
+  // still on a self-loading screen, which painted at the top of this function:
+  // re-rendering would rebuild its subtree and restart its own fetch.
+  if (!SELF_LOADING_SCREENS.has(state.screen)) render();
   loadSecondaryData();
 }
+
+/* Screens that own their subtree: they fetch through their own api callbacks
+   AND paint their own loading state, so they don't need wave 1 and can't
+   survive a render() they didn't ask for. Mentor is deliberately absent — it
+   has no loading paint of its own, so it keeps `mentorSkeleton()`. */
+const SELF_LOADING_SCREENS = new Set(['family', 'circle']);
 
 /* Quote of the day. Own function because it's the one call that starts before
    wave 1 rather than after it. */
