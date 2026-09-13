@@ -178,7 +178,7 @@ it silently landed on Home. Don't reintroduce a second list.
   `animation-delay`; past `TOAST_IN_MS` it stamps `is-settled` and the animation is dropped. Keep
   `TOAST_IN_MS` in step with `gb-toast-in` in `styles/premium.css`.
 - **There is exactly one Settings modal.** `openProfileSettings` owns all five tabs — Profile,
-  Display, Alerts, Layout, Account. Display and Layout come from `customisePanes()`, Account absorbs
+  Display, Alerts, Layout, Account. Alerts holds push, the notification-sound picker (`segmented` over `CHIMES` from `chime.js`, saved to `ui_prefs.notifySound` and previewed on tap), WhatsApp, the digest and the working week. Display and Layout come from `customisePanes()`, Account absorbs
   `securitySection()` plus `shareProgressRow()` (the Privacy switch — writes `shareProgress` to
   ui_prefs, which the *server* reads to decide whether a mentor may open this user's progress). Don't add a second settings surface; the app had three (Settings / Security /
   Customise) and nobody could guess which held what.

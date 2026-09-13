@@ -60,6 +60,15 @@ import {
 } from './native.js';
 import { registerToast } from './toast.js';
 import { initA11y } from './a11y.js';
+import {
+  CHIMES,
+  CUSTOM_MAX_BYTES,
+  DEFAULT_CHIME,
+  hasCustomChime,
+  playChime,
+  readCustomChime,
+  setCustomChime,
+} from './chime.js';
 
 // Replaced by Vite's `define` at build time — see vite.config.js.
 window.GB_BUILD = __GB_BUILD__;
@@ -613,6 +622,25 @@ function saveUiPrefs(patch) {
   }).catch((err) => {
     console.error('❌ CRITICAL: saveUiPrefs failed to reach database:', err);
   });
+}
+
+/* Which chime a notification makes in the app. Lives in ui_prefs like every
+   other preference, so it follows the user to their next device. */
+function notifySound() {
+  const p = state.user && state.user.uiPrefs;
+  return p && p.notifySound ? p.notifySound : DEFAULT_CHIME;
+}
+
+/* The user's own sound file, as a data URL. Deliberately NOT in ui_prefs: that
+   blob rides along with every /api/auth/me. Per-device, like the theme mirror. */
+const CUSTOM_CHIME_KEY = 'gb.notifySoundFile';
+function loadCustomChime() {
+  setCustomChime(CacheStorage.getItem(CUSTOM_CHIME_KEY));
+}
+function storeCustomChime(dataUrl) {
+  if (dataUrl) CacheStorage.setItem(CUSTOM_CHIME_KEY, dataUrl);
+  else CacheStorage.removeItem(CUSTOM_CHIME_KEY);
+  setCustomChime(dataUrl);
 }
 
 /* On login / user refresh, mirror the server's stored UI prefs into the local
@@ -1404,6 +1432,7 @@ async function connectWebSocket() {
             // (and whatever you were doing on it) alive.
             repaintOverlays();
             pushToast(n.title, n.kind === 'reminder' ? 'info' : 'success', 6000);
+            playChime(notifySound());
           } catch (e) {
             console.warn('Bad notification frame', e);
           }
@@ -4154,6 +4183,82 @@ function openProfileSettings(initialTab) {
     pushTestBtn
   );
 
+  // ---- Notification sound ----
+  // The segmented control already wraps past six options (that's why the
+  // recurrence picker uses it), so the chimes need no CSS of their own. The
+  // "Yours" option only exists once a file has been stored on this device.
+  const soundPicker = h('div');
+  const paintSoundPicker = () => {
+    const opts = CHIMES.map((c) => ({ value: c.key, label: c.label }));
+    if (hasCustomChime()) opts.push({ value: 'custom', label: 'Yours' });
+    soundPicker.replaceChildren(
+      segmented(opts, notifySound(), (v) => {
+        saveUiPrefs({ notifySound: v });
+        playChime(v); // picking one is the preview — a separate play button is a click nobody needs
+      }).node
+    );
+  };
+  paintSoundPicker();
+
+  // A plain file input, relabelled. `accept` filters the OS picker; the real
+  // gate (type + size) is readCustomChime, because accept is a hint, not a rule.
+  const soundFile = h('input', {
+    type: 'file',
+    accept: 'audio/*',
+    style: { display: 'none' },
+    onchange: async () => {
+      const file = soundFile.files && soundFile.files[0];
+      soundFile.value = ''; // so picking the same file twice still fires
+      if (!file) return;
+      try {
+        storeCustomChime(await readCustomChime(file));
+        saveUiPrefs({ notifySound: 'custom' });
+        paintSoundPicker();
+        syncCustomRow();
+        playChime('custom');
+        toastSuccess('Saved. That\u2019s your notification sound now.');
+      } catch (err) {
+        pushToast(err.message || 'Could not use that file.', 'error', 4200);
+      }
+    },
+  });
+  const soundPickBtn = h(
+    'button',
+    {
+      type: 'button',
+      class: 'gb-btn gb-btn--soft gb-btn--compact',
+      onclick: () => soundFile.click(),
+    },
+    'Use your own sound\u2026'
+  );
+  const soundClearBtn = h(
+    'button',
+    {
+      type: 'button',
+      class: 'gb-btn gb-btn--ghost gb-btn--compact',
+      onclick: () => {
+        storeCustomChime(null);
+        if (notifySound() === 'custom') saveUiPrefs({ notifySound: DEFAULT_CHIME });
+        paintSoundPicker();
+        syncCustomRow();
+      },
+    },
+    'Remove'
+  );
+  function syncCustomRow() {
+    const on = hasCustomChime();
+    soundPickBtn.textContent = on ? 'Replace your sound\u2026' : 'Use your own sound\u2026';
+    soundClearBtn.style.display = on ? '' : 'none';
+  }
+  syncCustomRow();
+  const customSoundRow = h(
+    'div',
+    { class: 'gb-quickadd-row', style: { flexWrap: 'wrap', marginTop: '10px' } },
+    soundPickBtn,
+    soundClearBtn,
+    soundFile
+  );
+
   const notifPane = h(
     'div',
     { class: 'gb-settings-pane', style: { display: 'none' } },
@@ -4164,6 +4269,21 @@ function openProfileSettings(initialTab) {
       'Get reminders and nudges on this device, even when the app is closed.'
     ),
     pushSectionBody,
+    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Notification sound'),
+    h(
+      'div',
+      { class: 'gb-field-hint', style: { marginBottom: '10px' } },
+      'What a reminder sounds like inside the app. Tap one to hear it. Notifications that arrive while the app is closed use your phone’s own sound.'
+    ),
+    soundPicker,
+    customSoundRow,
+    h(
+      'div',
+      { class: 'gb-field-hint', style: { marginTop: '8px' } },
+      'Your own sound stays on this device — under ' +
+        Math.round(CUSTOM_MAX_BYTES / 1024) +
+        ' KB, and it stops after five seconds.'
+    ),
     h(
       'div',
       { class: 'gb-settings-sec-label', style: { marginTop: '22px' } },
@@ -7108,6 +7228,9 @@ if (window.CacheStorage && window.CacheStorage.init) {
     .then((hydrated) => {
       // Large client-only data (e.g. wellness photo history) may have loaded
       // from the Cache API asynchronously — re-read it and repaint if so.
+      // The custom chime is Cache-API-only (too big for a cookie), so it can
+      // only be read once this resolves — whether or not anything repaints.
+      loadCustomChime();
       if (hydrated && state.user) {
         state.wellness = loadWellness();
         state.goalProgress = loadGoalProgress();
