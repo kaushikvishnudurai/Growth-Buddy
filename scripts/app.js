@@ -6858,7 +6858,12 @@ function weeklyReviewNudge() {
   // which arrives from the Cache API a beat after boot, so mid-load the answer is
   // computed from data that isn't there yet — and a nudge to review your week
   // reads as noise stacked on a skeleton either way.
-  if (state.loading || state.screen !== 'home' || !weeklyReviewDue()) return null;
+  // achReady means wave 2 has landed. state.weeklyReviews has no cache mirror, so
+  // until then "already reviewed this week" always reads false and the nudge
+  // appeared on first paint only to vanish when /api/weekly-review answered.
+  if (state.loading || !state.achReady || state.screen !== 'home' || !weeklyReviewDue()) {
+    return null;
+  }
   return h(
     'button',
     { type: 'button', class: 'gb-week-nudge', onclick: openWeeklyReview },
