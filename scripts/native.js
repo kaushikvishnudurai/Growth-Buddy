@@ -112,27 +112,52 @@ export async function requestLocalNotifications() {
 }
 
 /**
- * Fire or schedule one notification. `at` is a Date; omit it to show the
- * notification now. Ids must be a 32-bit int — callers pass a stable one so a
- * reschedule replaces rather than duplicates.
+ * Fire or schedule a batch. Each entry is `{ id, title, body, at }`; omit `at`
+ * to show it now. Ids must be a 32-bit int, and scheduling one that's already
+ * pending replaces it rather than adding a second.
+ *
+ * `allowWhileIdle` is what makes a reminder arrive on time rather than whenever
+ * Doze next lets the device wake — without it an overnight reminder can land
+ * hours late, which for a reminder is the same as not arriving.
  */
-export async function scheduleLocalNotification({ id, title, body, at }) {
+export async function scheduleLocalNotifications(items) {
   const LN = nativePlugin('LocalNotifications');
-  if (!LN) return false;
+  if (!LN || !items.length) return false;
   try {
     await LN.schedule({
-      notifications: [
-        {
-          id: id | 0,
-          title,
-          body,
-          schedule: at ? { at } : undefined,
-        },
-      ],
+      notifications: items.map((n) => ({
+        id: n.id | 0,
+        title: n.title,
+        body: n.body,
+        schedule: n.at ? { at: n.at, allowWhileIdle: true } : undefined,
+      })),
     });
     return true;
   } catch (_) {
     return false;
+  }
+}
+
+/** One notification. Thin wrapper so the single-shot callers stay readable. */
+export function scheduleLocalNotification(item) {
+  return scheduleLocalNotifications([item]);
+}
+
+/**
+ * Drop everything queued but not yet shown. Delivered notifications are not
+ * pending and are left alone, so this never clears a reminder off the shade.
+ */
+export async function cancelPendingLocalNotifications() {
+  const LN = nativePlugin('LocalNotifications');
+  if (!LN) return;
+  try {
+    const pending = await LN.getPending();
+    const list = (pending && pending.notifications) || [];
+    if (list.length) {
+      await LN.cancel({ notifications: list.map((n) => ({ id: n.id })) });
+    }
+  } catch (_) {
+    /* nothing queued, or the plugin is unhappy — the reschedule below still runs */
   }
 }
 

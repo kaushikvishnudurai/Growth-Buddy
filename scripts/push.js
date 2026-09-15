@@ -8,6 +8,13 @@
    PushManager — so the same three calls route to on-device local notifications
    instead. That path raises its permission sheet as Growth Buddy rather than
    as Chrome, which is the whole point of shipping a native shell.
+
+   Timed reminders take the same fork. On the web the server pushes them
+   (ReminderDeliveryScheduler -> Web Push); in the app there is nothing to push
+   TO — an Android WebView has no PushManager, so it can never register a
+   subscription — which is why reminders arrived in the in-app bell and nowhere
+   else. `syncReminderNotifications` queues them on the device instead, off the
+   same recurrence rules the calendar draws from.
    ===================================================================== */
 
 import {
@@ -15,7 +22,10 @@ import {
   localNotificationPermission,
   requestLocalNotifications,
   scheduleLocalNotification,
+  scheduleLocalNotifications,
+  cancelPendingLocalNotifications,
 } from './native.js';
+import { occursOn } from './recurrence.js';
 
 export function pushSupported() {
   if (localNotificationsAvailable()) return true;
@@ -130,4 +140,64 @@ export async function pushTestLocal() {
     title: 'Growth Buddy',
     body: 'Notifications are working. See you at your next reminder.',
   });
+}
+
+/* ---- Timed reminders as on-device alarms ---------------------------------
+
+   How far ahead to queue. Android will not hold an unbounded number of alarms
+   and the set is rebuilt on every launch and every reminder edit, so two weeks
+   is runway nobody reaches.
+   ponytail: an app left unopened for longer than the horizon goes quiet. The
+   fix is a push or a periodic background task; neither is worth it while
+   opening the app re-arms everything. */
+const HORIZON_DAYS = 14;
+const MAX_QUEUED = 60;
+
+function dayKey(d) {
+  const p = (n) => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
+
+/**
+ * Expand reminder definitions into the concrete notifications to queue.
+ *
+ * Pure, and exported for `push.test.mjs` — the awkward parts (an occurrence
+ * earlier today has already passed, an all-day reminder has no time to fire at,
+ * recurrence and skips) are exactly the parts that can't be checked on a phone.
+ */
+export function upcomingReminderAlarms(reminders, now, days = HORIZON_DAYS, max = MAX_QUEUED) {
+  const out = [];
+  for (let i = 0; i < days; i++) {
+    const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
+    const key = dayKey(day);
+    for (const rem of reminders || []) {
+      // No time means an all-day note on the calendar. There is no moment to
+      // ring at, and 00:00 would ring in the middle of the night.
+      if (!rem || !rem.time || !occursOn(rem, key)) continue;
+      const [hh, mm] = String(rem.time).split(':').map(Number);
+      const at = new Date(day.getFullYear(), day.getMonth(), day.getDate(), hh || 0, mm || 0, 0, 0);
+      if (at.getTime() <= now.getTime()) continue;
+      out.push({ title: 'Growth Buddy', body: rem.text, at });
+    }
+  }
+  out.sort((a, b) => a.at - b.at);
+  // Ids only have to be unique inside one batch: the queue is cancelled whole
+  // and rebuilt, so there is nothing older to collide with. 1 is the test
+  // notification's; start clear of it.
+  return out.slice(0, max).map((n, i) => Object.assign(n, { id: i + 1000 }));
+}
+
+/**
+ * Re-arm every timed reminder on this device. No-op on the web (the server
+ * pushes there) and when the user hasn't granted notifications. Returns how
+ * many are queued.
+ */
+export async function syncReminderNotifications(reminders) {
+  if (!localNotificationsAvailable()) return 0;
+  if ((await localNotificationPermission()) !== 'granted') return 0;
+  const queue = upcomingReminderAlarms(reminders, new Date());
+  // Cancel first: an edited or deleted reminder must not keep its old alarm,
+  // and rebuilding the whole set is cheaper to reason about than diffing it.
+  await cancelPendingLocalNotifications();
+  return (await scheduleLocalNotifications(queue)) ? queue.length : 0;
 }

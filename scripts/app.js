@@ -49,6 +49,7 @@ import {
   pushSubscribed,
   pushSupported,
   pushTestLocal,
+  syncReminderNotifications,
 } from './push.js';
 import { CacheStorage } from './cache-storage.js';
 import {
@@ -1188,32 +1189,6 @@ function updateCalendarDaySelection(newKey) {
   });
 }
 
-async function resetStaleCompletedTasks(tasks) {
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  const stale = tasks.filter((t) => t.done && t.doneAt && new Date(t.doneAt) < start);
-  if (!stale.length) {
-    return tasks;
-  }
-
-  const updatedPairs = await Promise.all(
-    stale.map(async (t) => {
-      try {
-        const updated = await api('/api/tasks/' + encodeURIComponent(t.id), {
-          method: 'PUT',
-          body: JSON.stringify({ done: false }),
-        });
-        return [t.id, updated];
-      } catch (_) {
-        return [t.id, t];
-      }
-    })
-  );
-
-  const byId = Object.fromEntries(updatedPairs);
-  return tasks.map((t) => byId[t.id] || t);
-}
-
 /* Boot in two waves.
 
    Every one of the twelve calls used to sit in one Promise.all behind the
@@ -1252,13 +1227,13 @@ async function loadData() {
       api('/api/water'),
       api('/api/reminders'),
     ]);
-    const tasks = await resetStaleCompletedTasks(tasksRaw);
-    state.tasks = tasks.map(mapTask);
+    state.tasks = tasksRaw.map(mapTask);
     state.habits = habits;
     reconcileStreakFreeze();
     state.score = todayScore && typeof todayScore.score === 'number' ? todayScore.score : 0;
     state.water = water;
     state.reminders = reminders;
+    reSyncReminderAlarms();
   } catch (err) {
     state.error = err.message || 'Failed to load data from backend.';
     state.loading = false;
@@ -4168,6 +4143,8 @@ function openProfileSettings(initialTab) {
         const r = await enablePush(api);
         if (r === 'ok') {
           pushOn = true;
+          // Nothing was queued while permission was refused; arm it all now.
+          reSyncReminderAlarms();
           toastSuccess('Push notifications on. Try “Send test”.');
         } else if (r === 'unconfigured') {
           pushToast('Push isn’t set up on the server yet (no VAPID keys).', 'error', 4200);
@@ -4686,6 +4663,7 @@ async function addReminder(key, text, time, tag, repeat, until) {
       body: JSON.stringify(body),
     });
     state.reminders.push(created);
+    reSyncReminderAlarms();
     resetCalendarForm();
     if (state.screen === 'calendar') {
       rerenderCalendarSideIfActive();
@@ -4725,9 +4703,18 @@ function repaintCalendarGrid() {
   refreshIcons();
 }
 
+/* Re-arm this device's reminder alarms from `state.reminders`. Fire-and-forget:
+   a no-op on the web (the server pushes there), and a phone that has refused
+   notifications is not an error worth a toast. Call it wherever the reminder
+   list changes — a stale queue rings for a reminder the user already deleted. */
+function reSyncReminderAlarms() {
+  syncReminderNotifications(state.reminders).catch(() => {});
+}
+
 // scope: 'all' | 'this' | 'future' | 'before'
 async function deleteReminder(scope, id, occKey) {
   const repaint = () => {
+    reSyncReminderAlarms();
     if (state.screen === 'calendar') {
       rerenderCalendarSideIfActive();
       repaintCalendarGrid();

@@ -15,7 +15,7 @@ Screen modules are leaves it calls into; they get thin `api` wrapper objects, ne
 | 559–625 | local trends: `emptyTrends`, `loadTrends`, `persistTrends`, `recordTrendsToday` |
 | 625–740 | `clearSession`, `syncUserSession`, **`api(path, options)` / `apiFetch`** — the single network chokepoint; attaches the bearer token and, in the Capacitor app, the `X-GB-Device` label from `native.js` so the signed-in-devices list can name the handset — `handleAuthExpired` |
 | 744–935 | `mapTask`, `formatTaskTime`, `cacheFoodSummary`, `loadCalendarFoodForDate`, in-place repaints (`rerenderCalendarSideIfActive`, `rerenderHomeMiniCalendarIfActive`, `updateCalendarDaySelection`) |
-| 934–1140 | `resetStaleCompletedTasks`, **`loadData()`** (boot fetch fan-out), `loadQuote()`, `connectWebSocket` / `disconnectWebSocket` |
+| 934–1140 | **`loadData()`** (boot fetch fan-out), `loadQuote()`, `connectWebSocket` / `disconnectWebSocket` |
 | 1140–1470 | mutations: `toggleTask`, `toggleHabit`, `refreshScore`, `refreshCurrentUser`, `createTask`, `updateTask`, `createHabit`, `createGoal`, goal actions CRUD, `deleteHabit`, `quickAddWater`, `updateWaterGoal`, `logFoodEntry`, `saveSleepEntry`, `saveMoodEntry`, `addQuickExpense`, **`runQuickAdd(text)`**, `rememberPhotoFood` |
 | 1481–2010 | modals: `openSleepSchedule`, `openMoodCheckin`, `openDailyPlan`, `openAddFood`, `addSuggestedReminder`, `deleteWaterEntry`, `deleteFoodEntry` |
 | 2014–2260 | notifications (`refreshNotifications`, `markNotificationRead`, `respondMentorshipRequest`, `unreadNotifs`), header popovers (`toggleNotifOpen`, `toggleProfileOpen`, `toggleMoreOpen`, `profileDropdown`), routing (`screenFromHash`, `setScreen`), **`applyTheme(theme)`** — the only writer of `data-theme`, because the native status bar has to be repainted alongside it — `toggleTheme`, `togglePremium` |
@@ -144,6 +144,18 @@ it silently landed on Home. Don't reintroduce a second list.
   The signature is only what's on screen (score, level, ticks, pills, sub-lines; XP only while the
   profile popover is open) — `doneAt`/`updatedAt` still land in `state` and paint on the next
   render. Widening it back to the whole state object brings the flicker back.
+- **`resetStaleCompletedTasks` is gone — don't bring it back.** It un-ticked, on every boot, any
+  task completed before today, which is why a task you finished yesterday reappeared this morning
+  looking like you never did it. The day boundary belongs to the server now:
+  `TaskMidnightSweep` soft-deletes completed tasks at the user's own local midnight, so they
+  simply aren't in `/api/tasks` any more. A client-side reset on top of that would resurrect
+  whatever the sweep hadn't reached yet.
+- **`reSyncReminderAlarms()` after every change to `state.reminders`.** In the app, reminders are
+  on-device alarms (`syncReminderNotifications` in `push.js`) because the server can only deliver
+  to a Web Push subscription the WebView can't register. The queue is cancelled and rebuilt whole,
+  so a list that changed without a re-sync keeps ringing for a reminder that's already deleted.
+  Wired at four points: boot, add, delete (inside `repaint()`, which the rollback also calls), and
+  the moment notification permission is granted.
 - **`buddyReact(mood)` is hooked to meaning, not to convenience.** The nod fires from
   `toggleTask` / `toggleHabit`, and only on the way to done — un-ticking is a correction, not an
   achievement. The head-shake fires from `pushToast` for errors only. Hooking the nod to every
