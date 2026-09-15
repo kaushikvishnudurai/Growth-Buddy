@@ -6,11 +6,14 @@
    Every sound is the same shape — a few notes, each a sine or triangle with
    a fast attack and an exponential tail — so adding one is a row in SOUNDS,
    not a new code path.
-   ponytail: in-app only. A notification that arrives while the app is closed
-   is drawn by the OS, which plays the OS sound; a per-channel custom sound on
-   Android needs a real file in res/raw and one channel per sound. When that
-   day comes the file comes from here too: render a sound through an
-   OfflineAudioContext (see `_demo`) and write the buffer out as a .wav.
+   These also ARE the phone's notification sound in the app: `gen-chimes.mjs`
+   renders the same table out to `public/gb-<key>.wav`, which rides in the
+   bundle, and @capacitor/local-notifications resolves a notification's `sound`
+   from the app's web assets and makes the per-sound Android channel itself.
+   So: edit SOUNDS, re-run `node scripts/gen-chimes.mjs`.
+   ponytail: the user's OWN uploaded file stays in-app. It lives as a data URL
+   in CacheStorage, and Android can only ring a file that shipped with the app;
+   giving it a channel means writing it out natively, which is a plugin.
    ===================================================================== */
 
 /* { f: Hz, t: seconds from the start, d: seconds to decay, g: peak gain,

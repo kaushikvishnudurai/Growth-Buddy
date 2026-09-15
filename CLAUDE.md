@@ -45,6 +45,7 @@ fix the doc line if it was wrong. A doc you touch and don't update is worse than
 - Frontend: `npm run dev` (:5173, proxies `/api` + `/ws` to :8080). `npm run lint` before committing.
 - Checks that exist: `node scripts/insights.test.mjs`, `node scripts/recurrence.test.mjs`,
   `node scripts/money-merge.test.mjs`, `node scripts/push.test.mjs`,
+  `node scripts/gen-chimes.mjs` (regenerates, and asserts none of them is silent or clipping),
   `money.js` and `chime.js` `_demo()` on Vite DEV, `./mvnw test` (131 tests — including the three that guard
   invariants rather than code: `SchemaCoverageTest`, `AccountDeletionCoverageTest`,
   `SharedRecurrenceCasesTest`), and `scripts/ui-audit.mjs` — walks every screen at
@@ -57,6 +58,9 @@ fix the doc line if it was wrong. A doc you touch and don't update is worse than
   someone's phone. Deriving it from git was tried and reverted: the prod image has no `.git`
   and no git binary, so every build reported 0.
 - `grep 'ponytail:'` for deliberate simplifications and their upgrade paths.
+- Edited `SOUNDS` in `chime.js` → re-run **`node scripts/gen-chimes.mjs`**. The same table is the
+  phone's notification sound, rendered to `public/gb-*.wav`; the in-app chime and the lock-screen
+  one drift apart silently otherwise.
 - New icon → add it to `scripts/icons.js`. New screen → `SCREENS` in `app.js` (+ `NAV_CATALOG` in
   `gb-kit.js` for a nav slot). New entity → add the table to `tableCreationQueries.sql` too;
   `ddl-auto: update` hides the omission in dev and breaks prod, and `SchemaCoverageTest` now

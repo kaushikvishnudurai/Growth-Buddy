@@ -112,7 +112,7 @@ export async function requestLocalNotifications() {
 }
 
 /**
- * Fire or schedule a batch. Each entry is `{ id, title, body, at }`; omit `at`
+ * Fire or schedule a batch. Each entry is `{ id, title, body, at, sound }`; omit `at`
  * to show it now. Ids must be a 32-bit int, and scheduling one that's already
  * pending replaces it rather than adding a second.
  *
@@ -129,6 +129,11 @@ export async function scheduleLocalNotifications(items) {
         id: n.id | 0,
         title: n.title,
         body: n.body,
+        // A filename in the web bundle (see gen-chimes.mjs). The plugin resolves
+        // it out of the app's assets and — because on Android 8+ the SOUND
+        // belongs to the channel, not the notification — creates a channel for
+        // it on first use. Nothing to do natively.
+        sound: n.sound,
         schedule: n.at ? { at: n.at, allowWhileIdle: true } : undefined,
       })),
     });

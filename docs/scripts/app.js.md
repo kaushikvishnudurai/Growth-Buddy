@@ -150,12 +150,14 @@ it silently landed on Home. Don't reintroduce a second list.
   `TaskMidnightSweep` soft-deletes completed tasks at the user's own local midnight, so they
   simply aren't in `/api/tasks` any more. A client-side reset on top of that would resurrect
   whatever the sweep hadn't reached yet.
-- **`reSyncReminderAlarms()` after every change to `state.reminders`.** In the app, reminders are
-  on-device alarms (`syncReminderNotifications` in `push.js`) because the server can only deliver
-  to a Web Push subscription the WebView can't register. The queue is cancelled and rebuilt whole,
-  so a list that changed without a re-sync keeps ringing for a reminder that's already deleted.
-  Wired at four points: boot, add, delete (inside `repaint()`, which the rollback also calls), and
-  the moment notification permission is granted.
+- **`reSyncDeviceAlarms()` after every change to its three inputs.** In the app, timed reminders
+  and the water nudge are on-device alarms (`syncDeviceAlarms` in `push.js`) because the server can
+  only deliver to a Web Push subscription the WebView can't register. The inputs are
+  `state.reminders`, `ui_prefs.water` and `ui_prefs.notifySound` — the chime rides on each queued
+  notification, so changing it has to rebuild the queue too. Cancelled and rebuilt whole, so
+  anything that changed without a re-sync keeps ringing with the old list or the old sound. Wired
+  at: boot, reminder add, reminder delete (inside `repaint()`, which the rollback also calls), the
+  moment notification permission is granted, every water-setting change, and every sound change.
 - **`buddyReact(mood)` is hooked to meaning, not to convenience.** The nod fires from
   `toggleTask` / `toggleHabit`, and only on the way to done — un-ticking is a correction, not an
   achievement. The head-shake fires from `pushToast` for errors only. Hooking the nod to every

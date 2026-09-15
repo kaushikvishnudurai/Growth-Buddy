@@ -49,7 +49,8 @@ import {
   pushSubscribed,
   pushSupported,
   pushTestLocal,
-  syncReminderNotifications,
+  syncDeviceAlarms,
+  WATER_DEFAULTS,
 } from './push.js';
 import { CacheStorage } from './cache-storage.js';
 import {
@@ -1233,7 +1234,7 @@ async function loadData() {
     state.score = todayScore && typeof todayScore.score === 'number' ? todayScore.score : 0;
     state.water = water;
     state.reminders = reminders;
-    reSyncReminderAlarms();
+    reSyncDeviceAlarms();
   } catch (err) {
     state.error = err.message || 'Failed to load data from backend.';
     state.loading = false;
@@ -4098,6 +4099,104 @@ function openProfileSettings(initialTab) {
     )
   );
 
+  /* ---- Water nudge ----
+     A drumbeat, not a calendar entry: every N minutes between two local times.
+     The settings live in ui_prefs (prod runs ddl-auto: none, and this is a
+     preference, not an entity); the alarms are queued on the device, because
+     the server can only reach a Web Push subscription the app can't register. */
+  const waterPrefs = waterReminderPrefs();
+  const saveWater = (patch) => {
+    Object.assign(waterPrefs, patch);
+    saveUiPrefs({ water: Object.assign({}, waterPrefs) });
+    reSyncDeviceAlarms();
+  };
+  const waterEverySel = h(
+    'select',
+    { class: 'gb-input', 'aria-label': 'Remind me every' },
+    [30, 45, 60, 90, 120, 180, 240].map((mins) => {
+      const label = mins < 60 ? mins + ' minutes' : mins / 60 + (mins === 60 ? ' hour' : ' hours');
+      const o = h('option', { value: String(mins) }, 'Every ' + label);
+      if (Number(waterPrefs.everyMins) === mins) o.selected = true;
+      return o;
+    })
+  );
+  const waterFrom = h('input', { type: 'time', class: 'gb-input', value: waterPrefs.from });
+  const waterTo = h('input', { type: 'time', class: 'gb-input', value: waterPrefs.to });
+  const waterFields = h(
+    'div',
+    { style: { display: waterPrefs.on ? '' : 'none' } },
+    h('div', { class: 'gb-field-label' }, 'How often'),
+    waterEverySel,
+    h('div', { class: 'gb-field-label' }, 'Between'),
+    h(
+      'div',
+      { class: 'gb-quickadd-row', style: { gap: '8px' } },
+      waterFrom,
+      h('span', { class: 'gb-field-hint', style: { alignSelf: 'center' } }, 'and'),
+      waterTo
+    ),
+    h(
+      'div',
+      { class: 'gb-field-hint', style: { marginTop: '6px' } },
+      'Queued on this device, so they arrive with the app closed. Nothing is sent outside these hours.'
+    )
+  );
+  waterEverySel.onchange = () => saveWater({ everyMins: Number(waterEverySel.value) });
+  // Only save a window that makes sense — a half-typed time in a native picker
+  // fires change events, and `to <= from` would mean no nudges at all with
+  // nothing on screen saying why.
+  const saveWindow = () => {
+    if (!waterFrom.value || !waterTo.value) return;
+    if (waterTo.value <= waterFrom.value) {
+      pushToast('The end time has to be after the start time.', 'error', 3200);
+      waterFrom.value = waterPrefs.from;
+      waterTo.value = waterPrefs.to;
+      return;
+    }
+    saveWater({ from: waterFrom.value, to: waterTo.value });
+  };
+  waterFrom.onchange = saveWindow;
+  waterTo.onchange = saveWindow;
+  const waterSwitch = h(
+    'button',
+    {
+      type: 'button',
+      role: 'switch',
+      'aria-checked': waterPrefs.on ? 'true' : 'false',
+      'aria-label': 'Remind me to drink water',
+      class: 'gb-switch' + (waterPrefs.on ? ' is-on' : ''),
+    },
+    h('span', { class: 'gb-switch-knob' })
+  );
+  waterSwitch.onclick = () => {
+    const next = !waterPrefs.on;
+    waterSwitch.classList.toggle('is-on', next);
+    waterSwitch.setAttribute('aria-checked', next ? 'true' : 'false');
+    waterFields.style.display = next ? '' : 'none';
+    saveWater({ on: next });
+    toastSuccess(next ? 'Water reminders on.' : 'Water reminders off.');
+  };
+  const waterSectionBody = h(
+    'div',
+    null,
+    h(
+      'div',
+      { class: 'gb-feature-row' },
+      h(
+        'div',
+        { class: 'gb-feature-row-text' },
+        h('div', { class: 'gb-feature-row-label' }, 'Remind me to drink water'),
+        h(
+          'div',
+          { class: 'gb-feature-row-desc' },
+          'A nudge through the day, on a rhythm you set.'
+        )
+      ),
+      waterSwitch
+    ),
+    waterFields
+  );
+
   // ---- Push notifications ----
   const pushBtn = h(
     'button',
@@ -4144,7 +4243,7 @@ function openProfileSettings(initialTab) {
         if (r === 'ok') {
           pushOn = true;
           // Nothing was queued while permission was refused; arm it all now.
-          reSyncReminderAlarms();
+          reSyncDeviceAlarms();
           toastSuccess('Push notifications on. Try “Send test”.');
         } else if (r === 'unconfigured') {
           pushToast('Push isn’t set up on the server yet (no VAPID keys).', 'error', 4200);
@@ -4170,7 +4269,7 @@ function openProfileSettings(initialTab) {
     try {
       if (native) {
         toastSuccess(
-          (await pushTestLocal())
+          (await pushTestLocal(notifySound()))
             ? 'Test notification sent.'
             : 'Could not post the notification.'
         );
@@ -4204,6 +4303,9 @@ function openProfileSettings(initialTab) {
     soundPicker.replaceChildren(
       segmented(opts, notifySound(), (v) => {
         saveUiPrefs({ notifySound: v });
+        // The sound rides on each queued notification, so already-queued ones
+        // would keep the old one until something else rebuilt the queue.
+        reSyncDeviceAlarms();
         playChime(v); // picking one is the preview — a separate play button is a click nobody needs
       }).node
     );
@@ -4223,6 +4325,7 @@ function openProfileSettings(initialTab) {
       try {
         storeCustomChime(await readCustomChime(file));
         saveUiPrefs({ notifySound: 'custom' });
+        reSyncDeviceAlarms();
         paintSoundPicker();
         syncCustomRow();
         playChime('custom');
@@ -4249,6 +4352,7 @@ function openProfileSettings(initialTab) {
       onclick: () => {
         storeCustomChime(null);
         if (notifySound() === 'custom') saveUiPrefs({ notifySound: DEFAULT_CHIME });
+        reSyncDeviceAlarms();
         paintSoundPicker();
         syncCustomRow();
       },
@@ -4279,11 +4383,20 @@ function openProfileSettings(initialTab) {
       'Get reminders and nudges on this device, even when the app is closed.'
     ),
     pushSectionBody,
+    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Water reminders'),
+    h(
+      'div',
+      { class: 'gb-field-hint', style: { marginBottom: '12px' } },
+      'Steady sips beat one big glass. Needs notifications turned on above.'
+    ),
+    waterSectionBody,
     h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Notification sound'),
     h(
       'div',
       { class: 'gb-field-hint', style: { marginBottom: '10px' } },
-      'What a reminder sounds like inside the app. Tap one to hear it. Notifications that arrive while the app is closed use your phone’s own sound.'
+      localNotificationsAvailable()
+        ? 'What a reminder sounds like, in the app and on your lock screen. Tap one to hear it.'
+        : 'What a reminder sounds like inside the app. Tap one to hear it. Notifications that arrive while the app is closed use your phone’s own sound.'
     ),
     soundPicker,
     customSoundRow,
@@ -4292,7 +4405,10 @@ function openProfileSettings(initialTab) {
       { class: 'gb-field-hint', style: { marginTop: '8px' } },
       'Your own sound stays on this device — under ' +
         Math.round(CUSTOM_MAX_BYTES / 1024) +
-        ' KB, and it stops after five seconds.'
+        ' KB, and it stops after five seconds.' +
+        (localNotificationsAvailable()
+          ? ' It plays in the app; notifications that arrive while the app is closed use your phone’s own sound, because Android can only ring a file that ships with the app.'
+          : '')
     ),
     h(
       'div',
@@ -4663,7 +4779,7 @@ async function addReminder(key, text, time, tag, repeat, until) {
       body: JSON.stringify(body),
     });
     state.reminders.push(created);
-    reSyncReminderAlarms();
+    reSyncDeviceAlarms();
     resetCalendarForm();
     if (state.screen === 'calendar') {
       rerenderCalendarSideIfActive();
@@ -4703,18 +4819,30 @@ function repaintCalendarGrid() {
   refreshIcons();
 }
 
-/* Re-arm this device's reminder alarms from `state.reminders`. Fire-and-forget:
-   a no-op on the web (the server pushes there), and a phone that has refused
-   notifications is not an error worth a toast. Call it wherever the reminder
-   list changes — a stale queue rings for a reminder the user already deleted. */
-function reSyncReminderAlarms() {
-  syncReminderNotifications(state.reminders).catch(() => {});
+/* The water nudge's settings. In ui_prefs like every other preference, so they
+   follow the user to their next device; the alarms themselves are per-device. */
+function waterReminderPrefs() {
+  const p = state.user && state.user.uiPrefs;
+  return Object.assign({}, WATER_DEFAULTS, (p && p.water) || {});
+}
+
+/* Re-arm this device's alarm queue — timed reminders plus the water nudge, in
+   the chosen chime. Fire-and-forget: a no-op on the web (the server pushes
+   there), and a phone that has refused notifications is not an error worth a
+   toast. Call it wherever any of the three inputs changes; the queue is
+   rebuilt whole, so a stale one rings for a reminder already deleted. */
+function reSyncDeviceAlarms() {
+  syncDeviceAlarms({
+    reminders: state.reminders,
+    water: waterReminderPrefs(),
+    sound: notifySound(),
+  }).catch(() => {});
 }
 
 // scope: 'all' | 'this' | 'future' | 'before'
 async function deleteReminder(scope, id, occKey) {
   const repaint = () => {
-    reSyncReminderAlarms();
+    reSyncDeviceAlarms();
     if (state.screen === 'calendar') {
       rerenderCalendarSideIfActive();
       repaintCalendarGrid();

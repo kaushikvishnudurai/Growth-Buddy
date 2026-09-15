@@ -26,6 +26,7 @@ import {
   cancelPendingLocalNotifications,
 } from './native.js';
 import { occursOn } from './recurrence.js';
+import { SOUNDS } from './chime.js';
 
 export function pushSupported() {
   if (localNotificationsAvailable()) return true;
@@ -134,38 +135,61 @@ export async function disablePush(api) {
  * local notification; on the web the server pushes it, so the caller keeps using
  * /api/push/test there.
  */
-export async function pushTestLocal() {
+export async function pushTestLocal(sound) {
   return scheduleLocalNotification({
     id: 1,
     title: 'Growth Buddy',
     body: 'Notifications are working. See you at your next reminder.',
+    // Same file a real reminder will use, so the test actually tests the sound.
+    sound: soundFile(sound),
   });
 }
 
-/* ---- Timed reminders as on-device alarms ---------------------------------
+/* ---- The device's alarm queue --------------------------------------------
+
+   Everything below is the app-only half of notifications: the server can only
+   deliver to a Web Push subscription and the WebView can never register one,
+   so timed reminders and water nudges are queued on the device instead.
 
    How far ahead to queue. Android will not hold an unbounded number of alarms
-   and the set is rebuilt on every launch and every reminder edit, so two weeks
-   is runway nobody reaches.
+   and the set is rebuilt on every launch and every change, so two weeks is
+   runway nobody reaches. Water gets a shorter one on purpose: at a nudge every
+   two hours it would otherwise fill the whole queue and push real reminders off
+   the end.
    ponytail: an app left unopened for longer than the horizon goes quiet. The
    fix is a push or a periodic background task; neither is worth it while
    opening the app re-arms everything. */
 const HORIZON_DAYS = 14;
-const MAX_QUEUED = 60;
+const WATER_HORIZON_DAYS = 3;
+const MAX_QUEUED = 100;
+
+/** Defaults for the water nudge, and the shape `ui_prefs.water` is stored in. */
+export const WATER_DEFAULTS = { on: false, everyMins: 120, from: '09:00', to: '21:00' };
 
 function dayKey(d) {
   const p = (n) => String(n).padStart(2, '0');
   return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
 }
 
+/** 'HH:MM' as minutes past local midnight. */
+function minuteOfDay(hhmm, fallback) {
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(hhmm || ''));
+  if (!m) return fallback;
+  return Math.min(23, Number(m[1])) * 60 + Math.min(59, Number(m[2]));
+}
+
+function atOn(day, minutes) {
+  return new Date(day.getFullYear(), day.getMonth(), day.getDate(), 0, minutes, 0, 0);
+}
+
 /**
- * Expand reminder definitions into the concrete notifications to queue.
+ * Expand reminder definitions into the notifications they'd fire.
  *
  * Pure, and exported for `push.test.mjs` — the awkward parts (an occurrence
  * earlier today has already passed, an all-day reminder has no time to fire at,
  * recurrence and skips) are exactly the parts that can't be checked on a phone.
  */
-export function upcomingReminderAlarms(reminders, now, days = HORIZON_DAYS, max = MAX_QUEUED) {
+export function upcomingReminderAlarms(reminders, now, days = HORIZON_DAYS) {
   const out = [];
   for (let i = 0; i < days; i++) {
     const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
@@ -175,27 +199,74 @@ export function upcomingReminderAlarms(reminders, now, days = HORIZON_DAYS, max 
       // ring at, and 00:00 would ring in the middle of the night.
       if (!rem || !rem.time || !occursOn(rem, key)) continue;
       const [hh, mm] = String(rem.time).split(':').map(Number);
-      const at = new Date(day.getFullYear(), day.getMonth(), day.getDate(), hh || 0, mm || 0, 0, 0);
+      const at = atOn(day, (hh || 0) * 60 + (mm || 0));
       if (at.getTime() <= now.getTime()) continue;
       out.push({ title: 'Growth Buddy', body: rem.text, at });
     }
   }
-  out.sort((a, b) => a.at - b.at);
-  // Ids only have to be unique inside one batch: the queue is cancelled whole
-  // and rebuilt, so there is nothing older to collide with. 1 is the test
-  // notification's; start clear of it.
-  return out.slice(0, max).map((n, i) => Object.assign(n, { id: i + 1000 }));
+  return out;
 }
 
 /**
- * Re-arm every timed reminder on this device. No-op on the web (the server
- * pushes there) and when the user hasn't granted notifications. Returns how
- * many are queued.
+ * The water nudge: a fixed drumbeat between two local times, every day. Not a
+ * calendar entry — there is nothing to anchor, repeat or skip, which is why it
+ * doesn't go through `recurrence.js`.
  */
-export async function syncReminderNotifications(reminders) {
+export function upcomingWaterAlarms(prefs, now, days = WATER_HORIZON_DAYS) {
+  const p = Object.assign({}, WATER_DEFAULTS, prefs || {});
+  if (!p.on) return [];
+  // A 5-minute drumbeat is a fault, not a preference, and it would fill the
+  // whole queue in an afternoon.
+  const every = Math.max(30, Number(p.everyMins) || WATER_DEFAULTS.everyMins);
+  const from = minuteOfDay(p.from, 9 * 60);
+  const to = minuteOfDay(p.to, 21 * 60);
+  // An inverted or empty window means "no waking hours" — silence beats
+  // guessing, and it's what an unfinished edit in the picker looks like.
+  if (to <= from) return [];
+  const out = [];
+  for (let i = 0; i < days; i++) {
+    const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
+    for (let m = from; m <= to; m += every) {
+      const at = atOn(day, m);
+      if (at.getTime() <= now.getTime()) continue;
+      out.push({ title: 'Time for water', body: 'A glass now keeps today\u2019s goal in reach.', at });
+    }
+  }
+  return out;
+}
+
+/* Only the five synthesised chimes have a rendered file. 'off', an unknown key,
+   and the user's own upload (which lives as a data URL in CacheStorage, not in
+   the bundle, so Android has nothing to point a channel at) all fall through to
+   the phone's own notification sound. */
+function soundFile(key) {
+  return SOUNDS[key] ? 'gb-' + key + '.wav' : undefined;
+}
+
+/**
+ * The whole queue, in firing order. `sound` is a chime key from `chime.js`;
+ * the matching `public/gb-<key>.wav` rides in the web bundle and the plugin
+ * resolves it out of the app's assets and makes the per-sound Android channel
+ * itself — which is why a custom notification sound needs no native code here.
+ */
+export function upcomingAlarms({ reminders, water, sound } = {}, now = new Date()) {
+  const queue = upcomingReminderAlarms(reminders, now).concat(upcomingWaterAlarms(water, now));
+  queue.sort((a, b) => a.at - b.at);
+  // Ids only have to be unique inside one batch: the queue is cancelled whole
+  // and rebuilt, so there is nothing older to collide with. 1 is the test
+  // notification's; start clear of it.
+  const file = soundFile(sound);
+  return queue.slice(0, MAX_QUEUED).map((n, i) => Object.assign(n, { id: i + 1000, sound: file }));
+}
+
+/**
+ * Re-arm this device. No-op on the web (the server pushes there) and when the
+ * user hasn't granted notifications. Returns how many are queued.
+ */
+export async function syncDeviceAlarms(opts) {
   if (!localNotificationsAvailable()) return 0;
   if ((await localNotificationPermission()) !== 'granted') return 0;
-  const queue = upcomingReminderAlarms(reminders, new Date());
+  const queue = upcomingAlarms(opts, new Date());
   // Cancel first: an edited or deleted reminder must not keep its old alarm,
   // and rebuilding the whole set is cheaper to reason about than diffing it.
   await cancelPendingLocalNotifications();
