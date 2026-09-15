@@ -55,6 +55,7 @@ import {
   initNative,
   deviceLabelHeader,
   localNotificationsAvailable,
+  nativePlugin,
   applyNativeStatusBar,
   hideNativeSplash,
 } from './native.js';
@@ -938,6 +939,11 @@ async function api(path, options) {
   return apiFetch(path, opts);
 }
 
+/* A fetch that never got a response at all. In production the server is not
+   the user's to start, so "make sure Growth Buddy is running" read as nonsense
+   on a phone — at that end the cause is almost always the connection. */
+const NO_CONNECTION = 'No connection. Check your internet, then swipe up to reload the app.';
+
 /* Fallback when a failed response carries no JSON message of its own — a
    gateway's HTML page, an empty body. A bare status code is not an error
    message; 502/503/504 from Render's proxy specifically mean the free instance
@@ -976,7 +982,7 @@ async function apiFetch(path, options) {
   try {
     res = await fetch(API_BASE + path, Object.assign({}, opts, { headers }));
   } catch (_) {
-    throw new Error('Cannot reach the server. Make sure Growth Buddy is running, then try again.');
+    throw new Error(NO_CONNECTION);
   }
   if (res.status === 401) {
     // Token went stale (revoked, expired, server restarted with empty DB,
@@ -1457,6 +1463,31 @@ function disconnectWebSocket() {
   }
 }
 
+/* Everything a toggle's round trip can legitimately repaint: the score ring, the
+   header's level, the ticks, their pills and sub-lines. The rest of what comes
+   back (doneAt, updatedAt) lands in state and paints on the next render.
+
+   render() replaces the whole app DOM, and after an optimistic paint the server
+   almost always just confirms what is already on screen — so that second render
+   showed up as a flicker a second after the tap: icons re-hydrating, the tick
+   animation restarting, the scroll position re-applied. Compare this before and
+   after instead, and skip the repaint when nothing actually moved. */
+function toggleSignature() {
+  const u = state.user || {};
+  return JSON.stringify([
+    state.score,
+    // XP ticks up on every completion but is only on screen while the profile
+    // popover is open — repainting the app for a number nobody can see is
+    // exactly the flicker this removes. Level always counts: it gates the
+    // level-up celebration.
+    state.profileOpen ? u.xpTotal : 0,
+    u.level,
+    state.freezeTokens,
+    (state.tasks || []).map((t) => [t.id, t.done, t.priority, t.time]),
+    (state.habits || []).map((x) => [x.id, x.doneToday, x.streak]),
+  ]);
+}
+
 /* Paint the tick, then tell the server. The round trip is three calls deep
    (toggle -> score -> /me), so awaiting it left the checkbox looking dead for
    most of a second. `before` is the rollback if any of them fails. */
@@ -1473,11 +1504,12 @@ async function toggleTask(id) {
     const updated = await api('/api/tasks/' + encodeURIComponent(id) + '/toggle', {
       method: 'PATCH',
     });
+    const painted = toggleSignature();
     state.tasks = state.tasks.map((t) => (t.id === updated.id ? mapTask(updated) : t));
     const todayScore = await api('/api/score/today');
     state.score = todayScore && typeof todayScore.score === 'number' ? todayScore.score : score();
     await refreshCurrentUser();
-    render();
+    if (toggleSignature() !== painted) render();
   } catch (err) {
     state.tasks = before.tasks;
     state.score = before.score;
@@ -1498,12 +1530,13 @@ async function toggleHabit(id) {
     const updated = await api('/api/habits/' + encodeURIComponent(id) + '/toggle', {
       method: 'PATCH',
     });
+    const painted = toggleSignature();
     state.habits = state.habits.map((h) => (h.id === updated.id ? updated : h));
     reconcileStreakFreeze();
     const todayScore = await api('/api/score/today');
     state.score = todayScore && typeof todayScore.score === 'number' ? todayScore.score : score();
     await refreshCurrentUser();
-    render();
+    if (toggleSignature() !== painted) render();
   } catch (err) {
     state.habits = before.habits;
     state.score = before.score;
@@ -4905,8 +4938,7 @@ function openAddSheet() {
   // Speech API; the Capacitor app's WebView doesn't ship it, so there the
   // native SpeechRecognition plugin takes over.
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const capSR =
-    window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SpeechRecognition;
+  const capSR = nativePlugin('SpeechRecognition');
   let micBtn = null;
   let langBtn = null;
   if (SR || capSR) {
@@ -6342,7 +6374,7 @@ async function authPost(path, body) {
       body: JSON.stringify(body),
     });
   } catch (_) {
-    throw new Error('Cannot reach the server. Make sure Growth Buddy is running, then try again.');
+    throw new Error(NO_CONNECTION);
   }
   let payload = null;
   try {

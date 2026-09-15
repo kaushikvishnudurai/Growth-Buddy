@@ -1,9 +1,9 @@
 /* =====================================================================
    Growth Buddy — native shell helpers
    Everything that only means something inside the Capacitor app. Plugins are
-   reached through `window.Capacitor.Plugins` rather than imported: the plugin
-   packages live in ../Growth-Buddy-Mobile, so an import would break the web
-   build. Same trick as the speech-recognition call in app.js.
+   reached through the bridge rather than imported: the plugin packages live in
+   ../Growth-Buddy-Mobile, so an import would break the web build. `nativePlugin`
+   below is the single door in — app.js's speech-recognition call uses it too.
    ===================================================================== */
 
 export function isNative() {
@@ -11,9 +11,37 @@ export function isNative() {
   return !!(cap && (cap.isNativePlatform ? cap.isNativePlatform() : cap.isNative));
 }
 
-function plugin(name) {
+/**
+ * Reach a native plugin, or null off-device.
+ *
+ * `Capacitor.Plugins` is only ever filled in by `registerPlugin()`, which lives
+ * inside the plugin's own JS package — and those packages are in
+ * ../Growth-Buddy-Mobile, not in this bundle, so importing them would break the
+ * web build. In the shipped app `Capacitor.Plugins` is therefore always empty
+ * and every lookup here returned null: no splash control, no device name, and
+ * "this browser doesn't support push notifications" on a phone. The bridge's own
+ * `nativePromise(plugin, method, options)` reaches the same native class without
+ * any of that JS, so proxy onto it.
+ * ponytail: promise-style methods only. A plugin listener would need
+ * `cap.nativeCallback`; nothing here uses one.
+ */
+export function nativePlugin(name) {
   const cap = typeof window !== 'undefined' ? window.Capacitor : null;
-  return (cap && cap.Plugins && cap.Plugins[name]) || null;
+  if (!cap) return null;
+  const registered = cap.Plugins && cap.Plugins[name];
+  if (registered) return registered;
+  if (typeof cap.nativePromise !== 'function') return null;
+  return new Proxy(
+    {},
+    {
+      get(_, method) {
+        // Never look thenable: these proxies get truthiness-checked and stored,
+        // and an accidental `await` on one would hang forever.
+        if (typeof method !== 'string' || method === 'then') return undefined;
+        return (options) => cap.nativePromise(name, method, options || {});
+      },
+    }
+  );
 }
 
 let deviceLabel = null;
@@ -33,9 +61,9 @@ export async function initNative() {
   // Backstop. The splash is held open by hand (launchAutoHide:false), so a throw
   // anywhere before the render would strand the user on it with no way out.
   // hide() is idempotent, so the normal path racing this is harmless.
-  const SS = plugin('SplashScreen');
+  const SS = nativePlugin('SplashScreen');
   if (SS) setTimeout(() => SS.hide().catch(() => {}), 4000);
-  const Device = plugin('Device');
+  const Device = nativePlugin('Device');
   let model = '';
   if (Device) {
     try {
@@ -56,12 +84,12 @@ export async function initNative() {
    app is closed) need FCM + @capacitor/push-notifications — separate job. */
 
 export function localNotificationsAvailable() {
-  return isNative() && !!plugin('LocalNotifications');
+  return isNative() && !!nativePlugin('LocalNotifications');
 }
 
 /** 'granted' | 'denied' | 'prompt' | 'unsupported' */
 export async function localNotificationPermission() {
-  const LN = plugin('LocalNotifications');
+  const LN = nativePlugin('LocalNotifications');
   if (!LN) return 'unsupported';
   try {
     const r = await LN.checkPermissions();
@@ -73,7 +101,7 @@ export async function localNotificationPermission() {
 
 /** Raise the system prompt. Returns the resulting permission string. */
 export async function requestLocalNotifications() {
-  const LN = plugin('LocalNotifications');
+  const LN = nativePlugin('LocalNotifications');
   if (!LN) return 'unsupported';
   try {
     const r = await LN.requestPermissions();
@@ -89,7 +117,7 @@ export async function requestLocalNotifications() {
  * reschedule replaces rather than duplicates.
  */
 export async function scheduleLocalNotification({ id, title, body, at }) {
-  const LN = plugin('LocalNotifications');
+  const LN = nativePlugin('LocalNotifications');
   if (!LN) return false;
   try {
     await LN.schedule({
@@ -130,7 +158,7 @@ function themeColor(name, fallback) {
  * theme change — Android keeps whatever it was last told.
  */
 export async function applyNativeStatusBar(theme) {
-  const SB = plugin('StatusBar');
+  const SB = nativePlugin('StatusBar');
   if (!SB) return;
   const dark = theme === 'dark';
   try {
@@ -148,7 +176,7 @@ export async function applyNativeStatusBar(theme) {
 
 /** Drop the splash once the first real frame is on screen. */
 export function hideNativeSplash() {
-  const SS = plugin('SplashScreen');
+  const SS = nativePlugin('SplashScreen');
   if (!SS) return;
   // Two frames: one for the render that just ran, one for the paint after it.
   requestAnimationFrame(() =>

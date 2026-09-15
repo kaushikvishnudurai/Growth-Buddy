@@ -138,6 +138,12 @@ it silently landed on Home. Don't reintroduce a second list.
   (toggle → `/api/score/today` → `/api/auth/me`), which is why awaiting it made the checkbox feel
   broken. `score()` prefers `state.score` when it is non-zero, so a local tick alone does NOT move
   the ring — that is what `optimisticScore()` is for. Don't re-add an `await` before the paint.
+  The **confirming** `render()` is gated on `toggleSignature()` changing, because `render()`
+  replaces the whole app DOM: when the server just agrees with the optimistic paint, repainting
+  was visible a second after the tap as icons re-hydrating and the tick animation restarting.
+  The signature is only what's on screen (score, level, ticks, pills, sub-lines; XP only while the
+  profile popover is open) — `doneAt`/`updatedAt` still land in `state` and paint on the next
+  render. Widening it back to the whole state object brings the flicker back.
 - **`buddyReact(mood)` is hooked to meaning, not to convenience.** The nod fires from
   `toggleTask` / `toggleHabit`, and only on the way to done — un-ticking is a correction, not an
   achievement. The head-shake fires from `pushToast` for errors only. Hooking the nod to every
