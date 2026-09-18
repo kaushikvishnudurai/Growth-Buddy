@@ -1,4 +1,4 @@
-# SQL schema — `tableCreationQueries.sql` (836 lines) + `growth_buddy.sql`
+# SQL schema — `tableCreationQueries.sql` (805 lines) + `growth_buddy.sql`
 
 **Two files, different jobs:**
 
@@ -14,12 +14,16 @@ nothing and checks nothing. This file is the only thing that ever changes the li
 
 - **A new table** → its `CREATE TABLE IF NOT EXISTS` here. `SchemaCoverageTest` fails the build
   without it. That is how the 11-table gap opened up.
-- **A new column on a table that already exists** → the `CREATE TABLE` above (for fresh installs)
-  **and** a `CALL gb_add_column('table', 'col', 'col TYPE …')` in the block at the end. A column
-  that only ever lands in the `CREATE TABLE` reaches a fresh database and never the live one, and
-  the first query that selects it 500s. Never a bare `ALTER TABLE … ADD COLUMN` — it aborts the
-  load on whichever database already has the column, which is how two fresh loads stopped
-  half-way; `SchemaCoverageTest` fails the build on one.
+- **A new column on a table that already exists** → the `CREATE TABLE` here (for fresh installs)
+  **and** an `ALTER` line in **`migrations.sql`** (for the live one). A column that only ever lands
+  in the `CREATE TABLE` reaches a fresh database and never prod, and the first query that selects it
+  500s. This file alters nothing at all now — a bare `ALTER` aborts the load on whichever database
+  already has the column, which is how two fresh loads stopped half-way, and `SchemaCoverageTest`
+  fails the build on one.
+
+**Prod is TiDB**, which has no stored procedures — so the migrations are plain `ALTER`s with a check
+query at the top of `migrations.sql` telling you which ones this database still needs. Run the check,
+run only what it reports MISSING. Nothing in either file deletes or rewrites a row.
 
 The last section, "TABLES CAPTURED FROM THE LIVE DB", is verbatim `SHOW CREATE TABLE` output — no FK
 to `users(id)` and `utf8mb4_0900_ai_ci` collation, unlike the hand-written sections above. Left as-is

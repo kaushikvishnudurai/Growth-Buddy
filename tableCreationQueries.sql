@@ -42,6 +42,24 @@ CREATE TABLE IF NOT EXISTS users (
   created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   deleted_at      TIMESTAMP    NULL,
+  -- Columns that used to live only in the migration block below, so a fresh
+  -- install depended on it running. They belong here.
+  whatsapp_number VARCHAR(20)    NULL,
+  whatsapp_enabled BOOLEAN        NOT NULL DEFAULT FALSE,
+  age_years INT            NULL,
+  height_cm INT            NULL,
+  weight_kg DECIMAL(5,1)   NULL,
+  diet_preference VARCHAR(64)    NULL,
+  about_me VARCHAR(500)   NULL,
+  daily_food_goal_kcal INT        NULL,
+  daily_water_goal_ml INT        NULL,
+  gender VARCHAR(20) NULL,
+  fitness_goal VARCHAR(100) NULL,
+  whatsapp_verified BOOLEAN NOT NULL DEFAULT FALSE,
+  favourite_dish VARCHAR(120) NULL,
+  allergic_to VARCHAR(255) NULL,
+  feature_prefs JSON         NULL,
+  ui_prefs JSON         NULL,
   PRIMARY KEY (id),
   UNIQUE KEY uq_users_email (email)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -137,6 +155,10 @@ CREATE TABLE IF NOT EXISTS habits (
   active          BOOLEAN      NOT NULL DEFAULT TRUE,
   created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   deleted_at      TIMESTAMP    NULL,
+  -- Columns that used to live only in the migration block below, so a fresh
+  -- install depended on it running. They belong here.
+  color VARCHAR(16) NULL,
+  reminder_time TIME NULL,
   PRIMARY KEY (id),
   KEY ix_habits_user (user_id),
   CONSTRAINT fk_habits_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -483,9 +505,10 @@ CREATE TABLE IF NOT EXISTS notes (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =====================================================================
--- Migrations live at the END of this file, below every CREATE TABLE, and go
--- through gb_add_column so they are safe on a fresh database, on one that
--- already has the column, and on a re-run. See the block down there.
+-- Migrations for a database that already exists live in `migrations.sql`.
+-- Nothing in THIS file alters anything: every column a running app reads is
+-- declared in its CREATE TABLE above, so a fresh install needs this file and
+-- nothing else. Run it twice if you like — every statement is guarded.
 -- =====================================================================
 
 -- Habit customisation columns (v2)
@@ -549,6 +572,11 @@ CREATE TABLE IF NOT EXISTS family_members (
   created_at            TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at            TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   deleted_at            TIMESTAMP    NULL,
+  -- Columns that used to live only in the migration block below, so a fresh
+  -- install depended on it running. They belong here.
+  invite_only BOOLEAN NOT NULL DEFAULT FALSE,
+  height_cm INT NULL,
+  weight_kg INT NULL,
   PRIMARY KEY (id),
   KEY ix_family_member_family (family_id),
   KEY ix_family_member_linked (linked_user_id),
@@ -775,61 +803,3 @@ CREATE TABLE IF NOT EXISTS `login_attempts` (
   KEY `ix_login_attempts_idle` (`updated_at_ms`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ;
-
--- =====================================================================
--- Migrations — safe on a fresh database, on an existing one, and on a re-run.
---
--- These used to be bare ALTERs, under a comment claiming a duplicate-column
--- error wouldn't abort the script. It does: the mysql client stops at the first
--- error and skips everything after it, which is how a fresh load twice left the
--- database missing half its tables. A bare ALTER can't reach prod either, where
--- the column is already there — and prod runs ddl-auto: none, so this file is
--- the only thing that ever adds a column to it.
---
--- Add a column to an @Entity? Put it in the CREATE TABLE above for fresh
--- installs AND add a line here, or the next deploy reads a column the live
--- database hasn't got. SchemaCoverageTest fails the build on a bare ALTER.
--- =====================================================================
-
-DROP PROCEDURE IF EXISTS gb_add_column;
-DELIMITER $$
-CREATE PROCEDURE gb_add_column(IN tbl VARCHAR(64), IN col VARCHAR(64), IN spec TEXT)
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.COLUMNS
-    WHERE table_schema = DATABASE() AND table_name = tbl AND column_name = col
-  ) THEN
-    SET @gb_ddl = CONCAT('ALTER TABLE `', tbl, '` ADD COLUMN ', spec);
-    PREPARE gb_stmt FROM @gb_ddl;
-    EXECUTE gb_stmt;
-    DEALLOCATE PREPARE gb_stmt;
-  END IF;
-END$$
-DELIMITER ;
-
-CALL gb_add_column('habits', 'color', 'color VARCHAR(16) NULL AFTER icon');
-CALL gb_add_column('habits', 'reminder_time', 'reminder_time TIME NULL AFTER cadence');
-CALL gb_add_column('users', 'whatsapp_number', 'whatsapp_number VARCHAR(20)    NULL');
-CALL gb_add_column('users', 'whatsapp_enabled', 'whatsapp_enabled BOOLEAN        NOT NULL DEFAULT FALSE');
-CALL gb_add_column('users', 'age_years', 'age_years INT            NULL');
-CALL gb_add_column('users', 'height_cm', 'height_cm INT            NULL');
-CALL gb_add_column('users', 'weight_kg', 'weight_kg DECIMAL(5,1)   NULL');
-CALL gb_add_column('users', 'diet_preference', 'diet_preference VARCHAR(64)    NULL');
-CALL gb_add_column('users', 'about_me', 'about_me VARCHAR(500)   NULL');
-CALL gb_add_column('users', 'daily_food_goal_kcal', 'daily_food_goal_kcal INT        NULL');
-CALL gb_add_column('users', 'daily_water_goal_ml', 'daily_water_goal_ml INT        NULL');
-CALL gb_add_column('users', 'gender', 'gender VARCHAR(20) NULL');
-CALL gb_add_column('users', 'fitness_goal', 'fitness_goal VARCHAR(100) NULL');
-CALL gb_add_column('users', 'whatsapp_verified', 'whatsapp_verified BOOLEAN NOT NULL DEFAULT FALSE');
-CALL gb_add_column('users', 'favourite_dish', 'favourite_dish VARCHAR(120) NULL');
-CALL gb_add_column('users', 'allergic_to', 'allergic_to VARCHAR(255) NULL');
-CALL gb_add_column('users', 'feature_prefs', 'feature_prefs JSON         NULL');
-CALL gb_add_column('users', 'ui_prefs', 'ui_prefs JSON         NULL');
-CALL gb_add_column('family_members', 'invite_only', 'invite_only BOOLEAN NOT NULL DEFAULT FALSE AFTER status');
-CALL gb_add_column('family_members', 'height_cm', 'height_cm INT NULL AFTER gender');
-CALL gb_add_column('family_members', 'weight_kg', 'weight_kg INT NULL AFTER height_cm');
-CALL gb_add_column('mentorship_requests', 'checked_at', 'checked_at TIMESTAMP NULL');
-CALL gb_add_column('users', 'nav_layout', 'nav_layout VARCHAR(255) NULL');
-CALL gb_add_column('calendar_reminders', 'sound', 'sound VARCHAR(16) NULL');
-
-DROP PROCEDURE IF EXISTS gb_add_column;

@@ -82,7 +82,7 @@ class SchemaCoverageTest {
      * the only thing that ever adds a column there.
      */
     @Test
-    void everyAddedColumnGoesThroughTheAddIfMissingProcedure() throws IOException {
+    void theSchemaFileAltersNothing() throws IOException {
         String sql = Files.readString(repoRoot().resolve("tableCreationQueries.sql"));
         Set<String> bare = new TreeSet<>();
         for (String line : sql.split("\\n")) {
@@ -92,8 +92,35 @@ class SchemaCoverageTest {
             }
         }
         assertThat(bare)
-                .as("bare ALTER TABLE … ADD COLUMN — use CALL gb_add_column('table', 'col', "
-                        + "'col TYPE …') so the file is safe on a fresh database, on prod, and on a re-run")
+                .as("ALTER TABLE … ADD COLUMN in tableCreationQueries.sql — declare the column in "
+                        + "its CREATE TABLE and put the migration in migrations.sql. A bare ALTER "
+                        + "aborts the load on whichever database already has the column, which is "
+                        + "how two fresh loads stopped half-way")
+                .isEmpty();
+    }
+
+    /**
+     * Every migration names a column the schema file declares. The two files
+     * drift in both directions otherwise: a migration for a column no fresh
+     * install creates, or — the one that bites in production — a column added
+     * only to a CREATE TABLE, which prod (ddl-auto: none) never receives.
+     */
+    @Test
+    void everyMigrationMatchesAColumnTheSchemaDeclares() throws IOException {
+        String schema = Files.readString(repoRoot().resolve("tableCreationQueries.sql"));
+        String migrations = Files.readString(repoRoot().resolve("migrations.sql"));
+        Set<String> orphans = new TreeSet<>();
+        Matcher m = ALTER_ADD.matcher(migrations);
+        while (m.find()) {
+            String table = m.group(1).toLowerCase();
+            String column = m.group(2).toLowerCase();
+            if (!columnsOf(schema, table).contains(column)) {
+                orphans.add(table + "." + column);
+            }
+        }
+        assertThat(orphans)
+                .as("migrations.sql adds a column no CREATE TABLE declares — a fresh install "
+                        + "would come up without it")
                 .isEmpty();
     }
 
@@ -113,6 +140,24 @@ class SchemaCoverageTest {
             }
         }
         assertThat(unguarded).as("CREATE TABLE without IF NOT EXISTS").isEmpty();
+    }
+
+    /** Column names declared inside {@code table}'s CREATE TABLE body. */
+    private static Set<String> columnsOf(String sql, String table) {
+        Matcher m = Pattern.compile(
+                "(?is)CREATE TABLE (?:IF NOT EXISTS )?`?" + Pattern.quote(table) + "`?\\s*\\((.*?)\\n\\)")
+                .matcher(sql);
+        Set<String> out = new TreeSet<>();
+        if (!m.find()) {
+            return out;
+        }
+        for (String line : m.group(1).split("\\n")) {
+            Matcher col = COLUMN.matcher(line.trim());
+            if (col.find()) {
+                out.add(col.group(1).toLowerCase());
+            }
+        }
+        return out;
     }
 
     private static Set<String> schemaTables() throws IOException {
