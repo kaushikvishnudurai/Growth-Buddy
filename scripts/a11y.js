@@ -1,9 +1,12 @@
 /* =====================================================================
    Growth Buddy — Global accessibility helpers
-   Every modal in the app uses the same shape: a `.gb-modal-overlay`
-   wrapping a `.gb-modal[role="dialog"]`, closing when the overlay itself
-   is clicked. That uniformity lets us add keyboard a11y once, centrally,
-   with no changes at the individual modal call sites:
+   A modal is anything carrying `role="dialog" aria-modal="true"`, and it
+   closes when its outermost box is clicked. Most wrap that dialog in a
+   `.gb-modal-overlay`; the celebration overlay is its own outermost box.
+   Keying on the ARIA role rather than the class is what makes this
+   central: a new overlay cannot opt out of a11y by forgetting a class
+   name — which is exactly how the celebration modal lost its focus trap.
+   Added once, centrally, with no changes at the modal call sites:
      • Escape closes the topmost modal (reusing its own close path)
      • Tab is trapped inside the open modal
      • focus moves into a modal when it opens and returns to the trigger
@@ -26,8 +29,30 @@ function focusable(root) {
   );
 }
 
+/* The element that owns the close: the `.gb-modal-overlay` around the dialog
+   when there is one, otherwise the dialog itself. Deduped, because the overlay
+   shape puts role="dialog" on the inner sheet and both map to one overlay. */
+const MODAL = '[role="dialog"][aria-modal="true"]';
+
+function overlayOf(dialog) {
+  return dialog.closest('.gb-modal-overlay') || dialog;
+}
+
 function openOverlays() {
-  return Array.from(document.querySelectorAll('.gb-modal-overlay'));
+  const out = [];
+  for (const d of document.querySelectorAll(MODAL)) {
+    const o = overlayOf(d);
+    if (!out.includes(o)) out.push(o);
+  }
+  return out;
+}
+
+/* A node added to <body> that is, or contains, a modal. */
+function overlayIn(node) {
+  if (node.nodeType !== 1) return null;
+  if (node.matches?.('.gb-modal-overlay')) return node;
+  const d = node.matches?.(MODAL) ? node : node.querySelector?.(MODAL);
+  return d ? overlayOf(d) : null;
 }
 
 function topOverlay() {
@@ -49,7 +74,7 @@ export function initA11y() {
     'focusin',
     (e) => {
       const t = e.target;
-      if (t && t.closest && !t.closest('.gb-modal-overlay')) lastFocused = t;
+      if (t && t.closest && !t.closest('.gb-modal-overlay, ' + MODAL)) lastFocused = t;
     },
     true
   );
@@ -86,23 +111,22 @@ export function initA11y() {
   const observer = new MutationObserver((mutations) => {
     for (const m of mutations) {
       for (const node of m.addedNodes) {
-        if (node.nodeType === 1 && node.classList?.contains('gb-modal-overlay')) {
+        const overlay = overlayIn(node);
+        if (overlay) {
           // Move focus into the dialog once it has rendered. A modal that sets
           // its own focus (e.g. an input) runs later and wins — no conflict.
           requestAnimationFrame(() => {
-            const dialog = node.querySelector('.gb-modal') || node;
+            const dialog = overlay.querySelector('.gb-modal') || overlay;
             if (dialog && !dialog.hasAttribute('tabindex')) dialog.setAttribute('tabindex', '-1');
-            const target = node.querySelector('[autofocus]') || dialog;
+            const target = overlay.querySelector('[autofocus]') || dialog;
             target?.focus?.();
           });
         }
       }
       for (const node of m.removedNodes) {
-        if (node.nodeType === 1 && node.classList?.contains('gb-modal-overlay')) {
-          if (lastFocused && document.contains(lastFocused)) {
-            const el = lastFocused;
-            requestAnimationFrame(() => el.focus?.());
-          }
+        if (overlayIn(node) && lastFocused && document.contains(lastFocused)) {
+          const el = lastFocused;
+          requestAnimationFrame(() => el.focus?.());
         }
       }
     }

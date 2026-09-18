@@ -7341,11 +7341,11 @@ function render() {
       unreadCount: unreadNotifs(),
       onBell: toggleNotifOpen,
     }),
-    // Stable wrappers so the popovers can be repainted without rebuilding the
-    // app. Both are layout-neutral: `.gb-app` is a flex column with no gap and
-    // the popovers are absolutely positioned, so an empty slot is 0px tall.
-    h('div', { id: 'gb-notif-slot' }, notificationDropdown()),
-    h('div', { id: 'gb-profile-slot' }, profileDropdown()),
+    // `gb-notif-slot` and `gb-profile-slot` live inside the header's action row
+    // (see Header in gb-kit.js) so each panel is positioned by the button that
+    // opens it. `repaintOverlays()` fills all three by id, so where they sit in
+    // the tree is the header's business, not this one's. Toasts are pinned to
+    // the viewport and belong here.
     h('div', { id: 'gb-toast-slot' }, toastStack()),
     h(
       'div',

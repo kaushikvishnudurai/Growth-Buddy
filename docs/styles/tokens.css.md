@@ -24,7 +24,8 @@ via `@fontsource` — plus Space Mono for `--font-mono`.
 - **AI accent:** `--ai`, `--ai-soft`, `--ai-soft-fg`, `--hairline-ai` — used for Buddy/AI surfaces.
 - **Type:** `--font-display`, `--font-body`, `--font-mono`; `--leading-tight|snug|normal|relaxed`.
 - **Shape:** `--radius-sm|md|lg|xl|2xl|3xl|pill`.
-- **Elevation:** `--shadow-xs|sm|md|lg`.
+- **Elevation:** `--shadow-xs|sm|md|lg|xl`. `xl` is the overlay tier — dialogs and the two header
+  panels, which sit above a dimmed page. Three surfaces were already naming it before it existed.
 - **Motion:** `--dur-fast|base|slow`, `--ease-standard|out|bounce`.
 
 ## Rules
@@ -34,4 +35,7 @@ via `@fontsource` — plus Space Mono for `--font-mono`.
 - The theme switch flips `data-theme` on the root; `scripts/app.js` `toggleTheme()` / `loadTheme()`
   own that, and the choice persists through `CacheStorage`.
 - Ramp steps that don't exist (e.g. `--leaf-900`) will render as an invalid value, not a fallback —
-  check the list above before using a step.
+  check the list above before using a step. **`node scripts/tokens.test.mjs`** now fails the moment
+  a bare `var(--x)` names something this file doesn't define: a missing token with no fallback
+  voids the entire declaration, which is how the modal lost its entrance animation and three
+  surfaces lost their background.

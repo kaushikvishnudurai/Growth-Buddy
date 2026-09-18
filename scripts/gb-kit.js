@@ -642,7 +642,14 @@ function AppHeader({ label, name, userName, onAccount, unreadCount, onBell, onAd
         bg: 'var(--coral-100)',
         fg: 'var(--coral-700)',
         onClick: onAccount,
-      })
+      }),
+      // The notification and profile panels render into these, filled by
+      // `repaintOverlays()` in app.js. They live here rather than at the app
+      // root so the panels are positioned by the row the bell and the avatar
+      // are actually in — a header offset can't drift away from them any more.
+      // Both are 0×0 until filled, so the row's layout is unchanged.
+      h('div', { id: 'gb-notif-slot' }),
+      h('div', { id: 'gb-profile-slot' })
     )
   );
 }

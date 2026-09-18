@@ -92,16 +92,9 @@ function show(ach, done) {
   );
   overlay.appendChild(card);
 
-  function onKey(e) {
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      close();
-    }
-  }
   function close() {
     if (closed) return;
     closed = true;
-    document.removeEventListener('keydown', onKey);
     overlay.classList.add('is-leaving');
     setTimeout(() => {
       overlay.remove();
@@ -109,10 +102,12 @@ function show(ach, done) {
     }, 240);
   }
 
+  // a11y.js finds this by its role and drives Escape through a synthetic click
+  // on the overlay, so this one handler is the whole close path — and the focus
+  // trap and focus restore come with it.
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) close();
   });
-  document.addEventListener('keydown', onKey);
 
   document.body.appendChild(overlay);
   requestAnimationFrame(() => nice.focus());

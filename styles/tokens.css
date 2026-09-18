@@ -221,6 +221,11 @@
   --shadow-sm: 0 1px 3px rgba(60, 40, 28, 0.08), 0 1px 2px rgba(60, 40, 28, 0.04);
   --shadow-md: 0 4px 14px rgba(60, 40, 28, 0.10), 0 2px 4px rgba(60, 40, 28, 0.05);
   --shadow-lg: 0 12px 32px rgba(60, 40, 28, 0.14), 0 4px 8px rgba(60, 40, 28, 0.06);
+  /* The overlay tier: dialogs and the header panels, which sit above a dimmed
+     page and need more separation than a card. Three surfaces were already
+     asking for it and silently falling back to a hardcoded light-mode literal
+     in both themes. */
+  --shadow-xl: 0 24px 60px rgba(60, 40, 28, 0.22), 0 8px 16px rgba(60, 40, 28, 0.10);
   --shadow-brand: 0 8px 22px rgba(249, 115, 22, 0.30);
 
   /* translucent / hairline helpers (avoid color-mix for capture safety) */
@@ -277,6 +282,7 @@
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.3);
   --shadow-lg: 0 14px 36px rgba(0, 0, 0, 0.6), 0 4px 10px rgba(0, 0, 0, 0.4);
+  --shadow-xl: 0 24px 60px rgba(0, 0, 0, 0.72), 0 8px 18px rgba(0, 0, 0, 0.5);
   --shadow-brand: 0 8px 24px rgba(249, 115, 22, 0.40);
   --nav-bg: rgba(33, 26, 22, 0.82);
   --hairline-ai: rgba(108, 92, 231, 0.40);
