@@ -25,7 +25,7 @@ array that used to live here was missing `report`, so refreshing on Progress or 
 it silently landed on Home. Don't reintroduce a second list.
 | 2270–4070 | profile + settings (biggest block): `saveProfileDetails`, `CountryPhoneInput`, `buildSegSlider`, `customisePanes()` (~2541, builds the Display + Layout panes), `securitySection()` (~3108, devices + password), **`openProfileSettings(initialTab)`** (~3229 — the one Settings modal), `getNutritionSuggestion` |
 | 4071–4262 | calendar: `syncSelectedDateToVisibleMonth`, `rerenderCalendarToolbarIfActive`, `rerenderCalendarMonthInPlace`, `calPrevMonth`/`calNextMonth`/`calToday`, `selectDate`, `retryCalendarFoodDate`, `addReminder`, `repaintCalendarGrid`, `deleteReminder` |
-| 4264–4940 | shared UI: `openModal`, `segmented`, `openAddSheet`, `toDateTimeLocal`, `taskForm` (shared by `openAddTask` / `openEditTask`), `colorPicker`, `openAddHabit`, `relativeTime`, `notificationDropdown`, `toastStack` (+ `TOAST_IN_MS`), `confirmDelete` |
+| 4264–4940 | shared UI: `openModal` (now a two-line wrapper over gb-kit's, adding `render()` after a successful primary — the layout itself lives in `gb-kit.js`), `segmented`, `openAddSheet`, `toDateTimeLocal`, `taskForm` (shared by `openAddTask` / `openEditTask`), `colorPicker`, `openAddHabit`, `relativeTime`, `notificationDropdown`, `toastStack` (+ `TOAST_IN_MS`), `confirmDelete` |
 | 4940–5256 | `ScreenHabits`, `featureOn` / `screenEnabled` / `setFeature`, `saveDigestPrefs`, `saveHomeLayout`, `saveNavLayout` |
 | **5256–5552** | **`SCREENS` registry** — screen id → render fn. Start here to find a screen. |
 | 5552–5575 | `captureScrollPosition` / `restoreScrollPosition` |

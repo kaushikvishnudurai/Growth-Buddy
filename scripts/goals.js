@@ -1,8 +1,7 @@
 /* =====================================================================
    Growth Buddy — Goals screen (short / mid / long term goals + actions)
    ===================================================================== */
-import { h, Icon, Pill, refreshIcons } from './gb-kit.js';
-import { toast } from './toast.js';
+import { h, Icon, Pill, openModal } from './gb-kit.js';
 
 const HORIZON_LABEL = {
   short_term: 'Short Term',
@@ -35,61 +34,10 @@ function todayKey() {
   return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
 }
 
-function openGoalModal({ title, sub, body, primary, onPrimary }) {
-  let overlay;
-  function close() {
-    overlay.classList.remove('is-open');
-    setTimeout(() => overlay && overlay.remove(), 180);
-  }
-  const primaryBtn = h(
-    'button',
-    {
-      type: 'button',
-      class: 'gb-btn gb-btn--primary',
-      onclick: async () => {
-        try {
-          primaryBtn.disabled = true;
-          await onPrimary();
-          close();
-        } catch (err) {
-          primaryBtn.disabled = false;
-          toast.error(err, 'Oops, that goal slipped away.');
-        }
-      },
-    },
-    primary || 'Save'
-  );
-  const sheet = h(
-    'div',
-    { class: 'gb-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
-    h(
-      'div',
-      { class: 'gb-modal-head' },
-      h('div', { class: 'gb-modal-title' }, title),
-      sub ? h('div', { class: 'gb-modal-sub' }, sub) : null
-    ),
-    h('div', { class: 'gb-modal-body' }, body),
-    primaryBtn,
-    h(
-      'button',
-      { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel', onclick: close },
-      'Cancel'
-    )
-  );
-  overlay = h(
-    'div',
-    {
-      class: 'gb-modal-overlay',
-      onclick: (e) => {
-        if (e.target === overlay) close();
-      },
-    },
-    sheet
-  );
-  document.body.appendChild(overlay);
-  refreshIcons();
-  requestAnimationFrame(() => overlay.classList.add('is-open'));
-  return { close };
+/* The shared dialog with this screen's own wording for a failed save. Returns
+   `{ close }` because that is what the call sites here destructure. */
+function openGoalModal(opts) {
+  return { close: openModal({ ...opts, errorMessage: 'Oops, that goal slipped away.' }) };
 }
 
 function confirmInModal({ title, body, primary, onConfirm }) {

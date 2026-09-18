@@ -14,6 +14,9 @@ import {
   Check,
   DOMAIN,
   CrashCard,
+  openOverlay,
+  openModal as sharedModal,
+  shakeRefusal,
 } from './gb-kit.js';
 import {
   ScreenDashboard,
@@ -3229,11 +3232,7 @@ function weeklyReviewStats() {
 }
 
 function openWeeklyReview() {
-  let overlay;
-  const close = () => {
-    overlay.classList.remove('is-open');
-    setTimeout(() => overlay.remove(), 180);
-  };
+  const { sheet, close } = openOverlay({ label: 'Weekly review' });
   const s = weeklyReviewStats();
   const prev = loadWeekly()[weekStartKey(new Date())] || {};
   const cur = () => (state.money && state.money.currency) || '₹';
@@ -3294,9 +3293,7 @@ function openWeeklyReview() {
     }
   });
 
-  const sheet = h(
-    'div',
-    { class: 'gb-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Weekly review' },
+  sheet.append(
     h(
       'div',
       { class: 'gb-modal-head' },
@@ -3327,29 +3324,13 @@ function openWeeklyReview() {
       'Maybe later'
     )
   );
-  overlay = h(
-    'div',
-    {
-      class: 'gb-modal-overlay',
-      onclick: (e) => {
-        if (e.target === overlay) close();
-      },
-    },
-    sheet
-  );
-  document.body.appendChild(overlay);
   refreshIcons();
-  requestAnimationFrame(() => overlay.classList.add('is-open'));
   setTimeout(() => focus.focus(), 60);
 }
 
 /* ---- Delete account (destructive, password-confirmed) ---- */
 function openDeleteAccount() {
-  let overlay;
-  const close = () => {
-    overlay.classList.remove('is-open');
-    setTimeout(() => overlay.remove(), 180);
-  };
+  const { sheet, close } = openOverlay({ label: 'Delete account' });
   const pw = h('input', {
     type: 'password',
     class: 'gb-input',
@@ -3384,9 +3365,7 @@ function openDeleteAccount() {
       toastError(err, 'Could not delete your account.');
     }
   });
-  const sheet = h(
-    'div',
-    { class: 'gb-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Delete account' },
+  sheet.append(
     h(
       'div',
       { class: 'gb-modal-head' },
@@ -3410,19 +3389,7 @@ function openDeleteAccount() {
       'Keep my account'
     )
   );
-  overlay = h(
-    'div',
-    {
-      class: 'gb-modal-overlay',
-      onclick: (e) => {
-        if (e.target === overlay) close();
-      },
-    },
-    sheet
-  );
-  document.body.appendChild(overlay);
   refreshIcons();
-  requestAnimationFrame(() => overlay.classList.add('is-open'));
   setTimeout(() => pw.focus(), 60);
 }
 
@@ -4936,88 +4903,11 @@ async function deleteReminder(scope, id, occKey) {
 }
 
 /* ---- Modal scaffolding ---- */
-function openModal({ title, sub, body, primary, onPrimary, modalClass, danger }) {
-  let overlay;
-  function close() {
-    overlay.classList.remove('is-open');
-    setTimeout(() => overlay.remove(), 180);
-  }
-  const primaryBtn = h(
-    'button',
-    {
-      type: 'button',
-      class: 'gb-btn gb-btn--primary',
-      style: { width: '100%', marginTop: '14px' },
-      onclick: async () => {
-        try {
-          primaryBtn.disabled = true;
-          await onPrimary();
-          close();
-          render();
-        } catch (err) {
-          primaryBtn.disabled = false;
-          // The modal refused what you gave it, so the modal is what shakes —
-          // the same head-shake the sign-in card does.
-          shakeRefusal(sheet);
-          toastError(err, 'Something went wrong.');
-        }
-      },
-    },
-    primary || 'Save'
-  );
-  // Destructive action, under the primary: close first, so what it opens (a
-  // confirm) isn't stacked on a sheet still showing the thing being deleted.
-  const dangerBtn = danger
-    ? h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-btn gb-btn--danger',
-          style: { width: '100%', marginTop: '8px' },
-          onclick: () => {
-            close();
-            danger.onClick();
-          },
-        },
-        danger.label
-      )
-    : null;
-  const sheet = h(
-    'div',
-    {
-      class: 'gb-modal' + (modalClass ? ' ' + modalClass : ''),
-      role: 'dialog',
-      'aria-modal': 'true',
-      'aria-label': title,
-    },
-    h(
-      'div',
-      { class: 'gb-modal-head' },
-      h('div', { class: 'gb-modal-title' }, title),
-      sub ? h('div', { class: 'gb-modal-sub' }, sub) : null
-    ),
-    h('div', { class: 'gb-modal-body' }, body),
-    primaryBtn,
-    dangerBtn,
-    h(
-      'button',
-      { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel', onclick: close },
-      'Cancel'
-    )
-  );
-  overlay = h(
-    'div',
-    {
-      class: 'gb-modal-overlay',
-      onclick: (e) => {
-        if (e.target === overlay) close();
-      },
-    },
-    sheet
-  );
-  document.body.appendChild(overlay);
-  refreshIcons();
-  requestAnimationFrame(() => overlay.classList.add('is-open'));
+/* The shared dialog, plus the one thing only this module can do: repaint the
+   app after a successful primary. Every openModal call site in app.js expects
+   that, and gb-kit has no business knowing about render(). */
+function openModal(opts) {
+  return sharedModal({ ...opts, afterPrimary: render });
 }
 
 function segmented(options, initial, onChange) {
@@ -5051,11 +4941,7 @@ function segmented(options, initial, onChange) {
 }
 
 function openAddSheet() {
-  let overlay;
-  function close() {
-    overlay.classList.remove('is-open');
-    setTimeout(() => overlay.remove(), 180);
-  }
+  const { sheet, close } = openOverlay({ label: 'Quick add' });
 
   // Natural-language quick-add: type it once, we sort it into the right trackers.
   const qaInput = h('input', {
@@ -5320,9 +5206,7 @@ function openAddSheet() {
       },
     },
   ];
-  const sheet = h(
-    'div',
-    { class: 'gb-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Quick add' },
+  sheet.append(
     h(
       'div',
       { class: 'gb-modal-head' },
@@ -5357,19 +5241,7 @@ function openAddSheet() {
       'Cancel'
     )
   );
-  overlay = h(
-    'div',
-    {
-      class: 'gb-modal-overlay',
-      onclick: (e) => {
-        if (e.target === overlay) close();
-      },
-    },
-    sheet
-  );
-  document.body.appendChild(overlay);
   refreshIcons();
-  requestAnimationFrame(() => overlay.classList.add('is-open'));
 }
 
 /* `<input type="datetime-local">` wants wall-clock local time, not the UTC an
@@ -6781,17 +6653,6 @@ function refuseFocus() {
 
    Keyframes live in styles/app.css; under reduced-motion the global kill
    switch drops the movement and the red field ring carries the meaning. */
-function shakeRefusal(el) {
-  if (!el) return;
-  el.classList.remove('gb-shake');
-  void el.offsetWidth; // restart the animation when the same surface fails twice
-  el.classList.add('gb-shake');
-  el.addEventListener('animationend', () => el.classList.remove('gb-shake'), { once: true });
-  try {
-    if (navigator.vibrate) navigator.vibrate([14, 70, 14]);
-  } catch (_) {}
-}
-
 /* `errField` names the input a server refusal belongs under ('password' for a
    bad sign-in, 'otp' for a bad code). Without one the failure is nobody's
    field — a dropped connection, say — and stays a toast. */

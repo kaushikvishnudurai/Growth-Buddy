@@ -6,7 +6,7 @@
    concerns). The timer owns its own DOM and ticks in place so the rest
    of the screen doesn't re-render every second.
    ===================================================================== */
-import { h, Icon, Card, refreshIcons } from './gb-kit.js';
+import { h, Icon, Card, refreshIcons, openOverlay } from './gb-kit.js';
 
 /* -------------------------------------------------------------------
      Timer state (module scope so a running session survives navigating
@@ -380,7 +380,6 @@ function buildRing(size, stroke) {
      UI — timer card.
      ------------------------------------------------------------------- */
 function openCustomMinutesModal() {
-  let overlay;
   const input = h('input', {
     type: 'number',
     class: 'gb-input',
@@ -391,12 +390,7 @@ function openCustomMinutesModal() {
     value: '15',
   });
   const error = h('div', { class: 'gb-water-prompt-error', 'aria-live': 'polite' });
-  function close() {
-    overlay.classList.remove('is-open');
-    setTimeout(function () {
-      overlay && overlay.remove();
-    }, 180);
-  }
+  const { sheet, close } = openOverlay({ label: 'Custom focus minutes' });
   function submit() {
     const m = Math.max(1, Math.min(180, parseInt(input.value, 10) || 0));
     if (!m) {
@@ -406,14 +400,7 @@ function openCustomMinutesModal() {
     setMode('focus', m);
     close();
   }
-  const sheet = h(
-    'div',
-    {
-      class: 'gb-modal',
-      role: 'dialog',
-      'aria-modal': 'true',
-      'aria-label': 'Custom focus minutes',
-    },
+  sheet.append(
     h(
       'div',
       { class: 'gb-modal-head' },
@@ -436,21 +423,7 @@ function openCustomMinutesModal() {
       )
     )
   );
-  overlay = h(
-    'div',
-    {
-      class: 'gb-modal-overlay',
-      onclick: function (e) {
-        if (e.target === overlay) close();
-      },
-    },
-    sheet
-  );
-  document.body.appendChild(overlay);
   refreshIcons();
-  requestAnimationFrame(function () {
-    overlay.classList.add('is-open');
-  });
   setTimeout(function () {
     input.focus();
   }, 60);

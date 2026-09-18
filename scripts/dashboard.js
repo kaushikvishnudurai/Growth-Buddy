@@ -11,6 +11,7 @@ import {
   Check,
   ProgressRing,
   plural,
+  openOverlay,
 } from './gb-kit.js';
 import { MoneyHomeCard } from './money.js';
 import { CacheStorage } from './cache-storage.js';
@@ -604,7 +605,7 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater })
       opts || {}
     );
 
-    let overlay = null;
+    const { sheet, close } = openOverlay({ label: cfg.title });
     const input = h('input', {
       type: 'number',
       class: 'gb-input',
@@ -615,34 +616,18 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater })
     });
     const error = h('div', { class: 'gb-water-prompt-error', 'aria-live': 'polite' });
 
-    function close() {
-      if (!overlay) return;
-      document.removeEventListener('keydown', onKeyDown);
-      overlay.classList.remove('is-open');
-      setTimeout(() => {
-        if (overlay) {
-          overlay.remove();
-          overlay = null;
-        }
-      }, 180);
-    }
-
     function showError(msg) {
       error.textContent = msg || '';
     }
 
-    function onKeyDown(e) {
-      if (!overlay) return;
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        close();
-        return;
-      }
+    // Escape and the backdrop are the shared overlay's job. Enter belongs to the
+    // field, not the document — it only ever meant "submit this one input".
+    input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
         submit();
       }
-    }
+    });
 
     function submit() {
       const value = Number(input.value);
@@ -657,9 +642,7 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater })
       close();
     }
 
-    const sheet = h(
-      'div',
-      { class: 'gb-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': cfg.title },
+    sheet.append(
       h('div', { class: 'gb-modal-head' }, h('div', { class: 'gb-modal-title' }, cfg.title)),
       h(
         'div',
@@ -695,20 +678,6 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater })
         )
       )
     );
-
-    overlay = h(
-      'div',
-      {
-        class: 'gb-modal-overlay',
-        onclick: (e) => {
-          if (e.target === overlay) close();
-        },
-      },
-      sheet
-    );
-    document.body.appendChild(overlay);
-    document.addEventListener('keydown', onKeyDown);
-    requestAnimationFrame(() => overlay.classList.add('is-open'));
     setTimeout(() => {
       input.focus();
       input.select();

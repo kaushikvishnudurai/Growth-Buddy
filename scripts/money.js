@@ -7,7 +7,7 @@
    ponytail: heuristics, not an LLM. Real OCR / NL understanding would need
    a vision/LLM endpoint — marked at each spot below.
    ===================================================================== */
-import { h, Icon, Card, ProgressRing, refreshIcons } from './gb-kit.js';
+import { h, Icon, Card, ProgressRing, refreshIcons, openModal } from './gb-kit.js';
 import { toast } from './toast.js';
 import { shareStoryCard, _demo as _shareCardDemo } from './share-card.js';
 
@@ -1622,58 +1622,13 @@ function lineChart(series, color) {
 /* =====================================================================
    Local modal + segmented
    ===================================================================== */
-function openMoneyModal({ title, sub, body, primary, onPrimary }) {
-  let overlay;
-  function close() {
-    overlay.classList.remove('is-open');
-    setTimeout(() => overlay && overlay.remove(), 180);
-  }
-  const primaryBtn = h(
-    'button',
-    {
-      type: 'button',
-      class: 'gb-btn gb-btn--primary',
-      style: { width: '100%', marginTop: '14px' },
-      onclick: async () => {
-        try {
-          primaryBtn.disabled = true;
-          await onPrimary();
-          close();
-        } catch (err) {
-          primaryBtn.disabled = false;
-          toast.error(err, 'Something went wrong.');
-        }
-      },
-    },
-    primary || 'Save'
-  );
-  const sheet = h(
-    'div',
-    { class: 'gb-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
-    h(
-      'div',
-      { class: 'gb-modal-head' },
-      h('div', { class: 'gb-modal-title' }, title),
-      sub ? h('div', { class: 'gb-modal-sub' }, sub) : null
-    ),
-    h('div', { class: 'gb-modal-body' }, body),
-    primary ? primaryBtn : null,
-    h(
-      'button',
-      { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel', onclick: close },
-      primary ? 'Cancel' : 'Close'
-    )
-  );
-  overlay = h(
-    'div',
-    { class: 'gb-modal-overlay', onclick: (e) => e.target === overlay && close() },
-    sheet
-  );
-  document.body.appendChild(overlay);
-  refreshIcons();
-  requestAnimationFrame(() => overlay.classList.add('is-open'));
-  return { close };
+/* Money's dialogs are the shared one; only the wording of a failed save is
+   this module's. Returns `{ close }` because that is what the call sites here
+   destructure. */
+function openMoneyModal(opts) {
+  return { close: openModal(opts) };
 }
+
 function segmented(options, initial, onChange) {
   let selected = initial;
   const segs = {};

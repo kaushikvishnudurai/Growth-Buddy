@@ -4,6 +4,7 @@
    ===================================================================== */
 import { createIcons } from 'lucide';
 import { icons } from './icons.js';
+import { toast } from './toast.js';
 
 // Preserve the historic `window.lucide.createIcons()` call shape now that we've
 // moved off the CDN UMD build. refreshIcons() (below) and timer.js both use it.
@@ -484,20 +485,164 @@ function BottomNav({ active, onNav, onMore, features, moreOpen, layout } = {}) {
   return h('div', { class: 'gb-nav-wrap' }, ...children);
 }
 
+/* ---- The overlay every dialog shares ----
+   The backdrop, click-outside-to-close, the mount, the open/close transition
+   and the teardown. Fourteen dialogs used to carry their own copy of these
+   eighteen lines, and they disagreed: some forgot the scroll body, some the
+   dismiss, one forgot aria-modal and fell out of a11y.js entirely.
+
+   Returns the empty `.gb-modal` to fill and the `close` it answers to. Callers
+   wanting the ordinary title / body / primary / cancel layout want `openModal`
+   below, which is built on this. */
+function openOverlay({ label, className, role = 'dialog', onClose } = {}) {
+  let closed = false;
+  const sheet = h('div', {
+    class: 'gb-modal' + (className ? ' ' + className : ''),
+    role,
+    'aria-modal': 'true',
+    'aria-label': label,
+  });
+  function close() {
+    if (closed) return;
+    closed = true;
+    overlay.classList.remove('is-open');
+    setTimeout(() => overlay.remove(), 180);
+    if (onClose) onClose();
+  }
+  const overlay = h(
+    'div',
+    {
+      class: 'gb-modal-overlay',
+      // a11y.js drives Escape by dispatching a click here, so this one handler
+      // is both the backdrop tap and the keyboard close.
+      onclick: (e) => {
+        if (e.target === overlay) close();
+      },
+    },
+    sheet
+  );
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add('is-open'));
+  // No refreshIcons() here: the sheet is empty until the caller fills it, so
+  // there is nothing to swap. Callers that draw icons call it after appending.
+  return { overlay, sheet, close };
+}
+
+/* ---- The standard dialog ----
+   Title, optional sub, a scrolling body, a full-width primary, an optional
+   destructive action under it, and a dismiss. app.js, money.js and goals.js
+   each had their own byte-identical copy of this; the only real differences
+   were the error message and whether the app re-rendered afterwards, which are
+   both arguments now.
+
+   `onPrimary` may throw: the sheet shakes, the message is toasted, and the
+   button comes back enabled so the value can be corrected in place. */
+function openModal({
+  title,
+  sub,
+  body,
+  primary,
+  onPrimary,
+  danger,
+  dismiss,
+  modalClass,
+  errorMessage = 'Something went wrong.',
+  afterPrimary,
+}) {
+  const { sheet, close } = openOverlay({ label: title, className: modalClass });
+
+  const primaryBtn = primary
+    ? h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--primary',
+          style: { width: '100%', marginTop: '14px' },
+          onclick: async () => {
+            try {
+              primaryBtn.disabled = true;
+              await onPrimary();
+              close();
+              if (afterPrimary) afterPrimary();
+            } catch (err) {
+              primaryBtn.disabled = false;
+              // The modal refused what you gave it, so the modal is what shakes
+              // — the same head-shake the sign-in card does.
+              shakeRefusal(sheet);
+              toast.error(err, errorMessage);
+            }
+          },
+        },
+        primary
+      )
+    : null;
+
+  // Destructive action, under the primary: close first, so what it opens (a
+  // confirm) isn't stacked on a sheet still showing the thing being deleted.
+  const dangerBtn = danger
+    ? h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--danger',
+          style: { width: '100%', marginTop: '8px' },
+          onclick: () => {
+            close();
+            danger.onClick();
+          },
+        },
+        danger.label
+      )
+    : null;
+
+  sheet.append(
+    h(
+      'div',
+      { class: 'gb-modal-head' },
+      h('div', { class: 'gb-modal-title' }, title),
+      sub ? h('div', { class: 'gb-modal-sub' }, sub) : null
+    ),
+    h('div', { class: 'gb-modal-body' }, body),
+    ...[primaryBtn, dangerBtn].filter(Boolean),
+    h(
+      'button',
+      { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel', onclick: close },
+      dismiss || (primary ? 'Cancel' : 'Close')
+    )
+  );
+  refreshIcons();
+  return close;
+}
+
+/* A surface refusing what it was given: one head-shake, one short buzz. Lives
+   here because every dialog's primary uses it and the sign-in card does too. */
+function shakeRefusal(el) {
+  if (!el) return;
+  el.classList.remove('gb-shake');
+  void el.offsetWidth; // restart the animation when the same surface fails twice
+  el.classList.add('gb-shake');
+  el.addEventListener('animationend', () => el.classList.remove('gb-shake'), { once: true });
+  try {
+    if (navigator.vibrate) navigator.vibrate([14, 70, 14]);
+  } catch (_) {}
+}
+
 /* ---- Confirm dialog ----
    Replaces window.confirm: the buttons carry the verbs ("Remove" / "Keep")
    so the choice reads at a glance instead of mapping OK/Cancel to a question.
    Cancel gets focus by default — Enter never destroys anything by accident. */
 function confirmDialog({ title, message, confirmLabel, cancelLabel = 'Cancel', danger = false }) {
   return new Promise((resolve) => {
+    // Dismissing any way that isn't the confirm button answers false, which is
+    // what the backdrop tap and Escape both come through as.
+    const { sheet, close: dismiss } = openOverlay({
+      label: title,
+      role: 'alertdialog',
+      onClose: () => resolve(false),
+    });
     function close(result) {
-      document.removeEventListener('keydown', onKey);
-      overlay.classList.remove('is-open');
-      setTimeout(() => overlay.remove(), 180);
-      resolve(result);
-    }
-    function onKey(e) {
-      if (e.key === 'Escape') close(false);
+      if (result) resolve(true);
+      dismiss();
     }
     const confirmBtn = h(
       'button',
@@ -511,12 +656,10 @@ function confirmDialog({ title, message, confirmLabel, cancelLabel = 'Cancel', d
     );
     const cancelBtn = h(
       'button',
-      { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel', onclick: () => close(false) },
+      { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel', onclick: dismiss },
       cancelLabel
     );
-    const sheet = h(
-      'div',
-      { class: 'gb-modal', role: 'alertdialog', 'aria-modal': 'true', 'aria-label': title },
+    sheet.append(
       h(
         'div',
         { class: 'gb-modal-head' },
@@ -526,19 +669,6 @@ function confirmDialog({ title, message, confirmLabel, cancelLabel = 'Cancel', d
       confirmBtn,
       cancelBtn
     );
-    const overlay = h(
-      'div',
-      {
-        class: 'gb-modal-overlay',
-        onclick: (e) => {
-          if (e.target === overlay) close(false);
-        },
-      },
-      sheet
-    );
-    document.addEventListener('keydown', onKey);
-    document.body.appendChild(overlay);
-    requestAnimationFrame(() => overlay.classList.add('is-open'));
     cancelBtn.focus();
   });
 }
@@ -717,4 +847,7 @@ export {
   CrashCard,
   Logo,
   confirmDialog,
+  openOverlay,
+  openModal,
+  shakeRefusal,
 };

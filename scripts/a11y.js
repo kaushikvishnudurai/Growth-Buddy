@@ -1,11 +1,12 @@
 /* =====================================================================
    Growth Buddy — Global accessibility helpers
-   A modal is anything carrying `role="dialog" aria-modal="true"`, and it
-   closes when its outermost box is clicked. Most wrap that dialog in a
-   `.gb-modal-overlay`; the celebration overlay is its own outermost box.
-   Keying on the ARIA role rather than the class is what makes this
-   central: a new overlay cannot opt out of a11y by forgetting a class
-   name — which is exactly how the celebration modal lost its focus trap.
+   A modal is anything carrying `aria-modal="true"` — dialog or alertdialog
+   — and it closes when its outermost box is clicked. Most wrap that dialog
+   in a `.gb-modal-overlay`; the celebration overlay is its own outermost
+   box. Keying on the ARIA attribute rather than a class is what makes this
+   central: a new overlay cannot opt out of a11y by forgetting a class name,
+   which is how the celebration modal and the confirm dialog both ended up
+   outside the focus trap carrying their own Escape handlers.
    Added once, centrally, with no changes at the modal call sites:
      • Escape closes the topmost modal (reusing its own close path)
      • Tab is trapped inside the open modal
@@ -32,7 +33,7 @@ function focusable(root) {
 /* The element that owns the close: the `.gb-modal-overlay` around the dialog
    when there is one, otherwise the dialog itself. Deduped, because the overlay
    shape puts role="dialog" on the inner sheet and both map to one overlay. */
-const MODAL = '[role="dialog"][aria-modal="true"]';
+const MODAL = '[aria-modal="true"]';
 
 function overlayOf(dialog) {
   return dialog.closest('.gb-modal-overlay') || dialog;

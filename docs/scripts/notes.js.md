@@ -12,7 +12,7 @@ else, so loading them at boot would buy a slower boot and nothing more.
 | `textOf(html)` | 109 | plain text, for the card preview and the "make a task" title |
 | `richEditor({html, placeholder, onInput})` | 150 | contenteditable + toolbar. Returns `{node, area, read(), focus()}`; `read()` is already sanitised. Toolbar buttons fire on **mousedown**, not click — by click time the caret has left the editor and the command applies to nothing. `styleWithCSS(false)` keeps `<b>`/`<i>` instead of `<span style>`, which sanitize() would strip. Paste is intercepted and sanitised so what lands is what saves |
 | `TOOLS` | 130 | bold, italic, underline, H2 (second press → paragraph), bullet + numbered list, link |
-| `sheet(...)` | 249 | local modal wrapper (same overlay contract `a11y.js` looks for: `.gb-modal-overlay > .gb-modal[role=dialog]`). Head row = title + `headActions` (where delete lives, as an icon); footer = Close + primary on one row |
+| `sheet(...)` | 249 | the note's own layout over `openOverlay` from `gb-kit.js` (which owns the overlay contract `a11y.js` looks for). Head row = title + `headActions` (where delete lives, as an icon); footer = Close + primary on one row |
 | `colorRow(selected, onPick)` | 309 | swatch row; `null` is a real choice and gets a swatch of its own |
 | `ScreenNotes` | 334 | composer (collapsed to one line until tapped), card grid, `NoteCard`, `togglePin`, `openNote` (edit sheet: title, editor, colour, pin, delete, make-a-task, add-a-reminder), `sortNotes`, `paint` |
 | `_demo()` | 668 | the runnable check, Vite DEV only — ten asserts on `sanitize` (scripts dropped, handlers stripped, `javascript:` hrefs removed, links hardened, formatting and lists kept, unknown tags unwrapped, attributes stripped) |

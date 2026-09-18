@@ -69,5 +69,5 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
 - Colors come from tokens (`var(--coral-500)`, `var(--leaf-50)`, …) — no raw hex here.
 - Responsive breakpoints are grouped at 4886 / 5226 / 5303, **not** inline per component. Put media
   queries there so the phone-first base stays readable.
-- Modal markup is fixed (`.gb-modal-overlay > .gb-modal[role=dialog]`) because `scripts/a11y.js`
+- Modal markup comes from `openOverlay` in `gb-kit.js` — don't hand-roll it. It is `.gb-modal-overlay > .gb-modal[role=dialog]` because `scripts/a11y.js`
   keys off it for focus trapping. Don't restyle it into a different structure.

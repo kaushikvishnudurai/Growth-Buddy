@@ -1,7 +1,16 @@
 /* =====================================================================
    Growth Buddy — Growth Circle (search people + mentorship invites)
    ===================================================================== */
-import { h, activate, Icon, Avatar, plural, refreshIcons, confirmDialog } from './gb-kit.js';
+import {
+  h,
+  activate,
+  Icon,
+  Avatar,
+  plural,
+  refreshIcons,
+  confirmDialog,
+  openOverlay,
+} from './gb-kit.js';
 import { toast } from './toast.js';
 
 /* Placeholder rows, so a section has its real height before the data lands.
@@ -120,17 +129,11 @@ function PersonRow(person, onOffer, onRequest, onView) {
  * not offering a tap that would fail.
  */
 function showPartnerStatus(partnerId, fallbackName, statusApi, onChecked) {
-  let overlay;
-  function close() {
-    overlay.classList.remove('is-open');
-    setTimeout(() => overlay.remove(), 180);
-  }
+  const { sheet: card, close } = openOverlay({ label: fallbackName });
   const subEl = h('div', { class: 'gb-modal-sub' }, 'Loading…');
   const taskBlock = h('div', { class: 'gb-status-block' });
   const habitBlock = h('div', { class: 'gb-status-block' });
-  const card = h(
-    'div',
-    { class: 'gb-modal', role: 'dialog', 'aria-modal': 'true' },
+  card.append(
     h(
       'div',
       { class: 'gb-profile-head' },
@@ -145,19 +148,7 @@ function showPartnerStatus(partnerId, fallbackName, statusApi, onChecked) {
       'Close'
     )
   );
-  overlay = h(
-    'div',
-    {
-      class: 'gb-modal-overlay',
-      onclick: (e) => {
-        if (e.target === overlay) close();
-      },
-    },
-    card
-  );
-  document.body.appendChild(overlay);
   refreshIcons();
-  requestAnimationFrame(() => overlay.classList.add('is-open'));
 
   statusApi(partnerId)
     .then((data) => {
@@ -391,11 +382,7 @@ function IncomingRow(req, statusApi, onRevoke) {
  * server search endpoint (which also surfaces users not in the recent list).
  */
 function openSearchModal({ onBrowse, onSearch, onOffer, onRequest, onView, currentUserId }) {
-  let overlay;
-  function close() {
-    overlay.classList.remove('is-open');
-    setTimeout(() => overlay.remove(), 180);
-  }
+  const { sheet, close } = openOverlay({ label: 'Find people', className: 'gb-search-modal' });
   const queryInput = h('input', {
     type: 'search',
     class: 'gb-input',
@@ -511,14 +498,7 @@ function openSearchModal({ onBrowse, onSearch, onOffer, onRequest, onView, curre
     }, 220);
   });
 
-  const sheet = h(
-    'div',
-    {
-      class: 'gb-modal gb-search-modal',
-      role: 'dialog',
-      'aria-modal': 'true',
-      'aria-label': 'Find people',
-    },
+  sheet.append(
     h(
       'div',
       { class: 'gb-modal-head' },
@@ -533,33 +513,14 @@ function openSearchModal({ onBrowse, onSearch, onOffer, onRequest, onView, curre
       'Close'
     )
   );
-  overlay = h(
-    'div',
-    {
-      class: 'gb-modal-overlay',
-      onclick: (e) => {
-        if (e.target === overlay) close();
-      },
-    },
-    sheet
-  );
-  document.body.appendChild(overlay);
   refreshIcons();
-  requestAnimationFrame(() => {
-    overlay.classList.add('is-open');
-    queryInput.focus();
-  });
+  requestAnimationFrame(() => queryInput.focus());
 }
 
 /* Minimal styled modal with a list of text/number fields; resolves the entered
    values via onSubmit. Reuses the app's modal CSS (see openNoteModal above). */
 function openFormModal({ title, sub, fields, submitLabel, onSubmit }) {
-  let overlay;
-  function close() {
-    overlay.classList.remove('is-open');
-    setTimeout(() => overlay && overlay.remove(), 180);
-  }
-  const inputs = {};
+  const { sheet, close } = openOverlay({ label: title });  const inputs = {};
   const fieldNodes = [];
   fields.forEach((f) => {
     const input = h('input', {
@@ -597,9 +558,7 @@ function openFormModal({ title, sub, fields, submitLabel, onSubmit }) {
     },
     submitLabel || 'Save'
   );
-  const sheet = h(
-    'div',
-    { class: 'gb-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
+  sheet.append(
     h(
       'div',
       { class: 'gb-modal-head' },
@@ -614,19 +573,7 @@ function openFormModal({ title, sub, fields, submitLabel, onSubmit }) {
       submitBtn
     )
   );
-  overlay = h(
-    'div',
-    {
-      class: 'gb-modal-overlay',
-      onclick: (e) => {
-        if (e.target === overlay) close();
-      },
-    },
-    sheet
-  );
-  document.body.appendChild(overlay);
   refreshIcons();
-  requestAnimationFrame(() => overlay.classList.add('is-open'));
   setTimeout(() => {
     const first = fieldNodes.find((n) => n.tagName === 'INPUT');
     first && first.focus();
@@ -905,14 +852,8 @@ function ChallengesPanel({ api, currentUserId }) {
 
 /* Lightweight read-only sheet for a prebuilt body node (used by Browse). */
 function openSheet(title, bodyNode) {
-  let overlay;
-  function close() {
-    overlay.classList.remove('is-open');
-    setTimeout(() => overlay && overlay.remove(), 180);
-  }
-  const sheet = h(
-    'div',
-    { class: 'gb-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
+  const { sheet, close } = openOverlay({ label: title });
+  sheet.append(
     h('div', { class: 'gb-modal-head' }, h('div', { class: 'gb-modal-title' }, title)),
     h('div', { class: 'gb-modal-body' }, bodyNode),
     h(
@@ -921,19 +862,7 @@ function openSheet(title, bodyNode) {
       h('button', { type: 'button', class: 'gb-btn gb-btn--primary', onclick: close }, 'Close')
     )
   );
-  overlay = h(
-    'div',
-    {
-      class: 'gb-modal-overlay',
-      onclick: (e) => {
-        if (e.target === overlay) close();
-      },
-    },
-    sheet
-  );
-  document.body.appendChild(overlay);
   refreshIcons();
-  requestAnimationFrame(() => overlay.classList.add('is-open'));
 }
 
 function ScreenCircle({
@@ -953,21 +882,14 @@ function ScreenCircle({
 
   function openNoteModal(person, direction) {
     const verb = direction === 'offer' ? 'mentor them' : 'ask them to mentor you';
-    let overlay;
     const noteInput = h('textarea', {
       class: 'gb-input gb-input--about',
       maxlength: '500',
       placeholder: 'Add a short note (optional)',
     });
 
-    function close() {
-      overlay.classList.remove('is-open');
-      setTimeout(() => overlay && overlay.remove(), 180);
-    }
-
-    const sheet = h(
-      'div',
-      { class: 'gb-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Add a short note' },
+    const { sheet, close } = openOverlay({ label: 'Add a short note' });
+    sheet.append(
       h(
         'div',
         { class: 'gb-modal-head' },
@@ -1009,19 +931,7 @@ function ScreenCircle({
         )
       )
     );
-    overlay = h(
-      'div',
-      {
-        class: 'gb-modal-overlay',
-        onclick: (e) => {
-          if (e.target === overlay) close();
-        },
-      },
-      sheet
-    );
-    document.body.appendChild(overlay);
     refreshIcons();
-    requestAnimationFrame(() => overlay.classList.add('is-open'));
     setTimeout(() => noteInput.focus(), 60);
   }
 

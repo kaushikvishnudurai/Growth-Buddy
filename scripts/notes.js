@@ -1,7 +1,7 @@
 /* =====================================================================
    Growth Buddy — Notes (quick jottings, rich text)
    ===================================================================== */
-import { h, Icon, refreshIcons, confirmDialog } from './gb-kit.js';
+import { h, Icon, refreshIcons, confirmDialog, openOverlay } from './gb-kit.js';
 import { toast } from './toast.js';
 
 /* Swatches a note can wear. Same family as the habit colours so the app keeps
@@ -247,11 +247,7 @@ function richEditor({ html, placeholder, onInput } = {}) {
    ------------------------------------------------------------------ */
 
 function sheet({ title, body, primary, onPrimary, headActions }) {
-  let overlay;
-  function close() {
-    overlay.classList.remove('is-open');
-    setTimeout(() => overlay && overlay.remove(), 180);
-  }
+  const { sheet: card, close } = openOverlay({ label: title, className: 'gb-note-modal' });
   const primaryBtn = h(
     'button',
     {
@@ -270,9 +266,7 @@ function sheet({ title, body, primary, onPrimary, headActions }) {
     },
     primary || 'Save'
   );
-  const card = h(
-    'div',
-    { class: 'gb-modal gb-note-modal', role: 'dialog', 'aria-modal': 'true' },
+  card.append(
     h(
       'div',
       { class: 'gb-note-modal-head' },
@@ -289,19 +283,7 @@ function sheet({ title, body, primary, onPrimary, headActions }) {
       primaryBtn
     )
   );
-  overlay = h(
-    'div',
-    {
-      class: 'gb-modal-overlay',
-      onclick: (e) => {
-        if (e.target === overlay) close();
-      },
-    },
-    card
-  );
-  document.body.appendChild(overlay);
   refreshIcons();
-  requestAnimationFrame(() => overlay.classList.add('is-open'));
   return { close, card };
 }
 

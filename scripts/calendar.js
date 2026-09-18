@@ -9,6 +9,7 @@ import {
   Pill,
   plural,
   refreshIcons,
+  openOverlay,
 } from './gb-kit.js';
 import {
   occursOn,
@@ -367,19 +368,9 @@ function openDeleteDialog(rem, occKey, onDelete) {
     { scope: 'all', icon: 'trash-2', label: 'Delete whole series', sub: 'Every occurrence' },
   ];
 
-  function close() {
-    overlay.classList.remove('is-open');
-    setTimeout(() => overlay.remove(), 180);
-  }
+  const { sheet, close } = openOverlay({ label: 'Delete recurring reminder' });
 
-  const sheet = h(
-    'div',
-    {
-      class: 'gb-modal',
-      role: 'dialog',
-      'aria-modal': 'true',
-      'aria-label': 'Delete recurring reminder',
-    },
+  sheet.append(
     h(
       'div',
       { class: 'gb-modal-head' },
@@ -421,21 +412,7 @@ function openDeleteDialog(rem, occKey, onDelete) {
       'Cancel'
     )
   );
-
-  const overlay = h(
-    'div',
-    {
-      class: 'gb-modal-overlay',
-      onclick: (e) => {
-        if (e.target === overlay) close();
-      },
-    },
-    sheet
-  );
-
-  document.body.appendChild(overlay);
   refreshIcons();
-  requestAnimationFrame(() => overlay.classList.add('is-open'));
 }
 
 /* ---- Reminder row ---- */
