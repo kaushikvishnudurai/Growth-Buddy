@@ -82,7 +82,12 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: max(env(safe-area-inset-top, 0px), 22px) 20px 12px;
+  /* The bottom padding is a variable because the header panels hang below it
+     and need to clear it. Anchored to .gb-head-actions they get the right edge
+     for free, but the actions row ends inside this padding — so the gap below
+     is measured, not guessed. Redeclare it anywhere this padding changes. */
+  --head-pad-b: 12px;
+  padding: max(env(safe-area-inset-top, 0px), 22px) 20px var(--head-pad-b);
   flex: none;
 }
 /* The live seedling ships in the markup on every screen but only the premium
@@ -824,7 +829,7 @@ body {
      padding is the safe-area inset and whose side padding changes at 360px and
      at 1024px, so the panel sat 4px inboard on a small phone, 22px past the
      bell on desktop, and under the header entirely on a notched phone. */
-  top: calc(100% + 10px);
+  top: calc(100% + var(--head-pad-b) + 8px);
   right: 0;
   width: min(360px, calc(100vw - 36px));
   max-height: 70vh;
@@ -1961,7 +1966,7 @@ body {
 .gb-profile-pop {
   position: absolute;
   /* Same anchor as .gb-notif-pop above. */
-  top: calc(100% + 10px);
+  top: calc(100% + var(--head-pad-b) + 8px);
   right: 0;
   width: 260px;
   background: var(--surface);
@@ -5078,7 +5083,8 @@ body {
   /* ---- Header → top bar in the main column ---- */
   .gb-head {
     grid-area: header;
-    padding: 22px 40px 18px;
+    --head-pad-b: 18px;
+    padding: 22px 40px var(--head-pad-b);
     border-bottom: 1px solid var(--border);
     background: var(--surface);
   }

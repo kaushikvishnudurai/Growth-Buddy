@@ -30,6 +30,11 @@ class SchemaCoverageTest {
             Pattern.DOTALL);
     private static final Pattern CREATE = Pattern.compile(
             "(?i)CREATE TABLE (?:IF NOT EXISTS )?`?([a-z_]+)`?\\s*\\(");
+    private static final Pattern ALTER_ADD = Pattern.compile(
+            "(?i)ALTER TABLE\\s+`?([a-z_]+)`?\\s+ADD COLUMN\\s+`?([a-z_]+)`?");
+    /** A column line: an identifier followed by a type, not a KEY/CONSTRAINT line. */
+    private static final Pattern COLUMN = Pattern.compile(
+            "(?i)^`?([a-z_]+)`?\\s+(?!KEY|PRIMARY|UNIQUE|CONSTRAINT|FOREIGN|INDEX)[a-z]");
 
     @Test
     void everyEntityTableIsInTheSchemaFile() throws IOException {
@@ -60,6 +65,56 @@ class SchemaCoverageTest {
                 if (m.find()) {
                     out.add(m.group(1).toLowerCase());
                 }
+            }
+        }
+        return out;
+    }
+
+    /**
+     * A bare {@code ALTER TABLE x ADD COLUMN y} for a column x's own CREATE TABLE
+     * already declares aborts a fresh load at that line — MySQL has no
+     * {@code ADD COLUMN IF NOT EXISTS} — and every statement after it is skipped.
+     *
+     * <p>This has now happened twice: {@code nav_layout} left a fresh database with
+     * 28 of 45 tables, and {@code checked_at} left it with 29 of 47. Both were
+     * invisible here, because the coverage test above only reads the file as text
+     * and never runs it. Prod is built from this file, so the failure lands on a
+     * deploy, not on anyone's laptop.
+     *
+     * <p>An ALTER for a column the CREATE TABLE does NOT have is fine: that is a
+     * genuine migration for an older database.
+     */
+    @Test
+    void noAlterReAddsAColumnItsCreateTableAlreadyHas() throws IOException {
+        String sql = Files.readString(repoRoot().resolve("tableCreationQueries.sql"));
+        Set<String> clashes = new TreeSet<>();
+        Matcher alter = ALTER_ADD.matcher(sql);
+        while (alter.find()) {
+            String table = alter.group(1).toLowerCase();
+            String column = alter.group(2).toLowerCase();
+            if (columnsOf(sql, table).contains(column)) {
+                clashes.add(table + "." + column);
+            }
+        }
+        assertThat(clashes)
+                .as("ALTER TABLE … ADD COLUMN for a column the CREATE TABLE already declares — "
+                        + "this aborts a fresh load at that line and skips every statement after it")
+                .isEmpty();
+    }
+
+    /** Column names declared inside {@code table}'s CREATE TABLE body. */
+    private static Set<String> columnsOf(String sql, String table) {
+        Matcher m = Pattern.compile(
+                "(?is)CREATE TABLE (?:IF NOT EXISTS )?`?" + Pattern.quote(table) + "`?\\s*\\((.*?)\\n\\)")
+                .matcher(sql);
+        Set<String> out = new TreeSet<>();
+        if (!m.find()) {
+            return out;
+        }
+        for (String line : m.group(1).split("\\n")) {
+            Matcher col = COLUMN.matcher(line.trim());
+            if (col.find()) {
+                out.add(col.group(1).toLowerCase());
             }
         }
         return out;

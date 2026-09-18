@@ -532,9 +532,10 @@ ALTER TABLE users ADD COLUMN ui_prefs         JSON         NULL;
 -- Run the ALTER by hand, or let dev's ddl-auto: update add it.
 
 -- "Checked today" tick on the Circle screen: when the mentor last opened this
--- mentee's progress. Declared in the CREATE TABLE above too, so this ALTER is
--- only for databases that predate it.
-ALTER TABLE mentorship_requests ADD COLUMN checked_at TIMESTAMP NULL;
+-- mentee's progress. Declared in the CREATE TABLE above, and MySQL has no
+-- ADD COLUMN IF NOT EXISTS — so the ALTER that used to sit here aborted a fresh
+-- load at this line, exactly as nav_layout's did. Same answer: a database that
+-- predates the column gets it by hand, or from dev's ddl-auto: update.
 
 CREATE TABLE IF NOT EXISTS whatsapp_otp_tokens (
   token_hash  VARCHAR(255) NOT NULL,
