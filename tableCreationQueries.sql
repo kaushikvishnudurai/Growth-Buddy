@@ -24,7 +24,7 @@ USE growth_buddy;
 -- =========================================================
 -- USERS
 -- =========================================================
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
   id              CHAR(36)     NOT NULL,
   email           VARCHAR(254) NOT NULL,
   email_verified  BOOLEAN      NOT NULL DEFAULT FALSE,
@@ -46,9 +46,7 @@ CREATE TABLE users (
   UNIQUE KEY uq_users_email (email)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-
-
-CREATE TABLE password_credentials (
+CREATE TABLE IF NOT EXISTS password_credentials (
   user_id          CHAR(36)     NOT NULL,
   password_hash    VARCHAR(255) NOT NULL,                 -- argon2id recommended
   algo             VARCHAR(32)  NOT NULL DEFAULT 'argon2id',
@@ -57,7 +55,7 @@ CREATE TABLE password_credentials (
   CONSTRAINT fk_pw_creds_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE sessions (
+CREATE TABLE IF NOT EXISTS sessions (
   id                  CHAR(36)     NOT NULL,
   user_id             CHAR(36)     NOT NULL,
   refresh_token_hash  VARCHAR(255) NOT NULL,              -- store hash, not the token
@@ -74,7 +72,7 @@ CREATE TABLE sessions (
   CONSTRAINT fk_session_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE email_verification_tokens (
+CREATE TABLE IF NOT EXISTS email_verification_tokens (
   token_hash       VARCHAR(255) NOT NULL,
   user_id          CHAR(36)     NOT NULL,
   expires_at       TIMESTAMP    NOT NULL,
@@ -84,7 +82,7 @@ CREATE TABLE email_verification_tokens (
   CONSTRAINT fk_evt_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE password_reset_tokens (
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
   token_hash       VARCHAR(255) NOT NULL,
   user_id          CHAR(36)     NOT NULL,
   expires_at       TIMESTAMP    NOT NULL,
@@ -94,9 +92,7 @@ CREATE TABLE password_reset_tokens (
   CONSTRAINT fk_prt_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-
-
-CREATE TABLE tasks (
+CREATE TABLE IF NOT EXISTS tasks (
   id              CHAR(36)     NOT NULL,
   user_id         CHAR(36)     NOT NULL,
   title           VARCHAR(255) NOT NULL,
@@ -114,7 +110,7 @@ CREATE TABLE tasks (
   CONSTRAINT fk_tasks_user     FOREIGN KEY (user_id)     REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE task_completion_history (
+CREATE TABLE IF NOT EXISTS task_completion_history (
   id              CHAR(36)     NOT NULL,
   user_id         CHAR(36)     NOT NULL,
   task_id         CHAR(36)     NOT NULL,
@@ -130,7 +126,7 @@ CREATE TABLE task_completion_history (
 -- =========================================================
 -- HABITS  (recurrence is a column on the habit itself)
 -- =========================================================
-CREATE TABLE habits (
+CREATE TABLE IF NOT EXISTS habits (
   id              CHAR(36)     NOT NULL,
   user_id         CHAR(36)     NOT NULL,
   name            VARCHAR(120) NOT NULL,
@@ -146,7 +142,7 @@ CREATE TABLE habits (
   CONSTRAINT fk_habits_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE habit_checkins (
+CREATE TABLE IF NOT EXISTS habit_checkins (
   habit_id        CHAR(36)     NOT NULL,
   user_id         CHAR(36)     NOT NULL,
   log_date        DATE         NOT NULL,                  -- in user's local TZ at write time
@@ -160,7 +156,7 @@ CREATE TABLE habit_checkins (
   CONSTRAINT fk_habit_checkin_user  FOREIGN KEY (user_id)  REFERENCES users(id)  ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE habit_streaks (
+CREATE TABLE IF NOT EXISTS habit_streaks (
   habit_id        CHAR(36) NOT NULL,
   current_streak  INT      NOT NULL DEFAULT 0,
   longest_streak  INT      NOT NULL DEFAULT 0,
@@ -171,7 +167,7 @@ CREATE TABLE habit_streaks (
 
 -- One freeze token granted per ISO week (Monday-anchored), capped; spent to
 -- protect a habit day (planned rest or rescue of a missed day).
-CREATE TABLE streak_freeze_wallets (
+CREATE TABLE IF NOT EXISTS streak_freeze_wallets (
   user_id     CHAR(36) NOT NULL,
   tokens      INT      NOT NULL DEFAULT 1,
   week_anchor DATE     NOT NULL,
@@ -182,7 +178,7 @@ CREATE TABLE streak_freeze_wallets (
 -- =========================================================
 -- WATER TRACKER
 -- =========================================================
-CREATE TABLE water_goals (
+CREATE TABLE IF NOT EXISTS water_goals (
   user_id         CHAR(36) NOT NULL,
   goal_ml         INT      NOT NULL DEFAULT 2000,
   updated_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -191,7 +187,7 @@ CREATE TABLE water_goals (
   CONSTRAINT ck_water_goal_range CHECK (goal_ml BETWEEN 250 AND 10000)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE water_entries (
+CREATE TABLE IF NOT EXISTS water_entries (
   id              CHAR(36)    NOT NULL,
   user_id         CHAR(36)  NOT NULL,
   amount_ml       INT       NOT NULL,
@@ -208,7 +204,7 @@ CREATE TABLE water_entries (
 -- =========================================================
 -- FOOD CALORIE TRACKER
 -- =========================================================
-CREATE TABLE food_entries (
+CREATE TABLE IF NOT EXISTS food_entries (
   id              CHAR(36)     NOT NULL,
   user_id         CHAR(36)     NOT NULL,
   food_name       VARCHAR(255) NOT NULL,
@@ -231,7 +227,7 @@ CREATE TABLE food_entries (
 
 -- Recent food-photo analyses (the "recent scans" list); capped to 12 per user
 -- on read.
-CREATE TABLE food_photo_logs (
+CREATE TABLE IF NOT EXISTS food_photo_logs (
   id              CHAR(36)     NOT NULL,
   user_id         CHAR(36)     NOT NULL,
   log_date        DATE         NOT NULL,
@@ -248,7 +244,7 @@ CREATE TABLE food_photo_logs (
 -- =========================================================
 -- GOALS
 -- =========================================================
-CREATE TABLE goals (
+CREATE TABLE IF NOT EXISTS goals (
   id              CHAR(36)   NOT NULL,
   user_id         CHAR(36)   NOT NULL,
   title           VARCHAR(255) NOT NULL,
@@ -266,7 +262,7 @@ CREATE TABLE goals (
   CONSTRAINT fk_goal_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE goal_actions (
+CREATE TABLE IF NOT EXISTS goal_actions (
   id              CHAR(36)   NOT NULL,
   goal_id         CHAR(36)   NOT NULL,
   user_id         CHAR(36)   NOT NULL,
@@ -280,14 +276,10 @@ CREATE TABLE goal_actions (
   CONSTRAINT fk_goal_action_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-
-
-
-
 -- =========================================================
 -- DAILY SCORE
 -- =========================================================
-CREATE TABLE daily_scores (
+CREATE TABLE IF NOT EXISTS daily_scores (
   user_id         CHAR(36) NOT NULL,
   score_date      DATE     NOT NULL,
   score           INT      NOT NULL,
@@ -304,7 +296,7 @@ CREATE TABLE daily_scores (
 -- Per-day wellness check-ins (sleep + mood) and a snapshot of headline metrics
 -- (score / water / calories). Backs the Report trends + insights engine; every
 -- column is nullable so a row may hold any subset.
-CREATE TABLE daily_logs (
+CREATE TABLE IF NOT EXISTS daily_logs (
   user_id        CHAR(36) NOT NULL,
   log_date       DATE     NOT NULL,
   bedtime        VARCHAR(5),
@@ -327,7 +319,7 @@ CREATE TABLE daily_logs (
 -- =========================================================
 -- QUOTES
 -- =========================================================
-CREATE TABLE quotes (
+CREATE TABLE IF NOT EXISTS quotes (
   id              CHAR(36)     NOT NULL,
   body            TEXT         NOT NULL,
   author          VARCHAR(120) NULL,
@@ -337,7 +329,7 @@ CREATE TABLE quotes (
 -- =========================================================
 -- MENTOR
 -- =========================================================
-CREATE TABLE mentor_threads (
+CREATE TABLE IF NOT EXISTS mentor_threads (
   id              CHAR(36)     NOT NULL,
   user_id         CHAR(36)     NOT NULL,
   title           VARCHAR(255) NULL,
@@ -347,7 +339,7 @@ CREATE TABLE mentor_threads (
   CONSTRAINT fk_mentor_thread_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE mentor_messages (
+CREATE TABLE IF NOT EXISTS mentor_messages (
   id              CHAR(36)    NOT NULL,
   thread_id       CHAR(36)  NOT NULL,
   role            ENUM('user','assistant','system') NOT NULL,
@@ -361,7 +353,7 @@ CREATE TABLE mentor_messages (
 -- =========================================================
 -- GROWTH CIRCLES
 -- =========================================================
-CREATE TABLE circles (
+CREATE TABLE IF NOT EXISTS circles (
   id              CHAR(36)     NOT NULL,
   name            VARCHAR(120) NOT NULL,
   goal            TEXT         NULL,
@@ -372,7 +364,7 @@ CREATE TABLE circles (
   CONSTRAINT fk_circles_creator FOREIGN KEY (created_by) REFERENCES users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE circle_members (
+CREATE TABLE IF NOT EXISTS circle_members (
   circle_id       CHAR(36) NOT NULL,
   user_id         CHAR(36) NOT NULL,
   role            ENUM('owner','member') NOT NULL DEFAULT 'member',
@@ -383,7 +375,7 @@ CREATE TABLE circle_members (
   CONSTRAINT fk_circle_member_user   FOREIGN KEY (user_id)   REFERENCES users(id)   ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE circle_posts (
+CREATE TABLE IF NOT EXISTS circle_posts (
   id              CHAR(36)    NOT NULL,
   circle_id       CHAR(36)  NOT NULL,
   user_id         CHAR(36)  NOT NULL,
@@ -398,7 +390,7 @@ CREATE TABLE circle_posts (
 
 -- Time-boxed habit challenges for a circle; members are ranked by check-ins
 -- completed during [start_date, end_date].
-CREATE TABLE circle_challenges (
+CREATE TABLE IF NOT EXISTS circle_challenges (
   id              CHAR(36)    NOT NULL,
   circle_id       CHAR(36)  NOT NULL,
   title           VARCHAR(120) NOT NULL,
@@ -411,9 +403,6 @@ CREATE TABLE circle_challenges (
   CONSTRAINT fk_circle_challenge_circle FOREIGN KEY (circle_id) REFERENCES circles(id) ON DELETE CASCADE,
   CONSTRAINT fk_circle_challenge_user   FOREIGN KEY (created_by) REFERENCES users(id)  ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-
-
 
 -- =====================================================================
 -- v2 additions: customisable habits, notifications bell, mentorship invites
@@ -494,48 +483,24 @@ CREATE TABLE IF NOT EXISTS notes (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =====================================================================
--- Migrations (run once per environment that already has v1 schema).
--- Wrap each ALTER in its own statement so a re-run that errors on the
--- duplicate column doesn't abort the whole script.
+-- Migrations live at the END of this file, below every CREATE TABLE, and go
+-- through gb_add_column so they are safe on a fresh database, on one that
+-- already has the column, and on a re-run. See the block down there.
 -- =====================================================================
 
 -- Habit customisation columns (v2)
-ALTER TABLE habits ADD COLUMN color VARCHAR(16) NULL AFTER icon;
-ALTER TABLE habits ADD COLUMN reminder_time TIME NULL AFTER cadence;
 
 -- User profile & nutrition columns (v2)
 -- These are auto-applied at startup by Hibernate ddl-auto: update,
 -- but listed here for fresh installs and documentation.
-ALTER TABLE users ADD COLUMN whatsapp_number  VARCHAR(20)    NULL;
-ALTER TABLE users ADD COLUMN whatsapp_enabled BOOLEAN        NOT NULL DEFAULT FALSE;
-ALTER TABLE users ADD COLUMN age_years        INT            NULL;
-ALTER TABLE users ADD COLUMN height_cm        INT            NULL;
-ALTER TABLE users ADD COLUMN weight_kg        DECIMAL(5,1)   NULL;
-ALTER TABLE users ADD COLUMN diet_preference  VARCHAR(64)    NULL;
-ALTER TABLE users ADD COLUMN about_me         VARCHAR(500)   NULL;
-ALTER TABLE users ADD COLUMN daily_food_goal_kcal INT        NULL;
-ALTER TABLE users ADD COLUMN daily_water_goal_ml  INT        NULL;
-ALTER TABLE users ADD COLUMN gender               VARCHAR(20) NULL;
-ALTER TABLE users ADD COLUMN fitness_goal         VARCHAR(100) NULL;
-ALTER TABLE users ADD COLUMN whatsapp_verified    BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- Present in the entity and read in 24 places, but never in this file: a fresh
 -- database built from it produced a users table the app could not query at all.
-ALTER TABLE users ADD COLUMN favourite_dish   VARCHAR(120) NULL;
-ALTER TABLE users ADD COLUMN allergic_to      VARCHAR(255) NULL;
-ALTER TABLE users ADD COLUMN feature_prefs    JSON         NULL;
-ALTER TABLE users ADD COLUMN ui_prefs         JSON         NULL;
 
 -- nav_layout is declared in the users CREATE TABLE above, so it needs no ALTER
 -- here: adding it twice made this file abort mid-load on a fresh database,
 -- leaving 28 of 45 tables. Upgrading an older DB that predates the column?
 -- Run the ALTER by hand, or let dev's ddl-auto: update add it.
-
--- "Checked today" tick on the Circle screen: when the mentor last opened this
--- mentee's progress. Declared in the CREATE TABLE above, and MySQL has no
--- ADD COLUMN IF NOT EXISTS — so the ALTER that used to sit here aborted a fresh
--- load at this line, exactly as nav_layout's did. Same answer: a database that
--- predates the column gets it by hand, or from dev's ddl-auto: update.
 
 CREATE TABLE IF NOT EXISTS whatsapp_otp_tokens (
   token_hash  VARCHAR(255) NOT NULL,
@@ -612,12 +577,9 @@ ALTER TABLE family_members
 
 -- Family invite-only flag (v3.2): rows created solely to carry an invite are
 -- removed (not orphaned) when the invitee declines. Run once.
-ALTER TABLE family_members ADD COLUMN invite_only BOOLEAN NOT NULL DEFAULT FALSE AFTER status;
 
 -- Family member physique (v3.3): height/weight for nutrition tailoring.
 -- ddl-auto: update auto-adds these nullable columns; listed for fresh installs.
-ALTER TABLE family_members ADD COLUMN height_cm INT NULL AFTER gender;
-ALTER TABLE family_members ADD COLUMN weight_kg INT NULL AFTER height_cm;
 
 -- =========================================================
 -- MONEY BUDDY  (v4)
@@ -627,7 +589,7 @@ ALTER TABLE family_members ADD COLUMN weight_kg INT NULL AFTER height_cm;
 -- client-side, so there is no server-side query that would need normalized
 -- tables. ddl-auto: update creates this automatically; listed for fresh installs.
 -- =========================================================
-CREATE TABLE money_state (
+CREATE TABLE IF NOT EXISTS money_state (
   user_id    CHAR(36)  NOT NULL,
   data       JSON      NOT NULL,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -644,7 +606,7 @@ CREATE TABLE money_state (
 -- ddl-auto emits no FK to users(id) and collates utf8mb4_unicode_ci.
 -- Match a section above if you ever normalise them.
 -- =========================================================
-CREATE TABLE `calendar_reminders` (
+CREATE TABLE IF NOT EXISTS `calendar_reminders` (
   `id` char(36) NOT NULL,
   `anchor_date` date NOT NULL,
   `created_at` datetime(6) NOT NULL,
@@ -662,7 +624,7 @@ CREATE TABLE `calendar_reminders` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ;
 
-CREATE TABLE `calendar_reminder_skips` (
+CREATE TABLE IF NOT EXISTS `calendar_reminder_skips` (
   `reminder_id` char(36) NOT NULL,
   `skip_date` date NOT NULL,
   PRIMARY KEY (`reminder_id`,`skip_date`),
@@ -670,7 +632,7 @@ CREATE TABLE `calendar_reminder_skips` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ;
 
-CREATE TABLE `reminder_dispatch_log` (
+CREATE TABLE IF NOT EXISTS `reminder_dispatch_log` (
   `id` char(36) NOT NULL,
   `channel` varchar(16) NOT NULL,
   `created_at` datetime(6) NOT NULL,
@@ -683,7 +645,7 @@ CREATE TABLE `reminder_dispatch_log` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ;
 
-CREATE TABLE `push_subscriptions` (
+CREATE TABLE IF NOT EXISTS `push_subscriptions` (
   `id` char(36) NOT NULL,
   `auth` varchar(255) NOT NULL,
   `created_at` datetime(6) NOT NULL,
@@ -694,7 +656,7 @@ CREATE TABLE `push_subscriptions` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ;
 
-CREATE TABLE `focus_sessions` (
+CREATE TABLE IF NOT EXISTS `focus_sessions` (
   `id` char(36) NOT NULL,
   `completed_at` datetime(6) NOT NULL,
   `duration_sec` int NOT NULL,
@@ -705,7 +667,7 @@ CREATE TABLE `focus_sessions` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ;
 
-CREATE TABLE `weekly_reviews` (
+CREATE TABLE IF NOT EXISTS `weekly_reviews` (
   `id` char(36) NOT NULL,
   `focus` varchar(255) DEFAULT NULL,
   `saved_at` datetime(6) NOT NULL,
@@ -717,7 +679,7 @@ CREATE TABLE `weekly_reviews` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ;
 
-CREATE TABLE `family_dish_preferences` (
+CREATE TABLE IF NOT EXISTS `family_dish_preferences` (
   `id` char(36) NOT NULL,
   `dish_name` varchar(160) NOT NULL,
   `family_id` char(36) NOT NULL,
@@ -729,7 +691,7 @@ CREATE TABLE `family_dish_preferences` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ;
 
-CREATE TABLE `family_pantry_items` (
+CREATE TABLE IF NOT EXISTS `family_pantry_items` (
   `id` char(36) NOT NULL,
   `category` varchar(32) DEFAULT NULL,
   `created_at` datetime(6) NOT NULL,
@@ -745,7 +707,7 @@ CREATE TABLE `family_pantry_items` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ;
 
-CREATE TABLE `family_shopping_items` (
+CREATE TABLE IF NOT EXISTS `family_shopping_items` (
   `id` char(36) NOT NULL,
   `checked` bit(1) NOT NULL,
   `created_at` datetime(6) NOT NULL,
@@ -760,7 +722,7 @@ CREATE TABLE `family_shopping_items` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ;
 
-CREATE TABLE `family_favourite_menus` (
+CREATE TABLE IF NOT EXISTS `family_favourite_menus` (
   `id` char(36) NOT NULL,
   `created_at` datetime(6) NOT NULL,
   `created_by_user_id` char(36) NOT NULL,
@@ -773,7 +735,7 @@ CREATE TABLE `family_favourite_menus` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ;
 
-CREATE TABLE `family_multi_day_plans` (
+CREATE TABLE IF NOT EXISTS `family_multi_day_plans` (
   `id` char(36) NOT NULL,
   `created_at` datetime(6) NOT NULL,
   `days` int NOT NULL,
@@ -795,7 +757,7 @@ CREATE TABLE `family_multi_day_plans` (
 -- "flow:identity", so the table can never accumulate raw email addresses.
 -- ---------------------------------------------------------------------------
 
-CREATE TABLE `rate_limit_counters` (
+CREATE TABLE IF NOT EXISTS `rate_limit_counters` (
   `bucket_key` char(64) NOT NULL,
   `window_start` bigint NOT NULL,
   `hits` int NOT NULL DEFAULT 0,
@@ -804,7 +766,7 @@ CREATE TABLE `rate_limit_counters` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ;
 
-CREATE TABLE `login_attempts` (
+CREATE TABLE IF NOT EXISTS `login_attempts` (
   `attempt_key` char(64) NOT NULL,
   `failures` int NOT NULL DEFAULT 0,
   `locked_until_ms` bigint NOT NULL DEFAULT 0,
@@ -813,3 +775,61 @@ CREATE TABLE `login_attempts` (
   KEY `ix_login_attempts_idle` (`updated_at_ms`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ;
+
+-- =====================================================================
+-- Migrations — safe on a fresh database, on an existing one, and on a re-run.
+--
+-- These used to be bare ALTERs, under a comment claiming a duplicate-column
+-- error wouldn't abort the script. It does: the mysql client stops at the first
+-- error and skips everything after it, which is how a fresh load twice left the
+-- database missing half its tables. A bare ALTER can't reach prod either, where
+-- the column is already there — and prod runs ddl-auto: none, so this file is
+-- the only thing that ever adds a column to it.
+--
+-- Add a column to an @Entity? Put it in the CREATE TABLE above for fresh
+-- installs AND add a line here, or the next deploy reads a column the live
+-- database hasn't got. SchemaCoverageTest fails the build on a bare ALTER.
+-- =====================================================================
+
+DROP PROCEDURE IF EXISTS gb_add_column;
+DELIMITER $$
+CREATE PROCEDURE gb_add_column(IN tbl VARCHAR(64), IN col VARCHAR(64), IN spec TEXT)
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE table_schema = DATABASE() AND table_name = tbl AND column_name = col
+  ) THEN
+    SET @gb_ddl = CONCAT('ALTER TABLE `', tbl, '` ADD COLUMN ', spec);
+    PREPARE gb_stmt FROM @gb_ddl;
+    EXECUTE gb_stmt;
+    DEALLOCATE PREPARE gb_stmt;
+  END IF;
+END$$
+DELIMITER ;
+
+CALL gb_add_column('habits', 'color', 'color VARCHAR(16) NULL AFTER icon');
+CALL gb_add_column('habits', 'reminder_time', 'reminder_time TIME NULL AFTER cadence');
+CALL gb_add_column('users', 'whatsapp_number', 'whatsapp_number VARCHAR(20)    NULL');
+CALL gb_add_column('users', 'whatsapp_enabled', 'whatsapp_enabled BOOLEAN        NOT NULL DEFAULT FALSE');
+CALL gb_add_column('users', 'age_years', 'age_years INT            NULL');
+CALL gb_add_column('users', 'height_cm', 'height_cm INT            NULL');
+CALL gb_add_column('users', 'weight_kg', 'weight_kg DECIMAL(5,1)   NULL');
+CALL gb_add_column('users', 'diet_preference', 'diet_preference VARCHAR(64)    NULL');
+CALL gb_add_column('users', 'about_me', 'about_me VARCHAR(500)   NULL');
+CALL gb_add_column('users', 'daily_food_goal_kcal', 'daily_food_goal_kcal INT        NULL');
+CALL gb_add_column('users', 'daily_water_goal_ml', 'daily_water_goal_ml INT        NULL');
+CALL gb_add_column('users', 'gender', 'gender VARCHAR(20) NULL');
+CALL gb_add_column('users', 'fitness_goal', 'fitness_goal VARCHAR(100) NULL');
+CALL gb_add_column('users', 'whatsapp_verified', 'whatsapp_verified BOOLEAN NOT NULL DEFAULT FALSE');
+CALL gb_add_column('users', 'favourite_dish', 'favourite_dish VARCHAR(120) NULL');
+CALL gb_add_column('users', 'allergic_to', 'allergic_to VARCHAR(255) NULL');
+CALL gb_add_column('users', 'feature_prefs', 'feature_prefs JSON         NULL');
+CALL gb_add_column('users', 'ui_prefs', 'ui_prefs JSON         NULL');
+CALL gb_add_column('family_members', 'invite_only', 'invite_only BOOLEAN NOT NULL DEFAULT FALSE AFTER status');
+CALL gb_add_column('family_members', 'height_cm', 'height_cm INT NULL AFTER gender');
+CALL gb_add_column('family_members', 'weight_kg', 'weight_kg INT NULL AFTER height_cm');
+CALL gb_add_column('mentorship_requests', 'checked_at', 'checked_at TIMESTAMP NULL');
+CALL gb_add_column('users', 'nav_layout', 'nav_layout VARCHAR(255) NULL');
+CALL gb_add_column('calendar_reminders', 'sound', 'sound VARCHAR(16) NULL');
+
+DROP PROCEDURE IF EXISTS gb_add_column;

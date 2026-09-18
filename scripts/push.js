@@ -199,7 +199,11 @@ export function upcomingReminderAlarms(reminders, now, days = HORIZON_DAYS) {
       // ring at, and 00:00 would ring in the middle of the night.
       if (!rem || !rem.time || !occursOn(rem, key)) continue;
       const [hh, mm] = String(rem.time).split(':').map(Number);
-      const at = atOn(day, (hh || 0) * 60 + (mm || 0));
+      // A time that doesn't parse would make an Invalid Date, and every check
+      // below passes on NaN — the alarm would be queued with a NaN id and the
+      // whole batch rejected. Skip it instead.
+      if (!Number.isFinite(hh) || !Number.isFinite(mm)) continue;
+      const at = atOn(day, hh * 60 + mm);
       if (at.getTime() <= now.getTime()) continue;
       // A reminder can carry its own chime key; null/absent means the user's
       // default, which only `upcomingAlarms` below knows.
@@ -262,16 +266,18 @@ export function upcomingAlarms({ reminders, water, sound } = {}, now = new Date(
   // so deleting a reminder silently wiped delivered ones off the lock screen.
   // Everything queued is in the future and everything delivered is in the past,
   // and a later minute is always a bigger number, so the two can't collide.
-  let slot = 0;
-  let lastMinute = -1;
+  const used = new Set();
   return queue.slice(0, MAX_QUEUED).map((n) => {
-    const minute = Math.floor(n.at.getTime() / 60000);
-    slot = minute === lastMinute ? slot + 1 : 0;
-    lastMinute = minute;
+    // 4 bits of room for alarms sharing a minute, then step forward until the
+    // id is free. Clamping the 17th into the 16th slot instead would have let
+    // one reminder quietly overwrite another. Every id still sits at or above
+    // its own minute, which is the property that keeps it clear of anything
+    // already delivered — and inside a signed 32-bit int until the year 2225.
+    let id = Math.floor(n.at.getTime() / 60000) * 16;
+    while (used.has(id)) id++;
+    used.add(id);
     return Object.assign(n, {
-      // ponytail: 4 bits for same-minute alarms, which is 16 reminders at one
-      // time. Keeps the id inside a signed 32-bit int until the year 2225.
-      id: minute * 16 + Math.min(slot, 15),
+      id,
       // Each reminder's own tone if it set one, the user's default otherwise.
       // The water nudge never sets one, so it always follows the default.
       sound: soundFile(n.sound || sound),

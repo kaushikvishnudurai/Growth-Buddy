@@ -132,6 +132,14 @@ body {
   gap: 10px;
   flex: none;
 }
+/* The two panel mounts must not be flex items: empty divs still take a `gap`
+   each, which pushed the avatar 20px left of the row's edge and left the panels
+   aligned to nothing. `contents` means they generate no box at all, and the
+   absolutely-positioned panel inside is unaffected. */
+#gb-notif-slot,
+#gb-profile-slot {
+  display: contents;
+}
 .gb-iconbtn {
   width: 42px;
   height: 42px;

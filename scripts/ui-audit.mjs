@@ -261,8 +261,18 @@ for (const panel of [
       const p = pop.getBoundingClientRect();
       const r = row.getBoundingClientRect();
       const h = head.getBoundingClientRect();
+      // Two separate things, and checking only the first hid a bug: the panel
+      // hangs off the action row's edge (a wide panel aligns to the header, not
+      // to the bell 52px inboard of it) — AND that edge must be a real control's
+      // edge. Two empty slot divs once added 20px of flex gap past the avatar,
+      // which moved both edges together and looked perfect.
+      const last = [...row.children]
+        .map((c) => c.getBoundingClientRect())
+        .filter((b) => b.width > 0)
+        .reduce((a, b) => (b.right > a.right ? b : a));
       return {
         rightGap: Math.round(p.right - r.right),
+        trailingBox: Math.round(r.right - last.right),
         belowHeader: p.top >= h.bottom - 1,
         onScreen: p.left >= -1 && p.right <= window.innerWidth + 1,
       };
@@ -272,7 +282,14 @@ for (const panel of [
       continue;
     }
     if (Math.abs(geo.rightGap) > 1)
-      problems.push(`[dialogs] ${panel.name} @ ${width}px: right edge off the bell by ${geo.rightGap}px`);
+      problems.push(
+        `[dialogs] ${panel.name} @ ${width}px: right edge off the action row by ${geo.rightGap}px`
+      );
+    if (geo.trailingBox > 1)
+      problems.push(
+        `[dialogs] ${panel.name} @ ${width}px: ${geo.trailingBox}px of empty box past the last control — ` +
+          'the panel is aligned to nothing'
+      );
     if (!geo.belowHeader) problems.push(`[dialogs] ${panel.name} @ ${width}px: overlaps the header`);
     if (!geo.onScreen) problems.push(`[dialogs] ${panel.name} @ ${width}px: spills off screen`);
     await dlg.evaluate(() => document.body.click());

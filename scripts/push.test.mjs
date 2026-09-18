@@ -144,6 +144,37 @@ assert.deepEqual(upcomingWaterAlarms({ on: true, from: '21:00', to: '09:00' }, N
   );
 }
 
+/* Twenty reminders at the same minute. Ids used to clamp into 16 slots, so the
+   17th onward quietly took an id another alarm already held and one of them
+   never fired. */
+{
+  const many = Array.from({ length: 20 }, (_, i) => ({
+    id: 'r' + i,
+    text: 'stand up ' + i,
+    date: '2026-09-16',
+    time: '18:00',
+    repeat: 'none',
+  }));
+  const q = upcomingAlarms({ reminders: many, sound: 'bloom' }, NOW);
+  assert.equal(q.length, 20, 'all twenty are queued');
+  assert.equal(new Set(q.map((n) => n.id)).size, 20, 'twenty distinct ids, no clamping');
+  const floor = Math.floor(new Date(2026, 8, 16, 18, 0).getTime() / 60000) * 16;
+  assert.ok(
+    q.every((n) => n.id >= floor),
+    'every id still sits at or above its own minute, clear of anything delivered'
+  );
+}
+
+/* A time that doesn't parse must not become an alarm: NaN passes every check
+   below it and the whole batch is rejected with a NaN id in it. */
+{
+  const q = upcomingAlarms(
+    { reminders: [{ id: 'x', text: 'broken', date: '2026-09-16', time: 'not-a-time' }] },
+    NOW
+  );
+  assert.equal(q.length, 0, 'an unparseable time is skipped, not queued');
+}
+
 /* 'off', the user's own upload and anything unknown have no rendered file, so
    they fall through to the phone's own sound rather than pointing a channel at
    nothing. */

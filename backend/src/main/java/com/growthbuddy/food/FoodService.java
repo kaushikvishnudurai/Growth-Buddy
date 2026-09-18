@@ -267,7 +267,16 @@ public class FoodService {
         // Food screen the moment it was saved.
         Instant ts = req.loggedAt() != null ? req.loggedAt() : Instant.now();
         e.setLoggedAt(ts);
-        e.setLogDate(ts.atZone(clock.zoneOf(userId)).toLocalDate());
+        LocalDate logDate = ts.atZone(clock.zoneOf(userId)).toLocalDate();
+        // Backdating is the point of `loggedAt` — forward-dating is not. The form
+        // caps its day picker at today, but this is an API anyone can POST to, and
+        // a meal filed under next week sits in a summary nothing ever opens.
+        // Compared as a DAY in the user's own zone, so a client clock a few
+        // seconds ahead of the server isn't an error.
+        if (logDate.isAfter(clock.today(userId))) {
+            throw ApiException.badRequest("You can't log food for a day that hasn't happened yet.");
+        }
+        e.setLogDate(logDate);
 
         FoodEntry saved = entries.save(e);
         return summary(userId, saved.getLogDate());

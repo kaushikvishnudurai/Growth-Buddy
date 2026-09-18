@@ -48,7 +48,7 @@ fix the doc line if it was wrong. A doc you touch and don't update is worse than
   **`node scripts/tokens.test.mjs`** (every bare `var(--x)` in `styles/` resolves — two dead
   tokens had been silently voiding whole declarations, one of them the modal's transition),
   `node scripts/gen-chimes.mjs` (regenerates, and asserts none of them is silent or clipping),
-  `money.js` and `chime.js` `_demo()` on Vite DEV, `./mvnw test` (135 tests — including the three that guard
+  `money.js` and `chime.js` `_demo()` on Vite DEV, `./mvnw test` (138 tests — including the three that guard
   invariants rather than code: `SchemaCoverageTest`, `AccountDeletionCoverageTest`,
   `SharedRecurrenceCasesTest`), and `scripts/ui-audit.mjs` — walks every screen at
   phone + desktop widths, screenshots each, then **opens one dialog per module and both header
@@ -66,6 +66,12 @@ fix the doc line if it was wrong. A doc you touch and don't update is worse than
 - Edited `SOUNDS` in `chime.js` → re-run **`node scripts/gen-chimes.mjs`**. The same table is the
   phone's notification sound, rendered to `public/gb-*.wav`; the in-app chime and the lock-screen
   one drift apart silently otherwise.
+- **New column on an existing `@Entity` → add it to that table's `CREATE TABLE` in
+  `tableCreationQueries.sql` AND add a `CALL gb_add_column(...)` line at the bottom of that file.**
+  Prod runs `ddl-auto: none`, so the file is the only thing that ever adds a column there — a column
+  that exists only in the `CREATE TABLE` reaches a fresh database and never the live one, and the
+  first read of it 500s. Never a bare `ALTER TABLE … ADD COLUMN`: it aborts the load on whichever
+  database already has the column, and `SchemaCoverageTest` fails the build on one.
 - New icon → add it to `scripts/icons.js`. New screen → `SCREENS` in `app.js` (+ `NAV_CATALOG` in
   `gb-kit.js` for a nav slot). New entity → add the table to `tableCreationQueries.sql` too;
   `ddl-auto: update` hides the omission in dev and breaks prod, and `SchemaCoverageTest` now

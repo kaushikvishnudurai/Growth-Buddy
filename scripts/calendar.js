@@ -553,7 +553,10 @@ function buildForm() {
     'select',
     { class: 'gb-input', 'aria-label': 'Reminder tone' },
     [h('option', { value: '' }, 'Default tone')].concat(
-      CHIMES.map((c) => h('option', { value: c.key }, c.label))
+      // 'Silent' is only silent in the app: Android takes a notification's sound
+      // from its channel, and a reminder with no sound file falls back to the
+      // phone's own. Say so here rather than let the label promise quiet.
+      CHIMES.map((c) => h('option', { value: c.key }, c.key === 'off' ? 'Silent in the app' : c.label))
     )
   );
   // Picking one is the preview, the same rule as the Alerts pane. Nothing plays

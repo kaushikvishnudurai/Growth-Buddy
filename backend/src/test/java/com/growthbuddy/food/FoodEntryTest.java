@@ -1,6 +1,7 @@
 package com.growthbuddy.food;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -9,6 +10,7 @@ import com.growthbuddy.mentor.OpenAIClient;
 import com.growthbuddy.user.UserClock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
@@ -67,6 +69,28 @@ class FoodEntryTest {
         service.addEntry(USER, new AddFoodEntryRequest("Dinner", 250, MealType.home,
                 null, null, null, EVENING, 420));
         assertThat(saved().getLogDate()).isEqualTo(LocalDate.of(2026, 9, 12));
+    }
+
+    /**
+     * `loggedAt` exists so a meal can be filed under a day that has already
+     * happened. The form caps its picker at today; this is the same rule for the
+     * API, which anyone can POST to.
+     */
+    @Test
+    void aMealCannotBeLoggedForADayThatHasNotHappened() {
+        FoodService service = serviceInZone("UTC");
+        assertThatThrownBy(() -> service.addEntry(USER, new AddFoodEntryRequest("Tomorrow's lunch",
+                250, MealType.home, null, null, null, EVENING.plus(2, ChronoUnit.DAYS), 420)))
+                .hasMessageContaining("hasn't happened yet");
+    }
+
+    /** Backdating still works, and lands on the day it was eaten. */
+    @Test
+    void aBackdatedMealLandsOnItsOwnDay() {
+        FoodService service = serviceInZone("UTC");
+        service.addEntry(USER, new AddFoodEntryRequest("Yesterday's dosa", 250, MealType.home,
+                null, null, null, EVENING.minus(2, ChronoUnit.DAYS), 420));
+        assertThat(saved().getLogDate()).isEqualTo(LocalDate.of(2026, 9, 10));
     }
 
     /** A typed number is the number. No clamp, no adjustment, no estimate. */

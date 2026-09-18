@@ -71,53 +71,48 @@ class SchemaCoverageTest {
     }
 
     /**
-     * A bare {@code ALTER TABLE x ADD COLUMN y} for a column x's own CREATE TABLE
-     * already declares aborts a fresh load at that line — MySQL has no
-     * {@code ADD COLUMN IF NOT EXISTS} — and every statement after it is skipped.
+     * No bare {@code ALTER TABLE … ADD COLUMN} in the schema file — every added
+     * column goes through {@code gb_add_column}, which adds it only if missing.
      *
-     * <p>This has now happened twice: {@code nav_layout} left a fresh database with
-     * 28 of 45 tables, and {@code checked_at} left it with 29 of 47. Both were
-     * invisible here, because the coverage test above only reads the file as text
-     * and never runs it. Prod is built from this file, so the failure lands on a
-     * deploy, not on anyone's laptop.
-     *
-     * <p>An ALTER for a column the CREATE TABLE does NOT have is fine: that is a
-     * genuine migration for an older database.
+     * <p>A bare ALTER cannot be right in both directions at once. On a fresh
+     * database it aborts the load at that line if the CREATE TABLE already has
+     * the column (nav_layout left 28 of 45 tables; checked_at left 29 of 47),
+     * and on an existing one it aborts if the column is already there — which
+     * is every deploy, since prod runs {@code ddl-auto: none} and this file is
+     * the only thing that ever adds a column there.
      */
     @Test
-    void noAlterReAddsAColumnItsCreateTableAlreadyHas() throws IOException {
+    void everyAddedColumnGoesThroughTheAddIfMissingProcedure() throws IOException {
         String sql = Files.readString(repoRoot().resolve("tableCreationQueries.sql"));
-        Set<String> clashes = new TreeSet<>();
-        Matcher alter = ALTER_ADD.matcher(sql);
-        while (alter.find()) {
-            String table = alter.group(1).toLowerCase();
-            String column = alter.group(2).toLowerCase();
-            if (columnsOf(sql, table).contains(column)) {
-                clashes.add(table + "." + column);
+        Set<String> bare = new TreeSet<>();
+        for (String line : sql.split("\\n")) {
+            Matcher m = ALTER_ADD.matcher(line.trim());
+            if (line.trim().toUpperCase().startsWith("ALTER TABLE") && m.find()) {
+                bare.add(m.group(1) + "." + m.group(2));
             }
         }
-        assertThat(clashes)
-                .as("ALTER TABLE … ADD COLUMN for a column the CREATE TABLE already declares — "
-                        + "this aborts a fresh load at that line and skips every statement after it")
+        assertThat(bare)
+                .as("bare ALTER TABLE … ADD COLUMN — use CALL gb_add_column('table', 'col', "
+                        + "'col TYPE …') so the file is safe on a fresh database, on prod, and on a re-run")
                 .isEmpty();
     }
 
-    /** Column names declared inside {@code table}'s CREATE TABLE body. */
-    private static Set<String> columnsOf(String sql, String table) {
-        Matcher m = Pattern.compile(
-                "(?is)CREATE TABLE (?:IF NOT EXISTS )?`?" + Pattern.quote(table) + "`?\\s*\\((.*?)\\n\\)")
-                .matcher(sql);
-        Set<String> out = new TreeSet<>();
-        if (!m.find()) {
-            return out;
-        }
-        for (String line : m.group(1).split("\\n")) {
-            Matcher col = COLUMN.matcher(line.trim());
-            if (col.find()) {
-                out.add(col.group(1).toLowerCase());
+    /**
+     * Every table the file creates is guarded, so running it against a database
+     * that already has them is a no-op rather than an abort at the first one.
+     * That is what makes it usable as the migration it has to be.
+     */
+    @Test
+    void everyCreateTableIsGuarded() throws IOException {
+        String sql = Files.readString(repoRoot().resolve("tableCreationQueries.sql"));
+        Set<String> unguarded = new TreeSet<>();
+        for (String line : sql.split("\\n")) {
+            String t = line.trim();
+            if (t.toUpperCase().startsWith("CREATE TABLE ") && !t.toUpperCase().contains("IF NOT EXISTS")) {
+                unguarded.add(t);
             }
         }
-        return out;
+        assertThat(unguarded).as("CREATE TABLE without IF NOT EXISTS").isEmpty();
     }
 
     private static Set<String> schemaTables() throws IOException {
