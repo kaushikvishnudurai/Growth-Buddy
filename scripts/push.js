@@ -201,7 +201,9 @@ export function upcomingReminderAlarms(reminders, now, days = HORIZON_DAYS) {
       const [hh, mm] = String(rem.time).split(':').map(Number);
       const at = atOn(day, (hh || 0) * 60 + (mm || 0));
       if (at.getTime() <= now.getTime()) continue;
-      out.push({ title: 'Growth Buddy', body: rem.text, at });
+      // A reminder can carry its own chime key; null/absent means the user's
+      // default, which only `upcomingAlarms` below knows.
+      out.push({ title: 'Growth Buddy', body: rem.text, at, sound: rem.sound || null });
     }
   }
   return out;
@@ -252,7 +254,6 @@ function soundFile(key) {
 export function upcomingAlarms({ reminders, water, sound } = {}, now = new Date()) {
   const queue = upcomingReminderAlarms(reminders, now).concat(upcomingWaterAlarms(water, now));
   queue.sort((a, b) => a.at - b.at);
-  const file = soundFile(sound);
   // Ids come from the minute a notification fires in, not its place in the
   // queue. A counter looked safe — the queue is cancelled whole and rebuilt —
   // but cancelling leaves notifications already sitting in the phone's shade
@@ -267,9 +268,14 @@ export function upcomingAlarms({ reminders, water, sound } = {}, now = new Date(
     const minute = Math.floor(n.at.getTime() / 60000);
     slot = minute === lastMinute ? slot + 1 : 0;
     lastMinute = minute;
-    // ponytail: 4 bits for same-minute alarms, which is 16 reminders at one
-    // time. Keeps the id inside a signed 32-bit int until the year 2225.
-    return Object.assign(n, { id: minute * 16 + Math.min(slot, 15), sound: file });
+    return Object.assign(n, {
+      // ponytail: 4 bits for same-minute alarms, which is 16 reminders at one
+      // time. Keeps the id inside a signed 32-bit int until the year 2225.
+      id: minute * 16 + Math.min(slot, 15),
+      // Each reminder's own tone if it set one, the user's default otherwise.
+      // The water nudge never sets one, so it always follows the default.
+      sound: soundFile(n.sound || sound),
+    });
   });
 }
 

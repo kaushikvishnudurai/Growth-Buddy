@@ -173,7 +173,7 @@ class ReminderServiceOccursOnTest {
     void rejectsAnUntilDateBeforeTheStart() {
         ReminderService svc = serviceWith(null); // never reaches the repo
         CreateReminderRequest req = new CreateReminderRequest("Test", TODAY,
-                null, ReminderTag.personal, RepeatFreq.daily, LocalDate.of(2007, 6, 19));
+                null, ReminderTag.personal, RepeatFreq.daily, LocalDate.of(2007, 6, 19), null);
         assertThatThrownBy(() -> svc.create(UUID.randomUUID(), req))
                 .hasMessageContaining("can't be before");
     }
@@ -182,7 +182,7 @@ class ReminderServiceOccursOnTest {
     void acceptsAnUntilDateOnTheStartItself() {
         LocalDate start = TODAY;
         CreateReminderRequest req = new CreateReminderRequest("Test", start, null,
-                ReminderTag.personal, RepeatFreq.daily, start);
+                ReminderTag.personal, RepeatFreq.daily, start, null);
         assertThat(serviceWith(savingRepo()).create(UUID.randomUUID(), req).until()).isEqualTo(start);
     }
 
@@ -191,7 +191,7 @@ class ReminderServiceOccursOnTest {
     @Test
     void ignoresUntilWhenTheReminderDoesNotRepeat() {
         CreateReminderRequest req = new CreateReminderRequest("Test", TODAY,
-                null, ReminderTag.personal, RepeatFreq.none, LocalDate.of(2007, 6, 19));
+                null, ReminderTag.personal, RepeatFreq.none, LocalDate.of(2007, 6, 19), null);
         assertThat(serviceWith(savingRepo()).create(UUID.randomUUID(), req).until()).isNull();
     }
 
@@ -221,9 +221,25 @@ class ReminderServiceOccursOnTest {
     @Test
     void refusesADateInThePast() {
         CreateReminderRequest req = new CreateReminderRequest("Test", TODAY.minusDays(2),
-                null, ReminderTag.personal, RepeatFreq.daily, null);
+                null, ReminderTag.personal, RepeatFreq.daily, null, null);
         assertThatThrownBy(() -> serviceWith(savingRepo()).create(UUID.randomUUID(), req))
                 .hasMessageContaining("already passed");
+    }
+
+    /* A reminder can ring with its own tone. Blank and absent both have to store
+       as null — "" would be a tone key nobody can play, and every read would then
+       have to know that "" means "the user's default" as well as null does. */
+    @Test
+    void keepsItsOwnToneAndStoresNoChoiceAsNull() {
+        assertThat(created(RepeatFreq.none, "droplet").sound()).isEqualTo("droplet");
+        assertThat(created(RepeatFreq.none, "  droplet  ").sound()).isEqualTo("droplet");
+        assertThat(created(RepeatFreq.none, "   ").sound()).isNull();
+        assertThat(created(RepeatFreq.none, null).sound()).isNull();
+    }
+
+    private ReminderResponse created(RepeatFreq repeat, String sound) {
+        return serviceWith(savingRepo()).create(UUID.randomUUID(),
+                new CreateReminderRequest("Test", TODAY, null, ReminderTag.personal, repeat, null, sound));
     }
 
     /* One day of slack, on purpose: a user whose timezone was never captured is
@@ -232,7 +248,7 @@ class ReminderServiceOccursOnTest {
     void acceptsTodayAndTheDayBeforeIt() {
         for (LocalDate d : new LocalDate[] { TODAY, TODAY.minusDays(1), TODAY.plusDays(30) }) {
             CreateReminderRequest req = new CreateReminderRequest("Test", d, null,
-                    ReminderTag.personal, RepeatFreq.none, null);
+                    ReminderTag.personal, RepeatFreq.none, null, null);
             assertThat(serviceWith(savingRepo()).create(UUID.randomUUID(), req).date())
                     .as("create on %s", d).isEqualTo(d);
         }

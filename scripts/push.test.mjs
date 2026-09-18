@@ -122,6 +122,28 @@ assert.deepEqual(upcomingWaterAlarms({ on: true, from: '21:00', to: '09:00' }, N
   );
 }
 
+/* A reminder can carry its own tone. The default is for the ones that don't —
+   including every water nudge, which has no reminder to carry anything. */
+{
+  const q = upcomingAlarms(
+    {
+      reminders: [
+        { id: 'a', text: 'own tone', date: '2026-09-16', time: '18:00', sound: 'droplet' },
+        { id: 'b', text: 'default tone', date: '2026-09-16', time: '19:00' },
+      ],
+      water: { on: true, everyMins: 120, from: '09:00', to: '21:00' },
+      sound: 'marimba',
+    },
+    NOW
+  );
+  assert.equal(q.find((n) => n.body === 'own tone').sound, 'gb-droplet.wav');
+  assert.equal(q.find((n) => n.body === 'default tone').sound, 'gb-marimba.wav');
+  assert.ok(
+    q.filter((n) => n.title === 'Time for water').every((n) => n.sound === 'gb-marimba.wav'),
+    'the water nudge always follows the default tone'
+  );
+}
+
 /* 'off', the user's own upload and anything unknown have no rendered file, so
    they fall through to the phone's own sound rather than pointing a channel at
    nothing. */

@@ -79,6 +79,14 @@ public class CalendarReminder {
     @Column(name = "skip_date", nullable = false)
     private Set<LocalDate> skipDays = new HashSet<>();
 
+    /**
+     * This reminder's own notification tone — a chime key from the frontend's
+     * table, not a file. Null means "whatever tone the user has set in Settings",
+     * which is what every reminder made before this column existed wants.
+     */
+    @Column(length = 16)
+    private String sound;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

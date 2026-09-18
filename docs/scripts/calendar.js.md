@@ -46,6 +46,12 @@ Day-key helpers: `pad`, `keyOf(y,m,d)`, `parseKey`, `todayKey`, `isFutureKey`, `
   **Don't go back to `reportValidity()` here.** It does enforce `min` and does return false, so the
   reminder was refused correctly — but the bubble it draws needs the input focused and vanishes as
   soon as anything else takes focus, so the only thing a user saw was a button that did nothing.
+- **Each reminder can carry its own tone.** The form's Tone `<select>` sends a chime key from
+  `chime.js`; an empty value means "the default from Alerts", which is stored as null so the
+  reminder keeps following that setting when it changes. A `<select>` and not the segmented control
+  the Alerts pane uses — six options don't fit the side panel. Picking one previews it; picking
+  "Default tone" previews nothing, because this file doesn't know which tone that is. The tone is
+  set at creation: there is no reminder-edit flow to change it in.
 - **Past days are read-only.** `ReminderPanel` computes `pastDate` and drops the whole form block
   for any day before today, so a reminder can only be filed on today or later. `app.js`
   `addReminder()` refuses a past `key` for every caller, and `ReminderService.create` rejects it

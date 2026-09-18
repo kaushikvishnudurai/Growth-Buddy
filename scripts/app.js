@@ -629,6 +629,19 @@ function saveUiPrefs(patch) {
 
 /* Which chime a notification makes in the app. Lives in ui_prefs like every
    other preference, so it follows the user to their next device. */
+/* The tone a single notification should make. A reminder carrying its own
+   chime rings with that one — `relatedId` is the reminder it came from — and
+   everything else falls back to the one setting in Alerts. A reminder whose
+   tone key we don't recognise falls back too: playChime() is silent on an
+   unknown key, and a silent reminder is the one outcome nobody chose. */
+function notifySoundFor(n) {
+  if (n && n.kind === 'reminder' && n.relatedId) {
+    const rem = (state.reminders || []).find((r) => r.id === n.relatedId);
+    if (rem && rem.sound && CHIMES.some((c) => c.key === rem.sound)) return rem.sound;
+  }
+  return notifySound();
+}
+
 function notifySound() {
   const p = state.user && state.user.uiPrefs;
   return p && p.notifySound ? p.notifySound : DEFAULT_CHIME;
@@ -1414,7 +1427,7 @@ async function connectWebSocket() {
             // (and whatever you were doing on it) alive.
             repaintOverlays();
             pushToast(n.title, n.kind === 'reminder' ? 'info' : 'success', 6000);
-            playChime(notifySound());
+            playChime(notifySoundFor(n));
           } catch (e) {
             console.warn('Bad notification frame', e);
           }
@@ -4781,7 +4794,7 @@ function retryCalendarFoodDate(key) {
 // to a second click: nothing.
 let addingReminder = false;
 
-async function addReminder(key, text, time, tag, repeat, until) {
+async function addReminder(key, text, time, tag, repeat, until, sound) {
   if (!text || addingReminder) return;
   // A day that has already gone takes no reminders at all — the calendar hides
   // the form on past days, and this is the same rule for every other caller.
@@ -4812,6 +4825,8 @@ async function addReminder(key, text, time, tag, repeat, until) {
       tag: tag || 'personal',
       repeat: repeat || 'none',
       until: until || null,
+      // Empty means "use my default tone", and the server stores that as null.
+      sound: sound || null,
     };
     const created = await api('/api/reminders', {
       method: 'POST',

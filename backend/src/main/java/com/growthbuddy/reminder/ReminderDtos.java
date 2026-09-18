@@ -20,7 +20,15 @@ record CreateReminderRequest(
         LocalTime time,
         ReminderTag tag,
         RepeatFreq repeat,
-        LocalDate until) {
+        LocalDate until,
+        /**
+         * Chime key for this reminder alone; null or blank means the user's
+         * default. Only length is checked here — the tone table lives in
+         * {@code scripts/chime.js}, and duplicating it server-side would leave two
+         * lists to keep in step. An unknown key resolves to the default on the
+         * client, so the worst a bad one does is ring the usual tone.
+         */
+        @Size(max = 16) String sound) {
 }
 
 /** The stored reminder definition (raw, not expanded). */
@@ -33,11 +41,13 @@ record ReminderResponse(
         RepeatFreq repeat,
         LocalDate from,
         LocalDate until,
-        Set<LocalDate> skip) {
+        Set<LocalDate> skip,
+        String sound) {
 
     static ReminderResponse from(CalendarReminder r) {
         return new ReminderResponse(r.getId(), r.getText(), r.getAnchorDate(), r.getTime(),
-                r.getTag(), r.getRepeat(), r.getFromDate(), r.getUntilDate(), r.getSkipDays());
+                r.getTag(), r.getRepeat(), r.getFromDate(), r.getUntilDate(), r.getSkipDays(),
+                r.getSound());
     }
 }
 

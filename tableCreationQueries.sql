@@ -654,6 +654,8 @@ CREATE TABLE `calendar_reminders` (
   `time_of_day` time(6) DEFAULT NULL,
   `until_date` date DEFAULT NULL,
   `user_id` char(36) NOT NULL,
+  -- This reminder's own chime key; NULL = the user's default tone.
+  `sound` varchar(16) DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `ix_cal_rem_user_date` (`user_id`,`anchor_date`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci

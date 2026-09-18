@@ -56,6 +56,9 @@ public class ReminderService {
         r.setTime(req.time());
         r.setTag(req.tag() != null ? req.tag() : ReminderTag.personal);
         r.setRepeat(req.repeat() != null ? req.repeat() : RepeatFreq.none);
+        // Blank and absent both mean "use my default tone"; storing "" instead of
+        // null would make every read have to know that too.
+        r.setSound(req.sound() != null && !req.sound().isBlank() ? req.sound().trim() : null);
         // "until" only applies to recurring reminders.
         if (r.getRepeat() != RepeatFreq.none) {
             // An end date before the start makes a reminder that can never fire —

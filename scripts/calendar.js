@@ -16,6 +16,7 @@ import {
   WORK_WEEKS,
   DEFAULT_WORK_WEEK,
 } from './recurrence.js';
+import { CHIMES, playChime } from './chime.js';
 
 const MONTHS = [
   'January',
@@ -539,10 +540,12 @@ function applyPendingReminderText() {
 
 function resetCalendarForm() {
   if (!cachedFormRefs) return;
-  const { textInput, timeInput, untilInput, tagPicker, repeatPicker, untilField } = cachedFormRefs;
+  const { textInput, timeInput, untilInput, tagPicker, repeatPicker, untilField, soundInput } =
+    cachedFormRefs;
   textInput.value = '';
   timeInput.value = '';
   untilInput.value = '';
+  soundInput.value = '';
   tagPicker.set('personal');
   repeatPicker.set('none');
   untilField.style.display = 'none';
@@ -563,6 +566,25 @@ function buildForm() {
   });
 
   const tagPicker = TagPicker('personal');
+
+  /* This reminder's own tone. An empty value is not "silent" — it means "use my
+     default from Settings", so a reminder nobody thought about keeps following
+     that setting when it changes. A <select> rather than the segmented control
+     the Alerts pane uses: six options don't fit the side panel's width, and the
+     native one already scrolls, keyboards and reads out. */
+  const soundInput = h(
+    'select',
+    { class: 'gb-input', 'aria-label': 'Reminder tone' },
+    [h('option', { value: '' }, 'Default tone')].concat(
+      CHIMES.map((c) => h('option', { value: c.key }, c.label))
+    )
+  );
+  // Picking one is the preview, the same rule as the Alerts pane. Nothing plays
+  // for 'Default tone': this file doesn't know which tone that is, and guessing
+  // the built-in default would preview a sound the reminder won't make.
+  soundInput.addEventListener('change', () => {
+    if (soundInput.value) playChime(soundInput.value);
+  });
 
   const untilInput = h('input', {
     type: 'date',
@@ -629,7 +651,15 @@ function buildForm() {
     }
     addBtn.disabled = true;
     try {
-      await cb(formBinding.selectedDate, text, timeInput.value || '', tagPicker.get(), repeat, until);
+      await cb(
+        formBinding.selectedDate,
+        text,
+        timeInput.value || '',
+        tagPicker.get(),
+        repeat,
+        until,
+        soundInput.value || ''
+      );
     } finally {
       addBtn.disabled = false;
     }
@@ -659,13 +689,15 @@ function buildForm() {
       h('div', { class: 'gb-field-label' }, 'Repeat'),
       repeatPicker.node,
       untilField,
+      h('div', { class: 'gb-field-label' }, 'Tone'),
+      soundInput,
       addBtn,
     ],
   });
 
   return {
     node,
-    refs: { textInput, timeInput, untilInput, tagPicker, repeatPicker, untilField },
+    refs: { textInput, timeInput, untilInput, tagPicker, repeatPicker, untilField, soundInput },
   };
 }
 
