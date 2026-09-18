@@ -252,11 +252,25 @@ function soundFile(key) {
 export function upcomingAlarms({ reminders, water, sound } = {}, now = new Date()) {
   const queue = upcomingReminderAlarms(reminders, now).concat(upcomingWaterAlarms(water, now));
   queue.sort((a, b) => a.at - b.at);
-  // Ids only have to be unique inside one batch: the queue is cancelled whole
-  // and rebuilt, so there is nothing older to collide with. 1 is the test
-  // notification's; start clear of it.
   const file = soundFile(sound);
-  return queue.slice(0, MAX_QUEUED).map((n, i) => Object.assign(n, { id: i + 1000, sound: file }));
+  // Ids come from the minute a notification fires in, not its place in the
+  // queue. A counter looked safe — the queue is cancelled whole and rebuilt —
+  // but cancelling leaves notifications already sitting in the phone's shade
+  // alone, and the rebuilt batch handed their ids straight back to the next
+  // alarms. Android replaces a notification when one with the same id arrives,
+  // so deleting a reminder silently wiped delivered ones off the lock screen.
+  // Everything queued is in the future and everything delivered is in the past,
+  // and a later minute is always a bigger number, so the two can't collide.
+  let slot = 0;
+  let lastMinute = -1;
+  return queue.slice(0, MAX_QUEUED).map((n) => {
+    const minute = Math.floor(n.at.getTime() / 60000);
+    slot = minute === lastMinute ? slot + 1 : 0;
+    lastMinute = minute;
+    // ponytail: 4 bits for same-minute alarms, which is 16 reminders at one
+    // time. Keeps the id inside a signed 32-bit int until the year 2225.
+    return Object.assign(n, { id: minute * 16 + Math.min(slot, 15), sound: file });
+  });
 }
 
 /**

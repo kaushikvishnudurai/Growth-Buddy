@@ -101,7 +101,17 @@ assert.deepEqual(upcomingWaterAlarms({ on: true, from: '21:00', to: '09:00' }, N
     assert.ok(q[i - 1].at <= q[i].at, 'queue must be in firing order');
   }
   assert.equal(new Set(q.map((n) => n.id)).size, q.length, 'ids must be unique in a batch');
-  assert.equal(q[0].id, 1000);
+  // The id has to be a function of when it fires, so a rebuilt queue never
+  // reuses the id of a notification already delivered to the shade — Android
+  // would replace it, and deleting one reminder would erase past ones.
+  assert.ok(
+    q.every((n) => Math.floor(n.id / 16) === Math.floor(n.at.getTime() / 60000)),
+    'ids are derived from the firing minute'
+  );
+  assert.ok(
+    q.every((n) => n.id > Math.floor(NOW.getTime() / 60000) * 16 && n.id < 2 ** 31 - 1),
+    'ids sit above every past minute and inside a signed 32-bit int'
+  );
   assert.ok(
     q.some((n) => n.body === 'evening') && q.some((n) => n.title === 'Time for water'),
     'both sources land in one queue'

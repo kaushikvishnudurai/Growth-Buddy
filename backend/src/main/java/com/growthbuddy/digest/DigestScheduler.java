@@ -57,7 +57,7 @@ public class DigestScheduler {
                 continue;
             }
             try {
-                digest.sendDigest(user, weekly);
+                digest.sendDigest(user, weekly, today);
             } catch (Exception ex) {
                 // Don't stamp lastDigestOn on a failure: that records a digest as
                 // delivered when it never left the building, and the `already sent

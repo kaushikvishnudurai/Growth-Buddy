@@ -20,7 +20,8 @@ protect/unprotect).
 | `contextSummary(userId)` | 162 | read-only text summary fed to the mentor/LLM prompts |
 | `countDoneBetween(userId, start, end)` | 180 | single user |
 | `countDoneBetween(List<UUID>, start, end)` | 186 | batched — **use this for leaderboards**, not the single-user version in a loop (Circle challenge ranking depends on it) |
-| `todayCounts(userId)` | 199 | `record TodayCounts(int done, int total)` (216), used by the score |
+| `todayCounts(userId)` | 205 | `record TodayCounts(int done, int total)` (231), used by the score |
+| `countsOn(userId, day)` | 214 | the same counts for **any** day — check-ins are stored against a log date, so a finished day still answers truthfully. What the digest reads, since it reports a day the midnight sweep has already rolled. |
 
 ## Timezone
 

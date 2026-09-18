@@ -203,16 +203,25 @@ public class HabitService {
     /** Today's completed-vs-total habit counts (used by the daily score). */
     @Transactional(readOnly = true)
     public TodayCounts todayCounts(UUID userId) {
+        return countsOn(userId, clock.today(userId));
+    }
+
+    /**
+     * The same counts for any day. Check-ins are stored against a log date, so a
+     * day that has already ended still answers truthfully — which is what the
+     * digest needs, since it reports a day the midnight sweep has already rolled.
+     */
+    @Transactional(readOnly = true)
+    public TodayCounts countsOn(UUID userId, LocalDate day) {
         List<Habit> list = habits.findByUserIdAndDeletedAtIsNullOrderByCreatedAtAsc(userId);
-        LocalDate today = clock.today(userId);
-        // Two queries instead of one-exists-per-habit: pull today's done check-ins
+        // Two queries instead of one-exists-per-habit: pull that day's done check-ins
         // once and count those belonging to a still-active habit (a soft-deleted
         // habit keeps its old check-ins, so filter by the active set).
         Set<UUID> activeIds = new HashSet<>();
         for (Habit h : list) {
             activeIds.add(h.getId());
         }
-        int done = (int) checkins.findByUserIdAndLogDateAndDoneTrue(userId, today).stream()
+        int done = (int) checkins.findByUserIdAndLogDateAndDoneTrue(userId, day).stream()
                 .filter(c -> activeIds.contains(c.getHabitId()))
                 .count();
         return new TodayCounts(done, list.size());

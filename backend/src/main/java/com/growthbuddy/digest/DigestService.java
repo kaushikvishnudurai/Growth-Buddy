@@ -7,13 +7,19 @@ import com.growthbuddy.score.ScoreService;
 import com.growthbuddy.user.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import java.time.LocalDate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 /**
  * Builds and delivers a user's progress digest — a short "here's your day/week"
  * summary — over email (via {@link MailService}) plus an in-app notification.
- * Content is derived from the live score so it works without extra history.
+ *
+ * <p>It reports the last day that actually <em>finished</em>, never the live score.
+ * A digest fires at the user's chosen hour, which for most people is the morning —
+ * and by then {@code TaskMidnightSweep} has cleared yesterday's ticked tasks and the
+ * habit check-ins have rolled to a new log date, so a live reading is a truthful 0
+ * about a day nobody has lived yet.
  */
 @Service
 public class DigestService {
@@ -33,9 +39,16 @@ public class DigestService {
         this.push = push;
     }
 
-    /** Send the digest to a single user. {@code weekly} picks the wording/cadence. */
-    public void sendDigest(User user, boolean weekly) {
-        ScoreService.ScoreResponse s = scores.today(user.getId());
+    /**
+     * Send the digest to a single user. {@code weekly} picks the wording/cadence;
+     * {@code today} is the user's own current date, so the recap covers the days
+     * before it.
+     */
+    public void sendDigest(User user, boolean weekly, LocalDate today) {
+        LocalDate through = today.minusDays(1);
+        ScoreService.ScoreResponse s = weekly
+                ? scores.between(user.getId(), through.minusDays(6), through)
+                : scores.on(user.getId(), through);
         String subject = weekly ? "Your weekly Growth Buddy digest" : "Your Growth Buddy daily digest";
 
         try {
@@ -44,7 +57,7 @@ public class DigestService {
             log.warn("Digest email failed for user {}: {}", user.getId(), ex.getMessage());
         }
 
-        String title = weekly ? "Your week in review" : "Your day in review";
+        String title = weekly ? "Your week in review" : "Yesterday in review";
         String note = "Score " + s.score() + "% · tasks " + s.tasksDone() + "/" + s.tasksTotal()
                 + " · habits " + s.habitsDone() + "/" + s.habitsTotal();
         try {
@@ -61,7 +74,7 @@ public class DigestService {
 
     private static String buildBody(User user, ScoreService.ScoreResponse s, boolean weekly) {
         String name = StringUtils.hasText(user.getDisplayName()) ? user.getDisplayName() : "Buddy";
-        String period = weekly ? "this week" : "today";
+        String period = weekly ? "the past 7 days" : "yesterday";
         return "Hi " + name + ",\n\n"
                 + "Here's your Growth Buddy snapshot for " + period + ":\n\n"
                 + "  • Growth score: " + s.score() + "%\n"

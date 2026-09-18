@@ -1742,10 +1742,26 @@ async function logFoodEntry(payload) {
       method: 'POST',
       body: JSON.stringify(payload),
     });
-    state.food = updated;
+    // The summary that comes back belongs to the entry's own day. Backdate one
+    // and that is not today — `state.food` drives the Home card, so only today's
+    // may land there. The date-keyed cache below takes every day, which is what
+    // the Calendar reads.
+    const forToday = !updated || !updated.date || updated.date === todayKeyNow();
+    if (forToday) state.food = updated;
     cacheFoodSummary(updated);
     render();
-    toastSuccess('Food logged.');
+    toastSuccess(
+      forToday
+        ? 'Food logged.'
+        : // 'T12:00' so the string parses as local noon — bare 'YYYY-MM-DD' is
+          // UTC midnight, which renders as the day before west of Greenwich.
+          'Food logged for ' +
+            new Date(updated.date + 'T12:00').toLocaleDateString(undefined, {
+              month: 'short',
+              day: 'numeric',
+            }) +
+            '.'
+    );
   } catch (err) {
     toastError(err, 'Could not log food right now.');
   }
@@ -1754,6 +1770,16 @@ async function logFoodEntry(payload) {
 function todayKeyNow() {
   const t = new Date();
   return dateKey(t.getFullYear(), t.getMonth(), t.getDate());
+}
+
+/* The instant to file an entry under, from a picked day. Today keeps the real
+   clock time so the day's list stays in order and shows a sensible one. A past
+   day gets local noon: the server re-derives the date in the user's own zone,
+   and noon is the one hour that lands on the same day whatever that zone is. */
+function loggedAtFor(dayKey) {
+  if (!dayKey || dayKey === todayKeyNow()) return new Date().toISOString();
+  const [y, m, d] = dayKey.split('-').map(Number);
+  return new Date(y, m - 1, d, 12, 0, 0).toISOString();
 }
 
 async function saveSleepEntry(payload) {
@@ -2279,9 +2305,22 @@ function openAddFood() {
     return result;
   }
 
+  /* Backdating. The server already took an entry's own `loggedAt` and filed the
+     day from it — the form just never offered a day, so everything landed on
+     now. `max` is today: a meal you haven't eaten yet is not a log. */
+  const dateInput = h('input', {
+    type: 'date',
+    class: 'gb-input',
+    value: todayKeyNow(),
+    max: todayKeyNow(),
+    'aria-label': 'Day this food was eaten',
+  });
+
   const body = h(
     'div',
     { class: 'gb-form' },
+    h('div', { class: 'gb-field-label' }, 'Day'),
+    dateInput,
     h('div', { class: 'gb-field-label' }, 'Meal type'),
     mealTypeSeg.node,
     h('div', { class: 'gb-field-label' }, 'Food name (or photo)'),
@@ -2332,7 +2371,7 @@ function openAddFood() {
 
       // If we have photo items, use them
       if (photoItems.length > 0) {
-        const loggedAtNow = new Date().toISOString();
+        const loggedAtNow = loggedAtFor(dateInput.value);
         entriesToAdd = photoItems.map((item) => ({
           foodName: item.foodName,
           quantityGrams: item.quantityGrams,
@@ -2368,7 +2407,7 @@ function openAddFood() {
             quantityGrams: quantityRaw != null ? Math.round(quantityRaw) : null,
             mealType: mealType,
             kcal: kcalRaw != null ? Math.round(kcalRaw) : null,
-            loggedAt: new Date().toISOString(),
+            loggedAt: loggedAtFor(dateInput.value),
             note: null,
           },
         ];

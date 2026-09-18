@@ -33,6 +33,16 @@ public interface TaskRepository extends JpaRepository<Task, UUID> {
     @Query("update Task t set t.deletedAt = :now, t.updatedAt = :now "
             + "where t.userId = :userId and t.done = true and t.deletedAt is null")
     int clearCompletedFor(@Param("userId") UUID userId, @Param("now") Instant now);
+
+    /**
+     * How many distinct tasks were ticked off inside a window. Once the midnight
+     * sweep has cleared a day, the completion history is the only thing left that
+     * remembers it — the task rows themselves are soft-deleted.
+     */
+    @Query("select count(distinct h.taskId) from TaskHistory h "
+            + "where h.userId = :userId and h.changedAt >= :from and h.changedAt < :to")
+    long countCompletedBetween(@Param("userId") UUID userId,
+                               @Param("from") Instant from, @Param("to") Instant to);
 }
 
 interface TaskHistoryRepository extends JpaRepository<TaskHistory, UUID> {

@@ -4,6 +4,7 @@ import com.growthbuddy.habit.HabitService;
 import com.growthbuddy.user.UserClock;
 import com.growthbuddy.task.TaskRepository;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,21 +42,68 @@ public class ScoreService {
         long taskTotal = tasks.countByUserIdAndDeletedAtIsNull(userId);
         long taskDone = tasks.countByUserIdAndDoneTrueAndDeletedAtIsNull(userId);
         HabitService.TodayCounts hc = habits.todayCounts(userId);
+        return build(clock.today(userId), taskDone, taskTotal, hc.done(), hc.total());
+    }
 
+    /**
+     * The score for a day that has already ended. {@link #today} can't answer this:
+     * it reads the live rows, and by the time anything looks back at yesterday the
+     * midnight sweep has soft-deleted every task ticked off then and the habit
+     * check-ins belong to a new log date — so yesterday reads as a flat zero.
+     *
+     * <p>Completions come from {@code task_completion_history}, which the sweep
+     * leaves alone. ponytail: the day's task <em>total</em> is reconstructed as
+     * "finished then + still open now", because nothing stores it. A task created
+     * since inflates it; snapshot into {@code daily_scores} at the sweep if that
+     * ever matters.
+     */
+    @Transactional(readOnly = true)
+    public ScoreResponse on(UUID userId, LocalDate day) {
+        ZoneId zone = clock.zoneOf(userId);
+        long done = tasks.countCompletedBetween(userId,
+                day.atStartOfDay(zone).toInstant(),
+                day.plusDays(1).atStartOfDay(zone).toInstant());
+        long open = tasks.countByUserIdAndDeletedAtIsNull(userId)
+                - tasks.countByUserIdAndDoneTrueAndDeletedAtIsNull(userId);
+        HabitService.TodayCounts hc = habits.countsOn(userId, day);
+        return build(day, done, done + open, hc.done(), hc.total());
+    }
+
+    /**
+     * Totals across an inclusive range — what the weekly digest reports.
+     * ponytail: a day at a time, so one rule decides a day everywhere. Seven
+     * cheap reads once a week per user is not worth a bespoke range query.
+     */
+    @Transactional(readOnly = true)
+    public ScoreResponse between(UUID userId, LocalDate from, LocalDate to) {
+        long taskDone = 0;
+        long taskTotal = 0;
+        int habitDone = 0;
+        int habitTotal = 0;
+        for (LocalDate d = from; !d.isAfter(to); d = d.plusDays(1)) {
+            ScoreResponse s = on(userId, d);
+            taskDone += s.tasksDone();
+            taskTotal += s.tasksTotal();
+            habitDone += s.habitsDone();
+            habitTotal += s.habitsTotal();
+        }
+        return build(to, taskDone, taskTotal, habitDone, habitTotal);
+    }
+
+    private static ScoreResponse build(LocalDate date, long taskDone, long taskTotal,
+                                       int habitDone, int habitTotal) {
         double sum = 0;
         int parts = 0;
         if (taskTotal > 0) {
             sum += (double) taskDone / taskTotal;
             parts++;
         }
-        if (hc.total() > 0) {
-            sum += (double) hc.done() / hc.total();
+        if (habitTotal > 0) {
+            sum += (double) habitDone / habitTotal;
             parts++;
         }
         int score = parts == 0 ? 0 : (int) Math.round((sum / parts) * 100);
-
-        return new ScoreResponse(clock.today(userId), score,
-                (int) taskDone, (int) taskTotal, hc.done(), hc.total());
+        return new ScoreResponse(date, score, (int) taskDone, (int) taskTotal, habitDone, habitTotal);
     }
 
     /** Persist today's score into {@code daily_scores} (idempotent upsert). */
