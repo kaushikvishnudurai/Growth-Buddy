@@ -121,8 +121,12 @@ body {
 }
 .gb-head-actions {
   /* The positioning context for the notification and profile panels, which
-     render into the two slots at the end of this row. */
+     render into the two slots at the end of this row. `stretch` so this row's
+     bottom is the header's content bottom whatever else is in there — the
+     panels hang off `100%`, and the premium skin's shorter buttons would
+     otherwise centre this row and lift them into the header. */
   position: relative;
+  align-self: stretch;
   display: flex;
   align-items: center;
   gap: 10px;

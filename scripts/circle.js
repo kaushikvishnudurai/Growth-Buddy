@@ -520,7 +520,8 @@ function openSearchModal({ onBrowse, onSearch, onOffer, onRequest, onView, curre
 /* Minimal styled modal with a list of text/number fields; resolves the entered
    values via onSubmit. Reuses the app's modal CSS (see openNoteModal above). */
 function openFormModal({ title, sub, fields, submitLabel, onSubmit }) {
-  const { sheet, close } = openOverlay({ label: title });  const inputs = {};
+  const { sheet, close } = openOverlay({ label: title });
+  const inputs = {};
   const fieldNodes = [];
   fields.forEach((f) => {
     const input = h('input', {
