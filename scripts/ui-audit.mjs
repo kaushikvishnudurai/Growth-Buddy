@@ -51,6 +51,13 @@ for (const [name, vp] of Object.entries(VIEWPORTS)) {
     if (m.type() === 'error') problems.push(`[${name}] console: ${m.text().slice(0, 180)}`);
   });
   page.on('pageerror', (e) => problems.push(`[${name}] pageerror: ${String(e).slice(0, 180)}`));
+  // "Failed to load resource" on its own names nothing. Record what actually
+  // failed, so a 4xx is a lead instead of a mystery.
+  page.on('response', (r) => {
+    if (r.status() >= 400) {
+      problems.push(`[${name}] HTTP ${r.status()} ${r.request().method()} ${r.url().slice(0, 140)}`);
+    }
+  });
 
   await page.goto(BASE, { waitUntil: 'networkidle2' });
 
@@ -124,6 +131,11 @@ dlg.on('console', (m) => {
   if (m.type() === 'error') problems.push(`[dialogs] console: ${m.text().slice(0, 180)}`);
 });
 dlg.on('pageerror', (e) => problems.push(`[dialogs] pageerror: ${String(e).slice(0, 180)}`));
+dlg.on('response', (r) => {
+  if (r.status() >= 400) {
+    problems.push(`[dialogs] HTTP ${r.status()} ${r.request().method()} ${r.url().slice(0, 140)}`);
+  }
+});
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 
 await dlg.setViewport(VIEWPORTS.mobile);
@@ -225,9 +237,14 @@ await checkDialog('note sheet', 'notes', () =>
 );
 await checkDialog('delete recurring reminder', 'calendar', () =>
   dlg.evaluate(() => {
-    const el = [...document.querySelectorAll('button, [role=button]')].find(
-      (b) => /delete|remove/i.test(b.getAttribute('aria-label') || '') && b.offsetParent
+    // The delete on a RECURRING row — the scope dialog is what this checks, and
+    // a one-off row deletes on the spot with no dialog at all. Picking whichever
+    // delete came first quietly destroyed a seeded reminder on every run, and
+    // then reported the dialog missing once a one-off happened to sort first.
+    const row = [...document.querySelectorAll('.gb-rem-row')].find(
+      (r) => r.offsetParent && r.querySelector('.meta-item i[data-lucide="repeat"], .meta-item svg.lucide-repeat')
     );
+    const el = row && row.querySelector('.gb-rem-del');
     if (!el) return false;
     el.click();
     return true;

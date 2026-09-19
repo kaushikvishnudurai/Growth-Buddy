@@ -6316,17 +6316,56 @@ function lazyScreen(loader, build) {
     .then((mod) => {
       // A later render() may have swapped this placeholder out already; that
       // render made its own, so this one is stale and must not resurrect itself.
+      // A chunk that loaded proves this build is being served, so the next
+      // deploy gets its own single recovery reload. Cleared here and not on
+      // boot: a boot happens after the reload too, and clearing it there wiped
+      // the guard that stops a still-missing chunk reloading forever.
+      try {
+        sessionStorage.removeItem(CHUNK_RELOAD_KEY);
+      } catch (_) {
+        /* private mode */
+      }
       if (!placeholder.isConnected) return;
       placeholder.replaceWith(build(mod));
       refreshIcons();
     })
     .catch((err) => {
       console.error('Screen failed to load', err);
+      // A deploy renames every hashed chunk. A tab that was already open still
+      // asks for the old name, the server no longer has it, and the import
+      // rejects — which is why Circle and Family "sometimes" refused to open
+      // and were fine after a manual reload. Reload once, which picks up the
+      // new index and the new chunk names; the flag makes it once per tab, so
+      // a genuinely broken module still lands on the crash card instead of
+      // reloading forever.
+      if (isStaleChunkError(err) && !sessionStorage.getItem(CHUNK_RELOAD_KEY)) {
+        try {
+          sessionStorage.setItem(CHUNK_RELOAD_KEY, '1');
+        } catch (_) {
+          /* private mode: fall through to the crash card */
+        }
+        location.reload();
+        return;
+      }
       if (!placeholder.isConnected) return;
       placeholder.replaceWith(CrashCard(() => render()));
       refreshIcons();
     });
   return placeholder;
+}
+
+const CHUNK_RELOAD_KEY = 'gb.chunkReloaded';
+
+/* A dynamic import that failed because the file is gone, not because the module
+   threw. Browsers word this differently and none of them give it a code, so the
+   message is all there is. */
+function isStaleChunkError(err) {
+  const msg = String((err && err.message) || err || '');
+  return (
+    /Failed to fetch dynamically imported module/i.test(msg) ||
+    /error loading dynamically imported module/i.test(msg) ||
+    /Importing a module script failed/i.test(msg)
+  );
 }
 
 function bottomNav() {
@@ -6380,6 +6419,93 @@ function paintBellBadge() {
   const text = n > 99 ? '99+' : String(n);
   if (badge) badge.textContent = text;
   else bell.appendChild(h('span', { class: 'gb-bell-badge' }, text));
+}
+
+/* ---- Pull to refresh ----------------------------------------------------
+   A WebView gives you no pull-to-refresh, and the app never had one: swiping
+   down at the top of a screen did nothing at all. This is the whole gesture —
+   drag from a scroll position of 0, past a threshold, and let go.
+
+   Attached once to the document rather than to `.gb-scroll`, because render()
+   replaces that element and a listener on it would be thrown away with it.
+   Only vertical drags that start at the very top are claimed; anything else
+   (a horizontal swipe, a drag begun mid-scroll) is left alone so normal
+   scrolling and the calendar's side-swipes still work. */
+const PTR_TRIGGER = 72; // px of pull that counts as "refresh"
+const PTR_MAX = 110; // how far the indicator travels at most
+let ptr = null;
+
+function pullIndicator() {
+  let el = document.getElementById('gb-ptr');
+  if (!el) {
+    el = h('div', { id: 'gb-ptr', class: 'gb-ptr', 'aria-hidden': 'true' }, Icon('refresh-cw', { size: 18 }));
+    document.body.appendChild(el);
+    refreshIcons();
+  }
+  return el;
+}
+
+function initPullToRefresh() {
+  document.addEventListener(
+    'touchstart',
+    (e) => {
+      ptr = null;
+      if (e.touches.length !== 1 || state.loading) return;
+      // Not while a dialog is up: the sheet scrolls, the page behind it must not.
+      if (document.querySelector('.gb-modal-overlay')) return;
+      const scroll = e.target.closest && e.target.closest('.gb-scroll');
+      if (!scroll || scroll.scrollTop > 0) return;
+      ptr = { scroll, y0: e.touches[0].clientY, x0: e.touches[0].clientX, claimed: false };
+    },
+    { passive: true }
+  );
+
+  document.addEventListener(
+    'touchmove',
+    (e) => {
+      if (!ptr || e.touches.length !== 1) return;
+      const dy = e.touches[0].clientY - ptr.y0;
+      const dx = e.touches[0].clientX - ptr.x0;
+      if (!ptr.claimed) {
+        // Decide once, on the first meaningful movement: a drag that is mostly
+        // sideways belongs to whatever is under it.
+        if (Math.abs(dy) < 8 && Math.abs(dx) < 8) return;
+        if (dy <= 0 || Math.abs(dx) > Math.abs(dy)) {
+          ptr = null;
+          return;
+        }
+        ptr.claimed = true;
+      }
+      if (ptr.scroll.scrollTop > 0) {
+        ptr = null;
+        pullIndicator().style.transform = '';
+        return;
+      }
+      // Resisted, so it feels like pulling against something rather than free
+      // dragging, and never runs past PTR_MAX.
+      const pulled = Math.min(PTR_MAX, dy * 0.5);
+      const el = pullIndicator();
+      el.style.transform = 'translate(-50%, ' + pulled + 'px) rotate(' + pulled * 3 + 'deg)';
+      el.classList.toggle('is-ready', pulled >= PTR_TRIGGER);
+      e.preventDefault(); // stops the WebView's own rubber-band fighting it
+    },
+    { passive: false }
+  );
+
+  const release = () => {
+    if (!ptr) return;
+    const el = pullIndicator();
+    const ready = el.classList.contains('is-ready');
+    el.classList.remove('is-ready');
+    el.style.transform = '';
+    ptr = null;
+    if (ready) {
+      el.classList.add('is-spinning');
+      loadData().finally(() => el.classList.remove('is-spinning'));
+    }
+  };
+  document.addEventListener('touchend', release, { passive: true });
+  document.addEventListener('touchcancel', release, { passive: true });
 }
 
 function captureScrollPosition() {
@@ -7312,6 +7438,7 @@ if (window.CacheStorage && window.CacheStorage.init) {
     .catch((err) => console.warn('CacheStorage init failed:', err));
 }
 initA11y();
+initPullToRefresh();
 applyTheme(state.theme);
 applyPremium(state.premium);
 applyTextScale(state.textScale);

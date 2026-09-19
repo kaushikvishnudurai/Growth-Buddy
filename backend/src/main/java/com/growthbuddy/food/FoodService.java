@@ -55,8 +55,11 @@ public class FoodService {
 
     private static final String PHOTO_AI_MULTI_PROMPT = """
             You analyze a plate photo for Indian meals and identify all visible food items separately.
-            Return strict JSON only with key "items" containing an array of food items.
-            Each item must have: foodName, kcalPer100g, quantityGrams.
+            Return strict JSON only, with exactly these three top-level keys:
+              "items"          an array of food items, each with foodName, kcalPer100g, quantityGrams
+              "confidence"     a NUMBER from 0 to 1 — how sure you are of the whole reading
+              "fallbackNeeded" a boolean
+            All three are required. Never omit "confidence".
 
             Rules:
             - Parse ALL distinct food items visible on the plate (e.g., rice, curry, bread, salad).
@@ -477,11 +480,29 @@ public class FoodService {
     }
 
     private static Integer numberAsInt(JsonNode node, String key) {
+        Double d = numberOrNull(node, key);
+        return d == null ? null : (int) Math.round(d);
+    }
+
+    /**
+     * A JSON number, or a string that holds one. Models quote numbers as often
+     * as not ({@code "confidence": "0.85"}), and reading only {@code isNumber()}
+     * turned every one of those into the caller's fallback without a word — which
+     * is why every plate photo reported 0% confidence.
+     */
+    private static Double numberOrNull(JsonNode node, String key) {
         JsonNode val = node.path(key);
-        if (!val.isNumber()) {
-            return null;
+        if (val.isNumber()) {
+            return val.asDouble();
         }
-        return (int) Math.round(val.asDouble());
+        if (val.isTextual()) {
+            try {
+                return Double.valueOf(val.asText().trim());
+            } catch (NumberFormatException ex) {
+                return null;
+            }
+        }
+        return null;
     }
 
     private static String textOrNull(JsonNode node, String key) {
@@ -490,11 +511,8 @@ public class FoodService {
     }
 
     private static double numberAsDouble(JsonNode node, String key, double fallback) {
-        JsonNode val = node.path(key);
-        if (!val.isNumber()) {
-            return fallback;
-        }
-        return val.asDouble();
+        Double d = numberOrNull(node, key);
+        return d == null ? fallback : d;
     }
 
     private static int clamp(int value) {

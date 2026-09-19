@@ -93,6 +93,41 @@ class FoodEntryTest {
         assertThat(saved().getLogDate()).isEqualTo(LocalDate.of(2026, 9, 10));
     }
 
+    /**
+     * Every plate photo reported 0% confidence. The multi-dish prompt opened with
+     * "return strict JSON only with key items", so a model that obeyed it sent no
+     * confidence at all — and the parser read a quoted number as absent too, so
+     * even a model that sent one often lost it. Both shapes must survive.
+     */
+    @Test
+    void confidenceSurvivesWhateverShapeTheModelSendsIt() throws Exception {
+        assertThat(parsedConfidence("0.85")).isEqualTo(0.85);
+        assertThat(parsedConfidence("\"0.85\"")).as("quoted, which models do constantly").isEqualTo(0.85);
+        assertThat(parsedConfidence("\"not a number\"")).as("unreadable falls back").isZero();
+    }
+
+    /** Runs the service's own parse over one AI response body. */
+    private static double parsedConfidence(String confidenceJson) throws Exception {
+        var m = FoodService.class.getDeclaredMethod("numberAsDouble",
+                com.fasterxml.jackson.databind.JsonNode.class, String.class, double.class);
+        m.setAccessible(true);
+        var node = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readTree("{\"confidence\": " + confidenceJson + "}");
+        return (double) m.invoke(null, node, "confidence", 0.0);
+    }
+
+    /** The prompt must ask for the key the parser reads. */
+    @Test
+    void theMultiDishPromptAsksForConfidence() throws Exception {
+        var f = FoodService.class.getDeclaredField("PHOTO_AI_MULTI_PROMPT");
+        f.setAccessible(true);
+        String prompt = (String) f.get(null);
+        assertThat(prompt).contains("confidence");
+        assertThat(prompt)
+                .as("an 'only key items' instruction makes an obedient model drop confidence")
+                .doesNotContain("only with key \"items\"");
+    }
+
     /** A typed number is the number. No clamp, no adjustment, no estimate. */
     @Test
     void typedCaloriesAreStoredExactly() {

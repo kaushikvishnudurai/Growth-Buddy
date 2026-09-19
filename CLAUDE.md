@@ -48,13 +48,13 @@ fix the doc line if it was wrong. A doc you touch and don't update is worse than
   **`node scripts/tokens.test.mjs`** (every bare `var(--x)` in `styles/` resolves — two dead
   tokens had been silently voiding whole declarations, one of them the modal's transition),
   `node scripts/gen-chimes.mjs` (regenerates, and asserts none of them is silent or clipping),
-  `money.js` and `chime.js` `_demo()` on Vite DEV, `./mvnw test` (139 tests — including the three that guard
+  `money.js` and `chime.js` `_demo()` on Vite DEV, `./mvnw test` (141 tests — including the three that guard
   invariants rather than code: `SchemaCoverageTest`, `AccountDeletionCoverageTest`,
   `SharedRecurrenceCasesTest`), and `scripts/ui-audit.mjs` — walks every screen at
   phone + desktop widths, screenshots each, then **opens one dialog per module and both header
   panels** and checks the shared overlay contract (animates in, carries a shadow, can scroll,
-  traps focus, closes on Escape, panels aligned to the bell). Fails on horizontal overflow or a
-  console error. Needs `npm run dev`, a **seeded** verified account (an empty one has no note or
+  traps focus, closes on Escape, panels aligned to the bell). Fails on horizontal overflow, a
+  console error, or any HTTP 4xx/5xx — and names the request. Needs `npm run dev`, a **seeded** verified account (an empty one has no note or
   reminder to open a dialog from), and a Chrome started with `--remote-debugging-port=9222`
   (`puppeteer.launch()` dies here with an empty stderr; attaching works).
 - After web changes, the Capacitor app needs `npm run sync` in `../Growth-Buddy-Mobile`.

@@ -4264,6 +4264,43 @@ body {
   color: var(--fg2);
   line-height: 1.4;
 }
+/* ---- Pull to refresh ----
+   Fixed under the header, dragged into view by the gesture in app.js. Nothing
+   here animates by itself: the transform is set per touchmove so the indicator
+   tracks the finger, and only the spring back on release is transitioned. */
+.gb-ptr {
+  position: fixed;
+  top: 6px;
+  left: 50%;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
+  color: var(--fg3);
+  transform: translate(-50%, 0);
+  transition: transform var(--dur-base) var(--ease-out);
+  pointer-events: none;
+}
+.gb-ptr.is-ready {
+  color: var(--brand);
+  border-color: var(--brand);
+}
+.gb-ptr.is-spinning {
+  color: var(--brand);
+  animation: gb-ptr-spin 700ms linear infinite;
+}
+@keyframes gb-ptr-spin {
+  to {
+    transform: translate(-50%, 28px) rotate(360deg);
+  }
+}
+
 /* ---- Focus stats card ---- */
 .gb-focus-statscard {
   margin-top: 16px;

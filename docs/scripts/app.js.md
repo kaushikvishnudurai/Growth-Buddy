@@ -150,6 +150,18 @@ it silently landed on Home. Don't reintroduce a second list.
   `TaskMidnightSweep` soft-deletes completed tasks at the user's own local midnight, so they
   simply aren't in `/api/tasks` any more. A client-side reset on top of that would resurrect
   whatever the sweep hadn't reached yet.
+- **Pull to refresh is hand-rolled** (`initPullToRefresh`, ~6390). A WebView gives you none, and the
+  app had none — swiping down at the top of a screen did nothing. Listeners sit on `document`, not on
+  `.gb-scroll`, because `render()` replaces that element and would throw a listener on it away. A drag
+  is only claimed when it starts at `scrollTop === 0` and is more vertical than horizontal, so normal
+  scrolling and the calendar's side-swipes are untouched; past 72px of (resisted) pull it calls
+  `loadData()`. Skipped while a dialog is open. Indicator is `#gb-ptr`, styled in `app.css`.
+- **A dynamic import that 404s reloads the page once** (`isStaleChunkError` + `CHUNK_RELOAD_KEY`). A
+  deploy renames every hashed chunk, so an already-open tab asks for a name the server no longer has
+  and `import('./circle.js')` rejects — which is why Circle and Family "sometimes" refused to open and
+  were fine after a manual reload. The guard flag is cleared when a chunk **loads**, never on boot:
+  clearing it on boot wiped the guard on the way back up and a genuinely missing chunk reloaded
+  forever. Second failure lands on the crash card with its retry button.
 - **`reSyncDeviceAlarms()` after every change to its three inputs.** In the app, timed reminders
   and the water nudge are on-device alarms (`syncDeviceAlarms` in `push.js`) because the server can
   only deliver to a Web Push subscription the WebView can't register. The inputs are
