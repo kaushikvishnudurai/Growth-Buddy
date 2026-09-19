@@ -4278,6 +4278,28 @@ body {
   color: var(--brand-soft-fg);
 }
 
+/* ---- Tap targets ----
+   Three controls are drawn at 28-30px because that is what the row wants
+   visually, which is under the 44px a finger needs. The overlay gives them the
+   hit area without moving a pixel of the layout: it is centred on the control
+   and does not paint. Nothing here has a ::before of its own. */
+.gb-check,
+.gb-icon-btn,
+.gb-note-pin {
+  position: relative;
+}
+.gb-check::before,
+.gb-icon-btn::before,
+.gb-note-pin::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+
 /* ---- Quick add preview ---- */
 .gb-qa-preview {
   display: flex;

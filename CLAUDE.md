@@ -47,6 +47,8 @@ fix the doc line if it was wrong. A doc you touch and don't update is worse than
   `node scripts/money-merge.test.mjs`, `node scripts/push.test.mjs`,
   **`node scripts/tokens.test.mjs`** (every bare `var(--x)` in `styles/` resolves — two dead
   tokens had been silently voiding whole declarations, one of them the modal's transition),
+  **`node scripts/icons.test.mjs`** (every `Icon('name')` is registered in `icons.js` — an
+  unregistered one renders as *nothing*: no error, no box, and the UI audit can't see it either),
   `node scripts/gen-chimes.mjs` (regenerates, and asserts none of them is silent or clipping),
   `money.js` and `chime.js` `_demo()` on Vite DEV, `./mvnw test` (146 tests — including the three that guard
   invariants rather than code: `SchemaCoverageTest`, `AccountDeletionCoverageTest`,
