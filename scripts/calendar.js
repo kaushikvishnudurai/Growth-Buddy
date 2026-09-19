@@ -407,7 +407,135 @@ function openDeleteDialog(rem, occKey, onDelete) {
 }
 
 /* ---- Reminder row ---- */
-function ReminderRow(rem, occKey, onDelete, whatsappEnabled) {
+/* Editing a recurring reminder asks the same question deleting one does, for
+   the same reason: the row on screen is one occurrence of a series, and the
+   user has to say how far the change reaches. Scoped delete has always asked;
+   editing had no answer at all because there was nothing to edit with. */
+function openEditDialog(rem, occKey, onEdit) {
+  const textInput = h('input', {
+    type: 'text',
+    class: 'gb-input',
+    value: rem.text || '',
+    maxlength: 120,
+    'aria-label': 'Reminder text',
+  });
+  const timeInput = h('input', {
+    type: 'time',
+    class: 'gb-input gb-input--time',
+    value: (rem.time || '').slice(0, 5),
+    'aria-label': 'Reminder time',
+  });
+  const toneSel = h(
+    'select',
+    { class: 'gb-input', 'aria-label': 'Reminder tone' },
+    [h('option', { value: '' }, 'Default tone')].concat(
+      CHIMES.map((c) =>
+        h('option', { value: c.key }, c.key === 'off' ? 'Silent in the app' : c.label)
+      )
+    )
+  );
+  toneSel.value = rem.sound || '';
+  toneSel.addEventListener('change', () => {
+    if (toneSel.value) playChime(toneSel.value);
+  });
+
+  const repeats = rem.repeat && rem.repeat !== 'none';
+  const scopes = [
+    { scope: 'this', icon: 'calendar-x', label: 'Only this day', sub: prettyDate(occKey) },
+    {
+      scope: 'future',
+      icon: 'calendar-off',
+      label: 'This & all future',
+      sub: 'From ' + prettyDate(occKey) + ' onward',
+    },
+    { scope: 'all', icon: 'repeat', label: 'The whole series', sub: 'Every occurrence' },
+  ];
+  let scope = repeats ? 'this' : 'all';
+  const scopeRow = repeats
+    ? h(
+        'div',
+        { class: 'gb-modal-opts' },
+        scopes.map((o) =>
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-modal-opt' + (o.scope === scope ? ' is-on' : ''),
+              dataset: { scope: o.scope },
+              onclick: (e) => {
+                scope = o.scope;
+                const row = e.currentTarget.parentElement;
+                for (const b of row.children) b.classList.toggle('is-on', b.dataset.scope === scope);
+              },
+            },
+            h('span', { class: 'gb-modal-opt-ic' }, Icon(o.icon, { size: 18 })),
+            h(
+              'span',
+              { class: 'gb-modal-opt-tx' },
+              h('span', { class: 'gb-modal-opt-l' }, o.label),
+              h('span', { class: 'gb-modal-opt-s' }, o.sub)
+            )
+          )
+        )
+      )
+    : null;
+
+  const { sheet, close } = openOverlay({ label: 'Edit reminder' });
+  sheet.append(
+    h(
+      'div',
+      { class: 'gb-modal-head' },
+      h('div', { class: 'gb-modal-title' }, 'Edit reminder'),
+      h(
+        'div',
+        { class: 'gb-modal-sub' },
+        repeats ? 'Pick how far this change reaches.' : prettyDate(occKey)
+      )
+    ),
+    h(
+      'div',
+      { class: 'gb-form' },
+      h('div', { class: 'gb-field-label' }, 'Reminder'),
+      textInput,
+      h('div', { class: 'gb-field-label' }, 'Time'),
+      timeInput,
+      h('div', { class: 'gb-field-label' }, 'Tone'),
+      toneSel
+    ),
+    ...(scopeRow ? [h('div', { class: 'gb-field-label' }, 'Apply to'), scopeRow] : []),
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'gb-btn gb-btn--primary',
+        style: { width: '100%', marginTop: '14px' },
+        onclick: () => {
+          const text = textInput.value.trim();
+          if (!text) {
+            textInput.focus();
+            return;
+          }
+          close();
+          onEdit(scope, rem.id, occKey, {
+            text,
+            time: timeInput.value || null,
+            sound: toneSel.value || '',
+          });
+        },
+      },
+      'Save changes'
+    ),
+    h(
+      'button',
+      { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel', onclick: close },
+      'Cancel'
+    )
+  );
+  refreshIcons();
+  setTimeout(() => textInput.focus(), 60);
+}
+
+function ReminderRow(rem, occKey, onDelete, whatsappEnabled, onEdit) {
   const t = TAGS[rem.tag] || TAGS.other;
   const meta = [];
   if (rem.time) {
@@ -464,6 +592,18 @@ function ReminderRow(rem, occKey, onDelete, whatsappEnabled) {
       h('div', { class: 'gb-rem-text' }, rem.text),
       h('div', { class: 'gb-rem-meta' }, tagPill, meta)
     ),
+    onEdit
+      ? h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-rem-del gb-rem-edit',
+            'aria-label': 'Edit reminder',
+            onclick: () => openEditDialog(rem, occKey, onEdit),
+          },
+          Icon('pencil', { size: 16 })
+        )
+      : null,
     h(
       'button',
       {
@@ -686,6 +826,7 @@ function ReminderPanel({
   onRetryFood,
   onAddReminder,
   onDeleteReminder,
+  onEditReminder,
 }) {
   const list = remindersOn(reminders, selectedDate);
   const dayTasks = tasksOn(tasks, selectedDate);
@@ -718,7 +859,9 @@ function ReminderPanel({
   let listNode;
   if (list.length) {
     listNode = Card({
-      children: list.map((r) => ReminderRow(r, selectedDate, onDeleteReminder, whatsappEnabled)),
+      children: list.map((r) =>
+        ReminderRow(r, selectedDate, onDeleteReminder, whatsappEnabled, onEditReminder)
+      ),
     });
   } else {
     listNode = futureDate
@@ -966,6 +1109,7 @@ function ScreenCalendar({
   onRetryFood,
   onAddReminder,
   onDeleteReminder,
+  onEditReminder,
 }) {
   const toolbar = CalendarToolbar({
     year,
@@ -1015,6 +1159,7 @@ function ScreenCalendar({
       onRetryFood,
       onAddReminder,
       onDeleteReminder,
+      onEditReminder,
     })
   );
 }

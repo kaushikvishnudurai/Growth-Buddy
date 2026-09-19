@@ -46,6 +46,12 @@ Day-key helpers: `pad`, `keyOf(y,m,d)`, `parseKey`, `todayKey`, `isFutureKey`, `
   **Don't go back to `reportValidity()` here.** It does enforce `min` and does return false, so the
   reminder was refused correctly — but the bubble it draws needs the input focused and vanishes as
   soon as anything else takes focus, so the only thing a user saw was a button that did nothing.
+- **Scoped edit mirrors scoped delete.** `openEditDialog` asks the same question the delete dialog
+  does, because the row on screen is one occurrence of a series. The model has no per-occurrence
+  overrides, so `this` can only mean *skip that day and leave a one-off in its place*; `future` cuts
+  the series at the day before and starts a new one; `all` edits the row. The server does the split
+  (`ReminderService.update`), so the client refetches the list rather than patching it — an edit can
+  come back as a brand-new reminder.
 - **Each reminder can carry its own tone.** The form's Tone `<select>` sends a chime key from
   `chime.js`; an empty value means "the default from Alerts", which is stored as null so the
   reminder keeps following that setting when it changes. A `<select>` and not the segmented control

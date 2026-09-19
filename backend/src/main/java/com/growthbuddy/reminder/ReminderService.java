@@ -10,6 +10,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -144,6 +145,102 @@ public class ReminderService {
                 repo.save(r);
             }
             default -> throw ApiException.badRequest("Unknown scope: " + scope);
+        }
+    }
+
+    /**
+     * Edit with a scope, the mirror of {@link #delete}.
+     * <ul>
+     *   <li>{@code all} — change the series itself.</li>
+     *   <li>{@code this} — skip that day on the series and put a one-off in its
+     *       place, which is the only way to vary a single occurrence when the
+     *       model has no per-occurrence overrides.</li>
+     *   <li>{@code future} — end the series the day before and start a new one
+     *       from that day with the new values.</li>
+     * </ul>
+     * A non-recurring reminder is always edited whole; there is nothing to split.
+     */
+    @Transactional
+    public ReminderResponse update(UUID userId, UUID id, String scope, LocalDate occ,
+                                   UpdateReminderRequest req) {
+        CalendarReminder r = repo.findByIdAndUserId(id, userId)
+                .orElseThrow(() -> ApiException.notFound("Reminder"));
+        String s = scope == null ? "all" : scope.toLowerCase();
+
+        if (s.equals("all") || r.getRepeat() == RepeatFreq.none) {
+            applyEdit(r, req, true);
+            return ReminderResponse.from(repo.save(r));
+        }
+        if (occ == null) {
+            throw ApiException.badRequest("'date' is required for a scoped edit of a recurring reminder");
+        }
+        switch (s) {
+            case "this" -> {
+                r.getSkipDays().add(occ);
+                repo.save(r);
+                CalendarReminder one = splitFrom(userId, r, occ);
+                one.setRepeat(RepeatFreq.none);
+                one.setUntilDate(null);
+                applyEdit(one, req, false);
+                return ReminderResponse.from(repo.save(one));
+            }
+            case "future" -> {
+                CalendarReminder rest = splitFrom(userId, r, occ);
+                applyEdit(rest, req, true);
+                LocalDate cut = occ.minusDays(1);
+                if (r.getFromDate() != null && r.getFromDate().isAfter(cut)) {
+                    // Nothing of the old series survives ahead of the cut.
+                    repo.delete(r);
+                } else {
+                    r.setUntilDate(cut);
+                    repo.save(r);
+                }
+                return ReminderResponse.from(repo.save(rest));
+            }
+            default -> throw ApiException.badRequest("Unknown scope: " + scope);
+        }
+    }
+
+    /** A copy of {@code r} anchored at {@code occ}, carrying none of its skips. */
+    private CalendarReminder splitFrom(UUID userId, CalendarReminder r, LocalDate occ) {
+        CalendarReminder c = new CalendarReminder();
+        c.setUserId(userId);
+        c.setText(r.getText());
+        c.setAnchorDate(occ);
+        c.setTime(r.getTime());
+        c.setTag(r.getTag());
+        c.setRepeat(r.getRepeat());
+        c.setUntilDate(r.getUntilDate());
+        c.setSound(r.getSound());
+        return c;
+    }
+
+    /** Only the fields actually sent. {@code allowRepeat} is false for a one-off. */
+    private void applyEdit(CalendarReminder r, UpdateReminderRequest req, boolean allowRepeat) {
+        if (req == null) {
+            return;
+        }
+        if (StringUtils.hasText(req.text())) {
+            r.setText(req.text().trim());
+        }
+        if (req.time() != null) {
+            r.setTime(req.time());
+        }
+        if (req.tag() != null) {
+            r.setTag(req.tag());
+        }
+        if (req.sound() != null) {
+            r.setSound(req.sound().isBlank() ? null : req.sound().trim());
+        }
+        if (allowRepeat && req.repeat() != null) {
+            r.setRepeat(req.repeat());
+        }
+        if (allowRepeat && r.getRepeat() != RepeatFreq.none && req.until() != null) {
+            if (req.until().isBefore(r.getAnchorDate())) {
+                throw ApiException.badRequest(
+                        "\"Repeat until\" can't be before the reminder's first date.");
+            }
+            r.setUntilDate(req.until());
         }
     }
 

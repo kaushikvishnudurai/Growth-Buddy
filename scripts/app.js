@@ -1175,6 +1175,7 @@ function rerenderCalendarSideIfActive() {
     onRetryFood: retryCalendarFoodDate,
     onAddReminder: addReminder,
     onDeleteReminder: deleteReminder,
+    onEditReminder: editReminder,
   });
   oldSide.replaceWith(newSide);
   refreshIcons();
@@ -5011,6 +5012,32 @@ function reSyncDeviceAlarms() {
   }).catch(() => {});
 }
 
+/* scope: 'this' | 'future' | 'all'. The server may answer with a NEW reminder —
+   editing one day of a series leaves a one-off behind and skips that day on the
+   original — so the list is refetched rather than patched in place. */
+async function editReminder(scope, id, occKey, patch) {
+  try {
+    const qs = new URLSearchParams();
+    qs.set('scope', scope || 'all');
+    if (occKey) qs.set('date', occKey);
+    await api('/api/reminders/' + encodeURIComponent(id) + '?' + qs.toString(), {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    });
+    state.reminders = await api('/api/reminders');
+    reSyncDeviceAlarms();
+    if (state.screen === 'calendar') {
+      rerenderCalendarSideIfActive();
+      repaintCalendarGrid();
+    } else {
+      render();
+    }
+    toastSuccess('Reminder updated.');
+  } catch (err) {
+    toastError(err, 'Could not update that reminder.');
+  }
+}
+
 // scope: 'all' | 'this' | 'future' | 'before'
 async function deleteReminder(scope, id, occKey) {
   const repaint = () => {
@@ -6363,6 +6390,7 @@ const SCREENS = {
         onRetryFood: retryCalendarFoodDate,
         onAddReminder: addReminder,
         onDeleteReminder: deleteReminder,
+        onEditReminder: editReminder,
       }),
   },
   mentor: {

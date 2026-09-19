@@ -156,7 +156,7 @@ checks off.
 | `/api/circles` | `mine`, `{id}/join`, `{id}/leave`, `{id}/posts` GET/POST, `{id}/challenges` GET/POST |
 | `/api/notifications` | list, `unread-count`, `{id}/read`, `read-all`, `{id}` DELETE |
 | `/api/push` | `public-key`, `subscribe`, `unsubscribe`, `test` |
-| `/api/reminders` | CRUD, `occurrences`, `day/{date}` |
+| `/api/reminders` | list, POST, **PATCH `{id}?scope=&date=`** (scoped edit — `this` skips the day and leaves a one-off in its place, `future` cuts the series and starts a new one, `all` edits the row), DELETE `{id}?scope=&date=`, `occurrences`, `day/{date}` |
 | `/api/notes` | list, POST, `{id}` PATCH, `{id}` DELETE |
 | `/api/quick-add` | POST — free text ("spent 200 on lunch, slept 7h, drank 500ml") → writes across features. Parses **task, habit, water, sleep, mood, expense** and nothing else: the old example here was "ran 3km", which there is no tracker for. |
 

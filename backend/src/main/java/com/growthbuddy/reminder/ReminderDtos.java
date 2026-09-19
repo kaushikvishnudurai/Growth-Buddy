@@ -31,6 +31,19 @@ record CreateReminderRequest(
         @Size(max = 16) String sound) {
 }
 
+/**
+ * Body for a scoped edit. Every field is optional — only what is sent is changed,
+ * so a caller that just wants a new time doesn't have to echo the text back.
+ */
+record UpdateReminderRequest(
+        @Size(max = 255) String text,
+        LocalTime time,
+        ReminderTag tag,
+        RepeatFreq repeat,
+        LocalDate until,
+        @Size(max = 16) String sound) {
+}
+
 /** The stored reminder definition (raw, not expanded). */
 record ReminderResponse(
         UUID id,

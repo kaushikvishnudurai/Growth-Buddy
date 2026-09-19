@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 import com.growthbuddy.common.WorkWeek;
 import com.growthbuddy.user.UserClock;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.UUID;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
@@ -224,6 +225,89 @@ class ReminderServiceOccursOnTest {
                 null, ReminderTag.personal, RepeatFreq.daily, null, null);
         assertThatThrownBy(() -> serviceWith(savingRepo()).create(UUID.randomUUID(), req))
                 .hasMessageContaining("already passed");
+    }
+
+    /*
+     * Scoped EDIT, the mirror of scoped delete. The model has no per-occurrence
+     * overrides, so "only this day" can only mean: skip that day on the series
+     * and leave a one-off in its place. Get it wrong and you either edit days
+     * the user never touched, or the old value keeps firing beside the new one.
+     */
+    private CalendarReminder storedSeries(UUID user, RepeatFreq repeat) {
+        CalendarReminder r = reminder(TODAY, repeat);
+        r.setId(UUID.randomUUID());
+        r.setUserId(user);
+        r.setText("Standup");
+        r.setTime(LocalTime.of(9, 0));
+        r.setTag(ReminderTag.work);
+        return r;
+    }
+
+    private CalendarReminderRepository repoHolding(CalendarReminder r) {
+        CalendarReminderRepository repo = mock(CalendarReminderRepository.class);
+        when(repo.findByIdAndUserId(any(), any())).thenReturn(java.util.Optional.of(r));
+        when(repo.save(any())).thenAnswer(i -> i.getArgument(0));
+        return repo;
+    }
+
+    @Test
+    void editingOnlyThisDaySkipsItAndLeavesAOneOffBehind() {
+        UUID user = UUID.randomUUID();
+        CalendarReminder series = storedSeries(user, RepeatFreq.daily);
+        ReminderService svc = serviceWith(repoHolding(series));
+        LocalDate day = TODAY.plusDays(2);
+
+        ReminderResponse oneOff = svc.update(user, series.getId(), "this", day,
+                new UpdateReminderRequest("Standup (late)", LocalTime.of(10, 0), null, null, null, null));
+
+        assertThat(series.getSkipDays()).as("the series stops firing that day").contains(day);
+        assertThat(series.getText()).as("the series itself is untouched").isEqualTo("Standup");
+        assertThat(oneOff.repeat()).as("the replacement is a single day").isEqualTo(RepeatFreq.none);
+        assertThat(oneOff.date()).isEqualTo(day);
+        assertThat(oneOff.text()).isEqualTo("Standup (late)");
+        assertThat(oneOff.time()).isEqualTo(LocalTime.of(10, 0));
+    }
+
+    @Test
+    void editingThisAndFutureCutsTheSeriesAndStartsANewOne() {
+        UUID user = UUID.randomUUID();
+        CalendarReminder series = storedSeries(user, RepeatFreq.daily);
+        ReminderService svc = serviceWith(repoHolding(series));
+        LocalDate day = TODAY.plusDays(3);
+
+        ReminderResponse rest = svc.update(user, series.getId(), "future", day,
+                new UpdateReminderRequest(null, LocalTime.of(8, 30), null, null, null, null));
+
+        assertThat(series.getUntilDate()).as("the old series ends the day before")
+                .isEqualTo(day.minusDays(1));
+        assertThat(rest.date()).isEqualTo(day);
+        assertThat(rest.repeat()).as("the new series keeps repeating").isEqualTo(RepeatFreq.daily);
+        assertThat(rest.time()).isEqualTo(LocalTime.of(8, 30));
+        assertThat(rest.text()).as("a field not sent is carried over").isEqualTo("Standup");
+    }
+
+    @Test
+    void editingWholeSeriesChangesTheRowItself() {
+        UUID user = UUID.randomUUID();
+        CalendarReminder series = storedSeries(user, RepeatFreq.daily);
+        ReminderService svc = serviceWith(repoHolding(series));
+
+        ReminderResponse out = svc.update(user, series.getId(), "all", null,
+                new UpdateReminderRequest("Standup (moved)", null, null, null, null, "droplet"));
+
+        assertThat(series.getText()).isEqualTo("Standup (moved)");
+        assertThat(out.sound()).isEqualTo("droplet");
+        assertThat(series.getSkipDays()).as("nothing is skipped for a whole-series edit").isEmpty();
+    }
+
+    @Test
+    void aScopedEditOfARecurringReminderNeedsTheDay() {
+        UUID user = UUID.randomUUID();
+        CalendarReminder series = storedSeries(user, RepeatFreq.daily);
+        ReminderService svc = serviceWith(repoHolding(series));
+        assertThatThrownBy(() -> svc.update(user, series.getId(), "this", null,
+                new UpdateReminderRequest("x", null, null, null, null, null)))
+                .hasMessageContaining("'date' is required");
     }
 
     /* A reminder can ring with its own tone. Blank and absent both have to store

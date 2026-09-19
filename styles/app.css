@@ -4264,6 +4264,20 @@ body {
   color: var(--fg2);
   line-height: 1.4;
 }
+/* The edit control sits beside delete on a reminder row and shares its shape;
+   only the hover colour differs, because one of them destroys something. */
+.gb-rem-edit:hover {
+  color: var(--brand);
+}
+/* The chosen scope in the edit sheet, using the same option rows as delete. */
+.gb-modal-opt.is-on {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+.gb-modal-opt.is-on .gb-modal-opt-l {
+  color: var(--brand-soft-fg);
+}
+
 /* ---- Quick add preview ---- */
 .gb-qa-preview {
   display: flex;

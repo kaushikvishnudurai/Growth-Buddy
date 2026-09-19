@@ -10,6 +10,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -52,6 +53,20 @@ public class ReminderController {
     @ResponseStatus(HttpStatus.CREATED)
     public ReminderResponse create(@Valid @RequestBody CreateReminderRequest req) {
         return service.create(CurrentUser.id(), req);
+    }
+
+    /**
+     * Scoped edit, the mirror of the delete below. {@code scope} is
+     * all|this|future; {@code date} is the occurrence the user acted on and is
+     * required for the recurring scopes.
+     */
+    @PatchMapping("/{id}")
+    public ReminderResponse update(
+            @PathVariable UUID id,
+            @RequestParam(defaultValue = "all") String scope,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @Valid @RequestBody UpdateReminderRequest req) {
+        return service.update(CurrentUser.id(), id, scope, date, req);
     }
 
     /**
