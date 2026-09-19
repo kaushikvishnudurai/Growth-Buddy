@@ -7,6 +7,7 @@
    of the screen doesn't re-render every second.
    ===================================================================== */
 import { h, Icon, Card, refreshIcons, openOverlay } from './gb-kit.js';
+import { scheduleLocalNotifications, cancelLocalNotifications } from './native.js';
 
 /* -------------------------------------------------------------------
      Timer state (module scope so a running session survives navigating
@@ -18,8 +19,40 @@ const T = {
   remainingSec: 25 * 60,
   running: false,
   intervalId: null,
+  /* Wall-clock instant this session ends. While running it is the only truth;
+     remainingSec is derived from it for display. */
+  endsAt: 0,
   refs: null, // live DOM refs, rebuilt on every (re)mount
 };
+
+/* The session end, queued with the OS so a phone rings even when the WebView
+   has been frozen behind a locked screen. Id 2 is this timer's alone: 1 is the
+   push test notification, and the reminder queue starts far above both (its
+   ids are derived from the minute they fire in). No-op on the web, where the
+   tab either lives to chime or is gone. */
+const TIMER_ALARM_ID = 2;
+
+function armEndAlarm() {
+  scheduleLocalNotifications([
+    {
+      id: TIMER_ALARM_ID,
+      title: T.mode === 'focus' ? 'Focus session done' : 'Break over',
+      body: T.mode === 'focus' ? 'Nice work. Take a breather.' : 'Ready for the next one?',
+      at: new Date(T.endsAt),
+    },
+  ]).catch(function () {});
+}
+
+function cancelEndAlarm() {
+  cancelLocalNotifications([TIMER_ALARM_ID]).catch(function () {});
+}
+
+/* A throttled or suspended interval is the normal case on a phone, so re-read
+   the clock whenever the page comes back rather than trusting the tick. */
+document.addEventListener('visibilitychange', function () {
+  if (!document.hidden) resync();
+});
+window.addEventListener('focus', resync);
 
 function pad(n) {
   return n < 10 ? '0' + n : String(n);
@@ -277,6 +310,8 @@ function setMode(mode, mins) {
   T.durationSec = mins * 60;
   T.remainingSec = T.durationSec;
   T.running = false;
+  T.endsAt = 0;
+  cancelEndAlarm();
   if (T.intervalId) {
     clearInterval(T.intervalId);
     T.intervalId = null;
@@ -285,36 +320,73 @@ function setMode(mode, mins) {
   paintRing();
 }
 
-function start() {
-  if (T.running) return;
-  T.running = true;
-  if (Sound.enabled) playSound();
-  T.intervalId = setInterval(function () {
-    T.remainingSec -= 1;
-    if (T.remainingSec <= 0) {
-      T.remainingSec = 0;
-      T.running = false;
-      clearInterval(T.intervalId);
-      T.intervalId = null;
-      if (Sound.playing) stopSound();
-      chime();
-      // Persist the completed session and refresh the stats card.
-      if (Focus.onSession) {
-        Promise.resolve(Focus.onSession(T.mode, T.durationSec)).then(applyStats).catch(function () {});
-      }
-    }
-    paintRing();
-  }, 1000);
+/* The clock is the authority, not the tick.
+
+   This used to be `remainingSec -= 1` once a second. A backgrounded tab gets
+   its interval throttled to once a minute or suspended altogether, and an
+   Android WebView behind a locked screen stops it dead — so a 25-minute session
+   put in your pocket came back with twenty-some minutes still on it and never
+   finished. Now `endsAt` is a wall-clock instant and every tick just reads it:
+   throttling changes how often the ring repaints, never what it says. */
+function tick() {
+  if (!T.running) return;
+  T.remainingSec = Math.max(0, Math.ceil((T.endsAt - Date.now()) / 1000));
+  if (T.remainingSec <= 0) {
+    finish();
+    return;
+  }
   paintRing();
 }
 
-function pause() {
-  if (!T.running) return;
+function finish() {
+  T.remainingSec = 0;
   T.running = false;
+  T.endsAt = 0;
   if (T.intervalId) {
     clearInterval(T.intervalId);
     T.intervalId = null;
   }
+  cancelEndAlarm();
+  if (Sound.playing) stopSound();
+  chime();
+  // Persist the completed session and refresh the stats card.
+  if (Focus.onSession) {
+    Promise.resolve(Focus.onSession(T.mode, T.durationSec)).then(applyStats).catch(function () {});
+  }
+  paintRing();
+}
+
+function start() {
+  if (T.running) return;
+  T.running = true;
+  T.endsAt = Date.now() + T.remainingSec * 1000;
+  if (Sound.enabled) playSound();
+  T.intervalId = setInterval(tick, 1000);
+  // On a phone the WebView may be frozen when this lands, so the session end
+  // has to be queued with the OS to be heard at all.
+  armEndAlarm();
+  paintRing();
+}
+
+/* Coming back from the background: the interval may have been throttled or
+   stopped, so re-read the clock immediately — and if the end passed while we
+   were away, finish now rather than pretending there is time left. */
+function resync() {
+  if (!T.running) return;
+  tick();
+}
+
+function pause() {
+  if (!T.running) return;
+  // Freeze what the clock says right now; start() measures the next run from it.
+  T.remainingSec = Math.max(0, Math.ceil((T.endsAt - Date.now()) / 1000));
+  T.running = false;
+  T.endsAt = 0;
+  if (T.intervalId) {
+    clearInterval(T.intervalId);
+    T.intervalId = null;
+  }
+  cancelEndAlarm();
   if (Sound.playing) stopSound();
   paintRing();
 }

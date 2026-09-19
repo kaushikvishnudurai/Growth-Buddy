@@ -152,6 +152,19 @@ export function scheduleLocalNotification(item) {
  * Drop everything queued but not yet shown. Delivered notifications are not
  * pending and are left alone, so this never clears a reminder off the shade.
  */
+/* Cancel specific ids. Distinct from cancelPendingLocalNotifications below,
+   which clears the whole queue — the focus timer must be able to drop its own
+   alarm without taking every queued reminder with it. */
+export async function cancelLocalNotifications(ids) {
+  const LN = nativePlugin('LocalNotifications');
+  if (!LN || !ids || !ids.length) return;
+  try {
+    await LN.cancel({ notifications: ids.map((id) => ({ id: id | 0 })) });
+  } catch (_) {
+    /* nothing queued under those ids */
+  }
+}
+
 export async function cancelPendingLocalNotifications() {
   const LN = nativePlugin('LocalNotifications');
   if (!LN) return;

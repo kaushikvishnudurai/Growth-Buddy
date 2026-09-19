@@ -1433,6 +1433,12 @@ async function connectWebSocket() {
       connectHeaders: { Authorization: 'Bearer ' + token },
       reconnectDelay: 5000,
       onConnect: () => {
+        // Catch up on whatever arrived while the socket was down. It reconnects
+        // on its own, but a reconnect only resumes the live feed — everything
+        // delivered in the gap was pushed to a socket nobody was holding, and
+        // the bell is built from pushes alone. A phone suspends the socket the
+        // moment the screen locks, so that gap is every night.
+        refreshNotifications();
         stomp.subscribe('/user/queue/notifications', (frame) => {
           try {
             const n = JSON.parse(frame.body);
@@ -7625,6 +7631,12 @@ if (window.CacheStorage && window.CacheStorage.init) {
 }
 initA11y();
 initPullToRefresh();
+/* Coming back to the app after it was backgrounded. The socket may have been
+   suspended without ever firing a disconnect, so `onConnect` never runs and the
+   bell is quietly stale. Ask the server directly. */
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && state.user) refreshNotifications();
+});
 applyTheme(state.theme);
 applyPremium(state.premium);
 applyTextScale(state.textScale);

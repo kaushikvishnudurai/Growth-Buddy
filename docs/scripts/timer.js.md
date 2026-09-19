@@ -10,6 +10,24 @@ Module scope on purpose — a running session survives navigating away from the 
 holds live DOM refs, rebuilt on every mount, so the timer **ticks in place** without re-rendering
 the screen every second.
 
+## The clock is the authority, not the tick
+
+`T.endsAt` is a wall-clock instant; `remainingSec` is **derived** from it on every
+tick and on every return to the foreground (`visibilitychange`, `focus` → `resync`).
+It used to be `remainingSec -= 1` inside a 1s interval — and a backgrounded tab has
+that interval throttled to once a minute, while an Android WebView behind a locked
+screen stops it dead. A 25-minute session put in a pocket came back with twenty-odd
+minutes still on it and never finished. Throttling now changes how often the ring
+repaints, never what it says.
+
+`armEndAlarm()` queues the session end with the OS (`scheduleLocalNotifications`,
+id **2** — 1 is the push test, and reminder ids start far above both because they are
+derived from the minute they fire in), so a phone rings even when the WebView is
+frozen. `pause`, `reset` and `setMode` all `cancelEndAlarm()`. That cancel is
+`cancelLocalNotifications([id])` from `native.js`, **not**
+`cancelPendingLocalNotifications()` — the latter clears the whole queue and would
+take every reminder with it.
+
 | Fn | Line |
 |---|---|
 | `setMode(mode, mins)` | 275 |
