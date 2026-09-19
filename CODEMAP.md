@@ -164,6 +164,9 @@ checks off.
 
 - `user/SessionService` (204) — mints/validates opaque tokens; stores
   `HMAC-SHA256(token, serverSecret)` so a DB dump alone can't validate a stolen token. 60-day life.
+- **Every `@RequestBody` takes `@Valid`, and every field a bound.** `mentor` was the one package
+  without either: an over-long thread title reached the insert and came back a 500 reading
+  "Something went wrong". A bound belongs at the boundary, not at the column.
 - `mentor/OpenAIClient` (188) — minimal chat-completions client on the JDK `HttpClient`, no SDK.
   Per-user caps live in `common/AiRateLimitInterceptor`, and the client charges a call budget of its
   own and refuses once it is spent — both apply to every AI route (mentor, photo estimate, meal plan,

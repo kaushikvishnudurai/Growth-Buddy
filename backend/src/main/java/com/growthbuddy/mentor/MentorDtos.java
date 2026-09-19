@@ -1,5 +1,6 @@
 package com.growthbuddy.mentor;
 
+import jakarta.validation.constraints.Size;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -23,11 +24,23 @@ interface MentorMessageRepository extends JpaRepository<MentorMessage, UUID> {
     int deleteAllByThreadId(@Param("threadId") UUID threadId);
 }
 
-/** Payloads for the mentor chat. */
-record CreateThreadRequest(String title) {
+/**
+ * Payloads for the mentor chat.
+ *
+ * <p>These carried no bounds at all, alone among the write DTOs in this app. A
+ * title past the column's 255 reached the insert and came back a 500 — the
+ * message was "Something went wrong", which is all a user ever saw. Bounds here,
+ * at the boundary, the way every other request in the codebase does it.
+ */
+record CreateThreadRequest(@Size(max = 200) String title) {
 }
 
-record PostMessageRequest(String content) {
+/**
+ * {@code content} is MEDIUMTEXT, so nothing overflows — but it is also the
+ * prompt, and an unbounded prompt is an unbounded bill. 4000 characters is far
+ * more than anyone types at a mentor and still a ceiling.
+ */
+record PostMessageRequest(@Size(max = 4000) String content) {
 }
 
 record MessageResponse(UUID id, MessageRole role, String content, Instant createdAt) {

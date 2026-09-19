@@ -1,6 +1,7 @@
 package com.growthbuddy.mentor;
 
 import com.growthbuddy.common.CurrentUser;
+import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -32,7 +33,7 @@ public class MentorController {
     }
 
     @PostMapping("/chat/messages")
-    public ReplyResponse postChat(@RequestBody PostMessageRequest req) {
+    public ReplyResponse postChat(@Valid @RequestBody PostMessageRequest req) {
         UUID uid = CurrentUser.id();
         MentorThread t = service.defaultThread(uid);
         return service.postMessage(uid, t.getId(), req);
@@ -53,7 +54,7 @@ public class MentorController {
 
     @PostMapping("/threads")
     @ResponseStatus(HttpStatus.CREATED)
-    public ThreadResponse createThread(@RequestBody(required = false) CreateThreadRequest req) {
+    public ThreadResponse createThread(@Valid @RequestBody(required = false) CreateThreadRequest req) {
         return service.createThread(CurrentUser.id(), req);
     }
 
@@ -64,7 +65,7 @@ public class MentorController {
 
     /** Post a user message and receive the assistant's reply. */
     @PostMapping("/threads/{threadId}/messages")
-    public ReplyResponse post(@PathVariable UUID threadId, @RequestBody PostMessageRequest req) {
+    public ReplyResponse post(@PathVariable UUID threadId, @Valid @RequestBody PostMessageRequest req) {
         return service.postMessage(CurrentUser.id(), threadId, req);
     }
 
