@@ -4264,6 +4264,56 @@ body {
   color: var(--fg2);
   line-height: 1.4;
 }
+/* ---- Quick add preview ---- */
+.gb-qa-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.gb-qa-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  cursor: pointer;
+}
+.gb-qa-row.is-unknown {
+  opacity: 0.6;
+  cursor: default;
+}
+.gb-qa-check {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  accent-color: var(--brand);
+}
+.gb-qa-icon {
+  display: inline-flex;
+  color: var(--fg3);
+  flex: none;
+}
+.gb-qa-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.gb-qa-copy strong {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--fg1);
+}
+.gb-qa-copy span {
+  font-size: 0.75rem;
+  color: var(--fg2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ---- Fitness habit presets and the day's number ---- */
 .gb-preset-row {
   display: flex;

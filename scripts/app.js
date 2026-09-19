@@ -1702,7 +1702,10 @@ function addQuickExpense(amount, note) {
   });
   saveMoney(next);
 }
-async function runQuickAdd(text) {
+/* Read the sentence; write nothing. Applying straight from the parse meant one
+   misread — "spent 200 on lunch" landing as 200ml of water — wrote itself into a
+   tracker with no way to see it coming or take it back. */
+async function parseQuickAdd(text) {
   const habits = (state.habits || [])
     .map((hb) => hb.name)
     .filter(Boolean)
@@ -1711,8 +1714,53 @@ async function runQuickAdd(text) {
     method: 'POST',
     body: JSON.stringify({ text, habits }),
   });
-  if (!res || res.configured === false) return { configured: false, applied: 0 };
-  const intents = res.intents || [];
+  if (!res || res.configured === false) return { configured: false, intents: [] };
+  return { configured: true, intents: res.intents || [], note: res.note };
+}
+
+/* One intent, in the words the user would use. This is what they are agreeing
+   to, so it has to name the tracker and the number, not the intent's shape. */
+function describeIntent(it) {
+  switch (it.type) {
+    case 'task':
+      return { icon: 'list-checks', label: 'New task', detail: it.title };
+    case 'habit': {
+      const known = (state.habits || []).some(
+        (x) => (x.name || '').toLowerCase() === String(it.name || '').toLowerCase()
+      );
+      return {
+        icon: 'repeat',
+        label: known ? 'Tick habit' : 'No such habit',
+        detail: it.name,
+        unknown: !known,
+      };
+    }
+    case 'water':
+      return { icon: 'droplets', label: 'Water', detail: it.amountMl + ' ml' };
+    case 'sleep':
+      return {
+        icon: 'moon',
+        label: 'Sleep',
+        detail: it.hours + ' h' + (it.quality ? ' · ' + it.quality : ''),
+      };
+    case 'mood':
+      return {
+        icon: 'heart',
+        label: 'Mood',
+        detail: it.mood + (it.energy ? ' · ' + it.energy + ' energy' : ''),
+      };
+    case 'expense':
+      return {
+        icon: 'wallet',
+        label: 'Expense',
+        detail: ((state.money && state.money.currency) || '₹') + it.amount + (it.note ? ' · ' + it.note : ''),
+      };
+    default:
+      return null;
+  }
+}
+
+async function applyQuickAdd(intents) {
   let applied = 0;
   for (const it of intents) {
     try {
@@ -1742,7 +1790,7 @@ async function runQuickAdd(text) {
       /* skip a single bad intent; keep applying the rest */
     }
   }
-  return { configured: true, applied, note: res.note, total: intents.length };
+  return applied;
 }
 
 async function loadGoals() {
@@ -5063,18 +5111,24 @@ function openAddSheet() {
     if (!text) return;
     qaBtn.disabled = true;
     qaInput.disabled = true;
-    qaBtn.textContent = 'Logging…';
+    qaBtn.textContent = 'Reading…';
     try {
-      const r = await runQuickAdd(text);
-      close();
+      const r = await parseQuickAdd(text);
       if (!r.configured) {
+        close();
         pushToast('Quick add needs an AI key configured on the server.', 'error', 3600);
-      } else if (r.applied > 0) {
-        toastSuccess(r.note || 'Logged ' + r.applied + (r.applied > 1 ? ' things.' : ' thing.'));
-        await loadData();
-      } else {
-        pushToast("Couldn't find anything to log there — try being more specific.", 'error', 3600);
+        return;
       }
+      const rows = r.intents.map((it) => ({ it, d: describeIntent(it) })).filter((x) => x.d);
+      if (!rows.length) {
+        qaBtn.disabled = false;
+        qaInput.disabled = false;
+        qaBtn.textContent = 'Log it';
+        pushToast("Couldn't find anything to log there — try being more specific.", 'error', 3600);
+        return;
+      }
+      close();
+      openQuickAddPreview(rows, r.note);
     } catch (err) {
       qaBtn.disabled = false;
       qaInput.disabled = false;
@@ -5624,6 +5678,60 @@ function openAddHabit() {
     },
   });
   setTimeout(() => nameInput.focus(), 60);
+}
+
+/* What quick add read, before any of it is written. Every row is on by default
+   and can be switched off, so one wrong reading costs a tap instead of a wrong
+   number in a tracker. A habit it couldn't match is off and stays off — there is
+   nothing to tick. */
+function openQuickAddPreview(rows, note) {
+  const chosen = rows.map((r) => !r.d.unknown);
+  const list = h(
+    'div',
+    { class: 'gb-qa-preview' },
+    rows.map((r, i) => {
+      const box = h('input', {
+        type: 'checkbox',
+        class: 'gb-qa-check',
+        checked: chosen[i],
+        disabled: !!r.d.unknown,
+        'aria-label': r.d.label + ': ' + r.d.detail,
+        onchange: (e) => {
+          chosen[i] = e.target.checked;
+        },
+      });
+      return h(
+        'label',
+        { class: 'gb-qa-row' + (r.d.unknown ? ' is-unknown' : '') },
+        box,
+        h('span', { class: 'gb-qa-icon' }, Icon(r.d.icon, { size: 16, sw: 2.4 })),
+        h(
+          'span',
+          { class: 'gb-qa-copy' },
+          h('strong', null, r.d.label),
+          h('span', null, r.d.detail || '')
+        )
+      );
+    })
+  );
+  openModal({
+    title: 'Log these?',
+    sub: note || 'Switch off anything it read wrong.',
+    body: list,
+    primary: 'Log them',
+    errorMessage: 'Could not log that.',
+    onPrimary: async () => {
+      const picked = rows.filter((_, i) => chosen[i]).map((r) => r.it);
+      if (!picked.length) throw new Error('Nothing selected — switch at least one on.');
+      const applied = await applyQuickAdd(picked);
+      if (applied > 0) {
+        toastSuccess('Logged ' + applied + (applied > 1 ? ' things.' : ' thing.'));
+        await loadData();
+      } else {
+        throw new Error('None of those could be logged.');
+      }
+    },
+  });
 }
 
 /** "Just now" / "5 min ago" / "2 h ago" / "3 d ago". */

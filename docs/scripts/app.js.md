@@ -150,6 +150,11 @@ it silently landed on Home. Don't reintroduce a second list.
   `TaskMidnightSweep` soft-deletes completed tasks at the user's own local midnight, so they
   simply aren't in `/api/tasks` any more. A client-side reset on top of that would resurrect
   whatever the sweep hadn't reached yet.
+- **Quick add previews before it writes.** `parseQuickAdd` reads the sentence and writes nothing;
+  `openQuickAddPreview` lists each intent in plain words with a checkbox; `applyQuickAdd` runs only
+  what is still ticked. It used to parse and apply in one call, so a single misread — "spent 200 on
+  lunch" landing as 200 ml of water — wrote itself into a tracker with no way to see it coming or
+  take it back. A habit name it can't match renders as "No such habit", unchecked and disabled.
 - **Pull to refresh is hand-rolled** (`initPullToRefresh`, ~6390). A WebView gives you none, and the
   app had none — swiping down at the top of a screen did nothing. Listeners sit on `document`, not on
   `.gb-scroll`, because `render()` replaces that element and would throw a listener on it away. A drag
