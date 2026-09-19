@@ -48,6 +48,18 @@ public class HabitCheckin {
     @Column(name = "protected_day", nullable = false)
     private boolean protectedDay = false;
 
+    /**
+     * The habit's metric for this day — km, steps, whichever it measures. Null
+     * for a plain habit, and null for a measured one ticked without a number:
+     * the tick still counts for the streak, there is just nothing to plot.
+     */
+    @Column(name = "metric_value")
+    private Double metricValue;
+
+    /** Minutes it took, when the habit records both a distance and a duration. */
+    @Column(name = "duration_min")
+    private Integer durationMin;
+
     @Column(columnDefinition = "TEXT")
     private String note;
 

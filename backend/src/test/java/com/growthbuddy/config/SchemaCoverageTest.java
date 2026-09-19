@@ -142,6 +142,30 @@ class SchemaCoverageTest {
         assertThat(unguarded).as("CREATE TABLE without IF NOT EXISTS").isEmpty();
     }
 
+    /**
+     * The check query at the top of migrations.sql lists every column the file
+     * can add. Add an ALTER without listing it and the check reports a database
+     * as complete while the column it needs is still missing — which is the one
+     * thing that file exists to prevent.
+     */
+    @Test
+    void theMigrationCheckListsEveryColumnTheFileAdds() throws IOException {
+        String migrations = Files.readString(repoRoot().resolve("migrations.sql"));
+        String checkBlock = migrations.substring(0, migrations.indexOf("---- The ALTERs"));
+        Set<String> unlisted = new TreeSet<>();
+        Matcher m = ALTER_ADD.matcher(migrations);
+        while (m.find()) {
+            String table = m.group(1);
+            String column = m.group(2);
+            if (!checkBlock.contains("'" + table + "'") || !checkBlock.contains("'" + column + "'")) {
+                unlisted.add(table + "." + column);
+            }
+        }
+        assertThat(unlisted)
+                .as("migrations.sql adds a column its own check query never asks about")
+                .isEmpty();
+    }
+
     /** Column names declared inside {@code table}'s CREATE TABLE body. */
     private static Set<String> columnsOf(String sql, String table) {
         Matcher m = Pattern.compile(

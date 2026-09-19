@@ -48,7 +48,7 @@ fix the doc line if it was wrong. A doc you touch and don't update is worse than
   **`node scripts/tokens.test.mjs`** (every bare `var(--x)` in `styles/` resolves — two dead
   tokens had been silently voiding whole declarations, one of them the modal's transition),
   `node scripts/gen-chimes.mjs` (regenerates, and asserts none of them is silent or clipping),
-  `money.js` and `chime.js` `_demo()` on Vite DEV, `./mvnw test` (141 tests — including the three that guard
+  `money.js` and `chime.js` `_demo()` on Vite DEV, `./mvnw test` (142 tests — including the three that guard
   invariants rather than code: `SchemaCoverageTest`, `AccountDeletionCoverageTest`,
   `SharedRecurrenceCasesTest`), and `scripts/ui-audit.mjs` — walks every screen at
   phone + desktop widths, screenshots each, then **opens one dialog per module and both header

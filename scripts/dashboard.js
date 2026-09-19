@@ -12,6 +12,7 @@ import {
   ProgressRing,
   plural,
   openOverlay,
+  formatTime as sharedFormatTime,
 } from './gb-kit.js';
 import { MoneyHomeCard } from './money.js';
 import { CacheStorage } from './cache-storage.js';
@@ -184,7 +185,7 @@ function TaskRow(task, toggleTask, onEdit) {
       'div',
       { style: { flex: 1, minWidth: 0 } },
       h('div', { class: 'title' }, task.title),
-      h('div', { class: 'sub' }, task.time)
+      h('div', { class: 'sub' }, sharedFormatTime(task.time))
     ),
     Pill({ label: task.priority, bg: p.bg, fg: p.fg, dot: p.dot }),
     onEdit
@@ -457,7 +458,7 @@ function ReminderSuggestionsCard({ habits, water, wellness, onAddSuggestedRemind
               'span',
               { class: 'gb-suggest-copy' },
               h('strong', null, item.text),
-              h('small', null, item.time)
+              h('small', null, sharedFormatTime(item.time))
             ),
             h(
               'button',
@@ -585,7 +586,7 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater })
   function timeLabel(iso) {
     if (!iso) return 'Now';
     try {
-      return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      return sharedFormatTime(iso);
     } catch (_) {
       return 'Now';
     }
@@ -1057,20 +1058,11 @@ function MiniCalendarCard({
     const dt = new Date(p.y, p.m, p.d);
     return DOW[dt.getDay()] + ', ' + MONTHS[p.m] + ' ' + p.d;
   }
-  function formatTime(value) {
-    if (!value) return 'Any time';
-    const parts = String(value).split(':');
-    let hh = parseInt(parts[0], 10);
-    const mm = parts[1] || '00';
-    const ampm = hh >= 12 ? 'PM' : 'AM';
-    hh = hh % 12;
-    if (hh === 0) hh = 12;
-    return hh + ':' + mm + ' ' + ampm;
-  }
+  const formatTime = (value) => sharedFormatTime(value, 'Any time');
   function prettyTaskTime(iso) {
     if (!iso) return 'No due time';
     try {
-      return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      return sharedFormatTime(iso, 'Due');
     } catch (_) {
       return 'Due';
     }

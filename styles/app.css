@@ -4264,6 +4264,52 @@ body {
   color: var(--fg2);
   line-height: 1.4;
 }
+/* ---- Fitness habit presets and the day's number ---- */
+.gb-preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.gb-preset {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 8px 14px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--fg2);
+  font-family: var(--font-body);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.gb-preset:hover {
+  border-color: var(--border-strong);
+}
+.gb-preset.is-on {
+  background: var(--brand-soft);
+  border-color: var(--brand);
+  color: var(--brand-soft-fg);
+}
+.gb-preset:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.gb-metric-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--brand-soft);
+  color: var(--brand-soft-fg);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ---- Pull to refresh ----
    Fixed under the header, dragged into view by the gesture in app.js. Nothing
    here animates by itself: the transform is set per touchmove so the indicator

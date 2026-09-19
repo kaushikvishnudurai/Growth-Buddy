@@ -485,6 +485,55 @@ function BottomNav({ active, onNav, onMore, features, moreOpen, layout } = {}) {
   return h('div', { class: 'gb-nav-wrap' }, ...children);
 }
 
+/* ---- Time formatting ----
+   One formatter for the whole app. There were four: two hand-rolled AM/PM
+   copies (calendar and dashboard), a locale-dependent toLocaleTimeString that
+   read 12h or 24h depending on the device, and two places printing the raw
+   `HH:MM` the server stores. So the same reminder read "7:30 PM" on one screen
+   and "19:30" on another.
+
+   `pref` is the user's choice from Settings — 'auto' follows the device, '12'
+   and '24' override it. app.js calls setTimeFormat on boot and on change. */
+let timePref = 'auto';
+
+function setTimeFormat(pref) {
+  timePref = pref === '12' || pref === '24' ? pref : 'auto';
+}
+
+function timeFormat() {
+  return timePref;
+}
+
+/** Accepts 'HH:MM', 'HH:MM:SS', a Date, an ISO string, or epoch millis. */
+function formatTime(value, fallback = '') {
+  if (value == null || value === '') return fallback;
+  let date;
+  const asText = String(value);
+  const hhmm = /^(\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?$/.exec(asText);
+  if (hhmm) {
+    date = new Date();
+    date.setHours(Number(hhmm[1]), Number(hhmm[2]), 0, 0);
+  } else {
+    date = value instanceof Date ? value : new Date(value);
+  }
+  if (Number.isNaN(date.getTime())) return fallback;
+  const opts = { minute: '2-digit' };
+  if (timePref === '24') {
+    opts.hour = '2-digit';
+    opts.hour12 = false;
+  } else if (timePref === '12') {
+    opts.hour = 'numeric';
+    opts.hour12 = true;
+  } else {
+    opts.hour = 'numeric';
+  }
+  try {
+    return date.toLocaleTimeString(undefined, opts);
+  } catch (_) {
+    return fallback;
+  }
+}
+
 /* ---- The overlay every dialog shares ----
    The backdrop, click-outside-to-close, the mount, the open/close transition
    and the teardown. Fourteen dialogs used to carry their own copy of these
@@ -850,4 +899,7 @@ export {
   openOverlay,
   openModal,
   shakeRefusal,
+  formatTime,
+  setTimeFormat,
+  timeFormat,
 };

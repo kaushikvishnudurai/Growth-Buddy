@@ -241,6 +241,7 @@ public class HabitService {
         h.setColor(req.color());
         h.setCadence(req.cadence() != null ? req.cadence() : Cadence.daily);
         h.setTargetPerWeek(req.targetPerWeek() != null ? req.targetPerWeek() : 7);
+        h.setMetric(req.metric() != null ? req.metric() : HabitMetric.none);
         h.setReminderTime(req.reminderTime());
         habits.save(h);
         return toResponse(h, clock.today(userId), userId);
@@ -266,6 +267,9 @@ public class HabitService {
         }
         if (req.targetPerWeek() != null) {
             h.setTargetPerWeek(req.targetPerWeek());
+        }
+        if (req.metric() != null) {
+            h.setMetric(req.metric());
         }
         if (req.reminderTime() != null) {
             h.setReminderTime(req.reminderTime());
@@ -308,6 +312,16 @@ public class HabitService {
             c.setProtectedDay(false);
         }
         c.setNote(req.note());
+        // The number only means anything on a measured habit, and only on a day
+        // that actually happened — un-ticking a day clears it rather than leaving
+        // a distance behind on a day the user says they didn't do.
+        if (done && h.getMetric() != HabitMetric.none) {
+            c.setMetricValue(req.value());
+            c.setDurationMin(req.durationMin());
+        } else {
+            c.setMetricValue(null);
+            c.setDurationMin(null);
+        }
         checkins.save(c);
 
         if (!wasDone && done) {
@@ -323,7 +337,7 @@ public class HabitService {
     public HabitResponse toggleToday(UUID userId, UUID id) {
         LocalDate today = clock.today(userId);
         boolean doneNow = checkins.existsByHabitIdAndLogDateAndDoneTrue(id, today);
-        return checkin(userId, id, new CheckinRequest(today, !doneNow, null));
+        return checkin(userId, id, new CheckinRequest(today, !doneNow, null, null, null));
     }
 
     /**
@@ -549,7 +563,13 @@ public class HabitService {
             }
         }
 
-        return HabitResponse.of(h, s, currentStreak, doneToday, protectedToday, atRisk, riskStreak, tokens);
+        HabitCheckin todayRow = h.getMetric() == HabitMetric.none
+                ? null
+                : checkins.findByHabitIdAndLogDate(h.getId(), today).orElse(null);
+        return HabitResponse.of(h, s, currentStreak, doneToday, protectedToday, atRisk, riskStreak,
+                tokens,
+                todayRow != null ? todayRow.getMetricValue() : null,
+                todayRow != null ? todayRow.getDurationMin() : null);
     }
 
     private Habit require(UUID userId, UUID id) {

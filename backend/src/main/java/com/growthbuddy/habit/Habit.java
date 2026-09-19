@@ -55,6 +55,22 @@ public class Habit {
     @Column(name = "target_per_week", nullable = false)
     private int targetPerWeek = 7;
 
+    /**
+     * What ticking this habit records beyond "done" — distance, steps, minutes.
+     * {@code none} is the plain tick every habit had before.
+     */
+    /*
+     * columnDefinition is load-bearing. Left to itself, ddl-auto creates this as
+     * enum('km','minutes','none','steps') with NO default — and MySQL's implicit
+     * default for a NOT NULL enum is its FIRST member, so every habit that
+     * existed before this column came out as "measures km". Spelling the column
+     * out keeps dev identical to what migrations.sql gives prod.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16,
+            columnDefinition = "VARCHAR(16) NOT NULL DEFAULT 'none'")
+    private HabitMetric metric = HabitMetric.none;
+
     @Column(nullable = false)
     private boolean active = true;
 

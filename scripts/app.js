@@ -17,6 +17,8 @@ import {
   openOverlay,
   openModal as sharedModal,
   shakeRefusal,
+  formatTime,
+  setTimeFormat,
 } from './gb-kit.js';
 import {
   ScreenDashboard,
@@ -325,6 +327,7 @@ const state = {
    (read synchronously at module init), so it is available here. hydrateUiPrefs()
    sets it again on every refresh; this is the same value, earlier. */
 setWorkWeek(state.user && state.user.uiPrefs && state.user.uiPrefs.workWeek);
+setTimeFormat(state.user && state.user.uiPrefs && state.user.uiPrefs.timeFormat);
 
 let stomp = null;
 let toastSeq = 0;
@@ -645,6 +648,13 @@ function notifySoundFor(n) {
   return notifySound();
 }
 
+/* 'auto' follows the device, '12' and '24' override it. Read from ui_prefs so it
+   travels with the account rather than living on one device. */
+function timeFormatPref() {
+  const p = state.user && state.user.uiPrefs;
+  return p && (p.timeFormat === '12' || p.timeFormat === '24') ? p.timeFormat : 'auto';
+}
+
 function notifySound() {
   const p = state.user && state.user.uiPrefs;
   return p && p.notifySound ? p.notifySound : DEFAULT_CHIME;
@@ -687,6 +697,9 @@ function hydrateUiPrefs() {
     // Before this runs, every "Mon-Fri" reminder answers with the default —
     // so it has to happen before the calendar or Home paints their dots.
     setWorkWeek(p.workWeek);
+    // Same reason as the working week: every time on the page is formatted
+    // through gb-kit, so the preference has to land before anything paints.
+    setTimeFormat(p.timeFormat);
     if (p.onboardingDone) CacheStorage.setItem('gb.onboardDismissed', '1');
     if (Array.isArray(p.achSeen)) {
       CacheStorage.setItem('gb.achSeen.' + (state.user.id || 'me'), JSON.stringify(p.achSeen));
@@ -1080,7 +1093,7 @@ function formatTaskTime(task) {
       const base =
         dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) +
         ' · ' +
-        dt.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+        formatTime(dt);
       return (isOverdue ? 'Overdue · ' : '') + base + suffix;
     } catch (_) {
       return (isOverdue ? 'Overdue' : 'Scheduled') + suffix;
@@ -1512,7 +1525,72 @@ async function toggleTask(id) {
 
 /* Same optimistic paint as toggleTask — same three-call round trip. Streak
    numbers are the server's to decide, so only `doneToday` flips locally. */
+/* Ticking a measured habit asks what it measured. Un-ticking never does: the
+   user is saying it didn't happen, so there is no number to take. */
 async function toggleHabit(id) {
+  const habit = (state.habits || []).find((x) => x.id === id);
+  if (habit && habit.metric && habit.metric !== 'none' && !habit.doneToday) {
+    openMeasuredCheckin(habit);
+    return;
+  }
+  return plainToggleHabit(id);
+}
+
+function openMeasuredCheckin(habit) {
+  const valueInput = h('input', {
+    type: 'number',
+    class: 'gb-input',
+    inputmode: 'decimal',
+    min: '0',
+    step: habit.metric === 'steps' ? '1' : '0.1',
+    placeholder: habit.metric === 'steps' ? 'e.g. 6500' : 'e.g. 5.2',
+    autofocus: true,
+  });
+  // Only where it means something: minutes against a distance give you a speed,
+  // minutes against minutes is the same box twice.
+  const durationInput =
+    habit.metric === 'km' ? h('input', { type: 'number', class: 'gb-input', min: '1', max: '1440', step: '1', placeholder: 'e.g. 26' }) : null;
+
+  openModal({
+    title: habit.name,
+    sub: 'Log today, or leave it blank — the tick counts either way.',
+    body: h(
+      'div',
+      { class: 'gb-form' },
+      h('div', { class: 'gb-field-label' }, METRIC_LABEL[habit.metric] || 'Amount'),
+      valueInput,
+      ...(durationInput
+        ? [h('div', { class: 'gb-field-label' }, 'Minutes (optional)'), durationInput]
+        : [])
+    ),
+    primary: 'Mark done',
+    errorMessage: 'Could not save that check-in.',
+    onPrimary: async () => {
+      const raw = valueInput.value.trim();
+      const value = raw === '' ? null : Number(raw);
+      if (value != null && (!Number.isFinite(value) || value < 0)) {
+        valueInput.focus();
+        throw new Error('Enter a number, or leave it blank.');
+      }
+      const mins = durationInput && durationInput.value.trim() !== '' ? Number(durationInput.value) : null;
+      if (mins != null && (!Number.isFinite(mins) || mins < 1 || mins > 1440)) {
+        durationInput.focus();
+        throw new Error('Minutes must be between 1 and 1440.');
+      }
+      const updated = await api('/api/habits/' + encodeURIComponent(habit.id) + '/checkin', {
+        method: 'POST',
+        body: JSON.stringify({ done: true, value, durationMin: mins }),
+      });
+      state.habits = state.habits.map((x) => (x.id === updated.id ? updated : x));
+      reconcileStreakFreeze();
+      buddyReact('yes');
+      await refreshScore();
+      await refreshCurrentUser();
+    },
+  });
+}
+
+async function plainToggleHabit(id) {
   const before = { habits: state.habits, score: state.score };
   state.habits = state.habits.map((h) => (h.id === id ? { ...h, doneToday: !h.doneToday } : h));
   state.score = optimisticScore();
@@ -3120,6 +3198,25 @@ function customisePanes() {
       h('div', { class: 'gb-textsize-sample-title' }, 'Sample'),
       h('div', { class: 'gb-textsize-sample-body' }, 'Drink a glass of water · 8:00 in the morning')
     ),
+    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '18px' } }, 'Time format'),
+    h(
+      'div',
+      { class: 'gb-field-hint', style: { marginBottom: '8px' } },
+      'How every time in the app is written — reminders, due times, meal logs.'
+    ),
+    segmented(
+      [
+        { value: 'auto', label: 'Automatic' },
+        { value: '12', label: '12-hour' },
+        { value: '24', label: '24-hour' },
+      ],
+      timeFormatPref(),
+      (v) => {
+        setTimeFormat(v);
+        saveUiPrefs({ timeFormat: v });
+        render();
+      }
+    ).node,
     h('div', { class: 'gb-settings-sec-label', style: { marginTop: '18px' } }, 'Theme'),
     h(
       'div',
@@ -5374,6 +5471,35 @@ function colorPicker(initial) {
   return { node: wrap, get: () => selected };
 }
 
+/* Fitness habits measure something. Picking one fills the name, the icon and
+   what it records, so the common cases are one tap instead of three fields.
+   'minutes' is the honest unit for a workout nobody measures in distance. */
+const FITNESS_PRESETS = [
+  { key: 'running', label: 'Running', name: 'Running', icon: 'footprints', metric: 'km' },
+  { key: 'cycling', label: 'Cycling', name: 'Cycling', icon: 'bike', metric: 'km' },
+  { key: 'walking', label: 'Walking', name: 'Walking', icon: 'footprints', metric: 'steps' },
+  { key: 'workout', label: 'Workout', name: 'Workout', icon: 'dumbbell', metric: 'minutes' },
+];
+
+const METRIC_LABEL = { none: 'Just a tick', km: 'Distance (km)', steps: 'Steps', minutes: 'Minutes' };
+const METRIC_UNIT = { km: 'km', steps: 'steps', minutes: 'min' };
+
+/* A measured day, as one short line: "5.2 km · 26 min · 12.0 km/h". Speed is
+   derived here and nowhere else — a stored speed is a third number that can
+   disagree with the two it came from. */
+function metricSummary(metric, value, durationMin) {
+  if (!metric || metric === 'none' || value == null) return '';
+  const unit = METRIC_UNIT[metric] || '';
+  const parts = [metric === 'steps' ? Math.round(value) + ' steps' : value + ' ' + unit];
+  if (durationMin) {
+    parts.push(durationMin + ' min');
+    if (metric === 'km' && durationMin > 0) {
+      parts.push((value / (durationMin / 60)).toFixed(1) + ' km/h');
+    }
+  }
+  return parts.join(' · ');
+}
+
 function openAddHabit() {
   const nameInput = h('input', {
     type: 'text',
@@ -5381,6 +5507,9 @@ function openAddHabit() {
     placeholder: 'e.g. Meditate',
     maxlength: 120,
   });
+  // Assigned once the fields it toggles exist; segmented() takes its handler at
+  // construction, and the preset row is built below.
+  let syncDomain = () => {};
   const domain = segmented(
     [
       { value: 'habit', label: 'General' },
@@ -5388,7 +5517,8 @@ function openAddHabit() {
       { value: 'study', label: 'Study' },
       { value: 'journal', label: 'Journal' },
     ],
-    'habit'
+    'habit',
+    (d) => syncDomain(d)
   );
   const cadence = segmented(
     [
@@ -5400,6 +5530,53 @@ function openAddHabit() {
   const color = colorPicker('');
   const reminderInput = h('input', { type: 'time', class: 'gb-input' });
 
+  let presetIcon = null;
+  const metricSel = h(
+    'select',
+    { class: 'gb-input', 'aria-label': 'What this habit records' },
+    Object.keys(METRIC_LABEL).map((k) => h('option', { value: k }, METRIC_LABEL[k]))
+  );
+  const metricField = h(
+    'div',
+    { style: { display: 'none' } },
+    h('div', { class: 'gb-field-label' }, 'Records'),
+    metricSel
+  );
+  const presetRow = h(
+    'div',
+    { class: 'gb-preset-row', style: { display: 'none' } },
+    FITNESS_PRESETS.map((pre) =>
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-preset',
+          onclick: () => {
+            nameInput.value = pre.name;
+            metricSel.value = pre.metric;
+            presetIcon = pre.icon;
+            for (const b of presetRow.children) b.classList.remove('is-on');
+            presetRow.querySelector('[data-preset="' + pre.key + '"]').classList.add('is-on');
+          },
+          dataset: { preset: pre.key },
+        },
+        Icon(pre.icon, { size: 16, sw: 2.4 }),
+        pre.label
+      )
+    )
+  );
+  // The presets and the unit only make sense for fitness; everything else is a
+  // plain tick, which is what every habit was before this.
+  syncDomain = (d) => {
+    const fitness = d === 'fitness';
+    presetRow.style.display = fitness ? '' : 'none';
+    metricField.style.display = fitness ? '' : 'none';
+    if (!fitness) {
+      metricSel.value = 'none';
+      presetIcon = null;
+    }
+  };
+
   const body = h(
     'div',
     { class: 'gb-form' },
@@ -5407,6 +5584,8 @@ function openAddHabit() {
     nameInput,
     h('div', { class: 'gb-field-label' }, 'Category'),
     domain.node,
+    presetRow,
+    metricField,
     h('div', { class: 'gb-field-label' }, 'Color (optional)'),
     color.node,
     h('div', { class: 'gb-field-label' }, 'Cadence'),
@@ -5426,7 +5605,7 @@ function openAddHabit() {
         throw new Error('Name is required');
       }
       const d = domain.get();
-      const icon = (DOMAIN[d] && DOMAIN[d].icon) || 'repeat';
+      const icon = presetIcon || (DOMAIN[d] && DOMAIN[d].icon) || 'repeat';
       await createHabit({
         name,
         domain: d,
@@ -5434,6 +5613,7 @@ function openAddHabit() {
         cadence: cadence.get(),
         color: color.get() || null,
         reminderTime: reminderInput.value || null,
+        metric: d === 'fitness' ? metricSel.value : 'none',
       });
     },
   });
@@ -5638,6 +5818,10 @@ function ScreenHabits() {
         (habit.cadence || 'daily') + (streak ? ' · 🔥 ' + streak + '-day streak' : '')
       ),
     ];
+    const measured = metricSummary(habit.metric, habit.todayValue, habit.todayDurationMin);
+    if (measured) {
+      subChildren.push(h('span', { class: 'gb-metric-chip' }, measured));
+    }
     if (frozenCount > 0) {
       subChildren.push(
         h(
@@ -5788,7 +5972,9 @@ function ScreenHabits() {
               title: 'Freezes protect a streak after a missed day. You get 1 free pass each week.',
             },
             Icon('snowflake', { size: 13, sw: 2.4 }),
-            left + ' freeze' + (left === 1 ? '' : 's') + ' left this week'
+            // The earning rule was in the title attribute above, which a phone
+            // never shows — so on mobile the only place it existed was invisible.
+            left + ' freeze' + (left === 1 ? '' : 's') + ' left · 1 more each week'
           )
         );
       })(),

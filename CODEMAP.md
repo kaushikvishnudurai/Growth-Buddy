@@ -158,13 +158,19 @@ checks off.
 | `/api/push` | `public-key`, `subscribe`, `unsubscribe`, `test` |
 | `/api/reminders` | CRUD, `occurrences`, `day/{date}` |
 | `/api/notes` | list, POST, `{id}` PATCH, `{id}` DELETE |
-| `/api/quick-add` | POST — free text ("ran 3km, spent 200 on lunch, slept 7h") → writes across features |
+| `/api/quick-add` | POST — free text ("spent 200 on lunch, slept 7h, drank 500ml") → writes across features. Parses **task, habit, water, sleep, mood, expense** and nothing else: the old example here was "ran 3km", which there is no tracker for. |
 
 ### Notable services (the ones without their own doc)
 
 - `user/SessionService` (204) — mints/validates opaque tokens; stores
   `HMAC-SHA256(token, serverSecret)` so a DB dump alone can't validate a stolen token. 60-day life.
 - `mentor/OpenAIClient` (188) — minimal chat-completions client on the JDK `HttpClient`, no SDK.
+  Per-user caps live in `common/AiRateLimitInterceptor`, and the client charges a call budget of its
+  own and refuses once it is spent — both apply to every AI route (mentor, photo estimate, meal plan,
+  receipt scan, purchase advice).
+- **What the mentor is given** (`MentorService.buildContext`): the user's **tasks and habits only**.
+  Not money, not food, not family. Say that plainly anywhere the mentor is described — "sees your
+  trackers" reads as all of them.
   Talks to **Claude through a Cloudflare AI Gateway**, whose `/compat/chat/completions` endpoint
   speaks the OpenAI wire format, so the provider swap was config plus the payload shape. Class name
   kept; `AiPayloadTest` pins the reply parser, the half that fails silently. Stateless: each call

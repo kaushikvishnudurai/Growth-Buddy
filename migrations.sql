@@ -47,6 +47,9 @@ FROM (
   UNION ALL SELECT 'mentorship_requests'    AS table_name, 'checked_at'  
   UNION ALL SELECT 'users'                  AS table_name, 'nav_layout'  
   UNION ALL SELECT 'calendar_reminders'     AS table_name, 'sound'       
+  UNION ALL SELECT 'habits'                 AS table_name, 'metric'
+  UNION ALL SELECT 'habit_checkins'         AS table_name, 'metric_value'
+  UNION ALL SELECT 'habit_checkins'         AS table_name, 'duration_min'
 ) AS t
 LEFT JOIN information_schema.COLUMNS c
        ON c.table_schema = DATABASE()
@@ -79,6 +82,12 @@ ALTER TABLE family_members ADD COLUMN weight_kg INT NULL AFTER height_cm;
 ALTER TABLE mentorship_requests ADD COLUMN checked_at TIMESTAMP NULL;
 ALTER TABLE users ADD COLUMN nav_layout VARCHAR(255) NULL;
 ALTER TABLE calendar_reminders ADD COLUMN sound VARCHAR(16) NULL;
+
+-- Fitness habits: a habit can measure distance, steps or minutes, and a
+-- check-in carries the number for that day.
+ALTER TABLE habits ADD COLUMN metric VARCHAR(16) NOT NULL DEFAULT 'none';
+ALTER TABLE habit_checkins ADD COLUMN metric_value DOUBLE NULL;
+ALTER TABLE habit_checkins ADD COLUMN duration_min INT NULL;
 
 -- Widening an ENUM: ddl-auto never does it, and MODIFY to the same definition
 -- is a no-op. Safe to re-run; it keeps every existing value.

@@ -159,6 +159,8 @@ CREATE TABLE IF NOT EXISTS habits (
   -- install depended on it running. They belong here.
   color VARCHAR(16) NULL,
   reminder_time TIME NULL,
+  -- What ticking this habit records beyond "done": none | km | steps | minutes.
+  metric          VARCHAR(16)  NOT NULL DEFAULT 'none',
   PRIMARY KEY (id),
   KEY ix_habits_user (user_id),
   CONSTRAINT fk_habits_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -172,6 +174,9 @@ CREATE TABLE IF NOT EXISTS habit_checkins (
   protected_day   BOOLEAN      NOT NULL DEFAULT FALSE,     -- rest/freeze day: bridges the streak gap
   note            TEXT,
   created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  -- The habit's metric for this day (km, steps, minutes) and how long it took.
+  metric_value    DOUBLE       NULL,
+  duration_min    INT          NULL,
   PRIMARY KEY (habit_id, log_date),
   KEY ix_habit_checkin_user_date (user_id, log_date),
   CONSTRAINT fk_habit_checkin_habit FOREIGN KEY (habit_id) REFERENCES habits(id) ON DELETE CASCADE,

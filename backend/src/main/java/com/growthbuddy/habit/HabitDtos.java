@@ -1,6 +1,8 @@
 package com.growthbuddy.habit;
 
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -13,7 +15,8 @@ record CreateHabitRequest(
         @Size(max = 16) String color,
         Cadence cadence,
         Integer targetPerWeek,
-        LocalTime reminderTime) {
+        LocalTime reminderTime,
+        HabitMetric metric) {
 }
 
 record UpdateHabitRequest(
@@ -24,11 +27,21 @@ record UpdateHabitRequest(
         Cadence cadence,
         Integer targetPerWeek,
         LocalTime reminderTime,
+        HabitMetric metric,
         Boolean active) {
 }
 
-/** Body for a check-in; {@code date} defaults to today, {@code done} defaults to true. */
-record CheckinRequest(LocalDate date, Boolean done, String note) {
+/**
+ * Body for a check-in; {@code date} defaults to today, {@code done} defaults to
+ * true. {@code value} is the habit's metric for that day (km, steps, minutes) and
+ * is optional even on a measured habit — the tick counts either way.
+ */
+record CheckinRequest(
+        LocalDate date,
+        Boolean done,
+        String note,
+        @PositiveOrZero @Max(1000000) Double value,
+        @PositiveOrZero @Max(1440) Integer durationMin) {
 }
 
 /** Body for protecting/unprotecting a habit day; {@code date} defaults to today. */
@@ -56,10 +69,20 @@ record HabitResponse(
         boolean protectedToday,
         boolean atRisk,
         int riskStreak,
-        int freezeTokens) {
+        int freezeTokens,
+        HabitMetric metric,
+        Double todayValue,
+        Integer todayDurationMin) {
 
     static HabitResponse of(Habit h, HabitStreak streak, int currentStreak, boolean doneToday,
                             boolean protectedToday, boolean atRisk, int riskStreak, int freezeTokens) {
+        return of(h, streak, currentStreak, doneToday, protectedToday, atRisk, riskStreak,
+                freezeTokens, null, null);
+    }
+
+    static HabitResponse of(Habit h, HabitStreak streak, int currentStreak, boolean doneToday,
+                            boolean protectedToday, boolean atRisk, int riskStreak, int freezeTokens,
+                            Double todayValue, Integer todayDurationMin) {
         // Current streak is computed live (date-aware) by the caller so a streak
         // that broke from a missed day shows immediately on read — without waiting
         // for the next check-in to recompute the stored value. Longest comes from
@@ -68,6 +91,7 @@ record HabitResponse(
         return new HabitResponse(h.getId(), h.getName(), h.getDomain(), h.getIcon(), h.getColor(),
                 h.getCadence(), h.getTargetPerWeek(), h.getReminderTime(),
                 h.isActive(), currentStreak, longest, doneToday,
-                protectedToday, atRisk, riskStreak, freezeTokens);
+                protectedToday, atRisk, riskStreak, freezeTokens,
+                h.getMetric(), todayValue, todayDurationMin);
     }
 }

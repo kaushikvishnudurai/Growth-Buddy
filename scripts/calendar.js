@@ -10,6 +10,7 @@ import {
   plural,
   refreshIcons,
   openOverlay,
+  formatTime,
 } from './gb-kit.js';
 import {
   occursOn,
@@ -128,16 +129,6 @@ function prettyDate(key) {
   return DOW[date.getDay()] + ', ' + MONTHS[p.m] + ' ' + p.d;
 }
 
-/* 24h 'HH:MM' → '9:00 PM'. */
-function formatTime(t) {
-  const [hStr, mStr] = t.split(':');
-  let hh = parseInt(hStr, 10);
-  const ampm = hh >= 12 ? 'PM' : 'AM';
-  hh = hh % 12;
-  if (hh === 0) hh = 12;
-  return hh + ':' + mStr + ' ' + ampm;
-}
-
 function remindersOn(reminders, key) {
   return reminders
     .filter((r) => occursOn(r, key))
@@ -192,7 +183,7 @@ function goalActionsOn(sections, key) {
 function prettyTaskTime(iso) {
   if (!iso) return 'No due time';
   try {
-    return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    return formatTime(iso);
   } catch (_) {
     return 'Due';
   }
