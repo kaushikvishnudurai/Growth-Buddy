@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -143,8 +144,16 @@ public class ReminderDeliveryScheduler {
                 continue;
             }
 
-            LocalDateTime scheduledAt = LocalDateTime.of(day, rem.getTime());
-            if (now.isBefore(scheduledAt) || now.isAfter(scheduledAt.plus(CATCH_UP))) {
+            // Zone-aware, not a bare LocalDateTime. On the morning clocks spring
+            // forward an hour simply does not happen locally: a 02:30 reminder's
+            // window (02:30 → 02:35 local) never arrives, and it was skipped
+            // without a word. ZonedDateTime.of resolves a time inside the gap to
+            // the first instant that does exist — 02:30 becomes 03:30 — so it
+            // fires late rather than never. On the autumn morning the hour
+            // repeats it picks the earlier offset and the dispatch log, keyed on
+            // the day, stops the second pass resending.
+            Instant scheduledAt = ZonedDateTime.of(day, rem.getTime(), zone).toInstant();
+            if (tick.isBefore(scheduledAt) || tick.isAfter(scheduledAt.plus(CATCH_UP))) {
                 continue;
             }
 

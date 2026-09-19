@@ -50,7 +50,7 @@ fix the doc line if it was wrong. A doc you touch and don't update is worse than
   **`node scripts/icons.test.mjs`** (every `Icon('name')` is registered in `icons.js` — an
   unregistered one renders as *nothing*: no error, no box, and the UI audit can't see it either),
   `node scripts/gen-chimes.mjs` (regenerates, and asserts none of them is silent or clipping),
-  `money.js` and `chime.js` `_demo()` on Vite DEV, `./mvnw test` (146 tests — including the three that guard
+  `money.js` and `chime.js` `_demo()` on Vite DEV, `./mvnw test` (150 tests — including the three that guard
   invariants rather than code: `SchemaCoverageTest`, `AccountDeletionCoverageTest`,
   `SharedRecurrenceCasesTest`), and `scripts/ui-audit.mjs` — walks every screen at
   phone + desktop widths, screenshots each, then **opens one dialog per module and both header
@@ -81,6 +81,11 @@ fix the doc line if it was wrong. A doc you touch and don't update is worse than
   fails the build if you forget. A table that holds a `user_id` also belongs in
   `AuthService.USER_OWNED_TABLES`, or a deleted account leaves its rows behind —
   `AccountDeletionCoverageTest` checks that one.
+- **A reminder's time is a LOCAL time and follows the user.** The delivery scheduler reads the
+  user's *current* timezone every tick, so 09:00 stays 09:00 after they move; nothing is pinned to an
+  instant at creation. The window is built with `ZonedDateTime.of(day, time, zone)`, never a bare
+  `LocalDateTime` — on the morning clocks spring forward, an hour does not happen locally, and a
+  02:30 reminder's local window never arrived at all. `DstWindowTest` pins both.
 - **Recurrence lives twice** (`scripts/recurrence.js` + `ReminderService.occursOn`, because the
   WhatsApp scheduler can't import JS). Add cases to **`scripts/recurrence.cases.json`** — both
   test suites read it, so neither side can drift alone.

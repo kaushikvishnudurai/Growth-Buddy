@@ -266,8 +266,15 @@ export function upcomingAlarms({ reminders, water, sound } = {}, now = new Date(
   // so deleting a reminder silently wiped delivered ones off the lock screen.
   // Everything queued is in the future and everything delivered is in the past,
   // and a later minute is always a bigger number, so the two can't collide.
+  // 'off' has to mean off. Android takes a notification's sound from its
+  // channel, and a channel created without one keeps the system default — so a
+  // queued alarm on the Silent tone rang the phone's own sound, the loudest
+  // possible reading of "silent". There is no soundless channel to reach from
+  // here, so the honest answer is not to queue it: nothing is scheduled, so
+  // nothing rings. The in-app chime was already silent on this key.
+  const resolved = queue.filter((n) => (n.sound || sound) !== 'off');
   const used = new Set();
-  return queue.slice(0, MAX_QUEUED).map((n) => {
+  return resolved.slice(0, MAX_QUEUED).map((n) => {
     // 4 bits of room for alarms sharing a minute, then step forward until the
     // id is free. Clamping the 17th into the 16th slot instead would have let
     // one reminder quietly overwrite another. Every id still sits at or above

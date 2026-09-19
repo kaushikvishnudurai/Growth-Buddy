@@ -184,7 +184,7 @@ checks off.
   carries its **own** chime key, and null means "whatever tone the user picked in Alerts".
   `ReminderDeliveryScheduler` (222) polls and delivers near the user's local time — the in-app
   bell always (it needs no setup, and `NotificationService.publish` pushes it down the websocket so
-  an open app shows it immediately), plus WhatsApp + push for the users configured for them, dispatching a tick's batch across a 16-thread pool; `ReminderDispatchLog` prevents
+  an open app shows it immediately), plus WhatsApp + push for the users configured for them, dispatching a tick's batch across a 16-thread pool; The delivery window is a zone-resolved `Instant`, so a reminder inside a spring-forward gap fires late rather than never. `ReminderDispatchLog` prevents
   double sends; `WhatsAppService` (161) = Meta WhatsApp Cloud API. Scheduled sends need
   `WHATSAPP_TEMPLATE` (an approved template, body = one `{{1}}`) — free-form text is only
   deliverable inside a user's 24h window.
