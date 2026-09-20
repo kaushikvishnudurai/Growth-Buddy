@@ -16,7 +16,8 @@ record CreateHabitRequest(
         Cadence cadence,
         Integer targetPerWeek,
         LocalTime reminderTime,
-        HabitMetric metric) {
+        HabitMetric metric,
+        @Size(max = 16) String sound) {
 }
 
 record UpdateHabitRequest(
@@ -28,7 +29,8 @@ record UpdateHabitRequest(
         Integer targetPerWeek,
         LocalTime reminderTime,
         HabitMetric metric,
-        Boolean active) {
+        Boolean active,
+        @Size(max = 16) String sound) {
 }
 
 /**
@@ -72,7 +74,8 @@ record HabitResponse(
         int freezeTokens,
         HabitMetric metric,
         Double todayValue,
-        Integer todayDurationMin) {
+        Integer todayDurationMin,
+        String sound) {
 
     static HabitResponse of(Habit h, HabitStreak streak, int currentStreak, boolean doneToday,
                             boolean protectedToday, boolean atRisk, int riskStreak, int freezeTokens) {
@@ -92,6 +95,6 @@ record HabitResponse(
                 h.getCadence(), h.getTargetPerWeek(), h.getReminderTime(),
                 h.isActive(), currentStreak, longest, doneToday,
                 protectedToday, atRisk, riskStreak, freezeTokens,
-                h.getMetric(), todayValue, todayDurationMin);
+                h.getMetric(), todayValue, todayDurationMin, h.getSound());
     }
 }

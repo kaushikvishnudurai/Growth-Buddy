@@ -243,6 +243,7 @@ public class HabitService {
         h.setTargetPerWeek(req.targetPerWeek() != null ? req.targetPerWeek() : 7);
         h.setMetric(req.metric() != null ? req.metric() : HabitMetric.none);
         h.setReminderTime(req.reminderTime());
+        h.setSound(req.sound());
         habits.save(h);
         return toResponse(h, clock.today(userId), userId);
     }
@@ -276,6 +277,9 @@ public class HabitService {
         }
         if (req.active() != null) {
             h.setActive(req.active());
+        }
+        if (req.sound() != null) {
+            h.setSound(req.sound().isBlank() ? null : req.sound());
         }
         habits.save(h);
         return toResponse(h, clock.today(userId), userId);

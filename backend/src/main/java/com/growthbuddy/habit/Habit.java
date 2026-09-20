@@ -52,6 +52,12 @@ public class Habit {
     @Column(name = "reminder_time")
     private LocalTime reminderTime;
 
+    /** This habit's own notification tone — a chime key from the frontend's
+     *  table, not a file. Null means "the user's default tone from Settings",
+     *  mirroring {@code CalendarReminder.sound}. */
+    @Column(length = 16)
+    private String sound;
+
     @Column(name = "target_per_week", nullable = false)
     private int targetPerWeek = 7;
 
