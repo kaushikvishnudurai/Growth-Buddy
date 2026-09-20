@@ -456,7 +456,7 @@ body {
   background: var(--surface-3);
   box-shadow: 0 2px 0 var(--border-strong);
   color: transparent;
-  border: none;
+  border: 1.5px solid var(--border-strong);
   transition:
     transform var(--dur-fast) var(--ease-bounce),
     background var(--dur-base);
@@ -466,9 +466,13 @@ body {
   opacity: 0;
   transition: opacity var(--dur-fast);
 }
+.gb-check:hover {
+  background: var(--surface-2);
+}
 .gb-check.is-done {
   background: var(--success);
   box-shadow: 0 2px 0 var(--leaf-700);
+  border-color: transparent;
   color: #fff;
 }
 .gb-check.is-done svg {
