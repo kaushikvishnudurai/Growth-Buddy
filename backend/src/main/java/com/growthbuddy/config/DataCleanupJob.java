@@ -39,6 +39,9 @@ public class DataCleanupJob {
         // Dedupe guard only ever reads today's row; older ones are pure ballast.
         total += jdbc.update(
                 "DELETE FROM reminder_dispatch_log WHERE occurrence_date < CURDATE() - INTERVAL 30 DAY");
+        // Same dedupe-guard shape, habit side.
+        total += jdbc.update(
+                "DELETE FROM habit_reminder_dispatch_log WHERE occurrence_date < CURDATE() - INTERVAL 30 DAY");
         log.info("Data cleanup removed {} expired rows", total);
         purgeAbandonedSignups();
     }

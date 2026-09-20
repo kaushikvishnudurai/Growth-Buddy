@@ -250,10 +250,14 @@ export function upcomingWaterAlarms(prefs, now, days = WATER_HORIZON_DAYS) {
 export function upcomingHabitAlarms(habits, now, days = HORIZON_DAYS) {
   const out = [];
   for (const habit of habits || []) {
-    if (!habit || !habit.reminderTime || habit.doneToday) continue;
+    if (!habit || !habit.reminderTime) continue;
     const [hh, mm] = String(habit.reminderTime).split(':').map(Number);
     if (!Number.isFinite(hh) || !Number.isFinite(mm)) continue;
     for (let i = 0; i < days; i++) {
+      // doneToday only describes today (i === 0) — a habit checked in this
+      // morning still needs tomorrow's alarm, so the skip can't cover the
+      // whole horizon.
+      if (i === 0 && habit.doneToday) continue;
       const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
       const at = atOn(day, hh * 60 + mm);
       if (at.getTime() <= now.getTime()) continue;

@@ -238,9 +238,25 @@ assert.deepEqual(
 
 /* Already checked in today: don't nag about something already done. */
 assert.deepEqual(
-  upcomingHabitAlarms([{ id: 'h1', name: 'Workout', reminderTime: '09:00', doneToday: true }], NOW),
+  upcomingHabitAlarms([{ id: 'h1', name: 'Workout', reminderTime: '09:00', doneToday: true }], NOW, 1),
   []
 );
+
+/* doneToday only describes today. A habit checked in this morning still
+   needs tomorrow's (and the rest of the horizon's) alarm — doneToday must
+   not suppress the whole multi-day queue, only day 0. */
+{
+  const got = upcomingHabitAlarms(
+    [{ id: 'h1', name: 'Workout', reminderTime: '09:00', doneToday: true }],
+    NOW,
+    3
+  );
+  assert.equal(got.length, 2, 'day 0 suppressed by doneToday, days 1 and 2 still queue');
+  assert.deepEqual(
+    got.map((n) => n.at.toISOString()),
+    [new Date(2026, 8, 17, 9, 0, 0, 0).toISOString(), new Date(2026, 8, 18, 9, 0, 0, 0).toISOString()]
+  );
+}
 
 /* A habit's own tone rides on the queued alarm, same as a reminder's. */
 {

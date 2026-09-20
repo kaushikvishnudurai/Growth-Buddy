@@ -103,7 +103,15 @@ public class HabitReminderDeliveryScheduler {
                 continue;
             }
 
-            deliver(user, habit, day);
+            try {
+                deliver(user, habit, day);
+            } catch (Exception ex) {
+                // deliver() already swallows per-channel failures; this guards the
+                // dispatch-log write itself (e.g. a duplicate-key hit on retry after
+                // a prior "failed" row for the same habit+day) so one bad row can't
+                // abort every other candidate left in this tick.
+                log.warn("Habit reminder dispatch {} for {} failed: {}", habit.getId(), user.getId(), ex.getMessage());
+            }
         }
     }
 

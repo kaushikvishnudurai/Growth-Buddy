@@ -197,17 +197,18 @@ ALTER TABLE notifications
   MODIFY COLUMN kind ENUM('mentorship_request','mentorship_accepted',
     'mentorship_rejected','system','reminder','habit_reminder') NOT NULL;
 
-CREATE TABLE IF NOT EXISTS habit_reminder_dispatch_log (
-  id              CHAR(36)    NOT NULL,
-  habit_id        CHAR(36)    NOT NULL,
-  occurrence_date DATE        NOT NULL,
-  channel         VARCHAR(16) NOT NULL,
-  status          VARCHAR(16) NOT NULL,
-  error_message   VARCHAR(255) NULL,
-  created_at      TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  UNIQUE KEY ux_habit_dispatch_unique (habit_id, occurrence_date)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS `habit_reminder_dispatch_log` (
+  `id` char(36) NOT NULL,
+  `habit_id` char(36) NOT NULL,
+  `occurrence_date` date NOT NULL,
+  `channel` varchar(16) NOT NULL,
+  `status` varchar(16) NOT NULL,
+  `error_message` varchar(255) DEFAULT NULL,
+  `created_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `ux_habit_dispatch_unique` (`habit_id`,`occurrence_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+;
 ```
 
 The first two lines are also captured in `migrations.sql`'s check-block +

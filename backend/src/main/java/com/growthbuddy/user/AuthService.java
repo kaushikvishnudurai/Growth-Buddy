@@ -317,6 +317,7 @@ public class AuthService {
         // Children keyed by a parent id → delete via the user's parent rows first.
         String[][] childDeletes = {
             {"habit_streaks", "habit_id", "habits"},
+            {"habit_reminder_dispatch_log", "habit_id", "habits"},
             {"mentor_messages", "thread_id", "mentor_threads"},
             {"calendar_reminder_skips", "reminder_id", "calendar_reminders"},
             {"reminder_dispatch_log", "reminder_id", "calendar_reminders"},

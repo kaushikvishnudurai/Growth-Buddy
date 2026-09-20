@@ -174,7 +174,9 @@ it silently landed on Home. Don't reintroduce a second list.
   chime rides on each queued notification, so changing it has to rebuild the queue too. Cancelled
   and rebuilt whole, so anything that changed without a re-sync keeps ringing with the old list or
   the old sound. Wired at: boot, reminder add, reminder delete (inside `repaint()`, which the
-  rollback also calls), habit add, the moment notification permission is granted, every
+  rollback also calls), habit add, habit delete, habit check-in (both `plainToggleHabit` — success
+  and rollback — and the measured check-in dialog in `openMeasuredCheckin`, so a habit just marked
+  done stops ringing today's alarm), the moment notification permission is granted, every
   water-setting change, and every sound change.
 - **`buddyReact(mood)` is hooked to meaning, not to convenience.** The nod fires from
   `toggleTask` / `toggleHabit`, and only on the way to done — un-ticking is a correction, not an

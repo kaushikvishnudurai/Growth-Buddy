@@ -639,11 +639,18 @@ function saveUiPrefs(patch) {
    chime rings with that one — `relatedId` is the reminder it came from — and
    everything else falls back to the one setting in Alerts. A reminder whose
    tone key we don't recognise falls back too: playChime() is silent on an
-   unknown key, and a silent reminder is the one outcome nobody chose. */
+   unknown key, and a silent reminder is the one outcome nobody chose. A habit
+   reminder's `relatedId` is the habit it came from (see
+   HabitReminderDeliveryScheduler.deliver) and carries its own chosen tone the
+   same way. */
 function notifySoundFor(n) {
   if (n && n.kind === 'reminder' && n.relatedId) {
     const rem = (state.reminders || []).find((r) => r.id === n.relatedId);
     if (rem && rem.sound && CHIMES.some((c) => c.key === rem.sound)) return rem.sound;
+  }
+  if (n && n.kind === 'habit_reminder' && n.relatedId) {
+    const habit = (state.habits || []).find((h) => h.id === n.relatedId);
+    if (habit && habit.sound && CHIMES.some((c) => c.key === habit.sound)) return habit.sound;
   }
   return notifySound();
 }
@@ -1449,7 +1456,7 @@ async function connectWebSocket() {
             // toast is the "pop up"; repaintOverlays keeps the screen underneath
             // (and whatever you were doing on it) alive.
             repaintOverlays();
-            pushToast(n.title, n.kind === 'reminder' ? 'info' : 'success', 6000);
+            pushToast(n.title, n.kind === 'reminder' || n.kind === 'habit_reminder' ? 'info' : 'success', 6000);
             playChime(notifySoundFor(n));
           } catch (e) {
             console.warn('Bad notification frame', e);
@@ -1593,6 +1600,7 @@ function openMeasuredCheckin(habit) {
       buddyReact('yes');
       await refreshScore();
       await refreshCurrentUser();
+      reSyncDeviceAlarms();
     },
   });
 }
@@ -1614,11 +1622,13 @@ async function plainToggleHabit(id) {
     state.score = todayScore && typeof todayScore.score === 'number' ? todayScore.score : score();
     await refreshCurrentUser();
     if (toggleSignature() !== painted) render();
+    reSyncDeviceAlarms();
   } catch (err) {
     state.habits = before.habits;
     state.score = before.score;
     render();
     toastError(err, 'Could not toggle habit.');
+    reSyncDeviceAlarms();
   }
 }
 
@@ -1858,6 +1868,7 @@ async function deleteHabit(id) {
   await api('/api/habits/' + encodeURIComponent(id), { method: 'DELETE' });
   state.habits = state.habits.filter((h) => h.id !== id);
   await refreshScore();
+  reSyncDeviceAlarms();
 }
 
 async function quickAddWater(amountMl) {
