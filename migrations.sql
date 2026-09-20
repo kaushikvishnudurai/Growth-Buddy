@@ -25,6 +25,7 @@ SELECT  t.table_name  AS `table`,
 FROM (
   SELECT 'habits'                 AS table_name, 'color'        AS column_name
   UNION ALL SELECT 'habits'                 AS table_name, 'reminder_time'
+  UNION ALL SELECT 'habits'                 AS table_name, 'sound'
   UNION ALL SELECT 'users'                  AS table_name, 'whatsapp_number'
   UNION ALL SELECT 'users'                  AS table_name, 'whatsapp_enabled'
   UNION ALL SELECT 'users'                  AS table_name, 'age_years'   
@@ -93,3 +94,11 @@ ALTER TABLE habit_checkins ADD COLUMN duration_min INT NULL;
 -- is a no-op. Safe to re-run; it keeps every existing value.
 ALTER TABLE family_members
   MODIFY COLUMN status ENUM('unmapped','invited','mapped') NOT NULL DEFAULT 'unmapped';
+
+ALTER TABLE habits ADD COLUMN sound VARCHAR(16) NULL;
+
+-- Same widening as family_members.status above: adds 'reminder' (missing
+-- since ReminderDeliveryScheduler shipped) and 'habit_reminder'.
+ALTER TABLE notifications
+  MODIFY COLUMN kind ENUM('mentorship_request','mentorship_accepted',
+    'mentorship_rejected','system','reminder','habit_reminder') NOT NULL;

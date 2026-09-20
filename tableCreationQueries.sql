@@ -159,6 +159,8 @@ CREATE TABLE IF NOT EXISTS habits (
   -- install depended on it running. They belong here.
   color VARCHAR(16) NULL,
   reminder_time TIME NULL,
+  -- This habit's own chime key; NULL = the user's default tone from Settings.
+  sound VARCHAR(16) NULL,
   -- What ticking this habit records beyond "done": none | km | steps | minutes.
   metric          VARCHAR(16)  NOT NULL DEFAULT 'none',
   PRIMARY KEY (id),
@@ -449,7 +451,7 @@ CREATE TABLE IF NOT EXISTS circle_challenges (
 CREATE TABLE IF NOT EXISTS notifications (
   id          CHAR(36)    NOT NULL,
   user_id     CHAR(36)  NOT NULL,
-  kind        ENUM('mentorship_request','mentorship_accepted','mentorship_rejected','system') NOT NULL,
+  kind        ENUM('mentorship_request','mentorship_accepted','mentorship_rejected','system','reminder','habit_reminder') NOT NULL,
   title       VARCHAR(255) NOT NULL,
   body        TEXT          NULL,
   -- Optional pointer to whatever the notification is "about"
