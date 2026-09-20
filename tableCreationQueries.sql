@@ -680,6 +680,22 @@ CREATE TABLE IF NOT EXISTS `reminder_dispatch_log` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ;
 
+-- One row per habit-reminder delivery attempt, so a scheduler tick that runs
+-- more than once inside the catch-up window doesn't send the same reminder
+-- twice in a day. Mirrors reminder_dispatch_log.
+CREATE TABLE IF NOT EXISTS `habit_reminder_dispatch_log` (
+  `id` char(36) NOT NULL,
+  `habit_id` char(36) NOT NULL,
+  `occurrence_date` date NOT NULL,
+  `channel` varchar(16) NOT NULL,
+  `status` varchar(16) NOT NULL,
+  `error_message` varchar(255) DEFAULT NULL,
+  `created_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `ux_habit_dispatch_unique` (`habit_id`,`occurrence_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+;
+
 CREATE TABLE IF NOT EXISTS `push_subscriptions` (
   `id` char(36) NOT NULL,
   `auth` varchar(255) NOT NULL,
