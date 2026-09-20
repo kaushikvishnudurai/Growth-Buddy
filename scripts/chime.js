@@ -3,8 +3,8 @@
    Synthesised, not sampled. A table of oscillator notes is ~2 kB of code
    where a set of .mp3s is a few hundred kB in the bundle *and* in the APK,
    needs a licence check each, and still wouldn't be ours. These are.
-   Every sound is the same shape — a few notes, each a sine or triangle with
-   a fast attack and an exponential tail — so adding one is a row in SOUNDS,
+   Every sound is the same shape — a few notes, each an oscillator with a
+   fast attack and an exponential tail — so adding one is a row in SOUNDS,
    not a new code path.
    These also ARE the phone's notification sound in the app: `gen-chimes.mjs`
    renders the same table out to `public/gb-<key>.wav`, which rides in the
@@ -42,6 +42,13 @@ export const SOUNDS = {
     { f: 329.63, t: 0, d: 0.9, g: 0.06 }, // E4, one note, barely there
     { f: 493.88, t: 0.06, d: 0.8, g: 0.03 },
   ],
+  alarm: [
+    { f: 880, t: 0, d: 0.12, g: 0.42, type: 'square' }, // sharp double-beep
+    { f: 880, t: 0.16, d: 0.12, g: 0.42, type: 'square' },
+  ],
+  buzz: [
+    { f: 220, t: 0, d: 0.35, g: 0.45, type: 'sawtooth' }, // low, harsh, sustained
+  ],
 };
 
 /* The picker's order and wording. `off` is a real choice, not the absence of
@@ -52,6 +59,8 @@ export const CHIMES = [
   { key: 'chime', label: 'Chime', hint: 'Three notes, like a glass bell' },
   { key: 'marimba', label: 'Marimba', hint: 'Wooden and short' },
   { key: 'hush', label: 'Hush', hint: 'Quietest of the five' },
+  { key: 'alarm', label: 'Alarm', hint: 'Sharp double beep, hard to miss' },
+  { key: 'buzz', label: 'Buzz', hint: 'A hard, rattling buzz' },
   { key: 'off', label: 'Silent', hint: 'No sound in the app' },
 ];
 
