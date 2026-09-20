@@ -12,6 +12,26 @@ interface HabitRepository extends JpaRepository<Habit, UUID> {
     List<Habit> findByUserIdAndDeletedAtIsNullOrderByCreatedAtAsc(UUID userId);
 
     Optional<Habit> findByIdAndUserIdAndDeletedAtIsNull(UUID id, UUID userId);
+
+    /**
+     * Active habits with a daily reminder time, for a user reachable on at
+     * least one of the given channels. Mirrors
+     * {@code CalendarReminderRepository.findDeliverable} without the
+     * WhatsApp branch — habits have no such integration.
+     */
+    @Query("""
+            select h from Habit h
+            where h.reminderTime is not null
+              and h.deletedAt is null
+              and h.active = true
+              and exists (
+                select 1 from User u where u.id = h.userId and (
+                     (:inAppOn = true)
+                  or (:pushOn = true and exists (
+                        select 1 from PushSubscription p where p.userId = u.id))
+                ))
+            """)
+    List<Habit> findDeliverable(@Param("inAppOn") boolean inAppOn, @Param("pushOn") boolean pushOn);
 }
 
 interface HabitCheckinRepository extends JpaRepository<HabitCheckin, HabitCheckin.Key> {
