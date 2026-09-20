@@ -241,6 +241,28 @@ export function upcomingWaterAlarms(prefs, now, days = WATER_HORIZON_DAYS) {
   return out;
 }
 
+/**
+ * One alarm a day for a habit with a reminder time set, skipped for a habit
+ * already checked in today. Daily only, regardless of the habit's own
+ * cadence — the UI calls this field "Daily reminder," and there is no
+ * per-day-of-week input to honor anything else.
+ */
+export function upcomingHabitAlarms(habits, now, days = HORIZON_DAYS) {
+  const out = [];
+  for (const habit of habits || []) {
+    if (!habit || !habit.reminderTime || habit.doneToday) continue;
+    const [hh, mm] = String(habit.reminderTime).split(':').map(Number);
+    if (!Number.isFinite(hh) || !Number.isFinite(mm)) continue;
+    for (let i = 0; i < days; i++) {
+      const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
+      const at = atOn(day, hh * 60 + mm);
+      if (at.getTime() <= now.getTime()) continue;
+      out.push({ title: 'Growth Buddy', body: habit.name, at, sound: habit.sound || null });
+    }
+  }
+  return out;
+}
+
 /* Only the five synthesised chimes have a rendered file. 'off', an unknown key,
    and the user's own upload (which lives as a data URL in CacheStorage, not in
    the bundle, so Android has nothing to point a channel at) all fall through to
@@ -255,8 +277,10 @@ function soundFile(key) {
  * resolves it out of the app's assets and makes the per-sound Android channel
  * itself — which is why a custom notification sound needs no native code here.
  */
-export function upcomingAlarms({ reminders, water, sound } = {}, now = new Date()) {
-  const queue = upcomingReminderAlarms(reminders, now).concat(upcomingWaterAlarms(water, now));
+export function upcomingAlarms({ reminders, water, habits, sound } = {}, now = new Date()) {
+  const queue = upcomingReminderAlarms(reminders, now)
+    .concat(upcomingWaterAlarms(water, now))
+    .concat(upcomingHabitAlarms(habits, now));
   queue.sort((a, b) => a.at - b.at);
   // Ids come from the minute a notification fires in, not its place in the
   // queue. A counter looked safe — the queue is cancelled whole and rebuilt —

@@ -9,7 +9,7 @@
    ones you cannot check by tapping around the app. */
 
 import assert from 'node:assert/strict';
-import { upcomingReminderAlarms, upcomingWaterAlarms, upcomingAlarms } from './push.js';
+import { upcomingReminderAlarms, upcomingWaterAlarms, upcomingHabitAlarms, upcomingAlarms } from './push.js';
 
 // Wednesday, 09:00 local.
 const NOW = new Date(2026, 8, 16, 9, 0, 0, 0);
@@ -227,6 +227,43 @@ assert.deepEqual(
   [],
   "'off' queues nothing"
 );
+
+/* ---- habits ---- */
+
+/* No reminder time set means nothing to schedule. */
+assert.deepEqual(
+  upcomingHabitAlarms([{ id: 'h1', name: 'Workout', reminderTime: null, doneToday: false }], NOW),
+  []
+);
+
+/* Already checked in today: don't nag about something already done. */
+assert.deepEqual(
+  upcomingHabitAlarms([{ id: 'h1', name: 'Workout', reminderTime: '09:00', doneToday: true }], NOW),
+  []
+);
+
+/* A habit's own tone rides on the queued alarm, same as a reminder's. */
+{
+  const got = upcomingHabitAlarms(
+    [{ id: 'h1', name: 'Workout', reminderTime: '18:00', doneToday: false, sound: 'buzz' }],
+    NOW,
+    1
+  );
+  assert.equal(got.length, 1);
+  assert.equal(got[0].sound, 'buzz');
+  assert.equal(got[0].body, 'Workout');
+}
+
+/* No tone chosen falls back to null, resolved later by upcomingAlarms's own
+   default — same contract upcomingReminderAlarms already has. */
+{
+  const got = upcomingHabitAlarms(
+    [{ id: 'h1', name: 'Workout', reminderTime: '18:00', doneToday: false }],
+    NOW,
+    1
+  );
+  assert.equal(got[0].sound, null);
+}
 
 /* Nothing to queue is a normal state, not a crash. */
 assert.deepEqual(upcomingAlarms({}, NOW), []);
