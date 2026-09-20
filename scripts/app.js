@@ -1671,6 +1671,7 @@ async function createHabit(body) {
   });
   state.habits = [created, ...state.habits];
   await refreshScore();
+  reSyncDeviceAlarms();
 }
 
 /* ---- Natural-language quick-add ----
@@ -5002,12 +5003,13 @@ function waterReminderPrefs() {
 /* Re-arm this device's alarm queue — timed reminders plus the water nudge, in
    the chosen chime. Fire-and-forget: a no-op on the web (the server pushes
    there), and a phone that has refused notifications is not an error worth a
-   toast. Call it wherever any of the three inputs changes; the queue is
+   toast. Call it wherever any of the four inputs changes; the queue is
    rebuilt whole, so a stale one rings for a reminder already deleted. */
 function reSyncDeviceAlarms() {
   syncDeviceAlarms({
     reminders: state.reminders,
     water: waterReminderPrefs(),
+    habits: state.habits,
     sound: notifySound(),
   }).catch(() => {});
 }
@@ -5616,6 +5618,16 @@ function openAddHabit() {
   );
   const color = colorPicker('');
   const reminderInput = h('input', { type: 'time', class: 'gb-input' });
+  const toneSel = h(
+    'select',
+    { class: 'gb-input', 'aria-label': 'Habit reminder tone' },
+    [h('option', { value: '' }, 'Default tone')].concat(
+      CHIMES.map((c) => h('option', { value: c.key }, c.key === 'off' ? 'Silent — no alert' : c.label))
+    )
+  );
+  toneSel.addEventListener('change', () => {
+    if (toneSel.value) playChime(toneSel.value);
+  });
 
   let presetIcon = null;
   const metricSel = h(
@@ -5678,7 +5690,9 @@ function openAddHabit() {
     h('div', { class: 'gb-field-label' }, 'Cadence'),
     cadence.node,
     h('div', { class: 'gb-field-label' }, 'Daily reminder (optional)'),
-    reminderInput
+    reminderInput,
+    h('div', { class: 'gb-field-label' }, 'Tone'),
+    toneSel
   );
 
   openModal({
@@ -5700,6 +5714,7 @@ function openAddHabit() {
         cadence: cadence.get(),
         color: color.get() || null,
         reminderTime: reminderInput.value || null,
+        sound: toneSel.value || null,
         metric: d === 'fitness' ? metricSel.value : 'none',
       });
     },
