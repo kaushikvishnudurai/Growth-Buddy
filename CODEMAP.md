@@ -154,7 +154,7 @@ checks off.
 | `/api/mentor` | `chat`, `chat/messages` POST/DELETE, `threads` GET/POST, `threads/{id}/messages` GET/POST, `threads/{id}` DELETE |
 | `/api/mentorship` | `requests` POST, `requests/{id}/accept|reject|revoke`, `requests/incoming`, `requests/outgoing`, `connections/{partnerId}/status` |
 | `/api/circles` | `mine`, `{id}/join`, `{id}/leave`, `{id}/posts` GET/POST, `{id}/challenges` GET/POST |
-| `/api/notifications` | list, `unread-count`, `{id}/read`, `read-all`, `{id}` DELETE |
+| `/api/notifications` | list, `unread-count`, `{id}/read`, `read-all`, `{id}` DELETE, **`custom-sound` GET/PUT/DELETE** (the user's own notification sound, as the data URL the client already stores — one row per account, 300 kB ceiling enforced both sides, GET answers **204** when there is none because that is the ordinary state, not an error) |
 | `/api/push` | `public-key`, `subscribe`, `unsubscribe`, `test` |
 | `/api/reminders` | list, POST, **PATCH `{id}?scope=&date=`** (scoped edit — `this` skips the day and leaves a one-off in its place, `future` cuts the series and starts a new one, `all` edits the row), DELETE `{id}?scope=&date=`, `occurrences`, `day/{date}` |
 | `/api/notes` | list, POST, `{id}` PATCH, `{id}` DELETE |

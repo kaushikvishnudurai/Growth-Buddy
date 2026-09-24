@@ -419,8 +419,25 @@ function BadgeCard({ tasks, habits, water, goals, wellness }) {
   });
 }
 
-function ReminderSuggestionsCard({ habits, water, wellness, onAddSuggestedReminder }) {
+/* A suggestion is for a clock time today, so one whose time has gone by is
+   noise — the card still offered "Sleep routine · 22:30" at one in the morning,
+   and the Add button would book it for a moment that cannot arrive. */
+const minutesOfDay = (hhmm) => {
+  const [h, m] = String(hhmm).split(':').map(Number);
+  return h * 60 + m;
+};
+
+function ReminderSuggestionsCard({
+  habits,
+  water,
+  wellness,
+  reminders,
+  onAddSuggestedReminder,
+}) {
   const key = todayKey();
+  const now = new Date();
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const stillToCome = (item) => minutesOfDay(item.time) > nowMinutes;
   const items = [];
   const missedHabit = (habits || []).find((habit) => !habit.doneToday);
   if (missedHabit)
@@ -435,8 +452,29 @@ function ReminderSuggestionsCard({ habits, water, wellness, onAddSuggestedRemind
     items.push({ icon: 'droplets', text: 'Drink water', time: '16:00', tag: 'health' });
   if (!((wellness && wellness.sleepByDate) || {})[key])
     items.push({ icon: 'moon', text: 'Sleep routine', time: '22:30', tag: 'personal' });
-  if (!items.length)
-    items.push({ icon: 'sparkles', text: 'Review tomorrow plan', time: '20:30', tag: 'personal' });
+  /* A suggestion the user already acted on is not a suggestion. Nothing here
+     read the reminders that exist, so "Add reminder" stayed on the row after it
+     had been added and a second tap booked a duplicate. Matched on the text the
+     Add button writes, which is what the suggestion is built from. */
+  const booked = new Set(
+    (reminders || [])
+      .filter((rem) => occursOn(rem, key))
+      .map((rem) => String(rem.text || '').trim().toLowerCase())
+  );
+  const unbooked = (item) => !booked.has(item.text.trim().toLowerCase());
+
+  // Filter before the fallback, not after: with every real suggestion already
+  // past, the evening default is still worth offering — but only if it is
+  // itself still ahead.
+  let live = items.filter((i) => stillToCome(i) && unbooked(i));
+  if (!live.length) {
+    live = [
+      { icon: 'sparkles', text: 'Review tomorrow plan', time: '20:30', tag: 'personal' },
+    ].filter((i) => stillToCome(i) && unbooked(i));
+  }
+  // Nothing left to suggest today. The renderer drops a widget that returns
+  // nothing, so the card disappears rather than sitting there empty.
+  if (!live.length) return null;
   return Card({
     className: 'gb-suggest-card',
     children: [
@@ -449,7 +487,7 @@ function ReminderSuggestionsCard({ habits, water, wellness, onAddSuggestedRemind
       h(
         'div',
         { class: 'gb-suggest-list' },
-        items.slice(0, 3).map((item) =>
+        live.slice(0, 3).map((item) =>
           h(
             'div',
             { class: 'gb-suggest-row' },
@@ -1460,7 +1498,8 @@ function ScreenDashboard({
       SectionTitle({ title: 'Habit streaks', action: '+ Add', onAction: onAddHabit }),
       HabitStrip({ habits, onAdd: onAddHabit, toggleHabit }),
     ],
-    reminders: () => ReminderSuggestionsCard({ habits, water, wellness, onAddSuggestedReminder }),
+    reminders: () =>
+      ReminderSuggestionsCard({ habits, water, wellness, reminders, onAddSuggestedReminder }),
     money: () => MoneyHomeCard({ money, onSaveMoney, onOpen: onOpenMoney }),
   };
 

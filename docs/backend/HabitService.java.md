@@ -15,6 +15,7 @@ protect/unprotect).
 | `checkin(userId, id, req)` | 274 | `date` defaults to today, `done` defaults to true; **recomputes `HabitStreak`** |
 | `toggleToday(userId, id)` | 307 | |
 | `freezeStatus(userId)` | 71 | wallet snapshot (`GET /api/habits/freeze`) |
+| `history(userId, id, days)` | 77 | `GET /api/habits/{id}/history` — `{since, days[]}` for the freeze calendar. `since` is the habit's creation date in the user's zone, so the client can tell a missed day from one before the habit existed |
 | `protect(userId, id, date)` | 77 | spends a token to shield a missed day |
 | `unprotect(userId, id, date)` | 110 | refunds it |
 | `contextSummary(userId)` | 162 | read-only text summary fed to the mentor/LLM prompts |
@@ -38,7 +39,10 @@ user id rather than reading `CurrentUser` because the digest scheduler reaches t
   paths must upsert, not blind-insert.
 - `HabitStreak` is a **cache**, recomputed on every check-in change. If a streak looks wrong, the bug
   is in the recompute inside `checkin`, not in the read path.
-- `StreakFreezeWallet` grants 1 free token per ISO week, capped at `FREEZE_CAP`.
+- `StreakFreezeWallet` grants 1 free token per ISO week, capped at `FREEZE_CAP`. Nothing spends a
+  token on its own — `protect` is the only writer, and it is always a user action. The freeze
+  calendar (`openFreezeCalendar` in `app.js`) is what reaches it for an arbitrary past day; the
+  at-risk prompt and the rest-day toggle still cover only yesterday and today.
 - Enums `Cadence` (`daily`/`weekly`/`custom`) and `HabitDomain` (`habit`/`fitness`/`study`/`journal`)
   are **lowercase to match the MySQL ENUM values** — renaming a constant breaks reads.
 

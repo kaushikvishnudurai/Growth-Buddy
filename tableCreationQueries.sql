@@ -669,7 +669,7 @@ CREATE TABLE IF NOT EXISTS `calendar_reminder_skips` (
 
 CREATE TABLE IF NOT EXISTS `reminder_dispatch_log` (
   `id` char(36) NOT NULL,
-  `channel` varchar(16) NOT NULL,
+  `channel` varchar(32) NOT NULL,
   `created_at` datetime(6) NOT NULL,
   `error_message` varchar(255) DEFAULT NULL,
   `occurrence_date` date NOT NULL,
@@ -687,7 +687,7 @@ CREATE TABLE IF NOT EXISTS `habit_reminder_dispatch_log` (
   `id` char(36) NOT NULL,
   `habit_id` char(36) NOT NULL,
   `occurrence_date` date NOT NULL,
-  `channel` varchar(16) NOT NULL,
+  `channel` varchar(32) NOT NULL,
   `status` varchar(16) NOT NULL,
   `error_message` varchar(255) DEFAULT NULL,
   `created_at` datetime(6) NOT NULL,
@@ -704,6 +704,25 @@ CREATE TABLE IF NOT EXISTS `push_subscriptions` (
   `p256dh` varchar(255) NOT NULL,
   `user_id` char(36) NOT NULL,
   PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+;
+
+-- ---------------------------------------------------------------------------
+-- Custom Notification Sounds
+-- The one sound a user brought themselves, as the data URL the client already
+-- stores and plays. One row per user -- the picker replaces, it doesn't collect
+-- -- and the unique key is what enforces that. The bytes live here rather than
+-- in object storage because there is at most one small file per account; see
+-- the ponytail note on the CustomSound entity for when that stops being true.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `custom_sounds` (
+  `id` char(36) NOT NULL,
+  `user_id` char(36) NOT NULL,
+  `data_url` mediumtext NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_custom_sounds_user` (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ;
 

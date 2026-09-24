@@ -7647,6 +7647,8 @@ textarea:focus-visible,
   outline-offset: -2px;
 }
 .gb-editor {
+  /* Anchors the placeholder below, which has to sit out of the text flow. */
+  position: relative;
   min-height: 110px;
   max-height: 45vh;
   overflow-y: auto;
@@ -7660,9 +7662,18 @@ textarea:focus-visible,
 }
 /* :empty alone lies — the browser leaves a stray <br> behind after you delete
    everything, so the placeholder would vanish for good on the first edit. */
+/* Absolute, not in the flow: generated content inside a contenteditable takes
+   up a real inline box, so the caret at offset 0 was drawn *after* the whole
+   "Write something…" string instead of at the left edge. Out of the flow it
+   still paints, and the caret sits where the first character will land.
+   Offsets match .gb-editor's padding so the two strings start on the same
+   pixel. */
 .gb-editor:empty::before,
 .gb-editor:has(> br:only-child)::before {
   content: attr(data-placeholder);
+  position: absolute;
+  top: 12px;
+  left: 12px;
   color: var(--fg3);
   pointer-events: none;
 }
@@ -7841,4 +7852,85 @@ textarea:focus-visible,
 }
 .gb-note-foot .gb-btn--primary {
   flex: 2 1 0;
+}
+
+/* ---- freeze calendar ----
+   Every day rule is scoped under .gb-freeze-cal on purpose: mini-calendar.css
+   is linked AFTER this file, so its .gb-mini-cal-day.is-today wins any tie at
+   equal specificity — a frozen day that happened to be today came out painted
+   as an ordinary one.
+   Picks the day a freeze covers. The grid, header and legend are the Home mini
+   calendar's (styles/mini-calendar.css); only the day states differ, because
+   here a cell means done / missed / frozen rather than "has something on it". */
+.gb-freeze-chip {
+  /* Was a span. Now it opens the calendar, so it has to read and behave as a
+     control — the visual treatment is unchanged. */
+  border: none;
+  cursor: pointer;
+  font: inherit;
+}
+.gb-freeze-chip:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.gb-freeze-modal {
+  max-width: 420px;
+}
+.gb-freeze-habits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 12px 0 4px;
+}
+.gb-freeze-loading {
+  padding: 28px 0;
+  text-align: center;
+  color: var(--fg3);
+}
+.gb-freeze-cal .gb-freeze-day {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  border: none;
+  background: var(--surface);
+  cursor: pointer;
+  color: var(--fg2);
+}
+.gb-freeze-cal .gb-freeze-day.is-missed {
+  background: var(--coral-100);
+  color: var(--coral-700);
+}
+.gb-freeze-cal .gb-freeze-day.is-done {
+  background: var(--leaf-100);
+  color: var(--leaf-700);
+}
+.gb-freeze-cal .gb-freeze-day.is-frozen {
+  background: var(--sky-100);
+  color: var(--sky-700);
+}
+/* Not yet happened: present so the month keeps its shape, but inert. */
+.gb-freeze-cal .gb-freeze-day.is-future {
+  background: transparent;
+  color: var(--fg3);
+  opacity: 0.45;
+  cursor: default;
+}
+.gb-freeze-cal .gb-freeze-day:disabled {
+  cursor: default;
+}
+.gb-freeze-cal .gb-freeze-day:not(:disabled):hover {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+.gb-mini-cal-legend-item .dot.is-done {
+  background: var(--leaf-500);
+}
+.gb-mini-cal-legend-item .dot.is-frozen {
+  background: var(--sky-500);
+}
+.gb-mini-cal-legend-item .dot.is-missed {
+  background: var(--coral-500);
 }

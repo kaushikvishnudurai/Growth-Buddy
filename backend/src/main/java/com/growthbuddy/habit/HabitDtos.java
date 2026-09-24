@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
+import java.util.List;
 import java.time.LocalTime;
 import java.util.UUID;
 
@@ -52,6 +53,18 @@ record ProtectRequest(LocalDate date) {
 
 /** The user's freeze-token wallet snapshot. */
 record FreezeStatus(int tokens, int cap) {
+}
+
+/** One day of a habit's history, for the freeze calendar. */
+record HabitDay(LocalDate date, boolean done, boolean protectedDay) {
+}
+
+/**
+ * A habit's history plus the day it started. Without {@code since} the calendar
+ * has no way to tell "missed" from "did not exist yet", and a habit created this
+ * morning painted the whole month red.
+ */
+record HabitHistory(LocalDate since, List<HabitDay> days) {
 }
 
 record HabitResponse(

@@ -36,7 +36,7 @@ public class HabitReminderDispatchLog {
     @Column(name = "occurrence_date", nullable = false)
     private LocalDate occurrenceDate;
 
-    @Column(name = "channel", nullable = false, length = 16)
+    @Column(name = "channel", nullable = false, length = 32)
     private String channel;
 
     @Column(name = "status", nullable = false, length = 16)

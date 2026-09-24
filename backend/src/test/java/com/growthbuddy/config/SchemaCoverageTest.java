@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
@@ -122,6 +123,33 @@ class SchemaCoverageTest {
                 .as("migrations.sql adds a column no CREATE TABLE declares — a fresh install "
                         + "would come up without it")
                 .isEmpty();
+    }
+
+    /**
+     * A column has to be wide enough for what the code actually writes into it.
+     * {@code reminder_dispatch_log.channel} holds a '+'-joined list of the
+     * channels that delivered, and the day push joined the bell and WhatsApp the
+     * widest value became 'app+whatsapp+push' — 17 characters into varchar(16).
+     * The insert threw inside a Callable whose Future nobody read, so no row was
+     * logged, so every later tick of the catch-up window resent: one reminder,
+     * five WhatsApp messages. The entity is the one place that states the
+     * intended width, so hold the schema to it.
+     */
+    @Test
+    void dispatchLogChannelFitsEveryChannelCombination() throws IOException {
+        String schema = Files.readString(repoRoot().resolve("tableCreationQueries.sql"));
+        // Longest a delivery can produce today, and the reason 16 was not enough.
+        int widest = "app+whatsapp+push".length();
+        for (String table : List.of("reminder_dispatch_log", "habit_reminder_dispatch_log")) {
+            Matcher m = Pattern.compile("(?is)CREATE TABLE[^(]*`?" + table
+                    + "`?\\s*\\(.*?`channel`\\s+varchar\\((\\d+)\\)").matcher(schema);
+            assertThat(m.find()).as("`channel` column of " + table).isTrue();
+            assertThat(Integer.parseInt(m.group(1)))
+                    .as(table + ".channel must hold '" + "app+whatsapp+push" + "' — too narrow and "
+                            + "the dispatch-log write throws, the de-dupe row is never written, "
+                            + "and the reminder is resent on every tick of the catch-up window")
+                    .isGreaterThanOrEqualTo(widest);
+        }
     }
 
     /**

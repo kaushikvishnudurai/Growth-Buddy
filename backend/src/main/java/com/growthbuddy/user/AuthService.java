@@ -104,7 +104,7 @@ public class AuthService {
         "water_entries", "water_goals", "food_entries", "food_photo_logs",
         "goal_actions", "goals", "daily_scores", "daily_logs",
         "mentor_threads", "circle_members", "circle_posts",
-        "push_subscriptions", "notifications", "focus_sessions", "weekly_reviews",
+        "push_subscriptions", "notifications", "custom_sounds", "focus_sessions", "weekly_reviews",
         "money_state", "calendar_reminders", "notes", "sessions",
     };
 

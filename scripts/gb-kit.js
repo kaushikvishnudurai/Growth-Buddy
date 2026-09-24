@@ -543,7 +543,13 @@ function formatTime(value, fallback = '') {
    Returns the empty `.gb-modal` to fill and the `close` it answers to. Callers
    wanting the ordinary title / body / primary / cancel layout want `openModal`
    below, which is built on this. */
-function openOverlay({ label, className, role = 'dialog', onClose } = {}) {
+/* Every overlay currently on screen, as { close, dismiss }, so navigation can
+   drop them — see closeOverlays() below. Both are kept because they are not
+   interchangeable: `close` abandons the sheet, `dismiss` is the caller's "this
+   is a way out, not a cancel" path. */
+const liveOverlays = new Set();
+
+function openOverlay({ label, className, role = 'dialog', onClose, onDismiss } = {}) {
   let closed = false;
   const sheet = h('div', {
     class: 'gb-modal' + (className ? ' ' + className : ''),
@@ -551,9 +557,11 @@ function openOverlay({ label, className, role = 'dialog', onClose } = {}) {
     'aria-modal': 'true',
     'aria-label': label,
   });
+  const entry = { close, dismiss: onDismiss };
   function close() {
     if (closed) return;
     closed = true;
+    liveOverlays.delete(entry);
     overlay.classList.remove('is-open');
     setTimeout(() => overlay.remove(), 180);
     if (onClose) onClose();
@@ -564,17 +572,42 @@ function openOverlay({ label, className, role = 'dialog', onClose } = {}) {
       class: 'gb-modal-overlay',
       // a11y.js drives Escape by dispatching a click here, so this one handler
       // is both the backdrop tap and the keyboard close.
+      //
+      // `onDismiss` takes over that path for a sheet where leaving is not the
+      // same as abandoning — the note editor commits instead of discarding. It
+      // owns the close from there, so it can keep the sheet up if the save
+      // fails rather than dropping the text on the floor.
       onclick: (e) => {
-        if (e.target === overlay) close();
+        if (e.target !== overlay) return;
+        if (onDismiss) onDismiss();
+        else close();
       },
     },
     sheet
   );
   document.body.appendChild(overlay);
+  liveOverlays.add(entry);
   requestAnimationFrame(() => overlay.classList.add('is-open'));
   // No refreshIcons() here: the sheet is empty until the caller fills it, so
   // there is nothing to swap. Callers that draw icons call it after appending.
   return { overlay, sheet, close };
+}
+
+/* A dialog belongs to the screen that opened it. setScreen() calls this, next
+   to the notif/profile/more panels it already drops on navigation: a button
+   that both navigates and leaves its own sheet up — notes' "Add a reminder",
+   which hands the text to the calendar — stranded the sheet on top of a screen
+   it had nothing to do with, hiding the very form it had just filled in.
+
+   Through `dismiss` when the sheet has one, for the same reason the backdrop
+   does: navigating away from a note is leaving it, not discarding it, and going
+   straight to close() threw away the edit — on the one button ("Add a
+   reminder") that navigates FROM the note editor, which is exactly the case
+   this function exists for.
+
+   Snapshot the set first: each close() removes its own entry from it. */
+function closeOverlays() {
+  [...liveOverlays].forEach((entry) => (entry.dismiss ? entry.dismiss() : entry.close()));
 }
 
 /* ---- The standard dialog ----
@@ -897,6 +930,7 @@ export {
   Logo,
   confirmDialog,
   openOverlay,
+  closeOverlays,
   openModal,
   shakeRefusal,
   formatTime,

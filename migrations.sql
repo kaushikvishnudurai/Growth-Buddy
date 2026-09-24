@@ -102,3 +102,44 @@ ALTER TABLE habits ADD COLUMN sound VARCHAR(16) NULL;
 ALTER TABLE notifications
   MODIFY COLUMN kind ENUM('mentorship_request','mentorship_accepted',
     'mentorship_rejected','system','reminder','habit_reminder') NOT NULL;
+
+-- A NEW TABLE, not a column: `tableCreationQueries.sql` is only ever run to
+-- build a fresh database, so a table added after first release reaches nothing
+-- that is already running — and the first query naming it does not 500, it
+-- throws inside the scheduler tick and aborts every habit reminder in it.
+-- Guarded, so re-running this file is a no-op. Keep it identical to the
+-- CREATE TABLE over there.
+CREATE TABLE IF NOT EXISTS `habit_reminder_dispatch_log` (
+  `id` char(36) NOT NULL,
+  `habit_id` char(36) NOT NULL,
+  `occurrence_date` date NOT NULL,
+  `channel` varchar(32) NOT NULL,
+  `status` varchar(16) NOT NULL,
+  `error_message` varchar(255) DEFAULT NULL,
+  `created_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `ux_habit_dispatch_unique` (`habit_id`,`occurrence_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- channel is a '+'-joined list of what actually delivered, and once push
+-- joined the bell and WhatsApp the widest value became 'app+whatsapp+push' —
+-- 17 characters into varchar(16). The insert threw, so no dispatch-log row was
+-- written, so the next tick saw nothing delivered and sent again: one reminder
+-- arrived five or six times, once per tick of the 5-minute catch-up window.
+-- Same widening as the ENUMs above: MODIFY to the definition already in place
+-- is a no-op, so this is safe to re-run.
+ALTER TABLE reminder_dispatch_log MODIFY COLUMN `channel` varchar(32) NOT NULL;
+
+-- A NEW TABLE, so it needs to be here as well as in the schema file: prod runs
+-- ddl-auto: none and only ever loads tableCreationQueries.sql into a fresh
+-- database, so a table added after first release reaches nothing that is
+-- already running. Guarded, so re-running this file is a no-op. Keep it
+-- identical to the CREATE TABLE over there.
+CREATE TABLE IF NOT EXISTS `custom_sounds` (
+  `id` char(36) NOT NULL,
+  `user_id` char(36) NOT NULL,
+  `data_url` mediumtext NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_custom_sounds_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

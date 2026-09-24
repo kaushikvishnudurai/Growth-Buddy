@@ -13,3 +13,6 @@ backend/.settings/
 assets/ui-audit/
 assets/ui-audit-*.png
 prod.env
+
+# macOS Finder droppings
+.DS_Store

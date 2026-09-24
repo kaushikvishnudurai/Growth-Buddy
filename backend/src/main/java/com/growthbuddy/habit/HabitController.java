@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -58,6 +59,13 @@ public class HabitController {
     @GetMapping("/freeze")
     public FreezeStatus freezeStatus() {
         return service.freezeStatus(CurrentUser.id());
+    }
+
+    /** Recent days for one habit — what the freeze calendar draws. */
+    @GetMapping("/{id}/history")
+    public HabitHistory history(@PathVariable UUID id,
+                                  @RequestParam(defaultValue = "120") int days) {
+        return service.history(CurrentUser.id(), id, days);
     }
 
     /** Protect a day (rest/freeze) so a missed day doesn't break the streak. */

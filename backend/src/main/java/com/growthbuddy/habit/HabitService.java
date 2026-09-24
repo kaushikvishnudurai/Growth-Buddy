@@ -5,6 +5,7 @@ import com.growthbuddy.user.ProgressService;
 import com.growthbuddy.user.UserClock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.temporal.WeekFields;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -74,6 +75,31 @@ public class HabitService {
     @Transactional
     public FreezeStatus freezeStatus(UUID userId) {
         return new FreezeStatus(wallet(userId, clock.today(userId)).getTokens(), FREEZE_CAP);
+    }
+
+    /**
+     * A habit's recent days, so the freeze calendar can show which were done,
+     * which were missed and which a token already covers. Missed days are the
+     * gaps — a day with no check-in row at all — so only the days that exist
+     * are returned and the client fills the rest of the month in as missed.
+     *
+     * <p>ponytail: reuses the existing full-history finder and trims in memory
+     * rather than adding a range query. A habit accrues at most one row a day;
+     * revisit if someone's year-old habit makes this read show up.
+     */
+    @Transactional(readOnly = true)
+    public HabitHistory history(UUID userId, UUID id, int days) {
+        Habit h = require(userId, id);
+        ZoneId zone = clock.zoneOf(userId);
+        LocalDate from = clock.today(userId).minusDays(Math.max(1, days));
+        // The habit's own start, in the user's zone — a day before it existed is
+        // not a day they missed.
+        LocalDate since = LocalDate.ofInstant(h.getCreatedAt(), zone);
+        List<HabitDay> rows = checkins.findByHabitIdOrderByLogDateDesc(id).stream()
+                .filter(c -> !c.getLogDate().isBefore(from))
+                .map(c -> new HabitDay(c.getLogDate(), c.isDone(), c.isProtectedDay()))
+                .toList();
+        return new HabitHistory(since.isBefore(from) ? from : since, rows);
     }
 
     /** Protect a day (rest/freeze): spend a token, mark the day, recompute. */

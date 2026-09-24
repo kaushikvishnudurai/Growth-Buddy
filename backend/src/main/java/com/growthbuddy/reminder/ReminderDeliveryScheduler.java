@@ -165,7 +165,19 @@ public class ReminderDeliveryScheduler {
 
             boolean wa = waEligible;
             sends.add(() -> {
-                deliver(user, rem, day, wa);
+                try {
+                    deliver(user, rem, day, wa);
+                } catch (Exception ex) {
+                    // invokeAll() parks a Callable's exception in a Future nobody reads,
+                    // so a failing dispatch-log write was completely silent — and a tick
+                    // that sends but logs nothing resends on every later tick of the
+                    // catch-up window. That is how one reminder went out five times.
+                    // ponytail: log it. The write-ahead fix — insert the row first and
+                    // let ux_rem_dispatch_unique reject the duplicate — is the real
+                    // cure, worth it if a send is ever costly enough to never repeat.
+                    log.warn("Reminder dispatch {} for {} failed: {}",
+                            rem.getId(), user.getId(), ex.getMessage());
+                }
                 return null;
             });
         }

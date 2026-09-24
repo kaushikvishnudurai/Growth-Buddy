@@ -1,7 +1,7 @@
 /* =====================================================================
    Growth Buddy — Notes (quick jottings, rich text)
    ===================================================================== */
-import { h, Icon, refreshIcons, confirmDialog, openOverlay } from './gb-kit.js';
+import { h, Icon, refreshIcons, confirmDialog, openOverlay, openModal } from './gb-kit.js';
 import { toast } from './toast.js';
 
 /* Swatches a note can wear. Same family as the habit colours so the app keeps
@@ -63,6 +63,12 @@ const DROP = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'TEMPLATE'
  * the part that's hard to get right, and DOMParser does it in an inert document
  * where nothing executes.
  */
+/* The only hrefs a note may carry. javascript: and data: are the two that turn
+   a link into an exploit. sanitize() is the boundary that enforces it, and the
+   link dialog tests the same rule so a bad URL is refused while it can still be
+   corrected, rather than silently losing its href on save. */
+const SAFE_HREF = /^(https?:|mailto:|#|\/)/i;
+
 function sanitize(html) {
   if (!html) return '';
   const doc = new DOMParser().parseFromString('<body>' + html + '</body>', 'text/html');
@@ -90,8 +96,7 @@ function sanitize(html) {
       });
       if (tag === 'A') {
         const href = (child.getAttribute('href') || '').trim();
-        // javascript: and data: are the two that turn a link into an exploit.
-        if (!/^(https?:|mailto:|#|\/)/i.test(href)) {
+        if (!SAFE_HREF.test(href)) {
           child.removeAttribute('href');
         } else {
           child.setAttribute('target', '_blank');
@@ -174,12 +179,53 @@ function richEditor({ html, placeholder, onInput } = {}) {
     });
   }
 
+  /* window.prompt is browser chrome: unthemed, captioned with the origin
+     ("growth-buddy-….onrender.com says"), and in the Capacitor WebView a system
+     alert that looks nothing like the app. Ask in our own sheet instead.
+     Opening one moves focus out of the editor and takes the selection with it,
+     so the range is captured here and restored before execCommand runs —
+     without that, createLink has nothing to wrap. */
+  function promptFor(tool) {
+    const sel = window.getSelection();
+    const saved = sel && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+    const input = h('input', {
+      type: 'url',
+      class: 'gb-input',
+      placeholder: 'https://example.com',
+      'aria-label': tool.prompt,
+    });
+    openModal({
+      title: tool.prompt,
+      body: input,
+      primary: 'Add link',
+      errorMessage: 'That does not look like a link.',
+      onPrimary: () => {
+        const url = input.value.trim();
+        // Same rule sanitize() applies on save, so the refusal lands here where
+        // it can still be fixed instead of quietly dropping the href later.
+        if (!url || !SAFE_HREF.test(url)) {
+          throw new Error('Enter a link starting with https://');
+        }
+        area.focus();
+        if (saved) {
+          const s = window.getSelection();
+          s.removeAllRanges();
+          s.addRange(saved);
+        }
+        document.execCommand(tool.cmd, false, url);
+        syncState();
+        if (onInput) onInput();
+      },
+    });
+    setTimeout(() => input.focus(), 60);
+  }
+
   function run(tool) {
     area.focus();
     let value = tool.value;
     if (tool.prompt) {
-      value = window.prompt(tool.prompt, 'https://');
-      if (!value) return;
+      promptFor(tool);
+      return;
     }
     if (tool.cmd === 'formatBlock') {
       // Second press on a heading returns it to a paragraph.
@@ -246,22 +292,36 @@ function richEditor({ html, placeholder, onInput } = {}) {
    The screen
    ------------------------------------------------------------------ */
 
-function sheet({ title, body, primary, onPrimary, headActions }) {
-  const { sheet: card, close } = openOverlay({ label: title, className: 'gb-note-modal' });
+function sheet({ title, body, primary, onPrimary, headActions, onDismiss }) {
+  let busy = false;
+  /* One commit path for every way out of the sheet, so a backdrop tap landing
+     while Save is already in flight can't fire a second write. A failure keeps
+     the sheet open and toasts — whatever was typed stays on screen to retry. */
+  async function commit(run) {
+    if (busy) return;
+    busy = true;
+    try {
+      await run();
+      close();
+    } catch (err) {
+      busy = false;
+      primaryBtn.disabled = false;
+      toast.error(err, 'Could not save.');
+    }
+  }
+  const { sheet: card, close } = openOverlay({
+    label: title,
+    className: 'gb-note-modal',
+    onDismiss: onDismiss ? () => commit(onDismiss) : undefined,
+  });
   const primaryBtn = h(
     'button',
     {
       type: 'button',
       class: 'gb-btn gb-btn--primary',
-      onclick: async () => {
+      onclick: () => {
         primaryBtn.disabled = true;
-        try {
-          await onPrimary();
-          close();
-        } catch (err) {
-          toast.error(err, 'Could not save.');
-          primaryBtn.disabled = false;
-        }
+        commit(onPrimary);
       },
     },
     primary || 'Save'
@@ -279,7 +339,16 @@ function sheet({ title, body, primary, onPrimary, headActions }) {
     h(
       'div',
       { class: 'gb-note-foot' },
-      h('button', { type: 'button', class: 'gb-btn gb-btn--ghost', onclick: close }, 'Close'),
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--ghost',
+          // Same rule as the backdrop: one way out, not two that disagree.
+          onclick: onDismiss ? () => commit(onDismiss) : close,
+        },
+        'Close'
+      ),
       primaryBtn
     )
   );
@@ -560,22 +629,42 @@ function ScreenNotes({ onList, onCreate, onUpdate, onDelete, onMakeTask, onMakeR
       Icon('trash-2', { size: 16, sw: 2.2 })
     );
 
+    /* Throws on failure and says nothing: commit() in sheet() is the one place
+       that reports, and toasting here too put the same failure on screen twice.
+       It also owns the close, so this doesn't call it either. */
+    const persist = async () => {
+      const saved = await onUpdate(note.id, {
+        title: title.value.trim(),
+        body: ed.read(),
+        // '' clears it server-side; undefined would mean "leave it alone".
+        color: color === null || color === undefined ? '' : color,
+        pinned,
+      });
+      Object.assign(note, saved);
+      sortNotes();
+      paint();
+    };
+
+    /* Snapshot of everything the sheet can change, taken through the same
+       readers the save uses — comparing against note.body directly would
+       misfire, since the editor round-trips it through sanitize() on the way
+       in. Leaving without an edit must not write: a no-op PATCH bumps
+       updatedAt, and the list is sorted by it, so opening a note and closing it
+       would jump it to the top. */
+    const snapshot = () => JSON.stringify([title.value.trim(), ed.read(), color, pinned]);
+    const opened = snapshot();
+
     const open = sheet({
       title: 'Note',
       body,
       primary: 'Save',
       headActions: [deleteBtn],
-      onPrimary: async () => {
-        const saved = await onUpdate(note.id, {
-          title: title.value.trim(),
-          body: ed.read(),
-          // '' clears it server-side; undefined would mean "leave it alone".
-          color: color || '',
-          pinned,
-        });
-        Object.assign(note, saved);
-        sortNotes();
-        paint();
+      onPrimary: persist,
+      // Closing a note keeps it. Tapping outside, Escape and Close all land
+      // here — the only way to lose the text was the one the user reached for
+      // most often.
+      onDismiss: async () => {
+        if (snapshot() !== opened) await persist();
       },
     });
     setTimeout(() => ed.focus(), 60);

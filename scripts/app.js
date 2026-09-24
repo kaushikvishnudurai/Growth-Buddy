@@ -15,6 +15,7 @@ import {
   DOMAIN,
   CrashCard,
   openOverlay,
+  closeOverlays,
   openModal as sharedModal,
   shakeRefusal,
   formatTime,
@@ -668,15 +669,75 @@ function notifySound() {
 }
 
 /* The user's own sound file, as a data URL. Deliberately NOT in ui_prefs: that
-   blob rides along with every /api/auth/me. Per-device, like the theme mirror. */
+   blob rides along with every /api/auth/me. It lives in two places instead —
+   this device's CacheStorage, which is the copy that actually plays (instant,
+   and fine with no connection), and the account, which is the only reason a
+   second device can find it at all. */
 const CUSTOM_CHIME_KEY = 'gb.notifySoundFile';
+/* When this device's copy was stored, so a login can tell which copy is newer
+   without shipping the bytes twice to find out. */
+const CUSTOM_CHIME_AT_KEY = 'gb.notifySoundFileAt';
+
 function loadCustomChime() {
   setCustomChime(CacheStorage.getItem(CUSTOM_CHIME_KEY));
 }
-function storeCustomChime(dataUrl) {
-  if (dataUrl) CacheStorage.setItem(CUSTOM_CHIME_KEY, dataUrl);
-  else CacheStorage.removeItem(CUSTOM_CHIME_KEY);
+
+/* This device's copy. Synchronous and can't fail, which is why the picker
+   writes here first and talks to the server afterwards. */
+function storeCustomChime(dataUrl, at) {
+  if (dataUrl) {
+    CacheStorage.setItem(CUSTOM_CHIME_KEY, dataUrl);
+    CacheStorage.setItem(CUSTOM_CHIME_AT_KEY, at || new Date().toISOString());
+  } else {
+    CacheStorage.removeItem(CUSTOM_CHIME_KEY);
+    CacheStorage.removeItem(CUSTOM_CHIME_AT_KEY);
+  }
   setCustomChime(dataUrl);
+}
+
+/* The account's copy, so the sound follows the user to their next device.
+   Throws if it doesn't land; this device keeps playing its own copy either way,
+   so the caller's job is to say what hasn't happened, not to undo anything. */
+async function syncCustomChimeUp(dataUrl) {
+  const res = dataUrl
+    ? await api('/api/notifications/custom-sound', {
+        method: 'PUT',
+        body: JSON.stringify({ dataUrl }),
+      })
+    : await api('/api/notifications/custom-sound', { method: 'DELETE' });
+  if (res && res.updatedAt) CacheStorage.setItem(CUSTOM_CHIME_AT_KEY, res.updatedAt);
+}
+
+/* Once per app load, not once per syncUserSession: that runs on every profile
+   save and password change too, and re-fetching a few hundred kB of audio each
+   time a display name changes is a lot of bandwidth for a file that can only
+   have changed on another device. */
+let customChimePulled = false;
+
+/* On login: take the account's sound if this device has none, or has an older
+   one than another device uploaded. Silent on failure — a device with a local
+   copy keeps playing it, and one without falls back to the default chime,
+   which is exactly what happened before any of this synced. */
+async function pullCustomChime() {
+  if (customChimePulled) return;
+  customChimePulled = true;
+  try {
+    const res = await api('/api/notifications/custom-sound');
+    // 204 → null: the account has never had one. Not an error, just the
+    // ordinary state of most users.
+    if (!res || !res.dataUrl) return;
+    const mine = Date.parse(CacheStorage.getItem(CUSTOM_CHIME_AT_KEY) || '');
+    const theirs = Date.parse(res.updatedAt);
+    // Unparseable on either side falls through to taking the server's copy: a
+    // device with no timestamp is one that has never synced.
+    if (Number.isFinite(mine) && Number.isFinite(theirs) && mine >= theirs) return;
+    storeCustomChime(res.dataUrl, res.updatedAt);
+    // The "Yours" option in Settings only exists once a file is stored, so the
+    // picker has to be repainted now that one is.
+    render();
+  } catch (_) {
+    /* offline, or signed out mid-flight — the local copy, if any, still plays */
+  }
 }
 
 /* On login / user refresh, mirror the server's stored UI prefs into the local
@@ -839,6 +900,256 @@ async function protectStreak(habitId) {
   }
 }
 
+/* ---- The freeze calendar ----
+   Picking the day a freeze covers. protect/unprotect have always accepted any
+   past date; the UI only ever sent today (the rest-day toggle) or yesterday
+   (the at-risk prompt), so a miss from earlier in the week was unreachable.
+
+   Days with no check-in row are simply absent from the history, so "missed" is
+   the absence of a record, not a record saying so — the grid fills the month
+   and marks whatever the server didn't mention. */
+async function openFreezeCalendar() {
+  const habits = (state.habits || []).filter((x) => x.active !== false);
+  if (!habits.length) {
+    toastError(new Error('Add a habit first.'), 'Nothing to freeze yet.');
+    return;
+  }
+
+  let habit = habits[0];
+  let cursor = new Date();
+  cursor = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+  let byDate = {};
+  // The day the habit started. Days before it are blank, not missed.
+  let since = '';
+
+  const grid = h('div', { class: 'gb-freeze-cal' });
+  const { sheet, close } = openOverlay({ label: 'Freeze a day', className: 'gb-freeze-modal' });
+
+  /* Far enough back to cover the month on screen, not a fixed window. A flat
+     ?days=120 only reached about four months, so paging further back returned
+     nothing and painted a whole month as untouched — indistinguishable from a
+     month genuinely missed. +31 so the first of the month is inside the range
+     rather than exactly on its edge. */
+  function daysBack() {
+    const span = Math.ceil((Date.now() - cursor.getTime()) / 86400000);
+    return Math.max(31, span + 31);
+  }
+
+  async function load() {
+    grid.replaceChildren(h('div', { class: 'gb-freeze-loading' }, 'Loading…'));
+    try {
+      const res = await api(
+        '/api/habits/' + encodeURIComponent(habit.id) + '/history?days=' + daysBack()
+      );
+      byDate = {};
+      since = (res && res.since) || '';
+      ((res && res.days) || []).forEach((r) => {
+        byDate[r.date] = r;
+      });
+    } catch (err) {
+      toastError(err, 'Could not load that habit.');
+      byDate = {};
+    }
+    paint();
+  }
+
+  async function toggleDay(key, row) {
+    const covered = row && row.protectedDay;
+    if (row && row.done) {
+      toastError(new Error('That day is already done.'), 'Nothing to freeze.');
+      return;
+    }
+    if (!covered && freezeTokensLeft() <= 0) {
+      toastError(new Error('No freezes left this week.'), 'Out of freezes.');
+      return;
+    }
+    try {
+      const updated = await api(
+        '/api/habits/' + encodeURIComponent(habit.id) + (covered ? '/unprotect' : '/protect'),
+        { method: 'POST', body: JSON.stringify({ date: key }) }
+      );
+      state.habits = state.habits.map((x) => (x.id === updated.id ? updated : x));
+      habit = updated;
+      reconcileStreakFreeze();
+      toastSuccess(covered ? 'Freeze returned to your wallet.' : 'Day covered by a freeze.');
+      render();
+      await load();
+    } catch (err) {
+      toastError(err, covered ? 'Could not undo that.' : 'Could not freeze that day.');
+    }
+  }
+
+  function paint() {
+    const today = todayKey();
+    const year = cursor.getFullYear();
+    const month = cursor.getMonth();
+    const first = new Date(year, month, 1).getDay();
+    const total = new Date(year, month + 1, 0).getDate();
+    const cells = [];
+    for (let i = 0; i < first; i++) cells.push(h('div', { class: 'gb-mini-cal-day is-empty' }));
+    for (let d = 1; d <= total; d++) {
+      const key =
+        year + '-' + String(month + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+      const row = byDate[key];
+      const future = key > today;
+      const before = !!since && key < since;
+      // Missed is "behind us and not done", not "has no row": unprotecting a day
+      // leaves the row behind with done=false, and keying off its absence made a
+      // refunded day render as though nothing had ever been missed.
+      const done = !!(row && row.done);
+      const frozen = !!(row && row.protectedDay);
+      const cls =
+        'gb-mini-cal-day gb-freeze-day' +
+        (key === today ? ' is-today' : '') +
+        (future || before ? ' is-future' : '') +
+        (done ? ' is-done' : '') +
+        (frozen ? ' is-frozen' : '') +
+        (!future && !before && !done && !frozen ? ' is-missed' : '');
+      cells.push(
+        h(
+          'button',
+          {
+            type: 'button',
+            class: cls,
+            disabled: future || before || !!(row && row.done),
+            title: future
+              ? 'Not yet'
+              : before
+                ? 'Before this habit existed'
+              : row && row.done
+                ? 'Done'
+                : row && row.protectedDay
+                  ? 'Frozen — tap to get the freeze back'
+                  : 'Tap to cover this day with a freeze',
+            onclick: () => toggleDay(key, row),
+          },
+          h('span', { class: 'num' }, String(d)),
+          row && row.done
+            ? Icon('check', { size: 11, sw: 3 })
+            : row && row.protectedDay
+              ? Icon('snowflake', { size: 11, sw: 2.6 })
+              : null
+        )
+      );
+    }
+
+    const monthLabel = cursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    const atCurrentMonth =
+      year === new Date().getFullYear() && month === new Date().getMonth();
+    grid.replaceChildren(
+      h(
+        'div',
+        { class: 'gb-mini-cal-header' },
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-mini-cal-nav-btn',
+            'aria-label': 'Previous month',
+            onclick: () => {
+              cursor = new Date(year, month - 1, 1);
+              load();
+            },
+          },
+          Icon('chevron-left', { size: 16, sw: 2.6 })
+        ),
+        h('div', { class: 'gb-mini-cal-month' }, monthLabel),
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-mini-cal-nav-btn',
+            'aria-label': 'Next month',
+            // Nothing to protect ahead of today, so the walk stops here.
+            disabled: atCurrentMonth,
+            onclick: () => {
+              cursor = new Date(year, month + 1, 1);
+              load();
+            },
+          },
+          Icon('chevron-right', { size: 16, sw: 2.6 })
+        )
+      ),
+      h(
+        'div',
+        { class: 'gb-mini-cal-dow' },
+        ['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d) =>
+          h('div', { class: 'gb-mini-cal-dow-cell' }, d)
+        )
+      ),
+      h('div', { class: 'gb-mini-cal-grid' }, ...cells),
+      h(
+        'div',
+        { class: 'gb-mini-cal-legend' },
+        h(
+          'span',
+          { class: 'gb-mini-cal-legend-item' },
+          h('span', { class: 'dot is-done' }),
+          'Done'
+        ),
+        h(
+          'span',
+          { class: 'gb-mini-cal-legend-item' },
+          h('span', { class: 'dot is-frozen' }),
+          'Frozen'
+        ),
+        h(
+          'span',
+          { class: 'gb-mini-cal-legend-item' },
+          h('span', { class: 'dot is-missed' }),
+          'Missed'
+        )
+      )
+    );
+    refreshIcons();
+  }
+
+  const picker = h(
+    'div',
+    { class: 'gb-freeze-habits' },
+    habits.map((x) =>
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-chip' + (x.id === habit.id ? ' is-on' : ''),
+          onclick: (e) => {
+            habit = x;
+            Array.from(picker.children).forEach((el) => el.classList.remove('is-on'));
+            e.currentTarget.classList.add('is-on');
+            load();
+          },
+        },
+        x.name
+      )
+    )
+  );
+
+  // Filtered, not passed straight through: Element.append() turns a null child
+  // into the literal text "null", which is exactly what it printed above the
+  // calendar for anyone with a single habit.
+  sheet.append(
+    ...[
+      h(
+        'div',
+        { class: 'gb-modal-title' },
+        Icon('snowflake', { size: 16, sw: 2.4 }),
+        ' Freeze a day'
+      ),
+      h(
+        'p',
+        { class: 'gb-modal-sub' },
+        'A freeze covers one missed day so the streak holds. Tap a day to spend one, tap it again to get it back.'
+      ),
+      habits.length > 1 ? picker : null,
+      grid,
+      h('button', { type: 'button', class: 'gb-btn gb-btn--ghost', onclick: close }, 'Done'),
+    ].filter(Boolean)
+  );
+  refreshIcons();
+  load();
+}
+
 /* Dismiss the at-risk prompt and let the streak reset (no token spent). */
 function declineStreakBreak(habitId) {
   dismissedRisk.add(String(habitId));
@@ -932,6 +1243,13 @@ function recordTrendsToday() {
 function clearSession() {
   CacheStorage.removeItem(SESSION_KEY);
   CacheStorage.removeItem(TOKEN_KEY);
+  // The sound goes too, and whoever signs in next gets their own looked up
+  // rather than inheriting the previous account's. It was keyed per device and
+  // never per user, so on a shared device the next person heard the last
+  // person's file. Safe to drop now that the account keeps a copy: signing back
+  // in pulls it straight down again.
+  storeCustomChime(null);
+  customChimePulled = false;
 }
 
 /* The ONLY way a signed-in user reaches `state` — sign-in, OTP verify, password
@@ -950,6 +1268,10 @@ function syncUserSession(userPatch) {
   }
   saveSession(state.user, token);
   hydrateUiPrefs();
+  // The bytes are too big for ui_prefs, so they come down on their own. Not
+  // awaited: nothing on screen waits for a notification sound, and a failure
+  // here must never be the thing that stops a sign-in.
+  pullCustomChime();
 }
 
 // In-flight dedup for idempotent GETs: if the same GET is already running,
@@ -2807,6 +3129,10 @@ function setScreen(id, opts) {
   state.notifOpen = false;
   state.profileOpen = false;
   state.moreOpen = false;
+  // Same reasoning as the three panels above, for dialogs: a sheet belongs to
+  // the screen that opened it. Safe here because the early return above means
+  // this only runs on a real screen change, never a same-screen repaint.
+  closeOverlays();
   if (!opts.fromHash) {
     const target = '#/' + id;
     if (window.location.hash !== target) {
@@ -4505,16 +4831,33 @@ function openProfileSettings(initialTab) {
       const file = soundFile.files && soundFile.files[0];
       soundFile.value = ''; // so picking the same file twice still fires
       if (!file) return;
+      let dataUrl;
       try {
-        storeCustomChime(await readCustomChime(file));
-        saveUiPrefs({ notifySound: 'custom' });
-        reSyncDeviceAlarms();
-        paintSoundPicker();
-        syncCustomRow();
-        playChime('custom');
-        toastSuccess('Saved. That\u2019s your notification sound now.');
+        dataUrl = await readCustomChime(file);
       } catch (err) {
         pushToast(err.message || 'Could not use that file.', 'error', 4200);
+        return;
+      }
+      // The file is good, so it becomes this device's sound before anything
+      // touches the network: a dead connection must not cost the user the pick
+      // they just made.
+      storeCustomChime(dataUrl);
+      saveUiPrefs({ notifySound: 'custom' });
+      reSyncDeviceAlarms();
+      paintSoundPicker();
+      syncCustomRow();
+      playChime('custom');
+      try {
+        await syncCustomChimeUp(dataUrl);
+        toastSuccess('Saved. That\u2019s your notification sound now.');
+      } catch (_) {
+        // It plays here regardless \u2014 so this says what hasn't happened yet
+        // rather than a bare "saved" that quietly means "on one device".
+        pushToast(
+          'Saved on this device. Your others will pick it up next time you\u2019re online.',
+          'info',
+          4600
+        );
       }
     },
   });
@@ -4532,12 +4875,24 @@ function openProfileSettings(initialTab) {
     {
       type: 'button',
       class: 'gb-btn gb-btn--ghost gb-btn--compact',
-      onclick: () => {
+      onclick: async () => {
         storeCustomChime(null);
         if (notifySound() === 'custom') saveUiPrefs({ notifySound: DEFAULT_CHIME });
         reSyncDeviceAlarms();
         paintSoundPicker();
         syncCustomRow();
+        try {
+          await syncCustomChimeUp(null);
+        } catch (_) {
+          // Gone from this device either way, but the account still has it —
+          // and the next sign-in pulls it back down. Say so rather than let it
+          // reappear looking like a bug.
+          pushToast(
+            'Removed here, but we couldn’t reach the server — it may come back when you next sign in.',
+            'error',
+            4600
+          );
+        }
       },
     },
     'Remove'
@@ -6131,17 +6486,25 @@ function ScreenHabits() {
             },
             'Your habits'
           ),
+          // A button, not a label: the wallet was the only place freezes were
+          // mentioned and there was nowhere to go from it. Protecting a day was
+          // reachable only through the at-risk prompt, which covers yesterday
+          // and nothing else — so a miss from earlier in the week could not be
+          // rescued at all, however many tokens were sitting unspent.
           h(
-            'span',
+            'button',
             {
+              type: 'button',
               class: 'gb-freeze-chip',
               'data-empty': left > 0 ? 'false' : 'true',
-              title: 'Freezes protect a streak after a missed day. You get 1 free pass each week.',
+              title: 'Choose which day a freeze covers',
+              onclick: openFreezeCalendar,
             },
             Icon('snowflake', { size: 13, sw: 2.4 }),
             // The earning rule was in the title attribute above, which a phone
             // never shows — so on mobile the only place it existed was invisible.
-            left + ' freeze' + (left === 1 ? '' : 's') + ' left · 1 more each week'
+            left + ' freeze' + (left === 1 ? '' : 's') + ' left · 1 more each week',
+            Icon('chevron-right', { size: 13, sw: 2.6 })
           )
         );
       })(),
