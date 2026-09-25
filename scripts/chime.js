@@ -14,7 +14,11 @@
    So: edit SOUNDS, re-run `node scripts/gen-chimes.mjs`.
    ponytail: the user's OWN uploaded file stays in-app. It lives as a data URL
    in CacheStorage, and Android can only ring a file that shipped with the app;
-   giving it a channel means writing it out natively, which is a plugin.
+   giving it a channel means writing it out natively. That plugin now exists —
+   CustomNotificationSoundPlugin in the Capacitor project — so do not write a
+   second one. It is not reached yet: nothing registers it (MainActivity is an
+   empty BridgeActivity, and capacitor.plugins.json only lists npm plugins), so
+   an upload still falls back to the phone's own sound.
    ===================================================================== */
 
 /* { f: Hz, t: seconds from the start, d: seconds to decay, g: peak gain,

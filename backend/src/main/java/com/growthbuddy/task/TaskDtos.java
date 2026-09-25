@@ -19,6 +19,13 @@ record UpdateTaskRequest(
         String notes,
         Priority priority,
         Instant dueAt,
+        /**
+         * Remove the due date. A null {@code dueAt} already means "leave it
+         * alone" here, like every other field in this record, so there was no
+         * way to say "make it empty" — clearing the field in the edit dialog
+         * saved with the old date still on it, silently.
+         */
+        Boolean clearDueAt,
         Boolean done) {
 }
 

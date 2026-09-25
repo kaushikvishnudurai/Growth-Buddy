@@ -5872,6 +5872,10 @@ function taskForm(task) {
         title,
         priority: priority.get(),
         dueAt: dueInput.value ? new Date(dueInput.value).toISOString() : null,
+        // An emptied field means "remove the due date", which a null dueAt
+        // can't say on its own — null is how every field in UpdateTaskRequest
+        // says "leave it alone". createTask has no such field and ignores it.
+        clearDueAt: !dueInput.value,
       };
     },
   };
@@ -5895,8 +5899,6 @@ function openEditTask(task) {
     sub: task.title,
     body: form.node,
     primary: 'Save changes',
-    // ponytail: a null dueAt means "leave it alone" to UpdateTaskRequest, so
-    // you can move a due date but not remove one. Needs a backend flag to fix.
     onPrimary: () => updateTask(task.id, form.read()),
     danger: {
       label: 'Delete task',

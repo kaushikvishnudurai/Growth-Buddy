@@ -58,9 +58,7 @@ public class TaskService {
         if (req.priority() != null) {
             t.setPriority(req.priority());
         }
-        if (req.dueAt() != null) {
-            t.setDueAt(req.dueAt());
-        }
+        t.setDueAt(resolveDueAt(t.getDueAt(), req.dueAt(), req.clearDueAt()));
         if (req.done() != null) {
             setDone(t, req.done());
         }
@@ -106,6 +104,18 @@ public class TaskService {
             historyRepo.save(h);
             progress.awardTaskCompletion(t.getUserId());
         }
+    }
+
+    /**
+     * Which due date an update lands on. An explicit clear wins, a supplied
+     * value is taken, and no value at all leaves the current one — the "null
+     * means leave it alone" rule the rest of {@link UpdateTaskRequest} follows.
+     */
+    static Instant resolveDueAt(Instant current, Instant requested, Boolean clear) {
+        if (Boolean.TRUE.equals(clear)) {
+            return null;
+        }
+        return requested != null ? requested : current;
     }
 
     private boolean escalateOverduePriority(Task t) {
