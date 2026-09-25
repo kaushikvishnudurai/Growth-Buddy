@@ -492,16 +492,35 @@ function BottomNav({ active, onNav, onMore, features, moreOpen, layout } = {}) {
    `HH:MM` the server stores. So the same reminder read "7:30 PM" on one screen
    and "19:30" on another.
 
-   `pref` is the user's choice from Settings — 'auto' follows the device, '12'
-   and '24' override it. app.js calls setTimeFormat on boot and on change. */
-let timePref = 'auto';
+   The preference is always '12' or '24' — there is no "follow the device" any
+   more. The device gets exactly one say: on the first load of an account,
+   detectTimeFormat() reads it and app.js writes the answer into ui_prefs. Every
+   load after that takes it from the server, so one account reads the same way on
+   a phone and on a laptop whose locales disagree. */
+let timePref = null;
 
+/** This device's own 12/24 habit, as '12' or '24'. First run only. */
+function detectTimeFormat() {
+  try {
+    const o = new Intl.DateTimeFormat(undefined, { hour: 'numeric' }).resolvedOptions();
+    if (typeof o.hour12 === 'boolean') return o.hour12 ? '12' : '24';
+    // Some engines fill in hourCycle and leave hour12 undefined.
+    if (o.hourCycle) return o.hourCycle === 'h11' || o.hourCycle === 'h12' ? '12' : '24';
+  } catch (_) {
+    /* no Intl worth trusting */
+  }
+  return '12';
+}
+
+/* Anything that isn't '12' or '24' — nothing stored yet, or the 'auto' an older
+   account still carries — resolves against the device right here, so no screen
+   ever paints in an undecided state while the write to ui_prefs is in flight. */
 function setTimeFormat(pref) {
-  timePref = pref === '12' || pref === '24' ? pref : 'auto';
+  timePref = pref === '12' || pref === '24' ? pref : detectTimeFormat();
 }
 
 function timeFormat() {
-  return timePref;
+  return timePref || (timePref = detectTimeFormat());
 }
 
 /** Accepts 'HH:MM', 'HH:MM:SS', a Date, an ISO string, or epoch millis. */
@@ -517,16 +536,14 @@ function formatTime(value, fallback = '') {
     date = value instanceof Date ? value : new Date(value);
   }
   if (Number.isNaN(date.getTime())) return fallback;
-  const opts = { minute: '2-digit' };
-  if (timePref === '24') {
-    opts.hour = '2-digit';
-    opts.hour12 = false;
-  } else if (timePref === '12') {
-    opts.hour = 'numeric';
-    opts.hour12 = true;
-  } else {
-    opts.hour = 'numeric';
-  }
+  // hourCycle rather than `hour12: false` for the 24h case: the two cannot be
+  // combined (hour12 wins and hourCycle is dropped), and hour12:false alone
+  // leaves the cycle to the locale — which on en-US used to mean h24, printing
+  // midnight as "24:00". h23 is the one that says 00:00.
+  const opts =
+    timeFormat() === '12'
+      ? { hour: 'numeric', minute: '2-digit', hour12: true }
+      : { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' };
   try {
     return date.toLocaleTimeString(undefined, opts);
   } catch (_) {
@@ -936,4 +953,5 @@ export {
   formatTime,
   setTimeFormat,
   timeFormat,
+  detectTimeFormat,
 };

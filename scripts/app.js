@@ -20,6 +20,7 @@ import {
   shakeRefusal,
   formatTime,
   setTimeFormat,
+  detectTimeFormat,
 } from './gb-kit.js';
 import {
   ScreenDashboard,
@@ -656,11 +657,14 @@ function notifySoundFor(n) {
   return notifySound();
 }
 
-/* 'auto' follows the device, '12' and '24' override it. Read from ui_prefs so it
-   travels with the account rather than living on one device. */
+/* Always '12' or '24'. Read from ui_prefs so it travels with the account rather
+   than living on one device. An account with nothing stored yet — or one still
+   carrying the old 'auto' — answers with this device's format, and
+   hydrateUiPrefs() writes that answer back so the next load reads it from the
+   server like every other preference. */
 function timeFormatPref() {
   const p = state.user && state.user.uiPrefs;
-  return p && (p.timeFormat === '12' || p.timeFormat === '24') ? p.timeFormat : 'auto';
+  return p && (p.timeFormat === '12' || p.timeFormat === '24') ? p.timeFormat : detectTimeFormat();
 }
 
 function notifySound() {
@@ -768,6 +772,13 @@ function hydrateUiPrefs() {
     // Same reason as the working week: every time on the page is formatted
     // through gb-kit, so the preference has to land before anything paints.
     setTimeFormat(p.timeFormat);
+    // The one moment the device gets a vote. Nothing stored yet (a new account,
+    // first load) or the old 'auto' — read the phone's own habit and write it
+    // to ui_prefs, so from the second load on this is the server's answer and
+    // the same on every device the account signs in from.
+    if (p.timeFormat !== '12' && p.timeFormat !== '24') {
+      saveUiPrefs({ timeFormat: detectTimeFormat() });
+    }
     if (p.onboardingDone) CacheStorage.setItem('gb.onboardDismissed', '1');
     if (Array.isArray(p.achSeen)) {
       CacheStorage.setItem('gb.achSeen.' + (state.user.id || 'me'), JSON.stringify(p.achSeen));
@@ -3599,7 +3610,6 @@ function customisePanes() {
     ),
     segmented(
       [
-        { value: 'auto', label: 'Automatic' },
         { value: '12', label: '12-hour' },
         { value: '24', label: '24-hour' },
       ],
@@ -4537,9 +4547,10 @@ function openProfileSettings(initialTab) {
   );
   const digestHourSel = h('select', { class: 'gb-input' });
   for (let hr = 0; hr < 24; hr++) {
-    const ampm = hr < 12 ? 'AM' : 'PM';
-    const h12 = hr % 12 === 0 ? 12 : hr % 12;
-    const o = h('option', { value: String(hr) }, h12 + ':00 ' + ampm);
+    // Through the shared formatter, like every other time on screen. This was
+    // the last hand-rolled AM/PM left, and it sat four settings below the
+    // 12/24 switch whose hint promises "how every time in the app is written".
+    const o = h('option', { value: String(hr) }, formatTime(hr + ':00'));
     if ((u.digestHour != null ? u.digestHour : 8) === hr) o.selected = true;
     digestHourSel.appendChild(o);
   }
