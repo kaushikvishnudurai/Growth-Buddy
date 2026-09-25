@@ -6,17 +6,27 @@
    The day chime.js's ponytail note pointed at: a notification that arrives
    while the app is closed is drawn by Android, and Android plays a sound from
    a FILE, not from our AudioContext. So the same SOUNDS table gets rendered
-   out here and dropped into `public/`, which Vite copies verbatim into the
-   bundle — @capacitor/local-notifications resolves a notification's `sound`
-   out of the app's web assets and creates the per-sound channel itself, so
-   this needs no res/raw, no Gradle and no native code.
+   out here, into two places.
+
+   `public/` is the web bundle, which Vite copies verbatim and the plugin can
+   resolve a notification's `sound` out of. `res/raw/` in the Capacitor project
+   is the one Android's NOTIFICATION CHANNELS can see: a channel's sound may
+   only ever be an `android.resource://.../raw/<name>` URI, never a web asset,
+   and the sound is the channel's — not the notification's — on Android 8+. We
+   have to make those channels ourselves (see native.js: the plugin's own are
+   IMPORTANCE_DEFAULT, which rings without ever showing a banner), so the files
+   have to exist as raw resources.
+
+   That is also why the names use an underscore: a raw resource name is
+   [a-z0-9_] only, and `gb-chime` is not a legal one — it silently resolves to
+   nothing. One name in both places, so neither resolver can miss.
 
    Synthesis mirrors playChime() note for note (sine/triangle, 12 ms attack,
    exponential tail, optional glide). Re-run it after editing SOUNDS; the
    assertions at the end are the check that a typo there produced silence.
    ===================================================================== */
 
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, existsSync, rmSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SOUNDS } from './chime.js';
@@ -25,7 +35,12 @@ import { SOUNDS } from './chime.js';
    in an APK. 44.1 kHz would double the bytes for nothing audible. */
 const RATE = 22050;
 const TAIL = 0.05;
-const OUT_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'public');
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const OUT_DIR = join(ROOT, 'public');
+/* The Capacitor project is a sibling checkout and may simply not be there (CI,
+   a web-only clone). Writing raw resources is then skipped, not fatal — the web
+   bundle is the half that matters for `npm run dev`. */
+const RAW_DIR = join(ROOT, '..', 'Growth-Buddy-Mobile', 'android', 'app', 'src', 'main', 'res', 'raw');
 
 /* Web Audio's exponential ramps, which is why playChime() floors its gain at
    0.0001 rather than 0 — the curve can't reach zero. */
@@ -79,6 +94,19 @@ function wav(samples) {
 }
 
 mkdirSync(OUT_DIR, { recursive: true });
+/* Only when the sibling checkout exists — see RAW_DIR. */
+const rawWanted = existsSync(join(ROOT, '..', 'Growth-Buddy-Mobile', 'android'));
+if (rawWanted) mkdirSync(RAW_DIR, { recursive: true });
+
+/* A tone deleted from SOUNDS has to lose its file too, or the APK keeps
+   shipping a chime nothing can select and Android keeps a channel pointed at
+   it. Clear ours first, then write; anything not named gb_*.wav isn't ours. */
+for (const dir of rawWanted ? [OUT_DIR, RAW_DIR] : [OUT_DIR]) {
+  for (const f of readdirSync(dir)) {
+    if (/^gb[-_].*\.wav$/.test(f)) rmSync(join(dir, f));
+  }
+}
+
 for (const [key, notes] of Object.entries(SOUNDS)) {
   const samples = render(notes);
   let peak = 0;
@@ -91,11 +119,17 @@ for (const [key, notes] of Object.entries(SOUNDS)) {
   // rather than shipping something nobody hears.
   const lift = 0.85 / peak;
   for (let i = 0; i < samples.length; i++) samples[i] *= lift;
-  const file = join(OUT_DIR, `gb-${key}.wav`);
-  writeFileSync(file, wav(samples));
+  const bytes = wav(samples);
+  writeFileSync(join(OUT_DIR, `gb_${key}.wav`), bytes);
+  if (rawWanted) writeFileSync(join(RAW_DIR, `gb_${key}.wav`), bytes);
   console.log(
-    `gb-${key}.wav  ${(samples.length / RATE).toFixed(2)}s  ` +
+    `gb_${key}.wav  ${(samples.length / RATE).toFixed(2)}s  ` +
       `${Math.round((44 + samples.length * 2) / 1024)} kB  (peak ${peak.toFixed(3)} → 0.85)`
   );
 }
-console.log('gen-chimes.mjs: rendered ' + Object.keys(SOUNDS).length + ' sounds');
+console.log(
+  'gen-chimes.mjs: rendered ' +
+    Object.keys(SOUNDS).length +
+    ' sounds to public/' +
+    (rawWanted ? ' and res/raw/' : ' (no Capacitor checkout — skipped res/raw)')
+);

@@ -66,8 +66,12 @@ fix the doc line if it was wrong. A doc you touch and don't update is worse than
   and no git binary, so every build reported 0.
 - `grep 'ponytail:'` for deliberate simplifications and their upgrade paths.
 - Edited `SOUNDS` in `chime.js` → re-run **`node scripts/gen-chimes.mjs`**. The same table is the
-  phone's notification sound, rendered to `public/gb-*.wav`; the in-app chime and the lock-screen
-  one drift apart silently otherwise.
+  phone's notification sound, rendered to `gb_<key>.wav` in **both** `public/` and
+  `../Growth-Buddy-Mobile/android/app/src/main/res/raw/`; the in-app chime and the lock-screen one
+  drift apart silently otherwise. The underscore is load-bearing — a raw resource name is
+  `[a-z0-9_]` only, and `gb-chime` resolves to nothing with no error. res/raw exists because an
+  Android **channel's** sound can only be a raw resource, and we build the channels ourselves:
+  the plugin's own are IMPORTANCE_DEFAULT, which rings without ever showing a banner.
 - **New column on an existing `@Entity` → declare it in that table's `CREATE TABLE` in
   `tableCreationQueries.sql` AND append an `ALTER` to `migrations.sql`.** Two files, two jobs:
   the first builds a new database, the second is the only thing that can change one that already

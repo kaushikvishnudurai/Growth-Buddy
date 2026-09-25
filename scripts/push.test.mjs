@@ -118,8 +118,16 @@ assert.deepEqual(upcomingWaterAlarms({ on: true, from: '21:00', to: '09:00' }, N
     'both sources land in one queue'
   );
   assert.ok(
-    q.every((n) => n.sound === 'gb-marimba.wav'),
+    q.every((n) => n.sound === 'gb_marimba.wav'),
     'the chosen chime rides on every notification'
+  );
+  /* The banner fix. Every audible notification has to NAME a channel: leave it
+     undefined and the plugin invents one at IMPORTANCE_DEFAULT, which rings
+     without ever showing anything on screen. Nothing on a phone can catch that
+     regression — the sound still plays, so it looks like it works. */
+  assert.ok(
+    q.every((n) => n.channelId === 'gb-tone-marimba'),
+    'every audible notification names a channel we control'
   );
 }
 
@@ -137,10 +145,10 @@ assert.deepEqual(upcomingWaterAlarms({ on: true, from: '21:00', to: '09:00' }, N
     },
     NOW
   );
-  assert.equal(q.find((n) => n.body === 'own tone').sound, 'gb-droplet.wav');
-  assert.equal(q.find((n) => n.body === 'default tone').sound, 'gb-marimba.wav');
+  assert.equal(q.find((n) => n.body === 'own tone').sound, 'gb_droplet.wav');
+  assert.equal(q.find((n) => n.body === 'default tone').sound, 'gb_marimba.wav');
   assert.ok(
-    q.filter((n) => n.title === 'Time for water').every((n) => n.sound === 'gb-marimba.wav'),
+    q.filter((n) => n.title === 'Time for water').every((n) => n.sound === 'gb_marimba.wav'),
     'the water nudge always follows the default tone'
   );
 }
@@ -184,8 +192,8 @@ assert.deepEqual(upcomingWaterAlarms({ on: true, from: '21:00', to: '09:00' }, N
   assert.deepEqual(q.map((n) => n.body), ['quiet one', 'loud one'], 'the silent reminder is still queued');
   assert.equal(q[0].channelId, SILENT_CHANNEL, 'on the silent channel');
   assert.equal(q[0].sound, undefined, 'and with no sound file');
-  assert.equal(q[1].channelId, undefined, 'the loud one keeps the plugin-picked channel');
-  assert.equal(q[1].sound, 'gb-bloom.wav');
+  assert.equal(q[1].channelId, 'gb-tone-bloom', 'the loud one names its own tone channel');
+  assert.equal(q[1].sound, 'gb_bloom.wav');
 }
 
 /* Silent as the DEFAULT tone applies to everything that doesn't override it,
@@ -204,8 +212,12 @@ assert.deepEqual(upcomingWaterAlarms({ on: true, from: '21:00', to: '09:00' }, N
   );
   const byBody = Object.fromEntries(q.map((n) => [n.body, n]));
   assert.equal(byBody['follows default'].channelId, SILENT_CHANNEL);
-  assert.equal(byBody['own tone'].channelId, undefined, 'its own tone overrides a silent default');
-  assert.equal(byBody['own tone'].sound, 'gb-droplet.wav');
+  assert.equal(
+    byBody['own tone'].channelId,
+    'gb-tone-droplet',
+    'its own tone overrides a silent default'
+  );
+  assert.equal(byBody['own tone'].sound, 'gb_droplet.wav');
   assert.ok(q.some((n) => n.title === 'Time for water'), 'the water nudge is queued too, silently');
 }
 
@@ -221,16 +233,17 @@ assert.deepEqual(upcomingWaterAlarms({ on: true, from: '21:00', to: '09:00' }, N
 
 /* The user's own upload and anything unknown have no rendered file, so they
    fall through to the phone's own sound rather than pointing a channel at
-   nothing — the user picked a real tone, we just can't ship that one. They keep
-   the plugin's own channel, so they ring the phone's sound; only 'off' is
-   routed to the silent channel, where nothing rings at all. */
+   nothing — the user picked a real tone, we just can't ship that one. They
+   share one audible channel of ours, which is what makes them banner; only
+   'off' is routed to the silent channel, where nothing rings at all. What they
+   must never be is channel-less, which hands them back to the plugin. */
 for (const key of ['custom', 'nope', undefined]) {
   const q = upcomingAlarms(
     { reminders: [{ id: 'a', text: 'x', date: '2026-09-16', time: '18:00' }], sound: key },
     NOW
   );
   assert.equal(q[0].sound, undefined, 'no file for ' + key);
-  assert.equal(q[0].channelId, undefined, 'and no silent channel for ' + key);
+  assert.equal(q[0].channelId, 'gb-tone-default', 'an audible channel of ours for ' + key);
 }
 
 /* ---- habits ---- */

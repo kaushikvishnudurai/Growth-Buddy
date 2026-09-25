@@ -143,10 +143,11 @@ export async function pushTestLocal(sound) {
     body: 'Notifications are working. See you at your next reminder.',
     // Same file a real reminder will use, so the test actually tests the sound.
     sound: soundFile(sound),
-    // ...and the same channel, so a test on 'Silent' is silent too. It used to
+    // ...and the same channel, so a test on 'Silent' is silent too, and a test
+    // on any other tone banners exactly the way a real reminder will. It used to
     // ignore the tone entirely, which made the button prove the opposite of
     // what was happening: it rang while every real alarm was being dropped.
-    channelId: sound === 'off' ? SILENT_CHANNEL : undefined,
+    channelId: channelForTone(sound),
   });
 }
 
@@ -272,19 +273,33 @@ export function upcomingHabitAlarms(habits, now, days = HORIZON_DAYS) {
   return out;
 }
 
-/* Only the five synthesised chimes have a rendered file. 'off', an unknown key,
-   and the user's own upload (which lives as a data URL in CacheStorage, not in
-   the bundle, so Android has nothing to point a channel at) all fall through to
-   the phone's own notification sound. */
+/* Only the synthesised chimes have a rendered file. 'off', an unknown key, and
+   the user's own upload (which lives as a data URL in CacheStorage, not in the
+   bundle, so Android has nothing to point a channel at) all fall through to the
+   phone's own notification sound.
+
+   The underscore is not cosmetic: gen-chimes.mjs writes these into the
+   Capacitor project's res/raw as well as the web bundle, and an Android raw
+   resource name may only contain [a-z0-9_]. `gb-chime` is not a legal one and
+   resolves to nothing at all — no error, no sound. */
 function soundFile(key) {
-  return SOUNDS[key] ? 'gb-' + key + '.wav' : undefined;
+  return SOUNDS[key] ? 'gb_' + key + '.wav' : undefined;
+}
+
+/* Which channel a tone rings on. Named here rather than left to the plugin,
+   which would invent one at an importance that never shows a banner — see the
+   long note in native.js. A tone with no rendered file shares one channel that
+   rings with the phone's own sound. */
+function channelForTone(key) {
+  if (key === 'off') return SILENT_CHANNEL;
+  return SOUNDS[key] ? 'gb-tone-' + key : 'gb-tone-default';
 }
 
 /**
  * The whole queue, in firing order. `sound` is a chime key from `chime.js`;
- * the matching `public/gb-<key>.wav` rides in the web bundle and the plugin
- * resolves it out of the app's assets and makes the per-sound Android channel
- * itself — which is why a custom notification sound needs no native code here.
+ * the matching `gb_<key>.wav` rides in both the web bundle and the Capacitor
+ * project's res/raw (gen-chimes.mjs writes both), and `channelId` names the
+ * channel we build it into — see native.js for why we can't let the plugin do it.
  */
 export function upcomingAlarms({ reminders, water, habits, sound } = {}, now = new Date()) {
   const queue = upcomingReminderAlarms(reminders, now)
@@ -323,7 +338,7 @@ export function upcomingAlarms({ reminders, water, habits, sound } = {}, now = n
       // sound: it arrived in the in-app bell and on WhatsApp, and never on the
       // phone. A channel at IMPORTANCE_LOW shows in the shade and never makes
       // a sound, which is what the picker has always promised.
-      channelId: key === 'off' ? SILENT_CHANNEL : undefined,
+      channelId: channelForTone(key),
     });
   });
 }

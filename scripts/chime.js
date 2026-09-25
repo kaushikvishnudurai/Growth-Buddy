@@ -7,9 +7,10 @@
    fast attack and an exponential tail — so adding one is a row in SOUNDS,
    not a new code path.
    These also ARE the phone's notification sound in the app: `gen-chimes.mjs`
-   renders the same table out to `public/gb-<key>.wav`, which rides in the
-   bundle, and @capacitor/local-notifications resolves a notification's `sound`
-   from the app's web assets and makes the per-sound Android channel itself.
+   renders the same table out to `gb_<key>.wav` in both `public/` (the web
+   bundle) and the Capacitor project's `res/raw/` — a notification channel's
+   sound can only be a raw resource, and native.js builds those channels itself
+   so they land at an importance that actually shows a banner.
    So: edit SOUNDS, re-run `node scripts/gen-chimes.mjs`.
    ponytail: the user's OWN uploaded file stays in-app. It lives as a data URL
    in CacheStorage, and Android can only ring a file that shipped with the app;

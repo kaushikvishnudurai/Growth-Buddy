@@ -83,23 +83,61 @@ export async function initNative() {
    ponytail: local only. Server-initiated nudges (a mentor pings you while the
    app is closed) need FCM + @capacitor/push-notifications — separate job. */
 
-/* Android takes a notification's sound from its CHANNEL, not the notification,
-   so there is no way to mute one from the JS side — the only silent channel is
-   one we make. IMPORTANCE_LOW (2) shows in the shade and never makes a sound,
-   whatever it is pointed at. iOS and the web have no channels at all; the call
-   below fails there and the notification posts with no sound anyway, which is
-   already the right answer. */
+/* Android takes everything about how a notification behaves from its CHANNEL,
+   not from the notification: the sound, whether it vibrates, and whether it
+   appears on screen at all. All of it is frozen the moment the channel is
+   created — an app cannot raise any of it afterwards, only the user can, in
+   Settings, and a deleted channel comes back with its old settings intact.
+
+   Left alone, @capacitor/local-notifications invents a channel per sound file
+   (`sound_<name>`) at IMPORTANCE_DEFAULT. That rings and stops there: at
+   importance 3 Android plays the sound and slides the notification straight
+   into the shade without ever putting a banner on screen, so the phone makes a
+   noise and nothing appears — indistinguishable from a bug. Only IMPORTANCE_HIGH
+   (4) banners.
+
+   So we create the channels ourselves and always name one on the notification,
+   which is also what stops the plugin inventing its own. A channel's sound can
+   only ever be a res/raw resource — never a web asset — which is why
+   gen-chimes.mjs writes the wavs there too, under names Android will accept.
+
+   iOS and the web have no channels at all; createChannel fails there and the
+   notification posts with the platform's own behaviour, which is already right.
+
+   ponytail: the ids are plain. Because Android freezes them, changing a
+   channel's importance or sound later needs a NEW id — that day the fix is a
+   suffix (`gb-tone-chime-2`), not an edit to the values here. */
 export const SILENT_CHANNEL = 'gb-silent';
 
-let silentChannelReady = false;
+/* createChannel is idempotent but not free, and this runs per batch. A failed
+   call is marked done too: failure means the platform has no channels, and
+   retrying that once per schedule would cost a round trip forever. */
+const channelsReady = new Set();
 
-/* createChannel is idempotent, but a round trip per batch isn't free, so this
-   remembers. Only called when a batch actually holds a silent alarm. */
-async function ensureSilentChannel(LN) {
-  if (silentChannelReady) return;
+/** 'gb-tone-chime' -> 'Chime', for the row the user sees in Settings. */
+function toneName(id) {
+  const key = id.replace(/^gb-tone-/, '');
+  return key.charAt(0).toUpperCase() + key.slice(1);
+}
+
+async function ensureChannel(LN, id, sound) {
+  if (!id || channelsReady.has(id)) return;
+  channelsReady.add(id);
+  const silent = id === SILENT_CHANNEL;
   try {
-    await LN.createChannel({ id: SILENT_CHANNEL, name: 'Silent reminders', importance: 2 });
-    silentChannelReady = true;
+    await LN.createChannel({
+      id,
+      // Every tone is its own row in the phone's notification settings, so it
+      // needs a name the user can tell from the other six.
+      name: silent ? 'Silent reminders' : 'Reminders \u00b7 ' + toneName(id),
+      // 2 = LOW: in the shade, never a sound, whatever it points at.
+      // 4 = HIGH: the banner. 3 is the plugin's default and the broken middle.
+      importance: silent ? 2 : 4,
+      // Left off the silent channel deliberately: a channel with no sound takes
+      // the system default, and it is importance 2 that actually keeps it quiet.
+      sound: silent ? undefined : sound,
+      vibration: !silent,
+    });
   } catch (_) {
     /* no channels on this platform */
   }
@@ -146,19 +184,19 @@ export async function scheduleLocalNotifications(items) {
   const LN = nativePlugin('LocalNotifications');
   if (!LN || !items.length) return false;
   try {
-    if (items.some((n) => n.channelId === SILENT_CHANNEL)) await ensureSilentChannel(LN);
+    // Cheap after the first of each id — ensureChannel returns on a Set hit.
+    for (const n of items) await ensureChannel(LN, n.channelId, n.sound);
     await LN.schedule({
       notifications: items.map((n) => ({
         id: n.id | 0,
         title: n.title,
         body: n.body,
-        // Set only for the 'Silent' tone; otherwise the plugin picks the
-        // channel itself from the sound file, which is what we want.
+        // Always set, so the plugin never falls back to inventing one of its
+        // own at an importance that cannot banner. See ensureChannel above.
         channelId: n.channelId,
-        // A filename in the web bundle (see gen-chimes.mjs). The plugin resolves
-        // it out of the app's assets and — because on Android 8+ the SOUND
-        // belongs to the channel, not the notification — creates a channel for
-        // it on first use. Nothing to do natively.
+        // Also passed to the notification, though on Android 8+ the channel's
+        // sound is the one that plays. It is what ensureChannel built the
+        // channel from, and it is still what rings on iOS and pre-8 Android.
         sound: n.sound,
         schedule: n.at ? { at: n.at, allowWhileIdle: true } : undefined,
       })),
