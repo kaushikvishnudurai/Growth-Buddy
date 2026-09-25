@@ -83,6 +83,28 @@ export async function initNative() {
    ponytail: local only. Server-initiated nudges (a mentor pings you while the
    app is closed) need FCM + @capacitor/push-notifications — separate job. */
 
+/* Android takes a notification's sound from its CHANNEL, not the notification,
+   so there is no way to mute one from the JS side — the only silent channel is
+   one we make. IMPORTANCE_LOW (2) shows in the shade and never makes a sound,
+   whatever it is pointed at. iOS and the web have no channels at all; the call
+   below fails there and the notification posts with no sound anyway, which is
+   already the right answer. */
+export const SILENT_CHANNEL = 'gb-silent';
+
+let silentChannelReady = false;
+
+/* createChannel is idempotent, but a round trip per batch isn't free, so this
+   remembers. Only called when a batch actually holds a silent alarm. */
+async function ensureSilentChannel(LN) {
+  if (silentChannelReady) return;
+  try {
+    await LN.createChannel({ id: SILENT_CHANNEL, name: 'Silent reminders', importance: 2 });
+    silentChannelReady = true;
+  } catch (_) {
+    /* no channels on this platform */
+  }
+}
+
 export function localNotificationsAvailable() {
   return isNative() && !!nativePlugin('LocalNotifications');
 }
@@ -124,11 +146,15 @@ export async function scheduleLocalNotifications(items) {
   const LN = nativePlugin('LocalNotifications');
   if (!LN || !items.length) return false;
   try {
+    if (items.some((n) => n.channelId === SILENT_CHANNEL)) await ensureSilentChannel(LN);
     await LN.schedule({
       notifications: items.map((n) => ({
         id: n.id | 0,
         title: n.title,
         body: n.body,
+        // Set only for the 'Silent' tone; otherwise the plugin picks the
+        // channel itself from the sound file, which is what we want.
+        channelId: n.channelId,
         // A filename in the web bundle (see gen-chimes.mjs). The plugin resolves
         // it out of the app's assets and — because on Android 8+ the SOUND
         // belongs to the channel, not the notification — creates a channel for

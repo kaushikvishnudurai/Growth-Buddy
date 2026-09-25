@@ -1,4 +1,4 @@
-# styles/money.css — Money Buddy styles (1615 lines)
+# styles/money.css — Money Buddy styles (1661 lines)
 
 Reuses the app's tokens, cards and buttons. Signature elements: the "safe to spend" hero ring and a
 growth/sprout motif. All classes are `gb-money-*`. Numbers in the banners map to the Money feature
@@ -16,33 +16,33 @@ list (e.g. "(14)" = financial health).
 | 432 | Forecast | overview |
 | 470 | Personality | coach |
 | 512 | Actions row | spending |
-| 527 | Week bars | spending (last 7 days) |
-| 566 | Category list / breakdown | spending (by tag) |
-| 619 | History list (`gb-money-exp-row`, `gb-money-exp-list`) | spending (this month), income, subscriptions |
-| 657 | Income / loans — settled row dims, amount struck through | income |
-| 665 | Budget cards (`gb-money-bcard*`, `is-over` / `is-near`) | budgets |
-| 725 | Budget modal fields | set-budgets modal |
-| 753 | Purchase advisor | coach |
-| 799 | Goal chips (modal) | goals |
-| 817 | Savings goals | goals |
-| 882 | Receipt scanner | spending |
-| 914 | Empty state (`emptyHint`) | everywhere |
-| 927 | Section head with multiple actions | budgets |
-| 934 | Financial health (14) | coach |
-| 986 | Daily tip (13) | coach |
-| 1020 | Recovery plan (20) | budgets |
-| 1044 | Search (16) | spending |
-| 1065 | Subscriptions (24) | spending |
-| 1078 | Wishlist (18) | coach |
-| 1097 | Challenges (11 / 15) | coach |
-| 1197 | Timeline (19) | overview |
-| 1245 | Tag chip picker — wraps instead of overflowing (replaced the segmented bar) | add-expense modal |
-| 1327 | Tag manager (custom tags) | customise pane |
-| 1363 | Simulator (23) | coach |
-| 1388 | Reflection dot (12) | expense rows |
-| 1396 | Home widget (mini card) | `MoneyHomeCard` |
-| 1479 | Star rating (reflection, 12) — `.gb-stars` + its caption; the amber fill is decoration, the caption carries the meaning | reflection modal |
-| 1592 | Responsive | — |
+| 527 | Week bars — each column carries its own CSS tooltip (`::after` on `data-tip`); the `title` it replaced was effectively invisible and absent entirely on touch | spending (last 7 days) |
+| 612 | Category list / breakdown | spending (by tag) |
+| 665 | History list (`gb-money-exp-row`, `gb-money-exp-list`) | spending (this month), income, subscriptions |
+| 703 | Income / loans — settled row dims, amount struck through | income |
+| 711 | Budget cards (`gb-money-bcard*`, `is-over` / `is-near`) | budgets |
+| 771 | Budget modal fields | set-budgets modal |
+| 799 | Purchase advisor | coach |
+| 845 | Goal chips (modal) | goals |
+| 863 | Savings goals | goals |
+| 928 | Receipt scanner | spending |
+| 960 | Empty state (`emptyHint`) | everywhere |
+| 973 | Section head with multiple actions | budgets |
+| 980 | Financial health (14) | coach |
+| 1032 | Daily tip (13) | coach |
+| 1066 | Recovery plan (20) | budgets |
+| 1090 | Search (16) | spending |
+| 1111 | Subscriptions (24) | spending |
+| 1124 | Wishlist (18) | coach |
+| 1143 | Challenges (11 / 15) | coach |
+| 1243 | Timeline (19) | overview |
+| 1291 | Tag chip picker — wraps instead of overflowing (replaced the segmented bar) | add-expense modal |
+| 1373 | Tag manager (custom tags) | customise pane |
+| 1409 | Simulator (23) | coach |
+| 1434 | Reflection dot (12) | expense rows |
+| 1442 | Home widget (mini card) | `MoneyHomeCard` |
+| 1525 | Star rating (reflection, 12) — `.gb-stars` + its caption; the amber fill is decoration, the caption carries the meaning | reflection modal |
+| 1638 | Responsive | — |
 
 Threshold colours: `is-near` at ≥80% of a budget, `is-over` above 100% — the JS in
 `scripts/money.js` (`tabBudgets`) picks these class names, so keep the names in sync.

@@ -10,6 +10,7 @@
 
 import assert from 'node:assert/strict';
 import { upcomingReminderAlarms, upcomingWaterAlarms, upcomingHabitAlarms, upcomingAlarms } from './push.js';
+import { SILENT_CHANNEL } from './native.js';
 
 // Wednesday, 09:00 local.
 const NOW = new Date(2026, 8, 16, 9, 0, 0, 0);
@@ -165,8 +166,10 @@ assert.deepEqual(upcomingWaterAlarms({ on: true, from: '21:00', to: '09:00' }, N
   );
 }
 
-/* 'Silent' must queue nothing. A queued alarm with no sound file falls back to
-   the phone's own, which is the opposite of what the user picked. */
+/* 'Silent' is still queued — it just gets the silent channel and no sound file.
+   Dropping it was the old behaviour and it cost the user the notification as
+   well as the sound: the reminder reached the in-app bell and WhatsApp and
+   never the phone, while the Test button (which ignored the tone) still rang. */
 {
   const q = upcomingAlarms(
     {
@@ -178,10 +181,15 @@ assert.deepEqual(upcomingWaterAlarms({ on: true, from: '21:00', to: '09:00' }, N
     },
     NOW
   );
-  assert.deepEqual(q.map((n) => n.body), ['loud one'], 'the silent reminder is not queued at all');
+  assert.deepEqual(q.map((n) => n.body), ['quiet one', 'loud one'], 'the silent reminder is still queued');
+  assert.equal(q[0].channelId, SILENT_CHANNEL, 'on the silent channel');
+  assert.equal(q[0].sound, undefined, 'and with no sound file');
+  assert.equal(q[1].channelId, undefined, 'the loud one keeps the plugin-picked channel');
+  assert.equal(q[1].sound, 'gb-bloom.wav');
 }
 
-/* Silent as the DEFAULT tone silences the ones that follow it, water included. */
+/* Silent as the DEFAULT tone applies to everything that doesn't override it,
+   water included — but again, silences rather than cancels. */
 {
   const q = upcomingAlarms(
     {
@@ -194,7 +202,11 @@ assert.deepEqual(upcomingWaterAlarms({ on: true, from: '21:00', to: '09:00' }, N
     },
     NOW
   );
-  assert.deepEqual(q.map((n) => n.body), ['own tone'], 'only the reminder with a tone of its own survives');
+  const byBody = Object.fromEntries(q.map((n) => [n.body, n]));
+  assert.equal(byBody['follows default'].channelId, SILENT_CHANNEL);
+  assert.equal(byBody['own tone'].channelId, undefined, 'its own tone overrides a silent default');
+  assert.equal(byBody['own tone'].sound, 'gb-droplet.wav');
+  assert.ok(q.some((n) => n.title === 'Time for water'), 'the water nudge is queued too, silently');
 }
 
 /* A time that doesn't parse must not become an alarm: NaN passes every check
@@ -209,24 +221,17 @@ assert.deepEqual(upcomingWaterAlarms({ on: true, from: '21:00', to: '09:00' }, N
 
 /* The user's own upload and anything unknown have no rendered file, so they
    fall through to the phone's own sound rather than pointing a channel at
-   nothing — the user picked a real tone, we just can't ship that one.
-   'off' is NOT in this list any more: it queues nothing at all, because falling
-   through to the phone's sound is the loudest possible reading of "silent". */
+   nothing — the user picked a real tone, we just can't ship that one. They keep
+   the plugin's own channel, so they ring the phone's sound; only 'off' is
+   routed to the silent channel, where nothing rings at all. */
 for (const key of ['custom', 'nope', undefined]) {
   const q = upcomingAlarms(
     { reminders: [{ id: 'a', text: 'x', date: '2026-09-16', time: '18:00' }], sound: key },
     NOW
   );
   assert.equal(q[0].sound, undefined, 'no file for ' + key);
+  assert.equal(q[0].channelId, undefined, 'and no silent channel for ' + key);
 }
-assert.deepEqual(
-  upcomingAlarms(
-    { reminders: [{ id: 'a', text: 'x', date: '2026-09-16', time: '18:00' }], sound: 'off' },
-    NOW
-  ),
-  [],
-  "'off' queues nothing"
-);
 
 /* ---- habits ---- */
 

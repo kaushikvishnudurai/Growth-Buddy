@@ -1,4 +1,4 @@
-# styles/app.css — app styles (7190 lines)
+# styles/app.css — app styles (7959 lines)
 
 Consumes tokens from `tokens.css`. Mobile-first: full-screen on phones, an iPhone-style frame on
 desktop, sidebar + multi-column grid at ≥1024px. Money has its own file (`money.css`).

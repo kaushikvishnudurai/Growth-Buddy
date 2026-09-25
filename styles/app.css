@@ -7720,16 +7720,27 @@ textarea:focus-visible,
 }
 
 /* ---- the list ---- */
+/* Multi-column, not grid. A grid row is as tall as its tallest card, so a
+   two-line note beside a full one left a hole the height of the difference —
+   with four notes the board was mostly hole. Columns pack each note under the
+   one above it instead, which is what a notes board is meant to look like.
+   ponytail: the trade is reading order, which goes down a column rather than
+   across a row. `grid-template-rows: masonry` gives both and isn't shipping
+   anywhere yet; swap to it when it is. */
 .gb-note-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 12px;
+  columns: 1;
+  column-gap: 12px;
 }
 @media (min-width: 640px) {
   .gb-note-grid {
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-    align-items: start;
+    columns: 240px;
   }
+}
+/* Both the real cards and the loading skeleton are column items. */
+.gb-note-card,
+.gb-note-skel {
+  break-inside: avoid;
+  margin-bottom: 12px;
 }
 .gb-note-card {
   position: relative;
@@ -7765,9 +7776,21 @@ textarea:focus-visible,
   font-size: 0.875rem;
   line-height: var(--leading-relaxed);
   color: var(--fg2);
-  /* Cards stay a card. The whole note is one tap away. */
-  max-height: 7.5em;
+  /* Cards stay a card. The whole note is one tap away.
+     A whole number of lines, not a round-looking number: 7.5em against a 1.65
+     line-height is 4.54 lines, so the cut landed through the middle of the
+     fifth one and the card showed a row of sliced glyphs. */
+  max-height: calc(var(--leading-relaxed) * 5em);
   overflow: hidden;
+}
+/* A note with no title starts with its body, and the pin button sits on top of
+   that first line. Float a spacer the size of the button so the text wraps
+   around it; a margin would indent every line, not just the one in the way. */
+.gb-note-pin + .gb-note-card-body::before {
+  content: '';
+  float: right;
+  width: 28px;
+  height: 1.4em;
 }
 .gb-note-card-body ul,
 .gb-note-card-body ol {

@@ -532,12 +532,58 @@
   height: 110px;
 }
 .gb-money-bar-col {
+  position: relative;
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6px;
   height: 100%;
+}
+/* The bars carried a `title`, which is the one tooltip nobody sees: it waits a
+   second, paints in the OS style rather than this one, and never appears on a
+   phone at all — so seven bars had no readable date or amount between them.
+   :focus-visible is what makes it work on touch; the column is focusable for
+   that alone, there is nothing to activate. */
+.gb-money-bar-col::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 4px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--fg1);
+  color: var(--surface);
+  font-family: var(--font-body);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+/* The end columns would hang off the card, which has no overflow to clip it. */
+.gb-money-bar-col:first-child::after {
+  left: 0;
+  transform: none;
+}
+.gb-money-bar-col:last-child::after {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+.gb-money-bar-col:hover::after,
+.gb-money-bar-col:focus-visible::after {
+  opacity: 1;
+}
+.gb-money-bar-col:focus {
+  outline: none;
+}
+.gb-money-bar-col:focus-visible .gb-money-bar-fill,
+.gb-money-bar-col:hover .gb-money-bar-fill {
+  background: var(--coral-500);
 }
 .gb-money-bar-track {
   flex: 1;

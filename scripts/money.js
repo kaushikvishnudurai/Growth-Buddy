@@ -1563,7 +1563,14 @@ function weekBars(expenses) {
     days.map((k, i) =>
       h(
         'div',
-        { class: 'gb-money-bar-col', title: fmtDateShort(k) + ' · ' + fmt(sums[i]) },
+        {
+          class: 'gb-money-bar-col',
+          // Read by the CSS tooltip. `title` used to do this and was invisible
+          // in practice — see the note on .gb-money-bar-col::after.
+          'data-tip': fmtDateShort(k) + ' \u00b7 ' + fmt(sums[i]),
+          tabindex: '0',
+          'aria-label': fmtDateShort(k) + ', ' + fmt(sums[i]),
+        },
         h(
           'div',
           { class: 'gb-money-bar-track' },

@@ -24,6 +24,7 @@ import {
   scheduleLocalNotification,
   scheduleLocalNotifications,
   cancelPendingLocalNotifications,
+  SILENT_CHANNEL,
 } from './native.js';
 import { occursOn } from './recurrence.js';
 import { SOUNDS } from './chime.js';
@@ -142,6 +143,10 @@ export async function pushTestLocal(sound) {
     body: 'Notifications are working. See you at your next reminder.',
     // Same file a real reminder will use, so the test actually tests the sound.
     sound: soundFile(sound),
+    // ...and the same channel, so a test on 'Silent' is silent too. It used to
+    // ignore the tone entirely, which made the button prove the opposite of
+    // what was happening: it rang while every real alarm was being dropped.
+    channelId: sound === 'off' ? SILENT_CHANNEL : undefined,
   });
 }
 
@@ -294,15 +299,8 @@ export function upcomingAlarms({ reminders, water, habits, sound } = {}, now = n
   // so deleting a reminder silently wiped delivered ones off the lock screen.
   // Everything queued is in the future and everything delivered is in the past,
   // and a later minute is always a bigger number, so the two can't collide.
-  // 'off' has to mean off. Android takes a notification's sound from its
-  // channel, and a channel created without one keeps the system default — so a
-  // queued alarm on the Silent tone rang the phone's own sound, the loudest
-  // possible reading of "silent". There is no soundless channel to reach from
-  // here, so the honest answer is not to queue it: nothing is scheduled, so
-  // nothing rings. The in-app chime was already silent on this key.
-  const resolved = queue.filter((n) => (n.sound || sound) !== 'off');
   const used = new Set();
-  return resolved.slice(0, MAX_QUEUED).map((n) => {
+  return queue.slice(0, MAX_QUEUED).map((n) => {
     // 4 bits of room for alarms sharing a minute, then step forward until the
     // id is free. Clamping the 17th into the 16th slot instead would have let
     // one reminder quietly overwrite another. Every id still sits at or above
@@ -311,11 +309,21 @@ export function upcomingAlarms({ reminders, water, habits, sound } = {}, now = n
     let id = Math.floor(n.at.getTime() / 60000) * 16;
     while (used.has(id)) id++;
     used.add(id);
+    // Each reminder's own tone if it set one, the user's default otherwise.
+    // The water nudge never sets one, so it always follows the default.
+    const key = n.sound || sound;
     return Object.assign(n, {
       id,
-      // Each reminder's own tone if it set one, the user's default otherwise.
-      // The water nudge never sets one, so it always follows the default.
-      sound: soundFile(n.sound || sound),
+      sound: soundFile(key),
+      // 'Silent' means a silent notification, not no notification. Android
+      // takes the sound from the CHANNEL, so a channel built without one keeps
+      // the system default — which made the Silent tone ring the phone's own
+      // sound, the loudest possible reading of it. The old answer was to queue
+      // nothing at all, and that cost the user the reminder along with the
+      // sound: it arrived in the in-app bell and on WhatsApp, and never on the
+      // phone. A channel at IMPORTANCE_LOW shows in the shade and never makes
+      // a sound, which is what the picker has always promised.
+      channelId: key === 'off' ? SILENT_CHANNEL : undefined,
     });
   });
 }
