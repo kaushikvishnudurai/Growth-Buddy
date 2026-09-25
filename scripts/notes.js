@@ -279,9 +279,21 @@ function richEditor({ html, placeholder, onInput } = {}) {
     /* not supported → tags are the default anyway */
   }
 
+  /* Deleting the last character leaves a stray <br> behind, so :empty stops
+     matching and the placeholder never comes back. Clear it here instead of
+     asking CSS to recognise the shape — a selector can't tell "one <br>" from
+     "text and a <br>", because :only-child counts elements and ignores text. */
+  function normalize() {
+    if (/^\s*(<br\s*\/?>)?\s*$/i.test(area.innerHTML)) area.innerHTML = '';
+  }
+  normalize();
+
   area.addEventListener('keyup', syncState);
   area.addEventListener('mouseup', syncState);
-  area.addEventListener('input', () => onInput && onInput());
+  area.addEventListener('input', () => {
+    normalize();
+    if (onInput) onInput();
+  });
   // Paste as the sanitiser sees it, so what lands is what gets saved.
   area.addEventListener('paste', (e) => {
     const html = e.clipboardData && e.clipboardData.getData('text/html');

@@ -7660,16 +7660,18 @@ textarea:focus-visible,
 .gb-editor:focus {
   outline: none;
 }
-/* :empty alone lies — the browser leaves a stray <br> behind after you delete
-   everything, so the placeholder would vanish for good on the first edit. */
+/* The stray <br> a browser leaves behind after you delete everything is cleared
+   in richEditor's own input handler, so :empty is the whole test. Matching the
+   br shape in CSS was wrong: :only-child counts elements and ignores text, so
+   "VTV<br>Jersey" is a br:only-child too — the placeholder painted straight
+   over the note. */
 /* Absolute, not in the flow: generated content inside a contenteditable takes
    up a real inline box, so the caret at offset 0 was drawn *after* the whole
    "Write something…" string instead of at the left edge. Out of the flow it
    still paints, and the caret sits where the first character will land.
    Offsets match .gb-editor's padding so the two strings start on the same
    pixel. */
-.gb-editor:empty::before,
-.gb-editor:has(> br:only-child)::before {
+.gb-editor:empty::before {
   content: attr(data-placeholder);
   position: absolute;
   top: 12px;
