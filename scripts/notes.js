@@ -4,14 +4,25 @@
 import { h, Icon, refreshIcons, confirmDialog, openOverlay, openModal } from './gb-kit.js';
 import { toast } from './toast.js';
 
-/* Swatches a note can wear. Same family as the habit colours so the app keeps
-   one palette; `null` (no colour) is the default and stays the plain card. */
+/* Swatches a note can wear. `null` (no colour) is the default and stays the
+   plain card.
+
+   These are the SEMANTIC soft tokens, not the raw `--sun-50` ramp they used to
+   be. The ramps are theme-independent by design, so `--sun-50` is #FFF7E0 in
+   dark mode too — and a note card sets only its background and inherits
+   `--fg1`/`--fg2` for the text, which flip to near-white there. A yellow note
+   came out cream-on-cream at about 1.03:1: the colour saved correctly and the
+   note simply went blank. (The pills and chips elsewhere pair a `-50` tint with
+   a pinned `-700` foreground, which is why they read fine in both themes; a
+   whole card done that way would be a glaring white slab.) The soft tokens
+   carry a light tint in light mode and a low-alpha wash in dark, so the
+   inherited text stays readable either way. */
 const COLORS = [
-  { key: 'sun', label: 'Yellow', bg: 'var(--sun-50)', line: 'var(--sun-500)' },
-  { key: 'leaf', label: 'Green', bg: 'var(--leaf-50)', line: 'var(--leaf-500)' },
-  { key: 'sky', label: 'Blue', bg: 'var(--sky-50)', line: 'var(--sky-500)' },
-  { key: 'iris', label: 'Purple', bg: 'var(--iris-50)', line: 'var(--iris-500)' },
-  { key: 'coral', label: 'Coral', bg: 'var(--coral-100)', line: 'var(--coral-500)' },
+  { key: 'sun', label: 'Yellow', bg: 'var(--warning-soft)', line: 'var(--warning)' },
+  { key: 'leaf', label: 'Green', bg: 'var(--success-soft)', line: 'var(--success)' },
+  { key: 'sky', label: 'Blue', bg: 'var(--info-soft)', line: 'var(--info)' },
+  { key: 'iris', label: 'Purple', bg: 'var(--ai-soft)', line: 'var(--ai)' },
+  { key: 'coral', label: 'Coral', bg: 'var(--brand-soft)', line: 'var(--brand)' },
 ];
 const colorOf = (key) => COLORS.find((c) => c.key === key) || null;
 
@@ -367,7 +378,9 @@ function colorRow(selected, onPick) {
       'aria-label': c ? c.label : 'No colour',
       'aria-pressed': selected === key ? 'true' : 'false',
       title: c ? c.label : 'No colour',
-      style: c ? { background: c.bg, borderColor: c.line } : null,
+      // The saturated edge colour, not the card tint: a 14%-alpha wash in a
+      // 24px circle is indistinguishable from the one beside it.
+      style: c ? { background: c.line, borderColor: c.line } : null,
       onclick: () => {
         selected = key;
         Array.from(row.children).forEach((el) => el.classList.remove('is-on'));
