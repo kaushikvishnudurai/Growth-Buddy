@@ -227,9 +227,10 @@ await checkDialog('custom focus minutes', 'focus', () => clickText(/^custom/i));
 await checkDialog('find someone', 'circle', () => clickText(/find someone|find people/i));
 await checkDialog('note sheet', 'notes', () =>
   dlg.evaluate(() => {
-    const card = [...document.querySelectorAll('[aria-label]')].find(
-      (el) => el.offsetParent && /note/i.test(el.getAttribute('aria-label') || '') && el.closest('[class*=note]')
-    );
+    // The card itself, by class: its aria-label is the note's TITLE, so matching
+    // /note/ on labels found "Pin this note" instead — which toggled the seeded
+    // note's pin and opened nothing, on every note not titled "note".
+    const card = [...document.querySelectorAll('.gb-note-card')].find((el) => el.offsetParent);
     if (!card) return false;
     card.click();
     return true;

@@ -32,7 +32,8 @@ public class CurrentUserInterceptor implements HandlerInterceptor {
             "/api/auth/resend-verification",
             "/api/auth/forgot-password",
             "/api/auth/reset-password",
-            "/api/auth/logout" // idempotent: works without a session too
+            "/api/auth/logout", // idempotent: works without a session too
+            "/api/whatsapp/webhook" // Meta calls it; authenticated by its HMAC signature instead
     );
 
     private final SessionService sessions;

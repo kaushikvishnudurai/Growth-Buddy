@@ -49,7 +49,8 @@ so it provably matches the running database.
 | 609 calendar_reminders · 627 calendar_reminder_skips · 635 reminder_dispatch_log | calendar reminders |
 | 659 focus_sessions · 670 weekly_reviews | focus & weekly review |
 | 524 families · 534 family_members · 559 family_meal_plans · 682 family_dish_preferences · 694 family_pantry_items · 710 family_shopping_items · 725 family_favourite_menus · 738 family_multi_day_plans | family |
-| 592 money_state | **the whole Money doc: `user_id`, `data` JSON, `updated_at`** |
+| 592 money_state | **the Money document minus the ledger: `user_id`, `data` JSON, `updated_at`** |
+| money_accounts · money_transactions · money_day_summaries | Money ledger: accounts (balance computed), one row per expense/income/transfer keyed `(user_id, id)`, cached AI day summaries |
 
 ## `users.timezone` is load-bearing
 

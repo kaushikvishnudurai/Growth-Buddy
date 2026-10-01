@@ -2,6 +2,9 @@ package com.growthbuddy.money;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.time.LocalDate;
 import com.growthbuddy.common.ApiException;
 import com.growthbuddy.mentor.OpenAIClient;
 import com.growthbuddy.mentor.OpenAIClient.ChatTurn;
@@ -36,11 +39,13 @@ public class MoneyService {
     private final MoneyRepository repo;
     private final ObjectMapper json;
     private final OpenAIClient openai;
+    private final MoneyLedger ledger;
 
-    public MoneyService(MoneyRepository repo, ObjectMapper json, OpenAIClient openai) {
+    public MoneyService(MoneyRepository repo, ObjectMapper json, OpenAIClient openai, MoneyLedger ledger) {
         this.repo = repo;
         this.json = json;
         this.openai = openai;
+        this.ledger = ledger;
     }
 
     /** Clamp free-text fields that flow into the LLM prompt (trust boundary). */
@@ -94,26 +99,77 @@ public class MoneyService {
         return data == null ? "0" : Integer.toHexString(data.hashCode());
     }
 
-    @Transactional(readOnly = true)
+    /**
+     * The document as the client knows it: the stored part, plus the ledger's
+     * expenses / income / transfers (last {@link MoneyLedger#WINDOW_DAYS} days) and
+     * live account balances, merged back in. The version covers the stored part
+     * only — ledger rows are written item by item and never conflict as a whole.
+     */
+    @Transactional
     public Versioned get(UUID userId) {
-        return repo.findById(userId)
-                .map(s -> new Versioned(s.getData(), versionOf(s)))
-                .orElseGet(() -> new Versioned(json.createObjectNode(), "0"));
+        MoneyState state = repo.lockById(userId).orElse(null);
+        if (state != null) {
+            migrate(state);
+            seedAccounts(state);
+        } else {
+            // A brand-new user has no document to remember the seeding in yet; the
+            // count check inside makes a repeat a no-op.
+            ledger.seedDefaults(userId);
+        }
+        ObjectNode out = state != null && state.getData() instanceof ObjectNode d
+                ? d.deepCopy()
+                : json.createObjectNode();
+        out.setAll(ledger.load(userId, LocalDate.now()));
+        out.set("accounts", ledger.accounts(userId));
+        return new Versioned(out, versionOf(state));
     }
 
     /**
-     * Replace the document, optionally only if it still looks the way the caller
-     * last saw it.
+     * Cash and Bank, once per user, remembered in settings. Seeding on "no accounts
+     * yet" brought both back every time someone deleted their last empty account.
+     */
+    private void seedAccounts(MoneyState state) {
+        if (!(state.getData() instanceof ObjectNode data)
+                || data.path("settings").path("accountsSeeded").asBoolean(false)) {
+            return;
+        }
+        ledger.seedDefaults(state.getUserId());
+        ObjectNode settings = data.path("settings") instanceof ObjectNode so ? so : data.putObject("settings");
+        settings.put("accountsSeeded", true);
+        state.setData(data);
+        repo.save(state);
+    }
+
+    /**
+     * Moves a document's old expenses / income into the ledger, once. Lazy, per
+     * user, on first read after deploy: TiDB has no JSON_TABLE, so no SQL script
+     * can unpack the document. INSERT IGNORE, so a retry after a crash between
+     * the insert and the document save moves nothing twice.
+     */
+    private void migrate(MoneyState state) {
+        if (!(state.getData() instanceof ObjectNode data)) {
+            return;
+        }
+        boolean hasArrays = MoneyLedger.ARRAYS.keySet().stream().anyMatch(data::has);
+        if (!hasArrays) {
+            return;
+        }
+        int moved = ledger.importIgnore(state.getUserId(), ledger.rowsFromDoc(data));
+        MoneyLedger.stripArrays(data);
+        state.setData(data);
+        repo.save(state);
+        log.info("Moved {} money entries for {} into the ledger", moved, state.getUserId());
+    }
+
+    /**
+     * Replace the stored part of the document, optionally only if it still looks
+     * the way the caller last saw it ({@code If-Match}; stale → 409, the caller
+     * merges and retries; absent → unconditional, as before).
      *
-     * <p>This endpoint takes the WHOLE money document on every edit, so two
-     * clients editing at once — a phone and a laptop, or two tabs — meant the
-     * slower save silently overwrote the faster one's expenses. In-tab ordering
-     * was already handled by a promise queue on the client; nothing covered two
-     * of them.
-     *
-     * <p>{@code expectedVersion} comes from the caller's {@code If-Match}. Absent,
-     * the write goes through unconditionally — old clients keep working. Present
-     * and stale, it is refused with 409 and the caller merges and retries.
+     * <p>Current clients send expenses as ledger writes and never put them here.
+     * An app build from before the ledger still sends them inside the document:
+     * those are upserted, so its adds and edits land. Its deletes cannot be told
+     * apart from "not loaded" and are not applied — the update prompt covers that.
      */
     @Transactional
     public Versioned save(UUID userId, JsonNode body, String expectedVersion) {
@@ -123,15 +179,142 @@ public class MoneyService {
         if (body.toString().length() > MAX_BYTES) {
             throw ApiException.badRequest("Money data is too large.");
         }
-        MoneyState state = repo.findById(userId).orElseGet(MoneyState::new);
+        MoneyState state = repo.lockById(userId).orElseGet(MoneyState::new);
         if (expectedVersion != null && !expectedVersion.isBlank()
                 && !expectedVersion.equals(versionOf(state))) {
             throw new ApiException(org.springframework.http.HttpStatus.CONFLICT,
                     "Your money data changed somewhere else.");
         }
+        ObjectNode doc = ((ObjectNode) body).deepCopy();
+        // An old build re-sends the whole history every 5 minutes. Adds only: letting
+        // it overwrite put back amounts and deleted entries a new build had changed.
+        List<MoneyLedger.Row> legacy = ledger.rowsFromDoc(doc);
+        if (!legacy.isEmpty()) {
+            ledger.importIgnore(userId, legacy);
+        }
+        MoneyLedger.stripArrays(doc);
         state.setUserId(userId);
-        state.setData(body);
+        state.setData(doc);
         MoneyState saved = repo.save(state);
         return new Versioned(saved.getData(), versionOf(saved));
+    }
+
+    /**
+     * Expense / income / transfer writes from the client, then fresh balances.
+     *
+     * <p>An invalid entry is refused on its own, by id, and the rest are saved.
+     * Failing the whole batch made one bad entry (an old expense with no date,
+     * edited later) a poison pill: the client kept it queued, and every save after
+     * it failed with it.
+     */
+    public ObjectNode applyLedger(UUID userId, JsonNode body) {
+        if (body.path("upserts").size() + body.path("deletes").size() > 2000) {
+            throw ApiException.badRequest("Too many changes in one save.");
+        }
+        List<MoneyLedger.Row> upserts = new java.util.ArrayList<>();
+        ObjectNode out = json.createObjectNode();
+        ArrayNode rejected = out.putArray("rejected");
+        for (JsonNode u : body.path("upserts")) {
+            try {
+                upserts.add(ledger.toRow(u.path("kind").asText(), withoutKind(u)));
+            } catch (ApiException ex) {
+                rejected.addObject().put("id", u.path("id").asText()).put("reason", ex.getMessage());
+            }
+        }
+        List<String> deletes = new java.util.ArrayList<>();
+        body.path("deletes").forEach(d -> deletes.add(d.asText()));
+        ledger.apply(userId, upserts, deletes);
+        out.set("accounts", ledger.accounts(userId));
+        return out;
+    }
+
+    private static JsonNode withoutKind(JsonNode u) {
+        if (u instanceof ObjectNode o) {
+            ObjectNode c = o.deepCopy();
+            c.remove("kind");
+            return c;
+        }
+        return u;
+    }
+
+    public record Paid(String name, boolean booked) {}
+
+    /**
+     * Marks one month of a subscription paid from outside the app (WhatsApp's
+     * "Mark as paid" button): stamps {@code paidFor} and logs the matching expense.
+     * Written without a version check on purpose — an open client's next save then
+     * 409s, and {@code mergeMoney} keeps this server copy of the item.
+     *
+     * @return the subscription and whether a payment was booked ({@code booked} is
+     *     false when that month, or a later one, was already paid), or null when
+     *     there is nothing to mark
+     */
+    @Transactional
+    public Paid markSubscriptionPaid(UUID userId, String subId, String month, LocalDate today) {
+        MoneyState state = repo.lockById(userId).orElse(null);
+        if (state == null || !(state.getData() instanceof ObjectNode data)) {
+            return null;
+        }
+        migrate(state);
+        String name = applyPaid(data, subId, month, today);
+        // migrate() left no expenses array, so one now means applyPaid booked a payment.
+        boolean booked = name != null && data.has("expenses");
+        if (booked) {
+            // applyPaid writes the expense into the document's shape; the ledger
+            // owns expenses now, so it moves there, paid from the bill's account.
+            for (JsonNode e : data.path("expenses")) {
+                if (e instanceof ObjectNode eo && !eo.hasNonNull("accountId")) {
+                    String acc = ledger.defaultBillAccount(userId);
+                    if (acc != null) {
+                        eo.put("accountId", acc);
+                    }
+                }
+            }
+            ledger.apply(userId, ledger.rowsFromDoc(data), List.of());
+            MoneyLedger.stripArrays(data);
+            state.setData(data);
+            repo.save(state);
+        }
+        return name == null ? null : new Paid(name, booked);
+    }
+
+    /** Idempotent: a second tap on the same message changes nothing. */
+    static String applyPaid(ObjectNode data, String subId, String month, LocalDate today) {
+        if (!(data.get("subscriptions") instanceof ArrayNode subs)) {
+            return null;
+        }
+        for (JsonNode n : subs) {
+            if (n instanceof ObjectNode sub && subId.equals(sub.path("id").asText())) {
+                // A bill with no amount can't be paid: stamping paidFor with no expense
+                // behind it would show it settled while nothing was recorded.
+                if (sub.path("amount").asDouble(0) <= 0) {
+                    return null;
+                }
+                // Forward only: tapping last month's message after this month is paid
+                // must not roll paidFor back (and re-open this month's bill).
+                // "YYYY-MM" strings order the same as the months they name.
+                if (month.compareTo(sub.path("paidFor").asText("")) <= 0) {
+                    return sub.path("name").asText();
+                }
+                sub.put("paidFor", month);
+                ArrayNode expenses = data.has("expenses") && data.get("expenses").isArray()
+                        ? (ArrayNode) data.get("expenses")
+                        : data.putArray("expenses");
+                ObjectNode e = expenses.insertObject(0);
+                // Deterministic id: the client merge unions by id, so a replayed webhook
+                // can never land a second copy of the same payment.
+                e.put("id", "sub-" + subId + "-" + month);
+                e.put("amount", Math.round(sub.path("amount").asDouble()));
+                e.put("category", sub.path("category").asText("others"));
+                e.put("note", sub.path("name").asText());
+                e.put("date", today.toString());
+                e.put("createdAt", System.currentTimeMillis());
+                if (sub.hasNonNull("accountId")) {
+                    e.put("accountId", sub.get("accountId").asText());
+                }
+                return sub.path("name").asText();
+            }
+        }
+        return null;
     }
 }

@@ -105,7 +105,8 @@ public class AuthService {
         "goal_actions", "goals", "daily_scores", "daily_logs",
         "mentor_threads", "circle_members", "circle_posts",
         "push_subscriptions", "notifications", "custom_sounds", "focus_sessions", "weekly_reviews",
-        "money_state", "calendar_reminders", "notes", "sessions",
+        "money_state", "money_accounts", "money_transactions", "money_day_summaries",
+        "calendar_reminders", "notes", "sessions",
     };
 
     @PersistenceContext
@@ -434,6 +435,11 @@ public class AuthService {
             throw ApiException.badRequest("Provide a WhatsApp number before enabling reminders.");
         }
 
+        // A new number is an unproven one. Keeping the old flag let anyone type in a
+        // stranger's number and have it treated as theirs by the WhatsApp webhook.
+        if (effectiveNumber != null && !effectiveNumber.equals(user.getWhatsappNumber())) {
+            user.setWhatsappVerified(false);
+        }
         user.setWhatsappNumber(effectiveNumber);
         user.setWhatsappEnabled(enabled);
         users.save(user);

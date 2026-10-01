@@ -27,6 +27,7 @@ public class WhatsAppService {
     private final String template;
     private final String authTemplate;
     private final String templateLang;
+    private final String billTemplate;
     private final HttpClient http;
 
     public WhatsAppService(
@@ -36,7 +37,8 @@ public class WhatsAppService {
             @Value("${growthbuddy.whatsapp.meta.api-version:v21.0}") String apiVersion,
             @Value("${growthbuddy.whatsapp.meta.template:}") String template,
             @Value("${growthbuddy.whatsapp.meta.auth-template:}") String authTemplate,
-            @Value("${growthbuddy.whatsapp.meta.template-lang:en}") String templateLang) {
+            @Value("${growthbuddy.whatsapp.meta.template-lang:en}") String templateLang,
+            @Value("${growthbuddy.whatsapp.meta.bill-template:}") String billTemplate) {
         this.enabled = enabled;
         this.phoneNumberId = phoneNumberId;
         this.accessToken = accessToken;
@@ -44,6 +46,7 @@ public class WhatsAppService {
         this.template = template;
         this.authTemplate = authTemplate;
         this.templateLang = templateLang;
+        this.billTemplate = billTemplate;
         this.http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(8)).build();
     }
 
@@ -71,7 +74,63 @@ public class WhatsAppService {
         return "Your Growth Buddy verification code: " + code + ". Do not share it.";
     }
 
+    /**
+     * A bill-due message carrying a "Mark as paid" quick-reply button; the tap comes
+     * back to {@code WhatsAppWebhookController} with {@code payload} attached.
+     */
+    public void sendBillDue(String toNumber, String text, String payload) {
+        if (!StringUtils.hasText(billTemplate) && StringUtils.hasText(template)) {
+            // No approved button template yet: an interactive message would be accepted
+            // (HTTP 200) and then dropped outside the 24h window, logged as "sent" while
+            // nothing arrived. The reminder template does arrive; the tap happens in the app.
+            sendReminder(toNumber, text.replace("Tap Mark as paid", "Mark it paid in the app"));
+            return;
+        }
+        post(toNumber, to -> buildBillBody(to, billTemplate, templateLang, text, payload));
+    }
+
+    /** A send Meta refused, or that never reached it ({@code status} 0). */
+    /** Throughput / pair rate limits, "something went wrong", service unavailable. */
+    static final java.util.Set<Integer> TRANSIENT_META_CODES =
+            java.util.Set.of(4, 80007, 130429, 131000, 131016, 131056, 133004);
+    private static final java.util.regex.Pattern META_CODE = java.util.regex.Pattern.compile("\"code\"\\s*:\\s*(\\d+)");
+
+    public static class SendFailed extends IllegalStateException {
+        public final int status;
+
+        public SendFailed(int status, String message, Throwable cause) {
+            super(message, cause);
+            this.status = status;
+        }
+
+        /**
+         * A 4xx usually fails the same way on retry (bad number, bad template). But Meta
+         * reports its rate limits and outages as HTTP 400 with the real reason in
+         * error.code, and an expired token (401) works again once it is renewed; those
+         * retry on the next tick (bounded by the day, see SubscriptionDueScheduler).
+         */
+        public boolean permanent() {
+            if (status == 401 || status == 429 || status / 100 != 4) {
+                return false;
+            }
+            java.util.regex.Matcher m = META_CODE.matcher(String.valueOf(getMessage()));
+            return !(m.find() && TRANSIENT_META_CODES.contains(Integer.parseInt(m.group(1))));
+        }
+    }
+
+    /** Plain text: only for replies, which by definition land inside the 24h window. */
+    public void reply(String toNumber, String text) {
+        post(toNumber, to -> buildBody(to, null, templateLang, text));
+    }
+
     private void send(String toNumber, String text, boolean auth) {
+        boolean useAuth = auth && StringUtils.hasText(authTemplate);
+        post(toNumber, to -> useAuth
+                ? buildAuthBody(to, authTemplate, templateLang, text)
+                : buildBody(to, template, templateLang, auth ? otpText(text) : text));
+    }
+
+    private void post(String toNumber, java.util.function.UnaryOperator<String> bodyFor) {
         if (!isConfigured()) {
             log.debug("WhatsApp disabled/not configured; skipping send to {}", toNumber);
             return;
@@ -84,10 +143,7 @@ public class WhatsAppService {
             // Meta wants the E.164 number without a leading "+".
             String to = toNumber.startsWith("+") ? toNumber.substring(1) : toNumber;
             String endpoint = "https://graph.facebook.com/" + apiVersion + "/" + phoneNumberId + "/messages";
-            boolean useAuth = auth && StringUtils.hasText(authTemplate);
-            String body = useAuth
-                    ? buildAuthBody(to, authTemplate, templateLang, text)
-                    : buildBody(to, template, templateLang, auth ? otpText(text) : text);
+            String body = bodyFor.apply(to);
 
             HttpRequest req = HttpRequest.newBuilder()
                     .uri(URI.create(endpoint))
@@ -99,11 +155,18 @@ public class WhatsAppService {
 
             HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
             if (res.statusCode() / 100 != 2) {
-                throw new IllegalStateException("WhatsApp Cloud API send failed: HTTP "
-                        + res.statusCode() + " " + res.body());
+                // Meta's reason rides in the message: callers log and store only
+                // getMessage(), and a bare wrapper left every failure with no why.
+                throw new SendFailed(res.statusCode(), "WhatsApp Cloud API send failed: HTTP "
+                        + res.statusCode() + " " + res.body(), null);
             }
+        } catch (SendFailed ex) {
+            throw ex;
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new SendFailed(0, "WhatsApp send interrupted", ex);
         } catch (Exception ex) {
-            throw new IllegalStateException("Could not send WhatsApp reminder", ex);
+            throw new SendFailed(0, "Could not reach WhatsApp: " + ex.getMessage(), ex);
         }
     }
 
@@ -121,6 +184,30 @@ public class WhatsAppService {
                 + "\",\"language\":{\"code\":\"" + jsonEscape(templateLang)
                 + "\"},\"components\":[{\"type\":\"body\",\"parameters\":[{\"type\":\"text\",\"text\":\""
                 + jsonEscape(message) + "\"}]}]}}";
+    }
+
+    /**
+     * Same 24h rule as {@link #buildBody}: a quick-reply button outside the window
+     * has to be declared on an approved template (body = one {@code {{1}}}, one
+     * QUICK_REPLY button), and only its payload is filled per send. Without one it
+     * falls back to an interactive button message, which only lands inside the window.
+     */
+    static String buildBillBody(String to, String template, String templateLang,
+                                String message, String payload) {
+        String head = "{\"messaging_product\":\"whatsapp\",\"to\":\"" + jsonEscape(to) + "\",";
+        String p = jsonEscape(payload);
+        if (!StringUtils.hasText(template)) {
+            return head + "\"type\":\"interactive\",\"interactive\":{\"type\":\"button\","
+                    + "\"body\":{\"text\":\"" + jsonEscape(message) + "\"},"
+                    + "\"action\":{\"buttons\":[{\"type\":\"reply\",\"reply\":{\"id\":\"" + p
+                    + "\",\"title\":\"Mark as paid\"}}]}}}";
+        }
+        return head + "\"type\":\"template\",\"template\":{\"name\":\"" + jsonEscape(template)
+                + "\",\"language\":{\"code\":\"" + jsonEscape(templateLang) + "\"},\"components\":["
+                + "{\"type\":\"body\",\"parameters\":[{\"type\":\"text\",\"text\":\""
+                + jsonEscape(message) + "\"}]},"
+                + "{\"type\":\"button\",\"sub_type\":\"quick_reply\",\"index\":\"0\","
+                + "\"parameters\":[{\"type\":\"payload\",\"payload\":\"" + p + "\"}]}]}}";
     }
 
     /**

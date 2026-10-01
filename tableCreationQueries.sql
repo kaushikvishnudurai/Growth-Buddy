@@ -618,11 +618,10 @@ ALTER TABLE family_members
 
 -- =========================================================
 -- MONEY BUDDY  (v4)
--- The whole money state (expenses, budgets, savings goals, custom tags,
--- challenges, wishlist, subscriptions, reflections, settings) is stored as one
--- per-user JSON document. All insights/health-score/search/etc. are computed
--- client-side, so there is no server-side query that would need normalized
--- tables. ddl-auto: update creates this automatically; listed for fresh installs.
+-- Budgets, savings goals, custom tags, challenges, wishlist, subscriptions and
+-- settings are one per-user JSON document. Expenses, income and transfers are
+-- rows in money_transactions (below), because they grow without bound. All
+-- insights/health-score/search/etc. are computed client-side.
 -- =========================================================
 CREATE TABLE IF NOT EXISTS money_state (
   user_id    CHAR(36)  NOT NULL,
@@ -630,6 +629,61 @@ CREATE TABLE IF NOT EXISTS money_state (
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (user_id),
   CONSTRAINT fk_money_state_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Where money sits: cash in a purse, a bank account, a card, a UPI wallet.
+-- balance = opening_balance + everything booked to the account since. Nothing
+-- here stores a running total, so no write can ever leave it out of step.
+CREATE TABLE IF NOT EXISTS `money_accounts` (
+  `id` char(36) NOT NULL,
+  `user_id` char(36) NOT NULL,
+  `name` varchar(40) NOT NULL,
+  `kind` varchar(10) NOT NULL,
+  `opening_balance` decimal(14,2) NOT NULL DEFAULT 0,
+  `position` int NOT NULL DEFAULT 0,
+  `archived` tinyint(1) NOT NULL DEFAULT 0,
+  `created_at` datetime(6) NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `ux_macc_user_name` (`user_id`, `name`),
+  KEY `ix_macc_user` (`user_id`, `position`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Every expense, income and transfer, one row each. It used to live inside the
+-- money_state JSON document, which is re-sent whole on every edit and capped at
+-- 512 kB (~3,000 expenses). The key leads with user_id, so a user's rows sit
+-- together and every read below is a range scan inside one user, however large
+-- the table grows. `id` is the client's own id (unique per user, not globally —
+-- 'sub-<id>-<month>' is deterministic), which is what makes a retried write an
+-- upsert instead of a duplicate.
+CREATE TABLE IF NOT EXISTS `money_transactions` (
+  `user_id` char(36) NOT NULL,
+  `id` varchar(64) NOT NULL,
+  `kind` varchar(10) NOT NULL,
+  `account_id` char(36) DEFAULT NULL,
+  `to_account_id` char(36) DEFAULT NULL,
+  `amount` decimal(14,2) NOT NULL,
+  `category` varchar(40) DEFAULT NULL,
+  `note` varchar(255) DEFAULT NULL,
+  `occurred_on` date NOT NULL,
+  `extra` json DEFAULT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`user_id`, `id`),
+  KEY `ix_mtx_user_day` (`user_id`, `occurred_on`),
+  KEY `ix_mtx_user_account` (`user_id`, `account_id`),
+  KEY `ix_mtx_user_to_account` (`user_id`, `to_account_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The AI's summary of one day's spending, kept so a second tap on the same bar
+-- costs nothing. Only the last 7 days are ever shown, so older rows are purged
+-- nightly; a row is deleted the moment an expense on that day changes.
+CREATE TABLE IF NOT EXISTS `money_day_summaries` (
+  `user_id` char(36) NOT NULL,
+  `day` date NOT NULL,
+  `summary` text NOT NULL,
+  `created_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`user_id`, `day`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =========================================================

@@ -159,6 +159,14 @@ growthbuddy:
       # create; empty => OTPs fall back to the reminder template above.
       auth-template: ${WHATSAPP_AUTH_TEMPLATE:}
       template-lang: ${WHATSAPP_TEMPLATE_LANG:en}
+      # Approved template for subscription-due messages: body = one {{1}}, plus one
+      # QUICK_REPLY button ("Mark as paid"). Empty => an interactive button message,
+      # which Meta only delivers inside the 24h window.
+      bill-template: ${WHATSAPP_BILL_TEMPLATE:}
+      # Webhook (/api/whatsapp/webhook) — receives the "Mark as paid" tap. The app
+      # secret signs every POST; without it the webhook refuses everything.
+      app-secret: ${WHATSAPP_APP_SECRET:}
+      webhook-verify-token: ${WHATSAPP_WEBHOOK_VERIFY_TOKEN:}
 
 logging:
   level:

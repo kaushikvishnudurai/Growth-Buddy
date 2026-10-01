@@ -16,6 +16,16 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     Optional<User> findByEmailIgnoreCase(String email);
 
+    /** Everyone a bill-due WhatsApp may go to: only a number its owner proved by OTP. */
+    List<User> findByWhatsappEnabledTrueAndWhatsappVerifiedTrueAndWhatsappNumberIsNotNull();
+
+    /**
+     * The accounts an inbound WhatsApp message may act for. Verified only — the
+     * webhook trusts the sender's number, so an unproven one must match nobody.
+     * A list: nothing makes a number unique across accounts. Stored E.164 with "+".
+     */
+    List<User> findByWhatsappNumberAndWhatsappEnabledTrueAndWhatsappVerifiedTrue(String whatsappNumber);
+
     /* Only VERIFIED accounts are discoverable. signup() writes a users row before
        the OTP is checked, so a typo'd or abandoned signup leaves a ghost account
        that can never log in — and inviting one produces an invite nobody can

@@ -183,7 +183,7 @@
   /* Foreground */
   --fg1: #1E1713;                  /* primary ink (warm near-black) */
   --fg2: #6B5C50;                  /* secondary text */
-  --fg3: #80705F;                  /* muted / placeholder — AA (~4.8:1) on white */
+  --fg3: #7E6E5D;                  /* muted / placeholder — AA 4.5:1 on bg, surface and surface-2 */
   --fg-on-brand: #FFFFFF;          /* text on coral / saturated fills */
 
   /* Lines */
@@ -205,7 +205,7 @@
   --success-soft-fg: var(--leaf-700);
   --warning: var(--sun-600);
   --warning-soft: var(--sun-50);
-  --warning-soft-fg: var(--sun-700);
+  --warning-soft-fg: #9A6104;       /* sun-700 is 3.7:1 on white; this clears AA on white and on the warning tint */
   --info: var(--sky-600);
   --info-soft: var(--sky-50);
   --info-soft-fg: var(--sky-700);
@@ -247,7 +247,7 @@
 
   --fg1: #FBF4EE;
   --fg2: #C3B2A6;
-  --fg3: #8A7A6E;
+  --fg3: #96877C;  /* AA 4.5:1 on bg, surface and surface-2 (was #8A7A6E, 4.2:1) */
   --fg-on-brand: #FFFFFF;
 
   --border: #382C25;

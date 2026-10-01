@@ -6,6 +6,31 @@
 
 * {
   box-sizing: border-box;
+  /* Android WebView otherwise flashes a square grey box over whatever
+     clickable div was tapped, ignoring its radius. :active states give the
+     feedback instead. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* No double-tap-zoom wait on anything tappable. */
+a, button, input, select, textarea, label, [role='button'], [onclick] {
+  touch-action: manipulation;
+}
+
+/* A long-press on a button selects its label and pops the copy menu. */
+button, [role='button'] {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* iOS zooms the whole page into any field under 16px and never zooms back.
+   ponytail: one !important instead of chasing every input class; drop it if a
+   compact field ever needs to be smaller on phones (it can't, without zoom). */
+@media (pointer: coarse) {
+  input, select, textarea, [contenteditable='true'] {
+    font-size: max(16px, 1em) !important;
+  }
 }
 
 html,
@@ -3076,6 +3101,13 @@ body {
   color: var(--fg2);
   line-height: 1.45;
   padding: 0 20px;
+}
+/* The desktop grid (same selector, in the ≥1024 query below) had the gap; on a
+   phone the sections were bare blocks and each heading sat on the card above. */
+.gb-goals > .gb-dash-block:last-child {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
 }
 .gb-goal-section {
   display: flex;
@@ -7744,6 +7776,14 @@ textarea:focus-visible,
   break-inside: avoid;
   margin-bottom: 12px;
 }
+/* The empty and load-error cards are one message, not a column item: without
+   this the multi-column grid sliced the empty state into three fragments (an
+   icon circle in one column, the text in another) on any screen wide enough
+   for more than one column. */
+.gb-note-state {
+  column-span: all;
+  break-inside: avoid;
+}
 .gb-note-card {
   position: relative;
   padding: 14px 14px 10px;
@@ -7892,7 +7932,9 @@ textarea:focus-visible,
      control — the visual treatment is unchanged. */
   border: none;
   cursor: pointer;
-  font: inherit;
+  /* family only: the `font` shorthand also reset the size and weight above,
+     which blew the chip up to body text and wrapped it onto two lines. */
+  font-family: inherit;
 }
 .gb-freeze-chip:focus-visible {
   outline: 2px solid var(--ring);

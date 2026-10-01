@@ -709,7 +709,7 @@ function ScreenNotes({ onList, onCreate, onUpdate, onDelete, onMakeTask, onMakeR
       listEl.appendChild(
         h(
           'div',
-          { class: 'gb-card' },
+          { class: 'gb-card gb-note-state' },
           h(
             'div',
             { class: 'gb-empty' },
@@ -743,7 +743,7 @@ function ScreenNotes({ onList, onCreate, onUpdate, onDelete, onMakeTask, onMakeR
       listEl.replaceChildren(
         h(
           'div',
-          { class: 'gb-card' },
+          { class: 'gb-card gb-note-state' },
           h(
             'div',
             { class: 'gb-empty' },

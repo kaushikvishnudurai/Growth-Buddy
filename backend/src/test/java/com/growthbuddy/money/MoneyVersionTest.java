@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.growthbuddy.common.ApiException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -32,19 +33,28 @@ class MoneyVersionTest {
     private static final UUID USER = UUID.randomUUID();
 
     @Mock MoneyRepository repo;
+    @Mock MoneyLedger ledger;
 
     private final ObjectMapper json = new ObjectMapper();
     private MoneyService service;
     private MoneyState stored;
 
     private JsonNode doc(String tag) {
-        return json.createObjectNode().put("expenses", tag);
+        // Not "expenses": that array belongs to the ledger now and is stripped
+        // from the stored document, which would make every version identical.
+        // accountsSeeded: the steady state. The first load of a new document seeds
+        // Cash and Bank and records it, a one-time write before any versioned save.
+        ObjectNode d = json.createObjectNode().put("note", tag);
+        d.putObject("settings").put("accountsSeeded", true);
+        return d;
     }
 
     @BeforeEach
     void setUp() {
-        service = new MoneyService(repo, json, null);
-        when(repo.findById(USER)).thenAnswer(inv -> Optional.ofNullable(reload()));
+        service = new MoneyService(repo, json, null, ledger);
+        org.mockito.Mockito.lenient().when(ledger.load(any(), any())).thenReturn(json.createObjectNode());
+        org.mockito.Mockito.lenient().when(ledger.accounts(any())).thenReturn(json.createArrayNode());
+        when(repo.lockById(USER)).thenAnswer(inv -> Optional.ofNullable(reload()));
         when(repo.save(any(MoneyState.class))).thenAnswer(inv -> {
             MoneyState in = inv.getArgument(0);
             in.touch(); // @PrePersist / @PreUpdate

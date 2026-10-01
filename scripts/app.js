@@ -37,6 +37,9 @@ import {
   normalizeMoney,
   mergeMoney,
   MoneyCustomisePane,
+  ledgerDiff,
+  applyLedgerDiff,
+  docPart,
 } from './money.js';
 import {
   ScreenCalendar,
@@ -582,34 +585,173 @@ async function putMoney(body, version) {
   });
 }
 
-function saveMoney(next) {
+/* Ledger writes (expenses / income / transfers) not yet confirmed by the server,
+   by id — the newest change to an item wins. Mirrored to storage, so an expense
+   added offline, or in a tab closed mid-save, is replayed on the next launch
+   instead of lost. */
+function pendingKey() {
+  return moneyStorageKey(state.user) + '.pending';
+}
+function loadPendingLedger() {
+  try {
+    const p = JSON.parse(CacheStorage.getItem(pendingKey()) || 'null');
+    if (p && p.upserts && Array.isArray(p.deletes)) return p;
+  } catch (_) {
+    /* unreadable → nothing pending */
+  }
+  return { upserts: {}, deletes: [] };
+}
+function storePendingLedger(p) {
+  try {
+    CacheStorage.setItem(pendingKey(), JSON.stringify(p));
+  } catch (err) {
+    console.error('Failed to keep unsaved money changes:', err);
+  }
+}
+function queueLedger(diff) {
+  if (!diff.upserts.length && !diff.deletes.length) return;
+  const p = loadPendingLedger();
+  const del = new Set(p.deletes);
+  for (const u of diff.upserts) {
+    p.upserts[u.id] = u;
+    del.delete(u.id);
+  }
+  for (const id of diff.deletes) {
+    delete p.upserts[id];
+    del.add(id);
+  }
+  p.deletes = [...del];
+  storePendingLedger(p);
+}
+/* Pending changes laid over a copy that came from the server, so a reload never
+   shows an unsaved expense as gone, nor a deleted one as back. */
+function overlayPending(money) {
+  const p = loadPendingLedger();
+  return applyLedgerDiff(money, { upserts: Object.values(p.upserts), deletes: p.deletes });
+}
+
+/* What the server last accepted of the document part, so an unchanged document
+   (the usual case: most saves are one new expense) is not re-sent at all. */
+let lastDocBody = null;
+
+function saveMoney(next, base) {
   // Optimistic: update local + cache + repaint immediately, then persist to the
   // server (mirrors saveHomeLayout). Offline writes still land in the cache.
-  state.money = normalizeMoney(next);
-  cacheMoney();
-  render();
-  const body = JSON.stringify(state.money);
-  // CRITICAL: This MUST reach the database. Log all failures prominently.
-  moneySaveQueue = moneySaveQueue.then(() =>
-    putMoney(body, moneyVersion)
-      .catch(async (err) => {
-        if (err && err.status === 409) {
-          // Someone else wrote first. Take their copy, fold ours into it, and
-          // write once more — unconditionally, so a third writer can't spin this.
-          const theirs = await api('/api/money', { onResponse: rememberMoneyVersion });
-          state.money = mergeMoney(state.money, theirs);
-          cacheMoney();
-          render();
-          toastSuccess('Merged money changes from your other device.');
-          return putMoney(JSON.stringify(state.money), null);
-        }
-        throw err;
-      })
-      .catch((err) => {
-      console.error('❌ CRITICAL: saveMoney failed to reach database:', err);
-      toastError(err, '❌ Money data NOT saved to database. Check your connection and try again.');
+  //
+  // `next` is built from the caller's own snapshot (`base`), which can be older
+  // than the live state: an expense from another device or a WhatsApp payment
+  // may have arrived since. Diffing against the live state turned every such
+  // item into a delete. So: diff against the snapshot, then lay only that change
+  // onto the live state. Balances are always the live ones; they come only from
+  // the server.
+  const nextN = normalizeMoney(next);
+  const diff = ledgerDiff(base ? normalizeMoney(base) : state.money, nextN);
+  state.money = normalizeMoney(
+    Object.assign(applyLedgerDiff(state.money, diff), docPart(nextN), {
+      accounts: state.money.accounts,
     })
   );
+  queueLedger(diff);
+  cacheMoney();
+  render();
+  persistMoney();
+}
+
+/* Queued: pending ledger writes, then the document if it changed. The 5-minute
+   re-push below goes through here too; it used to PUT the whole document with
+   no If-Match, silently replacing what another device — or a WhatsApp "Mark as
+   paid" — had saved since. */
+function persistMoney() {
+  // CRITICAL: This MUST reach the database. Log all failures prominently.
+  moneySaveQueue = moneySaveQueue.then(() =>
+    flushLedger()
+      .then(putDocIfChanged)
+      .catch((err) => {
+      console.error('CRITICAL: saveMoney failed to reach database:', err);
+      toastError(err, 'Money changes were not saved. Check your connection and try again.');
+    })
+  );
+}
+
+async function flushLedger() {
+  const p = loadPendingLedger();
+  const upserts = Object.values(p.upserts);
+  if (!upserts.length && !p.deletes.length) return;
+  const res = await api('/api/money/tx', {
+    method: 'POST',
+    body: JSON.stringify({ upserts, deletes: p.deletes }),
+  });
+  // Clear only what this request carried: an edit made while it was in flight
+  // is a newer version of the item and must still go.
+  const now = loadPendingLedger();
+  for (const u of upserts)
+    if (JSON.stringify(now.upserts[u.id]) === JSON.stringify(u)) delete now.upserts[u.id];
+  const sent = new Set(p.deletes);
+  now.deletes = now.deletes.filter((id) => !sent.has(id));
+  storePendingLedger(now);
+  // Refused entries are cleared with the rest — kept, they would fail every save
+  // after them — and named, so nothing disappears without a word.
+  if (res && res.rejected && res.rejected.length) {
+    const r = res.rejected[0];
+    toastError(
+      null,
+      res.rejected.length === 1
+        ? 'One entry was not saved: ' + r.reason
+        : res.rejected.length + ' entries were not saved. First: ' + r.reason
+    );
+  }
+  applyAccounts(res && res.accounts);
+}
+
+/* Behind the save queue: "cash is 1,850 right now" is worked out on the server
+   from the rows it has, so an expense still in flight would skew it. */
+function accountRequest(method, path, body) {
+  const run = moneySaveQueue
+    .then(flushLedger)
+    .then(() =>
+      api('/api/money/accounts' + path, {
+        method,
+        body: body ? JSON.stringify(body) : undefined,
+      })
+    )
+    .then(applyAccounts);
+  // A failed account write must not poison every later save in the queue.
+  moneySaveQueue = run.catch(() => {});
+  return run;
+}
+
+/* Balances only change on the server, so they arrive after the save. */
+function applyAccounts(accounts) {
+  if (!Array.isArray(accounts)) return;
+  if (JSON.stringify(accounts) === JSON.stringify(state.money.accounts)) return;
+  state.money = Object.assign({}, state.money, { accounts });
+  cacheMoney();
+  render();
+}
+
+async function putDocIfChanged() {
+  const body = JSON.stringify(docPart(state.money));
+  if (body === lastDocBody) return;
+  try {
+    // No version yet means the boot load failed: a PUT now would be blind and
+    // overwrite whatever another device saved. Treat it like a conflict: load,
+    // merge, then write.
+    if (!moneyVersion) throw { status: 409 };
+    await putMoney(body, moneyVersion);
+    lastDocBody = body;
+  } catch (err) {
+    if (!err || err.status !== 409) throw err;
+    // Someone else wrote first. Take their copy, fold ours into it, and
+    // write once more — unconditionally, so a third writer can't spin this.
+    const theirs = await api('/api/money', { onResponse: rememberMoneyVersion });
+    state.money = normalizeMoney(overlayPending(mergeMoney(state.money, theirs)));
+    cacheMoney();
+    render();
+    toastSuccess('Merged money changes from your other device.');
+    const merged = JSON.stringify(docPart(state.money));
+    await putMoney(merged, null);
+    lastDocBody = merged;
+  }
 }
 
 /* ---- UI preferences (theme, quick-add language, onboarding-dismissed,
@@ -1692,8 +1834,10 @@ async function loadSecondaryData() {
       cacheFoodSummary(food);
     }
     if (money) {
-      state.money = normalizeMoney(money);
+      state.money = normalizeMoney(overlayPending(money));
+      lastDocBody = JSON.stringify(docPart(normalizeMoney(money)));
       cacheMoney();
+      persistMoney(); // replays anything left unsaved by the last session
     }
     // Sleep/mood + trends live on the backend. Merge in the server data, keep
     // the local-only photo history, and mirror to cache for offline paint.
@@ -1725,23 +1869,17 @@ async function loadSecondaryData() {
     // Data is complete now, so achievement detection can baseline/fire safely.
     state.achReady = true;
 
-    // Push the cached money blob up ONLY when the server had none to give — the
-    // GET above overwrites state.money with the server copy whenever it lands, so
-    // pushing after a successful GET wrote back what we'd just been handed, bumped
-    // the stored version, and left this tab holding the pre-push ETag: the user's
-    // next expense 409'd "your money data changed somewhere else" against itself.
-    // putMoney (not a bare api call) so the new version is remembered either way.
-    // The wellness half of this used to sit here and did nothing but fail: it PUT
-    // to /api/daily-logs, which doesn't exist.
-    if (!money && state.money) {
-      setTimeout(() => {
-        putMoney(JSON.stringify(state.money), null).catch((err) =>
-          console.error('Money sync failed:', err)
-        );
-      }, 100);
-    }
+    // (A block here used to PUT the cached money document, unconditionally, whenever
+    // `money` came back null. A successful GET never returns null, so it only ever
+    // ran when the request FAILED, and then overwrote whatever another device or a
+    // WhatsApp "Mark as paid" had saved. Unsaved expenses now wait in the pending
+    // ledger queue and replay on their own; nothing needs pushing here.)
 
-    if (state.screen === bootScreen) render();
+    // Repaint the screen you are on when its own data just arrived, not only the one
+    // you booted on: tapping Money right after sign-in kept its empty first paint
+    // (every day "No log") until something else happened to redraw it.
+    const arrived = { money: !!money, goals: !!goals, food: !!food };
+    if (state.screen === bootScreen || arrived[state.screen]) render();
   } catch (err) {
     console.error('Secondary data load failed', err);
   }
@@ -6657,7 +6795,7 @@ const SCREENS = {
       h(
         'span',
         null,
-        greetingFor(new Date().getHours()) + ', ' + firstName() + ' ',
+        greetingFor(new Date().getHours()) + ', ' + firstName() + '\u00a0', // no-break: the wave never wraps onto a line alone
         h('span', { class: 'gb-greet-wave' }, '👋')
       ),
     render: () =>
@@ -6954,6 +7092,8 @@ const SCREENS = {
         onSaveMoney: saveMoney,
         requestAdvice: (payload) =>
           api('/api/money/advice', { method: 'POST', body: JSON.stringify(payload) }),
+        accountRequest,
+        requestDaySummary: (day) => api('/api/money/day-summary?date=' + encodeURIComponent(day)),
       }),
   },
   notes: {
@@ -8190,11 +8330,7 @@ if (state.user) {
   setInterval(
     () => {
       if (!state.user) return;
-      if (state.money && (state.money.expenses || []).length > 0) {
-        api('/api/money', { method: 'PUT', body: JSON.stringify(state.money) }).catch((err) =>
-          console.warn('Money sync failed:', err)
-        );
-      }
+      if (state.money) persistMoney();
     },
     5 * 60 * 1000
   );

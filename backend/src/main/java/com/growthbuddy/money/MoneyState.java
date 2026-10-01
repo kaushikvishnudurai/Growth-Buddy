@@ -20,9 +20,10 @@ import org.hibernate.type.SqlTypes;
  *
  * <p>ponytail: a per-user JSON blob, not normalized tables. The frontend saves
  * the entire money object through one setter and computes every insight
- * client-side, so there is no server-side query that would justify splitting
- * expenses/budgets/goals/etc. into separate tables. If money logic ever moves
- * server-side (e.g. shared analytics, cross-user reports), normalize then.
+ * client-side. The part that grows without bound — expenses, income, transfers —
+ * already moved out to money_transactions (see MoneyLedger), because re-sending
+ * years of history on every edit is what stopped scaling. What is left is small:
+ * budgets, goals, subscriptions, settings.
  */
 @Entity
 @Table(name = "money_state")

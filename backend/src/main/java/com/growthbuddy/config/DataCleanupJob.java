@@ -42,6 +42,8 @@ public class DataCleanupJob {
         // Same dedupe-guard shape, habit side.
         total += jdbc.update(
                 "DELETE FROM habit_reminder_dispatch_log WHERE occurrence_date < CURDATE() - INTERVAL 30 DAY");
+        // The Last 7 days chart is the only reader; older summaries are unreachable.
+        total += jdbc.update("DELETE FROM money_day_summaries WHERE day < CURDATE() - INTERVAL 7 DAY");
         log.info("Data cleanup removed {} expired rows", total);
         purgeAbandonedSignups();
     }

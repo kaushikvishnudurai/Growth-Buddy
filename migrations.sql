@@ -143,3 +143,63 @@ CREATE TABLE IF NOT EXISTS `custom_sounds` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_custom_sounds_user` (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- NEW TABLES for Money accounts (cash / bank) and for expenses moving out of the
+-- money_state document. Guarded, so re-running is a no-op; keep them identical
+-- to tableCreationQueries.sql. No data moves here: TiDB has no JSON_TABLE to
+-- unpack the document with, so MoneyService.migrate() moves each user's old
+-- expenses/income into money_transactions the first time they open Money.
+-- Where money sits: cash in a purse, a bank account, a card, a UPI wallet.
+-- balance = opening_balance + everything booked to the account since. Nothing
+-- here stores a running total, so no write can ever leave it out of step.
+CREATE TABLE IF NOT EXISTS `money_accounts` (
+  `id` char(36) NOT NULL,
+  `user_id` char(36) NOT NULL,
+  `name` varchar(40) NOT NULL,
+  `kind` varchar(10) NOT NULL,
+  `opening_balance` decimal(14,2) NOT NULL DEFAULT 0,
+  `position` int NOT NULL DEFAULT 0,
+  `archived` tinyint(1) NOT NULL DEFAULT 0,
+  `created_at` datetime(6) NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `ux_macc_user_name` (`user_id`, `name`),
+  KEY `ix_macc_user` (`user_id`, `position`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Every expense, income and transfer, one row each. It used to live inside the
+-- money_state JSON document, which is re-sent whole on every edit and capped at
+-- 512 kB (~3,000 expenses). The key leads with user_id, so a user's rows sit
+-- together and every read below is a range scan inside one user, however large
+-- the table grows. `id` is the client's own id (unique per user, not globally —
+-- 'sub-<id>-<month>' is deterministic), which is what makes a retried write an
+-- upsert instead of a duplicate.
+CREATE TABLE IF NOT EXISTS `money_transactions` (
+  `user_id` char(36) NOT NULL,
+  `id` varchar(64) NOT NULL,
+  `kind` varchar(10) NOT NULL,
+  `account_id` char(36) DEFAULT NULL,
+  `to_account_id` char(36) DEFAULT NULL,
+  `amount` decimal(14,2) NOT NULL,
+  `category` varchar(40) DEFAULT NULL,
+  `note` varchar(255) DEFAULT NULL,
+  `occurred_on` date NOT NULL,
+  `extra` json DEFAULT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`user_id`, `id`),
+  KEY `ix_mtx_user_day` (`user_id`, `occurred_on`),
+  KEY `ix_mtx_user_account` (`user_id`, `account_id`),
+  KEY `ix_mtx_user_to_account` (`user_id`, `to_account_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The AI's summary of one day's spending, kept so a second tap on the same bar
+-- costs nothing. Only the last 7 days are ever shown, so older rows are purged
+-- nightly; a row is deleted the moment an expense on that day changes.
+CREATE TABLE IF NOT EXISTS `money_day_summaries` (
+  `user_id` char(36) NOT NULL,
+  `day` date NOT NULL,
+  `summary` text NOT NULL,
+  `created_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`user_id`, `day`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

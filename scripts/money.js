@@ -229,9 +229,13 @@ function fmt(n) {
   const v = Math.round(Number(n) || 0);
   return cur + v.toLocaleString('en-IN');
 }
+/* The year appears only when it isn't this one: "1 Oct" twice in a list (this
+   October and last) was two different salaries that read as one. */
 function fmtDateShort(k) {
   try {
-    return parseKey(k).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    const opts = { month: 'short', day: 'numeric' };
+    if (String(k).slice(0, 4) !== todayKey().slice(0, 4)) opts.year = 'numeric';
+    return parseKey(k).toLocaleDateString(undefined, opts);
   } catch (_) {
     return k;
   }
@@ -265,6 +269,8 @@ export function emptyMoney() {
     challenges: [],
     wishlist: [],
     subscriptions: [],
+    transfers: [],
+    accounts: [],
     settings: { reflectThreshold: 1000, currency: CUR, defaultTag: 'others' },
     currency: CUR,
   };
@@ -273,9 +279,19 @@ export function normalizeMoney(m) {
   m = m || {};
   const e = emptyMoney();
   return {
-    expenses: Array.isArray(m.expenses) ? m.expenses : [],
-    noSpendDays: Array.isArray(m.noSpendDays) ? m.noSpendDays : [],
-    income: Array.isArray(m.income) ? m.income : [],
+    // Copies, not the caller's arrays: quick-add pushed onto a normalised copy,
+    // which mutated the live state before saveMoney diffed it, so the diff was
+    // empty and the expense never reached the server.
+    expenses: Array.isArray(m.expenses) ? m.expenses.slice() : [],
+    // A day with a real expense is not a no-spend day, however it got marked; one
+    // place fixes it for every path that logs an expense (modal, quick add, import).
+    noSpendDays: (Array.isArray(m.noSpendDays) ? m.noSpendDays : []).filter(
+      (d) =>
+        !(Array.isArray(m.expenses) ? m.expenses : []).some(
+          (e) => e && e.date === d && Number(e.amount) > 0
+        )
+    ),
+    income: Array.isArray(m.income) ? m.income.slice() : [],
     loans: Array.isArray(m.loans) ? m.loans : [],
     budgets: m.budgets && typeof m.budgets === 'object' ? m.budgets : {},
     goals: Array.isArray(m.goals)
@@ -287,10 +303,81 @@ export function normalizeMoney(m) {
     challenges: Array.isArray(m.challenges) ? m.challenges : [],
     wishlist: Array.isArray(m.wishlist) ? m.wishlist : [],
     subscriptions: Array.isArray(m.subscriptions) ? m.subscriptions : [],
+    transfers: Array.isArray(m.transfers) ? m.transfers.slice() : [],
+    // Live balances from the server; read-only here, never saved back.
+    accounts: Array.isArray(m.accounts) ? m.accounts : [],
     settings: Object.assign({}, e.settings, m.settings || {}),
     currency: CUR,
   };
 }
+/* ---- The ledger: expenses, income and transfers are rows on the server ----
+   Everything else in the document is saved whole; these three are saved item by
+   item, so a save sends what changed instead of years of history. */
+export const LEDGER_ARRAYS = { expenses: 'expense', income: 'income', transfers: 'transfer' };
+
+/* Key order must not count as a change: an expense that comes back from the
+   server with its fields in another order is the same expense. */
+function stable(v) {
+  if (Array.isArray(v)) return '[' + v.map(stable).join(',') + ']';
+  if (v && typeof v === 'object')
+    return (
+      '{' +
+      Object.keys(v)
+        .filter((k) => v[k] !== undefined)
+        .sort()
+        .map((k) => JSON.stringify(k) + ':' + stable(v[k]))
+        .join(',') +
+      '}'
+    );
+  return JSON.stringify(v);
+}
+
+/* What a save has to tell the ledger: every added or edited item, every removed id.
+   Pure, so the whole save path rests on something testable. */
+export function ledgerDiff(before, after) {
+  const upserts = [];
+  const deletes = [];
+  for (const [arr, kind] of Object.entries(LEDGER_ARRAYS)) {
+    const was = new Map(
+      ((before && before[arr]) || []).filter((x) => x && x.id).map((x) => [x.id, stable(x)])
+    );
+    const kept = new Set();
+    for (const item of (after && after[arr]) || []) {
+      if (!item || !item.id) continue;
+      kept.add(item.id);
+      if (was.get(item.id) !== stable(item)) upserts.push(Object.assign({ kind }, item));
+    }
+    for (const id of was.keys()) if (!kept.has(id)) deletes.push(id);
+  }
+  return { upserts, deletes };
+}
+
+/* A diff laid onto a document: deletes removed, edits replaced in place, new items
+   first. Pure; it is how a save built from an older snapshot lands on the live
+   state without dropping what arrived since. */
+export function applyLedgerDiff(money, diff) {
+  const out = Object.assign({}, money);
+  const del = new Set(diff.deletes);
+  for (const [arr, kind] of Object.entries(LEDGER_ARRAYS)) {
+    const ups = diff.upserts.filter((u) => u.kind === kind).map(({ kind: _k, ...item }) => item);
+    const byId = new Map(ups.map((u) => [u.id, u]));
+    const was = (money && money[arr]) || [];
+    const had = new Set(was.map((x) => x.id));
+    out[arr] = ups
+      .filter((u) => !had.has(u.id))
+      .concat(was.filter((x) => !del.has(x.id)).map((x) => byId.get(x.id) || x));
+  }
+  return out;
+}
+
+/* The part of the document that is still saved as one document. */
+export function docPart(m) {
+  const out = Object.assign({}, m);
+  for (const k of Object.keys(LEDGER_ARRAYS)) delete out[k];
+  delete out.accounts;
+  return out;
+}
+
 /* Union two money documents by item id.
 
    Reached only after the server refuses a write as stale, and it is the right
@@ -319,6 +406,13 @@ export function mergeMoney(mine, theirs) {
   }
   // Objects (budgets) and settings are last-writer-wins on purpose: they are
   // single values a person sets, not a log they append to.
+  // Items above are whole-item theirs-wins, which would drop a "Mark as paid" made
+  // here while another device saved: keep the later paidFor of the two copies.
+  const mineSubs = new Map(local.subscriptions.map((x) => [x && x.id, x]));
+  for (const s of out.subscriptions) {
+    const p = s && (mineSubs.get(s.id) || {}).paidFor;
+    if (p && p > (s.paidFor || '')) s.paidFor = p;
+  }
   out.budgets = Object.assign({}, out.budgets, local.budgets);
   out.settings = Object.assign({}, out.settings, local.settings);
   return out;
@@ -1143,10 +1237,13 @@ function financialHealth(money) {
   if (st.length && mExp.length) {
     adherence = Math.round((st.filter((s) => s.pct <= 100).length / st.length) * 25);
   }
+  // `fix` names the one action that moves a part off zero; the card turns it into a
+  // button, so the score says what to do instead of sending you to find it.
   parts.push({
     label: 'Budget adherence',
     score: adherence,
     max: 25,
+    fix: !st.length ? 'budgets' : !mExp.length ? 'log' : null,
     note: !st.length
       ? 'Set budgets to score this'
       : mExp.length
@@ -1161,6 +1258,7 @@ function financialHealth(money) {
     label: 'Savings consistency',
     score: sav,
     max: 20,
+    fix: money.goals.length ? null : 'goal',
     note: recentSave > 0 ? `${fmt(recentSave)} set aside lately` : 'Add to a goal to build this',
   });
   const logged14 = new Set(
@@ -1170,6 +1268,7 @@ function financialHealth(money) {
     label: 'Expense logging',
     score: Math.round((Math.min(14, logged14) / 14) * 20),
     max: 20,
+    fix: logged14 ? null : 'log',
     note: `${logged14}/14 recent days logged`,
   });
   const cc = byCategory(mExp, money);
@@ -1180,6 +1279,7 @@ function financialHealth(money) {
     // No expenses this month => can't assess habits yet (no phantom 8 points).
     score: mExp.length ? Math.round((1 - Math.min(1, wantShare / 0.6)) * 15) : 0,
     max: 15,
+    fix: mExp.length ? null : 'log',
     note: mExp.length ? `${Math.round(wantShare * 100)}% on wants` : 'Log to assess',
   });
   const gp = money.goals.length
@@ -1191,6 +1291,7 @@ function financialHealth(money) {
     label: 'Goal progress',
     score: gp,
     max: 20,
+    fix: money.goals.length ? null : 'goal',
     note: money.goals.length
       ? `avg ${Math.round(money.goals.reduce((a, g) => a + goalPlan(g).pct, 0) / money.goals.length)}% to target`
       : 'Create a goal to score this',
@@ -1213,7 +1314,10 @@ function searchExpenses(money, query) {
     };
   let from = money.expenses.reduce((m, e) => (e.date < m ? e.date : m), todayKey());
   let to = todayKey();
-  let label = 'all time';
+  // Not "all time": the app holds the last ~13 months (the server's load window),
+  // so the honest scope is "since" the earliest month actually loaded.
+  const allLoaded = 'since ' + parseKey(from).toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+  let label = allLoaded;
   if (q.includes('today')) {
     from = to = todayKey();
     label = 'today';
@@ -1249,6 +1353,89 @@ function searchExpenses(money, query) {
         }
       : { answer: 'Not enough data yet to compare months.', results: [] };
   }
+  // "What could I skip?" — the same rule as the day summary: a spend rated 2/5 or
+  // less, or a want bought on impulse that you didn't then rate 4/5 or more (an
+  // impulse buy you loved is not one to skip). Loose on spelling ("skkiped").
+  // "What is NOT skippable?" / "what shouldn't I skip?" / "what was worth it?" is
+  // the opposite question, and it used to fall into the skip branch below: the
+  // matcher saw "skip" and answered with 183 things to cut. A negation BEFORE
+  // "skip" flips it; "not worth it" stays a skip question.
+  const negatedSkip =
+    /(\bnot\b|n't\b|\bnever\b|\bcannot\b)[^?.!]{0,24}(sk+i+p|avoid|cut)/.test(q) ||
+    /\b(un|non-?)(sk+i+p|avoid)/.test(q);
+  // "Unavoidable" / "essential" asks for NEEDS, a different list from "worth it":
+  // everything outside the wants. "unnecessary" never matches \bnecessar.
+  const essentials =
+    /\b(un|non-?)avoid|essential|\bnecessar|must.?(have|pay)|fixed (cost|spend)/.test(q);
+  const worthIt = /worth (it|keeping|the money)|good spends?/.test(q) && !/not worth|n't worth/.test(q);
+  if (essentials) {
+    const WANTS = ['shopping', 'entertainment'];
+    const needs = inRange(money.expenses, from, to)
+      .filter((e) => !WANTS.includes(e.category))
+      .map((e) => Object.assign({}, e, { why: 'a need' }))
+      .sort((a, b) => b.amount - a.amount);
+    const cats = [...new Set(needs.map((e) => catOf(e.category, money).label.toLowerCase()))];
+    return needs.length
+      ? {
+          answer: `${needs.length} essential ${needs.length === 1 ? 'spend' : 'spends'} ${label}, ${fmt(sumAmt(needs))} in all: ${cats.join(', ')}. These are the needs, not the wants.`,
+          results: needs.slice(0, 40),
+        }
+      : { answer: `No essential spends ${label}: everything logged was shopping or entertainment.`, results: [] };
+  }
+  if (negatedSkip || worthIt) {
+    const keep = inRange(money.expenses, from, to)
+      .map((e) => {
+        const r = e.reflection || {};
+        const sat = Number(r.satisfaction) || 0;
+        const why = sat >= 4 ? 'rated ' + sat + '/5' : !sat && r.planned === true ? 'planned' : null;
+        return why ? Object.assign({}, e, { why }) : null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.amount - a.amount);
+    if (!keep.length) {
+      const rated = money.expenses.some((e) => e.reflection);
+      return {
+        answer: rated
+          ? `Nothing ${label} stands out as worth it yet: nothing you rated 4/5 or more.`
+          : 'Rate how a spend felt right after you add it, and I can tell you which ones were worth it.',
+        results: [],
+      };
+    }
+    return {
+      answer: `${keep.length} ${keep.length === 1 ? 'spend' : 'spends'} ${label} worth keeping, ${fmt(sumAmt(keep))} in all. You rated them 4/5 or more, or planned them.`,
+      results: keep.slice(0, 40),
+    };
+  }
+  if (/\bsk+i+p+|avoid|cut (back|down)|unnecessar|wast(e|ed|ing)\b|regret|not worth/.test(q)) {
+    const WANTS = ['shopping', 'entertainment'];
+    const skip = inRange(money.expenses, from, to)
+      .map((e) => {
+        const r = e.reflection || {};
+        const sat = Number(r.satisfaction) || 0;
+        const why =
+          sat >= 1 && sat <= 2
+            ? 'rated ' + sat + '/5'
+            : WANTS.includes(e.category) && r.planned === false && sat < 4
+              ? 'unplanned ' + catOf(e.category, money).label.toLowerCase()
+              : null;
+        return why ? Object.assign({}, e, { why }) : null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.amount - a.amount);
+    if (!skip.length) {
+      const rated = money.expenses.some((e) => e.reflection);
+      return {
+        answer: rated
+          ? `Nothing ${label} stands out to skip: nothing you rated 2/5 or less, and no unplanned shopping or entertainment.`
+          : 'Rate how a spend felt right after you add it, and I can point out what was worth skipping.',
+        results: [],
+      };
+    }
+    return {
+      answer: `${skip.length} ${skip.length === 1 ? 'spend' : 'spends'} ${label} you could skip next time, ${fmt(sumAmt(skip))} in all. They felt low-value or were impulse wants.`,
+      results: skip.slice(0, 40),
+    };
+  }
   let min = 0;
   let max = Infinity;
   const above = q.match(/(above|over|more than|greater than|>)\s*₹?\s*(\d[\d,]*)/);
@@ -1260,7 +1447,28 @@ function searchExpenses(money, query) {
     /\bon\s+([a-z][a-z ]*?)(?:\s+(?:last|this|today|above|over|under|below|more|less)\b|\?|$)/
   );
   const term = onMatch ? onMatch[1].trim() : null;
+  // Nothing in the question narrowed anything: no period, tag, amount or "on X".
+  // Matching every expense and calling them "matching" answered a question nobody
+  // asked. Try its meaningful words against notes and tags; failing that, say so.
+  const understood = label !== allLoaded || cat || min > 0 || max < Infinity || term;
+  let words = [];
+  if (!understood) {
+    const STOP = new Set(
+      'what which where when who how much many did does do i my me the a an on in of for to is was were can could be been spend spent spending expense expenses money buy bought about show tell all any'.split(' ')
+    );
+    words = q.split(/[^a-z]+/).filter((w) => w.length >= 3 && !STOP.has(w));
+    if (!words.length)
+      return {
+        answer:
+          'I didn\'t catch that. Try "how much on food this month", "expenses over ₹500", or "what could I skip".',
+        results: [],
+      };
+  }
   let results = inRange(money.expenses, from, to).filter((e) => {
+    if (words.length) {
+      const hay = ((e.note || '') + ' ' + catOf(e.category, money).label).toLowerCase();
+      if (!words.some((w) => hay.includes(w))) return false;
+    }
     const amt = Number(e.amount) || 0;
     if (amt < min || amt > max) return false;
     if (cat && e.category !== cat.key) return false;
@@ -1276,10 +1484,12 @@ function searchExpenses(money, query) {
   });
   results.sort((a, b) => (b.date < a.date ? -1 : 1));
   const total = sumAmt(results);
-  const what = term ? `"${term}"` : cat ? cat.label : 'matching expenses';
+  const what = term ? `"${term}"` : cat ? cat.label : words.length ? `"${words.join(' ')}"` : 'matching expenses';
   const answer = results.length
     ? `You spent ${fmt(total)} on ${what} ${label} (${results.length} expense${results.length === 1 ? '' : 's'}).`
-    : `No ${what} found ${label}.`;
+    : words.length
+      ? `Nothing matches ${what}. Try "how much on food this month", "expenses over ₹500", or "what could I skip".`
+      : `No ${what} found ${label}.`;
   return { answer, results: results.slice(0, 40) };
 }
 
@@ -1451,15 +1661,24 @@ function subsMonthlyTotal(money) {
 function upcomingSubs(money) {
   const today = new Date().getDate();
   const dim = daysInMonth();
-  return (money.subscriptions || [])
-    .map((s) => {
-      const due = Math.min(Number(s.dueDay) || 1, dim);
-      let inDays = due - today;
-      if (inDays < 0) inDays += dim;
-      return { sub: s, due, inDays };
-    })
-    .filter((x) => x.inDays <= 7)
-    .sort((a, b) => a.inDays - b.inDays);
+  return (
+    (money.subscriptions || [])
+      .map((s) => {
+        const due = Math.min(Number(s.dueDay) || 1, dim);
+        let inDays = due - today;
+        const d = new Date();
+        if (inDays < 0) {
+          inDays += dim;
+          d.setDate(1);
+          d.setMonth(d.getMonth() + 1);
+        }
+        // The month this occurrence bills for — what "Mark as paid" stamps as paidFor.
+        return { sub: s, due, inDays, month: dkey(d).slice(0, 7) };
+      })
+      // 'YYYY-MM' strings compare in month order; paidFor only ever moves forward.
+      .filter((x) => x.inDays <= 7 && (x.sub.paidFor || '') < x.month)
+      .sort((a, b) => a.inDays - b.inDays)
+  );
 }
 
 /* 12 — reflection insights (triggers / satisfaction patterns). */
@@ -1552,36 +1771,75 @@ function donut(segments, centerLabel, centerSub) {
   );
   return h('div', { class: 'gb-money-donut-wrap' }, svg, inner);
 }
-function weekBars(expenses) {
+/* ₹1.2k / ₹3.4L: a label that fits over a 40px bar. */
+function fmtCompact(n) {
+  const v = Math.round(Number(n) || 0);
+  if (v >= 100000)
+    return cur + (v / 100000).toFixed(v >= 1000000 ? 0 : 1).replace(/\.0$/, '') + 'L';
+  if (v >= 1000) return cur + (v / 1000).toFixed(v >= 10000 ? 0 : 1).replace(/\.0$/, '') + 'k';
+  return cur + v;
+}
+
+/* Seven days, each a button: the amount sits above its bar (a hover tooltip
+   never shows on a phone), the weekday and date below it, and a tap opens that
+   day's summary. */
+/* An empty day is a "No log" day — worked out, not stored: the absence of any
+   entry IS the record, and a row per empty day would go stale the moment a late
+   expense is logged. A day marked no-spend on purpose says so instead. */
+function weekBars(expenses, { selected, onPick, noSpendDays = [] } = {}) {
   const days = lastNDays(7);
   const sums = days.map((k) => sumAmt(expenses.filter((e) => e.date === k)));
-  const max = Math.max(1, ...sums);
-  const wd = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+  // One rent day would flatten the other six into slivers. When the biggest day
+  // is over 3x the next, the scale stops at 1.5x the next and that bar is drawn
+  // cut off (its label still says the real amount), so the ordinary days stay readable.
+  const sorted = sums.slice().sort((a, b) => b - a);
+  const scale = sorted[0] > sorted[1] * 3 && sorted[1] > 0 ? sorted[1] * 1.5 : Math.max(1, sorted[0]);
+  const today = todayKey();
   return h(
     'div',
-    { class: 'gb-money-bars' },
-    days.map((k, i) =>
-      h(
-        'div',
+    { class: 'gb-money-bars', role: 'group', 'aria-label': 'Spending, last 7 days' },
+    days.map((k, i) => {
+      const d = parseKey(k);
+      return h(
+        'button',
         {
-          class: 'gb-money-bar-col',
-          // Read by the CSS tooltip. `title` used to do this and was invisible
-          // in practice — see the note on .gb-money-bar-col::after.
-          'data-tip': fmtDateShort(k) + ' \u00b7 ' + fmt(sums[i]),
-          tabindex: '0',
-          'aria-label': fmtDateShort(k) + ', ' + fmt(sums[i]),
+          type: 'button',
+          class:
+            'gb-money-bar-col' +
+            (k === today ? ' is-today' : '') +
+            (k === selected ? ' is-selected' : '') +
+            (sums[i] ? '' : ' is-zero') +
+            (!sums[i] && noSpendDays.includes(k) ? ' is-nospend' : '') +
+            (sums[i] > scale ? ' is-clipped' : ''),
+          'aria-pressed': String(k === selected),
+          'aria-label':
+            d.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' }) +
+            ', ' +
+            (sums[i] ? fmt(sums[i]) : noSpendDays.includes(k) ? 'no-spend day' : 'no log') +
+            '. Show summary',
+          onclick: onPick ? () => onPick(k) : undefined,
         },
         h(
-          'div',
+          'span',
+          { class: 'gb-money-bar-amt' },
+          sums[i] ? fmtCompact(sums[i]) : noSpendDays.includes(k) ? 'No spend' : 'No log'
+        ),
+        h(
+          'span',
           { class: 'gb-money-bar-track' },
-          h('div', {
-            class: 'gb-money-bar-fill' + (k === todayKey() ? ' is-today' : ''),
-            style: { height: Math.max(2, Math.round((sums[i] / max) * 100)) + '%' },
+          h('span', {
+            class: 'gb-money-bar-fill',
+            style: { height: Math.max(3, Math.min(100, Math.round((sums[i] / scale) * 100))) + '%' },
           })
         ),
-        h('div', { class: 'gb-money-bar-day' }, wd[parseKey(k).getDay()])
-      )
-    )
+        h(
+          'span',
+          { class: 'gb-money-bar-day' },
+          k === today ? 'Today' : d.toLocaleDateString(undefined, { weekday: 'short' })
+        ),
+        h('span', { class: 'gb-money-bar-date' }, String(d.getDate()))
+      );
+    })
   );
 }
 function lineChart(series, color) {
@@ -1632,6 +1890,46 @@ function lineChart(series, color) {
 /* Money's dialogs are the shared one; only the wording of a failed save is
    this module's. Returns `{ close }` because that is what the call sites here
    destructure. */
+/* ---- Accounts: where the money physically is ---- */
+const ACCOUNT_ICON = { cash: 'banknote', bank: 'landmark', card: 'credit-card', wallet: 'wallet' };
+const ACCOUNT_KIND_LABEL = { cash: 'Cash', bank: 'Bank', card: 'Card', wallet: 'UPI / wallet' };
+function activeAccounts(money) {
+  return (money.accounts || []).filter((a) => !a.archived);
+}
+function accountOf(money, id) {
+  return (money.accounts || []).find((a) => a.id === id) || null;
+}
+/* "Paid from" / "Received in". Null node when there are no accounts yet (offline
+   first run): an entry without one still saves, it just isn't counted in a balance. */
+function accountPicker(money, initial, onChange) {
+  const list = activeAccounts(money);
+  if (!list.length) return { node: null, get: () => null, set() {}, disable() {} };
+  const start = list.some((a) => a.id === initial) ? initial : list[0].id;
+  const seg = segmented(
+    list.map((a) => ({ value: a.id, label: a.name })),
+    start,
+    onChange
+  );
+  const btns = [...seg.node.children];
+  return {
+    node: seg.node,
+    get: seg.get,
+    set: (id) => {
+      const i = list.findIndex((a) => a.id === id);
+      if (i >= 0) btns[i].click();
+    },
+    // One account can't be both ends of a move: its button is off in the other picker.
+    disable: (id) =>
+      btns.forEach((b, i) => {
+        b.disabled = list[i].id === id;
+      }),
+  };
+}
+function firstOfKind(money, kinds) {
+  const a = activeAccounts(money).find((x) => kinds.includes(x.kind));
+  return a ? a.id : null;
+}
+
 function openMoneyModal(opts) {
   return { close: openModal(opts) };
 }
@@ -1977,7 +2275,7 @@ export function MoneyCustomisePane(money, save) {
 function commitOn(money, save, mutator) {
   const next = clone(money);
   mutator(next);
-  save(next);
+  save(next, money);
 }
 
 /* Five stars instead of a 1–5 number strip: same { node, get() } contract as
@@ -2111,13 +2409,16 @@ function logNoSpendDay(money, save) {
   }
   const next = clone(money);
   next.noSpendDays = [...(next.noSpendDays || []), today];
-  save(next);
+  save(next, money);
   toast.success('No-spend day logged — that’s money kept.');
 }
 
-function openExpenseModal(money, save, prefillDate) {
+/* Add, or — with `existing` — edit in place. Editing keeps the id (so the ledger
+   updates the same row), the reflection and createdAt; only what the form shows changes. */
+function openExpenseModal(money, save, prefillDate, existing) {
   money = normalizeMoney(money);
   applyCurrency(money);
+  const ex = existing || null;
   const amount = h('input', {
     type: 'number',
     class: 'gb-input',
@@ -2125,18 +2426,24 @@ function openExpenseModal(money, save, prefillDate) {
     min: '1',
     max: '10000000',
     placeholder: 'e.g. 250',
+    value: ex ? String(ex.amount) : '',
   });
   const note = h('input', {
     type: 'text',
     class: 'gb-input',
     maxlength: '120',
     placeholder: 'e.g. Lunch with team',
+    value: ex ? ex.note || '' : '',
   });
-  const date = h('input', { type: 'date', class: 'gb-input', value: prefillDate || todayKey() });
+  const date = h('input', {
+    type: 'date',
+    class: 'gb-input',
+    value: (ex && ex.date) || prefillDate || todayKey(),
+  });
   const hint = h('div', { class: 'gb-note-hint', style: { marginTop: '6px' } }, '');
-  let userPicked = false;
+  let userPicked = !!ex; // an existing tag was chosen on purpose; don't re-guess it
   const picker = tagPicker(money, save, {
-    initial: money.settings.defaultTag || 'others',
+    initial: (ex && ex.category) || money.settings.defaultTag || 'others',
     allowCreate: true,
     onPick: () => (userPicked = true),
   });
@@ -2148,9 +2455,16 @@ function openExpenseModal(money, save, prefillDate) {
       hint.textContent = 'Suggested tag: ' + catOf(guess, money).label;
     }
   });
+  // Whatever you paid from last time is the best guess for this time.
+  const paidFrom = accountPicker(
+    money,
+    (ex && ex.accountId) || money.settings.lastAccountId || firstOfKind(money, ['cash'])
+  );
   openMoneyModal({
-    title: 'Add expense',
-    sub: "Add what you spent. I'll suggest a tag from your note.",
+    title: ex ? 'Edit expense' : 'Add expense',
+    sub: ex
+      ? 'Fix the amount, tag, account or date.'
+      : "Add what you spent. I'll suggest a tag from your note.",
     body: h(
       'div',
       { class: 'gb-form' },
@@ -2161,10 +2475,23 @@ function openExpenseModal(money, save, prefillDate) {
       hint,
       h('div', { class: 'gb-field-label' }, 'Tag'),
       picker.node,
+      paidFrom.node ? h('div', { class: 'gb-field-label' }, 'Paid from') : null,
+      paidFrom.node,
       h('div', { class: 'gb-field-label' }, 'Date'),
       date
     ),
-    primary: 'Add expense',
+    primary: ex ? 'Save changes' : 'Add expense',
+    danger: ex
+      ? {
+          label: 'Delete expense',
+          onClick: () => {
+            const next = clone(money);
+            next.expenses = next.expenses.filter((x) => x.id !== ex.id);
+            save(next, money);
+            toast.success('Expense deleted.');
+          },
+        }
+      : null,
     onPrimary: async () => {
       const amt = Math.round(Number(amount.value));
       if (!Number.isFinite(amt) || amt <= 0) {
@@ -2172,17 +2499,34 @@ function openExpenseModal(money, save, prefillDate) {
         throw new Error('Enter an amount greater than zero.');
       }
       const cat = picker.get();
-      const id = uid();
       const next = clone(money);
-      next.expenses.unshift({
-        id,
+      const accountId = paidFrom.get();
+      const fields = {
         amount: amt,
         category: cat,
         date: date.value || todayKey(),
         note: note.value.trim(),
+      };
+      if (ex) {
+        next.expenses = next.expenses.map((x) => {
+          if (x.id !== ex.id) return x;
+          const edited = Object.assign({}, x, fields);
+          if (accountId) edited.accountId = accountId;
+          return edited;
+        });
+        save(next, money);
+        toast.success('Expense updated.');
+        return;
+      }
+      const id = uid();
+      next.expenses.unshift({
+        id,
+        ...fields,
         createdAt: Date.now(),
+        ...(accountId ? { accountId } : {}),
       });
-      save(next);
+      if (accountId) next.settings.lastAccountId = accountId;
+      save(next, money);
       toast.success('Expense added.');
       // Every spend gets a quick "why" reflection right after — the reason prompt.
       // Operate on `next` so the new expense id resolves regardless of re-render timing.
@@ -2295,12 +2639,442 @@ let activeTab = 'overview';
 let spendFilter = 'all';
 let lastSearch = '';
 
-function ScreenMoney({ money, onSaveMoney, requestAdvice }) {
+function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, requestDaySummary }) {
   money = normalizeMoney(money);
   applyCurrency(money);
   const root = h('div', { class: 'gb-money gb-rise' });
-  const save = (next) => onSaveMoney(next);
+  const save = (next, base) => onSaveMoney(next, base);
   const commit = (mutator) => commitOn(money, save, mutator);
+
+  /* ---- Accounts card: where the money is, right under "what did I spend" ---- */
+  function accountsCard() {
+    const list = activeAccounts(money);
+    if (!list.length) return null;
+    const total = list.reduce((a, x) => a + (Number(x.balance) || 0), 0);
+    // Nothing tells us what was in the purse before the app, so ask once. Any
+    // non-zero balance, or any entry booked to an account, means it was answered.
+    const needsSetup =
+      !money.settings.accountsSetUp &&
+      list.every((a) => !Number(a.openingBalance)) &&
+      !money.expenses.concat(money.income).some((e) => e.accountId);
+    return Card({
+      className: 'gb-money-card',
+      children: [
+        h(
+          'div',
+          { class: 'gb-sectiontitle' },
+          h('h3', null, 'Where your money is'),
+          h(
+            'div',
+            { class: 'gb-money-head-actions' },
+            list.length > 1
+              ? h(
+                  'button',
+                  {
+                    type: 'button',
+                    class: 'gb-btn gb-btn--ghost gb-btn--compact',
+                    onclick: () => openTransfer(),
+                  },
+                  Icon('arrow-left-right', { size: 14, sw: 2.4 }),
+                  'Move money'
+                )
+              : null,
+            h(
+              'button',
+              {
+                type: 'button',
+                class: 'gb-btn gb-btn--soft gb-btn--compact',
+                onclick: openAddAccount,
+              },
+              Icon('plus', { size: 14, sw: 2.6 }),
+              'Account'
+            )
+          )
+        ),
+        needsSetup
+          ? coachCard('wallet', 'How much is in each right now?', [
+              h(
+                'p',
+                { class: 'gb-money-coach-text' },
+                'Tell me once and every expense after that keeps your cash and bank balances right.'
+              ),
+              h(
+                'button',
+                {
+                  type: 'button',
+                  class: 'gb-btn gb-btn--soft gb-btn--compact',
+                  onclick: openSetBalances,
+                },
+                Icon('pencil', { size: 14, sw: 2.4 }),
+                'Set balances'
+              ),
+            ])
+          : null,
+        h(
+          'div',
+          { class: 'gb-money-accounts' },
+          list.map((a) =>
+            h(
+              'button',
+              {
+                type: 'button',
+                class: 'gb-money-account' + (Number(a.balance) < 0 ? ' is-negative' : ''),
+                onclick: () => openEditAccount(a),
+                'aria-label': a.name + ', ' + fmt(a.balance) + '. Edit',
+              },
+              h(
+                'span',
+                { class: 'gb-money-account-ic' },
+                Icon(ACCOUNT_ICON[a.kind] || 'wallet', { size: 17, sw: 2.2 })
+              ),
+              h(
+                'span',
+                { class: 'gb-money-account-main' },
+                h('span', { class: 'gb-money-account-name' }, a.name),
+// "Cash / Cash" says nothing twice; the type shows only when the name doesn't.
+                a.name.toLowerCase() === (ACCOUNT_KIND_LABEL[a.kind] || '').toLowerCase()
+                  ? null
+                  : h('span', { class: 'gb-money-account-kind' }, ACCOUNT_KIND_LABEL[a.kind] || a.kind)
+              ),
+              h(
+                'span',
+                { class: 'gb-money-account-bal' },
+                (Number(a.balance) < 0 ? '−' : '') + fmt(Math.abs(Number(a.balance) || 0))
+              )
+            )
+          )
+        ),
+        list.some((a) => Number(a.balance) < 0)
+          ? h(
+              'p',
+              { class: 'gb-money-intro' },
+              "A balance below zero usually means some money came in that isn't logged. Tap the account to set what it really holds."
+            )
+          : null,
+        list.length > 1
+          ? h(
+              'div',
+              { class: 'gb-money-accounts-total' },
+              'Total ' + fmt(total) + ' across ' + list.length + ' accounts'
+            )
+          : null,
+        // A transfer is in no spending view (it isn't spending), so this is the
+        // one place it can be seen and taken back.
+        money.transfers.length
+          ? h(
+              'div',
+              { class: 'gb-money-moves' },
+              h('div', { class: 'gb-money-day-sub' }, 'Recent moves'),
+              money.transfers.slice(0, 3).map((t) =>
+                h(
+                  'div',
+                  { class: 'gb-money-exp-row' },
+                  h(
+                    'span',
+                    { class: 'gb-money-cat-ic gb-money-move-ic' },
+                    Icon('arrow-left-right', { size: 15, sw: 2.2 })
+                  ),
+                  h(
+                    'div',
+                    { class: 'gb-money-exp-main' },
+                    h(
+                      'div',
+                      { class: 'gb-money-exp-note' },
+                      ((accountOf(money, t.from) || {}).name || 'Account') +
+                        ' → ' +
+                        ((accountOf(money, t.to) || {}).name || 'Account')
+                    ),
+                    h(
+                      'div',
+                      { class: 'gb-money-exp-meta' },
+                      [t.note, fmtDateShort(t.date)].filter(Boolean).join(' · ')
+                    )
+                  ),
+                  h('div', { class: 'gb-money-exp-amt' }, fmt(t.amount)),
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      class: 'gb-icon-btn',
+                      'aria-label': 'Undo this move',
+                      onclick: () =>
+                        confirmDelete('Undo move', 'Undo moving ' + fmt(t.amount) + '?', async () => {
+                          commit((m) => (m.transfers = m.transfers.filter((x) => x.id !== t.id)));
+                          toast.success('Move undone.');
+                        }),
+                    },
+                    Icon('trash-2', { size: 15, sw: 2.4 })
+                  )
+                )
+              )
+            )
+          : null,
+      ],
+    });
+  }
+
+  /* Account writes go to the server (balances are computed there) and come back
+     as the whole list; app.js orders them after any expense still being saved. */
+  async function accountWrite(method, path, body, done) {
+    try {
+      await accountRequest(method, path, body);
+      if (done) toast.success(done);
+    } catch (err) {
+      throw new Error((err && err.message) || 'Could not update the account.');
+    }
+  }
+
+  function kindPicker(initial) {
+    return segmented(
+      Object.keys(ACCOUNT_KIND_LABEL).map((k) => ({ value: k, label: ACCOUNT_KIND_LABEL[k] })),
+      initial
+    );
+  }
+
+  function openAddAccount() {
+    const name = h('input', {
+      type: 'text',
+      class: 'gb-input',
+      maxlength: '40',
+      placeholder: 'e.g. HDFC savings',
+    });
+    const kind = kindPicker('bank');
+    const bal = h('input', {
+      type: 'number',
+      class: 'gb-input',
+      inputmode: 'decimal',
+      placeholder: 'e.g. 12000',
+    });
+    openMoneyModal({
+      title: 'Add account',
+      sub: 'A bank account, a card, a UPI wallet, or a second purse.',
+      body: h(
+        'div',
+        { class: 'gb-form' },
+        h('div', { class: 'gb-field-label' }, 'Name'),
+        name,
+        h('div', { class: 'gb-field-label' }, 'Type'),
+        kind.node,
+        h('div', { class: 'gb-field-label' }, 'In it right now (' + cur + ')'),
+        bal
+      ),
+      primary: 'Add account',
+      onPrimary: async () => {
+        if (!name.value.trim()) {
+          name.focus();
+          throw new Error('Give the account a name.');
+        }
+        await accountWrite(
+          'POST',
+          '',
+          { name: name.value.trim(), kind: kind.get(), balance: Number(bal.value) || 0 },
+          'Account added.'
+        );
+      },
+    });
+    setTimeout(() => name.focus(), 60);
+  }
+
+  function openEditAccount(a) {
+    const name = h('input', { type: 'text', class: 'gb-input', maxlength: '40', value: a.name });
+    const kind = kindPicker(a.kind);
+    const bal = h('input', {
+      type: 'number',
+      class: 'gb-input',
+      inputmode: 'decimal',
+      value: String(Math.round(Number(a.balance) || 0)),
+    });
+    openMoneyModal({
+      title: a.name,
+      sub: 'Change the name, or set what it holds right now. Logged history stays as it is.',
+      body: h(
+        'div',
+        { class: 'gb-form' },
+        h('div', { class: 'gb-field-label' }, 'Name'),
+        name,
+        h('div', { class: 'gb-field-label' }, 'Type'),
+        kind.node,
+        h('div', { class: 'gb-field-label' }, 'In it right now (' + cur + ')'),
+        bal,
+        h(
+          'div',
+          { class: 'gb-note-hint' },
+          'Removing an account with expenses archives it, so its history keeps its name.'
+        )
+      ),
+      primary: 'Save',
+      danger: {
+        label: 'Remove account',
+        onClick: () =>
+          confirmDelete(
+            'Remove ' + a.name,
+            'Remove "' + a.name + '"? Its logged expenses stay.',
+            () => accountWrite('DELETE', '/' + a.id, null, a.name + ' removed.')
+          ),
+      },
+      onPrimary: async () => {
+        if (!name.value.trim()) {
+          name.focus();
+          throw new Error('Give the account a name.');
+        }
+        const body = { name: name.value.trim(), kind: kind.get() };
+        if (bal.value !== '' && Number(bal.value) !== Math.round(Number(a.balance) || 0))
+          body.balance = Number(bal.value);
+        await accountWrite('PUT', '/' + a.id, body, 'Saved.');
+      },
+    });
+  }
+
+  function openSetBalances() {
+    const list = activeAccounts(money);
+    const inputs = list.map((a) =>
+      h('input', {
+        type: 'number',
+        class: 'gb-input',
+        inputmode: 'decimal',
+        placeholder: '0',
+        id: 'bal-' + a.id,
+      })
+    );
+    openMoneyModal({
+      title: 'What you have right now',
+      sub: 'Count the purse, check the bank app. Rough is fine; you can correct it any time.',
+      body: h(
+        'div',
+        { class: 'gb-form' },
+        list.flatMap((a, i) => [
+          h('div', { class: 'gb-field-label' }, a.name + ' (' + cur + ')'),
+          inputs[i],
+        ])
+      ),
+      primary: 'Save balances',
+      onPrimary: async () => {
+        for (let i = 0; i < list.length; i++) {
+          const v = inputs[i].value;
+          if (v !== '') await accountRequest('PUT', '/' + list[i].id, { balance: Number(v) });
+        }
+        commit((m) => (m.settings.accountsSetUp = true));
+        toast.success('Balances saved.');
+      },
+    });
+    setTimeout(() => inputs[0] && inputs[0].focus(), 60);
+  }
+
+  /* Moving money is not spending it: an ATM withdrawal is bank → cash, and
+     counting it as an expense would double every cash purchase after it. */
+  function openTransfer() {
+    const list = activeAccounts(money);
+    const holds = h('div', { class: 'gb-note-hint' });
+    const showHolds = (id) => {
+      const a = accountOf(money, id);
+      holds.textContent = a ? a.name + ' has ' + fmt(a.balance) + ' now.' : '';
+    };
+    // To can never equal From: picking From turns that account off in To, and
+    // moves To elsewhere if it was sitting on it.
+    const onFrom = (id) => {
+      showHolds(id);
+      to.disable(id);
+      if (to.get() === id) to.set((list.find((a) => a.id !== id) || {}).id);
+    };
+    const from = accountPicker(money, firstOfKind(money, ['bank']), (id) => onFrom(id));
+    const to = accountPicker(
+      money,
+      firstOfKind(money, ['cash']) || (list.find((a) => a.id !== from.get()) || {}).id
+    );
+    onFrom(from.get());
+    const swap = h(
+      'button',
+      {
+        type: 'button',
+        class: 'gb-btn gb-btn--ghost gb-btn--compact gb-money-swap',
+        onclick: () => {
+          const f = from.get();
+          const t = to.get();
+          to.disable(null);
+          to.set(f);
+          from.set(t);
+        },
+      },
+      Icon('arrow-left-right', { size: 14, sw: 2.4 }),
+      'Swap'
+    );
+    const amount = h('input', {
+      type: 'number',
+      class: 'gb-input',
+      inputmode: 'decimal',
+      min: '1',
+      placeholder: 'e.g. 2000',
+    });
+    // ATM withdrawals are almost always one of these.
+    const quick = h(
+      'div',
+      { class: 'gb-money-quick' },
+      [500, 1000, 2000, 5000].map((v) =>
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-money-quick-amt',
+            onclick: () => {
+              amount.value = String(v);
+              amount.focus();
+            },
+          },
+          fmt(v)
+        )
+      )
+    );
+    const note = h('input', {
+      type: 'text',
+      class: 'gb-input',
+      maxlength: '120',
+      placeholder: 'e.g. ATM withdrawal',
+    });
+    const date = h('input', { type: 'date', class: 'gb-input', value: todayKey() });
+    openMoneyModal({
+      title: 'Move money',
+      sub: 'Withdrawing cash, topping up a wallet, paying off a card. Not counted as spending.',
+      body: h(
+        'div',
+        { class: 'gb-form' },
+        h('div', { class: 'gb-money-move-head' }, h('div', { class: 'gb-field-label' }, 'From'), swap),
+        from.node,
+        holds,
+        h('div', { class: 'gb-field-label' }, 'To'),
+        to.node,
+        h('div', { class: 'gb-field-label' }, 'Amount (' + cur + ')'),
+        amount,
+        quick,
+        h('div', { class: 'gb-field-label' }, 'Note (optional)'),
+        note,
+        h('div', { class: 'gb-field-label' }, 'Date'),
+        date
+      ),
+      primary: 'Move money',
+      onPrimary: async () => {
+        const v = Math.round(Number(amount.value));
+        if (!Number.isFinite(v) || v <= 0) {
+          amount.focus();
+          throw new Error('Enter an amount greater than zero.');
+        }
+        if (from.get() === to.get()) throw new Error('Pick two different accounts.');
+        commit((m) =>
+          m.transfers.unshift({
+            id: uid(),
+            amount: v,
+            from: from.get(),
+            to: to.get(),
+            date: date.value || todayKey(),
+            note: note.value.trim(),
+            createdAt: Date.now(),
+          })
+        );
+        toast.success('Moved ' + fmt(v) + '.');
+      },
+    });
+    setTimeout(() => amount.focus(), 60);
+  }
+
 
   function coachCard(icon, title, children, variant) {
     return h(
@@ -2333,6 +3107,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice }) {
   }
 
   const openAddExpense = (prefillDate) => openExpenseModal(money, save, prefillDate);
+  const openEditExpense = (e) => openExpenseModal(money, save, null, e);
 
   /* ---- MODALS ---- */
   function openReceiptScan() {
@@ -3101,106 +3876,347 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice }) {
   /* =================================================================
      TAB: OVERVIEW
      ================================================================= */
+  /* ---- Day summary under the Last 7 days bars ---- */
+  let pickedDay = null;
+  // Per screen instance, keyed on the day's entries: an expense added or edited
+  // that day changes the key, so a stale summary is never shown (the server drops
+  // its cached one on the same change).
+  const daySummaries = new Map();
+
+  function dayPanel(day) {
+    const entries = money.expenses.filter((e) => e.date === day);
+    const key = day + '|' + stable(entries);
+    const got = daySummaries.get(key);
+    const label = parseKey(day).toLocaleDateString(undefined, {
+      weekday: 'long',
+      month: 'short',
+      day: 'numeric',
+    });
+    const head = h(
+      'div',
+      { class: 'gb-money-day-head' },
+      h('div', { class: 'gb-money-day-title' }, label),
+      h(
+        'div',
+        { class: 'gb-money-day-total' },
+        fmt(sumAmt(entries)) +
+          ' · ' +
+          entries.length +
+          (entries.length === 1 ? ' expense' : ' expenses')
+      )
+    );
+    if (!entries.length) {
+      const noSpend = money.noSpendDays.includes(day);
+      return h(
+        'div',
+        { class: 'gb-money-day', 'aria-live': 'polite' },
+        head,
+        h(
+          'p',
+          { class: 'gb-money-day-text' },
+          noSpend
+            ? 'You marked this a no-spend day. A win worth noticing.'
+            : 'No log for this day. Did you spend anything?'
+        ),
+        noSpend
+          ? null
+          : h(
+              'div',
+              { class: 'gb-money-day-actions' },
+              h(
+                'button',
+                {
+                  type: 'button',
+                  class: 'gb-btn gb-btn--soft gb-btn--compact',
+                  onclick: () => openAddExpense(day),
+                },
+                Icon('plus', { size: 14, sw: 2.6 }),
+                'Add an expense'
+              ),
+              h(
+                'button',
+                {
+                  type: 'button',
+                  class: 'gb-btn gb-btn--ghost gb-btn--compact',
+                  onclick: () => {
+                    commit((m) => (m.noSpendDays = [...new Set(m.noSpendDays.concat(day))]));
+                    toast.success('Marked as a no-spend day.');
+                  },
+                },
+                Icon('check', { size: 14, sw: 2.6 }),
+                'I spent nothing'
+              )
+            )
+      );
+    }
+    if (!got && requestDaySummary) {
+      daySummaries.set(key, { loading: true });
+      requestDaySummary(day)
+        .then((r) => daySummaries.set(key, { data: r }))
+        .catch((err) =>
+          daySummaries.set(key, { error: (err && err.message) || 'Could not load it.' })
+        )
+        .then(() => {
+          if (pickedDay === day) paint();
+        });
+    }
+    const st = daySummaries.get(key) || {};
+    const d = st.data;
+    // The facts come from the phone's own copy, so they show at once; only the
+    // coach's paragraph waits for the server.
+    const cc = byCategory(entries, money);
+    const cats = mergedCats(money)
+      .filter((c) => cc[c.key] > 0)
+      .sort((a, b) => cc[b.key] - cc[a.key]);
+    const ent = d && d.entertainment;
+    return h(
+      'div',
+      { class: 'gb-money-day', 'aria-live': 'polite' },
+      head,
+      h(
+        'div',
+        { class: 'gb-money-day-cats' },
+        cats.map((c) =>
+          h(
+            'span',
+            { class: 'gb-money-day-cat', style: { background: c.soft, color: c.fg } },
+            Icon(c.icon, { size: 13, sw: 2.4 }),
+            c.label + ' ' + fmt(cc[c.key])
+          )
+        )
+      ),
+      ent && ent.count
+        ? h(
+            'div',
+            { class: 'gb-money-day-row' },
+            h('span', null, 'Entertainment felt'),
+            h(
+              'strong',
+              null,
+              ent.avgSatisfaction != null
+                ? ent.avgSatisfaction + ' / 5' + (ent.rated > 1 ? ' avg of ' + ent.rated : '')
+                : 'not rated yet'
+            )
+          )
+        : null,
+      d && d.avoidable && d.avoidable.length
+        ? h(
+            'div',
+            { class: 'gb-money-day-skip' },
+            h('div', { class: 'gb-money-day-sub' }, 'Could skip next time'),
+            d.avoidable.map((a) =>
+              h(
+                'div',
+                { class: 'gb-money-day-row' },
+                h('span', null, a.note, h('span', { class: 'gb-money-day-why' }, ' · ' + a.reason)),
+                h('strong', null, fmt(a.amount))
+              )
+            )
+          )
+        : null,
+      st.loading
+        ? h('p', { class: 'gb-money-day-text is-loading' }, 'Buddy is reading your day…')
+        : st.error
+          ? h(
+              'p',
+              { class: 'gb-money-day-text' },
+              st.error + ' ',
+              h(
+                'button',
+                {
+                  type: 'button',
+                  class: 'gb-money-day-retry',
+                  onclick: () => {
+                    daySummaries.delete(key);
+                    paint();
+                  },
+                },
+                'Try again'
+              )
+            )
+          : d
+            ? h(
+                'p',
+                { class: 'gb-money-day-text' },
+                d.source === 'ai' ? h('span', { class: 'gb-money-day-by' }, 'Buddy · ') : null,
+                d.summary
+              )
+            : null
+    );
+  }
+
+  /* One cell per day of the month. Past days are coloured against a flat daily
+     share of the budget (or, with no budget, by how much was spent); a day with
+     nothing logged is hollow, a no-spend day ringed, today outlined, the rest
+     waiting. */
+  let tapeShown = false; // the fill-in plays once per visit, not on every repaint
+  function monthTape({ byDay, hasBudget, totalBudget, dim, dayNum, prefix, today }) {
+    const flat = hasBudget ? totalBudget / dim : 0;
+    const max = Math.max(1, ...Object.values(byDay));
+    const cells = [];
+    for (let d = 1; d <= dim; d++) {
+      const key = prefix + '-' + String(d).padStart(2, '0');
+      const spent = byDay[key] || 0;
+      let state;
+      if (d > dayNum) state = 'is-future';
+      else if (!spent) state = money.noSpendDays.includes(key) ? 'is-nospend' : key === today ? 'is-empty' : 'is-nolog';
+      else if (hasBudget) state = spent <= flat ? 'is-under' : spent <= flat * 1.5 ? 'is-near' : 'is-over';
+      else state = 'lv-' + Math.min(4, Math.ceil((spent / max) * 4));
+      const date = parseKey(key);
+      const words =
+        date.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }) +
+        (d > dayNum
+          ? ''
+          : ', ' +
+            (spent ? fmt(spent) : money.noSpendDays.includes(key) ? 'no-spend day' : 'nothing logged'));
+      // Display only: a cell is ~8px wide on a phone, far under a 44px target.
+      // Opening a day lives on the Spending tab's 7-day graph, whose columns are big.
+      cells.push(
+        h('span', {
+          class: 'gb-money-tape-day ' + state + (key === today ? ' is-today' : ''),
+          style: { '--i': String(d) },
+          role: 'img',
+          'aria-label': words,
+          title: words,
+        })
+      );
+    }
+    const entering = !tapeShown;
+    tapeShown = true;
+    return h(
+      'div',
+      { class: 'gb-money-tape-wrap' },
+      h(
+        'div',
+        {
+          class: 'gb-money-tape' + (entering ? ' is-entering' : ''),
+          role: 'group',
+          'aria-label': 'Your month, day by day',
+        },
+        cells
+      ),
+      h(
+        'div',
+        { class: 'gb-money-tape-key' },
+        h('span', null, '1'),
+        hasBudget
+          ? h(
+              'span',
+              { class: 'gb-money-tape-legend' },
+              h('i', { class: 'is-under' }),
+              'under',
+              h('i', { class: 'is-near' }),
+              'close',
+              h('i', { class: 'is-over' }),
+              'over its share'
+            )
+          : h('span', { class: 'gb-money-tape-legend' }, 'Darker days, more spent'),
+        h('span', null, String(dim))
+      )
+    );
+  }
+
+  /* The hero answers the question people open Money with: how much can I spend
+     today? Under it, the whole month as a tape of days, each coloured by how it
+     went against its share, so the month reads at a glance. */
   function tabOverview() {
     const st = budgetStatus(money);
     const totalBudget = st.reduce((a, s) => a + s.budget, 0);
-    const spentMonth = st.reduce((a, s) => a + s.spent, 0);
-    const safe = totalBudget - spentMonth;
-    const daysLeft = Math.max(1, daysInMonth() - new Date().getDate() + 1);
-    const ringPct =
-      totalBudget > 0 ? Math.max(0, Math.min(100, Math.round((safe / totalBudget) * 100))) : 0;
-    const ringColor = safe >= 0 ? 'var(--success)' : 'var(--brand)';
-    const heroFig =
-      totalBudget > 0
-        ? h(
-            'div',
-            { class: 'gb-money-hero-figure' },
-            ProgressRing({
-              value: ringPct,
-              size: 132,
-              stroke: 13,
-              color: ringColor,
-              children: [
-                h(
-                  'div',
-                  { class: 'gb-money-ring-val', style: { color: ringColor } },
-                  fmt(Math.max(0, safe))
-                ),
-                h(
-                  'div',
-                  { class: 'gb-money-ring-lbl' },
-                  safe >= 0 ? 'safe to spend' : 'over budget'
-                ),
-              ],
-            }),
-            h(
-              'div',
-              { class: 'gb-money-hero-meta' },
-              safe >= 0
-                ? '≈ ' + fmt(safe / daysLeft) + '/day for ' + daysLeft + ' more days'
-                : fmt(-safe) + " past this month's budgets"
-            )
-          )
-        : h(
-            'div',
-            { class: 'gb-money-hero-figure gb-money-hero-figure--empty' },
-            h('div', { class: 'gb-money-hero-spent' }, fmt(spentMonth)),
-            h('div', { class: 'gb-money-ring-lbl' }, 'spent this month'),
-            h(
-              'button',
-              {
-                type: 'button',
-                class: 'gb-btn gb-btn--soft gb-btn--compact',
-                style: { marginTop: '10px' },
-                onclick: openSetBudgets,
-              },
-              Icon('target', { size: 14, sw: 2.4 }),
-              'Set budgets'
-            )
-          );
+    const hasBudget = totalBudget > 0;
+    const today = todayKey();
+    const dim = daysInMonth();
+    const dayNum = new Date().getDate();
+    const prefix = thisMonthPrefix();
+    const byDay = {};
+    for (const e of inRange(money.expenses, prefix + '-01', today))
+      byDay[e.date] = (byDay[e.date] || 0) + (Number(e.amount) || 0);
+    const spentMonth = Object.values(byDay).reduce((a, v) => a + v, 0);
+    const spentToday = byDay[today] || 0;
+    const daysLeft = dim - dayNum + 1;
+    // Today's share: what is left of the month's budget before today, spread
+    // over the days still to come (today included).
+    const share = hasBudget ? (totalBudget - (spentMonth - spentToday)) / daysLeft : 0;
+    const left = share - spentToday;
+
+    let figure, label, meta, tone;
+    if (!hasBudget) {
+      figure = fmt(spentToday);
+      label = 'spent today';
+      meta = fmt(spentMonth) + ' so far this month';
+      tone = '';
+    } else if (left >= 0) {
+      figure = fmt(left);
+      label = 'left for today';
+      meta = fmt(Math.max(0, totalBudget - spentMonth)) + ' left this month · ' + daysLeft + (daysLeft === 1 ? ' day' : ' days') + ' to go';
+      tone = 'is-under';
+    } else if (daysLeft > 1) {
+      // Past today's share: the useful number is the next one, not the overshoot.
+      // Money is framed as growth here, so the headline is forward-looking and calm.
+      figure = fmt(Math.max(0, (totalBudget - spentMonth) / (daysLeft - 1)));
+      label = 'a day from tomorrow';
+      meta = 'Today went ' + fmt(-left) + " past its share, so the rest of the month has adjusted.";
+      tone = '';
+    } else {
+      figure = fmt(Math.max(0, totalBudget - spentMonth));
+      label = 'left this month';
+      meta = 'Last day of the month. A new share starts tomorrow.';
+      tone = '';
+    }
+
     const hero = h(
       'div',
-      { class: 'gb-money-hero' },
+      { class: 'gb-money-hero gb-money-today ' + tone },
       h(
         'div',
-        { class: 'gb-money-hero-side' },
+        { class: 'gb-money-today-top' },
         h(
           'div',
-          { class: 'gb-money-hero-eyebrow' },
-          Icon('wallet', { size: 14, sw: 2.4 }),
-          'Money Buddy'
+          { class: 'gb-money-today-read' },
+          h(
+            'div',
+            { class: 'gb-money-hero-eyebrow' },
+            Icon('wallet', { size: 14, sw: 2.4 }),
+            parseKey(today).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })
+          ),
+          h(
+            'div',
+            { class: 'gb-money-today-fig' },
+            h('span', { class: 'gb-money-today-num' }, figure),
+            h('span', { class: 'gb-money-today-label' }, label)
+          ),
+          h('div', { class: 'gb-money-today-meta' }, meta)
         ),
-        h('div', { class: 'gb-money-hero-say' }, buddyLine()),
         h(
           'div',
           { class: 'gb-money-hero-actions' },
           h(
             'button',
-            {
-              type: 'button',
-              class: 'gb-btn gb-btn--primary gb-btn--compact',
-              onclick: () => openAddExpense(),
-            },
+            { type: 'button', class: 'gb-btn gb-btn--primary gb-btn--compact', onclick: () => openAddExpense() },
             Icon('plus', { size: 15, sw: 2.6 }),
             'Add expense'
           ),
           h(
             'button',
-            {
-              type: 'button',
-              class: 'gb-btn gb-btn--secondary gb-btn--compact',
-              onclick: openPurchaseAdvisor,
-            },
+            { type: 'button', class: 'gb-btn gb-btn--secondary gb-btn--compact', onclick: openPurchaseAdvisor },
             Icon('sparkles', { size: 15, sw: 2.2 }),
             'Should I buy this?'
           )
         )
       ),
-      heroFig
+      monthTape({ byDay, hasBudget, totalBudget, dim, dayNum, prefix, today }),
+      h('p', { class: 'gb-money-today-say' }, buddyLine())
     );
     // Overview stays a glance: where you stand, your health, where the money
     // goes, and where the month is heading. Spending/Coach own the detail.
-    return [hero, healthCard(), donutCard(), forecastCard()];
+    return [
+      hero,
+      accountsCard(),
+      healthCard(),
+      ...budgetsSection(),
+      ...goalsSection(),
+      donutCard(),
+      forecastCard(),
+    ];
   }
 
   function donutCard() {
@@ -3254,66 +4270,122 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice }) {
     return `Set a budget or two and I can help you stay on track, gently.`;
   }
 
+  const TEXT_TONE = {
+    'var(--success)': 'var(--success-soft-fg)',
+    'var(--warning)': 'var(--warning-soft-fg)',
+    'var(--brand)': 'var(--brand-soft-fg)',
+  };
   function healthCard() {
     const hs = financialHealth(money);
     const color =
       hs.score >= 70 ? 'var(--success)' : hs.score >= 45 ? 'var(--warning)' : 'var(--brand)';
+    const FIX = {
+      budgets: { label: 'Set budgets', icon: 'target', run: openSetBudgets },
+      goal: { label: 'Create a goal', icon: 'sprout', run: () => openAddGoal(false) },
+      log: { label: 'Add expense', icon: 'plus', run: () => openAddExpense() },
+    };
+    // Two parts can share one fix (no goals zeroes both goal parts): one button each.
+    const fixes = [...new Set(hs.parts.map((p) => p.fix).filter(Boolean))];
+    const verdict =
+      hs.score >= 70
+        ? 'In great shape.'
+        : hs.score >= 45
+          ? 'Steady, with room to grow.'
+          : hs.score > 0
+            ? 'A good start.'
+            : 'Nothing scored yet.';
+    const firstOf = new Set();
     return Card({
       className: 'gb-money-card',
       children: [
-        h('div', { class: 'gb-sectiontitle' }, h('h3', null, 'Financial health')),
         h(
           'div',
-          { class: 'gb-money-health' },
+          { class: 'gb-money-health-head' },
           ProgressRing({
             value: hs.score,
-            size: 96,
-            stroke: 11,
+            size: 84,
+            stroke: 9,
             color,
             children: [
-              h('div', { class: 'gb-money-health-score', style: { color } }, String(hs.score)),
+              // The ring takes the colour; the number takes its darker text tone, so
+              // a 22px figure clears 3:1 (raw coral on white is 2.8:1).
+              h(
+                'div',
+                { class: 'gb-money-health-score', style: { color: TEXT_TONE[color] || color } },
+                String(hs.score)
+              ),
               h('div', { class: 'gb-money-ring-lbl' }, '/ 100'),
             ],
           }),
           h(
             'div',
-            { class: 'gb-money-health-parts' },
-            hs.parts.map((p) =>
-              h(
-                'div',
-                { class: 'gb-money-health-part' },
-                h(
-                  'div',
-                  { class: 'gb-money-health-part-top' },
-                  h('span', null, p.label),
-                  h('span', { class: 'gb-money-health-part-val' }, p.score + '/' + p.max)
-                ),
-                h(
-                  'div',
-                  { class: 'gb-money-health-track' },
-                  h('div', {
-                    class: 'gb-money-health-fill',
-                    style: { width: Math.round((p.score / p.max) * 100) + '%' },
-                  })
-                ),
-                h('div', { class: 'gb-money-health-note' }, p.note)
-              )
+            null,
+            h('h3', { class: 'gb-money-health-title' }, 'Financial health'),
+            h(
+              'p',
+              { class: 'gb-money-health-verdict' },
+              verdict +
+                (fixes.length
+                  ? ' ' +
+                    fixes.length +
+                    (fixes.length === 1 ? ' step' : ' steps') +
+                    ' below will raise it.'
+                  : '')
             )
           )
         ),
-        coachCard(
-          'lightbulb',
-          'How to improve',
-          h(
-            'p',
-            { class: 'gb-money-coach-text' },
-            // With nothing scored yet, "strongest area" is meaningless — give a
-            // clear first step instead.
-            hs.strongest.score === 0
-              ? 'Log your first expense and set a budget — your score builds from there.'
-              : `Your strongest area is ${hs.strongest.label.toLowerCase()}. To lift your score, focus on ${hs.weakest.label.toLowerCase()} — ${hs.weakest.note.toLowerCase()}.`
-          )
+        h(
+          'div',
+          { class: 'gb-money-health-parts' },
+          hs.parts.map((p) => {
+            const fix = p.fix && !firstOf.has(p.fix) ? FIX[p.fix] : null;
+            if (p.fix) firstOf.add(p.fix);
+            return h(
+              'div',
+              { class: 'gb-money-health-part' + (p.score === 0 ? ' is-empty' : '') },
+              h(
+                'div',
+                { class: 'gb-money-health-part-top' },
+                h('span', null, p.label),
+                h('span', { class: 'gb-money-health-part-val' }, p.score + ' / ' + p.max)
+              ),
+              h(
+                'div',
+                { class: 'gb-money-health-track' },
+                h('div', {
+                  class: 'gb-money-health-fill',
+                  style: { width: Math.round((p.score / p.max) * 100) + '%' },
+                })
+              ),
+              h(
+                'div',
+                { class: 'gb-money-health-foot' },
+                h('span', { class: 'gb-money-health-note' }, p.note),
+                fix
+                  ? h(
+                      'button',
+                      { type: 'button', class: 'gb-money-health-fix', onclick: fix.run },
+                      Icon(fix.icon, { size: 13, sw: 2.4 }),
+                      fix.label
+                    )
+                  : null
+              )
+            );
+          })
         ),
+        // Once nothing is at zero, the buttons are gone; the one tip left is the
+        // weakest area, so the card still ends on a next step.
+        fixes.length
+          ? null
+          : coachCard(
+              'lightbulb',
+              'Next step',
+              h(
+                'p',
+                { class: 'gb-money-coach-text' },
+                `Your weakest area is ${hs.weakest.label.toLowerCase()}: ${hs.weakest.note.toLowerCase()}.`
+              )
+            ),
       ],
     });
   }
@@ -3636,7 +4708,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice }) {
             onclick: () => logNoSpendDay(money, save),
           },
           Icon('circle-check', { size: 15, sw: 2.4 }),
-          noSpendToday ? 'No-spend day logged' : 'Log a no-spend day'
+          noSpendToday ? 'Logged: no spend' : 'No-spend day'
         );
       })()
     );
@@ -3644,7 +4716,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice }) {
     const searchInput = h('input', {
       type: 'search',
       class: 'gb-input',
-      placeholder: 'e.g. how much on food last month',
+      placeholder: 'e.g. what could I skip?',
       value: lastSearch,
     });
     const searchOut = h('div', { class: 'gb-money-search-out' });
@@ -3688,20 +4760,28 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice }) {
       ],
     });
 
+    const weekTotal = sumAmt(inRange(money.expenses, lastNDays(7)[0], todayKey()));
     const weekCard = Card({
       className: 'gb-money-card',
       children: [
+        h('div', { class: 'gb-sectiontitle' }, h('h3', null, 'Last 7 days')),
         h(
           'div',
-          { class: 'gb-sectiontitle' },
-          h('h3', null, 'Last 7 days'),
-          h(
-            'span',
-            { class: 'gb-money-week-total' },
-            fmt(sumAmt(inRange(money.expenses, lastNDays(7)[0], todayKey())))
-          )
+          { class: 'gb-money-week-total' },
+          fmt(weekTotal),
+          h('span', { class: 'gb-money-week-avg' }, 'spent · ' + fmt(weekTotal / 7) + ' a day on average')
         ),
-        weekBars(money.expenses),
+        weekBars(money.expenses, {
+          noSpendDays: money.noSpendDays,
+          selected: pickedDay,
+          onPick: (k) => {
+            pickedDay = pickedDay === k ? null : k;
+            paint();
+          },
+        }),
+        pickedDay
+          ? dayPanel(pickedDay)
+          : h('p', { class: 'gb-money-week-hint' }, 'Tap a day to see where it went.'),
       ],
     });
 
@@ -3815,8 +4895,15 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice }) {
         Icon(c.icon, { size: 15, sw: 2.2 })
       ),
       h(
-        'div',
-        { class: 'gb-money-exp-main' },
+        withDelete ? 'button' : 'div',
+        withDelete
+          ? {
+              type: 'button',
+              class: 'gb-money-exp-main gb-money-exp-edit',
+              'aria-label': 'Edit ' + (e.note || c.label) + ', ' + fmt(e.amount),
+              onclick: () => openEditExpense(e),
+            }
+          : { class: 'gb-money-exp-main' },
         h(
           'div',
           { class: 'gb-money-exp-note' },
@@ -3832,7 +4919,13 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice }) {
               )
             : null
         ),
-        h('div', { class: 'gb-money-exp-meta' }, c.label + ' · ' + fmtDateShort(e.date))
+        h(
+          'div',
+          { class: 'gb-money-exp-meta' },
+          [c.label, fmtDateShort(e.date), (accountOf(money, e.accountId) || {}).name, e.why]
+            .filter(Boolean)
+            .join(' · ')
+        )
       ),
       h('div', { class: 'gb-money-exp-amt' }, fmt(e.amount)),
       withDelete
@@ -3899,11 +4992,43 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice }) {
                   (u.inDays === 0
                     ? 'today'
                     : 'in ' + u.inDays + ' day' + (u.inDays === 1 ? '' : 's')),
-                h(
-                  'p',
-                  { class: 'gb-money-coach-text' },
-                  fmt(u.sub.amount) + ' · day ' + u.due + ' of the month.'
-                ),
+                [
+                  h(
+                    'p',
+                    { class: 'gb-money-coach-text' },
+                    fmt(u.sub.amount) + ' · day ' + u.due + ' of the month.'
+                  ),
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      class: 'gb-btn gb-btn--soft gb-btn--compact',
+                      onclick: () => {
+                        commit((m) => {
+                          const sub = m.subscriptions.find((x) => x.id === u.sub.id);
+                          if (!sub || (sub.paidFor || '') >= u.month) return;
+                          sub.paidFor = u.month;
+                          // Same id the WhatsApp button uses, so a tap on both logs one expense.
+                          // Same account rule as the WhatsApp button: a bill is paid
+                          // from the bank unless the subscription says otherwise.
+                          const accountId = sub.accountId || firstOfKind(m, ['bank', 'card']);
+                          m.expenses.unshift({
+                            id: 'sub-' + sub.id + '-' + u.month,
+                            amount: sub.amount,
+                            category: sub.category || 'others',
+                            note: sub.name,
+                            date: todayKey(),
+                            createdAt: Date.now(),
+                            ...(accountId ? { accountId } : {}),
+                          });
+                        });
+                        toast.success(u.sub.name + ' marked as paid.');
+                      },
+                    },
+                    Icon('check', { size: 14, sw: 2.6 }),
+                    'Mark as paid'
+                  ),
+                ],
                 'warn'
               )
             )
@@ -3967,38 +5092,40 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice }) {
   /* =================================================================
      TAB: BUDGETS
      ================================================================= */
-  function tabBudgets() {
+  /* Budgets and goals live on Overview, right under the health score that tells
+     you to set them: as their own tabs, "Set budgets to score this" pointed at a
+     screen you had to go and find. One card each, so the page stays scannable. */
+  function budgetsSection() {
     const st = budgetStatus(money);
     const anySet = st.some((s) => s.budget > 0);
-    const head = Card({
-      className: 'gb-money-card',
-      children: [
+    // Empty, it only repeats the health card's "Set budgets" as a tall blank card.
+    if (!anySet) return [];
+    const headKids = [
+      h(
+        'div',
+        { class: 'gb-sectiontitle' },
+        h('h3', null, 'Monthly budgets'),
         h(
           'div',
-          { class: 'gb-sectiontitle' },
-          h('h3', null, 'Monthly budgets'),
+          { class: 'gb-money-head-actions' },
           h(
-            'div',
-            { class: 'gb-money-head-actions' },
-            h(
-              'button',
-              {
-                type: 'button',
-                class: 'gb-btn gb-btn--soft gb-btn--compact',
-                onclick: openSetBudgets,
-              },
-              Icon('pencil', { size: 14, sw: 2.4 }),
-              anySet ? 'Edit' : 'Set up'
-            )
+            'button',
+            {
+              type: 'button',
+              class: 'gb-btn gb-btn--soft gb-btn--compact',
+              onclick: openSetBudgets,
+            },
+            Icon('pencil', { size: 14, sw: 2.4 }),
+            anySet ? 'Edit' : 'Set up'
           )
-        ),
-        h(
-          'div',
-          { class: 'gb-money-intro' },
-          "Gentle limits, not hard rules. I'll nudge you near 80% — never to make you feel bad."
-        ),
-      ],
-    });
+        )
+      ),
+      h(
+        'div',
+        { class: 'gb-money-intro' },
+        "Gentle limits, not hard rules. I'll nudge you near 80% — never to make you feel bad."
+      ),
+    ];
     const reminders = st
       .filter((s) => s.budget > 0 && s.pct >= 80)
       .map((s) =>
@@ -4071,85 +5198,74 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice }) {
     const totalBudget = st.reduce((a, s) => a + s.budget, 0);
     const totalSpent = st.reduce((a, s) => a + s.spent, 0);
     const summary = anySet
-      ? Card({
-          className: 'gb-money-card',
-          children: [
-            h(
-              'div',
-              { class: 'gb-money-bsummary' },
-              stat('Total budget', fmt(totalBudget)),
-              stat('Spent', fmt(totalSpent)),
-              stat('Remaining', fmt(Math.max(0, totalBudget - totalSpent)))
-            ),
-          ],
-        })
+      ? h(
+          'div',
+          { class: 'gb-money-bsummary' },
+          stat('Total budget', fmt(totalBudget)),
+          stat('Spent', fmt(totalSpent)),
+          stat('Remaining', fmt(Math.max(0, totalBudget - totalSpent)))
+        )
       : null;
     return [
-      head,
-      ...reminders,
-      recoveryCard(),
       Card({
         className: 'gb-money-card',
-        children: [h('div', { class: 'gb-money-bcards' }, bars)],
+        children: [...headKids, summary, h('div', { class: 'gb-money-bcards' }, bars)],
       }),
-      summary,
+      ...reminders,
+      recoveryCard(),
     ];
   }
 
-  /* =================================================================
-     TAB: GOALS
-     ================================================================= */
-  function tabGoals() {
-    const head = Card({
-      className: 'gb-money-card',
-      children: [
+  function goalsSection() {
+    // Same as budgets: the health card's "Create a goal" is the way in.
+    if (!money.goals.length) return [];
+    const headKids = [
+      h(
+        'div',
+        { class: 'gb-sectiontitle' },
+        h('h3', null, 'Savings goals'),
         h(
           'div',
-          { class: 'gb-sectiontitle' },
-          h('h3', null, 'Savings goals'),
+          { class: 'gb-money-head-actions' },
           h(
-            'div',
-            { class: 'gb-money-head-actions' },
-            h(
-              'button',
-              {
-                type: 'button',
-                class: 'gb-btn gb-btn--ghost gb-btn--compact',
-                onclick: openSimulator,
-              },
-              Icon('trending-up', { size: 14, sw: 2.2 }),
-              'Plan savings'
-            ),
-            h(
-              'button',
-              {
-                type: 'button',
-                class: 'gb-btn gb-btn--soft gb-btn--compact',
-                onclick: () => openAddGoal(false),
-              },
-              Icon('plus', { size: 14, sw: 2.6 }),
-              'New goal'
-            )
+            'button',
+            {
+              type: 'button',
+              class: 'gb-btn gb-btn--ghost gb-btn--compact',
+              onclick: openSimulator,
+            },
+            Icon('trending-up', { size: 14, sw: 2.2 }),
+            'Plan savings'
+          ),
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-btn gb-btn--soft gb-btn--compact',
+              onclick: () => openAddGoal(false),
+            },
+            Icon('plus', { size: 14, sw: 2.6 }),
+            'New goal'
           )
-        ),
-        h(
-          'div',
-          { class: 'gb-money-intro' },
-          "Set money aside on purpose. I'll suggest a pace and estimate when you'll get there."
-        ),
-        h(
-          'button',
-          {
-            type: 'button',
-            class: 'gb-btn gb-btn--secondary gb-btn--compact',
-            style: { width: 'auto' },
-            onclick: () => openAddGoal(true),
-          },
-          Icon('calendar', { size: 14, sw: 2.2 }),
-          'Plan a purchase'
-        ),
-      ],
-    });
+        )
+      ),
+      h(
+        'div',
+        { class: 'gb-money-intro' },
+        "Set money aside on purpose. I'll suggest a pace and estimate when you'll get there."
+      ),
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--secondary gb-btn--compact',
+          style: { width: 'auto' },
+          onclick: () => openAddGoal(true),
+        },
+        Icon('calendar', { size: 14, sw: 2.2 }),
+        'Plan a purchase'
+      ),
+    ];
     const goalCards = money.goals.length
       ? money.goals.map((g) => {
           const p = goalPlan(g);
@@ -4233,12 +5349,10 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice }) {
           ),
         ];
     return [
-      head,
       Card({
         className: 'gb-money-card',
-        children: [h('div', { class: 'gb-money-goals' }, goalCards)],
+        children: [...headKids, h('div', { class: 'gb-money-goals' }, goalCards)],
       }),
-      wishlistCard(),
     ];
   }
 
@@ -4354,6 +5468,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice }) {
       ],
       'salary'
     );
+    const into = accountPicker(money, firstOfKind(money, ['bank', 'wallet']));
     openMoneyModal({
       title: 'Add income',
       sub: 'Salary, freelance, a gift — anything that came in.',
@@ -4364,6 +5479,8 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice }) {
         amt,
         h('div', { class: 'gb-field-label' }, 'Type'),
         src.node,
+        into.node ? h('div', { class: 'gb-field-label' }, 'Received in') : null,
+        into.node,
         h('div', { class: 'gb-field-label' }, 'Note (optional)'),
         label,
         h('div', { class: 'gb-field-label' }, 'Date'),
@@ -4384,6 +5501,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice }) {
             source,
             label: label.value.trim() || (source === 'salary' ? 'Salary' : 'Income'),
             date: date.value || todayKey(),
+            ...(into.get() ? { accountId: into.get() } : {}),
           })
         );
         toast.success('Income added.');
@@ -4448,6 +5566,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice }) {
     setTimeout(() => amt.focus(), 60);
   }
 
+  let showAllIncome = false;
   function tabIncome() {
     const mStart = thisMonthPrefix() + '-01';
     const today = todayKey();
@@ -4457,31 +5576,61 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice }) {
     const lentOut = loanOutstanding(money, 'given');
     const borrowed = loanOutstanding(money, 'received');
 
+    // One bar reads faster than four equal tiles: of what came in, how much was
+    // spent and how much stayed. "Lent out" lives in the Loans card below.
+    const spentPct = incomeMonth > 0 ? Math.min(100, Math.round((spentMonth / incomeMonth) * 100)) : 0;
     const summary = Card({
       className: 'gb-money-card',
       children: [
         h('div', { class: 'gb-sectiontitle' }, h('h3', null, 'This month')),
-        h(
-          'div',
-          { class: 'gb-money-review-stats' },
-          stat('Income', fmt(incomeMonth)),
-          stat('Spent', fmt(spentMonth)),
-          stat('Net saved', fmt(net)),
-          stat('Lent out', fmt(lentOut))
-        ),
-        h(
-          'div',
-          { class: 'gb-money-intro' },
-          net >= 0
-            ? `You've kept ${fmt(net)} of what came in this month — money working for you.`
-            : `You've spent ${fmt(-net)} more than came in this month. Worth a gentle look.`
-        ),
+        incomeMonth > 0
+          ? h(
+              'div',
+              { class: 'gb-money-kept' },
+              h(
+                'div',
+                { class: 'gb-money-kept-fig' },
+                h('span', { class: 'gb-money-kept-num' + (net < 0 ? ' is-over' : '') }, fmt(Math.abs(net))),
+                h('span', { class: 'gb-money-kept-label' }, net >= 0 ? 'kept' : 'more spent than came in')
+              ),
+              h(
+                'div',
+                {
+                  class: 'gb-money-kept-bar',
+                  role: 'img',
+                  'aria-label': fmt(spentMonth) + ' spent of ' + fmt(incomeMonth) + ' that came in',
+                },
+                h('span', { class: 'gb-money-kept-spent', style: { width: spentPct + '%' } })
+              ),
+              h(
+                'div',
+                { class: 'gb-money-kept-key' },
+                h('span', null, fmt(spentMonth) + ' spent'),
+                h('span', null, fmt(incomeMonth) + ' came in')
+              )
+            )
+          : h(
+              'div',
+              { class: 'gb-money-review-stats' },
+              stat('Income', fmt(incomeMonth)),
+              stat('Spent', fmt(spentMonth))
+            ),
+        // The bar already says kept vs spent; the sentence is for the no-income case.
+        incomeMonth > 0
+          ? null
+          : h(
+              'div',
+              { class: 'gb-money-intro' },
+              spentMonth > 0
+                ? `No income logged this month yet. Add it to see what you're keeping.`
+                : 'Nothing in or out yet this month.'
+            ),
       ],
     });
 
-    const incomeList = (money.income || [])
-      .slice()
-      .sort((a, b) => (a.date < b.date ? 1 : -1));
+    const incomeAll = (money.income || []).slice().sort((a, b) => (a.date < b.date ? 1 : -1));
+    // Fourteen salary rows buried Loans; the latest six answer "did it come in?".
+    const incomeList = showAllIncome ? incomeAll : incomeAll.slice(0, 6);
     const incomeCard = Card({
       className: 'gb-money-card',
       children: [
@@ -4516,7 +5665,13 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice }) {
                     'div',
                     { class: 'gb-money-exp-main' },
                     h('div', { class: 'gb-money-exp-note' }, e.label),
-                    h('div', { class: 'gb-money-exp-meta' }, fmtDateShort(e.date))
+                    h(
+                      'div',
+                      { class: 'gb-money-exp-meta' },
+                      [fmtDateShort(e.date), (accountOf(money, e.accountId) || {}).name]
+                        .filter(Boolean)
+                        .join(' · ')
+                    )
                   ),
                   h(
                     'div',
@@ -4541,6 +5696,20 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice }) {
               )
             )
           : emptyHint('coins', 'No income logged yet. Add your salary or other inflow to see your net.'),
+        incomeAll.length > 6
+          ? h(
+              'button',
+              {
+                type: 'button',
+                class: 'gb-btn gb-btn--ghost gb-btn--compact gb-money-showall',
+                onclick: () => {
+                  showAllIncome = !showAllIncome;
+                  paint();
+                },
+              },
+              showAllIncome ? 'Show latest 6' : 'Show all ' + incomeAll.length
+            )
+          : null,
       ],
     });
 
@@ -4643,16 +5812,22 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice }) {
             )
           )
         ),
-        h(
-          'div',
-          { class: 'gb-money-bsummary' },
-          stat('Lent out', fmt(lentOut)),
-          stat('Borrowed', fmt(borrowed)),
-          stat('Net', fmt(borrowed - lentOut))
-        ),
+        loans.length
+          ? h(
+              'div',
+              { class: 'gb-money-bsummary' },
+              stat('Lent out', fmt(lentOut)),
+              stat('Borrowed', fmt(borrowed)),
+              stat('Net', fmt(borrowed - lentOut))
+            )
+          : null,
         loans.length
           ? h('div', { class: 'gb-money-exp-list' }, loans.map(loanRow))
-          : emptyHint('hand-helping', 'No loans tracked. Log money you lent or borrowed to keep it straight.'),
+          : h(
+              'p',
+              { class: 'gb-money-intro' },
+              'Lend a friend money or borrow some? Log it here so nobody has to remember.'
+            ),
       ],
     });
 
@@ -4832,6 +6007,8 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice }) {
 
     return [
       challengeCard,
+      // The wishlist is a buying decision, so it sits with the purchase advisor.
+      wishlistCard(),
       gamificationStrip(),
       timelineCard,
       insightCard(),
@@ -4847,8 +6024,6 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice }) {
     { key: 'overview', label: 'Overview', icon: 'wallet' },
     { key: 'spending', label: 'Spending', icon: 'receipt' },
     { key: 'income', label: 'Income', icon: 'coins' },
-    { key: 'budgets', label: 'Budgets', icon: 'target' },
-    { key: 'goals', label: 'Goals', icon: 'sprout' },
     { key: 'coach', label: 'Coach', icon: 'sparkles' },
   ];
   function tabBar() {
@@ -4884,13 +6059,9 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice }) {
         ? tabSpending()
         : activeTab === 'income'
           ? tabIncome()
-          : activeTab === 'budgets'
-            ? tabBudgets()
-          : activeTab === 'goals'
-            ? tabGoals()
-            : activeTab === 'coach'
-              ? tabCoach()
-              : tabOverview();
+          : activeTab === 'coach'
+            ? tabCoach()
+            : tabOverview();
     return h('div', { class: 'gb-money-tabpanel', role: 'tabpanel' }, nodes.filter(Boolean));
   }
   function paint() {
@@ -4998,4 +6169,4 @@ if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.DEV
   }
 }
 
-export { ScreenMoney, MoneyHomeCard };
+export { ScreenMoney, MoneyHomeCard, searchExpenses };

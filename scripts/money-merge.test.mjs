@@ -55,4 +55,16 @@ const doc = (over) => normalizeMoney({ expenses: [], income: [], budgets: {}, ..
   assert.equal(out.loans.length, 1, 'a collection only they had survives');
 }
 
+// "Mark as paid" is a field on an existing item, which theirs-wins would drop — the
+// later month survives from either side, and never rolls back.
+{
+  const sub = (paidFor) => ({ subscriptions: [{ id: 's1', name: 'Spotify', dueDay: 30, paidFor }] });
+  assert.equal(mergeMoney(doc(sub('2026-09')), doc(sub(undefined))).subscriptions[0].paidFor, '2026-09',
+    'paid here while the other device saved: still paid');
+  assert.equal(mergeMoney(doc(sub(undefined)), doc(sub('2026-09'))).subscriptions[0].paidFor, '2026-09',
+    'paid over WhatsApp, stale tab merges: still paid');
+  assert.equal(mergeMoney(doc(sub('2026-08')), doc(sub('2026-09'))).subscriptions[0].paidFor, '2026-09',
+    'an older local month never wins');
+}
+
 console.log('money-merge.test.mjs: all assertions passed');

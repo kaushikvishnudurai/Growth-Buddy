@@ -261,12 +261,26 @@ function Check({ done = false, onToggle, color } = {}) {
       'aria-pressed': String(!!done),
       'aria-label': done ? 'Mark as not done' : 'Mark as done',
       style: done && color ? { background: color, boxShadow: '0 2px 0 ' + color } : null,
+      // onToggle re-renders the whole app, which replaced this button on the
+      // tap's own frame — the press and the pop never got painted, so a tick
+      // on a phone looked like a jump cut. Paint here first, hand over after.
       onclick: () => {
-        if (!btn.classList.contains('is-done')) {
-          btn.classList.add('just-popped');
-          setTimeout(() => btn.classList.remove('just-popped'), 420);
-        }
-        onToggle && onToggle();
+        if (btn.dataset.pending) return; // a second tap mid-pop would un-tick
+        const ticking = !btn.classList.contains('is-done');
+        btn.classList.toggle('is-done', ticking);
+        if (ticking) btn.classList.add('just-popped');
+        btn.dataset.pending = '1';
+        setTimeout(
+          () => {
+            delete btn.dataset.pending;
+            btn.classList.remove('just-popped');
+            onToggle && onToggle();
+            // Still mounted → nothing re-rendered (a measured habit opened its
+            // dialog instead), so the local tick was a guess: take it back.
+            if (btn.isConnected) btn.classList.toggle('is-done', !ticking);
+          },
+          ticking ? 400 : 0
+        );
       },
     },
     Icon('check', { size: 17, sw: 3, color: '#fff' })

@@ -18,7 +18,8 @@ don't yet know which file you need. Files with their own doc are listed in
 - **Auth:** opaque bearer tokens; `CurrentUserInterceptor` resolves the user per request into a
   ThreadLocal (`CurrentUser`).
 - **Frontend-first bias:** wellness, mood, trends, insights and goal progress are computed and stored
-  client-side. The server holds what must sync. Money is one JSON blob per user.
+  client-side. The server holds what must sync. Money is a small JSON document per user (budgets,
+  goals, subscriptions…) plus a **ledger**: accounts and every expense / income / transfer as rows.
 - **Mobile:** `../Growth-Buddy-Mobile` is a Capacitor wrapper around this repo's build.
 - **Loading:** the boot chunk is Home only. Six screens (family, circle, timer, goals, report,
   mentor) and the realtime stack (sockjs + stompjs) are dynamic imports, kept out of the service
@@ -100,11 +101,19 @@ the OpenFoodFacts lookup and the AI call are all skipped, and `estimateSource` r
 per-100g figure is back-derived and clamped, because that column CHECKs 40..900 while the typed
 total does not.
 
-**Money is versioned, not last-write-wins.** `GET /api/money` returns an `ETag`; `PUT` sends it back
-as `If-Match` and is refused with **409** if someone else wrote first. The client then refetches,
-`mergeMoney` (in `money.js`, checked by `money-merge.test.mjs`) unions the two documents by item id,
-and it writes once more unconditionally. A phone and a laptop editing the same evening used to mean
-one of them silently lost its expenses. Deletions still lose to additions — see the `ponytail:` note.
+**Money is two stores behind one GET.** `GET /api/money` returns the stored document with the ledger
+merged in: `expenses` / `income` / `transfers` (last 400 days, `MoneyLedger.WINDOW_DAYS`) and live
+`accounts` balances. Saving splits again: `saveMoney` diffs before/after with `ledgerDiff` (pure,
+`money-ledger.test.mjs`) and sends only changed items to `POST /api/money/tx`; the rest goes to `PUT`
+only if it changed. Unconfirmed ledger writes wait in storage (`<money key>.pending`) and replay on the
+next launch. An invalid entry is refused by id, never the whole batch.
+The document part is still versioned: `PUT` sends `If-Match`, a stale one is **409**, the client
+merges (`mergeMoney`, `money-merge.test.mjs`, keeps the later `paidFor`) and writes once more. **The
+GET's ETag is `<version>-<hash of the whole response>`** — tagged with the version alone, a new expense
+(ledger changed, document not) got a 304 and every device kept its stale copy. `MoneyController.versionOf`
+strips the hash on save. Old documents move into the ledger lazily on first read (`MoneyService.migrate`;
+TiDB has no JSON_TABLE, so no SQL can), and an old app build that still PUTs expenses in the document
+has them upserted.
 
 **A "working days" reminder follows the user's week** (`WorkWeek` + `WORK_WEEKS` in
 `scripts/recurrence.js`): Mon–Fri, Sun–Thu or Mon–Sat, stored in the user's `ui_prefs` blob under
@@ -139,7 +148,8 @@ checks off.
 |---|---|
 | `/api/auth` | `signup`, `login`, `verify`, `resend-verification`, `forgot-password`, `reset-password`, `logout`, `me`, `sessions`, `sessions/{id}` DELETE, `change-password`, `delete-account`, `whatsapp` PUT |
 | `/api/users` | `search`, `browse` (public-ish lookup for Circle) |
-| `/api/money` | GET, PUT, `advice` POST |
+| `/api/money` | GET, PUT, `advice` POST, `tx` POST (ledger writes → balances), `accounts` POST, `accounts/{id}` PUT/DELETE, `day-summary?date=` GET |
+| `/api/whatsapp/webhook` | GET (Meta handshake), POST (anonymous, HMAC-signed — the "Mark as paid" tap → `MoneyService.markSubscriptionPaid`) |
 | `/api/habits` | CRUD, `{id}/checkin`, `{id}/toggle`, `freeze`, `{id}/protect`, `{id}/unprotect` |
 | `/api/tasks` | CRUD, `{id}/toggle`, `{id}/history` |
 | `/api/goals` | CRUD, `{id}/toggle`, `{id}/progress`, `{id}/actions` (+ per-action PUT/DELETE) |
@@ -229,10 +239,15 @@ checks off.
   ghost is undiscoverable the moment it exists rather than only after the nightly sweep.
 - `user/ProgressService` (47), `wellness/WellnessService` (99), `water/WaterService` (87),
   `task/TaskService` (132), `goal/GoalService` (151), `focus/FocusService` (81),
-  `money/MoneyService` (97 — 512 kB blob cap + the purchase advisor).
+  `money/MoneyService` (document part, migration, ledger writes, purchase advisor). `MoneyLedger` (JdbcTemplate:
+  accounts + balances computed, never stored; batched upserts keyed on the client's id). `MoneyDaySummary`
+  (a tapped day: facts always, AI paragraph cached in `money_day_summaries`, dropped when that day changes,
+  purged after 7 days; the prompt forbids numbers so it can't contradict the chips beside it). `SubscriptionDueScheduler` WhatsApps a
+  "due today" message with a Mark-as-paid button from 09:00 local on a subscription's due day (de-duped in
+  `reminder_dispatch_log` under a name-derived UUID); `WhatsAppWebhookController` takes the tap.
 
 ### Entities worth knowing
-`MoneyState` (one JSON doc per user, deliberately not normalized — see its `ponytail:` note),
+`MoneyState` (the small per-user Money document; expenses/income/transfers live in `money_transactions`),
 `HabitCheckin` (composite PK habit_id+log_date), `HabitStreak` (cache, recomputed per check-in),
 `StreakFreezeWallet` (1 token/ISO week, cap 2), `DailyLog` (one row per user+day),
 `FamilyMember` (may be unmapped — a profile with no account), `FocusSession` and

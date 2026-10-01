@@ -23,7 +23,7 @@ Every screen builds DOM from these. Element-returning factories, no framework, n
 | `Card({children, style, className, onClick})` | 174 | **has no padding of its own** — content insets itself |
 | `SectionTitle({title, action, onAction})` | 185 | |
 | `ProgressRing({value, size, stroke, color, children})` | 195 | SVG ring; children go in the middle |
-| `Check({done, onToggle, color})` | 254 | habit/task toggle |
+| `Check({done, onToggle, color})` | 254 | habit/task toggle. Paints the tick + pop itself and calls `onToggle` 400ms later (= `gb-pop`), since `onToggle` re-renders and would destroy the button mid-press |
 | `Avatar({...})` | 277 | |
 | `BottomNav({active, onNav, onMore, features, moreOpen, layout})` | 414 | |
 | `moreSections(overflow, active, onNav)` | 389 | Body of the "More" sheet: ungrouped items first, then one headed grid per `NAV_GROUPS` entry that still has members. Preserves the user's own order within a group. |
