@@ -961,10 +961,15 @@ function loadStreakFreeze() {
   return emptyStreakFreeze();
 }
 
-/* Sync the token balance from the latest habits payload (each habit echoes it). */
-function reconcileStreakFreeze() {
-  const h = (state.habits || []).find((x) => typeof x.freezeTokens === 'number');
-  if (h) state.freezeTokens = h.freezeTokens;
+/* Sync the token balance from the latest habits payload (each habit echoes it).
+   After a single-habit write, pass that habit: only it carries the fresh balance.
+   Reading the first habit instead kept a sibling's stale count, so freezing a day
+   on the second habit still showed "1 freeze left" and the next tap was refused. */
+function reconcileStreakFreeze(fresh) {
+  const h = fresh || (state.habits || []).find((x) => typeof x.freezeTokens === 'number');
+  if (!h || typeof h.freezeTokens !== 'number') return;
+  state.freezeTokens = h.freezeTokens;
+  state.habits = (state.habits || []).map((x) => ({ ...x, freezeTokens: h.freezeTokens }));
 }
 
 function effectiveStreak(habit) {
@@ -1045,7 +1050,7 @@ async function protectStreak(habitId) {
       body: JSON.stringify({ date: yesterdayKey() }),
     });
     state.habits = state.habits.map((h) => (h.id === updated.id ? updated : h));
-    reconcileStreakFreeze();
+    reconcileStreakFreeze(updated);
     toastSuccess('Streak protected with a freeze.');
     render();
   } catch (err) {
@@ -1123,7 +1128,7 @@ async function openFreezeCalendar() {
       );
       state.habits = state.habits.map((x) => (x.id === updated.id ? updated : x));
       habit = updated;
-      reconcileStreakFreeze();
+      reconcileStreakFreeze(updated);
       toastSuccess(covered ? 'Freeze returned to your wallet.' : 'Day covered by a freeze.');
       render();
       await load();
@@ -1318,7 +1323,7 @@ async function toggleRestDay(habitId, makeRest) {
       body: JSON.stringify({ date: todayKey() }),
     });
     state.habits = state.habits.map((h) => (h.id === updated.id ? updated : h));
-    reconcileStreakFreeze();
+    reconcileStreakFreeze(updated);
     toastSuccess(makeRest ? 'Rest day set — your streak holds.' : 'Rest day removed.');
     render();
   } catch (err) {
@@ -2067,7 +2072,7 @@ function openMeasuredCheckin(habit) {
         body: JSON.stringify({ done: true, value, durationMin: mins }),
       });
       state.habits = state.habits.map((x) => (x.id === updated.id ? updated : x));
-      reconcileStreakFreeze();
+      reconcileStreakFreeze(updated);
       buddyReact('yes');
       await refreshScore();
       await refreshCurrentUser();
@@ -2088,7 +2093,7 @@ async function plainToggleHabit(id) {
     });
     const painted = toggleSignature();
     state.habits = state.habits.map((h) => (h.id === updated.id ? updated : h));
-    reconcileStreakFreeze();
+    reconcileStreakFreeze(updated);
     const todayScore = await api('/api/score/today');
     state.score = todayScore && typeof todayScore.score === 'number' ? todayScore.score : score();
     await refreshCurrentUser();
