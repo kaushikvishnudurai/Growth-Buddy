@@ -56,6 +56,7 @@ const ALLOWED = {
   CODE: [],
   PRE: [],
   A: ['href'],
+  IMG: ['src', 'alt'],
 };
 /* Elements with no text worth keeping: unwrapping a <script> would paste its
    source into the note, so these go entirely. */
@@ -79,6 +80,10 @@ const DROP = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'TEMPLATE'
    link dialog tests the same rule so a bad URL is refused while it can still be
    corrected, rather than silently losing its href on save. */
 const SAFE_HREF = /^(https?:|mailto:|#|\/)/i;
+/* The only images a note may carry: raster data the editor embedded itself.
+   A remote src is a tracking pixel that phones home every time the note is
+   painted, and data:image/svg+xml is a document, not a picture. */
+const SAFE_IMG = /^data:image\/(png|jpe?g|webp|gif);base64,[a-z0-9+/]+=*$/i;
 
 function sanitize(html) {
   if (!html) return '';
@@ -105,6 +110,11 @@ function sanitize(html) {
         const keep = ALLOWED[tag].includes(attr.name.toLowerCase());
         if (!keep) child.removeAttribute(attr.name);
       });
+      // An image has no text to keep, so a refused one goes entirely.
+      if (tag === 'IMG' && !SAFE_IMG.test(child.getAttribute('src') || '')) {
+        child.remove();
+        return;
+      }
       if (tag === 'A') {
         const href = (child.getAttribute('href') || '').trim();
         if (!SAFE_HREF.test(href)) {
@@ -157,6 +167,54 @@ const TOOLS = [
   { cmd: 'createLink', icon: 'link', label: 'Link', prompt: 'Link to…' },
 ];
 
+/* Same ceiling as NoteService.MAX_BODY. Checked as each photo goes in, so the
+   refusal lands on the photo that would not fit rather than on Save. */
+const NOTE_MAX = 2_000_000;
+/* Long edge of an embedded photo. A phone photo is 4000px and 3-5 MB; at
+   1280px JPEG it is 150-250 kB of base64 and still sharp at any size a note
+   shows it, so a note holds about eight. */
+const PHOTO_SIDE = 1280;
+
+/** An image file as a downscaled JPEG data URL. */
+function shrinkPhoto(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, PHOTO_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+      const ctx = canvas.getContext('2d');
+      // JPEG has no alpha: a transparent screenshot would otherwise turn black.
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', 0.82));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('That photo could not be read. Try a JPEG or PNG.'));
+    };
+    img.src = url;
+  });
+}
+
+const imageFiles = (list) => Array.from(list || []).filter((f) => f && /^image\//.test(f.type));
+/* A clipboard's photos. Older Safari leaves `files` empty on paste and only
+   lists them under `items`, so fall back to those. */
+const clipboardPhotos = (cd) => {
+  if (!cd) return [];
+  const files = imageFiles(cd.files);
+  if (files.length) return files;
+  return imageFiles(
+    Array.from(cd.items || [])
+      .filter((it) => it.kind === 'file')
+      .map((it) => it.getAsFile())
+  );
+};
+
 /**
  * A contenteditable with a toolbar.
  *
@@ -179,7 +237,19 @@ function richEditor({ html, placeholder, onInput } = {}) {
   area.innerHTML = sanitize(html || '');
 
   const buttons = [];
+  /* Where the caret last was inside the editor. The photo picker takes focus
+     away (a file dialog, on a phone a whole camera app), and the photo should
+     land where the user was writing, not at the top. */
+  let lastRange = null;
   function syncState() {
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount && area.contains(sel.getRangeAt(0).startContainer)) {
+      lastRange = sel.getRangeAt(0).cloneRange();
+    }
+    // The caret moved on (arrow, End, typing): the photo is no longer picked.
+    if (sel && sel.isCollapsed) {
+      area.querySelectorAll('img.is-picked').forEach((img) => img.classList.remove('is-picked'));
+    }
     buttons.forEach(({ btn, tool }) => {
       let on = false;
       try {
@@ -275,6 +345,80 @@ function richEditor({ html, placeholder, onInput } = {}) {
     bar.appendChild(btn);
   });
 
+  /* ---- photos: pasted, dropped or picked, all through addPhotos ---- */
+  async function addPhotos(files) {
+    for (const file of files) {
+      let src;
+      try {
+        src = await shrinkPhoto(file);
+      } catch (err) {
+        toast.error(err, 'That photo could not be read.');
+        continue;
+      }
+      if (area.innerHTML.length + src.length > NOTE_MAX) {
+        toast.error(null, 'This note is full. Remove a photo to add another.');
+        return;
+      }
+      /* Shrinking is async. If the sheet closed or the composer folded away in
+         the meantime, execCommand would write into whatever has focus now. */
+      if (!area.isConnected || !area.getClientRects().length) return;
+      area.focus();
+      const sel = window.getSelection();
+      if (lastRange && area.contains(lastRange.startContainer)) {
+        // Collapsed: a photo goes beside selected text, never over it.
+        const at = lastRange.cloneRange();
+        at.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(at);
+      } else if (!sel.rangeCount || !area.contains(sel.getRangeAt(0).startContainer)) {
+        const end = document.createRange();
+        end.selectNodeContents(area);
+        end.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(end);
+      }
+      document.execCommand('insertHTML', false, '<img src="' + src + '" alt="" class="is-new">');
+      area.querySelectorAll('img.is-new').forEach((img) => {
+        img.classList.replace('is-new', 'is-developing');
+        img.addEventListener('animationend', () => img.classList.remove('is-developing'), {
+          once: true,
+        });
+      });
+      syncState();
+      if (onInput) onInput();
+    }
+  }
+
+  const picker = h('input', {
+    type: 'file',
+    accept: 'image/*',
+    multiple: true,
+    hidden: true,
+    onchange: () => {
+      const files = imageFiles(picker.files);
+      picker.value = ''; // picking the same photo twice must fire again
+      addPhotos(files);
+    },
+  });
+  bar.append(
+    h('span', { class: 'gb-editor-sep', 'aria-hidden': 'true' }),
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'gb-editor-btn',
+        'aria-label': 'Add a photo',
+        title: 'Add a photo (or paste one)',
+        // click, not mousedown like the others: nothing applies to the
+        // selection here, lastRange already holds it, and click is what a
+        // keyboard Enter fires.
+        onclick: () => picker.click(),
+      },
+      Icon('image-plus', { size: 16, sw: 2.4 })
+    ),
+    picker
+  );
+
   // Semantic tags (<b>, <i>) rather than <span style>, so sanitize() keeps the
   // formatting instead of stripping the style attribute and losing it.
   try {
@@ -288,6 +432,9 @@ function richEditor({ html, placeholder, onInput } = {}) {
      asking CSS to recognise the shape — a selector can't tell "one <br>" from
      "text and a <br>", because :only-child counts elements and ignores text. */
   function normalize() {
+    // A note with a photo isn't empty, and reading innerHTML would serialise
+    // every photo's data URL on each keystroke.
+    if (area.querySelector('img')) return;
     if (/^\s*(<br\s*\/?>)?\s*$/i.test(area.innerHTML)) area.innerHTML = '';
   }
   normalize();
@@ -300,15 +447,75 @@ function richEditor({ html, placeholder, onInput } = {}) {
   });
   // Paste as the sanitiser sees it, so what lands is what gets saved.
   area.addEventListener('paste', (e) => {
+    /* Photos first. "Copy image" in a browser puts both the picture and an
+       <img src="https://..."> on the clipboard, and the HTML one would be
+       stripped to nothing by sanitize(). */
+    const photos = clipboardPhotos(e.clipboardData);
+    if (photos.length) {
+      e.preventDefault();
+      addPhotos(photos);
+      return;
+    }
     const html = e.clipboardData && e.clipboardData.getData('text/html');
     if (!html) return;
     e.preventDefault();
-    document.execCommand('insertHTML', false, sanitize(html));
+    /* Some apps put their pictures in the HTML itself as data URLs, full size
+       and unshrunk. sanitize() keeps those, so the cap is checked here too or
+       the note fails on Save with the cause long gone. */
+    const clean = sanitize(html);
+    if (area.innerHTML.length + clean.length > NOTE_MAX) {
+      toast.error(null, 'That is too big to paste into a note. Paste the photos one at a time.');
+      return;
+    }
+    document.execCommand('insertHTML', false, clean);
     if (onInput) onInput();
   });
 
+  /* Clicking a photo selects it whole, so Backspace removes it and the ring
+     says which one. The class is display-only: sanitize() strips it on read. */
+  area.addEventListener('click', (e) => {
+    area.querySelectorAll('img.is-picked').forEach((img) => img.classList.remove('is-picked'));
+    if (e.target.tagName !== 'IMG') return;
+    const r = document.createRange();
+    r.selectNode(e.target);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(r);
+    e.target.classList.add('is-picked');
+  });
+
+  area.addEventListener('blur', () =>
+    area.querySelectorAll('img.is-picked').forEach((img) => img.classList.remove('is-picked'))
+  );
+
+  const wrap = h('div', { class: 'gb-editor-wrap' }, bar, area);
+  const dragsFiles = (e) => e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files');
+  wrap.addEventListener('dragover', (e) => {
+    if (!dragsFiles(e)) return;
+    e.preventDefault();
+    wrap.classList.add('is-dropping');
+  });
+  wrap.addEventListener('dragleave', (e) => {
+    if (!wrap.contains(e.relatedTarget)) wrap.classList.remove('is-dropping');
+  });
+  wrap.addEventListener('drop', (e) => {
+    wrap.classList.remove('is-dropping');
+    if (!dragsFiles(e)) return; // dragged text: the browser's own drop is right
+    // Always: a file the browser handles itself is a PDF opened over the app.
+    e.preventDefault();
+    const photos = imageFiles(e.dataTransfer.files);
+    if (!photos.length) {
+      toast.error(null, 'Only photos can go in a note.');
+      return;
+    }
+    // Land where it was dropped, where the browser can say where that is.
+    const at = document.caretRangeFromPoint && document.caretRangeFromPoint(e.clientX, e.clientY);
+    if (at && area.contains(at.startContainer)) lastRange = at;
+    addPhotos(photos);
+  });
+
   return {
-    node: h('div', { class: 'gb-editor-wrap' }, bar, area),
+    node: wrap,
     area,
     read: () => sanitize(area.innerHTML).trim(),
     focus: () => area.focus(),
@@ -473,7 +680,7 @@ function ScreenNotes({ onList, onCreate, onUpdate, onDelete, onMakeTask, onMakeR
   async function save() {
     const body = editor.read();
     const title = titleInput.value.trim();
-    if (!title && !textOf(body)) {
+    if (!title && !textOf(body) && !body.includes('<img')) {
       closeComposer();
       return;
     }
@@ -494,12 +701,23 @@ function ScreenNotes({ onList, onCreate, onUpdate, onDelete, onMakeTask, onMakeR
   function NoteCard(note) {
     const c = colorOf(note.color);
     const preview = textOf(note.body);
+    // Sanitised again on the way out: a note saved by an older build never
+    // went through the version of sanitize() running now.
+    const bodyEl = h('div', { class: 'gb-note-card-body' });
+    bodyEl.innerHTML = sanitize(note.body);
+    /* The first photo becomes the card's cover and the rest wait inside the
+       note: five photos stacked in a card is a scroll, not a preview. */
+    const photos = Array.from(bodyEl.querySelectorAll('img'));
+    photos.forEach((img) => img.remove());
     const card = h('article', {
-      class: 'gb-note-card' + (note.pinned ? ' is-pinned' : ''),
+      class:
+        'gb-note-card' + (note.pinned ? ' is-pinned' : '') + (photos.length ? ' has-cover' : ''),
       style: c ? { background: c.bg, borderColor: c.line } : null,
       tabindex: '0',
       role: 'button',
-      'aria-label': note.title || preview.slice(0, 60) || 'Untitled note',
+      'aria-label':
+        (note.title || preview.slice(0, 60) || (photos.length ? 'Photo note' : 'Untitled note')) +
+        (photos.length ? ', ' + photos.length + (photos.length === 1 ? ' photo' : ' photos') : ''),
       onclick: (e) => {
         if (e.target.closest('.gb-note-pin')) return;
         openNote(note);
@@ -525,14 +743,28 @@ function ScreenNotes({ onList, onCreate, onUpdate, onDelete, onMakeTask, onMakeR
         Icon(note.pinned ? 'pin-off' : 'pin', { size: 14, sw: 2.4 })
       )
     );
-    if (note.title) card.appendChild(h('h3', { class: 'gb-note-card-title' }, note.title));
-    if (note.body) {
-      // Sanitised again on the way out: a note saved by an older build never
-      // went through the version of sanitize() running now.
-      const bodyEl = h('div', { class: 'gb-note-card-body' });
-      bodyEl.innerHTML = sanitize(note.body);
-      card.appendChild(bodyEl);
+    if (photos.length) {
+      const cover = photos[0];
+      cover.setAttribute('loading', 'lazy');
+      cover.setAttribute('decoding', 'async');
+      card.appendChild(
+        h(
+          'div',
+          { class: 'gb-note-cover' },
+          cover,
+          photos.length > 1
+            ? h(
+                'span',
+                { class: 'gb-note-cover-count', 'aria-hidden': 'true' },
+                Icon('image-plus', { size: 12, sw: 2.6 }),
+                '+' + (photos.length - 1)
+              )
+            : null
+        )
+      );
     }
+    if (note.title) card.appendChild(h('h3', { class: 'gb-note-card-title' }, note.title));
+    if (preview) card.appendChild(bodyEl);
     card.appendChild(h('div', { class: 'gb-note-card-time' }, relativeTime(note.updatedAt)));
     return card;
   }
@@ -786,6 +1018,17 @@ function _demo() {
   a(sanitize('<marquee>hey</marquee>') === 'hey', 'unknown tag unwrapped, text kept');
   a(sanitize('<p class="x" style="color:red">p</p>') === '<p>p</p>', 'attributes stripped');
   a(sanitize('') === '' && sanitize(null) === '', 'empty is empty');
+  const jpeg = 'data:image/jpeg;base64,/9j/4AAQSkZJRg==';
+  a(
+    sanitize('<img src="' + jpeg + '" alt="">') === '<img src="' + jpeg + '" alt="">',
+    'photo kept'
+  );
+  a(
+    sanitize('<img src="' + jpeg + '" class="is-picked" width="9">') === '<img src="' + jpeg + '">',
+    'photo attributes stripped'
+  );
+  a(sanitize('<img src="https://t.example/p.gif">x') === 'x', 'remote image dropped');
+  a(sanitize('<img src="data:image/svg+xml;base64,PHN2Zz4=">') === '', 'svg image dropped');
   a(textOf('<p>a</p><p>b</p>') === 'a b', 'textOf flattens');
 }
 

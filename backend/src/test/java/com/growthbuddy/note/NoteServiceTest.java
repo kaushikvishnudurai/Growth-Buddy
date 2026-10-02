@@ -61,10 +61,10 @@ class NoteServiceTest {
     @Test
     void anAbsurdlyLongBodyIsRefusedRatherThanTruncated() {
         stored(null);
-        String huge = "x".repeat(70_000);
+        String huge = "x".repeat(2_100_000);
         assertThatThrownBy(() -> service.update(USER, ID, new UpdateNoteRequest(null, huge, null, null)))
                 .isInstanceOf(ApiException.class)
-                .hasMessageContaining("too long");
+                .hasMessageContaining("too big");
     }
 
     @Test

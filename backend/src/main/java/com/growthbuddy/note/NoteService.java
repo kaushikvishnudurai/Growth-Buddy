@@ -11,15 +11,16 @@ import org.springframework.transaction.annotation.Transactional;
 public class NoteService {
 
     /**
-     * Ceiling on a single note's HTML. Rich text is small — a long note is a few
-     * KB — so this is a runaway guard, not a limit anyone should meet: paste a
-     * whole page with images inlined as data URLs and the column (MEDIUMTEXT)
-     * would take it, the phone rendering the list would not.
+     * Ceiling on a single note's HTML. Text alone is a few KB; photos are
+     * embedded as data URLs (scripts/notes.js shrinks each to ~200 KB), so this
+     * holds about eight. Matches NOTE_MAX there, which refuses the photo that
+     * would not fit before Save ever runs. Well under TiDB's 6 MB row limit.
      *
-     * <p>ponytail: one number, no per-user quota. Add one when a user has
-     * enough notes for it to matter.
+     * <p>ponytail: photos live inside the body, so list() ships every photo of
+     * every note. Fine for a handful of photo notes; when the Notes screen gets
+     * slow, move them to their own table and send the list a thumbnail.
      */
-    private static final int MAX_BODY = 64_000;
+    private static final int MAX_BODY = 2_000_000;
 
     private final NoteRepository repo;
 
@@ -79,7 +80,7 @@ public class NoteService {
 
     private static String checkedBody(String body) {
         if (body != null && body.length() > MAX_BODY) {
-            throw ApiException.badRequest("That note is too long to save — try splitting it in two.");
+            throw ApiException.badRequest("That note is too big to save. Remove a photo or split it in two.");
         }
         return body;
     }

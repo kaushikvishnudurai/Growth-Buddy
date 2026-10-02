@@ -63,6 +63,7 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
 | 6997 | Bottom nav — "More" overflow sheet |
 | 7092 | Settings — Home screen customizer |
 | 7156 | Settings — Display (text size preview) |
+| 8489 | Notes — composer, editor (photos: develop-in animation, drop zone, picked ring), cards with a photo cover |
 
 ## Editing rules
 
