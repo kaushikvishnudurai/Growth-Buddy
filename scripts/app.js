@@ -21,6 +21,7 @@ import {
   formatTime,
   setTimeFormat,
   detectTimeFormat,
+  setThinking,
 } from './gb-kit.js';
 import {
   ScreenDashboard,
@@ -2986,12 +2987,16 @@ function openAddFood() {
       {
         type: 'button',
         class: 'gb-btn gb-btn--secondary gb-btn--compact',
-        onclick: async () => {
+        onclick: async (e) => {
+          // One estimate at a time: a second tap mid-call used to send the photo twice.
+          const done = setThinking(e.currentTarget, 'Looking at your plate');
           try {
             await estimateFromPhoto();
           } catch {
             const safeMsg = 'Could not analyze photo. Please enter manually.';
             toastError({ message: safeMsg }, safeMsg);
+          } finally {
+            done();
           }
         },
       },
@@ -4402,8 +4407,7 @@ function openProfileSettings(initialTab) {
       type: 'button',
       class: 'gb-btn gb-btn--secondary gb-profile-suggest-btn',
       onclick: async () => {
-        suggestBtn.disabled = true;
-        suggestBtn.textContent = 'Generating…';
+        const done = setThinking(suggestBtn, 'Working out your targets');
         try {
           // Send what's currently on screen so unsaved edits (allergy, about…) are honoured.
           const s = await getNutritionSuggestion({
@@ -4455,8 +4459,7 @@ function openProfileSettings(initialTab) {
             'Suggestion error'
           );
         } finally {
-          suggestBtn.disabled = false;
-          suggestBtn.textContent = 'Get AI nutrition suggestion';
+          done();
         }
       },
     },
@@ -5734,9 +5737,8 @@ function openAddSheet() {
   async function submitQuickAdd() {
     const text = qaInput.value.trim();
     if (!text) return;
-    qaBtn.disabled = true;
     qaInput.disabled = true;
-    qaBtn.textContent = 'Reading…';
+    const done = setThinking(qaBtn, 'Reading');
     try {
       const r = await parseQuickAdd(text);
       if (!r.configured) {
@@ -5746,18 +5748,16 @@ function openAddSheet() {
       }
       const rows = r.intents.map((it) => ({ it, d: describeIntent(it) })).filter((x) => x.d);
       if (!rows.length) {
-        qaBtn.disabled = false;
+        done();
         qaInput.disabled = false;
-        qaBtn.textContent = 'Log it';
         pushToast("Couldn't find anything to log there — try being more specific.", 'error', 3600);
         return;
       }
       close();
       openQuickAddPreview(rows, r.note);
     } catch (err) {
-      qaBtn.disabled = false;
+      done();
       qaInput.disabled = false;
-      qaBtn.textContent = 'Log it';
       toastError(err, 'Quick add failed. Try again?');
     }
   }
@@ -6870,15 +6870,7 @@ async function saveNavLayout(layout) {
 const SCREENS = {
   home: {
     headerLabel: () => todayLabel(),
-    // The wave is its own element so premium can drop it — the live seedling
-    // beside the greeting already does that job, and two mascots is one too many.
-    headerName: () =>
-      h(
-        'span',
-        null,
-        greetingFor(new Date().getHours()) + ', ' + firstName() + '\u00a0', // no-break: the wave never wraps onto a line alone
-        h('span', { class: 'gb-greet-wave' }, '👋')
-      ),
+    headerName: () => greetingFor(new Date().getHours()) + ', ' + firstName(),
     render: () =>
       ScreenDashboard({
         features: (state.user && state.user.features) || null,
@@ -7007,6 +6999,15 @@ const SCREENS = {
         onCheck: runDietCheck,
         onRetry: loadWeekSummary,
         onBack: () => setScreen('food'),
+        // A day on the Summary opens it in Calendar, where its meals are listed.
+        onOpenDay: (key) => {
+          const [y, m] = key.split('-').map(Number);
+          state.calYear = y;
+          state.calMonth = m - 1;
+          state.selectedDate = key;
+          setScreen('calendar');
+          loadCalendarFoodForDate(key);
+        },
       });
     },
   },
@@ -7368,6 +7369,14 @@ function bottomNav() {
    dumped you back on Members. Same for Money, Mentor and Circle, which also
    manage their own subtrees (see docs/scripts/app.js.md).
    Falls back to a full render before first paint, when the slots don't exist. */
+/* The header isn't rebuilt by repaintOverlays, so its two triggers are told
+   directly; render() calls it too, or a fresh header announced no state at all. */
+function syncHeaderExpanded() {
+  const head = document.querySelector('.gb-head');
+  head?.querySelector('.gb-bell')?.setAttribute('aria-expanded', String(!!state.notifOpen));
+  head?.querySelector('.gb-avatar')?.setAttribute('aria-expanded', String(!!state.profileOpen));
+}
+
 function repaintOverlays() {
   const notif = document.getElementById('gb-notif-slot');
   const profile = document.getElementById('gb-profile-slot');
@@ -7378,7 +7387,14 @@ function repaintOverlays() {
   }
   notif.replaceChildren(...[notificationDropdown()].filter(Boolean));
   profile.replaceChildren(...[profileDropdown()].filter(Boolean));
+  syncHeaderExpanded();
+  const wasInMore = !!document.activeElement?.closest('.gb-more-sheet');
   nav.replaceWith(bottomNav());
+  // The sheet is rebuilt, so focus is placed by hand: into it on open, back on
+  // its More button when it closes from inside (Escape, or a tap on an item
+  // that doesn't navigate away).
+  if (state.moreOpen) document.querySelector('.gb-more-sheet .gb-more-item')?.focus();
+  else if (wasInMore) document.querySelector('.gb-nav-tab--more')?.focus();
   paintBellBadge();
   refreshIcons();
   installOutsideClickToCloseHeaderPopovers();
@@ -8343,6 +8359,7 @@ function render() {
   refreshIcons();
   restoreScrollPosition(scrollSnapshot);
   renderedScreen = state.screen;
+  syncHeaderExpanded();
   installOutsideClickToCloseHeaderPopovers();
   // Any render can be the one where a badge crossed its threshold — check after
   // the DOM settles so the celebration layers over the fresh screen.
@@ -8365,7 +8382,8 @@ function installOutsideClickToCloseHeaderPopovers() {
     popoverCleanup();
     popoverCleanup = null;
   }
-  if (!state.notifOpen && !state.profileOpen) return;
+  // The More sheet too: it had a backdrop to tap but nothing for Escape.
+  if (!state.notifOpen && !state.profileOpen && !state.moreOpen) return;
   function cleanup() {
     document.removeEventListener('mousedown', onDocDown, true);
     document.removeEventListener('keydown', onKeyDown, true);
@@ -8375,10 +8393,15 @@ function installOutsideClickToCloseHeaderPopovers() {
     cleanup();
     state.notifOpen = false;
     state.profileOpen = false;
+    state.moreOpen = false;
     repaintOverlays();
   }
   function onDocDown(ev) {
-    const pop = ev.target.closest('.gb-notif-pop, .gb-profile-pop, .gb-bell, .gb-avatar');
+    // The nav owns its own taps (backdrop, More, a destination); closing on
+    // mousedown would rebuild it before the click landed.
+    const pop = ev.target.closest(
+      '.gb-notif-pop, .gb-profile-pop, .gb-bell, .gb-avatar, .gb-nav-wrap'
+    );
     if (pop) return; // click inside the popover or its trigger
     closePopovers();
   }

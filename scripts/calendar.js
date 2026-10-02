@@ -10,6 +10,7 @@ import {
   plural,
   refreshIcons,
   openOverlay,
+  confirmDialog,
   formatTime,
 } from './gb-kit.js';
 import {
@@ -568,12 +569,18 @@ function ReminderRow(rem, occKey, onDelete, whatsappEnabled, onEdit) {
     );
   }
 
-  function handleDelete() {
+  async function handleDelete() {
     if (rem.repeat && rem.repeat !== 'none') {
       openDeleteDialog(rem, occKey, onDelete);
-    } else {
-      onDelete('all', rem.id, occKey);
+      return;
     }
+    // A one-off went on a single tap, next to Edit, with no undo.
+    const ok = await confirmDialog({
+      title: 'Delete "' + rem.text + '"?',
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (ok) onDelete('all', rem.id, occKey);
   }
 
   const tagPill = h(
@@ -1135,7 +1142,10 @@ function ScreenCalendar({
       ),
       h(
         'div',
-        { class: 'gb-cal-block gb-cal-legend' },
+        // Says what it is: as a bare row of coloured labels it read as the tag
+        // filter, and people tapped it.
+        { class: 'gb-cal-block gb-cal-legend', role: 'note', 'aria-label': 'Dot colours' },
+        h('span', { class: 'gb-legend-title', 'aria-hidden': 'true' }, 'Dot colours'),
         TAG_ORDER.map((tag) =>
           h(
             'span',
@@ -1183,44 +1193,49 @@ function CalendarToolbar({ year, month, reminders, tasks, onPrevMonth, onNextMon
       'div',
       { class: 'gb-cal-monthbar' },
       h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-iconbtn',
-          'aria-label': 'Previous month',
-          onclick: onPrevMonth,
-        },
-        Icon('chevron-left', { size: 20 })
-      ),
-      h(
         'div',
-        { class: 'gb-cal-monthlabel' },
-        h('span', { class: 'm' }, MONTHS[month]),
-        h('span', { class: 'y' }, String(year))
+        { class: 'gb-cal-monthnav' },
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-iconbtn',
+            'aria-label': 'Previous month',
+            onclick: onPrevMonth,
+          },
+          Icon('chevron-left', { size: 20 })
+        ),
+        h(
+          'div',
+          { class: 'gb-cal-monthlabel' },
+          h('span', { class: 'm' }, MONTHS[month]),
+          h('span', { class: 'y' }, String(year))
+        ),
+        h(
+          'button',
+          { type: 'button', class: 'gb-iconbtn', 'aria-label': 'Next month', onclick: onNextMonth },
+          Icon('chevron-right', { size: 20 })
+        )
       ),
-      h(
-        'button',
-        { type: 'button', class: 'gb-iconbtn', 'aria-label': 'Next month', onclick: onNextMonth },
-        Icon('chevron-right', { size: 20 })
-      )
-    ),
-    h(
-      'div',
-      { class: 'gb-cal-toolbar-actions' },
-      monthCount
-        ? Pill({
-            icon: 'bell',
-            label: plural(monthCount, 'item') + ' this month',
-            bg: 'var(--brand-soft)',
-            fg: 'var(--brand-soft-fg)',
-          })
-        : null,
+      // Beside the month it jumps: on a phone it used to take a row of its own.
       h(
         'button',
         { type: 'button', class: 'gb-btn gb-btn--secondary gb-cal-today', onclick: onToday },
         'Today'
       )
-    )
+    ),
+    monthCount
+      ? h(
+          'div',
+          { class: 'gb-cal-toolbar-actions' },
+          Pill({
+            icon: 'bell',
+            label: plural(monthCount, 'item') + ' this month',
+            bg: 'var(--brand-soft)',
+            fg: 'var(--brand-soft-fg)',
+          })
+        )
+      : null
   );
 }
 

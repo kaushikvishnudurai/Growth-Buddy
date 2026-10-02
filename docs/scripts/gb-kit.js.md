@@ -21,7 +21,7 @@ Every screen builds DOM from these. Element-returning factories, no framework, n
 | `IconChip({domain, icon, size, iconSize})` | 147 | |
 | `Pill({icon, label, bg, fg, dot, style})` | 160 | |
 | `Card({children, style, className, onClick})` | 174 | **has no padding of its own** — content insets itself |
-| `SectionTitle({title, action, onAction})` | 185 | |
+| `SectionTitle({title, action, onAction})` | 186 | action is a `<button>` with `onAction`, plain text (a count) without |
 | `ProgressRing({value, size, stroke, color, children})` | 195 | SVG ring; children go in the middle |
 | `Check({done, onToggle, color})` | 254 | habit/task toggle. Paints the tick + pop itself and calls `onToggle` 400ms later (= `gb-pop`), since `onToggle` re-renders and would destroy the button mid-press |
 | `Avatar({...})` | 277 | |
@@ -39,6 +39,8 @@ Every screen builds DOM from these. Element-returning factories, no framework, n
 | `Logo({size, radius, alive})` | 537 | theme-aware inline SVG. `alive: true` returns the same mark as the header's live seedling — adds `.gb-sprout`, drops the img role, and leaves `display` to CSS (an inline value would leak it into the classic skin). |
 | `AppHeader({...})` | 602 | Three actions only — quick add, notifications, avatar. Theme and the premium skin were icon buttons here; they're preferences, not daily actions, and live in Settings → Display. Always renders `Logo({alive:true})` as its first child; CSS decides whether it shows, so the skin stays a stylesheet. |
 | `CrashCard(onRetry)` | 639 | render-error fallback |
+| `thinkingLabel(text)` / `setThinking(btn, text)` | 956 / 970 | **every AI wait's button.** `thinkingLabel` is the content (twinkling sparkle, text, three dots) for a button that also carries `.is-thinking`; `setThinking` does both to a live button and returns the undo. The button keeps its colour and gets a light running round its edge: a greyed button with new words read as broken |
+| `Thinking(label, steps)` | 982 | the panel that stands in for an AI answer: an orb, three steps shown in turn, lines writing in. **Always three steps** (the CSS gives each a third of a 7.5s cycle). `label` is the screen-reader text. While any `.is-thinking` / `.gb-thinking` is in the DOM, `body:has()` runs a bar along the top of the screen and glows its edge: no JS, no counter to leak |
 
 ## Notes
 

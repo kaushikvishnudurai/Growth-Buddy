@@ -39,14 +39,17 @@ it silently landed on Home. Don't reintroduce a second list.
   builds a brand-new screen — so toggling any of them threw away whatever state that screen owned.
   On Family that meant tapping the bell with Pantry open dumped you back on Members; Money, Mentor
   and Circle have the same exposure. `repaintOverlays()` swaps just `#gb-notif-slot`,
-  `#gb-profile-slot`, `.gb-nav-wrap` and the bell badge (`paintBellBadge`), and falls back to a full
+  `#gb-profile-slot`, `.gb-nav-wrap` and the bell badge (`paintBellBadge`), syncs the bell/avatar
+  `aria-expanded` (`syncHeaderExpanded`, which `render()` calls too), moves focus into the More sheet
+  on open and back to its button on close, and falls back to a full
   render before first paint. **Reading a notification is a popover-only change too** — the read-all
   link, `markNotificationRead` and the `refreshNotifications` poll all end in `repaintOverlays()`.
   They used to call `render()`, so "Mark all read" visibly reloaded whatever screen you were on.
 - **`installOutsideClickToCloseHeaderPopovers` tears down the previous listeners** via the
   module-level `popoverCleanup` before attaching new ones. Each call builds fresh closures, so
   without that a bell → avatar → bell sequence left orphaned `mousedown`/`keydown` listeners on
-  `document` for the rest of the session.
+  `document` for the rest of the session. It covers the bottom-nav More sheet as well (Escape
+  closes all three); mousedown inside `.gb-nav-wrap` is ignored, since the nav handles its own taps.
 - **Six screens are lazy: family, circle, timer, goals, report, mentor.** Each exported only its
   `Screen*` to app.js and nothing else imported it — ~151 KB of source a Home visitor never touches.
   `SCREENS[x].render()` must stay synchronous, so `lazyScreen(loader, build)` returns a skeleton now

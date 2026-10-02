@@ -440,12 +440,6 @@ html[data-premium='on'] .gb-head .gb-sprout[data-mood='no'] {
   }
 }
 
-/* Chanel's rule: take one thing off. The live seedling does what the waving
-   emoji was doing, and better — so the emoji goes. */
-html[data-premium='on'] .gb-greet-wave {
-  display: none;
-}
-
 /* ---------------------------------------------------------------------
    10. Toasts arrive instead of appearing
    The classic toast has no motion at all — it snaps into existence, which

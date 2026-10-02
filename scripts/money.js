@@ -7,7 +7,7 @@
    ponytail: heuristics, not an LLM. Real OCR / NL understanding would need
    a vision/LLM endpoint — marked at each spot below.
    ===================================================================== */
-import { h, Icon, Card, ProgressRing, refreshIcons, openModal } from './gb-kit.js';
+import { h, Icon, Card, ProgressRing, refreshIcons, openModal, Thinking } from './gb-kit.js';
 import { toast } from './toast.js';
 import { shareStoryCard, _demo as _shareCardDemo } from './share-card.js';
 
@@ -227,7 +227,8 @@ function lastNDays(n) {
 }
 function fmt(n) {
   const v = Math.round(Number(n) || 0);
-  return cur + v.toLocaleString('en-IN');
+  // Sign before the symbol, as a true minus: "₹-240" beside an account's "−₹240".
+  return (v < 0 ? '\u2212' : '') + cur + Math.abs(v).toLocaleString('en-IN');
 }
 /* The year appears only when it isn't this one: "1 Oct" twice in a list (this
    October and last) was two different salaries that read as one. */
@@ -3360,11 +3361,11 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
       // Upgrade to a real, tailored opinion when the AI is available; the
       // heuristic above stays as the instant + offline fallback.
       if (typeof requestAdvice !== 'function') return;
-      const loading = h(
-        'div',
-        { class: 'gb-money-advice-closer', style: { opacity: '0.7' } },
-        'Asking Buddy for a closer look…'
-      );
+      const loading = Thinking('Asking Buddy for a closer look', [
+        'Looking at your budget',
+        'Weighing the price against your goals',
+        'Writing a closer look',
+      ]);
       result.appendChild(loading);
       requestAdvice({
         item: item.value.trim(),
@@ -4015,7 +4016,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
           )
         : null,
       st.loading
-        ? h('p', { class: 'gb-money-day-text is-loading' }, 'Buddy is reading your day…')
+        ? Thinking('Buddy is reading your day', ['Reading your day', 'Sorting what you spent', 'Writing a note'])
         : st.error
           ? h(
               'p',
@@ -6081,6 +6082,8 @@ function _demo() {
   a(suggestCategory('Uber to office') === 'transport', 'suggest transport');
   a(suggestCategory('random xyz') === 'others', 'suggest others');
   a(suggestCategory('') === null, 'empty → null');
+  a(fmt(-240) === '\u2212' + cur + '240', 'fmt: minus before the symbol');
+  a(fmt(1200) === cur + '1,200', 'fmt: positives unchanged');
   const m = normalizeMoney({
     expenses: [
       { id: '1', amount: 100, category: 'food', date: todayKey() },

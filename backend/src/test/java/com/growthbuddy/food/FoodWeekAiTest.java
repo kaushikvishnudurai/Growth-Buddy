@@ -54,8 +54,9 @@ class FoodWeekAiTest {
         week.week(user);
         week.week(user);
         verify(openai, times(1)).complete(anyString(), anyList());
-        // The screen still has numbers: the keyword table's.
-        assertEquals(60, week.week(user).days().get(6).carbsG());
+        // The screen still has numbers: the keyword table's (60 g carbs, 362 kcal),
+        // scaled to the 400 kcal logged.
+        assertEquals(66, week.week(user).days().get(6).carbsG());
     }
 
     @Test

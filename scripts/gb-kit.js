@@ -188,7 +188,13 @@ function SectionTitle({ title, action, onAction } = {}) {
     'div',
     { class: 'gb-sectiontitle' },
     h('h3', null, title),
-    action ? h('a', { onclick: onAction, role: 'button', tabindex: '0' }, action) : null
+    // A real <button>: an href-less <a role=button> took focus but ignored Enter
+    // and Space. No handler means it is a count ("8 items"), not a control.
+    action
+      ? onAction
+        ? h('button', { type: 'button', class: 'gb-sectiontitle-act', onclick: onAction }, action)
+        : h('span', { class: 'gb-sectiontitle-act' }, action)
+      : null
   );
 }
 
@@ -408,7 +414,6 @@ function moreSections(overflow, active, onNav) {
       'button',
       {
         type: 'button',
-        role: 'menuitem',
         class: 'gb-more-item' + (active === i.id ? ' is-active' : ''),
         onclick: () => onNav && onNav(i.id),
       },
@@ -442,7 +447,6 @@ function BottomNav({ active, onNav, onMore, features, moreOpen, layout } = {}) {
         // aria-hidden — without this the whole nav is unnamed buttons.
         'aria-label': item.label,
         'aria-current': active === item.id ? 'page' : null,
-        'aria-haspopup': opts && opts.more ? 'true' : null,
         'aria-expanded': opts && opts.more ? (moreOpen ? 'true' : 'false') : null,
         onclick: () => (opts && opts.more ? onMore && onMore() : onNav && onNav(item.id)),
       },
@@ -489,7 +493,10 @@ function BottomNav({ active, onNav, onMore, features, moreOpen, layout } = {}) {
       }),
       h(
         'div',
-        { class: 'gb-more-sheet', role: 'menu', 'aria-label': 'More destinations' },
+        // A labelled group of plain buttons, not role=menu: a menu promises
+        // arrow-key movement and menuitem children, and this had neither. app.js
+        // moves focus into it on open (repaintOverlays).
+        { class: 'gb-more-sheet', role: 'group', 'aria-label': 'More destinations' },
         ...moreSections(overflow, active, onNav)
       )
     );
@@ -853,7 +860,9 @@ function AppHeader({ label, name, userName, onAccount, unreadCount, onBell, onAd
       'div',
       null,
       label ? h('div', { class: 'greet-label' }, label) : null,
-      h('div', { class: 'greet-name' }, name)
+      // The screen's one <h1>: every screen named itself only here, in a div,
+      // so a screen reader's heading list started at the first card.
+      h('h1', { class: 'greet-name' }, name)
     ),
     h(
       'div',
@@ -939,9 +948,66 @@ function CrashCard(onRetry) {
   );
 }
 
+/* ---- Buddy is thinking (app.css "Buddy is thinking") ----
+   thinkingLabel() is a busy AI button's content, under .is-thinking.
+   setThinking() puts a live button into that state and returns the undo.
+   Thinking() stands in for an AI answer while it is written: always three
+   steps, because the CSS shows each for a third of a 7.5s cycle. */
+function thinkingLabel(text) {
+  return [
+    h('span', { class: 'gb-think-spark' }, Icon('sparkles', { size: 16, sw: 2.4 })),
+    h('span', null, text),
+    h(
+      'span',
+      { class: 'gb-think-dots', 'aria-hidden': 'true' },
+      h('i', null),
+      h('i', null),
+      h('i', null)
+    ),
+  ];
+}
+
+function setThinking(btn, text) {
+  const kids = [...btn.childNodes];
+  btn.disabled = true;
+  btn.classList.add('is-thinking');
+  btn.replaceChildren(...thinkingLabel(text));
+  return () => {
+    btn.disabled = false;
+    btn.classList.remove('is-thinking');
+    btn.replaceChildren(...kids);
+  };
+}
+
+function Thinking(label, steps) {
+  return h(
+    'div',
+    { class: 'gb-thinking', role: 'status' },
+    h('span', { class: 'gb-think-sr' }, label),
+    h(
+      'div',
+      { class: 'gb-think-orb', 'aria-hidden': 'true' },
+      Icon('sparkles', { size: 20, sw: 2.2 })
+    ),
+    h(
+      'div',
+      { class: 'gb-think-body', 'aria-hidden': 'true' },
+      h(
+        'div',
+        { class: 'gb-think-steps' },
+        steps.map((s) => h('span', null, s))
+      ),
+      h('div', { class: 'gb-think-lines' }, h('i', null), h('i', null), h('i', null))
+    )
+  );
+}
+
 export {
   h,
   activate,
+  thinkingLabel,
+  setThinking,
+  Thinking,
   refreshIcons,
   DOMAIN,
   plural,

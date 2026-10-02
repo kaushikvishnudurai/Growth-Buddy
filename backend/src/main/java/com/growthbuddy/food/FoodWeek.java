@@ -101,7 +101,8 @@ public class FoodWeek {
         return new FoodWeekResponse(goal, targets.proteinG(), days,
                 by.get("protein").stream().map(x -> new ProteinSource(x.name(), x.count(), x.g())).toList(),
                 targets, avg, averageKcal(days),
-                Map.of("protein", r.protein(), "carbs", r.carbs(), "fat", r.fat(), "fiber", r.fiber()), by);
+                Map.of("protein", r.protein(), "carbs", r.carbs(), "fat", r.fat(), "fiber", r.fiber(),
+                        "calories", level(averageKcal(days), goal)), by);
     }
 
     private static int goalKcal(User u) {
@@ -192,13 +193,27 @@ public class FoodWeek {
         return e.getProteinG() == null || e.getCarbsG() == null || e.getFatG() == null || e.getFiberG() == null;
     }
 
-    /** Stored grams where the AI has estimated them, else the keyword table's guess. */
+    /**
+     * Stored grams where the AI has estimated them, else the keyword table's guess,
+     * scaled so protein, carbs and fat add up to the entry's calories. The grams
+     * are a second, separate estimate; unscaled, a week of 4,678 kcal showed
+     * macros worth 2,500, and the plate read "on target" beside a calorie ring
+     * nearly double its goal. The kcal is what the user logged and sees
+     * everywhere else, so it wins; the grams keep only their proportions.
+     */
     static int[] grams(FoodEntry e) {
         int[] g = missing(e) ? guess(e.getFoodName(), e.getQuantityGrams()) : new int[4];
         Integer[] stored = {e.getProteinG(), e.getCarbsG(), e.getFatG(), e.getFiberG()};
         for (int k = 0; k < 4; k++) {
             if (stored[k] != null) {
                 g[k] = stored[k];
+            }
+        }
+        int macroKcal = 4 * g[0] + 4 * g[1] + 9 * g[2];
+        if (e.getKcalEstimated() > 0 && macroKcal > 0) {
+            double f = (double) e.getKcalEstimated() / macroKcal;
+            for (int k = 0; k < 4; k++) {
+                g[k] = (int) Math.round(g[k] * f);
             }
         }
         return g;
@@ -252,8 +267,9 @@ public class FoodWeek {
     }
 
     private static final String ESTIMATE_PROMPT = """
-            You estimate nutrients for Indian food. Each numbered line is a dish and its
-            weight in grams as eaten. Return strict JSON only:
+            You estimate nutrients for Indian food. Each numbered line is a dish, its
+            weight in grams as eaten and its calories; 4 x protein + 4 x carbs + 9 x fat
+            should come close to those calories. Return strict JSON only:
             {"items":[{"i":1,"proteinG":12,"carbsG":40,"fatG":8,"fiberG":3}, ...]} with one
             entry per line, every value an integer number of grams. Use typical Indian
             home and hotel recipes.
@@ -272,7 +288,8 @@ public class FoodWeek {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < batch.size(); i++) {
             sb.append(i + 1).append(". ").append(cap(batch.get(i).getFoodName(), 120))
-                    .append(", ").append(batch.get(i).getQuantityGrams()).append(" g\n");
+                    .append(", ").append(batch.get(i).getQuantityGrams()).append(" g, ")
+                    .append(batch.get(i).getKcalEstimated()).append(" kcal\n");
         }
         try {
             JsonNode n = json.readTree(OpenAIClient.jsonOf(

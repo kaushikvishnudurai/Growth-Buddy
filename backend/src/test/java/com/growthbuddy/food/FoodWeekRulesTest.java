@@ -62,6 +62,20 @@ class FoodWeekRulesTest {
     }
 
     @Test
+    void gramsAddUpToTheLoggedCalories() {
+        // The AI said 10/40/8/3 (272 kcal) for a 700 kcal plate: the kcal wins.
+        FoodEntry e = entry("Chicken fried rice");
+        e.setKcalEstimated(700);
+        e.setProteinG(10);
+        e.setCarbsG(40);
+        e.setFatG(8);
+        e.setFiberG(3);
+        int[] g = FoodWeek.grams(e);
+        assertArrayEquals(new int[] {26, 103, 21, 8}, g);
+        assertTrue(Math.abs(4 * g[0] + 4 * g[1] + 9 * g[2] - 700) < 15);
+    }
+
+    @Test
     void sourcesGroupSameDishAndKeepTopFive() {
         List<FoodEntry> all = new ArrayList<>();
         for (String n : List.of("Dosa", "dosa ", "Chicken curry", "Rice", "Egg", "Paneer", "Dal", "Idli")) {

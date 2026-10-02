@@ -12,6 +12,7 @@
      • Tab is trapped inside the open modal
      • focus moves into a modal when it opens and returns to the trigger
        when it closes
+     • each form control is named from the .gb-field-label before it
    A MutationObserver picks up modals as they're added/removed from <body>.
    ===================================================================== */
 
@@ -69,6 +70,28 @@ function requestClose(overlay) {
 
 let lastFocused = null;
 
+/* Forms here put a `div.gb-field-label` before the control and never tie the
+   two, so a date or time input read as just "edit text". Name each control from
+   its label once the dialog renders.
+   ponytail: runs once per modal open; a field a dialog adds later stays unnamed —
+   make gb-field-label a real <label for> at the call sites if that bites. */
+function nameFields(root) {
+  for (const lab of root.querySelectorAll('.gb-field-label')) {
+    const next = lab.nextElementSibling;
+    if (!next) continue;
+    // A segmented picker (Paid from, Tag) is a radiogroup div: it takes the
+    // label as its group name, the way a fieldset takes a legend.
+    const ctl = next.matches('input, select, textarea, [role=radiogroup], [role=group]')
+      ? next
+      : next.querySelectorAll('input, select, textarea').length === 1
+        ? next.querySelector('input, select, textarea')
+        : null;
+    if (ctl && !ctl.labels?.length && !ctl.hasAttribute('aria-label') && !ctl.hasAttribute('aria-labelledby')) {
+      ctl.setAttribute('aria-label', lab.textContent.trim());
+    }
+  }
+}
+
 export function initA11y() {
   // Remember the last focus outside any modal so we can restore it on close.
   document.addEventListener(
@@ -119,6 +142,7 @@ export function initA11y() {
           requestAnimationFrame(() => {
             const dialog = overlay.querySelector('.gb-modal') || overlay;
             if (dialog && !dialog.hasAttribute('tabindex')) dialog.setAttribute('tabindex', '-1');
+            nameFields(overlay);
             const target = overlay.querySelector('[autofocus]') || dialog;
             target?.focus?.();
           });
@@ -127,7 +151,10 @@ export function initA11y() {
       for (const node of m.removedNodes) {
         if (overlayIn(node) && lastFocused && document.contains(lastFocused)) {
           const el = lastFocused;
-          requestAnimationFrame(() => el.focus?.());
+          // Not while another modal is up: Quick add → Task opens the second
+          // sheet before the first finishes animating out, and this used to pull
+          // focus back to the header button behind the new one.
+          requestAnimationFrame(() => topOverlay() || el.focus?.());
         }
       }
     }

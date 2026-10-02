@@ -16,3 +16,4 @@ prod.env
 
 # macOS Finder droppings
 .DS_Store
+.playwright-mcp/

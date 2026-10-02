@@ -13,6 +13,8 @@ import {
   plural,
   openOverlay,
   formatTime as sharedFormatTime,
+  thinkingLabel,
+  Thinking,
 } from './gb-kit.js';
 import { MoneyHomeCard } from './money.js';
 import { CacheStorage } from './cache-storage.js';
@@ -503,6 +505,9 @@ function ReminderSuggestionsCard({
               {
                 type: 'button',
                 class: 'gb-btn gb-btn--soft gb-btn--compact',
+                // Up to three of these sit in a column; out of the row's context
+                // a screen reader heard "Add reminder" three times over.
+                'aria-label': 'Add reminder: ' + item.text + ', ' + sharedFormatTime(item.time),
                 onclick: () =>
                   onAddSuggestedReminder && onAddSuggestedReminder(item.text, item.time, item.tag),
               },
@@ -820,7 +825,9 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater })
           'button',
           {
             type: 'button',
-            class: 'gb-water-add is-boost',
+            // One style for all three: a gradient on the largest read as a different
+            // kind of button.
+            class: 'gb-water-add',
             'aria-label': 'Add 750 millilitres of water',
             onclick: () => onQuickAddWater && onQuickAddWater(750),
           },
@@ -973,6 +980,25 @@ const isGood = (key, v) => v === 'ok' || (v === 'high' && (key === 'protein' || 
 // The Day by day tab, kept across repaints (a diet check result repaints the screen).
 let summaryNutrient = 'protein';
 
+// Flips the Day by day card to one nutrient in place. From a bowl, a calorie
+// share or one of Buddy's pills it also brings the card into view, so the tap
+// lands on that nutrient's days and the dishes behind them.
+function showNutrient(key, reveal) {
+  summaryNutrient = key;
+  const card = document.querySelector('.gb-daybyday');
+  if (!card) return;
+  card.querySelectorAll('[data-nutrient]').forEach((el) => {
+    const on = el.dataset.nutrient === key;
+    if (el.tagName === 'BUTTON') el.setAttribute('aria-pressed', String(on));
+    else el.hidden = !on;
+  });
+  if (!reveal) return;
+  const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  card.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'start' });
+  const tab = card.querySelector('button[aria-pressed="true"]');
+  if (tab) tab.focus({ preventScroll: true });
+}
+
 function dayLabel(date, isToday) {
   return isToday
     ? 'Today'
@@ -1040,11 +1066,13 @@ function NutrientThali(week) {
         const v = avg[n.key + 'G'];
         const t = Math.max(1, tgt[n.key + 'G']);
         return h(
-          'div',
+          'button',
           {
+            type: 'button',
             class: 'gb-katori is-' + n.key,
-            role: 'img',
-            'aria-label': n.label + ': ' + v + ' grams a day, target ' + t + ' grams',
+            'aria-label':
+              n.label + ': ' + v + ' grams a day, target ' + t + ' grams. Show day by day',
+            onclick: () => showNutrient(n.key, true),
             style: {
               left: 50 + 32.5 * Math.cos(a) - 13.4375 + '%',
               top: 50 + 32.5 * Math.sin(a) - 13.4375 + '%',
@@ -1096,8 +1124,8 @@ function CalorieSplit(week) {
         { class: 'gb-split-legend' },
         parts.map((n, i) =>
           h(
-            'div',
-            { class: 'is-' + n.key },
+            'button',
+            { type: 'button', class: 'is-' + n.key, onclick: () => showNutrient(n.key, true) },
             h('span', null, n.label),
             h('b', null, share[i] + '%'),
             h('small', null, 'aim ' + aims[i] + '%')
@@ -1108,7 +1136,7 @@ function CalorieSplit(week) {
   });
 }
 
-function NutrientPanel(week, n) {
+function NutrientPanel(week, n, onOpenDay) {
   const days = week.days || [];
   const key = n.key + 'G';
   const target = Math.max(1, week.targets[key]);
@@ -1137,7 +1165,7 @@ function NutrientPanel(week, n) {
     ),
     h(
       'div',
-      { class: 'gb-food-week-bars', role: 'img', 'aria-label': n.label + ' each day this week, in grams' },
+      { class: 'gb-food-week-bars', role: 'group', 'aria-label': n.label + ' each day this week, in grams' },
       h('div', {
         class: 'gb-food-week-goal',
         // A share of the track, not of the box: the box also holds the 18px value
@@ -1146,18 +1174,31 @@ function NutrientPanel(week, n) {
       }),
       days.map((d, i) =>
         h(
-          'div',
-          { class: 'gb-food-week-col' + (i === last ? ' is-today' : '') },
-          h('span', { class: 'gb-food-week-val' }, d.count ? d[key] : ''),
+          'button',
+          {
+            type: 'button',
+            class: 'gb-food-week-col' + (i === last ? ' is-today' : ''),
+            'aria-label':
+              dayLabel(d.date, i === last) +
+              ': ' +
+              (d.count ? d[key] + ' grams' : 'nothing logged') +
+              '. Open this day',
+            onclick: () => onOpenDay && onOpenDay(d.date),
+          },
+          h('span', { class: 'gb-food-week-val', 'aria-hidden': 'true' }, d.count ? d[key] : ''),
           h(
             'div',
-            { class: 'gb-food-week-track' },
+            { class: 'gb-food-week-track', 'aria-hidden': 'true' },
             h('div', {
               class: 'gb-food-week-bar',
               style: { height: d.count ? Math.max(4, (d[key] / top) * 100) + '%' : '0' },
             })
           ),
-          h('span', { class: 'gb-food-week-day' }, dayLabel(d.date, i === last))
+          h(
+            'span',
+            { class: 'gb-food-week-day', 'aria-hidden': 'true' },
+            dayLabel(d.date, i === last)
+          )
         )
       )
     ),
@@ -1194,9 +1235,9 @@ function NutrientPanel(week, n) {
 }
 
 // The tabs flip panels in place rather than repainting the whole screen.
-function DayByDayCard(week) {
-  const card = Card({
-    className: 'gb-food-week-card gb-summary-card',
+function DayByDayCard(week, onOpenDay) {
+  return Card({
+    className: 'gb-food-week-card gb-summary-card gb-daybyday',
     children: [
       summaryHead('Day by day'),
       h(
@@ -1210,26 +1251,19 @@ function DayByDayCard(week) {
               class: 'is-' + n.key,
               'data-nutrient': n.key,
               'aria-pressed': String(n.key === summaryNutrient),
-              onclick: () => {
-                summaryNutrient = n.key;
-                card.querySelectorAll('[data-nutrient]').forEach((el) => {
-                  const on = el.dataset.nutrient === n.key;
-                  if (el.tagName === 'BUTTON') el.setAttribute('aria-pressed', String(on));
-                  else el.hidden = !on;
-                });
-              },
+              onclick: () => showNutrient(n.key),
             },
             n.label
           )
         )
       ),
-      NUTRIENTS.map((n) => NutrientPanel(week, n)),
+      NUTRIENTS.map((n) => NutrientPanel(week, n, onOpenDay)),
+      h('p', { class: 'gb-summary-hint' }, 'Tap a day to see what you ate.'),
     ],
   });
-  return card;
 }
 
-function WaterWeekCard(water) {
+function WaterWeekCard(water, onOpenDay) {
   const goal = Math.max(1, water.goalMl || 2000);
   const days = water.days || [];
   const last = days.length - 1;
@@ -1248,14 +1282,16 @@ function WaterWeekCard(water) {
       ),
       h(
         'figure',
-        { class: 'gb-tumblers', 'aria-label': 'Water each day this week' },
+        { class: 'gb-tumblers', role: 'group', 'aria-label': 'Water each day this week' },
         days.map((d, i) =>
           h(
-            'div',
+            'button',
             {
+              type: 'button',
               class: 'gb-tumbler-col' + (i === last ? ' is-today' : ''),
-              role: 'img',
-              'aria-label': dayLabel(d.date, i === last) + ': ' + d.ml + ' ml of water',
+              'aria-label':
+                dayLabel(d.date, i === last) + ': ' + d.ml + ' ml of water. Open this day',
+              onclick: () => onOpenDay && onOpenDay(d.date),
             },
             h('small', { 'aria-hidden': 'true' }, litres(d.ml)),
             h(
@@ -1282,13 +1318,21 @@ function DietCheckCard({ check, canCheck, onCheck }) {
   const st = check || {};
   const level = (n, v) =>
     h(
-      'span',
-      { class: 'gb-food-level' + (isGood(n.key, v) ? ' is-good' : '') },
+      'button',
+      {
+        type: 'button',
+        class: 'gb-food-level' + (isGood(n.key, v) ? ' is-good' : ''),
+        onclick: () => showNutrient(n.key, true),
+      },
       n.label + ' · ' + (LEVEL_TEXT[v] || '-')
     );
   let body = null;
   if (st.loading) {
-    body = h('p', { class: 'gb-summary-meta' }, 'Buddy is reading your week...');
+    body = Thinking('Buddy is reading your week', [
+      'Reading the dishes you logged',
+      'Weighing protein, carbs, fat and fiber',
+      'Writing your tips',
+    ]);
   } else if (st.error) {
     body = h('p', { class: 'gb-summary-meta' }, st.error);
   } else if (st.data) {
@@ -1333,17 +1377,21 @@ function DietCheckCard({ check, canCheck, onCheck }) {
         'button',
         {
           type: 'button',
-          class: 'gb-btn gb-btn--soft gb-food-check-btn',
+          class: 'gb-btn gb-btn--soft gb-food-check-btn' + (st.loading ? ' is-thinking' : ''),
           disabled: !!st.loading || !canCheck,
           onclick: () => onCheck && onCheck(),
         },
-        st.data || st.error ? 'Check again' : 'Check my week'
+        st.loading
+          ? thinkingLabel('Reading your week')
+          : st.data || st.error
+            ? 'Check again'
+            : 'Check my week'
       ),
     ],
   });
 }
 
-function ScreenSummary({ features, week, water, check, error, hasWeight, onCheck, onRetry, onBack }) {
+function ScreenSummary({ features, week, water, check, error, hasWeight, onCheck, onRetry, onBack, onOpenDay }) {
   const on = (k) => !features || features[k] !== false;
   const back = h(
     'button',
@@ -1368,7 +1416,13 @@ function ScreenSummary({ features, week, water, check, error, hasWeight, onCheck
     );
   }
   if ((on('food') && !week) || (on('water') && !water)) {
-    return wrap(h('p', { class: 'gb-summary-meta' }, 'Loading your week...'));
+    return wrap(
+      Thinking('Loading your week', [
+        'Gathering your meals',
+        'Adding up each day',
+        'Filling in your water',
+      ])
+    );
   }
 
   const days = (week && week.days) || [];
@@ -1387,10 +1441,14 @@ function ScreenSummary({ features, week, water, check, error, hasWeight, onCheck
       h('em', { class: 'is-' + n.key }, n.label.toLowerCase() + (i === list.length - 1 ? '.' : '')),
     ]);
   let headline;
+  // Calories lead: the ring under the headline shows them, so "on target" can't
+  // sit above a plate nearly double its goal.
   if (!food) headline = ['Your week shows up here as you log it.'];
+  else if (lv.calories === 'high') headline = ['Your plate is over your calorie goal.'];
   else if (short.length) headline = ['Your plate is short on ', ...named(short)];
   else if (heavy.length) headline = ['Your plate is heavy on ', ...named(heavy)];
-  else headline = ['Your plate is close to target on all four.'];
+  else if (lv.calories === 'low') headline = ['Your plate is under your calorie goal.'];
+  else headline = ['Your plate is close to target on calories and all four.'];
 
   const hero = h(
     'section',
@@ -1402,12 +1460,13 @@ function ScreenSummary({ features, week, water, check, error, hasWeight, onCheck
           fmt(range[0].date) + ' – ' + fmt(range[range.length - 1].date) + ' · daily average'
         )
       : null,
-    h('h1', null, ...headline),
+    // h2: the header's "Summary" is the screen's h1.
+    h('h2', null, ...headline),
     food
       ? h(
           'p',
           { class: 'gb-summary-sub' },
-          short.length && heavy.length
+          (short.length || lv.calories === 'high') && heavy.length
             ? 'And heavy on ' + heavy.map((n) => n.label.toLowerCase()).join(' and ') + '. '
             : '',
           'Targets come from your calorie goal' +
@@ -1430,8 +1489,8 @@ function ScreenSummary({ features, week, water, check, error, hasWeight, onCheck
       h(
         'div',
         { class: 'gb-summary-col' },
-        food ? DayByDayCard(week) : null,
-        on('water') ? WaterWeekCard(water) : null,
+        food ? DayByDayCard(week, onOpenDay) : null,
+        on('water') ? WaterWeekCard(water, onOpenDay) : null,
         on('food') ? DietCheckCard({ check, canCheck: logged.length > 0, onCheck }) : null,
         on('food')
           ? h(
@@ -1594,7 +1653,7 @@ function MiniCalendarCard({
         {
           type: 'button',
           class: cls,
-          'aria-label': prettyDate(key) + ' - ' + (total ? total + ' items' : 'free'),
+          'aria-label': prettyDate(key) + ', ' + (total ? plural(total, 'item') : 'free'),
           onclick: () => onSelectDate(key),
         },
         h('span', { class: 'num' }, String(dt.getDate())),
@@ -1892,6 +1951,7 @@ function ScreenDashboard({
   onAddMood,
   onOnboardDismiss,
   onAddSuggestedReminder,
+  food,
   money,
   onSaveMoney,
   onOpenMoney,
@@ -1950,8 +2010,18 @@ function ScreenDashboard({
   // below it renders its own "nothing yet" state, so a new account used to open
   // on nine empty cards saying the same thing three ways — a checklist, a zero
   // score and a row of grey chips. One instruction beats nine blanks. Dismissing
-  // the checklist (or adding a task or habit) brings the full Home back.
-  const started = (tasks || []).length > 0 || (habits || []).length > 0;
+  // the checklist (or adding anything at all) brings the full Home back. Any
+  // data counts: an account with reminders and expenses but no task used to
+  // see only the checklist, its own reminders and spending hidden behind it.
+  const any = (o) => !!o && Object.keys(o).length > 0;
+  const started =
+    (tasks || []).length > 0 ||
+    (habits || []).length > 0 ||
+    (reminders || []).length > 0 ||
+    (money && ['expenses', 'income', 'transfers'].some((k) => (money[k] || []).length > 0)) ||
+    (food && (food.entries || []).length > 0) ||
+    (water && (water.entries || []).length > 0) ||
+    (wellness && (any(wellness.moodByDate) || any(wellness.sleepByDate)));
   if (onboard && !started) {
     return h(
       'div',

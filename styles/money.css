@@ -490,6 +490,20 @@
 .gb-money-actions .gb-btn {
   flex: 1;
 }
+/* Beside a secondary button the primary's 4px ledge and brand glow read as a
+   heavier, taller button. Same weight as its neighbour here; colour alone says
+   which one is primary. */
+.gb-money-actions .gb-btn--primary,
+.gb-money-hero-actions .gb-btn--primary {
+  box-shadow:
+    0 2px 0 var(--brand-edge),
+    var(--shadow-xs);
+}
+.gb-money-actions .gb-btn--primary:active,
+.gb-money-hero-actions .gb-btn--primary:active {
+  transform: translateY(1px);
+  box-shadow: 0 1px 0 var(--brand-edge);
+}
 
 /* ---- Week bars ---- */
 .gb-money-bars {
@@ -664,9 +678,6 @@
   font-size: var(--text-sm);
   line-height: var(--leading-normal);
   color: var(--fg1);
-}
-.gb-money-day-text.is-loading {
-  color: var(--fg3);
 }
 .gb-money-day-by {
   font-weight: 700;
@@ -1667,7 +1678,9 @@
   width: 100%;
   background: none;
   border: none;
-  padding: 0;
+  /* 26px tall without moving the row: at padding 0 it was an 18px tap target. */
+  padding: 4px 0;
+  margin: -4px 0;
   cursor: pointer;
   color: var(--fg3);
 }
@@ -1855,12 +1868,16 @@
   .gb-money-review-stats {
     grid-template-columns: repeat(2, 1fr);
   }
-  .gb-money-tab span:not(.gb-icon) {
-    display: none;
-  }
+  /* Icon over a visible label: icon-only tabs were names only a screen reader
+     heard. Four columns of ~85px fit "Overview" at this size. */
   .gb-money-tab {
-    flex: 1;
-    padding: 10px;
+    flex: 1 1 0;
+    min-width: 0;
+    flex-direction: column;
+    gap: 2px;
+    padding: 7px 4px;
+    border-radius: var(--radius-lg);
+    font-size: 0.75rem;
   }
 }
 

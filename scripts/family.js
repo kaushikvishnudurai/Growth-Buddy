@@ -5,7 +5,7 @@
    state and repaints its own subtree, so the parent only has to pass an
    `api` object of thin fetch wrappers. See SCREENS.family in app.js.
    ===================================================================== */
-import { h, Icon, CrashCard, confirmDialog } from './gb-kit.js';
+import { h, Icon, CrashCard, confirmDialog, thinkingLabel } from './gb-kit.js';
 
 const RELATIONSHIPS = [
   'mother',
@@ -324,13 +324,24 @@ function ScreenFamily({ api }) {
 
   // ---- panels (add / edit / profile / link) ----
 
+  // The steps replace the page in place, so the button that was pressed is
+  // gone and focus fell to the top of the document. Land it on the new step's
+  // heading instead, and back on the page's first heading when one closes.
+  function focusHeading() {
+    const el = root.querySelector('h2, h1');
+    if (!el) return;
+    el.setAttribute('tabindex', '-1');
+    el.focus({ preventScroll: false });
+  }
   function openPanel(panel) {
     model.panel = panel;
     paint();
+    focusHeading();
   }
   function closePanel() {
     model.panel = null;
     paint();
+    focusHeading();
   }
 
   function panelHeader(title) {
@@ -943,12 +954,13 @@ function ScreenFamily({ api }) {
         'button',
         {
           type: 'button',
-          class: 'gb-btn gb-btn--primary gb-family-generate',
+          class: 'gb-btn gb-btn--primary gb-family-generate' + (model.planBusy ? ' is-thinking' : ''),
           disabled: model.planBusy || !members.length,
           onclick: generate,
         },
-        Icon('sparkles', { size: 17, color: '#fff' }),
-        model.planBusy ? 'Cooking up a plan…' : hasPlan ? 'Regenerate plan' : 'Generate meal plan'
+        model.planBusy
+          ? thinkingLabel('Cooking up a plan')
+          : [Icon('sparkles', { size: 17, color: '#fff' }), hasPlan ? 'Regenerate plan' : 'Generate meal plan']
       ),
       model.planError ? h('p', { class: 'gb-msg-error' }, model.planError) : null,
       hasPlan ? planActions() : null,
@@ -1521,12 +1533,13 @@ function ScreenFamily({ api }) {
           'button',
           {
             type: 'button',
-            class: 'gb-btn gb-btn--primary gb-family-generate',
+            class: 'gb-btn gb-btn--primary gb-family-generate' + (model.weeklyBusy ? ' is-thinking' : ''),
             disabled: model.weeklyBusy || !members.length,
             onclick: generate,
           },
-          Icon('sparkles', { size: 17, color: '#fff' }),
-          model.weeklyBusy ? 'Planning your week…' : wk ? 'Regenerate week' : 'Generate weekly plan'
+          model.weeklyBusy
+            ? thinkingLabel('Planning your week')
+            : [Icon('sparkles', { size: 17, color: '#fff' }), wk ? 'Regenerate week' : 'Generate weekly plan']
         )
       ),
       model.weeklyError ? h('p', { class: 'gb-msg-error' }, model.weeklyError) : null,

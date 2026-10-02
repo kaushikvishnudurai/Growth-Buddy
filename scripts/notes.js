@@ -124,6 +124,10 @@ function sanitize(html) {
 /** Plain text of a note body — for the list preview and the "make a task" title. */
 function textOf(html) {
   const doc = new DOMParser().parseFromString('<body>' + (html || '') + '</body>', 'text/html');
+  // textContent has no notion of blocks: two paragraphs came out as one word.
+  doc.body
+    .querySelectorAll('p, div, li, h1, h2, h3, h4, blockquote, pre, br')
+    .forEach((el) => el.after(' '));
   return (doc.body.textContent || '').replace(/\s+/g, ' ').trim();
 }
 
@@ -736,7 +740,13 @@ function ScreenNotes({ onList, onCreate, onUpdate, onDelete, onMakeTask, onMakeR
   );
   onList()
     .then((data) => {
-      notes = Array.isArray(data) ? data : [];
+      // A note saved while this was in flight (a cold server takes seconds) is
+      // already in `notes` and may be missing from `data`, which the server read
+      // first. Replacing outright dropped it and put "No notes yet" back.
+      const fetched = Array.isArray(data) ? data : [];
+      const ids = new Set(fetched.map((n) => n.id));
+      notes = fetched.concat(notes.filter((n) => !ids.has(n.id)));
+      sortNotes();
       paint();
     })
     .catch(() => {
