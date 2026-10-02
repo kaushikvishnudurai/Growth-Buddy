@@ -8890,6 +8890,17 @@ textarea:focus-visible,
 .gb-note-card:hover .gb-note-cover img {
   transform: scale(1.04);
 }
+/* No cover saved (an old note, or a photo that would not decode): a quiet
+   placeholder holds the card's shape instead of collapsing it. */
+.gb-note-cover.is-empty {
+  display: grid;
+  place-items: center;
+}
+/* The tap that fetches a whole note before its sheet can open. */
+.gb-note-card.is-opening {
+  opacity: 0.6;
+  cursor: progress;
+}
 /* Over a photo, not a surface: a fixed dark scrim reads on any picture in
    either theme, where a theme token would vanish on a light one. */
 .gb-note-cover-count {

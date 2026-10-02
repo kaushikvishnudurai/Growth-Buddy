@@ -7233,6 +7233,7 @@ const SCREENS = {
             // read on one screen and nowhere else, so loading them at boot would
             // buy nothing but a slower boot.
             onList: () => api('/api/notes'),
+            onGet: (id) => api('/api/notes/' + encodeURIComponent(id)),
             onCreate: (body) =>
               api('/api/notes', { method: 'POST', body: JSON.stringify(body) }),
             onUpdate: (id, body) =>

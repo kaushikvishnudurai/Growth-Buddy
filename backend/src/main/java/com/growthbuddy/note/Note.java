@@ -48,6 +48,15 @@ public class Note {
     @Column(columnDefinition = "MEDIUMTEXT")
     private String body;
 
+    /**
+     * A small JPEG data URL cropped from the body's first photo, made by the
+     * client on save (null when there is no photo). The list sends this in
+     * place of the photos themselves, so the Notes screen doesn't download
+     * every photo of every note to draw a grid of cards.
+     */
+    @Column(columnDefinition = "TEXT")
+    private String cover;
+
     /** Swatch key from the shared palette (the habit colour picker's), or null. */
     @Column(length = 16)
     private String color;

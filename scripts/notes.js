@@ -177,30 +177,77 @@ const NOTE_MAX = 1_990_000;
    shows it, so a note holds about eight. */
 const PHOTO_SIDE = 1280;
 
-/** An image file as a downscaled JPEG data URL. */
-function shrinkPhoto(file) {
+function loadImage(src) {
   return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
     const img = new Image();
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      const scale = Math.min(1, PHOTO_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
-      canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
-      const ctx = canvas.getContext('2d');
-      // JPEG has no alpha: a transparent screenshot would otherwise turn black.
-      ctx.fillStyle = '#fff';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      resolve(canvas.toDataURL('image/jpeg', 0.82));
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error('That photo could not be read. Try a JPEG or PNG.'));
-    };
-    img.src = url;
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('That photo could not be read. Try a JPEG or PNG.'));
+    img.src = src;
   });
+}
+
+/** A region of `img` as a w x h JPEG data URL. */
+function toJpeg(
+  img,
+  w,
+  h,
+  quality,
+  [sx, sy, sw, sh] = [0, 0, img.naturalWidth, img.naturalHeight]
+) {
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  // JPEG has no alpha: a transparent screenshot would otherwise turn black.
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, w, h);
+  return canvas.toDataURL('image/jpeg', quality);
+}
+
+/** An image file as a downscaled JPEG data URL. */
+async function shrinkPhoto(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await loadImage(url);
+    const scale = Math.min(1, PHOTO_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
+    const w = Math.max(1, Math.round(img.naturalWidth * scale));
+    const h = Math.max(1, Math.round(img.naturalHeight * scale));
+    return toJpeg(img, w, h, 0.82);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/* The card's cover, saved beside the body so the list can send it instead of
+   the photos (NoteService.list). The first photo, centre-cropped to the card's
+   wide cover box at 2:1 (between a phone card, ~2.6:1, and a desktop column,
+   ~1.9:1, so object-fit trims little more on either) at 640x320,
+   which is 25-50 kB. NoteService.MAX_COVER caps it; a second, rougher pass
+   keeps a noisy photo under that, and '' (no cover) is the last resort. */
+const COVER_W = 640;
+const COVER_H = 320;
+const COVER_MAX = 60_000;
+async function coverOf(body) {
+  const m = /<img\b[^>]*?\bsrc="([^"]+)"/i.exec(body || '');
+  if (!m) return '';
+  try {
+    const img = await loadImage(m[1]);
+    const iw = img.naturalWidth;
+    const ih = img.naturalHeight;
+    const ratio = COVER_W / COVER_H;
+    const sw = Math.min(iw, ih * ratio);
+    const sh = sw / ratio;
+    const w = Math.max(1, Math.min(COVER_W, Math.round(sw)));
+    const h = Math.max(1, Math.round(w / ratio));
+    for (const q of [0.72, 0.45]) {
+      const url = toJpeg(img, w, h, q, [(iw - sw) / 2, (ih - sh) / 2, sw, sh]);
+      if (url.length <= COVER_MAX) return url;
+    }
+  } catch (_) {
+    /* unreadable: the card shows its placeholder cover */
+  }
+  return '';
 }
 
 const imageFiles = (list) => Array.from(list || []).filter((f) => f && /^image\//.test(f.type));
@@ -620,7 +667,7 @@ function colorRow(selected, onPick) {
   return row;
 }
 
-function ScreenNotes({ onList, onCreate, onUpdate, onDelete, onMakeTask, onMakeReminder }) {
+function ScreenNotes({ onList, onGet, onCreate, onUpdate, onDelete, onMakeTask, onMakeReminder }) {
   const listEl = h('div', { class: 'gb-note-grid' });
   let notes = [];
 
@@ -688,7 +735,12 @@ function ScreenNotes({ onList, onCreate, onUpdate, onDelete, onMakeTask, onMakeR
     }
     saveBtn.disabled = true;
     try {
-      const created = await onCreate({ title: title || null, body, color: composerColor });
+      const created = await onCreate({
+        title: title || null,
+        body,
+        color: composerColor,
+        cover: await coverOf(body),
+      });
       notes.unshift(created);
       closeComposer();
       paint();
@@ -711,23 +763,29 @@ function ScreenNotes({ onList, onCreate, onUpdate, onDelete, onMakeTask, onMakeR
        note: five photos stacked in a card is a scroll, not a preview. */
     const photos = Array.from(bodyEl.querySelectorAll('img'));
     photos.forEach((img) => img.remove());
+    /* A list item arrives with its photos cut out (bodyTrimmed) and a cover
+       and count in their place; a note this screen just loaded whole still
+       has them in the body. */
+    const count = Math.max(note.photoCount || 0, photos.length);
+    const coverSrc = SAFE_IMG.test(note.cover || '')
+      ? note.cover
+      : photos[0] && photos[0].getAttribute('src');
     const card = h('article', {
-      class:
-        'gb-note-card' + (note.pinned ? ' is-pinned' : '') + (photos.length ? ' has-cover' : ''),
+      class: 'gb-note-card' + (note.pinned ? ' is-pinned' : '') + (count ? ' has-cover' : ''),
       style: c ? { background: c.bg, borderColor: c.line } : null,
       tabindex: '0',
       role: 'button',
       'aria-label':
-        (note.title || preview.slice(0, 60) || (photos.length ? 'Photo note' : 'Untitled note')) +
-        (photos.length ? ', ' + photos.length + (photos.length === 1 ? ' photo' : ' photos') : ''),
+        (note.title || preview.slice(0, 60) || (count ? 'Photo note' : 'Untitled note')) +
+        (count ? ', ' + count + (count === 1 ? ' photo' : ' photos') : ''),
       onclick: (e) => {
         if (e.target.closest('.gb-note-pin')) return;
-        openNote(note);
+        openNote(note, card);
       },
       onkeydown: (e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          openNote(note);
+          openNote(note, card);
         }
       },
     });
@@ -745,20 +803,20 @@ function ScreenNotes({ onList, onCreate, onUpdate, onDelete, onMakeTask, onMakeR
         Icon(note.pinned ? 'pin-off' : 'pin', { size: 14, sw: 2.4 })
       )
     );
-    if (photos.length) {
-      const cover = photos[0];
-      cover.setAttribute('decoding', 'async');
+    if (count) {
       card.appendChild(
         h(
           'div',
-          { class: 'gb-note-cover' },
-          cover,
-          photos.length > 1
+          { class: 'gb-note-cover' + (coverSrc ? '' : ' is-empty') },
+          coverSrc
+            ? h('img', { src: coverSrc, alt: '', decoding: 'async' })
+            : Icon('image-plus', { size: 22, sw: 2, color: 'var(--fg3)' }),
+          count > 1
             ? h(
                 'span',
                 { class: 'gb-note-cover-count', 'aria-hidden': 'true' },
                 Icon('image-plus', { size: 12, sw: 2.6 }),
-                '+' + (photos.length - 1)
+                '+' + (count - 1)
               )
             : null
         )
@@ -782,7 +840,26 @@ function ScreenNotes({ onList, onCreate, onUpdate, onDelete, onMakeTask, onMakeR
   }
 
   /* ---- edit sheet: everything a note can do lives here ---- */
-  function openNote(note) {
+  const opening = new Set();
+  async function openNote(note, card) {
+    /* A list item has no photos in its body. Editing that copy would save it
+       back and delete them, so the whole note is fetched first. */
+    if (note.bodyTrimmed) {
+      if (opening.has(note.id)) return; // second tap while it loads
+      opening.add(note.id);
+      card && card.classList.add('is-opening');
+      card && card.setAttribute('aria-busy', 'true');
+      try {
+        Object.assign(note, await onGet(note.id));
+      } catch (err) {
+        toast.error(err, 'Could not open that note.');
+        return;
+      } finally {
+        opening.delete(note.id);
+        card && card.classList.remove('is-opening');
+        card && card.removeAttribute('aria-busy');
+      }
+    }
     const title = h('input', {
       type: 'text',
       class: 'gb-input gb-note-title-input',
@@ -895,9 +972,11 @@ function ScreenNotes({ onList, onCreate, onUpdate, onDelete, onMakeTask, onMakeR
        that reports, and toasting here too put the same failure on screen twice.
        It also owns the close, so this doesn't call it either. */
     const persist = async () => {
+      const body = ed.read();
       const saved = await onUpdate(note.id, {
         title: title.value.trim(),
-        body: ed.read(),
+        body,
+        cover: await coverOf(body),
         // '' clears it server-side; undefined would mean "leave it alone".
         color: color === null || color === undefined ? '' : color,
         pinned,

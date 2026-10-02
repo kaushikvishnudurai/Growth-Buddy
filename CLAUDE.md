@@ -20,7 +20,7 @@ open — don't go looking for a doc that isn't in this list.
 | Focus timer, ambient sound | `docs/scripts/timer.js.md` | 733 |
 | UI primitives (`h`, `Card`, `Icon`, nav) | `docs/scripts/gb-kit.js.md` | 701 |
 | Goals | `docs/scripts/goals.js.md` | 690 |
-| Notes, the rich-text editor, photos in notes | `docs/scripts/notes.js.md` | 1044 |
+| Notes, the rich-text editor, photos in notes | `docs/scripts/notes.js.md` | 1123 |
 | Report screen, charts | `docs/scripts/report.js.md` | 462 |
 | any styling | `docs/styles/app.css.md` | 7190 |
 | Money styling | `docs/styles/money.css.md` | 1615 |
@@ -52,7 +52,7 @@ fix the doc line if it was wrong. A doc you touch and don't update is worse than
   **`node scripts/icons.test.mjs`** (every `Icon('name')` is registered in `icons.js` — an
   unregistered one renders as *nothing*: no error, no box, and the UI audit can't see it either),
   `node scripts/gen-chimes.mjs` (regenerates, and asserts none of them is silent or clipping),
-  `money.js` and `chime.js` `_demo()` on Vite DEV, `./mvnw test` (183 tests — including the three that guard
+  `money.js` and `chime.js` `_demo()` on Vite DEV, `./mvnw test` (197 tests — including the three that guard
   invariants rather than code: `SchemaCoverageTest`, `AccountDeletionCoverageTest`,
   `SharedRecurrenceCasesTest`), and `scripts/ui-audit.mjs` — walks every screen at
   phone + desktop widths, screenshots each, then **opens one dialog per module and both header

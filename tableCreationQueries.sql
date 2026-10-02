@@ -504,6 +504,9 @@ CREATE TABLE IF NOT EXISTS notes (
   -- Rich text as HTML. Sanitised against an allow-list where it is rendered
   -- (sanitize() in scripts/notes.js) — never written to innerHTML raw.
   body          MEDIUMTEXT   NULL,
+  -- Small JPEG data URL of the body's first photo; the list sends it in place
+  -- of the photos. NULL with no photo.
+  cover         TEXT         NULL,
   color         VARCHAR(16)  NULL,
   pinned        BOOLEAN      NOT NULL DEFAULT FALSE,
   created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,

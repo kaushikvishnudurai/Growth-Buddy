@@ -55,6 +55,7 @@ FROM (
   UNION ALL SELECT 'food_entries'           AS table_name, 'carbs_g'
   UNION ALL SELECT 'food_entries'           AS table_name, 'fat_g'
   UNION ALL SELECT 'food_entries'           AS table_name, 'fiber_g'
+  UNION ALL SELECT 'notes'                  AS table_name, 'cover'
 ) AS t
 LEFT JOIN information_schema.COLUMNS c
        ON c.table_schema = DATABASE()
@@ -218,3 +219,7 @@ ALTER TABLE food_entries ADD COLUMN protein_g SMALLINT NULL;
 ALTER TABLE food_entries ADD COLUMN carbs_g SMALLINT NULL;
 ALTER TABLE food_entries ADD COLUMN fat_g SMALLINT NULL;
 ALTER TABLE food_entries ADD COLUMN fiber_g SMALLINT NULL;
+
+-- A note's cover thumbnail, so the Notes list can send it instead of every
+-- photo in every note. NULL until the note is next saved with a photo.
+ALTER TABLE notes ADD COLUMN cover TEXT NULL;

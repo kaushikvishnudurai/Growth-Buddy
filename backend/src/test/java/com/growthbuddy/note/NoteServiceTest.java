@@ -38,7 +38,7 @@ class NoteServiceTest {
     @Test
     void nullFieldsAreLeftAlone() {
         stored("sun");
-        NoteResponse out = service.update(USER, ID, new UpdateNoteRequest(null, null, null, null));
+        NoteResponse out = service.update(USER, ID, new UpdateNoteRequest(null, null, null, null, null));
         assertThat(out.title()).isEqualTo("Groceries");
         assertThat(out.color()).isEqualTo("sun");
     }
@@ -47,14 +47,14 @@ class NoteServiceTest {
     @Test
     void emptyStringClearsTheColour() {
         stored("sun");
-        NoteResponse out = service.update(USER, ID, new UpdateNoteRequest(null, null, "", null));
+        NoteResponse out = service.update(USER, ID, new UpdateNoteRequest(null, null, "", null, null));
         assertThat(out.color()).isNull();
     }
 
     @Test
     void someoneElsesNoteIsNotFound() {
         when(repo.findByIdAndUserIdAndDeletedAtIsNull(ID, USER)).thenReturn(Optional.empty());
-        assertThatThrownBy(() -> service.update(USER, ID, new UpdateNoteRequest("x", null, null, null)))
+        assertThatThrownBy(() -> service.update(USER, ID, new UpdateNoteRequest("x", null, null, null, null)))
                 .isInstanceOf(ApiException.class);
     }
 
@@ -62,9 +62,39 @@ class NoteServiceTest {
     void anAbsurdlyLongBodyIsRefusedRatherThanTruncated() {
         stored(null);
         String huge = "x".repeat(2_100_000);
-        assertThatThrownBy(() -> service.update(USER, ID, new UpdateNoteRequest(null, huge, null, null)))
+        assertThatThrownBy(() -> service.update(USER, ID, new UpdateNoteRequest(null, huge, null, null, null)))
                 .isInstanceOf(ApiException.class)
                 .hasMessageContaining("too big");
+    }
+
+    /** The list carries no photos, says so, and counts them for the card. */
+    @Test
+    void theListCutsPhotosOutAndSaysSo() {
+        Note n = stored(null);
+        n.setBody("<p>lake</p><img src=\"data:image/jpeg;base64,AAAA\" alt=\"\"><img src=\"data:image/jpeg;base64,BB==\">");
+        n.setCover("data:image/jpeg;base64,CC==");
+        when(repo.findByUserIdAndDeletedAtIsNullOrderByPinnedDescUpdatedAtDesc(USER))
+                .thenReturn(java.util.List.of(n));
+        NoteResponse item = service.list(USER).get(0);
+        assertThat(item.body()).isEqualTo("<p>lake</p>");
+        assertThat(item.photoCount()).isEqualTo(2);
+        assertThat(item.bodyTrimmed()).isTrue();
+        assertThat(item.cover()).isEqualTo("data:image/jpeg;base64,CC==");
+
+        NoteResponse full = service.get(USER, ID);
+        assertThat(full.body()).contains("<img").isEqualTo(n.getBody());
+        assertThat(full.bodyTrimmed()).isFalse();
+    }
+
+    @Test
+    void aCoverMustBeAnImageAndEmptyClearsIt() {
+        Note n = stored(null);
+        n.setCover("data:image/jpeg;base64,CC==");
+        assertThatThrownBy(() -> service.update(USER, ID,
+                new UpdateNoteRequest(null, null, null, null, "javascript:alert(1)")))
+                .isInstanceOf(ApiException.class);
+        service.update(USER, ID, new UpdateNoteRequest(null, null, null, null, ""));
+        assertThat(n.getCover()).isNull();
     }
 
     @Test

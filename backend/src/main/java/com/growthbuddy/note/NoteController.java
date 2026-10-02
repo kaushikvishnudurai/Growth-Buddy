@@ -30,6 +30,11 @@ public class NoteController {
         return service.list(CurrentUser.id());
     }
 
+    @GetMapping("/{id}")
+    public NoteResponse get(@PathVariable UUID id) {
+        return service.get(CurrentUser.id(), id);
+    }
+
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public NoteResponse create(@Valid @RequestBody CreateNoteRequest req) {
