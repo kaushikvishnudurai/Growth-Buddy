@@ -8,7 +8,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * Nightly purge of rows that only grow and are never read again:
- * expired/revoked sessions, spent auth tokens, and old read notifications.
+ * expired/revoked sessions, spent auth tokens, old read notifications, old
+ * dispatch logs and money day summaries, and photo logs past a user's newest 12.
  * Keeps the database inside a small hosting quota without touching user data.
  *
  * <p>Also drops abandoned signups — see {@link #purgeAbandonedSignups()}. That
@@ -21,6 +22,9 @@ public class DataCleanupJob {
 
     /** Days an unverified account is kept before it counts as abandoned. */
     private static final int ABANDONED_SIGNUP_DAYS = 7;
+
+    /** Photo logs kept per user: what findTop12ByUserIdOrderByCreatedAtDesc reads. */
+    static final int PHOTO_LOGS_KEPT = 12;
 
     private final JdbcTemplate jdbc;
 
@@ -44,6 +48,12 @@ public class DataCleanupJob {
                 "DELETE FROM habit_reminder_dispatch_log WHERE occurrence_date < CURDATE() - INTERVAL 30 DAY");
         // The Last 7 days chart is the only reader; older summaries are unreachable.
         total += jdbc.update("DELETE FROM money_day_summaries WHERE day < CURDATE() - INTERVAL 7 DAY");
+        // Every reader takes a user's newest 12 (FoodService.photoHistory); the
+        // rest are unreachable. The derived table is what lets MySQL delete from
+        // the table it reads; TiDB and MySQL 8 both have ROW_NUMBER.
+        total += jdbc.update("DELETE FROM food_photo_logs WHERE id IN (SELECT id FROM ("
+                + "SELECT id, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at DESC) AS rn"
+                + " FROM food_photo_logs) ranked WHERE rn > " + PHOTO_LOGS_KEPT + ")");
         log.info("Data cleanup removed {} expired rows", total);
         purgeAbandonedSignups();
     }

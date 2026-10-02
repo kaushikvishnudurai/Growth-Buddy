@@ -42,6 +42,7 @@ public class FoodService {
             Return strict JSON only with keys:
             kcalPer100g (integer),
             quantityGrams (integer),
+            proteinPer100g, carbsPer100g, fatPer100g, fiberPer100g (numbers, grams),
             reason (short string).
 
             Rules:
@@ -214,7 +215,8 @@ public class FoodService {
         return searchOpenFoodFacts(query.trim());
     }
 
-    @Transactional
+    // Not @Transactional: the estimate below can be an OpenFoodFacts lookup and
+    // an AI call, and a transaction would hold a pooled connection through both.
     public FoodSummaryResponse addEntry(UUID userId, AddFoodEntryRequest req) {
         if (req == null || !StringUtils.hasText(req.foodName())) {
             throw ApiException.badRequest("foodName is required");
@@ -229,9 +231,26 @@ public class FoodService {
                 req.riceBase() != null ? req.riceBase() : RiceBase.unsure,
                 req.note());
 
-        int quantity = req.quantityGrams() != null
-                ? req.quantityGrams()
-                : estimateQuantityGrams(input);
+        // At most ONE AI call per entry: it answers grams, kcal and nutrients
+        // together, asked the first time any of them is needed. Grams and kcal
+        // used to be two calls with the same prompt.
+        AiGuess[] ai = new AiGuess[1];
+        boolean[] asked = {false};
+        java.util.function.Supplier<AiGuess> askOnce = () -> {
+            if (!asked[0]) {
+                asked[0] = true;
+                ai[0] = openai.isConfigured() ? askAi(input) : null;
+            }
+            return ai[0];
+        };
+
+        int quantity;
+        if (req.quantityGrams() != null) {
+            quantity = req.quantityGrams();
+        } else {
+            AiGuess g = askOnce.get();
+            quantity = g != null && g.quantityGrams() != null ? clampQuantity(g.quantityGrams()) : defaultQuantity(input);
+        }
 
         // A typed number beats every estimate we could produce, and the user has
         // the packet in their hand. Taking it also means this entry costs no
@@ -250,7 +269,7 @@ public class FoodService {
             estimate = new CalorieEstimate(
                     clamp((int) Math.round((kcal * 100.0) / Math.max(1, quantity))), "manual");
         } else {
-            estimate = estimateCalories(input);
+            estimate = estimateCalories(input, askOnce);
             kcal = Math.max(1, (int) Math.round((estimate.kcalPer100g() * quantity) / 100.0));
         }
 
@@ -263,6 +282,15 @@ public class FoodService {
         e.setKcalEstimated(kcal);
         e.setEstimateSource(estimate.source());
         e.setNote(StringUtils.hasText(req.note()) ? req.note().trim() : null);
+        // Free when the AI was asked anyway. Otherwise they stay null and the
+        // Summary's batch fills them, 40 entries to a call.
+        if (ai[0] != null && ai[0].per100g() != null) {
+            double[] n = ai[0].per100g();
+            e.setProteinG(nutrient(n[0], quantity));
+            e.setCarbsG(nutrient(n[1], quantity));
+            e.setFatG(nutrient(n[2], quantity));
+            e.setFiberG(nutrient(n[3], quantity));
+        }
         // The day this entry counts towards, in the zone the user lives in. It used
         // to be derived in UTC while summary() read the day in another zone
         // entirely, so in IST every meal logged after 5:30pm — dinner, the most
@@ -359,18 +387,16 @@ public class FoodService {
         }
     }
 
-    private CalorieEstimate estimateCalories(EstimateInput input) {
+    private CalorieEstimate estimateCalories(EstimateInput input, java.util.function.Supplier<AiGuess> ai) {
         Integer fromApi = bestFromOpenFoodFacts(input.foodName());
         if (fromApi != null) {
             int adjusted = input.mealType() == MealType.hotel ? (int) Math.round(fromApi * 1.18) : fromApi;
             return new CalorieEstimate(clamp(adjusted), "openfoodfacts");
         }
 
-        if (openai.isConfigured()) {
-            Integer fromAi = estimateWithAi(input);
-            if (fromAi != null) {
-                return new CalorieEstimate(clamp(fromAi), "ai-estimate");
-            }
+        AiGuess g = ai.get();
+        if (g != null && g.kcalPer100g() != null) {
+            return new CalorieEstimate(clamp(g.kcalPer100g()), "ai-estimate");
         }
 
         return new CalorieEstimate(
@@ -378,14 +404,7 @@ public class FoodService {
                 "fallback-average");
     }
 
-    private int estimateQuantityGrams(EstimateInput input) {
-        if (openai.isConfigured()) {
-            Integer aiQuantity = estimateQuantityWithAi(input);
-            if (aiQuantity != null) {
-                return clampQuantity(aiQuantity);
-            }
-        }
-
+    private int defaultQuantity(EstimateInput input) {
         int base = switch (input.portionSize()) {
             case small -> 140;
             case medium -> 220;
@@ -399,41 +418,29 @@ public class FoodService {
         return clampQuantity(base);
     }
 
-    private Integer estimateWithAi(EstimateInput input) {
+    /** kcal, grams and nutrients in one call; null when the AI fails. */
+    private AiGuess askAi(EstimateInput input) {
         try {
             String userPrompt = "Food: " + input.foodName()
                     + "\nMeal type: " + input.mealType().name()
                     + "\nPortion size: " + input.portionSize().name()
                     + "\nWhite rice base: " + input.riceBase().name()
                     + "\nNote: " + (input.note() != null ? input.note() : "");
-            String raw = openai.complete(AI_PROMPT, List.of(new ChatTurn("user", userPrompt)));
-            JsonNode node = json.readTree(OpenAIClient.jsonOf(raw));
-            if (node.has("kcalPer100g") && node.get("kcalPer100g").isNumber()) {
-                return node.get("kcalPer100g").asInt();
-            }
-        } catch (Exception ignored) {
+            JsonNode node = json.readTree(OpenAIClient.jsonOf(
+                    openai.complete(AI_PROMPT, List.of(new ChatTurn("user", userPrompt)))));
+            Double[] n = {numberOrNull(node, "proteinPer100g"), numberOrNull(node, "carbsPer100g"),
+                numberOrNull(node, "fatPer100g"), numberOrNull(node, "fiberPer100g")};
+            boolean all = java.util.Arrays.stream(n).allMatch(java.util.Objects::nonNull);
+            return new AiGuess(numberAsInt(node, "kcalPer100g"), numberAsInt(node, "quantityGrams"),
+                    all ? new double[] {n[0], n[1], n[2], n[3]} : null);
+        } catch (Exception ex) {
             return null;
         }
-        return null;
     }
 
-    private Integer estimateQuantityWithAi(EstimateInput input) {
-        try {
-            String userPrompt = "Food: " + input.foodName()
-                    + "\nMeal type: " + input.mealType().name()
-                    + "\nPortion size: " + input.portionSize().name()
-                    + "\nWhite rice base: " + input.riceBase().name()
-                    + "\nNote: " + (input.note() != null ? input.note() : "")
-                    + "\nReturn quantityGrams only in JSON.";
-            String raw = openai.complete(AI_PROMPT, List.of(new ChatTurn("user", userPrompt)));
-            JsonNode node = json.readTree(OpenAIClient.jsonOf(raw));
-            if (node.has("quantityGrams") && node.get("quantityGrams").isNumber()) {
-                return node.get("quantityGrams").asInt();
-            }
-        } catch (Exception ignored) {
-            return null;
-        }
-        return null;
+    /** Grams of a nutrient in the portion, from its per-100 g figure; the column's own bounds. */
+    static int nutrient(double per100g, int quantity) {
+        return (int) Math.max(0, Math.min(900, Math.round(per100g * quantity / 100.0)));
     }
 
     private List<FoodSearchItem> searchOpenFoodFacts(String query) {
@@ -532,5 +539,9 @@ public class FoodService {
     }
 
     private record CalorieEstimate(int kcalPer100g, String source) {
+    }
+
+    /** One AI answer for a typed entry. per100g is protein, carbs, fat, fiber, or null if any is missing. */
+    private record AiGuess(Integer kcalPer100g, Integer quantityGrams, double[] per100g) {
     }
 }

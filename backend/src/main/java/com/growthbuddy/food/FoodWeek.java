@@ -7,6 +7,8 @@ import com.growthbuddy.mentor.OpenAIClient.ChatTurn;
 import com.growthbuddy.user.User;
 import com.growthbuddy.user.UserClock;
 import com.growthbuddy.user.UserRepository;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -14,6 +16,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -54,6 +57,15 @@ public class FoodWeek {
     private final OpenAIClient openai;
     private final ObjectMapper json = new ObjectMapper();
 
+    // ponytail: both in memory, per instance, lost on restart. Fine for one
+    // Render instance; move to a table if it ever runs more than one. Both are
+    // one entry per user, so they stay as small as the user list.
+    /** After a failed estimate, the week reads the keyword table until this instant. */
+    private final Map<UUID, Instant> retryAfter = new ConcurrentHashMap<>();
+    /** The last AI diet check, keyed by the exact prompt it answered. */
+    private final Map<UUID, Map.Entry<String, DietCheckResponse>> lastCheck = new ConcurrentHashMap<>();
+    static final Duration RETRY_AFTER = Duration.ofMinutes(10);
+
     public FoodWeek(FoodEntryRepository entries, UserRepository users, UserClock clock, OpenAIClient openai) {
         this.entries = entries;
         this.users = users;
@@ -66,7 +78,16 @@ public class FoodWeek {
     public FoodWeekResponse week(UUID userId) {
         Map<LocalDate, List<FoodEntry>> byDay = byDay(userId, clock.today(userId));
         List<FoodEntry> all = byDay.values().stream().flatMap(List::stream).toList();
-        estimate(all.stream().filter(FoodWeek::missing).toList());
+        List<FoodEntry> missing = all.stream().filter(FoodWeek::missing).toList();
+        // A failed batch isn't retried on every open: the gateway being down or
+        // out of budget would otherwise cost a call per Summary view.
+        if (!missing.isEmpty() && !Instant.now().isBefore(retryAfter.getOrDefault(userId, Instant.MIN))) {
+            if (estimate(missing)) {
+                retryAfter.remove(userId);
+            } else {
+                retryAfter.put(userId, Instant.now().plus(RETRY_AFTER));
+            }
+        }
         List<FoodWeekDay> days = days(byDay);
         User u = users.findById(userId).orElse(null);
         int goal = goalKcal(u);
@@ -238,11 +259,15 @@ public class FoodWeek {
             home and hotel recipes.
             """;
 
-    /** One AI call for every entry the week hasn't estimated yet; failures leave them null. */
-    private void estimate(List<FoodEntry> missing) {
-        if (missing.isEmpty() || !openai.isConfigured()) {
-            return;
+    /**
+     * One AI call for every entry the week hasn't estimated yet; failures leave
+     * them null. False when nothing came back, so the caller backs off.
+     */
+    private boolean estimate(List<FoodEntry> missing) {
+        if (!openai.isConfigured()) {
+            return false;
         }
+        int filled = 0;
         List<FoodEntry> batch = missing.subList(0, Math.min(40, missing.size()));
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < batch.size(); i++) {
@@ -271,10 +296,12 @@ public class FoodWeek {
                 if (e.getFatG() == null) e.setFatG(g[2]);
                 if (e.getFiberG() == null) e.setFiberG(g[3]);
                 entries.setNutrientsIfMissing(e.getId(), g[0], g[1], g[2], g[3]);
+                filled++;
             }
         } catch (Exception ex) {
             log.warn("Nutrient estimate failed, using the keyword table: {}", ex.toString());
         }
+        return filled > 0;
     }
 
     // Not @Transactional: that would hold a pooled connection through a
@@ -311,9 +338,16 @@ public class FoodWeek {
                     .append(", diet=").append(safe(u.getDietPreference()))
                     .append(", allergic=").append(safe(u.getAllergicTo()));
         }
+        // Same meals, same numbers, same profile: same prompt, so the last answer
+        // still holds and "Check again" costs no AI call.
+        String prompt = sb.toString();
+        Map.Entry<String, DietCheckResponse> last = lastCheck.get(userId);
+        if (last != null && last.getKey().equals(prompt)) {
+            return last.getValue();
+        }
         try {
             JsonNode n = json.readTree(OpenAIClient.jsonOf(
-                    openai.complete(PROMPT, List.of(new ChatTurn("user", sb.toString())))));
+                    openai.complete(PROMPT, List.of(new ChatTurn("user", prompt)))));
             List<String> add = new ArrayList<>();
             n.path("add").forEach(x -> {
                 if (add.size() < 4 && !x.asText().isBlank()) {
@@ -321,10 +355,12 @@ public class FoodWeek {
                 }
             });
             String summary = n.path("summary").asText("").strip();
-            return new DietCheckResponse(rules.protein(), rules.carbs(), rules.fat(), rules.fiber(),
+            DietCheckResponse out = new DietCheckResponse(rules.protein(), rules.carbs(), rules.fat(), rules.fiber(),
                     summary.isEmpty() ? rules.summary() : cap(summary, 400),
                     add.isEmpty() ? rules.add() : add,
                     "ai");
+            lastCheck.put(userId, Map.entry(prompt, out));
+            return out;
         } catch (Exception ex) {
             log.warn("Diet check fell back to the rules: {}", ex.toString());
             return rules;

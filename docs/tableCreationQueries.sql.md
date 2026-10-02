@@ -68,6 +68,7 @@ from the browser at signup and editable in Settings; validated on write, default
   `Priority` is the exception: `'Low','Medium','High'`, capitalized.
 - `config/DataCleanupJob` runs nightly to stay inside a small hosting quota, but it only trims rows
   nothing reads again: expired/revoked `sessions`, spent auth tokens, read `notifications` older than
-  90 days, and `reminder_dispatch_log` older than 30 days. The other append-only tables
+  90 days, `reminder_dispatch_log` / `habit_reminder_dispatch_log` older than 30 days,
+  `money_day_summaries` older than 7 days, and `food_photo_logs` past each user's newest 12. The other append-only tables
   (`task_completion_history`, `focus_sessions`) are **not** trimmed — they back
   user-visible history. Add one to the job only once you're sure nothing reads its old rows.

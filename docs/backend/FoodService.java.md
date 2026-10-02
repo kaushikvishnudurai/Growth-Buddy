@@ -1,17 +1,17 @@
-# food/FoodService.java — 481 lines
+# food/FoodService.java — 547 lines
 
 Backs `/api/food`: food logging, a food search, and **photo → nutrition estimation** via the AI gateway.
 
 | Method | Line | Notes |
 |---|---|---|
-| `estimateFromPhotoMulti(req)` | 71 | multi-dish estimate (~90 lines, the biggest method) — `POST /photo-estimate-multi` |
-| `estimateFromPhoto(req)` | 261 | single-dish — `POST /photo-estimate` |
-| `search(query)` | 200 | food lookup for the add-food form |
-| `addEntry(userId, req)` | 208 | returns the refreshed `FoodSummaryResponse` |
-| `deleteEntry(userId, entryId)` | 249 | also returns the refreshed summary |
-| `summary(userId, date)` | 191 | the day's totals — what the Home food card reads |
-| `photoHistory(userId)` | 171 | the "recent scans" list |
-| `recordPhoto(userId, req)` | 178 | writes a `FoodPhotoLog` |
+| `estimateFromPhotoMulti(req)` | 76 | multi-dish estimate (~90 lines, the biggest method) — `POST /photo-estimate-multi` |
+| `estimateFromPhoto(req)` | 329 | single-dish — `POST /photo-estimate` |
+| `search(query)` | 211 | food lookup for the add-food form |
+| `addEntry(userId, req)` | 220 | returns the refreshed `FoodSummaryResponse` |
+| `deleteEntry(userId, entryId)` | 317 | also returns the refreshed summary |
+| `summary(userId, date)` | 200 | the day's totals — what the Home food card reads |
+| `photoHistory(userId)` | 180 | the "recent scans" list |
+| `recordPhoto(userId, req)` | 187 | writes a `FoodPhotoLog` |
 
 Both mutating entry methods return the whole day summary, so the frontend never needs a follow-up
 GET after a write.
@@ -24,6 +24,10 @@ GET after a write.
   photo achievement (`achievements.js`) and a Home insight (`dashboard.js`); the frontend also caches its own copy via `rememberPhotoFood` in app.js.
 - These endpoints are behind `AiRateLimitInterceptor` (per-user limit on AI-backed routes).
 - Entries are per (user, date); `FoodEntry` holds the nutrition columns.
+- `addEntry` makes **at most one** AI call (`askAi`): grams, kcal/100 g and the four nutrients come
+  back together, asked only when a typed gram figure or an OpenFoodFacts hit leaves something
+  unknown. When it was asked, the nutrients are stored right away; otherwise FoodWeek's batch fills
+  them. Not `@Transactional`: it would hold a connection through OpenFoodFacts and the AI.
 
 DTOs: `FoodDtos`. Frontend: `openAddFood` in `scripts/app.js` (~1669), `FoodCard` / `ScreenFood` /
 `FoodSummaryCard` in `scripts/dashboard.js`.
@@ -39,7 +43,9 @@ nutrient; `proteinTargetG` / `sources` are the older protein-only fields, kept f
 `POST /diet-check` (rate-limited; levels come from the same numbers via `rules()`, the AI only writes
 the summary and the foods to add, and `rules()` is the whole answer when the AI is off or fails). Not
 `@Transactional` on purpose: it would hold a connection through the AI call. app.js drops the
-check on every entry change, since it describes the week's dishes.
+check on every entry change, since it describes the week's dishes. AI spend: a failed estimate batch
+backs off 10 minutes per user (the keyword table fills in meanwhile), and a diet check whose prompt
+is identical to the last one returns the last answer; both in memory, so per instance.
 
 ## Dating and manual calories
 
