@@ -13,8 +13,8 @@ public class NoteService {
     /**
      * Ceiling on a single note's HTML. Text alone is a few KB; photos are
      * embedded as data URLs (scripts/notes.js shrinks each to ~200 KB), so this
-     * holds about eight. Matches NOTE_MAX there, which refuses the photo that
-     * would not fit before Save ever runs. Well under TiDB's 6 MB row limit.
+     * holds about eight. NOTE_MAX there sits just under it and refuses the
+     * photo that would not fit before Save runs. Well under TiDB's 6 MB row limit.
      *
      * <p>ponytail: photos live inside the body, so list() ships every photo of
      * every note. Fine for a handful of photo notes; when the Notes screen gets

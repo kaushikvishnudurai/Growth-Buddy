@@ -20,7 +20,7 @@ open — don't go looking for a doc that isn't in this list.
 | Focus timer, ambient sound | `docs/scripts/timer.js.md` | 733 |
 | UI primitives (`h`, `Card`, `Icon`, nav) | `docs/scripts/gb-kit.js.md` | 701 |
 | Goals | `docs/scripts/goals.js.md` | 690 |
-| Notes, the rich-text editor, photos in notes | `docs/scripts/notes.js.md` | 1039 |
+| Notes, the rich-text editor, photos in notes | `docs/scripts/notes.js.md` | 1044 |
 | Report screen, charts | `docs/scripts/report.js.md` | 462 |
 | any styling | `docs/styles/app.css.md` | 7190 |
 | Money styling | `docs/styles/money.css.md` | 1615 |

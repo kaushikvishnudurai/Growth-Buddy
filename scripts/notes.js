@@ -167,9 +167,11 @@ const TOOLS = [
   { cmd: 'createLink', icon: 'link', label: 'Link', prompt: 'Link to…' },
 ];
 
-/* Same ceiling as NoteService.MAX_BODY. Checked as each photo goes in, so the
-   refusal lands on the photo that would not fit rather than on Save. */
-const NOTE_MAX = 2_000_000;
+/* NoteService.MAX_BODY (2 MB) less headroom for what sanitize() adds on save
+   (rel + target on every link), measured on the raw editor HTML. Checked as
+   each photo goes in, so the refusal lands on the photo that would not fit
+   rather than on Save. */
+const NOTE_MAX = 1_990_000;
 /* Long edge of an embedded photo. A phone photo is 4000px and 3-5 MB; at
    1280px JPEG it is 150-250 kB of base64 and still sharp at any size a note
    shows it, so a note holds about eight. */
@@ -745,7 +747,6 @@ function ScreenNotes({ onList, onCreate, onUpdate, onDelete, onMakeTask, onMakeR
     );
     if (photos.length) {
       const cover = photos[0];
-      cover.setAttribute('loading', 'lazy');
       cover.setAttribute('decoding', 'async');
       card.appendChild(
         h(
