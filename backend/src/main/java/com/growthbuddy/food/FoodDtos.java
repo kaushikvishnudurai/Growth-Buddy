@@ -7,6 +7,7 @@ import java.util.Locale;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -25,8 +26,10 @@ interface FoodEntryRepository extends JpaRepository<FoodEntry, UUID> {
      */
     @org.springframework.transaction.annotation.Transactional
     @org.springframework.data.jpa.repository.Modifying
-    @Query("update FoodEntry e set e.proteinG = :g where e.id = :id and e.proteinG is null")
-    int setProteinIfMissing(@Param("id") UUID id, @Param("g") int g);
+    @Query("update FoodEntry e set e.proteinG = coalesce(e.proteinG, :p), e.carbsG = coalesce(e.carbsG, :c),"
+            + " e.fatG = coalesce(e.fatG, :f), e.fiberG = coalesce(e.fiberG, :fi) where e.id = :id")
+    int setNutrientsIfMissing(@Param("id") UUID id, @Param("p") int p, @Param("c") int c,
+            @Param("f") int f, @Param("fi") int fi);
 
     @Query("select coalesce(sum(e.kcalEstimated), 0) from FoodEntry e where e.userId = :userId and e.logDate = :logDate")
     int totalCaloriesForDay(@Param("userId") UUID userId, @Param("logDate") LocalDate logDate);
@@ -180,19 +183,35 @@ record FoodEntryResponse(
     }
 }
 
-/** The Summary card's chart: 7 days, oldest first, empty days included. */
-record FoodWeekResponse(int goalKcal, int proteinTargetG, List<FoodWeekDay> days, List<ProteinSource> sources) {
+/**
+ * The Summary screen: 7 days, oldest first, empty days included. proteinTargetG
+ * and sources (protein's) predate targets / sourcesBy and stay for builds that
+ * still read them. averages / avgKcal / levels are what the diet check judges
+ * by too, so the screen and Buddy can't disagree. levels: nutrient to
+ * low|ok|high.
+ */
+record FoodWeekResponse(int goalKcal, int proteinTargetG, List<FoodWeekDay> days, List<ProteinSource> sources,
+        Nutrients targets, Nutrients averages, int avgKcal, Map<String, String> levels,
+        Map<String, List<NutrientSource>> sourcesBy) {
 }
 
-/** proteinG is estimated: the AI's per-entry figure where it has one, else the keyword table. */
-record FoodWeekDay(String date, int kcal, int count, int proteinG) {
+/** Grams a day of each nutrient. */
+record Nutrients(int proteinG, int carbsG, int fatG, int fiberG) {
+}
+
+/** Grams are estimated: the AI's per-entry figure where it has one, else the keyword table. */
+record FoodWeekDay(String date, int kcal, int count, int proteinG, int carbsG, int fatG, int fiberG) {
 }
 
 record ProteinSource(String name, int count, int proteinG) {
 }
 
-/** protein / fiber are low|ok|high, or null when nothing is logged; source is ai|rules. */
-record DietCheckResponse(String protein, String fiber, String summary, List<String> add, String source) {
+record NutrientSource(String name, int count, int g) {
+}
+
+/** Each nutrient is low|ok|high, or null when nothing is logged; source is ai|rules. */
+record DietCheckResponse(String protein, String carbs, String fat, String fiber, String summary, List<String> add,
+        String source) {
 }
 
 record FoodSummaryResponse(

@@ -954,12 +954,24 @@ function FoodCard({ food, onAddFood, onDeleteFood }) {
 }
 
 /* ---- Food summary screen (SCREENS.summary) ----
-   Protein as a thali: seven katoris round a plate, each ring filled toward the
-   day's target. Then the dishes it came from, water as tumblers, calories, and
-   Buddy's diet check. Protein is estimated on the server (FoodWeek), so the page
-   says so. The check is an AI call: it runs on a tap, and app.js drops it
-   whenever an entry changes, since it judged the week's dish names. */
+   Nutrition as a thali: four katoris (protein, carbs, fat, fiber) round a plate,
+   each ring filled toward its daily target, calories in the middle. Then the
+   calorie split, a day-by-day chart per nutrient with the dishes behind it,
+   water as tumblers, and Buddy's diet check. Every gram is estimated on the
+   server (FoodWeek), and so are the averages and low/ok/high levels, so the
+   headline and Buddy's pills agree. The check is an AI call: it runs on a tap,
+   and app.js drops it whenever an entry changes. */
 const LEVEL_TEXT = { low: 'low', ok: 'good', high: 'high' };
+const NUTRIENTS = [
+  { key: 'protein', label: 'Protein' },
+  { key: 'carbs', label: 'Carbs' },
+  { key: 'fat', label: 'Fat' },
+  { key: 'fiber', label: 'Fiber' },
+];
+// Protein and fiber can't really be too high here; carbs and fat can.
+const isGood = (key, v) => v === 'ok' || (v === 'high' && (key === 'protein' || key === 'fiber'));
+// The Day by day tab, kept across repaints (a diet check result repaints the screen).
+let summaryNutrient = 'protein';
 
 function dayLabel(date, isToday) {
   return isToday
@@ -978,7 +990,7 @@ function FoodSummaryLink({ onOpen }) {
           'div',
           null,
           h('div', { class: 'gb-water-title' }, 'Summary'),
-          h('div', { class: 'gb-water-meta' }, 'Protein, water and calories for the last 7 days')
+          h('div', { class: 'gb-water-meta' }, 'Nutrition, water and calories for the last 7 days')
         )
       ),
       h(
@@ -1005,10 +1017,11 @@ function summaryHead(title, meta) {
 }
 
 // Geometry in % of the plate, so it shrinks on a narrow phone instead of
-// overflowing: bowls 22.5% wide on a ring at 34.4% from the centre.
-function ProteinThali(days, target) {
-  const last = days.length - 1;
-  const total = days.reduce((s, d) => s + d.proteinG, 0);
+// overflowing: bowls 26.9% wide on the diagonals, 32.5% from the centre.
+function NutrientThali(week) {
+  const avg = week.averages;
+  const tgt = week.targets;
+  const angles = [-135, -45, 135, 45];
   return h(
     'figure',
     { class: 'gb-thali-fig' },
@@ -1018,30 +1031,31 @@ function ProteinThali(days, target) {
       h(
         'div',
         { class: 'gb-thali-center' },
-        h('span', { class: 'gb-thali-total' }, String(total), h('small', null, 'g')),
-        h('span', { class: 'gb-thali-of' }, 'of ' + target * 7 + ' g')
+        h('span', { class: 'gb-thali-total' }, week.avgKcal.toLocaleString()),
+        h('span', { class: 'gb-thali-unit' }, 'kcal a day'),
+        h('span', { class: 'gb-thali-of' }, 'goal ' + week.goalKcal.toLocaleString())
       ),
-      days.map((d, i) => {
-        const a = ((-90 + (i * 360) / 7) * Math.PI) / 180;
-        const pct = Math.min(100, Math.round((d.proteinG / target) * 100));
-        const label = dayLabel(d.date, i === last);
+      NUTRIENTS.map((n, i) => {
+        const a = (angles[i] * Math.PI) / 180;
+        const v = avg[n.key + 'G'];
+        const t = Math.max(1, tgt[n.key + 'G']);
         return h(
           'div',
           {
-            class: 'gb-katori' + (i === last ? ' is-today' : ''),
+            class: 'gb-katori is-' + n.key,
             role: 'img',
-            'aria-label': label + ': ' + d.proteinG + ' grams of protein',
+            'aria-label': n.label + ': ' + v + ' grams a day, target ' + t + ' grams',
             style: {
-              left: 50 + 34.375 * Math.cos(a) - 11.25 + '%',
-              top: 50 + 34.375 * Math.sin(a) - 11.25 + '%',
-              '--pct': pct + '%',
+              left: 50 + 32.5 * Math.cos(a) - 13.4375 + '%',
+              top: 50 + 32.5 * Math.sin(a) - 13.4375 + '%',
+              '--pct': Math.min(100, Math.round((v / t) * 100)) + '%',
             },
           },
           h(
             'div',
             { class: 'gb-katori-in', 'aria-hidden': 'true' },
-            h('strong', null, String(d.proteinG)),
-            h('span', null, label)
+            h('strong', null, String(v), h('small', null, 'g')),
+            h('span', null, n.label.toUpperCase())
           )
         );
       })
@@ -1049,46 +1063,170 @@ function ProteinThali(days, target) {
     h(
       'figcaption',
       { class: 'gb-thali-legend' },
-      h('span', null, h('i'), 'Full bowl = ' + target + ' g'),
-      h('span', null, h('i', { class: 'is-today' }), 'Today, still going')
+      'A full ring is your daily target. Today counts only when it is all you have logged.'
     )
   );
 }
 
-function ProteinSources(sources) {
-  if (!sources || !sources.length) return null;
-  const top = Math.max(1, sources[0].proteinG);
+function CalorieSplit(week) {
+  const a = week.averages;
+  const kcal = [a.proteinG * 4, a.carbsG * 4, a.fatG * 9];
+  const total = kcal[0] + kcal[1] + kcal[2];
+  if (!total) return null;
+  const goal = Math.max(1, week.goalKcal);
+  const share = kcal.map((k) => Math.round((k / total) * 100));
+  // The aims are FoodWeek.targets' split: protein from the gram target, 50 / 30 for the rest.
+  const aims = [Math.round(((week.targets.proteinG * 4) / goal) * 100), 50, 30];
+  const parts = NUTRIENTS.slice(0, 3);
   return Card({
     className: 'gb-food-week-card gb-summary-card',
     children: [
-      summaryHead('Where it came from', 'top ' + sources.length + ' dishes'),
-      sources.map((s) =>
-        h(
-          'div',
-          { class: 'gb-source-row' },
+      summaryHead('Where your calories come from'),
+      h(
+        'div',
+        {
+          class: 'gb-split-bar',
+          role: 'img',
+          'aria-label': parts.map((n, i) => n.label + ' ' + share[i] + ' percent').join(', ') + ' of calories',
+        },
+        parts.map((n, i) => h('div', { class: 'is-' + n.key, style: { flexGrow: String(kcal[i]) } }))
+      ),
+      h(
+        'div',
+        { class: 'gb-split-legend' },
+        parts.map((n, i) =>
           h(
             'div',
-            { class: 'gb-source-head' },
-            h(
-              'span',
-              null,
-              s.name,
-              h('small', null, ' · ' + (s.count === 1 ? 'once' : s.count + ' times'))
-            ),
-            h('b', null, s.proteinG + ' g')
-          ),
-          h(
-            'div',
-            { class: 'gb-source-track' },
-            h('div', {
-              class: 'gb-source-bar',
-              style: { width: Math.round((s.proteinG / top) * 100) + '%' },
-            })
+            { class: 'is-' + n.key },
+            h('span', null, n.label),
+            h('b', null, share[i] + '%'),
+            h('small', null, 'aim ' + aims[i] + '%')
           )
         )
       ),
     ],
   });
+}
+
+function NutrientPanel(week, n) {
+  const days = week.days || [];
+  const key = n.key + 'G';
+  const target = Math.max(1, week.targets[key]);
+  const top = Math.max(target * 1.25, ...days.map((d) => d[key]));
+  const last = days.length - 1;
+  const hits = days.filter((d) => d.count > 0 && d[key] >= target).length;
+  const sources = (week.sourcesBy && week.sourcesBy[n.key]) || [];
+  const most = Math.max(1, sources.length ? sources[0].g : 1);
+  const limit = n.key === 'carbs' || n.key === 'fat';
+  return h(
+    'div',
+    { class: 'gb-nutrient-panel is-' + n.key, 'data-nutrient': n.key, hidden: n.key !== summaryNutrient },
+    h(
+      'p',
+      { class: 'gb-summary-meta' },
+      n.label +
+        ': ' +
+        week.averages[key] +
+        ' g a day, target ' +
+        target +
+        ' g. ' +
+        (limit ? 'Over target' : 'Target reached') +
+        ' on ' +
+        hits +
+        ' of 7 days.'
+    ),
+    h(
+      'div',
+      { class: 'gb-food-week-bars', role: 'img', 'aria-label': n.label + ' each day this week, in grams' },
+      h('div', {
+        class: 'gb-food-week-goal',
+        // A share of the track, not of the box: the box also holds the 18px value
+        // row above and the 22px day row below (.gb-food-week-bars padding).
+        style: { bottom: 'calc(22px + (100% - 40px) * ' + (target / top).toFixed(4) + ')' },
+      }),
+      days.map((d, i) =>
+        h(
+          'div',
+          { class: 'gb-food-week-col' + (i === last ? ' is-today' : '') },
+          h('span', { class: 'gb-food-week-val' }, d.count ? d[key] : ''),
+          h(
+            'div',
+            { class: 'gb-food-week-track' },
+            h('div', {
+              class: 'gb-food-week-bar',
+              style: { height: d.count ? Math.max(4, (d[key] / top) * 100) + '%' : '0' },
+            })
+          ),
+          h('span', { class: 'gb-food-week-day' }, dayLabel(d.date, i === last))
+        )
+      )
+    ),
+    sources.length
+      ? h(
+          'div',
+          { class: 'gb-nutrient-sources' },
+          h('span', { class: 'gb-nutrient-sources-title' }, 'Most ' + n.label.toLowerCase() + ' came from'),
+          sources.map((s) =>
+            h(
+              'div',
+              { class: 'gb-source-row' },
+              h(
+                'div',
+                { class: 'gb-source-head' },
+                h(
+                  'span',
+                  null,
+                  s.name,
+                  h('small', null, ' · ' + (s.count === 1 ? 'once' : s.count + ' times'))
+                ),
+                h('b', null, s.g + ' g')
+              ),
+              h(
+                'div',
+                { class: 'gb-source-track' },
+                h('div', { class: 'gb-source-bar', style: { width: Math.round((s.g / most) * 100) + '%' } })
+              )
+            )
+          )
+        )
+      : null
+  );
+}
+
+// The tabs flip panels in place rather than repainting the whole screen.
+function DayByDayCard(week) {
+  const card = Card({
+    className: 'gb-food-week-card gb-summary-card',
+    children: [
+      summaryHead('Day by day'),
+      h(
+        'div',
+        { class: 'gb-nutrient-tabs', role: 'group', 'aria-label': 'Nutrient to show' },
+        NUTRIENTS.map((n) =>
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'is-' + n.key,
+              'data-nutrient': n.key,
+              'aria-pressed': String(n.key === summaryNutrient),
+              onclick: () => {
+                summaryNutrient = n.key;
+                card.querySelectorAll('[data-nutrient]').forEach((el) => {
+                  const on = el.dataset.nutrient === n.key;
+                  if (el.tagName === 'BUTTON') el.setAttribute('aria-pressed', String(on));
+                  else el.hidden = !on;
+                });
+              },
+            },
+            n.label
+          )
+        )
+      ),
+      NUTRIENTS.map((n) => NutrientPanel(week, n)),
+    ],
+  });
+  return card;
 }
 
 function WaterWeekCard(water) {
@@ -1140,62 +1278,13 @@ function WaterWeekCard(water) {
   });
 }
 
-function CaloriesWeekCard(week) {
-  const days = week.days || [];
-  const goal = Math.max(1, week.goalKcal || 2000);
-  const logged = days.filter((d) => d.count > 0);
-  const avg = logged.length
-    ? Math.round(logged.reduce((s, d) => s + d.kcal, 0) / logged.length)
-    : 0;
-  // Headroom over the goal so the goal line never sits on the card's top edge.
-  const top = Math.max(goal * 1.25, ...days.map((d) => d.kcal));
-  const last = days.length - 1;
-  return Card({
-    className: 'gb-food-week-card gb-summary-card',
-    children: [
-      summaryHead('Calories', 'goal ' + goal.toLocaleString() + ' kcal'),
-      h(
-        'p',
-        { class: 'gb-summary-meta' },
-        logged.length ? avg.toLocaleString() + ' kcal a day on average' : 'No meals logged yet'
-      ),
-      h(
-        'div',
-        { class: 'gb-food-week-bars', role: 'img', 'aria-label': 'Calories, last 7 days' },
-        h('div', {
-          class: 'gb-food-week-goal',
-          // A share of the track, not of the box: the box also holds the 18px value
-          // row above and the 22px day row below (.gb-food-week-bars padding).
-          style: { bottom: 'calc(22px + (100% - 40px) * ' + (goal / top).toFixed(4) + ')' },
-        }),
-        days.map((d, i) =>
-          h(
-            'div',
-            { class: 'gb-food-week-col' + (i === last ? ' is-today' : '') },
-            h('span', { class: 'gb-food-week-val' }, d.count ? d.kcal : ''),
-            h(
-              'div',
-              { class: 'gb-food-week-track' },
-              h('div', {
-                class: 'gb-food-week-bar' + (d.kcal > goal ? ' is-over' : ''),
-                style: { height: d.count ? Math.max(4, (d.kcal / top) * 100) + '%' : '0' },
-              })
-            ),
-            h('span', { class: 'gb-food-week-day' }, dayLabel(d.date, i === last))
-          )
-        )
-      ),
-    ],
-  });
-}
-
 function DietCheckCard({ check, canCheck, onCheck }) {
   const st = check || {};
-  const level = (label, v) =>
+  const level = (n, v) =>
     h(
       'span',
-      { class: 'gb-food-level' + (v === 'low' ? '' : ' is-good') },
-      label + ' · ' + (LEVEL_TEXT[v] || '-')
+      { class: 'gb-food-level' + (isGood(n.key, v) ? ' is-good' : '') },
+      n.label + ' · ' + (LEVEL_TEXT[v] || '-')
     );
   let body = null;
   if (st.loading) {
@@ -1207,8 +1296,12 @@ function DietCheckCard({ check, canCheck, onCheck }) {
     body = h(
       'div',
       { class: 'gb-food-check' },
-      r.protein || r.fiber
-        ? h('div', { class: 'gb-food-levels' }, level('Protein', r.protein), level('Fiber', r.fiber))
+      r.protein
+        ? h(
+            'div',
+            { class: 'gb-food-levels' },
+            NUTRIENTS.map((n) => level(n, r[n.key]))
+          )
         : null,
       h('p', { class: 'gb-food-check-text' }, r.summary),
       r.add && r.add.length
@@ -1223,7 +1316,7 @@ function DietCheckCard({ check, canCheck, onCheck }) {
     body = h(
       'p',
       { class: 'gb-summary-meta' },
-      'Buddy reads the dishes you logged this week and tells you what your plate is missing.'
+      'Buddy reads the dishes you logged this week and tells you how to close the gaps.'
     );
   }
   return Card({
@@ -1244,7 +1337,7 @@ function DietCheckCard({ check, canCheck, onCheck }) {
           disabled: !!st.loading || !canCheck,
           onclick: () => onCheck && onCheck(),
         },
-        st.data || st.error ? 'Check again' : 'Check protein and fiber'
+        st.data || st.error ? 'Check again' : 'Check my week'
       ),
     ],
   });
@@ -1279,18 +1372,25 @@ function ScreenSummary({ features, week, water, check, error, hasWeight, onCheck
   }
 
   const days = (week && week.days) || [];
-  const target = Math.max(1, (week && week.proteinTargetG) || 60);
   const logged = days.filter((d) => d.count > 0);
-  const hits = logged.filter((d) => d.proteinG >= target).length;
-  const past = days.slice(0, -1).filter((d) => d.count > 0);
-  const avg = past.length
-    ? Math.round(past.reduce((s, d) => s + d.proteinG, 0) / past.length)
-    : logged.length
-      ? logged[0].proteinG
-      : 0;
   const range = (water && water.days) || days;
   const fmt = (k) =>
     new Date(k + 'T12:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  const food = on('food') && logged.length > 0;
+  const lv = (week && week.levels) || {};
+  const short = NUTRIENTS.filter((n) => lv[n.key] === 'low');
+  const heavy = NUTRIENTS.filter((n) => lv[n.key] === 'high' && !isGood(n.key, 'high'));
+  // "protein and fiber." with each name in its own colour, the full stop inside the last.
+  const named = (list) =>
+    list.flatMap((n, i) => [
+      i === 0 ? '' : i === list.length - 1 ? ' and ' : ', ',
+      h('em', { class: 'is-' + n.key }, n.label.toLowerCase() + (i === list.length - 1 ? '.' : '')),
+    ]);
+  let headline;
+  if (!food) headline = ['Your week shows up here as you log it.'];
+  else if (short.length) headline = ['Your plate is short on ', ...named(short)];
+  else if (heavy.length) headline = ['Your plate is heavy on ', ...named(heavy)];
+  else headline = ['Your plate is close to target on all four.'];
 
   const hero = h(
     'section',
@@ -1299,26 +1399,19 @@ function ScreenSummary({ features, week, water, check, error, hasWeight, onCheck
       ? h(
           'span',
           { class: 'gb-summary-eyebrow' },
-          fmt(range[0].date) + ' – ' + fmt(range[range.length - 1].date) + ' · week so far'
+          fmt(range[0].date) + ' – ' + fmt(range[range.length - 1].date) + ' · daily average'
         )
       : null,
-    on('food') && logged.length
-      ? h(
-          'h1',
-          null,
-          'You reached your protein target on ',
-          h('em', null, hits + ' of 7 days.')
-        )
-      : h('h1', null, 'Your week shows up here as you log it.'),
-    on('food') && logged.length
+    h('h1', null, ...headline),
+    food
       ? h(
           'p',
           { class: 'gb-summary-sub' },
-          avg +
-            ' g a day on average, against ' +
-            target +
-            ' g a day.' +
-            (hasWeight ? '' : ' Add your weight in Settings for a target that fits you.')
+          short.length && heavy.length
+            ? 'And heavy on ' + heavy.map((n) => n.label.toLowerCase()).join(' and ') + '. '
+            : '',
+          'Targets come from your calorie goal' +
+            (hasWeight ? ' and weight.' : '. Add your weight in Settings for a protein target that fits you.')
         )
       : null
   );
@@ -1331,20 +1424,20 @@ function ScreenSummary({ features, week, water, check, error, hasWeight, onCheck
         'div',
         { class: 'gb-summary-col' },
         hero,
-        on('food') && logged.length ? ProteinThali(days, target) : null,
-        on('food') ? ProteinSources(week.sources) : null
+        food ? NutrientThali(week) : null,
+        food ? CalorieSplit(week) : null
       ),
       h(
         'div',
         { class: 'gb-summary-col' },
+        food ? DayByDayCard(week) : null,
         on('water') ? WaterWeekCard(water) : null,
-        on('food') ? CaloriesWeekCard(week) : null,
         on('food') ? DietCheckCard({ check, canCheck: logged.length > 0, onCheck }) : null,
         on('food')
           ? h(
               'p',
               { class: 'gb-summary-note' },
-              'Protein is estimated from the dishes you log, using Indian home and hotel averages. Read it as a direction, not a lab result.'
+              'Nutrients are estimated from the dishes you log, using Indian home and hotel averages. Read them as a direction, not a lab result.'
             )
           : null
       )

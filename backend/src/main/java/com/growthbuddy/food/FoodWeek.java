@@ -19,13 +19,13 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
- * The Food screen's Summary card: the last 7 days of calories against the goal
- * (free, computed on every read), and an on-demand diet check that asks the AI
- * whether the week is short on protein or fiber.
+ * The Summary screen: the last 7 days of calories, protein, carbs, fat and fiber
+ * against their targets (computed on every read), and an on-demand diet check
+ * that asks the AI how to close the gaps.
  *
- * <p>Entries carry only a name, grams and kcal, so the check judges from the
- * meal names. That is what the prompt says, and why its answer is three levels
- * rather than grams.
+ * <p>The grams are estimates. The first read of a week asks the AI for every
+ * entry it hasn't seen, in one batch, and stores them; until then, and when
+ * the AI is down, a keyword table stands in.
  */
 @Service
 public class FoodWeek {
@@ -34,29 +34,19 @@ public class FoodWeek {
 
     static final int DAYS = 7;
     private static final int DEFAULT_GOAL_KCAL = 2000;
+    /** Index order of every int[4] here, and of the JSON keys. */
+    static final List<String> KEYS = List.of("protein", "carbs", "fat", "fiber");
 
     private static final String PROMPT = """
             You are Buddy, the nutrition coach inside the Growth Buddy app, and you know
-            Indian food well. You get the meal names a user logged over the last few days
-            and their profile. Judge from the dish names alone whether the week is low,
-            ok or high in protein and in fiber. Be practical, kind and specific.
+            Indian food well. You get the meals a user logged over the last few days,
+            their estimated daily protein, carbs, fat and fiber against targets, and
+            their profile. Say how to close the gaps. Be practical, kind and specific.
             Return strict JSON only:
-            {"protein":"low|ok|high","fiber":"low|ok|high",
-             "summary":"two short sentences, second person, no numbers",
-             "add":["up to 4 short, specific Indian foods to add, respecting diet and allergies"]}
+            {"summary":"two short sentences, second person, no numbers",
+             "add":["up to 4 short, specific Indian foods to add or swap, respecting diet and allergies"]}
             No Markdown, no emoji.
             """;
-
-    // ponytail: keyword lists, not a nutrition database. Only used when the AI is
-    // unavailable; a dish named in Tamil or Hindi slang reads as "neither".
-    private static final List<String> PROTEIN = List.of(
-            "egg", "omelette", "chicken", "fish", "mutton", "prawn", "meat", "paneer", "dal", "sambar",
-            "rajma", "chana", "chole", "soya", "tofu", "curd", "yogurt", "milk", "sprout", "moong",
-            "peanut", "whey", "keema");
-    private static final List<String> FIBER = List.of(
-            "salad", "vegetable", "veg", "sabzi", "poriyal", "kootu", "avial", "spinach", "palak",
-            "fruit", "apple", "banana", "guava", "papaya", "orange", "oats", "millet", "ragi", "brown rice",
-            "chapati", "roti", "dal", "sambar", "rajma", "chana", "sprout", "beans", "carrot", "cucumber");
 
     private final FoodEntryRepository entries;
     private final UserRepository users;
@@ -71,38 +61,90 @@ public class FoodWeek {
         this.openai = openai;
     }
 
-    // Not @Transactional: estimateProtein is an AI call, and a transaction would
-    // hold a pooled connection through it.
+    // Not @Transactional: estimate is an AI call, and a transaction would hold a
+    // pooled connection through it.
     public FoodWeekResponse week(UUID userId) {
-        LocalDate today = clock.today(userId);
-        Map<LocalDate, List<FoodEntry>> byDay = byDay(userId, today);
-        estimateProtein(byDay.values().stream().flatMap(List::stream).filter(e -> e.getProteinG() == null).toList());
-        List<FoodWeekDay> days = new ArrayList<>();
-        byDay.forEach((d, list) -> days.add(new FoodWeekDay(d.toString(),
-                list.stream().mapToInt(FoodEntry::getKcalEstimated).sum(), list.size(),
-                list.stream().mapToInt(FoodWeek::protein).sum())));
+        Map<LocalDate, List<FoodEntry>> byDay = byDay(userId, clock.today(userId));
+        List<FoodEntry> all = byDay.values().stream().flatMap(List::stream).toList();
+        estimate(all.stream().filter(FoodWeek::missing).toList());
+        List<FoodWeekDay> days = days(byDay);
         User u = users.findById(userId).orElse(null);
-        Integer goal = u == null ? null : u.getDailyFoodGoalKcal();
-        return new FoodWeekResponse(goal != null ? goal : DEFAULT_GOAL_KCAL, proteinTarget(u), days,
-                sources(byDay.values().stream().flatMap(List::stream).toList()));
+        int goal = goalKcal(u);
+        Map<String, List<NutrientSource>> by = new LinkedHashMap<>();
+        for (int k = 0; k < KEYS.size(); k++) {
+            by.put(KEYS.get(k), sources(all, k));
+        }
+        Nutrients targets = targets(u, goal);
+        Nutrients avg = average(days);
+        DietCheckResponse r = rules(avg, targets);
+        return new FoodWeekResponse(goal, targets.proteinG(), days,
+                by.get("protein").stream().map(x -> new ProteinSource(x.name(), x.count(), x.g())).toList(),
+                targets, avg, averageKcal(days),
+                Map.of("protein", r.protein(), "carbs", r.carbs(), "fat", r.fat(), "fiber", r.fiber()), by);
     }
 
-    /** Top 5 dishes by protein over the week, same dish name counted together. */
-    static List<ProteinSource> sources(List<FoodEntry> all) {
+    private static int goalKcal(User u) {
+        Integer g = u == null ? null : u.getDailyFoodGoalKcal();
+        return g != null ? g : DEFAULT_GOAL_KCAL;
+    }
+
+    private static List<FoodWeekDay> days(Map<LocalDate, List<FoodEntry>> byDay) {
+        List<FoodWeekDay> days = new ArrayList<>();
+        byDay.forEach((d, list) -> {
+            int[] t = new int[4];
+            for (FoodEntry e : list) {
+                int[] g = grams(e);
+                for (int k = 0; k < 4; k++) {
+                    t[k] += g[k];
+                }
+            }
+            days.add(new FoodWeekDay(d.toString(), list.stream().mapToInt(FoodEntry::getKcalEstimated).sum(),
+                    list.size(), t[0], t[1], t[2], t[3]));
+        });
+        return days;
+    }
+
+    /**
+     * The days an average is taken over: the finished days with meals, because
+     * today is still being eaten. Only today logged? Then today.
+     */
+    static List<FoodWeekDay> averaged(List<FoodWeekDay> days) {
+        List<FoodWeekDay> logged = days.stream().filter(d -> d.count() > 0).toList();
+        List<FoodWeekDay> past = days.subList(0, Math.max(0, days.size() - 1)).stream()
+                .filter(d -> d.count() > 0).toList();
+        return past.isEmpty() ? logged : past;
+    }
+
+    static Nutrients average(List<FoodWeekDay> days) {
+        List<FoodWeekDay> a = averaged(days);
+        return new Nutrients(avg(a, FoodWeekDay::proteinG), avg(a, FoodWeekDay::carbsG),
+                avg(a, FoodWeekDay::fatG), avg(a, FoodWeekDay::fiberG));
+    }
+
+    static int averageKcal(List<FoodWeekDay> days) {
+        return avg(averaged(days), FoodWeekDay::kcal);
+    }
+
+    private static int avg(List<FoodWeekDay> days, java.util.function.ToIntFunction<FoodWeekDay> f) {
+        return (int) Math.round(days.stream().mapToInt(f).average().orElse(0));
+    }
+
+    /** Top 5 dishes by one nutrient over the week, same dish name counted together. */
+    static List<NutrientSource> sources(List<FoodEntry> all, int k) {
         Map<String, int[]> sum = new LinkedHashMap<>();
         Map<String, String> label = new LinkedHashMap<>();
         for (FoodEntry e : all) {
             String key = e.getFoodName().strip().toLowerCase(Locale.ROOT);
             label.putIfAbsent(key, e.getFoodName().strip());
-            int[] v = sum.computeIfAbsent(key, k -> new int[2]);
+            int[] v = sum.computeIfAbsent(key, x -> new int[2]);
             v[0]++;
-            v[1] += protein(e);
+            v[1] += grams(e)[k];
         }
         return sum.entrySet().stream()
                 .filter(en -> en.getValue()[1] > 0)
                 .sorted((a, b) -> b.getValue()[1] - a.getValue()[1])
                 .limit(5)
-                .map(en -> new ProteinSource(label.get(en.getKey()), en.getValue()[0], en.getValue()[1]))
+                .map(en -> new NutrientSource(label.get(en.getKey()), en.getValue()[0], en.getValue()[1]))
                 .toList();
     }
 
@@ -118,48 +160,86 @@ public class FoodWeek {
         return (int) Math.round(u.getWeightKg() * perKg);
     }
 
-    static int protein(FoodEntry e) {
-        return e.getProteinG() != null ? e.getProteinG() : guessProtein(e.getFoodName(), e.getQuantityGrams());
+    // ponytail: carbs 50% and fat 30% of the calorie goal, fiber a flat 30 g.
+    // The common dietary-guideline split; per-user shares if anyone asks.
+    static Nutrients targets(User u, int goalKcal) {
+        return new Nutrients(proteinTarget(u), (int) Math.round(goalKcal * 0.5 / 4),
+                (int) Math.round(goalKcal * 0.3 / 9), 30);
     }
 
-    // ponytail: grams of protein per 100 g, first keyword in this order wins
-    // ("chicken fried rice" is chicken, not rice). Only stands in while the AI
-    // hasn't estimated an entry, and is never stored, so the AI still can.
-    private static final Map<String, Double> PROTEIN_PER_100G = new LinkedHashMap<>();
+    private static boolean missing(FoodEntry e) {
+        return e.getProteinG() == null || e.getCarbsG() == null || e.getFatG() == null || e.getFiberG() == null;
+    }
+
+    /** Stored grams where the AI has estimated them, else the keyword table's guess. */
+    static int[] grams(FoodEntry e) {
+        int[] g = missing(e) ? guess(e.getFoodName(), e.getQuantityGrams()) : new int[4];
+        Integer[] stored = {e.getProteinG(), e.getCarbsG(), e.getFatG(), e.getFiberG()};
+        for (int k = 0; k < 4; k++) {
+            if (stored[k] != null) {
+                g[k] = stored[k];
+            }
+        }
+        return g;
+    }
+
+    // ponytail: protein, carbs, fat, fiber per 100 g as eaten; the first keyword
+    // in this order wins ("chicken fried rice" is chicken, any biryani is
+    // mostly rice). Only stands in while the AI hasn't estimated an entry, and is never
+    // stored, so the AI still can.
+    private static final Map<String, double[]> PER_100G = new LinkedHashMap<>();
+    private static final double[] UNKNOWN = {4, 15, 4, 1.5};
     static {
         Object[][] t = {
-            {"chicken", 18.0}, {"mutton", 20.0}, {"fish", 18.0}, {"prawn", 18.0}, {"keema", 18.0},
-            {"egg", 13.0}, {"omelette", 11.0}, {"paneer", 18.0}, {"tofu", 8.0}, {"soya", 13.0},
-            {"peanut", 25.0}, {"rajma", 7.0}, {"chana", 7.0}, {"chole", 7.0}, {"sprout", 7.0},
-            {"moong", 7.0}, {"dal", 6.0}, {"sambar", 3.0}, {"curd", 3.5}, {"milk", 3.3},
-            {"bread", 9.0}, {"roti", 9.0}, {"chapati", 9.0}, {"paratha", 7.0}, {"poori", 7.0},
-            {"dosa", 4.0}, {"idli", 4.0}, {"upma", 4.0}, {"poha", 3.0}, {"rice", 2.7},
+            {"biryani", 8, 25, 7, 1}, {"chicken", 18, 3, 10, 0.5}, {"mutton", 20, 2, 14, 0.3}, {"fish", 18, 3, 8, 0.3},
+            {"prawn", 18, 3, 6, 0.3}, {"keema", 18, 4, 14, 1}, {"egg", 13, 1, 10, 0},
+            {"omelette", 11, 2, 12, 0.3}, {"paneer", 18, 4, 20, 0}, {"tofu", 8, 2, 5, 1},
+            {"soya", 13, 10, 2, 4}, {"peanut", 25, 16, 49, 8.5}, {"rajma", 7, 18, 3, 6},
+            {"chana", 7, 20, 3, 6}, {"chole", 7, 18, 5, 6}, {"sprout", 7, 15, 1, 4},
+            {"moong", 7, 15, 2, 5}, {"dal", 6, 15, 3, 4}, {"sambar", 3, 10, 2, 3},
+            {"curd", 3.5, 4.5, 4, 0}, {"milk", 3.3, 5, 3.5, 0}, {"oats", 2.5, 12, 1.5, 1.7},
+            {"bread", 9, 49, 3, 3}, {"roti", 9, 46, 4, 5}, {"chapati", 9, 46, 4, 5},
+            {"paratha", 7, 40, 13, 4}, {"poori", 7, 45, 20, 3}, {"dosa", 4, 30, 5, 1.5},
+            {"idli", 4, 25, 0.5, 1.5}, {"upma", 4, 22, 6, 2}, {"poha", 3, 25, 4, 1.5},
+            {"ragi", 3, 20, 1, 3}, {"millet", 3, 23, 1, 1.3}, {"rice", 2.7, 28, 0.3, 0.4},
+            {"salad", 1.5, 5, 3, 2}, {"poriyal", 2, 9, 5, 3}, {"sabzi", 2, 9, 5, 3},
+            {"vegetable", 2, 9, 5, 3}, {"veg", 2, 9, 5, 3}, {"banana", 1.1, 23, 0.3, 2.6},
+            {"apple", 0.3, 14, 0.2, 2.4}, {"guava", 2.6, 14, 1, 5.4}, {"fruit", 0.8, 13, 0.3, 2.2},
         };
         for (Object[] r : t) {
-            PROTEIN_PER_100G.put((String) r[0], (Double) r[1]);
+            double[] v = new double[4];
+            for (int k = 0; k < 4; k++) {
+                v[k] = ((Number) r[k + 1]).doubleValue();
+            }
+            PER_100G.put((String) r[0], v);
         }
     }
 
-    static int guessProtein(String name, int grams) {
-        double per100 = 4.0;
-        for (Map.Entry<String, Double> en : PROTEIN_PER_100G.entrySet()) {
+    static int[] guess(String name, int grams) {
+        double[] per100 = UNKNOWN;
+        for (Map.Entry<String, double[]> en : PER_100G.entrySet()) {
             if (mentions(name, List.of(en.getKey()))) {
                 per100 = en.getValue();
                 break;
             }
         }
-        return (int) Math.round(per100 * grams / 100.0);
+        int[] g = new int[4];
+        for (int k = 0; k < 4; k++) {
+            g[k] = (int) Math.round(per100[k] * grams / 100.0);
+        }
+        return g;
     }
 
-    private static final String PROTEIN_PROMPT = """
-            You estimate protein for Indian food. Each numbered line is a dish and its
+    private static final String ESTIMATE_PROMPT = """
+            You estimate nutrients for Indian food. Each numbered line is a dish and its
             weight in grams as eaten. Return strict JSON only:
-            {"items":[{"i":1,"proteinG":12}, ...]} with one entry per line, proteinG an
-            integer. Use typical Indian home and hotel recipes.
+            {"items":[{"i":1,"proteinG":12,"carbsG":40,"fatG":8,"fiberG":3}, ...]} with one
+            entry per line, every value an integer number of grams. Use typical Indian
+            home and hotel recipes.
             """;
 
     /** One AI call for every entry the week hasn't estimated yet; failures leave them null. */
-    private void estimateProtein(List<FoodEntry> missing) {
+    private void estimate(List<FoodEntry> missing) {
         if (missing.isEmpty() || !openai.isConfigured()) {
             return;
         }
@@ -171,17 +251,29 @@ public class FoodWeek {
         }
         try {
             JsonNode n = json.readTree(OpenAIClient.jsonOf(
-                    openai.complete(PROTEIN_PROMPT, List.of(new ChatTurn("user", sb.toString())))));
+                    openai.complete(ESTIMATE_PROMPT, List.of(new ChatTurn("user", sb.toString())))));
             for (JsonNode it : n.path("items")) {
                 int i = it.path("i").asInt(0) - 1;
-                if (i >= 0 && i < batch.size() && it.path("proteinG").isNumber()) {
-                    int g = Math.max(0, Math.min(300, it.path("proteinG").asInt()));
-                    batch.get(i).setProteinG(g);
-                    entries.setProteinIfMissing(batch.get(i).getId(), g);
+                int[] g = new int[4];
+                boolean ok = i >= 0 && i < batch.size();
+                for (int k = 0; ok && k < 4; k++) {
+                    JsonNode v = it.path(KEYS.get(k) + "G");
+                    ok = v.isNumber();
+                    g[k] = Math.max(0, Math.min(900, v.asInt()));
                 }
+                if (!ok) {
+                    continue;
+                }
+                FoodEntry e = batch.get(i);
+                // Mirrors the UPDATE's coalesce: a value already stored wins.
+                if (e.getProteinG() == null) e.setProteinG(g[0]);
+                if (e.getCarbsG() == null) e.setCarbsG(g[1]);
+                if (e.getFatG() == null) e.setFatG(g[2]);
+                if (e.getFiberG() == null) e.setFiberG(g[3]);
+                entries.setNutrientsIfMissing(e.getId(), g[0], g[1], g[2], g[3]);
             }
         } catch (Exception ex) {
-            log.warn("Protein estimate failed, using the keyword table: {}", ex.toString());
+            log.warn("Nutrient estimate failed, using the keyword table: {}", ex.toString());
         }
     }
 
@@ -189,18 +281,16 @@ public class FoodWeek {
     // multi-second AI call. Each repository read takes its own.
     public DietCheckResponse check(UUID userId) {
         Map<LocalDate, List<FoodEntry>> byDay = byDay(userId, clock.today(userId));
-        List<String> names = byDay.values().stream().flatMap(List::stream).map(FoodEntry::getFoodName).toList();
-        if (names.isEmpty()) {
-            return new DietCheckResponse(null, null,
+        if (byDay.values().stream().allMatch(List::isEmpty)) {
+            return new DietCheckResponse(null, null, null, null,
                     "Log a few meals this week and Buddy can tell you what your plate is missing.", List.of(), "rules");
         }
         User u = users.findById(userId).orElse(null);
-        int target = proteinTarget(u);
-        int avgProtein = (int) Math.round(byDay.values().stream().filter(l -> !l.isEmpty())
-                .mapToInt(l -> l.stream().mapToInt(FoodWeek::protein).sum()).average().orElse(0));
-        // Protein is judged from the same numbers the screen's thali shows, never
-        // from keywords, so the verdict can't contradict the chart above it.
-        DietCheckResponse rules = rules(names, proteinLevel(avgProtein, target));
+        Nutrients target = targets(u, goalKcal(u));
+        Nutrients avg = average(days(byDay));
+        // Judged from the same numbers the screen's thali shows, never by the AI,
+        // so the verdict can't contradict the chart above it.
+        DietCheckResponse rules = rules(avg, target);
         if (!openai.isConfigured()) {
             return rules;
         }
@@ -211,8 +301,11 @@ public class FoodWeek {
                         .append(String.join(", ", list.stream().map(FoodEntry::getFoodName).toList())).append('\n');
             }
         });
-        sb.append("\nEstimated protein: ").append(avgProtein).append(" g a day on days with meals logged, target ")
-                .append(target).append(" g.");
+        sb.append("\nEstimated grams a day (target): protein ").append(avg.proteinG()).append(" (").append(target.proteinG())
+                .append("), carbs ").append(avg.carbsG()).append(" (").append(target.carbsG())
+                .append("), fat ").append(avg.fatG()).append(" (").append(target.fatG())
+                .append("), fiber ").append(avg.fiberG()).append(" (").append(target.fiberG()).append(").")
+                .append("\nVerdict: ").append(verdict(rules)).append('.');
         if (u != null) {
             sb.append("\nProfile: fitnessGoal=").append(safe(u.getFitnessGoal()))
                     .append(", diet=").append(safe(u.getDietPreference()))
@@ -228,10 +321,7 @@ public class FoodWeek {
                 }
             });
             String summary = n.path("summary").asText("").strip();
-            return new DietCheckResponse(
-                    // Protein from the numbers, as above; the AI only words it.
-                    rules.protein(),
-                    level(n.path("fiber").asText(), rules.fiber()),
+            return new DietCheckResponse(rules.protein(), rules.carbs(), rules.fat(), rules.fiber(),
                     summary.isEmpty() ? rules.summary() : cap(summary, 400),
                     add.isEmpty() ? rules.add() : add,
                     "ai");
@@ -239,6 +329,15 @@ public class FoodWeek {
             log.warn("Diet check fell back to the rules: {}", ex.toString());
             return rules;
         }
+    }
+
+    private static String verdict(DietCheckResponse r) {
+        List<String> v = List.of(r.protein(), r.carbs(), r.fat(), r.fiber());
+        List<String> parts = new ArrayList<>();
+        for (int k = 0; k < 4; k++) {
+            parts.add(KEYS.get(k) + " " + v.get(k));
+        }
+        return String.join(", ", parts);
     }
 
     /** Every day of the window, oldest first, empty days included so the chart has 7 bars. */
@@ -257,33 +356,61 @@ public class FoodWeek {
         return out;
     }
 
-    /** No AI: count how many logged dishes name a protein or a fiber food. */
     /** Under 80% of the target is low, over 120% high. */
-    static String proteinLevel(int avg, int target) {
+    static String level(int avg, int target) {
         double r = (double) avg / Math.max(1, target);
         return r < 0.8 ? "low" : r > 1.2 ? "high" : "ok";
     }
 
-    static DietCheckResponse rules(List<String> names) {
-        long p = names.stream().filter(n -> mentions(n, PROTEIN)).count();
-        return rules(names, share(p, names.size()));
-    }
-
-    static DietCheckResponse rules(List<String> names, String protein) {
-        long f = names.stream().filter(n -> mentions(n, FIBER)).count();
-        String fiber = share(f, names.size());
+    /** No AI: the verdict from the numbers, and a stock suggestion per gap. */
+    static DietCheckResponse rules(Nutrients avg, Nutrients target) {
+        String p = level(avg.proteinG(), target.proteinG());
+        String c = level(avg.carbsG(), target.carbsG());
+        String f = level(avg.fatG(), target.fatG());
+        String fi = level(avg.fiberG(), target.fiberG());
         List<String> add = new ArrayList<>();
-        if ("low".equals(protein)) {
+        List<String> light = new ArrayList<>();
+        List<String> heavy = new ArrayList<>();
+        if ("low".equals(p)) {
+            light.add("protein");
             add.addAll(List.of("Dal or sambar with lunch", "Eggs or paneer at breakfast"));
         }
-        if ("low".equals(fiber)) {
+        if ("low".equals(fi)) {
+            light.add("fiber");
             add.addAll(List.of("A vegetable poriyal or salad", "A fruit as an evening snack"));
         }
-        String summary = add.isEmpty()
-                ? "Your week has a fair mix of protein and fiber. Keep the variety going."
-                : "Your week looks light on " + ("low".equals(protein) && "low".equals(fiber) ? "protein and fiber"
-                        : "low".equals(protein) ? "protein" : "fiber") + ". A small addition to one meal a day closes the gap.";
-        return new DietCheckResponse(protein, fiber, summary, add, "rules");
+        if ("high".equals(c)) {
+            heavy.add("carbs");
+            add.add("Half a serving less rice, more vegetables");
+        } else if ("low".equals(c)) {
+            light.add("carbs");
+        }
+        if ("high".equals(f)) {
+            heavy.add("fat");
+            add.add("Fewer fried snacks like poori and bajji");
+        } else if ("low".equals(f)) {
+            light.add("fat");
+        }
+        String summary;
+        if (light.isEmpty() && heavy.isEmpty()) {
+            summary = "Your week is close to target on protein, carbs, fat and fiber. Keep the variety going.";
+        } else {
+            List<String> said = new ArrayList<>();
+            if (!light.isEmpty()) {
+                said.add("light on " + and(light));
+            }
+            if (!heavy.isEmpty()) {
+                said.add("heavy on " + and(heavy));
+            }
+            summary = "Your week looks " + String.join(" and ", said)
+                    + ". A small change to one meal a day closes most of the gap.";
+        }
+        return new DietCheckResponse(p, c, f, fi, summary, add.stream().limit(4).toList(), "rules");
+    }
+
+    private static String and(List<String> xs) {
+        return xs.size() == 1 ? xs.get(0)
+                : String.join(", ", xs.subList(0, xs.size() - 1)) + " and " + xs.get(xs.size() - 1);
     }
 
     /**
@@ -293,15 +420,6 @@ public class FoodWeek {
     static boolean mentions(String name, List<String> words) {
         String s = " " + name.toLowerCase(Locale.ROOT).replaceAll("non[ -]?veg\\w*", " ").replaceAll("[^a-z]+", " ");
         return words.stream().anyMatch(w -> s.contains(" " + w));
-    }
-
-    private static String share(long hits, int total) {
-        double r = (double) hits / total;
-        return r < 0.3 ? "low" : r > 0.7 ? "high" : "ok";
-    }
-
-    private static String level(String v, String fallback) {
-        return List.of("low", "ok", "high").contains(v) ? v : fallback;
     }
 
     private static String safe(String s) {

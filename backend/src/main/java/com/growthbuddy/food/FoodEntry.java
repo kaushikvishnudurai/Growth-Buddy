@@ -53,9 +53,18 @@ public class FoodEntry {
     @Column(length = 255)
     private String note;
 
-    /** Estimated grams of protein; null until FoodWeek estimates it. */
+    /** Estimated grams of each nutrient; null until FoodWeek estimates it. */
     @Column(name = "protein_g")
     private Integer proteinG;
+
+    @Column(name = "carbs_g")
+    private Integer carbsG;
+
+    @Column(name = "fat_g")
+    private Integer fatG;
+
+    @Column(name = "fiber_g")
+    private Integer fiberG;
 
     @Column(name = "logged_at", nullable = false)
     private Instant loggedAt;

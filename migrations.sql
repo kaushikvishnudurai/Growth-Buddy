@@ -52,6 +52,9 @@ FROM (
   UNION ALL SELECT 'habit_checkins'         AS table_name, 'metric_value'
   UNION ALL SELECT 'habit_checkins'         AS table_name, 'duration_min'
   UNION ALL SELECT 'food_entries'           AS table_name, 'protein_g'
+  UNION ALL SELECT 'food_entries'           AS table_name, 'carbs_g'
+  UNION ALL SELECT 'food_entries'           AS table_name, 'fat_g'
+  UNION ALL SELECT 'food_entries'           AS table_name, 'fiber_g'
 ) AS t
 LEFT JOIN information_schema.COLUMNS c
        ON c.table_schema = DATABASE()
@@ -209,3 +212,9 @@ CREATE TABLE IF NOT EXISTS `money_day_summaries` (
 -- NULL until FoodWeek estimates it (in one batch, the first time that week is
 -- viewed), so existing rows need nothing.
 ALTER TABLE food_entries ADD COLUMN protein_g SMALLINT NULL;
+
+-- Carbs, fat and fiber beside it, for the Summary's nutrition report. Same
+-- deal: NULL until FoodWeek's batch fills all four at once.
+ALTER TABLE food_entries ADD COLUMN carbs_g SMALLINT NULL;
+ALTER TABLE food_entries ADD COLUMN fat_g SMALLINT NULL;
+ALTER TABLE food_entries ADD COLUMN fiber_g SMALLINT NULL;

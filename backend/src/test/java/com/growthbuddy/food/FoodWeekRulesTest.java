@@ -1,27 +1,35 @@
 package com.growthbuddy.food;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-/** The no-AI diet check: what it says when the gateway is down or out of budget. */
+/** The numbers behind the Summary screen, and the no-AI diet check. */
 class FoodWeekRulesTest {
 
+    private static final Nutrients TARGET = new Nutrients(112, 325, 87, 30);
+
     @Test
-    void aWeekOfRiceAndDosaIsLowOnBoth() {
-        DietCheckResponse r = FoodWeek.rules(List.of("Rice", "Dosa", "Poori", "Bread", "Rice"));
+    void aRiceHeavyWeekIsLightOnProteinAndFiber() {
+        DietCheckResponse r = FoodWeek.rules(new Nutrients(79, 400, 72, 14), TARGET);
         assertEquals("low", r.protein());
+        assertEquals("high", r.carbs());
+        assertEquals("ok", r.fat());
         assertEquals("low", r.fiber());
-        assertTrue(r.add().size() >= 2);
+        assertTrue(r.summary().contains("light on protein and fiber"));
+        assertTrue(r.summary().contains("heavy on carbs"));
+        assertTrue(r.add().size() <= 4);
     }
 
     @Test
-    void dalAndVegetablesCountForBoth() {
-        DietCheckResponse r = FoodWeek.rules(List.of("Dal rice", "Chicken curry", "Veg salad", "Sambar"));
-        assertEquals("high", r.protein());
-        assertEquals("high", r.fiber());
+    void onTargetSaysSo() {
+        DietCheckResponse r = FoodWeek.rules(TARGET, TARGET);
+        assertEquals(List.of("ok", "ok", "ok", "ok"), List.of(r.protein(), r.carbs(), r.fat(), r.fiber()));
+        assertTrue(r.add().isEmpty());
     }
 
     @Test
@@ -34,36 +42,67 @@ class FoodWeekRulesTest {
     }
 
     @Test
-    void proteinGuessTakesTheFirstMatchingKeyword() {
-        // Chicken, not rice: 18 g per 100 g over 300 g.
-        assertEquals(54, FoodWeek.guessProtein("Chicken fried rice", 300));
-        assertEquals(8, FoodWeek.guessProtein("Plain dosa", 200));
-        // Unknown dish: the 4 g per 100 g default.
-        assertEquals(10, FoodWeek.guessProtein("Kozhukattai", 250));
+    void guessTakesTheFirstMatchingKeyword() {
+        // Chicken, not rice: 18/3/10/0.5 per 100 g over 300 g.
+        assertArrayEquals(new int[] {54, 9, 30, 2}, FoodWeek.guess("Chicken fried rice", 300));
+        // Biryani before chicken or veg: it is mostly rice.
+        assertEquals(50, FoodWeek.guess("Chicken biryani", 200)[1]);
+        assertEquals(50, FoodWeek.guess("Veg biryani", 200)[1]);
+        // Unknown dish: the 4/15/4/1.5 default.
+        assertArrayEquals(new int[] {10, 38, 10, 4}, FoodWeek.guess("Kozhukattai", 250));
+    }
+
+    @Test
+    void storedGramsWinOverTheGuess() {
+        FoodEntry e = entry("Dosa");
+        e.setProteinG(20);
+        int[] g = FoodWeek.grams(e);
+        assertEquals(20, g[0]);
+        assertEquals(60, g[1]);
     }
 
     @Test
     void sourcesGroupSameDishAndKeepTopFive() {
-        java.util.List<FoodEntry> all = new java.util.ArrayList<>();
+        List<FoodEntry> all = new ArrayList<>();
         for (String n : List.of("Dosa", "dosa ", "Chicken curry", "Rice", "Egg", "Paneer", "Dal", "Idli")) {
-            FoodEntry e = new FoodEntry();
-            e.setFoodName(n);
-            e.setQuantityGrams(200);
-            all.add(e);
+            all.add(entry(n));
         }
-        List<ProteinSource> top = FoodWeek.sources(all);
-        assertEquals(5, top.size());
-        assertEquals("Chicken curry", top.get(0).name());
-        assertTrue(top.stream().anyMatch(s -> s.name().equals("Dosa") && s.count() == 2));
+        List<NutrientSource> protein = FoodWeek.sources(all, 0);
+        assertEquals(5, protein.size());
+        assertEquals("Chicken curry", protein.get(0).name());
+        assertTrue(protein.stream().anyMatch(s -> s.name().equals("Dosa") && s.count() == 2));
+        // Carbs: two dosas (120 g) outrank a plate of rice (56 g).
+        assertEquals("Dosa", FoodWeek.sources(all, 1).get(0).name());
     }
 
     @Test
-    void proteinTargetFollowsWeightAndGoal() {
+    void averageSkipsTodayUnlessItIsAllThereIs() {
+        FoodWeekDay empty = day(0, 0);
+        FoodWeekDay today = day(1, 10);
+        List<FoodWeekDay> week = List.of(day(1, 100), empty, day(2, 50), today);
+        assertEquals(75, FoodWeek.average(week).proteinG());
+        assertEquals(10, FoodWeek.average(List.of(empty, empty, today)).proteinG());
+        assertEquals(0, FoodWeek.average(List.of(empty, empty)).proteinG());
+    }
+
+    @Test
+    void targetsFollowWeightGoalAndCalories() {
         com.growthbuddy.user.User u = new com.growthbuddy.user.User();
         assertEquals(60, FoodWeek.proteinTarget(u));
         u.setWeightKg(70);
         assertEquals(84, FoodWeek.proteinTarget(u));
         u.setFitnessGoal("Gain weight , dirty bulk");
-        assertEquals(112, FoodWeek.proteinTarget(u));
+        assertEquals(new Nutrients(112, 325, 87, 30), FoodWeek.targets(u, 2600));
+    }
+
+    private static FoodEntry entry(String name) {
+        FoodEntry e = new FoodEntry();
+        e.setFoodName(name);
+        e.setQuantityGrams(200);
+        return e;
+    }
+
+    private static FoodWeekDay day(int count, int protein) {
+        return new FoodWeekDay("2026-10-01", protein * 10, count, protein, 0, 0, 0);
     }
 }

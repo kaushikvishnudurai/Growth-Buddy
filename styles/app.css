@@ -2494,8 +2494,8 @@ body {
   position: absolute;
   left: 0;
   right: 0;
-  border-top: 1.5px dashed var(--sun-500);
-  opacity: 0.7;
+  border-top: 1.5px dashed var(--fg1);
+  opacity: 0.45;
   pointer-events: none;
 }
 .gb-food-week-col {
@@ -2524,14 +2524,11 @@ body {
   width: 100%;
   max-width: 30px;
   border-radius: 8px 8px 4px 4px;
-  background: var(--sun-300);
+  background: var(--n, var(--sun-300));
   transition: height 0.3s ease;
 }
-.gb-food-week-bar.is-over {
-  background: var(--sun-600);
-}
 .gb-food-week-col.is-today .gb-food-week-bar {
-  background: var(--brand);
+  opacity: 0.55;
 }
 .gb-food-week-day {
   position: absolute;
@@ -2626,8 +2623,14 @@ body {
 }
 .gb-summary-hero h1 em {
   font-style: normal;
-  color: var(--success);
+  color: var(--n);
 }
+/* One colour per nutrient, read as --n by every part of the Summary that
+   shows one: bowl ring, split bar, tab, chart bars, source bars, headline. */
+.gb-summary-page .is-protein { --n: var(--success); }
+.gb-summary-page .is-carbs { --n: var(--warning); }
+.gb-summary-page .is-fat { --n: var(--coral-400); }
+.gb-summary-page .is-fiber { --n: var(--info); }
 .gb-summary-sub {
   margin: 0;
   font-size: 0.9375rem;
@@ -2690,7 +2693,7 @@ body {
 }
 .gb-thali-center {
   position: absolute;
-  inset: 32.5%;
+  inset: 34.375%;
   border-radius: 50%;
   background: var(--bg-subtle);
   box-shadow: inset 0 0 0 1px var(--border);
@@ -2707,27 +2710,26 @@ body {
   letter-spacing: -0.02em;
   color: var(--fg1);
 }
-.gb-thali-total small {
-  font-size: 0.875rem;
+.gb-thali-unit {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--fg2);
 }
 .gb-thali-of {
   font-size: 0.75rem;
   font-weight: 600;
   color: var(--fg3);
 }
-/* --pct is set per bowl by dashboard.js: the day's share of the target. */
+/* --pct is set per bowl by dashboard.js: the average's share of the target. */
 .gb-katori {
   position: absolute;
-  width: 22.5%;
+  width: 26.875%;
   aspect-ratio: 1;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: conic-gradient(var(--success) 0 var(--pct, 0%), var(--surface-3) var(--pct, 0%) 100%);
-}
-.gb-katori.is-today {
-  box-shadow: 0 0 0 3px var(--surface-2), 0 0 0 5px var(--brand);
+  background: conic-gradient(var(--n) 0 var(--pct, 0%), var(--surface-3) var(--pct, 0%) 100%);
 }
 .gb-katori-in {
   width: 80.5%;
@@ -2742,37 +2744,115 @@ body {
 }
 .gb-katori-in strong {
   font-family: var(--font-mono);
-  font-size: 1rem;
+  font-size: 1.0625rem;
   line-height: 1;
   color: var(--fg1);
 }
+.gb-katori-in strong small {
+  font-size: 0.6875rem;
+}
 .gb-katori-in span {
-  margin-top: 3px;
+  margin-top: 4px;
   font-family: var(--font-mono);
   font-size: 0.625rem;
   letter-spacing: 0.04em;
-  color: var(--fg2);
+  color: var(--n);
 }
 .gb-thali-legend {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px 18px;
+  max-width: 320px;
+  text-align: center;
   font-size: 0.8125rem;
+  line-height: 1.5;
   color: var(--fg2);
 }
-.gb-thali-legend i {
-  display: inline-block;
-  width: 12px;
-  height: 12px;
-  margin-right: 7px;
-  vertical-align: -1px;
-  border-radius: 50%;
-  background: var(--success);
+
+/* Calorie split: one bar, flex-grow set inline from each macro's kcal. */
+.gb-split-bar {
+  display: flex;
+  gap: 2px;
+  height: 18px;
+  border-radius: 999px;
+  overflow: hidden;
 }
-.gb-thali-legend i.is-today {
-  background: none;
-  box-shadow: 0 0 0 2px var(--brand);
+.gb-split-bar > div {
+  flex-basis: 0;
+  background: var(--n);
+}
+.gb-split-legend {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.gb-split-legend > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.gb-split-legend span {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--n);
+}
+.gb-split-legend b {
+  font-family: var(--font-mono);
+  font-size: 1.125rem;
+  color: var(--fg1);
+}
+.gb-split-legend small {
+  font-size: 0.75rem;
+  color: var(--fg3);
+}
+
+/* Day by day: a four-way switch; the picked tab fills with its nutrient. */
+.gb-nutrient-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--bg);
+}
+.gb-nutrient-tabs button {
+  min-height: 44px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fg2);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.2s var(--ease-out), color 0.2s var(--ease-out);
+}
+/* Dark ink in both themes: every --n fill is a mid tone, and white on the
+   greens and yellows falls under 3:1. */
+.gb-nutrient-tabs button[aria-pressed='true'] {
+  background: var(--n);
+  color: var(--warm-900);
+}
+.gb-nutrient-tabs button:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+.gb-nutrient-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.gb-nutrient-panel[hidden] {
+  display: none;
+}
+.gb-nutrient-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.gb-nutrient-sources-title {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--fg2);
 }
 
 .gb-source-row {
@@ -2808,7 +2888,7 @@ body {
 .gb-source-bar {
   height: 100%;
   border-radius: 999px;
-  background: var(--success);
+  background: var(--n, var(--success));
 }
 
 .gb-tumblers {
@@ -2877,7 +2957,8 @@ body {
   color: var(--ai);
 }
 @media (prefers-reduced-motion: reduce) {
-  .gb-tumbler-fill {
+  .gb-tumbler-fill,
+  .gb-nutrient-tabs button {
     transition: none;
   }
 }

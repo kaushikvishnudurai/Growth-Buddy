@@ -29,11 +29,15 @@ DTOs: `FoodDtos`. Frontend: `openAddFood` in `scripts/app.js` (~1669), `FoodCard
 `FoodSummaryCard` in `scripts/dashboard.js`.
 
 **`food/FoodWeek`** (not in this file) backs the Summary screen: `GET /week` (7 days of kcal against
-`users.daily_food_goal_kcal`, plus protein: `food_entries.protein_g` is filled for the week's missing
-rows in one AI batch through a guarded UPDATE, never `save()`, which would re-insert an entry deleted
-mid-call; until then a keyword table stands in, unstored. Target: 1.6 g/kg for a gain goal, else
-1.2, else 60 g) and `POST /diet-check` (AI judges protein/fiber
-from dish names, rate-limited; keyword fallback `rules()` when the AI is off or fails). Not
+`users.daily_food_goal_kcal`, plus protein, carbs, fat and fiber: `food_entries.{protein,carbs,fat,fiber}_g`
+are filled for the week's missing rows in one AI batch through a guarded `coalesce` UPDATE, never
+`save()`, which would re-insert an entry deleted mid-call; until then a per-100 g keyword table stands
+in, unstored. Targets: protein 1.6 g/kg for a gain goal, else 1.2, else 60 g; carbs 50% and fat 30%
+of the kcal goal; fiber 30 g. The response also carries `averages` (finished days with meals; today
+only when it's all there is), `levels` (low/ok/high, under 80% / over 120%) and top-5 `sourcesBy`
+nutrient; `proteinTargetG` / `sources` are the older protein-only fields, kept for stale builds) and
+`POST /diet-check` (rate-limited; levels come from the same numbers via `rules()`, the AI only writes
+the summary and the foods to add, and `rules()` is the whole answer when the AI is off or fails). Not
 `@Transactional` on purpose: it would hold a connection through the AI call. app.js drops the
 check on every entry change, since it describes the week's dishes.
 
