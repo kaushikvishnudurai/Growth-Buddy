@@ -108,7 +108,9 @@ file — old WebViews, desktop Firefox, and the Capacitor wrapper. Both share bu
   for an empty day (worked out, not stored), "No spend" for one marked so. An outlier over 3x the next day
   caps the scale at 1.5x the next and draws that bar cut off (`is-clipped`), keeping its real label.
 - `dayPanel(day)`: facts from the local copy at once, the coach's paragraph from `requestDaySummary`, cached
-  per screen by the day's entries (`stable()`), with Try again on error; an empty day offers
+  per screen by the day's entries (`stable()`), with Try again on error. app.js runs `requestDaySummary`
+  behind `moneySaveQueue` + `flushLedger`: asked before the new expense reached the server, it
+  summarised the old day and that answer was kept under the new key; an empty day offers
   "Add an expense" (date prefilled) and "I spent nothing".
 - `searchExpenses` answers are scoped "since <earliest loaded month>", never "all time" (only ~13 months are loaded). Intents, checked in order: **essentials** ("unavoidable", "essential", "necessary": everything outside shopping/entertainment); **worth it** (a negation before skip/avoid/cut, "worth it": rated ≥4/5 or planned); **skip** ("skip", "avoid", "unnecessary", "not worth it"): spends rated ≤2/5 or unplanned wants not rated ≥4, with the
   reason on each row (`e.why`); a question it can't narrow tries its words against notes and tags, then says

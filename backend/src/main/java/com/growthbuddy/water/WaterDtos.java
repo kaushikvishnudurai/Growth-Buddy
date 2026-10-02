@@ -30,7 +30,8 @@ record AddWaterEntryRequest(
 }
 
 record UpdateWaterGoalRequest(
-        @Min(250) @Max(10000) Integer goalMl) {
+        // Same bounds as the profile's dailyWaterGoalMl: it is the same value now.
+        @Min(1000) @Max(7000) Integer goalMl) {
 }
 
 record WaterEntryResponse(
@@ -43,6 +44,12 @@ record WaterEntryResponse(
     static WaterEntryResponse from(WaterEntry e) {
         return new WaterEntryResponse(e.getId(), e.getAmountMl(), e.getNote(), e.getLoggedAt(), e.getLogDate());
     }
+}
+
+record WaterWeekResponse(int goalMl, List<WaterWeekDay> days) {
+}
+
+record WaterWeekDay(String date, int ml) {
 }
 
 record WaterSummaryResponse(

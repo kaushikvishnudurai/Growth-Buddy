@@ -22,9 +22,23 @@ import org.springframework.web.bind.annotation.RestController;
 public class FoodController {
 
     private final FoodService service;
+    private final FoodWeek week;
 
-    public FoodController(FoodService service) {
+    public FoodController(FoodService service, FoodWeek week) {
         this.service = service;
+        this.week = week;
+    }
+
+    /** Last 7 days of calories against the goal. No AI. */
+    @GetMapping("/week")
+    public FoodWeekResponse week() {
+        return week.week(CurrentUser.id());
+    }
+
+    /** Is the week short on protein or fiber? AI, so rate-limited in WebConfig. */
+    @PostMapping("/diet-check")
+    public DietCheckResponse dietCheck() {
+        return week.check(CurrentUser.id());
     }
 
     @GetMapping

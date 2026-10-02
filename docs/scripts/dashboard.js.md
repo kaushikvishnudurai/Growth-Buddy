@@ -28,7 +28,7 @@ ways. Adding a task or habit — or dismissing the checklist — brings the full
 | `GoalTimelineCard` | 475 | upcoming goal dates; `allGoals(sections)` (~100) |
 | `WaterCard` | 522 | biggest card (~360 lines): quick-add, goal edit, entry delete |
 | `FoodCard` | 880 | today's food summary |
-| `PhotoHistoryCard` | 945 | recent food-photo scans |
+| `FoodSummaryLink` / `ScreenSummary` | 956 | Food screen's link to `SCREENS.summary`; the screen: protein thali (7 katoris, % geometry so it shrinks on a narrow phone), protein sources, water tumblers, kcal bars, diet check. Data and invalidation live in app.js `loadWeekSummary` / `invalidateWeek` (fetched on open, not at boot: the food week may run an AI estimate) |
 | `MiniCalendarCard` | 1035 | ~370 lines; also used on Home, styled by `styles/mini-calendar.css`; app.js repaints it in place via `rerenderHomeMiniCalendarIfActive` |
 | `HabitSleepInsightCard` | ~1580 | fitness × sleep correlation. **Returns `null`** without at least one fitness habit *and* one sleep entry — it has no correlation to report, and it used to say so at full card size. Callers must guard on the returned node, not on the function. |
 | `ScreenFood` | 1545 | the standalone Food screen |

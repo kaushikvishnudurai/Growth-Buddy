@@ -20,13 +20,22 @@ GET after a write.
 
 - Photo estimation goes through `OpenAIClient` (Claude via Cloudflare). When it is unconfigured the estimate path must
   degrade gracefully rather than 500 — check that before changing the response shape.
-- `FoodPhotoLog` is a lightweight log (not the image itself) powering `PhotoHistoryCard` in
-  `scripts/dashboard.js`; the frontend also caches its own copy via `rememberPhotoFood` in app.js.
+- `FoodPhotoLog` is a lightweight log (not the image itself). Its card is gone; it still feeds the
+  photo achievement (`achievements.js`) and a Home insight (`dashboard.js`); the frontend also caches its own copy via `rememberPhotoFood` in app.js.
 - These endpoints are behind `AiRateLimitInterceptor` (per-user limit on AI-backed routes).
 - Entries are per (user, date); `FoodEntry` holds the nutrition columns.
 
 DTOs: `FoodDtos`. Frontend: `openAddFood` in `scripts/app.js` (~1669), `FoodCard` / `ScreenFood` /
-`PhotoHistoryCard` in `scripts/dashboard.js`.
+`FoodSummaryCard` in `scripts/dashboard.js`.
+
+**`food/FoodWeek`** (not in this file) backs the Summary screen: `GET /week` (7 days of kcal against
+`users.daily_food_goal_kcal`, plus protein: `food_entries.protein_g` is filled for the week's missing
+rows in one AI batch through a guarded UPDATE, never `save()`, which would re-insert an entry deleted
+mid-call; until then a keyword table stands in, unstored. Target: 1.6 g/kg for a gain goal, else
+1.2, else 60 g) and `POST /diet-check` (AI judges protein/fiber
+from dish names, rate-limited; keyword fallback `rules()` when the AI is off or fails). Not
+`@Transactional` on purpose: it would hold a connection through the AI call. app.js drops the
+check on every entry change, since it describes the week's dishes.
 
 ## Dating and manual calories
 

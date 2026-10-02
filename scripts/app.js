@@ -25,6 +25,7 @@ import {
 import {
   ScreenDashboard,
   ScreenFood,
+  ScreenSummary,
   HabitSleepInsightCard,
   RenderMiniCalendarCard,
   QuoteCard,
@@ -2355,6 +2356,7 @@ async function quickAddWater(amountMl) {
     });
     state.water = updated;
     render();
+    invalidateWeek('water');
   } catch (err) {
     toastError(err, 'Could not log water right now.');
   }
@@ -2367,7 +2369,12 @@ async function updateWaterGoal(goalMl) {
       body: JSON.stringify({ goalMl: goalMl }),
     });
     state.water = updated;
+    // Same column as Settings -> Profile, so its field shows this goal too.
+    // Not syncUserSession: that also re-applies UI prefs and refetches the chime.
+    state.user = Object.assign({}, state.user, { dailyWaterGoalMl: updated.goalMl });
+    saveSession(state.user, loadToken());
     render();
+    invalidateWeek('water');
   } catch (err) {
     toastError(err, 'Could not update water goal right now.');
   }
@@ -2387,6 +2394,7 @@ async function logFoodEntry(payload) {
     if (forToday) state.food = updated;
     cacheFoodSummary(updated);
     render();
+    invalidateWeek('food');
     toastSuccess(
       forToday
         ? 'Food logged.'
@@ -3073,9 +3081,68 @@ async function deleteWaterEntry(entryId) {
     });
     state.water = updated;
     render();
+    invalidateWeek('water');
   } catch (err) {
     toastError(err, 'Could not delete water entry.');
   }
+}
+
+/* The Summary screen's data. Fetched when the screen opens, not at boot: the
+   food half may run an AI protein estimate on the server. A write drops the half
+   it changed (refetched at once if the screen is showing), and a food write also
+   drops the diet check, which judged the week's dish names and no longer
+   describes it. `weekGen` throws away an answer that was in flight across a
+   write or a sign-out, so neither a stale week nor the last account's lands. */
+let weekGen = 0;
+let weekInFlight = null;
+function loadWeekSummary() {
+  if (weekInFlight === weekGen) return;
+  const gen = (weekInFlight = weekGen);
+  state.weekError = '';
+  Promise.all([
+    state.foodWeek || api('/api/food/week'),
+    state.waterWeek || api('/api/water/week'),
+  ])
+    .then(([f, w]) => {
+      if (gen !== weekGen) return;
+      state.foodWeek = f;
+      state.waterWeek = w;
+    })
+    .catch((err) => {
+      if (gen === weekGen) state.weekError = (err && err.message) || 'Could not load your week.';
+    })
+    .finally(() => {
+      if (weekInFlight === gen) weekInFlight = null;
+      if (state.screen !== 'summary') return;
+      if (gen !== weekGen) loadWeekSummary();
+      else render();
+    });
+}
+
+function invalidateWeek(kind) {
+  weekGen++;
+  if (kind !== 'water') {
+    state.foodWeek = null;
+    state.dietCheck = null;
+  }
+  if (kind !== 'food') state.waterWeek = null;
+  if (state.screen === 'summary') loadWeekSummary();
+}
+
+async function runDietCheck() {
+  const gen = weekGen;
+  state.dietCheck = { loading: true };
+  render();
+  let next;
+  try {
+    next = { data: await api('/api/food/diet-check', { method: 'POST' }) };
+  } catch (err) {
+    next = { error: (err && err.message) || 'Could not check your week right now.' };
+  }
+  // An entry changed (or the account did) while Buddy was reading: drop it.
+  if (gen !== weekGen) return;
+  state.dietCheck = next;
+  render();
 }
 
 async function deleteFoodEntry(entryId) {
@@ -3086,6 +3153,7 @@ async function deleteFoodEntry(entryId) {
     state.food = updated;
     cacheFoodSummary(updated);
     render();
+    invalidateWeek('food');
     toastSuccess('Food entry deleted.');
   } catch (err) {
     toastError(err, 'Could not delete food entry.');
@@ -3348,6 +3416,10 @@ async function saveProfileDetails(payload) {
     body: JSON.stringify(payload),
   });
   syncUserSession(updated);
+  // The tracker reads this same goal; refetch so Home shows it without a reload.
+  state.water = await api('/api/water').catch(() => state.water);
+  // Weight, fitness goal and both daily goals all feed the Summary's targets.
+  invalidateWeek();
   toastSuccess('Changes saved.');
   render();
   return updated;
@@ -4274,13 +4346,17 @@ function openProfileSettings(initialTab) {
     placeholder: 'kcal',
     value: u.dailyFoodGoalKcal || '',
   });
+  const waterGoalNow = (state.water && state.water.goalMl) || u.dailyWaterGoalMl;
   const waterGoalInput = h('input', {
     type: 'number',
     class: 'gb-input',
     min: '1000',
     max: '7000',
     placeholder: 'ml',
-    value: u.dailyWaterGoalMl || '',
+    // What the tracker uses, which for an account with a pre-move tracker goal is
+    // not yet this column. Clamped: an old tracker goal could be 250, and an
+    // out-of-range value here would refuse the whole Settings save.
+    value: waterGoalNow ? Math.min(7000, Math.max(1000, waterGoalNow)) : '',
   });
   const allergicInput = h('input', {
     type: 'text',
@@ -6904,13 +6980,35 @@ const SCREENS = {
         features: (state.user && state.user.features) || null,
         water: state.water,
         food: state.food,
-        photoHistory: state.wellness.photoHistory || [],
+        onOpenSummary: () => {
+          state.weekError = '';
+          setScreen('summary');
+        },
         onQuickAddWater: quickAddWater,
         onUpdateWaterGoal: updateWaterGoal,
         onAddFood: openAddFood,
         onDeleteWater: deleteWaterEntry,
         onDeleteFood: deleteFoodEntry,
       }),
+  },
+  summary: {
+    headerLabel: () => 'Water & meals',
+    headerName: () => 'Summary',
+    render: () => {
+      // Not on a failed load: that waits for Try again, or every repaint retries.
+      if ((!state.foodWeek || !state.waterWeek) && !state.weekError) loadWeekSummary();
+      return ScreenSummary({
+        features: (state.user && state.user.features) || null,
+        week: state.foodWeek,
+        water: state.waterWeek,
+        check: state.dietCheck,
+        error: state.weekError,
+        hasWeight: !!(state.user && state.user.weightKg),
+        onCheck: runDietCheck,
+        onRetry: loadWeekSummary,
+        onBack: () => setScreen('food'),
+      });
+    },
   },
   calendar: {
     headerLabel: () => 'Plan & remember',
@@ -7098,7 +7196,15 @@ const SCREENS = {
         requestAdvice: (payload) =>
           api('/api/money/advice', { method: 'POST', body: JSON.stringify(payload) }),
         accountRequest,
-        requestDaySummary: (day) => api('/api/money/day-summary?date=' + encodeURIComponent(day)),
+        // Behind the save queue, like accountRequest: asked the moment an expense is
+        // added, it read the day without it, and money.js kept that under the new key.
+        requestDaySummary: (day) => {
+          const run = moneySaveQueue
+            .then(flushLedger)
+            .then(() => api('/api/money/day-summary?date=' + encodeURIComponent(day)));
+          moneySaveQueue = run.catch(() => {});
+          return run;
+        },
       }),
   },
   notes: {
@@ -8031,6 +8137,11 @@ function logout() {
   state.authNotice = '';
   state.goalProgress = {};
   state.money = emptyMoney();
+  weekGen++;
+  state.foodWeek = null;
+  state.waterWeek = null;
+  state.dietCheck = null;
+  state.weekError = '';
   // Drop the hash so the URL doesn't say "#/circle" on the sign-in screen.
   if (window.location.hash) history.replaceState(null, '', window.location.pathname);
   render();

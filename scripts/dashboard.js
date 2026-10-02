@@ -742,8 +742,8 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater })
       title: 'Set daily water goal',
       label: 'Goal (ml/day)',
       initialValue: goalMl,
-      min: 250,
-      max: 10000,
+      min: 1000,
+      max: 7000,
       confirmLabel: 'Save goal',
       onConfirm: (amount) => onUpdateWaterGoal(amount),
     });
@@ -953,10 +953,23 @@ function FoodCard({ food, onAddFood, onDeleteFood }) {
   });
 }
 
-function PhotoHistoryCard({ photoHistory }) {
-  const items = photoHistory || [];
+/* ---- Food summary screen (SCREENS.summary) ----
+   Protein as a thali: seven katoris round a plate, each ring filled toward the
+   day's target. Then the dishes it came from, water as tumblers, calories, and
+   Buddy's diet check. Protein is estimated on the server (FoodWeek), so the page
+   says so. The check is an AI call: it runs on a tap, and app.js drops it
+   whenever an entry changes, since it judged the week's dish names. */
+const LEVEL_TEXT = { low: 'low', ok: 'good', high: 'high' };
+
+function dayLabel(date, isToday) {
+  return isToday
+    ? 'Today'
+    : new Date(date + 'T12:00').toLocaleDateString(undefined, { weekday: 'short' });
+}
+
+function FoodSummaryLink({ onOpen }) {
   return Card({
-    className: 'gb-photo-history-card',
+    className: 'gb-food-week-card',
     children: [
       h(
         'div',
@@ -964,56 +977,379 @@ function PhotoHistoryCard({ photoHistory }) {
         h(
           'div',
           null,
-          h('div', { class: 'gb-water-title' }, 'Photo food history'),
-          h('div', { class: 'gb-water-meta' }, 'Recent plate estimates and confidence')
-        ),
-        items.length
-          ? h(
-              'div',
-              { class: 'gb-food-total', 'aria-label': plural(items.length, 'plate photo') },
-              items.length
-            )
-          : null
+          h('div', { class: 'gb-water-title' }, 'Summary'),
+          h('div', { class: 'gb-water-meta' }, 'Protein, water and calories for the last 7 days')
+        )
       ),
-      items.length
-        ? h(
-            'div',
-            { class: 'gb-photo-history-list' },
-            items
-              .slice(0, 6)
-              .map((item) =>
-                h(
-                  'div',
-                  { class: 'gb-photo-history-row' },
-                  h(
-                    'span',
-                    { class: 'gb-photo-history-icon' },
-                    Icon('camera', { size: 16, sw: 2.4 })
-                  ),
-                  h(
-                    'span',
-                    { class: 'gb-photo-history-copy' },
-                    h('strong', null, item.foodName || 'Plate photo'),
-                    h(
-                      'small',
-                      null,
-                      (item.mealType || 'meal') +
-                        (item.confidence == null ? '' : ' - ' + item.confidence + '% confidence')
-                    )
-                  ),
-                  item.fallbackNeeded
-                    ? h('span', { class: 'gb-photo-history-pill' }, 'review')
-                    : h('span', { class: 'gb-photo-history-pill is-good' }, 'used')
-                )
-              )
-          )
-        : h(
-            'p',
-            { class: 'gb-water-quote', style: { marginTop: '8px' } },
-            'Add a photo when you log food — your plate history builds here.'
-          ),
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--soft gb-food-check-btn',
+          onclick: () => onOpen && onOpen(),
+        },
+        Icon('chart-column', { size: 16, sw: 2.4 }),
+        'Open summary'
+      ),
     ],
   });
+}
+
+function summaryHead(title, meta) {
+  return h(
+    'div',
+    { class: 'gb-summary-card-head' },
+    h('h2', null, title),
+    meta ? h('span', null, meta) : null
+  );
+}
+
+// Geometry in % of the plate, so it shrinks on a narrow phone instead of
+// overflowing: bowls 22.5% wide on a ring at 34.4% from the centre.
+function ProteinThali(days, target) {
+  const last = days.length - 1;
+  const total = days.reduce((s, d) => s + d.proteinG, 0);
+  return h(
+    'figure',
+    { class: 'gb-thali-fig' },
+    h(
+      'div',
+      { class: 'gb-thali' },
+      h(
+        'div',
+        { class: 'gb-thali-center' },
+        h('span', { class: 'gb-thali-total' }, String(total), h('small', null, 'g')),
+        h('span', { class: 'gb-thali-of' }, 'of ' + target * 7 + ' g')
+      ),
+      days.map((d, i) => {
+        const a = ((-90 + (i * 360) / 7) * Math.PI) / 180;
+        const pct = Math.min(100, Math.round((d.proteinG / target) * 100));
+        const label = dayLabel(d.date, i === last);
+        return h(
+          'div',
+          {
+            class: 'gb-katori' + (i === last ? ' is-today' : ''),
+            role: 'img',
+            'aria-label': label + ': ' + d.proteinG + ' grams of protein',
+            style: {
+              left: 50 + 34.375 * Math.cos(a) - 11.25 + '%',
+              top: 50 + 34.375 * Math.sin(a) - 11.25 + '%',
+              '--pct': pct + '%',
+            },
+          },
+          h(
+            'div',
+            { class: 'gb-katori-in', 'aria-hidden': 'true' },
+            h('strong', null, String(d.proteinG)),
+            h('span', null, label)
+          )
+        );
+      })
+    ),
+    h(
+      'figcaption',
+      { class: 'gb-thali-legend' },
+      h('span', null, h('i'), 'Full bowl = ' + target + ' g'),
+      h('span', null, h('i', { class: 'is-today' }), 'Today, still going')
+    )
+  );
+}
+
+function ProteinSources(sources) {
+  if (!sources || !sources.length) return null;
+  const top = Math.max(1, sources[0].proteinG);
+  return Card({
+    className: 'gb-food-week-card gb-summary-card',
+    children: [
+      summaryHead('Where it came from', 'top ' + sources.length + ' dishes'),
+      sources.map((s) =>
+        h(
+          'div',
+          { class: 'gb-source-row' },
+          h(
+            'div',
+            { class: 'gb-source-head' },
+            h(
+              'span',
+              null,
+              s.name,
+              h('small', null, ' · ' + (s.count === 1 ? 'once' : s.count + ' times'))
+            ),
+            h('b', null, s.proteinG + ' g')
+          ),
+          h(
+            'div',
+            { class: 'gb-source-track' },
+            h('div', {
+              class: 'gb-source-bar',
+              style: { width: Math.round((s.proteinG / top) * 100) + '%' },
+            })
+          )
+        )
+      ),
+    ],
+  });
+}
+
+function WaterWeekCard(water) {
+  const goal = Math.max(1, water.goalMl || 2000);
+  const days = water.days || [];
+  const last = days.length - 1;
+  const done = days.slice(0, -1);
+  const avg = done.length ? done.reduce((s, d) => s + d.ml, 0) / done.length : 0;
+  const hits = days.filter((d) => d.ml >= goal).length;
+  const litres = (ml) => (ml / 1000).toFixed(1);
+  return Card({
+    className: 'gb-food-week-card gb-summary-card',
+    children: [
+      summaryHead('Water', 'goal ' + litres(goal) + ' L'),
+      h(
+        'p',
+        { class: 'gb-summary-meta' },
+        litres(avg) + ' L a day on average. Goal reached on ' + hits + ' of 7 days.'
+      ),
+      h(
+        'figure',
+        { class: 'gb-tumblers', 'aria-label': 'Water each day this week' },
+        days.map((d, i) =>
+          h(
+            'div',
+            {
+              class: 'gb-tumbler-col' + (i === last ? ' is-today' : ''),
+              role: 'img',
+              'aria-label': dayLabel(d.date, i === last) + ': ' + d.ml + ' ml of water',
+            },
+            h('small', { 'aria-hidden': 'true' }, litres(d.ml)),
+            h(
+              'div',
+              { class: 'gb-tumbler' + (d.ml >= goal ? ' is-full' : ''), 'aria-hidden': 'true' },
+              h('div', {
+                class: 'gb-tumbler-fill',
+                style: { height: Math.min(100, Math.round((d.ml / goal) * 100)) + '%' },
+              })
+            ),
+            h(
+              'span',
+              { class: 'gb-tumbler-day', 'aria-hidden': 'true' },
+              dayLabel(d.date, i === last)
+            )
+          )
+        )
+      ),
+    ],
+  });
+}
+
+function CaloriesWeekCard(week) {
+  const days = week.days || [];
+  const goal = Math.max(1, week.goalKcal || 2000);
+  const logged = days.filter((d) => d.count > 0);
+  const avg = logged.length
+    ? Math.round(logged.reduce((s, d) => s + d.kcal, 0) / logged.length)
+    : 0;
+  // Headroom over the goal so the goal line never sits on the card's top edge.
+  const top = Math.max(goal * 1.25, ...days.map((d) => d.kcal));
+  const last = days.length - 1;
+  return Card({
+    className: 'gb-food-week-card gb-summary-card',
+    children: [
+      summaryHead('Calories', 'goal ' + goal.toLocaleString() + ' kcal'),
+      h(
+        'p',
+        { class: 'gb-summary-meta' },
+        logged.length ? avg.toLocaleString() + ' kcal a day on average' : 'No meals logged yet'
+      ),
+      h(
+        'div',
+        { class: 'gb-food-week-bars', role: 'img', 'aria-label': 'Calories, last 7 days' },
+        h('div', {
+          class: 'gb-food-week-goal',
+          // A share of the track, not of the box: the box also holds the 18px value
+          // row above and the 22px day row below (.gb-food-week-bars padding).
+          style: { bottom: 'calc(22px + (100% - 40px) * ' + (goal / top).toFixed(4) + ')' },
+        }),
+        days.map((d, i) =>
+          h(
+            'div',
+            { class: 'gb-food-week-col' + (i === last ? ' is-today' : '') },
+            h('span', { class: 'gb-food-week-val' }, d.count ? d.kcal : ''),
+            h(
+              'div',
+              { class: 'gb-food-week-track' },
+              h('div', {
+                class: 'gb-food-week-bar' + (d.kcal > goal ? ' is-over' : ''),
+                style: { height: d.count ? Math.max(4, (d.kcal / top) * 100) + '%' : '0' },
+              })
+            ),
+            h('span', { class: 'gb-food-week-day' }, dayLabel(d.date, i === last))
+          )
+        )
+      ),
+    ],
+  });
+}
+
+function DietCheckCard({ check, canCheck, onCheck }) {
+  const st = check || {};
+  const level = (label, v) =>
+    h(
+      'span',
+      { class: 'gb-food-level' + (v === 'low' ? '' : ' is-good') },
+      label + ' · ' + (LEVEL_TEXT[v] || '-')
+    );
+  let body = null;
+  if (st.loading) {
+    body = h('p', { class: 'gb-summary-meta' }, 'Buddy is reading your week...');
+  } else if (st.error) {
+    body = h('p', { class: 'gb-summary-meta' }, st.error);
+  } else if (st.data) {
+    const r = st.data;
+    body = h(
+      'div',
+      { class: 'gb-food-check' },
+      r.protein || r.fiber
+        ? h('div', { class: 'gb-food-levels' }, level('Protein', r.protein), level('Fiber', r.fiber))
+        : null,
+      h('p', { class: 'gb-food-check-text' }, r.summary),
+      r.add && r.add.length
+        ? h(
+            'ul',
+            { class: 'gb-food-check-add' },
+            r.add.map((x) => h('li', null, x))
+          )
+        : null
+    );
+  } else {
+    body = h(
+      'p',
+      { class: 'gb-summary-meta' },
+      'Buddy reads the dishes you logged this week and tells you what your plate is missing.'
+    );
+  }
+  return Card({
+    className: 'gb-food-week-card gb-summary-card gb-summary-buddy',
+    children: [
+      h(
+        'div',
+        { class: 'gb-buddy-eyebrow' },
+        Icon('sparkles', { size: 16, sw: 2.4 }),
+        "Buddy's read on your week"
+      ),
+      body,
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--soft gb-food-check-btn',
+          disabled: !!st.loading || !canCheck,
+          onclick: () => onCheck && onCheck(),
+        },
+        st.data || st.error ? 'Check again' : 'Check protein and fiber'
+      ),
+    ],
+  });
+}
+
+function ScreenSummary({ features, week, water, check, error, hasWeight, onCheck, onRetry, onBack }) {
+  const on = (k) => !features || features[k] !== false;
+  const back = h(
+    'button',
+    { type: 'button', class: 'gb-btn gb-btn--ghost gb-btn--compact gb-summary-back', onclick: onBack },
+    Icon('chevron-left', { size: 16, sw: 2.6 }),
+    'Food'
+  );
+  const wrap = (...kids) => h('div', { class: 'gb-rise gb-summary-page' }, back, ...kids);
+  if (error) {
+    return wrap(
+      Card({
+        className: 'gb-food-week-card gb-summary-card',
+        children: [
+          h('p', { class: 'gb-summary-meta' }, error),
+          h(
+            'button',
+            { type: 'button', class: 'gb-btn gb-btn--soft gb-food-check-btn', onclick: onRetry },
+            'Try again'
+          ),
+        ],
+      })
+    );
+  }
+  if ((on('food') && !week) || (on('water') && !water)) {
+    return wrap(h('p', { class: 'gb-summary-meta' }, 'Loading your week...'));
+  }
+
+  const days = (week && week.days) || [];
+  const target = Math.max(1, (week && week.proteinTargetG) || 60);
+  const logged = days.filter((d) => d.count > 0);
+  const hits = logged.filter((d) => d.proteinG >= target).length;
+  const past = days.slice(0, -1).filter((d) => d.count > 0);
+  const avg = past.length
+    ? Math.round(past.reduce((s, d) => s + d.proteinG, 0) / past.length)
+    : logged.length
+      ? logged[0].proteinG
+      : 0;
+  const range = (water && water.days) || days;
+  const fmt = (k) =>
+    new Date(k + 'T12:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+
+  const hero = h(
+    'section',
+    { class: 'gb-summary-hero' },
+    range.length
+      ? h(
+          'span',
+          { class: 'gb-summary-eyebrow' },
+          fmt(range[0].date) + ' – ' + fmt(range[range.length - 1].date) + ' · week so far'
+        )
+      : null,
+    on('food') && logged.length
+      ? h(
+          'h1',
+          null,
+          'You reached your protein target on ',
+          h('em', null, hits + ' of 7 days.')
+        )
+      : h('h1', null, 'Your week shows up here as you log it.'),
+    on('food') && logged.length
+      ? h(
+          'p',
+          { class: 'gb-summary-sub' },
+          avg +
+            ' g a day on average, against ' +
+            target +
+            ' g a day.' +
+            (hasWeight ? '' : ' Add your weight in Settings for a target that fits you.')
+        )
+      : null
+  );
+
+  return wrap(
+    h(
+      'div',
+      { class: 'gb-summary-grid' },
+      h(
+        'div',
+        { class: 'gb-summary-col' },
+        hero,
+        on('food') && logged.length ? ProteinThali(days, target) : null,
+        on('food') ? ProteinSources(week.sources) : null
+      ),
+      h(
+        'div',
+        { class: 'gb-summary-col' },
+        on('water') ? WaterWeekCard(water) : null,
+        on('food') ? CaloriesWeekCard(week) : null,
+        on('food') ? DietCheckCard({ check, canCheck: logged.length > 0, onCheck }) : null,
+        on('food')
+          ? h(
+              'p',
+              { class: 'gb-summary-note' },
+              'Protein is estimated from the dishes you log, using Indian home and hotel averages. Read it as a direction, not a lab result.'
+            )
+          : null
+      )
+    )
+  );
 }
 
 function HabitStrip({ habits, onAdd, toggleHabit }) {
@@ -1539,7 +1875,7 @@ function ScreenFood({
   features,
   water,
   food,
-  photoHistory,
+  onOpenSummary,
   onQuickAddWater,
   onUpdateWaterGoal,
   onAddFood,
@@ -1560,7 +1896,13 @@ function ScreenFood({
     on('food')
       ? h('div', { class: 'gb-dash-block' }, FoodCard({ food, onAddFood, onDeleteFood }))
       : null,
-    on('food') ? h('div', { class: 'gb-dash-block' }, PhotoHistoryCard({ photoHistory })) : null
+    on('food') || on('water')
+      ? h(
+          'div',
+          { class: 'gb-dash-block' },
+          FoodSummaryLink({ onOpen: onOpenSummary })
+        )
+      : null
   );
 }
 
@@ -1681,6 +2023,7 @@ export {
   resolveHomeLayout,
   MiniCalendarCard as RenderMiniCalendarCard,
   ScreenFood,
+  ScreenSummary,
   HabitSleepInsightCard,
   QuoteCard,
   WeeklyReflectionCard,

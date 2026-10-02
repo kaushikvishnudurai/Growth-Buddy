@@ -51,6 +51,7 @@ FROM (
   UNION ALL SELECT 'habits'                 AS table_name, 'metric'
   UNION ALL SELECT 'habit_checkins'         AS table_name, 'metric_value'
   UNION ALL SELECT 'habit_checkins'         AS table_name, 'duration_min'
+  UNION ALL SELECT 'food_entries'           AS table_name, 'protein_g'
 ) AS t
 LEFT JOIN information_schema.COLUMNS c
        ON c.table_schema = DATABASE()
@@ -203,3 +204,8 @@ CREATE TABLE IF NOT EXISTS `money_day_summaries` (
   `created_at` datetime(6) NOT NULL,
   PRIMARY KEY (`user_id`, `day`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Estimated protein per entry, for the Food summary's weekly protein report.
+-- NULL until FoodWeek estimates it (in one batch, the first time that week is
+-- viewed), so existing rows need nothing.
+ALTER TABLE food_entries ADD COLUMN protein_g SMALLINT NULL;

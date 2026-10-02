@@ -58,6 +58,7 @@ public class AuthService {
     private final OpenAIClient openai;
     private final RateLimiter rateLimiter;
     private final LoginAttemptGuard loginGuard;
+    private final com.growthbuddy.water.WaterService water;
     private final boolean prod;
     private final ObjectMapper json = new ObjectMapper();
     private final BCryptPasswordEncoder bcrypt = new BCryptPasswordEncoder();
@@ -134,6 +135,7 @@ public class AuthService {
                        OpenAIClient openai,
                        RateLimiter rateLimiter,
                        LoginAttemptGuard loginGuard,
+                       com.growthbuddy.water.WaterService water,
                        @org.springframework.beans.factory.annotation.Value("${spring.profiles.active:}") String activeProfiles) {
         this.users = users;
         this.creds = creds;
@@ -145,6 +147,7 @@ public class AuthService {
         this.openai = openai;
         this.rateLimiter = rateLimiter;
         this.loginGuard = loginGuard;
+        this.water = water;
         this.prod = activeProfiles != null && activeProfiles.toLowerCase().contains("prod");
     }
 
@@ -534,6 +537,11 @@ public class AuthService {
         user.setAllergicTo(clean(req.allergicTo()));
         user.setFavouriteDish(clean(req.favouriteDish()));
         user.setDailyFoodGoalKcal(req.dailyFoodGoalKcal());
+        if (!java.util.Objects.equals(user.getDailyWaterGoalMl(), req.dailyWaterGoalMl())) {
+            // The tracker reads an old water_goals row first; once the goal is
+            // edited here, this column is the only one.
+            water.dropLegacyGoal(userId);
+        }
         user.setDailyWaterGoalMl(req.dailyWaterGoalMl());
         users.save(user);
         return AuthUserResponse.from(user);

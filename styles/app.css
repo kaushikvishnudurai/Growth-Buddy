@@ -2297,7 +2297,7 @@ body {
 .gb-badge-card,
 .gb-suggest-card,
 .gb-timeline-card,
-.gb-photo-history-card,
+.gb-food-week-card,
 .gb-ach-summary,
 .gb-focus-statscard {
   padding: 16px;
@@ -2373,8 +2373,7 @@ body {
 }
 .gb-wellness-icon,
 .gb-suggest-icon,
-.gb-plan-icon,
-.gb-photo-history-icon {
+.gb-plan-icon {
   width: 30px;
   height: 30px;
   border-radius: var(--radius-sm);
@@ -2399,7 +2398,6 @@ body {
 .gb-reflect-list,
 .gb-suggest-list,
 .gb-timeline-list,
-.gb-photo-history-list,
 .gb-plan-list {
   display: flex;
   flex-direction: column;
@@ -2423,7 +2421,6 @@ body {
 }
 .gb-suggest-row,
 .gb-timeline-row,
-.gb-photo-history-row,
 .gb-plan-row {
   display: flex;
   align-items: center;
@@ -2432,7 +2429,6 @@ body {
 }
 .gb-suggest-copy,
 .gb-timeline-copy,
-.gb-photo-history-copy,
 .gb-plan-copy {
   flex: 1;
   min-width: 0;
@@ -2442,7 +2438,6 @@ body {
 }
 .gb-suggest-copy strong,
 .gb-timeline-copy strong,
-.gb-photo-history-copy strong,
 .gb-plan-copy strong {
   color: var(--fg1);
   font-size: 0.8125rem;
@@ -2451,7 +2446,6 @@ body {
 }
 .gb-suggest-copy small,
 .gb-timeline-copy small,
-.gb-photo-history-copy small,
 .gb-plan-copy span {
   color: var(--fg3);
   font-size: 0.75rem;
@@ -2470,7 +2464,7 @@ body {
   font-size: 0.84375rem;
   line-height: 1.5;
 }
-.gb-photo-history-pill {
+.gb-food-level {
   flex: none;
   border-radius: 999px;
   padding: 5px 8px;
@@ -2479,9 +2473,413 @@ body {
   color: var(--warning-soft-fg);
   background: var(--warning-soft);
 }
-.gb-photo-history-pill.is-good {
+.gb-food-level.is-good {
   color: var(--success-soft-fg);
   background: var(--success-soft);
+}
+
+/* Food Summary: 7 bars against a dashed goal line. Heights are % of the
+   track, set inline from the week's top value. */
+.gb-food-week-bars {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 8px;
+  height: 150px;
+  margin: 16px 0 14px;
+  /* Room for the value row above and the day row below the tracks. */
+  padding: 18px 0 22px;
+}
+.gb-food-week-goal {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1.5px dashed var(--sun-500);
+  opacity: 0.7;
+  pointer-events: none;
+}
+.gb-food-week-col {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  height: 100%;
+}
+.gb-food-week-val {
+  position: absolute;
+  top: -18px;
+  font-size: 0.6875rem;
+  font-weight: 800;
+  color: var(--fg3);
+}
+.gb-food-week-track {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.gb-food-week-bar {
+  width: 100%;
+  max-width: 30px;
+  border-radius: 8px 8px 4px 4px;
+  background: var(--sun-300);
+  transition: height 0.3s ease;
+}
+.gb-food-week-bar.is-over {
+  background: var(--sun-600);
+}
+.gb-food-week-col.is-today .gb-food-week-bar {
+  background: var(--brand);
+}
+.gb-food-week-day {
+  position: absolute;
+  bottom: -22px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: var(--fg3);
+  white-space: nowrap;
+}
+.gb-food-week-col.is-today .gb-food-week-day {
+  color: var(--fg1);
+}
+.gb-food-check-btn {
+  width: 100%;
+}
+.gb-food-check {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+.gb-food-levels {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.gb-food-check-text {
+  margin: 0;
+  color: var(--fg2);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+.gb-food-check-add {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--fg1);
+  font-size: 0.84375rem;
+  line-height: 1.6;
+}
+@media (prefers-reduced-motion: reduce) {
+  .gb-food-week-bar {
+    transition: none;
+  }
+}
+
+/* ---- Food Summary screen (dashboard.js ScreenSummary) ----
+   Two columns that fold to one on a phone. The thali is sized in % of its own
+   width so a 320px phone shrinks it instead of overflowing. */
+.gb-summary-page {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 20px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.gb-summary-back {
+  align-self: flex-start;
+}
+.gb-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+  gap: 24px;
+  align-items: start;
+}
+.gb-summary-col {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+}
+.gb-summary-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.gb-summary-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg3);
+}
+.gb-summary-hero h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 4vw, 2.75rem);
+  line-height: 1.05;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  color: var(--fg1);
+}
+.gb-summary-hero h1 em {
+  font-style: normal;
+  color: var(--success);
+}
+.gb-summary-sub {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  color: var(--fg2);
+}
+.gb-summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.gb-summary-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+.gb-summary-card-head h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.1875rem;
+  font-weight: 700;
+  color: var(--fg1);
+}
+.gb-summary-card-head span,
+.gb-summary-note {
+  font-size: 0.75rem;
+  color: var(--fg3);
+}
+.gb-summary-meta {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--fg2);
+}
+.gb-summary-note {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.gb-thali-fig {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+/* The steel plate: a lit rim, a darker well, and the plate's own shadow. */
+.gb-thali {
+  position: relative;
+  width: min(320px, 100%);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle at 34% 28%, var(--surface-3) 0%, var(--surface-2) 46%, var(--surface) 100%);
+  box-shadow:
+    inset 0 0 0 1px var(--border-strong),
+    inset 0 0 0 14px var(--surface-2),
+    inset 0 0 0 15px var(--border),
+    var(--shadow-lg);
+}
+.gb-thali-center {
+  position: absolute;
+  inset: 32.5%;
+  border-radius: 50%;
+  background: var(--bg-subtle);
+  box-shadow: inset 0 0 0 1px var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+.gb-thali-total {
+  font-family: var(--font-mono);
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--fg1);
+}
+.gb-thali-total small {
+  font-size: 0.875rem;
+}
+.gb-thali-of {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--fg3);
+}
+/* --pct is set per bowl by dashboard.js: the day's share of the target. */
+.gb-katori {
+  position: absolute;
+  width: 22.5%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: conic-gradient(var(--success) 0 var(--pct, 0%), var(--surface-3) var(--pct, 0%) 100%);
+}
+.gb-katori.is-today {
+  box-shadow: 0 0 0 3px var(--surface-2), 0 0 0 5px var(--brand);
+}
+.gb-katori-in {
+  width: 80.5%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.gb-katori-in strong {
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--fg1);
+}
+.gb-katori-in span {
+  margin-top: 3px;
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.04em;
+  color: var(--fg2);
+}
+.gb-thali-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 18px;
+  font-size: 0.8125rem;
+  color: var(--fg2);
+}
+.gb-thali-legend i {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 7px;
+  vertical-align: -1px;
+  border-radius: 50%;
+  background: var(--success);
+}
+.gb-thali-legend i.is-today {
+  background: none;
+  box-shadow: 0 0 0 2px var(--brand);
+}
+
+.gb-source-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.gb-source-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--fg1);
+  overflow-wrap: anywhere;
+}
+.gb-source-head small {
+  font-size: inherit;
+  font-weight: 500;
+  color: var(--fg3);
+}
+.gb-source-head b {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+.gb-source-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-3);
+}
+.gb-source-bar {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--success);
+}
+
+.gb-tumblers {
+  margin: 6px 0 0;
+  height: 128px;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+}
+.gb-tumbler-col {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.gb-tumbler-col small {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  color: var(--fg3);
+}
+.gb-tumbler {
+  position: relative;
+  width: 100%;
+  max-width: 30px;
+  height: 84px;
+  overflow: hidden;
+  border-radius: 5px 5px 11px 11px;
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1.5px var(--border-strong);
+}
+.gb-tumbler.is-full {
+  box-shadow: inset 0 0 0 1.5px var(--info);
+}
+.gb-tumbler-col.is-today .gb-tumbler {
+  box-shadow: inset 0 0 0 1.5px var(--border-strong), 0 0 0 2px var(--bg), 0 0 0 4px var(--brand);
+}
+.gb-tumbler-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(180deg, var(--sky-300), var(--sky-500));
+  transition: height 0.4s var(--ease-out);
+}
+.gb-tumbler-day {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: var(--fg3);
+  white-space: nowrap;
+}
+.gb-tumbler-col.is-today .gb-tumbler-day {
+  color: var(--fg1);
+}
+
+.gb-summary-buddy {
+  border: 1px solid var(--hairline-ai);
+}
+.gb-buddy-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--ai);
+}
+@media (prefers-reduced-motion: reduce) {
+  .gb-tumbler-fill {
+    transition: none;
+  }
 }
 
 .gb-habit-strip {
@@ -4067,6 +4465,7 @@ body {
 
 .gb-profile-suggest-btn {
   width: 100%;
+  margin-top: 14px;
 }
 
 .gb-profile-suggest {

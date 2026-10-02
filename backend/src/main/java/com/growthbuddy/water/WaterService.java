@@ -2,6 +2,7 @@ package com.growthbuddy.water;
 
 import com.growthbuddy.common.ApiException;
 import com.growthbuddy.user.UserClock;
+import com.growthbuddy.user.UserRepository;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -18,11 +19,14 @@ public class WaterService {
     private final WaterEntryRepository entries;
     private final WaterGoalRepository goals;
     private final UserClock clock;
+    private final UserRepository users;
 
-    public WaterService(WaterEntryRepository entries, WaterGoalRepository goals, UserClock clock) {
+    public WaterService(WaterEntryRepository entries, WaterGoalRepository goals, UserClock clock,
+            UserRepository users) {
         this.entries = entries;
         this.goals = goals;
         this.clock = clock;
+        this.users = users;
     }
 
     @Transactional(readOnly = true)
@@ -66,25 +70,48 @@ public class WaterService {
         return summary(userId, day);
     }
 
+    // One goal, on users.daily_water_goal_ml: the column Settings -> Profile edits.
+    // It used to live only in water_goals, so a goal saved in Settings never
+    // reached the tracker. An account that set one on the tracker before the move
+    // keeps seeing it (the old row is read first) until the goal is edited on
+    // either screen, which drops the row. Nobody's goal changes on its own.
     @Transactional
     public WaterSummaryResponse updateGoal(UUID userId, UpdateWaterGoalRequest req) {
         if (req == null || req.goalMl() == null) {
             throw ApiException.badRequest("goalMl is required");
         }
-        WaterGoal g = goals.findById(userId).orElseGet(() -> {
-            WaterGoal n = new WaterGoal();
-            n.setUserId(userId);
-            return n;
-        });
-        g.setGoalMl(req.goalMl());
-        g.setUpdatedAt(Instant.now());
-        goals.save(g);
+        var user = users.findById(userId).orElseThrow(() -> ApiException.notFound("User"));
+        user.setDailyWaterGoalMl(req.goalMl());
+        users.save(user);
+        dropLegacyGoal(userId);
         return summary(userId, clock.today(userId));
+    }
+
+    /**
+     * The Food summary's water row: 7 days, oldest first, against today's goal.
+     * ponytail: one query per day (7); a GROUP BY when this ever shows up slow.
+     */
+    @Transactional(readOnly = true)
+    public WaterWeekResponse week(UUID userId) {
+        LocalDate today = clock.today(userId);
+        List<WaterWeekDay> days = new java.util.ArrayList<>();
+        for (int i = 6; i >= 0; i--) {
+            LocalDate d = today.minusDays(i);
+            days.add(new WaterWeekDay(d.toString(), entries.totalForDay(userId, d)));
+        }
+        return new WaterWeekResponse(goal(userId), days);
+    }
+
+    /** Called by a profile save that changes the goal, and by updateGoal. */
+    @Transactional
+    public void dropLegacyGoal(UUID userId) {
+        goals.deleteById(userId);
     }
 
     private int goal(UUID userId) {
         return goals.findById(userId)
                 .map(WaterGoal::getGoalMl)
+                .or(() -> users.findById(userId).map(u -> u.getDailyWaterGoalMl()))
                 .orElse(DEFAULT_GOAL_ML);
     }
 }

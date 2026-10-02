@@ -45,6 +45,12 @@ public class WaterController {
         return service.deleteEntry(CurrentUser.id(), id);
     }
 
+    /** Last 7 days of water against the goal, for the Food summary. */
+    @GetMapping("/week")
+    public WaterWeekResponse week() {
+        return service.week(CurrentUser.id());
+    }
+
     @PutMapping("/goal")
     public WaterSummaryResponse updateGoal(@Valid @RequestBody UpdateWaterGoalRequest req) {
         return service.updateGoal(CurrentUser.id(), req);

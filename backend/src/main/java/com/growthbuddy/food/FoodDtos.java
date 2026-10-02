@@ -15,6 +15,19 @@ import org.springframework.data.repository.query.Param;
 interface FoodEntryRepository extends JpaRepository<FoodEntry, UUID> {
     List<FoodEntry> findByUserIdAndLogDateOrderByLoggedAtDesc(UUID userId, LocalDate logDate);
 
+    List<FoodEntry> findByUserIdAndLogDateBetween(UUID userId, LocalDate from, LocalDate to);
+
+    /**
+     * Fills an estimate in place. An UPDATE, not save(): the entity was read
+     * before a seconds-long AI call, and merging it back would re-insert an entry
+     * the user deleted meanwhile. "is null" keeps a parallel estimate from
+     * overwriting this one.
+     */
+    @org.springframework.transaction.annotation.Transactional
+    @org.springframework.data.jpa.repository.Modifying
+    @Query("update FoodEntry e set e.proteinG = :g where e.id = :id and e.proteinG is null")
+    int setProteinIfMissing(@Param("id") UUID id, @Param("g") int g);
+
     @Query("select coalesce(sum(e.kcalEstimated), 0) from FoodEntry e where e.userId = :userId and e.logDate = :logDate")
     int totalCaloriesForDay(@Param("userId") UUID userId, @Param("logDate") LocalDate logDate);
 }
@@ -165,6 +178,21 @@ record FoodEntryResponse(
                 e.getLoggedAt(),
                 e.getLogDate());
     }
+}
+
+/** The Summary card's chart: 7 days, oldest first, empty days included. */
+record FoodWeekResponse(int goalKcal, int proteinTargetG, List<FoodWeekDay> days, List<ProteinSource> sources) {
+}
+
+/** proteinG is estimated: the AI's per-entry figure where it has one, else the keyword table. */
+record FoodWeekDay(String date, int kcal, int count, int proteinG) {
+}
+
+record ProteinSource(String name, int count, int proteinG) {
+}
+
+/** protein / fiber are low|ok|high, or null when nothing is logged; source is ai|rules. */
+record DietCheckResponse(String protein, String fiber, String summary, List<String> add, String source) {
 }
 
 record FoodSummaryResponse(

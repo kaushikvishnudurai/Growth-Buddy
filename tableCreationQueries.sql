@@ -243,6 +243,7 @@ CREATE TABLE IF NOT EXISTS food_entries (
   kcal_per_100g   INT          NOT NULL,
   estimate_source VARCHAR(20)  NOT NULL,
   note            VARCHAR(255) NULL,
+  protein_g       SMALLINT     NULL,
   logged_at       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   log_date        DATE         NOT NULL,
   created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,

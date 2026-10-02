@@ -154,8 +154,8 @@ checks off.
 | `/api/tasks` | CRUD, `{id}/toggle`, `{id}/history` |
 | `/api/goals` | CRUD, `{id}/toggle`, `{id}/progress`, `{id}/actions` (+ per-action PUT/DELETE) |
 | `/api/family` | `members` CRUD + `{id}/profile`, `search`, `members/link`, `invites` (+accept/decline), `leave`, `grocery-scan`, `meal-plan` GET/POST, `pantry` (+`/scan`, `{id}` PUT/DELETE), `shopping` (+`/generate`, `{id}/toggle`, `{id}` DELETE) |
-| `/api/food` | `search`, `entries` POST/DELETE, `photo-estimate`, `photo-estimate-multi`, `photo-history` GET/POST |
-| `/api/water` | `entries` POST/DELETE, `goal` PUT |
+| `/api/food` | `search`, `entries` POST/DELETE, `photo-estimate`, `photo-estimate-multi`, `photo-history` GET/POST, `week` GET (7 days of kcal + estimated protein, top protein dishes; fills missing `protein_g` in one AI batch), `diet-check` POST (AI) |
+| `/api/water` | `entries` POST/DELETE, `week` GET (7 days of ml for the Food summary), `goal` PUT (writes `users.daily_water_goal_ml`, the Settings field; a pre-move `water_goals` row is read first until either screen edits the goal) |
 | `/api/daily-logs` | GET, `sleep`, `mood`, `snapshot` — **there is no PUT.** The client used to call one from three places (`persistWellness`, a boot "force-sync", a 5-minute timer); all three 405'd forever and logged `CRITICAL: failed to reach database`. Sleep and mood are saved by their own POSTs as you enter them. |
 | `/api/score` | `today`, `today/snapshot` |
 | `/api/focus` | `stats`, `sessions` |

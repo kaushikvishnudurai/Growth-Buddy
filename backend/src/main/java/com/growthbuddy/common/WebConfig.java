@@ -78,6 +78,7 @@ public class WebConfig implements WebMvcConfigurer {
                     "/api/auth/nutrition-suggestion",
                     "/api/food/photo-estimate",
                     "/api/food/photo-estimate-multi",
+                    "/api/food/diet-check",
                     "/api/food/entries",
                     "/api/family/grocery-scan",
                     "/api/family/pantry/scan",
