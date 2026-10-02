@@ -747,6 +747,49 @@ function shakeRefusal(el) {
   } catch (_) {}
 }
 
+/* The other half of shakeRefusal: something just saved lands where it now
+   lives. It drops in and settles while a brand ring fades, with one short tap.
+   The toast says it worked; this shows where it went. */
+function landed(el) {
+  if (!el) return;
+  // A row below the fold landed where nobody saw it: bring it into view, but
+  // only when it is out of view, so a visible one never makes the page jump.
+  const r = el.getBoundingClientRect();
+  if (r.bottom > window.innerHeight || r.top < 0) {
+    const calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    el.scrollIntoView({ block: 'center', behavior: calm ? 'auto' : 'smooth' });
+  }
+  el.classList.remove('gb-landed');
+  void el.offsetWidth; // replay when the same row lands twice
+  el.classList.add('gb-landed');
+  const done = (e) => {
+    if (e.target !== el) return; // a child's own animation ending
+    el.classList.remove('gb-landed');
+    el.removeEventListener('animationend', done);
+  };
+  el.addEventListener('animationend', done);
+  try {
+    if (navigator.vibrate) navigator.vibrate(10);
+  } catch (_) {}
+}
+
+/* Something deleted leaves visibly instead of blinking out. Resolves once it
+   has gone, so the caller drops it from the list then. The timeout covers a
+   background tab, where animationend never fires. */
+function leave(el) {
+  if (!el || !el.isConnected) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = (e) => {
+      if (e && e.target !== el) return;
+      el.removeEventListener('animationend', done);
+      resolve();
+    };
+    el.addEventListener('animationend', done);
+    setTimeout(done, 400);
+    el.classList.add('gb-leaving');
+  });
+}
+
 /* ---- Confirm dialog ----
    Replaces window.confirm: the buttons carry the verbs ("Remove" / "Keep")
    so the choice reads at a glance instead of mapping OK/Cancel to a question.
@@ -1030,6 +1073,8 @@ export {
   closeOverlays,
   openModal,
   shakeRefusal,
+  landed,
+  leave,
   formatTime,
   setTimeFormat,
   timeFormat,

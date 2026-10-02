@@ -1,7 +1,16 @@
 /* =====================================================================
    Growth Buddy — Notes (quick jottings, rich text)
    ===================================================================== */
-import { h, Icon, refreshIcons, confirmDialog, openOverlay, openModal } from './gb-kit.js';
+import {
+  h,
+  Icon,
+  refreshIcons,
+  confirmDialog,
+  openOverlay,
+  openModal,
+  landed,
+  leave,
+} from './gb-kit.js';
 import { toast } from './toast.js';
 
 /* Swatches a note can wear. `null` (no colour) is the default and stays the
@@ -744,12 +753,17 @@ function ScreenNotes({ onList, onGet, onCreate, onUpdate, onDelete, onMakeTask, 
       notes.unshift(created);
       closeComposer();
       paint();
+      landed(cardOf(created.id));
     } catch (err) {
       toast.error(err, 'Could not save that note.');
     } finally {
       saveBtn.disabled = false;
     }
   }
+
+  const cardOf = (id) => listEl.querySelector('[data-id="' + id + '"]');
+  // openOverlay's exit is 180ms; an effect on a card behind it waits that out.
+  const SHEET_EXIT = 200;
 
   /* ---- one note ---- */
   function NoteCard(note) {
@@ -772,6 +786,7 @@ function ScreenNotes({ onList, onGet, onCreate, onUpdate, onDelete, onMakeTask, 
       : photos[0] && photos[0].getAttribute('src');
     const card = h('article', {
       class: 'gb-note-card' + (note.pinned ? ' is-pinned' : '') + (count ? ' has-cover' : ''),
+      'data-id': note.id,
       style: c ? { background: c.bg, borderColor: c.line } : null,
       tabindex: '0',
       role: 'button',
@@ -834,6 +849,7 @@ function ScreenNotes({ onList, onGet, onCreate, onUpdate, onDelete, onMakeTask, 
       Object.assign(note, saved);
       sortNotes();
       paint();
+      landed(cardOf(note.id)); // it moved: show where to
     } catch (err) {
       toast.error(err, 'Could not pin that note.');
     }
@@ -957,9 +973,13 @@ function ScreenNotes({ onList, onGet, onCreate, onUpdate, onDelete, onMakeTask, 
           if (!ok) return;
           try {
             await onDelete(note.id);
-            notes = notes.filter((n) => n.id !== note.id);
-            paint();
             open.close();
+            // The card is behind the closing sheet: let the sheet go first.
+            setTimeout(async () => {
+              await leave(cardOf(note.id));
+              notes = notes.filter((n) => n.id !== note.id);
+              paint();
+            }, SHEET_EXIT);
           } catch (err) {
             toast.error(err, 'Could not delete that note.');
           }
@@ -984,6 +1004,8 @@ function ScreenNotes({ onList, onGet, onCreate, onUpdate, onDelete, onMakeTask, 
       Object.assign(note, saved);
       sortNotes();
       paint();
+      // sheet() closes once this resolves; land the card after it has gone.
+      setTimeout(() => landed(cardOf(note.id)), SHEET_EXIT);
     };
 
     /* Snapshot of everything the sheet can change, taken through the same

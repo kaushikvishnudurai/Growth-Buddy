@@ -604,6 +604,46 @@ button.gb-sectiontitle-act:hover {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 22%, transparent);
 }
 
+/* landed() and leave() in gb-kit.js: a save lands on the row it made, a
+   delete takes the row away. Transform and opacity only, so neither moves the
+   layout; the global reduced-motion switch cuts both to nothing. */
+.gb-landed {
+  animation: gb-land 520ms var(--ease-out) both;
+}
+@keyframes gb-land {
+  0% {
+    opacity: 0;
+    transform: translateY(-10px) scale(1.03);
+    box-shadow:
+      0 0 0 0 color-mix(in srgb, var(--brand) 35%, transparent),
+      var(--shadow-lg);
+  }
+  45% {
+    opacity: 1;
+    transform: translateY(1px) scale(0.995);
+    /* Not --brand-soft: on the light page that tint is nearly the page. */
+    box-shadow:
+      0 0 0 4px color-mix(in srgb, var(--brand) 35%, transparent),
+      var(--shadow-md);
+  }
+  100% {
+    transform: none;
+    box-shadow:
+      0 0 0 0 transparent,
+      0 0 0 0 transparent;
+  }
+}
+.gb-leaving {
+  animation: gb-leave 260ms var(--ease-standard) forwards;
+  pointer-events: none;
+}
+@keyframes gb-leave {
+  to {
+    opacity: 0;
+    transform: translateY(6px) scale(0.94);
+  }
+}
+
 /* Face ID doesn't print "incorrect" and stop; it shakes its head. Same here,
    on whatever surface just refused you — the wrong field, or the whole card
    when the failure has no field. Amplitude decays 9 → 1px because a real

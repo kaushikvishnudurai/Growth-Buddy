@@ -15,6 +15,7 @@ import {
   formatTime as sharedFormatTime,
   thinkingLabel,
   Thinking,
+  leave,
 } from './gb-kit.js';
 import { MoneyHomeCard } from './money.js';
 import { CacheStorage } from './cache-storage.js';
@@ -225,7 +226,7 @@ function TaskRow(task, toggleTask, onEdit) {
   const p = PRIORITY[task.priority] || PRIORITY.Low;
   return h(
     'div',
-    { class: 'gb-row' + (task.done ? ' is-done' : '') },
+    { class: 'gb-row' + (task.done ? ' is-done' : ''), 'data-task-id': task.id },
     Check({ done: task.done, onToggle: () => toggleTask(task.id) }),
     h(
       'div',
@@ -969,10 +970,10 @@ function FoodCard({ food, onAddFood, onDeleteFood }) {
         ? h(
             'div',
             { class: 'gb-water-log' },
-            recent.map((item) =>
-              h(
+            recent.map((item) => {
+              const row = h(
                 'div',
-                { class: 'gb-water-log-row' },
+                { class: 'gb-water-log-row', 'data-food-id': item.id },
                 h(
                   'div',
                   { style: { flex: 1 } },
@@ -984,14 +985,17 @@ function FoodCard({ food, onAddFood, onDeleteFood }) {
                   {
                     type: 'button',
                     class: 'gb-btn gb-btn--icon',
-                    onclick: () => onDeleteFood && onDeleteFood(item.id),
+                    // Leaves first, then deletes: no dialog here, so the row
+                    // goes the moment it's tapped.
+                    onclick: () => onDeleteFood && leave(row).then(() => onDeleteFood(item.id)),
                     title: 'Delete',
                     'aria-label': 'Delete food entry',
                   },
                   Icon('x', { size: 16, sw: 2.4 })
                 )
-              )
-            )
+              );
+              return row;
+            })
           )
         : h(
             'p',

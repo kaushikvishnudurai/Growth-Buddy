@@ -18,6 +18,8 @@ import {
   closeOverlays,
   openModal as sharedModal,
   shakeRefusal,
+  landed,
+  leave,
   formatTime,
   setTimeFormat,
   detectTimeFormat,
@@ -2134,6 +2136,7 @@ async function createTask(body) {
     body: JSON.stringify(body),
   });
   state.tasks = [mapTask(created), ...state.tasks];
+  landSoon('[data-task-id="' + created.id + '"]');
   await refreshScore();
 }
 
@@ -2143,12 +2146,15 @@ async function updateTask(id, body) {
     body: JSON.stringify(body),
   });
   state.tasks = state.tasks.map((t) => (t.id === updated.id ? mapTask(updated) : t));
+  landSoon('[data-task-id="' + updated.id + '"]');
   await refreshScore();
 }
 
 async function deleteTask(id) {
   await api('/api/tasks/' + encodeURIComponent(id), { method: 'DELETE' });
-  state.tasks = state.tasks.filter((t) => t.id !== id);
+  removeSoon('[data-task-id="' + id + '"]', () => {
+    state.tasks = state.tasks.filter((t) => t.id !== id);
+  });
   await refreshScore();
 }
 
@@ -2381,7 +2387,26 @@ async function updateWaterGoal(goalMl) {
   }
 }
 
+/* Effects for a change made through a dialog. The dialog takes 180ms to go and
+   re-renders the screen as it does, so playing at once would animate a row
+   under the scrim that is about to be replaced. Wait it out, then play on the
+   row that stays. */
+const AFTER_DIALOG = 200;
+function landSoon(selector) {
+  setTimeout(() => landed(root.querySelector(selector)), AFTER_DIALOG);
+}
+/* The row is still in `state` when the dialog closes, so it is still on
+   screen; take it away visibly, then drop it from state. */
+function removeSoon(selector, drop) {
+  setTimeout(async () => {
+    await leave(root.querySelector(selector));
+    drop();
+    render();
+  }, AFTER_DIALOG);
+}
+
 async function logFoodEntry(payload) {
+  const before = new Set(((state.food && state.food.entries) || []).map((e) => e.id));
   try {
     const updated = await api('/api/food/entries', {
       method: 'POST',
@@ -2395,6 +2420,8 @@ async function logFoodEntry(payload) {
     if (forToday) state.food = updated;
     cacheFoodSummary(updated);
     render();
+    const added = forToday && (updated.entries || []).find((e) => !before.has(e.id));
+    if (added) landSoon('[data-food-id="' + added.id + '"]');
     invalidateWeek('food');
     toastSuccess(
       forToday
@@ -3161,6 +3188,7 @@ async function deleteFoodEntry(entryId) {
     invalidateWeek('food');
     toastSuccess('Food entry deleted.');
   } catch (err) {
+    render(); // the row already left (FoodCard plays leave() first): bring it back
     toastError(err, 'Could not delete food entry.');
   }
 }

@@ -186,6 +186,7 @@ it silently landed on Home. Don't reintroduce a second list.
   achievement. The head-shake fires from `pushToast` for errors only. Hooking the nod to every
   success toast (the first attempt) made it celebrate "Changes saved" and the skin toggle, which
   is feedback about nothing. Don't widen it back for coverage's sake.
+- **An effect for a change made in a dialog goes through `landSoon(selector)` / `removeSoon(selector, drop)`**, never `landed()` straight from the save handler. Every dialog re-renders the screen as it closes (`afterPrimary: render`) and takes 180 ms to go, so an effect played at once animates a row under the scrim that is about to be replaced. `removeSoon` also defers the state change, so the row is still there to leave. Rows carry `data-task-id` / `data-food-id`; note cards `data-id`.
 - **`shakeRefusal(el)` belongs to the whole UI, not the login page**, and not to the premium skin
   either (`.gb-shake` lives in `styles/app.css`). Whatever surface refused the user is what shakes:
   the offending auth input, the sign-in card when the failure names no field, the modal sheet when
