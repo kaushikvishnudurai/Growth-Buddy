@@ -236,7 +236,7 @@ body {
   color: var(--fg3);
 }
 button.gb-sectiontitle-act {
-  color: var(--brand);
+  color: var(--brand-ink);
   background: none;
   border: 0;
   /* 24px tall without moving the text: the old link was a 17px tap target. */
@@ -283,14 +283,14 @@ button.gb-sectiontitle-act:hover {
   outline-offset: 2px;
 }
 .gb-btn--primary {
-  background: var(--brand);
+  background: var(--brand-fill);
   color: var(--fg-on-brand);
   box-shadow:
     0 4px 0 var(--brand-edge),
     var(--shadow-brand);
 }
 .gb-btn--primary:hover {
-  background: var(--brand-hover);
+  background: var(--brand-fill-hover);
 }
 .gb-btn--primary:active {
   transform: translateY(3px);
@@ -435,7 +435,7 @@ button.gb-sectiontitle-act:hover {
   display: none;
 }
 .gb-nav-tab.is-active {
-  color: var(--brand);
+  color: var(--brand-ink);
 }
 .gb-nav-tab:focus-visible {
   outline: 2px solid var(--ring);
@@ -447,7 +447,7 @@ button.gb-sectiontitle-act:hover {
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: var(--brand);
+  background: var(--brand-fill);
   border: none;
   cursor: pointer;
   display: flex;
@@ -464,7 +464,7 @@ button.gb-sectiontitle-act:hover {
     box-shadow var(--dur-fast);
 }
 .gb-fab:hover {
-  background: var(--brand-hover);
+  background: var(--brand-fill-hover);
 }
 .gb-fab:active {
   transform: translateY(4px) scale(0.97);
@@ -775,7 +775,7 @@ button.gb-sectiontitle-act:hover {
 .gb-btn.is-loading[disabled] {
   opacity: 1;
   cursor: progress;
-  background: var(--brand);
+  background: var(--brand-fill);
   box-shadow:
     0 4px 0 var(--brand-edge),
     var(--shadow-brand);
@@ -1166,7 +1166,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 .gb-login-link {
   font-size: 0.8125rem;
   font-weight: 700;
-  color: var(--brand);
+  color: var(--brand-ink);
   cursor: pointer;
   text-decoration: none;
 }
@@ -1380,7 +1380,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   word-break: break-word;
 }
 .gb-msg-bubble.is-user {
-  background: var(--brand);
+  background: var(--brand-fill);
   color: var(--fg-on-brand);
   border-bottom-right-radius: 4px;
 }
@@ -1473,7 +1473,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  background: var(--brand);
+  background: var(--brand-fill);
   border: none;
   display: flex;
   align-items: center;
@@ -1483,7 +1483,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   flex: none;
 }
 .gb-msg-send:hover {
-  background: var(--brand-hover);
+  background: var(--brand-fill-hover);
 }
 .gb-msg-send:active {
   transform: translateY(2px);
@@ -1690,7 +1690,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 .gb-revoke-btn:hover {
   background: var(--brand-soft);
-  color: var(--coral-600);
+  color: var(--brand-ink);
   border-color: var(--coral-200, var(--border));
 }
 .gb-revoke-btn:active {
@@ -2380,7 +2380,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   width: 42px;
   height: 42px;
   border-radius: 50%;
-  background: var(--brand);
+  background: var(--brand-fill);
   color: var(--fg-on-brand);
   display: flex;
   align-items: center;
@@ -2671,7 +2671,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 .gb-coach-kicker {
   font-size: 0.6875rem;
   font-weight: 800;
-  color: var(--brand);
+  color: var(--brand-ink);
   text-transform: uppercase;
   letter-spacing: 0;
 }
@@ -2733,7 +2733,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--brand);
+  color: var(--brand-ink);
   background: var(--brand-soft);
 }
 .gb-wellness-label,
@@ -2976,14 +2976,16 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 .gb-summary-hero h2 em {
   font-style: normal;
-  color: var(--n);
+  color: var(--n-ink);
 }
 /* One colour per nutrient, read as --n by every part of the Summary that
-   shows one: bowl ring, split bar, tab, chart bars, source bars, headline. */
-.gb-summary-page .is-protein { --n: var(--success); }
-.gb-summary-page .is-carbs { --n: var(--warning); }
-.gb-summary-page .is-fat { --n: var(--coral-400); }
-.gb-summary-page .is-fiber { --n: var(--info); }
+   shows one: bowl ring, split bar, tab, chart bars, source bars. Text reads
+   --n-ink instead: the fills are 2.3 to 3.5:1 on a light card, too faint for
+   words, and each status's -soft-fg clears 4.5:1 in both themes. */
+.gb-summary-page .is-protein { --n: var(--success); --n-ink: var(--success-soft-fg); }
+.gb-summary-page .is-carbs { --n: var(--warning); --n-ink: var(--warning-soft-fg); }
+.gb-summary-page .is-fat { --n: var(--coral-400); --n-ink: var(--brand-ink); }
+.gb-summary-page .is-fiber { --n: var(--info); --n-ink: var(--info-soft-fg); }
 .gb-summary-sub {
   margin: 0;
   font-size: 0.9375rem;
@@ -3109,7 +3111,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   font-family: var(--font-mono);
   font-size: 0.625rem;
   letter-spacing: 0.04em;
-  color: var(--n);
+  color: var(--n-ink);
 }
 .gb-thali-legend {
   max-width: 320px;
@@ -3144,7 +3146,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 .gb-split-legend span {
   font-size: 0.75rem;
   font-weight: 700;
-  color: var(--n);
+  color: var(--n-ink);
 }
 .gb-split-legend b {
   font-family: var(--font-mono);
@@ -3425,7 +3427,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   display: flex;
   align-items: center;
   gap: 4px;
-  color: var(--coral-600);
+  color: var(--brand-ink);
   font-weight: 800;
   font-size: 0.8125rem;
 }
@@ -3773,7 +3775,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   min-height: 18px;
   font-size: 0.78125rem;
   font-weight: 700;
-  color: var(--coral-600);
+  color: var(--brand-ink);
 }
 
 [data-theme='dark'] .gb-water-card {
@@ -4165,7 +4167,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   color: var(--fg3) !important;
 }
 .gb-goal-delete-btn:hover {
-  color: var(--coral-600) !important;
+  color: var(--brand-ink) !important;
   border-color: var(--coral-200) !important;
 }
 
@@ -4420,19 +4422,19 @@ body:has(.is-thinking, .gb-thinking)::after {
   outline-offset: 2px;
 }
 .gb-cal-day.is-today {
-  color: var(--brand);
+  color: var(--brand-ink);
 }
 .gb-cal-day.is-today .num {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
 .gb-cal-day.is-selected {
-  background: var(--brand);
+  background: var(--brand-fill);
   color: var(--fg-on-brand);
   box-shadow: var(--shadow-brand);
 }
 .gb-cal-day.is-selected:hover {
-  background: var(--brand-hover);
+  background: var(--brand-fill-hover);
 }
 .gb-cal-day.has-rem .num {
   transform: translateY(-3px);
@@ -4483,7 +4485,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   font-weight: 900;
   font-size: 1.875rem;
   line-height: 1;
-  color: var(--brand);
+  color: var(--brand-ink);
 }
 .gb-wins-copy {
   color: var(--fg2);
@@ -4939,7 +4941,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 .gb-btn--icon:hover {
   background: var(--surface-3-hover, rgba(0, 0, 0, 0.1));
-  color: var(--coral-600);
+  color: var(--brand-ink);
 }
 .gb-form--about-diet {
   gap: 8px;
@@ -5076,7 +5078,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 .gb-seg.is-on {
   background: var(--surface);
-  color: var(--brand);
+  color: var(--brand-ink);
   box-shadow: var(--shadow-xs);
 }
 .gb-seg:focus-visible {
@@ -5201,7 +5203,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 /* The edit control sits beside delete on a reminder row and shares its shape;
    only the hover colour differs, because one of them destroys something. */
 .gb-rem-edit:hover {
-  color: var(--brand);
+  color: var(--brand-ink);
 }
 /* The chosen scope in the edit sheet, using the same option rows as delete. */
 .gb-modal-opt.is-on {
@@ -5354,11 +5356,11 @@ body:has(.is-thinking, .gb-thinking)::after {
   pointer-events: none;
 }
 .gb-ptr.is-ready {
-  color: var(--brand);
+  color: var(--brand-ink);
   border-color: var(--brand);
 }
 .gb-ptr.is-spinning {
-  color: var(--brand);
+  color: var(--brand-ink);
   animation: gb-ptr-spin 700ms linear infinite;
 }
 @keyframes gb-ptr-spin {
@@ -5414,7 +5416,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   font-weight: 800;
   letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
-  color: var(--brand);
+  color: var(--brand-ink);
 }
 .gb-onboard-title {
   font-family: var(--font-display);
@@ -5712,13 +5714,13 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 .gb-modal-opt.is-danger .gb-modal-opt-ic {
   background: var(--brand-soft);
-  color: var(--coral-600);
+  color: var(--brand-ink);
 }
 .gb-modal-opt.is-danger:hover {
   border-color: var(--coral-300, var(--coral-500));
 }
 .gb-modal-opt.is-danger .gb-modal-opt-l {
-  color: var(--coral-600);
+  color: var(--brand-ink);
 }
 .gb-btn.gb-modal-cancel {
   width: 100%;
@@ -5979,7 +5981,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   align-items: center;
   justify-content: center;
   color: var(--fg-on-brand);
-  background: var(--brand);
+  background: var(--brand-fill);
   box-shadow: var(--shadow-brand);
   margin-bottom: 4px;
   animation: gb-badge-pop 0.5s var(--ease-bounce) 0.12s both;
@@ -5990,7 +5992,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   font-size: var(--text-2xs);
   letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
-  color: var(--brand);
+  color: var(--brand-ink);
 }
 .gb-celebrate-title {
   font-family: var(--font-display);
@@ -6402,7 +6404,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 .gb-goal-progress-pct {
   font-size: 0.75rem;
   font-weight: 800;
-  color: var(--brand);
+  color: var(--brand-ink);
 }
 .gb-goal-progress-track {
   height: 8px;
@@ -6754,7 +6756,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: var(--brand);
+  background: var(--brand-fill);
   color: var(--fg-on-brand);
   display: flex;
   align-items: center;
@@ -6789,7 +6791,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   display: inline-block;
   margin-top: 5px;
   background: var(--brand-soft, #e8f4fd);
-  color: var(--brand);
+  color: var(--brand-ink);
   font-size: 0.6875rem;
   font-weight: 700;
   padding: 2px 8px;
@@ -6811,7 +6813,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   bottom: 4px;
   left: 4px;
   border-radius: 9px;
-  background: var(--brand);
+  background: var(--brand-fill);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
   transition: transform 0.28s cubic-bezier(0.34, 1.2, 0.64, 1);
   pointer-events: none;
@@ -7002,7 +7004,7 @@ select.gb-input {
   border-radius: var(--radius-md);
 }
 .gb-iconbtn--danger {
-  color: var(--coral-600);
+  color: var(--brand-ink);
 }
 .gb-iconbtn--danger:hover {
   background: var(--brand-soft);
@@ -7128,7 +7130,7 @@ select.gb-input {
 .gb-family-card-rel {
   font-size: 0.8125rem;
   font-weight: 600;
-  color: var(--brand);
+  color: var(--brand-ink);
 }
 .gb-family-card-meta {
   font-size: 0.78125rem;
@@ -7427,7 +7429,7 @@ select.gb-input {
   gap: 12px;
 }
 .gb-family-summary .gb-family-avatar--sm {
-  background: var(--brand);
+  background: var(--brand-fill);
 }
 .gb-family-summary-id {
   flex: 1;
@@ -7444,7 +7446,7 @@ select.gb-input {
 /* Leave family */
 .gb-family-leave-btn {
   margin-top: 4px;
-  color: var(--coral-600);
+  color: var(--brand-ink);
 }
 .gb-family-leave-btn:hover {
   background: var(--brand-soft);
@@ -7499,7 +7501,7 @@ select.gb-input {
     color var(--dur-fast);
 }
 .gb-family-sectiontab.is-active {
-  background: var(--brand);
+  background: var(--brand-fill);
   color: var(--fg-on-brand);
 }
 .gb-family-check {
@@ -8011,7 +8013,7 @@ select.gb-input {
   font-family: var(--font-display);
   font-weight: 800;
   font-size: 1.25rem;
-  color: var(--brand);
+  color: var(--brand-ink);
 }
 .gb-ach-summary-bar,
 .gb-ach-summary-xpbar {
@@ -8090,7 +8092,7 @@ select.gb-input {
   flex: none;
 }
 .gb-ach-tile.is-unlocked .gb-ach-icon {
-  background: var(--brand);
+  background: var(--brand-fill);
 }
 .gb-ach-tier {
   color: var(--fg3);
@@ -8168,7 +8170,7 @@ select.gb-input {
 .gb-goal-ms-pct {
   font-size: var(--text-xs);
   font-weight: 700;
-  color: var(--brand);
+  color: var(--brand-ink);
 }
 .gb-goal-ms-track {
   height: 6px;
@@ -8211,7 +8213,7 @@ select.gb-input {
     border-color 0.15s ease;
 }
 .gb-goal-ms-check.is-done {
-  background: var(--brand);
+  background: var(--brand-fill);
   border-color: var(--brand);
 }
 .gb-goal-ms-title {
@@ -8266,7 +8268,7 @@ select.gb-input {
   left: 12px;
   z-index: 2000;
   padding: 10px 16px;
-  background: var(--brand);
+  background: var(--brand-fill);
   color: var(--fg-on-brand);
   border-radius: 0 0 12px 12px;
   font-weight: 700;
@@ -8377,7 +8379,7 @@ textarea:focus-visible,
   color: var(--brand-soft-fg);
 }
 .gb-more-item.is-active .gb-more-item-ic {
-  color: var(--brand);
+  color: var(--brand-ink);
 }
 @keyframes gb-more-fade {
   from {
@@ -8422,7 +8424,7 @@ textarea:focus-visible,
   align-items: center;
   justify-content: center;
   width: 30px;
-  height: 22px;
+  height: 24px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface-2);
@@ -8439,7 +8441,7 @@ textarea:focus-visible,
 }
 .gb-home-cust-move:not(:disabled):hover {
   border-color: var(--brand);
-  color: var(--brand);
+  color: var(--brand-ink);
 }
 .gb-home-cust-text {
   flex: 1;
@@ -8634,7 +8636,7 @@ textarea:focus-visible,
   padding-left: 22px;
 }
 .gb-editor a {
-  color: var(--brand);
+  color: var(--brand-ink);
   text-decoration: underline;
 }
 
@@ -8781,7 +8783,7 @@ textarea:focus-visible,
   color: var(--fg1);
 }
 .gb-note-pin.is-on {
-  color: var(--brand);
+  color: var(--brand-ink);
 }
 .gb-note-skel {
   padding: 18px;

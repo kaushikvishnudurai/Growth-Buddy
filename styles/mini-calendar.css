@@ -115,7 +115,7 @@
 .gb-mini-cal-day.is-selected.has-tasks,
 .gb-mini-cal-day.is-selected.has-reminders,
 .gb-mini-cal-day.is-selected.is-free {
-  background: var(--brand);
+  background: var(--brand-fill);
   color: var(--fg-on-brand);
   border-color: var(--brand);
 }
@@ -151,8 +151,8 @@
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  background: var(--coral-500);
-  color: #fff;
+  background: var(--brand-fill);
+  color: var(--fg-on-brand);
   font-size: 0.625rem;
   font-weight: 800;
 }

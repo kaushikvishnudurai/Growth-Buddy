@@ -18,7 +18,11 @@ via `@fontsource` — plus Space Mono for `--font-mono`.
 - **Semantic color:** `--bg`, `--bg-subtle`, `--fg1` / `--fg2` / `--fg3`, `--border`, `--border-strong`,
   `--ring`, `--nav-bg`.
 - **Brand:** `--brand`, `--brand-hover`, `--brand-press`, `--brand-edge`, `--brand-soft`,
-  `--brand-soft-fg`, `--fg-on-brand`, `--shadow-brand`.
+  `--brand-soft-fg`, `--fg-on-brand`, `--shadow-brand`, `--brand-ink`, `--brand-fill`,
+  `--brand-fill-hover`. **`--brand` (#F97316) is 2.8:1 against white, so it never carries text.**
+  Orange text is `--brand-ink`; an orange surface with white text or an icon on it (primary button,
+  FAB, active tab, selected day, badge) is `--brand-fill` (coral-700, 5.0:1). `--brand` stays for
+  bars, dots and rings. `--brand-hover` is text-only now (coral-800 in light).
 - **Status:** `--success`, `--warning`, `--danger`, `--info`. All but `--danger` also have
   `-soft` / `-soft-fg` variants; `--danger` is text-only (the two error lines in `app.css`).
 - **AI accent:** `--ai`, `--ai-soft`, `--ai-soft-fg`, `--hairline-ai` — used for Buddy/AI surfaces.

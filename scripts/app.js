@@ -3339,7 +3339,11 @@ function profileDropdown() {
     being declared further down: nothing calls this until after boot. */
 function screenFromHash() {
   const raw = (window.location.hash || '').replace(/^#\/?/, '').toLowerCase();
-  return Object.prototype.hasOwnProperty.call(SCREENS, raw) ? raw : 'home';
+  if (Object.prototype.hasOwnProperty.call(SCREENS, raw)) return raw;
+  // An unknown address (#/settings: Settings is a dialog, not a screen) shows
+  // Home, so the bar says so too instead of keeping the address that isn't there.
+  if (raw) history.replaceState(null, '', '#/home');
+  return 'home';
 }
 
 function setScreen(id, opts) {
@@ -3618,6 +3622,13 @@ function customisePanes() {
   const homeListEl = h('div', { class: 'gb-home-cust-list' });
   const persistHome = () =>
     saveHomeLayout(homeWorking.map((x) => ({ id: x.id, enabled: x.enabled })));
+  // The list re-renders on every move, which drops the focused button; put focus back on the
+  // same arrow of the row that moved (or its other arrow once it hits the top or bottom).
+  const refocusMove = (list, row, delta) => {
+    const [up, down] = list.children[row]?.querySelectorAll('.gb-home-cust-move') || [];
+    const want = delta < 0 ? up : down;
+    (want && !want.disabled ? want : delta < 0 ? down : up)?.focus();
+  };
   const renderHomeList = () => {
     homeListEl.replaceChildren();
     homeWorking.forEach((item, idx) => {
@@ -3653,6 +3664,7 @@ function customisePanes() {
             homeWorking[idx] = tmp;
             renderHomeList();
             persistHome();
+            refocusMove(homeListEl, j, delta);
           };
         }
         return btn;
@@ -3664,8 +3676,8 @@ function customisePanes() {
           h(
             'div',
             { class: 'gb-home-cust-moves' },
-            move(-1, 'Move up', 'chevron-up', idx === 0),
-            move(1, 'Move down', 'chevron-down', idx === homeWorking.length - 1)
+            move(-1, 'Move ' + def.label + ' up', 'chevron-up', idx === 0),
+            move(1, 'Move ' + def.label + ' down', 'chevron-down', idx === homeWorking.length - 1)
           ),
           h(
             'div',
@@ -3744,6 +3756,7 @@ function customisePanes() {
             navWorking[idx] = tmp;
             renderNavList();
             persistNav();
+            refocusMove(navListEl, j, delta);
           };
         }
         return btn;
@@ -3755,8 +3768,8 @@ function customisePanes() {
           h(
             'div',
             { class: 'gb-home-cust-moves' },
-            move(-1, 'Move up', 'chevron-up', idx === 0),
-            move(1, 'Move down', 'chevron-down', idx === navWorking.length - 1)
+            move(-1, 'Move ' + def.label + ' up', 'chevron-up', idx === 0),
+            move(1, 'Move ' + def.label + ' down', 'chevron-down', idx === navWorking.length - 1)
           ),
           h(
             'div',

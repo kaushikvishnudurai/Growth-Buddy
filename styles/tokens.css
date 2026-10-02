@@ -193,11 +193,18 @@
 
   /* Brand semantics */
   --brand: var(--coral-500);
-  --brand-hover: var(--coral-600);
+  --brand-hover: var(--coral-800); /* link / text hover: deeper than the ink, not lighter */
   --brand-press: var(--coral-700);
-  --brand-edge: var(--coral-700);  /* chunky button bottom edge */
+  --brand-edge: var(--coral-900);  /* chunky button bottom edge, under --brand-fill */
   --brand-soft: var(--coral-50);
   --brand-soft-fg: var(--coral-700);
+  /* --brand is 2.8:1 against white either way round, under the 4.5:1 text needs.
+     Orange TEXT uses --brand-ink, and an orange surface that carries white text
+     or an icon uses --brand-fill: coral-700 is 5.0:1 on white and 4.65:1 on
+     --brand-soft. --brand stays for bars, dots and rings, which carry no text. */
+  --brand-ink: var(--coral-700);
+  --brand-fill: var(--coral-700);
+  --brand-fill-hover: var(--coral-800);
 
   --danger: #C93B40;               /* error text — matches .gb-btn--danger */
   --success: var(--leaf-600);
@@ -257,9 +264,12 @@
   --brand: var(--coral-500);
   --brand-hover: var(--coral-400);
   --brand-press: var(--coral-300);
-  --brand-edge: var(--coral-700);
+  --brand-edge: var(--coral-900);
   --brand-soft: rgba(249, 115, 22, 0.15);
   --brand-soft-fg: var(--coral-300);
+  --brand-ink: var(--coral-500);   /* 6.1:1 on the dark surface */
+  --brand-fill: var(--coral-700);  /* white on it: 5.0:1, same as light */
+  --brand-fill-hover: var(--coral-800);
 
   --danger: #FF6369;
   --success: var(--leaf-500);

@@ -892,7 +892,7 @@ function AppHeader({ label, name, userName, onAccount, unreadCount, onBell, onAd
       Avatar({
         name: userName || 'Buddy',
         bg: 'var(--coral-100)',
-        fg: 'var(--coral-700)',
+        fg: 'var(--coral-800)', // coral-700 is 4.1:1 on coral-100; 800 is 6.0
         onClick: onAccount,
       }),
       // The notification and profile panels render into these, filled by

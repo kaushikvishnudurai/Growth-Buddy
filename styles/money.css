@@ -49,7 +49,7 @@
   color: var(--fg1);
 }
 .gb-money-tab.is-active {
-  background: var(--brand);
+  background: var(--brand-fill);
   border-color: var(--brand);
   color: var(--fg-on-brand);
   box-shadow: var(--shadow-brand);
@@ -763,7 +763,7 @@
   white-space: nowrap;
 }
 .gb-money-account.is-negative .gb-money-account-bal {
-  color: var(--warning);
+  color: var(--warning-soft-fg); /* --warning itself is 2.4:1 on the card */
 }
 .gb-money-accounts-total {
   margin-top: var(--space-3);
@@ -1542,7 +1542,7 @@
   color: var(--fg1);
 }
 .gb-money-tagchip.is-on {
-  background: var(--brand);
+  background: var(--brand-fill);
   border-color: var(--brand);
   color: var(--fg-on-brand);
 }
@@ -1560,7 +1560,7 @@
   color: var(--fg3);
 }
 .gb-money-tagchip--add:hover {
-  color: var(--brand);
+  color: var(--brand-ink);
   border-color: var(--brand);
 }
 .gb-money-tagpick-create {
@@ -1834,7 +1834,7 @@
   min-height: 1.3em;
 }
 .gb-stars-caption[data-level='low'] {
-  color: var(--coral-600);
+  color: var(--brand-ink);
 }
 .gb-stars-caption[data-level='high'] {
   color: var(--leaf-600);
