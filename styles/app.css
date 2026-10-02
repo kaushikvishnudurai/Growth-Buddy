@@ -2817,11 +2817,14 @@ body:has(.is-thinking, .gb-thinking)::after {
   font-size: 0.84375rem;
   line-height: 1.5;
 }
-.gb-food-level {
+/* `button.` on purpose: the Summary's shared button reset further down
+   (padding 0, font and colour inherit) has the same one-class weight and,
+   coming later, was stripping this pill to bare body text. */
+button.gb-food-level {
   flex: none;
   border-radius: 999px;
-  padding: 5px 8px;
-  font-size: 0.6875rem;
+  padding: 5px 10px;
+  font-size: 0.75rem;
   font-weight: 800;
   color: var(--warning-soft-fg);
   background: var(--warning-soft);

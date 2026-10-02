@@ -23,6 +23,15 @@ class FoodWeekRulesTest {
         assertTrue(r.summary().contains("light on protein and fiber"));
         assertTrue(r.summary().contains("heavy on carbs"));
         assertTrue(r.add().size() <= 4);
+        // Every gap the summary names keeps a tip, even past the cap.
+        assertTrue(r.add().contains("Half a serving less rice, more vegetables"));
+    }
+
+    @Test
+    void aLowGapAlwaysGetsATip() {
+        DietCheckResponse r = FoodWeek.rules(new Nutrients(112, 200, 40, 30), TARGET);
+        assertTrue(r.summary().contains("light on carbs and fat"));
+        assertEquals(2, r.add().size());
     }
 
     @Test

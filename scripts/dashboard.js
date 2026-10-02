@@ -24,15 +24,38 @@ const ONBOARD_KEY = 'gb.onboardDismissed';
 
 /* First-run checklist: shown until the basics are set up (or dismissed). Each
    step marks itself done from existing data, so it doubles as live progress. */
-function OnboardingCard({ tasks, habits, wellness, onAddHabit, onAddTask, onAddMood, onOnboardDismiss }) {
+function OnboardingCard({
+  tasks,
+  habits,
+  wellness,
+  onAddHabit,
+  onAddTask,
+  onAddMood,
+  onOnboardDismiss,
+}) {
   if (CacheStorage.getItem(ONBOARD_KEY) === '1') return null;
   const today = todayKey();
   const steps = [
-    { done: (habits || []).length > 0, label: 'Add your first habit', hint: 'Something to do daily', icon: 'repeat', action: onAddHabit },
-    { done: (tasks || []).length > 0, label: 'Add a task for today', hint: 'One thing to get done', icon: 'list-todo', action: onAddTask },
+    {
+      done: (habits || []).length > 0,
+      label: 'Add your first habit',
+      hint: 'Something to do daily',
+      icon: 'repeat',
+      action: onAddHabit,
+    },
+    {
+      done: (tasks || []).length > 0,
+      label: 'Add a task for today',
+      hint: 'One thing to get done',
+      icon: 'list-todo',
+      action: onAddTask,
+    },
     {
       done: !!(wellness && wellness.moodByDate && wellness.moodByDate[today]),
-      label: 'Log how you feel', hint: 'A quick mood check-in', icon: 'smile-plus', action: onAddMood,
+      label: 'Log how you feel',
+      hint: 'A quick mood check-in',
+      icon: 'smile-plus',
+      action: onAddMood,
     },
   ];
   const doneCount = steps.filter((s) => s.done).length;
@@ -47,13 +70,18 @@ function OnboardingCard({ tasks, habits, wellness, onAddHabit, onAddTask, onAddM
       h(
         'div',
         { class: 'gb-onboard-head' },
-        h('div', null,
+        h(
+          'div',
+          null,
           h('div', { class: 'gb-onboard-kicker' }, 'Getting started'),
-          h('div', { class: 'gb-onboard-title' }, 'Set up in ' + steps.length + ' quick steps')),
+          h('div', { class: 'gb-onboard-title' }, 'Set up in ' + steps.length + ' quick steps')
+        ),
         h(
           'button',
           {
-            type: 'button', class: 'gb-onboard-dismiss', 'aria-label': 'Dismiss',
+            type: 'button',
+            class: 'gb-onboard-dismiss',
+            'aria-label': 'Dismiss',
             onclick: () => {
               CacheStorage.setItem(ONBOARD_KEY, '1');
               if (onOnboardDismiss) onOnboardDismiss();
@@ -64,17 +92,33 @@ function OnboardingCard({ tasks, habits, wellness, onAddHabit, onAddTask, onAddM
           Icon('x', { size: 16, sw: 2.4 })
         )
       ),
-      h('div', { class: 'gb-onboard-steps' }, ...steps.map((s) =>
-        h(
-          'button',
-          { type: 'button', class: 'gb-onboard-step' + (s.done ? ' is-done' : ''), onclick: s.done ? null : s.action, disabled: s.done },
-          h('span', { class: 'gb-onboard-step-ic' }, Icon(s.done ? 'check' : s.icon, { size: 16, sw: 2.4 })),
-          h('span', { class: 'gb-onboard-step-tx' },
-            h('span', { class: 'gb-onboard-step-l' }, s.label),
-            h('span', { class: 'gb-onboard-step-h' }, s.hint)),
-          s.done ? null : Icon('chevron-right', { size: 16, sw: 2.4 })
+      h(
+        'div',
+        { class: 'gb-onboard-steps' },
+        ...steps.map((s) =>
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-onboard-step' + (s.done ? ' is-done' : ''),
+              onclick: s.done ? null : s.action,
+              disabled: s.done,
+            },
+            h(
+              'span',
+              { class: 'gb-onboard-step-ic' },
+              Icon(s.done ? 'check' : s.icon, { size: 16, sw: 2.4 })
+            ),
+            h(
+              'span',
+              { class: 'gb-onboard-step-tx' },
+              h('span', { class: 'gb-onboard-step-l' }, s.label),
+              h('span', { class: 'gb-onboard-step-h' }, s.hint)
+            ),
+            s.done ? null : Icon('chevron-right', { size: 16, sw: 2.4 })
+          )
         )
-      )),
+      ),
     ],
   });
 }
@@ -429,13 +473,7 @@ const minutesOfDay = (hhmm) => {
   return h * 60 + m;
 };
 
-function ReminderSuggestionsCard({
-  habits,
-  water,
-  wellness,
-  reminders,
-  onAddSuggestedReminder,
-}) {
+function ReminderSuggestionsCard({ habits, water, wellness, reminders, onAddSuggestedReminder }) {
   const key = todayKey();
   const now = new Date();
   const nowMinutes = now.getHours() * 60 + now.getMinutes();
@@ -461,7 +499,11 @@ function ReminderSuggestionsCard({
   const booked = new Set(
     (reminders || [])
       .filter((rem) => occursOn(rem, key))
-      .map((rem) => String(rem.text || '').trim().toLowerCase())
+      .map((rem) =>
+        String(rem.text || '')
+          .trim()
+          .toLowerCase()
+      )
   );
   const unbooked = (item) => !booked.has(item.text.trim().toLowerCase());
 
@@ -1115,9 +1157,12 @@ function CalorieSplit(week) {
         {
           class: 'gb-split-bar',
           role: 'img',
-          'aria-label': parts.map((n, i) => n.label + ' ' + share[i] + ' percent').join(', ') + ' of calories',
+          'aria-label':
+            parts.map((n, i) => n.label + ' ' + share[i] + ' percent').join(', ') + ' of calories',
         },
-        parts.map((n, i) => h('div', { class: 'is-' + n.key, style: { flexGrow: String(kcal[i]) } }))
+        parts.map((n, i) =>
+          h('div', { class: 'is-' + n.key, style: { flexGrow: String(kcal[i]) } })
+        )
       ),
       h(
         'div',
@@ -1148,7 +1193,11 @@ function NutrientPanel(week, n, onOpenDay) {
   const limit = n.key === 'carbs' || n.key === 'fat';
   return h(
     'div',
-    { class: 'gb-nutrient-panel is-' + n.key, 'data-nutrient': n.key, hidden: n.key !== summaryNutrient },
+    {
+      class: 'gb-nutrient-panel is-' + n.key,
+      'data-nutrient': n.key,
+      hidden: n.key !== summaryNutrient,
+    },
     h(
       'p',
       { class: 'gb-summary-meta' },
@@ -1165,7 +1214,11 @@ function NutrientPanel(week, n, onOpenDay) {
     ),
     h(
       'div',
-      { class: 'gb-food-week-bars', role: 'group', 'aria-label': n.label + ' each day this week, in grams' },
+      {
+        class: 'gb-food-week-bars',
+        role: 'group',
+        'aria-label': n.label + ' each day this week, in grams',
+      },
       h('div', {
         class: 'gb-food-week-goal',
         // A share of the track, not of the box: the box also holds the 18px value
@@ -1206,7 +1259,11 @@ function NutrientPanel(week, n, onOpenDay) {
       ? h(
           'div',
           { class: 'gb-nutrient-sources' },
-          h('span', { class: 'gb-nutrient-sources-title' }, 'Most ' + n.label.toLowerCase() + ' came from'),
+          h(
+            'span',
+            { class: 'gb-nutrient-sources-title' },
+            'Most ' + n.label.toLowerCase() + ' came from'
+          ),
           sources.map((s) =>
             h(
               'div',
@@ -1225,7 +1282,10 @@ function NutrientPanel(week, n, onOpenDay) {
               h(
                 'div',
                 { class: 'gb-source-track' },
-                h('div', { class: 'gb-source-bar', style: { width: Math.round((s.g / most) * 100) + '%' } })
+                h('div', {
+                  class: 'gb-source-bar',
+                  style: { width: Math.round((s.g / most) * 100) + '%' },
+                })
               )
             )
           )
@@ -1354,6 +1414,15 @@ function DietCheckCard({ check, canCheck, onCheck }) {
             { class: 'gb-food-check-add' },
             r.add.map((x) => h('li', null, x))
           )
+        : null,
+      // The AI couldn't answer, so this is the built-in read. Say so, quietly:
+      // the stock tips otherwise pass for Buddy's own.
+      r.source === 'rules' && r.protein
+        ? h(
+            'p',
+            { class: 'gb-summary-hint' },
+            "Standard tips for now. Buddy's own read is unavailable."
+          )
         : null
     );
   } else {
@@ -1391,11 +1460,26 @@ function DietCheckCard({ check, canCheck, onCheck }) {
   });
 }
 
-function ScreenSummary({ features, week, water, check, error, hasWeight, onCheck, onRetry, onBack, onOpenDay }) {
+function ScreenSummary({
+  features,
+  week,
+  water,
+  check,
+  error,
+  hasWeight,
+  onCheck,
+  onRetry,
+  onBack,
+  onOpenDay,
+}) {
   const on = (k) => !features || features[k] !== false;
   const back = h(
     'button',
-    { type: 'button', class: 'gb-btn gb-btn--ghost gb-btn--compact gb-summary-back', onclick: onBack },
+    {
+      type: 'button',
+      class: 'gb-btn gb-btn--ghost gb-btn--compact gb-summary-back',
+      onclick: onBack,
+    },
     Icon('chevron-left', { size: 16, sw: 2.6 }),
     'Food'
   );
@@ -1470,7 +1554,9 @@ function ScreenSummary({ features, week, water, check, error, hasWeight, onCheck
             ? 'And heavy on ' + heavy.map((n) => n.label.toLowerCase()).join(' and ') + '. '
             : '',
           'Targets come from your calorie goal' +
-            (hasWeight ? ' and weight.' : '. Add your weight in Settings for a protein target that fits you.')
+            (hasWeight
+              ? ' and weight.'
+              : '. Add your weight in Settings for a protein target that fits you.')
         )
       : null
   );
@@ -2004,7 +2090,15 @@ function ScreenDashboard({
     })
     .filter(Boolean);
 
-  const onboard = OnboardingCard({ tasks, habits, wellness, onAddHabit, onAddTask, onAddMood, onOnboardDismiss });
+  const onboard = OnboardingCard({
+    tasks,
+    habits,
+    wellness,
+    onAddHabit,
+    onAddTask,
+    onAddMood,
+    onOnboardDismiss,
+  });
 
   // Before you've added anything, the checklist IS the screen. Every widget
   // below it renders its own "nothing yet" state, so a new account used to open
@@ -2060,11 +2154,7 @@ function ScreenFood({
       ? h('div', { class: 'gb-dash-block' }, FoodCard({ food, onAddFood, onDeleteFood }))
       : null,
     on('food') || on('water')
-      ? h(
-          'div',
-          { class: 'gb-dash-block' },
-          FoodSummaryLink({ onOpen: onOpenSummary })
-        )
+      ? h('div', { class: 'gb-dash-block' }, FoodSummaryLink({ onOpen: onOpenSummary }))
       : null
   );
 }

@@ -421,29 +421,39 @@ public class FoodWeek {
         String c = level(avg.carbsG(), target.carbsG());
         String f = level(avg.fatG(), target.fatG());
         String fi = level(avg.fiberG(), target.fiberG());
-        List<String> add = new ArrayList<>();
+        // One tip per gap the summary names, extras after: with a cap of 4, two
+        // tips each for protein and fiber used to push "heavy on carbs" out of
+        // the list while the summary still said it.
+        List<String> first = new ArrayList<>();
+        List<String> more = new ArrayList<>();
         List<String> light = new ArrayList<>();
         List<String> heavy = new ArrayList<>();
         if ("low".equals(p)) {
             light.add("protein");
-            add.addAll(List.of("Dal or sambar with lunch", "Eggs or paneer at breakfast"));
+            first.add("Dal or sambar with lunch");
+            more.add("Eggs or paneer at breakfast");
         }
         if ("low".equals(fi)) {
             light.add("fiber");
-            add.addAll(List.of("A vegetable poriyal or salad", "A fruit as an evening snack"));
+            first.add("A vegetable poriyal or salad");
+            more.add("A fruit as an evening snack");
         }
         if ("high".equals(c)) {
             heavy.add("carbs");
-            add.add("Half a serving less rice, more vegetables");
+            first.add("Half a serving less rice, more vegetables");
         } else if ("low".equals(c)) {
             light.add("carbs");
+            first.add("A chapati or a small rice portion at dinner");
         }
         if ("high".equals(f)) {
             heavy.add("fat");
-            add.add("Fewer fried snacks like poori and bajji");
+            first.add("Fewer fried snacks like poori and bajji");
         } else if ("low".equals(f)) {
             light.add("fat");
+            first.add("A spoon of ghee or a handful of nuts");
         }
+        List<String> add = new ArrayList<>(first);
+        add.addAll(more);
         String summary;
         if (light.isEmpty() && heavy.isEmpty()) {
             summary = "Your week is close to target on protein, carbs, fat and fiber. Keep the variety going.";
