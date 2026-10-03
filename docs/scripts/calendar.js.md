@@ -78,5 +78,29 @@ Day-key helpers: `pad`, `keyOf(y,m,d)`, `parseKey`, `todayKey`, `isFutureKey`, `
 | `ScreenCalendar` | 884 | assembles grid + panel |
 | `CalendarToolbar` | 956 | month nav + counts |
 
+**Time blocks / free-busy.** A reminder with both `time` and `endTime` is a busy block
+("Meeting 15:00 to 16:00"). `freeBusy(list, key, routine)` paints the day minute by minute (1440
+cells) and returns spans of one kind: `free | busy | custom | lunch | sleep`, earlier ones winning where they
+overlap (each custom block paints its own cell value so two back to back stay two named spans),
+and overlapping meetings form one span carrying every title. **The routine** (`ui_prefs.routine`:
+`{bed, wake, lunchFrom, lunchTo, lunchDays, items: [{name, from, to, days}]}`, where `days` is
+`'all' | 'work' | 'off'` (off = outside the working week) and `items` are the user's own blocks, at
+most `ROUTINE_MAX` and none across midnight, set in `openRoutineDialog`, saved by
+app.js `saveRoutine`, held as module state via `setRoutine` like the working week) turns the window
+into all 24 hours: sleep may wrap midnight (painted 00:00-wake and bed-24:00), `work` lunch follows
+the user's working week. With no routine the window is 08:00-22:00, stretched to fit any block
+outside it. Week tiles use `wholeHours`, which rounds by largest remainder so they add up to 168h.
+`openRoutineDialog` builds its parts into an array before `sheet.append(...)`: native `append`
+writes a `null` argument out as the text "null". `ScheduleSection` holds the Day/Week toggle (`scheduleView`, session-only) and the
+Routine button; `ScheduleCard` is one day, `WeekCard` Monday to Sunday around the selected day, each
+row a button that opens that day. Point reminders (no end) never count as busy. No reminder block
+crosses midnight. `scripts/calendar.test.mjs` covers `freeBusy`, routine cases included.
+
+`TimeRange(start, end)` is the start/end pair in both the add form and the edit dialog: the end is
+disabled until there is a start, and has its own clear button, because a native time input has no
+reliable way to empty it. **In a PATCH, a start sent with a null end clears the end** (the edit
+dialog always sends the start), so a block can go back to being a plain reminder; an end sent alone
+keeps the stored start.
+
 Backend: `/api/reminders` (CRUD, `occurrences`, `day/{date}`).
 Styles: `app.css` §"Calendar screen" (~3010) and §"Delete-scope modal" (~3797).

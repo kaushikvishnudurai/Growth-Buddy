@@ -46,6 +46,10 @@ public class Task {
     @Column(nullable = false)
     private boolean done = false;
 
+    /** On hold: kept, but not escalated when overdue and drawn apart from live tasks. */
+    @Column(nullable = false)
+    private boolean paused = false;
+
     @Column(name = "done_at")
     private Instant doneAt;
 

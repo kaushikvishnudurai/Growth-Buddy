@@ -222,19 +222,35 @@ function ScoreCard({ score, tasks, habits }) {
   });
 }
 
-function TaskRow(task, toggleTask, onEdit) {
+function TaskRow(task, toggleTask, onEdit, onPause) {
   const p = PRIORITY[task.priority] || PRIORITY.Low;
   return h(
     'div',
-    { class: 'gb-row' + (task.done ? ' is-done' : ''), 'data-task-id': task.id },
+    {
+      class: 'gb-row' + (task.done ? ' is-done' : '') + (task.paused ? ' is-paused' : ''),
+      'data-task-id': task.id,
+    },
     Check({ done: task.done, onToggle: () => toggleTask(task.id) }),
     h(
       'div',
       { style: { flex: 1, minWidth: 0 } },
       h('div', { class: 'title' }, task.title),
-      h('div', { class: 'sub' }, sharedFormatTime(task.time))
+      h('div', { class: 'sub' }, task.paused ? 'Paused' : sharedFormatTime(task.time))
     ),
     Pill({ label: task.priority, bg: p.bg, fg: p.fg, dot: p.dot }),
+    onPause && !task.done
+      ? h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-icon-btn',
+            'aria-label': (task.paused ? 'Resume ' : 'Pause ') + task.title,
+            'aria-pressed': String(task.paused),
+            onclick: () => onPause(task),
+          },
+          Icon(task.paused ? 'play' : 'pause', { size: 15, sw: 2.4 })
+        )
+      : null,
     onEdit
       ? h(
           'button',
@@ -250,7 +266,7 @@ function TaskRow(task, toggleTask, onEdit) {
   );
 }
 
-function TasksCard({ tasks, toggleTask, onAdd, onEdit }) {
+function TasksCard({ tasks, toggleTask, onAdd, onEdit, onPause }) {
   if (!tasks.length) {
     return Card({
       children: [
@@ -274,7 +290,7 @@ function TasksCard({ tasks, toggleTask, onAdd, onEdit }) {
       h(
         'div',
         { class: 'gb-tasks-scroll' },
-        tasks.map((t) => TaskRow(t, toggleTask, onEdit))
+        tasks.map((t) => TaskRow(t, toggleTask, onEdit, onPause))
       ),
     ],
   });
@@ -2028,6 +2044,7 @@ function ScreenDashboard({
   dayFoodError,
   onAddTask,
   onEditTask,
+  onPauseTask,
   onAddHabit,
   calYear,
   calMonth,
@@ -2056,7 +2073,7 @@ function ScreenDashboard({
     wellness: () => WellnessCard({ wellness, onAddSleep, onAddMood }),
     tasks: () => [
       SectionTitle({ title: "Today's tasks", action: '+ Add', onAction: onAddTask }),
-      TasksCard({ tasks, toggleTask, onAdd: onAddTask, onEdit: onEditTask }),
+      TasksCard({ tasks, toggleTask, onAdd: onAddTask, onEdit: onEditTask, onPause: onPauseTask }),
     ],
     calendar: () =>
       MiniCalendarCard({

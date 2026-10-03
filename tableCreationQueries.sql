@@ -118,6 +118,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   priority        VARCHAR(8)  NOT NULL DEFAULT 'Medium',
   due_at          TIMESTAMP    NULL,
   done            BOOLEAN      NOT NULL DEFAULT FALSE,
+  paused          BOOLEAN      NOT NULL DEFAULT FALSE,
   done_at         TIMESTAMP    NULL,
   created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -714,6 +715,8 @@ CREATE TABLE IF NOT EXISTS `calendar_reminders` (
   `tag` varchar(16) NOT NULL,
   `text` varchar(255) NOT NULL,
   `time_of_day` time(6) DEFAULT NULL,
+  -- End of a time block, e.g. a meeting 15:00 to 16:00. NULL = a point reminder.
+  `end_time_of_day` time(6) DEFAULT NULL,
   `until_date` date DEFAULT NULL,
   `user_id` char(36) NOT NULL,
   -- This reminder's own chime key; NULL = the user's default tone.

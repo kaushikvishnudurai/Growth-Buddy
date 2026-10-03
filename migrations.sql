@@ -60,6 +60,8 @@ FROM (
   UNION ALL SELECT 'custom_sounds'          AS table_name, 'content_type'
   UNION ALL SELECT 'custom_sounds'          AS table_name, 'audio'
   UNION ALL SELECT 'tasks'                  AS table_name, 'push_count'
+  UNION ALL SELECT 'calendar_reminders'     AS table_name, 'end_time_of_day'
+  UNION ALL SELECT 'tasks'                  AS table_name, 'paused'
 ) AS t
 LEFT JOIN information_schema.COLUMNS c
        ON c.table_schema = DATABASE()
@@ -243,3 +245,10 @@ ALTER TABLE custom_sounds ADD COLUMN audio MEDIUMBLOB NULL;
 -- How many times a task's due date was moved to a later day, so Insights can
 -- ask "break it down or drop it?" about one that keeps getting pushed.
 ALTER TABLE tasks ADD COLUMN push_count INT NOT NULL DEFAULT 0;
+
+-- A reminder can be a time block ("Meeting 15:00-16:00"), so the calendar can
+-- show a day's busy and free hours. NULL = a point reminder, as before.
+ALTER TABLE calendar_reminders ADD COLUMN end_time_of_day TIME(6) NULL;
+
+-- A task can be put on hold: kept, but not escalated to High when overdue.
+ALTER TABLE tasks ADD COLUMN paused BOOLEAN NOT NULL DEFAULT FALSE;

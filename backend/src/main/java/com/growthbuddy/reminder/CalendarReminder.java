@@ -56,6 +56,10 @@ public class CalendarReminder {
     @Column(name = "time_of_day")
     private LocalTime time;
 
+    /** Optional end of a time block ("Meeting 15:00-16:00"); null for a point reminder. */
+    @Column(name = "end_time_of_day")
+    private LocalTime endTime;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
     private ReminderTag tag = ReminderTag.personal;

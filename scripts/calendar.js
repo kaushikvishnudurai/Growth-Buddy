@@ -136,6 +136,661 @@ function remindersOn(reminders, key) {
     .sort((a, b) => (a.time || '99:99').localeCompare(b.time || '99:99'));
 }
 
+/* ---- Free / busy ----
+   The user's routine (ui_prefs.routine: sleep every night, an optional lunch
+   break, and up to ROUTINE_MAX blocks of their own such as a gym slot or the
+   commute) turns the day into all 24 hours: those are painted in, and free is
+   what is left of the waking day. Without a routine the window is
+   08:00-22:00, stretched to fit any block outside it. Module state like the
+   working week in recurrence.js, set from app.js at boot and on save. */
+const HHMM_RE = /^([01]\d|2[0-3]):[0-5]\d/;
+let routine = null;
+
+function validRoutine(r) {
+  const ok = (t) => typeof t === 'string' && HHMM_RE.test(t);
+  if (!r || typeof r !== 'object' || !ok(r.bed) || !ok(r.wake)) return null;
+  const bed = r.bed.slice(0, 5);
+  const wake = r.wake.slice(0, 5);
+  if (bed === wake) return null;
+  const lunch = ok(r.lunchFrom) && ok(r.lunchTo) && r.lunchTo.slice(0, 5) > r.lunchFrom.slice(0, 5);
+  // ponytail: a custom block can't cross midnight (sleep is the one that does);
+  // split it in two if someone needs a night shift.
+  const items = (Array.isArray(r.items) ? r.items : [])
+    .filter(
+      (i) =>
+        i &&
+        typeof i.name === 'string' &&
+        i.name.trim() &&
+        ok(i.from) &&
+        ok(i.to) &&
+        i.to.slice(0, 5) > i.from.slice(0, 5)
+    )
+    .slice(0, ROUTINE_MAX)
+    .map((i) => ({
+      name: i.name.trim().slice(0, 40),
+      from: i.from.slice(0, 5),
+      to: i.to.slice(0, 5),
+      days: validDays(i.days),
+    }));
+  return {
+    bed,
+    wake,
+    lunchFrom: lunch ? r.lunchFrom.slice(0, 5) : null,
+    lunchTo: lunch ? r.lunchTo.slice(0, 5) : null,
+    lunchDays: validDays(r.lunchDays),
+    items,
+  };
+}
+
+const ROUTINE_MAX = 8;
+/* Which days a routine block is on: every day, the user's working week, or the
+   days outside it. */
+const DAY_OPTS = ['all', 'work', 'off'];
+const validDays = (d) => (DAY_OPTS.indexOf(d) !== -1 ? d : 'all');
+const dayOptLabel = (d) =>
+  d === 'all'
+    ? 'Every day'
+    : d === 'off'
+      ? 'Days off'
+      : 'Work days (' + (WORK_WEEKS[getWorkWeek()] || WORK_WEEKS[DEFAULT_WORK_WEEK]).label + ')';
+
+function setRoutine(r) {
+  routine = validRoutine(r);
+}
+
+const toMin = (hhmm) => +hhmm.slice(0, 2) * 60 + +hhmm.slice(3, 5);
+const toHHMM = (m) => pad(Math.floor(m / 60)) + ':' + pad(m % 60);
+
+function isWorkDay(key) {
+  const p = parseKey(key);
+  const days = (WORK_WEEKS[getWorkWeek()] || WORK_WEEKS[DEFAULT_WORK_WEEK]).days;
+  return days.indexOf(new Date(p.y, p.m, p.d).getDay()) !== -1;
+}
+
+const onDay = (days, key) => days === 'all' || (days === 'work') === isWorkDay(key);
+
+/* A day as consecutive spans of one kind: 'free' | 'busy' | 'custom' | 'lunch'
+   | 'sleep', in that order of precedence where they overlap. Busy is any
+   reminder with a start AND an end; overlapping meetings form one busy span carrying every
+   title. Painted minute by minute: 1440 cells, which is what makes overlaps,
+   sleep across midnight and lunch inside a meeting all the same simple case. */
+function freeBusy(reminders, key, rt = routine) {
+  const blocks = reminders
+    .filter((r) => r.time && r.endTime)
+    .map((r) => ({ a: toMin(r.time), b: toMin(r.endTime), title: r.text }));
+  let lo = 0;
+  let hi = 1440;
+  if (!rt) {
+    lo = Math.min(480, ...blocks.map((x) => x.a));
+    hi = Math.max(1320, ...blocks.map((x) => x.b));
+  }
+  const kind = new Array(1440).fill('free');
+  const paint = (a, b, k) => {
+    for (let m = a; m < b; m++) kind[m] = k;
+  };
+  if (rt) {
+    const bed = toMin(rt.bed);
+    const wake = toMin(rt.wake);
+    if (bed > wake) {
+      paint(0, wake, 'sleep');
+      paint(bed, 1440, 'sleep');
+    } else {
+      paint(bed, wake, 'sleep');
+    }
+    if (rt.lunchFrom && onDay(rt.lunchDays, key)) {
+      paint(toMin(rt.lunchFrom), toMin(rt.lunchTo), 'lunch');
+    }
+    // Each custom block paints its own cell value, 'c<index>', so two of them
+    // back to back stay two spans with their own names.
+    (rt.items || []).forEach((it, i) => {
+      if (onDay(it.days, key)) paint(toMin(it.from), toMin(it.to), 'c' + i);
+    });
+  }
+  blocks.forEach((x) => paint(x.a, x.b, 'busy'));
+  const spans = [];
+  for (let m = lo; m < hi; m++) {
+    const last = spans[spans.length - 1];
+    if (last && last.cell === kind[m]) last.b = m + 1;
+    else spans.push({ cell: kind[m], a: m, b: m + 1 });
+  }
+  return spans.map((x) => {
+    const custom = x.cell[0] === 'c';
+    const k = custom ? 'custom' : x.cell;
+    return {
+      kind: k,
+      free: k === 'free',
+      start: toHHMM(x.a),
+      end: toHHMM(x.b),
+      mins: x.b - x.a,
+      titles:
+        k === 'busy'
+          ? blocks.filter((b) => b.a < x.b && b.b > x.a).map((b) => b.title)
+          : custom
+            ? [rt.items[+x.cell.slice(1)].name]
+            : [],
+    };
+  });
+}
+
+function duration(m) {
+  const hrs = Math.floor(m / 60);
+  const rest = m % 60;
+  return (hrs ? hrs + 'h' : '') + (hrs && rest ? ' ' : '') + (rest || !hrs ? rest + 'm' : '');
+}
+
+const KIND_LABEL = { free: 'Free', busy: 'Busy', custom: 'Routine', lunch: 'Lunch', sleep: 'Sleep' };
+const KINDS = ['free', 'busy', 'custom', 'lunch', 'sleep'];
+
+function totalsOf(segs) {
+  const t = { free: 0, busy: 0, custom: 0, lunch: 0, sleep: 0 };
+  segs.forEach((x) => (t[x.kind] += x.mins));
+  return t;
+}
+
+function StatTiles(t, fmt = duration) {
+  return h(
+    'div',
+    { class: 'gb-sched-stats' },
+    KINDS.filter((k) => k === 'free' || k === 'busy' || t[k]).map((k) =>
+      h(
+        'div',
+        { class: 'gb-sched-stat is-' + k },
+        h('span', { class: 'gb-sched-stat-l' }, KIND_LABEL[k]),
+        h('span', { class: 'gb-sched-stat-v' }, fmt(t[k], k))
+      )
+    )
+  );
+}
+
+/* Whole hours that still add up to the week (168): round each total down, then
+   give the hours left over to the largest remainders. Rounding each tile on its
+   own showed 169h for a week. */
+function wholeHours(t) {
+  const total = Math.round(KINDS.reduce((n, k) => n + t[k], 0) / 60);
+  const out = {};
+  KINDS.forEach((k) => (out[k] = Math.floor(t[k] / 60)));
+  let left = total - KINDS.reduce((n, k) => n + out[k], 0);
+  KINDS.slice()
+    .sort((a, b) => (t[b] % 60) - (t[a] % 60))
+    .forEach((k) => {
+      if (left > 0 && t[k] % 60) {
+        out[k] += 1;
+        left -= 1;
+      }
+    });
+  return out;
+}
+
+/* The day's shape as one bar. Free is the bar's own fill; every other span is
+   drawn over it, positioned across the window the spans cover. */
+function DayBar(segs, className) {
+  const lo = toMin(segs[0].start);
+  const span = segs.reduce((n, x) => n + x.mins, 0);
+  return h(
+    'div',
+    { class: 'gb-sched-bar' + (className ? ' ' + className : ''), 'aria-hidden': 'true' },
+    segs
+      .filter((x) => !x.free)
+      .map((x) =>
+        h('span', {
+          class: 'gb-sched-' + x.kind,
+          style: { left: ((toMin(x.start) - lo) / span) * 100 + '%', width: (x.mins / span) * 100 + '%' },
+        })
+      )
+  );
+}
+
+function DayTicks(segs) {
+  const lo = toMin(segs[0].start);
+  const hi = lo + segs.reduce((n, x) => n + x.mins, 0);
+  const marks = hi - lo === 1440 ? ['00:00', '06:00', '12:00', '18:00'] : ['08:00', '12:00', '16:00', '20:00'];
+  return h(
+    'div',
+    { class: 'gb-sched-ticks', 'aria-hidden': 'true' },
+    marks
+      .filter((t) => toMin(t) >= lo && toMin(t) < hi)
+      .map((t) => h('span', { style: { left: ((toMin(t) - lo) / (hi - lo)) * 100 + '%' } }, formatTime(t)))
+  );
+}
+
+function SchedRow(x) {
+  if (x.kind === 'sleep' || x.kind === 'lunch') {
+    const when =
+      x.kind === 'sleep' && x.start === '00:00'
+        ? 'until ' + formatTime(x.end)
+        : x.kind === 'sleep' && x.end === '24:00'
+          ? 'from ' + formatTime(x.start)
+          : formatTime(x.start) + ' to ' + formatTime(x.end);
+    return h(
+      'li',
+      { class: 'gb-sched-row is-' + x.kind },
+      Icon(x.kind === 'sleep' ? 'moon' : 'utensils', { size: 15, sw: 2.2 }),
+      h('span', { class: 'gb-sched-time' }, when),
+      h(
+        'span',
+        { class: 'gb-sched-what' },
+        x.kind === 'sleep' ? 'Sleep' : 'Lunch break',
+        x.kind === 'lunch' ? h('span', { class: 'gb-sched-len' }, duration(x.mins)) : null
+      )
+    );
+  }
+  if (x.kind === 'custom') {
+    return h(
+      'li',
+      { class: 'gb-sched-row is-custom' },
+      Icon('repeat', { size: 15, sw: 2.2 }),
+      h('span', { class: 'gb-sched-time' }, formatTime(x.start) + ' to ' + formatTime(x.end)),
+      h(
+        'span',
+        { class: 'gb-sched-what' },
+        x.titles[0],
+        h('span', { class: 'gb-sched-len' }, duration(x.mins))
+      )
+    );
+  }
+  return h(
+    'li',
+    { class: 'gb-sched-row is-' + x.kind },
+    h('span', { class: 'gb-sched-time' }, formatTime(x.start) + ' to ' + formatTime(x.end)),
+    h(
+      'span',
+      { class: 'gb-sched-what' },
+      x.free ? 'Free' : x.titles.join(', '),
+      h('span', { class: 'gb-sched-len' }, duration(x.mins))
+    )
+  );
+}
+
+function ScheduleCard(list, key) {
+  const segs = freeBusy(list, key);
+  if (!routine && segs.every((x) => x.free)) return null;
+  return Card({
+    className: 'gb-schedule',
+    children: [
+      StatTiles(totalsOf(segs)),
+      DayBar(segs),
+      DayTicks(segs),
+      h('ul', { class: 'gb-sched-list' }, segs.map(SchedRow)),
+    ],
+  });
+}
+
+/* Day or week, picked by the toggle in the section head. Session-only view
+   state, like the form cache: it survives the panel's repaints, not a reload. */
+let scheduleView = 'day';
+
+function ScheduleSection(reminders, list, key, onSelectDate, onSaveRoutine) {
+  const rerender = (e) => {
+    const sec = e.currentTarget.closest('[data-cal-section="schedule"]');
+    sec.replaceWith(ScheduleSection(reminders, list, key, onSelectDate, onSaveRoutine));
+    refreshIcons();
+  };
+  const viewBtn = (v, label) =>
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'gb-sched-tab' + (scheduleView === v ? ' is-on' : ''),
+        'aria-pressed': String(scheduleView === v),
+        onclick: (e) => {
+          scheduleView = v;
+          rerender(e);
+        },
+      },
+      label
+    );
+  const day = scheduleView === 'day' ? ScheduleCard(list, key) : null;
+  const body =
+    scheduleView === 'week'
+      ? WeekCard(reminders, key, (k) => {
+          scheduleView = 'day';
+          if (onSelectDate) onSelectDate(k);
+        })
+      : day ||
+        h(
+          'div',
+          { class: 'gb-day-empty' },
+          'Nothing blocked out yet. Give a reminder an end time, or set your routine to see the whole day.'
+        );
+  return h(
+    'div',
+    { class: 'gb-cal-block gb-day-section', 'data-cal-section': 'schedule' },
+    h(
+      'div',
+      { class: 'gb-day-head gb-sched-headrow' },
+      h('span', { class: 'gb-day-head-title' }, 'Schedule'),
+      h('span', { class: 'gb-sched-tabs' }, viewBtn('day', 'Day'), viewBtn('week', 'Week')),
+      onSaveRoutine
+        ? h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-sched-routine',
+              onclick: () => openRoutineDialog(onSaveRoutine),
+            },
+            Icon('moon', { size: 14, sw: 2.4 }),
+            routine ? 'Routine' : 'Set routine'
+          )
+        : null
+    ),
+    body
+  );
+}
+
+/* Monday to Sunday around `key`, one bar per day. A row is a button that opens
+   that day; the week's totals sit on top. */
+function WeekCard(reminders, key, onPick) {
+  const p = parseKey(key);
+  const d0 = new Date(p.y, p.m, p.d);
+  d0.setDate(d0.getDate() - ((d0.getDay() + 6) % 7));
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(d0.getFullYear(), d0.getMonth(), d0.getDate() + i);
+    const k = keyOf(d.getFullYear(), d.getMonth(), d.getDate());
+    days.push({ key: k, d, segs: freeBusy(remindersOn(reminders, k), k) });
+  }
+  const week = totalsOf(days.flatMap((x) => x.segs));
+  return Card({
+    className: 'gb-schedule gb-week',
+    children: [
+      // Whole hours at week scale: "104h 45m" does not fit a quarter of a phone.
+      StatTiles(week, (m, k) => wholeHours(week)[k] + 'h'),
+      h(
+        'ul',
+        { class: 'gb-week-list' },
+        days.map((x) =>
+          h(
+            'li',
+            null,
+            h(
+              'button',
+              {
+                type: 'button',
+                class: 'gb-week-row' + (x.key === key ? ' is-on' : ''),
+                'aria-label':
+                  prettyDate(x.key) + ', ' + duration(totalsOf(x.segs).free) + ' free',
+                onclick: () => onPick(x.key),
+              },
+              h('span', { class: 'gb-week-day' }, DOW[x.d.getDay()].slice(0, 3) + ' ' + x.d.getDate()),
+              DayBar(x.segs, 'gb-sched-bar--mini'),
+              h('span', { class: 'gb-week-free' }, duration(totalsOf(x.segs).free))
+            )
+          )
+        )
+      ),
+    ],
+  });
+}
+
+/* A segmented pick of DAY_OPTS. get() reads the choice. */
+function DaysPicker(initial, label) {
+  let picked = validDays(initial);
+  const node = h(
+    'div',
+    { class: 'gb-segmented gb-segmented--days', role: 'radiogroup', 'aria-label': label },
+    DAY_OPTS.map((k) =>
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-seg' + (k === picked ? ' is-on' : ''),
+          role: 'radio',
+          'aria-checked': String(k === picked),
+          dataset: { k },
+          onclick: (e) => {
+            picked = k;
+            for (const b of e.currentTarget.parentElement.children) {
+              b.classList.toggle('is-on', b.dataset.k === k);
+              b.setAttribute('aria-checked', String(b.dataset.k === k));
+            }
+          },
+        },
+        dayOptLabel(k)
+      )
+    )
+  );
+  return { node, get: () => picked };
+}
+
+/* Set once, shown on every day. Sleep may run past midnight, so bedtime and
+   wake-up are two plain inputs with no "end after start" rule. Lunch is a
+   TimeRange, and clearing its end turns lunch off. Below them, the user's own
+   blocks: a name, a time range and which days, added and removed in place. */
+function openRoutineDialog(onSave) {
+  const r = routine || {
+    bed: '23:00',
+    wake: '07:00',
+    lunchFrom: null,
+    lunchTo: null,
+    lunchDays: 'all',
+    items: [],
+  };
+  const timeIn = (value, label) =>
+    h('input', { type: 'time', class: 'gb-input gb-input--time', value: value || '', 'aria-label': label });
+  const bedIn = timeIn(r.bed, 'Bedtime');
+  const wakeIn = timeIn(r.wake, 'Wake up');
+  const lunchFrom = timeIn(r.lunchFrom, 'Lunch from');
+  const lunchTo = timeIn(r.lunchTo, 'Lunch to');
+  const lunchRange = TimeRange(lunchFrom, lunchTo, 'Turn off lunch break');
+  const lunchDays = DaysPicker(r.lunchDays, 'Lunch on');
+  const err = h('p', { class: 'gb-field-error', role: 'alert', style: { display: 'none' } });
+
+  // One editor per custom block. Each keeps its own inputs; the list is the
+  // order they were added in.
+  const rows = [];
+  const list = h('div', { class: 'gb-routine-items' });
+  const addBtn = h(
+    'button',
+    { type: 'button', class: 'gb-btn gb-btn--soft gb-routine-add', onclick: () => addRow().nameIn.focus() },
+    Icon('plus', { size: 16, sw: 2.6 }),
+    'Add a routine block'
+  );
+  const syncAdd = () => (addBtn.style.display = rows.length >= ROUTINE_MAX ? 'none' : '');
+  function addRow(item = { name: '', from: '', to: '', days: 'all' }) {
+    const nameIn = h('input', {
+      type: 'text',
+      class: 'gb-input',
+      value: item.name,
+      maxlength: 40,
+      placeholder: 'Gym, commute, school run...',
+      'aria-label': 'Block name',
+    });
+    const fromIn = timeIn(item.from, 'Block from');
+    const toIn = timeIn(item.to, 'Block to');
+    const range = TimeRange(fromIn, toIn, 'Clear end time');
+    const days = DaysPicker(item.days, 'Block on');
+    const row = { nameIn, fromIn, toIn, range, days };
+    const node = h(
+      'div',
+      { class: 'gb-routine-item' },
+      h(
+        'div',
+        { class: 'gb-routine-item-head' },
+        nameIn,
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-icon-btn',
+            'aria-label': 'Remove this block',
+            onclick: () => {
+              rows.splice(rows.indexOf(row), 1);
+              node.remove();
+              syncAdd();
+            },
+          },
+          Icon('trash-2', { size: 15 })
+        )
+      ),
+      range.node,
+      days.node
+    );
+    rows.push(row);
+    list.appendChild(node);
+    syncAdd();
+    refreshIcons();
+    return row;
+  }
+  (r.items || []).forEach((it) => addRow(it));
+  syncAdd();
+
+  function save() {
+    err.style.display = 'none';
+    if (!bedIn.value || !wakeIn.value || bedIn.value === wakeIn.value) {
+      err.textContent = 'Pick a bedtime and a different wake-up time.';
+      err.style.display = '';
+      (bedIn.value ? wakeIn : bedIn).focus();
+      return;
+    }
+    if (!lunchRange.check()) return;
+    // A block left completely empty is dropped; a half-filled one is refused,
+    // since saving would silently lose it.
+    const items = [];
+    for (const row of rows) {
+      const name = row.nameIn.value.trim();
+      if (!name && !row.fromIn.value) continue;
+      if (!name) {
+        row.nameIn.focus();
+        return;
+      }
+      if (!row.fromIn.value || !row.toIn.value) {
+        (row.fromIn.value ? row.toIn : row.fromIn).focus();
+        return;
+      }
+      if (!row.range.check()) return;
+      items.push({ name, from: row.fromIn.value, to: row.toIn.value, days: row.days.get() });
+    }
+    const next = validRoutine({
+      bed: bedIn.value,
+      wake: wakeIn.value,
+      lunchFrom: lunchTo.value ? lunchFrom.value : null,
+      lunchTo: lunchTo.value || null,
+      lunchDays: lunchDays.get(),
+      items,
+    });
+    close();
+    onSave(next);
+  }
+
+  const { sheet, close } = openOverlay({ label: 'My routine' });
+  const parts = [
+    h(
+      'div',
+      { class: 'gb-modal-head' },
+      h('div', { class: 'gb-modal-title' }, 'My routine'),
+      h('div', { class: 'gb-modal-sub' }, 'Blocks out the same hours every day, with no reminders or alerts.')
+    ),
+    h(
+      'div',
+      { class: 'gb-form' },
+      h('div', { class: 'gb-field-label' }, 'Sleep'),
+      h('div', { class: 'gb-rem-inputs gb-rem-range' }, bedIn, h('span', { class: 'gb-rem-to' }, 'to'), wakeIn),
+      err,
+      h('div', { class: 'gb-field-label' }, 'Lunch break (optional)'),
+      lunchRange.node,
+      lunchDays.node,
+      h('div', { class: 'gb-field-label' }, 'Your own blocks (optional)'),
+      list,
+      addBtn
+    ),
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'gb-btn gb-btn--primary',
+        style: { width: '100%', marginTop: '14px' },
+        onclick: save,
+      },
+      'Save routine'
+    ),
+  ];
+  // Element.append writes a null argument out as the text "null", so the
+  // optional button is added only when there is something to turn off.
+  if (routine) {
+    parts.push(
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--ghost gb-modal-cancel',
+          onclick: () => {
+            close();
+            onSave(null);
+          },
+        },
+        'Turn off routine'
+      )
+    );
+  }
+  parts.push(
+    h('button', { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel', onclick: close }, 'Cancel')
+  );
+  sheet.append(...parts);
+  refreshIcons();
+}
+
+/* Start + end time pair, shared by the add form and the edit dialog. The end is
+   disabled until there is a start, and has its own clear button: a native time
+   input has no reliable way to empty it (none on iOS or Chrome), and an empty
+   end is how a block goes back to being a plain reminder. check() reports a bad
+   pair in the page, because a native bubble vanishes the moment focus moves. */
+function TimeRange(timeInput, endInput, clearLabel = 'Remove end time') {
+  const error = h('p', { class: 'gb-field-error', role: 'alert', style: { display: 'none' } });
+  const clearBtn = h(
+    'button',
+    {
+      type: 'button',
+      class: 'gb-icon-btn gb-rem-clear',
+      'aria-label': clearLabel,
+      onclick: () => {
+        endInput.value = '';
+        sync();
+        endInput.focus();
+      },
+    },
+    Icon('x', { size: 14, sw: 2.6 })
+  );
+  function setError(msg) {
+    error.textContent = msg || '';
+    error.style.display = msg ? '' : 'none';
+    endInput.setAttribute('aria-invalid', msg ? 'true' : 'false');
+  }
+  function sync() {
+    if (!timeInput.value) endInput.value = '';
+    endInput.disabled = !timeInput.value;
+    clearBtn.style.visibility = endInput.value ? 'visible' : 'hidden';
+    setError('');
+  }
+  timeInput.addEventListener('input', sync);
+  endInput.addEventListener('input', sync);
+  sync();
+  const node = h(
+    'div',
+    null,
+    h(
+      'div',
+      { class: 'gb-rem-inputs gb-rem-range' },
+      timeInput,
+      h('span', { class: 'gb-rem-to' }, 'to'),
+      endInput,
+      clearBtn
+    ),
+    error
+  );
+  return {
+    node,
+    sync,
+    check() {
+      if (endInput.value && endInput.value <= timeInput.value) {
+        setError('The end time has to be after the start time.');
+        endInput.focus();
+        return false;
+      }
+      return true;
+    },
+  };
+}
+
 function dueKey(task) {
   if (!task || !task.dueAt) return '';
   const dt = new Date(task.dueAt);
@@ -426,6 +1081,14 @@ function openEditDialog(rem, occKey, onEdit) {
     value: (rem.time || '').slice(0, 5),
     'aria-label': 'Reminder time',
   });
+  const endInput = h('input', {
+    type: 'time',
+    class: 'gb-input gb-input--time',
+    value: (rem.endTime || '').slice(0, 5),
+    placeholder: 'End',
+    'aria-label': 'End time (optional)',
+  });
+  const range = TimeRange(timeInput, endInput);
   const toneSel = h(
     'select',
     { class: 'gb-input', 'aria-label': 'Reminder tone' },
@@ -499,7 +1162,7 @@ function openEditDialog(rem, occKey, onEdit) {
       h('div', { class: 'gb-field-label' }, 'Reminder'),
       textInput,
       h('div', { class: 'gb-field-label' }, 'Time'),
-      timeInput,
+      range.node,
       h('div', { class: 'gb-field-label' }, 'Tone'),
       toneSel
     ),
@@ -516,10 +1179,12 @@ function openEditDialog(rem, occKey, onEdit) {
             textInput.focus();
             return;
           }
+          if (!range.check()) return;
           close();
           onEdit(scope, rem.id, occKey, {
             text,
             time: timeInput.value || null,
+            endTime: endInput.value || null,
             sound: toneSel.value || '',
           });
         },
@@ -545,7 +1210,7 @@ function ReminderRow(rem, occKey, onDelete, whatsappEnabled, onEdit) {
         'span',
         { class: 'meta-item' },
         Icon('clock', { size: 13, color: 'var(--fg3)' }),
-        formatTime(rem.time)
+        formatTime(rem.time) + (rem.endTime ? ' to ' + formatTime(rem.endTime) : '')
       )
     );
     // Only where it is still true: the scheduler has already passed a slot in
@@ -655,10 +1320,11 @@ function applyPendingReminderText() {
 
 function resetCalendarForm() {
   if (!cachedFormRefs) return;
-  const { textInput, timeInput, untilInput, tagPicker, repeatPicker, untilField, soundInput } =
+  const { textInput, timeInput, syncRange, untilInput, tagPicker, repeatPicker, untilField, soundInput } =
     cachedFormRefs;
   textInput.value = '';
   timeInput.value = '';
+  syncRange();
   untilInput.value = '';
   soundInput.value = '';
   tagPicker.set('personal');
@@ -679,6 +1345,12 @@ function buildForm() {
     class: 'gb-input gb-input--time',
     'aria-label': 'Reminder time (optional)',
   });
+  const endInput = h('input', {
+    type: 'time',
+    class: 'gb-input gb-input--time',
+    'aria-label': 'End time (optional, makes it a busy block)',
+  });
+  const range = TimeRange(timeInput, endInput);
 
   const tagPicker = TagPicker('personal');
 
@@ -757,6 +1429,7 @@ function buildForm() {
     // as a dead button rather than a rejected date. Say it in the page instead.
     // Both are YYYY-MM-DD, so < is a date comparison (same trick as money.js).
     setUntilError('');
+    if (!range.check()) return;
     if (repeat !== 'none' && untilInput.value && untilInput.value < formBinding.selectedDate) {
       setUntilError('This is before the reminder starts on ' + prettyDate(formBinding.selectedDate) + '.');
       untilInput.focus();
@@ -776,7 +1449,8 @@ function buildForm() {
         tagPicker.get(),
         repeat,
         until,
-        soundInput.value || ''
+        soundInput.value || '',
+        endInput.value || ''
       );
     } finally {
       addBtn.disabled = false;
@@ -801,7 +1475,10 @@ function buildForm() {
     className: 'gb-rem-form',
     children: [
       h('div', { class: 'gb-field-label' }, 'New reminder'),
-      h('div', { class: 'gb-rem-inputs' }, textInput, timeInput),
+      textInput,
+      h('div', { class: 'gb-field-label' }, 'Time'),
+      range.node,
+      h('p', { class: 'gb-field-hint' }, 'Add an end time to block it out as busy on the day.'),
       h('div', { class: 'gb-field-label' }, 'Tag'),
       tagPicker.node,
       h('div', { class: 'gb-field-label' }, 'Repeat'),
@@ -815,7 +1492,7 @@ function buildForm() {
 
   return {
     node,
-    refs: { textInput, timeInput, untilInput, tagPicker, repeatPicker, untilField, soundInput },
+    refs: { textInput, timeInput, endInput, syncRange: range.sync, untilInput, tagPicker, repeatPicker, untilField, soundInput },
   };
 }
 
@@ -834,6 +1511,8 @@ function ReminderPanel({
   onAddReminder,
   onDeleteReminder,
   onEditReminder,
+  onSelectDate,
+  onSaveRoutine,
 }) {
   const list = remindersOn(reminders, selectedDate);
   const dayTasks = tasksOn(tasks, selectedDate);
@@ -1082,6 +1761,7 @@ function ReminderPanel({
             : null
         )
       : null,
+    ScheduleSection(reminders, list, selectedDate, onSelectDate, onSaveRoutine),
     h(
       'div',
       { class: 'gb-cal-block gb-day-section', 'data-cal-section': 'reminders' },
@@ -1117,6 +1797,7 @@ function ScreenCalendar({
   onAddReminder,
   onDeleteReminder,
   onEditReminder,
+  onSaveRoutine,
 }) {
   const toolbar = CalendarToolbar({
     year,
@@ -1170,6 +1851,8 @@ function ScreenCalendar({
       onAddReminder,
       onDeleteReminder,
       onEditReminder,
+      onSelectDate,
+      onSaveRoutine,
     })
   );
 }
@@ -1241,6 +1924,9 @@ function CalendarToolbar({ year, month, reminders, tasks, onPrevMonth, onNextMon
 
 export {
   isPastSlot,
+  freeBusy,
+  wholeHours,
+  setRoutine,
   ScreenCalendar,
   CalendarToolbar as RenderCalendarToolbar,
   ReminderPanel as RenderCalendarSide,

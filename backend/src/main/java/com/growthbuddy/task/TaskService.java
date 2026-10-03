@@ -67,6 +67,9 @@ public class TaskService {
         if (req.done() != null) {
             setDone(t, req.done());
         }
+        if (req.paused() != null) {
+            t.setPaused(req.paused());
+        }
         escalateOverduePriority(t);
         return responseFor(userId, repo.save(t));
     }
@@ -142,7 +145,7 @@ public class TaskService {
     }
 
     private boolean escalateOverduePriority(Task t) {
-        if (t.isDone() || t.getDueAt() == null || !t.getDueAt().isBefore(Instant.now())) {
+        if (t.isDone() || t.isPaused() || t.getDueAt() == null || !t.getDueAt().isBefore(Instant.now())) {
             return false;
         }
         if (t.getPriority() == Priority.High) {
