@@ -44,7 +44,7 @@ function insightsSection({ wellness, trends, money }) {
               h(
                 'span',
                 null,
-                'Log sleep and mood for a few days — patterns show up here.'
+                'Log sleep and mood for a week and patterns show up here.'
               )
             ),
           ],

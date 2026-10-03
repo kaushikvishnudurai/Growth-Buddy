@@ -34,8 +34,8 @@ don't yet know which file you need. Files with their own doc are listed in
 
 | File | Lines | What |
 |---|---|---|
-| `insights.js` | 174 | Pure correlation engine. Median-splits each predictor (sleep, mood, energy, stress, growth score, water) and reports where the outcome differs. `MIN_DAYS=4`, `MIN_EFFECT=0.12`, `MAX_INSIGHTS=3`. Exports `compare`, `signals`, `buildInsights`. |
-| `insights.test.mjs` | 70 | Plain-assert check for the above. `node scripts/insights.test.mjs`. |
+| `insights.js` | 474 | Insights on Report: plain statistics over sleep, mood, check-ins, water, kcal and spend, no AI. Has its own doc (`docs/scripts/insights.js.md`). Listed here for one trap: sleep is keyed on the WAKE date, so stress -> sleep must look at the next day. |
+| `insights.test.mjs` | 170 | Plain-assert check for the above. `node scripts/insights.test.mjs`. |
 | `cache-storage.js` | 214 | The storage layer. In-memory map (sync source of truth) + cookies (tiny boot-critical allowlist only, ~3.5 kB cap) + Cache API (`gb-store-v2`, hydrated async in `init()`). Migrates old localStorage once. Keys prefixed `gb.`. Exports `CacheStorage`. |
 | `recurrence.js` | 72 | The ONE answer to "does this reminder fall on this day?", shared by the Calendar screen and Home's mini calendar. There were three copies and the dashboard's had drifted. `ReminderService.occursOn` is the fourth-that-must-stay (WhatsApp delivery); keep them in step. Checked by `scripts/recurrence.test.mjs`. |
 | `icons.js` | 234 | The Lucide subset actually used (121 icons). Load-bearing for bundle size — the full set is ~600 kB. **Add new icon names here or they won't render** — `scripts/icons.test.mjs` fails the moment one is missing, because nothing else can see it: a missing icon is not an error, not a console warning and not an empty box. |
