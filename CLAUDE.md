@@ -22,6 +22,7 @@ open — don't go looking for a doc that isn't in this list.
 | Goals | `docs/scripts/goals.js.md` | 690 |
 | Notes, the rich-text editor, photos in notes | `docs/scripts/notes.js.md` | 1123 |
 | Report screen, charts | `docs/scripts/report.js.md` | 462 |
+| Insights (Report's pattern finder) | `docs/scripts/insights.js.md` | 474 |
 | any styling | `docs/styles/app.css.md` | 7190 |
 | Money styling | `docs/styles/money.css.md` | 1615 |
 | colors, type, theming | `docs/styles/tokens.css.md` | 359 |
