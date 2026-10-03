@@ -10,6 +10,7 @@ import com.growthbuddy.user.UserRepository;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -44,14 +45,20 @@ public class SubscriptionDueScheduler {
         this.whatsapp = whatsapp;
     }
 
-    // ponytail: scans every WhatsApp user's money blob each tick — fine for hundreds;
-    // index due days in a column if that ever becomes thousands.
+    // The database picks the users first, on money_state.sub_due_days: only someone
+    // with a subscription due around today has their document read at all. It used
+    // to parse every WhatsApp user's document on every tick.
     @Scheduled(cron = "0 */15 * * * *")
     public void dispatch() {
         if (!whatsapp.isConfigured()) {
             return;
         }
-        for (User user : users.findByWhatsappEnabledTrueAndWhatsappVerifiedTrueAndWhatsappNumberIsNotNull()) {
+        List<UUID> ids = money.findWhatsappUserIdsDueOn(dueMaskAround(LocalDate.now(ZoneOffset.UTC)))
+                .stream().map(UUID::fromString).toList();
+        if (ids.isEmpty()) {
+            return;
+        }
+        for (User user : users.findAllById(ids)) {
             // One user's failure (a blank legacy number, a DB error) must not skip every
             // user after them: the list comes back in the same order every tick, so it
             // would block the same people all day.
@@ -61,7 +68,11 @@ public class SubscriptionDueScheduler {
                     continue;
                 }
                 LocalDate day = now.toLocalDate();
-                JsonNode data = money.findById(user.getId()).map(MoneyState::getData).orElse(null);
+                MoneyState state = money.findById(user.getId()).orElse(null);
+                JsonNode data = state == null ? null : state.getData();
+                if (state != null && state.getSubDueDays() == null) {
+                    money.fillDueDays(user.getId(), dueDayMask(data));
+                }
                 for (JsonNode sub : dueToday(data, day)) {
                     String subId = sub.path("id").asText();
                     // The dispatch log wants a UUID; a stable one per (user, subscription)
@@ -99,6 +110,40 @@ public class SubscriptionDueScheduler {
                 log.warn("Subscription reminders for {} skipped this tick: {}", user.getId(), ex.getMessage());
             }
         }
+    }
+
+    /** Bit (d - 1) per subscription due on day d, clamped to 1..31 as {@link #dueToday} clamps. */
+    static int dueDayMask(JsonNode data) {
+        int mask = 0;
+        if (data == null || !data.path("subscriptions").isArray()) {
+            return mask;
+        }
+        for (JsonNode sub : data.get("subscriptions")) {
+            if (!sub.path("id").asText().isEmpty()) {
+                mask |= 1 << (Math.min(Math.max(sub.path("dueDay").asInt(1), 1), 31) - 1);
+            }
+        }
+        return mask;
+    }
+
+    /**
+     * Every due day that can be "today" somewhere while it is {@code utcToday} in UTC:
+     * zones run from UTC-12 to UTC+14, so yesterday, today and tomorrow. On a month's
+     * last day the days past its end count too — dueToday treats a 31st as the 30th.
+     * Wider than any one user needs; dueToday makes the exact call.
+     */
+    static int dueMaskAround(LocalDate utcToday) {
+        int mask = 0;
+        for (int i = -1; i <= 1; i++) {
+            LocalDate d = utcToday.plusDays(i);
+            mask |= 1 << (d.getDayOfMonth() - 1);
+            if (d.getDayOfMonth() == d.lengthOfMonth()) {
+                for (int day = d.getDayOfMonth() + 1; day <= 31; day++) {
+                    mask |= 1 << (day - 1);
+                }
+            }
+        }
+        return mask;
     }
 
     /** Mirrors {@code upcomingSubs} in money.js: a day past the month's end means its last day. */

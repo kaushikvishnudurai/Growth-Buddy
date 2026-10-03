@@ -56,6 +56,9 @@ FROM (
   UNION ALL SELECT 'food_entries'           AS table_name, 'fat_g'
   UNION ALL SELECT 'food_entries'           AS table_name, 'fiber_g'
   UNION ALL SELECT 'notes'                  AS table_name, 'cover'
+  UNION ALL SELECT 'money_state'            AS table_name, 'sub_due_days'
+  UNION ALL SELECT 'custom_sounds'          AS table_name, 'content_type'
+  UNION ALL SELECT 'custom_sounds'          AS table_name, 'audio'
 ) AS t
 LEFT JOIN information_schema.COLUMNS c
        ON c.table_schema = DATABASE()
@@ -223,3 +226,15 @@ ALTER TABLE food_entries ADD COLUMN fiber_g SMALLINT NULL;
 -- A note's cover thumbnail, so the Notes list can send it instead of every
 -- photo in every note. NULL until the note is next saved with a photo.
 ALTER TABLE notes ADD COLUMN cover TEXT NULL;
+
+-- Which days of the month each user has a subscription due on (bit d-1 for day d),
+-- so SubscriptionDueScheduler reads only the documents of users due around today
+-- instead of every WhatsApp user's on every tick. NULL until the row's next save
+-- or the scheduler's first pass over it fills it in, so existing rows need nothing.
+ALTER TABLE money_state ADD COLUMN sub_due_days INT NULL;
+
+-- A custom sound as raw bytes instead of a base64 data URL, a third smaller.
+-- Nothing is converted here: CustomSoundService moves each old row over the
+-- first time it is read, and new uploads write only these two columns.
+ALTER TABLE custom_sounds ADD COLUMN content_type VARCHAR(64) NULL;
+ALTER TABLE custom_sounds ADD COLUMN audio MEDIUMBLOB NULL;

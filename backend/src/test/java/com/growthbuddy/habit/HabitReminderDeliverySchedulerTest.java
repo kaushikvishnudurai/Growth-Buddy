@@ -20,8 +20,10 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DataIntegrityViolationException;
 
 class HabitReminderDeliverySchedulerTest {
 
@@ -67,8 +69,6 @@ class HabitReminderDeliverySchedulerTest {
         when(habits.findDeliverable(true, false)).thenReturn(List.of(habit));
         when(users.findAllById(any())).thenReturn(List.of(user(userId)));
         when(checkins.existsByHabitIdAndLogDateAndDoneTrue(habit.getId(), today())).thenReturn(false);
-        when(dispatchLog.existsByHabitIdAndOccurrenceDateAndStatus(habit.getId(), today(), "sent"))
-                .thenReturn(false);
         when(push.isConfigured()).thenReturn(false);
 
         scheduler.dispatchHabitReminders();
@@ -99,12 +99,72 @@ class HabitReminderDeliverySchedulerTest {
         when(habits.findDeliverable(true, false)).thenReturn(List.of(habit));
         when(users.findAllById(any())).thenReturn(List.of(user(userId)));
         when(checkins.existsByHabitIdAndLogDateAndDoneTrue(habit.getId(), today())).thenReturn(false);
-        when(dispatchLog.existsByHabitIdAndOccurrenceDateAndStatus(habit.getId(), today(), "sent"))
-                .thenReturn(true);
+        when(dispatchLog.findByHabitIdAndOccurrenceDate(habit.getId(), today()))
+                .thenReturn(Optional.of(logRow(habit, "sent")));
 
         scheduler.dispatchHabitReminders();
 
         verify(notifications, never()).publish(any(), any(), any(), any(), any());
+    }
+
+    /** A crash between claim and send leaves 'sending'; resending could repeat it. */
+    @Test
+    void treatsAClaimLeftByACrashAsDelivered() {
+        UUID userId = UUID.randomUUID();
+        Habit habit = dueHabit(userId);
+        when(habits.findDeliverable(true, false)).thenReturn(List.of(habit));
+        when(users.findAllById(any())).thenReturn(List.of(user(userId)));
+        when(dispatchLog.findByHabitIdAndOccurrenceDate(habit.getId(), today()))
+                .thenReturn(Optional.of(logRow(habit, "sending")));
+
+        scheduler.dispatchHabitReminders();
+
+        verify(notifications, never()).publish(any(), any(), any(), any(), any());
+        verify(dispatchLog, never()).saveAndFlush(any());
+    }
+
+    /** A retry used to insert a second row, hit the unique key, and so never record
+     *  that it had sent — which resent it on every tick of the catch-up window. */
+    @Test
+    void retriesAFailedSendOnTheSameRow() {
+        UUID userId = UUID.randomUUID();
+        Habit habit = dueHabit(userId);
+        HabitReminderDispatchLog failed = logRow(habit, "failed");
+        failed.setErrorMessage("timeout");
+        when(habits.findDeliverable(true, false)).thenReturn(List.of(habit));
+        when(users.findAllById(any())).thenReturn(List.of(user(userId)));
+        when(dispatchLog.findByHabitIdAndOccurrenceDate(habit.getId(), today()))
+                .thenReturn(Optional.of(failed));
+
+        scheduler.dispatchHabitReminders();
+
+        verify(dispatchLog).saveAndFlush(failed);
+        verify(dispatchLog).save(failed);
+        assertThat(failed.getStatus()).isEqualTo("sent");
+        assertThat(failed.getErrorMessage()).isNull();
+    }
+
+    @Test
+    void claimsTheDayBeforeSending() {
+        UUID userId = UUID.randomUUID();
+        Habit habit = dueHabit(userId);
+        when(habits.findDeliverable(true, false)).thenReturn(List.of(habit));
+        when(users.findAllById(any())).thenReturn(List.of(user(userId)));
+        when(dispatchLog.saveAndFlush(any())).thenThrow(new DataIntegrityViolationException("dup"));
+
+        scheduler.dispatchHabitReminders();
+
+        verify(notifications, never()).publish(any(), any(), any(), any(), any());
+    }
+
+    private HabitReminderDispatchLog logRow(Habit habit, String status) {
+        HabitReminderDispatchLog row = new HabitReminderDispatchLog();
+        row.setId(UUID.randomUUID());
+        row.setHabitId(habit.getId());
+        row.setOccurrenceDate(today());
+        row.setChannel("app");
+        row.setStatus(status);
+        return row;
     }
 
     @Test
@@ -127,8 +187,6 @@ class HabitReminderDeliverySchedulerTest {
         when(habits.findDeliverable(true, true)).thenReturn(List.of(habit));
         when(users.findAllById(any())).thenReturn(List.of(user(userId)));
         when(checkins.existsByHabitIdAndLogDateAndDoneTrue(habit.getId(), today())).thenReturn(false);
-        when(dispatchLog.existsByHabitIdAndOccurrenceDateAndStatus(habit.getId(), today(), "sent"))
-                .thenReturn(false);
         when(push.isConfigured()).thenReturn(true);
         when(push.sendToUser(userId, "Habit reminder", "Workout", "/#habits")).thenReturn(1);
 

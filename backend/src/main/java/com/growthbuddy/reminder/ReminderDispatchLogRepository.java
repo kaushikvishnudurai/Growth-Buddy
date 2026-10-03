@@ -3,6 +3,7 @@ package com.growthbuddy.reminder;
 import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -12,13 +13,8 @@ public interface ReminderDispatchLogRepository extends JpaRepository<ReminderDis
 
     boolean existsByReminderIdAndOccurrenceDate(UUID reminderId, LocalDate occurrenceDate);
 
-    /**
-     * Only a delivered occurrence blocks redelivery — a failed attempt must stay
-     * retryable inside the catch-up window, or one network blip drops the reminder
-     * for the whole day.
-     */
-    boolean existsByReminderIdAndOccurrenceDateAndStatus(
-            UUID reminderId, LocalDate occurrenceDate, String status);
+    /** The one row (reminder, day) can have — ux_rem_dispatch_unique. */
+    Optional<ReminderDispatchLog> findByReminderIdAndOccurrenceDate(UUID reminderId, LocalDate occurrenceDate);
 
     /**
      * The delivered set for a whole tick in one round trip. Asked per reminder it
@@ -29,10 +25,13 @@ public interface ReminderDispatchLogRepository extends JpaRepository<ReminderDis
      * only redelivery-blocked for the specific occurrence already sent, and
      * collapsing that to "this reminder appears somewhere in the window" would
      * suppress today's send because yesterday's succeeded.
+     *
+     * <p>Anything but 'failed' blocks: a 'sending' row is a claim taken before the
+     * send, and one left behind by a crash means the send may well have gone out.
      */
     @Query("""
             select l.reminderId, l.occurrenceDate from ReminderDispatchLog l
-            where l.status = 'sent'
+            where l.status <> 'failed'
               and l.occurrenceDate in :days
               and l.reminderId in :reminderIds
             """)

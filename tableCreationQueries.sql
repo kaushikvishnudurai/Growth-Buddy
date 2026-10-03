@@ -634,6 +634,8 @@ CREATE TABLE IF NOT EXISTS money_state (
   user_id    CHAR(36)  NOT NULL,
   data       JSON      NOT NULL,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  -- Bit (d-1) per subscription due on day d; SubscriptionDueScheduler filters on it.
+  sub_due_days INT NULL,
   PRIMARY KEY (user_id),
   CONSTRAINT fk_money_state_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -770,8 +772,9 @@ CREATE TABLE IF NOT EXISTS `push_subscriptions` (
 
 -- ---------------------------------------------------------------------------
 -- Custom Notification Sounds
--- The one sound a user brought themselves, as the data URL the client already
--- stores and plays. One row per user -- the picker replaces, it doesn't collect
+-- The one sound a user brought themselves: raw bytes in `audio`, its type in
+-- `content_type`. `data_url` is legacy (the base64 data URL rows used to hold)
+-- and is '' on every row written since. One row per user -- the picker replaces, it doesn't collect
 -- -- and the unique key is what enforces that. The bytes live here rather than
 -- in object storage because there is at most one small file per account; see
 -- the ponytail note on the CustomSound entity for when that stops being true.
@@ -781,6 +784,8 @@ CREATE TABLE IF NOT EXISTS `custom_sounds` (
   `id` char(36) NOT NULL,
   `user_id` char(36) NOT NULL,
   `data_url` mediumtext NOT NULL,
+  `content_type` varchar(64) DEFAULT NULL,
+  `audio` mediumblob DEFAULT NULL,
   `updated_at` datetime(6) NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_custom_sounds_user` (`user_id`)

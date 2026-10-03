@@ -16,18 +16,19 @@ import lombok.Setter;
  * The notification sound a user brought themselves, so it follows the account
  * rather than living on whichever device they picked it on.
  *
- * <p>Stored as the data URL the browser already keeps in CacheStorage and hands
- * straight to {@code new Audio(...)} — the same string on both sides, so
- * neither end reassembles anything and there is no content-type to keep in
- * sync with the bytes.
+ * <p>Stored as the raw audio bytes plus their content type; the API still speaks
+ * the data URL the browser keeps in CacheStorage and hands to {@code new Audio(...)},
+ * built on the way out. It used to store that string itself, a third larger in
+ * base64. Rows from then still carry it in {@code data_url}, and the first read
+ * moves them over (see CustomSoundService.get); new rows leave it empty.
  *
  * <p>One row per user: the picker offers "Replace your sound", not a library,
  * and the unique key on {@code user_id} is what makes that true rather than
  * hopeful.
  *
- * <p>ponytail: the bytes live in the row — about 400 kB of base64 at the 300 kB
- * ceiling {@code chime.js} enforces, read once per login and never in a list
- * query. Object storage is the upgrade if a user ever gets more than one sound.
+ * <p>ponytail: the bytes live in the row — at most 300 kB, the ceiling
+ * {@code chime.js} enforces, read once per login and never in a list query.
+ * Object storage is the upgrade if a user ever gets more than one sound.
  */
 @Entity
 // The constraint is named here, not left to `unique = true`: Hibernate invents
@@ -47,9 +48,16 @@ public class CustomSound {
     @Column(name = "user_id", nullable = false)
     private UUID userId;
 
-    /** {@code data:audio/<type>;base64,…} — exactly what the client stores and plays. */
+    /** Legacy: the whole data URL, from before {@link #audio}. Empty on every row written since. */
     @Column(name = "data_url", nullable = false, columnDefinition = "MEDIUMTEXT")
     private String dataUrl;
+
+    /** {@code audio/<type>}, as the upload's data URL declared it. */
+    @Column(name = "content_type", length = 64)
+    private String contentType;
+
+    @Column(name = "audio", columnDefinition = "MEDIUMBLOB")
+    private byte[] audio;
 
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;

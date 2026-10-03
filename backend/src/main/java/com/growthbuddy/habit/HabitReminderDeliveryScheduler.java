@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -99,26 +100,37 @@ public class HabitReminderDeliveryScheduler {
                 continue;
             }
 
-            if (dispatchLog.existsByHabitIdAndOccurrenceDateAndStatus(habit.getId(), day, "sent")) {
-                continue;
-            }
-
             try {
                 deliver(user, habit, day);
             } catch (Exception ex) {
                 // deliver() already swallows per-channel failures; this guards the
-                // dispatch-log write itself (e.g. a duplicate-key hit on retry after
-                // a prior "failed" row for the same habit+day) so one bad row can't
-                // abort every other candidate left in this tick.
+                // dispatch-log writes themselves, so one bad row can't abort every
+                // other candidate left in this tick.
                 log.warn("Habit reminder dispatch {} for {} failed: {}", habit.getId(), user.getId(), ex.getMessage());
             }
         }
     }
 
     private void deliver(User user, Habit habit, LocalDate day) {
-        HabitReminderDispatchLog row = new HabitReminderDispatchLog();
+        // Write-ahead, as in ReminderDeliveryScheduler.deliver: claim the day before
+        // sending, reuse a 'failed' row on retry, and let a 'sending' row a crash
+        // left behind count as delivered.
+        HabitReminderDispatchLog row = dispatchLog
+                .findByHabitIdAndOccurrenceDate(habit.getId(), day)
+                .orElseGet(HabitReminderDispatchLog::new);
+        if (row.getStatus() != null && !"failed".equals(row.getStatus())) {
+            return;
+        }
         row.setHabitId(habit.getId());
         row.setOccurrenceDate(day);
+        row.setChannel("none");
+        row.setStatus("sending");
+        row.setErrorMessage(null);
+        try {
+            dispatchLog.saveAndFlush(row);
+        } catch (DataIntegrityViolationException ex) {
+            return; // another run claimed it first
+        }
         StringBuilder channels = new StringBuilder();
         boolean sent = false;
 

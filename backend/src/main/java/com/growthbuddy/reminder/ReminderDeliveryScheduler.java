@@ -24,6 +24,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -169,12 +170,7 @@ public class ReminderDeliveryScheduler {
                     deliver(user, rem, day, wa);
                 } catch (Exception ex) {
                     // invokeAll() parks a Callable's exception in a Future nobody reads,
-                    // so a failing dispatch-log write was completely silent — and a tick
-                    // that sends but logs nothing resends on every later tick of the
-                    // catch-up window. That is how one reminder went out five times.
-                    // ponytail: log it. The write-ahead fix — insert the row first and
-                    // let ux_rem_dispatch_unique reject the duplicate — is the real
-                    // cure, worth it if a send is ever costly enough to never repeat.
+                    // so without this a failing dispatch-log write was completely silent.
                     log.warn("Reminder dispatch {} for {} failed: {}",
                             rem.getId(), user.getId(), ex.getMessage());
                 }
@@ -200,9 +196,28 @@ public class ReminderDeliveryScheduler {
     }
 
     private void deliver(User user, CalendarReminder rem, LocalDate day, boolean waEligible) {
-        ReminderDispatchLog row = new ReminderDispatchLog();
+        // Write-ahead: claim the occurrence BEFORE sending. Logging after the send
+        // left two ways to repeat it on every tick of the catch-up window: a crash
+        // between send and save, and — worse — a retry after a 'failed' row, whose
+        // fresh insert hit ux_rem_dispatch_unique every time and so never recorded
+        // that it had sent. A retry now reuses the failed row. A crash mid-send
+        // leaves 'sending', which counts as delivered: at most once, never five.
+        ReminderDispatchLog row = dispatchLog
+                .findByReminderIdAndOccurrenceDate(rem.getId(), day)
+                .orElseGet(ReminderDispatchLog::new);
+        if (row.getStatus() != null && !"failed".equals(row.getStatus())) {
+            return;
+        }
         row.setReminderId(rem.getId());
         row.setOccurrenceDate(day);
+        row.setChannel("none");
+        row.setStatus("sending");
+        row.setErrorMessage(null);
+        try {
+            dispatchLog.saveAndFlush(row);
+        } catch (DataIntegrityViolationException ex) {
+            return; // another run claimed it first
+        }
         StringBuilder channels = new StringBuilder();
         boolean sent = false;
 

@@ -89,15 +89,19 @@ public class WaterService {
 
     /**
      * The Food summary's water row: 7 days, oldest first, against today's goal.
-     * ponytail: one query per day (7); a GROUP BY when this ever shows up slow.
+     * One GROUP BY; a day with no entries is absent from it and reads as 0.
      */
     @Transactional(readOnly = true)
     public WaterWeekResponse week(UUID userId) {
         LocalDate today = clock.today(userId);
+        java.util.Map<LocalDate, Integer> totals = new java.util.HashMap<>();
+        for (Object[] r : entries.totalsByDay(userId, today.minusDays(6), today)) {
+            totals.put((LocalDate) r[0], ((Number) r[1]).intValue());
+        }
         List<WaterWeekDay> days = new java.util.ArrayList<>();
         for (int i = 6; i >= 0; i--) {
             LocalDate d = today.minusDays(i);
-            days.add(new WaterWeekDay(d.toString(), entries.totalForDay(userId, d)));
+            days.add(new WaterWeekDay(d.toString(), totals.getOrDefault(d, 0)));
         }
         return new WaterWeekResponse(goal(userId), days);
     }

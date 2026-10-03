@@ -18,6 +18,12 @@ interface WaterEntryRepository extends JpaRepository<WaterEntry, UUID> {
 
     @Query("select coalesce(sum(e.amountMl), 0) from WaterEntry e where e.userId = :userId and e.logDate = :logDate")
     int totalForDay(@Param("userId") UUID userId, @Param("logDate") LocalDate logDate);
+
+    /** [logDate, sum(amountMl)] per day that has entries; days with none are absent. */
+    @Query("select e.logDate, sum(e.amountMl) from WaterEntry e where e.userId = :userId"
+            + " and e.logDate between :from and :to group by e.logDate")
+    List<Object[]> totalsByDay(@Param("userId") UUID userId,
+                               @Param("from") LocalDate from, @Param("to") LocalDate to);
 }
 
 interface WaterGoalRepository extends JpaRepository<WaterGoal, UUID> {

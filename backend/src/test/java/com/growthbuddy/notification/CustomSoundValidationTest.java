@@ -1,5 +1,6 @@
 package com.growthbuddy.notification;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -69,5 +70,17 @@ class CustomSoundValidationTest {
                 .isInstanceOf(ApiException.class)
                 .extracting(e -> ((ApiException) e).getStatus())
                 .isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    /** The row now holds bytes; the client must still get back the exact string it sent. */
+    @Test
+    void storedBytesRebuildTheSameDataUrl() {
+        byte[] audio = new byte[777];
+        for (int i = 0; i < audio.length; i++) audio[i] = (byte) (i * 31);
+        String sent = "data:audio/ogg;base64," + Base64.getEncoder().encodeToString(audio);
+        CustomSoundService.Parsed p = CustomSoundService.validate(sent);
+        assertThat(p.contentType()).isEqualTo("audio/ogg");
+        assertThat(p.bytes()).isEqualTo(audio);
+        assertThat(CustomSoundService.toDataUrl(p.contentType(), p.bytes())).isEqualTo(sent);
     }
 }

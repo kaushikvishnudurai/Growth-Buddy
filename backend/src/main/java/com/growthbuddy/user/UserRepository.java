@@ -17,7 +17,6 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     Optional<User> findByEmailIgnoreCase(String email);
 
     /** Everyone a bill-due WhatsApp may go to: only a number its owner proved by OTP. */
-    List<User> findByWhatsappEnabledTrueAndWhatsappVerifiedTrueAndWhatsappNumberIsNotNull();
 
     /**
      * The accounts an inbound WhatsApp message may act for. Verified only — the

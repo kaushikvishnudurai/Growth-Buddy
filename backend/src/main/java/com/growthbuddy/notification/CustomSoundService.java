@@ -29,7 +29,11 @@ public class CustomSoundService {
     static final int MAX_BYTES = 300 * 1024;
 
     /** What a browser's FileReader produces for an audio file, and nothing else. */
-    private static final Pattern DATA_URL = Pattern.compile("^data:audio/[A-Za-z0-9.+-]+;base64,(.+)$");
+    private static final Pattern DATA_URL = Pattern.compile("^data:(audio/[A-Za-z0-9.+-]+);base64,(.+)$");
+
+    /** An upload, decoded: what the row stores. */
+    record Parsed(String contentType, byte[] bytes) {
+    }
 
     private final CustomSoundRepository repo;
 
@@ -41,18 +45,40 @@ public class CustomSoundService {
     public record StoredSound(String dataUrl, Instant updatedAt) {
     }
 
+    /** Also moves a pre-bytes row over, once; updatedAt is left alone, since the sound is the same. */
     @Transactional
     public Optional<StoredSound> get(UUID userId) {
-        return repo.findByUserId(userId).map(s -> new StoredSound(s.getDataUrl(), s.getUpdatedAt()));
+        return repo.findByUserId(userId).map(s -> {
+            if (s.getAudio() == null) {
+                String legacy = s.getDataUrl();
+                try {
+                    Parsed p = validate(legacy);
+                    s.setContentType(p.contentType());
+                    s.setAudio(p.bytes());
+                    s.setDataUrl("");
+                } catch (ApiException ignored) {
+                    // Stored under older rules (say, before the size cap): keep serving
+                    // it as it is rather than fail every login over a sound.
+                }
+                return new StoredSound(legacy, s.getUpdatedAt());
+            }
+            return new StoredSound(toDataUrl(s.getContentType(), s.getAudio()), s.getUpdatedAt());
+        });
+    }
+
+    static String toDataUrl(String contentType, byte[] bytes) {
+        return "data:" + contentType + ";base64," + Base64.getEncoder().encodeToString(bytes);
     }
 
     /** Replace whatever this account had. Returns the moment it landed. */
     @Transactional
     public Instant put(UUID userId, String dataUrl) {
-        validate(dataUrl);
+        Parsed p = validate(dataUrl);
         CustomSound row = repo.findByUserId(userId).orElseGet(CustomSound::new);
         row.setUserId(userId);
-        row.setDataUrl(dataUrl);
+        row.setContentType(p.contentType());
+        row.setAudio(p.bytes());
+        row.setDataUrl("");
         row.setUpdatedAt(Instant.now());
         return repo.save(row).getUpdatedAt();
     }
@@ -71,7 +97,7 @@ public class CustomSoundService {
      * fall through to the catch-all and reach the user as "Something went
      * wrong" with a 500, which is neither true nor actionable.
      */
-    static void validate(String dataUrl) {
+    static Parsed validate(String dataUrl) {
         if (dataUrl == null || dataUrl.isBlank()) {
             throw ApiException.badRequest("No sound to save.");
         }
@@ -81,7 +107,7 @@ public class CustomSoundService {
         }
         byte[] bytes;
         try {
-            bytes = Base64.getDecoder().decode(m.group(1));
+            bytes = Base64.getDecoder().decode(m.group(2));
         } catch (IllegalArgumentException e) {
             throw ApiException.badRequest("That file didn’t upload cleanly. Try picking it again.");
         }
@@ -89,5 +115,6 @@ public class CustomSoundService {
             throw ApiException.badRequest(
                     "Keep it under " + (MAX_BYTES / 1024) + " KB — a notification is a second or two, not a track.");
         }
+        return new Parsed(m.group(1), bytes);
     }
 }

@@ -43,9 +43,20 @@ public class MoneyState {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    /**
+     * Bit (d - 1) set for every subscription due on day d — what lets
+     * SubscriptionDueScheduler ask the database who could be due today instead of
+     * parsing every WhatsApp user's document each tick. Derived on every write, so
+     * no save path can forget it. NULL only on rows written before the column
+     * existed; the scheduler includes those and fills them in.
+     */
+    @Column(name = "sub_due_days")
+    private Integer subDueDays;
+
     @PrePersist
     @PreUpdate
     void touch() {
         updatedAt = Instant.now();
+        subDueDays = SubscriptionDueScheduler.dueDayMask(data);
     }
 }
