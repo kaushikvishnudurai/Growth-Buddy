@@ -1,4 +1,4 @@
-# scripts/money.js — Money Buddy (5958 lines)
+# scripts/money.js — Money Buddy (6348 lines)
 
 Exports: `emptyMoney()`, `normalizeMoney(m)` (returns COPIES of the ledger arrays: aliasing them lost quick-add expenses), `mergeMoney`, `ledgerDiff`, `applyLedgerDiff`, `docPart`, `LEDGER_ARRAYS`,
 `MoneyCustomisePane(money, save)`, `ScreenMoney`, `MoneyHomeCard`, `searchExpenses` (for its test).
@@ -18,9 +18,9 @@ expenses[]  {id, amount, category, note, date, createdAt, accountId?, reflection
 income[]    {id, amount, source:'salary'|'other', label, date, accountId?}                                       ← ledger
 transfers[] {id, amount, from, to, date, note}   (moving money between accounts; never counted as spending)     ← ledger
 accounts[]  {id, name, kind:'cash'|'bank'|'card'|'wallet', openingBalance, balance, archived}   (server's, read-only)
-loans[]     {id, direction:'given'|'received', party, amount, date, settled}
+loans[]     {id, direction:'given'|'received', party, amount, date, note, settled}   ("Split a bill" writes one 'given' row per person, note `Split: …`)
 goals[]     {id, name, target, dueDate, contribs[{amount,date}]}
-subscriptions[] {id, name, amount, dueDay, category, paidFor?:'YYYY-MM'}  (paid → drops out of upcomingSubs; expense id `sub-<id>-<month>`, same as the server's WhatsApp path)
+subscriptions[] {id, name, amount, dueDay, category, paidFor?:'YYYY-MM', usesPerMonth?}  (paid → drops out of upcomingSubs; expense id `sub-<id>-<month>`, same as the server's WhatsApp path)
 budgets{}   categoryKey -> monthly limit
 challenges[], wishlist[], customCategories[], noSpendDays[]
 settings{reflectThreshold:1000, currency:'₹', defaultTag:'others', lastAccountId?, accountsSetUp?}
@@ -43,7 +43,7 @@ All keys are `YYYY-MM-DD` strings; **all range filtering is string comparison**:
 |---|---|
 | weekly/monthly insight builders (~359–420) | plain-language "where your money goes" lines |
 | `budgetStatus(money)` (~424) | per-category `{cat, budget, spent, pct, remaining}` for **this month** |
-| purchase advice (~470–520) | does it fit the category budget / what it costs a goal |
+| purchase advice `advise` (~566) | does it fit the category budget / what it costs a goal, and how many days it sets that goal back at the recent saving pace (`goalPlan().weeklyRate`, only when there is one) |
 | savings plan + ETA (~524) | from contributions + `dueDate`, no income needed |
 | `setAsideThisMonth` / `setAsideInRange` (~632) | goal contributions as savings |
 | `incomeInRange` / `sumIncome` (~637) | income filtering |
@@ -72,10 +72,15 @@ All keys are `YYYY-MM-DD` strings; **all range filtering is string comparison**:
 `healthCard` turns each part's `fix` (`'budgets' | 'goal' | 'log' | null`, set in `financialHealth`) into a
 button, one per distinct fix; the "Next step" tip shows only once nothing is left at zero.
 
+Subscriptions card: total per month **and per year**; each row shows its yearly cost and **cost per use**
+(`costPerUse(sub)` = amount / `usesPerMonth`); the row is a button to `openSubscriptionUses`. Loans card has
+**Split a bill** (`openSplitBill`, `splitShares(total, parties, includeMe)` — whole units, odd ones go to the
+others, so the shares plus yours equal the bill). Both helpers have asserts in `_demo()`.
+
 Shared row/card builders: `expRow(e, withDelete)` (~3690), `subscriptionsCard`, `coachCard`,
 `emptyHint`, `stat`, `weekBars`, `openMoneyModal`, `confirmDelete`.
 
-**Share summary** (~3049) is the only place `share-card.js` is used. `shareSummary()` draws the week
+**Share summary** (~3049) is Money's use of `share-card.js` (Report's "Share my month" is the other). `shareSummary()` draws the week
 as a 1080×1920 PNG and opens the OS share sheet (Instagram Stories lives in there); `summaryText()` /
 `shareSummaryText()` are the original text path, kept as the fallback for anything that can't take a
 file — old WebViews, desktop Firefox, and the Capacitor wrapper. Both share buttons (`weeklyReviewCard`

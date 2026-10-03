@@ -10,6 +10,7 @@ import {
   resolveNavLayout,
   refreshIcons,
   Icon,
+  plural,
   IconChip,
   Check,
   DOMAIN,
@@ -5679,12 +5680,14 @@ function loadInsightHistory() {
     soft(api('/api/water/times?days=14')),
     soft(Promise.all([api('/api/score/day?date=' + day(2)), api('/api/score/day?date=' + day(1))])),
     Promise.all(daily.map((x) => soft(api('/api/habits/' + x.id + '/history?days=60')))),
-  ]).then(([focus, finished, waterTimes, scores, hist]) => {
+    // Boot loads 60 days of daily logs; the year in pixels and records want the year.
+    soft(api('/api/daily-logs?days=366')),
+  ]).then(([focus, finished, waterTimes, scores, hist, year]) => {
     const habits = {};
     daily.forEach((x, i) => {
       if (hist[i]) habits[x.id] = hist[i];
     });
-    state.insightHistory = { focus, finished, waterTimes, scores, habits };
+    state.insightHistory = { focus, finished, waterTimes, scores, habits, year };
     if (state.screen === 'report') render();
   });
 }
@@ -6197,21 +6200,215 @@ function taskForm(task) {
 
 function openAddTask() {
   const form = taskForm();
-  openModal({
+  const close = openModal({
     title: 'New task',
-    body: form.node,
+    body: h(
+      'div',
+      null,
+      form.node,
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--ghost gb-btn--compact',
+          style: { marginTop: '10px' },
+          onclick: () => {
+            close();
+            openTaskTemplates();
+          },
+        },
+        Icon('list-checks', { size: 14, sw: 2.4 }),
+        'Add from a template'
+      )
+    ),
     primary: 'Add task',
     onPrimary: () => createTask(form.read()),
   });
   form.focus();
 }
 
+/* ---- Task templates ----
+   A template is a named checklist ("Weekly reset": laundry, groceries, plan
+   the week). Adding it creates one task per line. Stored in ui_prefs so they
+   follow the user across devices; no table, they're a few short strings. */
+function taskTemplates() {
+  const list = state.user && state.user.uiPrefs && state.user.uiPrefs.taskTemplates;
+  return Array.isArray(list) ? list : [];
+}
+
+async function addTemplateTasks(tpl) {
+  const res = await Promise.allSettled(
+    tpl.items.map((title) =>
+      api('/api/tasks', { method: 'POST', body: JSON.stringify({ title, priority: 'Medium' }) })
+    )
+  );
+  // Show the ones the server took even when some failed, so a retry is visibly partial.
+  const created = res.filter((r) => r.status === 'fulfilled').map((r) => r.value);
+  state.tasks = [...created.map(mapTask), ...state.tasks];
+  await refreshScore();
+  if (created.length < res.length) {
+    render();
+    throw new Error(res.length - created.length + ' of ' + res.length + ' tasks did not save.');
+  }
+}
+
+function openTaskTemplates() {
+  const list = h('div');
+  const name = h('input', {
+    type: 'text',
+    class: 'gb-input',
+    maxlength: '60',
+    placeholder: 'e.g. Weekly reset',
+  });
+  const items = h('textarea', {
+    class: 'gb-input',
+    rows: '4',
+    maxlength: '3000',
+    placeholder: 'One task per line',
+  });
+  const paint = () => {
+    const tpls = taskTemplates();
+    list.replaceChildren(
+      ...(tpls.length
+        ? tpls.map((tpl) =>
+            h(
+              'div',
+              { class: 'gb-row' },
+              h(
+                'div',
+                { style: { flex: 1, minWidth: 0 } },
+                h('div', { class: 'title' }, tpl.name),
+                h('div', { class: 'sub' }, tpl.items.join(', '))
+              ),
+              h(
+                'button',
+                {
+                  type: 'button',
+                  class: 'gb-btn gb-btn--soft gb-btn--compact',
+                  onclick: async (e) => {
+                    const btn = e.currentTarget;
+                    btn.disabled = true;
+                    try {
+                      await addTemplateTasks(tpl);
+                      close();
+                      render();
+                      toastSuccess(plural(tpl.items.length, 'task') + ' added.');
+                    } catch (err) {
+                      btn.disabled = false;
+                      toastError(err, 'Could not add those tasks.');
+                    }
+                  },
+                },
+                'Add'
+              ),
+              h(
+                'button',
+                {
+                  type: 'button',
+                  class: 'gb-icon-btn',
+                  'aria-label': 'Delete template ' + tpl.name,
+                  onclick: () => {
+                    saveUiPrefs({ taskTemplates: taskTemplates().filter((x) => x.id !== tpl.id) });
+                    paint();
+                  },
+                },
+                Icon('trash-2', { size: 15, sw: 2.4 })
+              )
+            )
+          )
+        : [h('div', { class: 'gb-note-hint' }, 'No templates yet. Make one below.')])
+    );
+    refreshIcons();
+  };
+  const body = h(
+    'div',
+    { class: 'gb-form' },
+    list,
+    h('div', { class: 'gb-field-label' }, 'New template'),
+    name,
+    items,
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'gb-btn gb-btn--soft',
+        onclick: () => {
+          const lines = items.value
+            .split('\n')
+            .map((x) => x.trim().slice(0, 255))
+            .filter(Boolean)
+            .slice(0, 30);
+          if (!name.value.trim() || !lines.length) {
+            toastError(null, 'Give it a name and at least one task.');
+            return;
+          }
+          saveUiPrefs({
+            taskTemplates: [
+              ...taskTemplates(),
+              { id: String(Date.now()), name: name.value.trim(), items: lines },
+            ].slice(-20),
+          });
+          name.value = '';
+          items.value = '';
+          paint();
+        },
+      },
+      'Save template'
+    )
+  );
+  const close = openModal({ title: 'Task templates', body });
+  paint();
+}
+
+/* Same time of day, `days` from today; 09:00 for a task with no time. Moving
+   the date later bumps the task's pushCount server-side, like any reschedule. */
+function snoozedDueAt(dueAt, days) {
+  const from = dueAt ? new Date(dueAt) : null;
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  d.setHours(from ? from.getHours() : 9, from ? from.getMinutes() : 0, 0, 0);
+  return d.toISOString();
+}
+
 function openEditTask(task) {
   const form = taskForm(task);
-  openModal({
+  const snooze = (days, label) =>
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'gb-btn gb-btn--soft gb-btn--compact',
+        onclick: async () => {
+          try {
+            await updateTask(task.id, { dueAt: snoozedDueAt(task.dueAt, days) });
+            close();
+            render();
+            toastSuccess('Snoozed to ' + label.toLowerCase() + '.');
+          } catch (err) {
+            toastError(err, 'Could not snooze the task.');
+          }
+        },
+      },
+      Icon('clock', { size: 14, sw: 2.4 }),
+      label
+    );
+  const close = openModal({
     title: 'Edit task',
     sub: task.title,
-    body: form.node,
+    body: task.done
+      ? form.node
+      : h(
+          'div',
+          null,
+          form.node,
+          h(
+            'div',
+            { class: 'gb-task-snooze' },
+            h('span', { class: 'gb-field-label' }, 'Snooze'),
+            snooze(1, 'Tomorrow'),
+            snooze(7, 'Next week')
+          )
+        ),
     primary: 'Save changes',
     onPrimary: () => updateTask(task.id, form.read()),
     danger: {

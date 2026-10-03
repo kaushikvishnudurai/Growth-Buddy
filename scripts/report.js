@@ -7,6 +7,16 @@
 import { h, Card, SectionTitle, Icon } from './gb-kit.js';
 import { WeeklyReflectionCard, BadgeCard, GoalTimelineCard } from './dashboard.js';
 import { buildInsights } from './insights.js';
+import {
+  daysEnding,
+  localKey,
+  pixelValues,
+  personalRecords,
+  periodDelta,
+  monthReview,
+} from './review.js';
+import { shareStoryCard } from './share-card.js';
+import { toast } from './toast.js';
 
 /** Patterns across the user's logged signals, plus habits, tasks, goals, focus and money. */
 function insightsSection(data) {
@@ -250,7 +260,7 @@ function trendChart(values, color, days, fmt) {
   return h('div', { class: 'gb-trend-plot' }, svg, tip);
 }
 
-function trendCard(title, latest, sub, values, color, days, fmt) {
+function trendCard(title, latest, sub, values, color, days, fmt, vs) {
   return Card({
     className: 'gb-trend-card',
     children: [
@@ -262,6 +272,7 @@ function trendCard(title, latest, sub, values, color, days, fmt) {
       ),
       trendChart(values, color, days, fmt),
       sub ? h('div', { class: 'gb-trend-sub' }, sub) : null,
+      vs ? h('div', { class: 'gb-trend-vs is-' + vs.dir }, vs.text) : null,
     ],
   });
 }
@@ -287,13 +298,31 @@ function trendsSection({ on, trends, wellness, range, onRange }) {
   const moodBy = (wellness && wellness.moodByDate) || {};
   const sleepBy = (wellness && wellness.sleepByDate) || {};
 
-  const seriesFrom = (pick) => days.map((k) => (byDate[k] ? pick(byDate[k]) : null));
-  const scaleFrom = (store, field) =>
-    days.map((k) => {
+  // "vs last week" compares the last `range` FULL days with the `range` before
+  // them. Today is left out of both: half logged, it read as a drop every morning.
+  const cmp = lastNDays(range * 2 + 1);
+  const prevDays = cmp.slice(0, range);
+  const curDays = cmp.slice(range, range * 2);
+  const seriesFrom = (pick, keys = days) => keys.map((k) => (byDate[k] ? pick(byDate[k]) : null));
+  const scaleFrom = (store, field, keys = days) =>
+    keys.map((k) => {
       const e = store[k];
       const num = e ? SCALE_NUM[e[field]] : null;
       return num || null;
     });
+  // Average of this window against the previous one. Neutral wording: more
+  // calories or less water is not "better" or "worse" for everyone.
+  const vsLine = (valsFor, fmtDiff) => {
+    const d = periodDelta(valsFor(curDays), valsFor(prevDays));
+    if (!d) return null;
+    const amount = fmtDiff(Math.abs(d.diff));
+    const label = range === 7 ? 'last week' : 'the 30 days before';
+    if (!parseFloat(amount)) return { dir: 'flat', text: 'Same as ' + label };
+    return {
+      dir: d.diff > 0 ? 'up' : 'down',
+      text: (d.diff > 0 ? '+' : '\u2212') + amount + ' vs ' + label,
+    };
+  };
 
   const cards = [];
 
@@ -309,7 +338,11 @@ function trendsSection({ on, trends, wellness, range, onRange }) {
         vals,
         'var(--brand)',
         days,
-        (v) => Math.round(v) + '%'
+        (v) => Math.round(v) + '%',
+        vsLine(
+          (keys) => seriesFrom((d) => (d.score != null ? d.score : null), keys),
+          (v) => Math.round(v) + ' pts'
+        )
       )
     );
   }
@@ -325,7 +358,11 @@ function trendsSection({ on, trends, wellness, range, onRange }) {
         vals,
         'var(--brand)',
         days,
-        (v) => Math.round(v) + ' ml'
+        (v) => Math.round(v) + ' ml',
+        vsLine(
+          (keys) => seriesFrom((d) => (d.waterMl != null ? d.waterMl : null), keys),
+          (v) => Math.round(v) + ' ml'
+        )
       )
     );
   }
@@ -341,7 +378,12 @@ function trendsSection({ on, trends, wellness, range, onRange }) {
         vals,
         'var(--brand)',
         days,
-        (v) => Math.round(v) + ' kcal'
+        (v) => Math.round(v) + ' kcal',
+        // 0 kcal is a day with no food logged, not a fast (same rule as Insights).
+        vsLine(
+          (keys) => seriesFrom((d) => Number(d.kcal) || null, keys),
+          (v) => Math.round(v) + ' kcal'
+        )
       )
     );
   }
@@ -357,7 +399,11 @@ function trendsSection({ on, trends, wellness, range, onRange }) {
         vals,
         'var(--brand)',
         days,
-        (v) => SCALE_LABEL[v]
+        (v) => SCALE_LABEL[v],
+        vsLine(
+          (keys) => scaleFrom(moodBy, 'mood', keys),
+          (v) => v.toFixed(1) + ' pts'
+        )
       )
     );
   }
@@ -373,7 +419,11 @@ function trendsSection({ on, trends, wellness, range, onRange }) {
         vals,
         'var(--brand)',
         days,
-        (v) => SCALE_LABEL[v]
+        (v) => SCALE_LABEL[v],
+        vsLine(
+          (keys) => scaleFrom(sleepBy, 'quality', keys),
+          (v) => v.toFixed(1) + ' pts'
+        )
       )
     );
   }
@@ -388,6 +438,150 @@ function trendsSection({ on, trends, wellness, range, onRange }) {
       rangeToggle(range, onRange)
     ),
     h('div', { class: 'gb-trend-grid' }, cards)
+  );
+}
+
+/* ---- Year in pixels ------------------------------------------------------
+   One square per day for the last 53 weeks, GitHub-style: a column is a week
+   (Monday on top), shade is the day's value, blank is a day with nothing logged.
+   The metric toggle repaints the grid in place; it is not app state. */
+const PIXEL_METRICS = [
+  { key: 'score', label: 'Score' },
+  { key: 'mood', label: 'Mood' },
+  { key: 'habits', label: 'Habits' },
+];
+let pixelMetric = 'score';
+
+function pixelGrid(values, today) {
+  const end = new Date(today + 'T00:00:00');
+  const back = 52 * 7 + ((end.getDay() + 6) % 7); // to the Monday 52 weeks ago
+  const days = daysEnding(today, back + 1);
+  const logged = days.filter((k) => k in values);
+  const avg = logged.length
+    ? Math.round((logged.reduce((a, k) => a + values[k], 0) / logged.length) * 100)
+    : 0;
+  return h(
+    'div',
+    {
+      class: 'gb-pixels',
+      role: 'img',
+      'aria-label': logged.length
+        ? logged.length + ' days logged in the last year, averaging ' + avg + '%'
+        : 'Nothing logged in the last year yet',
+    },
+    days.map((k) => {
+      const v = values[k];
+      const lv = v == null ? 0 : Math.max(1, Math.ceil(v * 4));
+      return h('span', {
+        class: 'gb-pixel lv-' + lv + (k === today ? ' is-today' : ''),
+        title: k + (v == null ? '' : ' · ' + Math.round(v * 100) + '%'),
+      });
+    })
+  );
+}
+
+function pixelsSection({ trends, wellness, insightHistory }) {
+  const today = localKey(new Date());
+  const habitHistory = insightHistory && insightHistory.habits;
+  const slot = h('div');
+  const toggle = h('div', { class: 'gb-range-toggle' });
+  const paint = () => {
+    toggle.replaceChildren(
+      ...PIXEL_METRICS.map((m) =>
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-range-opt' + (pixelMetric === m.key ? ' is-active' : ''),
+            'aria-pressed': String(pixelMetric === m.key),
+            onclick: () => {
+              pixelMetric = m.key;
+              paint();
+            },
+          },
+          m.label
+        )
+      )
+    );
+    slot.replaceChildren(
+      pixelGrid(pixelValues(pixelMetric, { trends, wellness, habitHistory, today }), today)
+    );
+  };
+  paint();
+  return h(
+    'div',
+    { class: 'gb-dash-block' },
+    h('div', { class: 'gb-trend-section-head' }, SectionTitle({ title: 'Year in pixels' }), toggle),
+    Card({
+      className: 'gb-pixels-card',
+      children: [
+        slot,
+        h(
+          'div',
+          { class: 'gb-pixels-key' },
+          'Less',
+          [1, 2, 3, 4].map((lv) => h('span', { class: 'gb-pixel lv-' + lv })),
+          'More'
+        ),
+      ],
+    })
+  );
+}
+
+/* Boot holds 60 days of daily logs; Report fetches the year (`insightHistory.year`,
+   same shape as /api/daily-logs) after first paint. Use it once it lands. */
+function yearOf(trends, wellness, insightHistory) {
+  const y = insightHistory && insightHistory.year;
+  if (!y) return { trends, wellness };
+  return { trends: { byDate: y.byDate || {} }, wellness: { moodByDate: y.moodByDate || {} } };
+}
+
+/* ---- Personal records + month in review ---------------------------------- */
+function recordsSection({ habits, trends, wellness, money, insightHistory }) {
+  const cur = (money && money.settings && money.settings.currency) || '';
+  const records = personalRecords({
+    habits,
+    trends,
+    money,
+    focus: insightHistory && insightHistory.focus,
+    fmtMoney: (v) => cur + Math.round(v).toLocaleString('en-IN'),
+  });
+  const card = monthReview({ trends, wellness, habits, history: insightHistory });
+  if (!records.length && !card) return null;
+  const share = async () => {
+    try {
+      const res = await shareStoryCard(card, {
+        filename: 'growth-buddy-month.png',
+        title: card.eyebrow,
+      });
+      if (res === 'saved') toast.success('Image saved. Add it to your story.');
+      if (res === 'unsupported') toast.error(null, 'Could not draw the card here.');
+    } catch (err) {
+      toast.error(err, 'Could not draw the card here.');
+    }
+  };
+  return h(
+    'div',
+    { class: 'gb-dash-block' },
+    h(
+      'div',
+      { class: 'gb-trend-section-head' },
+      SectionTitle({ title: 'Personal records' }),
+      card
+        ? h(
+            'button',
+            { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--compact', onclick: share },
+            Icon('share-2', { size: 14, sw: 2.4 }),
+            'Share my month'
+          )
+        : null
+    ),
+    records.length
+      ? Card({
+          className: 'gb-records',
+          children: records.map((r) => statTile(r.label, r.value, r.sub)),
+        })
+      : null
   );
 }
 
@@ -511,8 +705,19 @@ function ScreenReport({
       history: insightHistory,
     }),
 
+    // ---- Best-ever numbers + the shareable month card ----
+    recordsSection({
+      habits: hb,
+      ...yearOf(trends, wellness, insightHistory),
+      money,
+      insightHistory,
+    }),
+
     // ---- Trends drill-down (weekly / monthly line charts) ----
     trendsSection({ on, trends, wellness, range: range || 7, onRange }),
+
+    // ---- A year of days at a glance ----
+    pixelsSection({ ...yearOf(trends, wellness, insightHistory), insightHistory }),
 
     // ---- Reflection cards (moved here from the home dashboard) ----
     h(

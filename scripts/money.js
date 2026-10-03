@@ -629,6 +629,14 @@ function advise(money, item, price, reason) {
     reasons.push(
       `Skipping it would cover ${Math.min(100, Math.round((price / Math.max(1, left)) * 100))}% of what's left on "${goal.name}".`
     );
+    // The same price in time: how long your recent saving pace takes to put it back.
+    const weekly = goalPlan(goal).weeklyRate;
+    if (weekly > 0) {
+      const days = Math.max(1, Math.round((Math.min(price, left) / weekly) * 7));
+      reasons.push(
+        `At your pace of ${fmt(weekly)} a week, buying it puts "${goal.name}" about ${days} day${days === 1 ? '' : 's'} further away.`
+      );
+    }
   }
   let verdict, tone;
   if (!isWant && fits) {
@@ -1658,6 +1666,21 @@ function goalSimulate(money, scenario) {
 /* 24 — subscriptions: monthly total + what's due soon. */
 function subsMonthlyTotal(money) {
   return (money.subscriptions || []).reduce((a, s) => a + (Number(s.amount) || 0), 0);
+}
+// One use of a subscription, from the uses a month the user told us. null = not told.
+function costPerUse(sub) {
+  const uses = Number(sub.usesPerMonth);
+  return uses > 0 ? (Number(sub.amount) || 0) / uses : null;
+}
+/* A bill split evenly. Returns what each other person owes you; whole units
+   only, and the odd ones go to them rather than to you, so the shares plus
+   your own add up to the bill exactly. */
+function splitShares(total, parties, includeMe) {
+  const n = parties.length + (includeMe ? 1 : 0);
+  if (!parties.length || !(total > 0)) return [];
+  const base = Math.floor(total / n);
+  let extra = total - base * n;
+  return parties.map((party) => ({ party, amount: base + (extra-- > 0 ? 1 : 0) }));
 }
 function upcomingSubs(money) {
   const today = new Date().getDate();
@@ -3563,6 +3586,12 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
       max: '31',
       placeholder: 'Due day (1–31)',
     });
+    const uses = h('input', {
+      type: 'number',
+      class: 'gb-input',
+      min: '1',
+      placeholder: 'Optional, e.g. 8',
+    });
     const catSeg = tagPicker(money, save, { initial: 'entertainment' });
     openMoneyModal({
       title: 'Add subscription',
@@ -3576,6 +3605,8 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
         amount,
         h('div', { class: 'gb-field-label' }, 'Due day of month'),
         day,
+        h('div', { class: 'gb-field-label' }, 'Times you use it a month'),
+        uses,
         h('div', { class: 'gb-field-label' }, 'Tag'),
         catSeg.node
       ),
@@ -3602,6 +3633,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
             amount: a,
             dueDay: d,
             category: catSeg.get(),
+            ...(Number(uses.value) > 0 ? { usesPerMonth: Math.round(Number(uses.value)) } : {}),
             createdAt: Date.now(),
           })
         );
@@ -3609,6 +3641,38 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
       },
     });
     setTimeout(() => name.focus(), 60);
+  }
+
+  function openSubscriptionUses(sub) {
+    const uses = h('input', {
+      type: 'number',
+      class: 'gb-input',
+      min: '0',
+      placeholder: 'e.g. 8',
+      value: sub.usesPerMonth || '',
+    });
+    openMoneyModal({
+      title: sub.name,
+      sub: fmt(sub.amount) + ' a month, ' + fmt(sub.amount * 12) + ' a year.',
+      body: h(
+        'div',
+        { class: 'gb-form' },
+        h('div', { class: 'gb-field-label' }, 'Times you use it a month'),
+        uses,
+        h('div', { class: 'gb-note-hint' }, 'Leave empty if you would rather not count.')
+      ),
+      primary: 'Save',
+      onPrimary: async () => {
+        const v = Math.round(Number(uses.value));
+        commit((m) => {
+          const x = m.subscriptions.find((y) => y.id === sub.id);
+          if (!x) return;
+          if (v > 0) x.usesPerMonth = v;
+          else delete x.usesPerMonth;
+        });
+      },
+    });
+    setTimeout(() => uses.focus(), 60);
   }
 
   function openAddWishlist() {
@@ -4978,7 +5042,9 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
               'div',
               { class: 'gb-money-sub-total' },
               fmt(subsMonthlyTotal(money)) +
-                ' / month across ' +
+                ' / month · ' +
+                fmt(subsMonthlyTotal(money) * 12) +
+                ' / year across ' +
                 subs.length +
                 ' subscription' +
                 (subs.length === 1 ? '' : 's')
@@ -5054,13 +5120,25 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
                     Icon(catOf(s.category, money).icon, { size: 15, sw: 2.2 })
                   ),
                   h(
-                    'div',
-                    { class: 'gb-money-exp-main' },
+                    'button',
+                    {
+                      type: 'button',
+                      class: 'gb-money-exp-main gb-money-exp-edit',
+                      'aria-label': 'Set how often you use ' + s.name,
+                      onclick: () => openSubscriptionUses(s),
+                    },
                     h('div', { class: 'gb-money-exp-note' }, s.name),
                     h(
                       'div',
                       { class: 'gb-money-exp-meta' },
-                      'Day ' + s.dueDay + ' · ' + catOf(s.category, money).label
+                      'Day ' +
+                        s.dueDay +
+                        ' · ' +
+                        fmt(s.amount * 12) +
+                        ' / year · ' +
+                        (costPerUse(s) != null
+                          ? fmt(costPerUse(s)) + ' per use'
+                          : 'tap to add uses')
                     )
                   ),
                   h('div', { class: 'gb-money-exp-amt' }, fmt(s.amount)),
@@ -5567,6 +5645,80 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
     setTimeout(() => amt.focus(), 60);
   }
 
+  function openSplitBill() {
+    const total = h('input', { type: 'number', class: 'gb-input', min: '1', placeholder: 'e.g. 2400' });
+    const people = h('input', {
+      type: 'text',
+      class: 'gb-input',
+      maxlength: '200',
+      placeholder: 'Names, separated by commas',
+    });
+    const me = h('input', { type: 'checkbox', checked: true });
+    const note = h('input', { type: 'text', class: 'gb-input', maxlength: '80', placeholder: 'e.g. Dinner' });
+    const preview = h('div', { class: 'gb-note-hint' });
+    const names = () =>
+      people.value
+        .split(',')
+        .map((x) => x.trim())
+        .filter(Boolean)
+        .slice(0, 20);
+    const shares = () => splitShares(Math.round(Number(total.value)), names(), me.checked);
+    const paint = () => {
+      const sh = shares();
+      preview.textContent = sh.length
+        ? sh.map((x) => x.party + ' owes you ' + fmt(x.amount)).join(' · ')
+        : 'Each person gets an IOU you can settle later.';
+    };
+    [total, people].forEach((el) => el.addEventListener('input', paint));
+    me.addEventListener('change', paint);
+    paint();
+    openMoneyModal({
+      title: 'Split a bill',
+      sub: 'You paid; everyone else owes you their share.',
+      body: h(
+        'div',
+        { class: 'gb-form' },
+        h('div', { class: 'gb-field-label' }, 'Total (' + cur + ')'),
+        total,
+        h('div', { class: 'gb-field-label' }, 'Split with'),
+        people,
+        h('label', { class: 'gb-money-split-me' }, me, 'Include my share'),
+        h('div', { class: 'gb-field-label' }, 'Note (optional)'),
+        note,
+        preview
+      ),
+      primary: 'Save IOUs',
+      onPrimary: async () => {
+        if (!(Number(total.value) > 0)) {
+          total.focus();
+          throw new Error('Enter the bill total.');
+        }
+        const sh = shares();
+        if (!sh.length) {
+          people.focus();
+          throw new Error('Who did you split it with?');
+        }
+        const label = note.value.trim();
+        commit((m) => {
+          m.loans = m.loans || [];
+          sh.forEach((x) =>
+            m.loans.unshift({
+              id: uid(),
+              direction: 'given',
+              party: x.party,
+              amount: x.amount,
+              date: todayKey(),
+              note: label ? 'Split: ' + label : 'Split bill',
+              settled: false,
+            })
+          );
+        });
+        toast.success(sh.length === 1 ? 'IOU saved.' : sh.length + ' IOUs saved.');
+      },
+    });
+    setTimeout(() => total.focus(), 60);
+  }
+
   let showAllIncome = false;
   function tabIncome() {
     const mStart = thisMonthPrefix() + '-01';
@@ -5810,6 +5962,16 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
               },
               Icon('piggy-bank', { size: 14, sw: 2.2 }),
               'I borrowed'
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
+                class: 'gb-btn gb-btn--soft gb-btn--compact',
+                onclick: openSplitBill,
+              },
+              Icon('users', { size: 14, sw: 2.2 }),
+              'Split a bill'
             )
           )
         ),
@@ -6078,6 +6240,13 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
    ===================================================================== */
 function _demo() {
   const a = console.assert;
+  {
+    const sh = splitShares(1000, ['A', 'B'], true);
+    a(sh.length === 2 && sh[0].amount + sh[1].amount === 1000 - 333, 'split: odd units go to others');
+    a(splitShares(900, ['A', 'B'], false).every((x) => x.amount === 450), 'split without me');
+    a(splitShares(0, ['A'], true).length === 0 && splitShares(100, [], true).length === 0, 'split: nothing to split');
+    a(costPerUse({ amount: 200, usesPerMonth: 4 }) === 50 && costPerUse({ amount: 200 }) === null, 'cost per use');
+  }
   a(suggestCategory('Lunch at cafe') === 'food', 'suggest food');
   a(suggestCategory('Uber to office') === 'transport', 'suggest transport');
   a(suggestCategory('random xyz') === 'others', 'suggest others');
@@ -6099,6 +6268,10 @@ function _demo() {
   a(catOf('c_pets', m).label === 'Pets', 'custom tag resolves');
   a(budgetStatus(m).find((s) => s.cat.key === 'food').pct === 125, 'over-budget pct');
   a(goalPlan(m.goals[0]).pct === 50, 'goal 50%');
+  a(
+    advise(m, 'Headphones', 125, 'want').reasons.some((r) => r.includes('further away')),
+    'advice names the goal delay at the saving pace'
+  );
   a(financialHealth(m).score >= 0 && financialHealth(m).score <= 100, 'health 0..100');
   a(typeof searchExpenses(m, 'how much on food this month').answer === 'string', 'search answers');
   a(

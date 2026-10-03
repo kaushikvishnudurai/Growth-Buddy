@@ -45,7 +45,7 @@ fix the doc line if it was wrong. A doc you touch and don't update is worse than
 - Backend: **`./run.sh`** (loads `.env`, frees port 8080). Bare `mvnw spring-boot:run` breaks OTP email.
 - Frontend: `npm run dev` (:5173, proxies `/api` + `/ws` to :8080). `npm run lint` before committing.
 - Checks that exist: `node scripts/insights.test.mjs`, `node scripts/recurrence.test.mjs`,
-  `node scripts/money-merge.test.mjs`, **`node scripts/money-ledger.test.mjs`** (what a Money save
+  `node scripts/money-merge.test.mjs`, `node scripts/review.test.mjs`, **`node scripts/money-ledger.test.mjs`** (what a Money save
   sends: an item missed is an expense that never reaches the server, a false delete removes one the
   user still has), `node scripts/push.test.mjs`,
   **`node scripts/tokens.test.mjs`** (every bare `var(--x)` in `styles/` resolves — two dead
