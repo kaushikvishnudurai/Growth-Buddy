@@ -26,7 +26,8 @@ record UpdateTaskRequest(
          * saved with the old date still on it, silently.
          */
         Boolean clearDueAt,
-        Boolean done) {
+        Boolean done,
+        Boolean paused) {
 }
 
 record TaskResponse(
@@ -36,6 +37,7 @@ record TaskResponse(
         Priority priority,
         Instant dueAt,
         boolean done,
+        boolean paused,
                 Instant doneAt,
                 long completionCount,
                 Instant lastCompletedAt,
@@ -43,7 +45,7 @@ record TaskResponse(
 
         static TaskResponse from(Task t, long completionCount, Instant lastCompletedAt) {
         return new TaskResponse(t.getId(), t.getTitle(), t.getNotes(), t.getPriority(),
-                                t.getDueAt(), t.isDone(), t.getDoneAt(), completionCount, lastCompletedAt,
+                                t.getDueAt(), t.isDone(), t.isPaused(), t.getDoneAt(), completionCount, lastCompletedAt,
                                 t.getPushCount());
     }
 }

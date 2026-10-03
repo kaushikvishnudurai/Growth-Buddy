@@ -2603,6 +2603,10 @@ body:has(.is-thinking, .gb-thinking)::after {
   font-size: 0.9375rem;
   color: var(--fg1);
 }
+.gb-row.is-paused .title,
+.gb-row.is-paused .sub {
+  color: var(--fg3);
+}
 .gb-row.is-done .title {
   text-decoration: line-through;
   color: var(--fg3);
@@ -4996,6 +5000,273 @@ button.gb-food-level {
 .gb-rem-inputs > .gb-input:first-child {
   flex: 1;
   min-width: 0;
+}
+.gb-rem-inputs > .gb-input--time {
+  flex: 1;
+  min-width: 0;
+}
+.gb-rem-to {
+  align-self: center;
+  color: var(--fg3);
+  font-size: 0.875rem;
+}
+.gb-rem-range {
+  align-items: center;
+  gap: 8px;
+}
+.gb-rem-range .gb-input--time {
+  padding-inline: 10px;
+}
+.gb-rem-range .gb-input--time:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---- Day schedule: free / busy ----
+   A bar for the day's shape at a glance, then the spans in order. Busy is the
+   brand fill, free is the success tint, so the bar reads without a legend. */
+.gb-schedule {
+  padding: 14px;
+}
+.gb-sched-headrow {
+  align-items: center;
+  gap: 8px;
+}
+.gb-sched-tabs {
+  display: inline-flex;
+  margin-left: auto;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+}
+.gb-sched-tab,
+.gb-sched-routine {
+  font: 700 0.75rem var(--font-body);
+  border: 0;
+  cursor: pointer;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--fg2);
+}
+.gb-sched-tab.is-on {
+  background: var(--surface);
+  color: var(--brand-fill);
+  box-shadow: var(--shadow-sm);
+}
+.gb-sched-routine {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+/* Four kinds, told apart by lightness as well as hue: free is the palest,
+   then sleep, lunch, and busy the darkest. */
+.gb-sched-stats {
+  display: flex;
+  gap: 6px;
+}
+/* Up to five tiles share one row; a long value breaks inside its own tile
+   instead of pushing a tile onto a row of its own. */
+.gb-sched-stats > .gb-sched-stat {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.gb-sched-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  border-radius: var(--radius-md);
+}
+.gb-sched-stat-l {
+  font-size: 0.6875rem;
+  font-weight: 700;
+}
+.gb-sched-stat-v {
+  font-size: 0.875rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.gb-sched-stat.is-free {
+  background: var(--success-soft);
+  color: var(--success-soft-fg);
+}
+.gb-sched-stat.is-busy {
+  background: var(--brand-soft);
+  color: var(--brand-fill);
+}
+.gb-sched-stat.is-lunch {
+  background: var(--warning-soft);
+  color: var(--warning-soft-fg);
+}
+.gb-sched-stat.is-custom {
+  background: var(--info-soft);
+  color: var(--info-soft-fg);
+}
+.gb-sched-stat.is-sleep {
+  background: var(--ai-soft);
+  color: var(--ai-soft-fg);
+}
+.gb-sched-bar {
+  position: relative;
+  height: 12px;
+  margin-top: 12px;
+  border-radius: var(--radius-pill);
+  background: var(--success-soft);
+  overflow: hidden;
+}
+.gb-sched-bar > span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+.gb-sched-busy {
+  background: var(--brand-fill);
+}
+.gb-sched-lunch {
+  background: var(--sun-500);
+}
+.gb-sched-sleep {
+  background: var(--iris-300);
+}
+.gb-sched-custom {
+  background: var(--sky-600);
+}
+.gb-sched-ticks {
+  position: relative;
+  height: 16px;
+  margin-top: 4px;
+  font-size: 0.6875rem;
+  color: var(--fg3);
+}
+.gb-sched-ticks > span {
+  position: absolute;
+  white-space: nowrap;
+}
+.gb-sched-ticks > span + span {
+  transform: translateX(-50%);
+}
+.gb-sched-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.gb-sched-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  border-left: 3px solid transparent;
+  font-size: 0.8125rem;
+}
+.gb-sched-row.is-busy {
+  background: var(--brand-soft);
+  border-left-color: var(--brand-fill);
+}
+.gb-sched-row.is-free {
+  color: var(--fg3);
+  border-left-color: var(--success-soft);
+}
+.gb-sched-time {
+  flex: none;
+  min-width: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg2);
+}
+.gb-sched-what {
+  flex: 1;
+  min-width: 0;
+  font-weight: 700;
+  color: var(--fg1);
+  overflow-wrap: anywhere;
+}
+.gb-sched-row.is-sleep,
+.gb-sched-row.is-lunch,
+.gb-sched-row.is-custom {
+  align-items: center;
+  border-left-color: transparent;
+}
+.gb-sched-row.is-custom {
+  background: var(--info-soft);
+}
+.gb-sched-row.is-custom,
+.gb-sched-row.is-custom .gb-sched-time,
+.gb-sched-row.is-custom .gb-sched-what,
+.gb-sched-row.is-custom .gb-sched-len {
+  color: var(--info-soft-fg);
+}
+.gb-sched-row.is-sleep {
+  background: var(--ai-soft);
+}
+.gb-sched-row.is-sleep,
+.gb-sched-row.is-sleep .gb-sched-time,
+.gb-sched-row.is-sleep .gb-sched-what {
+  color: var(--ai-soft-fg);
+}
+.gb-sched-row.is-lunch {
+  background: var(--warning-soft);
+}
+.gb-sched-row.is-lunch,
+.gb-sched-row.is-lunch .gb-sched-time,
+.gb-sched-row.is-lunch .gb-sched-what,
+.gb-sched-row.is-lunch .gb-sched-len {
+  color: var(--warning-soft-fg);
+}
+
+/* Week: one button per day, a mini bar between the day and its free hours. */
+.gb-week-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+.gb-week-list > li + li {
+  border-top: 1px solid var(--border);
+}
+.gb-week-row {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) 58px;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 4px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--fg1);
+  font: 700 0.8125rem var(--font-body);
+  text-align: left;
+  cursor: pointer;
+}
+.gb-week-row.is-on {
+  background: var(--brand-soft);
+}
+.gb-week-free {
+  text-align: right;
+  color: var(--success-soft-fg);
+  font-variant-numeric: tabular-nums;
+}
+.gb-sched-bar.gb-sched-bar--mini {
+  margin-top: 0;
+  height: 10px;
+}
+.gb-sched-row.is-free .gb-sched-what {
+  font-weight: 600;
+  color: var(--success-soft-fg);
+}
+.gb-sched-len {
+  margin-left: 8px;
+  font-weight: 600;
+  color: var(--fg3);
 }
 .gb-btn.gb-rem-add {
   width: 100%;
@@ -9263,4 +9534,290 @@ h2[tabindex='-1']:focus {
 .gb-task-snooze .gb-field-label {
   flex-basis: 100%;
   margin: 0;
+}
+
+/* ---- Food loader ----
+   The full-screen wait while a food save runs its calorie estimate. Above the
+   dialog it was opened from (100) and below toasts, so a failure still shows. */
+.gb-food-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 150;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px;
+  background: var(--bg);
+  color: var(--fg1);
+  text-align: center;
+  animation: gb-fl-in var(--dur-base) var(--ease-out);
+}
+.gb-fl-art {
+  position: relative;
+  width: 240px;
+  height: 250px;
+  margin-bottom: 10px;
+}
+.gb-fl-steam {
+  position: absolute;
+  left: 86px;
+  top: 0;
+  width: 68px;
+  height: 46px;
+  display: flex;
+  justify-content: space-between;
+}
+.gb-fl-steam > i {
+  width: 4px;
+  height: 40px;
+  border-radius: 4px;
+  background: var(--border-strong);
+  opacity: 0;
+  animation: gb-fl-steam 2.4s ease-out infinite;
+}
+.gb-fl-steam > i:nth-child(2) {
+  animation-delay: 0.8s;
+}
+.gb-fl-steam > i:nth-child(3) {
+  animation-delay: 1.6s;
+}
+.gb-fl-plate {
+  position: absolute;
+  left: 20px;
+  top: 50px;
+  width: 200px;
+  height: 200px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 2px solid var(--border);
+  box-shadow:
+    inset 0 0 0 24px var(--surface),
+    inset 0 0 0 26px var(--border),
+    0 10px 28px rgba(60, 40, 28, 0.14);
+  animation: gb-fl-plate 3.6s ease-in-out infinite;
+}
+.gb-fl-bit {
+  position: absolute;
+  opacity: 0;
+  animation: gb-fl-drop 3.6s cubic-bezier(0.3, 0.7, 0.4, 1) infinite;
+}
+.gb-fl-bit.is-wrap {
+  left: 52px;
+  top: 76px;
+  width: 96px;
+  height: 46px;
+  border-radius: 24px;
+  background:
+    linear-gradient(var(--leaf-500), var(--leaf-500)) 26px 26px / 44px 6px no-repeat,
+    linear-gradient(var(--coral-500), var(--coral-500)) 18px 12px / 60px 6px no-repeat,
+    var(--coral-200);
+  box-shadow: inset 0 -6px 0 var(--coral-300);
+}
+.gb-fl-bit.is-tomato {
+  left: 44px;
+  top: 40px;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #f45b4b;
+  box-shadow: inset 0 0 0 5px #e0402f;
+  animation-delay: 0.35s;
+}
+.gb-fl-bit.is-leaf {
+  left: 124px;
+  top: 48px;
+  width: 34px;
+  height: 20px;
+  border-radius: 20px 2px 20px 2px;
+  background: var(--leaf-500);
+  box-shadow: inset 0 -4px 0 var(--leaf-600);
+  animation-delay: 0.7s;
+}
+.gb-fl-bit.is-fruit {
+  left: 118px;
+  top: 128px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--sun-500);
+  box-shadow: inset 0 -5px 0 #e59a0e;
+  animation-delay: 1.05s;
+}
+.gb-fl-title {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.625rem;
+  letter-spacing: -0.02em;
+}
+.gb-fl-sub {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--fg2);
+  max-width: 320px;
+  overflow-wrap: anywhere;
+}
+.gb-fl-bar {
+  position: relative;
+  width: 220px;
+  height: 6px;
+  margin-top: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--brand-soft);
+  overflow: hidden;
+}
+.gb-fl-bar > span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 40%;
+  border-radius: var(--radius-pill);
+  background: var(--brand-fill);
+  animation: gb-fl-bar 1.4s ease-in-out infinite;
+}
+.gb-fl-steps {
+  position: relative;
+  width: 260px;
+  height: 22px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--fg2);
+}
+.gb-fl-steps > span {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  animation: gb-fl-step 5.4s ease-in-out infinite;
+}
+.gb-fl-steps > span:nth-child(2) {
+  animation-delay: 1.8s;
+}
+.gb-fl-steps > span:nth-child(3) {
+  animation-delay: 3.6s;
+}
+@keyframes gb-fl-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes gb-fl-drop {
+  0% {
+    transform: translateY(-90px) rotate(-12deg);
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  22% {
+    transform: translateY(6px) rotate(4deg);
+  }
+  30% {
+    transform: none;
+  }
+  82% {
+    transform: none;
+    opacity: 1;
+  }
+  92%,
+  100% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+}
+@keyframes gb-fl-steam {
+  0% {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+  30% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateY(-22px);
+    opacity: 0;
+  }
+}
+@keyframes gb-fl-plate {
+  50% {
+    transform: scale(1.02);
+  }
+}
+@keyframes gb-fl-bar {
+  from {
+    left: -40%;
+  }
+  to {
+    left: 100%;
+  }
+}
+@keyframes gb-fl-step {
+  0%,
+  4% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  10%,
+  30% {
+    opacity: 1;
+    transform: none;
+  }
+  36%,
+  100% {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gb-food-loader,
+  .gb-fl-steam > i,
+  .gb-fl-plate,
+  .gb-fl-bit,
+  .gb-fl-bar > span,
+  .gb-fl-steps > span {
+    animation: none;
+  }
+  .gb-fl-bit,
+  .gb-fl-steps > span:first-child {
+    opacity: 1;
+  }
+}
+
+/* ---- Routine dialog: the user's own blocks ---- */
+.gb-routine-items {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.gb-routine-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.gb-routine-item-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.gb-routine-item .gb-input--time {
+  padding-inline: 8px;
+}
+.gb-routine-item-head > .gb-input {
+  flex: 1;
+  min-width: 0;
+}
+/* Three day choices with longer labels: each takes a line's share, and they
+   wrap on a narrow phone rather than squeezing. */
+.gb-segmented--days > .gb-seg {
+  flex: 1 1 30%;
+}
+.gb-btn.gb-routine-add {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }

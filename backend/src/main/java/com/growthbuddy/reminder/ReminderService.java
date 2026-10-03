@@ -5,6 +5,7 @@ import com.growthbuddy.common.WorkWeek;
 import com.growthbuddy.user.UserClock;
 import com.growthbuddy.user.UserRepository;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -55,6 +56,7 @@ public class ReminderService {
         r.setText(req.text().trim());
         r.setAnchorDate(req.date());
         r.setTime(req.time());
+        r.setEndTime(endAfter(req.time(), req.endTime()));
         r.setTag(req.tag() != null ? req.tag() : ReminderTag.personal);
         r.setRepeat(req.repeat() != null ? req.repeat() : RepeatFreq.none);
         // Blank and absent both mean "use my default tone"; storing "" instead of
@@ -208,6 +210,7 @@ public class ReminderService {
         c.setText(r.getText());
         c.setAnchorDate(occ);
         c.setTime(r.getTime());
+        c.setEndTime(r.getEndTime());
         c.setTag(r.getTag());
         c.setRepeat(r.getRepeat());
         c.setUntilDate(r.getUntilDate());
@@ -223,8 +226,14 @@ public class ReminderService {
         if (StringUtils.hasText(req.text())) {
             r.setText(req.text().trim());
         }
+        // A start time and its end are one field pair: sending the start sends the
+        // end too, so a null end there means "no end" and turns a block back into
+        // a plain reminder. Treating it as "unchanged" left a cleared end in place.
         if (req.time() != null) {
             r.setTime(req.time());
+            r.setEndTime(endAfter(req.time(), req.endTime()));
+        } else if (req.endTime() != null) {
+            r.setEndTime(endAfter(r.getTime(), req.endTime()));
         }
         if (req.tag() != null) {
             r.setTag(req.tag());
@@ -242,6 +251,17 @@ public class ReminderService {
             }
             r.setUntilDate(req.until());
         }
+    }
+
+    /** A block's end, which needs a start and must come after it. ponytail: no blocks past midnight. */
+    static LocalTime endAfter(LocalTime start, LocalTime end) {
+        if (end == null) {
+            return null;
+        }
+        if (start == null || !end.isAfter(start)) {
+            throw ApiException.badRequest("The end time has to be after the start time.");
+        }
+        return end;
     }
 
     /** The acting user's working week, or the default when they never chose one. */

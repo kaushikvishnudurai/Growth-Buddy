@@ -153,7 +153,7 @@ checks off.
 | `/api/money` | GET, PUT, `advice` POST, `tx` POST (ledger writes → balances), `accounts` POST, `accounts/{id}` PUT/DELETE, `day-summary?date=` GET |
 | `/api/whatsapp/webhook` | GET (Meta handshake), POST (anonymous, HMAC-signed — the "Mark as paid" tap → `MoneyService.markSubscriptionPaid`) |
 | `/api/habits` | CRUD, `{id}/checkin`, `{id}/toggle`, `freeze`, `{id}/protect`, `{id}/unprotect` |
-| `/api/tasks` | CRUD, `{id}/toggle`, `{id}/history`, `finished?days=` (ticked off lately, swept ones included: priority, createdAt, doneAt, for Insights). A due date moved 12h+ later bumps `pushCount` |
+| `/api/tasks` | CRUD (PUT takes `paused`: an on-hold task is never escalated to High when overdue; Home's task row has the pause/resume button), `{id}/toggle`, `{id}/history`, `finished?days=` (ticked off lately, swept ones included: priority, createdAt, doneAt, for Insights). A due date moved 12h+ later bumps `pushCount` |
 | `/api/goals` | CRUD, `{id}/toggle`, `{id}/progress`, `{id}/actions` (+ per-action PUT/DELETE) |
 | `/api/family` | `members` CRUD + `{id}/profile`, `search`, `members/link`, `invites` (+accept/decline), `leave`, `grocery-scan`, `meal-plan` GET/POST, `pantry` (+`/scan`, `{id}` PUT/DELETE), `shopping` (+`/generate`, `{id}/toggle`, `{id}` DELETE) |
 | `/api/food` | `search`, `entries` POST/DELETE, `photo-estimate`, `photo-estimate-multi`, `photo-history` GET/POST, `week` GET (7 days of kcal + estimated protein/carbs/fat/fiber, targets, averages, levels, top dishes per nutrient; fills missing `*_g` in one AI batch), `diet-check` POST (AI) |

@@ -54,6 +54,7 @@ import {
   resetCalendarForm,
   prefillCalendarReminder,
   isPastSlot,
+  setRoutine,
 } from './calendar.js';
 import { WORK_WEEKS, getWorkWeek, setWorkWeek } from './recurrence.js';
 import { ScreenAchievements, computeAchievements } from './achievements.js';
@@ -338,6 +339,7 @@ const state = {
    (read synchronously at module init), so it is available here. hydrateUiPrefs()
    sets it again on every refresh; this is the same value, earlier. */
 setWorkWeek(state.user && state.user.uiPrefs && state.user.uiPrefs.workWeek);
+setRoutine(state.user && state.user.uiPrefs && state.user.uiPrefs.routine);
 setTimeFormat(state.user && state.user.uiPrefs && state.user.uiPrefs.timeFormat);
 
 let stomp = null;
@@ -917,6 +919,7 @@ function hydrateUiPrefs() {
     // Before this runs, every "Mon-Fri" reminder answers with the default —
     // so it has to happen before the calendar or Home paints their dots.
     setWorkWeek(p.workWeek);
+    setRoutine(p.routine);
     // Same reason as the working week: every time on the page is formatted
     // through gb-kit, so the preference has to land before anything paints.
     setTimeFormat(p.timeFormat);
@@ -1610,10 +1613,11 @@ function mapTask(task) {
     title: task.title,
     time: formatTaskTime(task),
     priority:
-      !task.done && task.dueAt && new Date(task.dueAt).getTime() < Date.now()
+      !task.done && !task.paused && task.dueAt && new Date(task.dueAt).getTime() < Date.now()
         ? 'High'
         : task.priority || 'Medium',
     done: !!task.done,
+    paused: !!task.paused,
     dueAt: task.dueAt || null,
     doneAt: task.doneAt || null,
     completionCount: task.completionCount || 0,
@@ -1679,6 +1683,9 @@ function rerenderCalendarSideIfActive() {
     onAddReminder: addReminder,
     onDeleteReminder: deleteReminder,
     onEditReminder: editReminder,
+    onSelectDate: selectDate,
+    onSaveRoutine: saveRoutine,
+    whatsappEnabled: !!(state.user && state.user.whatsappEnabled),
   });
   oldSide.replaceWith(newSide);
   refreshIcons();
@@ -2453,6 +2460,46 @@ async function logFoodEntry(payload) {
   }
 }
 
+/* Full-screen "Estimating calories" while a food save runs: food drops onto a
+   plate, steam rises, three lines take turns. CSS only (app.css "Food
+   loader"); a still plate under reduced motion. Shown after 200ms so a fast
+   save does not flash it. Returns the hide function. */
+function showFoodLoader(foodName) {
+  const bit = (cls) => h('span', { class: 'gb-fl-bit ' + cls });
+  const node = h(
+    'div',
+    { class: 'gb-food-loader', role: 'status', 'aria-live': 'polite' },
+    h(
+      'div',
+      { class: 'gb-fl-art', 'aria-hidden': 'true' },
+      h('div', { class: 'gb-fl-steam' }, h('i'), h('i'), h('i')),
+      h(
+        'div',
+        { class: 'gb-fl-plate' },
+        bit('is-wrap'),
+        bit('is-tomato'),
+        bit('is-leaf'),
+        bit('is-fruit')
+      )
+    ),
+    h('div', { class: 'gb-fl-title' }, 'Estimating calories'),
+    foodName ? h('div', { class: 'gb-fl-sub' }, foodName) : null,
+    h('div', { class: 'gb-fl-bar', 'aria-hidden': 'true' }, h('span')),
+    h(
+      'div',
+      { class: 'gb-fl-steps', 'aria-hidden': 'true' },
+      h('span', null, 'Reading what you ate'),
+      h('span', null, 'Sizing up the portion'),
+      h('span', null, 'Adding up the calories')
+    )
+  );
+  const timer = setTimeout(() => document.body.appendChild(node), 200);
+  return () => {
+    clearTimeout(timer);
+    node.remove();
+  };
+}
+
 function todayKeyNow() {
   const t = new Date();
   return dateKey(t.getFullYear(), t.getMonth(), t.getDate());
@@ -3103,9 +3150,15 @@ function openAddFood() {
         ];
       }
 
-      // Add all entries
-      for (const entry of entriesToAdd) {
-        await logFoodEntry(entry);
+      // Add all entries. The estimate is an AI call, so the wait gets the whole
+      // screen rather than a busy button.
+      const hideLoader = showFoodLoader(entriesToAdd.map((e) => e.foodName).join(', '));
+      try {
+        for (const entry of entriesToAdd) {
+          await logFoodEntry(entry);
+        }
+      } finally {
+        hideLoader();
       }
 
       rememberPhotoFood(
@@ -5567,7 +5620,7 @@ function retryCalendarFoodDate(key) {
 // to a second click: nothing.
 let addingReminder = false;
 
-async function addReminder(key, text, time, tag, repeat, until, sound) {
+async function addReminder(key, text, time, tag, repeat, until, sound, endTime) {
   if (!text || addingReminder) return;
   // A day that has already gone takes no reminders at all — the calendar hides
   // the form on past days, and this is the same rule for every other caller.
@@ -5595,6 +5648,7 @@ async function addReminder(key, text, time, tag, repeat, until, sound) {
       text: text,
       date: key,
       time: time || null,
+      endTime: endTime || null,
       tag: tag || 'personal',
       repeat: repeat || 'none',
       until: until || null,
@@ -5714,6 +5768,15 @@ function reSyncDeviceAlarms() {
 /* scope: 'this' | 'future' | 'all'. The server may answer with a NEW reminder —
    editing one day of a series leaves a one-off behind and skips that day on the
    original — so the list is refetched rather than patched in place. */
+/* Sleep and lunch, shown on every day of the calendar. In ui_prefs, so it is in
+   the database and follows the account; null turns it off. */
+function saveRoutine(routine) {
+  setRoutine(routine);
+  saveUiPrefs({ routine: routine });
+  rerenderCalendarSideIfActive();
+  toastSuccess(routine ? 'Routine saved.' : 'Routine turned off.');
+}
+
 async function editReminder(scope, id, occKey, patch) {
   try {
     const qs = new URLSearchParams();
@@ -7181,6 +7244,10 @@ const SCREENS = {
         dayFoodError: state.calendarFoodErrorByDate[state.selectedDate] || '',
         onAddTask: openAddTask,
         onEditTask: openEditTask,
+        onPauseTask: (t) =>
+          updateTask(t.id, { paused: !t.paused })
+            .then(render)
+            .catch((err) => toastError(err, 'Could not update task.')),
         onAddHabit: openAddHabit,
         calYear: state.calYear,
         calMonth: state.calMonth,
@@ -7331,6 +7398,7 @@ const SCREENS = {
         onAddReminder: addReminder,
         onDeleteReminder: deleteReminder,
         onEditReminder: editReminder,
+        onSaveRoutine: saveRoutine,
       }),
   },
   mentor: {

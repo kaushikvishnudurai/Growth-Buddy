@@ -18,6 +18,7 @@ record CreateReminderRequest(
         @NotBlank @Size(max = 255) String text,
         LocalDate date,
         LocalTime time,
+        LocalTime endTime,
         ReminderTag tag,
         RepeatFreq repeat,
         LocalDate until,
@@ -38,6 +39,7 @@ record CreateReminderRequest(
 record UpdateReminderRequest(
         @Size(max = 255) String text,
         LocalTime time,
+        LocalTime endTime,
         ReminderTag tag,
         RepeatFreq repeat,
         LocalDate until,
@@ -50,6 +52,7 @@ record ReminderResponse(
         String text,
         LocalDate date,
         LocalTime time,
+        LocalTime endTime,
         ReminderTag tag,
         RepeatFreq repeat,
         LocalDate from,
@@ -59,7 +62,7 @@ record ReminderResponse(
 
     static ReminderResponse from(CalendarReminder r) {
         return new ReminderResponse(r.getId(), r.getText(), r.getAnchorDate(), r.getTime(),
-                r.getTag(), r.getRepeat(), r.getFromDate(), r.getUntilDate(), r.getSkipDays(),
+                r.getEndTime(), r.getTag(), r.getRepeat(), r.getFromDate(), r.getUntilDate(), r.getSkipDays(),
                 r.getSound());
     }
 }
@@ -69,13 +72,14 @@ record OccurrenceResponse(
         UUID reminderId,
         LocalDate date,
         LocalTime time,
+        LocalTime endTime,
         String text,
         ReminderTag tag,
         RepeatFreq repeat,
         LocalDate until) {
 
     static OccurrenceResponse of(CalendarReminder r, LocalDate date) {
-        return new OccurrenceResponse(r.getId(), date, r.getTime(), r.getText(),
+        return new OccurrenceResponse(r.getId(), date, r.getTime(), r.getEndTime(), r.getText(),
                 r.getTag(), r.getRepeat(), r.getUntilDate());
     }
 }
