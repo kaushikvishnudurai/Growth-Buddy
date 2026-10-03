@@ -27,6 +27,7 @@ import {
   SILENT_CHANNEL,
 } from './native.js';
 import { occursOn } from './recurrence.js';
+import { drinkRateByHour } from './insights.js';
 import { SOUNDS } from './chime.js';
 
 export function pushSupported() {
@@ -220,6 +221,16 @@ export function upcomingReminderAlarms(reminders, now, days = HORIZON_DAYS) {
 }
 
 /**
+ * Local hours the user drinks in on most days (60%+), from recent water log
+ * times. A nudge right after one of them is noise. Needs 5 logged days.
+ */
+export function usualDrinkHours(times) {
+  const { days, rate } = drinkRateByHour(times);
+  if (days < 5) return [];
+  return rate.map((r, h) => (r >= 0.6 ? h : -1)).filter((h) => h >= 0);
+}
+
+/**
  * The water nudge: a fixed drumbeat between two local times, every day. Not a
  * calendar entry — there is nothing to anchor, repeat or skip, which is why it
  * doesn't go through `recurrence.js`.
@@ -235,12 +246,16 @@ export function upcomingWaterAlarms(prefs, now, days = WATER_HORIZON_DAYS) {
   // An inverted or empty window means "no waking hours" — silence beats
   // guessing, and it's what an unfinished edit in the picker looks like.
   if (to <= from) return [];
+  // `usualHours` (usualDrinkHours) is not a stored pref; app.js adds it per sync.
+  const usual = new Set(p.usualHours || []);
   const out = [];
   for (let i = 0; i < days; i++) {
     const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
     for (let m = from; m <= to; m += every) {
       const at = atOn(day, m);
       if (at.getTime() <= now.getTime()) continue;
+      // The hour just before this slot is one they usually drink in: no nudge.
+      if (usual.has(Math.floor((m - 1) / 60))) continue;
       out.push({ title: 'Time for water', body: 'A glass now keeps today\u2019s goal in reach.', at });
     }
   }

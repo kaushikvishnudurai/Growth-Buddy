@@ -86,6 +86,18 @@ class NoteServiceTest {
         assertThat(full.bodyTrimmed()).isFalse();
     }
 
+    /** A described photo keeps its alt text in the list, without its bytes, so search finds it. */
+    @Test
+    void theListKeepsAPhotosAltText() {
+        Note n = stored(null);
+        n.setBody("<p>bills</p><img src=\"data:image/jpeg;base64,AAAA\" alt=\"electricity &amp; gas\">");
+        when(repo.findByUserIdAndDeletedAtIsNullOrderByPinnedDescUpdatedAtDesc(USER))
+                .thenReturn(java.util.List.of(n));
+        NoteResponse item = service.list(USER).get(0);
+        assertThat(item.body()).isEqualTo("<p>bills</p><img alt=\"electricity &amp; gas\">");
+        assertThat(item.photoCount()).isEqualTo(1);
+    }
+
     @Test
     void aCoverMustBeAnImageAndEmptyClearsIt() {
         Note n = stored(null);

@@ -9,7 +9,13 @@
    ones you cannot check by tapping around the app. */
 
 import assert from 'node:assert/strict';
-import { upcomingReminderAlarms, upcomingWaterAlarms, upcomingHabitAlarms, upcomingAlarms } from './push.js';
+import {
+  upcomingReminderAlarms,
+  upcomingWaterAlarms,
+  upcomingHabitAlarms,
+  upcomingAlarms,
+  usualDrinkHours,
+} from './push.js';
 import { SILENT_CHANNEL } from './native.js';
 
 // Wednesday, 09:00 local.
@@ -66,6 +72,21 @@ assert.deepEqual(upcomingWaterAlarms({ on: false, everyMins: 60 }, NOW), []);
     got.map((n) => n.at.getHours()),
     [11, 13, 15, 17, 19, 21]
   );
+}
+
+/* Hours they already drink in drop the nudge right after: a glass at 10:xx on
+   most days means 11:00 stays quiet, while the forgotten afternoon still rings. */
+{
+  const times = [];
+  for (let d = 0; d < 5; d++) times.push(new Date(2026, 0, 1 + d, 10, 15).toISOString());
+  assert.deepEqual(usualDrinkHours(times), [10]);
+  assert.deepEqual(usualDrinkHours(times.slice(0, 4)), [], 'under 5 days');
+  const got = upcomingWaterAlarms(
+    { on: true, everyMins: 120, from: '09:00', to: '21:00', usualHours: usualDrinkHours(times) },
+    NOW,
+    1
+  );
+  assert.deepEqual(got.map((n) => n.at.getHours()), [13, 15, 17, 19, 21]);
 }
 
 /* An inverted or empty window is an unfinished edit, not a request to nudge all

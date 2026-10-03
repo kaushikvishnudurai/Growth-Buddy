@@ -2,6 +2,7 @@ package com.growthbuddy.task;
 
 import com.growthbuddy.common.ApiException;
 import com.growthbuddy.user.ProgressService;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -58,7 +59,11 @@ public class TaskService {
         if (req.priority() != null) {
             t.setPriority(req.priority());
         }
-        t.setDueAt(resolveDueAt(t.getDueAt(), req.dueAt(), req.clearDueAt()));
+        Instant oldDue = t.getDueAt();
+        t.setDueAt(resolveDueAt(oldDue, req.dueAt(), req.clearDueAt()));
+        if (isPush(oldDue, t.getDueAt())) {
+            t.setPushCount(t.getPushCount() + 1);
+        }
         if (req.done() != null) {
             setDone(t, req.done());
         }
@@ -111,6 +116,24 @@ public class TaskService {
      * value is taken, and no value at all leaves the current one — the "null
      * means leave it alone" rule the rest of {@link UpdateTaskRequest} follows.
      */
+    /**
+     * A due date moved later counts as a push. ponytail: "later by 12h or more"
+     * rather than "a later day in the user's zone", so this needs no clock; a
+     * morning task moved to the evening counts too. Inject UserClock if that matters.
+     */
+    static boolean isPush(Instant before, Instant after) {
+        return before != null && after != null && !after.isBefore(before.plus(Duration.ofHours(12)));
+    }
+
+    /** Tasks ticked off in the last {@code days}, swept ones included: what Insights times. */
+    @Transactional(readOnly = true)
+    public List<FinishedTask> finished(UUID userId, int days) {
+        Instant since = Instant.now().minus(Duration.ofDays(Math.max(1, Math.min(days, 180))));
+        return repo.findByUserIdAndDoneAtAfter(userId, since).stream()
+                .map(t -> new FinishedTask(t.getPriority(), t.getCreatedAt(), t.getDoneAt()))
+                .toList();
+    }
+
     static Instant resolveDueAt(Instant current, Instant requested, Boolean clear) {
         if (Boolean.TRUE.equals(clear)) {
             return null;

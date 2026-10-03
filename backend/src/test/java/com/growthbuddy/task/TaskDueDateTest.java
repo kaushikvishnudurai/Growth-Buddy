@@ -38,4 +38,13 @@ class TaskDueDateTest {
         // field is empty — but the order has to be defined, not incidental.
         assertThat(TaskService.resolveDueAt(NOW, LATER, true)).isNull();
     }
+
+    @Test
+    void onlyAMoveHalfADayLaterCountsAsAPush() {
+        assertThat(TaskService.isPush(NOW, NOW.plusSeconds(86400))).isTrue();
+        assertThat(TaskService.isPush(NOW, NOW.plusSeconds(3600))).isFalse();
+        assertThat(TaskService.isPush(NOW, NOW.minusSeconds(86400))).isFalse();
+        assertThat(TaskService.isPush(null, NOW)).isFalse();
+        assertThat(TaskService.isPush(NOW, null)).isFalse();
+    }
 }

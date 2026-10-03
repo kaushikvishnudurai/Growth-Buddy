@@ -122,6 +122,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   deleted_at      TIMESTAMP    NULL,
+  push_count      INT          NOT NULL DEFAULT 0,
   PRIMARY KEY (id),
   KEY ix_tasks_user_due (user_id, due_at),
   KEY ix_tasks_user_done (user_id, done),

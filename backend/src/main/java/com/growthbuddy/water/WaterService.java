@@ -87,6 +87,11 @@ public class WaterService {
         return summary(userId, clock.today(userId));
     }
 
+    @Transactional(readOnly = true)
+    public List<Instant> times(UUID userId, int days) {
+        return entries.loggedTimesSince(userId, clock.today(userId).minusDays(Math.max(1, Math.min(days, 60))));
+    }
+
     /**
      * The Food summary's water row: 7 days, oldest first, against today's goal.
      * One GROUP BY; a day with no entries is absent from it and reads as 0.

@@ -38,12 +38,18 @@ record TaskResponse(
         boolean done,
                 Instant doneAt,
                 long completionCount,
-                Instant lastCompletedAt) {
+                Instant lastCompletedAt,
+                int pushCount) {
 
         static TaskResponse from(Task t, long completionCount, Instant lastCompletedAt) {
         return new TaskResponse(t.getId(), t.getTitle(), t.getNotes(), t.getPriority(),
-                                t.getDueAt(), t.isDone(), t.getDoneAt(), completionCount, lastCompletedAt);
+                                t.getDueAt(), t.isDone(), t.getDoneAt(), completionCount, lastCompletedAt,
+                                t.getPushCount());
     }
+}
+
+/** A task that was ticked off, for Insights' "how long do they take". */
+record FinishedTask(Priority priority, Instant createdAt, Instant doneAt) {
 }
 
 record TaskHistoryResponse(

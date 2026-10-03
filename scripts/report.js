@@ -8,9 +8,9 @@ import { h, Card, SectionTitle, Icon } from './gb-kit.js';
 import { WeeklyReflectionCard, BadgeCard, GoalTimelineCard } from './dashboard.js';
 import { buildInsights } from './insights.js';
 
-/** Correlation insights across the user's logged signals (sleep, mood, score…). */
-function insightsSection({ wellness, trends, money }) {
-  const insights = buildInsights({ wellness, trends, money });
+/** Patterns across the user's logged signals, plus habits, tasks, goals, focus and money. */
+function insightsSection(data) {
+  const insights = buildInsights(data);
   return h(
     'div',
     { class: 'gb-dash-block' },
@@ -41,11 +41,7 @@ function insightsSection({ wellness, trends, money }) {
               'div',
               { class: 'gb-insight-empty' },
               Icon('sparkles', { size: 18, color: 'var(--fg3)' }),
-              h(
-                'span',
-                null,
-                'Log sleep and mood for a week and patterns show up here.'
-              )
+              h('span', null, 'Log sleep and mood for a week and patterns show up here.')
             ),
           ],
         })
@@ -149,7 +145,9 @@ function summarize(values) {
 }
 
 // Build the SVG line chart (or an empty-state node) for a value series.
-function trendChart(values, color) {
+// Hover or drag across it to read one day: `days[i]` is values[i]'s date key,
+// `fmt` turns a value into its label.
+function trendChart(values, color, days, fmt) {
   const W = 320;
   const H = 72;
   const PX = 5;
@@ -202,10 +200,57 @@ function trendChart(values, color) {
   // Marker on the most recent point.
   const last = present[present.length - 1];
   svg.appendChild(svgEl('circle', { cx: x(last.i), cy: y(last.v), r: '3.5', fill: color }));
-  return svg;
+
+  // Hover readout: snaps to the nearest logged day, so a gap never reads as 0.
+  const guide = svgEl('line', {
+    y1: PY,
+    y2: H - PY,
+    stroke: color,
+    'stroke-width': '1',
+    visibility: 'hidden',
+  });
+  const dot = svgEl('circle', {
+    r: '4',
+    fill: color,
+    stroke: 'var(--surface)',
+    'stroke-width': '2',
+    visibility: 'hidden',
+  });
+  svg.append(guide, dot);
+  const tip = h('div', { class: 'gb-trend-tip', hidden: true });
+  const show = (e) => {
+    const box = svg.getBoundingClientRect();
+    const at = ((((e.clientX - box.left) / box.width) * W - PX) / (W - 2 * PX)) * (n - 1);
+    const p = present.reduce((a, b) => (Math.abs(b.i - at) < Math.abs(a.i - at) ? b : a));
+    const px = x(p.i).toFixed(1);
+    guide.setAttribute('x1', px);
+    guide.setAttribute('x2', px);
+    dot.setAttribute('cx', px);
+    dot.setAttribute('cy', y(p.v).toFixed(1));
+    guide.setAttribute('visibility', 'visible');
+    dot.setAttribute('visibility', 'visible');
+    const date = new Date(days[p.i] + 'T00:00:00').toLocaleDateString(undefined, {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+    });
+    tip.textContent = date + ' · ' + fmt(p.v);
+    tip.style.left = Math.min(85, Math.max(15, (x(p.i) / W) * 100)) + '%';
+    tip.hidden = false;
+  };
+  const hide = () => {
+    guide.setAttribute('visibility', 'hidden');
+    dot.setAttribute('visibility', 'hidden');
+    tip.hidden = true;
+  };
+  svg.addEventListener('pointermove', show);
+  svg.addEventListener('pointerdown', show);
+  svg.addEventListener('pointerleave', hide);
+  svg.addEventListener('pointercancel', hide);
+  return h('div', { class: 'gb-trend-plot' }, svg, tip);
 }
 
-function trendCard(title, latest, sub, values, color) {
+function trendCard(title, latest, sub, values, color, days, fmt) {
   return Card({
     className: 'gb-trend-card',
     children: [
@@ -215,7 +260,7 @@ function trendCard(title, latest, sub, values, color) {
         h('div', { class: 'gb-trend-title' }, title),
         h('div', { class: 'gb-trend-latest', style: { color } }, latest)
       ),
-      trendChart(values, color),
+      trendChart(values, color, days, fmt),
       sub ? h('div', { class: 'gb-trend-sub' }, sub) : null,
     ],
   });
@@ -262,7 +307,9 @@ function trendsSection({ on, trends, wellness, range, onRange }) {
         s.last != null ? Math.round(s.last) + '%' : '—',
         s.avg != null ? Math.round(s.avg) + '% avg over ' + nDays(s.count) : null,
         vals,
-        'var(--brand)'
+        'var(--brand)',
+        days,
+        (v) => Math.round(v) + '%'
       )
     );
   }
@@ -276,7 +323,9 @@ function trendsSection({ on, trends, wellness, range, onRange }) {
         s.last != null ? Math.round(s.last) + ' ml' : '—',
         s.avg != null ? Math.round(s.avg) + ' ml avg over ' + nDays(s.count) : null,
         vals,
-        'var(--brand)'
+        'var(--brand)',
+        days,
+        (v) => Math.round(v) + ' ml'
       )
     );
   }
@@ -290,7 +339,9 @@ function trendsSection({ on, trends, wellness, range, onRange }) {
         s.last != null ? Math.round(s.last) + ' kcal' : '—',
         s.avg != null ? Math.round(s.avg) + ' kcal avg over ' + nDays(s.count) : null,
         vals,
-        'var(--brand)'
+        'var(--brand)',
+        days,
+        (v) => Math.round(v) + ' kcal'
       )
     );
   }
@@ -304,7 +355,9 @@ function trendsSection({ on, trends, wellness, range, onRange }) {
         s.last != null ? SCALE_LABEL[Math.round(s.last)] || '—' : '—',
         s.count ? 'from ' + s.count + ' check-in' + (s.count === 1 ? '' : 's') : null,
         vals,
-        'var(--brand)'
+        'var(--brand)',
+        days,
+        (v) => SCALE_LABEL[v]
       )
     );
   }
@@ -318,7 +371,9 @@ function trendsSection({ on, trends, wellness, range, onRange }) {
         s.last != null ? SCALE_LABEL[Math.round(s.last)] || '—' : '—',
         s.count ? 'from ' + s.count + ' night' + (s.count === 1 ? '' : 's') + ' logged' : null,
         vals,
-        'var(--brand)'
+        'var(--brand)',
+        days,
+        (v) => SCALE_LABEL[v]
       )
     );
   }
@@ -356,6 +411,8 @@ function ScreenReport({
   wellness,
   trends,
   money,
+  goalProgress,
+  insightHistory,
   range,
   onRange,
   onEnableFeature,
@@ -443,7 +500,16 @@ function ScreenReport({
       : section('goals', 'Goals', 'target', false, onEnableFeature),
 
     // ---- Cross-signal correlation insights ----
-    insightsSection({ wellness, trends, money }),
+    insightsSection({
+      wellness,
+      trends,
+      money,
+      habits: hb,
+      tasks: t,
+      goals: flatGoals,
+      goalProgress,
+      history: insightHistory,
+    }),
 
     // ---- Trends drill-down (weekly / monthly line charts) ----
     trendsSection({ on, trends, wellness, range: range || 7, onRange }),

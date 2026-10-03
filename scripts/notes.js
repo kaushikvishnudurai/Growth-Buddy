@@ -150,6 +150,31 @@ function textOf(html) {
   return (doc.body.textContent || '').replace(/\s+/g, ' ').trim();
 }
 
+/* A photo's alt text is what search finds it by. A picked file's name is a fair
+   start ("receipt march"); a pasted one is always "image.png", which says nothing. */
+function altOf(file) {
+  const name = String((file && file.name) || '')
+    .replace(/\.[a-z0-9]+$/i, '')
+    .replace(/[-_]+/g, ' ')
+    .trim();
+  return /^image$/i.test(name) ? '' : name;
+}
+
+function escAttr(v) {
+  return String(v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+
+/* What search matches: title, text and every photo's alt text. The list's body
+   has its photos cut out but keeps their alt (NoteResponse.listItem). */
+function searchTextOf(note) {
+  const doc = new DOMParser().parseFromString(
+    '<body>' + (note.body || '') + '</body>',
+    'text/html'
+  );
+  const alts = Array.from(doc.querySelectorAll('img[alt]')).map((img) => img.getAttribute('alt'));
+  return [note.title || '', textOf(note.body), ...alts].join(' ').toLowerCase();
+}
+
 function relativeTime(iso) {
   if (!iso) return '';
   const then = new Date(iso).getTime();
@@ -435,7 +460,11 @@ function richEditor({ html, placeholder, onInput } = {}) {
         sel.removeAllRanges();
         sel.addRange(end);
       }
-      document.execCommand('insertHTML', false, '<img src="' + src + '" alt="" class="is-new">');
+      document.execCommand(
+        'insertHTML',
+        false,
+        '<img src="' + src + '" alt="' + escAttr(altOf(file)) + '" class="is-new">'
+      );
       area.querySelectorAll('img.is-new').forEach((img) => {
         img.classList.replace('is-new', 'is-developing');
         img.addEventListener('animationend', () => img.classList.remove('is-developing'), {
@@ -474,8 +503,50 @@ function richEditor({ html, placeholder, onInput } = {}) {
       },
       Icon('image-plus', { size: 16, sw: 2.4 })
     ),
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'gb-editor-btn',
+        'aria-label': 'Describe the selected photo',
+        title: 'Describe the selected photo, so search can find it',
+        // mousedown keeps focus in the editor, so the picked photo stays picked.
+        onmousedown: (e) => e.preventDefault(),
+        onclick: describePhoto,
+      },
+      Icon('tag', { size: 16, sw: 2.4 })
+    ),
     picker
   );
+
+  /* The photo last clicked. Tabbing to the button blurs the editor, which
+     clears .is-picked, so the keyboard path needs this to know which photo. */
+  let lastPicked = null;
+  function describePhoto() {
+    const img = area.querySelector('img.is-picked') || (area.contains(lastPicked) && lastPicked);
+    if (!img) {
+      toast.error(null, 'Tap a photo first, then describe it.');
+      return;
+    }
+    const input = h('input', {
+      type: 'text',
+      class: 'gb-input',
+      value: img.getAttribute('alt') || '',
+      maxlength: 200,
+      placeholder: 'e.g. electricity bill, March',
+      'aria-label': 'Photo description',
+    });
+    openModal({
+      title: 'Describe this photo',
+      body: input,
+      primary: 'Save',
+      onPrimary: () => {
+        img.setAttribute('alt', input.value.trim());
+        if (onInput) onInput();
+      },
+    });
+    setTimeout(() => input.focus(), 60);
+  }
 
   // Semantic tags (<b>, <i>) rather than <span style>, so sanitize() keeps the
   // formatting instead of stripping the style attribute and losing it.
@@ -540,6 +611,7 @@ function richEditor({ html, placeholder, onInput } = {}) {
     sel.removeAllRanges();
     sel.addRange(r);
     e.target.classList.add('is-picked');
+    lastPicked = e.target;
   });
 
   area.addEventListener('blur', () =>
@@ -679,6 +751,23 @@ function colorRow(selected, onPick) {
 function ScreenNotes({ onList, onGet, onCreate, onUpdate, onDelete, onMakeTask, onMakeReminder }) {
   const listEl = h('div', { class: 'gb-note-grid' });
   let notes = [];
+  let query = '';
+  const searchInput = h('input', {
+    type: 'search',
+    class: 'gb-input',
+    placeholder: 'Search notes and photo descriptions',
+    'aria-label': 'Search notes',
+    oninput: () => {
+      query = searchInput.value;
+      paint();
+    },
+  });
+  const searchBar = h(
+    'div',
+    { class: 'gb-notes-search', hidden: true },
+    Icon('search', { size: 16, sw: 2.2, color: 'var(--fg3)' }),
+    searchInput
+  );
 
   /* ---- composer: one line until you start, then the full editor ---- */
   const titleInput = h('input', {
@@ -1057,8 +1146,26 @@ function ScreenNotes({ onList, onGet, onCreate, onUpdate, onDelete, onMakeTask, 
         )
       );
     } else {
-      notes.forEach((n) => listEl.appendChild(NoteCard(n)));
+      // Every word must appear somewhere. ponytail: re-parses each body per
+      // keystroke, fine for hundreds of notes; cache searchTextOf by body if not.
+      const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+      const shown = words.length
+        ? notes.filter((n) => {
+            const hay = searchTextOf(n);
+            return words.every((w) => hay.includes(w));
+          })
+        : notes;
+      if (shown.length) shown.forEach((n) => listEl.appendChild(NoteCard(n)));
+      else
+        listEl.appendChild(
+          h(
+            'div',
+            { class: 'gb-card gb-note-state' },
+            h('div', { class: 'gb-empty' }, h('p', null, 'No notes match "' + query.trim() + '".'))
+          )
+        );
     }
+    searchBar.hidden = !notes.length;
     refreshIcons();
   }
 
@@ -1098,7 +1205,7 @@ function ScreenNotes({ onList, onGet, onCreate, onUpdate, onDelete, onMakeTask, 
       );
     });
 
-  return h('div', { class: 'gb-notes' }, composer, listEl);
+  return h('div', { class: 'gb-notes' }, composer, searchBar, listEl);
 }
 
 /* =====================================================================

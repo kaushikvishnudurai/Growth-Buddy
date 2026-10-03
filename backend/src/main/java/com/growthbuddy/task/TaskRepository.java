@@ -17,6 +17,8 @@ public interface TaskRepository extends JpaRepository<Task, UUID> {
 
     long countByUserIdAndDeletedAtIsNull(UUID userId);
 
+    List<Task> findByUserIdAndDoneAtAfter(UUID userId, Instant after);
+
     long countByUserIdAndDoneTrueAndDeletedAtIsNull(UUID userId);
 
     /** Ids of everyone currently holding a ticked-off task. Drives the midnight sweep. */

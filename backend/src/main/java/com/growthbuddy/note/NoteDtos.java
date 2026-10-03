@@ -58,7 +58,18 @@ record NoteResponse(
         if (body == null || photos(body) == 0) {
             return from(n);
         }
-        return of(n, IMG.matcher(body).replaceAll(""), true);
+        return of(n, IMG.matcher(body).replaceAll(m -> altOnly(m.group())), true);
+    }
+
+    private static final Pattern ALT = Pattern.compile("\\balt=\"([^\"]*)\"");
+
+    /** A photo's alt text stays, without its bytes, so the list can be searched by it. */
+    private static String altOnly(String img) {
+        Matcher a = ALT.matcher(img);
+        if (!a.find() || a.group(1).isBlank()) {
+            return "";
+        }
+        return Matcher.quoteReplacement("<img alt=\"" + a.group(1) + "\">");
     }
 
     private static NoteResponse of(Note n, String body, boolean trimmed) {

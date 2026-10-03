@@ -59,6 +59,7 @@ FROM (
   UNION ALL SELECT 'money_state'            AS table_name, 'sub_due_days'
   UNION ALL SELECT 'custom_sounds'          AS table_name, 'content_type'
   UNION ALL SELECT 'custom_sounds'          AS table_name, 'audio'
+  UNION ALL SELECT 'tasks'                  AS table_name, 'push_count'
 ) AS t
 LEFT JOIN information_schema.COLUMNS c
        ON c.table_schema = DATABASE()
@@ -238,3 +239,7 @@ ALTER TABLE money_state ADD COLUMN sub_due_days INT NULL;
 -- first time it is read, and new uploads write only these two columns.
 ALTER TABLE custom_sounds ADD COLUMN content_type VARCHAR(64) NULL;
 ALTER TABLE custom_sounds ADD COLUMN audio MEDIUMBLOB NULL;
+
+-- How many times a task's due date was moved to a later day, so Insights can
+-- ask "break it down or drop it?" about one that keeps getting pushed.
+ALTER TABLE tasks ADD COLUMN push_count INT NOT NULL DEFAULT 0;

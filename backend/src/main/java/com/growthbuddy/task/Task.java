@@ -58,6 +58,10 @@ public class Task {
     @Column(name = "deleted_at")
     private Instant deletedAt;
 
+    /** Times the due date was moved later by half a day or more. */
+    @Column(name = "push_count", nullable = false)
+    private int pushCount = 0;
+
     @PrePersist
     void prePersist() {
         if (id == null) {

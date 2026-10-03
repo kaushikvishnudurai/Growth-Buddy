@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -19,15 +20,28 @@ import org.springframework.web.bind.annotation.RestController;
 class FocusController {
 
     private final FocusService service;
+    private final FocusSessionRepository repo;
 
-    FocusController(FocusService service) {
+    FocusController(FocusService service, FocusSessionRepository repo) {
         this.service = service;
+        this.repo = repo;
     }
 
     @GetMapping("/stats")
     public FocusService.FocusStats stats() {
         return service.stats(CurrentUser.id());
     }
+
+    /** Focus sessions finished in the last {@code days}: when and how long, for Insights. */
+    @GetMapping("/sessions")
+    public List<SessionView> sessions(@RequestParam(defaultValue = "30") int days) {
+        Instant since = Instant.now().minus(java.time.Duration.ofDays(Math.max(1, Math.min(days, 90))));
+        return repo.findByUserIdAndModeAndCompletedAtAfter(CurrentUser.id(), "focus", since).stream()
+                .map(s -> new SessionView(s.getDurationSec(), s.getCompletedAt()))
+                .toList();
+    }
+
+    record SessionView(int durationSec, Instant completedAt) {}
 
     /** Log a completed session; returns fresh stats. */
     @PostMapping("/sessions")

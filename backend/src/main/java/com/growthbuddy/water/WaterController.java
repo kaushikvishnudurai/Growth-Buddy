@@ -3,6 +3,7 @@ package com.growthbuddy.water;
 import com.growthbuddy.common.CurrentUser;
 import jakarta.validation.Valid;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
@@ -49,6 +50,12 @@ public class WaterController {
     @GetMapping("/week")
     public WaterWeekResponse week() {
         return service.week(CurrentUser.id());
+    }
+
+    /** When each glass was logged over the last {@code days}, for timing water nudges. */
+    @GetMapping("/times")
+    public List<java.time.Instant> times(@RequestParam(defaultValue = "14") int days) {
+        return service.times(CurrentUser.id(), days);
     }
 
     @PutMapping("/goal")

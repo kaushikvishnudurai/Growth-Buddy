@@ -170,6 +170,11 @@ it silently landed on Home. Don't reintroduce a second list.
   were fine after a manual reload. The guard flag is cleared when a chunk **loads**, never on boot:
   clearing it on boot wiped the guard on the way back up and a genuinely missing chunk reloaded
   forever. Second failure lands on the crash card with its retry button.
+- **Insights history loads when Report opens, not at boot.** `loadInsightHistory()` (called from
+  the `report` entry in `SCREENS`, throttled to once per ten minutes) fetches focus sessions,
+  finished tasks, water times, two days of score parts and each daily habit's history into
+  `state.insightHistory`, then re-renders Report. `loadWaterUsualHours()` runs after boot only when
+  the water nudge is on and feeds `state.waterUsualHours` into `reSyncDeviceAlarms`.
 - **`reSyncDeviceAlarms()` after every change to its four inputs.** In the app, timed reminders,
   the water nudge and habit reminders are on-device alarms (`syncDeviceAlarms` in `push.js`)
   because the server can only deliver to a Web Push subscription the WebView can't register. The

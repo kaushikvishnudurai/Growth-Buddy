@@ -16,6 +16,9 @@ interface WaterEntryRepository extends JpaRepository<WaterEntry, UUID> {
 
     Optional<WaterEntry> findByIdAndUserId(UUID id, UUID userId);
 
+    @Query("select e.loggedAt from WaterEntry e where e.userId = :userId and e.logDate >= :from")
+    List<java.time.Instant> loggedTimesSince(@Param("userId") UUID userId, @Param("from") LocalDate from);
+
     @Query("select coalesce(sum(e.amountMl), 0) from WaterEntry e where e.userId = :userId and e.logDate = :logDate")
     int totalForDay(@Param("userId") UUID userId, @Param("logDate") LocalDate logDate);
 

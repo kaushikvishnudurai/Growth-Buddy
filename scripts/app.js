@@ -64,6 +64,7 @@ import {
   pushSupported,
   pushTestLocal,
   syncDeviceAlarms,
+  usualDrinkHours,
   WATER_DEFAULTS,
 } from './push.js';
 import { CacheStorage } from './cache-storage.js';
@@ -1275,10 +1276,15 @@ async function openFreezeCalendar() {
         {
           type: 'button',
           class: 'gb-chip' + (x.id === habit.id ? ' is-on' : ''),
+          'aria-pressed': x.id === habit.id ? 'true' : 'false',
           onclick: (e) => {
             habit = x;
-            Array.from(picker.children).forEach((el) => el.classList.remove('is-on'));
+            Array.from(picker.children).forEach((el) => {
+              el.classList.remove('is-on');
+              el.setAttribute('aria-pressed', 'false');
+            });
             e.currentTarget.classList.add('is-on');
+            e.currentTarget.setAttribute('aria-pressed', 'true');
             load();
           },
         },
@@ -1544,6 +1550,10 @@ function handleAuthExpired() {
   state.goals = [];
   state.wellness = emptyWellness();
   state.goalProgress = {};
+  // Another account must not see this one's Insights, nor wait out its throttle.
+  state.insightHistory = null;
+  state.waterUsualHours = null;
+  insightHistoryAt = 0;
   state.money = emptyMoney();
   state.streakFreeze = emptyStreakFreeze();
   state.trends = emptyTrends();
@@ -1606,6 +1616,7 @@ function mapTask(task) {
     dueAt: task.dueAt || null,
     doneAt: task.doneAt || null,
     completionCount: task.completionCount || 0,
+    pushCount: task.pushCount || 0,
   };
 }
 
@@ -1756,6 +1767,7 @@ async function loadData() {
     state.water = water;
     state.reminders = reminders;
     reSyncDeviceAlarms();
+    loadWaterUsualHours();
   } catch (err) {
     state.error = err.message || 'Failed to load data from backend.';
     state.loading = false;
@@ -5635,6 +5647,48 @@ function repaintCalendarGrid() {
 
 /* The water nudge's settings. In ui_prefs like every other preference, so they
    follow the user to their next device; the alarms themselves are per-device. */
+/* When the water nudge is on, learn the hours the user drinks in anyway so the
+   nudge right after them is dropped (push.js usualDrinkHours). */
+function loadWaterUsualHours() {
+  if (!waterReminderPrefs().on) return;
+  api('/api/water/times?days=14')
+    .then((times) => {
+      state.waterUsualHours = usualDrinkHours(times);
+      reSyncDeviceAlarms();
+    })
+    .catch(() => {});
+}
+
+/* History only Insights reads, fetched when Report opens and at most every
+   ten minutes after. Each part fails on its own: a missing one only hides its
+   cards. Daily habits only: weekly ones have no day to miss. */
+let insightHistoryAt = 0;
+function loadInsightHistory() {
+  if (Date.now() - insightHistoryAt < 600000) return;
+  insightHistoryAt = Date.now();
+  const soft = (p) => p.catch(() => null);
+  const day = (n) => {
+    const d = new Date();
+    d.setDate(d.getDate() - n);
+    return dateKey(d.getFullYear(), d.getMonth(), d.getDate());
+  };
+  const daily = (state.habits || []).filter((x) => x.cadence === 'daily');
+  Promise.all([
+    soft(api('/api/focus/sessions?days=30')),
+    soft(api('/api/tasks/finished?days=60')),
+    soft(api('/api/water/times?days=14')),
+    soft(Promise.all([api('/api/score/day?date=' + day(2)), api('/api/score/day?date=' + day(1))])),
+    Promise.all(daily.map((x) => soft(api('/api/habits/' + x.id + '/history?days=60')))),
+  ]).then(([focus, finished, waterTimes, scores, hist]) => {
+    const habits = {};
+    daily.forEach((x, i) => {
+      if (hist[i]) habits[x.id] = hist[i];
+    });
+    state.insightHistory = { focus, finished, waterTimes, scores, habits };
+    if (state.screen === 'report') render();
+  });
+}
+
 function waterReminderPrefs() {
   const p = state.user && state.user.uiPrefs;
   return Object.assign({}, WATER_DEFAULTS, (p && p.water) || {});
@@ -5648,7 +5702,7 @@ function waterReminderPrefs() {
 function reSyncDeviceAlarms() {
   syncDeviceAlarms({
     reminders: state.reminders,
-    water: waterReminderPrefs(),
+    water: Object.assign(waterReminderPrefs(), { usualHours: state.waterUsualHours }),
     habits: state.habits,
     sound: notifySound(),
   }).catch(() => {});
@@ -6952,8 +7006,9 @@ const SCREENS = {
   report: {
     headerLabel: () => 'Your progress',
     headerName: () => 'Progress',
-    render: () =>
-      lazyScreen(
+    render: () => {
+      loadInsightHistory();
+      return lazyScreen(
         () => import('./report.js'),
         (m) =>
           m.ScreenReport({
@@ -6967,6 +7022,8 @@ const SCREENS = {
             wellness: state.wellness,
             trends: state.trends,
             money: state.money,
+            goalProgress: state.goalProgress,
+            insightHistory: state.insightHistory,
             range: state.reportRange,
             onRange: (days) => {
               state.reportRange = days;
@@ -6976,7 +7033,8 @@ const SCREENS = {
               setFeature(key, true).catch((err) => toastError(err, 'Could not turn on feature.'));
             },
           })
-      ),
+      );
+    },
   },
   achievements: {
     headerLabel: () => 'Your badges',
@@ -7352,6 +7410,9 @@ function lazyScreen(loader, build) {
       if (!placeholder.isConnected) return;
       placeholder.replaceWith(build(mod));
       refreshIcons();
+      // render() restored scroll against the short skeleton, which clamped it to
+      // the top; restore again now the real screen is tall enough to hold it.
+      restoreScrollPosition(lastScrollSnapshot);
     })
     .catch((err) => {
       console.error('Screen failed to load', err);
@@ -8194,6 +8255,10 @@ function logout() {
   state.authEmail = '';
   state.authNotice = '';
   state.goalProgress = {};
+  // Another account must not see this one's Insights, nor wait out its throttle.
+  state.insightHistory = null;
+  state.waterUsualHours = null;
+  insightHistoryAt = 0;
   state.money = emptyMoney();
   weekGen++;
   state.foodWeek = null;
@@ -8326,6 +8391,9 @@ function handleOffline() {
   render();
 }
 
+/* The scroll position the last render() restored; a lazy screen re-applies it. */
+let lastScrollSnapshot = null;
+
 function render() {
   const scrollSnapshot = renderedScreen === state.screen ? captureScrollPosition() : null;
   const quietRefresh = !!scrollSnapshot;
@@ -8400,6 +8468,7 @@ function render() {
   root.replaceChildren(app);
   refreshIcons();
   restoreScrollPosition(scrollSnapshot);
+  lastScrollSnapshot = scrollSnapshot;
   renderedScreen = state.screen;
   syncHeaderExpanded();
   installOutsideClickToCloseHeaderPopovers();
