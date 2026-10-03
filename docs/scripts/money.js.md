@@ -75,7 +75,7 @@ button, one per distinct fix; the "Next step" tip shows only once nothing is lef
 Subscriptions card: total per month **and per year**; each row shows its yearly cost and **cost per use**
 (`costPerUse(sub)` = amount / `usesPerMonth`); the row is a button to `openSubscriptionUses`. Loans card has
 **Split a bill** (`openSplitBill`, `splitShares(total, parties, includeMe)` — whole units, odd ones go to the
-others, so the shares plus yours equal the bill). Both helpers have asserts in `_demo()`.
+others, so the shares plus yours equal the bill; a decimal total is rounded and the preview says so). Loan rows are signed from your side: lent `+` green (owed to you), borrowed `−` red; the summary says **Owed to you** or **You owe**. Both helpers have asserts in `_demo()`.
 
 Shared row/card builders: `expRow(e, withDelete)` (~3690), `subscriptionsCard`, `coachCard`,
 `emptyHint`, `stat`, `weekBars`, `openMoneyModal`, `confirmDelete`.

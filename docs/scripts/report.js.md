@@ -16,7 +16,7 @@ empty instead of showing zeros.
 | `summarize(values)` | 145 | latest + delta for a trend card |
 | `rangeToggle(range, onRange)` | 280 | 7 / 30-day switch |
 | `trendsSection({on, trends, wellness, range, onRange})` | 295 | the drill-down. Each card carries **"vs last week"** (`vsLine` → `periodDelta`): the last `range` *full* days against the `range` before them. Today is excluded from both — half-logged, it read as a drop every morning. kcal 0 = not logged |
-| `pixelsSection` / `pixelGrid` | 483 / 455 | **year in pixels**: 53 week-columns (Monday on top), shade = `pixelValues(metric)`, blank = nothing logged. Score / Mood / Habits toggle repaints in place (`pixelMetric`, module-level, not app state, not persisted) |
+| `pixelsSection` / `pixelGrid` | 483 / 455 | **year in pixels**: 53 week-columns (Monday on top), shade = `pixelValues(metric)`, blank = nothing logged. **Today's score is blank** (still climbing; as a finished day it read as 0%), and `monthReview` averages finished days only. Score / Mood / Habits toggle repaints in place (`pixelMetric`, module-level, not app state, not persisted) |
 | `yearOf(trends, wellness, insightHistory)` | 533 | boot holds only 60 days of daily logs; Report fetches 366 (`insightHistory.year`) and the pixels + records use it once it lands |
 | `recordsSection` | 540 | `personalRecords` tiles + **Share my month** (`monthReview` → `share-card.js`). Section is omitted when both are empty |
 | `section(...)` | 588 | feature-gated section wrapper |

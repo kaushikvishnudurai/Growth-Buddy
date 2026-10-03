@@ -9,9 +9,13 @@ assert.deepEqual(daysEnding('2026-03-30', 2), ['2026-03-29', '2026-03-30']);
 
 // --- pixelValues: blank days stay absent, not 0 ---
 {
-  const v = pixelValues('score', { trends: { byDate: { '2026-06-01': { score: 50 } } } });
+  const v = pixelValues('score', {
+    today: '2026-06-03',
+    trends: { byDate: { '2026-06-01': { score: 50 }, '2026-06-03': { score: 0 } } },
+  });
   assert.equal(v['2026-06-01'], 0.5);
   assert.equal('2026-06-02' in v, false);
+  assert.equal('2026-06-03' in v, false, "today's unfinished score is not a day's result");
   const m = pixelValues('mood', {
     wellness: { moodByDate: { a: { mood: 'low' }, b: { mood: 'great' }, c: { mood: '??' } } },
   });
@@ -104,6 +108,7 @@ assert.equal(monthReview({ today: '2026-06-17' }), null);
         '2026-05-31': { score: 0 }, // last month: ignored
         '2026-06-01': { score: 60, waterMl: 2000, waterGoalMl: 2000 },
         '2026-06-02': { score: 80 },
+        '2026-06-17': { score: 0 }, // today, still in progress: left out
       },
     },
     habits: [{ streak: 4 }],
@@ -116,5 +121,25 @@ assert.equal(monthReview({ today: '2026-06-17' }), null);
   );
   assert.equal(card.stats[0].value, '1');
 }
+
+// 3 Oct: (33 + 61) / 2 = 47%, not (33 + 61 + 0) / 3 = 31%
+{
+  const card = monthReview({
+    today: '2026-10-03',
+    trends: {
+      byDate: {
+        '2026-10-01': { score: 33 },
+        '2026-10-02': { score: 61 },
+        '2026-10-03': { score: 0 },
+      },
+    },
+  });
+  assert.equal(card.headline, '47%');
+}
+// Only today logged: no finished day, so no score headline
+assert.equal(
+  monthReview({ today: '2026-10-01', trends: { byDate: { '2026-10-01': { score: 20 } } } }),
+  null
+);
 
 console.log('review.test.mjs: all assertions passed');

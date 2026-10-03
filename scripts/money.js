@@ -5665,8 +5665,14 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
     const shares = () => splitShares(Math.round(Number(total.value)), names(), me.checked);
     const paint = () => {
       const sh = shares();
+      // Money keeps whole units everywhere; say so instead of rounding a ₹99.60 bill silently.
+      const raw = Number(total.value);
+      const rounded =
+        raw > 0 && raw !== Math.round(raw)
+          ? 'Splitting ' + fmt(raw) + ' (rounded from ' + cur + raw.toFixed(2) + '). '
+          : '';
       preview.textContent = sh.length
-        ? sh.map((x) => x.party + ' owes you ' + fmt(x.amount)).join(' · ')
+        ? rounded + sh.map((x) => x.party + ' owes you ' + fmt(x.amount)).join(' · ')
         : 'Each person gets an IOU you can settle later.';
     };
     [total, people].forEach((el) => el.addEventListener('input', paint));
@@ -5868,8 +5874,10 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
 
     const loanRow = (l) => {
       const lent = l.direction === 'given';
-      const accent = lent ? 'var(--coral-700)' : 'var(--leaf-700)';
-      const soft = lent ? 'var(--coral-50)' : 'var(--leaf-50)';
+      // Signed from your side of the IOU: lent = owed to you (+), borrowed = you owe (−).
+      // It was the cash-flow sign, so a split read "Asha owes you" in the dialog and −₹334 here.
+      const accent = lent ? 'var(--leaf-700)' : 'var(--coral-700)';
+      const soft = lent ? 'var(--leaf-50)' : 'var(--coral-50)';
       return h(
         'div',
         { class: 'gb-money-exp-row' + (l.settled ? ' is-settled' : '') },
@@ -5895,7 +5903,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
         h(
           'div',
           { class: 'gb-money-exp-amt', style: { color: l.settled ? 'var(--fg3)' : accent } },
-          (lent ? '−' : '+') + fmt(l.amount)
+          (lent ? '+' : '\u2212') + fmt(l.amount)
         ),
         h(
           'button',
@@ -5981,7 +5989,9 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
               { class: 'gb-money-bsummary' },
               stat('Lent out', fmt(lentOut)),
               stat('Borrowed', fmt(borrowed)),
-              stat('Net', fmt(borrowed - lentOut))
+              lentOut >= borrowed
+                ? stat('Owed to you', fmt(lentOut - borrowed))
+                : stat('You owe', fmt(borrowed - lentOut))
             )
           : null,
         loans.length

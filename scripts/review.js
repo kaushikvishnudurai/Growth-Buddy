@@ -63,8 +63,12 @@ function habitShares(habitHistory, today) {
 export function pixelValues(metric, { trends, wellness, habitHistory, today } = {}) {
   const out = {};
   if (metric === 'score') {
+    // Today's score is still climbing: as a finished day it shaded the square as
+    // the worst level and dragged the average. Blank until the day is over.
+    const todayKey = today || localKey(new Date());
     const by = (trends && trends.byDate) || {};
     for (const k in by) {
+      if (k >= todayKey) continue;
       const v = Number(by[k] && by[k].score);
       if (Number.isFinite(v)) out[k] = Math.max(0, Math.min(1, v / 100));
     }
@@ -195,8 +199,9 @@ export function monthReview({ trends, wellness, habits, history, today } = {}) {
   });
 
   const by = (trends && trends.byDate) || {};
+  // Finished days only (see pixelValues): on the 3rd, today's 0 turned 47% into 31%.
   const scores = Object.keys(by)
-    .filter(inMonth)
+    .filter((k) => inMonth(k) && k < todayKey)
     .map((k) => Number(by[k].score))
     .filter(Number.isFinite);
   const waterDays = Object.keys(by).filter(
