@@ -1949,6 +1949,24 @@ function accountPicker(money, initial, onChange) {
       }),
   };
 }
+/* Money lent from an account leaves it: a transfer with no "to" (never spending), id
+   `loan-<loanId>`, kept while the loan is outstanding. Settled = repaid into that same
+   account, so the move goes and the balance comes back. ponytail: repaid elsewhere isn't
+   modelled; a "Repaid into" picker on Settle if people ask. */
+function loanMove(m, loan) {
+  if (!loan) return;
+  const id = 'loan-' + loan.id;
+  m.transfers = (m.transfers || []).filter((t) => t.id !== id);
+  if (loan.direction === 'given' && loan.accountId && !loan.settled) {
+    m.transfers.unshift({
+      id,
+      amount: loan.amount,
+      from: loan.accountId,
+      date: loan.date,
+      note: 'Lent to ' + loan.party,
+    });
+  }
+}
 function firstOfKind(money, kinds) {
   const a = activeAccounts(money).find((x) => kinds.includes(x.kind));
   return a ? a.id : null;
@@ -2784,12 +2802,12 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
           : null,
         // A transfer is in no spending view (it isn't spending), so this is the
         // one place it can be seen and taken back.
-        money.transfers.length
+        money.transfers.some((t) => t.to)
           ? h(
               'div',
               { class: 'gb-money-moves' },
               h('div', { class: 'gb-money-day-sub' }, 'Recent moves'),
-              money.transfers.slice(0, 3).map((t) =>
+              money.transfers.filter((t) => t.to).slice(0, 3).map((t) =>
                 h(
                   'div',
                   { class: 'gb-money-exp-row' },
@@ -5600,6 +5618,12 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
     });
     const date = h('input', { type: 'date', class: 'gb-input', value: todayKey() });
     const note = h('input', { type: 'text', class: 'gb-input', maxlength: '80', placeholder: 'Optional note' });
+    // Optional "Given from": '' = not said. Picked, it comes out of that balance (loanMove).
+    const accts = activeAccounts(money);
+    const from =
+      lent && accts.length
+        ? segmented([{ value: '', label: 'Skip' }, ...accts.map((a) => ({ value: a.id, label: a.name }))], '')
+        : null;
     openMoneyModal({
       title: lent ? 'Money I lent' : 'Money I borrowed',
       sub: lent
@@ -5612,6 +5636,8 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
         amt,
         h('div', { class: 'gb-field-label' }, lent ? 'Lent to' : 'Borrowed from'),
         party,
+        from ? h('div', { class: 'gb-field-label' }, 'Given from (optional)') : null,
+        from ? from.node : null,
         h('div', { class: 'gb-field-label' }, 'Date'),
         date,
         h('div', { class: 'gb-field-label' }, 'Note (optional)'),
@@ -5628,7 +5654,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
           party.focus();
           throw new Error(lent ? 'Who did you lend to?' : 'Who did you borrow from?');
         }
-        commit((m) =>
+        commit((m) => {
           (m.loans = m.loans || []).unshift({
             id: uid(),
             direction,
@@ -5637,8 +5663,10 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
             date: date.value || todayKey(),
             note: note.value.trim(),
             settled: false,
-          })
-        );
+            ...(from && from.get() ? { accountId: from.get() } : {}),
+          });
+          loanMove(m, m.loans[0]);
+        });
         toast.success('Saved.');
       },
     });
@@ -5897,7 +5925,9 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
           h(
             'div',
             { class: 'gb-money-exp-meta' },
-            fmtDateShort(l.date) + (l.note ? ' · ' + l.note : '')
+            fmtDateShort(l.date) +
+              (accountOf(money, l.accountId) ? ' · from ' + accountOf(money, l.accountId).name : '') +
+              (l.note ? ' · ' + l.note : '')
           )
         ),
         h(
@@ -5915,6 +5945,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
               commit((m) => {
                 const x = m.loans.find((y) => y.id === l.id);
                 if (x) x.settled = !x.settled;
+                loanMove(m, x);
               });
               toast.success(l.settled ? 'Marked outstanding.' : 'Marked settled.');
             },
@@ -5929,7 +5960,10 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
             'aria-label': 'Delete loan',
             onclick: () =>
               confirmDelete('Delete record', 'Remove this loan record?', async () => {
-                commit((m) => (m.loans = m.loans.filter((x) => x.id !== l.id)));
+                commit((m) => {
+                  m.loans = m.loans.filter((x) => x.id !== l.id);
+                  loanMove(m, { ...l, settled: true });
+                });
                 toast.success('Removed.');
               }),
           },
@@ -6326,6 +6360,18 @@ function _demo() {
   a(sumIncome(m2.income) === 1000, 'income sums');
   a(loanOutstanding(m2, 'given') === 200, 'lent excludes settled');
   a(loanOutstanding(m2, 'received') === 300, 'borrowed outstanding');
+  {
+    // Lent from an account: one move out while outstanding, gone once settled.
+    const m = { transfers: [] };
+    const l = { id: 'q', direction: 'given', party: 'A', amount: 500, date: todayKey(), accountId: 'b' };
+    loanMove(m, l);
+    loanMove(m, l);
+    a(m.transfers.length === 1 && m.transfers[0].from === 'b' && !m.transfers[0].to, 'lent: one move out');
+    loanMove(m, { ...l, settled: true });
+    a(m.transfers.length === 0, 'settled: money back');
+    loanMove(m, { ...l, accountId: undefined });
+    a(m.transfers.length === 0, 'no account: balance untouched');
+  }
   // Challenge suggestions: thin data → common only; rich data → personalized.
   const thin = suggestChallenges(emptyMoney());
   a(thin.every((c) => c.personalized === false), 'no data → common challenges');

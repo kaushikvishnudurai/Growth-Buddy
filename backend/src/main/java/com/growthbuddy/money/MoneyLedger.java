@@ -474,7 +474,8 @@ public class MoneyLedger {
                 toAccount = text(rest.remove("to"));
                 category = null;
                 note = text(rest.remove("note"));
-                if (account == null || toAccount == null || account.equals(toAccount)) {
+                // No "to" = it left your accounts (money you lent): out of the balance, never spending.
+                if (account == null || account.equals(toAccount)) {
                     throw ApiException.badRequest("A transfer moves money between two different accounts.");
                 }
             }

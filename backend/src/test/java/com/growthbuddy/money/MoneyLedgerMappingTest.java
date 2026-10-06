@@ -53,6 +53,9 @@ class MoneyLedgerMappingTest {
         assertThat(roundTrip("income", inc)).isEqualTo(inc);
         ObjectNode t = obj("{\"id\":\"t1\",\"amount\":2000,\"from\":\"b\",\"to\":\"c\",\"date\":\"2026-09-30\",\"note\":\"ATM\"}");
         assertThat(roundTrip("transfer", t)).isEqualTo(t);
+        // A loan's move out of an account has no "to".
+        ObjectNode lent = obj("{\"id\":\"loan-l1\",\"amount\":500,\"from\":\"b\",\"date\":\"2026-09-30\",\"note\":\"Lent to Asha\"}");
+        assertThat(roundTrip("transfer", lent)).isEqualTo(lent);
     }
 
     @Test

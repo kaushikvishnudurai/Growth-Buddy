@@ -16,9 +16,9 @@ Tone rule stated at the top of the file: money framed as growth, never guilt.
 ```
 expenses[]  {id, amount, category, note, date, createdAt, accountId?, reflection?{reason, planned, satisfaction}}   ← ledger
 income[]    {id, amount, source:'salary'|'other', label, date, accountId?}                                       ← ledger
-transfers[] {id, amount, from, to, date, note}   (moving money between accounts; never counted as spending)     ← ledger
+transfers[] {id, amount, from, to?, date, note}   (moving money between accounts; never counted as spending. No `to` = lent out, see loans; hidden from Recent moves)     ← ledger
 accounts[]  {id, name, kind:'cash'|'bank'|'card'|'wallet', openingBalance, balance, archived}   (server's, read-only)
-loans[]     {id, direction:'given'|'received', party, amount, date, note, settled}   ("Split a bill" writes one 'given' row per person, note `Split: …`)
+loans[]     {id, direction:'given'|'received', party, amount, date, note, settled, accountId?}   (accountId = optional "Given from" on a lent row: while outstanding, `loanMove` keeps a transfer `loan-<id>` with no `to` out of that account, so the balance drops; settling or deleting removes it)   ("Split a bill" writes one 'given' row per person, note `Split: …`)
 goals[]     {id, name, target, dueDate, contribs[{amount,date}]}
 subscriptions[] {id, name, amount, dueDay, category, paidFor?:'YYYY-MM', usesPerMonth?}  (paid → drops out of upcomingSubs; expense id `sub-<id>-<month>`, same as the server's WhatsApp path)
 budgets{}   categoryKey -> monthly limit
