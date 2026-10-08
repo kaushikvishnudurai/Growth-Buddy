@@ -38,7 +38,7 @@ so it provably matches the running database.
 | 95 tasks · 113 task_completion_history | tasks |
 | 129 habits · 145 habit_checkins · 159 habit_streaks · 170 streak_freeze_wallets | habits |
 | 181 water_goals · 190 water_entries | water |
-| 207 food_entries · 230 food_photo_logs | food |
+| 207 food_entries · 230 food_photo_logs · 284 food_diet_checks | food; the last one stores Buddy's diet check per `(user_id, scope)` with the prompt it answered, so a changed day is a miss rather than something to invalidate |
 | 247 goals · 265 goal_actions | goals |
 | 282 daily_scores · 299 daily_logs | scoring & wellness |
 | 322 quotes | quotes |
@@ -69,6 +69,6 @@ from the browser at signup and editable in Settings; validated on write, default
 - `config/DataCleanupJob` runs nightly to stay inside a small hosting quota, but it only trims rows
   nothing reads again: expired/revoked `sessions`, spent auth tokens, read `notifications` older than
   90 days, `reminder_dispatch_log` / `habit_reminder_dispatch_log` older than 30 days,
-  and `food_photo_logs` past each user's newest 12. The other append-only tables
+  `food_diet_checks` older than 8 days, and `food_photo_logs` past each user's newest 12. The other append-only tables
   (`task_completion_history`, `focus_sessions`) are **not** trimmed — they back
   user-visible history. Add one to the job only once you're sure nothing reads its old rows.

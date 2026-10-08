@@ -30,6 +30,8 @@ class FoodWeekAiTest {
     private FoodWeek week;
 
     private com.growthbuddy.water.WaterService water;
+    private org.springframework.jdbc.core.JdbcTemplate jdbc;
+    private final Map<String, Map<String, Object>> table = new java.util.HashMap<>();
 
     @BeforeEach
     void setUp() {
@@ -49,7 +51,19 @@ class FoodWeekAiTest {
         when(entries.findByUserIdAndLogDateBetween(user, today.minusDays(6), today)).thenReturn(List.of(e));
         water = mock(com.growthbuddy.water.WaterService.class);
         when(water.goalMl(user)).thenReturn(2500);
-        week = new FoodWeek(entries, users, clock, openai, water);
+        // food_diet_checks as a map: the upsert writes it, the SELECT reads it back.
+        jdbc = mock(org.springframework.jdbc.core.JdbcTemplate.class);
+        when(jdbc.update(anyString(), org.mockito.ArgumentMatchers.any(Object[].class))).thenAnswer(inv -> {
+            Object[] a = (Object[]) inv.getRawArguments()[1];
+            table.put(a[0] + "/" + a[1], Map.of("prompt", a[2], "answer", a[3]));
+            return 1;
+        });
+        when(jdbc.queryForList(anyString(), org.mockito.ArgumentMatchers.any(Object[].class))).thenAnswer(inv -> {
+            Object[] a = (Object[]) inv.getRawArguments()[1];
+            Map<String, Object> row = table.get(a[0] + "/" + a[1]);
+            return row == null ? List.of() : List.of(row);
+        });
+        week = new FoodWeek(entries, users, clock, openai, water, jdbc);
     }
 
     @Test
@@ -73,6 +87,10 @@ class FoodWeekAiTest {
         verify(openai, times(1)).complete(anyString(), anyList());
         assertEquals("ai", again.source());
         assertEquals(first, again);
+        // A restart: a new instance over the same table still costs nothing.
+        FoodWeek restarted = new FoodWeek(entries, mock(UserRepository.class), clockFor(), openai, water, jdbc);
+        assertEquals(first, restarted.check(user, null));
+        verify(openai, times(1)).complete(anyString(), anyList());
     }
 
     @Test
@@ -91,5 +109,11 @@ class FoodWeekAiTest {
                         && turns.get(0).toString().contains("Water ml a day (goal): 0 (2500)")));
         org.junit.jupiter.api.Assertions.assertThrows(com.growthbuddy.common.ApiException.class,
                 () -> week.check(user, today.minusDays(7)));
+    }
+
+    private UserClock clockFor() {
+        UserClock c = mock(UserClock.class);
+        when(c.today(user)).thenReturn(today);
+        return c;
     }
 }

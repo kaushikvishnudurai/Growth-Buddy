@@ -49,6 +49,8 @@ public class DataCleanupJob {
         // Every reader takes a user's newest 12 (FoodService.photoHistory); the
         // rest are unreachable. The derived table is what lets MySQL delete from
         // the table it reads; TiDB and MySQL 8 both have ROW_NUMBER.
+        // A diet check covers the last 7 days at most; an older row can never match.
+        total += jdbc.update("DELETE FROM food_diet_checks WHERE created_at < NOW() - INTERVAL 8 DAY");
         total += jdbc.update("DELETE FROM food_photo_logs WHERE id IN (SELECT id FROM ("
                 + "SELECT id, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at DESC) AS rn"
                 + " FROM food_photo_logs) ranked WHERE rn > " + PHOTO_LOGS_KEPT + ")");

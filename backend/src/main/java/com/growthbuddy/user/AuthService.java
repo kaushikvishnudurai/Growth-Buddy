@@ -102,7 +102,7 @@ public class AuthService {
         "email_verification_tokens", "password_reset_tokens", "whatsapp_otp_tokens",
         "task_completion_history", "tasks",
         "habit_checkins", "habits", "streak_freeze_wallets",
-        "water_entries", "water_goals", "food_entries", "food_photo_logs",
+        "water_entries", "water_goals", "food_entries", "food_photo_logs", "food_diet_checks",
         "goal_actions", "goals", "daily_scores", "daily_logs",
         "mentor_threads", "circle_members", "circle_posts",
         "push_subscriptions", "notifications", "custom_sounds", "focus_sessions", "weekly_reviews",

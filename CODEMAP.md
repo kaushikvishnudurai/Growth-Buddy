@@ -237,7 +237,7 @@ checks off.
   score (`ScoreService` counts live rows). Unfinished tasks carry forward — they're still to do.
   `task_history` is left alone, so the report and the "done 3×" count survive.
 - `config/DataCleanupJob` (100) — nightly purge of append-only tables never read again (hosting
-  quota; includes `food_photo_logs` past a user's newest 12), plus abandoned signups: `signup()` writes the users row BEFORE the OTP is checked, so a
+  quota; includes `food_diet_checks` past 8 days and `food_photo_logs` past a user's newest 12), plus abandoned signups: `signup()` writes the users row BEFORE the OTP is checked, so a
   mistyped email leaves an account that can never sign in but still holds the unique email.
   Unverified + older than 7 days is deleted, children first (TiDB may not enforce FK cascade).
   The three people-lookup queries in `UserRepository` also require `emailVerified = true`, so a

@@ -21,6 +21,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 /**
@@ -59,24 +60,23 @@ public class FoodWeek {
     private final UserClock clock;
     private final OpenAIClient openai;
     private final WaterService water;
+    private final JdbcTemplate jdbc;
     private final ObjectMapper json = new ObjectMapper();
 
-    // ponytail: both in memory, per instance, lost on restart. Fine for one
-    // Render instance; move to a table if it ever runs more than one. retryAfter is
-    // one entry per user, lastCheck up to 8 (the week and each of its days).
+    // ponytail: in memory, per instance, lost on restart. Fine for one Render
+    // instance; move to a table if it ever runs more than one. One entry per user.
     /** After a failed estimate, the week reads the keyword table until this instant. */
     private final Map<UUID, Instant> retryAfter = new ConcurrentHashMap<>();
-    /** The last AI diet check per user and scope ("week" or a date), with the exact prompt it answered. */
-    private final Map<String, Map.Entry<String, DietCheckResponse>> lastCheck = new ConcurrentHashMap<>();
     static final Duration RETRY_AFTER = Duration.ofMinutes(10);
 
     public FoodWeek(FoodEntryRepository entries, UserRepository users, UserClock clock, OpenAIClient openai,
-                    WaterService water) {
+                    WaterService water, JdbcTemplate jdbc) {
         this.entries = entries;
         this.users = users;
         this.clock = clock;
         this.openai = openai;
         this.water = water;
+        this.jdbc = jdbc;
     }
 
     // Not @Transactional: estimate is an AI call, and a transaction would hold a
@@ -378,13 +378,13 @@ public class FoodWeek {
                     .append(", diet=").append(safe(u.getDietPreference()))
                     .append(", allergic=").append(safe(u.getAllergicTo()));
         }
-        // Same meals, same numbers, same profile: same prompt, so the last answer
-        // still holds and "Check again" costs no AI call.
+        // Same meals, water, numbers and profile: same prompt, so the stored answer
+        // still holds and "Check again" costs no AI call. Anything changed: a miss.
         String prompt = sb.toString();
-        String key = userId + "/" + (day == null ? "week" : day);
-        Map.Entry<String, DietCheckResponse> last = lastCheck.get(key);
-        if (last != null && last.getKey().equals(prompt)) {
-            return last.getValue();
+        String scope = day == null ? "week" : day.toString();
+        DietCheckResponse stored = storedCheck(userId, scope, prompt);
+        if (stored != null) {
+            return stored;
         }
         try {
             JsonNode n = json.readTree(OpenAIClient.jsonOf(
@@ -401,11 +401,42 @@ public class FoodWeek {
                     summary.isEmpty() ? rules.summary() : cap(summary, 400),
                     add.isEmpty() ? rules.add() : add,
                     "ai");
-            lastCheck.put(key, Map.entry(prompt, out));
+            store(userId, scope, prompt, out);
             return out;
         } catch (Exception ex) {
             log.warn("Diet check fell back to the rules: {}", ex.toString());
             return rules;
+        }
+    }
+
+    /** Upserted: two taps racing on a cold day both ask, and the second must not 500. */
+    private void store(UUID userId, String scope, String prompt, DietCheckResponse out) {
+        try {
+            jdbc.update("""
+                    INSERT INTO food_diet_checks (user_id, scope, prompt, answer, created_at)
+                    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    ON DUPLICATE KEY UPDATE prompt = VALUES(prompt), answer = VALUES(answer),
+                      created_at = VALUES(created_at)
+                    """, userId.toString(), scope, prompt, json.writeValueAsString(out));
+        } catch (Exception ex) {
+            // The answer is still good; only the next repeat costs a call.
+            log.warn("Diet check not stored: {}", ex.toString());
+        }
+    }
+
+    /** The stored answer for this scope, only if it answered this exact prompt. */
+    private DietCheckResponse storedCheck(UUID userId, String scope, String prompt) {
+        List<Map<String, Object>> rows = jdbc.queryForList(
+                "SELECT prompt, answer FROM food_diet_checks WHERE user_id = ? AND scope = ?",
+                userId.toString(), scope);
+        if (rows.isEmpty() || !prompt.equals(rows.get(0).get("prompt"))) {
+            return null;
+        }
+        try {
+            return json.readValue((String) rows.get(0).get("answer"), DietCheckResponse.class);
+        } catch (Exception ex) {
+            // A row from an older response shape: ask again and overwrite it.
+            return null;
         }
     }
 

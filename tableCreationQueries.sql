@@ -276,6 +276,21 @@ CREATE TABLE IF NOT EXISTS food_photo_logs (
   CONSTRAINT fk_food_photo_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Buddy's diet check, one row per user and scope ('week' or a YYYY-MM-DD of the
+-- last 7 days), so a repeat check survives a restart without another AI call.
+-- The row keeps the exact prompt it answered: a changed meal or water entry
+-- changes the prompt, so a stale row is simply a miss and nothing has to delete
+-- it. Rows older than 8 days are purged nightly (no day that old is checkable).
+CREATE TABLE IF NOT EXISTS food_diet_checks (
+  user_id         CHAR(36)     NOT NULL,
+  scope           VARCHAR(10)  NOT NULL,
+  prompt          TEXT         NOT NULL,
+  answer          TEXT         NOT NULL,
+  created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (user_id, scope),
+  CONSTRAINT fk_diet_check_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- =========================================================
 -- GOALS
 -- =========================================================
