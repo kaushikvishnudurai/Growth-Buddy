@@ -8,6 +8,7 @@ import com.growthbuddy.mentor.OpenAIClient.ChatTurn;
 import com.growthbuddy.user.User;
 import com.growthbuddy.user.UserClock;
 import com.growthbuddy.user.UserRepository;
+import com.growthbuddy.water.WaterService;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -44,8 +45,9 @@ public class FoodWeek {
     private static final String PROMPT = """
             You are Buddy, the nutrition coach inside the Growth Buddy app, and you know
             Indian food well. You get the meals a user logged (over the last few days,
-            or on one day — the Scope line says which), their estimated daily protein, carbs, fat and fiber against targets, and
-            their profile. Say how to close the gaps. Be practical, kind and specific.
+            or on one day — the Scope line says which), their estimated daily protein,
+            carbs, fat and fiber against targets, their water against its goal when
+            given, and their profile. Say how to close the gaps. Be practical, kind and specific.
             Return strict JSON only:
             {"summary":"two short sentences, second person, no numbers",
              "add":["up to 4 short, specific Indian foods to add or swap, respecting diet and allergies"]}
@@ -56,22 +58,25 @@ public class FoodWeek {
     private final UserRepository users;
     private final UserClock clock;
     private final OpenAIClient openai;
+    private final WaterService water;
     private final ObjectMapper json = new ObjectMapper();
 
     // ponytail: both in memory, per instance, lost on restart. Fine for one
-    // Render instance; move to a table if it ever runs more than one. Both are
-    // one entry per user, so they stay as small as the user list.
+    // Render instance; move to a table if it ever runs more than one. retryAfter is
+    // one entry per user, lastCheck up to 8 (the week and each of its days).
     /** After a failed estimate, the week reads the keyword table until this instant. */
     private final Map<UUID, Instant> retryAfter = new ConcurrentHashMap<>();
-    /** The last AI diet check, keyed by the exact prompt it answered. */
-    private final Map<UUID, Map.Entry<String, DietCheckResponse>> lastCheck = new ConcurrentHashMap<>();
+    /** The last AI diet check per user and scope ("week" or a date), with the exact prompt it answered. */
+    private final Map<String, Map.Entry<String, DietCheckResponse>> lastCheck = new ConcurrentHashMap<>();
     static final Duration RETRY_AFTER = Duration.ofMinutes(10);
 
-    public FoodWeek(FoodEntryRepository entries, UserRepository users, UserClock clock, OpenAIClient openai) {
+    public FoodWeek(FoodEntryRepository entries, UserRepository users, UserClock clock, OpenAIClient openai,
+                    WaterService water) {
         this.entries = entries;
         this.users = users;
         this.clock = clock;
         this.openai = openai;
+        this.water = water;
     }
 
     // Not @Transactional: estimate is an AI call, and a transaction would hold a
@@ -332,7 +337,7 @@ public class FoodWeek {
         }
         Map<LocalDate, List<FoodEntry>> byDay = day == null ? byDay(userId, today) : oneDay(userId, day);
         if (byDay.values().stream().allMatch(List::isEmpty)) {
-            return new DietCheckResponse(null, null, null, null, day == null
+            return new DietCheckResponse(null, null, null, null, null, day == null
                     ? "Log a few meals this week and Buddy can tell you what your plate is missing."
                     : "Nothing logged on this day yet. Add a meal and Buddy can read it.", List.of(), "rules");
         }
@@ -343,9 +348,11 @@ public class FoodWeek {
         User u = users.findById(userId).orElse(null);
         Nutrients target = targets(u, goalKcal(u));
         Nutrients avg = average(days(byDay));
+        Integer waterMl = waterFor(userId, today, day);
+        int waterGoal = waterMl == null ? 0 : water.goalMl(userId);
         // Judged from the same numbers the screen's thali shows, never by the AI,
         // so the verdict can't contradict the chart above it.
-        DietCheckResponse rules = rules(avg, target, label);
+        DietCheckResponse rules = rules(avg, target, label, waterMl, waterGoal);
         if (!openai.isConfigured()) {
             return rules;
         }
@@ -361,8 +368,11 @@ public class FoodWeek {
         sb.append("\nEstimated grams a day (target): protein ").append(avg.proteinG()).append(" (").append(target.proteinG())
                 .append("), carbs ").append(avg.carbsG()).append(" (").append(target.carbsG())
                 .append("), fat ").append(avg.fatG()).append(" (").append(target.fatG())
-                .append("), fiber ").append(avg.fiberG()).append(" (").append(target.fiberG()).append(").")
-                .append("\nVerdict: ").append(verdict(rules)).append('.');
+                .append("), fiber ").append(avg.fiberG()).append(" (").append(target.fiberG()).append(").");
+        if (waterMl != null) {
+            sb.append("\nWater ml a day (goal): ").append(waterMl).append(" (").append(waterGoal).append(").");
+        }
+        sb.append("\nVerdict: ").append(verdict(rules)).append('.');
         if (u != null) {
             sb.append("\nProfile: fitnessGoal=").append(safe(u.getFitnessGoal()))
                     .append(", diet=").append(safe(u.getDietPreference()))
@@ -371,7 +381,8 @@ public class FoodWeek {
         // Same meals, same numbers, same profile: same prompt, so the last answer
         // still holds and "Check again" costs no AI call.
         String prompt = sb.toString();
-        Map.Entry<String, DietCheckResponse> last = lastCheck.get(userId);
+        String key = userId + "/" + (day == null ? "week" : day);
+        Map.Entry<String, DietCheckResponse> last = lastCheck.get(key);
         if (last != null && last.getKey().equals(prompt)) {
             return last.getValue();
         }
@@ -386,10 +397,11 @@ public class FoodWeek {
             });
             String summary = n.path("summary").asText("").strip();
             DietCheckResponse out = new DietCheckResponse(rules.protein(), rules.carbs(), rules.fat(), rules.fiber(),
+                    rules.water(),
                     summary.isEmpty() ? rules.summary() : cap(summary, 400),
                     add.isEmpty() ? rules.add() : add,
                     "ai");
-            lastCheck.put(userId, Map.entry(prompt, out));
+            lastCheck.put(key, Map.entry(prompt, out));
             return out;
         } catch (Exception ex) {
             log.warn("Diet check fell back to the rules: {}", ex.toString());
@@ -403,7 +415,30 @@ public class FoodWeek {
         for (int k = 0; k < 4; k++) {
             parts.add(KEYS.get(k) + " " + v.get(k));
         }
+        if (r.water() != null) {
+            parts.add("water " + r.water());
+        }
         return String.join(", ", parts);
+    }
+
+    /**
+     * The day's water, or the week's average over the same days the food average
+     * uses; null when nothing was logged all week.
+     */
+    // ponytail: "no water all week" stands in for "Water is turned off", which only
+    // the client knows; a user who has it on and logs none just isn't told about it.
+    private Integer waterFor(UUID userId, LocalDate today, LocalDate day) {
+        Map<LocalDate, Integer> ml = water.totalsByDay(userId, today.minusDays(DAYS - 1), today);
+        if (ml.isEmpty()) {
+            return null;
+        }
+        if (day != null) {
+            return ml.getOrDefault(day, 0);
+        }
+        List<Integer> past = ml.entrySet().stream().filter(e -> e.getKey().isBefore(today))
+                .map(Map.Entry::getValue).toList();
+        List<Integer> use = past.isEmpty() ? List.copyOf(ml.values()) : past;
+        return (int) Math.round(use.stream().mapToInt(Integer::intValue).average().orElse(0));
     }
 
     /** Every day of the window, oldest first, empty days included so the chart has 7 bars. */
@@ -441,6 +476,12 @@ public class FoodWeek {
 
     /** {@code label} names what is judged: "Your week", "Today so far", "That day". */
     static DietCheckResponse rules(Nutrients avg, Nutrients target, String label) {
+        return rules(avg, target, label, null, 0);
+    }
+
+    /** {@code waterMl} null: water isn't judged or mentioned. */
+    static DietCheckResponse rules(Nutrients avg, Nutrients target, String label, Integer waterMl, int waterGoalMl) {
+        String w = waterMl == null ? null : level(waterMl, waterGoalMl);
         String p = level(avg.proteinG(), target.proteinG());
         String c = level(avg.carbsG(), target.carbsG());
         String f = level(avg.fatG(), target.fatG());
@@ -476,11 +517,16 @@ public class FoodWeek {
             light.add("fat");
             first.add("A spoon of ghee or a handful of nuts");
         }
+        if ("low".equals(w)) {
+            light.add("water");
+            first.add("A glass of water with each meal");
+        }
         List<String> add = new ArrayList<>(first);
         add.addAll(more);
         String summary;
         if (light.isEmpty() && heavy.isEmpty()) {
-            summary = label + " is close to target on protein, carbs, fat and fiber. Keep the variety going.";
+            summary = label + " is close to target on protein, carbs, fat and fiber"
+                    + (w == null ? "" : ", and water is on track") + ". Keep the variety going.";
         } else {
             List<String> said = new ArrayList<>();
             if (!light.isEmpty()) {
@@ -492,7 +538,7 @@ public class FoodWeek {
             summary = label + " looks " + String.join(" and ", said)
                     + ". A small change to one meal a day closes most of the gap.";
         }
-        return new DietCheckResponse(p, c, f, fi, summary, add.stream().limit(4).toList(), "rules");
+        return new DietCheckResponse(p, c, f, fi, w, summary, add.stream().limit(4).toList(), "rules");
     }
 
     private static String and(List<String> xs) {

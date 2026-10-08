@@ -99,16 +99,28 @@ public class WaterService {
     @Transactional(readOnly = true)
     public WaterWeekResponse week(UUID userId) {
         LocalDate today = clock.today(userId);
-        java.util.Map<LocalDate, Integer> totals = new java.util.HashMap<>();
-        for (Object[] r : entries.totalsByDay(userId, today.minusDays(6), today)) {
-            totals.put((LocalDate) r[0], ((Number) r[1]).intValue());
-        }
+        java.util.Map<LocalDate, Integer> totals = totalsByDay(userId, today.minusDays(6), today);
         List<WaterWeekDay> days = new java.util.ArrayList<>();
         for (int i = 6; i >= 0; i--) {
             LocalDate d = today.minusDays(i);
             days.add(new WaterWeekDay(d.toString(), totals.getOrDefault(d, 0)));
         }
         return new WaterWeekResponse(goal(userId), days);
+    }
+
+    /** Millilitres per day in [from, to]; a day with no entries is absent. For FoodWeek's diet check. */
+    @Transactional(readOnly = true)
+    public java.util.Map<LocalDate, Integer> totalsByDay(UUID userId, LocalDate from, LocalDate to) {
+        java.util.Map<LocalDate, Integer> totals = new java.util.HashMap<>();
+        for (Object[] r : entries.totalsByDay(userId, from, to)) {
+            totals.put((LocalDate) r[0], ((Number) r[1]).intValue());
+        }
+        return totals;
+    }
+
+    @Transactional(readOnly = true)
+    public int goalMl(UUID userId) {
+        return goal(userId);
     }
 
     /** Called by a profile save that changes the goal, and by updateGoal. */

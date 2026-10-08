@@ -14,6 +14,7 @@ import com.growthbuddy.user.UserClock;
 import com.growthbuddy.user.UserRepository;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,6 +28,8 @@ class FoodWeekAiTest {
     private FoodEntryRepository entries;
     private OpenAIClient openai;
     private FoodWeek week;
+
+    private com.growthbuddy.water.WaterService water;
 
     @BeforeEach
     void setUp() {
@@ -44,7 +47,9 @@ class FoodWeekAiTest {
         e.setKcalEstimated(400);
         e.setLogDate(today);
         when(entries.findByUserIdAndLogDateBetween(user, today.minusDays(6), today)).thenReturn(List.of(e));
-        week = new FoodWeek(entries, users, clock, openai);
+        water = mock(com.growthbuddy.water.WaterService.class);
+        when(water.goalMl(user)).thenReturn(2500);
+        week = new FoodWeek(entries, users, clock, openai, water);
     }
 
     @Test
@@ -74,11 +79,16 @@ class FoodWeekAiTest {
     void aDayCheckReadsOnlyThatDayAndSaysSoToTheAi() {
         List<FoodEntry> todays = entries.findByUserIdAndLogDateBetween(user, today.minusDays(6), today);
         when(entries.findByUserIdAndLogDateBetween(user, today, today)).thenReturn(todays);
+        when(water.totalsByDay(user, today.minusDays(6), today)).thenReturn(Map.of(today.minusDays(1), 2000));
         when(openai.complete(anyString(), anyList()))
                 .thenReturn("{\"summary\":\"Add dal.\",\"add\":[\"Dal\"]}");
-        assertEquals("ai", week.check(user, today).source());
+        DietCheckResponse r = week.check(user, today);
+        assertEquals("ai", r.source());
+        // Water was logged this week but not today: today's 0 ml is judged, not skipped.
+        assertEquals("low", r.water());
         verify(openai).complete(anyString(), org.mockito.ArgumentMatchers.argThat(turns ->
-                turns.get(0).toString().contains("still in progress")));
+                turns.get(0).toString().contains("still in progress")
+                        && turns.get(0).toString().contains("Water ml a day (goal): 0 (2500)")));
         org.junit.jupiter.api.Assertions.assertThrows(com.growthbuddy.common.ApiException.class,
                 () -> week.check(user, today.minusDays(7)));
     }

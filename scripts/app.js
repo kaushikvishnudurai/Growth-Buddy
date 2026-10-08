@@ -3219,10 +3219,9 @@ function loadWeekSummary() {
 
 function invalidateWeek(kind) {
   weekGen++;
-  if (kind !== 'water') {
-    state.foodWeek = null;
-    state.dietCheck = null;
-  }
+  // Water is part of Buddy's read too, so any change drops it.
+  state.dietCheck = null;
+  if (kind !== 'water') state.foodWeek = null;
   if (kind !== 'food') state.waterWeek = null;
   if (state.screen === 'summary') loadWeekSummary();
 }
@@ -3231,14 +3230,14 @@ function invalidateWeek(kind) {
 async function runDietCheck(date) {
   const gen = weekGen;
   const scope = date ? 'day' : 'week';
-  state.dietCheck = { loading: true, scope };
+  state.dietCheck = { loading: true, scope, date };
   render();
   let next;
   try {
     const q = date ? '?date=' + encodeURIComponent(date) : '';
-    next = { scope, data: await api('/api/food/diet-check' + q, { method: 'POST' }) };
+    next = { scope, date, data: await api('/api/food/diet-check' + q, { method: 'POST' }) };
   } catch (err) {
-    next = { scope, error: (err && err.message) || 'Could not check your ' + scope + ' right now.' };
+    next = { scope, date, error: (err && err.message) || 'Could not check your ' + scope + ' right now.' };
   }
   // An entry changed (or the account did) while Buddy was reading: drop it.
   if (gen !== weekGen) return;
@@ -7363,6 +7362,7 @@ const SCREENS = {
         error: state.weekError,
         hasWeight: !!(state.user && state.user.weightKg),
         onCheck: runDietCheck,
+        onPickDay: runDietCheck,
         onRetry: loadWeekSummary,
         onBack: () => setScreen('food'),
         // A day on the Summary opens it in Calendar, where its meals are listed.
