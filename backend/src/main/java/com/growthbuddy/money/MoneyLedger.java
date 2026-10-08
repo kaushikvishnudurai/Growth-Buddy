@@ -307,8 +307,7 @@ public class MoneyLedger {
                String category, String note, LocalDate day, String extra) {}
 
     /**
-     * Upserts and deletes in one transaction, then drops the cached summary of
-     * every day they touched — including the day an edited expense moved away from.
+     * Upserts and deletes in one transaction.
      * An account id the user does not own is cleared rather than trusted.
      */
     @Transactional
@@ -317,15 +316,10 @@ public class MoneyLedger {
             return;
         }
         Set<String> owned = accountIds(userId);
-        Set<LocalDate> days = new HashSet<>();
-        List<String> touched = new ArrayList<>(deletes);
-        upserts.forEach(r -> touched.add(r.id()));
-        days.addAll(existingDays(userId, touched));
 
         Timestamp now = Timestamp.from(Instant.now());
         List<Object[]> batch = new ArrayList<>();
         for (Row r : upserts) {
-            days.add(r.day());
             batch.add(new Object[] {
                 userId.toString(), r.id(), r.kind(),
                 owned.contains(r.accountId()) ? r.accountId() : null,
@@ -351,7 +345,6 @@ public class MoneyLedger {
             jdbc.update("DELETE FROM money_transactions WHERE user_id = ? AND id IN ("
                     + placeholders(chunk.size()) + ")", prepend(userId.toString(), chunk));
         }
-        forgetSummaries(userId, days);
     }
 
     /** Old document entries moved in once: an id already in the table is left alone. */
@@ -363,9 +356,7 @@ public class MoneyLedger {
         Set<String> owned = accountIds(userId);
         Timestamp now = Timestamp.from(Instant.now());
         List<Object[]> batch = new ArrayList<>();
-        Set<LocalDate> days = new HashSet<>();
         for (Row r : rows) {
-            days.add(r.day());
             batch.add(new Object[] {
                 userId.toString(), r.id(), r.kind(),
                 owned.contains(r.accountId()) ? r.accountId() : null,
@@ -383,7 +374,6 @@ public class MoneyLedger {
                         ps.setObject(i + 1, row[i]);
                     }
                 });
-        forgetSummaries(userId, days);
         int n = 0;
         for (int[] c : done) {
             for (int x : c) {
@@ -391,29 +381,6 @@ public class MoneyLedger {
             }
         }
         return n;
-    }
-
-    private Set<LocalDate> existingDays(UUID userId, List<String> ids) {
-        Set<LocalDate> out = new HashSet<>();
-        for (List<String> chunk : chunks(ids)) {
-            jdbc.query("SELECT occurred_on FROM money_transactions WHERE user_id = ? AND id IN ("
-                    + placeholders(chunk.size()) + ")",
-                    rs -> {
-                        out.add(rs.getDate(1).toLocalDate());
-                    }, prepend(userId.toString(), chunk));
-        }
-        return out;
-    }
-
-    private void forgetSummaries(UUID userId, Set<LocalDate> days) {
-        if (days.isEmpty()) {
-            return;
-        }
-        List<Object> args = new ArrayList<>();
-        args.add(userId.toString());
-        days.forEach(d -> args.add(Date.valueOf(d)));
-        jdbc.update("DELETE FROM money_day_summaries WHERE user_id = ? AND day IN ("
-                + placeholders(days.size()) + ")", args.toArray());
     }
 
     /* ------------------------------------------------------------------ */

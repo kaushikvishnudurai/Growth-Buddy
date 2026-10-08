@@ -7,8 +7,9 @@ The screen still sees **one doc** (`GET /api/money`), but it is stored in two pl
 `income`, `transfers` are ledger rows (`money_transactions`, last 400 days loaded) and `accounts` are
 live balances from the server; everything else is the `MoneyState` document. app.js `saveMoney` splits
 a save with `ledgerDiff(before, after)` → `POST /api/money/tx`, and `docPart(m)` → `PUT` only if changed.
-Insights are client-side heuristics; the server AI calls are the purchase advisor (`POST /api/money/advice`)
-and the tapped-day summary (`GET /api/money/day-summary`), both with a no-AI fallback.
+Insights are client-side heuristics; the only server AI call is the purchase advisor (`POST /api/money/advice`, no-AI fallback).
+The tapped-day summary (`GET /api/money/day-summary`) is rules-only on purpose: its facts are exact,
+so the AI only reworded them; the budget goes to Food, whose numbers are estimates.
 Tone rule stated at the top of the file: money framed as growth, never guilt.
 
 ## Doc shape (`emptyMoney`, ~255)
@@ -115,7 +116,7 @@ file — old WebViews, desktop Firefox, and the Capacitor wrapper. Both share bu
 - `weekBars(expenses, {selected, onPick, noSpendDays})`: amount over each bar, weekday + date under, "No log"
   for an empty day (worked out, not stored), "No spend" for one marked so. An outlier over 3x the next day
   caps the scale at 1.5x the next and draws that bar cut off (`is-clipped`), keeping its real label.
-- `dayPanel(day)`: facts from the local copy at once, the coach's paragraph from `requestDaySummary`, cached
+- `dayPanel(day)`: facts from the local copy at once, the server's rules paragraph from `requestDaySummary`, cached
   per screen by the day's entries (`stable()`), with Try again on error. app.js runs `requestDaySummary`
   behind `moneySaveQueue` + `flushLedger`: asked before the new expense reached the server, it
   summarised the old day and that answer was kept under the new key; an empty day offers

@@ -42,6 +42,31 @@ class FoodWeekRulesTest {
     }
 
     @Test
+    void waterIsJudgedOnlyWhenGiven() {
+        DietCheckResponse dry = FoodWeek.rules(TARGET, TARGET, "That day", 900, 2500);
+        assertEquals("low", dry.water());
+        assertTrue(dry.summary().startsWith("That day looks light on water"), dry.summary());
+        assertEquals(List.of("A glass of water with each meal"), dry.add());
+        assertTrue(FoodWeek.rules(TARGET, TARGET, "That day", 2500, 2500).summary().contains("water is on track"));
+        assertEquals(null, FoodWeek.rules(TARGET, TARGET).water());
+    }
+
+    @Test
+    void fiveGapsKeepFiveTips() {
+        // Light on protein, carbs and fiber, heavy on fat, and short on water.
+        DietCheckResponse r = FoodWeek.rules(new Nutrients(20, 100, 120, 5), TARGET, "That day", 900, 2500);
+        assertEquals(5, r.add().size(), r.add().toString());
+        assertTrue(r.add().contains("A glass of water with each meal"));
+        assertTrue(r.summary().contains("water, and heavy on fat"), r.summary());
+    }
+
+    @Test
+    void aDayCheckNamesTheDayNotTheWeek() {
+        DietCheckResponse r = FoodWeek.rules(new Nutrients(20, 400, 72, 14), TARGET, "Today so far");
+        assertTrue(r.summary().startsWith("Today so far looks light on protein"), r.summary());
+    }
+
+    @Test
     void keywordsMatchWordStartsOnly() {
         assertTrue(FoodWeek.mentions("2 Eggs", List.of("egg")));
         assertTrue(!FoodWeek.mentions("Veggie wrap", List.of("egg")));

@@ -216,8 +216,9 @@ record NutrientSource(String name, int count, int g) {
 }
 
 /** Each nutrient is low|ok|high, or null when nothing is logged; source is ai|rules. */
-record DietCheckResponse(String protein, String carbs, String fat, String fiber, String summary, List<String> add,
-        String source) {
+/** {@code water}: low/ok/high, or null when no water was logged in the window (Water off, or never used). */
+record DietCheckResponse(String protein, String carbs, String fat, String fiber, String water, String summary,
+        List<String> add, String source) {
 }
 
 record FoodSummaryResponse(

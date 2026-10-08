@@ -14,6 +14,7 @@ import com.growthbuddy.user.UserClock;
 import com.growthbuddy.user.UserRepository;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,6 +28,10 @@ class FoodWeekAiTest {
     private FoodEntryRepository entries;
     private OpenAIClient openai;
     private FoodWeek week;
+
+    private com.growthbuddy.water.WaterService water;
+    private org.springframework.jdbc.core.JdbcTemplate jdbc;
+    private final Map<String, Map<String, Object>> table = new java.util.HashMap<>();
 
     @BeforeEach
     void setUp() {
@@ -44,7 +49,21 @@ class FoodWeekAiTest {
         e.setKcalEstimated(400);
         e.setLogDate(today);
         when(entries.findByUserIdAndLogDateBetween(user, today.minusDays(6), today)).thenReturn(List.of(e));
-        week = new FoodWeek(entries, users, clock, openai);
+        water = mock(com.growthbuddy.water.WaterService.class);
+        when(water.goalMl(user)).thenReturn(2500);
+        // food_diet_checks as a map: the upsert writes it, the SELECT reads it back.
+        jdbc = mock(org.springframework.jdbc.core.JdbcTemplate.class);
+        when(jdbc.update(anyString(), org.mockito.ArgumentMatchers.any(Object[].class))).thenAnswer(inv -> {
+            Object[] a = (Object[]) inv.getRawArguments()[1];
+            table.put(a[0] + "/" + a[1], Map.of("prompt", a[2], "answer", a[3]));
+            return 1;
+        });
+        when(jdbc.queryForList(anyString(), org.mockito.ArgumentMatchers.any(Object[].class))).thenAnswer(inv -> {
+            Object[] a = (Object[]) inv.getRawArguments()[1];
+            Map<String, Object> row = table.get(a[0] + "/" + a[1]);
+            return row == null ? List.of() : List.of(row);
+        });
+        week = new FoodWeek(entries, users, clock, openai, water, jdbc);
     }
 
     @Test
@@ -63,10 +82,38 @@ class FoodWeekAiTest {
     void anUnchangedWeekIsAnsweredFromTheLastCheck() {
         when(openai.complete(anyString(), anyList()))
                 .thenReturn("{\"summary\":\"Add dal.\",\"add\":[\"Dal\"]}");
-        DietCheckResponse first = week.check(user);
-        DietCheckResponse again = week.check(user);
+        DietCheckResponse first = week.check(user, null);
+        DietCheckResponse again = week.check(user, null);
         verify(openai, times(1)).complete(anyString(), anyList());
         assertEquals("ai", again.source());
         assertEquals(first, again);
+        // A restart: a new instance over the same table still costs nothing.
+        FoodWeek restarted = new FoodWeek(entries, mock(UserRepository.class), clockFor(), openai, water, jdbc);
+        assertEquals(first, restarted.check(user, null));
+        verify(openai, times(1)).complete(anyString(), anyList());
+    }
+
+    @Test
+    void aDayCheckReadsOnlyThatDayAndSaysSoToTheAi() {
+        List<FoodEntry> todays = entries.findByUserIdAndLogDateBetween(user, today.minusDays(6), today);
+        when(entries.findByUserIdAndLogDateBetween(user, today, today)).thenReturn(todays);
+        when(water.totalsByDay(user, today.minusDays(6), today)).thenReturn(Map.of(today.minusDays(1), 2000));
+        when(openai.complete(anyString(), anyList()))
+                .thenReturn("{\"summary\":\"Add dal.\",\"add\":[\"Dal\"]}");
+        DietCheckResponse r = week.check(user, today);
+        assertEquals("ai", r.source());
+        // Water was logged this week but not today: today's 0 ml is judged, not skipped.
+        assertEquals("low", r.water());
+        verify(openai).complete(anyString(), org.mockito.ArgumentMatchers.argThat(turns ->
+                turns.get(0).toString().contains("still in progress")
+                        && turns.get(0).toString().contains("Water ml a day (goal): 0 (2500)")));
+        org.junit.jupiter.api.Assertions.assertThrows(com.growthbuddy.common.ApiException.class,
+                () -> week.check(user, today.minusDays(7)));
+    }
+
+    private UserClock clockFor() {
+        UserClock c = mock(UserClock.class);
+        when(c.today(user)).thenReturn(today);
+        return c;
     }
 }

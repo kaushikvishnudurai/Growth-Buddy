@@ -3028,7 +3028,12 @@ button.gb-food-level {
 .gb-food-week-col.is-today .gb-food-week-day {
   color: var(--fg1);
 }
+.gb-food-check-btns {
+  display: flex;
+  gap: 8px;
+}
 .gb-food-check-btn {
+  flex: 1;
   width: 100%;
 }
 .gb-food-check {

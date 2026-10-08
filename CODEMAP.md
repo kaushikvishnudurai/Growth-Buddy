@@ -156,7 +156,7 @@ checks off.
 | `/api/tasks` | CRUD (PUT takes `paused`: an on-hold task is never escalated to High when overdue; Home's task row has the pause/resume button), `{id}/toggle`, `{id}/history`, `finished?days=` (ticked off lately, swept ones included: priority, createdAt, doneAt, for Insights). A due date moved 12h+ later bumps `pushCount` |
 | `/api/goals` | CRUD, `{id}/toggle`, `{id}/progress`, `{id}/actions` (+ per-action PUT/DELETE) |
 | `/api/family` | `members` CRUD + `{id}/profile`, `search`, `members/link`, `invites` (+accept/decline), `leave`, `grocery-scan`, `meal-plan` GET/POST, `pantry` (+`/scan`, `{id}` PUT/DELETE), `shopping` (+`/generate`, `{id}/toggle`, `{id}` DELETE) |
-| `/api/food` | `search`, `entries` POST/DELETE, `photo-estimate`, `photo-estimate-multi`, `photo-history` GET/POST, `week` GET (7 days of kcal + estimated protein/carbs/fat/fiber, targets, averages, levels, top dishes per nutrient; fills missing `*_g` in one AI batch), `diet-check` POST (AI) |
+| `/api/food` | `search`, `entries` POST/DELETE, `photo-estimate`, `photo-estimate-multi`, `photo-history` GET/POST, `week` GET (7 days of kcal + estimated protein/carbs/fat/fiber, targets, averages, levels, top dishes per nutrient; fills missing `*_g` in one AI batch), `diet-check[?date=]` POST (AI; a day of the last 7, or the week; water included) |
 | `/api/water` | `entries` POST/DELETE, `week` GET (7 days of ml for the Food summary), `times?days=` GET (every entry's `loggedAt`, for Insights and the water nudge), `goal` PUT (writes `users.daily_water_goal_ml`, the Settings field; a pre-move `water_goals` row is read first until either screen edits the goal) |
 | `/api/daily-logs` | GET, `sleep`, `mood`, `snapshot` — **there is no PUT.** The client used to call one from three places (`persistWellness`, a boot "force-sync", a 5-minute timer); all three 405'd forever and logged `CRITICAL: failed to reach database`. Sleep and mood are saved by their own POSTs as you enter them. |
 | `/api/score` | `today`, `today/snapshot`, `day?date=` (a finished day's parts, via `ScoreService.on`) |
@@ -237,7 +237,7 @@ checks off.
   score (`ScoreService` counts live rows). Unfinished tasks carry forward — they're still to do.
   `task_history` is left alone, so the report and the "done 3×" count survive.
 - `config/DataCleanupJob` (100) — nightly purge of append-only tables never read again (hosting
-  quota; includes `money_day_summaries` past 7 days and `food_photo_logs` past a user's newest 12), plus abandoned signups: `signup()` writes the users row BEFORE the OTP is checked, so a
+  quota; includes `food_diet_checks` past 8 days and `food_photo_logs` past a user's newest 12), plus abandoned signups: `signup()` writes the users row BEFORE the OTP is checked, so a
   mistyped email leaves an account that can never sign in but still holds the unique email.
   Unverified + older than 7 days is deleted, children first (TiDB may not enforce FK cascade).
   The three people-lookup queries in `UserRepository` also require `emailVerified = true`, so a
@@ -246,8 +246,8 @@ checks off.
   `task/TaskService` (132), `goal/GoalService` (151), `focus/FocusService` (81),
   `money/MoneyService` (document part, migration, ledger writes, purchase advisor). `MoneyLedger` (JdbcTemplate:
   accounts + balances computed, never stored; batched upserts keyed on the client's id). `MoneyDaySummary`
-  (a tapped day: facts always, AI paragraph cached in `money_day_summaries`, dropped when that day changes,
-  purged after 7 days; the prompt forbids numbers so it can't contradict the chips beside it). `SubscriptionDueScheduler` WhatsApps a
+  (a tapped day: facts and a paragraph written from them, no AI and no cache on purpose — the AI only
+  reworded exact facts; Food's day/week diet check is where the AI earns its call). `SubscriptionDueScheduler` WhatsApps a
   "due today" message with a Mark-as-paid button from 09:00 local on a subscription's due day (de-duped in
   `reminder_dispatch_log` under a name-derived UUID). It reads only the documents of users the database picks on
   `money_state.sub_due_days` (bit d-1 per due day, derived in `MoneyState.touch()`; NULL rows from before the
