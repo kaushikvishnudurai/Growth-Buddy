@@ -97,7 +97,13 @@ record AddFoodEntryRequest(
          * a clear 400 rather than a constraint violation surfacing as a 500. It is
          * a ceiling for one entry, not for a day.
          */
-        @Min(1) @Max(5000) Integer kcal) {
+        @Min(1) @Max(5000) Integer kcal,
+        /**
+         * "2 dosa": a count instead of grams, for food nobody weighs. Turned into
+         * grams on the server (the AI, else a per-piece table); quantityGrams wins
+         * when both are sent.
+         */
+        @Min(1) @Max(30) Integer pieces) {
 }
 
 record PhotoFoodEstimateRequest(

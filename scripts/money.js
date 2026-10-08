@@ -230,6 +230,27 @@ function fmt(n) {
   // Sign before the symbol, as a true minus: "₹-240" beside an account's "−₹240".
   return (v < 0 ? '\u2212' : '') + cur + Math.abs(v).toLocaleString('en-IN');
 }
+/* An amount field's value, to the paisa. Rounding to whole rupees saved 249.50
+   as 250, and the ledger (decimal(14,2)) holds paise. type=number reports what
+   it can't parse ("1,250" in most locales) as an empty value, which read as
+   "greater than zero" — so say what is actually wrong. */
+function readAmount(input) {
+  if (input.validity && input.validity.badInput) {
+    input.focus();
+    throw new Error('Use digits only, like 1250 or 1250.50.');
+  }
+  return Math.round(Number(input.value) * 100) / 100;
+}
+/* readAmount's twin for the fields kept in whole rupees on purpose (budgets,
+   subscriptions). They carry step=1 and a numeric keyboard; a decimal pasted or
+   typed anyway is refused, not rounded behind the user's back. */
+function readWhole(input) {
+  if (input.validity && (input.validity.badInput || input.validity.stepMismatch)) {
+    input.focus();
+    throw new Error('Whole amounts only, like 1250.');
+  }
+  return Number(input.value);
+}
 /* The year appears only when it isn't this one: "1 Oct" twice in a list (this
    October and last) was two different salaries that read as one. */
 function fmtDateShort(k) {
@@ -1672,15 +1693,17 @@ function costPerUse(sub) {
   const uses = Number(sub.usesPerMonth);
   return uses > 0 ? (Number(sub.amount) || 0) / uses : null;
 }
-/* A bill split evenly. Returns what each other person owes you; whole units
-   only, and the odd ones go to them rather than to you, so the shares plus
-   your own add up to the bill exactly. */
-function splitShares(total, parties, includeMe) {
+/* A bill split evenly. Returns what each other person owes you, to the paisa
+   (a loan's amount keeps paise, like readAmount's), and the odd paise go to
+   them rather than to you, so the shares plus your own add up to the bill
+   exactly. Worked in whole paise: float rupees would drift. */
+export function splitShares(total, parties, includeMe) {
   const n = parties.length + (includeMe ? 1 : 0);
   if (!parties.length || !(total > 0)) return [];
-  const base = Math.floor(total / n);
-  let extra = total - base * n;
-  return parties.map((party) => ({ party, amount: base + (extra-- > 0 ? 1 : 0) }));
+  const paise = Math.round(total * 100);
+  const base = Math.floor(paise / n);
+  let extra = paise - base * n;
+  return parties.map((party) => ({ party, amount: (base + (extra-- > 0 ? 1 : 0)) / 100 }));
 }
 function upcomingSubs(money) {
   const today = new Date().getDate();
@@ -1976,6 +1999,16 @@ function openMoneyModal(opts) {
   return { close: openModal(opts) };
 }
 
+// Module level (not inside ScreenMoney) so the customise pane's tag manager uses it too.
+function confirmDelete(title, body, onConfirm) {
+  openMoneyModal({
+    title,
+    body: h('div', { class: 'gb-note-hint' }, body),
+    primary: 'Delete',
+    onPrimary: onConfirm,
+  });
+}
+
 function segmented(options, initial, onChange) {
   let selected = initial;
   const segs = {};
@@ -2207,18 +2240,19 @@ export function MoneyCustomisePane(money, save) {
                   type: 'button',
                   class: 'gb-icon-btn',
                   'aria-label': 'Remove tag',
-                  onclick: () => {
-                    money.customCategories = (money.customCategories || []).filter(
-                      (x) => x.key !== c.key
-                    );
-                    commit(
-                      (m) =>
-                        (m.customCategories = (m.customCategories || []).filter(
-                          (x) => x.key !== c.key
-                        ))
-                    );
-                    renderList();
-                  },
+                  onclick: () =>
+                    confirmDelete('Remove tag', 'Remove the "' + c.label + '" tag?', () => {
+                      money.customCategories = (money.customCategories || []).filter(
+                        (x) => x.key !== c.key
+                      );
+                      commit(
+                        (m) =>
+                          (m.customCategories = (m.customCategories || []).filter(
+                            (x) => x.key !== c.key
+                          ))
+                      );
+                      renderList();
+                    }),
                 },
                 Icon('trash-2', { size: 15, sw: 2.4 })
               )
@@ -2271,7 +2305,9 @@ export function MoneyCustomisePane(money, save) {
   const thresholdInput = h('input', {
     type: 'number',
     class: 'gb-input',
+    inputmode: 'numeric',
     min: '0',
+    step: '1',
     value: String(money.settings.reflectThreshold || 0),
     placeholder: '1000',
     onchange: () => {
@@ -2303,7 +2339,7 @@ export function MoneyCustomisePane(money, save) {
     ),
     h('div', { class: 'gb-field-label' }, 'Currency symbol'),
     currencyInput,
-    h('div', { class: 'gb-field-label' }, 'Ask me to reflect on buys above (' + cur + ')'),
+    h('div', { class: 'gb-field-label' }, 'Ask me to reflect on buys of at least (' + cur + ', whole amounts, 0 = off)'),
     thresholdInput,
     h('div', { class: 'gb-note-hint', style: { marginTop: '2px' } }, 'Set to 0 to never prompt.'),
     h('div', { class: 'gb-field-label' }, 'Default tag for new expenses'),
@@ -2535,7 +2571,7 @@ function openExpenseModal(money, save, prefillDate, existing) {
         }
       : null,
     onPrimary: async () => {
-      const amt = Math.round(Number(amount.value));
+      const amt = readAmount(amount);
       if (!Number.isFinite(amt) || amt <= 0) {
         amount.focus();
         throw new Error('Enter an amount greater than zero.');
@@ -2570,9 +2606,11 @@ function openExpenseModal(money, save, prefillDate, existing) {
       if (accountId) next.settings.lastAccountId = accountId;
       save(next, money);
       toast.success('Expense added.');
-      // Every spend gets a quick "why" reflection right after — the reason prompt.
+      // A quick "why" reflection for buys at or above the user's threshold (Customise;
+      // 0 turns it off). It used to open for every expense: the setting was never read.
       // Operate on `next` so the new expense id resolves regardless of re-render timing.
-      setTimeout(() => openReflection(next, save, id), 220);
+      const thr = Number(money.settings.reflectThreshold) || 0;
+      if (thr > 0 && amt >= thr) setTimeout(() => openReflection(next, save, id), 220);
     },
   });
   setTimeout(() => amount.focus(), 60);
@@ -2679,12 +2717,37 @@ function MoneyHomeCard({ money, onSaveMoney, onOpen }) {
    ===================================================================== */
 let activeTab = 'overview';
 let spendFilter = 'all';
-let lastSearch = '';
+let lastSearch = ''; // what is in the search box, run or not
+let searchAsked = ''; // the last query actually run
+let filterScroll = 0; // the tag filter strip's scrollLeft
+// View state that has to survive a repaint. Every Money save makes app.js call
+// ScreenMoney again, so state declared inside it reset on each save: the open day
+// panel closed, "Show all" income collapsed, the month tape replayed. These reset
+// on a fresh visit instead (see `moneyRoot` in ScreenMoney).
+const EXP_PAGE = 60;
+let pickedDay = null;
+let showAllIncome = false;
+let tapeShown = false; // the tape's fill-in plays on a visit's first paint only
+let expShown = EXP_PAGE; // rows of "This month" revealed by Show more
+let loanOrder = null; // loan ids as last shown, so Settle/Undo doesn't move a row
+let moneyRoot = null;
+const daySummaries = new Map();
 
 function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, requestDaySummary }) {
   money = normalizeMoney(money);
   applyCurrency(money);
   const root = h('div', { class: 'gb-money gb-rise' });
+  // app.js builds the new screen before swapping it in, so the previous root is
+  // still in the document on a repaint and detached on a fresh visit.
+  if (!(moneyRoot && moneyRoot.isConnected)) {
+    pickedDay = null;
+    showAllIncome = false;
+    tapeShown = false;
+    expShown = EXP_PAGE;
+    loanOrder = null;
+    daySummaries.clear();
+  }
+  moneyRoot = root;
   const save = (next, base) => onSaveMoney(next, base);
   const commit = (mutator) => commitOn(money, save, mutator);
 
@@ -2909,7 +2972,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
         await accountWrite(
           'POST',
           '',
-          { name: name.value.trim(), kind: kind.get(), balance: Number(bal.value) || 0 },
+          { name: name.value.trim(), kind: kind.get(), balance: readAmount(bal) || 0 },
           'Account added.'
         );
       },
@@ -2924,7 +2987,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
       type: 'number',
       class: 'gb-input',
       inputmode: 'decimal',
-      value: String(Math.round(Number(a.balance) || 0)),
+      value: String(Number(a.balance) || 0),
     });
     openMoneyModal({
       title: a.name,
@@ -2960,8 +3023,8 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
           throw new Error('Give the account a name.');
         }
         const body = { name: name.value.trim(), kind: kind.get() };
-        if (bal.value !== '' && Number(bal.value) !== Math.round(Number(a.balance) || 0))
-          body.balance = Number(bal.value);
+        const v = readAmount(bal);
+        if (bal.value !== '' && v !== (Number(a.balance) || 0)) body.balance = v;
         await accountWrite('PUT', '/' + a.id, body, 'Saved.');
       },
     });
@@ -2991,9 +3054,13 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
       ),
       primary: 'Save balances',
       onPrimary: async () => {
+        // Read every field first: a bad one found halfway used to leave the
+        // accounts before it saved and the rest not.
+        const vals = inputs.map((inp) =>
+          inp.value === '' && !inp.validity.badInput ? null : readAmount(inp)
+        );
         for (let i = 0; i < list.length; i++) {
-          const v = inputs[i].value;
-          if (v !== '') await accountRequest('PUT', '/' + list[i].id, { balance: Number(v) });
+          if (vals[i] !== null) await accountRequest('PUT', '/' + list[i].id, { balance: vals[i] });
         }
         commit((m) => (m.settings.accountsSetUp = true));
         toast.success('Balances saved.');
@@ -3094,7 +3161,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
       ),
       primary: 'Move money',
       onPrimary: async () => {
-        const v = Math.round(Number(amount.value));
+        const v = readAmount(amount);
         if (!Number.isFinite(v) || v <= 0) {
           amount.focus();
           throw new Error('Enter an amount greater than zero.');
@@ -3179,6 +3246,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
           const amt = h('input', {
             type: 'number',
             class: 'gb-input gb-input--inline',
+            inputmode: 'decimal',
             value: r.amount || '',
             placeholder: cur,
             min: '0',
@@ -3189,7 +3257,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
             r.category = suggestCategory(name.value, money) || 'others';
           });
           amt.addEventListener('input', () => {
-            r.amount = Math.round(Number(amt.value) || 0);
+            r.amount = Math.round((Number(amt.value) || 0) * 100) / 100;
             recompute();
           });
           const del = h(
@@ -3266,7 +3334,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
           valid.forEach((r) =>
             m.expenses.unshift({
               id: uid(),
-              amount: Math.round(r.amount),
+              amount: r.amount,
               category: catOf(r.category, money).key,
               date: todayKey(),
               note: r.name.trim() || 'Receipt item',
@@ -3285,7 +3353,9 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
       inp: h('input', {
         type: 'number',
         class: 'gb-input',
+        inputmode: 'numeric',
         min: '0',
+        step: '1',
         max: '10000000',
         placeholder: '0',
         value: money.budgets[c.key] ? String(money.budgets[c.key]) : '',
@@ -3293,7 +3363,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
     }));
     openMoneyModal({
       title: 'Monthly budgets',
-      sub: 'Set what feels realistic. Leave blank to skip a tag.',
+      sub: 'Set what feels realistic, in whole amounts. Leave blank to skip a tag.',
       body: h(
         'div',
         { class: 'gb-form' },
@@ -3313,11 +3383,12 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
       ),
       primary: 'Save budgets',
       onPrimary: async () => {
+        // Read every field before committing, so a refused one saves nothing.
+        const vals = inputs.map(({ c, inp }) => [c.key, readWhole(inp) || 0]);
         commit((m) => {
           m.budgets = {};
-          inputs.forEach(({ c, inp }) => {
-            const v = Math.round(Number(inp.value) || 0);
-            if (v > 0) m.budgets[c.key] = v;
+          vals.forEach(([k, v]) => {
+            if (v > 0) m.budgets[k] = v;
           });
         });
         toast.success('Budgets saved.');
@@ -3335,6 +3406,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
     const price = h('input', {
       type: 'number',
       class: 'gb-input',
+      inputmode: 'decimal',
       min: '1',
       placeholder: 'e.g. 2999',
     });
@@ -3384,7 +3456,15 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
       );
       refreshIcons();
     };
+    let asking = false;
+    const setAsking = (on) => {
+      asking = on;
+      askBtn.disabled = on;
+      askBtn.setAttribute('aria-busy', String(on));
+    };
     const evaluate = () => {
+      // A double tap (or Enter then tap) sent the same question to the AI twice.
+      if (asking) return;
       const seq = ++adviceSeq;
       const p = Number(price.value);
       if (!item.value.trim() || !Number.isFinite(p) || p <= 0) {
@@ -3408,6 +3488,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
         'Writing a closer look',
       ]);
       result.appendChild(loading);
+      setAsking(true);
       requestAdvice({
         item: item.value.trim(),
         price: Math.round(p),
@@ -3433,8 +3514,20 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
         })
         .catch(() => {
           if (seq === adviceSeq) loading.remove();
-        });
+        })
+        .finally(() => setAsking(false));
     };
+    const askBtn = h(
+      'button',
+      {
+        type: 'button',
+        class: 'gb-btn gb-btn--soft',
+        style: { marginTop: '4px' },
+        onclick: evaluate,
+      },
+      Icon('sparkles', { size: 15, sw: 2.2 }),
+      'Ask the buddy'
+    );
     [price, reason].forEach((el) =>
       el.addEventListener('keydown', (e) => e.key === 'Enter' && evaluate())
     );
@@ -3450,17 +3543,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
         price,
         h('div', { class: 'gb-field-label' }, 'Reason for buying'),
         reason,
-        h(
-          'button',
-          {
-            type: 'button',
-            class: 'gb-btn gb-btn--soft',
-            style: { marginTop: '4px' },
-            onclick: evaluate,
-          },
-          Icon('sparkles', { size: 15, sw: 2.2 }),
-          'Ask the buddy'
-        ),
+        askBtn,
         result
       ),
       primary: null,
@@ -3478,6 +3561,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
     const target = h('input', {
       type: 'number',
       class: 'gb-input',
+      inputmode: 'decimal',
       min: '1',
       placeholder: 'e.g. 40000',
     });
@@ -3518,7 +3602,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
       ),
       primary: planMode ? 'Plan it' : 'Create goal',
       onPrimary: async () => {
-        const t = Math.round(Number(target.value));
+        const t = readAmount(target);
         if (!name.value.trim()) {
           name.focus();
           throw new Error('Give it a name.');
@@ -3547,6 +3631,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
     const amt = h('input', {
       type: 'number',
       class: 'gb-input',
+      inputmode: 'decimal',
       min: '1',
       placeholder: 'e.g. 500',
     });
@@ -3569,7 +3654,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
       ),
       primary: 'Add to goal',
       onPrimary: async () => {
-        const v = Math.round(Number(amt.value));
+        const v = readAmount(amt);
         if (!Number.isFinite(v) || v <= 0) {
           amt.focus();
           throw new Error('Enter an amount greater than zero.');
@@ -3591,15 +3676,20 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
       maxlength: '40',
       placeholder: 'e.g. Netflix',
     });
+    // Whole rupees: the server's WhatsApp path rounds a subscription's amount
+    // and shares its expense id (`sub-<id>-<month>`), so paise here would split them.
     const amount = h('input', {
       type: 'number',
       class: 'gb-input',
+      inputmode: 'numeric',
       min: '1',
+      step: '1',
       placeholder: 'e.g. 199',
     });
     const day = h('input', {
       type: 'number',
       class: 'gb-input',
+      inputmode: 'numeric',
       min: '1',
       max: '31',
       placeholder: 'Due day (1–31)',
@@ -3607,6 +3697,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
     const uses = h('input', {
       type: 'number',
       class: 'gb-input',
+      inputmode: 'numeric',
       min: '1',
       placeholder: 'Optional, e.g. 8',
     });
@@ -3619,7 +3710,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
         { class: 'gb-form' },
         h('div', { class: 'gb-field-label' }, 'Name'),
         name,
-        h('div', { class: 'gb-field-label' }, 'Amount / month (' + cur + ')'),
+        h('div', { class: 'gb-field-label' }, 'Amount / month (' + cur + ', whole amounts)'),
         amount,
         h('div', { class: 'gb-field-label' }, 'Due day of month'),
         day,
@@ -3630,7 +3721,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
       ),
       primary: 'Add subscription',
       onPrimary: async () => {
-        const a = Math.round(Number(amount.value));
+        const a = readWhole(amount);
         const d = Math.round(Number(day.value));
         if (!name.value.trim()) {
           name.focus();
@@ -3665,6 +3756,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
     const uses = h('input', {
       type: 'number',
       class: 'gb-input',
+      inputmode: 'numeric',
       min: '0',
       placeholder: 'e.g. 8',
       value: sub.usesPerMonth || '',
@@ -3703,6 +3795,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
     const price = h('input', {
       type: 'number',
       class: 'gb-input',
+      inputmode: 'decimal',
       min: '1',
       placeholder: 'e.g. 4500',
     });
@@ -3719,7 +3812,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
       ),
       primary: 'Add to wishlist',
       onPrimary: async () => {
-        const p = Math.round(Number(price.value));
+        const p = readAmount(price);
         if (!name.value.trim()) {
           name.focus();
           throw new Error('Give the item a name.');
@@ -3808,6 +3901,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
     const perDay = h('input', {
       type: 'number',
       class: 'gb-input',
+      inputmode: 'decimal',
       min: '1',
       placeholder: 'e.g. 100',
       value: '100',
@@ -3816,6 +3910,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
     const pct = h('input', {
       type: 'number',
       class: 'gb-input',
+      inputmode: 'numeric',
       min: '1',
       max: '100',
       placeholder: 'e.g. 20',
@@ -3824,6 +3919,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
     const months = h('input', {
       type: 'number',
       class: 'gb-input',
+      inputmode: 'numeric',
       min: '1',
       max: '24',
       value: '6',
@@ -3947,24 +4043,13 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
     }
   }
 
-  function confirmDelete(title, body, onConfirm) {
-    openMoneyModal({
-      title,
-      body: h('div', { class: 'gb-note-hint' }, body),
-      primary: 'Delete',
-      onPrimary: onConfirm,
-    });
-  }
-
   /* =================================================================
      TAB: OVERVIEW
      ================================================================= */
   /* ---- Day summary under the Last 7 days bars ---- */
-  let pickedDay = null;
-  // Per screen instance, keyed on the day's entries: an expense added or edited
-  // that day changes the key, so a stale summary is never shown (the server drops
-  // its cached one on the same change).
-  const daySummaries = new Map();
+  // daySummaries (module level, cleared per visit) is keyed on the day's entries:
+  // an expense added or edited that day changes the key, so a stale summary is
+  // never shown (the server drops its cached one on the same change).
 
   function dayPanel(day) {
     const entries = money.expenses.filter((e) => e.date === day);
@@ -4132,7 +4217,6 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
      share of the budget (or, with no budget, by how much was spent); a day with
      nothing logged is hollow, a no-spend day ringed, today outlined, the rest
      waiting. */
-  let tapeShown = false; // the fill-in plays once per visit, not on every repaint
   function monthTape({ byDay, hasBudget, totalBudget, dim, dayNum, prefix, today }) {
     const flat = hasBudget ? totalBudget / dim : 0;
     const max = Math.max(1, ...Object.values(byDay));
@@ -4801,11 +4885,13 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
       class: 'gb-input',
       placeholder: 'e.g. what could I skip?',
       value: lastSearch,
+      // Kept as typed, so a save's repaint doesn't wipe a half-typed question.
+      oninput: () => (lastSearch = searchInput.value),
     });
     const searchOut = h('div', { class: 'gb-money-search-out' });
-    const runSearch = () => {
-      lastSearch = searchInput.value;
-      const r = searchExpenses(money, searchInput.value);
+    const runSearch = (q = searchInput.value) => {
+      searchAsked = q;
+      const r = searchExpenses(money, q);
       // replaceChildren is native DOM: a null child stringifies into the literal
       // text "null" under the answer. Drop it instead.
       searchOut.replaceChildren(
@@ -4823,7 +4909,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
       refreshIcons();
     };
     searchInput.addEventListener('keydown', (e) => e.key === 'Enter' && runSearch());
-    if (lastSearch) runSearch();
+    if (searchAsked) runSearch(searchAsked);
     const searchCard = Card({
       className: 'gb-money-card',
       children: [
@@ -4835,7 +4921,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
           searchInput,
           h(
             'button',
-            { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--compact', onclick: runSearch },
+            { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--compact', onclick: () => runSearch() },
             'Search'
           )
         ),
@@ -4925,9 +5011,18 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
       spendFilter,
       (v) => {
         spendFilter = v;
+        expShown = EXP_PAGE;
         paint();
       }
     );
+    // The strip scrolls sideways; a repaint rebuilt it at scrollLeft 0, so a
+    // picked tag far down the list looked like it had snapped back to All.
+    const filterStrip = h(
+      'div',
+      { class: 'gb-money-filter', onscroll: (e) => (filterScroll = e.currentTarget.scrollLeft) },
+      filterSeg.node
+    );
+    requestAnimationFrame(() => (filterStrip.scrollLeft = filterScroll));
     // ponytail: the list resets with the month. Older months are reachable through
     // the search card above ("how much on food last month"), so no month picker.
     let list = mExp
@@ -4940,12 +5035,12 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
       className: 'gb-money-card',
       children: [
         h('div', { class: 'gb-sectiontitle' }, h('h3', null, 'This month')),
-        h('div', { class: 'gb-money-filter' }, filterSeg.node),
+        filterStrip,
         list.length
           ? h(
               'div',
               { class: 'gb-money-exp-list' },
-              list.slice(0, 60).map((e) => expRow(e, true))
+              list.slice(0, expShown).map((e) => expRow(e, true))
             )
           : emptyHint(
               'wallet',
@@ -4953,6 +5048,20 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
                 ? 'Nothing logged this month yet. Add your first above.'
                 : 'Nothing in ' + catOf(spendFilter, money).label + ' this month.'
             ),
+        list.length > expShown
+          ? h(
+              'button',
+              {
+                type: 'button',
+                class: 'gb-btn gb-btn--ghost gb-btn--compact gb-money-showall',
+                onclick: () => {
+                  expShown += EXP_PAGE;
+                  paint();
+                },
+              },
+              'Show more (' + (list.length - expShown) + ' left)'
+            )
+          : null,
       ],
     });
 
@@ -5166,12 +5275,13 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
                       type: 'button',
                       class: 'gb-icon-btn',
                       'aria-label': 'Delete subscription',
-                      onclick: () => {
-                        commit(
-                          (m) => (m.subscriptions = m.subscriptions.filter((x) => x.id !== s.id))
-                        );
-                        toast.success('Subscription deleted.');
-                      },
+                      onclick: () =>
+                        confirmDelete('Delete subscription', 'Delete "' + s.name + '"?', () => {
+                          commit(
+                            (m) => (m.subscriptions = m.subscriptions.filter((x) => x.id !== s.id))
+                          );
+                          toast.success('Subscription deleted.');
+                        }),
                     },
                     Icon('trash-2', { size: 15, sw: 2.4 })
                   )
@@ -5531,10 +5641,11 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
                       type: 'button',
                       class: 'gb-icon-btn',
                       'aria-label': 'Remove',
-                      onclick: () => {
-                        commit((m) => (m.wishlist = m.wishlist.filter((x) => x.id !== it.id)));
-                        toast.success('Removed from wishlist.');
-                      },
+                      onclick: () =>
+                        confirmDelete('Remove item', 'Remove "' + it.name + '" from your wishlist?', () => {
+                          commit((m) => (m.wishlist = m.wishlist.filter((x) => x.id !== it.id)));
+                          toast.success('Removed from wishlist.');
+                        }),
                     },
                     Icon('trash-2', { size: 15, sw: 2.4 })
                   )
@@ -5550,7 +5661,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
      TAB: INCOME (salary + other inflow, loans given/received)
      ================================================================= */
   function openAddIncome() {
-    const amt = h('input', { type: 'number', class: 'gb-input', min: '1', placeholder: 'e.g. 45000' });
+    const amt = h('input', { type: 'number', class: 'gb-input', inputmode: 'decimal', min: '1', placeholder: 'e.g. 45000' });
     const label = h('input', {
       type: 'text',
       class: 'gb-input',
@@ -5585,7 +5696,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
       ),
       primary: 'Add income',
       onPrimary: async () => {
-        const v = Math.round(Number(amt.value));
+        const v = readAmount(amt);
         if (!Number.isFinite(v) || v <= 0) {
           amt.focus();
           throw new Error('Enter an amount greater than zero.');
@@ -5609,7 +5720,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
 
   function openAddLoan(direction) {
     const lent = direction === 'given';
-    const amt = h('input', { type: 'number', class: 'gb-input', min: '1', placeholder: 'e.g. 2000' });
+    const amt = h('input', { type: 'number', class: 'gb-input', inputmode: 'decimal', min: '1', placeholder: 'e.g. 2000' });
     const party = h('input', {
       type: 'text',
       class: 'gb-input',
@@ -5645,7 +5756,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
       ),
       primary: 'Save',
       onPrimary: async () => {
-        const v = Math.round(Number(amt.value));
+        const v = readAmount(amt);
         if (!Number.isFinite(v) || v <= 0) {
           amt.focus();
           throw new Error('Enter an amount greater than zero.');
@@ -5674,7 +5785,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
   }
 
   function openSplitBill() {
-    const total = h('input', { type: 'number', class: 'gb-input', min: '1', placeholder: 'e.g. 2400' });
+    const total = h('input', { type: 'number', class: 'gb-input', inputmode: 'decimal', min: '1', placeholder: 'e.g. 2400' });
     const people = h('input', {
       type: 'text',
       class: 'gb-input',
@@ -5690,17 +5801,14 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
         .map((x) => x.trim())
         .filter(Boolean)
         .slice(0, 20);
-    const shares = () => splitShares(Math.round(Number(total.value)), names(), me.checked);
+    const shares = () =>
+      splitShares(Math.round(Number(total.value) * 100) / 100, names(), me.checked);
+    // Shares can carry paise; fmt() rounds to whole units, so the preview shows them exactly.
+    const exact = (v) => cur + Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 });
     const paint = () => {
       const sh = shares();
-      // Money keeps whole units everywhere; say so instead of rounding a ₹99.60 bill silently.
-      const raw = Number(total.value);
-      const rounded =
-        raw > 0 && raw !== Math.round(raw)
-          ? 'Splitting ' + fmt(raw) + ' (rounded from ' + cur + raw.toFixed(2) + '). '
-          : '';
       preview.textContent = sh.length
-        ? rounded + sh.map((x) => x.party + ' owes you ' + fmt(x.amount)).join(' · ')
+        ? sh.map((x) => x.party + ' owes you ' + exact(x.amount)).join(' · ')
         : 'Each person gets an IOU you can settle later.';
     };
     [total, people].forEach((el) => el.addEventListener('input', paint));
@@ -5723,7 +5831,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
       ),
       primary: 'Save IOUs',
       onPrimary: async () => {
-        if (!(Number(total.value) > 0)) {
+        if (!(readAmount(total) > 0)) {
           total.focus();
           throw new Error('Enter the bill total.');
         }
@@ -5753,7 +5861,6 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
     setTimeout(() => total.focus(), 60);
   }
 
-  let showAllIncome = false;
   function tabIncome() {
     const mStart = thisMonthPrefix() + '-01';
     const today = todayKey();
@@ -5908,7 +6015,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
       const soft = lent ? 'var(--leaf-50)' : 'var(--coral-50)';
       return h(
         'div',
-        { class: 'gb-money-exp-row' + (l.settled ? ' is-settled' : '') },
+        { class: 'gb-money-exp-row gb-money-loan-row' + (l.settled ? ' is-settled' : '') },
         h(
           'span',
           { class: 'gb-money-cat-ic', style: { background: soft, color: accent } },
@@ -5971,10 +6078,17 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
         )
       );
     };
-    const loans = (money.loans || []).slice().sort((a, b) => {
+    const natural = (money.loans || []).slice().sort((a, b) => {
       if (!!a.settled !== !!b.settled) return a.settled ? 1 : -1;
       return a.date < b.date ? 1 : -1;
     });
+    // Settled rows sink to the bottom, but not while the user is tapping: Settle /
+    // Undo moved the row out from under the finger. Keep the last order shown
+    // (new loans first, in natural order; sort is stable) until the list re-enters.
+    const pos = new Map((loanOrder || []).map((id, i) => [id, i]));
+    const at = (l) => (pos.has(l.id) ? pos.get(l.id) : -1);
+    const loans = loanOrder ? natural.sort((a, b) => at(a) - at(b)) : natural;
+    loanOrder = loans.map((l) => l.id);
     const loansCard = Card({
       className: 'gb-money-card',
       children: [
@@ -6101,12 +6215,13 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
                         type: 'button',
                         class: 'gb-icon-btn',
                         'aria-label': 'Delete challenge',
-                        onclick: () => {
-                          commit(
-                            (m) => (m.challenges = m.challenges.filter((x) => x.id !== ch.id))
-                          );
-                          toast.success('Challenge deleted.');
-                        },
+                        onclick: () =>
+                          confirmDelete('Delete challenge', 'Delete "' + ch.title + '"?', () => {
+                            commit(
+                              (m) => (m.challenges = m.challenges.filter((x) => x.id !== ch.id))
+                            );
+                            toast.success('Challenge deleted.');
+                          }),
                       },
                       Icon('trash-2', { size: 14, sw: 2.4 })
                     )
@@ -6251,7 +6366,14 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
             onclick: () => {
               if (activeTab === t.key) return;
               activeTab = t.key;
+              loanOrder = null; // the loan list re-enters: settled rows may sink now
               paint();
+              // The old tab's scroll position carried over, usually past the bar, so
+              // the new tab opened mid-page with its tabs off-screen.
+              const bar = root.firstElementChild;
+              const sc = root.closest('.gb-scroll');
+              const top = sc ? sc.getBoundingClientRect().top : 0;
+              if (bar && bar.getBoundingClientRect().top < top) bar.scrollIntoView({ block: 'start' });
             },
           },
           Icon(t.icon, { size: 16, sw: activeTab === t.key ? 2.5 : 2.1 }),
@@ -6286,10 +6408,20 @@ function _demo() {
   const a = console.assert;
   {
     const sh = splitShares(1000, ['A', 'B'], true);
-    a(sh.length === 2 && sh[0].amount + sh[1].amount === 1000 - 333, 'split: odd units go to others');
+    a(sh.length === 2 && Math.round((sh[0].amount + sh[1].amount) * 100) === 66667, 'split: odd paise go to others');
     a(splitShares(900, ['A', 'B'], false).every((x) => x.amount === 450), 'split without me');
     a(splitShares(0, ['A'], true).length === 0 && splitShares(100, [], true).length === 0, 'split: nothing to split');
     a(costPerUse({ amount: 200, usesPerMonth: 4 }) === 50 && costPerUse({ amount: 200 }) === null, 'cost per use');
+    const field = (value, badInput) => ({ value, validity: { badInput }, focus() {} });
+    a(readAmount(field('249.5')) === 249.5 && readAmount(field('0.1234')) === 0.12, 'amount keeps paise');
+    a(readAmount(field('')) === 0 && readAmount(field('-5')) === -5, 'amount: blank/negative left to the caller');
+    let refused = false;
+    try {
+      readAmount(field('', true));
+    } catch (_) {
+      refused = true;
+    }
+    a(refused, 'amount: an unparseable value ("1,250") is refused, not read as 0');
   }
   a(suggestCategory('Lunch at cafe') === 'food', 'suggest food');
   a(suggestCategory('Uber to office') === 'transport', 'suggest transport');

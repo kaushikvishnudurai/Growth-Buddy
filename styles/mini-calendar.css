@@ -41,12 +41,29 @@
   transition: background var(--dur-fast), color var(--dur-fast), transform var(--dur-fast);
 }
 
-.gb-mini-cal-nav-btn:hover {
-  background: var(--surface-2);
+/* Drawn at 32px; the ::before overlay makes the tap target 44px. */
+.gb-mini-cal-nav-btn {
+  position: relative;
+}
+.gb-mini-cal-nav-btn::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
 }
 
-.gb-mini-cal-nav-btn:active {
+@media (hover: hover) {
+  .gb-mini-cal-nav-btn:not(:disabled):hover {
+    background: var(--surface-2);
+  }
+}
+
+.gb-mini-cal-nav-btn:not(:disabled):active {
   transform: scale(0.95);
+}
+
+.gb-mini-cal-nav-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .gb-mini-cal-dow {
@@ -84,12 +101,23 @@
   font-size: 0.8125rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background var(--dur-fast), color var(--dur-fast), border-color var(--dur-fast);
+  transition:
+    background var(--dur-fast),
+    color var(--dur-fast),
+    border-color var(--dur-fast),
+    transform var(--dur-fast);
 }
 
-.gb-mini-cal-day:hover {
+@media (hover: hover) {
+  .gb-mini-cal-day:hover {
+    background: var(--surface-3);
+    color: var(--fg1);
+  }
+}
+
+.gb-mini-cal-day:active {
   background: var(--surface-3);
-  color: var(--fg1);
+  transform: scale(0.94);
 }
 
 .gb-mini-cal-day.is-empty {
@@ -136,14 +164,24 @@
   border-color: var(--leaf-500);
 }
 
+/* Same specificity as .has-tasks / .is-free and written before them, so on a
+   day with tasks (or a free day) today lost its ring and nothing on the grid
+   said which day it was. The fill keeps saying what is on the day; the ring
+   keeps saying "today". */
+.gb-mini-cal-day.is-today:not(.is-selected) {
+  border-color: var(--brand);
+}
+
 .gb-mini-cal-day .num {
   display: block;
 }
 
 .gb-mini-cal-day .badge {
+  /* Top corner: the bottom edge carries the 3px reminder bar, which the badge
+     sat on top of and read as hanging off the cell. */
   position: absolute;
-  right: 2px;
-  bottom: 2px;
+  top: 3px;
+  right: 3px;
   min-width: 16px;
   height: 16px;
   padding: 0 4px;

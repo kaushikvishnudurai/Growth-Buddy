@@ -9,7 +9,7 @@ protect/unprotect).
 | Method | Line | Notes |
 |---|---|---|
 | `list(userId)` | 127 | habits + streaks + freeze state, the screen's main read |
-| `create(userId, req)` | 220 | |
+| `create(userId, req)` | 281 | `icon` must be in `HABIT_ICONS` (also on update); `HabitIconsTest` keeps it in step with the JS lists |
 | `update(userId, id, req)` | 235 | |
 | `delete(userId, id)` | 266 | |
 | `checkin(userId, id, req)` | 274 | `date` defaults to today, `done` defaults to true; **recomputes `HabitStreak`** |

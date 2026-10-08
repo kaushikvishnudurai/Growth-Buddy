@@ -18,3 +18,6 @@ Class map — all `gb-mini-cal-*`:
 The `--loading` / `--error` / `-retry` states exist because the card fetches per-day food
 asynchronously (`loadCalendarFoodForDate`) and must show
 a retry affordance rather than an empty day.
+
+`.is-today:not(.is-selected)` sits after `.has-tasks` / `.is-free` on purpose: same specificity, and written before them today lost its ring on any day with tasks.
+`-nav-btn` is drawn at 32px with a `::before` overlay making the tap target 44px, and has a `:disabled` style (dimmed, no hover or press).

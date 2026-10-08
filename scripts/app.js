@@ -45,6 +45,7 @@ import {
   ledgerDiff,
   applyLedgerDiff,
   docPart,
+  LEDGER_ARRAYS,
 } from './money.js';
 import {
   ScreenCalendar,
@@ -79,7 +80,7 @@ import {
   hideNativeSplash,
 } from './native.js';
 import { registerToast } from './toast.js';
-import { initA11y } from './a11y.js';
+import { initA11y, focusLocator, refocus } from './a11y.js';
 import {
   CHIMES,
   CUSTOM_MAX_BYTES,
@@ -528,18 +529,32 @@ function persistGoalProgress() {
   // This is just a local cache for offline access.
 }
 
+/* Per goal: which save is the newest. Each PUT carries the whole merged blob,
+   so only the newest one's failure is worth rolling back — an older one's is
+   already superseded by whatever was sent after it. */
+const goalProgressSeq = {};
+
 function updateGoalProgress(goalId, patch) {
   if (!state.goalProgress) state.goalProgress = {};
   const key = String(goalId);
-  state.goalProgress[key] = Object.assign({}, state.goalProgress[key] || {}, patch);
+  const prev = state.goalProgress[key];
+  const seq = (goalProgressSeq[key] || 0) + 1;
+  goalProgressSeq[key] = seq;
+  state.goalProgress[key] = Object.assign({}, prev || {}, patch);
   persistGoalProgress();
   render();
-  // Persist the merged blob to the backend (optimistic; cache already updated).
+  // Optimistic, but not silent: a failure used to be a console line only, so
+  // the tick stayed on screen and was gone after the next reload.
   api('/api/goals/' + encodeURIComponent(goalId) + '/progress', {
     method: 'PUT',
     body: JSON.stringify(state.goalProgress[key]),
   }).catch((err) => {
-    console.error('❌ CRITICAL: updateGoalProgress failed to reach database:', err);
+    if (goalProgressSeq[key] !== seq) return;
+    if (prev) state.goalProgress[key] = prev;
+    else delete state.goalProgress[key];
+    persistGoalProgress();
+    render();
+    toastError(err, 'Could not save that progress.');
   });
 }
 
@@ -681,14 +696,46 @@ function persistMoney() {
   );
 }
 
+/* Put these items back to what the server holds: its copy, or gone if it has
+   none. A refused save used to stay in the list and the totals until a reload
+   showed it had never landed. Only these ids: the rest of the live state may
+   hold changes still on their way. */
+async function rollbackMoneyItems(ids) {
+  if (!ids.length) return;
+  const keep = new Set(ids);
+  const only = (m) => {
+    const out = {};
+    for (const arr of Object.keys(LEDGER_ARRAYS))
+      out[arr] = ((m && m[arr]) || []).filter((x) => x && keep.has(x.id));
+    return out;
+  };
+  const theirs = normalizeMoney(await api('/api/money'));
+  state.money = normalizeMoney(
+    overlayPending(applyLedgerDiff(state.money, ledgerDiff(only(state.money), only(theirs))))
+  );
+  cacheMoney();
+  render();
+}
+
+/* 4xx other than these is the server saying no to the content, which no retry
+   will change; anything else (offline, 5xx, rate limit) stays queued. */
+const RETRYABLE = new Set([401, 408, 409, 429]);
+
 async function flushLedger() {
   const p = loadPendingLedger();
   const upserts = Object.values(p.upserts);
   if (!upserts.length && !p.deletes.length) return;
-  const res = await api('/api/money/tx', {
-    method: 'POST',
-    body: JSON.stringify({ upserts, deletes: p.deletes }),
-  });
+  let res;
+  try {
+    res = await api('/api/money/tx', {
+      method: 'POST',
+      body: JSON.stringify({ upserts, deletes: p.deletes }),
+    });
+  } catch (err) {
+    if (!err || !err.status || err.status >= 500 || RETRYABLE.has(err.status)) throw err;
+    res = { rejected: upserts.map((u) => ({ id: u.id, reason: err.message })) };
+    p.deletes.forEach((id) => res.rejected.push({ id, reason: err.message }));
+  }
   // Clear only what this request carried: an edit made while it was in flight
   // is a newer version of the item and must still go.
   const now = loadPendingLedger();
@@ -706,6 +753,9 @@ async function flushLedger() {
       res.rejected.length === 1
         ? 'One entry was not saved: ' + r.reason
         : res.rejected.length + ' entries were not saved. First: ' + r.reason
+    );
+    await rollbackMoneyItems(res.rejected.map((x) => x.id)).catch((err) =>
+      console.error('Could not reload money after a refused save:', err)
     );
   }
   applyAccounts(res && res.accounts);
@@ -1051,20 +1101,54 @@ function freezeTokensLeft() {
   return Number(state.freezeTokens) || 0;
 }
 
+/* Freeze writes paint first: the habit takes `guess` and the token count moves
+   by `tokenDelta` now, the server's habit replaces both when it answers, and a
+   failure restores the two exactly. One per habit in flight, or a double tap
+   spends two tokens. Returns whether the server took it. */
+async function freezeWrite(habitId, path, date, guess, tokenDelta, errorMessage) {
+  const key = 'freeze:' + habitId;
+  if (togglesInFlight.has(key)) return false;
+  const prev = state.habits.find((x) => x.id === habitId);
+  if (!prev) return false;
+  togglesInFlight.add(key);
+  const prevTokens = state.freezeTokens;
+  state.freezeTokens = Math.max(0, freezeTokensLeft() + tokenDelta);
+  state.habits = state.habits.map((x) =>
+    x.id === habitId ? { ...x, ...guess, freezeTokens: state.freezeTokens } : x
+  );
+  render();
+  try {
+    const updated = await api('/api/habits/' + encodeURIComponent(habitId) + path, {
+      method: 'POST',
+      body: JSON.stringify({ date }),
+    });
+    state.habits = state.habits.map((x) => (x.id === updated.id ? updated : x));
+    reconcileStreakFreeze(updated);
+    render();
+    return true;
+  } catch (err) {
+    state.habits = state.habits.map((x) => (x.id === habitId ? prev : x));
+    state.freezeTokens = prevTokens;
+    reconcileStreakFreeze(prev);
+    render();
+    toastError(err, errorMessage);
+    return false;
+  } finally {
+    togglesInFlight.delete(key);
+  }
+}
+
 /* Spend a freeze to rescue yesterday's missed day and keep the streak alive. */
 async function protectStreak(habitId) {
-  try {
-    const updated = await api('/api/habits/' + encodeURIComponent(habitId) + '/protect', {
-      method: 'POST',
-      body: JSON.stringify({ date: yesterdayKey() }),
-    });
-    state.habits = state.habits.map((h) => (h.id === updated.id ? updated : h));
-    reconcileStreakFreeze(updated);
-    toastSuccess('Streak protected with a freeze.');
-    render();
-  } catch (err) {
-    toastError(err, 'Could not protect your streak.');
-  }
+  const ok = await freezeWrite(
+    habitId,
+    '/protect',
+    yesterdayKey(),
+    { atRisk: false },
+    -1,
+    'Could not protect your streak.'
+  );
+  if (ok) toastSuccess('Streak protected with a freeze.');
 }
 
 /* ---- The freeze calendar ----
@@ -1120,7 +1204,11 @@ async function openFreezeCalendar() {
     paint();
   }
 
+  // One request at a time: a double tap on a missed day sent two /protect
+  // calls before the first answered, and the grid hadn't repainted to say so.
+  let toggling = false;
   async function toggleDay(key, row) {
+    if (toggling) return;
     const covered = row && row.protectedDay;
     if (row && row.done) {
       toastError(new Error('That day is already done.'), 'Nothing to freeze.');
@@ -1130,6 +1218,7 @@ async function openFreezeCalendar() {
       toastError(new Error('No freezes left this week.'), 'Out of freezes.');
       return;
     }
+    toggling = true;
     try {
       const updated = await api(
         '/api/habits/' + encodeURIComponent(habit.id) + (covered ? '/unprotect' : '/protect'),
@@ -1143,6 +1232,8 @@ async function openFreezeCalendar() {
       await load();
     } catch (err) {
       toastError(err, covered ? 'Could not undo that.' : 'Could not freeze that day.');
+    } finally {
+      toggling = false;
     }
   }
 
@@ -1330,19 +1421,15 @@ function declineStreakBreak(habitId) {
 
 /* Proactively mark today as a rest day (spends a token), or undo it (refunds). */
 async function toggleRestDay(habitId, makeRest) {
-  try {
-    const path = makeRest ? '/protect' : '/unprotect';
-    const updated = await api('/api/habits/' + encodeURIComponent(habitId) + path, {
-      method: 'POST',
-      body: JSON.stringify({ date: todayKey() }),
-    });
-    state.habits = state.habits.map((h) => (h.id === updated.id ? updated : h));
-    reconcileStreakFreeze(updated);
-    toastSuccess(makeRest ? 'Rest day set — your streak holds.' : 'Rest day removed.');
-    render();
-  } catch (err) {
-    toastError(err, makeRest ? 'Could not set a rest day.' : 'Could not remove the rest day.');
-  }
+  const ok = await freezeWrite(
+    habitId,
+    makeRest ? '/protect' : '/unprotect',
+    todayKey(),
+    { protectedToday: makeRest },
+    makeRest ? -1 : 1,
+    makeRest ? 'Could not set a rest day.' : 'Could not remove the rest day.'
+  );
+  if (ok) toastSuccess(makeRest ? 'Rest day set — your streak holds.' : 'Rest day removed.');
 }
 
 /* ---- Trends — local daily time-series for the Report drill-down ----
@@ -1557,6 +1644,7 @@ function handleAuthExpired() {
   // Another account must not see this one's Insights, nor wait out its throttle.
   state.insightHistory = null;
   state.waterUsualHours = null;
+  loadedFor = null; // the next sign-in is a first load, not a refresh
   insightHistoryAt = 0;
   state.money = emptyMoney();
   state.streakFreeze = emptyStreakFreeze();
@@ -1652,8 +1740,12 @@ async function loadCalendarFoodForDate(dayKey, options) {
     if (state.calendarFoodLoadingFor === dayKey) {
       state.calendarFoodLoadingFor = '';
     }
-    rerenderCalendarSideIfActive();
-    rerenderHomeMiniCalendarIfActive();
+    // Only the day on screen needs its answer painted; tapping through days
+    // used to repaint the panel once more for every day already left behind.
+    if (dayKey === state.selectedDate) {
+      rerenderCalendarSideIfActive();
+      rerenderHomeMiniCalendarIfActive();
+    }
   }
 }
 
@@ -1663,13 +1755,58 @@ async function loadCalendarFoodForDate(dayKey, options) {
  * reminder text / tag / repeat survives. Falls back to a full render
  * if we can't find the panel in the DOM (different screen, first paint).
  */
+/* Coalesced: one tap on a day used to repaint the panel two or three times in
+   the same tick (the selection, then the food fetch flagging "loading"). Every
+   caller in a tick now shares one repaint, run before the frame is drawn. */
+let sideRepaintQueued = false;
+// Read when the repaint was asked for: addReminder's finally has cleared
+// addingReminder by the time the microtask runs.
+let sideRepaintForAdd = false;
 function rerenderCalendarSideIfActive() {
+  if (state.screen !== 'calendar') return;
+  if (addingReminder) sideRepaintForAdd = true;
+  if (sideRepaintQueued) return;
+  sideRepaintQueued = true;
+  queueMicrotask(() => {
+    sideRepaintQueued = false;
+    const forAdd = sideRepaintForAdd;
+    sideRepaintForAdd = false;
+    repaintCalendarSideNow(forAdd);
+  });
+}
+
+/* The panel a repaint is waiting on while someone types in it. */
+let sideDeferredFor = null;
+
+function repaintCalendarSideNow(forAdd) {
   if (state.screen !== 'calendar') return;
   const oldSide = document.querySelector('.gb-cal-side');
   if (!oldSide || !RenderCalendarSide) {
     render();
     return;
   }
+  // The reminder form is one cached node that moves into the new panel, and
+  // moving a focused input out of the page blurs it: the keyboard dropped
+  // mid-word whenever a day's food answered. While a field in the panel has
+  // focus, a repaint waits until focus leaves the panel. Adding a reminder is
+  // the exception, since its list has to show the new row; it gets its focus
+  // back below.
+  const active = document.activeElement;
+  const hadFocus = oldSide.contains(active);
+  if (hadFocus && !forAdd && active.matches('input, textarea, select')) {
+    if (sideDeferredFor !== oldSide) {
+      sideDeferredFor = oldSide;
+      const onOut = (e) => {
+        if (e.relatedTarget && oldSide.contains(e.relatedTarget)) return;
+        oldSide.removeEventListener('focusout', onOut);
+        sideDeferredFor = null;
+        rerenderCalendarSideIfActive();
+      };
+      oldSide.addEventListener('focusout', onOut);
+    }
+    return;
+  }
+  const focusKey = hadFocus ? focusLocator(active, oldSide) : null;
   const newSide = RenderCalendarSide({
     selectedDate: state.selectedDate,
     reminders: state.reminders,
@@ -1687,16 +1824,50 @@ function rerenderCalendarSideIfActive() {
     onSaveRoutine: saveRoutine,
     whatsappEnabled: !!(state.user && state.user.whatsappEnabled),
   });
+  // While the day's food is loading, the panel keeps the height it had: the
+  // one-line "Loading" stand-in collapsed it and the answer grew it back.
+  if (state.calendarFoodLoadingFor === state.selectedDate) {
+    newSide.style.minHeight = oldSide.offsetHeight + 'px';
+  }
   oldSide.replaceWith(newSide);
   refreshIcons();
+  if (forAdd && (hadFocus || active === document.body)) {
+    // After an add the caret goes back to the reminder text, cleared and ready
+    // for the next one. It used to land nowhere: the Add button disables itself
+    // while saving, which drops focus, and the panel swap blurred the input.
+    newSide.querySelector('input[aria-label="Reminder text"]')?.focus({ preventScroll: true });
+  } else if (hadFocus) {
+    // The cached form is the same node, now in the new panel: focus it again.
+    // Anything else, by locator.
+    if (newSide.contains(active)) active.focus({ preventScroll: true });
+    else refocus(focusKey, newSide);
+  }
 }
 
+/* Coalesced like the calendar side panel above: a tap on a day asked for the
+   selection, then for the food fetch's "loading", in the same tick, and the
+   card was rebuilt each time. Callers in a tick share one rebuild; the answer
+   to true/false ("is there a card to repaint?") is still given synchronously. */
+let homeMiniRepaintQueued = false;
 function rerenderHomeMiniCalendarIfActive() {
   if (state.screen !== 'home') return false;
-  const oldCard = document.querySelector('.gb-mini-cal-card');
-  if (!oldCard || !RenderMiniCalendarCard) {
+  if (!document.querySelector('.gb-mini-cal-card') || !RenderMiniCalendarCard) {
     return false;
   }
+  if (!homeMiniRepaintQueued) {
+    homeMiniRepaintQueued = true;
+    queueMicrotask(() => {
+      homeMiniRepaintQueued = false;
+      repaintHomeMiniCalendarNow();
+    });
+  }
+  return true;
+}
+
+function repaintHomeMiniCalendarNow() {
+  if (state.screen !== 'home') return;
+  const oldCard = document.querySelector('.gb-mini-cal-card');
+  if (!oldCard) return;
   const fresh = RenderMiniCalendarCard({
     tasks: state.tasks,
     reminders: state.reminders,
@@ -1713,7 +1884,6 @@ function rerenderHomeMiniCalendarIfActive() {
   });
   oldCard.replaceWith(fresh);
   refreshIcons();
-  return true;
 }
 
 /**
@@ -1747,13 +1917,22 @@ async function loadData() {
   if (!state.user) {
     return;
   }
-  // Refreshing on /family used to run quote card -> family skeleton -> family:
-  // the boot screen was waiting on five calls that screen never reads. Screens
-  // that fetch their own data paint immediately instead, and wave 1 lands
-  // behind them.
-  state.loading = !SELF_LOADING_SCREENS.has(state.screen);
-  state.error = '';
-  render();
+  // A refresh (back online, pull to refresh, Quick add) keeps the screen up and
+  // repaints it in place; only the first load for this account shows the
+  // loading card, and only that one can end on the crash card. Coming back
+  // online used to swap the whole screen for the quote, then for the crash card
+  // if any one of the five calls failed.
+  const userKey = state.user.id || state.user.email;
+  const refresh = loadedFor === userKey && !state.error;
+  if (!refresh) {
+    // Refreshing on /family used to run quote card -> family skeleton -> family:
+    // the boot screen was waiting on five calls that screen never reads. Screens
+    // that fetch their own data paint immediately instead, and wave 1 lands
+    // behind them.
+    state.loading = !SELF_LOADING_SCREENS.has(state.screen);
+    state.error = '';
+    render();
+  }
   // Not awaited, and deliberately not in wave 2: the quote is the only thing on
   // the loading screen that isn't a grey box, and wave 2 doesn't start until all
   // five wave-1 calls have landed — so on a slow connection the request wasn't
@@ -1777,12 +1956,17 @@ async function loadData() {
     reSyncDeviceAlarms();
     loadWaterUsualHours();
   } catch (err) {
+    if (refresh) {
+      toastError(err, 'Could not refresh. Showing your last data.');
+      return;
+    }
     state.error = err.message || 'Failed to load data from backend.';
     state.loading = false;
     render();
     return;
   }
   state.loading = false;
+  loadedFor = userKey;
   // <- first paint happens here, on five calls instead of twelve. Unless we're
   // still on a self-loading screen, which painted at the top of this function:
   // re-rendering would rebuild its subtree and restart its own fetch.
@@ -1795,6 +1979,8 @@ async function loadData() {
    survive a render() they didn't ask for. Mentor is deliberately absent — it
    has no loading paint of its own, so it keeps `mentorSkeleton()`. */
 const SELF_LOADING_SCREENS = new Set(['family', 'circle']);
+/* The account whose wave 1 has landed: a loadData() for it is a refresh. */
+let loadedFor = null;
 
 /* Quote of the day. Own function because it's the one call that starts before
    wave 1 rather than after it. */
@@ -2009,9 +2195,19 @@ function toggleSignature() {
 
 /* Paint the tick, then tell the server. The round trip is three calls deep
    (toggle -> score -> /me), so awaiting it left the checkbox looking dead for
-   most of a second. `before` is the rollback if any of them fails. */
+   most of a second. A failed toggle flips just that row back. */
+/* One toggle per row in flight. A second tap before the first answered sent a
+   second PATCH .../toggle; whichever response landed last won, so the row could
+   settle opposite to the server, and a failed first call's rollback wiped the
+   second tap too. A tap that's ignored here leaves Check's own guess un-rendered,
+   and Check takes that back itself. */
+const togglesInFlight = new Set();
+
 async function toggleTask(id) {
-  const before = { tasks: state.tasks, score: state.score };
+  if (togglesInFlight.has(id)) return;
+  togglesInFlight.add(id);
+  const before = { score: state.score };
+  let saved = false; // past this, the server has the tick: a failed score refresh mustn't undo it
   state.tasks = state.tasks.map((t) => (t.id === id ? { ...t, done: !t.done } : t));
   state.score = optimisticScore();
   render();
@@ -2025,15 +2221,23 @@ async function toggleTask(id) {
     });
     const painted = toggleSignature();
     state.tasks = state.tasks.map((t) => (t.id === updated.id ? mapTask(updated) : t));
+    saved = true;
     const todayScore = await api('/api/score/today');
     state.score = todayScore && typeof todayScore.score === 'number' ? todayScore.score : score();
     await refreshCurrentUser();
     if (toggleSignature() !== painted) render();
   } catch (err) {
-    state.tasks = before.tasks;
+    if (saved) {
+      render();
+      return;
+    }
+    // Only this row: restoring the whole array undid any other row ticked meanwhile.
+    state.tasks = state.tasks.map((t) => (t.id === id ? { ...t, done: !t.done } : t));
     state.score = before.score;
     render();
     toastError(err, 'Could not toggle task.');
+  } finally {
+    togglesInFlight.delete(id);
   }
 }
 
@@ -2106,7 +2310,10 @@ function openMeasuredCheckin(habit) {
 }
 
 async function plainToggleHabit(id) {
-  const before = { habits: state.habits, score: state.score };
+  if (togglesInFlight.has(id)) return;
+  togglesInFlight.add(id);
+  const before = { score: state.score };
+  let saved = false;
   state.habits = state.habits.map((h) => (h.id === id ? { ...h, doneToday: !h.doneToday } : h));
   state.score = optimisticScore();
   render();
@@ -2117,6 +2324,7 @@ async function plainToggleHabit(id) {
     });
     const painted = toggleSignature();
     state.habits = state.habits.map((h) => (h.id === updated.id ? updated : h));
+    saved = true;
     reconcileStreakFreeze(updated);
     const todayScore = await api('/api/score/today');
     state.score = todayScore && typeof todayScore.score === 'number' ? todayScore.score : score();
@@ -2124,11 +2332,18 @@ async function plainToggleHabit(id) {
     if (toggleSignature() !== painted) render();
     reSyncDeviceAlarms();
   } catch (err) {
-    state.habits = before.habits;
+    if (saved) {
+      render();
+      reSyncDeviceAlarms();
+      return;
+    }
+    state.habits = state.habits.map((h) => (h.id === id ? { ...h, doneToday: !h.doneToday } : h));
     state.score = before.score;
     render();
     toastError(err, 'Could not toggle habit.');
     reSyncDeviceAlarms();
+  } finally {
+    togglesInFlight.delete(id);
   }
 }
 
@@ -2139,6 +2354,16 @@ async function refreshScore() {
   } catch (_) {
     /* silent */
   }
+}
+
+/* The ring is the only thing a create changes besides its own list, so a
+   dialog closes on the create and the score lands after it. Awaiting it held
+   every New task / habit / goal dialog open for a second round trip. */
+function refreshScoreLater() {
+  const before = state.score;
+  refreshScore().then(() => {
+    if (state.score !== before) render();
+  });
 }
 
 async function refreshCurrentUser() {
@@ -2157,7 +2382,7 @@ async function createTask(body) {
   });
   state.tasks = [mapTask(created), ...state.tasks];
   landSoon('[data-task-id="' + created.id + '"]');
-  await refreshScore();
+  refreshScoreLater();
 }
 
 async function updateTask(id, body) {
@@ -2167,7 +2392,41 @@ async function updateTask(id, body) {
   });
   state.tasks = state.tasks.map((t) => (t.id === updated.id ? mapTask(updated) : t));
   landSoon('[data-task-id="' + updated.id + '"]');
-  await refreshScore();
+  refreshScoreLater();
+}
+
+/* A one-field change to a task painted before it is sent (pause, snooze): the
+   button used to sit there for the round trip. A second change to the same task
+   while one is in flight is dropped; a failure puts back just that task. */
+async function patchTaskNow(id, patch, errorMessage) {
+  const key = 'patch:' + id;
+  if (togglesInFlight.has(key)) return false;
+  const prev = state.tasks.find((t) => t.id === id);
+  if (!prev) return false;
+  togglesInFlight.add(key);
+  state.tasks = state.tasks.map((t) => (t.id === id ? mapTask({ ...t, ...patch }) : t));
+  render();
+  try {
+    const updated = await api('/api/tasks/' + encodeURIComponent(id), {
+      method: 'PUT',
+      body: JSON.stringify(patch),
+    });
+    state.tasks = state.tasks.map((t) => (t.id === updated.id ? mapTask(updated) : t));
+    render();
+    refreshScoreLater();
+    return true;
+  } catch (err) {
+    state.tasks = state.tasks.map((t) => (t.id === id ? prev : t));
+    render();
+    toastError(err, errorMessage);
+    return false;
+  } finally {
+    togglesInFlight.delete(key);
+  }
+}
+
+function pauseTask(task) {
+  return patchTaskNow(task.id, { paused: !task.paused }, 'Could not update task.');
 }
 
 async function deleteTask(id) {
@@ -2184,7 +2443,7 @@ async function createHabit(body) {
     body: JSON.stringify(body),
   });
   state.habits = [created, ...state.habits];
-  await refreshScore();
+  refreshScoreLater();
   reSyncDeviceAlarms();
 }
 
@@ -2323,14 +2582,48 @@ async function createGoal(body) {
     method: 'POST',
     body: JSON.stringify(body),
   });
-  await loadGoals();
+  // The POST answers with the goal, so place it (newest first, as /api/goals
+  // sorts) instead of holding the dialog open for a full reload.
+  const sec = (state.goals || []).find((x) => x.horizon === created.horizon);
+  if (sec) sec.goals = [created, ...(sec.goals || [])];
+  else loadGoals();
   toastSuccess('Goal saved.');
   return created;
 }
 
+/* Called straight from Goals' "Mark done" button, with nobody awaiting it: a
+   failure was an unhandled rejection with no word to the user, and a second tap
+   before the reload landed toggled the goal straight back. */
+const goalTogglesInFlight = new Set();
+
+/* Swap one goal inside the horizon sections. */
+function mapGoal(id, fn) {
+  state.goals = (state.goals || []).map((sec) => ({
+    ...sec,
+    goals: (sec.goals || []).map((g) => (g.id === id ? fn(g) : g)),
+  }));
+}
+
+/* Paint first: it used to wait on the toggle and then a full /api/goals reload.
+   The toggle answers with the whole goal, so that is all the reconcile needs. */
 async function toggleGoal(id) {
-  await api('/api/goals/' + encodeURIComponent(id) + '/toggle', { method: 'PATCH' });
-  await loadGoals();
+  if (goalTogglesInFlight.has(id)) return;
+  goalTogglesInFlight.add(id);
+  mapGoal(id, (g) => ({ ...g, completed: !g.completed }));
+  render();
+  try {
+    const updated = await api('/api/goals/' + encodeURIComponent(id) + '/toggle', {
+      method: 'PATCH',
+    });
+    if (updated && updated.id) mapGoal(id, () => updated);
+    render();
+  } catch (err) {
+    mapGoal(id, (g) => ({ ...g, completed: !g.completed }));
+    render();
+    toastError(err, 'Could not update that goal.');
+  } finally {
+    goalTogglesInFlight.delete(id);
+  }
 }
 
 async function deleteGoal(id) {
@@ -2375,16 +2668,57 @@ async function deleteHabit(id) {
   reSyncDeviceAlarms();
 }
 
+/* Paint the glass at once, then POST. Each accepted tap is its own entry (two
+   deliberate +250s are 500 ml), but the same button again inside WATER_DOUBLE_TAP_MS
+   is a finger bounce, not a second glass: that used to log twice. Taps still in
+   flight are laid back over each server answer so one landing doesn't wipe the other. */
+const WATER_DOUBLE_TAP_MS = 600;
+const pendingWater = new Map(); // temp id -> amountMl
+let lastWaterTap = { amount: 0, at: 0 };
+let waterSeq = 0;
+
+function withPendingWater(water) {
+  const w = water || {};
+  let consumedMl = w.consumedMl || 0;
+  const entries = [...(w.entries || [])];
+  pendingWater.forEach((amountMl, id) => {
+    consumedMl += amountMl;
+    entries.push({ id, amountMl, loggedAt: new Date().toISOString() });
+  });
+  return { ...w, consumedMl, entries };
+}
+
 async function quickAddWater(amountMl) {
+  const now = Date.now();
+  if (lastWaterTap.amount === amountMl && now - lastWaterTap.at < WATER_DOUBLE_TAP_MS) return;
+  lastWaterTap = { amount: amountMl, at: now };
+  const tempId = 'pending-' + ++waterSeq;
+  pendingWater.set(tempId, amountMl);
+  const w0 = state.water || {};
+  state.water = {
+    ...w0,
+    consumedMl: (w0.consumedMl || 0) + amountMl,
+    entries: [...(w0.entries || []), { id: tempId, amountMl, loggedAt: new Date().toISOString() }],
+  };
+  render();
   try {
     const updated = await api('/api/water/entries', {
       method: 'POST',
       body: JSON.stringify({ amountMl: amountMl }),
     });
-    state.water = updated;
+    pendingWater.delete(tempId);
+    state.water = withPendingWater(updated);
     render();
     invalidateWeek('water');
   } catch (err) {
+    pendingWater.delete(tempId);
+    const w = state.water || {};
+    state.water = {
+      ...w,
+      consumedMl: Math.max(0, (w.consumedMl || 0) - amountMl),
+      entries: (w.entries || []).filter((e) => e.id !== tempId),
+    };
+    render();
     toastError(err, 'Could not log water right now.');
   }
 }
@@ -2425,39 +2759,37 @@ function removeSoon(selector, drop) {
   }, AFTER_DIALOG);
 }
 
+/* Throws on failure. The Log food dialog stays open only when its onPrimary
+   throws; catching here closed it over an entry that never saved. */
 async function logFoodEntry(payload) {
   const before = new Set(((state.food && state.food.entries) || []).map((e) => e.id));
-  try {
-    const updated = await api('/api/food/entries', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
-    // The summary that comes back belongs to the entry's own day. Backdate one
-    // and that is not today — `state.food` drives the Home card, so only today's
-    // may land there. The date-keyed cache below takes every day, which is what
-    // the Calendar reads.
-    const forToday = !updated || !updated.date || updated.date === todayKeyNow();
-    if (forToday) state.food = updated;
-    cacheFoodSummary(updated);
-    render();
-    const added = forToday && (updated.entries || []).find((e) => !before.has(e.id));
-    if (added) landSoon('[data-food-id="' + added.id + '"]');
-    invalidateWeek('food');
-    toastSuccess(
-      forToday
-        ? 'Food logged.'
-        : // 'T12:00' so the string parses as local noon — bare 'YYYY-MM-DD' is
-          // UTC midnight, which renders as the day before west of Greenwich.
-          'Food logged for ' +
-            new Date(updated.date + 'T12:00').toLocaleDateString(undefined, {
-              month: 'short',
-              day: 'numeric',
-            }) +
-            '.'
-    );
-  } catch (err) {
-    toastError(err, 'Could not log food right now.');
-  }
+  const updated = await api('/api/food/entries', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  // The summary that comes back belongs to the entry's own day. Backdate one
+  // and that is not today — `state.food` drives the Home card, so only today's
+  // may land there. The date-keyed cache below takes every day, which is what
+  // the Calendar reads.
+  const forToday = !updated || !updated.date || updated.date === todayKeyNow();
+  if (forToday) state.food = updated;
+  cacheFoodSummary(updated);
+  render();
+  const added = forToday && (updated.entries || []).find((e) => !before.has(e.id));
+  if (added) landSoon('[data-food-id="' + added.id + '"]');
+  invalidateWeek('food');
+  toastSuccess(
+    forToday
+      ? 'Food logged.'
+      : // 'T12:00' so the string parses as local noon — bare 'YYYY-MM-DD' is
+        // UTC midnight, which renders as the day before west of Greenwich.
+        'Food logged for ' +
+          new Date(updated.date + 'T12:00').toLocaleDateString(undefined, {
+            month: 'short',
+            day: 'numeric',
+          }) +
+          '.'
+  );
 }
 
 /* Full-screen "Estimating calories" while a food save runs: food drops onto a
@@ -2819,25 +3151,48 @@ function openAddFood() {
   const foodNameInput = h('input', {
     type: 'text',
     class: 'gb-input',
-    placeholder: 'e.g. Paneer butter masala',
+    placeholder: 'e.g. Rava dosa with chutney',
     maxlength: 255,
+    'aria-label': 'Food',
   });
+  // Pieces or grams: nobody weighs dosas, but a packet says grams. Pieces is
+  // the default because it's what most plates are counted in.
+  const UNITS = {
+    pcs: { min: 1, max: 30, placeholder: '2', name: 'pieces' },
+    g: { min: 10, max: 2000, placeholder: '180', name: 'grams' },
+  };
   const quantityInput = h('input', {
     type: 'number',
-    class: 'gb-input',
-    placeholder: 'e.g. 180 (optional)',
-    min: '10',
-    max: '2000',
+    inputmode: 'numeric',
+    placeholder: UNITS.pcs.placeholder,
+    min: String(UNITS.pcs.min),
+    max: String(UNITS.pcs.max),
     step: '1',
+    'aria-label': 'Amount in pieces',
   });
+  const unitSeg = segmented(
+    [
+      { value: 'pcs', label: 'pcs' },
+      { value: 'g', label: 'g' },
+    ],
+    'pcs',
+    (u) => {
+      quantityInput.placeholder = UNITS[u].placeholder;
+      quantityInput.min = String(UNITS[u].min);
+      quantityInput.max = String(UNITS[u].max);
+      quantityInput.setAttribute('aria-label', 'Amount in ' + UNITS[u].name);
+      quantityInput.focus();
+    }
+  );
+  unitSeg.node.setAttribute('aria-label', 'Unit');
   // Calories, typed. Everything else on this form feeds an estimator; this one
   // overrides it. Someone holding the packet knows the number better than any
   // guess we can make from a food name, and a manual entry costs no lookup and
   // no AI call.
   const kcalInput = h('input', {
     type: 'number',
-    class: 'gb-input',
-    placeholder: 'e.g. 320 — leave blank to estimate',
+    inputmode: 'numeric',
+    placeholder: 'Auto',
     min: '1',
     max: '5000',
     step: '1',
@@ -2845,21 +3200,15 @@ function openAddFood() {
   });
   const platePhotoInput = h('input', {
     type: 'file',
-    class: 'gb-input',
     accept: 'image/*',
     capture: 'environment',
+    hidden: true,
   });
 
   const itemsContainer = h('div', {
     class: 'gb-food-items-container',
     style: { marginTop: '16px', display: 'none' },
   });
-
-  const photoHint = h(
-    'div',
-    { style: { fontSize: '0.75rem', color: 'var(--fg3)' } },
-    'Optional: upload a plate photo to detect multiple items automatically.'
-  );
 
   async function readImageDataUrl(file) {
     return new Promise((resolve, reject) => {
@@ -3049,59 +3398,81 @@ function openAddFood() {
     'aria-label': 'Day this food was eaten',
   });
 
+  // The scan starts as soon as a photo is picked: choosing one and then also
+  // pressing "Analyze" was two taps for one intent.
+  const photoBtn = h(
+    'button',
+    {
+      type: 'button',
+      class: 'gb-btn gb-btn--secondary gb-food-photo-btn',
+      onclick: () => platePhotoInput.click(),
+    },
+    Icon('camera', { size: 16, sw: 2.2 }),
+    'Scan a plate photo instead'
+  );
+  platePhotoInput.addEventListener('change', async () => {
+    if (!platePhotoInput.files || !platePhotoInput.files[0]) return;
+    // One estimate at a time: a second tap mid-call used to send the photo twice.
+    const done = setThinking(photoBtn, 'Looking at your plate');
+    try {
+      await estimateFromPhoto();
+    } catch {
+      const safeMsg = 'Could not analyze photo. Please enter manually.';
+      toastError({ message: safeMsg }, safeMsg);
+    } finally {
+      done();
+      platePhotoInput.value = ''; // picking the same photo again must fire again
+    }
+  });
+
+  const field = (label, control) =>
+    h('label', { class: 'gb-food-field' }, h('span', { class: 'gb-field-label' }, label), control);
+
   const body = h(
     'div',
-    { class: 'gb-form' },
-    h('div', { class: 'gb-field-label' }, 'Day'),
-    dateInput,
-    h('div', { class: 'gb-field-label' }, 'Meal type'),
-    mealTypeSeg.node,
-    h('div', { class: 'gb-field-label' }, 'Food name (or photo)'),
-    foodNameInput,
-    h('div', { class: 'gb-field-label' }, 'Quantity (grams, optional)'),
-    quantityInput,
-    h('div', { class: 'gb-field-label' }, 'Calories (optional)'),
-    kcalInput,
+    { class: 'gb-form gb-food-form' },
     h(
       'div',
-      { class: 'gb-field-hint' },
-      'Know the number? Type it and we\u2019ll use it exactly. Leave it blank and we\u2019ll estimate.'
+      { class: 'gb-food-pair' },
+      field('Day', dateInput),
+      h(
+        'div',
+        { class: 'gb-food-field' },
+        h('span', { class: 'gb-field-label' }, 'Meal'),
+        mealTypeSeg.node
+      )
     ),
-    h('div', { class: 'gb-field-label' }, 'Plate photo (optional)'),
+    field('Food', foodNameInput),
+    photoBtn,
     platePhotoInput,
-    h(
-      'button',
-      {
-        type: 'button',
-        class: 'gb-btn gb-btn--secondary gb-btn--compact',
-        onclick: async (e) => {
-          // One estimate at a time: a second tap mid-call used to send the photo twice.
-          const done = setThinking(e.currentTarget, 'Looking at your plate');
-          try {
-            await estimateFromPhoto();
-          } catch {
-            const safeMsg = 'Could not analyze photo. Please enter manually.';
-            toastError({ message: safeMsg }, safeMsg);
-          } finally {
-            done();
-          }
-        },
-      },
-      'Analyze photo'
-    ),
-    photoHint,
     itemsContainer,
     h(
       'div',
-      { style: { fontSize: '0.75rem', color: 'var(--fg3)', marginTop: '8px' } },
-      'No grams needed \u2014 we estimate from the food name and an optional photo. Typed calories always win.'
+      { class: 'gb-food-pair' },
+      h(
+        'div',
+        { class: 'gb-food-field' },
+        h('span', { class: 'gb-field-label' }, 'Amount'),
+        h('div', { class: 'gb-affix' }, quantityInput, unitSeg.node)
+      ),
+      field(
+        'Calories',
+        h('div', { class: 'gb-affix' }, kcalInput, h('span', { class: 'gb-affix-unit' }, 'kcal'))
+      )
+    ),
+    h(
+      'div',
+      { class: 'gb-field-hint gb-food-hint' },
+      'Leave either blank and we\u2019ll estimate it. Typed calories are used exactly.'
     )
   );
 
+  const loggedItems = new Set();
   openModal({
     title: 'Log food',
     body,
     primary: 'Add food',
+    errorMessage: 'Could not log food right now.',
     onPrimary: async () => {
       let entriesToAdd = [];
       const mealType = mealTypeSeg.get();
@@ -3109,7 +3480,8 @@ function openAddFood() {
       // If we have photo items, use them
       if (photoItems.length > 0) {
         const loggedAtNow = loggedAtFor(dateInput.value);
-        entriesToAdd = photoItems.map((item) => ({
+        entriesToAdd = photoItems.filter((item) => !loggedItems.has(item)).map((item) => ({
+          item,
           foodName: item.foodName,
           quantityGrams: item.quantityGrams,
           mealType: mealType,
@@ -3120,17 +3492,20 @@ function openAddFood() {
         // Otherwise use manual input
         const foodName = foodNameInput.value.trim();
         const quantityRaw = quantityInput.value ? Number(quantityInput.value) : null;
+        const unit = UNITS[unitSeg.get()];
         if (!foodName) {
           foodNameInput.focus();
           throw new Error('Food name or photo is required');
         }
         if (
           quantityRaw != null &&
-          (!Number.isFinite(quantityRaw) || quantityRaw < 10 || quantityRaw > 2000)
+          (!Number.isFinite(quantityRaw) || quantityRaw < unit.min || quantityRaw > unit.max)
         ) {
           quantityInput.focus();
-          throw new Error('Quantity must be between 10 and 2000 grams.');
+          throw new Error('Amount must be ' + unit.min + ' to ' + unit.max + ' ' + unit.name + '.');
         }
+        const pieces = quantityRaw != null && unit === UNITS.pcs ? Math.round(quantityRaw) : null;
+        const grams = quantityRaw != null && unit === UNITS.g ? Math.round(quantityRaw) : null;
         const kcalRaw = kcalInput.value ? Number(kcalInput.value) : null;
         // The ceiling is one meal, not one day — a typed 50,000 is a slipped
         // finger. Say so here rather than letting the server answer 400.
@@ -3141,7 +3516,8 @@ function openAddFood() {
         entriesToAdd = [
           {
             foodName: foodName,
-            quantityGrams: quantityRaw != null ? Math.round(quantityRaw) : null,
+            quantityGrams: grams,
+            pieces,
             mealType: mealType,
             kcal: kcalRaw != null ? Math.round(kcalRaw) : null,
             loggedAt: loggedAtFor(dateInput.value),
@@ -3154,8 +3530,10 @@ function openAddFood() {
       // screen rather than a busy button.
       const hideLoader = showFoodLoader(entriesToAdd.map((e) => e.foodName).join(', '));
       try {
-        for (const entry of entriesToAdd) {
+        for (const { item, ...entry } of entriesToAdd) {
           await logFoodEntry(entry);
+          // A later item failing keeps the dialog open; a retry must not log this one twice.
+          if (item) loggedItems.add(item);
         }
       } finally {
         hideLoader();
@@ -3172,17 +3550,30 @@ function openAddFood() {
   setTimeout(() => foodNameInput.focus(), 60);
 }
 
-async function deleteWaterEntry(entryId) {
-  try {
-    const updated = await api('/api/water/entries/' + entryId, {
-      method: 'DELETE',
-    });
-    state.water = updated;
-    render();
-    invalidateWeek('water');
-  } catch (err) {
-    toastError(err, 'Could not delete water entry.');
-  }
+/* A second tap on a row's delete before the first answered sent a second
+   DELETE, which 404'd and toasted "Could not delete" over a delete that worked. */
+const entryDeletesInFlight = new Set();
+
+/* Both row deletes ask first: they were one tap on a small x with no way back.
+   ponytail: confirm, not an Undo toast; toasts carry no action yet. */
+function deleteWaterEntry(entryId) {
+  // Still in flight from quickAddWater: there is no server id to delete yet.
+  if (pendingWater.has(entryId)) return;
+  confirmDelete('Delete this water entry?', async () => {
+    const key = 'water:' + entryId;
+    if (entryDeletesInFlight.has(key)) return;
+    entryDeletesInFlight.add(key);
+    try {
+      const updated = await api('/api/water/entries/' + entryId, {
+        method: 'DELETE',
+      });
+      state.water = withPendingWater(updated);
+      invalidateWeek('water');
+      render();
+    } finally {
+      entryDeletesInFlight.delete(key);
+    }
+  });
 }
 
 /* The Summary screen's data. Fetched when the screen opens, not at boot: the
@@ -3243,20 +3634,24 @@ async function runDietCheck() {
   render();
 }
 
-async function deleteFoodEntry(entryId) {
-  try {
-    const updated = await api('/api/food/entries/' + entryId, {
-      method: 'DELETE',
-    });
-    state.food = updated;
-    cacheFoodSummary(updated);
-    render();
-    invalidateWeek('food');
-    toastSuccess('Food entry deleted.');
-  } catch (err) {
-    render(); // the row already left (FoodCard plays leave() first): bring it back
-    toastError(err, 'Could not delete food entry.');
-  }
+function deleteFoodEntry(entryId) {
+  confirmDelete('Delete this food entry?', async () => {
+    const key = 'food:' + entryId;
+    if (entryDeletesInFlight.has(key)) return;
+    entryDeletesInFlight.add(key);
+    try {
+      const updated = await api('/api/food/entries/' + entryId, {
+        method: 'DELETE',
+      });
+      invalidateWeek('food');
+      removeSoon('[data-food-id="' + entryId + '"]', () => {
+        state.food = updated;
+        cacheFoodSummary(updated);
+      });
+    } finally {
+      entryDeletesInFlight.delete(key);
+    }
+  });
 }
 
 /* ---- Notification handlers ---- */
@@ -3273,15 +3668,22 @@ async function refreshNotifications() {
   }
 }
 
+/* Read at once, then told to the server; a failure puts the dot back and says
+   so. The tap used to wait out the PATCH and fail with a console line only.
+   An already-read row (or one in flight) sends nothing. */
 async function markNotificationRead(id) {
+  const prev = state.notifications.find((n) => n.id === id);
+  if (!prev || prev.readAt) return;
+  const setRead = (readAt) => {
+    state.notifications = state.notifications.map((n) => (n.id === id ? { ...n, readAt } : n));
+    repaintOverlays();
+  };
+  setRead(new Date().toISOString());
   try {
     await api('/api/notifications/' + encodeURIComponent(id) + '/read', { method: 'PATCH' });
-    state.notifications = state.notifications.map((n) =>
-      n.id === id ? { ...n, readAt: new Date().toISOString() } : n
-    );
-    repaintOverlays();
   } catch (err) {
-    console.warn(err);
+    setRead(null);
+    toastError(err, 'Could not mark that as read.');
   }
 }
 
@@ -3296,7 +3698,7 @@ async function respondMentorshipRequest(requestId, notifId, accept) {
     // Backend deletes the request-bell entry on accept/reject. Drop it
     // optimistically here so the UI doesn't flash a stale row.
     state.notifications = state.notifications.filter((n) => n.id !== notifId);
-    render();
+    repaintOverlays(); // the bell only: rebuilding the screen behind it reset whatever it held
     // Re-fetch in case the server-side delete also created new rows.
     await refreshNotifications();
   } catch (err) {
@@ -4262,7 +4664,10 @@ function securitySection() {
                     type: 'button',
                     class: 'gb-btn gb-btn--ghost gb-btn--compact',
                     onclick: async (e) => {
-                      e.target.disabled = true;
+                      const btn = e.currentTarget;
+                      if (btn.disabled) return;
+                      btn.disabled = true;
+                      btn.textContent = 'Signing out…';
                       try {
                         await api('/api/auth/sessions/' + encodeURIComponent(s.id), {
                           method: 'DELETE',
@@ -4270,6 +4675,9 @@ function securitySection() {
                         toastSuccess('Signed out that device.');
                         loadSessions();
                       } catch (err) {
+                        // It stayed disabled after a failure, so a retry meant reopening Settings.
+                        btn.disabled = false;
+                        btn.textContent = 'Sign out';
                         toastError(err, 'Could not sign out that device.');
                       }
                     },
@@ -4764,6 +5172,9 @@ function openProfileSettings(initialTab) {
           role: 'switch',
           'aria-checked': String(waEnabled),
           onclick: async () => {
+            // Two PUTs in flight raced, and the later answer could be the older value.
+            if (waToggle.disabled) return;
+            waToggle.disabled = true;
             waEnabled = !waEnabled;
             waToggle.classList.toggle('is-on', waEnabled);
             waToggle.setAttribute('aria-checked', String(waEnabled));
@@ -4781,6 +5192,8 @@ function openProfileSettings(initialTab) {
               waToggle.classList.toggle('is-on', waEnabled);
               waToggle.setAttribute('aria-checked', String(waEnabled));
               toastError(err, 'Could not update WhatsApp settings.');
+            } finally {
+              waToggle.disabled = false;
             }
           },
         },
@@ -5482,7 +5895,14 @@ function openProfileSettings(initialTab) {
         ),
       };
 
-      await saveProfileDetails(profilePayload);
+      // openModal already disables Done for the wait; say what it is waiting on.
+      const doneBtn = body.closest('.gb-modal')?.querySelector(':scope > .gb-btn--primary');
+      if (doneBtn) doneBtn.textContent = 'Saving…';
+      try {
+        await saveProfileDetails(profilePayload);
+      } finally {
+        if (doneBtn) doneBtn.textContent = 'Done';
+      }
     },
   });
 }
@@ -5742,8 +6162,43 @@ function loadInsightHistory() {
       if (hist[i]) habits[x.id] = hist[i];
     });
     state.insightHistory = { focus, finished, waterTimes, scores, habits, year };
-    if (state.screen === 'report') render();
+    if (state.screen === 'report') repaintReport();
   });
+}
+
+/* Repaint Report's sections in place: only the ones whose markup changed are
+   swapped, and the page is held on whatever section was at the top of the view.
+   The year of history landing and the 7/30-day toggle both used to go through
+   render(), which rebuilt the whole app and let the sections above you grow
+   under your thumb. */
+const iconless = (html) =>
+  html.replace(/<svg[^>]*lucide[^>]*>[\s\S]*?<\/svg>|<i [^>]*data-lucide[^>]*><\/i>/g, '');
+function repaintReport() {
+  const old = document.querySelector('.gb-scroll .gb-report');
+  const scroll = document.querySelector('.gb-scroll');
+  const fresh = old && SCREENS.report.render();
+  if (!old || !fresh.classList.contains('gb-report')) return render();
+  const focusKey = focusLocator(document.activeElement, root);
+  const a = Array.from(old.children);
+  const b = Array.from(fresh.children);
+  if (a.length !== b.length) {
+    old.replaceWith(fresh);
+  } else {
+    const view = scroll.getBoundingClientRect().top;
+    let anchor = null;
+    let anchorTop = 0;
+    const changed = a.map((n, i) => iconless(n.outerHTML) !== iconless(b[i].outerHTML));
+    a.forEach((n, i) => {
+      if (!anchor && !changed[i] && n.getBoundingClientRect().bottom > view) {
+        anchor = n;
+        anchorTop = n.getBoundingClientRect().top;
+      }
+    });
+    a.forEach((n, i) => changed[i] && n.replaceWith(b[i]));
+    if (anchor) scroll.scrollTop += anchor.getBoundingClientRect().top - anchorTop;
+  }
+  refreshIcons();
+  if (focusKey) refocus(focusKey, root);
 }
 
 function waterReminderPrefs() {
@@ -5765,9 +6220,6 @@ function reSyncDeviceAlarms() {
   }).catch(() => {});
 }
 
-/* scope: 'this' | 'future' | 'all'. The server may answer with a NEW reminder —
-   editing one day of a series leaves a one-off behind and skips that day on the
-   original — so the list is refetched rather than patched in place. */
 /* Sleep and lunch, shown on every day of the calendar. In ui_prefs, so it is in
    the database and follows the account; null turns it off. */
 function saveRoutine(routine) {
@@ -5777,16 +6229,25 @@ function saveRoutine(routine) {
   toastSuccess(routine ? 'Routine saved.' : 'Routine turned off.');
 }
 
+/* scope: 'this' | 'future' | 'all'. Throws on failure, so the edit dialog can stay open with what was typed.
+   A whole-series (or one-off) edit answers with the edited reminder itself, so
+   the row is swapped in place at once; a 'this'/'future' edit splits the series
+   on the server (a new reminder plus a skip on the original), so only a refetch
+   knows the result. */
 async function editReminder(scope, id, occKey, patch) {
   try {
     const qs = new URLSearchParams();
     qs.set('scope', scope || 'all');
     if (occKey) qs.set('date', occKey);
-    await api('/api/reminders/' + encodeURIComponent(id) + '?' + qs.toString(), {
+    const saved = await api('/api/reminders/' + encodeURIComponent(id) + '?' + qs.toString(), {
       method: 'PATCH',
       body: JSON.stringify(patch),
     });
-    state.reminders = await api('/api/reminders');
+    if (saved && saved.id === id) {
+      state.reminders = state.reminders.map((r) => (r.id === id ? saved : r));
+    } else {
+      state.reminders = await api('/api/reminders');
+    }
     reSyncDeviceAlarms();
     if (state.screen === 'calendar') {
       rerenderCalendarSideIfActive();
@@ -5797,6 +6258,7 @@ async function editReminder(scope, id, occKey, patch) {
     toastSuccess('Reminder updated.');
   } catch (err) {
     toastError(err, 'Could not update that reminder.');
+    throw err;
   }
 }
 
@@ -5971,7 +6433,8 @@ function openAddSheet() {
     }
     langBtn = h('select', {
       class: 'gb-input',
-      style: { width: 'auto', flex: 'none', padding: '8px 10px' },
+      // 32px on the right is select.gb-input's room for its arrow.
+      style: { width: 'auto', flex: 'none', padding: '8px 32px 8px 12px' },
       'aria-label': 'Language you speak',
       title: 'Language you speak',
     });
@@ -6441,15 +6904,15 @@ function openEditTask(task) {
       {
         type: 'button',
         class: 'gb-btn gb-btn--soft gb-btn--compact',
-        onclick: async () => {
-          try {
-            await updateTask(task.id, { dueAt: snoozedDueAt(task.dueAt, days) });
-            close();
-            render();
-            toastSuccess('Snoozed to ' + label.toLowerCase() + '.');
-          } catch (err) {
-            toastError(err, 'Could not snooze the task.');
-          }
+        // Closes at once and moves the task now; patchTaskNow puts it back and
+        // says so if the server refuses.
+        onclick: () => {
+          close();
+          patchTaskNow(
+            task.id,
+            { dueAt: snoozedDueAt(task.dueAt, days) },
+            'Could not snooze the task.'
+          ).then((ok) => ok && toastSuccess('Snoozed to ' + label.toLowerCase() + '.'));
         },
       },
       Icon('clock', { size: 14, sw: 2.4 }),
@@ -7050,7 +7513,7 @@ function ScreenHabits() {
       'div',
       {
         style: {
-          padding: '6px 20px 10px',
+          padding: '6px var(--gutter) 10px',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
@@ -7109,14 +7572,14 @@ function ScreenHabits() {
     ),
     h(
       'div',
-      { style: { padding: '0 20px' } },
+      { style: { padding: '0 var(--gutter)' } },
       h('div', { class: 'gb-card', style: { padding: '4px 0' } }, rows)
     ),
     // Guard on the card, not on the function: it returns null when there's no
     // fitness habit or no sleep logged, and an empty padded div is still a gap.
     (() => {
       const card = HabitSleepInsightCard({ habits: state.habits, wellness: state.wellness });
-      return card ? h('div', { style: { padding: '0 20px', marginTop: '12px' } }, card) : null;
+      return card ? h('div', { style: { padding: '0 var(--gutter)', marginTop: '12px' } }, card) : null;
     })()
   );
 }
@@ -7244,10 +7707,7 @@ const SCREENS = {
         dayFoodError: state.calendarFoodErrorByDate[state.selectedDate] || '',
         onAddTask: openAddTask,
         onEditTask: openEditTask,
-        onPauseTask: (t) =>
-          updateTask(t.id, { paused: !t.paused })
-            .then(render)
-            .catch((err) => toastError(err, 'Could not update task.')),
+        onPauseTask: pauseTask,
         onAddHabit: openAddHabit,
         calYear: state.calYear,
         calMonth: state.calMonth,
@@ -7291,7 +7751,7 @@ const SCREENS = {
             range: state.reportRange,
             onRange: (days) => {
               state.reportRange = days;
-              render();
+              repaintReport();
             },
             onEnableFeature: (key) => {
               setFeature(key, true).catch((err) => toastError(err, 'Could not turn on feature.'));
@@ -7319,6 +7779,7 @@ const SCREENS = {
                 body: JSON.stringify({ mode, durationSec }),
               }),
             getFocusStats: () => api('/api/focus/stats'),
+            statsOwner: state.user && state.user.id,
           })
       ),
   },
@@ -7616,7 +8077,8 @@ const SCREENS = {
             sections: state.goals,
             onCreateGoal: createGoal,
             onToggleGoal: toggleGoal,
-            onDeleteGoal: deleteGoal,
+            // The trash icon deleted on one tap, with no confirm and no error path.
+            onDeleteGoal: (id) => confirmDelete('Delete this goal?', () => deleteGoal(id)),
             onAddAction: addGoalAction,
             onUpdateAction: updateGoalAction,
             onDeleteAction: deleteGoalAction,
@@ -7657,10 +8119,26 @@ function screenSkeleton() {
   return h('div', { class: 'gb-rise gb-lazy-skeleton' }, card(), card(), card());
 }
 
+/* Modules lazyScreen has already loaded, keyed by the loader's source (each
+   call site passes a fresh arrow, but its text is the same). Once a chunk is in,
+   the screen builds synchronously: going through import() again put the grey
+   placeholder up for a frame on every tap on Goals, Report, Timer and Notes. */
+const lazyModules = new Map();
+
 function lazyScreen(loader, build) {
+  const cached = lazyModules.get(String(loader));
+  if (cached) {
+    try {
+      return build(cached);
+    } catch (err) {
+      console.error('Screen failed to render', err);
+      return CrashCard(() => render());
+    }
+  }
   const placeholder = screenSkeleton();
   loader()
     .then((mod) => {
+      lazyModules.set(String(loader), mod);
       // A later render() may have swapped this placeholder out already; that
       // render made its own, so this one is stale and must not resurrect itself.
       // A chunk that loaded proves this build is being served, so the next
@@ -7811,53 +8289,58 @@ function pullIndicator() {
 }
 
 function initPullToRefresh() {
+  // Only touchstart is always on, and it's passive. The touchmove that has to
+  // preventDefault is non-passive, and a non-passive touchmove on the document
+  // makes the browser wait on the main thread before every scroll on every
+  // screen, so it's attached only for a touch that began at scrollTop 0 and
+  // dropped again the moment the drag isn't a downward pull.
+  const stop = () => document.removeEventListener('touchmove', onMove, { passive: false });
   document.addEventListener(
     'touchstart',
     (e) => {
       ptr = null;
+      stop();
       if (e.touches.length !== 1 || state.loading) return;
       // Not while a dialog is up: the sheet scrolls, the page behind it must not.
       if (document.querySelector('.gb-modal-overlay')) return;
       const scroll = e.target.closest && e.target.closest('.gb-scroll');
       if (!scroll || scroll.scrollTop > 0) return;
       ptr = { scroll, y0: e.touches[0].clientY, x0: e.touches[0].clientX, claimed: false };
+      document.addEventListener('touchmove', onMove, { passive: false });
     },
     { passive: true }
   );
 
-  document.addEventListener(
-    'touchmove',
-    (e) => {
-      if (!ptr || e.touches.length !== 1) return;
-      const dy = e.touches[0].clientY - ptr.y0;
-      const dx = e.touches[0].clientX - ptr.x0;
-      if (!ptr.claimed) {
-        // Decide once, on the first meaningful movement: a drag that is mostly
-        // sideways belongs to whatever is under it.
-        if (Math.abs(dy) < 8 && Math.abs(dx) < 8) return;
-        if (dy <= 0 || Math.abs(dx) > Math.abs(dy)) {
-          ptr = null;
-          return;
-        }
-        ptr.claimed = true;
-      }
-      if (ptr.scroll.scrollTop > 0) {
+  function onMove(e) {
+    if (!ptr || e.touches.length !== 1) return stop();
+    const dy = e.touches[0].clientY - ptr.y0;
+    const dx = e.touches[0].clientX - ptr.x0;
+    if (!ptr.claimed) {
+      // Decide once, on the first meaningful movement: a drag that is mostly
+      // sideways belongs to whatever is under it.
+      if (Math.abs(dy) < 8 && Math.abs(dx) < 8) return;
+      if (dy <= 0 || Math.abs(dx) > Math.abs(dy)) {
         ptr = null;
-        pullIndicator().style.transform = '';
-        return;
+        return stop();
       }
-      // Resisted, so it feels like pulling against something rather than free
-      // dragging, and never runs past PTR_MAX.
-      const pulled = Math.min(PTR_MAX, dy * 0.5);
-      const el = pullIndicator();
-      el.style.transform = 'translate(-50%, ' + pulled + 'px) rotate(' + pulled * 3 + 'deg)';
-      el.classList.toggle('is-ready', pulled >= PTR_TRIGGER);
-      e.preventDefault(); // stops the WebView's own rubber-band fighting it
-    },
-    { passive: false }
-  );
+      ptr.claimed = true;
+    }
+    if (ptr.scroll.scrollTop > 0) {
+      ptr = null;
+      pullIndicator().style.transform = '';
+      return stop();
+    }
+    // Resisted, so it feels like pulling against something rather than free
+    // dragging, and never runs past PTR_MAX.
+    const pulled = Math.min(PTR_MAX, dy * 0.5);
+    const el = pullIndicator();
+    el.style.transform = 'translate(-50%, ' + pulled + 'px) rotate(' + pulled * 3 + 'deg)';
+    el.classList.toggle('is-ready', pulled >= PTR_TRIGGER);
+    e.preventDefault(); // stops the WebView's own rubber-band fighting it
+  }
 
   const release = () => {
+    stop();
     if (!ptr) return;
     const el = pullIndicator();
     const ready = el.classList.contains('is-ready');
@@ -8523,6 +9006,7 @@ function logout() {
   // Another account must not see this one's Insights, nor wait out its throttle.
   state.insightHistory = null;
   state.waterUsualHours = null;
+  loadedFor = null; // the next sign-in is a first load, not a refresh
   insightHistoryAt = 0;
   state.money = emptyMoney();
   weekGen++;
@@ -8642,26 +9126,81 @@ function weeklyReviewNudge() {
    even when the backend is unreachable. */
 
 /* React to connectivity changes: flag state, toast, and re-sync on reconnect. */
+/* Going offline or back online only swaps the banner. A render() here rebuilt
+   Family and Circle (which own their subtree) and threw away their open panels
+   and typed text, and a refresh skips render() for them, so the banner used to
+   outlive the reconnect there. */
+function syncOfflineBanner() {
+  const main = document.getElementById('gb-main');
+  const old = main && main.querySelector(':scope > .gb-offline-banner');
+  if (old) old.remove();
+  const next = offlineBanner();
+  if (main && next) main.prepend(next);
+}
 function handleOnline() {
   if (state.online) return;
   state.online = true;
+  syncOfflineBanner();
   toastSuccess('Back online — syncing your latest data.');
   if (state.user) loadData();
-  else render();
 }
 function handleOffline() {
   if (!state.online) return;
   state.online = false;
+  syncOfflineBanner();
   pushToast("You're offline. Changes may not save until you reconnect.", 'error', 3200);
-  render();
 }
 
 /* The scroll position the last render() restored; a lazy screen re-applies it. */
 let lastScrollSnapshot = null;
+/* Where each screen was scrolled to when you left it. */
+const scrollByScreen = new Map();
+
+/* Meters that change on a tap. render() builds them fresh at the new value, so
+   the CSS transition had nothing to run from and they jumped. Each one starts
+   from the value it showed last render (keyed by screen + selector + position)
+   and is then set to the new one, which the transition animates. */
+const TWEENED = [
+  ['.gb-score-card svg circle:last-of-type', 'strokeDashoffset'],
+  ['.gb-water-fill', 'transform'],
+  ['.gb-goal-ms-fill', 'width'],
+  ['.gb-goal-progress-fill', 'width'],
+];
+const lastTween = new Map();
+function tweenFromLast() {
+  const moves = [];
+  for (const [sel, prop] of TWEENED) {
+    document.querySelectorAll('.gb-scroll ' + sel).forEach((el, i) => {
+      const key = state.screen + ' ' + sel + ' ' + i;
+      // The ring sets its offset as an attribute; a style override wins over it.
+      const next =
+        prop === 'strokeDashoffset' ? el.getAttribute('stroke-dashoffset') + 'px' : el.style[prop];
+      const prev = lastTween.get(key);
+      lastTween.set(key, next);
+      if (prev == null || prev === next) return;
+      el.style[prop] = prev;
+      moves.push([el, prop, next]);
+    });
+  }
+  if (!moves.length) return;
+  void document.body.offsetWidth; // commit the old values as the start
+  for (const [el, prop, next] of moves) el.style[prop] = next;
+}
 
 function render() {
-  const scrollSnapshot = renderedScreen === state.screen ? captureScrollPosition() : null;
-  const quietRefresh = !!scrollSnapshot;
+  const sameScreen = renderedScreen === state.screen;
+  // Leaving a screen files its scroll position; coming back to it (back, or its
+  // nav tab) restores it instead of starting at the top.
+  if (!sameScreen && renderedScreen) {
+    const left = captureScrollPosition();
+    if (left) scrollByScreen.set(renderedScreen, left);
+  }
+  const scrollSnapshot = sameScreen
+    ? captureScrollPosition()
+    : scrollByScreen.get(state.screen) || null;
+  const quietRefresh = sameScreen && !!scrollSnapshot;
+  const focusKey = sameScreen ? focusLocator(document.activeElement, root) : null;
+  const focusWasInApp = root.contains(document.activeElement);
   if (!state.user) {
     // Mount the toast stack alongside the login card so auth errors/notices
     // surface as toasts on the signed-out screen too. (toastStack() is null
@@ -8735,6 +9274,13 @@ function render() {
   restoreScrollPosition(scrollSnapshot);
   lastScrollSnapshot = scrollSnapshot;
   renderedScreen = state.screen;
+  // replaceChildren() drops focus on <body>, so after any save the next Tab
+  // started from the top of the page. Same screen: the same control again.
+  // A real screen change: the main region, so a reader hears the new screen.
+  if (focusKey) refocus(focusKey, root);
+  else if (!sameScreen && focusWasInApp)
+    document.getElementById('gb-main')?.focus({ preventScroll: true });
+  tweenFromLast();
   syncHeaderExpanded();
   installOutsideClickToCloseHeaderPopovers();
   // Any render can be the one where a badge crossed its threshold — check after

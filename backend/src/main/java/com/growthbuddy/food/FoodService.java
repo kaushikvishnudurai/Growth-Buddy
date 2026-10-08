@@ -52,6 +52,8 @@ public class FoodService {
             - Keep quantityGrams in realistic range 80..700.
             - Prefer moderate assumptions; do not ask many follow-ups.
             - If riceBase=yes, assume somewhat larger carb quantity.
+            - If Pieces is given, quantityGrams is the total weight of that many pieces
+              (range 10..2000 then, not 80..700).
             """;
 
     private static final String PHOTO_AI_MULTI_PROMPT = """
@@ -229,7 +231,8 @@ public class FoodService {
                 mealType,
                 req.portionSize() != null ? req.portionSize() : PortionSize.medium,
                 req.riceBase() != null ? req.riceBase() : RiceBase.unsure,
-                req.note());
+                req.note(),
+                req.pieces());
 
         // At most ONE AI call per entry: it answers grams, kcal and nutrients
         // together, asked the first time any of them is needed. Grams and kcal
@@ -249,7 +252,15 @@ public class FoodService {
             quantity = req.quantityGrams();
         } else {
             AiGuess g = askOnce.get();
-            quantity = g != null && g.quantityGrams() != null ? clampQuantity(g.quantityGrams()) : defaultQuantity(input);
+            if (g != null && g.quantityGrams() != null) {
+                // A counted portion can be one 40 g idli, under the 80 g a guessed
+                // plate is held to; only the column's own range applies.
+                quantity = input.pieces() != null
+                        ? Math.max(10, Math.min(2000, g.quantityGrams()))
+                        : clampQuantity(g.quantityGrams());
+            } else {
+                quantity = defaultQuantity(input);
+            }
         }
 
         // A typed number beats every estimate we could produce, and the user has
@@ -388,15 +399,23 @@ public class FoodService {
     }
 
     private CalorieEstimate estimateCalories(EstimateInput input, java.util.function.Supplier<AiGuess> ai) {
-        Integer fromApi = bestFromOpenFoodFacts(input.foodName());
-        if (fromApi != null) {
-            int adjusted = input.mealType() == MealType.hotel ? (int) Math.round(fromApi * 1.18) : fromApi;
-            return new CalorieEstimate(clamp(adjusted), "openfoodfacts");
-        }
-
+        // AI first: it reads the whole name ("rava dosa with chutney"), and it has
+        // usually been asked already for the grams, so this costs nothing extra.
         AiGuess g = ai.get();
         if (g != null && g.kcalPer100g() != null) {
             return new CalorieEstimate(clamp(g.kcalPer100g()), "ai-estimate");
+        }
+
+        // Then a dish the keyword table knows, before OpenFoodFacts: that is a
+        // packaged-goods database, and its "dosa" is a batter mix.
+        Integer fromTable = FoodWeek.kcalPer100g(input.foodName());
+        if (fromTable != null) {
+            return new CalorieEstimate(clamp(hotel(input, fromTable)), "table");
+        }
+
+        Integer fromApi = bestFromOpenFoodFacts(input.foodName());
+        if (fromApi != null) {
+            return new CalorieEstimate(clamp(hotel(input, fromApi)), "openfoodfacts");
         }
 
         return new CalorieEstimate(
@@ -404,7 +423,15 @@ public class FoodService {
                 "fallback-average");
     }
 
+    /** Hotel cooking runs richer: more oil and ghee. */
+    private static int hotel(EstimateInput input, int kcalPer100g) {
+        return input.mealType() == MealType.hotel ? (int) Math.round(kcalPer100g * 1.18) : kcalPer100g;
+    }
+
     private int defaultQuantity(EstimateInput input) {
+        if (input.pieces() != null) {
+            return Math.max(10, Math.min(2000, input.pieces() * FoodWeek.gramsPerPiece(input.foodName())));
+        }
         int base = switch (input.portionSize()) {
             case small -> 140;
             case medium -> 220;
@@ -425,6 +452,7 @@ public class FoodService {
                     + "\nMeal type: " + input.mealType().name()
                     + "\nPortion size: " + input.portionSize().name()
                     + "\nWhite rice base: " + input.riceBase().name()
+                    + (input.pieces() != null ? "\nPieces: " + input.pieces() : "")
                     + "\nNote: " + (input.note() != null ? input.note() : "");
             JsonNode node = json.readTree(OpenAIClient.jsonOf(
                     openai.complete(AI_PROMPT, List.of(new ChatTurn("user", userPrompt)))));
@@ -535,7 +563,8 @@ public class FoodService {
             MealType mealType,
             PortionSize portionSize,
             RiceBase riceBase,
-            String note) {
+            String note,
+            Integer pieces) {
     }
 
     private record CalorieEstimate(int kcalPer100g, String source) {

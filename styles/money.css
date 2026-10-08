@@ -6,7 +6,10 @@
    ===================================================================== */
 
 .gb-money {
-  padding: var(--space-4) var(--space-5) var(--space-12);
+  padding: var(--space-4) var(--gutter) var(--space-12);
+  /* A long unbroken goal, tag or person name wraps instead of widening the
+     screen. Inherited; it only breaks a word that would overflow its line. */
+  overflow-wrap: break-word;
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
@@ -18,7 +21,17 @@
   gap: var(--space-2);
   overflow-x: auto;
   scrollbar-width: none;
-  padding-bottom: 2px;
+  /* Pinned to the top of .gb-scroll (the header sits outside it, so top: 0 is
+     already below the header): on a long tab the switcher used to scroll away.
+     Same recipe as .gb-family-sectionnav — solid --surface bar with a border,
+     full-bleed over the gutter so cards don't show through beside it. */
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  margin-inline: calc(-1 * var(--gutter));
+  padding: var(--space-2) var(--gutter);
 }
 .gb-money-tabs::-webkit-scrollbar {
   display: none;
@@ -44,9 +57,12 @@
     color var(--dur-fast) var(--ease-standard),
     box-shadow var(--dur-fast) var(--ease-standard);
 }
-.gb-money-tab:hover {
-  border-color: var(--border-strong);
-  color: var(--fg1);
+/* Touch keeps :hover after a tap, so the bar or chip stayed recoloured. */
+@media (hover: hover) {
+  .gb-money-tab:hover {
+    border-color: var(--border-strong);
+    color: var(--fg1);
+  }
 }
 .gb-money-tab.is-active {
   background: var(--brand-fill);
@@ -230,6 +246,9 @@
 /* ---- Coach callouts ---- */
 .gb-money-coach {
   display: flex;
+  /* Not stretch: the icon's wrapper grew to the card's height and centred the
+     glyph, away from the title it belongs beside. */
+  align-items: flex-start;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-lg);
@@ -323,7 +342,7 @@
 }
 .gb-money-badges {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-2);
 }
 .gb-money-badge {
@@ -372,11 +391,13 @@
 .gb-money-review-stats,
 .gb-money-bsummary {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  /* minmax(0, …): a bare 1fr won't shrink below "₹1,25,000", and three of
+     those pushed the card past a 360px screen. */
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-2);
 }
 .gb-money-bsummary {
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 .gb-money-stat {
   background: var(--surface-2);
@@ -391,6 +412,7 @@
   color: var(--fg1);
   letter-spacing: var(--tracking-tight);
   line-height: 1.1;
+  overflow-wrap: anywhere;
 }
 .gb-money-stat-lbl {
   font-family: var(--font-body);
@@ -528,8 +550,10 @@
   color: inherit;
   transition: background-color var(--dur-fast) var(--ease-standard);
 }
-.gb-money-bar-col:hover {
-  background: var(--surface-2);
+@media (hover: hover) {
+  .gb-money-bar-col:hover {
+    background: var(--surface-2);
+  }
 }
 .gb-money-bar-col:focus-visible {
   outline: 2px solid var(--brand);
@@ -553,6 +577,13 @@
 .gb-money-bar-col.is-nospend .gb-money-bar-amt {
   color: var(--success-soft-fg);
 }
+/* "No spend" / "No log" are wider than a 320px screen's column and ran into each
+   other ("No spendNo log"). The words wrap onto two lines; amounts stay on one. */
+.gb-money-bar-col.is-zero .gb-money-bar-amt {
+  white-space: normal;
+  text-align: center;
+  line-height: 1.1;
+}
 .gb-money-bar-track {
   width: 100%;
   display: flex;
@@ -568,9 +599,13 @@
     height var(--dur-slow) var(--ease-out),
     background-color var(--dur-fast) var(--ease-standard);
 }
-.gb-money-bar-col.is-today .gb-money-bar-fill,
-.gb-money-bar-col:hover .gb-money-bar-fill {
+.gb-money-bar-col.is-today .gb-money-bar-fill {
   background: var(--coral-400);
+}
+@media (hover: hover) {
+  .gb-money-bar-col:hover .gb-money-bar-fill {
+    background: var(--coral-400);
+  }
 }
 .gb-money-bar-col.is-selected .gb-money-bar-fill {
   background: var(--brand);
@@ -685,7 +720,9 @@
 }
 .gb-money-day-retry {
   border: 0;
-  padding: 0;
+  /* A taller hit area for an inline link; the negative margin keeps the line box. */
+  padding: 12px 6px;
+  margin: -12px -6px;
   background: none;
   font: inherit;
   font-weight: 700;
@@ -716,9 +753,11 @@
     border-color var(--dur-fast) var(--ease-standard),
     background-color var(--dur-fast) var(--ease-standard);
 }
-.gb-money-account:hover {
-  border-color: var(--border-strong);
-  background: var(--surface-2);
+@media (hover: hover) {
+  .gb-money-account:hover {
+    border-color: var(--border-strong);
+    background: var(--surface-2);
+  }
 }
 .gb-money-account:focus-visible {
   outline: 2px solid var(--brand);
@@ -873,6 +912,18 @@
 .gb-money-exp-row.is-settled .gb-money-exp-amt {
   text-decoration: line-through;
 }
+/* Amount + Settle + delete left the name no room at 320-375px. Once the name
+   can't keep 9rem, the amount and buttons drop to their own line, right-aligned. */
+.gb-money-loan-row {
+  flex-wrap: wrap;
+  row-gap: var(--space-2);
+}
+.gb-money-loan-row .gb-money-exp-main {
+  flex: 1 1 9rem;
+}
+.gb-money-loan-row .gb-money-exp-amt {
+  margin-left: auto;
+}
 
 /* ---- Budget cards ---- */
 .gb-money-bcard {
@@ -888,6 +939,7 @@
 }
 .gb-money-bcard-name {
   flex: 1;
+  min-width: 0;
   font-family: var(--font-body);
   font-weight: 700;
   font-size: var(--text-sm);
@@ -1022,9 +1074,11 @@
   background: var(--surface-2);
   color: var(--fg2);
 }
-.gb-money-chip:hover {
-  border-color: var(--leaf-500);
-  color: var(--success-soft-fg);
+@media (hover: hover) {
+  .gb-money-chip:hover {
+    border-color: var(--leaf-500);
+    color: var(--success-soft-fg);
+  }
 }
 
 /* ---- Savings goals ---- */
@@ -1061,6 +1115,9 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  /* The name is a bare text node in a flex row, so only `anywhere` lets it
+     shrink below its longest word. */
+  overflow-wrap: anywhere;
   font-family: var(--font-display);
   font-weight: 700;
   font-size: var(--text-h4);
@@ -1114,6 +1171,11 @@
   display: flex;
   gap: var(--space-2);
   align-items: center;
+}
+/* An input's default width is its min-content, so flex: 1 alone never shrank
+   the item name and the row ran off a phone-width sheet. */
+.gb-money-receipt-row .gb-input {
+  min-width: 0;
 }
 .gb-money-receipt-total {
   margin-top: var(--space-3);
@@ -1236,8 +1298,10 @@
   cursor: pointer;
   transition: background-color var(--dur-fast) var(--ease-standard);
 }
-.gb-money-health-fix:hover {
-  background: var(--surface-3);
+@media (hover: hover) {
+  .gb-money-health-fix:hover {
+    background: var(--surface-3);
+  }
 }
 .gb-money-health-fix:focus-visible {
   outline: 2px solid var(--brand);
@@ -1311,6 +1375,9 @@
 }
 .gb-money-searchbar .gb-input {
   flex: 1;
+  /* An input's min-content width kept it from shrinking, so at 320px the bar
+     pushed Search off the card. */
+  min-width: 0;
 }
 .gb-money-searchbar .gb-btn {
   width: auto;
@@ -1433,9 +1500,11 @@
     color var(--dur-fast) var(--ease-standard),
     box-shadow var(--dur-fast) var(--ease-standard);
 }
-.gb-money-preset:hover {
-  border-color: var(--iris-500);
-  background: var(--ai-soft);
+@media (hover: hover) {
+  .gb-money-preset:hover {
+    border-color: var(--iris-500);
+    background: var(--ai-soft);
+  }
 }
 .gb-money-preset .gb-icon {
   color: var(--ai);
@@ -1537,9 +1606,11 @@
     color var(--dur-fast) var(--ease-standard),
     box-shadow var(--dur-fast) var(--ease-standard);
 }
-.gb-money-tagchip:hover {
-  border-color: var(--border-strong);
-  color: var(--fg1);
+@media (hover: hover) {
+  .gb-money-tagchip:hover {
+    border-color: var(--border-strong);
+    color: var(--fg1);
+  }
 }
 .gb-money-tagchip.is-on {
   background: var(--brand-fill);
@@ -1559,9 +1630,11 @@
   border-style: dashed;
   color: var(--fg3);
 }
-.gb-money-tagchip--add:hover {
-  color: var(--brand-ink);
-  border-color: var(--brand);
+@media (hover: hover) {
+  .gb-money-tagchip--add:hover {
+    color: var(--brand-ink);
+    border-color: var(--brand);
+  }
 }
 .gb-money-tagpick-create {
   display: flex;
@@ -1697,7 +1770,7 @@
 }
 .gb-money-mini-body {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-4);
 }
 .gb-money-mini-figure {
@@ -1863,10 +1936,10 @@
 /* ---- Responsive ---- */
 @media (max-width: 540px) {
   .gb-money {
-    padding: var(--space-3) var(--space-4) var(--space-12);
+    padding: var(--space-3) var(--gutter) var(--space-12);
   }
   .gb-money-review-stats {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   /* Icon over a visible label: icon-only tabs were names only a screen reader
      heard. Four columns of ~85px fit "Overview" at this size. */
@@ -1897,8 +1970,10 @@
   cursor: pointer;
   border-radius: var(--radius-sm);
 }
-.gb-money-exp-edit:hover .gb-money-exp-note {
-  color: var(--brand-soft-fg);
+@media (hover: hover) {
+  .gb-money-exp-edit:hover .gb-money-exp-note {
+    color: var(--brand-soft-fg);
+  }
 }
 .gb-money-exp-edit:focus-visible {
   outline: 2px solid var(--brand);
@@ -1997,8 +2072,20 @@
   font-variant-numeric: tabular-nums;
   cursor: pointer;
 }
-.gb-money-quick-amt:hover {
-  border-color: var(--border-strong);
+@media (hover: hover) {
+  .gb-money-quick-amt:hover {
+    border-color: var(--border-strong);
+  }
+}
+/* The pills are ~28px tall; the overlay makes each a 44px tap without spacing
+   them out (same trick as .gb-money-health-fix). */
+.gb-money-quick-amt {
+  position: relative;
+}
+.gb-money-quick-amt::after {
+  content: '';
+  position: absolute;
+  inset: -8px -4px;
 }
 .gb-money-quick-amt:focus-visible {
   outline: 2px solid var(--brand);
@@ -2251,4 +2338,24 @@
   width: 18px;
   height: 18px;
   accent-color: var(--brand);
+}
+
+/* Pressed feedback for Money's own buttons (.gb-btn and .gb-icon-btn already
+   have theirs in app.css); without it a tap looked like it had not landed. */
+.gb-money-tab:active,
+.gb-money-quick-amt:active,
+.gb-money-chip:active,
+.gb-money-preset:active,
+.gb-money-tagchip:active,
+.gb-money-health-fix:active,
+.gb-money-account:active,
+.gb-money-bar-col:active,
+.gb-money-swatch:active {
+  transform: scale(0.97);
+}
+/* Full-width rows and inline links dim instead: a scaled row looks like a jump. */
+.gb-money-mini-head:active,
+.gb-money-exp-edit:active,
+.gb-money-day-retry:active {
+  opacity: 0.7;
 }

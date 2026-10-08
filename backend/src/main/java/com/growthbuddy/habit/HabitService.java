@@ -24,6 +24,16 @@ public class HabitService {
     /** Most freeze tokens a user can bank at once. One is granted per ISO week. */
     public static final int FREEZE_CAP = 2;
 
+    /**
+     * Every icon the app can put on a habit: the DOMAIN icons in gb-kit.js, the
+     * FITNESS_PRESETS in app.js, and DataSeeder's. Anything else renders as an
+     * empty tile. ponytail: hand-kept mirror of those three lists; add here when
+     * the habit form gains an icon.
+     */
+    static final Set<String> HABIT_ICONS = Set.of(
+            "repeat", "dumbbell", "sparkles", "notebook-pen", "users-round", "trophy",
+            "book-open", "briefcase", "footprints", "bike", "brain");
+
     private final HabitRepository habits;
     private final HabitCheckinRepository checkins;
     private final HabitStreakRepository streaks;
@@ -109,7 +119,10 @@ public class HabitService {
         LocalDate today = clock.today(userId);
         LocalDate day = date != null ? date : today;
         if (day.isAfter(today)) {
-            throw ApiException.badRequest("Cannot protect a future day");
+            // Usually not a future day at all: the account's timezone is behind
+            // the device's (travel, or an API signup that left it on UTC).
+            throw ApiException.badRequest("That day hasn't started yet in your timezone ("
+                    + clock.zoneOf(userId).getId() + "). If that's wrong, update it in Settings.");
         }
         HabitCheckin c = checkins.findByHabitIdAndLogDate(id, day).orElse(null);
         if (c != null && c.isDone()) {
@@ -257,13 +270,20 @@ public class HabitService {
     public record TodayCounts(int done, int total) {
     }
 
+    private static String checkIcon(String icon) {
+        if (!HABIT_ICONS.contains(icon)) {
+            throw ApiException.badRequest("Unknown habit icon: " + icon);
+        }
+        return icon;
+    }
+
     @Transactional
     public HabitResponse create(UUID userId, CreateHabitRequest req) {
         Habit h = new Habit();
         h.setUserId(userId);
         h.setName(req.name().trim());
         h.setDomain(req.domain() != null ? req.domain() : HabitDomain.habit);
-        h.setIcon(req.icon());
+        h.setIcon(checkIcon(req.icon()));
         h.setColor(req.color());
         h.setCadence(req.cadence() != null ? req.cadence() : Cadence.daily);
         h.setTargetPerWeek(req.targetPerWeek() != null ? req.targetPerWeek() : 7);
@@ -284,7 +304,7 @@ public class HabitService {
             h.setDomain(req.domain());
         }
         if (req.icon() != null) {
-            h.setIcon(req.icon());
+            h.setIcon(checkIcon(req.icon()));
         }
         if (req.color() != null) {
             h.setColor(req.color().isBlank() ? null : req.color());

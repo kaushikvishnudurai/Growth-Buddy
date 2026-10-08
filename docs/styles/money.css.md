@@ -6,7 +6,7 @@ list (e.g. "(14)" = financial health).
 
 | Line | Section | Used by |
 |---|---|---|
-| 15 | Sub-tabs | `tabBar` |
+| 15 | Sub-tabs — `position: sticky` at the top of `.gb-scroll`, full-bleed `--surface` bar (same recipe as `.gb-family-sectionnav`) | `tabBar` |
 | 71 | Hero: safe-to-spend ring | `tabOverview` |
 | 155 | Insights | overview |
 | 195 | Donut | spending breakdown |
@@ -46,3 +46,9 @@ list (e.g. "(14)" = financial health).
 
 Threshold colours: `is-near` at ≥80% of a budget, `is-over` above 100% — the JS in
 `scripts/money.js` (`tabBudgets`) picks these class names, so keep the names in sync.
+
+Every `:hover` rule sits inside `@media (hover: hover)`: touch keeps `:hover` after a tap, so bars and
+chips stayed recoloured. Pressed (`:active`) feedback for Money's own buttons is the last block in the
+file (`.gb-btn` / `.gb-icon-btn` get theirs from app.css). Small pills take a 44px tap with an
+`::after` overlay (`.gb-money-health-fix`, `.gb-money-quick-amt`). Loan rows (`.gb-money-loan-row`)
+wrap their amount and buttons onto a second line when the name can't keep 9rem.

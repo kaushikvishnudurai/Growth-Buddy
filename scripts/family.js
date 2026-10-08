@@ -5,7 +5,9 @@
    state and repaints its own subtree, so the parent only has to pass an
    `api` object of thin fetch wrappers. See SCREENS.family in app.js.
    ===================================================================== */
-import { h, Icon, CrashCard, confirmDialog, thinkingLabel } from './gb-kit.js';
+import { h, Icon, CrashCard, confirmDialog, thinkingLabel, trackOverlay } from './gb-kit.js';
+import { toast } from './toast.js';
+import { shrinkPhoto } from './notes.js';
 
 const RELATIONSHIPS = [
   'mother',
@@ -87,15 +89,6 @@ function field(labelText, control, hint) {
   );
 }
 
-function readImageDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = () => reject(new Error('Could not read image file.'));
-    reader.readAsDataURL(file);
-  });
-}
-
 /**
  * ScreenFamily({ api })
  *   api: { getFamily, addMember, updateMember, updateProfile, removeMember,
@@ -110,7 +103,6 @@ function ScreenFamily({ api }) {
     family: null, // { familyId, ownerUserId, isOwner, members: [] }
     invites: [], // pending invitations addressed to the current user
     panel: null, // null | {type:'addChoose'} | {type:'add'} | {type:'edit',member} | {type:'profile',member} | {type:'link'}
-    busy: false,
     // Meal planner
     ingredients: [], // [{ name, category, quantity, freshness }]
     selectedMemberIds: null, // null = everyone
@@ -181,19 +173,33 @@ function ScreenFamily({ api }) {
     }
   }
 
+  // Runs one save. Only the pressed button is disabled while it runs, and
+  // nothing is repainted until it resolves: a repaint before the save rebuilt
+  // the form (wiping what was typed), and a failure now leaves the screen
+  // exactly as it was. The button is read off window.event because every
+  // caller runs inside its click handler; after an await (a confirm) it is
+  // gone, and the dialog already guarded the double tap.
+  // A disabled button fires no click, so that is the double-tap guard too.
   async function run(promise, onOk) {
-    if (model.busy) return;
-    model.busy = true;
-    paint();
+    const ev = window.event;
+    const t = ev && ev.currentTarget;
+    const btn = t instanceof HTMLButtonElement || t instanceof HTMLInputElement ? t : null;
+    if (btn) btn.disabled = true;
+    let res;
     try {
-      const res = await promise;
-      if (onOk) onOk(res);
+      res = await promise;
     } catch (err) {
-      window.alert(err.message || 'Something went wrong.');
-    } finally {
-      model.busy = false;
-      paint();
+      if (btn) {
+        btn.disabled = false;
+        if (btn.type === 'checkbox') btn.checked = !btn.checked; // the toggle didn't happen
+      }
+      toast.error(err, 'Something went wrong.');
+      return;
     }
+    // One repaint: onOk may already have done it (closePanel, load).
+    const before = paints;
+    if (onOk) onOk(res);
+    if (paints === before) paint();
   }
 
   // ---- member cards ----
@@ -333,15 +339,33 @@ function ScreenFamily({ api }) {
     el.setAttribute('tabindex', '-1');
     el.focus({ preventScroll: false });
   }
+  // Closing a panel returns to where the user was in the list, not the top:
+  // remember the scroll offset on the way in and put it back on the way out.
+  let listScroll = 0;
+  // Back (Android's, the browser's) closes the panel rather than the Family
+  // screen: the panel joins gb-kit's sheet stack while it is up. One entry
+  // for the chooser -> form pair, as for any stacked sheets.
+  let untrackPanel = null;
   function openPanel(panel) {
+    const scroller = root.closest('.gb-scroll');
+    if (!model.panel && scroller) listScroll = scroller.scrollTop;
+    if (!untrackPanel) untrackPanel = trackOverlay({ close: closePanel });
     model.panel = panel;
     paint();
     focusHeading();
   }
   function closePanel() {
+    if (untrackPanel) untrackPanel();
+    untrackPanel = null;
     model.panel = null;
     paint();
-    focusHeading();
+    const el = root.querySelector('h2, h1');
+    if (el) {
+      el.setAttribute('tabindex', '-1');
+      el.focus({ preventScroll: true });
+    }
+    const scroller = root.closest('.gb-scroll');
+    if (scroller) scroller.scrollTop = listScroll;
   }
 
   function panelHeader(title) {
@@ -470,7 +494,8 @@ function ScreenFamily({ api }) {
     const save = () => {
       const name = c.nameInput.value.trim();
       if (!name) {
-        window.alert('Please enter a name.');
+        toast.error(null, 'Please enter a name.');
+        c.nameInput.focus();
         return;
       }
       run(
@@ -507,11 +532,7 @@ function ScreenFamily({ api }) {
         field('Height (cm)', c.heightInput),
         field('Weight (kg)', c.weightInput)
       ),
-      h(
-        'button',
-        { type: 'button', class: 'gb-btn gb-btn--primary', disabled: model.busy, onclick: save },
-        'Add member'
-      )
+      h('button', { type: 'button', class: 'gb-btn gb-btn--primary', onclick: save }, 'Add member')
     );
   }
 
@@ -520,7 +541,8 @@ function ScreenFamily({ api }) {
     const save = () => {
       const name = c.nameInput.value.trim();
       if (!name) {
-        window.alert('Please enter a name.');
+        toast.error(null, 'Please enter a name.');
+        c.nameInput.focus();
         return;
       }
       run(
@@ -554,7 +576,7 @@ function ScreenFamily({ api }) {
       ),
       h(
         'button',
-        { type: 'button', class: 'gb-btn gb-btn--primary', disabled: model.busy, onclick: save },
+        { type: 'button', class: 'gb-btn gb-btn--primary', onclick: save },
         'Save changes'
       )
     );
@@ -634,7 +656,7 @@ function ScreenFamily({ api }) {
       field('Medical conditions (optional)', medical),
       h(
         'button',
-        { type: 'button', class: 'gb-btn gb-btn--primary', disabled: model.busy, onclick: save },
+        { type: 'button', class: 'gb-btn gb-btn--primary', onclick: save },
         'Save profile'
       )
     );
@@ -675,14 +697,13 @@ function ScreenFamily({ api }) {
                   {
                     type: 'button',
                     class: 'gb-btn gb-btn--soft gb-btn--sm',
-                    disabled: model.busy,
                     onclick: () =>
                       run(
                         api.linkMember({ userId: u.id, memberId: member ? member.id : null }),
                         (resp) => {
                           applyFamily(resp);
                           closePanel();
-                          window.alert(
+                          toast.success(
                             'Invitation sent — ' + u.displayName + ' needs to accept it.'
                           );
                         }
@@ -798,7 +819,8 @@ function ScreenFamily({ api }) {
         model.scanMsg = 'Scanning photo…';
         paint();
         try {
-          const dataUrl = await readImageDataUrl(file);
+          // Downscaled to 1280px JPEG first: a phone photo is 4-12 MB raw.
+          const dataUrl = await shrinkPhoto(file);
           const res = await api.scanGrocery(dataUrl);
           const items = (res && res.items) || [];
           // Merge, skipping duplicates by lowercase name.
@@ -979,13 +1001,12 @@ function ScreenFamily({ api }) {
         {
           type: 'button',
           class: 'gb-btn gb-btn--soft gb-btn--sm',
-          disabled: model.busy,
           onclick: () => {
             const name = window.prompt('Name this menu:', 'Family favourite');
             if (!name) return;
             run(api.saveFavourite({ name, planId }), () => {
               model.favourites = null; // force reload next time
-              window.alert('Saved to your favourites.');
+              toast.success('Saved to your favourites.');
             });
           },
         },
@@ -997,10 +1018,9 @@ function ScreenFamily({ api }) {
         {
           type: 'button',
           class: 'gb-btn gb-btn--soft gb-btn--sm',
-          disabled: model.busy,
           onclick: () =>
             run(api.markCooked(planId), () =>
-              window.alert('Noted — Buddy will favour these dishes next time.')
+              toast.success('Noted — Buddy will favour these dishes next time.')
             ),
         },
         Icon('check', { size: 15 }),
@@ -1011,7 +1031,6 @@ function ScreenFamily({ api }) {
         {
           type: 'button',
           class: 'gb-btn gb-btn--soft gb-btn--sm',
-          disabled: model.busy,
           onclick: () =>
             run(api.generateShopping({ planId }), (res) => {
               model.shoppingList = res;
@@ -1223,7 +1242,6 @@ function ScreenFamily({ api }) {
             {
               type: 'button',
               class: 'gb-btn gb-btn--ghost gb-family-leave-btn',
-              disabled: model.busy,
               onclick: leaveFamily,
             },
             Icon('log-out', { size: 16 }),
@@ -1266,7 +1284,6 @@ function ScreenFamily({ api }) {
               {
                 type: 'button',
                 class: 'gb-btn gb-btn--ghost gb-btn--sm',
-                disabled: model.busy,
                 onclick: () => run(api.declineInvite(inv.memberId), () => load()),
               },
               'Decline'
@@ -1276,7 +1293,6 @@ function ScreenFamily({ api }) {
               {
                 type: 'button',
                 class: 'gb-btn gb-btn--primary gb-btn--sm',
-                disabled: model.busy,
                 onclick: () => run(api.acceptInvite(inv.memberId), () => load()),
               },
               'Accept'
@@ -1661,7 +1677,8 @@ function ScreenFamily({ api }) {
         model.pantryScanMsg = 'Scanning…';
         paint();
         try {
-          const dataUrl = await readImageDataUrl(file);
+          // Downscaled to 1280px JPEG first: a phone photo is 4-12 MB raw.
+          const dataUrl = await shrinkPhoto(file);
           const res = await api.scanPantry(dataUrl);
           if (res && res.added && res.added.length) {
             model.pantryItems = res.added.concat(model.pantryItems || []);
@@ -1714,7 +1731,6 @@ function ScreenFamily({ api }) {
             {
               type: 'button',
               class: 'gb-btn gb-btn--soft gb-btn--sm',
-              disabled: model.busy,
               onclick: add,
             },
             Icon('plus', { size: 16 }),
@@ -1769,7 +1785,6 @@ function ScreenFamily({ api }) {
           type: 'button',
           class: 'gb-iconbtn gb-iconbtn--danger',
           'aria-label': 'Remove',
-          disabled: model.busy,
           onclick: () =>
             run(api.deletePantry(it.id), () => {
               model.pantryItems = (model.pantryItems || []).filter((x) => x.id !== it.id);
@@ -1820,7 +1835,6 @@ function ScreenFamily({ api }) {
           {
             type: 'button',
             class: 'gb-btn gb-btn--soft',
-            disabled: model.busy,
             onclick: () =>
               run(api.generateShopping({}), (res) => {
                 model.shoppingList = res;
@@ -1840,7 +1854,6 @@ function ScreenFamily({ api }) {
               type: 'button',
               class: 'gb-btn gb-btn--soft gb-btn--sm',
               'aria-label': 'Add to list',
-              disabled: model.busy,
               onclick: add,
             },
             Icon('plus', { size: 16 })
@@ -1873,20 +1886,23 @@ function ScreenFamily({ api }) {
     return h(
       'div',
       { class: 'gb-card gb-family-shop-item' + (it.checked ? ' is-checked' : '') },
-      h('input', {
-        type: 'checkbox',
-        checked: it.checked,
-        disabled: model.busy,
-        onchange: () =>
-          run(api.toggleShopping(it.id), (res) => {
-            model.shoppingList = res;
-          }),
-      }),
       h(
-        'div',
-        { class: 'gb-family-shop-id' },
-        h('div', { class: 'gb-family-card-name' }, it.name),
-        it.quantity ? h('div', { class: 'gb-family-card-meta' }, it.quantity) : null
+        'label',
+        { class: 'gb-family-shop-check' },
+        h('input', {
+          type: 'checkbox',
+          checked: it.checked,
+          onchange: () =>
+            run(api.toggleShopping(it.id), (res) => {
+              model.shoppingList = res;
+            }),
+        }),
+        h(
+          'div',
+          { class: 'gb-family-shop-id' },
+          h('div', { class: 'gb-family-card-name' }, it.name),
+          it.quantity ? h('div', { class: 'gb-family-card-meta' }, it.quantity) : null
+        )
       ),
       it.estimatedCost != null
         ? h('span', { class: 'gb-family-shop-cost' }, '₹' + it.estimatedCost)
@@ -1897,7 +1913,6 @@ function ScreenFamily({ api }) {
           type: 'button',
           class: 'gb-iconbtn gb-iconbtn--danger',
           'aria-label': 'Remove',
-          disabled: model.busy,
           onclick: () =>
             run(api.deleteShopping(it.id), (res) => {
               model.shoppingList = res;
@@ -1978,7 +1993,6 @@ function ScreenFamily({ api }) {
             type: 'button',
             class: 'gb-iconbtn gb-iconbtn--danger',
             'aria-label': 'Delete menu',
-            disabled: model.busy,
             onclick: async () => {
               const ok = await confirmDialog({
                 title: 'Delete “' + f.name + '”?',
@@ -2011,7 +2025,9 @@ function ScreenFamily({ api }) {
     return h('div', { class: 'gb-family gb-family-skeleton' }, card(), card(), card());
   }
 
+  let paints = 0;
   function paint() {
+    paints++;
     if (model.loading) {
       root.replaceChildren(skeleton());
       return;

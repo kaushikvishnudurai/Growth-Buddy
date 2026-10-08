@@ -159,15 +159,15 @@ function GoalProgressBar({ goal, progress, onUpdateProgress }) {
             'button',
             {
               type: 'button',
-              class: 'gb-btn gb-btn--soft gb-btn--compact',
+              class: 'gb-goal-day-btn',
               onclick: () =>
                 onUpdateProgress(goal.id, {
                   durationDays: dur,
                   daysFollowed: Math.min(dur, followed + 1),
                 }),
             },
-            Icon('plus', { size: 14, sw: 2.6 }),
-            '+1 Day'
+            Icon('calendar-check', { size: 15, sw: 2.4 }),
+            'Log a day'
           )
         : null,
       h(
@@ -203,14 +203,22 @@ function GoalMilestones({ goal, progress, onUpdateProgress }) {
 
   const addInput = h('input', {
     type: 'text',
-    class: 'gb-input gb-goal-ms-input',
+    class: 'gb-goal-ms-input',
     maxlength: '160',
-    placeholder: 'Add a checkpoint…',
+    placeholder: 'Add a milestone…',
+    'aria-label': 'New milestone',
+    'data-ms-goal': String(goal.id),
   });
   const add = () => {
     const title = addInput.value.trim();
     if (!title) return;
     setMs(ms.concat({ id: 'm' + Date.now().toString(36), title, done: false }));
+    // The save re-renders the screen, which replaces this input; put the caret
+    // in the new one so the next checkpoint can be typed straight after Enter.
+    requestAnimationFrame(() => {
+      const next = document.querySelector('[data-ms-goal="' + String(goal.id) + '"]');
+      if (next) next.focus();
+    });
   };
   addInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
@@ -266,15 +274,16 @@ function GoalMilestones({ goal, progress, onUpdateProgress }) {
         )
       : null,
     rows.length ? h('div', { class: 'gb-goal-ms-list' }, rows) : null,
+    // The + sits inside the field: a separate "+ Add" pill beside it squeezed
+    // the input to a few characters on a card this narrow.
     h(
       'div',
-      { class: 'gb-goal-ms-add' },
+      { class: 'gb-affix gb-goal-ms-add' },
       addInput,
       h(
         'button',
-        { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--compact', onclick: add },
-        Icon('plus', { size: 14, sw: 2.6 }),
-        'Add'
+        { type: 'button', class: 'gb-goal-ms-addbtn', 'aria-label': 'Add milestone', onclick: add },
+        Icon('plus', { size: 16, sw: 2.6 })
       )
     )
   );
@@ -394,10 +403,10 @@ function GoalRow(
         'button',
         {
           type: 'button',
-          class: 'gb-btn gb-btn--soft gb-btn--compact',
+          class: 'gb-btn gb-btn--secondary gb-btn--compact',
           onclick: () => onAddAction(goal),
         },
-        Icon('plus', { size: 14, sw: 2.4 }),
+        Icon('notebook-pen', { size: 14, sw: 2.4 }),
         'Log action'
       ),
       !(progress && progress.durationDays)
@@ -416,7 +425,7 @@ function GoalRow(
         'button',
         {
           type: 'button',
-          class: 'gb-btn gb-btn--secondary gb-btn--compact',
+          class: 'gb-btn ' + (goal.completed ? 'gb-btn--secondary' : 'gb-btn--soft') + ' gb-btn--compact',
           onclick: () => onToggle(goal.id),
         },
         Icon(goal.completed ? 'undo-2' : 'check', { size: 14, sw: 2.4 }),
@@ -459,71 +468,114 @@ function ScreenGoals({
     'New goal'
   );
 
+  // Horizon first and as three buttons, not a select: it's the one choice
+  // every goal needs, and the hint under it says what each one means.
+  const HORIZON_HINT = {
+    short_term: 'Weeks to a few months',
+    mid_term: 'About 3 to 12 months',
+    long_term: 'A year or more',
+  };
+
   function openCreateGoal() {
     const titleInput = h('input', {
       type: 'text',
-      class: 'gb-input',
+      class: 'gb-input gb-goal-title-input',
       maxlength: '255',
       placeholder: 'What do you want to achieve?',
+      'aria-label': 'Goal',
     });
-    const descInput = h('textarea', {
-      class: 'gb-input gb-input--about',
-      maxlength: '1000',
-      placeholder: 'Add a simple description or why this matters.',
-    });
-    const horizonInput = h(
-      'select',
-      { class: 'gb-input' },
-      h('option', { value: 'short_term' }, 'Short term'),
-      h('option', { value: 'mid_term' }, 'Mid term'),
-      h('option', { value: 'long_term' }, 'Long term')
+    let horizon = 'short_term';
+    const hint = h('div', { class: 'gb-field-hint gb-goal-horizon-hint' }, HORIZON_HINT[horizon]);
+    const segs = Object.keys(HORIZON_HINT).map((k) =>
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-seg' + (k === horizon ? ' is-on' : ''),
+          role: 'radio',
+          'aria-checked': String(k === horizon),
+          onclick: () => {
+            horizon = k;
+            segs.forEach((b) => {
+              const on = b.dataset.k === k;
+              b.classList.toggle('is-on', on);
+              b.setAttribute('aria-checked', String(on));
+            });
+            hint.textContent = HORIZON_HINT[k];
+          },
+          'data-k': k,
+        },
+        HORIZON_LABEL[k].replace(/ term$/i, '')
+      )
     );
-    const targetInput = h('input', { type: 'date', class: 'gb-input' });
+    const descInput = h('textarea', {
+      class: 'gb-input gb-goal-desc-input',
+      maxlength: '1000',
+      rows: '2',
+      placeholder: 'Why does it matter? (optional)',
+      'aria-label': 'Why it matters',
+    });
+    const targetInput = h('input', { type: 'date', class: 'gb-input', min: todayKey() });
     const durationInput = h('input', {
       type: 'number',
-      class: 'gb-input',
+      inputmode: 'numeric',
       min: '1',
       max: '1000',
-      placeholder: 'e.g. 50 (optional)',
+      step: '1',
+      placeholder: 'Off',
+      'aria-label': 'Track daily for how many days',
     });
+    const field = (label, control) =>
+      h('label', { class: 'gb-form-field' }, h('span', { class: 'gb-field-label' }, label), control);
     const body = h(
       'div',
-      { class: 'gb-form gb-form--about-diet' },
-      h('div', { class: 'gb-field-label' }, 'Title'),
+      { class: 'gb-form gb-goal-form' },
       titleInput,
-      h('div', { class: 'gb-field-label' }, 'Description'),
-      descInput,
-      h('div', { class: 'gb-field-label' }, 'Horizon'),
-      horizonInput,
-      h('div', { class: 'gb-field-label' }, 'Target date (optional)'),
-      targetInput,
-      h('div', { class: 'gb-field-label' }, 'Challenge duration in days (optional)'),
       h(
         'div',
-        { class: 'gb-note-hint', style: { marginBottom: '4px' } },
-        'For challenges like "50-day sugar cut" — adds a day-by-day progress tracker'
+        { class: 'gb-form-field' },
+        h('span', { class: 'gb-field-label' }, 'Horizon'),
+        h('div', { class: 'gb-segmented', role: 'radiogroup', 'aria-label': 'Horizon' }, segs),
+        hint
       ),
-      durationInput
+      descInput,
+      h(
+        'div',
+        { class: 'gb-form-pair' },
+        field('Target date', targetInput),
+        field(
+          'Track daily',
+          h('div', { class: 'gb-affix' }, durationInput, h('span', { class: 'gb-affix-unit' }, 'days'))
+        )
+      ),
+      h(
+        'div',
+        { class: 'gb-field-hint gb-goal-form-hint' },
+        'Track daily adds a day-by-day tracker, for challenges like a 50-day sugar cut.'
+      )
     );
     openGoalModal({
       title: 'New goal',
-      sub: 'Choose short, mid, or long term and keep the wording simple.',
       body,
       primary: 'Save goal',
       onPrimary: async () => {
         const title = titleInput.value.trim();
         if (!title) {
           titleInput.focus();
-          throw new Error('Title is required');
+          throw new Error('Give the goal a name first.');
+        }
+        const dur = durationInput.value ? Number(durationInput.value) : null;
+        if (dur != null && (!Number.isInteger(dur) || dur < 1 || dur > 1000)) {
+          durationInput.focus();
+          throw new Error('Track daily takes a whole number of days, 1 to 1000.');
         }
         const goal = await onCreateGoal({
           title,
           description: descInput.value.trim() || null,
-          horizon: horizonInput.value,
+          horizon,
           targetDate: targetInput.value || null,
         });
-        const dur = parseInt(durationInput.value);
-        if (Number.isFinite(dur) && dur >= 1 && goal && goal.id) {
+        if (dur != null && goal && goal.id) {
           onUpdateGoalProgress(goal.id, { durationDays: dur, daysFollowed: 0 });
         }
       },

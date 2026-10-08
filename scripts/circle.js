@@ -460,9 +460,11 @@ function openSearchModal({ onBrowse, onSearch, onOffer, onRequest, onView, curre
   loadPeople();
 
   let lastQ = '',
-    timer = null;
+    timer = null,
+    seq = 0; // bumped on every keystroke; a server answer for an older one is dropped
   queryInput.addEventListener('input', () => {
     const q = queryInput.value.trim().toLowerCase();
+    const mine = ++seq;
     clearTimeout(timer);
     // Empty query → restore the full browse list.
     if (q.length === 0) {
@@ -483,6 +485,7 @@ function openSearchModal({ onBrowse, onSearch, onOffer, onRequest, onView, curre
       lastQ = q;
       try {
         const ppl = await onSearch(q);
+        if (mine !== seq) return;
         // Merge server results with local filter, dedupe by id, keep stable order.
         const seen = new Set();
         const merged = [];
@@ -626,7 +629,9 @@ function ChallengesPanel({ api, currentUserId }) {
     );
   }
 
-  function startChallenge(circleId) {
+  // Actions update only the card they touch: refresh() rebuilt every card,
+  // so each one dropped back to "Loading…" and the page jumped.
+  function startChallenge(circleId, reload) {
     openFormModal({
       title: 'Start a challenge',
       sub: 'Most habit check-ins over the window wins.',
@@ -648,7 +653,7 @@ function ChallengesPanel({ api, currentUserId }) {
         });
         toast.success('Challenge started!');
         close();
-        refresh();
+        reload();
       },
     });
   }
@@ -664,10 +669,10 @@ function ChallengesPanel({ api, currentUserId }) {
       ],
       onSubmit: async (v, close) => {
         if (!v.name) return;
-        await api.createCircle({ name: v.name, goal: v.goal || null });
+        const made = await api.createCircle({ name: v.name, goal: v.goal || null });
         toast.success('Circle created.');
         close();
-        refresh();
+        addCard(made);
       },
     });
   }
@@ -724,7 +729,7 @@ function ChallengesPanel({ api, currentUserId }) {
           {
             type: 'button',
             class: 'gb-btn gb-btn--soft gb-btn--compact',
-            onclick: () => startChallenge(c.id),
+            onclick: () => startChallenge(c.id, loadChallenges),
           },
           Icon('flag', { size: 14, sw: 2.4 }),
           'Start challenge'
@@ -732,6 +737,14 @@ function ChallengesPanel({ api, currentUserId }) {
       ),
       body
     );
+  }
+
+  function addCard(c) {
+    if (!c) return refresh();
+    // The first circle replaces the "join or create" empty card.
+    if (!el.querySelector('.gb-circle-card')) el.replaceChildren();
+    el.appendChild(circleCard(c));
+    refreshIcons();
   }
 
   function refresh() {
@@ -828,12 +841,18 @@ function ChallengesPanel({ api, currentUserId }) {
                   type: 'button',
                   class: 'gb-btn gb-btn--soft gb-btn--compact',
                   onclick: async (e) => {
+                    // A second tap while the first is in flight joined twice
+                    // and toasted "Could not join" over the success.
+                    const btn = e.currentTarget;
+                    if (btn.disabled) return;
+                    btn.disabled = true;
                     try {
-                      await api.join(c.id);
-                      e.target.closest('.gb-browse-row').remove();
+                      const joined = await api.join(c.id);
+                      btn.closest('.gb-browse-row').remove();
                       toast.success('Joined ' + c.name + '.');
-                      refresh();
+                      addCard(joined);
                     } catch (err) {
+                      btn.disabled = false;
                       toast.error(err, 'Could not join.');
                     }
                   },
@@ -848,7 +867,8 @@ function ChallengesPanel({ api, currentUserId }) {
       .catch((err) => toast.error(err, 'Could not load circles.'));
   }
 
-  return { node: h('div', null, actions, el) };
+  // The screen puts the actions on the Challenges heading's line.
+  return { node: el, actions };
 }
 
 /* Lightweight read-only sheet for a prebuilt body node (used by Browse). */
@@ -917,13 +937,18 @@ function ScreenCircle({
           {
             type: 'button',
             class: 'gb-btn gb-btn--primary',
-            onclick: async () => {
+            onclick: async (e) => {
+              // One invite per tap: a double tap sent two.
+              const btn = e.currentTarget;
+              if (btn.disabled) return;
+              btn.disabled = true;
               try {
                 await onSendInvite(person.id, direction, noteInput.value.trim() || null);
                 toast.success('Invite sent to ' + person.displayName + '.');
                 refreshAll();
                 close();
               } catch (err) {
+                btn.disabled = false;
                 toast.error(err, 'Could not send invite.');
               }
             },
@@ -1093,9 +1118,8 @@ function ScreenCircle({
     'Find someone'
   );
 
-  const challengesPanel = challengesApi
-    ? ChallengesPanel({ api: challengesApi, currentUserId }).node
-    : null;
+  const challenges = challengesApi ? ChallengesPanel({ api: challengesApi, currentUserId }) : null;
+  const challengesPanel = challenges && challenges.node;
 
   return h(
     'div',
@@ -1104,7 +1128,7 @@ function ScreenCircle({
       'div',
       {
         style: {
-          padding: '6px 20px 10px',
+          padding: '6px var(--gutter) 10px',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'flex-end',
@@ -1124,7 +1148,8 @@ function ScreenCircle({
               margin: '0 0 4px',
             },
           },
-          'Growth Circle'
+          // Not "Growth Circle": the screen header already says that.
+          'Mentorship'
         ),
         h(
           'p',
@@ -1136,7 +1161,7 @@ function ScreenCircle({
     ),
     h(
       'div',
-      { style: { padding: '18px 20px 6px' } },
+      { style: { padding: '18px var(--gutter) 6px' } },
       h(
         'h4',
         {
@@ -1150,10 +1175,10 @@ function ScreenCircle({
         'Connections'
       )
     ),
-    h('div', { style: { padding: '0 20px' } }, incomingEl),
+    h('div', { style: { padding: '0 var(--gutter)' } }, incomingEl),
     h(
       'div',
-      { style: { padding: '18px 20px 6px' } },
+      { style: { padding: '18px var(--gutter) 6px' } },
       h(
         'h4',
         {
@@ -1167,11 +1192,11 @@ function ScreenCircle({
         'Your invites'
       )
     ),
-    h('div', { style: { padding: '0 20px' } }, outgoingEl),
+    h('div', { style: { padding: '0 var(--gutter)' } }, outgoingEl),
     challengesPanel
       ? h(
           'div',
-          { style: { padding: '22px 20px 6px' }, class: 'gb-challenges-head-wrap' },
+          { style: { padding: '22px var(--gutter) 6px' }, class: 'gb-challenges-head-wrap' },
           h(
             'div',
             {
@@ -1194,11 +1219,12 @@ function ScreenCircle({
                 },
               },
               'Challenges'
-            )
+            ),
+            challenges.actions
           )
         )
       : null,
-    challengesPanel ? h('div', { style: { padding: '0 20px' } }, challengesPanel) : null
+    challengesPanel ? h('div', { style: { padding: '0 var(--gutter)' } }, challengesPanel) : null
   );
 }
 

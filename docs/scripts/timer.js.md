@@ -31,7 +31,7 @@ take every reminder with it.
 | Fn | Line |
 |---|---|
 | `setMode(mode, mins)` | 275 |
-| `start` / `pause` / `reset` | 288 / 311 / 322 |
+| `start` / `pause` / `reset` | 288 / 311 / 322 — `start` on a finished clock (0s left) resets to a full session first; it used to finish on the next tick and record a phantom session |
 | `paintRing` / `buildRing(size, stroke)` | 241 / 348 |
 | `chime()` | 328 (synthesised, not a file) |
 | `openCustomMinutesModal` | 382 |
@@ -55,6 +55,8 @@ take every reminder with it.
 ## Stats
 
 `applyStats(s)` (690), `statTile` (697), `StatsCard` (701) — backed by `/api/focus/stats`;
+the newest answer is kept in `Focus.last` (cleared when `statsOwner` changes) so a revisit opens on
+numbers, not dashes;
 completed sessions POST to `/api/focus/sessions` (`FocusSession` rows are retention-capped per user).
 
 Styles: `app.css` §"Focus screen" (~1033) and §"Focus stats card" (~3859).

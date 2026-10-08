@@ -8,6 +8,7 @@ import {
   confirmDialog,
   openOverlay,
   openModal,
+  submitOnEnter,
   landed,
   leave,
 } from './gb-kit.js';
@@ -390,6 +391,15 @@ function richEditor({ html, placeholder, onInput } = {}) {
 
   function run(tool) {
     area.focus();
+    /* Reached from the keyboard (Tab to the button, Enter), focus left the
+       editor and the selection may have gone with it: put back where the user
+       was, or the command lands at the start of the note or on nothing. */
+    const sel = window.getSelection();
+    const inside = sel && sel.rangeCount && area.contains(sel.getRangeAt(0).startContainer);
+    if (!inside && lastRange && area.contains(lastRange.startContainer)) {
+      sel.removeAllRanges();
+      sel.addRange(lastRange);
+    }
     let value = tool.value;
     if (tool.prompt) {
       promptFor(tool);
@@ -420,6 +430,11 @@ function richEditor({ html, placeholder, onInput } = {}) {
         onmousedown: (e) => {
           e.preventDefault();
           run(tool);
+        },
+        // Keyboard activation fires click with no mousedown (detail 0); a
+        // pointer press already ran above, so it must not run twice.
+        onclick: (e) => {
+          if (e.detail === 0) run(tool);
         },
       },
       Icon(tool.icon, { size: 16, sw: 2.4 })
@@ -570,6 +585,15 @@ function richEditor({ html, placeholder, onInput } = {}) {
 
   area.addEventListener('keyup', syncState);
   area.addEventListener('mouseup', syncState);
+  /* A touch selection (long-press, drag the handles) fires no keyup or mouseup,
+     so Bold/Italic showed the state of wherever the caret was before. Only
+     while focused: selectionchange is document-wide. */
+  function onSelection() {
+    if (!area.isConnected) document.removeEventListener('selectionchange', onSelection);
+    else if (document.activeElement === area) syncState();
+  }
+  area.addEventListener('focus', () => document.addEventListener('selectionchange', onSelection));
+  area.addEventListener('blur', () => document.removeEventListener('selectionchange', onSelection));
   area.addEventListener('input', () => {
     normalize();
     if (onInput) onInput();
@@ -580,12 +604,15 @@ function richEditor({ html, placeholder, onInput } = {}) {
        <img src="https://..."> on the clipboard, and the HTML one would be
        stripped to nothing by sanitize(). */
     const photos = clipboardPhotos(e.clipboardData);
-    if (photos.length) {
+    const html = e.clipboardData && e.clipboardData.getData('text/html');
+    /* ...but only when the HTML has no words. Word, Excel and Notes on a Mac
+       also put a PNG *rendering* of the copied text on the clipboard, and
+       taking that pasted a picture of a paragraph instead of the paragraph. */
+    if (photos.length && (!html || !textOf(html))) {
       e.preventDefault();
       addPhotos(photos);
       return;
     }
-    const html = e.clipboardData && e.clipboardData.getData('text/html');
     if (!html) return;
     e.preventDefault();
     /* Some apps put their pictures in the HTML itself as data URLs, full size
@@ -597,6 +624,10 @@ function richEditor({ html, placeholder, onInput } = {}) {
       return;
     }
     document.execCommand('insertHTML', false, clean);
+    /* Chrome's insertHTML re-adds inline styles (font, colour, size) to keep
+       the source's look. sanitize() drops them on save, so leaving them meant
+       the note looked one way now and another when reopened. */
+    area.querySelectorAll('[style]').forEach((el) => el.removeAttribute('style'));
     if (onInput) onInput();
   });
 
@@ -690,6 +721,7 @@ function sheet({ title, body, primary, onPrimary, headActions, onDismiss }) {
     },
     primary || 'Save'
   );
+  submitOnEnter(card, primaryBtn);
   card.append(
     h(
       'div',
@@ -752,16 +784,28 @@ function ScreenNotes({ onList, onGet, onCreate, onUpdate, onDelete, onMakeTask, 
   const listEl = h('div', { class: 'gb-note-grid' });
   let notes = [];
   let query = '';
+  let searchTimer = null;
   const searchInput = h('input', {
     type: 'search',
     class: 'gb-input',
     placeholder: 'Search notes and photo descriptions',
     'aria-label': 'Search notes',
+    // Debounced, and it only hides cards: rebuilding them on every keystroke
+    // re-decoded every cover image, so the grid blinked while you typed.
     oninput: () => {
-      query = searchInput.value;
-      paint();
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => {
+        query = searchInput.value;
+        filter();
+      }, 150);
     },
   });
+  const noMatchText = h('p');
+  const noMatch = h(
+    'div',
+    { class: 'gb-card gb-note-state', hidden: true },
+    h('div', { class: 'gb-empty' }, noMatchText)
+  );
   const searchBar = h(
     'div',
     { class: 'gb-notes-search', hidden: true },
@@ -932,7 +976,11 @@ function ScreenNotes({ onList, onGet, onCreate, onUpdate, onDelete, onMakeTask, 
     return card;
   }
 
+  const pinning = new Set();
   async function togglePin(note) {
+    // A double tap pinned and then unpinned: one request per note at a time.
+    if (pinning.has(note.id)) return;
+    pinning.add(note.id);
     try {
       const saved = await onUpdate(note.id, { pinned: !note.pinned });
       Object.assign(note, saved);
@@ -941,6 +989,8 @@ function ScreenNotes({ onList, onGet, onCreate, onUpdate, onDelete, onMakeTask, 
       landed(cardOf(note.id)); // it moved: show where to
     } catch (err) {
       toast.error(err, 'Could not pin that note.');
+    } finally {
+      pinning.delete(note.id);
     }
   }
 
@@ -1003,14 +1053,19 @@ function ScreenNotes({ onList, onGet, onCreate, onUpdate, onDelete, onMakeTask, 
         {
           type: 'button',
           class: 'gb-btn gb-btn--soft gb-btn--compact',
-          onclick: async () => {
+          onclick: async (e) => {
             const text = title.value.trim() || textOf(ed.read());
             if (!text) return toast.error(null, 'Write something first.');
+            // Disabled in flight: a double tap made two identical tasks.
+            const btn = e.currentTarget;
+            btn.disabled = true;
             try {
               await onMakeTask(text.slice(0, 255));
               toast.success('Added to your tasks.');
             } catch (err) {
               toast.error(err, 'Could not make that a task.');
+            } finally {
+              btn.disabled = false;
             }
           },
         },
@@ -1146,27 +1201,31 @@ function ScreenNotes({ onList, onGet, onCreate, onUpdate, onDelete, onMakeTask, 
         )
       );
     } else {
-      // Every word must appear somewhere. ponytail: re-parses each body per
-      // keystroke, fine for hundreds of notes; cache searchTextOf by body if not.
-      const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-      const shown = words.length
-        ? notes.filter((n) => {
-            const hay = searchTextOf(n);
-            return words.every((w) => hay.includes(w));
-          })
-        : notes;
-      if (shown.length) shown.forEach((n) => listEl.appendChild(NoteCard(n)));
-      else
-        listEl.appendChild(
-          h(
-            'div',
-            { class: 'gb-card gb-note-state' },
-            h('div', { class: 'gb-empty' }, h('p', null, 'No notes match "' + query.trim() + '".'))
-          )
-        );
+      notes.forEach((n) => listEl.appendChild(NoteCard(n)));
+      listEl.appendChild(noMatch);
+      filter();
     }
     searchBar.hidden = !notes.length;
     refreshIcons();
+  }
+
+  /* Every word must appear somewhere. Toggles the cards already built.
+     ponytail: re-parses each body per search, fine for hundreds of notes;
+     cache searchTextOf by body if not. */
+  function filter() {
+    if (!notes.length) return;
+    const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+    const byId = new Map(notes.map((n) => [n.id, n]));
+    let any = false;
+    listEl.querySelectorAll('.gb-note-card').forEach((card) => {
+      const n = byId.get(card.dataset.id);
+      const hay = n ? searchTextOf(n) : '';
+      const show = words.every((w) => hay.includes(w));
+      card.hidden = !show;
+      any = any || show;
+    });
+    noMatchText.textContent = 'No notes match "' + query.trim() + '".';
+    noMatch.hidden = any;
   }
 
   // Skeleton first: the list has real height before the fetch lands, so the
@@ -1179,31 +1238,45 @@ function ScreenNotes({ onList, onGet, onCreate, onUpdate, onDelete, onMakeTask, 
       h('div', { class: 'gb-skel-lines' }, skelLine('55%'), skelLine('92%'), skelLine('38%'))
     )
   );
-  onList()
-    .then((data) => {
-      // A note saved while this was in flight (a cold server takes seconds) is
-      // already in `notes` and may be missing from `data`, which the server read
-      // first. Replacing outright dropped it and put "No notes yet" back.
-      const fetched = Array.isArray(data) ? data : [];
-      const ids = new Set(fetched.map((n) => n.id));
-      notes = fetched.concat(notes.filter((n) => !ids.has(n.id)));
-      sortNotes();
-      paint();
-    })
-    .catch(() => {
-      listEl.replaceChildren(
-        h(
-          'div',
-          { class: 'gb-card gb-note-state' },
+  const load = () =>
+    onList()
+      .then((data) => {
+        // A note saved while this was in flight (a cold server takes seconds) is
+        // already in `notes` and may be missing from `data`, which the server read
+        // first. Replacing outright dropped it and put "No notes yet" back.
+        const fetched = Array.isArray(data) ? data : [];
+        const ids = new Set(fetched.map((n) => n.id));
+        notes = fetched.concat(notes.filter((n) => !ids.has(n.id)));
+        sortNotes();
+        paint();
+      })
+      .catch(() => {
+        listEl.replaceChildren(
           h(
             'div',
-            { class: 'gb-empty' },
-            Icon('circle-alert', { size: 26, color: 'var(--fg3)' }),
-            h('p', null, 'Could not load your notes. Pull down to try again.')
+            { class: 'gb-card gb-note-state' },
+            h(
+              'div',
+              { class: 'gb-empty' },
+              Icon('circle-alert', { size: 26, color: 'var(--fg3)' }),
+              h('p', null, 'Could not load your notes.'),
+              h(
+                'button',
+                {
+                  type: 'button',
+                  class: 'gb-btn gb-btn--secondary gb-btn--compact',
+                  onclick: (e) => {
+                    e.currentTarget.disabled = true;
+                    load();
+                  },
+                },
+                'Try again'
+              )
+            )
           )
-        )
-      );
-    });
+        );
+      });
+  load();
 
   return h('div', { class: 'gb-notes' }, composer, searchBar, listEl);
 }
@@ -1249,4 +1322,4 @@ if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.DEV
   }
 }
 
-export { ScreenNotes, sanitize };
+export { ScreenNotes, sanitize, shrinkPhoto };

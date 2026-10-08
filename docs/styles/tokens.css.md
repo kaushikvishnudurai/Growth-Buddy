@@ -27,6 +27,8 @@ via `@fontsource` — plus Space Mono for `--font-mono`.
   `-soft` / `-soft-fg` variants; `--danger` is text-only (the two error lines in `app.css`).
 - **AI accent:** `--ai`, `--ai-soft`, `--ai-soft-fg`, `--hairline-ai` — used for Buddy/AI surfaces.
 - **Type:** `--font-display`, `--font-body`, `--font-mono`; `--leading-tight|snug|normal|relaxed`.
+- **Layout:** `--gutter` — every screen's side margin (20px; 16px at ≤460px, set in `app.css`).
+  A screen's outer wrapper pads with it and nothing inside adds more, or tabs shift sideways.
 - **Shape:** `--radius-sm|md|lg|xl|2xl|3xl|pill`.
 - **Elevation:** `--shadow-xs|sm|md|lg|xl`. `xl` is the overlay tier — dialogs and the two header
   panels, which sit above a dimmed page. Three surfaces were already naming it before it existed.

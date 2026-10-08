@@ -7,14 +7,7 @@
 import { h, Card, SectionTitle, Icon } from './gb-kit.js';
 import { WeeklyReflectionCard, BadgeCard, GoalTimelineCard } from './dashboard.js';
 import { buildInsights } from './insights.js';
-import {
-  daysEnding,
-  localKey,
-  pixelValues,
-  personalRecords,
-  periodDelta,
-  monthReview,
-} from './review.js';
+import { localKey, pixelValues, personalRecords, periodDelta, monthReview } from './review.js';
 import { shareStoryCard } from './share-card.js';
 import { toast } from './toast.js';
 
@@ -255,7 +248,10 @@ function trendChart(values, color, days, fmt) {
   };
   svg.addEventListener('pointermove', show);
   svg.addEventListener('pointerdown', show);
-  svg.addEventListener('pointerleave', hide);
+  // Mouse only: a finger lifting fires pointerleave straight after pointerup,
+  // so a tap read the day for one frame. A touch readout stays until the next
+  // tap or until a scroll starts (pointercancel).
+  svg.addEventListener('pointerleave', (e) => e.pointerType === 'mouse' && hide());
   svg.addEventListener('pointercancel', hide);
   return h('div', { class: 'gb-trend-plot' }, svg, tip);
 }
@@ -368,7 +364,9 @@ function trendsSection({ on, trends, wellness, range, onRange }) {
   }
   // Calories.
   if (on('food')) {
-    const vals = seriesFrom((d) => (d.kcal != null ? d.kcal : null));
+    // 0 kcal is a day with nothing logged, as in vsLine below: plotted, it drew
+    // a dive to zero and pulled the average down.
+    const vals = seriesFrom((d) => Number(d.kcal) || null);
     const s = summarize(vals);
     cards.push(
       trendCard(
@@ -442,42 +440,135 @@ function trendsSection({ on, trends, wellness, range, onRange }) {
 }
 
 /* ---- Year in pixels ------------------------------------------------------
-   One square per day for the last 53 weeks, GitHub-style: a column is a week
-   (Monday on top), shade is the day's value, blank is a day with nothing logged.
+   A row per month for the last 12 (oldest on top), a column per day of the
+   month, shade is the day's value, blank is a day with nothing logged. It was
+   53 week-columns, GitHub-style: ~5px dots on a phone with no month or date on
+   any of them, so "how was March" meant counting columns. Tapping a day reads
+   it out under the grid (a title tooltip never shows on touch).
    The metric toggle repaints the grid in place; it is not app state. */
 const PIXEL_METRICS = [
-  { key: 'score', label: 'Score' },
-  { key: 'mood', label: 'Mood' },
-  { key: 'habits', label: 'Habits' },
+  { key: 'score', label: 'Score', low: 'Less', high: 'More' },
+  { key: 'mood', label: 'Mood', low: 'Low', high: 'Great' },
+  { key: 'habits', label: 'Habits', low: 'None', high: 'All' },
 ];
 let pixelMetric = 'score';
 
-function pixelGrid(values, today) {
-  const end = new Date(today + 'T00:00:00');
-  const back = 52 * 7 + ((end.getDay() + 6) % 7); // to the Monday 52 weeks ago
-  const days = daysEnding(today, back + 1);
-  const logged = days.filter((k) => k in values);
-  const avg = logged.length
-    ? Math.round((logged.reduce((a, k) => a + values[k], 0) / logged.length) * 100)
-    : 0;
-  return h(
+const MONTH_SHORT = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+function nearestDay(grid, e) {
+  let best = null;
+  let bestD = Infinity;
+  for (const c of grid.querySelectorAll('[data-day]')) {
+    const r = c.getBoundingClientRect();
+    const d = Math.hypot(r.left + r.width / 2 - e.clientX, r.top + r.height / 2 - e.clientY);
+    if (d < bestD) {
+      bestD = d;
+      best = c;
+    }
+  }
+  // Not a tap on the month labels or far outside the cells.
+  return best && bestD < 12 ? best : null;
+}
+
+function pixelGrid(values, today, readout) {
+  const [ty, tm] = today.split('-').map(Number);
+  const rows = [];
+  const summary = { logged: 0, sum: 0 };
+  // Header: day numbers at 1, 10, 20, 30 over their columns.
+  rows.push(h('span', { class: 'gb-pixels-corner' }));
+  for (let d = 1; d <= 31; d++) {
+    rows.push(h('span', { class: 'gb-pixels-day' }, d === 1 || d % 10 === 0 ? String(d) : ''));
+  }
+  for (let i = 11; i >= 0; i--) {
+    const first = new Date(ty, tm - 1 - i, 1);
+    const y = first.getFullYear();
+    const m = first.getMonth();
+    const len = new Date(y, m + 1, 0).getDate();
+    rows.push(h('span', { class: 'gb-pixels-month' }, MONTH_SHORT[m]));
+    for (let d = 1; d <= 31; d++) {
+      if (d > len) {
+        rows.push(h('span', { class: 'gb-pixel is-void' }));
+        continue;
+      }
+      const k = y + '-' + pad2(m + 1) + '-' + pad2(d);
+      if (k > today) {
+        rows.push(h('span', { class: 'gb-pixel is-future' }));
+        continue;
+      }
+      const v = values[k];
+      if (v != null) {
+        summary.logged++;
+        summary.sum += v;
+      }
+      const lv = v == null ? 0 : Math.max(1, Math.ceil(v * 4));
+      rows.push(
+        h('span', {
+          class: 'gb-pixel lv-' + lv + (k === today ? ' is-today' : ''),
+          'data-day': k,
+        })
+      );
+    }
+  }
+  const avg = summary.logged ? Math.round((summary.sum / summary.logged) * 100) : 0;
+  const total = summary.logged
+    ? summary.logged + ' days logged · average ' + avg + '%'
+    : 'Nothing logged in the last year yet';
+  readout.textContent = total;
+
+  let picked = null;
+  const grid = h(
     'div',
     {
       class: 'gb-pixels',
       role: 'img',
-      'aria-label': logged.length
-        ? logged.length + ' days logged in the last year, averaging ' + avg + '%'
-        : 'Nothing logged in the last year yet',
+      'aria-label': total,
+      // One listener for ~370 cells. A tap on the picked day again goes back
+      // to the year's summary.
+      onclick: (e) => {
+        // Cells are ~6px on a small phone, so a tap often lands in a gap: take
+        // the nearest day to the finger rather than clearing the readout.
+        const cell = e.target.closest('[data-day]') || nearestDay(e.currentTarget, e);
+        if (picked) picked.classList.remove('is-picked');
+        if (!cell || cell === picked) {
+          picked = null;
+          readout.textContent = total;
+          return;
+        }
+        picked = cell;
+        cell.classList.add('is-picked');
+        const k = cell.dataset.day;
+        const v = values[k];
+        const date = new Date(k + 'T00:00:00').toLocaleDateString(undefined, {
+          weekday: 'short',
+          day: 'numeric',
+          month: 'short',
+        });
+        readout.textContent =
+          date +
+          ' · ' +
+          (k === today
+            ? 'today, still counting'
+            : v == null
+              ? 'nothing logged'
+              : Math.round(v * 100) + '%');
+      },
     },
-    days.map((k) => {
-      const v = values[k];
-      const lv = v == null ? 0 : Math.max(1, Math.ceil(v * 4));
-      return h('span', {
-        class: 'gb-pixel lv-' + lv + (k === today ? ' is-today' : ''),
-        title: k + (v == null ? '' : ' · ' + Math.round(v * 100) + '%'),
-      });
-    })
+    rows
   );
+  return grid;
 }
 
 function pixelsSection({ trends, wellness, insightHistory }) {
@@ -485,7 +576,10 @@ function pixelsSection({ trends, wellness, insightHistory }) {
   const habitHistory = insightHistory && insightHistory.habits;
   const slot = h('div');
   const toggle = h('div', { class: 'gb-range-toggle' });
+  const readout = h('span', { class: 'gb-pixels-readout', 'aria-live': 'polite' });
+  const key = h('div', { class: 'gb-pixels-legend' });
   const paint = () => {
+    const metric = PIXEL_METRICS.find((m) => m.key === pixelMetric);
     toggle.replaceChildren(
       ...PIXEL_METRICS.map((m) =>
         h(
@@ -504,7 +598,12 @@ function pixelsSection({ trends, wellness, insightHistory }) {
       )
     );
     slot.replaceChildren(
-      pixelGrid(pixelValues(pixelMetric, { trends, wellness, habitHistory, today }), today)
+      pixelGrid(pixelValues(pixelMetric, { trends, wellness, habitHistory, today }), today, readout)
+    );
+    key.replaceChildren(
+      metric.low,
+      ...[1, 2, 3, 4].map((lv) => h('span', { class: 'gb-pixel lv-' + lv })),
+      metric.high
     );
   };
   paint();
@@ -514,16 +613,7 @@ function pixelsSection({ trends, wellness, insightHistory }) {
     h('div', { class: 'gb-trend-section-head' }, SectionTitle({ title: 'Year in pixels' }), toggle),
     Card({
       className: 'gb-pixels-card',
-      children: [
-        slot,
-        h(
-          'div',
-          { class: 'gb-pixels-key' },
-          'Less',
-          [1, 2, 3, 4].map((lv) => h('span', { class: 'gb-pixel lv-' + lv })),
-          'More'
-        ),
-      ],
+      children: [slot, h('div', { class: 'gb-pixels-key' }, readout, key)],
     })
   );
 }

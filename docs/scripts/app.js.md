@@ -9,15 +9,15 @@ Screen modules are leaves it calls into; they get thin `api` wrapper objects, ne
 |---|---|
 | 1–230 | imports, date helpers (`todayLabel`, `greetingFor` + its dev self-check, `firstName`, `dateKey`), `loadTheme`, quote-of-day cache (`quoteDateStr`, `loadCachedQuote`, `cacheQuote`), toasts (`pushToast`, `toastError`, `toastSuccess`, `dismissToast`) |
 | 210–250 | `score()` (+ `optimisticScore()`, the same sum with the server's number ignored), `loadSession`, `loadToken`, `saveSession` |
-| 249–336 | wellness store (`emptyWellness`, `loadWellness`, `persistWellness`), goal progress (`loadGoalProgress`, `persistGoalProgress`, `updateGoalProgress`) |
-| 337–740 | **money store**: `moneyStorageKey`, `loadMoney`, `cacheMoney`, `saveMoney(next, base)` → `ledgerDiff(base, next)` laid onto the live state with `applyLedgerDiff` → pending queue (`queueLedger`/`flushLedger`, replayed at boot via `overlayPending`) + `putDocIfChanged`; `accountRequest` (queued behind ledger writes); UI prefs `saveUiPrefs(patch)` → `PUT /api/auth/ui-prefs`, `hydrateUiPrefs` |
-| 413–560 | streak freeze: `emptyStreakFreeze`, `loadStreakFreeze`, `reconcileStreakFreeze`, `effectiveStreak`, `habitFreezeState`, `freezeTokensLeft`, `protectStreak`, `declineStreakBreak`, `toggleRestDay`. Backend owns the tokens; this only reads fields + calls protect/unprotect. Achievements: `achievementProps`, `checkAchievements` (fires `celebrate()` on first unlock) |
+| 249–336 | wellness store (`emptyWellness`, `loadWellness`, `persistWellness`), goal progress (`loadGoalProgress`, `persistGoalProgress`, `updateGoalProgress` — optimistic; the newest save's failure rolls back and toasts) |
+| 337–740 | **money store**: `moneyStorageKey`, `loadMoney`, `cacheMoney`, `saveMoney(next, base)` → `ledgerDiff(base, next)` laid onto the live state with `applyLedgerDiff` → pending queue (`queueLedger`/`flushLedger`, replayed at boot via `overlayPending`) + `putDocIfChanged`; an entry the server refuses (a `rejected` id, or a whole-batch 4xx other than 401/408/409/429) is put back to the server's copy by `rollbackMoneyItems(ids)`, those ids only; `accountRequest` (queued behind ledger writes); UI prefs `saveUiPrefs(patch)` → `PUT /api/auth/ui-prefs`, `hydrateUiPrefs` |
+| 413–560 | streak freeze: `emptyStreakFreeze`, `loadStreakFreeze`, `reconcileStreakFreeze`, `effectiveStreak`, `habitFreezeState`, `freezeTokensLeft`, `protectStreak`, `declineStreakBreak`, `toggleRestDay` (both go through `freezeWrite`: optimistic habit + token count, one per habit in flight, exact rollback). Backend owns the tokens; this only reads fields + calls protect/unprotect. Achievements: `achievementProps`, `checkAchievements` (fires `celebrate()` on first unlock) |
 | 559–625 | local trends: `emptyTrends`, `loadTrends`, `persistTrends`, `recordTrendsToday` |
 | 625–740 | `clearSession`, `syncUserSession`, **`api(path, options)` / `apiFetch`** — the single network chokepoint; attaches the bearer token and, in the Capacitor app, the `X-GB-Device` label from `native.js` so the signed-in-devices list can name the handset — `handleAuthExpired` |
-| 744–935 | `mapTask`, `formatTaskTime`, `cacheFoodSummary`, `loadCalendarFoodForDate`, in-place repaints (`rerenderCalendarSideIfActive`, `rerenderHomeMiniCalendarIfActive`, `updateCalendarDaySelection`) |
+| 744–935 | `mapTask`, `formatTaskTime`, `cacheFoodSummary`, `loadCalendarFoodForDate`, in-place repaints (`rerenderCalendarSideIfActive` — coalesced to one repaint per tick, deferred while a field in the panel has focus, keeps its height while the day's food loads, puts the caret back in the reminder text after an add — `rerenderHomeMiniCalendarIfActive` (coalesced the same way; answers "is there a card?" synchronously, rebuilds it in a microtask), `updateCalendarDaySelection`) |
 | 934–1140 | **`loadData()`** (boot fetch fan-out), `loadQuote()`, `connectWebSocket` / `disconnectWebSocket` |
-| 1140–1470 | mutations: `toggleTask`, `toggleHabit`, `refreshScore`, `refreshCurrentUser`, `createTask`, `updateTask`, `createHabit`, `createGoal`, goal actions CRUD, `deleteHabit`, `quickAddWater`, `updateWaterGoal`, `logFoodEntry`, `saveSleepEntry`, `saveMoodEntry`, `addQuickExpense`, **`runQuickAdd(text)`**, `rememberPhotoFood`, `showFoodLoader(name)` (the full-screen "Estimating calories" over a food save, CSS in app.css "Food loader"; shown after 200ms so a fast save does not flash it) |
-| 1481–2010 | modals: `openSleepSchedule`, `openMoodCheckin`, `openDailyPlan`, `openAddFood`, `addSuggestedReminder`, `deleteWaterEntry`, `deleteFoodEntry` |
+| 1140–1470 | mutations: `toggleTask`, `toggleHabit`, `refreshScore`, `refreshScoreLater` (create/update dialogs close on the write; the ring lands after), `refreshCurrentUser`, `createTask`, `updateTask`, `patchTaskNow` / `pauseTask` (optimistic one-field task change, also Edit task's snooze), `createHabit`, `createGoal` (places the POSTed goal, no reload), `toggleGoal` (optimistic, reconciles from the PATCH answer), goal actions CRUD, `deleteHabit`, `quickAddWater` (optimistic; `pendingWater` taps are laid over each server answer, the same amount twice inside 600ms is dropped), `updateWaterGoal`, `logFoodEntry`, `saveSleepEntry`, `saveMoodEntry`, `addQuickExpense`, **`runQuickAdd(text)`**, `rememberPhotoFood`, `showFoodLoader(name)` (the full-screen "Estimating calories" over a food save, CSS in app.css "Food loader"; shown after 200ms so a fast save does not flash it) |
+| 1481–2010 | modals: `openSleepSchedule`, `openMoodCheckin`, `openDailyPlan`, `openAddFood`, `addSuggestedReminder`, `deleteWaterEntry`, `deleteFoodEntry` (both `confirmDelete` first; food plays `removeSoon`). `logFoodEntry` throws, so a failed save keeps Log food open |
 | 2014–2260 | notifications (`refreshNotifications`, `markNotificationRead`, `respondMentorshipRequest`, `unreadNotifs`), header popovers (`toggleNotifOpen`, `toggleProfileOpen`, `toggleMoreOpen`, `profileDropdown`), routing (`screenFromHash`, `setScreen`), **`applyTheme(theme)`** — the only writer of `data-theme`, because the native status bar has to be repainted alongside it — `toggleTheme`, `togglePremium` |
 
 **`screenFromHash` reads `SCREENS` itself** — there is no id list to keep in step. The `SCREEN_IDS`
@@ -43,7 +43,8 @@ it silently landed on Home. Don't reintroduce a second list.
   `aria-expanded` (`syncHeaderExpanded`, which `render()` calls too), moves focus into the More sheet
   on open and back to its button on close, and falls back to a full
   render before first paint. **Reading a notification is a popover-only change too** — the read-all
-  link, `markNotificationRead` and the `refreshNotifications` poll all end in `repaintOverlays()`.
+  link, `markNotificationRead`, the bell's invite accept/decline (`respondMentorshipRequest`) and
+  the `refreshNotifications` poll all end in `repaintOverlays()`.
   They used to call `render()`, so "Mark all read" visibly reloaded whatever screen you were on.
 - **`installOutsideClickToCloseHeaderPopovers` tears down the previous listeners** via the
   module-level `popoverCleanup` before attaching new ones. Each call builds fresh closures, so
@@ -56,7 +57,9 @@ it silently landed on Home. Don't reintroduce a second list.
   and **`replaceWith`s** the real root when the chunk lands. Replace, not wrap: the desktop width cap
   is `.gb-scroll > .gb-rise:not(.gb-goals):not(.gb-mentor)`, so a wrapper would steal the cap and
   break those two exceptions. It also bails if the placeholder is no longer `isConnected` — a later
-  render() made its own, and a stale one must not resurrect itself.
+  render() made its own, and a stale one must not resurrect itself. A chunk that has loaded once is
+  kept in `lazyModules` (keyed by the loader's source text) and later renders build synchronously,
+  so a tap on Goals, Report, Timer or Notes no longer flashes the grey placeholder.
   `money.js` **can't** join them yet: Home's Money card (`MoneyHomeCard`) and `normalizeMoney` on
   every load pull all 154 KB in eagerly. Splitting those few exports into a light module is the
   single biggest remaining bundle win.
@@ -137,7 +140,10 @@ it silently landed on Home. Don't reintroduce a second list.
   exception is `shakeAuthCard()`, which gates its haptic buzz on it.
 - **`toggleTask` / `toggleHabit` paint before they fetch.** They flip `done` in `state`, recompute
   the ring with `optimisticScore()` and `render()` immediately, then reconcile with the server's
-  version; a failure restores the snapshot taken first. The round trip is three calls deep
+  version; a failure flips just that row back (not the whole array, which undid any other row
+  ticked meanwhile), and once the toggle itself has succeeded a failed score refresh no longer
+  reverts it. `togglesInFlight` ignores a second tap on a row whose toggle is still in flight —
+  two `/toggle` PATCHes raced and the last response won. The round trip is three calls deep
   (toggle → `/api/score/today` → `/api/auth/me`), which is why awaiting it made the checkbox feel
   broken. `score()` prefers `state.score` when it is non-zero, so a local tick alone does NOT move
   the ring — that is what `optimisticScore()` is for. Don't re-add an `await` before the paint.
@@ -164,6 +170,18 @@ it silently landed on Home. Don't reintroduce a second list.
   is only claimed when it starts at `scrollTop === 0` and is more vertical than horizontal, so normal
   scrolling and the calendar's side-swipes are untouched; past 72px of (resisted) pull it calls
   `loadData()`. Skipped while a dialog is open. Indicator is `#gb-ptr`, styled in `app.css`.
+  Only `touchstart` is always on (passive); the non-passive `touchmove` is attached for a touch that
+  began at the top and removed as soon as the drag isn't a downward pull — a permanent non-passive
+  `touchmove` on `document` made every scroll on every screen wait on the main thread.
+- **`loadData()` after the first load is a refresh** (`loadedFor`, reset on sign-out): back online,
+  pull to refresh and Quick add keep the screen up and repaint it in place; a failed call there is a
+  toast. Only the first load shows the loading card and can end on the crash card.
+- **`render()` keeps focus and scroll.** Same screen: focus goes back to the same control
+  (`focusLocator` / `refocus` in `a11y.js`: id, else a data-* key, else child position), and a11y.js
+  does the same when a dialog closes over a re-rendered screen. A real screen change focuses
+  `#gb-main`. Each screen's scroll is filed in `scrollByScreen` when you leave and restored when you
+  come back. `tweenFromLast()` starts the score ring, water fill and goal bars from their last
+  value so their CSS transition plays instead of jumping (`TWEENED` lists them).
 - **A dynamic import that 404s reloads the page once** (`isStaleChunkError` + `CHUNK_RELOAD_KEY`). A
   deploy renames every hashed chunk, so an already-open tab asks for a name the server no longer has
   and `import('./circle.js')` rejects — which is why Circle and Family "sometimes" refused to open and
@@ -174,7 +192,8 @@ it silently landed on Home. Don't reintroduce a second list.
   the `report` entry in `SCREENS`, throttled to once per ten minutes) fetches focus sessions,
   finished tasks, water times, two days of score parts, each daily habit's history and a year of
   daily logs (`year`, `/api/daily-logs?days=366`, for Report's pixels and records — boot loads 60) into
-  `state.insightHistory`, then re-renders Report. `loadWaterUsualHours()` runs after boot only when
+  `state.insightHistory`, then `repaintReport()`s — which the 7/30 toggle uses too: it swaps only
+  the Report sections whose markup changed and holds the view on the first unchanged one. `loadWaterUsualHours()` runs after boot only when
   the water nudge is on and feeds `state.waterUsualHours` into `reSyncDeviceAlarms`.
 - **`reSyncDeviceAlarms()` after every change to its four inputs.** In the app, timed reminders,
   the water nudge and habit reminders are on-device alarms (`syncDeviceAlarms` in `push.js`)

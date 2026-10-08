@@ -15,7 +15,7 @@ import {
   formatTime as sharedFormatTime,
   thinkingLabel,
   Thinking,
-  leave,
+  refreshIcons,
 } from './gb-kit.js';
 import { MoneyHomeCard } from './money.js';
 import { CacheStorage } from './cache-storage.js';
@@ -235,9 +235,21 @@ function TaskRow(task, toggleTask, onEdit, onPause) {
       'div',
       { style: { flex: 1, minWidth: 0 } },
       h('div', { class: 'title' }, task.title),
-      h('div', { class: 'sub' }, task.paused ? 'Paused' : sharedFormatTime(task.time))
+      // The pill rides the sub line, not the row: beside the pause and edit
+      // buttons it squeezed a long title onto four lines on a phone.
+      h(
+        'div',
+        { class: 'sub' },
+        task.paused ? 'Paused' : sharedFormatTime(task.time),
+        Pill({
+          label: task.priority,
+          bg: p.bg,
+          fg: p.fg,
+          dot: p.dot,
+          style: { padding: '2px 8px' },
+        })
+      )
     ),
-    Pill({ label: task.priority, bg: p.bg, fg: p.fg, dot: p.dot }),
     onPause && !task.done
       ? h(
           'button',
@@ -266,7 +278,15 @@ function TaskRow(task, toggleTask, onEdit, onPause) {
   );
 }
 
-function TasksCard({ tasks, toggleTask, onAdd, onEdit, onPause }) {
+/* The Home task list grows with the page. It was a 284px scroll box inside the
+   scrolling page, a scroller in a scroller that trapped the thumb; now it shows
+   the first TASKS_SHOWN and a "Show all" that opens the rest in place. The
+   choice lives here so a re-render after a tick doesn't fold it back. */
+const TASKS_SHOWN = 6;
+let tasksExpanded = false;
+
+function TasksCard(props) {
+  const { tasks, toggleTask, onAdd, onEdit, onPause } = props;
   if (!tasks.length) {
     return Card({
       children: [
@@ -285,15 +305,36 @@ function TasksCard({ tasks, toggleTask, onAdd, onEdit, onPause }) {
       ],
     });
   }
-  return Card({
+  const hidden = tasksExpanded ? 0 : Math.max(0, tasks.length - TASKS_SHOWN);
+  const card = Card({
     children: [
       h(
         'div',
-        { class: 'gb-tasks-scroll' },
-        tasks.map((t) => TaskRow(t, toggleTask, onEdit, onPause))
+        { class: 'gb-tasks-list' },
+        tasks.slice(0, tasks.length - hidden).map((t) => TaskRow(t, toggleTask, onEdit, onPause))
       ),
+      hidden
+        ? h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-btn gb-btn--ghost gb-tasks-more',
+              onclick: () => {
+                tasksExpanded = true;
+                const next = TasksCard(props);
+                card.replaceWith(next);
+                refreshIcons();
+                // The button is gone; land on the first row it revealed.
+                const row = next.querySelectorAll('.gb-row')[TASKS_SHOWN];
+                row?.querySelector('button, input, [tabindex]')?.focus();
+              },
+            },
+            'Show all ' + tasks.length + ' tasks'
+          )
+        : null,
     ],
   });
+  return card;
 }
 
 function HabitCard(habit, toggleHabit) {
@@ -837,7 +878,10 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater })
           h('div', { class: 'gb-water-pour' + (isPouring ? ' is-active' : '') }),
           h(
             'div',
-            { class: 'gb-water-fill', style: { height: pct + '%' } },
+            // Full height, slid down by what's missing: a transform runs on the
+            // compositor where an animated height re-laid the card every frame,
+            // and unlike scaleY it doesn't squash the bubbles and wave inside.
+            { class: 'gb-water-fill', style: { transform: 'translateY(' + (100 - pct) + '%)' } },
             h('span', { class: 'gb-water-bubble b1' }),
             h('span', { class: 'gb-water-bubble b2' }),
             h('span', { class: 'gb-water-bubble b3' }),
@@ -977,9 +1021,11 @@ function FoodCard({ food, onAddFood, onDeleteFood }) {
         'button',
         {
           type: 'button',
-          class: 'gb-water-add gb-food-add',
+          // Same full-width soft button as the Summary card's "Open summary" below it.
+          class: 'gb-btn gb-btn--soft gb-food-check-btn gb-food-add',
           onclick: () => onAddFood && onAddFood(),
         },
+        Icon('plus', { size: 16, sw: 2.4 }),
         'Log food'
       ),
       recent.length
@@ -1001,9 +1047,8 @@ function FoodCard({ food, onAddFood, onDeleteFood }) {
                   {
                     type: 'button',
                     class: 'gb-btn gb-btn--icon',
-                    // Leaves first, then deletes: no dialog here, so the row
-                    // goes the moment it's tapped.
-                    onclick: () => onDeleteFood && leave(row).then(() => onDeleteFood(item.id)),
+                    // app.js confirms first and plays the row's exit after.
+                    onclick: () => onDeleteFood && onDeleteFood(item.id),
                     title: 'Delete',
                     'aria-label': 'Delete food entry',
                   },
@@ -1379,7 +1424,7 @@ function WaterWeekCard(water, onOpenDay) {
               { class: 'gb-tumbler' + (d.ml >= goal ? ' is-full' : ''), 'aria-hidden': 'true' },
               h('div', {
                 class: 'gb-tumbler-fill',
-                style: { height: Math.min(100, Math.round((d.ml / goal) * 100)) + '%' },
+                style: { transform: 'scaleY(' + Math.min(1, d.ml / goal).toFixed(3) + ')' },
               })
             ),
             h(
@@ -2163,7 +2208,7 @@ function ScreenFood({
   const on = (k) => !features || features[k] !== false;
   return h(
     'div',
-    { class: 'gb-rise', style: { padding: '0 20px 24px' } },
+    { class: 'gb-rise', style: { padding: '0 0 24px' } },
     on('water')
       ? h(
           'div',

@@ -10,6 +10,7 @@ import {
   plural,
   refreshIcons,
   openOverlay,
+  submitOnEnter,
   confirmDialog,
   formatTime,
 } from './gb-kit.js';
@@ -344,12 +345,17 @@ function DayTicks(segs) {
   const lo = toMin(segs[0].start);
   const hi = lo + segs.reduce((n, x) => n + x.mins, 0);
   const marks = hi - lo === 1440 ? ['00:00', '06:00', '12:00', '18:00'] : ['08:00', '12:00', '16:00', '20:00'];
+  // Label where the bar ends too (22:00), or it read as running past the axis.
+  // Marks too close to that label to fit beside it give way.
+  const end = hi < 1440 ? segs[segs.length - 1].end : null;
+  const at = (t) => ((toMin(t) - lo) / (hi - lo)) * 100;
   return h(
     'div',
     { class: 'gb-sched-ticks', 'aria-hidden': 'true' },
     marks
-      .filter((t) => toMin(t) >= lo && toMin(t) < hi)
-      .map((t) => h('span', { style: { left: ((toMin(t) - lo) / (hi - lo)) * 100 + '%' } }, formatTime(t)))
+      .filter((t) => toMin(t) >= lo && toMin(t) < hi && (!end || at(t) < 80))
+      .map((t) => h('span', { style: { left: at(t) + '%' } }, formatTime(t))),
+    end ? h('span', { class: 'is-end', style: { right: 0 } }, formatTime(end)) : null
   );
 }
 
@@ -897,7 +903,9 @@ function MonthGrid({ year, month, selectedDate, reminders, onSelectDate }) {
           class: cls,
           'data-day-key': key,
           'aria-label':
-            prettyDate(key) + (todays.length ? ' — ' + plural(todays.length, 'reminder') : ''),
+            prettyDate(key) +
+            (key === today ? ', today' : '') +
+            (todays.length ? ' — ' + plural(todays.length, 'reminder') : ''),
           'aria-pressed': String(key === selectedDate),
           onclick: () => onSelectDate(key),
         },
@@ -909,8 +917,24 @@ function MonthGrid({ year, month, selectedDate, reminders, onSelectDate }) {
 
   return Card({
     className: 'gb-cal-card',
-    children: [dowRow, h('div', { class: 'gb-cal-grid' }, cells)],
+    children: [dowRow, h('div', { class: 'gb-cal-grid', onkeydown: moveFocus }, cells)],
   });
+}
+
+/* Arrow keys walk the days, the way every date grid does; Enter/Space already
+   select (they are buttons). Without this, reaching the 28th was 28 Tabs.
+   Focus only — selecting stays an explicit Enter, so arrowing past a day doesn't
+   load its food and repaint the panel on each step. */
+const GRID_STEP = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 };
+function moveFocus(e) {
+  const step = GRID_STEP[e.key];
+  const cell = e.target.closest && e.target.closest('.gb-cal-day');
+  if (!step || !cell) return;
+  const days = Array.from(e.currentTarget.querySelectorAll('.gb-cal-day'));
+  const next = days[days.indexOf(cell) + step];
+  if (!next) return;
+  e.preventDefault();
+  next.focus();
 }
 
 /* ---- Tag picker (color chips) ---- */
@@ -1145,6 +1169,40 @@ function openEditDialog(rem, occKey, onEdit) {
     : null;
 
   const { sheet, close } = openOverlay({ label: 'Edit reminder' });
+  // Built on openOverlay, not openModal, so Enter needs wiring here too.
+  const saveBtn = h(
+    'button',
+    {
+      type: 'button',
+      class: 'gb-btn gb-btn--primary',
+      style: { width: '100%', marginTop: '14px' },
+      // Closes only once the save lands: closing first lost every edit when
+      // it failed (onEdit has toasted why and rethrown).
+      onclick: async (e) => {
+        const text = textInput.value.trim();
+        if (!text) {
+          textInput.focus();
+          return;
+        }
+        if (!range.check()) return;
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        try {
+          await onEdit(scope, rem.id, occKey, {
+            text,
+            time: timeInput.value || null,
+            endTime: endInput.value || null,
+            sound: toneSel.value || '',
+          });
+          close();
+        } catch (_) {
+          btn.disabled = false;
+        }
+      },
+    },
+    'Save changes'
+  );
+  submitOnEnter(sheet, saveBtn);
   sheet.append(
     h(
       'div',
@@ -1167,30 +1225,7 @@ function openEditDialog(rem, occKey, onEdit) {
       toneSel
     ),
     ...(scopeRow ? [h('div', { class: 'gb-field-label' }, 'Apply to'), scopeRow] : []),
-    h(
-      'button',
-      {
-        type: 'button',
-        class: 'gb-btn gb-btn--primary',
-        style: { width: '100%', marginTop: '14px' },
-        onclick: () => {
-          const text = textInput.value.trim();
-          if (!text) {
-            textInput.focus();
-            return;
-          }
-          if (!range.check()) return;
-          close();
-          onEdit(scope, rem.id, occKey, {
-            text,
-            time: timeInput.value || null,
-            endTime: endInput.value || null,
-            sound: toneSel.value || '',
-          });
-        },
-      },
-      'Save changes'
-    ),
+    saveBtn,
     h(
       'button',
       { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel', onclick: close },

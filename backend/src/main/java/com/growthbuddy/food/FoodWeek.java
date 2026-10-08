@@ -47,7 +47,7 @@ public class FoodWeek {
             their profile. Say how to close the gaps. Be practical, kind and specific.
             Return strict JSON only:
             {"summary":"two short sentences, second person, no numbers",
-             "add":["up to 4 short, specific Indian foods to add or swap, respecting diet and allergies"]}
+             "add":["up to 4 short, specific Indian foods to add or swap, respecting diet and allergies, each under 70 characters"]}
             No Markdown, no emoji.
             """;
 
@@ -251,6 +251,39 @@ public class FoodWeek {
         }
     }
 
+    /**
+     * kcal per 100 g from the table's macros (4/4/9), or null when no keyword
+     * matches. FoodService's estimate when the AI is off, so "dosa" isn't
+     * the flat 220 every unknown dish gets.
+     */
+    static Integer kcalPer100g(String name) {
+        for (Map.Entry<String, double[]> en : PER_100G.entrySet()) {
+            if (mentions(name, List.of(en.getKey()))) {
+                double[] v = en.getValue();
+                return (int) Math.round(4 * v[0] + 4 * v[1] + 9 * v[2]);
+            }
+        }
+        return null;
+    }
+
+    // ponytail: grams of one piece as served, for an entry logged as a count with
+    // the AI off. First match wins; anything else is 100 g a piece.
+    private static final Object[][] PIECE_GRAMS = {
+        {"idli", 40}, {"vada", 50}, {"dosa", 90}, {"uttapam", 120}, {"chapati", 40},
+        {"roti", 40}, {"phulka", 30}, {"paratha", 80}, {"poori", 30}, {"puri", 30},
+        {"samosa", 60}, {"bread", 30}, {"egg", 50}, {"omelette", 100}, {"banana", 120},
+        {"apple", 180}, {"guava", 150}, {"biscuit", 10}, {"cookie", 15},
+    };
+
+    static int gramsPerPiece(String name) {
+        for (Object[] r : PIECE_GRAMS) {
+            if (mentions(name, List.of((String) r[0]))) {
+                return (Integer) r[1];
+            }
+        }
+        return 100;
+    }
+
     static int[] guess(String name, int grams) {
         double[] per100 = UNKNOWN;
         for (Map.Entry<String, double[]> en : PER_100G.entrySet()) {
@@ -368,7 +401,7 @@ public class FoodWeek {
             List<String> add = new ArrayList<>();
             n.path("add").forEach(x -> {
                 if (add.size() < 4 && !x.asText().isBlank()) {
-                    add.add(cap(x.asText().strip(), 60));
+                    add.add(cap(x.asText().strip(), 90));
                 }
             });
             String summary = n.path("summary").asText("").strip();
@@ -489,7 +522,16 @@ public class FoodWeek {
         return s == null || s.isBlank() ? "-" : cap(s.strip(), 120);
     }
 
-    private static String cap(String s, int max) {
-        return s.length() <= max ? s : s.substring(0, max);
+    /**
+     * A ceiling on what the model sends, cut at a word with an ellipsis. It was a
+     * bare substring at 60, and a tip a few words long read "roasted peanuts or ch".
+     */
+    static String cap(String s, int max) {
+        if (s.length() <= max) {
+            return s;
+        }
+        int sp = s.lastIndexOf(' ', max - 1);
+        String head = (sp > max / 2 ? s.substring(0, sp) : s.substring(0, max - 1)).replaceAll("[\\s,;:.-]+$", "");
+        return head + "\u2026";
     }
 }

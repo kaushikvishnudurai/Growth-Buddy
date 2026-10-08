@@ -10,9 +10,9 @@ Almost everything lives inside `ScreenFamily` (line 112 → 2032) as closures:
 
 | Area | Functions (line) |
 |---|---|
-| data | `applyFamily` (147), `load` (151), `run(promise, onOk)` (192) — the async wrapper that toasts errors |
+| data | `applyFamily` (147), `load` (151), `run(promise, onOk)` (~190) — the save wrapper: disables only the pressed control (read off `window.event`), toasts errors, repaints once after success and not at all on failure, so a failed form keeps what was typed |
 | members | `statusPill` (209), `memberCard` (219), `removeMember` (322), `membersSection` (1187), `familySummary` (1127), `leaveFamily` (1175) |
-| panels (slide-over forms) | `openPanel`/`closePanel`/`panelHeader` (335–344), `memberFormControls` (357), `addChooserPanel` (419), `addPanel` (465), `editPanel` (515), `profilePanel` (560), `linkPanel` (640) |
+| panels (slide-over forms) | `openPanel`/`closePanel`/`panelHeader` (~350; close restores the list's scroll offset; an open panel is on gb-kit's back stack via `trackOverlay`, so back closes it), `memberFormControls` (357), `addChooserPanel` (419), `addPanel` (465), `editPanel` (515), `profilePanel` (560), `linkPanel` (640) |
 | invites | `invitesSection` (1232) |
 | meal planner | `ingredientChips` (747), `plannerSection` (781), `planActions` (967), `mealList` (1023), `chipRow` (1043), `planView` (1060), `nutriStat` (1115) |
 | multi-day plan | `weeklySection` (1434), `weeklyView` (1534), `weekDayCard` (1571) |
@@ -21,8 +21,9 @@ Almost everything lives inside `ScreenFamily` (line 112 → 2032) as closures:
 | favourites | `favouritesSection` (1897), `favCard` (1922) |
 | shell | `sectionNav` (1374), `switchSection` (1309), `activeSection` (1417), `sectionBadge` (1359), `emptyState` (1286), `skeleton` (1986), `paint` (1998) |
 
-Helpers: `initials`, `cap`, `toList`/`fromList` (comma string ↔ array), `field`,
-`readImageDataUrl` (file → data URL for the grocery photo scan).
+Helpers: `initials`, `cap`, `toList`/`fromList` (comma string ↔ array), `field`. The grocery and
+pantry photo scans send `shrinkPhoto(file)` from notes.js (≤1280px JPEG), not the raw 4-12 MB photo.
+Messages go through `toast` (toast.js), never `alert()`.
 
 Backend: everything under `/api/family` — see [FamilyService](../backend/FamilyService.java.md).
 A member may be **unmapped** (a profile with no account) or linked to a real user via an invite.
@@ -38,10 +39,10 @@ Two things in there that look odd and aren't:
 - **The member grid uses `minmax(0, 1fr)`, never a bare `1fr`.** A bare `1fr` is `minmax(auto, 1fr)`,
   whose `auto` floor let the left card grow to 331px against the right's 291px and pushed the grid
   36px past its own container, so the right column stopped lining up with the summary card above it.
-- **The sticky strip uses `--nav-bg` + `backdrop-filter`, not a flat fill**, and drops its border and
-  rounds its bottom corners at >=1024px. A flat `var(--bg)` is only invisible over a flat background;
-  the premium skin paints `.gb-app` with three radial gradients, so the strip showed up as a dark
-  rectangle. And at >=1024px the screen is capped at 900px (`.gb-scroll > .gb-rise:not(...)`) while
+- **The sticky strip is a solid `var(--surface)` with a bottom border, no blur**, and drops its border
+  and rounds its bottom corners at >=1024px. `var(--bg)` is only invisible over a flat background
+  (the premium skin paints `.gb-app` with three radial gradients, so it showed as a dark rectangle),
+  and a backdrop blur re-rasterised on every scroll frame. And at >=1024px the screen is capped at 900px (`.gb-scroll > .gb-rise:not(...)`) while
   the header spans the whole column, so a bar treatment stops mid-canvas. The desktop override has
   to sit *after* the sticky rule in the file — same specificity, source order decides.
 - **`.gb-family` insets its children 20px, the sticky nav excepted.** Family was the only screen

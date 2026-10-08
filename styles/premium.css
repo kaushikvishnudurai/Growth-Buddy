@@ -130,14 +130,17 @@ html[data-premium='on'][data-theme='dark'] .gb-page {
 html[data-premium='on'] .gb-card,
 html[data-premium='on'] .gb-login-card {
   background: var(--glass-face);
-  backdrop-filter: blur(12px) saturate(140%);
-  -webkit-backdrop-filter: blur(12px) saturate(140%);
   border: 1px solid var(--glass-edge);
   box-shadow:
     inset 0 1px 0 var(--glass-top),
     var(--shadow-md);
 }
+/* The blur is the login card's alone. On .gb-card it re-blurred every card on
+   every scroll frame, a dozen of them on Home, over a backdrop (the app's own
+   flat background) that has nothing in it to blur. */
 html[data-premium='on'] .gb-login-card {
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
   box-shadow:
     inset 0 1px 0 var(--glass-top),
     var(--shadow-lg);
@@ -230,8 +233,7 @@ html[data-premium='on'] .gb-btn--primary:active {
 }
 html[data-premium='on'] .gb-btn--secondary {
   background: var(--glass-face);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  /* No backdrop blur: these ride inside scrolling cards (see Surfaces). */
   box-shadow:
     inset 0 0 0 1px var(--border-strong),
     inset 0 1px 0 var(--glass-top),
@@ -497,8 +499,10 @@ html[data-premium='on'] .gb-toast-close:active {
    8. Accessibility — gentler, not gone
    --------------------------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {
-  html[data-premium='on'] .gb-iconbtn:hover {
-    transform: none;
+  @media (hover: hover) {
+    html[data-premium='on'] .gb-iconbtn:hover {
+      transform: none;
+    }
   }
   /* The seedling stops moving but doesn't go mute: it dims and brightens, so
      the reaction still registers without anything travelling across the screen.

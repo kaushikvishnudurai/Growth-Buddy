@@ -7,6 +7,7 @@
    of the screen doesn't re-render every second.
    ===================================================================== */
 import { h, Icon, Card, refreshIcons, openOverlay } from './gb-kit.js';
+import { toast } from './toast.js';
 import { scheduleLocalNotifications, cancelLocalNotifications } from './native.js';
 
 /* -------------------------------------------------------------------
@@ -351,13 +352,21 @@ function finish() {
   chime();
   // Persist the completed session and refresh the stats card.
   if (Focus.onSession) {
-    Promise.resolve(Focus.onSession(T.mode, T.durationSec)).then(applyStats).catch(function () {});
+    // Not silent: a dropped POST is a finished session that never counts.
+    Promise.resolve(Focus.onSession(T.mode, T.durationSec))
+      .then(applyStats)
+      .catch(function (err) {
+        toast.error(err, 'Could not save that focus session.');
+      });
   }
   paintRing();
 }
 
 function start() {
   if (T.running) return;
+  // Start on a finished clock runs a fresh session. It used to arm a 0s one,
+  // which finished on the next tick and POSTed a whole extra session to stats.
+  if (T.remainingSec <= 0) T.remainingSec = T.durationSec;
   T.running = true;
   T.endsAt = Date.now() + T.remainingSec * 1000;
   if (Sound.enabled) playSound();
@@ -464,8 +473,10 @@ function openCustomMinutesModal() {
   const error = h('div', { class: 'gb-water-prompt-error', 'aria-live': 'polite' });
   const { sheet, close } = openOverlay({ label: 'Custom focus minutes' });
   function submit() {
-    const m = Math.max(1, Math.min(180, parseInt(input.value, 10) || 0));
-    if (!m) {
+    // Checked, not clamped: clamping first made `!m` unreachable, so a blank or
+    // a 0 silently started a one-minute timer and the error never showed.
+    const m = parseInt(input.value, 10);
+    if (!(m >= 1 && m <= 180)) {
       error.textContent = 'Enter a number between 1 and 180.';
       return;
     }
@@ -730,9 +741,13 @@ function SoundCard() {
 /* -------------------------------------------------------------------
      Focus stats (backend-backed; bounded retention server-side).
      ------------------------------------------------------------------- */
-const Focus = { onSession: null, getStats: null, statsEl: null };
+/* `last` is the newest stats answer. Each visit builds a fresh card, which used
+   to start on dashes and flip to numbers a round trip later; it now starts on
+   the last numbers and the refresh corrects them in place. */
+const Focus = { onSession: null, getStats: null, statsEl: null, last: null };
 
 function applyStats(s) {
+  if (s) Focus.last = s;
   if (!s || !Focus.statsEl) return;
   Focus.statsEl.today.textContent = (s.todayMinutes || 0) + 'm';
   Focus.statsEl.sessions.textContent = String(s.todaySessions || 0);
@@ -748,6 +763,7 @@ function StatsCard() {
   const sessions = h('div', { class: 'gb-focus-stat-val' }, '—');
   const week = h('div', { class: 'gb-focus-stat-val' }, '—');
   Focus.statsEl = { today, sessions, week };
+  applyStats(Focus.last);
   if (Focus.getStats) {
     Promise.resolve(Focus.getStats()).then(applyStats).catch(function () {});
   }
@@ -772,6 +788,10 @@ function StatsCard() {
 function ScreenFocus(props) {
   Focus.onSession = props && props.onFocusSession;
   Focus.getStats = props && props.getFocusStats;
+  // Another account signed in on this device must not open on these numbers.
+  const owner = props && props.statsOwner;
+  if (owner !== Focus.owner) Focus.last = null;
+  Focus.owner = owner;
   return h('div', { class: 'gb-rise gb-focus' }, TimerCard(), StatsCard(), SoundCard());
 }
 

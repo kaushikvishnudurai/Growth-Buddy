@@ -4,7 +4,14 @@
    changed. A missed item is an expense that never reaches the server; a false
    delete removes one the user still has. Both are lost money, so both are pinned. */
 import assert from 'node:assert/strict';
-import { ledgerDiff, applyLedgerDiff, docPart, normalizeMoney, searchExpenses } from './money.js';
+import {
+  ledgerDiff,
+  applyLedgerDiff,
+  docPart,
+  normalizeMoney,
+  searchExpenses,
+  splitShares,
+} from './money.js';
 
 const doc = (over) => normalizeMoney({ ...over });
 const lunch = { id: 'e1', amount: 250, category: 'food', note: 'Lunch', date: '2026-09-30' };
@@ -240,6 +247,17 @@ const lunch = { id: 'e1', amount: 250, category: 'food', note: 'Lunch', date: '2
     applyLedgerDiff(live, del).expenses.map((e) => e.id),
     ['phone']
   );
+}
+
+// Split a bill: the IOUs keep paise (they were rounded to whole rupees, so a
+// 99.60 bill saved IOUs that did not add up to it), and ride in the document.
+{
+  assert.deepEqual(splitShares(99.6, ['A'], true), [{ party: 'A', amount: 49.8 }]);
+  const sh = splitShares(1000, ['A', 'B'], true);
+  assert.deepEqual(sh.map((x) => x.amount), [333.34, 333.33], 'odd paise go to the others');
+  const m = doc({ loans: sh.map((x, i) => ({ id: 'l' + i, direction: 'given', amount: x.amount })) });
+  assert.deepEqual(docPart(m).loans.map((l) => l.amount), [333.34, 333.33]);
+  assert.deepEqual(ledgerDiff(doc({}), m).upserts, [], 'a loan is not a ledger row');
 }
 
 console.log('money-ledger.test.mjs: all assertions passed');

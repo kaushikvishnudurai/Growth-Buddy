@@ -69,6 +69,54 @@ function requestClose(overlay) {
 }
 
 let lastFocused = null;
+let lastFocusKey = null;
+
+/* A selector that finds "the same control" in a rebuilt tree. render() replaces
+   every node, so the element itself is gone; this walks up to `scope` taking,
+   per step, the id, else a data-* key (rows carry data-task-id and so on, which
+   survives a reorder), else the child position. Inputs also keep their caret. */
+export function focusLocator(el, scope = document.body) {
+  if (!el || el === document.body || !scope.contains(el) || el === scope) return null;
+  const parts = [];
+  for (let n = el; n && n !== scope; n = n.parentElement) {
+    if (n.id) {
+      parts.unshift('#' + CSS.escape(n.id));
+      break;
+    }
+    const tag = n.tagName.toLowerCase();
+    const data = Array.from(n.attributes).find((a) => a.name.startsWith('data-') && a.value);
+    const nth = Array.prototype.indexOf.call(n.parentElement.children, n) + 1;
+    parts.unshift(
+      data
+        ? tag + '[' + data.name + '="' + CSS.escape(data.value) + '"]'
+        : tag + ':nth-child(' + nth + ')'
+    );
+  }
+  const caret = typeof el.selectionStart === 'number' ? [el.selectionStart, el.selectionEnd] : null;
+  return { sel: parts.join(' > '), anchored: parts[0][0] === '#', caret };
+}
+
+export function refocus(key, scope = document.body) {
+  if (!key) return false;
+  let el = null;
+  try {
+    el = key.anchored
+      ? document.querySelector(key.sel)
+      : scope.querySelector(':scope > ' + key.sel);
+  } catch (_) {
+    return false;
+  }
+  if (!el || typeof el.focus !== 'function') return false;
+  el.focus({ preventScroll: true });
+  if (key.caret && typeof el.setSelectionRange === 'function') {
+    try {
+      el.setSelectionRange(key.caret[0], key.caret[1]);
+    } catch (_) {
+      /* type=number/date have no caret */
+    }
+  }
+  return document.activeElement === el;
+}
 
 /* Forms here put a `div.gb-field-label` before the control and never tie the
    two, so a date or time input read as just "edit text". Name each control from
@@ -98,7 +146,10 @@ export function initA11y() {
     'focusin',
     (e) => {
       const t = e.target;
-      if (t && t.closest && !t.closest('.gb-modal-overlay, ' + MODAL)) lastFocused = t;
+      if (t && t.closest && !t.closest('.gb-modal-overlay, ' + MODAL)) {
+        lastFocused = t;
+        lastFocusKey = focusLocator(t);
+      }
     },
     true
   );
@@ -149,12 +200,20 @@ export function initA11y() {
         }
       }
       for (const node of m.removedNodes) {
-        if (overlayIn(node) && lastFocused && document.contains(lastFocused)) {
+        if (overlayIn(node) && lastFocused) {
           const el = lastFocused;
+          const key = lastFocusKey;
           // Not while another modal is up: Quick add → Task opens the second
           // sheet before the first finishes animating out, and this used to pull
           // focus back to the header button behind the new one.
-          requestAnimationFrame(() => topOverlay() || el.focus?.());
+          // A save re-renders the screen behind the dialog, so the trigger is
+          // usually a detached node by now: find its replacement instead of
+          // leaving focus on <body> (which put the next Tab at the top).
+          requestAnimationFrame(() => {
+            if (topOverlay()) return;
+            if (document.contains(el)) el.focus?.();
+            else refocus(key);
+          });
         }
       }
     }

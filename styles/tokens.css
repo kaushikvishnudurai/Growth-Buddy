@@ -133,6 +133,9 @@
   /* =================================================================
      SPACING  (4px base)
      ================================================================= */
+  /* The side margin every screen's content sits in from the edge. One value, so
+     switching tabs doesn't shift the cards sideways. 16px on phones (app.css). */
+  --gutter: 20px;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;

@@ -13,9 +13,9 @@ the data and visibly jump, so don't reintroduce per-list refreshers.
 | `checkedToday` / `paintCheckPill` / `CheckPill` | 209 / 221 / 231 | the mentor's "Checked today" tick. `checkedAt` is stamped SERVER-side (`MentorshipService.markChecked`, called when the progress sheet loads) and compared against the reader's LOCAL day here — so no nightly job has to expire anything. `paintCheckPill` writes in place so opening the sheet flips the pill without a repaint |
 | `statusLabel` / `STATUS_LABELS` | 237 | `pending` → "Invite pending", `accepted` → "Connected", `rejected` → "Declined" |
 | `OutgoingRow` / `IncomingRow` | 243 / 315 | request rows with revoke / accept. On an accepted row the caller can open (i.e. a mentee's), the check pill REPLACES the "Connected" status pill — inside a card headed "You mentor", "Connected" says nothing the heading doesn't |
-| `openSearchModal` | 393 | find-someone modal: `paintLoading` / `paintEmpty(msg, onRetry)` / `paintList` / `loadPeople`, plus browse. `paintList` drops `currentUserId` — the single choke point every list passes through, so you can never invite yourself |
+| `openSearchModal` | 393 | find-someone modal: `paintLoading` / `paintEmpty(msg, onRetry)` / `paintList` / `loadPeople`, plus browse. `paintList` drops `currentUserId` — the single choke point every list passes through, so you can never invite yourself. The typed search stamps each keystroke with `seq`; a server answer for an older query is dropped |
 | `openFormModal` | 556 | generic field-list modal |
-| `ChallengesPanel` | 641 | circle challenges: `leaderboardRows`, `challengeBlock`, `startChallenge`, `newCircle`, `circleCard`, `refresh`, `openBrowse` |
+| `ChallengesPanel` | 641 | circle challenges: `leaderboardRows`, `challengeBlock`, `startChallenge`, `newCircle`, `circleCard`, `addCard`, `refresh`, `openBrowse`. An action touches only its card: a new challenge reloads that card's list, a new or joined circle is appended (`addCard`); `refresh` is the initial load and the error retry only |
 | `openSheet` | 907 | bottom sheet wrapper |
 | `openNoteModal` / `promptAndSend` | 954 / 1028 | send an invite with a note |
 | `revokeAndRefresh` | 1032 | revoke an outgoing request |

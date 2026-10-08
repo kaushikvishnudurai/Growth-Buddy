@@ -61,8 +61,8 @@ All keys are `YYYY-MM-DD` strings; **all range filtering is string comparison**:
 
 | Fn | Line | Contents |
 |---|---|---|
-| `tabOverview` | ~3118 | **today hero** (what's left for today; past its share, tomorrow's new daily share, never the overshoot as the headline) + **`monthTape`** (one cell per day: under / close / over a flat daily share, or depth by spend with no budget; no-spend ringed, today outlined; last-7-day cells open that day on Spending; fills in once per visit, `tapeShown`), `accountsCard`, `healthCard`, **`budgetsSection`**, **`goalsSection`**, donut, forecast |
-| `tabSpending` | ~3498 | actions row, NL search card, last-7-days bars, by-tag breakdown, weekly review, subscriptions (due cards carry **Mark as paid**), **this-month expense list** (`list = mExp`, tag filter, 60-row cap) |
+| `tabOverview` | ~3118 | **today hero** (what's left for today; past its share, tomorrow's new daily share, never the overshoot as the headline) + **`monthTape`** (one cell per day: under / close / over a flat daily share, or depth by spend with no budget; no-spend ringed, today outlined; display-only, cells are far under a 44px target, so a day opens from Spending's 7-day graph; fills in on a visit's first paint only, `tapeShown`), `accountsCard`, `healthCard`, **`budgetsSection`**, **`goalsSection`**, donut, forecast |
+| `tabSpending` | ~3498 | actions row, NL search card, last-7-days bars, by-tag breakdown, weekly review, subscriptions (due cards carry **Mark as paid**), **this-month expense list** (`list = mExp`, tag filter, 60 rows then **Show more**, `expShown`) |
 | `budgetsSection` | — | ONE card (title, intro, totals, bars) + ≥80% nudges + recovery card. Was the Budgets tab. |
 | `goalsSection` | — | ONE card (title, plan/new-goal actions, goal list). Was the Goals tab; its wishlist moved to Coach. |
 | `tabIncome` | ~4339 | one kept-vs-spent bar for the month, the latest 6 income entries with their account (`showAllIncome` toggles all), loans (stats only when there are loans) |
@@ -74,11 +74,11 @@ button, one per distinct fix; the "Next step" tip shows only once nothing is lef
 
 Subscriptions card: total per month **and per year**; each row shows its yearly cost and **cost per use**
 (`costPerUse(sub)` = amount / `usesPerMonth`); the row is a button to `openSubscriptionUses`. Loans card has
-**Split a bill** (`openSplitBill`, `splitShares(total, parties, includeMe)` — whole units, odd ones go to the
-others, so the shares plus yours equal the bill; a decimal total is rounded and the preview says so). Loan rows are signed from your side: lent `+` green (owed to you), borrowed `−` red; the summary says **Owed to you** or **You owe**. Both helpers have asserts in `_demo()`.
+**Split a bill** (`openSplitBill`, `splitShares(total, parties, includeMe)` — worked in paise, odd paise go to the
+others, so the shares plus yours equal the bill to the paisa; exported, pinned in `money-ledger.test.mjs`). Loan rows are signed from your side: lent `+` green (owed to you), borrowed `−` red; the summary says **Owed to you** or **You owe**. Both helpers have asserts in `_demo()`.
 
 Shared row/card builders: `expRow(e, withDelete)` (~3690), `subscriptionsCard`, `coachCard`,
-`emptyHint`, `stat`, `weekBars`, `openMoneyModal`, `confirmDelete`.
+`emptyHint`, `stat`, `weekBars`, `openMoneyModal`, `confirmDelete` (module level; every delete in Money goes through it, the customise pane's tag manager included).
 
 **Share summary** (~3049) is Money's use of `share-card.js` (Report's "Share my month" is the other). `shareSummary()` draws the week
 as a 1080×1920 PNG and opens the OS share sheet (Instagram Stories lives in there); `summaryText()` /
@@ -92,7 +92,10 @@ file — old WebViews, desktop Firefox, and the Capacitor wrapper. Both share bu
   number looks stale, the culprit is a list that skipped `inRange` — that was the bug in the History
   card (fixed: it now reuses `mExp`).
 - Currency: module-level `cur`, set by `applyCurrency(money)` on every render. Not threaded through `fmt()`.
+- Amount fields: `readAmount(input)` keeps paise (the ledger is decimal(14,2)) and refuses a value `type=number` couldn't parse (`validity.badInput`, e.g. "1,250") instead of reading it as 0. Used by expense, income, loan, transfer, goal target and contribution, wishlist price, split total and account balances. Subscriptions, budgets and the reflection threshold stay whole units on purpose (the server's WhatsApp path rounds a subscription's amount, and its expense id is shared with ours): those fields are `inputmode=numeric step=1`, labelled "whole amounts" (not "rupees": the currency symbol is a setting), and read through `readWhole`, which refuses a decimal rather than rounding it. `fmt()` still displays whole units.
 - `commit(fn)` mutates the doc then persists via the injected `save`; `money` is the live object.
+- **Every save re-renders the screen**: app.js calls `ScreenMoney` again. View state therefore lives at module level (`activeTab`, `spendFilter` + `filterScroll`, `lastSearch` typed / `searchAsked` run, `pickedDay`, `showAllIncome`, `tapeShown`, `expShown`, `loanOrder`, `daySummaries`). The second group resets on a fresh visit, detected by the previous root being detached (`moneyRoot.isConnected`; app.js builds the new screen before swapping). `loanOrder` keeps loan rows where they were on Settle/Undo until a tab switch.
+- The "Quick reflection" sheet opens after a new expense only at or above `settings.reflectThreshold` (0 = off).
 - Self-check `_demo()` at the bottom runs **only on Vite DEV**, wrapped in try/catch so it never
   blocks boot. It covers: challenge progress, empty-account health = 0, income/loan sums,
   challenge suggestions. Add an assert here when you touch an engine. It also calls `share-card.js`'s

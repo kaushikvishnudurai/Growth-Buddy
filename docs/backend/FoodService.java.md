@@ -24,6 +24,14 @@ GET after a write.
   photo achievement (`achievements.js`) and a Home insight (`dashboard.js`); the frontend also caches its own copy via `rememberPhotoFood` in app.js.
 - These endpoints are behind `AiRateLimitInterceptor` (per-user limit on AI-backed routes).
 - Entries are per (user, date); `FoodEntry` holds the nutrition columns.
+- **Calories, in order:** the AI (when configured), then `FoodWeek.kcalPer100g` (the keyword
+  table's macros as 4/4/9, `estimateSource` "table"), then OpenFoodFacts, then the flat 220/300.
+  The table comes before OpenFoodFacts because that is a packaged-goods database: its "dosa" is a
+  batter mix. Hotel adds 18% to the table and OpenFoodFacts figures.
+- **`pieces`** ("2 dosa") is turned into grams: the AI's answer (told the count), else
+  `pieces x FoodWeek.gramsPerPiece(name)` (100 g for anything not in its table). `quantityGrams`
+  wins when both are sent. A counted portion is held to the column's 10..2000, not the 80..700 a
+  guessed plate gets, so one idli can be 40 g.
 - `addEntry` makes **at most one** AI call (`askAi`): grams, kcal/100 g and the four nutrients come
   back together, asked only when a typed gram figure or an OpenFoodFacts hit leaves something
   unknown. When it was asked, the nutrients are stored right away; otherwise FoodWeek's batch fills

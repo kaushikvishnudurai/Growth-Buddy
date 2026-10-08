@@ -57,7 +57,7 @@ class FoodEntryTest {
     void anEveningMealCountsTowardsTheUsersDayNotUtc() {
         FoodService service = serviceInZone("Asia/Kolkata");
         service.addEntry(USER, new AddFoodEntryRequest("Dinner dosa", 250, MealType.home,
-                null, null, null, EVENING, 420));
+                null, null, null, EVENING, 420, null));
         assertThat(saved().getLogDate())
                 .as("19:10 UTC is already the 13th in IST")
                 .isEqualTo(LocalDate.of(2026, 9, 13));
@@ -67,7 +67,7 @@ class FoodEntryTest {
     void andStillUtcForAUserWhoLivesThere() {
         FoodService service = serviceInZone("UTC");
         service.addEntry(USER, new AddFoodEntryRequest("Dinner", 250, MealType.home,
-                null, null, null, EVENING, 420));
+                null, null, null, EVENING, 420, null));
         assertThat(saved().getLogDate()).isEqualTo(LocalDate.of(2026, 9, 12));
     }
 
@@ -80,7 +80,7 @@ class FoodEntryTest {
     void aMealCannotBeLoggedForADayThatHasNotHappened() {
         FoodService service = serviceInZone("UTC");
         assertThatThrownBy(() -> service.addEntry(USER, new AddFoodEntryRequest("Tomorrow's lunch",
-                250, MealType.home, null, null, null, EVENING.plus(2, ChronoUnit.DAYS), 420)))
+                250, MealType.home, null, null, null, EVENING.plus(2, ChronoUnit.DAYS), 420, null)))
                 .hasMessageContaining("hasn't happened yet");
     }
 
@@ -89,7 +89,7 @@ class FoodEntryTest {
     void aBackdatedMealLandsOnItsOwnDay() {
         FoodService service = serviceInZone("UTC");
         service.addEntry(USER, new AddFoodEntryRequest("Yesterday's dosa", 250, MealType.home,
-                null, null, null, EVENING.minus(2, ChronoUnit.DAYS), 420));
+                null, null, null, EVENING.minus(2, ChronoUnit.DAYS), 420, null));
         assertThat(saved().getLogDate()).isEqualTo(LocalDate.of(2026, 9, 10));
     }
 
@@ -133,7 +133,7 @@ class FoodEntryTest {
     void typedCaloriesAreStoredExactly() {
         FoodService service = serviceInZone("UTC");
         service.addEntry(USER, new AddFoodEntryRequest("Protein bar", 200, MealType.home,
-                null, null, null, EVENING, 347));
+                null, null, null, EVENING, 347, null));
         FoodEntry e = saved();
         assertThat(e.getKcalEstimated()).isEqualTo(347);
         assertThat(e.getEstimateSource()).isEqualTo("manual");
@@ -148,7 +148,7 @@ class FoodEntryTest {
     void theDerivedPer100gStaysInsideWhatTheColumnAccepts() {
         FoodService service = serviceInZone("UTC");
         service.addEntry(USER, new AddFoodEntryRequest("Filter coffee", 250, MealType.hotel,
-                null, null, null, EVENING, 90));
+                null, null, null, EVENING, 90, null));
         FoodEntry e = saved();
         assertThat(e.getKcalEstimated()).as("the typed total is exact").isEqualTo(90);
         assertThat(e.getKcalPer100g()).as("the derived figure is clamped").isBetween(40, 900);
@@ -159,8 +159,23 @@ class FoodEntryTest {
     void withoutATypedNumberTheEstimatorStillRuns() {
         FoodService service = serviceInZone("UTC");
         service.addEntry(USER, new AddFoodEntryRequest("Idli", 150, MealType.home,
-                null, null, null, EVENING, null));
+                null, null, null, EVENING, null, null));
         assertThat(saved().getEstimateSource()).isNotEqualTo("manual");
+    }
+
+    /**
+     * "2 rava dosa" with the AI off: two pieces from the per-piece table, kcal from
+     * the keyword table, not the flat 250 g at 220 every unknown dish got.
+     */
+    @Test
+    void piecesBecomeGramsAndAKnownDishIsNotTheFlatGuess() {
+        FoodService service = serviceInZone("UTC");
+        service.addEntry(USER, new AddFoodEntryRequest("Rava dosa with chutney", null, MealType.home,
+                null, null, null, EVENING, null, 2));
+        FoodEntry e = saved();
+        assertThat(e.getQuantityGrams()).isEqualTo(180);
+        assertThat(e.getEstimateSource()).isEqualTo("table");
+        assertThat(e.getKcalEstimated()).isBetween(300, 360);
     }
 
     @Test

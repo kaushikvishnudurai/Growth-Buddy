@@ -125,6 +125,17 @@ class FoodWeekRulesTest {
         return e;
     }
 
+    /** A long AI tip is cut at a word with an ellipsis, never mid-word ("peanuts or ch"). */
+    @Test
+    void aLongTipIsCutAtAWord() {
+        String tip = "Replace lays packets and biscuits with roasted peanuts or chana for snacks";
+        String cut = FoodWeek.cap(tip, 60);
+        assertTrue(cut.endsWith("\u2026"), cut);
+        assertTrue(cut.length() <= 60, cut);
+        assertEquals("Replace lays packets and biscuits with roasted peanuts or\u2026", cut);
+        assertEquals("Short tip", FoodWeek.cap("Short tip", 60));
+    }
+
     private static FoodWeekDay day(int count, int protein) {
         return new FoodWeekDay("2026-10-01", protein * 10, count, protein, 0, 0, 0);
     }

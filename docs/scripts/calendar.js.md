@@ -50,8 +50,10 @@ Day-key helpers: `pad`, `keyOf(y,m,d)`, `parseKey`, `todayKey`, `isFutureKey`, `
   does, because the row on screen is one occurrence of a series. The model has no per-occurrence
   overrides, so `this` can only mean *skip that day and leave a one-off in its place*; `future` cuts
   the series at the day before and starts a new one; `all` edits the row. The server does the split
-  (`ReminderService.update`), so the client refetches the list rather than patching it — an edit can
-  come back as a brand-new reminder.
+  (`ReminderService.update`). An `all` edit answers with the same reminder, so `editReminder` in
+  app.js swaps that row in place; any other answer is a brand-new reminder and the list is refetched.
+  The dialog awaits the save and closes only on success — `editReminder` toasts and rethrows on
+  failure, so the typed edit stays on screen.
 - **Each reminder can carry its own tone.** The form's Tone `<select>` sends a chime key from
   `chime.js`; an empty value means "the default from Alerts", which is stored as null so the
   reminder keeps following that setting when it changes. A `<select>` and not the segmented control
@@ -68,7 +70,7 @@ Day-key helpers: `pad`, `keyOf(y,m,d)`, `parseKey`, `todayKey`, `isFutureKey`, `
 
 | Fn | Line | Notes |
 |---|---|---|
-| `MonthGrid` | 210 | the month cells + tag dots |
+| `MonthGrid` | 854 | the month cells + tag dots. Always 42 cells, so the card never changes height between months. Arrow keys move focus between days (`moveFocus`, focus only; Enter selects) |
 | `TagPicker` | 278 | color chips |
 | `RepeatPicker` | 313 | segmented recurrence |
 | `openDeleteDialog` | 345 | **scoped delete** for recurring reminders: this occurrence vs the whole series → app.js `deleteReminder(scope, id, occKey)` |

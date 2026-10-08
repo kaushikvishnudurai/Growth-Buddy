@@ -587,6 +587,75 @@ function formatTime(value, fallback = '') {
    is a way out, not a cancel" path. */
 const liveOverlays = new Set();
 
+/* ---- Back closes the sheet, not the screen behind it ----
+   Android's back button is the WebView's history.back(), and so is the
+   browser's. With nothing in history for a sheet, back either left the screen
+   (hashchange -> setScreen, which then dropped the sheet with it) or, on Home
+   with no history at all, closed the app with a half-filled form still up.
+
+   While any overlay is open there is ONE extra entry on top, at the same URL
+   (so no hashchange). Back pops it and closes the top sheet; a sheet closed
+   any other way takes the entry back off. One entry for the whole stack rather
+   than one per sheet: danger -> confirm and Quick add -> Task close one sheet
+   and open the next in the same tick, and a back() racing a pushState is the
+   thing that loses track of which entry is which.
+
+   Deferred a tick so those close-then-open pairs coalesce, and so setScreen's
+   own pushState lands first: by then the top entry is the new screen's, not
+   ours, and it is left alone. The dead sheet entry under it just reads as the
+   old screen again. */
+let sheetBackPending = false;
+let sheetSyncQueued = false;
+
+function syncSheetHistory() {
+  if (sheetSyncQueued) return;
+  sheetSyncQueued = true;
+  setTimeout(() => {
+    sheetSyncQueued = false;
+    if (sheetBackPending) return; // popstate re-syncs once that back() lands
+    const ours = !!(history.state && history.state.gbSheet);
+    if (liveOverlays.size && !ours) {
+      history.pushState({ gbSheet: true }, '');
+    } else if (!liveOverlays.size && ours) {
+      sheetBackPending = true;
+      history.back();
+    }
+  }, 0);
+}
+
+if (typeof window !== 'undefined') {
+  // A reload keeps history.state: an entry we can't own any more would make
+  // the first sheet's close step back off the page.
+  if (history.state && history.state.gbSheet) history.replaceState(null, '');
+  window.addEventListener('popstate', () => {
+    if (sheetBackPending) {
+      sheetBackPending = false;
+      syncSheetHistory();
+      return;
+    }
+    if (history.state && history.state.gbSheet) return; // forward onto our entry
+    const top = [...liveOverlays].pop();
+    if (!top) return;
+    if (top.dismiss) top.dismiss();
+    else top.close();
+    syncSheetHistory(); // a sheet still under it gets its own entry back
+  });
+
+  // Android's hardware back. The App plugin lives in ../Growth-Buddy-Mobile, so
+  // there's no JS package to import; the native bridge's own addListener reaches
+  // it (the same door native.js uses for promise calls). With a listener
+  // registered the plugin does nothing by itself, so back has to be routed here:
+  // history.back() lands on the popstate above and closes the top sheet, or
+  // steps back a screen. At the root, minimise rather than kill the app.
+  const cap = window.Capacitor;
+  if (cap && typeof cap.addListener === 'function' && cap.isNativePlatform?.()) {
+    cap.addListener('App', 'backButton', (ev) => {
+      if (ev && ev.canGoBack) history.back();
+      else cap.nativePromise('App', 'minimizeApp', {}).catch(() => {});
+    });
+  }
+}
+
 function openOverlay({ label, className, role = 'dialog', onClose, onDismiss } = {}) {
   let closed = false;
   const sheet = h('div', {
@@ -600,8 +669,10 @@ function openOverlay({ label, className, role = 'dialog', onClose, onDismiss } =
     if (closed) return;
     closed = true;
     liveOverlays.delete(entry);
+    if (vv) vv.removeEventListener('resize', fitViewport);
     overlay.classList.remove('is-open');
     setTimeout(() => overlay.remove(), 180);
+    syncSheetHistory();
     if (onClose) onClose();
   }
   const overlay = h(
@@ -615,20 +686,85 @@ function openOverlay({ label, className, role = 'dialog', onClose, onDismiss } =
       // same as abandoning — the note editor commits instead of discarding. It
       // owns the close from there, so it can keep the sheet up if the save
       // fails rather than dropping the text on the floor.
+      // A click lands on the common ancestor of press and release, so a text
+      // selection dragged out of the sheet and let go over the backdrop read as
+      // a backdrop tap and threw the dialog away. A real click only counts when
+      // the press began on the backdrop too; a11y.js's Escape click is
+      // synthetic (untrusted) and has no press, so it still closes.
+      onpointerdown: (e) => {
+        pressedBackdrop = e.target === overlay;
+      },
       onclick: (e) => {
         if (e.target !== overlay) return;
+        if (e.isTrusted && !pressedBackdrop) return;
         if (onDismiss) onDismiss();
         else close();
       },
     },
     sheet
   );
+  let pressedBackdrop = false;
+
+  // The iOS keyboard (and Chrome's, by default) shrinks the visual viewport but
+  // not the layout one this fixed overlay is sized to, so a tall sheet stayed
+  // centred behind the keyboard with Save under it. Pin the overlay to what is
+  // actually visible (the sheet's max-height follows it), and bring the focused
+  // field back into view once the keyboard has settled. Where the WebView
+  // resizes the layout viewport itself (Capacitor Android), nothing is covered
+  // and this does nothing. Not interactive-widget=resizes-content: that would
+  // also lift the bottom nav onto the keyboard on every screen.
+  const vv = typeof window !== 'undefined' ? window.visualViewport : null;
+  function fitViewport() {
+    const covered = vv && window.innerHeight - vv.height > 1;
+    overlay.style.top = covered ? vv.offsetTop + 'px' : '';
+    overlay.style.height = covered ? vv.height + 'px' : '';
+    const f = document.activeElement;
+    if (covered && f && sheet.contains(f)) f.scrollIntoView({ block: 'nearest' });
+  }
+  if (vv) vv.addEventListener('resize', fitViewport);
+  sheet.addEventListener('focusin', (e) => {
+    const t = e.target;
+    if (!t.matches || !t.matches('input, textarea, select, [contenteditable]')) return;
+    setTimeout(() => {
+      if (document.activeElement === t) t.scrollIntoView({ block: 'nearest' });
+    }, 300);
+  });
   document.body.appendChild(overlay);
   liveOverlays.add(entry);
+  syncSheetHistory();
   requestAnimationFrame(() => overlay.classList.add('is-open'));
   // No refreshIcons() here: the sheet is empty until the caller fills it, so
   // there is nothing to swap. Callers that draw icons call it after appending.
   return { overlay, sheet, close };
+}
+
+/* Enter / Go in a single-line field submits, as it would in a <form>. Not a
+   real <form>: a11y.js keys off .gb-modal-overlay > .gb-modal, and callers'
+   bodies hold their own buttons that would all turn into submits. Textareas
+   and contenteditable aren't INPUTs, so they keep their newlines. Exported for
+   the sheets that build their own footer on openOverlay (reminder edit, the
+   note sheet): without it, Enter did nothing there. */
+function submitOnEnter(sheet, primaryBtn) {
+  sheet.addEventListener('keydown', (e) => {
+    const t = e.target;
+    if (e.key !== 'Enter' || e.isComposing || e.shiftKey || t.tagName !== 'INPUT') return;
+    if (/^(button|submit|reset|checkbox|radio|file|color|range)$/.test(t.type)) return;
+    e.preventDefault();
+    if (!primaryBtn.disabled) primaryBtn.click();
+  });
+}
+
+/* A surface that isn't an openOverlay sheet (Family's panels) joining the same
+   back stack: back closes it like a sheet, and closeOverlays() drops it on
+   navigation. Returns the untrack, which the surface calls from its own close
+   — so the history entry comes off whichever way it was shut. */
+function trackOverlay({ close }) {
+  const entry = { close };
+  liveOverlays.add(entry);
+  syncSheetHistory();
+  return () => {
+    if (liveOverlays.delete(entry)) syncSheetHistory();
+  };
 }
 
 /* A dialog belongs to the screen that opened it. setScreen() calls this, next
@@ -679,12 +815,19 @@ function openModal({
           class: 'gb-btn gb-btn--primary',
           style: { width: '100%', marginTop: '14px' },
           onclick: async () => {
+            // A slow save showed a dead, disabled button with no word on it.
+            // Past 300ms it says so; a quick one never flickers.
+            let undoBusy = null;
+            const slow = setTimeout(() => (undoBusy = setThinking(primaryBtn, 'Saving')), 300);
             try {
               primaryBtn.disabled = true;
               await onPrimary();
+              clearTimeout(slow);
               close();
               if (afterPrimary) afterPrimary();
             } catch (err) {
+              clearTimeout(slow);
+              if (undoBusy) undoBusy();
               primaryBtn.disabled = false;
               // The modal refused what you gave it, so the modal is what shakes
               // — the same head-shake the sign-in card does.
@@ -714,6 +857,8 @@ function openModal({
         danger.label
       )
     : null;
+
+  if (primaryBtn) submitOnEnter(sheet, primaryBtn);
 
   sheet.append(
     h(
@@ -1048,6 +1193,8 @@ function Thinking(label, steps) {
 export {
   h,
   activate,
+  trackOverlay,
+  submitOnEnter,
   thinkingLabel,
   setThinking,
   Thinking,

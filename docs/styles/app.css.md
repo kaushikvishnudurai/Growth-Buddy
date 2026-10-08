@@ -72,3 +72,18 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
   queries there so the phone-first base stays readable.
 - Modal markup comes from `openOverlay` in `gb-kit.js` — don't hand-roll it. It is `.gb-modal-overlay > .gb-modal[role=dialog]` because `scripts/a11y.js`
   keys off it for focus trapping. Don't restyle it into a different structure.
+- Every `:hover` rule sits inside `@media (hover: hover)` (nested inside another `@media` where it
+  has one): touch screens keep `:hover` after a tap, so a pressed button stayed in its hover colour.
+  Split a mixed selector list (`:active, :hover`) rather than wrap the `:active` half too. Every
+  `.gb-btn` gets a `scale(0.97)` press; small controls share one `scale(0.96)` rule (grep `.gb-seg:active`).
+- A panel or editor that scrolls on its own sets `overscroll-behavior: contain` (`.gb-modal`,
+  `.gb-modal-body`, `.gb-notif-pop`, `.gb-editor`), or reaching its end scrolls the page behind.
+- A control drawn under 44px joins the "Tap targets" `::before` overlay list (grep the banner)
+  rather than growing. Skip any control that already has a `::before` of its own. An overlay is
+  clipped by the control's own `overflow: hidden` (why `.gb-msg-chip` has no ellipsis), and two
+  controls stacked closer than 44px need their overlays split, not centred (`.gb-home-cust-move`).
+- Fixed layers on a phone pad for `env(safe-area-inset-*)` (`index.html` has `viewport-fit=cover`,
+  so `100dvh` runs under the notch and home indicator): header, nav, modal overlay, toasts, PTR.
+- The tablet phone-frame (both rules) also needs `min-height: 560px`: a landscape phone stays full-screen.
+- The tablet phone-frame widens 440 -> 600px at 560px, the lowest viewport breakpoint any grid
+  goes two-up at. A new `min-width` grid rule below 560 would split a 440px frame.
