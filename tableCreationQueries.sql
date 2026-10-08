@@ -686,17 +686,6 @@ CREATE TABLE IF NOT EXISTS `money_transactions` (
   KEY `ix_mtx_user_to_account` (`user_id`, `to_account_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- The AI's summary of one day's spending, kept so a second tap on the same bar
--- costs nothing. Only the last 7 days are ever shown, so older rows are purged
--- nightly; a row is deleted the moment an expense on that day changes.
-CREATE TABLE IF NOT EXISTS `money_day_summaries` (
-  `user_id` char(36) NOT NULL,
-  `day` date NOT NULL,
-  `summary` text NOT NULL,
-  `created_at` datetime(6) NOT NULL,
-  PRIMARY KEY (`user_id`, `day`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 -- =========================================================
 -- TABLES CAPTURED FROM THE LIVE DB  (v6)
 -- These were created by Hibernate ddl-auto and never written down here,

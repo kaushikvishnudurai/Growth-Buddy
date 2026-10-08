@@ -46,8 +46,6 @@ public class DataCleanupJob {
         // Same dedupe-guard shape, habit side.
         total += jdbc.update(
                 "DELETE FROM habit_reminder_dispatch_log WHERE occurrence_date < CURDATE() - INTERVAL 30 DAY");
-        // The Last 7 days chart is the only reader; older summaries are unreachable.
-        total += jdbc.update("DELETE FROM money_day_summaries WHERE day < CURDATE() - INTERVAL 7 DAY");
         // Every reader takes a user's newest 12 (FoodService.photoHistory); the
         // rest are unreachable. The derived table is what lets MySQL delete from
         // the table it reads; TiDB and MySQL 8 both have ROW_NUMBER.

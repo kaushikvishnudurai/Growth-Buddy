@@ -3227,15 +3227,18 @@ function invalidateWeek(kind) {
   if (state.screen === 'summary') loadWeekSummary();
 }
 
-async function runDietCheck() {
+// date: a YYYY-MM-DD to read that one day; omitted, the week.
+async function runDietCheck(date) {
   const gen = weekGen;
-  state.dietCheck = { loading: true };
+  const scope = date ? 'day' : 'week';
+  state.dietCheck = { loading: true, scope };
   render();
   let next;
   try {
-    next = { data: await api('/api/food/diet-check', { method: 'POST' }) };
+    const q = date ? '?date=' + encodeURIComponent(date) : '';
+    next = { scope, data: await api('/api/food/diet-check' + q, { method: 'POST' }) };
   } catch (err) {
-    next = { error: (err && err.message) || 'Could not check your week right now.' };
+    next = { scope, error: (err && err.message) || 'Could not check your ' + scope + ' right now.' };
   }
   // An entry changed (or the account did) while Buddy was reading: drop it.
   if (gen !== weekGen) return;

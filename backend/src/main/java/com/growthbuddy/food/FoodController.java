@@ -35,10 +35,11 @@ public class FoodController {
         return week.week(CurrentUser.id());
     }
 
-    /** Is the week short on protein or fiber? AI, so rate-limited in WebConfig. */
+    /** Is the week (or one day of it) short on protein or fiber? AI, so rate-limited in WebConfig. */
     @PostMapping("/diet-check")
-    public DietCheckResponse dietCheck() {
-        return week.check(CurrentUser.id());
+    public DietCheckResponse dietCheck(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        return week.check(CurrentUser.id(), date);
     }
 
     @GetMapping

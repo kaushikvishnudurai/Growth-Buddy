@@ -42,6 +42,12 @@ class FoodWeekRulesTest {
     }
 
     @Test
+    void aDayCheckNamesTheDayNotTheWeek() {
+        DietCheckResponse r = FoodWeek.rules(new Nutrients(20, 400, 72, 14), TARGET, "Today so far");
+        assertTrue(r.summary().startsWith("Today so far looks light on protein"), r.summary());
+    }
+
+    @Test
     void keywordsMatchWordStartsOnly() {
         assertTrue(FoodWeek.mentions("2 Eggs", List.of("egg")));
         assertTrue(!FoodWeek.mentions("Veggie wrap", List.of("egg")));

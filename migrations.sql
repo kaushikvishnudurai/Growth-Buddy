@@ -252,3 +252,7 @@ ALTER TABLE calendar_reminders ADD COLUMN end_time_of_day TIME(6) NULL;
 
 -- A task can be put on hold: kept, but not escalated to High when overdue.
 ALTER TABLE tasks ADD COLUMN paused BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- The Money day summary is written from the facts now, with no AI, so its cache
+-- table is unused. It only ever held regenerable text.
+DROP TABLE IF EXISTS money_day_summaries;

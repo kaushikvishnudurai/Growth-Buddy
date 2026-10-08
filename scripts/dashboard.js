@@ -1396,6 +1396,8 @@ function WaterWeekCard(water, onOpenDay) {
 
 function DietCheckCard({ check, canCheck, onCheck }) {
   const st = check || {};
+  const scope = st.scope || 'week';
+  const what = scope === 'day' ? 'today' : 'your week';
   const level = (n, v) =>
     h(
       'button',
@@ -1408,7 +1410,7 @@ function DietCheckCard({ check, canCheck, onCheck }) {
     );
   let body = null;
   if (st.loading) {
-    body = Thinking('Buddy is reading your week', [
+    body = Thinking('Buddy is reading ' + what, [
       'Reading the dishes you logged',
       'Weighing protein, carbs, fat and fiber',
       'Writing your tips',
@@ -1449,7 +1451,7 @@ function DietCheckCard({ check, canCheck, onCheck }) {
     body = h(
       'p',
       { class: 'gb-summary-meta' },
-      'Buddy reads the dishes you logged this week and tells you how to close the gaps.'
+      'Buddy reads the dishes you logged today or this week and tells you how to close the gaps.'
     );
   }
   return Card({
@@ -1459,22 +1461,28 @@ function DietCheckCard({ check, canCheck, onCheck }) {
         'div',
         { class: 'gb-buddy-eyebrow' },
         Icon('sparkles', { size: 16, sw: 2.4 }),
-        "Buddy's read on your week"
+        "Buddy's read on " + what
       ),
       body,
       h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-btn gb-btn--soft gb-food-check-btn' + (st.loading ? ' is-thinking' : ''),
-          disabled: !!st.loading || !canCheck,
-          onclick: () => onCheck && onCheck(),
-        },
-        st.loading
-          ? thinkingLabel('Reading your week')
-          : st.data || st.error
-            ? 'Check again'
-            : 'Check my week'
+        'div',
+        { class: 'gb-food-check-btns' },
+        [
+          ['day', 'Check today', () => onCheck && onCheck(todayKey())],
+          ['week', 'Check my week', () => onCheck && onCheck()],
+        ].map(([s, label, run]) => {
+          const mine = s === scope && (st.loading || st.data || st.error);
+          return h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-btn gb-btn--soft gb-food-check-btn' + (mine && st.loading ? ' is-thinking' : ''),
+              disabled: !!st.loading || !canCheck,
+              onclick: run,
+            },
+            mine && st.loading ? thinkingLabel('Reading') : mine ? 'Check again' : label
+          );
+        })
       ),
     ],
   });

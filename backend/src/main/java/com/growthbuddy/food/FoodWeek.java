@@ -2,6 +2,7 @@ package com.growthbuddy.food;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.growthbuddy.common.ApiException;
 import com.growthbuddy.mentor.OpenAIClient;
 import com.growthbuddy.mentor.OpenAIClient.ChatTurn;
 import com.growthbuddy.user.User;
@@ -42,8 +43,8 @@ public class FoodWeek {
 
     private static final String PROMPT = """
             You are Buddy, the nutrition coach inside the Growth Buddy app, and you know
-            Indian food well. You get the meals a user logged over the last few days,
-            their estimated daily protein, carbs, fat and fiber against targets, and
+            Indian food well. You get the meals a user logged (over the last few days,
+            or on one day — the Scope line says which), their estimated daily protein, carbs, fat and fiber against targets, and
             their profile. Say how to close the gaps. Be practical, kind and specific.
             Return strict JSON only:
             {"summary":"two short sentences, second person, no numbers",
@@ -323,22 +324,34 @@ public class FoodWeek {
 
     // Not @Transactional: that would hold a pooled connection through a
     // multi-second AI call. Each repository read takes its own.
-    public DietCheckResponse check(UUID userId) {
-        Map<LocalDate, List<FoodEntry>> byDay = byDay(userId, clock.today(userId));
-        if (byDay.values().stream().allMatch(List::isEmpty)) {
-            return new DietCheckResponse(null, null, null, null,
-                    "Log a few meals this week and Buddy can tell you what your plate is missing.", List.of(), "rules");
+    // day == null: the week. A day: that one day of the last 7, judged on its own.
+    public DietCheckResponse check(UUID userId, LocalDate day) {
+        LocalDate today = clock.today(userId);
+        if (day != null && (day.isAfter(today) || day.isBefore(today.minusDays(DAYS - 1)))) {
+            throw ApiException.badRequest("Day checks cover the last 7 days.");
         }
+        Map<LocalDate, List<FoodEntry>> byDay = day == null ? byDay(userId, today) : oneDay(userId, day);
+        if (byDay.values().stream().allMatch(List::isEmpty)) {
+            return new DietCheckResponse(null, null, null, null, day == null
+                    ? "Log a few meals this week and Buddy can tell you what your plate is missing."
+                    : "Nothing logged on this day yet. Add a meal and Buddy can read it.", List.of(), "rules");
+        }
+        // ponytail: today is judged against full-day targets while it is still being
+        // eaten, so a morning check reads light; the wording says "so far" rather than
+        // pro-rating targets by the hour.
+        String label = day == null ? "Your week" : day.equals(today) ? "Today so far" : "That day";
         User u = users.findById(userId).orElse(null);
         Nutrients target = targets(u, goalKcal(u));
         Nutrients avg = average(days(byDay));
         // Judged from the same numbers the screen's thali shows, never by the AI,
         // so the verdict can't contradict the chart above it.
-        DietCheckResponse rules = rules(avg, target);
+        DietCheckResponse rules = rules(avg, target, label);
         if (!openai.isConfigured()) {
             return rules;
         }
-        StringBuilder sb = new StringBuilder("Meals by day:\n");
+        StringBuilder sb = new StringBuilder("Scope: ").append(day == null ? "the last few days"
+                : day.equals(today) ? "one day, today, still in progress: meals so far" : "one finished day")
+                .append("\nMeals by day:\n");
         byDay.forEach((d, list) -> {
             if (!list.isEmpty()) {
                 sb.append(d.getDayOfWeek().toString().substring(0, 3)).append(": ")
@@ -409,6 +422,12 @@ public class FoodWeek {
         return out;
     }
 
+    private Map<LocalDate, List<FoodEntry>> oneDay(UUID userId, LocalDate day) {
+        Map<LocalDate, List<FoodEntry>> out = new LinkedHashMap<>();
+        out.put(day, new ArrayList<>(entries.findByUserIdAndLogDateBetween(userId, day, day)));
+        return out;
+    }
+
     /** Under 80% of the target is low, over 120% high. */
     static String level(int avg, int target) {
         double r = (double) avg / Math.max(1, target);
@@ -417,6 +436,11 @@ public class FoodWeek {
 
     /** No AI: the verdict from the numbers, and a stock suggestion per gap. */
     static DietCheckResponse rules(Nutrients avg, Nutrients target) {
+        return rules(avg, target, "Your week");
+    }
+
+    /** {@code label} names what is judged: "Your week", "Today so far", "That day". */
+    static DietCheckResponse rules(Nutrients avg, Nutrients target, String label) {
         String p = level(avg.proteinG(), target.proteinG());
         String c = level(avg.carbsG(), target.carbsG());
         String f = level(avg.fatG(), target.fatG());
@@ -456,7 +480,7 @@ public class FoodWeek {
         add.addAll(more);
         String summary;
         if (light.isEmpty() && heavy.isEmpty()) {
-            summary = "Your week is close to target on protein, carbs, fat and fiber. Keep the variety going.";
+            summary = label + " is close to target on protein, carbs, fat and fiber. Keep the variety going.";
         } else {
             List<String> said = new ArrayList<>();
             if (!light.isEmpty()) {
@@ -465,7 +489,7 @@ public class FoodWeek {
             if (!heavy.isEmpty()) {
                 said.add("heavy on " + and(heavy));
             }
-            summary = "Your week looks " + String.join(" and ", said)
+            summary = label + " looks " + String.join(" and ", said)
                     + ". A small change to one meal a day closes most of the gap.";
         }
         return new DietCheckResponse(p, c, f, fi, summary, add.stream().limit(4).toList(), "rules");

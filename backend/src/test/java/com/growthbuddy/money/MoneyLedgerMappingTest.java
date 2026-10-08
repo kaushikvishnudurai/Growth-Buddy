@@ -104,17 +104,7 @@ class MoneyLedgerMappingTest {
         // Socks were an impulse buy rated 4/5: loved, so not one to skip.
         assertThat(f.get("avoidable")).extracting(a -> a.get("note").asText()).containsExactly("Arcade");
         assertThat(f.get("avoidable").get(0).get("reason").asText()).isEqualTo("You rated it 2/5");
-        // With no AI, the same facts still read as a sentence.
+        // The facts read as a sentence.
         assertThat(MoneyDaySummary.rulesText(f)).contains("entertainment").contains("3.5/5").contains("Arcade");
-    }
-
-    @Test
-    void thePromptOnlyAsksAboutFactsThatExist() throws Exception {
-        List<JsonNode> plain = List.of(obj("{\"id\":\"1\",\"amount\":125000,\"category\":\"others\",\"note\":\"Rent\"}"));
-        ObjectNode f = MoneyDaySummary.facts(plain, Map.of("others", "Others"), json);
-        f.put("currency", "₹");
-        String prompt = MoneyDaySummary.factsForPrompt(f);
-        assertThat(prompt).contains("₹1,25,000").doesNotContain("avoid").doesNotContain("satisfaction");
-        assertThat(prompt).contains("encouraging observation");
     }
 }

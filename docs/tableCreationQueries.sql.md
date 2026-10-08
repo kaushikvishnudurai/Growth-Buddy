@@ -50,7 +50,7 @@ so it provably matches the running database.
 | 659 focus_sessions · 670 weekly_reviews | focus & weekly review |
 | 524 families · 534 family_members · 559 family_meal_plans · 682 family_dish_preferences · 694 family_pantry_items · 710 family_shopping_items · 725 family_favourite_menus · 738 family_multi_day_plans | family |
 | 592 money_state | **the Money document minus the ledger: `user_id`, `data` JSON, `updated_at`** |
-| money_accounts · money_transactions · money_day_summaries | Money ledger: accounts (balance computed), one row per expense/income/transfer keyed `(user_id, id)`, cached AI day summaries |
+| money_accounts · money_transactions | Money ledger: accounts (balance computed), one row per expense/income/transfer keyed `(user_id, id)`. (`money_day_summaries`, the old AI day-summary cache, is dropped by `migrations.sql`.) |
 
 ## `users.timezone` is load-bearing
 
@@ -69,6 +69,6 @@ from the browser at signup and editable in Settings; validated on write, default
 - `config/DataCleanupJob` runs nightly to stay inside a small hosting quota, but it only trims rows
   nothing reads again: expired/revoked `sessions`, spent auth tokens, read `notifications` older than
   90 days, `reminder_dispatch_log` / `habit_reminder_dispatch_log` older than 30 days,
-  `money_day_summaries` older than 7 days, and `food_photo_logs` past each user's newest 12. The other append-only tables
+  and `food_photo_logs` past each user's newest 12. The other append-only tables
   (`task_completion_history`, `focus_sessions`) are **not** trimmed — they back
   user-visible history. Add one to the job only once you're sure nothing reads its old rows.

@@ -106,7 +106,7 @@ public class AuthService {
         "goal_actions", "goals", "daily_scores", "daily_logs",
         "mentor_threads", "circle_members", "circle_posts",
         "push_subscriptions", "notifications", "custom_sounds", "focus_sessions", "weekly_reviews",
-        "money_state", "money_accounts", "money_transactions", "money_day_summaries",
+        "money_state", "money_accounts", "money_transactions",
         "calendar_reminders", "notes", "sessions",
     };
 

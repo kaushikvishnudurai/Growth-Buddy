@@ -63,10 +63,23 @@ class FoodWeekAiTest {
     void anUnchangedWeekIsAnsweredFromTheLastCheck() {
         when(openai.complete(anyString(), anyList()))
                 .thenReturn("{\"summary\":\"Add dal.\",\"add\":[\"Dal\"]}");
-        DietCheckResponse first = week.check(user);
-        DietCheckResponse again = week.check(user);
+        DietCheckResponse first = week.check(user, null);
+        DietCheckResponse again = week.check(user, null);
         verify(openai, times(1)).complete(anyString(), anyList());
         assertEquals("ai", again.source());
         assertEquals(first, again);
+    }
+
+    @Test
+    void aDayCheckReadsOnlyThatDayAndSaysSoToTheAi() {
+        List<FoodEntry> todays = entries.findByUserIdAndLogDateBetween(user, today.minusDays(6), today);
+        when(entries.findByUserIdAndLogDateBetween(user, today, today)).thenReturn(todays);
+        when(openai.complete(anyString(), anyList()))
+                .thenReturn("{\"summary\":\"Add dal.\",\"add\":[\"Dal\"]}");
+        assertEquals("ai", week.check(user, today).source());
+        verify(openai).complete(anyString(), org.mockito.ArgumentMatchers.argThat(turns ->
+                turns.get(0).toString().contains("still in progress")));
+        org.junit.jupiter.api.Assertions.assertThrows(com.growthbuddy.common.ApiException.class,
+                () -> week.check(user, today.minusDays(7)));
     }
 }
