@@ -43,7 +43,7 @@ nutrient; `proteinTargetG` / `sources` are the older protein-only fields, kept f
 `POST /diet-check[?date=YYYY-MM-DD]` (rate-limited; with `date`, one of the last 7 days judged alone, today worded "so far" and told to the AI as in progress; water (via `WaterService.totalsByDay`/`goalMl`) is judged as a fifth gap whenever any was logged that week, `water: null` otherwise; the last AI answer is stored in `food_diet_checks` per user and scope with its prompt, and served only to the identical prompt; levels come from the same numbers via `rules()`, the AI only writes
 the summary and the foods to add, and `rules()` is the whole answer when the AI is off or fails, answering `source: "rules"`, which the
 card shows as a "Standard tips for now" line. `rules()` gives every gap its summary names one tip
-before any extras, so the cap of 4 can't drop one). Not
+before any extras, and lists at least 4 but never fewer than the gaps named, so water as a fifth gap keeps its tip). Not
 `@Transactional` on purpose: it would hold a connection through the AI call. app.js drops the
 check on every entry change, since it describes the week's dishes. AI spend: a failed estimate batch
 backs off 10 minutes per user (the keyword table fills in meanwhile), and a diet check whose prompt

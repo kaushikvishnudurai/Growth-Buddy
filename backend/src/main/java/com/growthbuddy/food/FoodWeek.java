@@ -566,10 +566,14 @@ public class FoodWeek {
             if (!heavy.isEmpty()) {
                 said.add("heavy on " + and(heavy));
             }
-            summary = label + " looks " + String.join(" and ", said)
+            // "light on protein, carbs and water, and heavy on fat": the comma keeps the
+            // second half from reading as one more item of the first.
+            summary = label + " looks " + String.join(light.size() > 1 && said.size() > 1 ? ", and " : " and ", said)
                     + ". A small change to one meal a day closes most of the gap.";
         }
-        return new DietCheckResponse(p, c, f, fi, w, summary, add.stream().limit(4).toList(), "rules");
+        // At least 4, and never fewer than the gaps named: with water there can be five.
+        return new DietCheckResponse(p, c, f, fi, w, summary,
+                add.stream().limit(Math.max(4, first.size())).toList(), "rules");
     }
 
     private static String and(List<String> xs) {

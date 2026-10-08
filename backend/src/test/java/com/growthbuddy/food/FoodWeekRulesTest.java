@@ -52,6 +52,15 @@ class FoodWeekRulesTest {
     }
 
     @Test
+    void fiveGapsKeepFiveTips() {
+        // Light on protein, carbs and fiber, heavy on fat, and short on water.
+        DietCheckResponse r = FoodWeek.rules(new Nutrients(20, 100, 120, 5), TARGET, "That day", 900, 2500);
+        assertEquals(5, r.add().size(), r.add().toString());
+        assertTrue(r.add().contains("A glass of water with each meal"));
+        assertTrue(r.summary().contains("water, and heavy on fat"), r.summary());
+    }
+
+    @Test
     void aDayCheckNamesTheDayNotTheWeek() {
         DietCheckResponse r = FoodWeek.rules(new Nutrients(20, 400, 72, 14), TARGET, "Today so far");
         assertTrue(r.summary().startsWith("Today so far looks light on protein"), r.summary());
