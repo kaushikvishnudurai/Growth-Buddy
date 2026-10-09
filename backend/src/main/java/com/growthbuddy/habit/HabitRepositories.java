@@ -16,8 +16,9 @@ interface HabitRepository extends JpaRepository<Habit, UUID> {
     /**
      * Active habits with a daily reminder time, for a user reachable on at
      * least one of the given channels. Mirrors
-     * {@code CalendarReminderRepository.findDeliverable} without the
-     * WhatsApp branch — habits have no such integration.
+     * {@code CalendarReminderRepository.findDeliverable}. No WhatsApp branch
+     * needed here: the scheduler always passes inAppOn = true (the bell reaches
+     * everyone), and it checks WhatsApp per user when it delivers.
      */
     @Query("""
             select h from Habit h

@@ -216,7 +216,12 @@ public class MoneyService {
         ArrayNode rejected = out.putArray("rejected");
         for (JsonNode u : body.path("upserts")) {
             try {
-                upserts.add(ledger.toRow(u.path("kind").asText(), withoutKind(u)));
+                MoneyLedger.Row row = ledger.toRow(u.path("kind").asText(), withoutKind(u));
+                // Not in toRow: a legacy document migrating through it must not lose a big expense.
+                if ("expense".equals(row.kind()) && row.amount().compareTo(MoneyLedger.EXPENSE_MAX) > 0) {
+                    throw ApiException.badRequest("An expense can be at most 10,000,000.");
+                }
+                upserts.add(row);
             } catch (ApiException ex) {
                 rejected.addObject().put("id", u.path("id").asText()).put("reason", ex.getMessage());
             }

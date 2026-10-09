@@ -47,7 +47,7 @@ public class UserController {
     }
 
     /**
-     * Find users by name/email substring. The email field is only populated
+     * Find users by display-name substring (never email; see UserRepository.search). The email field is only populated
      * when the searcher is *already connected* (accepted) with that user —
      * otherwise we return a masked form like {@code k****k@gmail.com} so the
      * searcher can disambiguate without leaking every Growth Buddy email.

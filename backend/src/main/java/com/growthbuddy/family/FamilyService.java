@@ -9,6 +9,7 @@ import com.growthbuddy.common.ApiException;
 import com.growthbuddy.mentor.OpenAIClient;
 import com.growthbuddy.mentor.OpenAIClient.ChatTurn;
 import com.growthbuddy.user.User;
+import com.growthbuddy.user.UserClock;
 import com.growthbuddy.user.UserRepository;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
@@ -86,6 +87,7 @@ public class FamilyService {
     private final FamilyPantryItemRepository pantry;
     private final FamilyShoppingItemRepository shopping;
     private final FamilyDishPreferenceRepository dishPrefs;
+    private final UserClock clock;
     private final ObjectMapper json = new ObjectMapper();
 
     public FamilyService(
@@ -98,7 +100,8 @@ public class FamilyService {
             FamilyMultiDayPlanRepository multiDayPlans,
             FamilyPantryItemRepository pantry,
             FamilyShoppingItemRepository shopping,
-            FamilyDishPreferenceRepository dishPrefs) {
+            FamilyDishPreferenceRepository dishPrefs,
+            UserClock clock) {
         this.families = families;
         this.members = members;
         this.plans = plans;
@@ -109,6 +112,17 @@ public class FamilyService {
         this.pantry = pantry;
         this.shopping = shopping;
         this.dishPrefs = dishPrefs;
+        this.clock = clock;
+    }
+
+    /* Against the user's own day, not the server's: @PastOrPresent used the
+       server clock, so for someone ahead of UTC a birth date of "today" was
+       refused for the first hours after their midnight. */
+    private LocalDate checkedDob(UUID userId, LocalDate dob) {
+        if (dob != null && dob.isAfter(clock.today(userId))) {
+            throw ApiException.badRequest("Date of birth cannot be in the future.");
+        }
+        return dob;
     }
 
     // ------------------------------------------------------------------
@@ -136,7 +150,7 @@ public class FamilyService {
         m.setFamilyId(fam.getId());
         m.setName(req.name().trim());
         m.setRelationship(req.relationship() != null ? req.relationship() : Relationship.other);
-        m.setDob(req.dob());
+        m.setDob(checkedDob(userId, req.dob()));
         m.setGender(StringUtils.hasText(req.gender()) ? req.gender().trim() : null);
         m.setHeightCm(req.heightCm());
         m.setWeightKg(req.weightKg());
@@ -159,7 +173,7 @@ public class FamilyService {
         if (req.relationship() != null && m.getRelationship() != Relationship.self) {
             m.setRelationship(req.relationship());
         }
-        m.setDob(req.dob());
+        m.setDob(checkedDob(userId, req.dob()));
         m.setGender(StringUtils.hasText(req.gender()) ? req.gender().trim() : null);
         m.setHeightCm(req.heightCm());
         m.setWeightKg(req.weightKg());

@@ -72,6 +72,9 @@ class MoneyLedgerMappingTest {
                 .isInstanceOf(ApiException.class).hasMessageContaining("x");
         assertThatThrownBy(() -> ledger.toRow("expense", obj("{\"id\":\"y\",\"amount\":0,\"date\":\"2026-09-30\"}")))
                 .isInstanceOf(ApiException.class);
+        // Rounds to 0.00, so it is a zero amount, not a tiny one.
+        assertThatThrownBy(() -> ledger.toRow("expense", obj("{\"id\":\"t\",\"amount\":0.001,\"date\":\"2026-09-30\"}")))
+                .isInstanceOf(ApiException.class);
         assertThatThrownBy(() -> ledger.toRow("transfer",
                 obj("{\"id\":\"z\",\"amount\":5,\"from\":\"a\",\"to\":\"a\",\"date\":\"2026-09-30\"}")))
                 .isInstanceOf(ApiException.class).hasMessageContaining("two different");

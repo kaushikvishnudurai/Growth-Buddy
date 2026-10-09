@@ -258,14 +258,16 @@ function ProgressRing({
 }
 
 /* ---- Check (habit / task toggle) ---- */
-function Check({ done = false, onToggle, color } = {}) {
+function Check({ done = false, onToggle, color, label } = {}) {
   const btn = h(
     'button',
     {
       type: 'button',
       class: 'gb-check' + (done ? ' is-done' : ''),
       'aria-pressed': String(!!done),
-      'aria-label': done ? 'Mark as not done' : 'Mark as done',
+      // `label` names the item: a list of identical "Mark as done" buttons
+      // told a screen reader nothing about which one it was on.
+      'aria-label': (done ? 'Mark as not done' : 'Mark as done') + (label ? ': ' + label : ''),
       style: done && color ? { background: color, boxShadow: '0 2px 0 ' + color } : null,
       // onToggle re-renders the whole app, which replaced this button on the
       // tap's own frame — the press and the pop never got painted, so a tick
@@ -832,7 +834,10 @@ function openModal({
               // The modal refused what you gave it, so the modal is what shakes
               // — the same head-shake the sign-in card does.
               shakeRefusal(sheet);
-              toast.error(err, errorMessage);
+              // The complaint is about what was typed, so it goes as soon as
+              // the user starts fixing it rather than sitting over the fix.
+              const id = toast.error(err, errorMessage);
+              sheet.addEventListener('input', () => toast.dismiss(id), { once: true });
             }
           },
         },

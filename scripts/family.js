@@ -415,6 +415,8 @@ function ScreenFamily({ api }) {
     const dobInput = h('input', {
       type: 'date',
       class: 'gb-input',
+      // en-CA is YYYY-MM-DD in local time; the server refuses a future date too.
+      max: new Date().toLocaleDateString('en-CA'),
       value: (member && member.dob) || '',
     });
     const heightInput = h('input', {
@@ -498,6 +500,12 @@ function ScreenFamily({ api }) {
         c.nameInput.focus();
         return;
       }
+      // `max` only stops the picker; a typed year still gets through.
+      if (c.dobInput.value && c.dobInput.value > c.dobInput.max) {
+        toast.error(null, 'Date of birth cannot be in the future.');
+        c.dobInput.focus();
+        return;
+      }
       run(
         api.addMember({
           name,
@@ -543,6 +551,12 @@ function ScreenFamily({ api }) {
       if (!name) {
         toast.error(null, 'Please enter a name.');
         c.nameInput.focus();
+        return;
+      }
+      // `max` only stops the picker; a typed year still gets through.
+      if (c.dobInput.value && c.dobInput.value > c.dobInput.max) {
+        toast.error(null, 'Date of birth cannot be in the future.');
+        c.dobInput.focus();
         return;
       }
       run(
@@ -668,7 +682,7 @@ function ScreenFamily({ api }) {
       type: 'text',
       class: 'gb-input',
       'aria-label': 'Search people',
-      placeholder: 'Search by name, user ID, email or phone',
+      placeholder: 'Search by name or user ID',
     });
     const resultsEl = h('div', { class: 'gb-family-search-results' });
 

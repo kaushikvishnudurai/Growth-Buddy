@@ -2572,9 +2572,17 @@ function openExpenseModal(money, save, prefillDate, existing) {
       : null,
     onPrimary: async () => {
       const amt = readAmount(amount);
-      if (!Number.isFinite(amt) || amt <= 0) {
+      // `max` on a number input is never checked without a <form> submit; the
+      // server refuses past it too (MoneyService.applyLedger).
+      const bad = !Number.isFinite(amt) || amt <= 0
+        ? 'Enter an amount greater than zero.'
+        : amt > Number(amount.max)
+          ? 'An expense can be at most ' + fmt(Number(amount.max)) + '.'
+          : '';
+      amount.setAttribute('aria-invalid', bad ? 'true' : 'false');
+      if (bad) {
         amount.focus();
-        throw new Error('Enter an amount greater than zero.');
+        throw new Error(bad);
       }
       const cat = picker.get();
       const next = clone(money);
@@ -4000,7 +4008,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
   function summaryText() {
     const hsc = financialHealth(money).score;
     const r = weeklyReview(money);
-    return `My Money Buddy week 💪\n• Spent: ${fmt(r.total)}\n• Set aside: ${fmt(r.setAside)}\n• Logging streak: ${logStreak(money.expenses)} days\n• Financial health: ${hsc}/100\n${r.motivation}`;
+    return `My Money Buddy week\n• Spent: ${fmt(r.total)}\n• Set aside: ${fmt(r.setAside)}\n• Logging streak: ${logStreak(money.expenses)} days\n• Financial health: ${hsc}/100\n${r.motivation}`;
   }
 
   function shareSummaryText() {
@@ -6237,7 +6245,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
                   h(
                     'div',
                     { class: 'gb-money-chal-detail' },
-                    pr.state === 'won' ? 'Completed — reward unlocked! 🎉' : pr.detail
+                    pr.state === 'won' ? 'Completed — reward unlocked!' : pr.detail
                   )
                 );
               })

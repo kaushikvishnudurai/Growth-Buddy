@@ -65,6 +65,8 @@ public class AuthService {
 
     /** Cap OTP sends per user, independent of the per-IP limit: 5 per hour. */
     private static final int WA_OTP_PER_HOUR = 5;
+    /** Same cap for email verification codes (signup, sign-in and resend can each send one). */
+    private static final int VERIFY_OTP_PER_HOUR = 5;
 
     @Lazy
     @Autowired
@@ -107,7 +109,7 @@ public class AuthService {
         "mentor_threads", "circle_members", "circle_posts",
         "push_subscriptions", "notifications", "custom_sounds", "focus_sessions", "weekly_reviews",
         "money_state", "money_accounts", "money_transactions",
-        "calendar_reminders", "notes", "sessions",
+        "calendar_reminders", "note_drafts", "notes", "sessions",
     };
 
     @PersistenceContext
@@ -154,10 +156,21 @@ public class AuthService {
     @Transactional
     public AuthUserResponse signup(SignupRequest req) {
         String email = normalize(req.email());
-        users.findByEmailIgnoreCase(email).ifPresent(existing -> {
+        User existing = users.findByEmailIgnoreCase(email).orElse(null);
+        if (existing != null) {
+            // Signed up before and never typed the code: with the SAME password
+            // that is the owner back again, so send a fresh code and answer like a
+            // first signup (unverified, no token) so the app opens the code screen.
+            // Anything else gets the same 409 as a verified account. Never take the
+            // new password: whoever verifies would then inherit one a stranger
+            // chose. A mismatch is a password guess, so it counts against the lockout.
+            if (!existing.isEmailVerified() && passwordMatches(existing, req.password(), "login:" + email)) {
+                issueVerificationOtpLimited(existing);
+                return AuthUserResponse.from(existing);
+            }
             throw new ApiException(org.springframework.http.HttpStatus.CONFLICT,
-                    "An account with this email already exists. Try signing in.");
-        });
+                    "An account with this email already exists. Sign in, or reset your password if you've forgotten it.");
+        }
         User user = new User();
         user.setEmail(email);
         user.setDisplayName(resolveDisplayName(req.displayName(), email));
@@ -177,10 +190,12 @@ public class AuthService {
 
     /**
      * Sign-in. Returns the user when credentials check out and email is verified.
-     * If the email is not yet verified, throws 403 (the controller surfaces this so
-     * the frontend can switch to the OTP screen).
+     * If the email is not yet verified, emails a fresh code and throws 403 so the
+     * frontend switches to the OTP screen. noRollbackFor is load-bearing: that 403
+     * must not roll back the code it just saved, or the emailed code never works.
+     * Every other throw here happens before any write.
      */
-    @Transactional
+    @Transactional(noRollbackFor = ApiException.class)
     public AuthUserResponse login(LoginRequest req, HttpServletRequest http) {
         String email = normalize(req.email());
         // Before the lookup, and keyed on the typed email rather than on a user
@@ -197,11 +212,12 @@ public class AuthService {
         // even if the unverified check below still turns them away.
         loginGuard.recordSuccess("login:" + email);
         if (!user.isEmailVerified()) {
-            // Sign-in must NOT send a verification email and must NOT reveal that
-            // the account exists-but-unverified. Verification only happens during
-            // signup, so an unverified account simply fails sign-in like any other
-            // bad credential.
-            throw ApiException.badRequest("Wrong email or password");
+            // Only someone holding the right password gets here, so saying
+            // "unverified" reveals nothing a stranger could use. Answering "Wrong
+            // email or password" left the owner looping against signup's 409.
+            // 403 is the frontend's cue to open the code screen.
+            issueVerificationOtpLimited(user);
+            throw ApiException.forbidden("Verify your email to finish signing up. We sent a new code to " + email + ".");
         }
         return AuthUserResponse.withToken(user, sessions.issue(user.getId(), http).token());
     }
@@ -233,7 +249,8 @@ public class AuthService {
     @Transactional
     public void resendVerification(EmailOnlyRequest req) {
         users.findByEmailIgnoreCase(normalize(req.email())).ifPresent(u -> {
-            if (!u.isEmailVerified()) {
+            // Over the per-account cap: skip silently; a refusal would say the account exists.
+            if (!u.isEmailVerified() && verificationOtpAllowed(u)) {
                 issueVerificationOtp(u, "verification");
             }
         });
@@ -705,6 +722,31 @@ public class AuthService {
         t.setExpiresAt(Instant.now().plus(OTP_TTL_MINUTES, ChronoUnit.MINUTES));
         verifyTokens.save(t);
         mail.sendOtp(user.getEmail(), user.getDisplayName(), otp, purpose);
+    }
+
+    /* Per-account cap on verification emails, on top of the per-IP limit. */
+    private boolean verificationOtpAllowed(User user) {
+        return rateLimiter.allow("verifyotp:" + user.getId(), VERIFY_OTP_PER_HOUR, 3_600_000L);
+    }
+
+    private void issueVerificationOtpLimited(User user) {
+        if (!verificationOtpAllowed(user)) {
+            throw new ApiException(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS,
+                    "Too many code requests. Use the last code we sent, or try again in an hour.");
+        }
+        issueVerificationOtp(user, "verification");
+    }
+
+    /* A password check outside login() still goes through LoginAttemptGuard. */
+    private boolean passwordMatches(User user, String password, String guardKey) {
+        loginGuard.check(guardKey);
+        PasswordCredential c = creds.findById(user.getId()).orElse(null);
+        if (c == null || !bcrypt.matches(password, c.getPasswordHash())) {
+            loginGuard.recordFailure(guardKey);
+            return false;
+        }
+        loginGuard.recordSuccess(guardKey);
+        return true;
     }
 
     private void issuePasswordResetOtp(User user) {

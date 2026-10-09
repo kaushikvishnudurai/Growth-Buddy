@@ -31,18 +31,21 @@ function computeAchievements({ user, topStreak, goals, wellness, trends, food, w
   const byDate = (trends && trends.byDate) || {};
   const trendDays = Object.values(byDate);
   const daysLogged = trendDays.length;
-  const waterGoalDays = trendDays.filter(
-    (d) => d.waterGoalMl > 0 && d.waterMl >= d.waterGoalMl
-  ).length;
-  const foodDays = trendDays.filter((d) => (d.kcal || 0) > 0).length;
+  // Day counts are sets of dates: adding today's live numbers to a history that
+  // may already hold today counted it twice (two plates on day 1 unlocked "3 days").
+  const today = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD, local
+  const datesWhere = (ok) => new Set(Object.keys(byDate).filter((k) => ok(byDate[k])));
+  const waterDates = datesWhere((d) => d.waterGoalMl > 0 && d.waterMl >= d.waterGoalMl);
+  const foodDates = datesWhere((d) => (d.kcal || 0) > 0);
   const strongDays = trendDays.filter((d) => (d.score || 0) >= 80).length;
 
   const moodCheckins = countKeys(wellness && wellness.moodByDate);
   const nights = countKeys(wellness && wellness.sleepByDate);
-  const photos = ((wellness && wellness.photoHistory) || []).length;
-  const todayPlates = (food && food.entries ? food.entries.length : 0) || 0;
-  const waterHitToday =
-    water && water.goalMl > 0 && (water.consumedMl || 0) >= water.goalMl ? 1 : 0;
+  ((wellness && wellness.photoHistory) || []).forEach((p) => p && p.date && foodDates.add(p.date));
+  if (food && food.entries && food.entries.length) foodDates.add(today);
+  if (water && water.goalMl > 0 && (water.consumedMl || 0) >= water.goalMl) waterDates.add(today);
+  const waterGoalDays = waterDates.size;
+  const foodDays = foodDates.size;
 
   // helper: a milestone with a numeric threshold.
   const m = (id, icon, title, desc, tier, value, target) => ({
@@ -109,7 +112,7 @@ function computeAchievements({ user, topStreak, goals, wellness, trends, food, w
           'Hydrated',
           'Hit your water goal 3 days',
           'bronze',
-          waterGoalDays + waterHitToday,
+          waterGoalDays,
           3
         ),
         m('water7', 'droplets', 'Aqua Pro', 'Hit your water goal 14 days', 'gold', waterGoalDays, 14),
@@ -132,7 +135,7 @@ function computeAchievements({ user, topStreak, goals, wellness, trends, food, w
           'Plate Logger',
           'Log meals on 3 days',
           'bronze',
-          photos + foodDays + todayPlates,
+          foodDays,
           3
         ),
         m('food7', 'utensils', 'Food Diary', 'Log meals on 14 days', 'silver', foodDays, 14),

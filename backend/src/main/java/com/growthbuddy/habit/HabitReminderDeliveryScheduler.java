@@ -4,6 +4,7 @@ import com.growthbuddy.common.UserZone;
 import com.growthbuddy.notification.NotificationKind;
 import com.growthbuddy.notification.NotificationService;
 import com.growthbuddy.push.PushService;
+import com.growthbuddy.reminder.WhatsAppService;
 import com.growthbuddy.user.User;
 import com.growthbuddy.user.UserRepository;
 import java.time.Duration;
@@ -21,14 +22,16 @@ import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 /**
  * Polls habits with a daily reminder time and delivers one near it in each
- * user's timezone: the in-app bell always, plus Web Push for users set up
- * for it. Mirrors {@link com.growthbuddy.reminder.ReminderDeliveryScheduler}
- * without the WhatsApp branch — habits have no such integration — and adds
- * one rule reminders don't have: a habit already checked in today doesn't
- * page anyone about it.
+ * user's timezone: the in-app bell always, plus WhatsApp and Web Push for
+ * users set up for them. Mirrors {@link com.growthbuddy.reminder.ReminderDeliveryScheduler}
+ * (it once left WhatsApp out, so a user who turned WhatsApp on got calendar
+ * reminders there and habit reminders only in the app) and adds one rule
+ * reminders don't have: a habit already checked in today doesn't page anyone
+ * about it.
  */
 @Component
 public class HabitReminderDeliveryScheduler {
@@ -45,6 +48,7 @@ public class HabitReminderDeliveryScheduler {
     private final UserRepository users;
     private final PushService push;
     private final NotificationService notifications;
+    private final WhatsAppService whatsapp;
 
     public HabitReminderDeliveryScheduler(
             HabitRepository habits,
@@ -52,13 +56,15 @@ public class HabitReminderDeliveryScheduler {
             HabitReminderDispatchLogRepository dispatchLog,
             UserRepository users,
             PushService push,
-            NotificationService notifications) {
+            NotificationService notifications,
+            WhatsAppService whatsapp) {
         this.habits = habits;
         this.checkins = checkins;
         this.dispatchLog = dispatchLog;
         this.users = users;
         this.push = push;
         this.notifications = notifications;
+        this.whatsapp = whatsapp;
     }
 
     // Deliberately one query per candidate rather than the batched
@@ -141,6 +147,18 @@ public class HabitReminderDeliveryScheduler {
             sent = true;
         } catch (Exception ex) {
             log.warn("In-app habit reminder {} for {} failed: {}", habit.getId(), user.getId(), ex.getMessage());
+        }
+
+        if (whatsapp.isConfigured() && user.isWhatsappEnabled()
+                && StringUtils.hasText(user.getWhatsappNumber())) {
+            try {
+                whatsapp.sendReminder(user.getWhatsappNumber(), "Time for your habit: " + habit.getName());
+                channels.append(channels.length() > 0 ? "+whatsapp" : "whatsapp");
+                sent = true;
+            } catch (Exception ex) {
+                row.setErrorMessage(truncate(ex.getMessage(), 250));
+                log.warn("WhatsApp habit reminder {} for {} failed: {}", habit.getId(), user.getId(), ex.getMessage());
+            }
         }
 
         if (push.isConfigured()) {

@@ -12,6 +12,7 @@ import static org.mockito.Mockito.when;
 import com.growthbuddy.notification.NotificationKind;
 import com.growthbuddy.notification.NotificationService;
 import com.growthbuddy.push.PushService;
+import com.growthbuddy.reminder.WhatsAppService;
 import com.growthbuddy.user.User;
 import com.growthbuddy.user.UserRepository;
 import java.time.LocalDate;
@@ -36,9 +37,11 @@ class HabitReminderDeliverySchedulerTest {
     private final UserRepository users = mock(UserRepository.class);
     private final PushService push = mock(PushService.class);
     private final NotificationService notifications = mock(NotificationService.class);
+    private final WhatsAppService whatsapp = mock(WhatsAppService.class);
 
     private final HabitReminderDeliveryScheduler scheduler =
-            new HabitReminderDeliveryScheduler(habits, checkins, dispatchLog, users, push, notifications);
+            new HabitReminderDeliveryScheduler(habits, checkins, dispatchLog, users, push, notifications,
+                    whatsapp);
 
     /** A habit whose reminder time is "right now" in UTC, so it always falls
      *  inside the scheduler's catch-up window regardless of wall-clock time. */
@@ -193,5 +196,38 @@ class HabitReminderDeliverySchedulerTest {
         scheduler.dispatchHabitReminders();
 
         verify(push).sendToUser(userId, "Habit reminder", "Workout", "/#habits");
+    }
+
+    /* The reported bug: WhatsApp on, calendar reminders arrived there, habit
+       reminders only reached the app. */
+    @Test
+    void alsoSendsToWhatsAppForAUserWhoTurnedItOn() {
+        UUID userId = UUID.randomUUID();
+        Habit habit = dueHabit(userId);
+        User u = user(userId);
+        u.setWhatsappEnabled(true);
+        u.setWhatsappNumber("+919800000000");
+        when(habits.findDeliverable(true, false)).thenReturn(List.of(habit));
+        when(users.findAllById(any())).thenReturn(List.of(u));
+        when(whatsapp.isConfigured()).thenReturn(true);
+
+        scheduler.dispatchHabitReminders();
+
+        verify(whatsapp).sendReminder(eq("+919800000000"), eq("Time for your habit: Workout"));
+        verify(dispatchLog).save(org.mockito.ArgumentMatchers.argThat(r ->
+                "app+whatsapp".equals(r.getChannel()) && "sent".equals(r.getStatus())));
+    }
+
+    @Test
+    void skipsWhatsAppWhenTheUserHasNotTurnedItOn() {
+        UUID userId = UUID.randomUUID();
+        Habit habit = dueHabit(userId);
+        when(habits.findDeliverable(true, false)).thenReturn(List.of(habit));
+        when(users.findAllById(any())).thenReturn(List.of(user(userId)));
+        when(whatsapp.isConfigured()).thenReturn(true);
+
+        scheduler.dispatchHabitReminders();
+
+        verify(whatsapp, never()).sendReminder(any(), any());
     }
 }

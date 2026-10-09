@@ -33,9 +33,40 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiError> handleValidation(MethodArgumentNotValidException ex) {
         String message = ex.getBindingResult().getFieldErrors().stream()
-                .map(f -> f.getField() + " " + f.getDefaultMessage())
-                .collect(Collectors.joining("; "));
+                .map(f -> humanMessage(f.getField(), f.getCode(), f.getDefaultMessage()))
+                .distinct()
+                .collect(Collectors.joining(" "));
         return ResponseEntity.badRequest().body(ApiError.of(HttpStatus.BAD_REQUEST, message));
+    }
+
+    /**
+     * This text reaches the user as-is, so "weightKg must be less than or equal
+     * to 400" becomes "Weight (kg) must be 400 or less." One place for every DTO,
+     * rather than a message= on each of a few hundred annotations.
+     */
+    static String humanMessage(String field, String code, String defaultMessage) {
+        if ("Email".equals(code)) return "Enter a valid email address.";
+        String m = defaultMessage == null ? "is not valid" : defaultMessage
+                .replaceFirst("^must be less than or equal to (\\S+)$", "must be $1 or less")
+                .replaceFirst("^must be greater than or equal to (\\S+)$", "must be at least $1")
+                .replaceFirst("^size must be between 0 and (\\d+)$", "is too long (at most $1)")
+                .replaceFirst("^size must be between (\\d+) and (\\d+)$", "must be between $1 and $2 long")
+                .replaceFirst("^must not be (blank|null|empty)$", "is required");
+        return fieldLabel(field) + " " + m + ".";
+    }
+
+    /** "profile.weightKg" → "Weight (kg)", "displayName" → "Display name". */
+    static String fieldLabel(String field) {
+        String leaf = field.substring(field.lastIndexOf('.') + 1).replaceAll("\\[\\d*]", "");
+        String unit = "";
+        java.util.regex.Matcher u = java.util.regex.Pattern.compile("(?<=[a-z])(Kg|Cm|Ml|Kcal|Min|Mins)$").matcher(leaf);
+        if (u.find()) {
+            unit = " (" + u.group(1).toLowerCase() + ")";
+            leaf = leaf.substring(0, u.start());
+        }
+        String words = leaf.replaceAll("([a-z0-9])([A-Z])", "$1 $2").toLowerCase();
+        if (words.isEmpty()) return "This field";
+        return Character.toUpperCase(words.charAt(0)) + words.substring(1) + unit;
     }
 
     @ExceptionHandler(NoResourceFoundException.class)

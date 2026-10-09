@@ -31,7 +31,9 @@ record UpdateHabitRequest(
         LocalTime reminderTime,
         HabitMetric metric,
         Boolean active,
-        @Size(max = 16) String sound) {
+        @Size(max = 16) String sound,
+        // A null reminderTime means "leave it", so taking a reminder off needs its own flag.
+        Boolean clearReminder) {
 }
 
 /**

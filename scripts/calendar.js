@@ -735,6 +735,19 @@ function openRoutineDialog(onSave) {
   refreshIcons();
 }
 
+/* A required text field refusing empty: the same in-page line as TimeRange's,
+   because an add that only refocused read as a dead button. Typing clears it. */
+function requiredError(input) {
+  const node = h('p', { class: 'gb-field-error', role: 'alert', style: { display: 'none' } });
+  const set = (msg) => {
+    node.textContent = msg || '';
+    node.style.display = msg ? '' : 'none';
+    input.setAttribute('aria-invalid', msg ? 'true' : 'false');
+  };
+  input.addEventListener('input', () => set(''));
+  return { node, set };
+}
+
 /* Start + end time pair, shared by the add form and the edit dialog. The end is
    disabled until there is a start, and has its own clear button: a native time
    input has no reliable way to empty it (none on iOS or Chrome), and an empty
@@ -1168,6 +1181,7 @@ function openEditDialog(rem, occKey, onEdit) {
       )
     : null;
 
+  const textErr = requiredError(textInput);
   const { sheet, close } = openOverlay({ label: 'Edit reminder' });
   // Built on openOverlay, not openModal, so Enter needs wiring here too.
   const saveBtn = h(
@@ -1181,6 +1195,7 @@ function openEditDialog(rem, occKey, onEdit) {
       onclick: async (e) => {
         const text = textInput.value.trim();
         if (!text) {
+          textErr.set('Write what to be reminded of first.');
           textInput.focus();
           return;
         }
@@ -1219,6 +1234,7 @@ function openEditDialog(rem, occKey, onEdit) {
       { class: 'gb-form' },
       h('div', { class: 'gb-field-label' }, 'Reminder'),
       textInput,
+      textErr.node,
       h('div', { class: 'gb-field-label' }, 'Time'),
       range.node,
       h('div', { class: 'gb-field-label' }, 'Tone'),
@@ -1305,7 +1321,7 @@ function ReminderRow(rem, occKey, onDelete, whatsappEnabled, onEdit) {
           {
             type: 'button',
             class: 'gb-rem-del gb-rem-edit',
-            'aria-label': 'Edit reminder',
+            'aria-label': 'Edit reminder: ' + rem.text,
             onclick: () => openEditDialog(rem, occKey, onEdit),
           },
           Icon('pencil', { size: 16 })
@@ -1316,7 +1332,7 @@ function ReminderRow(rem, occKey, onDelete, whatsappEnabled, onEdit) {
       {
         type: 'button',
         class: 'gb-rem-del',
-        'aria-label': 'Delete reminder',
+        'aria-label': 'Delete reminder: ' + rem.text,
         onclick: handleDelete,
       },
       Icon('trash-2', { size: 16 })
@@ -1386,6 +1402,7 @@ function buildForm() {
     'aria-label': 'End time (optional, makes it a busy block)',
   });
   const range = TimeRange(timeInput, endInput);
+  const textErr = requiredError(textInput);
 
   const tagPicker = TagPicker('personal');
 
@@ -1448,6 +1465,7 @@ function buildForm() {
   async function submit() {
     const text = textInput.value.trim();
     if (!text) {
+      textErr.set('Write what to be reminded of first.');
       textInput.focus();
       return;
     }
@@ -1511,6 +1529,7 @@ function buildForm() {
     children: [
       h('div', { class: 'gb-field-label' }, 'New reminder'),
       textInput,
+      textErr.node,
       h('div', { class: 'gb-field-label' }, 'Time'),
       range.node,
       h('p', { class: 'gb-field-hint' }, 'Add an end time to block it out as busy on the day.'),
@@ -1763,7 +1782,8 @@ function ReminderPanel({
           h(
             'div',
             { class: 'gb-day-head' },
-            h('span', { class: 'gb-day-head-title' }, 'Past wins'),
+            // Not "Past wins": this shows for today too, and today isn't past.
+            h('span', { class: 'gb-day-head-title' }, 'Wins'),
             h('span', { class: 'gb-day-head-count' }, String(winCount))
           ),
           winsNode

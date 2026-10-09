@@ -54,6 +54,8 @@ public class MoneyLedger {
     static final int WINDOW_DAYS = 400;
 
     private static final BigDecimal MAX_AMOUNT = new BigDecimal("1000000000");
+    /** The Add expense field's own max; applied to client writes only (MoneyService.applyLedger). */
+    static final BigDecimal EXPENSE_MAX = new BigDecimal("10000000");
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper json;
@@ -549,10 +551,12 @@ public class MoneyLedger {
     }
 
     private static BigDecimal amount(BigDecimal v, boolean allowZeroOrNegative) {
-        if (v.abs().compareTo(MAX_AMOUNT) > 0 || (!allowZeroOrNegative && v.signum() <= 0)) {
+        // Rounded first: 0.001 passed the > 0 check and was stored as 0.00.
+        BigDecimal r = v.setScale(2, java.math.RoundingMode.HALF_UP);
+        if (r.abs().compareTo(MAX_AMOUNT) > 0 || (!allowZeroOrNegative && r.signum() <= 0)) {
             throw ApiException.badRequest("Amount is out of range.");
         }
-        return v.setScale(2, java.math.RoundingMode.HALF_UP);
+        return r;
     }
 
     private static String text(JsonNode n) {

@@ -81,6 +81,7 @@
   --sky-500: #2BA6FF;
   --sky-600: #1184E0;
   --sky-700: #0A66B0;
+  --sky-800: #08548F;   /* text on sky fills: 6.4:1 on the water buttons, where sky-700 was marginal */
 
   /* Bloom — social, friends, Growth Circle */
   --bloom-50:  #FFEAF4;

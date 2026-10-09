@@ -264,7 +264,7 @@ function trendCard(title, latest, sub, values, color, days, fmt, vs) {
         'div',
         { class: 'gb-trend-head' },
         h('div', { class: 'gb-trend-title' }, title),
-        h('div', { class: 'gb-trend-latest', style: { color } }, latest)
+        h('div', { class: 'gb-trend-latest' }, latest)
       ),
       trendChart(values, color, days, fmt),
       sub ? h('div', { class: 'gb-trend-sub' }, sub) : null,

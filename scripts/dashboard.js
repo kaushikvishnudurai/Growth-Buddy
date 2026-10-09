@@ -232,7 +232,7 @@ function TaskRow(task, toggleTask, onEdit, onPause) {
       class: 'gb-row' + (task.done ? ' is-done' : '') + (task.paused ? ' is-paused' : ''),
       'data-task-id': task.id,
     },
-    Check({ done: task.done, onToggle: () => toggleTask(task.id) }),
+    Check({ done: task.done, onToggle: () => toggleTask(task.id), label: task.title }),
     h(
       'div',
       { style: { flex: 1, minWidth: 0 } },
@@ -242,7 +242,15 @@ function TaskRow(task, toggleTask, onEdit, onPause) {
       h(
         'div',
         { class: 'sub' },
-        task.paused ? 'Paused' : sharedFormatTime(task.time),
+        // task.time is already formatted ("Overdue · 1 Jan · 10:00") by
+        // mapTask; formatTime() could not parse it and blanked every row.
+        task.paused
+          ? 'Paused'
+          : h(
+              'span',
+              task.overdue ? { style: { color: 'var(--coral-700)', fontWeight: 600 } } : null,
+              task.time
+            ),
         Pill({
           label: task.priority,
           bg: p.bg,
@@ -352,7 +360,7 @@ function HabitCard(habit, toggleHabit) {
         String(habit.streak || 0)
       ),
       toggleHabit
-        ? Check({ done: !!habit.doneToday, onToggle: () => toggleHabit(habit.id) })
+        ? Check({ done: !!habit.doneToday, onToggle: () => toggleHabit(habit.id), label: habit.name })
         : null,
     ],
   });
@@ -539,7 +547,10 @@ function ReminderSuggestionsCard({ habits, water, wellness, reminders, onAddSugg
   const nowMinutes = now.getHours() * 60 + now.getMinutes();
   const stillToCome = (item) => minutesOfDay(item.time) > nowMinutes;
   const items = [];
-  const missedHabit = (habits || []).find((habit) => !habit.doneToday);
+  // A habit with its own reminder time is already covered (bell, push and
+  // WhatsApp at that time); suggesting a second 19:00 one for it read as if
+  // its reminder had landed here instead, and Add booked a duplicate.
+  const missedHabit = (habits || []).find((habit) => !habit.doneToday && !habit.reminderTime);
   if (missedHabit)
     items.push({
       icon: 'repeat',
@@ -808,19 +819,19 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater })
           'button',
           {
             type: 'button',
-            class: 'gb-btn gb-btn--ghost',
-            onclick: close,
+            class: 'gb-btn gb-btn--primary',
+            onclick: submit,
           },
-          'Cancel'
+          cfg.confirmLabel
         ),
         h(
           'button',
           {
             type: 'button',
-            class: 'gb-btn gb-btn--primary',
-            onclick: submit,
+            class: 'gb-btn gb-btn--ghost',
+            onclick: close,
           },
-          cfg.confirmLabel
+          'Cancel'
         )
       )
     );
@@ -1395,7 +1406,12 @@ function WaterWeekCard(water, onPickDay) {
   const goal = Math.max(1, water.goalMl || 2000);
   const days = water.days || [];
   const last = days.length - 1;
-  const done = days.slice(0, -1);
+  // Same days as the calorie average (FoodWeek.averaged): finished days with
+  // something logged; only today logged, then today. Counting empty days as 0
+  // read "0.0 L a day" beside a 0.5 L bar.
+  const logged = days.filter((d) => d.ml > 0);
+  const past = logged.filter((d) => d !== days[last]);
+  const done = past.length ? past : logged;
   const avg = done.length ? done.reduce((s, d) => s + d.ml, 0) / done.length : 0;
   const hits = days.filter((d) => d.ml >= goal).length;
   const litres = (ml) => (ml / 1000).toFixed(1);

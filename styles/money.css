@@ -434,7 +434,8 @@
 .gb-money-forecast-num {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: var(--text-h2);
+  font-size: clamp(1.25rem, 7vw, var(--text-h2));
+  overflow-wrap: anywhere;
   color: var(--fg1);
   letter-spacing: var(--tracking-tight);
 }
@@ -2117,7 +2118,11 @@
 .gb-money-today-num {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: clamp(2.6rem, 9vw, 3.75rem);
+  /* The floor is low on purpose: at 2.6rem, "Largest" text and a 1-crore figure ran
+     off a 320px card. A figure that still can't fit breaks rather than overflows. */
+  font-size: clamp(1.75rem, 9vw, 3.75rem);
+  min-width: 0;
+  overflow-wrap: anywhere;
   line-height: 1;
   letter-spacing: -0.035em;
   font-variant-numeric: tabular-nums;

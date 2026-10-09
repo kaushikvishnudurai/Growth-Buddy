@@ -14,7 +14,7 @@ via `@fontsource` — plus Space Mono for `--font-mono`.
 ## Token groups
 
 - **Color ramps** (`-50` → `-900`, though most stop at `-700`): `coral` (the brand ramp, full 50–900),
-  `leaf`, `sun`, `iris`, `sky`, `bloom`.
+  `leaf`, `sun`, `iris`, `sky` (plus `--sky-800`, text on sky fills only), `bloom`.
 - **Semantic color:** `--bg`, `--bg-subtle`, `--fg1` / `--fg2` / `--fg3`, `--border`, `--border-strong`,
   `--ring`, `--nav-bg`.
 - **Brand:** `--brand`, `--brand-hover`, `--brand-press`, `--brand-edge`, `--brand-soft`,

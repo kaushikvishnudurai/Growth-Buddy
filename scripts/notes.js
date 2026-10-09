@@ -780,7 +780,26 @@ function colorRow(selected, onPick) {
   return row;
 }
 
-function ScreenNotes({ onList, onGet, onCreate, onUpdate, onDelete, onMakeTask, onMakeReminder }) {
+/* The composer's unsaved note. ScreenNotes is rebuilt on every visit, so a draft
+   kept only in its inputs died the moment you went Home. It is autosaved to the
+   server (note_drafts, one per user) so it also survives a reload or another
+   device; module memory is just the instant copy for coming back mid-session,
+   before the server's answer. Save or an empty close deletes both. */
+let composerDraft = null; // { title, html, color }
+const DRAFT_SAVE_MS = 800;
+
+function ScreenNotes({
+  onList,
+  onGet,
+  onCreate,
+  onUpdate,
+  onDelete,
+  onMakeTask,
+  onMakeReminder,
+  onGetDraft,
+  onSaveDraft,
+  onDeleteDraft,
+}) {
   const listEl = h('div', { class: 'gb-note-grid' });
   let notes = [];
   let query = '';
@@ -820,9 +839,33 @@ function ScreenNotes({ onList, onGet, onCreate, onUpdate, onDelete, onMakeTask, 
     placeholder: 'Title (optional)',
     maxlength: '200',
     'aria-label': 'Note title',
+    value: composerDraft ? composerDraft.title : '',
+    oninput: () => keepDraft(),
   });
-  const editor = richEditor({ placeholder: 'Jot something down…' });
-  let composerColor = null;
+  const editor = richEditor({
+    placeholder: 'Jot something down…',
+    html: composerDraft ? composerDraft.html : '',
+    onInput: () => keepDraft(),
+  });
+  let composerColor = composerDraft ? composerDraft.color : null;
+  let draftTimer = null;
+  let draftTouched = false; // typed here, so a late server copy must not overwrite it
+  function keepDraft() {
+    draftTouched = true;
+    composerDraft = { title: titleInput.value, html: editor.area.innerHTML, color: composerColor };
+    const draft = composerDraft;
+    clearTimeout(draftTimer);
+    // Not cancelled when the screen goes: leaving right after typing still saves.
+    draftTimer = setTimeout(() => {
+      if (onSaveDraft)
+        onSaveDraft({ title: draft.title, body: draft.html, color: draft.color }).catch(() => {});
+    }, DRAFT_SAVE_MS);
+  }
+  function dropDraft() {
+    clearTimeout(draftTimer);
+    composerDraft = null;
+    if (onDeleteDraft) onDeleteDraft().catch(() => {});
+  }
   const saveBtn = h(
     'button',
     { type: 'button', class: 'gb-btn gb-btn--primary gb-btn--compact', onclick: () => save() },
@@ -836,8 +879,9 @@ function ScreenNotes({ onList, onGet, onCreate, onUpdate, onDelete, onMakeTask, 
     h(
       'div',
       { class: 'gb-note-composer-foot' },
-      colorRow(null, (key) => {
+      colorRow(composerColor, (key) => {
         composerColor = key;
+        keepDraft();
       }),
       saveBtn
     )
@@ -853,6 +897,29 @@ function ScreenNotes({ onList, onGet, onCreate, onUpdate, onDelete, onMakeTask, 
     h('span', null, 'Jot something down…')
   );
   const composer = h('div', { class: 'gb-card gb-note-composer' }, opener, composerBody);
+  if (composerDraft) composer.classList.add('is-open');
+  // A reload or another device: fetch the server's copy, unless typing here started first.
+  if (!composerDraft && onGetDraft) {
+    onGetDraft()
+      .then((d) => {
+        if (!d || draftTouched) return;
+        titleInput.value = d.title || '';
+        editor.area.innerHTML = sanitize(d.body || '');
+        composerColor = d.color || null;
+        const on = [null, ...COLORS].findIndex((c) => (c ? c.key : null) === composerColor);
+        Array.from(composer.querySelectorAll('.gb-note-swatch')).forEach((el, i) => {
+          el.classList.toggle('is-on', i === on);
+          el.setAttribute('aria-pressed', i === on ? 'true' : 'false');
+        });
+        composerDraft = {
+          title: titleInput.value,
+          html: editor.area.innerHTML,
+          color: composerColor,
+        };
+        composer.classList.add('is-open');
+      })
+      .catch(() => {});
+  }
 
   function openComposer() {
     composer.classList.add('is-open');
@@ -860,6 +927,7 @@ function ScreenNotes({ onList, onGet, onCreate, onUpdate, onDelete, onMakeTask, 
   }
   function closeComposer() {
     composer.classList.remove('is-open');
+    dropDraft();
     titleInput.value = '';
     editor.area.innerHTML = '';
     composerColor = null;
@@ -1322,4 +1390,8 @@ if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.DEV
   }
 }
 
-export { ScreenNotes, sanitize, shrinkPhoto };
+function clearNoteDraft() {
+  composerDraft = null;
+}
+
+export { ScreenNotes, sanitize, shrinkPhoto, clearNoteDraft };

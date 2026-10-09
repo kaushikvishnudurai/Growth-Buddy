@@ -35,8 +35,9 @@ function cookieEligible(key) {
     // handful of bytes.
     key === 'gb.premium' ||
     key === 'gb.textScale' ||
-    key === 'gb.apiBase' ||
-    key.startsWith('gb.achSeen.') // small, needed synchronously for unlock timing
+    key === 'gb.apiBase'
+    // gb.achSeen.<uid> used to be here: one cookie per account ever used on the
+    // device. It lives in ui_prefs now; init() evicts the leftovers.
   );
 }
 
@@ -171,6 +172,14 @@ const CacheStorage = {
     ourCookieNames().forEach(delCookie);
     if (typeof caches !== 'undefined') caches.delete(CACHE_NAME).catch(() => {});
   },
+  /** Remove every key `test` accepts, from memory, cookies and the Cache API
+      (including entries init() has not hydrated yet). */
+  removeWhere: (test) => {
+    Object.keys(mem).forEach((k) => test(k) && CacheStorage.removeItem(k));
+    return cacheReadAll().then((all) =>
+      Promise.all(Object.keys(all).filter(test).map(cacheDelete))
+    );
+  },
   /**
    * Called once at boot. Hydrates large values that live only in the Cache API
    * into the in-memory map, then finishes migrating any legacy localStorage
@@ -210,6 +219,8 @@ const CacheStorage = {
       ourCookieNames().forEach((k) => {
         if (!cookieEligible(k)) delCookie(k);
       });
+      // ponytail: one-time cleanup of the retired achSeen mirror; drop once old installs have booted.
+      CacheStorage.removeWhere((k) => k.startsWith('gb.achSeen.'));
       return hydrated;
     }),
 };

@@ -576,6 +576,11 @@ button.gb-sectiontitle-act {
   display: grid;
   gap: 10px;
 }
+/* The auth <form> is for password managers and a11y only; its fields stay
+   grid items of the card. */
+.gb-login-form {
+  display: contents;
+}
 
 [data-theme='dark'] .gb-login-card {
   border: 1px solid var(--border);
@@ -2688,6 +2693,9 @@ body:has(.is-thinking, .gb-thinking)::after {
   font-weight: 700;
   font-size: 0.9375rem;
   color: var(--fg1);
+  /* A long unbroken name ran under the row's pause/edit/freeze buttons. */
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 .gb-row.is-paused .title,
 .gb-row.is-paused .sub {
@@ -3867,7 +3875,7 @@ button.gb-food-level {
   font-weight: 800;
   font-family: var(--font-body);
   background: color-mix(in srgb, var(--sky-100) 78%, white 22%);
-  color: var(--info-soft-fg);
+  color: var(--sky-800); /* dark theme overrides below */
   cursor: pointer;
   transition:
     transform var(--dur-fast) var(--ease-bounce),
@@ -3877,7 +3885,7 @@ button.gb-food-level {
 .gb-water-add--custom {
   background: color-mix(in srgb, var(--surface) 65%, var(--sky-100) 35%);
   border: 1px dashed color-mix(in srgb, var(--sky-300) 55%, var(--border) 45%);
-  color: var(--info-soft-fg);
+  color: var(--sky-800);
 }
 @media (hover: hover) {
   .gb-water-add:hover {
@@ -3912,14 +3920,15 @@ button.gb-food-level {
 }
 
 .gb-water-prompt-actions {
+  /* Same shape as openModal's footer: full-width primary, Cancel under it.
+     A right-aligned Cancel-then-primary row made these the odd ones out. */
   display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 12px;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
 }
 .gb-water-prompt-actions .gb-btn {
-  width: auto;
-  min-width: 110px;
+  width: 100%;
 }
 .gb-water-prompt-error {
   min-height: 18px;
@@ -7785,7 +7794,7 @@ select.gb-input {
 /* Member cards */
 .gb-family-card-grid {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr); /* same trap as the two-column rule below, on phones */
   gap: 12px;
 }
 @media (min-width: 620px) {
@@ -7806,6 +7815,7 @@ select.gb-input {
 }
 .gb-family-card-head {
   display: flex;
+  flex-wrap: wrap; /* the status pill drops under the name instead of off the card */
   align-items: center;
   gap: 12px;
 }
@@ -7861,6 +7871,7 @@ select.gb-input {
 }
 .gb-family-card-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
 }
@@ -8604,6 +8615,7 @@ select.gb-input {
   align-items: center;
   gap: 14px;
   width: 100%;
+  font: inherit; /* a <button> doesn't inherit the body font: it rendered in Arial */
   text-align: left;
   padding: 16px;
   border: 1px solid var(--border);
@@ -8715,6 +8727,7 @@ select.gb-input {
   font-family: var(--font-display);
   font-weight: 800;
   font-size: 1.125rem;
+  color: var(--brand-ink); /* the line is --brand; as text that is 2.8:1 */
 }
 .gb-trend-svg {
   display: block;
@@ -9699,8 +9712,10 @@ textarea:focus-visible,
   font-weight: 800;
   margin: 0 26px 4px 0;
   color: var(--fg1);
+  overflow-wrap: anywhere;
 }
 .gb-note-card-body {
+  overflow-wrap: anywhere;
   font-size: 0.875rem;
   line-height: var(--leading-relaxed);
   color: var(--fg2);

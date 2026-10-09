@@ -382,6 +382,7 @@ function pushToast(message, kind, durationMs) {
   if (toast.kind !== 'success' && toast.kind !== 'info') buddyReact('no');
   const duration = typeof durationMs === 'number' ? durationMs : 2800;
   setTimeout(() => dismissToast(toast.id), duration);
+  return toast.id;
 }
 
 /* The header seedling nods at good news and shakes its head at bad. Hooked
@@ -403,7 +404,7 @@ function buddyReact(mood) {
 }
 
 function toastError(err, fallback) {
-  pushToast((err && err.message) || fallback || 'Something went wrong.', 'error');
+  return pushToast((err && err.message) || fallback || 'Something went wrong.', 'error');
 }
 
 function toastSuccess(message) {
@@ -411,7 +412,7 @@ function toastSuccess(message) {
 }
 
 // Hand the real implementations to the late-bound bridge that screens import.
-registerToast({ success: toastSuccess, error: toastError });
+registerToast({ success: toastSuccess, error: toastError, dismiss: dismissToast });
 
 function score() {
   if (state.score > 0) {
@@ -499,7 +500,7 @@ function persistWellness() {
       JSON.stringify(state.wellness || emptyWellness())
     );
   } catch (err) {
-    console.error('⚠️ Failed to cache wellness data locally:', err);
+    console.error('Failed to cache wellness data locally:', err);
   }
 }
 
@@ -525,7 +526,7 @@ function persistGoalProgress() {
       JSON.stringify(state.goalProgress || {})
     );
   } catch (err) {
-    console.error('⚠️ Failed to cache goal progress locally:', err);
+    console.error('Failed to cache goal progress locally:', err);
   }
   // Note: Goal progress is already persisted via updateGoalProgress() API calls.
   // This is just a local cache for offline access.
@@ -581,7 +582,7 @@ function cacheMoney() {
   try {
     CacheStorage.setItem(moneyStorageKey(state.user), JSON.stringify(state.money));
   } catch (err) {
-    console.error('⚠️ Failed to cache money data locally:', err);
+    console.error('Failed to cache money data locally:', err);
   }
 }
 
@@ -833,7 +834,7 @@ function saveUiPrefs(patch) {
     method: 'PUT',
     body: JSON.stringify({ prefs: state.user.uiPrefs }),
   }).catch((err) => {
-    console.error('❌ CRITICAL: saveUiPrefs failed to reach database:', err);
+    console.error('CRITICAL: saveUiPrefs failed to reach database:', err);
   });
 }
 
@@ -983,9 +984,7 @@ function hydrateUiPrefs() {
       saveUiPrefs({ timeFormat: detectTimeFormat() });
     }
     if (p.onboardingDone) CacheStorage.setItem('gb.onboardDismissed', '1');
-    if (Array.isArray(p.achSeen)) {
-      CacheStorage.setItem('gb.achSeen.' + (state.user.id || 'me'), JSON.stringify(p.achSeen));
-    }
+    // achSeen is read straight from ui_prefs (checkAchievements): no local mirror.
   } catch (_) {
     /* silent — cache mirror is best-effort */
   }
@@ -1057,7 +1056,6 @@ function achievementProps() {
    then celebrate anything new that crosses its threshold thereafter. */
 function checkAchievements() {
   if (!state.user || !state.achReady) return;
-  const seenKey = 'gb.achSeen.' + (state.user.id || 'me');
   let all;
   try {
     all = computeAchievements(achievementProps()).flatMap((g) => g.items);
@@ -1066,29 +1064,32 @@ function checkAchievements() {
   }
   const unlockedIds = all.filter((i) => i.unlocked).map((i) => i.id);
 
-  let seen = null;
-  try {
-    const raw = CacheStorage.getItem(seenKey);
-    seen = raw ? JSON.parse(raw) : null;
-  } catch (_) {
-    seen = null;
-  }
-  if (!Array.isArray(seen)) {
+  // The account's own list, in ui_prefs. It used to be mirrored into a
+  // gb.achSeen.<userId> cookie per account ever used on the device, all of them
+  // riding on every request. Unioned with this session's ids because any user
+  // object the server sent before our achSeen save landed (/api/auth/me, a
+  // settings save) replaces uiPrefs with the older list, and the badge would
+  // celebrate twice.
+  if (achSession.uid !== state.user.id) achSession = { uid: state.user.id, ids: new Set() };
+  const stored = state.user.uiPrefs && state.user.uiPrefs.achSeen;
+  if (!Array.isArray(stored) && !achSession.ids.size) {
     // First run with real data — baseline, don't celebrate the back-catalogue.
-    CacheStorage.setItem(seenKey, JSON.stringify(unlockedIds));
+    unlockedIds.forEach((id) => achSession.ids.add(id));
     saveUiPrefs({ achSeen: unlockedIds });
     return;
   }
-  const seenSet = new Set(seen);
-  const fresh = all.filter((i) => i.unlocked && !seenSet.has(i.id));
+  const seen = new Set([...(Array.isArray(stored) ? stored : []), ...achSession.ids]);
+  const fresh = all.filter((i) => i.unlocked && !seen.has(i.id));
   if (!fresh.length) return;
   // Persist the union BEFORE celebrating so a re-render mid-animation can't
   // double-fire the same badge.
   const union = Array.from(new Set([...seen, ...unlockedIds]));
-  CacheStorage.setItem(seenKey, JSON.stringify(union));
+  union.forEach((id) => achSession.ids.add(id));
   saveUiPrefs({ achSeen: union });
   fresh.forEach((item) => celebrate(item));
 }
+/* Ids already seen this session, per account. Memory only; ui_prefs is the record. */
+let achSession = { uid: null, ids: new Set() };
 
 /* Card-facing view of a habit's freeze state, shaped like the old local model. */
 function habitFreezeState(habit) {
@@ -1497,8 +1498,24 @@ function recordTrendsToday() {
     method: 'POST',
     body: JSON.stringify(state.trends.byDate[key]),
   }).catch((err) => {
-    console.error('❌ CRITICAL: recordTrendsToday snapshot failed to reach database:', err);
+    console.error('CRITICAL: recordTrendsToday snapshot failed to reach database:', err);
   });
+}
+
+/* Sign-out leaves nothing of this account on the device: money, wellness, goal
+   progress, trends — every key built as gb.<thing>.<userId>[.<more>]. Except a
+   money pending queue that still holds writes: those are expenses the server
+   never got, the only copy there is, and they replay when this account signs
+   back in. Session expiry (handleAuthExpired) keeps everything, since the same
+   person is about to sign back in. */
+function purgeUserCache() {
+  const id = state.user && state.user.id;
+  if (!id) return;
+  const p = loadPendingLedger();
+  const keep = Object.keys(p.upserts).length || p.deletes.length ? pendingKey() : null;
+  CacheStorage.removeWhere(
+    (k) => k !== keep && (k.endsWith('.' + id) || k.includes('.' + id + '.'))
+  );
 }
 
 function clearSession() {
@@ -1511,6 +1528,8 @@ function clearSession() {
   // in pulls it straight down again.
   storeCustomChime(null);
   customChimePulled = false;
+  // The notes composer keeps an unsaved draft in module memory; it is not the next account's.
+  import('./notes.js').then((m) => m.clearNoteDraft()).catch(() => {});
 }
 
 /* The ONLY way a signed-in user reaches `state` — sign-in, OTP verify, password
@@ -1563,7 +1582,8 @@ async function api(path, options) {
 /* A fetch that never got a response at all. In production the server is not
    the user's to start, so "make sure Growth Buddy is running" read as nonsense
    on a phone — at that end the cause is almost always the connection. */
-const NO_CONNECTION = 'No connection. Check your internet, then swipe up to reload the app.';
+// No gesture in it: this shows on desktop too, and pull to refresh is a swipe DOWN.
+const NO_CONNECTION = 'No connection. Check your internet and try again.';
 
 /* Fallback when a failed response carries no JSON message of its own — a
    gateway's HTML page, an empty body. A bare status code is not an error
@@ -1671,6 +1691,7 @@ function handleAuthExpired() {
   state.notifOpen = false;
   state.moreOpen = false;
   state.toasts = [];
+  returnToScreen = state.screen; // signing back in returns here, not to Home
   state.screen = 'home';
   if (window.location.hash) history.replaceState(null, '', window.location.pathname);
   render();
@@ -1702,10 +1723,12 @@ function mapTask(task) {
     id: task.id,
     title: task.title,
     time: formatTaskTime(task),
-    priority:
-      !task.done && !task.paused && task.dueAt && new Date(task.dueAt).getTime() < Date.now()
-        ? 'High'
-        : task.priority || 'Medium',
+    // The stored priority, never a display override: showing an overdue task
+    // as High fed the edit dialog, and Save wrote High back to the server.
+    // Overdue is its own flag; the row paints it.
+    priority: task.priority || 'Medium',
+    overdue:
+      !task.done && !task.paused && !!task.dueAt && new Date(task.dueAt).getTime() < Date.now(),
     done: !!task.done,
     paused: !!task.paused,
     dueAt: task.dueAt || null,
@@ -2124,6 +2147,7 @@ async function connectWebSocket() {
     ]);
     // Logged out (or already connected) while the chunks were in flight.
     if (!state.user || stomp) return;
+    let reconnect = false;
     stomp = new StompClient({
       webSocketFactory: () => new SockJS(API_BASE + '/ws'),
       connectHeaders: { Authorization: 'Bearer ' + token },
@@ -2134,7 +2158,13 @@ async function connectWebSocket() {
         // delivered in the gap was pushed to a socket nobody was holding, and
         // the bell is built from pushes alone. A phone suspends the socket the
         // moment the screen locks, so that gap is every night.
-        refreshNotifications();
+        // Not on the first connect: loadSecondaryData fetched the list a moment
+        // ago, and this made every boot ask twice. ponytail: a push landing in
+        // the split second between that fetch and this subscribe waits for the
+        // next reconnect or visibilitychange; close it with a since= cursor if
+        // that ever matters.
+        if (reconnect) refreshNotifications();
+        reconnect = true;
         stomp.subscribe('/user/queue/notifications', (frame) => {
           try {
             const n = JSON.parse(frame.body);
@@ -2449,6 +2479,15 @@ async function createHabit(body) {
   reSyncDeviceAlarms();
 }
 
+async function updateHabit(id, body) {
+  const updated = await api('/api/habits/' + encodeURIComponent(id), {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  });
+  state.habits = state.habits.map((x) => (x.id === id ? updated : x));
+  reSyncDeviceAlarms();
+}
+
 /* ---- Natural-language quick-add ----
    Send the raw text (+ the user's habit names for matching) to the backend
    parser, then apply each returned intent using the same handlers the manual
@@ -2492,6 +2531,7 @@ async function parseQuickAdd(text) {
     body: JSON.stringify({ text, habits }),
   });
   if (!res || res.configured === false) return { configured: false, intents: [] };
+  if (res.unavailable) return { configured: true, unavailable: true, intents: [] };
   return { configured: true, intents: res.intents || [], note: res.note };
 }
 
@@ -2945,7 +2985,7 @@ function rememberPhotoFood(foodName, estimate, usedPhoto) {
     method: 'POST',
     body: JSON.stringify({ foodName, mealType, confidence, fallbackNeeded, date: todayKeyNow() }),
   }).catch((err) => {
-    console.error('❌ CRITICAL: rememberPhotoFood failed to reach database:', err);
+    console.error('CRITICAL: rememberPhotoFood failed to reach database:', err);
   });
 }
 
@@ -3478,6 +3518,11 @@ function openAddFood() {
     onPrimary: async () => {
       let entriesToAdd = [];
       const mealType = mealTypeSeg.get();
+      // A typed date skips the picker's max; YYYY-MM-DD compares as text.
+      if (dateInput.value > todayKeyNow()) {
+        dateInput.focus();
+        throw new Error("You can't log food for a day that hasn't happened yet.");
+      }
 
       // If we have photo items, use them
       if (photoItems.length > 0) {
@@ -3846,6 +3891,19 @@ function screenFromHash() {
   return 'home';
 }
 
+/* Where a signed-out visitor was headed: the #/money link they opened, or the
+   screen their session expired on. Memory only, taken once by the next
+   sign-in; every sign-in used to land on Home. */
+let returnToScreen = '';
+function landAfterSignIn() {
+  const target = Object.prototype.hasOwnProperty.call(SCREENS, returnToScreen)
+    ? returnToScreen
+    : 'home';
+  returnToScreen = '';
+  state.screen = target;
+  history.replaceState(null, '', '#/' + target);
+}
+
 function setScreen(id, opts) {
   opts = opts || {};
   // Tapping a "More" item that's already active should still close the sheet.
@@ -3876,7 +3934,10 @@ function setScreen(id, opts) {
 
 /** Sync screen with the URL on back/forward navigation. */
 window.addEventListener('hashchange', () => {
-  if (!state.user) return;
+  if (!state.user) {
+    returnToScreen = screenFromHash();
+    return;
+  }
   setScreen(screenFromHash(), { fromHash: true });
 });
 
@@ -5788,7 +5849,8 @@ function openProfileSettings(initialTab) {
       'Delete account'
     ),
     h('div', { class: 'gb-settings-sec-label', style: { marginTop: '20px' } }, 'About'),
-    h('div', { class: 'gb-field-hint' }, 'Growth Buddy · v1.0.0')
+    // The real build (vite.config.js BUILD), the number support asks for.
+    h('div', { class: 'gb-field-hint' }, 'Growth Buddy · build ' + __GB_BUILD__)
   );
 
   // ---- Top-level segmented slider nav ----
@@ -5844,28 +5906,33 @@ function openProfileSettings(initialTab) {
     primary: 'Done',
     modalClass: 'gb-modal--settings',
     onPrimary: async () => {
+      // Every field Done checks lives on Profile, so a refusal brings that tab
+      // up: from Display, the toast named a field that wasn't on screen. All
+      // the problems are collected and told at once, not one per press.
+      const problems = [];
+      const bad = (msg, ref) => {
+        problems.push({ msg, ref });
+        return null;
+      };
+      const showProfile = (ref) => {
+        if (profilePane.style.display === 'none') tabBar.querySelector('[role="tab"]').click();
+        if (ref) ref.focus();
+      };
       const parseDobToAge = (raw, ref) => {
         if (!raw) return null;
         const dob = new Date(raw + 'T00:00:00');
-        if (Number.isNaN(dob.getTime())) {
-          if (ref) ref.focus();
-          throw new Error('Date of birth is invalid.');
-        }
+        if (Number.isNaN(dob.getTime())) return bad('Date of birth is invalid.', ref);
         let age = now.getFullYear() - dob.getFullYear();
         const m = now.getMonth() - dob.getMonth();
         if (m < 0 || (m === 0 && now.getDate() < dob.getDate())) age -= 1;
-        if (age < 10 || age > 100) {
-          if (ref) ref.focus();
-          throw new Error('Age must be between 10 and 100.');
-        }
+        if (age < 10 || age > 100) return bad('Age must be between 10 and 100.', ref);
         return age;
       };
       const parseRanged = (label, raw, min, max, ref) => {
         if (!raw) return null;
         const n = Number(raw);
         if (!Number.isFinite(n) || n < min || n > max) {
-          if (ref) ref.focus();
-          throw new Error(label + ' must be between ' + min + ' and ' + max + '.');
+          return bad(label + ' must be between ' + min + ' and ' + max + '.', ref);
         }
         return Math.round(n);
       };
@@ -5898,12 +5965,20 @@ function openProfileSettings(initialTab) {
           waterGoalInput
         ),
       };
+      if (problems.length) {
+        showProfile(problems[0].ref);
+        throw new Error(problems.map((p) => p.msg).join(' '));
+      }
 
       // openModal already disables Done for the wait; say what it is waiting on.
       const doneBtn = body.closest('.gb-modal')?.querySelector(':scope > .gb-btn--primary');
       if (doneBtn) doneBtn.textContent = 'Saving…';
       try {
         await saveProfileDetails(profilePayload);
+      } catch (err) {
+        // The server's one check here is the timezone ("Unknown timezone: ...").
+        showProfile(/timezone/i.test((err && err.message) || '') ? timezoneInput : null);
+        throw err;
       } finally {
         if (doneBtn) doneBtn.textContent = 'Done';
       }
@@ -6371,6 +6446,12 @@ function openAddSheet() {
       if (!r.configured) {
         close();
         pushToast('Quick add needs an AI key configured on the server.', 'error', 3600);
+        return;
+      }
+      if (r.unavailable) {
+        done();
+        qaInput.disabled = false;
+        pushToast("Couldn't reach the assistant, try again.", 'error', 3600);
         return;
       }
       const rows = r.intents.map((it) => ({ it, d: describeIntent(it) })).filter((x) => x.d);
@@ -6967,11 +7048,17 @@ function metricSummary(metric, value, durationMin) {
 }
 
 function openAddHabit() {
+  openHabitForm(null);
+}
+
+/* New habit, or edit `habit` (PUT keeps its streak; deleting to rename lost it). */
+function openHabitForm(habit) {
   const nameInput = h('input', {
     type: 'text',
     class: 'gb-input',
     placeholder: 'e.g. Meditate',
     maxlength: 120,
+    value: habit ? habit.name : '',
   });
   // Assigned once the fields it toggles exist; segmented() takes its handler at
   // construction, and the preset row is built below.
@@ -6983,7 +7070,7 @@ function openAddHabit() {
       { value: 'study', label: 'Study' },
       { value: 'journal', label: 'Journal' },
     ],
-    'habit',
+    (habit && habit.domain) || 'habit',
     (d) => syncDomain(d)
   );
   const cadence = segmented(
@@ -6991,10 +7078,14 @@ function openAddHabit() {
       { value: 'daily', label: 'Daily' },
       { value: 'weekly', label: 'Weekly' },
     ],
-    'daily'
+    (habit && habit.cadence) || 'daily'
   );
-  const color = colorPicker('');
-  const reminderInput = h('input', { type: 'time', class: 'gb-input' });
+  const color = colorPicker((habit && habit.color) || '');
+  const reminderInput = h('input', {
+    type: 'time',
+    class: 'gb-input',
+    value: habit && habit.reminderTime ? String(habit.reminderTime).slice(0, 5) : '',
+  });
   const toneSel = h(
     'select',
     { class: 'gb-input', 'aria-label': 'Habit reminder tone' },
@@ -7002,11 +7093,14 @@ function openAddHabit() {
       CHIMES.map((c) => h('option', { value: c.key }, c.key === 'off' ? 'Silent — no alert' : c.label))
     )
   );
+  if (habit) toneSel.value = habit.sound || '';
   toneSel.addEventListener('change', () => {
     if (toneSel.value) playChime(toneSel.value);
   });
 
   let presetIcon = null;
+  // A preset names the habit only if you haven't: it used to overwrite what you typed.
+  let presetName = '';
   const metricSel = h(
     'select',
     { class: 'gb-input', 'aria-label': 'What this habit records' },
@@ -7028,7 +7122,8 @@ function openAddHabit() {
           type: 'button',
           class: 'gb-preset',
           onclick: () => {
-            nameInput.value = pre.name;
+            const typed = nameInput.value.trim();
+            if (!typed || typed === presetName) nameInput.value = presetName = pre.name;
             metricSel.value = pre.metric;
             presetIcon = pre.icon;
             for (const b of presetRow.children) b.classList.remove('is-on');
@@ -7052,6 +7147,10 @@ function openAddHabit() {
       presetIcon = null;
     }
   };
+  if (habit) {
+    syncDomain(domain.get());
+    if (habit.domain === 'fitness') metricSel.value = habit.metric || 'none';
+  }
 
   const body = h(
     'div',
@@ -7072,27 +7171,49 @@ function openAddHabit() {
     toneSel
   );
 
+  nameInput.addEventListener('input', () => nameInput.setAttribute('aria-invalid', 'false'));
   openModal({
-    title: 'New habit',
+    title: habit ? 'Edit habit' : 'New habit',
     body,
-    primary: 'Add habit',
+    primary: habit ? 'Save changes' : 'Add habit',
     onPrimary: async () => {
       const name = nameInput.value.trim();
       if (!name) {
+        nameInput.setAttribute('aria-invalid', 'true');
         nameInput.focus();
         throw new Error('Name is required');
       }
       const d = domain.get();
-      const icon = presetIcon || (DOMAIN[d] && DOMAIN[d].icon) || 'repeat';
-      await createHabit({
+      // Editing keeps the habit's own icon unless a preset or a new category says otherwise.
+      const icon =
+        presetIcon ||
+        (habit && habit.domain === d && habit.icon) ||
+        (DOMAIN[d] && DOMAIN[d].icon) ||
+        'repeat';
+      const fields = {
         name,
         domain: d,
         icon,
         cadence: cadence.get(),
+        metric: d === 'fitness' ? metricSel.value : 'none',
+      };
+      if (habit) {
+        // On PUT a null field means "unchanged", so blanks are sent as '' and a
+        // removed reminder as its own flag.
+        await updateHabit(habit.id, {
+          ...fields,
+          color: color.get() || '',
+          reminderTime: reminderInput.value || null,
+          clearReminder: !reminderInput.value,
+          sound: toneSel.value || '',
+        });
+        return;
+      }
+      await createHabit({
+        ...fields,
         color: color.get() || null,
         reminderTime: reminderInput.value || null,
         sound: toneSel.value || null,
-        metric: d === 'fitness' ? metricSel.value : 'none',
       });
     },
   });
@@ -7396,7 +7517,7 @@ function ScreenHabits() {
                 class: 'gb-rem-del' + (resting ? ' is-active' : ''),
                 disabled: noTokens,
                 'aria-pressed': String(resting),
-                'aria-label': resting ? 'Remove rest day' : 'Mark today a rest day',
+                'aria-label': (resting ? 'Remove rest day: ' : 'Mark today a rest day: ') + habit.name,
                 title: resting
                   ? 'Rest day — your streak holds today. Tap to undo.'
                   : noTokens
@@ -7412,13 +7533,23 @@ function ScreenHabits() {
         'button',
         {
           type: 'button',
+          class: 'gb-rem-del',
+          'aria-label': 'Edit habit: ' + habit.name,
+          onclick: () => openHabitForm(habit),
+        },
+        Icon('pencil', { size: 16 })
+      ),
+      h(
+        'button',
+        {
+          type: 'button',
           class: 'gb-rem-del gb-rem-del--danger',
-          'aria-label': 'Delete habit',
+          'aria-label': 'Delete habit: ' + habit.name,
           onclick: () => confirmDelete('Delete this habit?', () => deleteHabit(habit.id)),
         },
         Icon('trash-2', { size: 16 })
       ),
-      Check({ done: habit.doneToday, onToggle: () => toggleHabit(habit.id) })
+      Check({ done: habit.doneToday, onToggle: () => toggleHabit(habit.id), label: habit.name })
     );
     if (!fz || !fz.pendingBreak) {
       return mainRow;
@@ -8017,6 +8148,10 @@ const SCREENS = {
               }),
             onDelete: (id) =>
               api('/api/notes/' + encodeURIComponent(id), { method: 'DELETE' }),
+            onGetDraft: () => api('/api/notes/draft'),
+            onSaveDraft: (draft) =>
+              api('/api/notes/draft', { method: 'PUT', body: JSON.stringify(draft) }),
+            onDeleteDraft: () => api('/api/notes/draft', { method: 'DELETE' }),
             onMakeTask: (title) => createTask({ title }),
             onMakeReminder: (text) => {
               // Hand it to the calendar rather than growing a second reminder
@@ -8430,9 +8565,20 @@ function authShell(title, subtitle, children) {
       ),
       h('h1', { class: 'gb-login-title' }, title),
       subtitle ? h('p', { class: 'gb-login-sub' }, subtitle) : null,
-      state.authNotice ? h('p', { class: 'gb-login-notice' }, state.authNotice) : null,
-      children,
-      state.error && !state.errorField ? h('p', { class: 'gb-login-error' }, state.error) : null
+      state.authNotice
+        ? h('p', { class: 'gb-login-notice', role: 'status' }, state.authNotice)
+        : null,
+      // A real <form> so password managers recognise the fields. The views
+      // submit from their own Enter handlers and button; this only stops a
+      // native submit from reloading the page. display: contents in app.css.
+      h(
+        'form',
+        { class: 'gb-login-form', novalidate: true, onsubmit: (e) => e.preventDefault() },
+        children
+      ),
+      state.error && !state.errorField
+        ? h('p', { class: 'gb-login-error', role: 'alert' }, state.error)
+        : null
     )
   );
 }
@@ -8460,10 +8606,15 @@ function field(label, node, key) {
   const bad = !!key && state.errorField === key && !!state.error;
   if (bad) input.classList.add('is-invalid');
   input.setAttribute('aria-invalid', bad ? 'true' : 'false');
+  // Label and error tied to the input, so a screen reader names the field and
+  // reads its error (role=alert announces it the moment it appears).
+  const id = 'gb-auth-' + (key || label).toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  input.id = id;
+  if (bad) input.setAttribute('aria-describedby', id + '-err');
   return [
-    h('label', { class: 'gb-login-label' }, label),
+    h('label', { class: 'gb-login-label', for: id }, label),
     node,
-    bad ? h('p', { class: 'gb-login-fielderr' }, state.error) : null,
+    bad ? h('p', { class: 'gb-login-fielderr', id: id + '-err', role: 'alert' }, state.error) : null,
   ];
 }
 
@@ -8621,6 +8772,7 @@ function viewSignin() {
   const emailInput = h('input', {
     type: 'email',
     class: 'gb-input gb-login-input',
+    autocomplete: 'username',
     placeholder: 'you@example.com',
     required: true,
     value: state.authEmail || '',
@@ -8628,7 +8780,8 @@ function viewSignin() {
   const pwInput = h('input', {
     type: 'password',
     class: 'gb-input gb-login-input',
-    placeholder: '••••••••',
+    // Not dots: a row of bullets reads as a password the browser already saved.
+    placeholder: 'Your password',
     maxlength: 128,
     autocomplete: 'current-password',
   });
@@ -8639,20 +8792,28 @@ function viewSignin() {
     const password = pwInput.value;
     // Silent returns made the button feel dead — always say what's missing.
     if (!email) return authFail('Enter your email to sign in.', 'email');
+    if (!emailInput.checkValidity()) return authFail('Enter a valid email address.', 'email');
     if (!password) return authFail('Enter your password to sign in.', 'password');
     runAuth(async () => {
-      // Sign-in is a plain credential check: it never routes to the OTP/verify
-      // screen and never sends email. Any failure (wrong credentials, or an
-      // unverified account) surfaces as an error toast via runAuth.
-      const user = await authPost('/api/auth/login', { email, password });
+      let user;
+      try {
+        user = await authPost('/api/auth/login', { email, password });
+      } catch (err) {
+        if (err.status !== 403) throw err;
+        // Right password, email never verified: the server just sent a fresh
+        // code (AuthService.login), so this is the code screen, not a refusal.
+        return setAuthMode('verify', {
+          email,
+          notice: 'Your email isn’t verified yet, so we sent you a fresh code.',
+        });
+      }
       syncUserSession(user);
       state.wellness = loadWellness();
       state.goalProgress = loadGoalProgress();
       state.money = loadMoney();
       state.streakFreeze = loadStreakFreeze();
       state.trends = loadTrends();
-      state.screen = 'home';
-      history.replaceState(null, '', '#/home');
+      landAfterSignIn();
       await loadData();
     }, 'password');
   }
@@ -8684,6 +8845,7 @@ function viewSignup() {
   const emailInput = h('input', {
     type: 'email',
     class: 'gb-input gb-login-input',
+    autocomplete: 'username',
     placeholder: 'you@example.com',
     required: true,
     value: state.authEmail || '',
@@ -8716,15 +8878,16 @@ function viewSignup() {
     const displayName = nameInput.value.trim();
     const password = pwInput.value;
     if (!email) return authFail('Enter your email to create the account.', 'email');
+    if (!emailInput.checkValidity()) return authFail('Enter a valid email address.', 'email');
     if (password.length < 8) return authFail('Password must be at least 8 characters.', 'password');
     if (pw2Input.value !== password) return authFail('The two passwords don’t match.', 'confirm');
     runAuth(async () => {
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+      // Also the way back for an account that never verified: same password →
+      // the server sends a fresh code and answers like a first signup.
       await authPost('/api/auth/signup', { email, password, displayName, timezone: tz });
-      setAuthMode('verify', {
-        email,
-        notice: 'We sent a 6-digit code to ' + email + '. Enter it below to finish signing up.',
-      });
+      // No notice: the verify screen's subtitle already says where the code went.
+      setAuthMode('verify', { email });
     }, 'email');
   }
 
@@ -8777,16 +8940,14 @@ function viewVerify() {
       state.money = loadMoney();
       state.streakFreeze = loadStreakFreeze();
       state.trends = loadTrends();
-      state.screen = 'home';
-      history.replaceState(null, '', '#/home');
+      landAfterSignIn();
       await loadData();
     }, 'otp');
   }
   function resend() {
     runAuth(async () => {
       await authPost('/api/auth/resend-verification', { email: state.authEmail });
-      state.authNotice =
-        'New code sent to ' + state.authEmail + '. Check your inbox (and spam folder).';
+      state.authNotice = 'New code sent. Any earlier code no longer works.';
       otpInput.value = '';
     });
   }
@@ -8798,11 +8959,12 @@ function viewVerify() {
   });
   setTimeout(() => otpInput.focus(), 60);
 
+  // The one place that says where the code went; notices only add what changed.
   return authShell(
     'Verify your email',
-    'Code sent to ' +
+    'Enter the 6-digit code we emailed to ' +
       state.authEmail +
-      '. Check your inbox (and spam folder) for the 6-digit code.',
+      '. Check your spam folder if it isn’t there.',
     [
       ...field('6-digit code', otpField, 'otp'),
       primaryBtn('Verify & continue', submit),
@@ -8821,18 +8983,17 @@ function viewForgot() {
   const emailInput = h('input', {
     type: 'email',
     class: 'gb-input gb-login-input',
+    autocomplete: 'username',
     placeholder: 'you@example.com',
     value: state.authEmail || '',
   });
   function submit() {
     const email = emailInput.value.trim();
     if (!email) return authFail('Enter your email and we’ll send the code there.', 'email');
+    if (!emailInput.checkValidity()) return authFail('Enter a valid email address.', 'email');
     runAuth(async () => {
       await authPost('/api/auth/forgot-password', { email });
-      setAuthMode('reset', {
-        email,
-        notice: 'If that email is registered, we just sent a 6-digit code to it.',
-      });
+      setAuthMode('reset', { email });
     }, 'email');
   }
   emailInput.addEventListener('keydown', (e) => {
@@ -8897,8 +9058,7 @@ function viewReset() {
       state.money = loadMoney();
       state.streakFreeze = loadStreakFreeze();
       state.trends = loadTrends();
-      state.screen = 'home';
-      history.replaceState(null, '', '#/home');
+      landAfterSignIn();
       await loadData();
     }, 'otp');
   }
@@ -8911,7 +9071,18 @@ function viewReset() {
     })
   );
 
-  return authShell('Set a new password', 'Code sent to ' + state.authEmail + '.', [
+  function resend() {
+    runAuth(async () => {
+      await authPost('/api/auth/forgot-password', { email: state.authEmail });
+      state.authNotice = 'New code sent. Any earlier code no longer works.';
+      otpInput.value = '';
+    });
+  }
+
+  // One sentence, worded so it can't say whether the email has an account.
+  const sub =
+    'If ' + state.authEmail + ' has an account, we emailed it a 6-digit code. Enter it below.';
+  return authShell('Set a new password', sub, [
     ...field('6-digit code', otpField, 'otp'),
     ...field('New password', pwField, 'password'),
     ...field('Confirm password', pw2Field, 'confirm'),
@@ -8919,6 +9090,7 @@ function viewReset() {
     h(
       'div',
       { class: 'gb-login-row' },
+      authLink('Resend code', resend),
       authLink('Back to sign in', () => setAuthMode('signin', { email: state.authEmail }))
     ),
   ]);
@@ -8951,6 +9123,7 @@ function logout() {
     });
   }
   disconnectWebSocket();
+  purgeUserCache();
   clearSession();
   state.user = null;
   state.tasks = [];
@@ -9170,6 +9343,7 @@ function render() {
     root.replaceChildren(...[loginCard(), toastStack()].filter(Boolean));
     refreshIcons();
     renderedScreen = '';
+    document.title = (document.querySelector('.gb-login-title')?.textContent || 'Sign in') + ' · Growth Buddy';
     return;
   }
 
@@ -9180,6 +9354,10 @@ function render() {
   }
 
   const cfg = SCREENS[state.screen] || SCREENS.home;
+  // Per screen, so history and a screen reader can tell them apart. Home's
+  // header name is a greeting, not a name.
+  document.title =
+    (cfg === SCREENS.home ? 'Home' : cfg.headerName()) + ' · Growth Buddy';
 
   const app = h(
     'div',
@@ -9357,6 +9535,9 @@ if (state.user) {
     },
     5 * 60 * 1000
   );
+} else {
+  // Opened a link (#/money) while signed out: go there once signed in.
+  returnToScreen = screenFromHash();
 }
 // Resolve the device model before anything signs in — the label rides along on
 // the request that creates the session.

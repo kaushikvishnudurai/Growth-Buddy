@@ -15,6 +15,9 @@ export const toast = {
   success() {
     /* no-op until registered */
   },
+  dismiss() {
+    /* no-op until registered */
+  },
 };
 
 export function registerToast(impl) {

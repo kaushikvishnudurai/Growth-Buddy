@@ -297,7 +297,7 @@ public class HabitService {
     @Transactional
     public HabitResponse update(UUID userId, UUID id, UpdateHabitRequest req) {
         Habit h = require(userId, id);
-        if (req.name() != null) {
+        if (req.name() != null && !req.name().isBlank()) {
             h.setName(req.name().trim());
         }
         if (req.domain() != null) {
@@ -320,6 +320,8 @@ public class HabitService {
         }
         if (req.reminderTime() != null) {
             h.setReminderTime(req.reminderTime());
+        } else if (Boolean.TRUE.equals(req.clearReminder())) {
+            h.setReminderTime(null);
         }
         if (req.active() != null) {
             h.setActive(req.active());

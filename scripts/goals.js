@@ -597,6 +597,7 @@ function ScreenGoals({
       type: 'date',
       class: 'gb-input',
       value: action ? action.actionDate || '' : todayKey(),
+      max: todayKey(), // an action is something already done
     });
     const body = h(
       'div',
@@ -616,6 +617,11 @@ function ScreenGoals({
         if (!note) {
           noteInput.focus();
           throw new Error('Action note is required');
+        }
+        // A typed date skips the picker's max; YYYY-MM-DD compares as text.
+        if (dateInput.value && dateInput.value > todayKey()) {
+          dateInput.focus();
+          throw new Error("An action can't be dated in the future.");
         }
         const payload = { note, actionDate: dateInput.value || null };
         if (action) await onUpdateAction(goal.id, action.id, payload);

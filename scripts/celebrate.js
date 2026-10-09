@@ -5,7 +5,7 @@
    (see checkAchievements in app.js). Self-contained — no confetti lib.
    Respects prefers-reduced-motion (shows the card, skips the confetti).
    ===================================================================== */
-import { h, Icon } from './gb-kit.js';
+import { h, Icon, trackOverlay } from './gb-kit.js';
 
 const CONFETTI_COLORS = [
   'var(--coral-500)',
@@ -65,6 +65,7 @@ function confettiLayer() {
 function show(ach, done) {
   const tierLabel = { bronze: 'Bronze', silver: 'Silver', gold: 'Gold' }[ach.tier] || '';
   let closed = false;
+  let untrack = null;
 
   const overlay = h('div', {
     class: 'gb-celebrate',
@@ -95,6 +96,7 @@ function show(ach, done) {
   function close() {
     if (closed) return;
     closed = true;
+    if (untrack) untrack();
     overlay.classList.add('is-leaving');
     setTimeout(() => {
       overlay.remove();
@@ -110,5 +112,8 @@ function show(ach, done) {
   });
 
   document.body.appendChild(overlay);
+  // On the shared back stack: Back closes it, and setScreen()'s closeOverlays()
+  // drops it on navigation instead of leaving it over every screen after.
+  untrack = trackOverlay({ close });
   requestAnimationFrame(() => nice.focus());
 }

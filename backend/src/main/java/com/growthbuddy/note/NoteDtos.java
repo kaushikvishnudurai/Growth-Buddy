@@ -18,6 +18,19 @@ record CreateNoteRequest(
         @Size(max = NoteService.MAX_COVER) String cover) {
 }
 
+/** The composer's draft, written whole on every autosave. */
+record NoteDraftRequest(
+        @Size(max = 200) String title,
+        String body,
+        @Size(max = 16) String color) {
+}
+
+record NoteDraftResponse(String title, String body, String color, Instant updatedAt) {
+    static NoteDraftResponse from(NoteDraft d) {
+        return new NoteDraftResponse(d.getTitle(), d.getBody(), d.getColor(), d.getUpdatedAt());
+    }
+}
+
 /** Update body. Null fields are left unchanged; "" clears colour and cover. */
 record UpdateNoteRequest(
         @Size(max = 200) String title,

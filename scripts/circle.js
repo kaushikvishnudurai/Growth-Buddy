@@ -386,7 +386,7 @@ function openSearchModal({ onBrowse, onSearch, onOffer, onRequest, onView, curre
   const queryInput = h('input', {
     type: 'search',
     class: 'gb-input',
-    placeholder: 'Search by name or email…',
+    placeholder: 'Search by name…',
     autofocus: true,
     maxlength: 80,
   });
@@ -506,7 +506,7 @@ function openSearchModal({ onBrowse, onSearch, onOffer, onRequest, onView, curre
       'div',
       { class: 'gb-modal-head' },
       h('div', { class: 'gb-modal-title' }, 'Find someone'),
-      h('div', { class: 'gb-modal-sub' }, 'Scroll the list or search by name / email.')
+      h('div', { class: 'gb-modal-sub' }, 'Scroll the list or search by name.')
     ),
     queryInput,
     resultsEl,
@@ -573,8 +573,8 @@ function openFormModal({ title, sub, fields, submitLabel, onSubmit }) {
     h(
       'div',
       { class: 'gb-water-prompt-actions' },
-      h('button', { type: 'button', class: 'gb-btn gb-btn--ghost', onclick: close }, 'Cancel'),
-      submitBtn
+      submitBtn,
+      h('button', { type: 'button', class: 'gb-btn gb-btn--ghost', onclick: close }, 'Cancel')
     )
   );
   refreshIcons();
@@ -592,18 +592,26 @@ function openFormModal({ title, sub, fields, submitLabel, onSubmit }) {
 function ChallengesPanel({ api, currentUserId }) {
   const el = h('div', { class: 'gb-challenges' }, sectionSkeleton(1));
 
+  // Gold, silver, bronze for the top three; the rest keep their number. These
+  // shades clear 3:1 on both light and dark cards (the 500s fade out on white).
+  const MEDAL_COLOR = { 1: 'var(--sun-700)', 2: 'var(--warm-500)', 3: 'var(--coral-600)' };
   function leaderboardRows(entries) {
     if (!entries || !entries.length) {
       return [h('div', { class: 'gb-empty-sm' }, 'No check-ins logged yet.')];
     }
-    const medals = { 1: '🥇', 2: '🥈', 3: '🥉' };
     return entries
       .slice(0, 10)
       .map((m) =>
         h(
           'div',
           { class: 'gb-lb-row' + (m.userId === currentUserId ? ' is-me' : '') },
-          h('span', { class: 'gb-lb-rank' }, medals[m.rank] || '#' + m.rank),
+          m.rank <= 3
+            ? h(
+                'span',
+                { class: 'gb-lb-rank', 'aria-label': 'Rank ' + m.rank, title: 'Rank ' + m.rank },
+                Icon('medal', { size: 18, sw: 2.2, color: MEDAL_COLOR[m.rank] })
+              )
+            : h('span', { class: 'gb-lb-rank' }, '#' + m.rank),
           h('span', { class: 'gb-lb-name' }, m.userId === currentUserId ? 'You' : m.name),
           h('span', { class: 'gb-lb-val' }, plural(m.value, 'check-in'))
         )
@@ -646,7 +654,7 @@ function ChallengesPanel({ api, currentUserId }) {
         { key: 'days', label: 'Length in days (1–90)', type: 'number', value: 7, min: 1, max: 90 },
       ],
       onSubmit: async (v, close) => {
-        if (!v.title) return;
+        if (!v.title) throw new Error('Give the challenge a title first.');
         await api.createChallenge(circleId, {
           title: v.title,
           days: Math.max(1, Math.min(90, Number(v.days) || 7)),
@@ -668,7 +676,7 @@ function ChallengesPanel({ api, currentUserId }) {
         { key: 'goal', label: 'Shared goal (optional)', placeholder: 'e.g. Move every day' },
       ],
       onSubmit: async (v, close) => {
-        if (!v.name) return;
+        if (!v.name) throw new Error('Give the circle a name first.');
         const made = await api.createCircle({ name: v.name, goal: v.goal || null });
         toast.success('Circle created.');
         close();
@@ -931,7 +939,6 @@ function ScreenCircle({
       h(
         'div',
         { class: 'gb-water-prompt-actions' },
-        h('button', { type: 'button', class: 'gb-btn gb-btn--ghost', onclick: close }, 'Cancel'),
         h(
           'button',
           {
@@ -954,7 +961,8 @@ function ScreenCircle({
             },
           },
           'Send invite'
-        )
+        ),
+        h('button', { type: 'button', class: 'gb-btn gb-btn--ghost', onclick: close }, 'Cancel')
       )
     );
     refreshIcons();

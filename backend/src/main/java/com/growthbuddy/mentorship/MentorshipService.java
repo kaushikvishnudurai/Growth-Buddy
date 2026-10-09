@@ -96,7 +96,7 @@ public class MentorshipService {
         String responderName = responder.getDisplayName();
         NotificationKind kind = accept ? NotificationKind.mentorship_accepted : NotificationKind.mentorship_rejected;
         String title = accept
-                ? responderName + " accepted your mentorship invite 🎉"
+                ? responderName + " accepted your mentorship invite"
                 : responderName + " declined your invite";
         notifications.publish(originator.getId(), kind, title, null, r.getId());
 

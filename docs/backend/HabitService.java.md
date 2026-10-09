@@ -10,7 +10,7 @@ protect/unprotect).
 |---|---|
 | `list(userId)` | habits + streaks + freeze state, the screen's main read |
 | `create(userId, req)` | `icon` must be in `HABIT_ICONS` (also on update); `HabitIconsTest` keeps it in step with the JS lists |
-| `update(userId, id, req)` | |
+| `update(userId, id, req)` | null = unchanged; a blank name is ignored; `clearReminder: true` is the only way to remove a reminder time |
 | `delete(userId, id)` | |
 | `checkin(userId, id, req)` | `date` defaults to today, `done` defaults to true; **recomputes `HabitStreak`** |
 | `toggleToday(userId, id)` | |

@@ -271,3 +271,14 @@ CREATE TABLE IF NOT EXISTS food_diet_checks (
   PRIMARY KEY (user_id, scope),
   CONSTRAINT fk_diet_check_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The Notes composer's draft, autosaved (one row per user; Save deletes it).
+CREATE TABLE IF NOT EXISTS note_drafts (
+  user_id       CHAR(36)     NOT NULL,
+  title         VARCHAR(200) NULL,
+  body          MEDIUMTEXT   NULL,
+  color         VARCHAR(16)  NULL,
+  updated_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (user_id),
+  CONSTRAINT fk_note_drafts_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

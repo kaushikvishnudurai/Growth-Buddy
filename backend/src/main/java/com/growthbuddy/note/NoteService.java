@@ -27,9 +27,39 @@ public class NoteService {
     static final int MAX_COVER = 60_000;
 
     private final NoteRepository repo;
+    private final NoteDraftRepository drafts;
 
-    public NoteService(NoteRepository repo) {
+    public NoteService(NoteRepository repo, NoteDraftRepository drafts) {
         this.repo = repo;
+        this.drafts = drafts;
+    }
+
+    /** The composer's unsaved note, or null. */
+    @Transactional(readOnly = true)
+    public NoteDraftResponse draft(UUID userId) {
+        return drafts.findById(userId).map(NoteDraftResponse::from).orElse(null);
+    }
+
+    /** Autosave. A draft with nothing in it is no draft: the row goes. */
+    @Transactional
+    public void saveDraft(UUID userId, NoteDraftRequest req) {
+        String title = trimToNull(req.title());
+        String body = checkedBody(req.body());
+        if (title == null && (body == null || body.isBlank())) {
+            drafts.deleteById(userId);
+            return;
+        }
+        NoteDraft d = drafts.findById(userId).orElseGet(NoteDraft::new);
+        d.setUserId(userId);
+        d.setTitle(title);
+        d.setBody(body);
+        d.setColor(trimToNull(req.color()));
+        drafts.save(d);
+    }
+
+    @Transactional
+    public void deleteDraft(UUID userId) {
+        drafts.deleteById(userId);
     }
 
     @Transactional(readOnly = true)

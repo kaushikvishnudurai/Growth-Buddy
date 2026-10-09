@@ -2,6 +2,7 @@ package com.growthbuddy.quickadd;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.growthbuddy.common.ApiException;
 import com.growthbuddy.mentor.OpenAIClient;
 import com.growthbuddy.mentor.OpenAIClient.ChatTurn;
 import java.util.ArrayList;
@@ -17,7 +18,9 @@ import org.springframework.stereotype.Service;
  * habit / task / water / sleep / mood / money handlers.
  *
  * <p>Returns {@code configured=false} when no LLM is available, so the client
- * can tell the user the feature needs an API key rather than failing silently.
+ * can tell the user the feature needs an API key rather than failing silently,
+ * and {@code unavailable=true} when the model call itself failed, so the client
+ * says the assistant was unreachable instead of blaming the user's sentence.
  */
 @Service
 public class QuickAddService {
@@ -55,12 +58,12 @@ public class QuickAddService {
             Double hours, String quality, String mood, String energy,
             Integer amount, String note) {}
 
-    public record QuickAddResult(boolean configured, List<Intent> intents, String note) {}
+    public record QuickAddResult(boolean configured, boolean unavailable, List<Intent> intents, String note) {}
 
     public QuickAddResult parse(String text, List<String> habitNames) {
         String clean = cap(text);
         if (!openai.isConfigured() || clean.isEmpty()) {
-            return new QuickAddResult(openai.isConfigured(), List.of(), null);
+            return new QuickAddResult(openai.isConfigured(), false, List.of(), null);
         }
         String context = PROMPT + "\nUser's habits: "
                 + (habitNames == null || habitNames.isEmpty() ? "(none)" : String.join(", ", habitNames));
@@ -73,10 +76,12 @@ public class QuickAddService {
                 if (it != null) out.add(it);
             }
             String note = root.path("note").asText("");
-            return new QuickAddResult(true, out, note.isBlank() ? null : cap(note, 120));
+            return new QuickAddResult(true, false, out, note.isBlank() ? null : cap(note, 120));
+        } catch (ApiException ex) {
+            throw ex; // the AI budget's 429 already says something true; let it through
         } catch (Exception ex) {
             log.warn("Quick-add parse failed: {}", ex.getMessage());
-            return new QuickAddResult(true, List.of(), null);
+            return new QuickAddResult(true, true, List.of(), null);
         }
     }
 

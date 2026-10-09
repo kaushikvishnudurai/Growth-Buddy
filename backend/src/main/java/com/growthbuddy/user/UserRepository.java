@@ -29,8 +29,11 @@ public interface UserRepository extends JpaRepository<User, UUID> {
        the OTP is checked, so a typo'd or abandoned signup leaves a ghost account
        that can never log in — and inviting one produces an invite nobody can
        ever accept. Same reason browseExcluding and searchForFamily filter it. */
-    @Query("select u from User u where (lower(u.displayName) like lower(concat('%', :q, '%')) "
-            + "or lower(u.email) like lower(concat('%', :q, '%'))) and u.id <> :excludeId "
+    /* Name only, never email: an email match - even an exact one - answers
+       "does this address have an account?", which sign-in is careful never to
+       do. Circle invites go by user id from a result row, so nothing needs it. */
+    @Query("select u from User u where lower(u.displayName) like lower(concat('%', :q, '%')) "
+            + "and u.id <> :excludeId "
             + "and u.emailVerified = true "
             + "order by u.displayName")
     List<User> search(@Param("q") String q, @Param("excludeId") UUID excludeId, Pageable pageable);
@@ -48,15 +51,14 @@ public interface UserRepository extends JpaRepository<User, UUID> {
         try {
             idMatch = UUID.fromString(q);
         } catch (IllegalArgumentException ignored) {
-            // q is a name/email/phone fragment, not an id
+            // q is a name fragment, not an id. Name or exact id only, as in search():
+            // an email or phone match tells the caller that contact has an account.
         }
         return searchForFamily(q, idMatch, excludeId, pageable);
     }
 
     @Query("select u from User u where (u.id = :idMatch "
-            + "or lower(u.displayName) like lower(concat('%', :q, '%')) "
-            + "or lower(u.email) like lower(concat('%', :q, '%')) "
-            + "or u.whatsappNumber like concat('%', :q, '%')) and u.id <> :excludeId "
+            + "or lower(u.displayName) like lower(concat('%', :q, '%'))) and u.id <> :excludeId "
             + "and u.emailVerified = true "
             + "order by u.displayName")
     List<User> searchForFamily(@Param("q") String q, @Param("idMatch") UUID idMatch,

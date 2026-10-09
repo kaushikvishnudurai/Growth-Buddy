@@ -1,7 +1,9 @@
 package com.growthbuddy.goal;
 
 import com.growthbuddy.common.ApiException;
+import com.growthbuddy.user.UserClock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -16,10 +18,20 @@ public class GoalService {
 
     private final GoalRepository goals;
     private final GoalActionRepository actions;
+    private final UserClock clock;
 
-    public GoalService(GoalRepository goals, GoalActionRepository actions) {
+    public GoalService(GoalRepository goals, GoalActionRepository actions, UserClock clock) {
         this.goals = goals;
         this.actions = actions;
+        this.clock = clock;
+    }
+
+    /** An action is something already done: a day that hasn't happened yet is not one. */
+    private LocalDate pastOrToday(UUID userId, LocalDate date) {
+        if (date != null && date.isAfter(clock.today(userId))) {
+            throw ApiException.badRequest("An action can't be dated in the future.");
+        }
+        return date;
     }
 
     @Transactional(readOnly = true)
@@ -101,7 +113,8 @@ public class GoalService {
         action.setGoalId(goalId);
         action.setUserId(userId);
         action.setNote(req.note().trim());
-        action.setActionDate(req.actionDate() != null ? req.actionDate() : java.time.LocalDate.now());
+        LocalDate date = pastOrToday(userId, req.actionDate());
+        action.setActionDate(date != null ? date : clock.today(userId));
         return GoalActionResponse.from(actions.save(action));
     }
 
@@ -113,7 +126,8 @@ public class GoalService {
             throw ApiException.badRequest("note is required");
         }
         action.setNote(req.note().trim());
-        action.setActionDate(req.actionDate() != null ? req.actionDate() : action.getActionDate());
+        LocalDate date = pastOrToday(userId, req.actionDate());
+        action.setActionDate(date != null ? date : action.getActionDate());
         return GoalActionResponse.from(actions.save(action));
     }
 

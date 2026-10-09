@@ -498,12 +498,12 @@ function openCustomMinutesModal() {
     h(
       'div',
       { class: 'gb-water-prompt-actions' },
-      h('button', { type: 'button', class: 'gb-btn gb-btn--ghost', onclick: close }, 'Cancel'),
       h(
         'button',
         { type: 'button', class: 'gb-btn gb-btn--primary', onclick: submit },
         'Set timer'
-      )
+      ),
+      h('button', { type: 'button', class: 'gb-btn gb-btn--ghost', onclick: close }, 'Cancel')
     )
   );
   refreshIcons();

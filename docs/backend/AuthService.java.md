@@ -8,10 +8,10 @@ user-settings writes. Backs `/api/auth` (`AuthController`). Session minting is *
 
 | Method | Notes |
 |---|---|
-| `signup(req)` | creates user + `PasswordCredential` (bcrypt) + emails an OTP |
-| `login(req, http)` | takes `HttpServletRequest` for IP/UA on the session row |
+| `signup(req)` | creates user + `PasswordCredential` (bcrypt) + emails an OTP. Existing UNVERIFIED account + same password (LoginAttemptGuard-checked) → fresh OTP, same 201 shape; anything else on an existing email → 409. Never overwrites the stored password |
+| `login(req, http)` | takes `HttpServletRequest` for IP/UA on the session row. Right password on an unverified account → fresh OTP + 403 (frontend opens the code screen); `noRollbackFor = ApiException` keeps that OTP row |
 | `verifyEmail(req, http)` | consumes the OTP, returns a session |
-| `resendVerification(req)` | |
+| `resendVerification(req)` | verification OTPs are capped per account (`VERIFY_OTP_PER_HOUR`); over the cap resend skips silently, signup/login answer 429 |
 | `forgotPassword(req)` | always succeeds outwardly (no account enumeration) |
 | `resetPassword(req, http)` | |
 | `changePassword(userId, req, http)` | |

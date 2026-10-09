@@ -70,7 +70,8 @@ record FoodProfile(
 record AddMemberRequest(
         @NotBlank @Size(max = 120) String name,
         Relationship relationship,
-        LocalDate dob,
+        // A future birth date saved as "0 yrs, Infant" and fed infant portions to the planner.
+        LocalDate dob, // future refused in FamilyService, against the user's own day
         @Size(max = 20) String gender,
         @Min(30) @Max(250) Integer heightCm,
         @Min(2) @Max(400) Integer weightKg,
@@ -80,7 +81,8 @@ record AddMemberRequest(
 record UpdateMemberRequest(
         @NotBlank @Size(max = 120) String name,
         Relationship relationship,
-        LocalDate dob,
+        // A future birth date saved as "0 yrs, Infant" and fed infant portions to the planner.
+        LocalDate dob, // future refused in FamilyService, against the user's own day
         @Size(max = 20) String gender,
         @Min(30) @Max(250) Integer heightCm,
         @Min(2) @Max(400) Integer weightKg) {

@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.growthbuddy.common.ApiException;
@@ -22,7 +24,8 @@ class NoteServiceTest {
     private static final UUID ID = UUID.randomUUID();
 
     private final NoteRepository repo = mock(NoteRepository.class);
-    private final NoteService service = new NoteService(repo);
+    private final NoteDraftRepository drafts = mock(NoteDraftRepository.class);
+    private final NoteService service = new NoteService(repo, drafts);
 
     private Note stored(String color) {
         Note n = new Note();
@@ -114,5 +117,24 @@ class NoteServiceTest {
         Note n = stored(null);
         service.delete(USER, ID);
         assertThat(n.getDeletedAt()).isNotNull();
+    }
+
+    /* An autosave of a cleared composer must remove the draft, not store an
+       empty one that reopens the composer on the next visit. */
+    @Test
+    void emptyDraftDeletesTheRow() {
+        service.saveDraft(USER, new NoteDraftRequest("  ", "", null));
+        verify(drafts).deleteById(USER);
+        verify(drafts, never()).save(any());
+    }
+
+    @Test
+    void draftIsUpsertedPerUser() {
+        when(drafts.findById(USER)).thenReturn(Optional.empty());
+        when(drafts.save(any())).thenAnswer(i -> i.getArgument(0));
+        service.saveDraft(USER, new NoteDraftRequest(" Groceries ", "<p>milk</p>", "sky"));
+        verify(drafts).save(org.mockito.ArgumentMatchers.argThat(d ->
+                USER.equals(d.getUserId()) && "Groceries".equals(d.getTitle())
+                        && "<p>milk</p>".equals(d.getBody())));
     }
 }
