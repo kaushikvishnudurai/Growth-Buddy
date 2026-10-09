@@ -292,3 +292,41 @@ export function hideNativeSplash() {
     })
   );
 }
+
+/* ---- Steps ---------------------------------------------------------------
+   Read from the OS health store (HealthKit / Health Connect), never from a
+   sensor of ours. The phone already counts steps all day on its low-power
+   motion chip; asking for today's total is one query, so there is no service,
+   no listener and no battery cost. Plugin: @capgo/capacitor-health in the
+   mobile repo, whose manifest strips every health permission but READ_STEPS.
+   ponytail: read on demand, today only. Back-filling earlier days, or ticking
+   a steps habit by itself, needs a target the habit doesn't have yet. */
+
+/** Today's steps so far, or null: off-device, no health store, or no access. */
+export async function readTodaySteps() {
+  const Health = isNative() ? nativePlugin('Health') : null;
+  if (!Health) return null;
+  try {
+    const { available } = await Health.isAvailable();
+    if (!available) return null;
+    // Opens the permission sheet once; already granted, it returns at once.
+    await Health.requestAuthorization({ read: ['steps'] });
+    const midnight = new Date();
+    midnight.setHours(0, 0, 0, 0);
+    const { samples } = await Health.queryAggregated({
+      dataType: 'steps',
+      startDate: midnight.toISOString(),
+      endDate: new Date().toISOString(),
+      bucket: 'day',
+      aggregation: 'sum',
+    });
+    // Summed: a day bucket the store cuts on UTC can come back as two.
+    const total = (samples || []).reduce((n, s) => n + (Number(s.value) || 0), 0);
+    // HealthKit never says a read was denied, it just answers 0, so a 0 is
+    // treated as "don't know" rather than pre-filled.
+    return total > 0 ? Math.round(total) : null;
+  } catch (_) {
+    // An older APK without the plugin, or the sheet dismissed: type it in.
+    return null;
+  }
+}
