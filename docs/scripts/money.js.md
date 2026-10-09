@@ -1,4 +1,4 @@
-# scripts/money.js — Money Buddy (6348 lines)
+# scripts/money.js — Money Buddy
 
 Exports: `emptyMoney()`, `normalizeMoney(m)` (returns COPIES of the ledger arrays: aliasing them lost quick-add expenses), `mergeMoney`, `ledgerDiff`, `applyLedgerDiff`, `docPart`, `LEDGER_ARRAYS`,
 `MoneyCustomisePane(money, save)`, `ScreenMoney`, `MoneyHomeCard`, `searchExpenses` (for its test).
@@ -12,7 +12,7 @@ The tapped-day summary (`GET /api/money/day-summary`) is rules-only on purpose: 
 so the AI only reworded them; the budget goes to Food, whose numbers are estimates.
 Tone rule stated at the top of the file: money framed as growth, never guilt.
 
-## Doc shape (`emptyMoney`, ~255)
+## Doc shape (`emptyMoney`)
 
 ```
 expenses[]  {id, amount, category, note, date, createdAt, accountId?, reflection?{reason, planned, satisfaction}}   ← ledger
@@ -27,48 +27,48 @@ challenges[], wishlist[], customCategories[], noSpendDays[]
 settings{reflectThreshold:1000, currency:'₹', defaultTag:'others', lastAccountId?, accountsSetUp?}
 ```
 
-`normalizeMoney` (~271) is the trust boundary — every array/object defaulted, `contribs` backfilled, and a
+`normalizeMoney` is the trust boundary — every array/object defaulted, `contribs` backfilled, and a
 `noSpendDays` entry dropped once that day has a real expense (one place, for every path that logs one).
 
 ## Dates
 
 All keys are `YYYY-MM-DD` strings; **all range filtering is string comparison**:
-- `inRange(list, from, to)` (~325) — `e.date >= from && e.date <= to`
+- `inRange(list, from, to)` — `e.date >= from && e.date <= to`
 - month scope = `thisMonthPrefix() + '-01'` → `todayKey()`
 - `lastMonthPrefix() + '-31'` is a deliberate string-max upper bound, not a real date
 - helpers: `todayKey`, `dkey`, `parseKey`, `addDays`, `diffDays`, `daysInMonth`, `weekStartKey`, `lastNDays`
 
-## Engines (~359–1400, pure functions)
+## Engines (pure functions)
 
 | Function | What |
 |---|---|
-| weekly/monthly insight builders (~359–420) | plain-language "where your money goes" lines |
-| `budgetStatus(money)` (~424) | per-category `{cat, budget, spent, pct, remaining}` for **this month** |
-| purchase advice `advise` (~566) | does it fit the category budget / what it costs a goal, and how many days it sets that goal back at the recent saving pace (`goalPlan().weeklyRate`, only when there is one) |
-| savings plan + ETA (~524) | from contributions + `dueDate`, no income needed |
-| `setAsideThisMonth` / `setAsideInRange` (~632) | goal contributions as savings |
-| `incomeInRange` / `sumIncome` (~637) | income filtering |
-| monthly forecast (~719) | run-rate projection; subscriptions counted as committed spend |
-| `challengeProgress(money, ch)` (~841) | no-spend / daily-cap / monthly save / log / reduce kinds |
-| `suggestChallenges(money)` (~960) | personalized when data is rich, common presets when thin |
-| daily tip (~1076) | deterministic by day-of-month |
-| `financialHealth(money)` (~1130) | 0–100; **an empty account must score 0** (no phantom points) |
-| `searchExpenses(money, q)` (~1165) | NL-ish query: "how much on food last month" |
+| weekly/monthly insight builders | plain-language "where your money goes" lines |
+| `budgetStatus(money)` | per-category `{cat, budget, spent, pct, remaining}` for **this month** |
+| purchase advice `advise` | does it fit the category budget / what it costs a goal, and how many days it sets that goal back at the recent saving pace (`goalPlan().weeklyRate`, only when there is one) |
+| savings plan + ETA | from contributions + `dueDate`, no income needed |
+| `setAsideThisMonth` / `setAsideInRange` | goal contributions as savings |
+| `incomeInRange` / `sumIncome` | income filtering |
+| monthly forecast | run-rate projection; subscriptions counted as committed spend |
+| `challengeProgress(money, ch)` | no-spend / daily-cap / monthly save / log / reduce kinds |
+| `suggestChallenges(money)` | personalized when data is rich, common presets when thin |
+| daily tip | deterministic by day-of-month |
+| `financialHealth(money)` | 0–100; **an empty account must score 0** (no phantom points) |
+| `searchExpenses(money, q)` | NL-ish query: "how much on food last month" |
 | `logStreak` / `bestStreak` | consecutive logging days |
-| scenario projection (~1383) | "cut X% of category for N months" |
-| `recoveryPlan` (~1300) | reallocate from categories with room when over budget |
+| scenario projection | "cut X% of category for N months" |
+| `recoveryPlan` | reallocate from categories with room when over budget |
 
 ## Tabs (each returns an array of cards)
 
-| Fn | Line | Contents |
-|---|---|---|
-| `tabOverview` | ~3118 | **today hero** (what's left for today; past its share, tomorrow's new daily share, never the overshoot as the headline) + **`monthTape`** (one cell per day: under / close / over a flat daily share, or depth by spend with no budget; no-spend ringed, today outlined; display-only, cells are far under a 44px target, so a day opens from Spending's 7-day graph; fills in on a visit's first paint only, `tapeShown`), `accountsCard`, `healthCard`, **`budgetsSection`**, **`goalsSection`**, donut, forecast |
-| `tabSpending` | ~3498 | actions row, NL search card, last-7-days bars, by-tag breakdown, weekly review, subscriptions (due cards carry **Mark as paid**), **this-month expense list** (`list = mExp`, tag filter, 60 rows then **Show more**, `expShown`) |
-| `budgetsSection` | — | ONE card (title, intro, totals, bars) + ≥80% nudges + recovery card. Was the Budgets tab. |
-| `goalsSection` | — | ONE card (title, plan/new-goal actions, goal list). Was the Goals tab; its wishlist moved to Coach. |
-| `tabIncome` | ~4339 | one kept-vs-spent bar for the month, the latest 6 income entries with their account (`showAllIncome` toggles all), loans (stats only when there are loans) |
-| `tabCoach` | ~4553 | challenges, **wishlist**, journey, insights, personality, tips, share |
-| `tabBar` | ~4742 | sub-tab bar: overview, spending, income, coach |
+| Fn | Contents |
+|---|---|
+| `tabOverview` | **today hero** (what's left for today; past its share, tomorrow's new daily share, never the overshoot as the headline) + **`monthTape`** (one cell per day: under / close / over a flat daily share, or depth by spend with no budget; no-spend ringed, today outlined; display-only, cells are far under a 44px target, so a day opens from Spending's 7-day graph; fills in on a visit's first paint only, `tapeShown`), `accountsCard`, `healthCard`, **`budgetsSection`**, **`goalsSection`**, donut, forecast |
+| `tabSpending` | actions row, NL search card, last-7-days bars, by-tag breakdown, weekly review, subscriptions (due cards carry **Mark as paid**), **this-month expense list** (`list = mExp`, tag filter, 60 rows then **Show more**, `expShown`) |
+| `budgetsSection` | ONE card (title, intro, totals, bars) + ≥80% nudges + recovery card. Was the Budgets tab. |
+| `goalsSection` | ONE card (title, plan/new-goal actions, goal list). Was the Goals tab; its wishlist moved to Coach. |
+| `tabIncome` | one kept-vs-spent bar for the month, the latest 6 income entries with their account (`showAllIncome` toggles all), loans (stats only when there are loans) |
+| `tabCoach` | challenges, **wishlist**, journey, insights, personality, tips, share |
+| `tabBar` | sub-tab bar: overview, spending, income, coach |
 
 `healthCard` turns each part's `fix` (`'budgets' | 'goal' | 'log' | null`, set in `financialHealth`) into a
 button, one per distinct fix; the "Next step" tip shows only once nothing is left at zero.
@@ -78,14 +78,14 @@ Subscriptions card: total per month **and per year**; each row shows its yearly 
 **Split a bill** (`openSplitBill`, `splitShares(total, parties, includeMe)` — worked in paise, odd paise go to the
 others, so the shares plus yours equal the bill to the paisa; exported, pinned in `money-ledger.test.mjs`). Loan rows are signed from your side: lent `+` green (owed to you), borrowed `−` red; the summary says **Owed to you** or **You owe**. Both helpers have asserts in `_demo()`.
 
-Shared row/card builders: `expRow(e, withDelete)` (~3690), `subscriptionsCard`, `coachCard`,
+Shared row/card builders: `expRow(e, withDelete)`, `subscriptionsCard`, `coachCard`,
 `emptyHint`, `stat`, `weekBars`, `openMoneyModal`, `confirmDelete` (module level; every delete in Money goes through it, the customise pane's tag manager included).
 
-**Share summary** (~3049) is Money's use of `share-card.js` (Report's "Share my month" is the other). `shareSummary()` draws the week
+**Share summary** is Money's use of `share-card.js` (Report's "Share my month" is the other). `shareSummary()` draws the week
 as a 1080×1920 PNG and opens the OS share sheet (Instagram Stories lives in there); `summaryText()` /
 `shareSummaryText()` are the original text path, kept as the fallback for anything that can't take a
-file — old WebViews, desktop Firefox, and the Capacitor wrapper. Both share buttons (`weeklyReviewCard`
-~3421, the Coach tab ~4791) call `shareSummary`.
+file — old WebViews, desktop Firefox, and the Capacitor wrapper. Both share buttons (`weeklyReviewCard`,
+the Coach tab) call `shareSummary`.
 
 ## Gotchas
 

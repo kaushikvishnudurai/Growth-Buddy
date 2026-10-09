@@ -1,4 +1,4 @@
-# SQL schema — `tableCreationQueries.sql` (805 lines) + `growth_buddy.sql`
+# SQL schema — `tableCreationQueries.sql` + `growth_buddy.sql`
 
 **Two files, different jobs:**
 

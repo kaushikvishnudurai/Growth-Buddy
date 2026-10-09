@@ -6,23 +6,23 @@ protect/unprotect).
 
 `FREEZE_CAP = 2` (line 23) — the wallet holds at most 2 tokens; one is granted per ISO week.
 
-| Method | Line | Notes |
-|---|---|---|
-| `list(userId)` | 127 | habits + streaks + freeze state, the screen's main read |
-| `create(userId, req)` | 281 | `icon` must be in `HABIT_ICONS` (also on update); `HabitIconsTest` keeps it in step with the JS lists |
-| `update(userId, id, req)` | 235 | |
-| `delete(userId, id)` | 266 | |
-| `checkin(userId, id, req)` | 274 | `date` defaults to today, `done` defaults to true; **recomputes `HabitStreak`** |
-| `toggleToday(userId, id)` | 307 | |
-| `freezeStatus(userId)` | 71 | wallet snapshot (`GET /api/habits/freeze`) |
-| `history(userId, id, days)` | 77 | `GET /api/habits/{id}/history` — `{since, days[]}` for the freeze calendar. `since` is the habit's creation date in the user's zone, so the client can tell a missed day from one before the habit existed |
-| `protect(userId, id, date)` | 77 | spends a token to shield a missed day |
-| `unprotect(userId, id, date)` | 110 | refunds it |
-| `contextSummary(userId)` | 162 | read-only text summary fed to the mentor/LLM prompts |
-| `countDoneBetween(userId, start, end)` | 180 | single user |
-| `countDoneBetween(List<UUID>, start, end)` | 186 | batched — **use this for leaderboards**, not the single-user version in a loop (Circle challenge ranking depends on it) |
-| `todayCounts(userId)` | 205 | `record TodayCounts(int done, int total)` (231), used by the score |
-| `countsOn(userId, day)` | 214 | the same counts for **any** day — check-ins are stored against a log date, so a finished day still answers truthfully. What the digest reads, since it reports a day the midnight sweep has already rolled. |
+| Method | Notes |
+|---|---|
+| `list(userId)` | habits + streaks + freeze state, the screen's main read |
+| `create(userId, req)` | `icon` must be in `HABIT_ICONS` (also on update); `HabitIconsTest` keeps it in step with the JS lists |
+| `update(userId, id, req)` | |
+| `delete(userId, id)` | |
+| `checkin(userId, id, req)` | `date` defaults to today, `done` defaults to true; **recomputes `HabitStreak`** |
+| `toggleToday(userId, id)` | |
+| `freezeStatus(userId)` | wallet snapshot (`GET /api/habits/freeze`) |
+| `history(userId, id, days)` | `GET /api/habits/{id}/history` — `{since, days[]}` for the freeze calendar. `since` is the habit's creation date in the user's zone, so the client can tell a missed day from one before the habit existed |
+| `protect(userId, id, date)` | spends a token to shield a missed day |
+| `unprotect(userId, id, date)` | refunds it |
+| `contextSummary(userId)` | read-only text summary fed to the mentor/LLM prompts |
+| `countDoneBetween(userId, start, end)` | single user |
+| `countDoneBetween(List<UUID>, start, end)` | batched — **use this for leaderboards**, not the single-user version in a loop (Circle challenge ranking depends on it) |
+| `todayCounts(userId)` | `record TodayCounts(int done, int total)` (231), used by the score |
+| `countsOn(userId, day)` | the same counts for **any** day — check-ins are stored against a log date, so a finished day still answers truthfully. What the digest reads, since it reports a day the midnight sweep has already rolled. |
 
 ## Timezone
 
@@ -47,5 +47,5 @@ user id rather than reading `CurrentUser` because the digest scheduler reaches t
   are **lowercase to match the MySQL ENUM values** — renaming a constant breaks reads.
 
 DTOs: `HabitDtos`. Repositories: `HabitRepositories`. Frontend: `ScreenHabits` in `scripts/app.js`
-(~4940) plus the habit cards in `scripts/dashboard.js`; the client-side freeze layer sits at
+ plus the habit cards in `scripts/dashboard.js`; the client-side freeze layer sits at
 `app.js` 413–560.

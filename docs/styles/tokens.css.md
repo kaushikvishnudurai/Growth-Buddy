@@ -1,15 +1,15 @@
-# styles/tokens.css — design tokens (359 lines)
+# styles/tokens.css — design tokens
 
 Single source of truth for color, type, spacing, radius, shadow, motion. **Nothing else should
 declare a raw hex.** Fonts: Bricolage Grotesque (display) + Hanken Grotesk (body/UI), self-hosted
 via `@fontsource` — plus Space Mono for `--font-mono`.
 
-| Line | Section |
-|---|---|
-| 1–161 | primitives (color ramps, type scale, spacing, radii, shadows, motion) |
-| 162 | **LIGHT THEME** — `:root, [data-theme="light"]` |
-| 223 | **DARK THEME** — `[data-theme="dark"]` (sets `color-scheme: dark`) |
-| 276 | **SEMANTIC TYPOGRAPHY ROLES** — apply as classes (`.gb-display`, `.gb-h1`, …) |
+| Section |
+|---|
+| primitives (color ramps, type scale, spacing, radii, shadows, motion) |
+| **LIGHT THEME** — `:root, [data-theme="light"]` |
+| **DARK THEME** — `[data-theme="dark"]` (sets `color-scheme: dark`) |
+| **SEMANTIC TYPOGRAPHY ROLES** — apply as classes (`.gb-display`, `.gb-h1`, …) |
 
 ## Token groups
 

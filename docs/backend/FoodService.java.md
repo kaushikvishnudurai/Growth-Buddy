@@ -2,16 +2,16 @@
 
 Backs `/api/food`: food logging, a food search, and **photo → nutrition estimation** via the AI gateway.
 
-| Method | Line | Notes |
-|---|---|---|
-| `estimateFromPhotoMulti(req)` | 76 | multi-dish estimate (~90 lines, the biggest method) — `POST /photo-estimate-multi` |
-| `estimateFromPhoto(req)` | 329 | single-dish — `POST /photo-estimate` |
-| `search(query)` | 211 | food lookup for the add-food form |
-| `addEntry(userId, req)` | 220 | returns the refreshed `FoodSummaryResponse` |
-| `deleteEntry(userId, entryId)` | 317 | also returns the refreshed summary |
-| `summary(userId, date)` | 200 | the day's totals — what the Home food card reads |
-| `photoHistory(userId)` | 180 | the "recent scans" list |
-| `recordPhoto(userId, req)` | 187 | writes a `FoodPhotoLog` |
+| Method | Notes |
+|---|---|
+| `estimateFromPhotoMulti(req)` | multi-dish estimate (~90 lines, the biggest method) — `POST /photo-estimate-multi` |
+| `estimateFromPhoto(req)` | single-dish — `POST /photo-estimate` |
+| `search(query)` | food lookup for the add-food form |
+| `addEntry(userId, req)` | returns the refreshed `FoodSummaryResponse` |
+| `deleteEntry(userId, entryId)` | also returns the refreshed summary |
+| `summary(userId, date)` | the day's totals — what the Home food card reads |
+| `photoHistory(userId)` | the "recent scans" list |
+| `recordPhoto(userId, req)` | writes a `FoodPhotoLog` |
 
 Both mutating entry methods return the whole day summary, so the frontend never needs a follow-up
 GET after a write.
@@ -37,7 +37,7 @@ GET after a write.
   unknown. When it was asked, the nutrients are stored right away; otherwise FoodWeek's batch fills
   them. Not `@Transactional`: it would hold a connection through OpenFoodFacts and the AI.
 
-DTOs: `FoodDtos`. Frontend: `openAddFood` in `scripts/app.js` (~1669), `FoodCard` / `ScreenFood` /
+DTOs: `FoodDtos`. Frontend: `openAddFood` in `scripts/app.js`, `FoodCard` / `ScreenFood` /
 `FoodSummaryCard` in `scripts/dashboard.js`.
 
 **`food/FoodWeek`** (not in this file) backs the Summary screen: `GET /week` (7 days of kcal against

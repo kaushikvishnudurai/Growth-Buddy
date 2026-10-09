@@ -1,36 +1,36 @@
-# scripts/app.js — app shell (6799 lines)
+# scripts/app.js — app shell
 
 The hub: owns all state, routing, rendering, and **every** backend call. No exports (entry module).
 Screen modules are leaves it calls into; they get thin `api` wrapper objects, never the state.
 
 ## Region map
 
-| Lines | Region |
-|---|---|
-| 1–230 | imports, date helpers (`todayLabel`, `greetingFor` + its dev self-check, `firstName`, `dateKey`), `loadTheme`, quote-of-day cache (`quoteDateStr`, `loadCachedQuote`, `cacheQuote`), toasts (`pushToast`, `toastError`, `toastSuccess`, `dismissToast`) |
-| 210–250 | `score()` (+ `optimisticScore()`, the same sum with the server's number ignored), `loadSession`, `loadToken`, `saveSession` |
-| 249–336 | wellness store (`emptyWellness`, `loadWellness`, `persistWellness`), goal progress (`loadGoalProgress`, `persistGoalProgress`, `updateGoalProgress` — optimistic; the newest save's failure rolls back and toasts) |
-| 337–740 | **money store**: `moneyStorageKey`, `loadMoney`, `cacheMoney`, `saveMoney(next, base)` → `ledgerDiff(base, next)` laid onto the live state with `applyLedgerDiff` → pending queue (`queueLedger`/`flushLedger`, replayed at boot via `overlayPending`) + `putDocIfChanged`; an entry the server refuses (a `rejected` id, or a whole-batch 4xx other than 401/408/409/429) is put back to the server's copy by `rollbackMoneyItems(ids)`, those ids only; `accountRequest` (queued behind ledger writes); UI prefs `saveUiPrefs(patch)` → `PUT /api/auth/ui-prefs`, `hydrateUiPrefs` |
-| 413–560 | streak freeze: `emptyStreakFreeze`, `loadStreakFreeze`, `reconcileStreakFreeze`, `effectiveStreak`, `habitFreezeState`, `freezeTokensLeft`, `protectStreak`, `declineStreakBreak`, `toggleRestDay` (both go through `freezeWrite`: optimistic habit + token count, one per habit in flight, exact rollback). Backend owns the tokens; this only reads fields + calls protect/unprotect. Achievements: `achievementProps`, `checkAchievements` (fires `celebrate()` on first unlock) |
-| 559–625 | local trends: `emptyTrends`, `loadTrends`, `persistTrends`, `recordTrendsToday` |
-| 625–740 | `clearSession`, `syncUserSession`, **`api(path, options)` / `apiFetch`** — the single network chokepoint; attaches the bearer token and, in the Capacitor app, the `X-GB-Device` label from `native.js` so the signed-in-devices list can name the handset — `handleAuthExpired` |
-| 744–935 | `mapTask`, `formatTaskTime`, `cacheFoodSummary`, `loadCalendarFoodForDate`, in-place repaints (`rerenderCalendarSideIfActive` — coalesced to one repaint per tick, deferred while a field in the panel has focus, keeps its height while the day's food loads, puts the caret back in the reminder text after an add — `rerenderHomeMiniCalendarIfActive` (coalesced the same way; answers "is there a card?" synchronously, rebuilds it in a microtask), `updateCalendarDaySelection`) |
-| 934–1140 | **`loadData()`** (boot fetch fan-out), `loadQuote()`, `connectWebSocket` / `disconnectWebSocket` |
-| 1140–1470 | mutations: `toggleTask`, `toggleHabit`, `refreshScore`, `refreshScoreLater` (create/update dialogs close on the write; the ring lands after), `refreshCurrentUser`, `createTask`, `updateTask`, `patchTaskNow` / `pauseTask` (optimistic one-field task change, also Edit task's snooze), `createHabit`, `createGoal` (places the POSTed goal, no reload), `toggleGoal` (optimistic, reconciles from the PATCH answer), goal actions CRUD, `deleteHabit`, `quickAddWater` (optimistic; `pendingWater` taps are laid over each server answer, the same amount twice inside 600ms is dropped), `updateWaterGoal`, `logFoodEntry`, `saveSleepEntry`, `saveMoodEntry`, `addQuickExpense`, **`runQuickAdd(text)`**, `rememberPhotoFood`, `showFoodLoader(name)` (the full-screen "Estimating calories" over a food save, CSS in app.css "Food loader"; shown after 200ms so a fast save does not flash it) |
-| 1481–2010 | modals: `openSleepSchedule`, `openMoodCheckin`, `openDailyPlan`, `openAddFood`, `addSuggestedReminder`, `deleteWaterEntry`, `deleteFoodEntry` (both `confirmDelete` first; food plays `removeSoon`). `logFoodEntry` throws, so a failed save keeps Log food open |
-| 2014–2260 | notifications (`refreshNotifications`, `markNotificationRead`, `respondMentorshipRequest`, `unreadNotifs`), header popovers (`toggleNotifOpen`, `toggleProfileOpen`, `toggleMoreOpen`, `profileDropdown`), routing (`screenFromHash`, `setScreen`), **`applyTheme(theme)`** — the only writer of `data-theme`, because the native status bar has to be repainted alongside it — `toggleTheme`, `togglePremium` |
+| Region |
+|---|
+| imports, date helpers (`todayLabel`, `greetingFor` + its dev self-check, `firstName`, `dateKey`), `loadTheme`, quote-of-day cache (`quoteDateStr`, `loadCachedQuote`, `cacheQuote`), toasts (`pushToast`, `toastError`, `toastSuccess`, `dismissToast`) |
+| `score()` (+ `optimisticScore()`, the same sum with the server's number ignored), `loadSession`, `loadToken`, `saveSession` |
+| wellness store (`emptyWellness`, `loadWellness`, `persistWellness`), goal progress (`loadGoalProgress`, `persistGoalProgress`, `updateGoalProgress` — optimistic; the newest save's failure rolls back and toasts) |
+| **money store**: `moneyStorageKey`, `loadMoney`, `cacheMoney`, `saveMoney(next, base)` → `ledgerDiff(base, next)` laid onto the live state with `applyLedgerDiff` → pending queue (`queueLedger`/`flushLedger`, replayed at boot via `overlayPending`) + `putDocIfChanged`; an entry the server refuses (a `rejected` id, or a whole-batch 4xx other than 401/408/409/429) is put back to the server's copy by `rollbackMoneyItems(ids)`, those ids only; `accountRequest` (queued behind ledger writes); UI prefs `saveUiPrefs(patch)` → `PUT /api/auth/ui-prefs`, `hydrateUiPrefs` |
+| streak freeze: `emptyStreakFreeze`, `loadStreakFreeze`, `reconcileStreakFreeze`, `effectiveStreak`, `habitFreezeState`, `freezeTokensLeft`, `protectStreak`, `declineStreakBreak`, `toggleRestDay` (both go through `freezeWrite`: optimistic habit + token count, one per habit in flight, exact rollback). Backend owns the tokens; this only reads fields + calls protect/unprotect. Achievements: `achievementProps`, `checkAchievements` (fires `celebrate()` on first unlock) |
+| local trends: `emptyTrends`, `loadTrends`, `persistTrends`, `recordTrendsToday` |
+| `clearSession`, `syncUserSession`, **`api(path, options)` / `apiFetch`** — the single network chokepoint; attaches the bearer token and, in the Capacitor app, the `X-GB-Device` label from `native.js` so the signed-in-devices list can name the handset — `handleAuthExpired` |
+| `mapTask`, `formatTaskTime`, `cacheFoodSummary`, `loadCalendarFoodForDate`, in-place repaints (`rerenderCalendarSideIfActive` — coalesced to one repaint per tick, deferred while a field in the panel has focus, keeps its height while the day's food loads, puts the caret back in the reminder text after an add — `rerenderHomeMiniCalendarIfActive` (coalesced the same way; answers "is there a card?" synchronously, rebuilds it in a microtask), `updateCalendarDaySelection`) |
+| **`loadData()`** (boot fetch fan-out), `loadQuote()`, `connectWebSocket` / `disconnectWebSocket` |
+| mutations: `toggleTask`, `toggleHabit`, `refreshScore`, `refreshScoreLater` (create/update dialogs close on the write; the ring lands after), `refreshCurrentUser`, `createTask`, `updateTask`, `patchTaskNow` / `pauseTask` (optimistic one-field task change), `createHabit`, `createGoal` (places the POSTed goal, no reload), `toggleGoal` (optimistic, reconciles from the PATCH answer), goal actions CRUD, `deleteHabit`, `quickAddWater` (optimistic; `pendingWater` taps are laid over each server answer, the same amount twice inside 600ms is dropped), `updateWaterGoal`, `logFoodEntry`, `saveSleepEntry`, `saveMoodEntry`, `addQuickExpense`, **`runQuickAdd(text)`**, `rememberPhotoFood`, `showFoodLoader(name)` (the full-screen "Estimating calories" over a food save, CSS in app.css "Food loader"; shown after 200ms so a fast save does not flash it) |
+| modals: `openSleepSchedule`, `openMoodCheckin`, `openDailyPlan`, `openAddFood`, `addSuggestedReminder`, `deleteWaterEntry`, `deleteFoodEntry` (both `confirmDelete` first; food plays `removeSoon`). `logFoodEntry` throws, so a failed save keeps Log food open |
+| notifications (`refreshNotifications`, `markNotificationRead`, `respondMentorshipRequest`, `unreadNotifs`), header popovers (`toggleNotifOpen`, `toggleProfileOpen`, `toggleMoreOpen`, `profileDropdown`), routing (`screenFromHash`, `setScreen`), **`applyTheme(theme)`** — the only writer of `data-theme`, because the native status bar has to be repainted alongside it — `toggleTheme`, `togglePremium` |
+| profile + settings (biggest block): `saveProfileDetails`, `CountryPhoneInput`, `buildSegSlider`, `customisePanes()` (builds the Display + Layout panes), `securitySection()` (devices + password), **`openProfileSettings(initialTab)`** (the one Settings modal), `getNutritionSuggestion` |
+| calendar: `syncSelectedDateToVisibleMonth`, `rerenderCalendarToolbarIfActive`, `rerenderCalendarMonthInPlace`, `calPrevMonth`/`calNextMonth`/`calToday`, `selectDate`, `retryCalendarFoodDate`, `addReminder`, `repaintCalendarGrid`, `deleteReminder` |
+| shared UI: `openModal` (now a two-line wrapper over gb-kit's, adding `render()` after a successful primary — the layout itself lives in `gb-kit.js`), `segmented`, `openAddSheet`, `toDateTimeLocal`, `taskForm` (shared by `openAddTask` / `openEditTask`), **task templates** (`openTaskTemplates` from New task's "Add from a template"; named checklists in `ui_prefs.taskTemplates` = `[{id, name, items:[title]}]`, max 20 x 30; `addTemplateTasks` POSTs one task per line with `allSettled`, so a partial failure keeps what saved), `colorPicker`, `openAddHabit`, `relativeTime`, `notificationDropdown`, `toastStack` (+ `TOAST_IN_MS`), `confirmDelete` |
+| `ScreenHabits`, `featureOn` / `screenEnabled` / `setFeature`, `saveDigestPrefs`, `saveHomeLayout`, `saveNavLayout` |
+| **`SCREENS` registry** — screen id → render fn. Start here to find a screen. |
+| `captureScrollPosition` / `restoreScrollPosition` |
+| auth: `authPost`, `loadAuthDraft`, `setAuthMode`, `authShell`, `field`, `renderAuth`, `authFail`, `refuseFocus`, `runAuth`, `shakeRefusal`, `viewSignin`, `viewSignup`, `viewVerify` (OTP), `viewForgot`, `viewReset`, `loginCard` |
+| `logout`, `mentorSkeleton` / `loadingContent`, `offlineBanner`, `weeklyReviewNudge` (Home only), `handleOnline`/`handleOffline`, **`render()`**, `installOutsideClickToCloseHeaderPopovers` |
 
 **`screenFromHash` reads `SCREENS` itself** — there is no id list to keep in step. The `SCREEN_IDS`
 array that used to live here was missing `report`, so refreshing on Progress or opening any link to
 it silently landed on Home. Don't reintroduce a second list.
-| 2270–4070 | profile + settings (biggest block): `saveProfileDetails`, `CountryPhoneInput`, `buildSegSlider`, `customisePanes()` (~2541, builds the Display + Layout panes), `securitySection()` (~3108, devices + password), **`openProfileSettings(initialTab)`** (~3229 — the one Settings modal), `getNutritionSuggestion` |
-| 4071–4262 | calendar: `syncSelectedDateToVisibleMonth`, `rerenderCalendarToolbarIfActive`, `rerenderCalendarMonthInPlace`, `calPrevMonth`/`calNextMonth`/`calToday`, `selectDate`, `retryCalendarFoodDate`, `addReminder`, `repaintCalendarGrid`, `deleteReminder` |
-| 4264–4940 | shared UI: `openModal` (now a two-line wrapper over gb-kit's, adding `render()` after a successful primary — the layout itself lives in `gb-kit.js`), `segmented`, `openAddSheet`, `toDateTimeLocal`, `taskForm` (shared by `openAddTask` / `openEditTask`), **task templates** (`openTaskTemplates` from New task's "Add from a template"; named checklists in `ui_prefs.taskTemplates` = `[{id, name, items:[title]}]`, max 20 x 30; `addTemplateTasks` POSTs one task per line with `allSettled`, so a partial failure keeps what saved), **snooze** in Edit task (`snoozedDueAt`: Tomorrow / Next week from today, same time of day or 09:00; a later date bumps `pushCount` server-side), `colorPicker`, `openAddHabit`, `relativeTime`, `notificationDropdown`, `toastStack` (+ `TOAST_IN_MS`), `confirmDelete` |
-| 4940–5256 | `ScreenHabits`, `featureOn` / `screenEnabled` / `setFeature`, `saveDigestPrefs`, `saveHomeLayout`, `saveNavLayout` |
-| **5256–5552** | **`SCREENS` registry** — screen id → render fn. Start here to find a screen. |
-| 5552–5575 | `captureScrollPosition` / `restoreScrollPosition` |
-| 5576–6100 | auth: `authPost`, `loadAuthDraft`, `setAuthMode`, `authShell`, `field`, `renderAuth`, `authFail`, `refuseFocus`, `runAuth`, `shakeRefusal`, `viewSignin`, `viewSignup`, `viewVerify` (OTP), `viewForgot`, `viewReset`, `loginCard` |
-| 6043–6336 | `logout`, `mentorSkeleton` / `loadingContent`, `offlineBanner`, `weeklyReviewNudge` (Home only), `handleOnline`/`handleOffline`, **`render()`** (~6143), `installOutsideClickToCloseHeaderPopovers` |
 
 ## Rules when editing
 
@@ -105,9 +105,9 @@ it silently landed on Home. Don't reintroduce a second list.
   failure leaves Home on wave-1 data instead of replacing it with a crash. It also skips its final
   `render()` if `state.screen` has changed since it started, so it can't rebuild a screen that owns
   its own subtree out from under the user.
-- **All fetches go through `api()`** (~646). Don't add a bare `fetch` — you'd lose auth headers and
+- **All fetches go through `api()`**. Don't add a bare `fetch` — you'd lose auth headers and
   the 401 → `handleAuthExpired` path.
-- **Adding a screen:** register in `SCREENS` (~5256); if it needs a nav slot, also `NAV_CATALOG` in
+- **Adding a screen:** register in `SCREENS`; if it needs a nav slot, also `NAV_CATALOG` in
   `gb-kit.js`. Gate it with `screenEnabled` if it's a toggleable feature.
 - **`toast` is late-bound** via `scripts/toast.js` — app.js calls `registerToast()` at boot so screen
   modules can fire toasts without importing app.js (cycle).
@@ -164,7 +164,7 @@ it silently landed on Home. Don't reintroduce a second list.
   what is still ticked. It used to parse and apply in one call, so a single misread — "spent 200 on
   lunch" landing as 200 ml of water — wrote itself into a tracker with no way to see it coming or
   take it back. A habit name it can't match renders as "No such habit", unchecked and disabled.
-- **Pull to refresh is hand-rolled** (`initPullToRefresh`, ~6390). A WebView gives you none, and the
+- **Pull to refresh is hand-rolled** (`initPullToRefresh`). A WebView gives you none, and the
   app had none — swiping down at the top of a screen did nothing. Listeners sit on `document`, not on
   `.gb-scroll`, because `render()` replaces that element and would throw a listener on it away. A drag
   is only claimed when it starts at `scrollTop === 0` and is more vertical than horizontal, so normal

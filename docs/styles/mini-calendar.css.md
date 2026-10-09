@@ -1,6 +1,6 @@
-# styles/mini-calendar.css — mini calendar card (375 lines)
+# styles/mini-calendar.css — mini calendar card
 
-Styles only `MiniCalendarCard` (`scripts/dashboard.js` ~1035), the compact calendar on Home. Split
+Styles only `MiniCalendarCard` (`scripts/dashboard.js`), the compact calendar on Home. Split
 out of `app.css` because the component is self-contained and app.js repaints it in place
 (`rerenderHomeMiniCalendarIfActive`).
 

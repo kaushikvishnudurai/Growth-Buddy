@@ -32,25 +32,25 @@ don't yet know which file you need. Files with their own doc are listed in
 
 ## Frontend — `scripts/` (small modules; the big ones are in `docs/`)
 
-| File | Lines | What |
-|---|---|---|
-| `insights.js` | 951 | Insights on Report: plain statistics over sleep, mood, check-ins, water, kcal and spend, plus focus hours, habit misses, goal pace, task follow-through, unusual and repeating expenses, water gaps and score changes. No AI. Has its own doc (`docs/scripts/insights.js.md`). Listed here for one trap: sleep is keyed on the WAKE date, so stress -> sleep must look at the next day. |
-| `insights.test.mjs` | 350 | Plain-assert check for the above. `node scripts/insights.test.mjs`. |
-| `review.js` | 254 | Report look-backs, pure: `pixelValues(metric)` (score / mood / daily-habit share per day, blank = absent, never 0), `personalRecords` (longest habit streak, best focus day, longest water streak, lowest-spend *finished* week with something logged), `periodDelta`, `monthReview` (the month card for `share-card.js`). |
-| `review.test.mjs` | 120 | Plain-assert check for the above. `node scripts/review.test.mjs`. |
-| `cache-storage.js` | 214 | The storage layer. In-memory map (sync source of truth) + cookies (tiny boot-critical allowlist only, ~3.5 kB cap) + Cache API (`gb-store-v2`, hydrated async in `init()`). Migrates old localStorage once. Keys prefixed `gb.`. Exports `CacheStorage`. |
-| `recurrence.js` | 72 | The ONE answer to "does this reminder fall on this day?", shared by the Calendar screen and Home's mini calendar. There were three copies and the dashboard's had drifted. `ReminderService.occursOn` is the fourth-that-must-stay (WhatsApp delivery); keep them in step. Checked by `scripts/recurrence.test.mjs`. |
-| `icons.js` | 234 | The Lucide subset actually used (121 icons). Load-bearing for bundle size — the full set is ~600 kB. **Add new icon names here or they won't render** — `scripts/icons.test.mjs` fails the moment one is missing, because nothing else can see it: a missing icon is not an error, not a console warning and not an empty box. |
-| `achievements.js` | 269 | Badge gallery derived from data already tracked (XP/level, freeze-protected streaks, goals, wellness/trends). `XP_PER_LEVEL = 500`. Exports `ScreenAchievements`, `computeAchievements`. |
-| `mentor.js` | 256 | Buddy chat screen. `renderRich()` = tiny markdown (`**bold**`, `*italic*`, newlines). Exports `ScreenMentor`. |
-| `celebrate.js` | 119 | One-off unlock celebration: badge pop + hand-rolled confetti, queued one at a time, respects `prefers-reduced-motion`. |
-| `a11y.js` | 161 | Global modal a11y. A modal is **anything carrying `aria-modal="true"`** — keyed on the attribute, not a class, so a new overlay can't opt out by forgetting one (which is how the celebration overlay and `confirmDialog` both ended up outside the trap, each carrying its own Escape handler). Usually `.gb-modal-overlay > .gb-modal[role=dialog]`, but the outermost box may be the dialog itself. A MutationObserver on `<body>` adds Escape-to-close, Tab trapping, focus in/out (never back to the trigger while another modal is still up) and names each control from the `.gb-field-label` before it, **centrally**, so individual modals need no a11y code. `initA11y()`. |
-| `share-card.js` | 255 | Draws a 1080×1920 story card on a canvas and hands the PNG to the OS share sheet (where Instagram's "Add to story" lives — there is no web API that posts to Instagram directly). `shareStoryCard(card, opts)` → `'shared'｜'saved'｜'unsupported'`; `renderStoryCard(card)` for the raw blob. Canvas text does NOT trigger font loading — it calls `document.fonts.load()` per face first. No deps. |
-| `push.js` | 373 | Notification client. On the web: Web Push — `pushSupported`, `pushPermission`, `pushSubscribed`, `enablePush(api)`, `disablePush(api)`, inert when unsupported or VAPID keys are missing. Inside the Capacitor app the same calls route to on-device local notifications via `native.js` (an Android WebView has no `PushManager`), plus `pushTestLocal()`. **Timed reminders, habit reminders and the water nudge fork the same way**: the server can only reach a Web Push subscription, and the app can never register one, so `syncDeviceAlarms({reminders, water, habits, sound})` queues them on the device instead — cancelled and rebuilt whole, capped at 100 in firing order, each id derived from the minute it fires in — a positional counter handed a rebuilt batch the ids of notifications already in the shade, and Android replaced them. Pure builders behind it, all checked by `scripts/push.test.mjs`: `upcomingReminderAlarms()` (14 days, shares `recurrence.js` with the calendar), `upcomingWaterAlarms()` (3 days — a 2-hourly drumbeat would otherwise crowd out real reminders; 30-minute floor; an inverted window means silence; a slot right after one of `usualHours` is dropped — `usualDrinkHours(times)` picks the hours the user logs water in on 60%+ of days, and app.js adds it per sync, it is never a stored pref), `upcomingHabitAlarms()` (daily at `reminderTime`, today skipped once checked in), and `upcomingAlarms()` which merges, sorts, caps and stamps each notification's chime file — a reminder's own `sound` when it has one, the user's default otherwise (the water nudge never has one, so it always follows the default). **The 'Silent' tone is queued like any other, onto `SILENT_CHANNEL`** — it used to be filtered out of the queue entirely, so picking Silent cost the user the notification as well as the sound (it still reached the in-app bell and WhatsApp, so only the phone went quiet) while the Test button, which ignored the tone, kept ringing and made the wiring look fine. |
-| `native.js` | 217 | Capacitor-only helpers, reached through the bridge rather than imported — the plugin packages live in `../Growth-Buddy-Mobile`, so an import would break the web build. **`nativePlugin(name)`** is the only way in: `Capacitor.Plugins` is filled by `registerPlugin()` inside those packages, so in the shipped app it is always empty and every lookup returned null (no splash control, no device name, and "this browser doesn't support push notifications" **on a phone**). It falls back to the bridge's own `Capacitor.nativePromise(plugin, method, opts)`, which reaches the same native class. Promise-style methods only — listeners would need `nativeCallback`. Every export is a no-op on the web. `isNative()`, `initNative()` (device model at boot + the splash backstop), `deviceLabelHeader()` (the `X-GB-Device` value), the LocalNotifications wrappers (`scheduleLocalNotifications` batch + `cancelPendingLocalNotifications` for the whole queue, `cancelLocalNotifications(ids)` for specific ones — the focus timer's end alarm must drop without taking every reminder with it), `applyNativeStatusBar(theme)` and `hideNativeSplash()`. **`SILENT_CHANNEL`** is the one channel this app makes itself (`importance: 2`, created on first use): Android takes a notification's sound from its channel, so silence is only reachable by posting to a channel that has none. |
-| `notes.js` | 1123 | Notes screen — has its own doc (`docs/scripts/notes.js.md`). Listed here for one reason: `sanitize()` is the allow-list that makes storing rich text as HTML safe, and it runs on save AND on paint. |
-| `chime.js` | 220 | The five built-in notification sounds, synthesised from a table of oscillator notes (`SOUNDS`) — no audio files, so nothing to licence and nothing added to the bundle or the APK. `playChime(key)`, `CHIMES`, `DEFAULT_CHIME`. Plus the user's own file: `readCustomChime(file)` (gate: `audio/*` and `CUSTOM_MAX_BYTES` = 300 kB), `setCustomChime(url)`, `hasCustomChime()`; playback stops at 5 s. The **choice** lives in `ui_prefs.notifySound`, the **bytes** in CacheStorage key `gb.notifySoundFile` — per device, because a base64 blob in ui_prefs would ride along with every `/api/auth/me`. Picker is the Alerts tab. The same table is **also** the phone's notification sound: `scripts/gen-chimes.mjs` renders it to `public/gb-<key>.wav`, which rides in the bundle, and the LocalNotifications plugin resolves a notification's `sound` out of the app's assets and creates the per-sound Android channel itself — so no `res/raw`, no Gradle, no native code. **Edit `SOUNDS` → re-run the generator.** The user's own upload stays in-app: it's a data URL in CacheStorage, and Android can only ring a file that shipped with the app. |
-| `toast.js` | 22 | Late-bound toast registry. Breaks the app.js ↔ screens import cycle: app.js calls `registerToast(impl)` at boot, screens `import { toast }`. |
+| File | What |
+|---|---|
+| `insights.js` | Insights on Report: plain statistics over sleep, mood, check-ins, water, kcal and spend, plus focus hours, habit misses, goal pace, task follow-through, unusual and repeating expenses, water gaps and score changes. No AI. Has its own doc (`docs/scripts/insights.js.md`). Listed here for one trap: sleep is keyed on the WAKE date, so stress -> sleep must look at the next day. |
+| `insights.test.mjs` | Plain-assert check for the above. `node scripts/insights.test.mjs`. |
+| `review.js` | Report look-backs, pure: `pixelValues(metric)` (score / mood / daily-habit share per day, blank = absent, never 0), `personalRecords` (longest habit streak, best focus day, longest water streak, lowest-spend *finished* week with something logged), `periodDelta`, `monthReview` (the month card for `share-card.js`). |
+| `review.test.mjs` | Plain-assert check for the above. `node scripts/review.test.mjs`. |
+| `cache-storage.js` | The storage layer. In-memory map (sync source of truth) + cookies (tiny boot-critical allowlist only, ~3.5 kB cap) + Cache API (`gb-store-v2`, hydrated async in `init()`). Migrates old localStorage once. Keys prefixed `gb.`. Exports `CacheStorage`. |
+| `recurrence.js` | The ONE answer to "does this reminder fall on this day?", shared by the Calendar screen and Home's mini calendar. There were three copies and the dashboard's had drifted. `ReminderService.occursOn` is the fourth-that-must-stay (WhatsApp delivery); keep them in step. Checked by `scripts/recurrence.test.mjs`. |
+| `icons.js` | The Lucide subset actually used (121 icons). Load-bearing for bundle size — the full set is ~600 kB. **Add new icon names here or they won't render** — `scripts/icons.test.mjs` fails the moment one is missing, because nothing else can see it: a missing icon is not an error, not a console warning and not an empty box. |
+| `achievements.js` | Badge gallery derived from data already tracked (XP/level, freeze-protected streaks, goals, wellness/trends). `XP_PER_LEVEL = 500`. Exports `ScreenAchievements`, `computeAchievements`. |
+| `mentor.js` | Buddy chat screen. `renderRich()` = tiny markdown (`**bold**`, `*italic*`, newlines). Exports `ScreenMentor`. |
+| `celebrate.js` | One-off unlock celebration: badge pop + hand-rolled confetti, queued one at a time, respects `prefers-reduced-motion`. |
+| `a11y.js` | Global modal a11y. A modal is **anything carrying `aria-modal="true"`** — keyed on the attribute, not a class, so a new overlay can't opt out by forgetting one (which is how the celebration overlay and `confirmDialog` both ended up outside the trap, each carrying its own Escape handler). Usually `.gb-modal-overlay > .gb-modal[role=dialog]`, but the outermost box may be the dialog itself. A MutationObserver on `<body>` adds Escape-to-close, Tab trapping, focus in/out (never back to the trigger while another modal is still up) and names each control from the `.gb-field-label` before it, **centrally**, so individual modals need no a11y code. `initA11y()`. |
+| `share-card.js` | Draws a 1080×1920 story card on a canvas and hands the PNG to the OS share sheet (where Instagram's "Add to story" lives — there is no web API that posts to Instagram directly). `shareStoryCard(card, opts)` → `'shared'｜'saved'｜'unsupported'`; `renderStoryCard(card)` for the raw blob. Canvas text does NOT trigger font loading — it calls `document.fonts.load()` per face first. No deps. |
+| `push.js` | Notification client. On the web: Web Push — `pushSupported`, `pushPermission`, `pushSubscribed`, `enablePush(api)`, `disablePush(api)`, inert when unsupported or VAPID keys are missing. Inside the Capacitor app the same calls route to on-device local notifications via `native.js` (an Android WebView has no `PushManager`), plus `pushTestLocal()`. **Timed reminders, habit reminders and the water nudge fork the same way**: the server can only reach a Web Push subscription, and the app can never register one, so `syncDeviceAlarms({reminders, water, habits, sound})` queues them on the device instead — cancelled and rebuilt whole, capped at 100 in firing order, each id derived from the minute it fires in — a positional counter handed a rebuilt batch the ids of notifications already in the shade, and Android replaced them. Pure builders behind it, all checked by `scripts/push.test.mjs`: `upcomingReminderAlarms()` (14 days, shares `recurrence.js` with the calendar), `upcomingWaterAlarms()` (3 days — a 2-hourly drumbeat would otherwise crowd out real reminders; 30-minute floor; an inverted window means silence; a slot right after one of `usualHours` is dropped — `usualDrinkHours(times)` picks the hours the user logs water in on 60%+ of days, and app.js adds it per sync, it is never a stored pref), `upcomingHabitAlarms()` (daily at `reminderTime`, today skipped once checked in), and `upcomingAlarms()` which merges, sorts, caps and stamps each notification's chime file — a reminder's own `sound` when it has one, the user's default otherwise (the water nudge never has one, so it always follows the default). **The 'Silent' tone is queued like any other, onto `SILENT_CHANNEL`** — it used to be filtered out of the queue entirely, so picking Silent cost the user the notification as well as the sound (it still reached the in-app bell and WhatsApp, so only the phone went quiet) while the Test button, which ignored the tone, kept ringing and made the wiring look fine. |
+| `native.js` | Capacitor-only helpers, reached through the bridge rather than imported — the plugin packages live in `../Growth-Buddy-Mobile`, so an import would break the web build. **`nativePlugin(name)`** is the only way in: `Capacitor.Plugins` is filled by `registerPlugin()` inside those packages, so in the shipped app it is always empty and every lookup returned null (no splash control, no device name, and "this browser doesn't support push notifications" **on a phone**). It falls back to the bridge's own `Capacitor.nativePromise(plugin, method, opts)`, which reaches the same native class. Promise-style methods only — listeners would need `nativeCallback`. Every export is a no-op on the web. `isNative()`, `initNative()` (device model at boot + the splash backstop), `deviceLabelHeader()` (the `X-GB-Device` value), the LocalNotifications wrappers (`scheduleLocalNotifications` batch + `cancelPendingLocalNotifications` for the whole queue, `cancelLocalNotifications(ids)` for specific ones — the focus timer's end alarm must drop without taking every reminder with it), `applyNativeStatusBar(theme)` and `hideNativeSplash()`. **`SILENT_CHANNEL`** is the one channel this app makes itself (`importance: 2`, created on first use): Android takes a notification's sound from its channel, so silence is only reachable by posting to a channel that has none. |
+| `notes.js` | Notes screen — has its own doc (`docs/scripts/notes.js.md`). Listed here for one reason: `sanitize()` is the allow-list that makes storing rich text as HTML safe, and it runs on save AND on paint. |
+| `chime.js` | The five built-in notification sounds, synthesised from a table of oscillator notes (`SOUNDS`) — no audio files, so nothing to licence and nothing added to the bundle or the APK. `playChime(key)`, `CHIMES`, `DEFAULT_CHIME`. Plus the user's own file: `readCustomChime(file)` (gate: `audio/*` and `CUSTOM_MAX_BYTES` = 300 kB), `setCustomChime(url)`, `hasCustomChime()`; playback stops at 5 s. The **choice** lives in `ui_prefs.notifySound`, the **bytes** in CacheStorage key `gb.notifySoundFile` — per device, because a base64 blob in ui_prefs would ride along with every `/api/auth/me`. Picker is the Alerts tab. The same table is **also** the phone's notification sound: `scripts/gen-chimes.mjs` renders it to `gb_<key>.wav` in **both** `public/` and `../Growth-Buddy-Mobile/android/app/src/main/res/raw/`, so the in-app and lock-screen chimes can't drift. The underscore is load-bearing: a raw resource name is `[a-z0-9_]` only, and `gb-chime` resolves to nothing with no error. res/raw exists because an Android **channel's** sound can only be a raw resource, and we build the channels ourselves (the plugin's own are IMPORTANCE_DEFAULT, which rings without a banner). **Edit `SOUNDS` → re-run the generator.** The user's own upload stays in-app: it's a data URL in CacheStorage, and Android can only ring a file that shipped with the app. |
+| `toast.js` | Late-bound toast registry. Breaks the app.js ↔ screens import cycle: app.js calls `registerToast(impl)` at boot, screens `import { toast }`. |
 
 ---
 
@@ -174,12 +174,12 @@ checks off.
 
 ### Notable services (the ones without their own doc)
 
-- `user/SessionService` (204) — mints/validates opaque tokens; stores
+- `user/SessionService` — mints/validates opaque tokens; stores
   `HMAC-SHA256(token, serverSecret)` so a DB dump alone can't validate a stolen token. 60-day life.
 - **Every `@RequestBody` takes `@Valid`, and every field a bound.** `mentor` was the one package
   without either: an over-long thread title reached the insert and came back a 500 reading
   "Something went wrong". A bound belongs at the boundary, not at the column.
-- `mentor/OpenAIClient` (188) — minimal chat-completions client on the JDK `HttpClient`, no SDK.
+- `mentor/OpenAIClient` — minimal chat-completions client on the JDK `HttpClient`, no SDK.
   Per-user caps live in `common/AiRateLimitInterceptor`, and the client charges a call budget of its
   own and refuses once it is spent — both apply to every AI route (mentor, photo estimate, meal plan,
   receipt scan, purchase advice).
@@ -192,58 +192,58 @@ checks off.
   sends the whole rolling context. `isConfigured()` — token **and** URL — gates every AI feature.
   The gateway URL is account-specific and has no default in `application.yml`: set `AI_GATEWAY_URL`
   in `.env` and in Render, never in the repo.
-- `score/ScoreService` (78) — today's score = average completion rate across enabled features.
-- `reminder/ReminderService` (155) — recurrence expansion + scoped deletes; **mirrors the client-side
+- `score/ScoreService` — today's score = average completion rate across enabled features.
+- `reminder/ReminderService` — recurrence expansion + scoped deletes; **mirrors the client-side
   expansion in `scripts/calendar.js` — keep both in step.** `create` rejects an `until` before the
   start date (a reminder that could never fire), and stores a blank `sound` as null — a reminder
   carries its **own** chime key, and null means "whatever tone the user picked in Alerts".
-  `ReminderDeliveryScheduler` (222) polls and delivers near the user's local time — the in-app
+  `ReminderDeliveryScheduler` polls and delivers near the user's local time — the in-app
   bell always (it needs no setup, and `NotificationService.publish` pushes it down the websocket so
   an open app shows it immediately), plus WhatsApp + push for the users configured for them, dispatching a tick's batch across a 16-thread pool; The delivery window is a zone-resolved `Instant`, so a reminder inside a spring-forward gap fires late rather than never. `ReminderDispatchLog` prevents
-  double sends: the day's row is claimed ('sending') before anything goes out, a retry reuses a 'failed' row, and a 'sending' row a crash left counts as delivered (habit reminders do the same); `WhatsAppService` (161) = Meta WhatsApp Cloud API. Scheduled sends need
+  double sends: the day's row is claimed ('sending') before anything goes out, a retry reuses a 'failed' row, and a 'sending' row a crash left counts as delivered (habit reminders do the same); `WhatsAppService` = Meta WhatsApp Cloud API. Scheduled sends need
   `WHATSAPP_TEMPLATE` (an approved template, body = one `{{1}}`) — free-form text is only
   deliverable inside a user's 24h window.
-- `digest/DigestScheduler` (75) + `DigestService` (101) — progress digest near each user's preferred
+- `digest/DigestScheduler` + `DigestService` — progress digest near each user's preferred
   local hour, honouring their timezone. Reports the **last day that finished**, never the live
   score: a digest fires in the morning, by which point `TaskMidnightSweep` has cleared yesterday's
   ticked tasks and the habit check-ins belong to a new log date, so a live reading is a truthful 0
   about a day nobody has lived yet. `ScoreService.on(user, day)` / `.between(...)` rebuild a past
   day from `task_completion_history` plus the check-in log.
-- `push/PushService` (135) — Web Push (VAPID); inert until keys are set.
-- `mail/MailService` (93) — transactional email; **no-ops with a log line when
+- `push/PushService` — Web Push (VAPID); inert until keys are set.
+- `mail/MailService` — transactional email; **no-ops with a log line when
   `spring.mail.username` is empty** (this is why local OTP flows need `./run.sh`).
-- `quickadd/QuickAddService` (142) — free text → structured writes across features.
-- `note/NoteService` (119) — quick notes: soft delete, `""` clears a colour or cover where `null`
+- `quickadd/QuickAddService` — free text → structured writes across features.
+- `note/NoteService` — quick notes: soft delete, `""` clears a colour or cover where `null`
   means "leave it alone", 2 MB body cap (photos are data URLs in the body). The list, POST and
   PATCH answer with the body's photos **cut out** (`bodyTrimmed: true`) and a client-made `cover`
   thumbnail in their place; only `GET {id}` returns the whole note, and the editor must open from
   that or a save would write the photo-less copy back. The body is **HTML** from the editor on the Notes screen and is
   sanitised where it is rendered (`sanitize()` in `scripts/notes.js`), never in Java.
   `NoteServiceTest` covers the null-vs-empty branch and the trimmed list.
-- `notification/NotificationService` (140) + `WebSocketConfig` (123) — realtime channel
+- `notification/NotificationService` + `WebSocketConfig` — realtime channel
   (STOMP/SockJS; the frontend uses `@stomp/stompjs`). `clearAll` **deletes** rather than stamping
   readAt — the bell is nudges with a lifetime, not a ledger — and `sweepOldNotifications`
   (nightly) drops read rows after 30 days and anything after 90.
-- `mentorship/MentorshipService` (222), `circle/CircleService` (196) — invites and circles;
+- `mentorship/MentorshipService`, `circle/CircleService` — invites and circles;
   `CircleChallenge` is a time-boxed habit challenge, members ranked by check-ins completed.
   The two mentorship directions are INDEPENDENT — A can mentor B while B mentors A — so
   `relationship()` returns `mentorLink` / `menteeLink` (none|pending|active) per side and `revoke()`
   cancels only the side it was handed. The single `state()` word is a legacy summary; UI uses the
   two links. Covered by `MentorshipRelationshipTest`.
-- `config/DataSeeder` (152) — demo user + starter data, keyed on `growthbuddy.demo-user-id`.
-- `task/TaskMidnightSweep` (76) — soft-deletes each user's **done** tasks at their own local
+- `config/DataSeeder` — demo user + starter data, keyed on `growthbuddy.demo-user-id`.
+- `task/TaskMidnightSweep` — soft-deletes each user's **done** tasks at their own local
   midnight (hourly cron, hour-0-in-their-zone, same shape as `DigestScheduler`). Tasks have no day
   of their own, so yesterday's ticks used to sit in today's list and still count towards today's
   score (`ScoreService` counts live rows). Unfinished tasks carry forward — they're still to do.
   `task_history` is left alone, so the report and the "done 3×" count survive.
-- `config/DataCleanupJob` (100) — nightly purge of append-only tables never read again (hosting
+- `config/DataCleanupJob` — nightly purge of append-only tables never read again (hosting
   quota; includes `food_diet_checks` past 8 days and `food_photo_logs` past a user's newest 12), plus abandoned signups: `signup()` writes the users row BEFORE the OTP is checked, so a
   mistyped email leaves an account that can never sign in but still holds the unique email.
   Unverified + older than 7 days is deleted, children first (TiDB may not enforce FK cascade).
   The three people-lookup queries in `UserRepository` also require `emailVerified = true`, so a
   ghost is undiscoverable the moment it exists rather than only after the nightly sweep.
-- `user/ProgressService` (47), `wellness/WellnessService` (99), `water/WaterService` (87),
-  `task/TaskService` (132), `goal/GoalService` (151), `focus/FocusService` (81),
+- `user/ProgressService`, `wellness/WellnessService`, `water/WaterService`,
+  `task/TaskService`, `goal/GoalService`, `focus/FocusService`,
   `money/MoneyService` (document part, migration, ledger writes, purchase advisor). `MoneyLedger` (JdbcTemplate:
   accounts + balances computed, never stored; batched upserts keyed on the client's id). `MoneyDaySummary`
   (a tapped day: facts and a paragraph written from them, no AI and no cache on purpose — the AI only
@@ -268,7 +268,7 @@ checks off.
 | File | What |
 |---|---|
 | `index.html` | single-page shell; module entry `scripts/app.js` |
-| `styles/premium.css` | the **premium skin** (621). Every rule scoped to `html[data-premium='on']` and loaded last, so it overrides tokens and is fully inert when off. Lit canvas on `.gb-app`, glass cards, floating pill nav (`<1024px` only — it's a sidebar above that), circular icon buttons, pill buttons, size-specific tracking. §9 is the signature: the **live seedling** in the header — the brand mark itself, nodding when you actually finish a task or habit (`buddyReact()` from `toggleTask`/`toggleHabit`) and shaking its head on errors. Shares its refusal rhythm with `@keyframes gb-shake`, the Face-ID-style "no" any refusing surface does (`shakeRefusal()` — sign-in card, modal sheets). §10 gives toasts an entrance they never had (they used to snap in). Toggle: Settings → Display → Look (the header gem button is gone — a skin switch isn't a daily action). |
+| `styles/premium.css` | the **premium skin**. Every rule scoped to `html[data-premium='on']` and loaded last, so it overrides tokens and is fully inert when off. Lit canvas on `.gb-app`, glass cards, floating pill nav (`<1024px` only — it's a sidebar above that), circular icon buttons, pill buttons, size-specific tracking. §9 is the signature: the **live seedling** in the header — the brand mark itself, nodding when you actually finish a task or habit (`buddyReact()` from `toggleTask`/`toggleHabit`) and shaking its head on errors. Shares its refusal rhythm with `@keyframes gb-shake`, the Face-ID-style "no" any refusing surface does (`shakeRefusal()` — sign-in card, modal sheets). §10 gives toasts an entrance they never had (they used to snap in). Toggle: Settings → Display → Look (the header gem button is gone — a skin switch isn't a daily action). |
 | `vite.config.js` | dev server :5173, proxies `/api` + `/ws` to :8080 **rewriting the Origin header** (the backend's CORS allow-list excludes :5173); `vite-plugin-pwa` for manifest, offline precache, NetworkFirst on API GETs, and it pulls in `public/push-handlers.js`. Target override: `API_PROXY_TARGET`. Also `define`s `__GB_BUILD__` (a hand-bumped int, starts at 0) — `app.js` logs it and parks it on `window.GB_BUILD`, so the console tells you which build a device is actually running. |
 | `run.sh` | **start the backend with this** — loads `.env`, frees port 8080 |
 | `DEPLOYING.md` | how to ship it. The two variables that fail *silently* are `SPRING_PROFILES_ACTIVE=prod` and `VITE_API_BASE` — read it before any deploy |
@@ -290,8 +290,7 @@ checks off.
 1. **UUIDs are `char(36)` text** in MySQL. `preferred_uuid_jdbc_type: CHAR` is what makes that work.
 2. **Lowercase Java enum constants are DB values** (`Cadence`, `HabitDomain`, `MessageRole`,
    `ReminderTag`, `RepeatFreq`, `NotificationKind`). `Priority` is `Low/Medium/High` on purpose.
-3. **`./run.sh`**, not bare Maven — otherwise `.env` is unloaded and OTP email silently no-ops.
-3b. **Never call `LocalDate.now()` for anything a user sees dated.** "Today" belongs to the
+3. **Never call `LocalDate.now()` for anything a user sees dated.** "Today" belongs to the
    user, not the server: resolve it through `UserClock.today(userId)` (their
    `users.timezone`, the same field the schedulers use) and resolve it **once** per
    operation, then pass it down — a loop costs a lookup each time and a request
@@ -302,6 +301,5 @@ checks off.
 5. **Date keys are `YYYY-MM-DD` strings** on the frontend; ranges are string comparisons.
 6. **Every AI feature must degrade** when `OpenAIClient.isConfigured()` is false — there's a
    heuristic or fallback path for each one. Don't add an AI call without one.
-7. `ddl-auto: update` in dev hides missing DDL. New entity → also add the table to
-   `tableCreationQueries.sql`.
-8. `grep 'ponytail:'` for deliberate simplifications and their stated upgrade path.
+
+(`./run.sh`, schema/DDL, `ponytail:` and the rest of the working rules live in CLAUDE.md, which is always loaded.)

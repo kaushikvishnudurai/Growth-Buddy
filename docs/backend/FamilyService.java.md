@@ -6,26 +6,26 @@ the **AI meal planner** (Claude via the Cloudflare gateway, with a deterministic
 ## Public API
 
 ### Membership
-| Method | Line | Notes |
-|---|---|---|
-| `getFamily(userId)` | 119 | read-only snapshot |
-| `addMember(userId, req)` | 128 | member may be **unmapped** (no account) |
-| `updateMember` / `updateProfile` | 150 / 171 | profile = the food/nutrition profile |
-| `removeMember` | 181 | |
-| `searchUsers(userId, q)` | 198 | to link an existing account |
-| `linkMember(userId, req)` | 225 | sends an invite |
-| `listInvites` / `acceptInvite` / `declineInvite` | 290 / 313 / 325 | |
-| `leaveFamily(userId)` | 341 | |
+| Method | Notes |
+|---|---|
+| `getFamily(userId)` | read-only snapshot |
+| `addMember(userId, req)` | member may be **unmapped** (no account) |
+| `updateMember` / `updateProfile` | profile = the food/nutrition profile |
+| `removeMember` | |
+| `searchUsers(userId, q)` | to link an existing account |
+| `linkMember(userId, req)` | sends an invite |
+| `listInvites` / `acceptInvite` / `declineInvite` | |
+| `leaveFamily(userId)` | |
 
 ### Meal planning
-| Method | Line | Notes |
-|---|---|---|
-| `scanGroceries(req)` | 373 | photo/text → ingredient list |
-| `generateMealPlan(userId, req)` | 446 | the big one (~130 lines) |
-| `getLatestPlan(userId)` | 427 | **latest row per family wins** |
-| `generateMultiDay` / `getLatestMultiDay` | 630 / 688 | weekly/monthly, optional occasion theme |
-| `markPlanCooked(userId, planId)` | 703 | feeds `bumpDishes` preference learning |
-| `saveFavourite` / `listFavourites` / `deleteFavourite` | 574 / 607 / 617 | |
+| Method | Notes |
+|---|---|
+| `scanGroceries(req)` | photo/text → ingredient list |
+| `generateMealPlan(userId, req)` | the big one (~130 lines) |
+| `getLatestPlan(userId)` | **latest row per family wins** |
+| `generateMultiDay` / `getLatestMultiDay` | weekly/monthly, optional occasion theme |
+| `markPlanCooked(userId, planId)` | feeds `bumpDishes` preference learning |
+| `saveFavourite` / `listFavourites` / `deleteFavourite` | |
 
 ### Pantry & shopping
 `listPantry` (714), `addPantry` (724), plus `/pantry/scan`, `/pantry/{id}` PUT+DELETE;

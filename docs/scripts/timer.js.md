@@ -1,11 +1,11 @@
-# scripts/timer.js — Focus screen (733 lines)
+# scripts/timer.js — Focus screen
 
-Exports `ScreenFocus(props)` (~727). Pomodoro timer + ambient sound **synthesised live with the Web
+Exports `ScreenFocus(props)`. Pomodoro timer + ambient sound **synthesised live with the Web
 Audio API** — no audio files, so zero download weight and no licensing.
 
 ## Timer
 
-Module-scope state `T` (~15): `{mode, durationSec, remainingSec, running, intervalId, refs}`.
+Module-scope state `T`: `{mode, durationSec, remainingSec, running, intervalId, refs}`.
 Module scope on purpose — a running session survives navigating away from the Focus tab. `T.refs`
 holds live DOM refs, rebuilt on every mount, so the timer **ticks in place** without re-rendering
 the screen every second.
@@ -28,29 +28,29 @@ frozen. `pause`, `reset` and `setMode` all `cancelEndAlarm()`. That cancel is
 `cancelPendingLocalNotifications()` — the latter clears the whole queue and would
 take every reminder with it.
 
-| Fn | Line |
-|---|---|
-| `setMode(mode, mins)` | 275 |
-| `start` / `pause` / `reset` | 288 / 311 / 322 — `start` on a finished clock (0s left) resets to a full session first; it used to finish on the next tick and record a phantom session |
-| `paintRing` / `buildRing(size, stroke)` | 241 / 348 |
-| `chime()` | 328 (synthesised, not a file) |
-| `openCustomMinutesModal` | 382 |
-| `TimerCard` | 459 |
-| `fmt(s)` / `pad(n)` | 27 / 24 |
+| Fn |
+|---|
+| `setMode(mode, mins)` |
+| `start` / `pause` / `reset` |
+| `paintRing` / `buildRing(size, stroke)` |
+| `chime()` |
+| `openCustomMinutesModal` |
+| `TimerCard` |
+| `fmt(s)` / `pad(n)` |
 
-## Sound engine (~31–240)
+## Sound engine
 
 `SOUNDSCAPES` (34) lists the presets. Graph is built per soundscape and torn down on stop:
 
-| Fn | Line | What |
-|---|---|---|
-| `ensureCtx` | 73 | lazy `AudioContext` (must be created on a user gesture) |
-| `noiseBuffer(ctx, brown)` | 90 | white/brown noise buffer |
-| `attachLfo(ctx, freq, min, max, param)` | 108 | slow modulation for movement |
-| `buildGraph(key)` | 122 | per-soundscape node graph |
-| `stopGraph` | 179 | full teardown |
-| `playSound` / `stopSound` / `setVolume` / `setSoundEnabled` / `setSoundscape` | 196–226 | |
-| `paintSound` / `SoundCard` | 585 / 604 | UI |
+| Fn | What |
+|---|---|
+| `ensureCtx` | lazy `AudioContext` (must be created on a user gesture) |
+| `noiseBuffer(ctx, brown)` | white/brown noise buffer |
+| `attachLfo(ctx, freq, min, max, param)` | slow modulation for movement |
+| `buildGraph(key)` | per-soundscape node graph |
+| `stopGraph` | full teardown |
+| `playSound` / `stopSound` / `setVolume` / `setSoundEnabled` / `setSoundscape` | |
+| `paintSound` / `SoundCard` | UI |
 
 ## Stats
 
@@ -59,4 +59,4 @@ the newest answer is kept in `Focus.last` (cleared when `statsOwner` changes) so
 numbers, not dashes;
 completed sessions POST to `/api/focus/sessions` (`FocusSession` rows are retention-capped per user).
 
-Styles: `app.css` §"Focus screen" (~1033) and §"Focus stats card" (~3859).
+Styles: `app.css` §"Focus screen" and §"Focus stats card".

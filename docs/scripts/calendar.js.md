@@ -1,6 +1,6 @@
-# scripts/calendar.js — Calendar screen (1022 lines)
+# scripts/calendar.js — Calendar screen
 
-Exports (~1016): `ScreenCalendar`, `CalendarToolbar`, `MonthGrid`, `ReminderPanel`,
+Exports: `ScreenCalendar`, `CalendarToolbar`, `MonthGrid`, `ReminderPanel`,
 `resetCalendarForm` (confirm the exact list in the export block).
 
 Shows reminders (with color tags + recurrence), tasks due, completed tasks, goal action dates,
@@ -68,17 +68,17 @@ Day-key helpers: `pad`, `keyOf(y,m,d)`, `parseKey`, `todayKey`, `isFutureKey`, `
 
 ## Components
 
-| Fn | Line | Notes |
-|---|---|---|
-| `MonthGrid` | 854 | the month cells + tag dots. Always 42 cells, so the card never changes height between months. Arrow keys move focus between days (`moveFocus`, focus only; Enter selects) |
-| `TagPicker` | 278 | color chips |
-| `RepeatPicker` | 313 | segmented recurrence |
-| `openDeleteDialog` | 345 | **scoped delete** for recurring reminders: this occurrence vs the whole series → app.js `deleteReminder(scope, id, occKey)` |
-| `ReminderRow` | 434 | one reminder; shows a WhatsApp marker when enabled |
-| form cache | 512–535 | `resetCalendarForm`, `buildForm` — the add-reminder form persists across repaints on purpose |
-| `ReminderPanel` | 615 | selected-day list + add form |
-| `ScreenCalendar` | 884 | assembles grid + panel |
-| `CalendarToolbar` | 956 | month nav + counts |
+| Fn | Notes |
+|---|---|
+| `MonthGrid` | the month cells + tag dots. Always 42 cells, so the card never changes height between months. Arrow keys move focus between days (`moveFocus`, focus only; Enter selects) |
+| `TagPicker` | color chips |
+| `RepeatPicker` | segmented recurrence |
+| `openDeleteDialog` | **scoped delete** for recurring reminders: this occurrence vs the whole series → app.js `deleteReminder(scope, id, occKey)` |
+| `ReminderRow` | one reminder; shows a WhatsApp marker when enabled |
+| form cache | `resetCalendarForm`, `buildForm` — the add-reminder form persists across repaints on purpose |
+| `ReminderPanel` | selected-day list + add form |
+| `ScreenCalendar` | assembles grid + panel |
+| `CalendarToolbar` | month nav + counts |
 
 **Time blocks / free-busy.** A reminder with both `time` and `endTime` is a busy block
 ("Meeting 15:00 to 16:00"). `freeBusy(list, key, routine)` paints the day minute by minute (1440
@@ -105,4 +105,4 @@ dialog always sends the start), so a block can go back to being a plain reminder
 keeps the stored start.
 
 Backend: `/api/reminders` (CRUD, `occurrences`, `day/{date}`).
-Styles: `app.css` §"Calendar screen" (~3010) and §"Delete-scope modal" (~3797).
+Styles: `app.css` §"Calendar screen" and §"Delete-scope modal".

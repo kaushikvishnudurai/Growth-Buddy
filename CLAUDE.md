@@ -9,35 +9,36 @@ Docs mirror the source tree: **the doc for `X` is `docs/X.md`.** They exist only
 enough that reading the code costs real tokens (≥300 lines). Everything else is cheaper to just
 open — don't go looking for a doc that isn't in this list.
 
-| Need to work on | Read first | Instead of |
-|---|---|---|
-| app shell, state, routing, any API call, settings, auth views | `docs/scripts/app.js.md` | 6799 lines |
-| Money Buddy | `docs/scripts/money.js.md` | 5001 |
-| Home screen / widgets / mini calendar | `docs/scripts/dashboard.js.md` | 1712 |
-| Family tab, meal planner | `docs/scripts/family.js.md` | 2032 |
-| Growth Circle, mentorship | `docs/scripts/circle.js.md` | 1210 |
-| Calendar, reminders, recurrence | `docs/scripts/calendar.js.md` | 1022 |
-| Focus timer, ambient sound | `docs/scripts/timer.js.md` | 733 |
-| UI primitives (`h`, `Card`, `Icon`, nav) | `docs/scripts/gb-kit.js.md` | 701 |
-| Goals | `docs/scripts/goals.js.md` | 690 |
-| Notes, the rich-text editor, photos in notes | `docs/scripts/notes.js.md` | 1252 |
-| Report screen, charts | `docs/scripts/report.js.md` | 528 |
-| Insights (Report's pattern finder) | `docs/scripts/insights.js.md` | 951 |
-| any styling | `docs/styles/app.css.md` | 7190 |
-| Money styling | `docs/styles/money.css.md` | 1615 |
-| colors, type, theming | `docs/styles/tokens.css.md` | 359 |
-| the Home mini calendar's CSS | `docs/styles/mini-calendar.css.md` | 375 |
-| family/meal-plan backend | `docs/backend/FamilyService.java.md` | 1492 |
-| auth, sessions, user settings | `docs/backend/AuthService.java.md` | 754 |
-| habits, streaks, freeze tokens | `docs/backend/HabitService.java.md` | 546 |
-| food logging, photo estimates | `docs/backend/FoodService.java.md` | 481 |
-| the DB schema | `docs/tableCreationQueries.sql.md` | 801 |
+| Need to work on | Read first |
+|---|---|
+| app shell, state, routing, any API call, settings, auth views | `docs/scripts/app.js.md` |
+| Money Buddy | `docs/scripts/money.js.md` |
+| Home screen / widgets / mini calendar | `docs/scripts/dashboard.js.md` |
+| Family tab, meal planner | `docs/scripts/family.js.md` |
+| Growth Circle, mentorship | `docs/scripts/circle.js.md` |
+| Calendar, reminders, recurrence | `docs/scripts/calendar.js.md` |
+| Focus timer, ambient sound | `docs/scripts/timer.js.md` |
+| UI primitives (`h`, `Card`, `Icon`, nav) | `docs/scripts/gb-kit.js.md` |
+| Goals | `docs/scripts/goals.js.md` |
+| Notes, the rich-text editor, photos in notes | `docs/scripts/notes.js.md` |
+| Report screen, charts | `docs/scripts/report.js.md` |
+| Insights (Report's pattern finder) | `docs/scripts/insights.js.md` |
+| any styling | `docs/styles/app.css.md` |
+| Money styling | `docs/styles/money.css.md` |
+| colors, type, theming | `docs/styles/tokens.css.md` |
+| the Home mini calendar's CSS | `docs/styles/mini-calendar.css.md` |
+| family/meal-plan backend | `docs/backend/FamilyService.java.md` |
+| auth, sessions, user settings | `docs/backend/AuthService.java.md` |
+| habits, streaks, freeze tokens | `docs/backend/HabitService.java.md` |
+| food logging, photo estimates | `docs/backend/FoodService.java.md` |
+| the DB schema | `docs/tableCreationQueries.sql.md` |
 
 **[CODEMAP.md](CODEMAP.md)** covers everything else in one pass: every small frontend module, every
 backend package with its full endpoint list, config files, and the repo-wide traps. Read it when you
 don't yet know *which* file you need.
 
-Docs can drift. Locating something → trust them. **Changing something → read the real code**, and
+Docs name symbols, never line numbers: `grep -n` the name, then read only that range. Line hints
+were tried and drifted by up to 1,600 lines. Docs can drift. Locating something → trust them. **Changing something → read the real code**, and
 fix the doc line if it was wrong. A doc you touch and don't update is worse than no doc.
 
 ## Working here
@@ -68,13 +69,8 @@ fix the doc line if it was wrong. A doc you touch and don't update is worse than
   someone's phone. Deriving it from git was tried and reverted: the prod image has no `.git`
   and no git binary, so every build reported 0.
 - `grep 'ponytail:'` for deliberate simplifications and their upgrade paths.
-- Edited `SOUNDS` in `chime.js` → re-run **`node scripts/gen-chimes.mjs`**. The same table is the
-  phone's notification sound, rendered to `gb_<key>.wav` in **both** `public/` and
-  `../Growth-Buddy-Mobile/android/app/src/main/res/raw/`; the in-app chime and the lock-screen one
-  drift apart silently otherwise. The underscore is load-bearing — a raw resource name is
-  `[a-z0-9_]` only, and `gb-chime` resolves to nothing with no error. res/raw exists because an
-  Android **channel's** sound can only be a raw resource, and we build the channels ourselves:
-  the plugin's own are IMPORTANCE_DEFAULT, which rings without ever showing a banner.
+- Edited `SOUNDS` in `chime.js` → re-run **`node scripts/gen-chimes.mjs`**; it writes `gb_<key>.wav`
+  to `public/` and the mobile `res/raw/` (underscore is load-bearing; why: CODEMAP `chime.js`).
 - **New column on an existing `@Entity` → declare it in that table's `CREATE TABLE` in
   `tableCreationQueries.sql` AND append an `ALTER` to `migrations.sql`.** Two files, two jobs:
   the first builds a new database, the second is the only thing that can change one that already

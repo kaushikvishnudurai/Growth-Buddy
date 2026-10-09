@@ -6,25 +6,25 @@ user-settings writes. Backs `/api/auth` (`AuthController`). Session minting is *
 
 ## Public API
 
-| Method | Line | Notes |
-|---|---|---|
-| `signup(req)` | 113 | creates user + `PasswordCredential` (bcrypt) + emails an OTP |
-| `login(req, http)` | 142 | takes `HttpServletRequest` for IP/UA on the session row |
-| `verifyEmail(req, http)` | 168 | consumes the OTP, returns a session |
-| `resendVerification(req)` | 192 | |
-| `forgotPassword(req)` | 202 | always succeeds outwardly (no account enumeration) |
-| `resetPassword(req, http)` | 210 | |
-| `changePassword(userId, req, http)` | 252 | |
-| `deleteAccount(userId, password)` | 273 | password-confirmed destructive path |
-| `updateWhatsApp(userId, req)` | 340 | |
-| `sendWhatsAppOtp` / `verifyWhatsAppOtp` | 360 / 388 | ownership proof before the number is saved |
-| `updateProfile(userId, req)` | 418 | |
-| `updateFeatures(userId, Map<String,Boolean>)` | 454 | per-feature on/off toggles |
-| `updateUiPrefs(userId, Map<String,Object>)` | 472 | merge, not replace (theme, language, onboarding, seen achievements) |
-| `updateDigest(userId, req)` | 490 | cadence `off`\|`daily`\|`weekly` + send hour |
-| `updateHomeLayout(userId, List<HomeLayoutItem>)` | 509 | |
-| `updateNavLayout(userId, List<NavLayoutItem>)` | 527 | |
-| `nutritionSuggestion(userId, form)` | 553 | read-only, LLM-assisted |
+| Method | Notes |
+|---|---|
+| `signup(req)` | creates user + `PasswordCredential` (bcrypt) + emails an OTP |
+| `login(req, http)` | takes `HttpServletRequest` for IP/UA on the session row |
+| `verifyEmail(req, http)` | consumes the OTP, returns a session |
+| `resendVerification(req)` | |
+| `forgotPassword(req)` | always succeeds outwardly (no account enumeration) |
+| `resetPassword(req, http)` | |
+| `changePassword(userId, req, http)` | |
+| `deleteAccount(userId, password)` | password-confirmed destructive path |
+| `updateWhatsApp(userId, req)` | |
+| `sendWhatsAppOtp` / `verifyWhatsAppOtp` | ownership proof before the number is saved |
+| `updateProfile(userId, req)` | |
+| `updateFeatures(userId, Map<String,Boolean>)` | per-feature on/off toggles |
+| `updateUiPrefs(userId, Map<String,Object>)` | merge, not replace (theme, language, onboarding, seen achievements) |
+| `updateDigest(userId, req)` | cadence `off`\|`daily`\|`weekly` + send hour |
+| `updateHomeLayout(userId, List<HomeLayoutItem>)` | |
+| `updateNavLayout(userId, List<NavLayoutItem>)` | |
+| `nutritionSuggestion(userId, form)` | read-only, LLM-assisted |
 
 All the mutating methods are `@Transactional` and return `AuthUserResponse` (the shape the frontend
 stores as its user object) — so a settings write refreshes the client in one round trip.
