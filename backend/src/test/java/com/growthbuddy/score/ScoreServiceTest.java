@@ -36,8 +36,8 @@ class ScoreServiceTest {
     }
 
     private void stub(long taskTotal, long taskDone, int habitDone, int habitTotal) {
-        when(tasks.countByUserIdAndDeletedAtIsNull(USER)).thenReturn(taskTotal);
-        when(tasks.countByUserIdAndDoneTrueAndDeletedAtIsNull(USER)).thenReturn(taskDone);
+        when(tasks.countByUserIdAndPausedFalseAndDeletedAtIsNull(USER)).thenReturn(taskTotal);
+        when(tasks.countByUserIdAndDoneTrueAndPausedFalseAndDeletedAtIsNull(USER)).thenReturn(taskDone);
         when(habits.todayCounts(USER)).thenReturn(new HabitService.TodayCounts(habitDone, habitTotal));
     }
 
@@ -88,8 +88,8 @@ class ScoreServiceTest {
         LocalDate day = LocalDate.of(2026, 9, 17);
         when(clock.zoneOf(USER)).thenReturn(ZoneOffset.UTC);
         when(tasks.countCompletedBetween(eq(USER), any(), any())).thenReturn(2L);
-        when(tasks.countByUserIdAndDeletedAtIsNull(USER)).thenReturn(2L);
-        when(tasks.countByUserIdAndDoneTrueAndDeletedAtIsNull(USER)).thenReturn(0L);
+        when(tasks.countByUserIdAndPausedFalseAndDeletedAtIsNull(USER)).thenReturn(2L);
+        when(tasks.countByUserIdAndDoneTrueAndPausedFalseAndDeletedAtIsNull(USER)).thenReturn(0L);
         when(habits.countsOn(USER, day)).thenReturn(new HabitService.TodayCounts(2, 2));
 
         ScoreService.ScoreResponse r = service().on(USER, day);
@@ -105,8 +105,8 @@ class ScoreServiceTest {
         LocalDate to = LocalDate.of(2026, 9, 17);
         when(clock.zoneOf(USER)).thenReturn(ZoneOffset.UTC);
         when(tasks.countCompletedBetween(eq(USER), any(), any())).thenReturn(1L);
-        when(tasks.countByUserIdAndDeletedAtIsNull(USER)).thenReturn(0L);
-        when(tasks.countByUserIdAndDoneTrueAndDeletedAtIsNull(USER)).thenReturn(0L);
+        when(tasks.countByUserIdAndPausedFalseAndDeletedAtIsNull(USER)).thenReturn(0L);
+        when(tasks.countByUserIdAndDoneTrueAndPausedFalseAndDeletedAtIsNull(USER)).thenReturn(0L);
         when(habits.countsOn(eq(USER), any())).thenReturn(new HabitService.TodayCounts(0, 0));
 
         ScoreService.ScoreResponse r = service().between(USER, to.minusDays(6), to);

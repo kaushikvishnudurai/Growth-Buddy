@@ -10121,19 +10121,6 @@ h2[tabindex='-1']:focus {
   }
 }
 
-/* ---- Edit task: snooze row ---- */
-.gb-task-snooze {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 14px;
-}
-.gb-task-snooze .gb-field-label {
-  flex-basis: 100%;
-  margin: 0;
-}
-
 /* ---- Food loader ----
    The full-screen wait while a food save runs its calorie estimate. Above the
    dialog it was opened from (100) and below toasts (160), so a failure still

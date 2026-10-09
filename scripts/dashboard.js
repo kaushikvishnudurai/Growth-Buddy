@@ -151,7 +151,9 @@ function allGoals(sections) {
   return (sections || []).flatMap((section) => section.goals || []);
 }
 
-function ScoreCard({ score, tasks, habits }) {
+function ScoreCard({ score, tasks: allTasks, habits }) {
+  // Paused tasks are out of the score, so out of its "x/y tasks" line too.
+  const tasks = allTasks.filter((t) => !t.paused);
   const doneTasks = tasks.filter((t) => t.done).length;
   const doneHabits = habits.filter((h) => h.doneToday).length;
   const topStreak = habits.reduce((m, h) => Math.max(m, h.streak || 0), 0);

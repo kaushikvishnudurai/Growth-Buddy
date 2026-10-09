@@ -15,11 +15,12 @@ public interface TaskRepository extends JpaRepository<Task, UUID> {
 
     Optional<Task> findByIdAndUserIdAndDeletedAtIsNull(UUID id, UUID userId);
 
-    long countByUserIdAndDeletedAtIsNull(UUID userId);
+    /** Paused tasks are left out of both score counts: a paused task scores as no task. */
+    long countByUserIdAndPausedFalseAndDeletedAtIsNull(UUID userId);
 
     List<Task> findByUserIdAndDoneAtAfter(UUID userId, Instant after);
 
-    long countByUserIdAndDoneTrueAndDeletedAtIsNull(UUID userId);
+    long countByUserIdAndDoneTrueAndPausedFalseAndDeletedAtIsNull(UUID userId);
 
     /** Ids of everyone currently holding a ticked-off task. Drives the midnight sweep. */
     @Query("select distinct t.userId from Task t where t.done = true and t.deletedAt is null")

@@ -706,7 +706,9 @@ function ScreenReport({
   const hb = habits || [];
   const flatGoals = (goals || []).flatMap((s) => s.goals || []);
 
-  const tasksDone = t.filter((x) => x.done).length;
+  // Paused tasks are out of the score, so out of the Tasks tile beside it too.
+  const scored = t.filter((x) => !x.paused);
+  const tasksDone = scored.filter((x) => x.done).length;
   const habitsDone = hb.filter((x) => x.doneToday).length;
   const topStreak = hb.reduce((m, x) => Math.max(m, x.streak || 0), 0);
   const goalsDone = flatGoals.filter((g) => g.completed).length;
@@ -728,7 +730,7 @@ function ScreenReport({
         className: 'gb-report-grid',
         children: [
           statTile('Score', score + '%', null, 'var(--brand)'),
-          statTile('Tasks', tasksDone + '/' + t.length, 'done today'),
+          statTile('Tasks', tasksDone + '/' + scored.length, 'done today'),
           statTile('Habits', habitsDone + '/' + hb.length, 'done today'),
         ],
       })

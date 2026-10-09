@@ -39,8 +39,8 @@ public class ScoreService {
 
     @Transactional(readOnly = true)
     public ScoreResponse today(UUID userId) {
-        long taskTotal = tasks.countByUserIdAndDeletedAtIsNull(userId);
-        long taskDone = tasks.countByUserIdAndDoneTrueAndDeletedAtIsNull(userId);
+        long taskTotal = tasks.countByUserIdAndPausedFalseAndDeletedAtIsNull(userId);
+        long taskDone = tasks.countByUserIdAndDoneTrueAndPausedFalseAndDeletedAtIsNull(userId);
         HabitService.TodayCounts hc = habits.todayCounts(userId);
         return build(clock.today(userId), taskDone, taskTotal, hc.done(), hc.total());
     }
@@ -63,8 +63,8 @@ public class ScoreService {
         long done = tasks.countCompletedBetween(userId,
                 day.atStartOfDay(zone).toInstant(),
                 day.plusDays(1).atStartOfDay(zone).toInstant());
-        long open = tasks.countByUserIdAndDeletedAtIsNull(userId)
-                - tasks.countByUserIdAndDoneTrueAndDeletedAtIsNull(userId);
+        long open = tasks.countByUserIdAndPausedFalseAndDeletedAtIsNull(userId)
+                - tasks.countByUserIdAndDoneTrueAndPausedFalseAndDeletedAtIsNull(userId);
         HabitService.TodayCounts hc = habits.countsOn(userId, day);
         return build(day, done, done + open, hc.done(), hc.total());
     }

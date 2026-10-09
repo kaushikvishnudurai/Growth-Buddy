@@ -419,8 +419,10 @@ function score() {
   }
   let sum = 0,
     parts = 0;
-  if (state.tasks.length) {
-    sum += state.tasks.filter((t) => t.done).length / state.tasks.length;
+  // Paused tasks count as no task, as on the server (ScoreService).
+  const tasks = state.tasks.filter((t) => !t.paused);
+  if (tasks.length) {
+    sum += tasks.filter((t) => t.done).length / tasks.length;
     parts++;
   }
   if (state.habits.length) {
@@ -2395,7 +2397,7 @@ async function updateTask(id, body) {
   refreshScoreLater();
 }
 
-/* A one-field change to a task painted before it is sent (pause, snooze): the
+/* A one-field change to a task painted before it is sent (pause): the
    button used to sit there for the round trip. A second change to the same task
    while one is in flight is dropped; a failure puts back just that task. */
 async function patchTaskNow(id, patch, errorMessage) {
@@ -6888,55 +6890,12 @@ function openTaskTemplates() {
   paint();
 }
 
-/* Same time of day, `days` from today; 09:00 for a task with no time. Moving
-   the date later bumps the task's pushCount server-side, like any reschedule. */
-function snoozedDueAt(dueAt, days) {
-  const from = dueAt ? new Date(dueAt) : null;
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  d.setHours(from ? from.getHours() : 9, from ? from.getMinutes() : 0, 0, 0);
-  return d.toISOString();
-}
-
 function openEditTask(task) {
   const form = taskForm(task);
-  const snooze = (days, label) =>
-    h(
-      'button',
-      {
-        type: 'button',
-        class: 'gb-btn gb-btn--soft gb-btn--compact',
-        // Closes at once and moves the task now; patchTaskNow puts it back and
-        // says so if the server refuses.
-        onclick: () => {
-          close();
-          patchTaskNow(
-            task.id,
-            { dueAt: snoozedDueAt(task.dueAt, days) },
-            'Could not snooze the task.'
-          ).then((ok) => ok && toastSuccess('Snoozed to ' + label.toLowerCase() + '.'));
-        },
-      },
-      Icon('clock', { size: 14, sw: 2.4 }),
-      label
-    );
-  const close = openModal({
+  openModal({
     title: 'Edit task',
     sub: task.title,
-    body: task.done
-      ? form.node
-      : h(
-          'div',
-          null,
-          form.node,
-          h(
-            'div',
-            { class: 'gb-task-snooze' },
-            h('span', { class: 'gb-field-label' }, 'Snooze'),
-            snooze(1, 'Tomorrow'),
-            snooze(7, 'Next week')
-          )
-        ),
+    body: form.node,
     primary: 'Save changes',
     onPrimary: () => updateTask(task.id, form.read()),
     danger: {
