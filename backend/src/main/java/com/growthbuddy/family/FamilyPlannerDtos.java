@@ -29,6 +29,16 @@ interface FamilyShoppingItemRepository extends JpaRepository<FamilyShoppingItem,
     List<FamilyShoppingItem> findByFamilyIdOrderByCheckedAscCreatedAtDesc(UUID familyId);
 }
 
+interface FamilyChoreRepository extends JpaRepository<FamilyChore, UUID> {
+    List<FamilyChore> findByFamilyIdOrderByCreatedAtAsc(UUID familyId);
+}
+
+interface FamilyRecipeRepository extends JpaRepository<FamilyRecipe, UUID> {
+    List<FamilyRecipe> findByFamilyIdOrderByDishNameAsc(UUID familyId);
+
+    Optional<FamilyRecipe> findByFamilyIdAndDishKey(UUID familyId, String dishKey);
+}
+
 interface FamilyDishPreferenceRepository extends JpaRepository<FamilyDishPreference, UUID> {
     Optional<FamilyDishPreference> findByFamilyIdAndDishName(UUID familyId, String dishName);
 
@@ -86,7 +96,8 @@ record PantryItemRequest(
         @Size(max = 32) String category,
         @Size(max = 60) String quantity,
         LocalDate expiryDate,
-        Boolean leftover) {
+        Boolean leftover,
+        Boolean low) { // null = leave as is (an edit that doesn't send it)
 }
 
 record PantryScanRequest(
@@ -118,6 +129,7 @@ record PantryItemResponse(
         boolean expiringSoon,
         boolean expired,
         boolean leftover,
+        boolean low,
         Instant createdAt) {
 }
 
@@ -146,12 +158,80 @@ record ShoppingItemResponse(
         Instant createdAt) {
 }
 
+/**
+ * {@code added} / {@code message} are filled only by Build-from-plan: how many
+ * lines it added, and a sentence when that was none (everything already on the
+ * list or in the pantry) — it used to return the list unchanged and say nothing.
+ */
 record ShoppingListResponse(
         List<ShoppingItemResponse> items,
-        int totalEstimatedCost) {
+        int totalEstimatedCost,
+        Integer added,
+        String message) {
+
+    ShoppingListResponse(List<ShoppingItemResponse> items, int totalEstimatedCost) {
+        this(items, totalEstimatedCost, null, null);
+    }
+}
+
+/** Absent body / null = flip (the old behaviour); a value = set it, so a retried tap can't undo itself. */
+record ToggleShoppingRequest(Boolean checked) {
 }
 
 record GenerateShoppingRequest(
         UUID planId, // optional: base the list on a specific plan; else latest
         Boolean estimateCost) {
+}
+
+// --- Chores ---
+
+record ChoreRequest(
+        @NotBlank @Size(max = 120) String title,
+        UUID assigneeMemberId, // null = anyone
+        LocalDate dueDate,
+        String repeat) { // none | daily | weekly
+}
+
+/** Absent body / null = flip; a value = set it (as the shopping tick). */
+record ToggleChoreRequest(Boolean done) {
+}
+
+record ChoreResponse(
+        UUID id,
+        String title,
+        UUID assigneeMemberId,
+        String assigneeName,
+        LocalDate dueDate,
+        String repeat,
+        boolean done,
+        Instant doneAt,
+        Instant createdAt) {
+}
+
+// --- Cook per meal ---
+
+/** {@code memberId} null clears the cook. {@code day} (1-based) only for a multi-day plan. */
+record AssignCookRequest(
+        @NotBlank String meal,
+        UUID memberId,
+        Integer day) {
+}
+
+// --- Recipes ---
+
+/** Ingredients one per line ("Toor dal: 200 g"); ingredients + steps together at most 4000 chars. */
+record RecipeRequest(
+        @NotBlank @Size(max = 160) String dish,
+        @Size(max = 4000) String ingredients,
+        @Size(max = 4000) String steps,
+        Integer cookMinutes) {
+}
+
+record RecipeResponse(
+        UUID id,
+        String dish,
+        String ingredients,
+        String steps,
+        Integer cookMinutes,
+        Instant updatedAt) {
 }

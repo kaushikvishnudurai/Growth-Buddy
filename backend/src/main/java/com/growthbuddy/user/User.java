@@ -145,6 +145,27 @@ public class User {
     @Column(name = "xp_total", nullable = false)
     private int xpTotal = 0;
 
+    /**
+     * Set when the owner asks to delete the account. Sessions are revoked at the
+     * same moment; {@code AccountDeletionJob} hard-deletes the account once this
+     * is {@code AuthService.DELETION_GRACE_DAYS} old, and signing in before that
+     * offers to cancel. Null = not scheduled.
+     */
+    @Column(name = "deletion_requested_at")
+    private Instant deletionRequestedAt;
+
+    /**
+     * Scheduled for deletion and inside the grace period. Such an account is
+     * already gone as far as everyone else can tell: no scheduler delivers to
+     * it, no search or invite finds it, no member list or leaderboard shows it
+     * (UserRepository's queries filter the column themselves). Only cancelling
+     * at sign-in brings it back.
+     */
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    public boolean isPendingDeletion() {
+        return deletionRequestedAt != null;
+    }
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

@@ -23,6 +23,11 @@ class FakeThrottleStore implements ThrottleStore {
     }
 
     @Override
+    public int hits(String bucketKey, long windowStart) {
+        return counters.getOrDefault(bucketKey + "@" + windowStart, 0);
+    }
+
+    @Override
     public void sweepCounters(long cutoffWindowStart) {
         counters.keySet().removeIf(k -> Long.parseLong(k.substring(k.lastIndexOf('@') + 1)) < cutoffWindowStart);
     }

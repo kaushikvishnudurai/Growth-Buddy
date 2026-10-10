@@ -19,12 +19,13 @@ interface WaterEntryRepository extends JpaRepository<WaterEntry, UUID> {
     @Query("select e.loggedAt from WaterEntry e where e.userId = :userId and e.logDate >= :from")
     List<java.time.Instant> loggedTimesSince(@Param("userId") UUID userId, @Param("from") LocalDate from);
 
-    @Query("select coalesce(sum(e.amountMl), 0) from WaterEntry e where e.userId = :userId and e.logDate = :logDate")
-    int totalForDay(@Param("userId") UUID userId, @Param("logDate") LocalDate logDate);
-
-    /** [logDate, sum(amountMl)] per day that has entries; days with none are absent. */
-    @Query("select e.logDate, sum(e.amountMl) from WaterEntry e where e.userId = :userId"
-            + " and e.logDate between :from and :to group by e.logDate")
+    /**
+     * [logDate, drinkType, sum(amountMl)] per day and drink that has entries; days
+     * with none are absent. Raw millilitres: WaterService applies the hydration
+     * factor per drink, so the factors live in one place (DrinkType).
+     */
+    @Query("select e.logDate, e.drinkType, sum(e.amountMl) from WaterEntry e where e.userId = :userId"
+            + " and e.logDate between :from and :to group by e.logDate, e.drinkType")
     List<Object[]> totalsByDay(@Param("userId") UUID userId,
                                @Param("from") LocalDate from, @Param("to") LocalDate to);
 }
@@ -35,7 +36,39 @@ interface WaterGoalRepository extends JpaRepository<WaterGoal, UUID> {
 record AddWaterEntryRequest(
         @Min(1) @Max(5000) Integer amountMl,
         String note,
-        Instant loggedAt) {
+        Instant loggedAt,
+        /** Absent: water. */
+        DrinkType drinkType) {
+
+    AddWaterEntryRequest(Integer amountMl, String note, Instant loggedAt) {
+        this(amountMl, note, loggedAt, null);
+    }
+}
+
+/**
+ * What a glass was, and how much of it counts towards the day's water. Tea and
+ * coffee carry some caffeine's mild diuretic pull, juice and milk some solids;
+ * the factors are a nudge, not physiology. Mirrored by HYDRATION in
+ * scripts/nutrition.js for the card's optimistic total.
+ */
+enum DrinkType {
+    water(1.0),
+    tea(0.9),
+    coffee(0.8),
+    juice(0.9),
+    milk(0.9),
+    other(1.0);
+
+    final double factor;
+
+    DrinkType(double factor) {
+        this.factor = factor;
+    }
+
+    /** Millilitres that count towards the goal; null is water. */
+    static int effectiveMl(DrinkType type, int amountMl) {
+        return (int) Math.round(amountMl * (type == null ? 1.0 : type.factor));
+    }
 }
 
 record UpdateWaterGoalRequest(
@@ -48,10 +81,16 @@ record WaterEntryResponse(
         int amountMl,
         String note,
         Instant loggedAt,
-        LocalDate logDate) {
+        LocalDate logDate,
+        /** water when the row has none. */
+        DrinkType drinkType,
+        /** amountMl times the drink's hydration factor: what counts towards the goal. */
+        int effectiveMl) {
 
     static WaterEntryResponse from(WaterEntry e) {
-        return new WaterEntryResponse(e.getId(), e.getAmountMl(), e.getNote(), e.getLoggedAt(), e.getLogDate());
+        DrinkType t = e.getDrinkType() != null ? e.getDrinkType() : DrinkType.water;
+        return new WaterEntryResponse(e.getId(), e.getAmountMl(), e.getNote(), e.getLoggedAt(), e.getLogDate(),
+                t, DrinkType.effectiveMl(t, e.getAmountMl()));
     }
 }
 
@@ -61,10 +100,15 @@ record WaterWeekResponse(int goalMl, List<WaterWeekDay> days) {
 record WaterWeekDay(String date, int ml) {
 }
 
+/**
+ * consumedMl is the EFFECTIVE total (each drink times its hydration factor), the
+ * figure the goal is judged by; drankMl is the raw sum of what was poured.
+ */
 record WaterSummaryResponse(
         LocalDate date,
         int goalMl,
         int consumedMl,
         int remainingMl,
-        List<WaterEntryResponse> entries) {
+        List<WaterEntryResponse> entries,
+        int drankMl) {
 }

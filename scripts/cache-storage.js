@@ -187,42 +187,50 @@ const CacheStorage = {
    * data into cookies/Cache and clears localStorage. Resolves to `true` when
    * new (not-yet-in-memory) values were pulled in, so the app can re-render.
    */
-  init: () =>
-    cacheReadAll().then((all) => {
-      let hydrated = false;
-      Object.keys(all).forEach((k) => {
-        if (!(k in mem)) {
-          mem[k] = all[k];
-          hydrated = true;
-        }
-      });
-      // Persist whatever we read from localStorage, then remove it for good.
-      try {
-        const legacy = [];
-        for (let i = 0; i < localStorage.length; i++) {
-          const k = localStorage.key(i);
-          if (k && k.startsWith(PREFIX)) legacy.push(k);
-        }
-        legacy.forEach((k) => {
-          const v = mem[k];
-          if (v != null) {
-            if (cookieEligible(k) && String(v).length <= COOKIE_MAX) setCookie(k, v);
-            cachePut(k, v);
-          }
-          localStorage.removeItem(k);
-        });
-      } catch (_) {
-        /* ignore */
-      }
-      // One-time cleanup: evict any non-allowlisted cookie left over from before
-      // the diet (their values already live in mem + the Cache API), so existing
-      // sessions stop sending bloated headers.
-      ourCookieNames().forEach((k) => {
-        if (!cookieEligible(k)) delCookie(k);
-      });
-      return hydrated;
-    }),
+  init: () => (initP = initP || hydrate()),
+  /** Resolves once init() has hydrated (starting it if nobody has). Await it
+      before reading a Cache-API-only key you are about to rewrite (the
+      outbox): before then it reads as absent, and a write would replace it. */
+  ready: () => CacheStorage.init().catch(() => {}),
 };
+
+let initP = null;
+function hydrate() {
+  return cacheReadAll().then((all) => {
+    let hydrated = false;
+    Object.keys(all).forEach((k) => {
+      if (!(k in mem)) {
+        mem[k] = all[k];
+        hydrated = true;
+      }
+    });
+    // Persist whatever we read from localStorage, then remove it for good.
+    try {
+      const legacy = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith(PREFIX)) legacy.push(k);
+      }
+      legacy.forEach((k) => {
+        const v = mem[k];
+        if (v != null) {
+          if (cookieEligible(k) && String(v).length <= COOKIE_MAX) setCookie(k, v);
+          cachePut(k, v);
+        }
+        localStorage.removeItem(k);
+      });
+    } catch (_) {
+      /* ignore */
+    }
+    // One-time cleanup: evict any non-allowlisted cookie left over from before
+    // the diet (their values already live in mem + the Cache API), so existing
+    // sessions stop sending bloated headers.
+    ourCookieNames().forEach((k) => {
+      if (!cookieEligible(k)) delCookie(k);
+    });
+    return hydrated;
+  });
+}
 
 // Kept for any non-module access; the app imports the binding below.
 if (typeof window !== 'undefined') window.CacheStorage = CacheStorage;

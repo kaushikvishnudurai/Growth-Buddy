@@ -30,8 +30,24 @@ public class Circle {
     @Column(columnDefinition = "TEXT")
     private String goal;
 
+    /**
+     * The OWNER, despite the column name: ownership can be transferred
+     * ({@code CircleService.transfer}) and handed on when the owner deletes their
+     * account, and both rewrite this alongside the members' {@code role}.
+     */
     @Column(name = "created_by", nullable = false)
     private UUID createdBy;
+
+    /**
+     * {@code public} (listed under Browse, anyone can join) or {@code private}
+     * (unlisted; joining takes {@link #joinCode}).
+     */
+    @Column(nullable = false, length = 16)
+    private String visibility = "public";
+
+    /** Set only on private circles; shown to members so they can pass it on. */
+    @Column(name = "join_code", length = 12)
+    private String joinCode;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

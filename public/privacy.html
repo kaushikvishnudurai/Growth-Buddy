@@ -23,7 +23,7 @@
 <body>
 
 <h1>Growth Buddy — Privacy Policy</h1>
-<p class="meta">Last updated: 22 August 2026</p>
+<p class="meta">Last updated: 10 October 2026</p>
 
 <p>Growth Buddy is a personal wellbeing and habit-tracking app. This policy describes what
 data the app stores, why, and who else can see it. It is written to describe what the
@@ -93,14 +93,17 @@ browsing activity outside the app. There is no analytics or advertising SDK.</p>
 <h2>Who else sees your data</h2>
 
 <ul>
-  <li><strong>OpenAI</strong> — the AI features (Buddy chat, quick-add text parsing, food photo
-      estimates, money advice, meal-plan suggestions) send the relevant content to OpenAI's API
-      to generate a response. If you never use those features, nothing is sent.</li>
+  <li><strong>Anthropic (Claude), via Cloudflare</strong> — the AI features (Buddy chat, quick-add
+      text parsing, food and receipt photo estimates, money advice, meal-plan suggestions) send the
+      relevant content to Anthropic's Claude models to generate a response. The request passes
+      through Cloudflare's AI Gateway on the way, which relays it to Anthropic. If you never use
+      those features, nothing is sent.</li>
   <li><strong>Meta (WhatsApp)</strong> — if you enable WhatsApp reminders, your phone number and
       the reminder text are sent to Meta's WhatsApp Cloud API to deliver the message.</li>
   <li><strong>Push services</strong> — if you enable notifications, reminder text passes through
       your browser or device vendor's push service (for example Google, Apple or Mozilla).</li>
-  <li><strong>Email provider</strong> — verification codes and password resets are sent by email.</li>
+  <li><strong>Email provider (Mailjet)</strong> — verification codes, password resets and digests are
+      sent by email through Mailjet (or Google's Gmail SMTP, where Mailjet is not configured).</li>
 </ul>
 
 <p>We do not sell your data, share it with advertisers, or use it to train models.</p>
@@ -122,6 +125,8 @@ browsing activity outside the app. There is no analytics or advertising SDK.</p>
       account and the data attached to it.</li>
   <li><strong>Turn off channels</strong> — WhatsApp reminders, push notifications and email
       digests are each individually optional and can be switched off at any time.</li>
+  <li><strong>Download your data</strong> — Settings → Account → Download my data gives you a copy
+      of everything your account holds, as a JSON file.</li>
   <li><strong>Access or correct your data</strong> — most of it is editable directly in the app.
       For anything else, email us.</li>
   <li><strong>Skip the AI features</strong> — the app works without them.</li>

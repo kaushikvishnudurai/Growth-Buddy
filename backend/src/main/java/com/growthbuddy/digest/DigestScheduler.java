@@ -40,12 +40,14 @@ public class DigestScheduler {
         List<User> candidates = users.findByDigestFrequencyNot("off");
         for (User user : candidates) {
             String freq = user.getDigestFrequency();
-            if (!StringUtils.hasText(user.getEmail()) || !StringUtils.hasText(freq)) {
+            // Scheduled for deletion: no digest email, bell or push during the grace period.
+            if (user.isPendingDeletion()
+                    || !StringUtils.hasText(user.getEmail()) || !StringUtils.hasText(freq)) {
                 continue;
             }
             ZoneId zone = UserZone.of(user.getTimezone());
             LocalDateTime now = LocalDateTime.now(zone);
-            if (now.getHour() != user.getDigestHour()) {
+            if (now.getHour() != digestHourFor(user.getDigestHour(), user.getUiPrefs())) {
                 continue;
             }
             LocalDate today = now.toLocalDate();
@@ -70,6 +72,21 @@ public class DigestScheduler {
             user.setLastDigestOn(today);
             users.save(user);
         }
+    }
+
+    /**
+     * The hour the digest actually goes at: the user's own, unless it falls in
+     * their quiet hours ({@code ReminderPrefs.isQuiet}), in which case it waits
+     * for the first whole hour after the window ends. Held back, not dropped —
+     * skipping it would lose the digest every day the two settings overlap.
+     */
+    static int digestHourFor(int hour, java.util.Map<String, Object> uiPrefs) {
+        java.time.LocalTime at = java.time.LocalTime.of(Math.floorMod(hour, 24), 0);
+        if (!com.growthbuddy.reminder.ReminderPrefs.isQuiet(uiPrefs, at)) {
+            return at.getHour();
+        }
+        java.time.LocalTime end = com.growthbuddy.reminder.ReminderPrefs.quietEndOf(uiPrefs);
+        return end.getMinute() == 0 ? end.getHour() : (end.getHour() + 1) % 24;
     }
 
 }

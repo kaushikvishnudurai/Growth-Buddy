@@ -256,3 +256,64 @@ templates are refused until Meta Business Verification completes. Once it does,
 create the auth template and set `WHATSAPP_AUTH_TEMPLATE` — `WhatsAppService`
 switches to the copy-code shape with no code change. See `.env.example` for the
 variables.
+
+## Backups & incidents
+
+**Documented, not automated.** Nothing below runs on a schedule; nobody is paged.
+Until it is automated, it is a checklist a person runs.
+
+### Back up
+
+TiDB Cloud Starter keeps its own automatic backups, but you cannot restore them
+into a different cluster on the free tier — so also take a logical dump you hold:
+
+```sh
+# Weekly, and always before a migrations.sql change. DB_* are the Render values.
+mysqldump -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" \
+  --ssl-mode=REQUIRED --single-transaction --no-tablespaces --set-gtid-purged=OFF \
+  "$DB_NAME" | gzip > "gb-$(date +%F).sql.gz"
+```
+
+(TiDB's `dumpling` works too: `tiup dumpling -h $DB_HOST -P $DB_PORT -u $DB_USER -p $DB_PASSWORD --filetype sql -o ./gb-dump`.)
+Store the file somewhere that is not the TiDB account. It holds every user's data —
+encrypt it (`gpg -c`) and treat it like the production database.
+
+### Restore
+
+1. Create an empty database (a new TiDB cluster or a fresh `DB_NAME`).
+2. `gunzip -c gb-YYYY-MM-DD.sql.gz | mysql -h … -P … -u … -p --ssl-mode=REQUIRED <db>`
+3. Run any `migrations.sql` statements newer than the dump (prod is `ddl-auto: none`).
+4. Point the Render `DB_*` variables at it and redeploy. Check `/actuator/health` is `UP`.
+
+### After a deploy (smoke test, by hand)
+
+`/actuator/health` → `UP`; open the site, check the console prints the new
+`[gb] build` number; sign in; open Home and one lazy screen (Goals); fire
+Settings → Alerts → test notification. Errors from real phones land in the server
+log as `[client] …` lines (`POST /api/client-errors`).
+
+### Uptime
+
+The keep-awake pinger on `/actuator/health` (above) is the only monitor. Point an
+UptimeRobot alert contact at it so a 503 emails someone instead of only waking the box.
+
+### Rotating a secret
+
+Set the new value in Render, redeploy, then revoke the old one at its source.
+What each rotation costs users:
+
+| Secret | Consequence of rotating |
+|---|---|
+| `SESSION_HMAC_SECRET` | **Every session ends** (stored tokens are HMACs of it) and outstanding push Snooze links stop working. Everyone signs in again. |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Every web push subscription is dead; each browser must turn notifications off and on again. Rotate only on a leak. |
+| `WHATSAPP_ACCESS_TOKEN` | None if the new token is live before the old is revoked (Meta Business settings → System users). |
+| `WHATSAPP_APP_SECRET` | Webhook signatures fail until Meta and Render agree — rotate both together. |
+| `AI_GATEWAY_TOKEN` (Cloudflare AI Gateway) | None; AI features fall back to canned answers during the gap. Also rotate the Anthropic key behind the gateway on a leak. |
+| `MAILJET_API_KEY` / `MAILJET_SECRET_KEY` | OTP and reset mail stops during the gap — no one can sign up or reset. Be quick. |
+| `DB_PASSWORD` | Downtime between the TiDB change and the redeploy. |
+
+### Incident: a secret leaked
+
+Rotate it (table above), check the Render and Cloudflare logs for use, and if
+user data may have been read, tell the affected users — the contact address in
+`public/privacy.html` is the one they know.

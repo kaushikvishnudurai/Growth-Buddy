@@ -14,9 +14,63 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx eslint scripts/ vite.config.js
+      # Runtime deps only (devDeps never ship in the bundle). Blocking: it was
+      # clean (0 vulnerabilities) when added, so a red here is a new advisory.
+      - name: npm audit (production deps)
+        run: npm audit --omit=dev --audit-level=high
+      - run: npm run lint
+      - run: npx eslint vite.config.js
+      # Every scripts/*.test.mjs, so a new check is in CI the moment it exists.
+      # (Only insights.test.mjs used to run; tokens/icons/money-ledger/push/… did not.)
+      # prettier's format:check is not here yet: the tree does not pass it today.
+      - name: Node checks
+        run: |
+          set -e
+          for t in scripts/*.test.mjs; do
+            echo "::group::$t"
+            node "$t"
+            echo "::endgroup::"
+          done
       - run: npm run build
-      - run: node scripts/insights.test.mjs
+      # Boot chunk + precache size budgets (measured + 5%); raise them on purpose.
+      - name: Bundle budget
+        run: node scripts/bundle-budget.mjs
+
+  # Secret scan over the WHOLE history (fetch-depth 0), not just the tip: a key
+  # committed and then deleted is still in the repo. The CI twin of
+  # .githooks/pre-commit, which only runs where someone installed it.
+  # An organization-owned repo also needs a GITLEAKS_LICENSE secret (free).
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+
+  # CLAUDE.md: bump BUILD in vite.config.js before every push — it is the only
+  # way to tell a live build from a cached one on a phone. A PR that leaves it
+  # equal to the base branch's would ship two different bundles under one number.
+  build-number:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: BUILD differs from the base branch
+        run: |
+          base="origin/${{ github.base_ref }}"
+          now=$(grep -oP '^const BUILD = \K[0-9]+' vite.config.js)
+          was=$(git show "$base:vite.config.js" | grep -oP '^const BUILD = \K[0-9]+')
+          echo "BUILD here=$now, $base=$was"
+          if [ "$now" -le "$was" ]; then
+            echo "::error file=vite.config.js::Bump BUILD in vite.config.js (it is $now; ${{ github.base_ref }} has $was)."
+            exit 1
+          fi
 
   backend:
     runs-on: ubuntu-latest
@@ -30,3 +84,115 @@ jobs:
       # Unit tests only — no DB needed (services are tested with plain JUnit).
       - run: ./mvnw -q test
         working-directory: backend
+      # Integration tests (*IT, @Tag("integration")): Testcontainers MySQL 8 —
+      # the schema + migrations files through the real mysql client, and the
+      # auth flow end to end over HTTP. The default surefire includes skip *IT,
+      # and without Docker they skip themselves; ubuntu runners have Docker.
+      - name: Integration tests (Testcontainers)
+        run: ./mvnw -q test -Dtest='*IT' -Dsurefire.failIfNoSpecifiedTests=false
+        working-directory: backend
+
+  # scripts/ui-audit.mjs against a real stack: MySQL built from the schema files,
+  # the backend jar, `npm run dev`, and a headless Chrome it attaches to over CDP.
+  # continue-on-error until it has a few green runs behind it: a flaky first run
+  # (timing, a 4xx from an unconfigured integration) must not block merges.
+  ui-audit:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 25
+    services:
+      # No MYSQL_DATABASE: tableCreationQueries.sql creates growth_buddy itself,
+      # with utf8mb4_unicode_ci. The image's default collation would mix with it.
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    env:
+      MYSQL_HOST: 127.0.0.1
+      MYSQL_USER: root
+      MYSQL_PWD: root
+      DB_HOST: 127.0.0.1
+      DB_PORT: '3306'
+      DB_NAME: growth_buddy
+      DB_USER: root
+      DB_PASSWORD: root
+      # Like prod: Hibernate creates nothing, so a column missing from the schema
+      # files 500s here instead of being papered over by ddl-auto=update.
+      SPRING_JPA_DDL_AUTO: none
+      SESSION_HMAC_SECRET: ci-only-hmac-secret-not-a-real-one-0123456789
+      # MAIL_*, AI_GATEWAY_*, VAPID_*, WHATSAPP_* stay unset: OTPs go to the log,
+      # AI falls back to canned replies, push and WhatsApp are off.
+      GB_AUDIT_EMAIL: audit@ci.growthbuddy.test
+      GB_AUDIT_PASSWORD: ci-audit-password-1
+      GB_AUDIT_BASE: http://localhost:5173
+      GB_AUDIT_CDP: http://127.0.0.1:9222
+      GB_AUDIT_OUT: ui-audit-out
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      # A fresh database already has every column from the CREATE TABLEs, so each
+      # ALTER in migrations.sql is a duplicate-column error; --force skips those, and
+      # any other error (a typo in a migration) is still printed to the log.
+      - name: Schema
+        run: |
+          mysql -h 127.0.0.1 -u root < tableCreationQueries.sql
+          mysql -h 127.0.0.1 -u root --force growth_buddy < migrations.sql 2>&1 |
+            grep -v 'Duplicate column name' || true
+
+      - name: Build backend jar
+        run: ./mvnw -q -DskipTests package
+        working-directory: backend
+
+      - name: Start backend
+        run: |
+          nohup java -jar backend/target/growth-buddy-backend-*.jar > backend.log 2>&1 &
+          for i in $(seq 1 90); do
+            curl -fsS http://localhost:8080/actuator/health >/dev/null 2>&1 && exit 0
+            sleep 2
+          done
+          echo "::error::backend did not come up"; tail -100 backend.log; exit 1
+
+      - name: Seed the audit account
+        run: bash scripts/ci/seed-audit-user.sh
+
+      - name: Start frontend and Chrome
+        run: |
+          nohup npm run dev > vite.log 2>&1 &
+          nohup google-chrome --headless=new --disable-gpu --no-first-run \
+            --remote-debugging-port=9222 --user-data-dir=/tmp/gb-audit about:blank \
+            > chrome.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -fsS http://localhost:5173 >/dev/null 2>&1 &&
+              curl -fsS http://127.0.0.1:9222/json/version >/dev/null 2>&1 && exit 0
+            sleep 2
+          done
+          echo "::error::vite or chrome did not come up"; tail -50 vite.log chrome.log; exit 1
+
+      - name: UI audit
+        run: node scripts/ui-audit.mjs
+
+      - name: Upload screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-audit
+          path: |
+            ui-audit-out/
+            backend.log
+            vite.log
+          if-no-files-found: warn

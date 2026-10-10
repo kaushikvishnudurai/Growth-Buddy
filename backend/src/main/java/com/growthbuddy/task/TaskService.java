@@ -1,6 +1,7 @@
 package com.growthbuddy.task;
 
 import com.growthbuddy.common.ApiException;
+import com.growthbuddy.goal.GoalService;
 import com.growthbuddy.user.ProgressService;
 import java.time.Duration;
 import java.time.Instant;
@@ -15,11 +16,25 @@ public class TaskService {
     private final TaskRepository repo;
     private final TaskHistoryRepository historyRepo;
     private final ProgressService progress;
+    private final GoalService goals;
 
-    public TaskService(TaskRepository repo, TaskHistoryRepository historyRepo, ProgressService progress) {
+    public TaskService(TaskRepository repo, TaskHistoryRepository historyRepo, ProgressService progress,
+            GoalService goals) {
         this.repo = repo;
         this.historyRepo = historyRepo;
         this.progress = progress;
+        this.goals = goals;
+    }
+
+    /**
+     * The goal a task may be put on: one of the user's own. Someone else's goal
+     * (or a deleted one) answers like a missing one, so ids can't be probed.
+     */
+    UUID ownGoal(UUID userId, UUID goalId) {
+        if (goalId != null && !goals.ownsGoal(userId, goalId)) {
+            throw ApiException.notFound("Goal");
+        }
+        return goalId;
     }
 
     @Transactional(readOnly = true)
@@ -43,6 +58,7 @@ public class TaskService {
         t.setNotes(req.notes());
         t.setPriority(req.priority() != null ? req.priority() : Priority.Medium);
         t.setDueAt(req.dueAt());
+        t.setGoalId(ownGoal(userId, req.goalId()));
         escalateOverduePriority(t);
         return responseFor(userId, repo.save(t));
     }
@@ -70,6 +86,11 @@ public class TaskService {
         if (req.paused() != null) {
             t.setPaused(req.paused());
         }
+        if (Boolean.TRUE.equals(req.clearGoal())) {
+            t.setGoalId(null);
+        } else if (req.goalId() != null) {
+            t.setGoalId(ownGoal(userId, req.goalId()));
+        }
         escalateOverduePriority(t);
         return responseFor(userId, repo.save(t));
     }
@@ -93,6 +114,9 @@ public class TaskService {
     public void delete(UUID userId, UUID id) {
         Task t = require(userId, id);
         t.setDeletedAt(Instant.now());
+        // Off its goal too: a soft-deleted task that is done and still linked
+        // reads as one the midnight sweep cleared, which the goal counts.
+        t.setGoalId(null);
         repo.save(t);
         historyRepo.deleteByUserIdAndTaskId(userId, id);
     }
@@ -103,6 +127,11 @@ public class TaskService {
         Instant now = Instant.now();
         t.setDoneAt(done ? now : null);
         if (!wasDone && done) {
+            // XP on the task's first completion only. Un-ticking takes nothing back,
+            // so paying every re-tick let a toggle loop farm XP. History still gets a
+            // row each time: the score's per-day counts are distinct tasks, and a
+            // task reopened and finished on a later day really was done that day.
+            boolean firstCompletion = historyRepo.countByUserIdAndTaskId(t.getUserId(), t.getId()) == 0;
             TaskHistory h = new TaskHistory();
             h.setUserId(t.getUserId());
             h.setTaskId(t.getId());
@@ -110,7 +139,9 @@ public class TaskService {
             h.setPriority((t.getPriority() != null ? t.getPriority() : Priority.Medium).name());
             h.setDueAt(t.getDueAt());
             historyRepo.save(h);
-            progress.awardTaskCompletion(t.getUserId());
+            if (firstCompletion) {
+                progress.awardTaskCompletion(t.getUserId());
+            }
         }
     }
 

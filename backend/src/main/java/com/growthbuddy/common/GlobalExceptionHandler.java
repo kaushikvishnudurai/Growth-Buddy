@@ -19,15 +19,22 @@ public class GlobalExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     /** Uniform error body returned for every handled exception. */
-    public record ApiError(Instant timestamp, int status, String error, String message) {
+    /** {@code code} is omitted from the JSON unless an ApiException set one. */
+    public record ApiError(Instant timestamp, int status, String error, String message,
+                           @com.fasterxml.jackson.annotation.JsonInclude(
+                                   com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL) String code) {
         static ApiError of(HttpStatus status, String message) {
-            return new ApiError(Instant.now(), status.value(), status.getReasonPhrase(), message);
+            return of(status, message, null);
+        }
+
+        static ApiError of(HttpStatus status, String message, String code) {
+            return new ApiError(Instant.now(), status.value(), status.getReasonPhrase(), message, code);
         }
     }
 
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ApiError> handleApi(ApiException ex) {
-        return ResponseEntity.status(ex.getStatus()).body(ApiError.of(ex.getStatus(), ex.getMessage()));
+        return ResponseEntity.status(ex.getStatus()).body(ApiError.of(ex.getStatus(), ex.getMessage(), ex.getCode()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

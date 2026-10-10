@@ -67,6 +67,44 @@ class FoodWeekRulesTest {
     }
 
     @Test
+    void todayIsJudgedAgainstTheShareOfTheWakingDayGone() {
+        assertEquals(0.25, FoodWeek.dayShare(java.time.LocalTime.of(5, 0)));
+        assertEquals(0.25, FoodWeek.dayShare(java.time.LocalTime.of(9, 30)));
+        assertEquals(0.5, FoodWeek.dayShare(java.time.LocalTime.of(15, 0)));
+        assertEquals(0.5, FoodWeek.dayShare(java.time.LocalTime.of(15, 59)), "whole hours, so the prompt holds");
+        assertEquals(1.0, FoodWeek.dayShare(java.time.LocalTime.of(23, 30)));
+        // Breakfast and lunch by 15:00: half a day's protein is on track, not light...
+        Nutrients half = new Nutrients(56, 160, 43, 15);
+        DietCheckResponse r = FoodWeek.rules(half, TARGET, "Today so far", 1250, 2500, 0.5);
+        assertEquals(List.of("ok", "ok", "ok", "ok", "ok"), List.of(r.protein(), r.carbs(), r.fat(), r.fiber(), r.water()));
+        // ...which it would be against the full day.
+        assertEquals("low", FoodWeek.rules(half, TARGET, "Today so far").protein());
+        // "High" stays against the full day: a big lunch is not heavy at 13:00.
+        assertEquals("ok", FoodWeek.level(300, 325, 0.375));
+        assertEquals("high", FoodWeek.level(400, 325, 0.375));
+    }
+
+    @Test
+    void onlyTodayMeansNoFinishedDayHasMeals() {
+        FoodWeekDay empty = new FoodWeekDay("2026-10-01", 0, 0, 0, 0, 0, 0);
+        FoodWeekDay eaten = new FoodWeekDay("2026-10-02", 500, 2, 10, 60, 10, 4);
+        assertTrue(FoodWeek.averagesOnlyToday(List.of(empty, eaten)));
+        assertTrue(!FoodWeek.averagesOnlyToday(List.of(eaten, eaten)));
+        assertTrue(!FoodWeek.averagesOnlyToday(List.of(eaten, empty)));
+    }
+
+    @Test
+    void waterIsJudgedUnlessTheFeatureIsOff() {
+        com.growthbuddy.user.User u = new com.growthbuddy.user.User();
+        assertTrue(FoodWeek.waterOn(null));
+        assertTrue(FoodWeek.waterOn(u));
+        u.setFeaturePrefs(java.util.Map.of("water", true, "food", false));
+        assertTrue(FoodWeek.waterOn(u));
+        u.setFeaturePrefs(java.util.Map.of("water", false));
+        assertTrue(!FoodWeek.waterOn(u));
+    }
+
+    @Test
     void keywordsMatchWordStartsOnly() {
         assertTrue(FoodWeek.mentions("2 Eggs", List.of("egg")));
         assertTrue(!FoodWeek.mentions("Veggie wrap", List.of("egg")));

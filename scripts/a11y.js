@@ -120,9 +120,10 @@ export function refocus(key, scope = document.body) {
 
 /* Forms here put a `div.gb-field-label` before the control and never tie the
    two, so a date or time input read as just "edit text". Name each control from
-   its label once the dialog renders.
-   ponytail: runs once per modal open; a field a dialog adds later stays unnamed —
-   make gb-field-label a real <label for> at the call sites if that bites. */
+   its label once the dialog renders, and again (watchFields) whenever the open
+   dialog adds nodes — a repeat picker revealing its interval field, a step that
+   swaps its body — so a later field is named too.
+   ponytail: the real fix is a <label for> at the call sites. */
 function nameFields(root) {
   for (const lab of root.querySelectorAll('.gb-field-label')) {
     const next = lab.nextElementSibling;
@@ -138,6 +139,27 @@ function nameFields(root) {
       ctl.setAttribute('aria-label', lab.textContent.trim());
     }
   }
+}
+
+/* One subtree observer per open dialog, batched to a frame, gone with the dialog. */
+function watchFields(overlay) {
+  if (overlay._gbFieldWatch) return;
+  let queued = false;
+  const mo = new MutationObserver((muts) => {
+    if (!overlay.isConnected) {
+      mo.disconnect();
+      overlay._gbFieldWatch = null;
+      return;
+    }
+    if (queued || !muts.some((m) => m.addedNodes.length)) return;
+    queued = true;
+    requestAnimationFrame(() => {
+      queued = false;
+      nameFields(overlay);
+    });
+  });
+  mo.observe(overlay, { childList: true, subtree: true });
+  overlay._gbFieldWatch = mo;
 }
 
 export function initA11y() {
@@ -194,13 +216,19 @@ export function initA11y() {
             const dialog = overlay.querySelector('.gb-modal') || overlay;
             if (dialog && !dialog.hasAttribute('tabindex')) dialog.setAttribute('tabindex', '-1');
             nameFields(overlay);
+            watchFields(overlay);
             const target = overlay.querySelector('[autofocus]') || dialog;
             target?.focus?.();
           });
         }
       }
       for (const node of m.removedNodes) {
-        if (overlayIn(node) && lastFocused) {
+        const gone = overlayIn(node);
+        if (gone && gone._gbFieldWatch) {
+          gone._gbFieldWatch.disconnect();
+          gone._gbFieldWatch = null;
+        }
+        if (gone && lastFocused) {
           const el = lastFocused;
           const key = lastFocusKey;
           // Not while another modal is up: Quick add → Task opens the second

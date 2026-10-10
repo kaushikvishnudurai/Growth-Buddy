@@ -63,6 +63,8 @@ export async function initNative() {
   // hide() is idempotent, so the normal path racing this is harmless.
   const SS = nativePlugin('SplashScreen');
   if (SS) setTimeout(() => SS.hide().catch(() => {}), 4000);
+  // Not awaited: housekeeping, never worth holding boot for.
+  pruneStaleChannels();
   const Device = nativePlugin('Device');
   let model = '';
   if (Device) {
@@ -104,10 +106,45 @@ export async function initNative() {
    iOS and the web have no channels at all; createChannel fails there and the
    notification posts with the platform's own behaviour, which is already right.
 
-   ponytail: the ids are plain. Because Android freezes them, changing a
-   channel's importance or sound later needs a NEW id — that day the fix is a
-   suffix (`gb-tone-chime-2`), not an edit to the values here. */
-export const SILENT_CHANNEL = 'gb-silent';
+   Because Android freezes them, changing a channel's importance or sound
+   later needs a NEW id. That is what CHANNEL_VERSION is for: bump it, and
+   every id gains a `-v<N>` suffix (version 1 is the plain ids that already
+   exist on phones) while pruneStaleChannels, run from initNative, deletes our
+   `gb-` channels from any other version so Settings doesn't list both.
+   ponytail: one version for every channel. A change to one tone re-creates
+   all of them — which also resets any per-channel tweak the user made in
+   Settings; per-channel versions if that ever matters. */
+export const CHANNEL_VERSION = 1;
+
+/** 'gb-tone-chime' -> the id for the current version ('gb-tone-chime-v2' at 2). */
+export function versionedChannel(base, version = CHANNEL_VERSION) {
+  return version === 1 ? base : base + '-v' + version;
+}
+
+/** Whether one of OUR channels belongs to another version. Pure, for push.test.mjs. */
+export function isStaleChannel(id, version = CHANNEL_VERSION) {
+  if (typeof id !== 'string' || !id.startsWith('gb-')) return false;
+  const m = /-v(\d+)$/.exec(id);
+  return (m ? Number(m[1]) : 1) !== version;
+}
+
+export const SILENT_CHANNEL = versionedChannel('gb-silent');
+
+/* Delete our channels from earlier (or later) versions. Promise-style
+   listChannels/deleteChannel only; iOS and the web have no channels, and a
+   rejection there is the expected answer. Never touches a channel we didn't
+   name (no `gb-` prefix). */
+async function pruneStaleChannels() {
+  const LN = nativePlugin('LocalNotifications');
+  if (!LN) return;
+  try {
+    const res = await LN.listChannels();
+    const stale = ((res && res.channels) || []).map((c) => c && c.id).filter((id) => isStaleChannel(id));
+    for (const id of stale) await LN.deleteChannel({ id });
+  } catch (_) {
+    /* no channels on this platform */
+  }
+}
 
 /* createChannel is idempotent but not free, and this runs per batch. A failed
    call is marked done too: failure means the platform has no channels, and
@@ -116,7 +153,7 @@ const channelsReady = new Set();
 
 /** 'gb-tone-chime' -> 'Chime', for the row the user sees in Settings. */
 function toneName(id) {
-  const key = id.replace(/^gb-tone-/, '');
+  const key = id.replace(/^gb-tone-/, '').replace(/-v\d+$/, '');
   return key.charAt(0).toUpperCase() + key.slice(1);
 }
 
@@ -212,10 +249,6 @@ export function scheduleLocalNotification(item) {
   return scheduleLocalNotifications([item]);
 }
 
-/**
- * Drop everything queued but not yet shown. Delivered notifications are not
- * pending and are left alone, so this never clears a reminder off the shade.
- */
 /* Cancel specific ids. Distinct from cancelPendingLocalNotifications below,
    which clears the whole queue — the focus timer must be able to drop its own
    alarm without taking every queued reminder with it. */
@@ -229,14 +262,34 @@ export async function cancelLocalNotifications(ids) {
   }
 }
 
-export async function cancelPendingLocalNotifications() {
+/* The focus timer's session-end alarm. Id 2 is its alone: 1 is the push test
+   notification, and the reminder queue's ids are derived from the minute they
+   fire in, far above both. Lives here so push.js can leave it queued. */
+export const TIMER_ALARM_ID = 2;
+
+/** The pending ids to cancel, minus the ones in `keep`. Pure, for push.test.mjs. */
+export function idsToCancel(pending, keep = []) {
+  return (pending || [])
+    .map((n) => n && n.id)
+    .filter((id) => id !== undefined && id !== null && keep.indexOf(id | 0) === -1);
+}
+
+/**
+ * Drop everything queued but not yet shown, except the ids in `keep`. A
+ * reminder re-sync passes `[TIMER_ALARM_ID]`: it rebuilds its own alarms, and
+ * wiping the whole queue silently took a running focus session's end alarm
+ * with it. Logout passes nothing — then every alarm goes. Delivered
+ * notifications are not pending and are left alone, so this never clears a
+ * reminder off the shade.
+ */
+export async function cancelPendingLocalNotifications({ keep = [] } = {}) {
   const LN = nativePlugin('LocalNotifications');
   if (!LN) return;
   try {
     const pending = await LN.getPending();
-    const list = (pending && pending.notifications) || [];
-    if (list.length) {
-      await LN.cancel({ notifications: list.map((n) => ({ id: n.id })) });
+    const ids = idsToCancel((pending && pending.notifications) || [], keep);
+    if (ids.length) {
+      await LN.cancel({ notifications: ids.map((id) => ({ id })) });
     }
   } catch (_) {
     /* nothing queued, or the plugin is unhappy — the reschedule below still runs */

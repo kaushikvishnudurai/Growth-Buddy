@@ -32,10 +32,11 @@ class SchemaCoverageTest {
     private static final Pattern CREATE = Pattern.compile(
             "(?i)CREATE TABLE (?:IF NOT EXISTS )?`?([a-z_]+)`?\\s*\\(");
     private static final Pattern ALTER_ADD = Pattern.compile(
-            "(?i)ALTER TABLE\\s+`?([a-z_]+)`?\\s+ADD COLUMN\\s+`?([a-z_]+)`?");
-    /** A column line: an identifier followed by a type, not a KEY/CONSTRAINT line. */
+            "(?i)ALTER TABLE\\s+`?([a-z_]+)`?\\s+ADD COLUMN\\s+`?([a-z0-9_]+)`?");
+    /** A column line: an identifier followed by a type, not a KEY/CONSTRAINT line. Digits allowed
+     *  (notify_before2): without them the name was read as a shorter one that happened to exist. */
     private static final Pattern COLUMN = Pattern.compile(
-            "(?i)^`?([a-z_]+)`?\\s+(?!KEY|PRIMARY|UNIQUE|CONSTRAINT|FOREIGN|INDEX)[a-z]");
+            "(?i)^`?([a-z0-9_]+)`?\\s+(?!KEY|PRIMARY|UNIQUE|CONSTRAINT|FOREIGN|INDEX)[a-z]");
 
     @Test
     void everyEntityTableIsInTheSchemaFile() throws IOException {

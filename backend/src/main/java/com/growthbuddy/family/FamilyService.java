@@ -8,13 +8,19 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.growthbuddy.common.ApiException;
 import com.growthbuddy.mentor.OpenAIClient;
 import com.growthbuddy.mentor.OpenAIClient.ChatTurn;
+import com.growthbuddy.notification.NotificationKind;
+import com.growthbuddy.notification.NotifyCategory;
+import com.growthbuddy.notification.NotificationService;
 import com.growthbuddy.user.User;
 import com.growthbuddy.user.UserClock;
 import com.growthbuddy.user.UserRepository;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -88,6 +94,10 @@ public class FamilyService {
     private final FamilyShoppingItemRepository shopping;
     private final FamilyDishPreferenceRepository dishPrefs;
     private final UserClock clock;
+    private final NotificationService notifications;
+    private final FamilyEvents events;
+    private final FamilyChoreRepository chores;
+    private final FamilyRecipeRepository recipes;
     private final ObjectMapper json = new ObjectMapper();
 
     public FamilyService(
@@ -101,7 +111,11 @@ public class FamilyService {
             FamilyPantryItemRepository pantry,
             FamilyShoppingItemRepository shopping,
             FamilyDishPreferenceRepository dishPrefs,
-            UserClock clock) {
+            UserClock clock,
+            NotificationService notifications,
+            FamilyEvents events,
+            FamilyChoreRepository chores,
+            FamilyRecipeRepository recipes) {
         this.families = families;
         this.members = members;
         this.plans = plans;
@@ -113,6 +127,10 @@ public class FamilyService {
         this.shopping = shopping;
         this.dishPrefs = dishPrefs;
         this.clock = clock;
+        this.notifications = notifications;
+        this.events = events;
+        this.chores = chores;
+        this.recipes = recipes;
     }
 
     /* Against the user's own day, not the server's: @PastOrPresent used the
@@ -199,9 +217,81 @@ public class FamilyService {
         if (m.getLinkedUserId() != null && m.getLinkedUserId().equals(fam.getOwnerUserId())) {
             throw ApiException.badRequest("The family owner cannot be removed.");
         }
+        boolean wasMapped = m.getStatus() == MemberStatus.mapped;
+        UUID linked = m.getLinkedUserId();
         m.setDeletedAt(java.time.Instant.now());
         members.save(m);
+        if (linked != null) {
+            // They lose access (or a pending invite) — tell them, don't let
+            // them discover it as an empty Family tab.
+            String owner = displayName(userId);
+            notifications.publish(linked, NotificationKind.system, NotifyCategory.people,
+                    wasMapped ? owner + " removed you from their family" : owner + " withdrew their family invite",
+                    null, fam.getId());
+            if (wasMapped) {
+                events.changed(List.of(linked), "members");
+            }
+        }
+        changed(fam, userId, "members");
         return buildResponse(fam, userId);
+    }
+
+    /**
+     * Hand the family to another member who has accepted (mapped, linked to an
+     * account). The old owner stays as an ordinary member and can then leave —
+     * which is the only way an owner can leave at all.
+     */
+    @Transactional
+    public FamilyResponse transferOwnership(UUID userId, UUID memberId) {
+        Family fam = requireMyFamily(userId);
+        requireOwner(fam, userId);
+        FamilyMember heir = requireMember(memberId);
+        if (!heir.getFamilyId().equals(fam.getId())) {
+            throw ApiException.forbidden("That member is not in your family.");
+        }
+        if (heir.getStatus() != MemberStatus.mapped || heir.getLinkedUserId() == null) {
+            throw ApiException.badRequest("Only someone who has joined with their own account can own the family.");
+        }
+        if (heir.getLinkedUserId().equals(userId)) {
+            throw ApiException.badRequest("You already own this family.");
+        }
+        fam.setOwnerUserId(heir.getLinkedUserId());
+        families.save(fam);
+        notifications.publish(heir.getLinkedUserId(), NotificationKind.system, NotifyCategory.people,
+                displayName(userId) + " made you the family owner", null, fam.getId());
+        changed(fam, userId, "members");
+        return buildResponse(fam, userId);
+    }
+
+    /** Linked members of {@code fam} who have accepted, the actor excepted — who a change is news to. */
+    private List<UUID> otherMappedUsers(Family fam, UUID actor) {
+        List<UUID> out = new ArrayList<>();
+        for (FamilyMember m : members.findByFamilyIdAndDeletedAtIsNullOrderByCreatedAtAsc(fam.getId())) {
+            if (m.getStatus() == MemberStatus.mapped && m.getLinkedUserId() != null
+                    && !m.getLinkedUserId().equals(actor)) {
+                out.add(m.getLinkedUserId());
+            }
+        }
+        return out;
+    }
+
+    private void changed(Family fam, UUID actor, String section) {
+        events.changed(otherMappedUsers(fam, actor), section);
+    }
+
+    private String displayName(UUID userId) {
+        return users.findById(userId).map(User::getDisplayName).filter(StringUtils::hasText).orElse("Someone");
+    }
+
+    /**
+     * Owns a family nobody else has joined: the only account linked and mapped
+     * in it is their own. Such a household has nothing to share, so it must not
+     * stop that person being invited into a real one — before, opening the
+     * Family tab once (which creates your family) made you un-invitable for good.
+     */
+    boolean isSoloOwner(UUID userId) {
+        Family fam = currentFamily(userId);
+        return fam != null && fam.getOwnerUserId().equals(userId) && otherMappedUsers(fam, userId).isEmpty();
     }
 
     // ------------------------------------------------------------------
@@ -243,14 +333,19 @@ public class FamilyService {
         Family fam = resolveOrCreateFamily(userId);
         requireOwner(fam, userId);
 
+        // Scheduled for deletion reads as not found, as it does in search.
         User target = users.findById(req.userId())
+                .filter(u -> !u.isPendingDeletion())
                 .orElseThrow(() -> ApiException.notFound("that account"));
         if (target.getId().equals(userId)) {
             throw ApiException.badRequest("You're already in your own family.");
         }
 
-        // Someone can only belong to one family — block if already accepted elsewhere.
-        if (!members.findByLinkedUserIdAndStatusAndDeletedAtIsNull(target.getId(), MemberStatus.mapped).isEmpty()) {
+        // Someone can only belong to one family — block if already accepted
+        // elsewhere, unless that "family" is just them (see isSoloOwner).
+        boolean mappedElsewhere = !members
+                .findByLinkedUserIdAndStatusAndDeletedAtIsNull(target.getId(), MemberStatus.mapped).isEmpty();
+        if (mappedElsewhere && !isSoloOwner(target.getId())) {
             throw ApiException.badRequest("This person already belongs to a family.");
         }
         boolean alreadyHere = members.findByLinkedUserIdAndDeletedAtIsNull(target.getId()).stream()
@@ -293,6 +388,10 @@ public class FamilyService {
             m.setInviteOnly(true); // created purely for the invite — remove on decline
             members.save(m);
         }
+        // The invite used to wait silently until they happened to open Family.
+        notifications.publish(target.getId(), NotificationKind.system, NotifyCategory.people,
+                displayName(userId) + " invited you to their family",
+                "Open Family to accept or decline.", fam.getId());
         return buildResponse(fam, userId);
     }
 
@@ -323,21 +422,97 @@ public class FamilyService {
         return out;
     }
 
+    /**
+     * Join the family that invited you.
+     *
+     * <p>Locks every row naming this user first ({@code lockByLinkedUser}) and
+     * decides on what that read returns, so two accepts racing for one person
+     * serialise: the second sees the first's membership and is refused, instead
+     * of both landing and leaving them "in" two families.
+     *
+     * <p>A solo owner — a family nobody else has joined — may accept: their
+     * household is folded into the new one ({@link #foldSoloFamilyInto}). Anyone
+     * in a family with other people must leave it first. Every OTHER pending
+     * invite is declined in the same transaction; they used to stay pending, and
+     * accepting a second one later failed with "already part of a family".
+     */
     @Transactional
     public FamilyResponse acceptInvite(UUID userId, UUID memberId) {
-        FamilyMember m = requireInvite(userId, memberId);
-        if (currentFamily(userId) != null) {
-            throw ApiException.badRequest("You're already part of a family.");
+        List<FamilyMember> mine = members.lockByLinkedUser(userId);
+        FamilyMember m = mine.stream()
+                .filter(x -> x.getId().equals(memberId) && x.getStatus() == MemberStatus.invited)
+                .findFirst()
+                .orElseThrow(() -> ApiException.badRequest("That invitation is no longer available."));
+        Family target = requireFamily(m.getFamilyId());
+        Family current = currentFamily(userId);
+        if (current != null) {
+            if (current.getId().equals(target.getId()) || !isSoloOwner(userId)) {
+                throw ApiException.badRequest("You're already part of a family. Leave it first to join another.");
+            }
+            foldSoloFamilyInto(current, target, userId, m);
         }
         m.setStatus(MemberStatus.mapped);
         members.save(m);
-        Family fam = requireFamily(m.getFamilyId());
-        return buildResponse(fam, userId);
+        for (FamilyMember other : mine) {
+            if (other != m && other.getStatus() == MemberStatus.invited) {
+                revertInvite(other);
+            }
+        }
+        notifications.publish(target.getOwnerUserId(), NotificationKind.system, NotifyCategory.people,
+                displayName(userId) + " joined your family", null, target.getId());
+        changed(target, userId, "members");
+        return buildResponse(target, userId);
+    }
+
+    /**
+     * A solo owner joining another family brings their household with them.
+     *
+     * <p>Chosen as the option that destroys nothing: the profiles they added
+     * (children, parents — rows with no account) MOVE to the new family, so
+     * their food profiles and history survive; the invites they had sent out are
+     * withdrawn (a family they are leaving can't keep inviting people); their own
+     * "self" row is retired, its food profile copied onto the new membership when
+     * that one was created just for the invite. The old family row itself, with
+     * its pantry, shopping list and plans, is left in place but unreachable — no
+     * mapped member — rather than deleted; account deletion removes it with the
+     * account ({@code AuthService.handOverOrRemoveFamilies}). The cost: the new
+     * family's owner now manages the moved profiles, and may see duplicates of
+     * people both households had added.
+     */
+    private void foldSoloFamilyInto(Family solo, Family target, UUID userId, FamilyMember newSelf) {
+        for (FamilyMember x : members.findByFamilyIdAndDeletedAtIsNullOrderByCreatedAtAsc(solo.getId())) {
+            if (userId.equals(x.getLinkedUserId())) {
+                if (newSelf.isInviteOnly()) {
+                    applyProfile(newSelf, readProfile(x));
+                }
+                x.setDeletedAt(java.time.Instant.now());
+                members.save(x);
+                continue;
+            }
+            if (x.getStatus() == MemberStatus.invited) {
+                revertInvite(x);
+                if (x.getDeletedAt() != null) {
+                    continue;
+                }
+            }
+            if (x.getStatus() == MemberStatus.unmapped) {
+                x.setFamilyId(target.getId());
+                members.save(x);
+            }
+        }
     }
 
     @Transactional
     public void declineInvite(UUID userId, UUID memberId) {
         FamilyMember m = requireInvite(userId, memberId);
+        UUID familyId = m.getFamilyId();
+        revertInvite(m);
+        families.findById(familyId).ifPresent(fam -> notifications.publish(fam.getOwnerUserId(),
+                NotificationKind.system, NotifyCategory.people, displayName(userId) + " declined your family invite", null, fam.getId()));
+    }
+
+    /** Undo an invite: drop a row made only to carry it, or hand a profile slot back as unmapped. */
+    private void revertInvite(FamilyMember m) {
         if (m.isInviteOnly()) {
             // Row existed only to carry the invite — remove it entirely so no
             // orphan profile is left behind.
@@ -350,7 +525,11 @@ public class FamilyService {
         members.save(m);
     }
 
-    /** A non-owner member leaves the family (soft-deletes their own membership). */
+    /**
+     * A member leaves the family (soft-deletes their own membership). The owner
+     * can't — someone has to own it — so they hand it on first
+     * ({@link #transferOwnership}) and then leave as a member.
+     */
     @Transactional
     public FamilyResponse leaveFamily(UUID userId) {
         Family fam = currentFamily(userId);
@@ -358,7 +537,9 @@ public class FamilyService {
             throw ApiException.badRequest("You're not part of a family.");
         }
         if (fam.getOwnerUserId().equals(userId)) {
-            throw ApiException.badRequest("As the family owner you can't leave — remove members instead.");
+            throw ApiException.badRequest(otherMappedUsers(fam, userId).isEmpty()
+                    ? "It's just you in this family, so there's nothing to leave."
+                    : "Make another member the owner first, then you can leave.");
         }
         members.findByLinkedUserIdAndStatusAndDeletedAtIsNull(userId, MemberStatus.mapped).stream()
                 .filter(m -> m.getFamilyId().equals(fam.getId()))
@@ -366,6 +547,9 @@ public class FamilyService {
                     m.setDeletedAt(java.time.Instant.now());
                     members.save(m);
                 });
+        notifications.publish(fam.getOwnerUserId(), NotificationKind.system, NotifyCategory.people,
+                displayName(userId) + " left your family", null, fam.getId());
+        changed(fam, userId, "members");
         return getFamily(userId);
     }
 
@@ -447,13 +631,129 @@ public class FamilyService {
         if (latest.isEmpty()) {
             return null;
         }
-        FamilyMealPlan p = latest.get();
+        return toPlanResponse(latest.get());
+    }
+
+    private MealPlanResponse toPlanResponse(FamilyMealPlan p) {
         return new MealPlanResponse(
                 p.getId(),
                 readJson(p.getPlanJson()),
                 readJson(p.getGroceryItemsJson()),
                 p.getSource(),
                 p.getCreatedAt());
+    }
+
+    /**
+     * The last 8 one-day plans, newest first — the current one included (the
+     * client skips it). Every Generate already wrote a new row, so nothing was
+     * ever overwritten; there was just no way to see the older ones.
+     */
+    @Transactional(readOnly = true)
+    public List<MealPlanResponse> planHistory(UUID userId) {
+        Family fam = currentFamily(userId);
+        if (fam == null) {
+            return List.of();
+        }
+        return plans.findTop8ByFamilyIdOrderByCreatedAtDesc(fam.getId()).stream()
+                .map(this::toPlanResponse).toList();
+    }
+
+    /**
+     * "Use again": copy an older plan forward as a new row, so it becomes the
+     * current plan and the history keeps its place (and its cooked_at) intact.
+     */
+    @Transactional
+    public MealPlanResponse reusePlan(UUID userId, UUID planId) {
+        Family fam = requireMyFamily(userId);
+        requireMemberAccess(fam, userId);
+        FamilyMealPlan src = plans.findById(planId)
+                .filter(p -> p.getFamilyId().equals(fam.getId()))
+                .orElseThrow(() -> ApiException.notFound("that meal plan"));
+        FamilyMealPlan copy = new FamilyMealPlan();
+        copy.setFamilyId(fam.getId());
+        copy.setGeneratedByUserId(userId);
+        copy.setSource(src.getSource());
+        copy.setPlanJson(src.getPlanJson());
+        copy.setGroceryItemsJson(src.getGroceryItemsJson());
+        plans.save(copy);
+        changed(fam, userId, "plan");
+        return toPlanResponse(copy);
+    }
+
+    private static final List<String> MEAL_KEYS = List.of("breakfast", "lunch", "snack", "dinner");
+
+    /**
+     * Who cooks a meal. Stored on the plan JSON as {@code cooks: {meal: memberId}}
+     * — the plan is a JSON blob, so no column. A linked cook (not the actor) gets
+     * a bell notification.
+     */
+    @Transactional
+    public MealPlanResponse assignCook(UUID userId, UUID planId, AssignCookRequest req) {
+        Family fam = requireMyFamily(userId);
+        requireMemberAccess(fam, userId);
+        FamilyMealPlan p = plans.findById(planId)
+                .filter(x -> x.getFamilyId().equals(fam.getId()))
+                .orElseThrow(() -> ApiException.notFound("that meal plan"));
+        JsonNode root = readJson(p.getPlanJson());
+        if (!(root instanceof ObjectNode obj)) {
+            throw ApiException.badRequest("That plan can't be edited.");
+        }
+        setCook(fam, userId, obj, req);
+        p.setPlanJson(obj.toString());
+        plans.save(p);
+        changed(fam, userId, "plan");
+        return toPlanResponse(p);
+    }
+
+    /** As {@link #assignCook}, for one day ({@code req.day}, 1-based) of a weekly plan. */
+    @Transactional
+    public MultiDayPlanResponse assignMultiDayCook(UUID userId, UUID planId, AssignCookRequest req) {
+        Family fam = requireMyFamily(userId);
+        requireMemberAccess(fam, userId);
+        FamilyMultiDayPlan p = multiDayPlans.findById(planId)
+                .filter(x -> x.getFamilyId().equals(fam.getId()))
+                .orElseThrow(() -> ApiException.notFound("that meal plan"));
+        JsonNode root = readJson(p.getPlanJson());
+        JsonNode days = root != null ? root.path("days") : null;
+        int idx = req != null && req.day() != null ? req.day() - 1 : -1;
+        if (days == null || !days.isArray() || idx < 0 || idx >= days.size()
+                || !(days.get(idx) instanceof ObjectNode day)) {
+            throw ApiException.badRequest("Pick a day in this plan.");
+        }
+        setCook(fam, userId, day, req);
+        p.setPlanJson(root.toString());
+        multiDayPlans.save(p);
+        changed(fam, userId, "weekly");
+        return new MultiDayPlanResponse(p.getId(), p.getDays(), p.getOccasion(), root, p.getSource(), p.getCreatedAt());
+    }
+
+    private String setCook(Family fam, UUID actor, ObjectNode target, AssignCookRequest req) {
+        String meal = req != null && req.meal() != null ? req.meal().trim().toLowerCase(Locale.ROOT) : "";
+        if (!MEAL_KEYS.contains(meal)) {
+            throw ApiException.badRequest("meal must be breakfast, lunch, snack or dinner.");
+        }
+        JsonNode existing = target.get("cooks");
+        ObjectNode cooks = existing instanceof ObjectNode o ? o : target.putObject("cooks");
+        if (req.memberId() == null) {
+            cooks.remove(meal);
+            return meal;
+        }
+        FamilyMember cook = requireFamilyMember(fam, req.memberId());
+        boolean changedCook = !req.memberId().toString().equals(cooks.path(meal).asText(null));
+        cooks.put(meal, cook.getId().toString());
+        if (changedCook && cook.getStatus() == MemberStatus.mapped && cook.getLinkedUserId() != null
+                && !cook.getLinkedUserId().equals(actor)) {
+            notifications.publish(cook.getLinkedUserId(), NotificationKind.system, NotifyCategory.people,
+                    displayName(actor) + " asked you to cook " + meal, null, fam.getId());
+        }
+        return meal;
+    }
+
+    /** A live member row of {@code fam}; anything else is a bad request, not a leak of another family's row. */
+    private FamilyMember requireFamilyMember(Family fam, UUID memberId) {
+        return members.findById(memberId)
+                .filter(m -> m.getDeletedAt() == null && m.getFamilyId().equals(fam.getId()))
+                .orElseThrow(() -> ApiException.badRequest("That person is not in your family."));
     }
 
     @Transactional
@@ -719,6 +1019,13 @@ public class FamilyService {
         FamilyMealPlan p = plans.findById(planId)
                 .filter(x -> x.getFamilyId().equals(fam.getId()))
                 .orElseThrow(() -> ApiException.notFound("that meal plan"));
+        // Once per plan. Every tap used to bump the dishes again, so a few
+        // taps on one plan outweighed weeks of real cooking.
+        if (p.getCookedAt() != null) {
+            return;
+        }
+        p.setCookedAt(java.time.Instant.now());
+        plans.save(p);
         bumpDishes(fam.getId(), extractDishNames(readJson(p.getPlanJson())), 1);
     }
 
@@ -744,6 +1051,7 @@ public class FamilyService {
         item.setFamilyId(fam.getId());
         applyPantry(item, req);
         pantry.save(item);
+        changed(fam, userId, "pantry");
         return toPantryResponse(item);
     }
 
@@ -755,6 +1063,7 @@ public class FamilyService {
             applyPantry(item, req);
         }
         pantry.save(item);
+        changed(fam, userId, "pantry");
         return toPantryResponse(item);
     }
 
@@ -764,6 +1073,7 @@ public class FamilyService {
         FamilyPantryItem item = requirePantry(fam, id);
         item.setDeletedAt(java.time.Instant.now());
         pantry.save(item);
+        changed(fam, userId, "pantry");
     }
 
     @Transactional
@@ -795,6 +1105,9 @@ public class FamilyService {
                 item.setExpiryDate(parseDate(textOrNull(it, "expiry")));
                 pantry.save(item);
                 added.add(toPantryResponse(item));
+            }
+            if (!added.isEmpty()) {
+                changed(fam, userId, "pantry");
             }
             return new PantryScanResponse(added, added.size(), added.isEmpty(),
                     added.isEmpty() ? "No items detected. Try a clearer photo." : "Added " + added.size() + " item(s) to your pantry.",
@@ -830,17 +1143,24 @@ public class FamilyService {
         item.setEstimatedCost(req.estimatedCost() != null && req.estimatedCost() >= 0 ? req.estimatedCost() : null);
         item.setCreatedByUserId(userId);
         shopping.save(item);
+        changed(fam, userId, "shopping");
         return buildShoppingResponse(fam.getId());
     }
 
+    /**
+     * Set (or, with no value, flip) an item's tick. Setting is what the UI sends:
+     * a flip replayed — a retried request, two people ticking the same line —
+     * undid itself, where "checked: true" twice is still checked.
+     */
     @Transactional
-    public ShoppingListResponse toggleShopping(UUID userId, UUID id) {
+    public ShoppingListResponse toggleShopping(UUID userId, UUID id, Boolean checked) {
         Family fam = requireMyFamily(userId);
         FamilyShoppingItem item = shopping.findById(id)
                 .filter(s -> s.getFamilyId().equals(fam.getId()))
                 .orElseThrow(() -> ApiException.notFound("that item"));
-        item.setChecked(!item.isChecked());
+        item.setChecked(checked != null ? checked : !item.isChecked());
         shopping.save(item);
+        changed(fam, userId, "shopping");
         return buildShoppingResponse(fam.getId());
     }
 
@@ -851,9 +1171,22 @@ public class FamilyService {
                 .filter(s -> s.getFamilyId().equals(fam.getId()))
                 .orElseThrow(() -> ApiException.notFound("that item"));
         shopping.delete(item);
+        changed(fam, userId, "shopping");
         return buildShoppingResponse(fam.getId());
     }
 
+    /**
+     * Build the list from a meal plan, minus the pantry and minus what's already
+     * on the list.
+     *
+     * <p>Two things it used to get wrong: each run appended the whole list again
+     * (Build twice = every item twice), and with no AI gateway — or a failed
+     * call — it returned the list unchanged and said nothing. Now every
+     * candidate is deduped case-insensitively against the list and the pantry
+     * ({@link #newShoppingLines}), the no-AI path builds a deterministic list from
+     * the plan's dishes ({@link #fallbackShopping}), and {@code message} says so
+     * when nothing was added.
+     */
     @Transactional
     public ShoppingListResponse generateShopping(UUID userId, GenerateShoppingRequest req) {
         Family fam = requireMyFamily(userId);
@@ -871,17 +1204,24 @@ public class FamilyService {
             throw ApiException.badRequest("Generate a meal plan first, then build a shopping list from it.");
         }
         boolean estimateCost = req == null || req.estimateCost() == null || req.estimateCost();
+        JsonNode plan = readJson(src.getPlanJson());
+        List<String> have = pantryNames(fam.getId());
+        // The family's own recipes come first; only the dishes without one go
+        // to the AI / the built-in map.
+        RecipeSplit split = splitByRecipe(extractDishNames(plan), recipeIngredients(fam.getId()));
+        List<String> dishes = split.rest();
 
-        if (openai.isConfigured()) {
+        List<ShoppingCandidate> candidates = null;
+        if (dishes.isEmpty()) {
+            candidates = new ArrayList<>();
+        } else if (openai.isConfigured()) {
             try {
-                JsonNode plan = readJson(src.getPlanJson());
                 StringBuilder ctx = new StringBuilder();
                 ctx.append("Planned dishes:\n");
-                for (String d : extractDishNames(plan)) {
+                for (String d : dishes) {
                     ctx.append("- ").append(sanitize(d)).append("\n");
                 }
                 ctx.append("\nAlready in pantry:\n");
-                List<String> have = pantryNames(fam.getId());
                 if (have.isEmpty()) {
                     ctx.append("(nothing)\n");
                 } else {
@@ -892,25 +1232,450 @@ public class FamilyService {
                 ctx.append(estimateCost ? "\nInclude estimatedCost in INR." : "\nSet estimatedCost to 0.");
                 String raw = openai.complete(SHOPPING_PROMPT, List.of(new ChatTurn("user", ctx.toString())));
                 JsonNode node = json.readTree(OpenAIClient.jsonOf(raw));
+                candidates = new ArrayList<>();
                 for (JsonNode it : node.path("items")) {
                     String name = textOrNull(it, "name");
-                    if (!StringUtils.hasText(name)) {
-                        continue;
+                    if (StringUtils.hasText(name)) {
+                        candidates.add(new ShoppingCandidate(name, textOrNull(it, "quantity"),
+                                numberAsInt(it, "estimatedCost")));
                     }
-                    FamilyShoppingItem item = new FamilyShoppingItem();
-                    item.setFamilyId(fam.getId());
-                    item.setName(trimTo(name, 120));
-                    item.setQuantity(trimTo(textOrNull(it, "quantity"), 60));
-                    Integer cost = numberAsInt(it, "estimatedCost");
-                    item.setEstimatedCost(estimateCost && cost != null && cost >= 0 ? cost : null);
-                    item.setCreatedByUserId(userId);
-                    shopping.save(item);
                 }
             } catch (Exception ex) {
-                log.warn("Shopping generation failed; returning current list", ex);
+                log.warn("Shopping generation failed; using the dish-based list", ex);
+                candidates = null;
             }
         }
-        return buildShoppingResponse(fam.getId());
+        boolean usedFallback = !dishes.isEmpty() && (candidates == null || candidates.isEmpty());
+        if (usedFallback) {
+            candidates = fallbackShopping(dishes);
+        }
+        List<ShoppingCandidate> all = new ArrayList<>(split.fromRecipes());
+        all.addAll(candidates);
+        candidates = all;
+
+        List<String> existing = shopping.findByFamilyIdOrderByCheckedAscCreatedAtDesc(fam.getId()).stream()
+                .map(FamilyShoppingItem::getName).toList();
+        List<ShoppingCandidate> fresh = newShoppingLines(candidates, existing, have);
+        for (ShoppingCandidate c : fresh) {
+            FamilyShoppingItem item = new FamilyShoppingItem();
+            item.setFamilyId(fam.getId());
+            item.setName(trimTo(c.name(), 120));
+            item.setQuantity(trimTo(c.quantity(), 60));
+            Integer cost = c.estimatedCost();
+            item.setEstimatedCost(estimateCost && cost != null && cost >= 0 ? cost : null);
+            item.setCreatedByUserId(userId);
+            shopping.save(item);
+        }
+        if (!fresh.isEmpty()) {
+            changed(fam, userId, "shopping");
+        }
+        ShoppingListResponse list = buildShoppingResponse(fam.getId());
+        String message;
+        if (fresh.isEmpty()) {
+            message = candidates.isEmpty()
+                    ? "Couldn't work out ingredients for this plan. Add items by hand."
+                    : "Nothing new to add. Everything for this plan is already on your list or in your pantry.";
+        } else {
+            message = "Added " + fresh.size() + (fresh.size() == 1 ? " item" : " items")
+                    + (!split.fromRecipes().isEmpty() ? " (your recipes first)"
+                    : usedFallback ? " from the plan's dishes" : "") + ".";
+        }
+        return new ShoppingListResponse(list.items(), list.totalEstimatedCost(), fresh.size(), message);
+    }
+
+    record ShoppingCandidate(String name, String quantity, Integer estimatedCost) {
+    }
+
+    /** {@code fromRecipes}: lines from the family's recipes; {@code rest}: dishes with no recipe ingredients. */
+    record RecipeSplit(List<ShoppingCandidate> fromRecipes, List<String> rest) {
+    }
+
+    /** dish key → ingredient text, for the recipes that list any. */
+    private Map<String, String> recipeIngredients(UUID familyId) {
+        Map<String, String> out = new LinkedHashMap<>();
+        for (FamilyRecipe r : recipes.findByFamilyIdOrderByDishNameAsc(familyId)) {
+            if (StringUtils.hasText(r.getIngredients())) {
+                out.put(r.getDishKey(), r.getIngredients());
+            }
+        }
+        return out;
+    }
+
+    /** Pure: each dish's recipe lines when it has a recipe, else the dish goes on to {@code rest}. */
+    static RecipeSplit splitByRecipe(List<String> dishes, Map<String, String> ingredientsByKey) {
+        List<ShoppingCandidate> lines = new ArrayList<>();
+        List<String> rest = new ArrayList<>();
+        for (String dish : dishes) {
+            String text = ingredientsByKey.get(shoppingKey(dish));
+            List<ShoppingCandidate> parsed = text == null ? List.of() : parseIngredientLines(text);
+            if (parsed.isEmpty()) {
+                rest.add(dish);
+            } else {
+                lines.addAll(parsed);
+            }
+        }
+        return new RecipeSplit(lines, rest);
+    }
+
+    /**
+     * One ingredient per line, bullets and numbering dropped. "Toor dal: 200 g"
+     * and "Toor dal - 200 g" split into name + quantity; anything else is all name.
+     */
+    private static final java.util.regex.Pattern BULLET =
+            java.util.regex.Pattern.compile("^\\s*(?:[-*\\u2022]+\\s*|\\d+[.)]\\s+)"); // "1.5 kg" is not item 1
+    private static final java.util.regex.Pattern NAME_QTY =
+            java.util.regex.Pattern.compile("^(.+?)\\s*(?::|\\s-\\s|\\u2014)\\s*(.+)$");
+
+    static List<ShoppingCandidate> parseIngredientLines(String text) {
+        List<ShoppingCandidate> out = new ArrayList<>();
+        if (text == null) {
+            return out;
+        }
+        for (String raw : text.split("\\r?\\n")) {
+            String line = BULLET.matcher(raw).replaceFirst("").trim();
+            if (line.isEmpty()) {
+                continue;
+            }
+            String name = line;
+            String qty = null;
+            java.util.regex.Matcher m = NAME_QTY.matcher(line);
+            if (m.matches()) {
+                name = m.group(1).trim();
+                qty = m.group(2).trim();
+            }
+            if (!name.isEmpty()) {
+                out.add(new ShoppingCandidate(trimTo(name, 120), trimTo(qty, 60), null));
+            }
+        }
+        return out;
+    }
+
+    /**
+     * "Add expiring & low items to list": pantry items marked low, or whose
+     * expiry is within 2 days of the user's today (already expired included),
+     * deduped against the list — and not against the pantry, which is where
+     * every one of them came from.
+     */
+    @Transactional
+    public ShoppingListResponse restockFromPantry(UUID userId) {
+        Family fam = requireMyFamily(userId);
+        requireMemberAccess(fam, userId);
+        List<ShoppingCandidate> wanted = restockLines(
+                pantry.findByFamilyIdAndDeletedAtIsNullOrderByCreatedAtDesc(fam.getId()), clock.today(userId));
+        List<String> existing = shopping.findByFamilyIdOrderByCheckedAscCreatedAtDesc(fam.getId()).stream()
+                .map(FamilyShoppingItem::getName).toList();
+        List<ShoppingCandidate> fresh = newShoppingLines(wanted, existing, List.of());
+        for (ShoppingCandidate c : fresh) {
+            FamilyShoppingItem item = new FamilyShoppingItem();
+            item.setFamilyId(fam.getId());
+            item.setName(trimTo(c.name(), 120));
+            item.setQuantity(trimTo(c.quantity(), 60));
+            item.setCreatedByUserId(userId);
+            shopping.save(item);
+        }
+        if (!fresh.isEmpty()) {
+            changed(fam, userId, "shopping");
+        }
+        ShoppingListResponse list = buildShoppingResponse(fam.getId());
+        String message = fresh.isEmpty()
+                ? (wanted.isEmpty() ? "Nothing in the pantry is low or expiring in the next 2 days."
+                        : "Those items are already on your list.")
+                : "Added " + fresh.size() + (fresh.size() == 1 ? " item" : " items") + " from the pantry.";
+        return new ShoppingListResponse(list.items(), list.totalEstimatedCost(), fresh.size(), message);
+    }
+
+    /** Pure: low items, plus anything expiring on or before {@code today + 2}. */
+    static List<ShoppingCandidate> restockLines(List<FamilyPantryItem> items, LocalDate today) {
+        LocalDate cutoff = today.plusDays(2);
+        List<ShoppingCandidate> out = new ArrayList<>();
+        for (FamilyPantryItem i : items) {
+            boolean expiring = i.getExpiryDate() != null && !i.getExpiryDate().isAfter(cutoff);
+            if ((i.isLow() || expiring) && StringUtils.hasText(i.getName())) {
+                out.add(new ShoppingCandidate(i.getName(), i.getQuantity(), null));
+            }
+        }
+        return out;
+    }
+
+    /** Lowercased, trimmed, inner whitespace collapsed — "Toor Dal " and "toor dal" are one line. */
+    static String shoppingKey(String name) {
+        return name == null ? "" : name.trim().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
+    }
+
+    /**
+     * Candidates that are neither already on the list, nor in the pantry, nor a
+     * repeat of an earlier candidate. Pure, so the dedupe is testable without a DB.
+     */
+    static List<ShoppingCandidate> newShoppingLines(List<ShoppingCandidate> candidates,
+                                                    List<String> onList, List<String> inPantry) {
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        onList.forEach(n -> seen.add(shoppingKey(n)));
+        inPantry.forEach(n -> seen.add(shoppingKey(n)));
+        List<ShoppingCandidate> out = new ArrayList<>();
+        for (ShoppingCandidate c : candidates) {
+            String key = shoppingKey(c.name());
+            if (!key.isEmpty() && seen.add(key)) {
+                out.add(c);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Staples behind the dishes the planner (and {@link #fallbackPlan}) actually
+     * produces. Matched on a whole word of the dish name, so "Tomato rasam" finds
+     * rasam's line. ponytail: a dish nobody listed here contributes nothing —
+     * grow the map rather than guessing.
+     */
+    private static final Map<String, List<String>> DISH_INGREDIENTS = new LinkedHashMap<>();
+
+    static {
+        DISH_INGREDIENTS.put("idli", List.of("Idli rice", "Urad dal"));
+        DISH_INGREDIENTS.put("dosa", List.of("Dosa rice", "Urad dal"));
+        DISH_INGREDIENTS.put("sambar", List.of("Toor dal", "Tamarind", "Sambar powder", "Drumstick", "Shallots"));
+        DISH_INGREDIENTS.put("rasam", List.of("Toor dal", "Tamarind", "Tomatoes", "Rasam powder"));
+        DISH_INGREDIENTS.put("chutney", List.of("Coconut", "Roasted chana dal", "Green chillies"));
+        DISH_INGREDIENTS.put("poriyal", List.of("Beans", "Grated coconut", "Mustard seeds"));
+        DISH_INGREDIENTS.put("kootu", List.of("Moong dal", "Mixed vegetables", "Grated coconut"));
+        DISH_INGREDIENTS.put("avial", List.of("Mixed vegetables", "Coconut", "Curd"));
+        DISH_INGREDIENTS.put("upma", List.of("Rava (semolina)", "Onions", "Green chillies"));
+        DISH_INGREDIENTS.put("pongal", List.of("Raw rice", "Moong dal", "Black pepper", "Ghee"));
+        DISH_INGREDIENTS.put("sundal", List.of("Chickpeas", "Grated coconut"));
+        DISH_INGREDIENTS.put("buttermilk", List.of("Curd"));
+        DISH_INGREDIENTS.put("curd", List.of("Curd"));
+        DISH_INGREDIENTS.put("rice", List.of("Rice"));
+        DISH_INGREDIENTS.put("chapati", List.of("Wheat flour"));
+        DISH_INGREDIENTS.put("roti", List.of("Wheat flour"));
+        DISH_INGREDIENTS.put("kurma", List.of("Mixed vegetables", "Coconut", "Fennel seeds"));
+        DISH_INGREDIENTS.put("egg", List.of("Eggs"));
+        DISH_INGREDIENTS.put("chicken", List.of("Chicken"));
+        DISH_INGREDIENTS.put("fish", List.of("Fish"));
+    }
+
+    /** The no-AI list: each dish's staples, in plan order (deduped later). */
+    static List<ShoppingCandidate> fallbackShopping(List<String> dishes) {
+        List<ShoppingCandidate> out = new ArrayList<>();
+        for (String dish : dishes) {
+            List<String> words = java.util.Arrays.asList(shoppingKey(dish).split("[^a-z]+"));
+            for (Map.Entry<String, List<String>> e : DISH_INGREDIENTS.entrySet()) {
+                if (words.contains(e.getKey())) {
+                    e.getValue().forEach(n -> out.add(new ShoppingCandidate(n, null, null)));
+                }
+            }
+        }
+        return out;
+    }
+
+    // ---- Chores ----
+
+    static final List<String> CHORE_REPEATS = List.of("none", "daily", "weekly");
+
+    @Transactional(readOnly = true)
+    public List<ChoreResponse> listChores(UUID userId) {
+        Family fam = currentFamily(userId);
+        if (fam == null) {
+            return List.of();
+        }
+        return buildChores(fam, userId);
+    }
+
+    @Transactional
+    public List<ChoreResponse> addChore(UUID userId, ChoreRequest req) {
+        Family fam = requireMyFamily(userId);
+        requireMemberAccess(fam, userId);
+        FamilyChore c = new FamilyChore();
+        c.setFamilyId(fam.getId());
+        c.setCreatedByUserId(userId);
+        applyChore(fam, c, req);
+        chores.save(c);
+        notifyAssignee(fam, userId, c);
+        changed(fam, userId, "chores");
+        return buildChores(fam, userId);
+    }
+
+    @Transactional
+    public List<ChoreResponse> updateChore(UUID userId, UUID id, ChoreRequest req) {
+        Family fam = requireMyFamily(userId);
+        requireMemberAccess(fam, userId);
+        FamilyChore c = requireChore(fam, id);
+        UUID before = c.getAssigneeMemberId();
+        applyChore(fam, c, req);
+        chores.save(c);
+        if (c.getAssigneeMemberId() != null && !c.getAssigneeMemberId().equals(before)) {
+            notifyAssignee(fam, userId, c);
+        }
+        changed(fam, userId, "chores");
+        return buildChores(fam, userId);
+    }
+
+    /** Set (or, with no value, flip) done. A repeating chore's tick lasts its day / week. */
+    @Transactional
+    public List<ChoreResponse> toggleChore(UUID userId, UUID id, Boolean done) {
+        Family fam = requireMyFamily(userId);
+        requireMemberAccess(fam, userId);
+        FamilyChore c = requireChore(fam, id);
+        boolean now = choreDone(c, clock.today(userId), clock.zoneOf(userId));
+        boolean want = done != null ? done : !now;
+        c.setDoneAt(want ? java.time.Instant.now() : null);
+        chores.save(c);
+        changed(fam, userId, "chores");
+        return buildChores(fam, userId);
+    }
+
+    @Transactional
+    public List<ChoreResponse> deleteChore(UUID userId, UUID id) {
+        Family fam = requireMyFamily(userId);
+        requireMemberAccess(fam, userId);
+        chores.delete(requireChore(fam, id));
+        changed(fam, userId, "chores");
+        return buildChores(fam, userId);
+    }
+
+    private FamilyChore requireChore(Family fam, UUID id) {
+        return chores.findById(id)
+                .filter(c -> c.getFamilyId().equals(fam.getId()))
+                .orElseThrow(() -> ApiException.notFound("that chore"));
+    }
+
+    private void applyChore(Family fam, FamilyChore c, ChoreRequest req) {
+        if (req == null || !StringUtils.hasText(req.title())) {
+            throw ApiException.badRequest("A chore needs a title.");
+        }
+        String repeat = req.repeat() == null ? "none" : req.repeat().trim().toLowerCase(Locale.ROOT);
+        if (!CHORE_REPEATS.contains(repeat)) {
+            throw ApiException.badRequest("repeat must be none, daily or weekly.");
+        }
+        c.setTitle(trimTo(req.title(), 120));
+        c.setAssigneeMemberId(req.assigneeMemberId() != null
+                ? requireFamilyMember(fam, req.assigneeMemberId()).getId() : null);
+        c.setDueDate(req.dueDate());
+        c.setRepeatRule(repeat);
+    }
+
+    /** The assignee hears about it, when they have an account in the family and didn't assign it themselves. */
+    private void notifyAssignee(Family fam, UUID actor, FamilyChore c) {
+        if (c.getAssigneeMemberId() == null) {
+            return;
+        }
+        members.findById(c.getAssigneeMemberId())
+                .filter(m -> m.getDeletedAt() == null && m.getStatus() == MemberStatus.mapped
+                        && m.getLinkedUserId() != null && !m.getLinkedUserId().equals(actor))
+                .ifPresent(m -> notifications.publish(m.getLinkedUserId(), NotificationKind.system, NotifyCategory.people,
+                        displayName(actor) + " gave you a chore: " + c.getTitle(),
+                        c.getDueDate() != null ? "Due " + c.getDueDate() : null, fam.getId()));
+    }
+
+    /**
+     * Done, as the viewer sees it today: a one-off once ticked; a daily chore
+     * ticked today; a weekly one ticked within the last 7 days.
+     */
+    static boolean choreDone(FamilyChore c, LocalDate today, java.time.ZoneId zone) {
+        if (c.getDoneAt() == null) {
+            return false;
+        }
+        LocalDate doneDay = c.getDoneAt().atZone(zone).toLocalDate();
+        String rule = c.getRepeatRule() == null ? "none" : c.getRepeatRule();
+        return switch (rule) {
+            case "daily" -> !doneDay.isBefore(today);
+            case "weekly" -> doneDay.isAfter(today.minusDays(7));
+            default -> true;
+        };
+    }
+
+    private List<ChoreResponse> buildChores(Family fam, UUID userId) {
+        LocalDate today = clock.today(userId);
+        java.time.ZoneId zone = clock.zoneOf(userId);
+        Map<UUID, String> names = new java.util.HashMap<>();
+        for (FamilyMember m : members.findByFamilyIdAndDeletedAtIsNullOrderByCreatedAtAsc(fam.getId())) {
+            names.put(m.getId(), m.getName());
+        }
+        List<ChoreResponse> out = new ArrayList<>();
+        for (FamilyChore c : chores.findByFamilyIdOrderByCreatedAtAsc(fam.getId())) {
+            // A removed member's chores read as unassigned rather than naming a ghost.
+            UUID who = c.getAssigneeMemberId() != null && names.containsKey(c.getAssigneeMemberId())
+                    ? c.getAssigneeMemberId() : null;
+            out.add(new ChoreResponse(c.getId(), c.getTitle(), who, who != null ? names.get(who) : null,
+                    c.getDueDate(), c.getRepeatRule(), choreDone(c, today, zone), c.getDoneAt(),
+                    c.getCreatedAt()));
+        }
+        // Open first, then by due date (none last); creation order breaks ties (the sort is stable).
+        out.sort(java.util.Comparator.comparing(ChoreResponse::done)
+                .thenComparing(ChoreResponse::dueDate,
+                        java.util.Comparator.nullsLast(java.util.Comparator.<LocalDate>naturalOrder())));
+        return out;
+    }
+
+    // ---- Recipes ----
+
+    @Transactional(readOnly = true)
+    public List<RecipeResponse> listRecipes(UUID userId) {
+        Family fam = currentFamily(userId);
+        if (fam == null) {
+            return List.of();
+        }
+        return recipes.findByFamilyIdOrderByDishNameAsc(fam.getId()).stream()
+                .map(FamilyService::toRecipeResponse).toList();
+    }
+
+    /**
+     * Create or replace the recipe for a dish (matched on {@link #shoppingKey}).
+     * Nothing left in it (no ingredients, steps or time) deletes it; the
+     * response is then null.
+     */
+    @Transactional
+    public RecipeResponse saveRecipe(UUID userId, RecipeRequest req) {
+        Family fam = requireMyFamily(userId);
+        requireMemberAccess(fam, userId);
+        if (req == null || !StringUtils.hasText(req.dish())) {
+            throw ApiException.badRequest("Which dish is this recipe for?");
+        }
+        String ingredients = StringUtils.hasText(req.ingredients()) ? req.ingredients().trim() : null;
+        String steps = StringUtils.hasText(req.steps()) ? req.steps().trim() : null;
+        int len = (ingredients != null ? ingredients.length() : 0) + (steps != null ? steps.length() : 0);
+        if (len > 4000) {
+            throw ApiException.badRequest("A recipe can be at most 4000 characters (ingredients + steps).");
+        }
+        Integer minutes = req.cookMinutes();
+        if (minutes != null && (minutes < 0 || minutes > 1440)) {
+            throw ApiException.badRequest("Cook time must be between 0 and 1440 minutes.");
+        }
+        String key = trimTo(shoppingKey(req.dish()), 160);
+        Optional<FamilyRecipe> found = recipes.findByFamilyIdAndDishKey(fam.getId(), key);
+        if (ingredients == null && steps == null && minutes == null) {
+            found.ifPresent(recipes::delete);
+            changed(fam, userId, "recipes");
+            return null;
+        }
+        FamilyRecipe r = found.orElseGet(() -> {
+            FamilyRecipe n = new FamilyRecipe();
+            n.setFamilyId(fam.getId());
+            n.setDishKey(key);
+            return n;
+        });
+        r.setDishName(trimTo(req.dish(), 160));
+        r.setIngredients(ingredients);
+        r.setSteps(steps);
+        r.setCookMinutes(minutes);
+        r.setUpdatedByUserId(userId);
+        recipes.save(r);
+        changed(fam, userId, "recipes");
+        return toRecipeResponse(r);
+    }
+
+    @Transactional
+    public void deleteRecipe(UUID userId, UUID id) {
+        Family fam = requireMyFamily(userId);
+        requireMemberAccess(fam, userId);
+        FamilyRecipe r = recipes.findById(id)
+                .filter(x -> x.getFamilyId().equals(fam.getId()))
+                .orElseThrow(() -> ApiException.notFound("that recipe"));
+        recipes.delete(r);
+        changed(fam, userId, "recipes");
+    }
+
+    private static RecipeResponse toRecipeResponse(FamilyRecipe r) {
+        return new RecipeResponse(r.getId(), r.getDishName(), r.getIngredients(), r.getSteps(),
+                r.getCookMinutes(), r.getUpdatedAt());
     }
 
     // ---- planner helpers ----
@@ -938,6 +1703,9 @@ public class FamilyService {
         item.setQuantity(trimTo(req.quantity(), 60));
         item.setExpiryDate(req.expiryDate());
         item.setLeftover(Boolean.TRUE.equals(req.leftover()));
+        if (req.low() != null) {
+            item.setLow(req.low());
+        }
     }
 
     private ShoppingListResponse buildShoppingResponse(UUID familyId) {
@@ -968,7 +1736,7 @@ public class FamilyService {
             soon = d >= 0 && d <= 3;
         }
         return new PantryItemResponse(i.getId(), i.getName(), i.getCategory(), i.getQuantity(),
-                i.getExpiryDate(), dte, soon, expired, i.isLeftover(), i.getCreatedAt());
+                i.getExpiryDate(), dte, soon, expired, i.isLeftover(), i.isLow(), i.getCreatedAt());
     }
 
     private List<String> pantryNames(UUID familyId) {
@@ -1225,7 +1993,11 @@ public class FamilyService {
 
     private void requireManageOrSelf(Family fam, UUID userId, FamilyMember m) {
         boolean owner = fam.getOwnerUserId().equals(userId);
-        boolean self = m.getLinkedUserId() != null && m.getLinkedUserId().equals(userId);
+        // MAPPED, not merely linked: an invited row carries the invitee's id
+        // too, so "linked" let someone edit a profile in a family they had not
+        // yet agreed to join — or one whose invite they'd never answer.
+        boolean self = m.getLinkedUserId() != null && m.getLinkedUserId().equals(userId)
+                && m.getStatus() == MemberStatus.mapped;
         if (!owner && !self) {
             throw ApiException.forbidden("You can only edit your own profile.");
         }
@@ -1233,7 +2005,8 @@ public class FamilyService {
 
     private void requireMemberAccess(Family fam, UUID userId) {
         boolean owner = fam.getOwnerUserId().equals(userId);
-        boolean member = members.existsByFamilyIdAndLinkedUserIdAndDeletedAtIsNull(fam.getId(), userId);
+        boolean member = members.existsByFamilyIdAndLinkedUserIdAndStatusAndDeletedAtIsNull(
+                fam.getId(), userId, MemberStatus.mapped);
         if (!owner && !member) {
             throw ApiException.forbidden("You are not part of this family.");
         }

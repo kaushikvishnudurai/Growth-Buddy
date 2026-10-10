@@ -4,7 +4,7 @@
 
 | File | What it is |
 |---|---|
-| `tableCreationQueries.sql` | hand-written DDL, the schema of record. 47 guarded `CREATE TABLE`s plus an add-if-missing migration block at the end. **Runnable against a fresh database, against prod, and twice.** **In sync with the live DB as of v6** — the 11 tables ddl-auto had created but nobody had written down were captured from `SHOW CREATE TABLE` and appended, and 11 phantom tables that had no entity and existed nowhere were deleted. |
+| `tableCreationQueries.sql` | hand-written DDL, the schema of record. One guarded `CREATE TABLE IF NOT EXISTS` per table (count them with `grep -c '^CREATE TABLE'`; a number written here went stale), with old migrations left as comments — the one live `ALTER` is the idempotent `MODIFY COLUMN` widening `family_members.status`'s ENUM; column adds go to `migrations.sql`. **Runnable against a fresh database, against prod, and twice.** **In sync with the live DB as of v6** — the 11 tables ddl-auto had created but nobody had written down were captured from `SHOW CREATE TABLE` and appended, and 11 phantom tables that had no entity and existed nowhere were deleted. |
 | `growth_buddy.sql` | a real `mysqldump` of a working DB (backticked identifiers). Untracked in git, and **stale** — it still holds the dropped Google tables. Re-dump it when you care. |
 
 `application.yml` sets `ddl-auto: ${SPRING_JPA_DDL_AUTO:update}`, so dev papers over any gap:
@@ -29,27 +29,32 @@ The last section, "TABLES CAPTURED FROM THE LIVE DB", is verbatim `SHOW CREATE T
 to `users(id)` and `utf8mb4_0900_ai_ci` collation, unlike the hand-written sections above. Left as-is
 so it provably matches the running database.
 
-## Tables in `tableCreationQueries.sql` (line → table)
+## Tables in `tableCreationQueries.sql` (by area)
 
 | | |
 |---|---|
-| 27 users · 49 password_credentials · 58 sessions | identity |
-| 75 email_verification_tokens · 85 password_reset_tokens · 505 whatsapp_otp_tokens | one-time codes (bcrypt hashes only) |
-| 95 tasks · 113 task_completion_history | tasks |
-| 129 habits · 145 habit_checkins · 159 habit_streaks · 170 streak_freeze_wallets | habits |
-| 181 water_goals · 190 water_entries | water |
-| 207 food_entries · 230 food_photo_logs · 284 food_diet_checks | food; the last one stores Buddy's diet check per `(user_id, scope)` with the prompt it answered, so a changed day is a miss rather than something to invalidate |
-| 247 goals · 265 goal_actions | goals |
-| 282 daily_scores · 299 daily_logs | scoring & wellness |
-| 322 quotes | quotes |
-| 332 mentor_threads · 342 mentor_messages | mentor chat |
-| 356 circles · 367 circle_members · 378 circle_posts · 393 circle_challenges | circles |
-| 422 notifications · 648 push_subscriptions | notifications |
-| 443 mentorship_requests | mentorship |
-| 609 calendar_reminders · 627 calendar_reminder_skips · 635 reminder_dispatch_log | calendar reminders |
-| 659 focus_sessions · 670 weekly_reviews | focus & weekly review |
-| 524 families · 534 family_members · 559 family_meal_plans · 682 family_dish_preferences · 694 family_pantry_items · 710 family_shopping_items · 725 family_favourite_menus · 738 family_multi_day_plans | family |
-| 592 money_state | **the Money document minus the ledger: `user_id`, `data` JSON, `updated_at`** |
+| users · password_credentials · sessions | identity |
+| email_verification_tokens · password_reset_tokens · whatsapp_otp_tokens | one-time codes (bcrypt hashes only) |
+| email_change_tokens · user_totp | change-email codes (bcrypt hash + the `new_email` they prove); authenticator 2FA — `secret_enc` is AES-GCM ciphertext (`TotpService`), `recovery_codes` a JSON array of bcrypt hashes, `enabled_at` NULL = setup pending. `users.deletion_requested_at` = account scheduled for deletion (purged 7 days later) |
+| tasks · task_completion_history | tasks (`tasks.goal_id` NULL = on no goal; no FK, since `tasks` is created before `goals` — `GoalService.delete` clears it) |
+| habits · habit_checkins · habit_streaks · streak_freeze_wallets | habits |
+| water_goals · water_entries | water |
+| food_entries · food_favourites · food_photo_logs · food_diet_checks | food (`food_entries.meal_slot` null on pre-slot rows; `sugar_g`/`sodium_mg` only from a barcode label; `food_favourites` is a copy of a starred entry); `water_entries.drink_type` null = water; the last one stores Buddy's diet check per `(user_id, scope)` with the prompt it answered, so a changed day is a miss rather than something to invalidate |
+| goals · goal_actions | goals |
+| daily_scores · daily_logs | scoring & wellness |
+| quotes | quotes |
+| mentor_threads · mentor_messages | mentor chat (`mentor_messages.actions_json` = the one-tap actions a reply offered, JSON array, NULL = none) |
+| circles · circle_members · circle_posts · circle_post_reactions · circle_challenges | circles (`circle_post_reactions` = kudos, PK `(post_id, user_id)`: one per member per post, toggled) |
+| notes · note_drafts · note_edit_drafts | notes (`labels` comma-joined, `archived_at`, `deleted_at` = the Trash); `note_drafts` = the composer's unsaved note, one per user; `note_edit_drafts` = an open edit's autosave, one per note, `labels` included (`''` = all removed, NULL = a pre-labels row) — saving or deleting the note drops it |
+| custom_sounds | the user's own notification sounds (≤5 per account): raw bytes in `audio` + `content_type`, `name`, `source` recording/file; `data_url` is the pre-bytes column, converted on first GET |
+| rate_limit_counters · login_attempts | `RateLimiter` / `LoginAttemptGuard` state (and FoodWeek's estimate backoff, key `food-estimate:<userId>`), shared across instances; keys are SHA-256 hashes, no user data |
+| mentorship_messages | the thread inside an accepted mentorship link (`link_id` = `mentorship_requests.id`); `kind` message / cheer / nudge — the daily nudge cap counts these rows |
+| notifications · push_subscriptions | notifications (`kind` ENUM gained `buddy_checkin`: the evening reflection) |
+| mentorship_requests | mentorship |
+| calendar_reminders · calendar_reminder_skips · reminder_done · reminder_dispatch_log · habit_reminder_dispatch_log | calendar reminders (`reminder_done` = one occurrence checked off, unique `(reminder_id, occurrence_date)`: not delivered, no device alarm); `habit_reminder_dispatch_log` = the habit reminder scheduler's de-dupe; a snooze's `reminder_dispatch_log` row carries `snooze_of` (the reminder; its `reminder_id` is name-derived) and `attempts`, status `pending` → `sent`/`failed` (the scheduler's at-least-once snooze sweeper) |
+| focus_sessions · weekly_reviews | focus & weekly review |
+| families · family_members · family_meal_plans · family_dish_preferences · family_pantry_items · family_shopping_items · family_favourite_menus · family_multi_day_plans · family_recipes · family_chores | family (`family_recipes` one per `(family_id, dish_key)`; `family_chores` with optional assignee member, `due_date`, `repeat_rule`, `done_at`) |
+| money_state | **the Money document minus the ledger: `user_id`, `data` JSON, `updated_at`** |
 | money_accounts · money_transactions | Money ledger: accounts (balance computed), one row per expense/income/transfer keyed `(user_id, id)`. (`money_day_summaries`, the old AI day-summary cache, is dropped by `migrations.sql`.) |
 
 ## `users.timezone` is load-bearing

@@ -10,7 +10,9 @@ record CreateTaskRequest(
         @NotBlank @Size(max = 255) String title,
         String notes,
         Priority priority,
-        Instant dueAt) {
+        Instant dueAt,
+        /** One of the user's own goals, or null for none. */
+        UUID goalId) {
 }
 
 /** Update body. Null fields are left unchanged. */
@@ -27,7 +29,11 @@ record UpdateTaskRequest(
          */
         Boolean clearDueAt,
         Boolean done,
-        Boolean paused) {
+        Boolean paused,
+        /** Move the task to this goal (the user's own). Null = unchanged. */
+        UUID goalId,
+        /** Take the task off its goal; the same reason as {@code clearDueAt}. */
+        Boolean clearGoal) {
 }
 
 record TaskResponse(
@@ -41,12 +47,13 @@ record TaskResponse(
                 Instant doneAt,
                 long completionCount,
                 Instant lastCompletedAt,
-                int pushCount) {
+                int pushCount,
+                UUID goalId) {
 
         static TaskResponse from(Task t, long completionCount, Instant lastCompletedAt) {
         return new TaskResponse(t.getId(), t.getTitle(), t.getNotes(), t.getPriority(),
                                 t.getDueAt(), t.isDone(), t.isPaused(), t.getDoneAt(), completionCount, lastCompletedAt,
-                                t.getPushCount());
+                                t.getPushCount(), t.getGoalId());
     }
 }
 

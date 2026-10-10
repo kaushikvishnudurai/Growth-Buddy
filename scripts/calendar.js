@@ -19,8 +19,12 @@ import {
   getWorkWeek,
   WORK_WEEKS,
   DEFAULT_WORK_WEEK,
+  DAY_CODES,
+  WEEK_ORDER,
+  parseRepeatDays,
+  nthWeekdayOf,
 } from './recurrence.js';
-import { CHIMES, playChime } from './chime.js';
+import { chimeOptionValue, chimeOptions, playChime } from './chime.js';
 
 const MONTHS = [
   'January',
@@ -197,6 +201,128 @@ const dayOptLabel = (d) =>
 
 function setRoutine(r) {
   routine = validRoutine(r);
+}
+
+/* "Notify before": how far ahead of its time a reminder rings. A reminder's own
+   choice wins; none means the user's default, `ui_prefs.reminderLead`, held
+   here as module state like the routine so the form can name it. The server
+   applies the same rule (`ReminderPrefs.leadFor`), and so does push.js for the
+   phone's own alarms. */
+const LEAD_OPTIONS = [0, 5, 10, 15, 30, 60, 120, 1440];
+let defaultLead = 0;
+// Opens Settings on the Reminders tab; app.js owns Settings, so it hands this in.
+let openReminderSettings = null;
+function setReminderSettingsOpener(fn) {
+  openReminderSettings = fn;
+}
+
+function validLead(n) {
+  const v = Number(n);
+  return Number.isFinite(v) && v >= 0 && v <= 1440 ? Math.round(v) : 0;
+}
+
+function setDefaultLead(n) {
+  defaultLead = validLead(n);
+}
+
+function getDefaultLead() {
+  return defaultLead;
+}
+
+/** "5 min", "1 h", "1 h 30 min", "1 day" — ReminderPrefs.human on the server. */
+function minutesLabel(m) {
+  if (m >= 1440 && m % 1440 === 0) return m / 1440 + (m === 1440 ? ' day' : ' days');
+  const hh = Math.floor(m / 60);
+  const mm = m % 60;
+  if (!hh) return mm + ' min';
+  return mm ? hh + ' h ' + mm + ' min' : hh + ' h';
+}
+
+function leadLabel(m) {
+  return m ? minutesLabel(m) + ' before' : 'At the time';
+}
+
+/* The Notify <select>: Default (naming what that is today), then each lead. An
+   empty value is "follow my default", not "at the time" — the same split the
+   Tone select makes, for the same reason. Refilled on focus: the add form is
+   cached for the session and the default can change in Settings meanwhile. */
+function notifySelect() {
+  const sel = h('select', { class: 'gb-input', 'aria-label': 'When to notify' });
+  // "Custom…": any number of minutes or hours up to a day — the server's
+  // ceiling (ReminderPrefs.MAX_LEAD), so what is typed is what is stored.
+  const amount = h('input', {
+    type: 'number',
+    class: 'gb-input gb-notify-amount',
+    min: 1,
+    max: 1440,
+    step: 1,
+    inputmode: 'numeric',
+    'aria-label': 'How long before',
+  });
+  const unit = h(
+    'select',
+    { class: 'gb-input gb-notify-unit', 'aria-label': 'Minutes or hours' },
+    h('option', { value: '1' }, 'min before'),
+    h('option', { value: '60' }, 'hours before')
+  );
+  const hint = h('span', { class: 'gb-notify-hint' }, 'Up to 24 hours');
+  const customRow = h('div', { class: 'gb-notify-custom', style: { display: 'none' } }, amount, unit, hint);
+  const wrap = h('div', { class: 'gb-notify' }, sel, customRow);
+  const fill = () => {
+    const v = sel.value;
+    sel.replaceChildren(
+      h('option', { value: '' }, 'Default \u00b7 ' + (defaultLead ? minutesLabel(defaultLead) + ' early' : 'on time')),
+      ...LEAD_OPTIONS.map((m) => h('option', { value: String(m) }, leadLabel(m))),
+      h('option', { value: 'custom' }, 'Custom\u2026')
+    );
+    sel.value = v;
+  };
+  fill();
+  sel.addEventListener('focus', fill);
+  const showCustom = (on) => {
+    customRow.style.display = on ? '' : 'none';
+  };
+  sel.addEventListener('change', () => {
+    showCustom(sel.value === 'custom');
+    if (sel.value === 'custom') {
+      if (!amount.value) amount.value = '20';
+      setTimeout(() => amount.focus(), 0);
+    }
+  });
+  // Clamp as they type past the ceiling, rather than refuse it on save.
+  const clamp = () => {
+    const max = 1440 / Number(unit.value);
+    if (Number(amount.value) > max) amount.value = String(max);
+  };
+  amount.addEventListener('input', clamp);
+  unit.addEventListener('change', clamp);
+  wrap.setLead = (n) => {
+    fill();
+    if (n === null || n === undefined) {
+      sel.value = '';
+      showCustom(false);
+      return;
+    }
+    const m = validLead(n);
+    if (LEAD_OPTIONS.indexOf(m) !== -1) {
+      sel.value = String(m);
+      showCustom(false);
+      return;
+    }
+    sel.value = 'custom';
+    const hours = m % 60 === 0;
+    unit.value = hours ? '60' : '1';
+    amount.value = String(hours ? m / 60 : m);
+    showCustom(true);
+  };
+  /** Minutes, or null for "the default". An empty custom box counts as the default too. */
+  wrap.getLead = () => {
+    if (sel.value === '') return null;
+    if (sel.value !== 'custom') return Number(sel.value);
+    const v = Math.round(Number(amount.value) * Number(unit.value));
+    return Number.isFinite(v) && v > 0 ? Math.min(v, 1440) : null;
+  };
+  return wrap;
 }
 
 const toMin = (hhmm) => +hhmm.slice(0, 2) * 60 + +hhmm.slice(3, 5);
@@ -753,6 +879,36 @@ function requiredError(input) {
    input has no reliable way to empty it (none on iOS or Chrome), and an empty
    end is how a block goes back to being a plain reminder. check() reports a bad
    pair in the page, because a native bubble vanishes the moment focus moves. */
+/* Pure: an end time is optional, but when present it must be after the start.
+   Both are HH:MM strings, so <= is a time comparison. */
+function timeRangeOk(start, end) {
+  return !(end && end <= start);
+}
+
+/* Pure: the PATCH the edit dialog sends. null means "unchanged" in a PATCH, so a
+   removed time says allDay outright and a dropped until says clearUntil; -1 is
+   "back to my default" lead. `repeat` is null when the scope is one occurrence. */
+function reminderEditPatch(rem, { text, time, endTime, tag, sound, lead, movedDate, repeat, until }) {
+  const patch = {
+    text,
+    time: time || null,
+    endTime: endTime || null,
+    tag,
+    sound: sound || '',
+    notifyBefore: lead === null ? -1 : lead,
+  };
+  if (!time && rem.time) patch.allDay = true;
+  if (movedDate) patch.date = movedDate;
+  if (repeat) {
+    patch.repeat = repeat;
+    if (repeat !== 'none') {
+      if (until) patch.until = until;
+      else if (rem.until) patch.clearUntil = true;
+    }
+  }
+  return patch;
+}
+
 function TimeRange(timeInput, endInput, clearLabel = 'Remove end time') {
   const error = h('p', { class: 'gb-field-error', role: 'alert', style: { display: 'none' } });
   const clearBtn = h(
@@ -800,7 +956,7 @@ function TimeRange(timeInput, endInput, clearLabel = 'Remove end time') {
     node,
     sync,
     check() {
-      if (endInput.value && endInput.value <= timeInput.value) {
+      if (!timeRangeOk(timeInput.value, endInput.value)) {
         setError('The end time has to be after the start time.');
         endInput.focus();
         return false;
@@ -1033,6 +1189,209 @@ function RepeatPicker(initial, onChange) {
   };
 }
 
+/* ---- The richer rule: every N, which weekdays, nth weekday, end after N ----
+   The fields recurrence.js and ReminderService.occursOn both read (see the
+   header there). One control set, shown under the Repeat picker in the add
+   form and the edit dialog; `sync(repeat, anchorKey)` shows the parts that
+   repeat can use, and get() always answers all four, with the "clear" values
+   a PATCH needs (interval 1, days '', nth 0, count 0). */
+const RULE_UNIT = {
+  daily: ['day', 'days'],
+  weekly: ['week', 'weeks'],
+  monthly: ['month', 'months'],
+  yearly: ['year', 'years'],
+};
+const DAY_SHORT = { MO: 'Mon', TU: 'Tue', WE: 'Wed', TH: 'Thu', FR: 'Fri', SA: 'Sat', SU: 'Sun' };
+const DAY_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const ORDINAL = { 1: '1st', 2: '2nd', 3: '3rd', 4: '4th', 5: '5th', '-1': 'last' };
+
+function RuleExtras() {
+  let repeat = 'none';
+  let anchorKey = todayKey();
+  // The day-of-month a by-date monthly series keeps (see sync); null = the anchor's.
+  let dateKey = null;
+  const clampInt = (v, lo, hi) => {
+    const n = Math.floor(Number(v));
+    return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : lo;
+  };
+  const every = h('input', {
+    type: 'number',
+    class: 'gb-input gb-rule-num',
+    min: 1,
+    max: 99,
+    step: 1,
+    value: '1',
+    inputmode: 'numeric',
+    'aria-label': 'Repeat every',
+  });
+  const unitLabel = h('span', { class: 'gb-rule-word' }, 'days');
+  const everyRow = h('div', { class: 'gb-rule-row' }, h('span', { class: 'gb-rule-word' }, 'Every'), every, unitLabel);
+  const relabelUnit = () => {
+    const u = RULE_UNIT[repeat];
+    if (u) unitLabel.textContent = clampInt(every.value, 1, 99) === 1 ? u[0] : u[1];
+  };
+  every.addEventListener('input', relabelUnit);
+
+  const picked = new Set();
+  const chips = {};
+  const paintDays = () => {
+    for (const code of WEEK_ORDER) {
+      chips[code].classList.toggle('is-on', picked.has(code));
+      chips[code].setAttribute('aria-pressed', String(picked.has(code)));
+    }
+  };
+  const daysRow = h(
+    'div',
+    { class: 'gb-rule-days', role: 'group', 'aria-label': 'On these days' },
+    WEEK_ORDER.map((code) => {
+      chips[code] = h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-rule-day',
+          'aria-pressed': 'false',
+          onclick: () => {
+            if (picked.has(code)) picked.delete(code);
+            else picked.add(code);
+            paintDays();
+          },
+        },
+        DAY_SHORT[code]
+      );
+      return chips[code];
+    })
+  );
+
+  const monthSel = h('select', { class: 'gb-input gb-rule-month', 'aria-label': 'Which day of the month' });
+  const fillMonth = () => {
+    const keep = monthSel.value;
+    const { nth, isLast, dow } = nthWeekdayOf(anchorKey);
+    const day = parseKey(dateKey || anchorKey).d;
+    const opts = [h('option', { value: '0' }, 'On day ' + day)];
+    if (nth <= 5) opts.push(h('option', { value: String(nth) }, 'On the ' + ORDINAL[nth] + ' ' + DAY_LONG[dow]));
+    if (isLast) opts.push(h('option', { value: '-1' }, 'On the last ' + DAY_LONG[dow]));
+    monthSel.replaceChildren(...opts);
+    monthSel.value = Array.from(monthSel.options).some((o) => o.value === keep) ? keep : '0';
+  };
+
+  const count = h('input', {
+    type: 'number',
+    class: 'gb-input gb-rule-num',
+    min: 1,
+    max: 999,
+    step: 1,
+    inputmode: 'numeric',
+    placeholder: '-',
+    'aria-label': 'End after this many times (optional)',
+  });
+  const countRow = h(
+    'div',
+    { class: 'gb-rule-row' },
+    h('span', { class: 'gb-rule-word' }, 'End after'),
+    count,
+    h('span', { class: 'gb-rule-word' }, 'times (optional)')
+  );
+  const node = h('div', { class: 'gb-rule', style: { display: 'none' } }, everyRow, daysRow, monthSel, countRow);
+
+  // `dayKey`: a split of a series on the 31st made from February's 28th keeps
+  // the 31st (ReminderService.keepDayOfMonth), so "On day" names the series' day.
+  function sync(rep, key, dayKey = null) {
+    repeat = rep || 'none';
+    if (key) anchorKey = key;
+    dateKey = dayKey;
+    node.style.display = repeat === 'none' ? 'none' : '';
+    everyRow.style.display = RULE_UNIT[repeat] ? '' : 'none';
+    daysRow.style.display = repeat === 'weekly' ? '' : 'none';
+    monthSel.style.display = repeat === 'monthly' ? '' : 'none';
+    relabelUnit();
+    if (repeat === 'monthly') fillMonth();
+    // Weekly with nothing picked means the anchor's own weekday; show it so.
+    if (repeat === 'weekly' && !picked.size) {
+      picked.add(DAY_CODES[nthWeekdayOf(anchorKey).dow]);
+      paintDays();
+    }
+  }
+  function get() {
+    return {
+      repeatInterval: RULE_UNIT[repeat] ? clampInt(every.value, 1, 99) : 1,
+      repeatDays: repeat === 'weekly' ? WEEK_ORDER.filter((c) => picked.has(c)).join(',') : '',
+      repeatNth: repeat === 'monthly' ? Number(monthSel.value) || 0 : 0,
+      repeatCount: count.value ? clampInt(count.value, 1, 999) : 0,
+    };
+  }
+  function set(rem) {
+    every.value = String((rem && rem.repeatInterval) || 1);
+    picked.clear();
+    for (const i of parseRepeatDays(rem && rem.repeatDays)) picked.add(DAY_CODES[i]);
+    paintDays();
+    count.value = rem && rem.repeatCount ? String(rem.repeatCount) : '';
+    sync((rem && rem.repeat) || 'none', rem && rem.date);
+    if (rem && rem.repeatNth) {
+      fillMonth();
+      monthSel.value = String(rem.repeatNth);
+    }
+  }
+  return { node, sync, get, set, reset: () => set(null) };
+}
+
+/** "Every 2 weeks on Mon, Fri", "Monthly on the last Fri · 10 times". */
+function describeRepeat(rem) {
+  const rep = rem && rem.repeat;
+  if (!rep || rep === 'none' || !REPEATS[rep]) return '';
+  const n = Number(rem.repeatInterval) || 1;
+  const u = RULE_UNIT[rep];
+  let out = n > 1 && u ? 'Every ' + n + ' ' + u[1] : REPEATS[rep].label;
+  if (rep === 'weekly') {
+    const days = parseRepeatDays(rem.repeatDays);
+    if (days.length) {
+      out += ' on ' + WEEK_ORDER.filter((c) => days.indexOf(DAY_CODES.indexOf(c)) !== -1)
+        .map((c) => DAY_SHORT[c])
+        .join(', ');
+    }
+  }
+  if (rep === 'monthly' && rem.repeatNth && rem.date) {
+    out += ' on the ' + ORDINAL[rem.repeatNth] + ' ' + DAY_LONG[nthWeekdayOf(rem.date).dow].slice(0, 3);
+  }
+  if (rem.repeatCount) out += ' · ' + rem.repeatCount + ' times';
+  return out;
+}
+
+/* A second alert: None, or minutes before. No "Default": unlike the first
+   alert it has nothing to fall back on (notify_before2 is null = none). */
+function secondAlertSelect() {
+  const sel = h(
+    'select',
+    { class: 'gb-input', 'aria-label': 'Second alert' },
+    h('option', { value: '' }, 'None'),
+    ...LEAD_OPTIONS.map((m) => h('option', { value: String(m) }, leadLabel(m)))
+  );
+  sel.setLead = (n) => {
+    const m = n === null || n === undefined ? '' : String(validLead(n));
+    if (m && !Array.from(sel.options).some((o) => o.value === m)) {
+      sel.append(h('option', { value: m }, leadLabel(Number(m))));
+    }
+    sel.value = m;
+  };
+  /** Minutes, or null for none. */
+  sel.getLead = () => (sel.value === '' ? null : Number(sel.value));
+  return sel;
+}
+
+/* Notes under the title: the 1000 the column holds. */
+function notesInput(value) {
+  return h(
+    'textarea',
+    {
+      class: 'gb-input gb-rem-notes-input',
+      rows: 2,
+      maxlength: 1000,
+      placeholder: 'Details, a link, what to bring (optional)',
+      'aria-label': 'Notes (optional)',
+    },
+    value || ''
+  );
+}
+
 /* ---- Scoped delete dialog for recurring reminders ---- */
 function openDeleteDialog(rem, occKey, onDelete) {
   const opts = [
@@ -1109,7 +1468,8 @@ function openEditDialog(rem, occKey, onEdit) {
     type: 'text',
     class: 'gb-input',
     value: rem.text || '',
-    maxlength: 120,
+    // The column's own width (calendar_reminders.text is 255).
+    maxlength: 255,
     'aria-label': 'Reminder text',
   });
   const timeInput = h('input', {
@@ -1126,21 +1486,99 @@ function openEditDialog(rem, occKey, onEdit) {
     'aria-label': 'End time (optional)',
   });
   const range = TimeRange(timeInput, endInput);
-  const toneSel = h(
-    'select',
-    { class: 'gb-input', 'aria-label': 'Reminder tone' },
-    [h('option', { value: '' }, 'Default tone')].concat(
-      CHIMES.map((c) =>
-        h('option', { value: c.key }, c.key === 'off' ? 'Silent in the app' : c.label)
-      )
-    )
+  /* A native time input can't reliably be emptied (no clear on iOS or Chrome),
+     and a null time in the PATCH means "unchanged" — so taking the time off is
+     its own button here and its own field (allDay) on the wire. */
+  const noTimeBtn = h(
+    'button',
+    {
+      type: 'button',
+      class: 'gb-login-link gb-rem-notime',
+      onclick: () => {
+        timeInput.value = '';
+        range.sync();
+        syncNoTime();
+      },
+    },
+    'No time, just the day'
   );
-  toneSel.value = rem.sound || '';
+  const syncNoTime = () => {
+    noTimeBtn.style.display = timeInput.value ? '' : 'none';
+  };
+  timeInput.addEventListener('input', syncNoTime);
+  syncNoTime();
+  const toneSel = toneSelect('Silent in the app');
+  toneSel.setTone(rem.sound);
+  const notifySel = notifySelect();
+  notifySel.setLead(rem.notifyBefore);
   toneSel.addEventListener('change', () => {
     if (toneSel.value) playChime(toneSel.value);
   });
 
   const repeats = rem.repeat && rem.repeat !== 'none';
+  const tagPicker = TagPicker(TAGS[rem.tag] ? rem.tag : 'personal');
+
+  // The day: only a single reminder has one to move — a one-off, or the
+  // one-off an "only this day" edit leaves. A series is measured from its anchor.
+  const dateInput = h('input', {
+    type: 'date',
+    class: 'gb-input gb-input--until',
+    value: occKey,
+    min: occKey < todayKey() ? occKey : todayKey(),
+    'aria-label': 'Reminder date',
+  });
+  const dateErr = requiredError(dateInput);
+  const dateField = h(
+    'div',
+    null,
+    h('div', { class: 'gb-field-label' }, 'Day'),
+    dateInput,
+    dateErr.node
+  );
+
+  // Repeat + until describe how a series runs, so not for "only this day".
+  const untilInput = h('input', {
+    type: 'date',
+    class: 'gb-input gb-input--until',
+    value: rem.until || '',
+    'aria-label': 'Repeat until (optional)',
+  });
+  const untilErr = requiredError(untilInput);
+  const untilClear = h(
+    'button',
+    {
+      type: 'button',
+      class: 'gb-login-link',
+      onclick: () => {
+        untilInput.value = '';
+        untilErr.set('');
+      },
+    },
+    'No end date'
+  );
+  const untilField = h(
+    'div',
+    null,
+    h('div', { class: 'gb-field-label' }, 'Repeat until (optional)'),
+    untilInput,
+    untilClear,
+    untilErr.node
+  );
+  const repeatPicker = RepeatPicker(rem.repeat || 'none', () => syncScope());
+  const rule = RuleExtras();
+  rule.set(rem);
+  const repeatField = h(
+    'div',
+    null,
+    h('div', { class: 'gb-field-label' }, 'Repeat'),
+    repeatPicker.node,
+    rule.node,
+    untilField
+  );
+  const notes = notesInput(rem.notes);
+  const secondSel = secondAlertSelect();
+  secondSel.setLead(rem.notifyBefore2);
+
   const scopes = [
     { scope: 'this', icon: 'calendar-x', label: 'Only this day', sub: prettyDate(occKey) },
     {
@@ -1167,6 +1605,7 @@ function openEditDialog(rem, occKey, onEdit) {
                 scope = o.scope;
                 const row = e.currentTarget.parentElement;
                 for (const b of row.children) b.classList.toggle('is-on', b.dataset.scope === scope);
+                syncScope();
               },
             },
             h('span', { class: 'gb-modal-opt-ic' }, Icon(o.icon, { size: 18 })),
@@ -1180,6 +1619,19 @@ function openEditDialog(rem, occKey, onEdit) {
         )
       )
     : null;
+
+  // The first day "until" is measured from, for the scope in hand.
+  const startKey = () => (scope === 'future' ? occKey : rem.date || occKey);
+  function syncScope() {
+    const single = !repeats || scope === 'this';
+    dateField.style.display = single ? '' : 'none';
+    repeatField.style.display = scope === 'this' ? 'none' : '';
+    untilField.style.display = repeatPicker.get() === 'none' ? 'none' : '';
+    untilInput.min = startKey();
+    const keepsDay = scope === 'future' && rem.repeat === 'monthly' && !rem.repeatNth;
+    rule.sync(repeatPicker.get(), startKey(), keepsDay ? rem.date : null);
+  }
+  syncScope();
 
   const textErr = requiredError(textInput);
   const { sheet, close } = openOverlay({ label: 'Edit reminder' });
@@ -1200,15 +1652,43 @@ function openEditDialog(rem, occKey, onEdit) {
           return;
         }
         if (!range.check()) return;
+        const single = !repeats || scope === 'this';
+        // Only a move is checked: a reminder already on a past day can still
+        // have its text fixed without being made to jump forward.
+        const movedDay = single && dateInput.value !== occKey;
+        if (movedDay && (!dateInput.value || dateInput.value < todayKey())) {
+          dateErr.set('Pick today or a day after it.');
+          dateInput.focus();
+          return;
+        }
+        const repeat = scope === 'this' ? null : repeatPicker.get();
+        // YYYY-MM-DD strings, so < is a date comparison (same as the add form).
+        if (repeat && repeat !== 'none' && untilInput.value && untilInput.value < startKey()) {
+          untilErr.set('This is before the reminder starts on ' + prettyDate(startKey()) + '.');
+          untilInput.focus();
+          return;
+        }
+        const patch = reminderEditPatch(rem, {
+          text,
+          time: timeInput.value,
+          endTime: endInput.value,
+          tag: tagPicker.get(),
+          sound: toneSel.value,
+          lead: notifySel.getLead(),
+          movedDate: movedDay ? dateInput.value : null,
+          repeat,
+          until: untilInput.value,
+        });
+        // Notes and the second alert: '' clears notes, -1 clears the alert
+        // (a PATCH's null means "unchanged"). The rule's details go with the
+        // repeat, in the clear-able form RuleExtras.get() gives.
+        patch.notes = notes.value.trim();
+        patch.notifyBefore2 = secondSel.getLead() === null ? -1 : secondSel.getLead();
+        if (repeat) Object.assign(patch, rule.get());
         const btn = e.currentTarget;
         btn.disabled = true;
         try {
-          await onEdit(scope, rem.id, occKey, {
-            text,
-            time: timeInput.value || null,
-            endTime: endInput.value || null,
-            sound: toneSel.value || '',
-          });
+          await onEdit(scope, rem.id, occKey, patch);
           close();
         } catch (_) {
           btn.disabled = false;
@@ -1235,8 +1715,19 @@ function openEditDialog(rem, occKey, onEdit) {
       h('div', { class: 'gb-field-label' }, 'Reminder'),
       textInput,
       textErr.node,
+      h('div', { class: 'gb-field-label' }, 'Notes'),
+      notes,
+      h('div', { class: 'gb-field-label' }, 'Notify'),
+      notifySel,
+      h('div', { class: 'gb-field-label' }, 'Second alert'),
+      secondSel,
       h('div', { class: 'gb-field-label' }, 'Time'),
       range.node,
+      noTimeBtn,
+      h('div', { class: 'gb-field-label' }, 'Tag'),
+      tagPicker.node,
+      dateField,
+      repeatField,
       h('div', { class: 'gb-field-label' }, 'Tone'),
       toneSel
     ),
@@ -1252,9 +1743,27 @@ function openEditDialog(rem, occKey, onEdit) {
   setTimeout(() => textInput.focus(), 60);
 }
 
-function ReminderRow(rem, occKey, onDelete, whatsappEnabled, onEdit) {
+/** "HH:MM" local, from a snooze's instant — what formatTime takes. */
+function snoozeClock(iso) {
+  const d = new Date(iso);
+  return pad(d.getHours()) + ':' + pad(d.getMinutes());
+}
+
+/** "Snoozed till 09:20", with the day when it isn't today — a 23:55 snooze of
+    20 minutes rings tomorrow, and a bare "00:15" read as earlier today. */
+function snoozeLabel(iso) {
+  const d = new Date(iso);
+  const key = keyOf(d.getFullYear(), d.getMonth(), d.getDate());
+  return (
+    'Snoozed till ' + (key === todayKey() ? '' : prettyDate(key) + ', ') + formatTime(snoozeClock(iso))
+  );
+}
+
+function ReminderRow(rem, occKey, onDelete, whatsappEnabled, onEdit, onCancelSnooze, onToggleDone) {
   const t = TAGS[rem.tag] || TAGS.other;
   const meta = [];
+  // Per occurrence: ticking off today's leaves tomorrow's ringing.
+  const done = Array.isArray(rem.doneDates) && rem.doneDates.indexOf(occKey) !== -1;
   if (rem.time) {
     meta.push(
       h(
@@ -1264,6 +1773,40 @@ function ReminderRow(rem, occKey, onDelete, whatsappEnabled, onEdit) {
         formatTime(rem.time) + (rem.endTime ? ' to ' + formatTime(rem.endTime) : '')
       )
     );
+    // Only the reminder's own choice: the default is in Settings, and badging
+    // every row with it would say the same thing down the whole list.
+    if (rem.notifyBefore) {
+      meta.push(
+        h(
+          'span',
+          { class: 'meta-item' },
+          Icon('bell', { size: 13, color: 'var(--fg3)' }),
+          leadLabel(rem.notifyBefore)
+        )
+      );
+    }
+    if (rem.snoozedUntil && new Date(rem.snoozedUntil).getTime() > Date.now()) {
+      const label = snoozeLabel(rem.snoozedUntil);
+      // A button when it can be undone: the endpoint existed, and the only way
+      // to call off a snooze was Settings → Reminders.
+      meta.push(
+        onCancelSnooze
+          ? h(
+              'button',
+              {
+                type: 'button',
+                class: 'meta-item gb-rem-snoozed gb-rem-snoozed--btn',
+                'aria-label': label + '. Cancel the snooze',
+                title: 'Cancel the snooze',
+                onclick: () => onCancelSnooze(rem.id),
+              },
+              Icon('alarm-clock', { size: 13 }),
+              label,
+              Icon('x', { size: 12, sw: 2.6 })
+            )
+          : h('span', { class: 'meta-item gb-rem-snoozed' }, Icon('alarm-clock', { size: 13 }), label)
+      );
+    }
     // Only where it is still true: the scheduler has already passed a slot in
     // the past, so badging it "WhatsApp" promises a message that will never come.
     if (whatsappEnabled && !isPastSlot(occKey, rem.time)) {
@@ -1277,9 +1820,20 @@ function ReminderRow(rem, occKey, onDelete, whatsappEnabled, onEdit) {
       );
     }
   }
+  // A second alert, when it has one (no default to hide, unlike the first).
+  if (rem.time && rem.notifyBefore2 !== null && rem.notifyBefore2 !== undefined) {
+    meta.push(
+      h(
+        'span',
+        { class: 'meta-item' },
+        Icon('bell-plus', { size: 13, color: 'var(--fg3)' }),
+        'and ' + leadLabel(rem.notifyBefore2).toLowerCase()
+      )
+    );
+  }
   if (rem.repeat && rem.repeat !== 'none') {
     const reLabel =
-      REPEATS[rem.repeat].label + (rem.until ? ' · until ' + prettyDate(rem.until) : '');
+      describeRepeat(rem) + (rem.until ? ' · until ' + prettyDate(rem.until) : '');
     meta.push(
       h('span', { class: 'meta-item' }, Icon('repeat', { size: 13, color: 'var(--fg3)' }), reLabel)
     );
@@ -1307,12 +1861,28 @@ function ReminderRow(rem, occKey, onDelete, whatsappEnabled, onEdit) {
 
   return h(
     'div',
-    { class: 'gb-rem-row', style: { '--tag-color': t.color } },
+    { class: 'gb-rem-row' + (done ? ' is-done' : ''), style: { '--tag-color': t.color } },
     h('span', { class: 'gb-rem-accent' }),
+    onToggleDone
+      ? h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-rem-check' + (done ? ' is-on' : ''),
+            role: 'checkbox',
+            'aria-checked': String(done),
+            'aria-label': (done ? 'Done: ' : 'Mark done: ') + rem.text,
+            title: done ? 'Done. Tap to undo' : 'Mark done: it won’t ring for this day',
+            onclick: () => onToggleDone(rem.id, occKey, !done),
+          },
+          done ? Icon('check', { size: 14, sw: 3 }) : null
+        )
+      : null,
     h(
       'div',
       { style: { flex: 1, minWidth: 0 } },
       h('div', { class: 'gb-rem-text' }, rem.text),
+      rem.notes ? h('div', { class: 'gb-rem-notes' }, rem.notes) : null,
       h('div', { class: 'gb-rem-meta' }, tagPill, meta)
     ),
     onEdit
@@ -1346,6 +1916,7 @@ function ReminderRow(rem, occKey, onDelete, whatsappEnabled, onEdit) {
      We rebind the per-render closure variables (selectedDate, callback)
      through `formBinding` rather than rebuilding the DOM. */
 const formBinding = {
+  onSelectDate: null,
   selectedDate: '',
   onAddReminder: null,
 };
@@ -1356,23 +1927,104 @@ let cachedFormRefs = null;
    until the form exists — the caller switches screens, so the form is usually
    built a tick AFTER the prefill lands. */
 let pendingReminderText = '';
+let pendingReminderOpts = null; // { time?: 'HH:MM', repeat?: REPEAT_ORDER key }
 
-function prefillCalendarReminder(text) {
+/* `opts` (optional) also presets the time and the repeat — Report's
+   "Set a bedtime reminder" hands over a daily one at the suggested hour. */
+function prefillCalendarReminder(text, opts) {
   pendingReminderText = text || '';
+  pendingReminderOpts = opts || null;
   applyPendingReminderText();
 }
 
 function applyPendingReminderText() {
   if (!pendingReminderText || !cachedFormRefs) return;
   cachedFormRefs.textInput.value = pendingReminderText;
+  const o = pendingReminderOpts;
+  if (o && /^\d{2}:\d{2}$/.test(String(o.time || ''))) {
+    cachedFormRefs.timeInput.value = o.time;
+    cachedFormRefs.syncRange();
+  }
+  if (o && o.repeat && REPEATS[o.repeat]) cachedFormRefs.repeatPicker.set(o.repeat);
   pendingReminderText = '';
+  pendingReminderOpts = null;
   setTimeout(() => cachedFormRefs.textInput.focus(), 60);
+}
+
+/* Adds one of the user's own sounds from a tone picker (app.js owns the
+   storage, the upload and the cap). Resolves to the new chime key, or null when
+   they cancelled or were at the limit. */
+let addCustomTone = null;
+function setCustomToneAdder(fn) {
+  addCustomTone = fn;
+}
+
+/* Speaking a reminder into the form (app.js owns the microphone and the
+   parser): { supported(), capture(btn) -> Promise<{said, reminder} | null> }. */
+let voiceReminder = null;
+function setVoiceReminder(v) {
+  voiceReminder = v;
+}
+
+/* A reminder's tone <select>: Default, the built-ins, the user's own sounds,
+   Silent, then "Add your own sound…". Refilled on focus when the list has changed, because the add form is
+   built once and cached, and a sound added in Settings since must show up. */
+const ADD_TONE = '__add';
+function toneSelect(offLabel) {
+  const sel = h('select', { class: 'gb-input', 'aria-label': 'Reminder tone' });
+  let sig = null;
+  const fill = () => {
+    const opts = chimeOptions();
+    const next = opts.map((c) => c.key + '=' + c.label).join('|');
+    if (next === sig) return;
+    sig = next;
+    const v = sel.value;
+    sel.replaceChildren(
+      h('option', { value: '' }, 'Default tone'),
+      ...opts.map((c) => h('option', { value: c.key }, c.key === 'off' ? offLabel : c.label)),
+      addCustomTone ? h('option', { value: ADD_TONE }, '+ Add your own sound\u2026') : null
+    );
+    sel.value = chimeOptionValue(v);
+  };
+  fill();
+  sel.addEventListener('focus', fill);
+  // Before the caller's own change listener (it previews the pick), which must
+  // never see the "add" entry: it isn't a tone.
+  let last = sel.value;
+  sel.addEventListener('focus', () => {
+    last = sel.value;
+  });
+  sel.addEventListener('change', async (e) => {
+    if (sel.value !== ADD_TONE) {
+      last = sel.value;
+      return;
+    }
+    e.stopImmediatePropagation();
+    sel.value = last;
+    const key = addCustomTone ? await addCustomTone() : null;
+    sig = null;
+    fill();
+    if (key) {
+      sel.value = chimeOptionValue(key);
+      last = sel.value;
+    }
+  });
+  sel.setTone = (key) => {
+    fill();
+    sel.value = chimeOptionValue(key);
+    last = sel.value;
+  };
+  return sel;
 }
 
 function resetCalendarForm() {
   if (!cachedFormRefs) return;
-  const { textInput, timeInput, syncRange, untilInput, tagPicker, repeatPicker, untilField, soundInput } =
+  const { textInput, timeInput, syncRange, untilInput, tagPicker, repeatPicker, untilField, soundInput, notifyInput, rule, notes, secondSel } =
     cachedFormRefs;
+  notifyInput.setLead(null);
+  rule.reset();
+  notes.value = '';
+  secondSel.setLead(null);
   textInput.value = '';
   timeInput.value = '';
   syncRange();
@@ -1389,7 +2041,8 @@ function buildForm() {
     class: 'gb-input',
     placeholder: 'Add a reminder…',
     'aria-label': 'Reminder text',
-    maxlength: 120,
+    // The column's own width (calendar_reminders.text is 255).
+    maxlength: 255,
   });
   const timeInput = h('input', {
     type: 'time',
@@ -1411,22 +2064,17 @@ function buildForm() {
      that setting when it changes. A <select> rather than the segmented control
      the Alerts pane uses: six options don't fit the side panel's width, and the
      native one already scrolls, keyboards and reads out. */
-  const soundInput = h(
-    'select',
-    { class: 'gb-input', 'aria-label': 'Reminder tone' },
-    [h('option', { value: '' }, 'Default tone')].concat(
-      // 'Silent' means no sound anywhere now: the app plays nothing on this key
-      // and push.js queues no device alarm for it, because Android has no
-      // soundless channel to queue one against.
-      CHIMES.map((c) => h('option', { value: c.key }, c.key === 'off' ? 'Silent — no alert' : c.label))
-    )
-  );
+  // 'Silent' means no sound anywhere now: the app plays nothing on this key
+  // and push.js queues no device alarm for it, because Android has no
+  // soundless channel to queue one against.
+  const soundInput = toneSelect('Silent — no alert');
   // Picking one is the preview, the same rule as the Alerts pane. Nothing plays
   // for 'Default tone': this file doesn't know which tone that is, and guessing
   // the built-in default would preview a sound the reminder won't make.
   soundInput.addEventListener('change', () => {
     if (soundInput.value) playChime(soundInput.value);
   });
+  const notifyInput = notifySelect();
 
   const untilInput = h('input', {
     type: 'date',
@@ -1454,7 +2102,11 @@ function buildForm() {
     untilError
   );
 
+  const rule = RuleExtras();
+  const notes = notesInput('');
+  const secondSel = secondAlertSelect();
   const repeatPicker = RepeatPicker('none', (rep) => {
+    rule.sync(rep, formBinding.selectedDate);
     untilField.style.display = rep === 'none' ? 'none' : '';
     if (rep === 'none') {
       untilInput.value = '';
@@ -1503,7 +2155,15 @@ function buildForm() {
         repeat,
         until,
         soundInput.value || '',
-        endInput.value || ''
+        endInput.value || '',
+        notifyInput.getLead(),
+        Object.assign(
+          {
+            notes: notes.value.trim() || null,
+            notifyBefore2: secondSel.getLead(),
+          },
+          repeat !== 'none' ? rule.get() : null
+        )
       );
     } finally {
       addBtn.disabled = false;
@@ -1524,12 +2184,99 @@ function buildForm() {
     'Add reminder'
   );
 
+  /* Say it all at once — "every Monday at 7 to 7:30 call mom, ten minutes
+     before" — and every field it named is filled in, the day included (the
+     calendar moves to it). Nothing is added until they tap Add: what they see
+     is what they're agreeing to. Without the assistant, the words alone go in. */
+  const voiceNote = h('p', { class: 'gb-field-hint gb-voice-note', role: 'status', style: { display: 'none' } });
+  const fillFromSpeech = (said, rem) => {
+    textErr.set('');
+    if (!rem) {
+      textInput.value = said;
+      voiceNote.textContent = 'Heard: “' + said + '”. Set the time and day, then tap Add.';
+      voiceNote.style.display = '';
+      textInput.focus();
+      return;
+    }
+    const hm = (v) => (v ? String(v).slice(0, 5) : '');
+    // The day first: the repeat rule reads it as it is set ("weekly" takes its
+    // weekday from the selected day), and filling it while the calendar was
+    // still on today stored a Monday gym as a Saturday one. The panel's repaint
+    // sets the same value again a moment later.
+    const prevDay = formBinding.selectedDate;
+    if (rem.date) formBinding.selectedDate = rem.date;
+    textInput.value = rem.text || said;
+    timeInput.value = hm(rem.time);
+    endInput.value = hm(rem.endTime);
+    range.sync();
+    tagPicker.set(rem.tag || 'personal');
+    repeatPicker.set(rem.repeat || 'none');
+    // From scratch: a weekday chip left on from an earlier reminder would
+    // otherwise stay picked, and "every Monday" would also ring on that day.
+    rule.set({ repeat: rem.repeat || 'none', date: formBinding.selectedDate, repeatInterval: 1 });
+    untilInput.value = rem.repeat && rem.repeat !== 'none' ? rem.until || '' : '';
+    notifyInput.setLead(rem.notifyBefore === undefined ? null : rem.notifyBefore);
+    const filled = ['the text'];
+    if (rem.date && rem.date !== prevDay) filled.push('the day');
+    if (rem.time) filled.push('the time');
+    if (rem.repeat && rem.repeat !== 'none') filled.push('the repeat');
+    if (rem.notifyBefore) filled.push('the alert');
+    voiceNote.textContent =
+      'Filled in ' + filled.join(', ').replace(/, ([^,]*)$/, ' and $1') + ' from what you said. Check it, then tap Add.';
+    voiceNote.style.display = '';
+    // Moving the day repaints the panel, and a repaint waits while a field in
+    // it has focus, so the caret only goes back when the day stays put.
+    if (rem.date && rem.date !== prevDay && formBinding.onSelectDate) {
+      formBinding.onSelectDate(rem.date);
+    } else {
+      textInput.focus();
+    }
+  };
+  const micBtn =
+    voiceReminder && voiceReminder.supported()
+      ? h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-btn gb-btn--compact gb-mic gb-rem-mic',
+            'aria-label': 'Say the reminder',
+            'aria-pressed': 'false',
+            title: 'Say it: “every Monday at 7pm call mom, 10 minutes before”',
+            onclick: async () => {
+              voiceNote.style.display = 'none';
+              const out = await voiceReminder.capture(micBtn);
+              if (out && out.said) fillFromSpeech(out.said, out.reminder);
+            },
+          },
+          Icon('mic', { size: 18 })
+        )
+      : null;
+  textInput.addEventListener('input', () => {
+    voiceNote.style.display = 'none';
+  });
+
   const node = Card({
     className: 'gb-rem-form',
     children: [
       h('div', { class: 'gb-field-label' }, 'New reminder'),
-      textInput,
+      micBtn ? h('div', { class: 'gb-rem-text-row' }, textInput, micBtn) : textInput,
       textErr.node,
+      voiceNote,
+      h('div', { class: 'gb-field-label' }, 'Notes'),
+      notes,
+      h('div', { class: 'gb-field-label' }, 'Notify'),
+      notifyInput,
+      h('div', { class: 'gb-field-label' }, 'Second alert'),
+      secondSel,
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-login-link gb-rem-defaults-link',
+          onclick: () => openReminderSettings && openReminderSettings(),
+        },
+        'Default and snooze length, and all your reminders, in Settings'
+      ),
       h('div', { class: 'gb-field-label' }, 'Time'),
       range.node,
       h('p', { class: 'gb-field-hint' }, 'Add an end time to block it out as busy on the day.'),
@@ -1537,6 +2284,7 @@ function buildForm() {
       tagPicker.node,
       h('div', { class: 'gb-field-label' }, 'Repeat'),
       repeatPicker.node,
+      rule.node,
       untilField,
       h('div', { class: 'gb-field-label' }, 'Tone'),
       soundInput,
@@ -1546,7 +2294,21 @@ function buildForm() {
 
   return {
     node,
-    refs: { textInput, timeInput, endInput, syncRange: range.sync, untilInput, tagPicker, repeatPicker, untilField, soundInput },
+    refs: {
+      textInput,
+      timeInput,
+      endInput,
+      syncRange: range.sync,
+      untilInput,
+      tagPicker,
+      repeatPicker,
+      untilField,
+      soundInput,
+      notifyInput,
+      rule,
+      notes,
+      secondSel,
+    },
   };
 }
 
@@ -1565,6 +2327,8 @@ function ReminderPanel({
   onAddReminder,
   onDeleteReminder,
   onEditReminder,
+  onCancelSnooze,
+  onToggleDone,
   onSelectDate,
   onSaveRoutine,
 }) {
@@ -1586,12 +2350,15 @@ function ReminderPanel({
   // Rebind the form to the latest date + callback (DOM stays the same).
   formBinding.selectedDate = selectedDate;
   formBinding.onAddReminder = onAddReminder;
+  formBinding.onSelectDate = onSelectDate;
   if (!cachedForm) {
     const built = buildForm();
     cachedForm = built.node;
     cachedFormRefs = built.refs;
   }
   cachedFormRefs.untilInput.min = selectedDate;
+  // The rule's labels ("the 2nd Tuesday") are about the day the form is on.
+  cachedFormRefs.rule.sync(cachedFormRefs.repeatPicker.get(), selectedDate);
   cachedFormRefs.repeatPicker.relabel();
   applyPendingReminderText();
   const form = cachedForm;
@@ -1600,7 +2367,7 @@ function ReminderPanel({
   if (list.length) {
     listNode = Card({
       children: list.map((r) =>
-        ReminderRow(r, selectedDate, onDeleteReminder, whatsappEnabled, onEditReminder)
+        ReminderRow(r, selectedDate, onDeleteReminder, whatsappEnabled, onEditReminder, onCancelSnooze, onToggleDone)
       ),
     });
   } else {
@@ -1763,72 +2530,86 @@ function ReminderPanel({
           h('span', null, 'This day is open. Add a task or reminder when you are ready.')
         )
       : null;
+  /* Two blocks inside one node: the day's reminders (with the add form and the
+     schedule) and its record (wins, tasks, food). One node because app.js
+     repaints this panel in place by swapping .gb-cal-side; display: contents
+     on it lets the page grid place the two blocks apart — reminders top right,
+     the record under the month on desktop, and reminders straight after the
+     month on a phone, ahead of the record. */
   return h(
     'div',
-    { class: 'gb-cal-col gb-cal-side' },
+    { class: 'gb-cal-side' },
     h(
       'div',
-      { 'data-cal-section': 'title' },
-      SectionTitle({
-        title: prettyDate(selectedDate),
-        action: totalCount ? totalCount + (totalCount === 1 ? ' item' : ' items') : null,
-      })
-    ),
+      { class: 'gb-cal-col gb-cal-reminders' },
+      h(
+        'div',
+        { 'data-cal-section': 'title' },
+        SectionTitle({
+          title: prettyDate(selectedDate),
+          action: totalCount ? totalCount + (totalCount === 1 ? ' item' : ' items') : null,
+        })
+      ),
     futurePlanningHint,
-    !futureDate
-      ? h(
-          'div',
-          { class: 'gb-cal-block gb-day-section', 'data-cal-section': 'wins' },
-          h(
-            'div',
-            { class: 'gb-day-head' },
-            // Not "Past wins": this shows for today too, and today isn't past.
-            h('span', { class: 'gb-day-head-title' }, 'Wins'),
-            h('span', { class: 'gb-day-head-count' }, String(winCount))
-          ),
-          winsNode
-        )
-      : null,
-    h(
-      'div',
-      { class: 'gb-cal-block gb-day-section', 'data-cal-section': 'tasks' },
       h(
         'div',
-        { class: 'gb-day-head' },
-        h('span', { class: 'gb-day-head-title' }, 'Tasks'),
-        h('span', { class: 'gb-day-head-count' }, String(dayTasks.length))
-      ),
-      tasksNode
-    ),
-    !futureDate
-      ? h(
+        { class: 'gb-cal-block gb-day-section', 'data-cal-section': 'reminders' },
+        h(
           'div',
-          { class: 'gb-cal-block gb-day-section', 'data-cal-section': 'food' },
-          h(
-            'div',
-            { class: 'gb-day-head' },
-            h('span', { class: 'gb-day-head-title' }, 'Food'),
-            h('span', { class: 'gb-day-head-count' }, String(dayFood.length))
-          ),
-          foodNode,
-          foodSummary && typeof foodSummary.totalCalories === 'number'
-            ? h('div', { class: 'gb-day-total' }, 'Total: ' + foodSummary.totalCalories + ' kcal')
-            : null
-        )
-      : null,
-    ScheduleSection(reminders, list, selectedDate, onSelectDate, onSaveRoutine),
+          { class: 'gb-day-head' },
+          h('span', { class: 'gb-day-head-title' }, 'Reminders'),
+          h('span', { class: 'gb-day-head-count' }, String(list.length))
+        ),
+        listNode
+      ),
+    pastDate ? null : h('div', { class: 'gb-cal-block' }, form),
+      ScheduleSection(reminders, list, selectedDate, onSelectDate, onSaveRoutine)
+    ),
     h(
       'div',
-      { class: 'gb-cal-block gb-day-section', 'data-cal-section': 'reminders' },
+      { class: 'gb-cal-col gb-cal-daylog' },
+      !futureDate
+        ? h(
+            'div',
+            { class: 'gb-cal-block gb-day-section', 'data-cal-section': 'wins' },
+            h(
+              'div',
+              { class: 'gb-day-head' },
+              // Not "Past wins": this shows for today too, and today isn't past.
+              h('span', { class: 'gb-day-head-title' }, 'Wins'),
+              h('span', { class: 'gb-day-head-count' }, String(winCount))
+            ),
+            winsNode
+          )
+        : null,
       h(
         'div',
-        { class: 'gb-day-head' },
-        h('span', { class: 'gb-day-head-title' }, 'Reminders'),
-        h('span', { class: 'gb-day-head-count' }, String(list.length))
+        { class: 'gb-cal-block gb-day-section', 'data-cal-section': 'tasks' },
+        h(
+          'div',
+          { class: 'gb-day-head' },
+          h('span', { class: 'gb-day-head-title' }, 'Tasks'),
+          h('span', { class: 'gb-day-head-count' }, String(dayTasks.length))
+        ),
+        tasksNode
       ),
-      listNode
-    ),
-    pastDate ? null : h('div', { class: 'gb-cal-block' }, form)
+      !futureDate
+        ? h(
+            'div',
+            { class: 'gb-cal-block gb-day-section', 'data-cal-section': 'food' },
+            h(
+              'div',
+              { class: 'gb-day-head' },
+              h('span', { class: 'gb-day-head-title' }, 'Food'),
+              h('span', { class: 'gb-day-head-count' }, String(dayFood.length))
+            ),
+            foodNode,
+            foodSummary && typeof foodSummary.totalCalories === 'number'
+              ? h('div', { class: 'gb-day-total' }, 'Total: ' + foodSummary.totalCalories + ' kcal')
+              : null
+          )
+        : null,
+    )
   );
 }
 
@@ -1852,6 +2633,8 @@ function ScreenCalendar({
   onAddReminder,
   onDeleteReminder,
   onEditReminder,
+  onCancelSnooze,
+  onToggleDone,
   onSaveRoutine,
 }) {
   const toolbar = CalendarToolbar({
@@ -1906,6 +2689,8 @@ function ScreenCalendar({
       onAddReminder,
       onDeleteReminder,
       onEditReminder,
+      onCancelSnooze,
+      onToggleDone,
       onSelectDate,
       onSaveRoutine,
     })
@@ -1981,11 +2766,27 @@ export {
   isPastSlot,
   freeBusy,
   wholeHours,
+  timeRangeOk,
+  reminderEditPatch,
   setRoutine,
+  setDefaultLead,
+  getDefaultLead,
+  setReminderSettingsOpener,
+  setCustomToneAdder,
+  setVoiceReminder,
+  notifySelect as NotifySelect,
+  LEAD_OPTIONS,
+  leadLabel,
+  minutesLabel,
+  REPEATS,
+  REPEAT_ORDER,
+  TAGS,
   ScreenCalendar,
   CalendarToolbar as RenderCalendarToolbar,
   ReminderPanel as RenderCalendarSide,
   MonthGrid as RenderCalendarGrid,
   resetCalendarForm,
   prefillCalendarReminder,
+  snoozeLabel,
+  describeRepeat,
 };

@@ -163,6 +163,10 @@ growthbuddy:
       # QUICK_REPLY button ("Mark as paid"). Empty => an interactive button message,
       # which Meta only delivers inside the 24h window.
       bill-template: ${WHATSAPP_BILL_TEMPLATE:}
+      # Approved template for reminders: body = one {{1}}, plus one QUICK_REPLY button
+      # ("Snooze"). Empty => the plain reminder template, with a "reply SNOOZE" line when
+      # the webhook below is set up.
+      reminder-template: ${WHATSAPP_REMINDER_TEMPLATE:}
       # Webhook (/api/whatsapp/webhook) — receives the "Mark as paid" tap. The app
       # secret signs every POST; without it the webhook refuses everything.
       app-secret: ${WHATSAPP_APP_SECRET:}

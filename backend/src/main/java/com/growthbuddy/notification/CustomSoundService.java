@@ -4,6 +4,7 @@ import com.growthbuddy.common.ApiException;
 import jakarta.transaction.Transactional;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Matcher;
@@ -11,11 +12,11 @@ import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
 
 /**
- * The account's own notification sound: store it, hand it back, forget it.
+ * The account's own notification sounds: store them, hand them back, forget them.
  *
- * <p>The client keeps the file locally too — that copy is what actually plays,
+ * <p>The client keeps the files locally too — that copy is what actually plays,
  * so the sound still works offline and the picker stays instant. This is the
- * copy that lets a second device find it at all.
+ * copy that lets a second device find them at all.
  */
 @Service
 public class CustomSoundService {
@@ -27,6 +28,19 @@ public class CustomSoundService {
      * decoded bytes, not the base64, so the two numbers mean the same thing.
      */
     static final int MAX_BYTES = 300 * 1024;
+
+    /**
+     * How many a user may keep: the one place to change it here. The client's
+     * twin is {@code CUSTOM_MAX_COUNT} in scripts/chime.js, and
+     * CustomSoundLimitsTest fails the build if the two differ.
+     */
+    static final int MAX_PER_USER = 5;
+
+    /** The column's width. */
+    static final int MAX_NAME = 60;
+
+    /** What a row from before names existed is called. */
+    static final String DEFAULT_NAME = "Your sound";
 
     /** What a browser's FileReader produces for an audio file, and nothing else. */
     private static final Pattern DATA_URL = Pattern.compile("^data:(audio/[A-Za-z0-9.+-]+);base64,(.+)$");
@@ -41,41 +55,102 @@ public class CustomSoundService {
         this.repo = repo;
     }
 
-    /** What the client stored, and when — the timestamp is how a device knows whose copy is newer. */
-    public record StoredSound(String dataUrl, Instant updatedAt) {
+    /** One entry of the list — no bytes. The timestamp is how a device knows whose copy is newer. */
+    public record SoundInfo(UUID id, String name, String source, Instant updatedAt) {
     }
 
-    /** Also moves a pre-bytes row over, once; updatedAt is left alone, since the sound is the same. */
+    /** One sound, bytes included, as the data URL the client stores. */
+    public record StoredSound(UUID id, String name, String source, String dataUrl, Instant updatedAt) {
+    }
+
+    public List<SoundInfo> list(UUID userId) {
+        return repo.summaries(userId).stream()
+                .map(s -> new SoundInfo(s.getId(), displayName(s.getName()), s.getSource(), s.getUpdatedAt()))
+                .toList();
+    }
+
     @Transactional
-    public Optional<StoredSound> get(UUID userId) {
-        return repo.findByUserId(userId).map(s -> {
-            if (s.getAudio() == null) {
-                String legacy = s.getDataUrl();
-                try {
-                    Parsed p = validate(legacy);
-                    s.setContentType(p.contentType());
-                    s.setAudio(p.bytes());
-                    s.setDataUrl("");
-                } catch (ApiException ignored) {
-                    // Stored under older rules (say, before the size cap): keep serving
-                    // it as it is rather than fail every login over a sound.
-                }
-                return new StoredSound(legacy, s.getUpdatedAt());
-            }
-            return new StoredSound(toDataUrl(s.getContentType(), s.getAudio()), s.getUpdatedAt());
-        });
+    public StoredSound get(UUID userId, UUID id) {
+        return repo.findByIdAndUserId(id, userId).map(this::toStored)
+                .orElseThrow(() -> ApiException.notFound("that sound"));
     }
 
-    static String toDataUrl(String contentType, byte[] bytes) {
-        return "data:" + contentType + ";base64," + Base64.getEncoder().encodeToString(bytes);
-    }
-
-    /** Replace whatever this account had. Returns the moment it landed. */
+    /**
+     * Save one under the id the client minted. The same id twice replaces, so a
+     * retry never costs a slot; a new id past the cap is refused. An id that
+     * belongs to someone else answers as if it didn't exist.
+     */
     @Transactional
-    public Instant put(UUID userId, String dataUrl) {
+    public Instant put(UUID userId, UUID id, String name, String source, String dataUrl) {
         Parsed p = validate(dataUrl);
-        CustomSound row = repo.findByUserId(userId).orElseGet(CustomSound::new);
-        row.setUserId(userId);
+        // First, before any read: see lockOwner and countForUpdate.
+        repo.lockOwner(userId.toString());
+        CustomSound row = repo.findById(id).orElse(null);
+        if (row != null && !row.getUserId().equals(userId)) {
+            throw ApiException.notFound("that sound");
+        }
+        if (row == null) {
+            if (repo.countForUpdate(userId.toString()) >= MAX_PER_USER) {
+                throw ApiException.badRequest(
+                        "You can keep " + MAX_PER_USER + " sounds of your own. Remove one to add another.");
+            }
+            row = new CustomSound();
+            row.setId(id);
+            row.setUserId(userId);
+        }
+        row.setSource(normalizeSource(source));
+        return save(row, normalizeName(name), p);
+    }
+
+    /**
+     * Change only the name. The bytes and updatedAt stay as they are: updatedAt
+     * is how another device decides to re-download the audio, and the audio
+     * didn't change — the new name reaches it through the list.
+     */
+    @Transactional
+    public SoundInfo rename(UUID userId, UUID id, String name) {
+        String clean = normalizeName(name);
+        if (clean == null) {
+            throw ApiException.badRequest("Give it a name.");
+        }
+        CustomSound row = repo.findByIdAndUserId(id, userId)
+                .orElseThrow(() -> ApiException.notFound("that sound"));
+        row.setName(clean);
+        repo.save(row);
+        return new SoundInfo(row.getId(), clean, row.getSource(), row.getUpdatedAt());
+    }
+
+    @Transactional
+    public void delete(UUID userId, UUID id) {
+        repo.deleteByIdAndUserId(id, userId);
+    }
+
+    /* ---- The one-sound API, for builds cached on phones from before the library.
+       "The" sound is the oldest; these never touch the others. ---- */
+
+    @Transactional
+    public Optional<StoredSound> getFirst(UUID userId) {
+        return repo.findFirstByUserIdOrderByUpdatedAtAscIdAsc(userId).map(this::toStored);
+    }
+
+    @Transactional
+    public Instant putFirst(UUID userId, String dataUrl) {
+        Parsed p = validate(dataUrl);
+        CustomSound row = repo.findFirstByUserIdOrderByUpdatedAtAscIdAsc(userId).orElseGet(() -> {
+            CustomSound s = new CustomSound();
+            s.setUserId(userId);
+            return s;
+        });
+        return save(row, row.getName(), p);
+    }
+
+    @Transactional
+    public void deleteFirst(UUID userId) {
+        repo.findFirstByUserIdOrderByUpdatedAtAscIdAsc(userId).ifPresent(repo::delete);
+    }
+
+    private Instant save(CustomSound row, String name, Parsed p) {
+        row.setName(name);
         row.setContentType(p.contentType());
         row.setAudio(p.bytes());
         row.setDataUrl("");
@@ -83,9 +158,45 @@ public class CustomSoundService {
         return repo.save(row).getUpdatedAt();
     }
 
-    @Transactional
-    public void delete(UUID userId) {
-        repo.deleteByUserId(userId);
+    /** Also moves a pre-bytes row over, once; updatedAt is left alone, since the sound is the same. */
+    private StoredSound toStored(CustomSound s) {
+        String name = displayName(s.getName());
+        if (s.getAudio() == null) {
+            String legacy = s.getDataUrl();
+            try {
+                Parsed p = validate(legacy);
+                s.setContentType(p.contentType());
+                s.setAudio(p.bytes());
+                s.setDataUrl("");
+            } catch (ApiException ignored) {
+                // Stored under older rules (say, before the size cap): keep serving
+                // it as it is rather than fail every login over a sound.
+            }
+            return new StoredSound(s.getId(), name, s.getSource(), legacy, s.getUpdatedAt());
+        }
+        return new StoredSound(s.getId(), name, s.getSource(), toDataUrl(s.getContentType(), s.getAudio()),
+                s.getUpdatedAt());
+    }
+
+    static String toDataUrl(String contentType, byte[] bytes) {
+        return "data:" + contentType + ";base64," + Base64.getEncoder().encodeToString(bytes);
+    }
+
+    private static String displayName(String stored) {
+        return stored == null || stored.isBlank() ? DEFAULT_NAME : stored;
+    }
+
+    /** Only the two values the client sends; anything else is stored as unknown. */
+    static String normalizeSource(String source) {
+        return "recording".equals(source) || "file".equals(source) ? source : null;
+    }
+
+    /** Trimmed, control characters out, cut to the column. Blank is fine — it reads as {@link #DEFAULT_NAME}. */
+    static String normalizeName(String name) {
+        if (name == null) return null;
+        String clean = name.replaceAll("\\p{Cntrl}", "").strip();
+        if (clean.isEmpty()) return null;
+        return clean.length() > MAX_NAME ? clean.substring(0, MAX_NAME).strip() : clean;
     }
 
     /**

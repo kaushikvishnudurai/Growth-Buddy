@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * {@link HabitService#HABIT_ICONS} mirrors the icons the habit form can send:
- * gb-kit.js's DOMAIN map and app.js's FITNESS_PRESETS. An icon added there and
+ * gb-kit.js's DOMAIN map and app.js's FITNESS_PRESETS and HABIT_TEMPLATES. An icon added there and
  * not here makes the form's own save fail with a 400.
  */
 class HabitIconsTest {
@@ -19,6 +19,7 @@ class HabitIconsTest {
     void allowListCoversEveryIconTheFormSends() throws Exception {
         assertCovers(block("scripts/gb-kit.js", "const DOMAIN = {", "};"));
         assertCovers(block("scripts/app.js", "const FITNESS_PRESETS = [", "];"));
+        assertCovers(block("scripts/app.js", "const HABIT_TEMPLATES = [", "];"));
     }
 
     private static void assertCovers(String block) {

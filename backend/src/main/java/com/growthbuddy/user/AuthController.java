@@ -110,11 +110,68 @@ public class AuthController {
         return auth.changePassword(CurrentUser.id(), req, http);
     }
 
-    /** Permanently delete the current user's account and data (password required). */
+    /**
+     * Schedule the current account for deletion (password required): every
+     * session is revoked now, the data goes after AuthService.DELETION_GRACE_DAYS.
+     */
     @PostMapping("/delete-account")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteAccount(@Valid @RequestBody DeleteAccountRequest req) {
         auth.deleteAccount(CurrentUser.id(), req.password());
+    }
+
+    /**
+     * Anonymous — the account has no session by now. Exactly a sign-in that
+     * also clears the schedule: same password, second-factor and lockout
+     * checks, and it answers with a session.
+     */
+    @PostMapping("/cancel-deletion")
+    public AuthUserResponse cancelDeletion(@Valid @RequestBody LoginRequest req, HttpServletRequest http) {
+        return auth.login(new LoginRequest(req.email(), req.password(), req.code(), true), http);
+    }
+
+    /** Change email, step 1: password-confirmed; emails a code to the new address. */
+    @PostMapping("/email/change")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void requestEmailChange(@Valid @RequestBody ChangeEmailRequest req) {
+        auth.requestEmailChange(CurrentUser.id(), req);
+    }
+
+    /** Change email, step 2: the code from the new inbox swaps the address. */
+    @PostMapping("/email/confirm")
+    public AuthUserResponse confirmEmailChange(@Valid @RequestBody ConfirmEmailChangeRequest req) {
+        return auth.confirmEmailChange(CurrentUser.id(), req.code());
+    }
+
+    /** Two-step sign-in state + any pending email change, for Settings → Account. */
+    @GetMapping("/security")
+    public AccountSecurityStatus security() {
+        return auth.securityStatus(CurrentUser.id());
+    }
+
+    /**
+     * Start authenticator setup: a new secret + otpauth URI. A POST, not a GET,
+     * so the Workbox API-GET cache never stores the secret on the device.
+     */
+    @PostMapping("/2fa/setup")
+    public TotpSetupResponse beginTotpSetup() {
+        return auth.beginTotpSetup(CurrentUser.id());
+    }
+
+    /**
+     * Password + first code from the app turns 2FA on and signs out every other
+     * device; the answer holds the 8 recovery codes, once.
+     */
+    @PostMapping("/2fa/verify")
+    public RecoveryCodesResponse enableTotp(@Valid @RequestBody TotpEnableRequest req,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        return auth.enableTotp(CurrentUser.id(), req, bearer(authHeader));
+    }
+
+    @PostMapping("/2fa/disable")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void disableTotp(@Valid @RequestBody TotpDisableRequest req) {
+        auth.disableTotp(CurrentUser.id(), req);
     }
 
     private static String bearer(String header) {

@@ -302,6 +302,7 @@ function pairInsight(sig, [x, y, lag = 0]) {
       ' days (' +
       r.n +
       ' days).',
+    basis: r.n + ' days',
     effect,
   };
 }
@@ -314,7 +315,12 @@ function thisWeek(s) {
   const recent = keys.filter((k) => end - dayNum(k) < 7).map((k) => s[k]);
   const before = keys.filter((k) => end - dayNum(k) >= 7).map((k) => s[k]);
   if (recent.length < 4 || before.length < MIN_DAYS) return null;
-  return { recent: mean(recent), usual: mean(before), nights: recent.length };
+  return {
+    recent: mean(recent),
+    usual: mean(before),
+    nights: recent.length,
+    total: recent.length + before.length,
+  };
 }
 
 /** Sleeping less than usual this week, as total hours owed. */
@@ -337,6 +343,7 @@ function sleepDebt(sig) {
       '. That is about ' +
       f(gap * w.nights) +
       ' short.',
+    basis: w.total + ' nights',
     effect: gap / META.sleepHours.range,
   };
 }
@@ -360,6 +367,7 @@ function moodShift(sig) {
       ' your usual ' +
       f(w.usual) +
       '.',
+    basis: w.total + ' days',
     effect,
   };
 }
@@ -406,6 +414,7 @@ function weekdayPattern(sig, key, worst) {
       ' ' +
       WEEKDAYS[pick] +
       ').',
+    basis: all.length + ' days',
     effect,
   };
 }
@@ -452,7 +461,13 @@ function bestBedtime(sig) {
       ' on other nights (' +
       n +
       ' nights).',
+    basis: n + ' nights',
     effect,
+    action: {
+      label: 'Set a bedtime reminder',
+      kind: 'bedtimeReminder',
+      params: { time: hh(best.b + 12), repeat: 'daily' },
+    },
   };
 }
 
@@ -507,6 +522,7 @@ export function focusHours(sessions) {
       ' vs ' +
       Math.round(best.rest) +
       ' min). A good slot for hard tasks.',
+    basis: ok.length + ' sessions',
     effect: Math.min(best.lift, 1) / 2,
   };
 }
@@ -520,7 +536,9 @@ export function habitDays(habits, history, today) {
   const end = dayNum(today) - 1;
   for (const hab of habits || []) {
     const hist = hab && history && history[hab.id];
-    if (!hist || hab.cadence !== 'daily') continue;
+    // A quit ("break a habit") habit's clean days have no row: read as days it
+    // was "missed", every pattern about it would be backwards.
+    if (!hist || hab.cadence !== 'daily' || hab.kind === 'quit') continue;
     const done = new Set(
       (hist.days || []).filter((d) => d.done || d.protectedDay).map((d) => String(d.date))
     );
@@ -529,7 +547,14 @@ export function habitDays(habits, history, today) {
       const key = dayKey(n);
       days.push({ key, done: done.has(key) });
     }
-    if (days.length) out.push({ id: hab.id, name: hab.name, doneToday: !!hab.doneToday, days });
+    if (days.length)
+      out.push({
+        id: hab.id,
+        name: hab.name,
+        doneToday: !!hab.doneToday,
+        reminderTime: hab.reminderTime ? String(hab.reminderTime).slice(0, 5) : null,
+        days,
+      });
   }
   return out;
 }
@@ -547,10 +572,11 @@ export function habitWeekdayMiss(hdays) {
       if (g.length < 2 || missed < 2) return;
       const gap = missed / g.length - overall;
       if (gap >= 0.25 && (!best || gap > best.gap))
-        best = { name: hab.name, i, missed, of: g.length, gap };
+        best = { hab, name: hab.name, i, missed, of: g.length, gap, days: hab.days.length };
     });
   }
   if (!best) return null;
+  const to = earlierReminder(best.hab.reminderTime);
   return {
     icon: 'calendar',
     title: best.name + ' on ' + WEEKDAYS[best.i],
@@ -564,8 +590,28 @@ export function habitWeekdayMiss(hdays) {
       ' of ' +
       best.of +
       '. Plan a smaller version for that day.',
+    basis: best.days + ' days',
     effect: best.gap,
+    action: to && {
+      label: (best.hab.reminderTime ? 'Move reminder to ' : 'Remind me at ') + to,
+      kind: 'habitReminder',
+      params: { habitId: best.hab.id, time: to },
+    },
   };
+}
+
+/**
+ * The reminder time a habit miss card offers: an hour before the current one
+ * (a reminder that lands too late is the usual reason a day slips), 09:00 for a
+ * habit without one, null when an hour earlier would fall before 06:00.
+ * No check-in times are stored, so this is a nudge, not a measured best hour.
+ */
+export function earlierReminder(time) {
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(time || ''));
+  if (!m) return '09:00';
+  const mins = Number(m[1]) * 60 + Number(m[2]) - 60;
+  if (mins < 6 * 60) return null;
+  return String(Math.floor(mins / 60)).padStart(2, '0') + ':' + m[2];
 }
 
 /**
@@ -600,6 +646,7 @@ export function missTwice(hdays) {
       ' of ' +
       single +
       ' times). Today matters.',
+    basis: single + ' missed days',
     effect: 0.6,
   };
 }
@@ -635,6 +682,7 @@ export function keystoneHabit(hdays, sig) {
       ' on days you skip it (' +
       best.n +
       ' days).',
+    basis: best.n + ' days',
     effect: best.diff / META.mood.range,
   };
 }
@@ -647,23 +695,94 @@ function goalFraction(p) {
   return null;
 }
 
+const PACE_WINDOW = 90; // days of the progress log the slope is fitted over
+const PACE_MIN_POINTS = 3;
+const PACE_MIN_SPAN = 5; // days between the first and last point
+
 /**
- * Straight line from the goal's creation (0%) to today's progress, run on to
- * 100%. ponytail: two points, because progress has no history; a real fit
- * needs a dated progress log.
+ * Least-squares slope (fraction per day) through the goal's dated progress log
+ * (`progressLog` [{date, pct}], written by app.js `updateGoalProgress`) over the
+ * last PACE_WINDOW days, today's own value standing in for today's entry. Null
+ * when there are too few points or too short a span to call it a trend.
+ */
+export function paceSlope(log, frac, today) {
+  const t = dayNum(today);
+  const by = new Map();
+  for (const e of Array.isArray(log) ? log : []) {
+    const n = e && dayNum(String(e.date));
+    if (Number.isFinite(n) && Number.isFinite(e.pct) && n <= t && n > t - PACE_WINDOW)
+      by.set(n, e.pct / 100);
+  }
+  by.set(t, frac);
+  const pts = [...by].sort((a, b) => a[0] - b[0]);
+  if (pts.length < PACE_MIN_POINTS || pts[pts.length - 1][0] - pts[0][0] < PACE_MIN_SPAN)
+    return null;
+  const mx = mean(pts.map((p) => p[0]));
+  const my = mean(pts.map((p) => p[1]));
+  let num = 0;
+  let den = 0;
+  for (const [x, y] of pts) {
+    num += (x - mx) * (y - my);
+    den += (x - mx) * (x - mx);
+  }
+  return {
+    slope: den ? num / den : 0,
+    points: pts.length,
+    span: pts[pts.length - 1][0] - pts[0][0],
+  };
+}
+
+/**
+ * When a goal finishes at its pace, against its target date. With a dated
+ * progress log (paceSlope) the pace is the fitted slope, run on from today's
+ * progress; a log that went flat says so. Without one (old goals, or fewer
+ * than three days logged), the fallback is a straight line from creation (0%)
+ * to today's progress.
  */
 export function goalPace(goals, progressById, now) {
+  const today = localKey(new Date(now));
   let worst = null;
   for (const g of goals || []) {
     if (!g || g.completed || !g.targetDate || !g.createdAt) continue;
-    const frac = goalFraction((progressById && progressById[g.id]) || g.progress);
+    const p = (progressById && progressById[g.id]) || g.progress;
+    const frac = goalFraction(p);
     const elapsed = (now - Date.parse(g.createdAt)) / DAY_MS;
-    if (frac == null || frac <= 0 || frac >= 1 || elapsed < 3) continue;
-    const finish = now + ((1 - frac) / (frac / elapsed)) * DAY_MS;
-    const late = Math.round((finish - Date.parse(g.targetDate + 'T23:59:59')) / DAY_MS);
-    if (late > 2 && (!worst || late > worst.late)) worst = { g, late, finish, frac };
+    if (frac == null || frac >= 1 || elapsed < 3) continue;
+    const target = Date.parse(g.targetDate + 'T23:59:59');
+    const fit = paceSlope(p && p.progressLog, frac, today);
+    let cand;
+    if (fit && fit.slope <= 0) {
+      // Flat (or sliding back) across the log: no finish date to project.
+      if (target < now) continue;
+      cand = { g, late: Infinity, frac, fit };
+    } else if (fit) {
+      const finish = now + ((1 - frac) / fit.slope) * DAY_MS;
+      cand = { g, late: Math.round((finish - target) / DAY_MS), finish, frac, fit };
+    } else {
+      if (frac <= 0) continue;
+      const finish = now + ((1 - frac) / (frac / elapsed)) * DAY_MS;
+      cand = { g, late: Math.round((finish - target) / DAY_MS), finish, frac, elapsed };
+    }
+    if (cand.late > 2 && (!worst || cand.late > worst.late)) worst = cand;
   }
   if (!worst) return null;
+  const basis = worst.fit
+    ? worst.fit.points + ' progress days over ' + worst.fit.span + ' days'
+    : Math.round(worst.elapsed) + ' days';
+  if (worst.late === Infinity) {
+    return {
+      icon: 'target',
+      title: worst.g.title + ' has stalled',
+      text:
+        'You are ' +
+        pct(worst.frac) +
+        ' of the way, and it has not moved over the last ' +
+        worst.fit.span +
+        ' days. At this pace the target date passes first.',
+      basis,
+      effect: 0.45,
+    };
+  }
   const d = new Date(worst.finish).toLocaleDateString(undefined, {
     day: 'numeric',
     month: 'short',
@@ -674,13 +793,16 @@ export function goalPace(goals, progressById, now) {
     text:
       'You are ' +
       pct(worst.frac) +
-      ' of the way. At this pace you finish around ' +
+      ' of the way. At ' +
+      (worst.fit ? 'your recent pace' : 'this pace') +
+      ' you finish around ' +
       d +
       ', ' +
       worst.late +
       ' day' +
       (worst.late === 1 ? '' : 's') +
       ' after your target.',
+    basis,
     effect: Math.min(0.5, 0.15 + worst.late / 100),
   };
 }
@@ -699,10 +821,12 @@ export function taskTiming(finished) {
       return p + ' ' + d + (d === 1 ? ' day' : ' days');
     });
   if (!parts.length) return null;
+  const n = Object.values(by).reduce((a, d) => a + d.length, 0);
   return {
     icon: 'clock',
     title: 'How long tasks take you',
     text: 'From adding a task to ticking it off: ' + parts.join(', ') + '.',
+    basis: n + ' tasks',
     effect: 0.13,
   };
 }
@@ -723,6 +847,7 @@ export function pushedTask(tasks) {
       t.pushCount +
       ' times. Break it down or drop it?',
     effect: 0.3 + Math.min(t.pushCount, 10) / 100,
+    action: { label: 'Reschedule', kind: 'editTask', params: { taskId: t.id } },
   };
 }
 
@@ -744,6 +869,7 @@ export function taskWeekday(finished) {
     icon: 'calendar',
     title: WEEKDAYS[i] + ' get things done',
     text: 'You finish the most tasks on ' + WEEKDAYS[i] + ': ' + by[i] + ' of ' + n + ' lately.',
+    basis: n + ' tasks',
     effect: lift,
   };
 }
@@ -763,7 +889,7 @@ export function unusualExpense(m, today) {
     if (before.length < 5) continue;
     const usual = median(before);
     const x = Number(e.amount) / usual;
-    if (x >= 3 && (!best || x > best.x)) best = { e, usual, x };
+    if (x >= 3 && (!best || x > best.x)) best = { e, usual, x, n: before.length };
   }
   if (!best) return null;
   return {
@@ -779,7 +905,9 @@ export function unusualExpense(m, today) {
       'x your usual ' +
       fmtMoney(best.usual) +
       '.',
+    basis: best.n + ' earlier ' + best.e.category + ' expenses',
     effect: Math.min(0.5, best.x / 10),
+    action: { label: 'Open in Money', kind: 'openMoney', params: { expenseId: best.e.id || null } },
   };
 }
 
@@ -819,7 +947,9 @@ export function hiddenSubscription(m, today) {
         ' every month (' +
         g.length +
         ' times). Track it as a subscription in Money?',
+      basis: g.length + ' payments',
       effect: 0.35,
+      action: { label: 'Open in Money', kind: 'openMoney', params: { note: g[0].note } },
     };
   }
   return null;
@@ -865,7 +995,17 @@ export function waterGap(times) {
       ' (' +
       days +
       ' days). A glass there is the easiest win. Water nudges, when on, skip the hours you already drink in.',
+    basis: days + ' days',
     effect: 0.15 + best.len / 50,
+    action: {
+      label: 'Nudge me at ' + hh(best.from + Math.floor(best.len / 2)),
+      kind: 'waterNudge',
+      params: {
+        hour: best.from + Math.floor(best.len / 2),
+        from: hh(best.from),
+        to: hh(best.from + best.len),
+      },
+    },
   };
 }
 
@@ -901,52 +1041,84 @@ export function scoreChange(days) {
       ' of ' +
       a[k + 'Total'] +
       '.',
+    basis: '2 days',
     effect: Math.abs(delta) / 100,
   };
 }
 
 /**
  * Find the strongest real patterns and render them as plain insight cards:
- * { icon, title, text, effect }. Sorted by effect size, capped at MAX_INSIGHTS.
- * `history` (see above) and the rest are optional; each card that lacks its
- * data simply doesn't appear.
+ * { id, icon, title, text, basis, effect }. Sorted by effect size, capped at
+ * MAX_INSIGHTS. `history` (see above) and the rest are optional; each card that
+ * lacks its data simply doesn't appear.
+ *
+ * `features` is the user's feature map: a switched-off feature's signals are
+ * dropped, so someone who turned Money off is not told about their spending.
+ * `dismissed` lists card ids the user waved away; they stay gone and the next
+ * card fills the slot. Cards about *this* week or day carry it in their id
+ * (sleep debt, a mood shift, an expense, yesterday's score), so dismissing this
+ * week's sleep debt does not silence next month's.
  */
 export function buildInsights({
   wellness,
   trends,
-  money: m,
+  money,
   habits,
   tasks,
   goals,
   goalProgress,
   history,
+  features,
+  dismissed,
   now = Date.now(),
 }) {
+  const off = (k) => !!features && features[k] === false;
+  const m = off('money') ? null : money;
   const sig = signals({ wellness, trends, money: m });
+  if (off('water')) sig.water = {};
+  if (off('food')) sig.kcal = {};
   const today = localKey(new Date(now));
+  const t0 = dayNum(today);
+  const week = dayKey(t0 - ((new Date(t0 * DAY_MS).getUTCDay() + 6) % 7)); // its Monday
   const hist = history || {};
-  const hdays = habitDays(habits, hist.habits, today);
+  const hdays = off('habits') ? [] : habitDays(habits, hist.habits, today);
+  const tag = (id, card) => card && Object.assign(card, { id });
   const found = [
-    ...TESTS.map((t) => pairInsight(sig, t)),
-    sleepDebt(sig),
-    moodShift(sig),
-    weekdayPattern(sig, 'mood', 'min'),
-    weekdayPattern(sig, 'stress', 'max'),
-    bestBedtime(sig),
-    focusHours(hist.focus),
-    habitWeekdayMiss(hdays),
-    missTwice(hdays),
-    keystoneHabit(hdays, sig),
-    goalPace(goals, goalProgress, now),
-    taskTiming(hist.finished),
-    pushedTask(tasks),
-    taskWeekday(hist.finished),
-    unusualExpense(m, today),
-    hiddenSubscription(m, today),
-    waterGap(hist.waterTimes),
-    scoreChange(hist.scores),
+    ...TESTS.map((t) => tag('pair:' + t.join(':'), pairInsight(sig, t))),
+    tag('sleepDebt:' + week, sleepDebt(sig)),
+    tag('moodShift:' + week, moodShift(sig)),
+    tag('weekday:mood', weekdayPattern(sig, 'mood', 'min')),
+    tag('weekday:stress', weekdayPattern(sig, 'stress', 'max')),
+    tag('bestBedtime', bestBedtime(sig)),
+    off('focus') ? null : tag('focusHours', focusHours(hist.focus)),
+    tag('habitWeekdayMiss', habitWeekdayMiss(hdays)),
+    tag('missTwice:' + today, missTwice(hdays)),
+    tag('keystone', keystoneHabit(hdays, sig)),
+    off('goals') ? null : tag('goalPace:' + week, goalPace(goals, goalProgress, now)),
+    tag('taskTiming', taskTiming(hist.finished)),
+    tag('pushedTask:' + week, pushedTask(tasks)),
+    tag('taskWeekday', taskWeekday(hist.finished)),
+    tag('unusualExpense:' + week, unusualExpense(m, today)),
+    tag('hiddenSubscription', hiddenSubscription(m, today)),
+    off('water') ? null : tag('waterGap', waterGap(hist.waterTimes)),
+    tag('scoreChange:' + today, scoreChange(hist.scores)),
   ].filter(Boolean);
-  return found.sort((a, b) => b.effect - a.effect).slice(0, MAX_INSIGHTS);
+  const gone = new Set(Array.isArray(dismissed) ? dismissed : []);
+  return found
+    .filter((c) => !gone.has(c.id))
+    .sort((a, b) => b.effect - a.effect)
+    .slice(0, MAX_INSIGHTS);
+}
+
+/**
+ * How close the user is to their first insights: days with both a sleep and a
+ * mood check-in, against the MIN_DAYS a pair needs. For the empty state.
+ */
+export function insightProgress(wellness) {
+  const sleep = (wellness && wellness.sleepByDate) || {};
+  const mood = (wellness && wellness.moodByDate) || {};
+  const days = Object.keys(sleep).filter((k) => mood[k]).length;
+  return { days: Math.min(days, MIN_DAYS), need: MIN_DAYS };
 }
 
 function cap(s) {

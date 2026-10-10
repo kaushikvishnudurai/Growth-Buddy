@@ -14,7 +14,9 @@ import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -36,6 +38,7 @@ public class SubscriptionDueScheduler {
     private final MoneyRepository money;
     private final ReminderDispatchLogRepository dispatchLog;
     private final WhatsAppService whatsapp;
+    private final Retries retries = new Retries();
 
     public SubscriptionDueScheduler(UserRepository users, MoneyRepository money,
                                     ReminderDispatchLogRepository dispatchLog, WhatsAppService whatsapp) {
@@ -59,6 +62,9 @@ public class SubscriptionDueScheduler {
             return;
         }
         for (User user : users.findAllById(ids)) {
+            if (user.isPendingDeletion()) {
+                continue; // scheduled for deletion: no bill-due WhatsApp in the grace period
+            }
             // One user's failure (a blank legacy number, a DB error) must not skip every
             // user after them: the list comes back in the same order every tick, so it
             // would block the same people all day.
@@ -79,7 +85,8 @@ public class SubscriptionDueScheduler {
                     // reuses its de-dupe without a table of our own.
                     UUID key = UUID.nameUUIDFromBytes(
                             ("sub:" + user.getId() + ":" + subId).getBytes(StandardCharsets.UTF_8));
-                    if (dispatchLog.existsByReminderIdAndOccurrenceDate(key, day)) {
+                    if (dispatchLog.existsByReminderIdAndOccurrenceDate(key, day)
+                            || !retries.due(key, day, System.currentTimeMillis())) {
                         continue;
                     }
                     ReminderDispatchLog row = new ReminderDispatchLog();
@@ -93,22 +100,67 @@ public class SubscriptionDueScheduler {
                         row.setStatus("sent");
                     } catch (WhatsAppService.SendFailed ex) {
                         log.warn("Subscription reminder {} for {} failed: {}", subId, user.getId(), ex.getMessage());
+                        String why = String.valueOf(ex.getMessage());
                         if (!ex.permanent()) {
-                            // No row: a network blip or a 5xx is tried again next tick.
-                            // ponytail: unbounded within the day (≤ ~60 tries if Meta is down
-                            // all day); count attempts if that ever matters.
-                            continue;
+                            // No row: a network blip or a 5xx is tried again on a later tick,
+                            // backing off, at most MAX_ATTEMPTS a day. The last one writes the
+                            // failed row below, so the cap holds across instances and restarts.
+                            if (!retries.recordFailure(key, day, System.currentTimeMillis())) {
+                                continue;
+                            }
+                            why = "gave up after " + Retries.MAX_ATTEMPTS + " attempts: " + why;
                         }
                         // A 4xx fails the same way every time, so it is recorded once and left:
                         // the unique (id, day) index allows one row, and resending is pointless.
                         row.setStatus("failed");
-                        row.setErrorMessage(ex.getMessage().substring(0, Math.min(250, ex.getMessage().length())));
+                        row.setErrorMessage(why.substring(0, Math.min(250, why.length())));
                     }
                     dispatchLog.save(row);
                 }
             } catch (RuntimeException ex) {
                 log.warn("Subscription reminders for {} skipped this tick: {}", user.getId(), ex.getMessage());
             }
+        }
+    }
+
+    /**
+     * Transient-failure budget per (subscription, day): {@link #MAX_ATTEMPTS} tries,
+     * each retry waiting twice as long as the last (the next tick, then two ticks), so a Meta
+     * outage costs three calls per subscription instead of one every tick all day.
+     *
+     * <p>ponytail: the backoff clock is in memory, per instance. A restart or a
+     * second instance can retry sooner than the backoff says — never more than
+     * {@link #MAX_ATTEMPTS} per instance, and the give-up row is in the shared
+     * dispatch log, so the first instance to exhaust its budget stops every other.
+     * Persist the attempt count if that ever matters.
+     */
+    static final class Retries {
+        static final int MAX_ATTEMPTS = 3;
+        /** Just under one 15-minute tick, so a tick that runs a little early still qualifies. */
+        static final long FIRST_BACKOFF_MS = 14 * 60_000L;
+
+        private record State(LocalDate day, int failures, long nextTryMs) { }
+
+        private final Map<UUID, State> byKey = new ConcurrentHashMap<>();
+
+        /** Whether this subscription may be tried now — false while backing off. */
+        boolean due(UUID key, LocalDate day, long nowMs) {
+            State st = byKey.get(key);
+            return st == null || !st.day().equals(day) || nowMs >= st.nextTryMs();
+        }
+
+        /** Count a transient failure; {@code true} once the day's budget is spent. */
+        boolean recordFailure(UUID key, LocalDate day, long nowMs) {
+            // Yesterday's entries are dead weight; a key re-seen today replaces its own.
+            byKey.values().removeIf(st -> !st.day().equals(day));
+            State prev = byKey.get(key);
+            int failures = (prev == null ? 0 : prev.failures()) + 1;
+            if (failures >= MAX_ATTEMPTS) {
+                byKey.remove(key);
+                return true;
+            }
+            byKey.put(key, new State(day, failures, nowMs + (FIRST_BACKOFF_MS << (failures - 1))));
+            return false;
         }
     }
 
@@ -146,7 +198,12 @@ public class SubscriptionDueScheduler {
         return mask;
     }
 
-    /** Mirrors {@code upcomingSubs} in money.js: a day past the month's end means its last day. */
+    /**
+     * Mirrors {@code upcomingSubs} in money.js: a day past the month's end means its last day.
+     * Paid is forward-only, as in {@link MoneyService#applyPaid}: a bill paid ahead (paidFor
+     * a later month) is not due, and one with no amount is skipped, since its "Mark as paid"
+     * button could book nothing.
+     */
     static List<JsonNode> dueToday(JsonNode data, LocalDate day) {
         List<JsonNode> out = new ArrayList<>();
         if (data == null || !data.path("subscriptions").isArray()) {
@@ -155,7 +212,9 @@ public class SubscriptionDueScheduler {
         String month = YearMonth.from(day).toString();
         for (JsonNode sub : data.get("subscriptions")) {
             int due = Math.min(Math.max(sub.path("dueDay").asInt(1), 1), day.lengthOfMonth());
-            if (due == day.getDayOfMonth() && !month.equals(sub.path("paidFor").asText())
+            // "YYYY-MM" strings order the same as the months they name.
+            boolean paid = month.compareTo(sub.path("paidFor").asText("")) <= 0;
+            if (due == day.getDayOfMonth() && !paid && sub.path("amount").asDouble(0) > 0
                     && !sub.path("id").asText().isEmpty()) {
                 out.add(sub);
             }

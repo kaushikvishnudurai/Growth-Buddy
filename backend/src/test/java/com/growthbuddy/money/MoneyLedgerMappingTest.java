@@ -56,6 +56,19 @@ class MoneyLedgerMappingTest {
         // A loan's move out of an account has no "to".
         ObjectNode lent = obj("{\"id\":\"loan-l1\",\"amount\":500,\"from\":\"b\",\"date\":\"2026-09-30\",\"note\":\"Lent to Asha\"}");
         assertThat(roundTrip("transfer", lent)).isEqualTo(lent);
+        // Money borrowed into an account (or a loan repaid to you) has no "from".
+        ObjectNode borrowed = obj("{\"id\":\"loan-l2\",\"amount\":800,\"to\":\"c\",\"date\":\"2026-09-30\",\"note\":\"Borrowed from Ravi\"}");
+        assertThat(roundTrip("transfer", borrowed)).isEqualTo(borrowed);
+        MoneyLedger.Row r = ledger.toRow("transfer", borrowed);
+        assertThat(r.accountId()).isNull();
+        assertThat(r.toAccountId()).isEqualTo("c");
+    }
+
+    @Test
+    void aTransferTouchingNoAccountIsRefused() throws Exception {
+        assertThatThrownBy(() -> ledger.toRow("transfer",
+                obj("{\"id\":\"n\",\"amount\":5,\"date\":\"2026-09-30\"}")))
+                .isInstanceOf(ApiException.class).hasMessageContaining("from or into");
     }
 
     @Test

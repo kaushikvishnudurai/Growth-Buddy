@@ -15,8 +15,15 @@ import {
   upcomingHabitAlarms,
   upcomingAlarms,
   usualDrinkHours,
+  isQuietAt,
 } from './push.js';
-import { SILENT_CHANNEL } from './native.js';
+import {
+  SILENT_CHANNEL,
+  TIMER_ALARM_ID,
+  idsToCancel,
+  versionedChannel,
+  isStaleChannel,
+} from './native.js';
 
 // Wednesday, 09:00 local.
 const NOW = new Date(2026, 8, 16, 9, 0, 0, 0);
@@ -32,6 +39,46 @@ const bodies = (list) => list.map((n) => n.body);
     { id: 'b', text: 'gone', date: '2026-09-16', time: '08:00', repeat: 'none' },
   ];
   assert.deepEqual(bodies(upcomingReminderAlarms(rems, NOW)), ['later']);
+}
+
+/* "Notify before": the reminder's own lead wins, null follows the default, and
+   a lead can ring tomorrow's 00:10 tonight. Mirrors ReminderPrefs.leadFor. */
+{
+  const rems = [
+    { id: 'a', text: 'own', date: '2026-09-16', time: '18:00', repeat: 'none', notifyBefore: 30 },
+    { id: 'b', text: 'default', date: '2026-09-16', time: '18:00', repeat: 'none' },
+    { id: 'c', text: 'at time', date: '2026-09-16', time: '18:00', repeat: 'none', notifyBefore: 0 },
+    { id: 'd', text: 'early', date: '2026-09-17', time: '00:10', repeat: 'none' },
+  ];
+  const at = (list, body) => {
+    const n = list.find((x) => x.body.startsWith(body));
+    return n.at.getDate() + ' ' + n.at.getHours() + ':' + n.at.getMinutes();
+  };
+  const q = upcomingReminderAlarms(rems, NOW, 3, 15);
+  assert.equal(at(q, 'own'), '16 17:30');
+  assert.equal(at(q, 'default'), '16 17:45');
+  assert.equal(at(q, 'at time'), '16 18:0');
+  assert.equal(at(q, 'early'), '16 23:55', 'the evening before');
+  assert.equal(q.find((x) => x.body.startsWith('own')).body, 'own · at 18:00');
+  assert.equal(q.find((x) => x.body.startsWith('at time')).body, 'at time', 'no time line when it rings on time');
+}
+
+/* Inside its own lead: 09:20 with a 30-minute lead, at 09:00 — rings at 09:20. */
+assert.equal(
+  upcomingReminderAlarms([{ id: 'a', text: 'late', date: '2026-09-16', time: '09:20', repeat: 'none', notifyBefore: 30 }], NOW)[0].at.getMinutes(),
+  20
+);
+
+/* A snooze rings once more at snoozedUntil; one already past rings nothing. */
+{
+  const rems = [
+    { id: 'a', text: 'snoozed', date: '2026-09-15', time: '08:50', repeat: 'none', snoozedUntil: new Date(2026, 8, 16, 9, 10).toISOString() },
+    { id: 'b', text: 'stale', date: '2026-09-15', time: '08:00', repeat: 'none', snoozedUntil: new Date(2026, 8, 16, 8, 30).toISOString() },
+  ];
+  const q = upcomingReminderAlarms(rems, NOW);
+  assert.deepEqual(bodies(q), ['snoozed']);
+  assert.equal(q[0].title, 'Snoozed reminder');
+  assert.equal(q[0].at.getMinutes(), 10);
 }
 
 /* No time = an all-day note on the calendar. 00:00 would ring at midnight. */
@@ -324,5 +371,112 @@ assert.deepEqual(
 assert.deepEqual(upcomingAlarms({}, NOW), []);
 assert.deepEqual(upcomingAlarms({ reminders: [null, {}] }, NOW), []);
 assert.deepEqual(upcomingAlarms(undefined, NOW), []);
+
+/* A reminder re-sync cancels the queue before rebuilding it, and used to take
+   the focus timer's session-end alarm with it. */
+assert.deepEqual(idsToCancel([{ id: 2 }, { id: 90001 }, { id: 90002 }], [TIMER_ALARM_ID]), [90001, 90002]);
+assert.deepEqual(idsToCancel([{ id: 2 }, { id: 90001 }]), [2, 90001]);
+assert.deepEqual(idsToCancel(null, [TIMER_ALARM_ID]), []);
+
+
+/* ---- channel versions ---- */
+
+/* Version 1 is the ids already frozen on phones: they must stay exactly as
+   they were, or every install gets a second set of channels. A bump suffixes
+   every id and marks the old ones (and only ours) for deletion. */
+assert.equal(versionedChannel('gb-tone-chime', 1), 'gb-tone-chime');
+assert.equal(versionedChannel('gb-tone-chime', 2), 'gb-tone-chime-v2');
+assert.equal(SILENT_CHANNEL, 'gb-silent');
+assert.equal(isStaleChannel('gb-tone-chime', 1), false);
+assert.equal(isStaleChannel('gb-tone-chime', 2), true);
+assert.equal(isStaleChannel('gb-tone-chime-v2', 2), false);
+assert.equal(isStaleChannel('gb-silent-v2', 3), true);
+assert.equal(isStaleChannel('sound_chime', 2), false, 'never a channel we did not name');
+assert.equal(isStaleChannel(undefined, 2), false);
+
+/* ---- done, a second alert, quiet hours ---- */
+
+/* A checked-off occurrence queues nothing; the days around it still ring. */
+{
+  const rems = [
+    { id: 'a', text: 'pills', date: '2026-09-16', time: '18:00', repeat: 'daily', doneDates: ['2026-09-17'] },
+  ];
+  assert.deepEqual(
+    upcomingReminderAlarms(rems, NOW, 3).map((n) => n.at.getDate()),
+    [16, 18]
+  );
+}
+
+/* A second alert rings too, with its own lead; one equal to the first, or
+   already gone, adds nothing. Mirrors ReminderDeliveryScheduler.secondDueDay. */
+{
+  const at = (n) => n.at.getDate() + ' ' + n.at.getHours() + ':' + n.at.getMinutes();
+  const both = upcomingReminderAlarms(
+    [{ id: 'a', text: 'call', date: '2026-09-16', time: '18:00', repeat: 'none', notifyBefore: 10, notifyBefore2: 60 }],
+    NOW
+  );
+  assert.deepEqual(both.map(at).sort(), ['16 17:0', '16 17:50']);
+  assert.ok(both.every((n) => n.body === 'call · at 18:00'));
+  assert.equal(
+    upcomingReminderAlarms(
+      [{ id: 'a', text: 'x', date: '2026-09-16', time: '18:00', repeat: 'none', notifyBefore: 10, notifyBefore2: 10 }],
+      NOW
+    ).length,
+    1,
+    'the same lead twice is one ring'
+  );
+  assert.equal(
+    upcomingReminderAlarms(
+      [{ id: 'a', text: 'x', date: '2026-09-16', time: '09:30', repeat: 'none', notifyBefore2: 60 }],
+      NOW
+    ).length,
+    1,
+    'a second alert already gone is dropped, the reminder itself still rings'
+  );
+  // Inside the first alert's lead the first falls back to on time; a second
+  // alert of 0 would then be the same ring.
+  assert.equal(
+    upcomingReminderAlarms(
+      [{ id: 'a', text: 'x', date: '2026-09-16', time: '09:10', repeat: 'none', notifyBefore: 30, notifyBefore2: 0 }],
+      NOW
+    ).length,
+    1
+  );
+  // The default lead counts as the first alert's lead.
+  assert.equal(
+    upcomingReminderAlarms([{ id: 'a', text: 'x', date: '2026-09-16', time: '18:00', notifyBefore2: 15 }], NOW, 1, 15)
+      .length,
+    1
+  );
+}
+
+/* Quiet hours: wraps midnight, end exclusive, off when unset or equal. */
+{
+  const q = { start: '22:00', end: '07:00' };
+  assert.equal(isQuietAt(q, new Date(2026, 8, 16, 23, 30)), true);
+  assert.equal(isQuietAt(q, new Date(2026, 8, 16, 6, 59)), true);
+  assert.equal(isQuietAt(q, new Date(2026, 8, 16, 7, 0)), false);
+  assert.equal(isQuietAt(q, new Date(2026, 8, 16, 12, 0)), false);
+  assert.equal(isQuietAt({ start: '13:00', end: '14:00' }, new Date(2026, 8, 16, 13, 15)), true);
+  assert.equal(isQuietAt({ start: '09:00', end: '09:00' }, new Date(2026, 8, 16, 9, 0)), false);
+  assert.equal(isQuietAt(null, new Date(2026, 8, 16, 23, 0)), false);
+  assert.equal(isQuietAt({ start: 'late' }, new Date(2026, 8, 16, 23, 0)), false);
+}
+
+/* ...and they hold back the water nudge and habit reminders, never a reminder
+   the user timed themselves. */
+{
+  const queue = upcomingAlarms(
+    {
+      reminders: [{ id: 'r', text: 'late call', date: '2026-09-16', time: '22:30', repeat: 'none' }],
+      habits: [{ id: 'h', name: 'Read', reminderTime: '22:15' }, { id: 'h2', name: 'Walk', reminderTime: '18:00' }],
+      water: { on: true, everyMins: 60, from: '20:00', to: '23:00' },
+      quiet: { start: '21:00', end: '07:00' },
+    },
+    NOW
+  );
+  const today = queue.filter((n) => n.at.getDate() === 16).map((n) => n.at.getHours() + ':' + n.at.getMinutes());
+  assert.deepEqual(today, ['18:0', '20:0', '22:30'], 'Walk and the 20:00 glass; the late call still rings');
+}
 
 console.log('push.test.mjs: all assertions passed');

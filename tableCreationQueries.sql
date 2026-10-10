@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS users (
   allergic_to VARCHAR(255) NULL,
   feature_prefs JSON         NULL,
   ui_prefs JSON         NULL,
+  deletion_requested_at DATETIME(6) NULL,                 -- "delete my account" pressed; purged 7 days later (AccountDeletionJob)
   PRIMARY KEY (id),
   UNIQUE KEY uq_users_email (email)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -110,6 +111,32 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
   CONSTRAINT fk_prt_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- A pending email change: the code went to new_email (bcrypt hash only).
+CREATE TABLE IF NOT EXISTS email_change_tokens (
+  token_hash       VARCHAR(255) NOT NULL,
+  user_id          CHAR(36)     NOT NULL,
+  new_email        VARCHAR(254) NOT NULL,
+  expires_at       DATETIME(6)  NOT NULL,
+  consumed_at      DATETIME(6)  NULL,
+  PRIMARY KEY (token_hash),
+  KEY ix_ect_user (user_id),
+  CONSTRAINT fk_ect_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Authenticator-app second factor. secret_enc is AES-GCM ciphertext (TotpService),
+-- recovery_codes a JSON array of bcrypt hashes; enabled_at NULL = setup pending.
+CREATE TABLE IF NOT EXISTS user_totp (
+  user_id          CHAR(36)     NOT NULL,
+  secret_enc       VARCHAR(255) NOT NULL,
+  enabled_at       DATETIME(6)  NULL,
+  last_used_step   BIGINT       NULL,
+  recovery_codes   JSON         NULL,
+  created_at       DATETIME(6)  NOT NULL,
+  updated_at       DATETIME(6)  NOT NULL,
+  PRIMARY KEY (user_id),
+  CONSTRAINT fk_user_totp_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS tasks (
   id              CHAR(36)     NOT NULL,
   user_id         CHAR(36)     NOT NULL,
@@ -124,8 +151,10 @@ CREATE TABLE IF NOT EXISTS tasks (
   updated_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   deleted_at      TIMESTAMP    NULL,
   push_count      INT          NOT NULL DEFAULT 0,
+  goal_id         CHAR(36)     NULL,
   PRIMARY KEY (id),
   KEY ix_tasks_user_due (user_id, due_at),
+  KEY ix_tasks_goal (goal_id),
   KEY ix_tasks_user_done (user_id, done),
   CONSTRAINT fk_tasks_user     FOREIGN KEY (user_id)     REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -165,6 +194,14 @@ CREATE TABLE IF NOT EXISTS habits (
   sound VARCHAR(16) NULL,
   -- What ticking this habit records beyond "done": none | km | steps | minutes.
   metric          VARCHAR(16)  NOT NULL DEFAULT 'none',
+  -- The user's own order on the Habits screen (PUT /api/habits/order); ties
+  -- (every habit before the column existed is 0) fall back to created_at.
+  sort_order      INT          NOT NULL DEFAULT 0,
+  -- build = tick it to do it; quit = clean unless a slip is logged (a check-in
+  -- row with done = FALSE and protected_day = FALSE is that day's slip).
+  kind            VARCHAR(8)   NOT NULL DEFAULT 'build',
+  -- A quit habit's clean days are paid XP up to and including this day, once.
+  clean_credited_through DATE NULL,
   PRIMARY KEY (id),
   KEY ix_habits_user (user_id),
   CONSTRAINT fk_habits_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -223,6 +260,7 @@ CREATE TABLE IF NOT EXISTS water_entries (
   user_id         CHAR(36)  NOT NULL,
   amount_ml       INT       NOT NULL,
   note            VARCHAR(255) NULL,
+  drink_type      VARCHAR(10)  NULL,
   logged_at       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   log_date        DATE      NOT NULL,
   created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -249,6 +287,9 @@ CREATE TABLE IF NOT EXISTS food_entries (
   carbs_g         SMALLINT     NULL,
   fat_g           SMALLINT     NULL,
   fiber_g         SMALLINT     NULL,
+  sugar_g         SMALLINT     NULL,
+  sodium_mg       INT          NULL,
+  meal_slot       VARCHAR(10)  NULL,
   logged_at       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   log_date        DATE         NOT NULL,
   created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -258,6 +299,24 @@ CREATE TABLE IF NOT EXISTS food_entries (
   CONSTRAINT ck_food_qty_range CHECK (quantity_grams BETWEEN 10 AND 2000),
   CONSTRAINT ck_food_kcal_range CHECK (kcal_estimated BETWEEN 1 AND 5000),
   CONSTRAINT ck_food_kcal_100g_range CHECK (kcal_per_100g BETWEEN 40 AND 900)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Starred foods (the "Log food" form's favourite chips): a copy of one entry's
+-- name, portion and figures, capped at 24 per user in FoodService.
+CREATE TABLE IF NOT EXISTS food_favourites (
+  id              CHAR(36)     NOT NULL,
+  user_id         CHAR(36)     NOT NULL,
+  food_name       VARCHAR(255) NOT NULL,
+  quantity_grams  INT          NOT NULL,
+  kcal            INT          NOT NULL,
+  protein_g       SMALLINT     NULL,
+  carbs_g         SMALLINT     NULL,
+  fat_g           SMALLINT     NULL,
+  fiber_g         SMALLINT     NULL,
+  created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY ix_food_fav_user (user_id),
+  CONSTRAINT fk_food_fav_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Recent food-photo analyses (the "recent scans" list); capped to 12 per user
@@ -394,6 +453,10 @@ CREATE TABLE IF NOT EXISTS mentor_messages (
   thread_id       CHAR(36)  NOT NULL,
   role            ENUM('user','assistant','system') NOT NULL,
   content         MEDIUMTEXT NOT NULL,
+  -- a canned reply (AI offline/unreachable): shown, never replayed to the model
+  fallback        BOOLEAN NOT NULL DEFAULT FALSE,
+  -- one-tap actions offered with a reply (JSON array; MentorActions), NULL = none
+  actions_json    TEXT NULL,
   created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY ix_mentor_msg_thread_time (thread_id, created_at),
@@ -407,7 +470,10 @@ CREATE TABLE IF NOT EXISTS circles (
   id              CHAR(36)     NOT NULL,
   name            VARCHAR(120) NOT NULL,
   goal            TEXT         NULL,
-  created_by      CHAR(36)     NOT NULL,
+  created_by      CHAR(36)     NOT NULL,  -- the current OWNER (transferable)
+  -- 'public' = listed under Browse; 'private' = unlisted, join with join_code
+  visibility      VARCHAR(16)  NOT NULL DEFAULT 'public',
+  join_code       VARCHAR(12)  NULL,
   created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY ix_circles_created_by (created_by),
@@ -438,14 +504,27 @@ CREATE TABLE IF NOT EXISTS circle_posts (
   CONSTRAINT fk_circle_post_user   FOREIGN KEY (user_id)   REFERENCES users(id)   ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Time-boxed habit challenges for a circle; members are ranked by check-ins
--- completed during [start_date, end_date].
+-- Kudos on a circle post: one per member per post (the key), toggled.
+CREATE TABLE IF NOT EXISTS circle_post_reactions (
+  post_id         CHAR(36)    NOT NULL,
+  user_id         CHAR(36)    NOT NULL,
+  created_at      DATETIME(6) NOT NULL,
+  PRIMARY KEY (post_id, user_id),
+  KEY ix_circle_post_reaction_user (user_id),
+  CONSTRAINT fk_cpr_post FOREIGN KEY (post_id) REFERENCES circle_posts(id) ON DELETE CASCADE,
+  CONSTRAINT fk_cpr_user FOREIGN KEY (user_id) REFERENCES users(id)        ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Time-boxed challenges for a circle; members are ranked by `metric`
+-- (habit_checkins | focus_minutes | water_days) during [start_date, end_date].
+-- start_date may be in the future (an upcoming challenge).
 CREATE TABLE IF NOT EXISTS circle_challenges (
   id              CHAR(36)    NOT NULL,
   circle_id       CHAR(36)  NOT NULL,
   title           VARCHAR(120) NOT NULL,
   start_date      DATE      NOT NULL,
   end_date        DATE      NOT NULL,
+  metric          VARCHAR(16) NOT NULL DEFAULT 'habit_checkins',
   created_by      CHAR(36)  NOT NULL,
   created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
@@ -472,7 +551,10 @@ CREATE TABLE IF NOT EXISTS circle_challenges (
 CREATE TABLE IF NOT EXISTS notifications (
   id          CHAR(36)    NOT NULL,
   user_id     CHAR(36)  NOT NULL,
-  kind        ENUM('mentorship_request','mentorship_accepted','mentorship_rejected','system','reminder','habit_reminder') NOT NULL,
+  kind        ENUM('mentorship_request','mentorship_accepted','mentorship_rejected','system','reminder','habit_reminder','buddy_checkin') NOT NULL,
+  -- NotifyCategory: reminders|habits|people|money|system — the bell's filter
+  -- chips and the per-category push mute. NULL on older rows = derived from kind.
+  category    VARCHAR(16)  NULL,
   title       VARCHAR(255) NOT NULL,
   body        TEXT          NULL,
   -- Optional pointer to whatever the notification is "about"
@@ -501,6 +583,8 @@ CREATE TABLE IF NOT EXISTS mentorship_requests (
   responded_at  TIMESTAMP NULL,
   -- Last time the mentor opened this mentee's progress ("checked today" tick).
   checked_at    TIMESTAMP NULL,
+  -- What the pair agreed to work on; either partner edits it (weekly check-in card).
+  agreement     VARCHAR(500) NULL,
   PRIMARY KEY (id),
   -- Don't put a unique key on (from, to, direction, status) — a 2nd
   -- accepted row legitimately shares that tuple once the pair has worked
@@ -509,6 +593,23 @@ CREATE TABLE IF NOT EXISTS mentorship_requests (
   KEY ix_mr_from_status (from_user_id, status, created_at),
   CONSTRAINT fk_mr_from FOREIGN KEY (from_user_id) REFERENCES users(id) ON DELETE CASCADE,
   CONSTRAINT fk_mr_to   FOREIGN KEY (to_user_id)   REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The thread inside an accepted mentorship link (link_id = mentorship_requests.id).
+-- kind: 'message', or 'cheer' / 'nudge' (body optional, <= 140) — the daily
+-- nudge cap counts these rows. Account deletion clears it by link, before the
+-- links themselves go (AuthService.deleteAccount).
+CREATE TABLE IF NOT EXISTS mentorship_messages (
+  id            CHAR(36)      NOT NULL,
+  link_id       CHAR(36)      NOT NULL,
+  sender_id     CHAR(36)      NOT NULL,
+  kind          VARCHAR(8)    NOT NULL DEFAULT 'message',
+  body          VARCHAR(2000) NULL,
+  created_at    DATETIME(6)   NOT NULL,
+  PRIMARY KEY (id),
+  KEY ix_mm_link_time (link_id, created_at),
+  CONSTRAINT fk_mm_link   FOREIGN KEY (link_id)   REFERENCES mentorship_requests(id) ON DELETE CASCADE,
+  CONSTRAINT fk_mm_sender FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =========================================================
@@ -526,8 +627,13 @@ CREATE TABLE IF NOT EXISTS notes (
   cover         TEXT         NULL,
   color         VARCHAR(16)  NULL,
   pinned        BOOLEAN      NOT NULL DEFAULT FALSE,
+  -- Comma-joined labels ("work,ideas"), at most 10 x 30 chars (NoteLabels). NULL = none.
+  labels        VARCHAR(500) NULL,
+  -- Set while archived: out of the main list, in the Archived view.
+  archived_at   TIMESTAMP    NULL,
   created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  -- Soft delete: the note sits in the Trash for 30 days, then DataCleanupJob purges it.
   deleted_at    TIMESTAMP    NULL,
   PRIMARY KEY (id),
   -- The list's own order: pinned first, most recently touched next.
@@ -545,6 +651,24 @@ CREATE TABLE IF NOT EXISTS note_drafts (
   updated_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (user_id),
   CONSTRAINT fk_note_drafts_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Unsaved edits to an existing note, one row per note: the open edit sheet
+-- autosaves here, so a reload or a killed app doesn't lose them. Saving the
+-- note or deleting it removes the row.
+CREATE TABLE IF NOT EXISTS note_edit_drafts (
+  note_id       CHAR(36)     NOT NULL,
+  user_id       CHAR(36)     NOT NULL,
+  title         VARCHAR(200) NULL,
+  body          MEDIUMTEXT   NULL,
+  color         VARCHAR(16)  NULL,
+  -- Comma-joined like notes.labels; NULL = a row from before labels were drafted.
+  labels        VARCHAR(500) NULL,
+  updated_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (note_id),
+  KEY ix_note_edit_drafts_user (user_id),
+  CONSTRAINT fk_note_edit_drafts_note FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE,
+  CONSTRAINT fk_note_edit_drafts_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =====================================================================
@@ -634,6 +758,8 @@ CREATE TABLE IF NOT EXISTS family_meal_plans (
   grocery_items_json   TEXT         NULL,
   generated_by_user_id CHAR(36)     NOT NULL,
   source               VARCHAR(24)  NULL,
+  -- first "We cooked this" — makes the preference bump once per plan
+  cooked_at            DATETIME(6)  NULL,
   created_at           TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY ix_family_meal_plan_family (family_id, created_at),
@@ -737,8 +863,37 @@ CREATE TABLE IF NOT EXISTS `calendar_reminders` (
   `user_id` char(36) NOT NULL,
   -- This reminder's own chime key; NULL = the user's default tone.
   `sound` varchar(16) DEFAULT NULL,
+  -- Minutes before time_of_day to notify; NULL = the user's default (ui_prefs.reminderLead).
+  `notify_before` int DEFAULT NULL,
+  -- When a snoozed reminder rings again; NULL = not snoozed. Cleared as it is delivered.
+  `snoozed_until` datetime(6) DEFAULT NULL,
+  -- The richer rule (scripts/recurrence.js = ReminderService.occursOn): every N
+  -- periods; a weekly reminder's days ("MO,WE,FR", NULL = the anchor's weekday);
+  -- monthly on the nth anchor-weekday (1..5, -1 = last; NULL = by date); end
+  -- after N occurrences (NULL = no count).
+  `repeat_interval` int NOT NULL DEFAULT 1,
+  `repeat_days` varchar(32) DEFAULT NULL,
+  `repeat_nth` int DEFAULT NULL,
+  `repeat_count` int DEFAULT NULL,
+  -- Free-text details under the title.
+  `notes` varchar(1000) DEFAULT NULL,
+  -- A second alert, minutes before time_of_day; NULL = none (no default).
+  `notify_before2` int DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `ix_cal_rem_user_date` (`user_id`,`anchor_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+;
+
+-- One occurrence of a reminder checked off: not delivered, no device alarm.
+CREATE TABLE IF NOT EXISTS `reminder_done` (
+  `id` char(36) NOT NULL,
+  `reminder_id` char(36) NOT NULL,
+  `user_id` char(36) NOT NULL,
+  `occurrence_date` date NOT NULL,
+  `done_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `ux_reminder_done` (`reminder_id`,`occurrence_date`),
+  KEY `ix_reminder_done_user` (`user_id`,`occurrence_date`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ;
 
@@ -758,6 +913,8 @@ CREATE TABLE IF NOT EXISTS `reminder_dispatch_log` (
   `occurrence_date` date NOT NULL,
   `reminder_id` char(36) NOT NULL,
   `status` varchar(16) NOT NULL,
+  `snooze_of` char(36) DEFAULT NULL,
+  `attempts` int NOT NULL DEFAULT 0,
   PRIMARY KEY (`id`),
   UNIQUE KEY `ux_rem_dispatch_unique` (`reminder_id`,`occurrence_date`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -792,23 +949,27 @@ CREATE TABLE IF NOT EXISTS `push_subscriptions` (
 
 -- ---------------------------------------------------------------------------
 -- Custom Notification Sounds
--- The one sound a user brought themselves: raw bytes in `audio`, its type in
--- `content_type`. `data_url` is legacy (the base64 data URL rows used to hold)
--- and is '' on every row written since. One row per user -- the picker replaces, it doesn't collect
--- -- and the unique key is what enforces that. The bytes live here rather than
--- in object storage because there is at most one small file per account; see
--- the ponytail note on the CustomSound entity for when that stops being true.
+-- Sounds a user brought themselves -- an uploaded file or a voice recording,
+-- up to four each (CustomSoundService.MAX_PER_USER; the service enforces it,
+-- not a key). Raw bytes in `audio`, its type in `content_type`, `name` what the
+-- picker shows. `data_url` is legacy (the base64 data URL rows used to hold)
+-- and is '' on every row written since. The id is minted by the client, so a
+-- retried save replaces instead of filling a second slot. The bytes live here
+-- rather than in object storage because it is at most four small files per
+-- account; see the ponytail note on the CustomSound entity.
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS `custom_sounds` (
   `id` char(36) NOT NULL,
   `user_id` char(36) NOT NULL,
+  `name` varchar(60) DEFAULT NULL,
+  `source` varchar(16) DEFAULT NULL,
   `data_url` mediumtext NOT NULL,
   `content_type` varchar(64) DEFAULT NULL,
   `audio` mediumblob DEFAULT NULL,
   `updated_at` datetime(6) NOT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_custom_sounds_user` (`user_id`)
+  KEY `idx_custom_sounds_user` (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ;
 
@@ -818,6 +979,8 @@ CREATE TABLE IF NOT EXISTS `focus_sessions` (
   `duration_sec` int NOT NULL,
   `mode` varchar(16) NOT NULL,
   `user_id` char(36) NOT NULL,
+  `task_id` char(36) DEFAULT NULL,
+  `goal_id` char(36) DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `ix_focus_user_time` (`user_id`,`completed_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -855,6 +1018,7 @@ CREATE TABLE IF NOT EXISTS `family_pantry_items` (
   `expiry_date` date DEFAULT NULL,
   `family_id` char(36) NOT NULL,
   `is_leftover` bit(1) NOT NULL,
+  `is_low` bit(1) NOT NULL DEFAULT b'0',
   `name` varchar(120) NOT NULL,
   `quantity` varchar(60) DEFAULT NULL,
   `updated_at` datetime(6) NOT NULL,
@@ -875,6 +1039,39 @@ CREATE TABLE IF NOT EXISTS `family_shopping_items` (
   `updated_at` datetime(6) NOT NULL,
   PRIMARY KEY (`id`),
   KEY `ix_family_shopping_family` (`family_id`,`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+;
+
+CREATE TABLE IF NOT EXISTS `family_chores` (
+  `id` char(36) NOT NULL,
+  `family_id` char(36) NOT NULL,
+  `title` varchar(120) NOT NULL,
+  `assignee_member_id` char(36) DEFAULT NULL,
+  `due_date` date DEFAULT NULL,
+  `repeat_rule` varchar(8) NOT NULL DEFAULT 'none',
+  `done_at` datetime(6) DEFAULT NULL,
+  `created_by_user_id` char(36) NOT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `ix_family_chores_family` (`family_id`,`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+;
+
+CREATE TABLE IF NOT EXISTS `family_recipes` (
+  `id` char(36) NOT NULL,
+  `family_id` char(36) NOT NULL,
+  `dish_key` varchar(160) NOT NULL,
+  `dish_name` varchar(160) NOT NULL,
+  `ingredients` text,
+  `steps` text,
+  `cook_minutes` int DEFAULT NULL,
+  `updated_by_user_id` char(36) NOT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_family_recipe` (`family_id`,`dish_key`),
+  KEY `ix_family_recipes_family` (`family_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ;
 
@@ -929,5 +1126,23 @@ CREATE TABLE IF NOT EXISTS `login_attempts` (
   `updated_at_ms` bigint NOT NULL DEFAULT 0,
   PRIMARY KEY (`attempt_key`),
   KEY `ix_login_attempts_idle` (`updated_at_ms`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+;
+
+-- Idempotency-Key replay cache (common/IdempotencyFilter + IdempotencyInterceptor).
+-- A keyed write's answer, so an offline replay whose first answer was lost is
+-- answered again instead of run twice. status NULL = still in progress.
+-- Plain JDBC (JdbcIdempotencyStore); purged after 48h by DataCleanupJob.
+CREATE TABLE IF NOT EXISTS `idempotency_keys` (
+  `user_id` char(36) NOT NULL,
+  `idem_key` varchar(64) NOT NULL,
+  `method` varchar(8) NOT NULL,
+  `path` varchar(255) NOT NULL,
+  `status` int DEFAULT NULL,
+  `content_type` varchar(255) DEFAULT NULL,
+  `response_body` mediumtext,
+  `created_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`user_id`,`idem_key`),
+  KEY `ix_idempotency_created` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ;

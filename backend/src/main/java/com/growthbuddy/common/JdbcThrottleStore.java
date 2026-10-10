@@ -57,6 +57,14 @@ public class JdbcThrottleStore implements ThrottleStore {
     }
 
     @Override
+    public int hits(String bucketKey, long windowStart) {
+        List<Integer> rows = jdbc.queryForList(
+                "SELECT hits FROM rate_limit_counters WHERE bucket_key = ? AND window_start = ?",
+                Integer.class, hash(bucketKey), windowStart);
+        return rows.isEmpty() || rows.get(0) == null ? 0 : rows.get(0);
+    }
+
+    @Override
     public void sweepCounters(long cutoffWindowStart) {
         jdbc.update("DELETE FROM rate_limit_counters WHERE window_start < ?", cutoffWindowStart);
     }

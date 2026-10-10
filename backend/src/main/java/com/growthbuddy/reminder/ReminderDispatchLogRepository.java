@@ -37,4 +37,47 @@ public interface ReminderDispatchLogRepository extends JpaRepository<ReminderDis
             """)
     List<Object[]> findDelivered(@Param("reminderIds") Collection<UUID> reminderIds,
                                  @Param("days") Collection<LocalDate> days);
+
+    /**
+     * Snooze claims still 'pending' since before {@code before}: the instance that
+     * claimed them died (or its send failed) before it could mark them. The sweeper's read.
+     * ponytail: a scan on status — the table holds 30 days (DataCleanupJob); index
+     * (status, created_at) if this ever shows up slow.
+     */
+    @Query("""
+            select l from ReminderDispatchLog l
+            where l.status = 'pending' and l.snoozeOf is not null and l.createdAt < :before
+            """)
+    List<ReminderDispatchLog> findStuckSnoozes(@Param("before") java.time.Instant before);
+
+    /**
+     * Take one resend of a stuck snooze. Matches only the attempt count this
+     * instance read, so of two sweepers racing, one gets 1 and sends; the other 0.
+     */
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.transaction.annotation.Transactional
+    @Query("""
+            update ReminderDispatchLog l set l.attempts = l.attempts + 1
+            where l.id = :id and l.status = 'pending' and l.attempts = :attempts
+            """)
+    int claimResend(@Param("id") UUID id, @Param("attempts") int attempts);
+
+    /** Retake a failed occurrence for a resend. 1 = this instance sends it; 0 = another one already did. */
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.transaction.annotation.Transactional
+    @Query("""
+            update ReminderDispatchLog l set l.status = 'sending', l.errorMessage = null
+            where l.id = :id and l.status = 'failed'
+            """)
+    int claimFailed(@Param("id") UUID id);
+
+    /** Record how a snooze send went. Only a 'pending' row moves, so a late write never undoes a 'sent'. */
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.transaction.annotation.Transactional
+    @Query("""
+            update ReminderDispatchLog l set l.status = :status, l.channel = :channel, l.errorMessage = :error
+            where l.id = :id and l.status = 'pending'
+            """)
+    int settleSnooze(@Param("id") UUID id, @Param("status") String status,
+                     @Param("channel") String channel, @Param("error") String error);
 }

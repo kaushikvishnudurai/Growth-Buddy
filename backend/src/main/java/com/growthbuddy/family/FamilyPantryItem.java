@@ -45,6 +45,10 @@ public class FamilyPantryItem {
     @Column(name = "is_leftover", nullable = false)
     private boolean leftover = false;
 
+    /** "Running low" — the pantry → shopping action restocks these. */
+    @Column(name = "is_low", nullable = false)
+    private boolean low = false;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

@@ -2,6 +2,7 @@ package com.growthbuddy.note;
 
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -15,29 +16,53 @@ record CreateNoteRequest(
         String body,
         @Size(max = 16) String color,
         Boolean pinned,
-        @Size(max = NoteService.MAX_COVER) String cover) {
+        @Size(max = NoteService.MAX_COVER) String cover,
+        List<String> labels) {
 }
 
-/** The composer's draft, written whole on every autosave. */
+/**
+ * A draft, written whole on every autosave. {@code labels} is kept only by an
+ * edit draft ({@code {id}/draft}); the composer's ignores it (a new note takes
+ * the active label filter at save instead).
+ */
 record NoteDraftRequest(
         @Size(max = 200) String title,
         String body,
-        @Size(max = 16) String color) {
+        @Size(max = 16) String color,
+        List<String> labels) {
 }
 
-record NoteDraftResponse(String title, String body, String color, Instant updatedAt) {
+/** {@code labels}: an edit draft's chips ([] = all removed); null = none stored, leave the note's. */
+record NoteDraftResponse(String title, String body, String color, Instant updatedAt, List<String> labels) {
     static NoteDraftResponse from(NoteDraft d) {
-        return new NoteDraftResponse(d.getTitle(), d.getBody(), d.getColor(), d.getUpdatedAt());
+        return new NoteDraftResponse(d.getTitle(), d.getBody(), d.getColor(), d.getUpdatedAt(), null);
+    }
+
+    static NoteDraftResponse from(NoteEditDraft d) {
+        return new NoteDraftResponse(d.getTitle(), d.getBody(), d.getColor(), d.getUpdatedAt(),
+                d.getLabels() == null ? null : NoteLabels.split(d.getLabels()));
     }
 }
 
-/** Update body. Null fields are left unchanged; "" clears colour and cover. */
+/**
+ * Update body. Null fields are left unchanged; "" clears colour and cover, an
+ * empty list clears the labels. {@code archived} true/false archives or brings
+ * the note back. {@code baseUpdatedAt} is the version the client edited: a newer
+ * one on the server is a 409, not a silent overwrite. Null skips the check.
+ */
 record UpdateNoteRequest(
         @Size(max = 200) String title,
         String body,
         @Size(max = 16) String color,
         Boolean pinned,
-        @Size(max = NoteService.MAX_COVER) String cover) {
+        @Size(max = NoteService.MAX_COVER) String cover,
+        Instant baseUpdatedAt,
+        List<String> labels,
+        Boolean archived) {
+}
+
+/** How many notes sit outside the main list, for the view switcher's counts. */
+record NoteCountsResponse(long archived, long trash) {
 }
 
 /**
@@ -55,7 +80,10 @@ record NoteResponse(
         Instant updatedAt,
         String cover,
         int photoCount,
-        boolean bodyTrimmed) {
+        boolean bodyTrimmed,
+        List<String> labels,
+        Instant archivedAt,
+        Instant deletedAt) {
 
     /* The body is sanitize()'s output, so a photo is always a plain <img ...>
        whose src is base64 — no '>' inside it for this to trip on. */
@@ -87,7 +115,8 @@ record NoteResponse(
 
     private static NoteResponse of(Note n, String body, boolean trimmed) {
         return new NoteResponse(n.getId(), n.getTitle(), body, n.getColor(), n.isPinned(),
-                n.getCreatedAt(), n.getUpdatedAt(), n.getCover(), photos(n.getBody()), trimmed);
+                n.getCreatedAt(), n.getUpdatedAt(), n.getCover(), photos(n.getBody()), trimmed,
+                NoteLabels.split(n.getLabels()), n.getArchivedAt(), n.getDeletedAt());
     }
 
     private static int photos(String body) {

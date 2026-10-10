@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -27,9 +28,22 @@ public class NoteController {
         this.service = service;
     }
 
+    /** The main list; {@code ?archived=true} is the Archived view instead. */
     @GetMapping
-    public List<NoteResponse> list() {
-        return service.list(CurrentUser.id());
+    public List<NoteResponse> list(@RequestParam(defaultValue = "false") boolean archived) {
+        return service.list(CurrentUser.id(), archived);
+    }
+
+    /** Deleted in the last 30 days. Literal paths win over /{id}. */
+    @GetMapping("/trash")
+    public List<NoteResponse> trash() {
+        return service.trash(CurrentUser.id());
+    }
+
+    /** Archived and Trash counts, for the view switcher. */
+    @GetMapping("/counts")
+    public NoteCountsResponse counts() {
+        return service.counts(CurrentUser.id());
     }
 
     /** 204 when there is no draft. Literal paths win over /{id}. */
@@ -57,6 +71,31 @@ public class NoteController {
         return service.get(CurrentUser.id(), id);
     }
 
+    /** Unsaved edits to one note; 204 when there are none. */
+    @GetMapping("/{id}/draft")
+    public ResponseEntity<NoteDraftResponse> editDraft(@PathVariable UUID id) {
+        NoteDraftResponse d = service.editDraft(CurrentUser.id(), id);
+        return d == null ? ResponseEntity.noContent().build() : ResponseEntity.ok(d);
+    }
+
+    @PutMapping("/{id}/draft")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void saveEditDraft(@PathVariable UUID id, @Valid @RequestBody NoteDraftRequest req) {
+        service.saveEditDraft(CurrentUser.id(), id, req);
+    }
+
+    @DeleteMapping("/{id}/draft")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteEditDraft(@PathVariable UUID id) {
+        service.deleteEditDraft(CurrentUser.id(), id);
+    }
+
+    /** Undo a delete (soft, so nothing was lost). */
+    @PostMapping("/{id}/restore")
+    public NoteResponse restore(@PathVariable UUID id) {
+        return service.restore(CurrentUser.id(), id);
+    }
+
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public NoteResponse create(@Valid @RequestBody CreateNoteRequest req) {
@@ -72,5 +111,12 @@ public class NoteController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable UUID id) {
         service.delete(CurrentUser.id(), id);
+    }
+
+    /** Hard delete of a note already in the Trash (400 for a live one). */
+    @DeleteMapping("/{id}/forever")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteForever(@PathVariable UUID id) {
+        service.deleteForever(CurrentUser.id(), id);
     }
 }

@@ -36,6 +36,15 @@ public class FocusSession {
     @Column(name = "completed_at", nullable = false)
     private Instant completedAt;
 
+    /** What the session was spent on ("Focusing on…"), the user's own task or
+     *  goal; both null for a session spent on nothing in particular. No FK: a
+     *  task swept at midnight or deleted leaves the minutes standing. */
+    @Column(name = "task_id")
+    private UUID taskId;
+
+    @Column(name = "goal_id")
+    private UUID goalId;
+
     @PrePersist
     void prePersist() {
         if (id == null) id = UUID.randomUUID();
