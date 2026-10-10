@@ -1,6 +1,7 @@
 package com.growthbuddy.reminder;
 
 import com.growthbuddy.common.ApiException;
+import com.growthbuddy.common.UserZone;
 import com.growthbuddy.notification.NotificationKind;
 import com.growthbuddy.notification.NotificationRepository;
 import com.growthbuddy.user.User;
@@ -8,6 +9,7 @@ import com.growthbuddy.user.UserRepository;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.Optional;
 import java.util.UUID;
@@ -77,11 +79,24 @@ public class ReminderSnoozeService {
         return ReminderResponse.from(reminders.save(r));
     }
 
-    /** The push button's ticket. Empty when it is no good or the reminder is gone. */
+    /**
+     * The push button's ticket. Empty when it is no good, the reminder is gone,
+     * the account is scheduled for deletion, or the day it rang for has passed
+     * where the user lives (a lead can ring tomorrow's tonight, so a later day is fine).
+     */
     @Transactional
     public Optional<Instant> snoozeByLink(String token) {
-        return links.verify(token, clock.instant())
-                .flatMap(t -> trySnooze(t.userId(), t.reminderId(), null));
+        return links.verify(token, clock.instant()).flatMap(t -> {
+            User u = users.findById(t.userId()).orElse(null);
+            if (u == null || u.isPendingDeletion()) {
+                return Optional.empty();
+            }
+            if (t.day() != null
+                    && t.day().isBefore(LocalDate.ofInstant(clock.instant(), UserZone.of(u.getTimezone())))) {
+                return Optional.empty();
+            }
+            return trySnooze(t.userId(), t.reminderId(), null);
+        });
     }
 
     /** WhatsApp's button: the payload names the reminder, the sender's number names the user. */

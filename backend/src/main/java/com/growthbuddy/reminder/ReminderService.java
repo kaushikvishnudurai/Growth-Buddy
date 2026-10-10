@@ -73,8 +73,10 @@ public class ReminderService {
 
     /**
      * Check one occurrence off ({@code on}) or back on. Only a day the reminder
-     * actually lands on can be done. Checking off also drops a pending snooze —
-     * the snooze was this occurrence ringing again, and it has been dealt with.
+     * actually lands on can be done. Checking off also drops a pending snooze of
+     * that occurrence ({@link #snoozeDay}): it has been dealt with. A snooze of
+     * another day's occurrence stays, so ticking tomorrow off ahead of time does
+     * not silence today's.
      */
     @Transactional
     public void setDone(UUID userId, UUID id, LocalDate day, boolean on) {
@@ -99,9 +101,38 @@ public class ReminderService {
             done.save(d);
         }
         if (r.getSnoozedUntil() != null) {
-            r.setSnoozedUntil(null);
-            repo.save(r);
+            LocalDate of = snoozeDay(userId, r);
+            if (of == null || of.equals(day)) {
+                r.setSnoozedUntil(null);
+                repo.save(r);
+            }
         }
+    }
+
+    /**
+     * The occurrence a pending snooze is ringing again: the latest day whose ring
+     * (its time less the lead, so a lead can make it the evening before) came at or
+     * before the snooze. Null when there is no snooze or no such day nearby.
+     * ponytail: inferred, not stored; a snooze_day column would make it exact.
+     */
+    LocalDate snoozeDay(UUID userId, CalendarReminder r) {
+        java.time.Instant at = r.getSnoozedUntil();
+        if (at == null || r.getTime() == null) {
+            return null;
+        }
+        com.growthbuddy.user.User u = users == null || userId == null ? null : users.findById(userId).orElse(null);
+        java.time.ZoneId zone = u == null ? com.growthbuddy.common.UserZone.FALLBACK
+                : com.growthbuddy.common.UserZone.of(u.getTimezone());
+        java.time.Duration lead = java.time.Duration.ofMinutes(ReminderPrefs.leadFor(r, u == null ? null : u.getUiPrefs()));
+        WorkWeek week = u == null ? WorkWeek.DEFAULT : WorkWeek.fromPrefs(u.getUiPrefs());
+        // A lead is at most a day and a snooze at most a few hours, so three days back covers it.
+        LocalDate d = LocalDate.ofInstant(at, zone).plusDays(1);
+        for (int i = 0; i < 4; i++, d = d.minusDays(1)) {
+            if (!ReminderDeliveryScheduler.ringAt(d, r.getTime(), zone, lead).isAfter(at) && occursOn(r, d, week)) {
+                return d;
+            }
+        }
+        return null;
     }
 
     @Transactional
@@ -275,9 +306,16 @@ public class ReminderService {
         }
         switch (s) {
             case "this" -> {
+                // A snooze of that day goes with it, so it rings with the edited text;
+                // the edit below drops it if the time or day moved.
+                boolean snoozeMoves = occ.equals(snoozeDay(userId, r));
+                CalendarReminder one = splitFrom(userId, r, occ);
+                if (snoozeMoves) {
+                    one.setSnoozedUntil(r.getSnoozedUntil());
+                    r.setSnoozedUntil(null);
+                }
                 r.getSkipDays().add(occ);
                 repo.save(r);
-                CalendarReminder one = splitFrom(userId, r, occ);
                 one.setRepeat(RepeatFreq.none);
                 one.setUntilDate(null);
                 // The one-off stands alone, so it may move to another day.
@@ -291,13 +329,22 @@ public class ReminderService {
                 return ReminderResponse.from(saved);
             }
             case "future" -> {
+                WorkWeek week = workWeekOf(userId);
+                LocalDate snoozed = snoozeDay(userId, r);
                 CalendarReminder rest = splitFrom(userId, r, occ);
-                // "End after 10 times" means ten in all, not ten more from the cut.
-                if (r.getRepeatCount() != null) {
-                    int used = countBefore(r, occ, workWeekOf(userId));
-                    rest.setRepeatCount(Math.max(1, r.getRepeatCount() - used));
+                if (snoozed != null && !snoozed.isBefore(occ)) {
+                    rest.setSnoozedUntil(r.getSnoozedUntil());
+                    r.setSnoozedUntil(null);
                 }
                 applyEdit(rest, req, true);
+                // "End after 10 times" means ten in all, not ten more from the cut,
+                // and the dialog sends the series' total back with every edit, so the
+                // count asked for (or kept) is a total too, less what was already used.
+                Integer total = req != null && req.repeatCount() != null ? req.repeatCount() : r.getRepeatCount();
+                if (rest.getRepeatCount() != null && total != null && total > 0) {
+                    rest.setRepeatCount(Math.max(1, total - countBefore(r, occ, week)));
+                }
+                keepDayOfMonth(r, rest, occ, week);
                 CalendarReminder saved = repo.save(rest);
                 // Ticks from the cut on describe days the new series now owns. Moved
                 // before the old row can go, or deleting it would take them along.
@@ -343,6 +390,38 @@ public class ReminderService {
         r.setAnchorDate(req.date());
         // A new day is a new moment to ring at, like a new time.
         r.setSnoozedUntil(null);
+    }
+
+    /**
+     * A monthly-by-date (or yearly) series on the 29th-31st lands on the month's
+     * last day when the month is short, and a split anchored on that clamped day
+     * would carry on from the 28th. Instead the new series keeps an anchor on the
+     * original day (the latest one before {@code occ} the rule puts there) and
+     * starts at {@code occ} through its "from" bound. Its count is measured from
+     * that earlier anchor, so the occurrences before {@code occ} are added in.
+     */
+    private static void keepDayOfMonth(CalendarReminder r, CalendarReminder rest, LocalDate occ, WorkWeek week) {
+        int dom = r.getAnchorDate().getDayOfMonth();
+        boolean byDate = (rest.getRepeat() == RepeatFreq.monthly && rest.getRepeatNth() == null)
+                || rest.getRepeat() == RepeatFreq.yearly;
+        if (!byDate || rest.getRepeat() != r.getRepeat() || r.getRepeatNth() != null
+                || dom <= occ.lengthOfMonth()) {
+            return;
+        }
+        boolean yearly = rest.getRepeat() == RepeatFreq.yearly;
+        int n = rest.getRepeatInterval();
+        // Leap days come every 4 years (8 across 2100), so 9 periods back always finds one.
+        for (int k = 1; k <= 9; k++) {
+            LocalDate month = yearly ? occ.minusYears((long) k * n) : occ.minusMonths((long) k * n);
+            if (month.lengthOfMonth() >= dom) {
+                rest.setAnchorDate(month.withDayOfMonth(dom));
+                rest.setFromDate(occ);
+                if (rest.getRepeatCount() != null) {
+                    rest.setRepeatCount(Math.min(MAX_COUNT, rest.getRepeatCount() + countBefore(rest, occ, week)));
+                }
+                return;
+            }
+        }
     }
 
     /** A copy of {@code r} anchored at {@code occ}, carrying none of its skips. */

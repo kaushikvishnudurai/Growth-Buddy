@@ -266,6 +266,11 @@ public class ReminderDeliveryScheduler {
      * the user's default), which can be the evening before; and the catch-up
      * window can carry a 23:58 one past midnight. So yesterday, today and
      * tomorrow are each tried — the window first, as it is the cheap test.
+     *
+     * <p>When the early ring's window has gone, it rings on time instead, as
+     * scripts/push.js does on the device: a reminder made, or edited, inside its
+     * own lead still rings once. Both rings share the (reminder, day) log key, so
+     * one already sent early blocks the on-time one.
      */
     private LocalDate dueDay(CalendarReminder rem, User user, Instant tick) {
         if (user == null || rem.getTime() == null) {
@@ -276,13 +281,8 @@ public class ReminderDeliveryScheduler {
         LocalDate today = LocalDateTime.ofInstant(tick, zone).toLocalDate();
         for (int offset = -1; offset <= 1; offset++) {
             LocalDate day = today.plusDays(offset);
-            Instant at = ringAt(day, rem.getTime(), zone, lead);
-            // Made inside its own lead ("at 18:56, 10 min early", set at 18:52): the
-            // early ring had gone before the reminder existed, so it rings on time.
-            if (!lead.isZero() && rem.getCreatedAt() != null && rem.getCreatedAt().isAfter(at)) {
-                at = ringAt(day, rem.getTime(), zone, Duration.ZERO);
-            }
-            if (!inWindow(at, tick)) {
+            if (!inWindow(ringAt(day, rem.getTime(), zone, lead), tick)
+                    && (lead.isZero() || !inWindow(ringAt(day, rem.getTime(), zone, Duration.ZERO), tick))) {
                 continue;
             }
             // The user object is already in hand from the batch read, so the
@@ -381,18 +381,24 @@ public class ReminderDeliveryScheduler {
         ReminderDispatchLog row = dispatchLog
                 .findByReminderIdAndOccurrenceDate(logId, day)
                 .orElseGet(ReminderDispatchLog::new);
-        if (row.getStatus() != null && !"failed".equals(row.getStatus())) {
-            return;
-        }
-        row.setReminderId(logId);
-        row.setOccurrenceDate(day);
-        row.setChannel("none");
-        row.setStatus("sending");
-        row.setErrorMessage(null);
-        try {
-            dispatchLog.saveAndFlush(row);
-        } catch (DataIntegrityViolationException ex) {
-            return; // another run claimed it first
+        if (row.getStatus() != null) {
+            // A retry claims the failed row with one conditional UPDATE: of two
+            // instances that both read 'failed', only one moves it, and only it sends.
+            if (!"failed".equals(row.getStatus()) || dispatchLog.claimFailed(row.getId()) != 1) {
+                return;
+            }
+            row.setStatus("sending");
+            row.setErrorMessage(null);
+        } else {
+            row.setReminderId(logId);
+            row.setOccurrenceDate(day);
+            row.setChannel("none");
+            row.setStatus("sending");
+            try {
+                dispatchLog.saveAndFlush(row);
+            } catch (DataIntegrityViolationException ex) {
+                return; // another run claimed it first
+            }
         }
         // What is actually left, not the lead: a reminder made inside its own lead
         // rings on time, and a catch-up tick can ring a minute or two late.
@@ -401,7 +407,7 @@ public class ReminderDeliveryScheduler {
                 ZonedDateTime.of(day, rem.getTime(), UserZone.of(user.getTimezone())).toInstant()).getSeconds();
         int left = (int) Math.max(0, (secondsLeft + 59) / 60);
         String in = ReminderPrefs.human(left);
-        Outcome out = send(user, rem, waEligible, tick,
+        Outcome out = send(user, rem, day, waEligible, tick,
                 left > 0 ? "At " + time + " · in " + in : "Reminder for " + time,
                 left > 0 ? rem.getText() + " (at " + time + ", in " + in + ")" : rem.getText(),
                 "Reminder");
@@ -497,7 +503,9 @@ public class ReminderDeliveryScheduler {
 
     private Outcome sendSnooze(User user, CalendarReminder rem, boolean waEligible, Instant tick) {
         String time = String.valueOf(rem.getTime());
-        return send(user, rem, waEligible, tick, "Snoozed · was due at " + time,
+        // A snooze rings the day it rings: its ticket is good for that local day.
+        LocalDate day = LocalDate.ofInstant(tick, UserZone.of(user.getTimezone()));
+        return send(user, rem, day, waEligible, tick, "Snoozed · was due at " + time,
                 rem.getText() + " (snoozed, was " + time + ")", "Snoozed reminder");
     }
 
@@ -560,7 +568,8 @@ public class ReminderDeliveryScheduler {
     }
 
     /** The three channels, each on its own: one failing never stops the next. */
-    private Outcome send(User user, CalendarReminder rem, boolean waEligible, Instant tick,
+    /** {@code day}: the occurrence this rings for, which the push's snooze ticket is tied to. */
+    private Outcome send(User user, CalendarReminder rem, LocalDate day, boolean waEligible, Instant tick,
                          String bellBody, String waText, String pushTitle) {
         StringBuilder channels = new StringBuilder();
         boolean sent = false;
@@ -596,7 +605,7 @@ public class ReminderDeliveryScheduler {
                 // Snooze button sends, since it holds no session.
                 int n = push.sendToUser(user.getId(), pushTitle, rem.getText(), "/#calendar", Map.of(
                         "tag", "rem-" + rem.getId(),
-                        "snooze", snoozeLinks.sign(user.getId(), rem.getId(), tick),
+                        "snooze", snoozeLinks.sign(user.getId(), rem.getId(), day, tick),
                         "snoozeLabel", "Snooze " + ReminderPrefs.human(snooze)));
                 if (n > 0) {
                     channels.append(channels.length() > 0 ? "+push" : "push");

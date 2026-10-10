@@ -47,8 +47,10 @@ Day-key helpers: `pad`, `keyOf(y,m,d)`, `parseKey`, `todayKey`, `isFutureKey`, `
   weekly reminder (`repeatDays`, "MO,WE,FR"; weekly with none picked shows the anchor's day
   picked, which means the same), "On day 14 / the 2nd Tuesday / the last Tuesday" for a monthly
   one (`repeatNth`, from `nthWeekdayOf(anchor)`; "last" is offered only when the anchor is in the
-  month's last 7 days), and "End after N times" (`repeatCount`). `sync(repeat, anchorKey)` shows
-  what that repeat can use (`ReminderPanel` re-syncs the cached form to the selected day);
+  month's last 7 days), and "End after N times" (`repeatCount`). `sync(repeat, anchorKey, dayKey?)` shows
+  what that repeat can use (`dayKey`: the edit dialog's `future` scope on a by-date monthly series
+  passes the series' own date, so "On day 31" stays 31 when the cut is February's clamped 28th,
+  matching `ReminderService.keepDayOfMonth`) (`ReminderPanel` re-syncs the cached form to the selected day);
   `get()` always answers all four in the PATCH's clear-able form (interval 1, days '', nth 0,
   count 0), which `ReminderService.normalizeRule` turns into nulls. The edit dialog sends them only
   with a `repeat` (not for scope `this`). `describeRepeat(rem)` is the row's label ("Every 2 weeks
