@@ -6,7 +6,7 @@
    matter are pinned: both sides' additions survive, nothing is duplicated, and
    a value someone SET (a budget) is not unioned like a log entry. */
 import assert from 'node:assert/strict';
-import { mergeMoney, normalizeMoney } from './money.js';
+import { mergeMoney, normalizeMoney, removeDocItem } from './money.js';
 
 const doc = (over) => normalizeMoney({ expenses: [], income: [], budgets: {}, ...over });
 
@@ -65,6 +65,45 @@ const doc = (over) => normalizeMoney({ expenses: [], income: [], budgets: {}, ..
     'paid over WhatsApp, stale tab merges: still paid');
   assert.equal(mergeMoney(doc(sub('2026-08')), doc(sub('2026-09'))).subscriptions[0].paidFor, '2026-09',
     'an older local month never wins');
+}
+
+// A delete sticks: a loan / goal / subscription removed on one device does not
+// come back from the other device's copy of the document (tombstones).
+{
+  const both = { loans: [{ id: 'l1', amount: 200 }, { id: 'l2', amount: 50 }], goals: [{ id: 'g1', name: 'Bike' }] };
+  const mine = doc(both);
+  removeDocItem(mine, 'loans', 'l1');
+  removeDocItem(mine, 'goals', 'g1');
+  const theirs = doc(both); // the laptop never saw the delete
+  const out = mergeMoney(mine, theirs);
+  assert.deepEqual(out.loans.map((l) => l.id), ['l2'], 'my delete wins over their stale copy');
+  assert.equal(out.goals.length, 0);
+  assert.ok(out.tombstones['loans:l1'], 'the tombstone is kept, for the next merge');
+  // And the other way round: deleted there, still here.
+  const back = mergeMoney(doc(both), mine);
+  assert.deepEqual(back.loans.map((l) => l.id), ['l2'], 'their delete wins over my stale copy');
+  // An unrelated addition on the other side survives.
+  const added = doc({ subscriptions: [{ id: 's9', name: 'New' }], ...both });
+  assert.equal(mergeMoney(mine, added).subscriptions.length, 1);
+}
+
+// Tombstones expire, so the document doesn't grow forever.
+{
+  const old = normalizeMoney({ tombstones: { 'loans:x': Date.now() - 200 * 86400000, 'loans:y': Date.now() } });
+  assert.deepEqual(Object.keys(old.tombstones), ['loans:y']);
+}
+
+// Repeats: postedFor is forward-only (the later month wins), rollover merges like
+// budgets, and a deleted repeat stays deleted.
+{
+  const rule = { id: 'r1', kind: 'expense', amount: 9000, day: 1, active: true };
+  const mine = { recurring: [{ ...rule, postedFor: '2026-10' }], rollover: { food: '2026-09' } };
+  const theirs = { recurring: [{ ...rule }], rollover: { shopping: null } };
+  const out = mergeMoney(mine, theirs);
+  assert.equal(out.recurring[0].postedFor, '2026-10', 'posted here: not posted again there');
+  assert.deepEqual(out.rollover, { shopping: null, food: '2026-09' });
+  const gone = mergeMoney({ recurring: [], tombstones: { 'recurring:r1': Date.now() } }, { recurring: [rule] });
+  assert.equal(gone.recurring.length, 0, 'a deleted repeat does not come back');
 }
 
 console.log('money-merge.test.mjs: all assertions passed');

@@ -1,0 +1,50 @@
+name: CodeQL
+
+# Static analysis for the two codebases: the vanilla-JS frontend and the
+# Spring Boot backend. Results land in the repo's Security > Code scanning tab.
+# Weekly as well as on push/PR, so a NEW query in the pack catches OLD code.
+#
+# Not here: OWASP dependency-check. It downloads the whole NVD (~several GB,
+# rate-limited without an API key) on every cold run — too heavy for this CI.
+# Dependabot (.github/dependabot.yml) + `npm audit` in ci.yml cover dependency
+# advisories instead.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '23 4 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: javascript-typescript
+            build-mode: none
+          # build-mode none: CodeQL reads the Java sources without a Maven
+          # build, so this job needs no JDK cache or DB and can't break on one.
+          - language: java-kotlin
+            build-mode: none
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          queries: security-extended
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:${{ matrix.language }}

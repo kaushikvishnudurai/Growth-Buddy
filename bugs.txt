@@ -11,7 +11,7 @@
 - **Evidence:** reproduced 4 times. Captured stack: `onDocDown → closePopovers → repaintOverlays → render`.
 - **Cause:** `logout()` (`scripts/app.js`) resets everything except `state.profileOpen` and never removes the popover's `mousedown` listener. The first mousedown on the auth screen therefore runs `closePopovers` → `repaintOverlays`, which falls back to a full `render()` because the header slots are gone. That rebuilds the form under the pointer.
 - **Suggested fix:** in `logout()`, set `notifOpen`, `profileOpen` and `moreOpen` to false and call `popoverCleanup?.()`.
-- **Status:** Confirmed.
+- **Status:** Fixed (verified in code: `logout()` clears all three flags and calls `popoverCleanup?.()`).
 
 **QA-02: The AI rate limit counts requests that make no AI call**
 - **Where:** Family, Buddy, Food summary. Category: broken features. **Severity: High.**
@@ -21,7 +21,7 @@
 - **Actual:** `429` with "You've used the AI features a lot…". Family's meal plan also fails to load, and day checks on the Food summary return 429.
 - **Evidence:** about 70 `429 GET /api/family/meal-plan*` responses in the console log; Buddy chips returned 429.
 - **Suggested fix:** apply the interceptor only to requests that actually call the AI (the POSTs that generate content), not to reads or manual logging.
-- **Status:** Confirmed.
+- **Status:** Partly fixed (verified in code): `AiRateLimitInterceptor` now passes every non-POST, so the Family GETs and the chat DELETE are free. `POST /food/entries` still counts even when the entry carries its own kcal and `FoodService` never asks the AI.
 
 **QA-03: Tapping outside a header panel also triggers what's underneath**
 - **Where:** Notifications and Account panels, at all widths. Category: accidental clicks. **Severity: Medium.**
@@ -29,7 +29,7 @@
 - **Expected:** the panel closes and nothing else happens.
 - **Actual:** the panel closes on mousedown and the click still lands. At 375px it opened "Plan my day" (an AI call) and the Sleep log; at 1280px it opened the weekly review dialog.
 - **Suggested fix:** swallow the click that dismisses the panel (a capture-phase handler for that one click, or a transparent backdrop).
-- **Status:** Confirmed.
+- **Status:** Fixed (verified in code: the outside-press handler in `app.js` calls `swallowNextClick()`, a one-shot capture-phase click eater).
 
 **QA-04: "Buddy's read on this day" appears off-screen, so the tap looks dead**
 - **Where:** Food summary, "Day by day" columns, on phones. Category: no visible feedback. **Severity: Medium.**
@@ -54,7 +54,7 @@
   - Mini-calendar arrows: 32×32.
   - Header buttons and calendar days: 42×42.
 - **Suggested fix:** keep the icons the same size and extend the hit area to 44px with padding or a `::before`.
-- **Status:** Confirmed.
+- **Status:** Fixed (statically, from the CSS; not re-measured on a device). Every listed control is in the "Tap targets" `::before` overlay list in app.css or has its own 44px overlay (mini-calendar arrows, reminder edit/delete, Money fix pills); the volume slider's input box is 44px tall with a 6px track; calendar days span the column pitch. Today's additions: the reminder "Snoozed till… ✕" chip (28px) joined the overlay list; the Habits reorder arrows and milestone edit tools now get pitch-wide overlays so a tap on one's edge no longer lands on its neighbour; circle ⋯ / family Make owner (`.gb-iconbtn`), circle Make owner and Money CSV (`.gb-btn--compact`, 44px floor), insight dismiss (44px), notes toolbar (44px on coarse pointers) and timer chips (`.gb-seg`) already passed. Remaining: the habit-history heatmap days are ~19-26px cells (exempt from 44, held to WCAG 2.5.8's 24px): the hit area is now the full pitch and the panel narrows its padding at ≤380px, which clears 24px from 360px up; at 320px it is ~21px, as 12 columns can't fit 24 each.
 
 **QA-06: "Mark today a rest day" fails when the account timezone differs from the device's**
 - **Where:** Habits. **Severity: Low.**
@@ -65,12 +65,12 @@
 - **Where:** Goals. **Severity: Low.**
 - **Actual:** the button looks enabled but gives no feedback and doesn't move focus to the field.
 - **Suggested fix:** focus the input and shake it, or disable the button until the field has text.
-- **Status:** Confirmed.
+- **Status:** Fixed (verified in code: `goals.js` milestone `add()` focuses the empty field and calls `shakeRefusal`).
 
 **QA-08: The year heatmap can't be used with a keyboard**
 - **Where:** Progress. **Severity: Low.**
 - **Actual:** about 370 cells show a pointer cursor, but the grid is a `role=img` with `tabindex=-1`. Picking a day works only by mouse or touch, and cells are about 6px wide on phones (a nearest-day fallback helps).
-- **Status:** Confirmed.
+- **Status:** Fixed (verified in code: the `report.js` year grid is `role=group`, `tabindex=0`, and arrow keys/Home/End pick a day into an aria-live readout).
 
 **QA-09: In landscape, content gets about half the screen**
 - **Where:** phones at 667×375. **Severity: Low.**
@@ -87,3 +87,13 @@
 **QA-11: A click in the first frame of a dialog opening hits the page underneath**
 - **Severity: Low.** The window is under 50ms, so people are very unlikely to hit it.
 - **Status:** Suspected.
+
+## 2026-10-10 — audit areas addressed today (working tree, not yet committed)
+
+Short index of what landed across today's parallel changes; details live in CODEMAP.md / docs/. Not re-verified on a device.
+- Security: SecurityHeadersFilter (CSP Report-Only until CSP_ENFORCE), RequestSizeLimitFilter, shared-DB RateLimiter + LoginAttemptGuard (rate_limit_counters, login_attempts), optional TOTP 2FA, email change with codes, scheduled account deletion (7-day grace) + data export, CodeQL + Dependabot + npm audit in CI.
+- Reliability: offline outbox (scripts/outbox.js) for the common writes; crash reporter (POST /api/client-errors) and RUM vitals (POST /api/client-vitals), both log-only.
+- Tests/CI: CI runs every scripts/*.test.mjs in one loop; new node checks (achievements, calendar, contrast, goal-milestones, habit-stats, home-order, i18n, mentor, money-calc, notes-core, nutrition, outbox, timer); Testcontainers *IT integration tests (AuthFlowIT, SchemaMigrationsIT) in CI.
+- Features/API: mentorship chat, nudges, agreement, mentee week; circle post kudos and post delete; family recipes, chores, favourites, multi-day plans, cook assignment, restock from pantry; reminders done-per-occurrence, .ics export, snooze (incl. snooze-link + WhatsApp reply); notes labels / archive / Trash / drafts; food favourites, barcode, edit, copy-slot; habit order + batch history; i18n scaffold (en only).
+- Accessibility: WCAG contrast check on tokens (contrast.test.mjs); tap-target overlays (QA-05 above).
+- Docs: CLAUDE.md check list, CODEMAP endpoint index (every @*Mapping now listed) and module rows, schema doc table list brought up to date.

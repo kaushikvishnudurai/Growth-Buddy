@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 
 import com.growthbuddy.notification.NotificationKind;
 import com.growthbuddy.notification.NotificationService;
+import com.growthbuddy.notification.NotifyCategory;
 import com.growthbuddy.push.PushService;
 import com.growthbuddy.reminder.WhatsAppService;
 import com.growthbuddy.user.User;
@@ -199,11 +200,11 @@ class HabitReminderDeliverySchedulerTest {
         when(users.findAllById(any())).thenReturn(List.of(user(userId)));
         when(checkins.existsByHabitIdAndLogDateAndDoneTrue(habit.getId(), today())).thenReturn(false);
         when(push.isConfigured()).thenReturn(true);
-        when(push.sendToUser(userId, "Habit reminder", "Workout", "/#habits")).thenReturn(1);
+        when(push.sendToUser(userId, NotifyCategory.habits, "Habit reminder", "Workout", "/#habits")).thenReturn(1);
 
         scheduler.dispatchHabitReminders();
 
-        verify(push).sendToUser(userId, "Habit reminder", "Workout", "/#habits");
+        verify(push).sendToUser(userId, NotifyCategory.habits, "Habit reminder", "Workout", "/#habits");
     }
 
     /* The reported bug: WhatsApp on, calendar reminders arrived there, habit
@@ -274,5 +275,26 @@ class HabitReminderDeliverySchedulerTest {
         scheduler.dispatchHabitReminders();
 
         verify(notifications, never()).publish(any(), any(), any(), any(), any());
+    }
+
+    /* Quiet hours hold a habit reminder back on every server channel (the
+       window here wraps midnight when the test runs late in the day). */
+    @Test
+    void quietHoursHoldAHabitReminderBack() {
+        UUID userId = UUID.randomUUID();
+        Habit habit = dueHabit(userId);
+        User u = user(userId);
+        java.time.format.DateTimeFormatter hhmm = java.time.format.DateTimeFormatter.ofPattern("HH:mm");
+        u.setUiPrefs(java.util.Map.of(
+                "quietStart", habit.getReminderTime().minusHours(1).format(hhmm),
+                "quietEnd", habit.getReminderTime().plusHours(1).format(hhmm)));
+        when(habits.findDeliverable(true, false)).thenReturn(List.of(habit));
+        when(habits.findAllById(any())).thenReturn(List.of(habit));
+        when(users.findAllById(any())).thenReturn(List.of(u));
+
+        scheduler.dispatchHabitReminders();
+
+        verify(notifications, never()).publish(any(), any(), any(), any(), any());
+        verify(dispatchLog, never()).save(any());
     }
 }

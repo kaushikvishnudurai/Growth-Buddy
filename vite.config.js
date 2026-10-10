@@ -16,7 +16,7 @@ const API_TARGET = process.env.API_PROXY_TARGET || 'http://localhost:8080';
    A literal is readable by any build anywhere, which is the whole requirement.
 
    GB_BUILD=<n> in the environment overrides it for a one-off build. */
-const BUILD = 73;
+const BUILD = 74;
 const buildNumber = () => Number(process.env.GB_BUILD) || BUILD;
 
 export default defineConfig({
@@ -115,10 +115,14 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
-    // 'hidden' still emits the maps (upload them to your error tracker) but drops
-    // the //# sourceMappingURL comment, so the published bundle doesn't hand out
-    // readable source to anyone who opens devtools.
-    sourcemap: 'hidden',
+    // No maps by default. 'hidden' only dropped the //# sourceMappingURL comment:
+    // the .map files were still written to dist/, copied into the prod image and
+    // served by WebConfig's /assets/** handler to anyone who guessed
+    // <chunk>.js.map — the full readable source, comments and all. Nothing
+    // consumes them (crash reports are log-only, scripts/error-report.js), so
+    // there is nothing to upload them to either. GB_SOURCEMAP=1 brings 'hidden'
+    // back for a local build you want to debug or feed to a tracker.
+    sourcemap: process.env.GB_SOURCEMAP === '1' ? 'hidden' : false,
   },
   // `vite preview` serves the production build, and without the same proxy every
   // /api call is cross-origin and dies on CORS — so the prod bundle can't be

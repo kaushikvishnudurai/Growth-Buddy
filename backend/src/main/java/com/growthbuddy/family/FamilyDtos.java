@@ -13,6 +13,9 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 // --- Repositories ---
 
@@ -27,10 +30,30 @@ interface FamilyMemberRepository extends JpaRepository<FamilyMember, UUID> {
     List<FamilyMember> findByLinkedUserIdAndStatusAndDeletedAtIsNull(UUID linkedUserId, MemberStatus status);
 
     boolean existsByFamilyIdAndLinkedUserIdAndDeletedAtIsNull(UUID familyId, UUID linkedUserId);
+
+    /** Access checks: an INVITED row names the user too, so "has a row" is not "is in". */
+    boolean existsByFamilyIdAndLinkedUserIdAndStatusAndDeletedAtIsNull(
+            UUID familyId, UUID linkedUserId, MemberStatus status);
+
+    /**
+     * Every live row naming this user, locked (SELECT ... FOR UPDATE). Accepting
+     * an invite takes this first, so two accepts for one person — two tabs, two
+     * invites tapped at once — run one after the other, and the second sees the
+     * first's membership instead of both landing.
+     */
+    @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select m from FamilyMember m where m.linkedUserId = :userId and m.deletedAt is null")
+    List<FamilyMember> lockByLinkedUser(@Param("userId") UUID userId);
 }
 
 interface FamilyMealPlanRepository extends JpaRepository<FamilyMealPlan, UUID> {
     Optional<FamilyMealPlan> findFirstByFamilyIdOrderByCreatedAtDesc(UUID familyId);
+
+    /** Plan history: newest first, the current plan included. */
+    List<FamilyMealPlan> findTop8ByFamilyIdOrderByCreatedAtDesc(UUID familyId);
+}
+
+record TransferOwnershipRequest(@NotNull UUID memberId) {
 }
 
 // --- Enums ---

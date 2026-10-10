@@ -11,6 +11,10 @@ import org.springframework.data.repository.query.Param;
 interface HabitRepository extends JpaRepository<Habit, UUID> {
     List<Habit> findByUserIdAndDeletedAtIsNullOrderByCreatedAtAsc(UUID userId);
 
+    /** The Habits screen's order: the user's own, then oldest first for ties (and for every
+     *  habit that predates the column, all 0). */
+    List<Habit> findByUserIdAndDeletedAtIsNullOrderBySortOrderAscCreatedAtAsc(UUID userId);
+
     Optional<Habit> findByIdAndUserIdAndDeletedAtIsNull(UUID id, UUID userId);
 
     /**
@@ -37,6 +41,21 @@ interface HabitRepository extends JpaRepository<Habit, UUID> {
 
 interface HabitCheckinRepository extends JpaRepository<HabitCheckin, HabitCheckin.Key> {
     List<HabitCheckin> findByHabitIdOrderByLogDateDesc(UUID habitId);
+
+    /** One habit's check-ins from {@code from} on — the bounded read behind a single-habit response. */
+    List<HabitCheckin> findByHabitIdAndLogDateGreaterThanEqualOrderByLogDateDesc(UUID habitId,
+                                                                               LocalDate from);
+
+    /** A user's check-ins from {@code from} on, so the habit list never loads years of history. */
+    List<HabitCheckin> findByUserIdAndLogDateGreaterThanEqualOrderByLogDateDesc(UUID userId,
+                                                                              LocalDate from);
+
+    /** A user's completed check-ins in [start, end] — the week a weekly habit's "due today" reads. */
+    List<HabitCheckin> findByUserIdAndDoneTrueAndLogDateBetween(UUID userId, LocalDate start,
+                                                                LocalDate end);
+
+    /** Every check-in row in [start, end], done or not — countsOn needs a quit habit's slips too. */
+    List<HabitCheckin> findByUserIdAndLogDateBetween(UUID userId, LocalDate start, LocalDate end);
 
     /** All of a user's check-ins in one query, so the habit list avoids N per-habit reads. */
     List<HabitCheckin> findByUserIdOrderByLogDateDesc(UUID userId);

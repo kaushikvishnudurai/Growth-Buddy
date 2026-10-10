@@ -24,6 +24,15 @@ interface MoneyRepository extends JpaRepository<MoneyState, UUID> {
     Optional<MoneyState> lockById(@Param("id") UUID id);
 
     /**
+     * The stored document, unlocked and unmanaged (a scalar, not the entity), so
+     * a read can check whether it needs a migration before taking the row lock.
+     * Loading the entity here instead would leave it in the session, and a later
+     * {@link #lockById} would hand back that same, possibly stale, instance.
+     */
+    @Query("select s.data from MoneyState s where s.userId = :id")
+    Optional<com.fasterxml.jackson.databind.JsonNode> peekData(@Param("id") UUID id);
+
+    /**
      * WhatsApp-verified users with a subscription due on any day in {@code mask}
      * (see {@link MoneyState#getSubDueDays}), plus any row not yet indexed. Ids only:
      * the documents are read afterwards, for the few that match.

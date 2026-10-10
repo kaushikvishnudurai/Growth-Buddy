@@ -44,6 +44,19 @@ public class ReminderDispatchLog {
     @Column(name = "error_message", length = 255)
     private String errorMessage;
 
+    /**
+     * Set only on a snooze's row: the reminder it rings. That row's reminderId is
+     * name-derived from (reminder, snoozed_until) — ReminderDeliveryScheduler.snoozeLogId —
+     * so ux_rem_dispatch_unique admits one claim per snooze, and the sweeper needs
+     * this to find the reminder again. Null on an occurrence's row.
+     */
+    @Column(name = "snooze_of")
+    private UUID snoozeOf;
+
+    /** Sends tried for a snooze row (the first counts); the sweeper stops resending at its cap. 0 otherwise. */
+    @Column(name = "attempts", nullable = false)
+    private int attempts;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

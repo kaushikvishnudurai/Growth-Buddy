@@ -7,7 +7,22 @@
    ===================================================================== */
 import { h, Card, SectionTitle, Icon } from './gb-kit.js';
 
-const XP_PER_LEVEL = 500;
+// The server owns the level curve (ProgressService.XP_PER_LEVEL) and sends each
+// user's progress through it; this is only the fallback for an older cached user.
+const XP_PER_LEVEL_FALLBACK = 100;
+
+/** Level progress, from the server's numbers when the user object carries them. */
+function levelProgress(user) {
+  const u = user || {};
+  const xp = Number(u.xpTotal) || 0;
+  const per = Number(u.xpPerLevel) > 0 ? Number(u.xpPerLevel) : XP_PER_LEVEL_FALLBACK;
+  const level = Number(u.level) || Math.max(1, 1 + Math.floor(xp / per));
+  const num = (v) => (v == null || !Number.isFinite(Number(v)) ? null : Number(v));
+  const into = num(u.xpIntoLevel) ?? xp % per;
+  const toNext = num(u.xpForNextLevel) ?? per - into;
+  const span = into + toNext || per;
+  return { xp, level, into, toNext, pct: Math.round((into / span) * 100) };
+}
 
 // Tier labels (shown as a small caption). Unlocked badges share one calm brand
 // treatment rather than a different colour per tier, to keep the wall quiet.
@@ -21,9 +36,11 @@ function countKeys(obj) {
  * Build the grouped achievement list from the current state. Each item is
  * either unlocked, or carries { current, target } so we can show progress.
  */
-function computeAchievements({ user, topStreak, goals, wellness, trends, food, water }) {
-  const xp = (user && user.xpTotal) || 0;
-  const level = (user && user.level) || 1;
+function computeAchievements({ user, topStreak, goals, wellness, trends, food, water, seen }) {
+  const { xp, level } = levelProgress(user);
+  // A badge once earned stays earned: the day counts below only see the 60 days
+  // boot loads, so "Be active 14 days" would relock as old days slid out.
+  const earned = new Set(Array.isArray(seen) ? seen : []);
   const flatGoals = (goals || []).flatMap((s) => s.goals || []);
   const goalsTotal = flatGoals.length;
   const goalsDone = flatGoals.filter((g) => g.completed).length;
@@ -48,16 +65,19 @@ function computeAchievements({ user, topStreak, goals, wellness, trends, food, w
   const foodDays = foodDates.size;
 
   // helper: a milestone with a numeric threshold.
-  const m = (id, icon, title, desc, tier, value, target) => ({
-    id,
-    icon,
-    title,
-    desc,
-    tier,
-    target,
-    current: Math.min(value, target),
-    unlocked: value >= target,
-  });
+  const m = (id, icon, title, desc, tier, value, target) => {
+    const unlocked = value >= target || earned.has(id);
+    return {
+      id,
+      icon,
+      title,
+      desc,
+      tier,
+      target,
+      current: unlocked ? target : Math.min(value, target),
+      unlocked,
+    };
+  };
 
   // Targets are set to be earned, not handed out: the first tier of each track
   // is a genuine milestone, and gold tiers take real, sustained effort.
@@ -65,9 +85,9 @@ function computeAchievements({ user, topStreak, goals, wellness, trends, food, w
     {
       title: 'Progress',
       items: [
-        m('lvl2', 'sparkles', 'Rising Star', 'Reach Level 3', 'bronze', xp, XP_PER_LEVEL * 2),
-        m('lvl5', 'zap', 'Achiever', 'Reach Level 8', 'silver', xp, XP_PER_LEVEL * 7),
-        m('lvl10', 'trophy', 'Growth Guru', 'Reach Level 15', 'gold', xp, XP_PER_LEVEL * 14),
+        m('lvl2', 'sparkles', 'Rising Star', 'Reach Level 3', 'bronze', level, 3),
+        m('lvl5', 'zap', 'Achiever', 'Reach Level 8', 'silver', level, 8),
+        m('lvl10', 'trophy', 'Growth Guru', 'Reach Level 15', 'gold', level, 15),
       ],
       note: 'Level ' + level + ' · ' + xp + ' XP',
     },
@@ -181,7 +201,14 @@ function badgeTile(item) {
         { class: 'gb-ach-progress' },
         h(
           'div',
-          { class: 'gb-ach-progress-bar' },
+          {
+            class: 'gb-ach-progress-bar',
+            role: 'progressbar',
+            'aria-valuemin': '0',
+            'aria-valuemax': String(item.target),
+            'aria-valuenow': String(item.current),
+            'aria-label': item.title,
+          },
           h('div', { class: 'gb-ach-progress-fill', style: { width: pct + '%' } })
         ),
         h('div', { class: 'gb-ach-progress-label' }, item.current + ' / ' + item.target)
@@ -192,6 +219,7 @@ function badgeTile(item) {
     'div',
     {
       class: 'gb-ach-tile' + (item.unlocked ? ' is-unlocked' : ' is-locked'),
+      role: 'listitem',
       'aria-label':
         item.title + ' — ' + (item.unlocked ? 'unlocked' : item.current + ' of ' + item.target),
     },
@@ -205,10 +233,7 @@ function ScreenAchievements(props) {
   const unlocked = all.filter((i) => i.unlocked).length;
   const total = all.length;
   const pct = total ? Math.round((unlocked / total) * 100) : 0;
-  const user = props.user || {};
-  const xp = user.xpTotal || 0;
-  const xpInLevel = xp % XP_PER_LEVEL;
-  const xpPct = Math.round((xpInLevel / XP_PER_LEVEL) * 100);
+  const { xp, level, pct: xpPct } = levelProgress(props.user);
 
   return h(
     'div',
@@ -234,7 +259,7 @@ function ScreenAchievements(props) {
               h(
                 'div',
                 { class: 'gb-ach-summary-sub' },
-                'Level ' + (user.level || 1) + ' · ' + xp + ' XP'
+                'Level ' + level + ' · ' + xp + ' XP'
               )
             ),
             h('div', { class: 'gb-ach-summary-pct' }, pct + '%')
@@ -242,7 +267,14 @@ function ScreenAchievements(props) {
           // Badge completion — this is what the big % refers to.
           h(
             'div',
-            { class: 'gb-ach-summary-bar' },
+            {
+              class: 'gb-ach-summary-bar',
+              role: 'progressbar',
+              'aria-valuemin': '0',
+              'aria-valuemax': '100',
+              'aria-valuenow': String(pct),
+              'aria-label': 'Badges earned',
+            },
             h('div', { class: 'gb-ach-summary-fill', style: { width: pct + '%' } })
           ),
           h('div', { class: 'gb-ach-summary-caption' }, pct + '% of badges earned'),
@@ -251,10 +283,17 @@ function ScreenAchievements(props) {
           // made "% to next level" look like it belonged to the badge %).
           h(
             'div',
-            { class: 'gb-ach-summary-bar gb-ach-summary-bar--xp' },
+            {
+              class: 'gb-ach-summary-bar gb-ach-summary-bar--xp',
+              role: 'progressbar',
+              'aria-valuemin': '0',
+              'aria-valuemax': '100',
+              'aria-valuenow': String(xpPct),
+              'aria-label': 'Progress to Level ' + (level + 1),
+            },
             h('div', { class: 'gb-ach-summary-fill gb-ach-summary-fill--xp', style: { width: xpPct + '%' } })
           ),
-          h('div', { class: 'gb-ach-summary-caption' }, xpPct + '% to Level ' + ((user.level || 1) + 1)),
+          h('div', { class: 'gb-ach-summary-caption' }, xpPct + '% to Level ' + (level + 1)),
         ],
       })
     ),
@@ -263,10 +302,10 @@ function ScreenAchievements(props) {
         'div',
         { class: 'gb-dash-block' },
         SectionTitle({ title: group.title }),
-        h('div', { class: 'gb-ach-grid' }, group.items.map(badgeTile))
+        h('div', { class: 'gb-ach-grid', role: 'list' }, group.items.map(badgeTile))
       )
     )
   );
 }
 
-export { ScreenAchievements, computeAchievements };
+export { ScreenAchievements, computeAchievements, levelProgress };

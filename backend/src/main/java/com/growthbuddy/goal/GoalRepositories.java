@@ -1,14 +1,19 @@
 package com.growthbuddy.goal;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 interface GoalRepository extends JpaRepository<Goal, UUID> {
     List<Goal> findByUserIdOrderByCreatedAtDesc(UUID userId);
 
     Optional<Goal> findByIdAndUserId(UUID id, UUID userId);
+
+    boolean existsByIdAndUserId(UUID id, UUID userId);
 }
 
 interface GoalActionRepository extends JpaRepository<GoalAction, UUID> {
@@ -19,4 +24,8 @@ interface GoalActionRepository extends JpaRepository<GoalAction, UUID> {
     Optional<GoalAction> findByIdAndUserId(UUID id, UUID userId);
 
     long countByGoalId(UUID goalId);
+
+    /** Action counts for many goals in one query: {@code [goalId, count]} rows. */
+    @Query("select a.goalId, count(a) from GoalAction a where a.goalId in :ids group by a.goalId")
+    List<Object[]> countByGoalIds(@Param("ids") Collection<UUID> ids);
 }

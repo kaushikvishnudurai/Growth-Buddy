@@ -47,4 +47,17 @@ public interface CalendarReminderRepository extends JpaRepository<CalendarRemind
                                            @Param("pushOn") boolean pushOn);
 
     java.util.Optional<CalendarReminder> findByIdAndUserId(UUID id, UUID userId);
+
+    /**
+     * Take a due snooze, once: only the run whose update matched the exact
+     * {@code at} it read goes on to send, so two overlapping runs (or a snooze
+     * moved in between) can't ring it twice. Bulk SQL skips the DeliveryCache
+     * listener; the caller calls {@code DeliveryCache.changed()}. Joins the
+     * scheduler's claim transaction, which also writes the snooze's 'pending'
+     * dispatch-log row — so a crash before the send leaves something to resend.
+     */
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.transaction.annotation.Transactional
+    @Query("update CalendarReminder r set r.snoozedUntil = null where r.id = :id and r.snoozedUntil = :at")
+    int claimSnooze(@Param("id") UUID id, @Param("at") java.time.Instant at);
 }

@@ -18,6 +18,10 @@ export const toast = {
   dismiss() {
     /* no-op until registered */
   },
+  /** action(message, label, run): a toast with one button, e.g. "Undo". */
+  action() {
+    /* no-op until registered */
+  },
 };
 
 export function registerToast(impl) {

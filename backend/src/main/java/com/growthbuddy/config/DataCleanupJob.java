@@ -1,5 +1,7 @@
 package com.growthbuddy.config;
 
+import com.growthbuddy.note.NoteService;
+import java.time.Instant;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -9,7 +11,8 @@ import org.springframework.stereotype.Component;
 /**
  * Nightly purge of rows that only grow and are never read again:
  * expired/revoked sessions, spent auth tokens, old read notifications, old
- * dispatch logs and money day summaries, and photo logs past a user's newest 12.
+ * dispatch logs and money day summaries, photo logs past a user's newest 12,
+ * and notes that have sat in the Notes Trash past its 30 days.
  * Keeps the database inside a small hosting quota without touching user data.
  *
  * <p>Also drops abandoned signups — see {@link #purgeAbandonedSignups()}. That
@@ -27,9 +30,11 @@ public class DataCleanupJob {
     static final int PHOTO_LOGS_KEPT = 12;
 
     private final JdbcTemplate jdbc;
+    private final NoteService notes;
 
-    public DataCleanupJob(JdbcTemplate jdbc) {
+    public DataCleanupJob(JdbcTemplate jdbc, NoteService notes) {
         this.jdbc = jdbc;
+        this.notes = notes;
     }
 
     @Scheduled(cron = "0 30 3 * * *")
@@ -39,6 +44,7 @@ public class DataCleanupJob {
         total += jdbc.update("DELETE FROM email_verification_tokens WHERE expires_at < NOW()");
         total += jdbc.update("DELETE FROM password_reset_tokens WHERE expires_at < NOW()");
         total += jdbc.update("DELETE FROM whatsapp_otp_tokens WHERE expires_at < NOW()");
+        total += jdbc.update("DELETE FROM email_change_tokens WHERE expires_at < NOW()");
         total += jdbc.update("DELETE FROM notifications WHERE read_at IS NOT NULL AND read_at < NOW() - INTERVAL 90 DAY");
         // Dedupe guard only ever reads today's row; older ones are pure ballast.
         total += jdbc.update(
@@ -51,9 +57,15 @@ public class DataCleanupJob {
         // the table it reads; TiDB and MySQL 8 both have ROW_NUMBER.
         // A diet check covers the last 7 days at most; an older row can never match.
         total += jdbc.update("DELETE FROM food_diet_checks WHERE created_at < NOW() - INTERVAL 8 DAY");
+        // Idempotency-Key replays: a retry comes within hours (the outbox replays on
+        // the next launch); two days is generous and keeps the bodies from piling up.
+        total += jdbc.update("DELETE FROM idempotency_keys WHERE created_at < NOW() - INTERVAL 48 HOUR");
         total += jdbc.update("DELETE FROM food_photo_logs WHERE id IN (SELECT id FROM ("
                 + "SELECT id, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at DESC) AS rn"
                 + " FROM food_photo_logs) ranked WHERE rn > " + PHOTO_LOGS_KEPT + ")");
+        // The Notes Trash keeps a deleted note 30 days (NoteService.TRASH_DAYS);
+        // past that it is gone for good. Same cutoff the Trash view reads.
+        total += notes.purgeTrash(Instant.now());
         log.info("Data cleanup removed {} expired rows", total);
         purgeAbandonedSignups();
     }

@@ -25,6 +25,14 @@ public class HabitService {
     public static final int FREEZE_CAP = 2;
 
     /**
+     * How far back the read paths load check-ins. A live streak walks back only
+     * until its first gap, so this bounds a run only for someone over ~13 months
+     * unbroken, and then the cached {@link HabitStreak} (recomputed from the full
+     * history on every mutation) takes over; see {@link #liveOrCached}.
+     */
+    static final int HISTORY_WINDOW_DAYS = 400;
+
+    /**
      * Every icon the app can put on a habit: the DOMAIN icons in gb-kit.js, the
      * FITNESS_PRESETS in app.js, and DataSeeder's. Anything else renders as an
      * empty tile. ponytail: hand-kept mirror of those three lists; add here when
@@ -32,7 +40,9 @@ public class HabitService {
      */
     static final Set<String> HABIT_ICONS = Set.of(
             "repeat", "dumbbell", "sparkles", "notebook-pen", "users-round", "trophy",
-            "book-open", "briefcase", "footprints", "bike", "brain");
+            "book-open", "briefcase", "footprints", "bike", "brain",
+            // HABIT_TEMPLATES in app.js; "ban" is a quit habit's own icon.
+            "droplets", "leaf", "ban");
 
     private final HabitRepository habits;
     private final HabitCheckinRepository checkins;
@@ -92,24 +102,58 @@ public class HabitService {
      * which were missed and which a token already covers. Missed days are the
      * gaps — a day with no check-in row at all — so only the days that exist
      * are returned and the client fills the rest of the month in as missed.
-     *
-     * <p>ponytail: reuses the existing full-history finder and trims in memory
-     * rather than adding a range query. A habit accrues at most one row a day;
-     * revisit if someone's year-old habit makes this read show up.
      */
     @Transactional(readOnly = true)
     public HabitHistory history(UUID userId, UUID id, int days) {
         Habit h = require(userId, id);
         ZoneId zone = clock.zoneOf(userId);
-        LocalDate from = clock.today(userId).minusDays(Math.max(1, days));
+        // Clamped like historyAll: ?days=2147483647 made minusDays throw (a 500).
+        LocalDate from = clock.today(userId).minusDays(clampHistoryDays(days));
         // The habit's own start, in the user's zone — a day before it existed is
         // not a day they missed.
         LocalDate since = LocalDate.ofInstant(h.getCreatedAt(), zone);
-        List<HabitDay> rows = checkins.findByHabitIdOrderByLogDateDesc(id).stream()
-                .filter(c -> !c.getLogDate().isBefore(from))
-                .map(c -> new HabitDay(c.getLogDate(), c.isDone(), c.isProtectedDay()))
+        List<HabitDay> rows = checkins.findByHabitIdAndLogDateGreaterThanEqualOrderByLogDateDesc(id, from)
+                .stream()
+                .map(HabitDay::of)
                 .toList();
         return new HabitHistory(since.isBefore(from) ? from : since, rows);
+    }
+
+    /**
+     * {@link #history} for every habit the user has, in one check-in query —
+     * Insights asked once per daily habit, so ten habits were ten requests on
+     * every Report open. Same shape per habit ({@code since} included), keyed by
+     * habit id, in the user's order; a habit with no check-ins in range maps to an
+     * empty {@code days}. {@code days} is clamped to 1..{@link #HISTORY_WINDOW_DAYS}:
+     * this one reads every habit at once, so an unbounded value was a full-table
+     * read per request.
+     */
+    @Transactional(readOnly = true)
+    public Map<UUID, HabitHistory> historyAll(UUID userId, int days) {
+        List<Habit> rows = habits.findByUserIdAndDeletedAtIsNullOrderBySortOrderAscCreatedAtAsc(userId);
+        Map<UUID, HabitHistory> out = new java.util.LinkedHashMap<>();
+        if (rows.isEmpty()) {
+            return out;
+        }
+        ZoneId zone = clock.zoneOf(userId);
+        LocalDate from = clock.today(userId).minusDays(clampHistoryDays(days));
+        Map<UUID, List<HabitDay>> byHabit = new HashMap<>();
+        // Newest first, as the single-habit read returns them. Rows of a deleted
+        // habit come back too and are simply never looked up.
+        for (HabitCheckin c : checkins.findByUserIdAndLogDateGreaterThanEqualOrderByLogDateDesc(userId, from)) {
+            byHabit.computeIfAbsent(c.getHabitId(), k -> new ArrayList<>())
+                    .add(HabitDay.of(c));
+        }
+        for (Habit h : rows) {
+            LocalDate since = LocalDate.ofInstant(h.getCreatedAt(), zone);
+            out.put(h.getId(), new HabitHistory(since.isBefore(from) ? from : since,
+                    byHabit.getOrDefault(h.getId(), List.of())));
+        }
+        return out;
+    }
+
+    static int clampHistoryDays(int days) {
+        return Math.max(1, Math.min(days, HISTORY_WINDOW_DAYS));
     }
 
     /** Protect a day (rest/freeze): spend a token, mark the day, recompute. */
@@ -123,6 +167,16 @@ public class HabitService {
             // the device's (travel, or an API signup that left it on UTC).
             throw ApiException.badRequest("That day hasn't started yet in your timezone ("
                     + clock.zoneOf(userId).getId() + "). If that's wrong, update it in Settings.");
+        }
+        if (h.getCreatedAt() != null
+                && day.isBefore(LocalDate.ofInstant(h.getCreatedAt(), clock.zoneOf(userId)))) {
+            // A day before the habit existed was never missed, so a token spent
+            // on it bought nothing.
+            throw ApiException.badRequest("That day is before you started this habit");
+        }
+        if (isQuit(h)) {
+            // Nothing to bridge: a quit habit's day is clean unless a slip is logged.
+            throw ApiException.badRequest("A habit you're breaking doesn't need a freeze");
         }
         HabitCheckin c = checkins.findByHabitIdAndLogDate(id, day).orElse(null);
         if (c != null && c.isDone()) {
@@ -171,7 +225,8 @@ public class HabitService {
     @Transactional
     public List<HabitResponse> list(UUID userId) {
         LocalDate today = clock.today(userId);
-        List<Habit> rows = habits.findByUserIdAndDeletedAtIsNullOrderByCreatedAtAsc(userId);
+        // The user's own order (PUT /order), oldest first among ties.
+        List<Habit> rows = habits.findByUserIdAndDeletedAtIsNullOrderBySortOrderAscCreatedAtAsc(userId);
         if (rows.isEmpty()) {
             return List.of();
         }
@@ -183,7 +238,8 @@ public class HabitService {
         // Streaks are already recomputed on every mutation, so we don't rewrite
         // them here — just read the cached value.
         Map<UUID, List<HabitCheckin>> byHabit = new HashMap<>();
-        for (HabitCheckin c : checkins.findByUserIdOrderByLogDateDesc(userId)) {
+        LocalDate from = today.minusDays(HISTORY_WINDOW_DAYS);
+        for (HabitCheckin c : checkins.findByUserIdAndLogDateGreaterThanEqualOrderByLogDateDesc(userId, from)) {
             byHabit.computeIfAbsent(c.getHabitId(), k -> new ArrayList<>()).add(c);
         }
         Map<UUID, HabitStreak> streakById = new HashMap<>();
@@ -191,11 +247,138 @@ public class HabitService {
             streakById.put(s.getHabitId(), s);
         }
         int tokens = wallet(userId, today).getTokens();
+        // Only a quit habit needs the zone (its start day); most lists have none.
+        ZoneId zone = rows.stream().anyMatch(HabitService::isQuit) ? clock.zoneOf(userId) : null;
+        if (zone != null) {
+            creditCleanDays(userId, rows, byHabit, today, zone);
+        }
         return rows.stream()
                 .map(h -> toResponse(h, today,
                         byHabit.getOrDefault(h.getId(), List.of()),
-                        streakById.get(h.getId()), tokens))
+                        streakById.get(h.getId()), tokens, zone))
                 .toList();
+    }
+
+    /**
+     * Pay a quit habit's finished clean days, each once. Clean days are not rows,
+     * so nothing else would ever reach them: the habit list (the screen's main
+     * read, already read-write for the wallet) settles every day up to yesterday
+     * and moves {@code cleanCreditedThrough} past it. Today is never paid — it
+     * can still be slipped. A slip logged on a day already paid takes nothing
+     * back, and un-slipping it pays nothing again, so there is nothing to farm.
+     */
+    private void creditCleanDays(UUID userId, List<Habit> rows, Map<UUID, List<HabitCheckin>> byHabit,
+                                 LocalDate today, ZoneId zone) {
+        int days = 0;
+        List<Habit> moved = new ArrayList<>();
+        for (Habit h : rows) {
+            if (!isQuit(h)) {
+                continue;
+            }
+            Set<LocalDate> slips = slipDates(byHabit.getOrDefault(h.getId(), List.of()));
+            int paid = creditableCleanDays(h, slips, today, zone);
+            LocalDate through = today.minusDays(1);
+            if (h.getCleanCreditedThrough() == null || h.getCleanCreditedThrough().isBefore(through)) {
+                h.setCleanCreditedThrough(through);
+                moved.add(h);
+            }
+            days += paid;
+        }
+        if (!moved.isEmpty()) {
+            habits.saveAll(moved);
+        }
+        if (days > 0) {
+            progress.awardHabitCleanDays(userId, days);
+        }
+    }
+
+    /**
+     * How many of a quit habit's days, after {@code cleanCreditedThrough} and up
+     * to yesterday, were clean and are owed XP. None for a build habit, and none
+     * while it is paused (ponytail: the pause state at settle time stands for the
+     * whole span; a per-day pause log would make it exact). Bounded to the read
+     * window, which is all the slips the caller loaded.
+     */
+    static int creditableCleanDays(Habit h, Set<LocalDate> slips, LocalDate today, ZoneId zone) {
+        if (!isQuit(h) || !h.isActive()) {
+            return 0;
+        }
+        LocalDate start = startDay(h, zone, today);
+        LocalDate from = h.getCleanCreditedThrough() == null ? start : h.getCleanCreditedThrough().plusDays(1);
+        if (from.isBefore(start)) {
+            from = start;
+        }
+        LocalDate floor = today.minusDays(HISTORY_WINDOW_DAYS);
+        if (from.isBefore(floor)) {
+            from = floor;
+        }
+        int clean = 0;
+        for (LocalDate d = from; d.isBefore(today); d = d.plusDays(1)) {
+            if (!slips.contains(d)) {
+                clean++;
+            }
+        }
+        return clean;
+    }
+
+    /* ---- "Break a habit" (HabitKind.quit) ---- */
+
+    static boolean isQuit(Habit h) {
+        return h.getKind() == HabitKind.quit;
+    }
+
+    /** On a quit habit, the row that records a slip: not done, and not a freeze. */
+    static boolean isSlip(HabitCheckin c) {
+        return !c.isDone() && !c.isProtectedDay();
+    }
+
+    private static Set<LocalDate> slipDates(List<HabitCheckin> rows) {
+        Set<LocalDate> out = new HashSet<>();
+        for (HabitCheckin c : rows) {
+            if (isSlip(c)) {
+                out.add(c.getLogDate());
+            }
+        }
+        return out;
+    }
+
+    /** The habit's first day in the user's zone; today when that can't be told. */
+    static LocalDate startDay(Habit h, ZoneId zone, LocalDate today) {
+        if (h.getCreatedAt() == null || zone == null) {
+            return today;
+        }
+        LocalDate d = LocalDate.ofInstant(h.getCreatedAt(), zone);
+        return d.isAfter(today) ? today : d;
+    }
+
+    /**
+     * A quit habit's streak: clean days in the run ending today, today included
+     * unless it was slipped. Days since the last slip, or since the habit
+     * started when there has been none — so day one reads 1, a slip today 0.
+     */
+    static int quitStreak(LocalDate today, LocalDate start, LocalDate lastSlip) {
+        LocalDate anchor = start.minusDays(1);
+        if (lastSlip != null && lastSlip.isAfter(anchor)) {
+            anchor = lastSlip;
+        }
+        return (int) Math.max(0, java.time.temporal.ChronoUnit.DAYS.between(anchor, today));
+    }
+
+    /** The longest clean run between slips (and from the start, and up to today). */
+    static int longestQuitRun(LocalDate today, LocalDate start, Set<LocalDate> slips) {
+        LocalDate prev = start.minusDays(1);
+        int longest = 0;
+        for (LocalDate s : new TreeSet<>(slips)) {
+            if (s.isAfter(today)) {
+                break;
+            }
+            if (!s.isAfter(prev)) {
+                continue;
+            }
+            longest = Math.max(longest, (int) java.time.temporal.ChronoUnit.DAYS.between(prev, s) - 1);
+            prev = s;
+        }
+        return Math.max(longest, quitStreak(today, start, prev));
     }
 
     /**
@@ -210,14 +393,63 @@ public class HabitService {
         LocalDate today = clock.today(userId);
         StringBuilder sb = new StringBuilder("Habits:\n");
         for (Habit h : hs) {
-            boolean done = checkins.existsByHabitIdAndLogDateAndDoneTrue(h.getId(), today);
             HabitStreak s = streaks.findById(h.getId()).orElse(null);
+            if (isQuit(h)) {
+                // The cache's lastDoneOn is the last slip on a quit habit; its
+                // current streak goes stale a day at a time, so it is worked out.
+                LocalDate lastSlip = s == null ? null : s.getLastDoneOn();
+                boolean slipped = today.equals(lastSlip);
+                sb.append("  - Quitting: ").append(h.getName())
+                        .append(" — ").append(slipped ? "slipped today" : "clean today")
+                        .append(", ").append(quitStreak(today, startDay(h, clock.zoneOf(userId), today), lastSlip))
+                        .append(" days clean\n");
+                continue;
+            }
+            boolean done = checkins.existsByHabitIdAndLogDateAndDoneTrue(h.getId(), today);
             int streak = s == null ? 0 : s.getCurrentStreak();
             sb.append("  - ").append(h.getName())
                     .append(" — ").append(done ? "done today" : "not yet today")
                     .append(", ").append(streak).append("-day streak\n");
         }
         return sb.toString();
+    }
+
+    /** One habit's streak, for a mentor's weekly check-in card (HabitResponse is package-private). */
+    public record StreakLine(String name, int streak, int longestStreak, boolean doneToday) {
+    }
+
+    /**
+     * The user's active habits with their cached streaks, in their own order.
+     * Read-only: three queries, no streak recompute and no wallet write (which
+     * {@link #list} may do), so another user's read can't touch their rows.
+     */
+    @Transactional(readOnly = true)
+    public List<StreakLine> streakLines(UUID userId) {
+        List<Habit> hs = habits.findByUserIdAndDeletedAtIsNullOrderBySortOrderAscCreatedAtAsc(userId).stream()
+                .filter(Habit::isActive).toList();
+        if (hs.isEmpty()) {
+            return List.of();
+        }
+        LocalDate today = clock.today(userId);
+        Map<UUID, HabitStreak> byId = new HashMap<>();
+        streaks.findAllById(hs.stream().map(Habit::getId).toList()).forEach(s -> byId.put(s.getHabitId(), s));
+        Set<UUID> doneToday = new HashSet<>();
+        checkins.findByUserIdAndLogDateAndDoneTrue(userId, today).forEach(c -> doneToday.add(c.getHabitId()));
+        List<StreakLine> out = new ArrayList<>();
+        for (Habit h : hs) {
+            HabitStreak s = byId.get(h.getId());
+            if (isQuit(h)) {
+                // Clean unless today is the last slip (the cache's lastDoneOn on a quit habit).
+                LocalDate lastSlip = s == null ? null : s.getLastDoneOn();
+                int clean = quitStreak(today, startDay(h, clock.zoneOf(userId), today), lastSlip);
+                out.add(new StreakLine(h.getName(), clean,
+                        Math.max(clean, s == null ? 0 : s.getLongestStreak()), !today.equals(lastSlip)));
+                continue;
+            }
+            out.add(new StreakLine(h.getName(), s == null ? 0 : s.getCurrentStreak(),
+                    s == null ? 0 : s.getLongestStreak(), doneToday.contains(h.getId())));
+        }
+        return out;
     }
 
     /** Completed habit check-ins in [start, end] — used by circle challenge leaderboards. */
@@ -253,17 +485,94 @@ public class HabitService {
     @Transactional(readOnly = true)
     public TodayCounts countsOn(UUID userId, LocalDate day) {
         List<Habit> list = habits.findByUserIdAndDeletedAtIsNullOrderByCreatedAtAsc(userId);
-        // Two queries instead of one-exists-per-habit: pull that day's done check-ins
-        // once and count those belonging to a still-active habit (a soft-deleted
-        // habit keeps its old check-ins, so filter by the active set).
-        Set<UUID> activeIds = new HashSet<>();
-        for (Habit h : list) {
-            activeIds.add(h.getId());
+        if (list.isEmpty()) {
+            return new TodayCounts(0, 0);
         }
-        int done = (int) checkins.findByUserIdAndLogDateAndDoneTrue(userId, day).stream()
-                .filter(c -> activeIds.contains(c.getHabitId()))
-                .count();
-        return new TodayCounts(done, list.size());
+        // Two queries instead of one-exists-per-habit: the week's done check-ins up
+        // to and including `day` (a weekly habit needs the earlier days to know
+        // whether it is still owed).
+        // Every row, not just the done ones: a quit habit's slip is a not-done row.
+        List<HabitCheckin> week = checkins.findByUserIdAndLogDateBetween(
+                userId, weekStart(day), day);
+        return countDue(list, week, day, clock.zoneOf(userId));
+    }
+
+    /**
+     * Which habits count on {@code day}, and how many of those were done. A habit
+     * counts when it is active (not paused), existed by that day, and is still owed:
+     * a daily habit always is; a weekly / N-per-week habit is owed until the week's
+     * quota is met on an earlier day, so a Monday run on a once-a-week habit stops
+     * reading as a miss on Tuesday. A habit done on {@code day} always counts (and
+     * counts as done), so ticking it never shrinks the total under the user.
+     * Soft-deleted habits are not in {@code habitsList}, so their check-ins are ignored.
+     * A quit habit counts every day it is active and existed, and counts as done
+     * unless {@code day} holds its slip (a not-done, not-frozen row).
+     */
+    static TodayCounts countDue(List<Habit> habitsList, List<HabitCheckin> weekDone,
+                                LocalDate day, ZoneId zone) {
+        Map<UUID, Integer> earlier = new HashMap<>();
+        Set<UUID> doneOnDay = new HashSet<>();
+        Set<UUID> slipOnDay = new HashSet<>();
+        for (HabitCheckin c : weekDone) {
+            if (!c.isDone()) {
+                if (isSlip(c) && c.getLogDate().isEqual(day)) {
+                    slipOnDay.add(c.getHabitId());
+                }
+                continue;
+            }
+            if (c.getLogDate().isEqual(day)) {
+                doneOnDay.add(c.getHabitId());
+            } else if (c.getLogDate().isBefore(day) && !c.getLogDate().isBefore(weekStartOf(day))) {
+                earlier.merge(c.getHabitId(), 1, Integer::sum);
+            }
+        }
+        int done = 0;
+        int total = 0;
+        for (Habit h : habitsList) {
+            if (isQuit(h)) {
+                if (isDue(h, 0, day, zone)) {
+                    total++;
+                    if (!slipOnDay.contains(h.getId())) {
+                        done++;
+                    }
+                }
+                continue;
+            }
+            boolean doneThatDay = doneOnDay.contains(h.getId());
+            if (doneThatDay || isDue(h, earlier.getOrDefault(h.getId(), 0), day, zone)) {
+                total++;
+                if (doneThatDay) {
+                    done++;
+                }
+            }
+        }
+        return new TodayCounts(done, total);
+    }
+
+    /**
+     * Owed on {@code day}, given the done days earlier in the same ISO week. A null
+     * {@code zone} skips the "existed by then" check (moot when asking about today).
+     */
+    static boolean isDue(Habit h, int doneEarlierThisWeek, LocalDate day, ZoneId zone) {
+        if (!h.isActive()) {
+            return false;
+        }
+        if (zone != null && h.getCreatedAt() != null
+                && day.isBefore(LocalDate.ofInstant(h.getCreatedAt(), zone))) {
+            return false;
+        }
+        return doneEarlierThisWeek < requiredPerWeek(h);
+    }
+
+    /** Done days a week asks for: daily = every day, weekly = 1, custom = its target. */
+    static int requiredPerWeek(Habit h) {
+        if (h.getCadence() == Cadence.weekly) {
+            return 1;
+        }
+        if (h.getCadence() == Cadence.custom) {
+            return Math.max(1, Math.min(7, h.getTargetPerWeek()));
+        }
+        return Integer.MAX_VALUE; // daily: never "met for the week"
     }
 
     /** Completed-vs-total pair for a single day. */
@@ -290,8 +599,85 @@ public class HabitService {
         h.setMetric(req.metric() != null ? req.metric() : HabitMetric.none);
         h.setReminderTime(req.reminderTime());
         h.setSound(req.sound());
+        if (req.kind() == HabitKind.quit) {
+            // Breaking a habit is a daily thing with nothing to measure, and it
+            // has been "paid" up to the day before it started.
+            h.setKind(HabitKind.quit);
+            h.setCadence(Cadence.daily);
+            h.setTargetPerWeek(7);
+            h.setMetric(HabitMetric.none);
+            h.setCleanCreditedThrough(clock.today(userId).minusDays(1));
+        }
+        // A new habit goes to the bottom of the user's order: left at 0 it would
+        // tie with the first habit and land second once the list was reordered.
+        h.setSortOrder(nextSortOrder(
+                habits.findByUserIdAndDeletedAtIsNullOrderBySortOrderAscCreatedAtAsc(userId)));
         habits.save(h);
         return toResponse(h, clock.today(userId), userId);
+    }
+
+    /** One past the largest position in use; 0 for a first habit. */
+    static int nextSortOrder(List<Habit> existing) {
+        int max = -1;
+        for (Habit h : existing) {
+            max = Math.max(max, h.getSortOrder());
+        }
+        return max + 1;
+    }
+
+    /**
+     * Save the user's habit order ({@code PUT /api/habits/order}). {@code ids} is
+     * the list top to bottom; returns the habit list in its new order.
+     */
+    @Transactional
+    public List<HabitResponse> reorder(UUID userId, List<UUID> ids) {
+        List<Habit> rows = habits.findByUserIdAndDeletedAtIsNullOrderBySortOrderAscCreatedAtAsc(userId);
+        List<Habit> changed = applyOrder(rows, ids);
+        if (!changed.isEmpty()) {
+            habits.saveAll(changed);
+        }
+        return list(userId);
+    }
+
+    /**
+     * Number {@code rows} (the user's live habits, in their current order) 0..n-1
+     * so the ids in {@code ids} come first, in that order, and every habit the
+     * request left out keeps its relative place after them — a client holding a
+     * stale list (a habit added on another device) can't drop one off the end.
+     * A repeated id counts once, at its first place. An id that is not one of the
+     * user's live habits is refused: a deleted or foreign habit has no place here.
+     * Returns only the habits whose position changed, the ones worth saving.
+     */
+    static List<Habit> applyOrder(List<Habit> rows, List<UUID> ids) {
+        Map<UUID, Habit> byId = new HashMap<>();
+        for (Habit h : rows) {
+            byId.put(h.getId(), h);
+        }
+        List<Habit> ordered = new ArrayList<>(rows.size());
+        Set<UUID> placed = new HashSet<>();
+        for (UUID id : ids == null ? List.<UUID>of() : ids) {
+            Habit h = id == null ? null : byId.get(id);
+            if (h == null) {
+                throw ApiException.notFound("Habit");
+            }
+            if (placed.add(id)) {
+                ordered.add(h);
+            }
+        }
+        for (Habit h : rows) {
+            if (!placed.contains(h.getId())) {
+                ordered.add(h);
+            }
+        }
+        List<Habit> changed = new ArrayList<>();
+        for (int i = 0; i < ordered.size(); i++) {
+            Habit h = ordered.get(i);
+            if (h.getSortOrder() != i) {
+                h.setSortOrder(i);
+                changed.add(h);
+            }
+        }
+        return changed;
     }
 
     @Transactional
@@ -329,8 +715,20 @@ public class HabitService {
         if (req.sound() != null) {
             h.setSound(req.sound().isBlank() ? null : req.sound());
         }
+        if (isQuit(h)) {
+            // A quit habit stays daily and unmeasured whatever the form sent.
+            h.setCadence(Cadence.daily);
+            h.setTargetPerWeek(7);
+            h.setMetric(HabitMetric.none);
+        }
         habits.save(h);
-        return toResponse(h, clock.today(userId), userId);
+        LocalDate today = clock.today(userId);
+        if (req.cadence() != null || req.targetPerWeek() != null) {
+            // The cached streak is in the old cadence's units (days vs weeks), and
+            // the read path trusts it for long runs; rebuild it in the new ones.
+            recomputeStreak(h, today);
+        }
+        return toResponse(h, today, userId);
     }
 
     @Transactional
@@ -346,24 +744,40 @@ public class HabitService {
         Habit h = require(userId, id);
         LocalDate today = clock.today(userId);
         LocalDate date = req.date() != null ? req.date() : today;
+        if (date.isAfter(today)) {
+            throw ApiException.badRequest("That day hasn't happened yet in your timezone ("
+                    + clock.zoneOf(userId).getId() + ").");
+        }
         boolean done = req.done() == null || req.done();
 
-        HabitCheckin c = checkins.findByHabitIdAndLogDate(h.getId(), date)
-                .orElseGet(() -> {
-                    HabitCheckin n = new HabitCheckin();
-                    n.setHabitId(h.getId());
-                    n.setLogDate(date);
-                    n.setUserId(userId);
-                    return n;
-                });
+        HabitCheckin existing = checkins.findByHabitIdAndLogDate(h.getId(), date).orElse(null);
+        HabitCheckin c = existing;
+        if (c == null) {
+            c = new HabitCheckin();
+            c.setHabitId(h.getId());
+            c.setLogDate(date);
+            c.setUserId(userId);
+            // A fresh row starts undone. The entity's field default is done = true,
+            // which made a first tick look like a re-tick.
+            c.setDone(false);
+        }
         boolean wasDone = c.isDone();
+        // XP once per habit per day. Un-ticking keeps the row (done = false), so a
+        // re-tick finds it and earns nothing: tick/untick/tick used to pay 10 XP
+        // every round. The one exception is completing a protected (freeze) day:
+        // it was never done, and each one cost a capped token.
+        boolean firstCompletion = existing == null || existing.isProtectedDay();
         c.setUserId(userId);
         c.setDone(done);
-        if (done) {
-            // A completed day supersedes a protected (rest/freeze) day.
+        if (done || isQuit(h)) {
+            // A completed day supersedes a protected (rest/freeze) day. On a quit
+            // habit done = false is a slip, which a freeze must not disguise.
             c.setProtectedDay(false);
         }
-        c.setNote(req.note());
+        // Absent = unchanged: re-saving a measured value used to wipe the note.
+        if (req.note() != null) {
+            c.setNote(req.note().isBlank() ? null : req.note());
+        }
         // The number only means anything on a measured habit, and only on a day
         // that actually happened — un-ticking a day clears it rather than leaving
         // a distance behind on a day the user says they didn't do.
@@ -376,7 +790,9 @@ public class HabitService {
         }
         checkins.save(c);
 
-        if (!wasDone && done) {
+        // A quit habit earns nothing here: done = true only takes a slip back (or
+        // carries a note), and its clean days are paid once by creditCleanDays.
+        if (!wasDone && done && firstCompletion && !isQuit(h)) {
             progress.awardHabitCheckin(userId);
         }
 
@@ -388,7 +804,14 @@ public class HabitService {
     @Transactional
     public HabitResponse toggleToday(UUID userId, UUID id) {
         LocalDate today = clock.today(userId);
-        boolean doneNow = checkins.existsByHabitIdAndLogDateAndDoneTrue(id, today);
+        boolean doneNow;
+        if (isQuit(require(userId, id))) {
+            // Clean unless today's row is a slip: a toggle logs a slip, or takes it back.
+            HabitCheckin row = checkins.findByHabitIdAndLogDate(id, today).orElse(null);
+            doneNow = row == null || !isSlip(row);
+        } else {
+            doneNow = checkins.existsByHabitIdAndLogDateAndDoneTrue(id, today);
+        }
         return checkin(userId, id, new CheckinRequest(today, !doneNow, null, null, null));
     }
 
@@ -414,6 +837,21 @@ public class HabitService {
             n.setHabitId(habit.getId());
             return n;
         });
+
+        if (isQuit(habit)) {
+            // Days since the last slip. lastDoneOn holds that slip on a quit habit
+            // (null = never slipped): the read path needs it for a run older than
+            // its window, since a quit streak grows with no mutation to refresh it.
+            Set<LocalDate> slips = slipDates(all);
+            LocalDate start = startDay(habit, clock.zoneOf(habit.getUserId()), today);
+            LocalDate lastSlip = slips.stream().filter(d -> !d.isAfter(today))
+                    .max(LocalDate::compareTo).orElse(null);
+            s.setCurrentStreak(quitStreak(today, start, lastSlip));
+            s.setLongestStreak(Math.max(s.getLongestStreak(), longestQuitRun(today, start, slips)));
+            s.setLastDoneOn(lastSlip);
+            streaks.save(s);
+            return;
+        }
 
         if (done.isEmpty()) {
             s.setCurrentStreak(0);
@@ -499,7 +937,7 @@ public class HabitService {
         return longest;
     }
 
-    private List<LocalDate> completedWeekBuckets(List<HabitCheckin> doneDesc, int requiredPerWeek) {
+    List<LocalDate> completedWeekBuckets(List<HabitCheckin> doneDesc, int requiredPerWeek) {
         Map<LocalDate, Integer> countsByWeek = new HashMap<>();
         for (HabitCheckin c : doneDesc) {
             LocalDate bucket = weekStart(c.getLogDate());
@@ -515,7 +953,7 @@ public class HabitService {
         return completed;
     }
 
-    private int currentWeeklyRun(LocalDate today, List<LocalDate> completedWeeksDesc) {
+    int currentWeeklyRun(LocalDate today, List<LocalDate> completedWeeksDesc) {
         if (completedWeeksDesc.isEmpty()) {
             return 0;
         }
@@ -556,24 +994,40 @@ public class HabitService {
     }
 
     private LocalDate weekStart(LocalDate d) {
-        WeekFields wf = WeekFields.ISO;
-        return d.with(wf.dayOfWeek(), 1);
+        return weekStartOf(d);
+    }
+
+    static LocalDate weekStartOf(LocalDate d) {
+        return d.with(WeekFields.ISO.dayOfWeek(), 1);
     }
 
     /** Single-habit convenience (mutation paths): loads this habit's data itself. */
     private HabitResponse toResponse(Habit h, LocalDate today, UUID userId) {
         return toResponse(h, today,
-                checkins.findByHabitIdOrderByLogDateDesc(h.getId()),
+                checkins.findByHabitIdAndLogDateGreaterThanEqualOrderByLogDateDesc(
+                        h.getId(), today.minusDays(HISTORY_WINDOW_DAYS)),
                 streaks.findById(h.getId()).orElse(null),
-                wallet(userId, today).getTokens());
+                wallet(userId, today).getTokens(),
+                isQuit(h) ? clock.zoneOf(userId) : null);
     }
 
-    /** Core: builds the response from already-loaded check-ins, streak, and token count. */
+    /**
+     * Core: builds the response from already-loaded check-ins, streak, and token
+     * count. {@code zone} is needed only by a quit habit (its start day).
+     */
     private HabitResponse toResponse(Habit h, LocalDate today,
-                                     List<HabitCheckin> checkinsDesc, HabitStreak s, int tokens) {
+                                     List<HabitCheckin> checkinsDesc, HabitStreak s, int tokens,
+                                     ZoneId zone) {
+        if (isQuit(h)) {
+            return quitResponse(h, today, checkinsDesc, s, tokens, zone);
+        }
         Set<LocalDate> done = new HashSet<>();
         Set<LocalDate> prot = new HashSet<>();
+        HabitCheckin todayRow = null;
         for (HabitCheckin c : checkinsDesc) {
+            if (c.getLogDate().isEqual(today)) {
+                todayRow = c;
+            }
             if (c.isDone()) {
                 done.add(c.getLogDate());
             } else if (c.isProtectedDay()) {
@@ -602,6 +1056,7 @@ public class HabitService {
             completedWeeks.sort((a, b) -> b.compareTo(a));
             currentStreak = currentWeeklyRun(today, completedWeeks);
         }
+        currentStreak = liveOrCached(currentStreak, s);
 
         // "At risk" = a daily streak that survives only if yesterday's gap is
         // protected (the reactive rescue prompt). Proactive rest uses the same token.
@@ -615,13 +1070,79 @@ public class HabitService {
             }
         }
 
-        HabitCheckin todayRow = h.getMetric() == HabitMetric.none
-                ? null
-                : checkins.findByHabitIdAndLogDate(h.getId(), today).orElse(null);
+        LocalDate week = weekStart(today);
+        int doneThisWeek = 0;
+        int doneEarlierThisWeek = 0;
+        for (LocalDate d : done) {
+            if (!d.isBefore(week) && !d.isAfter(today)) {
+                doneThisWeek++;
+                if (d.isBefore(today)) {
+                    doneEarlierThisWeek++;
+                }
+            }
+        }
+        // Same rule as countsOn, so Home's "x/y habits" and the score agree.
+        boolean dueToday = doneToday || isDue(h, doneEarlierThisWeek, today, null);
+        // todayRow comes from the check-ins already loaded: this used to be one more
+        // query per measured habit on every list read.
+        boolean measured = h.getMetric() != HabitMetric.none;
         return HabitResponse.of(h, s, currentStreak, doneToday, protectedToday, atRisk, riskStreak,
                 tokens,
-                todayRow != null ? todayRow.getMetricValue() : null,
-                todayRow != null ? todayRow.getDurationMin() : null);
+                measured && todayRow != null ? todayRow.getMetricValue() : null,
+                measured && todayRow != null ? todayRow.getDurationMin() : null,
+                dueToday, doneThisWeek,
+                todayRow != null ? todayRow.getNote() : null);
+    }
+
+    /**
+     * A quit habit's response. doneToday = clean today (active, and no slip
+     * logged); streak = days since the last slip, live from the rows, falling
+     * back to the cache's last slip when none is inside the read window. No
+     * freezes, no at-risk prompt: there is no gap to bridge. doneThisWeek counts
+     * the clean days so far this week.
+     */
+    private HabitResponse quitResponse(Habit h, LocalDate today, List<HabitCheckin> checkinsDesc,
+                                       HabitStreak s, int tokens, ZoneId zone) {
+        LocalDate start = startDay(h, zone, today);
+        Set<LocalDate> slips = slipDates(checkinsDesc);
+        HabitCheckin todayRow = null;
+        for (HabitCheckin c : checkinsDesc) {
+            if (c.getLogDate().isEqual(today)) {
+                todayRow = c;
+            }
+        }
+        LocalDate lastSlip = slips.stream().filter(d -> !d.isAfter(today))
+                .max(LocalDate::compareTo).orElse(null);
+        if (lastSlip == null && s != null) {
+            lastSlip = s.getLastDoneOn();
+        }
+        boolean slippedToday = slips.contains(today);
+        int streak = quitStreak(today, start, lastSlip);
+        LocalDate week = weekStart(today);
+        LocalDate from = start.isAfter(week) ? start : week;
+        int cleanThisWeek = 0;
+        for (LocalDate d = from; !d.isAfter(today); d = d.plusDays(1)) {
+            if (!slips.contains(d)) {
+                cleanThisWeek++;
+            }
+        }
+        boolean active = h.isActive();
+        return HabitResponse.of(h, s, streak, active && !slippedToday, false, false, 0, tokens,
+                null, null, isDue(h, 0, today, zone), cleanThisWeek,
+                todayRow != null ? todayRow.getNote() : null);
+    }
+
+    /**
+     * The live streak, unless the bounded read cut it short. A run that is still
+     * going was last recomputed (from the full history) by the tick that extended
+     * it, so the cached value is exact then; a broken run reads 0 live, and the
+     * stale cache is ignored.
+     */
+    static int liveOrCached(int live, HabitStreak cached) {
+        if (live <= 0) {
+            return 0;
+        }
+        return cached == null ? live : Math.max(live, cached.getCurrentStreak());
     }
 
     private Habit require(UUID userId, UUID id) {

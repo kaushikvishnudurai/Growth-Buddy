@@ -19,6 +19,10 @@ import {
   hiddenSubscription,
   waterGap,
   scoreChange,
+  drinkRateByHour,
+  insightProgress,
+  paceSlope,
+  earlierReminder,
 } from './insights.js';
 
 // Consecutive YYYY-MM-DD keys starting 2026-06-01 (a Monday).
@@ -352,5 +356,182 @@ assert.deepEqual(buildInsights({ wellness: {}, trends: {} }), []);
 
 // --- buildInsights: no history at all still works ---
 assert.deepEqual(buildInsights({}), []);
+
+// --- drinkRateByHour: share of logged days with a glass in each local hour ---
+{
+  const at = (d, h) => new Date(2026, 5, 1 + d, h, 10).toISOString();
+  const r = drinkRateByHour([at(0, 9), at(0, 9), at(1, 9), at(1, 14), 'garbage']);
+  assert.equal(r.days, 2, 'two distinct local days; an unparseable time is skipped');
+  assert.equal(r.rate[9], 1, 'both days had 09:xx (two glasses in one hour count once)');
+  assert.equal(r.rate[14], 0.5);
+  assert.equal(r.rate[3], 0);
+  assert.deepEqual(drinkRateByHour(null), { days: 0, rate: new Array(24).fill(0) });
+}
+
+// --- buildInsights: a feature switched off takes its cards with it ---
+{
+  const expenses = [];
+  for (let i = 0; i < 6; i++) expenses.push({ amount: 200, category: 'Food', date: day(i) });
+  expenses.push({ amount: 1000, category: 'Food', date: day(20), note: 'party' });
+  const times = [];
+  for (let d = 0; d < 5; d++)
+    for (const h of [8, 9, 10, 11, 17, 18, 19])
+      times.push(new Date(2026, 5, 1 + d, h, 5).toISOString());
+  const now = Date.UTC(2026, 5, 21, 12);
+  const args = { money: { expenses }, history: { waterTimes: times }, now };
+  const titles = (opts) => buildInsights({ ...args, ...opts }).map((c) => c.title);
+  assert.ok(titles({}).includes('Unusual expense'), titles({}).join());
+  assert.ok(titles({}).includes('When water slips'));
+  assert.ok(!titles({ features: { money: false } }).includes('Unusual expense'));
+  assert.ok(!titles({ features: { water: false } }).includes('When water slips'));
+  assert.ok(titles({ features: { money: true } }).includes('Unusual expense'), 'true is on');
+
+  // Every card carries an id and what it stands on; a dismissed id stays gone.
+  const all = buildInsights(args);
+  assert.ok(all.every((c) => c.id && c.basis), JSON.stringify(all));
+  const water = all.find((c) => c.title === 'When water slips');
+  assert.equal(water.basis, '5 days');
+  const left = buildInsights({ ...args, dismissed: [water.id] });
+  assert.ok(!left.some((c) => c.id === water.id));
+  assert.equal(left.length, all.length - 1);
+}
+
+// --- insightProgress: days with both a sleep and a mood entry, capped at 7 ---
+{
+  const sleepByDate = {};
+  const moodByDate = {};
+  for (let i = 0; i < 10; i++) sleepByDate[day(i)] = { quality: 'good' };
+  for (let i = 0; i < 4; i++) moodByDate[day(i)] = { mood: 'good' };
+  moodByDate[day(30)] = { mood: 'good' }; // no sleep that day: not counted
+  assert.deepEqual(insightProgress({ sleepByDate, moodByDate }), { days: 4, need: 7 });
+  for (let i = 0; i < 10; i++) moodByDate[day(i)] = { mood: 'good' };
+  assert.deepEqual(insightProgress({ sleepByDate, moodByDate }), { days: 7, need: 7 });
+  assert.deepEqual(insightProgress(null), { days: 0, need: 7 });
+}
+
+// --- actions: each card kind that has a next step carries it as plain data ---
+{
+  // bestBedtime -> a daily reminder at the start of the best hour.
+  const sleepByDate = {};
+  for (let i = 0; i < 12; i++)
+    sleepByDate[day(i)] = {
+      bedtime: i % 2 === 0 ? '22:15' : '00:30',
+      wakeTime: '07:00',
+      quality: i % 2 === 0 ? 'great' : 'okay',
+    };
+  const bed = buildInsights({ wellness: { sleepByDate }, trends: {} }).find(
+    (i) => i.id === 'bestBedtime'
+  );
+  assert.deepEqual(bed.action, {
+    label: 'Set a bedtime reminder',
+    kind: 'bedtimeReminder',
+    params: { time: '22:00', repeat: 'daily' },
+  });
+
+  // waterGap -> a nudge inside the dry stretch (12:00-17:00 -> 14:00).
+  const times = [];
+  for (let d = 0; d < 5; d++)
+    for (const h of [8, 9, 10, 11, 17, 18, 19])
+      times.push(new Date(2026, 5, 1 + d, h, 5).toISOString());
+  const w = waterGap(times);
+  assert.equal(w.action.kind, 'waterNudge');
+  assert.equal(w.action.label, 'Nudge me at 14:00');
+  assert.deepEqual(w.action.params, { hour: 14, from: '12:00', to: '17:00' });
+
+  // pushedTask -> edit that task.
+  const pt = pushedTask([{ id: 't9', title: 'Tax', done: false, pushCount: 4 }]);
+  assert.deepEqual(pt.action, { label: 'Reschedule', kind: 'editTask', params: { taskId: 't9' } });
+
+  // habitWeekdayMiss -> move that habit's reminder an hour earlier (09:00 when it has none).
+  const days = [];
+  for (let i = 0; i < 28; i++) if (i % 7 !== 4) days.push({ date: day(i), done: true });
+  const hist = { g: { since: day(0), days } };
+  const withRem = habitWeekdayMiss(
+    habitDays([{ id: 'g', name: 'Gym', cadence: 'daily', reminderTime: '19:30:00' }], hist, day(28))
+  );
+  assert.deepEqual(withRem.action, {
+    label: 'Move reminder to 18:30',
+    kind: 'habitReminder',
+    params: { habitId: 'g', time: '18:30' },
+  });
+  const noRem = habitWeekdayMiss(
+    habitDays([{ id: 'g', name: 'Gym', cadence: 'daily' }], hist, day(28))
+  );
+  assert.equal(noRem.action.label, 'Remind me at 09:00');
+  assert.equal(earlierReminder('06:30'), null, 'not before 06:00');
+  assert.equal(earlierReminder('07:00'), '06:00');
+
+  // unusualExpense / hiddenSubscription -> Money.
+  const expenses = [];
+  for (let i = 0; i < 6; i++) expenses.push({ amount: 200, category: 'Food', date: day(i) });
+  expenses.push({ id: 'e7', amount: 1000, category: 'Food', date: day(20), note: 'party' });
+  for (const d of ['2026-03-05', '2026-04-04', '2026-05-05', '2026-06-04'])
+    expenses.push({ amount: 649, category: 'Bills', date: d, note: 'Netflix' });
+  const u = unusualExpense({ expenses }, day(21));
+  assert.deepEqual(u.action, {
+    label: 'Open in Money',
+    kind: 'openMoney',
+    params: { expenseId: 'e7' },
+  });
+  const hs = hiddenSubscription({ expenses }, '2026-06-20');
+  assert.equal(hs.action.kind, 'openMoney');
+
+  // Cards without a next step carry none, and buildInsights keeps the action on the card.
+  assert.equal(
+    scoreChange([
+      { score: 90, tasksDone: 1, tasksTotal: 1 },
+      { score: 50, tasksDone: 0, tasksTotal: 1 },
+    ]).action,
+    undefined
+  );
+  const built = buildInsights({ tasks: [{ id: 't9', title: 'Tax', done: false, pushCount: 4 }] });
+  assert.equal(built.find((c) => c.id.startsWith('pushedTask:')).action.kind, 'editTask');
+}
+
+// --- goalPace with a dated progress log: least-squares slope, not the two-point line ---
+{
+  const now = Date.parse('2026-06-30T12:00:00');
+  const goal = (log, ms, target = '2026-07-20') => ({
+    id: 'a',
+    title: 'Ship the app',
+    createdAt: '2026-04-01T12:00:00Z', // 90 days ago: the two-point line would say ~3%/90d
+    targetDate: target,
+    progress: { milestones: ms, progressLog: log },
+  });
+  // Ten milestones, 5 done; the log climbs 1% a day for the last 20 days.
+  const half = Array.from({ length: 10 }, (_, i) => ({ done: i < 5 }));
+  const log = [];
+  for (let i = 20; i >= 1; i--) log.push({ date: localDay(now - i * 86400000), pct: 50 - i });
+  const fit = paceSlope(log, 0.5, localDay(now));
+  assert.ok(Math.abs(fit.slope - 0.01) < 1e-9, 'slope ' + (fit && fit.slope));
+  assert.equal(fit.points, 21);
+  // 50% left at 1%/day = 50 days out: 2026-08-19, 30 days past a 07-20 target.
+  const c = goalPace([goal(log, half)], {}, now);
+  assert.ok(c && /recent pace/.test(c.text) && /30 days after/.test(c.text), c && c.text);
+  assert.equal(c.basis, '21 progress days over 20 days');
+  // On pace by the fit (target well after day 50) -> nothing, although the
+  // two-point line (50% in 90 days -> 90 more) would have said behind.
+  assert.equal(goalPace([goal(log, half, '2026-08-25')], {}, now), null);
+  const noLog = goalPace([goal(undefined, half, '2026-08-25')], {}, now);
+  assert.ok(noLog && /this pace/.test(noLog.text), 'two-point fallback without a log');
+  // A flat log: stalled, as long as the target is still ahead.
+  const flat = log.map((e) => ({ date: e.date, pct: 50 }));
+  const st = goalPace([goal(flat, half)], {}, now);
+  assert.ok(st && /has stalled/.test(st.title), st && st.title);
+  // Too few points / too short a span -> fallback.
+  assert.equal(paceSlope(log.slice(-2), 0.5, localDay(now)), null);
+  const short = [
+    { date: localDay(now - 2 * 86400000), pct: 40 },
+    { date: localDay(now - 86400000), pct: 45 },
+  ];
+  assert.equal(paceSlope(short, 0.5, localDay(now)), null, 'a 2-day span');
+}
+
+// Device-local YYYY-MM-DD of an instant (goalPace reads 'today' in the device zone).
+function localDay(ms) {
+  const d = new Date(ms);
+  const p = (n) => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
 
 console.log('insights.test.mjs: all assertions passed');

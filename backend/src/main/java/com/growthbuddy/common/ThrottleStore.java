@@ -32,6 +32,16 @@ public interface ThrottleStore {
      */
     int countHit(String bucketKey, long windowStart);
 
+    /**
+     * Read a window's total without adding to it — {@link RateLimiter} weighs the
+     * previous window into its sliding estimate. Zero when the window has no row.
+     * The default is zero so a store that only counts degrades to a fixed window
+     * rather than failing to compile; the shipped store overrides it.
+     */
+    default int hits(String bucketKey, long windowStart) {
+        return 0;
+    }
+
     /** Drop counters for windows that closed before {@code cutoffWindowStart}. */
     void sweepCounters(long cutoffWindowStart);
 

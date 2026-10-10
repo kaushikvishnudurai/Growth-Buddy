@@ -81,6 +81,29 @@ public class Habit {
     @Column(nullable = false)
     private boolean active = true;
 
+    /** The user's own position on the Habits screen; ties fall back to createdAt. */
+    @Column(name = "sort_order", nullable = false,
+            columnDefinition = "INT NOT NULL DEFAULT 0")
+    private int sortOrder = 0;
+
+    /**
+     * build = tick it to do it; quit = "break a habit": clean unless a slip is
+     * logged (for a quit habit, a check-in row with done = false and no freeze
+     * is that day's slip). Spelled out for the same reason as {@code metric}.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 8,
+            columnDefinition = "VARCHAR(8) NOT NULL DEFAULT 'build'")
+    private HabitKind kind = HabitKind.build;
+
+    /**
+     * A quit habit's clean days have been paid XP up to and including this day
+     * (each once). Null on a build habit. Set to the day before creation when a
+     * quit habit is made, so nothing before it is ever paid.
+     */
+    @Column(name = "clean_credited_through")
+    private java.time.LocalDate cleanCreditedThrough;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

@@ -112,7 +112,7 @@ function ScreenFamily({ api }) {
     planBusy: false,
     planError: '',
     // Sectioned planner UI
-    section: 'members', // members | plan | weekly | pantry | shopping | favourites
+    section: 'members', // members | chores | plan | weekly | pantry | shopping | favourites
     weekly: null, // last MultiDayPlanResponse
     weeklyBusy: false,
     weeklyError: '',
@@ -124,6 +124,11 @@ function ScreenFamily({ api }) {
     shoppingBusy: false,
     favourites: null,
     openFavouriteId: null,
+    sectionErrors: {}, // section key -> message, when that section's fetch failed
+    chores: null, // [ChoreResponse], open first
+    choreDraft: { title: '', assigneeMemberId: null, dueDate: '', repeat: 'none' },
+    planHistory: null, // last 8 MealPlanResponse, newest first (current included)
+    recipes: null, // [RecipeResponse]
   };
 
   // ---- data ----
@@ -132,39 +137,119 @@ function ScreenFamily({ api }) {
     model.family = resp || null;
   }
 
+  function applyPlan(plan) {
+    if (!plan) return;
+    model.plan = plan;
+    if (Array.isArray(plan.groceryItems) && !model.ingredients.length) {
+      model.ingredients = plan.groceryItems.map((g) => ({
+        name: g.name,
+        category: g.category || 'Other',
+        quantity: g.quantity || '',
+        freshness: g.freshness || '',
+      }));
+    }
+  }
+
+  /* One loader per section. Each section's failure is its own: it used to be
+     swallowed into an empty list, so a failed shopping fetch read as "List is
+     empty" — and building a new list on top of that duplicated the real one. */
+  const SECTION_LOADERS = {
+    plan: () => api.getMealPlan().then(applyPlan),
+    invites: () =>
+      api.getInvites().then((r) => {
+        model.invites = r || [];
+      }),
+    weekly: () =>
+      api.getWeekly().then((w) => {
+        model.weekly = w || false;
+      }),
+    pantry: () =>
+      api.listPantry().then((r) => {
+        model.pantryItems = r || [];
+      }),
+    shopping: () =>
+      api.listShopping().then((r) => {
+        model.shoppingList = overlayPending(r || { items: [], totalEstimatedCost: 0 });
+      }),
+    favourites: () =>
+      api.listFavourites().then((r) => {
+        model.favourites = r || [];
+      }),
+    chores: () =>
+      api.listChores().then((r) => {
+        model.chores = overlayChoreTicks(r || []);
+      }),
+    history: () =>
+      api.planHistory().then((r) => {
+        model.planHistory = r || [];
+      }),
+    recipes: () =>
+      api.listRecipes().then((r) => {
+        model.recipes = r || [];
+      }),
+  };
+  const SECTION_EMPTY = {
+    chores: () => (model.chores = []),
+    history: () => (model.planHistory = []),
+    recipes: () => (model.recipes = []),
+    invites: () => (model.invites = []),
+    weekly: () => (model.weekly = false),
+    pantry: () => (model.pantryItems = []),
+    shopping: () => (model.shoppingList = { items: [], totalEstimatedCost: 0 }),
+    favourites: () => (model.favourites = []),
+  };
+
+  function loadSection(key) {
+    return SECTION_LOADERS[key]()
+      .then(() => {
+        delete model.sectionErrors[key];
+      })
+      .catch((err) => {
+        model.sectionErrors[key] = (err && err.message) || 'Could not load this.';
+        if (SECTION_EMPTY[key]) SECTION_EMPTY[key]();
+      });
+  }
+
+  function retrySection(key) {
+    delete model.sectionErrors[key];
+    paint();
+    loadSection(key).then(paint);
+  }
+
+  /* The banner a section shows instead of pretending to be empty. */
+  function sectionError(key, what) {
+    const msg = model.sectionErrors[key];
+    if (!msg) return null;
+    return h(
+      'div',
+      { class: 'gb-card gb-family-section-error', role: 'alert' },
+      Icon('circle-alert', { size: 16, color: 'var(--coral-600)' }),
+      h('span', null, 'Could not load ' + what + '.'),
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--secondary gb-btn--sm',
+          onclick: () => retrySection(key),
+        },
+        'Try again'
+      )
+    );
+  }
+
   async function load() {
     model.loading = true;
     model.error = '';
+    model.sectionErrors = {};
     paint();
     try {
       // Prefetch every section so switching is instant and the nav can show
       // live count badges. Planner endpoints return empty when there's no family.
-      const [fam, plan, invites, weekly, pantry, shop, favs] = await Promise.all([
+      const [fam] = await Promise.all([
         api.getFamily(),
-        api.getMealPlan().catch(() => null),
-        api.getInvites().catch(() => []),
-        api.getWeekly().catch(() => null),
-        api.listPantry().catch(() => []),
-        api.listShopping().catch(() => ({ items: [], totalEstimatedCost: 0 })),
-        api.listFavourites().catch(() => []),
+        ...Object.keys(SECTION_LOADERS).map(loadSection),
       ]);
       applyFamily(fam);
-      model.invites = invites || [];
-      model.weekly = weekly || false;
-      model.pantryItems = pantry || [];
-      model.shoppingList = shop || { items: [], totalEstimatedCost: 0 };
-      model.favourites = favs || [];
-      if (plan) {
-        model.plan = plan;
-        if (Array.isArray(plan.groceryItems) && !model.ingredients.length) {
-          model.ingredients = plan.groceryItems.map((g) => ({
-            name: g.name,
-            category: g.category || 'Other',
-            quantity: g.quantity || '',
-            freshness: g.freshness || '',
-          }));
-        }
-      }
     } catch (err) {
       model.error = err.message || 'Could not load your family.';
     } finally {
@@ -172,6 +257,57 @@ function ScreenFamily({ api }) {
       paint();
     }
   }
+
+  /* ---- live: another member changed something ----
+     app.js turns the server's `family_changed` frame into `gb:family-changed`.
+     Refetch just that slice. Never repaint over an open panel or a field being
+     typed in — the change waits for the panel to close / the field to blur. */
+  let deferredPaint = false;
+  function typingHere() {
+    const a = document.activeElement;
+    return (
+      !!a &&
+      root.contains(a) &&
+      (a.tagName === 'TEXTAREA' || (a.tagName === 'INPUT' && a.type !== 'checkbox'))
+    );
+  }
+  function paintSoon() {
+    if (model.loading) return;
+    if (model.panel || typingHere()) {
+      deferredPaint = true;
+      return;
+    }
+    paint();
+  }
+  root.addEventListener('focusout', () => {
+    if (deferredPaint) setTimeout(paintSoon, 0);
+  });
+  let wasMounted = false;
+  function onFamilyChanged(e) {
+    if (!root.isConnected) {
+      if (wasMounted) window.removeEventListener('gb:family-changed', onFamilyChanged);
+      return;
+    }
+    wasMounted = true;
+    const section = (e && e.detail && e.detail.section) || 'members';
+    if (section === 'members') {
+      Promise.all([api.getFamily(), loadSection('invites')])
+        .then(([fam]) => {
+          applyFamily(fam);
+          paintSoon();
+        })
+        .catch(() => {});
+    } else if (SECTION_LOADERS[section]) {
+      // A new / reused plan is also a new history row.
+      Promise.all([loadSection(section), section === 'plan' ? loadSection('history') : null]).then(
+        paintSoon
+      );
+    }
+  }
+  window.addEventListener('gb:family-changed', onFamilyChanged);
+  requestAnimationFrame(() => {
+    if (root.isConnected) wasMounted = true;
+  });
 
   // Runs one save. Only the pressed button is disabled while it runs, and
   // nothing is repainted until it resolves: a repaint before the save rebuilt
@@ -268,6 +404,20 @@ function ScreenFamily({ api }) {
             Icon('user-plus', { size: 16 })
           )
         : null,
+      // Hand the family on — the only way an owner can then leave it.
+      isOwner && m.status === 'mapped' && m.linkedUserId && !m.isSelf
+        ? h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-iconbtn',
+              'aria-label': 'Make ' + m.name + ' the owner',
+              title: 'Make owner',
+              onclick: () => transferOwner(m),
+            },
+            Icon('star', { size: 16 })
+          )
+        : null,
       canRemove
         ? h(
             'button',
@@ -326,6 +476,21 @@ function ScreenFamily({ api }) {
     });
     if (!ok) return;
     run(api.removeMember(m.id), applyFamily);
+  }
+
+  async function transferOwner(m) {
+    const ok = await confirmDialog({
+      title: 'Make ' + m.name + ' the owner?',
+      message:
+        "They'll manage members and invites. You stay in the family, and can leave it afterwards.",
+      confirmLabel: 'Make owner',
+      cancelLabel: 'Cancel',
+    });
+    if (!ok) return;
+    run(api.transferOwnership(m.id), (res) => {
+      applyFamily(res);
+      toast.success(m.name + ' now owns the family.');
+    });
   }
 
   // ---- panels (add / edit / profile / link) ----
@@ -780,6 +945,83 @@ function ScreenFamily({ api }) {
     );
   }
 
+  /* ---- recipe per dish ----
+     The family's own ingredients + steps for a dish, keyed by its name. Build
+     shopping list reads the ingredient lines before its built-in guesses. */
+  const RECIPE_MAX = 4000;
+  function recipePanel(dish) {
+    const r = recipeFor(dish);
+    const ingI = h('textarea', {
+      class: 'gb-input gb-family-recipe-text',
+      rows: 6,
+      placeholder: 'One per line, e.g.\nToor dal: 200 g\nTamarind: lemon-sized ball',
+    });
+    ingI.value = (r && r.ingredients) || '';
+    const stepsI = h('textarea', {
+      class: 'gb-input gb-family-recipe-text',
+      rows: 8,
+      placeholder: '1. Pressure-cook the dal…',
+    });
+    stepsI.value = (r && r.steps) || '';
+    const minI = h('input', {
+      type: 'number',
+      class: 'gb-input',
+      min: 0,
+      max: 1440,
+      inputmode: 'numeric',
+      placeholder: 'e.g. 40',
+      value: r && r.cookMinutes != null ? r.cookMinutes : '',
+    });
+    const count = h('span', { class: 'gb-family-recipe-count' });
+    const recount = () => {
+      const n = ingI.value.trim().length + stepsI.value.trim().length;
+      count.textContent = n + ' / ' + RECIPE_MAX;
+      count.classList.toggle('is-over', n > RECIPE_MAX);
+    };
+    ingI.addEventListener('input', recount);
+    stepsI.addEventListener('input', recount);
+    recount();
+    const save = () => {
+      if (ingI.value.trim().length + stepsI.value.trim().length > RECIPE_MAX) {
+        toast.error(null, 'A recipe can be at most ' + RECIPE_MAX + ' characters.');
+        return;
+      }
+      run(
+        api.saveRecipe({
+          dish,
+          ingredients: ingI.value.trim() || null,
+          steps: stepsI.value.trim() || null,
+          cookMinutes: intOrNull(minI),
+        }),
+        (saved) => {
+          const k = dishKey(dish);
+          const rest = (model.recipes || []).filter((x) => dishKey(x.dish) !== k);
+          model.recipes = saved ? rest.concat(saved) : rest;
+          toast.success(saved ? 'Recipe saved.' : 'Recipe removed.');
+          closePanel();
+        }
+      );
+    };
+    return h(
+      'div',
+      { class: 'gb-family-panel' },
+      panelHeader(dish),
+      h(
+        'p',
+        { class: 'gb-family-panel-sub' },
+        'Your family’s way of making it. “Build shopping list” uses these ingredients for this dish.'
+      ),
+      field('Cook time (minutes)', minI),
+      field('Ingredients', ingI),
+      field('Steps', stepsI, count),
+      h(
+        'button',
+        { type: 'button', class: 'gb-btn gb-btn--primary', onclick: save },
+        r ? 'Save recipe' : 'Add recipe'
+      )
+    );
+  }
+
   // ---- meal planner ----
 
   function ingredientChips() {
@@ -920,6 +1162,8 @@ function ScreenFamily({ api }) {
         .generateMealPlan({ ingredients: model.ingredients, memberIds })
         .then((res) => {
           model.plan = res;
+          // The plan it replaced is now history.
+          loadSection('history').then(paintSoon);
         })
         .catch((err) => {
           model.planError = err.message || 'Could not generate a meal plan.';
@@ -990,17 +1234,88 @@ function ScreenFamily({ api }) {
         'button',
         {
           type: 'button',
-          class: 'gb-btn gb-btn--primary gb-family-generate' + (model.planBusy ? ' is-thinking' : ''),
+          class:
+            'gb-btn gb-btn--primary gb-family-generate' + (model.planBusy ? ' is-thinking' : ''),
           disabled: model.planBusy || !members.length,
           onclick: generate,
         },
         model.planBusy
           ? thinkingLabel('Cooking up a plan')
-          : [Icon('sparkles', { size: 17, color: '#fff' }), hasPlan ? 'Regenerate plan' : 'Generate meal plan']
+          : [
+              Icon('sparkles', { size: 17, color: '#fff' }),
+              hasPlan ? 'Regenerate plan' : 'Generate meal plan',
+            ]
       ),
       model.planError ? h('p', { class: 'gb-msg-error' }, model.planError) : null,
       hasPlan ? planActions() : null,
-      hasPlan ? planView(model.plan) : null
+      hasPlan ? planView(model.plan) : null,
+      pastPlans()
+    );
+  }
+
+  /* ---- plan history ----
+     Every Generate already wrote a new row; these are the older ones. "Use
+     again" copies one forward on the server, so the history keeps its place. */
+  function planDishes(plan) {
+    const p = plan || {};
+    return MEALS.flatMap((m) => (Array.isArray(p[m.key]) ? p[m.key] : [])).filter(Boolean);
+  }
+  function pastPlans() {
+    const currentId = model.plan && model.plan.planId;
+    const past = (model.planHistory || []).filter((p) => p.planId !== currentId);
+    if (!past.length) return null;
+    return h(
+      'div',
+      { class: 'gb-card gb-family-history' },
+      h(
+        'h3',
+        { class: 'gb-family-subhead' },
+        Icon('history', { size: 16, color: 'var(--fg3)' }),
+        'Past plans'
+      ),
+      h(
+        'ul',
+        { class: 'gb-family-history-list' },
+        past.map((p) => {
+          const dishes = planDishes(p.plan);
+          const when = p.createdAt
+            ? new Date(p.createdAt).toLocaleDateString(undefined, {
+                weekday: 'short',
+                day: 'numeric',
+                month: 'short',
+              })
+            : '';
+          return h(
+            'li',
+            { class: 'gb-family-history-row' },
+            h(
+              'div',
+              { class: 'gb-family-shop-id' },
+              h('div', { class: 'gb-family-card-name' }, when),
+              h(
+                'div',
+                { class: 'gb-family-card-meta' },
+                dishes.slice(0, 4).join(', ') + (dishes.length > 4 ? ', …' : '')
+              )
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
+                class: 'gb-btn gb-btn--soft gb-btn--sm',
+                onclick: () =>
+                  run(api.reusePlan(p.planId), (res) => {
+                    model.plan = res;
+                    toast.success('Back on the menu.');
+                    loadSection('history').then(paintSoon);
+                  }),
+              },
+              Icon('rotate-ccw', { size: 14 }),
+              'Use again'
+            )
+          );
+        })
+      )
     );
   }
 
@@ -1048,6 +1363,8 @@ function ScreenFamily({ api }) {
           onclick: () =>
             run(api.generateShopping({ planId }), (res) => {
               model.shoppingList = res;
+              delete model.sectionErrors.shopping;
+              if (res && res.message) toast.success(res.message);
               switchSection('shopping');
             }),
         },
@@ -1057,24 +1374,92 @@ function ScreenFamily({ api }) {
     );
   }
 
-  function mealList(title, icon, items) {
+  /* Same key as the server's shoppingKey: "Sambar " and "sambar" share a recipe. */
+  function dishKey(name) {
+    return String(name || '')
+      .trim()
+      .replace(/\s+/g, ' ')
+      .toLowerCase();
+  }
+  function recipeFor(dish) {
+    const k = dishKey(dish);
+    return (model.recipes || []).find((r) => dishKey(r.dish) === k) || null;
+  }
+
+  /* "Who cooks this?" — a member per meal, kept on the plan JSON (`cooks`). */
+  function cookPicker(mealLabel, currentId, onPick) {
+    const members = (model.family && model.family.members) || [];
+    if (!members.length) return null;
+    const known = members.some((m) => m.id === currentId);
+    return h(
+      'label',
+      { class: 'gb-family-cook' },
+      Icon('chef-hat', { size: 14, color: 'var(--fg3)' }),
+      h(
+        'select',
+        {
+          class: 'gb-family-cook-select',
+          'aria-label': 'Who cooks ' + mealLabel.toLowerCase(),
+          onchange: (e) => onPick(e.currentTarget.value || null),
+        },
+        h('option', { value: '', selected: !known }, 'Who cooks?'),
+        members.map((m) => h('option', { value: m.id, selected: m.id === currentId }, m.name))
+      )
+    );
+  }
+
+  function dishItem(d, live) {
+    const name = String(d);
+    if (!live) return h('li', null, name);
+    const r = recipeFor(name);
+    return h(
+      'li',
+      null,
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-family-dish' + (r ? ' has-recipe' : ''),
+          title: r ? 'View recipe' : 'Add a recipe',
+          onclick: () => openPanel({ type: 'recipe', dish: name }),
+        },
+        h('span', null, name),
+        r && r.cookMinutes
+          ? h('span', { class: 'gb-family-dish-time' }, r.cookMinutes + ' min')
+          : null,
+        Icon('book-open', { size: 13, color: r ? 'var(--brand)' : 'var(--fg3)' })
+      )
+    );
+  }
+
+  function mealList(meal, items, opts) {
     const list = Array.isArray(items) ? items.filter(Boolean) : [];
     if (!list.length) return null;
+    const live = !!(opts && opts.live);
     return h(
       'div',
       { class: 'gb-family-meal' },
       h(
         'div',
         { class: 'gb-family-meal-head' },
-        Icon(icon, { size: 16, color: 'var(--leaf-600)' }),
-        h('h4', null, title)
+        Icon(meal.icon, { size: 16, color: 'var(--leaf-600)' }),
+        h('h4', null, meal.label),
+        live ? cookPicker(meal.label, opts.cookId, opts.onCook) : null
       ),
       h(
         'ul',
         { class: 'gb-family-meal-list' },
-        list.map((d) => h('li', null, String(d)))
+        list.map((d) => dishItem(d, live))
       )
     );
+  }
+
+  function assignCook(meal, memberId) {
+    const planId = model.plan && model.plan.planId;
+    if (!planId) return;
+    run(api.assignCook(planId, { meal, memberId }), (res) => {
+      if (res) model.plan = res;
+    });
   }
 
   function chipRow(label, values, tone) {
@@ -1098,6 +1483,9 @@ function ScreenFamily({ api }) {
     const plan = (resp && resp.plan) || {};
     const ns = plan.nutritionSummary || {};
     const isFallback = resp && resp.source === 'fallback';
+    // Cooks and recipes only on the live plan, not on a saved favourite's copy.
+    const live = !!(resp && resp.planId && model.plan && resp.planId === model.plan.planId);
+    const cooks = plan.cooks || {};
 
     const nutritionCard = h(
       'div',
@@ -1129,7 +1517,13 @@ function ScreenFamily({ api }) {
       h(
         'div',
         { class: 'gb-card gb-family-meals' },
-        MEALS.map((m) => mealList(m.label, m.icon, plan[m.key]))
+        MEALS.map((m) =>
+          mealList(m, plan[m.key], {
+            live,
+            cookId: cooks[m.key] || null,
+            onCook: (id) => assignCook(m.key, id),
+          })
+        )
       ),
       nutritionCard,
       chipRow('Allergens avoided', plan.allergensAvoided, 'ok'),
@@ -1266,6 +1660,7 @@ function ScreenFamily({ api }) {
   }
 
   function invitesSection() {
+    if (model.sectionErrors.invites) return sectionError('invites', 'your family invites');
     if (!model.invites.length) return null;
     return h(
       'section',
@@ -1407,6 +1802,9 @@ function ScreenFamily({ api }) {
       const items = (model.shoppingList && model.shoppingList.items) || [];
       return items.filter((i) => !i.checked).length;
     }
+    if (id === 'chores') {
+      return (model.chores || []).filter((c) => !c.done).length;
+    }
     if (id === 'members') {
       return (model.family && model.family.members && model.family.members.length) || 0;
     }
@@ -1416,6 +1814,7 @@ function ScreenFamily({ api }) {
   function sectionNav() {
     const items = [
       ['members', 'Members', 'users'],
+      ['chores', 'Chores', 'list-todo'],
       ['plan', 'Today', 'utensils'],
       ['weekly', 'Weekly', 'calendar-days'],
       ['pantry', 'Pantry', 'sprout'],
@@ -1468,6 +1867,8 @@ function ScreenFamily({ api }) {
         return shoppingSection();
       case 'favourites':
         return favouritesSection();
+      case 'chores':
+        return choresSection();
       case 'members':
       default:
         return membersSection();
@@ -1563,13 +1964,18 @@ function ScreenFamily({ api }) {
           'button',
           {
             type: 'button',
-            class: 'gb-btn gb-btn--primary gb-family-generate' + (model.weeklyBusy ? ' is-thinking' : ''),
+            class:
+              'gb-btn gb-btn--primary gb-family-generate' +
+              (model.weeklyBusy ? ' is-thinking' : ''),
             disabled: model.weeklyBusy || !members.length,
             onclick: generate,
           },
           model.weeklyBusy
             ? thinkingLabel('Planning your week')
-            : [Icon('sparkles', { size: 17, color: '#fff' }), wk ? 'Regenerate week' : 'Generate weekly plan']
+            : [
+                Icon('sparkles', { size: 17, color: '#fff' }),
+                wk ? 'Regenerate week' : 'Generate weekly plan',
+              ]
         )
       ),
       model.weeklyError ? h('p', { class: 'gb-msg-error' }, model.weeklyError) : null,
@@ -1597,7 +2003,7 @@ function ScreenFamily({ api }) {
       h(
         'div',
         { class: 'gb-family-week-grid' },
-        days.map((d) => weekDayCard(d))
+        days.map((d, i) => weekDayCard(d, i, wk))
       ),
       suggestions.length
         ? h(
@@ -1614,25 +2020,35 @@ function ScreenFamily({ api }) {
     );
   }
 
-  function weekDayCard(d) {
-    const line = (label, arr) => {
+  function weekDayCard(d, index, wk) {
+    const cooks = d.cooks || {};
+    // The server addresses a day by its position (1-based), not by d.day,
+    // which the AI may leave out or number oddly.
+    const pick = (meal, memberId) =>
+      wk && wk.planId
+        ? run(api.assignWeeklyCook(wk.planId, { meal, memberId, day: index + 1 }), (res) => {
+            if (res) model.weekly = res;
+          })
+        : null;
+    const line = (label, key, arr) => {
       const list = Array.isArray(arr) ? arr.filter(Boolean) : [];
       if (!list.length) return null;
       return h(
         'div',
         { class: 'gb-family-weekday-meal' },
         h('span', { class: 'gb-family-weekday-meal-label' }, label),
-        h('span', null, list.join(', '))
+        h('span', { class: 'gb-family-weekday-meal-dishes' }, list.join(', ')),
+        cookPicker(label, cooks[key] || null, (id) => pick(key, id))
       );
     };
     return h(
       'div',
       { class: 'gb-card gb-family-weekday' },
-      h('h4', { class: 'gb-family-weekday-label' }, d.label || 'Day ' + d.day),
-      line('Breakfast', d.breakfast),
-      line('Lunch', d.lunch),
-      line('Snack', d.snack),
-      line('Dinner', d.dinner)
+      h('h4', { class: 'gb-family-weekday-label' }, d.label || 'Day ' + (d.day || index + 1)),
+      line('Breakfast', 'breakfast', d.breakfast),
+      line('Lunch', 'lunch', d.lunch),
+      line('Snack', 'snack', d.snack),
+      line('Dinner', 'dinner', d.dinner)
     );
   }
 
@@ -1661,6 +2077,7 @@ function ScreenFamily({ api }) {
     });
     const expI = h('input', { type: 'date', class: 'gb-input', 'aria-label': 'Expiry date' });
     const leftI = h('input', { type: 'checkbox' });
+    const lowI = h('input', { type: 'checkbox' });
     const add = () => {
       const name = nameI.value.trim();
       if (!name) return;
@@ -1671,6 +2088,7 @@ function ScreenFamily({ api }) {
           quantity: qtyI.value.trim() || null,
           expiryDate: expI.value || null,
           leftover: leftI.checked,
+          low: lowI.checked,
         }),
         (item) => {
           model.pantryItems = [item].concat(model.pantryItems || []);
@@ -1740,6 +2158,7 @@ function ScreenFamily({ api }) {
           qtyI,
           field('Expiry (optional)', expI),
           h('label', { class: 'gb-family-check' }, leftI, h('span', null, 'This is a leftover')),
+          h('label', { class: 'gb-family-check' }, lowI, h('span', null, 'Running low')),
           h(
             'button',
             {
@@ -1752,6 +2171,7 @@ function ScreenFamily({ api }) {
           )
         )
       ),
+      items.length ? restockButton() : null,
       items.length
         ? h(
             'div',
@@ -1763,6 +2183,25 @@ function ScreenFamily({ api }) {
             { class: 'gb-family-empty-note' },
             'Your pantry is empty. Scan groceries or add items.'
           )
+    );
+  }
+
+  /* Low + expiring within 2 days → the shopping list, deduped on the server. */
+  function restockButton() {
+    return h(
+      'button',
+      {
+        type: 'button',
+        class: 'gb-btn gb-btn--soft gb-btn--sm gb-family-restock',
+        onclick: () =>
+          run(api.shoppingFromPantry(), (res) => {
+            model.shoppingList = overlayPending(res);
+            delete model.sectionErrors.shopping;
+            if (res && res.message) toast.success(res.message);
+          }),
+      },
+      Icon('shopping-bag', { size: 15 }),
+      'Add expiring & low items to list'
     );
   }
 
@@ -1793,6 +2232,32 @@ function ScreenFamily({ api }) {
         meta ? h('div', { class: 'gb-family-card-meta' }, meta) : null
       ),
       badge,
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-family-chip gb-family-chip--toggle gb-family-low' + (it.low ? ' is-on' : ''),
+          'aria-pressed': String(!!it.low),
+          title: it.low ? 'Marked as running low' : 'Mark as running low',
+          onclick: () =>
+            run(
+              api.updatePantry(it.id, {
+                name: it.name,
+                category: it.category,
+                quantity: it.quantity || null,
+                expiryDate: it.expiryDate || null,
+                leftover: !!it.leftover,
+                low: !it.low,
+              }),
+              (saved) => {
+                model.pantryItems = (model.pantryItems || []).map((x) =>
+                  x.id === it.id ? saved : x
+                );
+              }
+            ),
+        },
+        'Low'
+      ),
       h(
         'button',
         {
@@ -1852,11 +2317,16 @@ function ScreenFamily({ api }) {
             onclick: () =>
               run(api.generateShopping({}), (res) => {
                 model.shoppingList = res;
+                delete model.sectionErrors.shopping;
+                // Says "Added 6 items" or why nothing was — it used to come
+                // back unchanged without a word when there was nothing new.
+                if (res && res.message) toast.success(res.message);
               }),
           },
           Icon('sparkles', { size: 16 }),
           'Build from latest plan'
         ),
+        restockButton(),
         h(
           'div',
           { class: 'gb-family-manual-add' },
@@ -1874,6 +2344,8 @@ function ScreenFamily({ api }) {
           )
         )
       ),
+      list.items.length ? shopTools(list) : null,
+      list.items.length ? shopPrintout(list) : null,
       list.items.length
         ? h(
             'div',
@@ -1896,6 +2368,94 @@ function ScreenFamily({ api }) {
     );
   }
 
+  /* ---- share / print ----
+     Plain text, still-to-buy lines only. The share sheet where there is one
+     (phones), the clipboard otherwise. */
+  function shoppingText(list) {
+    const open = list.items.filter((i) => !i.checked);
+    const lines = open.map((i) => '• ' + i.name + (i.quantity ? ' — ' + i.quantity : ''));
+    return ['Shopping list', ...lines].join('\n');
+  }
+  async function shareShopping(list) {
+    const text = shoppingText(list);
+    if (!list.items.some((i) => !i.checked)) {
+      toast.success('Everything is ticked off. Nothing to share.');
+      return;
+    }
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'Shopping list', text });
+        return;
+      } catch (err) {
+        if (err && err.name === 'AbortError') return; // the user closed the sheet
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success('Shopping list copied.');
+    } catch (err) {
+      toast.error(err, 'Could not copy the list.');
+    }
+  }
+  /* Print only the printout: the body class scopes the @media print rules
+     (styles/app.css), so printing any other screen is unaffected. */
+  function printShopping() {
+    const cls = 'gb-print-shopping';
+    document.body.classList.add(cls);
+    const done = () => {
+      document.body.classList.remove(cls);
+      window.removeEventListener('afterprint', done);
+    };
+    window.addEventListener('afterprint', done);
+    window.print();
+    setTimeout(done, 1000); // afterprint never fires in some WebViews
+  }
+  function shopTools(list) {
+    return h(
+      'div',
+      { class: 'gb-family-shop-tools' },
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--soft gb-btn--sm',
+          onclick: () => shareShopping(list),
+        },
+        Icon('share-2', { size: 15 }),
+        'Share'
+      ),
+      h(
+        'button',
+        { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--sm', onclick: printShopping },
+        Icon('printer', { size: 15 }),
+        'Print'
+      )
+    );
+  }
+  function shopPrintout(list) {
+    const open = list.items.filter((i) => !i.checked);
+    return h(
+      'div',
+      { class: 'gb-family-shop-printout', 'aria-hidden': 'true' },
+      h('h1', null, 'Shopping list'),
+      h(
+        'ul',
+        null,
+        open.map((i) =>
+          h(
+            'li',
+            null,
+            h('span', { class: 'gb-family-shop-printout-box' }),
+            i.name,
+            i.quantity
+              ? h('span', { class: 'gb-family-shop-printout-qty' }, ' — ' + i.quantity)
+              : null
+          )
+        )
+      )
+    );
+  }
+
   function shopRow(it) {
     return h(
       'div',
@@ -1906,10 +2466,7 @@ function ScreenFamily({ api }) {
         h('input', {
           type: 'checkbox',
           checked: it.checked,
-          onchange: () =>
-            run(api.toggleShopping(it.id), (res) => {
-              model.shoppingList = res;
-            }),
+          onchange: (e) => tickShopping(it, e.currentTarget.checked),
         }),
         h(
           'div',
@@ -1930,6 +2487,308 @@ function ScreenFamily({ api }) {
           onclick: () =>
             run(api.deleteShopping(it.id), (res) => {
               model.shoppingList = res;
+              // One tap removed it for good; now it can come back.
+              toast.action('Removed ' + it.name + '.', 'Undo', () => restoreShopping(it));
+            }),
+        },
+        Icon('trash-2', { size: 15 })
+      )
+    );
+  }
+
+  /* Ticks paint at once and roll back if the save fails — a tick used to wait
+     a full round trip, which in a shop on mobile data is a long time. A later
+     response must not undo a tick still in flight, so the wanted state of each
+     pending item is laid back over whatever list comes back. */
+  const pendingTicks = new Map(); // item id -> wanted checked
+  function overlayPending(list) {
+    if (!list || !list.items) return list;
+    list.items.forEach((x) => {
+      if (pendingTicks.has(x.id)) x.checked = pendingTicks.get(x.id);
+    });
+    return list;
+  }
+  function tickShopping(it, want) {
+    const prev = it.checked;
+    it.checked = want;
+    pendingTicks.set(it.id, want);
+    paint();
+    api
+      .toggleShopping(it.id, want)
+      .then((res) => {
+        if (pendingTicks.get(it.id) === want) pendingTicks.delete(it.id);
+        model.shoppingList = overlayPending(res);
+        paintSoon();
+      })
+      .catch((err) => {
+        if (pendingTicks.get(it.id) === want) pendingTicks.delete(it.id);
+        const row = model.shoppingList && model.shoppingList.items.find((x) => x.id === it.id);
+        if (row) row.checked = prev;
+        paintSoon();
+        toast.error(err, 'Could not update that item.');
+      });
+  }
+
+  function restoreShopping(it) {
+    api
+      .addShopping({
+        name: it.name,
+        quantity: it.quantity || null,
+        estimatedCost: it.estimatedCost,
+      })
+      .then((res) => {
+        const back = res && res.items && res.items.find((x) => x.name === it.name && !x.checked);
+        if (it.checked && back) return api.toggleShopping(back.id, true);
+        return res;
+      })
+      .then((res) => {
+        model.shoppingList = overlayPending(res);
+        paintSoon();
+      })
+      .catch((err) => toast.error(err, 'Could not restore that item.'));
+  }
+
+  // ---- chores ----
+
+  const REPEAT_LABEL = { none: 'Once', daily: 'Daily', weekly: 'Weekly' };
+
+  /* Ticks paint at once, as the shopping tick does; the wanted state of each
+     in-flight tick is laid back over any list that lands meanwhile. */
+  const pendingChoreTicks = new Map(); // chore id -> wanted done
+  function overlayChoreTicks(list) {
+    (list || []).forEach((c) => {
+      if (pendingChoreTicks.has(c.id)) c.done = pendingChoreTicks.get(c.id);
+    });
+    return list;
+  }
+  function tickChore(c, want) {
+    const prev = c.done;
+    c.done = want;
+    pendingChoreTicks.set(c.id, want);
+    paint();
+    api
+      .toggleChore(c.id, want)
+      .then((res) => {
+        if (pendingChoreTicks.get(c.id) === want) pendingChoreTicks.delete(c.id);
+        model.chores = overlayChoreTicks(res || []);
+        paintSoon();
+      })
+      .catch((err) => {
+        if (pendingChoreTicks.get(c.id) === want) pendingChoreTicks.delete(c.id);
+        const row = (model.chores || []).find((x) => x.id === c.id);
+        if (row) row.done = prev;
+        paintSoon();
+        toast.error(err, 'Could not update that chore.');
+      });
+  }
+
+  function choreBody(c) {
+    return {
+      title: c.title,
+      assigneeMemberId: c.assigneeMemberId || null,
+      dueDate: c.dueDate || null,
+      repeat: c.repeat || 'none',
+    };
+  }
+
+  /* Anyone + one chip per member. The picked one is the draft's assignee. */
+  function assigneeChips(selectedId, onPick) {
+    const members = (model.family && model.family.members) || [];
+    const chip = (id, label) =>
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-family-chip gb-family-chip--toggle' + (selectedId === id ? ' is-on' : ''),
+          'aria-pressed': String(selectedId === id),
+          onclick: () => onPick(id),
+        },
+        label
+      );
+    return h(
+      'div',
+      {
+        class: 'gb-family-chips gb-family-member-select',
+        role: 'group',
+        'aria-label': 'Assign to',
+      },
+      chip(null, 'Anyone'),
+      members.map((m) => chip(m.id, m.isSelf ? 'Me' : m.name))
+    );
+  }
+
+  function choresSection() {
+    const list = model.chores || [];
+    const draft = model.choreDraft;
+    const titleI = h('input', {
+      type: 'text',
+      class: 'gb-input',
+      maxlength: 120,
+      'aria-label': 'Chore',
+      placeholder: 'Add a chore (e.g. Take out the bins)',
+      value: draft.title,
+      oninput: (e) => (draft.title = e.currentTarget.value),
+    });
+    const dueI = h('input', {
+      type: 'date',
+      class: 'gb-input',
+      'aria-label': 'Due date',
+      value: draft.dueDate,
+      onchange: (e) => (draft.dueDate = e.currentTarget.value),
+    });
+    const repeatI = h(
+      'select',
+      {
+        class: 'gb-input',
+        'aria-label': 'Repeat',
+        onchange: (e) => (draft.repeat = e.currentTarget.value),
+      },
+      Object.keys(REPEAT_LABEL).map((k) =>
+        h('option', { value: k, selected: draft.repeat === k }, REPEAT_LABEL[k])
+      )
+    );
+    const add = () => {
+      const title = titleI.value.trim();
+      if (!title) {
+        titleI.focus();
+        return;
+      }
+      run(
+        api.addChore({
+          title,
+          assigneeMemberId: draft.assigneeMemberId,
+          dueDate: dueI.value || null,
+          repeat: repeatI.value,
+        }),
+        (res) => {
+          model.chores = overlayChoreTicks(res || []);
+          model.choreDraft = { title: '', assigneeMemberId: null, dueDate: '', repeat: 'none' };
+        }
+      );
+    };
+    titleI.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        add();
+      }
+    });
+    return h(
+      'section',
+      { class: 'gb-family-planner' },
+      h(
+        'div',
+        { class: 'gb-section-head' },
+        h('h2', null, 'Chores'),
+        Icon('list-todo', { size: 18, color: 'var(--iris-500)' })
+      ),
+      h(
+        'div',
+        { class: 'gb-card gb-family-grocery' },
+        titleI,
+        h('h3', { class: 'gb-family-subhead' }, 'Assign to'),
+        assigneeChips(draft.assigneeMemberId, (id) => {
+          draft.assigneeMemberId = id;
+          paint();
+        }),
+        h('div', { class: 'gb-family-chore-form' }, field('Due', dueI), field('Repeat', repeatI)),
+        h(
+          'button',
+          { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--sm', onclick: add },
+          Icon('plus', { size: 16 }),
+          'Add chore'
+        )
+      ),
+      list.length
+        ? h(
+            'div',
+            { class: 'gb-family-shop-list' },
+            list.map((c) => choreRow(c))
+          )
+        : h(
+            'p',
+            { class: 'gb-family-empty-note' },
+            'No chores yet. Add one and give it to someone.'
+          )
+    );
+  }
+
+  function choreRow(c) {
+    const members = (model.family && model.family.members) || [];
+    const today = new Date().toLocaleDateString('en-CA');
+    const overdue = !c.done && c.dueDate && c.dueDate < today;
+    const meta = [
+      c.dueDate ? (c.dueDate === today ? 'Today' : 'Due ' + c.dueDate) : null,
+      c.repeat && c.repeat !== 'none' ? REPEAT_LABEL[c.repeat] : null,
+    ].filter(Boolean);
+    const reassign = h(
+      'select',
+      {
+        class: 'gb-family-chip gb-family-chore-assignee' + (c.assigneeMemberId ? ' is-set' : ''),
+        'aria-label': 'Assign ' + c.title,
+        onchange: (e) =>
+          run(
+            api.updateChore(
+              c.id,
+              Object.assign(choreBody(c), { assigneeMemberId: e.currentTarget.value || null })
+            ),
+            (res) => {
+              model.chores = overlayChoreTicks(res || []);
+            }
+          ),
+      },
+      h('option', { value: '', selected: !c.assigneeMemberId }, 'Anyone'),
+      members.map((m) =>
+        h(
+          'option',
+          { value: m.id, selected: m.id === c.assigneeMemberId },
+          m.isSelf ? 'Me' : m.name
+        )
+      )
+    );
+    return h(
+      'div',
+      { class: 'gb-card gb-family-shop-item' + (c.done ? ' is-checked' : '') },
+      h(
+        'label',
+        { class: 'gb-family-shop-check' },
+        h('input', {
+          type: 'checkbox',
+          checked: c.done,
+          onchange: (e) => tickChore(c, e.currentTarget.checked),
+        }),
+        h(
+          'div',
+          { class: 'gb-family-shop-id' },
+          h('div', { class: 'gb-family-card-name' }, c.title),
+          meta.length
+            ? h(
+                'div',
+                { class: 'gb-family-card-meta' + (overdue ? ' is-overdue' : '') },
+                c.repeat && c.repeat !== 'none' ? Icon('repeat', { size: 12 }) : null,
+                meta.join(' · ')
+              )
+            : null
+        )
+      ),
+      reassign,
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-iconbtn gb-iconbtn--danger',
+          'aria-label': 'Remove ' + c.title,
+          onclick: () =>
+            run(api.deleteChore(c.id), (res) => {
+              model.chores = overlayChoreTicks(res || []);
+              toast.action('Removed ' + c.title + '.', 'Undo', () =>
+                api
+                  .addChore(choreBody(c))
+                  .then((back) => {
+                    model.chores = overlayChoreTicks(back || []);
+                    paintSoon();
+                  })
+                  .catch((err) => toast.error(err, 'Could not restore that chore.'))
+              );
             }),
         },
         Icon('trash-2', { size: 15 })
@@ -2042,6 +2901,7 @@ function ScreenFamily({ api }) {
   let paints = 0;
   function paint() {
     paints++;
+    deferredPaint = false;
     if (model.loading) {
       root.replaceChildren(skeleton());
       return;
@@ -2058,6 +2918,7 @@ function ScreenFamily({ api }) {
       else if (p.type === 'edit') panelEl = editPanel(p.member);
       else if (p.type === 'profile') panelEl = profilePanel(p.member);
       else if (p.type === 'link') panelEl = linkPanel(p.member);
+      else if (p.type === 'recipe') panelEl = recipePanel(p.dish);
       root.replaceChildren(panelEl);
       return;
     }
@@ -2067,7 +2928,20 @@ function ScreenFamily({ api }) {
       root.replaceChildren(...[invitesSection(), emptyState()].filter(Boolean));
       return;
     }
-    const children = [invitesSection(), sectionNav(), activeSection()].filter(Boolean);
+    const SECTION_WHAT = {
+      plan: "today's plan",
+      weekly: 'the weekly plan',
+      pantry: 'your pantry',
+      shopping: 'the shopping list',
+      favourites: 'your saved menus',
+      chores: 'the chores',
+    };
+    const children = [
+      invitesSection(),
+      sectionNav(),
+      SECTION_WHAT[model.section] ? sectionError(model.section, SECTION_WHAT[model.section]) : null,
+      activeSection(),
+    ].filter(Boolean);
     root.replaceChildren(...children);
   }
 

@@ -18,6 +18,7 @@ import {
   openOverlay,
   closeOverlays,
   openModal as sharedModal,
+  fieldRefusal,
   shakeRefusal,
   landed,
   leave,
@@ -26,6 +27,7 @@ import {
   detectTimeFormat,
   setThinking,
 } from './gb-kit.js';
+import { setLocale, localeFromUser } from './i18n.js';
 import {
   ScreenDashboard,
   ScreenFood,
@@ -36,17 +38,42 @@ import {
   HOME_WIDGETS,
   resolveHomeLayout,
 } from './dashboard.js';
+import { habitDue } from './home-order.js';
+import { withProgressLog, needsProgressLog } from './goal-milestones.js';
+import { goalTaskStats, combinedGoalProgress, goalFinishedBy } from './goal-tasks.js';
 import {
-  ScreenMoney,
+  overlayPendingWater,
+  replayOldestFirst,
+  summaryIsForToday,
+  generation,
+  applyWeekInvalidation,
+  latestSeq,
+  restoreKey,
+  inFlightKeys,
+} from './app-logic.js';
+import { MEAL_SLOTS, mealSlotAt, effectiveMl, labelFor } from './nutrition.js';
+import {
+  habitStats,
+  heatmapWeeks,
+  canEditDay,
+  pctLabel,
+  daysFrom,
+  linkedHabitActivity,
+  monthStart,
+  isSlipRow,
+  recentNotes,
+} from './habit-stats.js';
+// The Money document model only; the screen and its Customise pane are lazy
+// (SCREENS.money, moneyPane), so money.js stays out of the boot chunk.
+import {
   emptyMoney,
   normalizeMoney,
   mergeMoney,
-  MoneyCustomisePane,
   ledgerDiff,
   applyLedgerDiff,
   docPart,
   LEDGER_ARRAYS,
-} from './money.js';
+} from './money-core.js';
 import {
   ScreenCalendar,
   RenderCalendarToolbar,
@@ -54,11 +81,25 @@ import {
   RenderCalendarGrid,
   resetCalendarForm,
   prefillCalendarReminder,
+  snoozeLabel,
+  describeRepeat,
   isPastSlot,
   setRoutine,
+  setDefaultLead,
+  getDefaultLead,
+  setReminderSettingsOpener,
+  setCustomToneAdder,
+  setVoiceReminder,
+  NotifySelect,
+  LEAD_OPTIONS,
+  leadLabel,
+  minutesLabel,
+  REPEATS,
+  REPEAT_ORDER,
+  TAGS,
 } from './calendar.js';
-import { WORK_WEEKS, getWorkWeek, setWorkWeek } from './recurrence.js';
-import { ScreenAchievements, computeAchievements } from './achievements.js';
+import { WORK_WEEKS, getWorkWeek, setWorkWeek, occursOn } from './recurrence.js';
+import { ScreenAchievements, computeAchievements, levelProgress } from './achievements.js';
 import { celebrate } from './celebrate.js';
 import {
   enablePush,
@@ -71,6 +112,7 @@ import {
   WATER_DEFAULTS,
 } from './push.js';
 import { CacheStorage } from './cache-storage.js';
+import { createOutbox, tempId, isTempId, newIdemKey } from './outbox.js';
 import {
   initNative,
   deviceLabelHeader,
@@ -79,17 +121,29 @@ import {
   applyNativeStatusBar,
   hideNativeSplash,
   readTodaySteps,
+  cancelPendingLocalNotifications,
 } from './native.js';
 import { registerToast } from './toast.js';
 import { initA11y, focusLocator, refocus } from './a11y.js';
+import { initErrorReporting } from './error-report.js';
+import { initVitals, markHomePainted } from './vitals.js';
 import {
-  CHIMES,
   CUSTOM_MAX_BYTES,
+  CUSTOM_MAX_COUNT,
+  CUSTOM_MAX_MS,
+  chimeOptionValue,
   DEFAULT_CHIME,
-  hasCustomChime,
+  canRecordChime,
+  chimeOptions,
+  customChimes,
+  customKey,
+  isKnownChime,
   playChime,
+  previewChime,
   readCustomChime,
-  setCustomChime,
+  recordCustomChime,
+  setCustomChimes,
+  stopChime,
 } from './chime.js';
 
 // Replaced by Vite's `define` at build time — see vite.config.js.
@@ -102,6 +156,10 @@ console.log('[gb] build', __GB_BUILD__);
 // otherwise redirect every API call, bearer token attached, to an attacker host.
 // In dev only, still honor it for convenience.
 const API_BASE = resolveApiBase();
+// Crash reports → POST /api/client-errors → server log (scripts/error-report.js).
+initErrorReporting({ apiBase: API_BASE, build: __GB_BUILD__, screen: () => state && state.screen });
+// RUM: LCP/CLS/INP/TTFB + Home paint, 10% of prod loads → POST /api/client-vitals (scripts/vitals.js).
+initVitals({ apiBase: API_BASE, build: __GB_BUILD__, screen: () => state && state.screen });
 
 function resolveApiBase() {
   const env = (typeof import.meta !== 'undefined' && import.meta.env) || {};
@@ -316,17 +374,20 @@ const state = {
   streakFreeze: loadStreakFreeze(),
   freezeTokens: 0,
   trends: loadTrends(),
-  reportRange: 7, // days shown in the Report trends drill-down (7 | 30)
+  reportRange: 7, // days shown in the Report trends drill-down (7 | 30 | 90 | 365)
   water: null,
   food: null,
   quote: loadCachedQuote(),
   score: 0,
-  // Auth flow: 'signin' | 'signup' | 'verify' | 'forgot' | 'reset'
+  // Auth flow: 'signin' | 'signup' | 'verify' | 'forgot' | 'reset' | 'totp' | 'deletion'
   // Restore a pending verify screen across reloads so a refresh doesn't strand
   // the user on sign-in (which then makes them re-signup and burn the code).
   authMode: loadAuthDraft().mode || 'signin',
   authEmail: loadAuthDraft().email || '',
   authNotice: '',
+  // {email, password, cancelDeletion, message} between a right password and the
+  // 2FA / cancel-deletion step (routeSignInStep). Memory only, never stored.
+  authPending: null,
   // Calendar / reminders
   calYear: _now.getFullYear(),
   calMonth: _now.getMonth(),
@@ -359,7 +420,14 @@ const state = {
    sets it again on every refresh; this is the same value, earlier. */
 setWorkWeek(state.user && state.user.uiPrefs && state.user.uiPrefs.workWeek);
 setRoutine(state.user && state.user.uiPrefs && state.user.uiPrefs.routine);
+setDefaultLead(state.user && state.user.uiPrefs && state.user.uiPrefs.reminderLead);
+setReminderSettingsOpener(() => openProfileSettings('reminders'));
+setCustomToneAdder(() => openCustomToneDialog());
+setVoiceReminder({ supported: () => voiceSupported(), capture: (btn) => captureReminder(btn) });
 setTimeFormat(state.user && state.user.uiPrefs && state.user.uiPrefs.timeFormat);
+// i18n.js: dates/numbers format in this locale and <html lang> follows it (index.html
+// ships lang="en"). No locale field on the profile yet → the device's language.
+setLocale(localeFromUser(state.user));
 
 let stomp = null;
 let toastSeq = 0;
@@ -380,26 +448,109 @@ function paintToasts() {
 
 function dismissToast(id) {
   state.toasts = state.toasts.filter((t) => t.id !== id);
+  dropStaleToastTimers();
   paintToasts();
 }
 
-function pushToast(message, kind, durationMs) {
-  const text = message || 'Something went wrong.';
+/* Toast timers live outside the toast objects so a pointer resting on the
+   stack (or a tap on it, or focus inside it) can hold every toast until it
+   leaves. A three-line error was gone before it could be read. */
+const toastTimers = new Map(); // id -> { handle, due } running, or { left } held
+let toastsHeld = false;
+function armToast(id, ms) {
+  const prev = toastTimers.get(id);
+  if (prev) clearTimeout(prev.handle);
+  if (toastsHeld) {
+    toastTimers.set(id, { left: ms });
+    return;
+  }
+  toastTimers.set(id, { handle: setTimeout(() => dismissToast(id), ms), due: Date.now() + ms });
+}
+function holdToasts() {
+  if (toastsHeld) return;
+  toastsHeld = true;
+  const now = Date.now();
+  for (const [id, t] of toastTimers) {
+    clearTimeout(t.handle);
+    toastTimers.set(id, { left: Math.max(0, t.due - now) });
+  }
+}
+function releaseToasts() {
+  if (!toastsHeld) return;
+  toastsHeld = false;
+  // A little time back after letting go, so it doesn't vanish the instant you look away.
+  for (const [id, t] of toastTimers) armToast(id, Math.max(t.left, 1500));
+}
+function dropStaleToastTimers() {
+  const live = new Set(state.toasts.map((t) => t.id));
+  for (const [id, t] of toastTimers) {
+    if (live.has(id)) continue;
+    clearTimeout(t.handle);
+    toastTimers.delete(id);
+  }
+  // The stack that was being hovered is gone, and with it any mouseleave.
+  if (!state.toasts.length) toastsHeld = false;
+}
+
+/* How long an error stays: never under six seconds, longer the more there is
+   to read, whatever shorter time the call site asked for. */
+function errorToastMs(text) {
+  return Math.min(12000, 6000 + text.length * 40);
+}
+
+/* Screen readers hear toasts through two regions that live outside the
+   re-rendered tree: render() rebuilds the stack, and a rebuilt live region
+   either repeats itself or says nothing. Errors go assertive. */
+function announce(text, urgent) {
+  const id = urgent ? 'gb-sr-alert' : 'gb-sr-status';
+  let el = document.getElementById(id);
+  if (!el) {
+    el = h('div', {
+      id,
+      class: 'gb-sr-only',
+      role: urgent ? 'alert' : 'status',
+      'aria-live': urgent ? 'assertive' : 'polite',
+    });
+    document.body.append(el);
+  }
+  el.textContent = '';
+  // Filled a beat later: a region filled in the same tick it was created is skipped.
+  setTimeout(() => (el.textContent = text), 60);
+}
+
+/* Errors about the connection, not about anything typed: these are what
+   coming back online makes untrue. */
+const OFFLINE_ACTION = 'You’re offline, so that didn’t go through. Try again once you reconnect.';
+function isConnectionToast(t) {
+  return t.kind === 'error' && (t.message === NO_CONNECTION || t.message === OFFLINE_ACTION);
+}
+
+/* `action` ({label, run}) puts one button on the toast — a reminder's Snooze.
+   Tapping it runs it and dismisses the toast. */
+function pushToast(message, kind, durationMs, action) {
+  let text = message || 'Something went wrong.';
+  // The banner already says the connection is down; repeating "Check your
+  // internet" under it said it twice. What's left to say is what happened to
+  // the thing just tried.
+  if (text === NO_CONNECTION && !state.online) text = OFFLINE_ACTION;
   const toast = {
     id: ++toastSeq,
     message: text,
     kind: kind || 'error',
     at: Date.now(), // when it arrived — toastStack resumes its entrance from here
+    action: action || null,
   };
   state.toasts = [...state.toasts.filter((t) => t.message !== text), toast].slice(-4);
+  dropStaleToastTimers();
   paintToasts();
+  announce(text, toast.kind === 'error');
   // Errors only. A nod has to mean "you got something done" — wiring it to
   // every success toast made it fire for "Changes saved" and even for the
   // skin toggle, which is feedback about nothing. The nod now lives on the
   // actual accomplishments (toggleTask / toggleHabit).
   if (toast.kind !== 'success' && toast.kind !== 'info') buddyReact('no');
-  const duration = typeof durationMs === 'number' ? durationMs : 2800;
-  setTimeout(() => dismissToast(toast.id), duration);
+  const asked = typeof durationMs === 'number' ? durationMs : 2800;
+  armToast(toast.id, toast.kind === 'error' ? Math.max(asked, errorToastMs(text)) : asked);
   return toast.id;
 }
 
@@ -430,7 +581,13 @@ function toastSuccess(message) {
 }
 
 // Hand the real implementations to the late-bound bridge that screens import.
-registerToast({ success: toastSuccess, error: toastError, dismiss: dismissToast });
+registerToast({
+  success: toastSuccess,
+  error: toastError,
+  dismiss: dismissToast,
+  // A toast with one button (e.g. "Undo") — the same action slot a reminder's Snooze uses.
+  action: (message, label, run) => pushToast(message, 'info', 6000, { label, run }),
+});
 
 function score() {
   if (state.score > 0) {
@@ -444,8 +601,11 @@ function score() {
     sum += tasks.filter((t) => t.done).length / tasks.length;
     parts++;
   }
-  if (state.habits.length) {
-    sum += state.habits.filter((h) => h.doneToday).length / state.habits.length;
+  // Only the habits owed today, as on the server (HabitService.countsOn): a
+  // weekly habit already done this week is not today's miss.
+  const due = state.habits.filter(habitDueToday);
+  if (due.length) {
+    sum += due.filter((h) => h.doneToday).length / due.length;
     parts++;
   }
   return parts === 0 ? 0 : Math.round((sum / parts) * 100);
@@ -553,15 +713,19 @@ function persistGoalProgress() {
 /* Per goal: which save is the newest. Each PUT carries the whole merged blob,
    so only the newest one's failure is worth rolling back — an older one's is
    already superseded by whatever was sent after it. */
-const goalProgressSeq = {};
+const goalProgressSeq = latestSeq();
 
 function updateGoalProgress(goalId, patch) {
   if (!state.goalProgress) state.goalProgress = {};
   const key = String(goalId);
   const prev = state.goalProgress[key];
-  const seq = (goalProgressSeq[key] || 0) + 1;
-  goalProgressSeq[key] = seq;
-  state.goalProgress[key] = Object.assign({}, prev || {}, patch);
+  const seq = goalProgressSeq.start(key);
+  // Every save also dates today's percentage (`progressLog`, one per day, last
+  // wins): it is the history insights.js `goalPace` fits its finish date to.
+  state.goalProgress[key] = withProgressLog(
+    Object.assign({}, prev || {}, patch),
+    accountTodayKey()
+  );
   persistGoalProgress();
   render();
   // Optimistic, but not silent: a failure used to be a console line only, so
@@ -570,9 +734,8 @@ function updateGoalProgress(goalId, patch) {
     method: 'PUT',
     body: JSON.stringify(state.goalProgress[key]),
   }).catch((err) => {
-    if (goalProgressSeq[key] !== seq) return;
-    if (prev) state.goalProgress[key] = prev;
-    else delete state.goalProgress[key];
+    if (!goalProgressSeq.isLatest(key, seq)) return;
+    restoreKey(state.goalProgress, key, prev);
     persistGoalProgress();
     render();
     toastError(err, 'Could not save that progress.');
@@ -665,6 +828,9 @@ function queueLedger(diff) {
     del.add(id);
   }
   p.deletes = [...del];
+  // New content, new request: a retry of the OLD batch could be answered from
+  // the server's replay cache with a body that no longer matches what is sent.
+  p.idemKey = newIdemKey();
   storePendingLedger(p);
 }
 /* Pending changes laid over a copy that came from the server, so a reload never
@@ -712,9 +878,24 @@ function persistMoney() {
       .then(putDocIfChanged)
       .catch((err) => {
       console.error('CRITICAL: saveMoney failed to reach database:', err);
-      toastError(err, 'Money changes were not saved. Check your connection and try again.');
+      // No connection (or a server that's down) is not "not saved": the change is
+      // in the cache and the ledger queue, and is replayed on the next flush
+      // (handleOnline → loadData, or the timer below). Saying "not saved" made
+      // people enter it twice. Only a refusal is worth an error.
+      const queued = !navigator.onLine || !err || !err.status || err.status >= 500;
+      if (queued) pushToast('Saved on this phone — will sync when you’re back online.', 'info');
+      else toastError(err, 'Money changes were not saved. Check your connection and try again.');
     })
   );
+}
+
+/* Anything the server hasn't confirmed yet: queued ledger writes, or a document
+   that differs from the last one it accepted. The 5-minute re-push asks this
+   first, so an idle tab doesn't re-send (or re-toast) on a timer. */
+function moneyDirty() {
+  const p = loadPendingLedger();
+  if (Object.keys(p.upserts).length || p.deletes.length) return true;
+  return JSON.stringify(docPart(state.money)) !== lastDocBody; // null: the boot load failed
 }
 
 /* Put these items back to what the server holds: its copy, or gone if it has
@@ -746,10 +927,19 @@ async function flushLedger() {
   const p = loadPendingLedger();
   const upserts = Object.values(p.upserts);
   if (!upserts.length && !p.deletes.length) return;
+  // Stable while the batch is unchanged (queueLedger mints a new one when it
+  // changes), so a POST that landed but whose answer was lost is replayed by the
+  // server rather than applied twice.
+  if (!p.idemKey) {
+    p.idemKey = newIdemKey();
+    storePendingLedger(p);
+  }
+  const idemKey = p.idemKey;
   let res;
   try {
     res = await api('/api/money/tx', {
       method: 'POST',
+      headers: { 'Idempotency-Key': idemKey },
       body: JSON.stringify({ upserts, deletes: p.deletes }),
     });
   } catch (err) {
@@ -764,6 +954,7 @@ async function flushLedger() {
     if (JSON.stringify(now.upserts[u.id]) === JSON.stringify(u)) delete now.upserts[u.id];
   const sent = new Set(p.deletes);
   now.deletes = now.deletes.filter((id) => !sent.has(id));
+  if (now.idemKey === idemKey) delete now.idemKey; // spent; anything left is a new batch
   storePendingLedger(now);
   // Refused entries are cleared with the rest — kept, they would fail every save
   // after them — and named, so nothing disappears without a word.
@@ -848,7 +1039,8 @@ function saveUiPrefs(patch) {
   // to refresh the user. Caught by the working week, where a stale value means
   // the calendar draws the wrong days; it was equally wrong for the rest.
   saveSession(state.user, state.user.token);
-  api('/api/auth/ui-prefs', {
+  // Returned so a caller that reads the pref back server-side (the focus goal's streak) can wait for it.
+  return api('/api/auth/ui-prefs', {
     method: 'PUT',
     body: JSON.stringify({ prefs: state.user.uiPrefs }),
   }).catch((err) => {
@@ -869,11 +1061,11 @@ function saveUiPrefs(patch) {
 function notifySoundFor(n) {
   if (n && n.kind === 'reminder' && n.relatedId) {
     const rem = (state.reminders || []).find((r) => r.id === n.relatedId);
-    if (rem && rem.sound && CHIMES.some((c) => c.key === rem.sound)) return rem.sound;
+    if (rem && rem.sound && isKnownChime(rem.sound)) return rem.sound;
   }
   if (n && n.kind === 'habit_reminder' && n.relatedId) {
     const habit = (state.habits || []).find((h) => h.id === n.relatedId);
-    if (habit && habit.sound && CHIMES.some((c) => c.key === habit.sound)) return habit.sound;
+    if (habit && habit.sound && isKnownChime(habit.sound)) return habit.sound;
   }
   return notifySound();
 }
@@ -893,75 +1085,161 @@ function notifySound() {
   return p && p.notifySound ? p.notifySound : DEFAULT_CHIME;
 }
 
-/* The user's own sound file, as a data URL. Deliberately NOT in ui_prefs: that
-   blob rides along with every /api/auth/me. It lives in two places instead —
-   this device's CacheStorage, which is the copy that actually plays (instant,
-   and fine with no connection), and the account, which is the only reason a
-   second device can find it at all. */
-const CUSTOM_CHIME_KEY = 'gb.notifySoundFile';
-/* When this device's copy was stored, so a login can tell which copy is newer
-   without shipping the bytes twice to find out. */
-const CUSTOM_CHIME_AT_KEY = 'gb.notifySoundFileAt';
+/* The user's own sounds (uploads and voice recordings, up to CUSTOM_MAX_COUNT),
+   as data URLs. Deliberately NOT in ui_prefs: those blobs would ride along with
+   every /api/auth/me. They live in two places instead — this device's
+   CacheStorage, which is the copy that actually plays (instant, and fine with
+   no connection), and the account, which is the only reason a second device
+   can find them at all.
+   Two kinds of key: a small index, [{ id, name, updatedAt, synced }], and each
+   sound's bytes under its own key. Split because every setItem rewrites the
+   whole value into the Cache API — kept as one list, marking a sound synced
+   re-wrote up to four files' worth of base64 (~1.6 MB) to flip one flag.
+   `synced` is false until the server has the sound, which is how a pull tells
+   "never reached the server, upload it" from "deleted on another device, drop it". */
+const CUSTOM_CHIMES_KEY = 'gb.notifySounds';
+const customChimeBytesKey = (id) => 'gb.notifySound.' + id;
+/* The one-sound keys from before. Read by nothing now; the pull fetches that
+   sound back as the account's first. */
+const LEGACY_CHIME_KEYS = ['gb.notifySoundFile', 'gb.notifySoundFileAt'];
+
+function readChimeIndex() {
+  try {
+    const list = JSON.parse(CacheStorage.getItem(CUSTOM_CHIMES_KEY) || '[]');
+    return Array.isArray(list) ? list.filter((s) => s && s.id) : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+/* The index with each sound's bytes attached. A row whose bytes are missing is
+   left out: there is nothing to play, and the next pull fetches it again. */
+function readCustomChimes() {
+  return readChimeIndex()
+    .map((s) => Object.assign({}, s, { dataUrl: CacheStorage.getItem(customChimeBytesKey(s.id)) }))
+    .filter((s) => s.dataUrl);
+}
+
+/* Resolves once this device's copies have been read from the Cache API. The
+   pull waits on it: merged against a list that hasn't loaded yet, a sound never
+   uploaded looks like one deleted elsewhere, and would be dropped. */
+let markCustomChimesLoaded;
+const customChimesLoaded = new Promise((resolve) => (markCustomChimesLoaded = resolve));
 
 function loadCustomChime() {
-  setCustomChime(CacheStorage.getItem(CUSTOM_CHIME_KEY));
+  LEGACY_CHIME_KEYS.forEach((k) => CacheStorage.removeItem(k));
+  setCustomChimes(readCustomChimes());
+  markCustomChimesLoaded();
 }
 
 /* This device's copy. Synchronous and can't fail, which is why the picker
-   writes here first and talks to the server afterwards. */
-function storeCustomChime(dataUrl, at) {
-  if (dataUrl) {
-    CacheStorage.setItem(CUSTOM_CHIME_KEY, dataUrl);
-    CacheStorage.setItem(CUSTOM_CHIME_AT_KEY, at || new Date().toISOString());
-  } else {
-    CacheStorage.removeItem(CUSTOM_CHIME_KEY);
-    CacheStorage.removeItem(CUSTOM_CHIME_AT_KEY);
-  }
-  setCustomChime(dataUrl);
+   writes here first and talks to the server afterwards. Bytes are written only
+   when they changed, and dropped for any sound that left the list. */
+function storeCustomChimes(list) {
+  list = list || [];
+  const keep = new Set(list.map((s) => s.id));
+  readChimeIndex().forEach((s) => {
+    if (!keep.has(s.id)) CacheStorage.removeItem(customChimeBytesKey(s.id));
+  });
+  list.forEach((s) => {
+    const k = customChimeBytesKey(s.id);
+    if (s.dataUrl && CacheStorage.getItem(k) !== s.dataUrl) CacheStorage.setItem(k, s.dataUrl);
+  });
+  const index = list.map(({ id, name, source, updatedAt, synced }) => ({
+    id,
+    name,
+    source: source || null,
+    updatedAt,
+    synced: !!synced,
+  }));
+  if (index.length) CacheStorage.setItem(CUSTOM_CHIMES_KEY, JSON.stringify(index));
+  else CacheStorage.removeItem(CUSTOM_CHIMES_KEY);
+  setCustomChimes(list);
 }
 
-/* The account's copy, so the sound follows the user to their next device.
-   Throws if it doesn't land; this device keeps playing its own copy either way,
-   so the caller's job is to say what hasn't happened, not to undo anything. */
-async function syncCustomChimeUp(dataUrl) {
-  const res = dataUrl
-    ? await api('/api/notifications/custom-sound', {
-        method: 'PUT',
-        body: JSON.stringify({ dataUrl }),
-      })
-    : await api('/api/notifications/custom-sound', { method: 'DELETE' });
-  if (res && res.updatedAt) CacheStorage.setItem(CUSTOM_CHIME_AT_KEY, res.updatedAt);
+/* The server takes the client's id, so a retried upload replaces rather than
+   filling a second slot. */
+function newSoundId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const x = Array.from(b, (n) => n.toString(16).padStart(2, '0')).join('');
+  return [x.slice(0, 8), x.slice(8, 12), x.slice(12, 16), x.slice(16, 20), x.slice(20)].join('-');
+}
+
+/* The account's copy of one sound. Throws if it doesn't land; this device keeps
+   playing its own copy either way, so the caller's job is to say what hasn't
+   happened, not to undo anything. On success only the index is rewritten. */
+async function uploadCustomChime(sound) {
+  const res = await api('/api/notifications/custom-sounds/' + sound.id, {
+    method: 'PUT',
+    body: JSON.stringify({ name: sound.name, source: sound.source, dataUrl: sound.dataUrl }),
+  });
+  storeCustomChimes(
+    readCustomChimes().map((s) =>
+      s.id === sound.id
+        ? Object.assign({}, s, { synced: true, updatedAt: (res && res.updatedAt) || s.updatedAt })
+        : s
+    )
+  );
 }
 
 /* Once per app load, not once per syncUserSession: that runs on every profile
-   save and password change too, and re-fetching a few hundred kB of audio each
-   time a display name changes is a lot of bandwidth for a file that can only
-   have changed on another device. */
+   save and password change too, and re-checking the sounds each time a display
+   name changes is traffic for files that can only have changed on another device. */
 let customChimePulled = false;
 
-/* On login: take the account's sound if this device has none, or has an older
-   one than another device uploaded. Silent on failure — a device with a local
-   copy keeps playing it, and one without falls back to the default chime,
+/* On login: the account's list is the truth for every sound the server has
+   seen, so one deleted on another device goes here too. The list carries no
+   bytes; only the sounds this device lacks (or holds an older copy of) are
+   fetched, all at once. A sound that never reached the server is uploaded now
+   instead of dropped. Silent on failure — a device keeps playing what it has,
    which is exactly what happened before any of this synced. */
 async function pullCustomChime() {
   if (customChimePulled) return;
   customChimePulled = true;
+  await customChimesLoaded;
+  if (!state.user) return; // signed out while the cache loaded
   try {
-    const res = await api('/api/notifications/custom-sound');
-    // 204 → null: the account has never had one. Not an error, just the
-    // ordinary state of most users.
-    if (!res || !res.dataUrl) return;
-    const mine = Date.parse(CacheStorage.getItem(CUSTOM_CHIME_AT_KEY) || '');
-    const theirs = Date.parse(res.updatedAt);
-    // Unparseable on either side falls through to taking the server's copy: a
-    // device with no timestamp is one that has never synced.
-    if (Number.isFinite(mine) && Number.isFinite(theirs) && mine >= theirs) return;
-    storeCustomChime(res.dataUrl, res.updatedAt);
-    // The "Yours" option in Settings only exists once a file is stored, so the
-    // picker has to be repainted now that one is.
-    render();
+    const remote = (await api('/api/notifications/custom-sounds')) || [];
+    const local = readCustomChimes();
+    const byId = new Map(local.map((s) => [s.id, s]));
+    const next = await Promise.all(
+      remote.map(async (r) => {
+        const mine = byId.get(r.id);
+        if (mine && Date.parse(mine.updatedAt) >= Date.parse(r.updatedAt)) {
+          return Object.assign({}, mine, { name: r.name, source: r.source || mine.source, synced: true });
+        }
+        const full = await api('/api/notifications/custom-sounds/' + r.id).catch(() => null);
+        if (full && full.dataUrl) {
+          return {
+            id: r.id,
+            name: full.name,
+            source: full.source || null,
+            dataUrl: full.dataUrl,
+            updatedAt: full.updatedAt,
+            synced: true,
+          };
+        }
+        // Couldn't fetch it this time: keep an older copy rather than lose it.
+        return mine ? Object.assign({}, mine, { synced: true }) : null;
+      })
+    );
+    const have = next.filter(Boolean);
+    const unsent = local.filter((s) => !s.synced && !remote.some((r) => r.id === s.id));
+    const merged = have.concat(unsent).slice(0, CUSTOM_MAX_COUNT);
+    const sig = (list) => list.map((s) => s.id + '@' + s.updatedAt + ':' + s.name).join('|');
+    if (sig(merged) !== sig(local)) {
+      storeCustomChimes(merged);
+      // The pickers list them, so repaint — only when something actually changed.
+      render();
+    }
+    for (const s of unsent.slice(0, Math.max(0, CUSTOM_MAX_COUNT - have.length))) {
+      await uploadCustomChime(s).catch(() => {});
+    }
   } catch (_) {
-    /* offline, or signed out mid-flight — the local copy, if any, still plays */
+    /* offline, or signed out mid-flight — the local copies, if any, still play */
   }
 }
 
@@ -991,9 +1269,11 @@ function hydrateUiPrefs() {
     // so it has to happen before the calendar or Home paints their dots.
     setWorkWeek(p.workWeek);
     setRoutine(p.routine);
+    setDefaultLead(p.reminderLead);
     // Same reason as the working week: every time on the page is formatted
     // through gb-kit, so the preference has to land before anything paints.
     setTimeFormat(p.timeFormat);
+    setLocale(localeFromUser(state.user));
     // The one moment the device gets a vote. Nothing stored yet (a new account,
     // first load) or the old 'auto' — read the phone's own habit and write it
     // to ui_prefs, so from the second load on this is the server's answer and
@@ -1054,6 +1334,47 @@ function effectiveStreak(habit) {
   return Number(habit.streak) || 0;
 }
 
+/* The server's `dueToday` (HabitService.isDue; home-order.js habitDue): paused
+   habits and weekly ones whose quota is already met are not owed today. */
+function habitDueToday(habit) {
+  return habitDue(habit) || !!habit.doneToday;
+}
+
+/* "day" for a daily habit, "week" for weekly / N-per-week: their streaks count
+   weeks (HabitService.currentWeeklyRun), and "3-day streak" on one was wrong. */
+function streakUnit(habit) {
+  return (habit.cadence || 'daily') === 'daily' ? 'day' : 'week';
+}
+
+/* "Break a habit" (HabitKind.quit): clean by default, the user logs a slip.
+   On one, `doneToday` means clean today and `streak` the days since a slip. */
+function isQuitHabit(habit) {
+  return !!habit && habit.kind === 'quit';
+}
+
+/* The row's sub-line for a quit habit: "Breaking · 🛡 5 days clean". */
+function quitHabitLabel(habit) {
+  if (habit.active === false) return 'Paused · breaking';
+  if (!habit.doneToday) return 'Breaking · slipped today';
+  const n = Number(habit.streak) || 0;
+  return 'Breaking · 🛡 ' + n + ' day' + (n === 1 ? '' : 's') + ' clean';
+}
+
+/* What the row says about how often: "daily", "weekly", "3× a week". */
+function cadenceLabel(habit) {
+  const c = habit.cadence || 'daily';
+  if (c === 'custom') return (habit.targetPerWeek || 1) + '× a week';
+  return c;
+}
+
+/* " · 2/3 this week" for a weekly / N-a-week habit; nothing for a daily one. */
+function weekProgressLabel(habit) {
+  const c = habit.cadence || 'daily';
+  if (c === 'daily') return '';
+  const need = c === 'weekly' ? 1 : habit.targetPerWeek || 1;
+  return ' · ' + Math.min(habit.doneThisWeek || 0, need) + '/' + need + ' this week';
+}
+
 /* Inputs the achievement engine reads. Shared by the Achievements screen and
    the first-unlock detector so both see identical numbers. */
 function achievementProps() {
@@ -1065,6 +1386,8 @@ function achievementProps() {
     trends: state.trends,
     food: state.food,
     water: state.water,
+    // Earned badges stay unlocked even after their days slide out of the 60-day window.
+    seen: (state.user && state.user.uiPrefs && state.user.uiPrefs.achSeen) || [],
   };
 }
 
@@ -1537,6 +1860,11 @@ function purgeUserCache() {
   CacheStorage.removeWhere(
     (k) => k !== keep && (k.endsWith('.' + id) || k.includes('.' + id + '.'))
   );
+  // The offline outbox (gb.outbox.<uid>) goes too — the pattern above already
+  // matches it; this says so. Unlike the money queue it is not kept: a task tick
+  // replayed into a later session is worth less than a clean sign-out.
+  outbox.clear();
+  outboxIds.clear();
 }
 
 function clearSession() {
@@ -1547,10 +1875,13 @@ function clearSession() {
   // never per user, so on a shared device the next person heard the last
   // person's file. Safe to drop now that the account keeps a copy: signing back
   // in pulls it straight down again.
-  storeCustomChime(null);
+  storeCustomChimes([]);
   customChimePulled = false;
   // The notes composer keeps an unsaved draft in module memory; it is not the next account's.
   import('./notes.js').then((m) => m.clearNoteDraft()).catch(() => {});
+  // The Notes list's offline copy (notes-core.js offlineKey) is that account's
+  // notes in plain text on this device: it leaves with the session.
+  CacheStorage.removeWhere((k) => k.startsWith('gb.notesOffline.')).catch(() => {});
 }
 
 /* The ONLY way a signed-in user reaches `state` — sign-in, OTP verify, password
@@ -1597,15 +1928,30 @@ function sameZone(stored, device) {
     return stored === device;
   }
 }
-function offerDeviceTimezone() {
-  let tz = '';
+function deviceZone() {
   try {
-    tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || '';
   } catch (_) {
-    /* no Intl zone: nothing to compare */
+    return ''; // no Intl zone: nothing to compare
   }
+}
+/* The one timezone write, shared by the offer below and first-run setup. */
+async function saveDeviceTimezone(tz) {
+  const me = await api('/api/auth/timezone', {
+    method: 'PUT',
+    body: JSON.stringify({ timezone: tz }),
+  });
+  syncUserSession(me || {});
+  toastSuccess('Timezone set to ' + tz + '.');
+  loadData();
+}
+function offerDeviceTimezone() {
+  const tz = deviceZone();
   const u = state.user;
   if (!tz || !u || !u.id || !u.timezone || sameZone(u.timezone, tz)) return;
+  // Not decided yet whether this account gets first-run setup, which asks the
+  // same question itself. maybeStartFirstRun() re-arms this when it says no.
+  if (!(u.uiPrefs && u.uiPrefs.setupDone)) return;
   if ((u.uiPrefs && u.uiPrefs.tzAsked) === tz) return;
   saveUiPrefs({ tzAsked: tz });
   openModal({
@@ -1619,16 +1965,239 @@ function offerDeviceTimezone() {
     body: h('div', { class: 'gb-note-hint' }, 'You can change it later in Settings, Profile.'),
     primary: 'Switch',
     dismiss: 'Keep ' + u.timezone,
-    onPrimary: async () => {
-      const me = await api('/api/auth/timezone', {
-        method: 'PUT',
-        body: JSON.stringify({ timezone: tz }),
-      });
-      syncUserSession(me || {});
-      toastSuccess('Timezone set to ' + tz + '.');
-      loadData();
+    onPrimary: () => saveDeviceTimezone(tz),
+  });
+}
+
+/* Ask for notification permission and say how it went. Settings › Alerts and
+   first-run setup share it. Resolves true only when push is on. */
+async function enablePushFlow(okMessage) {
+  const native = localNotificationsAvailable();
+  const r = await enablePush(api);
+  if (r === 'ok') {
+    // Nothing was queued while permission was refused; arm it all now.
+    reSyncDeviceAlarms();
+    toastSuccess(okMessage || 'Notifications on.');
+    return true;
+  }
+  if (r === 'unconfigured') {
+    pushToast('Push isn’t set up on the server yet (no VAPID keys).', 'error', 4200);
+  } else if (r === 'denied') {
+    pushToast(
+      native
+        ? 'Notifications are blocked — turn them on in Settings › Apps › Growth Buddy.'
+        : 'Notifications are blocked — enable them in your browser settings.',
+      'error',
+      4200
+    );
+  } else if (r === 'unsupported') {
+    pushToast('This browser doesn’t support push notifications.', 'error', 4200);
+  } else {
+    pushToast('Could not enable push. Please try again.', 'error', 3600);
+  }
+  return false;
+}
+
+/* ---- First-run setup ----
+   Once per account, after a NEW account's first data load: timezone,
+   notifications, features — three skippable steps in one sheet. Decided in
+   loadData() once wave 1 lands, because "new" is read from real data: an
+   account that already has tasks, habits or reminders, or dismissed the Home
+   checklist, is marked `ui_prefs.setupDone` silently and never sees it. Any
+   way out (Done, Skip on the last step, Escape, the backdrop) sets setupDone,
+   so it can't come back on another device either. While it is undecided,
+   offerDeviceTimezone() stands down — the first step asks the same thing. */
+let firstRunOpen = false;
+function maybeStartFirstRun() {
+  const u = state.user;
+  if (!u || !u.id || firstRunOpen) return;
+  const p = u.uiPrefs || {};
+  if (p.setupDone) return;
+  const hasData =
+    (state.tasks || []).length > 0 ||
+    (state.habits || []).length > 0 ||
+    (state.reminders || []).length > 0 ||
+    !!p.onboardingDone;
+  if (hasData) {
+    saveUiPrefs({ setupDone: true });
+    syncDeviceTimezone(); // the offer stood down while this was undecided
+    return;
+  }
+  // A beat after first paint, like the timezone offer, so it lands on Home
+  // rather than on the loading card.
+  setTimeout(openFirstRunSetup, 600);
+}
+
+function openFirstRunSetup() {
+  if (firstRunOpen || !state.user || (state.user.uiPrefs || {}).setupDone) return;
+  firstRunOpen = true;
+  const tz = deviceZone();
+  const { sheet, close } = openOverlay({
+    label: 'Set up Growth Buddy',
+    className: 'gb-setup-modal',
+    onClose: () => {
+      firstRunOpen = false;
+      // Whatever step it was left on, it has been seen: never again.
+      saveUiPrefs(tz ? { setupDone: true, tzAsked: tz } : { setupDone: true });
+      syncDeviceTimezone();
     },
   });
+
+  const steps = [timezoneStep, notifyStep, featuresStep];
+  let at = 0;
+  const dots = h(
+    'div',
+    { class: 'gb-setup-dots', 'aria-hidden': 'true' },
+    ...steps.map(() => h('span', { class: 'gb-setup-dot' }))
+  );
+  const stepLabel = h('div', { class: 'gb-setup-count' });
+  const titleEl = h('div', { class: 'gb-modal-title' });
+  const subEl = h('div', { class: 'gb-modal-sub' });
+  const bodyEl = h('div', { class: 'gb-modal-body' });
+  const primaryBtn = h('button', {
+    type: 'button',
+    class: 'gb-btn gb-btn--primary',
+    style: { width: '100%', marginTop: '14px' },
+  });
+  const skipBtn = h('button', { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel' });
+
+  sheet.append(
+    h(
+      'div',
+      { class: 'gb-modal-head' },
+      h('div', { class: 'gb-setup-top' }, stepLabel, dots),
+      titleEl,
+      subEl
+    ),
+    bodyEl,
+    primaryBtn,
+    skipBtn
+  );
+
+  function next() {
+    if (at >= steps.length - 1) {
+      toastSuccess('You’re all set.');
+      close();
+      return;
+    }
+    at += 1;
+    show();
+  }
+
+  function show() {
+    const s = steps[at]();
+    stepLabel.textContent = 'Step ' + (at + 1) + ' of ' + steps.length;
+    [...dots.children].forEach((d, i) => d.classList.toggle('is-on', i <= at));
+    titleEl.textContent = s.title;
+    subEl.textContent = s.sub;
+    bodyEl.replaceChildren(s.body);
+    primaryBtn.textContent = s.primary;
+    primaryBtn.disabled = false;
+    primaryBtn.onclick = async () => {
+      primaryBtn.disabled = true;
+      try {
+        if (s.onPrimary) await s.onPrimary();
+        next();
+      } catch (err) {
+        primaryBtn.disabled = false;
+        shakeRefusal(sheet);
+        toastError(err, 'Something went wrong.');
+      }
+    };
+    skipBtn.textContent = s.skip;
+    skipBtn.onclick = next;
+    refreshIcons();
+    titleEl.setAttribute('tabindex', '-1');
+    titleEl.focus({ preventScroll: true });
+  }
+
+  function badge(icon) {
+    return h('div', { class: 'gb-setup-badge' }, Icon(icon, { size: 22, sw: 2.2 }));
+  }
+
+  function timezoneStep() {
+    const saved = (state.user && state.user.timezone) || '';
+    const differs = !!tz && !!saved && !sameZone(saved, tz);
+    const zoneRow = (label, value) =>
+      h(
+        'div',
+        { class: 'gb-setup-zone' },
+        h('span', { class: 'gb-setup-zone-lbl' }, label),
+        h('span', { class: 'gb-setup-zone-val' }, value || 'Not set')
+      );
+    return {
+      title: 'Your timezone',
+      sub: 'Days, streaks and reminder times follow it.',
+      body: h(
+        'div',
+        {},
+        badge('clock'),
+        zoneRow('This device', tz),
+        zoneRow('Your account', saved),
+        h(
+          'div',
+          { class: 'gb-field-hint' },
+          differs
+            ? 'They differ. Use this device’s zone unless you want to keep home time.'
+            : 'They match. You can change it later in Settings › Profile.'
+        )
+      ),
+      primary: differs ? 'Use ' + tz : 'Looks right',
+      onPrimary: differs ? () => saveDeviceTimezone(tz) : null,
+      skip: differs ? 'Keep ' + saved : 'Skip',
+    };
+  }
+
+  function notifyStep() {
+    const supported = pushSupported();
+    const status = h(
+      'div',
+      { class: 'gb-field-hint' },
+      supported ? '' : 'This browser can’t show notifications. The app on your phone can.'
+    );
+    const body = h(
+      'div',
+      {},
+      badge('bell'),
+      h(
+        'p',
+        { class: 'gb-setup-text' },
+        'Reminders, habit nudges and messages from your circle arrive as notifications — even with the app closed.'
+      ),
+      status
+    );
+    if (supported) {
+      pushSubscribed().then((on) => {
+        if (on && at === 1) {
+          status.textContent = 'Notifications are already on for this device.';
+          primaryBtn.textContent = 'Next';
+          primaryBtn.onclick = next;
+        }
+      });
+    }
+    return {
+      title: 'Stay in the loop',
+      sub: 'You choose what rings in Settings › Alerts.',
+      body,
+      primary: supported ? 'Turn on notifications' : 'Next',
+      // A refusal still moves on: the toast says why, and Settings can retry.
+      onPrimary: supported ? () => enablePushFlow('Notifications on.') : null,
+      skip: 'Not now',
+    };
+  }
+
+  function featuresStep() {
+    return {
+      title: 'Pick what you’ll use',
+      sub: 'Turn off anything you don’t need. It all comes back in Settings › Layout.',
+      body: h('div', { class: 'gb-setup-features' }, ...FEATURE_DEFS.map(featureSwitchRow)),
+      primary: 'Done',
+      onPrimary: null,
+      skip: 'Skip',
+    };
+  }
+
+  show();
 }
 
 // In-flight dedup for idempotent GETs: if the same GET is already running,
@@ -1712,23 +2281,78 @@ async function apiFetch(path, options) {
   }
   if (!res.ok) {
     let msg = statusMessage(res.status);
+    let code;
     try {
       const err = await res.json();
       msg = err.message || msg;
+      code = err.code;
     } catch (_) {
       // ignored
     }
     const err = new Error(msg);
     err.status = res.status;
+    // ApiError.code, e.g. 'idempotency_in_progress' (a replay racing its first try).
+    if (code) err.code = code;
     throw err;
   }
   if (typeof opts.onResponse === 'function') {
-    opts.onResponse(res);
+    const read = opts.onResponse(res);
+    // raw: the caller reads the body itself (a file, not JSON), so wait for it.
+    if (opts.raw) await read;
   }
-  if (res.status === 204) {
+  if (opts.raw || res.status === 204) {
     return null;
   }
   return res.json();
+}
+
+/* POST that answers text/event-stream (Buddy's streamed reply). Resolves to the
+   open Response for the caller to read; EventSource can't POST or carry the
+   bearer header, hence fetch. Throws an Error with `fallback: true` when the
+   plain endpoint should be used instead — no response at all, an older server
+   (404/405), or a body that isn't an event stream (a proxy's page) — and a
+   normal error, with the server's message, for anything else: a 429 sent again
+   as a plain POST would only be refused twice. */
+async function apiStream(path, body, signal) {
+  const headers = {
+    Accept: 'text/event-stream, application/json',
+    'Content-Type': 'application/json',
+  };
+  const token = loadToken();
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  const device = deviceLabelHeader();
+  if (device) headers['X-GB-Device'] = device;
+  const fallback = (msg) => Object.assign(new Error(msg), { fallback: true });
+  let res;
+  try {
+    res = await fetch(API_BASE + path, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (err) {
+    if (err && err.name === 'AbortError') throw err;
+    throw fallback(NO_CONNECTION);
+  }
+  if (res.status === 401) {
+    handleAuthExpired();
+    throw new Error(SESSION_EXPIRED);
+  }
+  if (res.status === 404 || res.status === 405) throw fallback('Streaming not supported');
+  if (!res.ok) {
+    let msg = statusMessage(res.status);
+    try {
+      msg = (await res.json()).message || msg;
+    } catch (_) {
+      // ignored
+    }
+    throw Object.assign(new Error(msg), { status: res.status });
+  }
+  if (!/text\/event-stream/i.test(res.headers.get('Content-Type') || '') || !res.body) {
+    throw fallback('Not an event stream');
+  }
+  return res;
 }
 
 function handleAuthExpired() {
@@ -1747,6 +2371,7 @@ function handleAuthExpired() {
   state.waterUsualHours = null;
   loadedFor = null; // the next sign-in is a first load, not a refresh
   insightHistoryAt = 0;
+  insightReq = null; // a fetch still in flight belongs to the old account: drop it
   state.money = emptyMoney();
   state.streakFreeze = emptyStreakFreeze();
   state.trends = emptyTrends();
@@ -1755,7 +2380,8 @@ function handleAuthExpired() {
   state.calendarFoodByDate = {};
   state.calendarFoodErrorByDate = {};
   state.calendarFoodLoadingFor = '';
-  state.notifications = [];
+  setNotifFirstPage([]); // also drops the last account's unread-past-the-page count
+  notifFilter = 'all';
   state.quote = null;
   state.score = 0;
   state.authMode = 'signin';
@@ -1814,6 +2440,7 @@ function mapTask(task) {
     doneAt: task.doneAt || null,
     completionCount: task.completionCount || 0,
     pushCount: task.pushCount || 0,
+    goalId: task.goalId || null,
   };
 }
 
@@ -1924,14 +2551,19 @@ function repaintCalendarSideNow(forAdd) {
     onAddReminder: addReminder,
     onDeleteReminder: deleteReminder,
     onEditReminder: editReminder,
+    onCancelSnooze: cancelReminderSnooze,
+    onToggleDone: toggleReminderDone,
     onSelectDate: selectDate,
     onSaveRoutine: saveRoutine,
     whatsappEnabled: !!(state.user && state.user.whatsappEnabled),
   });
   // While the day's food is loading, the panel keeps the height it had: the
   // one-line "Loading" stand-in collapsed it and the answer grew it back.
-  if (state.calendarFoodLoadingFor === state.selectedDate) {
-    newSide.style.minHeight = oldSide.offsetHeight + 'px';
+  // On the day log, not the panel: .gb-cal-side is display: contents, no box.
+  const oldLog = oldSide.querySelector('.gb-cal-daylog');
+  const newLog = newSide.querySelector('.gb-cal-daylog');
+  if (state.calendarFoodLoadingFor === state.selectedDate && oldLog && newLog) {
+    newLog.style.minHeight = oldLog.offsetHeight + 'px';
   }
   oldSide.replaceWith(newSide);
   refreshIcons();
@@ -2055,8 +2687,14 @@ async function loadData() {
     state.habits = habits;
     reconcileStreakFreeze();
     state.score = todayScore && typeof todayScore.score === 'number' ? todayScore.score : 0;
-    state.water = water;
+    restoreWaterQueue();
+    state.water = withPendingWater(water);
+    flushWaterQueue();
     state.reminders = reminders;
+    // Offline writes the server hasn't seen yet, then send them. Not awaited:
+    // first paint doesn't wait on a replay; the flush refetches what it touched.
+    overlayOutbox();
+    flushOutbox();
     reSyncDeviceAlarms();
     loadWaterUsualHours();
   } catch (err) {
@@ -2075,6 +2713,10 @@ async function loadData() {
   // still on a self-loading screen, which painted at the top of this function:
   // re-rendering would rebuild its subtree and restart its own fetch.
   if (!SELF_LOADING_SCREENS.has(state.screen)) render();
+  // The 'home painted' RUM mark (scripts/vitals.js): the first Home with data.
+  if (!refresh && state.screen === 'home') markHomePainted();
+  // Needs wave 1: "is this a new account?" is read from tasks/habits/reminders.
+  if (!refresh) maybeStartFirstRun();
   loadSecondaryData();
 }
 
@@ -2117,7 +2759,7 @@ async function loadSecondaryData() {
     const [goals, notifications, food, money, dailyLogs, photoHistory, weekly] =
       await Promise.all([
         api('/api/goals').catch(() => null),
-        api('/api/notifications').catch(() => null),
+        api(notifPageUrl('all')).catch(() => null),
         api('/api/food').catch(() => null),
         api('/api/money', { onResponse: rememberMoneyVersion }).catch((err) => {
           console.error('Money API failed - data will NOT persist!', err);
@@ -2147,7 +2789,10 @@ async function loadSecondaryData() {
       state.goalProgress = gp;
       persistGoalProgress();
     }
-    if (notifications) state.notifications = notifications;
+    if (notifications) {
+      setNotifFirstPage(notifications);
+      syncNotifBeyond();
+    }
     if (food) {
       state.food = food;
       cacheFoodSummary(food);
@@ -2231,6 +2876,19 @@ async function connectWebSocket() {
       webSocketFactory: () => new SockJS(API_BASE + '/ws'),
       connectHeaders: { Authorization: 'Bearer ' + token },
       reconnectDelay: 5000,
+      // Re-read the token before EVERY (re)connect. It used to be captured once
+      // here, so after the session rotated (re-login, password change) the
+      // socket reconnected every 5 s with a dead token, forever. No token at
+      // all means signed out: stop instead of retrying.
+      beforeConnect: (client) => {
+        const current = loadToken();
+        if (!current || !state.user) {
+          if (stomp === client) stomp = null;
+          client.deactivate();
+          return;
+        }
+        client.connectHeaders = { Authorization: 'Bearer ' + current };
+      },
       onConnect: () => {
         // Catch up on whatever arrived while the socket was down. It reconnects
         // on its own, but a reconnect only resumes the live feed — everything
@@ -2247,13 +2905,42 @@ async function connectWebSocket() {
         stomp.subscribe('/user/queue/notifications', (frame) => {
           try {
             const n = JSON.parse(frame.body);
+            // Not a notification: "your family's data changed, refetch" (FamilyEvents
+            // on the server). No bell card, no toast, no chime — the Family screen
+            // listens and refreshes itself if it is open.
+            if (n.kind === 'family_changed') {
+              window.dispatchEvent(new CustomEvent('gb:family-changed', { detail: n }));
+              return;
+            }
+            // Also not a notification: a line for a mentorship thread
+            // (MentorshipEvents). An open chat sheet appends it; the bell card
+            // for it arrives separately as an ordinary 'system' push.
+            if (n.kind === 'mentorship_message') {
+              window.dispatchEvent(new CustomEvent('gb:mentorship-message', { detail: n.message }));
+              return;
+            }
+            // An invite answered, sent or ended changes the Circle screen's lists —
+            // it refreshes itself if it is open (circle.js listens).
+            if (n.kind && (n.kind.indexOf('mentorship_') === 0 || n.kind === 'system')) {
+              window.dispatchEvent(new CustomEvent('gb:circle-changed', { detail: n }));
+            }
             state.notifications = [n, ...state.notifications.filter((x) => x.id !== n.id)];
             // A card in a closed dropdown is not an alert, and a reminder that
             // arrives while you're using the app should still say something. The
             // toast is the "pop up"; repaintOverlays keeps the screen underneath
             // (and whatever you were doing on it) alive.
             repaintOverlays();
-            pushToast(n.title, n.kind === 'reminder' || n.kind === 'habit_reminder' ? 'info' : 'success', 6000);
+            // A reminder that can ring again offers to, right on the toast — and
+            // stays a little longer, since it now asks for a decision.
+            const snoozable = snoozableReminder(n);
+            pushToast(
+              n.title,
+              n.kind === 'reminder' || n.kind === 'habit_reminder' ? 'info' : 'success',
+              snoozable ? 10000 : 6000,
+              snoozable
+                ? { label: 'Snooze ' + minutesLabel(snoozeMinutes()), run: () => snoozeReminder(snoozable.id, null, n.id) }
+                : null
+            );
             playChime(notifySoundFor(n));
           } catch (e) {
             console.warn('Bad notification frame', e);
@@ -2312,26 +2999,57 @@ function toggleSignature() {
    settle opposite to the server, and a failed first call's rollback wiped the
    second tap too. A tap that's ignored here leaves Check's own guess un-rendered,
    and Check takes that back itself. */
-const togglesInFlight = new Set();
+const togglesInFlight = inFlightKeys();
+
+/* The tick that finished a goal's last open linked task offers to close the
+   goal: the same one-button toast a reminder's Snooze uses. On Goals the card's
+   own "Everything here is done" line says it as well. */
+function suggestGoalDone(taskId, tasksBefore) {
+  const goals = (state.goals || []).flatMap((sec) => sec.goals || []);
+  const goal = goalFinishedBy(taskId, tasksBefore, state.tasks, goals);
+  if (!goal) return;
+  pushToast('That was the last task for “' + goal.title + '”.', 'info', 6000, {
+    label: 'Mark goal done',
+    run: () => {
+      const g = (state.goals || []).flatMap((sec) => sec.goals || []).find((x) => x.id === goal.id);
+      if (g && !g.completed) toggleGoal(goal.id);
+    },
+  });
+}
 
 async function toggleTask(id) {
   if (togglesInFlight.has(id)) return;
   togglesInFlight.add(id);
   const before = { score: state.score };
   let saved = false; // past this, the server has the tick: a failed score refresh mustn't undo it
+  const tasksBefore = state.tasks;
   state.tasks = state.tasks.map((t) => (t.id === id ? { ...t, done: !t.done } : t));
   state.score = optimisticScore();
   render();
   const nowDone = state.tasks.some((t) => t.id === id && t.done);
+  suggestGoalDone(id, tasksBefore);
   // Only on the way to done. Un-ticking something is a correction, not an
   // achievement, and nodding at it would make the nod meaningless.
   if (nowDone) buddyReact('yes');
+  // Offline (or a task whose create is still queued): the tick stays, the PATCH waits in the outbox.
+  const queueToggle = () =>
+    queueWrite({
+      method: 'PATCH',
+      path: '/api/tasks/' + encodeURIComponent(realId(id)) + '/toggle',
+      kind: 'task.toggle',
+      toggleKey: 'task:' + realId(id),
+      local: { id },
+    });
   try {
-    const updated = await api('/api/tasks/' + encodeURIComponent(id) + '/toggle', {
+    if (isTempId(realId(id))) {
+      queueToggle();
+      return;
+    }
+    const updated = await api('/api/tasks/' + encodeURIComponent(realId(id)) + '/toggle', {
       method: 'PATCH',
     });
     const painted = toggleSignature();
-    state.tasks = state.tasks.map((t) => (t.id === updated.id ? mapTask(updated) : t));
+    state.tasks = state.tasks.map((t) => (t.id === id || t.id === updated.id ? mapTask(updated) : t));
     saved = true;
     const todayScore = await api('/api/score/today');
     state.score = todayScore && typeof todayScore.score === 'number' ? todayScore.score : score();
@@ -2340,6 +3058,10 @@ async function toggleTask(id) {
   } catch (err) {
     if (saved) {
       render();
+      return;
+    }
+    if (networkError(err)) {
+      queueToggle();
       return;
     }
     // Only this row: restoring the whole array undid any other row ticked meanwhile.
@@ -2354,18 +3076,81 @@ async function toggleTask(id) {
 
 /* Same optimistic paint as toggleTask — same three-call round trip. Streak
    numbers are the server's to decide, so only `doneToday` flips locally. */
-/* Ticking a measured habit asks what it measured. Un-ticking never does: the
-   user is saying it didn't happen, so there is no number to take. */
+/* Ticking a measured habit asks what it measured. Tapping one that is already
+   done reopens the same dialog with today's number in it, so a typo can be
+   fixed; un-ticking is the dialog's own button there. A second tap used to
+   un-tick straight away and throw the number out. */
 async function toggleHabit(id) {
   const habit = (state.habits || []).find((x) => x.id === id);
-  if (habit && habit.metric && habit.metric !== 'none' && !habit.doneToday) {
+  if (isQuitHabit(habit)) {
+    if (togglesInFlight.has(id)) return;
+    openSlipDialog(habit);
+    return;
+  }
+  if (habit && habit.metric && habit.metric !== 'none') {
+    if (togglesInFlight.has(id)) return;
     openMeasuredCheckin(habit);
     return;
   }
   return plainToggleHabit(id);
 }
 
+/* A day's note on a check-in (HabitCheckin.note, ≤2000 on the server). */
+function habitNoteInput(value, placeholder) {
+  const el = h('textarea', {
+    class: 'gb-input',
+    rows: '2',
+    maxlength: '2000',
+    placeholder: placeholder || 'How did it go? (optional)',
+    'aria-label': 'Note for the day',
+  });
+  // A textarea's text is its value property, not an attribute.
+  el.value = value || '';
+  return el;
+}
+
+/* A quit habit's tap. Clean today: log a slip, with an optional note on what
+   happened. Slipped: take it back (the note stays editable). Each goes through
+   the dated check-in, `done: false` being the slip — no XP either way; clean
+   days are paid once by the server when the day is over. */
+function openSlipDialog(habit) {
+  const slipped = !habit.doneToday;
+  const note = habitNoteInput(habit.todayNote, 'What happened? Noting it helps spot the pattern.');
+  const save = async (done) => {
+    if (togglesInFlight.has(habit.id)) return;
+    togglesInFlight.add(habit.id);
+    let updated;
+    try {
+      updated = await api('/api/habits/' + encodeURIComponent(habit.id) + '/checkin', {
+        method: 'POST',
+        body: JSON.stringify({ date: accountTodayKey(), done, note: note.value.trim() }),
+      });
+    } finally {
+      togglesInFlight.delete(habit.id);
+    }
+    state.habits = state.habits.map((x) => (x.id === updated.id ? updated : x));
+    if (done) buddyReact('yes');
+    reSyncDeviceAlarms();
+    refreshScoreLater();
+    render();
+  };
+  openModal({
+    title: habit.name,
+    sub: slipped
+      ? 'You logged a slip today. Take it back if it was a mistake.'
+      : (Number(habit.streak) || 0) +
+        ' days clean. Slipped? Log it honestly — the streak restarts tomorrow.',
+    body: h('div', { class: 'gb-form' }, h('div', { class: 'gb-field-label' }, 'Note'), note),
+    primary: slipped ? 'Save note' : 'I slipped',
+    destructive: !slipped,
+    errorMessage: 'Could not save that.',
+    danger: slipped ? { label: 'Undo the slip', onClick: () => save(true) } : null,
+    onPrimary: () => save(false),
+  });
+}
+
 function openMeasuredCheckin(habit) {
+  const editing = !!habit.doneToday;
   const valueInput = h('input', {
     type: 'number',
     class: 'gb-input',
@@ -2374,10 +3159,11 @@ function openMeasuredCheckin(habit) {
     step: habit.metric === 'steps' ? '1' : '0.1',
     placeholder: habit.metric === 'steps' ? 'e.g. 6500' : 'e.g. 5.2',
     autofocus: true,
+    value: editing && habit.todayValue != null ? String(habit.todayValue) : '',
   });
   // The phone already counted them. Fill in only while the box is still empty,
   // so a number the user started typing is never overwritten.
-  if (habit.metric === 'steps') {
+  if (habit.metric === 'steps' && !editing) {
     readTodaySteps().then((n) => {
       if (n != null && valueInput.value === '') valueInput.value = String(n);
     });
@@ -2385,11 +3171,25 @@ function openMeasuredCheckin(habit) {
   // Only where it means something: minutes against a distance give you a speed,
   // minutes against minutes is the same box twice.
   const durationInput =
-    habit.metric === 'km' ? h('input', { type: 'number', class: 'gb-input', min: '1', max: '1440', step: '1', placeholder: 'e.g. 26' }) : null;
+    habit.metric === 'km'
+      ? h('input', {
+          type: 'number',
+          class: 'gb-input',
+          min: '1',
+          max: '1440',
+          step: '1',
+          placeholder: 'e.g. 26',
+          value: editing && habit.todayDurationMin != null ? String(habit.todayDurationMin) : '',
+        })
+      : null;
+  // Today's note rides along (todayNote), so re-saving the number keeps it.
+  const noteInput = habitNoteInput(editing ? habit.todayNote : '');
 
   openModal({
     title: habit.name,
-    sub: 'Log today, or leave it blank — the tick counts either way.',
+    sub: editing
+      ? 'Done today. Change the number, or un-tick it.'
+      : 'Log today, or leave it blank — the tick counts either way.',
     body: h(
       'div',
       { class: 'gb-form' },
@@ -2397,11 +3197,19 @@ function openMeasuredCheckin(habit) {
       valueInput,
       ...(durationInput
         ? [h('div', { class: 'gb-field-label' }, 'Minutes (optional)'), durationInput]
-        : [])
+        : []),
+      h('div', { class: 'gb-field-label' }, 'Note (optional)'),
+      noteInput
     ),
-    primary: 'Mark done',
+    primary: editing ? 'Save' : 'Mark done',
     errorMessage: 'Could not save that check-in.',
+    // Closes first, then un-ticks through the ordinary toggle (optimistic paint,
+    // score refresh). Un-ticking clears the day's number on the server.
+    danger: editing ? { label: 'Un-tick today', onClick: () => plainToggleHabit(habit.id) } : null,
     onPrimary: async () => {
+      // One save at a time per habit, shared with the plain toggle: Enter plus a
+      // click, or a tick on Home while this was saving, sent two check-ins.
+      if (togglesInFlight.has(habit.id)) return;
       const raw = valueInput.value.trim();
       const value = raw === '' ? null : Number(raw);
       if (value != null && (!Number.isFinite(value) || value < 0)) {
@@ -2413,23 +3221,37 @@ function openMeasuredCheckin(habit) {
         durationInput.focus();
         throw new Error('Minutes must be between 1 and 1440.');
       }
-      const updated = await api('/api/habits/' + encodeURIComponent(habit.id) + '/checkin', {
-        method: 'POST',
-        body: JSON.stringify({ done: true, value, durationMin: mins }),
-      });
+      togglesInFlight.add(habit.id);
+      let updated;
+      try {
+        updated = await api('/api/habits/' + encodeURIComponent(habit.id) + '/checkin', {
+          method: 'POST',
+          body: JSON.stringify({
+            done: true,
+            value,
+            durationMin: mins,
+            note: noteInput.value.trim(),
+          }),
+        });
+      } finally {
+        togglesInFlight.delete(habit.id);
+      }
       state.habits = state.habits.map((x) => (x.id === updated.id ? updated : x));
       reconcileStreakFreeze(updated);
-      buddyReact('yes');
-      await refreshScore();
-      await refreshCurrentUser();
+      if (!editing) buddyReact('yes');
       reSyncDeviceAlarms();
+      // The dialog closes on the check-in; score and XP land after it, together.
+      // Awaiting them in series held it open for two more round trips.
+      const before = state.score;
+      Promise.all([refreshScore(), refreshCurrentUser()]).then(() => {
+        if (state.score !== before || !editing) render();
+      });
     },
   });
 }
 
 async function plainToggleHabit(id) {
-  if (togglesInFlight.has(id)) return;
-  togglesInFlight.add(id);
+  if (!togglesInFlight.claim(id)) return;
   const before = { score: state.score };
   let saved = false;
   state.habits = state.habits.map((h) => (h.id === id ? { ...h, doneToday: !h.doneToday } : h));
@@ -2452,6 +3274,23 @@ async function plainToggleHabit(id) {
   } catch (err) {
     if (saved) {
       render();
+      reSyncDeviceAlarms();
+      return;
+    }
+    if (networkError(err)) {
+      // Queued as a dated check-in, not /toggle: the server's "today" when this
+      // replays may be tomorrow, and a toggle would tick the wrong day. Two taps
+      // on the same day cancel in the outbox (toggleKey).
+      const day = todayKeyNow();
+      const done = state.habits.some((h) => h.id === id && h.doneToday);
+      queueWrite({
+        method: 'POST',
+        path: '/api/habits/' + encodeURIComponent(id) + '/checkin',
+        body: { date: day, done },
+        kind: 'habit.checkin',
+        toggleKey: 'habit:' + id + ':' + day,
+        local: { id, day, done },
+      });
       reSyncDeviceAlarms();
       return;
     }
@@ -2494,10 +3333,21 @@ async function refreshCurrentUser() {
 }
 
 async function createTask(body) {
-  const created = await api('/api/tasks', {
-    method: 'POST',
-    body: JSON.stringify(body),
-  });
+  let created;
+  try {
+    created = await api('/api/tasks', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    if (!networkError(err)) throw err;
+    // Offline: the row goes in now under a temp id; the POST waits in the outbox.
+    const local = mapTask({ ...body, id: tempId(), done: false, paused: false });
+    state.tasks = [local, ...state.tasks];
+    queueWrite({ method: 'POST', path: '/api/tasks', body, kind: 'task.create', tempId: local.id, local });
+    landSoon('[data-task-id="' + local.id + '"]');
+    return;
+  }
   state.tasks = [mapTask(created), ...state.tasks];
   landSoon('[data-task-id="' + created.id + '"]');
   refreshScoreLater();
@@ -2548,7 +3398,16 @@ function pauseTask(task) {
 }
 
 async function deleteTask(id) {
-  await api('/api/tasks/' + encodeURIComponent(id), { method: 'DELETE' });
+  const path = '/api/tasks/' + encodeURIComponent(realId(id));
+  const queue = () => queueWrite({ method: 'DELETE', path, kind: 'task.delete', local: { id } });
+  if (isTempId(realId(id))) queue(); // its create is still queued: both are cancelled
+  else
+    try {
+      await api(path, { method: 'DELETE' });
+    } catch (err) {
+      if (!networkError(err)) throw err;
+      queue();
+    }
   removeSoon('[data-task-id="' + id + '"]', () => {
     state.tasks = state.tasks.filter((t) => t.id !== id);
   });
@@ -2560,9 +3419,62 @@ async function createHabit(body) {
     method: 'POST',
     body: JSON.stringify(body),
   });
-  state.habits = [created, ...state.habits];
+  // At the bottom, where the server files it (sort_order = last + 1): put on
+  // top here, it jumped down on the next load.
+  state.habits = [...state.habits, created];
   refreshScoreLater();
   reSyncDeviceAlarms();
+}
+
+/* ---- Habit order (PUT /api/habits/order) ----
+   Move up / move down on the Habits screen in reorder mode. Optimistic: the
+   list moves at once, and each save sends the whole order, so saves are
+   chained — two quick taps landing out of order would leave the first one's
+   order on the server. A failure puts back the order from before that tap. */
+let habitReorderMode = false;
+let habitOrderQueue = Promise.resolve();
+
+function moveHabit(id, delta) {
+  const list = state.habits.slice();
+  const from = list.findIndex((x) => x.id === id);
+  const to = from + delta;
+  if (from < 0 || to < 0 || to >= list.length) return;
+  const before = state.habits;
+  [list[from], list[to]] = [list[to], list[from]];
+  state.habits = list;
+  render();
+  // Keep the keyboard on the arrow just used, now on the moved row.
+  refocusMoveButton(id, delta);
+  const ids = list.map((x) => x.id);
+  habitOrderQueue = habitOrderQueue
+    .then(() =>
+      api('/api/habits/order', { method: 'PUT', body: JSON.stringify({ ids }) })
+    )
+    .then(
+      () => announce('Moved ' + (list[to].name || 'habit') + ' to position ' + (to + 1) + '.'),
+      (err) => {
+        // Only if nothing else moved since: a later tap's order supersedes this one.
+        if (state.habits.map((x) => x.id).join() === ids.join()) {
+          state.habits = before;
+          render();
+        }
+        toastError(err, 'Could not save the new order.');
+      }
+    );
+}
+
+function refocusMoveButton(id, delta) {
+  requestAnimationFrame(() => {
+    const sel = '[data-habit-move="' + id + ':' + (delta < 0 ? 'up' : 'down') + '"]';
+    const btn = document.querySelector(sel);
+    if (btn && !btn.disabled) btn.focus();
+    else {
+      const other = document.querySelector(
+        '[data-habit-move="' + id + ':' + (delta < 0 ? 'down' : 'up') + '"]'
+      );
+      if (other) other.focus();
+    }
+  });
 }
 
 async function updateHabit(id, body) {
@@ -2612,9 +3524,10 @@ async function parseQuickAdd(text) {
     .map((hb) => hb.name)
     .filter(Boolean)
     .slice(0, 100);
+  // The device's own date: it is what "tomorrow" means to the person speaking.
   const res = await api('/api/quick-add', {
     method: 'POST',
-    body: JSON.stringify({ text, habits }),
+    body: JSON.stringify({ text, habits, today: todayKeyNow() }),
   });
   if (!res || res.configured === false) return { configured: false, intents: [] };
   if (res.unavailable) return { configured: true, unavailable: true, intents: [] };
@@ -2652,6 +3565,8 @@ function describeIntent(it) {
         label: 'Mood',
         detail: it.mood + (it.energy ? ' · ' + it.energy + ' energy' : ''),
       };
+    case 'reminder':
+      return { icon: 'bell', label: 'Reminder', detail: reminderSummary(it) };
     case 'expense':
       return {
         icon: 'wallet',
@@ -2660,6 +3575,158 @@ function describeIntent(it) {
       };
     default:
       return null;
+  }
+}
+
+/** "09:00:00" (the API's LocalTime) -> "09:00"; anything else -> "". */
+function hhmm(v) {
+  const m = /^(\d{2}):(\d{2})/.exec(String(v || ''));
+  return m ? m[1] + ':' + m[2] : '';
+}
+
+/* What a spoken reminder will be, in full, so the preview shows every field
+   before anything is saved: "Call mom · Tomorrow, 7:00 PM to 7:30 PM · Weekly
+   until 31 Dec · 10 min before · Work". */
+function reminderSummary(it) {
+  const bits = [it.text];
+  const day = it.date || todayKeyNow();
+  const when = day === todayKeyNow() ? 'Today' : shortDay(day);
+  bits.push(
+    when +
+      (it.time ? ', ' + formatTime(hhmm(it.time)) : '') +
+      (it.endTime ? ' to ' + formatTime(hhmm(it.endTime)) : '')
+  );
+  if (it.repeat && it.repeat !== 'none' && REPEATS[it.repeat]) {
+    bits.push(
+      REPEATS[it.repeat].label +
+        (it.until ? ' until ' + new Date(it.until + 'T00:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '')
+    );
+  }
+  if (it.time && it.notifyBefore) bits.push(leadLabel(it.notifyBefore));
+  if (it.tag && it.tag !== 'personal' && TAGS[it.tag]) bits.push(TAGS[it.tag].label);
+  return bits.join(' \u00b7 ');
+}
+
+/* ---- Voice input, everywhere text can be spoken ----
+   Speech-to-text works on one language at a time: the one picked in Quick add
+   (remembered), else the device's own. Browsers have the Web Speech API; the
+   Capacitor app's WebView doesn't, so there the native SpeechRecognition plugin
+   takes over. One helper, so Quick add, the calendar's reminder form and
+   Settings → Reminders all listen the same way. */
+function speechLang() {
+  return (
+    localStorage.getItem('gb.qa.lang') ||
+    ((state.user && state.user.uiPrefs) || {}).qaLang ||
+    navigator.language ||
+    'en-IN'
+  );
+}
+
+function voiceSupported() {
+  return !!(window.SpeechRecognition || window.webkitSpeechRecognition || nativePlugin('SpeechRecognition'));
+}
+
+/* Listen once; resolves to what was said ('' for nothing heard). A second tap on
+   `btn` while listening stops it early, which still hands back what was heard.
+   `btn` carries .is-listening throughout. Says why when it can't listen. */
+const listening = new WeakMap(); // btn -> stop()
+function listenOnce(btn, lang) {
+  if (listening.has(btn)) {
+    listening.get(btn)();
+    return Promise.resolve(null);
+  }
+  const code = lang || speechLang();
+  const capSR = nativePlugin('SpeechRecognition');
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!capSR && !SR) {
+    pushToast('Voice input isn’t available in this browser.', 'error', 3200);
+    return Promise.resolve('');
+  }
+  btn.classList.add('is-listening');
+  btn.setAttribute('aria-pressed', 'true');
+  const finish = (said) => {
+    listening.delete(btn);
+    btn.classList.remove('is-listening');
+    btn.setAttribute('aria-pressed', 'false');
+    return said;
+  };
+  if (capSR) {
+    listening.set(btn, () => capSR.stop().catch(() => {}));
+    return (async () => {
+      try {
+        const perm = await capSR.requestPermissions();
+        if (perm && perm.speechRecognition && perm.speechRecognition !== 'granted') {
+          pushToast('Microphone access was blocked — allow it in Settings.', 'error', 3600);
+          return finish('');
+        }
+        const res = await capSR.start({ language: code, maxResults: 1, partialResults: false, popup: false });
+        const said = res && res.matches && res.matches[0] ? res.matches[0].trim() : '';
+        if (!said) pushToast('Didn’t catch that — try speaking again.', 'error', 3000);
+        return finish(said);
+      } catch (_) {
+        pushToast('Didn’t catch that — try speaking again.', 'error', 3000);
+        return finish('');
+      }
+    })();
+  }
+  return new Promise((resolve) => {
+    const rec = new SR();
+    rec.lang = code;
+    rec.interimResults = false;
+    let said = '';
+    let failed = false;
+    listening.set(btn, () => rec.stop());
+    rec.onresult = (e) => {
+      said = Array.from(e.results)
+        .map((r) => r[0].transcript)
+        .join(' ')
+        .trim();
+    };
+    rec.onerror = (e) => {
+      failed = true;
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+        pushToast('Microphone access was blocked — allow it in your browser.', 'error', 3600);
+      } else if (e.error !== 'aborted') {
+        pushToast('Didn’t catch that — try speaking again.', 'error', 3000);
+      }
+    };
+    rec.onend = () => {
+      if (!said && !failed) pushToast('Didn’t catch that — try speaking again.', 'error', 3000);
+      resolve(finish(said));
+    };
+    try {
+      rec.start();
+    } catch (_) {
+      resolve(finish(''));
+    }
+  });
+}
+
+/* Speak a whole reminder into a form: "every Monday at 7 to 7:30 call mom, ten
+   minutes before". Listens, then reads the sentence with Quick add's parser and
+   hands back {said, reminder} — reminder null when it couldn't be read (no AI
+   key, assistant down, or nothing reminder-like), and the caller falls back to
+   the words alone. Nothing is saved: the form shows it all for a check first. */
+async function captureReminder(btn) {
+  const said = await listenOnce(btn);
+  if (!said) return null;
+  btn.classList.add('is-busy');
+  btn.disabled = true;
+  try {
+    const r = await parseQuickAdd(said);
+    const reminder = (r.intents || []).find((x) => x.type === 'reminder') || null;
+    if (!r.configured) {
+      pushToast('Heard you. Reading the time and day needs the assistant, so set those yourself.', 'info', 4200);
+    } else if (r.unavailable) {
+      pushToast('Heard you, but couldn’t reach the assistant — set the time and day yourself.', 'info', 4200);
+    }
+    return { said, reminder };
+  } catch (err) {
+    toastError(err, 'Couldn’t read that — set the time and day yourself.');
+    return { said, reminder: null };
+  } finally {
+    btn.classList.remove('is-busy');
+    btn.disabled = false;
   }
 }
 
@@ -2688,6 +3755,21 @@ async function applyQuickAdd(intents) {
       } else if (it.type === 'expense' && it.amount) {
         addQuickExpense(it.amount, it.note);
         applied++;
+      } else if (it.type === 'reminder' && it.text) {
+        // Every field the sentence gave, through the same path as the calendar's
+        // own form — so the past-day and past-time refusals apply here too.
+        const made = await addReminder(
+          it.date || todayKeyNow(),
+          it.text,
+          hhmm(it.time),
+          it.tag || 'personal',
+          it.repeat || 'none',
+          it.until || '',
+          '',
+          hhmm(it.endTime),
+          it.notifyBefore === null || it.notifyBefore === undefined ? null : it.notifyBefore
+        );
+        if (made) applied++;
       }
     } catch (_) {
       /* skip a single bad intent; keep applying the rest */
@@ -2724,6 +3806,127 @@ async function createGoal(body) {
    before the reload landed toggled the goal straight back. */
 const goalTogglesInFlight = new Set();
 
+/* ---- Goals linked to habits ----
+   A goal's progress blob may carry `linkedHabitIds` (and `autoDays`: the day
+   tracker counts the days any linked habit was done, from `autoSince`). The
+   Goals screen needs those habits' done days, so each linked habit's history
+   is fetched once per day and span, kept here, and today's own tick is read
+   off `state.habits` live, so ticking a habit on Home moves the goal at once
+   without a refetch. A past day ticked from a habit's history drops its entry
+   (`forgetGoalHabitHistory`). */
+const goalHabitHistory = {}; // habitId -> { key, days }
+const goalHabitInFlight = new Set();
+
+function goalHabitNeeds() {
+  const today = accountTodayKey();
+  const span = {}; // habitId -> days back needed
+  Object.values(state.goalProgress || {}).forEach((p) => {
+    if (!p || !Array.isArray(p.linkedHabitIds)) return;
+    let back = daysFrom(monthStart(today), today) + 1;
+    if (p.autoDays && p.autoSince) back = Math.max(back, daysFrom(p.autoSince, today) + 1);
+    back = Math.min(730, Math.max(1, back));
+    p.linkedHabitIds.forEach((id) => {
+      span[id] = Math.max(span[id] || 0, back);
+    });
+  });
+  return { today, span };
+}
+
+function ensureGoalHabitHistory() {
+  const { today, span } = goalHabitNeeds();
+  const live = new Set((state.habits || []).map((x) => x.id));
+  Object.keys(span).forEach((id) => {
+    if (!live.has(id)) return;
+    const key = today + '|' + span[id];
+    const have = goalHabitHistory[id];
+    if ((have && have.key === key) || goalHabitInFlight.has(id)) return;
+    goalHabitInFlight.add(id);
+    api('/api/habits/' + encodeURIComponent(id) + '/history?days=' + span[id])
+      .then((res) => {
+        goalHabitHistory[id] = { key, days: (res && res.days) || [] };
+        if (state.screen === 'goals' || state.screen === 'home') render();
+      })
+      .catch(() => {
+        // Counted as nothing done rather than retried every render.
+        goalHabitHistory[id] = { key, days: [] };
+      })
+      .finally(() => goalHabitInFlight.delete(id));
+  });
+}
+
+/* goalProgress with each counted-from-habits tracker's `daysFollowed` set to
+   what its linked habits add up to — what Goals and Home's GoalsCard draw. The
+   stored count is left alone; it is what the tracker falls back to if the
+   links are removed. */
+function effectiveGoalProgress() {
+  const gp = state.goalProgress || {};
+  const sum = goalHabitSummary();
+  let out = gp;
+  Object.keys(sum).forEach((id) => {
+    const p = gp[id];
+    if (sum[id].autoDays == null || !p || !p.durationDays) return;
+    if (out === gp) out = { ...gp };
+    out[id] = { ...p, daysFollowed: Math.min(p.durationDays, sum[id].autoDays) };
+  });
+  // Linked tasks (tasks.goal_id): `linkedTasks` {done, total, open} for the
+  // card, and `work` — milestones plus, when `countTasks` is on, the finished
+  // tasks (goal-tasks.js combinedGoalProgress). Both derived, never saved:
+  // every progress write is a patch of its own fields.
+  (state.goals || [])
+    .flatMap((sec) => sec.goals || [])
+    .forEach((g) => {
+      const key = String(g.id);
+      const linkedTasks = goalTaskStats(g, state.tasks);
+      if (!linkedTasks.total && !(out[key] && out[key].countTasks)) return;
+      if (out === gp) out = { ...gp };
+      const p = out[key] || {};
+      out[key] = { ...p, linkedTasks, work: combinedGoalProgress(p, linkedTasks) };
+    });
+  return out;
+}
+
+function forgetGoalHabitHistory(habitId) {
+  delete goalHabitHistory[habitId];
+}
+
+/* Per habit id, its done days: the fetched past plus today from the live habit. */
+function linkedHabitDays() {
+  const today = accountTodayKey();
+  const out = {};
+  (state.habits || []).forEach((hb) => {
+    const past = ((goalHabitHistory[hb.id] && goalHabitHistory[hb.id].days) || []).filter(
+      (r) => r.date !== today
+    );
+    out[hb.id] = hb.doneToday ? past.concat({ date: today, done: true }) : past;
+  });
+  return out;
+}
+
+/* What GoalRow prints for linked habits: check-ins this month, and — for a
+   tracker counting from habits — the distinct done days since `autoSince`.
+   Starts any history it is still missing; that lands with its own render. */
+function goalHabitSummary() {
+  ensureGoalHabitHistory();
+  const today = accountTodayKey();
+  const days = linkedHabitDays();
+  const out = {};
+  Object.entries(state.goalProgress || {}).forEach(([goalId, p]) => {
+    const ids = (p && Array.isArray(p.linkedHabitIds) ? p.linkedHabitIds : []).filter(
+      (id) => days[id]
+    );
+    if (!ids.length) return;
+    out[goalId] = {
+      count: ids.length,
+      month: linkedHabitActivity(days, ids, monthStart(today), today).checkins,
+      autoDays:
+        p.autoDays && p.autoSince
+          ? linkedHabitActivity(days, ids, p.autoSince, today).days
+          : null,
+    };
+  });
+  return out;
+}
+
 /* Swap one goal inside the horizon sections. */
 function mapGoal(id, fn) {
   state.goals = (state.goals || []).map((sec) => ({
@@ -2745,6 +3948,16 @@ async function toggleGoal(id) {
     });
     if (updated && updated.id) mapGoal(id, () => updated);
     render();
+    // Finishing a goal is the biggest thing the app tracks; it went by as a
+    // chip changing colour. Reopening is not celebrated.
+    if (updated && updated.completed) {
+      celebrate({
+        icon: 'trophy',
+        kicker: 'Goal complete',
+        title: updated.title,
+        desc: 'You did it.',
+      });
+    }
   } catch (err) {
     mapGoal(id, (g) => ({ ...g, completed: !g.completed }));
     render();
@@ -2754,9 +3967,47 @@ async function toggleGoal(id) {
   }
 }
 
+/* PUT /api/goals/{id}: title, why, horizon, target date. A changed horizon
+   moves the goal to its new section. */
+async function updateGoal(id, body) {
+  const updated = await api('/api/goals/' + encodeURIComponent(id), {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  });
+  state.goals = (state.goals || []).map((sec) => ({
+    ...sec,
+    goals:
+      sec.horizon === updated.horizon
+        ? (sec.goals || []).some((g) => g.id === id)
+          ? sec.goals.map((g) => (g.id === id ? updated : g))
+          : [updated, ...(sec.goals || [])]
+        : (sec.goals || []).filter((g) => g.id !== id),
+  }));
+  // goals.js opens its dialogs on gb-kit's openModal, which has no render hook.
+  render();
+  toastSuccess('Goal updated.');
+}
+
+/* Every action of one goal: the list carries only the latest three. */
+function loadGoalActions(id) {
+  return api('/api/goals/' + encodeURIComponent(id) + '/actions');
+}
+
+/* The DELETE is the whole answer: drop the goal where it sits rather than
+   reload every goal, and take its cached progress with it (that blob used to
+   stay in CacheStorage for good). */
 async function deleteGoal(id) {
   await api('/api/goals/' + encodeURIComponent(id), { method: 'DELETE' });
-  await loadGoals();
+  state.goals = (state.goals || []).map((sec) => ({
+    ...sec,
+    goals: (sec.goals || []).filter((g) => g.id !== id),
+  }));
+  // The server took its tasks off it (they stay, on no goal); mirror that.
+  state.tasks = (state.tasks || []).map((t) => (t.goalId === id ? { ...t, goalId: null } : t));
+  if (state.goalProgress && state.goalProgress[String(id)]) {
+    delete state.goalProgress[String(id)];
+    persistGoalProgress();
+  }
 }
 
 async function addGoalAction(id, body) {
@@ -2764,6 +4015,10 @@ async function addGoalAction(id, body) {
     method: 'POST',
     body: JSON.stringify(body),
   });
+  // An action doesn't move the percentage, but it is a day the goal was
+  // worked on: date it in the progress log (goalPace) unless today is there.
+  const gp = state.goalProgress && state.goalProgress[String(id)];
+  if (gp && needsProgressLog(gp, accountTodayKey())) updateGoalProgress(id, {});
   await loadGoals();
   toastSuccess('Action logged.');
 }
@@ -2801,22 +4056,233 @@ async function deleteHabit(id) {
    is a finger bounce, not a second glass: that used to log twice. Taps still in
    flight are laid back over each server answer so one landing doesn't wipe the other. */
 const WATER_DOUBLE_TAP_MS = 600;
-const pendingWater = new Map(); // temp id -> amountMl
+const pendingWater = new Map(); // temp id -> { amountMl, loggedAt }
 let lastWaterTap = { amount: 0, at: 0 };
 let waterSeq = 0;
+/* Out-of-order answers: two quick taps A then B, B's summary lands first and
+   is painted, then A's arrives — painting it would drop the card back to A's
+   view of the day (B has already left pendingWater, so the overlay can't put
+   it back). Only the newest tap's answer paints; a skipped older one sets
+   waterRefetch, and when the last tap in flight settles, one GET repaints. */
+let waterPaintedSeq = 0;
+let waterInFlight = 0;
+let waterRefetch = false;
 
+/* Glasses tapped with no connection: kept on this phone (CacheStorage, per
+   account) and replayed with their own loggedAt, so a glass drunk at 23:50
+   offline still counts for that day. It used to vanish with a "Could not log"
+   toast. Each tap mints an Idempotency-Key that its live POST and every replay
+   send, so a POST that landed but whose answer was lost is answered again by
+   the server, not logged as a second glass. */
+function waterQueueKey() {
+  return moneyStorageKey(state.user) + '.water';
+}
+function loadWaterQueue() {
+  try {
+    const q = JSON.parse(CacheStorage.getItem(waterQueueKey()) || '[]');
+    return Array.isArray(q) ? q.filter((x) => x && x.id && x.amountMl > 0 && x.loggedAt) : [];
+  } catch (_) {
+    return [];
+  }
+}
+function storeWaterQueue(q) {
+  try {
+    CacheStorage.setItem(waterQueueKey(), JSON.stringify(q));
+  } catch (err) {
+    console.error('Failed to keep an unsent glass of water:', err);
+  }
+}
+/* A boot after an offline session: put its queued glasses back on the card. */
+function restoreWaterQueue() {
+  for (const x of loadWaterQueue())
+    if (!pendingWater.has(x.id))
+      pendingWater.set(x.id, { amountMl: x.amountMl, loggedAt: x.loggedAt, drinkType: x.drinkType });
+}
+const localDayOf = (iso) => {
+  const t = new Date(iso);
+  return dateKey(t.getFullYear(), t.getMonth(), t.getDate());
+};
+
+/* Taps not yet on the server, laid over a summary from it. Only the summary's
+   own day: a glass queued last night is yesterday's, not today's. */
 function withPendingWater(water) {
-  const w = water || {};
-  let consumedMl = w.consumedMl || 0;
-  const entries = [...(w.entries || [])];
-  pendingWater.forEach((amountMl, id) => {
-    consumedMl += amountMl;
-    entries.push({ id, amountMl, loggedAt: new Date().toISOString() });
-  });
-  return { ...w, consumedMl, entries };
+  return overlayPendingWater(water, pendingWater, { today: todayKeyNow(), dayOf: localDayOf, effectiveMl });
 }
 
-async function quickAddWater(amountMl) {
+/* No connection, or a server that's down: worth queueing. A 4xx is a refusal. */
+const offlineError = (err) => !navigator.onLine || !err || !err.status || err.status >= 500;
+
+/* ---- Offline outbox (scripts/outbox.js) ----
+   Task create / toggle / delete, a plain habit tick, a one-off reminder's
+   create, a whole-series reminder delete and a text-only note create keep their
+   optimistic paint when there is no connection: the write is queued here
+   (CacheStorage, gb.outbox.<uid>, purged on logout) and replayed oldest first
+   by flushOutbox() after loadData's wave 1 and on 'online'. Creates wear a
+   `tmp-…` id until the POST lands; `outboxIds` maps it to the server's id for
+   anything still holding the temp one (a note card, a row mid-refresh). */
+const SAVED_ON_PHONE = 'Saved on this phone — will sync when you’re back online.';
+function outboxKey() {
+  const u = state.user || loadSession() || {};
+  return 'gb.outbox.' + String(u.id || u.email || 'guest');
+}
+const outbox = createOutbox(CacheStorage, outboxKey);
+const outboxIds = new Map();
+const realId = (id) => outboxIds.get(id) || id;
+/* No response at all. A 5xx is the server answering; those roll back and toast. */
+const networkError = (err) => !navigator.onLine || !err || !err.status;
+
+function queueWrite(op) {
+  const r = outbox.enqueue(op);
+  if (r !== 'cancelled') pushToast(SAVED_ON_PHONE, 'info');
+  paintOutboxChip();
+  // A temp id touched while online (its create is still queued): send now.
+  if (state.online && navigator.onLine) flushOutbox();
+  return r;
+}
+
+/* Lay what's queued over lists just read from the server, which has not seen
+   it yet. Called right after state.tasks / habits / reminders are replaced. */
+function overlayOutbox() {
+  const today = todayKeyNow();
+  for (const op of outbox.list()) {
+    const l = op.local || {};
+    if (op.kind === 'task.create' && !state.tasks.some((t) => t.id === l.id)) state.tasks = [l, ...state.tasks];
+    else if (op.kind === 'task.toggle')
+      state.tasks = state.tasks.map((t) => (t.id === l.id ? { ...t, done: !t.done } : t));
+    else if (op.kind === 'task.delete') state.tasks = state.tasks.filter((t) => t.id !== l.id);
+    else if (op.kind === 'habit.checkin' && l.day === today)
+      state.habits = state.habits.map((x) => (x.id === l.id ? { ...x, doneToday: !!l.done } : x));
+    else if (op.kind === 'reminder.create' && !state.reminders.some((r) => r.id === l.id))
+      state.reminders = [...state.reminders, l];
+    else if (op.kind === 'reminder.delete') state.reminders = state.reminders.filter((r) => r.id !== l.id);
+  }
+}
+/* Notes the server hasn't got yet, for the Notes screen's list. */
+const queuedNotes = () =>
+  outbox
+    .list()
+    .filter((op) => op.kind === 'note.create' && op.local)
+    .map((op) => op.local);
+
+async function flushOutbox() {
+  if (!state.user || !outbox.size()) return paintOutboxChip();
+  const out = await outbox.flush(api);
+  Object.entries(out.idMap).forEach(([tmp, id]) => outboxIds.set(tmp, id));
+  const done = [...out.sent, ...out.dropped, ...out.conflicts];
+  if (out.dropped.length === 1) toastError(null, 'A change made offline couldn’t be saved: ' + out.dropped[0].message);
+  else if (out.dropped.length) toastError(null, out.dropped.length + ' changes made offline couldn’t be saved.');
+  // 409: someone (another device) changed it meanwhile. Say so; the refetch shows theirs.
+  out.conflicts.forEach((c) => toastError(null, c.message || 'That was changed somewhere else, so your offline change was skipped.'));
+  if (done.length) await refreshOutboxStores(new Set(done.map((x) => String(x.op.kind).split('.')[0])));
+  paintOutboxChip();
+}
+
+async function refreshOutboxStores(kinds) {
+  const jobs = [];
+  if (kinds.has('task')) jobs.push(api('/api/tasks').then((r) => (state.tasks = r.map(mapTask))));
+  if (kinds.has('habit'))
+    jobs.push(
+      api('/api/habits').then((r) => {
+        state.habits = r;
+        reconcileStreakFreeze();
+      })
+    );
+  if (kinds.has('reminder')) jobs.push(api('/api/reminders').then((r) => (state.reminders = r)));
+  await Promise.allSettled(jobs);
+  overlayOutbox();
+  if (kinds.has('task') || kinds.has('habit')) await Promise.all([refreshScore(), refreshCurrentUser()]);
+  if (kinds.has('habit') || kinds.has('reminder')) reSyncDeviceAlarms();
+  // Notes own their list: a sent note keeps its card, and its temp id resolves
+  // through outboxIds; the next load swaps in the server's copy. Screens that
+  // own their subtree are left alone too (render() would drop their view state).
+  const own = ['money', 'family', 'mentor', 'circle', 'notes'];
+  if ((kinds.has('task') || kinds.has('habit') || kinds.has('reminder')) && !own.includes(state.screen)) render();
+}
+
+/* The "N changes waiting to sync" chip lives in the profile panel. */
+function outboxChip() {
+  const n = outbox.size();
+  if (!n) return null;
+  return h(
+    'div',
+    { class: 'gb-outbox-chip', role: 'status' },
+    Icon('refresh-cw', { size: 14, sw: 2.4 }),
+    n + (n === 1 ? ' change' : ' changes') + ' waiting to sync'
+  );
+}
+function paintOutboxChip() {
+  const slot = state.profileOpen && document.getElementById('gb-profile-slot');
+  if (slot) slot.replaceChildren(...[profileDropdown()].filter(Boolean));
+}
+
+let waterFlushing = false;
+/* Send the queued glasses, oldest first; stops at the first one that can't go. */
+async function flushWaterQueue() {
+  if (waterFlushing || !state.user) return;
+  waterFlushing = true;
+  try {
+    const send = (x) =>
+      api('/api/water/entries', {
+        method: 'POST',
+        // Queued before taps carried a key: its temp id is stable, so that is one.
+        headers: { 'Idempotency-Key': x.idemKey || 'water-' + x.id },
+        body: JSON.stringify({ amountMl: x.amountMl, loggedAt: x.loggedAt, drinkType: x.drinkType || null }),
+      });
+    await replayOldestFirst(loadWaterQueue(), send, {
+      isOffline: offlineError,
+      onSent: (x, updated) => {
+        pendingWater.delete(x.id);
+        storeWaterQueue(loadWaterQueue().filter((y) => y.id !== x.id));
+        if (summaryIsForToday(updated, todayKeyNow())) state.water = withPendingWater(updated);
+        invalidateWeek('water');
+      },
+      onRefused: (x, err) => {
+        // Refused (a day too far back, say): drop it rather than retry forever.
+        pendingWater.delete(x.id);
+        storeWaterQueue(loadWaterQueue().filter((y) => y.id !== x.id));
+        const w = state.water || {};
+        if ((w.entries || []).some((e) => e.id === x.id))
+          state.water = {
+            ...w,
+            consumedMl: Math.max(0, (w.consumedMl || 0) - effectiveMl(x.amountMl, x.drinkType)),
+            entries: w.entries.filter((e) => e.id !== x.id),
+          };
+        toastError(err, 'A glass of water from earlier could not be saved.');
+      },
+    });
+  } finally {
+    waterFlushing = false;
+    render();
+  }
+}
+
+/* `dayKey`: a past day from the custom dialog (backdating). Today, or none,
+   is a tap: painted at once, then sent. `drinkType` (custom dialog only; the
+   quick buttons are water): tea/coffee/... count for less, nutrition.js HYDRATION. */
+async function quickAddWater(amountMl, dayKey, drinkType) {
+  const drink = drinkType && drinkType !== 'water' ? drinkType : null;
+  if (dayKey && dayKey !== todayKeyNow()) {
+    if (dayKey > todayKeyNow()) {
+      toastError(null, "You can't log water for a day that hasn't happened yet.");
+      return;
+    }
+    try {
+      await api('/api/water/entries', {
+        method: 'POST',
+        body: JSON.stringify({ amountMl, loggedAt: loggedAtFor(dayKey), drinkType: drink }),
+      });
+      invalidateWeek('water');
+      render();
+      toastSuccess(
+        'Water logged for ' +
+          new Date(dayKey + 'T12:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) +
+          '.'
+      );
+    } catch (err) {
+      toastError(err, 'Could not log water right now.');
+    }
+    return;
+  }
   const now = Date.now();
   if (lastWaterTap.amount === amountMl && now - lastWaterTap.at < WATER_DOUBLE_TAP_MS) {
     // Silently dropped, two quick +250s for 500 ml read as a lost glass.
@@ -2824,34 +4290,66 @@ async function quickAddWater(amountMl) {
     return;
   }
   lastWaterTap = { amount: amountMl, at: now };
-  const tempId = 'pending-' + ++waterSeq;
-  pendingWater.set(tempId, amountMl);
+  const seq = ++waterSeq;
+  const tempId = 'pending-' + seq + '-' + now;
+  const idemKey = newIdemKey(); // this glass, live or replayed
+  const loggedAt = new Date(now).toISOString();
+  pendingWater.set(tempId, { amountMl, loggedAt, drinkType: drink });
+  const counts = effectiveMl(amountMl, drink);
   const w0 = state.water || {};
   state.water = {
     ...w0,
-    consumedMl: (w0.consumedMl || 0) + amountMl,
-    entries: [...(w0.entries || []), { id: tempId, amountMl, loggedAt: new Date().toISOString() }],
+    consumedMl: (w0.consumedMl || 0) + counts,
+    entries: [
+      ...(w0.entries || []),
+      { id: tempId, amountMl, loggedAt, drinkType: drink || 'water', effectiveMl: counts },
+    ],
   };
   render();
+  waterInFlight++;
   try {
     const updated = await api('/api/water/entries', {
       method: 'POST',
-      body: JSON.stringify({ amountMl: amountMl }),
+      headers: { 'Idempotency-Key': idemKey },
+      // No loggedAt on a live tap: the server's now, so a phone clock running
+      // fast can't make it "the future". Only a queued replay sends its own.
+      body: JSON.stringify({ amountMl: amountMl, drinkType: drink }),
     });
     pendingWater.delete(tempId);
-    state.water = withPendingWater(updated);
-    render();
+    if (seq > waterPaintedSeq) {
+      waterPaintedSeq = seq;
+      state.water = withPendingWater(updated);
+      render();
+    } else {
+      waterRefetch = true;
+    }
     invalidateWeek('water');
   } catch (err) {
+    if (offlineError(err)) {
+      // Keep the glass on the card and on this phone; 'online' sends it.
+      storeWaterQueue(loadWaterQueue().concat({ id: tempId, amountMl, loggedAt, drinkType: drink, idemKey }));
+      pushToast('Saved on this phone — will sync when you’re back online.', 'info');
+      return;
+    }
     pendingWater.delete(tempId);
     const w = state.water || {};
     state.water = {
       ...w,
-      consumedMl: Math.max(0, (w.consumedMl || 0) - amountMl),
+      consumedMl: Math.max(0, (w.consumedMl || 0) - counts),
       entries: (w.entries || []).filter((e) => e.id !== tempId),
     };
     render();
     toastError(err, 'Could not log water right now.');
+  } finally {
+    if (--waterInFlight === 0 && waterRefetch) {
+      waterRefetch = false;
+      const fresh = await api('/api/water').catch(() => null);
+      // A tap made while this GET was out has its own answer coming; let it paint.
+      if (fresh && waterInFlight === 0 && summaryIsForToday(fresh, todayKeyNow())) {
+        state.water = withPendingWater(fresh);
+        render();
+      }
+    }
   }
 }
 
@@ -2895,15 +4393,18 @@ function removeSoon(selector, drop) {
    throws; catching here closed it over an entry that never saved. */
 async function logFoodEntry(payload) {
   const before = new Set(((state.food && state.food.entries) || []).map((e) => e.id));
-  const updated = await api('/api/food/entries', {
+  // Typed calories go to /manual, which makes no AI call and so sits outside
+  // the AI rate limit: logging from a label used to spend a photo's budget.
+  const updated = await api('/api/food/entries' + (payload.kcal != null ? '/manual' : ''), {
     method: 'POST',
     body: JSON.stringify(payload),
   });
+  recentFoods = null; // the next Log food asks again
   // The summary that comes back belongs to the entry's own day. Backdate one
   // and that is not today — `state.food` drives the Home card, so only today's
   // may land there. The date-keyed cache below takes every day, which is what
   // the Calendar reads.
-  const forToday = !updated || !updated.date || updated.date === todayKeyNow();
+  const forToday = summaryIsForToday(updated, todayKeyNow());
   if (forToday) state.food = updated;
   cacheFoodSummary(updated);
   render();
@@ -2922,6 +4423,120 @@ async function logFoodEntry(payload) {
           }) +
           '.'
   );
+}
+
+/* "Copy yesterday's breakfast" on an empty slot of the Food card: POST
+   /api/food/entries/copy copies that slot's entries onto today as manual kcal
+   (no AI). The answer is today's summary. */
+async function copyYesterdaySlot(slot) {
+  const label = (MEAL_SLOTS.find((m) => m.key === slot) || { label: slot }).label.toLowerCase();
+  try {
+    const before = new Set(((state.food && state.food.entries) || []).map((e) => e.id));
+    const updated = await api('/api/food/entries/copy?slot=' + encodeURIComponent(slot), { method: 'POST' });
+    state.food = updated;
+    cacheFoodSummary(updated);
+    recentFoods = null;
+    invalidateWeek('food');
+    render();
+    const added = ((updated && updated.entries) || []).filter((e) => !before.has(e.id));
+    added.forEach((e) => landed(root.querySelector('[data-food-id="' + e.id + '"]')));
+    toastSuccess('Copied yesterday’s ' + label + '.');
+  } catch (err) {
+    toastError(err, 'Could not copy yesterday’s ' + label + ' right now.');
+  }
+}
+
+/* Starred foods (GET /api/food/favourites), the first chip row in Log food.
+   null = not asked yet; every star / unstar answers with the whole list. */
+let favouriteFoods = null;
+function loadFavouriteFoods() {
+  if (favouriteFoods) return Promise.resolve(favouriteFoods);
+  return api('/api/food/favourites')
+    .then((list) => (favouriteFoods = Array.isArray(list) ? list : []))
+    .catch(() => []);
+}
+async function starFoodEntry(entry, on) {
+  const fav = (favouriteFoods || []).find(
+    (f) => f.foodName.toLowerCase() === String(entry.foodName || '').trim().toLowerCase()
+  );
+  const list = on
+    ? await api('/api/food/favourites', { method: 'POST', body: JSON.stringify({ entryId: entry.id }) })
+    : fav
+      ? await api('/api/food/favourites/' + encodeURIComponent(fav.id), { method: 'DELETE' })
+      : favouriteFoods || [];
+  favouriteFoods = Array.isArray(list) ? list : [];
+  return favouriteFoods;
+}
+
+/* The browser's own barcode reader: BarcodeDetector + the rear camera. Chrome
+   on Android has it, Safari and Firefox mostly don't, so the button is only
+   built where both exist. The stream is stopped however the sheet goes
+   (a read, Cancel, Escape, the backdrop): a camera left on keeps its light lit. */
+const canScanBarcode = () =>
+  typeof window !== 'undefined' &&
+  'BarcodeDetector' in window &&
+  !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+
+function openBarcodeScanner(onCode) {
+  let stream = null;
+  let raf = 0;
+  let done = false;
+  const stop = () => {
+    done = true;
+    cancelAnimationFrame(raf);
+    if (stream) stream.getTracks().forEach((t) => t.stop());
+    stream = null;
+  };
+  const { sheet, close } = openOverlay({ label: 'Scan barcode', className: 'gb-barcode-modal', onClose: stop });
+  const video = h('video', { class: 'gb-barcode-video', playsinline: '', muted: '', autoplay: '' });
+  video.muted = true;
+  const status = h('div', { class: 'gb-field-hint', 'aria-live': 'polite' }, 'Point the camera at the barcode.');
+  sheet.append(
+    h('div', { class: 'gb-modal-head' }, h('div', { class: 'gb-modal-title' }, 'Scan barcode')),
+    h('div', { class: 'gb-modal-body' }, h('div', { class: 'gb-barcode-frame' }, video), status),
+    h(
+      'div',
+      { class: 'gb-water-prompt-actions' },
+      h('button', { type: 'button', class: 'gb-btn gb-btn--ghost', onclick: close }, 'Cancel')
+    )
+  );
+  (async () => {
+    try {
+      const detector = new window.BarcodeDetector({
+        formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e'],
+      });
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+      // Closed while the permission prompt was up: let the camera go at once.
+      if (done) {
+        stop();
+        return;
+      }
+      video.srcObject = stream;
+      await video.play();
+      const tick = async () => {
+        if (done) return;
+        try {
+          const codes = video.readyState >= 2 ? await detector.detect(video) : [];
+          const code = codes && codes[0] && codes[0].rawValue;
+          if (code && /^\d{6,14}$/.test(code)) {
+            close(); // onClose stops the stream
+            onCode(code);
+            return;
+          }
+        } catch (_) {
+          /* a frame it could not read; try the next */
+        }
+        raf = requestAnimationFrame(tick);
+      };
+      tick();
+    } catch (err) {
+      stop();
+      status.textContent =
+        err && err.name === 'NotAllowedError'
+          ? 'Camera permission was refused. Type the food in instead.'
+          : 'The camera could not start here. Type the food in instead.';
+    }
+  })();
 }
 
 /* Full-screen "Estimating calories" while a food save runs: food drops onto a
@@ -3267,6 +4882,10 @@ async function addSuggestedReminder(text, time, tag) {
   await addReminder(todayKeyNow(), text, time || '19:00', tag || 'personal', 'none', null);
 }
 
+/* The "recent foods" chips: GET /api/food/recent, kept for the session and
+   dropped by every log. null = not asked yet. */
+let recentFoods = null;
+
 function openAddFood() {
   let photoDataUrl = '';
   let photoItems = [];
@@ -3279,6 +4898,18 @@ function openAddFood() {
     ],
     'home'
   );
+  // Which meal: defaulted from the hour now (nutrition.js, same hours as the
+  // server's MealSlot.forHour); the Food card groups by it.
+  const slotSeg = segmented(
+    MEAL_SLOTS.map((m) => ({ value: m.key, label: m.key === 'snack' ? 'Snack' : m.label })),
+    mealSlotAt(new Date())
+  );
+  slotSeg.node.setAttribute('aria-label', 'Meal slot');
+  /* Figures from a label the form was filled from: a barcode product (per
+     100 g, scaled at save) or a favourite (its own portion). Sent only while the
+     name still matches, so typing a different food drops them. */
+  let label = null; // { kind: 'barcode', name, product } | { kind: 'fav', name, fav }
+  let autoKcal = '';
 
   const foodNameInput = h('input', {
     type: 'text',
@@ -3560,6 +5191,106 @@ function openAddFood() {
   const field = (label, control) =>
     h('label', { class: 'gb-food-field' }, h('span', { class: 'gb-field-label' }, label), control);
 
+  /* One tap fills the form from a recent entry: name, grams and its calories,
+     typed, so saving it re-logs the same plate with no estimate. Filled, not
+     saved, so the day and meal above can still change. */
+  const recentRow = h('div', { class: 'gb-food-recent', role: 'group', 'aria-label': 'Recent foods' });
+  const fillGrams = (name, grams, kcal) => {
+    foodNameInput.value = name;
+    // segmented() has no setter; a click runs its own onChange (min/max/label).
+    if (unitSeg.get() !== 'g') unitSeg.node.children[1].click();
+    quantityInput.value = String(grams);
+    kcalInput.value = kcal != null ? String(kcal) : '';
+  };
+  const fillRecent = (r) => {
+    label = null;
+    fillGrams(r.foodName, r.quantityGrams, r.kcalEstimated);
+    const mealIdx = { home: 0, hotel: 1 }[r.mealType];
+    if (mealIdx != null && mealTypeSeg.get() !== r.mealType) mealTypeSeg.node.children[mealIdx].click();
+  };
+  // A favourite: its own portion and kcal, and its macros go with it.
+  const fillFavourite = (f) => {
+    label = { kind: 'fav', name: f.foodName, fav: f };
+    fillGrams(f.foodName, f.quantityGrams, f.kcal);
+  };
+  const favRow = h('div', { class: 'gb-food-recent', role: 'group', 'aria-label': 'Favourite foods' });
+  const paintFavourites = (list) => {
+    favRow.replaceChildren(
+      ...(list || []).map((f) =>
+        h(
+          'button',
+          { type: 'button', class: 'gb-food-recent-chip is-fav', onclick: () => fillFavourite(f) },
+          Icon('star', { size: 12, sw: 2.4 }),
+          f.foodName
+        )
+      )
+    );
+    favRow.hidden = !(list && list.length);
+  };
+  paintFavourites(favouriteFoods);
+  if (!favouriteFoods) loadFavouriteFoods().then(paintFavourites);
+
+  /* Barcode: the product's per-100 g label from OpenFoodFacts (GET
+     /api/food/barcode/{code}, no AI) fills name, grams (its serving, else 100)
+     and kcal; the grams can still change and the kcal follows them until typed. */
+  const fillBarcode = (p) => {
+    label = { kind: 'barcode', name: p.name, product: p };
+    const grams = p.servingGrams || 100;
+    const k = labelFor(p, grams).kcal;
+    fillGrams(p.name, grams, k);
+    autoKcal = kcalInput.value;
+  };
+  quantityInput.addEventListener('input', () => {
+    if (!label || label.kind !== 'barcode' || unitSeg.get() !== 'g') return;
+    if (kcalInput.value !== autoKcal) return; // typed over: theirs now
+    const k = labelFor(label.product, Number(quantityInput.value)).kcal;
+    kcalInput.value = k != null && Number(quantityInput.value) >= 10 ? String(k) : '';
+    autoKcal = kcalInput.value;
+  });
+  const barcodeBtn = canScanBarcode()
+    ? h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--secondary gb-food-photo-btn',
+          onclick: () =>
+            openBarcodeScanner(async (code) => {
+              const done = setThinking(barcodeBtn, 'Looking it up');
+              try {
+                fillBarcode(await api('/api/food/barcode/' + encodeURIComponent(code)));
+                toastSuccess('Found it. Check the amount, then add.');
+              } catch (err) {
+                toastError(err && err.status === 404 ? null : err, 'That product isn’t in the database. Type it in instead.');
+              } finally {
+                done();
+              }
+            }),
+        },
+        Icon('scan-barcode', { size: 16, sw: 2.2 }),
+        'Scan a barcode'
+      )
+    : null;
+  const paintRecent = (list) => {
+    recentRow.replaceChildren(
+      ...(list || []).map((r) =>
+        h(
+          'button',
+          { type: 'button', class: 'gb-food-recent-chip', onclick: () => fillRecent(r) },
+          r.foodName
+        )
+      )
+    );
+    recentRow.hidden = !(list && list.length);
+  };
+  paintRecent(recentFoods);
+  if (!recentFoods)
+    api('/api/food/recent')
+      .then((list) => {
+        recentFoods = Array.isArray(list) ? list : [];
+        paintRecent(recentFoods);
+      })
+      .catch(() => {});
+
   const body = h(
     'div',
     { class: 'gb-form gb-food-form' },
@@ -3574,7 +5305,11 @@ function openAddFood() {
         mealTypeSeg.node
       )
     ),
+    h('div', { class: 'gb-food-field' }, h('span', { class: 'gb-field-label' }, 'Slot'), slotSeg.node),
     field('Food', foodNameInput),
+    favRow,
+    recentRow,
+    barcodeBtn,
     photoBtn,
     platePhotoInput,
     itemsContainer,
@@ -3622,6 +5357,7 @@ function openAddFood() {
           foodName: item.foodName,
           quantityGrams: item.quantityGrams,
           mealType: mealType,
+          mealSlot: slotSeg.get(),
           loggedAt: loggedAtNow,
           note: photoDataUrl ? 'photo:' + (photoConfidence >= 0.7 ? 'used' : 'fallback') : null,
         }));
@@ -3650,15 +5386,29 @@ function openAddFood() {
           kcalInput.focus();
           throw new Error('Calories must be between 1 and 5,000 for a single entry.');
         }
+        // A label's figures ride along only for the food it described, in grams,
+        // with typed kcal (the server ignores them on an estimate anyway).
+        let figures = {};
+        if (label && label.name === foodName && grams != null && kcalRaw != null) {
+          if (label.kind === 'barcode') {
+            figures = labelFor(label.product, grams);
+            delete figures.kcal; // the field's own figure, typed or followed
+          } else if (grams === label.fav.quantityGrams) {
+            const f = label.fav;
+            figures = { proteinG: f.proteinG, carbsG: f.carbsG, fatG: f.fatG, fiberG: f.fiberG };
+          }
+        }
         entriesToAdd = [
           {
             foodName: foodName,
             quantityGrams: grams,
             pieces,
             mealType: mealType,
+            mealSlot: slotSeg.get(),
             kcal: kcalRaw != null ? Math.round(kcalRaw) : null,
             loggedAt: loggedAtFor(dateInput.value),
             note: null,
+            ...figures,
           },
         ];
       }
@@ -3719,51 +5469,44 @@ function deleteWaterEntry(entryId) {
    drops the diet check, which judged the week's dish names and no longer
    describes it. `weekGen` throws away an answer that was in flight across a
    write or a sign-out, so neither a stale week nor the last account's lands. */
-let weekGen = 0;
+const weekGen = generation();
 let weekInFlight = null;
 function loadWeekSummary() {
-  if (weekInFlight === weekGen) return;
-  const gen = (weekInFlight = weekGen);
+  if (weekInFlight === weekGen.now()) return;
+  const gen = (weekInFlight = weekGen.now());
   state.weekError = '';
   Promise.all([
     state.foodWeek || api('/api/food/week'),
     state.waterWeek || api('/api/water/week'),
   ])
     .then(([f, w]) => {
-      if (gen !== weekGen) return;
+      if (weekGen.isStale(gen)) return;
       state.foodWeek = f;
       state.waterWeek = w;
     })
     .catch((err) => {
-      if (gen === weekGen) state.weekError = (err && err.message) || 'Could not load your week.';
+      if (!weekGen.isStale(gen)) state.weekError = (err && err.message) || 'Could not load your week.';
     })
     .finally(() => {
       if (weekInFlight === gen) weekInFlight = null;
       if (state.screen !== 'summary') return;
-      if (gen !== weekGen) loadWeekSummary();
+      if (weekGen.isStale(gen)) loadWeekSummary();
       else render();
     });
 }
 
 function invalidateWeek(kind) {
-  weekGen++;
-  // Water is part of Buddy's read too, so any change drops it.
-  state.dietCheck = null;
-  if (kind !== 'water') state.foodWeek = null;
-  if (kind !== 'food') state.waterWeek = null;
-  // Progress charts today's water from the trends row, which is written at
-  // load: every water write passes here, so keep that row in step too.
-  const todayRow = state.trends && state.trends.byDate && state.trends.byDate[todayKey()];
-  if (todayRow && state.water && kind !== 'food') {
-    todayRow.waterMl = state.water.consumedMl || 0;
-    todayRow.waterGoalMl = state.water.goalMl || 0;
-  }
+  weekGen.bump();
+  // Water is part of Buddy's read too, so any change drops it. Progress charts
+  // today's water from the trends row, which is written at load: every water
+  // write passes here, so that row is kept in step too.
+  applyWeekInvalidation(state, kind, todayKey());
   if (state.screen === 'summary') loadWeekSummary();
 }
 
 // date: a YYYY-MM-DD to read that one day; omitted, the week.
 async function runDietCheck(date) {
-  const gen = weekGen;
+  const gen = weekGen.now();
   const scope = date ? 'day' : 'week';
   state.dietCheck = { loading: true, scope, date };
   render();
@@ -3776,7 +5519,7 @@ async function runDietCheck(date) {
     next = { scope, date, error: (err && err.message) || 'Could not check your ' + scope + ' right now.' };
   }
   // An entry changed (or the account did) while Buddy was reading: drop it.
-  if (gen !== weekGen) return;
+  if (weekGen.isStale(gen)) return;
   state.dietCheck = next;
   render();
   if (date) revealBuddyCard();
@@ -3792,6 +5535,156 @@ function revealBuddyCard() {
     const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     card?.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'start' });
   });
+}
+
+/* Fix a logged meal: PUT /api/food/entries/{id}. Typed calories are kept as
+   typed; new grams alone rescale the entry's own kcal/100 g; no AI either way.
+   The answer is the summary of the day the entry ends up on. */
+function openEditFood(entry) {
+  const name = h('input', {
+    type: 'text',
+    class: 'gb-input',
+    maxlength: 255,
+    value: entry.foodName || '',
+    'aria-label': 'Food',
+  });
+  const grams = h('input', {
+    type: 'number',
+    class: 'gb-input',
+    inputmode: 'numeric',
+    min: '10',
+    max: '2000',
+    step: '1',
+    value: String(entry.quantityGrams || ''),
+    'aria-label': 'Amount in grams',
+  });
+  const kcal = h('input', {
+    type: 'number',
+    class: 'gb-input',
+    inputmode: 'numeric',
+    min: '1',
+    max: '5000',
+    step: '1',
+    value: String(entry.kcalEstimated || ''),
+    'aria-label': 'Calories',
+  });
+  const day = h('input', {
+    type: 'date',
+    class: 'gb-input',
+    value: entry.logDate || todayKeyNow(),
+    max: todayKeyNow(),
+    'aria-label': 'Day this food was eaten',
+  });
+  const meal = segmented(
+    [
+      { value: 'home', label: 'Home' },
+      { value: 'hotel', label: 'Hotel' },
+    ],
+    entry.mealType || 'home'
+  );
+  const slot = segmented(
+    MEAL_SLOTS.map((m) => ({ value: m.key, label: m.key === 'snack' ? 'Snack' : m.label })),
+    entry.mealSlot || mealSlotAt(entry.loggedAt)
+  );
+  slot.node.setAttribute('aria-label', 'Meal slot');
+  /* The star saves this entry as it is on the server (name, grams, kcal,
+     macros) into the favourites, at once; Save is for the fields. */
+  const isStarred = () =>
+    (favouriteFoods || []).some(
+      (f) => f.foodName.toLowerCase() === String(entry.foodName || '').trim().toLowerCase()
+    );
+  const star = h(
+    'button',
+    { type: 'button', class: 'gb-btn gb-btn--secondary gb-food-star', 'aria-pressed': 'false' },
+    Icon('star', { size: 16, sw: 2.2 }),
+    h('span', null, 'Save as favourite')
+  );
+  const paintStar = () => {
+    const on = isStarred();
+    star.setAttribute('aria-pressed', String(on));
+    star.classList.toggle('is-on', on);
+    star.lastChild.textContent = on ? 'Saved as favourite' : 'Save as favourite';
+  };
+  star.addEventListener('click', async () => {
+    const done = setThinking(star, isStarred() ? 'Removing' : 'Saving');
+    try {
+      await starFoodEntry(entry, !isStarred());
+    } catch (err) {
+      toastError(err, 'Could not change this favourite right now.');
+    } finally {
+      done();
+      paintStar();
+    }
+  });
+  loadFavouriteFoods().then(paintStar);
+  const field = (label, control) =>
+    h('label', { class: 'gb-food-field' }, h('span', { class: 'gb-field-label' }, label), control);
+  openModal({
+    title: 'Edit food',
+    body: h(
+      'div',
+      { class: 'gb-form gb-food-form' },
+      h(
+        'div',
+        { class: 'gb-food-pair' },
+        field('Day', day),
+        h('div', { class: 'gb-food-field' }, h('span', { class: 'gb-field-label' }, 'Meal'), meal.node)
+      ),
+      h('div', { class: 'gb-food-field' }, h('span', { class: 'gb-field-label' }, 'Slot'), slot.node),
+      field('Food', name),
+      h(
+        'div',
+        { class: 'gb-food-pair' },
+        field('Amount', h('div', { class: 'gb-affix' }, grams, h('span', { class: 'gb-affix-unit' }, 'g'))),
+        field('Calories', h('div', { class: 'gb-affix' }, kcal, h('span', { class: 'gb-affix-unit' }, 'kcal')))
+      ),
+      h('div', { class: 'gb-field-hint gb-food-hint' }, 'Change the grams alone and the calories follow.'),
+      star
+    ),
+    primary: 'Save',
+    errorMessage: 'Could not save this entry right now.',
+    onPrimary: async () => {
+      const foodName = name.value.trim();
+      if (!foodName) {
+        name.focus();
+        throw new Error('Food name is required');
+      }
+      const g = Math.round(Number(grams.value));
+      if (!Number.isFinite(g) || g < 10 || g > 2000) {
+        grams.focus();
+        throw new Error('Amount must be 10 to 2000 grams.');
+      }
+      const k = Math.round(Number(kcal.value));
+      if (!Number.isFinite(k) || k < 1 || k > 5000) {
+        kcal.focus();
+        throw new Error('Calories must be between 1 and 5,000 for a single entry.');
+      }
+      if (day.value > todayKeyNow()) {
+        day.focus();
+        throw new Error("You can't log food for a day that hasn't happened yet.");
+      }
+      const body = { foodName, mealType: meal.get(), mealSlot: slot.get(), date: day.value || entry.logDate };
+      if (g !== entry.quantityGrams) body.quantityGrams = g;
+      // Unchanged calories with new grams: let the server rescale them.
+      if (k !== entry.kcalEstimated || g === entry.quantityGrams) body.kcal = k;
+      const updated = await api('/api/food/entries/' + encodeURIComponent(entry.id), {
+        method: 'PUT',
+        body: JSON.stringify(body),
+      });
+      recentFoods = null;
+      // Moved to another day: today's card loses it, so refetch today's.
+      if (updated && updated.date === todayKeyNow()) state.food = updated;
+      else if (state.food && (state.food.entries || []).some((e) => e.id === entry.id))
+        state.food = await api('/api/food').catch(() => state.food);
+      cacheFoodSummary(updated);
+      if (entry.logDate && updated && entry.logDate !== updated.date)
+        delete state.calendarFoodByDate[entry.logDate];
+      invalidateWeek('food');
+      render();
+      toastSuccess('Food updated.');
+    },
+  });
+  setTimeout(() => name.focus(), 60);
 }
 
 function deleteFoodEntry(entryId) {
@@ -3815,13 +5708,146 @@ function deleteFoodEntry(entryId) {
 }
 
 /* ---- Notification handlers ---- */
+/* The bell is paged: NOTIF_PAGE rows at a time, "Load older" for the next
+   (GET /api/notifications?limit=&before=&category=). `beyond` is the unread
+   count the server has past what is loaded, so the badge still counts every
+   unread card; `cursor`/`more` are per filter chip — a chip's rows newer than
+   min(its own cursor, the All cursor) are all loaded, so that is where its
+   next page starts. */
+const NOTIF_PAGE = 30;
+const NOTIF_FILTERS = [
+  { id: 'all', label: 'All' },
+  { id: 'reminders', label: 'Reminders' },
+  { id: 'habits', label: 'Habits' },
+  { id: 'people', label: 'People' },
+  { id: 'money', label: 'Money' },
+  { id: 'system', label: 'System' },
+];
+let notifFilter = 'all';
+let notifPaging = { cursor: {}, more: {}, beyond: 0, loading: false };
+
+function notifPageUrl(filter, before) {
+  const qs = new URLSearchParams({ limit: String(NOTIF_PAGE) });
+  if (before) qs.set('before', before);
+  if (filter && filter !== 'all') qs.set('category', filter);
+  return '/api/notifications?' + qs;
+}
+
+/* A row from before the server stamped `category` reads it off its kind,
+   as NotifyCategory.of does. */
+function notifCategory(n) {
+  if (n.category) return n.category;
+  if (n.kind === 'reminder') return 'reminders';
+  if (n.kind === 'habit_reminder') return 'habits';
+  if (String(n.kind || '').startsWith('mentorship_')) return 'people';
+  return 'system';
+}
+
+const notifTime = (n) => Date.parse(n.createdAt) || 0;
+const oldestNotif = (list) =>
+  list && list.length ? list.reduce((a, b) => (notifTime(b) < notifTime(a) ? b : a)).createdAt : null;
+
+function setNotifFirstPage(list) {
+  state.notifications = list || [];
+  notifPaging = {
+    cursor: { all: oldestNotif(state.notifications) },
+    more: { all: state.notifications.length >= NOTIF_PAGE },
+    beyond: 0,
+    loading: false,
+  };
+}
+
+/* The unread cards the server holds past the loaded pages. */
+function syncNotifBeyond() {
+  api('/api/notifications/unread-count')
+    .then((r) => {
+      const loaded = state.notifications.filter((n) => !n.readAt).length;
+      notifPaging.beyond = Math.max(0, ((r && r.count) || 0) - loaded);
+      repaintOverlays();
+    })
+    .catch(() => {});
+}
+
+function notifCursor(filter) {
+  const all = notifPaging.cursor.all;
+  const own = notifPaging.cursor[filter];
+  if (filter === 'all' || !own) return all;
+  if (!all) return own;
+  return Date.parse(own) < Date.parse(all) ? own : all;
+}
+
+function notifHasMore(filter) {
+  if (!notifPaging.more.all) return false; // the All stream reached the end: everything is loaded
+  return filter === 'all' || !(filter in notifPaging.more) ? true : notifPaging.more[filter];
+}
+
+async function loadOlderNotifs() {
+  if (notifPaging.loading) return;
+  const filter = notifFilter;
+  const before = notifCursor(filter);
+  notifPaging.loading = true;
+  repaintOverlays();
+  try {
+    const page = (await api(notifPageUrl(filter, before))) || [];
+    // `before` is inclusive (a second-precision column), so the boundary rows repeat.
+    const known = new Set(state.notifications.map((n) => n.id));
+    const fresh = page.filter((n) => !known.has(n.id));
+    state.notifications = state.notifications.concat(fresh).sort((a, b) => notifTime(b) - notifTime(a));
+    notifPaging.beyond = Math.max(0, notifPaging.beyond - fresh.filter((n) => !n.readAt).length);
+    notifPaging.cursor[filter] = oldestNotif(page) || before;
+    notifPaging.more[filter] = page.length >= NOTIF_PAGE && fresh.length > 0;
+  } catch (err) {
+    toastError(err, 'Could not load older notifications.');
+  }
+  notifPaging.loading = false;
+  repaintOverlays();
+}
+
+/* Read at once, then told to the server; a failure puts it all back. */
+async function markAllNotificationsRead() {
+  const prev = state.notifications;
+  const prevBeyond = notifPaging.beyond;
+  const now = new Date().toISOString();
+  state.notifications = prev.map((n) => (n.readAt ? n : { ...n, readAt: now }));
+  notifPaging.beyond = 0;
+  repaintOverlays();
+  try {
+    await api('/api/notifications/mark-all-read', { method: 'POST' });
+  } catch (err) {
+    state.notifications = prev;
+    notifPaging.beyond = prevBeyond;
+    repaintOverlays();
+    toastError(err, 'Could not mark them read.');
+  }
+}
+
+/* Read cards go; unread ones stay. Server-wide for the user, not just the loaded pages. */
+async function clearReadNotifications() {
+  const prev = state.notifications;
+  state.notifications = prev.filter((n) => !n.readAt);
+  repaintOverlays();
+  try {
+    await api('/api/notifications/read', { method: 'DELETE' });
+  } catch (err) {
+    state.notifications = prev;
+    repaintOverlays();
+    toastError(err, 'Could not clear read notifications.');
+  }
+}
+
 function unreadNotifs() {
-  return state.notifications.filter((n) => !n.readAt).length;
+  return state.notifications.filter((n) => !n.readAt).length + (notifPaging.beyond || 0);
 }
 
 async function refreshNotifications() {
   try {
-    state.notifications = await api('/api/notifications');
+    const [list, unread] = await Promise.all([
+      api(notifPageUrl('all')),
+      api('/api/notifications/unread-count').catch(() => null),
+    ]);
+    setNotifFirstPage(list);
+    const loaded = state.notifications.filter((n) => !n.readAt).length;
+    notifPaging.beyond = Math.max(0, ((unread && unread.count) || 0) - loaded);
     repaintOverlays();
   } catch (_) {
     /* silent */
@@ -3847,6 +5873,113 @@ async function markNotificationRead(id) {
   }
 }
 
+/* ---- Buddy (mentor.js) wiring ----
+   The open thread lives in memory only: leaving Buddy and coming back opens the
+   same chat, a reload opens the newest. mentorStarter is text the next Buddy
+   mount prefills — set by a tap on the evening-reflection card. */
+let mentorThreadId = null;
+let mentorStarter = '';
+
+/** Taken once by the Buddy screen. Also covers the reflection's push, which only
+    opens /#mentor: an unread reflection card from the last 3 hours is the starter. */
+function takeMentorStarter() {
+  if (mentorStarter) {
+    const s = mentorStarter;
+    mentorStarter = '';
+    return s;
+  }
+  const n = (state.notifications || []).find(
+    (x) =>
+      x.kind === 'buddy_checkin' &&
+      !x.readAt &&
+      Date.now() - new Date(x.createdAt).getTime() < 3 * 3600 * 1000
+  );
+  if (!n) return '';
+  // Not inside render(): marking read repaints the overlays.
+  setTimeout(() => markNotificationRead(n.id), 0);
+  return n.body || '';
+}
+
+/** The bell's evening-reflection card: open Buddy with its question in the box. */
+function openReflectionCard(n) {
+  mentorStarter = n.body || '';
+  markNotificationRead(n.id);
+  state.notifOpen = false;
+  setScreen('mentor', { force: true });
+}
+
+/** Settings › Alerts' "Evening reflection" value, for Buddy's chat sheet. */
+function reflectionLabel() {
+  const t = state.user && state.user.uiPrefs && state.user.uiPrefs.buddyReflection;
+  return t ? formatTime(t) : 'Off';
+}
+
+function mentorApi() {
+  const T = (id) => '/api/mentor/threads/' + encodeURIComponent(id);
+  return {
+    get: (id) =>
+      id
+        ? api(T(id) + '/messages').then(
+            (messages) => ({ threadId: id, messages }),
+            (err) => {
+              // Deleted on another device: open the newest instead.
+              if (err && err.status === 404) {
+                mentorThreadId = null;
+                return api('/api/mentor/chat');
+              }
+              throw err;
+            }
+          )
+        : api('/api/mentor/chat'),
+    post: (text, id) =>
+      api(T(id) + '/messages', { method: 'POST', body: JSON.stringify({ content: text }) }),
+    stream: (text, signal, id) => apiStream(T(id) + '/messages/stream', { content: text }, signal),
+    clear: (id) => api(T(id) + '/messages', { method: 'DELETE' }),
+    threads: {
+      list: () => api('/api/mentor/threads'),
+      create: () => api('/api/mentor/threads', { method: 'POST', body: '{}' }),
+      rename: (id, title) => api(T(id), { method: 'PATCH', body: JSON.stringify({ title }) }),
+      remove: (id) => api(T(id), { method: 'DELETE' }),
+    },
+    onThread: (id) => {
+      mentorThreadId = id;
+    },
+    today: todayKeyNow,
+    reflection: { label: reflectionLabel, open: () => openProfileSettings('notifications') },
+    // Buddy's one-tap actions, after the user confirmed the sheet. Each throws to
+    // keep the sheet open with the reason.
+    act: {
+      task: async (title) => {
+        await createTask({ title });
+        toastSuccess('Task added.');
+      },
+      habit: async ({ title, time }) => {
+        await createHabit({
+          name: title,
+          domain: 'habit',
+          icon: 'repeat',
+          cadence: 'daily',
+          metric: 'none',
+          reminderTime: time || null,
+        });
+        toastSuccess('Habit added.');
+      },
+      reminder: async ({ title, date, time, timeInput }) => {
+        if (time && isPastSlot(date, time)) {
+          throw fieldRefusal(timeInput, 'That time has already passed — pick a later one.');
+        }
+        const created = await api('/api/reminders', {
+          method: 'POST',
+          body: JSON.stringify({ text: title, date, time: time || null, tag: 'personal', repeat: 'none' }),
+        });
+        state.reminders.push(created);
+        reSyncDeviceAlarms();
+        toastSuccess('Reminder added.');
+      },
+    },
+  };
+}
+
 async function respondMentorshipRequest(requestId, notifId, accept) {
   try {
     await api(
@@ -3859,6 +5992,8 @@ async function respondMentorshipRequest(requestId, notifId, accept) {
     // optimistically here so the UI doesn't flash a stale row.
     state.notifications = state.notifications.filter((n) => n.id !== notifId);
     repaintOverlays(); // the bell only: rebuilding the screen behind it reset whatever it held
+    // An open Circle screen moves the row from "Requests for you" to Connections.
+    window.dispatchEvent(new CustomEvent('gb:circle-changed'));
     // Re-fetch in case the server-side delete also created new rows.
     await refreshNotifications();
   } catch (err) {
@@ -3891,11 +6026,8 @@ function profileDropdown() {
   if (!state.profileOpen) return null;
   const u = state.user || {};
   const initials = (u.displayName || u.email || 'B')[0].toUpperCase();
-  const xpToNextLevel = 500;
-  const xpProgress = Math.min(
-    100,
-    Math.round((((u.xpTotal || 0) % xpToNextLevel) / xpToNextLevel) * 100)
-  );
+  // The server's level curve, not a local constant (this said 500 against its 100).
+  const xpProgress = Math.min(100, levelProgress(u).pct);
   return h(
     'div',
     { class: 'gb-profile-pop' },
@@ -3929,6 +6061,7 @@ function profileDropdown() {
         xpProgress + '% to Level ' + ((u.level || 1) + 1)
       )
     ),
+    outboxChip(),
     h('div', { class: 'gb-profile-pop-divider' }),
     h(
       'button',
@@ -4104,7 +6237,8 @@ async function saveProfileDetails(payload) {
   });
   syncUserSession(updated);
   // The tracker reads this same goal; refetch so Home shows it without a reload.
-  state.water = await api('/api/water').catch(() => state.water);
+  const water = await api('/api/water').catch(() => null);
+  if (water) state.water = withPendingWater(water);
   // Weight, fitness goal and both daily goals all feed the Summary's targets.
   invalidateWeek();
   toastSuccess('Changes saved.');
@@ -4202,7 +6336,19 @@ function buildSegSlider(slides, initialId) {
   const btnMap = {};
   const thumb = h('div', { class: 'gb-segnav-thumb' });
   thumb.style.width = 'calc((100% - 8px) / ' + slides.length + ')';
+  let current = initialId;
+  /* Tabs are sized by their labels (six equal ones cut "Reminders" to
+     "Reminde" on a phone), so the thumb measures the tab it sits under. Until
+     the bar is laid out there is nothing to measure, and the equal-share guess
+     stands in; the observer below corrects it on first layout and on resize. */
   const move = (id) => {
+    current = id;
+    const btn = btnMap[id];
+    if (btn && btn.offsetWidth) {
+      thumb.style.width = btn.offsetWidth + 'px';
+      thumb.style.transform = 'translateX(' + (btn.offsetLeft - 4) + 'px)';
+      return;
+    }
     thumb.style.transform = 'translateX(' + slides.findIndex((t) => t.id === id) * 100 + '%)';
   };
   const bar = h('div', { class: 'gb-segnav', role: 'tablist' }, thumb);
@@ -4236,6 +6382,7 @@ function buildSegSlider(slides, initialId) {
     if (t.pane) t.pane.style.display = t.id === initialId ? '' : 'none';
   });
   move(initialId);
+  if (typeof ResizeObserver === 'function') new ResizeObserver(() => move(current)).observe(bar);
   return bar;
 }
 
@@ -4256,43 +6403,7 @@ function customisePanes() {
       { class: 'gb-field-hint', style: { marginBottom: '8px' } },
       'Turn parts of Growth Buddy on or off. Changes apply instantly.'
     ),
-    ...FEATURE_DEFS.map((def) => {
-      const isOn = () => featureOn(def.key);
-      const sw = h(
-        'button',
-        {
-          type: 'button',
-          role: 'switch',
-          'aria-checked': isOn() ? 'true' : 'false',
-          'aria-label': def.label,
-          class: 'gb-switch' + (isOn() ? ' is-on' : ''),
-        },
-        h('span', { class: 'gb-switch-knob' })
-      );
-      sw.onclick = async () => {
-        const next = !isOn();
-        sw.classList.toggle('is-on', next);
-        sw.setAttribute('aria-checked', next ? 'true' : 'false');
-        try {
-          await setFeature(def.key, next);
-        } catch (err) {
-          sw.classList.toggle('is-on', !next);
-          sw.setAttribute('aria-checked', !next ? 'true' : 'false');
-          toastError(err, 'Could not update features.');
-        }
-      };
-      return h(
-        'div',
-        { class: 'gb-feature-row' },
-        h(
-          'div',
-          { class: 'gb-feature-row-text' },
-          h('div', { class: 'gb-feature-row-label' }, def.label),
-          h('div', { class: 'gb-feature-row-desc' }, def.desc)
-        ),
-        sw
-      );
-    })
+    ...FEATURE_DEFS.map(featureSwitchRow)
   );
 
   // Home tab — show/hide + reorder home-screen widgets. Saves automatically.
@@ -4485,7 +6596,15 @@ function customisePanes() {
 
   // Money tab — tags, currency and prompts. Only when the feature is on.
   const moneyPane = featureOn('money')
-    ? h('div', { class: 'gb-settings-pane' }, MoneyCustomisePane(state.money, saveMoney))
+    ? h(
+        'div',
+        { class: 'gb-settings-pane' },
+        // money.js is a lazy chunk; the pane starts hidden, so it is usually in by the time it shows.
+        lazyScreen(
+          () => import('./money.js'),
+          (m) => m.MoneyCustomisePane(state.money, saveMoney)
+        )
+      )
     : null;
 
   // Display tab — text size and theme. Text size scales every rem in the app.
@@ -4740,6 +6859,54 @@ function openWeeklyReview() {
 }
 
 /* ---- Delete account (destructive, password-confirmed) ---- */
+/* "Download my data": GET /api/auth/export (every table the account owns, minus
+   secrets) handed to the OS as growth-buddy-export.json. Share sheet first where
+   the platform takes files (the Capacitor WebView mostly does not), else a plain
+   download — the same ladder share-card.js uses. */
+async function downloadMyData(btn) {
+  const label = btn && btn.lastChild && btn.lastChild.nodeType === 3 ? btn.lastChild : null;
+  const was = label ? label.textContent : '';
+  if (btn) btn.disabled = true;
+  if (label) label.textContent = 'Preparing…';
+  try {
+    const data = await api('/api/auth/export');
+    const name = 'growth-buddy-export-' + todayKey() + '.json';
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const file = typeof File === 'function' ? new File([blob], name, { type: 'application/json' }) : null;
+    if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: 'Growth Buddy data' });
+        return;
+      } catch (err) {
+        if (err && err.name === 'AbortError') return;
+      }
+    }
+    const url = URL.createObjectURL(blob);
+    const a = h('a', { href: url, download: name, style: { display: 'none' } });
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    pushToast('Your data is downloading.', 'success', 3000);
+  } catch (err) {
+    toastError(err, 'Could not export your data.');
+  } finally {
+    if (btn) btn.disabled = false;
+    if (label) label.textContent = was;
+  }
+}
+
+function downloadDataButton(extraClass = '') {
+  const btn = h(
+    'button',
+    { type: 'button', class: ('gb-btn gb-btn--ghost gb-account-signout ' + extraClass).trim() },
+    Icon('file', { size: 16 }),
+    'Download my data'
+  );
+  btn.addEventListener('click', () => downloadMyData(btn));
+  return btn;
+}
+
 function openDeleteAccount() {
   const { sheet, close } = openOverlay({ label: 'Delete account' });
   const pw = h('input', {
@@ -4765,7 +6932,16 @@ function openDeleteAccount() {
         method: 'POST',
         body: JSON.stringify({ password: pw.value }),
       });
-      // Account is gone — drop the local session and return to the login screen.
+      // Scheduled, not gone (AuthService.deleteAccount): every session was revoked
+      // and the purge runs in 7 days; signing in before then offers to cancel.
+      // Drop the local session and return to the login screen. The device's own
+      // alarms and the offline API cache are ours to clear (see logout()).
+      cancelPendingLocalNotifications();
+      try {
+        if (typeof caches !== 'undefined') await caches.delete('gb-api-get');
+      } catch (_) {
+        /* no CacheStorage */
+      }
       clearSession();
       state.user = null;
       close();
@@ -4784,12 +6960,18 @@ function openDeleteAccount() {
       h(
         'div',
         { class: 'gb-modal-sub' },
-        'This permanently erases your habits, tasks, goals, logs and money data. It can’t be undone.'
+        'You’ll be signed out on every device now, and in 7 days your habits, tasks, goals, logs ' +
+          'and money data are erased for good. Changed your mind? Sign in before then and choose ' +
+          '“Cancel deletion”. We’ll email you the date.'
       )
     ),
     h(
       'div',
       { class: 'gb-form' },
+      // Offered before the destructive button, not after: once it is pressed
+      // there is nothing left to export.
+      h('div', { class: 'gb-field-hint' }, 'Want a copy first? Download everything as a JSON file.'),
+      downloadDataButton(),
       h('label', { class: 'gb-field-label gb-field-label--sub' }, 'Confirm with your password'),
       pw,
       confirmBtn
@@ -4931,6 +7113,201 @@ function securitySection() {
       newPw,
       pwBtn
     ),
+    ...accountSecuritySections(),
+  ];
+}
+
+/* Copy text, toasting the result. The secret and the recovery codes are the
+   two things here that are useless unless they leave the screen intact. */
+function copyText(text, what) {
+  const done = () => toastSuccess(what + ' copied.');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done, () => toastError(null, 'Could not copy — select it and copy by hand.'));
+  } else {
+    toastError(null, 'Could not copy — select it and copy by hand.');
+  }
+}
+
+/* ---- Settings → Account: change email + two-step sign-in ----
+   Both read GET /api/auth/security once: whether 2FA is on, recovery codes
+   left, and an email change still waiting for its code. Each section repaints
+   its own box; nothing here calls render(). */
+function accountSecuritySections() {
+  const emailBox = h('div', { class: 'gb-form' });
+  const tfaBox = h('div', { class: 'gb-form' }, h('div', { class: 'gb-empty-sm' }, 'Loading…'));
+  let status = { twoFactorEnabled: false, recoveryCodesLeft: 0, pendingEmail: null };
+
+  const input = (attrs) => h('input', Object.assign({ class: 'gb-input' }, attrs));
+  const label = (text) => h('label', { class: 'gb-field-label gb-field-label--sub' }, text);
+  const hint = (text) => h('div', { class: 'gb-field-hint' }, text);
+  const busy = async (btn, working, run) => {
+    const was = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = working;
+    try {
+      return await run();
+    } finally {
+      btn.disabled = false;
+      btn.textContent = was;
+    }
+  };
+
+  /* Email: step 1 asks for the new address + password, step 2 for the code
+     that went to it. The old address gets a notice once it moves. */
+  function paintEmail(pending) {
+    if (pending) {
+      const code = input({ type: 'text', inputmode: 'numeric', maxlength: 6, autocomplete: 'one-time-code', placeholder: '6-digit code' });
+      const ok = h('button', { type: 'button', class: 'gb-btn gb-btn--primary' }, 'Confirm new email');
+      ok.addEventListener('click', () =>
+        busy(ok, 'Confirming…', async () => {
+          const digits = code.value.replace(/\D/g, '');
+          if (digits.length !== 6) return pushToast('Enter the 6-digit code from the email.', 'error', 3000);
+          try {
+            const user = await api('/api/auth/email/confirm', { method: 'POST', body: JSON.stringify({ code: digits }) });
+            syncUserSession(user);
+            toastSuccess('Email changed to ' + user.email + '.');
+            paintEmail(null);
+          } catch (err) {
+            toastError(err, 'Could not confirm that code.');
+          }
+        })
+      );
+      emailBox.replaceChildren(
+        hint('We sent a code to ' + pending + '. It works for 15 minutes.'),
+        label('Code'),
+        code,
+        ok,
+        h('button', { type: 'button', class: 'gb-btn gb-btn--ghost', onclick: () => paintEmail(null) }, 'Use a different email')
+      );
+      setTimeout(() => code.focus(), 30);
+      return;
+    }
+    const email = input({ type: 'email', autocomplete: 'email', placeholder: 'new@example.com', maxlength: 254 });
+    const pw = input({ type: 'password', autocomplete: 'current-password', placeholder: 'Your password' });
+    const send = h('button', { type: 'button', class: 'gb-btn gb-btn--primary' }, 'Send code');
+    send.addEventListener('click', () =>
+      busy(send, 'Sending…', async () => {
+        const newEmail = email.value.trim();
+        if (!newEmail || !email.checkValidity()) return pushToast('Enter the new email address.', 'error', 3000);
+        if (!pw.value) return pushToast('Enter your password to confirm.', 'error', 3000);
+        try {
+          await api('/api/auth/email/change', { method: 'POST', body: JSON.stringify({ newEmail, password: pw.value }) });
+          paintEmail(newEmail.toLowerCase());
+        } catch (err) {
+          toastError(err, 'Could not start the email change.');
+        }
+      })
+    );
+    emailBox.replaceChildren(
+      hint('Signed in as ' + ((state.user && state.user.email) || '') + '. We’ll send a code to the new address first.'),
+      label('New email'),
+      email,
+      label('Password'),
+      pw,
+      send
+    );
+  }
+
+  function paintTfaStatus() {
+    if (!status.twoFactorEnabled) {
+      const on = h('button', { type: 'button', class: 'gb-btn gb-btn--primary' }, 'Set up two-step sign-in');
+      on.addEventListener('click', () =>
+        busy(on, 'Starting…', async () => {
+          try {
+            paintTfaSetup(await api('/api/auth/2fa/setup', { method: 'POST' }));
+          } catch (err) {
+            toastError(err, 'Could not start setup.');
+          }
+        })
+      );
+      tfaBox.replaceChildren(
+        hint('Off. Turn it on and signing in also asks for a code from an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password…).'),
+        on
+      );
+      return;
+    }
+    const pw = input({ type: 'password', autocomplete: 'current-password', placeholder: 'Your password' });
+    const code = input({ type: 'text', autocomplete: 'one-time-code', maxlength: 32, placeholder: 'Code from the app, or a recovery code' });
+    const off = h('button', { type: 'button', class: 'gb-btn gb-btn--danger' }, 'Turn off two-step sign-in');
+    off.addEventListener('click', () =>
+      busy(off, 'Turning off…', async () => {
+        if (!pw.value || !code.value.trim()) return pushToast('Enter your password and a code.', 'error', 3000);
+        try {
+          await api('/api/auth/2fa/disable', { method: 'POST', body: JSON.stringify({ password: pw.value, code: code.value.trim() }) });
+          status = Object.assign({}, status, { twoFactorEnabled: false, recoveryCodesLeft: 0 });
+          toastSuccess('Two-step sign-in is off.');
+          paintTfaStatus();
+        } catch (err) {
+          toastError(err, 'Could not turn it off.');
+        }
+      })
+    );
+    tfaBox.replaceChildren(
+      hint('On. ' + status.recoveryCodesLeft + ' of 8 recovery codes left — each works once if you lose your phone.'),
+      label('To turn it off, confirm with your password and a code'),
+      pw,
+      code,
+      off
+    );
+  }
+
+  /* The secret is shown here and nowhere else, ever — once 2FA is on the
+     server refuses to hand it out again. No QR library, so it is text: the key
+     to type into the app, and the otpauth link for apps that take one. */
+  function paintTfaSetup(setup) {
+    const grouped = setup.secret.replace(/(.{4})/g, '$1 ').trim();
+    const code = input({ type: 'text', inputmode: 'numeric', maxlength: 6, autocomplete: 'one-time-code', placeholder: '6-digit code' });
+    const verify = h('button', { type: 'button', class: 'gb-btn gb-btn--primary' }, 'Turn on');
+    verify.addEventListener('click', () =>
+      busy(verify, 'Checking…', async () => {
+        const digits = code.value.replace(/\D/g, '');
+        if (digits.length !== 6) return pushToast('Enter the 6-digit code the app shows.', 'error', 3000);
+        try {
+          const out = await api('/api/auth/2fa/verify', { method: 'POST', body: JSON.stringify({ code: digits }) });
+          status = Object.assign({}, status, { twoFactorEnabled: true, recoveryCodesLeft: out.recoveryCodes.length });
+          paintRecoveryCodes(out.recoveryCodes);
+        } catch (err) {
+          toastError(err, 'That code didn’t work.');
+        }
+      })
+    );
+    tfaBox.replaceChildren(
+      hint('1. In your authenticator app, add an account and choose “Enter a setup key”. Type this key (time-based):'),
+      h('code', { class: 'gb-tfa-secret' }, grouped),
+      h('button', { type: 'button', class: 'gb-btn gb-btn--ghost', onclick: () => copyText(setup.secret, 'Key') }, 'Copy key'),
+      hint('Or, if your app accepts a setup link, use this one:'),
+      h('code', { class: 'gb-tfa-secret gb-tfa-uri' }, setup.otpauthUri),
+      h('button', { type: 'button', class: 'gb-btn gb-btn--ghost', onclick: () => copyText(setup.otpauthUri, 'Link') }, 'Copy link'),
+      label('2. Enter the 6-digit code the app now shows'),
+      code,
+      verify,
+      h('button', { type: 'button', class: 'gb-btn gb-btn--ghost', onclick: () => paintTfaStatus() }, 'Cancel')
+    );
+  }
+
+  function paintRecoveryCodes(codes) {
+    tfaBox.replaceChildren(
+      hint('Two-step sign-in is on. Save these recovery codes somewhere safe — each one signs you in once if you lose your phone. You won’t see them again.'),
+      h('code', { class: 'gb-tfa-secret gb-tfa-codes' }, codes.join('\n')),
+      h('button', { type: 'button', class: 'gb-btn gb-btn--ghost', onclick: () => copyText(codes.join('\n'), 'Recovery codes') }, 'Copy codes'),
+      h('button', { type: 'button', class: 'gb-btn gb-btn--primary', onclick: () => paintTfaStatus() }, 'I’ve saved them')
+    );
+  }
+
+  paintEmail(null);
+  api('/api/auth/security')
+    .then((s) => {
+      status = s || status;
+      if (status.pendingEmail) paintEmail(status.pendingEmail);
+      paintTfaStatus();
+    })
+    .catch(() => tfaBox.replaceChildren(h('div', { class: 'gb-empty-sm' }, 'Could not load two-step sign-in.')));
+
+  return [
+    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '20px' } }, 'Email'),
+    emailBox,
+    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '20px' } }, 'Two-step sign-in'),
+    tfaBox,
   ];
 }
 
@@ -4975,7 +7352,704 @@ function shareProgressRow() {
   );
 }
 
+/* Settings → Alerts: push per category, and how long read cards stay in the
+   bell. Both live in ui_prefs because the server acts on them with no client
+   around — PushService checks `notifyMute` before a web push
+   (NotificationPrefs.isMuted) and the nightly sweep reads `notifyKeepReadDays`.
+   A muted category still lands in the bell; on the phone, muting Habits also
+   drops the habit alarms from the device queue (reSyncDeviceAlarms). */
+const MUTE_CATEGORIES = [
+  { id: 'people', label: 'People', desc: 'Your circle, mentorship and family.' },
+  { id: 'money', label: 'Money', desc: 'Bills and spending nudges.' },
+  { id: 'habits', label: 'Habits', desc: 'Habit reminders.' },
+];
+const KEEP_READ_DAYS = [7, 30, 90];
+
+function notifyMuted(cat) {
+  const m = state.user && state.user.uiPrefs && state.user.uiPrefs.notifyMute;
+  return !!(m && m[cat]);
+}
+
+function notifyMuteRows() {
+  return MUTE_CATEGORIES.map((c) => {
+    const isOn = () => !notifyMuted(c.id);
+    const sw = h(
+      'button',
+      {
+        type: 'button',
+        role: 'switch',
+        'aria-checked': isOn() ? 'true' : 'false',
+        'aria-label': 'Notifications about ' + c.label,
+        class: 'gb-switch' + (isOn() ? ' is-on' : ''),
+      },
+      h('span', { class: 'gb-switch-knob' })
+    );
+    sw.onclick = () => {
+      const next = !isOn();
+      sw.classList.toggle('is-on', next);
+      sw.setAttribute('aria-checked', next ? 'true' : 'false');
+      const prev = (state.user && state.user.uiPrefs && state.user.uiPrefs.notifyMute) || {};
+      saveUiPrefs({ notifyMute: Object.assign({}, prev, { [c.id]: !next }) });
+      if (c.id === 'habits') reSyncDeviceAlarms();
+      toastSuccess(
+        next ? c.label + ' notifications are back on.' : c.label + ' muted — still listed in the bell.'
+      );
+    };
+    return h(
+      'div',
+      { class: 'gb-feature-row' },
+      h(
+        'div',
+        { class: 'gb-feature-row-text' },
+        h('div', { class: 'gb-feature-row-label' }, c.label),
+        h('div', { class: 'gb-feature-row-desc' }, c.desc)
+      ),
+      sw
+    );
+  });
+}
+
+function keepReadDays() {
+  const v = Number(((state.user && state.user.uiPrefs) || {}).notifyKeepReadDays);
+  return KEEP_READ_DAYS.includes(v) ? v : 30;
+}
+
+function keepReadPicker() {
+  return segmented(
+    KEEP_READ_DAYS.map((d) => ({ value: String(d), label: d + ' days' })),
+    String(keepReadDays()),
+    (v) => {
+      saveUiPrefs({ notifyKeepReadDays: Number(v) });
+      toastSuccess('Read notifications now stay ' + v + ' days.');
+    }
+  );
+}
+
 /* ---- Settings modal (Profile / Alerts / Account) ---- */
+/* ---- Settings → Reminders ----
+   The two defaults every reminder follows unless it picks its own — how far
+   ahead it rings, how long a snooze waits; both in ui_prefs, which the server
+   reads too (ReminderPrefs) — and every reminder in one list, to add to or
+   clear out without paging through the calendar a day at a time. */
+const SNOOZE_OPTIONS = [5, 10, 15, 30, 60];
+let reminderSettingsPaint = null;
+
+/** Repaint the Settings list if it is on screen; a no-op otherwise. */
+function repaintReminderSettings() {
+  if (reminderSettingsPaint) reminderSettingsPaint();
+}
+
+function keyOfDate(d) {
+  return (
+    d.getFullYear() +
+    '-' +
+    String(d.getMonth() + 1).padStart(2, '0') +
+    '-' +
+    String(d.getDate()).padStart(2, '0')
+  );
+}
+
+/* The next day a reminder still rings on, today included while its time is
+   ahead (an untimed one counts all day). A year out is far enough: past that
+   it reads "No date ahead", which is what an ended series is. */
+function nextOccurrence(rem) {
+  const now = new Date();
+  for (let i = 0; i < 370; i++) {
+    const key = keyOfDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() + i));
+    if (!occursOn(rem, key)) continue;
+    if (i === 0 && rem.time && isPastSlot(key, rem.time)) continue;
+    return key;
+  }
+  return null;
+}
+
+function shortDay(key) {
+  const today = todayKeyNow();
+  const d = new Date(key + 'T00:00:00');
+  const tomorrow = keyOfDate(new Date(Date.now() + 864e5));
+  if (key === today) return 'Today';
+  if (key === tomorrow) return 'Tomorrow';
+  return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
+function reminderSettingsPane() {
+  const pane = h('div', { class: 'gb-settings-pane', style: { display: 'none' } });
+
+  // ---- Defaults ----
+  const leadPicker = segmented(
+    LEAD_OPTIONS.map((m) => ({ value: String(m), label: m ? minutesLabel(m) : 'On time' })),
+    String(getDefaultLead()),
+    (v) => {
+      const lead = Number(v);
+      setDefaultLead(lead);
+      saveUiPrefs({ reminderLead: lead });
+      reSyncDeviceAlarms();
+      paintList();
+      toastSuccess(lead ? 'Reminders now ring ' + minutesLabel(lead) + ' early.' : 'Reminders now ring on time.');
+    }
+  );
+  const snoozePicker = segmented(
+    SNOOZE_OPTIONS.map((m) => ({ value: String(m), label: minutesLabel(m) })),
+    String(snoozeMinutes()),
+    (v) => {
+      saveUiPrefs({ snoozeMinutes: Number(v) });
+      repaintOverlays();
+      toastSuccess('Snooze set to ' + minutesLabel(Number(v)) + '.');
+    }
+  );
+
+  // ---- Quick add ----
+  const textInput = h('input', {
+    type: 'text',
+    class: 'gb-input',
+    placeholder: 'What should I remind you of?',
+    maxlength: 255,
+    'aria-label': 'Reminder text',
+  });
+  const dateInput = h('input', {
+    type: 'date',
+    class: 'gb-input',
+    value: todayKeyNow(),
+    min: todayKeyNow(),
+    'aria-label': 'Reminder date',
+  });
+  const timeInput = h('input', {
+    type: 'time',
+    class: 'gb-input gb-input--time',
+    'aria-label': 'Reminder time',
+  });
+  const repeatSel = h(
+    'select',
+    { class: 'gb-input', 'aria-label': 'Repeat' },
+    REPEAT_ORDER.map((r) => h('option', { value: r }, r === 'none' ? 'Once' : REPEATS[r].label))
+  );
+  // The calendar's own Notify control, Custom… included.
+  const notifySel = NotifySelect();
+  const addErr = h('p', { class: 'gb-field-error', role: 'alert', style: { display: 'none' } });
+  const setErr = (msg) => {
+    addErr.textContent = msg || '';
+    addErr.style.display = msg ? '' : 'none';
+  };
+  textInput.addEventListener('input', () => setErr(''));
+
+  const addBtn = h(
+    'button',
+    { type: 'button', class: 'gb-btn gb-btn--primary gb-remset-add-btn' },
+    Icon('plus', { size: 16, sw: 2.6, color: 'var(--fg-on-brand)' }),
+    'Add reminder'
+  );
+  const submit = async () => {
+    const text = textInput.value.trim();
+    if (!text) {
+      setErr('Write what to be reminded of first.');
+      textInput.focus();
+      return;
+    }
+    if (!dateInput.value) {
+      setErr('Pick a day for it.');
+      dateInput.focus();
+      return;
+    }
+    addBtn.disabled = true;
+    try {
+      const created = await addReminder(
+        dateInput.value,
+        text,
+        timeInput.value || '',
+        spokenTag || 'personal',
+        repeatSel.value,
+        '',
+        '',
+        '',
+        notifySel.getLead()
+      );
+      if (created) {
+        spokenTag = null;
+        voiceNote.style.display = 'none';
+        textInput.value = '';
+        timeInput.value = '';
+        repeatSel.value = 'none';
+        notifySel.setLead(null);
+        textInput.focus();
+      }
+    } finally {
+      addBtn.disabled = false;
+    }
+  };
+  addBtn.onclick = submit;
+  // Enter adds rather than reaching the sheet, where it would press Done.
+  textInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      submit();
+    }
+  });
+
+  // The calendar form's mic, here too: say it, check it, Add. This form has
+  // no Tag field, so a spoken tag ("urgent", "for work") rides along to the save.
+  let spokenTag = null;
+  const voiceNote = h('p', { class: 'gb-field-hint gb-voice-note', role: 'status', style: { display: 'none' } });
+  const micBtn = voiceSupported()
+    ? h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--compact gb-mic gb-rem-mic',
+          'aria-label': 'Say the reminder',
+          'aria-pressed': 'false',
+          onclick: async () => {
+            voiceNote.style.display = 'none';
+            const out = await captureReminder(micBtn);
+            if (!out || !out.said) return;
+            setErr('');
+            const rem = out.reminder;
+            textInput.value = rem ? rem.text || out.said : out.said;
+            spokenTag = rem && TAGS[rem.tag] ? rem.tag : null;
+            if (rem) {
+              if (rem.date) dateInput.value = rem.date;
+              timeInput.value = hhmm(rem.time);
+              repeatSel.value = REPEATS[rem.repeat] ? rem.repeat : 'none';
+              notifySel.setLead(rem.notifyBefore === undefined ? null : rem.notifyBefore);
+            }
+            voiceNote.textContent = rem
+              ? 'Filled in from what you said: ' + reminderSummary(rem) + '. Check it, then tap Add.'
+              : 'Heard: “' + out.said + '”. Set the day and time, then tap Add.';
+            voiceNote.style.display = '';
+            textInput.focus();
+          },
+        },
+        Icon('mic', { size: 18 })
+      )
+    : null;
+  textInput.addEventListener('input', () => {
+    voiceNote.style.display = 'none';
+  });
+
+  const addForm = h(
+    'div',
+    { class: 'gb-remset-add' },
+    micBtn ? h('div', { class: 'gb-rem-text-row' }, textInput, micBtn) : textInput,
+    addErr,
+    voiceNote,
+    h(
+      'div',
+      { class: 'gb-remset-add-grid' },
+      // Notify spans the row: its Custom… line needs the width.
+      h('div', { class: 'gb-remset-field gb-remset-field--wide' }, h('span', null, 'Notify'), notifySel),
+      h('label', { class: 'gb-remset-field' }, h('span', null, 'Day'), dateInput),
+      h('label', { class: 'gb-remset-field' }, h('span', null, 'Time'), timeInput),
+      h('label', { class: 'gb-remset-field gb-remset-field--wide' }, h('span', null, 'Repeat'), repeatSel)
+    ),
+    addBtn
+  );
+
+  // ---- The list ----
+  const count = h('span', { class: 'gb-sound-count' });
+  const list = h('div', { class: 'gb-remset-list', role: 'list' });
+  let armed = null;
+  let armTimer = null;
+
+  function row(rem, next) {
+    const tag = TAGS[rem.tag] || TAGS.other;
+    const bits = [];
+    bits.push(next ? shortDay(next) + (rem.time ? ', ' + formatTime(rem.time.slice(0, 5)) : '') : 'No date ahead');
+    if (rem.repeat && rem.repeat !== 'none') bits.push(describeRepeat(rem));
+    if (rem.time) {
+      bits.push(
+        rem.notifyBefore === null || rem.notifyBefore === undefined
+          ? leadLabel(getDefaultLead())
+          : leadLabel(rem.notifyBefore)
+      );
+    }
+    const snoozed = rem.snoozedUntil && new Date(rem.snoozedUntil).getTime() > Date.now();
+    const isArmed = armed === rem.id;
+    const del = h(
+      'button',
+      {
+        type: 'button',
+        class: 'gb-btn gb-btn--icon gb-sound-remove' + (isArmed ? ' is-armed' : ''),
+        'aria-label': isArmed ? 'Tap again to delete ' + rem.text : 'Delete ' + rem.text,
+        onclick: async () => {
+          if (armed !== rem.id) {
+            armed = rem.id;
+            clearTimeout(armTimer);
+            armTimer = setTimeout(() => {
+              armed = null;
+              paintList();
+            }, 3500);
+            paintList();
+            list.querySelector('[data-id="' + rem.id + '"] .gb-sound-remove')?.focus();
+            return;
+          }
+          armed = null;
+          clearTimeout(armTimer);
+          // The whole series: this list shows reminders, not days. One day of a
+          // series is still the calendar's to skip.
+          await deleteReminder('all', rem.id, null);
+        },
+      },
+      Icon('trash-2', { size: 15 }),
+      isArmed ? (rem.repeat && rem.repeat !== 'none' ? 'Delete all' : 'Delete') : null
+    );
+    return h(
+      'div',
+      { class: 'gb-remset-row', role: 'listitem', dataset: { id: rem.id }, style: { '--tag-color': tag.color } },
+      h('span', { class: 'gb-rem-accent' }),
+      h(
+        'div',
+        { class: 'gb-remset-main' },
+        h('div', { class: 'gb-remset-text' }, rem.text),
+        h('div', { class: 'gb-remset-meta' }, bits.join(' · ')),
+        snoozed
+          ? h(
+              'button',
+              {
+                type: 'button',
+                class: 'gb-remset-snoozed',
+                'aria-label': 'Cancel the snooze on ' + rem.text,
+                onclick: () => cancelReminderSnooze(rem.id),
+              },
+              Icon('alarm-clock', { size: 13 }),
+              snoozeLabel(rem.snoozedUntil),
+              Icon('x', { size: 12 })
+            )
+          : null
+      ),
+      del
+    );
+  }
+
+  function paintList() {
+    const all = (state.reminders || []).map((r) => ({ r, next: nextOccurrence(r) }));
+    // Soonest first; the ones with nothing ahead sink to the bottom.
+    all.sort((a, b) => {
+      if (!a.next || !b.next) return a.next ? -1 : b.next ? 1 : 0;
+      if (a.next !== b.next) return a.next < b.next ? -1 : 1;
+      return String(a.r.time || '99').localeCompare(String(b.r.time || '99'));
+    });
+    count.textContent = all.length ? String(all.length) : '';
+    list.replaceChildren(
+      ...(all.length
+        ? all.map((x) => row(x.r, x.next))
+        : [h('div', { class: 'gb-sound-empty' }, 'No reminders yet. Add one above.')])
+    );
+    refreshIcons();
+  }
+  // Only while this pane is in the page: a closed Settings must not keep a
+  // list being rebuilt behind it.
+  reminderSettingsPaint = () => {
+    if (!pane.isConnected) {
+      reminderSettingsPaint = null;
+      return;
+    }
+    paintList();
+  };
+  paintList();
+
+  pane.append(
+    h('div', { class: 'gb-settings-sec-label' }, 'When to notify'),
+    h(
+      'div',
+      { class: 'gb-field-hint', style: { marginBottom: '10px' } },
+      'How far ahead of its time a reminder rings — in the app, on your phone and on WhatsApp. A reminder can set its own when you add or edit it.'
+    ),
+    h('div', { class: 'gb-remset-picker' }, leadPicker.node),
+    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Snooze'),
+    h(
+      'div',
+      { class: 'gb-field-hint', style: { marginBottom: '10px' } },
+      'How long Snooze waits before it rings again. It’s on the reminder in the app, on its notification, and on WhatsApp — tap Snooze there, or reply SNOOZE (or “snooze 20”).'
+    ),
+    h('div', { class: 'gb-remset-picker gb-remset-picker--5' }, snoozePicker.node),
+    h(
+      'div',
+      { class: 'gb-sounds-head', style: { marginTop: '22px' } },
+      h('div', { class: 'gb-settings-sec-label', style: { margin: 0 } }, 'Your reminders'),
+      count
+    ),
+    addForm,
+    list,
+    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Other calendars'),
+    h(
+      'div',
+      { class: 'gb-field-hint', style: { marginBottom: '10px' } },
+      'Every reminder as a calendar file, repeats and alerts included, at your local times. A copy: changes here don’t follow it.'
+    ),
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'gb-btn gb-btn--ghost',
+        onclick: (e) => exportRemindersIcs(e.currentTarget),
+      },
+      Icon('calendar-plus', { size: 16 }),
+      'Export calendar (.ics)'
+    )
+  );
+  return pane;
+}
+
+/* The account's copy of a sound just kept on this device. 'saved', 'local'
+   (unreachable — it plays here and goes up at the next sign-in) or 'refused':
+   a 4xx, say another device took the last slot, which drops the local copy
+   too, or it would retry and fail at every sign-in. The caller repaints. */
+async function uploadNewCustomSound(sound) {
+  try {
+    await uploadCustomChime(sound);
+    return 'saved';
+  } catch (err) {
+    if (err && err.status >= 400 && err.status < 500) {
+      storeCustomChimes(readCustomChimes().filter((s) => s.id !== sound.id));
+      if (notifySound() === customKey(sound.id)) saveUiPrefs({ notifySound: DEFAULT_CHIME });
+      reSyncDeviceAlarms();
+      toastError(err, 'Couldn’t save that sound.');
+      return 'refused';
+    }
+    return 'local';
+  }
+}
+
+/* "+ Add your own sound…" in a reminder's or habit's Tone list: the same file or
+   voice recording as Settings → Alerts, under the same cap (CUSTOM_MAX_COUNT,
+   enforced again by the server). Resolves to the new key — the picker selects
+   it for that reminder only, the default tone is left alone — or null. */
+function openCustomToneDialog() {
+  return new Promise((resolve) => {
+    let result = null;
+    let recording = null;
+    const { sheet, close } = openOverlay({
+      label: 'Add your own sound',
+      className: 'gb-tone-modal',
+      onClose: () => {
+        if (recording) recording.cancel();
+        resolve(result);
+      },
+    });
+    const have = customChimes();
+    const full = have.length >= CUSTOM_MAX_COUNT;
+    const head = h(
+      'div',
+      { class: 'gb-modal-head' },
+      h('div', { class: 'gb-modal-title' }, full ? 'Your sounds are full' : 'Add your own sound'),
+      h(
+        'div',
+        { class: 'gb-modal-sub' },
+        full
+          ? 'You can keep ' +
+              CUSTOM_MAX_COUNT +
+              ' of your own, and all ' +
+              CUSTOM_MAX_COUNT +
+              ' are taken. Remove one in Settings → Alerts to add another, or pick one of these.'
+          : 'A file under ' +
+              Math.round(CUSTOM_MAX_BYTES / 1024) +
+              ' KB, or up to ' +
+              CUSTOM_MAX_MS / 1000 +
+              ' seconds of your voice. It joins your sounds (' +
+              have.length +
+              ' of ' +
+              CUSTOM_MAX_COUNT +
+              ') for any reminder or habit.'
+      )
+    );
+    const cancelBtn = h(
+      'button',
+      { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel', onclick: close },
+      'Cancel'
+    );
+
+    if (full) {
+      sheet.append(
+        head,
+        h(
+          'div',
+          { class: 'gb-tone-have' },
+          // Each one picks itself for this reminder: what "pick one of these" offers.
+          have.map((c) =>
+            h(
+              'button',
+              {
+                type: 'button',
+                class: 'gb-tone-chip',
+                'aria-label': 'Use ' + c.name,
+                onclick: () => {
+                  result = c.key;
+                  playChime(c.key);
+                  close();
+                },
+              },
+              Icon(c.source === 'recording' ? 'mic' : 'audio-lines', { size: 13 }),
+              c.name
+            )
+          )
+        ),
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-btn gb-btn--primary',
+            style: { width: '100%', marginTop: '14px' },
+            onclick: () => {
+              close();
+              openProfileSettings('notifications');
+            },
+          },
+          'Manage sounds in Settings'
+        ),
+        cancelBtn
+      );
+      refreshIcons();
+      return;
+    }
+
+    const keep = async (name, dataUrl, source) => {
+      const sound = { id: newSoundId(), name, source, dataUrl, updatedAt: new Date().toISOString(), synced: false };
+      storeCustomChimes(readCustomChimes().concat(sound));
+      const key = customKey(sound.id);
+      playChime(key);
+      const outcome = await uploadNewCustomSound(sound);
+      if (outcome === 'refused') {
+        close();
+        return;
+      }
+      result = key;
+      toastSuccess(
+        outcome === 'saved'
+          ? 'Added “' + name + '”. It’s this reminder’s tone now.'
+          : 'Added “' + name + '” on this device; your others get it when you’re next online.'
+      );
+      close();
+    };
+
+    const file = h('input', {
+      type: 'file',
+      accept: 'audio/*',
+      style: { display: 'none' },
+      onchange: async () => {
+        const f = file.files && file.files[0];
+        file.value = '';
+        if (!f) return;
+        let dataUrl;
+        try {
+          dataUrl = await readCustomChime(f);
+        } catch (err) {
+          pushToast(err.message || 'Could not use that file.', 'error', 4200);
+          return;
+        }
+        const name =
+          (f.name || '')
+            .replace(/\.[^.]+$/, '')
+            .trim()
+            .slice(0, 40) || 'Your sound';
+        keep(name, dataUrl, 'file');
+      },
+    });
+
+    const recBar = h('span', { class: 'gb-sound-rec-fill' });
+    const recTime = h('span', { class: 'gb-sound-rec-time' }, '0:00');
+    const recPanel = h(
+      'div',
+      { class: 'gb-sound-rec', role: 'status', 'aria-live': 'polite', style: { display: 'none' } },
+      h(
+        'div',
+        { class: 'gb-sound-rec-head' },
+        h('span', { class: 'gb-sound-rec-dot', 'aria-hidden': 'true' }),
+        h('span', { class: 'gb-sound-rec-label' }, 'Recording…'),
+        recTime
+      ),
+      h('div', { class: 'gb-sound-rec-track', 'aria-hidden': 'true' }, recBar),
+      h(
+        'div',
+        { class: 'gb-sound-actions' },
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-btn gb-btn--primary gb-btn--compact',
+            onclick: () => recording && recording.stop(),
+          },
+          'Stop & save'
+        ),
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-btn gb-btn--ghost gb-btn--compact',
+            onclick: () => recording && recording.cancel(),
+          },
+          'Cancel'
+        )
+      )
+    );
+    const recordBtn = h(
+      'button',
+      {
+        type: 'button',
+        class: 'gb-modal-opt',
+        onclick: async () => {
+          if (recording) return;
+          recordBtn.disabled = true;
+          try {
+            recording = await recordCustomChime();
+          } catch (err) {
+            recordBtn.disabled = false;
+            pushToast(err.message || 'Couldn’t start recording.', 'error', 4600);
+            return;
+          }
+          recordBtn.disabled = false;
+          choices.style.display = 'none';
+          recPanel.style.display = '';
+          const started = Date.now();
+          const tick = () => {
+            const ms = Math.min(CUSTOM_MAX_MS, Date.now() - started);
+            recTime.textContent = '0:0' + Math.floor(ms / 1000) + ' / 0:0' + CUSTOM_MAX_MS / 1000;
+            recBar.style.width = (ms / CUSTOM_MAX_MS) * 100 + '%';
+          };
+          tick();
+          const timer = setInterval(tick, 100);
+          let dataUrl = null;
+          try {
+            dataUrl = await recording.done;
+          } catch (err) {
+            pushToast(err.message || 'Couldn’t save that recording.', 'error', 4600);
+          }
+          clearInterval(timer);
+          recording = null;
+          recPanel.style.display = 'none';
+          choices.style.display = '';
+          if (dataUrl) {
+            const used = new Set(customChimes().map((c) => c.name));
+            let n = 1;
+            while (used.has('Recording ' + n)) n++;
+            keep('Recording ' + n, dataUrl, 'recording');
+          }
+        },
+      },
+      h('span', { class: 'gb-modal-opt-ic' }, Icon('mic', { size: 20 })),
+      h(
+        'span',
+        { class: 'gb-modal-opt-tx' },
+        h('span', { class: 'gb-modal-opt-l' }, 'Record your voice'),
+        h('span', { class: 'gb-modal-opt-s' }, 'Up to ' + CUSTOM_MAX_MS / 1000 + ' seconds')
+      )
+    );
+    const fileBtn = h(
+      'button',
+      { type: 'button', class: 'gb-modal-opt', onclick: () => file.click() },
+      h('span', { class: 'gb-modal-opt-ic' }, Icon('audio-lines', { size: 20 })),
+      h(
+        'span',
+        { class: 'gb-modal-opt-tx' },
+        h('span', { class: 'gb-modal-opt-l' }, 'Pick a sound file'),
+        h('span', { class: 'gb-modal-opt-s' }, 'mp3, m4a, ogg or wav, under ' + Math.round(CUSTOM_MAX_BYTES / 1024) + ' KB')
+      )
+    );
+    const choices = h('div', { class: 'gb-modal-opts gb-tone-choices' }, canRecordChime() ? recordBtn : null, fileBtn, file);
+    sheet.append(head, choices, recPanel, cancelBtn);
+    refreshIcons();
+  });
+}
+
 function openProfileSettings(initialTab) {
   const u = state.user || {};
   const now = new Date();
@@ -5641,6 +8715,147 @@ function openProfileSettings(initialTab) {
     waterFields
   );
 
+  /* ---- Quiet hours ----
+     ui_prefs.quietStart / quietEnd, read by the server (ReminderPrefs.isQuiet:
+     habit reminders, the digest) and by this device's alarm queue (push.js:
+     habit reminders, the water nudge). A window may wrap midnight. */
+  const qp = (u && u.uiPrefs) || {};
+  let quietOn = !!(qp.quietStart && qp.quietEnd && qp.quietStart !== qp.quietEnd);
+  const quietFrom = h('input', {
+    type: 'time',
+    class: 'gb-input',
+    value: qp.quietStart || '22:00',
+    'aria-label': 'Quiet from',
+  });
+  const quietTo = h('input', {
+    type: 'time',
+    class: 'gb-input',
+    value: qp.quietEnd || '07:00',
+    'aria-label': 'Quiet until',
+  });
+  const quietFields = h(
+    'div',
+    { style: { display: quietOn ? '' : 'none' } },
+    h('div', { class: 'gb-field-label' }, 'From'),
+    h(
+      'div',
+      { class: 'gb-quickadd-row', style: { gap: '8px' } },
+      quietFrom,
+      h('span', { class: 'gb-field-hint', style: { alignSelf: 'center' } }, 'until'),
+      quietTo
+    )
+  );
+  const saveQuiet = () => {
+    if (quietOn && (!quietFrom.value || !quietTo.value)) return; // a half-typed time
+    if (quietOn && quietFrom.value === quietTo.value) {
+      pushToast('Pick two different times.', 'error', 3200);
+      return;
+    }
+    saveUiPrefs(
+      quietOn ? { quietStart: quietFrom.value, quietEnd: quietTo.value } : { quietStart: null, quietEnd: null }
+    );
+    reSyncDeviceAlarms();
+  };
+  quietFrom.onchange = saveQuiet;
+  quietTo.onchange = saveQuiet;
+  const quietSwitch = h(
+    'button',
+    {
+      type: 'button',
+      role: 'switch',
+      'aria-checked': quietOn ? 'true' : 'false',
+      'aria-label': 'Quiet hours',
+      class: 'gb-switch' + (quietOn ? ' is-on' : ''),
+    },
+    h('span', { class: 'gb-switch-knob' })
+  );
+  quietSwitch.onclick = () => {
+    quietOn = !quietOn;
+    quietSwitch.classList.toggle('is-on', quietOn);
+    quietSwitch.setAttribute('aria-checked', quietOn ? 'true' : 'false');
+    quietFields.style.display = quietOn ? '' : 'none';
+    saveQuiet();
+    toastSuccess(quietOn ? 'Quiet hours on.' : 'Quiet hours off.');
+  };
+  const quietSectionBody = h(
+    'div',
+    null,
+    h(
+      'div',
+      { class: 'gb-feature-row' },
+      h(
+        'div',
+        { class: 'gb-feature-row-text' },
+        h('div', { class: 'gb-feature-row-label' }, 'Quiet hours'),
+        h('div', { class: 'gb-feature-row-desc' }, 'Hold back nudges overnight, or whenever you set.')
+      ),
+      quietSwitch
+    ),
+    quietFields
+  );
+
+  /* ---- Buddy's evening reflection ----
+     ui_prefs.buddyReflection = "HH:MM" local, absent = off (the default). The
+     server sends it (mentor/ReflectionScheduler: bell card + push, once a day,
+     held by quiet hours); no AI call. Tapping it opens Buddy with the question. */
+  let reflectOn = !!qp.buddyReflection;
+  const reflectAt = h('input', {
+    type: 'time',
+    class: 'gb-input',
+    value: qp.buddyReflection || '21:00',
+    'aria-label': 'Evening reflection time',
+  });
+  const reflectFields = h(
+    'div',
+    { style: { display: reflectOn ? '' : 'none' } },
+    h('div', { class: 'gb-field-label' }, 'At'),
+    reflectAt
+  );
+  const saveReflect = () => {
+    if (reflectOn && !reflectAt.value) return; // a half-typed time
+    saveUiPrefs({ buddyReflection: reflectOn ? reflectAt.value : null });
+  };
+  reflectAt.onchange = saveReflect;
+  const reflectSwitch = h(
+    'button',
+    {
+      type: 'button',
+      role: 'switch',
+      'aria-checked': reflectOn ? 'true' : 'false',
+      'aria-label': 'Evening reflection with Buddy',
+      class: 'gb-switch' + (reflectOn ? ' is-on' : ''),
+    },
+    h('span', { class: 'gb-switch-knob' })
+  );
+  reflectSwitch.onclick = () => {
+    reflectOn = !reflectOn;
+    reflectSwitch.classList.toggle('is-on', reflectOn);
+    reflectSwitch.setAttribute('aria-checked', reflectOn ? 'true' : 'false');
+    reflectFields.style.display = reflectOn ? '' : 'none';
+    saveReflect();
+    toastSuccess(reflectOn ? 'Evening reflection on.' : 'Evening reflection off.');
+  };
+  const reflectSectionBody = h(
+    'div',
+    null,
+    h(
+      'div',
+      { class: 'gb-feature-row' },
+      h(
+        'div',
+        { class: 'gb-feature-row-text' },
+        h('div', { class: 'gb-feature-row-label' }, 'Evening reflection'),
+        h(
+          'div',
+          { class: 'gb-feature-row-desc' },
+          'Once a day, Buddy asks how today went. Tap it to answer in a chat.'
+        )
+      ),
+      reflectSwitch
+    ),
+    reflectFields
+  );
+
   // ---- Push notifications ----
   const pushBtn = h(
     'button',
@@ -5683,27 +8898,7 @@ function openProfileSettings(initialTab) {
         pushOn = false;
         toastSuccess('Push notifications turned off.');
       } else {
-        const r = await enablePush(api);
-        if (r === 'ok') {
-          pushOn = true;
-          // Nothing was queued while permission was refused; arm it all now.
-          reSyncDeviceAlarms();
-          toastSuccess('Push notifications on. Try “Send test”.');
-        } else if (r === 'unconfigured') {
-          pushToast('Push isn’t set up on the server yet (no VAPID keys).', 'error', 4200);
-        } else if (r === 'denied') {
-          pushToast(
-            native
-              ? 'Notifications are blocked — turn them on in Settings › Apps › Growth Buddy.'
-              : 'Notifications are blocked — enable them in your browser settings.',
-            'error',
-            4200
-          );
-        } else if (r === 'unsupported') {
-          pushToast('This browser doesn’t support push notifications.', 'error', 4200);
-        } else {
-          pushToast('Could not enable push. Please try again.', 'error', 3600);
-        }
+        pushOn = await enablePushFlow('Push notifications on. Try “Send test”.');
       }
     } finally {
       syncPushUi();
@@ -5739,13 +8934,20 @@ function openProfileSettings(initialTab) {
   // ---- Notification sound ----
   // The segmented control already wraps past six options (that's why the
   // recurrence picker uses it), so the chimes need no CSS of their own. The
-  // "Yours" option only exists once a file has been stored on this device.
-  const soundPicker = h('div');
+  // user's own sounds join it, by name, once they are stored on this device.
+  const soundPicker = h('div', { class: 'gb-sound-picker' });
   const paintSoundPicker = () => {
-    const opts = CHIMES.map((c) => ({ value: c.key, label: c.label }));
-    if (hasCustomChime()) opts.push({ value: 'custom', label: 'Yours' });
+    // A file's name can be long; the segment wraps, but one 40-character pill
+    // would push the row wide. The list below shows the full name.
+    const opts = chimeOptions().map((c) => ({
+      value: c.key,
+      label: c.custom && c.label.length > 12 ? c.label.slice(0, 11).trimEnd() + '…' : c.label,
+    }));
+    // The pre-library 'custom' means the first one: light that up, not nothing.
+    let current = notifySound();
+    if (current === 'custom' && customChimes()[0]) current = customChimes()[0].key;
     soundPicker.replaceChildren(
-      segmented(opts, notifySound(), (v) => {
+      segmented(opts, current, (v) => {
         saveUiPrefs({ notifySound: v });
         // The sound rides on each queued notification, so already-queued ones
         // would keep the old one until something else rebuilt the queue.
@@ -5756,11 +8958,284 @@ function openProfileSettings(initialTab) {
   };
   paintSoundPicker();
 
+  // ---- Your own sounds: up to CUSTOM_MAX_COUNT, uploaded or recorded here ----
+  const soundCount = h('span', { class: 'gb-sound-count' });
+  const customSoundList = h('div', { class: 'gb-sound-list', role: 'list' });
+
+  // Remove is two taps — the first arms it for a few seconds — because a
+  // recording, once gone, can't be made again the same way. Inline rather than
+  // a confirm dialog, which would stack a second modal over Settings.
+  // One preview at a time. The row playing shows a Pause button and moving
+  // bars in place of its icon until the sound ends, is stopped, or another
+  // row's Play takes over.
+  let playing = null; // { key, row, btn, name }
+  const showPlaying = (p, on) => {
+    p.row.classList.toggle('is-playing', on);
+    p.btn.classList.toggle('is-on', on);
+    p.btn.setAttribute('aria-pressed', String(on));
+    p.btn.setAttribute('aria-label', (on ? 'Stop ' : 'Play ') + p.name);
+    p.btn.replaceChildren(Icon(on ? 'pause' : 'play', { size: 17 }));
+  };
+  const togglePreview = async (c, row, btn) => {
+    if (playing && playing.key === c.key) {
+      stopChime();
+      return;
+    }
+    const me = { key: c.key, row, btn, name: c.name };
+    playing = me;
+    showPlaying(me, true);
+    await previewChime(c.key); // settles the previous preview first, which resets its row
+    showPlaying(me, false);
+    if (playing === me) playing = null;
+  };
+
+  const soundRow = (c) => {
+    const inUse = notifySound() === c.key;
+    // Stored since renames: a row from before it was kept falls back to the
+    // name the recorder gives.
+    const isRecording = c.source ? c.source === 'recording' : /^Recording \d+$/.test(c.name);
+    let armed = null;
+    const removeBtn = h(
+      'button',
+      {
+        type: 'button',
+        class: 'gb-btn gb-btn--icon gb-sound-remove',
+        'aria-label': 'Remove ' + c.name,
+        onclick: () => {
+          if (armed) {
+            clearTimeout(armed);
+            removeCustomSound(c);
+            return;
+          }
+          removeBtn.classList.add('is-armed');
+          removeBtn.setAttribute('aria-label', 'Tap again to remove ' + c.name);
+          removeBtn.replaceChildren(h('span', null, 'Remove?'));
+          armed = setTimeout(() => {
+            armed = null;
+            removeBtn.classList.remove('is-armed');
+            removeBtn.setAttribute('aria-label', 'Remove ' + c.name);
+            removeBtn.replaceChildren(Icon('trash-2', { size: 17 }));
+          }, 3000);
+        },
+      },
+      Icon('trash-2', { size: 17 })
+    );
+    // Rename in place. The name itself is the control (a pencil beside it says
+    // so) — a third icon button squeezed the name to a few letters on a phone.
+    // Tapping it swaps in a field and moves Play/Remove aside; Enter or leaving
+    // the field saves, Escape puts the old name back.
+    const meta = h(
+      'span',
+      { class: 'gb-sound-meta' },
+      (isRecording ? 'Voice recording' : 'Sound file') + (inUse ? ' · Default' : '')
+    );
+    const nameBtn = h(
+      'button',
+      {
+        type: 'button',
+        class: 'gb-sound-name',
+        'aria-label': 'Rename ' + c.name,
+        onclick: () => startRename(),
+      },
+      h(
+        'span',
+        { class: 'gb-sound-title' },
+        h('span', { class: 'gb-sound-title-text' }, c.name),
+        Icon('pencil', { size: 13, className: 'gb-sound-title-edit' })
+      ),
+      meta
+    );
+    const startRename = () => {
+      const field = h('input', {
+        type: 'text',
+        class: 'gb-input gb-sound-rename',
+        value: c.name,
+        maxlength: '40',
+        'aria-label': 'New name for ' + c.name,
+        enterkeyhint: 'done',
+      });
+      const editor = h('span', { class: 'gb-sound-name' }, field);
+      let done = false;
+      const finish = (save) => {
+        if (done) return;
+        done = true;
+        const next = field.value.replace(/\s+/g, ' ').trim();
+        row.classList.remove('is-renaming');
+        if (save && next && next !== c.name) {
+          renameCustomSound(c, next);
+          return;
+        }
+        editor.replaceWith(nameBtn);
+        nameBtn.focus();
+      };
+      field.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          // Not up to the sheet: its submitOnEnter (gb-kit) would press Done and
+          // close Settings along with the rename.
+          e.preventDefault();
+          e.stopPropagation();
+          finish(true);
+        } else if (e.key === 'Escape') {
+          // The Settings modal closes on Escape too; this one is only the field's.
+          e.preventDefault();
+          e.stopPropagation();
+          finish(false);
+        }
+      });
+      field.addEventListener('blur', () => finish(true));
+      if (playing && playing.key === c.key) stopChime();
+      nameBtn.replaceWith(editor);
+      row.classList.add('is-renaming');
+      field.focus();
+      field.select();
+    };
+    const playBtn = h(
+      'button',
+      {
+        type: 'button',
+        class: 'gb-btn gb-btn--icon gb-sound-play',
+        'aria-label': 'Play ' + c.name,
+        'aria-pressed': 'false',
+        onclick: () => togglePreview(c, row, playBtn),
+      },
+      Icon('play', { size: 17 })
+    );
+    const row = h(
+      'div',
+      { class: 'gb-sound-row' + (inUse ? ' is-default' : ''), role: 'listitem', 'data-key': c.key },
+      h(
+        'span',
+        { class: 'gb-sound-chip' },
+        // Wrapped: Icon() sets an inline display, which a stylesheet can't hide.
+        h('span', { class: 'gb-sound-chip-icon' }, Icon(isRecording ? 'mic' : 'audio-lines', { size: 17 })),
+        h('span', { class: 'gb-sound-eq', 'aria-hidden': 'true' }, h('i'), h('i'), h('i'))
+      ),
+      nameBtn,
+      playBtn,
+      removeBtn
+    );
+    return row;
+  };
+
+  const paintSounds = () => {
+    // The rows are rebuilt, so a preview's button would be orphaned mid-play.
+    if (playing) stopChime();
+    paintSoundPicker();
+    const list = customChimes();
+    soundCount.textContent = list.length + ' of ' + CUSTOM_MAX_COUNT;
+    customSoundList.replaceChildren(
+      ...(list.length
+        ? list.map(soundRow)
+        : [
+            h(
+              'div',
+              { class: 'gb-sound-empty' },
+              'None yet. Add a short file or record your voice — up to ' +
+                CUSTOM_MAX_COUNT +
+                ', each up to five seconds.'
+            ),
+          ])
+    );
+    syncCustomRow();
+  };
+
+  // A new sound is this device's before anything touches the network: a dead
+  // connection must not cost the user the pick they just made.
+  async function addCustomSound(name, dataUrl, source) {
+    const sound = {
+      id: newSoundId(),
+      name,
+      source,
+      dataUrl,
+      updatedAt: new Date().toISOString(),
+      synced: false,
+    };
+    storeCustomChimes(readCustomChimes().concat(sound));
+    const key = customKey(sound.id);
+    saveUiPrefs({ notifySound: key });
+    reSyncDeviceAlarms();
+    paintSounds();
+    // Hear what was just added — through its row, so the row shows it playing.
+    const newPlay = customSoundList.querySelector('[data-key="' + key + '"] .gb-sound-play');
+    if (newPlay) newPlay.click();
+    else playChime(key);
+    const outcome = await uploadNewCustomSound(sound);
+    if (outcome === 'refused') {
+      paintSounds();
+      return;
+    }
+    if (outcome === 'saved') {
+      toastSuccess('Saved. “' + name + '” is your notification sound now.');
+      return;
+    }
+    // It plays here regardless — so this says what hasn't happened yet
+    // rather than a bare "saved" that quietly means "on one device".
+    pushToast(
+      'Saved on this device. Your others will pick it up next time you’re online.',
+      'info',
+      4600
+    );
+  }
+
+  /* The name changes here first, so the list and every picker show it at once.
+     A sound the server has never had just carries the new name up with its
+     upload. Otherwise a PATCH — and if that fails the old name comes back,
+     because the next sign-in would take the server's name anyway, and a rename
+     that quietly undoes itself later is worse than one that says it didn't take. */
+  async function renameCustomSound(c, name) {
+    const rename = (to) =>
+      storeCustomChimes(
+        readCustomChimes().map((s) => (s.id === c.id ? Object.assign({}, s, { name: to }) : s))
+      );
+    const wasSynced = readCustomChimes().some((s) => s.id === c.id && s.synced);
+    rename(name);
+    paintSounds();
+    // The rows were rebuilt; put focus back where the rename started.
+    const again = customSoundList.querySelector('[data-key="' + c.key + '"] [aria-label^="Rename"]');
+    if (again) again.focus();
+    if (!wasSynced) return;
+    try {
+      await api('/api/notifications/custom-sounds/' + c.id, {
+        method: 'PATCH',
+        body: JSON.stringify({ name }),
+      });
+    } catch (err) {
+      rename(c.name);
+      paintSounds();
+      toastError(err, 'Couldn’t rename it. Check your connection and try again.');
+    }
+  }
+
+  async function removeCustomSound(c) {
+    storeCustomChimes(readCustomChimes().filter((s) => s.id !== c.id));
+    // A reminder or habit tone that named it now finds an unknown key and falls
+    // back to the default on its own; only the default itself needs moving.
+    const cur = notifySound();
+    if (cur === c.key || (cur === 'custom' && !customChimes().length)) {
+      saveUiPrefs({ notifySound: DEFAULT_CHIME });
+    }
+    reSyncDeviceAlarms();
+    paintSounds();
+    try {
+      await api('/api/notifications/custom-sounds/' + c.id, { method: 'DELETE' });
+    } catch (_) {
+      // Gone from this device either way, but the account still has it —
+      // and the next sign-in pulls it back down. Say so rather than let it
+      // reappear looking like a bug.
+      pushToast(
+        'Removed here, but we couldn’t reach the server — it may come back when you next sign in.',
+        'error',
+        4600
+      );
+    }
+  }
+
   // A plain file input, relabelled. `accept` filters the OS picker; the real
   // gate (type + size) is readCustomChime, because accept is a hint, not a rule.
   const soundFile = h('input', {
     type: 'file',
     accept: 'audio/*',
+    class: 'gb-sound-file',
     style: { display: 'none' },
     onchange: async () => {
       const file = soundFile.files && soundFile.files[0];
@@ -5773,27 +9248,12 @@ function openProfileSettings(initialTab) {
         pushToast(err.message || 'Could not use that file.', 'error', 4200);
         return;
       }
-      // The file is good, so it becomes this device's sound before anything
-      // touches the network: a dead connection must not cost the user the pick
-      // they just made.
-      storeCustomChime(dataUrl);
-      saveUiPrefs({ notifySound: 'custom' });
-      reSyncDeviceAlarms();
-      paintSoundPicker();
-      syncCustomRow();
-      playChime('custom');
-      try {
-        await syncCustomChimeUp(dataUrl);
-        toastSuccess('Saved. That\u2019s your notification sound now.');
-      } catch (_) {
-        // It plays here regardless \u2014 so this says what hasn't happened yet
-        // rather than a bare "saved" that quietly means "on one device".
-        pushToast(
-          'Saved on this device. Your others will pick it up next time you\u2019re online.',
-          'info',
-          4600
-        );
-      }
+      const name =
+        (file.name || '')
+          .replace(/\.[^.]+$/, '')
+          .trim()
+          .slice(0, 40) || 'Your sound';
+      addCustomSound(name, dataUrl, 'file');
     },
   });
   const soundPickBtn = h(
@@ -5803,48 +9263,126 @@ function openProfileSettings(initialTab) {
       class: 'gb-btn gb-btn--soft gb-btn--compact',
       onclick: () => soundFile.click(),
     },
-    'Use your own sound\u2026'
+    Icon('plus', { size: 17 }),
+    h('span', null, 'Add a file')
   );
-  const soundClearBtn = h(
+
+  // Record: Start opens a small panel with a live countdown and a bar; Stop
+  // keeps it, Cancel throws it away, and it stops by itself at CUSTOM_MAX_MS —
+  // the five seconds any custom sound is cut to on playback.
+  let recording = null;
+  const recBar = h('span', { class: 'gb-sound-rec-fill' });
+  const recTime = h('span', { class: 'gb-sound-rec-time' }, '0:00');
+  const recPanel = h(
+    'div',
+    { class: 'gb-sound-rec', role: 'status', 'aria-live': 'polite', style: { display: 'none' } },
+    h(
+      'div',
+      { class: 'gb-sound-rec-head' },
+      h('span', { class: 'gb-sound-rec-dot', 'aria-hidden': 'true' }),
+      h('span', { class: 'gb-sound-rec-label' }, 'Recording…'),
+      recTime
+    ),
+    h('div', { class: 'gb-sound-rec-track', 'aria-hidden': 'true' }, recBar),
+    h(
+      'div',
+      { class: 'gb-sound-actions' },
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--primary gb-btn--compact',
+          onclick: () => recording && recording.stop(),
+        },
+        'Stop & save'
+      ),
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--ghost gb-btn--compact',
+          onclick: () => recording && recording.cancel(),
+        },
+        'Cancel'
+      )
+    )
+  );
+  const soundRecordBtn = h(
     'button',
     {
       type: 'button',
-      class: 'gb-btn gb-btn--ghost gb-btn--compact',
+      class: 'gb-btn gb-btn--soft gb-btn--compact',
       onclick: async () => {
-        storeCustomChime(null);
-        if (notifySound() === 'custom') saveUiPrefs({ notifySound: DEFAULT_CHIME });
-        reSyncDeviceAlarms();
-        paintSoundPicker();
-        syncCustomRow();
+        if (recording) return;
+        soundRecordBtn.disabled = true;
         try {
-          await syncCustomChimeUp(null);
-        } catch (_) {
-          // Gone from this device either way, but the account still has it —
-          // and the next sign-in pulls it back down. Say so rather than let it
-          // reappear looking like a bug.
-          pushToast(
-            'Removed here, but we couldn’t reach the server — it may come back when you next sign in.',
-            'error',
-            4600
-          );
+          recording = await recordCustomChime();
+        } catch (err) {
+          soundRecordBtn.disabled = false;
+          pushToast(err.message || 'Couldn’t start recording.', 'error', 4600);
+          return;
+        }
+        soundRecordBtn.disabled = false;
+        syncCustomRow();
+        const started = Date.now();
+        const tick = () => {
+          const ms = Math.min(CUSTOM_MAX_MS, Date.now() - started);
+          recTime.textContent = '0:0' + Math.floor(ms / 1000) + ' / 0:0' + CUSTOM_MAX_MS / 1000;
+          recBar.style.width = (ms / CUSTOM_MAX_MS) * 100 + '%';
+          // Settings closed mid-recording: let go of the microphone.
+          if (!recPanel.isConnected && recording) recording.cancel();
+        };
+        tick();
+        const timer = setInterval(tick, 100);
+        let dataUrl = null;
+        try {
+          dataUrl = await recording.done;
+        } catch (err) {
+          pushToast(err.message || 'Couldn’t save that recording.', 'error', 4600);
+        }
+        clearInterval(timer);
+        recording = null;
+        syncCustomRow();
+        if (dataUrl) {
+          const used = new Set(customChimes().map((c) => c.name));
+          let n = 1;
+          while (used.has('Recording ' + n)) n++;
+          addCustomSound('Recording ' + n, dataUrl, 'recording');
         }
       },
     },
-    'Remove'
+    Icon('mic', { size: 17 }),
+    h('span', null, 'Record voice')
   );
-  function syncCustomRow() {
-    const on = hasCustomChime();
-    soundPickBtn.textContent = on ? 'Replace your sound\u2026' : 'Use your own sound\u2026';
-    soundClearBtn.style.display = on ? '' : 'none';
-  }
-  syncCustomRow();
-  const customSoundRow = h(
+  const soundActions = h(
     'div',
-    { class: 'gb-quickadd-row', style: { flexWrap: 'wrap', marginTop: '10px' } },
+    { class: 'gb-sound-actions' },
     soundPickBtn,
-    soundClearBtn,
+    soundRecordBtn,
     soundFile
   );
+  const soundFullHint = h(
+    'div',
+    { class: 'gb-field-hint', style: { display: 'none' } },
+    'That’s ' + CUSTOM_MAX_COUNT + ' of your own — remove one to add another.'
+  );
+  function syncCustomRow() {
+    const full = customChimes().length >= CUSTOM_MAX_COUNT;
+    recPanel.style.display = recording ? '' : 'none';
+    soundActions.style.display = recording || full ? 'none' : '';
+    soundRecordBtn.style.display = canRecordChime() ? '' : 'none';
+    soundFullHint.style.display = full && !recording ? '' : 'none';
+  }
+  const customSoundRow = h(
+    'div',
+    { class: 'gb-sounds' },
+    h('div', { class: 'gb-sounds-head' }, h('span', null, 'Your sounds'), soundCount),
+    customSoundList,
+    soundActions,
+    recPanel,
+    soundFullHint
+  );
+  paintSounds();
 
   const notifPane = h(
     'div',
@@ -5863,6 +9401,15 @@ function openProfileSettings(initialTab) {
       'Steady sips beat one big glass. Needs notifications turned on above.'
     ),
     waterSectionBody,
+    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Quiet hours'),
+    h(
+      'div',
+      { class: 'gb-field-hint', style: { marginBottom: '12px' } },
+      'No habit reminders, water nudges or digest in this window, on any device or on WhatsApp. The digest waits until it ends. Reminders you set a time for still ring.'
+    ),
+    quietSectionBody,
+    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Buddy'),
+    reflectSectionBody,
     h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Notification sound'),
     h(
       'div',
@@ -5876,13 +9423,29 @@ function openProfileSettings(initialTab) {
     h(
       'div',
       { class: 'gb-field-hint', style: { marginTop: '8px' } },
-      'Your own sound stays on this device — under ' +
+      'Keep up to ' +
+        CUSTOM_MAX_COUNT +
+        ' of your own — a file under ' +
         Math.round(CUSTOM_MAX_BYTES / 1024) +
-        ' KB, and it stops after five seconds.' +
-        (localNotificationsAvailable()
-          ? ' It plays in the app; notifications that arrive while the app is closed use your phone’s own sound, because Android can only ring a file that ships with the app.'
-          : '')
+        ' KB, or your voice recorded here. Each stops after five seconds, follows you to your other devices, and can be picked for a single reminder or habit too.' +
+        // True everywhere: Android can only ring a file that ships with the app,
+        // and a Web Push notification rings with the browser's own sound.
+        ' Plays in the app only — the lock screen uses built-in tones.'
     ),
+    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Notify me about'),
+    h(
+      'div',
+      { class: 'gb-field-hint', style: { marginBottom: '10px' } },
+      'Off means no push or phone notification for it. It still shows in the bell.'
+    ),
+    ...notifyMuteRows(),
+    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Keep read notifications for'),
+    h(
+      'div',
+      { class: 'gb-field-hint', style: { marginBottom: '10px' } },
+      'Unread ones go after 90 days whatever you pick.'
+    ),
+    keepReadPicker(),
     h(
       'div',
       { class: 'gb-settings-sec-label', style: { marginTop: '22px' } },
@@ -5948,12 +9511,18 @@ function openProfileSettings(initialTab) {
     ),
     h('div', { class: 'gb-settings-sec-label', style: { marginTop: '20px' } }, 'Privacy'),
     shareProgressRow(),
+    h(
+      'div',
+      { class: 'gb-field-hint', style: { margin: '10px 0' } },
+      'A copy of everything your account holds, as a JSON file.'
+    ),
+    downloadDataButton(),
     ...securitySection(),
     h('div', { class: 'gb-settings-sec-label', style: { marginTop: '20px' } }, 'Danger zone'),
     h(
       'div',
       { class: 'gb-field-hint', style: { marginBottom: '10px' } },
-      'Permanently delete your account and all your data. This cannot be undone.'
+      'Delete your account and all your data. It happens 7 days after you ask, and signing in before then cancels it.'
     ),
     h(
       'button',
@@ -5974,10 +9543,12 @@ function openProfileSettings(initialTab) {
   // One door for everything a person can change about the app. Display and
   // Layout came from the old Customise modal; Security folded into Account.
   const { displayPane, layoutPane } = customisePanes();
+  const remindersPane = reminderSettingsPane();
   const tabDefs = [
     { id: 'profile', label: 'Profile', pane: profilePane },
     { id: 'display', label: 'Display', pane: displayPane },
     { id: 'notifications', label: 'Alerts', pane: notifPane },
+    { id: 'reminders', label: 'Reminders', pane: remindersPane },
     { id: 'layout', label: 'Layout', pane: layoutPane },
     { id: 'account', label: 'Account', pane: accountPane },
   ];
@@ -6008,6 +9579,7 @@ function openProfileSettings(initialTab) {
     profilePane,
     displayPane,
     notifPane,
+    remindersPane,
     layoutPane,
     accountPane
   );
@@ -6236,8 +9808,11 @@ function retryCalendarFoodDate(key) {
 // to a second click: nothing.
 let addingReminder = false;
 
-async function addReminder(key, text, time, tag, repeat, until, sound, endTime) {
-  if (!text || addingReminder) return;
+/* Returns the new reminder, or null when it was refused or failed (and toasted). */
+/* `extra`: the optional rest of CreateReminderRequest: notes, notifyBefore2 and
+   the richer rule (repeatInterval, repeatDays, repeatNth, repeatCount). */
+async function addReminder(key, text, time, tag, repeat, until, sound, endTime, notifyBefore, extra) {
+  if (!text || addingReminder) return null;
   // A day that has already gone takes no reminders at all — the calendar hides
   // the form on past days, and this is the same rule for every other caller.
   // The anchor date is what a recurrence counts from, so an anchor in the past
@@ -6247,7 +9822,7 @@ async function addReminder(key, text, time, tag, repeat, until, sound, endTime) 
       new Error('That day has already passed — pick today or later.'),
       'Could not add reminder.'
     );
-    return;
+    return null;
   }
   // Today, but at an hour that has gone. A recurring one still fires — "daily at
   // 8am" set up at 10am has tomorrow — so only the single occurrence is refused.
@@ -6256,7 +9831,7 @@ async function addReminder(key, text, time, tag, repeat, until, sound, endTime) 
       new Error('That time has already passed — pick a later one.'),
       'Could not add reminder.'
     );
-    return;
+    return null;
   }
   addingReminder = true;
   try {
@@ -6270,11 +9845,25 @@ async function addReminder(key, text, time, tag, repeat, until, sound, endTime) 
       until: until || null,
       // Empty means "use my default tone", and the server stores that as null.
       sound: sound || null,
+      // null = follow the default in Settings → Reminders.
+      notifyBefore: notifyBefore === null || notifyBefore === undefined || notifyBefore === '' ? null : Number(notifyBefore),
+      ...(extra || {}),
     };
-    const created = await api('/api/reminders', {
-      method: 'POST',
-      body: JSON.stringify(body),
-    });
+    let created;
+    let queued = false;
+    try {
+      created = await api('/api/reminders', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+    } catch (err) {
+      // A one-off offline goes in under a temp id and still rings on this phone
+      // (device alarm ids don't come from the reminder's). A series waits for
+      // the server: its skips and splits are the server's to work out.
+      if (body.repeat !== 'none' || !networkError(err)) throw err;
+      created = { ...body, id: tempId() };
+      queued = true;
+    }
     state.reminders.push(created);
     reSyncDeviceAlarms();
     resetCalendarForm();
@@ -6285,11 +9874,196 @@ async function addReminder(key, text, time, tag, repeat, until, sound, endTime) 
     } else {
       render();
     }
-    toastSuccess('Reminder added.');
+    if (queued)
+      queueWrite({ method: 'POST', path: '/api/reminders', body, kind: 'reminder.create', tempId: created.id, local: created });
+    else toastSuccess('Reminder added.');
+    repaintReminderSettings();
+    return created;
   } catch (err) {
     toastError(err, 'Could not add reminder.');
+    return null;
   } finally {
     addingReminder = false;
+  }
+}
+
+/* What timer.js is handed, both by the Focus screen and by the boot-time
+   resumeFocusSession (a session that ended while the app was closed is counted
+   then). chimeKey: the session end rings the user's own alert tone. */
+function focusProps() {
+  const link = focusPreselect;
+  focusPreselect = null; // taken once: the next visit opens on whatever the timer holds
+  return {
+    // link: { taskId } | { goalId } | null — what the session was spent on.
+    onFocusSession: (mode, durationSec, link) =>
+      api('/api/focus/sessions', {
+        method: 'POST',
+        body: JSON.stringify({
+          mode,
+          durationSec,
+          taskId: (link && link.taskId) || null,
+          goalId: (link && link.goalId) || null,
+        }),
+      }),
+    getFocusStats: () => api('/api/focus/stats'),
+    getFocusHistory: () => api('/api/focus/history?days=30'),
+    statsOwner: state.user && state.user.id,
+    chimeKey: notifySound(),
+    // "Focusing on…": the open tasks and goals, and a "Start focus" row's pick.
+    focusTargets: {
+      tasks: (state.tasks || []).filter((t) => !t.done).map((t) => ({ id: t.id, title: t.title })),
+      goals: (state.goals || [])
+        .flatMap((sec) => sec.goals || [])
+        .filter((g) => !g.completed)
+        .map((g) => ({ id: g.id, title: g.title })),
+    },
+    preselect: link,
+    // Daily focus goal, minutes (0 = off). In ui_prefs, where FocusService reads it for the streak.
+    focusGoalMins: (state.user && state.user.uiPrefs && state.user.uiPrefs.focusGoalMins) || 0,
+    onSetFocusGoal: (mins) => saveUiPrefs({ focusGoalMins: mins }),
+  };
+}
+
+/* A task or goal row's "Start focus": open the timer with it picked. */
+let focusPreselect = null;
+function startFocusOn(link) {
+  focusPreselect = link;
+  if (state.screen === 'focus') render();
+  else setScreen('focus');
+}
+
+/* ---- Snooze ----
+   One snoozed_until per reminder on the server; the scheduler rings it then on
+   every channel the reminder itself uses (bell, WhatsApp, push), and this
+   device's own alarm queue picks it up from the reminder (push.js). */
+/* A single-reminder answer (edit, snooze) carries doneDates: null; only the
+   list has them. Keep the ones this device already holds. */
+function keepDone(old, saved) {
+  return saved && !Array.isArray(saved.doneDates)
+    ? Object.assign({}, saved, { doneDates: (old && old.doneDates) || [] })
+    : saved;
+}
+
+/* Check one occurrence off, or back on. Optimistic: the row and the device's
+   alarm queue change at once and go back if the server refuses. Checking off
+   also drops a pending snooze, as the server does. */
+async function toggleReminderDone(id, key, done) {
+  const rem = (state.reminders || []).find((r) => r.id === id);
+  if (!rem) return;
+  const before = { doneDates: rem.doneDates, snoozedUntil: rem.snoozedUntil };
+  const dates = (rem.doneDates || []).filter((d) => d !== key);
+  rem.doneDates = done ? dates.concat(key) : dates;
+  if (done) rem.snoozedUntil = null;
+  const repaint = () => {
+    reSyncDeviceAlarms();
+    rerenderCalendarSideIfActive();
+    repaintReminderSettings();
+  };
+  repaint();
+  try {
+    await api(
+      '/api/reminders/' + encodeURIComponent(id) + '/done?date=' + encodeURIComponent(key),
+      { method: done ? 'POST' : 'DELETE' }
+    );
+  } catch (err) {
+    Object.assign(rem, before);
+    repaint();
+    toastError(err, done ? 'Could not mark that done.' : 'Could not undo that.');
+  }
+}
+
+/* Every reminder as an .ics file (GET /api/reminders/export.ics), handed to the
+   OS the way "Download my data" is: share sheet where it takes files, else a
+   plain download. */
+async function exportRemindersIcs(btn) {
+  if (btn) btn.disabled = true;
+  try {
+    let text = '';
+    await api('/api/reminders/export.ics', {
+      headers: { Accept: 'text/calendar' },
+      raw: true,
+      onResponse: async (res) => {
+        text = await res.text();
+      },
+    });
+    const name = 'growth-buddy-reminders.ics';
+    const blob = new Blob([text], { type: 'text/calendar' });
+    const file = typeof File === 'function' ? new File([blob], name, { type: 'text/calendar' }) : null;
+    if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: 'Growth Buddy reminders' });
+        return;
+      } catch (err) {
+        if (err && err.name === 'AbortError') return;
+      }
+    }
+    const url = URL.createObjectURL(blob);
+    const a = h('a', { href: url, download: name, style: { display: 'none' } });
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    pushToast('Your calendar file is downloading. Open it in Google, Apple or Outlook Calendar.', 'success', 4000);
+  } catch (err) {
+    toastError(err, 'Could not export your reminders.');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function snoozeMinutes() {
+  const v = Number(((state.user && state.user.uiPrefs) || {}).snoozeMinutes);
+  return Number.isFinite(v) && v >= 1 && v <= 240 ? Math.round(v) : 10;
+}
+
+/** The reminder a bell card came from, if it can ring again. One this device
+    hasn't loaded (made on another device since) still offers it: the server
+    decides, and only a timed reminder ever reaches the bell. */
+function snoozableReminder(n) {
+  if (!n || n.kind !== 'reminder' || !n.relatedId) return null;
+  const known = (state.reminders || []).find((r) => r.id === n.relatedId);
+  if (known && !known.time) return null;
+  return { id: n.relatedId };
+}
+
+function clockOf(iso) {
+  const d = new Date(iso);
+  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+
+/* minutes null = the default length. notifId: the bell card it came from,
+   marked read — a snoozed reminder is dealt with for now. */
+async function snoozeReminder(id, minutes, notifId) {
+  try {
+    const saved = await api('/api/reminders/' + encodeURIComponent(id) + '/snooze', {
+      method: 'POST',
+      body: JSON.stringify(minutes ? { minutes } : {}),
+    });
+    state.reminders = state.reminders.some((r) => r.id === id)
+      ? state.reminders.map((r) => (r.id === id ? keepDone(r, saved) : r))
+      : [...state.reminders, saved];
+    reSyncDeviceAlarms();
+    if (notifId) markNotificationRead(notifId);
+    rerenderCalendarSideIfActive();
+    repaintReminderSettings();
+    toastSuccess('Snoozed. It rings again at ' + formatTime(clockOf(saved.snoozedUntil)) + '.');
+    return saved;
+  } catch (err) {
+    toastError(err, 'Could not snooze that reminder.');
+    return null;
+  }
+}
+
+async function cancelReminderSnooze(id) {
+  try {
+    const saved = await api('/api/reminders/' + encodeURIComponent(id) + '/snooze', { method: 'DELETE' });
+    state.reminders = state.reminders.map((r) => (r.id === id ? keepDone(r, saved) : r));
+    reSyncDeviceAlarms();
+    rerenderCalendarSideIfActive();
+    repaintReminderSettings();
+    toastSuccess('Snooze cancelled.');
+  } catch (err) {
+    toastError(err, 'Could not cancel that snooze.');
   }
 }
 
@@ -6334,9 +10108,10 @@ function loadWaterUsualHours() {
    ten minutes after. Each part fails on its own: a missing one only hides its
    cards. Daily habits only: weekly ones have no day to miss. */
 let insightHistoryAt = 0;
+let insightReq = null; // the fetch in flight, so a re-render doesn't start another
 function loadInsightHistory() {
-  if (Date.now() - insightHistoryAt < 600000) return;
-  insightHistoryAt = Date.now();
+  if (insightReq || Date.now() - insightHistoryAt < 600000) return;
+  const req = (insightReq = {});
   const soft = (p) => p.catch(() => null);
   const day = (n) => {
     const d = new Date();
@@ -6349,15 +10124,31 @@ function loadInsightHistory() {
     soft(api('/api/tasks/finished?days=60')),
     soft(api('/api/water/times?days=14')),
     soft(Promise.all([api('/api/score/day?date=' + day(2)), api('/api/score/day?date=' + day(1))])),
-    Promise.all(daily.map((x) => soft(api('/api/habits/' + x.id + '/history?days=60')))),
+    // One request for every habit; an older server without /history answers
+    // 404/405 (its PUT /{id} matches the path), so ask per habit as before.
+    (daily.length ? api('/api/habits/history?days=60') : Promise.resolve({}))
+      .then((all) => daily.map((x) => (all && all[x.id]) || null))
+      .catch((err) =>
+        err && (err.status === 404 || err.status === 405)
+          ? Promise.all(daily.map((x) => soft(api('/api/habits/' + x.id + '/history?days=60'))))
+          : daily.map(() => null)
+      ),
     // Boot loads 60 days of daily logs; the year in pixels and records want the year.
     soft(api('/api/daily-logs?days=366')),
   ]).then(([focus, finished, waterTimes, scores, hist, year]) => {
+    if (insightReq !== req) return; // signed out (or in as someone else) meanwhile
+    insightReq = null;
+    // Stamped on success only: stamping before the fetch left a failed one (offline,
+    // a server blip) unretried for ten minutes. Every part failing is a failure.
+    const anyPart = [focus, finished, waterTimes, scores, year].some(Boolean) || hist.some(Boolean);
+    if (anyPart) insightHistoryAt = Date.now();
     const habits = {};
     daily.forEach((x, i) => {
       if (hist[i]) habits[x.id] = hist[i];
     });
-    state.insightHistory = { focus, finished, waterTimes, scores, habits, year };
+    if (anyPart || !state.insightHistory) {
+      state.insightHistory = { focus, finished, waterTimes, scores, habits, year, failed: !anyPart };
+    }
     if (state.screen === 'report') repaintReport();
   });
 }
@@ -6402,6 +10193,60 @@ function waterReminderPrefs() {
   return Object.assign({}, WATER_DEFAULTS, (p && p.water) || {});
 }
 
+/* An insight card's button (insights.js `action` {label, kind, params}). Report
+   draws the button; what it does lives here, because it reaches into reminders,
+   prefs, tasks and screens that insights.js must not know about. */
+function runInsightAction(action) {
+  const p = (action && action.params) || {};
+  const hm = (mins) =>
+    String(Math.floor(mins / 60)).padStart(2, '0') + ':' + String(mins % 60).padStart(2, '0');
+  const toMins = (t) => {
+    const m = /^(\d{1,2}):(\d{2})/.exec(String(t || ''));
+    return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+  };
+  switch (action && action.kind) {
+    case 'bedtimeReminder':
+      // The calendar's own form, prefilled: the user still picks the tone and saves.
+      prefillCalendarReminder('Wind down for bed', { time: p.time, repeat: p.repeat || 'daily' });
+      calToday();
+      setScreen('calendar');
+      return;
+    case 'waterNudge': {
+      const at = Number(p.hour) * 60;
+      if (!Number.isFinite(at)) return;
+      const w = waterReminderPrefs();
+      const every = Math.max(30, Number(w.everyMins) || WATER_DEFAULTS.everyMins);
+      let from = toMins(w.from) ?? 9 * 60;
+      let to = toMins(w.to) ?? 21 * 60;
+      // Slots run from `from` every `every` minutes: line the grid up on `at`
+      // (moving the start later by less than one step), or start there.
+      from = at >= from ? at - Math.floor((at - from) / every) * every : at;
+      if (to < at) to = at;
+      saveUiPrefs({ water: Object.assign({}, w, { on: true, from: hm(from), to: hm(to) }) });
+      reSyncDeviceAlarms();
+      toastSuccess('Water nudges on, one at ' + hm(at) + '.');
+      return;
+    }
+    case 'editTask': {
+      const t = (state.tasks || []).find((x) => String(x.id) === String(p.taskId));
+      if (t) openEditTask(t);
+      else pushToast('That task is gone.', 'error', 3200);
+      return;
+    }
+    case 'habitReminder':
+      updateHabit(p.habitId, { reminderTime: p.time })
+        .then(() => {
+          toastSuccess('Reminder moved to ' + p.time + '.');
+          render();
+        })
+        .catch((err) => toastError(err, 'Could not move that reminder.'));
+      return;
+    case 'openMoney':
+      setScreen('money');
+      return;
+  }
+}
+
 /* Re-arm this device's alarm queue — timed reminders plus the water nudge, in
    the chosen chime. Fire-and-forget: a no-op on the web (the server pushes
    there), and a phone that has refused notifications is not an error worth a
@@ -6411,9 +10256,24 @@ function reSyncDeviceAlarms() {
   syncDeviceAlarms({
     reminders: state.reminders,
     water: Object.assign(waterReminderPrefs(), { usualHours: state.waterUsualHours }),
-    habits: state.habits,
+    // A paused habit is out of the server's reminders too (findDeliverable).
+    // Muting Habits in Settings → Alerts silences the phone too, not just web push.
+    habits: notifyMuted('habits') ? [] : (state.habits || []).filter((x) => x.active !== false),
     sound: notifySound(),
+    lead: getDefaultLead(),
+    quiet: quietHours(),
   }).catch(() => {});
+}
+
+/* Quiet hours (ui_prefs.quietStart / quietEnd, set in Settings > Alerts), or
+   null when off. They hold back habit reminders, the water nudge and the
+   digest, on the device (push.js isQuietAt) and on the server
+   (ReminderPrefs.isQuiet). A timed reminder the user set still rings. */
+function quietHours() {
+  const p = (state.user && state.user.uiPrefs) || {};
+  return p.quietStart && p.quietEnd && p.quietStart !== p.quietEnd
+    ? { start: p.quietStart, end: p.quietEnd }
+    : null;
 }
 
 /* Sleep and lunch, shown on every day of the calendar. In ui_prefs, so it is in
@@ -6440,7 +10300,7 @@ async function editReminder(scope, id, occKey, patch) {
       body: JSON.stringify(patch),
     });
     if (saved && saved.id === id) {
-      state.reminders = state.reminders.map((r) => (r.id === id ? saved : r));
+      state.reminders = state.reminders.map((r) => (r.id === id ? keepDone(r, saved) : r));
     } else {
       state.reminders = await api('/api/reminders');
     }
@@ -6462,6 +10322,7 @@ async function editReminder(scope, id, occKey, patch) {
 async function deleteReminder(scope, id, occKey) {
   const repaint = () => {
     reSyncDeviceAlarms();
+    repaintReminderSettings();
     if (state.screen === 'calendar') {
       rerenderCalendarSideIfActive();
       repaintCalendarGrid();
@@ -6484,9 +10345,17 @@ async function deleteReminder(scope, id, occKey) {
     if (occKey) {
       qs.set('date', occKey);
     }
-    await api('/api/reminders/' + encodeURIComponent(id) + '?' + qs.toString(), {
-      method: 'DELETE',
-    });
+    const path = '/api/reminders/' + encodeURIComponent(realId(id)) + '?' + qs.toString();
+    // The whole series, offline (or one whose create is still queued): the row
+    // stays gone and the DELETE waits in the outbox.
+    const queue = () => queueWrite({ method: 'DELETE', path, kind: 'reminder.delete', local: { id } });
+    if (whole && isTempId(realId(id))) return queue();
+    try {
+      await api(path, { method: 'DELETE' });
+    } catch (err) {
+      if (!whole || !networkError(err)) throw err;
+      return queue();
+    }
     if (!whole) {
       state.reminders = await api('/api/reminders');
       repaint();
@@ -6545,7 +10414,7 @@ function openAddSheet() {
   const qaInput = h('input', {
     type: 'text',
     class: 'gb-input',
-    placeholder: 'e.g. spent 200 on lunch, slept 7h, drank a bottle of water',
+    placeholder: 'e.g. remind me tomorrow at 9 to call mom, spent 200 on lunch, slept 7h',
     'aria-label': 'Quick log in your own words',
   });
   const qaBtn = h(
@@ -6664,78 +10533,11 @@ function openAddSheet() {
       qaInput.focus();
     };
 
-    if (capSR) {
-      // Native path (mobile app): promise-based one-shot recognition.
-      let listening = false;
-      micBtn.addEventListener('click', async () => {
-        if (listening) {
-          try {
-            await capSR.stop();
-          } catch (_) {
-            /* already stopped */
-          }
-          return;
-        }
-        try {
-          const perm = await capSR.requestPermissions();
-          if (perm && perm.speechRecognition && perm.speechRecognition !== 'granted') {
-            pushToast('Microphone access was blocked — allow it in Settings.', 'error', 3600);
-            return;
-          }
-          listening = true;
-          micBtn.classList.add('is-listening');
-          const res = await capSR.start({
-            language: langCode,
-            maxResults: 1,
-            partialResults: false,
-            popup: false,
-          });
-          const said = res && res.matches && res.matches[0] ? res.matches[0].trim() : '';
-          if (said) gotSpeech(said);
-          else pushToast('Didn’t catch that — try speaking again.', 'error', 3000);
-        } catch (_) {
-          pushToast('Didn’t catch that — try speaking again.', 'error', 3000);
-        } finally {
-          listening = false;
-          micBtn.classList.remove('is-listening');
-        }
-      });
-    } else {
-      // Browser path: Web Speech API.
-      let rec = null;
-      langBtn.addEventListener('change', () => {
-        if (rec) rec.stop();
-      });
-      micBtn.addEventListener('click', () => {
-        if (rec) {
-          rec.stop();
-          return;
-        }
-        rec = new SR();
-        rec.lang = langCode;
-        rec.interimResults = false;
-        micBtn.classList.add('is-listening');
-        rec.onresult = (e) => {
-          const said = Array.from(e.results)
-            .map((r) => r[0].transcript)
-            .join(' ')
-            .trim();
-          gotSpeech(said);
-        };
-        rec.onerror = (e) => {
-          if (e.error === 'not-allowed') {
-            pushToast('Microphone access was blocked — allow it in your browser.', 'error', 3600);
-          } else {
-            pushToast('Didn’t catch that — try speaking again.', 'error', 3000);
-          }
-        };
-        rec.onend = () => {
-          micBtn.classList.remove('is-listening');
-          rec = null;
-        };
-        rec.start();
-      });
-    }
+    // listenOnce: the same capture every other mic in the app uses.
+    micBtn.addEventListener('click', async () => {
+      const said = await listenOnce(micBtn, langCode);
+      if (said) gotSpeech(said);
+    });
   }
 
   const quickAddBox = h(
@@ -6873,7 +10675,7 @@ function toDateTimeLocal(iso) {
 
 /* Title / priority / due — the same three fields whether you're adding a task
    or editing one, so both modals build the form from here. */
-function taskForm(task) {
+function taskForm(task, presetGoalId) {
   const titleInput = h('input', {
     type: 'text',
     class: 'gb-input',
@@ -6894,6 +10696,24 @@ function taskForm(task) {
     class: 'gb-input',
     value: task && task.dueAt ? toDateTimeLocal(task.dueAt) : '',
   });
+  // Goal (optional): the open goals, plus the one the task is already on even
+  // if that goal is done, so editing never silently drops the link.
+  const goalNow = (task && task.goalId) || presetGoalId || '';
+  const goalChoices = (state.goals || [])
+    .flatMap((sec) => sec.goals || [])
+    .filter((g) => !g.completed || g.id === goalNow);
+  const goalSel = goalChoices.length
+    ? h(
+        'select',
+        { class: 'gb-input', 'aria-label': 'Goal' },
+        h('option', { value: '' }, 'No goal'),
+        goalChoices.map((g) => {
+          const o = h('option', { value: g.id }, g.title);
+          if (g.id === goalNow) o.selected = true;
+          return o;
+        })
+      )
+    : null;
 
   return {
     node: h(
@@ -6904,15 +10724,14 @@ function taskForm(task) {
       h('div', { class: 'gb-field-label' }, 'Priority'),
       priority.node,
       h('div', { class: 'gb-field-label' }, 'Due (optional)'),
-      dueInput
+      dueInput,
+      goalSel ? h('div', { class: 'gb-field-label' }, 'Goal (optional)') : null,
+      goalSel
     ),
     focus: () => setTimeout(() => titleInput.focus(), 60),
     read: () => {
       const title = titleInput.value.trim();
-      if (!title) {
-        titleInput.focus();
-        throw new Error('Title is required');
-      }
+      if (!title) throw fieldRefusal(titleInput, 'Give the task a title.');
       return {
         title,
         priority: priority.get(),
@@ -6921,13 +10740,22 @@ function taskForm(task) {
         // can't say on its own — null is how every field in UpdateTaskRequest
         // says "leave it alone". createTask has no such field and ignores it.
         clearDueAt: !dueInput.value,
+        // Same shape for the goal: `clearGoal` is how "No goal" is said on a
+        // PUT. With no picker (no goals yet) the link is left as it is.
+        ...(goalSel
+          ? { goalId: goalSel.value || null, clearGoal: !goalSel.value }
+          : presetGoalId
+            ? { goalId: presetGoalId }
+            : {}),
       };
     },
   };
 }
 
-function openAddTask() {
-  const form = taskForm();
+/* `goal` — Goals' "Add a task" — preselects that goal. Anything else (a click
+   event from a plain onclick) means none. */
+function openAddTask(goal) {
+  const form = taskForm(null, goal && typeof goal.id === 'string' ? goal.id : null);
   const close = openModal({
     title: 'New task',
     body: h(
@@ -6950,7 +10778,10 @@ function openAddTask() {
       )
     ),
     primary: 'Add task',
-    onPrimary: () => createTask(form.read()),
+    onPrimary: async () => {
+      await createTask(form.read());
+      toastSuccess('Task added.');
+    },
   });
   form.focus();
 }
@@ -7098,7 +10929,7 @@ function openEditTask(task) {
     onPrimary: () => updateTask(task.id, form.read()),
     danger: {
       label: 'Delete task',
-      onClick: () => confirmDelete('Delete this task?', () => deleteTask(task.id)),
+      onClick: () => confirmDelete('Delete “' + task.title + '”?', () => deleteTask(task.id)),
     },
   });
   form.focus();
@@ -7145,6 +10976,17 @@ const FITNESS_PRESETS = [
   { key: 'workout', label: 'Workout', name: 'Workout', icon: 'dumbbell', metric: 'minutes' },
 ];
 
+/* Starter templates on New habit: one tap fills the name, category, icon and
+   (for a quit one) the kind, then the form is the user's to change. Icons must
+   be in HabitService.HABIT_ICONS (HabitIconsTest reads this list). */
+const HABIT_TEMPLATES = [
+  { key: 'water', name: 'Drink water', domain: 'habit', icon: 'droplets' },
+  { key: 'read', name: 'Read 20 min', domain: 'study', icon: 'book-open' },
+  { key: 'walk', name: 'Walk 8k steps', domain: 'fitness', icon: 'footprints', metric: 'steps' },
+  { key: 'nosugar', name: 'No sugar', domain: 'habit', icon: 'ban', kind: 'quit' },
+  { key: 'meditate', name: 'Meditate', domain: 'habit', icon: 'leaf' },
+];
+
 const METRIC_LABEL = { none: 'Just a tick', km: 'Distance (km)', steps: 'Steps', minutes: 'Minutes' };
 const METRIC_UNIT = { km: 'km', steps: 'steps', minutes: 'min' };
 
@@ -7169,6 +11011,328 @@ function openAddHabit() {
 }
 
 /* New habit, or edit `habit` (PUT keeps its streak; deleting to rename lost it). */
+/* Today in the account's zone (the day the server's UserClock files a check-in
+   under and refuses a future one against); the device date when none is set. */
+function accountTodayKey() {
+  const zone = state.user && state.user.timezone;
+  if (zone) {
+    try {
+      return new Intl.DateTimeFormat('en-CA', {
+        timeZone: zone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(new Date());
+    } catch (_) {
+      /* unknown zone id: the device date */
+    }
+  }
+  return todayKey();
+}
+
+const HEAT_LABEL = {
+  done: 'done',
+  frozen: 'covered by a freeze',
+  missed: 'missed',
+  open: 'not done',
+  today: 'not done yet',
+  before: 'before this habit started',
+  future: 'not yet',
+  // A quit ("break a habit") habit's days.
+  clean: 'clean',
+  slipped: 'slipped',
+};
+
+/* ---- A habit's history (Edit habit's top block) ----
+   12 ISO weeks of done / missed / frozen days from GET /api/habits/{id}/history,
+   plus the numbers habit-stats.js derives from the same rows: completion over
+   30 days and since it started, and the best streak in the cadence's unit.
+   Today and the 7 days before it are buttons: a tap opens that day's popover
+   (dayPopover) — tick / un-tick (a quit habit: log / undo a slip) and the
+   day's note — saved through the ordinary check-in endpoint with its `date`
+   (the server refuses a future day; a day before the habit existed is not
+   offered). Under the legend, the last few days that carry a note. */
+function habitHistoryPanel(habit) {
+  const panel = h(
+    'section',
+    { class: 'gb-hh', 'aria-label': 'History' },
+    h('div', { class: 'gb-hh-loading' }, 'Loading history…')
+  );
+  // Two years: "all time" for nearly everyone; past that the server's `since`
+  // is the window's start and the label says so.
+  const SPAN_DAYS = 730;
+  let rows = [];
+  let since = '';
+  let clipped = false;
+  let busy = false;
+
+  async function load() {
+    try {
+      const res = await api(
+        '/api/habits/' + encodeURIComponent(habit.id) + '/history?days=' + SPAN_DAYS
+      );
+      rows = (res && res.days) || [];
+      since = (res && res.since) || '';
+      clipped = !!since && daysFrom(since, accountTodayKey()) >= SPAN_DAYS;
+      paint();
+    } catch (_) {
+      panel.replaceChildren(
+        h('div', { class: 'gb-hh-loading' }, 'Could not load this habit’s history.')
+      );
+    }
+  }
+
+  // The day whose popover is open (tick or slip + its note), or null.
+  let openDay = null;
+
+  function isDone(row) {
+    // A quit habit's day is "done" (clean) unless its row is a slip.
+    return isQuitHabit(habit) ? !isSlipRow(row) : !!(row && row.done);
+  }
+
+  /* Save one day: its done state (on a quit habit, done = false is the slip)
+     and, when given, its note. Optimistic: painted first, rolled back on a
+     failure. A note alone on a missed day of a build habit is a not-done row
+     with a note — no tick, no XP. */
+  async function saveDay(key, nextDone, note) {
+    if (busy) return;
+    const prev = rows;
+    const row = rows.find((r) => r.date === key);
+    const changed = nextDone !== isDone(row);
+    busy = true;
+    rows = rows
+      .filter((r) => r.date !== key)
+      .concat({
+        date: key,
+        done: nextDone,
+        protectedDay: nextDone || isQuitHabit(habit) ? false : !!(row && row.protectedDay),
+        note: note != null ? note || null : row ? row.note : null,
+      });
+    paint();
+    try {
+      const body = { date: key, done: nextDone };
+      if (note != null) body.note = note;
+      const updated = await api('/api/habits/' + encodeURIComponent(habit.id) + '/checkin', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+      if (updated && updated.id) {
+        state.habits = state.habits.map((x) => (x.id === updated.id ? updated : x));
+        reconcileStreakFreeze(updated);
+        habit = updated;
+      }
+      forgetGoalHabitHistory(habit.id);
+      let what;
+      if (isQuitHabit(habit)) what = nextDone ? 'Slip taken back on ' : 'Slip logged on ';
+      else what = nextDone ? 'Ticked ' : 'Un-ticked ';
+      announce(changed ? what + fmtDayKey(key) + '.' : 'Note saved for ' + fmtDayKey(key) + '.');
+      // Today's tick moves the ring; an earlier day only the streak.
+      if (changed && key === accountTodayKey()) refreshScoreLater();
+      render();
+      reSyncDeviceAlarms();
+    } catch (err) {
+      rows = prev;
+      toastError(err, 'Could not update that day.');
+    } finally {
+      busy = false;
+      paint();
+      // The repaint replaced the button that had focus; put it back on that day.
+      const again = panel.querySelector('[data-hh-day="' + key + '"]');
+      if (again) again.focus();
+    }
+  }
+
+  function fmtDayKey(key) {
+    return new Date(key + 'T12:00:00').toLocaleDateString(undefined, {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+    });
+  }
+
+  /* The open day's popover: its state, the tick (or slip) button and its note. */
+  function dayPopover(key, dayState) {
+    const quit = isQuitHabit(habit);
+    const row = rows.find((r) => r.date === key);
+    const done = isDone(row);
+    const note = habitNoteInput(row && row.note);
+    let toggleLabel;
+    let toggleIcon;
+    if (quit) {
+      toggleLabel = done ? 'Log a slip' : 'Undo the slip';
+      toggleIcon = done ? 'ban' : 'undo-2';
+    } else {
+      toggleLabel = done ? 'Un-tick' : 'Mark done';
+      toggleIcon = done ? 'undo-2' : 'check';
+    }
+    return h(
+      'div',
+      { class: 'gb-hh-pop', role: 'group', 'aria-label': fmtDayKey(key) },
+      h(
+        'div',
+        { class: 'gb-hh-pop-head' },
+        h('span', null, fmtDayKey(key) + ' · ' + HEAT_LABEL[dayState]),
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-icon-btn',
+            'aria-label': 'Close this day',
+            onclick: () => {
+              openDay = null;
+              paint();
+              const cell = panel.querySelector('[data-hh-day="' + key + '"]');
+              if (cell) cell.focus();
+            },
+          },
+          Icon('x', { size: 16, sw: 2.4 })
+        )
+      ),
+      note,
+      h(
+        'div',
+        { class: 'gb-hh-pop-actions' },
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-btn ' + (quit && done ? 'gb-btn--soft' : 'gb-btn--primary'),
+            disabled: busy,
+            onclick: () => saveDay(key, !done, note.value.trim()),
+          },
+          Icon(toggleIcon, { size: 15, sw: 2.4 }),
+          toggleLabel
+        ),
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-btn gb-btn--soft',
+            disabled: busy,
+            onclick: () => saveDay(key, done, note.value.trim()),
+          },
+          'Save note'
+        )
+      )
+    );
+  }
+
+  function paint() {
+    const today = accountTodayKey();
+    const cadence = habit.cadence || 'daily';
+    const kind = isQuitHabit(habit) ? 'quit' : 'build';
+    const quit = kind === 'quit';
+    const stats = habitStats({
+      days: rows,
+      since,
+      today,
+      cadence,
+      targetPerWeek: habit.targetPerWeek,
+      kind,
+    });
+    // The server's longest only grows, and remembers runs older than this window.
+    const best = Math.max(stats.best, Number(habit.longestStreak) || 0);
+    const weeks = heatmapWeeks({ days: rows, since, today, cadence, kind });
+    let openState = null;
+    const grid = h(
+      'div',
+      { class: 'gb-hh-grid', role: 'group', 'aria-label': 'Last 12 weeks' },
+      weeks.map((w) =>
+        h(
+          'div',
+          { class: 'gb-hh-week' },
+          w.cells.map((c) => {
+            const editable = canEditDay(c.date, { today, since });
+            const label = fmtDayKey(c.date) + ': ' + HEAT_LABEL[c.state];
+            const cls = 'gb-hh-day is-' + c.state + (c.date === today ? ' is-now' : '');
+            if (editable && c.date === openDay) openState = c.state;
+            return editable
+              ? h('button', {
+                  type: 'button',
+                  class: cls + ' is-editable',
+                  disabled: busy,
+                  'aria-expanded': String(c.date === openDay),
+                  'data-hh-day': c.date,
+                  'aria-label':
+                    label + '. Tap to ' + (quit ? 'log a slip' : 'tick') + ' or add a note',
+                  title: label,
+                  onclick: () => {
+                    openDay = openDay === c.date ? null : c.date;
+                    paint();
+                    const again = panel.querySelector('[data-hh-day="' + c.date + '"]');
+                    if (again) again.focus();
+                  },
+                })
+              : h('span', { class: cls, role: 'img', 'aria-label': label, title: label });
+          })
+        )
+      )
+    );
+    const unit = stats.unit === 'week' ? 'week' : 'day';
+    const stat = (value, label) =>
+      h(
+        'div',
+        { class: 'gb-hh-stat' },
+        h('span', { class: 'gb-hh-stat-val' }, value),
+        h('span', { class: 'gb-hh-stat-label' }, label)
+      );
+    const legend = quit
+      ? ['clean', 'slipped']
+      : ['done', cadence === 'daily' ? 'missed' : 'open', 'frozen'];
+    const notes = recentNotes({ days: rows, since, today, cadence, kind });
+    let allLabel = clipped ? 'Last 2 years' : 'All time';
+    if (quit) allLabel = 'Clean, ' + allLabel.toLowerCase();
+    panel.replaceChildren(
+      h(
+        'div',
+        { class: 'gb-hh-stats' },
+        stat(pctLabel(stats.rate30), quit ? 'Clean, 30 days' : 'Last 30 days'),
+        stat(pctLabel(stats.rateAll), allLabel),
+        stat(String(best), quit ? 'Best clean run (days)' : 'Best streak (' + unit + 's)')
+      ),
+      grid,
+      openState ? dayPopover(openDay, openState) : null,
+      h(
+        'div',
+        { class: 'gb-hh-legend', 'aria-hidden': 'true' },
+        legend.map((s) =>
+          h(
+            'span',
+            { class: 'gb-hh-legend-item' },
+            h('span', { class: 'gb-hh-day is-' + s }),
+            s === 'open' ? 'Not done' : s === 'frozen' ? 'Freeze' : s[0].toUpperCase() + s.slice(1)
+          )
+        )
+      ),
+      h(
+        'div',
+        { class: 'gb-field-hint' },
+        quit
+          ? 'Tap any of the last 7 days to log or undo a slip, or add a note.'
+          : 'Forgot to tick? Tap any of the last 7 days to tick it, un-tick it or add a note.'
+      ),
+      notes.length
+        ? h(
+            'ul',
+            { class: 'gb-hh-notes', 'aria-label': 'Recent notes' },
+            notes.map((n) =>
+              h(
+                'li',
+                { class: 'gb-hh-note' },
+                h('span', { class: 'gb-hh-day is-' + n.state, 'aria-hidden': 'true' }),
+                h('span', { class: 'gb-hh-note-date' }, fmtDayKey(n.date)),
+                h('span', null, n.note)
+              )
+            )
+          )
+        : null
+    );
+  }
+
+  load();
+  return panel;
+}
+
 function openHabitForm(habit) {
   const nameInput = h('input', {
     type: 'text',
@@ -7190,13 +11354,56 @@ function openHabitForm(habit) {
     (habit && habit.domain) || 'habit',
     (d) => syncDomain(d)
   );
+  // "N× a week" is the custom cadence: the server always had it (targetPerWeek,
+  // weekly-bucket streaks), but the form offered only Daily and Weekly.
+  const targetInput = h('input', {
+    type: 'number',
+    class: 'gb-input',
+    min: '1',
+    max: '7',
+    step: '1',
+    inputmode: 'numeric',
+    'aria-label': 'Times per week',
+    value: String(habit && habit.cadence === 'custom' ? habit.targetPerWeek || 3 : 3),
+  });
+  const targetField = h(
+    'div',
+    { style: { display: habit && habit.cadence === 'custom' ? '' : 'none' } },
+    h('div', { class: 'gb-field-label' }, 'Times per week'),
+    targetInput
+  );
   const cadence = segmented(
     [
       { value: 'daily', label: 'Daily' },
       { value: 'weekly', label: 'Weekly' },
+      { value: 'custom', label: 'N× a week' },
     ],
-    (habit && habit.cadence) || 'daily'
+    (habit && habit.cadence) || 'daily',
+    (c) => {
+      targetField.style.display = c === 'custom' ? '' : 'none';
+    }
   );
+  // Pause keeps the habit and its history but takes it out of today's score,
+  // Home's count and its reminders (Habit.active; the scheduler skips inactive).
+  let paused = !!habit && habit.active === false;
+  const pauseSwitch = habit
+    ? h(
+        'button',
+        {
+          type: 'button',
+          role: 'switch',
+          'aria-checked': String(paused),
+          'aria-label': 'Pause this habit',
+          class: 'gb-switch' + (paused ? ' is-on' : ''),
+          onclick: () => {
+            paused = !paused;
+            pauseSwitch.classList.toggle('is-on', paused);
+            pauseSwitch.setAttribute('aria-checked', String(paused));
+          },
+        },
+        h('span', { class: 'gb-switch-knob' })
+      )
+    : null;
   const color = colorPicker((habit && habit.color) || '');
   const reminderInput = h('input', {
     type: 'time',
@@ -7207,10 +11414,12 @@ function openHabitForm(habit) {
     'select',
     { class: 'gb-input', 'aria-label': 'Habit reminder tone' },
     [h('option', { value: '' }, 'Default tone')].concat(
-      CHIMES.map((c) => h('option', { value: c.key }, c.key === 'off' ? 'Silent — no alert' : c.label))
+      chimeOptions().map((c) =>
+        h('option', { value: c.key }, c.key === 'off' ? 'Silent — no alert' : c.label)
+      )
     )
   );
-  if (habit) toneSel.value = habit.sound || '';
+  if (habit) toneSel.value = chimeOptionValue(habit.sound);
   toneSel.addEventListener('change', () => {
     if (toneSel.value) playChime(toneSel.value);
   });
@@ -7269,9 +11478,92 @@ function openHabitForm(habit) {
     if (habit.domain === 'fitness') metricSel.value = habit.metric || 'none';
   }
 
+  // Build (tick it) or break (quit: clean unless a slip is logged). Chosen at
+  // creation only — the server refuses to turn ticks into slips — so editing
+  // shows a line instead. A quit habit is daily and measures nothing.
+  let kind = isQuitHabit(habit) ? 'quit' : 'build';
+  const cadenceBlock = h(
+    'div',
+    null,
+    h('div', { class: 'gb-field-label' }, 'Cadence'),
+    cadence.node,
+    targetField
+  );
+  const syncKind = (k) => {
+    kind = k;
+    const quit = k === 'quit';
+    cadenceBlock.style.display = quit ? 'none' : '';
+    nameInput.placeholder = quit ? 'e.g. No sugar' : 'e.g. Meditate';
+    if (quit) {
+      presetRow.style.display = 'none';
+      metricField.style.display = 'none';
+      metricSel.value = 'none';
+    } else {
+      syncDomain(domain.get());
+    }
+  };
+  const kindSeg = habit
+    ? null
+    : segmented(
+        [
+          { value: 'build', label: 'Build a habit' },
+          { value: 'quit', label: 'Break a habit' },
+        ],
+        kind,
+        (k) => syncKind(k)
+      );
+  const DOMAIN_ORDER = ['habit', 'fitness', 'study', 'journal'];
+  const templateRow = habit
+    ? null
+    : h(
+        'div',
+        { class: 'gb-preset-row', role: 'group', 'aria-label': 'Start from a template' },
+        HABIT_TEMPLATES.map((t) =>
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-preset',
+              onclick: () => {
+                nameInput.value = presetName = t.name;
+                nameInput.setAttribute('aria-invalid', 'false');
+                // Category first, then the kind: a quit kind hides what fitness showed.
+                const di = DOMAIN_ORDER.indexOf(t.domain || 'habit');
+                if (di >= 0) domain.node.children[di].click();
+                kindSeg.node.children[t.kind === 'quit' ? 1 : 0].click();
+                if (t.metric) metricSel.value = t.metric;
+                // After the category click: syncDomain clears a non-fitness icon.
+                presetIcon = t.icon;
+              },
+            },
+            Icon(t.icon, { size: 16, sw: 2.4 }),
+            t.name
+          )
+        )
+      );
+  // A category tap while breaking a habit must not bring the fitness presets back.
+  const syncDomainOnly = syncDomain;
+  syncDomain = (d) => {
+    syncDomainOnly(d);
+    if (kind === 'quit') syncKind('quit');
+  };
+  if (habit) syncKind(kind);
+
   const body = h(
     'div',
     { class: 'gb-form' },
+    // Editing doubles as the habit's detail view: its history comes first.
+    habit ? habitHistoryPanel(habit) : null,
+    kindSeg ? kindSeg.node : null,
+    templateRow ? h('div', { class: 'gb-field-label' }, 'Start from a template') : null,
+    templateRow,
+    isQuitHabit(habit)
+      ? h(
+          'div',
+          { class: 'gb-field-hint' },
+          'Breaking a habit: every day counts as clean unless you log a slip.'
+        )
+      : null,
     h('div', { class: 'gb-field-label' }, 'Name'),
     nameInput,
     h('div', { class: 'gb-field-label' }, 'Category'),
@@ -7280,12 +11572,19 @@ function openHabitForm(habit) {
     metricField,
     h('div', { class: 'gb-field-label' }, 'Color (optional)'),
     color.node,
-    h('div', { class: 'gb-field-label' }, 'Cadence'),
-    cadence.node,
+    cadenceBlock,
     h('div', { class: 'gb-field-label' }, 'Daily reminder (optional)'),
     reminderInput,
     h('div', { class: 'gb-field-label' }, 'Tone'),
-    toneSel
+    toneSel,
+    pauseSwitch
+      ? h(
+          'div',
+          { style: { display: 'flex', gap: '12px', alignItems: 'center', marginTop: '12px' } },
+          h('span', { style: { flex: 1 } }, 'Pause — keep it, but don’t count it or remind me'),
+          pauseSwitch
+        )
+      : null
   );
 
   nameInput.addEventListener('input', () => nameInput.setAttribute('aria-invalid', 'false'));
@@ -7293,26 +11592,44 @@ function openHabitForm(habit) {
     title: habit ? 'Edit habit' : 'New habit',
     body,
     primary: habit ? 'Save changes' : 'Add habit',
+    danger: habit
+      ? {
+          label: 'Delete habit',
+          onClick: () =>
+            confirmDelete(
+              'Delete “' + habit.name + '”?',
+              () => deleteHabit(habit.id),
+              'Its streak and check-in history go with it.'
+            ),
+        }
+      : null,
     onPrimary: async () => {
       const name = nameInput.value.trim();
-      if (!name) {
-        nameInput.setAttribute('aria-invalid', 'true');
-        nameInput.focus();
-        throw new Error('Name is required');
-      }
+      if (!name) throw fieldRefusal(nameInput, 'Give the habit a name.');
       const d = domain.get();
       // Editing keeps the habit's own icon unless a preset or a new category says otherwise.
+      const quit = kind === 'quit';
       const icon =
         presetIcon ||
         (habit && habit.domain === d && habit.icon) ||
-        (DOMAIN[d] && DOMAIN[d].icon) ||
+        (quit ? 'ban' : DOMAIN[d] && DOMAIN[d].icon) ||
         'repeat';
+      // A quit habit is daily whatever the hidden cadence control says.
+      const cad = quit ? 'daily' : cadence.get();
+      let targetPerWeek;
+      if (cad === 'custom') {
+        targetPerWeek = Number(targetInput.value);
+        if (!Number.isInteger(targetPerWeek) || targetPerWeek < 1 || targetPerWeek > 7) {
+          throw fieldRefusal(targetInput, 'Pick 1 to 7 times a week.');
+        }
+      }
       const fields = {
         name,
         domain: d,
         icon,
-        cadence: cadence.get(),
-        metric: d === 'fitness' ? metricSel.value : 'none',
+        cadence: cad,
+        metric: d === 'fitness' && !quit ? metricSel.value : 'none',
+        ...(targetPerWeek ? { targetPerWeek } : {}),
       };
       if (habit) {
         // On PUT a null field means "unchanged", so blanks are sent as '' and a
@@ -7323,18 +11640,26 @@ function openHabitForm(habit) {
           reminderTime: reminderInput.value || null,
           clearReminder: !reminderInput.value,
           sound: toneSel.value || '',
+          active: !paused,
         });
+        // Pausing or a new cadence changes what today's score counts.
+        if (paused !== (habit.active === false) || cad !== (habit.cadence || 'daily')) {
+          refreshScoreLater();
+        }
         return;
       }
       await createHabit({
         ...fields,
+        kind,
         color: color.get() || null,
         reminderTime: reminderInput.value || null,
         sound: toneSel.value || null,
       });
     },
   });
-  setTimeout(() => nameInput.focus(), 60);
+  // A new habit starts at its name. Editing opens on the history: focusing the
+  // name scrolled it away and raised a phone keyboard over it.
+  if (!habit) setTimeout(() => nameInput.focus(), 60);
 }
 
 /* What quick add read, before any of it is written. Every row is on by default
@@ -7407,48 +11732,77 @@ function relativeTime(iso) {
 /* ---- Bell dropdown ---- */
 function notificationDropdown() {
   if (!state.notifOpen) return null;
-  const items = state.notifications.slice(0, 12);
+  // Every loaded page, narrowed by the chip; "Load older" fetches the next one.
+  // (It used to be the newest 12 of an unpaged list, and "Clear all" deleted
+  // the lot — PATCH /read-all still does that for builds cached on phones.)
+  const items =
+    notifFilter === 'all'
+      ? state.notifications
+      : state.notifications.filter((n) => notifCategory(n) === notifFilter);
+  const anyUnread = unreadNotifs() > 0;
+  const anyRead = state.notifications.some((n) => n.readAt);
   const card = h('div', { class: 'gb-notif-pop' });
+  const headLink = (label, run) => h('button', { type: 'button', class: 'gb-notif-link', onclick: run }, label);
   card.appendChild(
     h(
       'div',
       { class: 'gb-notif-head' },
       h('span', null, 'Notifications'),
-      state.notifications.length
+      anyUnread || anyRead
         ? h(
-            'a',
-            {
-              role: 'button',
-              tabindex: '0',
-              class: 'gb-login-link',
-              onclick: async () => {
-                try {
-                  await api('/api/notifications/read-all', { method: 'PATCH' });
-                } catch (_) {}
-                // Clears server-side, so the list empties here too — a bell that
-                // still showed every notification it had ever received was a
-                // growing table on one end and a wall of read cards on the other.
-                state.notifications = [];
-                repaintOverlays();
-              },
-            },
-            'Clear all'
+            'div',
+            { class: 'gb-notif-head-actions' },
+            anyUnread ? headLink('Mark all read', markAllNotificationsRead) : null,
+            anyRead ? headLink('Clear read', clearReadNotifications) : null
           )
         : null
     )
   );
+  card.appendChild(
+    h(
+      'div',
+      { class: 'gb-notif-chips', role: 'group', 'aria-label': 'Show notifications about' },
+      NOTIF_FILTERS.map((f) =>
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-notif-chip' + (notifFilter === f.id ? ' is-on' : ''),
+            'aria-pressed': notifFilter === f.id ? 'true' : 'false',
+            onclick: () => {
+              notifFilter = f.id;
+              repaintOverlays();
+            },
+          },
+          f.label
+        )
+      )
+    )
+  );
   if (!items.length) {
-    card.appendChild(h('div', { class: 'gb-notif-empty' }, "You're all caught up."));
+    card.appendChild(
+      h(
+        'div',
+        { class: 'gb-notif-empty' },
+        notifFilter === 'all' ? "You're all caught up." : 'Nothing here' + (notifHasMore(notifFilter) ? ' yet.' : '.')
+      )
+    );
   } else {
     items.forEach((n) => {
       const isMentorshipReq = n.kind === 'mentorship_request' && !n.readAt;
+      // Unread only: a snooze marks its card read, so the button going is the receipt.
+      const snoozable = !n.readAt && snoozableReminder(n);
       const row = h(
         'div',
         { class: 'gb-notif-row' + (n.readAt ? '' : ' is-unread') },
         h('div', { class: 'gb-notif-dot' }),
         h(
           'div',
-          { class: 'gb-notif-body', ...activate(() => markNotificationRead(n.id)) },
+          {
+            class: 'gb-notif-body',
+            // Buddy's evening reflection opens the chat with its question ready.
+            ...activate(() => (n.kind === 'buddy_checkin' ? openReflectionCard(n) : markNotificationRead(n.id))),
+          },
           h('div', { class: 'gb-notif-title' }, n.title),
           n.body ? h('div', { class: 'gb-notif-sub' }, n.body) : null,
           h('div', { class: 'gb-notif-time' }, relativeTime(n.createdAt))
@@ -7478,10 +11832,40 @@ function notificationDropdown() {
                 'Reject'
               )
             )
-          : null
+          : snoozable
+            ? h(
+                'div',
+                { class: 'gb-notif-actions' },
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    class: 'gb-btn gb-btn--ghost gb-notif-snooze',
+                    'aria-label': 'Snooze ' + n.title + ' for ' + minutesLabel(snoozeMinutes()),
+                    onclick: () => snoozeReminder(snoozable.id, null, n.id),
+                  },
+                  Icon('alarm-clock', { size: 14 }),
+                  minutesLabel(snoozeMinutes())
+                )
+              )
+            : null
       );
       card.appendChild(row);
     });
+  }
+  if (notifHasMore(notifFilter)) {
+    card.appendChild(
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-notif-more',
+          disabled: notifPaging.loading,
+          onclick: loadOlderNotifs,
+        },
+        notifPaging.loading ? 'Loading…' : 'Load older'
+      )
+    );
   }
   return card;
 }
@@ -7524,6 +11908,20 @@ function toastStack() {
         })
       ),
       h('span', { class: 'gb-toast-msg' }, t.message),
+      t.action
+        ? h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-toast-action',
+              onclick: () => {
+                dismissToast(t.id);
+                t.action.run();
+              },
+            },
+            t.action.label
+          )
+        : null,
       h(
         'button',
         {
@@ -7536,15 +11934,32 @@ function toastStack() {
       )
     );
   });
-  return h('div', { class: 'gb-toast-stack', role: 'status', 'aria-live': 'polite' }, nodes);
+  // No live region here: announce() speaks for the stack (see there).
+  return h(
+    'div',
+    {
+      class: 'gb-toast-stack',
+      onmouseenter: holdToasts,
+      onmouseleave: releaseToasts,
+      onfocusin: holdToasts,
+      onfocusout: (e) => {
+        if (!e.currentTarget.contains(e.relatedTarget)) releaseToasts();
+      },
+    },
+    nodes
+  );
 }
 
-function confirmDelete(message, onYes) {
+/* The heading names the thing ("Delete “Morning walk”?"), `detail` says what
+   goes with it, and the button is red — it was the same orange as every Save. */
+function confirmDelete(message, onYes, detail) {
   openModal({
     // The question IS the heading — "Please confirm" told the user nothing.
     title: message,
+    sub: detail || null,
     body: null,
     primary: 'Delete',
+    destructive: true,
     onPrimary: async () => {
       await onYes();
       toastSuccess('Deleted.');
@@ -7578,15 +11993,22 @@ function ScreenHabits() {
       )
     );
   }
-  const rows = state.habits.map((habit) => {
+  const reordering = habitReorderMode && state.habits.length > 1;
+  const rows = state.habits.map((habit, index) => {
     const fz = habitFreezeState(habit);
     const streak = effectiveStreak(habit);
     const frozenCount = fz && fz.frozen ? fz.frozen.length : 0;
     const subChildren = [
       h(
         'span',
-        null,
-        (habit.cadence || 'daily') + (streak ? ' · 🔥 ' + streak + '-day streak' : '')
+        // One piece, so a narrow row never breaks it at "3- / day".
+        { style: { whiteSpace: 'nowrap' } },
+        isQuitHabit(habit)
+          ? quitHabitLabel(habit)
+          : (habit.active === false ? 'Paused · ' : '') +
+              cadenceLabel(habit) +
+              weekProgressLabel(habit) +
+              (streak ? ' · 🔥 ' + streak + '-' + streakUnit(habit) + ' streak' : '')
       ),
     ];
     const measured = metricSummary(habit.metric, habit.todayValue, habit.todayDurationMin);
@@ -7610,12 +12032,20 @@ function ScreenHabits() {
       'div',
       { class: 'gb-row' },
       IconChip({ domain: habit.domain, icon: habit.icon }),
+      // The name opens Edit, where Delete lives too. Edit and Delete sat on the
+      // row as two more 32px icons, and four of them squeezed the name onto two
+      // lines on a phone.
       h(
-        'div',
-        { style: { flex: 1, minWidth: 0 } },
-        h('div', { class: 'title' }, habit.name),
+        'button',
+        {
+          type: 'button',
+          class: 'gb-row-open',
+          'aria-label': 'Edit habit: ' + habit.name,
+          onclick: () => openHabitForm(habit),
+        },
+        h('span', { class: 'title' }, habit.name),
         h(
-          'div',
+          'span',
           {
             class: 'sub',
             style: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' },
@@ -7623,7 +12053,40 @@ function ScreenHabits() {
           ...subChildren
         )
       ),
-      (habit.cadence || 'daily') === 'daily' && !habit.doneToday
+      reordering
+        ? h(
+            'span',
+            { class: 'gb-habit-move' },
+            h(
+              'button',
+              {
+                type: 'button',
+                class: 'gb-icon-btn',
+                disabled: index === 0,
+                'aria-label': 'Move up: ' + habit.name,
+                'data-habit-move': habit.id + ':up',
+                onclick: () => moveHabit(habit.id, -1),
+              },
+              Icon('chevron-up', { size: 18, sw: 2.4 })
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
+                class: 'gb-icon-btn',
+                disabled: index === state.habits.length - 1,
+                'aria-label': 'Move down: ' + habit.name,
+                'data-habit-move': habit.id + ':down',
+                onclick: () => moveHabit(habit.id, 1),
+              },
+              Icon('chevron-down', { size: 18, sw: 2.4 })
+            )
+          )
+        : null,
+      !reordering &&
+        !isQuitHabit(habit) &&
+        (habit.cadence || 'daily') === 'daily' &&
+        !habit.doneToday
         ? (function () {
             const resting = !!habit.protectedToday;
             const noTokens = !resting && freezeTokensLeft() <= 0;
@@ -7646,29 +12109,30 @@ function ScreenHabits() {
             );
           })()
         : null,
-      h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-rem-del',
-          'aria-label': 'Edit habit: ' + habit.name,
-          onclick: () => openHabitForm(habit),
-        },
-        Icon('pencil', { size: 16 })
-      ),
-      h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-rem-del gb-rem-del--danger',
-          'aria-label': 'Delete habit: ' + habit.name,
-          onclick: () => confirmDelete('Delete this habit?', () => deleteHabit(habit.id)),
-        },
-        Icon('trash-2', { size: 16 })
-      ),
-      Check({ done: habit.doneToday, onToggle: () => toggleHabit(habit.id), label: habit.name })
+      reordering
+        ? null
+        : isQuitHabit(habit)
+          ? h(
+              'button',
+              {
+                type: 'button',
+                class: 'gb-slip-btn' + (habit.doneToday ? '' : ' is-slipped'),
+                disabled: habit.active === false,
+                'aria-label':
+                  (habit.doneToday ? 'I slipped: ' : 'Slipped today — undo or add a note: ') +
+                  habit.name,
+                onclick: () => toggleHabit(habit.id),
+              },
+              Icon(habit.doneToday ? 'ban' : 'undo-2', { size: 15, sw: 2.4 }),
+              habit.doneToday ? 'I slipped' : 'Slipped'
+            )
+          : Check({
+              done: habit.doneToday,
+              onToggle: () => toggleHabit(habit.id),
+              label: habit.name,
+            })
     );
-    if (!fz || !fz.pendingBreak) {
+    if (reordering || !fz || !fz.pendingBreak) {
       return mainRow;
     }
     const canProtect = freezeTokensLeft() > 0;
@@ -7768,15 +12232,41 @@ function ScreenHabits() {
         );
       })(),
       h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-btn gb-btn--soft',
-          style: { width: 'auto', padding: '8px 14px' },
-          onclick: openAddHabit,
-        },
-        Icon('plus', { size: 16, sw: 2.6 }),
-        'Add'
+        'div',
+        { style: { display: 'flex', gap: '8px', alignItems: 'center' } },
+        // Reorder swaps each row's tick for up / down arrows: plain buttons, so
+        // a keyboard or a screen reader can move a habit as easily as a finger.
+        state.habits.length > 1
+          ? h(
+              'button',
+              {
+                type: 'button',
+                class: 'gb-btn ' + (reordering ? 'gb-btn--primary' : 'gb-btn--ghost'),
+                style: { width: 'auto', padding: '8px 12px' },
+                'aria-pressed': String(reordering),
+                onclick: () => {
+                  habitReorderMode = !habitReorderMode;
+                  render();
+                },
+              },
+              reordering
+                ? 'Done'
+                : [Icon('list-ordered', { size: 16, sw: 2.4 }), 'Reorder']
+            )
+          : null,
+        reordering
+          ? null
+          : h(
+              'button',
+              {
+                type: 'button',
+                class: 'gb-btn gb-btn--soft',
+                style: { width: 'auto', padding: '8px 14px' },
+                onclick: openAddHabit,
+              },
+              Icon('plus', { size: 16, sw: 2.6 }),
+              'Add'
+            )
       )
     ),
     h(
@@ -7842,6 +12332,45 @@ async function setFeature(key, value) {
   state.user = Object.assign({}, state.user, updated, { token });
   saveSession(state.user, token);
   render();
+}
+/* One feature's on/off row: Settings › Layout and first-run setup both draw
+   this, so the switch and its rollback-on-failure live in one place. */
+function featureSwitchRow(def) {
+  const isOn = () => featureOn(def.key);
+  const sw = h(
+    'button',
+    {
+      type: 'button',
+      role: 'switch',
+      'aria-checked': isOn() ? 'true' : 'false',
+      'aria-label': def.label,
+      class: 'gb-switch' + (isOn() ? ' is-on' : ''),
+    },
+    h('span', { class: 'gb-switch-knob' })
+  );
+  sw.onclick = async () => {
+    const next = !isOn();
+    sw.classList.toggle('is-on', next);
+    sw.setAttribute('aria-checked', next ? 'true' : 'false');
+    try {
+      await setFeature(def.key, next);
+    } catch (err) {
+      sw.classList.toggle('is-on', !next);
+      sw.setAttribute('aria-checked', !next ? 'true' : 'false');
+      toastError(err, 'Could not update features.');
+    }
+  };
+  return h(
+    'div',
+    { class: 'gb-feature-row' },
+    h(
+      'div',
+      { class: 'gb-feature-row-text' },
+      h('div', { class: 'gb-feature-row-label' }, def.label),
+      h('div', { class: 'gb-feature-row-desc' }, def.desc)
+    ),
+    sw
+  );
 }
 
 /** Persist progress-digest preferences (frequency + send hour) to the account. */
@@ -7910,6 +12439,8 @@ const SCREENS = {
         water: state.water,
         food: state.food,
         goals: state.goals,
+        goalProgress: effectiveGoalProgress(),
+        onOpenGoals: () => setScreen('goals'),
         wellness: state.wellness,
         foodSummary: state.calendarFoodByDate[state.selectedDate] || null,
         dayFoodLoading: state.calendarFoodLoadingFor === state.selectedDate,
@@ -7917,6 +12448,7 @@ const SCREENS = {
         onAddTask: openAddTask,
         onEditTask: openEditTask,
         onPauseTask: pauseTask,
+        onFocusTask: featureOn('focus') ? (task) => startFocusOn({ taskId: task.id }) : null,
         onAddHabit: openAddHabit,
         calYear: state.calYear,
         calMonth: state.calMonth,
@@ -7961,6 +12493,16 @@ const SCREENS = {
             money: state.money,
             goalProgress: state.goalProgress,
             insightHistory: state.insightHistory,
+            insightLoading: !!insightReq && !state.insightHistory,
+            dismissedInsights: (state.user && state.user.uiPrefs && state.user.uiPrefs.insightsDismissed) || [],
+            onDismissInsight: (id) => {
+              const p = (state.user && state.user.uiPrefs) || {};
+              const prev = Array.isArray(p.insightsDismissed) ? p.insightsDismissed : [];
+              // Last 50 only: a dismissed card's id is stable, the list must not grow forever.
+              saveUiPrefs({ insightsDismissed: [...prev.filter((x) => x !== id), id].slice(-50) });
+              repaintReport();
+            },
+            onInsightAction: runInsightAction,
             range: state.reportRange,
             onRange: (days) => {
               state.reportRange = days;
@@ -7984,16 +12526,7 @@ const SCREENS = {
     render: () =>
       lazyScreen(
         () => import('./timer.js'),
-        (m) =>
-          m.ScreenFocus({
-            onFocusSession: (mode, durationSec) =>
-              api('/api/focus/sessions', {
-                method: 'POST',
-                body: JSON.stringify({ mode, durationSec }),
-              }),
-            getFocusStats: () => api('/api/focus/stats'),
-            statsOwner: state.user && state.user.id,
-          })
+        (m) => m.ScreenFocus(focusProps())
       ),
   },
   habits: {
@@ -8018,6 +12551,9 @@ const SCREENS = {
         onAddFood: openAddFood,
         onDeleteWater: deleteWaterEntry,
         onDeleteFood: deleteFoodEntry,
+        onEditFood: openEditFood,
+        onCopySlot: copyYesterdaySlot,
+        weightKg: (state.user && state.user.weightKg) || null,
       }),
   },
   summary: {
@@ -8073,6 +12609,8 @@ const SCREENS = {
         onAddReminder: addReminder,
         onDeleteReminder: deleteReminder,
         onEditReminder: editReminder,
+        onCancelSnooze: cancelReminderSnooze,
+        onToggleDone: toggleReminderDone,
         onSaveRoutine: saveRoutine,
       }),
   },
@@ -8084,15 +12622,9 @@ const SCREENS = {
         () => import('./mentor.js'),
         (m) =>
           m.ScreenMentor({
-            api: {
-              get: () => api('/api/mentor/chat'),
-              post: (text) =>
-                api('/api/mentor/chat/messages', {
-                  method: 'POST',
-                  body: JSON.stringify({ content: text }),
-                }),
-              clear: () => api('/api/mentor/chat/messages', { method: 'DELETE' }),
-            },
+            threadId: mentorThreadId,
+            starter: takeMentorStarter(),
+            api: mentorApi(),
           })
       ),
   },
@@ -8119,7 +12651,50 @@ const SCREENS = {
               api('/api/mentorship/requests/' + encodeURIComponent(requestId) + '/revoke', {
                 method: 'POST',
               }),
+            // Accept / decline an invite addressed to me, from the Circle screen.
+            // Same endpoints as the bell's buttons (respondMentorshipRequest).
+            onRespond: (requestId, accept) =>
+              api(
+                '/api/mentorship/requests/' +
+                  encodeURIComponent(requestId) +
+                  (accept ? '/accept' : '/reject'),
+                { method: 'POST' }
+              ).then((res) => {
+                // The bell card for this invite is gone server-side now.
+                state.notifications = state.notifications.filter(
+                  (n) => !(n.kind === 'mentorship_request' && n.relatedId === requestId)
+                );
+                repaintOverlays();
+                return res;
+              }),
             currentUserId: state.user && state.user.id,
+            // Inside an accepted link ({id} = the request id): cheer/nudge, the
+            // thread, the agreement, and the mentor's weekly card.
+            mentorshipApi: {
+              nudge: (linkId, kind, text) =>
+                api('/api/mentorship/' + encodeURIComponent(linkId) + '/nudge', {
+                  method: 'POST',
+                  body: JSON.stringify({ kind, text: text || null }),
+                }),
+              listMessages: (linkId, before) =>
+                api(
+                  '/api/mentorship/' +
+                    encodeURIComponent(linkId) +
+                    '/messages' +
+                    (before ? '?before=' + encodeURIComponent(before) : '')
+                ),
+              sendMessage: (linkId, body) =>
+                api('/api/mentorship/' + encodeURIComponent(linkId) + '/messages', {
+                  method: 'POST',
+                  body: JSON.stringify({ body }),
+                }),
+              setAgreement: (linkId, text) =>
+                api('/api/mentorship/' + encodeURIComponent(linkId) + '/agreement', {
+                  method: 'PUT',
+                  body: JSON.stringify({ text }),
+                }),
+              week: (linkId) => api('/api/mentorship/' + encodeURIComponent(linkId) + '/week'),
+            },
             challengesApi: {
               listMine: () => api('/api/circles/mine'),
               listAll: () => api('/api/circles'),
@@ -8127,6 +12702,49 @@ const SCREENS = {
                 api('/api/circles', { method: 'POST', body: JSON.stringify(body) }),
               join: (id) =>
                 api('/api/circles/' + encodeURIComponent(id) + '/join', { method: 'POST' }),
+              joinByCode: (code) =>
+                api('/api/circles/join-code', { method: 'POST', body: JSON.stringify({ code }) }),
+              leave: (id) =>
+                api('/api/circles/' + encodeURIComponent(id) + '/leave', { method: 'POST' }),
+              deleteCircle: (id) =>
+                api('/api/circles/' + encodeURIComponent(id), { method: 'DELETE' }),
+              listMembers: (id) => api('/api/circles/' + encodeURIComponent(id) + '/members'),
+              removeMember: (id, userId) =>
+                api(
+                  '/api/circles/' + encodeURIComponent(id) + '/members/' + encodeURIComponent(userId),
+                  { method: 'DELETE' }
+                ),
+              transfer: (id, userId) =>
+                api('/api/circles/' + encodeURIComponent(id) + '/transfer', {
+                  method: 'POST',
+                  body: JSON.stringify({ userId }),
+                }),
+              listPosts: (id, before) =>
+                api(
+                  '/api/circles/' +
+                    encodeURIComponent(id) +
+                    '/posts' +
+                    (before ? '?before=' + encodeURIComponent(before) : '')
+                ),
+              createPost: (id, body) =>
+                api('/api/circles/' + encodeURIComponent(id) + '/posts', {
+                  method: 'POST',
+                  body: JSON.stringify({ body }),
+                }),
+              deletePost: (id, postId) =>
+                api(
+                  '/api/circles/' + encodeURIComponent(id) + '/posts/' + encodeURIComponent(postId),
+                  { method: 'DELETE' }
+                ),
+              toggleKudos: (id, postId) =>
+                api(
+                  '/api/circles/' +
+                    encodeURIComponent(id) +
+                    '/posts/' +
+                    encodeURIComponent(postId) +
+                    '/kudos',
+                  { method: 'POST' }
+                ),
               listChallenges: (id) => api('/api/circles/' + encodeURIComponent(id) + '/challenges'),
               createChallenge: (id, body) =>
                 api('/api/circles/' + encodeURIComponent(id) + '/challenges', {
@@ -8216,12 +12834,58 @@ const SCREENS = {
                   method: 'POST',
                   body: JSON.stringify(body || {}),
                 }),
-              toggleShopping: (id) =>
+              // Sends the state wanted, not "flip": a retried flip undid itself.
+              toggleShopping: (id, checked) =>
                 api('/api/family/shopping/' + encodeURIComponent(id) + '/toggle', {
                   method: 'POST',
+                  body: JSON.stringify({ checked: !!checked }),
                 }),
+              transferOwnership: (memberId) =>
+                api('/api/family/transfer', { method: 'POST', body: JSON.stringify({ memberId }) }),
               deleteShopping: (id) =>
                 api('/api/family/shopping/' + encodeURIComponent(id), { method: 'DELETE' }),
+              shoppingFromPantry: () => api('/api/family/shopping/from-pantry', { method: 'POST' }),
+              updatePantry: (id, body) =>
+                api('/api/family/pantry/' + encodeURIComponent(id), {
+                  method: 'PUT',
+                  body: JSON.stringify(body),
+                }),
+              // Chores
+              listChores: () => api('/api/family/chores'),
+              addChore: (body) =>
+                api('/api/family/chores', { method: 'POST', body: JSON.stringify(body) }),
+              updateChore: (id, body) =>
+                api('/api/family/chores/' + encodeURIComponent(id), {
+                  method: 'PUT',
+                  body: JSON.stringify(body),
+                }),
+              toggleChore: (id, done) =>
+                api('/api/family/chores/' + encodeURIComponent(id) + '/toggle', {
+                  method: 'POST',
+                  body: JSON.stringify({ done: !!done }),
+                }),
+              deleteChore: (id) =>
+                api('/api/family/chores/' + encodeURIComponent(id), { method: 'DELETE' }),
+              // Plan history + cook per meal
+              planHistory: () => api('/api/family/plans/history'),
+              reusePlan: (planId) =>
+                api('/api/family/meal-plan/' + encodeURIComponent(planId) + '/reuse', {
+                  method: 'POST',
+                }),
+              assignCook: (planId, body) =>
+                api('/api/family/meal-plan/' + encodeURIComponent(planId) + '/cook', {
+                  method: 'PUT',
+                  body: JSON.stringify(body),
+                }),
+              assignWeeklyCook: (planId, body) =>
+                api('/api/family/meal-plan/multi/' + encodeURIComponent(planId) + '/cook', {
+                  method: 'PUT',
+                  body: JSON.stringify(body),
+                }),
+              // Recipes (per dish)
+              listRecipes: () => api('/api/family/recipes'),
+              saveRecipe: (body) =>
+                api('/api/family/recipes', { method: 'PUT', body: JSON.stringify(body) }),
             },
           })
       ),
@@ -8230,32 +12894,40 @@ const SCREENS = {
     headerLabel: () => 'Spend & save well',
     headerName: () => 'Money Buddy',
     render: () =>
-      ScreenMoney({
-        money: state.money,
-        onSaveMoney: saveMoney,
-        requestAdvice: (payload) =>
-          api('/api/money/advice', { method: 'POST', body: JSON.stringify(payload) }),
-        // Shrunk the way Notes shrinks a photo: 1280px is enough to read a bill.
-        requestReceiptScan: (file) =>
-          import('./notes.js')
-            .then((m) => m.shrinkPhoto(file))
-            .then((imageDataUrl) =>
-              api('/api/money/receipt-scan', {
-                method: 'POST',
-                body: JSON.stringify({ imageDataUrl }),
-              })
-            ),
-        accountRequest,
-        // Behind the save queue, like accountRequest: asked the moment an expense is
-        // added, it read the day without it, and money.js kept that under the new key.
-        requestDaySummary: (day) => {
-          const run = moneySaveQueue
-            .then(flushLedger)
-            .then(() => api('/api/money/day-summary?date=' + encodeURIComponent(day)));
-          moneySaveQueue = run.catch(() => {});
-          return run;
-        },
-      }),
+      lazyScreen(
+        () => import('./money.js'),
+        (m) =>
+          m.ScreenMoney({
+            money: state.money,
+            onSaveMoney: saveMoney,
+            requestAdvice: (payload) =>
+              api('/api/money/advice', { method: 'POST', body: JSON.stringify(payload) }),
+            // Shrunk the way Notes shrinks a photo: 1280px is enough to read a bill.
+            requestReceiptScan: (file) =>
+              import('./notes.js')
+                .then((m) => m.shrinkPhoto(file))
+                .then((imageDataUrl) =>
+                  api('/api/money/receipt-scan', {
+                    method: 'POST',
+                    body: JSON.stringify({ imageDataUrl }),
+                  })
+                ),
+            accountRequest,
+            // Behind the save queue, like accountRequest: asked the moment an expense is
+            // added, it read the day without it, and money.js kept that under the new key.
+            requestDaySummary: (day) => {
+              const run = moneySaveQueue
+                .then(flushLedger)
+                .then(() => api('/api/money/day-summary?date=' + encodeURIComponent(day)));
+              moneySaveQueue = run.catch(() => {});
+              return run;
+            },
+            // "Load older" in the expense list: history before the 400-day load. View-only
+            // in money.js, never merged into state.money, so no save can send it back.
+            requestOlderTx: (before) =>
+              api('/api/money/tx?before=' + encodeURIComponent(before) + '&limit=200'),
+          })
+      ),
   },
   notes: {
     headerLabel: () => 'Think out loud',
@@ -8268,21 +12940,56 @@ const SCREENS = {
             // The screen owns its list rather than living in `state`: notes are
             // read on one screen and nowhere else, so loading them at boot would
             // buy nothing but a slower boot.
-            onList: () => api('/api/notes'),
-            onGet: (id) => api('/api/notes/' + encodeURIComponent(id)),
+            // Notes still in the outbox lead the list until the server has them.
+            onList: (opts) =>
+              api('/api/notes' + (opts && opts.archived ? '?archived=true' : '')).then((data) =>
+                opts && opts.archived ? data : queuedNotes().concat(Array.isArray(data) ? data : [])
+              ),
+            onTrash: () => api('/api/notes/trash'),
+            onCounts: () => api('/api/notes/counts'),
+            onDeleteForever: (id) =>
+              api('/api/notes/' + encodeURIComponent(id) + '/forever', { method: 'DELETE' }),
+            // Keys the offline copy of the list, so one account never sees another's.
+            userId: state.user && state.user.id,
+            onGet: (id) => {
+              const queued = isTempId(realId(id)) && queuedNotes().find((n) => n.id === id);
+              return queued ? Promise.resolve(queued) : api('/api/notes/' + encodeURIComponent(realId(id)));
+            },
+            // Text only goes in the outbox offline: a photo is too big to sit in it.
             onCreate: (body) =>
-              api('/api/notes', { method: 'POST', body: JSON.stringify(body) }),
-            onUpdate: (id, body) =>
-              api('/api/notes/' + encodeURIComponent(id), {
-                method: 'PATCH',
-                body: JSON.stringify(body),
+              api('/api/notes', { method: 'POST', body: JSON.stringify(body) }).catch((err) => {
+                if (!networkError(err) || body.cover || /<img/i.test(body.body || '')) throw err;
+                const now = new Date().toISOString();
+                const local = { ...body, id: tempId(), pinned: false, createdAt: now, updatedAt: now };
+                queueWrite({ method: 'POST', path: '/api/notes', body, kind: 'note.create', tempId: local.id, local });
+                return local;
               }),
+            onUpdate: (id, body) =>
+              isTempId(realId(id))
+                ? Promise.reject(new Error('This note is still waiting to sync. Edit it once it has.'))
+                : api('/api/notes/' + encodeURIComponent(realId(id)), {
+                    method: 'PATCH',
+                    body: JSON.stringify(body),
+                  }),
             onDelete: (id) =>
-              api('/api/notes/' + encodeURIComponent(id), { method: 'DELETE' }),
+              isTempId(realId(id))
+                ? Promise.resolve(queueWrite({ method: 'DELETE', path: '/api/notes/' + id, kind: 'note.delete' })).then(() => null)
+                : api('/api/notes/' + encodeURIComponent(realId(id)), { method: 'DELETE' }),
             onGetDraft: () => api('/api/notes/draft'),
             onSaveDraft: (draft) =>
               api('/api/notes/draft', { method: 'PUT', body: JSON.stringify(draft) }),
             onDeleteDraft: () => api('/api/notes/draft', { method: 'DELETE' }),
+            // Undo for a delete (soft on the server), and the open edit's own draft.
+            onRestore: (id) =>
+              api('/api/notes/' + encodeURIComponent(id) + '/restore', { method: 'POST' }),
+            onGetEditDraft: (id) => api('/api/notes/' + encodeURIComponent(id) + '/draft'),
+            onSaveEditDraft: (id, draft) =>
+              api('/api/notes/' + encodeURIComponent(id) + '/draft', {
+                method: 'PUT',
+                body: JSON.stringify(draft),
+              }),
+            onDeleteEditDraft: (id) =>
+              api('/api/notes/' + encodeURIComponent(id) + '/draft', { method: 'DELETE' }),
             onMakeTask: (title) => createTask({ title }),
             onMakeReminder: (text) => {
               // Hand it to the calendar rather than growing a second reminder
@@ -8306,12 +13013,29 @@ const SCREENS = {
             onCreateGoal: createGoal,
             onToggleGoal: toggleGoal,
             // The trash icon deleted on one tap, with no confirm and no error path.
-            onDeleteGoal: (id) => confirmDelete('Delete this goal?', () => deleteGoal(id)),
+            onDeleteGoal: (id, goal) =>
+              confirmDelete(
+                goal ? 'Delete “' + goal.title + '”?' : 'Delete this goal?',
+                () => deleteGoal(id),
+                'Its actions and progress are deleted with it. Its tasks stay, on no goal.'
+              ),
+            // Linked tasks: "Add a task" opens New task on this goal; the open
+            // ones listed on the card tick like Home's rows.
+            onAddTask: (goal) => openAddTask(goal),
+            onToggleTask: toggleTask,
             onAddAction: addGoalAction,
             onUpdateAction: updateGoalAction,
             onDeleteAction: deleteGoalAction,
-            goalProgress: state.goalProgress || {},
+            goalProgress: effectiveGoalProgress(),
             onUpdateGoalProgress: updateGoalProgress,
+            onUpdateGoal: updateGoal,
+            onLoadActions: loadGoalActions,
+            onFocusGoal: featureOn('focus') ? (goal) => startFocusOn({ goalId: goal.id }) : null,
+            // Linked habits: the picker's list, and what each goal's links add up to.
+            habits: (state.habits || []).map((x) => ({ id: x.id, name: x.name })),
+            linkedHabits: goalHabitSummary(),
+            // Action dates are checked against the account's zone (UserClock).
+            timezone: (state.user && state.user.timezone) || '',
           })
       ),
   },
@@ -8322,11 +13046,12 @@ const root = document.getElementById('root');
 let renderedScreen = '';
 
 /* ---- Lazy screens ----
-   Six screens export nothing but their own `Screen*` to app.js and nothing else
-   imports them, so they don't belong in the boot chunk: family, circle, timer,
-   goals, report and mentor are ~151 KB of source that a user landing on Home
-   never touches. (money.js can't join them yet — Home's Money card and
-   `normalizeMoney` pull it in eagerly; see the note in docs.)
+   Screens that export nothing the boot path needs don't belong in the boot
+   chunk: family, circle, timer, goals, report, mentor, notes and money are
+   source a user landing on Home never touches. Money joined once its document
+   model moved to money-core.js and Home's card to money-home.js; money.js is
+   still reached from Settings (MoneyCustomisePane, via lazyScreen) and the
+   card's "Add expense" (import on tap).
 
    `SCREENS[x].render()` has to stay synchronous because render() uses its return
    value as a child directly. So return a placeholder now and `replaceWith` the
@@ -8629,6 +13354,9 @@ async function authPost(path, body) {
     const msg = (payload && payload.message) || statusMessage(res.status);
     const err = new Error(msg);
     err.status = res.status;
+    // ApiException's machine-readable reason: totp_required, totp_invalid,
+    // deletion_scheduled. Absent on every other refusal.
+    err.code = (payload && payload.code) || '';
     throw err;
   }
   return payload;
@@ -8976,6 +13704,117 @@ function runAuth(action, errField) {
     });
 }
 
+/* The steps after a right password (AuthService.login): the authenticator
+   code (401 totp_required) or the cancel-deletion screen (409
+   deletion_scheduled). Both re-send the same email + password, so they live in
+   state.authPending — memory only, never sessionStorage: a reload lands back
+   on plain sign-in. Returns whether it took over. */
+function routeSignInStep(err, email, password, cancelDeletion) {
+  if (!err || (err.code !== 'totp_required' && err.code !== 'deletion_scheduled')) return false;
+  state.authPending = {
+    email,
+    password,
+    cancelDeletion: !!cancelDeletion,
+    message: err.code === 'deletion_scheduled' ? err.message : (state.authPending || {}).message,
+  };
+  setAuthMode(err.code === 'totp_required' ? 'totp' : 'deletion', { email });
+  return true;
+}
+
+async function completeSignIn(user) {
+  state.authPending = null;
+  syncUserSession(user);
+  state.wellness = loadWellness();
+  state.goalProgress = loadGoalProgress();
+  state.money = loadMoney();
+  state.streakFreeze = loadStreakFreeze();
+  state.trends = loadTrends();
+  landAfterSignIn();
+  await loadData();
+}
+
+function backToSignin() {
+  const email = (state.authPending && state.authPending.email) || state.authEmail;
+  state.authPending = null;
+  setAuthMode('signin', { email });
+}
+
+/* ---- Two-step sign-in: the authenticator code, or a recovery code ---- */
+function viewTotp() {
+  const p = state.authPending;
+  // Not one-time-code boxes: a recovery code has letters and a hyphen.
+  const codeInput = h('input', {
+    type: 'text',
+    class: 'gb-input gb-login-input',
+    autocomplete: 'one-time-code',
+    autocapitalize: 'off',
+    spellcheck: 'false',
+    maxlength: 32,
+    placeholder: '123456',
+  });
+  function submit() {
+    const code = codeInput.value.trim();
+    if (!code) return authFail('Enter the code from your authenticator app.', 'otp');
+    runAuth(async () => {
+      const path = p.cancelDeletion ? '/api/auth/cancel-deletion' : '/api/auth/login';
+      let user;
+      try {
+        user = await authPost(path, { email: p.email, password: p.password, code });
+      } catch (err) {
+        if (err.code === 'deletion_scheduled' && routeSignInStep(err, p.email, p.password)) return;
+        throw err;
+      }
+      const cancelled = p.cancelDeletion;
+      await completeSignIn(user);
+      if (cancelled) toastSuccess('Deletion cancelled. Your account stays.');
+    }, 'otp');
+  }
+  codeInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      submit();
+    }
+  });
+  setTimeout(() => codeInput.focus(), 60);
+  return authShell(
+    'Two-step sign-in',
+    'Enter the 6-digit code from your authenticator app. Lost your phone? Type one of your recovery codes instead.',
+    [
+      ...field('Code', codeInput, 'otp'),
+      primaryBtn('Verify & sign in', submit),
+      h('div', { class: 'gb-login-row' }, authLink('Back to sign in', backToSignin)),
+    ]
+  );
+}
+
+/* ---- Signed in to an account that is waiting to be deleted ---- */
+function viewDeletion() {
+  const p = state.authPending;
+  function cancel() {
+    runAuth(async () => {
+      let user;
+      try {
+        user = await authPost('/api/auth/cancel-deletion', { email: p.email, password: p.password });
+      } catch (err) {
+        // With 2FA on, the cancel needs the code too: same code step, cancel flag carried.
+        if (routeSignInStep(err, p.email, p.password, true)) return;
+        throw err;
+      }
+      await completeSignIn(user);
+      toastSuccess('Deletion cancelled. Your account stays.');
+    });
+  }
+  return authShell(
+    'Scheduled for deletion',
+    (p.message || 'This account is scheduled for deletion.') +
+      ' Until then nothing is gone — cancel and everything is as you left it.',
+    [
+      primaryBtn('Cancel deletion', cancel),
+      h('div', { class: 'gb-login-row' }, authLink('Back to sign in', backToSignin)),
+    ]
+  );
+}
+
 /* ---- Sign-in ---- */
 function viewSignin() {
   const emailInput = h('input', {
@@ -9008,6 +13847,7 @@ function viewSignin() {
       try {
         user = await authPost('/api/auth/login', { email, password });
       } catch (err) {
+        if (routeSignInStep(err, email, password)) return;
         if (err.status !== 403) throw err;
         // Right password, email never verified: the server just sent a fresh
         // code (AuthService.login), so this is the code screen, not a refusal.
@@ -9081,6 +13921,24 @@ function viewSignup() {
     autocomplete: 'new-password',
   });
   const pw2Field = passwordField(pw2Input);
+  // A hint, not a gate: the server's only rule is 8+ characters. Length and
+  // variety are what a guesser pays for, so that is all it counts.
+  const pwHint = h('p', { class: 'gb-field-hint', 'aria-live': 'polite' });
+  pwInput.addEventListener('input', () => {
+    const v = pwInput.value;
+    const kinds = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].filter((r) => r.test(v)).length;
+    const score = !v
+      ? -1
+      : v.length < 8
+        ? 0
+        : 1 + Number(v.length >= 12) + Number(v.length >= 16 || kinds >= 3);
+    pwHint.textContent =
+      score < 0
+        ? ''
+        : ['Too short — 8 characters minimum.', 'Weak — longer is stronger.', 'Okay.', 'Strong.'][
+            Math.min(score, 3)
+          ];
+  });
 
   function submit() {
     const email = emailInput.value.trim();
@@ -9114,6 +13972,7 @@ function viewSignup() {
       ...field('Email', emailInput, 'email'),
       ...field('Name', nameInput, 'name'),
       ...field('Password', pwField, 'password'),
+      pwHint,
       ...field('Confirm password', pw2Field, 'confirm'),
       primaryBtn('Create account', submit),
       h(
@@ -9255,12 +14114,21 @@ function viewReset() {
     if (otp.length !== 6) return authFail('Enter the 6-digit code.', 'otp');
     if (pwInput.value.length < 8) return authFail('Password must be at least 8 characters.', 'password');
     if (pw2Input.value !== pwInput.value) return authFail('The two passwords don’t match.', 'confirm');
+    const password = pwInput.value;
     runAuth(async () => {
-      const user = await authPost('/api/auth/reset-password', {
-        email: state.authEmail,
-        otp,
-        password: pwInput.value,
-      });
+      let user;
+      try {
+        user = await authPost('/api/auth/reset-password', {
+          email: state.authEmail,
+          otp,
+          password,
+        });
+      } catch (err) {
+        // The new password is saved either way; with 2FA on (or a deletion
+        // pending) the reset hands over no session, so sign in the usual way.
+        if (routeSignInStep(err, state.authEmail, password)) return;
+        throw err;
+      }
       syncUserSession(user);
       state.wellness = loadWellness();
       state.goalProgress = loadGoalProgress();
@@ -9315,6 +14183,11 @@ function loginCard() {
       return viewForgot();
     case 'reset':
       return viewReset();
+    // Both need the password held in authPending; without it (a reload, say) → sign-in.
+    case 'totp':
+      return state.authPending ? viewTotp() : viewSignin();
+    case 'deletion':
+      return state.authPending ? viewDeletion() : viewSignin();
     default:
       return viewSignin();
   }
@@ -9324,12 +14197,36 @@ function logout() {
   // Fire-and-forget; the token is invalidated locally either way.
   const token = loadToken();
   if (token) {
-    fetch(API_BASE + '/api/auth/logout', {
-      method: 'POST',
-      headers: { Authorization: 'Bearer ' + token },
-    }).catch(() => {
-      /* silent */
-    });
+    // Unsubscribe this browser's Web Push endpoint BEFORE the token is revoked,
+    // or the server keeps pushing this account's reminders to a device that is
+    // now someone else's. disablePush awaits the service worker before it calls
+    // api(), by which time clearSession() has dropped the stored token — so it
+    // gets a fetch bound to the token captured here, and the logout POST waits
+    // for it (revoking first would 401 the unsubscribe).
+    const withToken = (path, o = {}) =>
+      fetch(API_BASE + path, {
+        ...o,
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      });
+    disablePush(withToken)
+      .catch(() => {})
+      .then(() => withToken('/api/auth/logout', { method: 'POST' }))
+      .catch(() => {
+        /* silent */
+      });
+  }
+  // On-device alarms (native only; a no-op on the web) were scheduled for this
+  // account's reminders, water and habits — they must not ring for the next one.
+  cancelPendingLocalNotifications();
+  // Log food's chip rows are this account's foods, not the next one's.
+  recentFoods = null;
+  favouriteFoods = null;
+  // The Workbox NetworkFirst cache holds this account's API GET responses and
+  // would serve them, offline, to whoever signs in next on this browser.
+  try {
+    if (typeof caches !== 'undefined') caches.delete('gb-api-get').catch(() => {});
+  } catch (_) {
+    /* no CacheStorage (insecure context) */
   }
   disconnectWebSocket();
   purgeUserCache();
@@ -9346,6 +14243,7 @@ function logout() {
   state.authMode = 'signin';
   state.authEmail = '';
   state.authNotice = '';
+  state.authPending = null;
   // A panel left open kept its mousedown listener alive on the sign-in screen,
   // where the first press "closed" it with a full render() that rebuilt the form
   // under the pointer: no request, both fields blanked.
@@ -9359,8 +14257,9 @@ function logout() {
   state.waterUsualHours = null;
   loadedFor = null; // the next sign-in is a first load, not a refresh
   insightHistoryAt = 0;
+  insightReq = null; // a fetch still in flight belongs to the old account: drop it
   state.money = emptyMoney();
-  weekGen++;
+  weekGen.bump();
   state.foodWeek = null;
   state.waterWeek = null;
   state.dietCheck = null;
@@ -9492,14 +14391,25 @@ function handleOnline() {
   if (state.online) return;
   state.online = true;
   syncOfflineBanner();
+  // "No connection" next to "Back online" contradicted itself.
+  if (state.toasts.some(isConnectionToast)) {
+    state.toasts = state.toasts.filter((t) => !isConnectionToast(t));
+    dropStaleToastTimers();
+  }
   toastSuccess('Back online — syncing your latest data.');
-  if (state.user) loadData();
+  if (state.user) {
+    // The outbox goes after wave 1 (loadData flushes it there too; flush is
+    // single-flight), so its refetch can't be answered by wave 1's older GET.
+    loadData().then(flushOutbox);
+    flushWaterQueue();
+  }
 }
 function handleOffline() {
   if (!state.online) return;
   state.online = false;
+  // The banner says it, and stays while it's true. A toast on top said it twice
+  // more, and on a phone the stack covered the open dialog's buttons.
   syncOfflineBanner();
-  pushToast("You're offline. Changes may not save until you reconnect.", 'error', 3200);
 }
 
 /* The scroll position the last render() restored; a lazy screen re-applies it. */
@@ -9720,6 +14630,17 @@ if (window.CacheStorage && window.CacheStorage.init) {
       // The custom chime is Cache-API-only (too big for a cookie), so it can
       // only be read once this resolves — whether or not anything repaints.
       loadCustomChime();
+      // A reload with a stored session never passes through syncUserSession,
+      // so without this a device already signed in never saw a sound added on
+      // another one. Once per load either way (see customChimePulled).
+      if (state.user) pullCustomChime();
+      // A focus session stored before a reload or a killed app: resumed, or
+      // counted once if it ended meanwhile. timer.js only loads when one exists.
+      if (state.user && CacheStorage.getItem('gb.focusSession')) {
+        import('./timer.js')
+          .then((m) => m.resumeFocusSession(focusProps()))
+          .catch(() => {});
+      }
       if (hydrated && state.user) {
         state.wellness = loadWellness();
         state.goalProgress = loadGoalProgress();
@@ -9736,7 +14657,12 @@ if (window.CacheStorage && window.CacheStorage.init) {
         render();
       }
     })
-    .catch((err) => console.warn('CacheStorage init failed:', err));
+    .catch((err) => {
+      console.warn('CacheStorage init failed:', err);
+      markCustomChimesLoaded(); // nothing local to merge, but don't stall the pull
+    });
+} else {
+  markCustomChimesLoaded();
 }
 initA11y();
 initPullToRefresh();
@@ -9747,8 +14673,32 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden && state.user) {
     refreshNotifications();
     syncDeviceTimezone(); // reopened after a flight
+    refreshDayIfStale();
   }
 });
+
+/* Opened the next morning from the background: water and food still showed
+   yesterday's totals (and a tap added to them) until something else reloaded.
+   Each summary carries its own date, so a stale one is a cheap check. */
+function refreshDayIfStale() {
+  const today = todayKeyNow();
+  const stale = (s) => s && s.date && s.date !== today;
+  if (!stale(state.water) && !stale(state.food)) return;
+  Promise.all([
+    stale(state.water) ? api('/api/water').catch(() => null) : null,
+    stale(state.food) ? api('/api/food').catch(() => null) : null,
+  ]).then(([water, food]) => {
+    if (water) state.water = withPendingWater(water);
+    if (food) {
+      state.food = food;
+      cacheFoodSummary(food);
+    }
+    if (water || food) {
+      invalidateWeek(water && food ? 'both' : water ? 'water' : 'food');
+      render();
+    }
+  });
+}
 applyTheme(state.theme);
 followSystemTheme();
 applyPremium(state.premium);
@@ -9764,8 +14714,8 @@ if (state.user) {
   // their own POSTs at the moment you enter them.
   setInterval(
     () => {
-      if (!state.user) return;
-      if (state.money) persistMoney();
+      if (!state.user || !navigator.onLine) return;
+      if (state.money && moneyDirty()) persistMoney();
     },
     5 * 60 * 1000
   );
@@ -9805,4 +14755,7 @@ if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.DEV
   } catch (_) {
     /* never block the app */
   }
+  // money.js is a lazy chunk now; load it on DEV boot so its _demo() (and
+  // share-card's, which rides along) still runs without opening Money.
+  import('./money.js').catch(() => {});
 }

@@ -131,15 +131,8 @@ public class MentorshipController {
         );
     }
 
-    /**
-     * Has this mentee left their mentor's window open? Settings writes
-     * {@code shareProgress} into the ui_prefs blob; anything other than an
-     * explicit false means sharing, so every account that predates the toggle
-     * keeps working. Second {@code ui_prefs} key the server reads, after
-     * {@code workWeek} — see {@link com.growthbuddy.common.WorkWeek}.
-     */
+    /** See {@link ProgressSharing} — the leaderboard reads the same switch. */
     private static boolean sharesProgress(User u) {
-        Object v = u.getUiPrefs() == null ? null : u.getUiPrefs().get("shareProgress");
-        return !Boolean.FALSE.equals(v) && !"false".equals(v);
+        return ProgressSharing.sharesProgress(u);
     }
 }

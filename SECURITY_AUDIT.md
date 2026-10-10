@@ -288,3 +288,70 @@ Tests passing:
 - ✅ Recurrence tests: 27 cases passed
 - ✅ Icon registry: All 97 icons resolve
 - ✅ CSS tokens: 1869 references, all valid
+
+---
+
+## Addendum — 2026-10-10 (self-review)
+
+> **This is an internal self-review by the development team (AI-assisted), not a third-party
+> audit or penetration test.** It records what changed in the security model since the
+> 2026-09-24 report above and what was checked against the code. Findings are only as good as
+> the reading; nothing here has been independently verified.
+
+### What changed since 2026-09-24
+
+| Area | Model now | Checked |
+|---|---|---|
+| **Bearer sessions** | Opaque random bearer token per device (`SessionService`). Only an HMAC-SHA256 of it (keyed by `SESSION_HMAC_SECRET`, which must be set and non-default or boot fails) is stored in `sessions`; 60-day TTL; logout / change-password revoke rows. A 60 s per-instance token cache means a revoke on *another* instance can take up to a minute to bite. | Code read |
+| **WhatsApp webhook** | Anonymous (Meta holds no session); every POST must carry `X-Hub-Signature-256` over the raw body, compared in constant time (`MessageDigest.isEqual`). No app secret configured → every POST refused. The acting user comes from the verified sender number, never from the payload. | Code read |
+| **Custom-sound uploads** | Data-URL only, MIME allow-list regex, Base64 decode errors → 400, 300 KB cap, 5 per account (counted under a row lock), name clipped to 60 chars. Served back with `nosniff`. Bodies over 8 MB are refused before parsing (`RequestSizeLimitFilter`). | Code read |
+| **Data export** (`GET /api/auth/export`) | Scoped to `CurrentUser.id()`; reads `users` + every `USER_OWNED_TABLES` table `WHERE user_id = ?`; credential/OTP/session tables skipped; hash/key columns dropped; `Cache-Control: no-store`; per-IP rate-limited (it reads every table). | Code read |
+| **Client-error endpoint** (`POST /api/client-errors`) | Anonymous by design (the sign-in screen crashes too). Per-IP rate-limited, each field length-clipped, control characters stripped so a report cannot forge log lines, nothing stored. | Code read |
+| **Security headers + CSP** | `SecurityHeadersFilter`: `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, HSTS only over real HTTPS, and a same-origin CSP on HTML responses. **CSP is Report-Only by default** (`CSP_ENFORCE=false`) until it has been watched against a production build. Open item: flip to enforcing. The Capacitor shell loads HTML from the device, so the CSP never applies there. | Code read |
+| **2FA (TOTP)** | RFC 6238 via `TotpService`; secret AES-GCM encrypted at rest; 8 single-use recovery codes stored bcrypt-hashed and shown once; setup is a POST so the Workbox GET cache never stores the secret; enable/verify/disable go through `LoginAttemptGuard` and the per-IP limiter; disable needs password + a code. Login checks it after the password, so `totp_required` reveals nothing to a stranger. | Code read |
+| **Email change** | Password-confirmed (guarded), code sent to the NEW address; the address only moves once that code is typed; taken addresses refused at both steps; the OLD address is notified. Per-account 5/h cap plus the new per-address OTP cap (below). | Code read + unit test |
+| **Deletion grace** | `deleteAccount` schedules a purge `DELETION_GRACE_DAYS` (7) out and revokes sessions; `/api/auth/cancel-deletion` is anonymous but is exactly a sign-in (password, 2FA, lockout, per-IP limit). The purge walks `USER_OWNED_TABLES`, which `AccountDeletionCoverageTest` holds against the schema. | Code read |
+| **Streaming Buddy reply** (SSE) | The worker thread sets `CurrentUser` itself and clears it in `finally`; `CurrentUserInterceptor.afterConcurrentHandlingStarted` clears the request thread when it is handed back to Tomcat (before this, the user id leaked into the next request served by that pooled thread — e.g. an anonymous `/api/client-errors` would have run as that user). Thread ownership is checked (`findByIdAndUserId`) before the stream opens. | Code read |
+
+### Changed in this review
+
+- **OTP mail cap per destination address, across every purpose** (`AuthService.requireOtpMailBudget`,
+  5/hour, key `otpmail:<email>`). Each flow already had its own 5/h, so mixing signup-again,
+  resend, reset and email change could send one inbox 15+ codes an hour. Resend and forgot-password
+  check it *before* the account lookup, so an unknown address gets the same 429 (no enumeration
+  oracle). Test: `OtpMailCapTest`. **Open item:** the requested 10/day cap is not in — `RateLimiter`
+  only retains 2 h of counters, so a 24 h window would be swept within hours; it needs
+  `RETAIN_MS` ≥ 2 × 24 h first.
+- **`POST /api/auth/signup` is now per-IP rate-limited.** It was the one anonymous endpoint that
+  both creates a row and sends an email with no IP limit at all.
+- **`POST /api/circles/join-code` is now per-IP rate-limited** — it checks a guessable secret
+  (8 chars of a 32-letter alphabet).
+- **`GET /api/habits/{id}/history?days=` is clamped** to 1..400 like the bulk read; a huge value
+  made `minusDays` throw (500). Scoping was already correct.
+- **CI:** `npm audit --omit=dev --audit-level=high` (blocking; 0 vulnerabilities at time of
+  adding), gitleaks over full history, CodeQL (JS + Java, `security-extended`, weekly).
+  OWASP dependency-check deliberately skipped (multi-GB NVD download per cold run); Dependabot +
+  `npm audit` cover dependency advisories. Pre-commit hook install documented in `CONTRIBUTING.md`.
+
+### Authorization review of endpoints added since the last report
+
+Every handler below takes the user from `CurrentUser.id()` (never from the body or path) and the
+service scopes the row by it; verdict per endpoint:
+
+| Endpoint | Scoping | Verdict |
+|---|---|---|
+| `GET /api/auth/export` | `WHERE user_id = CurrentUser` per table | OK |
+| `POST /api/client-errors` | anonymous, nothing read or written | OK (by design) |
+| `POST /api/auth/email/change`, `/email/confirm` | `CurrentUser`; token rows by `userId` | OK |
+| `POST /api/auth/2fa/setup`, `/verify`, `/disable` | `CurrentUser` | OK |
+| `POST /api/auth/cancel-deletion` | anonymous → full `login()` | OK |
+| `POST /api/notes/{id}/restore` | `findByIdAndUserId` | OK |
+| `GET/PUT/DELETE /api/notes/{id}/draft` | `findByNoteIdAndUserId`; PUT also requires the live note | OK |
+| `POST /api/circles/join-code` | private circles only; adds the caller | OK (+ rate limit added) |
+| `GET /api/circles/{id}/members` | `requireMember` | OK |
+| `DELETE /api/circles/{id}/members/{userId}`, `POST /{id}/transfer` | `requireOwner`; target must be a member | OK |
+| `POST /api/family/transfer` | caller's family, `requireOwner`, heir must be a mapped member of it | OK |
+| `POST /api/food/entries/manual`, `GET /api/food/recent` | `CurrentUser`; recent = `findTop60ByUserId…` | OK |
+| `PUT /api/habits/order` | only the caller's live habits; a foreign id → 404 | OK |
+| `GET /api/habits/{id}/history`, `/history` | `require(userId, id)` / `findByUserId…` | OK (+ clamp added) |
+| `POST /api/mentor/…/messages/stream` | `requireThread` = `findByIdAndUserId`; ThreadLocal cleared | OK |

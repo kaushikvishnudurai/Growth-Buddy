@@ -16,6 +16,19 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     Optional<User> findByEmailIgnoreCase(String email);
 
+    /** Accounts whose deletion grace period has run out (AccountDeletionJob). */
+    @Query("select u.id from User u where u.deletionRequestedAt is not null and u.deletionRequestedAt < :cutoff")
+    List<UUID> findIdsDueForDeletion(@Param("cutoff") java.time.Instant cutoff);
+
+    /**
+     * {@code [id, uiPrefs]} for every account that has prefs at all — the
+     * notification sweep's per-user retention (NotificationPrefs.keepReadDays).
+     * ponytail: reads every blob nightly; JSON_EXTRACT on notifyKeepReadDays in
+     * a native query is the upgrade once that gets heavy.
+     */
+    @Query("select u.id, u.uiPrefs from User u where u.uiPrefs is not null")
+    List<Object[]> findIdsWithUiPrefs();
+
     /** Everyone a bill-due WhatsApp may go to: only a number its owner proved by OTP. */
 
     /**
@@ -32,13 +45,18 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     /* Name only, never email: an email match - even an exact one - answers
        "does this address have an account?", which sign-in is careful never to
        do. Circle invites go by user id from a result row, so nothing needs it. */
+    /* Nor an account scheduled for deletion (User.isPendingDeletion): for its
+       7-day grace period it is gone to everyone else, so it is not found, not
+       browsable and not invitable. All three discovery queries filter it. */
     @Query("select u from User u where lower(u.displayName) like lower(concat('%', :q, '%')) "
             + "and u.id <> :excludeId "
             + "and u.emailVerified = true "
+            + "and u.deletionRequestedAt is null "
             + "order by u.displayName")
     List<User> search(@Param("q") String q, @Param("excludeId") UUID excludeId, Pageable pageable);
 
     @Query("select u from User u where u.id <> :excludeId and u.emailVerified = true "
+            + "and u.deletionRequestedAt is null "
             + "order by u.createdAt desc")
     List<User> browseExcluding(@Param("excludeId") UUID excludeId, Pageable pageable);
 
@@ -60,6 +78,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     @Query("select u from User u where (u.id = :idMatch "
             + "or lower(u.displayName) like lower(concat('%', :q, '%'))) and u.id <> :excludeId "
             + "and u.emailVerified = true "
+            + "and u.deletionRequestedAt is null "
             + "order by u.displayName")
     List<User> searchForFamily(@Param("q") String q, @Param("idMatch") UUID idMatch,
             @Param("excludeId") UUID excludeId, Pageable pageable);

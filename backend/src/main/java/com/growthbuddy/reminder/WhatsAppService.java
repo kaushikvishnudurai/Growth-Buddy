@@ -28,6 +28,8 @@ public class WhatsAppService {
     private final String authTemplate;
     private final String templateLang;
     private final String billTemplate;
+    private final String reminderTemplate;
+    private final boolean repliesHandled;
     private final HttpClient http;
 
     public WhatsAppService(
@@ -38,7 +40,9 @@ public class WhatsAppService {
             @Value("${growthbuddy.whatsapp.meta.template:}") String template,
             @Value("${growthbuddy.whatsapp.meta.auth-template:}") String authTemplate,
             @Value("${growthbuddy.whatsapp.meta.template-lang:en}") String templateLang,
-            @Value("${growthbuddy.whatsapp.meta.bill-template:}") String billTemplate) {
+            @Value("${growthbuddy.whatsapp.meta.bill-template:}") String billTemplate,
+            @Value("${growthbuddy.whatsapp.meta.reminder-template:}") String reminderTemplate,
+            @Value("${growthbuddy.whatsapp.meta.app-secret:}") String appSecret) {
         this.enabled = enabled;
         this.phoneNumberId = phoneNumberId;
         this.accessToken = accessToken;
@@ -47,6 +51,10 @@ public class WhatsAppService {
         this.authTemplate = authTemplate;
         this.templateLang = templateLang;
         this.billTemplate = billTemplate;
+        this.reminderTemplate = reminderTemplate;
+        // The webhook refuses every POST without the app secret, so with none a
+        // "reply SNOOZE" would go nowhere — and the message must not offer it.
+        this.repliesHandled = StringUtils.hasText(appSecret);
         this.http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(8)).build();
     }
 
@@ -58,6 +66,28 @@ public class WhatsAppService {
 
     public void sendReminder(String toNumber, String message) {
         send(toNumber, message, false);
+    }
+
+    /**
+     * A reminder the user can snooze from WhatsApp. With an approved button
+     * template ({@code WHATSAPP_REMINDER_TEMPLATE}: body = one {{1}}, one
+     * QUICK_REPLY "Snooze") the tap comes back to the webhook as
+     * {@code snooze:<reminderId>}. Without one the plain reminder template goes
+     * out with a line asking for a reply of SNOOZE — a reply the webhook only
+     * hears when it is set up, so the line is only there when it is.
+     */
+    public void sendSnoozableReminder(String toNumber, String text, java.util.UUID reminderId, int snoozeMinutes) {
+        if (StringUtils.hasText(reminderTemplate)) {
+            post(toNumber, to -> buildQuickReplyBody(to, reminderTemplate, templateLang, text,
+                    "snooze:" + reminderId, "Snooze"));
+            return;
+        }
+        sendReminder(toNumber, repliesHandled ? withSnoozeHint(text, snoozeMinutes) : text);
+    }
+
+    /** One line, no newline: Meta refuses a template parameter that holds one. */
+    static String withSnoozeHint(String text, int minutes) {
+        return text + " — reply SNOOZE to hear it again in " + ReminderPrefs.human(minutes) + ".";
     }
 
     /**
@@ -194,13 +224,19 @@ public class WhatsAppService {
      */
     static String buildBillBody(String to, String template, String templateLang,
                                 String message, String payload) {
+        return buildQuickReplyBody(to, template, templateLang, message, payload, "Mark as paid");
+    }
+
+    /** {@link #buildBillBody} for any one button; {@code title} only shows on the no-template fallback. */
+    static String buildQuickReplyBody(String to, String template, String templateLang,
+                                      String message, String payload, String title) {
         String head = "{\"messaging_product\":\"whatsapp\",\"to\":\"" + jsonEscape(to) + "\",";
         String p = jsonEscape(payload);
         if (!StringUtils.hasText(template)) {
             return head + "\"type\":\"interactive\",\"interactive\":{\"type\":\"button\","
                     + "\"body\":{\"text\":\"" + jsonEscape(message) + "\"},"
                     + "\"action\":{\"buttons\":[{\"type\":\"reply\",\"reply\":{\"id\":\"" + p
-                    + "\",\"title\":\"Mark as paid\"}}]}}}";
+                    + "\",\"title\":\"" + jsonEscape(title) + "\"}}]}}}";
         }
         return head + "\"type\":\"template\",\"template\":{\"name\":\"" + jsonEscape(template)
                 + "\",\"language\":{\"code\":\"" + jsonEscape(templateLang) + "\"},\"components\":["

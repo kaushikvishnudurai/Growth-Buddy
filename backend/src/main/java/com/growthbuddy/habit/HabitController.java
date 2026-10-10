@@ -3,6 +3,7 @@ package com.growthbuddy.habit;
 import com.growthbuddy.common.CurrentUser;
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -38,6 +39,13 @@ public class HabitController {
         return service.create(CurrentUser.id(), req);
     }
 
+    /** Save the user's order (top first); answers with the list in that order. Mapped before
+     *  {@code /{id}} for readability — Spring prefers the literal path either way. */
+    @PutMapping("/order")
+    public List<HabitResponse> reorder(@Valid @RequestBody HabitOrderRequest req) {
+        return service.reorder(CurrentUser.id(), req.ids());
+    }
+
     @PutMapping("/{id}")
     public HabitResponse update(@PathVariable UUID id, @Valid @RequestBody UpdateHabitRequest req) {
         return service.update(CurrentUser.id(), id, req);
@@ -66,6 +74,16 @@ public class HabitController {
     public HabitHistory history(@PathVariable UUID id,
                                   @RequestParam(defaultValue = "120") int days) {
         return service.history(CurrentUser.id(), id, days);
+    }
+
+    /**
+     * Every habit's recent days at once, {@code {habitId: {since, days[]}}} —
+     * Insights' read, which was one {@code /{id}/history} call per daily habit.
+     * {@code days} is clamped to 1..400.
+     */
+    @GetMapping("/history")
+    public Map<UUID, HabitHistory> historyAll(@RequestParam(defaultValue = "60") int days) {
+        return service.historyAll(CurrentUser.id(), days);
     }
 
     /** Protect a day (rest/freeze) so a missed day doesn't break the streak. */

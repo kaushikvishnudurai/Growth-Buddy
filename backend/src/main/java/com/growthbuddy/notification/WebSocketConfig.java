@@ -73,35 +73,50 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
-        registration.interceptors(new ChannelInterceptor() {
-            @Override
-            public Message<?> preSend(Message<?> message, MessageChannel channel) {
-                StompHeaderAccessor acc = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
-                if (acc == null) {
-                    return message;
-                }
-                StompCommand cmd = acc.getCommand();
-                if (StompCommand.CONNECT.equals(cmd)) {
-                    // Reject the CONNECT outright when the token is missing/invalid,
-                    // instead of letting an unauthenticated session linger.
-                    String auth = firstHeader(acc, "Authorization");
-                    Optional<UUID> userId = (StringUtils.hasText(auth)
-                            && auth.regionMatches(true, 0, "Bearer ", 0, 7))
-                            ? sessions.resolve(auth.substring(7).trim())
-                            : Optional.empty();
-                    if (userId.isEmpty()) {
-                        throw new MessagingException("Unauthorized WebSocket connection");
-                    }
-                    acc.setUser(new StompPrincipal(userId.get().toString()));
-                } else if (StompCommand.SUBSCRIBE.equals(cmd)) {
-                    // Must be authenticated and may only subscribe to their own queue.
-                    if (acc.getUser() == null || !ALLOWED_SUBSCRIPTION.equals(acc.getDestination())) {
-                        throw new MessagingException("Subscription not allowed");
-                    }
-                }
+        registration.interceptors(new AuthInterceptor(sessions));
+    }
+
+    /**
+     * CONNECT must carry a live session token; SUBSCRIBE must be authenticated
+     * and aimed at the caller's own queue. A named class (it was anonymous) so
+     * {@code WebSocketAuthInterceptorTest} can drive it with hand-built frames.
+     */
+    static final class AuthInterceptor implements ChannelInterceptor {
+        private final SessionService sessions;
+
+        AuthInterceptor(SessionService sessions) {
+            this.sessions = sessions;
+        }
+
+        @Override
+        public Message<?> preSend(Message<?> message, MessageChannel channel) {
+            StompHeaderAccessor acc = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
+            if (acc == null) {
                 return message;
             }
-        });
+            StompCommand cmd = acc.getCommand();
+            if (StompCommand.CONNECT.equals(cmd)) {
+                // Reject the CONNECT outright when the token is missing/invalid,
+                // instead of letting an unauthenticated session linger. The client
+                // re-reads its token before every (re)connect, so a rotated
+                // session reconnects with the new one rather than looping on a 401.
+                String auth = firstHeader(acc, "Authorization");
+                Optional<UUID> userId = (StringUtils.hasText(auth)
+                        && auth.regionMatches(true, 0, "Bearer ", 0, 7))
+                        ? sessions.resolve(auth.substring(7).trim())
+                        : Optional.empty();
+                if (userId.isEmpty()) {
+                    throw new MessagingException("Unauthorized WebSocket connection");
+                }
+                acc.setUser(new StompPrincipal(userId.get().toString()));
+            } else if (StompCommand.SUBSCRIBE.equals(cmd)) {
+                // Must be authenticated and may only subscribe to their own queue.
+                if (acc.getUser() == null || !ALLOWED_SUBSCRIPTION.equals(acc.getDestination())) {
+                    throw new MessagingException("Subscription not allowed");
+                }
+            }
+            return message;
+        }
     }
 
     private static String firstHeader(StompHeaderAccessor acc, String name) {

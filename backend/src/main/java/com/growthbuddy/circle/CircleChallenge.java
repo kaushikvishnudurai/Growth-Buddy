@@ -14,8 +14,9 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 /**
- * A time-boxed habit challenge for a circle. Members are ranked by how many
- * habit check-ins they complete during [startDate, endDate].
+ * A time-boxed challenge for a circle. Members are ranked by {@link #metric}
+ * (habit check-ins, focus minutes or water-goal days) during [startDate, endDate].
+ * The start may be a future day — an upcoming challenge shows an empty board.
  */
 @Entity
 @Table(name = "circle_challenges", indexes = {
@@ -40,6 +41,14 @@ public class CircleChallenge {
 
     @Column(name = "end_date", nullable = false)
     private LocalDate endDate;
+
+    /**
+     * What the board counts — a {@link ChallengeMetrics.Metric} name:
+     * {@code habit_checkins} (every row from before the column),
+     * {@code focus_minutes} or {@code water_days}.
+     */
+    @Column(nullable = false, length = 16)
+    private String metric = "habit_checkins";
 
     @Column(name = "created_by", nullable = false)
     private UUID createdBy;

@@ -8,8 +8,12 @@
    photo library at no extra cost.
 
    Canvas, `toBlob` and the Web Share API are all platform features; this
-   file adds no dependency and works offline.
+   file adds no dependency and works offline. Inside the Capacitor app the
+   PNG goes through @capacitor/filesystem + @capacitor/share instead (both
+   installed in ../Growth-Buddy-Mobile, reached via the bridge).
    ===================================================================== */
+
+import { isNative, nativePlugin } from './native.js';
 
 const W = 1080;
 const H = 1920;
@@ -39,6 +43,28 @@ function wrap(ctx, text, maxW) {
   });
   if (line) lines.push(line);
   return lines;
+}
+
+/** `text` cut with an ellipsis to fit `maxW` at the current ctx font. */
+function fit(ctx, text, maxW) {
+  let t = String(text || '');
+  if (maxW <= 0) return '';
+  if (ctx.measureText(t).width <= maxW) return t;
+  while (t && ctx.measureText(t + '\u2026').width > maxW) t = t.slice(0, -1);
+  return t ? t.trimEnd() + '\u2026' : '';
+}
+
+/* A rounded rect path. ctx.roundRect is Chrome 99 / Safari 16 / Firefox 112:
+   an older WebView threw on it and the share button just failed. */
+function roundRect(ctx, x, y, w, h, r) {
+  if (typeof ctx.roundRect === 'function') return ctx.roundRect(x, y, w, h, r);
+  const k = Math.min(r, w / 2, h / 2);
+  ctx.moveTo(x + k, y);
+  ctx.arcTo(x + w, y, x + w, y + h, k);
+  ctx.arcTo(x + w, y + h, x, y + h, k);
+  ctx.arcTo(x, y + h, x, y, k);
+  ctx.arcTo(x, y, x + w, y, k);
+  ctx.closePath();
 }
 
 /** The app icon, or null if it can't be read. Never rejects. */
@@ -113,11 +139,11 @@ export async function renderStoryCard(card) {
     // The app icon is orange on orange, so it needs something to sit on.
     ctx.fillStyle = 'rgba(255,255,255,0.95)';
     ctx.beginPath();
-    ctx.roundRect(PAD, BRAND_Y, 92, 92, 26);
+    roundRect(ctx, PAD, BRAND_Y, 92, 92, 26);
     ctx.fill();
     ctx.save();
     ctx.beginPath();
-    ctx.roundRect(PAD + 10, BRAND_Y + 10, 72, 72, 20);
+    roundRect(ctx, PAD + 10, BRAND_Y + 10, 72, 72, 20);
     ctx.clip();
     ctx.drawImage(logo, PAD + 10, BRAND_Y + 10, 72, 72);
     ctx.restore();
@@ -133,16 +159,16 @@ export async function renderStoryCard(card) {
   if ('letterSpacing' in ctx) ctx.letterSpacing = '6px';
   ctx.fillStyle = 'rgba(255,255,255,0.72)';
   ctx.font = '700 34px ' + BODY;
-  ctx.fillText(String(card.eyebrow || '').toUpperCase(), PAD, EYEBROW_Y);
+  ctx.fillText(fit(ctx, String(card.eyebrow || '').toUpperCase(), W - PAD * 2), PAD, EYEBROW_Y);
   if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
 
   ctx.fillStyle = '#FFFFFF';
   ctx.font = '800 148px ' + DISPLAY;
-  ctx.fillText(card.headline || '', PAD, EYEBROW_Y + 160);
+  ctx.fillText(fit(ctx, card.headline, W - PAD * 2), PAD, EYEBROW_Y + 160);
 
   ctx.fillStyle = 'rgba(255,255,255,0.78)';
   ctx.font = '500 46px ' + BODY;
-  ctx.fillText(card.sub || '', PAD, EYEBROW_Y + 230);
+  ctx.fillText(fit(ctx, card.sub, W - PAD * 2), PAD, EYEBROW_Y + 230);
 
   // ---- stats panel ----
   const stats = (card.stats || []).slice(0, 3);
@@ -151,7 +177,7 @@ export async function renderStoryCard(card) {
   const panelH = stats.length * rowH + 48;
   ctx.fillStyle = 'rgba(255,255,255,0.16)';
   ctx.beginPath();
-  ctx.roundRect(PAD, panelY, W - PAD * 2, panelH, 44);
+  roundRect(ctx, PAD, panelY, W - PAD * 2, panelH, 44);
   ctx.fill();
 
   stats.forEach((s, i) => {
@@ -165,14 +191,20 @@ export async function renderStoryCard(card) {
       ctx.stroke();
     }
     ctx.textBaseline = 'middle';
+    // The value keeps its width (up to most of the row); the label gets what is
+    // left, less a gap, and is cut with an ellipsis rather than run under it.
+    const inner = W - PAD * 2 - 96;
+    ctx.font = '700 52px ' + DISPLAY;
+    const value = fit(ctx, s.value, inner * 0.6);
+    const valueW = ctx.measureText(value).width;
     ctx.fillStyle = 'rgba(255,255,255,0.80)';
     ctx.font = '500 44px ' + BODY;
     ctx.textAlign = 'left';
-    ctx.fillText(s.label, PAD + 48, y);
+    ctx.fillText(fit(ctx, s.label, inner - valueW - 32), PAD + 48, y);
     ctx.fillStyle = '#FFFFFF';
     ctx.font = '700 52px ' + DISPLAY;
     ctx.textAlign = 'right';
-    ctx.fillText(s.value, W - PAD - 48, y);
+    ctx.fillText(value, W - PAD - 48, y);
   });
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
@@ -191,7 +223,7 @@ export async function renderStoryCard(card) {
   // ---- footer ----
   ctx.fillStyle = 'rgba(255,255,255,0.62)';
   ctx.font = '500 34px ' + BODY;
-  ctx.fillText(card.footer || '', PAD, H - FOOTER_UP);
+  ctx.fillText(fit(ctx, card.footer, W - PAD * 2), PAD, H - FOOTER_UP);
 
   return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
 }
@@ -209,11 +241,15 @@ export async function shareStoryCard(card, { filename = 'growth-buddy.png', titl
   if (!blob) return 'unsupported';
   const file = new File([blob], filename, { type: 'image/png' });
 
+  // Inside the app the WebView's canShare({files}) is false, so the image is
+  // written to the cache dir and its file:// URI handed to the native sheet.
+  if (isNative()) {
+    const native = await shareNatively(blob, filename, title);
+    if (native) return native;
+  }
+
   // canShare({files}) is the only honest test — Android WebView and desktop
   // Firefox have navigator.share but reject files.
-  // ponytail: inside the Capacitor wrapper this is usually false, so the app
-  // falls back to a download. Swap in @capacitor/share (Filesystem URI) there
-  // if the native share sheet is worth the plugin.
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
       await navigator.share({ files: [file], title });
@@ -236,6 +272,49 @@ export async function shareStoryCard(card, { filename = 'growth-buddy.png', titl
   return 'saved';
 }
 
+/** A blob -> its bytes as bare base64 (no data: prefix), for Filesystem.writeFile. */
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).slice(String(r.result).indexOf(',') + 1));
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(blob);
+  });
+}
+
+/**
+ * The Capacitor path: Filesystem.writeFile into the cache directory, then
+ * Share.share with that file's URI. Resolves 'shared', or null when either
+ * plugin is missing from this APK (or fails) so the caller falls back to the
+ * download. `nativePlugin` hands back a proxy whether or not the native class
+ * exists, so "missing" only shows up as a rejected call — hence the try.
+ */
+async function shareNatively(blob, filename, title) {
+  const FS = nativePlugin('Filesystem');
+  const Share = nativePlugin('Share');
+  if (!FS || !Share) return null;
+  let uri;
+  try {
+    const data = await blobToBase64(blob);
+    // 'CACHE' is Directory.Cache's value; the enum lives in the plugin package.
+    const res = await FS.writeFile({ path: filename, data, directory: 'CACHE' });
+    uri = res && res.uri;
+  } catch (_) {
+    return null;
+  }
+  if (!uri) return null;
+  try {
+    await Share.share({ title, files: [uri] });
+    return 'shared';
+  } catch (err) {
+    // A dismissed sheet rejects with "Share canceled" — that is still a share
+    // offered, same as the web AbortError. Anything else (UNIMPLEMENTED on an
+    // older APK) falls back to the download.
+    const msg = String((err && err.message) || err || '');
+    return /cancel/i.test(msg) ? 'shared' : null;
+  }
+}
+
 /* Dev self-check: the layout maths that would silently produce an overlapping
    or off-canvas card, and the wrap that would run text past the edge. */
 export function _demo() {
@@ -246,6 +325,9 @@ export function _demo() {
   a(lines.length > 1, 'long text wraps');
   a(lines.every((l) => ctx.measureText(l).width <= 400), 'no wrapped line overflows');
   a(wrap(ctx, '', 400).length === 0, 'empty text makes no lines');
+  const cut = fit(ctx, 'x'.repeat(200), 300);
+  a(cut.endsWith('\u2026') && ctx.measureText(cut).width <= 300, 'a long label is cut to fit');
+  a(fit(ctx, 'short', 300) === 'short', 'a label that fits is left alone');
   const panelH = 3 * 132 + 48;
   const noteEnd = EYEBROW_Y + 340 + panelH + 120 + 68 * 2;
   a(noteEnd < H - FOOTER_UP, 'three stats + three note lines clear the footer');

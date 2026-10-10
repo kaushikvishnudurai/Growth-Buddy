@@ -1,8 +1,9 @@
 /* =====================================================================
    Growth Buddy — Achievement celebration
    A big, one-off "you earned it" moment: a badge that pops in over a
-   burst of confetti. Fired only the first time an achievement unlocks
-   (see checkAchievements in app.js). Self-contained — no confetti lib.
+   burst of confetti. Fired the first time an achievement unlocks (see
+   checkAchievements in app.js) and when a goal is marked done (toggleGoal,
+   with its own `kicker`). Self-contained — no confetti lib.
    Respects prefers-reduced-motion (shows the card, skips the confetti).
    ===================================================================== */
 import { h, Icon, trackOverlay } from './gb-kit.js';
@@ -64,6 +65,9 @@ function confettiLayer() {
 
 function show(ach, done) {
   const tierLabel = { bronze: 'Bronze', silver: 'Silver', gold: 'Gold' }[ach.tier] || '';
+  // A goal finishing is not an achievement: callers pass their own kicker
+  // ("Goal complete"); a badge unlock leaves it out and gets the default.
+  const kicker = ach.kicker || 'Achievement unlocked';
   let closed = false;
   let untrack = null;
 
@@ -71,7 +75,7 @@ function show(ach, done) {
     class: 'gb-celebrate',
     role: 'dialog',
     'aria-modal': 'true',
-    'aria-label': 'Achievement unlocked: ' + ach.title,
+    'aria-label': kicker + ': ' + ach.title,
   });
 
   if (!prefersReducedMotion()) overlay.appendChild(confettiLayer());
@@ -86,7 +90,7 @@ function show(ach, done) {
     'div',
     { class: 'gb-celebrate-card' },
     h('div', { class: 'gb-celebrate-badge' }, Icon(ach.icon || 'award', { size: 40, sw: 2 })),
-    h('div', { class: 'gb-celebrate-kicker' }, 'Achievement unlocked'),
+    h('div', { class: 'gb-celebrate-kicker' }, kicker),
     h('div', { class: 'gb-celebrate-title' }, ach.title),
     h('div', { class: 'gb-celebrate-desc' }, ach.desc + (tierLabel ? ' · ' + tierLabel : '')),
     nice

@@ -37,6 +37,11 @@ public class GoalController {
         return service.create(CurrentUser.id(), req);
     }
 
+    @PutMapping("/{id}")
+    public GoalResponse update(@PathVariable UUID id, @Valid @RequestBody UpdateGoalRequest req) {
+        return service.update(CurrentUser.id(), id, req);
+    }
+
     @PatchMapping("/{id}/toggle")
     public GoalResponse toggle(@PathVariable UUID id) {
         return service.toggleComplete(CurrentUser.id(), id);

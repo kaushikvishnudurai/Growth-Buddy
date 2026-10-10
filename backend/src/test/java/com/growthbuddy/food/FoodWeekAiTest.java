@@ -9,6 +9,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.growthbuddy.common.ThrottleStore;
 import com.growthbuddy.mentor.OpenAIClient;
 import com.growthbuddy.user.UserClock;
 import com.growthbuddy.user.UserRepository;
@@ -40,6 +41,8 @@ class FoodWeekAiTest {
         UserClock clock = mock(UserClock.class);
         openai = mock(OpenAIClient.class);
         when(clock.today(user)).thenReturn(today);
+        when(clock.zoneOf(user)).thenReturn(java.time.ZoneOffset.UTC);
+        this.users = users;
         when(users.findById(any())).thenReturn(Optional.empty());
         when(openai.isConfigured()).thenReturn(true);
         FoodEntry e = new FoodEntry();
@@ -63,8 +66,25 @@ class FoodWeekAiTest {
             Map<String, Object> row = table.get(a[0] + "/" + a[1]);
             return row == null ? List.of() : List.of(row);
         });
-        week = new FoodWeek(entries, users, clock, openai, water, jdbc);
+        week = new FoodWeek(entries, users, clock, openai, water, jdbc, throttle);
     }
+
+    private UserRepository users;
+
+    /** login_attempts as a map: the shared store every instance reads. */
+    private final ThrottleStore throttle = new ThrottleStore() {
+        private final Map<String, Attempt> rows = new java.util.HashMap<>();
+        @Override public int countHit(String k, long w) { return 1; }
+        @Override public void sweepCounters(long c) { }
+        @Override public Attempt attempt(String k) { return rows.getOrDefault(k, Attempt.NONE); }
+        @Override public void recordFailure(String k, java.util.function.IntUnaryOperator lock) {
+            Attempt a = attempt(k);
+            long now = System.currentTimeMillis();
+            rows.put(k, new Attempt(a.failures() + 1, now + lock.applyAsInt(a.failures() + 1), now));
+        }
+        @Override public void clearAttempt(String k) { rows.remove(k); }
+        @Override public void sweepAttempts(long c) { }
+    };
 
     @Test
     void aFailedEstimateIsNotRetriedOnEveryOpen() {
@@ -72,7 +92,10 @@ class FoodWeekAiTest {
         week.week(user);
         week.week(user);
         week.week(user);
+        // Another instance, or this one restarted, shares the backoff.
+        new FoodWeek(entries, users, clockFor(), openai, water, jdbc, throttle).week(user);
         verify(openai, times(1)).complete(anyString(), anyList());
+        assertEquals(1, throttle.attempt(FoodWeek.backoffKey(user)).failures());
         // The screen still has numbers: the keyword table's (60 g carbs, 362 kcal),
         // scaled to the 400 kcal logged.
         assertEquals(66, week.week(user).days().get(6).carbsG());
@@ -88,7 +111,8 @@ class FoodWeekAiTest {
         assertEquals("ai", again.source());
         assertEquals(first, again);
         // A restart: a new instance over the same table still costs nothing.
-        FoodWeek restarted = new FoodWeek(entries, mock(UserRepository.class), clockFor(), openai, water, jdbc);
+        FoodWeek restarted = new FoodWeek(entries, mock(UserRepository.class), clockFor(), openai, water, jdbc,
+                throttle);
         assertEquals(first, restarted.check(user, null));
         verify(openai, times(1)).complete(anyString(), anyList());
     }
@@ -111,9 +135,36 @@ class FoodWeekAiTest {
                 () -> week.check(user, today.minusDays(7)));
     }
 
+    @Test
+    void aSuccessfulEstimateClearsTheBackoff() {
+        throttle.recordFailure(FoodWeek.backoffKey(user), n -> -1); // a failure on record, lock already over
+        when(openai.complete(anyString(), anyList()))
+                .thenReturn("{\"items\":[{\"i\":1,\"proteinG\":8,\"carbsG\":60,\"fatG\":10,\"fiberG\":3}]}");
+        week.week(user);
+        assertEquals(ThrottleStore.Attempt.NONE, throttle.attempt(FoodWeek.backoffKey(user)));
+    }
+
+    @Test
+    void waterIsLeftOutOnlyWhenTheFeatureIsOff() {
+        when(openai.complete(anyString(), anyList()))
+                .thenReturn("{\"summary\":\"Add dal.\",\"add\":[\"Dal\"]}");
+        LocalDate yesterday = today.minusDays(1);
+        List<FoodEntry> meals = entries.findByUserIdAndLogDateBetween(user, today.minusDays(6), today);
+        when(entries.findByUserIdAndLogDateBetween(user, yesterday, yesterday)).thenReturn(meals);
+        // On (the default) and nothing logged all week: 0 ml is judged, not skipped.
+        assertEquals("low", week.check(user, today.minusDays(1)).water());
+        com.growthbuddy.user.User off = new com.growthbuddy.user.User();
+        off.setFeaturePrefs(Map.of("water", false));
+        when(users.findById(user)).thenReturn(Optional.of(off));
+        assertEquals(null, week.check(user, today.minusDays(1)).water());
+        verify(openai).complete(anyString(), org.mockito.ArgumentMatchers.argThat(turns ->
+                !turns.get(0).toString().contains("Water ml")));
+    }
+
     private UserClock clockFor() {
         UserClock c = mock(UserClock.class);
         when(c.today(user)).thenReturn(today);
+        when(c.zoneOf(user)).thenReturn(java.time.ZoneOffset.UTC);
         return c;
     }
 }

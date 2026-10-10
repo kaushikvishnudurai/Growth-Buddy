@@ -73,6 +73,29 @@ public class AuthService {
     private WhatsAppService whatsApp;
     private final SecureRandom rng = new SecureRandom();
 
+    /* Field-injected so the constructor (and the unit tests that call it) stay
+       as they were. A test that builds AuthService by hand leaves them null —
+       login() reads that as "no second factor". */
+    @Autowired
+    private EmailChangeTokenRepository emailChangeTokens;
+    @Autowired
+    private TotpService totp;
+
+    /** Days between "delete my account" and the purge; signing in before then can cancel. */
+    public static final int DELETION_GRACE_DAYS = 7;
+    /** Change-email codes per account per hour, on top of the per-IP limit. */
+    private static final int EMAIL_CHANGE_PER_HOUR = 5;
+    /**
+     * OTP emails per destination address per hour, across EVERY purpose
+     * (verification, resend, password reset, email change). The per-purpose caps
+     * each allow 5/h, so without this one an address could be sent 15+ codes an
+     * hour by mixing flows — mail-bombing with our sender reputation. Plus a
+     * daily ceiling, so 5/h can't run all day; RateLimiter retains counters 48h
+     * for exactly this window.
+     */
+    static final int OTP_MAIL_PER_HOUR = 5;
+    static final int OTP_MAIL_PER_DAY = 10;
+
     /**
      * Every table owning a direct {@code user_id} column — what a deleted account
      * has to take with it. Hoisted out of {@code deleteAccount} so a test can hold
@@ -94,6 +117,7 @@ public class AuthService {
      * being removed outright — see {@link #handOverOrRemoveFamilies}.
      */
     private static final String[] FAMILY_OWNED_TABLES = {
+        "family_chores", "family_recipes",
         "family_dish_preferences", "family_pantry_items", "family_shopping_items",
         "family_favourite_menus", "family_multi_day_plans", "family_meal_plans",
         "family_members",
@@ -102,14 +126,17 @@ public class AuthService {
     static final String[] USER_OWNED_TABLES = {
         "password_credentials",
         "email_verification_tokens", "password_reset_tokens", "whatsapp_otp_tokens",
+        "email_change_tokens", "user_totp",
         "task_completion_history", "tasks",
         "habit_checkins", "habits", "streak_freeze_wallets",
         "water_entries", "water_goals", "food_entries", "food_photo_logs", "food_diet_checks",
+        "food_favourites",
         "goal_actions", "goals", "daily_scores", "daily_logs",
-        "mentor_threads", "circle_members", "circle_posts",
+        "mentor_threads", "circle_members", "circle_post_reactions", "circle_posts",
         "push_subscriptions", "notifications", "custom_sounds", "focus_sessions", "weekly_reviews",
         "money_state", "money_accounts", "money_transactions",
-        "calendar_reminders", "note_drafts", "notes", "sessions",
+        "calendar_reminders", "reminder_done", "note_drafts", "note_edit_drafts", "notes", "sessions",
+        "idempotency_keys",
     };
 
     @PersistenceContext
@@ -171,6 +198,7 @@ public class AuthService {
             throw new ApiException(org.springframework.http.HttpStatus.CONFLICT,
                     "An account with this email already exists. Sign in, or reset your password if you've forgotten it.");
         }
+        requireOtpMailBudget(email);
         User user = new User();
         user.setEmail(email);
         user.setDisplayName(resolveDisplayName(req.displayName(), email));
@@ -219,7 +247,82 @@ public class AuthService {
             issueVerificationOtpLimited(user);
             throw ApiException.forbidden("Verify your email to finish signing up. We sent a new code to " + email + ".");
         }
+        // Both checks come after the password, so neither says anything to a
+        // stranger: 401 totp_required / 409 deletion_scheduled each mean "right
+        // password", which only the owner can produce.
+        // Deletion first, the code second: the code is single-use, so asking for
+        // it before the cancel screen would leave the cancel unable to reuse it.
+        if (user.getDeletionRequestedAt() != null && !Boolean.TRUE.equals(req.cancelDeletion())) {
+            throw deletionScheduled(user);
+        }
+        requireSecondFactor(user, req.code(), email);
+        if (user.getDeletionRequestedAt() != null) {
+            user.setDeletionRequestedAt(null);
+            users.save(user);
+            notifyQuietly(user.getEmail(), "Your Growth Buddy account is staying",
+                    greeting(user) + "You cancelled the deletion of your Growth Buddy account, so nothing "
+                            + "will be removed. If that wasn't you, change your password now.\n\n— Growth Buddy");
+        }
         return AuthUserResponse.withToken(user, sessions.issue(user.getId(), http).token());
+    }
+
+    /**
+     * Second step of sign-in when an authenticator is enrolled. No code yet →
+     * 401 {@code totp_required} (the client opens the code step and re-sends the
+     * same email + password with it). A wrong code is a guess at a 6-digit
+     * secret, so it gets the same LoginAttemptGuard backoff as a password.
+     */
+    private void requireSecondFactor(User user, String code, String email) {
+        if (totp == null || !totp.isEnabled(user.getId())) {
+            return;
+        }
+        if (code == null || code.isBlank()) {
+            throw new ApiException(org.springframework.http.HttpStatus.UNAUTHORIZED,
+                    "Enter the 6-digit code from your authenticator app.", "totp_required");
+        }
+        String key = "totp:" + email;
+        loginGuard.check(key);
+        if (!totp.verify(user.getId(), code)) {
+            loginGuard.recordFailure(key);
+            throw new ApiException(org.springframework.http.HttpStatus.BAD_REQUEST,
+                    "That code didn't work. Use the newest one in your app, or a recovery code.", "totp_invalid");
+        }
+        loginGuard.recordSuccess(key);
+    }
+
+    private ApiException deletionScheduled(User user) {
+        return new ApiException(org.springframework.http.HttpStatus.CONFLICT,
+                "Your account is scheduled for deletion on " + deletionDate(user) + ".", "deletion_scheduled");
+    }
+
+    /** The purge day, in the user's own zone, e.g. "17 October 2026". */
+    private static String deletionDate(User user) {
+        java.time.ZoneId zone;
+        try {
+            zone = java.time.ZoneId.of(user.getTimezone());
+        } catch (RuntimeException ex) {
+            zone = java.time.ZoneOffset.UTC;
+        }
+        return user.getDeletionRequestedAt().plus(DELETION_GRACE_DAYS, ChronoUnit.DAYS).atZone(zone)
+                .format(java.time.format.DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.ENGLISH));
+    }
+
+    private static String greeting(User user) {
+        String name = user.getDisplayName();
+        return (name == null || name.isBlank() ? "Hello" : "Hi " + name) + ",\n\n";
+    }
+
+    /**
+     * A courtesy email (old-address notice, deletion receipt). Never allowed to
+     * undo the change it reports: MailService throws when delivery fails, and
+     * inside the caller's transaction that would roll the change back.
+     */
+    private void notifyQuietly(String to, String subject, String body) {
+        try {
+            mail.sendPlain(to, subject, body);
+        } catch (RuntimeException ex) {
+            log.warn("Courtesy email to {} failed ({}): {}", to, subject, ex.getMessage());
+        }
     }
 
     @Transactional
@@ -248,6 +351,9 @@ public class AuthService {
 
     @Transactional
     public void resendVerification(EmailOnlyRequest req) {
+        // Before the lookup, keyed on the typed address: an unknown email hits
+        // the same 429 as a real one, so the refusal says nothing about accounts.
+        requireOtpMailBudget(normalize(req.email()));
         users.findByEmailIgnoreCase(normalize(req.email())).ifPresent(u -> {
             // Over the per-account cap: skip silently; a refusal would say the account exists.
             if (!u.isEmailVerified() && verificationOtpAllowed(u)) {
@@ -259,13 +365,20 @@ public class AuthService {
 
     @Transactional
     public void forgotPassword(EmailOnlyRequest req) {
+        // Pre-lookup for the same reason as resendVerification: no oracle.
+        requireOtpMailBudget(normalize(req.email()));
         users.findByEmailIgnoreCase(normalize(req.email())).ifPresent(u -> {
             issuePasswordResetOtp(u);
         });
         // Do not signal whether the email exists.
     }
 
-    @Transactional
+    /**
+     * noRollbackFor: the two refusals at the end (second factor, scheduled
+     * deletion) come AFTER the new password is saved, and must keep it — the
+     * client then signs in with that password through the normal steps.
+     */
+    @Transactional(noRollbackFor = ApiException.class)
     public AuthUserResponse resetPassword(ResetPasswordRequest req, HttpServletRequest http) {
         String email = normalize(req.email());
         // Generic error for unknown email or wrong code (no enumeration oracle).
@@ -299,6 +412,13 @@ public class AuthService {
         // A reset invalidates every existing session — a thief's stolen token
         // must not survive the legitimate owner regaining control.
         sessions.revokeAllForUser(user.getId());
+        // A reset proves the inbox, not the authenticator: with 2FA on it must not
+        // hand out a session by itself, or the mailbox alone would bypass it.
+        // Same for an account waiting to be deleted — it gets the cancel screen.
+        if (user.getDeletionRequestedAt() != null) {
+            throw deletionScheduled(user);
+        }
+        requireSecondFactor(user, null, email);
         return AuthUserResponse.withToken(user, sessions.issue(user.getId(), http).token());
     }
 
@@ -322,9 +442,10 @@ public class AuthService {
     }
 
     /**
-     * Permanently delete the user's account and their data. Verifies the password
-     * first. Shared entities (circles, families) are intentionally left intact —
-     * only the user's own membership/posts are removed. FK checks are disabled for
+     * Schedule the account for deletion (password-confirmed); {@link #purgeAccount}
+     * does the actual delete after the grace period. What the purge does: shared entities (circles, families) survive: the ones this account
+     * owns are handed to their longest-standing other member, or deleted when
+     * nobody else is in them; elsewhere only the user's own membership/posts go. FK checks are disabled for
      * the purge so table order doesn't matter; each statement is best-effort so a
      * schema that lacks a legacy table doesn't abort the whole delete.
      */
@@ -335,6 +456,43 @@ public class AuthService {
         if (!bcrypt.matches(password, c.getPasswordHash())) {
             throw ApiException.badRequest("Password is incorrect.");
         }
+        // Not deleted here: scheduled. Every session goes now, so the account is
+        // shut to every device at once; AccountDeletionJob runs purgeAccount once
+        // DELETION_GRACE_DAYS have passed, and signing in before then offers to
+        // cancel (login → 409 deletion_scheduled). A second request keeps the
+        // first date — asking twice must not push the purge further out.
+        User user = users.findById(userId).orElseThrow(() -> ApiException.notFound("User not found"));
+        if (user.getDeletionRequestedAt() == null) {
+            user.setDeletionRequestedAt(Instant.now());
+            users.save(user);
+        }
+        sessions.revokeAllForUser(userId);
+        notifyQuietly(user.getEmail(), "Your Growth Buddy account will be deleted on " + deletionDate(user),
+                greeting(user) + "We received your request to delete your Growth Buddy account. It is "
+                        + "signed out everywhere, and it and all of its data will be permanently deleted on "
+                        + deletionDate(user) + ".\n\nChanged your mind? Sign in before then and choose "
+                        + "\"Cancel deletion\". If you didn't ask for this, sign in, cancel, and change your "
+                        + "password.\n\n— Growth Buddy");
+    }
+
+    /**
+     * The purge for {@code AccountDeletionJob}. Re-checks the schedule inside its
+     * own transaction, so an account whose owner cancelled after the job listed
+     * it is left alone. Returns whether it deleted anything.
+     */
+    @Transactional
+    public boolean purgeScheduledAccount(UUID userId, Instant cutoff) {
+        User user = users.findById(userId).orElse(null);
+        if (user == null || user.getDeletionRequestedAt() == null
+                || !user.getDeletionRequestedAt().isBefore(cutoff)) {
+            return false;
+        }
+        purgeAccount(userId);
+        return true;
+    }
+
+    /** The hard delete: every user-owned row, then the users row. No checks — callers gate it. */
+    private void purgeAccount(UUID userId) {
         // Children keyed by a parent id → delete via the user's parent rows first.
         String[][] childDeletes = {
             {"habit_streaks", "habit_id", "habits"},
@@ -342,6 +500,8 @@ public class AuthService {
             {"mentor_messages", "thread_id", "mentor_threads"},
             {"calendar_reminder_skips", "reminder_id", "calendar_reminders"},
             {"reminder_dispatch_log", "reminder_id", "calendar_reminders"},
+            // Other members' kudos on this account's posts (its own kudos: USER_OWNED_TABLES).
+            {"circle_post_reactions", "post_id", "circle_posts"},
         };
         // Kept as a guard even though every table above now exists: a DELETE against
         // a missing table throws, which marks the whole transaction rollback-only and
@@ -357,6 +517,12 @@ public class AuthService {
         exec("SET FOREIGN_KEY_CHECKS=0", null);
         try {
             handOverOrRemoveFamilies(userId);
+            handOverOrRemoveCircles(userId, existing);
+            // A link's thread goes with the link (FK checks are off, so no cascade).
+            if (existing.contains("mentorship_messages")) {
+                exec("DELETE FROM mentorship_messages WHERE link_id IN (SELECT id FROM mentorship_requests"
+                        + " WHERE from_user_id = ?1 OR to_user_id = ?1)", userId);
+            }
             // A request is addressed to a person, so it cannot outlive either end.
             em.createNativeQuery(
                     "DELETE FROM mentorship_requests WHERE from_user_id = ?1 OR to_user_id = ?1")
@@ -422,6 +588,44 @@ public class AuthService {
         }
     }
 
+    /**
+     * Same rule for Growth Circles the account owns ({@code circles.created_by}
+     * is the owner): the longest-standing other member takes it over, and a
+     * circle with nobody else in it goes. Before, the circle stayed behind with
+     * {@code created_by} naming a deleted user — ownerless, so nobody could
+     * delete it, remove a member or hand it on.
+     */
+    private void handOverOrRemoveCircles(UUID userId, java.util.Set<String> existing) {
+        List<?> owned = em.createNativeQuery("SELECT id FROM circles WHERE created_by = ?1")
+                .setParameter(1, userId).getResultList();
+        for (Object raw : owned) {
+            String circleId = String.valueOf(raw);
+            List<?> heirs = em.createNativeQuery(
+                    "SELECT user_id FROM circle_members WHERE circle_id = ?1 AND user_id <> ?2"
+                            + " ORDER BY joined_at ASC LIMIT 1")
+                    .setParameter(1, circleId).setParameter(2, userId).getResultList();
+            if (!heirs.isEmpty()) {
+                String heir = String.valueOf(heirs.get(0));
+                em.createNativeQuery("UPDATE circles SET created_by = ?1 WHERE id = ?2")
+                        .setParameter(1, heir).setParameter(2, circleId).executeUpdate();
+                em.createNativeQuery("UPDATE circle_members SET role = 'owner' WHERE circle_id = ?1 AND user_id = ?2")
+                        .setParameter(1, circleId).setParameter(2, heir).executeUpdate();
+                continue;
+            }
+            if (existing.contains("circle_post_reactions")) {
+                em.createNativeQuery("DELETE FROM circle_post_reactions WHERE post_id IN"
+                                + " (SELECT id FROM circle_posts WHERE circle_id = ?1)")
+                        .setParameter(1, circleId).executeUpdate();
+            }
+            for (String t : new String[] {"circle_posts", "circle_challenges", "circle_members"}) {
+                em.createNativeQuery("DELETE FROM " + t + " WHERE circle_id = ?1")
+                        .setParameter(1, circleId).executeUpdate();
+            }
+            em.createNativeQuery("DELETE FROM circles WHERE id = ?1")
+                    .setParameter(1, circleId).executeUpdate();
+        }
+    }
+
     /** Lowercased set of tables present in the current schema. */
     @SuppressWarnings("unchecked")
     private java.util.Set<String> existingTables() {
@@ -439,6 +643,142 @@ public class AuthService {
         var q = em.createNativeQuery(sql);
         if (userId != null) q.setParameter(1, userId);
         q.executeUpdate();
+    }
+
+    /* ---- Change email ---- */
+
+    /**
+     * Step 1: password-confirmed, then a code goes to the NEW address — the
+     * address only moves once that inbox proves it is real and theirs. Taken
+     * addresses are refused here and again at confirm (15 minutes is long enough
+     * for someone else to sign up with it).
+     */
+    @Transactional
+    public void requestEmailChange(UUID userId, ChangeEmailRequest req) {
+        User user = users.findById(userId).orElseThrow(() -> ApiException.notFound("User not found"));
+        String newEmail = normalize(req.newEmail());
+        if (!passwordMatches(user, req.password(), "login:" + user.getEmail())) {
+            throw ApiException.badRequest("Password is incorrect.");
+        }
+        if (newEmail.equalsIgnoreCase(user.getEmail())) {
+            throw ApiException.badRequest("That is already your email.");
+        }
+        if (users.findByEmailIgnoreCase(newEmail).isPresent()) {
+            throw new ApiException(org.springframework.http.HttpStatus.CONFLICT,
+                    "Another account already uses that email.");
+        }
+        if (!rateLimiter.allow("emailchange:" + userId, EMAIL_CHANGE_PER_HOUR, 3_600_000L)) {
+            throw new ApiException(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS,
+                    "Too many code requests. Use the last code we sent, or try again in an hour.");
+        }
+        requireOtpMailBudget(newEmail);
+        emailChangeTokens.deleteAllForUser(userId);
+        String otp = newOtp();
+        EmailChangeToken t = new EmailChangeToken();
+        t.setTokenHash(bcrypt.encode(otp));
+        t.setUserId(userId);
+        t.setNewEmail(newEmail);
+        t.setExpiresAt(Instant.now().plus(OTP_TTL_MINUTES, ChronoUnit.MINUTES));
+        emailChangeTokens.save(t);
+        mail.sendOtp(newEmail, user.getDisplayName(), otp, "email change");
+    }
+
+    /**
+     * Step 2: the code from the new inbox. Swaps the address, keeps every
+     * session (the account didn't change hands — its owner proved both the
+     * password and the new inbox), and tells the OLD address, which is the only
+     * warning a hijacked account's owner would get.
+     */
+    @Transactional
+    public AuthUserResponse confirmEmailChange(UUID userId, String code) {
+        User user = users.findById(userId).orElseThrow(() -> ApiException.notFound("User not found"));
+        String key = "emailchange:" + userId;
+        loginGuard.check(key);
+        EmailChangeToken match = findMatchingToken(
+                emailChangeTokens.findByUserIdAndConsumedAtIsNull(userId),
+                code, EmailChangeToken::getExpiresAt, EmailChangeToken::getTokenHash);
+        if (match == null) {
+            loginGuard.recordFailure(key);
+            throw ApiException.badRequest("Invalid or expired code. Request a new one.");
+        }
+        loginGuard.recordSuccess(key);
+        String newEmail = match.getNewEmail();
+        if (users.findByEmailIgnoreCase(newEmail).filter(u -> !u.getId().equals(userId)).isPresent()) {
+            throw new ApiException(org.springframework.http.HttpStatus.CONFLICT,
+                    "Another account started using that email in the meantime.");
+        }
+        String oldEmail = user.getEmail();
+        emailChangeTokens.deleteAllForUser(userId);
+        user.setEmail(newEmail);
+        user.setEmailVerified(true); // the code just proved the inbox
+        users.save(user);
+        notifyQuietly(oldEmail, "Your Growth Buddy email was changed",
+                greeting(user) + "The email on your Growth Buddy account was changed from " + oldEmail
+                        + " to " + newEmail + ". Sign in with the new address from now on.\n\n"
+                        + "If you didn't do this, reply to this email straight away.\n\n— Growth Buddy");
+        return AuthUserResponse.from(user);
+    }
+
+    /* ---- Two-step sign-in (TOTP) ---- */
+
+    @Transactional(readOnly = true)
+    public AccountSecurityStatus securityStatus(UUID userId) {
+        Instant now = Instant.now();
+        String pending = emailChangeTokens.findByUserIdAndConsumedAtIsNull(userId).stream()
+                .filter(t -> t.getExpiresAt().isAfter(now))
+                .map(EmailChangeToken::getNewEmail)
+                .findFirst().orElse(null);
+        return new AccountSecurityStatus(totp.isEnabled(userId), totp.recoveryCodesLeft(userId), pending);
+    }
+
+    @Transactional
+    public TotpSetupResponse beginTotpSetup(UUID userId) {
+        User user = users.findById(userId).orElseThrow(() -> ApiException.notFound("User not found"));
+        TotpService.Setup s = totp.beginSetup(userId, user.getEmail());
+        return new TotpSetupResponse(s.secret(), s.otpauthUri());
+    }
+
+    /** First code from the app turns 2FA on; answers the recovery codes, once. */
+    @Transactional
+    public RecoveryCodesResponse enableTotp(UUID userId, String code) {
+        User user = users.findById(userId).orElseThrow(() -> ApiException.notFound("User not found"));
+        String key = "totpsetup:" + userId;
+        loginGuard.check(key);
+        List<String> codes = totp.enable(userId, code);
+        if (codes == null) {
+            loginGuard.recordFailure(key);
+            throw ApiException.badRequest("That code didn't match. Check the app's clock and use the newest code.");
+        }
+        loginGuard.recordSuccess(key);
+        notifyQuietly(user.getEmail(), "Two-step sign-in is on",
+                greeting(user) + "Two-step sign-in was turned on for your Growth Buddy account. Signing in "
+                        + "now also asks for a code from your authenticator app.\n\n"
+                        + "If this wasn't you, reset your password straight away.\n\n— Growth Buddy");
+        return new RecoveryCodesResponse(codes);
+    }
+
+    /** Off needs both factors: the password and a current code (or a recovery code). */
+    @Transactional
+    public void disableTotp(UUID userId, TotpDisableRequest req) {
+        User user = users.findById(userId).orElseThrow(() -> ApiException.notFound("User not found"));
+        if (!totp.isEnabled(userId)) {
+            totp.disable(userId); // drops a half-finished setup, if any
+            return;
+        }
+        if (!passwordMatches(user, req.password(), "login:" + user.getEmail())) {
+            throw ApiException.badRequest("Password is incorrect.");
+        }
+        String key = "totp:" + user.getEmail();
+        loginGuard.check(key);
+        if (!totp.verify(userId, req.code())) {
+            loginGuard.recordFailure(key);
+            throw ApiException.badRequest("That code didn't work. Use the newest one in your app, or a recovery code.");
+        }
+        loginGuard.recordSuccess(key);
+        totp.disable(userId);
+        notifyQuietly(user.getEmail(), "Two-step sign-in is off",
+                greeting(user) + "Two-step sign-in was turned off for your Growth Buddy account.\n\n"
+                        + "If this wasn't you, reset your password and turn it back on.\n\n— Growth Buddy");
     }
 
     /**
@@ -747,7 +1087,26 @@ public class AuthService {
             throw new ApiException(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS,
                     "Too many code requests. Use the last code we sent, or try again in an hour.");
         }
+        requireOtpMailBudget(user.getEmail());
         issueVerificationOtp(user, "verification");
+    }
+
+    /**
+     * The cross-purpose cap ({@link #OTP_MAIL_PER_HOUR}), keyed on the address
+     * the code is going TO. Every mail.sendOtp path calls this exactly once
+     * before sending: signup, issueVerificationOtpLimited (signup again, login),
+     * resendVerification, forgotPassword, requestEmailChange.
+     */
+    private void requireOtpMailBudget(String email) {
+        String to = email.toLowerCase(java.util.Locale.ROOT);
+        if (!rateLimiter.allow("otpmail:" + to, OTP_MAIL_PER_HOUR, 3_600_000L)) {
+            throw new ApiException(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS,
+                    "Too many codes sent to this email. Use the last one we sent, or try again in an hour.");
+        }
+        if (!rateLimiter.allow("otpday:" + to, OTP_MAIL_PER_DAY, 86_400_000L)) {
+            throw new ApiException(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS,
+                    "Too many codes sent to this email today. Use the last one we sent, or try again tomorrow.");
+        }
     }
 
     /* A password check outside login() still goes through LoginAttemptGuard. */

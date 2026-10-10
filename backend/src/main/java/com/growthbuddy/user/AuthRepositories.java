@@ -39,6 +39,18 @@ interface PasswordResetTokenRepository extends JpaRepository<PasswordResetToken,
     void deleteAllForUser(@Param("userId") UUID userId);
 }
 
+interface EmailChangeTokenRepository extends JpaRepository<EmailChangeToken, String> {
+
+    List<EmailChangeToken> findByUserIdAndConsumedAtIsNull(UUID userId);
+
+    @Modifying
+    @Query("delete from EmailChangeToken t where t.userId = :userId")
+    void deleteAllForUser(@Param("userId") UUID userId);
+}
+
+interface UserTotpRepository extends JpaRepository<UserTotp, UUID> {
+}
+
 interface WhatsAppOtpTokenRepository extends JpaRepository<WhatsAppOtpToken, String> {
 
     List<WhatsAppOtpToken> findByUserIdAndConsumedAtIsNull(UUID userId);

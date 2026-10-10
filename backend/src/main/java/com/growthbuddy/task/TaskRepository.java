@@ -46,6 +46,22 @@ public interface TaskRepository extends JpaRepository<Task, UUID> {
             + "where h.userId = :userId and h.changedAt >= :from and h.changedAt < :to")
     long countCompletedBetween(@Param("userId") UUID userId,
                                @Param("from") Instant from, @Param("to") Instant to);
+
+    /** Take every task off a goal that is being deleted. */
+    @Modifying(clearAutomatically = true)
+    @Query("update Task t set t.goalId = null where t.userId = :userId and t.goalId = :goalId")
+    int clearGoal(@Param("userId") UUID userId, @Param("goalId") UUID goalId);
+
+    /**
+     * Finished tasks per goal that the midnight sweep has already cleared:
+     * {@code [goalId, count]} rows. They are gone from {@code GET /api/tasks}, so
+     * the Goals card adds these to the live ones it can see. A task the user
+     * deleted has its goal cleared, so it is not among them.
+     */
+    @Query("select t.goalId, count(t) from Task t where t.userId = :userId and t.goalId in :ids "
+            + "and t.done = true and t.deletedAt is not null group by t.goalId")
+    List<Object[]> countClearedByGoalIds(@Param("userId") UUID userId,
+                                         @Param("ids") java.util.Collection<UUID> ids);
 }
 
 interface TaskHistoryRepository extends JpaRepository<TaskHistory, UUID> {

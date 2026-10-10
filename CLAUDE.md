@@ -23,6 +23,12 @@ open — don't go looking for a doc that isn't in this list.
 | Notes, the rich-text editor, photos in notes | `docs/scripts/notes.js.md` |
 | Report screen, charts | `docs/scripts/report.js.md` |
 | Insights (Report's pattern finder) | `docs/scripts/insights.js.md` |
+| Buddy (AI mentor) chat, streaming replies, crisis card | `docs/scripts/mentor.js.md` |
+| push / notifications, the phone's alarm queue | `docs/scripts/push.js.md` |
+| notification sounds, custom tones, `gen-chimes` | `docs/scripts/chime.js.md` |
+| Capacitor bridge, local notifications, channels, steps | `docs/scripts/native.js.md` |
+| story-card sharing (Report / Money) | `docs/scripts/share-card.js.md` |
+| achievements / badges, level progress | `docs/scripts/achievements.js.md` |
 | any styling | `docs/styles/app.css.md` |
 | Money styling | `docs/styles/money.css.md` |
 | colors, type, theming | `docs/styles/tokens.css.md` |
@@ -45,16 +51,31 @@ fix the doc line if it was wrong. A doc you touch and don't update is worse than
 
 - Backend: **`./run.sh`** (loads `.env`, frees port 8080). Bare `mvnw spring-boot:run` breaks OTP email.
 - Frontend: `npm run dev` (:5173, proxies `/api` + `/ws` to :8080). `npm run lint` before committing.
-- Checks that exist: `node scripts/insights.test.mjs`, `node scripts/recurrence.test.mjs`,
-  `node scripts/money-merge.test.mjs`, `node scripts/review.test.mjs`, **`node scripts/money-ledger.test.mjs`** (what a Money save
+- Checks that exist (CI runs every `scripts/*.test.mjs` in one loop, so a new one joins by existing — list it here too): `node scripts/insights.test.mjs`, `node scripts/recurrence.test.mjs`,
+  `node scripts/calendar.test.mjs`,
+  `node scripts/i18n.test.mjs` (a `YYYY-MM-DD` key formats as that local day — re-runs itself in LA and Kolkata time; plurals, number grouping, `t()` falls back to the key),
+  `node scripts/money-merge.test.mjs`, `node scripts/money-calc.test.mjs` (forecast, due/overdue bills, budgets, streaks, loans, CSV; pinned clock), `node scripts/review.test.mjs`, `node scripts/timer.test.mjs`, `node scripts/home-order.test.mjs`, **`node scripts/money-ledger.test.mjs`** (what a Money save
   sends: an item missed is an expense that never reaches the server, a false delete removes one the
-  user still has), `node scripts/push.test.mjs`,
+  user still has), `node scripts/push.test.mjs`, `node scripts/app-logic.test.mjs` (water overlay +
+  offline replay order, backdated-summary guard, week generation, goal-progress rollback, double-tap
+  guard, reminder edit PATCH + time range, nav layout split; helpers in `app-logic.js`), `node scripts/habit-stats.test.mjs`,
+  **`node scripts/bundle-budget.mjs`** after `npm run build` (CI runs it: boot chunk and precache
+  must stay under measured + 5%; raise the budget at the top of the script on purpose, not by drift),
+  **`node scripts/outbox.test.mjs`** (the offline outbox: FIFO, collapse rules, temp-id rewrite,
+  4xx drop vs 409 conflict vs network stop — an op lost there is a tick or task the user made),
+  `node scripts/goal-milestones.test.mjs`, `node scripts/goal-tasks.test.mjs`, `node scripts/achievements.test.mjs`,
+  `node scripts/mentor.test.mjs`, `node scripts/notes-core.test.mjs`, `node scripts/nutrition.test.mjs`
+  (two of its rules are mirrored in Java — `MealSlot.forHour`, `DrinkType`),
+  **`node scripts/contrast.test.mjs`** (WCAG contrast of the token pairs text and UI actually use,
+  both themes: 4.5:1 text, 3:1 focus ring),
   **`node scripts/tokens.test.mjs`** (every bare `var(--x)` in `styles/` resolves — two dead
-  tokens had been silently voiding whole declarations, one of them the modal's transition),
+  tokens had been silently voiding whole declarations, one of them the modal's transition; also
+  every light-theme token has a dark one, and no raw hex colour in a stylesheet rule outside its
+  allowlist — use a token),
   **`node scripts/icons.test.mjs`** (every `Icon('name')` is registered in `icons.js` — an
   unregistered one renders as *nothing*: no error, no box, and the UI audit can't see it either),
   `node scripts/gen-chimes.mjs` (regenerates, and asserts none of them is silent or clipping),
-  `money.js` and `chime.js` `_demo()` on Vite DEV, `./mvnw test` (205 tests — including the three that guard
+  `money.js` and `chime.js` `_demo()` on Vite DEV, `./mvnw test` (every unit test; the `*IT` integration tests run in CI with Docker via Testcontainers, locally `./mvnw test -Dtest='*IT' -Dsurefire.failIfNoSpecifiedTests=false` — including the three that guard
   invariants rather than code: `SchemaCoverageTest`, `AccountDeletionCoverageTest`,
   `SharedRecurrenceCasesTest`), and `scripts/ui-audit.mjs` — walks every screen at
   phone + desktop widths, screenshots each, then **opens one dialog per module and both header

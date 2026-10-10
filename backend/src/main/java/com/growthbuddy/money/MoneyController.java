@@ -114,6 +114,23 @@ public class MoneyController {
         return service.applyLedger(CurrentUser.id(), body);
     }
 
+    /**
+     * History older than the GET's 400-day window, a page at a time:
+     * {@code {expenses, income, transfers, more, oldest}}. The client shows it and
+     * never saves it back into the document.
+     */
+    @GetMapping("/tx")
+    public JsonNode olderLedger(@RequestParam String before,
+                                @RequestParam(defaultValue = "200") int limit) {
+        java.time.LocalDate day;
+        try {
+            day = java.time.LocalDate.parse(before);
+        } catch (java.time.format.DateTimeParseException ex) {
+            throw ApiException.badRequest("before must be a date like 2025-01-31");
+        }
+        return ledger.page(CurrentUser.id(), day, limit);
+    }
+
     /** Cash / bank / card / wallet. Each write answers with every account's balance. */
     @PostMapping("/accounts")
     public JsonNode createAccount(@RequestBody JsonNode body) {

@@ -1,5 +1,8 @@
 package com.growthbuddy.push;
 
+import com.growthbuddy.notification.NotificationPrefs;
+import com.growthbuddy.notification.NotifyCategory;
+import com.growthbuddy.user.UserRepository;
 import jakarta.annotation.PostConstruct;
 import java.security.Security;
 import java.util.List;
@@ -25,6 +28,7 @@ public class PushService {
     private static final Logger log = LoggerFactory.getLogger(PushService.class);
 
     private final PushRepository repo;
+    private final UserRepository users;
     private final String publicKey;
     private final String privateKey;
     private final String subject;
@@ -33,10 +37,12 @@ public class PushService {
     private boolean configured;
 
     public PushService(PushRepository repo,
+                       UserRepository users,
                        @Value("${growthbuddy.push.public-key:}") String publicKey,
                        @Value("${growthbuddy.push.private-key:}") String privateKey,
                        @Value("${growthbuddy.push.subject:mailto:hello@growthbuddy.app}") String subject) {
         this.repo = repo;
+        this.users = users;
         this.publicKey = publicKey;
         this.privateKey = privateKey;
         this.subject = subject;
@@ -91,10 +97,47 @@ public class PushService {
      */
     @Transactional
     public int sendToUser(UUID userId, String title, String body, String url) {
+        return sendToUser(userId, title, body, url, java.util.Map.of());
+    }
+
+    /**
+     * The same, for something of a {@link NotifyCategory} the user can mute
+     * (Settings → Alerts, {@code ui_prefs.notifyMute}). Muted → nothing is sent
+     * and 0 comes back; the bell card was already recorded by the caller's
+     * {@code NotificationService.publish}, which never looks at the mute.
+     */
+    @Transactional
+    public int sendToUser(UUID userId, NotifyCategory category, String title, String body, String url) {
+        if (!configured || isMuted(userId, category)) return 0;
+        return sendToUser(userId, title, body, url, java.util.Map.of());
+    }
+
+    /** Whether the user muted pushes of this category. Unmutable categories never ask the database. */
+    public boolean isMuted(UUID userId, NotifyCategory category) {
+        if (category == null || !category.mutable()) return false;
+        return users.findById(userId)
+                .map(u -> NotificationPrefs.isMuted(u.getUiPrefs(), category))
+                .orElse(false);
+    }
+
+    /**
+     * The same, with extra string fields for the service worker — a reminder's
+     * {@code tag} and Snooze ticket (see {@code public/push-handlers.js}).
+     */
+    @Transactional
+    public int sendToUser(UUID userId, String title, String body, String url, java.util.Map<String, String> extra) {
         if (!configured) return 0;
         List<PushSubscription> subs = repo.findByUserId(userId);
-        String payload = "{\"title\":" + jsonStr(title) + ",\"body\":" + jsonStr(body)
-                + ",\"url\":" + jsonStr(url == null ? "/" : url) + "}";
+        if (subs.isEmpty()) return 0;
+        // An account in its deletion grace period hears nothing, whoever's action
+        // triggered the push (a partner's chat message, a family invite): the
+        // schedulers gate their own loops, this is the one door every path shares.
+        if (users.findById(userId).map(com.growthbuddy.user.User::isPendingDeletion).orElse(false)) return 0;
+        StringBuilder json = new StringBuilder("{\"title\":").append(jsonStr(title))
+                .append(",\"body\":").append(jsonStr(body))
+                .append(",\"url\":").append(jsonStr(url == null ? "/" : url));
+        extra.forEach((k, v) -> json.append(",").append(jsonStr(k)).append(":").append(jsonStr(v)));
+        String payload = json.append("}").toString();
         int sent = 0;
         for (PushSubscription s : subs) {
             try {

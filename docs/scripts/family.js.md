@@ -6,20 +6,24 @@ Exports `ScreenFamily({ api })`. Self-contained: owns its data + view state, rep
 Consts at top: `RELATIONSHIPS` (mother…other), `DIETS` (Vegetarian/Non-Veg/Eggetarian/Vegan),
 `REL_GENDER`, `MEALS`, `AGE_ACCENT` / `AGE_PLURAL` (age-band styling).
 
-Almost everything lives inside `ScreenFamily` (line 112 → 2032) as closures:
+Almost everything lives inside `ScreenFamily` as closures:
 
-| Area | Functions (line) |
+| Area | Functions |
 |---|---|
-| data | `applyFamily` (147), `load` (151), `run(promise, onOk)` — the save wrapper: disables only the pressed control (read off `window.event`), toasts errors, repaints once after success and not at all on failure, so a failed form keeps what was typed |
-| members | `statusPill` (209), `memberCard` (219), `removeMember` (322), `membersSection` (1187), `familySummary` (1127), `leaveFamily` (1175) |
-| panels (slide-over forms) | `openPanel`/`closePanel`/`panelHeader` (close restores the list's scroll offset; an open panel is on gb-kit's back stack via `trackOverlay`, so back closes it), `memberFormControls` (357), `addChooserPanel` (419), `addPanel` (465), `editPanel` (515), `profilePanel` (560), `linkPanel` (640) |
-| invites | `invitesSection` (1232) |
-| meal planner | `ingredientChips` (747), `plannerSection` (781), `planActions` (967), `mealList` (1023), `chipRow` (1043), `planView` (1060), `nutriStat` (1115) |
-| multi-day plan | `weeklySection` (1434), `weeklyView` (1534), `weekDayCard` (1571) |
-| pantry | `pantrySection` (1595), `pantryRow` (1723) |
-| shopping | `shoppingSection` (1769), `shopRow` (1856) |
-| favourites | `favouritesSection` (1897), `favCard` (1922) |
-| shell | `sectionNav` (1374), `switchSection` (1309), `activeSection` (1417), `sectionBadge` (1359), `emptyState` (1286), `skeleton` (1986), `paint` (1998) |
+| data | `applyFamily`, `applyPlan`, `load`, `SECTION_LOADERS` / `loadSection` / `retrySection` / `sectionError` — each planner section loads and fails on its own: a failure sets `model.sectionErrors[key]` and the section shows "Could not load … · Try again" instead of a fake empty list. `run(promise, onOk)` — the save wrapper: disables only the pressed control (read off `window.event`), toasts errors, repaints once after success and not at all on failure, so a failed form keeps what was typed |
+| live | `onFamilyChanged` listens for `gb:family-changed` (another member changed members / chores / shopping / pantry / plan / weekly / recipes — `FamilyEvents` on the server) and refetches that slice (a `plan` change also refetches `history`); `paintSoon` defers the repaint while a panel is open or a text field has focus |
+| members | `statusPill`, `memberCard` (owner sees ★ Make owner on mapped accounts), `removeMember`, `transferOwner`, `membersSection`, `familySummary`, `leaveFamily` (members only — an owner transfers first) |
+| panels (slide-over forms) | `openPanel`/`closePanel`/`panelHeader` (close restores the list's scroll offset; an open panel is on gb-kit's back stack via `trackOverlay`, so back closes it), `memberFormControls`, `addChooserPanel`, `addPanel`, `editPanel`, `profilePanel`, `linkPanel` |
+| invites | `invitesSection` |
+| meal planner | `ingredientChips`, `plannerSection`, `planActions`, `mealList(meal, items, {live, cookId, onCook})`, `chipRow`, `planView`, `nutriStat`. On the **live** plan only (not a favourite's copy) each meal has a `cookPicker` (`assignCook` → `plan.cooks[meal] = memberId`, stored in the plan JSON) and each dish is a `dishItem` button that opens `recipePanel` |
+| plan history | `pastPlans` (`model.planHistory`, the current plan filtered out) — **Use again** calls `reusePlan`, which copies the row forward server-side; `planDishes` summarises a plan |
+| recipes | `recipePanel(dish)` (ingredients one per line + steps ≤4000 together + cook minutes; saving it empty deletes it), `recipeFor` / `dishKey` — the same key as the server's `shoppingKey` |
+| chores | `choresSection` (draft lives in `model.choreDraft` so a chip tap's repaint keeps the typed title), `assigneeChips` (Anyone + members), `choreRow` (assignee `select` styled as a chip → `updateChore`; Undo on delete re-adds), `tickChore` + `pendingChoreTicks` / `overlayChoreTicks` (optimistic, as the shopping tick) |
+| multi-day plan | `weeklySection`, `weeklyView`, `weekDayCard(d, index, wk)` — a cook per meal per day; the server addresses the day by **position** (`index + 1`), not `d.day` |
+| pantry | `pantrySection`, `pantryRow` (a **Low** toggle → `updatePantry` with the whole item), `restockButton` ("Add expiring & low items to list" → `shoppingFromPantry`; also on Shopping) |
+| shopping | `shoppingSection`, `shopRow`, `tickShopping` (optimistic tick, rolled back on failure; `pendingTicks` is laid back over any list that lands meanwhile via `overlayPending`), `restoreShopping` (the delete toast's Undo re-adds the line). Build-from-plan toasts the server's `message`. `shopTools`: **Share** (`shareShopping` — `navigator.share`, else clipboard; unticked lines only, `shoppingText`) and **Print** (`printShopping` puts `gb-print-shopping` on `<body>` for the length of the print; `@media print` in app.css then shows only `shopPrintout`, which is `display:none` on screen) |
+| favourites | `favouritesSection`, `favCard` |
+| shell | `sectionNav`, `switchSection`, `activeSection`, `sectionBadge`, `emptyState`, `skeleton`, `paint` |
 
 Helpers: `initials`, `cap`, `toList`/`fromList` (comma string ↔ array), `field`. The grocery and
 pantry photo scans send `shrinkPhoto(file)` from notes.js (≤1280px JPEG), not the raw 4-12 MB photo.

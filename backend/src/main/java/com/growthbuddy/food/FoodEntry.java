@@ -53,6 +53,11 @@ public class FoodEntry {
     @Column(length = 255)
     private String note;
 
+    /** breakfast | lunch | dinner | snack; null on rows from before slots (the app derives one from loggedAt). */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "meal_slot", length = 10)
+    private MealSlot mealSlot;
+
     /** Estimated grams of each nutrient; null until FoodWeek estimates it. */
     @Column(name = "protein_g")
     private Integer proteinG;
@@ -65,6 +70,13 @@ public class FoodEntry {
 
     @Column(name = "fiber_g")
     private Integer fiberG;
+
+    /** From a barcode's OpenFoodFacts label only; null for everything else (never estimated). */
+    @Column(name = "sugar_g")
+    private Integer sugarG;
+
+    @Column(name = "sodium_mg")
+    private Integer sodiumMg;
 
     @Column(name = "logged_at", nullable = false)
     private Instant loggedAt;

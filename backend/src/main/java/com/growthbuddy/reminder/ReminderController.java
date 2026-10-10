@@ -23,9 +23,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class ReminderController {
 
     private final ReminderService service;
+    private final ReminderSnoozeService snoozes;
 
-    public ReminderController(ReminderService service) {
+    public ReminderController(ReminderService service, ReminderSnoozeService snoozes) {
         this.service = service;
+        this.snoozes = snoozes;
     }
 
     /** Raw reminder definitions for the current user. */
@@ -80,5 +82,55 @@ public class ReminderController {
             @RequestParam(defaultValue = "all") String scope,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
         service.delete(CurrentUser.id(), id, scope, date);
+    }
+
+    /** Every reminder as an iCalendar file, for Google / Apple / Outlook. */
+    // No `produces`: the content type is set on the response itself, which skips
+    // negotiation, so a client sending its usual Accept: application/json still gets the file.
+    @GetMapping("/export.ics")
+    public org.springframework.http.ResponseEntity<String> exportIcs() {
+        return org.springframework.http.ResponseEntity.ok()
+                .contentType(org.springframework.http.MediaType.parseMediaType("text/calendar; charset=utf-8"))
+                .header("Content-Disposition", "attachment; filename=\"growth-buddy-reminders.ics\"")
+                .body(service.exportIcs(CurrentUser.id()));
+    }
+
+    /** Check one occurrence off: it is not delivered, and the device queues no alarm for it. */
+    @PostMapping("/{id}/done")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void markDone(@PathVariable UUID id,
+                         @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        service.setDone(CurrentUser.id(), id, date, true);
+    }
+
+    @DeleteMapping("/{id}/done")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void unmarkDone(@PathVariable UUID id,
+                           @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        service.setDone(CurrentUser.id(), id, date, false);
+    }
+
+    /** Ring it again in {@code minutes} (default: the user's snooze length). */
+    @PostMapping("/{id}/snooze")
+    public ReminderResponse snooze(@PathVariable UUID id, @Valid @RequestBody(required = false) SnoozeRequest req) {
+        return snoozes.snooze(CurrentUser.id(), id, req == null ? null : req.minutes());
+    }
+
+    @DeleteMapping("/{id}/snooze")
+    public ReminderResponse cancelSnooze(@PathVariable UUID id) {
+        return snoozes.cancel(CurrentUser.id(), id);
+    }
+
+    /**
+     * The Snooze button on a push notification, sent by the service worker,
+     * which holds no session: the signed token is the authority (anonymous in
+     * CurrentUserInterceptor). A bad or expired one gets the same 404 as a
+     * deleted reminder, so the endpoint answers nothing about either.
+     */
+    @PostMapping("/snooze-link")
+    public java.util.Map<String, java.time.Instant> snoozeByLink(@Valid @RequestBody SnoozeLinkRequest req) {
+        return snoozes.snoozeByLink(req.token())
+                .map(at -> java.util.Map.of("snoozedUntil", at))
+                .orElseThrow(() -> com.growthbuddy.common.ApiException.notFound("Reminder"));
     }
 }

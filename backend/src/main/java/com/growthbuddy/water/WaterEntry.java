@@ -35,6 +35,11 @@ public class WaterEntry {
     @Column(length = 255)
     private String note;
 
+    /** What was drunk; null is water (every row from before drink types). */
+    @jakarta.persistence.Enumerated(jakarta.persistence.EnumType.STRING)
+    @Column(name = "drink_type", length = 10)
+    private DrinkType drinkType;
+
     @Column(name = "logged_at", nullable = false)
     private Instant loggedAt;
 

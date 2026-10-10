@@ -3,7 +3,10 @@ package com.growthbuddy.wellness;
 import com.growthbuddy.user.UserClock;
 import com.growthbuddy.water.WaterService;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -101,6 +104,57 @@ public class WellnessService {
             }
         }
         return new DailyLogsResponse(sleep, mood, metric);
+    }
+
+    /**
+     * The last seven days of check-ins in a few lines, for the AI mentor's
+     * context: one query, the words the user picked, oldest first. Free-text
+     * notes are left out on purpose — they are private, and they are the part
+     * of a check-in that could carry instructions.
+     */
+    @Transactional(readOnly = true)
+    public String contextSummary(UUID userId) {
+        LocalDate end = clock.today(userId);
+        return summarize(logs.findByUserIdAndLogDateBetween(userId, end.minusDays(6), end));
+    }
+
+    static String summarize(List<DailyLog> days) {
+        List<DailyLog> sorted = new ArrayList<>(days == null ? List.of() : days);
+        sorted.sort(Comparator.comparing(DailyLog::getLogDate));
+        List<String> mood = new ArrayList<>();
+        List<String> energy = new ArrayList<>();
+        List<String> stress = new ArrayList<>();
+        List<String> sleep = new ArrayList<>();
+        for (DailyLog d : sorted) {
+            if (d.getMood() != null) {
+                mood.add(word(d.getMood()));
+                energy.add(word(d.getEnergy()));
+                stress.add(word(d.getStress()));
+            }
+            if (d.getSleepQuality() != null) {
+                sleep.add(word(d.getSleepQuality()));
+            }
+        }
+        if (mood.isEmpty() && sleep.isEmpty()) {
+            return "Check-ins: no mood or sleep logged in the last 7 days.\n";
+        }
+        StringBuilder sb = new StringBuilder("Check-ins, last 7 days (oldest first):\n");
+        if (!mood.isEmpty()) {
+            sb.append("  - mood: ").append(String.join(", ", mood)).append('\n');
+            sb.append("  - energy: ").append(String.join(", ", energy)).append('\n');
+            sb.append("  - stress: ").append(String.join(", ", stress)).append('\n');
+        }
+        if (!sleep.isEmpty()) {
+            sb.append("  - sleep quality: ").append(String.join(", ", sleep)).append('\n');
+        }
+        return sb.toString();
+    }
+
+    /** A stored check-in word, kept to a short plain token (they are free strings up to 16). */
+    private static String word(String s) {
+        if (s == null) return "?";
+        String w = s.replaceAll("[^A-Za-z -]", "").trim();
+        return w.isEmpty() ? "?" : (w.length() > 16 ? w.substring(0, 16) : w);
     }
 
     private static int nz(Integer v) {

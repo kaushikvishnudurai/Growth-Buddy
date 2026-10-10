@@ -174,7 +174,7 @@ class ReminderServiceOccursOnTest {
     void rejectsAnUntilDateBeforeTheStart() {
         ReminderService svc = serviceWith(null); // never reaches the repo
         CreateReminderRequest req = new CreateReminderRequest("Test", TODAY,
-                null, null, ReminderTag.personal, RepeatFreq.daily, LocalDate.of(2007, 6, 19), null);
+                null, null, ReminderTag.personal, RepeatFreq.daily, LocalDate.of(2007, 6, 19), null, null);
         assertThatThrownBy(() -> svc.create(UUID.randomUUID(), req))
                 .hasMessageContaining("can't be before");
     }
@@ -183,7 +183,7 @@ class ReminderServiceOccursOnTest {
     void acceptsAnUntilDateOnTheStartItself() {
         LocalDate start = TODAY;
         CreateReminderRequest req = new CreateReminderRequest("Test", start, null,
-                null, ReminderTag.personal, RepeatFreq.daily, start, null);
+                null, ReminderTag.personal, RepeatFreq.daily, start, null, null);
         assertThat(serviceWith(savingRepo()).create(UUID.randomUUID(), req).until()).isEqualTo(start);
     }
 
@@ -192,7 +192,7 @@ class ReminderServiceOccursOnTest {
     @Test
     void ignoresUntilWhenTheReminderDoesNotRepeat() {
         CreateReminderRequest req = new CreateReminderRequest("Test", TODAY,
-                null, null, ReminderTag.personal, RepeatFreq.none, LocalDate.of(2007, 6, 19), null);
+                null, null, ReminderTag.personal, RepeatFreq.none, LocalDate.of(2007, 6, 19), null, null);
         assertThat(serviceWith(savingRepo()).create(UUID.randomUUID(), req).until()).isNull();
     }
 
@@ -222,7 +222,7 @@ class ReminderServiceOccursOnTest {
     @Test
     void refusesADateInThePast() {
         CreateReminderRequest req = new CreateReminderRequest("Test", TODAY.minusDays(2),
-                null, null, ReminderTag.personal, RepeatFreq.daily, null, null);
+                null, null, ReminderTag.personal, RepeatFreq.daily, null, null, null);
         assertThatThrownBy(() -> serviceWith(savingRepo()).create(UUID.randomUUID(), req))
                 .hasMessageContaining("already passed");
     }
@@ -258,7 +258,7 @@ class ReminderServiceOccursOnTest {
         LocalDate day = TODAY.plusDays(2);
 
         ReminderResponse oneOff = svc.update(user, series.getId(), "this", day,
-                new UpdateReminderRequest("Standup (late)", LocalTime.of(10, 0), null, null, null, null, null));
+                new UpdateReminderRequest("Standup (late)", LocalTime.of(10, 0), null, null, null, null, null, null, null, null, null));
 
         assertThat(series.getSkipDays()).as("the series stops firing that day").contains(day);
         assertThat(series.getText()).as("the series itself is untouched").isEqualTo("Standup");
@@ -276,7 +276,7 @@ class ReminderServiceOccursOnTest {
         LocalDate day = TODAY.plusDays(3);
 
         ReminderResponse rest = svc.update(user, series.getId(), "future", day,
-                new UpdateReminderRequest(null, LocalTime.of(8, 30), null, null, null, null, null));
+                new UpdateReminderRequest(null, LocalTime.of(8, 30), null, null, null, null, null, null, null, null, null));
 
         assertThat(series.getUntilDate()).as("the old series ends the day before")
                 .isEqualTo(day.minusDays(1));
@@ -296,7 +296,7 @@ class ReminderServiceOccursOnTest {
 
         // What the edit dialog sends with the End field emptied: the start, and a null end.
         svc.update(user, series.getId(), "all", null,
-                new UpdateReminderRequest(null, LocalTime.of(15, 0), null, null, null, null, null));
+                new UpdateReminderRequest(null, LocalTime.of(15, 0), null, null, null, null, null, null, null, null, null));
 
         assertThat(series.getEndTime()).as("a null end sent with the start clears it").isNull();
     }
@@ -309,7 +309,7 @@ class ReminderServiceOccursOnTest {
 
         assertThatThrownBy(() -> svc.update(user, series.getId(), "all", null,
                 new UpdateReminderRequest(null, LocalTime.of(15, 0), LocalTime.of(14, 0),
-                        null, null, null, null)))
+                        null, null, null, null, null, null, null, null)))
                 .hasMessageContaining("end time has to be after");
     }
 
@@ -320,7 +320,7 @@ class ReminderServiceOccursOnTest {
         ReminderService svc = serviceWith(repoHolding(series));
 
         ReminderResponse out = svc.update(user, series.getId(), "all", null,
-                new UpdateReminderRequest("Standup (moved)", null, null, null, null, null, "droplet"));
+                new UpdateReminderRequest("Standup (moved)", null, null, null, null, null, "droplet", null, null, null, null));
 
         assertThat(series.getText()).isEqualTo("Standup (moved)");
         assertThat(out.sound()).isEqualTo("droplet");
@@ -333,7 +333,7 @@ class ReminderServiceOccursOnTest {
         CalendarReminder series = storedSeries(user, RepeatFreq.daily);
         ReminderService svc = serviceWith(repoHolding(series));
         assertThatThrownBy(() -> svc.update(user, series.getId(), "this", null,
-                new UpdateReminderRequest("x", null, null, null, null, null, null)))
+                new UpdateReminderRequest("x", null, null, null, null, null, null, null, null, null, null)))
                 .hasMessageContaining("'date' is required");
     }
 
@@ -350,7 +350,7 @@ class ReminderServiceOccursOnTest {
 
     private ReminderResponse created(RepeatFreq repeat, String sound) {
         return serviceWith(savingRepo()).create(UUID.randomUUID(),
-                new CreateReminderRequest("Test", TODAY, null, null, ReminderTag.personal, repeat, null, sound));
+                new CreateReminderRequest("Test", TODAY, null, null, ReminderTag.personal, repeat, null, sound, null));
     }
 
     /* One day of slack, on purpose: a user whose timezone was never captured is
@@ -359,7 +359,7 @@ class ReminderServiceOccursOnTest {
     void acceptsTodayAndTheDayBeforeIt() {
         for (LocalDate d : new LocalDate[] { TODAY, TODAY.minusDays(1), TODAY.plusDays(30) }) {
             CreateReminderRequest req = new CreateReminderRequest("Test", d, null,
-                    null, ReminderTag.personal, RepeatFreq.none, null, null);
+                    null, ReminderTag.personal, RepeatFreq.none, null, null, null);
             assertThat(serviceWith(savingRepo()).create(UUID.randomUUID(), req).date())
                     .as("create on %s", d).isEqualTo(d);
         }

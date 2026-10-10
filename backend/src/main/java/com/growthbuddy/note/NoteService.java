@@ -1,9 +1,11 @@
 package com.growthbuddy.note;
 
 import com.growthbuddy.common.ApiException;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,12 +28,60 @@ public class NoteService {
     /** A cover is a 640x320 JPEG, 25-50 KB of base64; this fits the TEXT column. */
     static final int MAX_COVER = 60_000;
 
+    /** Days a deleted note waits in the Trash before the nightly purge removes it for good. */
+    static final int TRASH_DAYS = 30;
+
     private final NoteRepository repo;
     private final NoteDraftRepository drafts;
+    private final NoteEditDraftRepository editDrafts;
 
-    public NoteService(NoteRepository repo, NoteDraftRepository drafts) {
+    public NoteService(NoteRepository repo, NoteDraftRepository drafts, NoteEditDraftRepository editDrafts) {
         this.repo = repo;
         this.drafts = drafts;
+        this.editDrafts = editDrafts;
+    }
+
+    /** Unsaved edits to note {@code id}, or null. */
+    @Transactional(readOnly = true)
+    public NoteDraftResponse editDraft(UUID userId, UUID id) {
+        return editDrafts.findByNoteIdAndUserId(id, userId).map(NoteDraftResponse::from).orElse(null);
+    }
+
+    /** Autosave of an open edit. The note must be the user's and still exist. */
+    @Transactional
+    public void saveEditDraft(UUID userId, UUID id, NoteDraftRequest req) {
+        require(userId, id);
+        NoteEditDraft d = editDrafts.findByNoteIdAndUserId(id, userId).orElseGet(NoteEditDraft::new);
+        d.setNoteId(id);
+        d.setUserId(userId);
+        d.setTitle(trimToNull(req.title()));
+        d.setBody(checkedBody(req.body()));
+        d.setColor(trimToNull(req.color()));
+        d.setLabels(draftLabels(req.labels(), d.getLabels()));
+        editDrafts.save(d);
+    }
+
+    /**
+     * The edit draft's labels column: "" for "all removed" (so it differs from null,
+     * "none drafted"), the joined list otherwise. Null from an older client keeps
+     * what is stored. Labels past {@link NoteLabels}' limits keep the last good set
+     * rather than 400 the autosave and lose the body with them; Save enforces them.
+     */
+    static String draftLabels(List<String> labels, String stored) {
+        if (labels == null) {
+            return stored;
+        }
+        try {
+            List<String> clean = NoteLabels.normalize(labels);
+            return clean.isEmpty() ? "" : NoteLabels.join(clean);
+        } catch (ApiException e) {
+            return stored;
+        }
+    }
+
+    @Transactional
+    public void deleteEditDraft(UUID userId, UUID id) {
+        editDrafts.findByNoteIdAndUserId(id, userId).ifPresent(editDrafts::delete);
     }
 
     /** The composer's unsaved note, or null. */
@@ -62,11 +112,62 @@ public class NoteService {
         drafts.deleteById(userId);
     }
 
+    /** The main list, or with {@code archived} the Archived view. */
+    @Transactional(readOnly = true)
+    public List<NoteResponse> list(UUID userId, boolean archived) {
+        List<Note> rows = archived
+                ? repo.findByUserIdAndDeletedAtIsNullAndArchivedAtIsNotNullOrderByArchivedAtDesc(userId)
+                : repo.findByUserIdAndDeletedAtIsNullAndArchivedAtIsNullOrderByPinnedDescUpdatedAtDesc(userId);
+        return rows.stream().map(NoteResponse::listItem).toList();
+    }
+
     @Transactional(readOnly = true)
     public List<NoteResponse> list(UUID userId) {
-        return repo.findByUserIdAndDeletedAtIsNullOrderByPinnedDescUpdatedAtDesc(userId).stream()
+        return list(userId, false);
+    }
+
+    /** Deleted in the last {@value #TRASH_DAYS} days, most recent first. */
+    @Transactional(readOnly = true)
+    public List<NoteResponse> trash(UUID userId) {
+        return repo.findByUserIdAndDeletedAtAfterOrderByDeletedAtDesc(userId, trashCutoff(Instant.now()))
+                .stream()
                 .map(NoteResponse::listItem)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public NoteCountsResponse counts(UUID userId) {
+        return new NoteCountsResponse(
+                repo.countByUserIdAndDeletedAtIsNullAndArchivedAtIsNotNull(userId),
+                repo.countByUserIdAndDeletedAtAfter(userId, trashCutoff(Instant.now())));
+    }
+
+    /** The one definition of "too old for the Trash", shared by the view and the purge. */
+    static Instant trashCutoff(Instant now) {
+        return now.minus(Duration.ofDays(TRASH_DAYS));
+    }
+
+    /**
+     * Hard delete, from the Trash only: a live note has to be deleted (soft)
+     * first, so no single tap can lose one for good.
+     */
+    @Transactional
+    public void deleteForever(UUID userId, UUID id) {
+        Note n = repo.findByIdAndUserId(id, userId)
+                .orElseThrow(() -> ApiException.notFound("Note"));
+        if (n.getDeletedAt() == null) {
+            throw ApiException.badRequest("Move the note to the Trash first.");
+        }
+        deleteEditDraft(userId, id);
+        repo.delete(n);
+    }
+
+    /** Nightly (DataCleanupJob): notes deleted more than {@value #TRASH_DAYS} days ago. */
+    @Transactional
+    public int purgeTrash(Instant now) {
+        Instant cutoff = trashCutoff(now);
+        editDrafts.purgeForNotesDeletedBefore(cutoff);
+        return repo.purgeDeletedBefore(cutoff);
     }
 
     /** The whole note, photos included — what the editor opens. */
@@ -84,6 +185,7 @@ public class NoteService {
         n.setColor(trimToNull(req.color()));
         n.setPinned(Boolean.TRUE.equals(req.pinned()));
         n.setCover(checkedCover(req.cover()));
+        n.setLabels(NoteLabels.join(NoteLabels.normalize(req.labels())));
         // Trimmed like the list: the client already has the body it just sent.
         return NoteResponse.listItem(repo.save(n));
     }
@@ -91,6 +193,14 @@ public class NoteService {
     @Transactional
     public NoteResponse update(UUID userId, UUID id, UpdateNoteRequest req) {
         Note n = require(userId, id);
+        // Optimistic concurrency: the client says which version it edited. A
+        // write on top of a newer one (another device, another tab) used to win
+        // silently and throw that edit away. Null skips the check — a pin
+        // toggle doesn't care what the text says.
+        if (req.baseUpdatedAt() != null && !sameVersion(req.baseUpdatedAt(), n.getUpdatedAt())) {
+            throw new ApiException(HttpStatus.CONFLICT,
+                    "This note was changed on another device since you opened it.");
+        }
         if (req.title() != null) {
             n.setTitle(trimToNull(req.title()));
         }
@@ -107,7 +217,49 @@ public class NoteService {
         if (req.cover() != null) {
             n.setCover(checkedCover(req.cover()));
         }
+        if (req.labels() != null) {
+            // [] clears them; null (above) leaves them alone.
+            n.setLabels(NoteLabels.join(NoteLabels.normalize(req.labels())));
+        }
+        if (req.archived() != null) {
+            // Archiving twice keeps the first date: that is when it left the list.
+            if (!req.archived()) {
+                n.setArchivedAt(null);
+            } else if (n.getArchivedAt() == null) {
+                n.setArchivedAt(Instant.now());
+            }
+        }
+        // What was being drafted is now the note.
+        if (req.body() != null || req.title() != null) {
+            deleteEditDraft(userId, id);
+        }
         return NoteResponse.listItem(repo.save(n));
+    }
+
+    /**
+     * Within a second, not equal: updated_at is a TIMESTAMP with no fraction,
+     * which MySQL rounds, while the entity a save returns still carries the
+     * nanoseconds — so the version a client got from a PATCH never compares
+     * equal to the one read back. Two saves of one note inside a second from
+     * two devices is not a case worth a false 409 on every other save.
+     */
+    static boolean sameVersion(Instant a, Instant b) {
+        if (a == null || b == null) {
+            return a == b;
+        }
+        return Math.abs(Duration.between(a, b).toMillis()) < 1000;
+    }
+
+    /** Undo for a delete: the row was only soft-deleted, so it simply comes back. */
+    @Transactional
+    public NoteResponse restore(UUID userId, UUID id) {
+        Note n = repo.findByIdAndUserId(id, userId)
+                .orElseThrow(() -> ApiException.notFound("Note"));
+        if (n.getDeletedAt() != null) {
+            n.setDeletedAt(null);
+            n = repo.save(n);
+        }
+        return NoteResponse.listItem(n);
     }
 
     /** Soft delete, like tasks: the row stays, the note stops existing. */
@@ -116,6 +268,7 @@ public class NoteService {
         Note n = require(userId, id);
         n.setDeletedAt(Instant.now());
         repo.save(n);
+        deleteEditDraft(userId, id);
     }
 
     private Note require(UUID userId, UUID id) {

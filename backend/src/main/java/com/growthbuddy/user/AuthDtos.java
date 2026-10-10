@@ -37,9 +37,47 @@ record SignupRequest(
         @Size(max = 64) String timezone) {
 }
 
+/**
+ * {@code code}: the authenticator code or a recovery code, sent on the second
+ * try once the first answered 401 {@code totp_required}. {@code cancelDeletion}:
+ * the "Cancel deletion" button on the 409 {@code deletion_scheduled} screen.
+ */
 record LoginRequest(
         @NotBlank @Email @Size(max = 254) String email,
+        @NotBlank @Size(max = 128) String password,
+        @Size(max = 32) String code,
+        Boolean cancelDeletion) {
+
+    LoginRequest(String email, String password) {
+        this(email, password, null, null);
+    }
+}
+
+record ChangeEmailRequest(
+        @NotBlank @Email @Size(max = 254) String newEmail,
         @NotBlank @Size(max = 128) String password) {
+}
+
+record ConfirmEmailChangeRequest(
+        @NotBlank @Pattern(regexp = "\\d{6}", message = "must be a 6-digit code") String code) {
+}
+
+record TotpCodeRequest(@NotBlank @Size(max = 32) String code) {
+}
+
+record TotpDisableRequest(
+        @NotBlank @Size(max = 128) String password,
+        @NotBlank @Size(max = 32) String code) {
+}
+
+/** Settings → Account: is 2FA on, how many recovery codes remain, an email change awaiting its code. */
+record AccountSecurityStatus(boolean twoFactorEnabled, int recoveryCodesLeft, String pendingEmail) {
+}
+
+record TotpSetupResponse(String secret, String otpauthUri) {
+}
+
+record RecoveryCodesResponse(List<String> recoveryCodes) {
 }
 
 record ChangePasswordRequest(
@@ -143,6 +181,9 @@ record AuthUserResponse(
         Integer dailyWaterGoalMl,
         int level,
         int xpTotal,
+        int xpIntoLevel,
+        int xpForNextLevel,
+        int xpPerLevel,
         boolean emailVerified,
         Map<String, Boolean> features,
         String digestFrequency,
@@ -168,7 +209,10 @@ record AuthUserResponse(
                 user.getDietPreference(), user.getAboutMe(),
                 user.getAllergicTo(), user.getFavouriteDish(),
                 user.getDailyFoodGoalKcal(), user.getDailyWaterGoalMl(),
-                user.getLevel(), user.getXpTotal(), user.isEmailVerified(),
+                user.getLevel(), user.getXpTotal(),
+                ProgressService.xpIntoLevel(user.getXpTotal()),
+                ProgressService.xpForNextLevel(user.getXpTotal()),
+                ProgressService.XP_PER_LEVEL, user.isEmailVerified(),
                 user.getFeaturePrefs(), user.getDigestFrequency(), user.getDigestHour(),
                 user.getHomeLayout(), user.getNavLayout(), user.getUiPrefs(), token);
     }

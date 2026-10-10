@@ -3,12 +3,19 @@ package com.growthbuddy.money;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.growthbuddy.common.UserZone;
+import com.growthbuddy.reminder.ReminderSnoozeService;
 import com.growthbuddy.reminder.WhatsAppService;
 import com.growthbuddy.user.User;
 import com.growthbuddy.user.UserRepository;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.HexFormat;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -26,8 +33,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Meta's WhatsApp webhook. Today it handles one thing: the "Mark as paid" button
- * on a subscription-due message.
+ * Meta's WhatsApp webhook: the "Mark as paid" button on a subscription-due
+ * message, and snoozing a reminder — its "Snooze" button, or a typed reply of
+ * SNOOZE (optionally "snooze 20") meaning the reminder that reached them last.
  *
  * <p>Anonymous (Meta holds no session), so every POST must carry a valid
  * {@code X-Hub-Signature-256} over the raw body, keyed with the app secret. With
@@ -46,17 +54,25 @@ public class WhatsAppWebhookController {
     private final UserRepository users;
     private final MoneyService money;
     private final WhatsAppService whatsapp;
+    private final ReminderSnoozeService snoozes;
+
+    /** "snooze", "Snooze 20", "snooze 15 min" — and nothing else, so a chatty reply isn't taken for one. */
+    static final Pattern SNOOZE_REPLY =
+            Pattern.compile("^\\s*snooze(?:\\s+(\\d{1,3})\\s*(?:m|min|mins|minutes?)?)?\\s*[.!]?\\s*$",
+                    Pattern.CASE_INSENSITIVE);
 
     public WhatsAppWebhookController(
             @Value("${growthbuddy.whatsapp.meta.app-secret:}") String appSecret,
             @Value("${growthbuddy.whatsapp.meta.webhook-verify-token:}") String verifyToken,
-            ObjectMapper json, UserRepository users, MoneyService money, WhatsAppService whatsapp) {
+            ObjectMapper json, UserRepository users, MoneyService money, WhatsAppService whatsapp,
+            ReminderSnoozeService snoozes) {
         this.appSecret = appSecret;
         this.verifyToken = verifyToken;
         this.json = json;
         this.users = users;
         this.money = money;
         this.whatsapp = whatsapp;
+        this.snoozes = snoozes;
     }
 
     /** Meta's one-time subscription handshake. */
@@ -92,7 +108,15 @@ public class WhatsAppWebhookController {
                 for (JsonNode msg : change.path("value").path("messages")) {
                     // Per message: one failure must not drop the rest of a batched delivery.
                     try {
-                        handle(msg.path("from").asText(), buttonPayload(msg));
+                        String from = msg.path("from").asText();
+                        String payload = buttonPayload(msg);
+                        if (payload != null && payload.startsWith("snooze:")) {
+                            snoozeButton(from, payload.substring("snooze:".length()));
+                        } else if (payload != null) {
+                            handle(from, payload);
+                        } else {
+                            snoozeReply(from, textBody(msg));
+                        }
                     } catch (Exception ex) {
                         log.warn("WhatsApp webhook message not handled: {}", ex.getMessage());
                     }
@@ -112,7 +136,7 @@ public class WhatsAppWebhookController {
         if (subId.isEmpty() || !month.matches("\\d{4}-\\d{2}")) {
             return;
         }
-        for (User user : users.findByWhatsappNumberAndWhatsappEnabledTrueAndWhatsappVerifiedTrue("+" + from)) {
+        for (User user : senders(from)) {
             LocalDate today = LocalDate.now(UserZone.of(user.getTimezone()));
             // Subscription ids are per-document, so at most the account that owns
             // this one matches; the others come back null and are skipped.
@@ -122,7 +146,10 @@ public class WhatsAppWebhookController {
             }
             // Say what actually happened: an old month's button, or a repeat tap,
             // books nothing, so it must not claim to have.
-            String text = paid.booked()
+            String text = paid.noAmount()
+                    ? paid.name() + " has no amount yet, so it can't be marked paid. "
+                            + "Add an amount first in Money, then tap again."
+                    : paid.booked()
                     ? "Marked " + paid.name() + " as paid. Nice one."
                     : paid.name() + " is already marked as paid, so nothing changed.";
             // The payment is already saved; a failed confirmation must not abort the
@@ -133,6 +160,65 @@ public class WhatsAppWebhookController {
                 log.warn("Paid confirmation to {} failed: {}", user.getId(), ex.getMessage());
             }
         }
+    }
+
+    private void snoozeButton(String from, String reminderId) {
+        UUID id;
+        try {
+            id = UUID.fromString(reminderId);
+        } catch (IllegalArgumentException ex) {
+            return;
+        }
+        for (User user : senders(from)) {
+            // Reminder ids are per-account, so only the owner's comes back with a time.
+            snoozes.snoozeFromWhatsApp(user, id, null).ifPresent(at -> confirm(user, at));
+        }
+    }
+
+    private void snoozeReply(String from, String text) {
+        Matcher m = text == null ? null : SNOOZE_REPLY.matcher(text);
+        if (m == null || !m.matches()) {
+            return;
+        }
+        Integer minutes = m.group(1) == null ? null : Integer.valueOf(m.group(1));
+        for (User user : senders(from)) {
+            Optional<Instant> at = minutes != null && (minutes < 1 || minutes > 240)
+                    ? Optional.empty()
+                    : snoozes.snoozeLatestFromWhatsApp(user, minutes);
+            if (at.isPresent()) {
+                confirm(user, at.get());
+            } else {
+                say(user, minutes != null && (minutes < 1 || minutes > 240)
+                        ? "Snooze takes 1 to 240 minutes — try \"snooze 15\"."
+                        : "There's no reminder from the last few hours to snooze.");
+            }
+        }
+    }
+
+    private java.util.List<User> senders(String from) {
+        // An account scheduled for deletion acts on nothing, and is told nothing,
+        // from WhatsApp during its grace period: its sessions are gone too.
+        return from.isEmpty() ? java.util.List.of()
+                : users.findByWhatsappNumberAndWhatsappEnabledTrueAndWhatsappVerifiedTrue("+" + from).stream()
+                        .filter(u -> !u.isPendingDeletion()).toList();
+    }
+
+    private void confirm(User user, Instant at) {
+        String time = DateTimeFormatter.ofPattern("HH:mm").format(at.atZone(UserZone.of(user.getTimezone())));
+        say(user, "Snoozed. I'll remind you again at " + time + ".");
+    }
+
+    /** A reply lands inside the 24h window their tap or message just opened, so plain text is fine. */
+    private void say(User user, String text) {
+        try {
+            whatsapp.reply(user.getWhatsappNumber(), text);
+        } catch (Exception ex) {
+            log.warn("Snooze reply to {} failed: {}", user.getId(), ex.getMessage());
+        }
+    }
+
+    static String textBody(JsonNode msg) {
+        return "text".equals(msg.path("type").asText()) ? msg.path("text").path("body").asText(null) : null;
     }
 
     /** A template quick-reply arrives as "button"; an interactive reply as "interactive". */

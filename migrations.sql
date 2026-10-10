@@ -62,6 +62,41 @@ FROM (
   UNION ALL SELECT 'tasks'                  AS table_name, 'push_count'
   UNION ALL SELECT 'calendar_reminders'     AS table_name, 'end_time_of_day'
   UNION ALL SELECT 'tasks'                  AS table_name, 'paused'
+  UNION ALL SELECT 'custom_sounds'          AS table_name, 'name'
+  UNION ALL SELECT 'custom_sounds'          AS table_name, 'source'
+  UNION ALL SELECT 'calendar_reminders'     AS table_name, 'notify_before'
+  UNION ALL SELECT 'calendar_reminders'     AS table_name, 'snoozed_until'
+  UNION ALL SELECT 'circles'                AS table_name, 'visibility'
+  UNION ALL SELECT 'circles'                AS table_name, 'join_code'
+  UNION ALL SELECT 'family_meal_plans'      AS table_name, 'cooked_at'
+  UNION ALL SELECT 'mentor_messages'        AS table_name, 'fallback'
+  UNION ALL SELECT 'users'                  AS table_name, 'deletion_requested_at'
+  UNION ALL SELECT 'habits'                 AS table_name, 'sort_order'
+  UNION ALL SELECT 'habits'                 AS table_name, 'kind'
+  UNION ALL SELECT 'habits'                 AS table_name, 'clean_credited_through'
+  UNION ALL SELECT 'notes'                  AS table_name, 'labels'
+  UNION ALL SELECT 'notes'                  AS table_name, 'archived_at'
+  UNION ALL SELECT 'food_entries'           AS table_name, 'meal_slot'
+  UNION ALL SELECT 'food_entries'           AS table_name, 'sugar_g'
+  UNION ALL SELECT 'food_entries'           AS table_name, 'sodium_mg'
+  UNION ALL SELECT 'water_entries'          AS table_name, 'drink_type'
+  UNION ALL SELECT 'family_pantry_items'    AS table_name, 'is_low'
+  UNION ALL SELECT 'mentorship_requests'    AS table_name, 'agreement'
+  UNION ALL SELECT 'circle_challenges'      AS table_name, 'metric'
+  UNION ALL SELECT 'focus_sessions'         AS table_name, 'task_id'
+  UNION ALL SELECT 'focus_sessions'         AS table_name, 'goal_id'
+  UNION ALL SELECT 'calendar_reminders'     AS table_name, 'repeat_interval'
+  UNION ALL SELECT 'calendar_reminders'     AS table_name, 'repeat_days'
+  UNION ALL SELECT 'calendar_reminders'     AS table_name, 'repeat_nth'
+  UNION ALL SELECT 'calendar_reminders'     AS table_name, 'repeat_count'
+  UNION ALL SELECT 'calendar_reminders'     AS table_name, 'notes'
+  UNION ALL SELECT 'calendar_reminders'     AS table_name, 'notify_before2'
+  UNION ALL SELECT 'notifications'          AS table_name, 'category'
+  UNION ALL SELECT 'tasks'                  AS table_name, 'goal_id'
+  UNION ALL SELECT 'note_edit_drafts'       AS table_name, 'labels'
+  UNION ALL SELECT 'mentor_messages'        AS table_name, 'actions_json'
+  UNION ALL SELECT 'reminder_dispatch_log'  AS table_name, 'snooze_of'
+  UNION ALL SELECT 'reminder_dispatch_log'  AS table_name, 'attempts'
 ) AS t
 LEFT JOIN information_schema.COLUMNS c
        ON c.table_schema = DATABASE()
@@ -282,3 +317,266 @@ CREATE TABLE IF NOT EXISTS note_drafts (
   PRIMARY KEY (user_id),
   CONSTRAINT fk_note_drafts_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- A user can keep up to four sounds of their own (uploads or voice recordings),
+-- not one: each gets a name for the picker, and the one-per-user unique key
+-- gives way to a plain index so lookups by user stay indexed. Add the index
+-- BEFORE dropping the unique key. The two index lines are not in the check
+-- above (it reads columns); see whether they are still needed with
+--   SHOW INDEX FROM custom_sounds;
+-- -- run the ADD if idx_custom_sounds_user is absent, the DROP if
+-- uq_custom_sounds_user is still there. Neither touches a row.
+ALTER TABLE custom_sounds ADD COLUMN name VARCHAR(60) NULL;
+-- 'recording' or 'file': a sound can be renamed, so its kind can't be read off its name.
+ALTER TABLE custom_sounds ADD COLUMN source VARCHAR(16) NULL;
+ALTER TABLE custom_sounds ADD INDEX idx_custom_sounds_user (user_id);
+ALTER TABLE custom_sounds DROP INDEX uq_custom_sounds_user;
+
+-- A reminder can ring ahead of its time and be snoozed. notify_before is minutes
+-- ahead of time_of_day (NULL = the user's default, ui_prefs.reminderLead);
+-- snoozed_until is when a snoozed reminder rings again (NULL = not snoozed).
+ALTER TABLE calendar_reminders ADD COLUMN notify_before INT NULL;
+ALTER TABLE calendar_reminders ADD COLUMN snoozed_until DATETIME(6) NULL;
+
+-- Private Growth Circles: unlisted, joined with a code. Existing circles get
+-- the column default, 'public', which is what they already were.
+ALTER TABLE circles ADD COLUMN visibility VARCHAR(16) NOT NULL DEFAULT 'public';
+ALTER TABLE circles ADD COLUMN join_code VARCHAR(12) NULL;
+
+-- "We cooked this" bumps a plan's dishes once; cooked_at is the first tap.
+ALTER TABLE family_meal_plans ADD COLUMN cooked_at DATETIME(6) NULL;
+
+-- Buddy's canned replies (AI offline or unreachable) stay in the chat but are
+-- left out of the history sent to the model. Existing rows: FALSE, as before.
+ALTER TABLE mentor_messages ADD COLUMN fallback BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Unsaved edits to an existing note (the composer's note_drafts only ever
+-- covered a new one). A new table, so a guarded CREATE rather than an ALTER.
+CREATE TABLE IF NOT EXISTS note_edit_drafts (
+  note_id       CHAR(36)     NOT NULL,
+  user_id       CHAR(36)     NOT NULL,
+  title         VARCHAR(200) NULL,
+  body          MEDIUMTEXT   NULL,
+  color         VARCHAR(16)  NULL,
+  updated_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (note_id),
+  KEY ix_note_edit_drafts_user (user_id),
+  CONSTRAINT fk_note_edit_drafts_note FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE,
+  CONSTRAINT fk_note_edit_drafts_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The user's own habit order (PUT /api/habits/order). Existing rows get 0, so
+-- they keep their created_at order until the user first moves one.
+ALTER TABLE habits ADD COLUMN sort_order INT NOT NULL DEFAULT 0;
+
+-- Notes: labels (comma-joined, NULL = none) and archive (NULL = in the main
+-- list). Existing notes get NULL for both: unlabelled and not archived.
+ALTER TABLE notes ADD COLUMN labels VARCHAR(500) NULL;
+ALTER TABLE notes ADD COLUMN archived_at TIMESTAMP NULL;
+
+-- Account deletion grace period: "delete my account" stamps this and revokes
+-- every session; AccountDeletionJob purges 7 days later. Existing rows: NULL
+-- (not scheduled).
+ALTER TABLE users ADD COLUMN deletion_requested_at DATETIME(6) NULL;
+
+-- Change email (code to the new address) and authenticator-app 2FA. New
+-- tables, so guarded CREATEs rather than ALTERs; same as tableCreationQueries.sql.
+CREATE TABLE IF NOT EXISTS email_change_tokens (
+  token_hash       VARCHAR(255) NOT NULL,
+  user_id          CHAR(36)     NOT NULL,
+  new_email        VARCHAR(254) NOT NULL,
+  expires_at       DATETIME(6)  NOT NULL,
+  consumed_at      DATETIME(6)  NULL,
+  PRIMARY KEY (token_hash),
+  KEY ix_ect_user (user_id),
+  CONSTRAINT fk_ect_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS user_totp (
+  user_id          CHAR(36)     NOT NULL,
+  secret_enc       VARCHAR(255) NOT NULL,
+  enabled_at       DATETIME(6)  NULL,
+  last_used_step   BIGINT       NULL,
+  recovery_codes   JSON         NULL,
+  created_at       DATETIME(6)  NOT NULL,
+  updated_at       DATETIME(6)  NOT NULL,
+  PRIMARY KEY (user_id),
+  CONSTRAINT fk_user_totp_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Meal slots (breakfast|lunch|dinner|snack). Existing rows stay NULL; the app
+-- groups those by the hour they were logged at.
+ALTER TABLE food_entries ADD COLUMN meal_slot VARCHAR(10) NULL;
+-- Label figures from a barcode (OpenFoodFacts) only; NULL everywhere else.
+ALTER TABLE food_entries ADD COLUMN sugar_g SMALLINT NULL;
+ALTER TABLE food_entries ADD COLUMN sodium_mg INT NULL;
+-- What a glass was (tea, coffee, ...); NULL is water, as every existing row is.
+ALTER TABLE water_entries ADD COLUMN drink_type VARCHAR(10) NULL;
+
+-- Starred foods. A new table, so a guarded CREATE rather than an ALTER.
+CREATE TABLE IF NOT EXISTS food_favourites (
+  id              CHAR(36)     NOT NULL,
+  user_id         CHAR(36)     NOT NULL,
+  food_name       VARCHAR(255) NOT NULL,
+  quantity_grams  INT          NOT NULL,
+  kcal            INT          NOT NULL,
+  protein_g       SMALLINT     NULL,
+  carbs_g         SMALLINT     NULL,
+  fat_g           SMALLINT     NULL,
+  fiber_g         SMALLINT     NULL,
+  created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY ix_food_fav_user (user_id),
+  CONSTRAINT fk_food_fav_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Richer reminder recurrence (every N, chosen weekdays, nth weekday, end after
+-- N times), notes, and a second alert. Existing rows: interval 1 and NULLs,
+-- which is exactly what they meant before.
+ALTER TABLE calendar_reminders ADD COLUMN repeat_interval INT NOT NULL DEFAULT 1;
+ALTER TABLE calendar_reminders ADD COLUMN repeat_days VARCHAR(32) NULL;
+ALTER TABLE calendar_reminders ADD COLUMN repeat_nth INT NULL;
+ALTER TABLE calendar_reminders ADD COLUMN repeat_count INT NULL;
+ALTER TABLE calendar_reminders ADD COLUMN notes VARCHAR(1000) NULL;
+ALTER TABLE calendar_reminders ADD COLUMN notify_before2 INT NULL;
+
+-- A reminder's occurrences checked off (POST /api/reminders/{id}/done). A new
+-- table, so a guarded CREATE rather than an ALTER.
+CREATE TABLE IF NOT EXISTS reminder_done (
+  id              CHAR(36)    NOT NULL,
+  reminder_id     CHAR(36)    NOT NULL,
+  user_id         CHAR(36)    NOT NULL,
+  occurrence_date DATE        NOT NULL,
+  done_at         DATETIME(6) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY ux_reminder_done (reminder_id, occurrence_date),
+  KEY ix_reminder_done_user (user_id, occurrence_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Mentorship: the pair's agreement (weekly check-in card). Existing links: NULL.
+ALTER TABLE mentorship_requests ADD COLUMN agreement VARCHAR(500) NULL;
+-- Circle challenges count something other than habit check-ins. Existing
+-- challenges get the default, which is what they already counted.
+ALTER TABLE circle_challenges ADD COLUMN metric VARCHAR(16) NOT NULL DEFAULT 'habit_checkins';
+
+-- Mentor <-> mentee thread (messages + cheers/nudges) and circle post kudos.
+-- New tables, so guarded CREATEs; same as tableCreationQueries.sql.
+CREATE TABLE IF NOT EXISTS mentorship_messages (
+  id            CHAR(36)      NOT NULL,
+  link_id       CHAR(36)      NOT NULL,
+  sender_id     CHAR(36)      NOT NULL,
+  kind          VARCHAR(8)    NOT NULL DEFAULT 'message',
+  body          VARCHAR(2000) NULL,
+  created_at    DATETIME(6)   NOT NULL,
+  PRIMARY KEY (id),
+  KEY ix_mm_link_time (link_id, created_at),
+  CONSTRAINT fk_mm_link   FOREIGN KEY (link_id)   REFERENCES mentorship_requests(id) ON DELETE CASCADE,
+  CONSTRAINT fk_mm_sender FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS circle_post_reactions (
+  post_id         CHAR(36)    NOT NULL,
+  user_id         CHAR(36)    NOT NULL,
+  created_at      DATETIME(6) NOT NULL,
+  PRIMARY KEY (post_id, user_id),
+  KEY ix_circle_post_reaction_user (user_id),
+  CONSTRAINT fk_cpr_post FOREIGN KEY (post_id) REFERENCES circle_posts(id) ON DELETE CASCADE,
+  CONSTRAINT fk_cpr_user FOREIGN KEY (user_id) REFERENCES users(id)        ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Pantry "running low" flag (Pantry -> "Add expiring & low items to list").
+-- Existing rows: 0, not low.
+ALTER TABLE family_pantry_items ADD COLUMN is_low BIT(1) NOT NULL DEFAULT b'0';
+
+-- Household chores and per-dish recipes. New tables, so guarded CREATEs
+-- rather than ALTERs; same as tableCreationQueries.sql. Both are family-owned:
+-- AuthService.FAMILY_OWNED_TABLES deletes them with the family.
+CREATE TABLE IF NOT EXISTS `family_chores` (
+  `id` char(36) NOT NULL,
+  `family_id` char(36) NOT NULL,
+  `title` varchar(120) NOT NULL,
+  `assignee_member_id` char(36) DEFAULT NULL,
+  `due_date` date DEFAULT NULL,
+  `repeat_rule` varchar(8) NOT NULL DEFAULT 'none',
+  `done_at` datetime(6) DEFAULT NULL,
+  `created_by_user_id` char(36) NOT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `ix_family_chores_family` (`family_id`,`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+;
+
+CREATE TABLE IF NOT EXISTS `family_recipes` (
+  `id` char(36) NOT NULL,
+  `family_id` char(36) NOT NULL,
+  `dish_key` varchar(160) NOT NULL,
+  `dish_name` varchar(160) NOT NULL,
+  `ingredients` text,
+  `steps` text,
+  `cook_minutes` int DEFAULT NULL,
+  `updated_by_user_id` char(36) NOT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_family_recipe` (`family_id`,`dish_key`),
+  KEY `ix_family_recipes_family` (`family_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+;
+
+-- A task can belong to one of the user's goals (Goals: "Tasks: done/total").
+-- NULL = no goal, as every existing task. Deleting the goal sets it back to NULL.
+ALTER TABLE tasks ADD COLUMN goal_id CHAR(36) NULL;
+
+-- "Break a habit": a habit is build (tick to do it) or quit (clean unless a
+-- slip is logged). Existing rows get 'build', which is what every habit was.
+-- clean_credited_through: the last day a quit habit's clean days were paid XP.
+ALTER TABLE habits ADD COLUMN kind VARCHAR(8) NOT NULL DEFAULT 'build';
+ALTER TABLE habits ADD COLUMN clean_credited_through DATE NULL;
+
+-- A focus session linked to what it was spent on (the timer's "Focusing on…").
+-- Existing rows: NULL, a session on nothing in particular.
+ALTER TABLE focus_sessions ADD COLUMN task_id CHAR(36) NULL;
+ALTER TABLE focus_sessions ADD COLUMN goal_id CHAR(36) NULL;
+
+-- The bell's filter chips and the per-category push mute (NotifyCategory).
+-- Nullable: an existing row reads its category off its kind.
+ALTER TABLE notifications ADD COLUMN category VARCHAR(16) NULL;
+
+-- An open note edit's autosave keeps its label chips too (comma-joined like
+-- notes.labels). NULL: a draft from before, which restores without touching labels.
+ALTER TABLE note_edit_drafts ADD COLUMN labels VARCHAR(500) NULL;
+
+-- Buddy's one-tap actions ("Add as task" / "Make it a habit" / "Remind me"):
+-- the JSON the model offered with a reply, stripped from its text. NULL = none.
+ALTER TABLE mentor_messages ADD COLUMN actions_json TEXT NULL;
+
+-- Buddy's evening reflection prompt (ReflectionScheduler). Widening the ENUM
+-- keeps every existing value; MODIFY to the definition already in place is a
+-- no-op, so this is safe to re-run.
+ALTER TABLE notifications
+  MODIFY COLUMN kind ENUM('mentorship_request','mentorship_accepted',
+    'mentorship_rejected','system','reminder','habit_reminder','buddy_checkin') NOT NULL;
+
+-- Idempotency-Key replay cache (an offline replay is answered, not run twice).
+-- A new table, so a guarded CREATE; same as tableCreationQueries.sql.
+CREATE TABLE IF NOT EXISTS `idempotency_keys` (
+  `user_id` char(36) NOT NULL,
+  `idem_key` varchar(64) NOT NULL,
+  `method` varchar(8) NOT NULL,
+  `path` varchar(255) NOT NULL,
+  `status` int DEFAULT NULL,
+  `content_type` varchar(255) DEFAULT NULL,
+  `response_body` mediumtext,
+  `created_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`user_id`,`idem_key`),
+  KEY `ix_idempotency_created` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+;
+
+-- A snooze is claimed with a 'pending' dispatch-log row and rung again by the
+-- sweeper if its instance dies before marking it 'sent' (ReminderDeliveryScheduler
+-- .resendStuckSnoozes). snooze_of: the reminder a snooze row rings (NULL on an
+-- occurrence's row); attempts: sends tried, existing rows 0.
+ALTER TABLE reminder_dispatch_log ADD COLUMN snooze_of CHAR(36) NULL;
+ALTER TABLE reminder_dispatch_log ADD COLUMN attempts INT NOT NULL DEFAULT 0;

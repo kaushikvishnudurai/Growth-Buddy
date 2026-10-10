@@ -53,6 +53,26 @@ const lunch = { id: 'e1', amount: 250, category: 'food', note: 'Lunch', date: '2
   assert.equal(d.upserts.find((u) => u.id === 'e3').accountId, 'cash-1', 'the account rides along');
 }
 
+// A loan's one-sided moves are transfers too: money borrowed into an account has
+// no "from", and goes to the server as it is (MoneyLedger.toRow takes either side).
+{
+  const inflow = { id: 'loan-b1', amount: 2000, to: 'bank-1', date: '2026-09-30', note: 'Borrowed from Ravi' };
+  const d = ledgerDiff(doc({}), doc({ transfers: [inflow] }));
+  assert.deepEqual(d.upserts, [{ kind: 'transfer', ...inflow }]);
+  assert.equal('from' in d.upserts[0], false, 'no from is sent, not an empty one');
+}
+
+// A posted repeat is an ordinary expense with a deterministic id: two devices
+// posting the same month send the same upsert.
+{
+  const a = { id: 'rec-r1-2026-09', amount: 9000, category: 'home', note: 'Rent', date: '2026-09-01' };
+  assert.deepEqual(
+    ledgerDiff(doc({}), doc({ expenses: [a] })).upserts,
+    ledgerDiff(doc({}), doc({ expenses: [{ ...a }] })).upserts
+  );
+  assert.deepEqual(ledgerDiff(doc({ expenses: [a] }), doc({ expenses: [{ ...a }] })).upserts, [], 'already there: nothing sent');
+}
+
 // A transfer is its own kind, so it is never counted as spending.
 {
   const t = { id: 't1', amount: 2000, from: 'bank-1', to: 'cash-1', date: '2026-09-30' };

@@ -84,6 +84,12 @@ public class FamilyController {
         return service.leaveFamily(CurrentUser.id());
     }
 
+    /** Owner only: make another mapped member the owner (the caller stays a member). */
+    @PostMapping("/transfer")
+    public FamilyResponse transfer(@Valid @RequestBody TransferOwnershipRequest req) {
+        return service.transferOwnership(CurrentUser.id(), req.memberId());
+    }
+
     @PostMapping("/grocery-scan")
     public GroceryScanResponse groceryScan(@Valid @RequestBody GroceryScanRequest req) {
         return service.scanGroceries(req);
@@ -101,6 +107,77 @@ public class FamilyController {
             return ResponseEntity.noContent().build();
         }
         return ResponseEntity.ok(plan);
+    }
+
+    /** The last 8 one-day plans, newest first (the current one included). */
+    @GetMapping("/plans/history")
+    public List<MealPlanResponse> planHistory() {
+        return service.planHistory(CurrentUser.id());
+    }
+
+    /** Use again: copy an older plan forward as the current one. */
+    @PostMapping("/meal-plan/{planId}/reuse")
+    public MealPlanResponse reusePlan(@PathVariable UUID planId) {
+        return service.reusePlan(CurrentUser.id(), planId);
+    }
+
+    @PutMapping("/meal-plan/{planId}/cook")
+    public MealPlanResponse assignCook(@PathVariable UUID planId, @Valid @RequestBody AssignCookRequest req) {
+        return service.assignCook(CurrentUser.id(), planId, req);
+    }
+
+    @PutMapping("/meal-plan/multi/{planId}/cook")
+    public MultiDayPlanResponse assignMultiDayCook(@PathVariable UUID planId,
+            @Valid @RequestBody AssignCookRequest req) {
+        return service.assignMultiDayCook(CurrentUser.id(), planId, req);
+    }
+
+    // ---- Recipes (per dish) ----
+
+    @GetMapping("/recipes")
+    public List<RecipeResponse> recipes() {
+        return service.listRecipes(CurrentUser.id());
+    }
+
+    /** Upsert by dish name; an empty recipe deletes it (204). */
+    @PutMapping("/recipes")
+    public ResponseEntity<RecipeResponse> saveRecipe(@Valid @RequestBody RecipeRequest req) {
+        RecipeResponse r = service.saveRecipe(CurrentUser.id(), req);
+        return r == null ? ResponseEntity.noContent().build() : ResponseEntity.ok(r);
+    }
+
+    @DeleteMapping("/recipes/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteRecipe(@PathVariable UUID id) {
+        service.deleteRecipe(CurrentUser.id(), id);
+    }
+
+    // ---- Chores ----
+
+    @GetMapping("/chores")
+    public List<ChoreResponse> chores() {
+        return service.listChores(CurrentUser.id());
+    }
+
+    @PostMapping("/chores")
+    public List<ChoreResponse> addChore(@Valid @RequestBody ChoreRequest req) {
+        return service.addChore(CurrentUser.id(), req);
+    }
+
+    @PutMapping("/chores/{id}")
+    public List<ChoreResponse> updateChore(@PathVariable UUID id, @Valid @RequestBody ChoreRequest req) {
+        return service.updateChore(CurrentUser.id(), id, req);
+    }
+
+    @PostMapping("/chores/{id}/toggle")
+    public List<ChoreResponse> toggleChore(@PathVariable UUID id,
+            @RequestBody(required = false) ToggleChoreRequest req) {
+        return service.toggleChore(CurrentUser.id(), id, req != null ? req.done() : null);
+    }
+
+    @DeleteMapping("/chores/{id}")
+    public List<ChoreResponse> deleteChore(@PathVariable UUID id) {
+        return service.deleteChore(CurrentUser.id(), id);
     }
 
     // ---- Favourites ----
@@ -187,9 +264,16 @@ public class FamilyController {
         return service.generateShopping(CurrentUser.id(), req);
     }
 
+    /** Pantry items marked low or expiring within 2 days, onto the list (deduped). */
+    @PostMapping("/shopping/from-pantry")
+    public ShoppingListResponse shoppingFromPantry() {
+        return service.restockFromPantry(CurrentUser.id());
+    }
+
     @PostMapping("/shopping/{id}/toggle")
-    public ShoppingListResponse toggleShopping(@PathVariable UUID id) {
-        return service.toggleShopping(CurrentUser.id(), id);
+    public ShoppingListResponse toggleShopping(@PathVariable UUID id,
+            @RequestBody(required = false) ToggleShoppingRequest req) {
+        return service.toggleShopping(CurrentUser.id(), id, req != null ? req.checked() : null);
     }
 
     @DeleteMapping("/shopping/{id}")

@@ -161,16 +161,21 @@ public class FoodService {
 
     private final FoodEntryRepository entries;
     private final FoodPhotoLogRepository photoLogs;
+    private final FoodFavouriteRepository favourites;
     private final OpenAIClient openai;
     private final ObjectMapper json;
     private final HttpClient http;
 
     private final UserClock clock;
 
-    public FoodService(FoodEntryRepository entries, FoodPhotoLogRepository photoLogs, OpenAIClient openai,
-                       UserClock clock) {
+    /** A starred food list is a chip row, not a pantry. */
+    static final int MAX_FAVOURITES = 24;
+
+    public FoodService(FoodEntryRepository entries, FoodPhotoLogRepository photoLogs,
+                       FoodFavouriteRepository favourites, OpenAIClient openai, UserClock clock) {
         this.entries = entries;
         this.photoLogs = photoLogs;
+        this.favourites = favourites;
         this.openai = openai;
         this.json = new ObjectMapper();
         this.http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(8)).build();
@@ -206,10 +211,43 @@ public class FoodService {
         int total = entries.totalCaloriesForDay(userId, day);
         List<FoodEntryResponse> row = entries.findByUserIdAndLogDateOrderByLoggedAtDesc(userId, day)
                 .stream().map(FoodEntryResponse::from).toList();
-        return new FoodSummaryResponse(day, total, row);
+        return new FoodSummaryResponse(day, total, row,
+                daySum(row, FoodEntryResponse::fiberG),
+                daySum(row, FoodEntryResponse::sugarG),
+                daySum(row, FoodEntryResponse::sodiumMg));
     }
 
+    /** The day's sum over the entries that carry the figure; null when none does. */
+    static Integer daySum(List<FoodEntryResponse> rows, java.util.function.Function<FoodEntryResponse, Integer> f) {
+        Integer sum = null;
+        for (FoodEntryResponse r : rows) {
+            Integer v = f.apply(r);
+            if (v != null) {
+                sum = (sum == null ? 0 : sum) + v;
+            }
+        }
+        return sum;
+    }
+
+    /**
+     * Up to 8 different foods from the user's latest entries, newest first, one per
+     * name (case-insensitive): the "Log food" form offers them as one-tap re-logs,
+     * sent with their calories typed, so a repeat costs no estimate.
+     */
     @Transactional(readOnly = true)
+    public List<FoodEntryResponse> recent(UUID userId) {
+        java.util.Map<String, FoodEntryResponse> out = new java.util.LinkedHashMap<>();
+        for (FoodEntry e : entries.findTop60ByUserIdOrderByLoggedAtDesc(userId)) {
+            out.putIfAbsent(e.getFoodName().trim().toLowerCase(java.util.Locale.ROOT), FoodEntryResponse.from(e));
+            if (out.size() == 8) {
+                break;
+            }
+        }
+        return List.copyOf(out.values());
+    }
+
+    // Not @Transactional: it is one HTTP call to OpenFoodFacts and no database at
+    // all, and a read-only transaction held a pooled connection through it.
     public List<FoodSearchItem> search(String query) {
         if (!StringUtils.hasText(query)) {
             return List.of();
@@ -250,6 +288,11 @@ public class FoodService {
         int quantity;
         if (req.quantityGrams() != null) {
             quantity = req.quantityGrams();
+        } else if (req.kcal() != null) {
+            // Typed calories: the grams are only a display figure, so no AI call for
+            // them. It used to ask the AI here, so "no AI for a typed number" held
+            // only when grams were typed too.
+            quantity = defaultQuantity(input);
         } else {
             AiGuess g = askOnce.get();
             if (g != null && g.quantityGrams() != null) {
@@ -293,6 +336,16 @@ public class FoodService {
         e.setKcalEstimated(kcal);
         e.setEstimateSource(estimate.source());
         e.setNote(StringUtils.hasText(req.note()) ? req.note().trim() : null);
+        // Label figures (a barcode product, a favourite) only with typed calories:
+        // an estimated entry's nutrients come from the same estimate as its kcal.
+        if (req.kcal() != null) {
+            e.setProteinG(req.proteinG());
+            e.setCarbsG(req.carbsG());
+            e.setFatG(req.fatG());
+            e.setFiberG(req.fiberG());
+            e.setSugarG(req.sugarG());
+            e.setSodiumMg(req.sodiumMg());
+        }
         // Free when the AI was asked anyway. Otherwise they stay null and the
         // Summary's batch fills them, 40 entries to a call.
         if (ai[0] != null && ai[0].per100g() != null) {
@@ -309,7 +362,9 @@ public class FoodService {
         // Food screen the moment it was saved.
         Instant ts = req.loggedAt() != null ? req.loggedAt() : Instant.now();
         e.setLoggedAt(ts);
-        LocalDate logDate = ts.atZone(clock.zoneOf(userId)).toLocalDate();
+        java.time.ZoneId zone = clock.zoneOf(userId);
+        LocalDate logDate = ts.atZone(zone).toLocalDate();
+        e.setMealSlot(defaultSlot(req.mealSlot(), ts, zone));
         // Backdating is the point of `loggedAt` — forward-dating is not. The form
         // caps its day picker at today, but this is an API anyone can POST to, and
         // a meal filed under next week sits in a summary nothing ever opens.
@@ -322,6 +377,259 @@ public class FoodService {
 
         FoodEntry saved = entries.save(e);
         return summary(userId, saved.getLogDate());
+    }
+
+    /**
+     * Fix a logged entry: name, grams, calories, meal or day. No AI and no lookup:
+     * typed calories are taken as they are ("manual"); new grams without calories
+     * rescale the entry's own kcal/100 g. A changed name or grams clears the four
+     * nutrients so FoodWeek's batch refills them for the new food (its guarded
+     * coalesce UPDATE only fills nulls). Returns the summary of the day the entry
+     * is on afterwards.
+     */
+    @Transactional
+    public FoodSummaryResponse updateEntry(UUID userId, UUID entryId, UpdateFoodEntryRequest req) {
+        FoodEntry e = entries.findById(entryId)
+                .orElseThrow(() -> ApiException.notFound("Entry not found"));
+        if (!e.getUserId().equals(userId)) {
+            throw ApiException.forbidden("Unauthorized");
+        }
+        boolean foodChanged = false;
+        if (req.foodName() != null) {
+            if (!StringUtils.hasText(req.foodName())) {
+                throw ApiException.badRequest("foodName can't be empty");
+            }
+            String name = req.foodName().trim();
+            foodChanged |= !name.equals(e.getFoodName());
+            e.setFoodName(name);
+        }
+        if (req.quantityGrams() != null && req.quantityGrams() != e.getQuantityGrams()) {
+            foodChanged = true;
+            e.setQuantityGrams(req.quantityGrams());
+            if (req.kcal() == null) {
+                e.setKcalEstimated(Math.max(1, Math.min(5000,
+                        (int) Math.round(e.getKcalPer100g() * req.quantityGrams() / 100.0))));
+            }
+        }
+        if (req.kcal() != null) {
+            e.setKcalEstimated(req.kcal());
+            e.setKcalPer100g(clamp((int) Math.round((req.kcal() * 100.0) / Math.max(1, e.getQuantityGrams()))));
+            e.setEstimateSource("manual");
+        }
+        if (req.mealType() != null) {
+            e.setMealType(req.mealType());
+        }
+        if (req.mealSlot() != null) {
+            e.setMealSlot(req.mealSlot());
+        }
+        if (req.date() != null && !req.date().equals(e.getLogDate())) {
+            if (req.date().isAfter(clock.today(userId))) {
+                throw ApiException.badRequest("You can't log food for a day that hasn't happened yet.");
+            }
+            e.setLogDate(req.date());
+            // Noon local, as the add form sends for a past day.
+            e.setLoggedAt(req.date().atTime(12, 0).atZone(clock.zoneOf(userId)).toInstant());
+        }
+        if (foodChanged) {
+            e.setProteinG(null);
+            e.setCarbsG(null);
+            e.setFatG(null);
+            e.setFiberG(null);
+        }
+        if (req.note() != null) {
+            e.setNote(StringUtils.hasText(req.note()) ? req.note().trim() : null);
+        }
+        entries.save(e);
+        return summary(userId, e.getLogDate());
+    }
+
+    /** The request's slot, else the one the local hour of the entry falls in. */
+    static MealSlot defaultSlot(MealSlot requested, Instant loggedAt, java.time.ZoneId zone) {
+        return requested != null ? requested : MealSlot.at(loggedAt, zone);
+    }
+
+    /** An entry's slot: its own, or (a row from before slots) its logged hour's. */
+    static MealSlot slotOf(FoodEntry e, java.time.ZoneId zone) {
+        return e.getMealSlot() != null ? e.getMealSlot() : MealSlot.at(e.getLoggedAt(), zone);
+    }
+
+    /**
+     * "Copy yesterday's breakfast": every entry of {@code from}'s slot again on
+     * {@code to} (defaults yesterday and today, in the user's zone), as manual
+     * kcal with the figures it already had. No estimate, no AI, no lookup.
+     */
+    @Transactional
+    public FoodSummaryResponse copySlot(UUID userId, MealSlot slot, LocalDate from, LocalDate to) {
+        if (slot == null) {
+            throw ApiException.badRequest("slot is required");
+        }
+        LocalDate today = clock.today(userId);
+        LocalDate target = to != null ? to : today;
+        LocalDate source = from != null ? from : target.minusDays(1);
+        if (target.isAfter(today)) {
+            throw ApiException.badRequest("You can't log food for a day that hasn't happened yet.");
+        }
+        java.time.ZoneId zone = clock.zoneOf(userId);
+        List<FoodEntry> src = entries.findByUserIdAndLogDate(userId, source).stream()
+                .filter(e -> slotOf(e, zone) == slot)
+                .sorted(Comparator.comparing(FoodEntry::getLoggedAt))
+                .toList();
+        if (src.isEmpty()) {
+            throw ApiException.badRequest("Nothing was logged for " + slot.name() + " that day.");
+        }
+        // Today: now, so it reads as just logged. A past day: its local noon, as the form does.
+        Instant at = target.equals(today) ? Instant.now()
+                : target.atTime(12, 0).atZone(zone).toInstant();
+        for (FoodEntry e : src) {
+            FoodEntry c = new FoodEntry();
+            c.setUserId(userId);
+            c.setFoodName(e.getFoodName());
+            c.setQuantityGrams(e.getQuantityGrams());
+            c.setMealType(e.getMealType());
+            c.setKcalEstimated(e.getKcalEstimated());
+            c.setKcalPer100g(e.getKcalPer100g());
+            c.setEstimateSource("manual");
+            c.setProteinG(e.getProteinG());
+            c.setCarbsG(e.getCarbsG());
+            c.setFatG(e.getFatG());
+            c.setFiberG(e.getFiberG());
+            c.setSugarG(e.getSugarG());
+            c.setSodiumMg(e.getSodiumMg());
+            c.setMealSlot(slot);
+            c.setLoggedAt(at);
+            c.setLogDate(target);
+            entries.save(c);
+        }
+        return summary(userId, target);
+    }
+
+    @Transactional(readOnly = true)
+    public List<FoodFavouriteResponse> favourites(UUID userId) {
+        return favourites.findByUserIdOrderByCreatedAtDesc(userId).stream()
+                .map(FoodFavouriteResponse::from).toList();
+    }
+
+    /**
+     * Star an entry: its name, portion, kcal and macros become a favourite. A name
+     * already starred (case-insensitive) is refreshed rather than duplicated.
+     * Returns the whole list, newest first.
+     */
+    @Transactional
+    public List<FoodFavouriteResponse> addFavourite(UUID userId, UUID entryId) {
+        FoodEntry e = entries.findById(entryId)
+                .orElseThrow(() -> ApiException.notFound("Entry not found"));
+        if (!e.getUserId().equals(userId)) {
+            throw ApiException.forbidden("Unauthorized");
+        }
+        String name = e.getFoodName().trim();
+        FoodFavourite f = favourites.findFirstByUserIdAndFoodNameIgnoreCase(userId, name).orElse(null);
+        if (f == null) {
+            if (favourites.countByUserId(userId) >= MAX_FAVOURITES) {
+                throw ApiException.badRequest(
+                        "You can keep up to " + MAX_FAVOURITES + " favourites. Remove one first.");
+            }
+            f = new FoodFavourite();
+            f.setUserId(userId);
+        }
+        f.setFoodName(name);
+        f.setQuantityGrams(e.getQuantityGrams());
+        f.setKcal(e.getKcalEstimated());
+        f.setProteinG(e.getProteinG());
+        f.setCarbsG(e.getCarbsG());
+        f.setFatG(e.getFatG());
+        f.setFiberG(e.getFiberG());
+        favourites.save(f);
+        return favourites(userId);
+    }
+
+    @Transactional
+    public List<FoodFavouriteResponse> deleteFavourite(UUID userId, UUID favouriteId) {
+        FoodFavourite f = favourites.findById(favouriteId)
+                .orElseThrow(() -> ApiException.notFound("Favourite not found"));
+        if (!f.getUserId().equals(userId)) {
+            throw ApiException.forbidden("Unauthorized");
+        }
+        favourites.delete(f);
+        return favourites(userId);
+    }
+
+    /**
+     * One packaged product by its barcode, from OpenFoodFacts' product endpoint.
+     * No AI and no database. 404 when the code is unknown or the lookup fails, so
+     * the form says "type it in" either way. Not @Transactional: one HTTP call.
+     */
+    public BarcodeProduct barcode(String code) {
+        if (code == null || !code.matches("\\d{6,14}")) {
+            throw ApiException.badRequest("A barcode is 6 to 14 digits.");
+        }
+        try {
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create("https://world.openfoodfacts.org/api/v2/product/" + code
+                            + ".json?fields=product_name,brands,nutriments,serving_quantity"))
+                    .timeout(Duration.ofSeconds(10))
+                    .header("User-Agent", "GrowthBuddy/1.0 (food log)")
+                    .GET()
+                    .build();
+            HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
+            BarcodeProduct p = res.statusCode() / 100 == 2 ? barcodeFrom(json.readTree(res.body()), code) : null;
+            if (p != null) {
+                return p;
+            }
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+        } catch (Exception ex) {
+            log.debug("Barcode lookup failed for {}", code, ex);
+        }
+        throw ApiException.notFound("Product not found");
+    }
+
+    /**
+     * An OpenFoodFacts product answer, mapped to what the form needs; null when it
+     * has no product or no name. kcal/100 g falls back to kJ / 4.184 and is clamped
+     * like every other per-100 g figure; sodium is grams there, milligrams here,
+     * and comes from salt / 2.5 when only salt is on the label.
+     */
+    static BarcodeProduct barcodeFrom(JsonNode root, String code) {
+        if (root == null || root.path("status").asInt(0) != 1) {
+            return null;
+        }
+        JsonNode p = root.path("product");
+        String name = textOrNull(p, "product_name");
+        if (!StringUtils.hasText(name)) {
+            return null;
+        }
+        name = name.trim();
+        String brand = textOrNull(p, "brands");
+        if (StringUtils.hasText(brand)) {
+            String first = brand.split(",")[0].trim();
+            if (!first.isEmpty() && !name.toLowerCase(java.util.Locale.ROOT)
+                    .contains(first.toLowerCase(java.util.Locale.ROOT))) {
+                name = first + " " + name;
+            }
+        }
+        JsonNode n = p.path("nutriments");
+        Double kcal = numberOrNull(n, "energy-kcal_100g");
+        if (kcal == null) {
+            Double kj = numberOrNull(n, "energy_100g");
+            kcal = kj != null ? kj / 4.184 : null;
+        }
+        Double sodiumG = numberOrNull(n, "sodium_100g");
+        if (sodiumG == null) {
+            Double salt = numberOrNull(n, "salt_100g");
+            sodiumG = salt != null ? salt / 2.5 : null;
+        }
+        Double serving = numberOrNull(p, "serving_quantity");
+        Integer servingGrams = serving != null && serving >= 10 && serving <= 2000
+                ? (int) Math.round(serving) : null;
+        return new BarcodeProduct(code, name.length() > 255 ? name.substring(0, 255) : name,
+                kcal != null && kcal > 0 ? clamp((int) Math.round(kcal)) : null,
+                numberOrNull(n, "proteins_100g"),
+                numberOrNull(n, "carbohydrates_100g"),
+                numberOrNull(n, "fat_100g"),
+                numberOrNull(n, "fiber_100g"),
+                numberOrNull(n, "sugars_100g"),
+                sodiumG != null ? (int) Math.round(sodiumG * 1000) : null,
+                servingGrams);
     }
 
     @Transactional

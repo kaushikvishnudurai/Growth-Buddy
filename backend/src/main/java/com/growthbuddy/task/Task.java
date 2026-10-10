@@ -17,7 +17,8 @@ import lombok.Setter;
 
 @Entity
 @Table(name = "tasks", indexes = {
-        @Index(name = "ix_tasks_user_done", columnList = "user_id, done")
+        @Index(name = "ix_tasks_user_done", columnList = "user_id, done"),
+        @Index(name = "ix_tasks_goal", columnList = "goal_id")
 })
 @Getter
 @Setter
@@ -65,6 +66,15 @@ public class Task {
     /** Times the due date was moved later by half a day or more. */
     @Column(name = "push_count", nullable = false)
     private int pushCount = 0;
+
+    /**
+     * The user's own goal this task counts toward, or null. Checked against the
+     * goal's owner on every write; deleting the goal sets it back to null, and
+     * deleting the task clears it too, so only a task the midnight sweep
+     * cleared still counts as one of the goal's finished tasks.
+     */
+    @Column(name = "goal_id")
+    private UUID goalId;
 
     @PrePersist
     void prePersist() {
