@@ -1630,15 +1630,8 @@ function ScreenSummary({
   onPickDay,
 }) {
   const on = (k) => !features || features[k] !== false;
-  // A tapped day is read in the Buddy card, so bring the card to the tap.
-  const pick = (date) => {
-    if (onPickDay) onPickDay(date);
-    requestAnimationFrame(() => {
-      const card = document.querySelector('.gb-summary-buddy');
-      const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      if (card) card.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'nearest' });
-    });
-  };
+  // A tapped day is read in the Buddy card; runDietCheck brings the card to the tap.
+  const pick = (date) => onPickDay && onPickDay(date);
   const back = h(
     'button',
     {

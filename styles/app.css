@@ -1982,19 +1982,31 @@ body:has(.is-thinking, .gb-thinking)::after {
   color: var(--fg3);
 }
 
-/* Range slider */
+/* Range slider. The box is a 44px tap target; the 6px you see is the track.
+   An input can't carry the ::before overlay the other small controls use. */
 .gb-range {
   -webkit-appearance: none;
   appearance: none;
   flex: 1;
+  height: 44px;
+  background: transparent;
+  cursor: pointer;
+}
+.gb-range::-webkit-slider-runnable-track {
   height: 6px;
   border-radius: 999px;
   background: var(--surface-3);
-  cursor: pointer;
+}
+.gb-range::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-3);
 }
 .gb-range::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
+  /* Centres the 18px thumb on the 6px track; WebKit tops it on the track. */
+  margin-top: -6px;
   width: 18px;
   height: 18px;
   border-radius: 50%;
@@ -2011,7 +2023,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 .gb-range:focus-visible {
   outline: 2px solid var(--ring);
-  outline-offset: 3px;
+  outline-offset: -8px;
 }
 
 /* Toggle switch */
@@ -5717,8 +5729,10 @@ button.gb-food-level {
   opacity: 1;
 }
 /* A closing overlay fades for 180ms before it is removed; while it does, taps
-   meant for the screen underneath landed on it and did nothing. */
-.gb-modal-overlay:not(.is-open) {
+   meant for the screen underneath landed on it and did nothing. Only while
+   closing: `:not(.is-open)` also matched the opening frame, before is-open
+   lands, and a click then went through to the page behind the dialog. */
+.gb-modal-overlay.is-closing {
   pointer-events: none;
 }
 .gb-modal {
@@ -10042,6 +10056,11 @@ h2[tabindex='-1']:focus {
   gap: 2px;
   max-width: 640px;
   cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.gb-pixels:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 4px;
 }
 .gb-pixels-corner,
 .gb-pixels-day,
@@ -10419,4 +10438,41 @@ h2[tabindex='-1']:focus {
   align-items: center;
   justify-content: center;
   gap: 6px;
+}
+
+/* A phone on its side: 375px of height, and the full header (81px) plus nav
+   (83px) left content barely half of it. Both go compact, the way they already
+   do under 360px wide: one-line title, icon-only tabs (each keeps its
+   aria-label), a smaller FAB. The ≥1024px sidebar layout never gets here. */
+@media (orientation: landscape) and (max-height: 500px) and (max-width: 1023.98px) {
+  .gb-head {
+    --head-pad-b: 6px;
+    padding-top: max(env(safe-area-inset-top, 0px), 8px);
+  }
+  .gb-head .greet-label {
+    display: none;
+  }
+  .gb-head .greet-name {
+    font-size: 1.125rem;
+    -webkit-line-clamp: 1;
+  }
+  .gb-nav,
+  html[data-premium='on'] .gb-nav {
+    padding-top: 4px;
+    padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
+  }
+  html[data-premium='on'] .gb-nav {
+    margin-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
+  }
+  .gb-nav-tab {
+    min-height: 44px;
+    gap: 2px;
+  }
+  .gb-nav-tab span {
+    display: none;
+  }
+  .gb-fab {
+    width: 44px;
+    height: 44px;
+  }
 }

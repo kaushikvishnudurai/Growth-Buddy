@@ -1427,7 +1427,10 @@ async function toggleRestDay(habitId, makeRest) {
   const ok = await freezeWrite(
     habitId,
     makeRest ? '/protect' : '/unprotect',
-    todayKey(),
+    // No date: the server's "today", in the account's zone. The device's date
+    // was a day ahead whenever the two zones disagreed (travel, an API signup on
+    // UTC), and the server refused it as a day that hadn't started.
+    null,
     { protectedToday: makeRest },
     makeRest ? -1 : 1,
     makeRest ? 'Could not set a rest day.' : 'Could not remove the rest day.'
@@ -2732,7 +2735,11 @@ function withPendingWater(water) {
 
 async function quickAddWater(amountMl) {
   const now = Date.now();
-  if (lastWaterTap.amount === amountMl && now - lastWaterTap.at < WATER_DOUBLE_TAP_MS) return;
+  if (lastWaterTap.amount === amountMl && now - lastWaterTap.at < WATER_DOUBLE_TAP_MS) {
+    // Silently dropped, two quick +250s for 500 ml read as a lost glass.
+    pushToast('Counted once. Tap again for another glass.', 'info', 1800);
+    return;
+  }
   lastWaterTap = { amount: amountMl, at: now };
   const tempId = 'pending-' + ++waterSeq;
   pendingWater.set(tempId, amountMl);
@@ -3677,6 +3684,7 @@ async function runDietCheck(date) {
   const scope = date ? 'day' : 'week';
   state.dietCheck = { loading: true, scope, date };
   render();
+  if (date) revealBuddyCard();
   let next;
   try {
     const q = date ? '?date=' + encodeURIComponent(date) : '';
@@ -3688,6 +3696,19 @@ async function runDietCheck(date) {
   if (gen !== weekGen) return;
   state.dietCheck = next;
   render();
+  if (date) revealBuddyCard();
+}
+
+/* A day tapped in a chart is read in the Buddy card, which on a phone sits a
+   screen below the chart. Scrolled once on the tap, the answer then grew the
+   card downward past the fold and the tap looked dead, so it runs again when
+   the answer lands. After render()'s own scroll restore, which also runs in a rAF. */
+function revealBuddyCard() {
+  requestAnimationFrame(() => {
+    const card = document.querySelector('.gb-summary-buddy');
+    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    card?.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'start' });
+  });
 }
 
 function deleteFoodEntry(entryId) {
@@ -9144,6 +9165,13 @@ function logout() {
   state.authMode = 'signin';
   state.authEmail = '';
   state.authNotice = '';
+  // A panel left open kept its mousedown listener alive on the sign-in screen,
+  // where the first press "closed" it with a full render() that rebuilt the form
+  // under the pointer: no request, both fields blanked.
+  state.notifOpen = false;
+  state.profileOpen = false;
+  state.moreOpen = false;
+  popoverCleanup?.();
   state.goalProgress = {};
   // Another account must not see this one's Insights, nor wait out its throttle.
   state.insightHistory = null;
@@ -9473,6 +9501,20 @@ function installOutsideClickToCloseHeaderPopovers() {
     );
     if (pop) return; // click inside the popover or its trigger
     closePopovers();
+    swallowNextClick();
+  }
+  // The tap that dismisses a panel is only a dismiss: without this its click
+  // still landed on whatever card was under it (Plan my day, the weekly review).
+  function swallowNextClick() {
+    const eat = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      done();
+    };
+    const done = () => document.removeEventListener('click', eat, true);
+    document.addEventListener('click', eat, true);
+    // A press that drags off fires no click; don't eat the next real one.
+    document.addEventListener('mouseup', () => setTimeout(done, 0), { once: true, capture: true });
   }
   function onKeyDown(ev) {
     if (ev.key === 'Escape') {

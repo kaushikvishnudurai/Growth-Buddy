@@ -31,6 +31,10 @@ public class AiRateLimitInterceptor implements HandlerInterceptor {
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
             throws IOException {
+        // Only a POST can reach OpenAI. GET /meal-plan, DELETE /chat/messages and the
+        // rest are reads or clears on the same paths, and counting them let two Family
+        // visits cost as much as two generated plans.
+        if (!"POST".equalsIgnoreCase(request.getMethod())) return true;
         String who;
         try {
             who = "u:" + CurrentUser.id();

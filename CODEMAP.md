@@ -70,8 +70,8 @@ every limit per-instance and forgave every account lockout on restart.
 `LoginAttemptGuard.recordFailure` commits in `REQUIRES_NEW`, load-bearing: `AuthService.login` is
 `@Transactional` and records the failure immediately before throwing, so on the caller's
 transaction the count would roll back with the rejection it exists to count.
-`RateLimitInterceptor` = per-IP on auth routes, `AiRateLimitInterceptor` = 40/hour per user on an
-**allowlist of paths in `WebConfig`** — the four vision endpoints were missing from it for months,
+`RateLimitInterceptor` = per-IP on auth routes, `AiRateLimitInterceptor` = 40/hour per user, **POSTs only** (a GET of the saved meal plan or a
+chat clear on the same path costs nothing), on an **allowlist of paths in `WebConfig`** — the four vision endpoints were missing from it for months,
 the most expensive call in the app running uncapped. The allowlist is no longer the only line:
 **`OpenAIClient` charges every call against its own 60/hour per-user budget**, so a forgotten path
 is still bounded and the request never reaches the model. The interceptor stays because only it can

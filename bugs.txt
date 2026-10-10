@@ -1,0 +1,89 @@
+## Findings
+
+**QA-01: Sign-in after logout ignores the first click and clears the fields**
+- **Where:** Sign-in screen after Account → Log out. Category: unresponsive button / lost input. **Severity: High.**
+- **Steps:**
+  1. Open the Account panel and log out.
+  2. Fill in (or autofill) email and password.
+  3. Click Sign in.
+- **Expected:** you're signed in.
+- **Actual:** no request is sent, both fields go blank, and no error appears. The second attempt works.
+- **Evidence:** reproduced 4 times. Captured stack: `onDocDown → closePopovers → repaintOverlays → render`.
+- **Cause:** `logout()` (`scripts/app.js`) resets everything except `state.profileOpen` and never removes the popover's `mousedown` listener. The first mousedown on the auth screen therefore runs `closePopovers` → `repaintOverlays`, which falls back to a full `render()` because the header slots are gone. That rebuilds the form under the pointer.
+- **Suggested fix:** in `logout()`, set `notifOpen`, `profileOpen` and `moreOpen` to false and call `popoverCleanup?.()`.
+- **Status:** Confirmed.
+
+**QA-02: The AI rate limit counts requests that make no AI call**
+- **Where:** Family, Buddy, Food summary. Category: broken features. **Severity: High.**
+- **Cause:** `AiRateLimitInterceptor` (40 per hour) covers every HTTP method on the listed paths. Each Family visit spends 2 units (`GET /meal-plan`, `GET /meal-plan/multi`), and so does manual food logging (`POST /food/entries`) and clearing the chat (`DELETE /mentor/chat/messages`).
+- **Steps:** open Family about 20 times within an hour, then tap a Buddy suggestion chip.
+- **Expected:** the chat answers.
+- **Actual:** `429` with "You've used the AI features a lot…". Family's meal plan also fails to load, and day checks on the Food summary return 429.
+- **Evidence:** about 70 `429 GET /api/family/meal-plan*` responses in the console log; Buddy chips returned 429.
+- **Suggested fix:** apply the interceptor only to requests that actually call the AI (the POSTs that generate content), not to reads or manual logging.
+- **Status:** Confirmed.
+
+**QA-03: Tapping outside a header panel also triggers what's underneath**
+- **Where:** Notifications and Account panels, at all widths. Category: accidental clicks. **Severity: Medium.**
+- **Steps:** open a panel, then tap a card on the page to dismiss it.
+- **Expected:** the panel closes and nothing else happens.
+- **Actual:** the panel closes on mousedown and the click still lands. At 375px it opened "Plan my day" (an AI call) and the Sleep log; at 1280px it opened the weekly review dialog.
+- **Suggested fix:** swallow the click that dismisses the panel (a capture-phase handler for that one click, or a transparent backdrop).
+- **Status:** Confirmed.
+
+**QA-04: "Buddy's read on this day" appears off-screen, so the tap looks dead**
+- **Where:** Food summary, "Day by day" columns, on phones. Category: no visible feedback. **Severity: Medium.**
+- **Actual:** at 390×844 the tapped column is at y=366, but its result or error renders at y=994, below the fold, and the page doesn't scroll.
+- **Evidence:** `.playwright-mcp/qa-summary-429.png`.
+- **Suggested fix:** scroll the result into view, or render it next to the chart.
+- **Status:** Confirmed.
+
+**QA-05: Touch targets under 44px on phones**
+- **Category:** touch usability. **Severity: Medium.** Measured identically at 320, 375, 390 and 430px.
+- **Smallest offenders:**
+  - Habits freeze chip: 228×22 (also under 24 on desktop).
+  - Timer volume slider track: 6px tall (also under 24 on desktop).
+  - Progress range chips (7/30 days, Score/Mood/Habits): 26 tall.
+  - Money fix chips (Set budgets, Create a goal, Add expense): 26 tall.
+  - Home task check, pause and edit buttons: 30×30, side by side.
+  - Home onboarding dismiss and Notes pin: 28×28.
+  - Home section "+ Add": 34×25.
+  - Calendar Day/Week tabs and "Set routine": 28 tall.
+  - Habit and reminder edit/delete: 34×34.
+  - Timer sound switch: 46×26.
+  - Mini-calendar arrows: 32×32.
+  - Header buttons and calendar days: 42×42.
+- **Suggested fix:** keep the icons the same size and extend the hit area to 44px with padding or a `::before`.
+- **Status:** Confirmed.
+
+**QA-06: "Mark today a rest day" fails when the account timezone differs from the device's**
+- **Where:** Habits. **Severity: Low.**
+- **Actual:** the client sends the device's local date (`todayKey()`), but the server checks it against the stored timezone and answers 400 "That day hasn't started yet…". A toast explains this.
+- **Status:** Confirmed only under test conditions (an account created through the API in UTC, with the device past midnight in IST). Real users who travel could hit it.
+
+**QA-07: "Add milestone" does nothing when the field is empty**
+- **Where:** Goals. **Severity: Low.**
+- **Actual:** the button looks enabled but gives no feedback and doesn't move focus to the field.
+- **Suggested fix:** focus the input and shake it, or disable the button until the field has text.
+- **Status:** Confirmed.
+
+**QA-08: The year heatmap can't be used with a keyboard**
+- **Where:** Progress. **Severity: Low.**
+- **Actual:** about 370 cells show a pointer cursor, but the grid is a `role=img` with `tabindex=-1`. Picking a day works only by mouse or touch, and cells are about 6px wide on phones (a nearest-day fallback helps).
+- **Status:** Confirmed.
+
+**QA-09: In landscape, content gets about half the screen**
+- **Where:** phones at 667×375. **Severity: Low.**
+- **Actual:** the header (81px) and bottom nav (83px) leave 212px for content.
+- **Evidence:** `.playwright-mcp/qa-landscape-calendar.png`.
+- **Status:** Confirmed.
+
+**QA-10: A second water tap within 600ms is silently ignored**
+- **Where:** Food. **Severity: Low.**
+- **Actual:** this is deliberate (`WATER_DOUBLE_TAP_MS`), but nothing tells the user. Someone tapping +250 twice for 500 ml gets 250.
+- **Suggested fix:** a brief "counted once" hint.
+- **Status:** Confirmed, by design.
+
+**QA-11: A click in the first frame of a dialog opening hits the page underneath**
+- **Severity: Low.** The window is under 50ms, so people are very unlikely to hit it.
+- **Status:** Suspected.
