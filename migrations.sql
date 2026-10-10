@@ -580,3 +580,14 @@ CREATE TABLE IF NOT EXISTS `idempotency_keys` (
 -- occurrence's row); attempts: sends tried, existing rows 0.
 ALTER TABLE reminder_dispatch_log ADD COLUMN snooze_of CHAR(36) NULL;
 ALTER TABLE reminder_dispatch_log ADD COLUMN attempts INT NOT NULL DEFAULT 0;
+
+-- The index tableCreationQueries.sql declares with tasks.goal_id (KEY
+-- ix_tasks_goal), missing from a database that got the column from the ALTER
+-- above. Guarded through information_schema, so it is safe to re-run on MySQL
+-- and TiDB alike; it touches no row.
+SET @gb_ix := (SELECT IF(COUNT(*) = 0, 'ALTER TABLE tasks ADD INDEX ix_tasks_goal (goal_id)', 'SELECT 1')
+               FROM information_schema.statistics
+               WHERE table_schema = DATABASE() AND table_name = 'tasks' AND index_name = 'ix_tasks_goal');
+PREPARE gb_stmt FROM @gb_ix;
+EXECUTE gb_stmt;
+DEALLOCATE PREPARE gb_stmt;

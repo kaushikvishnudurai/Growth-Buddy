@@ -30,6 +30,11 @@ import org.springframework.web.servlet.HandlerInterceptor;
 public class IdempotencyInterceptor implements HandlerInterceptor {
 
     /** Longer than any handler runs; past it an in-progress row is a dead instance's. */
+    // ponytail: a handler still alive past STALE_MS gets taken over, and then both
+    // it and the retry run. Ceiling: a keyed write that takes over 5 minutes, which
+    // no handler here is meant to. Upgrade path: a
+    // heartbeat that refreshes created_at while the handler runs, or a claim token
+    // in the row that complete() must match.
     static final long STALE_MS = 5 * 60_000L;
     private static final int MAX_PATH = 255;
 
