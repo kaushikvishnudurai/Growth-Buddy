@@ -166,6 +166,10 @@ the Coach tab) call `shareSummary`.
   Account writes go through the injected `accountRequest`, which app.js queues behind unsent ledger writes.
 - "Paid from" / "Received in" = `accountPicker` over `segmented`; the expense modal defaults to
   `settings.lastAccountId`, bills to the first bank/card account (same rule as the WhatsApp path).
+  The picker lists active accounts plus `initial` when it is archived, so editing an entry never
+  silently moves it. An edit is booked by `editedHomeAmount` (money-core.js): an untouched amount keeps
+  `amount` + `orig` as stored, a changed one on the same account keeps the row's currency and rate,
+  only a move to another account goes through `toHomeAmount`.
 - `openExpenseModal(money, save, prefillDate, existing)` also edits: same id, reflection and createdAt kept;
   the expense row's text is the edit button (`gb-money-exp-edit`), delete sits in the dialog and the row.
 - `weekBars(expenses, {selected, onPick, noSpendDays})`: amount over each bar, weekday + date under, "No log"
