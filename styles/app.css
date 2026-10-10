@@ -43,6 +43,10 @@ body {
      browser's own pull-to-refresh only ever dragged the whole app around. */
   overscroll-behavior: none;
   font-family: var(--font-body);
+  /* A word longer than its box (a pasted URL, a long name) breaks instead of
+     running under the tag beside it and off the card. Inherited, so every text
+     element gets it; break-word, not anywhere, so it leaves min-content sizing alone. */
+  overflow-wrap: break-word;
   color: var(--fg1);
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
@@ -2151,7 +2155,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   transition: background var(--dur-fast);
 }
 .gb-switch.is-on {
-  background: var(--iris-500);
+  background: var(--brand-fill);
 }
 .gb-switch-knob {
   position: absolute;
@@ -5188,6 +5192,16 @@ button.gb-food-level {
   flex: none;
   min-width: 120px;
 }
+/* A reminder's start + end share one row; under 400px each gets ~92px and the
+   clock icon (24px) clipped "09:00 AM" to "09:00 A". A tap opens the picker on
+   a phone anyway, so the icon goes and the text fits (90px at 320).
+   ponytail: sized for en "AM/PM"; a locale with a longer day-period would need
+   the end field to wrap onto its own line. */
+@media (max-width: 400px) {
+  .gb-input--time::-webkit-calendar-picker-indicator {
+    display: none;
+  }
+}
 .gb-input--about {
   min-height: 92px;
   max-height: 180px;
@@ -5216,10 +5230,13 @@ button.gb-food-level {
 .gb-food-form {
   gap: 14px;
 }
+/* Side by side while each half can hold a native date field (159px); below that
+   they stack. Two fixed halves cut a phone's date to "dd/mm/y" and squeezed the
+   food amount, beside its pcs/g toggle, to one visible digit. */
 .gb-food-pair,
 .gb-form-pair {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
   gap: 10px;
 }
 .gb-food-field,

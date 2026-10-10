@@ -25,7 +25,7 @@ Every screen builds DOM from these. Element-returning factories, no framework, n
 | `ProgressRing({value, size, stroke, color, children})` | SVG ring; children go in the middle |
 | `Check({done, onToggle, color, label})` | habit/task toggle; pass `label` (the item's name) so each one's aria-label is distinct. Paints the tick + pop itself and calls `onToggle` 400ms later (= `gb-pop`), since `onToggle` re-renders and would destroy the button mid-press |
 | `Avatar({...})` | |
-| `BottomNav({active, onNav, onMore, features, moreOpen, layout})` | |
+| `BottomNav({active, onNav, onMore, features, moreOpen, layout})` | A bar slot freed by a turned-off feature is refilled from the next enabled overflow item, up to the user's own primary count (capped at `NAV_MAX_PRIMARY`) |
 | `moreSections(overflow, active, onNav)` | Body of the "More" sheet: ungrouped items first, then one headed grid per `NAV_GROUPS` entry that still has members. Preserves the user's own order within a group. |
 | `NAV_CATALOG` / `resolveNavLayout(saved)` | `NAV_PRIMARY` + `NAV_OVERFLOW`, `NAV_MAX_PRIMARY = 5`. `resolveNavLayout` reconciles a saved layout against the catalog and drops entries whose feature is off (`navFeatureOn`) |
 | `NAV_GROUPS` | Headings for the "More" sheet. Every catalog entry carries a `group` (`plan` / `track` / `people`); an entry with none renders ungrouped and first. |

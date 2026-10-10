@@ -444,7 +444,8 @@ function score() {
     sum += tasks.filter((t) => t.done).length / tasks.length;
     parts++;
   }
-  if (state.habits.length) {
+  // Habits switched off count as none, as on the server.
+  if (featureOn('habits') && state.habits.length) {
     sum += state.habits.filter((h) => h.doneToday).length / state.habits.length;
     parts++;
   }
@@ -2618,7 +2619,12 @@ async function parseQuickAdd(text) {
   });
   if (!res || res.configured === false) return { configured: false, intents: [] };
   if (res.unavailable) return { configured: true, unavailable: true, intents: [] };
-  return { configured: true, intents: res.intents || [], note: res.note };
+  // A sentence can't write into a tracker the user switched off.
+  const INTENT_FEATURE = { habit: 'habits', water: 'water', expense: 'money' };
+  const intents = (res.intents || []).filter(
+    (it) => !INTENT_FEATURE[it.type] || featureOn(INTENT_FEATURE[it.type])
+  );
+  return { configured: true, intents, note: res.note };
 }
 
 /* One intent, in the words the user would use. This is what they are agreeing
@@ -6764,6 +6770,7 @@ function openAddSheet() {
     },
     {
       key: 'habit',
+      feature: 'habits',
       icon: 'repeat',
       label: 'Habit',
       sub: 'Something to do every day',
@@ -6774,6 +6781,7 @@ function openAddSheet() {
     },
     {
       key: 'note',
+      feature: 'notes',
       icon: 'notebook-pen',
       label: 'Note',
       sub: 'Jot something down',
@@ -6784,6 +6792,7 @@ function openAddSheet() {
     },
     {
       key: 'reminder',
+      feature: 'calendar',
       icon: 'calendar-plus',
       label: 'Reminder',
       sub: 'Opens your calendar to pick a day',
@@ -6827,7 +6836,9 @@ function openAddSheet() {
     h(
       'div',
       { class: 'gb-modal-opts' },
-      opts.map((o) =>
+      opts
+        .filter((o) => !o.feature || featureOn(o.feature))
+        .map((o) =>
         h(
           'button',
           { type: 'button', class: 'gb-modal-opt', onclick: o.action },

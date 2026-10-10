@@ -403,7 +403,7 @@ function TodayPlanCard({ water, wellness, onPlanToday }) {
   //     showing "7.5h · Good", so the chip said less than the thing beneath it.
   // Finish everything and the row empties out, which is the point.
   const chips = [];
-  if (waterPct < 100) chips.push({ label: waterPct + '% water' });
+  if (water && waterPct < 100) chips.push({ label: waterPct + '% water' });
   if (!sleep) chips.push({ label: 'Sleep not logged' });
   if (!mood) chips.push({ label: 'Mood not logged' });
   return Card({
@@ -2237,8 +2237,9 @@ function ScreenDashboard({
 
   // One renderer per widget id. Each returns the card node(s) for that widget.
   const renderers = {
-    score: () => ScoreCard({ score, tasks, habits }),
-    plan: () => TodayPlanCard({ water, wellness, onPlanToday }),
+    // A turned-off feature drops out of the cards that summarise it, not just its own card.
+    score: () => ScoreCard({ score, tasks, habits: on('habits') ? habits : [] }),
+    plan: () => TodayPlanCard({ water: on('water') ? water : null, wellness, onPlanToday }),
     wellness: () => WellnessCard({ wellness, onAddSleep, onAddMood }),
     tasks: () => [
       SectionTitle({ title: "Today's tasks", action: '+ Add', onAction: onAddTask }),

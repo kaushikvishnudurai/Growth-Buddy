@@ -1011,9 +1011,11 @@
   font-size: var(--text-sm);
   color: var(--fg1);
 }
+/* 120px, but it gives way: on a 320px phone "Entertainment" can't shrink, and a
+   fixed box was pushed 18px past the sheet's edge. */
 .gb-money-budget-field .gb-input {
-  flex: none;
-  width: 120px;
+  flex: 0 1 120px;
+  min-width: 0;
 }
 
 /* ---- Purchase advisor ---- */

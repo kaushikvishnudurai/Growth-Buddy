@@ -7,9 +7,13 @@ import static org.mockito.Mockito.when;
 
 import com.growthbuddy.habit.HabitService;
 import com.growthbuddy.task.TaskRepository;
+import com.growthbuddy.user.User;
 import com.growthbuddy.user.UserClock;
+import com.growthbuddy.user.UserRepository;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -30,9 +34,10 @@ class ScoreServiceTest {
     @Mock HabitService habits;
     @Mock DailyScoreRepository scores;
     @Mock UserClock clock;
+    @Mock UserRepository users;
 
     private ScoreService service() {
-        return new ScoreService(tasks, habits, scores, clock);
+        return new ScoreService(tasks, habits, scores, clock, users);
     }
 
     private void stub(long taskTotal, long taskDone, int habitDone, int habitTotal) {
@@ -68,6 +73,19 @@ class ScoreServiceTest {
         // tasks 1/2 = 0.5, habits 3/3 = 1.0  ->  avg 0.75  ->  75
         stub(2, 1, 3, 3);
         assertThat(service().today(USER).score()).isEqualTo(75);
+    }
+
+    /** Habits switched off in Settings: 1/1 tasks is 100, not held at 50 by unseen habits. */
+    @Test
+    void habitsFeatureOffIgnoresHabits() {
+        User u = new User();
+        u.setFeaturePrefs(Map.of("habits", false));
+        when(users.findById(USER)).thenReturn(Optional.of(u));
+        when(tasks.countByUserIdAndPausedFalseAndDeletedAtIsNull(USER)).thenReturn(1L);
+        when(tasks.countByUserIdAndDoneTrueAndPausedFalseAndDeletedAtIsNull(USER)).thenReturn(1L);
+        ScoreService.ScoreResponse r = service().today(USER);
+        assertThat(r.score()).isEqualTo(100);
+        assertThat(r.habitsTotal()).isZero();
     }
 
     @Test

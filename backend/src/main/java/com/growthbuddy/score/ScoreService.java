@@ -2,6 +2,7 @@ package com.growthbuddy.score;
 
 import com.growthbuddy.habit.HabitService;
 import com.growthbuddy.user.UserClock;
+import com.growthbuddy.user.UserRepository;
 import com.growthbuddy.task.TaskRepository;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -14,6 +15,8 @@ import org.springframework.transaction.annotation.Transactional;
  * categories the user actually has. With both tasks and habits it's a 50/50
  * split; with only one category it's that category's completion ratio.
  * (Avoids the prior bug where 1/1 tasks + 0 habits scored 50.)
+ * Habits switched off in Settings count as none: the user can't see or tick
+ * them, so they mustn't hold the score at half.
  */
 @Service
 public class ScoreService {
@@ -22,13 +25,25 @@ public class ScoreService {
     private final HabitService habits;
     private final DailyScoreRepository scores;
     private final UserClock clock;
+    private final UserRepository users;
+
+    private static final HabitService.TodayCounts NO_HABITS = new HabitService.TodayCounts(0, 0);
 
     public ScoreService(TaskRepository tasks, HabitService habits, DailyScoreRepository scores,
-                        UserClock clock) {
+                        UserClock clock, UserRepository users) {
         this.tasks = tasks;
         this.habits = habits;
         this.scores = scores;
         this.clock = clock;
+        this.users = users;
+    }
+
+    /** Same rule as the client's featureOn: only an explicit false turns it off. */
+    private boolean habitsOn(UUID userId) {
+        return users.findById(userId)
+                .map(u -> u.getFeaturePrefs() == null
+                        || !Boolean.FALSE.equals(u.getFeaturePrefs().get("habits")))
+                .orElse(true);
     }
 
     public record ScoreResponse(
@@ -41,7 +56,7 @@ public class ScoreService {
     public ScoreResponse today(UUID userId) {
         long taskTotal = tasks.countByUserIdAndPausedFalseAndDeletedAtIsNull(userId);
         long taskDone = tasks.countByUserIdAndDoneTrueAndPausedFalseAndDeletedAtIsNull(userId);
-        HabitService.TodayCounts hc = habits.todayCounts(userId);
+        HabitService.TodayCounts hc = habitsOn(userId) ? habits.todayCounts(userId) : NO_HABITS;
         return build(clock.today(userId), taskDone, taskTotal, hc.done(), hc.total());
     }
 
@@ -65,7 +80,7 @@ public class ScoreService {
                 day.plusDays(1).atStartOfDay(zone).toInstant());
         long open = tasks.countByUserIdAndPausedFalseAndDeletedAtIsNull(userId)
                 - tasks.countByUserIdAndDoneTrueAndPausedFalseAndDeletedAtIsNull(userId);
-        HabitService.TodayCounts hc = habits.countsOn(userId, day);
+        HabitService.TodayCounts hc = habitsOn(userId) ? habits.countsOn(userId, day) : NO_HABITS;
         return build(day, done, done + open, hc.done(), hc.total());
     }
 

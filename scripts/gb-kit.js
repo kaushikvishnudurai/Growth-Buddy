@@ -459,11 +459,16 @@ function BottomNav({ active, onNav, onMore, features, moreOpen, layout } = {}) {
   // Resolve the user's saved layout (or defaults) to renderable destinations,
   // dropping any whose feature is turned off.
   const byId = new Map(NAV_CATALOG.map((i) => [i.id, i]));
-  const visible = resolveNavLayout(layout)
+  const resolved = resolveNavLayout(layout);
+  const visible = resolved
     .map((x) => ({ def: byId.get(x.id), primary: x.primary }))
     .filter((x) => x.def && navFeatureOn(features, x.def.feature));
   let primaryItems = visible.filter((x) => x.primary).map((x) => x.def);
   const overflowItems = visible.filter((x) => !x.primary).map((x) => x.def);
+  // A turned-off feature frees its bar slot; the next enabled "More" item takes
+  // it, or turning off Habits and Buddy left a phone bar of Home, Progress, More.
+  const slots = Math.min(NAV_MAX_PRIMARY, resolved.filter((x) => x.primary).length);
+  while (primaryItems.length < slots && overflowItems.length) primaryItems.push(overflowItems.shift());
   // Bar can only hold so many — surplus primary spill to the front of "More".
   let spilled = [];
   if (primaryItems.length > NAV_MAX_PRIMARY) {
