@@ -169,6 +169,23 @@ function typingBubble() {
 
 const OFFLINE = 'You are offline. Messages to Buddy need a connection.';
 
+/* What streamReply throws once the stream breaks. Words that already arrived
+   are kept as .partial whether the break was a Stop, a clean close with no done,
+   or the line dropping mid-read (a bare network TypeError): the server saved the
+   question, so a Retry would ask it twice. The server's own error event, and a
+   break before the first word, pass through, and an empty assistant row is taken
+   back out so it does not sit under the failed message. */
+export function streamFailure(err, got, row) {
+  const stopped = !!err && err.name === 'AbortError';
+  if (got && !(err && err.serverError)) {
+    const message = stopped ? 'Stopped.' : 'The reply was cut off.';
+    return Object.assign(new Error(message), { stopped, partial: got, row });
+  }
+  if (row && !got) row.remove();
+  if (stopped) return Object.assign(new Error('Stopped.'), { stopped: true });
+  return err;
+}
+
 /**
  * Split buffered Server-Sent Events text into whole events. Pure, so it is
  * testable: returns {events: [{event, data}], rest}, where rest is the partial
@@ -655,6 +672,7 @@ function ScreenMentor({ api, threadId: initialThread, starter }) {
             if (row) row.remove();
             const fail = new Error((ev.data && ev.data.message) || 'Could not reach Buddy.');
             fail.status = ev.data && ev.data.status;
+            fail.serverError = true;
             throw fail;
           }
         }
@@ -662,10 +680,7 @@ function ScreenMentor({ api, threadId: initialThread, starter }) {
       // Closed with no done: what arrived is what the server kept.
       throw Object.assign(new Error('The reply was cut off.'), { partial: got, row });
     } catch (err) {
-      if (err && err.name === 'AbortError') {
-        throw Object.assign(new Error('Stopped.'), { stopped: true, partial: got, row });
-      }
-      throw err;
+      throw streamFailure(err, got, row);
     } finally {
       stopCtl = null;
     }

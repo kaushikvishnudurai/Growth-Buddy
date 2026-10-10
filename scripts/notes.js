@@ -863,7 +863,7 @@ function sheet({ title, body, primary, onPrimary, headActions, onDismiss }) {
   /* One commit path for every way out of the sheet, so a backdrop tap landing
      while Save is already in flight can't fire a second write. A failure keeps
      the sheet open and toasts — whatever was typed stays on screen to retry. */
-  async function commit(run) {
+  async function commit(run, fallback) {
     if (busy) return;
     busy = true;
     try {
@@ -872,7 +872,7 @@ function sheet({ title, body, primary, onPrimary, headActions, onDismiss }) {
     } catch (err) {
       busy = false;
       primaryBtn.disabled = false;
-      toast.error(err, 'Could not save.');
+      toast.error(err, fallback || 'Could not save.');
     }
   }
   const { sheet: card, close } = openOverlay({
@@ -920,7 +920,7 @@ function sheet({ title, body, primary, onPrimary, headActions, onDismiss }) {
     )
   );
   refreshIcons();
-  return { close, card };
+  return { close, card, commit };
 }
 
 /* Colour row. `null` is a real choice (no colour), so it gets a swatch too. */
@@ -1580,7 +1580,9 @@ function ScreenNotes({
     // Sanitised on the way out, like every paint of a note body.
     bodyEl.innerHTML = sanitize(note.body);
     let why = '';
-    if (offline && note.bodyDropped) {
+    if (String(note.id).startsWith('tmp-')) {
+      why = 'This note is still waiting to sync. Edit it once it has.';
+    } else if (offline && note.bodyDropped) {
       why = 'This note is too big to keep offline. It opens when you are back online.';
     } else if (note.bodyTrimmed) {
       why = offline
@@ -1676,6 +1678,11 @@ function ScreenNotes({
   /* ---- edit sheet: everything a note can do lives here ---- */
   const opening = new Set();
   async function openNote(note, card) {
+    /* Created offline and still in the outbox: the server has no such id, so a
+       save can't land (onUpdate refuses it), Close would keep failing on that and
+       the edit draft would PUT to a 404. Read it until it has synced; the next
+       load swaps in the real id. */
+    if (String(note.id).startsWith('tmp-')) return readOnly(note);
     /* A list item has no photos in its body. Editing that copy would save it
        back and delete them, so the whole note is fetched first. */
     if (note.bodyTrimmed) {
@@ -1867,7 +1874,9 @@ function ScreenNotes({
     );
 
     /* Archive is a save that also moves the note out of this list, so it goes
-       through persist (one PATCH, same 409 check) and closes the sheet itself. */
+       through persist (one PATCH, same 409 check) by way of the sheet's commit:
+       that sets busy, so an Escape or backdrop tap mid-PATCH can't fire a second
+       persist on the stale baseUpdatedAt (a false 409), and closes on success. */
     const wasArchived = !!note.archivedAt;
     const archiveBtn = h(
       'button',
@@ -1878,23 +1887,16 @@ function ScreenNotes({
         title: wasArchived ? 'Unarchive: back to your notes' : 'Archive: keep it, out of the list',
         onclick: async () => {
           archiveBtn.disabled = true;
-          try {
+          await open.commit(async () => {
             const done = await persist(false, { archived: !wasArchived });
-            open.close();
             if (!done) return; // took the newer copy instead; it reopens itself
             refreshCounts();
             if (wasArchived) toast.success('Back in your notes.');
             else if (toast.action) {
               toast.action('Note archived.', 'Undo', () => setArchived(note, false));
             }
-          } catch (err) {
-            toast.error(
-              err,
-              wasArchived ? 'Could not unarchive that note.' : 'Could not archive that note.'
-            );
-          } finally {
-            archiveBtn.disabled = false;
-          }
+          }, wasArchived ? 'Could not unarchive that note.' : 'Could not archive that note.');
+          archiveBtn.disabled = false;
         },
       },
       Icon(wasArchived ? 'archive-restore' : 'archive', { size: 16, sw: 2.2 })
@@ -1946,6 +1948,7 @@ function ScreenNotes({
       }
       editStored = false; // the PATCH dropped the draft
       Object.assign(note, saved);
+      opened = snapshot(); // saved: the sheet now matches the server again
       // Archived (or brought back) from here: it belongs to the other list now.
       if (!inView(note)) notes = notes.filter((n) => n.id !== note.id);
       sortNotes();
@@ -1963,7 +1966,7 @@ function ScreenNotes({
        would jump it to the top. */
     const snapshot = () =>
       JSON.stringify([title.value.trim(), ed.read(), color, pinned, labelEd.peek()]);
-    const opened = snapshot();
+    let opened = snapshot();
 
     const open = sheet({
       title: 'Note',

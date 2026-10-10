@@ -1,7 +1,7 @@
 # scripts/mentor.js — Buddy chat screen
 
 Exports `ScreenMentor({api, threadId, starter})` and the pure helpers `richParts`, `crisisMatch`,
-`parseSse`, `actionChips`, `streamVisible` (checked by `node scripts/mentor.test.mjs`). Lazy-loaded
+`parseSse`, `actionChips`, `streamVisible`, `streamFailure` (checked by `node scripts/mentor.test.mjs`). Lazy-loaded
 from app.js's `SCREENS.mentor`, which passes `api: mentorApi()` — `get(threadId?)` (none → `/api/mentor/chat`,
 the newest thread; a 404 falls back to it), `post/stream(…, threadId)` → `/api/mentor/threads/{id}/messages[/stream]`,
 `clear(threadId)`, `threads {list, create, rename, remove}`, `onThread(id)` (app.js remembers it in
@@ -32,7 +32,7 @@ Owns its thread and messages locally so a keystroke never round-trips global sta
 | `append(node)` | everything else. Removes the welcome if showing |
 | `load()` | GET. A failure shows **only** the error + Retry (`.gb-mentor-loadfail`), chips hidden — the welcome under an error used to invite a send into a chat that never loaded. `loaded` gates send |
 | `failRow(message, onRetry)` | error + Retry under a failed send |
-| `streamReply(text, typing)` | reads `api.stream(text, signal)` with a `ReadableStream` reader + `parseSse`. `delta {text}` → plain `textContent` (no rich render mid-stream: half a `**` would flash); `done {message, userMessage}` → `renderRich`, resolves; `error {status, message}` → throws with the server's words. Closed without `done` → throws `{partial, row}`; `AbortError` (Stop) → throws `{stopped, partial, row}` |
+| `streamReply(text, typing)` | reads `api.stream(text, signal)` with a `ReadableStream` reader + `parseSse`. `delta {text}` → plain `textContent` (no rich render mid-stream: half a `**` would flash); `done {message, userMessage}` → `renderRich`, resolves; `error {status, message}` → throws with the server's words. Every other break goes through `streamFailure(err, got, row)` (exported, tested): once any word arrived, a close without `done`, a Stop (`AbortError`) or a network `TypeError` mid-read all throw `{partial, row}` (+`stopped` for Stop); the server's `error` event and a break before the first word pass through, and an empty assistant row is removed |
 | `send()` | appends user bubble, crisis card if `crisisMatch`, typing bubble. Tries `streamReply` when `api.stream` exists; **only an error carrying `.fallback`** (no response, 404/405, not `text/event-stream` — thrown by app.js `apiStream`) drops to `api.post`; a 429 or Stop does not |
 | `clearAll()` | `confirmDialog` → `api.clear(threadId)` → `renderMessages([])` |
 | `setTitle` / `refreshTitle` | the thread bar's name; `refreshTitle` re-reads the list after a send into a thread still on a starting title (the server auto-titles it) |
