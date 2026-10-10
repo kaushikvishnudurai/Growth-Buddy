@@ -2693,6 +2693,8 @@ async function loadData() {
     state.reminders = reminders;
     // Offline writes the server hasn't seen yet, then send them. Not awaited:
     // first paint doesn't wait on a replay; the flush refetches what it touched.
+    // The queue itself is read only once CacheStorage has hydrated it.
+    await CacheStorage.ready();
     overlayOutbox();
     flushOutbox();
     reSyncDeviceAlarms();
@@ -3032,6 +3034,8 @@ async function toggleTask(id) {
   // achievement, and nodding at it would make the nod meaningless.
   if (nowDone) buddyReact('yes');
   // Offline (or a task whose create is still queued): the tick stays, the PATCH waits in the outbox.
+  // One key for the live PATCH and its replay: a flip that landed unanswered must not flip back.
+  const idemKey = newIdemKey();
   const queueToggle = () =>
     queueWrite({
       method: 'PATCH',
@@ -3039,6 +3043,7 @@ async function toggleTask(id) {
       kind: 'task.toggle',
       toggleKey: 'task:' + realId(id),
       local: { id },
+      idemKey,
     });
   try {
     if (isTempId(realId(id))) {
@@ -3047,6 +3052,7 @@ async function toggleTask(id) {
     }
     const updated = await api('/api/tasks/' + encodeURIComponent(realId(id)) + '/toggle', {
       method: 'PATCH',
+      headers: { 'Idempotency-Key': idemKey },
     });
     const painted = toggleSignature();
     state.tasks = state.tasks.map((t) => (t.id === id || t.id === updated.id ? mapTask(updated) : t));
@@ -3334,9 +3340,11 @@ async function refreshCurrentUser() {
 
 async function createTask(body) {
   let created;
+  const idemKey = newIdemKey(); // this tap, live or replayed
   try {
     created = await api('/api/tasks', {
       method: 'POST',
+      headers: { 'Idempotency-Key': idemKey },
       body: JSON.stringify(body),
     });
   } catch (err) {
@@ -3344,7 +3352,7 @@ async function createTask(body) {
     // Offline: the row goes in now under a temp id; the POST waits in the outbox.
     const local = mapTask({ ...body, id: tempId(), done: false, paused: false });
     state.tasks = [local, ...state.tasks];
-    queueWrite({ method: 'POST', path: '/api/tasks', body, kind: 'task.create', tempId: local.id, local });
+    queueWrite({ method: 'POST', path: '/api/tasks', body, kind: 'task.create', tempId: local.id, local, idemKey });
     landSoon('[data-task-id="' + local.id + '"]');
     return;
   }
@@ -3399,11 +3407,12 @@ function pauseTask(task) {
 
 async function deleteTask(id) {
   const path = '/api/tasks/' + encodeURIComponent(realId(id));
-  const queue = () => queueWrite({ method: 'DELETE', path, kind: 'task.delete', local: { id } });
+  const idemKey = newIdemKey();
+  const queue = () => queueWrite({ method: 'DELETE', path, kind: 'task.delete', local: { id }, idemKey });
   if (isTempId(realId(id))) queue(); // its create is still queued: both are cancelled
   else
     try {
-      await api(path, { method: 'DELETE' });
+      await api(path, { method: 'DELETE', headers: { 'Idempotency-Key': idemKey } });
     } catch (err) {
       if (!networkError(err)) throw err;
       queue();
@@ -4131,7 +4140,10 @@ const realId = (id) => outboxIds.get(id) || id;
 /* No response at all. A 5xx is the server answering; those roll back and toast. */
 const networkError = (err) => !navigator.onLine || !err || !err.status;
 
-function queueWrite(op) {
+/* Async: the outbox lives in the Cache API, and until CacheStorage has hydrated
+   it reads as empty: an enqueue then would overwrite the persisted queue. */
+async function queueWrite(op) {
+  await CacheStorage.ready();
   const r = outbox.enqueue(op);
   if (r !== 'cancelled') pushToast(SAVED_ON_PHONE, 'info');
   paintOutboxChip();
@@ -4165,6 +4177,7 @@ const queuedNotes = () =>
     .map((op) => op.local);
 
 async function flushOutbox() {
+  await CacheStorage.ready();
   if (!state.user || !outbox.size()) return paintOutboxChip();
   const out = await outbox.flush(api);
   Object.entries(out.idMap).forEach(([tmp, id]) => outboxIds.set(tmp, id));
@@ -9851,9 +9864,11 @@ async function addReminder(key, text, time, tag, repeat, until, sound, endTime, 
     };
     let created;
     let queued = false;
+    const idemKey = newIdemKey(); // this tap, live or replayed
     try {
       created = await api('/api/reminders', {
         method: 'POST',
+        headers: { 'Idempotency-Key': idemKey },
         body: JSON.stringify(body),
       });
     } catch (err) {
@@ -9875,7 +9890,7 @@ async function addReminder(key, text, time, tag, repeat, until, sound, endTime, 
       render();
     }
     if (queued)
-      queueWrite({ method: 'POST', path: '/api/reminders', body, kind: 'reminder.create', tempId: created.id, local: created });
+      queueWrite({ method: 'POST', path: '/api/reminders', body, kind: 'reminder.create', tempId: created.id, local: created, idemKey });
     else toastSuccess('Reminder added.');
     repaintReminderSettings();
     return created;
@@ -12956,12 +12971,12 @@ const SCREENS = {
               return queued ? Promise.resolve(queued) : api('/api/notes/' + encodeURIComponent(realId(id)));
             },
             // Text only goes in the outbox offline: a photo is too big to sit in it.
-            onCreate: (body) =>
-              api('/api/notes', { method: 'POST', body: JSON.stringify(body) }).catch((err) => {
+            onCreate: (body, idemKey = newIdemKey()) =>
+              api('/api/notes', { method: 'POST', headers: { 'Idempotency-Key': idemKey }, body: JSON.stringify(body) }).catch((err) => {
                 if (!networkError(err) || body.cover || /<img/i.test(body.body || '')) throw err;
                 const now = new Date().toISOString();
                 const local = { ...body, id: tempId(), pinned: false, createdAt: now, updatedAt: now };
-                queueWrite({ method: 'POST', path: '/api/notes', body, kind: 'note.create', tempId: local.id, local });
+                queueWrite({ method: 'POST', path: '/api/notes', body, kind: 'note.create', tempId: local.id, local, idemKey });
                 return local;
               }),
             onUpdate: (id, body) =>

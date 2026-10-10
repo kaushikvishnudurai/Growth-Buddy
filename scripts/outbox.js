@@ -23,10 +23,12 @@
                                       (superseded); the delete is queued
 
    flush(apiFn) sends FIFO and stops at the first op that can't go yet: no
-   response at all, a 5xx, or 401 / 408 / 429. A 409 is removed and surfaced in
-   `conflicts` (somebody else changed it; the app says so and refetches). Any
-   other 4xx is a refusal: dropped, with every queued op naming its temp id,
-   and reported in `dropped`.
+   response at all, a 5xx, or 401 / 408 / 429. The fifth 5xx for one op
+   (`fails5xx`, stored with it) drops it instead, so one poisoned op can't hold
+   the queue forever. A 404 to a DELETE is success (already gone). A 409 is
+   removed and surfaced in `conflicts` (somebody else changed it; the app says
+   so and refetches). Any other 4xx is a refusal: dropped, with every queued op
+   naming its temp id, and reported in `dropped`.
 
    Every op carries an `idemKey`, minted at enqueue and stored with it, sent as
    the `Idempotency-Key` header on every attempt. A POST that landed but whose
@@ -50,6 +52,9 @@ export function newIdemKey() {
   if (c && typeof c.randomUUID === 'function') return c.randomUUID();
   return tempId().replace('tmp-', 'idem-');
 }
+
+/* 5xx answers an op may get before it is dropped (counted across flushes). */
+const MAX_5XX = 5;
 
 /* Keep trying later, or give up on it. */
 function retryable(err) {
@@ -169,7 +174,17 @@ export function createOutbox(storage, keyFn) {
         res = await apiFn(op.path, opts);
       } catch (err) {
         sendingId = null;
-        if (retryable(err)) {
+        // Already gone (an earlier attempt landed, or another device deleted it): done.
+        if (op.method === 'DELETE' && err.status === 404) {
+          store(list().filter((x) => x.id !== op.id));
+          out.sent.push({ op, result: null });
+          continue;
+        }
+        // A 5xx every time would hold the whole queue behind it forever: the
+        // MAX_5XX-th one drops it like a refusal, so the rest can go.
+        const fails = err.status >= 500 ? (op.fails5xx || 0) + 1 : 0;
+        if (retryable(err) && fails < MAX_5XX) {
+          if (fails) store(list().map((x) => (x.id === op.id ? { ...x, fails5xx: fails } : x)));
           out.stopped = true;
           break;
         }

@@ -226,7 +226,11 @@ it silently landed on Home. Don't reintroduce a second list.
   Notes). `outboxChip()` — "N changes waiting to sync" — sits in `profileDropdown()`;
   `paintOutboxChip()` repaints just the profile slot. Each op's `idemKey` goes out as
   `Idempotency-Key`, so a POST whose answer was lost is answered from the server's replay cache, not
-  run twice (CODEMAP `common/`). ponytail: a temp note can't be edited until it syncs.
+  run twice (CODEMAP `common/`). The task / reminder / note writes mint that key **per tap**, send it
+  on the live request too and pass it to `queueWrite` (as water and Money do): the live attempt and
+  its replay are one request to the server. `queueWrite` and `flushOutbox` are async and await
+  `CacheStorage.ready()`, as does loadData before `overlayOutbox()`: until the Cache API has
+  hydrated, the queue reads as empty and an enqueue would overwrite the persisted one. ponytail: a temp note can't be edited until it syncs.
 - **`render()` keeps focus and scroll.** Same screen: focus goes back to the same control
   (`focusLocator` / `refocus` in `a11y.js`: id, else a data-* key, else child position), and a11y.js
   does the same when a dialog closes over a re-rendered screen. A real screen change focuses

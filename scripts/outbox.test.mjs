@@ -283,6 +283,47 @@ for (const status of [500, 503, 401, 408, 429]) {
   assert.equal(ob.size(), 1);
 }
 
+// A 5xx every time: kept for four flushes, dropped on the fifth so the op
+// behind it finally goes. The drop is reported like any refusal.
+{
+  const { ob } = fresh();
+  ob.enqueue({ method: 'POST', path: '/api/tasks', body: { title: 'poison' } });
+  ob.enqueue({ method: 'POST', path: '/api/tasks', body: { title: 'fine' } });
+  const api = mockApi((path, opts) => {
+    if (JSON.parse(opts.body).title === 'poison') throw httpErr(500, 'boom');
+    return { id: 'srv' };
+  });
+  for (let i = 0; i < 4; i++) {
+    const out = await ob.flush(api);
+    assert.equal(out.stopped, true);
+    assert.equal(ob.size(), 2);
+  }
+  const out = await ob.flush(api);
+  assert.equal(out.dropped.length, 1);
+  assert.equal(out.dropped[0].status, 500);
+  assert.equal(out.sent.length, 1);
+  assert.equal(ob.size(), 0);
+}
+
+// A 404 to a replayed DELETE is done, not a refusal: it is already gone.
+{
+  const { ob } = fresh();
+  ob.enqueue({ method: 'DELETE', path: '/api/tasks/9', kind: 'task.delete' });
+  const out = await ob.flush(mockApi(() => {
+    throw httpErr(404, 'not found');
+  }));
+  assert.equal(out.dropped.length, 0);
+  assert.equal(out.sent.length, 1);
+  assert.equal(ob.size(), 0);
+}
+
+// A caller's idemKey (the one its live request already sent) is the one kept.
+{
+  const { ob } = fresh();
+  ob.enqueue({ method: 'POST', path: '/api/tasks', body: { title: 'a' }, idemKey: 'live-key-1' });
+  assert.equal(ob.list()[0].idemKey, 'live-key-1');
+}
+
 // Garbage in storage is an empty queue, not a crash.
 {
   const s = memStorage();
