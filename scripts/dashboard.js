@@ -85,7 +85,9 @@ function OnboardingCard({
             'aria-label': 'Dismiss',
             onclick: () => {
               CacheStorage.setItem(ONBOARD_KEY, '1');
-              if (onOnboardDismiss) onOnboardDismiss();
+              // On a fresh account the checklist is the whole Home, so hiding it
+              // left a blank screen; ask for a re-render to bring the full Home back.
+              if (onOnboardDismiss) onOnboardDismiss({ rerender: true });
               const el = document.querySelector('.gb-onboard');
               if (el) el.closest('.gb-dash-block').style.display = 'none';
             },

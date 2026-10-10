@@ -7928,7 +7928,11 @@ const SCREENS = {
         onPlanToday: openDailyPlan,
         onAddSleep: openSleepSchedule,
         onAddMood: openMoodCheckin,
-        onOnboardDismiss: () => saveUiPrefs({ onboardingDone: true }),
+        onOnboardDismiss: (opts) => {
+          saveUiPrefs({ onboardingDone: true });
+          // Only from the ✕ click — the all-done path fires mid-render.
+          if (opts && opts.rerender) render();
+        },
         onAddSuggestedReminder: addSuggestedReminder,
         money: state.money,
         onSaveMoney: saveMoney,

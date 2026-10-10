@@ -16,7 +16,7 @@ three ways. Adding anything — or dismissing the checklist — brings the full 
 
 | Card | Notes |
 |---|---|
-| `OnboardingCard` | first-run checklist; each step marks itself done from real data, so it doubles as live progress. Dismissal key `gb.onboardDismissed` |
+| `OnboardingCard` | first-run checklist; each step marks itself done from real data, so it doubles as live progress. Dismissal key `gb.onboardDismissed`; the ✕ calls `onOnboardDismiss({ rerender: true })` so a fresh account (checklist = whole Home) re-renders instead of going blank. The all-done path calls it bare, mid-render |
 | `ScoreCard` | today's completion ring. The `%` lives in the number (`100%` over `SCORE`), matching Progress's summary tile and its "Daily score" trend — one number, one name. The sub-line (`4/4 tasks · 3/3 habits`) is the percentage's own arithmetic. No level/XP pill: different currency, lives in the profile menu. |
 | `TaskRow` / `TasksCard` | today's tasks, `PRIORITY` colors. The sub line prints `task.time` as-is (already formatted by `mapTask`), coral when `task.overdue`. The trailing `.gb-icon-btn` pencil is the only way to edit a task — it calls `onEditTask` (app.js `openEditTask`) and is skipped when that prop is absent. The list grows with the page (no inner scroll box); past `TASKS_SHOWN` (6) a "Show all" button opens the rest in place (`tasksExpanded`, module-level) |
 | `HabitCard` / `HabitStrip` | habit check-ins |
