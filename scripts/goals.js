@@ -1,7 +1,7 @@
 /* =====================================================================
    Growth Buddy — Goals screen (short / mid / long term goals + actions)
    ===================================================================== */
-import { h, Icon, Pill, openModal } from './gb-kit.js';
+import { h, Icon, Pill, openModal, shakeRefusal } from './gb-kit.js';
 
 const HORIZON_LABEL = {
   short_term: 'Short Term',
@@ -211,7 +211,12 @@ function GoalMilestones({ goal, progress, onUpdateProgress }) {
   });
   const add = () => {
     const title = addInput.value.trim();
-    if (!title) return;
+    if (!title) {
+      // An enabled + that did nothing read as broken: point at the empty field.
+      addInput.focus();
+      shakeRefusal(addInput.parentElement);
+      return;
+    }
     setMs(ms.concat({ id: 'm' + Date.now().toString(36), title, done: false }));
     // The save re-renders the screen, which replaces this input; put the caret
     // in the new one so the next checkpoint can be typed straight after Enter.

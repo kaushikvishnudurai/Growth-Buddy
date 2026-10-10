@@ -673,6 +673,7 @@ function openOverlay({ label, className, role = 'dialog', onClose, onDismiss } =
     liveOverlays.delete(entry);
     if (vv) vv.removeEventListener('resize', fitViewport);
     overlay.classList.remove('is-open');
+    overlay.classList.add('is-closing');
     setTimeout(() => overlay.remove(), 180);
     syncSheetHistory();
     if (onClose) onClose();

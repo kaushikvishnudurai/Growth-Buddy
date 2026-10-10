@@ -529,41 +529,62 @@ function pixelGrid(values, today, readout) {
   readout.textContent = total;
 
   let picked = null;
+  // A tap on the picked day again goes back to the year's summary.
+  const pick = (cell) => {
+    if (picked) picked.classList.remove('is-picked');
+    if (!cell || cell === picked) {
+      picked = null;
+      readout.textContent = total;
+      return;
+    }
+    picked = cell;
+    cell.classList.add('is-picked');
+    const k = cell.dataset.day;
+    const v = values[k];
+    const date = new Date(k + 'T00:00:00').toLocaleDateString(undefined, {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+    });
+    readout.textContent =
+      date +
+      ' · ' +
+      (k === today ? 'today, still counting' : v == null ? 'nothing logged' : Math.round(v * 100) + '%');
+  };
+  // Rows are a month label + 31 cells, so a column step is 32 children.
+  const STEP = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -32, ArrowDown: 32 };
   const grid = h(
     'div',
     {
       class: 'gb-pixels',
-      role: 'img',
-      'aria-label': total,
-      // One listener for ~370 cells. A tap on the picked day again goes back
-      // to the year's summary.
+      // Not an img: it takes a pick. The readout is aria-live, so a keyboard
+      // pick is announced the same way a tap's is shown.
+      role: 'group',
+      tabindex: '0',
+      'aria-label': total + '. Arrow keys pick a day.',
+      // One listener for ~370 cells.
       onclick: (e) => {
         // Cells are ~6px on a small phone, so a tap often lands in a gap: take
         // the nearest day to the finger rather than clearing the readout.
-        const cell = e.target.closest('[data-day]') || nearestDay(e.currentTarget, e);
-        if (picked) picked.classList.remove('is-picked');
-        if (!cell || cell === picked) {
-          picked = null;
-          readout.textContent = total;
+        pick(e.target.closest('[data-day]') || nearestDay(e.currentTarget, e));
+      },
+      onkeydown: (e) => {
+        if (e.key === 'Escape' && picked) {
+          e.preventDefault();
+          pick(picked);
           return;
         }
-        picked = cell;
-        cell.classList.add('is-picked');
-        const k = cell.dataset.day;
-        const v = values[k];
-        const date = new Date(k + 'T00:00:00').toLocaleDateString(undefined, {
-          weekday: 'short',
-          day: 'numeric',
-          month: 'short',
-        });
-        readout.textContent =
-          date +
-          ' · ' +
-          (k === today
-            ? 'today, still counting'
-            : v == null
-              ? 'nothing logged'
-              : Math.round(v * 100) + '%');
+        const step = STEP[e.key];
+        if (!step) return;
+        e.preventDefault();
+        const kids = Array.from(e.currentTarget.children);
+        // Nothing picked yet: start on today, the last cell that has a day.
+        const days = e.currentTarget.querySelectorAll('[data-day]');
+        if (!picked) return pick(days[days.length - 1] || null);
+        let i = kids.indexOf(picked) + step;
+        // Left/right walk days across month ends; up/down only land on a real day.
+        if (Math.abs(step) === 1) while (kids[i] && !kids[i].dataset.day) i += step;
+        if (kids[i] && kids[i].dataset.day) pick(kids[i]);
       },
     },
     rows
