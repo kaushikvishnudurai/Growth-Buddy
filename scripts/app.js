@@ -9780,7 +9780,12 @@ function calNextMonth() {
 }
 
 function calToday() {
-  const t = new Date();
+  calGoTo(new Date());
+}
+
+/* Any day, not just today — a task's due day. Its own function because
+   calToday is handed out as an onclick, which would pass it the event. */
+function calGoTo(t) {
   state.calYear = t.getFullYear();
   state.calMonth = t.getMonth();
   state.selectedDate = dateKey(t.getFullYear(), t.getMonth(), t.getDate());
@@ -10950,12 +10955,44 @@ function openTaskTemplates() {
   paint();
 }
 
+/* Hand a task to the calendar's reminder form, like a note's "Add a reminder":
+   the date, repeat and tag pickers all live there. A future due date presets the
+   day and time; a past or missing one leaves today and the form's own time. */
+function remindAboutTask(task) {
+  const due = task.dueAt ? new Date(task.dueAt) : null;
+  const ahead = due && due > new Date();
+  const hhmm = ahead
+    ? String(due.getHours()).padStart(2, '0') + ':' + String(due.getMinutes()).padStart(2, '0')
+    : null;
+  prefillCalendarReminder(task.title.slice(0, 255), hhmm ? { time: hhmm } : null);
+  calGoTo(ahead ? due : new Date());
+  setScreen('calendar');
+}
+
 function openEditTask(task) {
   const form = taskForm(task);
-  openModal({
+  const close = openModal({
     title: 'Edit task',
     sub: task.title,
-    body: form.node,
+    body: h(
+      'div',
+      null,
+      form.node,
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--soft gb-btn--compact',
+          style: { marginTop: '12px' },
+          onclick: () => {
+            close();
+            remindAboutTask(task);
+          },
+        },
+        Icon('calendar-plus', { size: 14, sw: 2.4 }),
+        'Add a reminder'
+      )
+    ),
     primary: 'Save changes',
     onPrimary: () => updateTask(task.id, form.read()),
     danger: {
