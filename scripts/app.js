@@ -78,6 +78,7 @@ import {
   nativePlugin,
   applyNativeStatusBar,
   hideNativeSplash,
+  readTodaySteps,
 } from './native.js';
 import { registerToast } from './toast.js';
 import { initA11y, focusLocator, refocus } from './a11y.js';
@@ -2299,6 +2300,13 @@ function openMeasuredCheckin(habit) {
     placeholder: habit.metric === 'steps' ? 'e.g. 6500' : 'e.g. 5.2',
     autofocus: true,
   });
+  // The phone already counted them. Fill in only while the box is still empty,
+  // so a number the user started typing is never overwritten.
+  if (habit.metric === 'steps') {
+    readTodaySteps().then((n) => {
+      if (n != null && valueInput.value === '') valueInput.value = String(n);
+    });
+  }
   // Only where it means something: minutes against a distance give you a speed,
   // minutes against minutes is the same box twice.
   const durationInput =
