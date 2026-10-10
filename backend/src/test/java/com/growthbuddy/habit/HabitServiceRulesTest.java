@@ -175,6 +175,33 @@ class HabitServiceRulesTest {
         verify(checkins, never()).save(any());
     }
 
+    @Test
+    void aBackdatedCheckinPastTheEditWindowIsRefused() {
+        assertThatThrownBy(() -> service.checkin(USER, habit.getId(),
+                new CheckinRequest(TODAY.minusDays(HabitService.CHECKIN_BACK_DAYS + 1), true, null, null, null)))
+                .isInstanceOf(ApiException.class);
+        verify(checkins, never()).save(any());
+        verify(progress, never()).awardHabitCheckin(any());
+    }
+
+    @Test
+    void aCheckinBeforeTheHabitExistedIsRefused() {
+        Habit fresh = habit(Cadence.daily, 7, TODAY.minusDays(2));
+        when(habits.findByIdAndUserIdAndDeletedAtIsNull(fresh.getId(), USER)).thenReturn(Optional.of(fresh));
+        assertThatThrownBy(() -> service.checkin(USER, fresh.getId(),
+                new CheckinRequest(TODAY.minusDays(3), true, null, null, null)))
+                .isInstanceOf(ApiException.class);
+        verify(progress, never()).awardHabitCheckin(any());
+    }
+
+    @Test
+    void theOldestEditableDayStillPays() {
+        LocalDate oldest = TODAY.minusDays(HabitService.CHECKIN_BACK_DAYS);
+        when(checkins.findByHabitIdAndLogDate(habit.getId(), oldest)).thenReturn(Optional.empty());
+        service.checkin(USER, habit.getId(), new CheckinRequest(oldest, true, null, null, null));
+        verify(progress).awardHabitCheckin(USER);
+    }
+
     /* ---- freeze wallet ---- */
 
     @Test

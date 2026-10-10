@@ -31,6 +31,8 @@ public class HabitService {
      * history on every mutation) takes over; see {@link #liveOrCached}.
      */
     static final int HISTORY_WINDOW_DAYS = 400;
+    /** How far back a check-in may be written; keep in step with {@code canEditDay}'s maxBack. */
+    static final int CHECKIN_BACK_DAYS = 7;
 
     /**
      * Every icon the app can put on a habit: the DOMAIN icons in gb-kit.js, the
@@ -748,6 +750,16 @@ public class HabitService {
             throw ApiException.badRequest("That day hasn't happened yet in your timezone ("
                     + clock.zoneOf(userId).getId() + ").");
         }
+        // The same days the history panel offers (canEditDay in habit-stats.js):
+        // today and the week before it, never before the habit existed. Any older
+        // day was open to a client backfilling months of check-ins for XP and a
+        // streak nobody earned.
+        if (date.isBefore(today.minusDays(CHECKIN_BACK_DAYS))) {
+            throw ApiException.badRequest("Only the last " + CHECKIN_BACK_DAYS + " days can be changed");
+        }
+        if (date.isBefore(startDay(h, clock.zoneOf(userId), today))) {
+            throw ApiException.badRequest("That day is before you started this habit");
+        }
         boolean done = req.done() == null || req.done();
 
         HabitCheckin existing = checkins.findByHabitIdAndLogDate(h.getId(), date).orElse(null);
@@ -766,6 +778,9 @@ public class HabitService {
         // re-tick finds it and earns nothing: tick/untick/tick used to pay 10 XP
         // every round. The one exception is completing a protected (freeze) day:
         // it was never done, and each one cost a capped token.
+        // ponytail: tick / untick / protect / tick still pays a second time — the row
+        // can't tell a day that already paid; bounded by the token cap (one a week).
+        // A paid-flag column closes it if that ever matters.
         boolean firstCompletion = existing == null || existing.isProtectedDay();
         c.setUserId(userId);
         c.setDone(done);
