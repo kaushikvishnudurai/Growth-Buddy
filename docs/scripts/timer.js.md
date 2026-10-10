@@ -74,6 +74,7 @@ store before it is posted**, so it counts exactly once. The decision is `restore
 |---|
 | `setMode(mode, mins, suggest)` / `switchMode` (asks first) |
 | `saveSession` / `restoreSession` / `resumeFocusSession` (export) |
+| `resetFocusSession` (export): app.js `logout()` calls it — clears the interval and OS alarm, stops sound, idles `T`, drops the stored session |
 | `start` / `pause` / `reset` |
 | `paintRing` / `buildRing(size, stroke)` |
 | `chime()` |

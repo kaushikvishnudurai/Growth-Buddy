@@ -262,6 +262,20 @@ function toHomeAmount(money, accountId, v) {
   if (!rate) throw new Error('Set a rate for ' + c + ' in Customise → Other currencies first.');
   return { amount: Math.round(v * rate * 100) / 100, orig: { amount: v, currency: c, rate } };
 }
+/* An edited entry's stored figures. The form shows `orig.amount` for a foreign
+   row, so an untouched amount keeps both what was paid and what it cost at the
+   time: a note-only edit must not re-convert at today's rate, or read $50 as 50
+   in the home currency once the account's currency is cleared. A changed amount
+   on the same account keeps the row's own currency and rate; only a move to
+   another account books it as that account says. */
+function editedHomeAmount(money, ex, accountId, v) {
+  if (v === (ex.orig ? ex.orig.amount : ex.amount)) return { amount: ex.amount, orig: ex.orig };
+  if (ex.orig && accountId === ex.accountId) {
+    const { currency, rate } = ex.orig;
+    return { amount: Math.round(v * rate * 100) / 100, orig: { amount: v, currency, rate } };
+  }
+  return toHomeAmount(money, accountId, v);
+}
 function fmtIn(n, sym) {
   const v = Number(n) || 0;
   const a = Math.abs(v);
@@ -716,6 +730,7 @@ export {
   accCurrency,
   fxRate,
   toHomeAmount,
+  editedHomeAmount,
   fmtIn,
   fmtBalance,
   readAmount,

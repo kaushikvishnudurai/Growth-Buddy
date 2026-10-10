@@ -1440,4 +1440,26 @@ function resumeFocusSession(props) {
   restoreSession();
 }
 
-export { ScreenFocus, resumeFocusSession };
+/* Sign-out: a running clock would otherwise tick on and, at its end, chime and
+   post the session with the next account's token. Back to an idle 25-minute
+   focus, nothing queued with the OS, nothing stored. */
+function resetFocusSession() {
+  if (T.intervalId) clearInterval(T.intervalId);
+  cancelEndAlarm();
+  if (Sound.playing) stopSound();
+  Object.assign(T, {
+    mode: 'focus',
+    durationSec: 25 * 60,
+    remainingSec: 25 * 60,
+    running: false,
+    intervalId: null,
+    endsAt: 0,
+    suggest: '',
+    lastFocusMins: 25,
+    cycleDone: 0,
+    link: null,
+  });
+  dropSession();
+}
+
+export { ScreenFocus, resumeFocusSession, resetFocusSession };

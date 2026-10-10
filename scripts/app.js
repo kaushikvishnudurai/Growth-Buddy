@@ -14248,6 +14248,8 @@ function logout() {
   } catch (_) {
     /* no CacheStorage (insecure context) */
   }
+  // A running focus timer would finish later and post under the next account.
+  import('./timer.js').then((m) => m.resetFocusSession()).catch(() => {});
   disconnectWebSocket();
   purgeUserCache();
   clearSession();

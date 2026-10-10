@@ -32,6 +32,7 @@ const {
   recurringToCome,
   materialiseRecurring,
   toHomeAmount,
+  editedHomeAmount,
 } = _calc;
 
 const doc = (over) => normalizeMoney({ ...over });
@@ -247,6 +248,14 @@ const ex = (id, amount, date, category = 'food') => ({ id, amount, date, categor
   assert.deepEqual(toHomeAmount(m, 'cash', 250), { amount: 250 }, 'home account: as typed');
   assert.deepEqual(toHomeAmount(m, 'usd', 12.5), { amount: 1040.63, orig: { amount: 12.5, currency: '$', rate: 83.25 } });
   assert.throws(() => toHomeAmount(m, 'eur', 10), /rate for €/, 'no rate: refused, not booked 1:1');
+  // Editing a $50 row booked at 83.2 (INR 4160) after the account's currency was cleared.
+  const usdRow = { id: 'x', amount: 4160, accountId: 'usd', orig: { amount: 50, currency: '$', rate: 83.2 } };
+  const cleared = doc({ settings: { currency: '₹', fx: { $: 90 } } });
+  assert.deepEqual(editedHomeAmount(cleared, usdRow, 'usd', 50), { amount: 4160, orig: usdRow.orig }, 'untouched amount: kept, not INR 50');
+  assert.deepEqual(editedHomeAmount(m, usdRow, 'usd', 50), { amount: 4160, orig: usdRow.orig }, 'untouched amount: no re-convert at today\'s rate');
+  assert.deepEqual(editedHomeAmount(cleared, usdRow, 'usd', 60), { amount: 4992, orig: { amount: 60, currency: '$', rate: 83.2 } }, 'changed amount, same account: row\'s own rate');
+  assert.deepEqual(editedHomeAmount(m, usdRow, 'cash', 70), { amount: 70 }, 'moved to a home account with a new amount: as typed');
+  assert.deepEqual(editedHomeAmount(m, { id: 'y', amount: 250, accountId: 'cash' }, 'cash', 300), { amount: 300 });
 }
 
 

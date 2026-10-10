@@ -31,6 +31,7 @@ import {
   accCurrency,
   fxRate,
   toHomeAmount,
+  editedHomeAmount,
   fmtIn,
   fmtBalance,
   readAmount,
@@ -1577,6 +1578,10 @@ function accountOf(money, id) {
    first run): an entry without one still saves, it just isn't counted in a balance. */
 function accountPicker(money, initial, onChange) {
   const list = activeAccounts(money);
+  // An entry booked to an archived account keeps it: falling back to list[0]
+  // would silently move (and re-currency) the entry on an unrelated edit.
+  const held = !list.some((a) => a.id === initial) && accountOf(money, initial);
+  if (held) list.push(held);
   if (!list.length) return { node: null, get: () => null, set() {}, disable() {} };
   const start = list.some((a) => a.id === initial) ? initial : list[0].id;
   const seg = segmented(
@@ -2386,7 +2391,7 @@ function openExpenseModal(money, save, prefillDate, existing) {
       const next = clone(money);
       const accountId = paidFrom.get();
       // Another currency's account: stored converted, with what was paid kept as `orig`.
-      const home = toHomeAmount(money, accountId, amt);
+      const home = ex ? editedHomeAmount(money, ex, accountId, amt) : toHomeAmount(money, accountId, amt);
       const fields = {
         amount: home.amount,
         orig: home.orig,
@@ -6850,4 +6855,5 @@ export const _calc = {
   recurringToCome,
   materialiseRecurring,
   toHomeAmount,
+  editedHomeAmount,
 };
