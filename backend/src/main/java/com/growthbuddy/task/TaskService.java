@@ -127,6 +127,11 @@ public class TaskService {
         Instant now = Instant.now();
         t.setDoneAt(done ? now : null);
         if (!wasDone && done) {
+            // XP on the task's first completion only. Un-ticking takes nothing back,
+            // so paying every re-tick let a toggle loop farm XP. History still gets a
+            // row each time: the score's per-day counts are distinct tasks, and a
+            // task reopened and finished on a later day really was done that day.
+            boolean firstCompletion = historyRepo.countByUserIdAndTaskId(t.getUserId(), t.getId()) == 0;
             TaskHistory h = new TaskHistory();
             h.setUserId(t.getUserId());
             h.setTaskId(t.getId());
@@ -134,7 +139,9 @@ public class TaskService {
             h.setPriority((t.getPriority() != null ? t.getPriority() : Priority.Medium).name());
             h.setDueAt(t.getDueAt());
             historyRepo.save(h);
-            progress.awardTaskCompletion(t.getUserId());
+            if (firstCompletion) {
+                progress.awardTaskCompletion(t.getUserId());
+            }
         }
     }
 
