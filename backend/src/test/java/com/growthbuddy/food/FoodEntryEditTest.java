@@ -23,7 +23,8 @@ import org.junit.jupiter.api.Test;
 class FoodEntryEditTest {
 
     private static final UUID USER = UUID.randomUUID();
-    private static final LocalDate TODAY = LocalDate.of(2026, 10, 10);
+    // The real day: addEntry stamps Instant.now(), so a pinned date fails the day after.
+    private static final LocalDate TODAY = LocalDate.now(ZoneId.of("Asia/Kolkata"));
 
     private final FoodEntryRepository entries = mock(FoodEntryRepository.class);
     private final UserClock clock = mock(UserClock.class);
