@@ -14,7 +14,7 @@
     "format:check": "prettier --check \"scripts/**/*.js\" \"styles/**/*.css\" \"*.html\""
   },
   "dependencies": {
-    "@fontsource/bricolage-grotesque": "^5.2.10",
+    "@fontsource/bricolage-grotesque": "^5.3.0",
     "@fontsource/hanken-grotesk": "^5.2.8",
     "@fontsource/space-mono": "^5.2.9",
     "@stomp/stompjs": "^7.0.0",
