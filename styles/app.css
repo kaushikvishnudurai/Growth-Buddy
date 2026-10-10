@@ -576,6 +576,117 @@ button.gb-sectiontitle-act {
   display: grid;
   gap: 10px;
 }
+/* ---- The crest: a week of growth on the card's top edge ----
+   Seven plants, a seed on the left to a bloom on the right, rooted on the
+   card's edge as if it were the soil line. The one decorative thing on the
+   auth screens, so everything else stays plain. It grows in once per load
+   (.is-growing, set by authShell), and is drawn grown otherwise. */
+.gb-login-card {
+  position: relative;
+  margin-top: 78px;
+}
+.gb-garden {
+  position: absolute;
+  bottom: calc(100% - 1px);
+  left: 50%;
+  width: min(300px, 84%);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.gb-garden svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.gb-garden-stem {
+  fill: none;
+  stroke: var(--leaf-600);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+}
+.gb-garden-leaf {
+  fill: var(--leaf-500);
+  transform-box: fill-box;
+}
+.gb-garden-leaf--r {
+  transform-origin: 0% 100%;
+}
+.gb-garden-leaf--l {
+  transform-origin: 100% 100%;
+}
+.gb-garden-seed {
+  fill: var(--sun-600);
+}
+.gb-garden-bud {
+  fill: var(--coral-300);
+}
+.gb-garden-bloom circle {
+  fill: var(--brand);
+}
+.gb-garden-bloom .gb-garden-heart {
+  fill: var(--sun-300);
+}
+.gb-garden-bloom,
+.gb-garden-bud {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+[data-theme='dark'] .gb-garden-stem {
+  stroke: var(--leaf-500);
+}
+[data-theme='dark'] .gb-garden-leaf {
+  fill: var(--leaf-300);
+}
+
+/* Left to right, a day at a time: each stem draws up, its leaves unfurl as it
+   passes them, and the bloom opens last. About a second end to end. */
+@media (prefers-reduced-motion: no-preference) {
+  .gb-garden.is-growing .gb-garden-stem {
+    stroke-dasharray: 100;
+    stroke-dashoffset: 100;
+    animation: gb-garden-draw 420ms var(--ease-out) forwards;
+    animation-delay: calc(var(--i) * 90ms);
+  }
+  .gb-garden.is-growing .gb-garden-leaf {
+    transform: scale(0);
+    animation: gb-garden-unfurl 320ms var(--ease-bounce) forwards;
+    animation-delay: calc(var(--i) * 90ms + 240ms);
+  }
+  .gb-garden.is-growing .gb-garden-seed {
+    animation: gb-garden-unfurl 300ms var(--ease-bounce) both;
+  }
+  .gb-garden.is-growing .gb-garden-bud {
+    transform: scale(0);
+    animation: gb-garden-unfurl 300ms var(--ease-bounce) 760ms forwards;
+  }
+  .gb-garden.is-growing .gb-garden-bloom {
+    transform: scale(0);
+    animation: gb-garden-unfurl 480ms var(--ease-bounce) 880ms forwards;
+  }
+  /* While signing in, the bloom breathes: the only motion after the entrance. */
+  .gb-login-card:has(.gb-login-btn.is-loading) .gb-garden-bloom {
+    animation: gb-garden-breathe 1.2s var(--ease-standard) infinite;
+  }
+}
+@keyframes gb-garden-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes gb-garden-unfurl {
+  from {
+    transform: scale(0);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+@keyframes gb-garden-breathe {
+  50% {
+    transform: scale(1.18);
+  }
+}
+
 /* The auth <form> is for password managers and a11y only; its fields stay
    grid items of the card. */
 .gb-login-form {
@@ -4935,12 +5046,12 @@ button.gb-food-level {
     color var(--dur-fast);
 }
 /* The visual box stays 34px so the row keeps its rhythm, but the tap target
-   grows to 42x44 — measured gaps between these buttons are 13px, so this leaves
-   ~5px of dead space between neighbours rather than overlapping them. */
+   grows to 44x44. Neighbours sit 13px apart, so 5px either side still leaves
+   3px of dead space between them rather than overlapping. */
 .gb-rem-del::after {
   content: '';
   position: absolute;
-  inset: -5px -4px;
+  inset: -5px;
 }
 @media (hover: hover) {
   .gb-rem-del:hover {
@@ -10440,10 +10551,11 @@ h2[tabindex='-1']:focus {
   gap: 6px;
 }
 
-/* A phone on its side: 375px of height, and the full header (81px) plus nav
-   (83px) left content barely half of it. Both go compact, the way they already
-   do under 360px wide: one-line title, icon-only tabs (each keeps its
-   aria-label), a smaller FAB. The ≥1024px sidebar layout never gets here. */
+/* A phone on its side: 375px of height. Compacting the header and bottom nav
+   still left content 266px (71%), so the nav becomes an icon rail on the left,
+   the way the >=1024px sidebar does, and height goes to the content: a
+   one-line header and nothing below. Tabs stay icon-only (each keeps its
+   aria-label); the rail pads for the notch on the left. */
 @media (orientation: landscape) and (max-height: 500px) and (max-width: 1023.98px) {
   .gb-head {
     --head-pad-b: 6px;
@@ -10456,17 +10568,43 @@ h2[tabindex='-1']:focus {
     font-size: 1.125rem;
     -webkit-line-clamp: 1;
   }
+  .gb-app {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas:
+      'rail header'
+      'rail content';
+  }
+  .gb-head {
+    grid-area: header;
+  }
+  #gb-main {
+    grid-area: content;
+  }
+  .gb-nav-wrap {
+    grid-area: rail;
+    display: flex;
+    min-height: 0;
+  }
   .gb-nav,
   html[data-premium='on'] .gb-nav {
-    padding-top: 4px;
-    padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
-  }
-  html[data-premium='on'] .gb-nav {
-    margin-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-evenly;
+    width: calc(60px + env(safe-area-inset-left, 0px));
+    margin: 0;
+    padding: max(env(safe-area-inset-top, 0px), 6px) 0 6px env(safe-area-inset-left, 0px);
+    border-top: none;
+    border-right: 1px solid var(--border);
+    border-radius: 0;
   }
   .gb-nav-tab {
+    flex: 0 0 auto;
+    width: 48px;
     min-height: 44px;
-    gap: 2px;
+    gap: 0;
+    padding: 0;
   }
   .gb-nav-tab span {
     display: none;
@@ -10474,5 +10612,22 @@ h2[tabindex='-1']:focus {
   .gb-fab {
     width: 44px;
     height: 44px;
+    margin: 0;
+  }
+  /* "More" rose out of the bottom nav (bottom: 100%), which from the rail is off
+     the top of the screen. Here it is a panel beside the rail instead. */
+  .gb-more-sheet {
+    position: fixed;
+    left: calc(60px + env(safe-area-inset-left, 0px));
+    right: auto;
+    top: 0;
+    bottom: 0;
+    width: min(360px, 70vw);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-top: none;
+    border-right: 1px solid var(--border);
+    border-radius: 0 var(--radius-2xl) var(--radius-2xl) 0;
+    animation: gb-more-fade var(--dur-fast) var(--ease-out);
   }
 }

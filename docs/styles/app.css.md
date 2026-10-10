@@ -85,5 +85,6 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
 - Fixed layers on a phone pad for `env(safe-area-inset-*)` (`index.html` has `viewport-fit=cover`,
   so `100dvh` runs under the notch and home indicator): header, nav, modal overlay, toasts, PTR.
 - The tablet phone-frame (both rules) also needs `min-height: 560px`: a landscape phone stays full-screen.
+- A landscape phone (`orientation: landscape` and `max-height: 500px`, under 1024 wide) turns `.gb-app` into a grid with the nav as a 60px icon rail on the left and the More sheet as a panel beside it; content gets ~85% of the height instead of 71%.
 - The tablet phone-frame widens 440 -> 600px at 560px, the lowest viewport breakpoint any grid
   goes two-up at. A new `min-width` grid rule below 560 would split a 440px frame.

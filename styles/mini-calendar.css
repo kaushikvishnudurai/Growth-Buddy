@@ -41,14 +41,15 @@
   transition: background var(--dur-fast), color var(--dur-fast), transform var(--dur-fast);
 }
 
-/* Drawn at 32px; the ::before overlay makes the tap target 44px. */
+/* Drawn at 32px; the ::before overlay makes the tap target 44px. Inset is
+   measured from inside the 1px border, so -7, not -6 (which measured 42). */
 .gb-mini-cal-nav-btn {
   position: relative;
 }
 .gb-mini-cal-nav-btn::before {
   content: '';
   position: absolute;
-  inset: -6px;
+  inset: -7px;
 }
 
 @media (hover: hover) {
@@ -195,6 +196,18 @@
   font-weight: 800;
 }
 
+/* A repeating reminder: a dot where a one-off's count would sit, so a daily
+   one doesn't badge every day ahead. */
+.gb-mini-cal-rep {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--iris-500);
+}
+
 .gb-mini-cal-legend {
   display: flex;
   flex-wrap: wrap;
@@ -223,6 +236,13 @@
 }
 
 .gb-mini-cal-legend-item .dot.has-reminders {
+  background: var(--iris-500);
+}
+
+.gb-mini-cal-legend-item .dot.is-repeating {
+  width: 6px;
+  height: 6px;
+  margin: 1px;
   background: var(--iris-500);
 }
 

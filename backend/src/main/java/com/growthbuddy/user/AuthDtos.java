@@ -75,6 +75,9 @@ record ResetPasswordRequest(
         @NotBlank @Size(min = 8, max = 128) String password) {
 }
 
+record UpdateTimezoneRequest(@NotBlank @Size(max = 64) String timezone) {
+}
+
 record UpdateWhatsAppRequest(
         @Pattern(regexp = "^\\+?[1-9]\\d{7,14}$", message = "must be a valid international number") String number,
         Boolean enabled) {

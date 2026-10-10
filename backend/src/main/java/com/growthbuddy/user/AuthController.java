@@ -188,6 +188,12 @@ public class AuthController {
         return auth.verifyWhatsAppOtp(CurrentUser.id(), req);
     }
 
+    /** The device's zone, sent whenever it differs from the stored one, so "today" follows the user. */
+    @PutMapping("/timezone")
+    public AuthUserResponse updateTimezone(@Valid @RequestBody UpdateTimezoneRequest req) {
+        return auth.updateTimezone(CurrentUser.id(), req.timezone());
+    }
+
     @PutMapping("/profile")
     public AuthUserResponse updateProfile(@Valid @RequestBody UpdateProfileRequest req) {
         return auth.updateProfile(CurrentUser.id(), req);
