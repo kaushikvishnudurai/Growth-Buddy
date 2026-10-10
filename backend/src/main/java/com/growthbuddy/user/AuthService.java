@@ -441,6 +441,19 @@ public class AuthService {
         q.executeUpdate();
     }
 
+    /**
+     * Only the zone, unlike {@link #updateProfile}, which replaces every field.
+     * The client calls it when the device's zone and the stored one disagree.
+     */
+    @Transactional
+    public AuthUserResponse updateTimezone(UUID userId, String timezone) {
+        User user = users.findById(userId)
+                .orElseThrow(() -> ApiException.notFound("User not found"));
+        user.setTimezone(requireValidTimezone(timezone));
+        users.save(user);
+        return AuthUserResponse.from(user);
+    }
+
     @Transactional
     public AuthUserResponse updateWhatsApp(UUID userId, UpdateWhatsAppRequest req) {
         User user = users.findById(userId)

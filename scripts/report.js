@@ -561,7 +561,7 @@ function pixelGrid(values, today, readout) {
       // pick is announced the same way a tap's is shown.
       role: 'group',
       tabindex: '0',
-      'aria-label': total + '. Arrow keys pick a day.',
+      'aria-label': total + '. Arrow keys pick a day, Home and End jump to the first and last.',
       // One listener for ~370 cells.
       onclick: (e) => {
         // Cells are ~6px on a small phone, so a tap often lands in a gap: take
@@ -574,12 +574,19 @@ function pixelGrid(values, today, readout) {
           pick(picked);
           return;
         }
+        const days = e.currentTarget.querySelectorAll('[data-day]');
+        if (e.key === 'Home' || e.key === 'End') {
+          e.preventDefault();
+          const end = e.key === 'Home' ? days[0] : days[days.length - 1];
+          // pick() on the picked cell clears it; Home on the first day stays put.
+          if (end && end !== picked) pick(end);
+          return;
+        }
         const step = STEP[e.key];
         if (!step) return;
         e.preventDefault();
         const kids = Array.from(e.currentTarget.children);
         // Nothing picked yet: start on today, the last cell that has a day.
-        const days = e.currentTarget.querySelectorAll('[data-day]');
         if (!picked) return pick(days[days.length - 1] || null);
         let i = kids.indexOf(picked) + step;
         // Left/right walk days across month ends; up/down only land on a real day.

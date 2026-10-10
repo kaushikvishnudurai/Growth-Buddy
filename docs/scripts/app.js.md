@@ -7,7 +7,7 @@ Screen modules are leaves it calls into; they get thin `api` wrapper objects, ne
 
 | Region |
 |---|
-| imports, date helpers (`todayLabel`, `greetingFor` + its dev self-check, `firstName`, `dateKey`), `loadTheme`, quote-of-day cache (`quoteDateStr`, `loadCachedQuote`, `cacheQuote`), toasts (`pushToast`, `toastError`, `toastSuccess`, `dismissToast`) |
+| imports, date helpers (`todayLabel`, `greetingFor` + its dev self-check, `firstName`, `dateKey`), `loadTheme` (follows the OS until a theme is picked), `syncDeviceTimezone` / `offerDeviceTimezone` (asks once per phone zone, `ui_prefs.tzAsked`; `sameZone` treats aliases like Calcutta/Kolkata as equal), quote-of-day cache (`quoteDateStr`, `loadCachedQuote`, `cacheQuote`), toasts (`pushToast`, `toastError`, `toastSuccess`, `dismissToast`) |
 | `score()` (+ `optimisticScore()`, the same sum with the server's number ignored), `loadSession`, `loadToken`, `saveSession` |
 | wellness store (`emptyWellness`, `loadWellness`, `persistWellness`), goal progress (`loadGoalProgress`, `persistGoalProgress`, `updateGoalProgress` — optimistic; the newest save's failure rolls back and toasts) |
 | **money store**: `moneyStorageKey`, `loadMoney`, `cacheMoney`, `saveMoney(next, base)` → `ledgerDiff(base, next)` laid onto the live state with `applyLedgerDiff` → pending queue (`queueLedger`/`flushLedger`, replayed at boot via `overlayPending`) + `putDocIfChanged`; an entry the server refuses (a `rejected` id, or a whole-batch 4xx other than 401/408/409/429) is put back to the server's copy by `rollbackMoneyItems(ids)`, those ids only; `accountRequest` (queued behind ledger writes); UI prefs `saveUiPrefs(patch)` → `PUT /api/auth/ui-prefs`, `hydrateUiPrefs` |
@@ -25,7 +25,7 @@ Screen modules are leaves it calls into; they get thin `api` wrapper objects, ne
 | `ScreenHabits`, `featureOn` / `screenEnabled` / `setFeature`, `saveDigestPrefs`, `saveHomeLayout`, `saveNavLayout` |
 | **`SCREENS` registry** — screen id → render fn. Start here to find a screen. |
 | `captureScrollPosition` / `restoreScrollPosition` |
-| auth: `authPost`, `loadAuthDraft`, `setAuthMode`, `authShell`, `field`, `renderAuth`, `authFail`, `refuseFocus`, `runAuth`, `shakeRefusal`, `viewSignin`, `viewSignup`, `viewVerify` (OTP), `viewForgot`, `viewReset`, `loginCard` |
+| auth: `authPost`, `loadAuthDraft`, `setAuthMode`, `authShell` (draws `GARDEN_SVG`, the crest, growing once per load via `gardenGrown`; hides a `SESSION_EXPIRED` error under the notice that already says it), `field`, `renderAuth`, `authFail`, `refuseFocus`, `runAuth`, `shakeRefusal`, `viewSignin`, `viewSignup`, `viewVerify` (OTP), `viewForgot`, `viewReset`, `loginCard` |
 | `logout`, `mentorSkeleton` / `loadingContent`, `offlineBanner`, `weeklyReviewNudge` (Home only), `handleOnline`/`handleOffline`, **`render()`**, `installOutsideClickToCloseHeaderPopovers` |
 
 **`screenFromHash` reads `SCREENS` itself** — there is no id list to keep in step. The `SCREEN_IDS`

@@ -1889,7 +1889,12 @@ function MiniCalendarCard({
     const key = dateKey(dt.getFullYear(), dt.getMonth(), dt.getDate());
     const inMonth = dt.getFullYear() === calYear && dt.getMonth() === calMonth;
     const taskCount = dueTasksOn(key).length + completedTasksOn(key).length;
-    const reminderCount = remindersOn(key).length;
+    const rems = remindersOn(key);
+    // A daily reminder put a "1" on every day ahead, so the badge said nothing.
+    // The number counts one-off items only; a repeating one is a dot, and a day
+    // with nothing but its routine still reads as free.
+    const repeating = rems.filter((r) => r.repeat && r.repeat !== 'none').length;
+    const reminderCount = rems.length - repeating;
     const total = taskCount + reminderCount;
     const isFree = total === 0 && key >= today;
     const cls =
@@ -1907,11 +1912,19 @@ function MiniCalendarCard({
         {
           type: 'button',
           class: cls,
-          'aria-label': prettyDate(key) + ', ' + (total ? plural(total, 'item') : 'free'),
+          'aria-label':
+            prettyDate(key) +
+            ', ' +
+            (total ? plural(total, 'item') : 'free') +
+            (repeating ? ', ' + plural(repeating, 'repeating reminder') : ''),
           onclick: () => onSelectDate(key),
         },
         h('span', { class: 'num' }, String(dt.getDate())),
-        total ? h('span', { class: 'badge' }, String(total)) : null
+        total
+          ? h('span', { class: 'badge' }, String(total))
+          : repeating
+            ? h('span', { class: 'gb-mini-cal-rep' })
+            : null
       )
     );
   }
@@ -2024,6 +2037,12 @@ function MiniCalendarCard({
           { class: 'gb-mini-cal-legend-item' },
           h('span', { class: 'dot has-reminders' }),
           'Reminders'
+        ),
+        h(
+          'span',
+          { class: 'gb-mini-cal-legend-item' },
+          h('span', { class: 'dot is-repeating' }),
+          'Repeating'
         ),
         h('span', { class: 'gb-mini-cal-legend-item' }, h('span', { class: 'dot is-free' }), 'Free')
       ),

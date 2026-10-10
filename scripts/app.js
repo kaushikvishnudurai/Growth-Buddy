@@ -200,12 +200,29 @@ function dateKey(y, m, d) {
 
 /* ---- App state ---- */
 const THEME_KEY = 'gb.theme';
-function loadTheme() {
+/* A picked theme wins; until there is one, the phone's setting decides, and
+   keeps deciding when it flips at sunset (followSystemTheme). */
+const systemDark =
+  typeof matchMedia === 'function' ? matchMedia('(prefers-color-scheme: dark)') : null;
+function pickedTheme() {
   try {
-    return CacheStorage.getItem(THEME_KEY) === 'dark' ? 'dark' : 'light';
+    const t = CacheStorage.getItem(THEME_KEY);
+    return t === 'dark' || t === 'light' ? t : null;
   } catch (_) {
-    return 'light';
+    return null;
   }
+}
+function loadTheme() {
+  return pickedTheme() || (systemDark && systemDark.matches ? 'dark' : 'light');
+}
+function followSystemTheme() {
+  if (!systemDark || !systemDark.addEventListener) return;
+  systemDark.addEventListener('change', () => {
+    if (pickedTheme() || (state.user && state.user.uiPrefs && state.user.uiPrefs.theme)) return;
+    state.theme = systemDark.matches ? 'dark' : 'light';
+    applyTheme(state.theme);
+    render();
+  });
 }
 
 /* ---- Premium skin ----
@@ -1556,6 +1573,62 @@ function syncUserSession(userPatch) {
   // awaited: nothing on screen waits for a notification sound, and a failure
   // here must never be the thing that stops a sign-in.
   pullCustomChime();
+  syncDeviceTimezone();
+}
+
+/* "Today" on the server is the stored timezone's today (UserClock), and
+   reminders fire on it too. It was set at signup and only ever changed by hand,
+   so after a flight, or on an account made on UTC, the phone was a day ahead
+   and a rest day was refused as a day that hadn't started. Offered, not forced:
+   someone abroad for a weekend may want home time. Asked once per phone zone
+   (`ui_prefs.tzAsked`), so "Keep" sticks until the phone moves again. Waits a
+   beat so it never lands on top of the first paint. */
+let tzOfferTimer = 0;
+function syncDeviceTimezone() {
+  clearTimeout(tzOfferTimer);
+  tzOfferTimer = setTimeout(offerDeviceTimezone, 1500);
+}
+/* Chrome still reports India as "Asia/Calcutta"; the account says "Asia/Kolkata".
+   Same place, so run the stored name through Intl to get the browser's spelling. */
+function sameZone(stored, device) {
+  try {
+    return new Intl.DateTimeFormat('en', { timeZone: stored }).resolvedOptions().timeZone === device;
+  } catch (_) {
+    return stored === device;
+  }
+}
+function offerDeviceTimezone() {
+  let tz = '';
+  try {
+    tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+  } catch (_) {
+    /* no Intl zone: nothing to compare */
+  }
+  const u = state.user;
+  if (!tz || !u || !u.id || !u.timezone || sameZone(u.timezone, tz)) return;
+  if ((u.uiPrefs && u.uiPrefs.tzAsked) === tz) return;
+  saveUiPrefs({ tzAsked: tz });
+  openModal({
+    title: 'Switch to ' + tz + '?',
+    sub:
+      'Your phone is on ' +
+      tz +
+      ', your account on ' +
+      u.timezone +
+      '. Days, streaks and reminder times follow the account.',
+    body: h('div', { class: 'gb-note-hint' }, 'You can change it later in Settings, Profile.'),
+    primary: 'Switch',
+    dismiss: 'Keep ' + u.timezone,
+    onPrimary: async () => {
+      const me = await api('/api/auth/timezone', {
+        method: 'PUT',
+        body: JSON.stringify({ timezone: tz }),
+      });
+      syncUserSession(me || {});
+      toastSuccess('Timezone set to ' + tz + '.');
+      loadData();
+    },
+  });
 }
 
 // In-flight dedup for idempotent GETs: if the same GET is already running,
@@ -1563,6 +1636,8 @@ function syncUserSession(userPatch) {
 // the moment it settles, so this collapses concurrent duplicates without ever
 // serving stale data (it is not a cache). Mutations always bypass it.
 const _inflightGets = new Map();
+
+const SESSION_EXPIRED = 'Your session expired. Please sign in again.';
 
 async function api(path, options) {
   const opts = options || {};
@@ -1633,7 +1708,7 @@ async function apiFetch(path, options) {
     // Token went stale (revoked, expired, server restarted with empty DB,
     // etc.) — wipe local state and bounce to the sign-in screen.
     handleAuthExpired();
-    throw new Error('Your session expired. Please sign in again.');
+    throw new Error(SESSION_EXPIRED);
   }
   if (!res.ok) {
     let msg = statusMessage(res.status);
@@ -3947,6 +4022,12 @@ function setScreen(id, opts) {
     if (state.moreOpen) {
       state.moreOpen = false;
       repaintOverlays();
+    } else if (opts.tab) {
+      // The tab you're on, tapped again: back to the top, the way a phone's tab
+      // bar does. Each screen still keeps its spot when you switch away and back.
+      const main = document.getElementById('gb-main');
+      const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (main) main.scrollTo({ top: 0, behavior: still ? 'auto' : 'smooth' });
     }
     return;
   }
@@ -8342,7 +8423,7 @@ function isStaleChunkError(err) {
 function bottomNav() {
   return BottomNav({
     active: state.screen,
-    onNav: setScreen,
+    onNav: (id) => setScreen(id, { tab: true }),
     onMore: toggleMoreOpen,
     moreOpen: state.moreOpen,
     features: (state.user && state.user.features) || null,
@@ -8596,13 +8677,89 @@ function authLink(label, onClick) {
   );
 }
 
+/* The sign-in card's crest: a week of growth, a seed on the left and a bloom on
+   the right, rooted on the card's top edge. Static markup with nothing from the
+   user in it, so a string is fine. It grows in once per page load; every
+   re-render after that (renderAuth on a typo) draws it already grown. */
+let gardenGrown = false;
+const GARDEN_SVG = (() => {
+  const xs = [24, 66, 108, 150, 192, 234, 276];
+  const hs = [0, 14, 26, 40, 52, 64, 74];
+  const leaf = (x, y, dir, i) =>
+    '<path class="gb-garden-leaf gb-garden-leaf--' +
+    (dir > 0 ? 'r' : 'l') +
+    '" style="--i:' +
+    i +
+    '" d="M' +
+    x +
+    ' ' +
+    y +
+    'q' +
+    5 * dir +
+    ' -9 ' +
+    11 * dir +
+    ' -6q' +
+    -5 * dir +
+    ' 8 ' +
+    -11 * dir +
+    ' 6z"/>';
+  let out = '<ellipse class="gb-garden-seed" cx="24" cy="92" rx="5" ry="3.5"/>';
+  for (let i = 1; i < 7; i++) {
+    const x = xs[i];
+    const top = 96 - hs[i];
+    out +=
+      '<path class="gb-garden-stem" style="--i:' +
+      i +
+      '" pathLength="100" d="M' +
+      x +
+      ' 96Q' +
+      (x - 3) +
+      ' ' +
+      (96 - hs[i] / 2) +
+      ' ' +
+      x +
+      ' ' +
+      top +
+      '"/>';
+    // Leaves alternate up the stem, one more pair every other day.
+    const pairs = Math.ceil(i / 2);
+    for (let k = 0; k < pairs; k++) {
+      const y = 96 - hs[i] * (0.4 + 0.5 * ((k + 1) / (pairs + 1)));
+      out += leaf(x, Math.round(y), k % 2 ? -1 : 1, i);
+    }
+    if (i === 1) out += leaf(x, top, 1, i);
+  }
+  out += '<circle class="gb-garden-bud" cx="234" cy="' + (96 - 64) + '" r="4"/>';
+  const by = 96 - 74;
+  out += '<g class="gb-garden-bloom">';
+  for (let k = 0; k < 5; k++) {
+    const a = (k / 5) * Math.PI * 2 - Math.PI / 2;
+    out +=
+      '<circle cx="' +
+      (276 + Math.cos(a) * 5.5).toFixed(1) +
+      '" cy="' +
+      (by + Math.sin(a) * 5.5).toFixed(1) +
+      '" r="5"/>';
+  }
+  out += '<circle class="gb-garden-heart" cx="276" cy="' + by + '" r="3.5"/></g>';
+  return (
+    '<svg viewBox="0 0 300 96" aria-hidden="true" focusable="false" overflow="visible">' +
+    out +
+    '</svg>'
+  );
+})();
+
 function authShell(title, subtitle, children) {
+  const garden = h('div', { class: 'gb-garden' + (gardenGrown ? '' : ' is-growing') });
+  garden.innerHTML = GARDEN_SVG;
+  gardenGrown = true;
   return h(
     'div',
     { class: 'gb-login-wrap' },
     h(
       'div',
       { class: 'gb-login-card gb-rise' },
+      garden,
       h(
         'div',
         { class: 'gb-login-brand' },
@@ -8622,7 +8779,9 @@ function authShell(title, subtitle, children) {
         { class: 'gb-login-form', novalidate: true, onsubmit: (e) => e.preventDefault() },
         children
       ),
-      state.error && !state.errorField
+      // A request in flight when the session expired lands its own "session
+      // expired" here, under the notice that already says so.
+      state.error && !state.errorField && !(state.authNotice && state.error === SESSION_EXPIRED)
         ? h('p', { class: 'gb-login-error', role: 'alert' }, state.error)
         : null
     )
@@ -8873,7 +9032,7 @@ function viewSignin() {
     })
   );
 
-  return authShell('Welcome back', 'Sign in to sync your habits, tasks, reminders, and score.', [
+  return authShell('Welcome back', 'Your habits, streaks and reminders are where you left them.', [
     ...field('Email', emailInput, 'email'),
     ...field('Password', pwField, 'password'),
     primaryBtn('Sign in', submit),
@@ -9581,9 +9740,13 @@ initPullToRefresh();
    suspended without ever firing a disconnect, so `onConnect` never runs and the
    bell is quietly stale. Ask the server directly. */
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && state.user) refreshNotifications();
+  if (!document.hidden && state.user) {
+    refreshNotifications();
+    syncDeviceTimezone(); // reopened after a flight
+  }
 });
 applyTheme(state.theme);
+followSystemTheme();
 applyPremium(state.premium);
 applyTextScale(state.textScale);
 if (state.user) {

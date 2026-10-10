@@ -38,6 +38,7 @@ via `@fontsource` — plus Space Mono for `--font-mono`.
 
 - Both themes must define every semantic token. Adding one → add it in **both** blocks (162 and 223),
   or dark mode silently falls back to the light value.
+- Until the user picks a theme, `loadTheme()` follows `prefers-color-scheme` and `followSystemTheme()` tracks it live; a pick (`gb.theme` / `ui_prefs.theme`) wins from then on.
 - The theme switch flips `data-theme` on the root; `scripts/app.js` `toggleTheme()` / `loadTheme()`
   own that, and the choice persists through `CacheStorage`.
 - Ramp steps that don't exist (e.g. `--leaf-900`) will render as an invalid value, not a fallback —

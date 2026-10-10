@@ -148,7 +148,7 @@ checks off.
 
 | Base | Routes |
 |---|---|
-| `/api/auth` | `signup`, `login`, `verify`, `resend-verification`, `forgot-password`, `reset-password`, `logout`, `me`, `sessions`, `sessions/{id}` DELETE, `change-password`, `delete-account`, `whatsapp` PUT |
+| `/api/auth` | `signup`, `login`, `verify`, `resend-verification`, `forgot-password`, `reset-password`, `logout`, `me`, `timezone` PUT (zone only, from the client's device-zone offer; `profile` PUT replaces every field), `sessions`, `sessions/{id}` DELETE, `change-password`, `delete-account`, `whatsapp` PUT |
 | `/api/users` | `search`, `browse` (public-ish lookup for Circle) |
 | `/api/money` | GET, PUT, `advice` POST, `receipt-scan` POST (photo → line items, saves nothing), `tx` POST (ledger writes → balances), `accounts` POST, `accounts/{id}` PUT/DELETE, `day-summary?date=` GET |
 | `/api/whatsapp/webhook` | GET (Meta handshake), POST (anonymous, HMAC-signed — the "Mark as paid" tap → `MoneyService.markSubscriptionPaid`) |
