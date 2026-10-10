@@ -1,6 +1,7 @@
 package com.growthbuddy.money;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.growthbuddy.common.ApiException;
 import com.growthbuddy.common.CurrentUser;
 import java.math.BigDecimal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -93,6 +94,19 @@ public class MoneyController {
     }
 
     public record AdviceRequest(String item, Integer price, String reason, String context) {}
+
+    /** A receipt photo read into line items for the user to confirm; nothing is saved here. */
+    @PostMapping("/receipt-scan")
+    public MoneyService.ReceiptScan scanReceipt(@RequestBody ReceiptScanRequest req) {
+        String img = req == null ? null : req.imageDataUrl();
+        // Same ceiling as the grocery scan; the client sends a 1280px JPEG, ~200-400 kB.
+        if (img == null || !img.startsWith("data:image/") || img.length() > 2_000_000) {
+            throw ApiException.badRequest("imageDataUrl must be an image data URL under 2 MB");
+        }
+        return service.scanReceipt(img);
+    }
+
+    public record ReceiptScanRequest(String imageDataUrl) {}
 
     /** Expense / income / transfer writes: {upserts:[{kind, …item}], deletes:[id]} → balances. */
     @PostMapping("/tx")

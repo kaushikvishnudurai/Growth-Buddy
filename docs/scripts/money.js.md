@@ -7,7 +7,7 @@ The screen still sees **one doc** (`GET /api/money`), but it is stored in two pl
 `income`, `transfers` are ledger rows (`money_transactions`, last 400 days loaded) and `accounts` are
 live balances from the server; everything else is the `MoneyState` document. app.js `saveMoney` splits
 a save with `ledgerDiff(before, after)` → `POST /api/money/tx`, and `docPart(m)` → `PUT` only if changed.
-Insights are client-side heuristics; the only server AI call is the purchase advisor (`POST /api/money/advice`, no-AI fallback).
+Insights are client-side heuristics; the server AI calls are the purchase advisor (`POST /api/money/advice`) and the receipt reader in `openReceiptScan` (`POST /api/money/receipt-scan` via the `requestReceiptScan` prop, which shrinks the photo with Notes' `shrinkPhoto`); both fall back to no AI, and scanned items are only rows to confirm, never saved by the scan.
 The tapped-day summary (`GET /api/money/day-summary`) is rules-only on purpose: its facts are exact,
 so the AI only reworded them; the budget goes to Food, whose numbers are estimates.
 Tone rule stated at the top of the file: money framed as growth, never guilt.

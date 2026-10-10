@@ -2741,7 +2741,14 @@ let loanOrder = null; // loan ids as last shown, so Settle/Undo doesn't move a r
 let moneyRoot = null;
 const daySummaries = new Map();
 
-function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, requestDaySummary }) {
+function ScreenMoney({
+  money,
+  onSaveMoney,
+  requestAdvice,
+  requestReceiptScan,
+  accountRequest,
+  requestDaySummary,
+}) {
   money = normalizeMoney(money);
   applyCurrency(money);
   const root = h('div', { class: 'gb-money gb-rise' });
@@ -3299,7 +3306,10 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
       Icon('plus', { size: 14, sw: 2.6 }),
       'Add item'
     );
-    file.addEventListener('change', () => {
+    const date = h('input', { type: 'date', class: 'gb-input', value: todayKey(), max: todayKey() });
+    const status = h('div', { class: 'gb-note-hint', 'aria-live': 'polite' });
+    let scanSeq = 0; // a second photo picked mid-scan wins; the first answer is dropped
+    file.addEventListener('change', async () => {
       const f = file.files && file.files[0];
       if (!f) return;
       const reader = new FileReader();
@@ -3308,22 +3318,59 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
         preview.classList.add('has-img');
       };
       reader.readAsDataURL(f);
-      if (!rows.length) {
-        rows = [{ name: '', amount: 0, category: 'others' }];
-        renderRows();
+      if (typeof requestReceiptScan !== 'function') return;
+      const seq = ++scanSeq;
+      status.replaceChildren(
+        Thinking('Reading your receipt', ['Reading the receipt', 'Finding each item', 'Tagging them'])
+      );
+      let res = null;
+      try {
+        res = await requestReceiptScan(f);
+      } catch (_) {
+        /* offline, rate-limited or an unreadable photo: same as no AI */
       }
+      if (seq !== scanSeq) return;
+      const items = (res && res.configured && res.items) || [];
+      if (!items.length) {
+        status.textContent = "Couldn't read items from this photo. Add them below.";
+        if (!rows.length) {
+          rows = [{ name: '', amount: 0, category: 'others' }];
+          renderRows();
+        }
+        return;
+      }
+      const scanned = items.map((it) => ({
+        name: it.name,
+        amount: Number(it.amount) || 0,
+        category: suggestCategory(it.name, money) || 'others',
+      }));
+      // Rows the user already filled in stay; empty ones make way for the scan.
+      rows = rows.filter((r) => (Number(r.amount) || 0) > 0).concat(scanned);
+      if (res.date && res.date <= todayKey()) date.value = res.date;
+      renderRows();
+      recompute();
+      status.textContent =
+        'Read ' +
+        items.length +
+        ' item' +
+        (items.length === 1 ? '' : 's') +
+        (res.merchant ? ' from ' + res.merchant : '') +
+        '. Check the amounts before saving.';
     });
     openMoneyModal({
       title: 'Scan a receipt',
-      // ponytail: no real OCR (needs a vision endpoint). Photo is a reference;
-      // you confirm the line items, which we auto-tag and save.
-      sub: "Snap your receipt for reference, then confirm the items — I'll tag each one.",
+      // The AI reads the items (MoneyService.scanReceipt); nothing is saved until
+      // the user confirms them. Without AI the photo is only a reference.
+      sub: "Snap your receipt and I'll read the items. Check them, then save.",
       body: h(
         'div',
         { class: 'gb-form' },
-        h('div', { class: 'gb-field-label' }, 'Receipt photo (optional)'),
+        h('div', { class: 'gb-field-label' }, 'Receipt photo'),
         file,
         preview,
+        status,
+        h('div', { class: 'gb-field-label' }, 'Date'),
+        date,
         h('div', { class: 'gb-field-label' }, 'Items'),
         rowsWrap,
         addRowBtn,
@@ -3344,7 +3391,7 @@ function ScreenMoney({ money, onSaveMoney, requestAdvice, accountRequest, reques
               id: uid(),
               amount: r.amount,
               category: catOf(r.category, money).key,
-              date: todayKey(),
+              date: date.value && date.value <= todayKey() ? date.value : todayKey(),
               note: r.name.trim() || 'Receipt item',
               createdAt: Date.now(),
             })
