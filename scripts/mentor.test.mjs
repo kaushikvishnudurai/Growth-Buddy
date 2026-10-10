@@ -1,7 +1,7 @@
 /* Run with: node scripts/mentor.test.mjs
    The chat bubble's markdown split and the on-device crisis check. */
 import assert from 'node:assert/strict';
-import { richParts, crisisMatch, parseSse, actionChips, streamVisible } from './mentor.js';
+import { richParts, crisisMatch, parseSse, actionChips, streamVisible, streamFailure } from './mentor.js';
 
 const shape = (s) => richParts(s).map((p) => p.type + ':' + p.text);
 
@@ -97,5 +97,29 @@ assert.equal(streamVisible('Go for a walk.\n`'), 'Go for a walk.\n', 'a half-arr
 assert.equal(streamVisible('Go for a walk.\n``'), 'Go for a walk.\n');
 assert.equal(streamVisible('One small '), 'One small ', 'spaces between words survive mid-stream');
 assert.equal(streamVisible(null), '');
+
+
+// --- streamFailure: words that arrived survive any break but the server's own error ---
+{
+  let removed = 0;
+  const row = { remove: () => removed++ };
+  const net = streamFailure(new TypeError('network error'), 'Half a', row);
+  assert.equal(net.partial, 'Half a', 'a dropped line keeps what came');
+  assert.equal(net.stopped, false);
+  assert.equal(net.row, row);
+  assert.equal(removed, 0);
+  const abort = streamFailure(Object.assign(new Error('x'), { name: 'AbortError' }), 'Half', row);
+  assert.equal(abort.partial, 'Half');
+  assert.equal(abort.stopped, true);
+  const closed = streamFailure(Object.assign(new Error('The reply was cut off.'), { partial: 'Hi' }), 'Hi', row);
+  assert.equal(closed.partial, 'Hi');
+  const server = Object.assign(new Error('Slow down'), { serverError: true });
+  assert.equal(streamFailure(server, 'Half', row), server, 'a server error passes through');
+  const bare = new TypeError('network error');
+  assert.equal(streamFailure(bare, '', row), bare, 'nothing came: the plain failure');
+  assert.equal(removed, 1, 'and the empty assistant row goes');
+  const early = streamFailure(Object.assign(new Error('x'), { name: 'AbortError' }), '', null);
+  assert.ok(early.stopped && !early.partial, 'a Stop before any word is offered again');
+}
 
 console.log('mentor.test.mjs: all assertions passed');
