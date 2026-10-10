@@ -1402,7 +1402,7 @@ function DayByDayCard(week, onPickDay) {
   });
 }
 
-function WaterWeekCard(water, onPickDay) {
+function WaterWeekCard(water) {
   const goal = Math.max(1, water.goalMl || 2000);
   const days = water.days || [];
   const last = days.length - 1;
@@ -1428,17 +1428,13 @@ function WaterWeekCard(water, onPickDay) {
         'figure',
         { class: 'gb-tumblers', role: 'group', 'aria-label': 'Water each day this week' },
         days.map((d, i) =>
+          // Read-only: a tap used to ask Buddy (an AI call) about the day.
           h(
-            'button',
+            'div',
             {
-              type: 'button',
               class: 'gb-tumbler-col' + (i === last ? ' is-today' : ''),
-              'aria-label':
-                dayLabel(d.date, i === last) +
-                ': ' +
-                d.ml +
-                " ml of water. Buddy's read on this day",
-              onclick: () => onPickDay && onPickDay(d.date),
+              role: 'img',
+              'aria-label': dayLabel(d.date, i === last) + ': ' + d.ml + ' ml of water',
             },
             h('small', { 'aria-hidden': 'true' }, litres(d.ml)),
             h(
@@ -1746,7 +1742,7 @@ function ScreenSummary({
         'div',
         { class: 'gb-summary-col' },
         food ? DayByDayCard(week, pick) : null,
-        on('water') ? WaterWeekCard(water, pick) : null,
+        on('water') ? WaterWeekCard(water) : null,
         on('food')
           ? DietCheckCard({
               check,

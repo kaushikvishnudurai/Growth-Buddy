@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 import com.growthbuddy.user.UserClock;
+import com.growthbuddy.water.WaterService;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -25,11 +26,12 @@ class WellnessServiceTest {
 
     @Mock DailyLogRepository logs;
     @Mock UserClock clock;
+    @Mock WaterService water;
 
     /** range() now ends on the user's own today, so the clock has to answer. */
     private WellnessService service() {
         when(clock.today(USER)).thenReturn(LocalDate.of(2026, 6, 30));
-        return new WellnessService(logs, clock);
+        return new WellnessService(logs, clock, water);
     }
 
     private DailyLog row(LocalDate date) {
@@ -84,5 +86,21 @@ class WellnessServiceTest {
         assertThat(r.sleepByDate()).containsKey("2026-06-27");
         assertThat(r.moodByDate()).containsKey("2026-06-27");
         assertThat(r.byDate()).containsKey("2026-06-27");
+    }
+
+    /* The reported bug: the snapshot is taken when the app loads, so water drunk
+       after that never showed on Progress. The entries are the truth. */
+    @Test
+    void waterComesFromTheEntriesNotTheSnapshot() {
+        LocalDate d = LocalDate.of(2026, 6, 29);
+        DailyLog snap = row(d);
+        snap.setScore(60);
+        snap.setWaterMl(500);
+        when(logs.findByUserIdAndLogDateBetween(eq(USER), any(), any())).thenReturn(List.of(snap));
+        when(water.totalsByDay(eq(USER), any(), any())).thenReturn(java.util.Map.of(d, 2250));
+
+        DailyLogsResponse r = service().range(USER, 7);
+
+        assertThat(r.byDate().get("2026-06-29").waterMl()).isEqualTo(2250);
     }
 }

@@ -3661,6 +3661,13 @@ function invalidateWeek(kind) {
   state.dietCheck = null;
   if (kind !== 'water') state.foodWeek = null;
   if (kind !== 'food') state.waterWeek = null;
+  // Progress charts today's water from the trends row, which is written at
+  // load: every water write passes here, so keep that row in step too.
+  const todayRow = state.trends && state.trends.byDate && state.trends.byDate[todayKey()];
+  if (todayRow && state.water && kind !== 'food') {
+    todayRow.waterMl = state.water.consumedMl || 0;
+    todayRow.waterGoalMl = state.water.goalMl || 0;
+  }
   if (state.screen === 'summary') loadWeekSummary();
 }
 
