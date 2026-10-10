@@ -213,15 +213,25 @@ public class CircleService {
                 .toList();
     }
 
+    /**
+     * A private circle gets a new code: the removed member knows the old one, and
+     * {@link #joinByCode} would let them straight back in. Answers the circle so
+     * the owner's open menu shows the new code.
+     */
     @Transactional
-    public void removeMember(UUID userId, UUID circleId, UUID targetId) {
-        requireOwner(userId, circleId);
+    public CircleResponse removeMember(UUID userId, UUID circleId, UUID targetId) {
+        Circle c = requireOwner(userId, circleId);
         if (userId.equals(targetId)) {
             throw ApiException.badRequest("You can't remove yourself. Hand the circle on or delete it.");
         }
         CircleMember m = members.findByCircleIdAndUserId(circleId, targetId)
                 .orElseThrow(() -> ApiException.notFound("that member"));
         members.delete(m);
+        if (isPrivate(c)) {
+            c.setJoinCode(freshCode());
+            circles.save(c);
+        }
+        return CircleResponse.of(c, members.countByCircleId(circleId), true, userId);
     }
 
     @Transactional

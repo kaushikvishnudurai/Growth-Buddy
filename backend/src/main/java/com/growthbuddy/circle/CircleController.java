@@ -73,11 +73,10 @@ public class CircleController {
         return service.members(CurrentUser.id(), id);
     }
 
-    /** Owner only. */
+    /** Owner only. Answers the circle: a private one has a new join code. */
     @DeleteMapping("/{id}/members/{userId}")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void removeMember(@PathVariable UUID id, @PathVariable UUID userId) {
-        service.removeMember(CurrentUser.id(), id, userId);
+    public CircleResponse removeMember(@PathVariable UUID id, @PathVariable UUID userId) {
+        return service.removeMember(CurrentUser.id(), id, userId);
     }
 
     /** Owner only: hand the circle to another member (the caller stays as a member). */

@@ -1291,8 +1291,10 @@ function ChallengesPanel({ api, currentUserId }) {
                       });
                       if (!ok) return;
                       try {
-                        await api.removeMember(c.id, m.userId);
+                        const r = await api.removeMember(c.id, m.userId);
                         c.memberCount = Math.max(1, (c.memberCount || 1) - 1);
+                        // A private circle's code rotates so the removed member can't rejoin.
+                        if (r && r.joinCode) c.joinCode = r.joinCode;
                         onChanged();
                         load();
                       } catch (err) {

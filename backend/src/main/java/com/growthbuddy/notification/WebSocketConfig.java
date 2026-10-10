@@ -4,8 +4,10 @@ import com.growthbuddy.user.SessionService;
 import java.security.Principal;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.Message;
@@ -13,6 +15,8 @@ import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.MessagingException;
 import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
+import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
+import org.springframework.messaging.simp.SimpMessageType;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
@@ -36,12 +40,12 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final String allowedOrigins;
-    private final SessionService sessions;
+    private final AuthInterceptor auth;
 
     public WebSocketConfig(@Value("${growthbuddy.cors.allowed-origins}") String allowedOrigins,
                            SessionService sessions) {
         this.allowedOrigins = allowedOrigins;
-        this.sessions = sessions;
+        this.auth = new AuthInterceptor(sessions);
     }
 
     @Override
@@ -73,16 +77,33 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
-        registration.interceptors(new AuthInterceptor(sessions));
+        registration.interceptors(auth);
+    }
+
+    @Override
+    public void configureClientOutboundChannel(ChannelRegistration registration) {
+        registration.interceptors(new ChannelInterceptor() {
+            @Override
+            public Message<?> preSend(Message<?> message, MessageChannel channel) {
+                return auth.mayDeliver(message) ? message : null;
+            }
+        });
     }
 
     /**
      * CONNECT must carry a live session token; SUBSCRIBE must be authenticated
-     * and aimed at the caller's own queue. A named class (it was anonymous) so
+     * and aimed at the caller's own queue; SEND is refused outright (nothing
+     * handles {@code /app/**}, and a SEND to {@code /user/{id}/queue/...} would
+     * forge a notification into someone else's bell). The CONNECT token is kept
+     * per socket and re-resolved on every SUBSCRIBE and every pushed MESSAGE, so
+     * revoking the session (password change, account deletion) silences an open
+     * socket within one {@code SessionService} cache window. A named class so
      * {@code WebSocketAuthInterceptorTest} can drive it with hand-built frames.
      */
     static final class AuthInterceptor implements ChannelInterceptor {
         private final SessionService sessions;
+        // ponytail: per-instance map; the socket lives on one instance, so that is enough.
+        private final Map<String, String> tokenBySession = new ConcurrentHashMap<>();
 
         AuthInterceptor(SessionService sessions) {
             this.sessions = sessions;
@@ -109,13 +130,34 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                     throw new MessagingException("Unauthorized WebSocket connection");
                 }
                 acc.setUser(new StompPrincipal(userId.get().toString()));
+                if (acc.getSessionId() != null) {
+                    tokenBySession.put(acc.getSessionId(), auth.substring(7).trim());
+                }
             } else if (StompCommand.SUBSCRIBE.equals(cmd)) {
-                // Must be authenticated and may only subscribe to their own queue.
-                if (acc.getUser() == null || !ALLOWED_SUBSCRIPTION.equals(acc.getDestination())) {
+                // Must be authenticated, still signed in, and may only subscribe to their own queue.
+                if (acc.getUser() == null || !ALLOWED_SUBSCRIPTION.equals(acc.getDestination())
+                        || !live(acc.getSessionId())) {
                     throw new MessagingException("Subscription not allowed");
                 }
+            } else if (StompCommand.SEND.equals(cmd)) {
+                throw new MessagingException("Sending is not allowed");
+            } else if (StompCommand.DISCONNECT.equals(cmd) && acc.getSessionId() != null) {
+                tokenBySession.remove(acc.getSessionId());
             }
             return message;
+        }
+
+        /** Outbound: a pushed MESSAGE reaches a socket only while its CONNECT token still resolves. */
+        boolean mayDeliver(Message<?> message) {
+            if (SimpMessageHeaderAccessor.getMessageType(message.getHeaders()) != SimpMessageType.MESSAGE) {
+                return true;
+            }
+            return live(SimpMessageHeaderAccessor.getSessionId(message.getHeaders()));
+        }
+
+        private boolean live(String sessionId) {
+            String token = sessionId == null ? null : tokenBySession.get(sessionId);
+            return token != null && sessions.resolve(token).isPresent();
         }
     }
 

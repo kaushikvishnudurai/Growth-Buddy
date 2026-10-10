@@ -139,6 +139,20 @@ class CircleServiceTest {
     }
 
     @Test
+    void removingAMemberRotatesAPrivateCode() {
+        Circle c = circle("private");
+        CircleResponse r = service.removeMember(OWNER, CIRCLE, MEMBER);
+        // The removed member still knows the old code; it must no longer find the circle.
+        assertThat(c.getJoinCode()).isNotEqualTo("K7M2QX9P").hasSize(8);
+        assertThat(r.joinCode()).isEqualTo(c.getJoinCode());
+        verify(circles).save(c);
+
+        Circle open = circle("public");
+        service.removeMember(OWNER, CIRCLE, MEMBER);
+        assertThat(open.getJoinCode()).isNull();
+    }
+
+    @Test
     void aPrivateCircleNeedsItsCode() {
         circle("private");
         assertForbidden(() -> service.join(STRANGER, CIRCLE));
