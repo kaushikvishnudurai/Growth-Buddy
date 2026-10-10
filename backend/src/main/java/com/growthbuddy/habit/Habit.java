@@ -16,6 +16,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 @Entity
+@jakarta.persistence.EntityListeners(com.growthbuddy.common.DeliveryCache.Listener.class)
 @Table(name = "habits", indexes = {
         @Index(name = "ix_habits_user", columnList = "user_id")
 })

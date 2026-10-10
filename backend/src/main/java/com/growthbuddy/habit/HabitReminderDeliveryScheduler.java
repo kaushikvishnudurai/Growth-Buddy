@@ -1,5 +1,6 @@
 package com.growthbuddy.habit;
 
+import com.growthbuddy.common.DeliveryCache;
 import com.growthbuddy.common.UserZone;
 import com.growthbuddy.notification.NotificationKind;
 import com.growthbuddy.notification.NotificationService;
@@ -13,6 +14,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -67,6 +69,13 @@ public class HabitReminderDeliveryScheduler {
         this.whatsapp = whatsapp;
     }
 
+    // Candidate list from the last load; see DeliveryCache. Only the scheduler
+    // thread touches these, and Spring never overlaps two runs of one cron task.
+    private List<Habit> snapshot = List.of();
+    private Map<UUID, User> snapshotUsers = Map.of();
+    private long snapshotVersion;
+    private Instant snapshotAt;
+
     // Deliberately one query per candidate rather than the batched
     // dispatch-log read ReminderDeliveryScheduler uses: that batching earns
     // its complexity at "~1000 due reminders" scale (its own Javadoc). The
@@ -74,31 +83,44 @@ public class HabitReminderDeliveryScheduler {
     // near that yet — revisit if this tick ever shows up slow.
     @Scheduled(cron = "0 * * * * *")
     public void dispatchHabitReminders() {
-        List<Habit> candidates = habits.findDeliverable(true, push.isConfigured());
-        if (candidates.isEmpty()) {
+        Instant tick = Instant.now();
+
+        if (DeliveryCache.stale(snapshotVersion, snapshotAt, tick)) {
+            long version = DeliveryCache.version();
+            snapshot = habits.findDeliverable(true, push.isConfigured());
+            snapshotUsers = usersById(snapshot);
+            snapshotVersion = version;
+            snapshotAt = tick;
+        }
+
+        // Most ticks end here without touching the database: nothing is due.
+        List<UUID> dueIds = new ArrayList<>();
+        for (Habit habit : snapshot) {
+            if (dueDay(habit, snapshotUsers.get(habit.getUserId()), tick) != null) {
+                dueIds.add(habit.getId());
+            }
+        }
+        if (dueIds.isEmpty()) {
             return;
         }
 
-        Map<UUID, User> userCache = new HashMap<>();
-        for (User u : users.findAllById(
-                candidates.stream().map(Habit::getUserId).distinct().toList())) {
-            userCache.put(u.getId(), u);
+        // The due few are read fresh and re-checked against the same rules
+        // findDeliverable applies, so a send always uses current data.
+        List<Habit> candidates = habits.findAllById(dueIds).stream()
+                .filter(h -> h.getReminderTime() != null && h.getDeletedAt() == null && h.isActive())
+                .toList();
+        if (candidates.isEmpty()) {
+            return;
         }
-
-        Instant tick = Instant.now();
+        Map<UUID, User> userCache = usersById(candidates);
 
         for (Habit habit : candidates) {
             User user = userCache.get(habit.getUserId());
             if (user == null) {
                 continue;
             }
-            ZoneId zone = UserZone.of(user.getTimezone());
-            LocalDateTime now = LocalDateTime.ofInstant(tick, zone);
-            LocalDate day = now.toLocalDate();
-
-            // Zone-aware, not a bare LocalDateTime — see DstWindowTest for why.
-            Instant scheduledAt = ZonedDateTime.of(day, habit.getReminderTime(), zone).toInstant();
-            if (tick.isBefore(scheduledAt) || tick.isAfter(scheduledAt.plus(CATCH_UP))) {
+            LocalDate day = dueDay(habit, user, tick);
+            if (day == null) {
                 continue;
             }
 
@@ -115,6 +137,30 @@ public class HabitReminderDeliveryScheduler {
                 log.warn("Habit reminder dispatch {} for {} failed: {}", habit.getId(), user.getId(), ex.getMessage());
             }
         }
+    }
+
+    private Map<UUID, User> usersById(List<Habit> list) {
+        Map<UUID, User> out = new HashMap<>();
+        for (User u : users.findAllById(list.stream().map(Habit::getUserId).distinct().toList())) {
+            out.put(u.getId(), u);
+        }
+        return out;
+    }
+
+    /** The user's local day if this habit is inside its reminder window at
+     *  {@code tick}, else null. */
+    private static LocalDate dueDay(Habit habit, User user, Instant tick) {
+        if (user == null) {
+            return null;
+        }
+        ZoneId zone = UserZone.of(user.getTimezone());
+        LocalDate day = LocalDateTime.ofInstant(tick, zone).toLocalDate();
+        // Zone-aware, not a bare LocalDateTime — see DstWindowTest for why.
+        Instant scheduledAt = ZonedDateTime.of(day, habit.getReminderTime(), zone).toInstant();
+        if (tick.isBefore(scheduledAt) || tick.isAfter(scheduledAt.plus(CATCH_UP))) {
+            return null;
+        }
+        return day;
     }
 
     private void deliver(User user, Habit habit, LocalDate day) {
