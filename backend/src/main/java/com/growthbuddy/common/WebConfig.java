@@ -75,6 +75,7 @@ public class WebConfig implements WebMvcConfigurer {
                     "/api/mentor/chat/messages",
                     "/api/quick-add",
                     "/api/money/advice",
+                    "/api/money/receipt-scan",
                     "/api/auth/nutrition-suggestion",
                     "/api/food/photo-estimate",
                     "/api/food/photo-estimate-multi",

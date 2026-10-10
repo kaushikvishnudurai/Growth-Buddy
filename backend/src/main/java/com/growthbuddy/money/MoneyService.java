@@ -79,6 +79,71 @@ public class MoneyService {
 
     public record AdviceResult(boolean configured, String advice) {}
 
+    private static final String RECEIPT_PROMPT = """
+            You read a photo of a shop receipt or bill and list what was bought.
+            Return strict JSON only: {"items":[{"name":"Milk 1L","amount":56.00}],"date":"2026-10-08","merchant":"Shop name"}
+
+            Rules:
+            - One item per purchased line. amount is that line's total price as a number, no currency symbol.
+            - Leave out subtotal, total, amount paid, change, card or UPI lines, and loyalty points.
+            - Tax, service charge, delivery fee and tip are items of their own, so the items add up to the bill's total.
+            - A discount is a negative amount on its own line.
+            - name is short and readable (expand obvious abbreviations), at most 40 characters.
+            - date is the bill's date as YYYY-MM-DD, or null when none is printed. merchant is null when unclear.
+            - Not a receipt, or nothing legible: {"items":[],"date":null,"merchant":null}.
+            """;
+
+    /**
+     * Line items read off a receipt photo. {@code configured=false} when no AI is
+     * available or the call fails, so the client keeps its type-them-in form.
+     */
+    public ReceiptScan scanReceipt(String imageDataUrl) {
+        if (!openai.isConfigured()) {
+            return new ReceiptScan(false, List.of(), null, null);
+        }
+        try {
+            String raw = openai.completeWithImage(RECEIPT_PROMPT, "Read this receipt. Strict JSON only.", imageDataUrl);
+            return parseReceipt(json.readTree(OpenAIClient.jsonOf(raw)));
+        } catch (Exception ex) {
+            log.warn("Receipt scan failed, falling back to manual entry: {}", ex.getMessage());
+            return new ReceiptScan(false, List.of(), null, null);
+        }
+    }
+
+    /**
+     * Trust boundary: the model's JSON becomes expenses, so every line is checked
+     * here. Discounts are folded into the line above them, because an expense
+     * can't be negative and dropping one would overstate the bill.
+     */
+    static ReceiptScan parseReceipt(JsonNode node) {
+        List<ReceiptItem> items = new java.util.ArrayList<>();
+        for (JsonNode it : node.path("items")) {
+            if (!it.path("amount").isNumber()) continue;
+            java.math.BigDecimal amt = it.path("amount").decimalValue().setScale(2, java.math.RoundingMode.HALF_UP);
+            if (amt.signum() < 0 && !items.isEmpty()) {
+                ReceiptItem prev = items.remove(items.size() - 1);
+                java.math.BigDecimal left = prev.amount().add(amt);
+                if (left.signum() > 0) items.add(new ReceiptItem(prev.name(), left));
+                continue;
+            }
+            if (amt.signum() <= 0 || amt.compareTo(MoneyLedger.EXPENSE_MAX) > 0) continue;
+            String name = cap(it.path("name").asText(""), 60);
+            items.add(new ReceiptItem(name.isEmpty() ? "Receipt item" : name, amt));
+        }
+        String date = null;
+        try {
+            date = LocalDate.parse(node.path("date").asText("")).toString();
+        } catch (java.time.format.DateTimeParseException ignored) {
+            // no printed date, or not ISO: the client uses today
+        }
+        String merchant = cap(node.path("merchant").isTextual() ? node.path("merchant").asText() : "", 60);
+        return new ReceiptScan(true, items, date, merchant.isEmpty() ? null : merchant);
+    }
+
+    public record ReceiptItem(String name, java.math.BigDecimal amount) {}
+
+    public record ReceiptScan(boolean configured, List<ReceiptItem> items, String date, String merchant) {}
+
     /** The whole document plus the version a later write must match. */
     public record Versioned(JsonNode data, String version) {}
 

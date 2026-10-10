@@ -37,7 +37,8 @@ function cookieEligible(key) {
     key === 'gb.textScale' ||
     key === 'gb.apiBase'
     // gb.achSeen.<uid> used to be here: one cookie per account ever used on the
-    // device. It lives in ui_prefs now; init() evicts the leftovers.
+    // device. It lives in ui_prefs now; init()'s sweep of non-allowlisted cookies
+    // evicts the leftovers. Their Cache API copies are dead bytes nothing reads.
   );
 }
 
@@ -219,8 +220,6 @@ const CacheStorage = {
       ourCookieNames().forEach((k) => {
         if (!cookieEligible(k)) delCookie(k);
       });
-      // ponytail: one-time cleanup of the retired achSeen mirror; drop once old installs have booted.
-      CacheStorage.removeWhere((k) => k.startsWith('gb.achSeen.'));
       return hydrated;
     }),
 };
