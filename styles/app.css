@@ -3462,13 +3462,12 @@ button.gb-food-level {
   color: var(--ai);
 }
 /* The Summary's tappable pieces: a bowl, a calorie share or a pill shows that
-   nutrient day by day; a day's bar or tumbler opens the day in Calendar. They
+   nutrient day by day; a day's bar opens the day in Calendar. They
    keep their look and gain a press, a hover and a focus ring. */
 .gb-katori,
 .gb-split-legend > button,
 .gb-food-level,
-.gb-food-week-col,
-.gb-tumbler-col {
+.gb-food-week-col {
   border: 0;
   padding: 0;
   font: inherit;
@@ -3480,8 +3479,7 @@ button.gb-food-level {
   transition: transform 0.15s var(--ease-out), background-color 0.15s var(--ease-out);
 }
 .gb-split-legend > button,
-.gb-food-week-col,
-.gb-tumbler-col {
+.gb-food-week-col {
   background: transparent;
   border-radius: 10px;
 }
@@ -3492,8 +3490,7 @@ button.gb-food-level {
 .gb-katori:active,
 .gb-food-level:active,
 .gb-split-legend > button:active,
-.gb-food-week-col:active,
-.gb-tumbler-col:active {
+.gb-food-week-col:active {
   transform: scale(0.96);
 }
 @media (hover: hover) {
@@ -3501,8 +3498,7 @@ button.gb-food-level {
     transform: scale(1.04);
   }
   .gb-split-legend > button:hover,
-  .gb-food-week-col:hover,
-  .gb-tumbler-col:hover {
+  .gb-food-week-col:hover {
     background: var(--surface-2);
   }
   .gb-food-level:hover {
@@ -3512,8 +3508,7 @@ button.gb-food-level {
 .gb-katori:focus-visible,
 .gb-food-level:focus-visible,
 .gb-split-legend > button:focus-visible,
-.gb-food-week-col:focus-visible,
-.gb-tumbler-col:focus-visible {
+.gb-food-week-col:focus-visible {
   outline: 2px solid var(--brand);
   outline-offset: 3px;
 }
@@ -3527,7 +3522,6 @@ button.gb-food-level {
   .gb-split-legend > button,
   .gb-food-level,
   .gb-food-week-col,
-  .gb-tumbler-col,
   .gb-tumbler-fill,
   .gb-nutrient-tabs button {
     transition: none;

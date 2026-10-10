@@ -1,6 +1,7 @@
 package com.growthbuddy.wellness;
 
 import com.growthbuddy.user.UserClock;
+import com.growthbuddy.water.WaterService;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -15,10 +16,12 @@ public class WellnessService {
 
     private final DailyLogRepository logs;
     private final UserClock clock;
+    private final WaterService water;
 
-    public WellnessService(DailyLogRepository logs, UserClock clock) {
+    public WellnessService(DailyLogRepository logs, UserClock clock, WaterService water) {
         this.logs = logs;
         this.clock = clock;
+        this.water = water;
     }
 
     private DailyLog upsert(UUID userId, LocalDate date) {
@@ -78,6 +81,9 @@ public class WellnessService {
         Map<String, SleepEntry> sleep = new LinkedHashMap<>();
         Map<String, MoodEntry> mood = new LinkedHashMap<>();
         Map<String, MetricEntry> metric = new LinkedHashMap<>();
+        // Water comes from the entries themselves. The snapshot's copy is taken
+        // when the app loads, so water drunk after that never reached Progress.
+        Map<LocalDate, Integer> drunk = water.totalsByDay(userId, start, end);
 
         for (DailyLog d : logs.findByUserIdAndLogDateBetween(userId, start, end)) {
             String key = d.getLogDate().toString();
@@ -91,7 +97,7 @@ public class WellnessService {
             }
             if (d.getScore() != null) {
                 metric.put(key, new MetricEntry(key, d.getScore(),
-                        nz(d.getWaterMl()), nz(d.getWaterGoalMl()), nz(d.getKcal())));
+                        drunk.getOrDefault(d.getLogDate(), 0), nz(d.getWaterGoalMl()), nz(d.getKcal())));
             }
         }
         return new DailyLogsResponse(sleep, mood, metric);
