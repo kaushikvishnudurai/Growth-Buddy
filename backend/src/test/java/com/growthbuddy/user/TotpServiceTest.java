@@ -117,6 +117,37 @@ class TotpServiceTest {
                 .contains("issuer=Growth%20Buddy").contains("digits=6").contains("period=30");
     }
 
+    /* Two concurrent sign-ins must not both spend one code: the replay guard is
+       read-check-save, so verify and enable read the row under SELECT ... FOR
+       UPDATE, inside a transaction that holds it until the save. And isEnabled
+       must not load the entity first, or the lock query would return that
+       already-managed, stale instance. */
+    @Test
+    void theReplayGuardReadsUnderARowLock() throws Exception {
+        UserTotpRepository repo = mock(UserTotpRepository.class);
+        TotpService locked = new TotpService(repo, "test-secret-that-is-long-enough-for-the-key-derivation");
+        java.util.UUID id = java.util.UUID.randomUUID();
+        UserTotp pending = enrolled(new ArrayList<>());
+        pending.setEnabledAt(null);
+        org.mockito.Mockito.when(repo.lockById(id))
+                .thenReturn(java.util.Optional.of(enrolled(new ArrayList<>())), java.util.Optional.of(pending));
+        org.mockito.Mockito.when(repo.existsByUserIdAndEnabledAtIsNotNull(id)).thenReturn(true);
+
+        assertThat(locked.isEnabled(id)).isTrue();
+        assertThat(locked.verify(id, "not-a-code")).isFalse();
+        assertThat(locked.enable(id, "not-a-code")).isNull();
+        org.mockito.Mockito.verify(repo, org.mockito.Mockito.times(2)).lockById(id);
+        org.mockito.Mockito.verify(repo, org.mockito.Mockito.never()).findById(id);
+
+        var lock = UserTotpRepository.class.getDeclaredMethod("lockById", java.util.UUID.class)
+                .getAnnotation(org.springframework.data.jpa.repository.Lock.class);
+        assertThat(lock.value()).isEqualTo(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+        for (String m : new String[] {"verify", "enable"}) {
+            assertThat(TotpService.class.getMethod(m, java.util.UUID.class, String.class)
+                    .isAnnotationPresent(org.springframework.transaction.annotation.Transactional.class)).as(m).isTrue();
+        }
+    }
+
     private UserTotp enrolled(List<String> recoveryHashes) {
         UserTotp row = new UserTotp();
         row.setSecretEnc(service.encrypt(Totp.base32Encode(RFC_KEY)));

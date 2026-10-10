@@ -62,7 +62,10 @@ record ConfirmEmailChangeRequest(
         @NotBlank @Pattern(regexp = "\\d{6}", message = "must be a 6-digit code") String code) {
 }
 
-record TotpCodeRequest(@NotBlank @Size(max = 32) String code) {
+/** Turning 2FA on needs the password too: a stolen session alone must not enroll its own authenticator. */
+record TotpEnableRequest(
+        @NotBlank @Size(max = 128) String password,
+        @NotBlank @Size(max = 32) String code) {
 }
 
 record TotpDisableRequest(

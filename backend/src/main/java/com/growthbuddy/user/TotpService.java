@@ -18,6 +18,7 @@ import javax.crypto.spec.SecretKeySpec;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Authenticator-app second factor: setup, enable, disable, and the check that
@@ -54,7 +55,7 @@ public class TotpService {
 
     /** True when sign-in must ask for a second factor. */
     public boolean isEnabled(UUID userId) {
-        return repo.findById(userId).map(t -> t.getEnabledAt() != null).orElse(false);
+        return repo.existsByUserIdAndEnabledAtIsNotNull(userId);
     }
 
     public int recoveryCodesLeft(UUID userId) {
@@ -89,8 +90,9 @@ public class TotpService {
      * Finish setup with the app's first code. Returns the recovery codes in
      * plain text — the only time they exist outside a bcrypt hash.
      */
+    @Transactional
     public List<String> enable(UUID userId, String code) {
-        UserTotp row = repo.findById(userId)
+        UserTotp row = repo.lockById(userId)
                 .orElseThrow(() -> ApiException.badRequest("Start setup first."));
         if (row.getEnabledAt() != null) {
             throw ApiException.badRequest("Two-step sign-in is already on.");
@@ -111,9 +113,14 @@ public class TotpService {
         return plain;
     }
 
-    /** Check a sign-in / disable code against an ENABLED factor and persist what it used up. */
+    /**
+     * Check a sign-in / disable code against an ENABLED factor and persist what
+     * it used up. Under the row lock, so two concurrent sign-ins can't both
+     * spend one code; joins the caller's transaction, holding the lock to its end.
+     */
+    @Transactional
     public boolean verify(UUID userId, String code) {
-        Optional<UserTotp> row = repo.findById(userId).filter(t -> t.getEnabledAt() != null);
+        Optional<UserTotp> row = repo.lockById(userId).filter(t -> t.getEnabledAt() != null);
         if (row.isEmpty()) {
             return false;
         }

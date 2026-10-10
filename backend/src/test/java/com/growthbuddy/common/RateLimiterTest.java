@@ -30,6 +30,19 @@ class RateLimiterTest {
         assertThat(limiter.allow("ip:5.6.7.8", 10, 60_000L)).isTrue();
     }
 
+    /* peek + record: a cap that counts only what happened. Peeking never
+       spends, so refused attempts can't keep the door shut. */
+    @Test
+    void peekDecidesWithoutCountingAndRecordCounts() {
+        RateLimiter limiter = new RateLimiter(new FakeThrottleStore());
+        for (int i = 0; i < 100; i++) assertThat(limiter.peek("k", 2, 60_000L)).isTrue();
+        limiter.record("k", 60_000L);
+        assertThat(limiter.peek("k", 2, 60_000L)).isTrue();
+        limiter.record("k", 60_000L);
+        assertThat(limiter.peek("k", 2, 60_000L)).as("two recorded, limit 2").isFalse();
+        assertThat(limiter.allow("k", 2, 60_000L)).as("same counters as allow").isFalse();
+    }
+
     private static final long W = 60_000L;
 
     /* The hole a fixed window had: spend 10 in the last second of one window,

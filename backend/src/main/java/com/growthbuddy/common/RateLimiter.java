@@ -71,6 +71,26 @@ public class RateLimiter {
         return estimate(previous, current, now - windowStart, windowMs) <= limit;
     }
 
+    /**
+     * {@link #allow}'s decision without counting anything: would one more hit
+     * still be within the limit? Pair with {@link #record} for a cap that counts
+     * only what actually happened, so refused attempts never extend the block.
+     * ponytail: peek-then-record is not atomic; concurrent callers can overshoot
+     * by a hit or two. Fine for a mail cap; use {@link #allow} where it isn't.
+     */
+    public boolean peek(String key, int limit, long windowMs) {
+        long now = clock.getAsLong();
+        long windowStart = windowStartFor(now, windowMs);
+        int previous = store.hits(key, windowStart - windowMs);
+        int current = store.hits(key, windowStart);
+        return estimate(previous, current + 1, now - windowStart, windowMs) <= limit;
+    }
+
+    /** Count one hit against {@code key} with no decision attached (see {@link #peek}). */
+    public void record(String key, long windowMs) {
+        store.countHit(key, windowStartFor(clock.getAsLong(), windowMs));
+    }
+
     /** The window a moment falls in. Pure, so the bucketing is testable on its own. */
     static long windowStartFor(long nowMs, long windowMs) {
         return nowMs - Math.floorMod(nowMs, windowMs);
