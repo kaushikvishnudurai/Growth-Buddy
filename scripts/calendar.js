@@ -1208,6 +1208,8 @@ const ORDINAL = { 1: '1st', 2: '2nd', 3: '3rd', 4: '4th', 5: '5th', '-1': 'last'
 function RuleExtras() {
   let repeat = 'none';
   let anchorKey = todayKey();
+  // The day-of-month a by-date monthly series keeps (see sync); null = the anchor's.
+  let dateKey = null;
   const clampInt = (v, lo, hi) => {
     const n = Math.floor(Number(v));
     return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : lo;
@@ -1264,7 +1266,7 @@ function RuleExtras() {
   const fillMonth = () => {
     const keep = monthSel.value;
     const { nth, isLast, dow } = nthWeekdayOf(anchorKey);
-    const day = parseKey(anchorKey).d;
+    const day = parseKey(dateKey || anchorKey).d;
     const opts = [h('option', { value: '0' }, 'On day ' + day)];
     if (nth <= 5) opts.push(h('option', { value: String(nth) }, 'On the ' + ORDINAL[nth] + ' ' + DAY_LONG[dow]));
     if (isLast) opts.push(h('option', { value: '-1' }, 'On the last ' + DAY_LONG[dow]));
@@ -1291,9 +1293,12 @@ function RuleExtras() {
   );
   const node = h('div', { class: 'gb-rule', style: { display: 'none' } }, everyRow, daysRow, monthSel, countRow);
 
-  function sync(rep, key) {
+  // `dayKey`: a split of a series on the 31st made from February's 28th keeps
+  // the 31st (ReminderService.keepDayOfMonth), so "On day" names the series' day.
+  function sync(rep, key, dayKey = null) {
     repeat = rep || 'none';
     if (key) anchorKey = key;
+    dateKey = dayKey;
     node.style.display = repeat === 'none' ? 'none' : '';
     everyRow.style.display = RULE_UNIT[repeat] ? '' : 'none';
     daysRow.style.display = repeat === 'weekly' ? '' : 'none';
@@ -1623,7 +1628,8 @@ function openEditDialog(rem, occKey, onEdit) {
     repeatField.style.display = scope === 'this' ? 'none' : '';
     untilField.style.display = repeatPicker.get() === 'none' ? 'none' : '';
     untilInput.min = startKey();
-    rule.sync(repeatPicker.get(), startKey());
+    const keepsDay = scope === 'future' && rem.repeat === 'monthly' && !rem.repeatNth;
+    rule.sync(repeatPicker.get(), startKey(), keepsDay ? rem.date : null);
   }
   syncScope();
 

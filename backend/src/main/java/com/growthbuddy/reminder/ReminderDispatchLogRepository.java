@@ -62,6 +62,15 @@ public interface ReminderDispatchLogRepository extends JpaRepository<ReminderDis
             """)
     int claimResend(@Param("id") UUID id, @Param("attempts") int attempts);
 
+    /** Retake a failed occurrence for a resend. 1 = this instance sends it; 0 = another one already did. */
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.transaction.annotation.Transactional
+    @Query("""
+            update ReminderDispatchLog l set l.status = 'sending', l.errorMessage = null
+            where l.id = :id and l.status = 'failed'
+            """)
+    int claimFailed(@Param("id") UUID id);
+
     /** Record how a snooze send went. Only a 'pending' row moves, so a late write never undoes a 'sent'. */
     @org.springframework.data.jpa.repository.Modifying
     @org.springframework.transaction.annotation.Transactional

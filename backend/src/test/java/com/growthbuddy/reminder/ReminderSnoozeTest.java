@@ -108,8 +108,9 @@ class ReminderSnoozeTest {
     @Test
     void aSnoozeTicketIsBoundAndExpires() {
         UUID rem = UUID.randomUUID();
-        String token = links.sign(USER, rem, NOW);
-        assertThat(links.verify(token, NOW)).contains(new SnoozeLinks.Ticket(USER, rem));
+        LocalDate day = LocalDate.of(2026, 10, 10);
+        String token = links.sign(USER, rem, day, NOW);
+        assertThat(links.verify(token, NOW)).contains(new SnoozeLinks.Ticket(USER, rem, day));
         assertThat(links.verify(token, NOW.plus(Duration.ofHours(25)))).isEmpty();
         assertThat(new SnoozeLinks("other-secret").verify(token, NOW)).isEmpty();
         String[] parts = token.split("\\.");
@@ -125,9 +126,45 @@ class ReminderSnoozeTest {
     void aTicketSnoozesItsReminder() {
         CalendarReminder r = timed();
         prefs(new HashMap<>());
-        assertThat(service.snoozeByLink(links.sign(USER, r.getId(), NOW)))
+        assertThat(service.snoozeByLink(links.sign(USER, r.getId(), LocalDate.of(2026, 10, 10), NOW)))
                 .contains(Instant.parse("2026-10-10T09:10:00Z"));
         assertThat(service.snoozeByLink("nope")).isEmpty();
+    }
+
+    /** Yesterday's push tapped today snoozes nothing; a lead's ring for tomorrow does. Old tickets still work. */
+    @Test
+    void aTicketIsForItsOwnDay() {
+        CalendarReminder r = timed();
+        prefs(new HashMap<>());
+        assertThat(service.snoozeByLink(links.sign(USER, r.getId(), LocalDate.of(2026, 10, 9), NOW))).isEmpty();
+        assertThat(service.snoozeByLink(links.sign(USER, r.getId(), LocalDate.of(2026, 10, 11), NOW))).isPresent();
+        String body = USER + ":" + r.getId() + ":" + NOW.plusSeconds(3600).getEpochSecond();
+        String old = signRaw(body);
+        assertThat(links.verify(old, NOW)).contains(new SnoozeLinks.Ticket(USER, r.getId(), null));
+        assertThat(service.snoozeByLink(old)).isPresent();
+    }
+
+    @Test
+    void aTicketDoesNotSnoozeAnAccountPendingDeletion() {
+        CalendarReminder r = timed();
+        User u = new User();
+        u.setId(USER);
+        u.setDeletionRequestedAt(NOW.minusSeconds(60));
+        when(users.findById(USER)).thenReturn(Optional.of(u));
+        assertThat(service.snoozeByLink(links.sign(USER, r.getId(), LocalDate.of(2026, 10, 10), NOW))).isEmpty();
+        assertThat(r.getSnoozedUntil()).isNull();
+    }
+
+    /** A ticket in the pre-day format, signed with the same key SnoozeLinks derives. */
+    private static String signRaw(String body) {
+        try {
+            javax.crypto.Mac m = javax.crypto.Mac.getInstance("HmacSHA256");
+            m.init(new javax.crypto.spec.SecretKeySpec("snooze-link:test-secret".getBytes(), "HmacSHA256"));
+            var b64 = java.util.Base64.getUrlEncoder().withoutPadding();
+            return b64.encodeToString(body.getBytes()) + "." + b64.encodeToString(m.doFinal(body.getBytes()));
+        } catch (Exception ex) {
+            throw new IllegalStateException(ex);
+        }
     }
 
     /** A typed SNOOZE means the reminder that reached them last, found through its bell card. */

@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.Base64;
 import java.util.Optional;
 import java.util.UUID;
@@ -16,7 +17,8 @@ import org.springframework.stereotype.Component;
  * The Snooze button on a push notification. It runs in the service worker,
  * which has no session (the token lives in the page's storage), so the push
  * carries a signed ticket for exactly one thing: snoozing that reminder, for
- * that user, for a day. Keyed with the session HMAC secret, under its own label
+ * that user, for a day, and names the occurrence day it rang for, so a link
+ * tapped once that day is over snoozes nothing. Keyed with the session HMAC secret, under its own label
  * so a ticket can never pass for anything else.
  */
 @Component
@@ -31,11 +33,12 @@ public class SnoozeLinks {
         this.key = ("snooze-link:" + secret).getBytes(StandardCharsets.UTF_8);
     }
 
-    public record Ticket(UUID userId, UUID reminderId) {
+    /** {@code day} is null on a ticket signed before it carried one. */
+    public record Ticket(UUID userId, UUID reminderId, LocalDate day) {
     }
 
-    public String sign(UUID userId, UUID reminderId, Instant now) {
-        String body = userId + ":" + reminderId + ":" + now.plus(LIFETIME).getEpochSecond();
+    public String sign(UUID userId, UUID reminderId, LocalDate day, Instant now) {
+        String body = userId + ":" + reminderId + ":" + now.plus(LIFETIME).getEpochSecond() + ":" + day;
         return B64.encodeToString(body.getBytes(StandardCharsets.UTF_8)) + "." + B64.encodeToString(mac(body));
     }
 
@@ -48,8 +51,12 @@ public class SnoozeLinks {
             byte[] sig = Base64.getUrlDecoder().decode(token.substring(dot + 1));
             if (!MessageDigest.isEqual(sig, mac(body))) return Optional.empty();
             String[] parts = body.split(":");
-            if (parts.length != 3 || now.getEpochSecond() > Long.parseLong(parts[2])) return Optional.empty();
-            return Optional.of(new Ticket(UUID.fromString(parts[0]), UUID.fromString(parts[1])));
+            // Three parts: a ticket from before the day was added, still good until it expires.
+            if (parts.length < 3 || parts.length > 4 || now.getEpochSecond() > Long.parseLong(parts[2])) {
+                return Optional.empty();
+            }
+            LocalDate day = parts.length == 4 ? LocalDate.parse(parts[3]) : null;
+            return Optional.of(new Ticket(UUID.fromString(parts[0]), UUID.fromString(parts[1]), day));
         } catch (RuntimeException ex) {
             return Optional.empty();
         }

@@ -127,11 +127,89 @@ class ReminderRichRulesTest {
         r.setRepeatCount(10);
         when(repo.findByIdAndUserId(r.getId(), USER)).thenReturn(Optional.of(r));
 
-        ReminderResponse rest = service.update(USER, r.getId(), "future", MON.plusDays(4),
-                new UpdateReminderRequest("Later", null, null, null, null, null, null, null, null, null, null));
+        // The edit dialog sends the series' total back with the rule, as RuleExtras.get() does.
+        ReminderResponse rest = service.update(USER, r.getId(), "future", MON.plusDays(4), withCount(10));
 
         assertThat(rest.repeatCount()).as("ten in all, four already used").isEqualTo(6);
         assertThat(r.getUntilDate()).isEqualTo(MON.plusDays(3));
+    }
+
+    private static UpdateReminderRequest withCount(Integer count) {
+        return new UpdateReminderRequest("Later", null, null, null, RepeatFreq.daily, null, null, null, null, null,
+                null, null, null, 1, "", 0, count);
+    }
+
+    private ReminderService splitter(CalendarReminder r) {
+        CalendarReminderRepository repo = mock(CalendarReminderRepository.class);
+        when(repo.save(any())).thenAnswer(i -> i.getArgument(0));
+        when(repo.findByIdAndUserId(r.getId(), USER)).thenReturn(Optional.of(r));
+        UserClock clock = mock(UserClock.class);
+        when(clock.today(any())).thenReturn(MON);
+        return new ReminderService(repo, clock, null);
+    }
+
+    @Test
+    void aFutureSplitReadsAChangedCountAsANewTotal() {
+        CalendarReminder r = rule(MON, RepeatFreq.daily);
+        r.setRepeatCount(10);
+        ReminderService service = splitter(r);
+
+        assertThat(service.update(USER, r.getId(), "future", MON.plusDays(4), withCount(12)).repeatCount())
+                .as("twelve in all now, four used").isEqualTo(8);
+        CalendarReminder again = rule(MON, RepeatFreq.daily);
+        again.setRepeatCount(10);
+        assertThat(splitter(again).update(USER, again.getId(), "future", MON.plusDays(4), withCount(0)).repeatCount())
+                .as("0 clears the count").isNull();
+    }
+
+    @Test
+    void aFutureSplitFromAClampedDayKeepsTheSeriesDay() {
+        // Monthly on the 31st; February's occurrence is the 28th.
+        CalendarReminder r = rule(LocalDate.of(2026, 1, 31), RepeatFreq.monthly);
+        r.setRepeatCount(6);
+        LocalDate feb = LocalDate.of(2026, 2, 28);
+        ReminderResponse rest = splitter(r).update(USER, r.getId(), "future", feb,
+                new UpdateReminderRequest("Rent", null, null, null, RepeatFreq.monthly, null, null, null, null, null,
+                        null, null, null, 1, "", 0, 6));
+
+        CalendarReminder c = new CalendarReminder();
+        c.setAnchorDate(rest.date());
+        c.setFromDate(rest.from());
+        c.setRepeat(rest.repeat());
+        c.setRepeatCount(rest.repeatCount());
+        assertThat(rest.date()).isEqualTo(LocalDate.of(2026, 1, 31));
+        assertThat(on(c, LocalDate.of(2026, 1, 31))).as("the old row owns January").isFalse();
+        assertThat(on(c, feb)).isTrue();
+        assertThat(on(c, LocalDate.of(2026, 3, 31))).as("back on the 31st, not the 28th").isTrue();
+        assertThat(on(c, LocalDate.of(2026, 3, 28))).isFalse();
+        assertThat(on(c, LocalDate.of(2026, 6, 30))).as("six in all: Jan..Jun").isTrue();
+        assertThat(on(c, LocalDate.of(2026, 7, 31))).isFalse();
+
+        // Yearly on Feb 29, split from 2027's Feb 28.
+        CalendarReminder y = rule(LocalDate.of(2024, 2, 29), RepeatFreq.yearly);
+        ReminderResponse ry = splitter(y).update(USER, y.getId(), "future", LocalDate.of(2027, 2, 28),
+                new UpdateReminderRequest("Leap", null, null, null, null, null, null, null, null, null, null));
+        assertThat(ry.date()).isEqualTo(LocalDate.of(2024, 2, 29));
+        assertThat(ry.from()).isEqualTo(LocalDate.of(2027, 2, 28));
+    }
+
+    @Test
+    void aThisDayEditTakesThatDaysSnoozeAlong() {
+        CalendarReminder r = rule(MON, RepeatFreq.daily);
+        r.setTime(LocalTime.of(9, 0));
+        r.setSnoozedUntil(Instant.parse("2026-09-15T09:10:00Z"));
+        ReminderResponse one = splitter(r).update(USER, r.getId(), "this", MON.plusDays(1),
+                new UpdateReminderRequest("New text", null, null, null, null, null, null, null, null, null, null));
+        assertThat(one.snoozedUntil()).as("rings again with the new text").isEqualTo(Instant.parse("2026-09-15T09:10:00Z"));
+        assertThat(r.getSnoozedUntil()).isNull();
+
+        CalendarReminder other = rule(MON, RepeatFreq.daily);
+        other.setTime(LocalTime.of(9, 0));
+        other.setSnoozedUntil(Instant.parse("2026-09-15T09:10:00Z"));
+        ReminderResponse moved = splitter(other).update(USER, other.getId(), "this", MON.plusDays(2),
+                new UpdateReminderRequest("Wed", null, null, null, null, null, null, null, null, null, null));
+        assertThat(moved.snoozedUntil()).as("Tuesday's snooze isn't Wednesday's").isNull();
+        assertThat(other.getSnoozedUntil()).isNotNull();
     }
 
     /* ---- done ---- */
@@ -174,6 +252,23 @@ class ReminderRichRulesTest {
         when(done.findByUserIdAndOccurrenceDateGreaterThanEqual(USER, MON.minusDays(90))).thenReturn(List.of(d));
 
         assertThat(service.list(USER).get(0).doneDates()).containsExactly(MON);
+    }
+
+    @Test
+    void tickingAnotherDayLeavesTodaysSnooze() {
+        CalendarReminderRepository repo = mock(CalendarReminderRepository.class);
+        ReminderDoneRepository done = mock(ReminderDoneRepository.class);
+        ReminderService service = new ReminderService(repo, mock(UserClock.class), null, done);
+        CalendarReminder r = rule(MON, RepeatFreq.daily);
+        r.setTime(LocalTime.of(9, 0));
+        Instant snooze = Instant.parse("2026-09-14T09:10:00Z");
+        r.setSnoozedUntil(snooze);
+        when(repo.findByIdAndUserId(r.getId(), USER)).thenReturn(Optional.of(r));
+
+        service.setDone(USER, r.getId(), MON.plusDays(1), true);
+        assertThat(r.getSnoozedUntil()).as("tomorrow ticked ahead of time").isEqualTo(snooze);
+        service.setDone(USER, r.getId(), MON, true);
+        assertThat(r.getSnoozedUntil()).isNull();
     }
 
     /* ---- the scheduler: done suppression and the second alert ---- */
@@ -235,6 +330,55 @@ class ReminderRichRulesTest {
         verify(dispatchLog, never()).findByReminderIdAndOccurrenceDate(r.getId(), due.toLocalDate());
         verify(notifications, times(1)).publish(eq(USER), eq(NotificationKind.reminder), any(), any(), eq(r.getId()));
         assertThat(second).isEqualTo(ReminderDeliveryScheduler.secondAlertId(r.getId())).isNotEqualTo(r.getId());
+    }
+
+    /** Edited into its own lead (createdAt long ago): the early ring had gone, so it rings on time, as push.js does. */
+    @Test
+    void anEarlyRingMissedByAnEditRingsOnTime() {
+        CalendarReminder r = timedAt(ZonedDateTime.now(UTC));
+        r.setNotifyBefore(10);
+        r.setCreatedAt(Instant.now().minusSeconds(86400));
+
+        scheduler.dispatchTimedWhatsAppReminders();
+
+        verify(notifications).publish(eq(USER), eq(NotificationKind.reminder), eq("Standup"), any(), eq(r.getId()));
+    }
+
+    @Test
+    void anEarlyRingAlreadySentBlocksTheOnTimeOne() {
+        ZonedDateTime now = ZonedDateTime.now(UTC);
+        CalendarReminder r = timedAt(now);
+        r.setNotifyBefore(10);
+        when(dispatchLog.findDelivered(any(), any()))
+                .thenReturn(List.<Object[]>of(new Object[] {r.getId(), now.toLocalDate()}));
+
+        scheduler.dispatchTimedWhatsAppReminders();
+
+        verify(notifications, never()).publish(any(), any(), any(), any(), any());
+    }
+
+    /** Two instances both read 'failed': the conditional UPDATE lets one of them send. */
+    @Test
+    void aFailedRowIsRetriedOnlyByTheInstanceThatClaimsIt() {
+        ZonedDateTime now = ZonedDateTime.now(UTC);
+        CalendarReminder r = timedAt(now);
+        ReminderDispatchLog failed = new ReminderDispatchLog();
+        failed.setId(UUID.randomUUID());
+        failed.setReminderId(r.getId());
+        failed.setOccurrenceDate(now.toLocalDate());
+        failed.setStatus("failed");
+        when(dispatchLog.findByReminderIdAndOccurrenceDate(r.getId(), now.toLocalDate()))
+                .thenReturn(Optional.of(failed));
+
+        when(dispatchLog.claimFailed(failed.getId())).thenReturn(0);
+        scheduler.dispatchTimedWhatsAppReminders();
+        verify(notifications, never()).publish(any(), any(), any(), any(), any());
+
+        when(dispatchLog.claimFailed(failed.getId())).thenReturn(1);
+        scheduler.dispatchTimedWhatsAppReminders();
+        verify(notifications).publish(eq(USER), eq(NotificationKind.reminder), eq("Standup"), any(), eq(r.getId()));
+        verify(dispatchLog, never()).saveAndFlush(any());
+        assertThat(failed.getStatus()).isEqualTo("sent");
     }
 
     @Test
