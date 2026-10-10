@@ -158,10 +158,14 @@ public class AuthController {
         return auth.beginTotpSetup(CurrentUser.id());
     }
 
-    /** First code from the app turns 2FA on; the answer holds the 8 recovery codes, once. */
+    /**
+     * Password + first code from the app turns 2FA on and signs out every other
+     * device; the answer holds the 8 recovery codes, once.
+     */
     @PostMapping("/2fa/verify")
-    public RecoveryCodesResponse enableTotp(@Valid @RequestBody TotpCodeRequest req) {
-        return auth.enableTotp(CurrentUser.id(), req.code());
+    public RecoveryCodesResponse enableTotp(@Valid @RequestBody TotpEnableRequest req,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        return auth.enableTotp(CurrentUser.id(), req, bearer(authHeader));
     }
 
     @PostMapping("/2fa/disable")

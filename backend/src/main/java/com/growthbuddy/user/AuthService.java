@@ -351,12 +351,10 @@ public class AuthService {
 
     @Transactional
     public void resendVerification(EmailOnlyRequest req) {
-        // Before the lookup, keyed on the typed address: an unknown email hits
-        // the same 429 as a real one, so the refusal says nothing about accounts.
-        requireOtpMailBudget(normalize(req.email()));
         users.findByEmailIgnoreCase(normalize(req.email())).ifPresent(u -> {
-            // Over the per-account cap: skip silently; a refusal would say the account exists.
-            if (!u.isEmailVerified() && verificationOtpAllowed(u)) {
+            // Over either cap: skip silently; a refusal would say the account
+            // exists. The address cap is spent only by a mail that goes out.
+            if (!u.isEmailVerified() && verificationOtpAllowed(u) && takeOtpMail(u.getEmail())) {
                 issueVerificationOtp(u, "verification");
             }
         });
@@ -365,10 +363,13 @@ public class AuthService {
 
     @Transactional
     public void forgotPassword(EmailOnlyRequest req) {
-        // Pre-lookup for the same reason as resendVerification: no oracle.
-        requireOtpMailBudget(normalize(req.email()));
+        // Over the address cap: skip silently, as resendVerification does — same
+        // answer for an unknown address, and only a real mail spends the budget,
+        // so a stranger's requests for an address can't lock its owner out.
         users.findByEmailIgnoreCase(normalize(req.email())).ifPresent(u -> {
-            issuePasswordResetOtp(u);
+            if (takeOtpMail(u.getEmail())) {
+                issuePasswordResetOtp(u);
+            }
         });
         // Do not signal whether the email exists.
     }
@@ -738,21 +739,32 @@ public class AuthService {
         return new TotpSetupResponse(s.secret(), s.otpauthUri());
     }
 
-    /** First code from the app turns 2FA on; answers the recovery codes, once. */
+    /**
+     * Password + the app's first code turn 2FA on; answers the recovery codes,
+     * once. The password is what stops a stolen session from enrolling its own
+     * authenticator and locking the owner out (login, reset and disable would
+     * all then need the thief's code). Every other session is signed out, as a
+     * password change does; {@code currentToken}'s device stays signed in.
+     */
     @Transactional
-    public RecoveryCodesResponse enableTotp(UUID userId, String code) {
+    public RecoveryCodesResponse enableTotp(UUID userId, TotpEnableRequest req, String currentToken) {
         User user = users.findById(userId).orElseThrow(() -> ApiException.notFound("User not found"));
+        if (!passwordMatches(user, req.password(), "login:" + user.getEmail())) {
+            throw ApiException.badRequest("Password is incorrect.");
+        }
         String key = "totpsetup:" + userId;
         loginGuard.check(key);
-        List<String> codes = totp.enable(userId, code);
+        List<String> codes = totp.enable(userId, req.code());
         if (codes == null) {
             loginGuard.recordFailure(key);
             throw ApiException.badRequest("That code didn't match. Check the app's clock and use the newest code.");
         }
         loginGuard.recordSuccess(key);
+        sessions.revokeOthers(userId, currentToken);
         notifyQuietly(user.getEmail(), "Two-step sign-in is on",
                 greeting(user) + "Two-step sign-in was turned on for your Growth Buddy account. Signing in "
-                        + "now also asks for a code from your authenticator app.\n\n"
+                        + "now also asks for a code from your authenticator app, and every other device "
+                        + "was signed out.\n\n"
                         + "If this wasn't you, reset your password straight away.\n\n— Growth Buddy");
         return new RecoveryCodesResponse(codes);
     }
@@ -1092,20 +1104,35 @@ public class AuthService {
     }
 
     /**
-     * The cross-purpose cap ({@link #OTP_MAIL_PER_HOUR}), keyed on the address
-     * the code is going TO. Every mail.sendOtp path calls this exactly once
-     * before sending: signup, issueVerificationOtpLimited (signup again, login),
-     * resendVerification, forgotPassword, requestEmailChange.
+     * The cross-purpose cap ({@link #OTP_MAIL_PER_HOUR}, {@link #OTP_MAIL_PER_DAY}),
+     * keyed on the address the code is going TO. Every mail.sendOtp path spends
+     * it exactly once, right before sending: signup, issueVerificationOtpLimited
+     * (signup again, login) and requestEmailChange through this 429;
+     * resendVerification and forgotPassword through {@link #takeOtpMail}, which
+     * skips silently. Only a mail that goes out counts — a refused or unknown-
+     * address call spends nothing, so it can neither block nor extend a block.
      */
     private void requireOtpMailBudget(String email) {
         String to = email.toLowerCase(java.util.Locale.ROOT);
-        if (!rateLimiter.allow("otpmail:" + to, OTP_MAIL_PER_HOUR, 3_600_000L)) {
+        if (!rateLimiter.peek("otpmail:" + to, OTP_MAIL_PER_HOUR, 3_600_000L)) {
             throw new ApiException(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS,
                     "Too many codes sent to this email. Use the last one we sent, or try again in an hour.");
         }
-        if (!rateLimiter.allow("otpday:" + to, OTP_MAIL_PER_DAY, 86_400_000L)) {
+        if (!rateLimiter.peek("otpday:" + to, OTP_MAIL_PER_DAY, 86_400_000L)) {
             throw new ApiException(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS,
                     "Too many codes sent to this email today. Use the last one we sent, or try again tomorrow.");
+        }
+        rateLimiter.record("otpmail:" + to, 3_600_000L);
+        rateLimiter.record("otpday:" + to, 86_400_000L);
+    }
+
+    /** {@link #requireOtpMailBudget} for the no-oracle paths: false instead of a 429. */
+    private boolean takeOtpMail(String email) {
+        try {
+            requireOtpMailBudget(email);
+            return true;
+        } catch (ApiException capped) {
+            return false;
         }
     }
 

@@ -197,7 +197,7 @@ checks off.
 
 | Base | Routes |
 |---|---|
-| `/api/auth` | `signup`, `login`, `verify`, `resend-verification`, `forgot-password`, `reset-password`, `logout`, `me`, `timezone` PUT (zone only, from the client's device-zone offer; `profile` PUT replaces every field), `sessions`, `sessions/{id}` DELETE, `change-password`, `delete-account` (schedules: 7-day grace, sessions revoked), **`cancel-deletion`** (anonymous; a login that clears the schedule), `email/change` + `email/confirm` (code to the new address, old one notified), `security` GET (2FA state + pending email), `2fa/setup` POST (secret + otpauth URI, refused once on), `2fa/verify` (enables, returns 8 recovery codes once), `2fa/disable` (password + code), `whatsapp` PUT + `whatsapp/send-otp` / `whatsapp/verify-otp` POST, `features` / `ui-prefs` / `digest` / `home-layout` / `nav-layout` PUT, `nutrition-suggestion` POST, **`export` GET** (`user/DataExportController`: every `AuthService.USER_OWNED_TABLES` row + the `users` row as one JSON attachment; skips credential/session/OTP tables and push keys; per-IP rate-limited) |
+| `/api/auth` | `signup`, `login`, `verify`, `resend-verification`, `forgot-password`, `reset-password`, `logout`, `me`, `timezone` PUT (zone only, from the client's device-zone offer; `profile` PUT replaces every field), `sessions`, `sessions/{id}` DELETE, `change-password`, `delete-account` (schedules: 7-day grace, sessions revoked), **`cancel-deletion`** (anonymous; a login that clears the schedule), `email/change` + `email/confirm` (code to the new address, old one notified), `security` GET (2FA state + pending email), `2fa/setup` POST (secret + otpauth URI, refused once on), `2fa/verify` (password + code; enables, signs out other sessions, returns 8 recovery codes once), `2fa/disable` (password + code), `whatsapp` PUT + `whatsapp/send-otp` / `whatsapp/verify-otp` POST, `features` / `ui-prefs` / `digest` / `home-layout` / `nav-layout` PUT, `nutrition-suggestion` POST, **`export` GET** (`user/DataExportController`: every `AuthService.USER_OWNED_TABLES` row + the `users` row as one JSON attachment; skips credential/session/OTP tables and push keys; per-IP rate-limited) |
 | `/api/client-errors` | POST, **anonymous** (`ClientErrorController`): the frontend crash reporter (`scripts/error-report.js`) → server log only. Fields clipped, control chars stripped, per-IP rate-limited, nothing stored |
 | `/api/client-vitals` | POST, **anonymous** (`ClientVitalsController`): `scripts/vitals.js`'s beacon (LCP/CLS/INP/TTFB + home-painted, 10% sample) → one log line. Body is `text/plain` (what `sendBeacon` sends; no preflight), ≤2048 chars, numbers clamped, strings clipped; per-IP rate-limited, nothing stored |
 | `/api/users` | `search`, `browse` (public-ish lookup for Circle) |
@@ -230,7 +230,8 @@ checks off.
 - `user/TotpService` + `user/Totp` — optional authenticator-app 2FA. `Totp` is RFC 6238 by hand
   (HMAC-SHA1, 30 s, 6 digits, ±1 step, constant-time compare) + base32; `TotpService` stores the
   secret AES-GCM-encrypted (key derived from `SESSION_HMAC_SECRET`) in `user_totp`, rejects a step
-  already used (replay), and spends bcrypt-hashed recovery codes. `TotpServiceTest` = RFC vectors.
+  already used (replay; `verify`/`enable` read the row via `lockById`, SELECT ... FOR UPDATE, so two
+  concurrent sign-ins can't both spend one code), and spends bcrypt-hashed recovery codes. `TotpServiceTest` = RFC vectors.
 - **Every `@RequestBody` takes `@Valid`, and every field a bound.** `mentor` was the one package
   without either: an over-long thread title reached the insert and came back a 500 reading
   "Something went wrong". A bound belongs at the boundary, not at the column.

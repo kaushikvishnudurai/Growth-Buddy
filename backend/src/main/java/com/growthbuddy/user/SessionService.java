@@ -193,6 +193,21 @@ public class SessionService {
         tokenCache.clear();
     }
 
+    /**
+     * Revoke every session but the one {@code keepRawToken} belongs to (e.g.
+     * after turning 2FA on). Everything goes when that token is unknown.
+     */
+    @Transactional
+    public void revokeOthers(UUID userId, String keepRawToken) {
+        UUID keep = sessionIdForToken(keepRawToken);
+        if (keep == null) {
+            revokeAllForUser(userId);
+            return;
+        }
+        sessions.revokeOthersForUser(userId, keep, Instant.now());
+        tokenCache.clear(); // keyed by hash, not user (rare op)
+    }
+
     /** Active (non-revoked, non-expired) sessions for a user, most-recent first. */
     @Transactional(readOnly = true)
     public List<Session> listActive(UUID userId) {

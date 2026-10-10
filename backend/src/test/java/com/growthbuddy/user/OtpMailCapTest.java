@@ -67,6 +67,11 @@ class OtpMailCapTest {
             int limit = inv.getArgument(1);
             return hits.merge(key, 1, Integer::sum) <= limit;
         });
+        // The address cap counts only what is sent: peek decides, record counts.
+        when(limiter.peek(anyString(), anyInt(), anyLong())).thenAnswer(inv ->
+                hits.getOrDefault((String) inv.getArgument(0), 0) + 1 <= (int) inv.getArgument(1));
+        org.mockito.Mockito.doAnswer(inv -> hits.merge(inv.getArgument(0), 1, Integer::sum))
+                .when(limiter).record(anyString(), anyLong());
     }
 
     private static void assert429(Runnable call) {
@@ -85,8 +90,9 @@ class OtpMailCapTest {
         auth.forgotPassword(new EmailOnlyRequest(EMAIL));
         verify(mail, times(AuthService.OTP_MAIL_PER_HOUR)).sendOtp(eq(EMAIL), any(), anyString(), anyString());
 
-        assert429(() -> auth.forgotPassword(new EmailOnlyRequest(EMAIL)));
-        assert429(() -> auth.resendVerification(new EmailOnlyRequest(EMAIL)));
+        // forgot/resend skip silently (no oracle); login, past the password, says 429.
+        auth.forgotPassword(new EmailOnlyRequest(EMAIL));
+        auth.resendVerification(new EmailOnlyRequest(EMAIL));
         assert429(() -> auth.login(new LoginRequest(EMAIL, PASSWORD), null));
         verify(mail, times(AuthService.OTP_MAIL_PER_HOUR)).sendOtp(any(), any(), any(), any());
     }
@@ -102,7 +108,8 @@ class OtpMailCapTest {
             auth.forgotPassword(new EmailOnlyRequest(EMAIL));
         }
         anHourPasses.run();
-        assert429(() -> auth.forgotPassword(new EmailOnlyRequest(EMAIL)));
+        auth.forgotPassword(new EmailOnlyRequest(EMAIL));
+        assert429(() -> auth.login(new LoginRequest(EMAIL, PASSWORD), null));
         verify(mail, times(AuthService.OTP_MAIL_PER_DAY)).sendOtp(any(), any(), any(), any());
     }
 
@@ -111,25 +118,42 @@ class OtpMailCapTest {
         for (int i = 0; i < AuthService.OTP_MAIL_PER_HOUR; i++) {
             auth.forgotPassword(new EmailOnlyRequest(EMAIL));
         }
-        assert429(() -> auth.forgotPassword(new EmailOnlyRequest("  ADA@Example.com ")));
+        auth.forgotPassword(new EmailOnlyRequest("  ADA@Example.com "));
+        verify(mail, times(AuthService.OTP_MAIL_PER_HOUR)).sendOtp(any(), any(), any(), any());
     }
 
+    /* No oracle: an unknown address and a capped real one both answer with
+       silence, never a 429; and the unknown one spends nothing. */
     @Test
-    void unknownAddressGetsTheSame429SoItIsNoOracle() {
+    void unknownAndCappedAddressesAnswerTheSameSoItIsNoOracle() {
         String stranger = "nobody@example.com";
-        for (int i = 0; i < AuthService.OTP_MAIL_PER_HOUR; i++) {
+        for (int i = 0; i <= AuthService.OTP_MAIL_PER_DAY; i++) {
             auth.forgotPassword(new EmailOnlyRequest(stranger));
+            auth.resendVerification(new EmailOnlyRequest(stranger));
+            auth.forgotPassword(new EmailOnlyRequest(EMAIL));
         }
-        assert429(() -> auth.forgotPassword(new EmailOnlyRequest(stranger)));
-        assert429(() -> auth.resendVerification(new EmailOnlyRequest(stranger)));
-        verify(mail, never()).sendOtp(any(), any(), any(), any());
+        verify(mail, never()).sendOtp(eq(stranger), any(), any(), any());
+        assertThat(hits).doesNotContainKey("otpmail:" + stranger);
+    }
+
+    /* The lockout: a stranger rotating IPs sends forgot-password requests for an
+       address. Only mails actually sent count, and refused requests spend
+       nothing — so hammering past the cap doesn't push the reopening out. */
+    @Test
+    void refusedRequestsDoNotExtendTheBlock() {
+        for (int i = 0; i < 50; i++) {
+            auth.forgotPassword(new EmailOnlyRequest(EMAIL));
+        }
+        verify(mail, times(AuthService.OTP_MAIL_PER_HOUR)).sendOtp(any(), any(), any(), any());
+        assertThat(hits.get("otpmail:" + EMAIL)).isEqualTo(AuthService.OTP_MAIL_PER_HOUR);
+        assertThat(hits.get("otpday:" + EMAIL)).isEqualTo(AuthService.OTP_MAIL_PER_HOUR);
     }
 
     @Test
     void emailChangeIsCappedOnTheAddressItMailsTo() {
         String target = "victim@example.com";
         for (int i = 0; i < AuthService.OTP_MAIL_PER_HOUR; i++) {
-            auth.forgotPassword(new EmailOnlyRequest(target));
+            hits.merge("otpmail:" + target, 1, Integer::sum); // codes already mailed there
         }
         user.setEmailVerified(true);
         assert429(() -> auth.requestEmailChange(user.getId(), new ChangeEmailRequest(target, PASSWORD)));
@@ -139,9 +163,7 @@ class OtpMailCapTest {
     @Test
     void freshSignupIsRefusedBeforeAnAccountIsCreated() {
         String fresh = "new@example.com";
-        for (int i = 0; i < AuthService.OTP_MAIL_PER_HOUR; i++) {
-            auth.resendVerification(new EmailOnlyRequest(fresh));
-        }
+        hits.put("otpmail:" + fresh, AuthService.OTP_MAIL_PER_HOUR); // e.g. earlier signups that never verified
         assert429(() -> auth.signup(new SignupRequest(fresh, PASSWORD, null, null)));
         verify(users, never()).save(any());
         assertThat(hits).containsKey("otpmail:" + fresh);

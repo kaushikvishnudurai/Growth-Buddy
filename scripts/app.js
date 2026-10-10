@@ -7257,13 +7257,16 @@ function accountSecuritySections() {
   function paintTfaSetup(setup) {
     const grouped = setup.secret.replace(/(.{4})/g, '$1 ').trim();
     const code = input({ type: 'text', inputmode: 'numeric', maxlength: 6, autocomplete: 'one-time-code', placeholder: '6-digit code' });
+    const pw = input({ type: 'password', autocomplete: 'current-password', placeholder: 'Your password' });
     const verify = h('button', { type: 'button', class: 'gb-btn gb-btn--primary' }, 'Turn on');
     verify.addEventListener('click', () =>
       busy(verify, 'Checking…', async () => {
         const digits = code.value.replace(/\D/g, '');
         if (digits.length !== 6) return pushToast('Enter the 6-digit code the app shows.', 'error', 3000);
+        if (!pw.value) return pushToast('Enter your password to confirm.', 'error', 3000);
         try {
-          const out = await api('/api/auth/2fa/verify', { method: 'POST', body: JSON.stringify({ code: digits }) });
+          // Turning it on signs out every other device (server side).
+          const out = await api('/api/auth/2fa/verify', { method: 'POST', body: JSON.stringify({ password: pw.value, code: digits }) });
           status = Object.assign({}, status, { twoFactorEnabled: true, recoveryCodesLeft: out.recoveryCodes.length });
           paintRecoveryCodes(out.recoveryCodes);
         } catch (err) {
@@ -7280,6 +7283,8 @@ function accountSecuritySections() {
       h('button', { type: 'button', class: 'gb-btn gb-btn--ghost', onclick: () => copyText(setup.otpauthUri, 'Link') }, 'Copy link'),
       label('2. Enter the 6-digit code the app now shows'),
       code,
+      label('3. Confirm with your password'),
+      pw,
       verify,
       h('button', { type: 'button', class: 'gb-btn gb-btn--ghost', onclick: () => paintTfaStatus() }, 'Cancel')
     );
@@ -7287,7 +7292,7 @@ function accountSecuritySections() {
 
   function paintRecoveryCodes(codes) {
     tfaBox.replaceChildren(
-      hint('Two-step sign-in is on. Save these recovery codes somewhere safe — each one signs you in once if you lose your phone. You won’t see them again.'),
+      hint('Two-step sign-in is on, and other devices were signed out. Save these recovery codes somewhere safe — each one signs you in once if you lose your phone. You won’t see them again.'),
       h('code', { class: 'gb-tfa-secret gb-tfa-codes' }, codes.join('\n')),
       h('button', { type: 'button', class: 'gb-btn gb-btn--ghost', onclick: () => copyText(codes.join('\n'), 'Recovery codes') }, 'Copy codes'),
       h('button', { type: 'button', class: 'gb-btn gb-btn--primary', onclick: () => paintTfaStatus() }, 'I’ve saved them')
