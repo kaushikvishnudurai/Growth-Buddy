@@ -31,6 +31,7 @@ import lombok.Setter;
  * bounds and a set of {@code skipDays} (single-occurrence removals).
  */
 @Entity
+@jakarta.persistence.EntityListeners(com.growthbuddy.common.DeliveryCache.Listener.class)
 @Table(name = "calendar_reminders", indexes = {
         @Index(name = "ix_cal_rem_user_date", columnList = "user_id, anchor_date")
 })

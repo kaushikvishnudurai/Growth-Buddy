@@ -70,6 +70,7 @@ class HabitReminderDeliverySchedulerTest {
         UUID userId = UUID.randomUUID();
         Habit habit = dueHabit(userId);
         when(habits.findDeliverable(true, false)).thenReturn(List.of(habit));
+        when(habits.findAllById(any())).thenReturn(List.of(habit));
         when(users.findAllById(any())).thenReturn(List.of(user(userId)));
         when(checkins.existsByHabitIdAndLogDateAndDoneTrue(habit.getId(), today())).thenReturn(false);
         when(push.isConfigured()).thenReturn(false);
@@ -86,6 +87,7 @@ class HabitReminderDeliverySchedulerTest {
         UUID userId = UUID.randomUUID();
         Habit habit = dueHabit(userId);
         when(habits.findDeliverable(true, false)).thenReturn(List.of(habit));
+        when(habits.findAllById(any())).thenReturn(List.of(habit));
         when(users.findAllById(any())).thenReturn(List.of(user(userId)));
         when(checkins.existsByHabitIdAndLogDateAndDoneTrue(habit.getId(), today())).thenReturn(true);
 
@@ -100,6 +102,7 @@ class HabitReminderDeliverySchedulerTest {
         UUID userId = UUID.randomUUID();
         Habit habit = dueHabit(userId);
         when(habits.findDeliverable(true, false)).thenReturn(List.of(habit));
+        when(habits.findAllById(any())).thenReturn(List.of(habit));
         when(users.findAllById(any())).thenReturn(List.of(user(userId)));
         when(checkins.existsByHabitIdAndLogDateAndDoneTrue(habit.getId(), today())).thenReturn(false);
         when(dispatchLog.findByHabitIdAndOccurrenceDate(habit.getId(), today()))
@@ -116,6 +119,7 @@ class HabitReminderDeliverySchedulerTest {
         UUID userId = UUID.randomUUID();
         Habit habit = dueHabit(userId);
         when(habits.findDeliverable(true, false)).thenReturn(List.of(habit));
+        when(habits.findAllById(any())).thenReturn(List.of(habit));
         when(users.findAllById(any())).thenReturn(List.of(user(userId)));
         when(dispatchLog.findByHabitIdAndOccurrenceDate(habit.getId(), today()))
                 .thenReturn(Optional.of(logRow(habit, "sending")));
@@ -135,6 +139,7 @@ class HabitReminderDeliverySchedulerTest {
         HabitReminderDispatchLog failed = logRow(habit, "failed");
         failed.setErrorMessage("timeout");
         when(habits.findDeliverable(true, false)).thenReturn(List.of(habit));
+        when(habits.findAllById(any())).thenReturn(List.of(habit));
         when(users.findAllById(any())).thenReturn(List.of(user(userId)));
         when(dispatchLog.findByHabitIdAndOccurrenceDate(habit.getId(), today()))
                 .thenReturn(Optional.of(failed));
@@ -152,6 +157,7 @@ class HabitReminderDeliverySchedulerTest {
         UUID userId = UUID.randomUUID();
         Habit habit = dueHabit(userId);
         when(habits.findDeliverable(true, false)).thenReturn(List.of(habit));
+        when(habits.findAllById(any())).thenReturn(List.of(habit));
         when(users.findAllById(any())).thenReturn(List.of(user(userId)));
         when(dispatchLog.saveAndFlush(any())).thenThrow(new DataIntegrityViolationException("dup"));
 
@@ -176,6 +182,7 @@ class HabitReminderDeliverySchedulerTest {
         Habit habit = dueHabit(userId);
         habit.setReminderTime(LocalTime.now(UTC).plusHours(2));
         when(habits.findDeliverable(true, false)).thenReturn(List.of(habit));
+        when(habits.findAllById(any())).thenReturn(List.of(habit));
         when(users.findAllById(any())).thenReturn(List.of(user(userId)));
 
         scheduler.dispatchHabitReminders();
@@ -188,6 +195,7 @@ class HabitReminderDeliverySchedulerTest {
         UUID userId = UUID.randomUUID();
         Habit habit = dueHabit(userId);
         when(habits.findDeliverable(true, true)).thenReturn(List.of(habit));
+        when(habits.findAllById(any())).thenReturn(List.of(habit));
         when(users.findAllById(any())).thenReturn(List.of(user(userId)));
         when(checkins.existsByHabitIdAndLogDateAndDoneTrue(habit.getId(), today())).thenReturn(false);
         when(push.isConfigured()).thenReturn(true);
@@ -208,6 +216,7 @@ class HabitReminderDeliverySchedulerTest {
         u.setWhatsappEnabled(true);
         u.setWhatsappNumber("+919800000000");
         when(habits.findDeliverable(true, false)).thenReturn(List.of(habit));
+        when(habits.findAllById(any())).thenReturn(List.of(habit));
         when(users.findAllById(any())).thenReturn(List.of(u));
         when(whatsapp.isConfigured()).thenReturn(true);
 
@@ -223,11 +232,47 @@ class HabitReminderDeliverySchedulerTest {
         UUID userId = UUID.randomUUID();
         Habit habit = dueHabit(userId);
         when(habits.findDeliverable(true, false)).thenReturn(List.of(habit));
+        when(habits.findAllById(any())).thenReturn(List.of(habit));
         when(users.findAllById(any())).thenReturn(List.of(user(userId)));
         when(whatsapp.isConfigured()).thenReturn(true);
 
         scheduler.dispatchHabitReminders();
 
         verify(whatsapp, never()).sendReminder(any(), any());
+    }
+
+    /* The candidate list is cached (DeliveryCache): a quiet minute must not
+       re-read every habit, but any write must be seen on the very next tick. */
+    @Test
+    void reusesTheCandidateListUntilSomethingChanges() {
+        UUID userId = UUID.randomUUID();
+        Habit later = dueHabit(userId);
+        later.setReminderTime(LocalTime.now(UTC).plusHours(2));
+        when(habits.findDeliverable(true, false)).thenReturn(List.of(later));
+        when(users.findAllById(any())).thenReturn(List.of(user(userId)));
+
+        scheduler.dispatchHabitReminders();
+        scheduler.dispatchHabitReminders();
+        verify(habits, times(1)).findDeliverable(true, false);
+        verify(habits, never()).findAllById(any()); // nothing due: no fresh read either
+
+        com.growthbuddy.common.DeliveryCache.changed();
+        scheduler.dispatchHabitReminders();
+        verify(habits, times(2)).findDeliverable(true, false);
+    }
+
+    /* Due in the cached list, but deleted since (bulk SQL skips the listener):
+       the fresh read before sending drops it. */
+    @Test
+    void doesNotSendAHabitGoneSinceTheListWasLoaded() {
+        UUID userId = UUID.randomUUID();
+        Habit habit = dueHabit(userId);
+        when(habits.findDeliverable(true, false)).thenReturn(List.of(habit));
+        when(users.findAllById(any())).thenReturn(List.of(user(userId)));
+        when(habits.findAllById(any())).thenReturn(List.of());
+
+        scheduler.dispatchHabitReminders();
+
+        verify(notifications, never()).publish(any(), any(), any(), any(), any());
     }
 }

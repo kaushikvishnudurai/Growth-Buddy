@@ -4,6 +4,7 @@ import com.growthbuddy.notification.NotificationKind;
 import com.growthbuddy.notification.NotificationService;
 import com.growthbuddy.user.User;
 import com.growthbuddy.user.UserRepository;
+import com.growthbuddy.common.DeliveryCache;
 import com.growthbuddy.common.UserZone;
 import com.growthbuddy.common.WorkWeek;
 import java.time.Duration;
@@ -83,32 +84,56 @@ public class ReminderDeliveryScheduler {
 
     private final com.growthbuddy.push.PushService push;
 
+    // Candidate list from the last load; see DeliveryCache. Only the scheduler
+    // thread touches these, and Spring never overlaps two runs of one cron task.
+    private List<CalendarReminder> snapshot = List.of();
+    private Map<UUID, User> snapshotUsers = Map.of();
+    private long snapshotVersion;
+    private Instant snapshotAt;
+
     // Not @Transactional: this loop makes a blocking WhatsApp HTTP call per due
     // reminder; a loop-wide transaction would pin one DB connection for the whole
     // run. Each dispatchLog.save() is its own short transaction.
     @Scheduled(cron = "0 * * * * *")
     public void dispatchTimedWhatsAppReminders() {
-        // No early exit on WhatsApp/push any more: the bell is a channel too, and
-        // it needs no configuration at all. A reminder set on a phone with
-        // notifications refused still turns up in the app.
-        List<CalendarReminder> candidates =
-                reminders.findDeliverable(true, whatsapp.isConfigured(), push.isConfigured());
-        if (candidates.isEmpty()) {
-            return;
-        }
-
-        // Two batch reads replace a per-reminder lookup each. Everything below is
-        // then in-memory, so a tick costs three queries whatever the user count.
-        Map<UUID, User> userCache = new HashMap<>();
-        for (User u : users.findAllById(
-                candidates.stream().map(CalendarReminder::getUserId).distinct().toList())) {
-            userCache.put(u.getId(), u);
-        }
-
         // One wall-clock reading for the whole run. Read per-reminder, it drifts forward
         // as the blocking sends below take time, so late entries in a long run would miss
         // their own delivery window and never fire that day.
         Instant tick = Instant.now();
+
+        // No early exit on WhatsApp/push any more: the bell is a channel too, and
+        // it needs no configuration at all. A reminder set on a phone with
+        // notifications refused still turns up in the app.
+        if (DeliveryCache.stale(snapshotVersion, snapshotAt, tick)) {
+            long version = DeliveryCache.version();
+            snapshot = reminders.findDeliverable(true, whatsapp.isConfigured(), push.isConfigured());
+            snapshotUsers = usersById(snapshot);
+            snapshotVersion = version;
+            snapshotAt = tick;
+        }
+
+        // Most ticks end here without touching the database: nothing is due.
+        List<UUID> dueIds = new ArrayList<>();
+        for (CalendarReminder rem : snapshot) {
+            if (dueDay(rem, snapshotUsers.get(rem.getUserId()), tick) != null) {
+                dueIds.add(rem.getId());
+            }
+        }
+        if (dueIds.isEmpty()) {
+            return;
+        }
+
+        // The due few are read fresh, so a send always uses the current text,
+        // number and settings, and one deleted by bulk SQL is simply gone.
+        List<CalendarReminder> candidates = reminders.findAllById(dueIds).stream()
+                .filter(r -> r.getTime() != null).toList();
+        if (candidates.isEmpty()) {
+            return;
+        }
+
+        // Two batch reads replace a per-reminder lookup each, so the due set
+        // costs three queries whatever the user count.
+        Map<UUID, User> userCache = usersById(candidates);
 
         // A tick can straddle two calendar dates because users sit in different
         // zones, so ask for the days actually in play rather than just "today".
@@ -136,25 +161,8 @@ public class ReminderDeliveryScheduler {
             boolean waEligible = whatsapp.isConfigured() && user.isWhatsappEnabled()
                     && StringUtils.hasText(user.getWhatsappNumber());
 
-            ZoneId zone = UserZone.of(user.getTimezone());
-            LocalDateTime now = LocalDateTime.ofInstant(tick, zone);
-            LocalDate day = now.toLocalDate();
-            // The user object is already in hand from the batch read above, so the
-            // working week costs nothing extra here.
-            if (!reminderService.occursOn(rem, day, WorkWeek.fromPrefs(user.getUiPrefs()))) {
-                continue;
-            }
-
-            // Zone-aware, not a bare LocalDateTime. On the morning clocks spring
-            // forward an hour simply does not happen locally: a 02:30 reminder's
-            // window (02:30 → 02:35 local) never arrives, and it was skipped
-            // without a word. ZonedDateTime.of resolves a time inside the gap to
-            // the first instant that does exist — 02:30 becomes 03:30 — so it
-            // fires late rather than never. On the autumn morning the hour
-            // repeats it picks the earlier offset and the dispatch log, keyed on
-            // the day, stops the second pass resending.
-            Instant scheduledAt = ZonedDateTime.of(day, rem.getTime(), zone).toInstant();
-            if (tick.isBefore(scheduledAt) || tick.isAfter(scheduledAt.plus(CATCH_UP))) {
+            LocalDate day = dueDay(rem, user, tick);
+            if (day == null) {
                 continue;
             }
 
@@ -188,6 +196,43 @@ public class ReminderDeliveryScheduler {
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
         }
+    }
+
+    private Map<UUID, User> usersById(List<CalendarReminder> rems) {
+        Map<UUID, User> out = new HashMap<>();
+        for (User u : users.findAllById(
+                rems.stream().map(CalendarReminder::getUserId).distinct().toList())) {
+            out.put(u.getId(), u);
+        }
+        return out;
+    }
+
+    /** The user's local day if this reminder is inside its delivery window at
+     *  {@code tick}, else null. */
+    private LocalDate dueDay(CalendarReminder rem, User user, Instant tick) {
+        if (user == null) {
+            return null;
+        }
+        ZoneId zone = UserZone.of(user.getTimezone());
+        LocalDate day = LocalDateTime.ofInstant(tick, zone).toLocalDate();
+        // The user object is already in hand from the batch read, so the
+        // working week costs nothing extra here.
+        if (!reminderService.occursOn(rem, day, WorkWeek.fromPrefs(user.getUiPrefs()))) {
+            return null;
+        }
+        // Zone-aware, not a bare LocalDateTime. On the morning clocks spring
+        // forward an hour simply does not happen locally: a 02:30 reminder's
+        // window (02:30 → 02:35 local) never arrives, and it was skipped
+        // without a word. ZonedDateTime.of resolves a time inside the gap to
+        // the first instant that does exist — 02:30 becomes 03:30 — so it
+        // fires late rather than never. On the autumn morning the hour
+        // repeats it picks the earlier offset and the dispatch log, keyed on
+        // the day, stops the second pass resending.
+        Instant scheduledAt = ZonedDateTime.of(day, rem.getTime(), zone).toInstant();
+        if (tick.isBefore(scheduledAt) || tick.isAfter(scheduledAt.plus(CATCH_UP))) {
+            return null;
+        }
+        return day;
     }
 
     /** Matches the dispatch-log row for one reminder on one occurrence date. */

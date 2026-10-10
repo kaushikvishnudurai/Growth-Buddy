@@ -18,6 +18,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 @Entity
+@jakarta.persistence.EntityListeners(com.growthbuddy.common.DeliveryCache.Listener.class)
 @Table(name = "users")
 @Getter
 @Setter
