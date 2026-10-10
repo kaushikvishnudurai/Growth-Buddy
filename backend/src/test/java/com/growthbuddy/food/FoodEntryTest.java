@@ -39,7 +39,7 @@ class FoodEntryTest {
         when(entries.totalCaloriesForDay(any(), any())).thenReturn(0);
         OpenAIClient openai = mock(OpenAIClient.class);
         when(openai.isConfigured()).thenReturn(false);
-        return new FoodService(entries, mock(FoodPhotoLogRepository.class), openai, clock);
+        return new FoodService(entries, mock(FoodPhotoLogRepository.class), mock(FoodFavouriteRepository.class), openai, clock);
     }
 
     private FoodEntry saved() {

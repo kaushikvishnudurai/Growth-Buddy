@@ -3,6 +3,7 @@ package com.growthbuddy.food;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.growthbuddy.common.ApiException;
+import com.growthbuddy.common.ThrottleStore;
 import com.growthbuddy.mentor.OpenAIClient;
 import com.growthbuddy.mentor.OpenAIClient.ChatTurn;
 import com.growthbuddy.user.User;
@@ -10,15 +11,14 @@ import com.growthbuddy.user.UserClock;
 import com.growthbuddy.user.UserRepository;
 import com.growthbuddy.water.WaterService;
 import java.time.Duration;
-import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -61,22 +61,30 @@ public class FoodWeek {
     private final OpenAIClient openai;
     private final WaterService water;
     private final JdbcTemplate jdbc;
+    private final ThrottleStore throttle;
     private final ObjectMapper json = new ObjectMapper();
 
-    // ponytail: in memory, per instance, lost on restart. Fine for one Render
-    // instance; move to a table if it ever runs more than one. One entry per user.
-    /** After a failed estimate, the week reads the keyword table until this instant. */
-    private final Map<UUID, Instant> retryAfter = new ConcurrentHashMap<>();
+    /**
+     * After a failed estimate, the week reads the keyword table for this long. The
+     * lock lives in the shared {@link ThrottleStore} ({@code login_attempts}, keyed
+     * by a hash of {@link #backoffKey}), so every instance and a restart honour it;
+     * the login guard's sweep drops the row once it is idle and unlocked.
+     */
     static final Duration RETRY_AFTER = Duration.ofMinutes(10);
 
     public FoodWeek(FoodEntryRepository entries, UserRepository users, UserClock clock, OpenAIClient openai,
-                    WaterService water, JdbcTemplate jdbc) {
+                    WaterService water, JdbcTemplate jdbc, ThrottleStore throttle) {
         this.entries = entries;
         this.users = users;
         this.clock = clock;
         this.openai = openai;
         this.water = water;
         this.jdbc = jdbc;
+        this.throttle = throttle;
+    }
+
+    static String backoffKey(UUID userId) {
+        return "food-estimate:" + userId;
     }
 
     // Not @Transactional: estimate is an AI call, and a transaction would hold a
@@ -87,11 +95,12 @@ public class FoodWeek {
         List<FoodEntry> missing = all.stream().filter(FoodWeek::missing).toList();
         // A failed batch isn't retried on every open: the gateway being down or
         // out of budget would otherwise cost a call per Summary view.
-        if (!missing.isEmpty() && !Instant.now().isBefore(retryAfter.getOrDefault(userId, Instant.MIN))) {
+        String key = backoffKey(userId);
+        if (!missing.isEmpty() && throttle.attempt(key).lockedUntilMs() <= System.currentTimeMillis()) {
             if (estimate(missing)) {
-                retryAfter.remove(userId);
+                throttle.clearAttempt(key);
             } else {
-                retryAfter.put(userId, Instant.now().plus(RETRY_AFTER));
+                throttle.recordFailure(key, failures -> (int) RETRY_AFTER.toMillis());
             }
         }
         List<FoodWeekDay> days = days(byDay);
@@ -103,12 +112,13 @@ public class FoodWeek {
         }
         Nutrients targets = targets(u, goal);
         Nutrients avg = average(days);
-        DietCheckResponse r = rules(avg, targets);
+        double share = averagesOnlyToday(days) ? dayShare(LocalTime.now(clock.zoneOf(userId))) : 1.0;
+        DietCheckResponse r = rules(avg, targets, "Your week", null, 0, share);
         return new FoodWeekResponse(goal, targets.proteinG(), days,
                 by.get("protein").stream().map(x -> new ProteinSource(x.name(), x.count(), x.g())).toList(),
                 targets, avg, averageKcal(days),
                 Map.of("protein", r.protein(), "carbs", r.carbs(), "fat", r.fat(), "fiber", r.fiber(),
-                        "calories", level(averageKcal(days), goal)), by);
+                        "calories", level(averageKcal(days), goal, share)), by);
     }
 
     private static int goalKcal(User u) {
@@ -141,6 +151,28 @@ public class FoodWeek {
         List<FoodWeekDay> past = days.subList(0, Math.max(0, days.size() - 1)).stream()
                 .filter(d -> d.count() > 0).toList();
         return past.isEmpty() ? logged : past;
+    }
+
+    /** True when the average is today alone: no finished day has meals, today does. */
+    static boolean averagesOnlyToday(List<FoodWeekDay> days) {
+        if (days.isEmpty() || days.get(days.size() - 1).count() == 0) {
+            return false;
+        }
+        return days.subList(0, days.size() - 1).stream().noneMatch(d -> d.count() > 0);
+    }
+
+    /** The user's waking day, for judging a day still in progress. */
+    static final LocalTime WAKE = LocalTime.of(7, 0);
+    static final int WAKING_HOURS = 16;
+
+    // ponytail: a fixed 07:00-23:00 waking day, counted in whole hours (so the AI
+    // prompt, and with it the stored diet check, changes at most hourly), floored at
+    // a quarter so breakfast isn't judged against nothing. A user-set wake/sleep
+    // time, or the hours they usually log meals at, if anyone asks.
+    /** Share of today's targets that "so far" is judged against: 0.25 .. 1. */
+    static double dayShare(LocalTime now) {
+        long h = Duration.between(WAKE, now).toHours();
+        return Math.max(0.25, Math.min(1.0, h / (double) WAKING_HOURS));
     }
 
     static Nutrients average(List<FoodWeekDay> days) {
@@ -374,18 +406,22 @@ public class FoodWeek {
                     ? "Log a few meals this week and Buddy can tell you what your plate is missing."
                     : "Nothing logged on this day yet. Add a meal and Buddy can read it.", List.of(), "rules");
         }
-        // ponytail: today is judged against full-day targets while it is still being
-        // eaten, so a morning check reads light; the wording says "so far" rather than
-        // pro-rating targets by the hour.
         String label = day == null ? "Your week" : day.equals(today) ? "Today so far" : "That day";
         User u = users.findById(userId).orElse(null);
         Nutrients target = targets(u, goalKcal(u));
-        Nutrients avg = average(days(byDay));
-        Integer waterMl = waterFor(userId, today, day);
+        List<FoodWeekDay> ds = days(byDay);
+        Nutrients avg = average(ds);
+        // Today still being eaten (a day check of today, or a week whose only meals
+        // are today's) is judged "low" against the share of the waking day gone, so a
+        // morning check doesn't read light on everything. "High" stays against the
+        // full day: meals are lumpy, and a big lunch must not read "heavy" at 13:00.
+        boolean inProgress = day == null ? averagesOnlyToday(ds) : day.equals(today);
+        double share = inProgress ? dayShare(LocalTime.now(clock.zoneOf(userId))) : 1.0;
+        Integer waterMl = waterFor(u, userId, today, day);
         int waterGoal = waterMl == null ? 0 : water.goalMl(userId);
         // Judged from the same numbers the screen's thali shows, never by the AI,
         // so the verdict can't contradict the chart above it.
-        DietCheckResponse rules = rules(avg, target, label, waterMl, waterGoal);
+        DietCheckResponse rules = rules(avg, target, label, waterMl, waterGoal, share);
         if (!openai.isConfigured()) {
             return rules;
         }
@@ -404,6 +440,10 @@ public class FoodWeek {
                 .append("), fiber ").append(avg.fiberG()).append(" (").append(target.fiberG()).append(").");
         if (waterMl != null) {
             sb.append("\nWater ml a day (goal): ").append(waterMl).append(" (").append(waterGoal).append(").");
+        }
+        if (share < 1.0) {
+            sb.append("\nShare of the waking day gone: ").append(Math.round(share * 100))
+                    .append("%; judge what's light against that share of the targets.");
         }
         sb.append("\nVerdict: ").append(verdict(rules)).append('.');
         if (u != null) {
@@ -486,16 +526,23 @@ public class FoodWeek {
     }
 
     /**
-     * The day's water, or the week's average over the same days the food average
-     * uses; null when nothing was logged all week.
+     * Water tracking is on unless the user turned the {@code water} feature off
+     * ({@code users.feature_prefs}, opt-out like the client's {@code featureOn});
+     * an unknown user reads as on, the same default.
      */
-    // ponytail: "no water all week" stands in for "Water is turned off", which only
-    // the client knows; a user who has it on and logs none just isn't told about it.
-    private Integer waterFor(UUID userId, LocalDate today, LocalDate day) {
-        Map<LocalDate, Integer> ml = water.totalsByDay(userId, today.minusDays(DAYS - 1), today);
-        if (ml.isEmpty()) {
+    static boolean waterOn(User u) {
+        return u == null || u.getFeaturePrefs() == null || !Boolean.FALSE.equals(u.getFeaturePrefs().get("water"));
+    }
+
+    /**
+     * The day's water, or the week's average over the same days the food average
+     * uses (0 when none was logged); null when the Water feature is off.
+     */
+    private Integer waterFor(User u, UUID userId, LocalDate today, LocalDate day) {
+        if (!waterOn(u)) {
             return null;
         }
+        Map<LocalDate, Integer> ml = water.totalsByDay(userId, today.minusDays(DAYS - 1), today);
         if (day != null) {
             return ml.getOrDefault(day, 0);
         }
@@ -529,8 +576,13 @@ public class FoodWeek {
 
     /** Under 80% of the target is low, over 120% high. */
     static String level(int avg, int target) {
+        return level(avg, target, 1.0);
+    }
+
+    /** "Low" is judged against {@code share} of the target; "high" always against all of it. */
+    static String level(int avg, int target, double share) {
         double r = (double) avg / Math.max(1, target);
-        return r < 0.8 ? "low" : r > 1.2 ? "high" : "ok";
+        return r < 0.8 * share ? "low" : r > 1.2 ? "high" : "ok";
     }
 
     /** No AI: the verdict from the numbers, and a stock suggestion per gap. */
@@ -545,11 +597,17 @@ public class FoodWeek {
 
     /** {@code waterMl} null: water isn't judged or mentioned. */
     static DietCheckResponse rules(Nutrients avg, Nutrients target, String label, Integer waterMl, int waterGoalMl) {
-        String w = waterMl == null ? null : level(waterMl, waterGoalMl);
-        String p = level(avg.proteinG(), target.proteinG());
-        String c = level(avg.carbsG(), target.carbsG());
-        String f = level(avg.fatG(), target.fatG());
-        String fi = level(avg.fiberG(), target.fiberG());
+        return rules(avg, target, label, waterMl, waterGoalMl, 1.0);
+    }
+
+    /** {@code share} under 1: a day still in progress, see {@link #level(int, int, double)}. */
+    static DietCheckResponse rules(Nutrients avg, Nutrients target, String label, Integer waterMl, int waterGoalMl,
+                                   double share) {
+        String w = waterMl == null ? null : level(waterMl, waterGoalMl, share);
+        String p = level(avg.proteinG(), target.proteinG(), share);
+        String c = level(avg.carbsG(), target.carbsG(), share);
+        String f = level(avg.fatG(), target.fatG(), share);
+        String fi = level(avg.fiberG(), target.fiberG(), share);
         // One tip per gap the summary names, extras after: with a cap of 4, two
         // tips each for protein and fiber used to push "heavy on carbs" out of
         // the list while the summary still said it.

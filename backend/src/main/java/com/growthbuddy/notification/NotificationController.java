@@ -1,6 +1,9 @@
 package com.growthbuddy.notification;
 
+import com.growthbuddy.common.ApiException;
 import com.growthbuddy.common.CurrentUser;
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -9,7 +12,9 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -23,9 +28,41 @@ public class NotificationController {
         this.service = service;
     }
 
+    /**
+     * No parameters: every row, as shipped clients expect. With {@code limit}
+     * (or {@code before} / {@code category}): one page, newest first, at or
+     * before {@code before} (ISO instant) — the bell's "Load older".
+     * {@code category} is a {@link NotifyCategory}; anything else means all.
+     */
     @GetMapping
-    public List<NotificationService.NotificationDto> list() {
-        return service.list(CurrentUser.id());
+    public List<NotificationService.NotificationDto> list(
+            @RequestParam(required = false) String before,
+            @RequestParam(required = false) Integer limit,
+            @RequestParam(required = false) String category) {
+        if (before == null && limit == null && category == null) {
+            return service.list(CurrentUser.id());
+        }
+        Instant at = null;
+        if (before != null && !before.isBlank()) {
+            try {
+                at = Instant.parse(before.trim());
+            } catch (DateTimeParseException e) {
+                throw ApiException.badRequest("before must be an ISO-8601 instant");
+            }
+        }
+        return service.page(CurrentUser.id(), at, limit == null ? 30 : limit, NotifyCategory.parse(category));
+    }
+
+    /** Stamp every unread card of the caller's read; nothing is deleted. */
+    @PostMapping("/mark-all-read")
+    public Map<String, Integer> markAllRead() {
+        return Map.of("updated", service.markAllRead(CurrentUser.id()));
+    }
+
+    /** Delete the caller's read cards; unread ones stay. */
+    @DeleteMapping("/read")
+    public Map<String, Integer> clearRead() {
+        return Map.of("deleted", service.clearRead(CurrentUser.id()));
     }
 
     @GetMapping("/unread-count")

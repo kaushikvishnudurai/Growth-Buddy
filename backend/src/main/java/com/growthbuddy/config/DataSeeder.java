@@ -118,6 +118,22 @@ public class DataSeeder implements CommandLineRunner {
                     index ix_login_attempts_idle (updated_at_ms)
                 ) engine=InnoDB default charset=utf8mb4 collate=utf8mb4_unicode_ci
                 """).executeUpdate();
+
+        // Same reason: JdbcIdempotencyStore's table, no entity behind it.
+        em.createNativeQuery("""
+                create table if not exists idempotency_keys (
+                    user_id char(36) not null,
+                    idem_key varchar(64) not null,
+                    method varchar(8) not null,
+                    path varchar(255) not null,
+                    status int null,
+                    content_type varchar(255) null,
+                    response_body mediumtext null,
+                    created_at datetime(6) not null,
+                    primary key (user_id, idem_key),
+                    index ix_idempotency_created (created_at)
+                ) engine=InnoDB default charset=utf8mb4 collate=utf8mb4_unicode_ci
+                """).executeUpdate();
     }
 
     private void seedDemoUser() {

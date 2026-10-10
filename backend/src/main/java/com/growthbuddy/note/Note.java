@@ -64,6 +64,18 @@ public class Note {
     @Column(nullable = false)
     private boolean pinned = false;
 
+    /**
+     * The note's labels, comma-joined ("work,ideas"), or null for none.
+     * {@link NoteLabels} is the one place that splits, validates and joins them:
+     * at most 10, each at most 30 characters, no commas inside one.
+     */
+    @Column(length = 500)
+    private String labels;
+
+    /** Set while the note is archived: kept, searchable in its own view, out of the main list. */
+    @Column(name = "archived_at")
+    private Instant archivedAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

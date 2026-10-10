@@ -55,6 +55,9 @@ class MoneyVersionTest {
         org.mockito.Mockito.lenient().when(ledger.load(any(), any())).thenReturn(json.createObjectNode());
         org.mockito.Mockito.lenient().when(ledger.accounts(any())).thenReturn(json.createArrayNode());
         when(repo.lockById(USER)).thenAnswer(inv -> Optional.ofNullable(reload()));
+        // get() peeks at the document unlocked and locks only when it must migrate.
+        org.mockito.Mockito.lenient().when(repo.peekData(USER))
+                .thenAnswer(inv -> Optional.ofNullable(stored == null ? null : stored.getData()));
         when(repo.save(any(MoneyState.class))).thenAnswer(inv -> {
             MoneyState in = inv.getArgument(0);
             in.touch(); // @PrePersist / @PreUpdate
@@ -94,5 +97,19 @@ class MoneyVersionTest {
         assertThatThrownBy(() -> service.save(USER, doc("mine plus one"), mine))
                 .isInstanceOf(ApiException.class)
                 .hasMessageContaining("changed somewhere else");
+    }
+
+    @Test
+    void aSettledDocumentIsReadWithoutTheRowLock() {
+        service.save(USER, doc("plain"), null);
+        org.mockito.Mockito.clearInvocations(repo);
+        service.get(USER);
+        org.mockito.Mockito.verify(repo, org.mockito.Mockito.never()).lockById(any());
+        assertThat(MoneyService.needsWrite(json.createObjectNode().putArray("expenses"))).isFalse(); // not an object doc
+        ObjectNode legacy = json.createObjectNode();
+        legacy.putArray("expenses");
+        legacy.putObject("settings").put("accountsSeeded", true);
+        assertThat(MoneyService.needsWrite(legacy)).isTrue();
+        assertThat(MoneyService.needsWrite(doc("x"))).isFalse();
     }
 }

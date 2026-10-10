@@ -24,15 +24,18 @@ public class WebConfig implements WebMvcConfigurer {
     private final CurrentUserInterceptor currentUserInterceptor;
     private final RateLimitInterceptor   rateLimitInterceptor;
     private final AiRateLimitInterceptor aiRateLimitInterceptor;
+    private final IdempotencyInterceptor idempotencyInterceptor;
     private final String allowedOrigins;
 
     public WebConfig(CurrentUserInterceptor currentUserInterceptor,
                      RateLimitInterceptor rateLimitInterceptor,
                      AiRateLimitInterceptor aiRateLimitInterceptor,
+                     IdempotencyInterceptor idempotencyInterceptor,
                      @Value("${growthbuddy.cors.allowed-origins}") String allowedOrigins) {
         this.currentUserInterceptor = currentUserInterceptor;
         this.rateLimitInterceptor   = rateLimitInterceptor;
         this.aiRateLimitInterceptor = aiRateLimitInterceptor;
+        this.idempotencyInterceptor = idempotencyInterceptor;
         this.allowedOrigins         = allowedOrigins;
     }
 
@@ -48,16 +51,36 @@ public class WebConfig implements WebMvcConfigurer {
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(currentUserInterceptor).addPathPatterns("/api/**");
+        // Second, on purpose: it needs the user CurrentUserInterceptor just set, and
+        // it must answer a replay before the AI limiter below charges for it.
+        // (IdempotencyFilter captures the response; it only acts on keyed writes.)
+        registry.addInterceptor(idempotencyInterceptor).addPathPatterns("/api/**");
         // Rate-limit sensitive auth endpoints: 10 attempts per IP per 5 minutes.
         registry.addInterceptor(rateLimitInterceptor)
                 .addPathPatterns(
+                    // Anonymous, creates an account AND sends an email — it was the
+                    // one OTP-sending path with no per-IP limit at all.
+                    "/api/auth/signup",
                     "/api/auth/login",
                     "/api/auth/verify",
                     "/api/auth/forgot-password",
                     "/api/auth/reset-password",
                     "/api/auth/resend-verification",
                     "/api/auth/whatsapp/send-otp",
-                    "/api/auth/whatsapp/verify-otp"
+                    "/api/auth/whatsapp/verify-otp",
+                    // Each checks a password or a code (and change sends an email).
+                    "/api/auth/cancel-deletion",
+                    "/api/auth/email/change",
+                    "/api/auth/email/confirm",
+                    "/api/auth/2fa/verify",
+                    "/api/auth/2fa/disable",
+                    // A guessable secret too: a private circle's 8-char code (32^8).
+                    "/api/circles/join-code",
+                    // Not secrets, but each is costly or anonymous: the export reads
+                    // every table this account owns, and crash reports need no session.
+                    "/api/auth/export",
+                    "/api/client-errors",
+                    "/api/client-vitals"
                 );
         // Per-user cap on the pricey OpenAI-backed endpoints. EVERY path that can
         // reach OpenAIClient belongs here; the four vision ones (photo-estimate,
@@ -73,6 +96,12 @@ public class WebConfig implements WebMvcConfigurer {
         registry.addInterceptor(aiRateLimitInterceptor)
                 .addPathPatterns(
                     "/api/mentor/chat/messages",
+                    // Same reply path as /chat/messages, per thread: it was missing,
+                    // so only OpenAIClient's looser backstop budget capped it.
+                    "/api/mentor/threads/*/messages",
+                    // The streamed twins of the two above (SSE; same model call).
+                    "/api/mentor/chat/messages/stream",
+                    "/api/mentor/threads/*/messages/stream",
                     "/api/quick-add",
                     "/api/money/advice",
                     "/api/money/receipt-scan",

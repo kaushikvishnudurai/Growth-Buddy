@@ -6,7 +6,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.util.Set;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
-import org.springframework.web.servlet.HandlerInterceptor;
+import org.springframework.web.servlet.AsyncHandlerInterceptor;
 
 /**
  * Resolves the acting user for each request by validating the bearer token in
@@ -18,7 +18,7 @@ import org.springframework.web.servlet.HandlerInterceptor;
  * spoof any user just by guessing/learning their id.
  */
 @Component
-public class CurrentUserInterceptor implements HandlerInterceptor {
+public class CurrentUserInterceptor implements AsyncHandlerInterceptor {
 
     /**
      * Routes that may be hit without a session token. Everything else demands
@@ -32,8 +32,12 @@ public class CurrentUserInterceptor implements HandlerInterceptor {
             "/api/auth/resend-verification",
             "/api/auth/forgot-password",
             "/api/auth/reset-password",
+            "/api/auth/cancel-deletion", // a scheduled account has no sessions left; password-checked like login
             "/api/auth/logout", // idempotent: works without a session too
-            "/api/whatsapp/webhook" // Meta calls it; authenticated by its HMAC signature instead
+            "/api/whatsapp/webhook", // Meta calls it; authenticated by its HMAC signature instead
+            "/api/reminders/snooze-link", // a push notification's Snooze button; a signed ticket instead (SnoozeLinks)
+            "/api/client-errors", // crash reports; the sign-in screen crashes too. Rate-limited + size-capped (ClientErrorController)
+            "/api/client-vitals" // RUM beacons (scripts/vitals.js); same rules as client-errors (ClientVitalsController)
     );
 
     private final SessionService sessions;
@@ -81,6 +85,19 @@ public class CurrentUserInterceptor implements HandlerInterceptor {
     @Override
     public void afterCompletion(HttpServletRequest request, HttpServletResponse response,
                                 Object handler, Exception ex) {
+        CurrentUser.clear();
+    }
+
+    /**
+     * An async handler (the streamed Buddy reply) hands its request thread back
+     * to Tomcat without {@link #afterCompletion} — that runs only after the later
+     * ASYNC dispatch, on whichever thread serves it. Without this the user id
+     * stayed in the pooled thread's ThreadLocal, and the next anonymous request
+     * on it ({@code /api/client-errors}, say) would run as that user.
+     */
+    @Override
+    public void afterConcurrentHandlingStarted(HttpServletRequest request, HttpServletResponse response,
+                                               Object handler) {
         CurrentUser.clear();
     }
 }

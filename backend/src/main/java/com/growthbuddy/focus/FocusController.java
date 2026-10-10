@@ -43,17 +43,26 @@ class FocusController {
 
     record SessionView(int durationSec, Instant completedAt) {}
 
+    /** Per-day focus minutes for the last {@code days} (user's zone), and this week's minutes per linked task / goal. */
+    @GetMapping("/history")
+    public FocusService.FocusHistory history(@RequestParam(defaultValue = "30") int days) {
+        return service.history(CurrentUser.id(), days);
+    }
+
     /** Log a completed session; returns fresh stats. */
     @PostMapping("/sessions")
     public FocusService.FocusStats record(@jakarta.validation.Valid @RequestBody SessionRequest req) {
-        return service.record(CurrentUser.id(), req.mode(), req.durationSec());
+        return service.record(CurrentUser.id(), req.mode(), req.durationSec(), req.taskId(), req.goalId());
     }
 
-    record SessionRequest(String mode, @NotNull @Min(1) @Max(21600) Integer durationSec) {}
+    /** taskId / goalId: optional, what the session was spent on; must be the caller's own. */
+    record SessionRequest(String mode, @NotNull @Min(1) @Max(21600) Integer durationSec, UUID taskId, UUID goalId) {}
 }
 
 interface FocusSessionRepository extends JpaRepository<FocusSession, UUID> {
     long countByUserId(UUID userId);
+
+    long countByUserIdAndMode(UUID userId, String mode);
 
     List<FocusSession> findByUserIdAndModeAndCompletedAtAfter(UUID userId, String mode, Instant after);
 }

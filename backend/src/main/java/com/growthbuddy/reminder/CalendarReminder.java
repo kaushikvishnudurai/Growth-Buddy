@@ -69,6 +69,39 @@ public class CalendarReminder {
     @Column(name = "repeat_freq", nullable = false, length = 16)
     private RepeatFreq repeat = RepeatFreq.none;
 
+    /*
+     * The richer rule, read by ReminderService.occursOn and scripts/recurrence.js
+     * alike (recurrence.cases.json holds both to it). Each is only meaningful for
+     * some repeats and ReminderService.normalizeRule clears it everywhere else.
+     */
+
+    /** Every N days/weeks/months/years; 1 = every. Ignored by {@code weekdays}. */
+    @Column(name = "repeat_interval", nullable = false)
+    private int repeatInterval = 1;
+
+    /** A weekly reminder's days, "MO,WE,FR"; null = the anchor's weekday. */
+    @Column(name = "repeat_days", length = 32)
+    private String repeatDays;
+
+    /** Monthly on the nth (1..5, -1 = last) anchor-weekday instead of the date; null = by date. */
+    @Column(name = "repeat_nth")
+    private Integer repeatNth;
+
+    /** End after this many occurrences of the rule, counted from the anchor; null = no count. */
+    @Column(name = "repeat_count")
+    private Integer repeatCount;
+
+    /** Free-text details under the title; null = none. */
+    @Column(length = 1000)
+    private String notes;
+
+    /**
+     * A second alert, minutes ahead of {@link #time}; null = none. Unlike
+     * {@link #notifyBefore} it has no default to fall back on.
+     */
+    @Column(name = "notify_before2")
+    private Integer notifyBefore2;
+
     /** Lower bound for occurrences (used by "delete all before"). */
     @Column(name = "from_date")
     private LocalDate fromDate;
@@ -91,6 +124,21 @@ public class CalendarReminder {
      */
     @Column(length = 16)
     private String sound;
+
+    /**
+     * Minutes ahead of {@link #time} to notify. Null means the user's default
+     * ({@code ui_prefs.reminderLead}, see {@link ReminderPrefs}), so a reminder
+     * nobody tuned keeps following that setting when it changes.
+     */
+    @Column(name = "notify_before")
+    private Integer notifyBefore;
+
+    /**
+     * When a snoozed reminder rings again; null when it isn't snoozed. One per
+     * reminder: snoozing again moves it. The scheduler clears it as it delivers.
+     */
+    @Column(name = "snoozed_until")
+    private Instant snoozedUntil;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

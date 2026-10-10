@@ -17,9 +17,28 @@ import {
   Thinking,
   refreshIcons,
 } from './gb-kit.js';
-import { MoneyHomeCard } from './money.js';
+import { MoneyHomeCard } from './money-home.js';
 import { CacheStorage } from './cache-storage.js';
 import { occursOn } from './recurrence.js';
+import {
+  HOME_WIDGETS,
+  resolveHomeLayout,
+  sortTasksForHome,
+  sortHabitsForHome,
+  habitDue,
+  topStreaks,
+  homeGoals,
+} from './home-order.js';
+import { suggestReminderTime } from './habit-stats.js';
+import { fmtDate, fmtNumber } from './i18n.js';
+import {
+  groupBySlot,
+  mealSlotAt,
+  DRINKS,
+  effectiveMl,
+  suggestWaterGoalMl,
+  dayMicros,
+} from './nutrition.js';
 
 const ONBOARD_KEY = 'gb.onboardDismissed';
 
@@ -157,8 +176,12 @@ function ScoreCard({ score, tasks: allTasks, habits }) {
   // Paused tasks are out of the score, so out of its "x/y tasks" line too.
   const tasks = allTasks.filter((t) => !t.paused);
   const doneTasks = tasks.filter((t) => t.done).length;
-  const doneHabits = habits.filter((h) => h.doneToday).length;
-  const topStreak = habits.reduce((m, h) => Math.max(m, h.streak || 0), 0);
+  // The habits owed today, as the server's score counts them (HabitService.
+  // countsOn): a weekly habit already done this week, or a paused one, is not
+  // today's miss. "2/3 habits" used to count every habit.
+  const dueHabits = habits.filter((hb) => habitDue(hb) || hb.doneToday);
+  const doneHabits = dueHabits.filter((hb) => hb.doneToday).length;
+  const best = topStreaks(habits);
 
   const ringNumber = h(
     'span',
@@ -194,21 +217,28 @@ function ScoreCard({ score, tasks: allTasks, habits }) {
   const heading =
     score >= 70 ? "You're on track 🔥" : score > 0 ? 'Keep it going' : 'Let’s get started';
 
+  // Days and weeks are different units, so each gets its own pill; one max
+  // over both called a 6-week streak "6-day".
   const pills = [];
-  if (topStreak > 0) {
-    pills.push(
-      Pill({
+  [
+    [best.days, '-day', ' day streak'],
+    [best.weeks, '-week', ' week streak'],
+  ].forEach(([n, unit, spoken]) => {
+    if (n > 0) {
+      const pill = Pill({
         icon: 'flame',
-        label: topStreak + '-day',
+        label: n + unit,
         bg: 'var(--coral-50)',
         fg: 'var(--coral-700)',
-      })
-    );
-  }
+      });
+      pill.setAttribute('aria-label', 'Best ' + n + spoken);
+      pills.push(pill);
+    }
+  });
 
   const subParts = [];
   if (tasks.length) subParts.push(doneTasks + '/' + tasks.length + ' tasks');
-  if (habits.length) subParts.push(doneHabits + '/' + habits.length + ' habits');
+  if (dueHabits.length) subParts.push(doneHabits + '/' + dueHabits.length + ' habits');
   const sub = subParts.length ? subParts.join(' · ') : 'Add a task or habit to begin';
 
   return Card({
@@ -226,7 +256,7 @@ function ScoreCard({ score, tasks: allTasks, habits }) {
   });
 }
 
-function TaskRow(task, toggleTask, onEdit, onPause) {
+function TaskRow(task, toggleTask, onEdit, onPause, onFocus) {
   const p = PRIORITY[task.priority] || PRIORITY.Low;
   return h(
     'div',
@@ -275,6 +305,20 @@ function TaskRow(task, toggleTask, onEdit, onPause) {
           Icon(task.paused ? 'play' : 'pause', { size: 15, sw: 2.4 })
         )
       : null,
+    // Opens the Focus timer with this task picked as what the session is on.
+    onFocus && !task.done && !task.paused
+      ? h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-icon-btn',
+            'aria-label': 'Start focus on ' + task.title,
+            title: 'Start focus',
+            onclick: () => onFocus(task),
+          },
+          Icon('timer', { size: 15, sw: 2.4 })
+        )
+      : null,
     onEdit
       ? h(
           'button',
@@ -298,7 +342,9 @@ const TASKS_SHOWN = 6;
 let tasksExpanded = false;
 
 function TasksCard(props) {
-  const { tasks, toggleTask, onAdd, onEdit, onPause } = props;
+  const { toggleTask, onAdd, onEdit, onPause, onFocus } = props;
+  // Overdue, today, upcoming, no date; paused and done last (home-order.js).
+  const tasks = sortTasksForHome(props.tasks);
   if (!tasks.length) {
     return Card({
       children: [
@@ -323,7 +369,9 @@ function TasksCard(props) {
       h(
         'div',
         { class: 'gb-tasks-list' },
-        tasks.slice(0, tasks.length - hidden).map((t) => TaskRow(t, toggleTask, onEdit, onPause))
+        tasks
+          .slice(0, tasks.length - hidden)
+          .map((t) => TaskRow(t, toggleTask, onEdit, onPause, onFocus))
       ),
       hidden
         ? h(
@@ -355,14 +403,26 @@ function HabitCard(habit, toggleHabit) {
     children: [
       IconChip({ domain: habit.domain, icon: habit.icon }),
       h('div', { class: 'name' }, habit.name),
+      // The flame and a bare number said nothing to a screen reader.
       h(
         'div',
-        { class: 'streak' },
+        {
+          class: 'streak',
+          role: 'img',
+          'aria-label':
+            (habit.streak || 0) +
+            ((habit.cadence || 'daily') === 'daily' ? '-day' : '-week') +
+            ' streak',
+        },
         Icon('flame', { size: 14, color: 'var(--coral-500)' }),
         String(habit.streak || 0)
       ),
       toggleHabit
-        ? Check({ done: !!habit.doneToday, onToggle: () => toggleHabit(habit.id), label: habit.name })
+        ? Check({
+            done: !!habit.doneToday,
+            onToggle: () => toggleHabit(habit.id),
+            label: habit.name,
+          })
         : null,
     ],
   });
@@ -552,12 +612,20 @@ function ReminderSuggestionsCard({ habits, water, wellness, reminders, onAddSugg
   // A habit with its own reminder time is already covered (bell, push and
   // WhatsApp at that time); suggesting a second 19:00 one for it read as if
   // its reminder had landed here instead, and Add booked a duplicate.
-  const missedHabit = (habits || []).find((habit) => !habit.doneToday && !habit.reminderTime);
+  // Only a habit still owed today: a paused one, or a weekly one already met,
+  // has nothing to be reminded of.
+  const missedHabit = (habits || []).find(
+    (habit) => !habit.doneToday && !habit.reminderTime && habitDue(habit)
+  );
+  // The time: when this user already likes to be nudged — the median of the
+  // reminder times on their other habits (suggestReminderTime), else 19:00.
+  // The server keeps no time of day for a check-in, so "when they usually tick"
+  // isn't knowable here.
   if (missedHabit)
     items.push({
       icon: 'repeat',
       text: missedHabit.name + ' reminder',
-      time: '19:00',
+      time: suggestReminderTime(habits),
       tag: 'health',
     });
   const waterGoal = (water && water.goalMl) || 2000;
@@ -682,7 +750,7 @@ function GoalTimelineCard({ goals }) {
   });
 }
 
-function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater }) {
+function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, weightKg }) {
   const goalMl = Math.max(1, (water && water.goalMl) || 2000);
   const consumedMl = Math.max(0, (water && water.consumedMl) || 0);
   const remainingMl = Math.max(0, goalMl - consumedMl);
@@ -774,6 +842,60 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater })
       value: String(cfg.initialValue || ''),
     });
     const error = h('div', { class: 'gb-water-prompt-error', 'aria-live': 'polite' });
+    // Backdating: "I forgot to log yesterday's bottle". Capped at today.
+    const dayInput = cfg.withDay
+      ? h('input', {
+          type: 'date',
+          class: 'gb-input',
+          value: todayKey(),
+          max: todayKey(),
+          'aria-label': 'Day',
+        })
+      : null;
+    // What was drunk: tea and coffee count for a little less (nutrition.js
+    // HYDRATION). Water first and preselected; the quick buttons are always water.
+    let drink = 'water';
+    const drinkRow = cfg.withDrink
+      ? h(
+          'div',
+          { class: 'gb-water-drinks', role: 'radiogroup', 'aria-label': 'Drink' },
+          DRINKS.map((d) =>
+            h(
+              'button',
+              {
+                type: 'button',
+                class: 'gb-water-drink' + (d.key === drink ? ' is-on' : ''),
+                role: 'radio',
+                'aria-checked': String(d.key === drink),
+                onclick: (e) => {
+                  drink = d.key;
+                  for (const b of drinkRow.children) {
+                    const on = b === e.currentTarget;
+                    b.classList.toggle('is-on', on);
+                    b.setAttribute('aria-checked', String(on));
+                  }
+                },
+              },
+              d.label
+            )
+          )
+        )
+      : null;
+    // "Suggested: 2,250 ml" — one tap puts it in the field; Save still saves.
+    const suggestBtn = cfg.suggestion
+      ? h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-water-suggest',
+            onclick: () => {
+              input.value = String(cfg.suggestion.value);
+              input.focus();
+            },
+          },
+          cfg.suggestion.label
+        )
+      : null;
 
     function showError(msg) {
       error.textContent = msg || '';
@@ -795,8 +917,13 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater })
         input.focus();
         return;
       }
+      if (dayInput && dayInput.value > todayKey()) {
+        showError("You can't log water for a day that hasn't happened yet.");
+        dayInput.focus();
+        return;
+      }
       if (typeof cfg.onConfirm === 'function') {
-        cfg.onConfirm(Math.round(value));
+        cfg.onConfirm(Math.round(value), dayInput ? dayInput.value || todayKey() : undefined, drink);
       }
       close();
     }
@@ -811,6 +938,11 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater })
           { class: 'gb-form' },
           h('div', { class: 'gb-field-label' }, cfg.label),
           input,
+          suggestBtn,
+          drinkRow ? h('div', { class: 'gb-field-label' }, 'Drink') : null,
+          drinkRow,
+          dayInput ? h('div', { class: 'gb-field-label' }, 'Day') : null,
+          dayInput,
           error
         )
       ),
@@ -852,13 +984,24 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater })
       min: 1,
       max: 5000,
       confirmLabel: 'Add water',
-      onConfirm: (amount) => onQuickAddWater(amount),
+      withDay: true,
+      withDrink: true,
+      onConfirm: (amount, day, drink) => onQuickAddWater(amount, day, drink),
     });
   }
 
   function setGoalAmount() {
     if (!onUpdateWaterGoal) return;
+    // 33 ml per kg of the profile's weight, to the nearest 250; none without one.
+    const suggested = suggestWaterGoalMl(weightKg);
     openNumericPrompt({
+      suggestion:
+        suggested && suggested !== goalMl
+          ? {
+              value: suggested,
+              label: 'Suggested for ' + weightKg + ' kg: ' + fmtNumber(suggested) + ' ml',
+            }
+          : null,
       title: 'Set daily water goal',
       label: 'Goal (ml/day)',
       initialValue: goalMl,
@@ -987,7 +1130,19 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater })
                 h(
                   'div',
                   { style: { flex: 1 } },
-                  h('span', null, (item.amountMl || 0) + ' ml'),
+                  h(
+                    'span',
+                    null,
+                    (item.amountMl || 0) +
+                      ' ml' +
+                      (item.drinkType && item.drinkType !== 'water'
+                        ? ' ' +
+                          item.drinkType +
+                          ' (counts ' +
+                          (item.effectiveMl ?? effectiveMl(item.amountMl, item.drinkType)) +
+                          ')'
+                        : '')
+                  ),
                   h(
                     'span',
                     { style: { marginLeft: '8px', fontSize: '0.75rem', color: 'var(--fg3)' } },
@@ -1013,10 +1168,85 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater })
   });
 }
 
-function FoodCard({ food, onAddFood, onDeleteFood }) {
+/* Slots start at these local hours; "Copy yesterday's" is offered for an empty
+   one only once it has begun (a snack, any time). */
+const SLOT_STARTS = { breakfast: 4, lunch: 11, dinner: 18, snack: 0 };
+
+function FoodCard({ food, onAddFood, onDeleteFood, onEditFood, onCopySlot }) {
   const total = Math.max(0, (food && food.totalCalories) || 0);
   const entries = (food && food.entries) || [];
-  const recent = entries.slice(0, 5);
+  const groups = groupBySlot(entries);
+  const micros = dayMicros(food);
+  const isToday = !food || !food.date || food.date === todayKey();
+  const hourNow = new Date().getHours();
+  const nowSlot = mealSlotAt(new Date());
+
+  const row = (item) =>
+    h(
+      'div',
+      { class: 'gb-water-log-row', 'data-food-id': item.id },
+      // The text is the edit button (as on a Money expense row).
+      h(
+        onEditFood ? 'button' : 'div',
+        onEditFood
+          ? {
+              type: 'button',
+              class: 'gb-food-row-edit',
+              onclick: () => onEditFood(item),
+              'aria-label': 'Edit ' + item.foodName,
+            }
+          : { style: { flex: 1 } },
+        h('span', null, item.foodName + ' (' + item.quantityGrams + 'g)'),
+        h('span', { style: { marginLeft: '8px' } }, item.kcalEstimated + ' kcal')
+      ),
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--icon',
+          // app.js confirms first and plays the row's exit after.
+          onclick: () => onDeleteFood && onDeleteFood(item.id),
+          title: 'Delete',
+          'aria-label': 'Delete food entry',
+        },
+        Icon('x', { size: 16, sw: 2.4 })
+      )
+    );
+
+  // An empty slot that has begun (or the one we're in) offers yesterday's.
+  const copyBtn = (g) =>
+    onCopySlot && isToday && (hourNow >= SLOT_STARTS[g.slot] || g.slot === nowSlot)
+      ? h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-food-copy',
+            onclick: () => onCopySlot(g.slot),
+          },
+          Icon('copy', { size: 14, sw: 2.2 }),
+          'Copy yesterday’s ' + g.label.toLowerCase()
+        )
+      : null;
+
+  const slots = groups
+    .map((g) =>
+      g.entries.length
+        ? h(
+            'section',
+            { class: 'gb-food-slot', 'aria-label': g.label },
+            h(
+              'div',
+              { class: 'gb-food-slot-head' },
+              h('span', null, g.label),
+              h('span', { class: 'gb-food-slot-kcal' }, g.kcal + ' kcal')
+            ),
+            h('div', { class: 'gb-water-log' }, g.entries.map(row))
+          )
+        : copyBtn(g)
+    )
+    .filter(Boolean);
+  const copies = slots.filter((n) => n.classList && n.classList.contains('gb-food-copy'));
+  const filled = slots.filter((n) => !copies.includes(n));
 
   return Card({
     className: 'gb-food-card',
@@ -1043,41 +1273,23 @@ function FoodCard({ food, onAddFood, onDeleteFood }) {
         Icon('plus', { size: 16, sw: 2.4 }),
         'Log food'
       ),
-      recent.length
+      // Only what is known: fibre is estimated, sugar and sodium come from a
+      // scanned label, so a day without either shows no 0 for them.
+      micros.length
         ? h(
             'div',
-            { class: 'gb-water-log' },
-            recent.map((item) => {
-              const row = h(
-                'div',
-                { class: 'gb-water-log-row', 'data-food-id': item.id },
-                h(
-                  'div',
-                  { style: { flex: 1 } },
-                  h('span', null, item.foodName + ' (' + item.quantityGrams + 'g)'),
-                  h('span', { style: { marginLeft: '8px' } }, item.kcalEstimated + ' kcal')
-                ),
-                h(
-                  'button',
-                  {
-                    type: 'button',
-                    class: 'gb-btn gb-btn--icon',
-                    // app.js confirms first and plays the row's exit after.
-                    onclick: () => onDeleteFood && onDeleteFood(item.id),
-                    title: 'Delete',
-                    'aria-label': 'Delete food entry',
-                  },
-                  Icon('x', { size: 16, sw: 2.4 })
-                )
-              );
-              return row;
-            })
+            { class: 'gb-food-micros' },
+            micros.map((m) => h('span', null, m.label + ' ' + m.value + ' ' + m.unit))
           )
+        : null,
+      entries.length
+        ? filled
         : h(
             'p',
             { class: 'gb-water-quote', style: { marginTop: '8px' } },
             'No food logged yet today.'
           ),
+      copies.length ? h('div', { class: 'gb-food-copies' }, copies) : null,
     ],
   });
 }
@@ -1125,7 +1337,7 @@ function showNutrient(key, reveal) {
 function dayLabel(date, isToday) {
   return isToday
     ? 'Today'
-    : new Date(date + 'T12:00').toLocaleDateString(undefined, { weekday: 'short' });
+    : fmtDate(date, 'weekday');
 }
 
 function FoodSummaryLink({ onOpen }) {
@@ -1180,9 +1392,9 @@ function NutrientThali(week) {
       h(
         'div',
         { class: 'gb-thali-center' },
-        h('span', { class: 'gb-thali-total' }, week.avgKcal.toLocaleString()),
+        h('span', { class: 'gb-thali-total' }, fmtNumber(week.avgKcal)),
         h('span', { class: 'gb-thali-unit' }, 'kcal a day'),
-        h('span', { class: 'gb-thali-of' }, 'goal ' + week.goalKcal.toLocaleString())
+        h('span', { class: 'gb-thali-of' }, 'goal ' + fmtNumber(week.goalKcal))
       ),
       NUTRIENTS.map((n, i) => {
         const a = (angles[i] * Math.PI) / 180;
@@ -1463,7 +1675,7 @@ function WaterWeekCard(water) {
 function dayName(date) {
   return date === todayKey()
     ? 'today'
-    : new Date(date + 'T12:00').toLocaleDateString(undefined, { weekday: 'long' });
+    : fmtDate(date, 'weekdayLong');
 }
 
 // One day's numbers, straight from the week already on screen: shown the moment a
@@ -1474,7 +1686,7 @@ function dayFacts(date, week, water) {
   const parts = [];
   if (f) {
     parts.push(
-      f.kcal.toLocaleString() + ' of ' + week.goalKcal.toLocaleString() + ' kcal',
+      fmtNumber(f.kcal) + ' of ' + fmtNumber(week.goalKcal) + ' kcal',
       f.count === 1 ? '1 dish' : f.count + ' dishes'
     );
   }
@@ -1674,7 +1886,7 @@ function ScreenSummary({
   const logged = days.filter((d) => d.count > 0);
   const range = (water && water.days) || days;
   const fmt = (k) =>
-    new Date(k + 'T12:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+    fmtDate(k, 'dayMonth');
   const food = on('food') && logged.length > 0;
   const lv = (week && week.levels) || {};
   const short = NUTRIENTS.filter((n) => lv[n.key] === 'low');
@@ -1783,8 +1995,8 @@ function HabitStrip({ habits, onAdd, toggleHabit }) {
     'div',
     { class: 'gb-habit-strip' },
     // All of them. The old slice(0, 4) meant a fifth habit simply didn't exist
-    // on Home — not scrolled off, not rendered.
-    habits.map((h2) => HabitCard(h2, toggleHabit))
+    // on Home — not scrolled off, not rendered. What is still owed comes first.
+    sortHabitsForHome(habits).map((h2) => HabitCard(h2, toggleHabit))
   );
 }
 
@@ -2141,61 +2353,83 @@ function MiniCalendarCard({
   });
 }
 
-/* ---- Home-screen widget catalog ----
-   The set of cards a user can show/hide and reorder on Home. `feature` (if set)
-   gates the widget on a feature toggle being on. Order here is the default. */
-const HOME_WIDGETS = [
-  {
-    id: 'score',
-    label: 'Score & streak',
-    desc: 'Your daily growth score and streak',
-    feature: null,
-  },
-  { id: 'plan', label: 'Daily brief', desc: 'A quick suggested plan for today', feature: null },
-  { id: 'wellness', label: 'Sleep & mood', desc: 'Log sleep and mood check-ins', feature: null },
-  { id: 'tasks', label: "Today's tasks", desc: 'Your tasks for today', feature: null },
-  {
-    id: 'calendar',
-    label: 'Mini calendar',
-    desc: 'Month view with reminders & food',
-    feature: 'calendar',
-  },
-  {
-    id: 'habits',
-    label: 'Habit streaks',
-    desc: 'Your daily habits and streaks',
-    feature: 'habits',
-  },
-  {
-    id: 'money',
-    label: 'Money Buddy',
-    desc: 'Safe-to-spend & quick expense add',
-    feature: 'money',
-  },
-  {
-    id: 'reminders',
-    label: 'Smart reminders',
-    desc: 'Suggested reminders for today',
-    feature: null,
-  },
-];
+/* HOME_WIDGETS and resolveHomeLayout live in home-order.js (DOM-free, so they
+   have a node test); re-exported below for the callers that import them here. */
 
-/* Merge a saved layout with the catalog: keep saved order/enabled for known
-   widgets, drop unknown ids, and append any new catalog widgets (enabled). */
-function resolveHomeLayout(saved) {
-  const known = new Set(HOME_WIDGETS.map((w) => w.id));
-  const seen = new Set();
-  const out = [];
-  (Array.isArray(saved) ? saved : []).forEach((item) => {
-    if (item && known.has(item.id) && !seen.has(item.id)) {
-      out.push({ id: item.id, enabled: item.enabled !== false });
-      seen.add(item.id);
-    }
+/* ---- Goals widget ----
+   The nearest open goals: days to the target, the next unticked milestone, the
+   day tracker's count. The whole card opens Goals; nothing is edited here. */
+function GoalsCard({ goals, goalProgress, onOpenGoals }) {
+  const rows = homeGoals(goals, goalProgress, todayKey());
+  const dueLine = (r) => {
+    if (r.daysLeft == null) return 'No target date';
+    if (r.daysLeft < 0) return 'Overdue by ' + plural(-r.daysLeft, 'day');
+    if (r.daysLeft === 0) return 'Due today';
+    return plural(r.daysLeft, 'day') + ' left';
+  };
+  return Card({
+    className: 'gb-home-goals',
+    children: [
+      h('div', { class: 'gb-card-titleline' }, Icon('target', { size: 18, sw: 2.4 }), 'Goals'),
+      rows.length
+        ? h(
+            'div',
+            { class: 'gb-timeline-list' },
+            rows.map((r) =>
+              h(
+                'button',
+                {
+                  type: 'button',
+                  class: 'gb-timeline-row gb-home-goal',
+                  style: {
+                    width: '100%',
+                    textAlign: 'left',
+                    background: 'none',
+                    border: 0,
+                    padding: 0,
+                    cursor: 'pointer',
+                  },
+                  'aria-label': r.goal.title + ', ' + dueLine(r) + '. Open Goals',
+                  onclick: onOpenGoals,
+                },
+                h('span', { class: 'gb-timeline-dot' }),
+                h(
+                  'span',
+                  { class: 'gb-timeline-copy' },
+                  h('strong', null, r.goal.title),
+                  h(
+                    'small',
+                    r.daysLeft != null && r.daysLeft < 0
+                      ? { style: { color: 'var(--coral-700)', fontWeight: 600 } }
+                      : null,
+                    [
+                      dueLine(r),
+                      r.nextMilestone ? 'Next: ' + r.nextMilestone : null,
+                      r.days ? r.days.done + '/' + r.days.total + ' days' : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')
+                  )
+                )
+              )
+            )
+          )
+        : h(
+            'div',
+            { class: 'gb-empty-slim' },
+            'No open goals. ',
+            h(
+              'button',
+              {
+                type: 'button',
+                class: 'gb-btn gb-btn--ghost gb-btn--compact',
+                onclick: onOpenGoals,
+              },
+              'Set one'
+            )
+          ),
+    ],
   });
-  HOME_WIDGETS.forEach((w) => {
-    if (!seen.has(w.id)) out.push({ id: w.id, enabled: true });
-  });
-  return out;
 }
 
 function ScreenDashboard({
@@ -2204,6 +2438,9 @@ function ScreenDashboard({
   toggleTask,
   habits,
   toggleHabit,
+  goals,
+  goalProgress,
+  onOpenGoals,
   score,
   water,
   wellness,
@@ -2214,6 +2451,7 @@ function ScreenDashboard({
   onAddTask,
   onEditTask,
   onPauseTask,
+  onFocusTask,
   onAddHabit,
   calYear,
   calMonth,
@@ -2243,7 +2481,14 @@ function ScreenDashboard({
     wellness: () => WellnessCard({ wellness, onAddSleep, onAddMood }),
     tasks: () => [
       SectionTitle({ title: "Today's tasks", action: '+ Add', onAction: onAddTask }),
-      TasksCard({ tasks, toggleTask, onAdd: onAddTask, onEdit: onEditTask, onPause: onPauseTask }),
+      TasksCard({
+        tasks,
+        toggleTask,
+        onAdd: onAddTask,
+        onEdit: onEditTask,
+        onPause: onPauseTask,
+        onFocus: onFocusTask,
+      }),
     ],
     calendar: () =>
       MiniCalendarCard({
@@ -2264,6 +2509,7 @@ function ScreenDashboard({
       SectionTitle({ title: 'Habit streaks', action: '+ Add', onAction: onAddHabit }),
       HabitStrip({ habits, onAdd: onAddHabit, toggleHabit }),
     ],
+    goals: () => GoalsCard({ goals, goalProgress, onOpenGoals }),
     reminders: () =>
       ReminderSuggestionsCard({ habits, water, wellness, reminders, onAddSuggestedReminder }),
     money: () => MoneyHomeCard({ money, onSaveMoney, onOpen: onOpenMoney }),
@@ -2329,6 +2575,9 @@ function ScreenFood({
   onAddFood,
   onDeleteWater,
   onDeleteFood,
+  onEditFood,
+  onCopySlot,
+  weightKg,
 }) {
   const on = (k) => !features || features[k] !== false;
   return h(
@@ -2338,11 +2587,11 @@ function ScreenFood({
       ? h(
           'div',
           { class: 'gb-dash-block' },
-          WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater })
+          WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, weightKg })
         )
       : null,
     on('food')
-      ? h('div', { class: 'gb-dash-block' }, FoodCard({ food, onAddFood, onDeleteFood }))
+      ? h('div', { class: 'gb-dash-block' }, FoodCard({ food, onAddFood, onDeleteFood, onEditFood, onCopySlot }))
       : null,
     on('food') || on('water')
       ? h('div', { class: 'gb-dash-block' }, FoodSummaryLink({ onOpen: onOpenSummary }))

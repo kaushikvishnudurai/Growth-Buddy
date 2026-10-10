@@ -56,6 +56,7 @@ class UnverifiedSignupTest {
         when(users.findByEmailIgnoreCase(EMAIL)).thenReturn(Optional.of(user));
         when(creds.findById(user.getId())).thenReturn(Optional.of(c));
         when(limiter.allow(anyString(), anyInt(), anyLong())).thenReturn(true);
+        when(limiter.peek(anyString(), anyInt(), anyLong())).thenReturn(true);
     }
 
     @Test
@@ -93,7 +94,10 @@ class UnverifiedSignupTest {
 
     @Test
     void overTheCapNoMoreCodes() {
-        when(limiter.allow(anyString(), anyInt(), anyLong())).thenReturn(false);
+        // Only the per-account verification cap is spent; the cross-purpose
+        // per-address cap (OtpMailCapTest) answers 429 even on resend.
+        when(limiter.allow(org.mockito.ArgumentMatchers.startsWith("verifyotp:"), anyInt(), anyLong()))
+                .thenReturn(false);
         assertThatThrownBy(() -> auth.signup(new SignupRequest(EMAIL, PASSWORD, null, null)))
                 .isInstanceOf(ApiException.class)
                 .extracting(e -> ((ApiException) e).getStatus()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);

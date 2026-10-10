@@ -12,10 +12,9 @@
 
     <!-- sockjs-client (CommonJS) references the Node `global`, which doesn't
          exist in the browser. The old CDN UMD build shimmed it; the bundled
-         npm version doesn't, so define it before the module entry loads. -->
-    <script>
-      window.global = window.global || window;
-    </script>
+         npm version doesn't, so define it before the module entry loads.
+         External (public/) so the CSP needs no 'unsafe-inline' for scripts. -->
+    <script src="/global-shim.js"></script>
 
     <link rel="icon" type="image/svg+xml" href="/logomark.svg" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />

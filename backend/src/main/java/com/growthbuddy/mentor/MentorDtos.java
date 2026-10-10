@@ -1,5 +1,6 @@
 package com.growthbuddy.mentor;
 
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
 import java.util.List;
@@ -18,6 +19,9 @@ interface MentorThreadRepository extends JpaRepository<MentorThread, UUID> {
 
 interface MentorMessageRepository extends JpaRepository<MentorMessage, UUID> {
     List<MentorMessage> findByThreadIdOrderByCreatedAtAsc(UUID threadId);
+
+    /** The newest {@link MentorService#READ_LIMIT}, newest first: what the chat shows and the model reads. */
+    List<MentorMessage> findTop200ByThreadIdOrderByCreatedAtDesc(UUID threadId);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("delete from MentorMessage m where m.threadId = :threadId")
@@ -43,9 +47,16 @@ record CreateThreadRequest(@Size(max = 200) String title) {
 record PostMessageRequest(@Size(max = 4000) String content) {
 }
 
-record MessageResponse(UUID id, MessageRole role, String content, Instant createdAt) {
+/** Rename a thread. Same bound as {@link CreateThreadRequest}. */
+record RenameThreadRequest(@NotBlank @Size(max = 200) String title) {
+}
+
+/** {@code actions}: never null; empty for a user message or a reply that offered none. */
+record MessageResponse(UUID id, MessageRole role, String content, Instant createdAt,
+                       boolean fallback, List<MentorActions.Action> actions) {
     static MessageResponse from(MentorMessage m) {
-        return new MessageResponse(m.getId(), m.getRole(), m.getContent(), m.getCreatedAt());
+        return new MessageResponse(m.getId(), m.getRole(), m.getContent(), m.getCreatedAt(),
+                m.isFallback(), MentorActions.fromJson(m.getActionsJson()));
     }
 }
 

@@ -172,21 +172,36 @@ public class MoneyService {
      */
     @Transactional
     public Versioned get(UUID userId) {
-        MoneyState state = repo.lockById(userId).orElse(null);
-        if (state != null) {
-            migrate(state);
-            seedAccounts(state);
-        } else {
+        // Check, then lock: every GET used to take the row lock (SELECT ... FOR
+        // UPDATE) for a migration that runs once per user, serialising reads behind
+        // saves. Only a document that still needs a write is locked now; the lock
+        // re-reads it, so a concurrent migration is seen and skipped.
+        JsonNode data = repo.peekData(userId).orElse(null);
+        if (data != null && needsWrite(data)) {
+            MoneyState state = repo.lockById(userId).orElse(null);
+            if (state != null) {
+                migrate(state);
+                seedAccounts(state);
+                data = state.getData();
+            }
+        } else if (data == null) {
             // A brand-new user has no document to remember the seeding in yet; the
             // count check inside makes a repeat a no-op.
             ledger.seedDefaults(userId);
         }
-        ObjectNode out = state != null && state.getData() instanceof ObjectNode d
-                ? d.deepCopy()
-                : json.createObjectNode();
+        ObjectNode out = data instanceof ObjectNode d ? d.deepCopy() : json.createObjectNode();
         out.setAll(ledger.load(userId, LocalDate.now()));
         out.set("accounts", ledger.accounts(userId));
-        return new Versioned(out, versionOf(state));
+        return new Versioned(out, data == null ? "0" : Integer.toHexString(data.hashCode()));
+    }
+
+    /** What {@link #migrate} or {@link #seedAccounts} would change; false = a plain read. */
+    static boolean needsWrite(JsonNode data) {
+        if (!(data instanceof ObjectNode d)) {
+            return false;
+        }
+        return MoneyLedger.ARRAYS.keySet().stream().anyMatch(d::has)
+                || !d.path("settings").path("accountsSeeded").asBoolean(false);
     }
 
     /**
@@ -307,7 +322,12 @@ public class MoneyService {
         return u;
     }
 
-    public record Paid(String name, boolean booked) {}
+    /** {@code noAmount}: the bill exists but has no amount, so nothing could be booked. */
+    public record Paid(String name, boolean booked, boolean noAmount) {
+        Paid(String name, boolean booked) {
+            this(name, booked, false);
+        }
+    }
 
     /**
      * Marks one month of a subscription paid from outside the app (WhatsApp's
@@ -327,6 +347,10 @@ public class MoneyService {
         }
         migrate(state);
         String name = applyPaid(data, subId, month, today);
+        if (name == null) {
+            String unpriced = unpricedName(data, subId);
+            return unpriced == null ? null : new Paid(unpriced, false, true);
+        }
         // migrate() left no expenses array, so one now means applyPaid booked a payment.
         boolean booked = name != null && data.has("expenses");
         if (booked) {
@@ -346,6 +370,16 @@ public class MoneyService {
             repo.save(state);
         }
         return name == null ? null : new Paid(name, booked);
+    }
+
+    /** The bill's name when it exists with no amount (applyPaid refuses those), else null. */
+    static String unpricedName(JsonNode data, String subId) {
+        for (JsonNode sub : data.path("subscriptions")) {
+            if (subId.equals(sub.path("id").asText()) && sub.path("amount").asDouble(0) <= 0) {
+                return sub.path("name").asText();
+            }
+        }
+        return null;
     }
 
     /** Idempotent: a second tap on the same message changes nothing. */

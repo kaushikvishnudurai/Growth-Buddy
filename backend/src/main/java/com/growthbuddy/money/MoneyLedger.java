@@ -49,7 +49,7 @@ public class MoneyLedger {
     /**
      * How far back a load reaches. Every month-scoped insight reads at most the
      * last ~13 months, and a load of all history is what stopped scaling.
-     * ponytail: fixed window; page further back on demand if a screen ever needs it.
+     * Older rows come a page at a time from {@link #page} (GET /api/money/tx?before=).
      */
     static final int WINDOW_DAYS = 400;
 
@@ -288,6 +288,48 @@ public class MoneyLedger {
         return out;
     }
 
+    /**
+     * One page of history older than the load window: every row before {@code before},
+     * newest first, about {@code limit} of them. A page always holds whole days, so the
+     * next one (before this page's oldest day) can't skip the rest of a day the limit
+     * cut through: the cutoff is the day of the limit-th row, and that whole day is in.
+     * View-only on the client; it is never saved back into the document.
+     */
+    public ObjectNode page(UUID userId, LocalDate before, int limit) {
+        int n = Math.max(1, Math.min(limit, 500));
+        ObjectNode out = json.createObjectNode();
+        for (String arr : ARRAYS.keySet()) {
+            out.putArray(arr);
+        }
+        List<java.sql.Date> cut = jdbc.queryForList("""
+                SELECT occurred_on FROM money_transactions
+                WHERE user_id = ? AND occurred_on < ?
+                ORDER BY occurred_on DESC LIMIT 1 OFFSET ?
+                """, java.sql.Date.class, userId.toString(), Date.valueOf(before), n - 1);
+        LocalDate from = cut.isEmpty() ? LocalDate.of(1900, 1, 1) : cut.get(0).toLocalDate();
+        jdbc.query("""
+                SELECT id, kind, account_id, to_account_id, amount, category, note, occurred_on, extra
+                FROM money_transactions
+                WHERE user_id = ? AND occurred_on >= ? AND occurred_on < ?
+                ORDER BY occurred_on DESC, created_at DESC
+                """, rs -> {
+            String arr = arrayOf(rs.getString("kind"));
+            if (arr != null) {
+                ((ArrayNode) out.get(arr)).add(toItem(rs.getString("kind"), rs.getString("id"),
+                        rs.getString("account_id"), rs.getString("to_account_id"), rs.getBigDecimal("amount"),
+                        rs.getString("category"), rs.getString("note"), rs.getDate("occurred_on").toLocalDate(),
+                        rs.getString("extra")));
+            }
+        }, userId.toString(), Date.valueOf(from), Date.valueOf(before));
+        Integer older = cut.isEmpty() ? Integer.valueOf(0) : jdbc.queryForObject("""
+                SELECT COUNT(*) FROM (SELECT 1 FROM money_transactions
+                  WHERE user_id = ? AND occurred_on < ? LIMIT 1) x
+                """, Integer.class, userId.toString(), Date.valueOf(from));
+        out.put("more", older != null && older > 0);
+        out.put("oldest", cut.isEmpty() ? null : from.toString());
+        return out;
+    }
+
     /** One day's expenses, for the day summary. */
     public List<ObjectNode> expensesOn(UUID userId, LocalDate day) {
         List<ObjectNode> out = new ArrayList<>();
@@ -443,8 +485,15 @@ public class MoneyLedger {
                 toAccount = text(rest.remove("to"));
                 category = null;
                 note = text(rest.remove("note"));
-                // No "to" = it left your accounts (money you lent): out of the balance, never spending.
-                if (account == null || account.equals(toAccount)) {
+                // No "to" = it left your accounts (money you lent, a loan paid back); no
+                // "from" = it came in from outside (money you borrowed, a loan repaid to
+                // you). Either way it moves a balance and is never spending or income.
+                // The balance query already reads each side on its own, so a one-sided
+                // row needs nothing there.
+                if (account == null && toAccount == null) {
+                    throw ApiException.badRequest("A transfer needs an account to move money from or into.");
+                }
+                if (account != null && account.equals(toAccount)) {
                     throw ApiException.badRequest("A transfer moves money between two different accounts.");
                 }
             }

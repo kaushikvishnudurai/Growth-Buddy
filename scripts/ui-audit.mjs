@@ -10,6 +10,9 @@
 
      node scripts/ui-audit.mjs <email> <password> [outDir]
 
+   or set GB_AUDIT_EMAIL / GB_AUDIT_PASSWORD / GB_AUDIT_OUT, plus
+   GB_AUDIT_BASE (app URL) and GB_AUDIT_CDP (Chrome's DevTools URL).
+
    puppeteer.launch() has been unreliable here — it exits with an empty
    stderr while the same binary runs fine by hand — so this attaches to a
    Chrome you start yourself:
@@ -24,8 +27,12 @@ import { mkdirSync } from 'node:fs';
 
 const BASE = process.env.GB_AUDIT_BASE || 'http://localhost:5173';
 const DEVTOOLS = process.env.GB_AUDIT_CDP || 'http://127.0.0.1:9222';
-const [EMAIL, PASSWORD, OUT_ARG] = process.argv.slice(2);
-const OUT = OUT_ARG || 'assets/ui-audit';
+// CLI args win; the GB_AUDIT_* env vars are for CI (.github/workflows/ci.yml),
+// where the credentials come from scripts/ci/seed-audit-user.sh.
+const [ARG_EMAIL, ARG_PASSWORD, OUT_ARG] = process.argv.slice(2);
+const EMAIL = ARG_EMAIL || process.env.GB_AUDIT_EMAIL;
+const PASSWORD = ARG_PASSWORD || process.env.GB_AUDIT_PASSWORD;
+const OUT = OUT_ARG || process.env.GB_AUDIT_OUT || 'assets/ui-audit';
 
 const SCREENS = (process.env.GB_AUDIT_SCREENS ||
   'home,habits,food,goals,calendar,mentor,circle,family,money,report,focus').split(',');
@@ -36,7 +43,7 @@ const VIEWPORTS = {
 };
 
 if (!EMAIL || !PASSWORD) {
-  console.error('usage: node scripts/ui-audit.mjs <email> <password> [outDir]');
+  console.error('usage: node scripts/ui-audit.mjs <email> <password> [outDir]  (or GB_AUDIT_EMAIL / GB_AUDIT_PASSWORD)');
   process.exit(2);
 }
 

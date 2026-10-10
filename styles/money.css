@@ -2332,6 +2332,22 @@
   min-height: 44px;
 }
 
+/* The expense list's month picker + CSV, right of its title. */
+.gb-money-list-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.gb-money-list-tools > .gb-btn {
+  min-height: 44px;
+}
+.gb-money-month-pick {
+  width: auto;
+  max-width: 11rem;
+  min-height: 44px;
+}
+
 /* ---- Split a bill ---- */
 .gb-money-split-me {
   display: flex;
@@ -2345,6 +2361,118 @@
   width: 18px;
   height: 18px;
   accent-color: var(--brand);
+}
+
+/* ---- Every month (recurring rules, Income tab) ---- */
+.gb-money-rec-row.is-paused {
+  opacity: 0.6;
+}
+.gb-money-exp-amt.is-in {
+  color: var(--leaf-700);
+}
+/* The forecast's "expected in" line sits under the projected total. */
+.gb-money-forecast-in {
+  margin-top: 2px;
+  color: var(--leaf-700);
+}
+
+/* ---- Budget rollover ---- */
+/* "Roll over" beside each budget field: the checkbox and its word are one 44px tap. */
+.gb-money-roll {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  font-size: var(--text-xs);
+  color: var(--fg2);
+  cursor: pointer;
+}
+.gb-money-roll-check {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--brand);
+}
+.gb-money-bcard-carry {
+  margin-top: 4px;
+  font-size: var(--text-xs);
+  color: var(--leaf-700);
+}
+.gb-money-bcard-carry.is-less {
+  color: var(--warning-soft-fg);
+}
+@media (max-width: 380px) {
+  .gb-money-budget-field {
+    flex-wrap: wrap;
+  }
+}
+
+/* ---- Other currencies ---- */
+/* A row booked from another currency's account: what was paid, under the home figure. */
+.gb-money-exp-orig {
+  text-align: right;
+  white-space: nowrap;
+}
+/* An account in another currency: its own balance big, the home figure small under it. */
+.gb-money-account-home {
+  display: block;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: var(--text-xs);
+  color: var(--fg3);
+  text-align: right;
+}
+.gb-money-fx {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.gb-money-fx-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.gb-money-fx-row .gb-input {
+  flex: 1;
+  min-width: 0;
+}
+.gb-money-fx-new .gb-input:first-child {
+  flex: none;
+  width: 4.5rem;
+}
+.gb-money-fx-new .gb-btn {
+  flex: none;
+}
+.gb-money-fx-sym,
+.gb-money-fx-home {
+  flex: none;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--fg2);
+  white-space: nowrap;
+}
+.gb-money-fx-accounts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+.gb-money-fx-acc {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--fg1);
+}
+.gb-money-fx-acc .gb-input {
+  flex: none;
+  width: 6rem;
+}
+
+/* ---- Load older (expense list) ---- */
+.gb-money-older {
+  gap: 6px;
 }
 
 /* Pressed feedback for Money's own buttons (.gb-btn and .gb-icon-btn already

@@ -24,7 +24,9 @@ import {
   scheduleLocalNotification,
   scheduleLocalNotifications,
   cancelPendingLocalNotifications,
+  TIMER_ALARM_ID,
   SILENT_CHANNEL,
+  versionedChannel,
 } from './native.js';
 import { occursOn } from './recurrence.js';
 import { drinkRateByHour } from './insights.js';
@@ -185,6 +187,13 @@ function minuteOfDay(hhmm, fallback) {
   return Math.min(23, Number(m[1])) * 60 + Math.min(59, Number(m[2]));
 }
 
+/** A reminder's own lead, else the default; anything odd counts as "at the time". */
+function leadOf(rem, lead) {
+  const own = rem.notifyBefore;
+  const v = own === null || own === undefined ? lead : own;
+  return Number.isFinite(+v) && +v > 0 && +v <= 1440 ? Math.round(+v) : 0;
+}
+
 function atOn(day, minutes) {
   return new Date(day.getFullYear(), day.getMonth(), day.getDate(), 0, minutes, 0, 0);
 }
@@ -195,9 +204,20 @@ function atOn(day, minutes) {
  * Pure, and exported for `push.test.mjs` — the awkward parts (an occurrence
  * earlier today has already passed, an all-day reminder has no time to fire at,
  * recurrence and skips) are exactly the parts that can't be checked on a phone.
+ *
+ * Each rings `notifyBefore` minutes ahead of its time, or `lead` (the user's
+ * default, `ui_prefs.reminderLead`) when it has none — the same rule as
+ * `ReminderPrefs.leadFor` on the server. A lead can put tomorrow's 00:10 on
+ * tonight. A snoozed reminder also rings at `snoozedUntil`.
  */
-export function upcomingReminderAlarms(reminders, now, days = HORIZON_DAYS) {
+export function upcomingReminderAlarms(reminders, now, days = HORIZON_DAYS, lead = 0) {
   const out = [];
+  for (const rem of reminders || []) {
+    const snoozed = rem && rem.snoozedUntil ? new Date(rem.snoozedUntil) : null;
+    if (snoozed && snoozed.getTime() > now.getTime()) {
+      out.push({ title: 'Snoozed reminder', body: rem.text, at: snoozed, sound: rem.sound || null });
+    }
+  }
   for (let i = 0; i < days; i++) {
     const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
     const key = dayKey(day);
@@ -205,19 +225,65 @@ export function upcomingReminderAlarms(reminders, now, days = HORIZON_DAYS) {
       // No time means an all-day note on the calendar. There is no moment to
       // ring at, and 00:00 would ring in the middle of the night.
       if (!rem || !rem.time || !occursOn(rem, key)) continue;
+      // Checked off in the app (doneDates rides on the list DTO): dealt with.
+      if (Array.isArray(rem.doneDates) && rem.doneDates.indexOf(key) !== -1) continue;
       const [hh, mm] = String(rem.time).split(':').map(Number);
       // A time that doesn't parse would make an Invalid Date, and every check
       // below passes on NaN — the alarm would be queued with a NaN id and the
       // whole batch rejected. Skip it instead.
       if (!Number.isFinite(hh) || !Number.isFinite(mm)) continue;
-      const at = atOn(day, hh * 60 + mm);
+      let ahead = leadOf(rem, lead);
+      let at = atOn(day, hh * 60 + mm - ahead);
+      // The early ring has gone but the reminder hasn't: ring on time instead
+      // (the server does the same for one made inside its own lead).
+      if (ahead && at.getTime() <= now.getTime()) {
+        ahead = 0;
+        at = atOn(day, hh * 60 + mm);
+      }
+      // A second alert (notifyBefore2), the same rule as the server's
+      // secondDueDay: none when it would ring with the first, and no fallback to
+      // on-time when it has already gone; the first alert covers that.
+      const two = secondLeadOf(rem, leadOf(rem, lead));
+      if (two !== null) {
+        const at2 = atOn(day, hh * 60 + mm - two);
+        if (at2.getTime() > now.getTime() && at2.getTime() !== at.getTime()) {
+          const body2 = two ? rem.text + ' \u00b7 at ' + String(rem.time).slice(0, 5) : rem.text;
+          out.push({ title: 'Growth Buddy', body: body2, at: at2, sound: rem.sound || null });
+        }
+      }
       if (at.getTime() <= now.getTime()) continue;
       // A reminder can carry its own chime key; null/absent means the user's
       // default, which only `upcomingAlarms` below knows.
-      out.push({ title: 'Growth Buddy', body: rem.text, at, sound: rem.sound || null });
+      const body = ahead ? rem.text + ' \u00b7 at ' + String(rem.time).slice(0, 5) : rem.text;
+      out.push({ title: 'Growth Buddy', body, at, sound: rem.sound || null });
     }
   }
   return out;
+}
+
+/** The second alert's lead, or null: none set, nonsense, or the same as the first. */
+function secondLeadOf(rem, lead1) {
+  const v = rem.notifyBefore2;
+  if (v === null || v === undefined || v === '') return null;
+  const n = Math.round(+v);
+  if (!Number.isFinite(n) || n < 0 || n > 1440 || n === lead1) return null;
+  return n;
+}
+
+/**
+ * Quiet hours: `ui_prefs.quietStart` / `quietEnd` ('HH:MM', local; may wrap
+ * midnight; equal or missing = off). True when `at` falls inside, end exclusive.
+ * Mirrors ReminderPrefs.isQuiet. Only the nudges the app sends on its own are
+ * held back by it (habit reminders and the water nudge), never a timed
+ * reminder the user set: they chose that minute.
+ */
+export function isQuietAt(quiet, at) {
+  if (!quiet) return false;
+  const from = minuteOfDay(quiet.start, null);
+  const to = minuteOfDay(quiet.end, null);
+  if (from === null || to === null || from === to) return false;
+  const m = at.getHours() * 60 + at.getMinutes();
+  return from < to ? m >= from && m < to : m >= from || m < to;
 }
 
 /**
@@ -307,7 +373,7 @@ function soundFile(key) {
    rings with the phone's own sound. */
 function channelForTone(key) {
   if (key === 'off') return SILENT_CHANNEL;
-  return SOUNDS[key] ? 'gb-tone-' + key : 'gb-tone-default';
+  return versionedChannel(SOUNDS[key] ? 'gb-tone-' + key : 'gb-tone-default');
 }
 
 /**
@@ -316,10 +382,13 @@ function channelForTone(key) {
  * project's res/raw (gen-chimes.mjs writes both), and `channelId` names the
  * channel we build it into — see native.js for why we can't let the plugin do it.
  */
-export function upcomingAlarms({ reminders, water, habits, sound } = {}, now = new Date()) {
-  const queue = upcomingReminderAlarms(reminders, now)
-    .concat(upcomingWaterAlarms(water, now))
-    .concat(upcomingHabitAlarms(habits, now));
+export function upcomingAlarms({ reminders, water, habits, sound, lead, quiet } = {}, now = new Date()) {
+  // Quiet hours drop the water nudge and habit reminders, never a reminder the
+  // user timed themselves (isQuietAt).
+  const loud = (n) => !isQuietAt(quiet, n.at);
+  const queue = upcomingReminderAlarms(reminders, now, HORIZON_DAYS, lead)
+    .concat(upcomingWaterAlarms(water, now).filter(loud))
+    .concat(upcomingHabitAlarms(habits, now).filter(loud));
   queue.sort((a, b) => a.at - b.at);
   // Ids come from the minute a notification fires in, not its place in the
   // queue. A counter looked safe — the queue is cancelled whole and rebuilt —
@@ -368,6 +437,8 @@ export async function syncDeviceAlarms(opts) {
   const queue = upcomingAlarms(opts, new Date());
   // Cancel first: an edited or deleted reminder must not keep its old alarm,
   // and rebuilding the whole set is cheaper to reason about than diffing it.
-  await cancelPendingLocalNotifications();
+  // Not the focus timer's: a session running while reminders re-sync must
+  // still ring at its end.
+  await cancelPendingLocalNotifications({ keep: [TIMER_ALARM_ID] });
   return (await scheduleLocalNotifications(queue)) ? queue.length : 0;
 }

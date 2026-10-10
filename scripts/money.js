@@ -10,578 +10,65 @@
 import { h, Icon, Card, ProgressRing, refreshIcons, openModal, Thinking } from './gb-kit.js';
 import { toast } from './toast.js';
 import { shareStoryCard, _demo as _shareCardDemo } from './share-card.js';
-
-const CUR = '₹';
-// Display currency symbol — customizable via settings.currency; applied from
-// the money doc whenever the screen/widget/modals render. ponytail: a single
-// module-level display var beats threading currency through every fmt() call.
-let cur = CUR;
-function applyCurrency(money) {
-  cur = (money && money.settings && money.settings.currency) || CUR;
-}
-
-/* Built-in categories. Users can add their own (custom tags) — see mergedCats. */
-const DEFAULT_CATEGORIES = [
-  {
-    key: 'food',
-    label: 'Food',
-    icon: 'utensils',
-    color: 'var(--coral-500)',
-    soft: 'var(--coral-50)',
-    fg: 'var(--coral-700)',
-  },
-  {
-    key: 'shopping',
-    label: 'Shopping',
-    icon: 'shopping-bag',
-    color: 'var(--bloom-500)',
-    soft: 'var(--bloom-50)',
-    fg: 'var(--bloom-700)',
-  },
-  {
-    key: 'transport',
-    label: 'Transport',
-    icon: 'bus',
-    color: 'var(--sky-500)',
-    soft: 'var(--sky-50)',
-    fg: 'var(--sky-700)',
-  },
-  {
-    key: 'entertainment',
-    label: 'Entertainment',
-    icon: 'clapperboard',
-    color: 'var(--iris-500)',
-    soft: 'var(--iris-50)',
-    fg: 'var(--iris-700)',
-  },
-  {
-    key: 'education',
-    label: 'Education',
-    icon: 'graduation-cap',
-    color: 'var(--leaf-600)',
-    soft: 'var(--leaf-50)',
-    fg: 'var(--leaf-700)',
-  },
-  {
-    key: 'others',
-    label: 'Others',
-    icon: 'shapes',
-    color: 'var(--sun-600)',
-    soft: 'var(--sun-50)',
-    fg: 'var(--sun-700)',
-  },
-];
-
-/* Swatches a user picks from when creating a custom tag. */
-const PALETTE = [
-  { color: 'var(--coral-500)', soft: 'var(--coral-50)', fg: 'var(--coral-700)' },
-  { color: 'var(--bloom-500)', soft: 'var(--bloom-50)', fg: 'var(--bloom-700)' },
-  { color: 'var(--sky-500)', soft: 'var(--sky-50)', fg: 'var(--sky-700)' },
-  { color: 'var(--iris-500)', soft: 'var(--iris-50)', fg: 'var(--iris-700)' },
-  { color: 'var(--leaf-600)', soft: 'var(--leaf-50)', fg: 'var(--leaf-700)' },
-  { color: 'var(--sun-600)', soft: 'var(--sun-50)', fg: 'var(--sun-700)' },
-];
-
-const KEYWORDS = {
-  food: [
-    'food',
-    'lunch',
-    'dinner',
-    'breakfast',
-    'coffee',
-    'cafe',
-    'restaurant',
-    'snack',
-    'grocery',
-    'groceries',
-    'pizza',
-    'swiggy',
-    'zomato',
-    'tea',
-    'meal',
-    'canteen',
-    'dining',
-    'milk',
-    'bakery',
-    'juice',
-  ],
-  shopping: [
-    'shopping',
-    'clothes',
-    'shoes',
-    'amazon',
-    'flipkart',
-    'myntra',
-    'dress',
-    'shirt',
-    'mall',
-    'gift',
-    'electronics',
-    'gadget',
-    'makeup',
-    'jeans',
-    'bag',
-  ],
-  transport: [
-    'uber',
-    'ola',
-    'bus',
-    'train',
-    'metro',
-    'fuel',
-    'petrol',
-    'diesel',
-    'cab',
-    'auto',
-    'rickshaw',
-    'flight',
-    'parking',
-    'toll',
-    'transport',
-    'commute',
-  ],
-  entertainment: [
-    'movie',
-    'netflix',
-    'spotify',
-    'game',
-    'concert',
-    'party',
-    'subscription',
-    'prime',
-    'hotstar',
-    'bar',
-    'club',
-    'outing',
-    'entertain',
-    'cinema',
-  ],
-  education: [
-    'book',
-    'course',
-    'tuition',
-    'class',
-    'exam',
-    'fee',
-    'udemy',
-    'coursera',
-    'school',
-    'college',
-    'study',
-    'stationery',
-    'education',
-    'notes',
-  ],
-};
-
-/* =====================================================================
-   Date + money helpers
-   ===================================================================== */
-function pad2(n) {
-  return n < 10 ? '0' + n : String(n);
-}
-function dkey(d) {
-  return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
-}
-function todayKey() {
-  return dkey(new Date());
-}
-function parseKey(k) {
-  const [y, m, d] = k.split('-').map(Number);
-  return new Date(y, m - 1, d);
-}
-function addDays(date, n) {
-  const d = new Date(date);
-  d.setDate(d.getDate() + n);
-  return d;
-}
-function diffDays(aKey, bKey) {
-  return Math.round((parseKey(aKey) - parseKey(bKey)) / 86400000);
-}
-function thisMonthPrefix() {
-  return todayKey().slice(0, 7);
-}
-function lastMonthPrefix() {
-  const d = new Date();
-  d.setDate(1);
-  d.setMonth(d.getMonth() - 1);
-  return dkey(d).slice(0, 7);
-}
-function daysInMonth() {
-  const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-}
-function weekStartKey(date) {
-  const d = date ? new Date(date) : new Date();
-  const dow = (d.getDay() + 6) % 7;
-  d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() - dow);
-  return dkey(d);
-}
-function lastNDays(n) {
-  const out = [];
-  const base = new Date();
-  base.setHours(0, 0, 0, 0);
-  for (let i = n - 1; i >= 0; i--) out.push(dkey(addDays(base, -i)));
-  return out;
-}
-function fmt(n) {
-  const v = Math.round(Number(n) || 0);
-  // Sign before the symbol, as a true minus: "₹-240" beside an account's "−₹240".
-  return (v < 0 ? '\u2212' : '') + cur + Math.abs(v).toLocaleString('en-IN');
-}
-/* An amount field's value, to the paisa. Rounding to whole rupees saved 249.50
-   as 250, and the ledger (decimal(14,2)) holds paise. type=number reports what
-   it can't parse ("1,250" in most locales) as an empty value, which read as
-   "greater than zero" — so say what is actually wrong. */
-function readAmount(input) {
-  if (input.validity && input.validity.badInput) {
-    input.focus();
-    throw new Error('Use digits only, like 1250 or 1250.50.');
-  }
-  return Math.round(Number(input.value) * 100) / 100;
-}
-/* readAmount's twin for the fields kept in whole rupees on purpose (budgets,
-   subscriptions). They carry step=1 and a numeric keyboard; a decimal pasted or
-   typed anyway is refused, not rounded behind the user's back. */
-function readWhole(input) {
-  if (input.validity && (input.validity.badInput || input.validity.stepMismatch)) {
-    input.focus();
-    throw new Error('Whole amounts only, like 1250.');
-  }
-  return Number(input.value);
-}
-/* The year appears only when it isn't this one: "1 Oct" twice in a list (this
-   October and last) was two different salaries that read as one. */
-function fmtDateShort(k) {
-  try {
-    const opts = { month: 'short', day: 'numeric' };
-    if (String(k).slice(0, 4) !== todayKey().slice(0, 4)) opts.year = 'numeric';
-    return parseKey(k).toLocaleDateString(undefined, opts);
-  } catch (_) {
-    return k;
-  }
-}
-
-let _seq = 0;
-function uid() {
-  return 'm' + Date.now().toString(36) + (_seq++).toString(36);
-}
-const clone = (o) => JSON.parse(JSON.stringify(o));
-const slug = (s) =>
-  'c_' +
-  String(s || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_|_$/g, '')
-    .slice(0, 24);
-
-/* =====================================================================
-   Data model
-   ===================================================================== */
-export function emptyMoney() {
-  return {
-    expenses: [],
-    noSpendDays: [],
-    income: [],
-    loans: [],
-    budgets: {},
-    goals: [],
-    customCategories: [],
-    challenges: [],
-    wishlist: [],
-    subscriptions: [],
-    transfers: [],
-    accounts: [],
-    settings: { reflectThreshold: 1000, currency: CUR, defaultTag: 'others' },
-    currency: CUR,
-  };
-}
-export function normalizeMoney(m) {
-  m = m || {};
-  const e = emptyMoney();
-  return {
-    // Copies, not the caller's arrays: quick-add pushed onto a normalised copy,
-    // which mutated the live state before saveMoney diffed it, so the diff was
-    // empty and the expense never reached the server.
-    expenses: Array.isArray(m.expenses) ? m.expenses.slice() : [],
-    // A day with a real expense is not a no-spend day, however it got marked; one
-    // place fixes it for every path that logs an expense (modal, quick add, import).
-    noSpendDays: (Array.isArray(m.noSpendDays) ? m.noSpendDays : []).filter(
-      (d) =>
-        !(Array.isArray(m.expenses) ? m.expenses : []).some(
-          (e) => e && e.date === d && Number(e.amount) > 0
-        )
-    ),
-    income: Array.isArray(m.income) ? m.income.slice() : [],
-    loans: Array.isArray(m.loans) ? m.loans : [],
-    budgets: m.budgets && typeof m.budgets === 'object' ? m.budgets : {},
-    goals: Array.isArray(m.goals)
-      ? m.goals.map((g) =>
-          Object.assign({}, g, { contribs: Array.isArray(g.contribs) ? g.contribs : [] })
-        )
-      : [],
-    customCategories: Array.isArray(m.customCategories) ? m.customCategories : [],
-    challenges: Array.isArray(m.challenges) ? m.challenges : [],
-    wishlist: Array.isArray(m.wishlist) ? m.wishlist : [],
-    subscriptions: Array.isArray(m.subscriptions) ? m.subscriptions : [],
-    transfers: Array.isArray(m.transfers) ? m.transfers.slice() : [],
-    // Live balances from the server; read-only here, never saved back.
-    accounts: Array.isArray(m.accounts) ? m.accounts : [],
-    settings: Object.assign({}, e.settings, m.settings || {}),
-    currency: CUR,
-  };
-}
-/* ---- The ledger: expenses, income and transfers are rows on the server ----
-   Everything else in the document is saved whole; these three are saved item by
-   item, so a save sends what changed instead of years of history. */
-export const LEDGER_ARRAYS = { expenses: 'expense', income: 'income', transfers: 'transfer' };
-
-/* Key order must not count as a change: an expense that comes back from the
-   server with its fields in another order is the same expense. */
-function stable(v) {
-  if (Array.isArray(v)) return '[' + v.map(stable).join(',') + ']';
-  if (v && typeof v === 'object')
-    return (
-      '{' +
-      Object.keys(v)
-        .filter((k) => v[k] !== undefined)
-        .sort()
-        .map((k) => JSON.stringify(k) + ':' + stable(v[k]))
-        .join(',') +
-      '}'
-    );
-  return JSON.stringify(v);
-}
-
-/* What a save has to tell the ledger: every added or edited item, every removed id.
-   Pure, so the whole save path rests on something testable. */
-export function ledgerDiff(before, after) {
-  const upserts = [];
-  const deletes = [];
-  for (const [arr, kind] of Object.entries(LEDGER_ARRAYS)) {
-    const was = new Map(
-      ((before && before[arr]) || []).filter((x) => x && x.id).map((x) => [x.id, stable(x)])
-    );
-    const kept = new Set();
-    for (const item of (after && after[arr]) || []) {
-      if (!item || !item.id) continue;
-      kept.add(item.id);
-      if (was.get(item.id) !== stable(item)) upserts.push(Object.assign({ kind }, item));
-    }
-    for (const id of was.keys()) if (!kept.has(id)) deletes.push(id);
-  }
-  return { upserts, deletes };
-}
-
-/* A diff laid onto a document: deletes removed, edits replaced in place, new items
-   first. Pure; it is how a save built from an older snapshot lands on the live
-   state without dropping what arrived since. */
-export function applyLedgerDiff(money, diff) {
-  const out = Object.assign({}, money);
-  const del = new Set(diff.deletes);
-  for (const [arr, kind] of Object.entries(LEDGER_ARRAYS)) {
-    const ups = diff.upserts.filter((u) => u.kind === kind).map(({ kind: _k, ...item }) => item);
-    const byId = new Map(ups.map((u) => [u.id, u]));
-    const was = (money && money[arr]) || [];
-    const had = new Set(was.map((x) => x.id));
-    out[arr] = ups
-      .filter((u) => !had.has(u.id))
-      .concat(was.filter((x) => !del.has(x.id)).map((x) => byId.get(x.id) || x));
-  }
-  return out;
-}
-
-/* The part of the document that is still saved as one document. */
-export function docPart(m) {
-  const out = Object.assign({}, m);
-  for (const k of Object.keys(LEDGER_ARRAYS)) delete out[k];
-  delete out.accounts;
-  return out;
-}
-
-/* Union two money documents by item id.
-
-   Reached only after the server refuses a write as stale, and it is the right
-   shape for what actually collides: both sides have been ADDING things — an
-   expense here, an income row there — to a document they both loaded from the
-   same place. Union keeps both.
-
-   ponytail: a deletion on one side loses to an addition-era copy on the other,
-   so an expense deleted on the laptop can reappear from the phone. That is the
-   deliberate trade — a row you have to delete twice is a nuisance, a row that
-   vanishes without being deleted is lost money. Deletions that must stick need
-   tombstones, which need the normalized tables this blob doesn't have. */
-export function mergeMoney(mine, theirs) {
-  const out = normalizeMoney(theirs);
-  const local = normalizeMoney(mine);
-  for (const key of Object.keys(out)) {
-    if (!Array.isArray(out[key]) || !Array.isArray(local[key])) continue;
-    const seen = new Set(out[key].map((x) => (x && x.id) || JSON.stringify(x)));
-    for (const item of local[key]) {
-      const id = (item && item.id) || JSON.stringify(item);
-      if (!seen.has(id)) {
-        out[key].push(item);
-        seen.add(id);
-      }
-    }
-  }
-  // Objects (budgets) and settings are last-writer-wins on purpose: they are
-  // single values a person sets, not a log they append to.
-  // Items above are whole-item theirs-wins, which would drop a "Mark as paid" made
-  // here while another device saved: keep the later paidFor of the two copies.
-  const mineSubs = new Map(local.subscriptions.map((x) => [x && x.id, x]));
-  for (const s of out.subscriptions) {
-    const p = s && (mineSubs.get(s.id) || {}).paidFor;
-    if (p && p > (s.paidFor || '')) s.paidFor = p;
-  }
-  out.budgets = Object.assign({}, out.budgets, local.budgets);
-  out.settings = Object.assign({}, out.settings, local.settings);
-  return out;
-}
-
-
-const goalSaved = (g) => (g.contribs || []).reduce((a, c) => a + (Number(c.amount) || 0), 0);
-
-/* ---- Categories (built-in + custom tags) ---- */
-function mergedCats(money) {
-  const custom = (money && money.customCategories) || [];
-  return DEFAULT_CATEGORIES.concat(
-    custom.map((c) => ({
-      key: c.key,
-      label: c.label,
-      icon: c.icon || 'tag',
-      color: c.color || 'var(--sun-600)',
-      soft: c.soft || 'var(--sun-50)',
-      fg: c.fg || 'var(--sun-700)',
-    }))
-  );
-}
-function catOf(key, money) {
-  return (
-    mergedCats(money).find((c) => c.key === key) || {
-      key: key || 'others',
-      label: key || 'Others',
-      icon: 'tag',
-      color: 'var(--sun-600)',
-      soft: 'var(--sun-50)',
-      fg: 'var(--sun-700)',
-    }
-  );
-}
-
-/* =====================================================================
-   Heuristic engine — pure functions over the money doc
-   ===================================================================== */
-function inRange(expenses, from, to) {
-  return expenses.filter((e) => e.date >= from && e.date <= to);
-}
-function sumAmt(list) {
-  return list.reduce((a, e) => a + (Number(e.amount) || 0), 0);
-}
-function byCategory(list, money) {
-  const m = {};
-  mergedCats(money).forEach((c) => (m[c.key] = 0));
-  list.forEach((e) => {
-    const k = m[e.category] !== undefined ? e.category : 'others';
-    m[k] += Number(e.amount) || 0;
-  });
-  return m;
-}
-function pctChange(cur, prev) {
-  if (prev <= 0) return cur > 0 ? 100 : 0;
-  return Math.round(((cur - prev) / prev) * 100);
-}
-
-/* 1 — auto-categorize a note (built-in keywords, then custom tag labels). */
-function suggestCategory(text, money) {
-  const t = String(text || '').toLowerCase();
-  if (!t.trim()) return null;
-  for (const c of DEFAULT_CATEGORIES) {
-    const ks = KEYWORDS[c.key];
-    if (ks && ks.some((k) => t.includes(k))) return c.key;
-  }
-  for (const c of (money && money.customCategories) || []) {
-    if (c.label && t.includes(String(c.label).toLowerCase())) return c.key;
-  }
-  return 'others';
-}
-
-/* 2 — weekly + monthly insights, plain language. */
-function buildInsights(money) {
-  const out = [];
-  const tw = weekStartKey();
-  const today = todayKey();
-  const lwS = dkey(addDays(parseKey(tw), -7));
-  const lwE = dkey(addDays(parseKey(tw), -1));
-  const cur = inRange(money.expenses, tw, today);
-  const prev = inRange(money.expenses, lwS, lwE);
-  const curT = sumAmt(cur);
-  const prevT = sumAmt(prev);
-  if (cur.length && prevT > 0) {
-    const ch = pctChange(curT, prevT);
-    if (ch <= -10)
-      out.push({
-        tone: 'down',
-        text: `You're spending ${Math.abs(ch)}% less than last week so far.`,
-      });
-    else if (ch >= 10)
-      out.push({
-        tone: 'up',
-        text: `You've spent ${ch}% more than last week. Worth a quick glance.`,
-      });
-    else out.push({ tone: 'flat', text: `Your spending is steady — about the same as last week.` });
-  }
-  if (cur.length) {
-    const cc = byCategory(cur, money);
-    const pc = byCategory(prev, money);
-    let best = null;
-    mergedCats(money).forEach((c) => {
-      if (pc[c.key] > 0 && cc[c.key] > 0) {
-        const ch = pctChange(cc[c.key], pc[c.key]);
-        if (!best || Math.abs(ch) > Math.abs(best.ch)) best = { c, ch };
-      }
-    });
-    if (best && Math.abs(best.ch) >= 15)
-      out.push(
-        best.ch > 0
-          ? { tone: 'up', text: `${best.c.label} is up ${best.ch}% vs last week.` }
-          : { tone: 'down', text: `${best.c.label} is down ${Math.abs(best.ch)}% — nice control.` }
-      );
-  }
-  const mExp = inRange(money.expenses, thisMonthPrefix() + '-01', today);
-  if (mExp.length) {
-    const mc = byCategory(mExp, money);
-    const ranked = mergedCats(money)
-      .map((c) => ({ c, v: mc[c.key] }))
-      .filter((x) => x.v > 0)
-      .sort((a, b) => b.v - a.v);
-    if (ranked.length >= 2)
-      out.push({
-        tone: 'info',
-        text: `Most of your money this month goes to ${ranked[0].c.label} and ${ranked[1].c.label}.`,
-      });
-    else if (ranked.length === 1)
-      out.push({ tone: 'info', text: `${ranked[0].c.label} is your main spend this month.` });
-  }
-  if (!out.length)
-    out.push({
-      tone: 'info',
-      text: `Log a few expenses and I'll start spotting patterns for you.`,
-    });
-  return out.slice(0, 3);
-}
-
-/* 3 — per-category budget status (this month). */
-function budgetStatus(money) {
-  const spent = byCategory(inRange(money.expenses, thisMonthPrefix() + '-01', todayKey()), money);
-  return mergedCats(money).map((c) => {
-    const budget = Number(money.budgets[c.key]) || 0;
-    const s = spent[c.key] || 0;
-    const pct = budget > 0 ? Math.round((s / budget) * 100) : 0;
-    return { cat: c, budget, spent: s, pct, remaining: Math.max(0, budget - s) };
-  });
-}
+import {
+  CUR,
+  cur,
+  applyCurrency,
+  PALETTE,
+  pad2,
+  dkey,
+  todayKey,
+  parseKey,
+  addDays,
+  diffDays,
+  thisMonthPrefix,
+  lastMonthPrefix,
+  daysInMonth,
+  weekStartKey,
+  lastNDays,
+  fmt,
+  homeCur,
+  accCurrency,
+  fxRate,
+  toHomeAmount,
+  editedHomeAmount,
+  fmtIn,
+  fmtBalance,
+  readAmount,
+  readWhole,
+  fmtDateShort,
+  uid,
+  clone,
+  slug,
+  emptyMoney,
+  normalizeMoney,
+  removeDocItem,
+  LEDGER_ARRAYS,
+  stable,
+  goalSaved,
+  mergedCats,
+  catOf,
+  inRange,
+  sumAmt,
+  byCategory,
+  pctChange,
+  suggestCategory,
+  buildInsights,
+  budgetStatus,
+} from './money-core.js';
+// The document model moved to money-core.js (boot chunk); re-exported so the tests and
+// any import of these from money.js keep working.
+export {
+  emptyMoney,
+  normalizeMoney,
+  TOMBSTONED,
+  removeDocItem,
+  LEDGER_ARRAYS,
+  ledgerDiff,
+  applyLedgerDiff,
+  docPart,
+  mergeMoney,
+} from './money-core.js';
 
 /* 4 — purchase advisor: a thoughtful recommendation, not yes/no. */
 function advise(money, item, price, reason) {
@@ -625,7 +112,7 @@ function advise(money, item, price, reason) {
   const isWant = score > 0;
   const st = budgetStatus(money).find((s) => s.cat.key === cat);
   const remaining = st ? st.remaining : 0;
-  const hasBudget = st && st.budget > 0;
+  const hasBudget = st && st.base > 0;
   const fits = !hasBudget || price <= remaining;
   const goals = (money.goals || []).filter((g) => goalSaved(g) < (g.target || 0));
   const goal = goals.sort((a, b) => goalSaved(b) - goalSaved(a))[0] || null;
@@ -732,7 +219,7 @@ function personality(money) {
     (c) => (Number(money.budgets[c.key]) || 0) > 0
   ).length;
   const allUnder = budgetStatus(money)
-    .filter((s) => s.budget > 0)
+    .filter((s) => s.base > 0)
     .every((s) => s.pct <= 100);
   const scores = {
     impulse:
@@ -799,11 +286,21 @@ function incomeInRange(money, from, to) {
 function sumIncome(list) {
   return list.reduce((a, e) => a + (Number(e.amount) || 0), 0);
 }
+/* What is still owed on one loan: its amount less the part repayments
+   (`repaid[{amount, date}]`), 0 once settled. Worked in paise like splitShares. */
+function loanLeft(l) {
+  if (!l || l.settled) return 0;
+  const back = (Array.isArray(l.repaid) ? l.repaid : []).reduce(
+    (a, r) => a + Math.round((Number(r.amount) || 0) * 100),
+    0
+  );
+  return Math.max(0, Math.round((Number(l.amount) || 0) * 100) - back) / 100;
+}
 // Outstanding (not settled) loans in a direction: 'given' = lent out, 'received' = borrowed.
 function loanOutstanding(money, direction) {
   return (money.loans || [])
-    .filter((l) => l.direction === direction && !l.settled)
-    .reduce((a, l) => a + (Number(l.amount) || 0), 0);
+    .filter((l) => l.direction === direction)
+    .reduce((a, l) => a + loanLeft(l), 0);
 }
 
 /* 8 / 25 — weekly review + motivation. */
@@ -828,7 +325,7 @@ function weeklyReview(money) {
       .filter((e) => wantCats.includes(e.category))
       .sort((a, b) => (b.amount || 0) - (a.amount || 0))[0] || null;
   const streak = logStreak(money.expenses);
-  const st = budgetStatus(money).filter((s) => s.budget > 0);
+  const st = budgetStatus(money).filter((s) => s.base > 0);
   const underNow = st.filter((s) => s.pct <= 100);
   const positive =
     setAside > 0
@@ -875,38 +372,160 @@ function weeklyReview(money) {
   };
 }
 
-/* 9 / 24 — monthly forecast (subscriptions counted as committed spend). */
+/* ---- Recurring income & expenses ----
+   A rule: {id, kind:'income'|'expense', amount, category, accountId?, day: 1-28 |
+   'last', note, active, start:'YYYY-MM-DD', postedFor?:'YYYY-MM'}. For income,
+   `category` is the source ('salary' | 'other'). On a Money visit each active rule
+   whose day this month has come is posted as a ledger row with the id
+   `rec-<ruleId>-<YYYY-MM>`: deterministic, so two devices posting the same month
+   upsert one row, never two. `postedFor` (forward-only, kept by mergeMoney) stops a
+   deleted occurrence coming back. Only the current month is posted: a missed
+   month is not backfilled, because the person has most likely logged it by hand.
+   A day before `start` (the rule was made after it) waits for next month.
+   Amounts are in the home currency. */
+function recurDate(rule, ym) {
+  const [y, mo] = ym.split('-').map(Number);
+  const dim = new Date(y, mo, 0).getDate();
+  const d = rule.day === 'last' ? dim : Math.min(dim, Math.max(1, Math.round(Number(rule.day) || 1)));
+  return ym + '-' + String(d).padStart(2, '0');
+}
+function recurId(rule, ym) {
+  return 'rec-' + rule.id + '-' + ym;
+}
+function recurOpen(money, rule, ym) {
+  if (!rule || !rule.active || !(Number(rule.amount) > 0)) return false;
+  if ((rule.postedFor || '') >= ym) return false;
+  const date = recurDate(rule, ym);
+  if (rule.start && date < rule.start) return false;
+  const list = rule.kind === 'income' ? money.income : money.expenses;
+  return !(list || []).some((x) => x && x.id === recurId(rule, ym));
+}
+/* Occurrences due by today and not posted: [{rule, id, date}]. Pure. */
+function recurringDue(money, today = todayKey()) {
+  const ym = today.slice(0, 7);
+  return (money.recurring || [])
+    .filter((r) => recurOpen(money, r, ym) && recurDate(r, ym) <= today)
+    .map((rule) => ({ rule, id: recurId(rule, ym), date: recurDate(rule, ym) }));
+}
+/* Still ahead this month: the forecast's "to come". */
+function recurringToCome(money, today = todayKey()) {
+  const ym = today.slice(0, 7);
+  return (money.recurring || [])
+    .filter((r) => recurOpen(money, r, ym) && recurDate(r, ym) > today)
+    .map((rule) => ({ rule, id: recurId(rule, ym), date: recurDate(rule, ym) }));
+}
+/* Posts what recurringDue found into `m` (mutates). Returns how many. */
+function materialiseRecurring(m, today = todayKey()) {
+  const due = recurringDue(m, today);
+  const ym = today.slice(0, 7);
+  for (const { rule, id, date } of due) {
+    const acc = rule.accountId ? { accountId: rule.accountId } : {};
+    if (rule.kind === 'income') {
+      m.income = [
+        {
+          id,
+          amount: Number(rule.amount),
+          source: rule.category === 'other' ? 'other' : 'salary',
+          label: rule.note || (rule.category === 'other' ? 'Income' : 'Salary'),
+          date,
+          ...acc,
+        },
+      ].concat(m.income || []);
+    } else {
+      m.expenses = [
+        {
+          id,
+          amount: Number(rule.amount),
+          category: rule.category || 'others',
+          note: rule.note || '',
+          date,
+          ...acc,
+        },
+      ].concat(m.expenses || []);
+    }
+    const x = (m.recurring || []).find((r) => r.id === rule.id);
+    if (x) x.postedFor = ym;
+  }
+  return due.length;
+}
+
+/* 9 / 24 — monthly forecast.
+
+   Only day-to-day spending is extrapolated. Fixed amounts are added as they are:
+   - a bill already paid this month (its expense id is `sub-<id>-<month>`) is in
+     `spent` once and not projected again; a bill not yet paid is `committed`.
+     (Counting every subscription as committed on top of a run-rate that already
+     held the paid ones counted each paid bill about twice.)
+   - per category, a one-off: the single largest expense, when it is more than
+     half of that category's month so far, is taken as a one-off and not
+     multiplied by the days left. A ₹6,000 shoe on the 2nd projected ₹90,000 of
+     shopping; now it projects ₹6,000 plus the pace of the rest.
+   Pure; `forecast` reads the clock only through todayKey / daysInMonth. */
+// A bill or a repeat: a fixed amount on a fixed day, never a pace to multiply.
+const isBillExpense = (e) =>
+  typeof e.id === 'string' && (e.id.startsWith('sub-') || e.id.startsWith('rec-'));
+function projectSpend(list, day, dim) {
+  const fixed = list.filter(isBillExpense);
+  let rest = list.filter((e) => !isBillExpense(e));
+  const total = sumAmt(rest);
+  let oneOff = 0;
+  if (rest.length) {
+    const big = rest.reduce((a, e) => (Number(e.amount) > Number(a.amount) ? e : a));
+    if (Number(big.amount) > total / 2) {
+      oneOff = Number(big.amount) || 0;
+      rest = rest.filter((e) => e !== big);
+    }
+  }
+  const pace = day > 0 ? (sumAmt(rest) / day) * dim : sumAmt(rest);
+  return Math.round(sumAmt(fixed) + oneOff + pace);
+}
 function forecast(money) {
   const mStart = thisMonthPrefix() + '-01';
   const today = todayKey();
+  const month = thisMonthPrefix();
   const mExp = inRange(money.expenses, mStart, today);
   const spent = sumAmt(mExp);
   const day = new Date().getDate();
   const dim = daysInMonth();
-  const runRate = day > 0 ? Math.round((spent / day) * dim) : spent;
-  const committed = subsMonthlyTotal(money);
-  const projected = Math.max(runRate, spent + Math.round((committed * (dim - day)) / dim));
-  const cc = byCategory(mExp, money);
+  // Bills still to pay this month ('YYYY-MM' strings order like months).
+  const bills = (money.subscriptions || [])
+    .filter((s) => (s.paidFor || '') < month)
+    .reduce((a, s) => a + (Number(s.amount) || 0), 0);
+  // Repeats whose day is still ahead this month (posted ones are already in mExp).
+  const toCome = recurringToCome(money);
+  const recurringOut = sumAmt(toCome.filter((x) => x.rule.kind === 'expense').map((x) => x.rule));
+  const expectedIncome = sumAmt(toCome.filter((x) => x.rule.kind === 'income').map((x) => x.rule));
+  const committed = bills + recurringOut;
+  const projected = projectSpend(mExp, day, dim) + committed;
+  // Rollover moves a limit, so the warning reads the limit budgetStatus shows.
+  const limits = new Map(budgetStatus(money).map((s) => [s.cat.key, s]));
   const willExceed = [];
+  // Same bucketing as byCategory: an unknown tag counts as Others.
+  const known = new Set(mergedCats(money).map((c) => c.key));
+  const byCat = (k) => mExp.filter((e) => (known.has(e.category) ? e.category : 'others') === k);
   mergedCats(money).forEach((c) => {
-    const b = Number(money.budgets[c.key]) || 0;
-    if (b > 0) {
-      const proj = Math.round((cc[c.key] / day) * dim);
+    const st = limits.get(c.key);
+    const b = st && st.base > 0 ? st.budget : 0;
+    if (st && st.base > 0) {
+      const proj = projectSpend(byCat(c.key), day, dim);
       if (proj > b) willExceed.push({ cat: c, proj, budget: b });
     }
   });
   const disc = ['shopping', 'entertainment', 'food', 'others'];
   const topDisc = disc
-    .map((k) => ({ k, proj: Math.round((cc[k] / day) * dim) }))
+    .map((k) => ({ k, proj: projectSpend(byCat(k), day, dim) }))
     .sort((a, b) => b.proj - a.proj)[0];
   const potential = topDisc ? Math.round(topDisc.proj * 0.2) : 0;
   return {
     spent,
     projected,
     committed,
+    bills,
+    recurringOut,
+    expectedIncome,
     willExceed,
     potential,
-    topDisc: topDisc ? catOf(topDisc.k, money) : null,
+    topDisc: topDisc && topDisc.proj > 0 ? catOf(topDisc.k, money) : null,
     hasData: mExp.length > 0,
   };
 }
@@ -947,7 +566,7 @@ function levelInfo(money) {
 }
 function badges(money) {
   const streak = logStreak(money.expenses);
-  const st = budgetStatus(money).filter((s) => s.budget > 0);
+  const st = budgetStatus(money).filter((s) => s.base > 0);
   const withinBudget = st.length > 0 && st.every((s) => s.pct <= 100);
   const tw = weekStartKey();
   const today = todayKey();
@@ -1240,7 +859,7 @@ function dailyTip(money) {
     tips.push(
       `Cooking at home twice this week could save around ${fmt(Math.round(cc.food * 0.15))}.`
     );
-  const st = budgetStatus(money).filter((s) => s.budget > 0);
+  const st = budgetStatus(money).filter((s) => s.base > 0);
   const under = st.find((s) => s.pct < 60);
   if (under) tips.push(`Your ${under.cat.label} spending is well under budget.`);
   const over = st.find((s) => s.pct > 90);
@@ -1257,7 +876,7 @@ function dailyTip(money) {
 function financialHealth(money) {
   const parts = [];
   const mExp = inRange(money.expenses, thisMonthPrefix() + '-01', todayKey());
-  const st = budgetStatus(money).filter((s) => s.budget > 0);
+  const st = budgetStatus(money).filter((s) => s.base > 0);
   // No budgets set => nothing to adhere to yet (the note says as much). Earlier
   // this defaulted to 12, inflating the score with points the user hadn't earned.
   // An unlogged month is not adherence either: every category sits at 0% spent,
@@ -1581,7 +1200,7 @@ function achievementTimeline(money) {
 /* 20 — budget recovery plan (a plan, not just a warning). */
 function recoveryPlan(money) {
   const st = budgetStatus(money);
-  const over = st.filter((s) => s.budget > 0 && s.pct > 100);
+  const over = st.filter((s) => s.base > 0 && s.pct > 100);
   if (!over.length) return null;
   const totalOver = over.reduce((a, s) => a + (s.spent - s.budget), 0);
   const room = st
@@ -1642,7 +1261,7 @@ function coachTips(money) {
         `You often spend more on weekends (${fmt(wkndAvg)}/day vs ${fmt(wdAvg)} on weekdays). A weekend limit could help.`
       );
   }
-  const st = budgetStatus(money).filter((s) => s.budget > 0);
+  const st = budgetStatus(money).filter((s) => s.base > 0);
   if (st.length && st.every((s) => s.pct <= 100))
     out.push(`You've stayed within budget this month — keep it up!`);
   const cc = byCategory(inRange(money.expenses, thisMonthPrefix() + '-01', todayKey()), money);
@@ -1705,24 +1324,33 @@ export function splitShares(total, parties, includeMe) {
   let extra = paise - base * n;
   return parties.map((party) => ({ party, amount: (base + (extra-- > 0 ? 1 : 0)) / 100 }));
 }
+/* Bills to show: due in the next 7 days, or overdue — this month's due day has
+   passed and it isn't marked paid. An overdue bill used to roll to next month's
+   occurrence (and, 3+ weeks out, drop off the list), so a missed payment
+   silently disappeared. `month` is what "Mark as paid" stamps as paidFor;
+   paid is forward-only, as on the server (SubscriptionDueScheduler.dueToday). */
 function upcomingSubs(money) {
-  const today = new Date().getDate();
+  const now = new Date();
+  const today = now.getDate();
   const dim = daysInMonth();
+  const thisMonth = dkey(now).slice(0, 7);
+  const next = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const nextMonth = dkey(next).slice(0, 7);
+  const nextDim = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
   return (
     (money.subscriptions || [])
       .map((s) => {
-        const due = Math.min(Number(s.dueDay) || 1, dim);
-        let inDays = due - today;
-        const d = new Date();
-        if (inDays < 0) {
-          inDays += dim;
-          d.setDate(1);
-          d.setMonth(d.getMonth() + 1);
+        const day = Number(s.dueDay) || 1;
+        const due = Math.min(day, dim);
+        const paid = (m) => (s.paidFor || '') >= m;
+        if (due >= today || !paid(thisMonth)) {
+          const inDays = due - today;
+          return { sub: s, due, inDays, month: thisMonth, overdue: inDays < 0 };
         }
-        // The month this occurrence bills for — what "Mark as paid" stamps as paidFor.
-        return { sub: s, due, inDays, month: dkey(d).slice(0, 7) };
+        // This month's is paid and behind us: the next one.
+        const nextDue = Math.min(day, nextDim);
+        return { sub: s, due: nextDue, inDays: dim - today + nextDue, month: nextMonth, overdue: false };
       })
-      // 'YYYY-MM' strings compare in month order; paidFor only ever moves forward.
       .filter((x) => x.inDays <= 7 && (x.sub.paidFor || '') < x.month)
       .sort((a, b) => a.inDays - b.inDays)
   );
@@ -1950,6 +1578,10 @@ function accountOf(money, id) {
    first run): an entry without one still saves, it just isn't counted in a balance. */
 function accountPicker(money, initial, onChange) {
   const list = activeAccounts(money);
+  // An entry booked to an archived account keeps it: falling back to list[0]
+  // would silently move (and re-currency) the entry on an unrelated edit.
+  const held = !list.some((a) => a.id === initial) && accountOf(money, initial);
+  if (held) list.push(held);
   if (!list.length) return { node: null, get: () => null, set() {}, disable() {} };
   const start = list.some((a) => a.id === initial) ? initial : list[0].id;
   const seg = segmented(
@@ -1972,24 +1604,52 @@ function accountPicker(money, initial, onChange) {
       }),
   };
 }
-/* Money lent from an account leaves it: a transfer with no "to" (never spending), id
-   `loan-<loanId>`, kept while the loan is outstanding. Settled = repaid into that same
-   account, so the move goes and the balance comes back. ponytail: repaid elsewhere isn't
-   modelled; a "Repaid into" picker on Settle if people ask. */
-function loanMove(m, loan) {
+/* A loan's money through your accounts, as transfers with one side only (never
+   spending, never income; the ledger takes a transfer with just `from` or just `to`):
+   - the loan itself, id `loan-<id>`, on its date, when it names an account: lent =
+     out of `accountId` (no "to"), borrowed = into it (no "from");
+   - each repayment `loan-<id>-r<i>`, on the day it came back / was paid, through its
+     own account (`repaid[i].accountId`, else the loan's): lent = back in, borrowed =
+     out. A repayment with no account moves nothing;
+   - a loan settled before repayments were recorded (no `final` repayment) gets
+     `loan-<id>-s` for the rest, through the loan's account on the loan's date, so its
+     balance comes out where it always did.
+   `gone` (the loan was deleted) removes every move. Rebuilt whole on each call, so
+   calling it twice is the same as once. */
+function loanMove(m, loan, gone) {
   if (!loan) return;
   const id = 'loan-' + loan.id;
-  m.transfers = (m.transfers || []).filter((t) => t.id !== id);
-  if (loan.direction === 'given' && loan.accountId && !loan.settled) {
-    m.transfers.unshift({
-      id,
-      amount: loan.amount,
-      from: loan.accountId,
-      date: loan.date,
-      note: 'Lent to ' + loan.party,
-    });
+  m.transfers = (m.transfers || []).filter((t) => t.id !== id && !String(t.id).startsWith(id + '-'));
+  if (gone) return;
+  const lent = loan.direction === 'given';
+  const moves = [];
+  const move = (tid, amount, accountId, date, note, back) => {
+    if (!accountId || !(amount > 0)) return;
+    // Out of the account when lending or paying back; into it when borrowing or repaid.
+    const out = lent !== back;
+    moves.push({ id: tid, amount, ...(out ? { from: accountId } : { to: accountId }), date, note });
+  };
+  move(id, Number(loan.amount) || 0, loan.accountId, loan.date, (lent ? 'Lent to ' : 'Borrowed from ') + loan.party, false);
+  const repaid = Array.isArray(loan.repaid) ? loan.repaid : [];
+  repaid.forEach((r, i) =>
+    move(
+      id + '-r' + i,
+      Math.round((Number(r.amount) || 0) * 100) / 100,
+      r.accountId || loan.accountId,
+      r.date || loan.date,
+      (lent ? 'Repaid by ' : 'Repaid to ') + loan.party,
+      true
+    )
+  );
+  if (loan.settled && !repaid.some((r) => r.final)) {
+    const back = repaid.reduce((a, r) => a + Math.round((Number(r.amount) || 0) * 100), 0);
+    const rest = Math.max(0, Math.round((Number(loan.amount) || 0) * 100) - back) / 100;
+    move(id + '-s', rest, loan.accountId, loan.date, 'Settled with ' + loan.party, true);
   }
+  m.transfers = moves.concat(m.transfers);
 }
+/* A transfer between two of your accounts, as opposed to a loan's one-sided move. */
+const isMove = (t) => !!(t && t.from && t.to);
 function firstOfKind(money, kinds) {
   const a = activeAccounts(money).find((x) => kinds.includes(x.kind));
   return a ? a.id : null;
@@ -2005,6 +1665,7 @@ function confirmDelete(title, body, onConfirm) {
     title,
     body: h('div', { class: 'gb-note-hint' }, body),
     primary: 'Delete',
+    destructive: true,
     onPrimary: onConfirm,
   });
 }
@@ -2321,6 +1982,124 @@ export function MoneyCustomisePane(money, save) {
     onPick: (key) => setPref({ defaultTag: key }),
   });
 
+  /* Other currencies: a rate table typed by the person (no network FX) and which
+     account holds which. See toHomeAmount for how an entry is booked. */
+  const fxBox = h('div', { class: 'gb-money-fx' });
+  function renderFx() {
+    const fx = Object.assign({}, money.settings.fx);
+    const ac = Object.assign({}, money.settings.accountCurrency);
+    const home = homeCur(money);
+    const syms = Object.keys(fx).filter((k) => fxRate(money, k) && k !== home);
+    const badRate = () => toast.error({ message: 'Enter a rate above zero.' }, 'Enter a rate above zero.');
+    const rateRow = (sym) =>
+      h(
+        'div',
+        { class: 'gb-money-fx-row' },
+        h('span', { class: 'gb-money-fx-sym' }, '1 ' + sym + ' ='),
+        h('input', {
+          type: 'number',
+          class: 'gb-input',
+          inputmode: 'decimal',
+          min: '0',
+          step: 'any',
+          value: String(fx[sym]),
+          'aria-label': 'Rate for ' + sym + ' in ' + home,
+          onchange: (e) => {
+            const r = Number(e.currentTarget.value);
+            if (!(r > 0)) {
+              e.currentTarget.value = String(fx[sym]);
+              return badRate();
+            }
+            setPref({ fx: Object.assign({}, fx, { [sym]: r }) });
+          },
+        }),
+        h('span', { class: 'gb-money-fx-home' }, home),
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-icon-btn',
+            'aria-label': 'Remove ' + sym,
+            onclick: () =>
+              confirmDelete(
+                'Remove ' + sym,
+                'Remove ' + sym + '? Accounts in it go back to ' + home + '. Entries already booked keep their amounts.',
+                () => {
+                  delete fx[sym];
+                  for (const k of Object.keys(ac)) if (ac[k] === sym) ac[k] = null;
+                  setPref({ fx, accountCurrency: ac });
+                  renderFx();
+                }
+              ),
+          },
+          Icon('trash-2', { size: 15, sw: 2.4 })
+        )
+      );
+    const newSym = h('input', { type: 'text', class: 'gb-input', maxlength: '3', placeholder: '$', 'aria-label': 'Currency symbol' });
+    const newRate = h('input', {
+      type: 'number',
+      class: 'gb-input',
+      inputmode: 'decimal',
+      min: '0',
+      step: 'any',
+      placeholder: 'e.g. 83.2',
+      'aria-label': 'Its rate in ' + home,
+    });
+    const add = h(
+      'button',
+      {
+        type: 'button',
+        class: 'gb-btn gb-btn--soft gb-btn--compact',
+        onclick: () => {
+          const sym = newSym.value.trim().slice(0, 3);
+          const r = Number(newRate.value);
+          if (!sym || sym === home) {
+            newSym.focus();
+            return toast.error({ message: 'Use a symbol other than ' + home + '.' }, 'Use a symbol other than ' + home + '.');
+          }
+          if (!(r > 0)) return badRate();
+          setPref({ fx: Object.assign({}, fx, { [sym]: r }) });
+          renderFx();
+        },
+      },
+      Icon('plus', { size: 14, sw: 2.6 }),
+      'Add currency'
+    );
+    const accts = activeAccounts(money);
+    // replaceChildren would print a null (or a 0) as text, so the optional part is filtered.
+    const parts = [
+      ...Object.keys(fx).filter((k) => k !== home).map(rateRow),
+      h('div', { class: 'gb-money-fx-row gb-money-fx-new' }, newSym, newRate, add),
+      syms.length > 0 && accts.length > 0
+        ? h(
+            'div',
+            { class: 'gb-money-fx-accounts' },
+            accts.map((a) =>
+              h(
+                'label',
+                { class: 'gb-money-fx-acc' },
+                h('span', null, a.name),
+                h(
+                  'select',
+                  {
+                    class: 'gb-input',
+                    onchange: (e) => {
+                      const v = e.currentTarget.value;
+                      setPref({ accountCurrency: Object.assign({}, ac, { [a.id]: v === home ? null : v }) });
+                    },
+                  },
+                  [home].concat(syms).map((c) => h('option', { value: c, selected: (ac[a.id] || home) === c }, c))
+                )
+              )
+            )
+          )
+        : null,
+    ].filter(Boolean);
+    fxBox.replaceChildren(...parts);
+    refreshIcons();
+  }
+  renderFx();
+
   return h(
     'div',
     { class: 'gb-form' },
@@ -2343,7 +2122,21 @@ export function MoneyCustomisePane(money, save) {
     thresholdInput,
     h('div', { class: 'gb-note-hint', style: { marginTop: '2px' } }, 'Set to 0 to never prompt.'),
     h('div', { class: 'gb-field-label' }, 'Default tag for new expenses'),
-    defaultPicker.node
+    defaultPicker.node,
+    h(
+      'div',
+      { class: 'gb-money-custom-head', style: { marginTop: '8px' } },
+      Icon('coins', { size: 14, sw: 2.2 }),
+      'Other currencies'
+    ),
+    h(
+      'div',
+      { class: 'gb-note-hint' },
+      'For an account in another currency. Type the rate yourself; an entry is counted in ' +
+        homeCur(money) +
+        ' at the rate on the day you log it, and its row shows what you paid.'
+    ),
+    fxBox
   );
 }
 
@@ -2478,7 +2271,7 @@ function logNoSpendDay(money, save) {
   const today = todayKey();
   const spentToday = money.expenses.some((e) => e.date === today && Number(e.amount) > 0);
   if (spentToday) {
-    toast.error('You’ve logged spending today, so it isn’t a no-spend day.');
+    toast.error(null, 'You’ve logged spending today, so it isn’t a no-spend day.');
     return;
   }
   if ((money.noSpendDays || []).includes(today)) {
@@ -2504,7 +2297,8 @@ function openExpenseModal(money, save, prefillDate, existing) {
     min: '1',
     max: '10000000',
     placeholder: 'e.g. 250',
-    value: ex ? String(ex.amount) : '',
+    // Booked in another currency: edit what was actually paid, not the converted figure.
+    value: ex ? String(ex.orig ? ex.orig.amount : ex.amount) : '',
   });
   const note = h('input', {
     type: 'text',
@@ -2534,10 +2328,19 @@ function openExpenseModal(money, save, prefillDate, existing) {
     }
   });
   // Whatever you paid from last time is the best guess for this time.
+  const amountLabel = h('div', { class: 'gb-field-label' }, '');
+  const labelFor = (accId) => {
+    const c = accCurrency(money, accId);
+    amountLabel.textContent = c
+      ? 'Amount (' + c + (fxRate(money, c) ? ', 1 ' + c + ' = ' + fmtIn(fxRate(money, c), cur) : ', no rate set') + ')'
+      : 'Amount (' + cur + ')';
+  };
   const paidFrom = accountPicker(
     money,
-    (ex && ex.accountId) || money.settings.lastAccountId || firstOfKind(money, ['cash'])
+    (ex && ex.accountId) || money.settings.lastAccountId || firstOfKind(money, ['cash']),
+    labelFor
   );
+  labelFor(paidFrom.get());
   openMoneyModal({
     title: ex ? 'Edit expense' : 'Add expense',
     sub: ex
@@ -2546,7 +2349,7 @@ function openExpenseModal(money, save, prefillDate, existing) {
     body: h(
       'div',
       { class: 'gb-form' },
-      h('div', { class: 'gb-field-label' }, 'Amount (' + cur + ')'),
+      amountLabel,
       amount,
       h('div', { class: 'gb-field-label' }, 'Note (optional)'),
       note,
@@ -2587,8 +2390,11 @@ function openExpenseModal(money, save, prefillDate, existing) {
       const cat = picker.get();
       const next = clone(money);
       const accountId = paidFrom.get();
+      // Another currency's account: stored converted, with what was paid kept as `orig`.
+      const home = ex ? editedHomeAmount(money, ex, accountId, amt) : toHomeAmount(money, accountId, amt);
       const fields = {
-        amount: amt,
+        amount: home.amount,
+        orig: home.orig,
         category: cat,
         date: date.value || todayKey(),
         note: note.value.trim(),
@@ -2597,6 +2403,7 @@ function openExpenseModal(money, save, prefillDate, existing) {
         next.expenses = next.expenses.map((x) => {
           if (x.id !== ex.id) return x;
           const edited = Object.assign({}, x, fields);
+          if (!edited.orig) delete edited.orig;
           if (accountId) edited.accountId = accountId;
           return edited;
         });
@@ -2605,6 +2412,7 @@ function openExpenseModal(money, save, prefillDate, existing) {
         return;
       }
       const id = uid();
+      if (!fields.orig) delete fields.orig;
       next.expenses.unshift({
         id,
         ...fields,
@@ -2625,102 +2433,6 @@ function openExpenseModal(money, save, prefillDate, existing) {
 }
 
 /* =====================================================================
-   Home widget
-   ===================================================================== */
-function MoneyHomeCard({ money, onSaveMoney, onOpen }) {
-  money = normalizeMoney(money);
-  applyCurrency(money);
-  const st = budgetStatus(money);
-  const totalBudget = st.reduce((a, s) => a + s.budget, 0);
-  const spentMonth = st.reduce((a, s) => a + s.spent, 0);
-  const safe = totalBudget - spentMonth;
-  const hasBudget = totalBudget > 0;
-  const ringPct = hasBudget
-    ? Math.max(0, Math.min(100, Math.round((safe / totalBudget) * 100)))
-    : 0;
-  const ringColor = safe >= 0 ? 'var(--success)' : 'var(--brand)';
-  const insight = buildInsights(money)[0];
-  const figure = hasBudget
-    ? ProgressRing({
-        value: ringPct,
-        size: 72,
-        stroke: 8,
-        color: ringColor,
-        children: [
-          h(
-            'div',
-            { class: 'gb-money-mini-ring-val', style: { color: ringColor } },
-            fmt(Math.max(0, safe))
-          ),
-        ],
-      })
-    : h(
-        'div',
-        { class: 'gb-money-mini-figure' },
-        h('div', { class: 'gb-money-mini-spent' }, fmt(spentMonth)),
-        h('div', { class: 'gb-money-mini-lbl' }, 'this month')
-      );
-  return h(
-    'div',
-    { class: 'gb-card gb-money-mini' },
-    h(
-      'button',
-      {
-        type: 'button',
-        class: 'gb-money-mini-head',
-        onclick: onOpen,
-        'aria-label': 'Open Money Buddy',
-      },
-      h(
-        'span',
-        { class: 'gb-money-mini-eyebrow' },
-        Icon('wallet', { size: 14, sw: 2.4 }),
-        'Money Buddy'
-      ),
-      Icon('chevron-right', { size: 18, sw: 2.4 })
-    ),
-    h(
-      'div',
-      { class: 'gb-money-mini-body' },
-      figure,
-      h(
-        'div',
-        { class: 'gb-money-mini-main' },
-        h(
-          'div',
-          { class: 'gb-money-mini-cap' },
-          hasBudget ? (safe >= 0 ? 'safe to spend' : 'over budget') : 'spent so far'
-        ),
-        h(
-          'div',
-          { class: 'gb-money-mini-say' },
-          insight ? insight.text : 'Track a little each day for clearer money.'
-        )
-      )
-    ),
-    h(
-      'div',
-      { class: 'gb-money-mini-actions' },
-      h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-btn gb-btn--soft gb-btn--compact',
-          onclick: () => openExpenseModal(money, onSaveMoney),
-        },
-        Icon('plus', { size: 14, sw: 2.6 }),
-        'Add expense'
-      ),
-      h(
-        'button',
-        { type: 'button', class: 'gb-btn gb-btn--ghost gb-btn--compact', onclick: onOpen },
-        'Open Money Buddy'
-      )
-    )
-  );
-}
-
-/* =====================================================================
    Screen
    ===================================================================== */
 let activeTab = 'overview';
@@ -2737,9 +2449,66 @@ let pickedDay = null;
 let showAllIncome = false;
 let tapeShown = false; // the tape's fill-in plays on a visit's first paint only
 let expShown = EXP_PAGE; // rows of "This month" revealed by Show more
+let expMonth = null; // 'YYYY-MM' the expense list shows; null = this month
 let loanOrder = null; // loan ids as last shown, so Settle/Undo doesn't move a row
 let moneyRoot = null;
+let recurPosting = false; // a repeat post is queued; one at a time
+/* History older than the 400-day load, fetched a page at a time by "Load older"
+   (GET /api/money/tx?before=). View-only: it lives here, never in the document, so
+   a save neither re-sends it nor reads its absence as deletes. Its rows can't be
+   edited or deleted from the list. */
+let older = null; // {expenses, income, transfers, more} once a page has come
+let olderBusy = false;
 const daySummaries = new Map();
+
+/* The loaded ledger (~13 months: the server sends the last 400 days, plus any
+   page "Load older" fetched) as CSV, newest first. Client-side from what's on
+   screen, so it works offline and needs no endpoint of its own. Exported for
+   money-calc.test.mjs. Text cells are quoted, and a leading = + - @ is
+   defused with a ' so a spreadsheet doesn't run a note as a formula. */
+export function ledgerCsv(money) {
+  const accName = new Map((money.accounts || []).map((a) => [a.id, a.name]));
+  const cell = (v) => {
+    if (typeof v === 'number') return String(v);
+    let t = v == null ? '' : String(v);
+    if (/^[=+\-@]/.test(t)) t = "'" + t;
+    return /[",\r\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t;
+  };
+  const rows = [];
+  // What was actually paid, for an entry booked from another currency's account.
+  const orig = (x) => (x.orig && x.orig.currency ? x.orig.amount + ' ' + x.orig.currency : '');
+  for (const e of money.expenses || [])
+    rows.push([e.date, 'expense', -Number(e.amount) || 0, e.category || '', e.note || '', accName.get(e.accountId) || '', orig(e)]);
+  for (const i of money.income || [])
+    rows.push([i.date, 'income', Number(i.amount) || 0, i.source || '', i.label || '', accName.get(i.accountId) || '', orig(i)]);
+  for (const t of money.transfers || [])
+    rows.push([
+      t.date,
+      'transfer',
+      Number(t.amount) || 0,
+      '',
+      t.note || '',
+      (t.from ? accName.get(t.from) || '' : 'in') + ' → ' + (t.to ? accName.get(t.to) || '' : 'out'),
+      '',
+    ]);
+  rows.sort((a, b) => (a[0] < b[0] ? 1 : a[0] > b[0] ? -1 : 0));
+  return [['date', 'type', 'amount', 'category', 'note', 'account', 'original']]
+    .concat(rows)
+    .map((r) => r.map(cell).join(','))
+    .join('\r\n');
+}
+function downloadLedgerCsv(money) {
+  const name = 'growth-buddy-money-' + todayKey() + '.csv';
+  // BOM: Excel reads a BOM-less CSV as ANSI and mangles ₹ and names.
+  const blob = new Blob(['\uFEFF' + ledgerCsv(money)], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = h('a', { href: url, download: name, style: { display: 'none' } });
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  toast.success('Your money CSV is downloading.');
+}
 
 function ScreenMoney({
   money,
@@ -2748,6 +2517,7 @@ function ScreenMoney({
   requestReceiptScan,
   accountRequest,
   requestDaySummary,
+  requestOlderTx,
 }) {
   money = normalizeMoney(money);
   applyCurrency(money);
@@ -2759,12 +2529,26 @@ function ScreenMoney({
     showAllIncome = false;
     tapeShown = false;
     expShown = EXP_PAGE;
+    expMonth = null;
     loanOrder = null;
+    older = null;
     daySummaries.clear();
   }
   moneyRoot = root;
   const save = (next, base) => onSaveMoney(next, base);
   const commit = (mutator) => commitOn(money, save, mutator);
+  // Repeats whose day has come are posted on the visit (ids `rec-<id>-<month>`, so a
+  // second device posting the same month upserts the same row). After this render,
+  // not during it: a save repaints the screen synchronously.
+  if (!recurPosting && recurringDue(money).length) {
+    recurPosting = true;
+    setTimeout(() => {
+      recurPosting = false;
+      let n = 0;
+      commit((m) => (n = materialiseRecurring(m)));
+      if (n) toast.success(n === 1 ? 'Logged 1 monthly repeat.' : 'Logged ' + n + ' monthly repeats.');
+    }, 0);
+  }
 
   /* ---- Accounts card: where the money is, right under "what did I spend" ---- */
   function accountsCard() {
@@ -2840,7 +2624,7 @@ function ScreenMoney({
                 type: 'button',
                 class: 'gb-money-account' + (Number(a.balance) < 0 ? ' is-negative' : ''),
                 onclick: () => openEditAccount(a),
-                'aria-label': a.name + ', ' + fmt(a.balance) + '. Edit',
+                'aria-label': a.name + ', ' + fmtBalance(money, a) + '. Edit',
               },
               h(
                 'span',
@@ -2859,7 +2643,10 @@ function ScreenMoney({
               h(
                 'span',
                 { class: 'gb-money-account-bal' },
-                (Number(a.balance) < 0 ? '−' : '') + fmt(Math.abs(Number(a.balance) || 0))
+                fmtBalance(money, a),
+                accCurrency(money, a.id) && fxRate(money, accCurrency(money, a.id))
+                  ? h('span', { class: 'gb-money-account-home' }, fmt(a.balance))
+                  : null
               )
             )
           )
@@ -2880,12 +2667,12 @@ function ScreenMoney({
           : null,
         // A transfer is in no spending view (it isn't spending), so this is the
         // one place it can be seen and taken back.
-        money.transfers.some((t) => t.to)
+        money.transfers.some(isMove)
           ? h(
               'div',
               { class: 'gb-money-moves' },
               h('div', { class: 'gb-money-day-sub' }, 'Recent moves'),
-              money.transfers.filter((t) => t.to).slice(0, 3).map((t) =>
+              money.transfers.filter(isMove).slice(0, 3).map((t) =>
                 h(
                   'div',
                   { class: 'gb-money-exp-row' },
@@ -2998,11 +2785,15 @@ function ScreenMoney({
   function openEditAccount(a) {
     const name = h('input', { type: 'text', class: 'gb-input', maxlength: '40', value: a.name });
     const kind = kindPicker(a.kind);
+    // Another currency's account is set in that currency and stored converted.
+    const ac = accCurrency(money, a.id);
+    const rate = ac ? fxRate(money, ac) : 0;
+    const shown = rate ? Math.round(((Number(a.balance) || 0) / rate) * 100) / 100 : Number(a.balance) || 0;
     const bal = h('input', {
       type: 'number',
       class: 'gb-input',
       inputmode: 'decimal',
-      value: String(Number(a.balance) || 0),
+      value: String(shown),
     });
     openMoneyModal({
       title: a.name,
@@ -3014,7 +2805,7 @@ function ScreenMoney({
         name,
         h('div', { class: 'gb-field-label' }, 'Type'),
         kind.node,
-        h('div', { class: 'gb-field-label' }, 'In it right now (' + cur + ')'),
+        h('div', { class: 'gb-field-label' }, 'In it right now (' + (rate ? ac : cur) + ')'),
         bal,
         h(
           'div',
@@ -3039,7 +2830,7 @@ function ScreenMoney({
         }
         const body = { name: name.value.trim(), kind: kind.get() };
         const v = readAmount(bal);
-        if (bal.value !== '' && v !== (Number(a.balance) || 0)) body.balance = v;
+        if (bal.value !== '' && v !== shown) body.balance = rate ? Math.round(v * rate * 100) / 100 : v;
         await accountWrite('PUT', '/' + a.id, body, 'Saved.');
       },
     });
@@ -3063,7 +2854,7 @@ function ScreenMoney({
         'div',
         { class: 'gb-form' },
         list.flatMap((a, i) => [
-          h('div', { class: 'gb-field-label' }, a.name + ' (' + cur + ')'),
+          h('div', { class: 'gb-field-label' }, a.name + ' (' + (accCurrency(money, a.id) || cur) + ')'),
           inputs[i],
         ])
       ),
@@ -3074,8 +2865,10 @@ function ScreenMoney({
         const vals = inputs.map((inp) =>
           inp.value === '' && !inp.validity.badInput ? null : readAmount(inp)
         );
+        // Converted up front too: an account with no rate refuses before any saves.
+        const home = vals.map((v, i) => (v === null ? null : toHomeAmount(money, list[i].id, v).amount));
         for (let i = 0; i < list.length; i++) {
-          if (vals[i] !== null) await accountRequest('PUT', '/' + list[i].id, { balance: vals[i] });
+          if (home[i] !== null) await accountRequest('PUT', '/' + list[i].id, { balance: home[i] });
         }
         commit((m) => (m.settings.accountsSetUp = true));
         toast.success('Balances saved.');
@@ -3415,6 +3208,12 @@ function ScreenMoney({
         placeholder: '0',
         value: money.budgets[c.key] ? String(money.budgets[c.key]) : '',
       }),
+      roll: h('input', {
+        type: 'checkbox',
+        class: 'gb-money-roll-check',
+        checked: typeof (money.rollover || {})[c.key] === 'string',
+        'aria-label': 'Roll ' + c.label + ' over to next month',
+      }),
     }));
     openMoneyModal({
       title: 'Monthly budgets',
@@ -3422,7 +3221,7 @@ function ScreenMoney({
       body: h(
         'div',
         { class: 'gb-form' },
-        inputs.map(({ c, inp }) =>
+        inputs.map(({ c, inp, roll }) =>
           h(
             'div',
             { class: 'gb-money-budget-field' },
@@ -3432,18 +3231,30 @@ function ScreenMoney({
               Icon(c.icon, { size: 16, sw: 2.2 })
             ),
             h('span', { class: 'gb-money-budget-field-label' }, c.label),
+            h('label', { class: 'gb-money-roll', title: 'Carry what is left (or over) into next month' }, roll, 'Roll over'),
             inp
           )
+        ),
+        h(
+          'div',
+          { class: 'gb-note-hint' },
+          'Roll over: what a month leaves unspent is added to the next one, and going over takes it off. It starts from the month after you turn it on.'
         )
       ),
       primary: 'Save budgets',
       onPrimary: async () => {
         // Read every field before committing, so a refused one saves nothing.
-        const vals = inputs.map(({ c, inp }) => [c.key, readWhole(inp) || 0]);
+        const vals = inputs.map(({ c, inp, roll }) => [c.key, readWhole(inp) || 0, roll.checked]);
         commit((m) => {
           m.budgets = {};
-          vals.forEach(([k, v]) => {
+          const was = m.rollover || {};
+          m.rollover = {};
+          vals.forEach(([k, v, r]) => {
             if (v > 0) m.budgets[k] = v;
+            // Kept as the month it was switched on; off is null (not deleted), so a
+            // merge with another device's copy can't switch it back on.
+            if (r && v > 0) m.rollover[k] = typeof was[k] === 'string' ? was[k] : thisMonthPrefix();
+            else if (was[k] !== undefined) m.rollover[k] = null;
           });
         });
         toast.success('Budgets saved.');
@@ -3481,7 +3292,7 @@ function ScreenMoney({
         .filter((g) => goalSaved(g) < (g.target || 0))
         .sort((x, y) => goalSaved(y) - goalSaved(x))[0];
       const parts = ['Category: ' + catOf(a.cat, money).label];
-      if (st && st.budget > 0)
+      if (st && st.base > 0)
         parts.push(
           a.fits
             ? `Fits the ${st.cat.label} budget — ${fmt(st.remaining)} free this month`
@@ -4476,7 +4287,7 @@ function ScreenMoney({
   }
 
   function buddyLine() {
-    const st = budgetStatus(money).filter((s) => s.budget > 0);
+    const st = budgetStatus(money).filter((s) => s.base > 0);
     const over = st.filter((s) => s.pct > 100);
     const near = st.filter((s) => s.pct >= 80 && s.pct <= 100);
     const streak = logStreak(money.expenses);
@@ -4790,8 +4601,16 @@ function ScreenMoney({
               'projected total · ' +
                 fmt(f.spent) +
                 ' so far' +
-                (f.committed ? ' · ' + fmt(f.committed) + ' subs' : '')
-            )
+                (f.bills ? ' · ' + fmt(f.bills) + ' in bills to come' : '') +
+                (f.recurringOut ? ' · ' + fmt(f.recurringOut) + ' in repeats to come' : '')
+            ),
+            f.expectedIncome
+              ? h(
+                  'div',
+                  { class: 'gb-money-forecast-lbl gb-money-forecast-in' },
+                  fmt(f.expectedIncome) + ' expected in before the month ends'
+                )
+              : null
           ),
           f.potential > 0
             ? h(
@@ -5078,9 +4897,38 @@ function ScreenMoney({
       filterSeg.node
     );
     requestAnimationFrame(() => (filterStrip.scrollLeft = filterScroll));
-    // ponytail: the list resets with the month. Older months are reachable through
-    // the search card above ("how much on food last month"), so no month picker.
-    let list = mExp
+    // Any loaded month (the server sends ~13); a fresh visit is back on this one.
+    const olderIds = new Set(older ? older.expenses.map((e) => e.id) : []);
+    const allExp = withOlder(money).expenses;
+    const months = Array.from(
+      new Set([thisMonthPrefix()].concat(allExp.map((e) => (e.date || '').slice(0, 7))))
+    )
+      .filter((k) => /^\d{4}-\d{2}$/.test(k))
+      .sort()
+      .reverse();
+    const shownMonth = expMonth && months.includes(expMonth) ? expMonth : thisMonthPrefix();
+    const isThisMonth = shownMonth === thisMonthPrefix();
+    const monthLabel = (k) =>
+      parseKey(k + '-01').toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    const monthPick =
+      months.length > 1
+        ? h(
+            'select',
+            {
+              class: 'gb-input gb-money-month-pick',
+              'aria-label': 'Month to show',
+              onchange: (e) => {
+                expMonth = e.currentTarget.value;
+                expShown = EXP_PAGE;
+                paint();
+              },
+            },
+            months.map((k) =>
+              h('option', { value: k, selected: k === shownMonth }, k === thisMonthPrefix() ? 'This month' : monthLabel(k))
+            )
+          )
+        : null;
+    let list = (isThisMonth ? mExp : inRange(allExp, shownMonth + '-01', shownMonth + '-31'))
       .slice()
       .sort((a, b) =>
         b.date < a.date ? -1 : b.date > a.date ? 1 : (b.createdAt || 0) - (a.createdAt || 0)
@@ -5089,19 +4937,44 @@ function ScreenMoney({
     const recent = Card({
       className: 'gb-money-card',
       children: [
-        h('div', { class: 'gb-sectiontitle' }, h('h3', null, 'This month')),
+        h(
+          'div',
+          { class: 'gb-sectiontitle' },
+          h('h3', null, isThisMonth ? 'This month' : monthLabel(shownMonth)),
+          h(
+            'div',
+            { class: 'gb-money-list-tools' },
+            monthPick,
+            money.expenses.length || money.income.length
+              ? h(
+                  'button',
+                  {
+                    type: 'button',
+                    class: 'gb-btn gb-btn--ghost gb-btn--compact',
+                    title: 'Everything loaded: about the last 13 months',
+                    onclick: () => downloadLedgerCsv(withOlder(money)),
+                  },
+                  Icon('file', { size: 14, sw: 2.4 }),
+                  'CSV'
+                )
+              : null
+          )
+        ),
         filterStrip,
         list.length
           ? h(
               'div',
               { class: 'gb-money-exp-list' },
-              list.slice(0, expShown).map((e) => expRow(e, true))
+              // An older page's rows are view-only: they aren't in the document.
+              list.slice(0, expShown).map((e) => expRow(e, !olderIds.has(e.id)))
             )
           : emptyHint(
               'wallet',
               spendFilter === 'all'
-                ? 'Nothing logged this month yet. Add your first above.'
-                : 'Nothing in ' + catOf(spendFilter, money).label + ' this month.'
+                ? isThisMonth
+                  ? 'Nothing logged this month yet. Add your first above.'
+                  : 'Nothing logged in ' + monthLabel(shownMonth) + '.'
+                : 'Nothing in ' + catOf(spendFilter, money).label + (isThisMonth ? ' this month.' : ' in ' + monthLabel(shownMonth) + '.')
             ),
         list.length > expShown
           ? h(
@@ -5117,6 +4990,20 @@ function ScreenMoney({
               'Show more (' + (list.length - expShown) + ' left)'
             )
           : null,
+        typeof requestOlderTx === 'function' && (!older || older.more)
+          ? h(
+              'button',
+              {
+                type: 'button',
+                class: 'gb-btn gb-btn--ghost gb-btn--compact gb-money-showall gb-money-older',
+                disabled: olderBusy,
+                title: 'The app loads about 13 months; this fetches the 200 or so entries before that',
+                onclick: loadOlder,
+              },
+              Icon('history', { size: 14, sw: 2.4 }),
+              olderBusy ? 'Loading…' : 'Load older'
+            )
+          : null,
       ],
     });
 
@@ -5129,6 +5016,43 @@ function ScreenMoney({
       subscriptionsCard(),
       recent,
     ];
+  }
+
+  /* The loaded document plus any older pages, for the expense list and the CSV. */
+  function withOlder(m) {
+    if (!older) return m;
+    const out = Object.assign({}, m);
+    for (const k of Object.keys(LEDGER_ARRAYS)) {
+      const have = new Set((m[k] || []).map((x) => x.id));
+      out[k] = (m[k] || []).concat((older[k] || []).filter((x) => !have.has(x.id)));
+    }
+    return out;
+  }
+  async function loadOlder() {
+    if (olderBusy || typeof requestOlderTx !== 'function') return;
+    const all = withOlder(money);
+    let before = todayKey();
+    for (const k of Object.keys(LEDGER_ARRAYS))
+      for (const x of all[k] || []) if (x.date && x.date < before) before = x.date;
+    olderBusy = true;
+    paint();
+    try {
+      const page = await requestOlderTx(before);
+      const prev = older || { expenses: [], income: [], transfers: [] };
+      older = { more: !!(page && page.more) };
+      for (const k of Object.keys(LEDGER_ARRAYS))
+        older[k] = prev[k].concat(Array.isArray(page && page[k]) ? page[k] : []);
+      const newest = ((page && page.expenses) || [])[0];
+      if (newest && newest.date) {
+        expMonth = newest.date.slice(0, 7);
+        expShown = EXP_PAGE;
+      } else if (!older.more) toast.success('That is everything: nothing older is logged.');
+    } catch (err) {
+      toast.error(err, 'Could not load older entries. Try again.');
+    } finally {
+      olderBusy = false;
+      paint();
+    }
   }
 
   function expRow(e, withDelete) {
@@ -5174,7 +5098,15 @@ function ScreenMoney({
             .join(' · ')
         )
       ),
-      h('div', { class: 'gb-money-exp-amt' }, fmt(e.amount)),
+      h(
+        'div',
+        { class: 'gb-money-exp-amt' },
+        fmt(e.amount),
+        // Paid in another currency: what it was, under what it counts as.
+        e.orig && e.orig.currency
+          ? h('div', { class: 'gb-money-exp-meta gb-money-exp-orig' }, fmtIn(e.orig.amount, e.orig.currency))
+          : null
+      ),
       withDelete
         ? h(
             'button',
@@ -5237,10 +5169,13 @@ function ScreenMoney({
               coachCard(
                 'bell',
                 u.sub.name +
-                  ' due ' +
-                  (u.inDays === 0
-                    ? 'today'
-                    : 'in ' + u.inDays + ' day' + (u.inDays === 1 ? '' : 's')),
+                  (u.overdue
+                    ? ' overdue · was due ' +
+                      (-u.inDays === 1 ? 'yesterday' : -u.inDays + ' days ago')
+                    : ' due ' +
+                      (u.inDays === 0
+                        ? 'today'
+                        : 'in ' + u.inDays + ' day' + (u.inDays === 1 ? '' : 's'))),
                 [
                   h(
                     'p',
@@ -5253,6 +5188,11 @@ function ScreenMoney({
                       type: 'button',
                       class: 'gb-btn gb-btn--soft gb-btn--compact',
                       onclick: () => {
+                        // Same rule as the server's applyPaid: no amount, nothing to book.
+                        if (!(Number(u.sub.amount) > 0)) {
+                          toast.error(null, 'Add an amount to ' + u.sub.name + ' first.');
+                          return;
+                        }
                         commit((m) => {
                           const sub = m.subscriptions.find((x) => x.id === u.sub.id);
                           if (!sub || (sub.paidFor || '') >= u.month) return;
@@ -5332,9 +5272,7 @@ function ScreenMoney({
                       'aria-label': 'Delete subscription',
                       onclick: () =>
                         confirmDelete('Delete subscription', 'Delete "' + s.name + '"?', () => {
-                          commit(
-                            (m) => (m.subscriptions = m.subscriptions.filter((x) => x.id !== s.id))
-                          );
+                          commit((m) => removeDocItem(m, 'subscriptions', s.id));
                           toast.success('Subscription deleted.');
                         }),
                     },
@@ -5359,7 +5297,7 @@ function ScreenMoney({
      screen you had to go and find. One card each, so the page stays scannable. */
   function budgetsSection() {
     const st = budgetStatus(money);
-    const anySet = st.some((s) => s.budget > 0);
+    const anySet = st.some((s) => s.base > 0);
     // Empty, it only repeats the health card's "Set budgets" as a tall blank card.
     if (!anySet) return [];
     const headKids = [
@@ -5389,7 +5327,7 @@ function ScreenMoney({
       ),
     ];
     const reminders = st
-      .filter((s) => s.budget > 0 && s.pct >= 80)
+      .filter((s) => s.base > 0 && s.pct >= 80)
       .map((s) =>
         coachCard(
           'lightbulb',
@@ -5406,7 +5344,7 @@ function ScreenMoney({
       );
     const bars = anySet
       ? st
-          .filter((s) => s.budget > 0)
+          .filter((s) => s.base > 0)
           .map((s) => {
             const over = s.pct > 100;
             return h(
@@ -5448,7 +5386,18 @@ function ScreenMoney({
                   null,
                   over ? fmt(s.spent - s.budget) + ' over' : fmt(s.remaining) + ' left'
                 )
-              )
+              ),
+              s.carried
+                ? h(
+                    'div',
+                    { class: 'gb-money-bcard-carry' + (s.carried < 0 ? ' is-less' : '') },
+                    (s.carried > 0 ? '+' : '−') +
+                      fmt(Math.abs(s.carried)) +
+                      ' carried from last month · ' +
+                      fmt(s.base) +
+                      ' set'
+                  )
+                : null
             );
           })
       : [
@@ -5594,7 +5543,7 @@ function ScreenMoney({
                       'Delete goal',
                       'Delete "' + g.name + '"? Set-aside history will be cleared.',
                       async () => {
-                        commit((m) => (m.goals = m.goals.filter((x) => x.id !== g.id)));
+                        commit((m) => removeDocItem(m, 'goals', g.id));
                         toast.success('Goal deleted.');
                       }
                     ),
@@ -5698,7 +5647,7 @@ function ScreenMoney({
                       'aria-label': 'Remove',
                       onclick: () =>
                         confirmDelete('Remove item', 'Remove "' + it.name + '" from your wishlist?', () => {
-                          commit((m) => (m.wishlist = m.wishlist.filter((x) => x.id !== it.id)));
+                          commit((m) => removeDocItem(m, 'wishlist', it.id));
                           toast.success('Removed from wishlist.');
                         }),
                     },
@@ -5731,14 +5680,18 @@ function ScreenMoney({
       ],
       'salary'
     );
-    const into = accountPicker(money, firstOfKind(money, ['bank', 'wallet']));
+    const amtLabel = h('div', { class: 'gb-field-label' }, 'Amount (' + cur + ')');
+    const into = accountPicker(money, firstOfKind(money, ['bank', 'wallet']), (id) => {
+      amtLabel.textContent = 'Amount (' + (accCurrency(money, id) || cur) + ')';
+    });
+    amtLabel.textContent = 'Amount (' + (accCurrency(money, into.get()) || cur) + ')';
     openMoneyModal({
       title: 'Add income',
       sub: 'Salary, freelance, a gift — anything that came in.',
       body: h(
         'div',
         { class: 'gb-form' },
-        h('div', { class: 'gb-field-label' }, 'Amount (' + cur + ')'),
+        amtLabel,
         amt,
         h('div', { class: 'gb-field-label' }, 'Type'),
         src.node,
@@ -5757,10 +5710,12 @@ function ScreenMoney({
           throw new Error('Enter an amount greater than zero.');
         }
         const source = src.get();
+        const home = toHomeAmount(money, into.get(), v);
         commit((m) =>
           (m.income = m.income || []).unshift({
             id: uid(),
-            amount: v,
+            amount: home.amount,
+            ...(home.orig ? { orig: home.orig } : {}),
             source,
             label: label.value.trim() || (source === 'salary' ? 'Salary' : 'Income'),
             date: date.value || todayKey(),
@@ -5784,12 +5739,12 @@ function ScreenMoney({
     });
     const date = h('input', { type: 'date', class: 'gb-input', value: todayKey() });
     const note = h('input', { type: 'text', class: 'gb-input', maxlength: '80', placeholder: 'Optional note' });
-    // Optional "Given from": '' = not said. Picked, it comes out of that balance (loanMove).
+    // Optional "Given from" / "Received into": '' = not said. Picked, the loan moves
+    // that balance (loanMove): lent comes out of it, borrowed goes into it.
     const accts = activeAccounts(money);
-    const from =
-      lent && accts.length
-        ? segmented([{ value: '', label: 'Skip' }, ...accts.map((a) => ({ value: a.id, label: a.name }))], '')
-        : null;
+    const from = accts.length
+      ? segmented([{ value: '', label: 'Skip' }, ...accts.map((a) => ({ value: a.id, label: a.name }))], '')
+      : null;
     openMoneyModal({
       title: lent ? 'Money I lent' : 'Money I borrowed',
       sub: lent
@@ -5802,7 +5757,7 @@ function ScreenMoney({
         amt,
         h('div', { class: 'gb-field-label' }, lent ? 'Lent to' : 'Borrowed from'),
         party,
-        from ? h('div', { class: 'gb-field-label' }, 'Given from (optional)') : null,
+        from ? h('div', { class: 'gb-field-label' }, lent ? 'Given from (optional)' : 'Received into (optional)') : null,
         from ? from.node : null,
         h('div', { class: 'gb-field-label' }, 'Date'),
         date,
@@ -5837,6 +5792,73 @@ function ScreenMoney({
       },
     });
     setTimeout(() => amt.focus(), 60);
+  }
+
+  /* Settle all of it, or record the part that came back. Nothing left = settled. */
+  function openRepay(l) {
+    const lent = l.direction === 'given';
+    const left = loanLeft(l);
+    const amt = h('input', {
+      type: 'number',
+      class: 'gb-input',
+      inputmode: 'decimal',
+      min: '0.01',
+      step: '0.01',
+      value: String(left),
+    });
+    const date = h('input', { type: 'date', class: 'gb-input', value: todayKey() });
+    // "Repaid into" / "Paid from": defaults to the loan's own account; Skip moves no balance.
+    const accts = activeAccounts(money);
+    const via = accts.length
+      ? segmented(
+          [{ value: '', label: 'Skip' }, ...accts.map((a) => ({ value: a.id, label: a.name }))],
+          accts.some((a) => a.id === l.accountId) ? l.accountId : ''
+        )
+      : null;
+    openMoneyModal({
+      title: lent ? 'Money back from ' + l.party : 'Paid back to ' + l.party,
+      sub: fmt(left) + ' left of ' + fmt(l.amount) + '. Part of it is fine: the rest stays outstanding.',
+      body: h(
+        'div',
+        { class: 'gb-form' },
+        h('div', { class: 'gb-field-label' }, 'Amount (' + cur + ')'),
+        amt,
+        via ? h('div', { class: 'gb-field-label' }, lent ? 'Repaid into' : 'Paid from') : null,
+        via ? via.node : null,
+        h('div', { class: 'gb-field-label' }, 'Date'),
+        date
+      ),
+      primary: 'Save',
+      onPrimary: async () => {
+        const v = readAmount(amt);
+        if (!Number.isFinite(v) || v <= 0) {
+          amt.focus();
+          throw new Error('Enter an amount greater than zero.');
+        }
+        if (v > left) {
+          amt.focus();
+          throw new Error('That is more than the ' + fmt(left) + ' left.');
+        }
+        const after = loanLeft(Object.assign({}, l, { repaid: (l.repaid || []).concat({ amount: v }) }));
+        const accountId = via ? via.get() : '';
+        commit((m) => {
+          const x = m.loans.find((y) => y.id === l.id);
+          if (!x) return;
+          // The last part is recorded too (`final`), so its day and account are
+          // known; Undo takes it off again.
+          x.repaid = (Array.isArray(x.repaid) ? x.repaid : []).concat({
+            amount: v,
+            date: date.value || todayKey(),
+            ...(accountId ? { accountId } : {}),
+            ...(after <= 0 ? { final: true } : {}),
+          });
+          if (after <= 0) x.settled = true;
+          loanMove(m, x);
+        });
+        toast.success(after <= 0 ? 'Marked settled.' : fmt(after) + ' still outstanding.');
+      },
+    });
+    setTimeout(() => amt.select(), 60);
   }
 
   function openSplitBill() {
@@ -6088,14 +6110,19 @@ function ScreenMoney({
             'div',
             { class: 'gb-money-exp-meta' },
             fmtDateShort(l.date) +
-              (accountOf(money, l.accountId) ? ' · from ' + accountOf(money, l.accountId).name : '') +
+              (accountOf(money, l.accountId)
+                ? (lent ? ' · from ' : ' · into ') + accountOf(money, l.accountId).name
+                : '') +
               (l.note ? ' · ' + l.note : '')
           )
         ),
         h(
           'div',
           { class: 'gb-money-exp-amt', style: { color: l.settled ? 'var(--fg3)' : accent } },
-          (lent ? '+' : '\u2212') + fmt(l.amount)
+          (lent ? '+' : '\u2212') + fmt(l.settled ? l.amount : loanLeft(l)),
+          !l.settled && loanLeft(l) < Number(l.amount)
+            ? h('div', { class: 'gb-money-exp-meta' }, 'of ' + fmt(l.amount))
+            : null
         ),
         h(
           'button',
@@ -6104,12 +6131,15 @@ function ScreenMoney({
             class: 'gb-btn gb-btn--ghost gb-btn--compact',
             style: { width: 'auto' },
             onclick: () => {
+              if (!l.settled) return openRepay(l);
               commit((m) => {
                 const x = m.loans.find((y) => y.id === l.id);
-                if (x) x.settled = !x.settled;
+                if (!x) return;
+                x.settled = false;
+                x.repaid = (Array.isArray(x.repaid) ? x.repaid : []).filter((r) => !r.final);
                 loanMove(m, x);
               });
-              toast.success(l.settled ? 'Marked outstanding.' : 'Marked settled.');
+              toast.success('Marked outstanding.');
             },
           },
           l.settled ? 'Undo' : 'Settle'
@@ -6123,8 +6153,8 @@ function ScreenMoney({
             onclick: () =>
               confirmDelete('Delete record', 'Remove this loan record?', async () => {
                 commit((m) => {
-                  m.loans = m.loans.filter((x) => x.id !== l.id);
-                  loanMove(m, { ...l, settled: true });
+                  removeDocItem(m, 'loans', l.id);
+                  loanMove(m, l, true);
                 });
                 toast.success('Removed.');
               }),
@@ -6207,7 +6237,228 @@ function ScreenMoney({
       ],
     });
 
-    return [summary, incomeCard, loansCard];
+    return [summary, incomeCard, recurringCard(), loansCard];
+  }
+
+  /* ---- Repeats: salary, rent, SIPs — posted on their day each month ---- */
+  function recurDayLabel(day) {
+    if (day === 'last') return 'the last day';
+    const n = Number(day) || 1;
+    const sfx = n % 10 === 1 && n !== 11 ? 'st' : n % 10 === 2 && n !== 12 ? 'nd' : n % 10 === 3 && n !== 13 ? 'rd' : 'th';
+    return 'the ' + n + sfx;
+  }
+  function recurringCard() {
+    const rules = money.recurring || [];
+    const row = (r) => {
+      const isIn = r.kind === 'income';
+      const c = catOf(r.category, money);
+      const label = r.note || (isIn ? (r.category === 'other' ? 'Income' : 'Salary') : c.label);
+      const acc = accountOf(money, r.accountId);
+      return h(
+        'div',
+        { class: 'gb-money-exp-row gb-money-rec-row' + (r.active ? '' : ' is-paused') },
+        h(
+          'span',
+          {
+            class: 'gb-money-cat-ic',
+            style: isIn
+              ? { background: 'var(--leaf-50)', color: 'var(--leaf-700)' }
+              : { background: c.soft, color: c.fg },
+          },
+          Icon('repeat', { size: 15, sw: 2.2 })
+        ),
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-money-exp-main gb-money-exp-edit',
+            'aria-label': 'Edit ' + label,
+            onclick: () => openRecurring(r),
+          },
+          h('div', { class: 'gb-money-exp-note' }, label + (r.active ? '' : ' · paused')),
+          h(
+            'div',
+            { class: 'gb-money-exp-meta' },
+            ['Every month on ' + recurDayLabel(r.day), acc ? (isIn ? 'into ' : 'from ') + acc.name : null]
+              .filter(Boolean)
+              .join(' · ')
+          )
+        ),
+        h(
+          'div',
+          { class: 'gb-money-exp-amt' + (isIn ? ' is-in' : '') },
+          (isIn ? '+' : '\u2212') + fmt(r.amount)
+        ),
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-btn gb-btn--ghost gb-btn--compact',
+            style: { width: 'auto' },
+            'aria-label': (r.active ? 'Pause ' : 'Resume ') + label,
+            onclick: () => {
+              commit((m) => {
+                const x = (m.recurring || []).find((y) => y.id === r.id);
+                if (!x) return;
+                x.active = !x.active;
+                // Resumed: from today on, so a day that passed while paused isn't posted late.
+                if (x.active) x.start = todayKey();
+              });
+              toast.success(r.active ? 'Paused.' : 'Resumed.');
+            },
+          },
+          r.active ? 'Pause' : 'Resume'
+        )
+      );
+    };
+    return Card({
+      className: 'gb-money-card',
+      children: [
+        h(
+          'div',
+          { class: 'gb-sectiontitle' },
+          h('h3', null, 'Every month'),
+          h(
+            'div',
+            { class: 'gb-money-head-actions' },
+            h(
+              'button',
+              {
+                type: 'button',
+                class: 'gb-btn gb-btn--soft gb-btn--compact',
+                onclick: () => openRecurring(null),
+              },
+              Icon('plus', { size: 14, sw: 2.6 }),
+              'Add repeat'
+            )
+          )
+        ),
+        rules.length
+          ? h('div', { class: 'gb-money-exp-list' }, rules.map(row))
+          : h(
+              'p',
+              { class: 'gb-money-intro' },
+              'Salary, rent, a SIP: add it once and it is logged on its day every month, and counted in the forecast before it lands.'
+            ),
+      ],
+    });
+  }
+  function openRecurring(rule) {
+    const r = rule || null;
+    const accLabel = h('div', { class: 'gb-field-label' }, '');
+    let tagWrap = null;
+    let srcWrap = null;
+    function paintKind(v) {
+      if (!tagWrap) return;
+      tagWrap.style.display = v === 'income' ? 'none' : '';
+      srcWrap.style.display = v === 'income' ? '' : 'none';
+      accLabel.textContent = v === 'income' ? 'Received in' : 'Paid from';
+    }
+    const kind = segmented(
+      [
+        { value: 'expense', label: 'Money out' },
+        { value: 'income', label: 'Money in' },
+      ],
+      r ? r.kind : 'expense',
+      (v) => paintKind(v)
+    );
+    const amt = h('input', {
+      type: 'number',
+      class: 'gb-input',
+      inputmode: 'decimal',
+      min: '1',
+      placeholder: 'e.g. 9000',
+      value: r ? String(r.amount) : '',
+    });
+    const tag = tagPicker(money, save, {
+      initial: r && r.kind !== 'income' ? r.category : money.settings.defaultTag || 'others',
+    });
+    const src = segmented(
+      [
+        { value: 'salary', label: 'Salary' },
+        { value: 'other', label: 'Other' },
+      ],
+      r && r.kind === 'income' && r.category === 'other' ? 'other' : 'salary'
+    );
+    tagWrap = h('div', null, h('div', { class: 'gb-field-label' }, 'Tag'), tag.node);
+    srcWrap = h('div', null, h('div', { class: 'gb-field-label' }, 'Type'), src.node);
+    const acc = accountPicker(money, r ? r.accountId : firstOfKind(money, ['bank', 'card']));
+    const day = h(
+      'select',
+      { class: 'gb-input', 'aria-label': 'Day of the month' },
+      Array.from({ length: 28 }, (_, i) => String(i + 1))
+        .concat('last')
+        .map((d) =>
+          h('option', { value: d, selected: String(r ? r.day : 1) === d }, d === 'last' ? 'Last day of the month' : d)
+        )
+    );
+    const note = h('input', {
+      type: 'text',
+      class: 'gb-input',
+      maxlength: '80',
+      placeholder: 'e.g. Rent, Salary, SIP',
+      value: r ? r.note || '' : '',
+    });
+    paintKind(kind.get());
+    openMoneyModal({
+      title: r ? 'Edit repeat' : 'Every month',
+      sub: 'Logged for you on its day each month. Days 29 to 31 are "last day", so every month has one.',
+      body: h(
+        'div',
+        { class: 'gb-form' },
+        kind.node,
+        h('div', { class: 'gb-field-label' }, 'Amount (' + cur + ')'),
+        amt,
+        tagWrap,
+        srcWrap,
+        acc.node ? accLabel : null,
+        acc.node,
+        h('div', { class: 'gb-field-label' }, 'On day'),
+        day,
+        h('div', { class: 'gb-field-label' }, 'Note (optional)'),
+        note
+      ),
+      primary: r ? 'Save' : 'Add repeat',
+      danger: r
+        ? {
+            label: 'Delete repeat',
+            onClick: () => {
+              commit((m) => removeDocItem(m, 'recurring', r.id));
+              toast.success('Repeat deleted. What it already logged stays.');
+            },
+          }
+        : null,
+      onPrimary: async () => {
+        const v = readAmount(amt);
+        if (!Number.isFinite(v) || v <= 0) {
+          amt.focus();
+          throw new Error('Enter an amount greater than zero.');
+        }
+        const k = kind.get();
+        const fields = {
+          kind: k,
+          amount: v,
+          category: k === 'income' ? src.get() : tag.get(),
+          day: day.value === 'last' ? 'last' : Number(day.value),
+          note: note.value.trim(),
+          ...(acc.get() ? { accountId: acc.get() } : {}),
+        };
+        commit((m) => {
+          m.recurring = m.recurring || [];
+          if (r) {
+            const x = m.recurring.find((y) => y.id === r.id);
+            if (x) {
+              delete x.accountId;
+              Object.assign(x, fields);
+            }
+          } else {
+            m.recurring.push({ id: uid(), ...fields, active: true, start: todayKey() });
+          }
+        });
+        toast.success(r ? 'Saved.' : 'Added. It logs itself on ' + recurDayLabel(fields.day) + '.');
+      },
+    });
+    setTimeout(() => amt.focus(), 60);
   }
 
   /* =================================================================
@@ -6272,9 +6523,7 @@ function ScreenMoney({
                         'aria-label': 'Delete challenge',
                         onclick: () =>
                           confirmDelete('Delete challenge', 'Delete "' + ch.title + '"?', () => {
-                            commit(
-                              (m) => (m.challenges = m.challenges.filter((x) => x.id !== ch.id))
-                            );
+                            commit((m) => removeDocItem(m, 'challenges', ch.id));
                             toast.success('Challenge deleted.');
                           }),
                       },
@@ -6555,7 +6804,8 @@ function _demo() {
     loanMove(m, l);
     a(m.transfers.length === 1 && m.transfers[0].from === 'b' && !m.transfers[0].to, 'lent: one move out');
     loanMove(m, { ...l, settled: true });
-    a(m.transfers.length === 0, 'settled: money back');
+    const net = m.transfers.reduce((x, t) => x + (t.to ? t.amount : -t.amount), 0);
+    a(m.transfers.length === 2 && net === 0, 'settled: money back');
     loanMove(m, { ...l, accountId: undefined });
     a(m.transfers.length === 0, 'no account: balance untouched');
   }
@@ -6588,4 +6838,22 @@ if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.DEV
   }
 }
 
-export { ScreenMoney, MoneyHomeCard, searchExpenses };
+export { ScreenMoney, searchExpenses, openExpenseModal };
+// Lives in money-home.js now (Home imports it from there); re-exported for older imports.
+export { MoneyHomeCard } from './money-home.js';
+// The pure engines, for money-calc.test.mjs (node, no DOM). Not for screens.
+export const _calc = {
+  forecast,
+  upcomingSubs,
+  budgetStatus,
+  logStreak,
+  bestStreak,
+  loanLeft,
+  loanOutstanding,
+  loanMove,
+  recurringDue,
+  recurringToCome,
+  materialiseRecurring,
+  toHomeAmount,
+  editedHomeAmount,
+};

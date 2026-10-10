@@ -23,13 +23,16 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
 | Bottom nav |
 | Habit / task check |
 | Login |
-| Notification bell |
+| Notification bell — incl. the header links (`.gb-notif-link`: Mark all read / Clear read), filter chips (`.gb-notif-chips`, `.gb-notif-chip.is-on`) and `.gb-notif-more` (Load older) |
 | Mentor chat — incl. the boot skeleton (`.gb-msg-skel`, two-class selectors so they beat `.gb-skel-line`). On desktop `.gb-mentor` needs `width: 100%` beside its `max-width`: it is a flex item in a column container, and auto inline margins opt an item out of stretch, so the screen collapsed to fit-content (392px at 1512px wide) |
 | Search modal (Find someone) |
 | Circle (person rows + status pills) |
 | Focus screen |
 | Feature on/off rows |
 | Settings: Account pane |
+| Settings: your own notification sounds (`.gb-sounds`, rows, the recording panel) |
+| Settings: Reminders (`.gb-remset-*`: the lead/snooze pickers, quick add, the list), the toast's action button (`.gb-toast-action`), the bell card's Snooze (`.gb-notif-snooze`) |
+| Dropdowns: every `select.gb-input` — one line, ellipsised; under `@supports (appearance: base-select)` (current Chrome / Android WebView) the open list is the app's own popover (`::picker(select)`, tinted `option:checked`, `::checkmark`), elsewhere the native list. Then the six-tab `.gb-segnav` tightening under 420px. Last in the file |
 | Loading splash (quote of the day) |
 | Report screen |
 | Insights |
@@ -81,7 +84,12 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
 - A control drawn under 44px joins the "Tap targets" `::before` overlay list (grep the banner)
   rather than growing. Skip any control that already has a `::before` of its own. An overlay is
   clipped by the control's own `overflow: hidden` (why `.gb-msg-chip` has no ellipsis), and two
-  controls stacked closer than 44px need their overlays split, not centred (`.gb-home-cust-move`).
+  controls stacked closer than 44px need their overlays split, not centred (`.gb-home-cust-move`);
+  side by side, the overlay is the column pitch instead (`.gb-habit-move`, `.gb-goal-ms-tools`).
+  The heatmap's editable days (`.gb-hh-day.is-editable`) use the pitch overlay too, plus less panel
+  padding at ≤380px, to clear WCAG 2.5.8's 24px from 360px up. Its day popover (`.gb-hh-pop`) sits
+  inline under the grid, not floating, so it scrolls with the dialog; recent notes are `.gb-hh-notes`.
+  A quit habit's days are `.is-clean` / `.is-slipped`, and its row's tick is `.gb-slip-btn` (44px).
 - Fixed layers on a phone pad for `env(safe-area-inset-*)` (`index.html` has `viewport-fit=cover`,
   so `100dvh` runs under the notch and home indicator): header, nav, modal overlay, toasts, PTR.
 - The tablet phone-frame (both rules) also needs `min-height: 560px`: a landscape phone stays full-screen.

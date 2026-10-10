@@ -13,6 +13,26 @@ import {
   leave,
 } from './gb-kit.js';
 import { toast } from './toast.js';
+import { CacheStorage } from './cache-storage.js';
+import {
+  parseLabels,
+  validateLabels,
+  labelsInUse,
+  hasLabel,
+  SORTS,
+  SORT_PREF_KEY,
+  sortKeyOf,
+  compareNotes,
+  queryWords,
+  matchesAll,
+  splitHighlights,
+  snippetAround,
+  createSearchCache,
+  offlineKey,
+  offlineCopy,
+  readOfflineCopy,
+  trashDaysLeft,
+} from './notes-core.js';
 
 /* Swatches a note can wear. `null` (no colour) is the default and stays the
    plain card.
@@ -57,9 +77,11 @@ const ALLOWED = {
   U: [],
   S: [],
   STRIKE: [],
-  UL: [],
+  // A checklist is a <ul data-checklist> whose ticked items carry data-checked.
+  // Presence is all either says: sanitize() empties their values.
+  UL: ['data-checklist'],
   OL: [],
-  LI: [],
+  LI: ['data-checked'],
   H2: [],
   H3: [],
   BLOCKQUOTE: [],
@@ -119,6 +141,9 @@ function sanitize(html) {
       Array.from(child.attributes).forEach((attr) => {
         const keep = ALLOWED[tag].includes(attr.name.toLowerCase());
         if (!keep) child.removeAttribute(attr.name);
+        // A flag, never a payload.
+        else if (attr.name.startsWith('data-') && attr.value !== '')
+          child.setAttribute(attr.name, '');
       });
       // An image has no text to keep, so a refused one goes entirely.
       if (tag === 'IMG' && !SAFE_IMG.test(child.getAttribute('src') || '')) {
@@ -149,6 +174,25 @@ function textOf(html) {
     .querySelectorAll('p, div, li, h1, h2, h3, h4, blockquote, pre, br')
     .forEach((el) => el.after(' '));
   return (doc.body.textContent || '').replace(/\s+/g, ' ').trim();
+}
+
+/* Plain text that keeps its lines, for Share / Copy: textOf() flattens to one
+   line for a card preview. List items get a bullet, checklist items a box. */
+function plainTextOf(html) {
+  const doc = new DOMParser().parseFromString('<body>' + (html || '') + '</body>', 'text/html');
+  doc.body.querySelectorAll('li').forEach((li) => {
+    const box = li.parentElement && li.parentElement.hasAttribute('data-checklist');
+    li.prepend(box ? (li.hasAttribute('data-checked') ? '[x] ' : '[ ] ') : '• ');
+  });
+  doc.body
+    .querySelectorAll('p, div, li, h2, h3, blockquote, pre, br')
+    .forEach((el) => el.after('\n'));
+  return (doc.body.textContent || '')
+    .split('\n')
+    .map((l) => l.replace(/[ \t]+/g, ' ').trim())
+    .filter((l, i, all) => l || (i > 0 && all[i - 1]))
+    .join('\n')
+    .trim();
 }
 
 /* A photo's alt text is what search finds it by. A picked file's name is a fair
@@ -196,10 +240,22 @@ const TOOLS = [
   { cmd: 'bold', icon: 'bold', label: 'Bold', key: 'b' },
   { cmd: 'italic', icon: 'italic', label: 'Italic', key: 'i' },
   { cmd: 'underline', icon: 'underline', label: 'Underline', key: 'u' },
+  // <s>/<strike> (whichever the browser writes) and the two below are all in ALLOWED.
+  { cmd: 'strikeThrough', icon: 'strikethrough', label: 'Strikethrough' },
+  // Not an execCommand either: wraps the selection in <code> (see inlineCode()).
+  { cmd: 'inlineCode', icon: 'code', label: 'Inline code' },
   { cmd: 'formatBlock', value: 'h2', icon: 'heading-2', label: 'Heading', state: 'h2' },
+  { cmd: 'formatBlock', value: 'blockquote', icon: 'quote', label: 'Quote', state: 'blockquote' },
   { cmd: 'insertUnorderedList', icon: 'list', label: 'Bullet list' },
   { cmd: 'insertOrderedList', icon: 'list-ordered', label: 'Numbered list' },
+  // Not an execCommand: a bullet list marked data-checklist (see checklist()).
+  { cmd: 'checklist', icon: 'list-checks', label: 'Checklist' },
   { cmd: 'createLink', icon: 'link', label: 'Link', prompt: 'Link to…' },
+  /* The browser's own undo stack, which every command here goes through
+     (insertHTML included), so it undoes a photo or a paste as well as typing.
+     No pressed state: there is nothing to be "on". */
+  { cmd: 'undo', icon: 'undo-2', label: 'Undo', key: 'z', stateless: true, sep: true },
+  { cmd: 'redo', icon: 'redo-2', label: 'Redo', stateless: true },
 ];
 
 /* NoteService.MAX_BODY (2 MB) less headroom for what sanitize() adds on save
@@ -337,14 +393,20 @@ function richEditor({ html, placeholder, onInput } = {}) {
     buttons.forEach(({ btn, tool }) => {
       let on = false;
       try {
-        on = tool.state
-          ? document.queryCommandValue('formatBlock').toLowerCase() === tool.state
-          : document.queryCommandState(tool.cmd);
+        on = tool.stateless
+          ? false
+          : tool.cmd === 'checklist'
+            ? !!(caretList() && caretList().hasAttribute('data-checklist'))
+            : tool.cmd === 'inlineCode'
+              ? !!caretCode()
+              : tool.state
+                ? document.queryCommandValue('formatBlock').toLowerCase() === tool.state
+                : document.queryCommandState(tool.cmd);
       } catch (_) {
         /* queryCommandState throws on some commands in some browsers */
       }
       btn.classList.toggle('is-on', !!on);
-      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      if (!tool.stateless) btn.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
   }
 
@@ -389,6 +451,68 @@ function richEditor({ html, placeholder, onInput } = {}) {
     setTimeout(() => input.focus(), 60);
   }
 
+  /* The <ul> the caret is in, if it is in this editor. */
+  function caretList() {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return null;
+    let n = sel.getRangeAt(0).startContainer;
+    if (n && n.nodeType === 3) n = n.parentNode;
+    const ul = n && n.closest ? n.closest('ul') : null;
+    return ul && area.contains(ul) ? ul : null;
+  }
+  /* Checklist on/off. A checklist is a bullet list with a flag, so the browser
+     keeps doing what it already does well (Enter for a new item, Backspace
+     out of it) and sanitize() needs two attributes, not a new tag. */
+  function checklist() {
+    let ul = caretList();
+    if (ul && ul.hasAttribute('data-checklist')) {
+      document.execCommand('insertUnorderedList', false); // off: back to text
+      return;
+    }
+    if (!ul) {
+      document.execCommand('insertUnorderedList', false);
+      ul = caretList();
+    }
+    if (ul) ul.setAttribute('data-checklist', '');
+  }
+
+  /* The inline <code> the caret is in (not a <pre> block), if in this editor. */
+  function caretCode() {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return null;
+    let n = sel.getRangeAt(0).startContainer;
+    if (n && n.nodeType === 3) n = n.parentNode;
+    const code = n && n.closest ? n.closest('code') : null;
+    return code && area.contains(code) && !code.closest('pre') ? code : null;
+  }
+  /* Inline code on/off. There is no execCommand for it, so it goes through
+     insertHTML / insertText, which keeps it on the undo stack. The selected
+     text is escaped, never parsed: it is the user's, not markup. */
+  function inlineCode() {
+    const sel = window.getSelection();
+    const code = caretCode();
+    if (code) {
+      const r = document.createRange();
+      r.selectNode(code);
+      sel.removeAllRanges();
+      sel.addRange(r);
+      document.execCommand('insertText', false, code.textContent);
+      // Chrome keeps the removed element's look as an inline style.
+      area.querySelectorAll('[style]').forEach((el) => el.removeAttribute('style'));
+      return;
+    }
+    const text = sel && sel.rangeCount ? sel.toString() : '';
+    if (!text) {
+      toast.error(null, 'Select a few words first, then mark them as code.');
+      return;
+    }
+    if (/\n/.test(text)) {
+      toast.error(null, 'Inline code is for a few words on one line.');
+      return;
+    }
+    document.execCommand('insertHTML', false, '<code>' + escAttr(text) + '</code>');
+  }
+
   function run(tool) {
     area.focus();
     /* Reached from the keyboard (Tab to the button, Enter), focus left the
@@ -405,6 +529,13 @@ function richEditor({ html, placeholder, onInput } = {}) {
       promptFor(tool);
       return;
     }
+    if (tool.cmd === 'checklist' || tool.cmd === 'inlineCode') {
+      if (tool.cmd === 'checklist') checklist();
+      else inlineCode();
+      syncState();
+      if (onInput) onInput();
+      return;
+    }
     if (tool.cmd === 'formatBlock') {
       // Second press on a heading returns it to a paragraph.
       const current = (document.queryCommandValue('formatBlock') || '').toLowerCase();
@@ -417,13 +548,14 @@ function richEditor({ html, placeholder, onInput } = {}) {
 
   const bar = h('div', { class: 'gb-editor-bar', role: 'toolbar', 'aria-label': 'Formatting' });
   TOOLS.forEach((tool) => {
+    if (tool.sep) bar.appendChild(h('span', { class: 'gb-editor-sep', 'aria-hidden': 'true' }));
     const btn = h(
       'button',
       {
         type: 'button',
         class: 'gb-editor-btn',
         'aria-label': tool.label,
-        'aria-pressed': 'false',
+        'aria-pressed': tool.stateless ? null : 'false',
         title: tool.label + (tool.key ? ' (⌘' + tool.key.toUpperCase() + ')' : ''),
         // mousedown, not click: click fires after the caret has already left the
         // editor, so the command would apply to nothing.
@@ -594,9 +726,48 @@ function richEditor({ html, placeholder, onInput } = {}) {
   }
   area.addEventListener('focus', () => document.addEventListener('selectionchange', onSelection));
   area.addEventListener('blur', () => document.removeEventListener('selectionchange', onSelection));
-  area.addEventListener('input', () => {
+  area.addEventListener('input', (e) => {
+    // Enter on a ticked item clones its attributes into the new one, which
+    // would arrive already ticked.
+    if (e && e.inputType === 'insertParagraph') {
+      const ul = caretList();
+      const sel = window.getSelection();
+      let n = sel && sel.rangeCount ? sel.getRangeAt(0).startContainer : null;
+      if (n && n.nodeType === 3) n = n.parentNode;
+      const li = n && n.closest ? n.closest('li') : null;
+      if (ul && li && !li.textContent.trim()) li.removeAttribute('data-checked');
+    }
     normalize();
     if (onInput) onInput();
+  });
+
+  /* Ticking: the box is the item's ::before, in its left padding, so a tap
+     there toggles and a tap on the words just places the caret. Ctrl/⌘+Enter
+     ticks the item the caret is in, for the keyboard. */
+  function tick(li) {
+    if (li.hasAttribute('data-checked')) li.removeAttribute('data-checked');
+    else li.setAttribute('data-checked', '');
+    if (onInput) onInput();
+  }
+  area.addEventListener('click', (e) => {
+    const li = e.target && e.target.closest ? e.target.closest('li') : null;
+    if (!li || !area.contains(li) || !li.parentElement.hasAttribute('data-checklist')) return;
+    const r = li.getBoundingClientRect();
+    if (e.clientX - r.left > 28) return;
+    e.preventDefault();
+    tick(li);
+  });
+  area.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || !(e.ctrlKey || e.metaKey)) return;
+    const ul = caretList();
+    if (!ul || !ul.hasAttribute('data-checklist')) return;
+    const sel = window.getSelection();
+    let n = sel.getRangeAt(0).startContainer;
+    if (n.nodeType === 3) n = n.parentNode;
+    const li = n.closest('li');
+    if (!li) return;
+    e.preventDefault();
+    tick(li);
   });
   // Paste as the sanitiser sees it, so what lands is what gets saved.
   area.addEventListener('paste', (e) => {
@@ -692,7 +863,7 @@ function sheet({ title, body, primary, onPrimary, headActions, onDismiss }) {
   /* One commit path for every way out of the sheet, so a backdrop tap landing
      while Save is already in flight can't fire a second write. A failure keeps
      the sheet open and toasts — whatever was typed stays on screen to retry. */
-  async function commit(run) {
+  async function commit(run, fallback) {
     if (busy) return;
     busy = true;
     try {
@@ -701,7 +872,7 @@ function sheet({ title, body, primary, onPrimary, headActions, onDismiss }) {
     } catch (err) {
       busy = false;
       primaryBtn.disabled = false;
-      toast.error(err, 'Could not save.');
+      toast.error(err, fallback || 'Could not save.');
     }
   }
   const { sheet: card, close } = openOverlay({
@@ -749,7 +920,7 @@ function sheet({ title, body, primary, onPrimary, headActions, onDismiss }) {
     )
   );
   refreshIcons();
-  return { close, card };
+  return { close, card, commit };
 }
 
 /* Colour row. `null` is a real choice (no colour), so it gets a swatch too. */
@@ -780,6 +951,154 @@ function colorRow(selected, onPick) {
   return row;
 }
 
+/* A note's labels as removable chips plus one input: Enter or a comma adds,
+   Backspace in the empty input takes the last one off. Same rules as the
+   server (notes-core.js parseLabels/validateLabels = NoteLabels.java), checked
+   here so a refusal lands while the label can still be fixed. */
+function labelEditor(initial, suggestions, onChange) {
+  let labels = parseLabels(initial || []);
+  const chips = h('div', { class: 'gb-note-label-chips' });
+  const listId = 'gb-note-labels-' + Math.random().toString(36).slice(2, 8);
+  const input = h('input', {
+    type: 'text',
+    class: 'gb-note-label-input',
+    placeholder: labels.length ? 'Add another' : 'Add a label',
+    'aria-label': 'Add a label',
+    list: listId,
+    autocomplete: 'off',
+    onkeydown: (e) => {
+      if ((e.key === 'Enter' || e.key === ',') && !e.isComposing) {
+        // An empty Enter is still the sheet's Save (submitOnEnter).
+        if (e.key === 'Enter' && !input.value.trim()) return;
+        e.preventDefault();
+        e.stopPropagation();
+        commit();
+      } else if (e.key === 'Backspace' && !input.value && labels.length) {
+        labels = labels.slice(0, -1);
+        paintChips();
+        onChange && onChange();
+      }
+    },
+    // A pasted "a, b, c" lands whole.
+    oninput: () => {
+      if (input.value.includes(',')) commit();
+    },
+    onblur: () => commit(),
+  });
+  const options = h(
+    'datalist',
+    { id: listId },
+    (suggestions || []).map((l) => h('option', { value: l }))
+  );
+  function commit() {
+    const add = parseLabels(input.value);
+    if (!add.length) {
+      input.value = '';
+      return true;
+    }
+    const next = parseLabels([...labels, ...add]);
+    const err = validateLabels(next);
+    if (err) {
+      toast.error(null, err);
+      return false;
+    }
+    labels = next;
+    input.value = '';
+    paintChips();
+    onChange && onChange();
+    return true;
+  }
+  function paintChips() {
+    chips.replaceChildren(
+      ...labels.map((label) =>
+        h(
+          'span',
+          { class: 'gb-note-label' },
+          label,
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-note-label-x',
+              'aria-label': 'Remove label ' + label,
+              onclick: () => {
+                labels = labels.filter((l) => l !== label);
+                paintChips();
+                onChange && onChange();
+                input.focus();
+              },
+            },
+            Icon('x', { size: 12, sw: 2.6 })
+          )
+        )
+      ),
+      input
+    );
+    input.placeholder = labels.length ? 'Add another' : 'Add a label';
+    refreshIcons();
+  }
+  paintChips();
+  return {
+    node: h(
+      'div',
+      { class: 'gb-note-labels-edit' },
+      Icon('tag', { size: 14, sw: 2.4, color: 'var(--fg3)' }),
+      chips,
+      options
+    ),
+    /** The labels, a half-typed one included; throws the rule it breaks. */
+    read() {
+      if (!commit()) throw new Error(validateLabels(parseLabels([...labels, input.value])));
+      return labels.slice();
+    },
+    /** For the sheet's "anything changed?" snapshot: no commit, no toast. */
+    peek: () => labels.join(',') + '|' + input.value.trim(),
+    /** The committed chips only, for the edit draft: no commit, no toast. */
+    list: () => labels.slice(),
+    /** Replace the chips (an edit draft's restore). */
+    set(next) {
+      labels = parseLabels(next || []);
+      paintChips();
+    },
+  };
+}
+
+/* Text with every match of `words` wrapped in <mark>. DOM nodes only, never
+   innerHTML: the text is the user's (sanitize()'s rule for this screen). */
+function marked(text, words) {
+  return splitHighlights(text, words).map((run) =>
+    run.hit ? h('mark', { class: 'gb-note-hit' }, run.text) : document.createTextNode(run.text)
+  );
+}
+
+/* Put the caret on the first match in an open editor and scroll it into view. */
+function revealMatch(area, words) {
+  if (!words.length || !area.isConnected) return;
+  const walker = document.createTreeWalker(area, NodeFilter.SHOW_TEXT);
+  for (let t = walker.nextNode(); t; t = walker.nextNode()) {
+    const lower = t.nodeValue.toLowerCase();
+    let at = -1;
+    let len = 0;
+    words.forEach((w) => {
+      const i = lower.indexOf(w);
+      if (i >= 0 && (at < 0 || i < at)) {
+        at = i;
+        len = w.length;
+      }
+    });
+    if (at < 0) continue;
+    const r = document.createRange();
+    r.setStart(t, at);
+    r.setEnd(t, at + len);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(r);
+    const calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    t.parentElement.scrollIntoView({ block: 'center', behavior: calm ? 'auto' : 'smooth' });
+    return;
+  }
+}
+
 /* The composer's unsaved note. ScreenNotes is rebuilt on every visit, so a draft
    kept only in its inputs died the moment you went Home. It is autosaved to the
    server (note_drafts, one per user) so it also survives a reload or another
@@ -799,11 +1118,35 @@ function ScreenNotes({
   onGetDraft,
   onSaveDraft,
   onDeleteDraft,
+  onRestore,
+  onGetEditDraft,
+  onSaveEditDraft,
+  onDeleteEditDraft,
+  onTrash,
+  onCounts,
+  onDeleteForever,
+  userId,
 }) {
   const listEl = h('div', { class: 'gb-note-grid' });
   let notes = [];
   let query = '';
   let searchTimer = null;
+  /* Which list is showing: the main one, the Archived view or the Trash. */
+  let view = 'notes';
+  let activeLabel = null; // the label filter chip that is on, or null for all
+  let offline = false; // showing the saved copy: read-only until a load succeeds
+  let counts = null; // { archived, trash } once onCounts answers
+  let sortKey = 'updated';
+  try {
+    sortKey = sortKeyOf(CacheStorage.getItem(SORT_PREF_KEY));
+  } catch (_) {
+    /* storage unavailable: the default order */
+  }
+  /* What search reads per note, parsed once per version (id + updatedAt)
+     rather than on every keystroke for every card. */
+  const searchCache = createSearchCache((n) => ({ hay: searchTextOf(n), text: textOf(n.body) }));
+  const inView = (n) =>
+    view === 'trash' ? !!n.deletedAt : !n.deletedAt && (view === 'archived') === !!n.archivedAt;
   const searchInput = h('input', {
     type: 'search',
     class: 'gb-input',
@@ -827,10 +1170,123 @@ function ScreenNotes({
   );
   const searchBar = h(
     'div',
-    { class: 'gb-notes-search', hidden: true },
+    { class: 'gb-notes-search' },
     Icon('search', { size: 16, sw: 2.2, color: 'var(--fg3)' }),
     searchInput
   );
+  const sortSelect = h(
+    'select',
+    {
+      class: 'gb-input gb-notes-sort',
+      'aria-label': 'Sort notes',
+      title: 'Sort notes',
+      onchange: () => {
+        sortKey = sortKeyOf(sortSelect.value);
+        try {
+          CacheStorage.setItem(SORT_PREF_KEY, sortKey);
+        } catch (_) {
+          /* the choice still holds for this visit */
+        }
+        sortNotes();
+        paint();
+      },
+    },
+    SORTS.map((o) => h('option', { value: o.key }, o.label))
+  );
+  sortSelect.value = sortKey;
+  /* The screen's top bar, always shown: hiding it while a view loads or is
+     empty made everything under it jump when it came back. */
+  const tools = h('div', { class: 'gb-notes-tools' }, searchBar, sortSelect);
+  const labelRow = h('div', {
+    class: 'gb-note-filter',
+    role: 'group',
+    'aria-label': 'Filter by label',
+    hidden: true,
+  });
+
+  /* ---- views: Notes / Archived (n) / Trash (n) ---- */
+  const viewRow = h('div', { class: 'gb-note-views', role: 'group', 'aria-label': 'Which notes' });
+  function paintViews() {
+    const btn = (key, label, n) =>
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-note-view' + (view === key ? ' is-on' : ''),
+          'aria-pressed': view === key ? 'true' : 'false',
+          onclick: () => setView(key),
+        },
+        label + (n ? ' (' + n + ')' : '')
+      );
+    viewRow.replaceChildren(
+      btn('notes', 'Notes'),
+      btn('archived', 'Archived', counts && counts.archived),
+      btn('trash', 'Trash', counts && counts.trash)
+    );
+    viewRow.hidden = offline;
+  }
+  function refreshCounts() {
+    if (!onCounts) return;
+    onCounts()
+      .then((c) => {
+        counts = c || null;
+        paintViews();
+      })
+      .catch(() => {});
+  }
+  function setView(key) {
+    if (key === view) return;
+    view = key;
+    activeLabel = null;
+    notes = [];
+    paintViews();
+    composer.hidden = view !== 'notes';
+    showSkeleton();
+    load();
+  }
+
+  /* Offline: the last list this device loaded, read-only. */
+  const offlineBanner = h(
+    'div',
+    { class: 'gb-note-offline', role: 'status', hidden: true },
+    Icon('wifi-off', { size: 16, sw: 2.2 }),
+    h('span', null, 'Offline — showing saved copy, editing disabled'),
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'gb-btn gb-btn--ghost gb-btn--compact',
+        onclick: (e) => {
+          const b = e.currentTarget;
+          b.disabled = true;
+          load().finally(() => (b.disabled = false));
+        },
+      },
+      'Try again'
+    )
+  );
+  function saveOffline() {
+    if (!userId || offline || view !== 'notes') return;
+    try {
+      CacheStorage.setItem(offlineKey(userId), JSON.stringify(offlineCopy(notes)));
+    } catch (_) {
+      /* a full or missing store: there is simply no offline copy */
+    }
+  }
+  function showOffline() {
+    let copy = null;
+    try {
+      copy = userId ? readOfflineCopy(CacheStorage.getItem(offlineKey(userId))) : null;
+    } catch (_) {
+      copy = null;
+    }
+    if (!copy) return false;
+    offline = true;
+    notes = copy.notes;
+    sortNotes();
+    paint();
+    return true;
+  }
 
   /* ---- composer: one line until you start, then the full editor ---- */
   const titleInput = h('input', {
@@ -950,8 +1406,12 @@ function ScreenNotes({
         body,
         color: composerColor,
         cover: await coverOf(body),
+        // Written under a label filter, it wears that label, or it would
+        // vanish from the list the moment it was saved.
+        labels: activeLabel ? [activeLabel] : [],
       });
       notes.unshift(created);
+      sortNotes();
       closeComposer();
       paint();
       landed(cardOf(created.id));
@@ -967,6 +1427,8 @@ function ScreenNotes({
   const SHEET_EXIT = 200;
 
   /* ---- one note ---- */
+  // The parts filter() re-marks for a search: title, body and its snippet.
+  const cardParts = new WeakMap();
   function NoteCard(note) {
     const c = colorOf(note.color);
     const preview = textOf(note.body);
@@ -995,30 +1457,35 @@ function ScreenNotes({
         (note.title || preview.slice(0, 60) || (count ? 'Photo note' : 'Untitled note')) +
         (count ? ', ' + count + (count === 1 ? ' photo' : ' photos') : ''),
       onclick: (e) => {
-        if (e.target.closest('.gb-note-pin')) return;
-        openNote(note, card);
+        if (e.target.closest('button')) return; // the pin, Restore, Delete forever
+        activate(note, card);
       },
       onkeydown: (e) => {
+        if (e.target !== card) return; // Enter on a button inside is that button's
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          openNote(note, card);
+          activate(note, card);
         }
       },
     });
-    card.appendChild(
-      h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-note-pin' + (note.pinned ? ' is-on' : ''),
-          'aria-label': note.pinned ? 'Unpin this note' : 'Pin this note',
-          'aria-pressed': note.pinned ? 'true' : 'false',
-          title: note.pinned ? 'Unpin' : 'Pin to top',
-          onclick: () => togglePin(note),
-        },
-        Icon(note.pinned ? 'pin-off' : 'pin', { size: 14, sw: 2.4 })
-      )
-    );
+    // The Trash has no pin: a deleted note has no place in the order.
+    if (view !== 'trash') {
+      card.appendChild(
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-note-pin' + (note.pinned ? ' is-on' : ''),
+            'aria-label': note.pinned ? 'Unpin this note' : 'Pin this note',
+            'aria-pressed': note.pinned ? 'true' : 'false',
+            title: offline ? 'Offline: editing is off' : note.pinned ? 'Unpin' : 'Pin to top',
+            disabled: offline,
+            onclick: () => togglePin(note),
+          },
+          Icon(note.pinned ? 'pin-off' : 'pin', { size: 14, sw: 2.4 })
+        )
+      );
+    }
     if (count) {
       card.appendChild(
         h(
@@ -1038,10 +1505,156 @@ function ScreenNotes({
         )
       );
     }
-    if (note.title) card.appendChild(h('h3', { class: 'gb-note-card-title' }, note.title));
+    const titleEl = note.title ? h('h3', { class: 'gb-note-card-title' }, note.title) : null;
+    const snippetEl = h('p', { class: 'gb-note-card-snippet', hidden: true });
+    if (titleEl) card.appendChild(titleEl);
     if (preview) card.appendChild(bodyEl);
-    card.appendChild(h('div', { class: 'gb-note-card-time' }, relativeTime(note.updatedAt)));
+    card.appendChild(snippetEl);
+    cardParts.set(card, { titleEl, bodyEl, snippetEl, title: note.title || '' });
+    if (note.labels && note.labels.length) {
+      card.appendChild(
+        h(
+          'div',
+          { class: 'gb-note-card-labels' },
+          note.labels.map((l) => h('span', { class: 'gb-note-label' }, l))
+        )
+      );
+    }
+    if (view === 'trash') {
+      const left = trashDaysLeft(note.deletedAt);
+      card.appendChild(
+        h(
+          'div',
+          { class: 'gb-note-card-time' },
+          left
+            ? 'Deleted · gone for good in ' + left + (left === 1 ? ' day' : ' days')
+            : 'Deleted · goes tonight'
+        )
+      );
+      card.appendChild(
+        h(
+          'div',
+          { class: 'gb-note-trash-actions' },
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-btn gb-btn--soft gb-btn--compact',
+              disabled: offline,
+              onclick: () => restoreFromTrash(note),
+            },
+            Icon('rotate-ccw', { size: 14, sw: 2.4 }),
+            'Restore'
+          ),
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-btn gb-btn--ghost gb-btn--compact gb-note-forever',
+              disabled: offline,
+              onclick: () => deleteForever(note),
+            },
+            Icon('trash-2', { size: 14, sw: 2.4 }),
+            'Delete forever'
+          )
+        )
+      );
+    } else {
+      card.appendChild(h('div', { class: 'gb-note-card-time' }, relativeTime(note.updatedAt)));
+    }
     return card;
+  }
+
+  /* A card's tap: the editor, or (offline, or in the Trash) a read-only view. */
+  function activate(note, card) {
+    if (offline || view === 'trash') readOnly(note);
+    else openNote(note, card);
+  }
+
+  function readOnly(note) {
+    const { sheet: card, close } = openOverlay({
+      label: note.title || 'Note',
+      className: 'gb-note-modal',
+    });
+    const bodyEl = h('div', { class: 'gb-editor gb-note-readonly' });
+    // Sanitised on the way out, like every paint of a note body.
+    bodyEl.innerHTML = sanitize(note.body);
+    let why = '';
+    if (String(note.id).startsWith('tmp-')) {
+      why = 'This note is still waiting to sync. Edit it once it has.';
+    } else if (offline && note.bodyDropped) {
+      why = 'This note is too big to keep offline. It opens when you are back online.';
+    } else if (note.bodyTrimmed) {
+      why = offline
+        ? 'Photos open when you are back online.'
+        : 'Restore the note to see its photos.';
+    }
+    const foot = [
+      h('button', { type: 'button', class: 'gb-btn gb-btn--ghost', onclick: close }, 'Close'),
+    ];
+    if (view === 'trash' && !offline) {
+      foot.push(
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-btn gb-btn--primary',
+            onclick: () => {
+              close();
+              restoreFromTrash(note);
+            },
+          },
+          'Restore'
+        )
+      );
+    }
+    card.append(
+      h(
+        'div',
+        { class: 'gb-note-modal-head' },
+        h('div', { class: 'gb-modal-title' }, note.title || 'Note')
+      ),
+      h(
+        'div',
+        { class: 'gb-modal-body' },
+        bodyEl,
+        why ? h('p', { class: 'gb-note-readonly-why' }, why) : null
+      ),
+      h('div', { class: 'gb-note-foot' }, foot)
+    );
+    refreshIcons();
+  }
+
+  async function restoreFromTrash(note) {
+    try {
+      await onRestore(note.id);
+      notes = notes.filter((n) => n.id !== note.id);
+      paint();
+      refreshCounts();
+      toast.success(note.archivedAt ? 'Restored to Archived.' : 'Restored to your notes.');
+    } catch (err) {
+      toast.error(err, 'Could not restore that note.');
+    }
+  }
+
+  async function deleteForever(note) {
+    const ok = await confirmDialog({
+      title: 'Delete forever?',
+      message: 'This note and its photos are removed for good. This cannot be undone.',
+      confirmLabel: 'Delete forever',
+      cancelLabel: 'Keep',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await onDeleteForever(note.id);
+      await leave(cardOf(note.id));
+      notes = notes.filter((n) => n.id !== note.id);
+      paint();
+      refreshCounts();
+    } catch (err) {
+      toast.error(err, 'Could not delete that note.');
+    }
   }
 
   const pinning = new Set();
@@ -1065,6 +1678,11 @@ function ScreenNotes({
   /* ---- edit sheet: everything a note can do lives here ---- */
   const opening = new Set();
   async function openNote(note, card) {
+    /* Created offline and still in the outbox: the server has no such id, so a
+       save can't land (onUpdate refuses it), Close would keep failing on that and
+       the edit draft would PUT to a 404. Read it until it has synced; the next
+       load swaps in the real id. */
+    if (String(note.id).startsWith('tmp-')) return readOnly(note);
     /* A list item has no photos in its body. Editing that copy would save it
        back and delete them, so the whole note is fetched first. */
     if (note.bodyTrimmed) {
@@ -1090,10 +1708,47 @@ function ScreenNotes({
       maxlength: '200',
       value: note.title || '',
       'aria-label': 'Note title',
+      oninput: () => keepEdit(),
     });
-    const ed = richEditor({ html: note.body, placeholder: 'Write something…' });
+    const ed = richEditor({
+      html: note.body,
+      placeholder: 'Write something…',
+      onInput: () => keepEdit(),
+    });
     let color = note.color || null;
     let pinned = !!note.pinned;
+    const labelEd = labelEditor(
+      note.labels,
+      labelsInUse(notes).filter((l) => !hasLabel(note, l)),
+      () => keepEdit()
+    );
+
+    /* An edit autosaves as a draft of THIS note (note_edit_drafts, keyed by its
+       id), the way the composer's new note always has. Only the composer's
+       did: an edit lived in the open sheet alone, so a reload or a killed app
+       lost it. Saving the note drops the draft server-side. */
+    let editTimer = null;
+    let editStored = false; // a draft row may exist for this note
+    let editTouched = false; // typed here, so a late server copy must not overwrite it
+    function keepEdit() {
+      editTouched = true;
+      clearTimeout(editTimer);
+      editTimer = setTimeout(() => {
+        if (!onSaveEditDraft) return;
+        editStored = true;
+        onSaveEditDraft(note.id, {
+          title: title.value,
+          body: ed.read(),
+          color,
+          labels: labelEd.list(),
+        }).catch(() => {});
+      }, DRAFT_SAVE_MS);
+    }
+    function dropEdit() {
+      clearTimeout(editTimer);
+      if (editStored && onDeleteEditDraft) onDeleteEditDraft(note.id).catch(() => {});
+      editStored = false;
+    }
 
     const pinBtn = h(
       'button',
@@ -1154,6 +1809,16 @@ function ScreenNotes({
         Icon('calendar-plus', { size: 14, sw: 2.4 }),
         'Add a reminder'
       ),
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--soft gb-btn--compact',
+          onclick: () => shareNote(title.value.trim(), ed.read()),
+        },
+        Icon('share-2', { size: 14, sw: 2.4 }),
+        'Share'
+      ),
       pinBtn
     );
 
@@ -1162,8 +1827,10 @@ function ScreenNotes({
       null,
       title,
       ed.node,
+      labelEd.node,
       colorRow(color, (key) => {
         color = key;
+        keepEdit();
       }),
       turnInto
     );
@@ -1185,7 +1852,13 @@ function ScreenNotes({
           if (!ok) return;
           try {
             await onDelete(note.id);
+            clearTimeout(editTimer); // the server dropped the draft with the note
             open.close();
+            refreshCounts(); // one more in the Trash
+            // Soft delete, so it can come straight back.
+            if (onRestore && toast.action) {
+              toast.action('Note deleted.', 'Undo', () => restoreNote(note));
+            }
             // The card is behind the closing sheet: let the sheet go first.
             setTimeout(async () => {
               await leave(cardOf(note.id));
@@ -1200,24 +1873,89 @@ function ScreenNotes({
       Icon('trash-2', { size: 16, sw: 2.2 })
     );
 
+    /* Archive is a save that also moves the note out of this list, so it goes
+       through persist (one PATCH, same 409 check) by way of the sheet's commit:
+       that sets busy, so an Escape or backdrop tap mid-PATCH can't fire a second
+       persist on the stale baseUpdatedAt (a false 409), and closes on success. */
+    const wasArchived = !!note.archivedAt;
+    const archiveBtn = h(
+      'button',
+      {
+        type: 'button',
+        class: 'gb-iconbtn gb-note-del',
+        'aria-label': wasArchived ? 'Unarchive note' : 'Archive note',
+        title: wasArchived ? 'Unarchive: back to your notes' : 'Archive: keep it, out of the list',
+        onclick: async () => {
+          archiveBtn.disabled = true;
+          await open.commit(async () => {
+            const done = await persist(false, { archived: !wasArchived });
+            if (!done) return; // took the newer copy instead; it reopens itself
+            refreshCounts();
+            if (wasArchived) toast.success('Back in your notes.');
+            else if (toast.action) {
+              toast.action('Note archived.', 'Undo', () => setArchived(note, false));
+            }
+          }, wasArchived ? 'Could not unarchive that note.' : 'Could not archive that note.');
+          archiveBtn.disabled = false;
+        },
+      },
+      Icon(wasArchived ? 'archive-restore' : 'archive', { size: 16, sw: 2.2 })
+    );
+
     /* Throws on failure and says nothing: commit() in sheet() is the one place
        that reports, and toasting here too put the same failure on screen twice.
-       It also owns the close, so this doesn't call it either. */
-    const persist = async () => {
+       It also owns the close, so this doesn't call it either. Resolves true
+       when saved, false when the newer copy was loaded instead. */
+    const persist = async (overwrite, extra) => {
+      clearTimeout(editTimer);
       const body = ed.read();
-      const saved = await onUpdate(note.id, {
-        title: title.value.trim(),
-        body,
-        cover: await coverOf(body),
-        // '' clears it server-side; undefined would mean "leave it alone".
-        color: color === null || color === undefined ? '' : color,
-        pinned,
-      });
+      const labels = labelEd.read(); // throws the rule a half-typed label breaks
+      let saved;
+      try {
+        saved = await onUpdate(
+          note.id,
+          Object.assign(
+            {
+              title: title.value.trim(),
+              body,
+              cover: await coverOf(body),
+              // '' clears it server-side; undefined would mean "leave it alone".
+              color: color === null || color === undefined ? '' : color,
+              pinned,
+              // [] clears them, like '' for the colour.
+              labels,
+              // The version this sheet opened. Newer on the server (another device
+              // saved since) is a 409, which asks rather than overwriting it.
+              baseUpdatedAt: overwrite ? null : note.updatedAt || null,
+            },
+            extra || {}
+          )
+        );
+      } catch (err) {
+        if (!err || err.status !== 409) throw err;
+        const choice = await askConflict();
+        if (choice === 'mine') return persist(true, extra);
+        if (choice === 'theirs') {
+          Object.assign(note, await onGet(note.id));
+          dropEdit();
+          sortNotes();
+          paint();
+          // This sheet closes once persist resolves; reopen on the newer copy.
+          setTimeout(() => openNote(note, cardOf(note.id)), SHEET_EXIT);
+          return false;
+        }
+        throw new Error('Not saved. Your changes are still here.');
+      }
+      editStored = false; // the PATCH dropped the draft
       Object.assign(note, saved);
+      opened = snapshot(); // saved: the sheet now matches the server again
+      // Archived (or brought back) from here: it belongs to the other list now.
+      if (!inView(note)) notes = notes.filter((n) => n.id !== note.id);
       sortNotes();
       paint();
       // sheet() closes once this resolves; land the card after it has gone.
       setTimeout(() => landed(cardOf(note.id)), SHEET_EXIT);
+      return true;
     };
 
     /* Snapshot of everything the sheet can change, taken through the same
@@ -1226,36 +1964,170 @@ function ScreenNotes({
        in. Leaving without an edit must not write: a no-op PATCH bumps
        updatedAt, and the list is sorted by it, so opening a note and closing it
        would jump it to the top. */
-    const snapshot = () => JSON.stringify([title.value.trim(), ed.read(), color, pinned]);
-    const opened = snapshot();
+    const snapshot = () =>
+      JSON.stringify([title.value.trim(), ed.read(), color, pinned, labelEd.peek()]);
+    let opened = snapshot();
 
     const open = sheet({
       title: 'Note',
       body,
       primary: 'Save',
-      headActions: [deleteBtn],
+      headActions: [archiveBtn, deleteBtn],
       onPrimary: persist,
       // Closing a note keeps it. Tapping outside, Escape and Close all land
       // here — the only way to lose the text was the one the user reached for
       // most often.
       onDismiss: async () => {
         if (snapshot() !== opened) await persist();
+        else dropEdit();
       },
     });
     setTimeout(() => ed.focus(), 60);
+    // Opened from a search: land on the first match, not the top of the note.
+    const words = queryWords(query);
+    if (words.length) setTimeout(() => revealMatch(ed.area, words), 90);
+
+    // Unsaved edits from a reload or another device, unless typing here began
+    // first. A draft older than the note itself is stale (saved over since).
+    if (onGetEditDraft) {
+      onGetEditDraft(note.id)
+        .then((d) => {
+          if (!d || editTouched) return;
+          if (note.updatedAt && d.updatedAt && new Date(d.updatedAt) < new Date(note.updatedAt)) {
+            editStored = true;
+            dropEdit();
+            return;
+          }
+          editStored = true;
+          title.value = d.title || '';
+          ed.area.innerHTML = sanitize(d.body || '');
+          color = d.color || null;
+          // null: a draft from before labels were kept; leave the note's own.
+          if (Array.isArray(d.labels)) labelEd.set(d.labels);
+          const on = [null, ...COLORS].findIndex((c) => (c ? c.key : null) === color);
+          Array.from(body.querySelectorAll('.gb-note-swatch')).forEach((el, i) => {
+            el.classList.toggle('is-on', i === on);
+            el.setAttribute('aria-pressed', i === on ? 'true' : 'false');
+          });
+          toast.success('Picked up your unsaved changes.');
+        })
+        .catch(() => {});
+    }
   }
 
-  /* Same order the server returns, kept locally so a pin doesn't need a refetch. */
-  function sortNotes() {
-    notes.sort((a, b) => {
-      if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
-      return new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0);
+  /* Someone saved this note elsewhere since the sheet opened. Three answers,
+     so not confirmDialog: overwrite, take theirs, or keep editing. */
+  function askConflict() {
+    return new Promise((resolve) => {
+      const { sheet: card, close } = openOverlay({
+        label: 'This note changed elsewhere',
+        role: 'alertdialog',
+        onClose: () => resolve('cancel'),
+      });
+      const pick = (v) => () => {
+        resolve(v);
+        close();
+      };
+      card.append(
+        h(
+          'div',
+          { class: 'gb-modal-head' },
+          h('div', { class: 'gb-modal-title' }, 'This note changed elsewhere'),
+          h(
+            'div',
+            { class: 'gb-modal-sub' },
+            'It was saved on another device after you opened it here.'
+          )
+        ),
+        h(
+          'div',
+          { class: 'gb-note-conflict' },
+          h(
+            'button',
+            { type: 'button', class: 'gb-btn gb-btn--primary', onclick: pick('mine') },
+            'Save mine over it'
+          ),
+          h(
+            'button',
+            { type: 'button', class: 'gb-btn gb-btn--soft', onclick: pick('theirs') },
+            'Load the newer one'
+          ),
+          h(
+            'button',
+            { type: 'button', class: 'gb-btn gb-btn--ghost', onclick: pick('cancel') },
+            'Keep editing'
+          )
+        )
+      );
     });
   }
+
+  async function restoreNote(note) {
+    try {
+      const back = Object.assign({}, note, await onRestore(note.id));
+      notes = notes.filter((n) => n.id !== note.id);
+      if (inView(back)) notes.push(back); // the view may have changed since the delete
+      sortNotes();
+      paint();
+      refreshCounts();
+      landed(cardOf(note.id));
+    } catch (err) {
+      toast.error(err, 'Could not bring that note back.');
+    }
+  }
+
+  /* Archive's Undo (and any other flip of it from outside the sheet). */
+  async function setArchived(note, archived) {
+    try {
+      const saved = Object.assign({}, note, await onUpdate(note.id, { archived }));
+      notes = notes.filter((n) => n.id !== note.id);
+      if (inView(saved)) notes.push(saved);
+      sortNotes();
+      paint();
+      refreshCounts();
+      landed(cardOf(note.id));
+    } catch (err) {
+      toast.error(err, 'Could not change that note.');
+    }
+  }
+
+  /* Plain text out: the share sheet where there is one, else the clipboard. */
+  async function shareNote(titleText, html) {
+    const text = [titleText, plainTextOf(html)].filter(Boolean).join('\n\n');
+    if (!text) return toast.error(null, 'Write something first.');
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: titleText || 'Note', text });
+        return;
+      } catch (err) {
+        if (err && err.name === 'AbortError') return; // closed the sheet: not a failure
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success('Copied as plain text.');
+    } catch (err) {
+      toast.error(err, 'Could not copy that note.');
+    }
+  }
+
+  /* The chosen order (Last edited / Date created / Title), pinned first in
+     each; kept locally so a pin doesn't need a refetch. The Trash keeps the
+     server's order, most recently deleted first. */
+  function sortNotes() {
+    if (view !== 'trash') notes.sort(compareNotes(sortKey));
+  }
+
+  const EMPTY = {
+    notes: ['notebook-pen', 'No notes yet. Jot down the thing you keep forgetting.'],
+    archived: ['archive', 'Nothing archived. Archive a note to keep it out of the way.'],
+    trash: ['trash-2', 'The Trash is empty. Deleted notes wait here for 30 days.'],
+  };
 
   function paint() {
     listEl.replaceChildren();
     if (!notes.length) {
+      const [icon, text] = EMPTY[view];
       listEl.appendChild(
         h(
           'div',
@@ -1263,62 +2135,139 @@ function ScreenNotes({
           h(
             'div',
             { class: 'gb-empty' },
-            Icon('notebook-pen', { size: 26, color: 'var(--fg3)' }),
-            h('p', null, 'No notes yet. Jot down the thing you keep forgetting.')
+            Icon(icon, { size: 26, color: 'var(--fg3)' }),
+            h('p', null, text)
           )
         )
       );
     } else {
       notes.forEach((n) => listEl.appendChild(NoteCard(n)));
       listEl.appendChild(noMatch);
-      filter();
     }
-    searchBar.hidden = !notes.length;
+    paintLabels();
+    filter();
+    offlineBanner.hidden = !offline;
+    composer.hidden = offline || view !== 'notes';
+    viewRow.hidden = offline;
+    saveOffline();
     refreshIcons();
   }
 
-  /* Every word must appear somewhere. Toggles the cards already built.
-     ponytail: re-parses each body per search, fine for hundreds of notes;
-     cache searchTextOf by body if not. */
+  /* One chip per label in use in this list, plus All. Tapping the one that is
+     on turns it off. */
+  function paintLabels() {
+    const all = labelsInUse(notes);
+    if (activeLabel && !all.some((l) => l.toLowerCase() === activeLabel.toLowerCase())) {
+      activeLabel = null; // its last note went
+    }
+    const chip = (label, text) =>
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-note-chip' + (activeLabel === label ? ' is-on' : ''),
+          'aria-pressed': activeLabel === label ? 'true' : 'false',
+          onclick: () => {
+            activeLabel = activeLabel === label ? null : label;
+            paintLabels();
+            filter();
+          },
+        },
+        text
+      );
+    labelRow.replaceChildren(chip(null, 'All'), ...all.map((l) => chip(l, l)));
+    labelRow.hidden = !all.length;
+  }
+
+  /* Every word must appear somewhere (title, text, photo descriptions), and
+     the label chip that is on must be on the note. Toggles the cards already
+     built, and marks the matches in the ones it shows. */
   function filter() {
     if (!notes.length) return;
-    const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+    const words = queryWords(query);
     const byId = new Map(notes.map((n) => [n.id, n]));
+    searchCache.prune(byId.keys());
     let any = false;
     listEl.querySelectorAll('.gb-note-card').forEach((card) => {
       const n = byId.get(card.dataset.id);
-      const hay = n ? searchTextOf(n) : '';
-      const show = words.every((w) => hay.includes(w));
+      const found = n ? searchCache.get(n) : null;
+      const show = !!n && hasLabel(n, activeLabel) && matchesAll(found.hay, words);
       card.hidden = !show;
       any = any || show;
+      if (show) highlight(card, found.text, words);
     });
-    noMatchText.textContent = 'No notes match "' + query.trim() + '".';
+    const where = activeLabel ? ' labelled "' + activeLabel + '"' : '';
+    noMatchText.textContent = words.length
+      ? 'No notes' + where + ' match "' + query.trim() + '".'
+      : 'No notes' + where + '.';
     noMatch.hidden = any;
+  }
+
+  /* A search shows where it matched: the title marked, and the body swapped
+     for a snippet around the first hit. No search, the card as painted. */
+  function highlight(card, text, words) {
+    const parts = cardParts.get(card);
+    if (!parts) return;
+    const { titleEl, bodyEl, snippetEl, title } = parts;
+    if (titleEl) titleEl.replaceChildren(...(words.length ? marked(title, words) : [title]));
+    const lower = (text || '').toLowerCase();
+    const inBody = words.length && words.some((w) => lower.includes(w));
+    if (inBody) snippetEl.replaceChildren(...marked(snippetAround(text, words), words));
+    snippetEl.hidden = !inBody;
+    bodyEl.hidden = !!inBody;
   }
 
   // Skeleton first: the list has real height before the fetch lands, so the
   // page doesn't jump the way every other screen here learned not to.
   const skelLine = (w) => h('div', { class: 'gb-skel-line', style: { width: w } });
-  listEl.appendChild(
-    h(
-      'div',
-      { class: 'gb-card gb-note-skel' },
-      h('div', { class: 'gb-skel-lines' }, skelLine('55%'), skelLine('92%'), skelLine('38%'))
-    )
-  );
-  const load = () =>
-    onList()
+  function showSkeleton() {
+    labelRow.hidden = true;
+    listEl.replaceChildren(
+      h(
+        'div',
+        { class: 'gb-card gb-note-skel' },
+        h('div', { class: 'gb-skel-lines' }, skelLine('55%'), skelLine('92%'), skelLine('38%'))
+      )
+    );
+  }
+  showSkeleton();
+
+  /* A failure that means "no network" rather than "the server said no": the
+     api() wrapper throws those without a status. */
+  const looksOffline = (err) =>
+    (typeof navigator !== 'undefined' && navigator.onLine === false) || !(err && err.status);
+
+  const fetchView = () =>
+    view === 'trash' ? onTrash() : view === 'archived' ? onList({ archived: true }) : onList();
+
+  const load = () => {
+    const forView = view;
+    return fetchView()
       .then((data) => {
-        // A note saved while this was in flight (a cold server takes seconds) is
-        // already in `notes` and may be missing from `data`, which the server read
-        // first. Replacing outright dropped it and put "No notes yet" back.
+        if (forView !== view) return; // switched while this was in flight
         const fetched = Array.isArray(data) ? data : [];
-        const ids = new Set(fetched.map((n) => n.id));
-        notes = fetched.concat(notes.filter((n) => !ids.has(n.id)));
+        if (view === 'notes' && !offline) {
+          // A note saved while this was in flight (a cold server takes seconds) is
+          // already in `notes` and may be missing from `data`, which the server read
+          // first. Replacing outright dropped it and put "No notes yet" back.
+          const ids = new Set(fetched.map((n) => n.id));
+          // Not a `tmp-` one, though: an offline note the outbox has since sent
+          // is in `data` under its real id, and keeping both showed it twice.
+          notes = fetched.concat(notes.filter((n) => !ids.has(n.id) && !String(n.id).startsWith('tmp-')));
+        } else {
+          notes = fetched; // the offline copy is replaced whole
+        }
+        offline = false;
         sortNotes();
         paint();
+        paintViews();
+        refreshCounts();
       })
-      .catch(() => {
+      .catch((err) => {
+        if (forView !== view) return;
+        // The list this device last saw, read-only, beats an error card.
+        if (view === 'notes' && looksOffline(err) && showOffline()) return;
+        if (offline) return; // still offline: keep showing the copy
         listEl.replaceChildren(
           h(
             'div',
@@ -1344,9 +2293,13 @@ function ScreenNotes({
           )
         );
       });
+  };
+  paintViews();
   load();
 
-  return h('div', { class: 'gb-notes' }, composer, searchBar, listEl);
+  // Search (with sort) is the top bar, sticky while the list scrolls; everything
+  // else — banner, composer, views, label chips — sits under it.
+  return h('div', { class: 'gb-notes' }, tools, offlineBanner, composer, viewRow, labelRow, listEl);
 }
 
 /* =====================================================================
@@ -1380,6 +2333,32 @@ function _demo() {
   a(sanitize('<img src="https://t.example/p.gif">x') === 'x', 'remote image dropped');
   a(sanitize('<img src="data:image/svg+xml;base64,PHN2Zz4=">') === '', 'svg image dropped');
   a(textOf('<p>a</p><p>b</p>') === 'a b', 'textOf flattens');
+  a(
+    sanitize('<ul data-checklist="x" onclick="y"><li data-checked="1">a</li><li>b</li></ul>') ===
+      '<ul data-checklist=""><li data-checked="">a</li><li>b</li></ul>',
+    'checklist kept, its flags emptied, handlers stripped'
+  );
+  a(sanitize('<p data-checked="1">p</p>') === '<p>p</p>', 'checklist flags only on their own tags');
+  a(
+    plainTextOf('<ul data-checklist=""><li data-checked="">milk</li><li>eggs</li></ul>') ===
+      '[x] milk\n[ ] eggs',
+    'checklist shares as boxes'
+  );
+  // The toolbar's strikethrough, quote and inline code write these four tags.
+  a(sanitize('<s>x</s><strike>y</strike>') === '<s>x</s><strike>y</strike>', 'strikethrough kept');
+  a(
+    sanitize('<blockquote cite="https://x.dev" onclick="y">q</blockquote>') ===
+      '<blockquote>q</blockquote>',
+    'quote kept, its attributes stripped'
+  );
+  a(
+    sanitize('<code class="x">a &lt; b</code>') === '<code>a &lt; b</code>',
+    'inline code kept, escaped text stays text'
+  );
+  a(
+    sanitize('<code><img src=x onerror=alert(1)></code>') === '<code></code>',
+    'nothing executable rides in inside code'
+  );
 }
 
 if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.DEV) {

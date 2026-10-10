@@ -193,7 +193,9 @@
   /* Lines */
   --border: #ECE0D6;
   --border-strong: #DFCFC1;
-  --ring: var(--coral-500);        /* focus ring */
+  /* focus ring: coral-600, 3.3:1 on surface-2 (coral-500 was 2.6-2.8:1, under
+     the 3:1 a focus indicator needs). scripts/contrast.test.mjs holds it. */
+  --ring: var(--coral-600);
 
   /* Brand semantics */
   --brand: var(--coral-500);
@@ -211,6 +213,12 @@
   --brand-fill-hover: var(--coral-800);
 
   --danger: #C93B40;               /* error text — matches .gb-btn--danger */
+  /* A red surface carrying white text (.gb-btn--danger, the live mic). Same in
+     both themes: --danger brightens for dark text use, but white on #FF6369 is
+     2.9:1, so a fill cannot follow it. #D34247: white on it is 4.53:1 (the old
+     #E5484D was 3.9:1, under AA for a button label). */
+  --danger-fill: #D34247;
+  --danger-fill-hover: #C93B40;
   --success: var(--leaf-600);
   --success-soft: var(--leaf-50);
   --success-soft-fg: var(--leaf-700);
@@ -276,6 +284,8 @@
   --brand-fill-hover: var(--coral-800);
 
   --danger: #FF6369;
+  --danger-fill: #D34247;
+  --danger-fill-hover: #C93B40;
   --success: var(--leaf-500);
   --success-soft: rgba(24, 191, 110, 0.14);
   --success-soft-fg: var(--leaf-300);

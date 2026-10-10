@@ -3,6 +3,7 @@ package com.growthbuddy.habit;
 import com.growthbuddy.common.DeliveryCache;
 import com.growthbuddy.common.UserZone;
 import com.growthbuddy.notification.NotificationKind;
+import com.growthbuddy.notification.NotifyCategory;
 import com.growthbuddy.notification.NotificationService;
 import com.growthbuddy.push.PushService;
 import com.growthbuddy.reminder.WhatsAppService;
@@ -142,7 +143,10 @@ public class HabitReminderDeliveryScheduler {
     private Map<UUID, User> usersById(List<Habit> list) {
         Map<UUID, User> out = new HashMap<>();
         for (User u : users.findAllById(list.stream().map(Habit::getUserId).distinct().toList())) {
-            out.put(u.getId(), u);
+            // Scheduled for deletion = "no user": none of its habits is ever due.
+            if (!u.isPendingDeletion()) {
+                out.put(u.getId(), u);
+            }
         }
         return out;
     }
@@ -151,6 +155,11 @@ public class HabitReminderDeliveryScheduler {
      *  {@code tick}, else null. */
     private static LocalDate dueDay(Habit habit, User user, Instant tick) {
         if (user == null) {
+            return null;
+        }
+        // Quiet hours hold back the nudges the app sends on its own; a habit
+        // reminder is one. (A timed calendar reminder is not — see ReminderPrefs.)
+        if (com.growthbuddy.reminder.ReminderPrefs.isQuiet(user.getUiPrefs(), habit.getReminderTime())) {
             return null;
         }
         ZoneId zone = UserZone.of(user.getTimezone());
@@ -209,7 +218,7 @@ public class HabitReminderDeliveryScheduler {
 
         if (push.isConfigured()) {
             try {
-                int n = push.sendToUser(user.getId(), "Habit reminder", habit.getName(), "/#habits");
+                int n = push.sendToUser(user.getId(), NotifyCategory.habits, "Habit reminder", habit.getName(), "/#habits");
                 if (n > 0) {
                     channels.append(channels.length() > 0 ? "+push" : "push");
                     sent = true;

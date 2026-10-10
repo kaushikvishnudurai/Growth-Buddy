@@ -18,6 +18,12 @@ interface FoodEntryRepository extends JpaRepository<FoodEntry, UUID> {
 
     List<FoodEntry> findByUserIdAndLogDateBetween(UUID userId, LocalDate from, LocalDate to);
 
+    /** One day's rows, unordered; FoodService.copySlot picks a slot from them. */
+    List<FoodEntry> findByUserIdAndLogDate(UUID userId, LocalDate logDate);
+
+    /** The newest entries, for the add form's "recent foods" chips (deduped in FoodService.recent). */
+    List<FoodEntry> findTop60ByUserIdOrderByLoggedAtDesc(UUID userId);
+
     /**
      * Fills an estimate in place. An UPDATE, not save(): the entity was read
      * before a seconds-long AI call, and merging it back would re-insert an entry
@@ -33,6 +39,14 @@ interface FoodEntryRepository extends JpaRepository<FoodEntry, UUID> {
 
     @Query("select coalesce(sum(e.kcalEstimated), 0) from FoodEntry e where e.userId = :userId and e.logDate = :logDate")
     int totalCaloriesForDay(@Param("userId") UUID userId, @Param("logDate") LocalDate logDate);
+}
+
+interface FoodFavouriteRepository extends JpaRepository<FoodFavourite, UUID> {
+    List<FoodFavourite> findByUserIdOrderByCreatedAtDesc(UUID userId);
+
+    long countByUserId(UUID userId);
+
+    java.util.Optional<FoodFavourite> findFirstByUserIdAndFoodNameIgnoreCase(UUID userId, String foodName);
 }
 
 interface FoodPhotoLogRepository extends JpaRepository<FoodPhotoLog, UUID> {
@@ -66,6 +80,36 @@ record PhotoHistoryItem(
 enum MealType {
     home,
     hotel
+}
+
+/**
+ * Which meal of the day. Defaulted from the local hour the food was logged at
+ * when the request has none; mirrored by {@code mealSlotAt} in scripts/nutrition.js,
+ * which groups the rows from before slots existed (null here) the same way.
+ */
+enum MealSlot {
+    breakfast,
+    lunch,
+    dinner,
+    snack;
+
+    /** 04-10 breakfast, 11-15 lunch, 18-22 dinner, anything else a snack. */
+    static MealSlot forHour(int hour) {
+        if (hour >= 4 && hour < 11) {
+            return breakfast;
+        }
+        if (hour >= 11 && hour < 16) {
+            return lunch;
+        }
+        if (hour >= 18 && hour < 23) {
+            return dinner;
+        }
+        return snack;
+    }
+
+    static MealSlot at(Instant instant, java.time.ZoneId zone) {
+        return forHour(instant.atZone(zone).getHour());
+    }
 }
 
 enum PortionSize {
@@ -103,7 +147,69 @@ record AddFoodEntryRequest(
          * grams on the server (the AI, else a per-piece table); quantityGrams wins
          * when both are sent.
          */
-        @Min(1) @Max(30) Integer pieces) {
+        @Min(1) @Max(30) Integer pieces,
+        /** Absent: from the local hour of loggedAt (MealSlot.forHour). */
+        MealSlot mealSlot,
+        /**
+         * Label figures for the portion, sent with a barcode product (OpenFoodFacts)
+         * or a favourite. Taken only alongside a typed kcal; an estimate fills its
+         * own. Bounds are the columns'.
+         */
+        @Min(0) @Max(900) Integer proteinG,
+        @Min(0) @Max(900) Integer carbsG,
+        @Min(0) @Max(900) Integer fatG,
+        @Min(0) @Max(900) Integer fiberG,
+        @Min(0) @Max(900) Integer sugarG,
+        @Min(0) @Max(50000) Integer sodiumMg) {
+
+    /** The shape before slots and label nutrients. */
+    AddFoodEntryRequest(String foodName, Integer quantityGrams, MealType mealType, PortionSize portionSize,
+            RiceBase riceBase, String note, Instant loggedAt, Integer kcal, Integer pieces) {
+        this(foodName, quantityGrams, mealType, portionSize, riceBase, note, loggedAt, kcal, pieces,
+                null, null, null, null, null, null, null);
+    }
+}
+
+/**
+ * PUT /api/food/entries/{id}: every field optional, absent = unchanged. Same bounds
+ * as adding one, so an edit can't store what an add would refuse.
+ */
+record UpdateFoodEntryRequest(
+        @Size(max = 255) String foodName,
+        @Min(10) @Max(2000) Integer quantityGrams,
+        @Min(1) @Max(5000) Integer kcal,
+        MealType mealType,
+        LocalDate date,
+        @Size(max = 255) String note,
+        MealSlot mealSlot) {
+
+    UpdateFoodEntryRequest(String foodName, Integer quantityGrams, Integer kcal, MealType mealType,
+            LocalDate date, String note) {
+        this(foodName, quantityGrams, kcal, mealType, date, note, null);
+    }
+}
+
+/** A starred food (FoodFavourite). */
+record FoodFavouriteResponse(UUID id, String foodName, int quantityGrams, int kcal,
+        Integer proteinG, Integer carbsG, Integer fatG, Integer fiberG) {
+
+    static FoodFavouriteResponse from(FoodFavourite f) {
+        return new FoodFavouriteResponse(f.getId(), f.getFoodName(), f.getQuantityGrams(), f.getKcal(),
+                f.getProteinG(), f.getCarbsG(), f.getFatG(), f.getFiberG());
+    }
+}
+
+/** POST /api/food/favourites: star this entry. */
+record AddFavouriteRequest(@jakarta.validation.constraints.NotNull UUID entryId) {
+}
+
+/**
+ * GET /api/food/barcode/{code}: one OpenFoodFacts product, per 100 g. Any figure
+ * the label lacks is null; servingGrams is the label's serving when it has one.
+ */
+record BarcodeProduct(String code, String name, Integer kcalPer100g, Double proteinPer100g,
+        Double carbsPer100g, Double fatPer100g, Double fiberPer100g, Double sugarPer100g,
+        Integer sodiumMgPer100g, Integer servingGrams) {
 }
 
 record PhotoFoodEstimateRequest(
@@ -172,7 +278,15 @@ record FoodEntryResponse(
         String estimateSource,
         String note,
         Instant loggedAt,
-        LocalDate logDate) {
+        LocalDate logDate,
+        /** null on rows from before slots; the app derives one from loggedAt. */
+        MealSlot mealSlot,
+        Integer proteinG,
+        Integer carbsG,
+        Integer fatG,
+        Integer fiberG,
+        Integer sugarG,
+        Integer sodiumMg) {
 
     static FoodEntryResponse from(FoodEntry e) {
         return new FoodEntryResponse(
@@ -185,7 +299,14 @@ record FoodEntryResponse(
                 e.getEstimateSource(),
                 e.getNote(),
                 e.getLoggedAt(),
-                e.getLogDate());
+                e.getLogDate(),
+                e.getMealSlot(),
+                e.getProteinG(),
+                e.getCarbsG(),
+                e.getFatG(),
+                e.getFiberG(),
+                e.getSugarG(),
+                e.getSodiumMg());
     }
 }
 
@@ -221,8 +342,21 @@ record DietCheckResponse(String protein, String carbs, String fat, String fiber,
         List<String> add, String source) {
 }
 
+/**
+ * One day. fiberG / sugarG / sodiumMg are the day's sums over the entries that
+ * carry the figure, null when none does: fiber is estimated (FoodWeek fills it),
+ * sugar and sodium come only from a barcode label, so the card shows a line only
+ * for what is actually known.
+ */
 record FoodSummaryResponse(
         LocalDate date,
         int totalCalories,
-        List<FoodEntryResponse> entries) {
+        List<FoodEntryResponse> entries,
+        Integer fiberG,
+        Integer sugarG,
+        Integer sodiumMg) {
+
+    FoodSummaryResponse(LocalDate date, int totalCalories, List<FoodEntryResponse> entries) {
+        this(date, totalCalories, entries, null, null, null);
+    }
 }

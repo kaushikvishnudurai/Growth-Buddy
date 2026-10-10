@@ -408,6 +408,30 @@ function resolveNavLayout(saved) {
   return out;
 }
 
+/* Pure: the bar's tabs and the "More" sheet's items for a saved layout, with
+   feature-off destinations dropped and their bar slots refilled from "More".
+   The bar can only hold NAV_MAX_PRIMARY; surplus primary items spill to the
+   front of "More". */
+function splitNavBar(layout, features) {
+  const byId = new Map(NAV_CATALOG.map((i) => [i.id, i]));
+  const resolved = resolveNavLayout(layout);
+  const visible = resolved
+    .map((x) => ({ def: byId.get(x.id), primary: x.primary }))
+    .filter((x) => x.def && navFeatureOn(features, x.def.feature));
+  let primaryItems = visible.filter((x) => x.primary).map((x) => x.def);
+  const overflowItems = visible.filter((x) => !x.primary).map((x) => x.def);
+  // A turned-off feature frees its bar slot; the next enabled "More" item takes
+  // it, or turning off Habits and Buddy left a phone bar of Home, Progress, More.
+  const slots = Math.min(NAV_MAX_PRIMARY, resolved.filter((x) => x.primary).length);
+  while (primaryItems.length < slots && overflowItems.length) primaryItems.push(overflowItems.shift());
+  let spilled = [];
+  if (primaryItems.length > NAV_MAX_PRIMARY) {
+    spilled = primaryItems.slice(NAV_MAX_PRIMARY);
+    primaryItems = primaryItems.slice(0, NAV_MAX_PRIMARY);
+  }
+  return { primary: primaryItems, overflow: spilled.concat(overflowItems) };
+}
+
 /* Build the "More" sheet body: ungrouped items first, then one headed grid per
    group that still has items. Keeps each user's own ordering inside a group. */
 function moreSections(overflow, active, onNav) {
@@ -458,24 +482,7 @@ function BottomNav({ active, onNav, onMore, features, moreOpen, layout } = {}) {
 
   // Resolve the user's saved layout (or defaults) to renderable destinations,
   // dropping any whose feature is turned off.
-  const byId = new Map(NAV_CATALOG.map((i) => [i.id, i]));
-  const resolved = resolveNavLayout(layout);
-  const visible = resolved
-    .map((x) => ({ def: byId.get(x.id), primary: x.primary }))
-    .filter((x) => x.def && navFeatureOn(features, x.def.feature));
-  let primaryItems = visible.filter((x) => x.primary).map((x) => x.def);
-  const overflowItems = visible.filter((x) => !x.primary).map((x) => x.def);
-  // A turned-off feature frees its bar slot; the next enabled "More" item takes
-  // it, or turning off Habits and Buddy left a phone bar of Home, Progress, More.
-  const slots = Math.min(NAV_MAX_PRIMARY, resolved.filter((x) => x.primary).length);
-  while (primaryItems.length < slots && overflowItems.length) primaryItems.push(overflowItems.shift());
-  // Bar can only hold so many — surplus primary spill to the front of "More".
-  let spilled = [];
-  if (primaryItems.length > NAV_MAX_PRIMARY) {
-    spilled = primaryItems.slice(NAV_MAX_PRIMARY);
-    primaryItems = primaryItems.slice(0, NAV_MAX_PRIMARY);
-  }
-  const overflow = spilled.concat(overflowItems);
+  const { primary: primaryItems, overflow } = splitNavBar(layout, features);
 
   const tabs = primaryItems.map((i) => tab(i));
 
@@ -800,13 +807,19 @@ function closeOverlays() {
    both arguments now.
 
    `onPrimary` may throw: the sheet shakes, the message is toasted, and the
-   button comes back enabled so the value can be corrected in place. */
+   button comes back enabled so the value can be corrected in place. An error
+   carrying `field` (the input at fault) is shown under that input instead —
+   a toast at the bottom of the screen is far from what needs fixing.
+
+   `destructive` paints the primary red: a confirm whose primary deletes
+   something must not look like every other Save. */
 function openModal({
   title,
   sub,
   body,
   primary,
   onPrimary,
+  destructive = false,
   danger,
   dismiss,
   modalClass,
@@ -820,7 +833,7 @@ function openModal({
         'button',
         {
           type: 'button',
-          class: 'gb-btn gb-btn--primary',
+          class: 'gb-btn ' + (destructive ? 'gb-btn--danger' : 'gb-btn--primary'),
           style: { width: '100%', marginTop: '14px' },
           onclick: async () => {
             // A slow save showed a dead, disabled button with no word on it.
@@ -840,6 +853,10 @@ function openModal({
               // The modal refused what you gave it, so the modal is what shakes
               // — the same head-shake the sign-in card does.
               shakeRefusal(sheet);
+              if (err && err.field && sheet.contains(err.field)) {
+                fieldError(err.field, err.message);
+                return;
+              }
               // The complaint is about what was typed, so it goes as soon as
               // the user starts fixing it rather than sitting over the fix.
               const id = toast.error(err, errorMessage);
@@ -888,6 +905,38 @@ function openModal({
   );
   refreshIcons();
   return close;
+}
+
+/* An input's own complaint, under it: red outline, the message, and both gone
+   on the next keystroke. role=alert so a screen reader hears it at once. */
+let fieldErrorSeq = 0;
+function fieldError(input, message) {
+  const next = input.nextElementSibling;
+  if (next && next.classList.contains('gb-field-error')) next.remove();
+  const id = 'gb-field-err-' + ++fieldErrorSeq;
+  const note = h('p', { class: 'gb-field-error', id, role: 'alert' }, message);
+  input.after(note);
+  input.classList.add('is-invalid');
+  input.setAttribute('aria-invalid', 'true');
+  input.setAttribute('aria-describedby', id);
+  input.focus();
+  input.addEventListener(
+    'input',
+    () => {
+      note.remove();
+      input.classList.remove('is-invalid');
+      input.setAttribute('aria-invalid', 'false');
+      input.removeAttribute('aria-describedby');
+    },
+    { once: true }
+  );
+}
+
+/* Throw this from an onPrimary to put the message under `input`. */
+function fieldRefusal(input, message) {
+  const err = new Error(message);
+  err.field = input;
+  return err;
 }
 
 /* A surface refusing what it was given: one head-shake, one short buzz. Lives
@@ -1222,11 +1271,14 @@ export {
   Avatar,
   BottomNav,
   NAV_CATALOG,
+  NAV_MAX_PRIMARY,
+  splitNavBar,
   resolveNavLayout,
   AppHeader,
   CrashCard,
   Logo,
   confirmDialog,
+  fieldRefusal,
   openOverlay,
   closeOverlays,
   openModal,

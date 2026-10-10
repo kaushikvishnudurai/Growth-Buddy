@@ -113,6 +113,11 @@ public class OpenAIClient {
      * Throws on transport errors / non-2xx responses so callers can fall back.
      */
     public String complete(String systemPrompt, List<ChatTurn> turns) {
+        return complete(systemPrompt, turns, MAX_TOKENS);
+    }
+
+    /** {@link #complete(String, List)} with a tighter reply ceiling (the mentor's chat turns). */
+    public String complete(String systemPrompt, List<ChatTurn> turns, int maxTokens) {
         if (!isConfigured()) {
             throw new IllegalStateException("AI_GATEWAY_TOKEN is not set");
         }
@@ -126,7 +131,7 @@ public class OpenAIClient {
         }
         Map<String, Object> body = Map.of(
                 "model", model,
-                "max_tokens", MAX_TOKENS,
+                "max_tokens", Math.max(1, Math.min(maxTokens, MAX_TOKENS)),
                 "messages", messages
         );
         try {
@@ -146,23 +151,158 @@ public class OpenAIClient {
             return extractContent(res.body());
         } catch (JsonProcessingException ex) {
             throw new IllegalStateException("Bad request body", ex);
-        } catch (java.io.IOException | InterruptedException ex) {
+        } catch (InterruptedException ex) {
+            // Only an interrupt re-asserts the flag. Setting it on an IOException
+            // too (a timeout, a reset) left the request thread marked interrupted,
+            // and the next blocking call on it — the DB save after the fallback —
+            // could fail for no reason of its own.
             Thread.currentThread().interrupt();
+            throw new IllegalStateException("AI gateway request interrupted", ex);
+        } catch (java.io.IOException ex) {
             throw new IllegalStateException("AI gateway request failed", ex);
         }
+    }
+
+    /**
+     * {@link #complete(String, List, int)} as a stream: {@code "stream": true} on
+     * the same compat endpoint, read line by line, each {@code data:} chunk's
+     * {@code choices[0].delta.content} handed to {@code onDelta} as it lands.
+     * Returns the whole text.
+     *
+     * <p>Charges the budget like every other call, against {@link CurrentUser} —
+     * a caller running this off the request thread must set it there first, or
+     * the call is billed to the shared "system" budget. The 429 is thrown before
+     * any byte is requested, so it can never arrive after a delta.
+     *
+     * <p>{@code cancelled} is polled between lines; once it reads true the
+     * response stream is closed, which drops the upstream connection and stops
+     * the tokens. ponytail: a gateway that stalls mid-body blocks the read until
+     * it closes — HttpClient's timeout covers the headers only. Bound it with a
+     * watchdog that closes the stream if that ever shows up in the logs.
+     */
+    public String stream(String systemPrompt, List<ChatTurn> turns, int maxTokens,
+                         java.util.function.Consumer<String> onDelta,
+                         java.util.function.BooleanSupplier cancelled) {
+        if (!isConfigured()) {
+            throw new IllegalStateException("AI_GATEWAY_TOKEN is not set");
+        }
+        chargeBudget();
+        List<Map<String, String>> messages = new ArrayList<>();
+        if (StringUtils.hasText(systemPrompt)) {
+            messages.add(Map.of("role", "system", "content", systemPrompt));
+        }
+        for (ChatTurn t : turns) {
+            messages.add(Map.of("role", t.role(), "content", t.content()));
+        }
+        Map<String, Object> body = Map.of(
+                "model", model,
+                "max_tokens", Math.max(1, Math.min(maxTokens, MAX_TOKENS)),
+                "stream", true,
+                "messages", messages
+        );
+        StringBuilder all = new StringBuilder();
+        try {
+            String payload = json.writeValueAsString(body);
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create(endpoint()))
+                    .timeout(Duration.ofSeconds(45))
+                    .header("Authorization", "Bearer " + apiKey)
+                    .header("Content-Type", "application/json")
+                    .header("Accept", "text/event-stream")
+                    .POST(HttpRequest.BodyPublishers.ofString(payload))
+                    .build();
+            HttpResponse<java.util.stream.Stream<String>> res =
+                    http.send(req, HttpResponse.BodyHandlers.ofLines());
+            try (java.util.stream.Stream<String> lines = res.body()) {
+                if (res.statusCode() / 100 != 2) {
+                    String err = String.join("\n", lines.limit(20).toList());
+                    log.warn("AI gateway (stream) returned {}: {}", res.statusCode(), err);
+                    throw new IllegalStateException("AI gateway " + res.statusCode());
+                }
+                java.util.Iterator<String> it = lines.iterator();
+                while (!cancelled.getAsBoolean() && it.hasNext()) {
+                    StreamChunk chunk = parseStreamLine(it.next());
+                    if (chunk == null) continue;
+                    if (chunk.done()) break;
+                    all.append(chunk.text());
+                    onDelta.accept(chunk.text());
+                }
+            }
+            return all.toString();
+        } catch (JsonProcessingException ex) {
+            throw new IllegalStateException("Bad request body", ex);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("AI gateway request interrupted", ex);
+        } catch (java.io.IOException | java.io.UncheckedIOException ex) {
+            throw new IllegalStateException("AI gateway request failed", ex);
+        }
+    }
+
+    /** One parsed line of a streamed reply: some text, or the end marker. */
+    record StreamChunk(String text, boolean done) {
+        static final StreamChunk DONE = new StreamChunk("", true);
+    }
+
+    private static final ObjectMapper STREAM_JSON = new ObjectMapper();
+
+    /**
+     * Parse one line of an OpenAI-style event stream. Pure, so it is tested
+     * without a gateway.
+     *
+     * <ul>
+     *   <li>{@code data: [DONE]} → {@link StreamChunk#DONE}</li>
+     *   <li>{@code data: {"choices":[{"delta":{"content":"Hi"}}]}} → "Hi"</li>
+     *   <li>blank lines, {@code :} comments (keep-alives), {@code event:}/{@code id:}
+     *       lines, a chunk with no text (the role-only first delta, the
+     *       finish_reason one) and malformed JSON → {@code null}, skipped. One bad
+     *       line costs a few characters; failing the reply over it costs all of them.</li>
+     *   <li>{@code data: {"error":…}} → throws: the provider gave up mid-stream, and
+     *       skipping it would end the reply short with no word as to why.</li>
+     * </ul>
+     */
+    static StreamChunk parseStreamLine(String line) {
+        if (line == null || !line.startsWith("data:")) return null;
+        String data = line.substring(5).trim();
+        if (data.isEmpty()) return null;
+        if ("[DONE]".equals(data)) return StreamChunk.DONE;
+        com.fasterxml.jackson.databind.JsonNode node;
+        try {
+            node = STREAM_JSON.readTree(data);
+        } catch (JsonProcessingException ex) {
+            return null;
+        }
+        if (node == null || !node.isObject()) return null;
+        if (node.hasNonNull("error")) {
+            throw new IllegalStateException("AI gateway stream error: "
+                    + node.path("error").path("message").asText(node.path("error").toString()));
+        }
+        var content = node.path("choices").path(0).path("delta").path("content");
+        String text;
+        if (content.isTextual()) {
+            text = content.asText();
+        } else {
+            StringBuilder sb = new StringBuilder();
+            for (var part : content) sb.append(part.path("text").asText(""));
+            text = sb.toString();
+        }
+        return text.isEmpty() ? null : new StreamChunk(text, false);
     }
 
     /**
      * Send one user turn with text + image.
      */
     public String completeWithImage(String systemPrompt, String userPrompt, String imageDataUrl) {
-        chargeBudget();
+        // Checked before charging: a call that can never be sent must not spend
+        // the user's hourly budget (it did, and an unconfigured deploy's photo
+        // estimates ran users into a 429 for calls that never left the server).
         if (!isConfigured()) {
             throw new IllegalStateException("AI_GATEWAY_TOKEN is not set");
         }
         if (!StringUtils.hasText(userPrompt) || !StringUtils.hasText(imageDataUrl)) {
             throw new IllegalArgumentException("userPrompt and imageDataUrl are required");
         }
+        chargeBudget();
 
         List<Map<String, Object>> messages = new ArrayList<>();
         if (StringUtils.hasText(systemPrompt)) {
@@ -200,8 +340,10 @@ public class OpenAIClient {
             return extractContent(res.body());
         } catch (JsonProcessingException ex) {
             throw new IllegalStateException("Bad request body", ex);
-        } catch (java.io.IOException | InterruptedException ex) {
+        } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
+            throw new IllegalStateException("AI gateway request interrupted", ex);
+        } catch (java.io.IOException ex) {
             throw new IllegalStateException("AI gateway request failed", ex);
         }
     }

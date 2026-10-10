@@ -51,6 +51,20 @@ class SharedRecurrenceCasesTest {
             if (r.hasNonNull("until")) {
                 rem.setUntilDate(LocalDate.parse(r.get("until").asText()));
             }
+            // The richer rule, raw: normalizeRule is the API's job, and the shared
+            // cases are about what occursOn makes of stored values.
+            if (r.hasNonNull("repeatInterval")) {
+                rem.setRepeatInterval(r.get("repeatInterval").asInt());
+            }
+            if (r.hasNonNull("repeatDays")) {
+                rem.setRepeatDays(r.get("repeatDays").asText());
+            }
+            if (r.hasNonNull("repeatNth")) {
+                rem.setRepeatNth(r.get("repeatNth").asInt());
+            }
+            if (r.hasNonNull("repeatCount")) {
+                rem.setRepeatCount(r.get("repeatCount").asInt());
+            }
             if (r.hasNonNull("skip")) {
                 Set<LocalDate> skips = new HashSet<>();
                 r.get("skip").forEach(d -> skips.add(LocalDate.parse(d.asText())));

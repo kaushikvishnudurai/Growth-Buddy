@@ -60,6 +60,13 @@ public class MentorshipRequest {
     @Column(name = "checked_at")
     private Instant checkedAt;
 
+    /**
+     * What the pair agreed to work on ("30 min of DSA, 5 days a week"). Either
+     * partner edits it; the mentor's weekly check-in card leads with it.
+     */
+    @Column(length = 500)
+    private String agreement;
+
     @PrePersist
     void prePersist() {
         if (id == null) id = UUID.randomUUID();

@@ -67,6 +67,28 @@ class SubscriptionPaidTest {
     }
 
     @Test
+    void aBillPaidAheadIsNotDueAndAgreesWithApplyPaid() throws Exception {
+        // dueToday and applyPaid share one rule (forward only): once applyPaid has a
+        // month, no day of that month or an earlier one is "due" for the bill.
+        ObjectNode d = doc();
+        MoneyService.applyPaid(d, "m1", "2026-10", LocalDate.of(2026, 9, 30)); // paid October early
+        assertEquals("2026-10", d.get("subscriptions").get(0).get("paidFor").asText());
+        assertEquals(1, SubscriptionDueScheduler.dueToday(d, LocalDate.of(2026, 9, 30)).size()); // Rent only
+        assertEquals(0, SubscriptionDueScheduler.dueToday(d, LocalDate.of(2026, 10, 30)).size()); // Spotify, paid
+        assertEquals("m2", SubscriptionDueScheduler.dueToday(d, LocalDate.of(2026, 10, 31)).get(0).path("id").asText());
+        assertEquals(2, SubscriptionDueScheduler.dueToday(d, LocalDate.of(2026, 11, 30)).size()); // next month due again
+    }
+
+    @Test
+    void aBillWithNoAmountIsNeverDueAndIsNamedForTheReply() throws Exception {
+        ObjectNode d = (ObjectNode) json.readTree(
+                "{\"subscriptions\":[{\"id\":\"x\",\"name\":\"Odd\",\"dueDay\":1,\"amount\":0}]}");
+        assertEquals(0, SubscriptionDueScheduler.dueToday(d, LocalDate.of(2026, 9, 1)).size());
+        assertEquals("Odd", MoneyService.unpricedName(d, "x"));
+        assertEquals(null, MoneyService.unpricedName(doc(), "m1"));
+    }
+
+    @Test
     void amountsGroupLikeTheApp() throws Exception {
         assertEquals("9,000", SubscriptionDueScheduler.amount(json.readTree("9000")));
         assertEquals("1,00,000", SubscriptionDueScheduler.amount(json.readTree("100000")));

@@ -277,6 +277,34 @@ button.gb-sectiontitle-act {
   border: 1px solid var(--border);
 }
 
+/* ---- Forced colours (Windows High Contrast) ----
+   The system repaints every colour and drops box-shadows, so a card drawn by
+   its shadow alone, a pill button drawn by its fill, and a focus ring drawn as a
+   box-shadow all vanish. Give them real borders and outlines in system colours. */
+@media (forced-colors: active) {
+  .gb-card,
+  .gb-modal,
+  .gb-input,
+  .gb-btn {
+    border: 1px solid CanvasText;
+  }
+  .gb-btn:disabled {
+    border-color: GrayText;
+    color: GrayText;
+  }
+  :focus-visible {
+    outline: 2px solid Highlight !important;
+    outline-offset: 2px;
+  }
+  .gb-check.is-done,
+  [aria-pressed='true'],
+  [aria-selected='true'] {
+    forced-color-adjust: none;
+    background: Highlight;
+    color: HighlightText;
+  }
+}
+
 /* ---- Buttons ---- */
 .gb-btn {
   font-family: var(--font-body);
@@ -350,16 +378,17 @@ button.gb-sectiontitle-act {
 }
 /* Destructive action (delete account). */
 .gb-btn--danger {
-  background: #e5484d;
-  color: #fff;
+  background: var(--danger-fill);
+  color: var(--fg-on-brand);
 }
 @media (hover: hover) {
   .gb-btn--danger:hover {
-    background: #c93b40;
+    background: var(--danger-fill-hover);
   }
 }
+/* --danger, not the light-mode literal: #c93b40 on the dark surface was ~3:1. */
 .gb-account-signout.is-danger {
-  color: #c93b40;
+  color: var(--danger);
 }
 .gb-btn--ghost {
   background: transparent;
@@ -490,7 +519,7 @@ button.gb-sectiontitle-act {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: var(--fg-on-brand);
   flex: none;
   margin: 0 6px -2px;
   box-shadow:
@@ -548,7 +577,7 @@ button.gb-sectiontitle-act {
   background: var(--success);
   box-shadow: 0 2px 0 var(--leaf-700);
   border-color: transparent;
-  color: #fff;
+  color: var(--fg-on-brand);
 }
 .gb-check.is-done svg {
   opacity: 1;
@@ -1408,7 +1437,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   padding: 0 5px;
   border-radius: 9px;
   background: var(--coral-500);
-  color: #fff;
+  color: var(--fg-on-brand);
   font-size: 0.65625rem;
   font-weight: 800;
   display: inline-flex;
@@ -1502,6 +1531,92 @@ body:has(.is-thinking, .gb-thinking)::after {
   display: flex;
   gap: 6px;
   flex-shrink: 0;
+}
+/* Mark all read / Clear read, the filter chips and Load older (app.js
+   notificationDropdown). */
+.gb-notif-head-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.gb-notif-link {
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: none;
+  color: var(--brand);
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.gb-notif-chips {
+  display: flex;
+  gap: 6px;
+  padding: 10px 14px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+  scrollbar-width: none;
+}
+.gb-notif-chips::-webkit-scrollbar {
+  display: none;
+}
+.gb-notif-chip {
+  flex: none;
+  min-height: 32px;
+  padding: 5px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--fg2);
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+.gb-notif-chip.is-on {
+  background: var(--brand-fill);
+  border-color: var(--brand-fill);
+  color: var(--fg-on-brand);
+}
+.gb-notif-link:focus-visible,
+.gb-notif-chip:focus-visible,
+.gb-notif-more:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+@media (hover: hover) {
+  .gb-notif-link:hover,
+  .gb-notif-more:hover {
+    background: var(--brand-soft);
+  }
+  .gb-notif-chip:hover:not(.is-on) {
+    border-color: var(--brand);
+    color: var(--fg1);
+  }
+}
+.gb-notif-more {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  padding: 12px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: none;
+  color: var(--brand);
+  font-family: var(--font-body);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.gb-notif-more:disabled {
+  color: var(--fg3);
+  cursor: default;
 }
 
 /* ---- Mentor chat ---- */
@@ -1645,6 +1760,49 @@ body:has(.is-thinking, .gb-thinking)::after {
   font-size: 0.8125rem;
   padding: 0 14px;
 }
+/* A failed send: the error, why, and a Retry beside it (mentor.js failRow). */
+.gb-msg-fail {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.gb-msg-fail .gb-msg-error {
+  padding: 0;
+}
+.gb-msg-row.is-failed .gb-msg-bubble {
+  opacity: 0.6;
+}
+/* Shown under a message that reads like a crisis; never sent or saved. */
+.gb-msg-crisis {
+  align-self: stretch;
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  background: var(--surface);
+  padding: 12px 14px;
+  font-size: 0.84375rem;
+  color: var(--fg2);
+  line-height: 1.45;
+}
+.gb-msg-crisis strong {
+  display: block;
+  color: var(--fg1);
+  margin-bottom: 4px;
+}
+.gb-msg-crisis a {
+  /* --brand is 2.8:1 on the light surface; this is the crisis helpline link. */
+  color: var(--brand-ink);
+}
+.gb-mentor-loadfail {
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+  padding: 24px 18px;
+}
 
 .gb-msg-bar {
   display: flex;
@@ -1702,6 +1860,10 @@ body:has(.is-thinking, .gb-thinking)::after {
   opacity: 0.55;
   cursor: not-allowed;
   box-shadow: none;
+}
+/* Send and Stop share the slot; `display: flex` above would beat the UA's [hidden]. */
+.gb-msg-send[hidden] {
+  display: none;
 }
 /* While waiting for Buddy's reply, gently pulse the send button. */
 .gb-msg-send.is-busy {
@@ -2201,6 +2363,83 @@ body:has(.is-thinking, .gb-thinking)::after {
   margin-top: 2px;
 }
 
+/* ---- First-run setup (app.js openFirstRunSetup) ----
+   One sheet, three steps; the step counter and dots sit above the title. */
+.gb-setup-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.gb-setup-count {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--fg3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.gb-setup-dots {
+  display: flex;
+  gap: 6px;
+}
+.gb-setup-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+  transition: background 0.2s ease;
+}
+.gb-setup-dot.is-on {
+  background: var(--brand);
+}
+.gb-setup-badge {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 12px;
+  border-radius: var(--radius-md);
+  background: var(--brand-soft);
+  color: var(--brand-soft-fg);
+}
+.gb-setup-zone {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+.gb-setup-zone-lbl {
+  font-size: 0.8125rem;
+  color: var(--fg3);
+  flex-shrink: 0;
+}
+/* "America/Argentina/Buenos_Aires" has no spaces to wrap at on a phone. */
+.gb-setup-zone-val {
+  font-weight: 600;
+  color: var(--fg1);
+  text-align: right;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.gb-setup-text {
+  margin: 0 0 8px;
+  color: var(--fg2);
+  line-height: 1.45;
+}
+.gb-setup-features .gb-feature-row {
+  padding: 10px 2px;
+}
+/* "Use <zone>" / "Keep <zone>" carry a zone name: let it wrap, never overflow. */
+.gb-setup-modal .gb-btn {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 /* ---- Settings: Account pane ---- */
 .gb-account-row {
   display: flex;
@@ -2369,6 +2608,52 @@ body:has(.is-thinking, .gb-thinking)::after {
   font-size: 0.8125rem;
   color: var(--fg3);
 }
+/* "Based on N days": how much data a card stands on. */
+.gb-insight-basis {
+  font-size: 0.75rem;
+  color: var(--fg3);
+  margin-top: 4px;
+}
+/* A card's next step (insights.js `action`): under the text, never full width. */
+.gb-insight-action {
+  margin-top: 8px;
+  align-self: flex-start;
+}
+.gb-insight-dismiss {
+  flex: none;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin: -10px -12px -10px auto;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--fg3);
+  cursor: pointer;
+}
+.gb-insight-dismiss:hover {
+  background: var(--surface-3);
+  color: var(--fg1);
+}
+/* Empty state's "4 of 7 days logged" meter. */
+.gb-insight-meter {
+  height: 6px;
+  margin: 0 18px 16px;
+  border-radius: 3px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.gb-insight-meter > div {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--brand);
+}
+.gb-insight-skel {
+  padding: 14px 16px;
+}
 
 /* ---- Circle challenges + leaderboard ---- */
 .gb-challenges-actions {
@@ -2476,6 +2761,280 @@ body:has(.is-thinking, .gb-thinking)::after {
   padding: 10px 0;
   border-bottom: 1px solid var(--surface-3);
 }
+/* Circle: "Requests for you", the card's tools/feed, the private-circle code. */
+.gb-circle-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 0.9375rem;
+  margin: 18px 0 10px;
+}
+.gb-circle-count {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--fg3);
+}
+.gb-request-row {
+  flex-wrap: wrap;
+}
+.gb-request-actions {
+  display: flex;
+  gap: 8px;
+  flex: none;
+  margin-left: auto;
+}
+.gb-circle-card-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+.gb-circle-card-foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px 12px;
+  border-top: 1px solid var(--surface-3);
+}
+.gb-circle-posts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 16px 14px;
+}
+.gb-circle-composer {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+.gb-circle-post-input {
+  flex: 1;
+  min-width: 0;
+  resize: vertical;
+}
+.gb-circle-post {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--surface-3);
+}
+.gb-circle-post-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.75rem;
+  color: var(--fg3);
+}
+.gb-circle-post-meta strong {
+  color: var(--fg1);
+}
+.gb-circle-post-body {
+  margin-top: 4px;
+  font-size: 0.875rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.gb-circle-code {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface-3);
+  font-size: 0.8125rem;
+}
+.gb-circle-code strong {
+  font-family: var(--font-mono, monospace);
+  letter-spacing: 0.12em;
+  user-select: all;
+}
+/* Circle: a post's kudos + delete; under each connection the agreement, the
+   Cheer / Nudge / Message / This week tools and the weekly card; the chat sheet. */
+.gb-circle-post-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+}
+.gb-kudos {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid var(--surface-3);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fg2);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.gb-kudos.is-on {
+  border-color: transparent;
+  background: var(--iris-100);
+  color: var(--iris-700);
+}
+.gb-kudos:disabled {
+  opacity: 0.6;
+}
+.gb-conn-item + .gb-conn-item {
+  border-top: 1px solid var(--surface-3);
+}
+.gb-conn-extra {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 16px 10px;
+}
+.gb-conn-agreement {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 32px;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--fg2);
+  font: inherit;
+  font-size: 0.8125rem;
+  text-align: left;
+  cursor: pointer;
+}
+.gb-conn-agreement span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.gb-conn-agreement.is-empty {
+  color: var(--fg3);
+}
+.gb-conn-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.gb-week-card {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface-3);
+  font-size: 0.8125rem;
+}
+.gb-week-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--fg3);
+}
+.gb-week-head strong {
+  color: var(--fg1);
+}
+.gb-week-stat {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 6px 0;
+  color: var(--fg2);
+}
+.gb-week-num {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.5rem;
+  color: var(--fg1);
+}
+.gb-week-streaks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.gb-week-streaks li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 0;
+}
+.gb-week-habit {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg1);
+}
+.gb-week-streak {
+  flex: none;
+  color: var(--fg2);
+  font-variant-numeric: tabular-nums;
+}
+.gb-chat-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-height: 0;
+}
+.gb-chat-log {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-height: min(52vh, 460px);
+  overflow-y: auto;
+  padding: 4px 2px;
+}
+.gb-chat-msg {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  max-width: 85%;
+}
+.gb-chat-msg.is-mine {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+.gb-chat-bubble {
+  padding: 8px 12px;
+  border-radius: 14px;
+  background: var(--surface-3);
+  color: var(--fg1);
+  font-size: 0.875rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.gb-chat-msg.is-mine .gb-chat-bubble {
+  background: var(--iris-100);
+  color: var(--iris-700);
+}
+.gb-chat-time {
+  margin-top: 2px;
+  font-size: 0.6875rem;
+  color: var(--fg3);
+}
+.gb-chat-event {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  align-self: center;
+  font-size: 0.75rem;
+  color: var(--fg3);
+  text-align: center;
+}
+.gb-chat-composer {
+  margin-top: 10px;
+}
+.gb-form-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.875rem;
+}
+.gb-form-check small {
+  display: block;
+  color: var(--fg3);
+  font-size: 0.75rem;
+}
 
 .gb-food-card {
   padding: 16px;
@@ -2560,6 +3119,150 @@ body:has(.is-thinking, .gb-thinking)::after {
     overflow-x: visible;
     row-gap: 8px;
   }
+}
+
+/* ---- Buddy: a reply's one-tap actions (mentor.js actionsRow) ---- */
+.gb-msg-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: 78%;
+  min-width: 0;
+}
+.gb-msg-col .gb-msg-bubble {
+  max-width: 100%;
+}
+.gb-msg-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.gb-msg-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: normal;
+  text-align: left;
+}
+.gb-msg-action-form .gb-input {
+  width: 100%;
+}
+
+/* ---- Buddy: the thread bar and the chats sheet ---- */
+.gb-mentor-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px 0;
+}
+.gb-mentor-thread {
+  flex: 1;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--fg1);
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.84375rem;
+  cursor: pointer;
+}
+.gb-mentor-thread-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gb-mentor-thread:focus-visible,
+.gb-thread-pick:focus-visible,
+.gb-thread-reflect:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.gb-mentor-thread:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.gb-thread-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.gb-thread-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  border-radius: var(--radius-md);
+}
+.gb-thread-row.is-current {
+  background: var(--brand-soft);
+}
+.gb-thread-pick {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 0;
+  background: none;
+  color: var(--fg1);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.gb-thread-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
+.gb-thread-date {
+  flex: none;
+  color: var(--fg3);
+  font-size: 0.75rem;
+}
+.gb-thread-rename {
+  flex: 1;
+  min-width: 0;
+}
+.gb-thread-del.is-armed {
+  width: auto;
+  padding: 0 10px;
+  color: var(--danger);
+  font-weight: 800;
+  font-size: 0.75rem;
+}
+.gb-thread-reflect {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 12px;
+  padding: 0 10px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--fg2);
+  font: inherit;
+  font-size: 0.8125rem;
+  text-align: left;
+  cursor: pointer;
+}
+.gb-thread-reflect-act {
+  margin-left: auto;
+  color: var(--brand-soft-fg);
+  font-weight: 800;
 }
 
 /* Clickable connection row */
@@ -2649,6 +3352,19 @@ body:has(.is-thinking, .gb-thinking)::after {
   margin-top: 3px;
   font-size: 0.6875rem;
   color: var(--fg3);
+  font-weight: 700;
+}
+/* "N changes waiting to sync": the offline outbox (scripts/outbox.js) is not empty. */
+.gb-outbox-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 16px 12px;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--warning-soft);
+  color: var(--warning-soft-fg);
+  font-size: 0.75rem;
   font-weight: 700;
 }
 .gb-profile-pop-xp {
@@ -2831,6 +3547,28 @@ body:has(.is-thinking, .gb-thinking)::after {
 .gb-row.is-done .title {
   text-decoration: line-through;
   color: var(--fg3);
+}
+/* A row's text as its own tap target (Habits: opens Edit). A button so the
+   check beside it isn't nested inside something clickable. */
+.gb-row-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 4px 0;
+  margin: -4px 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.gb-row-open:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 .gb-row .sub {
   font-size: 0.78125rem;
@@ -3807,7 +4545,7 @@ button.gb-food-level {
 }
 .gb-water-chip {
   background: color-mix(in srgb, var(--sky-500) 82%, white 18%);
-  color: #fff;
+  color: var(--fg-on-brand);
   border-radius: var(--radius-pill);
   padding: 6px 10px;
   font-size: 0.75rem;
@@ -4585,6 +5323,11 @@ button.gb-food-level {
   display: flex;
   flex-direction: column;
 }
+/* The repaint unit (app.js swaps it whole), not a box: its two blocks,
+   .gb-cal-reminders and .gb-cal-daylog, are laid out by .gb-cal itself. */
+.gb-cal-side {
+  display: contents;
+}
 .gb-cal-block {
   padding: 0 var(--gutter);
   margin-top: 16px;
@@ -5260,6 +6003,192 @@ button.gb-food-level {
 }
 .gb-food-hint {
   margin: -6px 0 0;
+}
+/* "Recent foods" under the Food field: one tap fills the form (openAddFood). */
+.gb-food-recent {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: -4px;
+}
+.gb-food-recent[hidden] {
+  display: none;
+}
+.gb-food-recent-chip {
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  min-height: 44px;
+  max-width: 100%;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--fg1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.gb-food-recent-chip:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+/* A food row's text is its edit button (openEditFood). */
+.gb-food-row-edit {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.gb-food-row-edit span:first-child {
+  color: var(--fg1);
+  font-weight: 700;
+}
+.gb-food-row-edit:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+/* The Food card grouped by meal slot (nutrition.js groupBySlot). */
+.gb-food-slot {
+  margin-top: 12px;
+}
+.gb-food-slot-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg2);
+}
+.gb-food-slot-kcal {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+  color: var(--fg3);
+}
+.gb-food-slot .gb-water-log {
+  margin-top: 4px;
+}
+.gb-food-copies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.gb-food-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-pill);
+  background: none;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--fg2);
+  cursor: pointer;
+}
+.gb-food-copy:focus-visible,
+.gb-food-star:focus-visible,
+.gb-water-drink:focus-visible,
+.gb-water-suggest:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+/* Fibre / sugar / sodium: only the figures the day actually has. */
+.gb-food-micros {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--fg3);
+}
+.gb-food-recent-chip.is-fav {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-color: var(--brand);
+  background: var(--brand-soft);
+  color: var(--brand-soft-fg);
+}
+.gb-food-star {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+}
+.gb-food-star.is-on {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+  color: var(--brand-soft-fg);
+}
+/* Barcode scanner sheet (openBarcodeScanner). */
+.gb-barcode-frame {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: #000;
+}
+.gb-barcode-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+/* The custom water dialog's drink picker and the goal dialog's suggestion. */
+.gb-water-drinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.gb-water-drink {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--fg1);
+  cursor: pointer;
+}
+.gb-water-drink.is-on {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+  color: var(--brand-soft-fg);
+}
+.gb-water-suggest {
+  align-self: flex-start;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px dashed var(--brand);
+  border-radius: var(--radius-pill);
+  background: none;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--brand-ink);
+  cursor: pointer;
 }
 /* An input with its unit inside the same box: "2 [pcs|g]", "320 kcal". */
 .gb-affix {
@@ -5975,6 +6904,7 @@ button.gb-food-level {
 .gb-water-add,
 .gb-segnav-btn,
 .gb-msg-chip,
+.gb-rem-snoozed--btn,
 .gb-wa-toggle {
   position: relative;
 }
@@ -6002,6 +6932,7 @@ button.gb-food-level {
 .gb-segnav-btn::before,
 .gb-msg-chip::before,
 .gb-pw-toggle::before,
+.gb-rem-snoozed--btn::before,
 .gb-wa-toggle::before {
   content: '';
   position: absolute;
@@ -6028,6 +6959,17 @@ button.gb-food-level {
   bottom: -10px;
   height: auto;
   transform: translateX(-50%);
+}
+/* Same problem sideways: the Habits reorder arrows (4px apart) and a milestone's
+   edit tools (2px apart) are 30px buttons in a row. Centred 44px overlays
+   overlapped the left neighbour by 5-6px, so a tap on the right edge of "Delete"
+   hit "Cancel". Each overlay is the column pitch instead (button + gap), still
+   44px tall; the row as a whole is covered with no dead space and no overlap. */
+.gb-habit-move .gb-icon-btn::before {
+  width: calc(100% + 4px);
+}
+.gb-goal-ms-tools .gb-icon-btn::before {
+  width: calc(100% + 2px);
 }
 
 /* ---- Quick add preview ---- */
@@ -6179,6 +7121,15 @@ button.gb-food-level {
 }
 
 /* ---- Focus stats card ---- */
+/* A failed stats load, with its retry. */
+.gb-focus-stats-error {
+  margin-top: 10px;
+  font-size: 0.8125rem;
+  color: var(--fg2);
+}
+.gb-focus-stats-error[hidden] {
+  display: none;
+}
 .gb-focus-statscard {
   margin-top: 16px;
 }
@@ -6205,6 +7156,136 @@ button.gb-food-level {
   font-size: 0.6875rem;
   color: var(--fg3);
   margin-top: 3px;
+}
+
+/* Timer card extras: "Sprint n of 4", "Focusing on…", the daily goal bar. */
+.gb-focus-cycle {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: var(--brand-soft-fg);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  margin-bottom: 2px;
+}
+.gb-focus-on {
+  margin-top: 10px;
+}
+.gb-focus-on .gb-field-label {
+  display: block;
+  margin-bottom: 4px;
+}
+.gb-focus-goal {
+  margin-top: 14px;
+  font-size: 0.8125rem;
+  color: var(--fg2);
+}
+.gb-focus-goal-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.gb-focus-goal-head .gb-login-link {
+  margin-left: auto;
+}
+.gb-focus-goal-streak {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 700;
+  color: var(--sun-700);
+}
+.gb-focus-goal-bar {
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.gb-focus-goal-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--iris-500);
+  transition: width var(--dur-base) var(--ease-out);
+}
+.gb-focus-goal-bar.is-met .gb-focus-goal-fill {
+  background: var(--leaf-500);
+}
+
+/* History card: 30-day bars (inline SVG; the table beside it is sr-only). */
+.gb-focus-histcard {
+  padding: 16px;
+}
+.gb-focus-hist-sum {
+  margin: 4px 0 10px;
+  font-size: 0.8125rem;
+  color: var(--fg2);
+}
+.gb-focus-hist-svg {
+  display: block;
+  width: 100%;
+  height: 96px;
+}
+.gb-focus-hist-bar {
+  fill: var(--iris-300);
+}
+.gb-focus-hist-bar.is-today {
+  fill: var(--iris-600);
+}
+.gb-focus-hist-hit {
+  fill: transparent;
+}
+.gb-focus-hist-hit:hover {
+  fill: var(--surface-3);
+  fill-opacity: 0.5;
+}
+.gb-focus-hist-goal {
+  stroke: var(--fg3);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+.gb-focus-hist-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-size: 0.6875rem;
+  color: var(--fg3);
+}
+.gb-focus-hist-sub {
+  margin-top: 14px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--fg2);
+}
+.gb-focus-hist-note {
+  margin-top: 6px;
+  font-size: 0.8125rem;
+  color: var(--fg3);
+}
+.gb-focus-links {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+}
+.gb-focus-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  border-top: 1px solid var(--border);
+  font-size: 0.8125rem;
+  color: var(--fg1);
+}
+.gb-focus-link-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gb-focus-link-mins {
+  font-weight: 700;
+  color: var(--fg2);
 }
 
 /* ---- First-run onboarding checklist ---- */
@@ -6284,7 +7365,7 @@ button.gb-food-level {
 }
 .gb-onboard-step.is-done .gb-onboard-step-ic {
   background: var(--success);
-  color: #fff;
+  color: var(--fg-on-brand);
 }
 .gb-onboard-step-tx {
   flex: 1;
@@ -6397,6 +7478,29 @@ button.gb-food-level {
   padding: 5px 10px;
   border-radius: var(--radius-pill);
 }
+/* Settings → Account → Two-step sign-in: the setup key, the otpauth link and
+   the recovery codes. Selectable text, wrapped anywhere (the link is one long
+   word), monospace so 0/O and 1/l read apart. */
+.gb-tfa-secret {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 0.9375rem;
+  letter-spacing: 0.04em;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  user-select: all;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.gb-tfa-uri {
+  font-size: 0.75rem;
+  letter-spacing: 0;
+}
+.gb-tfa-codes {
+  line-height: 1.7;
+}
 .gb-sec-divider {
   height: 1px;
   background: var(--border);
@@ -6440,8 +7544,8 @@ button.gb-food-level {
   color: var(--fg3);
 }
 .gb-mic.is-listening {
-  color: #fff;
-  background: #e5484d;
+  color: var(--fg-on-brand);
+  background: var(--danger-fill);
   animation: gb-mic-pulse 1.2s ease-in-out infinite;
 }
 @keyframes gb-mic-pulse {
@@ -6570,8 +7674,10 @@ button.gb-food-level {
 }
 
 .gb-toast.is-error {
-  border-color: color-mix(in srgb, var(--coral-500) 68%, var(--border-strong) 32%);
-  background: color-mix(in srgb, var(--coral-50) 62%, var(--surface) 38%);
+  /* Red, not the brand peach: an error that looks like "Saved" reads as one. */
+  border-color: color-mix(in srgb, var(--danger) 70%, var(--border-strong) 30%);
+  border-left: 4px solid var(--danger);
+  background: color-mix(in srgb, var(--danger) 7%, var(--surface) 93%);
 }
 
 .gb-toast.is-success {
@@ -6595,8 +7701,8 @@ button.gb-food-level {
 }
 
 .gb-toast.is-error .gb-toast-icon {
-  color: var(--brand-soft-fg);
-  background: color-mix(in srgb, var(--coral-100) 78%, transparent);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
 }
 
 .gb-toast.is-success .gb-toast-icon {
@@ -6633,8 +7739,8 @@ button.gb-food-level {
 
 @media (hover: hover) {
   .gb-toast.is-error .gb-toast-close:hover {
-    background: color-mix(in srgb, var(--coral-100) 70%, transparent);
-    color: var(--brand-soft-fg);
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
+    color: var(--danger);
   }
 }
 
@@ -6646,7 +7752,7 @@ button.gb-food-level {
 }
 
 [data-theme='dark'] .gb-toast.is-error {
-  background: color-mix(in srgb, var(--coral-500) 18%, var(--surface) 82%);
+  background: color-mix(in srgb, var(--danger) 16%, var(--surface) 84%);
 }
 
 [data-theme='dark'] .gb-toast.is-success {
@@ -6663,6 +7769,26 @@ button.gb-food-level {
     bottom: 20px;
     right: 20px;
   }
+}
+/* On a phone an open dialog is a bottom-heavy sheet, and the stack sat on its
+   Cancel and Save. With one open the stack moves to the top of the screen. */
+@media (max-width: 1023px) {
+  body:has(.gb-modal-overlay.is-open) .gb-toast-stack {
+    top: calc(10px + env(safe-area-inset-top, 0px));
+    bottom: auto;
+    right: 50%;
+    transform: translateX(50%);
+  }
+}
+
+/* Toast announcements (announce() in app.js): heard, not seen. */
+.gb-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 @media (max-width: 520px) {
@@ -7080,20 +8206,33 @@ button.gb-food-level {
     margin: 0;
   }
 
-  /* Calendar: two independent columns, capped & centered. */
+  /* Calendar: the month with the day's record (wins, tasks, food) under it on
+     the left, the day's reminders down the right. The 1fr second row is what
+     keeps the record tight under the month: an item spanning a flexible row
+     doesn't stretch the auto row above it, so the tall reminders column can't
+     open a gap there. */
   .gb-cal {
-    flex-direction: row;
-    align-items: flex-start;
-    gap: 28px;
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+    grid-template-areas:
+      'main side'
+      'day side';
+    align-items: start;
+    column-gap: 28px;
     max-width: 1180px;
     margin: 0 auto;
     padding: 28px 40px 40px;
   }
   .gb-cal-main {
-    flex: 1.4 1 0;
+    grid-area: main;
   }
-  .gb-cal-side {
-    flex: 1 1 0;
+  .gb-cal-reminders {
+    grid-area: side;
+  }
+  .gb-cal-daylog {
+    grid-area: day;
+    margin-top: 26px;
   }
   .gb-cal-block {
     padding: 0;
@@ -7667,13 +8806,18 @@ button.gb-food-level {
   border-radius: 9px;
   background: var(--brand-fill);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
-  transition: transform 0.28s cubic-bezier(0.34, 1.2, 0.64, 1);
+  transition:
+    transform 0.28s cubic-bezier(0.34, 1.2, 0.64, 1),
+    width 0.28s cubic-bezier(0.34, 1.2, 0.64, 1);
   pointer-events: none;
 }
 .gb-segnav-btn {
   position: relative;
   z-index: 1;
-  flex: 1 1 0;
+  /* Sized by the label, then the slack shared out: six equal tabs cut the
+     longest. The thumb follows the measured tab (buildSegSlider). */
+  flex: 1 1 auto;
+  white-space: nowrap;
   min-width: 0;
   padding: 8px 4px;
   font-size: 0.78125rem;
@@ -7819,7 +8963,7 @@ select.gb-input {
 }
 .gb-wa-verified-label {
   background: var(--gb-wa-green);
-  color: #fff;
+  color: var(--fg-on-brand);
   font-size: 0.625rem;
   padding: 1px 6px;
   border-radius: 999px;
@@ -8068,6 +9212,19 @@ select.gb-input {
   font-size: 0.84375rem;
   color: var(--fg3);
   padding: 6px 2px;
+}
+/* A section whose fetch failed: says so, with a retry, instead of looking empty. */
+.gb-family-section-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0;
+  padding: 10px 14px;
+  font-size: 0.84375rem;
+}
+.gb-family-section-error > span {
+  flex: 1;
+  min-width: 0;
 }
 
 /* Meal planner */
@@ -8640,11 +9797,11 @@ select.gb-input {
 }
 .gb-family-sectiontab.is-active .gb-family-tab-badge {
   background: rgba(255, 255, 255, 0.25);
-  color: #fff;
+  color: var(--fg-on-brand);
 }
 .gb-family-tab-badge.is-danger {
   background: var(--coral-500);
-  color: #fff;
+  color: var(--fg-on-brand);
 }
 
 /* Empty state */
@@ -8684,6 +9841,183 @@ select.gb-input {
 /* Tighten section spacing now that the nav is sticky */
 .gb-family {
   gap: 18px;
+}
+
+/* Chores: rows reuse the shopping row; these are the extras. */
+.gb-family-chore-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+.gb-family-chore-assignee {
+  flex: none;
+  max-width: 40%;
+  min-height: 36px;
+  border: 1.5px solid var(--border-strong);
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  text-overflow: ellipsis;
+}
+.gb-family-chore-assignee.is-set {
+  background: var(--brand-soft);
+  border-color: transparent;
+  color: var(--brand-soft-fg);
+}
+.gb-family-card-meta.is-overdue {
+  color: var(--danger);
+}
+.gb-family-card-meta svg {
+  vertical-align: -2px;
+  margin-right: 3px;
+}
+
+/* Cook per meal + recipe per dish (Today's plan, weekly cards) */
+.gb-family-cook {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.gb-family-cook-select {
+  min-height: 32px;
+  max-width: 140px;
+  padding: 4px 8px;
+  border-radius: var(--radius-pill);
+  border: 1.5px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--fg2);
+  font: inherit;
+  font-size: 0.78125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.gb-family-weekday-meal {
+  align-items: center;
+  flex-wrap: wrap;
+}
+.gb-family-weekday-meal-dishes {
+  flex: 1;
+  min-width: 0;
+}
+.gb-family-dish {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.gb-family-dish:hover span:first-child,
+.gb-family-dish.has-recipe span:first-child {
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+}
+.gb-family-dish-time {
+  font-size: var(--text-xs);
+  color: var(--fg3);
+}
+.gb-family-recipe-text {
+  min-height: 120px;
+  resize: vertical;
+  font-family: inherit;
+}
+.gb-family-recipe-count {
+  font-size: var(--text-xs);
+  color: var(--fg3);
+}
+.gb-family-recipe-count.is-over {
+  color: var(--danger);
+}
+
+/* Past plans */
+.gb-family-history {
+  padding: 14px;
+}
+.gb-family-history .gb-family-subhead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.gb-family-history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.gb-family-history-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Pantry "Low" toggle + restock */
+.gb-family-low {
+  flex: none;
+  min-height: 32px;
+}
+.gb-family-restock {
+  align-self: flex-start;
+}
+
+/* Shopping share / print */
+.gb-family-shop-tools {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.gb-family-shop-printout {
+  display: none;
+}
+@media print {
+  body.gb-print-shopping * {
+    visibility: hidden;
+  }
+  body.gb-print-shopping .gb-family-shop-printout,
+  body.gb-print-shopping .gb-family-shop-printout * {
+    visibility: visible;
+  }
+  body.gb-print-shopping .gb-family-shop-printout {
+    display: block;
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 100%;
+    padding: 12mm;
+    background: #fff;
+    color: #000;
+    font: 12pt/1.5 system-ui, sans-serif;
+  }
+  .gb-family-shop-printout h1 {
+    font-size: 18pt;
+    margin: 0 0 8mm;
+  }
+  .gb-family-shop-printout ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .gb-family-shop-printout li {
+    display: flex;
+    align-items: center;
+    gap: 4mm;
+    padding: 2mm 0;
+    border-bottom: 0.3mm dotted #000;
+    break-inside: avoid;
+  }
+  .gb-family-shop-printout-box {
+    flex: none;
+    width: 4mm;
+    height: 4mm;
+    border: 0.4mm solid #000;
+  }
 }
 
 /* =====================================================================
@@ -8907,6 +10241,112 @@ select.gb-input {
   padding: 20px 4px;
   text-align: center;
 }
+/* 1-year range: month labels under the weekly line, centred on each month's first week. */
+.gb-trend-ticks {
+  position: relative;
+  height: 14px;
+  margin: -2px 0 4px;
+}
+.gb-trend-ticks > span {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-size: var(--text-2xs);
+  color: var(--fg3);
+  white-space: nowrap;
+}
+.gb-trend-ticks > span.is-start {
+  transform: none;
+}
+.gb-trend-ticks > span.is-end {
+  transform: translateX(-100%);
+}
+/* Compare (scatter + r). Axis and tick ink stay recessive; points carry --brand. */
+.gb-compare-pick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.gb-compare-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 130px;
+  min-width: 0;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--fg2);
+}
+.gb-compare-field select {
+  width: 100%;
+  min-width: 0;
+}
+.gb-scatter-svg {
+  touch-action: pan-y;
+}
+/* Full-width on desktop scaled the ticks to body size; hold it near phone size. */
+.gb-compare-card .gb-trend-plot {
+  max-width: 460px;
+  margin: 0 auto;
+}
+.gb-scatter-axis {
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+.gb-scatter-tick {
+  fill: var(--fg3);
+  font-size: 10px;
+  font-family: inherit;
+}
+.gb-compare-result {
+  margin: 4px 0 6px;
+}
+.gb-compare-r {
+  font-family: var(--font-display);
+  font-weight: 800;
+  color: var(--fg1);
+}
+.gb-compare-words {
+  font-size: var(--text-sm);
+  color: var(--fg2);
+  margin-top: 2px;
+}
+/* This week vs last (water + food). */
+.gb-wow-card {
+  padding: 12px 16px 14px;
+}
+.gb-wow {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  margin-bottom: 8px;
+}
+.gb-wow th,
+.gb-wow td {
+  padding: 6px 4px;
+  text-align: right;
+  border-bottom: 1px solid var(--surface-3);
+  vertical-align: top;
+}
+.gb-wow thead th {
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  color: var(--fg3);
+}
+.gb-wow th[scope='row'] {
+  text-align: left;
+  font-weight: 700;
+  color: var(--fg2);
+}
+.gb-wow td {
+  color: var(--fg1);
+  font-variant-numeric: tabular-nums;
+}
+.gb-wow-n {
+  display: block;
+  font-size: var(--text-2xs);
+  color: var(--fg3);
+}
 
 /* =====================================================================
    Achievements gallery
@@ -9052,7 +10492,7 @@ select.gb-input {
   height: 24px;
   border-radius: 999px;
   background: var(--leaf-600);
-  color: #fff;
+  color: var(--fg-on-brand);
   flex: none;
 }
 .gb-ach-progress {
@@ -9084,6 +10524,11 @@ select.gb-input {
   margin-top: 12px;
   padding-top: 12px;
   border-top: 1px solid var(--border);
+}
+/* A goal's linked tasks (goals.js GoalTasks): the milestone list's look; with
+   none yet it is just the "Add a task" button. */
+.gb-goal-tasks:not(.gb-goal-ms) {
+  margin-top: 8px;
 }
 .gb-goal-ms-header {
   display: flex;
@@ -9652,6 +11097,62 @@ textarea:focus-visible,
   margin: 4px 0;
   padding-left: 22px;
 }
+/* Checklist: a <ul data-checklist>, its ticked items [data-checked]. The box is
+   the item's ::before, sitting in the left padding notes.js listens on (28px). */
+.gb-editor ul[data-checklist],
+.gb-note-card-body ul[data-checklist] {
+  list-style: none;
+  padding-left: 0;
+}
+.gb-editor ul[data-checklist] > li,
+.gb-note-card-body ul[data-checklist] > li {
+  position: relative;
+  padding-left: 26px;
+}
+.gb-editor ul[data-checklist] > li::before,
+.gb-note-card-body ul[data-checklist] > li::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 0.2em;
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 2px solid var(--fg3);
+  border-radius: 4px;
+}
+.gb-editor ul[data-checklist] > li::before {
+  cursor: pointer;
+}
+.gb-editor ul[data-checklist] > li[data-checked]::before,
+.gb-note-card-body ul[data-checklist] > li[data-checked]::before {
+  border-color: var(--iris-500);
+  background: var(--iris-500);
+}
+.gb-editor ul[data-checklist] > li[data-checked]::after,
+.gb-note-card-body ul[data-checklist] > li[data-checked]::after {
+  content: '';
+  position: absolute;
+  left: 7.5px;
+  top: calc(0.2em + 3px);
+  width: 5px;
+  height: 9px;
+  border: solid var(--fg-on-brand);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.gb-editor ul[data-checklist] > li[data-checked],
+.gb-note-card-body ul[data-checklist] > li[data-checked] {
+  color: var(--fg3);
+  text-decoration: line-through;
+}
+/* The "changed on another device" choice: three stacked answers. */
+.gb-note-conflict {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
 .gb-editor a {
   color: var(--brand-ink);
   text-decoration: underline;
@@ -10023,6 +11524,257 @@ textarea:focus-visible,
 }
 .gb-note-foot .gb-btn--primary {
   flex: 2 1 0;
+}
+/* Title takes the row, so Archive and Delete sit together at the end. */
+.gb-note-modal-head .gb-modal-title {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---- Notes: views, sort, label filter, labels, search marks, Trash, offline ---- */
+.gb-note-views {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.gb-note-views[hidden],
+.gb-notes-tools[hidden],
+.gb-note-filter[hidden],
+.gb-note-offline[hidden],
+.gb-note-composer[hidden] {
+  display: none;
+}
+.gb-note-view,
+.gb-note-chip {
+  min-height: 40px;
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--fg2);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast),
+    color var(--dur-fast),
+    background var(--dur-fast);
+}
+@media (hover: hover) {
+  .gb-note-view:hover,
+  .gb-note-chip:hover {
+    border-color: var(--brand);
+    color: var(--fg1);
+  }
+}
+.gb-note-view.is-on,
+.gb-note-chip.is-on {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+  color: var(--brand-ink);
+}
+.gb-note-view:focus-visible,
+.gb-note-chip:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+/* The Notes top bar: search + sort, first on the screen and sticky while the
+   list scrolls. Same treatment as .gb-family-sectionnav: a solid surface bar
+   (not --bg, which the premium skin's gradients show through, and not a blur,
+   which re-rasterises every scroll frame) bled to the gutter edges. */
+.gb-notes-tools {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  margin: 0 calc(-1 * var(--gutter));
+  padding: 8px var(--gutter);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.gb-notes-tools .gb-notes-search {
+  flex: 1;
+  min-width: 0;
+}
+.gb-notes-sort {
+  flex: none;
+  width: auto;
+  max-width: 44%;
+}
+/* One scrolling row on a phone rather than a wall of chips over the notes. */
+.gb-note-filter {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  /* Room for the focus ring, which overflow would otherwise clip. */
+  padding: 3px;
+  margin: -3px;
+}
+.gb-note-filter::-webkit-scrollbar {
+  display: none;
+}
+.gb-note-filter .gb-note-chip {
+  flex: none;
+  white-space: nowrap;
+}
+.gb-note-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+  color: var(--fg2);
+  font-size: 0.75rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.gb-note-card-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+.gb-note-labels-edit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.gb-note-label-chips {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.gb-note-labels-edit .gb-note-label {
+  font-size: 0.8125rem;
+  padding: 2px 2px 2px 10px;
+}
+.gb-note-label-x {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin: -4px 0;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--fg3);
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .gb-note-label-x:hover {
+    color: var(--fg1);
+  }
+}
+.gb-note-label-input {
+  flex: 1;
+  min-width: 8em;
+  min-height: 36px;
+  border: none;
+  background: transparent;
+  color: var(--fg1);
+  font: inherit;
+  font-size: 0.875rem;
+}
+.gb-note-label-input:focus {
+  outline: none;
+}
+.gb-note-labels-edit:focus-within {
+  border-color: var(--ring);
+}
+/* A search hit: the warning tint with its own pinned foreground, which reads
+   in both themes (the reason COLORS above uses the soft tokens). */
+.gb-note-hit {
+  padding: 0 1px;
+  border-radius: 3px;
+  background: var(--warning-soft);
+  color: var(--warning-soft-fg);
+  font-weight: 700;
+}
+.gb-note-card-snippet {
+  margin: 0;
+  color: var(--fg2);
+  font-size: 0.875rem;
+  line-height: var(--leading-relaxed);
+  overflow-wrap: anywhere;
+}
+.gb-note-card-snippet[hidden],
+.gb-note-card-body[hidden] {
+  display: none;
+}
+.gb-note-trash-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.gb-note-trash-actions .gb-btn {
+  flex: 1 1 auto;
+}
+.gb-note-forever {
+  color: var(--danger);
+}
+.gb-note-offline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 6px 6px 14px;
+  border-radius: var(--radius-md);
+  background: var(--warning-soft);
+  color: var(--warning-soft-fg);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.gb-note-offline > span {
+  flex: 1;
+  min-width: 0;
+}
+.gb-note-offline .gb-btn {
+  color: inherit;
+}
+/* The read-only view (offline, Trash) uses the editor's type without its box. */
+.gb-note-readonly {
+  min-height: 0;
+  padding: 0;
+  max-height: none;
+}
+.gb-note-readonly img {
+  max-width: 100%;
+  border-radius: var(--radius-md);
+}
+.gb-note-readonly-why {
+  margin: 10px 0 0;
+  color: var(--fg3);
+  font-size: 0.8125rem;
+}
+/* The toolbar's quote and inline code, in the editor and on the card. */
+.gb-editor blockquote,
+.gb-note-card-body blockquote {
+  margin: 6px 0;
+  padding: 2px 0 2px 12px;
+  border-left: 3px solid var(--border);
+  color: var(--fg2);
+}
+.gb-editor code,
+.gb-note-card-body code {
+  padding: 1px 4px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-3);
+  font-family: var(--font-mono);
+  font-size: 0.85em;
 }
 
 /* ---- freeze calendar ----
@@ -10647,4 +12399,1067 @@ h2[tabindex='-1']:focus {
     border-radius: 0 var(--radius-2xl) var(--radius-2xl) 0;
     animation: gb-more-fade var(--dur-fast) var(--ease-out);
   }
+}
+
+/* ---- Settings: your own notification sounds ----
+   The Alerts tab's list of uploaded / recorded sounds (up to four), the add
+   buttons, and the recording panel. Rows follow the account-row vernacular:
+   hairline-divided, no card of their own, since they sit inside the Settings
+   pane's card already. */
+.gb-sounds {
+  margin-top: 14px;
+}
+.gb-sounds-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--fg2);
+  margin-bottom: 4px;
+}
+.gb-sound-count {
+  font-weight: 600;
+  color: var(--fg3);
+  font-variant-numeric: tabular-nums;
+}
+.gb-sound-list {
+  border-top: 1px solid var(--surface-3);
+}
+.gb-sound-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--surface-3);
+}
+.gb-sound-chip {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  color: var(--fg2);
+}
+.gb-sound-row.is-default .gb-sound-chip {
+  background: var(--brand-soft);
+  color: var(--brand-soft-fg);
+}
+.gb-sound-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+/* The name is the rename button: a plain row of text, with the tap target
+   covering title and meta so it clears 44px. */
+button.gb-sound-name {
+  align-items: flex-start;
+  justify-content: center;
+  min-height: 44px;
+  padding: 2px 4px;
+  margin-left: -4px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  button.gb-sound-name:hover {
+    background: var(--surface-2);
+  }
+}
+button.gb-sound-name:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+.gb-sound-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+}
+.gb-sound-title-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gb-sound-title-edit {
+  flex-shrink: 0;
+  color: var(--fg3);
+}
+/* Renaming: the field gets the row; Play and Remove step aside until it's done. */
+.gb-sound-row.is-renaming .gb-sound-play,
+.gb-sound-row.is-renaming .gb-sound-remove {
+  display: none;
+}
+.gb-sound-title-text {
+  font-weight: 600;
+  color: var(--fg1);
+}
+.gb-sound-meta {
+  font-size: 0.75rem;
+  color: var(--fg3);
+}
+.gb-sound-row.is-default .gb-sound-meta {
+  color: var(--brand-soft-fg);
+  font-weight: 700;
+}
+/* The tone picker holds up to twelve: a fixed four-column grid (as
+   .gb-segmented--repeat does), so a sound's free-text name ellipsizes inside
+   its cell instead of wrapping it to two lines. A plain flex row can't do
+   that — with min-width: 0 every item shrank onto one line instead. */
+.gb-sound-picker .gb-segmented {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.gb-sound-picker .gb-seg {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+.gb-sound-row .gb-btn--icon {
+  flex-shrink: 0;
+  min-width: 44px;
+}
+/* Playing: the Play button turns into a filled Pause, the title takes the
+   brand colour, and the chip's icon gives way to three moving bars. */
+.gb-sound-play.is-on {
+  background: var(--brand);
+  color: var(--fg-on-brand);
+}
+.gb-sound-row.is-playing .gb-sound-title-text {
+  color: var(--brand-ink);
+}
+.gb-sound-row.is-playing .gb-sound-chip {
+  background: var(--brand-soft);
+  color: var(--brand-soft-fg);
+}
+.gb-sound-eq {
+  display: none;
+  align-items: flex-end;
+  gap: 2px;
+  height: 16px;
+}
+.gb-sound-eq i {
+  display: block;
+  width: 3px;
+  height: 100%;
+  border-radius: 2px;
+  background: currentColor;
+  transform-origin: bottom;
+  transform: scaleY(0.5);
+}
+.gb-sound-eq i:nth-child(2) {
+  transform: scaleY(0.9);
+}
+.gb-sound-chip-icon {
+  display: inline-flex;
+}
+.gb-sound-row.is-playing .gb-sound-chip-icon {
+  display: none;
+}
+.gb-sound-row.is-playing .gb-sound-eq {
+  display: inline-flex;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .gb-sound-row.is-playing .gb-sound-eq i {
+    animation: gb-sound-eq 0.9s var(--ease-standard) infinite;
+  }
+  .gb-sound-row.is-playing .gb-sound-eq i:nth-child(2) {
+    animation-delay: -0.3s;
+  }
+  .gb-sound-row.is-playing .gb-sound-eq i:nth-child(3) {
+    animation-delay: -0.6s;
+  }
+}
+@keyframes gb-sound-eq {
+  0%,
+  100% {
+    transform: scaleY(0.3);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+.gb-sound-rename.gb-input {
+  min-height: 40px;
+  padding: 8px 10px;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+.gb-sound-remove.is-armed {
+  color: var(--danger);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  padding: 4px 10px;
+}
+.gb-sound-empty {
+  padding: 14px;
+  margin-top: 6px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  color: var(--fg3);
+  line-height: var(--leading-snug);
+}
+.gb-sound-list:has(.gb-sound-empty) {
+  border-top: none;
+}
+.gb-sound-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.gb-sound-actions .gb-btn {
+  flex: 1 1 120px;
+}
+.gb-sound-rec {
+  margin-top: 12px;
+  padding: 14px;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+.gb-sound-rec-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  color: var(--fg1);
+}
+.gb-sound-rec-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--danger);
+}
+.gb-sound-rec-label {
+  flex: 1;
+}
+.gb-sound-rec-time {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--fg2);
+}
+.gb-sound-rec-track {
+  height: 6px;
+  margin-top: 10px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.gb-sound-rec-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--danger);
+  border-radius: inherit;
+}
+.gb-sound-rec .gb-sound-actions {
+  margin-top: 12px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .gb-sound-rec-dot {
+    animation: gb-sound-rec-pulse 1.2s var(--ease-standard) infinite;
+  }
+}
+@keyframes gb-sound-rec-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* ---- Settings: Reminders (defaults, snooze, the whole list) ----
+   The pickers share the tone picker's grid so no label truncates to "1…"; the
+   list rows are the calendar's (.gb-rem-accent carries the tag colour). */
+.gb-remset-picker .gb-segmented {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.gb-remset-picker--5 .gb-segmented {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+.gb-remset-picker .gb-seg {
+  white-space: nowrap;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+.gb-remset-add {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+.gb-remset-add-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.gb-remset-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--fg3);
+}
+.gb-remset-field .gb-input {
+  width: 100%;
+  min-width: 0;
+}
+.gb-remset-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.gb-remset-list {
+  display: flex;
+  flex-direction: column;
+  margin-top: 10px;
+}
+.gb-remset-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.gb-remset-row:first-child {
+  border-top: none;
+}
+.gb-remset-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.gb-remset-text {
+  font-weight: 700;
+  font-size: 0.90625rem;
+  color: var(--fg1);
+  overflow-wrap: anywhere;
+}
+.gb-remset-meta {
+  font-size: 0.75rem;
+  color: var(--fg3);
+}
+.gb-remset-snoozed {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  min-height: 28px;
+  padding: 2px 8px;
+  border: 1px solid color-mix(in srgb, var(--sky-500) 45%, transparent);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--sky-50) 70%, transparent);
+  color: var(--fg1);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.gb-remset-snoozed:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+/* The calendar row's "Snoozed till 09:20". */
+.gb-rem-snoozed {
+  color: var(--fg2);
+  font-weight: 700;
+}
+/* ...as a button that cancels it: the row's own way to call a snooze off. */
+.gb-rem-snoozed--btn {
+  min-height: 28px;
+  padding: 2px 8px;
+  border: 1px solid color-mix(in srgb, var(--sky-500) 45%, transparent);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--sky-50) 70%, transparent);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.gb-rem-snoozed--btn:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+/* The edit dialog's "No time" and "No end date": quiet links under their field. */
+.gb-rem-notime {
+  display: block;
+  margin-top: 6px;
+}
+
+/* Snooze on a reminder's toast and its bell card. */
+.gb-toast-action {
+  flex: none;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--fg1);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.gb-toast-action:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+.gb-btn.gb-notif-snooze {
+  width: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+.gb-rem-defaults-link {
+  align-self: flex-start;
+  margin: 6px 0 2px;
+  padding: 4px 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 0.75rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* ---- Dropdowns ----
+   The closed field reads as a control rather than a text box: bolder value,
+   the surface colour, a brand edge on hover. Where the browser lets the open
+   list be styled (appearance: base-select — current Chrome, and the Android
+   WebView the app runs in) it gets the app's own popover: rounded, shadowed,
+   a tinted row for the current choice. Everywhere else the native list stays. */
+select.gb-input {
+  font-weight: 600;
+  background-color: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+@media (hover: hover) {
+  select.gb-input:hover:not(:disabled) {
+    border-color: color-mix(in srgb, var(--brand) 45%, var(--border-strong));
+  }
+}
+@supports (appearance: base-select) {
+  select.gb-input,
+  select.gb-input::picker(select) {
+    appearance: base-select;
+  }
+  select.gb-input {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background-image: none;
+    padding-right: 12px;
+  }
+  select.gb-input::picker-icon {
+    content: '';
+    width: 16px;
+    height: 16px;
+    margin-left: auto;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")
+      center / 16px no-repeat;
+    transition: rotate var(--dur-fast);
+  }
+  select.gb-input:open {
+    border-color: var(--brand);
+    box-shadow: 0 0 0 3px var(--brand-soft);
+  }
+  select.gb-input:open::picker-icon {
+    rotate: 180deg;
+  }
+  select.gb-input::picker(select) {
+    margin-top: 6px;
+    padding: 6px;
+    max-height: min(320px, 60vh);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    color: var(--fg1);
+    box-shadow: var(--shadow-lg);
+  }
+  select.gb-input option {
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: var(--radius-md);
+    font-weight: 500;
+    cursor: pointer;
+  }
+  select.gb-input option:hover,
+  select.gb-input option:focus-visible {
+    outline: none;
+    background: color-mix(in srgb, var(--brand-soft) 60%, transparent);
+  }
+  select.gb-input option:checked {
+    background: var(--brand-soft);
+    color: var(--brand-soft-fg);
+    font-weight: 700;
+  }
+  select.gb-input option::checkmark {
+    order: 1;
+    margin-left: auto;
+    color: var(--brand);
+  }
+}
+/* Six settings tabs on a phone: a touch smaller and tighter so every label
+   fits whole down to 360px wide (the bar is ~270px there). */
+@media (max-width: 420px) {
+  .gb-segnav-btn {
+    padding-left: 2px;
+    padding-right: 2px;
+    font-size: 0.75rem;
+    letter-spacing: -0.01em;
+  }
+}
+/* One line, always: a long option ellipsises rather than growing the field. */
+select.gb-input {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gb-remset-field .gb-input {
+  padding-left: 10px;
+  padding-right: 8px;
+}
+
+/* ---- A reminder's Notify: presets, or Custom… minutes / hours ---- */
+.gb-notify {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.gb-notify-custom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.gb-notify-custom .gb-notify-amount {
+  width: 88px;
+  flex: none;
+}
+.gb-notify-custom .gb-notify-unit {
+  width: auto;
+  flex: 1 1 140px;
+  min-width: 0;
+}
+.gb-notify-hint {
+  font-size: 0.75rem;
+  color: var(--fg3);
+}
+.gb-remset-field--wide {
+  grid-column: 1 / -1;
+}
+
+/* ---- "Add your own sound" from a Tone list ---- */
+.gb-tone-choices {
+  margin-top: 14px;
+}
+.gb-tone-modal .gb-sound-rec {
+  margin-top: 14px;
+}
+.gb-tone-have {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+.gb-tone-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--fg1);
+}
+button.gb-tone-chip {
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  min-height: 34px;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  button.gb-tone-chip:hover {
+    border-color: var(--brand);
+  }
+}
+button.gb-tone-chip:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+/* =====================================================================
+   Habit history — Edit habit's top block (habitHistoryPanel in app.js):
+   three numbers, a 12-week heatmap (columns are ISO weeks, Monday on top),
+   and a legend. The last 8 days are buttons that tick a missed day.
+   ===================================================================== */
+.gb-hh {
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.gb-hh-loading {
+  padding: 18px 0;
+  text-align: center;
+  color: var(--fg3);
+  font-size: 0.875rem;
+}
+.gb-hh-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.gb-hh-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.gb-hh-stat-val {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.25rem;
+  color: var(--fg1);
+}
+.gb-hh-stat-label {
+  font-size: 0.75rem;
+  color: var(--fg3);
+}
+.gb-hh-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 3px;
+}
+.gb-hh-week {
+  display: grid;
+  grid-template-rows: repeat(7, auto);
+  gap: 3px;
+}
+.gb-hh-day {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  max-width: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: var(--surface);
+  font: inherit;
+}
+.gb-hh-day.is-done {
+  background: var(--leaf-500);
+}
+.gb-hh-day.is-missed {
+  background: var(--coral-100);
+}
+.gb-hh-day.is-frozen {
+  background: var(--sky-100);
+  border-color: var(--sky-500);
+}
+.gb-hh-day.is-open,
+.gb-hh-day.is-today {
+  border-color: var(--border);
+}
+.gb-hh-day.is-before,
+.gb-hh-day.is-future {
+  background: transparent;
+}
+/* Today: ink, not the focus ring's coral, which is the "missed" hue too. */
+.gb-hh-day.is-now {
+  box-shadow: 0 0 0 1.5px var(--fg1);
+}
+.gb-hh-day.is-editable {
+  position: relative;
+  cursor: pointer;
+}
+/* Today and the 7 days before it are buttons drawn at the cell size (~19-26px
+   on a phone). WCAG 2.5.8 asks for 24px or 24px of spacing; the overlay spans
+   the 3px gaps so the hit area is the full column pitch, and on small phones
+   the panel's side padding gives the grid back 12px so the pitch clears 24px
+   from 360px up. (At 320px it is ~21px: 12 columns can't fit 24 each.)
+   Kept here, not in the ≤380 block, because .gb-hh comes later and would win. */
+.gb-hh-day.is-editable::before {
+  content: '';
+  position: absolute;
+  inset: -2.5px;
+}
+@media (max-width: 380px) {
+  .gb-hh {
+    padding-inline: 6px;
+  }
+}
+.gb-hh-day.is-editable:disabled {
+  cursor: progress;
+}
+.gb-hh-day.is-editable:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+@media (hover: hover) {
+  .gb-hh-day.is-editable:not(:disabled):hover {
+    border-color: var(--brand);
+  }
+}
+.gb-hh-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 10px 0 4px;
+  font-size: 0.75rem;
+  color: var(--fg2);
+}
+.gb-hh-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.gb-hh-legend-item .gb-hh-day {
+  width: 12px;
+  height: 12px;
+}
+
+/* Habits screen, reorder mode: two arrows replace the rest-day and tick. */
+.gb-habit-move {
+  display: inline-flex;
+  gap: 4px;
+}
+.gb-habit-move .gb-icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* "Break a habit" (kind quit): a heatmap day is clean or slipped, and the
+   Habits row trades the tick for an "I slipped" pill (openSlipDialog). */
+.gb-hh-day.is-clean {
+  background: var(--leaf-500);
+}
+.gb-hh-day.is-slipped {
+  background: var(--coral-500);
+}
+.gb-slip-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--fg2);
+  font-family: var(--font-body);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.gb-slip-btn.is-slipped {
+  background: var(--coral-50);
+  border-color: var(--coral-500);
+  color: var(--coral-600);
+}
+.gb-slip-btn:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+@media (hover: hover) {
+  .gb-slip-btn:hover {
+    border-color: var(--border-strong);
+  }
+}
+
+/* The heatmap's day popover: one past day's tick (or slip) and its note,
+   opened by tapping an editable day. Inline under the grid, not floating, so
+   it scrolls with the dialog and never clips at its edge. */
+.gb-hh-pop {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.gb-hh-pop-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 0.875rem;
+  color: var(--fg1);
+}
+.gb-hh-pop-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.gb-hh-pop-actions .gb-btn {
+  width: auto;
+  padding: 7px 12px;
+}
+/* Recent notes, under the legend. */
+.gb-hh-notes {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.gb-hh-note {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 0.8125rem;
+  color: var(--fg2);
+  overflow-wrap: anywhere;
+}
+.gb-hh-note-date {
+  flex: none;
+  font-weight: 700;
+  color: var(--fg1);
+}
+.gb-hh-note .gb-hh-day {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  align-self: center;
+}
+
+/* Goal milestones: a row open for editing (rename, due date, move, delete),
+   the due chip on a plain row, and a goal's linked-habits line. */
+.gb-goal-ms-row.is-editing {
+  flex-wrap: wrap;
+  align-items: flex-end;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.gb-goal-ms-edit {
+  flex: 1 1 200px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+.gb-goal-ms-edit .gb-goal-ms-input {
+  flex: 1 1 160px;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--fg1);
+  font: inherit;
+  font-size: 0.875rem;
+}
+.gb-goal-ms-due-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.gb-goal-ms-due-input {
+  min-height: 40px;
+}
+.gb-goal-ms-tools {
+  display: flex;
+  gap: 2px;
+  flex: none;
+}
+.gb-goal-ms-tools .gb-icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.gb-goal-ms-due {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: var(--text-xs);
+  color: var(--fg3);
+  white-space: nowrap;
+}
+.gb-goal-ms-due.is-overdue {
+  color: var(--coral-700);
+  font-weight: 600;
+}
+.gb-goal-linked {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: var(--text-xs);
+  color: var(--fg2);
+}
+.gb-goal-habit-picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* ---- Reminders: done tick, notes, the richer repeat rule (calendar.js) ---- */
+/* The tick is per occurrence (reminder_done): a done one is struck through and
+   rings nowhere for that day. 32px hit area around a 22px box. */
+.gb-rem-check {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin: -4px -4px 0 -6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fg-on-brand);
+  cursor: pointer;
+}
+.gb-rem-check::before {
+  content: '';
+  grid-area: 1 / 1;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-pill);
+  border: 2px solid var(--border-strong);
+  background: var(--surface);
+}
+.gb-rem-check svg {
+  grid-area: 1 / 1;
+  position: relative;
+}
+.gb-rem-check.is-on::before {
+  border-color: var(--brand-fill);
+  background: var(--brand-fill);
+}
+.gb-rem-check:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+  border-radius: var(--radius-pill);
+}
+.gb-rem-row.is-done .gb-rem-text {
+  text-decoration: line-through;
+  color: var(--fg2);
+}
+.gb-rem-notes {
+  margin-top: 3px;
+  font-size: 0.8125rem;
+  color: var(--fg2);
+  line-height: 1.4;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.gb-rem-notes-input {
+  resize: vertical;
+  min-height: 52px;
+  font: inherit;
+}
+.gb-rule {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+.gb-rule-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.gb-rule-word {
+  font-size: 0.84375rem;
+  font-weight: 600;
+  color: var(--fg2);
+}
+.gb-rule-num {
+  width: 76px;
+  flex: none;
+}
+.gb-rule-days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.gb-rule-day {
+  min-width: 44px;
+  min-height: 36px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--fg1);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.gb-rule-day.is-on {
+  border-color: var(--brand-fill);
+  background: var(--brand-fill);
+  color: var(--fg-on-brand);
+}
+.gb-rule-day:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* ---- Saying a reminder: the mic beside its text (calendar form, Settings) ---- */
+.gb-rem-text-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+.gb-rem-text-row > .gb-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.gb-rem-mic {
+  flex: none;
+  width: 48px;
+  min-height: 44px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.gb-rem-mic.is-busy {
+  opacity: 0.6;
+  cursor: progress;
+}
+.gb-voice-note {
+  margin: 6px 0 0;
+  color: var(--fg2);
 }

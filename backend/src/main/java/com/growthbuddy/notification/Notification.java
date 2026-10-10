@@ -33,6 +33,11 @@ public class Notification {
     @Column(nullable = false, length = 32)
     private NotificationKind kind;
 
+    /** Null on rows from before the column: read it through {@link #effectiveCategory()}. */
+    @Enumerated(EnumType.STRING)
+    @Column(length = 16)
+    private NotifyCategory category;
+
     @Column(nullable = false, length = 255)
     private String title;
 
@@ -47,6 +52,10 @@ public class Notification {
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
+
+    public NotifyCategory effectiveCategory() {
+        return category != null ? category : NotifyCategory.of(kind);
+    }
 
     @PrePersist
     void prePersist() {

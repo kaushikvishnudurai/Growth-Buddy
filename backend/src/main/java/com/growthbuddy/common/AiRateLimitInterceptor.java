@@ -35,6 +35,10 @@ public class AiRateLimitInterceptor implements HandlerInterceptor {
         // rest are reads or clears on the same paths, and counting them let two Family
         // visits cost as much as two generated plans.
         if (!"POST".equalsIgnoreCase(request.getMethod())) return true;
+        // A streamed reply (SseEmitter) ends with an ASYNC re-dispatch of the same
+        // request, and Spring runs preHandle again on it. Counting that charged
+        // every streamed Buddy message twice.
+        if (request.getDispatcherType() == jakarta.servlet.DispatcherType.ASYNC) return true;
         String who;
         try {
             who = "u:" + CurrentUser.id();

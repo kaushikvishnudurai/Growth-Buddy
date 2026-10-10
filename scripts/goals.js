@@ -2,6 +2,13 @@
    Growth Buddy — Goals screen (short / mid / long term goals + actions)
    ===================================================================== */
 import { h, Icon, Pill, openModal, shakeRefusal } from './gb-kit.js';
+import {
+  moveItem,
+  renameMilestone,
+  setMilestoneDue,
+  milestoneDueState,
+  liveLinkedIds,
+} from './goal-milestones.js';
 
 const HORIZON_LABEL = {
   short_term: 'Short Term',
@@ -28,10 +35,58 @@ function fmtDate(value) {
   }
 }
 
+/* Today as YYYY-MM-DD in the account's timezone, which is what the server's
+   UserClock checks an action date against. The device's own date disagreed
+   with it for anyone whose phone and account zones differ (travel, an account
+   left on UTC): the picker allowed a day the server then refused, or blocked
+   one it would take. Set by ScreenGoals from the user; device date if unset. */
+let userZone = '';
 function todayKey() {
+  if (userZone) {
+    try {
+      // en-CA formats as YYYY-MM-DD.
+      return new Intl.DateTimeFormat('en-CA', {
+        timeZone: userZone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(new Date());
+    } catch (_) {
+      /* unknown zone id: fall through to the device date */
+    }
+  }
   const d = new Date();
   const pad = (n) => (n < 10 ? '0' + n : String(n));
   return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+}
+
+/* Whole days from today to a YYYY-MM-DD target (negative = past). */
+function daysUntil(dateKey) {
+  if (!dateKey) return null;
+  const [y, m, d] = String(dateKey).split('-').map(Number);
+  const [ty, tm, td] = todayKey().split('-').map(Number);
+  if (!y || !m || !d) return null;
+  return Math.round((Date.UTC(y, m - 1, d) - Date.UTC(ty, tm - 1, td)) / 86400000);
+}
+
+/* Active goals first, soonest target first (no target after dated ones), then
+   completed ones, most recently completed first. Newest-first within a tie,
+   which is the order the server sends. */
+function sortGoals(goals) {
+  return (goals || [])
+    .map((g, i) => ({ g, i }))
+    .sort((a, b) => {
+      if (a.g.completed !== b.g.completed) return a.g.completed ? 1 : -1;
+      if (a.g.completed) {
+        return (
+          String(b.g.completedAt || '').localeCompare(String(a.g.completedAt || '')) || a.i - b.i
+        );
+      }
+      const at = a.g.targetDate || '9999-12-31';
+      const bt = b.g.targetDate || '9999-12-31';
+      return at.localeCompare(bt) || a.i - b.i;
+    })
+    .map((x) => x.g);
 }
 
 /* The shared dialog with this screen's own wording for a failed save. Returns
@@ -45,12 +100,16 @@ function confirmInModal({ title, body, primary, onConfirm }) {
     title,
     body: h('div', { class: 'gb-note-hint' }, body),
     primary,
+    destructive: true,
     onPrimary: onConfirm,
   });
 }
 
 /* ---- Goal progress: open edit dialog ---- */
-function openEditProgress(goal, progress, onUpdateProgress) {
+function openEditProgress(goal, progress, onUpdateProgress, linkedCount = 0) {
+  // With habits linked, the tracker can count itself: a day any of them was
+  // done is a day followed (from `autoSince`, the goal's start).
+  let auto = !!(progress && progress.autoDays) && linkedCount > 0;
   const durationInput = h('input', {
     type: 'number',
     class: 'gb-input',
@@ -66,6 +125,32 @@ function openEditProgress(goal, progress, onUpdateProgress) {
     max: '1000',
     value: progress && progress.daysFollowed != null ? String(progress.daysFollowed) : '0',
   });
+  const followedField = h(
+    'div',
+    { style: { display: auto ? 'none' : '' } },
+    h('div', { class: 'gb-field-label' }, 'Days followed so far'),
+    followedInput
+  );
+  const autoSwitch =
+    linkedCount > 0
+      ? h(
+          'button',
+          {
+            type: 'button',
+            role: 'switch',
+            'aria-checked': String(auto),
+            'aria-label': 'Count days from linked habits',
+            class: 'gb-switch' + (auto ? ' is-on' : ''),
+            onclick: () => {
+              auto = !auto;
+              autoSwitch.classList.toggle('is-on', auto);
+              autoSwitch.setAttribute('aria-checked', String(auto));
+              followedField.style.display = auto ? 'none' : '';
+            },
+          },
+          h('span', { class: 'gb-switch-knob' })
+        )
+      : null;
   const body = h(
     'div',
     { class: 'gb-form' },
@@ -76,8 +161,19 @@ function openEditProgress(goal, progress, onUpdateProgress) {
       { class: 'gb-note-hint', style: { marginBottom: '4px' } },
       'e.g. 50 for a "50-day sugar cut"'
     ),
-    h('div', { class: 'gb-field-label' }, 'Days followed so far'),
-    followedInput
+    autoSwitch
+      ? h(
+          'div',
+          { style: { display: 'flex', gap: '12px', alignItems: 'center', margin: '8px 0' } },
+          h(
+            'span',
+            { style: { flex: 1 } },
+            'Count a day whenever a linked habit was done'
+          ),
+          autoSwitch
+        )
+      : null,
+    followedField
   );
   openGoalModal({
     title: 'Edit day tracker',
@@ -91,6 +187,16 @@ function openEditProgress(goal, progress, onUpdateProgress) {
         durationInput.focus();
         throw new Error('Duration must be at least 1 day.');
       }
+      if (auto) {
+        // Counted from the goal's own start, so linking habits to a goal that
+        // is weeks old picks up the weeks already done.
+        const since =
+          (progress && progress.autoSince) ||
+          String(goal.createdAt || '').slice(0, 10) ||
+          todayKey();
+        onUpdateProgress(goal.id, { durationDays: dur, autoDays: true, autoSince: since });
+        return;
+      }
       if (!Number.isFinite(followed) || followed < 0) {
         followedInput.focus();
         throw new Error('Days followed cannot be negative.');
@@ -99,20 +205,25 @@ function openEditProgress(goal, progress, onUpdateProgress) {
         followedInput.focus();
         throw new Error('Days followed cannot exceed duration.');
       }
-      onUpdateProgress(goal.id, { durationDays: dur, daysFollowed: followed });
+      onUpdateProgress(goal.id, { durationDays: dur, daysFollowed: followed, autoDays: false });
     },
   });
   setTimeout(() => durationInput.focus(), 60);
 }
 
 /* ---- Goal progress bar component ---- */
-function GoalProgressBar({ goal, progress, onUpdateProgress }) {
+function GoalProgressBar({ goal, progress, onUpdateProgress, linkedCount = 0 }) {
   if (!progress || !progress.durationDays) return null;
+  // Counting from linked habits: app.js already set daysFollowed from them,
+  // and there is no day to log by hand.
+  const auto = !!progress.autoDays && linkedCount > 0;
   const dur = progress.durationDays;
   const followed = progress.daysFollowed || 0;
   const left = Math.max(0, dur - followed);
   const pct = Math.min(100, Math.round((followed / dur) * 100));
   const isDone = followed >= dur;
+  const today = todayKey();
+  const loggedToday = progress.lastLoggedOn === today && followed > 0;
 
   const leftEl = isDone
     ? h('span', { class: 'gb-goal-progress-done-chip' }, 'Complete!')
@@ -129,7 +240,11 @@ function GoalProgressBar({ goal, progress, onUpdateProgress }) {
     h(
       'div',
       { class: 'gb-goal-progress-header' },
-      h('span', { class: 'gb-goal-progress-label' }, 'Day tracker'),
+      h(
+        'span',
+        { class: 'gb-goal-progress-label' },
+        auto ? 'Day tracker · from linked habits' : 'Day tracker'
+      ),
       h('span', { class: 'gb-goal-progress-pct' }, pct + '%')
     ),
     h(
@@ -154,29 +269,54 @@ function GoalProgressBar({ goal, progress, onUpdateProgress }) {
     h(
       'div',
       { class: 'gb-goal-progress-actions' },
-      !isDone
+      // One day a day. "Log a day" took any number of taps, so a double tap (or
+      // a second visit) counted the same day twice. `lastLoggedOn` lives in the
+      // progress blob with the count; today's log can be taken back.
+      auto
+        ? null
+        : loggedToday
         ? h(
             'button',
             {
               type: 'button',
-              class: 'gb-goal-day-btn',
+              class: 'gb-goal-day-btn is-logged',
+              'aria-label': 'Logged today. Undo',
               onclick: () =>
                 onUpdateProgress(goal.id, {
                   durationDays: dur,
-                  daysFollowed: Math.min(dur, followed + 1),
+                  daysFollowed: Math.max(0, followed - 1),
+                  lastLoggedOn: progress.prevLoggedOn || null,
+                  prevLoggedOn: null,
                 }),
             },
-            Icon('calendar-check', { size: 15, sw: 2.4 }),
-            'Log a day'
+            Icon('undo-2', { size: 15, sw: 2.4 }),
+            'Logged today · Undo'
           )
-        : null,
+        : !isDone
+          ? h(
+              'button',
+              {
+                type: 'button',
+                class: 'gb-goal-day-btn',
+                onclick: () =>
+                  onUpdateProgress(goal.id, {
+                    durationDays: dur,
+                    daysFollowed: Math.min(dur, followed + 1),
+                    lastLoggedOn: today,
+                    prevLoggedOn: progress.lastLoggedOn || null,
+                  }),
+              },
+              Icon('calendar-check', { size: 15, sw: 2.4 }),
+              'Log a day'
+            )
+          : null,
       h(
         'button',
         {
           type: 'button',
           class: 'gb-icon-btn',
           'aria-label': 'Edit day tracker',
-          onclick: () => openEditProgress(goal, progress, onUpdateProgress),
+          onclick: () => openEditProgress(goal, progress, onUpdateProgress, linkedCount),
         },
         Icon('pencil', { size: 15, sw: 2.4 })
       )
@@ -186,20 +326,42 @@ function GoalProgressBar({ goal, progress, onUpdateProgress }) {
 
 /* ---- Goal milestones / sub-tasks ----
    Break a goal into checkpoints with a progress %. Stored alongside the day
-   tracker in goalProgress[goalId].milestones (CacheStorage, frontend-first):
-     milestones: [{ id, title, done }] */
+   tracker in goalProgress[goalId].milestones (the goal's progress blob):
+     milestones: [{ id, title, done, due? }]
+   A row's pencil opens it in place: rename, an optional due date, move up /
+   down and delete. Which row is open is module state: a move saves and
+   re-renders the screen, and the row has to come back still open. */
 function milestoneStats(progress) {
   const ms = (progress && progress.milestones) || [];
   const done = ms.filter((x) => x.done).length;
   return { ms, done, total: ms.length, pct: ms.length ? Math.round((done / ms.length) * 100) : 0 };
 }
 
+let editingMs = ''; // 'goalId:milestoneId' of the row open for editing
+
+function focusMs(sel) {
+  requestAnimationFrame(() => {
+    const el = document.querySelector(sel);
+    if (el) el.focus();
+  });
+}
+
+const DUE_LABEL = { overdue: 'Overdue', today: 'Due today', soon: 'Due', later: 'Due' };
+
 function GoalMilestones({ goal, progress, onUpdateProgress }) {
   const { ms, done, total, pct } = milestoneStats(progress);
+  // "Count finished tasks toward progress" on: the bar is milestones and
+  // finished linked tasks together (goal-tasks.js combinedGoalProgress).
+  const work = progress && progress.work && progress.work.withTasks ? progress.work : null;
   const setMs = (next) => onUpdateProgress(goal.id, { milestones: next });
   const toggle = (id) =>
     setMs(ms.map((x) => (x.id === id ? Object.assign({}, x, { done: !x.done }) : x)));
-  const remove = (id) => setMs(ms.filter((x) => x.id !== id));
+  const remove = (id) => {
+    editingMs = '';
+    setMs(ms.filter((x) => x.id !== id));
+  };
+  const keyOf = (x) => String(goal.id) + ':' + x.id;
+  const today = todayKey();
 
   const addInput = h('input', {
     type: 'text',
@@ -220,10 +382,7 @@ function GoalMilestones({ goal, progress, onUpdateProgress }) {
     setMs(ms.concat({ id: 'm' + Date.now().toString(36), title, done: false }));
     // The save re-renders the screen, which replaces this input; put the caret
     // in the new one so the next checkpoint can be typed straight after Enter.
-    requestAnimationFrame(() => {
-      const next = document.querySelector('[data-ms-goal="' + String(goal.id) + '"]');
-      if (next) next.focus();
-    });
+    focusMs('[data-ms-goal="' + String(goal.id) + '"]');
   };
   addInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
@@ -232,8 +391,103 @@ function GoalMilestones({ goal, progress, onUpdateProgress }) {
     }
   });
 
-  const rows = ms.map((x) =>
-    h(
+  function editRow(x, index) {
+    const titleInput = h('input', {
+      type: 'text',
+      class: 'gb-goal-ms-input',
+      maxlength: '160',
+      value: x.title,
+      'aria-label': 'Milestone name',
+      'data-ms-edit': keyOf(x),
+    });
+    const dueInput = h('input', {
+      type: 'date',
+      class: 'gb-input gb-goal-ms-due-input',
+      value: x.due || '',
+      'aria-label': 'Due date (optional)',
+    });
+    let node = null;
+    const save = () => {
+      const title = titleInput.value.trim();
+      if (!title) {
+        titleInput.focus();
+        shakeRefusal(titleInput);
+        return;
+      }
+      editingMs = '';
+      setMs(setMilestoneDue(renameMilestone(ms, x.id, title), x.id, dueInput.value));
+      focusMs('[data-ms-open="' + keyOf(x) + '"]');
+    };
+    // Nothing was saved, so nothing re-renders: swap the plain row back in.
+    const cancel = () => {
+      editingMs = '';
+      const plain = viewRow(x);
+      node.replaceWith(plain);
+      focusMs('[data-ms-open="' + keyOf(x) + '"]');
+    };
+    titleInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        save();
+      } else if (e.key === 'Escape') {
+        // Close the row, not the screen or dialog behind it.
+        e.preventDefault();
+        e.stopPropagation();
+        cancel();
+      }
+    });
+    // A move saves the order only and re-renders with this row still open; a
+    // name typed and not yet saved goes with it, so save it along.
+    const move = (delta, dir) => {
+      const title = titleInput.value.trim();
+      const renamed = title ? renameMilestone(ms, x.id, title) : ms;
+      setMs(moveItem(setMilestoneDue(renamed, x.id, dueInput.value), x.id, delta));
+      focusMs('[data-ms-move="' + keyOf(x) + ':' + dir + '"]');
+    };
+    const iconBtn = (label, icon, onclick, extra = {}) =>
+      h(
+        'button',
+        { type: 'button', class: 'gb-icon-btn', 'aria-label': label, onclick, ...extra },
+        Icon(icon, { size: 14, sw: 2.4 })
+      );
+    node = h(
+      'div',
+      { class: 'gb-goal-ms-row is-editing' },
+      h(
+        'div',
+        { class: 'gb-goal-ms-edit' },
+        titleInput,
+        h(
+          'label',
+          { class: 'gb-goal-ms-due-field' },
+          h('span', { class: 'gb-field-label' }, 'Due'),
+          dueInput
+        )
+      ),
+      h(
+        'div',
+        { class: 'gb-goal-ms-tools' },
+        iconBtn('Move up: ' + x.title, 'chevron-up', () => move(-1, 'up'), {
+          disabled: index === 0,
+          'data-ms-move': keyOf(x) + ':up',
+        }),
+        iconBtn('Move down: ' + x.title, 'chevron-down', () => move(1, 'down'), {
+          disabled: index === ms.length - 1,
+          'data-ms-move': keyOf(x) + ':down',
+        }),
+        iconBtn('Delete milestone: ' + x.title, 'trash-2', () => remove(x.id)),
+        iconBtn('Cancel editing', 'x', cancel),
+        iconBtn('Save milestone', 'check', save)
+      )
+    );
+    return node;
+  }
+
+  function viewRow(x) {
+    const index = ms.findIndex((m) => m.id === x.id);
+    const dueState = milestoneDueState(x, today);
+    let node = null;
+    node = h(
       'div',
       { class: 'gb-goal-ms-row' + (x.done ? ' is-done' : '') },
       h(
@@ -248,19 +502,40 @@ function GoalMilestones({ goal, progress, onUpdateProgress }) {
         },
         x.done ? Icon('check', { size: 13, sw: 3, color: '#fff' }) : null
       ),
-      h('span', { class: 'gb-goal-ms-title' }, x.title),
+      h(
+        'span',
+        { class: 'gb-goal-ms-title' },
+        x.title,
+        x.due
+          ? h(
+              'span',
+              { class: 'gb-goal-ms-due' + (dueState === 'overdue' ? ' is-overdue' : '') },
+              (DUE_LABEL[dueState] || 'Due') +
+                (dueState === 'today' ? '' : ' ' + fmtDate(x.due).replace(/,? \d{4}$/, ''))
+            )
+          : null
+      ),
       h(
         'button',
         {
           type: 'button',
           class: 'gb-icon-btn gb-goal-ms-del',
-          'aria-label': 'Delete checkpoint',
-          onclick: () => remove(x.id),
+          'aria-label': 'Edit milestone: ' + x.title,
+          'data-ms-open': keyOf(x),
+          // Opening a row changes nothing stored: swap it in place, no save.
+          onclick: () => {
+            editingMs = keyOf(x);
+            node.replaceWith(editRow(x, index));
+            focusMs('[data-ms-edit="' + keyOf(x) + '"]');
+          },
         },
-        Icon('trash-2', { size: 13, sw: 2.4 })
+        Icon('pencil', { size: 13, sw: 2.4 })
       )
-    )
-  );
+    );
+    return node;
+  }
+
+  const rows = ms.map((x, index) => (editingMs === keyOf(x) ? editRow(x, index) : viewRow(x)));
 
   return h(
     'div',
@@ -268,14 +543,21 @@ function GoalMilestones({ goal, progress, onUpdateProgress }) {
     h(
       'div',
       { class: 'gb-goal-ms-header' },
-      h('span', { class: 'gb-goal-ms-label' }, 'Milestones'),
-      total ? h('span', { class: 'gb-goal-ms-pct' }, done + '/' + total + ' · ' + pct + '%') : null
+      h('span', { class: 'gb-goal-ms-label' }, work ? 'Milestones + tasks' : 'Milestones'),
+      work
+        ? h('span', { class: 'gb-goal-ms-pct' }, work.done + '/' + work.total + ' · ' + work.pct + '%')
+        : total
+          ? h('span', { class: 'gb-goal-ms-pct' }, done + '/' + total + ' · ' + pct + '%')
+          : null
     ),
-    total
+    work || total
       ? h(
           'div',
           { class: 'gb-goal-ms-track' },
-          h('div', { class: 'gb-goal-ms-fill', style: { width: Math.max(pct, 2) + '%' } })
+          h('div', {
+            class: 'gb-goal-ms-fill',
+            style: { width: Math.max(work ? work.pct : pct, 2) + '%' },
+          })
         )
       : null,
     rows.length ? h('div', { class: 'gb-goal-ms-list' }, rows) : null,
@@ -341,6 +623,81 @@ function ActionRow(goal, action, onEditAction, onDeleteAction) {
   );
 }
 
+/* A goal's linked tasks (tasks.goal_id): "Tasks: done/total", its open ones
+   (ticked like Home's rows — the tick is the task's own, toggleTask), "Add a
+   task" (New task with this goal picked) and, once it has any, the "Count
+   finished tasks toward progress" switch (`countTasks` in the progress blob,
+   read by goal-tasks.js combinedGoalProgress). */
+function GoalTasks({ goal, progress, tasks, onUpdateProgress, taskOps }) {
+  const ops = taskOps || {};
+  if (!ops.onAddTask && !tasks.total) return null;
+  const counting = !!(progress && progress.countTasks);
+  const addBtn = ops.onAddTask
+    ? h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--ghost gb-btn--compact',
+          onclick: () => ops.onAddTask(goal),
+        },
+        Icon('plus', { size: 14, sw: 2.4 }),
+        'Add a task'
+      )
+    : null;
+  if (!tasks.total) return h('div', { class: 'gb-goal-tasks' }, addBtn);
+  const countSwitch = h(
+    'button',
+    {
+      type: 'button',
+      role: 'switch',
+      'aria-checked': String(counting),
+      'aria-label': 'Count finished tasks toward progress',
+      class: 'gb-switch' + (counting ? ' is-on' : ''),
+      onclick: () => onUpdateProgress(goal.id, { countTasks: !counting }),
+    },
+    h('span', { class: 'gb-switch-knob' })
+  );
+  return h(
+    'div',
+    { class: 'gb-goal-ms gb-goal-tasks' },
+    h(
+      'div',
+      { class: 'gb-goal-ms-header' },
+      h('span', { class: 'gb-goal-ms-label' }, 'Tasks: ' + tasks.done + '/' + tasks.total)
+    ),
+    tasks.open.length
+      ? h(
+          'div',
+          { class: 'gb-goal-ms-list' },
+          tasks.open.map((t) =>
+            h(
+              'div',
+              { class: 'gb-goal-ms-row' },
+              ops.onToggleTask
+                ? h('button', {
+                    type: 'button',
+                    class: 'gb-goal-ms-check',
+                    role: 'checkbox',
+                    'aria-checked': 'false',
+                    'aria-label': 'Mark complete: ' + t.title,
+                    onclick: () => ops.onToggleTask(t.id),
+                  })
+                : null,
+              h('span', { class: 'gb-goal-ms-title' }, t.title)
+            )
+          )
+        )
+      : null,
+    h(
+      'div',
+      { style: { display: 'flex', gap: '12px', alignItems: 'center', margin: '6px 0' } },
+      h('span', { style: { flex: 1 } }, 'Count finished tasks toward progress'),
+      countSwitch
+    ),
+    addBtn
+  );
+}
+
 function GoalRow(
   goal,
   onToggle,
@@ -349,10 +706,32 @@ function GoalRow(
   onEditAction,
   onDeleteAction,
   progress,
-  onUpdateProgress
+  onUpdateProgress,
+  onEditGoal,
+  onSeeAllActions,
+  linked,
+  taskOps,
+  onFocus
 ) {
   const meta = HORIZON_META[goal.horizon] || HORIZON_META.short_term;
+  // linked = { count, month, autoDays } from app.js (goalHabitSummary), or null.
+  const linkedCount = linked ? linked.count : 0;
   const recentActions = goal.recentActions || [];
+  const left = goal.completed ? null : daysUntil(goal.targetDate);
+  const overdue = left != null && left < 0;
+  // Everything it tracks is finished, but the goal still says Active: offer the
+  // one tap that closes it rather than leaving a 100% goal among the open ones.
+  const hasDays = !!(progress && progress.durationDays);
+  const ms = milestoneStats(progress);
+  // Linked tasks ({done, total, open} from app.js effectiveGoalProgress): a goal
+  // whose last open task was just ticked is offered "Mark done" here too.
+  const tasks = (progress && progress.linkedTasks) || { done: 0, total: 0, open: [] };
+  const allDone =
+    !goal.completed &&
+    (hasDays || ms.total > 0 || tasks.total > 0) &&
+    (!hasDays || (progress.daysFollowed || 0) >= progress.durationDays) &&
+    ms.done === ms.total &&
+    tasks.done === tasks.total;
 
   const statusChip = h(
     'span',
@@ -372,7 +751,33 @@ function GoalRow(
       'div',
       { class: 'gb-goal-card-header' },
       h('div', { class: 'gb-goal-title' }, goal.title),
-      statusChip
+      statusChip,
+      // Opens the Focus timer with this goal picked as what the session is on.
+      onFocus && !goal.completed
+        ? h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-icon-btn',
+              'aria-label': 'Start focus on ' + goal.title,
+              title: 'Start focus',
+              onclick: () => onFocus(goal),
+            },
+            Icon('timer', { size: 15, sw: 2.4 })
+          )
+        : null,
+      onEditGoal
+        ? h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-icon-btn',
+              'aria-label': 'Edit goal: ' + goal.title,
+              onclick: () => onEditGoal(goal),
+            },
+            Icon('pencil', { size: 15, sw: 2.4 })
+          )
+        : null
     ),
     goal.description ? h('div', { class: 'gb-goal-desc' }, goal.description) : null,
     h(
@@ -386,19 +791,64 @@ function GoalRow(
       }),
       h('span', null, goal.actionCount + ' ' + (goal.actionCount === 1 ? 'action' : 'actions')),
       goal.targetDate
-        ? h('span', null, 'Target ' + fmtDate(goal.targetDate))
+        ? h(
+            'span',
+            overdue
+              ? { class: 'gb-goal-overdue', style: { color: 'var(--coral-700)', fontWeight: 600 } }
+              : null,
+            overdue
+              ? 'Overdue · target ' + fmtDate(goal.targetDate)
+              : 'Target ' +
+                  fmtDate(goal.targetDate) +
+                  (left != null && left <= 30 && !goal.completed
+                    ? left === 0
+                      ? ' · today'
+                      : ' · ' + left + (left === 1 ? ' day' : ' days') + ' left'
+                    : '')
+          )
         : h('span', null, 'Flexible target'),
       goal.latestActionAt
         ? h('span', null, 'Last ' + fmtDate(String(goal.latestActionAt).slice(0, 10)))
         : null
     ),
-    GoalProgressBar({ goal, progress: progress || null, onUpdateProgress }),
+    linked
+      ? h(
+          'div',
+          { class: 'gb-goal-linked' },
+          Icon('link', { size: 13, sw: 2.4 }),
+          'Linked habits: ' +
+            linked.month +
+            (linked.month === 1 ? ' check-in' : ' check-ins') +
+            ' this month'
+        )
+      : null,
+    GoalProgressBar({ goal, progress: progress || null, onUpdateProgress, linkedCount }),
     GoalMilestones({ goal, progress: progress || null, onUpdateProgress }),
+    GoalTasks({ goal, progress: progress || null, tasks, onUpdateProgress, taskOps }),
     recentActions.length
       ? h(
           'div',
           { class: 'gb-goal-action-list' },
-          recentActions.map((action) => ActionRow(goal, action, onEditAction, onDeleteAction))
+          recentActions.map((action) => ActionRow(goal, action, onEditAction, onDeleteAction)),
+          // Only three ride along with the list; the rest come on request.
+          onSeeAllActions && goal.actionCount > recentActions.length
+            ? h(
+                'button',
+                {
+                  type: 'button',
+                  class: 'gb-btn gb-btn--ghost gb-btn--compact',
+                  onclick: () => onSeeAllActions(goal),
+                },
+                'See all ' + goal.actionCount + ' actions'
+              )
+            : null
+        )
+      : null,
+    allDone
+      ? h(
+          'div',
+          { class: 'gb-goal-progress-done-chip', style: { marginTop: '8px' } },
+          'Everything here is done. Mark the goal done?'
         )
       : null,
     h(
@@ -420,7 +870,8 @@ function GoalRow(
             {
               type: 'button',
               class: 'gb-btn gb-btn--secondary gb-btn--compact',
-              onclick: () => openEditProgress(goal, progress || null, onUpdateProgress),
+              onclick: () =>
+                openEditProgress(goal, progress || null, onUpdateProgress, linkedCount),
             },
             Icon('timer', { size: 14, sw: 2.4 }),
             'Track days'
@@ -430,7 +881,10 @@ function GoalRow(
         'button',
         {
           type: 'button',
-          class: 'gb-btn ' + (goal.completed ? 'gb-btn--secondary' : 'gb-btn--soft') + ' gb-btn--compact',
+          class:
+            'gb-btn ' +
+            (goal.completed ? 'gb-btn--secondary' : allDone ? 'gb-btn--primary' : 'gb-btn--soft') +
+            ' gb-btn--compact',
           onclick: () => onToggle(goal.id),
         },
         Icon(goal.completed ? 'undo-2' : 'check', { size: 14, sw: 2.4 }),
@@ -441,7 +895,7 @@ function GoalRow(
         {
           type: 'button',
           class: 'gb-btn gb-btn--ghost gb-btn--compact gb-goal-delete-btn',
-          onclick: () => onDelete(goal.id),
+          onclick: () => onDelete(goal.id, goal),
           'aria-label': 'Delete goal',
         },
         Icon('trash-2', { size: 14, sw: 2.4 })
@@ -460,14 +914,23 @@ function ScreenGoals({
   onDeleteAction,
   goalProgress = {},
   onUpdateGoalProgress,
+  onUpdateGoal,
+  onLoadActions,
+  onFocusGoal,
+  timezone,
+  habits = [],
+  linkedHabits = {},
+  onAddTask,
+  onToggleTask,
 }) {
+  userZone = timezone || '';
   const createBtn = h(
     'button',
     {
       type: 'button',
       class: 'gb-btn gb-btn--soft',
       style: { width: 'auto', padding: '8px 14px' },
-      onclick: () => openCreateGoal(),
+      onclick: () => openGoalForm(null),
     },
     Icon('plus', { size: 16, sw: 2.6 }),
     'New goal'
@@ -481,15 +944,19 @@ function ScreenGoals({
     long_term: 'A year or more',
   };
 
-  function openCreateGoal() {
+  /* New goal, or edit one (`goal` given): same fields, prefilled. The day
+     tracker is edited from its own pencil, so editing hides that field. */
+  function openGoalForm(goal) {
+    const editing = !!goal;
     const titleInput = h('input', {
       type: 'text',
       class: 'gb-input gb-goal-title-input',
       maxlength: '255',
       placeholder: 'What do you want to achieve?',
       'aria-label': 'Goal',
+      value: editing ? goal.title || '' : '',
     });
-    let horizon = 'short_term';
+    let horizon = editing && HORIZON_HINT[goal.horizon] ? goal.horizon : 'short_term';
     const hint = h('div', { class: 'gb-field-hint gb-goal-horizon-hint' }, HORIZON_HINT[horizon]);
     const segs = Object.keys(HORIZON_HINT).map((k) =>
       h(
@@ -520,7 +987,15 @@ function ScreenGoals({
       placeholder: 'Why does it matter? (optional)',
       'aria-label': 'Why it matters',
     });
-    const targetInput = h('input', { type: 'date', class: 'gb-input', min: todayKey() });
+    if (editing && goal.description) descInput.value = goal.description;
+    // Editing keeps a target that has already passed (min would refuse it).
+    const targetInput = h('input', {
+      type: 'date',
+      class: 'gb-input',
+      min:
+        editing && goal.targetDate && goal.targetDate < todayKey() ? goal.targetDate : todayKey(),
+      value: editing ? goal.targetDate || '' : '',
+    });
     const durationInput = h('input', {
       type: 'number',
       inputmode: 'numeric',
@@ -531,7 +1006,60 @@ function ScreenGoals({
       'aria-label': 'Track daily for how many days',
     });
     const field = (label, control) =>
-      h('label', { class: 'gb-form-field' }, h('span', { class: 'gb-field-label' }, label), control);
+      h(
+        'label',
+        { class: 'gb-form-field' },
+        h('span', { class: 'gb-field-label' }, label),
+        control
+      );
+    // Habits this goal is built from. Stored in the goal's progress blob
+    // (`linkedHabitIds`), so no schema change; the card counts their
+    // check-ins, and the day tracker can count from them.
+    const progressNow = (editing && goalProgress[String(goal.id)]) || {};
+    const linkedBefore = liveLinkedIds(progressNow.linkedHabitIds, habits);
+    const linkedPicked = new Set(linkedBefore);
+    const habitPicker = habits.length
+      ? h(
+          'div',
+          { class: 'gb-form-field' },
+          h('span', { class: 'gb-field-label', id: 'gb-goal-habits-label' }, 'Linked habits'),
+          h(
+            'div',
+            {
+              class: 'gb-goal-habit-picks',
+              role: 'group',
+              'aria-labelledby': 'gb-goal-habits-label',
+            },
+            habits.map((hb) => {
+              const on = linkedPicked.has(hb.id);
+              const btn = h(
+                'button',
+                {
+                  type: 'button',
+                  class: 'gb-preset' + (on ? ' is-on' : ''),
+                  'aria-pressed': String(on),
+                  onclick: () => {
+                    const now = !linkedPicked.has(hb.id);
+                    if (now) linkedPicked.add(hb.id);
+                    else linkedPicked.delete(hb.id);
+                    btn.classList.toggle('is-on', now);
+                    btn.setAttribute('aria-pressed', String(now));
+                  },
+                },
+                hb.name
+              );
+              return btn;
+            })
+          ),
+          h(
+            'div',
+            { class: 'gb-field-hint' },
+            'Their check-ins show on this goal, and the day tracker can count from them.'
+          )
+        )
+      : null;
+    // In the user's habit order, which is the order the picker shows.
+    const pickedIds = () => habits.map((hb) => hb.id).filter((id) => linkedPicked.has(id));
     const body = h(
       'div',
       { class: 'gb-form gb-goal-form' },
@@ -544,30 +1072,59 @@ function ScreenGoals({
         hint
       ),
       descInput,
-      h(
-        'div',
-        { class: 'gb-form-pair' },
-        field('Target date', targetInput),
-        field(
-          'Track daily',
-          h('div', { class: 'gb-affix' }, durationInput, h('span', { class: 'gb-affix-unit' }, 'days'))
-        )
-      ),
-      h(
-        'div',
-        { class: 'gb-field-hint gb-goal-form-hint' },
-        'Track daily adds a day-by-day tracker, for challenges like a 50-day sugar cut.'
-      )
+      editing
+        ? field('Target date', targetInput)
+        : h(
+            'div',
+            { class: 'gb-form-pair' },
+            field('Target date', targetInput),
+            field(
+              'Track daily',
+              h(
+                'div',
+                { class: 'gb-affix' },
+                durationInput,
+                h('span', { class: 'gb-affix-unit' }, 'days')
+              )
+            )
+          ),
+      editing
+        ? null
+        : h(
+            'div',
+            { class: 'gb-field-hint gb-goal-form-hint' },
+            'Track daily adds a day-by-day tracker, for challenges like a 50-day sugar cut.'
+          ),
+      habitPicker
     );
     openGoalModal({
-      title: 'New goal',
+      title: editing ? 'Edit goal' : 'New goal',
       body,
-      primary: 'Save goal',
+      primary: editing ? 'Save changes' : 'Save goal',
       onPrimary: async () => {
         const title = titleInput.value.trim();
         if (!title) {
           titleInput.focus();
           throw new Error('Give the goal a name first.');
+        }
+        if (editing) {
+          // PUT: null = unchanged, so a removed date says so with its own flag.
+          await onUpdateGoal(goal.id, {
+            title,
+            description: descInput.value.trim(),
+            horizon,
+            targetDate: targetInput.value || null,
+            clearTargetDate: !targetInput.value,
+          });
+          const ids = pickedIds();
+          if (ids.join() !== linkedBefore.join()) {
+            // Unlinking every habit also turns off a tracker counting from them.
+            onUpdateGoalProgress(
+              goal.id,
+              ids.length ? { linkedHabitIds: ids } : { linkedHabitIds: [], autoDays: false }
+            );
+          }
+          return;
         }
         const dur = durationInput.value ? Number(durationInput.value) : null;
         if (dur != null && (!Number.isInteger(dur) || dur < 1 || dur > 1000)) {
@@ -580,8 +1137,12 @@ function ScreenGoals({
           horizon,
           targetDate: targetInput.value || null,
         });
-        if (dur != null && goal && goal.id) {
-          onUpdateGoalProgress(goal.id, { durationDays: dur, daysFollowed: 0 });
+        const ids = pickedIds();
+        if (goal && goal.id && (dur != null || ids.length)) {
+          onUpdateGoalProgress(goal.id, {
+            ...(dur != null ? { durationDays: dur, daysFollowed: 0 } : {}),
+            ...(ids.length ? { linkedHabitIds: ids } : {}),
+          });
         }
       },
     });
@@ -640,8 +1201,65 @@ function ScreenGoals({
     openActionModal(goal, null);
   }
 
+  /* Every action, newest first (GET /api/goals/{id}/actions). The card carries
+     only the latest three. Edit / delete close this list first and work as on
+     the card. */
+  function openAllActions(goal) {
+    const list = h(
+      'div',
+      { class: 'gb-goal-action-list' },
+      h('div', { class: 'gb-note-hint' }, 'Loading…')
+    );
+    const { close } = openGoalModal({ title: 'All actions', sub: goal.title, body: list });
+    onLoadActions(goal.id)
+      .then((all) => {
+        list.replaceChildren(
+          ...(all && all.length
+            ? all.map((a) =>
+                ActionRow(
+                  goal,
+                  a,
+                  (g, act) => {
+                    close();
+                    openActionModal(g, act);
+                  },
+                  (gid, aid) => {
+                    close();
+                    return onDeleteAction(gid, aid);
+                  }
+                )
+              )
+            : [h('div', { class: 'gb-note-hint' }, 'No actions yet.')])
+        );
+      })
+      .catch(() => {
+        list.replaceChildren(
+          h('div', { class: 'gb-note-hint' }, 'Could not load the actions. Try again.')
+        );
+      });
+  }
+
+  const row = (goal) =>
+    GoalRow(
+      goal,
+      onToggleGoal,
+      onDeleteGoal,
+      openAddAction,
+      openActionModal,
+      onDeleteAction,
+      goalProgress[String(goal.id)] || null,
+      onUpdateGoalProgress,
+      onUpdateGoal ? openGoalForm : null,
+      onLoadActions ? openAllActions : null,
+      linkedHabits[String(goal.id)] || null,
+      { onAddTask, onToggleTask },
+      onFocusGoal || null
+    );
+
   const horizonCards = sections.map((section) => {
-    const goals = section.goals || [];
+    const goals = sortGoals(section.goals);
+    const open = goals.filter((g) => !g.completed);
+    const finished = goals.filter((g) => g.completed);
     return h(
       'div',
       { class: 'gb-goal-section' },
@@ -659,18 +1277,21 @@ function ScreenGoals({
         ? h(
             'div',
             { class: 'gb-goal-cards' },
-            goals.map((goal) =>
-              GoalRow(
-                goal,
-                onToggleGoal,
-                onDeleteGoal,
-                openAddAction,
-                openActionModal,
-                onDeleteAction,
-                goalProgress[String(goal.id)] || null,
-                onUpdateGoalProgress
-              )
-            )
+            open.map(row),
+            // Finished goals fold away under the open ones instead of sitting
+            // between them.
+            finished.length
+              ? h(
+                  'details',
+                  { class: 'gb-goal-done-group' },
+                  h(
+                    'summary',
+                    { class: 'gb-goal-section-title' },
+                    'Completed (' + finished.length + ')'
+                  ),
+                  finished.map(row)
+                )
+              : null
           )
         : h(
             'div',
