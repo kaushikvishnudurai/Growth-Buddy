@@ -277,7 +277,7 @@ it silently landed on Home. Don't reintroduce a second list.
   `deleteReminder` (`scope=all` only), and Notes' `onCreate` (text only — no `<img>`, no cover).
   Sleep and mood (`saveSleepEntry` / `saveMoodEntry` → `postWellness`) queue on a 5xx too (Render
   waking): both are upserts by date, so a replay is safe; a 4xx puts the day back and toasts.
-  loadSecondaryData lays queued ones over the server's logs (`overlayQueuedWellness`, app-logic.js) —
+  loadSecondaryData lays queued ones over the server's logs (`overlayQueuedWellness`, app-logic.js; the queue as it was when the logs were requested *and* as it is now, since loadData's `flushOutbox` runs alongside and can send one in between) —
   they used to say "saved locally" and be wiped by the next load. `plainToggleHabit` queues the tap
   (instead of a live `/toggle`) while a check-in for that habit and day is still queued, so the pair
   cancels rather than flipping the server the wrong way. A task or reminder made offline has a `tmp-`

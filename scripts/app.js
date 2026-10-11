@@ -2781,6 +2781,11 @@ async function loadSecondaryData() {
   const bootScreen = state.screen;
   const gen = sessionGen();
   connectWebSocket();
+  // What the outbox holds as the logs are read. loadData's flushOutbox runs
+  // alongside: a queued night it sends after the server read the logs, but
+  // before they are laid over below, would be in neither the answer nor the
+  // queue, and left the phone until the next load.
+  const queuedAtRead = outbox.list();
   try {
     const [goals, notifications, food, money, dailyLogs, photoHistory, weekly] =
       await Promise.all([
@@ -2835,13 +2840,14 @@ async function loadSecondaryData() {
     if (dailyLogs) {
       const localWell = loadWellness();
       await CacheStorage.ready(); // the outbox reads as empty until it has hydrated
+      if (isStaleSession(gen)) return;
       state.wellness = overlayQueuedWellness(
         {
           sleepByDate: dailyLogs.sleepByDate || {},
           moodByDate: dailyLogs.moodByDate || {},
           photoHistory: photoHistory != null ? photoHistory : localWell.photoHistory || [],
         },
-        outbox.list()
+        [...queuedAtRead, ...outbox.list()]
       );
       state.trends = { byDate: dailyLogs.byDate || {} };
       persistWellness();
