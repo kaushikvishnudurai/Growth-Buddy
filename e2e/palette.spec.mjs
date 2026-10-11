@@ -88,11 +88,15 @@ test.describe('keyboard', () => {
     await expect(qa).toHaveAttribute('aria-selected', 'true');
     await shot(page, 'quick-add-row');
     await page.keyboard.press('Enter');
+    // One clear model read saves at once with an Undo toast; a fallback read still previews.
     const preview = page.getByRole('dialog', { name: /Log this/ });
-    await expect(preview).toBeVisible({ timeout: 20_000 });
-    await expect(preview).toContainText(/buy oat milk/i);
-    await shot(page, 'quick-add-preview');
-    await preview.getByRole('button', { name: 'Log it' }).click();
+    const logged = page.locator('.gb-toast').filter({ hasText: /buy oat milk/i });
+    await expect(preview.or(logged)).toBeVisible({ timeout: 20_000 });
+    if (await preview.isVisible()) {
+      await expect(preview).toContainText(/buy oat milk/i);
+      await shot(page, 'quick-add-preview');
+      await preview.getByRole('button', { name: 'Log it' }).click();
+    }
     await expect
       // The assistant keeps "need to"; the no-AI fallback drops it. Either is the task.
       .poll(async () => (await apiGet(request, account.token, '/api/tasks')).some((t) => /buy oat milk/i.test(t.title)))

@@ -115,7 +115,9 @@ test('Home: ticking a habit counts it and survives a reload', async ({ page, acc
 test('Tasks: add, edit and delete from Home', async ({ page, account }) => {
   await boot(page, account);
   const m = main(page);
-  await m.getByRole('button', { name: '+ Add' }).first().click();
+  // Scoped to the Tasks title: Home's order is the user's (onboarding puts Habits first for some).
+  await m.locator('.gb-sectiontitle', { has: page.getByRole('heading', { name: 'Tasks', exact: true }) })
+    .getByRole('button', { name: '+ Add' }).click();
   let dlg = page.getByRole('dialog', { name: 'New task' });
   await dlg.getByRole('textbox', { name: 'Title' }).fill('Water the plants');
   await dlg.getByRole('radio', { name: 'High' }).click();

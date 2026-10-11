@@ -3011,11 +3011,13 @@ function ScreenDashboard({
     wellness: !!wellness && (any(wellness.moodByDate) || any(wellness.sleepByDate)),
     score: score > 0,
     money: hasMoney,
+    // No empty state, and Home is its only door: left out, Plan my day was unreachable until the checklist went.
+    plan: true,
   };
   const young = !!onboard && started;
   const pick = (id) => (has[id] ? blockFor(layout.find((item) => item.id === id)) : null);
   const blocks = young
-    ? [pick('habits'), h('div', { class: 'gb-dash-block' }, onboard), ...['goals', 'calendar', 'tasks', 'wellness', 'score', 'money'].map(pick)].filter(Boolean)
+    ? [pick('habits'), h('div', { class: 'gb-dash-block' }, onboard), ...['plan', 'goals', 'calendar', 'tasks', 'wellness', 'score', 'money'].map(pick)].filter(Boolean)
     : layout.map(blockFor).filter(Boolean);
 
   // Quick add is always first and is not a widget: one sentence logs anything,

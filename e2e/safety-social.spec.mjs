@@ -238,9 +238,14 @@ test('quick add: typed "add task buy milk" creates the task', async ({ page, acc
   await qa.getByRole('textbox', { name: 'Quick log in your own words' }).fill('add task buy milk');
   await qa.getByRole('button', { name: 'Log it' }).click();
   // "Log this?" / "Log it" for one item, "Log these?" / "Log them" for several.
+  // One clear model read skips it and saves at once with an Undo toast; either way the task exists.
   const confirm = page.getByRole('dialog', { name: /^Log (this|these)\?$/ });
-  await expect(confirm.getByRole('checkbox', { name: /New task: buy milk/i })).toBeChecked();
-  await confirm.getByRole('button', { name: /^Log (it|them)$/ }).click();
+  const logged = page.locator('.gb-toast').filter({ hasText: /buy milk/i });
+  await expect(confirm.or(logged)).toBeVisible({ timeout: 20_000 });
+  if (await confirm.isVisible()) {
+    await expect(confirm.getByRole('checkbox', { name: /New task: buy milk/i })).toBeChecked();
+    await confirm.getByRole('button', { name: /^Log (it|them)$/ }).click();
+  }
   await expect(confirm).toHaveCount(0);
   await expect
     .poll(async () => {
