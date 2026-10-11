@@ -22,6 +22,11 @@ export const toast = {
   action() {
     /* no-op until registered */
   },
+  /** announce(text, urgent): read to a screen reader through app.js's persistent
+      live regions, which sit outside every repainted subtree. Nothing visible. */
+  announce() {
+    /* no-op until registered */
+  },
 };
 
 export function registerToast(impl) {

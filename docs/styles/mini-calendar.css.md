@@ -22,4 +22,5 @@ a retry affordance rather than an empty day.
 The `.badge` counts one-off items only (tasks + non-repeating reminders, and `.has-reminders` follows the same count); a day whose only reminders repeat gets `.gb-mini-cal-rep`, a dot, and still reads `.is-free`. A daily reminder used to badge every day ahead.
 
 `.is-today:not(.is-selected)` sits after `.has-tasks` / `.is-free` on purpose: same specificity, and written before them today lost its ring on any day with tasks.
+`.is-other-month` days dim by `--fg3` alone (an extra opacity took them to 3.2:1), and the phone badge keeps its 14px with an 11px (`--text-2xs`) digit by giving up padding, not by shrinking the type.
 `-nav-btn` is drawn at 32px with a `::before` overlay making the tap target 44px, and has a `:disabled` style (dimmed, no hover or press).

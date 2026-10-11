@@ -47,7 +47,12 @@ function probe() {
   const expectPremium = /(?:^|; )gb\.premium=1/.test(document.cookie);
   new MutationObserver((records) => {
     for (const r of records) {
-      if (r.target.id === 'root' && r.type === 'childList' && r.addedNodes.length) P.renders++;
+      // index.html's static .gb-static block (shown before any script runs) is not a render.
+      if (
+        r.target.id === 'root' &&
+        [...r.addedNodes].some((n) => n.nodeType === 1 && !n.classList.contains('gb-static'))
+      )
+        P.renders++;
       const gone = [...r.removedNodes].some(
         (n) =>
           n.nodeType === 1 &&
@@ -61,7 +66,13 @@ function probe() {
   }).observe(document, { childList: true, subtree: true });
   const tick = () => {
     const root = document.getElementById('root');
-    if (expectPremium && root && root.childElementCount) {
+    // The pre-script static block paints before any skin can apply, on any build.
+    if (
+      expectPremium &&
+      root &&
+      root.childElementCount &&
+      !root.querySelector(':scope > .gb-static')
+    ) {
       P.frames++;
       const shown = getComputedStyle(root).visibility !== 'hidden';
       if (shown && document.documentElement.getAttribute('data-premium') !== 'on') P.flash++;

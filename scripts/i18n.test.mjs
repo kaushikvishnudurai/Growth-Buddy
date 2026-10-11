@@ -28,6 +28,7 @@ if (!process.env.GB_I18N_CHILD) {
 const {
   t,
   setLocale,
+  pageLang,
   getLocale,
   localeFromUser,
   toDate,
@@ -63,6 +64,10 @@ assert.equal(getLocale(), 'en-US');
 }
 
 // --- relative days, counted in local calendar days ---
+// <html lang> follows the shipped catalog (only en): a Tamil phone still renders English.
+assert.equal(pageLang('ta-IN'), 'en');
+assert.equal(pageLang('en-IN'), 'en');
+assert.equal(pageLang('en'), 'en');
 assert.equal(fmtRelativeDays(-1), 'yesterday');
 assert.equal(fmtRelativeDays(0), 'today');
 assert.equal(fmtRelativeDays(3), 'in 3 days');

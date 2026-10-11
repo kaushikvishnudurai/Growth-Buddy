@@ -14,8 +14,10 @@ import {
   CrashCard,
   openOverlay,
   closeOverlays,
+  trackOverlay,
   openModal as sharedModal,
   fieldRefusal,
+  fieldError,
   shakeRefusal,
   landed,
   leave,
@@ -23,6 +25,7 @@ import {
   setTimeFormat,
   detectTimeFormat,
   setThinking,
+  rovingGroup,
 } from './gb-kit.js';
 import { setLocale, localeFromUser } from './i18n.js';
 import {
@@ -33,7 +36,7 @@ import {
   RenderMiniCalendarCard,
   QuoteCard,
 } from './dashboard.js';
-import { habitDue } from './home-order.js';
+import { habitDue, todayKey as sharedTodayKey, shiftDayKey } from './home-order.js';
 import { withProgressLog, needsProgressLog } from './goal-milestones.js';
 import { goalTaskStats, combinedGoalProgress, goalFinishedBy } from './goal-tasks.js';
 import {
@@ -63,6 +66,7 @@ import {
   docPart,
   LEDGER_ARRAYS,
   suggestCategory,
+  quickAccount,
 } from './money-core.js';
 import {
   ScreenCalendar,
@@ -76,15 +80,20 @@ import {
   setDefaultLead,
   getDefaultLead,
   setReminderSettingsOpener,
+  setCalendarImporter,
   setCustomToneAdder,
   setVoiceReminder,
+  NotifySelect,
+  UsualTimeChip,
   leadLabel,
   minutesLabel,
   REPEATS,
+  REPEAT_ORDER,
   TAGS,
+  clearReminderForm,
 } from './calendar.js';
 import { setWorkWeek } from './recurrence.js';
-import { ScreenAchievements, computeAchievements, levelProgress } from './achievements.js';
+import { computeAchievements, levelProgress } from './achievements.js';
 import { celebrate } from './celebrate.js';
 import { usualSleep, stepsTarget, focusMinutesTarget } from './nudges.js';
 import {
@@ -96,8 +105,23 @@ import {
   usualDrinkHours,
   WATER_DEFAULTS,
   WATER_ACTION_ML,
+  notificationTarget,
 } from './push.js';
 import { CacheStorage } from './cache-storage.js';
+import {
+  sessionGen,
+  bumpSession,
+  isStaleSession,
+  sessionEndedError,
+  SESSION_ENDED,
+  freshUserState,
+  USER_CACHES,
+  isUserKey,
+  bootKey,
+  bootSnapshot,
+  readBootSnapshot,
+  bootFromSnapshot,
+} from './session.js';
 import { createOutbox, tempId, isTempId, newIdemKey } from './outbox.js';
 import {
   initNative,
@@ -110,12 +134,18 @@ import {
   readTodaySteps,
   cancelPendingLocalNotifications,
   onLocalNotificationAction,
+  onDeepLink,
+  deepLinkHash,
+  publicSiteUrl,
 } from './native.js';
+import { launchIntent } from './launch-intent.js';
+import { registerSW } from 'virtual:pwa-register';
 import { registerToast } from './toast.js';
+import { createUndoQueue } from './undo-queue.js';
 import { initA11y, focusLocator, refocus } from './a11y.js';
 import { initErrorReporting } from './error-report.js';
 import { initVitals, markHomePainted } from './vitals.js';
-import { winLines } from './circle-core.js';
+import { winLines } from './circle-wins.js';
 import {
   CUSTOM_MAX_BYTES,
   CUSTOM_MAX_COUNT,
@@ -159,8 +189,39 @@ if ('serviceWorker' in navigator) {
     }
   } else if (!import.meta.env.DEV) {
     // vite-plugin-pwa emits sw.js only in a build; on the dev server it is the SPA fallback.
-    window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js', { scope: '/' }));
+    initServiceWorker();
   }
+}
+
+/* A new deploy reaches an open tab or an installed app. The worker is
+   registerType 'prompt' (vite.config.js): a new build installs and WAITS, and
+   the page keeps the old build's precache, chunks and all, so nothing skews
+   under it. "Reload" tells the waiting worker to take over and reloads once it
+   has (registerSW's updateSW(true)). The worker is otherwise only re-checked on
+   a navigation, which a hash-routed app never makes, so coming back to the app
+   checks too. Dismissed, it asks again on the next return. */
+function initServiceWorker() {
+  let updateReady = false;
+  const offerUpdate = () =>
+    pushToast('A new version is ready.', 'info', 24 * 60 * 60 * 1000, {
+      label: 'Reload',
+      run: () => updateSW(true),
+    });
+  const updateSW = registerSW({
+    onNeedRefresh() {
+      updateReady = true;
+      offerUpdate();
+    },
+    onRegisteredSW(_url, reg) {
+      if (!reg) return;
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) return;
+        if (updateReady) {
+          if (!state.toasts.some((t) => t.message === 'A new version is ready.')) offerUpdate();
+        } else reg.update().catch(() => {});
+      });
+    },
+  });
 }
 
 // Prefer the build-time env (VITE_API_BASE). In dev, fall back to '' so requests
@@ -450,13 +511,14 @@ const state = {
 /* The working week decides which days a "working days" reminder lands on, so it
    has to be right for the FIRST paint — not after /api/auth/me comes back, by
    which time the calendar and Home's dots have already been drawn from the
-   default. The session cache carries uiPrefs and `gb.session` is cookie-backed
-   (read synchronously at module init), so it is available here. hydrateUiPrefs()
+   default. The session cache carries uiPrefs and `gb.session`'s slim cookie keeps
+   them (read synchronously at module init), so it is available here. hydrateUiPrefs()
    sets it again on every refresh; this is the same value, earlier. */
 setWorkWeek(state.user && state.user.uiPrefs && state.user.uiPrefs.workWeek);
 setRoutine(state.user && state.user.uiPrefs && state.user.uiPrefs.routine);
 setDefaultLead(state.user && state.user.uiPrefs && state.user.uiPrefs.reminderLead);
 setReminderSettingsOpener(() => openProfileSettings('reminders'));
+setCalendarImporter(() => openIcsImportDialog());
 setCustomToneAdder(() => openCustomToneDialog());
 setVoiceReminder({ supported: () => voiceSupported(), capture: (btn) => captureReminder(btn) });
 setTimeFormat(state.user && state.user.uiPrefs && state.user.uiPrefs.timeFormat);
@@ -481,8 +543,13 @@ function paintToasts() {
   refreshIcons();
 }
 
-function dismissToast(id) {
+/* `quiet`: the toast's own onGone is not run (its Undo was tapped, or its
+   undo window already settled). The close button is not quiet: closing an
+   Undo toast means "done", so its delete goes now. */
+function dismissToast(id, quiet) {
+  const gone = state.toasts.find((t) => t.id === id);
   state.toasts = state.toasts.filter((t) => t.id !== id);
+  if (gone && gone.onGone && !quiet) gone.onGone();
   dropStaleToastTimers();
   paintToasts();
 }
@@ -504,6 +571,7 @@ function armToast(id, ms) {
 function holdToasts() {
   if (toastsHeld) return;
   toastsHeld = true;
+  undoQueue.hold(); // an Undo toast's delete waits with it
   const now = Date.now();
   for (const [id, t] of toastTimers) {
     clearTimeout(t.handle);
@@ -513,6 +581,7 @@ function holdToasts() {
 function releaseToasts() {
   if (!toastsHeld) return;
   toastsHeld = false;
+  undoQueue.release();
   // A little time back after letting go, so it doesn't vanish the instant you look away.
   for (const [id, t] of toastTimers) armToast(id, Math.max(t.left, 1500));
 }
@@ -524,7 +593,10 @@ function dropStaleToastTimers() {
     toastTimers.delete(id);
   }
   // The stack that was being hovered is gone, and with it any mouseleave.
-  if (!state.toasts.length) toastsHeld = false;
+  if (!state.toasts.length) {
+    toastsHeld = false;
+    undoQueue.release();
+  }
 }
 
 /* How long an error stays: never under six seconds, longer the more there is
@@ -561,9 +633,15 @@ function isConnectionToast(t) {
 }
 
 /* `action` ({label, run}) puts one button on the toast — a reminder's Snooze.
-   Tapping it runs it and dismisses the toast. */
-function pushToast(message, kind, durationMs, action) {
+   Tapping it runs it and dismisses the toast. `durationMs: Infinity` arms no
+   timer (an Undo toast: deferDelete's queue closes it). `onGone` runs when the
+   toast goes any other way than its button: closed, or pushed off the stack. */
+function pushToast(message, kind, durationMs, action, onGone) {
   let text = message || 'Something went wrong.';
+  // A late answer for a session that has ended (session.js) has nobody to tell,
+  // and "session expired" from the requests a 401 cut short is what the sign-in
+  // card's notice already says.
+  if (text === SESSION_ENDED || (text === SESSION_EXPIRED && !state.user)) return 0;
   // The banner already says the connection is down; repeating "Check your
   // internet" under it said it twice. What's left to say is what happened to
   // the thing just tried.
@@ -574,8 +652,12 @@ function pushToast(message, kind, durationMs, action) {
     kind: kind || 'error',
     at: Date.now(), // when it arrived — toastStack resumes its entrance from here
     action: action || null,
+    onGone: onGone || null,
   };
-  state.toasts = [...state.toasts.filter((t) => t.message !== text), toast].slice(-4);
+  // Two "Task deleted." toasts are two Undos: only plain repeats collapse.
+  const before = state.toasts;
+  state.toasts = [...before.filter((t) => t.onGone || t.message !== text), toast].slice(-4);
+  for (const t of before) if (t.onGone && !state.toasts.includes(t)) t.onGone();
   dropStaleToastTimers();
   paintToasts();
   announce(text, toast.kind === 'error');
@@ -585,7 +667,8 @@ function pushToast(message, kind, durationMs, action) {
   // actual accomplishments (toggleTask / toggleHabit).
   if (toast.kind !== 'success' && toast.kind !== 'info') buddyReact('no');
   const asked = typeof durationMs === 'number' ? durationMs : 2800;
-  armToast(toast.id, toast.kind === 'error' ? Math.max(asked, errorToastMs(text)) : asked);
+  if (Number.isFinite(asked))
+    armToast(toast.id, toast.kind === 'error' ? Math.max(asked, errorToastMs(text)) : asked);
   return toast.id;
 }
 
@@ -622,7 +705,81 @@ registerToast({
   dismiss: dismissToast,
   // A toast with one button (e.g. "Undo") — the same action slot a reminder's Snooze uses.
   action: (message, label, run) => pushToast(message, 'info', 6000, { label, run }),
+  // Screen-reader-only status, for async results a repaint would otherwise swallow.
+  announce,
 });
+
+/* ---- Deferred deletes (scripts/undo-queue.js) ----
+   Undo instead of "Are you sure?": the item leaves the screen at once, a toast
+   says so with Undo, and the DELETE goes only when the toast's window passes
+   (held, like every toast, while the stack is hovered or focused). Undo puts it
+   back where it was. Page hidden or sign-out sends what is pending first; a
+   send that fails puts the item back and toasts. Each delete is its own toast,
+   so several pending ones are undone separately.
+   `remove` / `restore` change state only, and `remove` must be safe to run
+   again: render() and overlayOutbox() re-run it, so a list reloaded from the
+   server mid-window doesn't bring the item back. `commit` is the real request,
+   through api() and, offline, the outbox: the same paths the old instant
+   delete used. */
+const UNDO_MS = 6000;
+const undoQueue = createUndoQueue({ ms: UNDO_MS, onError: (err, e) => toastError(err, e.errorText) });
+
+function deferDelete({ message, errorText, remove, restore, commit, selector, paint = render }) {
+  const uid = state.user && state.user.id;
+  const mine = () => !!state.user && state.user.id === uid;
+  let toastId = 0;
+  const qid = undoQueue.schedule({
+    errorText,
+    remove,
+    restore: () => {
+      if (!mine()) return; // signed out meanwhile: there is no list to put it in
+      restore();
+      paint();
+      if (selector) landSoon(selector);
+    },
+    commit,
+    settled: () => dismissToast(toastId, true),
+  });
+  toastId = pushToast(
+    message,
+    'info',
+    Infinity,
+    { label: 'Undo', run: () => undoQueue.undo(qid) },
+    () => undoQueue.commit(qid)
+  );
+  // A row with an exit animation plays it; anything else just repaints.
+  if (selector) removeSoon(selector, () => {});
+  else paint();
+}
+
+/* remove / restore for an item of an id-keyed list held at get() / set(). */
+function listSlot(get, set, id) {
+  let item = null;
+  let at = 0;
+  return {
+    remove() {
+      const list = get() || [];
+      const i = list.findIndex((x) => x.id === id);
+      if (i < 0) return;
+      item = list[i];
+      at = i;
+      set(list.filter((x) => x.id !== id));
+    },
+    restore() {
+      const list = get() || [];
+      if (!item || list.some((x) => x.id === id)) return;
+      set([...list.slice(0, at), item, ...list.slice(at)]);
+    },
+  };
+}
+
+// Pending deletes go before the page does. pagehide alone misses a phone
+// that backgrounds the tab and never comes back to it.
+const flushDeletes = () => undoQueue.flush();
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) flushDeletes();
+});
+window.addEventListener('pagehide', flushDeletes);
 
 function score() {
   if (state.score > 0) {
@@ -917,8 +1074,10 @@ function persistMoney() {
       // No connection (or a server that's down) is not "not saved": the change is
       // in the cache and the ledger queue, and is replayed on the next flush
       // (handleOnline → loadData, or the timer below). Saying "not saved" made
-      // people enter it twice. Only a refusal is worth an error.
-      const queued = !navigator.onLine || !err || !err.status || err.status >= 500;
+      // people enter it twice. Only a refusal is worth an error; what flushLedger
+      // keeps for a retry (RETRYABLE: 401, 408, 409, 429) is queued too.
+      const queued =
+        !navigator.onLine || !err || !err.status || err.status >= 500 || RETRYABLE.has(err.status);
       if (queued) pushToast('Saved on this phone — will sync when you’re back online.', 'info');
       else toastError(err, 'Money changes were not saved. Check your connection and try again.');
     })
@@ -1290,7 +1449,6 @@ function hydrateUiPrefs() {
       CacheStorage.setItem(PREMIUM_KEY, p.premium ? '1' : '0');
       applyPremium(p.premium);
     }
-    if (typeof p.qaLang === 'string') localStorage.setItem('gb.qa.lang', p.qaLang);
     // Before this runs, every "Mon-Fri" reminder answers with the default —
     // so it has to happen before the calendar or Home paints their dots.
     setWorkWeek(p.workWeek);
@@ -1325,15 +1483,14 @@ function hydrateUiPrefs() {
    can still rescue), `protectedToday`, and the current `freezeTokens` balance.
    This layer just reads those fields and calls the protect/unprotect endpoints. */
 
+/* The account's today (home-order.js todayKey): the day the server checks a
+   check-in or rest day against and stamps on its water/food summaries. */
 function todayKey() {
-  const d = new Date();
-  return dateKey(d.getFullYear(), d.getMonth(), d.getDate());
+  return sharedTodayKey(state.user && state.user.timezone);
 }
 
 function yesterdayKey() {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return dateKey(d.getFullYear(), d.getMonth(), d.getDate());
+  return shiftDayKey(todayKey(), -1);
 }
 
 // At-risk banners the user chose to let reset — session-only, don't nag again.
@@ -1617,24 +1774,24 @@ function recordTrendsToday() {
 }
 
 /* Sign-out leaves nothing of this account on the device: money, wellness, goal
-   progress, trends — every key built as gb.<thing>.<userId>[.<more>]. Except a
-   money pending queue that still holds writes: those are expenses the server
-   never got, the only copy there is, and they replay when this account signs
-   back in. Session expiry (handleAuthExpired) keeps everything, since the same
-   person is about to sign back in. */
-function purgeUserCache() {
+   progress, trends, the app's boot snapshot — every key built as
+   gb.<thing>.<userId>[.<more>] (session.js isUserKey). Every way out runs it, a
+   401 included: whoever signs in next on this device is not necessarily the
+   same person. Except writes the server never got, the only copy there is:
+   a money pending queue that still holds some is kept (it replays when this
+   account signs back in), and so is the offline outbox when the session
+   expired rather than being ended on purpose. */
+function purgeUserCache(reason) {
   const id = state.user && state.user.id;
   if (!id) return;
   const p = loadPendingLedger();
-  const keep = Object.keys(p.upserts).length || p.deletes.length ? pendingKey() : null;
-  CacheStorage.removeWhere(
-    (k) => k !== keep && (k.endsWith('.' + id) || k.includes('.' + id + '.'))
-  );
-  // The offline outbox (gb.outbox.<uid>) goes too — the pattern above already
-  // matches it; this says so. Unlike the money queue it is not kept: a task tick
-  // replayed into a later session is worth less than a clean sign-out.
-  outbox.clear();
+  const keepMoney = reason !== 'deleted' && (Object.keys(p.upserts).length || p.deletes.length);
+  const keepOutbox = reason === 'expired' && outbox.size() ? outboxKey() : null;
+  const keep = keepMoney ? pendingKey() : null;
+  const gone = CacheStorage.removeWhere((k) => k !== keepOutbox && isUserKey(k, id, keep));
+  if (!keepOutbox) outbox.clear();
   outboxIds.clear();
+  return gone;
 }
 
 function clearSession() {
@@ -1981,7 +2138,10 @@ const SESSION_EXPIRED = 'Your session expired. Please sign in again.';
 async function api(path, options) {
   const opts = options || {};
   const method = (opts.method || 'GET').toUpperCase();
-  if (method === 'GET' && !opts.body) {
+  // Only a plain GET is shared. One with onResponse (the money ETag), raw or its
+  // own headers needs its own response: handed the first caller's promise, its
+  // onResponse never ran and the next PUT sent a stale If-Match.
+  if (method === 'GET' && !opts.body && !opts.onResponse && !opts.raw && !opts.headers) {
     const existing = _inflightGets.get(path);
     if (existing) return existing;
     const p = (async () => {
@@ -2020,7 +2180,21 @@ function statusMessage(status) {
   return "That didn't work. Please try again.";
 }
 
+/* The session generation (session.js) is noted before the request goes out:
+   an answer that lands after a sign-out rejects with sessionEndedError() and
+   writes nothing, and its 401 doesn't end the NEXT session. */
 async function apiFetch(path, options) {
+  const gen = sessionGen();
+  try {
+    const out = await apiFetchNow(path, options, gen);
+    if (isStaleSession(gen)) throw sessionEndedError();
+    return out;
+  } catch (err) {
+    throw isStaleSession(gen) ? sessionEndedError() : err;
+  }
+}
+
+async function apiFetchNow(path, options, gen) {
   const opts = options || {};
   const headers = Object.assign({ Accept: 'application/json' }, opts.headers || {});
   const token = loadToken();
@@ -2043,6 +2217,7 @@ async function apiFetch(path, options) {
   } catch (_) {
     throw new Error(NO_CONNECTION);
   }
+  if (isStaleSession(gen)) throw sessionEndedError();
   if (res.status === 401) {
     // Token went stale (revoked, expired, server restarted with empty DB,
     // etc.) — wipe local state and bounce to the sign-in screen.
@@ -2093,6 +2268,7 @@ async function apiStream(path, body, signal) {
   const device = deviceLabelHeader();
   if (device) headers['X-GB-Device'] = device;
   const fallback = (msg) => Object.assign(new Error(msg), { fallback: true });
+  const gen = sessionGen();
   let res;
   try {
     res = await fetch(API_BASE + path, {
@@ -2105,6 +2281,7 @@ async function apiStream(path, body, signal) {
     if (err && err.name === 'AbortError') throw err;
     throw fallback(NO_CONNECTION);
   }
+  if (isStaleSession(gen)) throw sessionEndedError();
   if (res.status === 401) {
     handleAuthExpired();
     throw new Error(SESSION_EXPIRED);
@@ -2125,51 +2302,11 @@ async function apiStream(path, body, signal) {
   return res;
 }
 
+/* A 401 from api() or the stream: the token was revoked, expired, or signed
+   out everywhere. Same teardown as Sign out, minus the server calls the dead
+   token can't make. */
 function handleAuthExpired() {
-  disconnectWebSocket();
-  clearSession();
-  state.user = null;
-  state.tasks = [];
-  state.habits = [];
-  state.goals = [];
-  state.reminders = [];
-  state.goals = [];
-  state.wellness = emptyWellness();
-  state.goalProgress = {};
-  // Another account must not see this one's Insights, nor wait out its throttle.
-  state.insightHistory = null;
-  state.waterUsualHours = null;
-  loadedFor = null; // the next sign-in is a first load, not a refresh
-  insightHistoryAt = 0;
-  insightReq = null; // a fetch still in flight belongs to the old account: drop it
-  state.money = emptyMoney();
-  state.streakFreeze = emptyStreakFreeze();
-  state.trends = emptyTrends();
-  state.water = null;
-  state.food = null;
-  state.calendarFoodByDate = {};
-  state.calendarFoodErrorByDate = {};
-  state.calendarFoodLoadingFor = '';
-  setNotifFirstPage([]); // also drops the last account's unread-past-the-page count
-  notifFilter = 'all';
-  state.quote = null;
-  state.score = 0;
-  state.authMode = 'signin';
-  state.authEmail = '';
-  try {
-    sessionStorage.removeItem('gb.authDraft');
-  } catch (_) {
-    /* ignore */
-  }
-  state.authNotice = 'Your session ended. Sign in again.';
-  state.profileOpen = false;
-  state.notifOpen = false;
-  state.moreOpen = false;
-  state.toasts = [];
-  returnToScreen = state.screen; // signing back in returns here, not to Home
-  state.screen = 'home';
-  if (window.location.hash) history.replaceState(null, '', window.location.pathname);
-  render();
+  endSession('expired');
 }
 
 function formatTaskTime(task) {
@@ -2430,6 +2567,7 @@ async function loadData() {
   // if any one of the five calls failed.
   const userKey = state.user.id || state.user.email;
   const refresh = loadedFor === userKey && !state.error;
+  const gen = sessionGen();
   if (!refresh) {
     // Refreshing on /family used to run quote card -> family skeleton -> family:
     // the boot screen was waiting on five calls that screen never reads. Screens
@@ -2465,16 +2603,20 @@ async function loadData() {
     // first paint doesn't wait on a replay; the flush refetches what it touched.
     // The queue itself is read only once CacheStorage has hydrated it.
     await CacheStorage.ready();
+    if (isStaleSession(gen)) return; // signed out while the queue hydrated
+    saveBootSnapshot();
     overlayOutbox();
     flushOutbox();
     reSyncDeviceAlarms();
     loadWaterUsualHours();
     autoTickStepHabits();
   } catch (err) {
+    if (err && err.sessionEnded) return; // that session is gone; this answer is nobody's
     if (refresh) {
       toastError(err, 'Could not refresh. Showing your last data.');
       return;
     }
+    if (bootFromSnapshot(err, isNative()) && (await paintBootSnapshot(userKey))) return;
     state.error = err.message || 'Failed to load data from backend.';
     state.loading = false;
     render();
@@ -2490,10 +2632,38 @@ async function loadData() {
   if (!refresh && state.screen === 'home') markHomePainted();
   // Needs wave 1: "is this a new account?" is read from tasks/habits/reminders.
   if (!refresh) maybeStartFirstRun();
+  // A manifest shortcut or a share: needs wave 1 (water, tasks) on screen.
+  if (!refresh) runLaunchIntent();
   // After wave 1, so a button press that cold-started the app (the plugin holds
   // it until a listener attaches) finds the habit or reminder it names.
   armNotificationActions();
   loadSecondaryData();
+}
+
+/* The phone app has no service worker, so with no connection a cold start's
+   wave 1 had nothing to answer it and Home was the crash card. The last good
+   wave 1 (+ goals) is kept per account (session.js bootKey; every sign-out
+   removes it) and painted instead, under the offline banner, or a toast when
+   the device thinks it is online (a server that never answered). It counts as
+   loaded, so coming back online refreshes in place. Web: the worker's
+   gb-api-get already does this, so nothing is stored twice there. */
+function saveBootSnapshot() {
+  if (!isNative() || !state.user || !state.user.id) return;
+  CacheStorage.setItem(bootKey(state.user.id), bootSnapshot(state));
+}
+async function paintBootSnapshot(userKey) {
+  await CacheStorage.ready();
+  const snap =
+    state.user && state.user.id && readBootSnapshot(CacheStorage.getItem(bootKey(state.user.id)));
+  if (!snap) return false;
+  Object.assign(state, snap);
+  overlayOutbox();
+  state.loading = false;
+  loadedFor = userKey;
+  if (!SELF_LOADING_SCREENS.has(state.screen)) render();
+  if (navigator.onLine)
+    pushToast('Couldn’t reach Growth Buddy. Showing your last data.', 'info', 5000);
+  return true;
 }
 
 /* Screens that own their subtree: they fetch through their own api callbacks
@@ -2530,6 +2700,7 @@ async function loadSecondaryData() {
   // and re-rendering would rebuild screens that own their subtree (family,
   // money, mentor, circle) and throw away their local view state.
   const bootScreen = state.screen;
+  const gen = sessionGen();
   connectWebSocket();
   try {
     const [goals, notifications, food, money, dailyLogs, photoHistory, weekly] =
@@ -2538,22 +2709,24 @@ async function loadSecondaryData() {
         api(notifPageUrl('all')).catch(() => null),
         api('/api/food').catch(() => null),
         api('/api/money', { onResponse: rememberMoneyVersion }).catch((err) => {
-          console.error('Money API failed - data will NOT persist!', err);
+          if (!err.sessionEnded) console.error('Money API failed - data will NOT persist!', err);
           return null;
         }),
         api('/api/daily-logs?days=60').catch((err) => {
-          console.error('Daily logs API failed - sleep/mood data will NOT persist!', err);
+          if (!err.sessionEnded) console.error('Daily logs API failed - sleep/mood data will NOT persist!', err);
           return null;
         }),
         api('/api/food/photo-history').catch((err) => {
-          console.error('Photo history API failed - photos will NOT persist!', err);
+          if (!err.sessionEnded) console.error('Photo history API failed - photos will NOT persist!', err);
           return null;
         }),
         api('/api/weekly-review').catch(() => null),
       ]);
+    if (isStaleSession(gen)) return; // signed out meanwhile: none of this is the next account's
 
     if (goals) {
       state.goals = goals;
+      saveBootSnapshot();
       // Per-goal progress (milestones, day-tracker) rides on each goal from the
       // backend; rebuild the id-keyed map and mirror it to the local cache.
       const gp = {};
@@ -3061,7 +3234,7 @@ async function plainToggleHabit(id) {
       // Queued as a dated check-in, not /toggle: the server's "today" when this
       // replays may be tomorrow, and a toggle would tick the wrong day. Two taps
       // on the same day cancel in the outbox (toggleKey).
-      const day = todayKeyNow();
+      const day = todayKey();
       const done = state.habits.some((h) => h.id === id && h.doneToday);
       queueWrite({
         method: 'POST',
@@ -3248,22 +3421,32 @@ function pauseTask(task) {
   return patchTaskNow(task.id, { paused: !task.paused }, 'Could not update task.');
 }
 
-async function deleteTask(id) {
+/* Undoable (deferDelete): the row goes now, the DELETE when the toast does. */
+function deleteTask(id) {
+  if (!state.tasks.some((t) => t.id === id)) return;
+  deferDelete({
+    message: 'Task deleted.',
+    errorText: 'Could not delete that task.',
+    selector: '[data-task-id="' + id + '"]',
+    ...listSlot(() => state.tasks, (l) => (state.tasks = l), id),
+    commit: () => sendTaskDelete(id),
+  });
+}
+
+async function sendTaskDelete(id) {
+  // realId at send time: a create that was queued may have landed in the window.
   const path = '/api/tasks/' + encodeURIComponent(realId(id));
   const idemKey = newIdemKey();
   const queue = () => queueWrite({ method: 'DELETE', path, kind: 'task.delete', local: { id }, idemKey });
-  if (isTempId(realId(id))) queue(); // its create is still queued: both are cancelled
+  if (isTempId(realId(id))) await queue(); // its create is still queued: both are cancelled
   else
     try {
-      await api(path, { method: 'DELETE', headers: { 'Idempotency-Key': idemKey } });
+      await api(path, { method: 'DELETE', keepalive: true, headers: { 'Idempotency-Key': idemKey } });
     } catch (err) {
       if (!networkError(err)) throw err;
-      queue();
+      await queue();
     }
-  removeSoon('[data-task-id="' + id + '"]', () => {
-    state.tasks = state.tasks.filter((t) => t.id !== id);
-  });
-  await refreshScore();
+  if (state.user) refreshScoreLater();
 }
 
 async function createHabit(body) {
@@ -3276,6 +3459,7 @@ async function createHabit(body) {
   state.habits = [...state.habits, created];
   refreshScoreLater();
   reSyncDeviceAlarms();
+  return created;
 }
 
 /* ---- Habit order (PUT /api/habits/order) ----
@@ -3360,10 +3544,11 @@ function addQuickExpense(amount, note) {
   next.expenses.unshift({
     id:
       typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
-    amount: Math.round(amount),
+    amount: Math.round(amount * 100) / 100,
+    ...quickAccount(state.money, 'expense'),
     // The tag Money's own form would start on: this note's past tag, then keywords.
     category: (note && suggestCategory(note, state.money)) || 'others',
-    date: todayKeyNow(),
+    date: todayKey(),
     note: note || '',
     createdAt: Date.now(),
   });
@@ -3375,10 +3560,11 @@ function addQuickIncome(amount, label) {
   (next.income = next.income || []).unshift({
     id:
       typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
-    amount: Math.round(amount),
+    amount: Math.round(amount * 100) / 100,
+    ...quickAccount(state.money, 'income'),
     source: salary ? 'salary' : 'other',
     label: label || (salary ? 'Salary' : 'Income'),
-    date: todayKeyNow(),
+    date: todayKey(),
   });
   saveMoney(next);
 }
@@ -3396,7 +3582,7 @@ async function parseQuickAdd(text) {
   const now = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
   const res = await api('/api/quick-add', {
     method: 'POST',
-    body: JSON.stringify({ text, habits, today: todayKeyNow(), now }),
+    body: JSON.stringify({ text, habits, today: todayKey(), now }),
   });
   // A sentence can't write into a tracker the user switched off.
   const intents = ((res && res.intents) || []).filter(
@@ -3545,8 +3731,8 @@ function hhmm(v) {
    until 31 Dec · 10 min before · Work". */
 function reminderSummary(it) {
   const bits = [it.text];
-  const day = it.date || todayKeyNow();
-  const when = day === todayKeyNow() ? 'Today' : shortDay(day);
+  const day = it.date || todayKey();
+  const when = day === todayKey() ? 'Today' : shortDay(day);
   bits.push(
     when +
       (it.time ? ', ' + formatTime(hhmm(it.time)) : '') +
@@ -3569,13 +3755,30 @@ function reminderSummary(it) {
    Capacitor app's WebView doesn't, so there the native SpeechRecognition plugin
    takes over. One helper, so Quick add, the calendar's reminder form and
    Settings → Reminders all listen the same way. */
+const VOICE_LANGS = [
+  { code: 'en-IN', label: 'English' },
+  { code: 'hi-IN', label: 'हिन्दी' },
+  { code: 'ta-IN', label: 'தமிழ்' },
+  { code: 'te-IN', label: 'తెలుగు' },
+  { code: 'kn-IN', label: 'ಕನ್ನಡ' },
+  { code: 'ml-IN', label: 'മലയാളം' },
+  { code: 'bn-IN', label: 'বাংলা' },
+  { code: 'mr-IN', label: 'मराठी' },
+  { code: 'gu-IN', label: 'ગુજરાતી' },
+  { code: 'pa-IN', label: 'ਪੰਜਾਬੀ' },
+];
+/* The picked language (ui_prefs.qaLang, the account's), else the device's own
+   matched against VOICE_LANGS: Quick add's picker and every other mic read this
+   one answer, so they can't default differently. */
 function speechLang() {
-  return (
-    localStorage.getItem('gb.qa.lang') ||
-    ((state.user && state.user.uiPrefs) || {}).qaLang ||
-    navigator.language ||
-    'en-IN'
-  );
+  const saved = ((state.user && state.user.uiPrefs) || {}).qaLang;
+  if (saved) return saved;
+  const device = navigator.language || 'en-IN';
+  const base = (c) => c.split('-')[0];
+  const match =
+    VOICE_LANGS.find((l) => l.code === device) ||
+    VOICE_LANGS.find((l) => base(l.code) === base(device));
+  return match ? match.code : device;
 }
 
 function voiceSupported() {
@@ -3774,7 +3977,7 @@ async function applyIntent(it) {
       // Every field the sentence gave, through the same path as the calendar's
       // own form — so the past-day and past-time refusals apply here too.
       const made = await addReminder(
-        it.date || todayKeyNow(),
+        it.date || todayKey(),
         it.text,
         hhmm(it.time),
         it.tag || 'personal',
@@ -3849,7 +4052,8 @@ async function createGoal(body) {
   const sec = (state.goals || []).find((x) => x.horizon === created.horizon);
   if (sec) sec.goals = [created, ...(sec.goals || [])];
   else loadGoals();
-  toastSuccess('Goal saved.');
+  // The next step is known: the goal's first task, linked already (taskForm's presetGoalId).
+  pushToast('Goal saved.', 'success', 6000, { label: 'Add first task', run: () => openAddTask(created) });
   return created;
 }
 
@@ -4048,18 +4252,50 @@ function loadGoalActions(id) {
 /* The DELETE is the whole answer: drop the goal where it sits rather than
    reload every goal, and take its cached progress with it (that blob used to
    stay in CacheStorage for good). */
-async function deleteGoal(id) {
-  await api('/api/goals/' + encodeURIComponent(id), { method: 'DELETE' });
-  state.goals = (state.goals || []).map((sec) => ({
-    ...sec,
-    goals: (sec.goals || []).filter((g) => g.id !== id),
-  }));
+function deleteGoal(id) {
+  let item = null;
+  let secAt = -1;
+  let at = 0;
+  deferDelete({
+    message: 'Goal deleted.',
+    errorText: 'Could not delete that goal.',
+    remove: () => {
+      (state.goals || []).forEach((sec, si) => {
+        const i = (sec.goals || []).findIndex((g) => g.id === id);
+        if (i < 0) return;
+        item = sec.goals[i];
+        secAt = si;
+        at = i;
+      });
+      if (secAt < 0) return;
+      state.goals = (state.goals || []).map((sec) => ({
+        ...sec,
+        goals: (sec.goals || []).filter((g) => g.id !== id),
+      }));
+    },
+    // Back into the section it left, at its place (a reload may have reshaped them).
+    restore: () => {
+      const sec = (state.goals || [])[secAt];
+      if (!item || !sec || (state.goals || []).some((s) => (s.goals || []).some((g) => g.id === id))) return;
+      const goals = sec.goals || [];
+      state.goals = state.goals.map((s, si) =>
+        si === secAt ? { ...s, goals: [...goals.slice(0, at), item, ...goals.slice(at)] } : s
+      );
+    },
+    commit: () => sendGoalDelete(id),
+  });
+}
+
+async function sendGoalDelete(id) {
+  await api('/api/goals/' + encodeURIComponent(id), { method: 'DELETE', keepalive: true });
+  if (!state.user) return;
   // The server took its tasks off it (they stay, on no goal); mirror that.
   state.tasks = (state.tasks || []).map((t) => (t.goalId === id ? { ...t, goalId: null } : t));
   if (state.goalProgress && state.goalProgress[String(id)]) {
     delete state.goalProgress[String(id)];
     persistGoalProgress();
   }
+  render();
 }
 
 async function addGoalAction(id, body) {
@@ -4094,6 +4330,22 @@ async function deleteGoalAction(goalId, actionId) {
   );
   await loadGoals();
   toastSuccess('Action deleted.');
+}
+
+/* Its history goes with it, which the toast can't say in two words: Undo is
+   the whole of the safety. */
+function deleteHabit(id) {
+  deferDelete({
+    message: 'Habit deleted.',
+    errorText: 'Could not delete that habit.',
+    ...listSlot(() => state.habits, (l) => (state.habits = l), id),
+    commit: async () => {
+      await api('/api/habits/' + encodeURIComponent(id), { method: 'DELETE', keepalive: true });
+      if (!state.user) return;
+      refreshScoreLater();
+      reSyncDeviceAlarms();
+    },
+  });
 }
 
 /* Paint the glass at once, then POST. Each accepted tap is its own entry (two
@@ -4151,7 +4403,7 @@ const localDayOf = (iso) => {
 /* Taps not yet on the server, laid over a summary from it. Only the summary's
    own day: a glass queued last night is yesterday's, not today's. */
 function withPendingWater(water) {
-  return overlayPendingWater(water, pendingWater, { today: todayKeyNow(), dayOf: localDayOf, effectiveMl });
+  return overlayPendingWater(water, pendingWater, { today: todayKey(), dayOf: localDayOf, effectiveMl });
 }
 
 /* No connection, or a server that's down: worth queueing. A 4xx is a refusal. */
@@ -4191,7 +4443,7 @@ async function queueWrite(op) {
 /* Lay what's queued over lists just read from the server, which has not seen
    it yet. Called right after state.tasks / habits / reminders are replaced. */
 function overlayOutbox() {
-  const today = todayKeyNow();
+  const today = todayKey();
   for (const op of outbox.list()) {
     const l = op.local || {};
     if (op.kind === 'task.create' && !state.tasks.some((t) => t.id === l.id)) state.tasks = [l, ...state.tasks];
@@ -4204,6 +4456,7 @@ function overlayOutbox() {
       state.reminders = [...state.reminders, l];
     else if (op.kind === 'reminder.delete') state.reminders = state.reminders.filter((r) => r.id !== l.id);
   }
+  undoQueue.reapply(); // and what is waiting out an Undo toast
 }
 /* Notes the server hasn't got yet, for the Notes screen's list. */
 const queuedNotes = () =>
@@ -4282,7 +4535,7 @@ async function flushWaterQueue() {
       onSent: (x, updated) => {
         pendingWater.delete(x.id);
         storeWaterQueue(loadWaterQueue().filter((y) => y.id !== x.id));
-        if (summaryIsForToday(updated, todayKeyNow())) state.water = withPendingWater(updated);
+        if (summaryIsForToday(updated, todayKey())) state.water = withPendingWater(updated);
         invalidateWeek('water');
       },
       onRefused: (x, err) => {
@@ -4310,8 +4563,8 @@ async function flushWaterQueue() {
    quick buttons are water): tea/coffee/... count for less, nutrition.js HYDRATION. */
 async function quickAddWater(amountMl, dayKey, drinkType) {
   const drink = drinkType && drinkType !== 'water' ? drinkType : null;
-  if (dayKey && dayKey !== todayKeyNow()) {
-    if (dayKey > todayKeyNow()) {
+  if (dayKey && dayKey !== todayKey()) {
+    if (dayKey > todayKey()) {
       toastError(null, "You can't log water for a day that hasn't happened yet.");
       return;
     }
@@ -4394,7 +4647,7 @@ async function quickAddWater(amountMl, dayKey, drinkType) {
       waterRefetch = false;
       const fresh = await api('/api/water').catch(() => null);
       // A tap made while this GET was out has its own answer coming; let it paint.
-      if (fresh && waterInFlight === 0 && summaryIsForToday(fresh, todayKeyNow())) {
+      if (fresh && waterInFlight === 0 && summaryIsForToday(fresh, todayKey())) {
         state.water = withPendingWater(fresh);
         render();
       }
@@ -4439,8 +4692,10 @@ function removeSoon(selector, drop) {
 }
 
 /* Throws on failure. The Log food dialog stays open only when its onPrimary
-   throws; catching here closed it over an entry that never saved. */
-async function logFoodEntry(payload) {
+   throws; catching here closed it over an entry that never saved.
+   opts.undo: a one-tap log (a recent or favourite chip) toasts with Undo, which
+   deletes the entry just made. Returns the new entry when it is today's. */
+async function logFoodEntry(payload, opts) {
   const before = new Set(((state.food && state.food.entries) || []).map((e) => e.id));
   // Typed calories go to /manual, which makes no AI call and so sits outside
   // the AI rate limit: logging from a label used to spend a photo's budget.
@@ -4453,13 +4708,20 @@ async function logFoodEntry(payload) {
   // and that is not today — `state.food` drives the Home card, so only today's
   // may land there. The date-keyed cache below takes every day, which is what
   // the Calendar reads.
-  const forToday = summaryIsForToday(updated, todayKeyNow());
+  const forToday = summaryIsForToday(updated, todayKey());
   if (forToday) state.food = updated;
   cacheFoodSummary(updated);
   render();
   const added = forToday && (updated.entries || []).find((e) => !before.has(e.id));
   if (added) landSoon('[data-food-id="' + added.id + '"]');
   invalidateWeek('food');
+  if (opts && opts.undo && added) {
+    pushToast('Logged ' + (added.foodName || 'food') + '.', 'success', 6000, {
+      label: 'Undo',
+      run: () => undoFoodLog(added.id),
+    });
+    return added;
+  }
   toastSuccess(
     forToday
       ? 'Food logged.'
@@ -4472,6 +4734,22 @@ async function logFoodEntry(payload) {
           }) +
           '.'
   );
+}
+
+/* Undo on a one-tap food log: DELETE the entry just made. The answer is that
+   day's summary, so it lands like any other food write. */
+async function undoFoodLog(id) {
+  try {
+    const updated = await api('/api/food/entries/' + encodeURIComponent(id), { method: 'DELETE' });
+    if (summaryIsForToday(updated, todayKey())) state.food = updated;
+    cacheFoodSummary(updated);
+    recentFoods = null;
+    invalidateWeek('food');
+    render();
+    toastSuccess('Removed.');
+  } catch (err) {
+    toastError(err, 'Could not undo that right now.');
+  }
 }
 
 /* "Copy yesterday's breakfast" on an empty slot of the Food card: POST
@@ -4649,23 +4927,18 @@ function showFoodLoader(foodName) {
   };
 }
 
-function todayKeyNow() {
-  const t = new Date();
-  return dateKey(t.getFullYear(), t.getMonth(), t.getDate());
-}
-
 /* The instant to file an entry under, from a picked day. Today keeps the real
    clock time so the day's list stays in order and shows a sensible one. A past
    day gets local noon: the server re-derives the date in the user's own zone,
    and noon is the one hour that lands on the same day whatever that zone is. */
 function loggedAtFor(dayKey) {
-  if (!dayKey || dayKey === todayKeyNow()) return new Date().toISOString();
+  if (!dayKey || dayKey === todayKey()) return new Date().toISOString();
   const [y, m, d] = dayKey.split('-').map(Number);
   return new Date(y, m - 1, d, 12, 0, 0).toISOString();
 }
 
 async function saveSleepEntry(payload) {
-  const key = payload.date || todayKeyNow();
+  const key = payload.date || todayKey();
   // Optimistic local update + cache mirror, then persist to the backend.
   state.wellness = Object.assign(emptyWellness(), state.wellness || {});
   state.wellness.sleepByDate = Object.assign({}, state.wellness.sleepByDate || {}, {
@@ -4698,7 +4971,7 @@ async function saveSleepEntry(payload) {
 }
 
 async function saveMoodEntry(payload) {
-  const key = payload.date || todayKeyNow();
+  const key = payload.date || todayKey();
   state.wellness = Object.assign(emptyWellness(), state.wellness || {});
   state.wellness.moodByDate = Object.assign({}, state.wellness.moodByDate || {}, {
     [key]: {
@@ -4744,7 +5017,7 @@ function rememberPhotoFood(foodName, estimate, usedPhoto) {
     photoHistory: [
       {
         id: String(Date.now()),
-        date: todayKeyNow(),
+        date: todayKey(),
         foodName,
         mealType,
         confidence,
@@ -4758,14 +5031,14 @@ function rememberPhotoFood(foodName, estimate, usedPhoto) {
   // Persist to the backend (optimistic; cache already updated).
   api('/api/food/photo-history', {
     method: 'POST',
-    body: JSON.stringify({ foodName, mealType, confidence, fallbackNeeded, date: todayKeyNow() }),
+    body: JSON.stringify({ foodName, mealType, confidence, fallbackNeeded, date: todayKey() }),
   }).catch((err) => {
     console.error('CRITICAL: rememberPhotoFood failed to reach database:', err);
   });
 }
 
 function openSleepSchedule() {
-  const today = todayKeyNow();
+  const today = todayKey();
   const existing = (state.wellness.sleepByDate || {})[today] || {};
   // An unlogged night opens on the usual one, so a normal night is one tap on Save.
   const usual = usualSleep(state.wellness.sleepByDate, today) || { bedtime: '23:00', wakeTime: '07:00' };
@@ -4824,7 +5097,7 @@ function openSleepSchedule() {
 }
 
 function openMoodCheckin() {
-  const today = todayKeyNow();
+  const today = todayKey();
   const existing = (state.wellness.moodByDate || {})[today] || {};
   const mood = segmented(
     [
@@ -4890,7 +5163,7 @@ function openMoodCheckin() {
 // day-plan.js loads on the tap: it is only ever needed here, and the boot chunk is over budget.
 async function openDailyPlan() {
   const { buildDayPlan } = await import('./day-plan.js');
-  const today = todayKeyNow();
+  const today = todayKey();
   const now = new Date();
   const plan = buildDayPlan({
     tasks: state.tasks,
@@ -4989,7 +5262,7 @@ function addMinutesHHMM(hhmmStr, mins) {
 }
 
 async function addSuggestedReminder(text, time, tag) {
-  await addReminder(todayKeyNow(), text, time || '19:00', tag || 'personal', 'none', null);
+  await addReminder(todayKey(), text, time || '19:00', tag || 'personal', 'none', null);
 }
 
 /* The "recent foods" chips: GET /api/food/recent, kept for the session and
@@ -5098,6 +5371,7 @@ function openAddFood() {
       class: 'gb-input gb-input--inline',
       value: item.foodName || '',
       placeholder: 'Food name',
+      'aria-label': 'Food name',
       maxlength: 100,
       style: { flex: '1', marginRight: '8px' },
     });
@@ -5107,6 +5381,7 @@ function openAddFood() {
       class: 'gb-input gb-input--inline',
       value: item.quantityGrams || '',
       placeholder: 'g',
+      'aria-label': 'Grams of ' + (item.foodName || 'this item'),
       min: '10',
       max: '2000',
       style: { width: '70px', marginRight: '8px' },
@@ -5131,14 +5406,14 @@ function openAddFood() {
       {
         type: 'button',
         class: 'gb-btn gb-btn--icon',
-        title: 'Remove item',
+        'aria-label': 'Remove ' + (item.foodName || 'item'),
         onclick: () => {
           photoItems.splice(index, 1);
           renderItemsList();
         },
         style: { padding: '4px 8px', minHeight: '36px' },
       },
-      '✕'
+      Icon('x', { size: 14 })
     );
 
     const updateItem = () => {
@@ -5266,8 +5541,8 @@ function openAddFood() {
   const dateInput = h('input', {
     type: 'date',
     class: 'gb-input',
-    value: todayKeyNow(),
-    max: todayKeyNow(),
+    value: todayKey(),
+    max: todayKey(),
     'aria-label': 'Day this food was eaten',
   });
 
@@ -5301,10 +5576,63 @@ function openAddFood() {
   const field = (label, control) =>
     h('label', { class: 'gb-food-field' }, h('span', { class: 'gb-field-label' }, label), control);
 
-  /* One tap fills the form from a recent entry: name, grams and its calories,
-     typed, so saving it re-logs the same plate with no estimate. Filled, not
-     saved, so the day and meal above can still change. */
+  /* A recent or favourite chip logs that plate at once, on the day, meal and
+     slot above, with Undo (logFoodEntry). Press and hold fills the form
+     instead, for a plate that differs today. */
+  let closeLog = null;
+  const quickLog = async (btn, entry) => {
+    btn.disabled = true;
+    // No calories on file: the server estimates, an AI call, so the wait shows.
+    const hideLoader = entry.kcal == null ? showFoodLoader(entry.foodName) : null;
+    try {
+      await logFoodEntry(
+        {
+          pieces: null,
+          mealType: mealTypeSeg.get(),
+          mealSlot: slotSeg.get(),
+          loggedAt: loggedAtFor(dateInput.value),
+          note: null,
+          ...entry,
+        },
+        { undo: true }
+      );
+      if (closeLog) closeLog();
+    } catch (err) {
+      btn.disabled = false;
+      toastError(err, 'Could not log food right now.');
+    } finally {
+      if (hideLoader) hideLoader();
+    }
+  };
+  const HOLD_MS = 500;
+  const chipPress = (onTap, onHold) => {
+    let timer = 0;
+    let held = false;
+    const cancel = () => clearTimeout(timer);
+    return {
+      onpointerdown: () => {
+        held = false;
+        timer = setTimeout(() => {
+          held = true;
+          onHold();
+        }, HOLD_MS);
+      },
+      onpointerup: cancel,
+      onpointerleave: cancel,
+      onpointercancel: cancel,
+      // The phone's own long-press menu would cover the form being filled.
+      oncontextmenu: (e) => e.preventDefault(),
+      onclick: (e) => {
+        if (held) return;
+        onTap(e.currentTarget);
+      },
+    };
+  };
   const recentRow = h('div', { class: 'gb-food-recent', role: 'group', 'aria-label': 'Recent foods' });
+  const chipHint = h('div', { class: 'gb-field-hint', style: { display: 'none' } }, 'Tap a food to log it now. Press and hold to edit it first.');
+  const syncChipHint = () => {
+    chipHint.style.display = favRow.hidden && recentRow.hidden ? 'none' : '';
+  };
   const fillGrams = (name, grams, kcal) => {
     foodNameInput.value = name;
     // segmented() has no setter; a click runs its own onChange (min/max/label).
@@ -5339,13 +5667,31 @@ function openAddFood() {
       ...(list || []).map((f) =>
         h(
           'button',
-          { type: 'button', class: 'gb-food-recent-chip is-fav', onclick: () => fillFavourite(f) },
+          {
+            type: 'button',
+            class: 'gb-food-recent-chip is-fav',
+            title: 'Tap to log, hold to edit first',
+            ...chipPress(
+              (btn) =>
+                quickLog(btn, {
+                  foodName: f.foodName,
+                  quantityGrams: f.quantityGrams,
+                  kcal: f.kcal,
+                  proteinG: f.proteinG,
+                  carbsG: f.carbsG,
+                  fatG: f.fatG,
+                  fiberG: f.fiberG,
+                }),
+              () => fillFavourite(f)
+            ),
+          },
           Icon('star', { size: 12, sw: 2.4 }),
           f.foodName
         )
       )
     );
     favRow.hidden = !(list && list.length);
+    syncChipHint();
   };
   paintFavourites(favouriteFoods);
   if (!favouriteFoods) loadFavouriteFoods().then(paintFavourites);
@@ -5395,12 +5741,27 @@ function openAddFood() {
       ...(list || []).map((r) =>
         h(
           'button',
-          { type: 'button', class: 'gb-food-recent-chip', onclick: () => fillRecent(r) },
+          {
+            type: 'button',
+            class: 'gb-food-recent-chip',
+            title: 'Tap to log, hold to edit first',
+            ...chipPress(
+              (btn) =>
+                quickLog(btn, {
+                  foodName: r.foodName,
+                  quantityGrams: r.quantityGrams,
+                  kcal: r.kcalEstimated,
+                  ...(r.mealType === 'home' || r.mealType === 'hotel' ? { mealType: r.mealType } : {}),
+                }),
+              () => fillRecent(r)
+            ),
+          },
           r.foodName
         )
       )
     );
     recentRow.hidden = !(list && list.length);
+    syncChipHint();
   };
   paintRecent(recentFoods);
   if (!recentFoods)
@@ -5429,6 +5790,7 @@ function openAddFood() {
     field('Food', foodNameInput),
     favRow,
     recentRow,
+    chipHint,
     barcodeBtn,
     photoBtn,
     platePhotoInput,
@@ -5455,7 +5817,7 @@ function openAddFood() {
   );
 
   const loggedItems = new Set();
-  openModal({
+  closeLog = openModal({
     title: 'Log food',
     body,
     primary: 'Add food',
@@ -5464,7 +5826,7 @@ function openAddFood() {
       let entriesToAdd = [];
       const mealType = mealTypeSeg.get();
       // A typed date skips the picker's max; YYYY-MM-DD compares as text.
-      if (dateInput.value > todayKeyNow()) {
+      if (dateInput.value > todayKey()) {
         dateInput.focus();
         throw new Error("You can't log food for a day that hasn't happened yet.");
       }
@@ -5561,25 +5923,67 @@ function openAddFood() {
    DELETE, which 404'd and toasted "Could not delete" over a delete that worked. */
 const entryDeletesInFlight = new Set();
 
-/* Both row deletes ask first: they were one tap on a small x with no way back.
-   ponytail: confirm, not an Undo toast; toasts carry no action yet. */
+/* A day summary's entry taken out, or put back at `at`, with the totals that
+   counted it. `fix(summary, entry, sign)` moves the totals. */
+function summarySlot(get, set, id, fix) {
+  let item = null;
+  let at = 0;
+  return {
+    remove() {
+      const s = get();
+      const list = (s && s.entries) || [];
+      const i = list.findIndex((e) => e.id === id);
+      if (i < 0) return;
+      item = list[i];
+      at = i;
+      set({ ...fix(s, item, -1), entries: list.filter((e) => e.id !== id) });
+    },
+    restore() {
+      const s = get();
+      const list = (s && s.entries) || [];
+      if (!item || !s || list.some((e) => e.id === id)) return;
+      set({ ...fix(s, item, 1), entries: [...list.slice(0, at), item, ...list.slice(at)] });
+    },
+  };
+}
+
+/* Both row deletes are one tap on a small x: undoable (deferDelete), so they
+   need no confirm. */
 function deleteWaterEntry(entryId) {
   // Still in flight from quickAddWater: there is no server id to delete yet.
   if (pendingWater.has(entryId)) return;
-  confirmDelete('Delete this water entry?', async () => {
-    const key = 'water:' + entryId;
-    if (entryDeletesInFlight.has(key)) return;
-    entryDeletesInFlight.add(key);
-    try {
-      const updated = await api('/api/water/entries/' + entryId, {
-        method: 'DELETE',
-      });
-      state.water = withPendingWater(updated);
-      invalidateWeek('water');
-      render();
-    } finally {
-      entryDeletesInFlight.delete(key);
-    }
+  const key = 'water:' + entryId;
+  if (entryDeletesInFlight.has(key)) return;
+  deferDelete({
+    message: 'Water entry deleted.',
+    errorText: 'Could not delete that water entry.',
+    selector: '[data-water-id="' + entryId + '"]',
+    ...summarySlot(
+      () => state.water,
+      (w) => (state.water = w),
+      entryId,
+      (w, e, sign) => {
+        const consumedMl = Math.max(0, (w.consumedMl || 0) + sign * (e.effectiveMl ?? effectiveMl(e.amountMl, e.drinkType)));
+        return {
+          ...w,
+          consumedMl,
+          drankMl: Math.max(0, (w.drankMl || 0) + sign * (e.amountMl || 0)),
+          remainingMl: Math.max(0, (w.goalMl || 0) - consumedMl),
+        };
+      }
+    ),
+    commit: async () => {
+      entryDeletesInFlight.add(key);
+      try {
+        const updated = await api('/api/water/entries/' + entryId, { method: 'DELETE', keepalive: true });
+        if (!state.user) return;
+        state.water = withPendingWater(updated);
+        invalidateWeek('water');
+        render();
+      } finally {
+        entryDeletesInFlight.delete(key);
+      }
+    },
   });
 }
 
@@ -5691,8 +6095,8 @@ function openEditFood(entry) {
   const day = h('input', {
     type: 'date',
     class: 'gb-input',
-    value: entry.logDate || todayKeyNow(),
-    max: todayKeyNow(),
+    value: entry.logDate || todayKey(),
+    max: todayKey(),
     'aria-label': 'Day this food was eaten',
   });
   const meal = segmented(
@@ -5779,7 +6183,7 @@ function openEditFood(entry) {
         kcal.focus();
         throw new Error('Calories must be between 1 and 5,000 for a single entry.');
       }
-      if (day.value > todayKeyNow()) {
+      if (day.value > todayKey()) {
         day.focus();
         throw new Error("You can't log food for a day that hasn't happened yet.");
       }
@@ -5793,7 +6197,7 @@ function openEditFood(entry) {
       });
       recentFoods = null;
       // Moved to another day: today's card loses it, so refetch today's.
-      if (updated && updated.date === todayKeyNow()) state.food = updated;
+      if (updated && updated.date === todayKey()) state.food = updated;
       else if (state.food && (state.food.entries || []).some((e) => e.id === entry.id))
         state.food = await api('/api/food').catch(() => state.food);
       cacheFoodSummary(updated);
@@ -5807,23 +6211,41 @@ function openEditFood(entry) {
   setTimeout(() => name.focus(), 60);
 }
 
+// A day figure the entry carried moves with it; one it lacked stays as it is.
+const shiftBy = (total, part, sign) => (total != null && part != null ? Math.max(0, total + sign * part) : total);
+
 function deleteFoodEntry(entryId) {
-  confirmDelete('Delete this food entry?', async () => {
-    const key = 'food:' + entryId;
-    if (entryDeletesInFlight.has(key)) return;
-    entryDeletesInFlight.add(key);
-    try {
-      const updated = await api('/api/food/entries/' + entryId, {
-        method: 'DELETE',
-      });
-      invalidateWeek('food');
-      removeSoon('[data-food-id="' + entryId + '"]', () => {
-        state.food = updated;
+  const key = 'food:' + entryId;
+  if (entryDeletesInFlight.has(key)) return;
+  deferDelete({
+    message: 'Food entry deleted.',
+    errorText: 'Could not delete that food entry.',
+    selector: '[data-food-id="' + entryId + '"]',
+    ...summarySlot(
+      () => state.food,
+      (f) => (state.food = f),
+      entryId,
+      (f, e, sign) => ({
+        ...f,
+        totalCalories: shiftBy(f.totalCalories || 0, e.kcalEstimated || 0, sign),
+        fiberG: shiftBy(f.fiberG, e.fiberG, sign),
+        sugarG: shiftBy(f.sugarG, e.sugarG, sign),
+        sodiumMg: shiftBy(f.sodiumMg, e.sodiumMg, sign),
+      })
+    ),
+    commit: async () => {
+      entryDeletesInFlight.add(key);
+      try {
+        const updated = await api('/api/food/entries/' + entryId, { method: 'DELETE', keepalive: true });
+        if (!state.user) return;
+        invalidateWeek('food');
+        if (summaryIsForToday(updated, todayKey())) state.food = updated;
         cacheFoodSummary(updated);
-      });
-    } finally {
-      entryDeletesInFlight.delete(key);
-    }
+        render();
+      } finally {
+        entryDeletesInFlight.delete(key);
+      }
+    },
   });
 }
 
@@ -5925,16 +6347,20 @@ async function loadOlderNotifs() {
 
 /* Read at once, then told to the server; a failure puts it all back. */
 async function markAllNotificationsRead() {
-  const prev = state.notifications;
+  // On failure only these ids go back to unread: a card pushed (or an older page
+  // loaded) while the POST was out must survive the rollback.
+  const wereUnread = new Set(state.notifications.filter((n) => !n.readAt).map((n) => n.id));
   const prevBeyond = notifPaging.beyond;
   const now = new Date().toISOString();
-  state.notifications = prev.map((n) => (n.readAt ? n : { ...n, readAt: now }));
+  state.notifications = state.notifications.map((n) => (n.readAt ? n : { ...n, readAt: now }));
   notifPaging.beyond = 0;
   repaintOverlays();
   try {
     await api('/api/notifications/mark-all-read', { method: 'POST' });
   } catch (err) {
-    state.notifications = prev;
+    state.notifications = state.notifications.map((n) =>
+      wereUnread.has(n.id) && n.readAt === now ? { ...n, readAt: null } : n
+    );
     notifPaging.beyond = prevBeyond;
     repaintOverlays();
     toastError(err, 'Could not mark them read.');
@@ -5943,13 +6369,18 @@ async function markAllNotificationsRead() {
 
 /* Read cards go; unread ones stay. Server-wide for the user, not just the loaded pages. */
 async function clearReadNotifications() {
-  const prev = state.notifications;
-  state.notifications = prev.filter((n) => !n.readAt);
+  // On failure the removed cards are put back, in their place, beside anything
+  // that arrived meanwhile — never a snapshot over it.
+  const removed = state.notifications.filter((n) => n.readAt);
+  state.notifications = state.notifications.filter((n) => !n.readAt);
   repaintOverlays();
   try {
     await api('/api/notifications/read', { method: 'DELETE' });
   } catch (err) {
-    state.notifications = prev;
+    const have = new Set(state.notifications.map((n) => n.id));
+    state.notifications = [...state.notifications, ...removed.filter((n) => !have.has(n.id))].sort(
+      (a, b) => notifTime(b) - notifTime(a)
+    );
     repaintOverlays();
     toastError(err, 'Could not clear read notifications.');
   }
@@ -6064,16 +6495,25 @@ function mentorApi() {
     onThread: (id) => {
       mentorThreadId = id;
     },
-    today: todayKeyNow,
+    today: todayKey,
     reflection: { label: reflectionLabel, open: () => openProfileSettings('notifications') },
     // Buddy's one-tap actions, after the user confirmed the sheet. Each throws to
     // keep the sheet open with the reason.
+    // A task or habit chip saves on the tap; the toast's Undo deletes what it made
+    // (found by id against the list before, so createTask/createHabit stay as they are).
     act: {
       task: async (title) => {
+        const had = new Set(state.tasks.map((t) => t.id));
         await createTask({ title });
-        toastSuccess('Task added.');
+        const made = state.tasks.find((t) => !had.has(t.id));
+        if (!made) return toastSuccess('Task added.');
+        pushToast('Task added.', 'success', 6000, {
+          label: 'Undo',
+          run: () => deleteTask(made.id).catch((err) => toastError(err, 'Could not undo that.')),
+        });
       },
       habit: async ({ title, time }) => {
+        const had = new Set(state.habits.map((x) => x.id));
         await createHabit({
           name: title,
           domain: 'habit',
@@ -6082,7 +6522,12 @@ function mentorApi() {
           metric: 'none',
           reminderTime: time || null,
         });
-        toastSuccess('Habit added.');
+        const made = state.habits.find((x) => !had.has(x.id));
+        if (!made) return toastSuccess('Habit added.');
+        pushToast('Habit added.', 'success', 6000, {
+          label: 'Undo',
+          run: () => deleteHabit(made.id).catch((err) => toastError(err, 'Could not undo that.')),
+        });
       },
       reminder: async ({ title, date, time, timeInput }) => {
         if (time && isPastSlot(date, time)) {
@@ -6119,6 +6564,30 @@ async function respondMentorshipRequest(requestId, notifId, accept) {
   } catch (err) {
     toastError(err, 'Could not respond to invite.');
   }
+}
+
+/* The bell, avatar and More panels are one entry on the shared back stack
+   (gb-kit trackOverlay): hardware Back or the browser's closes the open one
+   before it leaves the screen, and on Home before it minimises the app.
+   Synced from installOutsideClickToCloseHeaderPopovers, which every path that
+   opens or shuts a panel goes through (setScreen and logout via render()). */
+let untrackPanels = null;
+function syncPanelBackEntry() {
+  const open = state.notifOpen || state.profileOpen || state.moreOpen;
+  if (open && !untrackPanels) untrackPanels = trackOverlay({ close: closeHeaderPanels });
+  else if (!open && untrackPanels) {
+    untrackPanels();
+    untrackPanels = null;
+  }
+}
+function closeHeaderPanels() {
+  const wasOpen = state.notifOpen || state.profileOpen || state.moreOpen;
+  state.notifOpen = false;
+  state.profileOpen = false;
+  state.moreOpen = false;
+  syncPanelBackEntry();
+  // setScreen has already shut them and renders next; only Back needs a repaint.
+  if (wasOpen) repaintOverlays();
 }
 
 function toggleNotifOpen() {
@@ -6261,6 +6730,41 @@ function screenFromHash() {
    screen their session expired on. Memory only, taken once by the next
    sign-in; every sign-in used to land on Home. */
 let returnToScreen = '';
+
+/* A manifest shortcut (?shortcut=water) or a share into the app (?text=…):
+   read once, taken off the address at once so a reload doesn't log a second
+   glass, and run after the first data load (runLaunchIntent). Signed out, it
+   waits for the sign-in's first load. */
+let pendingLaunch = launchIntent(window.location.search);
+if (pendingLaunch) history.replaceState(null, '', window.location.pathname + window.location.hash);
+
+function runLaunchIntent() {
+  const it = pendingLaunch;
+  pendingLaunch = null;
+  if (!it) return;
+  if (it.share) {
+    // The shared words go through Quick add's own preview; nothing is written
+    // until the user ticks and confirms there.
+    openAddSheet({ text: it.share, preview: true });
+    return;
+  }
+  if (it.shortcut === 'water' && featureOn('water')) {
+    const before = ((state.water && state.water.entries) || []).length;
+    quickAddWater(WATER_ACTION_ML).then(() => {
+      // Failures and offline saves have toasted already.
+      const now = ((state.water && state.water.entries) || []).length;
+      if (now > before && navigator.onLine) toastSuccess('Logged ' + WATER_ACTION_ML + ' ml of water.');
+    });
+  } else if (it.shortcut === 'task') {
+    openAddTask();
+  } else if (it.shortcut === 'focus' && screenEnabled('focus')) {
+    focusAutoStart = true;
+    setScreen('focus');
+  } else if (it.shortcut === 'quickadd') {
+    openAddSheet();
+  }
+}
+
 function landAfterSignIn() {
   const target = Object.prototype.hasOwnProperty.call(SCREENS, returnToScreen)
     ? returnToScreen
@@ -6312,7 +6816,9 @@ window.addEventListener('hashchange', () => {
     returnToScreen = screenFromHash();
     return;
   }
-  setScreen(screenFromHash(), { fromHash: true });
+  // A link with a query (#/circle?join=CODE) on the screen already showing:
+  // force the repaint, or the screen that reads the query never sees it.
+  setScreen(screenFromHash(), { fromHash: true, force: window.location.hash.includes('?') });
 });
 
 /**
@@ -6428,7 +6934,7 @@ function openWeeklyReview() {
           habits: state.habits,
           trends: state.trends,
           money: state.money,
-          today: todayKeyNow(),
+          today: todayKey(),
           fmtMoney: (n) => cur() + Math.round(n),
         });
         if (draft && !typed && !wins.value) wins.value = draft.slice(0, 400);
@@ -6520,10 +7026,10 @@ function notifyMuted(cat) {
 function habitDialogs() {
   return import('./habit-dialogs.js').then((m) => {
     m.bind({
-      state, announce, toastError, toastSuccess, todayKey, reconcileStreakFreeze, isQuitHabit,
-      freezeTokensLeft, api, habitNoteInput, refreshScore, refreshScoreLater, createHabit,
-      updateHabit, forgetGoalHabitHistory, reSyncDeviceAlarms, openModal, segmented,
-      METRIC_LABEL, accountTodayKey, confirmDelete, render,
+      state, announce, pushToast, toastError, toastSuccess, todayKey, reconcileStreakFreeze,
+      isQuitHabit, freezeTokensLeft, api, habitNoteInput, refreshScoreLater, createHabit,
+      updateHabit, forgetGoalHabitHistory, deleteHabit, reSyncDeviceAlarms, openModal, segmented,
+      METRIC_LABEL, accountTodayKey, render,
     });
     return m;
   });
@@ -6557,12 +7063,11 @@ function settingsContext() {
     PREMIUM_KEY, loadPremiumCss, applyPremium, TEXT_SCALE_KEY, applyTextScale, state, pushToast,
     toastError, toastSuccess, loadToken, saveSession, cacheMoney, rememberMoneyVersion,
     overlayPending, saveMoney, saveUiPrefs, notifySound, readCustomChimes, storeCustomChimes,
-    newSoundId, todayKey, clearSession, syncUserSession, enablePushFlow, api, hhmm,
-    reminderSummary, voiceSupported, captureReminder, withPendingWater, todayKeyNow,
-    invalidateWeek, toggleTheme, notifyMuted, keyOfDate, shortDay, uploadNewCustomSound,
-    addReminder, snoozeMinutes, cancelReminderSnooze, waterReminderPrefs, reSyncDeviceAlarms,
-    deleteReminder, openModal, segmented, relativeTime, FEATURE_DEFS, featureOn,
-    featureSwitchRow, lazyScreen, repaintOverlays, otpBoxes, logout, render,
+    newSoundId, todayKey, syncUserSession, enablePushFlow, api, withPendingWater, invalidateWeek,
+    toggleTheme, notifyMuted, keyOfDate, shortDay, reminderQuickAdd, uploadNewCustomSound,
+    openIcsImportDialog, snoozeMinutes, cancelReminderSnooze, waterReminderPrefs,
+    reSyncDeviceAlarms, deleteReminder, openModal, segmented, relativeTime, FEATURE_DEFS, featureOn,
+    featureSwitchRow, lazyScreen, repaintOverlays, privacyLink, otpBoxes, logout, endSession, render,
   };
 }
 
@@ -6582,12 +7087,206 @@ function keyOfDate(d) {
 }
 
 function shortDay(key) {
-  const today = todayKeyNow();
+  const today = todayKey();
   const d = new Date(key + 'T00:00:00');
   const tomorrow = keyOfDate(new Date(Date.now() + 864e5));
   if (key === today) return 'Today';
   if (key === tomorrow) return 'Tomorrow';
   return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
+/* The compact reminder add (text, notify, day, time, repeat, mic): Settings ›
+   Reminders shows it inline, and + then Reminder opens it as a sheet
+   (openReminderSheet). Enter adds; with no time picked the text is read for
+   one first. onAdded(created) runs after a save; without it the form clears
+   for the next one. */
+function reminderQuickAdd(onAdded) {
+  const textInput = h('input', {
+    type: 'text',
+    class: 'gb-input',
+    placeholder: 'What should I remind you of?',
+    maxlength: 255,
+    'aria-label': 'Reminder text',
+  });
+  const dateInput = h('input', {
+    type: 'date',
+    class: 'gb-input',
+    value: todayKey(),
+    min: todayKey(),
+    'aria-label': 'Reminder date',
+  });
+  const timeInput = h('input', {
+    type: 'time',
+    class: 'gb-input gb-input--time',
+    'aria-label': 'Reminder time',
+  });
+  const usualTime = UsualTimeChip(timeInput);
+  usualTime.sync(state.reminders);
+  const repeatSel = h(
+    'select',
+    { class: 'gb-input', 'aria-label': 'Repeat' },
+    REPEAT_ORDER.map((r) => h('option', { value: r }, r === 'none' ? 'Once' : REPEATS[r].label))
+  );
+  // The calendar's own Notify control, Custom… included.
+  const notifySel = NotifySelect();
+  const addErr = h('p', { class: 'gb-field-error', role: 'alert', style: { display: 'none' } });
+  const setErr = (msg) => {
+    addErr.textContent = msg || '';
+    addErr.style.display = msg ? '' : 'none';
+  };
+  textInput.addEventListener('input', () => setErr(''));
+
+  const addBtn = h(
+    'button',
+    { type: 'button', class: 'gb-btn gb-btn--primary gb-remset-add-btn' },
+    Icon('plus', { size: 16, sw: 2.6, color: 'var(--fg-on-brand)' }),
+    'Add reminder'
+  );
+  const submit = async () => {
+    const text = textInput.value.trim();
+    if (!text) {
+      setErr('Write what to be reminded of first.');
+      textInput.focus();
+      return;
+    }
+    if (!dateInput.value) {
+      setErr('Pick a day for it.');
+      dateInput.focus();
+      return;
+    }
+    addBtn.disabled = true;
+    try {
+      // No time picked: the words may carry one ("call mom at 6"). The same
+      // reader as Quick add; offline or unread, it saves as typed.
+      if (!timeInput.value) {
+        // Read as a reminder, not as whatever else the words could be ("buy milk at 6" is a task).
+        const said = /^(remind|set a reminder|reminder)\b/i.test(text) ? text : 'remind me to ' + text;
+        const rem = await parseQuickAdd(said)
+          .then((r) => (r.intents || []).find((x) => x.type === 'reminder' && x.time))
+          .catch(() => null);
+        if (rem) {
+          if (rem.text) textInput.value = rem.text;
+          if (rem.date) dateInput.value = rem.date;
+          timeInput.value = hhmm(rem.time);
+          if (REPEATS[rem.repeat]) repeatSel.value = rem.repeat;
+          if (rem.notifyBefore !== undefined) notifySel.setLead(rem.notifyBefore);
+          if (!spokenTag && TAGS[rem.tag]) spokenTag = rem.tag;
+        }
+      }
+      const created = await addReminder(
+        dateInput.value,
+        textInput.value.trim() || text,
+        timeInput.value || '',
+        spokenTag || 'personal',
+        repeatSel.value,
+        '',
+        '',
+        '',
+        notifySel.getLead()
+      );
+      if (created) {
+        spokenTag = null;
+        voiceNote.style.display = 'none';
+        textInput.value = '';
+        timeInput.value = '';
+        usualTime.sync(state.reminders);
+        repeatSel.value = 'none';
+        notifySel.setLead(null);
+        if (onAdded) onAdded(created);
+        else textInput.focus();
+      }
+    } finally {
+      addBtn.disabled = false;
+    }
+  };
+  addBtn.onclick = submit;
+  // Enter adds rather than reaching the sheet, where it would press Done.
+  textInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      submit();
+    }
+  });
+
+  // The calendar form's mic, here too: say it, check it, Add. This form has
+  // no Tag field, so a spoken tag ("urgent", "for work") rides along to the save.
+  let spokenTag = null;
+  const voiceNote = h('p', { class: 'gb-field-hint gb-voice-note', role: 'status', style: { display: 'none' } });
+  const micBtn = voiceSupported()
+    ? h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--compact gb-mic gb-rem-mic',
+          'aria-label': 'Say the reminder',
+          'aria-pressed': 'false',
+          onclick: async () => {
+            voiceNote.style.display = 'none';
+            const out = await captureReminder(micBtn);
+            if (!out || !out.said) return;
+            setErr('');
+            const rem = out.reminder;
+            textInput.value = rem ? rem.text || out.said : out.said;
+            spokenTag = rem && TAGS[rem.tag] ? rem.tag : null;
+            if (rem) {
+              if (rem.date) dateInput.value = rem.date;
+              timeInput.value = hhmm(rem.time);
+              repeatSel.value = REPEATS[rem.repeat] ? rem.repeat : 'none';
+              notifySel.setLead(rem.notifyBefore === undefined ? null : rem.notifyBefore);
+            }
+            voiceNote.textContent = rem
+              ? 'Filled in from what you said: ' + reminderSummary(rem) + '. Check it, then tap Add.'
+              : 'Heard: “' + out.said + '”. Set the day and time, then tap Add.';
+            voiceNote.style.display = '';
+            textInput.focus();
+          },
+        },
+        Icon('mic', { size: 18 })
+      )
+    : null;
+  textInput.addEventListener('input', () => {
+    voiceNote.style.display = 'none';
+  });
+
+  const addForm = h(
+    'div',
+    { class: 'gb-remset-add' },
+    micBtn ? h('div', { class: 'gb-rem-text-row' }, textInput, micBtn) : textInput,
+    addErr,
+    voiceNote,
+    h(
+      'div',
+      { class: 'gb-remset-add-grid' },
+      // Notify spans the row: its Custom… line needs the width.
+      h('div', { class: 'gb-remset-field gb-remset-field--wide' }, h('span', null, 'Notify'), notifySel),
+      h('label', { class: 'gb-remset-field' }, h('span', null, 'Day'), dateInput),
+      h('label', { class: 'gb-remset-field' }, h('span', null, 'Time'), timeInput),
+      h('label', { class: 'gb-remset-field gb-remset-field--wide' }, h('span', null, 'Repeat'), repeatSel)
+    ),
+    usualTime.node,
+    addBtn
+  );
+  return { node: addForm, focus: () => textInput.focus() };
+}
+
+/* + then Reminder: the quick add above as a sheet over wherever the user is,
+   text focused, so "call mom at 6" then Enter is the whole flow. */
+function openReminderSheet() {
+  const { sheet, close } = openOverlay({ label: 'New reminder' });
+  const form = reminderQuickAdd(close);
+  sheet.append(
+    h(
+      'div',
+      { class: 'gb-modal-head' },
+      h('div', { class: 'gb-modal-title' }, 'New reminder'),
+      h('div', { class: 'gb-modal-sub' }, 'Today unless you pick a day. A time in the words is read for you.')
+    ),
+    form.node,
+    h('button', { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel', onclick: close }, 'Cancel')
+  );
+  refreshIcons();
+  setTimeout(form.focus, 60);
 }
 
 /* The account's copy of a sound just kept on this device. 'saved', 'local'
@@ -6990,7 +7689,7 @@ async function addReminder(key, text, time, tag, repeat, until, sound, endTime, 
   // the form on past days, and this is the same rule for every other caller.
   // The anchor date is what a recurrence counts from, so an anchor in the past
   // is a series the user never got to choose the start of.
-  if (key < todayKeyNow()) {
+  if (key < todayKey()) {
     toastError(
       new Error('That day has already passed — pick today or later.'),
       'Could not add reminder.'
@@ -7103,14 +7802,21 @@ function focusProps() {
     // Daily focus goal, minutes (0 = off). In ui_prefs, where FocusService reads it for the streak.
     focusGoalMins: (state.user && state.user.uiPrefs && state.user.uiPrefs.focusGoalMins) || 0,
     onSetFocusGoal: (mins) => saveUiPrefs({ focusGoalMins: mins }),
+    // The end-of-sprint "Mark done": never flips back a task ticked meanwhile.
+    onFinishTask: (id) => {
+      if ((state.tasks || []).some((t) => t.id === id && !t.done)) toggleTask(id);
+    },
   };
 }
 
-/* A task or goal row's "Start focus": open the timer with it picked. */
+/* A task or goal row's "Start focus": open the timer with it picked. A task
+   row's timer button means "work on this now", so it also starts the clock
+   (`run`); ScreenFocus never restarts a session already running. */
 let focusPreselect = null;
 let focusAutoStart = null; // minutes, or true for the last length: Quick add's "start a focus"
-function startFocusOn(link) {
+function startFocusOn(link, run) {
   focusPreselect = link;
+  if (run) focusAutoStart = true;
   if (state.screen === 'focus') render();
   else setScreen('focus');
 }
@@ -7153,6 +7859,40 @@ async function toggleReminderDone(id, key, done) {
     repaint();
     toastError(err, done ? 'Could not mark that done.' : 'Could not undo that.');
   }
+}
+
+/* Google / Apple / Outlook events in as reminders (import-ui.js, loaded on tap).
+   Times land in the account's zone, the one the scheduler rings them in. */
+function openIcsImportDialog() {
+  const zone = (state.user && state.user.timezone) || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  const nowHHMM = () => {
+    try {
+      return new Intl.DateTimeFormat('en-GB', { timeZone: zone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date());
+    } catch (_) {
+      return new Date().toTimeString().slice(0, 5);
+    }
+  };
+  import('./import-ui.js')
+    .then((m) =>
+      m.openIcsImport({
+        api,
+        existing: state.reminders,
+        zone,
+        today: accountTodayKey,
+        now: nowHHMM,
+        onDone: async () => {
+          state.reminders = await api('/api/reminders');
+          reSyncDeviceAlarms();
+          repaintReminderSettings();
+          if (state.screen === 'calendar') {
+            rerenderCalendarSideIfActive();
+            repaintCalendarGrid();
+            rerenderCalendarToolbarIfActive();
+          } else render();
+        },
+      })
+    )
+    .catch((err) => toastError(err, 'Couldn’t open the importer. Check your connection and try again.'));
 }
 
 function snoozeMinutes() {
@@ -7414,8 +8154,9 @@ function reSyncDeviceAlarms() {
    Done / Snooze on a reminder, Done on a plain habit, +250 ml on the water
    nudge (push.js builds the sets and stamps `extra`). A press opens the app
    and lands here, through the same handlers the in-app taps use, so the toast
-   it shows is the confirmation. A plain tap on the card does what it always
-   did: nothing beyond opening the app. On the web the service worker carries
+   it shows is the confirmation. A plain tap on the card opens what it is
+   about (push.js notificationTarget): the reminder's day on the calendar,
+   Habits, Home for water, the timer. On the web the service worker carries
    these out itself, with a signed ticket (public/push-handlers.js). */
 let notificationActionsArmed = false;
 function armNotificationActions() {
@@ -7429,7 +8170,15 @@ function armNotificationActions() {
 async function handleNotificationAction(ev) {
   const act = ev && ev.actionId;
   const x = (ev && ev.notification && ev.notification.extra) || {};
-  if (!state.user || !act || act === 'tap' || act === 'dismiss') return;
+  if (!state.user || !act || act === 'dismiss') return;
+  if (act === 'tap') {
+    const to = notificationTarget(x);
+    if (!to) return;
+    setScreen(to.screen);
+    // After the switch: calGoTo repaints the month in place, already on Calendar or not.
+    if (to.day) calGoTo(new Date(to.day + 'T12:00:00'));
+    return;
+  }
   if (x.kind === 'water' && act === 'water') {
     await quickAddWater(WATER_ACTION_ML);
   } else if (x.kind === 'reminder' && act === 'snooze' && x.id) {
@@ -7441,7 +8190,7 @@ async function handleNotificationAction(ev) {
   } else if (x.kind === 'habit' && act === 'done' && x.id) {
     const hb = (state.habits || []).find((h) => h.id === x.id);
     if (!hb) return;
-    if (!x.day || x.day === todayKeyNow()) {
+    if (!x.day || x.day === todayKey()) {
       if (!hb.doneToday) await plainToggleHabit(hb.id);
       return;
     }
@@ -7520,15 +8269,35 @@ async function deleteReminder(scope, id, occKey) {
       render();
     }
   };
-  const previous = state.reminders;
   const whole = (scope || 'all') === 'all';
   // Deleting the whole series is the one case whose outcome we can work out
-  // locally, so the row goes now and the request follows. The occurrence scopes
-  // depend on the server's skip list, so they still wait for the refetch.
+  // locally, so it is undoable: the row goes now and the request follows the
+  // toast. The occurrence scopes depend on the server's skip list, so they
+  // still wait for the refetch.
   if (whole) {
-    state.reminders = previous.filter((r) => r.id !== id);
-    repaint();
+    if (!state.reminders.some((r) => r.id === id)) return;
+    deferDelete({
+      message: 'Reminder deleted.',
+      errorText: 'Could not delete reminder.',
+      paint: repaint,
+      ...listSlot(() => state.reminders, (l) => (state.reminders = l), id),
+      commit: async () => {
+        const path = '/api/reminders/' + encodeURIComponent(realId(id)) + '?scope=all';
+        // Offline (or its create still queued): the DELETE waits in the outbox.
+        const queue = () => queueWrite({ method: 'DELETE', path, kind: 'reminder.delete', local: { id } });
+        if (isTempId(realId(id))) return queue();
+        try {
+          await api(path, { method: 'DELETE', keepalive: true });
+        } catch (err) {
+          if (!networkError(err)) throw err;
+          return queue();
+        }
+        if (state.user) reSyncDeviceAlarms();
+      },
+    });
+    return;
   }
+  const previous = state.reminders;
   try {
     const qs = new URLSearchParams();
     qs.set('scope', scope || 'all');
@@ -7536,23 +8305,11 @@ async function deleteReminder(scope, id, occKey) {
       qs.set('date', occKey);
     }
     const path = '/api/reminders/' + encodeURIComponent(realId(id)) + '?' + qs.toString();
-    // The whole series, offline (or one whose create is still queued): the row
-    // stays gone and the DELETE waits in the outbox.
-    const queue = () => queueWrite({ method: 'DELETE', path, kind: 'reminder.delete', local: { id } });
-    if (whole && isTempId(realId(id))) return queue();
-    try {
-      await api(path, { method: 'DELETE' });
-    } catch (err) {
-      if (!whole || !networkError(err)) throw err;
-      return queue();
-    }
-    if (!whole) {
-      state.reminders = await api('/api/reminders');
-      repaint();
-    }
+    await api(path, { method: 'DELETE' });
+    state.reminders = await api('/api/reminders');
+    repaint();
     toastSuccess('Reminder deleted.');
   } catch (err) {
-    // Put it back: the row is gone from the screen but not from the server.
     state.reminders = previous;
     repaint();
     toastError(err, 'Could not delete reminder.');
@@ -7570,7 +8327,7 @@ function openModal(opts) {
 function segmented(options, initial, onChange) {
   let selected = initial;
   const segs = {};
-  const wrap = h('div', { class: 'gb-segmented', role: 'radiogroup' });
+  const wrap = rovingGroup(h('div', { class: 'gb-segmented', role: 'radiogroup' }));
   options.forEach((opt) => {
     const btn = h(
       'button',
@@ -7597,7 +8354,45 @@ function segmented(options, initial, onChange) {
   return { node: wrap, get: () => selected };
 }
 
-function openAddSheet() {
+/* Quick add's one sentence -> preview (or straight through for controls only).
+   Shared by the add sheet and the command palette. `beforeShow` closes the
+   caller's sheet once there is something to show; false = nothing read (it has
+   already said why), and a thrown error is the caller's to report.
+   `opts.preview`: always show the preview, even for controls alone (a share
+   into the app: words the user didn't type here, so even "dark mode" waits). */
+async function runQuickAdd(text, beforeShow, opts = {}) {
+  const r = await parseQuickAdd(text);
+  const rows = r.intents.map((it) => ({ it, d: describeIntent(it) })).filter((x) => x.d);
+  if (!rows.length) {
+    pushToast(
+      r.unavailable
+        ? "Couldn't reach the assistant, and couldn't read that without it. Try again?"
+        : !r.configured
+          ? 'Couldn’t read that. Try short phrases like “spent 200 on lunch, slept 7h, remind me at 6 to call mom”.'
+          : "Couldn't find anything to log there — try being more specific.",
+      'error',
+      4200
+    );
+    return false;
+  }
+  if (beforeShow) beforeShow();
+  // Only controls ("open money", "dark mode"): just do it — nothing is written
+  // that a preview would protect.
+  if (!opts.preview && rows.every((x) => CONTROL_INTENTS.has(x.it.type) && !x.d.unknown)) {
+    await applyQuickAdd(rows.map((x) => x.it));
+    return true;
+  }
+  openQuickAddPreview(
+    rows,
+    r.fallback ? 'Read without the assistant — switch off anything it got wrong.' : r.note
+  );
+  return true;
+}
+
+/* prefill.text fills the one-line box; prefill.preview reads it at once and
+   shows Quick add's preview rather than acting (see runQuickAdd's opts). */
+function openAddSheet(prefill) {
+  prefill = prefill || {};
   const { sheet, close } = openOverlay({ label: 'Quick add' });
 
   // Natural-language quick-add: type it once, we sort it into the right trackers.
@@ -7618,38 +8413,12 @@ function openAddSheet() {
     qaInput.disabled = true;
     const done = setThinking(qaBtn, 'Reading');
     try {
-      const r = await parseQuickAdd(text);
-      const rows = r.intents.map((it) => ({ it, d: describeIntent(it) })).filter((x) => x.d);
-      if (!rows.length) {
-        done();
-        qaInput.disabled = false;
-        pushToast(
-          r.unavailable
-            ? "Couldn't reach the assistant, and couldn't read that without it. Try again?"
-            : !r.configured
-              ? 'Couldn’t read that. Try short phrases like “spent 200 on lunch, slept 7h, remind me at 6 to call mom”.'
-              : "Couldn't find anything to log there — try being more specific.",
-          'error',
-          4200
-        );
-        return;
-      }
-      close();
-      // Only controls ("open money", "dark mode"): just do it — nothing is written
-      // that a preview would protect.
-      if (rows.every((x) => CONTROL_INTENTS.has(x.it.type) && !x.d.unknown)) {
-        await applyQuickAdd(rows.map((x) => x.it));
-        return;
-      }
-      openQuickAddPreview(
-        rows,
-        r.fallback ? 'Read without the assistant — switch off anything it got wrong.' : r.note
-      );
+      if (await runQuickAdd(text, close, { preview: prefill.preview })) return;
     } catch (err) {
-      done();
-      qaInput.disabled = false;
       toastError(err, 'Quick add failed. Try again?');
     }
+    done();
+    qaInput.disabled = false;
   }
   qaBtn.addEventListener('click', submitQuickAdd);
   qaInput.addEventListener('keydown', (e) => {
@@ -7669,25 +8438,8 @@ function openAddSheet() {
   let micBtn = null;
   let langBtn = null;
   if (SR || capSR) {
-    const LANGS = [
-      { code: 'en-IN', label: 'English' },
-      { code: 'hi-IN', label: 'हिन्दी' },
-      { code: 'ta-IN', label: 'தமிழ்' },
-      { code: 'te-IN', label: 'తెలుగు' },
-      { code: 'kn-IN', label: 'ಕನ್ನಡ' },
-      { code: 'ml-IN', label: 'മലയാളം' },
-      { code: 'bn-IN', label: 'বাংলা' },
-      { code: 'mr-IN', label: 'मराठी' },
-      { code: 'gu-IN', label: 'ગુજરાતી' },
-      { code: 'pa-IN', label: 'ਪੰਜਾਬੀ' },
-    ];
-    const device = navigator.language || 'en-IN';
-    const sameBase = (a, b) => a.split('-')[0] === b.split('-')[0];
-    let langCode =
-      localStorage.getItem('gb.qa.lang') ||
-      (LANGS.find((l) => l.code === device) || LANGS.find((l) => sameBase(l.code, device)) || {})
-        .code ||
-      device;
+    const LANGS = VOICE_LANGS.slice(); // the device's own may be added below
+    let langCode = speechLang();
     if (!LANGS.some((l) => l.code === langCode)) {
       // Device speaks something we didn't list — offer it anyway, by name.
       let label = langCode;
@@ -7712,7 +8464,6 @@ function openAddSheet() {
     });
     langBtn.addEventListener('change', () => {
       langCode = langBtn.value;
-      localStorage.setItem('gb.qa.lang', langCode);
       saveUiPrefs({ qaLang: langCode });
     });
     micBtn = h(
@@ -7779,6 +8530,7 @@ function openAddSheet() {
       sub: 'Jot something down',
       action: () => {
         close();
+        pendingNoteOpen = 'new'; // Notes opens with the composer open and focused
         setScreen('notes');
       },
     },
@@ -7787,11 +8539,10 @@ function openAddSheet() {
       feature: 'calendar',
       icon: 'calendar-plus',
       label: 'Reminder',
-      sub: 'Opens your calendar to pick a day',
+      sub: 'What and when, in one line',
       action: () => {
         close();
-        calToday();
-        setScreen('calendar');
+        openReminderSheet();
       },
     },
     {
@@ -7853,6 +8604,10 @@ function openAddSheet() {
     )
   );
   refreshIcons();
+  if (prefill.text) {
+    qaInput.value = prefill.text;
+    if (prefill.preview) submitQuickAdd();
+  }
 }
 
 /* `<input type="datetime-local">` wants wall-clock local time, not the UTC an
@@ -7897,6 +8652,45 @@ function taskForm(task, presetGoalId) {
     class: 'gb-input',
     value: task && task.dueAt ? toDateTimeLocal(task.dueAt) : '',
   });
+  // Today / Tomorrow set the end of that local day; Pick opens the full picker.
+  // No chip is the default, so nothing turns overdue by itself.
+  const endOf = (days) => {
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    d.setHours(23, 59, 0, 0);
+    return toDateTimeLocal(d.toISOString());
+  };
+  const dueChips = [
+    { label: 'Today', days: 0 },
+    { label: 'Tomorrow', days: 1 },
+  ].map((c) => h('button', { type: 'button', class: 'gb-chip', 'aria-pressed': 'false', onclick: () => setDue(endOf(c.days)) }, c.label));
+  const paintDue = () =>
+    dueChips.forEach((b, i) => {
+      const on = dueInput.value === endOf(i);
+      b.classList.toggle('is-on', on);
+      b.setAttribute('aria-pressed', String(on));
+    });
+  const setDue = (v) => {
+    dueInput.value = dueInput.value === v ? '' : v; // a second tap clears it
+    paintDue();
+  };
+  dueInput.addEventListener('input', paintDue);
+  paintDue();
+  const pickBtn = h(
+    'button',
+    {
+      type: 'button',
+      class: 'gb-chip',
+      onclick: () => {
+        try {
+          dueInput.showPicker();
+        } catch (_) {
+          dueInput.focus();
+        }
+      },
+    },
+    'Pick'
+  );
   // Goal (optional): the open goals, plus the one the task is already on even
   // if that goal is done, so editing never silently drops the link.
   const goalNow = (task && task.goalId) || presetGoalId || '';
@@ -7925,11 +8719,13 @@ function taskForm(task, presetGoalId) {
       h('div', { class: 'gb-field-label' }, 'Priority'),
       priority.node,
       h('div', { class: 'gb-field-label' }, 'Due (optional)'),
+      h('div', { class: 'gb-due-chips', role: 'group', 'aria-label': 'Due' }, ...dueChips, pickBtn),
       dueInput,
       goalSel ? h('div', { class: 'gb-field-label' }, 'Goal (optional)') : null,
       goalSel
     ),
     focus: () => setTimeout(() => titleInput.focus(), 60),
+    titleInput,
     read: () => {
       const title = titleInput.value.trim();
       if (!title) throw fieldRefusal(titleInput, 'Give the task a title.');
@@ -7957,12 +8753,46 @@ function taskForm(task, presetGoalId) {
    event from a plain onclick) means none. */
 function openAddTask(goal) {
   const form = taskForm(null, goal && typeof goal.id === 'string' ? goal.id : null);
+  // A run of tasks: "Add another" (or Shift+Enter in the title) saves this one
+  // and clears the title for the next, keeping priority, due and goal.
+  let adding = false;
+  const addAnother = async () => {
+    if (adding) return;
+    adding = true;
+    anotherBtn.disabled = true;
+    try {
+      await createTask(form.read());
+      render();
+      toastSuccess('Task added.');
+      form.titleInput.value = '';
+      form.titleInput.focus();
+    } catch (err) {
+      if (err && err.field) fieldError(err.field, err.message);
+      else toastError(err, 'Could not add the task.');
+    } finally {
+      adding = false;
+      anotherBtn.disabled = false;
+    }
+  };
+  const anotherBtn = h(
+    'button',
+    { type: 'button', class: 'gb-btn gb-btn--secondary gb-btn--compact', style: { marginTop: '10px' }, onclick: addAnother },
+    Icon('plus', { size: 14, sw: 2.4 }),
+    'Add another'
+  );
+  form.titleInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      addAnother();
+    }
+  });
   const close = openModal({
     title: 'New task',
     body: h(
       'div',
       null,
       form.node,
+      anotherBtn,
       h(
         'button',
         {
@@ -8162,7 +8992,7 @@ function openEditTask(task) {
     onPrimary: () => updateTask(task.id, form.read()),
     danger: {
       label: 'Delete task',
-      onClick: () => confirmDelete('Delete “' + task.title + '”?', () => deleteTask(task.id)),
+      onClick: () => deleteTask(task.id), // undoable: no confirm
     },
   });
   form.focus();
@@ -8288,7 +9118,7 @@ function starterRow(it) {
 }
 
 async function applyStarter(rows) {
-  const today = todayKeyNow();
+  const today = todayKey();
   let made = 0;
   const budgets = {};
   for (const it of rows) {
@@ -8351,7 +9181,7 @@ async function openStarterPacks() {
       waterGoalMl: state.water && state.water.goalMl,
       weightKg: state.user && state.user.weightKg,
       money: state.money,
-      today: todayKeyNow(),
+      today: todayKey(),
       suggestWater: suggestWaterGoalMl,
     }).map((it) => ({ it, d: starterRow(it) }));
     list.replaceChildren(
@@ -8617,7 +9447,7 @@ function toastStack() {
               type: 'button',
               class: 'gb-toast-action',
               onclick: () => {
-                dismissToast(t.id);
+                dismissToast(t.id, true);
                 t.action.run();
               },
             },
@@ -8650,23 +9480,6 @@ function toastStack() {
     },
     nodes
   );
-}
-
-/* The heading names the thing ("Delete “Morning walk”?"), `detail` says what
-   goes with it, and the button is red — it was the same orange as every Save. */
-function confirmDelete(message, onYes, detail) {
-  openModal({
-    // The question IS the heading — "Please confirm" told the user nothing.
-    title: message,
-    sub: detail || null,
-    body: null,
-    primary: 'Delete',
-    destructive: true,
-    onPrimary: async () => {
-      await onYes();
-      toastSuccess('Deleted.');
-    },
-  });
 }
 
 /* ---- Habits screen ---- */
@@ -9115,7 +9928,7 @@ const SCREENS = {
         onAddTask: openAddTask,
         onEditTask: openEditTask,
         onPauseTask: pauseTask,
-        onFocusTask: featureOn('focus') ? (task) => startFocusOn({ taskId: task.id }) : null,
+        onFocusTask: featureOn('focus') ? (task) => startFocusOn({ taskId: task.id }, true) : null,
         onAddHabit: openAddHabit,
         calYear: state.calYear,
         calMonth: state.calMonth,
@@ -9140,6 +9953,7 @@ const SCREENS = {
         onSaveMoney: saveMoney,
         requestReceiptScan,
         onOpenMoney: () => setScreen('money'),
+        onQuickAddWater: featureOn('water') ? quickAddWater : null,
         homeLayout: (state.user && state.user.homeLayout) || null,
       }),
   },
@@ -9186,7 +10000,11 @@ const SCREENS = {
   achievements: {
     headerLabel: () => 'Your badges',
     headerName: () => 'Achievements',
-    render: () => ScreenAchievements(achievementProps()),
+    render: () =>
+      lazyScreen(
+        () => import('./achievements-screen.js'),
+        (m) => m.ScreenAchievements(achievementProps())
+      ),
   },
   focus: {
     headerLabel: () => 'Deep work',
@@ -9342,7 +10160,7 @@ const SCREENS = {
               winLines({
                 habits: state.habits || [],
                 goals: (state.goals || []).flatMap((sec) => sec.goals || []),
-                today: todayKeyNow(),
+                today: todayKey(),
               }),
             // Inside an accepted link ({id} = the request id): cheer/nudge, the
             // thread, the agreement, and the mentor's weekly card.
@@ -9372,6 +10190,9 @@ const SCREENS = {
               week: (linkId) => api('/api/mentorship/' + encodeURIComponent(linkId) + '/week'),
             },
             challengesApi: {
+              // Where an invite link points: the public site, never the app's
+              // own https://localhost (native.js publicSiteUrl).
+              siteUrl: publicSiteUrl() + '/',
               listMine: () => api('/api/circles/mine'),
               listAll: () => api('/api/circles'),
               createCircle: (body) =>
@@ -9463,6 +10284,7 @@ const SCREENS = {
           m.ScreenFamily({
             api: {
               getFamily: () => api('/api/family'),
+              startSolo: () => api('/api/family/solo', { method: 'POST' }),
               addMember: (body) =>
                 api('/api/family/members', { method: 'POST', body: JSON.stringify(body) }),
               updateMember: (id, body) =>
@@ -9638,6 +10460,12 @@ const SCREENS = {
             // in money.js, never merged into state.money, so no save can send it back.
             requestOlderTx: (before) =>
               api('/api/money/tx?before=' + encodeURIComponent(before) + '&limit=200'),
+            // The CSV import waits on this between batches: true once nothing is left unsent.
+            moneySettled: () =>
+              moneySaveQueue.then(() => {
+                const p = loadPendingLedger();
+                return !Object.keys(p.upserts).length && !p.deletes.length;
+              }),
           })
       ),
   },
@@ -9703,6 +10531,12 @@ const SCREENS = {
             onDeleteEditDraft: (id) =>
               api('/api/notes/' + encodeURIComponent(id) + '/draft', { method: 'DELETE' }),
             onMakeTask: (title) => createTask({ title }),
+            // The palette's pick: a note id to open, or 'new' for the composer. Taken once.
+            openOnMount: (() => {
+              const id = pendingNoteOpen;
+              pendingNoteOpen = null;
+              return id;
+            })(),
             onMakeReminder: (text) => {
               // Hand it to the calendar rather than growing a second reminder
               // form here — the date, repeat and tag pickers all live there.
@@ -9724,13 +10558,8 @@ const SCREENS = {
             sections: state.goals,
             onCreateGoal: createGoal,
             onToggleGoal: toggleGoal,
-            // The trash icon deleted on one tap, with no confirm and no error path.
-            onDeleteGoal: (id, goal) =>
-              confirmDelete(
-                goal ? 'Delete “' + goal.title + '”?' : 'Delete this goal?',
-                () => deleteGoal(id),
-                'Its actions and progress are deleted with it. Its tasks stay, on no goal.'
-              ),
+            // Undoable (deferDelete); a failed send puts it back and toasts.
+            onDeleteGoal: (id) => deleteGoal(id),
             // Linked tasks: "Add a task" opens New task on this goal; the open
             // ones listed on the card tick like Home's rows.
             onAddTask: (goal) => openAddTask(goal),
@@ -9920,11 +10749,12 @@ function paintBellBadge() {
   if (!bell) return;
   const n = unreadNotifs();
   const badge = bell.querySelector('.gb-bell-badge');
+  const text = n > 99 ? '99+' : String(n);
+  bell.setAttribute('aria-label', n ? 'Notifications, ' + text + ' unread' : 'Notifications');
   if (!n) {
     if (badge) badge.remove();
     return;
   }
-  const text = n > 99 ? '99+' : String(n);
   if (badge) badge.textContent = text;
   else bell.appendChild(h('span', { class: 'gb-bell-badge' }, text));
 }
@@ -10033,6 +10863,9 @@ function captureScrollPosition() {
 
 function restoreScrollPosition(snapshot) {
   if (!snapshot || snapshot.screen !== state.screen) return;
+  // At the top there is nothing to restore (a fresh .gb-scroll starts there), and
+  // reading scrollHeight would force a layout of the tree just built.
+  if (!snapshot.top && !snapshot.left) return;
   const scroll = document.querySelector('.gb-scroll');
   if (!scroll) return;
   const apply = () => {
@@ -10227,8 +11060,19 @@ function authShell(title, subtitle, children) {
       // expired" here, under the notice that already says so.
       state.error && !state.errorField && !(state.authNotice && state.error === SESSION_EXPIRED)
         ? h('p', { class: 'gb-login-error', role: 'alert' }, state.error)
-        : null
+        : null,
+      h('p', { class: 'gb-login-legal' }, privacyLink())
     )
+  );
+}
+
+/* The hosted policy. Absolute (publicSiteUrl), so in the app it opens in the
+   system browser instead of replacing the app inside its own WebView. */
+function privacyLink() {
+  return h(
+    'a',
+    { class: 'gb-login-link', href: publicSiteUrl() + '/privacy.html', target: '_blank', rel: 'noopener' },
+    'Privacy policy'
   );
 }
 
@@ -10283,7 +11127,7 @@ function passwordField(input) {
   const toggle = h('button', {
     type: 'button',
     class: 'gb-pw-toggle',
-    tabindex: '-1', // the field, not its decoration, is what Tab should reach
+    // Reachable by Tab: a keyboard user must be able to check what they typed.
     onclick: () => {
       input.type = input.type === 'password' ? 'text' : 'password';
       paint();
@@ -10433,8 +11277,12 @@ function routeSignInStep(err, email, password, cancelDeletion) {
   return true;
 }
 
+/* Every sign-in lands here (password, OTP verify, reset, 2FA, cancel-deletion).
+   It starts from session.js's fresh state, not whatever is in memory: an answer
+   the last session sent before it ended can still have rolled something back
+   into `state` on its way out. */
 async function completeSignIn(user) {
-  state.authPending = null;
+  Object.assign(state, freshUserState(EMPTY_STATE), { loading: state.loading });
   syncUserSession(user);
   state.wellness = loadWellness();
   state.goalProgress = loadGoalProgress();
@@ -10568,14 +11416,7 @@ function viewSignin() {
           notice: 'Your email isn’t verified yet, so we sent you a fresh code.',
         });
       }
-      syncUserSession(user);
-      state.wellness = loadWellness();
-      state.goalProgress = loadGoalProgress();
-      state.money = loadMoney();
-      state.streakFreeze = loadStreakFreeze();
-      state.trends = loadTrends();
-      landAfterSignIn();
-      await loadData();
+      await completeSignIn(user);
     }, 'password');
   }
 
@@ -10615,6 +11456,7 @@ function viewSignup() {
     type: 'text',
     class: 'gb-input gb-login-input',
     placeholder: 'Your name',
+    autocomplete: 'name',
     maxlength: 120,
   });
   const pwInput = h('input', {
@@ -10714,14 +11556,7 @@ function viewVerify() {
     if (otp.length !== 6) return authFail('Enter the 6-digit code (must be exactly 6 digits).', 'otp');
     runAuth(async () => {
       const user = await authPost('/api/auth/verify', { email: state.authEmail, otp });
-      syncUserSession(user);
-      state.wellness = loadWellness();
-      state.goalProgress = loadGoalProgress();
-      state.money = loadMoney();
-      state.streakFreeze = loadStreakFreeze();
-      state.trends = loadTrends();
-      landAfterSignIn();
-      await loadData();
+      await completeSignIn(user);
     }, 'otp');
   }
   function resend() {
@@ -10841,14 +11676,7 @@ function viewReset() {
         if (routeSignInStep(err, state.authEmail, password)) return;
         throw err;
       }
-      syncUserSession(user);
-      state.wellness = loadWellness();
-      state.goalProgress = loadGoalProgress();
-      state.money = loadMoney();
-      state.streakFreeze = loadStreakFreeze();
-      state.trends = loadTrends();
-      landAfterSignIn();
-      await loadData();
+      await completeSignIn(user);
     }, 'otp');
   }
   [otpInput, pwInput, pw2Input].forEach((el) =>
@@ -10906,81 +11734,128 @@ function loginCard() {
 }
 
 function logout() {
-  // Fire-and-forget; the token is invalidated locally either way.
+  return endSession('logout');
+}
+
+/* ---- The one way out of a session ----
+   Sign out, a 401 and account deletion all end here. They used to keep three
+   hand-written reset lists that had drifted: a 401 left a running focus timer,
+   the device alarms, the money cache and the service worker's gb-api-get cache
+   for whoever signed in next, and Sign out left the goals, water, food and the
+   bell. What a sign-out resets is session.js `freshUserState` (session.test.mjs
+   fails on a state field it doesn't classify), the rest is module memory here.
+   `reason`: 'logout' | 'expired' | 'deleted'. */
+async function endSession(reason) {
+  if (!state.user) return;
+  // Every sheet goes, by close() not dismiss(): the note editor's dismiss saves,
+  // and nothing should save on the way out. Settings' "Sign out" used to leave
+  // the sheet up over the sign-in card, the last account's name and email in it.
+  closeOverlays({ discard: true });
+  popoverCleanup?.();
+  // Pending writes go before the token does. Not on a 401: that token can't send them.
+  if (reason === 'logout') await flushPendingWrites();
+  // A dead token can't send them, and the lists they'd restore into are going.
+  else undoQueue.clear();
+  if (!state.user) return; // a 401 during the flush already ended it
   const token = loadToken();
-  if (token) {
-    // Unsubscribe this browser's Web Push endpoint BEFORE the token is revoked,
-    // or the server keeps pushing this account's reminders to a device that is
-    // now someone else's. disablePush awaits the service worker before it calls
-    // api(), by which time clearSession() has dropped the stored token — so it
-    // gets a fetch bound to the token captured here, and the logout POST waits
-    // for it (revoking first would 401 the unsubscribe).
-    const withToken = (path, o = {}) =>
-      fetch(API_BASE + path, {
-        ...o,
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-      });
-    disablePush(withToken)
-      .catch(() => {})
-      .then(() => withToken('/api/auth/logout', { method: 'POST' }))
-      .catch(() => {
-        /* silent */
-      });
-  }
+  // From here on an answer to anything already sent lands nowhere (session.js).
+  bumpSession();
+  _inflightGets.clear();
+  if (reason === 'logout' && token) revokeOnServer(token);
   // On-device alarms (native only; a no-op on the web) were scheduled for this
   // account's reminders, water and habits — they must not ring for the next one.
   cancelPendingLocalNotifications();
-  // Log food's chip rows are this account's foods, not the next one's.
-  recentFoods = null;
-  favouriteFoods = null;
-  // The Workbox NetworkFirst cache holds this account's API GET responses and
-  // would serve them, offline, to whoever signs in next on this browser.
-  try {
-    if (typeof caches !== 'undefined') caches.delete('gb-api-get').catch(() => {});
-  } catch (_) {
-    /* no CacheStorage (insecure context) */
-  }
   // A running focus timer would finish later and post under the next account.
   import('./timer.js').then((m) => m.resetFocusSession()).catch(() => {});
   disconnectWebSocket();
-  purgeUserCache();
+  const purged = Promise.all([purgeUserCache(reason), deleteUserCaches()]).catch(() => {});
   clearSession();
-  state.user = null;
-  state.tasks = [];
-  state.habits = [];
-  state.reminders = [];
-  state.quote = null;
-  state.score = 0;
-  state.error = '';
-  state.loading = false;
+  clearReminderForm(); // a half-typed reminder in the calendar's kept form
+  Object.assign(state, freshUserState(EMPTY_STATE));
+  setNotifFirstPage([]); // also drops the last account's unread-past-the-page count
+  notifFilter = 'all';
+  toastTimers.forEach((t) => clearTimeout(t.handle));
+  toastTimers.clear();
+  loadedFor = null; // the next sign-in is a first load, not a refresh
+  // Another account must not see this one's Insights, nor wait out its throttle.
+  insightHistoryAt = 0;
+  insightReq = null;
+  // Log food's chip rows are this account's foods, not the next one's.
+  recentFoods = null;
+  favouriteFoods = null;
+  weekGen.bump();
+  try {
+    sessionStorage.removeItem('gb.authDraft');
+  } catch (_) {
+    /* ignore */
+  }
+  if (reason === 'deleted') {
+    await purged; // a reload mid-delete would leave the caches behind
+    location.reload();
+    return;
+  }
+  if (reason === 'expired') returnToScreen = state.screen; // signing back in returns here, not to Home
   state.screen = 'home';
   state.authMode = 'signin';
   state.authEmail = '';
-  state.authNotice = '';
-  state.authPending = null;
-  // A panel left open kept its mousedown listener alive on the sign-in screen,
-  // where the first press "closed" it with a full render() that rebuilt the form
-  // under the pointer: no request, both fields blanked.
-  state.notifOpen = false;
-  state.profileOpen = false;
-  state.moreOpen = false;
-  popoverCleanup?.();
-  state.goalProgress = {};
-  // Another account must not see this one's Insights, nor wait out its throttle.
-  state.insightHistory = null;
-  state.waterUsualHours = null;
-  loadedFor = null; // the next sign-in is a first load, not a refresh
-  insightHistoryAt = 0;
-  insightReq = null; // a fetch still in flight belongs to the old account: drop it
-  state.money = emptyMoney();
-  weekGen.bump();
-  state.foodWeek = null;
-  state.waterWeek = null;
-  state.dietCheck = null;
-  state.weekError = '';
+  state.authNotice = reason === 'expired' ? 'Your session ended. Sign in again.' : '';
   // Drop the hash so the URL doesn't say "#/circle" on the sign-in screen.
   if (window.location.hash) history.replaceState(null, '', window.location.pathname);
   render();
+}
+
+const EMPTY_STATE = {
+  wellness: emptyWellness,
+  money: emptyMoney,
+  streakFreeze: emptyStreakFreeze,
+  trends: emptyTrends,
+};
+
+/* Step one of a sign-out: send what is queued while the token still works.
+   The offline outbox's queue (sends only: the refetch after it would land on
+   nobody), capped so an asleep server can't hold Sign out for long; whatever
+   didn't go stays queued and purgeUserCache decides. Undoable deletes still
+   waiting on their Undo toast commit here too (feat/ov-undo). */
+async function flushPendingWrites() {
+  // Deletes still waiting on an Undo toast go first, while the token is good:
+  // each request leaves synchronously inside flush() (offline, into the outbox).
+  undoQueue.flush();
+  if (!navigator.onLine) return;
+  await CacheStorage.ready();
+  if (!outbox.size()) return;
+  await Promise.race([outbox.flush(api).catch(() => {}), new Promise((r) => setTimeout(r, 4000))]);
+}
+
+/* Fire-and-forget; the token is invalidated locally either way. Unsubscribe
+   this browser's Web Push endpoint BEFORE the token is revoked, or the server
+   keeps pushing this account's reminders to a device that is now someone
+   else's. disablePush awaits the service worker before it calls api(), by which
+   time clearSession() has dropped the stored token — so it gets a fetch bound
+   to the token captured here, and the logout POST waits for it (revoking first
+   would 401 the unsubscribe). */
+function revokeOnServer(token) {
+  const withToken = (path, o = {}) =>
+    fetch(API_BASE + path, {
+      ...o,
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+    });
+  disablePush(withToken)
+    .catch(() => {})
+    .then(() => withToken('/api/auth/logout', { method: 'POST' }))
+    .catch(() => {
+      /* silent */
+    });
+}
+
+/* The service worker's runtime caches hold this account's GET responses, keyed
+   by URL only: left behind, they answer the next account's requests offline. */
+function deleteUserCaches() {
+  try {
+    if (typeof caches !== 'undefined') return Promise.all(USER_CACHES.map((c) => caches.delete(c)));
+  } catch (_) {
+    /* no CacheStorage (insecure context) */
+  }
+  return Promise.resolve();
 }
 
 /* ---- Loading splash (shown while data loads, e.g. on reload) ----
@@ -11158,11 +12033,162 @@ function tweenFromLast() {
     });
   }
   if (!moves.length) return;
-  void document.body.offsetWidth; // commit the old values as the start
-  for (const [el, prop, next] of moves) el.style[prop] = next;
+  // The old values paint one frame, then the new ones are set and transition from
+  // them. Was a forced layout (`void offsetWidth`) to commit the start values.
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      for (const [el, prop, next] of moves) el.style[prop] = next;
+    })
+  );
 }
 
+/* ---- Command palette + keyboard shortcuts ----
+   Ctrl/Cmd+K anywhere, "/" or "?" outside a text field, and the header's search
+   button. The UI (palette.js + palette-core.js) loads on first open; only this
+   listener and paletteProps() ride in the boot chunk. */
+const GO_KEYS = { h: 'home', c: 'calendar', m: 'money', n: 'notes', r: 'report', s: 'settings' };
+let palettePromise = null;
+function openPalette(help) {
+  palettePromise =
+    palettePromise ||
+    import('./palette.js').catch((err) => {
+      palettePromise = null; // a failed fetch (offline) may succeed next time
+      throw err;
+    });
+  palettePromise
+    .then((m) => (help ? m.openShortcutHelp(GO_KEYS, SCREEN_LABEL) : m.openPalette(paletteProps())))
+    .catch((err) => toastError(err, 'Couldn’t open search. Check your connection?'));
+}
+function goToScreen(id) {
+  if (id === 'settings') openProfileSettings();
+  else if (SCREENS[id] && screenEnabled(id)) setScreen(id);
+}
+/* A note the palette picked ('new' = the composer), taken once by the Notes
+   screen's next mount. force: Notes may already be the screen. */
+let pendingNoteOpen = null;
+function openNoteById(id) {
+  pendingNoteOpen = id;
+  setScreen('notes', { force: true });
+}
+/* What the palette searches and does: every item already in state, gated by the
+   same featureOn / screenEnabled the nav and Quick add use. */
+function paletteProps() {
+  const on = featureOn;
+  const act = (key, label, icon, run, alt) => ({ key: 'act:' + key, kind: 'action', label, icon, run, alt });
+  const dark = state.theme === 'dark';
+  const items = [
+    act('new-task', 'New task', 'list-todo', () => openAddTask(), ['add task', 'to-do']),
+    on('habits') && act('new-habit', 'New habit', 'repeat', openAddHabit, ['add habit']),
+    on('calendar') &&
+      act('new-reminder', 'New reminder', 'calendar-plus', () => {
+        calToday();
+        setScreen('calendar');
+      }, ['add reminder', 'remind me']),
+    on('notes') && act('new-note', 'New note', 'notebook-pen', () => openNoteById('new'), ['add note', 'jot']),
+    on('water') && act('water', 'Log water 250 ml', 'droplets', () => quickAddWater(250), ['drink', 'glass']),
+    on('focus') && act('focus', 'Start focus', 'timer', () => applyIntent({ type: 'focus' }), ['pomodoro', 'deep work']),
+    act('plan', 'Plan my day', 'sparkles', openDailyPlan, ['schedule today']),
+    act('theme', dark ? 'Switch to light mode' : 'Switch to dark mode', dark ? 'sun' : 'moon', toggleTheme, [
+      'toggle dark mode',
+      'theme',
+    ]),
+    act('settings', 'Open Settings', 'settings', () => openProfileSettings(), ['preferences', 'account']),
+    ...Object.keys(SCREENS)
+      .filter(screenEnabled)
+      .map((id) => ({
+        key: 'screen:' + id,
+        kind: 'screen',
+        label: SCREEN_LABEL[id] || SCREENS[id].headerName(),
+        alt: id === 'home' ? [] : [SCREENS[id].headerName()],
+        screen: id,
+        run: () => setScreen(id),
+      })),
+    ...(state.tasks || []).map((t) => ({
+      key: 'task:' + t.id,
+      kind: 'task',
+      label: t.title,
+      sub: t.done ? 'Done' : t.dueAt ? t.time : '', // not "No due time" on every row
+      run: () => openEditTask(t),
+    })),
+    ...(on('habits') ? state.habits || [] : []).map((hb) => ({
+      key: 'habit:' + hb.id,
+      kind: 'habit',
+      label: hb.name,
+      run: () => openHabitForm(hb),
+    })),
+    ...(on('goals') ? (state.goals || []).flatMap((sec) => sec.goals || []) : []).map((g) => ({
+      key: 'goal:' + g.id,
+      kind: 'goal',
+      label: g.title,
+      sub: g.completed ? 'Complete' : '',
+      goalId: g.id,
+      run: () => setScreen('goals'),
+    })),
+    ...(on('calendar') ? state.reminders || [] : []).map((r) => ({
+      key: 'reminder:' + r.id,
+      kind: 'reminder',
+      label: r.text,
+      reminder: r,
+    })),
+  ].filter((x) => x && x.label);
+  return {
+    items,
+    // On the reminder's next day (recurrence.js), or its own date: palette.js works out which.
+    openDay: (key) => {
+      const [y, m, d] = key.split('-').map(Number);
+      calGoTo(new Date(y, m - 1, d));
+      setScreen('calendar');
+    },
+    // Notes live on their screen, not in state: the list once, when the palette opens.
+    listNotes: on('notes') ? () => api('/api/notes') : null,
+    openNote: openNoteById,
+    runQuickAdd,
+    recent: (state.user && state.user.uiPrefs && state.user.uiPrefs.paletteRecent) || [],
+    saveRecent: (list) => saveUiPrefs({ paletteRecent: list }),
+  };
+}
+let goPending = 0; // when "g" was pressed, for the g-then-letter jumps
+document.addEventListener('keydown', (e) => {
+  if (!state.user || e.isComposing) return;
+  const k = e.key;
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (k === 'k' || k === 'K')) {
+    e.preventDefault();
+    const input = document.querySelector('.gb-palette input');
+    if (input) input.focus();
+    else openPalette();
+    return;
+  }
+  if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
+  const el = document.activeElement;
+  const typing = el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+  if (typing || document.querySelector('[aria-modal="true"]')) {
+    goPending = 0;
+    return;
+  }
+  if (goPending && Date.now() - goPending < 1500) {
+    goPending = 0;
+    if (GO_KEYS[k]) {
+      e.preventDefault();
+      goToScreen(GO_KEYS[k]);
+    }
+    return;
+  }
+  goPending = 0;
+  if (k === '/' || k === '?') {
+    e.preventDefault();
+    openPalette(k === '?');
+  } else if (k === 'n') {
+    e.preventDefault();
+    openAddTask();
+  } else if (k === 'g') {
+    goPending = Date.now();
+  }
+});
+
 function render() {
+  // A list reloaded mid-window still holds a delete waiting on its Undo toast.
+  // ponytail: re-filtered on every paint (a few pending items); a per-load hook if that ever shows.
+  undoQueue.reapply();
   const sameScreen = renderedScreen === state.screen;
   // Leaving a screen files its scroll position; coming back to it (back, or its
   // nav tab) restores it instead of starting at the top.
@@ -11220,6 +12246,7 @@ function render() {
       name: cfg.headerName(),
       userName: state.user.displayName || 'Buddy',
       onAdd: openAddSheet,
+      onSearch: () => openPalette(),
       onAccount: toggleProfileOpen,
       unreadCount: unreadNotifs(),
       onBell: toggleNotifOpen,
@@ -11284,6 +12311,7 @@ function installOutsideClickToCloseHeaderPopovers() {
     popoverCleanup();
     popoverCleanup = null;
   }
+  syncPanelBackEntry();
   // The More sheet too: it had a backdrop to tap but nothing for Escape.
   if (!state.notifOpen && !state.profileOpen && !state.moreOpen) return;
   function cleanup() {
@@ -11356,6 +12384,11 @@ if (window.CacheStorage && window.CacheStorage.init) {
           .catch(() => {});
       }
       if (hydrated && state.user) {
+        // The session cookie is slim (cache-storage.js cookieValue): the profile
+        // fields it leaves out come from the Cache API copy, without overwriting
+        // anything /api/auth/me may already have refreshed.
+        const full = loadSession();
+        if (full) Object.keys(full).forEach((k) => k in state.user || (state.user[k] = full[k]));
         state.wellness = loadWellness();
         state.goalProgress = loadGoalProgress();
         state.money = loadMoney();
@@ -11396,7 +12429,7 @@ document.addEventListener('visibilitychange', () => {
    yesterday's totals (and a tap added to them) until something else reloaded.
    Each summary carries its own date, so a stale one is a cheap check. */
 function refreshDayIfStale() {
-  const today = todayKeyNow();
+  const today = todayKey();
   const stale = (s) => s && s.date && s.date !== today;
   if (!stale(state.water) && !stale(state.food)) return;
   Promise.all([
@@ -11422,25 +12455,32 @@ if (state.user) {
   // Restore the screen from the URL fragment, so refreshing on /circle stays there.
   state.screen = screenFromHash();
   loadData();
-
-  // Re-push the money blob every 5 minutes in case a save was lost to a dropped
-  // connection. Wellness rode along here too, PUTting to an endpoint that has
-  // never existed — a failure on a timer, forever. Sleep and mood are saved by
-  // their own POSTs at the moment you enter them.
-  setInterval(
-    () => {
-      if (!state.user || !navigator.onLine) return;
-      if (state.money && moneyDirty()) persistMoney();
-    },
-    5 * 60 * 1000
-  );
 } else {
   // Opened a link (#/money) while signed out: go there once signed in.
   returnToScreen = screenFromHash();
 }
+// Re-push the money blob every 5 minutes in case a save was lost to a dropped
+// connection, or to a 5xx while still online (no 'online' event ever fires for
+// that). Armed whether or not this boot is signed in: it used to be armed only
+// then, so anyone who signed in during the session never got it. Wellness rode
+// along here too, PUTting to an endpoint that has never existed — a failure on
+// a timer, forever. Sleep and mood are saved by their own POSTs.
+setInterval(
+  () => {
+    if (!state.user || !navigator.onLine) return;
+    if (state.money && moneyDirty()) persistMoney();
+  },
+  5 * 60 * 1000
+);
 // Resolve the device model before anything signs in — the label rides along on
 // the request that creates the session.
 initNative();
+// A link that opened the app (or arrived while it ran): its hash is the route,
+// and the hashchange handler above routes it, signed in or not.
+onDeepLink((url) => {
+  const hash = deepLinkHash(url);
+  if (hash) window.location.hash = hash;
+});
 // Signed in, loadData() above has already painted the loading screen; a second
 // render here rebuilt the same tree before any data had arrived.
 if (!state.user) render();

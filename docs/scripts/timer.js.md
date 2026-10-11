@@ -24,7 +24,8 @@ repaints, never what it says.
 id **`TIMER_ALARM_ID`** = 2, exported from `native.js` — 1 is the push test, and reminder ids
 start far above both because they are derived from the minute they fire in; push.js's
 `syncDeviceAlarms` re-sync keeps it, it used to wipe it), so a phone rings even when the WebView is
-frozen. `pause`, `reset` and `setMode` all `cancelEndAlarm()`. That cancel is
+frozen. It carries `extra {kind: 'focus'}`, so a tap on it opens the timer (push.js
+`notificationTarget`). `pause`, `reset` and `setMode` all `cancelEndAlarm()`. That cancel is
 `cancelLocalNotifications([id])` from `native.js`, **not**
 `cancelPendingLocalNotifications()` — the latter clears the whole queue and would
 take every reminder with it.
@@ -53,7 +54,10 @@ store before it is posted**, so it counts exactly once. The decision is `restore
   carries one; the server 404s a link that isn't the caller's). A pick that has left the lists stays as
   "The task you picked". A task/goal row's timer button → app.js `startFocusOn(link)` → `focusPreselect`,
   handed once as `props.preselect` (a running sprint is moved over to it, with a toast; an idle break
-  becomes a sprint).
+  becomes a sprint). A task row also sets `props.autoStart = true`, so the clock starts (a paused
+  sprint resumes rather than resetting; a running one is left alone). A sprint that ends on a task
+  still in `Focus.targets.tasks` toasts 'Mark "<title>" done?' (`offerTaskDone`, from `finish` and from a restored session that ended while away) →
+  `props.onFinishTask(id)` (app.js: `toggleTask`, skipped if the task was ticked meanwhile).
 - **Daily goal** (`paintGoal` into `Focus.goalEl`, under the buttons): `ui_prefs.focusGoalMins`
   (`props.focusGoalMins`, 0 = off, "Set a daily focus goal" link), a `role=progressbar` bar of today's
   minutes and the server's `goalStreak` (shown only once `stats.goalMinutes` matches the local goal).
@@ -112,8 +116,9 @@ completed sessions POST to `/api/focus/sessions` (`FocusSession` rows are retent
 **History** (`HistoryCard`, between stats and sound): `GET /api/focus/history?days=30`
 (`props.getFocusHistory`), re-fetched after every saved focus session. 30 bars in an inline SVG
 (`barLayout`, scaled to max(busiest day, goal); the goal is a dashed line; today's bar darker; each
-day's full-height hit rect carries a `<title>` tooltip), `aria-hidden`, with a `gb-sr-only` table of
-the same days. Under it, this week's minutes per linked task/goal (`week`; a deleted one is "A removed
+day's full-height hit rect carries a `<title>` tooltip, and a tap on it reads the day out in the
+summary line, `.is-picked`; tap again for the summary), `aria-hidden`, with a `gb-sr-only` table of
+the same days. `paintSound`'s status line carries the playing sound's `hint` (the tile's `title` is mouse-only). Under it, this week's minutes per linked task/goal (`week`; a deleted one is "A removed
 task"). `History.last` is cleared with `Focus.last` when the owner changes.
 
 Styles: `app.css` §"Focus screen" and §"Focus stats card".

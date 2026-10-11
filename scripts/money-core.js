@@ -5,17 +5,47 @@
    (emptyMoney / normalizeMoney / mergeMoney, tombstones), the ledger split
    app.js saves through (ledgerDiff / applyLedgerDiff / docPart), and the
    few engines Home's Money card reads (budgetStatus, buildInsights), with
-   the date / currency / category helpers under them. No DOM, no imports.
+   the date / currency / category helpers under them. No DOM; one import (todayKey).
    money.js imports all of it and re-exports what it used to export, so the
    tests and older import paths keep working; the screen itself is a lazy
    chunk (app.js SCREENS.money → lazyScreen).
    `cur` is a live binding: applyCurrency() here sets it, money.js reads it.
    ===================================================================== */
+
+import { todayKey } from './home-order.js';
 const CUR = '₹';
 // Display currency symbol — customizable via settings.currency; applied from
 // the money doc whenever the screen/widget/modals render. ponytail: a single
 // module-level display var beats threading currency through every fmt() call.
 let cur = CUR;
+
+/* The home currency for an account that never picked one: the device's region,
+   read from its language (`en-GB` -> GB -> £). An Indian timezone wins over the
+   language, since plenty of phones in India run en-US. Anything not listed keeps
+   CUR. A currency the user set (Customise) is stored and always wins. */
+const REGION_CUR = { US: '$', CA: '$', AU: '$', NZ: '$', SG: '$', HK: '$', GB: '£', JP: '¥', CN: '¥', KR: '₩', NG: '₦', PH: '₱', AE: 'AED', SA: 'SAR', ZA: 'R', LK: 'Rs', PK: 'Rs', NP: 'Rs', BD: '৳', MY: 'RM', ID: 'Rp', TH: '฿', VN: '₫', BR: 'R$', MX: '$', CH: 'CHF', SE: 'kr', NO: 'kr', DK: 'kr', PL: 'zł', TR: '₺', RU: '₽', IL: '₪', EG: 'E£', KE: 'KSh' };
+const EURO = new Set(['DE', 'FR', 'IT', 'ES', 'NL', 'BE', 'AT', 'IE', 'PT', 'FI', 'GR', 'SK', 'SI', 'LT', 'LV', 'EE', 'LU', 'MT', 'CY', 'HR']);
+export function currencyFor(locale, timeZone) {
+  if (/^Asia\/(Kolkata|Calcutta)$/.test(timeZone || '')) return CUR;
+  let region = '';
+  try {
+    region = new Intl.Locale(locale).maximize().region || '';
+  } catch (_) {
+    /* no or bad locale: the default */
+  }
+  return REGION_CUR[region] || (EURO.has(region) ? '€' : CUR);
+}
+let deviceCur = null;
+function deviceCurrency() {
+  if (deviceCur) return deviceCur;
+  try {
+    deviceCur = currencyFor(navigator.language, Intl.DateTimeFormat().resolvedOptions().timeZone);
+  } catch (_) {
+    deviceCur = CUR;
+  }
+  return deviceCur;
+}
+
 function applyCurrency(money) {
   cur = (money && money.settings && money.settings.currency) || CUR;
 }
@@ -210,9 +240,6 @@ function pad2(n) {
 }
 function dkey(d) {
   return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
-}
-function todayKey() {
-  return dkey(new Date());
 }
 function parseKey(k) {
   const [y, m, d] = k.split('-').map(Number);
@@ -427,7 +454,10 @@ export function normalizeMoney(m) {
     // Live balances from the server; read-only here, never saved back.
     accounts: Array.isArray(m.accounts) ? m.accounts : [],
     tombstones: pruneTombstones(m.tombstones),
-    settings: Object.assign({}, e.settings, m.settings || {}),
+    // ponytail: the device's currency is seeded here, not written: it reaches the
+    // server with the next document save (any budget, goal or setting). Until then
+    // the server's own messages (WhatsApp, day summary) still say ₹.
+    settings: Object.assign({}, e.settings, { currency: deviceCurrency() }, m.settings || {}),
     currency: CUR,
   };
 }
@@ -698,6 +728,20 @@ function suggestCategory(text, money) {
   return predictCategory(text, money && money.expenses, mergedCats(money));
 }
 
+/* The account a quick-add books to: the one Money's own form starts on (an
+   expense: the last account used, else the first cash; income: the first bank
+   or wallet). Home-currency accounts only, since the sentence's amount is in the
+   home currency. With no account the entry moved no balance at all. Spread into
+   the entry: `{ accountId }`, or nothing. */
+function quickAccount(money, kind) {
+  const ok = (a) => a && !a.archived && !accCurrency(money, a.id);
+  const accts = (money && money.accounts) || [];
+  const last = kind === 'expense' && accts.find((a) => a.id === (money.settings || {}).lastAccountId);
+  const kinds = kind === 'expense' ? ['cash'] : ['bank', 'wallet'];
+  const a = ok(last) ? last : accts.find((x) => ok(x) && kinds.includes(x.kind));
+  return a ? { accountId: a.id } : {};
+}
+
 /* 2 — weekly + monthly insights, plain language. */
 function buildInsights(money) {
   const out = [];
@@ -832,6 +876,7 @@ export {
   byCategory,
   pctChange,
   suggestCategory,
+  quickAccount,
   predictCategory,
   buildInsights,
   budgetStatus,

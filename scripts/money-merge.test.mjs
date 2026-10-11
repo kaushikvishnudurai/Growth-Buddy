@@ -7,6 +7,7 @@
    a value someone SET (a budget) is not unioned like a log entry. */
 import assert from 'node:assert/strict';
 import { mergeMoney, normalizeMoney, removeDocItem } from './money.js';
+import { currencyFor } from './money-core.js';
 
 const doc = (over) => normalizeMoney({ expenses: [], income: [], budgets: {}, ...over });
 
@@ -104,6 +105,20 @@ const doc = (over) => normalizeMoney({ expenses: [], income: [], budgets: {}, ..
   assert.deepEqual(out.rollover, { shopping: null, food: '2026-09' });
   const gone = mergeMoney({ recurring: [], tombstones: { 'recurring:r1': Date.now() } }, { recurring: [rule] });
   assert.equal(gone.recurring.length, 0, 'a deleted repeat does not come back');
+}
+
+// Home currency: a stored one always wins; with none, the device's region decides.
+{
+  assert.equal(normalizeMoney({ settings: { currency: '₹' } }).settings.currency, '₹', 'set by the user: kept');
+  assert.equal(normalizeMoney({ settings: { currency: '$' } }).settings.currency, '$');
+  assert.ok(normalizeMoney({ settings: {} }).settings.currency, 'never blank');
+  assert.equal(currencyFor('en-GB', 'Europe/London'), '£');
+  assert.equal(currencyFor('de-DE', 'Europe/Berlin'), '€');
+  assert.equal(currencyFor('en', 'America/New_York'), '$', 'bare language maximises to its region');
+  assert.equal(currencyFor('en-US', 'Asia/Kolkata'), '₹', 'an Indian timezone beats an en-US phone');
+  assert.equal(currencyFor('hi-IN', 'Asia/Calcutta'), '₹');
+  assert.equal(currencyFor('xx-ZZ', 'Etc/UTC'), '₹', 'unknown region: the old default');
+  assert.equal(currencyFor(undefined, undefined), '₹');
 }
 
 console.log('money-merge.test.mjs: all assertions passed');

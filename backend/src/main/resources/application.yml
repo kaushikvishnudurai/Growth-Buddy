@@ -105,6 +105,13 @@ management:
 
 # Cross-origin so the static file:// / localhost frontend can call the API.
 growthbuddy:
+  # Behind a reverse proxy (Render, Caddy) every socket peer is the proxy, so per-IP
+  # rate limits were one bucket for all users until this was bound: the code read
+  # this key and nothing mapped TRUST_PROXY onto it. On, the client is read from
+  # X-Forwarded-For, trusted-proxy-hops entries from the RIGHT (ClientIp): each
+  # proxy appends, and the left end is whatever the client sent.
+  trust-proxy: ${TRUST_PROXY:false}
+  trusted-proxy-hops: ${TRUST_PROXY_HOPS:1}
   cors:
     # Comma-separated origins; default is local development only.
     # Override via CORS_ALLOWED_ORIGINS in deployment.

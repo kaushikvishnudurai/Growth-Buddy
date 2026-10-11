@@ -20,9 +20,9 @@ Tone rule stated at the top of the file: money framed as growth, never guilt.
 
 Three files so the ~6k-line screen stays out of the boot chunk (boot 551,884 B -> 447,141 B raw):
 
-- **`money-core.js`** (boot, no imports): everything from `CUR` / `cur` / `applyCurrency` through
+- **`money-core.js`** (boot; one import, `todayKey` from home-order.js): everything from `CUR` / `cur` / `applyCurrency` through
   `budgetStatus` — categories (`DEFAULT_CATEGORIES`, `PALETTE`, `KEYWORDS`, `mergedCats`, `catOf`,
-  `predictCategory` / `suggestCategory`, see below), date + currency helpers (`todayKey` … `fmtDateShort`, `toHomeAmount`,
+  `predictCategory` / `suggestCategory`, see below; `quickAccount`, the account a Quick add books to, tested in money-category.test.mjs), date + currency helpers (`todayKey` (re-exported from home-order.js) … `fmtDateShort`, `toHomeAmount`,
   `readAmount` / `readWhole`, `uid`, `clone`, `slug`), the document model (`emptyMoney`,
   `normalizeMoney`, tombstones + `removeDocItem`, `mergeMoney`), the ledger split (`LEDGER_ARRAYS`,
   `stable`, `ledgerDiff`, `applyLedgerDiff`, `docPart`) and the two engines Home reads
@@ -56,6 +56,8 @@ rollover{}  categoryKey -> 'YYYY-MM' switched on | null (off is null, not delete
 challenges[], wishlist[], customCategories[], noSpendDays[]
 settings{reflectThreshold:1000, currency:'₹', defaultTag:'others', lastAccountId?, accountsSetUp?, fx?{'$': 83.2}, accountCurrency?{accountId: '$'|null}}
 ```
+
+**Home currency for an account that never set one** (`currency` missing from the stored doc): `normalizeMoney` fills it from the device (`currencyFor(locale, timeZone)` in money-core.js: the language's region through `REGION_CUR` / `EURO`; an Indian timezone is always ₹, since many Indian phones run en-US; unknown = ₹). A stored currency always wins. It is seeded, not written: it reaches the server with the next document save (ponytail there; until then WhatsApp and the day summary still say ₹). Asserted in `money-merge.test.mjs`.
 
 `normalizeMoney` is the trust boundary — every array/object defaulted (**a top-level field it doesn't list is dropped**: a new doc field goes in `emptyMoney` AND `normalizeMoney`), `contribs` backfilled, and a
 `noSpendDays` entry dropped once that day has a real expense (one place, for every path that logs one).
@@ -116,7 +118,7 @@ Customise → Other currencies.
 | Fn | Contents |
 |---|---|
 | `tabOverview` | **today hero** (what's left for today; past its share, tomorrow's new daily share, never the overshoot as the headline) + **`monthTape`** (one cell per day: under / close / over a flat daily share, or depth by spend with no budget; no-spend ringed, today outlined; display-only, cells are far under a 44px target, so a day opens from Spending's 7-day graph; fills in on a visit's first paint only, `tapeShown`), `accountsCard`, `healthCard`, **`budgetsSection`**, **`goalsSection`**, donut, forecast |
-| `tabSpending` | actions row, NL search card, last-7-days bars, by-tag breakdown, weekly review, subscriptions (due and **overdue** cards carry **Mark as paid**; overdue = this month's due day passed unpaid, it stays listed until paid), **expense list** (this month by default, a month `<select>` over the loaded months — `expMonth`, reset on a fresh visit — tag filter, 60 rows then **Show more**, `expShown`; **Load older** fetches ~200 rows before the earliest loaded date through the `requestOlderTx(before)` prop (`GET /api/money/tx?before=`; pages hold whole days, `more` says if there is another) into module-level `older`, merged by `withOlder` into the month list and CSV only — never into the document, its rows are read-only; a **CSV** button downloads `ledgerCsv`: every loaded expense / income / transfer, newest first, a leading `= + - @` defused, `original` column for foreign-currency rows) |
+| `tabSpending` | actions row, NL search card, last-7-days bars, by-tag breakdown, weekly review, subscriptions (due and **overdue** cards carry **Mark as paid**; overdue = this month's due day passed unpaid, it stays listed until paid), **expense list** (this month by default, a month `<select>` over the loaded months — `expMonth`, reset on a fresh visit — tag filter, 60 rows then **Show more**, `expShown`; **Load older** fetches ~200 rows before the earliest loaded date through the `requestOlderTx(before)` prop (`GET /api/money/tx?before=`; pages hold whole days, `more` says if there is another) into module-level `older`, merged by `withOlder` into the month list and CSV only — never into the document, its rows are read-only; a **CSV** button downloads `ledgerCsv` (through `offerFile`, `shareFirst: false`; in the app it says saving isn't available yet): every loaded expense / income / transfer, newest first, a leading `= + - @` defused, `original` column for foreign-currency rows; **Import** beside it (`gb-money-import`) lazy-loads `import-ui.js` `openCsvImport` with `money`, `known: withOlder(money)` (duplicates are looked for in the older pages too), `save: onSaveMoney` and the `moneySettled` prop (app.js: the save queue idle and nothing left pending). Parsing is `csv-import.js`; rows go in through the ordinary `save(next, base)` 500 at a time, so a 5,000-row file is ten normal ledger saves (the server refuses over 2,000 a POST) and pending / idempotency / rollback all apply; ids are `csv-<hash>` of date + kind + amount + note + repeat count, so re-importing a file upserts. Imported rows are home currency and never transfers; an account is set only when the file's account column names an active account. See CODEMAP `csv-import.js` / `import-ui.js`) |
 | `budgetsSection` | ONE card (title, intro, totals, bars) + ≥80% nudges + recovery card. Was the Budgets tab. |
 | `goalsSection` | ONE card (title, plan/new-goal actions, goal list). Was the Goals tab; its wishlist moved to Coach. |
 | `tabIncome` | one kept-vs-spent bar for the month, the latest 6 income entries with their account (`showAllIncome` toggles all), **Every month** (`recurringCard`), loans (stats only when there are loans) |
@@ -151,7 +153,8 @@ the Coach tab) call `shareSummary`.
 - **Delete a doc-list item with `removeDocItem`, never a bare `filter`**: without its tombstone the
   next 409 merge brings it back from the other device's copy.
 - **Every save re-renders the screen**: app.js calls `ScreenMoney` again. View state therefore lives at module level (`activeTab`, `spendFilter` + `filterScroll`, `lastSearch` typed / `searchAsked` run, `pickedDay`, `showAllIncome`, `tapeShown`, `expShown`, `expMonth`, `loanOrder`, `older`, `daySummaries`). The second group resets on a fresh visit, detected by the previous root being detached (`moneyRoot.isConnected`; app.js builds the new screen before swapping). `loanOrder` keeps loan rows where they were on Settle/Undo until a tab switch.
-- The "Quick reflection" sheet opens after a new expense only at or above `settings.reflectThreshold` (0 = off).
+- A new expense at or above `settings.reflectThreshold` (0 = off) gets a toast with **Reflect**, which opens the "Quick reflection" sheet; it no longer opens by itself. Otherwise, when it is this month's 5th in a tag with no budget, the toast offers **Set budget** at `budgetOffer`'s figure (starter-packs.js, same 30-day rule as below), one tap.
+- **Set budgets** (`openSetBudgets`) prefills every tag without a budget from `budgetsFrom(money, today, Infinity)` (starter-packs.js: last 30 days, 10% under, nearest 100, capped at the field's 10,000,000; never Others), marked "Suggested" until typed over. Save accepts them as they are.
 - Self-check `_demo()` at the bottom runs **only on Vite DEV**, wrapped in try/catch so it never
   blocks boot. It covers: challenge progress, empty-account health = 0, income/loan sums,
   challenge suggestions. Add an assert here when you touch an engine. It also calls `share-card.js`'s

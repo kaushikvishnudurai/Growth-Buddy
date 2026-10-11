@@ -1,7 +1,8 @@
 /* =====================================================================
    Growth Buddy — Goals screen (short / mid / long term goals + actions)
    ===================================================================== */
-import { h, Icon, Pill, openModal, shakeRefusal } from './gb-kit.js';
+import { h, Icon, Pill, openModal, shakeRefusal, rovingGroup } from './gb-kit.js';
+import { todayKey as sharedTodayKey } from './home-order.js';
 import {
   moveItem,
   renameMilestone,
@@ -17,9 +18,9 @@ const HORIZON_LABEL = {
 };
 
 const HORIZON_META = {
-  short_term: { bg: 'var(--leaf-50)', fg: 'var(--leaf-700)', dot: 'var(--leaf-500)' },
-  mid_term: { bg: 'var(--sun-50)', fg: 'var(--sun-700)', dot: 'var(--sun-500)' },
-  long_term: { bg: 'var(--iris-50)', fg: 'var(--iris-700)', dot: 'var(--iris-500)' },
+  short_term: { bg: 'var(--success-soft)', fg: 'var(--success-soft-fg)', dot: 'var(--leaf-500)' },
+  mid_term: { bg: 'var(--warning-soft)', fg: 'var(--warning-soft-fg)', dot: 'var(--sun-500)' },
+  long_term: { bg: 'var(--ai-soft)', fg: 'var(--ai-soft-fg)', dot: 'var(--iris-500)' },
 };
 
 function fmtDate(value) {
@@ -35,30 +36,11 @@ function fmtDate(value) {
   }
 }
 
-/* Today as YYYY-MM-DD in the account's timezone, which is what the server's
-   UserClock checks an action date against. The device's own date disagreed
-   with it for anyone whose phone and account zones differ (travel, an account
-   left on UTC): the picker allowed a day the server then refused, or blocked
-   one it would take. Set by ScreenGoals from the user; device date if unset. */
+/* Today in the account's timezone, which is what the server's UserClock checks
+   an action date against (home-order.js todayKey). Set by ScreenGoals from the
+   user; device date if unset. */
 let userZone = '';
-function todayKey() {
-  if (userZone) {
-    try {
-      // en-CA formats as YYYY-MM-DD.
-      return new Intl.DateTimeFormat('en-CA', {
-        timeZone: userZone,
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-      }).format(new Date());
-    } catch (_) {
-      /* unknown zone id: fall through to the device date */
-    }
-  }
-  const d = new Date();
-  const pad = (n) => (n < 10 ? '0' + n : String(n));
-  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
-}
+const todayKey = () => sharedTodayKey(userZone);
 
 /* Whole days from today to a YYYY-MM-DD target (negative = past). */
 function daysUntil(dateKey) {
@@ -746,6 +728,8 @@ function GoalRow(
     {
       class: 'gb-goal-card' + (goal.completed ? ' is-complete' : ''),
       style: { borderLeftColor: meta.dot },
+      // The command palette finds a goal's card by this to bring it into view.
+      'data-goal-id': goal.id,
     },
     h(
       'div',
@@ -1068,7 +1052,9 @@ function ScreenGoals({
         'div',
         { class: 'gb-form-field' },
         h('span', { class: 'gb-field-label' }, 'Horizon'),
-        h('div', { class: 'gb-segmented', role: 'radiogroup', 'aria-label': 'Horizon' }, segs),
+        rovingGroup(
+          h('div', { class: 'gb-segmented', role: 'radiogroup', 'aria-label': 'Horizon' }, segs)
+        ),
         hint
       ),
       descInput,

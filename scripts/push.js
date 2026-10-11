@@ -17,6 +17,7 @@
    same recurrence rules the calendar draws from.
    ===================================================================== */
 
+import { localDayKey as dayKey } from './home-order.js';
 import {
   localNotificationsAvailable,
   localNotificationPermission,
@@ -41,10 +42,6 @@ export function pushSupported() {
     'PushManager' in window &&
     'Notification' in window
   );
-}
-
-export function pushPermission() {
-  return typeof Notification !== 'undefined' ? Notification.permission : 'denied';
 }
 
 function urlBase64ToUint8Array(base64) {
@@ -176,10 +173,6 @@ const MAX_QUEUED = 100;
 /** Defaults for the water nudge, and the shape `ui_prefs.water` is stored in. */
 export const WATER_DEFAULTS = { on: false, everyMins: 120, from: '09:00', to: '21:00' };
 
-function dayKey(d) {
-  const p = (n) => String(n).padStart(2, '0');
-  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
-}
 
 /** 'HH:MM' as minutes past local midnight. */
 function minuteOfDay(hhmm, fallback) {
@@ -290,6 +283,20 @@ export function notificationActionTypes(snoozeLabel = 'Snooze') {
   ];
 }
 
+/**
+ * Where a tap on the card itself goes, from its `extra`: `{ screen, day? }`, or
+ * null to just open the app where it was. The web's service worker does the
+ * same from the push's `url` (/#calendar, /#report ...). Pure.
+ */
+export function notificationTarget(extra) {
+  const x = extra || {};
+  if (x.kind === 'reminder') return { screen: 'calendar', day: x.day || null };
+  if (x.kind === 'habit') return { screen: 'habits' };
+  if (x.kind === 'water') return { screen: 'home' };
+  if (x.kind === 'focus') return { screen: 'focus' };
+  return null;
+}
+
 /** `day` is the occurrence the press checks off; null leaves Done a plain dismiss. */
 function reminderButtons(rem, day) {
   return rem.id ? { actionTypeId: ACTION_TYPES.reminder, extra: { kind: 'reminder', id: rem.id, day } } : {};
@@ -393,9 +400,10 @@ export function upcomingHabitAlarms(habits, now, days = HORIZON_DAYS) {
       const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
       const at = atOn(day, hh * 60 + mm);
       if (at.getTime() <= now.getTime()) continue;
-      const buttons = habitTickable(habit)
-        ? { actionTypeId: ACTION_TYPES.habit, extra: { kind: 'habit', id: habit.id, day: dayKey(day) } }
-        : {};
+      // `extra` on every habit alarm, so a tap opens Habits; the Done button
+      // only where one tap finishes it.
+      const extra = { kind: 'habit', id: habit.id, day: dayKey(day) };
+      const buttons = habitTickable(habit) ? { actionTypeId: ACTION_TYPES.habit, extra } : { extra };
       out.push({ title: 'Growth Buddy', body: habit.name, at, sound: habit.sound || null, ...buttons });
     }
   }

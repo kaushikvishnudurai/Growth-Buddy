@@ -136,7 +136,7 @@ class MentorshipInviteRulesTest {
     private final MentorshipRequestRepository requests = mock(MentorshipRequestRepository.class);
     private final UserRepository users = mock(UserRepository.class);
     private final NotificationService notifications = mock(NotificationService.class);
-    private final MentorshipService service = new MentorshipService(requests, users, notifications);
+    private final MentorshipService service = new MentorshipService(requests, users, notifications, allowAllLimiter());
 
     private User user(UUID id, String name) {
         User u = new User();
@@ -144,6 +144,20 @@ class MentorshipInviteRulesTest {
         u.setDisplayName(name);
         when(users.findById(id)).thenReturn(Optional.of(u));
         return u;
+    }
+
+    /** SEC-11: create / revoke / create is capped per sender per day. */
+    @Test
+    void invitesPastTheDailyCapAreRefused() {
+        user(ME, "Me");
+        user(THEM, "Them");
+        var limiter = org.mockito.Mockito.mock(com.growthbuddy.common.RateLimiter.class);
+        var capped = new MentorshipService(requests, users, notifications, limiter);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> capped.create(ME, THEM, Direction.offer, "hi"))
+                .isInstanceOf(com.growthbuddy.common.ApiException.class)
+                .hasMessageContaining("mentorship invites");
+        org.mockito.Mockito.verify(requests, org.mockito.Mockito.never()).save(org.mockito.ArgumentMatchers.any());
+        org.mockito.Mockito.verifyNoInteractions(notifications);
     }
 
     /** Only the person an invite is addressed to may answer it; to anyone else it does not exist. */
@@ -202,5 +216,12 @@ class MentorshipInviteRulesTest {
         when(requests.findById(r.getId())).thenReturn(Optional.of(r));
         assertThatThrownBy(() -> service.revoke(UUID.randomUUID(), r.getId())).isInstanceOf(ApiException.class);
         assertThat(r.getStatus()).isEqualTo(Status.accepted);
+    }
+
+    private static com.growthbuddy.common.RateLimiter allowAllLimiter() {
+        var l = org.mockito.Mockito.mock(com.growthbuddy.common.RateLimiter.class);
+        org.mockito.Mockito.lenient().when(l.allow(org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.anyLong())).thenReturn(true);
+        return l;
     }
 }

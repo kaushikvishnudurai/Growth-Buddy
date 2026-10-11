@@ -27,6 +27,7 @@ import {
   AGREEMENT_MAX,
   parseAgreement,
   formatAgreement,
+  latestSave,
 } from './circle-core.js';
 
 /* Placeholder rows, so a section has its real height before the data lands.
@@ -739,6 +740,7 @@ function WeekCard(mApi, linkId, partnerName) {
    tick paints at once and rolls back if the save fails. */
 function AgreementList(req, mApi, heading, onEnd) {
   let items = parseAgreement(req.agreement);
+  const saves = latestSave();
   const el = h('div', { class: 'gb-agree' });
   const input = h('input', {
     type: 'text',
@@ -753,15 +755,20 @@ function AgreementList(req, mApi, heading, onEnd) {
       toast.error(null, 'The list is full. Remove a finished item first.');
       return false;
     }
-    const before = items;
+    const n = saves.start();
     items = next;
     paint();
     try {
       const res = await mApi.setAgreement(req.id, text || null);
       req.agreement = res && res.agreement;
+      if (saves.ok(n)) {
+        items = parseAgreement(req.agreement);
+        paint();
+      }
       return true;
     } catch (err) {
-      items = before;
+      if (!saves.fail(n)) return false; // a newer list is on its way
+      items = parseAgreement(req.agreement); // the last list the server accepted
       paint();
       toast.error(err, 'Could not save the agreement.');
       return false;
@@ -1026,8 +1033,9 @@ function openSearchModal({ onBrowse, onSearch, onOffer, onRequest, onView, curre
   }
   loadPeople();
 
-  let lastQ = '',
-    timer = null,
+  // No "same query as last time" short-circuit: type-and-delete back to it
+  // painted the local matches and then skipped the server, dropping its people.
+  let timer = null,
     seq = 0; // bumped on every keystroke; a server answer for an older one is dropped
   queryInput.addEventListener('input', () => {
     const q = queryInput.value.trim().toLowerCase();
@@ -1036,7 +1044,6 @@ function openSearchModal({ onBrowse, onSearch, onOffer, onRequest, onView, curre
     // Empty query → restore the full browse list.
     if (q.length === 0) {
       paintList(allPeople);
-      lastQ = '';
       return;
     }
     // 1-character query → filter locally (avoids a server round-trip on every keystroke).
@@ -1048,8 +1055,6 @@ function openSearchModal({ onBrowse, onSearch, onOffer, onRequest, onView, curre
     if (q.length < 2) return;
     // 2+ chars → also ask the server (catches users not in the recent browse window).
     timer = setTimeout(async () => {
-      if (q === lastQ) return;
-      lastQ = q;
       try {
         const ppl = await onSearch(q);
         if (mine !== seq) return;
@@ -1529,7 +1534,7 @@ function ChallengesPanel({ api, currentUserId, wins }) {
         const joined = await api.joinByCode(v.code);
         toast.success('Joined ' + joined.name + '.');
         close();
-        if (!el.querySelector('[data-circle-id="' + joined.id + '"]')) addCard(joined);
+        showJoined(joined);
       },
     });
   }
@@ -1723,10 +1728,12 @@ function ChallengesPanel({ api, currentUserId, wins }) {
     refreshIcons();
   }
 
-  /* The link joins in one tap (inviteFromHash on the far side). The OS share
-     sheet where there is one, else the clipboard. */
+  /* The link joins after one confirm (joinFromLink on the far side). The OS share
+     sheet where there is one, else the clipboard. Built on the public site
+     (api.siteUrl), not location.href: in the phone app that is
+     https://localhost, a link that opens nothing on anyone else's phone. */
   async function shareInvite(c) {
-    const url = inviteLink(window.location.href, c);
+    const url = inviteLink(api.siteUrl || window.location.href, c);
     const text = 'Join my circle ' + c.name + ' on Growth Buddy';
     try {
       if (navigator.share) {
@@ -1744,15 +1751,25 @@ function ChallengesPanel({ api, currentUserId, wins }) {
     }
   }
 
-  /* Opened from an invite link: join, show the card, and drop the link's
-     query so a reload doesn't try again. Already a member is a quiet no-op. */
+  /* Opened from an invite link: ask first, then join, show the card, and drop
+     the link's query so a reload doesn't try again. Already a member is a quiet
+     no-op. The ask is the point: a crafted link used to add whoever opened it,
+     and the circle then saw their name and daily check-ins. */
   async function joinFromLink() {
     const invite = inviteFromHash(window.location.hash);
     if (!invite) return;
     history.replaceState(null, '', window.location.pathname + window.location.search + '#/circle');
+    const ok = await confirmDialog({
+      title: 'Join this circle?',
+      message:
+        'You opened an invite link. Its members will see your name and whether you checked in each day.',
+      confirmLabel: 'Join circle',
+      cancelLabel: 'Not now',
+    });
+    if (!ok) return;
     try {
       const joined = invite.code ? await api.joinByCode(invite.code) : await api.join(invite.id);
-      if (!el.querySelector('[data-circle-id="' + joined.id + '"]')) addCard(joined);
+      showJoined(joined);
       toast.success('You joined ' + joined.name + '.');
     } catch (err) {
       toast.error(err, 'That invite link did not work. Ask for a fresh one.');
@@ -2056,7 +2073,9 @@ function ChallengesPanel({ api, currentUserId, wins }) {
           more.hidden = page.length < PAGE;
           paintPosts();
         })
-        .catch(() =>
+        .catch((err) => {
+          // Older posts failing keeps the ones shown; "Load older" is still there to retry.
+          if (before && posts.length) return toast.error(err, 'Could not load older posts.');
           list.replaceChildren(
             h('div', { class: 'gb-empty-sm' }, 'Could not load posts.'),
             h(
@@ -2068,8 +2087,8 @@ function ChallengesPanel({ api, currentUserId, wins }) {
               },
               'Try again'
             )
-          )
-        );
+          );
+        });
     }
     load(null);
     return h(
@@ -2085,7 +2104,7 @@ function ChallengesPanel({ api, currentUserId, wins }) {
   /* One circle: the seat ring (who is in today), one line to act on it, the
      challenges, then the circle's posts. `openPosts` opens the feed at once
      (the first circle on the screen); the rest open on demand, one fetch each. */
-  function circleCard(c, { openPosts = false } = {}) {
+  function circleCard(c, { openPosts = false, offerTemplate = false } = {}) {
     const body = h(
       'div',
       { class: 'gb-challenge-body' },
@@ -2098,7 +2117,10 @@ function ChallengesPanel({ api, currentUserId, wins }) {
           body.replaceChildren();
           // The one running now leads; the rest follow, newest first as served.
           const ordered = (list || []).slice().sort((a, b) => Number(!!b.active) - Number(!!a.active));
-          if (!ordered.length) {
+          // Just joined, and nothing running or coming up: the first template, one tap.
+          const running = ordered.some((x) => x.active || x.startDate > localISO());
+          if (offerTemplate && !running) body.appendChild(templateOffer());
+          if (!ordered.length && !(offerTemplate && !running)) {
             body.appendChild(
               h(
                 'div',
@@ -2137,6 +2159,56 @@ function ChallengesPanel({ api, currentUserId, wins }) {
         );
     }
     loadChallenges();
+
+    function templateOffer() {
+      const t = CHALLENGE_TEMPLATES[0];
+      return h(
+        'div',
+        { class: 'gb-challenge-empty gb-challenge-offer' },
+        h('p', null, 'No challenge running here yet. Start one; everyone’s check-ins count from today.'),
+        h(
+          'div',
+          { class: 'gb-challenge-offer-actions' },
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-btn gb-btn--primary gb-btn--compact',
+              onclick: async (e) => {
+                const btn = e.currentTarget;
+                if (btn.disabled) return;
+                btn.disabled = true;
+                try {
+                  await api.createChallenge(c.id, {
+                    title: t.title,
+                    days: t.days,
+                    metric: t.metric,
+                    startDate: localISO(),
+                  });
+                  offerTemplate = false;
+                  toast.success('Challenge started!');
+                  loadChallenges();
+                } catch (err) {
+                  btn.disabled = false;
+                  toast.error(err, 'Could not start the challenge.');
+                }
+              },
+            },
+            Icon('flag', { size: 14, sw: 2.4 }),
+            'Start ' + t.label
+          ),
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-btn gb-btn--ghost gb-btn--compact',
+              onclick: () => startChallenge(c.id, loadChallenges),
+            },
+            'Pick another'
+          )
+        )
+      );
+    }
 
     // Who is in today: the ring, and the one action it suggests.
     const cheered = new Set(); // members cheered from this card today
@@ -2309,12 +2381,28 @@ function ChallengesPanel({ api, currentUserId, wins }) {
     return card;
   }
 
-  function addCard(c) {
+  function addCard(c, opts) {
     if (!c) return refresh();
     // The first circle replaces the "join or create" empty card.
     if (!el.querySelector('.gb-circle-card')) el.replaceChildren();
-    el.appendChild(circleCard(c));
+    el.appendChild(circleCard(c, opts));
     refreshIcons();
+  }
+
+  /* After any join (code, link, Browse): the card in view, and when the circle
+     has no challenge going, its first template offered in one tap. Already a
+     member (a link opened twice): scroll to the card that is there. */
+  function showJoined(joined) {
+    let card = el.querySelector('[data-circle-id="' + joined.id + '"]');
+    if (!card) {
+      addCard(joined, { offerTemplate: true });
+      card = el.querySelector('[data-circle-id="' + joined.id + '"]');
+    }
+    if (!card) return;
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    // After a closing sheet (Browse, the code form) has handed focus back to its
+    // opener at the top (a11y.js, 180ms + a frame): focusing that scrolled the page back up.
+    setTimeout(() => card.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' }), 300);
   }
 
   function refresh() {
@@ -2422,6 +2510,7 @@ function ChallengesPanel({ api, currentUserId, wins }) {
       .listAll()
       .then((all) => {
         const joinable = (all || []).filter((c) => !c.joined);
+        let closeBrowse = null;
         // Private circles are never listed — the code is the way in, so it
         // lives here, and the sheet opens even when there is nothing to browse.
         const list = h(
@@ -2463,7 +2552,9 @@ function ChallengesPanel({ api, currentUserId, wins }) {
                       const joined = await api.join(c.id);
                       btn.closest('.gb-browse-row').remove();
                       toast.success('Joined ' + c.name + '.');
-                      addCard(joined);
+                      // Off the sheet and onto the new card, where its next step is.
+                      if (closeBrowse) closeBrowse();
+                      showJoined(joined);
                     } catch (err) {
                       btn.disabled = false;
                       toast.error(err, 'Could not join.');
@@ -2475,7 +2566,7 @@ function ChallengesPanel({ api, currentUserId, wins }) {
             )
           );
         });
-        openSheet('Browse circles', list);
+        closeBrowse = openSheet('Browse circles', list);
       })
       .catch((err) => toast.error(err, 'Could not load circles.'));
   }
@@ -2496,7 +2587,7 @@ function openSheet(title, bodyNode) {
       h('button', { type: 'button', class: 'gb-btn gb-btn--primary', onclick: close }, 'Close')
     )
   );
-  refreshIcons();
+  refreshIcons();  return close;
 }
 
 function ScreenCircle({
@@ -2709,7 +2800,7 @@ function ScreenCircle({
             h(
               'div',
               { class: 'gb-conn-group' },
-              h('h5', { class: 'gb-conn-group-head' }, g.title, h('span', null, g.items.length)),
+              h('h3', { class: 'gb-conn-group-head' }, g.title, h('span', null, g.items.length)),
               card
             )
           );
@@ -2741,7 +2832,7 @@ function ScreenCircle({
     outgoingEl.replaceChildren();
     // Sent invites only when there are some: "none pending" says nothing.
     if (invites.length) {
-      outgoingEl.appendChild(h('h5', { class: 'gb-conn-group-head' }, 'Invites you sent', h('span', null, invites.length)));
+      outgoingEl.appendChild(h('h3', { class: 'gb-conn-group-head' }, 'Invites you sent', h('span', null, invites.length)));
       const card = h('div', { class: 'gb-card', style: { padding: '4px 0' } });
       invites.forEach((r) =>
         card.appendChild(OutgoingRow(r, onLoadStatus, onRevoke ? revokeAndRefresh : null))

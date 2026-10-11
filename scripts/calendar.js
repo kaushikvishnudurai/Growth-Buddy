@@ -1,6 +1,7 @@
 /* =====================================================================
    Growth Buddy — Calendar screen (reminders + tags + recurrence)
    ===================================================================== */
+import { todayKey } from './home-order.js';
 import {
   h,
   Card,
@@ -11,8 +12,8 @@ import {
   refreshIcons,
   openOverlay,
   submitOnEnter,
-  confirmDialog,
   formatTime,
+  rovingGroup,
 } from './gb-kit.js';
 import {
   occursOn,
@@ -105,11 +106,6 @@ function keyOf(y, m, d) {
 function parseKey(key) {
   const [y, m, d] = key.split('-').map(Number);
   return { y: y, m: m - 1, d: d };
-}
-
-function todayKey() {
-  const t = new Date();
-  return keyOf(t.getFullYear(), t.getMonth(), t.getDate());
 }
 
 function isFutureKey(key) {
@@ -215,6 +211,11 @@ let defaultLead = 0;
 let openReminderSettings = null;
 function setReminderSettingsOpener(fn) {
   openReminderSettings = fn;
+}
+// "Import .ics" on the toolbar: app.js holds the reminders and the API, so it hands this in.
+let openCalendarImport = null;
+function setCalendarImporter(fn) {
+  openCalendarImport = fn;
 }
 
 function validLead(n) {
@@ -563,7 +564,7 @@ function ScheduleSection(reminders, list, key, onSelectDate, onSaveRoutine) {
       'button',
       {
         type: 'button',
-        class: 'gb-sched-tab' + (scheduleView === v ? ' is-on' : ''),
+        class: 'gb-range-opt' + (scheduleView === v ? ' is-active' : ''),
         'aria-pressed': String(scheduleView === v),
         onclick: (e) => {
           scheduleView = v;
@@ -592,7 +593,7 @@ function ScheduleSection(reminders, list, key, onSelectDate, onSaveRoutine) {
       'div',
       { class: 'gb-day-head gb-sched-headrow' },
       h('span', { class: 'gb-day-head-title' }, 'Schedule'),
-      h('span', { class: 'gb-sched-tabs' }, viewBtn('day', 'Day'), viewBtn('week', 'Week')),
+      h('span', { class: 'gb-range-toggle gb-sched-tabs' }, viewBtn('day', 'Day'), viewBtn('week', 'Week')),
       onSaveRoutine
         ? h(
             'button',
@@ -682,7 +683,7 @@ function DaysPicker(initial, label) {
       )
     )
   );
-  return { node, get: () => picked };
+  return { node: rovingGroup(node), get: () => picked };
 }
 
 /* Set once, shown on every day. Sleep may run past midnight, so bedtime and
@@ -1145,7 +1146,9 @@ function TagPicker(initial) {
       chips[k].setAttribute('aria-checked', String(on));
     }
   }
-  const wrap = h('div', { class: 'gb-tagpick', role: 'radiogroup', 'aria-label': 'Tag' });
+  const wrap = rovingGroup(
+    h('div', { class: 'gb-tagpick', role: 'radiogroup', 'aria-label': 'Tag' })
+  );
   TAG_ORDER.forEach((tag) => {
     const t = TAGS[tag];
     const chip = h(
@@ -1181,11 +1184,13 @@ function RepeatPicker(initial, onChange) {
     }
     if (fireChange && onChange) onChange(rep);
   }
-  const wrap = h('div', {
-    class: 'gb-segmented gb-segmented--repeat',
-    role: 'radiogroup',
-    'aria-label': 'Repeat',
-  });
+  const wrap = rovingGroup(
+    h('div', {
+      class: 'gb-segmented gb-segmented--repeat',
+      role: 'radiogroup',
+      'aria-label': 'Repeat',
+    })
+  );
   REPEAT_ORDER.forEach((rep) => {
     const seg = h(
       'button',
@@ -1866,18 +1871,13 @@ function ReminderRow(rem, occKey, onDelete, whatsappEnabled, onEdit, onCancelSno
     );
   }
 
-  async function handleDelete() {
+  function handleDelete() {
     if (rem.repeat && rem.repeat !== 'none') {
       openDeleteDialog(rem, occKey, onDelete);
       return;
     }
-    // A one-off went on a single tap, next to Edit, with no undo.
-    const ok = await confirmDialog({
-      title: 'Delete "' + rem.text + '"?',
-      confirmLabel: 'Delete',
-      danger: true,
-    });
-    if (ok) onDelete('all', rem.id, occKey);
+    // A one-off: one tap, with Undo on the toast (app.js deferDelete).
+    onDelete('all', rem.id, occKey);
   }
 
   const tagPill = h(
@@ -1955,6 +1955,14 @@ let cachedFormRefs = null;
    built a tick AFTER the prefill lands. */
 let pendingReminderText = '';
 let pendingReminderOpts = null; // { time?: 'HH:MM', repeat?: REPEAT_ORDER key }
+
+/* Sign-out: the kept form holds the last account's half-typed reminder. */
+function clearReminderForm() {
+  cachedForm = null;
+  cachedFormRefs = null;
+  pendingReminderText = '';
+  pendingReminderOpts = null;
+}
 
 /* `opts` (optional) also presets the time and the repeat — Report's
    "Set a bedtime reminder" hands over a daily one at the suggested hour. */
@@ -2778,16 +2786,31 @@ function CalendarToolbar({ year, month, reminders, tasks, onPrevMonth, onNextMon
         'Today'
       )
     ),
-    monthCount
+    monthCount || openCalendarImport
       ? h(
           'div',
           { class: 'gb-cal-toolbar-actions' },
-          Pill({
-            icon: 'bell',
-            label: plural(monthCount, 'item') + ' this month',
-            bg: 'var(--brand-soft)',
-            fg: 'var(--brand-soft-fg)',
-          })
+          monthCount
+            ? Pill({
+                icon: 'bell',
+                label: plural(monthCount, 'item') + ' this month',
+                bg: 'var(--brand-soft)',
+                fg: 'var(--brand-soft-fg)',
+              })
+            : null,
+          openCalendarImport
+            ? h(
+                'button',
+                {
+                  type: 'button',
+                  class: 'gb-btn gb-btn--ghost gb-btn--compact gb-cal-import',
+                  title: 'From Google, Apple or Outlook Calendar',
+                  onclick: () => openCalendarImport(),
+                },
+                Icon('upload', { size: 14, sw: 2.4 }),
+                'Import .ics'
+              )
+            : null
         )
       : null
   );
@@ -2795,6 +2818,7 @@ function CalendarToolbar({ year, month, reminders, tasks, onPrevMonth, onNextMon
 
 export {
   UsualTimeChip,
+  clearReminderForm,
   isPastSlot,
   freeBusy,
   wholeHours,
@@ -2804,6 +2828,7 @@ export {
   setDefaultLead,
   getDefaultLead,
   setReminderSettingsOpener,
+  setCalendarImporter,
   setCustomToneAdder,
   setVoiceReminder,
   notifySelect as NotifySelect,

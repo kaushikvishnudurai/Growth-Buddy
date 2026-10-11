@@ -97,18 +97,24 @@ class GoalServiceTest {
     @Test
     void listCountsActionsInOneQueryAndNeverLoadsTheFullHistory() {
         Goal g = goal();
-        when(goals.findByUserIdOrderByCreatedAtDesc(USER)).thenReturn(List.of(g));
         when(actions.countByGoalIds(anyCollection())).thenReturn(List.<Object[]>of(new Object[] {g.getId(), 7L}));
         GoalAction latest = new GoalAction();
         latest.setId(UUID.randomUUID());
         latest.setGoalId(g.getId());
         latest.setNote("Ran 5k");
         latest.setCreatedAt(Instant.parse("2026-10-09T07:00:00Z"));
-        when(actions.findTop3ByGoalIdOrderByCreatedAtDesc(g.getId())).thenReturn(List.of(latest));
+        Goal quiet = goal();
+        when(goals.findByUserIdOrderByCreatedAtDesc(USER)).thenReturn(List.of(g, quiet));
+        when(actions.findTop3PerGoal(anyCollection())).thenReturn(List.of(latest));
 
-        GoalResponse r = service.list(USER).get(0).goals().get(0);
+        List<GoalResponse> rows = service.list(USER).get(0).goals();
+        GoalResponse r = rows.get(0);
         assertThat(r.actionCount()).isEqualTo(7);
         assertThat(r.latestActionAt()).isEqualTo(latest.getCreatedAt());
+        assertThat(rows.get(1).latestActionAt()).isNull();
+        // Recent actions come from one batched query for every goal, never one per goal.
+        verify(actions).findTop3PerGoal(List.of(g.getId().toString(), quiet.getId().toString()));
+        verify(actions, never()).findTop3ByGoalIdOrderByCreatedAtDesc(any());
         verify(actions, never()).findByGoalIdOrderByCreatedAtDesc(any());
         verify(actions, never()).countByGoalId(any());
     }

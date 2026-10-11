@@ -23,7 +23,7 @@
   background: none;
   border: none;
   /* 26px tall without moving the row: at padding 0 it was an 18px tap target. */
-  padding: 4px 0;
+  padding: var(--space-1) 0;
   margin: -4px 0;
   cursor: pointer;
   color: var(--fg3);

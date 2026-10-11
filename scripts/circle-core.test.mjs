@@ -2,13 +2,14 @@
 import assert from 'node:assert/strict';
 import {
   standingLine,
-  winLines,
   inviteLink,
   inviteFromHash,
   CHALLENGE_TEMPLATES,
   parseAgreement,
   formatAgreement,
+  latestSave,
 } from './circle-core.js';
+import { winLines } from './circle-wins.js';
 
 const unit = (n) => n + (n === 1 ? ' check-in' : ' check-ins');
 const board = [
@@ -129,3 +130,35 @@ const items = [
 assert.deepEqual(parseAgreement(formatAgreement(items)), items);
 assert.equal(formatAgreement([]), '');
 console.log('circle-core agreement: ok');
+
+// latestSave: overlapping agreement saves, only the newest outcome repaints.
+{
+  // Tick A, tick B; B lands, then A fails: nothing rolls back (it undid B).
+  const s = latestSave();
+  const a = s.start();
+  const b = s.start();
+  assert.equal(s.ok(b), false);
+  assert.equal(s.fail(a), false);
+}
+{
+  // B (newest) fails: show the server's copy; A landing after it is that copy.
+  const s = latestSave();
+  const a = s.start();
+  const b = s.start();
+  assert.equal(s.fail(b), true);
+  assert.equal(s.ok(a), true);
+}
+{
+  // A lands while B is still out: B's list stays shown.
+  const s = latestSave();
+  const a = s.start();
+  s.start();
+  assert.equal(s.ok(a), false);
+}
+{
+  // One save failing rolls back; a later save then succeeding repaints nothing.
+  const s = latestSave();
+  assert.equal(s.fail(s.start()), true);
+  assert.equal(s.ok(s.start()), false);
+}
+console.log('circle-core latestSave: ok');

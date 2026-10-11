@@ -17,7 +17,7 @@ import org.springframework.data.jpa.repository.Query;
  */
 class PendingDeletionDiscoveryTest {
 
-    private static final List<String> DISCOVERY = List.of("search", "browseExcluding", "searchForFamily");
+    private static final List<String> DISCOVERY = List.of("searchByName", "browseExcluding", "searchForFamily");
 
     @Test
     void everyPeopleSearchQueryLeavesOutAccountsScheduledForDeletion() {

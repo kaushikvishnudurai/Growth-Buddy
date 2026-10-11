@@ -5,7 +5,16 @@
    what it uses from app.js arrives as a context object and is bound to the
    same names. Never import this statically from a boot module.
    ===================================================================== */
-import { h, refreshIcons, Icon, DOMAIN, openOverlay, fieldRefusal } from './gb-kit.js';
+import {
+  h,
+  refreshIcons,
+  Icon,
+  DOMAIN,
+  openOverlay,
+  fieldRefusal,
+  formatTime,
+  rovingGroup,
+} from './gb-kit.js';
 import {
   habitStats,
   heatmapWeeks,
@@ -14,20 +23,21 @@ import {
   daysFrom,
   isSlipRow,
   recentNotes,
+  suggestReminderTime,
 } from './habit-stats.js';
 import { chimeOptionValue, chimeOptions, playChime } from './chime.js';
 
 // Bound from app.js before every open (bind()), before any code below runs.
-let state, announce, toastError, toastSuccess, todayKey, reconcileStreakFreeze, isQuitHabit,
-  freezeTokensLeft, api, habitNoteInput, refreshScore, refreshScoreLater, createHabit,
-  updateHabit, forgetGoalHabitHistory, reSyncDeviceAlarms, openModal, segmented, METRIC_LABEL,
-  accountTodayKey, confirmDelete, render;
+let state, announce, pushToast, toastError, toastSuccess, todayKey, reconcileStreakFreeze,
+  isQuitHabit, freezeTokensLeft, api, habitNoteInput, refreshScoreLater, createHabit, updateHabit,
+  forgetGoalHabitHistory, deleteHabit, reSyncDeviceAlarms, openModal, segmented, METRIC_LABEL,
+  accountTodayKey, render;
 export function bind(ctx) {
   ({
-    state, announce, toastError, toastSuccess, todayKey, reconcileStreakFreeze, isQuitHabit,
-    freezeTokensLeft, api, habitNoteInput, refreshScore, refreshScoreLater, createHabit,
-    updateHabit, forgetGoalHabitHistory, reSyncDeviceAlarms, openModal, segmented, METRIC_LABEL,
-    accountTodayKey, confirmDelete, render,
+    state, announce, pushToast, toastError, toastSuccess, todayKey, reconcileStreakFreeze,
+    isQuitHabit, freezeTokensLeft, api, habitNoteInput, refreshScoreLater, createHabit, updateHabit,
+    forgetGoalHabitHistory, deleteHabit, reSyncDeviceAlarms, openModal, segmented, METRIC_LABEL,
+    accountTodayKey, render,
   } = ctx);
 }
 
@@ -293,13 +303,6 @@ async function openFreezeCalendar() {
   load();
 }
 
-async function deleteHabit(id) {
-  await api('/api/habits/' + encodeURIComponent(id), { method: 'DELETE' });
-  state.habits = state.habits.filter((h) => h.id !== id);
-  await refreshScore();
-  reSyncDeviceAlarms();
-}
-
 function colorPicker(initial) {
   // Friendly palette mapped to token-aware hexes (so dark mode still reads OK).
   const swatches = [
@@ -311,18 +314,24 @@ function colorPicker(initial) {
     { v: '#EAB308', name: 'sun' },
   ];
   let selected = initial || '';
-  const wrap = h('div', { class: 'gb-color-pick', role: 'radiogroup', 'aria-label': 'Color' });
+  const wrap = rovingGroup(
+    h('div', { class: 'gb-color-pick', role: 'radiogroup', 'aria-label': 'Color' })
+  );
   const dots = {};
   swatches.forEach((s) => {
     const dot = h('button', {
       type: 'button',
       class: 'gb-color-dot' + (s.v === selected ? ' is-on' : ''),
       style: { background: s.v },
+      role: 'radio',
       'aria-label': s.name,
       'aria-checked': String(s.v === selected),
       onclick: () => {
         selected = selected === s.v ? '' : s.v;
-        for (const k in dots) dots[k].classList.toggle('is-on', k === selected);
+        for (const k in dots) {
+          dots[k].classList.toggle('is-on', k === selected);
+          dots[k].setAttribute('aria-checked', String(k === selected));
+        }
       },
     });
     dots[s.v] = dot;
@@ -917,12 +926,7 @@ function openHabitForm(habit) {
     danger: habit
       ? {
           label: 'Delete habit',
-          onClick: () =>
-            confirmDelete(
-              'Delete “' + habit.name + '”?',
-              () => deleteHabit(habit.id),
-              'Its streak and check-in history go with it.'
-            ),
+          onClick: () => deleteHabit(habit.id), // undoable: no confirm
         }
       : null,
     onPrimary: async () => {
@@ -970,13 +974,28 @@ function openHabitForm(habit) {
         }
         return;
       }
-      await createHabit({
+      const created = await createHabit({
         ...fields,
         kind,
         color: color.get() || null,
         reminderTime: reminderInput.value || null,
         sound: toneSel.value || null,
       });
+      // No reminder picked: offer the time the user's other habits ring at, one
+      // tap. A quit habit has nothing to be reminded to do.
+      if (!reminderInput.value && !quit && created && created.id) {
+        const at = suggestReminderTime(state.habits);
+        pushToast('Remind you at ' + formatTime(at) + '?', 'info', 6000, {
+          label: 'Remind me',
+          run: () =>
+            updateHabit(created.id, { reminderTime: at })
+              .then(() => {
+                render();
+                toastSuccess('Reminder set for ' + formatTime(at) + '.');
+              })
+              .catch((err) => toastError(err, 'Could not set the reminder.')),
+        });
+      }
     },
   });
   // A new habit starts at its name. Editing opens on the history: focusing the

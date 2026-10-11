@@ -1,6 +1,7 @@
 # scripts/achievements.js — badge gallery
 
-Exports `ScreenAchievements(props)`, `computeAchievements(props)`, `levelProgress(user)`. All
+Exports `computeAchievements(props)`, `levelProgress(user)` (boot: the unlock check, the XP bar);
+`ScreenAchievements(props)` is in `achievements-screen.js`, a lazy chunk (`SCREENS.achievements`). All
 client-side, derived from data already tracked (XP/level, freeze-protected habit streaks, goals,
 wellness, trends, today's food and water). Reached from the profile menu. Checked by
 `node scripts/achievements.test.mjs`.
@@ -30,7 +31,7 @@ Invariants:
   hold today; counting instead of set-adding counted it twice (two plates on day 1 unlocked "3 days").
   Today = `toLocaleDateString('en-CA')`. Photo-log dates count as food days.
 
-## Rendering
+## Rendering (`achievements-screen.js`)
 
 | Fn | What |
 |---|---|

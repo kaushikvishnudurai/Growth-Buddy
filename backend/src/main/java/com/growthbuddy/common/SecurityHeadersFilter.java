@@ -29,11 +29,17 @@ import org.springframework.web.filter.OncePerRequestFilter;
  *       stylesheet is same-origin (fonts are @fontsource, bundled); styles need
  *       'unsafe-inline' because {@code h()} writes style attributes; images and
  *       sounds come from data:/blob: (photos, custom chimes) and avatars may be
- *       any https URL; the socket is same-origin ws/wss.
+ *       any https URL; the socket is same-origin ({@code 'self'} covers ws/wss
+ *       to the page's own host in CSP Level 3), plus any origin named in
+ *       {@code growthbuddy.csp.connect-src} ({@code CSP_CONNECT_SRC}) for an API
+ *       or socket on another host. It used to be {@code ws: wss:}, a socket to
+ *       anywhere. Violations are POSTed to {@code /api/csp-report}
+ *       ({@link CspReportController}), so a production build can be watched
+ *       from the server log rather than one person's devtools.
  *       <b>Report-Only by default</b> ({@code growthbuddy.csp.enforce=false}): it
  *       has not yet been watched against a production build, and a wrong CSP
  *       blanks the app for everyone. Run a build with it, check the console
- *       for "[Report Only]" violations, then set {@code CSP_ENFORCE=true}.</li>
+ *       for "[csp]" lines in the server log, then set {@code CSP_ENFORCE=true}.</li>
  * </ul>
  *
  * <p>The Capacitor shell loads its HTML from the device, not from here, so the
@@ -42,28 +48,35 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Component
 public class SecurityHeadersFilter extends OncePerRequestFilter {
 
-    static final String CSP = String.join("; ",
+    static String csp(String extraConnect) {
+        String connect = ("'self' " + (extraConnect == null ? "" : extraConnect.replace(',', ' '))).trim();
+        return String.join("; ",
             "default-src 'self'",
             "script-src 'self'",
             "style-src 'self' 'unsafe-inline'",
             "img-src 'self' data: blob: https:",
             "media-src 'self' data: blob:",
             "font-src 'self' data:",
-            "connect-src 'self' ws: wss:",
+            "connect-src " + connect,
             "worker-src 'self' blob:",
             "manifest-src 'self'",
             "object-src 'none'",
             "base-uri 'self'",
             "form-action 'self'",
-            "frame-ancestors 'none'");
+            "frame-ancestors 'none'",
+            "report-uri /api/csp-report");
+    }
 
-    private final boolean trustProxy;
+    private final ClientIp clientIp;
     private final boolean enforceCsp;
+    private final String csp;
 
-    public SecurityHeadersFilter(@Value("${growthbuddy.trust-proxy:false}") boolean trustProxy,
-                                 @Value("${growthbuddy.csp.enforce:${CSP_ENFORCE:false}}") boolean enforceCsp) {
-        this.trustProxy = trustProxy;
+    public SecurityHeadersFilter(ClientIp clientIp,
+                                 @Value("${growthbuddy.csp.enforce:${CSP_ENFORCE:false}}") boolean enforceCsp,
+                                 @Value("${growthbuddy.csp.connect-src:${CSP_CONNECT_SRC:}}") String extraConnect) {
+        this.clientIp = clientIp;
         this.enforceCsp = enforceCsp;
+        this.csp = csp(extraConnect);
     }
 
     @Override
@@ -72,18 +85,13 @@ public class SecurityHeadersFilter extends OncePerRequestFilter {
         response.setHeader("X-Content-Type-Options", "nosniff");
         response.setHeader("X-Frame-Options", "DENY");
         response.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-        if (isHttps(request)) {
+        if (clientIp.isHttps(request)) {
             response.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
         }
         if (isDocument(request)) {
-            response.setHeader(enforceCsp ? "Content-Security-Policy" : "Content-Security-Policy-Report-Only", CSP);
+            response.setHeader(enforceCsp ? "Content-Security-Policy" : "Content-Security-Policy-Report-Only", csp);
         }
         chain.doFilter(request, response);
-    }
-
-    private boolean isHttps(HttpServletRequest request) {
-        if (request.isSecure()) return true;
-        return trustProxy && "https".equalsIgnoreCase(request.getHeader("X-Forwarded-Proto"));
     }
 
     /** The shell: "/" and index.html. Set before the handler runs, so decided by path. */

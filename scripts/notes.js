@@ -110,8 +110,9 @@ const DROP = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'TEMPLATE'
 /* The only hrefs a note may carry. javascript: and data: are the two that turn
    a link into an exploit. sanitize() is the boundary that enforces it, and the
    link dialog tests the same rule so a bad URL is refused while it can still be
-   corrected, rather than silently losing its href on save. */
-const SAFE_HREF = /^(https?:|mailto:|#|\/)/i;
+   corrected, rather than silently losing its href on save. A bare "/" means a
+   path on this app; "//host" and "/\host" are protocol-relative and leave it. */
+const SAFE_HREF = /^(https?:|mailto:|#|\/(?![/\\]))/i;
 /* The only images a note may carry: raster data the editor embedded itself.
    A remote src is a tracking pixel that phones home every time the note is
    painted, and data:image/svg+xml is a document, not a picture. */
@@ -1158,6 +1159,7 @@ function ScreenNotes({
   onCounts,
   onDeleteForever,
   userId,
+  openOnMount = null,
 }) {
   const listEl = h('div', { class: 'gb-note-grid' });
   let notes = [];
@@ -1413,6 +1415,13 @@ function ScreenNotes({
     composer.classList.add('is-open');
     editor.focus();
   }
+  // 'new' (+ then Note, or the palette's New note): open and focused on arrival,
+  // once the screen is in the page, without waiting for the list. A note id
+  // waits for the list (below).
+  if (openOnMount === 'new') {
+    openOnMount = null;
+    requestAnimationFrame(() => composer.isConnected && openComposer());
+  }
   function closeComposer() {
     composer.classList.remove('is-open');
     dropDraft();
@@ -1537,7 +1546,7 @@ function ScreenNotes({
         )
       );
     }
-    const titleEl = note.title ? h('h3', { class: 'gb-note-card-title' }, note.title) : null;
+    const titleEl = note.title ? h('h2', { class: 'gb-note-card-title' }, note.title) : null;
     const snippetEl = h('p', { class: 'gb-note-card-snippet', hidden: true });
     if (titleEl) card.appendChild(titleEl);
     if (preview) card.appendChild(bodyEl);
@@ -1874,14 +1883,8 @@ function ScreenNotes({
         class: 'gb-iconbtn gb-iconbtn--danger gb-note-del',
         'aria-label': 'Delete note',
         title: 'Delete note',
+        // No confirm: it goes to the Trash, with Undo on the toast.
         onclick: async () => {
-          const ok = await confirmDialog({
-            title: 'Delete this note?',
-            confirmLabel: 'Delete',
-            cancelLabel: 'Keep',
-            danger: true,
-          });
-          if (!ok) return;
           try {
             await onDelete(note.id);
             clearTimeout(editTimer); // the server dropped the draft with the note
@@ -2294,6 +2297,16 @@ function ScreenNotes({
         paint();
         paintViews();
         refreshCounts();
+        // The command palette's pick (a note id, or 'new'), once the list is in.
+        if (openOnMount) {
+          const want = openOnMount;
+          openOnMount = null;
+          if (want === 'new') openComposer();
+          else {
+            const n = notes.find((x) => String(x.id) === String(want));
+            if (n) openNote(n, cardOf(n.id));
+          }
+        }
       })
       .catch((err) => {
         if (forView !== view) return;

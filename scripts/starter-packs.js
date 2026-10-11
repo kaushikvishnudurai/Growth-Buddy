@@ -78,10 +78,11 @@ function addDays(key, n) {
   return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
 }
 
-/* Budgets from what was really spent: the two biggest categories of the last 30
-   days, 10% under, to the nearest 100. No spending yet means no number to stand
-   on, so no budget — a made-up one is a target the user never chose. */
-function budgetsFrom(money, today) {
+/* Budgets from what was really spent: the `limit` biggest categories of the last
+   30 days (two for a starter pack; Money's Set budgets asks for all), 10% under,
+   to the nearest 100. No spending yet means no number to stand on, so no budget —
+   a made-up one is a target the user never chose. A tag that has one is skipped. */
+export function budgetsFrom(money, today, limit = 2) {
   const since = addDays(today, -30);
   const spent = {};
   ((money && money.expenses) || []).forEach((e) => {
@@ -93,8 +94,22 @@ function budgetsFrom(money, today) {
   return Object.entries(spent)
     .filter(([c, v]) => v > 0 && !(Number(have[c]) > 0))
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 2)
+    .slice(0, limit)
     .map(([category, v]) => ({ category, amount: Math.max(100, Math.round((v * 0.9) / 100) * 100) }));
+}
+
+/* The moment to offer a budget: the expense just added is this month's 5th in a
+   tag with none. Exactly the 5th, so it is offered once, not on every one after.
+   Returns budgetsFrom's figure for that tag, or null. Never for Others: a cap on
+   "everything else" is not a budget anyone plans by. */
+export function budgetOffer(money, category, today) {
+  if (category === 'others') return null;
+  const month = today.slice(0, 7);
+  const n = ((money && money.expenses) || []).filter(
+    (e) => e && (e.category || 'others') === category && String(e.date || '').startsWith(month)
+  ).length;
+  if (n !== 5) return null;
+  return budgetsFrom(money, today, Infinity).find((b) => b.category === category) || null;
 }
 
 /**

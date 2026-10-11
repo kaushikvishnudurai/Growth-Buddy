@@ -2,11 +2,13 @@
    Growth Buddy — Mentor (Buddy) chat screen
    ===================================================================== */
 import { h, Icon, confirmDialog, openModal, fieldRefusal } from './gb-kit.js';
+import { toast } from './toast.js';
 
 /* ---- One-tap actions under a reply ----
    The server takes Buddy's ```actions block out of the reply and hands it back
-   as message.actions (MentorActions.java). These are the chips; a tap opens a
-   prefilled confirm sheet, and only Save creates anything. */
+   as message.actions (MentorActions.java). These are the chips. A task or habit
+   chip saves on the tap, with Undo on its toast; a reminder opens a prefilled
+   sheet, since its date and time are worth a look (a past time is refused there). */
 const ACTION_LABEL = { task: 'Add as task', habit: 'Make it a habit', reminder: 'Remind me' };
 const ACTION_ICON = { task: 'list-checks', habit: 'repeat', reminder: 'alarm-clock' };
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -129,7 +131,7 @@ function actionsRow(actions, onAction) {
           class: 'gb-msg-chip gb-msg-action',
           'aria-label': c.aria,
           title: c.title,
-          onclick: () => onAction(c),
+          onclick: (e) => onAction(c, e.currentTarget),
         },
         Icon(c.icon, { size: 14 }),
         c.label
@@ -262,7 +264,7 @@ function ScreenMentor({ api, threadId: initialThread, starter }) {
   let cache = [];
   let threadId = initialThread || null;
   let threadTitle = '';
-  const onAction = api.act ? (c) => openActionSheet(c) : null;
+  const onAction = api.act ? (c, btn) => (c.type === 'reminder' ? openActionSheet(c) : quickAct(c, btn)) : null;
 
   const PROMPTS = [
     'Plan my day',
@@ -612,6 +614,23 @@ function ScreenMentor({ api, threadId: initialThread, starter }) {
     });
   }
 
+  /* One tap: the chip's own title (and a habit's time) as Buddy wrote them. The
+     chip stays disabled once saved, so a second tap can't add it twice. */
+  async function quickAct(c, btn) {
+    if (btn) {
+      if (btn.disabled) return;
+      btn.disabled = true;
+    }
+    try {
+      if (c.type === 'task') await api.act.task(c.title);
+      else await api.act.habit({ title: c.title, time: c.time || null });
+      if (btn) btn.lastChild.textContent = c.type === 'task' ? 'Task added' : 'Habit added';
+    } catch (err) {
+      if (btn) btn.disabled = false;
+      toast.error(err, 'Could not save that.');
+    }
+  }
+
   /** Error line + Retry under a message that didn't go through. */
   function failRow(message, onRetry) {
     return h(
@@ -811,7 +830,7 @@ function ScreenMentor({ api, threadId: initialThread, starter }) {
       type: 'button',
       class: 'gb-msg-chip gb-msg-chip--clear',
       onclick: clearAll,
-      'aria-label': 'Clear mentor chat',
+      'aria-label': 'Clear chat with mentor',
     },
     'Clear chat'
   );

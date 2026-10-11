@@ -67,7 +67,10 @@ fix the doc line if it was wrong. A doc you touch and don't update is worse than
   `node scripts/mentor.test.mjs`, `node scripts/notes-core.test.mjs`, `node scripts/nutrition.test.mjs`
   (two of its rules are mirrored in Java — `MealSlot.forHour`, `DrinkType`),
   **`node scripts/contrast.test.mjs`** (WCAG contrast of the token pairs text and UI actually use,
-  both themes: 4.5:1 text, 3:1 focus ring),
+  both themes: 4.5:1 text, 3:1 focus ring and control edges; then every rule in `styles/`: a raw
+  `-50`/`-100` ramp background with no `[data-theme='dark']` twin, or a colour/background pair
+  under 4.5:1, fails — see tokens.css.md), `scripts/e2e/contrast.e2e.mjs` (the same pairs read off
+  the rendered app in light, dark and premium; needs Vite + the seeded account),
   **`node scripts/tokens.test.mjs`** (every bare `var(--x)` in `styles/` resolves — two dead
   tokens had been silently voiding whole declarations, one of them the modal's transition; also
   every light-theme token has a dark one, and no raw hex colour in a stylesheet rule outside its

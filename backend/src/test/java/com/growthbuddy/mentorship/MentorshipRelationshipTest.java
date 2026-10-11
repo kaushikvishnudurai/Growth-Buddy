@@ -30,7 +30,7 @@ class MentorshipRelationshipTest {
     @Mock NotificationService notifications;
 
     private MentorshipService service() {
-        return new MentorshipService(requests, users, notifications);
+        return new MentorshipService(requests, users, notifications, allowAllLimiter());
     }
 
     private MentorshipRequest req(UUID from, UUID to, Direction direction, Status status) {
@@ -118,5 +118,12 @@ class MentorshipRelationshipTest {
         assertThat(rel.state()).isEqualTo("self");
         assertThat(rel.mentorLink()).isEqualTo("none");
         assertThat(rel.menteeLink()).isEqualTo("none");
+    }
+
+    private static com.growthbuddy.common.RateLimiter allowAllLimiter() {
+        var l = org.mockito.Mockito.mock(com.growthbuddy.common.RateLimiter.class);
+        org.mockito.Mockito.lenient().when(l.allow(org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.anyLong())).thenReturn(true);
+        return l;
     }
 }

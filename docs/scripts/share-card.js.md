@@ -11,7 +11,8 @@ which also runs `_demo` on DEV boot).
 | Export | What |
 |---|---|
 | `renderStoryCard(card)` | → PNG blob. `card = {eyebrow, headline, sub, stats: [{label, value}] (≤3), note (≤3 wrapped lines), footer}` |
-| `shareStoryCard(card, {filename, title})` | → `'shared'｜'saved'｜'unsupported'`. Native path first, then `navigator.share({files})`, then a download (`'saved'`). `'unsupported'` = the canvas failed. **A dismissed sheet counts as `'shared'`** (web `AbortError`, native "Share canceled") — the platform doesn't say otherwise |
+| `shareStoryCard(card, {filename, title})` | → `'shared'｜'saved'｜'unavailable'｜'unsupported'`. Draws, then hands the PNG to `offerFile` (`scripts/save-file.js`): native path, `navigator.share({files})`, a download (`'saved'`), or in the app `'unavailable'` (already toasted). `'unsupported'` = the canvas failed. **A dismissed sheet counts as `'shared'`** (web `AbortError`, native "Share canceled") — the platform doesn't say otherwise |
+| (file hand-off) | `shareStoryCard` ends in `offerFile` from `save-file.js`, the one ladder every export uses: native Filesystem + Share in the app when those plugins are present, then `navigator.share({files})`, then a download; in the app with neither, a toast offering the website (`'unavailable'`). Callers toast "downloading" only on `'saved'` |
 | `_demo()` | DEV self-check: wrap/fit never overflow, three stats + three note lines clear the footer, brand row clears Instagram's chrome |
 
 ## Layout
@@ -35,9 +36,11 @@ headline, sub, stats panel, note, footer. Fonts: `DISPLAY` (Bricolage Grotesque)
   over faces nobody asked for. `renderStoryCard` calls `document.fonts.load()` per family/weight first.
 - `canShare({files})` is the only honest test — Android WebView and desktop Firefox have
   `navigator.share` but reject files.
-- **Inside Capacitor** (`shareNatively`): WebView `canShare({files})` is false, so the PNG is written
+- **Inside Capacitor** (`shareNatively`, now in `save-file.js`): WebView `canShare({files})` is false, so the PNG is written
   with `nativePlugin('Filesystem').writeFile` (bare base64, `directory: 'CACHE'`) and the `file://`
   URI handed to `nativePlugin('Share').share({files: [uri]})`. A missing/failed plugin → `null` →
-  falls through to the download. Needs **`@capacitor/share` + `@capacitor/filesystem` installed in
-  `../Growth-Buddy-Mobile`** (`npm i`, `npx cap sync`); without them the app still just downloads.
+  next rung. Needs **`@capacitor/share` + `@capacitor/filesystem` installed in
+  `../Growth-Buddy-Mobile`** (`npm i`, `npx cap sync`); without them (today) the WebView's
+  `<a download>` does nothing, so `offerFile` says "Saving files isn't available in the app yet" with
+  an "Open website" button instead of a download toast that lied.
   The proxy from `nativePlugin` exists either way, so "missing" is only a rejected call — hence the `try`s.
