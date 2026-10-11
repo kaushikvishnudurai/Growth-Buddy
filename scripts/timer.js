@@ -170,11 +170,24 @@ function postSession(mode, durationSec, link) {
     .then(function (s) {
       applyStats(s);
       if (mode === 'focus') loadHistory();
+      // Credited once; a pick no longer open (ticked, deleted, swept at midnight)
+      // isn't carried into the next session. The server already saves a session
+      // whose link has gone as unlinked, rather than refusing it.
+      const t = Focus.targets;
+      if (link && T.link && linkValue(T.link) === linkValue(link) && t && !linkOpen(link, t)) {
+        T.link = null;
+        saveSession();
+      }
     })
     .catch(function (err) {
       toast.error(err, 'Could not save that focus session.');
     });
 }
+
+const linkOpen = (l, t) =>
+  l.taskId
+    ? (t.tasks || []).some((x) => String(x.id) === l.taskId)
+    : (t.goals || []).some((x) => String(x.id) === l.goalId);
 
 /* A link as stored or handed in: exactly one of taskId / goalId, else null. */
 function cleanLink(l) {

@@ -3,13 +3,10 @@ package com.growthbuddy.focus;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.growthbuddy.common.ApiException;
 import com.growthbuddy.user.User;
 import com.growthbuddy.user.UserClock;
 import com.growthbuddy.user.UserRepository;
@@ -187,14 +184,33 @@ class FocusServiceTest {
         when(links.ownsTask(user, mine)).thenReturn(true);
         FocusService svc = new FocusService(repo, clock, mock(UserRepository.class), links);
 
-        assertThatThrownBy(() -> svc.record(user, "focus", 1500, theirs, null)).isInstanceOf(ApiException.class);
-        assertThatThrownBy(() -> svc.record(user, "focus", 1500, null, theirs)).isInstanceOf(ApiException.class);
-        verify(repo, never()).save(any());
-
         svc.record(user, "focus", 1500, mine, null);
         ArgumentCaptor<FocusSession> saved = ArgumentCaptor.forClass(FocusSession.class);
         verify(repo).save(saved.capture());
         assertThat(saved.getValue().getTaskId()).isEqualTo(mine);
+    }
+
+    /** FN-07: a link that isn't theirs, or has gone (deleted, swept), keeps the minutes, unlinked. */
+    @Test
+    void aGoneOrForeignLinkIsDroppedAndTheSessionStillCounts() {
+        FocusSessionRepository repo = mock(FocusSessionRepository.class);
+        FocusLinks links = mock(FocusLinks.class);
+        UserClock clock = mock(UserClock.class);
+        UUID user = UUID.randomUUID();
+        UUID gone = UUID.randomUUID();
+        when(clock.zoneOf(user)).thenReturn(ZoneOffset.UTC);
+        when(repo.findByUserIdAndModeAndCompletedAtAfter(any(), any(), any())).thenReturn(List.of());
+        FocusService svc = new FocusService(repo, clock, mock(UserRepository.class), links);
+
+        svc.record(user, "focus", 1500, gone, null);
+        svc.record(user, "focus", 1500, null, gone);
+        ArgumentCaptor<FocusSession> saved = ArgumentCaptor.forClass(FocusSession.class);
+        verify(repo, org.mockito.Mockito.times(2)).save(saved.capture());
+        for (FocusSession s : saved.getAllValues()) {
+            assertThat(s.getTaskId()).isNull();
+            assertThat(s.getGoalId()).isNull();
+            assertThat(s.getDurationSec()).isEqualTo(1500);
+        }
     }
 
     @Test

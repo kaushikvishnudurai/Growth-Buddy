@@ -51,7 +51,10 @@ store before it is posted**, so it counts exactly once. The decision is `restore
   that finished while the app was gone advances the cycle too. "Sessions today" is the stats card's count.
 - **"Focusing on…"** (`FocusPicker`, a `<select>` of `Focus.targets` = app.js's open tasks and goals):
   `T.link` = `{taskId}` | `{goalId}` | null, read when the session ends and POSTed with it (a break never
-  carries one; the server 404s a link that isn't the caller's). A pick that has left the lists stays as
+  carries one; the server saves a session whose link isn't the caller's, or has gone — deleted, swept at
+  midnight — **unlinked**, never a 404 that lost the minutes). Once posted, `postSession` clears a
+  `T.link` no longer in `Focus.targets` (`linkOpen`), so the next session isn't credited to it; app.js
+  `onFocusSession` sends a task made offline by its server id (`realId`) and leaves a `tmp-` id out. A pick that has left the lists stays as
   "The task you picked". A task/goal row's timer button → app.js `startFocusOn(link)` → `focusPreselect`,
   handed once as `props.preselect` (a running sprint is moved over to it, with a toast; an idle break
   becomes a sprint). A task row also sets `props.autoStart = true`, so the clock starts (a paused
@@ -111,7 +114,8 @@ numbers, not dashes; a failed load says so under the tiles with a Try again;
 completed sessions POST to `/api/focus/sessions` (`FocusSession` rows are retention-capped per user).
 `FocusService.stats` counts focus sessions only, from the user's local midnight and Monday
 (`UserClock`); with a goal it also reads back `STREAK_LOOKBACK_DAYS` for `goalStreak`.
-`FocusServiceTest` pins the windows, the clamp, the mode, the zone bucketing, link ownership and the streak.
+`FocusServiceTest` pins the windows, the clamp, the mode, the zone bucketing, link ownership (a gone or
+foreign link is dropped, the session kept) and the streak.
 
 **History** (`HistoryCard`, between stats and sound): `GET /api/focus/history?days=30`
 (`props.getFocusHistory`), re-fetched after every saved focus session. 30 bars in an inline SVG

@@ -13,6 +13,7 @@ import {
   latestSeq,
   restoreKey,
   inFlightKeys,
+  overlayQueuedWellness,
 } from './app-logic.js';
 import { timeRangeOk, reminderEditPatch } from './calendar.js';
 import { resolveNavLayout, splitNavBar, NAV_CATALOG, NAV_MAX_PRIMARY } from './gb-kit.js';
@@ -333,6 +334,26 @@ await test('a slot freed by a turned-off feature is refilled from "More"', () =>
   assert.equal(off.primary.length, on.primary.length, 'the bar keeps its size');
   assert.equal(off.primary.some((i) => i.id === gated.id), false);
   assert.equal(off.primary[off.primary.length - 1].id, on.overflow[0].id, 'first More item moves up');
+});
+
+await test('FN-02: sleep / mood still queued survive a load of the server logs', () => {
+  const server = {
+    sleepByDate: { '2026-10-09': { date: '2026-10-09', quality: 'good' } },
+    moodByDate: {},
+    photoHistory: [],
+  };
+  const ops = [
+    { kind: 'wellness.sleep', local: { date: '2026-10-11', quality: 'poor' } },
+    { kind: 'task.toggle', local: { id: 't1' } },
+    { kind: 'wellness.mood', local: { date: '2026-10-11', mood: 'low' } },
+    { kind: 'wellness.mood', local: { date: '2026-10-11', mood: 'great' } },
+  ];
+  const w = overlayQueuedWellness(server, ops);
+  assert.equal(w.sleepByDate['2026-10-11'].quality, 'poor', 'queued night shown after the load');
+  assert.equal(w.sleepByDate['2026-10-09'].quality, 'good', "the server's other nights kept");
+  assert.equal(w.moodByDate['2026-10-11'].mood, 'great', 'newest queued check-in for the day wins');
+  assert.deepEqual(server.moodByDate, {}, 'the server copy is not mutated');
+  assert.deepEqual(overlayQueuedWellness(server, []).sleepByDate, server.sleepByDate);
 });
 
 if (failures) {

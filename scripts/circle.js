@@ -2849,12 +2849,38 @@ function ScreenCircle({
    * second response landed, and the page visibly jumped. Waiting for both means
    * the first paint is the final one.
    */
+  // A failed FIRST load has no cache to fall back on: painting it said "No mentors
+  // or mentees yet" and hid waiting requests. Say it failed, with Try again.
+  let loaded = false;
+  function paintLoadError() {
+    requestsEl.replaceChildren();
+    outgoingEl.replaceChildren();
+    incomingEl.replaceChildren(
+      h(
+        'div',
+        { class: 'gb-empty' },
+        h('p', null, 'Could not load your mentors and requests.'),
+        h(
+          'button',
+          { type: 'button', class: 'gb-btn gb-btn--secondary gb-btn--compact', onclick: () => refreshAll() },
+          'Try again'
+        )
+      )
+    );
+  }
   function refreshAll() {
-    const outgoing = onLoadOutgoing().catch(() => cachedOutgoing);
+    let failed = false;
+    const fallback = (cached) => () => {
+      failed = true;
+      return cached;
+    };
+    const outgoing = onLoadOutgoing().catch(fallback(cachedOutgoing));
     const incoming = onLoadIncoming
-      ? onLoadIncoming().catch(() => cachedIncoming)
+      ? onLoadIncoming().catch(fallback(cachedIncoming))
       : Promise.resolve([]);
     return Promise.all([outgoing, incoming]).then(([out, inc]) => {
+      if (failed && !loaded) return paintLoadError();
+      loaded = true;
       cachedOutgoing = out || [];
       cachedIncoming = inc || [];
       paint();
