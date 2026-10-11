@@ -331,4 +331,31 @@ for (const status of [500, 503, 401, 408, 429]) {
   assert.deepEqual(createOutbox(s, () => 'gb.outbox.u1').list(), []);
 }
 
+// Write-ahead (OFF-1): a live op is kept, not counted, not sent twice, and not
+// collapsed with; a dead page's are revived.
+{
+  const { ob } = fresh();
+  ob.enqueue({ id: 'w1', method: 'PATCH', path: '/api/tasks/1/toggle', toggleKey: 'task:1', live: true });
+  assert.equal(ob.size(), 0, 'not "waiting to sync" while its own request is out');
+  assert.equal(ob.list().length, 1);
+  // A twin tap does not cancel the one whose request is out.
+  assert.equal(ob.enqueue({ method: 'PATCH', path: '/api/tasks/1/toggle', toggleKey: 'task:1' }), 'queued');
+  const api = mockApi(() => ({}));
+  const out = await ob.flush(api);
+  assert.equal(api.calls.length, 0, 'flush waits behind the live op');
+  assert.ok(out.stopped);
+  // No response: back in as an ordinary op, through the collapse rules (the twin cancels it).
+  const w1 = ob.list()[0];
+  ob.remove('w1');
+  assert.equal(ob.enqueue({ ...w1, live: false }), 'cancelled');
+  assert.equal(ob.size(), 0);
+  ob.enqueue({ id: 'w2', method: 'POST', path: '/api/tasks', body: { title: 'x' }, live: true });
+  ob.remove('w2');
+  assert.equal(ob.list().length, 0, 'answered: gone');
+  ob.enqueue({ id: 'w3', method: 'POST', path: '/api/tasks', body: { title: 'y' }, live: true });
+  ob.reviveLive();
+  assert.equal(ob.size(), 1, 'left by a page that unloaded: replayed');
+  assert.equal(ob.list()[0].live, undefined);
+}
+
 console.log('outbox: all tests passed');

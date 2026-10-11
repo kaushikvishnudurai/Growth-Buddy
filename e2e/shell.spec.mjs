@@ -1,5 +1,6 @@
 // The app shell: sign-out teardown, overlays, the back stack, the outbox, theme on auth screens.
 import { test, expect, signInFast, go } from './fixtures.mjs';
+import { seedAccount } from './seed.mjs';
 
 const EV = 'docs/evidence/shell/';
 // The shared Chrome only paints the tab in front: a background tab's screenshot never returns.
@@ -15,7 +16,7 @@ const storeKeys = (page) =>
     for (const name of await caches.keys()) {
       if (!name.startsWith('gb-store')) continue;
       const c = await caches.open(name);
-      for (const r of await c.keys()) out.push(decodeURIComponent(new URL(r.url).pathname));
+      for (const r of await c.keys()) out.push(decodeURIComponent(new URL(r.url).pathname.slice(1)));
     }
     return out;
   });
@@ -33,7 +34,7 @@ async function openSettings(page, tab) {
 test('CRS-1: signing out from Settings closes Settings', async ({ page, account }) => {
   await signInFast(page, account);
   await openSettings(page, 'Account');
-  await page.locator('.gb-account-signout').click();
+  await page.locator('.gb-modal--settings').getByRole('button', { name: 'Sign out' }).click();
   await expect(page.locator('input[type=email]').first()).toBeVisible();
   await expect(page.locator('.gb-modal-overlay.is-open')).toHaveCount(0);
   await expect(page.getByText(account.user.email)).toHaveCount(0);
@@ -123,13 +124,14 @@ test('A11-1: a re-render keeps the open bell panel drawn', async ({ page, accoun
 test('RSP-4: back closes the bell and account panels, not the screen', async ({ page, account }) => {
   await signInFast(page, account);
   await go(page, 'calendar');
+  const hash = new URL(page.url()).hash;
   for (const [trigger, slot] of [['.gb-bell', '#gb-notif-slot'], ['.gb-avatar', '#gb-profile-slot']]) {
     await page.locator(trigger).click();
     await expect(page.locator(slot + ' > *')).toHaveCount(1);
     await page.waitForTimeout(50);
     await page.goBack();
     await expect(page.locator(slot + ' > *')).toHaveCount(0);
-    expect(new URL(page.url()).hash).toBe('#/calendar');
+    expect(new URL(page.url()).hash).toBe(hash);
   }
   const more = page.locator('.gb-nav-tab--more');
   if (await more.isVisible()) {
@@ -138,7 +140,7 @@ test('RSP-4: back closes the bell and account panels, not the screen', async ({ 
     await page.waitForTimeout(50);
     await page.goBack();
     await expect(page.locator('.gb-more-sheet')).toHaveCount(0);
-    expect(new URL(page.url()).hash).toBe('#/calendar');
+    expect(new URL(page.url()).hash).toBe(hash);
   }
   await shot(page, 'RSP-4');
 });
@@ -165,4 +167,81 @@ test('RSP-6 + RSP-7: a write queued with no response retries on resume, under on
   await posted;
   await expect.poll(() => storeKeys(page).then((k) => k.some((x) => x.startsWith('gb.outbox.'))), { timeout: 10_000 }).toBe(false);
   await shot(page, 'RSP-6');
+});
+
+const apiAs = (page, token, path) =>
+  page.evaluate(
+    async ([t, p]) => (await fetch(p, { headers: { Authorization: 'Bearer ' + t } })).json(),
+    [token, path]
+  );
+
+test('OFF-1: a task whose request is still out when the page reloads is sent after it', async ({ page, account, allowed }) => {
+  allowed.push('/api/tasks');
+  await signInFast(page, account);
+  // The request never answers: the page unloads with it in flight.
+  await page.route('**/api/tasks', (route) => (route.request().method() === 'POST' ? undefined : route.fallback()));
+  await addTaskThroughSheet(page, 'Sent from the grave');
+  await page.waitForTimeout(400);
+  await page.unroute('**/api/tasks');
+  await page.reload();
+  await expect(page.locator('#gb-main')).toBeVisible();
+  await expect
+    .poll(async () => (await apiAs(page, account.token, '/api/tasks')).some((t) => t.title === 'Sent from the grave'), { timeout: 15_000 })
+    .toBe(true);
+  await shot(page, 'OFF-1');
+});
+
+test('OFF-3: logging out with a queued change asks first', async ({ page, account, allowed }) => {
+  allowed.push('/api/tasks', 'net::ERR_FAILED', 'Failed to load resource');
+  await signInFast(page, account);
+  await page.route('**/api/tasks', (route) => (route.request().method() === 'POST' ? route.abort('failed') : route.fallback()));
+  await addTaskThroughSheet(page, 'Not synced');
+  await expect(page.locator('.gb-toast-msg', { hasText: 'Saved on this phone' })).toBeVisible();
+  await page.locator('.gb-avatar').click();
+  await page.locator('.gb-profile-pop-item', { hasText: 'Log out' }).click();
+  await expect(page.locator('.gb-modal-title', { hasText: '1 change not synced yet' })).toBeVisible();
+  await shot(page, 'OFF-3');
+  await page.getByRole('button', { name: 'Stay signed in' }).click();
+  await expect(page.locator('.gb-avatar')).toBeVisible();
+  await expect(page.locator('input[type=email]')).toHaveCount(0);
+});
+
+test('OFF-2: a glass queued by one account does not show on the next', async ({ page, account, allowed }) => {
+  allowed.push('/api/water/entries', 'net::ERR_FAILED', 'Failed to load resource');
+  const other = await seedAccount();
+  await signInFast(page, account);
+  await go(page, 'food');
+  await page.route('**/api/water/entries', (route) => route.abort('failed'));
+  await page.getByRole('button', { name: 'Add 250 millilitres of water' }).first().click();
+  await expect(page.locator('.gb-toast-msg', { hasText: 'Saved on this phone' })).toBeVisible();
+  await page.locator('.gb-avatar').click();
+  await page.locator('.gb-profile-pop-item', { hasText: 'Log out' }).click();
+  await page.getByRole('button', { name: 'Sign out anyway' }).click();
+  await page.unroute('**/api/water/entries');
+  // The next person signs in on the same tab: no reload between the two.
+  const snap = page.waitForRequest((r) => r.url().includes('/api/daily-logs/snapshot'), { timeout: 20_000 });
+  await page.locator('input[type=email]').first().fill(other.email);
+  await page.locator('input[type=password]').first().fill(other.password);
+  await page.locator('input[type=password]').first().press('Enter');
+  await expect(page.locator('#gb-main')).toBeVisible({ timeout: 20_000 });
+  const sent = JSON.parse((await snap).postData());
+  const theirs = await apiAs(page, other.token, '/api/water');
+  expect(sent.waterMl).toBe(theirs.consumedMl);
+  await shot(page, 'OFF-2');
+});
+
+test('OFF-7: a sign-out made offline is revoked on the next boot', async ({ page, account, allowed }) => {
+  // The last check's own /me is meant to 401.
+  allowed.push('/api/auth/logout', '/api/auth/me', 'net::ERR_FAILED', 'Failed to load resource');
+  await signInFast(page, account);
+  await page.route('**/api/auth/logout', (route) => route.abort('failed'));
+  await page.locator('.gb-avatar').click();
+  await page.locator('.gb-profile-pop-item', { hasText: 'Log out' }).click();
+  await expect(page.locator('input[type=email]').first()).toBeVisible();
+  await expect.poll(() => storeKeys(page).then((k) => k.includes('gb.revoke.pending'))).toBe(true);
+  await page.unroute('**/api/auth/logout');
+  await page.reload();
+  await expect.poll(() => storeKeys(page).then((k) => k.includes('gb.revoke.pending')), { timeout: 10_000 }).toBe(false);
+  const me = await page.evaluate((t) => fetch('/api/auth/me', { headers: { Authorization: 'Bearer ' + t } }).then((r) => r.status), account.token);
+  expect(me).toBe(401);
 });

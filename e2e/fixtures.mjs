@@ -30,6 +30,7 @@ export const test = base.extend({
       page.on('requestfailed', (r) => {
         const err = r.failure() && r.failure().errorText;
         // Aborts are navigation/cancel noise, not failures.
+        if (allowed.some((a) => r.url().includes(a))) return;
         if (err && !/ERR_ABORTED|NS_BINDING_ABORTED|cancelled/i.test(err)) problems.push(`failed ${r.method()} ${r.url()} ${err}`);
       });
       await use(problems);
