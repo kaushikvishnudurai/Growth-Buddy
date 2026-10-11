@@ -90,6 +90,27 @@ public class GoalService {
                         new GoalSectionResponse(GoalHorizon.long_term, grouped.get(GoalHorizon.long_term)));
     }
 
+    /** Buddy's view: open goals, newest first, at most 10, with any target date. */
+    @Transactional(readOnly = true)
+    public String contextSummary(UUID userId) {
+        List<String> open = new java.util.ArrayList<>();
+        int more = 0;
+        for (Goal g : goals.findByUserIdOrderByCreatedAtDesc(userId)) {
+            if (g.isCompleted()) continue;
+            if (open.size() == 10) {
+                more++;
+                continue;
+            }
+            String t = g.getTitle() == null ? "" : g.getTitle().replaceAll("\\s+", " ").trim();
+            if (t.length() > 80) t = t.substring(0, 80);
+            open.add("  - " + t + " (" + g.getHorizon().name().replace('_', ' ')
+                    + (g.getTargetDate() != null ? ", by " + g.getTargetDate() : "") + ")");
+        }
+        if (open.isEmpty()) return "Goals: none open.\n";
+        return "Open goals:\n" + String.join("\n", open) + "\n"
+                + (more > 0 ? "  (+" + more + " more open goals)\n" : "");
+    }
+
     @Transactional
     public GoalResponse create(UUID userId, CreateGoalRequest req) {
         if (req == null || !StringUtils.hasText(req.title())) {
@@ -252,5 +273,11 @@ public class GoalService {
                 .toList();
         Instant latest = recent.isEmpty() ? null : recent.get(0).createdAt();
         return GoalResponse.from(goal, actionCount, latest, recent).withClearedTaskCount(clearedTasks);
+    }
+
+    /** Quick add from WhatsApp (QuickAddApplier). */
+    @Transactional
+    public void createTitled(UUID userId, String title) {
+        create(userId, new CreateGoalRequest(title, null, GoalHorizon.short_term, null));
     }
 }

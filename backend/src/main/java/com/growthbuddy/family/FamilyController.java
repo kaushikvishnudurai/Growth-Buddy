@@ -198,6 +198,12 @@ public class FamilyController {
         return service.saveFavourite(CurrentUser.id(), req);
     }
 
+    /** Put a saved menu back as today's plan. */
+    @PostMapping("/favourites/{id}/use")
+    public MealPlanResponse useFavourite(@PathVariable UUID id) {
+        return service.useFavourite(CurrentUser.id(), id);
+    }
+
     @DeleteMapping("/favourites/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteFavourite(@PathVariable UUID id) {

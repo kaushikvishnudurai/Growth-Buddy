@@ -37,7 +37,7 @@ class HabitReminderPendingDeletionTest {
     private final WhatsAppService whatsapp = mock(WhatsAppService.class);
     private final HabitReminderDeliveryScheduler scheduler =
             new HabitReminderDeliveryScheduler(habits, checkins, dispatchLog, users, push, notifications,
-                    whatsapp);
+                    whatsapp, new com.growthbuddy.reminder.SnoozeLinks("test-secret"));
 
     private Habit dueFor(User owner) {
         Habit h = new Habit();
@@ -72,7 +72,7 @@ class HabitReminderPendingDeletionTest {
         verify(notifications, never()).publish(any(), any(), any(), any(), any());
         verify(whatsapp, never()).sendReminder(anyString(), anyString());
         verify(push, never()).sendToUser(any(UUID.class), any(NotifyCategory.class), any(String.class),
-                any(String.class), any(String.class));
+                any(String.class), any(String.class), any());
         verify(dispatchLog, never()).saveAndFlush(any());
     }
 

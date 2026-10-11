@@ -2,7 +2,11 @@ package com.growthbuddy.money;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.growthbuddy.common.ApiException;
+import com.growthbuddy.common.CurrentUser;
 import com.growthbuddy.common.UserZone;
+import com.growthbuddy.quickadd.QuickAddApplier;
+import com.growthbuddy.quickadd.QuickAddService;
 import com.growthbuddy.reminder.ReminderSnoozeService;
 import com.growthbuddy.reminder.WhatsAppService;
 import com.growthbuddy.user.User;
@@ -11,7 +15,10 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Matcher;
@@ -36,6 +43,9 @@ import org.springframework.web.bind.annotation.RestController;
  * Meta's WhatsApp webhook: the "Mark as paid" button on a subscription-due
  * message, and snoozing a reminder — its "Snooze" button, or a typed reply of
  * SNOOZE (optionally "snooze 20") meaning the reminder that reached them last.
+ * Any other text is Quick add: "spent 200 on lunch, slept 7h, remind me at 6 to
+ * call mom" is read by the same parser as the app's box and saved straight away
+ * (there is no preview in a chat), and the reply lists every line it saved.
  *
  * <p>Anonymous (Meta holds no session), so every POST must carry a valid
  * {@code X-Hub-Signature-256} over the raw body, keyed with the app secret. With
@@ -55,6 +65,8 @@ public class WhatsAppWebhookController {
     private final MoneyService money;
     private final WhatsAppService whatsapp;
     private final ReminderSnoozeService snoozes;
+    private final QuickAddService quickAdd;
+    private final QuickAddApplier applier;
 
     /** "snooze", "Snooze 20", "snooze 15 min" — and nothing else, so a chatty reply isn't taken for one. */
     static final Pattern SNOOZE_REPLY =
@@ -65,7 +77,7 @@ public class WhatsAppWebhookController {
             @Value("${growthbuddy.whatsapp.meta.app-secret:}") String appSecret,
             @Value("${growthbuddy.whatsapp.meta.webhook-verify-token:}") String verifyToken,
             ObjectMapper json, UserRepository users, MoneyService money, WhatsAppService whatsapp,
-            ReminderSnoozeService snoozes) {
+            ReminderSnoozeService snoozes, QuickAddService quickAdd, QuickAddApplier applier) {
         this.appSecret = appSecret;
         this.verifyToken = verifyToken;
         this.json = json;
@@ -73,6 +85,8 @@ public class WhatsAppWebhookController {
         this.money = money;
         this.whatsapp = whatsapp;
         this.snoozes = snoozes;
+        this.quickAdd = quickAdd;
+        this.applier = applier;
     }
 
     /** Meta's one-time subscription handshake. */
@@ -114,8 +128,8 @@ public class WhatsAppWebhookController {
                             snoozeButton(from, payload.substring("snooze:".length()));
                         } else if (payload != null) {
                             handle(from, payload);
-                        } else {
-                            snoozeReply(from, textBody(msg));
+                        } else if (!snoozeReply(from, textBody(msg))) {
+                            quickAdd(from, textBody(msg));
                         }
                     } catch (Exception ex) {
                         log.warn("WhatsApp webhook message not handled: {}", ex.getMessage());
@@ -175,10 +189,11 @@ public class WhatsAppWebhookController {
         }
     }
 
-    private void snoozeReply(String from, String text) {
+    /** False when the text isn't a snooze, so it can be read as Quick add instead. */
+    private boolean snoozeReply(String from, String text) {
         Matcher m = text == null ? null : SNOOZE_REPLY.matcher(text);
         if (m == null || !m.matches()) {
-            return;
+            return false;
         }
         Integer minutes = m.group(1) == null ? null : Integer.valueOf(m.group(1));
         for (User user : senders(from)) {
@@ -192,6 +207,39 @@ public class WhatsAppWebhookController {
                         ? "Snooze takes 1 to 240 minutes — try \"snooze 15\"."
                         : "There's no reminder from the last few hours to snooze.");
             }
+        }
+        return true;
+    }
+
+    /**
+     * Free text from a verified number, through Quick add, saved for that account.
+     * The AI call is charged to the user's own hourly budget ({@link CurrentUser}
+     * is set for it), and a sentence over budget or with nothing in it gets a
+     * reply saying so rather than silence.
+     */
+    private void quickAdd(String from, String text) {
+        if (text == null || text.isBlank()) {
+            return;
+        }
+        String clean = text.length() > 400 ? text.substring(0, 400) : text;
+        for (User user : senders(from)) {
+            ZoneId zone = UserZone.of(user.getTimezone());
+            LocalDate today = LocalDate.now(zone);
+            CurrentUser.set(user.getId());
+            List<String> lines;
+            try {
+                var parsed = quickAdd.parse(clean, applier.habitNames(user.getId()), today, LocalTime.now(zone));
+                lines = applier.apply(user.getId(), user.getFeaturePrefs(), parsed.intents(), today);
+            } catch (ApiException ex) {
+                say(user, ex.getMessage());
+                continue;
+            } finally {
+                CurrentUser.clear();
+            }
+            say(user, lines.isEmpty()
+                    ? "I couldn't find anything to log there. Try: \"spent 200 on lunch, slept 7h, 2 glasses of water,"
+                            + " remind me at 6 to call mom\"."
+                    : String.join("\n", lines));
         }
     }
 
@@ -213,7 +261,7 @@ public class WhatsAppWebhookController {
         try {
             whatsapp.reply(user.getWhatsappNumber(), text);
         } catch (Exception ex) {
-            log.warn("Snooze reply to {} failed: {}", user.getId(), ex.getMessage());
+            log.warn("WhatsApp reply to {} failed: {}", user.getId(), ex.getMessage());
         }
     }
 

@@ -1,7 +1,8 @@
-# family/FamilyService.java (largest backend class)
+# family/FamilyService.java — the largest backend class
 
 Backs everything under `/api/family` (`FamilyController`). Two halves: **household membership** and
-the **AI meal planner** (Claude via the Cloudflare gateway, with a deterministic fallback).
+the **planner** (meal plans via the AI gateway with a deterministic fallback, chores, recipes,
+pantry, shopping). Docs name symbols — `grep -n` them.
 
 ## Public API
 
@@ -10,88 +11,63 @@ the **AI meal planner** (Claude via the Cloudflare gateway, with a deterministic
 |---|---|
 | `getFamily(userId)` | read-only snapshot |
 | `addMember(userId, req)` | member may be **unmapped** (no account) |
-| `updateMember` / `updateProfile` | profile = the food/nutrition profile |
-| `removeMember` | owner only; tells a linked member they were removed (or their invite withdrawn) |
-| `transferOwnership(userId, memberId)` | owner only, to a **mapped** member with an account; the old owner stays a member |
-| `searchUsers(userId, q)` | to link an existing account |
-| `linkMember(userId, req)` | sends an invite + a bell notification. A target already mapped elsewhere is refused unless they are a **solo owner** (`isSoloOwner`: their family has no other mapped account) |
-| `listInvites` / `acceptInvite` / `declineInvite` | see "Accepting" below; decline tells the owner (`revertInvite` drops an invite-only row or hands a slot back as unmapped) |
-| `leaveFamily(userId)` | members only — the owner is refused until they `transferOwnership`; tells the owner |
+| `updateMember` / `updateProfile` | owner, or the mapped member themselves (`requireManageOrSelf`) |
+| `removeMember` | owner only; tells a linked member |
+| `transferOwnership` | the only way an owner can then leave |
+| `searchUsers(userId, q)` | name or exact id, masked email |
+| `linkMember(userId, req)` | sends an invite |
+| `listInvites` / `acceptInvite` / `declineInvite` | accept locks the user's rows; a solo owner's household folds in (`foldSoloFamilyInto`) |
+| `leaveFamily(userId)` | |
 
-**Accepting** (`acceptInvite`) takes `lockByLinkedUser` (SELECT … FOR UPDATE on every row naming the
-user) and decides on what that returns, so two racing accepts serialise. Every other pending invite
-is declined in the same transaction. A solo owner may accept: `foldSoloFamilyInto` **moves** their
-unmapped profiles to the new family, withdraws the invites they had sent, retires their self row
-(copying its food profile onto an invite-only membership), and leaves the old family row + its
-pantry/shopping/plans in place but unreachable — nothing is deleted by an accept; account deletion
-removes it. Anyone in a family with another account must leave first.
-
-**Access is MAPPED, not linked**: `requireMemberAccess` / `requireManageOrSelf` count a row only when
-its status is `mapped` — an `invited` row names the invitee too.
-
-**Live sync**: membership, chores, shopping, pantry, plan (reuse / cook), weekly (cook) and recipe writes call `changed(fam, actor, section)` →
-`FamilyEvents.changed`, a transient `family_changed` frame on `/user/queue/notifications` to every
-other mapped member, sent after commit (not a `Notification` row). Frontend: `gb:family-changed`.
-
-### Meal planning
+### Planning
 | Method | Notes |
 |---|---|
-| `scanGroceries(req)` | photo/text → ingredient list |
-| `generateMealPlan(userId, req)` | the big one (~130 lines) |
-| `getLatestPlan(userId)` | **latest row per family wins** |
-| `planHistory(userId)` | last 8 rows, newest first, current included — plans were always rows, never overwritten |
-| `reusePlan(userId, planId)` | "Use again": copies the row forward as a new one, so it becomes current and the history is untouched |
-| `assignCook` / `assignMultiDayCook` | `cooks: {meal: memberId}` on the plan JSON (on `days[day-1]` for weekly — by position). No column. `setCook` notifies a mapped cook who isn't the actor |
-| `generateMultiDay` / `getLatestMultiDay` | weekly/monthly, optional occasion theme |
-| `markPlanCooked(userId, planId)` | feeds `bumpDishes` preference learning — **once per plan** (`cooked_at` stamps the first tap) |
-| `saveFavourite` / `listFavourites` / `deleteFavourite` | |
-
-### Chores
-`listChores`, `addChore`, `updateChore`, `toggleChore(userId, id, done)` (sets; `null` flips), `deleteChore` —
-all return the whole list, open first then by due date. Writes need `requireMemberAccess` (mapped).
-The assignee must be a live row of the same family (`requireFamilyMember`, else 400); a removed member's
-chores read as unassigned. `notifyAssignee` sends a bell notification on create, and on update only when
-the assignee changed — never to the actor. **Repeating chores** (`repeat_rule` daily | weekly) keep
-`done_at` and `choreDone` compares it to the viewer's today (`UserClock`), so a tick lasts its day / week.
-`remindChore(userId, id, time)` writes a `CalendarReminder` (via `ReminderService.create(userId, text, date, time, repeat)`) into the
-**assignee's** calendar when they are mapped with an account, else the caller's; due day or today (tomorrow when the time has
-gone), repeating as the chore does. The assignee also gets a bell notification; `sentTo` names them for the toast.
-
-### Recipes
-`listRecipes`, `saveRecipe` (upsert on `family_recipes.dish_key` = `shoppingKey(dish)`; ingredients +
-steps ≤ 4000 together, cook minutes 0-1440; all empty → delete, returns null → 204), `deleteRecipe`.
+| `scanGroceries(req)` | photo → ingredient list |
+| `generateMealPlan(userId, req)` | one day; prompt = members + sent ingredients + **pantry** + learned dishes |
+| `getLatestPlan` / `planHistory` / `reusePlan` | **latest row per family wins**; history = last 8 |
+| `assignCook` / `assignMultiDayCook` | `cooks: {meal: memberId}` on the plan JSON, no column |
+| `generateMultiDay` / `getLatestMultiDay` | weekly / fortnight, optional occasion theme |
+| `markPlanCooked(userId, planId)` | once per plan; feeds `bumpDishes` |
+| `saveFavourite` / `listFavourites` / `useFavourite` / `deleteFavourite` | saves a STORED plan (named or latest), never a client body; use = a new plan row |
+| chores: `listChores` / `addChore` / `updateChore` / `toggleChore` / `deleteChore` | `choreDone` reads repeat (daily / weekly) against the user's day |
+| `remindChore(userId, id, time)` | a `CalendarReminder` (via `ReminderService.create(userId, text, date, time, repeat)`) in the **assignee's** calendar when mapped with an account, else the caller's, plus a bell to the assignee; due day or today (tomorrow when the time has gone), repeating as the chore does; `sentTo` names who got it |
+| recipes: `listRecipes` / `saveRecipe` / `deleteRecipe` | keyed by `shoppingKey(dish)`; empty save deletes |
 
 ### Pantry & shopping
-`listPantry`, `addPantry`, plus `/pantry/scan`, `/pantry/{id}` PUT+DELETE;
-`addShopping`, `toggleShopping(userId, id, checked)` (sets; `null` = the old flip), `deleteShopping`,
-`generateShopping` — dedupes case-insensitively against the list and the pantry (`newShoppingLines`,
-`shoppingKey`), falls back to a deterministic list from the plan's dishes when the AI is off or
-fails (`fallbackShopping` over `DISH_INGREDIENTS`), and returns `added` + a `message`. **A dish with
-a family recipe shops from it first** (`splitByRecipe` → `parseIngredientLines`: one per line,
-"Toor dal: 200 g" / "Toor dal - 200 g" split into name + quantity); only the dishes without one go to the
-AI / the map. `restockFromPantry` (`/shopping/from-pantry`): `restockLines` = pantry items marked
-`low` or expiring on/before the user's today + 2 (expired included), deduped against the list only.
+`listPantry`, `addPantry`, `updatePantry`, `deletePantry`, `scanPantry`; `listShopping`,
+`addShopping`, `toggleShopping` (sets, or flips with no value), `deleteShopping`,
+`generateShopping` (recipes first, then AI, then `fallbackShopping`), `restockFromPantry`.
 
 ## Internals worth knowing before editing
 
-- **Access control helpers** — use these, don't hand-roll checks: `requireMyFamily`,
-  `requireFamily`, `requireMember`, `requireOwner`, `requireManageOrSelf`,
-  `requireMemberAccess`, `requirePantry`.
-- `resolveOrCreateFamily` / `currentFamily` — a user gets a family lazily on first use.
-- **LLM prompt assembly:** `buildContext` ← `appendMemberLines`,
-  `appendAvailableLines`, `appendListLine`, `memberPhysique`,
-  `inferGender`, `learnedDishesNote`, `pantryNames`, `sanitize`.
-- **LLM response handling:** `stripFences` strips ``` fences, `readJson`,
-  `extractDishNames` + `collectMeals`, and **`fallbackPlan` / `fallbackMultiDay`**
-  — the deterministic plans returned when the AI gateway is unconfigured or fails. Keep that path
-  working; the UI must never hard-fail on a missing API key.
-- **Preference learning:** `bumpDishes(familyId, dishes, weight)` writes
-  `FamilyDishPreference` rows (accepted / cooked / favourited signal), read back via
-  `learnedDishesNote` into the next prompt.
-- Column-packing helpers: `writeList` / `readList` store `List<String>` as a delimited
-  string; `applyProfile` / `readProfile` map the food profile.
+- **AI methods are not `@Transactional`** (`scanGroceries`, `generateMealPlan`, `generateMultiDay`,
+  `scanPantry`, `generateShopping`): a transaction held one of 8 pooled connections through a call
+  of up to 45s. Each repository call runs on its own short transaction, as in `MentorService`.
+- **An `ApiException` from the AI client is rethrown, not fallen back on** — it is the hourly budget's
+  429. Falling back saved a template over the family's real plan and blamed "AI unavailable".
+- Any other AI failure, or no gateway configured, uses **`fallbackPlan` / `fallbackMultiDay` /
+  `fallbackShopping`**. Keep that path working; the UI must never hard-fail on a missing API key.
+- **Access control helpers** — use these, don't hand-roll checks: `requireMyFamily`, `requireFamily`,
+  `requireMember`, `requireFamilyMember`, `requireOwner`, `requireManageOrSelf`,
+  `requireMemberAccess`, `requirePantry`, `requireChore`. `currentFamily` only follows a **mapped**
+  row: an invite grants nothing.
+- `resolveOrCreateFamily` / `currentFamily` — a user gets a family lazily on first add / invite.
+- **Live sync:** every write calls `changed(fam, actor, section)` → `FamilyEvents` (after commit) →
+  the client's `gb:family-changed`. Sections: members, chores, plan, weekly, pantry, shopping,
+  favourites, recipes. A write that skips it leaves other members on stale data.
+- **Prompt assembly:** `appendMemberLines` (age band, `memberPhysique`, diet, allergies, avoid,
+  favourites, conditions) + `appendAvailableLines` (ingredients + pantry), `learnedDishesNote`,
+  `sanitize` on every user string. Shared by the one-day and multi-day plans.
+- **Shopping:** `addToList` is the one writer for both builders: dedupe via `newShoppingLines`
+  against UNTICKED lines + pantry; a candidate matching a ticked line re-opens it.
+- **Pantry expiry:** `toPantryResponse(item, today)` with the user's today; `EXPIRING_DAYS` is both
+  the badge window and the restock window.
+- **Preference learning:** `bumpDishes(familyId, dishes, weight)` (accepted / cooked / favourited),
+  read back via `learnedDishesNote`.
+- `writeList` / `readList` store `List<String>` as JSON text; `applyProfile` / `readProfile` map the
+  food profile (`dietPreference` trimmed to its 32-char column).
 
 Entities: `Family`, `FamilyMember`, `FamilyMealPlan`, `FamilyMultiDayPlan`, `FamilyFavouriteMenu`,
-`FamilyDishPreference`, `FamilyPantryItem` (+`is_low`), `FamilyShoppingItem`, `FamilyChore`, `FamilyRecipe`.
-The last two are family-owned: `AuthService.FAMILY_OWNED_TABLES` deletes them with the family. DTOs: `FamilyDtos`,
-`FamilyPlannerDtos`. Frontend: [scripts/family.js](../scripts/family.js.md).
+`FamilyDishPreference`, `FamilyPantryItem`, `FamilyShoppingItem`, `FamilyChore`, `FamilyRecipe`.
+DTOs + repositories: `FamilyDtos`, `FamilyPlannerDtos`. Live events: `FamilyEvents`. Frontend:
+[scripts/family.js](../scripts/family.js.md).

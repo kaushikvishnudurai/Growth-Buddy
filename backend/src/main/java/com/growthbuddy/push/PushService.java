@@ -108,8 +108,15 @@ public class PushService {
      */
     @Transactional
     public int sendToUser(UUID userId, NotifyCategory category, String title, String body, String url) {
+        return sendToUser(userId, category, title, body, url, java.util.Map.of());
+    }
+
+    /** Mutable category plus the service worker's extra fields (a habit reminder's Done ticket). */
+    @Transactional
+    public int sendToUser(UUID userId, NotifyCategory category, String title, String body, String url,
+                          java.util.Map<String, String> extra) {
         if (!configured || isMuted(userId, category)) return 0;
-        return sendToUser(userId, title, body, url, java.util.Map.of());
+        return sendToUser(userId, title, body, url, extra);
     }
 
     /** Whether the user muted pushes of this category. Unmutable categories never ask the database. */

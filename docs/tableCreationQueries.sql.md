@@ -56,6 +56,7 @@ so it provably matches the running database.
 | families · family_members · family_meal_plans · family_dish_preferences · family_pantry_items · family_shopping_items · family_favourite_menus · family_multi_day_plans · family_recipes · family_chores | family (`family_recipes` one per `(family_id, dish_key)`; `family_chores` with optional assignee member, `due_date`, `repeat_rule`, `done_at`) |
 | money_state | **the Money document minus the ledger: `user_id`, `data` JSON, `updated_at`** |
 | money_accounts · money_transactions | Money ledger: accounts (balance computed), one row per expense/income/transfer keyed `(user_id, id)`. (`money_day_summaries`, the old AI day-summary cache, is dropped by `migrations.sql`.) |
+| bank_feed_consents | Account Aggregator consents for the bank feed (`BankFeedService`): consent id + status, last 4 digits per linked account, `synced_to` / `pending_session` / `requested_at` progress. No account numbers, no FI data. In `USER_OWNED_TABLES`. |
 
 ## `users.timezone` is load-bearing
 

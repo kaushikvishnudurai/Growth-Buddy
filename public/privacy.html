@@ -95,7 +95,10 @@ browsing activity outside the app. There is no analytics or advertising SDK.</p>
 <ul>
   <li><strong>Anthropic (Claude), via Cloudflare</strong> — the AI features (Buddy chat, quick-add
       text parsing, food and receipt photo estimates, money advice, meal-plan suggestions) send the
-      relevant content to Anthropic's Claude models to generate a response. The request passes
+      relevant content to Anthropic's Claude models to generate a response. Each Buddy chat message
+      also carries a short summary of your trackers (open tasks, habits, mood and sleep, water, food,
+      this month's spending by category and bills due, open goals and the next few days' reminders)
+      so its advice fits your day; notes, family details and individual expenses are not included. The request passes
       through Cloudflare's AI Gateway on the way, which relays it to Anthropic. If you never use
       those features, nothing is sent.</li>
   <li><strong>Meta (WhatsApp)</strong> — if you enable WhatsApp reminders, your phone number and

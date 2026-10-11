@@ -6,6 +6,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -38,14 +39,18 @@ public class QuickAddController {
     @PostMapping
     public QuickAddService.QuickAddResult parse(@Valid @RequestBody QuickAddRequest req) {
         LocalDate stored = clock.today(CurrentUser.id());
-        LocalDate today = req.today() != null && !req.today().isBefore(stored.minusDays(1))
-                && !req.today().isAfter(stored.plusDays(1)) ? req.today() : stored;
-        return service.parse(req.text(), req.habits(), today);
+        boolean deviceDay = req.today() != null && !req.today().isBefore(stored.minusDays(1))
+                && !req.today().isAfter(stored.plusDays(1));
+        LocalDate today = deviceDay ? req.today() : stored;
+        // "in 20 minutes" counts from the device's clock when its day was taken, else the stored zone's.
+        LocalTime now = deviceDay && req.now() != null ? req.now() : LocalTime.now(clock.zoneOf(CurrentUser.id()));
+        return service.parse(req.text(), req.habits(), today, now);
     }
 
     record QuickAddRequest(
             @NotBlank @Size(max = 400) String text,
             @Size(max = 100) List<String> habits,
-            LocalDate today) {
+            LocalDate today,
+            LocalTime now) {
     }
 }

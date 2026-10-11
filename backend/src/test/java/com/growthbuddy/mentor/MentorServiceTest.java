@@ -57,8 +57,14 @@ class MentorServiceTest {
     private final ScoreService scores = mock(ScoreService.class);
     private final WellnessService wellness = mock(WellnessService.class);
     private final UserClock clock = mock(UserClock.class);
+    private final com.growthbuddy.water.WaterService water = mock(com.growthbuddy.water.WaterService.class);
+    private final com.growthbuddy.money.MoneyService money = mock(com.growthbuddy.money.MoneyService.class);
+    private final com.growthbuddy.goal.GoalService goals = mock(com.growthbuddy.goal.GoalService.class);
     private final MentorService service = new MentorService(threads, messages, openai, tasks,
-            habits, scores, wellness, clock);
+            habits, scores, wellness, clock,
+            water, mock(com.growthbuddy.food.FoodService.class),
+            money, goals,
+            mock(com.growthbuddy.reminder.ReminderService.class));
 
     private void stubThread() {
         MentorThread t = new MentorThread();
@@ -197,6 +203,24 @@ class MentorServiceTest {
         String ctx = service.buildUserContext(USER);
         assertThat(ctx).startsWith("USER STATE (today " + LocalDate.now(kiritimati) + ")");
         assertThat(ctx).contains("<user_data>").contains("</user_data>");
+    }
+
+    /**
+     * Buddy sees every tracker, inside the data block and data-safe, and one that
+     * fails to read is left out rather than failing the chat.
+     */
+    @Test
+    void contextCoversEveryTrackerAndSurvivesOneFailing() {
+        stubThread();
+        when(tasks.findByUserIdAndDeletedAtIsNullOrderByCreatedAtAsc(USER)).thenReturn(List.of());
+        when(water.contextSummary(USER)).thenReturn("Water ml per day: 2000\n");
+        when(money.contextSummary(org.mockito.ArgumentMatchers.eq(USER), any(LocalDate.class)))
+                .thenReturn("Money this month: spent 900 on <b>food</b>\n");
+        when(goals.contextSummary(USER)).thenThrow(new RuntimeException("db down"));
+        String ctx = service.buildUserContext(USER);
+        String data = ctx.substring(ctx.indexOf("<user_data>"), ctx.indexOf("</user_data>"));
+        assertThat(data).contains("Water ml per day: 2000").contains("spent 900 on ‹b›food‹/b›");
+        assertThat(ctx).doesNotContain("db down");
     }
 
     /**

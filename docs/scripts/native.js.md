@@ -13,7 +13,12 @@ splash control, no device name, "this browser doesn't support push notifications
 `nativePlugin` returns a registered plugin if any, else a `Proxy` onto the bridge's own
 `Capacitor.nativePromise(plugin, method, opts)`, which reaches the same native class.
 
-- **Promise-style methods only**; a listener would need `nativeCallback` (ponytail).
+- **Promise-style methods only.** The one listener, `onLocalNotificationAction(cb)`, calls
+  `cap.nativeCallback('LocalNotifications', 'addListener', {eventName}, cb)` itself (what a
+  registered plugin's `addListener` does). `registerNotificationActions(types)` writes the button
+  sets; `scheduleLocalNotifications` passes each item's `actionTypeId` + `extra`. A press opens the
+  app (Android buttons are activity intents; iOS actions are `foreground`), and the plugin holds the
+  event until a listener attaches, so a press that cold-starts the app still arrives.
 - The proxy answers `undefined` for `then`, so an accidental `await` on it can't hang forever.
 - It exists whether or not the native class does: a missing plugin shows up only as a rejected
   call, so callers wrap in `try` (see share-card.js `shareNatively`). Also used by app.js's

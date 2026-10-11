@@ -36,7 +36,7 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
 | Loading splash (quote of the day) |
 | Report screen |
 | Insights |
-| Circle challenges + leaderboard |
+| Circle screen: blocks, the seat ring (`.gb-seat-ring`, `.gb-seat.is-lit/.is-ash/.is-private/.is-me/.is-cheered`, sized in container units), the nudge line, challenges + the quiet board, the empty ring, and the ≥760px two-column card |
 | Mentor prompt chips |
 | Color picker (habit customize) |
 | List rows |
@@ -56,7 +56,7 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
 | WhatsApp reminders |
 | Profile Settings modal |
 | WhatsApp OTP verification |
-| **Family tab & AI meal planner** (+ polish at 6119) |
+| **Family tab & AI meal planner** — includes the day rail (`.gb-family-rail`, `.gb-family-stop`) and a `pointer: coarse` 44px block that must stay LAST in the section (same-specificity rules it raises sit above it) |
 | Streak freeze / protection |
 | Report — trends drill-down |
 | Achievements gallery |

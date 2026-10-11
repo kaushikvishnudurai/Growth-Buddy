@@ -33,6 +33,8 @@ const {
   materialiseRecurring,
   toHomeAmount,
   editedHomeAmount,
+  challengeProgress,
+  financialHealth,
 } = _calc;
 
 const doc = (over) => normalizeMoney({ ...over });
@@ -124,6 +126,20 @@ const ex = (id, amount, date, category = 'food') => ({ id, amount, date, categor
   // Nothing today yet: the streak still counts from yesterday.
   assert.equal(logStreak(list.slice(1)), 2);
   assert.equal(logStreak([]), 0);
+  // A marked no-spend day is a logged day: it bridges the streak instead of breaking it.
+  {
+    const k = (n) => {
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      d.setDate(d.getDate() - n);
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    };
+    const spent = [{ date: k(0), amount: 50 }, { date: k(2), amount: 80 }];
+    assert.equal(logStreak(spent), 1, 'yesterday unlogged breaks it');
+    assert.equal(logStreak(spent, [k(1)]), 3, 'yesterday marked no-spend keeps it');
+    assert.equal(bestStreak(spent, [k(1)]), 3);
+    assert.equal(logStreak([], [k(0), k(1)]), 2, 'no-spend days alone are a streak');
+  }
 }
 
 // ---- loans ----
@@ -283,3 +299,17 @@ const ex = (id, amount, date, category = 'food') => ({ id, amount, date, categor
 }
 
 console.log('money-calc.test.mjs: all assertions passed');
+
+// ---- no-spend days count as logged: the "log N days" challenge and the health score ----
+{
+  const m = normalizeMoney({
+    expenses: [ex('a', 120, '2026-10-18'), ex('b', 60, '2026-10-20')],
+    noSpendDays: ['2026-10-19', '2026-10-17', '2026-09-30'], // last one is last month
+  });
+  const p = challengeProgress(m, { kind: 'logdays', days: 4, start: '2026-10-01', end: '2026-10-31' });
+  assert.equal(p.detail, '4 of 4 days logged', 'two spend days + two no-spend days this month');
+  assert.equal(p.state, 'won');
+  const logging = financialHealth(m).parts.find((x) => x.label === 'Expense logging');
+  assert.equal(logging.note, '4/14 recent days logged');
+}
+console.log('money-calc no-spend logging: ok');

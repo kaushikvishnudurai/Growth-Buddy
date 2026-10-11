@@ -1164,4 +1164,27 @@ public class HabitService {
         return habits.findByIdAndUserIdAndDeletedAtIsNull(id, userId)
                 .orElseThrow(() -> ApiException.notFound("Habit"));
     }
+
+    /* ---- Quick add from WhatsApp (QuickAddApplier), where the DTOs can't reach ---- */
+
+    /** Ticks today on the habit with this name; its name, or null when there is none. Already done = left alone. */
+    @Transactional
+    public String tickNamed(UUID userId, String name) {
+        for (HabitResponse h : list(userId)) {
+            if (h.name() != null && h.name().equalsIgnoreCase(name == null ? "" : name.strip())) {
+                if (!h.doneToday()) toggleToday(userId, h.id());
+                return h.name();
+            }
+        }
+        return null;
+    }
+
+    public List<String> names(UUID userId) {
+        return list(userId).stream().map(HabitResponse::name).toList();
+    }
+
+    @Transactional
+    public void createNamed(UUID userId, String name) {
+        create(userId, new CreateHabitRequest(name, null, "repeat", null, null, null, null, null, null, null));
+    }
 }

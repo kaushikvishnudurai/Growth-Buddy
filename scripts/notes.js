@@ -958,13 +958,11 @@ function colorRow(selected, onPick) {
 function labelEditor(initial, suggestions, onChange) {
   let labels = parseLabels(initial || []);
   const chips = h('div', { class: 'gb-note-label-chips' });
-  const listId = 'gb-note-labels-' + Math.random().toString(36).slice(2, 8);
   const input = h('input', {
     type: 'text',
     class: 'gb-note-label-input',
     placeholder: labels.length ? 'Add another' : 'Add a label',
     'aria-label': 'Add a label',
-    list: listId,
     autocomplete: 'off',
     onkeydown: (e) => {
       if ((e.key === 'Enter' || e.key === ',') && !e.isComposing) {
@@ -982,14 +980,43 @@ function labelEditor(initial, suggestions, onChange) {
     // A pasted "a, b, c" lands whole.
     oninput: () => {
       if (input.value.includes(',')) commit();
+      paintSuggestions();
     },
     onblur: () => commit(),
   });
-  const options = h(
-    'datalist',
-    { id: listId },
-    (suggestions || []).map((l) => h('option', { value: l }))
-  );
+  /* The user's other labels as chips under the field, narrowed by what's typed.
+     A <datalist> did this before: a native popup that sat over the colour
+     swatches, looked like no other part of the app, and on Android did nothing. */
+  const sugg = h('div', { class: 'gb-note-label-sugg' });
+  function paintSuggestions() {
+    const q = input.value.trim().toLowerCase();
+    const have = new Set(labels.map((l) => l.toLowerCase()));
+    const pick = (suggestions || [])
+      .filter((l) => !have.has(l.toLowerCase()) && (!q || l.toLowerCase().includes(q)))
+      .slice(0, 6);
+    sugg.replaceChildren(
+      ...pick.map((l) =>
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-note-label-opt',
+            'aria-label': 'Add label ' + l,
+            // Keeps focus in the input: its blur would commit the half-typed text first.
+            onpointerdown: (e) => e.preventDefault(),
+            onclick: () => {
+              input.value = l;
+              commit();
+            },
+          },
+          Icon('plus', { size: 12, sw: 2.6 }),
+          l
+        )
+      )
+    );
+    sugg.hidden = !pick.length;
+    refreshIcons();
+  }
   function commit() {
     const add = parseLabels(input.value);
     if (!add.length) {
@@ -1035,16 +1062,21 @@ function labelEditor(initial, suggestions, onChange) {
       input
     );
     input.placeholder = labels.length ? 'Add another' : 'Add a label';
+    paintSuggestions();
     refreshIcons();
   }
   paintChips();
   return {
     node: h(
       'div',
-      { class: 'gb-note-labels-edit' },
-      Icon('tag', { size: 14, sw: 2.4, color: 'var(--fg3)' }),
-      chips,
-      options
+      null,
+      h(
+        'div',
+        { class: 'gb-note-labels-edit' },
+        Icon('tag', { size: 14, sw: 2.4, color: 'var(--fg3)' }),
+        chips
+      ),
+      sugg
     ),
     /** The labels, a half-typed one included; throws the rule it breaks. */
     read() {

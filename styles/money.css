@@ -1170,10 +1170,16 @@
   flex-direction: column;
   gap: var(--space-2);
 }
+/* Name, amount, remove on the first line; the item's tag under the name, so
+   four controls still fit a 320px sheet. */
 .gb-money-receipt-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 84px auto;
   gap: var(--space-2);
   align-items: center;
+}
+.gb-money-receipt-row .gb-money-receipt-tag {
+  grid-column: 1 / 3;
 }
 /* An input's default width is its min-content, so flex: 1 alone never shrank
    the item name and the row ran off a phone-width sheet. */
@@ -1187,6 +1193,19 @@
   font-weight: 800;
   color: var(--fg1);
   font-variant-numeric: tabular-nums;
+}
+
+/* Add expense's "Scan a receipt": the way in to the item rows above. */
+.gb-money-scan-cta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+.gb-money-scan-cta .gb-btn {
+  width: auto;
+  min-height: 44px;
 }
 
 /* ---- Empty state ---- */
@@ -1736,6 +1755,20 @@
   vertical-align: middle;
   margin-left: 6px;
   color: var(--bloom-500);
+}
+
+/* An entry the bank feed imported (BankFeedService); still edits like any other. */
+.gb-money-bank-tag {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  background: var(--surface-2);
+  color: var(--fg3);
+  border: 1px solid var(--border);
 }
 
 /* ---- Home widget (mini card) ---- */

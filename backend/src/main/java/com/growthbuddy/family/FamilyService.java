@@ -574,7 +574,10 @@ public class FamilyService {
     // Grocery scan (vision)
     // ------------------------------------------------------------------
 
-    @Transactional(readOnly = true)
+    /* Not @Transactional, nor are the other AI methods below: a transaction holds
+       a pooled connection (8 of them) through an AI call of up to 45s, so a few
+       people generating at once stalled every other request in the app. Each
+       repository call runs on its own short transaction (as MentorService). */
     public GroceryScanResponse scanGroceries(GroceryScanRequest req) {
         if (req == null || !StringUtils.hasText(req.imageDataUrl())) {
             throw ApiException.badRequest("imageDataUrl is required");
@@ -615,6 +618,8 @@ public class FamilyService {
                     fallbackNeeded,
                     message,
                     "ai-grocery");
+        } catch (ApiException ex) {
+            throw ex; // the AI budget's 429: says why, and keeps the current plan / list
         } catch (Exception ex) {
             log.warn("Grocery scan fallback: image analysis failed", ex);
             return new GroceryScanResponse(
@@ -763,7 +768,6 @@ public class FamilyService {
                 .orElseThrow(() -> ApiException.badRequest("That person is not in your family."));
     }
 
-    @Transactional
     public MealPlanResponse generateMealPlan(UUID userId, MealPlanRequest req) {
         Family fam = currentFamily(userId);
         if (fam == null) {
@@ -781,26 +785,16 @@ public class FamilyService {
                 selected = filtered;
             }
         }
-        // Normalise + bound the ingredient list so a client can't blow up the
-        // prompt (token cost) with a huge or oversized payload.
-        List<GroceryItem> ingredients = new ArrayList<>();
-        if (req != null && req.ingredients() != null) {
-            for (GroceryItem g : req.ingredients()) {
-                if (g == null || !StringUtils.hasText(g.name())) {
-                    continue;
-                }
-                ingredients.add(new GroceryItem(
-                        trimTo(g.name(), 100),
-                        trimTo(g.category(), 40),
-                        trimTo(g.quantity(), 60),
-                        trimTo(g.freshness(), 20)));
-                if (ingredients.size() >= 80) {
-                    break;
-                }
-            }
-        }
+        List<GroceryItem> ingredients = normalizeIngredients(req != null ? req.ingredients() : null);
 
-        String context = buildContext(selected, ingredients) + learnedDishesNote(fam.getId());
+        // The pantry too, as the weekly plan does: it is what the family has.
+        StringBuilder ctx = new StringBuilder();
+        appendMemberLines(ctx, selected);
+        ctx.append("\nAvailable groceries:\n");
+        appendAvailableLines(ctx, ingredients, pantryNames(fam.getId()));
+        ctx.append(learnedDishesNote(fam.getId()));
+        ctx.append("\nReturn the meal plan as strict JSON in the required shape.");
+        String context = ctx.toString();
         ArrayNode groceriesNode = groceriesToJson(ingredients);
 
         JsonNode plan;
@@ -814,6 +808,8 @@ public class FamilyService {
                 String raw = openai.complete(MEAL_PLAN_PROMPT, List.of(new ChatTurn("user", context)));
                 plan = json.readTree(OpenAIClient.jsonOf(raw));
                 source = "ai";
+            } catch (ApiException ex) {
+                throw ex; // the AI budget's 429: says why, and keeps the current plan / list
             } catch (Exception ex) {
                 log.warn("Meal plan fallback: AI generation failed", ex);
                 plan = fallbackPlan("Could not generate an AI plan just now. Here is a simple balanced template.");
@@ -828,6 +824,7 @@ public class FamilyService {
         saved.setPlanJson(plan.toString());
         saved.setGroceryItemsJson(groceriesNode.toString());
         plans.save(saved);
+        changed(fam, userId, "plan");
 
         return new MealPlanResponse(saved.getId(), plan, groceriesNode, source, saved.getCreatedAt());
     }
@@ -897,20 +894,21 @@ public class FamilyService {
         if (req == null || !StringUtils.hasText(req.name())) {
             throw ApiException.badRequest("A menu name is required.");
         }
-        JsonNode plan = req.plan();
-        if (plan == null || plan.isNull()) {
-            // Fall back to a stored plan: the named planId, else the latest meal plan.
-            FamilyMealPlan src = null;
-            if (req.planId() != null) {
-                src = plans.findById(req.planId()).filter(p -> p.getFamilyId().equals(fam.getId())).orElse(null);
-            }
-            if (src == null) {
-                src = plans.findFirstByFamilyIdOrderByCreatedAtDesc(fam.getId()).orElse(null);
-            }
-            if (src == null) {
-                throw ApiException.badRequest("Generate a meal plan before saving it as a favourite.");
-            }
-            plan = readJson(src.getPlanJson());
+        // A stored plan only — the named one, else the latest. The request used to
+        // take a plan body too, which nothing sent: unbounded JSON into a TEXT column.
+        FamilyMealPlan src = null;
+        if (req.planId() != null) {
+            src = plans.findById(req.planId()).filter(p -> p.getFamilyId().equals(fam.getId())).orElse(null);
+        }
+        if (src == null) {
+            src = plans.findFirstByFamilyIdOrderByCreatedAtDesc(fam.getId()).orElse(null);
+        }
+        if (src == null) {
+            throw ApiException.badRequest("Generate a meal plan before saving it as a favourite.");
+        }
+        JsonNode plan = readJson(src.getPlanJson());
+        if (plan instanceof ObjectNode o) {
+            o.remove("cooks"); // who cooked that day is not part of the menu
         }
         FamilyFavouriteMenu fav = new FamilyFavouriteMenu();
         fav.setFamilyId(fam.getId());
@@ -921,7 +919,26 @@ public class FamilyService {
         favourites.save(fav);
         // Saving a menu is a strong "we like this" signal -> learn from it.
         bumpDishes(fam.getId(), extractDishNames(plan), 2);
+        changed(fam, userId, "favourites");
         return toFavouriteResponse(fav);
+    }
+
+    /** A saved menu back on the table: a new plan row from it, as "Use again" does for history. */
+    @Transactional
+    public MealPlanResponse useFavourite(UUID userId, UUID id) {
+        Family fam = requireMyFamily(userId);
+        FamilyFavouriteMenu fav = favourites.findById(id)
+                .filter(f -> f.getFamilyId().equals(fam.getId()))
+                .orElseThrow(() -> ApiException.notFound("that menu"));
+        FamilyMealPlan copy = new FamilyMealPlan();
+        copy.setFamilyId(fam.getId());
+        copy.setGeneratedByUserId(userId);
+        copy.setSource("saved");
+        copy.setPlanJson(fav.getPlanJson());
+        copy.setGroceryItemsJson("[]");
+        plans.save(copy);
+        changed(fam, userId, "plan");
+        return toPlanResponse(copy);
     }
 
     @Transactional(readOnly = true)
@@ -943,11 +960,11 @@ public class FamilyService {
             throw ApiException.forbidden("That menu is not in your family.");
         }
         favourites.delete(fav);
+        changed(fam, userId, "favourites");
     }
 
     // ---- Multi-day (weekly / monthly) plans ----
 
-    @Transactional
     public MultiDayPlanResponse generateMultiDay(UUID userId, MultiDayPlanRequest req) {
         Family fam = requireMyFamily(userId);
         requireMemberAccess(fam, userId);
@@ -986,6 +1003,8 @@ public class FamilyService {
                 String raw = openai.complete(MULTI_DAY_PROMPT, List.of(new ChatTurn("user", ctx.toString())));
                 plan = json.readTree(OpenAIClient.jsonOf(raw));
                 source = "ai";
+            } catch (ApiException ex) {
+                throw ex; // the AI budget's 429: says why, and keeps the current plan / list
             } catch (Exception ex) {
                 log.warn("Multi-day plan fallback: AI generation failed", ex);
                 plan = fallbackMultiDay(days);
@@ -1001,6 +1020,7 @@ public class FamilyService {
         saved.setGeneratedByUserId(userId);
         saved.setSource(source);
         multiDayPlans.save(saved);
+        changed(fam, userId, "weekly");
 
         return new MultiDayPlanResponse(saved.getId(), days, occasion, plan, source, saved.getCreatedAt());
     }
@@ -1044,8 +1064,9 @@ public class FamilyService {
         if (fam == null) {
             return List.of();
         }
+        LocalDate today = clock.today(userId);
         return pantry.findByFamilyIdAndDeletedAtIsNullOrderByCreatedAtDesc(fam.getId()).stream()
-                .map(FamilyService::toPantryResponse).toList();
+                .map(i -> toPantryResponse(i, today)).toList();
     }
 
     @Transactional
@@ -1059,7 +1080,7 @@ public class FamilyService {
         applyPantry(item, req);
         pantry.save(item);
         changed(fam, userId, "pantry");
-        return toPantryResponse(item);
+        return toPantryResponse(item, clock.today(userId));
     }
 
     @Transactional
@@ -1071,7 +1092,7 @@ public class FamilyService {
         }
         pantry.save(item);
         changed(fam, userId, "pantry");
-        return toPantryResponse(item);
+        return toPantryResponse(item, clock.today(userId));
     }
 
     @Transactional
@@ -1083,7 +1104,6 @@ public class FamilyService {
         changed(fam, userId, "pantry");
     }
 
-    @Transactional
     public PantryScanResponse scanPantry(UUID userId, PantryScanRequest req) {
         Family fam = requireMyFamily(userId);
         if (req == null || !StringUtils.hasText(req.imageDataUrl())) {
@@ -1099,6 +1119,7 @@ public class FamilyService {
                     req.imageDataUrl());
             JsonNode node = json.readTree(OpenAIClient.jsonOf(raw));
             List<PantryItemResponse> added = new ArrayList<>();
+            LocalDate today = clock.today(userId);
             for (JsonNode it : node.path("items")) {
                 String name = textOrNull(it, "name");
                 if (!StringUtils.hasText(name)) {
@@ -1111,7 +1132,7 @@ public class FamilyService {
                 item.setQuantity(trimTo(defaultText(textOrNull(it, "quantity"), ""), 60));
                 item.setExpiryDate(parseDate(textOrNull(it, "expiry")));
                 pantry.save(item);
-                added.add(toPantryResponse(item));
+                added.add(toPantryResponse(item, today));
             }
             if (!added.isEmpty()) {
                 changed(fam, userId, "pantry");
@@ -1119,6 +1140,8 @@ public class FamilyService {
             return new PantryScanResponse(added, added.size(), added.isEmpty(),
                     added.isEmpty() ? "No items detected. Try a clearer photo." : "Added " + added.size() + " item(s) to your pantry.",
                     "ai-pantry");
+        } catch (ApiException ex) {
+            throw ex; // the AI budget's 429: says why, and keeps the current plan / list
         } catch (Exception ex) {
             log.warn("Pantry scan fallback: image analysis failed", ex);
             return new PantryScanResponse(List.of(), 0, true,
@@ -1194,7 +1217,6 @@ public class FamilyService {
      * the plan's dishes ({@link #fallbackShopping}), and {@code message} says so
      * when nothing was added.
      */
-    @Transactional
     public ShoppingListResponse generateShopping(UUID userId, GenerateShoppingRequest req) {
         Family fam = requireMyFamily(userId);
         requireMemberAccess(fam, userId);
@@ -1247,6 +1269,8 @@ public class FamilyService {
                                 numberAsInt(it, "estimatedCost")));
                     }
                 }
+            } catch (ApiException ex) {
+                throw ex; // the AI budget's 429: says why, and keeps the current plan / list
             } catch (Exception ex) {
                 log.warn("Shopping generation failed; using the dish-based list", ex);
                 candidates = null;
@@ -1260,22 +1284,7 @@ public class FamilyService {
         all.addAll(candidates);
         candidates = all;
 
-        List<String> existing = shopping.findByFamilyIdOrderByCheckedAscCreatedAtDesc(fam.getId()).stream()
-                .map(FamilyShoppingItem::getName).toList();
-        List<ShoppingCandidate> fresh = newShoppingLines(candidates, existing, have);
-        for (ShoppingCandidate c : fresh) {
-            FamilyShoppingItem item = new FamilyShoppingItem();
-            item.setFamilyId(fam.getId());
-            item.setName(trimTo(c.name(), 120));
-            item.setQuantity(trimTo(c.quantity(), 60));
-            Integer cost = c.estimatedCost();
-            item.setEstimatedCost(estimateCost && cost != null && cost >= 0 ? cost : null);
-            item.setCreatedByUserId(userId);
-            shopping.save(item);
-        }
-        if (!fresh.isEmpty()) {
-            changed(fam, userId, "shopping");
-        }
+        List<ShoppingCandidate> fresh = addToList(fam, userId, candidates, have, estimateCost);
         ShoppingListResponse list = buildShoppingResponse(fam.getId());
         String message;
         if (fresh.isEmpty()) {
@@ -1291,6 +1300,49 @@ public class FamilyService {
     }
 
     record ShoppingCandidate(String name, String quantity, Integer estimatedCost) {
+    }
+
+    /**
+     * Put {@code candidates} on the list, minus what is already on it unticked or
+     * in {@code inPantry}. A line that matches a TICKED item re-opens that item:
+     * ticked means bought last time, and counting it as "already on your list"
+     * made the next week's build say there was nothing to add. Returns what went on.
+     */
+    private List<ShoppingCandidate> addToList(Family fam, UUID userId, List<ShoppingCandidate> candidates,
+                                              List<String> inPantry, boolean keepCost) {
+        List<String> open = new ArrayList<>();
+        Map<String, FamilyShoppingItem> ticked = new java.util.HashMap<>();
+        for (FamilyShoppingItem i : shopping.findByFamilyIdOrderByCheckedAscCreatedAtDesc(fam.getId())) {
+            if (i.isChecked()) {
+                ticked.putIfAbsent(shoppingKey(i.getName()), i);
+            } else {
+                open.add(i.getName());
+            }
+        }
+        List<ShoppingCandidate> fresh = newShoppingLines(candidates, open, inPantry);
+        for (ShoppingCandidate c : fresh) {
+            FamilyShoppingItem item = ticked.get(shoppingKey(c.name()));
+            if (item != null) {
+                item.setChecked(false);
+            } else {
+                item = new FamilyShoppingItem();
+                item.setFamilyId(fam.getId());
+                item.setName(trimTo(c.name(), 120));
+                item.setCreatedByUserId(userId);
+            }
+            if (StringUtils.hasText(c.quantity())) {
+                item.setQuantity(trimTo(c.quantity(), 60));
+            }
+            Integer cost = c.estimatedCost();
+            if (keepCost && cost != null && cost > 0) {
+                item.setEstimatedCost(cost);
+            }
+            shopping.save(item);
+        }
+        if (!fresh.isEmpty()) {
+            changed(fam, userId, "shopping");
+        }
+        return fresh;
     }
 
     /** {@code fromRecipes}: lines from the family's recipes; {@code rest}: dishes with no recipe ingredients. */
@@ -1369,20 +1421,7 @@ public class FamilyService {
         requireMemberAccess(fam, userId);
         List<ShoppingCandidate> wanted = restockLines(
                 pantry.findByFamilyIdAndDeletedAtIsNullOrderByCreatedAtDesc(fam.getId()), clock.today(userId));
-        List<String> existing = shopping.findByFamilyIdOrderByCheckedAscCreatedAtDesc(fam.getId()).stream()
-                .map(FamilyShoppingItem::getName).toList();
-        List<ShoppingCandidate> fresh = newShoppingLines(wanted, existing, List.of());
-        for (ShoppingCandidate c : fresh) {
-            FamilyShoppingItem item = new FamilyShoppingItem();
-            item.setFamilyId(fam.getId());
-            item.setName(trimTo(c.name(), 120));
-            item.setQuantity(trimTo(c.quantity(), 60));
-            item.setCreatedByUserId(userId);
-            shopping.save(item);
-        }
-        if (!fresh.isEmpty()) {
-            changed(fam, userId, "shopping");
-        }
+        List<ShoppingCandidate> fresh = addToList(fam, userId, wanted, List.of(), false);
         ShoppingListResponse list = buildShoppingResponse(fam.getId());
         String message = fresh.isEmpty()
                 ? (wanted.isEmpty() ? "Nothing in the pantry is low or expiring in the next 2 days."
@@ -1393,7 +1432,7 @@ public class FamilyService {
 
     /** Pure: low items, plus anything expiring on or before {@code today + 2}. */
     static List<ShoppingCandidate> restockLines(List<FamilyPantryItem> items, LocalDate today) {
-        LocalDate cutoff = today.plusDays(2);
+        LocalDate cutoff = today.plusDays(EXPIRING_DAYS);
         List<ShoppingCandidate> out = new ArrayList<>();
         for (FamilyPantryItem i : items) {
             boolean expiring = i.getExpiryDate() != null && !i.getExpiryDate().isAfter(cutoff);
@@ -1771,15 +1810,20 @@ public class FamilyService {
                 readJson(f.getPlanJson()), f.getCreatedAt());
     }
 
-    private static PantryItemResponse toPantryResponse(FamilyPantryItem i) {
+    /** "Expiring soon": the window the badge shows AND the one restock adds from — they used to be 3 and 2. */
+    static final int EXPIRING_DAYS = 2;
+
+    /* Against the user's today, not the server's: on a UTC server an item expiring
+       "today" in India read as tomorrow until 05:30. */
+    static PantryItemResponse toPantryResponse(FamilyPantryItem i, LocalDate today) {
         Integer dte = null;
         boolean soon = false;
         boolean expired = false;
         if (i.getExpiryDate() != null) {
-            long d = ChronoUnit.DAYS.between(LocalDate.now(), i.getExpiryDate());
+            long d = ChronoUnit.DAYS.between(today, i.getExpiryDate());
             dte = (int) d;
             expired = d < 0;
-            soon = d >= 0 && d <= 3;
+            soon = d >= 0 && d <= EXPIRING_DAYS;
         }
         return new PantryItemResponse(i.getId(), i.getName(), i.getCategory(), i.getQuantity(),
                 i.getExpiryDate(), dte, soon, expired, i.isLeftover(), i.isLow(), i.getCreatedAt());
@@ -1864,13 +1908,15 @@ public class FamilyService {
             Integer age = ageFromDob(m.getDob());
             sb.append("- ").append(sanitize(m.getName()))
                     .append(" (").append(m.getRelationship().name()).append("), age ")
-                    .append(age != null ? age : "unknown").append(" [").append(ageCategory(age)).append("]");
+                    .append(age != null ? age : "unknown").append(" [").append(ageCategory(age)).append("]")
+                    .append(memberPhysique(m));
             if (StringUtils.hasText(m.getDietPreference())) {
                 sb.append(", diet: ").append(sanitize(m.getDietPreference()));
             }
             appendListLine(sb, "allergies", readList(m.getAllergies()));
             appendListLine(sb, "avoid", readList(m.getIngredientsToAvoid()));
             appendListLine(sb, "favourite dishes", readList(m.getFavouriteDishes()));
+            appendListLine(sb, "favourite ingredients", readList(m.getFavouriteIngredients()));
             appendListLine(sb, "medical conditions", readList(m.getMedicalConditions()));
             sb.append("\n");
         }
@@ -2130,7 +2176,7 @@ public class FamilyService {
         }
         m.setFavouriteDishes(writeList(p.favouriteDishes()));
         m.setFavouriteIngredients(writeList(p.favouriteIngredients()));
-        m.setDietPreference(StringUtils.hasText(p.dietPreference()) ? p.dietPreference().trim() : null);
+        m.setDietPreference(StringUtils.hasText(p.dietPreference()) ? trimTo(p.dietPreference(), 32) : null); // column is 32
         m.setAllergies(writeList(p.allergies()));
         m.setIngredientsToAvoid(writeList(p.ingredientsToAvoid()));
         m.setMedicalConditions(writeList(p.medicalConditions()));
@@ -2182,42 +2228,6 @@ public class FamilyService {
         } catch (Exception ex) {
             return null;
         }
-    }
-
-    private String buildContext(List<FamilyMember> selected, List<GroceryItem> ingredients) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("Family members (").append(selected.size()).append("):\n");
-        for (FamilyMember m : selected) {
-            Integer age = ageFromDob(m.getDob());
-            sb.append("- ").append(sanitize(m.getName()))
-                    .append(" (").append(m.getRelationship().name()).append(")")
-                    .append(", age ").append(age != null ? age : "unknown")
-                    .append(" [").append(ageCategory(age)).append("]")
-                    .append(memberPhysique(m));
-            if (StringUtils.hasText(m.getDietPreference())) {
-                sb.append(", diet: ").append(sanitize(m.getDietPreference()));
-            }
-            appendListLine(sb, "allergies", readList(m.getAllergies()));
-            appendListLine(sb, "avoid", readList(m.getIngredientsToAvoid()));
-            appendListLine(sb, "favourite dishes", readList(m.getFavouriteDishes()));
-            appendListLine(sb, "favourite ingredients", readList(m.getFavouriteIngredients()));
-            appendListLine(sb, "medical conditions", readList(m.getMedicalConditions()));
-            sb.append("\n");
-        }
-        sb.append("\nAvailable groceries:\n");
-        if (ingredients.isEmpty()) {
-            sb.append("(none provided — suggest a balanced plan from common South Indian staples)\n");
-        } else {
-            for (GroceryItem g : ingredients) {
-                sb.append("- ").append(sanitize(g.name()));
-                if (StringUtils.hasText(g.quantity())) {
-                    sb.append(" (").append(sanitize(g.quantity())).append(")");
-                }
-                sb.append("\n");
-            }
-        }
-        sb.append("\nReturn the meal plan as strict JSON in the required shape.");
-        return sb.toString();
     }
 
     private static void appendListLine(StringBuilder sb, String label, List<String> values) {

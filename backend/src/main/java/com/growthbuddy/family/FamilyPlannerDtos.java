@@ -60,7 +60,6 @@ enum Occasion {
 record SaveFavouriteRequest(
         @NotBlank @Size(max = 120) String name,
         UUID planId, // optional: a specific meal plan; else the latest
-        JsonNode plan,  // optional: an explicit plan body to save
         String occasion) {
 }
 

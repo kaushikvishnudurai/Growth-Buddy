@@ -132,9 +132,9 @@ public class AuthService {
         "water_entries", "water_goals", "food_entries", "food_photo_logs", "food_diet_checks",
         "food_favourites",
         "goal_actions", "goals", "daily_scores", "daily_logs",
-        "mentor_threads", "circle_members", "circle_post_reactions", "circle_posts",
+        "mentor_threads", "circle_members", "circle_post_reactions", "circle_post_comments", "circle_posts",
         "push_subscriptions", "notifications", "custom_sounds", "focus_sessions", "weekly_reviews",
-        "money_state", "money_accounts", "money_transactions",
+        "money_state", "money_accounts", "money_transactions", "bank_feed_consents",
         "calendar_reminders", "reminder_done", "note_drafts", "note_edit_drafts", "notes", "sessions",
         "idempotency_keys",
     };
@@ -503,6 +503,8 @@ public class AuthService {
             {"reminder_dispatch_log", "reminder_id", "calendar_reminders"},
             // Other members' kudos on this account's posts (its own kudos: USER_OWNED_TABLES).
             {"circle_post_reactions", "post_id", "circle_posts"},
+            // Other members' replies under this account's posts (its own: USER_OWNED_TABLES).
+            {"circle_post_comments", "post_id", "circle_posts"},
         };
         // Kept as a guard even though every table above now exists: a DELETE against
         // a missing table throws, which marks the whole transaction rollback-only and

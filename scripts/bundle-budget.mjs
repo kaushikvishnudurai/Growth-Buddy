@@ -10,6 +10,12 @@
    Boot lowered after the money split (money-core.js / money-home.js, ScreenMoney
    lazy): 447,141 B raw (137.8 kB gzip) -> 469,498 B. Precache left: the split
    moves bytes between chunks, it doesn't remove them.
+   Raised 2026-10-11 (build 78) for the low-input round: Quick add as the one
+   command box, notification actions, Home one-tap cards and nudges, Circle
+   replies/cheers/invites, the bank feed's settings, one-tap expense + scan.
+   main was already over (boot 470,661 B). Measured boot 495,155 B -> 519,913 B,
+   precache 1,403,472 B -> 1,473,646 B. day-plan.js and starter-packs.js were
+   moved out to on-tap imports first.
    (Workbox prints "41 entries": the icons are listed twice, once by the glob
    and once by includeAssets/manifest; they are fetched and stored once.)
    Raw bytes, not gzip: deterministic and what the precache actually stores.
@@ -22,8 +28,8 @@ import { readFileSync, statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 
-const BOOT_BUDGET = 469_498;
-const PRECACHE_BUDGET = 1_321_998;
+const BOOT_BUDGET = 519_913;
+const PRECACHE_BUDGET = 1_473_646;
 
 const dist = process.argv[2] || 'dist';
 const fail = (msg) => {
