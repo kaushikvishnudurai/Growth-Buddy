@@ -9018,7 +9018,22 @@ button.gb-food-level {
      names someone remembered. */
   :where(.gb-scroll) > :where(.gb-rise:not(.gb-goals):not(.gb-mentor)) {
     max-width: 900px;
-    margin-left: 40px;
+    margin-left: calc(40px - var(--gutter));
+    margin-right: auto;
+    padding-inline: var(--gutter);
+  }
+  /* One left edge on every screen: content starts under the header title (40px
+     in), whatever the screen's own width. These used to centre (margin: 0 auto),
+     so each screen began somewhere else and, at 2560px and up, the content sat
+     a thousand pixels from its title. Mentor (a chat column) stays centred. */
+  .gb-dash,
+  .gb-cal,
+  .gb-goals {
+    margin-left: 0;
+    margin-right: auto;
+  }
+  .gb-scroll > :is(.gb-notes, .gb-focus, .gb-summary-page, .gb-health) {
+    margin-left: calc(40px - var(--gutter));
     margin-right: auto;
   }
 

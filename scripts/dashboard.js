@@ -2665,7 +2665,7 @@ function ScreenFood({
   const on = (k) => !features || features[k] !== false;
   return h(
     'div',
-    { class: 'gb-rise gb-food-screen', style: { padding: '0 0 24px' } },
+    { class: 'gb-rise gb-food-screen', style: { paddingBottom: '24px' } },
     on('water')
       ? h(
           'div',
