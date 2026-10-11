@@ -30,7 +30,7 @@ import {
   versionedChannel,
 } from './native.js';
 import { occursOn } from './recurrence.js';
-import { drinkRateByHour } from './insights.js';
+import { drinkRateByHour } from './water-stats.js';
 import { SOUNDS } from './chime.js';
 
 export function pushSupported() {

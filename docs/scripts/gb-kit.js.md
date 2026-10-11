@@ -7,7 +7,7 @@ Every screen builds DOM from these. Element-returning factories, no framework, n
 - **`h(tag, attrs, ...children)`** (18) — hyperscript. Children may be strings, numbers, nodes,
   arrays, or `null`/`false` (skipped, which is why conditional children read as `cond ? node : null`).
   `attrs`: `class`, `style` (object), `onclick`/`on*` handlers, anything else set as an attribute.
-- **`Icon(name, {size, sw, color, style, className})`** (113) — renders `<span.gb-icon><svg>`.
+- **`Icon(name, {size, sw, color, style, className})`** — renders `<span.gb-icon><svg>`, the svg built on the spot (no sweep).
   `sw` is stroke-width. **The name must exist in `scripts/icons.js`** or nothing renders.
 
 ## Components
@@ -16,7 +16,7 @@ Every screen builds DOM from these. Element-returning factories, no framework, n
 |---|---|
 | `activate(fn)` | spread into attrs to make a non-button keyboard-operable (click + Enter/Space + role) |
 | `plural(count, singular, pluralForm)` | |
-| `refreshIcons()` | re-scan for icon placeholders after injecting DOM |
+| `refreshIcons()` | **a no-op**, kept so its ~60 call sites need no edit. `Icon()` builds the `<svg>` itself now (lucide `createElement` over the `icons.js` subset); the old `<i data-lucide>` + `createIcons()` sweep matched every svg it had made before (lucide copies `data-lucide` onto it) and rebuilt every icon on the page per render |
 | `DOMAIN` | domain → color map (`habit`, `fitness`, `study`, `journal`) |
 | `IconChip({domain, icon, size, iconSize})` | |
 | `Pill({icon, label, bg, fg, dot, style})` | |
@@ -47,7 +47,7 @@ Every screen builds DOM from these. Element-returning factories, no framework, n
 
 ## Notes
 
-- Top of file shims `window.lucide.createIcons` over the icon **subset** so the old call shape keeps
-  working off-CDN; `timer.js` relies on it too.
+- No `window.lucide` shim any more: nothing sweeps the DOM for icons. An unregistered name renders
+  nothing and warns on the console (`icons.test.mjs` catches it first).
 - Adding a nav destination = `NAV_CATALOG` here **and** a `SCREENS` entry in `app.js`. Give it a
   `group` too, or it lands ungrouped at the top of the "More" sheet.

@@ -2163,14 +2163,27 @@ function MiniCalendarCard({
     if (Number.isNaN(dt.getTime())) return '';
     return dateKey(dt.getFullYear(), dt.getMonth(), dt.getDate());
   }
+  // Bucketed by day once per render: the 42-cell grid used to re-filter every
+  // task (two Date parses each) per cell.
+  const dueByKey = new Map();
+  const doneByKey = new Map();
+  const bucket = (map, key, t) => {
+    if (!key) return;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(t);
+  };
+  for (const t of tasks || []) {
+    bucket(dueByKey, keyFromInstant(t.dueAt), t);
+    if (t.done) bucket(doneByKey, keyFromInstant(t.doneAt), t);
+  }
   function dueTasksOn(key) {
-    return (tasks || [])
-      .filter((t) => keyFromInstant(t.dueAt) === key)
+    return (dueByKey.get(key) || [])
+      .slice()
       .sort((a, b) => String(a.dueAt || '').localeCompare(String(b.dueAt || '')));
   }
   function completedTasksOn(key) {
-    return (tasks || [])
-      .filter((t) => !!t.done && keyFromInstant(t.doneAt) === key)
+    return (doneByKey.get(key) || [])
+      .slice()
       .sort((a, b) => String(a.doneAt || '').localeCompare(String(b.doneAt || '')));
   }
   function remindersOn(key) {
@@ -2198,7 +2211,7 @@ function MiniCalendarCard({
     const dt = new Date(calYear, calMonth, startDay + i);
     const key = dateKey(dt.getFullYear(), dt.getMonth(), dt.getDate());
     const inMonth = dt.getFullYear() === calYear && dt.getMonth() === calMonth;
-    const taskCount = dueTasksOn(key).length + completedTasksOn(key).length;
+    const taskCount = (dueByKey.get(key) || []).length + (doneByKey.get(key) || []).length;
     const rems = remindersOn(key);
     // A daily reminder put a "1" on every day ahead, so the badge said nothing.
     // The number counts one-off items only; a repeating one is a dot, and a day

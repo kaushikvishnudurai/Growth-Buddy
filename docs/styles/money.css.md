@@ -4,6 +4,13 @@ Reuses the app's tokens, cards and buttons. Signature elements: the "safe to spe
 growth/sprout motif. All classes are `gb-money-*`. Numbers in the banners map to the Money feature
 list (e.g. "(14)" = financial health).
 
+**Loads with the screen, not at boot:** `scripts/money-screen.js` imports it (Vite emits
+`money-screen-*.css` and waits for it before the import resolves), so it is out of the
+render-blocking CSS. Every lazy Money import goes through `money-screen.js`; `money.js` itself stays
+CSS-free because node tests import it. What boot draws lives in **`styles/money-home.css`**
+(linked from `index.html`): Home's mini card (`gb-money-mini*`), `.gb-money-cat-ic` (Settings'
+bank-feed row) and `.gb-seg:disabled` (every segmented control).
+
 | Section | Used by |
 |---|---|
 | Sub-tabs — `position: sticky` at the top of `.gb-scroll`, full-bleed `--surface` bar (same recipe as `.gb-family-sectionnav`) | `tabBar` |
@@ -40,7 +47,7 @@ list (e.g. "(14)" = financial health).
 | Tag manager (custom tags) | customise pane |
 | Simulator (23) | coach |
 | Reflection dot (12) | expense rows |
-| Home widget (mini card) | `MoneyHomeCard` |
+| Home widget (mini card): moved to `styles/money-home.css` | `MoneyHomeCard` |
 | Star rating (reflection, 12) — `.gb-stars` + its caption; the amber fill is decoration, the caption carries the meaning | reflection modal |
 | Every month (`gb-money-rec-row`, `.is-paused` dims; `gb-money-exp-amt.is-in` green; `gb-money-forecast-in`) | income tab, forecast |
 | Budget rollover (`gb-money-roll` 44px checkbox label in the set-budgets row, `gb-money-bcard-carry` "+₹X carried", `.is-less` when negative) | set-budgets modal, budgets |

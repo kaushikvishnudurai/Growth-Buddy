@@ -123,6 +123,11 @@ body {
   padding: max(env(safe-area-inset-top, 0px), 22px) 20px var(--head-pad-b);
   flex: none;
 }
+/* Premium on at boot, its stylesheet (loaded on demand) not in yet: show
+   nothing rather than a classic frame that then jumps. app.js applyPremium. */
+html[data-premium='loading'] #root {
+  visibility: hidden;
+}
 /* The live seedling ships in the markup on every screen but only the premium
    skin shows it (styles/premium.css §9), so the skin stays CSS, not a JS fork. */
 .gb-head .gb-sprout {

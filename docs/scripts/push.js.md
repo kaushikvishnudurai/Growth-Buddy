@@ -28,7 +28,7 @@ reminders off the end), `MAX_QUEUED` 100. ponytail: an app unopened past the hor
 |---|---|
 | `upcomingReminderAlarms(reminders, now, days, lead)` | expands via `recurrence.js` `occursOn` (same rules the calendar draws). Skips: no `time` (all-day), a `doneDates` hit, an unparseable time (NaN would reject the whole batch). Rings `notifyBefore`, else `lead` (`leadOf`; the user's `reminderLead`, = server `ReminderPrefs.leadFor`); **an early ring already gone falls back to on time**. `notifyBefore2` (`secondLeadOf`) is a second alert — none when equal to the first, no on-time fallback. A future `snoozedUntil` is one more alarm |
 | `isQuietAt(quiet, at)` | quiet hours, may wrap midnight, end exclusive. Mirrors `ReminderPrefs.isQuiet`. Holds back **only** water + habit nudges, never a reminder the user timed |
-| `usualDrinkHours(times)` | hours with water logged on 60%+ of days (`insights.js` `drinkRateByHour`), needs 5 days. **Not a stored pref** — app.js adds it as `usualHours` per sync |
+| `usualDrinkHours(times)` | hours with water logged on 60%+ of days (`water-stats.js` `drinkRateByHour`; never import `insights.js` here, it would join the boot chunk), needs 5 days. **Not a stored pref** — app.js adds it as `usualHours` per sync |
 | `upcomingWaterAlarms(prefs, now, days)` | `WATER_DEFAULTS` `{on, everyMins: 120, from, to}` (= `ui_prefs.water`). 30-minute floor; inverted/empty window → silence; a slot right after a usual hour is dropped. Not recurrence |
 | `upcomingHabitAlarms(habits, now, days)` | daily at `reminderTime` regardless of cadence; `doneToday` skips **today only** |
 | `upcomingAlarms({reminders, water, habits, sound, lead, quiet}, now)` | merge, quiet-filter, sort, cap, then stamp `id`, `sound`, `channelId` |

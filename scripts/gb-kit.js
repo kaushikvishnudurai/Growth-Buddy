@@ -2,16 +2,9 @@
    Growth Buddy — UI primitives (vanilla JS)
    Element-returning factories, exported as ES module bindings.
    ===================================================================== */
-import { createIcons } from 'lucide';
+import { createElement } from 'lucide';
 import { icons } from './icons.js';
 import { toast } from './toast.js';
-
-// Preserve the historic `window.lucide.createIcons()` call shape now that we've
-// moved off the CDN UMD build. refreshIcons() (below) and timer.js both use it.
-// We pass only the icon subset (scripts/icons.js) so the bundle stays small.
-if (typeof window !== 'undefined' && !window.lucide) {
-  window.lucide = { createIcons: (opts) => createIcons({ icons, ...(opts || {}) }) };
-}
 
 /* ---- Tiny hyperscript helper ----
      h('div', { class: 'x', onclick: fn }, child1, child2, ...)
@@ -92,24 +85,17 @@ function plural(count, singular, pluralForm) {
 }
 
 /* ---- Lucide icon ----
-     Lucide's CDN script exposes `lucide.createIcons()` which scans the
-     DOM for `<i data-lucide="...">` placeholders and replaces them with
-     inline SVGs. We render the placeholder; whoever mounts the tree
-     should call GB.refreshIcons() (or it's auto-debounced below). */
-let _iconRaf = 0;
-function refreshIcons() {
-  if (_iconRaf) return;
-  _iconRaf = requestAnimationFrame(() => {
-    _iconRaf = 0;
-    if (window.lucide && window.lucide.createIcons) {
-      try {
-        window.lucide.createIcons();
-      } catch (_) {
-        /* noop */
-      }
-    }
-  });
-}
+     Icon() builds the <svg> itself from the subset in scripts/icons.js.
+     It used to drop an <i data-lucide> placeholder and debounce a
+     createIcons() sweep, but lucide copies data-lucide onto the svg it makes,
+     so every sweep matched every icon already on the page and rebuilt them
+     all: one full-document rebuild per render, toast or timer button. */
+// ponytail: kept as a no-op so the ~60 call sites across screens need no edit.
+function refreshIcons() {}
+
+// lucide's own name -> export mapping ('arrow-up-right' -> 'ArrowUpRight').
+const toPascal = (name) =>
+  name.replace(/(\w)(\w*)(_|-|\s*)/g, (_, a, b) => a.toUpperCase() + b.toLowerCase());
 
 function Icon(name, { size = 20, sw = 2, color, style, className } = {}) {
   const wrap = h('span', {
@@ -123,13 +109,27 @@ function Icon(name, { size = 20, sw = 2, color, style, className } = {}) {
       style || null
     ),
   });
-  const i = document.createElement('i');
-  i.setAttribute('data-lucide', name);
-  i.setAttribute('width', String(size));
-  i.setAttribute('height', String(size));
-  i.setAttribute('stroke-width', String(sw));
-  wrap.appendChild(i);
-  refreshIcons();
+  const node = icons[toPascal(name)];
+  if (!node) {
+    // Same outcome as the old sweep: nothing renders. icons.test.mjs catches it.
+    console.warn('Icon: "' + name + '" is not registered in scripts/icons.js');
+    return wrap;
+  }
+  const [tag, attrs, children] = node;
+  wrap.appendChild(
+    createElement([
+      tag,
+      {
+        ...attrs,
+        'data-lucide': name,
+        width: size,
+        height: size,
+        'stroke-width': sw,
+        class: 'lucide lucide-' + name,
+      },
+      children,
+    ])
+  );
   return wrap;
 }
 
