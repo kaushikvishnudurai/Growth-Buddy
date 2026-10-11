@@ -11450,7 +11450,7 @@ textarea:focus-visible,
 }
 @media (hover: hover) {
   .gb-note-opener:hover {
-    background: var(--surface-2);
+    background-color: var(--surface-2);
   }
 }
 .gb-note-composer-body {
@@ -12303,6 +12303,170 @@ textarea:focus-visible,
   background: var(--surface-3);
   font-family: var(--font-mono);
   font-size: 0.85em;
+}
+
+/* ---- Notes: the page ----
+   The screen's one signature is the paper itself: every note, on the board and
+   open in the sheet, is a page with a margin rule down its left edge, the line
+   a notebook draws before you write. Goals' milestone trail is the same line
+   walked (§"Goals: the trail"), so the two read as one family. Everything
+   else stays quiet so the writing is what you see.
+   --note-paper / --note-rule come from a note's colour (notes.js NoteCard). */
+.gb-notes {
+  --note-margin: 30px;
+}
+.gb-note-card {
+  padding-left: calc(var(--note-margin) + 4px);
+  background: var(--note-paper, var(--surface));
+  border-color: var(--border);
+}
+.gb-note-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--note-margin) - 12px);
+  border-left: 1.5px solid var(--note-rule, color-mix(in srgb, var(--brand) 32%, transparent));
+  pointer-events: none;
+}
+.gb-note-card.is-pinned {
+  border-color: var(--brand);
+}
+/* The cover bleeds to every edge and sits over the rule, which starts under it. */
+.gb-note-cover {
+  z-index: 1;
+  margin-left: calc(-4px - var(--note-margin));
+}
+.gb-note-card-title {
+  font-size: 1rem;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+.gb-note-card-time {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 400;
+}
+
+/* The page in the editor: paper a step off the sheet, the rule in its margin,
+   body text at a reading size and measure. The rule is a background on the
+   scroller (not a pseudo-element) so it spans the visible page while the
+   writing scrolls past it. Padding-right holds the line to ~70ch on a wide
+   composer, so a long paragraph never runs the full 900px. */
+.gb-editor-wrap {
+  background: var(--bg);
+}
+.gb-editor-bar {
+  background: transparent;
+}
+.gb-editor {
+  --page-top: 16px;
+  --page-left: 44px;
+  min-height: 140px;
+  padding: var(--page-top) max(18px, calc(100% - 72ch)) 20px var(--page-left);
+  background: linear-gradient(
+      to right,
+      transparent 29px,
+      color-mix(in srgb, var(--brand) 32%, transparent) 29px 30.5px,
+      transparent 30.5px
+    )
+    no-repeat;
+  font-size: 1rem;
+  line-height: 1.7;
+}
+.gb-editor:empty::before {
+  top: var(--page-top);
+  left: var(--page-left);
+}
+@media (max-width: 480px) {
+  .gb-notes {
+    --note-margin: 24px;
+  }
+  .gb-editor {
+    --page-left: 34px;
+    background-position: -8px 0;
+  }
+}
+.gb-editor h2 {
+  font-size: 1.25rem;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  margin: 14px 0 6px;
+}
+.gb-editor h2:first-child {
+  margin-top: 0;
+}
+.gb-editor blockquote {
+  margin: 10px 0;
+  padding-left: 14px;
+  border-left-color: color-mix(in srgb, var(--brand) 45%, transparent);
+  font-style: italic;
+}
+/* The read-only view (offline, Trash) is the same page, without the toolbar. */
+.gb-editor.gb-note-readonly {
+  min-height: 0;
+  max-height: none;
+  border-radius: var(--radius-md);
+  background-color: var(--bg);
+}
+
+/* The title is the page's heading: written on the sheet, not boxed in a field.
+   The underline comes up in brand on focus, so the field still says where the
+   caret is. The doubled class makes it (0,4,0): the premium skin recesses .gb-input
+   at up to (0,3,1) in dark, and that boxed it back in. */
+:is(.gb-note-modal, .gb-note-composer) .gb-input.gb-note-title-input.gb-note-title-input {
+  padding: 6px 2px 8px;
+  min-height: 44px;
+  border: 0;
+  border-bottom: 1.5px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  font-family: var(--font-display);
+  font-size: 1.375rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+:is(.gb-note-modal, .gb-note-composer) .gb-input.gb-note-title-input.gb-note-title-input:focus {
+  border-bottom-color: var(--brand);
+  box-shadow: 0 1px 0 0 var(--brand);
+}
+.gb-note-title-input::placeholder {
+  font-weight: 700;
+}
+/* The sheet is a page, so it gets a page's width on a screen with room for one:
+   ~65 characters a line at the editor's size. */
+@media (min-width: 720px) {
+  .gb-modal.gb-note-modal {
+    max-width: 660px;
+  }
+}
+.gb-note-modal-head .gb-modal-title {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg3);
+}
+.gb-note-modal .gb-editor {
+  min-height: 200px;
+}
+/* The closed composer is the top line of a fresh page: the pen sits in the
+   margin, the prompt starts past the rule, where the writing will. */
+.gb-note-opener {
+  gap: 18px;
+  background: linear-gradient(
+      to right,
+      transparent 36px,
+      color-mix(in srgb, var(--brand) 32%, transparent) 36px 37.5px,
+      transparent 37.5px
+    )
+    no-repeat;
+}
+/* The page says where the caret is: the editor itself draws no focus ring. */
+.gb-editor-wrap:focus-within {
+  border-color: var(--ring);
 }
 
 /* ---- freeze calendar ----
@@ -13862,6 +14026,153 @@ button.gb-tone-chip:focus-visible {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+/* ---- Goals: the trail ----
+   The screen's one signature: a goal's milestones are stops on a path, in the
+   order they were set, because that order is the plan. Each stop is a node on
+   one vertical line; the stretch behind you is solid, the road ahead dashed,
+   and the first open stop is ringed and tagged Next. The line is Notes' margin
+   rule walked (§"Notes: the page"). Open stops carry their number in Space
+   Mono. Scoped to .gb-goal-trail: GoalTasks reuses the row classes for a list
+   that has no order. */
+.gb-goal-trail {
+  gap: 10px;
+}
+.gb-goal-trail > .gb-goal-ms-row {
+  position: relative;
+  min-height: 30px;
+}
+.gb-goal-trail > .gb-goal-ms-row:not(.is-editing)::before,
+.gb-goal-trail > .gb-goal-ms-row:not(.is-editing)::after {
+  content: '';
+  position: absolute;
+  left: 11px;
+  border-left: 2px dashed var(--border-strong);
+  pointer-events: none;
+}
+/* Into this stop from the one above, and out of it to the one below (across the
+   list's 10px gap). A stretch is walked when the stop it leaves is done. */
+.gb-goal-trail > .gb-goal-ms-row::before {
+  top: -1px;
+  height: calc(50% - 12px);
+}
+.gb-goal-trail > .gb-goal-ms-row::after {
+  top: calc(50% + 13px);
+  bottom: -11px;
+}
+.gb-goal-trail > .gb-goal-ms-row:first-child::before,
+.gb-goal-trail > .gb-goal-ms-row:last-child::after {
+  display: none;
+}
+.gb-goal-trail > .gb-goal-ms-row.is-done::after,
+.gb-goal-trail > .gb-goal-ms-row.is-done + .gb-goal-ms-row::before {
+  border-left-style: solid;
+  border-left-color: var(--brand);
+}
+.gb-goal-trail .gb-goal-ms-check {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border-width: 2px;
+  background: var(--surface);
+  color: var(--fg3);
+}
+.gb-goal-trail .gb-goal-ms-check.is-done {
+  background: var(--brand-fill);
+  border-color: var(--brand-fill);
+}
+.gb-goal-ms-n {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  line-height: 1;
+}
+.gb-goal-trail .gb-goal-ms-row.is-next .gb-goal-ms-check {
+  border-color: var(--brand);
+  color: var(--brand-ink);
+  box-shadow: 0 0 0 4px var(--brand-soft);
+}
+.gb-goal-trail .gb-goal-ms-row.is-next .gb-goal-ms-title {
+  font-weight: 700;
+}
+/* The due date is the stop's second line, so every stop reads the same way
+   whether its name wraps or not. */
+.gb-goal-trail .gb-goal-ms-due {
+  display: block;
+  margin: 1px 0 0;
+}
+.gb-goal-ms-nexttag {
+  display: inline-block;
+  margin-left: 8px;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--brand-ink);
+  vertical-align: 1px;
+}
+.gb-goal-trail .gb-goal-ms-check:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+/* The edit row sits on the path where its stop was. */
+.gb-goal-trail > .gb-goal-ms-row.is-editing {
+  margin-left: -8px;
+}
+
+/* Quiet the rest of the card so the trail is the thing you see: the goal's
+   name in the display face, every count in mono, no horizon stripe (the
+   section and the pill already say which horizon). */
+.gb-goals .gb-goal-card {
+  border-left-width: 1px;
+  border-left-color: var(--border);
+  box-shadow: var(--shadow-xs);
+}
+.gb-goals .gb-goal-title {
+  font-family: var(--font-display);
+  font-size: 1.0625rem;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+.gb-goals .gb-goal-ms-pct,
+.gb-goals .gb-goal-progress-pct,
+.gb-goals .gb-goal-progress-stat-val,
+.gb-goals .gb-goal-section-count,
+.gb-goals .gb-goal-ms-due,
+.gb-goals .gb-goal-action-date {
+  font-family: var(--font-mono);
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.gb-goals .gb-goal-ms-pct,
+.gb-goals .gb-goal-progress-pct {
+  color: var(--fg2);
+}
+/* A horizon's heading says how far it reaches. */
+.gb-goal-section-head {
+  align-items: flex-end;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.gb-goal-section-name {
+  min-width: 0;
+}
+.gb-goal-section-head .gb-goal-section-title {
+  margin: 0;
+  font-size: 1.125rem;
+  letter-spacing: -0.01em;
+}
+.gb-goal-section-reach {
+  margin-top: 2px;
+  font-size: var(--text-xs);
+  color: var(--fg3);
+}
+.gb-goals .gb-goal-section-count {
+  background: transparent;
+  color: var(--fg3);
+  font-size: var(--text-xs);
 }
 
 /* ---- Reminders: done tick, notes, the richer repeat rule (calendar.js) ---- */

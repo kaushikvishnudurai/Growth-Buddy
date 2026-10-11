@@ -1485,7 +1485,8 @@ function ScreenNotes({
     const card = h('article', {
       class: 'gb-note-card' + (note.pinned ? ' is-pinned' : '') + (count ? ' has-cover' : ''),
       'data-id': note.id,
-      style: c ? { background: c.bg, borderColor: c.line } : null,
+      // The colour tints the paper and inks the margin rule (app.css .gb-note-card).
+      style: c ? { '--note-paper': c.bg, '--note-rule': c.line } : null,
       tabindex: '0',
       role: 'button',
       'aria-label':
