@@ -510,6 +510,13 @@ public class AuthService {
             users.save(user);
         }
         sessions.revokeAllForUser(userId);
+        // Every device stops hearing from this account now, not at the purge: a
+        // subscription outlives the session it was made in (CRS-3). PushService
+        // also skips a pending account; this keeps a cancelled-then-reused
+        // browser from being pushed the old account's reminders. A cancel
+        // re-subscribes from the app.
+        em.createNativeQuery("DELETE FROM push_subscriptions WHERE user_id = ?1")
+                .setParameter(1, userId).executeUpdate();
         notifyQuietly(user.getEmail(), "Your Growth Buddy account will be deleted on " + deletionDate(user),
                 greeting(user) + "We received your request to delete your Growth Buddy account. It is "
                         + "signed out everywhere, and it and all of its data will be permanently deleted on "
