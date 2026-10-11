@@ -20,7 +20,7 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
 | Buttons |
 | Chips / pills |
 | Icon chip |
-| Bottom nav |
+| Bottom nav — incl. the shell's signature: the active tab's sprout (`.gb-nav-tab.is-active::before/::after`, the logo's coral + sun leaves above the icon; grows only on `.is-sprouting`; `--sprout-lift` places it, the landscape rail overrides it; hidden on premium's floating pill) and `.gb-nav-brand` (the sidebar wordmark, ≥1024px only) |
 | Habit / task check |
 | Login |
 | Notification bell — incl. the header links (`.gb-notif-link`: Mark all read / Clear read), filter chips (`.gb-notif-chips`, `.gb-notif-chip.is-on`) and `.gb-notif-more` (Load older) |
@@ -67,6 +67,8 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
 | Settings — Home screen customizer |
 | Settings — Display (text size preview) |
 | Notes — composer, editor (photos: develop-in animation, drop zone, picked ring), cards with a photo cover |
+| Notes: the page (inside the Notes views block: margin rule on cards, opener and editor, reading measure, headline title, 660px sheet) |
+| Goals: the trail (after the milestone edit row: numbered stops on one path, Next stop, mono counts, horizon reach line) |
 | Health screen (`.gb-health-*`: header row, the "Last night" band (`.gb-health-track`, `.gb-health-lastbar.is-growing`, `.gb-health-night` fading by `--age`), tile grids with SVG traces (`.gb-health-trace`), the history sheet (`.gb-health-sheet`, chart axes, rows) and the log form (`.gb-health-valrow`); a `pointer: coarse` block that must stay LAST in the section), then the habit form's `.gb-habit-link-target` — last in the file |
 
 ## Editing rules

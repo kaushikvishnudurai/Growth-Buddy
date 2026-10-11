@@ -1,12 +1,14 @@
 # styles/money.css — Money Buddy styles
 
-Reuses the app's tokens, cards and buttons. Signature elements: the "safe to spend" hero ring and a
-growth/sprout motif. All classes are `gb-money-*`. Numbers in the banners map to the Money feature
+Reuses the app's tokens, cards and buttons. Signature: **the statement** — the Overview hero is a
+bank slip (`gb-money-slip*`: mono date head, perforated `gb-money-slip-tear` with notches clipped by the
+slip's `overflow: hidden`, dotted-leader `gb-money-slip-line`s, the total double-underlined). The rest
+keeps the ledger habits quietly: every amount in Space Mono, hairline rules instead of tinted boxes. All classes are `gb-money-*`. Numbers in the banners map to the Money feature
 list (e.g. "(14)" = financial health).
 
 | Section | Used by |
 |---|---|
-| Sub-tabs — `position: sticky` at the top of `.gb-scroll`, full-bleed `--surface` bar (same recipe as `.gb-family-sectionnav`) | `tabBar` |
+| Sub-tabs — `position: sticky` at the top of `.gb-scroll`, full-bleed `--surface` bar (same recipe as `.gb-family-sectionnav`); words on a rule, the open tab underlined in `--brand` | `tabBar` |
 | Hero: safe-to-spend ring | `tabOverview` |
 | Insights | overview |
 | Donut | spending breakdown |
@@ -47,6 +49,7 @@ list (e.g. "(14)" = financial health).
 | Other currencies (`gb-money-fx*` rate rows + account selects, `gb-money-exp-orig` under an amount, `gb-money-account-home` under a foreign balance) | customise pane, rows, accounts |
 | Load older (`gb-money-older`, sits with `.gb-money-showall`) | expense list |
 | Responsive | — |
+| The statement (last section before pressed feedback, so it wins same-specificity fights): the slip, the Space Mono amount list, the passbook expense list (`gb-money-ledger`, `gb-money-ledger-day`), accounts as ruled lines + double-underlined total, budgets on hairlines, `bsummary` / `review-stats` as label-left amount-right lines, `.gb-money-modal` number inputs in mono, the set-budgets row as a grid (icon / tag over Roll over / amount) | overview, spending, income, dialogs |
 
 Threshold colours: `is-near` at ≥80% of a budget, `is-over` above 100% — the JS in
 `scripts/money.js` (`tabBudgets`) picks these class names, so keep the names in sync.

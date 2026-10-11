@@ -1052,8 +1052,10 @@ function ScreenHealth(props = {}) {
   const root = h(
     'div',
     { class: 'gb-health' + (entering ? ' is-entering' : '') },
-    Header(props),
+    // The sentence is the screen's thesis: it leads, and where the numbers came
+    // from (plus the way to add one) reads as its footnote.
     Hero(props),
+    Header(props),
     LastNight(props),
     Ledger(props)
   );

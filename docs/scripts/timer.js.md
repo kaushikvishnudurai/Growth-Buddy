@@ -76,7 +76,7 @@ store before it is posted**, so it counts exactly once. The decision is `restore
 | `saveSession` / `restoreSession` / `resumeFocusSession` (export) |
 | `resetFocusSession` (export): app.js `logout()` calls it — clears the interval and OS alarm, stops sound, idles `T`, drops the stored session |
 | `start` / `pause` / `reset` |
-| `paintRing` / `buildRing(size, stroke)` |
+| `paintRing` (also toggles `.is-running` on `T.refs.card`: the setup, `.gb-focus-setup` = length chips + "Focusing on…", folds away while a session runs; Pause brings it back) / `buildRing(size, stroke)` (the face: viewBox-sized, CSS sets the width; 60 dial ticks inside a thin arc; mode, mono digits and the cycle line sit inside it) |
 | `chime()` |
 | `FocusPicker` / `linkValue` / `cleanLink` |
 | `paintGoal` / `openGoalSheet` / `setGoal` |

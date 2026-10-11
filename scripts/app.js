@@ -41,6 +41,7 @@ import {
   HOME_WIDGETS,
   resolveHomeLayout,
   sleepHours,
+  StreakChain,
 } from './dashboard.js';
 import { habitDue } from './home-order.js';
 import { withProgressLog, needsProgressLog } from './goal-milestones.js';
@@ -13130,6 +13131,7 @@ function ScreenHabits() {
     const fz = habitFreezeState(habit);
     const streak = effectiveStreak(habit);
     const frozenCount = fz && fz.frozen ? fz.frozen.length : 0;
+    const daily = !isQuitHabit(habit) && (habit.cadence || 'daily') === 'daily';
     const subChildren = [
       h(
         'span',
@@ -13140,9 +13142,15 @@ function ScreenHabits() {
           : (habit.active === false ? 'Paused · ' : '') +
               cadenceLabel(habit) +
               weekProgressLabel(habit) +
-              (streak ? ' · 🔥 ' + streak + '-' + streakUnit(habit) + ' streak' : '')
+              (streak && !daily ? ' · 🔥 ' + streak + '-' + streakUnit(habit) + ' streak' : '')
       ),
     ];
+    // A daily habit's streak is its seven-day chain, the same one Home draws.
+    if (daily) {
+      subChildren.push(
+        StreakChain({ streak, doneToday: habit.doneToday, owed: habitDueToday(habit) })
+      );
+    }
     const measured = metricSummary(habit.metric, habit.todayValue, habit.todayDurationMin);
     if (measured) {
       subChildren.push(h('span', { class: 'gb-metric-chip' }, measured));
@@ -13313,7 +13321,7 @@ function ScreenHabits() {
   });
   return h(
     'div',
-    { class: 'gb-rise', style: { padding: '0 0 24px' } },
+    { class: 'gb-rise gb-habits', style: { padding: '0 0 24px' } },
     h(
       'div',
       {
@@ -13334,7 +13342,23 @@ function ScreenHabits() {
             margin: 0,
           },
         },
-        'Your habits'
+        'Your habits',
+        (() => {
+          const owed = state.habits.filter(habitDueToday);
+          const done = owed.filter((x) => x.doneToday).length;
+          // Just the figure: "today" too wrapped the heading beside Reorder and Add.
+          return owed.length
+            ? h(
+                'span',
+                {
+                  class: 'gb-habits-today',
+                  title: done + ' of ' + owed.length + ' done today',
+                  'aria-label': done + ' of ' + owed.length + ' done today',
+                },
+                done + '/' + owed.length
+              )
+            : null;
+        })()
       ),
       h(
         'div',
@@ -13405,7 +13429,7 @@ function ScreenHabits() {
     h(
       'div',
       { style: { padding: '0 var(--gutter)' } },
-      h('div', { class: 'gb-card', style: { padding: '4px 0' } }, rows)
+      h('div', { class: 'gb-card gb-habits-list', style: { padding: '4px 0' } }, rows)
     ),
     // Guard on the card, not on the function: it returns null when there's no
     // fitness habit or no sleep logged, and an empty padded div is still a gap.
@@ -15618,7 +15642,6 @@ const scrollByScreen = new Map();
    from the value it showed last render (keyed by screen + selector + position)
    and is then set to the new one, which the transition animates. */
 const TWEENED = [
-  ['.gb-score-card svg circle:last-of-type', 'strokeDashoffset'],
   ['.gb-water-fill', 'transform'],
   ['.gb-goal-ms-fill', 'width'],
   ['.gb-goal-progress-fill', 'width'],

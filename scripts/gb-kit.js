@@ -459,7 +459,13 @@ function moreSections(overflow, active, onNav) {
   return out;
 }
 
+/* The nav is rebuilt on every render(), so a sprout that grew on creation would
+   regrow after every save. It grows only when the destination actually changed. */
+let lastNavActive = null;
+
 function BottomNav({ active, onNav, onMore, features, moreOpen, layout } = {}) {
+  const arriving = active !== lastNavActive;
+  lastNavActive = active;
   const tab = (item, opts) =>
     h(
       'button',
@@ -469,7 +475,8 @@ function BottomNav({ active, onNav, onMore, features, moreOpen, layout } = {}) {
           'gb-nav-tab' +
           ((opts && opts.active) || active === item.id ? ' is-active' : '') +
           (opts && opts.overflow ? ' gb-nav-tab--overflow' : '') +
-          (opts && opts.more ? ' gb-nav-tab--more' : ''),
+          (opts && opts.more ? ' gb-nav-tab--more' : '') +
+          (arriving && ((opts && opts.active) || active === item.id) ? ' is-sprouting' : ''),
         // Below 360px .gb-nav-tab span is display:none (app.css) and the icon is
         // aria-hidden — without this the whole nav is unnamed buttons.
         'aria-label': item.label,
@@ -498,7 +505,15 @@ function BottomNav({ active, onNav, onMore, features, moreOpen, layout } = {}) {
     );
   }
 
-  const children = [h('nav', { class: 'gb-nav', 'aria-label': 'Primary' }, ...tabs)];
+  // The wordmark heads the desktop sidebar only (CSS hides it on a phone, where
+  // the header carries the screen and the bar has no room).
+  const brand = h(
+    'div',
+    { class: 'gb-nav-brand', 'aria-hidden': 'true' },
+    Logo({ size: 30, radius: 9 }),
+    h('span', null, 'Growth Buddy')
+  );
+  const children = [h('nav', { class: 'gb-nav', 'aria-label': 'Primary' }, brand, ...tabs)];
 
   if (moreOpen && overflow.length) {
     children.push(
