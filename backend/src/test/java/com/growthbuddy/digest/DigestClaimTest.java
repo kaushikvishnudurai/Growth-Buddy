@@ -58,6 +58,18 @@ class DigestClaimTest {
         verify(digest, never()).sendDigest(any(), anyBoolean(), any());
     }
 
+    /** I-08: no digest on a break day; nothing is claimed, so it resumes after. */
+    @Test
+    void aBreakDaySendsNoDigest() {
+        User u = dueNow();
+        LocalDate today = LocalDate.now(ZoneId.of("UTC"));
+        u.setUiPrefs(new java.util.HashMap<>(java.util.Map.of(
+                "breakFrom", today.toString(), "breakUntil", today.plusDays(2).toString())));
+        scheduler.dispatchDigests();
+        verify(users, never()).claimDigest(any(), any());
+        verify(digest, never()).sendDigest(any(), anyBoolean(), any());
+    }
+
     @Test
     void aFailedSendHandsTheClaimBack() {
         User u = dueNow();

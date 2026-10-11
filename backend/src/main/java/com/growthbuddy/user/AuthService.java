@@ -135,7 +135,7 @@ public class AuthService {
         "goal_actions", "goals", "daily_scores", "daily_logs",
         "mentor_threads", "circle_members", "circle_post_reactions", "circle_post_comments", "circle_posts",
         "push_subscriptions", "notifications", "custom_sounds", "focus_sessions", "weekly_reviews",
-        "money_state", "money_accounts", "money_transactions", "bank_feed_consents",
+        "money_state", "money_accounts", "money_transactions", "money_tx_tombstones", "bank_feed_consents",
         "calendar_reminders", "reminder_done", "note_drafts", "note_edit_drafts", "notes", "sessions",
         "idempotency_keys", "health_readings",
     };
@@ -1026,7 +1026,10 @@ public class AuthService {
         User user = users.findById(userId)
                 .orElseThrow(() -> ApiException.notFound("User not found"));
         java.util.Map<String, Object> before = user.getUiPrefs() != null ? user.getUiPrefs() : java.util.Map.of();
-        java.util.Map<String, Object> merged = mergeUiPrefs(before, prefs);
+        // A break (I-08) may not be aimed at the past, and breakPast is the server's.
+        java.util.Map<String, Object> merged = com.growthbuddy.habit.OnBreak.settle(before,
+                mergeUiPrefs(before, prefs),
+                java.time.LocalDate.now(com.growthbuddy.common.UserZone.of(user.getTimezone())));
         String blob;
         try {
             blob = json.writeValueAsString(merged);

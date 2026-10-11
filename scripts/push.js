@@ -33,6 +33,7 @@ import { occursOn } from './recurrence.js';
 import { drinkRateByHour } from './water-hours.js';
 import { SOUNDS } from './chime.js';
 import { localKey as dayKey } from './dates.js';
+import { onBreakDay } from './break.js';
 
 export function pushSupported() {
   if (localNotificationsAvailable()) return true;
@@ -423,13 +424,14 @@ function channelForTone(key) {
  * project's res/raw (gen-chimes.mjs writes both), and `channelId` names the
  * channel we build it into — see native.js for why we can't let the plugin do it.
  */
-export function upcomingAlarms({ reminders, water, habits, sound, lead, quiet } = {}, now = new Date()) {
+export function upcomingAlarms({ reminders, water, habits, sound, lead, quiet, breakPrefs } = {}, now = new Date()) {
   // Quiet hours drop the water nudge and habit reminders, never a reminder the
-  // user timed themselves (isQuietAt).
+  // user timed themselves (isQuietAt). A break (ui_prefs.breakFrom..breakUntil,
+  // break.js) drops habit alarms on its days, the same as the server's.
   const loud = (n) => !isQuietAt(quiet, n.at);
   const queue = upcomingReminderAlarms(reminders, now, HORIZON_DAYS, lead)
     .concat(upcomingWaterAlarms(water, now).filter(loud))
-    .concat(upcomingHabitAlarms(habits, now).filter(loud));
+    .concat(upcomingHabitAlarms(habits, now).filter((n) => loud(n) && !onBreakDay(breakPrefs, dayKey(n.at))));
   queue.sort((a, b) => a.at - b.at);
   // Ids come from the minute a notification fires in, not its place in the
   // queue. A counter looked safe — the queue is cancelled whole and rebuilt —

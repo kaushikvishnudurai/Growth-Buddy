@@ -861,6 +861,17 @@ CREATE TABLE IF NOT EXISTS `money_transactions` (
   KEY `ix_mtx_user_to_account` (`user_id`, `to_account_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Ledger ids deleted in the last 120 days. An upsert of one of these from a tab
+-- or phone that never saw the delete is refused by id ("deleted on another
+-- device") instead of silently bringing the row back (OFF-5). Pruned per user on
+-- each delete; ids rebuilt from the document (loan-, sub-, rec-) are not checked.
+CREATE TABLE IF NOT EXISTS `money_tx_tombstones` (
+  `user_id` char(36) NOT NULL,
+  `id` varchar(64) NOT NULL,
+  `deleted_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`user_id`, `id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- =========================================================
 -- TABLES CAPTURED FROM THE LIVE DB  (v6)
 -- These were created by Hibernate ddl-auto and never written down here,

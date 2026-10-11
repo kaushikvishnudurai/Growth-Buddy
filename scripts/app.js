@@ -15,6 +15,7 @@ import {
   Check,
   DOMAIN,
   CrashCard,
+  Card,
   openOverlay,
   closeOverlays,
   openModal as sharedModal,
@@ -29,7 +30,8 @@ import {
   focusSoon,
   SHEET_EXIT_MS,
 } from './gb-kit.js';
-import { setLocale, localeFromUser } from './i18n.js';
+import { setLocale, localeFromUser, fmtDate } from './i18n.js';
+import { BREAK_LENGTHS, breakState, startBreak, endBreak } from './break.js';
 import { dateKey, todayKey } from './dates.js';
 import {
   ScreenDashboard,
@@ -44,7 +46,7 @@ import {
   StreakChain,
   loadOutlook,
 } from './dashboard.js';
-import { habitDue, tasksForToday } from './home-order.js';
+import { habitDue, tasksForToday, sortHabitsForHome } from './home-order.js';
 import { withProgressLog, needsProgressLog } from './goal-milestones.js';
 import { goalTaskStats, combinedGoalProgress, goalFinishedBy } from './goal-tasks.js';
 import {
@@ -154,6 +156,7 @@ import {
   requestHealthAccess,
   cancelPendingLocalNotifications,
   onLocalNotificationAction,
+  saveFile,
 } from './native.js';
 import { registerToast } from './toast.js';
 import { initA11y, focusLocator, refocus } from './a11y.js';
@@ -1571,6 +1574,98 @@ async function protectStreak(habitId) {
   if (ok) toastSuccess('Streak protected with a freeze.');
 }
 
+/* ---- Take a break (I-08) ----
+   ui_prefs.breakFrom..breakUntil (break.js). The server holds every streak over
+   it without a token, owes nothing those days (the score), and keeps habit
+   reminders, the evening reflection and the digest quiet; this device's habit
+   alarms follow (reSyncDeviceAlarms). Timed reminders still ring. Started from
+   Settings > Alerts or Home's at-risk entry; ended early with one tap. */
+function breakPrefs() {
+  return (state.user && state.user.uiPrefs) || {};
+}
+
+function breakUntilLabel(until) {
+  return fmtDate(until, 'weekdayDate');
+}
+
+async function setBreak(patch, message) {
+  const saved = saveUiPrefs(patch);
+  render();
+  reSyncDeviceAlarms();
+  await saved;
+  // Streaks, "owed today" and the score are the server's; read them back.
+  try {
+    state.habits = await api('/api/habits');
+    reconcileStreakFreeze();
+  } catch (_) {
+    /* the next load brings them */
+  }
+  await refreshScore();
+  render();
+  if (message) toastSuccess(message);
+}
+
+function takeBreak(days, rescue) {
+  const patch = startBreak(days, todayKey(), rescue);
+  return setBreak(patch, 'On a break until ' + breakUntilLabel(patch.breakUntil) + '. Your streaks are held.');
+}
+
+function endBreakNow() {
+  return setBreak(endBreak(todayKey()), 'Break ended.');
+}
+
+/* Home's one line about a break: on one, back from one, or offered when a
+   streak is at risk (a rescue, so it covers the missed yesterday too). */
+function homeBreakEntry() {
+  if (!featureOn('habits') || !(state.habits || []).length) return null;
+  const st = breakState(breakPrefs(), todayKey());
+  const btn = (label, onclick, primary) =>
+    h(
+      'button',
+      { type: 'button', class: 'gb-btn gb-btn--compact ' + (primary ? 'gb-btn--primary' : 'gb-btn--soft'), onclick },
+      label
+    );
+  const card = (kicker, title, why, buttons) =>
+    Card({
+      className: 'gb-coach-card gb-break-card',
+      children: [
+        h(
+          'div',
+          null,
+          h('div', { class: 'gb-coach-kicker' }, kicker),
+          h('div', { class: 'gb-coach-title' }, title),
+          h('div', { class: 'gb-coach-why' }, why)
+        ),
+        buttons.length ? h('div', { class: 'gb-coach-chiprow' }, ...buttons) : null,
+      ],
+    });
+  if (st && st.on) {
+    return card(
+      'On a break',
+      'Until ' + breakUntilLabel(st.until),
+      'Your streaks are held and habit reminders are off. Reminders you set a time for still ring.',
+      [btn('End now', endBreakNow, false)]
+    );
+  }
+  if (st && st.back) {
+    const build = (state.habits || []).filter((x) => x.active !== false && !isQuitHabit(x));
+    const next = sortHabitsForHome(build).find((x) => !x.doneToday && habitDue(x));
+    return card(
+      'Back on it',
+      'Your streaks are intact.',
+      next ? 'One to start with: ' + next.name + '.' : 'Pick up wherever suits you today.',
+      next ? [btn('Mark ' + next.name + ' done', () => toggleHabit(next.id), true)] : []
+    );
+  }
+  if (!(state.habits || []).some((x) => habitFreezeState(x).pendingBreak)) return null;
+  return card(
+    'Rough week?',
+    'Take a break',
+    'Your streaks hold and habit reminders go quiet. Reminders you set a time for still ring.',
+    BREAK_LENGTHS.map((n) => btn(n + ' days', () => takeBreak(n, true), n === BREAK_LENGTHS[0]))
+  );
+}
+
 /* ---- The freeze calendar ----
    Picking the day a freeze covers. protect/unprotect have always accepted any
    past date; the UI only ever sent today (the rest-day toggle) or yesterday
@@ -2466,11 +2561,23 @@ async function apiFetch(path, options) {
     headers['Content-Type'] = 'application/json';
   }
 
+  const savedKey = savedGetKey(path, opts);
   let res;
   try {
     res = await fetch(API_BASE + path, Object.assign({}, opts, { headers }));
   } catch (_) {
+    const saved = savedKey && (await CacheStorage.ready(), CacheStorage.getItem(savedKey));
+    if (saved) {
+      servedSaved = true;
+      handleOffline(); // the banner: "You're offline — showing your last saved data."
+      return JSON.parse(saved);
+    }
     throw new Error(NO_CONNECTION);
+  }
+  if (servedSaved) {
+    // A response again: drop the banner and refetch what was painted from the copy.
+    servedSaved = false;
+    handleOnline();
   }
   if (res.status === 401) {
     // Token went stale (revoked, expired, server restarted with empty DB,
@@ -2502,7 +2609,27 @@ async function apiFetch(path, options) {
   if (opts.raw || res.status === 204) {
     return null;
   }
-  return res.json();
+  const body = await res.json();
+  if (savedKey) CacheStorage.setItem(savedKey, JSON.stringify(body));
+  return body;
+}
+
+/* The app's stand-in for the website's Workbox NetworkFirst cache (gb-api-get,
+   vite.config.js). The app removes the service worker (see the boot block), so
+   offline nothing answered its GETs and a cold start without a connection put
+   the crash card on every screen, over data the device already had. Native only:
+   on the web the worker does this. Every good JSON GET is mirrored into
+   CacheStorage under gb.apiGet.<uid>.<path>, and only a fetch that got no
+   response at all is answered from it; a server error is still an error.
+   purgeUserCache drops the copies with the account (the key holds .<uid>.).
+   ponytail: no eviction; the keys are bounded by the distinct GET paths the app
+   builds. Add an LRU like Workbox's maxEntries if dated paths ever pile up. */
+let servedSaved = false;
+function savedGetKey(path, opts) {
+  const id = state.user && state.user.id;
+  const get = !opts.method || String(opts.method).toUpperCase() === 'GET';
+  if (!isNative() || !id || !get || opts.body || opts.raw || path.startsWith('/api/auth/export')) return null;
+  return 'gb.apiGet.' + id + '.' + path;
 }
 
 /* POST that answers text/event-stream (Buddy's streamed reply). Resolves to the
@@ -5823,6 +5950,22 @@ async function addSuggestedReminder(text, time, tag) {
 /* The "recent foods" chips: GET /api/food/recent, kept for the session and
    dropped by every log. null = not asked yet. */
 let recentFoods = null;
+const FUTURE_FOOD = "You can't log food for a day that hasn't happened yet.";
+
+/* Log food closes on the tap: the save, and the estimate behind it when no
+   kcal was typed, carry on under the screen (they held the dialog ~11 s). A
+   failure keeps the entry on a Retry toast rather than losing what was typed. */
+function logFoodLater(payload) {
+  const wait = payload.kcal == null ? pushToast('Estimating calories for ' + payload.foodName + '.', 'info', 20000) : 0;
+  logFoodEntry(payload)
+    .catch((err) =>
+      pushToast((err && err.message) || 'Could not log ' + payload.foodName + '.', 'error', 10000, {
+        label: 'Retry',
+        run: () => logFoodLater(payload),
+      })
+    )
+    .finally(() => wait && dismissToast(wait));
+}
 
 /* opts.file: a plate photo already taken (the Photo option in Quick add);
    estimated as soon as the form opens, as if picked with its own button. */
@@ -5849,7 +5992,6 @@ function openAddFood(opts) {
      100 g, scaled at save) or a favourite (its own portion). Sent only while the
      name still matches, so typing a different food drops them. */
   let label = null; // { kind: 'barcode', name, product } | { kind: 'fav', name, fav }
-  let autoKcal = '';
 
   const foodNameInput = h('input', {
     type: 'text',
@@ -5884,7 +6026,7 @@ function openAddFood(opts) {
       quantityInput.min = String(UNITS[u].min);
       quantityInput.max = String(UNITS[u].max);
       quantityInput.setAttribute('aria-label', 'Amount in ' + UNITS[u].name);
-      quantityInput.focus();
+      if (!quietUnit) quantityInput.focus();
     }
   );
   unitSeg.node.setAttribute('aria-label', 'Unit');
@@ -6122,54 +6264,131 @@ function openAddFood(opts) {
   const field = (label, control) =>
     h('label', { class: 'gb-food-field' }, h('span', { class: 'gb-field-label' }, label), control);
 
-  /* One tap fills the form from a recent entry: name, grams and its calories,
-     typed, so saving it re-logs the same plate with no estimate. Filled, not
-     saved, so the day and meal above can still change. */
-  const recentRow = h('div', { class: 'gb-food-recent', role: 'group', 'aria-label': 'Recent foods' });
-  const fillGrams = (name, grams, kcal) => {
-    foodNameInput.value = name;
-    // segmented() has no setter; a click runs its own onChange (min/max/label).
-    if (unitSeg.get() !== 'g') unitSeg.node.children[1].click();
-    quantityInput.value = String(grams);
-    kcalInput.value = kcal != null ? String(kcal) : '';
+  /* "Had before": favourites (starred, first) then recent foods, one row under
+     the Food field. A tap logs that food at once with its own portion and
+     calories (typed, so no estimate) on the day and slot below. One line that
+     scrolls sideways, filtered by what is typed: wrapped, a full list pushed
+     Amount and Calories off a phone screen and buried the field itself. */
+  let closeDialog = () => {};
+  const chipRow = h('div', { class: 'gb-food-recent', role: 'group', 'aria-label': 'Foods you had before' });
+  const known = () => {
+    const seen = new Set();
+    return [
+      ...(favouriteFoods || []).map((f) => ({ foodName: f.foodName, quantityGrams: f.quantityGrams, kcal: f.kcal, fav: f })),
+      ...(recentFoods || []).map((r) => ({
+        foodName: r.foodName,
+        quantityGrams: r.quantityGrams,
+        kcal: r.kcalEstimated,
+        pieces: r.pieces || null,
+        mealType: r.mealType,
+      })),
+    ].filter((x) => {
+      const k = String(x.foodName || '').trim().toLowerCase();
+      if (!k || seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
   };
-  const fillRecent = (r) => {
-    label = null;
-    fillGrams(r.foodName, r.quantityGrams, r.kcalEstimated);
-    const mealIdx = { home: 0, hotel: 1 }[r.mealType];
-    if (mealIdx != null && mealTypeSeg.get() !== r.mealType) mealTypeSeg.node.children[mealIdx].click();
+  const logAgain = (x) => {
+    if (dateInput.value > todayKey()) {
+      toastError(null, FUTURE_FOOD);
+      return;
+    }
+    const f = x.fav;
+    closeDialog();
+    logFoodLater({
+      foodName: x.foodName,
+      quantityGrams: x.quantityGrams,
+      pieces: x.pieces || null,
+      mealType: x.mealType || mealTypeSeg.get(),
+      mealSlot: slotSeg.get(),
+      kcal: x.kcal,
+      loggedAt: loggedAtFor(dateInput.value),
+      note: null,
+      ...(f ? { proteinG: f.proteinG, carbsG: f.carbsG, fatG: f.fatG, fiberG: f.fiberG } : {}),
+    });
   };
-  // A dish typed by hand that was logged lately starts on that portion: the
-  // grams only, so the estimator still prices today's plate. Never over a number
-  // already in the box.
-  foodNameInput.addEventListener('change', () => {
-    const name = foodNameInput.value.trim().toLowerCase();
-    const r = name && (recentFoods || []).find((x) => (x.foodName || '').trim().toLowerCase() === name);
-    if (!r || !r.quantityGrams || quantityInput.value !== '') return;
-    if (unitSeg.get() !== 'g') unitSeg.node.children[1].click();
-    quantityInput.value = String(r.quantityGrams);
-  });
-  // A favourite: its own portion and kcal, and its macros go with it.
-  const fillFavourite = (f) => {
-    label = { kind: 'fav', name: f.foodName, fav: f };
-    fillGrams(f.foodName, f.quantityGrams, f.kcal);
-  };
-  const favRow = h('div', { class: 'gb-food-recent', role: 'group', 'aria-label': 'Favourite foods' });
-  const paintFavourites = (list) => {
-    favRow.replaceChildren(
-      ...(list || []).map((f) =>
+  const paintChips = () => {
+    const q = foodNameInput.value.trim().toLowerCase();
+    const list = known().filter((x) => !q || x.foodName.toLowerCase().includes(q));
+    chipRow.replaceChildren(
+      ...list.map((x) =>
         h(
           'button',
-          { type: 'button', class: 'gb-food-recent-chip is-fav', onclick: () => fillFavourite(f) },
-          Icon('star', { size: 12, sw: 2.4 }),
-          f.foodName
+          {
+            type: 'button',
+            class: 'gb-food-recent-chip' + (x.fav ? ' is-fav' : ''),
+            'aria-label': 'Log ' + x.foodName + ' again, ' + x.kcal + ' kcal',
+            onclick: () => logAgain(x),
+          },
+          x.fav ? Icon('star', { size: 12, sw: 2.4 }) : null,
+          x.foodName
         )
       )
     );
-    favRow.hidden = !(list && list.length);
+    chipRow.hidden = !list.length;
   };
-  paintFavourites(favouriteFoods);
-  if (!favouriteFoods) loadFavouriteFoods().then(paintFavourites);
+
+  /* Kcal the form filled in itself follows the grams until typed over: a
+     barcode's label, or the last portion of a food typed by name. */
+  let autoKcal = '';
+  let kcalFor = null; // (amount, unit) -> kcal for the food the form filled
+  let filledFor = ''; // ...and its name; typing another food drops both
+  let quietUnit = false;
+  const toGrams = () => {
+    if (unitSeg.get() === 'g') return;
+    // segmented() has no setter; a click runs its own onChange (min/max/label).
+    quietUnit = true;
+    unitSeg.node.children[1].click();
+    quietUnit = false;
+  };
+  quantityInput.addEventListener('input', () => {
+    if (!kcalFor || kcalInput.value !== autoKcal) return;
+    const n = Number(quantityInput.value);
+    const k = n >= UNITS[unitSeg.get()].min ? kcalFor(n, unitSeg.get()) : null;
+    kcalInput.value = k != null ? String(k) : '';
+    autoKcal = kcalInput.value;
+  });
+  // A food typed by hand that was had before starts on that portion (by the
+  // piece if it was counted) and its calories, so the save is instant (no
+  // estimate); both stay editable. Never over a number already typed.
+  const remember = () => {
+    const name = foodNameInput.value.trim().toLowerCase();
+    const r = name && known().find((x) => x.foodName.trim().toLowerCase() === name);
+    if (!r || !r.quantityGrams || quantityInput.value !== '') return;
+    label = r.fav ? { kind: 'fav', name: r.foodName, fav: r.fav } : null;
+    const unit = r.pieces ? 'pcs' : 'g';
+    const base = r.pieces || r.quantityGrams;
+    if (unit === 'g') toGrams();
+    else if (unitSeg.get() !== 'pcs') {
+      quietUnit = true;
+      unitSeg.node.children[0].click();
+      quietUnit = false;
+    }
+    quantityInput.value = String(base);
+    if (kcalInput.value === '' && r.kcal) {
+      kcalInput.value = autoKcal = String(r.kcal);
+      kcalFor = (n, u) => (u === unit ? Math.round((r.kcal * n) / base) : null);
+      filledFor = name;
+    }
+  };
+  foodNameInput.addEventListener('change', remember);
+  foodNameInput.addEventListener('input', () => {
+    paintChips();
+    if (!filledFor || foodNameInput.value.trim().toLowerCase() === filledFor) return;
+    if (kcalInput.value === autoKcal) kcalInput.value = '';
+    kcalFor = null;
+    filledFor = '';
+  });
+  if (!favouriteFoods) loadFavouriteFoods().then(paintChips);
+  if (!recentFoods)
+    api('/api/food/recent')
+      .then((list) => {
+        recentFoods = Array.isArray(list) ? list : [];
+        paintChips();
+      })
+      .catch(() => {});
+  paintChips();
 
   /* Barcode: the product's per-100 g label from OpenFoodFacts (GET
      /api/food/barcode/{code}, no AI) fills name, grams (its serving, else 100)
@@ -6178,16 +6397,14 @@ function openAddFood(opts) {
     label = { kind: 'barcode', name: p.name, product: p };
     const grams = p.servingGrams || 100;
     const k = labelFor(p, grams).kcal;
-    fillGrams(p.name, grams, k);
-    autoKcal = kcalInput.value;
+    foodNameInput.value = p.name;
+    toGrams();
+    quantityInput.value = String(grams);
+    kcalInput.value = autoKcal = k != null ? String(k) : '';
+    kcalFor = (n, u) => (u === 'g' ? labelFor(p, n).kcal : null);
+    filledFor = String(p.name || '').trim().toLowerCase();
+    paintChips();
   };
-  quantityInput.addEventListener('input', () => {
-    if (!label || label.kind !== 'barcode' || unitSeg.get() !== 'g') return;
-    if (kcalInput.value !== autoKcal) return; // typed over: theirs now
-    const k = labelFor(label.product, Number(quantityInput.value)).kcal;
-    kcalInput.value = k != null && Number(quantityInput.value) >= 10 ? String(k) : '';
-    autoKcal = kcalInput.value;
-  });
   const barcodeBtn = canScanBarcode()
     ? h(
         'button',
@@ -6211,49 +6428,13 @@ function openAddFood(opts) {
         'Scan a barcode'
       )
     : null;
-  const paintRecent = (list) => {
-    recentRow.replaceChildren(
-      ...(list || []).map((r) =>
-        h(
-          'button',
-          { type: 'button', class: 'gb-food-recent-chip', onclick: () => fillRecent(r) },
-          r.foodName
-        )
-      )
-    );
-    recentRow.hidden = !(list && list.length);
-  };
-  paintRecent(recentFoods);
-  if (!recentFoods)
-    api('/api/food/recent')
-      .then((list) => {
-        recentFoods = Array.isArray(list) ? list : [];
-        paintRecent(recentFoods);
-      })
-      .catch(() => {});
-
+  // The food first, focused, with what was had before right under it; the
+  // fields that have a default (day, home/hotel, slot) come after the amount.
   const body = h(
     'div',
     { class: 'gb-form gb-food-form' },
-    h(
-      'div',
-      { class: 'gb-food-pair' },
-      field('Day', dateInput),
-      h(
-        'div',
-        { class: 'gb-food-field' },
-        h('span', { class: 'gb-field-label' }, 'Meal'),
-        mealTypeSeg.node
-      )
-    ),
-    h('div', { class: 'gb-food-field' }, h('span', { class: 'gb-field-label' }, 'Slot'), slotSeg.node),
     field('Food', foodNameInput),
-    favRow,
-    recentRow,
-    barcodeBtn,
-    photoBtn,
-    platePhotoInput,
-    itemsContainer,
+    chipRow,
     h(
       'div',
       { class: 'gb-food-pair' },
@@ -6271,12 +6452,28 @@ function openAddFood(opts) {
     h(
       'div',
       { class: 'gb-field-hint gb-food-hint' },
-      'Leave either blank and we\u2019ll estimate it. Typed calories are used exactly.'
-    )
+      'Leave either blank and we’ll estimate it. Typed calories are used exactly.'
+    ),
+    h(
+      'div',
+      { class: 'gb-food-pair' },
+      field('Day', dateInput),
+      h(
+        'div',
+        { class: 'gb-food-field' },
+        h('span', { class: 'gb-field-label' }, 'Meal'),
+        mealTypeSeg.node
+      )
+    ),
+    h('div', { class: 'gb-food-field' }, h('span', { class: 'gb-field-label' }, 'Slot'), slotSeg.node),
+    barcodeBtn,
+    photoBtn,
+    platePhotoInput,
+    itemsContainer
   );
 
   const loggedItems = new Set();
-  openModal({
+  closeDialog = openModal({
     title: 'Log food',
     body,
     primary: 'Add food',
@@ -6285,10 +6482,7 @@ function openAddFood(opts) {
       let entriesToAdd = [];
       const mealType = mealTypeSeg.get();
       // A typed date skips the picker's max; YYYY-MM-DD compares as text.
-      if (dateInput.value > todayKey()) {
-        dateInput.focus();
-        throw new Error("You can't log food for a day that hasn't happened yet.");
-      }
+      if (dateInput.value > todayKey()) throw fieldRefusal(dateInput, FUTURE_FOOD);
 
       // If we have photo items, use them
       if (photoItems.length > 0) {
@@ -6303,20 +6497,18 @@ function openAddFood(opts) {
           note: photoDataUrl ? 'photo:' + (photoConfidence >= 0.7 ? 'used' : 'fallback') : null,
         }));
       } else {
-        // Otherwise use manual input
+        // Otherwise use manual input. Enter in the Food field can beat its
+        // change event here, so the remembered portion is applied first.
+        remember();
         const foodName = foodNameInput.value.trim();
         const quantityRaw = quantityInput.value ? Number(quantityInput.value) : null;
         const unit = UNITS[unitSeg.get()];
-        if (!foodName) {
-          foodNameInput.focus();
-          throw new Error('Food name or photo is required');
-        }
+        if (!foodName) throw fieldRefusal(foodNameInput, 'Type a food, or scan a photo.');
         if (
           quantityRaw != null &&
           (!Number.isFinite(quantityRaw) || quantityRaw < unit.min || quantityRaw > unit.max)
         ) {
-          quantityInput.focus();
-          throw new Error('Amount must be ' + unit.min + ' to ' + unit.max + ' ' + unit.name + '.');
+          throw fieldRefusal(quantityInput, 'Amount must be ' + unit.min + ' to ' + unit.max + ' ' + unit.name + '.');
         }
         const pieces = quantityRaw != null && unit === UNITS.pcs ? Math.round(quantityRaw) : null;
         const grams = quantityRaw != null && unit === UNITS.g ? Math.round(quantityRaw) : null;
@@ -6324,8 +6516,7 @@ function openAddFood(opts) {
         // The ceiling is one meal, not one day — a typed 50,000 is a slipped
         // finger. Say so here rather than letting the server answer 400.
         if (kcalRaw != null && (!Number.isFinite(kcalRaw) || kcalRaw < 1 || kcalRaw > 5000)) {
-          kcalInput.focus();
-          throw new Error('Calories must be between 1 and 5,000 for a single entry.');
+          throw fieldRefusal(kcalInput, 'Calories must be between 1 and 5,000 for a single entry.');
         }
         // A label's figures ride along only for the food it described, in grams,
         // with typed kcal (the server ignores them on an estimate anyway).
@@ -6339,23 +6530,24 @@ function openAddFood(opts) {
             figures = { proteinG: f.proteinG, carbsG: f.carbsG, fatG: f.fatG, fiberG: f.fiberG };
           }
         }
-        entriesToAdd = [
-          {
-            foodName: foodName,
-            quantityGrams: grams,
-            pieces,
-            mealType: mealType,
-            mealSlot: slotSeg.get(),
-            kcal: kcalRaw != null ? Math.round(kcalRaw) : null,
-            loggedAt: loggedAtFor(dateInput.value),
-            note: null,
-            ...figures,
-          },
-        ];
+        // The dialog closes on the tap; the save (and an estimate, ~10 s of AI)
+        // carries on under the screen.
+        logFoodLater({
+          foodName: foodName,
+          quantityGrams: grams,
+          pieces,
+          mealType: mealType,
+          mealSlot: slotSeg.get(),
+          kcal: kcalRaw != null ? Math.round(kcalRaw) : null,
+          loggedAt: loggedAtFor(dateInput.value),
+          note: null,
+          ...figures,
+        });
+        return;
       }
 
-      // Add all entries. The estimate is an AI call, so the wait gets the whole
-      // screen rather than a busy button.
+      // A plate's items, one after another. Each is an AI estimate, so the wait
+      // gets the whole screen rather than a busy button.
       const hideLoader = showFoodLoader(entriesToAdd.map((e) => e.foodName).join(', '));
       try {
         for (const { item, ...entry } of entriesToAdd) {
@@ -6368,7 +6560,7 @@ function openAddFood(opts) {
       }
 
       rememberPhotoFood(
-        photoItems.map((i) => i.foodName).join(', ') || foodNameInput.value.trim(),
+        photoItems.map((i) => i.foodName).join(', '),
         { confidence: photoConfidence, fallbackNeeded: photoFallbackNeeded },
         !!photoDataUrl
       );
@@ -6388,20 +6580,39 @@ const entryDeletesInFlight = new Set();
 function deleteWaterEntry(entryId) {
   // Still in flight from quickAddWater: there is no server id to delete yet.
   if (pendingWater.has(entryId)) return;
-  confirmDelete('Delete this water entry?', async () => {
-    const key = 'water:' + entryId;
-    if (entryDeletesInFlight.has(key)) return;
-    entryDeletesInFlight.add(key);
-    try {
-      const updated = await api('/api/water/entries/' + entryId, {
-        method: 'DELETE',
-      });
-      state.water = withPendingWater(updated);
-      invalidateWeek('water');
-      render();
-    } finally {
-      entryDeletesInFlight.delete(key);
-    }
+  confirmDelete('Delete this water entry?', () => removeWaterEntry(entryId));
+}
+async function removeWaterEntry(entryId) {
+  const key = 'water:' + entryId;
+  if (entryDeletesInFlight.has(key)) return;
+  entryDeletesInFlight.add(key);
+  try {
+    const updated = await api('/api/water/entries/' + entryId, {
+      method: 'DELETE',
+    });
+    state.water = withPendingWater(updated);
+    invalidateWeek('water');
+    render();
+  } finally {
+    entryDeletesInFlight.delete(key);
+  }
+}
+
+/* Home's water pill: one tap is a glass, Undo on the toast. Undo waits for
+   the glass to have a server id; one still queued offline has none, and stays.
+   ponytail: matched as the newest new 250 ml entry, not by its own id. */
+function addGlassFromHome() {
+  const entries = () => (state.water && state.water.entries) || [];
+  const before = new Set(entries().map((e) => e.id));
+  const saved = quickAddWater(250);
+  if (entries().length === before.size) return; // a double tap, already said so
+  pushToast('Logged 250 ml of water.', 'info', 6000, {
+    label: 'Undo',
+    run: async () => {
+      await saved;
+      const mine = entries().filter((e) => !before.has(e.id) && !pendingWater.has(e.id) && e.amountMl === 250);
+      if (mine.length) removeWaterEntry(mine[mine.length - 1].id).catch((err) => toastError(err, 'Could not undo that glass.'));
+    },
   });
 }
 
@@ -7838,9 +8049,8 @@ function openWeeklyReview() {
 
 /* ---- Delete account (destructive, password-confirmed) ---- */
 /* "Download my data": GET /api/auth/export (every table the account owns, minus
-   secrets) handed to the OS as growth-buddy-export.json. Share sheet first where
-   the platform takes files (the Capacitor WebView mostly does not), else a plain
-   download — the same ladder share-card.js uses. */
+   secrets) handed to the OS as growth-buddy-export.json through native.js
+   saveFile: the share sheet in the app, a plain download on the web. */
 async function downloadMyData(btn) {
   const label = btn && btn.lastChild && btn.lastChild.nodeType === 3 ? btn.lastChild : null;
   const was = label ? label.textContent : '';
@@ -7849,23 +8059,7 @@ async function downloadMyData(btn) {
   try {
     const data = await api('/api/auth/export');
     const name = 'growth-buddy-export-' + todayKey() + '.json';
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const file = typeof File === 'function' ? new File([blob], name, { type: 'application/json' }) : null;
-    if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
-      try {
-        await navigator.share({ files: [file], title: 'Growth Buddy data' });
-        return;
-      } catch (err) {
-        if (err && err.name === 'AbortError') return;
-      }
-    }
-    const url = URL.createObjectURL(blob);
-    const a = h('a', { href: url, download: name, style: { display: 'none' } });
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 10_000);
-    pushToast('Your data is downloading.', 'success', 3000);
+    if ((await saveFile(JSON.stringify(data, null, 2), name, 'application/json', 'Growth Buddy data')) === 'saved') pushToast('Your data is downloading.', 'success', 3000);
   } catch (err) {
     toastError(err, 'Could not export your data.');
   } finally {
@@ -9713,6 +9907,42 @@ function openProfileSettings(initialTab) {
     waterFields
   );
 
+  /* ---- Take a break (I-08): one tap for 3 / 7 / 14 days, one to end it. ---- */
+  const breakSectionBody = h('div');
+  const paintBreak = () => {
+    const st = breakState(breakPrefs(), todayKey());
+    const btn = (label, onclick, primary) =>
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--compact ' + (primary ? 'gb-btn--primary' : 'gb-btn--soft'),
+          onclick: () => onclick().then(paintBreak),
+        },
+        label
+      );
+    breakSectionBody.replaceChildren(
+      st && st.on
+        ? h(
+            'div',
+            { class: 'gb-feature-row' },
+            h(
+              'div',
+              { class: 'gb-feature-row-text' },
+              h('div', { class: 'gb-feature-row-label' }, 'On a break until ' + breakUntilLabel(st.until)),
+              h('div', { class: 'gb-feature-row-desc' }, 'Your streaks are held.')
+            ),
+            btn('End now', endBreakNow, false)
+          )
+        : h(
+            'div',
+            { class: 'gb-coach-chiprow', style: { marginTop: 0 } },
+            ...BREAK_LENGTHS.map((n) => btn(n + ' days', () => takeBreak(n, false), false))
+          )
+    );
+  };
+  paintBreak();
+
   /* ---- Quiet hours ----
      ui_prefs.quietStart / quietEnd, read by the server (ReminderPrefs.isQuiet:
      habit reminders, the digest) and by this device's alarm queue (push.js:
@@ -10399,6 +10629,13 @@ function openProfileSettings(initialTab) {
       'Steady sips beat one big glass. Needs notifications turned on above.'
     ),
     waterSectionBody,
+    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Take a break'),
+    h(
+      'div',
+      { class: 'gb-field-hint', style: { marginBottom: '12px' } },
+      'A rough week? Your habit streaks hold without using freezes, and habit reminders, the evening reflection and the digest go quiet. Reminders you set a time for still ring.'
+    ),
+    breakSectionBody,
     h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Quiet hours'),
     h(
       'div',
@@ -11000,23 +11237,7 @@ async function exportRemindersIcs(btn) {
       },
     });
     const name = 'growth-buddy-reminders.ics';
-    const blob = new Blob([text], { type: 'text/calendar' });
-    const file = typeof File === 'function' ? new File([blob], name, { type: 'text/calendar' }) : null;
-    if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
-      try {
-        await navigator.share({ files: [file], title: 'Growth Buddy reminders' });
-        return;
-      } catch (err) {
-        if (err && err.name === 'AbortError') return;
-      }
-    }
-    const url = URL.createObjectURL(blob);
-    const a = h('a', { href: url, download: name, style: { display: 'none' } });
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 10_000);
-    pushToast('Your calendar file is downloading. Open it in Google, Apple or Outlook Calendar.', 'success', 4000);
+    if ((await saveFile(text, name, 'text/calendar', 'Growth Buddy reminders')) === 'saved') pushToast('Your calendar file is downloading. Open it in Google, Apple or Outlook Calendar.', 'success', 4000);
   } catch (err) {
     toastError(err, 'Could not export your reminders.');
   } finally {
@@ -11296,6 +11517,7 @@ function reSyncDeviceAlarms() {
     sound: notifySound(),
     lead: getDefaultLead(),
     quiet: quietHours(),
+    breakPrefs: breakPrefs(),
     snoozeLabel: 'Snooze ' + minutesLabel(snoozeMinutes()),
   }).catch(() => {});
 }
@@ -14334,6 +14556,7 @@ const SCREENS = {
         onNextMonth: calNextMonth,
         onRetryFood: retryCalendarFoodDate,
         onPlanToday: openDailyPlan,
+        onAddGlass: addGlassFromHome,
         onAddSleep: openSleepSchedule,
         onAddMood: openMoodCheckin,
         onStarterPack: openStarterPacks,
@@ -14352,6 +14575,7 @@ const SCREENS = {
         onQuickAddWater: featureOn('water') ? quickAddWater : null,
         homeLayout: (state.user && state.user.homeLayout) || null,
         quickAdd: homeQuickAdd(),
+        breakEntry: homeBreakEntry(),
         trends: state.trends,
         // Loaded once per session after wave 2 (loadSecondaryData), so Home's
         // top insight matches Report's on a cold start.

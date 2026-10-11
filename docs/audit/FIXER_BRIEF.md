@@ -27,3 +27,12 @@ Read docs/audit/BRIEF.md first (stack, ports, seeding, CDP Chrome, rules). Then:
 - If a doc in docs/ or CODEMAP.md describes what you changed, update that line.
 - Final reply: per finding ID -> fixed (sha, test) / not fixed (why); inputs before -> after for any flow you
   changed; test results; files touched.
+
+## Added 2026-10-12 (efficiency and safety)
+- NEVER use `git stash`: the stash is shared by every worktree, and one agent's pop has already applied another
+  agent's work-in-progress. To test the pre-fix code, use `git worktree add <scratch dir> HEAD~n` or `git show`.
+- Run YOUR OWN headless Chrome; the shared :9591 is overloaded. Pick port 9600 + (your Vite port - 5590), e.g.
+  `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --remote-debugging-port=<p>
+  --user-data-dir=<scratch>/chrome-<p> --no-first-run --hide-scrollbars --mute-audio &` and set GB_E2E_CDP=http://localhost:<p>.
+  Kill it when done. Run playwright with --workers=2.
+- Set the theme with the gb.theme cookie, never prefers-color-scheme emulation.

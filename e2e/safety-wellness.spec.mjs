@@ -2,7 +2,7 @@
 // screen after a reload and what the server holds (page.request with the account's token).
 import { test, expect, signInFast, go } from './fixtures.mjs';
 
-const API = process.env.GB_API || 'http://localhost:8591';
+const API = process.env.GB_API || 'http://localhost:8590';
 const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 const today = () => new Date().toLocaleDateString('en-CA');
 
@@ -122,6 +122,8 @@ test('focus: start and stop posts nothing; a finished sprint posts one session',
   // Start, then stop it early: no session is recorded.
   await start.click();
   await expect(main(page).getByRole('button', { name: 'Pause' })).toBeVisible();
+  // Some time has to pass: a session with nothing elapsed is "not started" and has nothing to reset.
+  await page.clock.runFor(5000);
   await main(page).getByRole('button', { name: 'Pause' }).click();
   await main(page).getByRole('button', { name: 'Reset timer' }).click();
   await expect(start).toBeVisible();

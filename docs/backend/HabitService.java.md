@@ -20,7 +20,7 @@ reads the full history.
 | `applyHealthLink(h, link, target)` | static, both `create` and `update` route through it (`HabitHealthLinkTest`). `healthLink` must be a key of `HEALTH_LINK_MAX` (steps 100000, sleep 24 h, distance 300 km, calories 10000 kcal, floors 1000, workout 1440 min), `healthTarget` > 0 and at most that; else 400. null link = unchanged, `""` = clear link and target; a new link needs a target, the same link again keeps its own; a target alone retargets a linked habit and is ignored on an unlinked one. A quit habit never carries a link (create skips it, update nulls both). Storage only: the app reads the phone's health data and ticks |
 | `delete(userId, id)` | |
 | `reorder(userId, ids)` | `PUT /api/habits/order` → the list in its new order. The numbering is `applyOrder` (static, `HabitOrderTest`): listed ids first in that order, every habit left out keeps its relative place after them (a stale client can't drop one), a repeated id counts once, an id that isn't one of the user's live habits 404s before anything is renumbered; only rows whose position changed are saved |
-| `checkin(userId, id, req)` | `date` defaults to today; refused: a date after the user's today, more than `CHECKIN_BACK_DAYS` (7, = `canEditDay`'s `maxBack` in `habit-stats.js`) before it, or before the habit's creation day in the user's zone, `done` defaults to true; an absent `note` leaves the stored one; **recomputes `HabitStreak`**. **XP once per habit per day**, tracked on the row: `habit_checkins.xp_paid` (`xpPaid(c)`; NULL on a row from before the column reads the old rule, paid unless protected). Tick/untick/tick and tick/untick/protect/tick each pay once (a fresh row starts `done = false`, `xp_paid = false`). **Ticking a protected day refunds its token** (`refundToken`, capped at `FREEZE_CAP`) and clears the protection: the freeze bought nothing. `HabitFreezeRefundTest` |
+| `checkin(userId, id, req)` | `date` defaults to today; refused: a date after the user's today, more than `CHECKIN_BACK_DAYS` (7, = `canEditDay`'s `maxBack` in `habit-stats.js`) before it, or before the habit's creation day in the user's zone, `done` defaults to true; an absent `note` leaves the stored one; **recomputes `HabitStreak`**. **XP follows the tick, held on the row:** `habit_checkins.xp_paid` (`xpPaid(c)`; NULL on a row from before the column reads the old rule, paid unless protected) says the day's XP is held now. A tick pays when it isn't (`awardHabitCheckin`), an un-tick hands it back (`ProgressService.revokeHabitCheckin`, floor 0), so a day holds one tick's XP however it is toggled, protect included (a fresh row starts `done = false`, `xp_paid = false`). Quit habits are not paid here. An un-tick also lets the **longest streak** drop: when the stored record equals the longest run history made with that day still done, it is recomputed from history; a record history can't explain is kept (EXS-9). **Ticking a protected day refunds its token** (`refundToken`, capped at `FREEZE_CAP`) and clears the protection: the freeze bought nothing. `HabitFreezeRefundTest` |
 | `toggleToday(userId, id)` | |
 | `freezeStatus(userId)` | wallet snapshot (`GET /api/habits/freeze`) |
 | `history(userId, id, days)` | `GET /api/habits/{id}/history` — `{since, days[]}` for the freeze calendar and the history panel; each day is `HabitDay.of(row)` = `{date, done, protectedDay, note}`. `since` is the habit's creation date in the user's zone, so the client can tell a missed day from one before the habit existed |
@@ -31,7 +31,7 @@ reads the full history.
 | `countDoneBetween(userId, start, end)` | single user |
 | `countDoneBetween(List<UUID>, start, end)` | batched — **use this for leaderboards**, not the single-user version in a loop (Circle challenge ranking depends on it) |
 | `todayCounts(userId)` | `record TodayCounts(int done, int total)`, used by the score |
-| `countsOn(userId, day)` | the same counts for **any** day — check-ins are stored against a log date, so a finished day still answers truthfully. What the digest reads, since it reports a day the midnight sweep has already rolled. Counts only habits **owed** that day (`countDue` / `isDue`): active, created by then, and — for weekly / N-a-week — the week's quota not yet met on an earlier day. A habit done that day always counts, as done. A quit habit counts every day it is active and existed, as done unless that day holds its slip — so `countsOn` reads every row of the week (`findByUserIdAndLogDateBetween`), not just done ones. Soft-deleted habits and their check-ins are out. |
+| `countsOn(userId, day)` | (a break day owes nothing: only done habits count, see below) the same counts for **any** day — check-ins are stored against a log date, so a finished day still answers truthfully. What the digest reads, since it reports a day the midnight sweep has already rolled. Counts only habits **owed** that day (`countDue` / `isDue`): active, created by then, and — for weekly / N-a-week — the week's quota not yet met on an earlier day. A habit done that day always counts, as done. A quit habit counts every day it is active and existed, as done unless that day holds its slip — so `countsOn` reads every row of the week (`findByUserIdAndLogDateBetween`), not just done ones. Soft-deleted habits and their check-ins are out. |
 
 ## Break a habit (`HabitKind.quit`)
 
@@ -55,6 +55,18 @@ only takes a slip back or carries a clean day's note; `toggleToday` logs / undoe
   for the whole unpaid span.
 - Not covered on purpose: Circle's `countDoneBetween` sees only a quit habit's explicit `done` rows,
   Insights skips quit habits (`insights.js`), and the reminder scheduler still nudges one daily.
+
+## Take a break (I-08)
+
+`OnBreak.days(clock.prefsOf(userId), today)` = the break days (`ui_prefs.breakFrom..breakUntil` plus
+`breakPast`) through today, read once per call. `toResponse` and `recomputeStreak` add them to the
+protected set (so `currentDailyRun` / `longestDailyRun` bridge them and `atRisk` stays off), while
+`protectedToday` still means a freeze row; the weekly walk is `currentWeeklyRun(today, weeks,
+restWeeks)` (this week skipped while incomplete, a week a break touched holds without counting). A
+break day owes nothing: `dueToday` is false unless done, and `countDue(..., rest)` counts only the done
+habits (a quit habit's slip on a break day is left out). No token moves, no XP is paid for rest; a
+real tick on a break day pays as usual. Validation of what a client may store is `OnBreak.settle`
+(see CODEMAP). `BreakStreakTest`.
 
 ## Timezone
 

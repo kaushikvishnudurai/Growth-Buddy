@@ -254,6 +254,7 @@ final class QuickAddFallback {
     /** "tomorrow at 9pm to call mom, 10 minutes before" -> every field the words carry. */
     static Intent reminder(String rest, LocalDate today, LocalTime now) {
         String s = " " + rest + " ";
+        String said = s;
         LocalDate date = today;
         LocalTime time = null;
         String repeat = "none";
@@ -337,8 +338,59 @@ final class QuickAddFallback {
                 .replaceAll("\\s+(?:to|on|at|by)$", "").strip();
         if (what.isEmpty()) return null;
         if (lead != null && (time == null || lead > 1440)) lead = null;
+        date = anchor(said, date, repeat, today, time, now);
         return Intent.of("reminder").text(cap(what.substring(0, 1).toUpperCase(Locale.ROOT) + what.substring(1), 120))
                 .when(date, time, repeat, tagOf(what), lead);
+    }
+
+    private static final Pattern WEEKDAY = Pattern.compile(
+            "\\b(next\\s+)?(monday|tuesday|wednesday|thursday|friday|saturday|sunday)s?\\b", F);
+
+    /**
+     * The first day of a reminder, checked against the weekday the words name: the
+     * model has filed "every Monday" on a Tuesday, and a weekly series rings on its
+     * anchor's weekday for ever. With exactly one weekday in the text, a date on
+     * another weekday (or already gone, or today with the time passed) becomes the
+     * next one that day falls on ("next X" never means today). A weekdays series
+     * never starts on a weekend; a one-off with no day said whose time has gone
+     * today is tomorrow's. Anything else is left as read.
+     *
+     * <p>ponytail: one weekday per message; "Monday and Friday" or two reminders on
+     * two days are trusted as read. English weekday names only.
+     */
+    private static final Pattern TODAY_SAID = Pattern.compile("\\b(today|tonight)\\b", F);
+
+    static LocalDate anchor(String text, LocalDate date, String repeat, LocalDate today, LocalTime time, LocalTime now) {
+        if (date == null) date = today;
+        DayOfWeek named = null;
+        boolean next = false;
+        Matcher m = WEEKDAY.matcher(text == null ? "" : text);
+        while (m.find()) {
+            DayOfWeek d = DayOfWeek.valueOf(m.group(2).toUpperCase(Locale.ROOT));
+            if (named != null && named != d) return date;
+            named = d;
+            next |= m.group(1) != null;
+        }
+        boolean passed = time != null && now != null && !time.isAfter(now);
+        if (named != null) {
+            boolean ok = date.getDayOfWeek() == named && !date.isBefore(today)
+                    && !(date.equals(today) && (passed || next));
+            if (ok) return date;
+            LocalDate first = today.with(TemporalAdjusters.nextOrSame(named));
+            return first.equals(today) && (passed || next) ? first.plusWeeks(1) : first;
+        }
+        // "remind me at 9pm" at 23:45: no day was said, so the next 9pm is tomorrow's
+        // (EXS-5). Only a one-off: a series still has tomorrow, and the app refuses only
+        // a single occurrence that has gone. "today" / "tonight" said out loud are kept.
+        if ("none".equals(repeat) && passed && date.equals(today) && !TODAY_SAID.matcher(text == null ? "" : text).find()) {
+            return today.plusDays(1);
+        }
+        if ("weekdays".equals(repeat)) {
+            while (date.getDayOfWeek() == DayOfWeek.SATURDAY || date.getDayOfWeek() == DayOfWeek.SUNDAY) {
+                date = date.plusDays(1);
+            }
+        }
+        return date;
     }
 
     private static String cut(String s, Matcher m) {

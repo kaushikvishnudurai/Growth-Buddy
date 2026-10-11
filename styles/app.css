@@ -4286,6 +4286,16 @@ button.gb-seat:disabled {
   font-weight: 800;
   padding: 7px 9px;
 }
+/* Home's water pill is a +250 ml button (TodayPlanCard). */
+.gb-coach-chip--add {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 44px;
+  border: 0;
+  font-family: inherit;
+  cursor: pointer;
+}
 .gb-wellness-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -5419,6 +5429,15 @@ button.gb-food-level {
   font-size: 0.75rem;
   color: var(--fg2);
   padding: 3px 0;
+}
+.gb-water-log-row[hidden] {
+  display: none;
+}
+/* "Show all N" under the water log (WaterCard). */
+.gb-water-more {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 4px;
 }
 .gb-water-log-row span:first-child {
   color: var(--fg1);
@@ -6601,12 +6620,34 @@ button.gb-food-level {
 .gb-food-hint {
   margin: -6px 0 0;
 }
-/* "Recent foods" under the Food field: one tap fills the form (openAddFood). */
+/* Foods had before, under the Food field: one tap logs it (openAddFood). One
+   line that scrolls sideways; wrapped, a full list pushed the rest of the form
+   off a phone screen. */
 .gb-food-recent {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
   margin-top: -4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+.gb-food-recent::-webkit-scrollbar {
+  display: none;
+}
+.gb-food-recent > .gb-food-recent-chip {
+  flex: none;
+  max-width: 70%;
+}
+/* A refusal under an amount sits on its own line inside the box, after the
+   number and its unit (order), so the pcs/g toggle stays beside the number. */
+.gb-food-form .gb-affix {
+  flex-wrap: wrap;
+}
+.gb-food-form .gb-affix > .gb-field-error {
+  order: 1;
+  flex-basis: 100%;
+  margin: 0 0 4px;
 }
 .gb-food-recent[hidden] {
   display: none;
@@ -13624,11 +13665,14 @@ h2[tabindex='-1']:focus {
    still left content 266px (71%), so the nav becomes an icon rail on the left,
    the way the >=1024px sidebar does, and height goes to the content: a
    one-line header and nothing below. Tabs stay icon-only (each keeps its
-   aria-label); the rail pads for the notch on the left. */
+   aria-label); the rail pads for the notch on the left, the header and content
+   for one on the right. */
 @media (orientation: landscape) and (max-height: 500px) and (max-width: 1023.98px) {
   .gb-head {
     --head-pad-b: 6px;
     padding-top: max(env(safe-area-inset-top, 0px), 8px);
+    /* Turned the other way, the cutout is on the right: the bell and avatar sat under it. */
+    padding-right: max(20px, env(safe-area-inset-right, 0px));
     grid-area: header;
   }
   .gb-head .greet-label {
@@ -13648,6 +13692,8 @@ h2[tabindex='-1']:focus {
   }
   #gb-main {
     grid-area: content;
+    /* On top of each screen's own 20px gutter, so cards clear a right-hand cutout. */
+    padding-right: env(safe-area-inset-right, 0px);
   }
   .gb-nav-wrap {
     grid-area: rail;

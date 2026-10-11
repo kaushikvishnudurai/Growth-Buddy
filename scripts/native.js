@@ -45,6 +45,85 @@ export function nativePlugin(name) {
   );
 }
 
+/**
+ * Every file the app hands the user (story card PNG, data export, .ics, CSV)
+ * goes out through here.
+ *
+ * In the app a `<a download href=blob:>` is silently dropped: the Capacitor
+ * WebView registers no download handler, so the file went nowhere while the
+ * caller toasted "downloading". There the bytes are written to the cache dir
+ * (@capacitor/filesystem) and offered through the OS share sheet
+ * (@capacitor/share), which is where "save to Files", Drive, mail and
+ * Instagram all live. On the web an image is offered to the Web Share sheet
+ * where it takes files (Instagram's story is in there); everything else
+ * downloads as before.
+ *
+ * @returns {Promise<'shared'|'saved'>} `shared` = a share sheet took it (a
+ *   dismissed sheet counts, the platform does not say otherwise); `saved` = a
+ *   browser download started. Rejects with a user-facing message when the
+ *   native path fails, so no caller can claim a success that did not happen.
+ */
+export async function saveFile(data, filename, mime, title = 'Growth Buddy') {
+  const blob = data instanceof Blob ? data : new Blob([data], { type: mime });
+  if (isNative()) {
+    const FS = nativePlugin('Filesystem');
+    const Share = nativePlugin('Share');
+    let uri;
+    try {
+      // 'CACHE' is Directory.Cache; without an encoding, data is read as base64.
+      // ponytail: the cache file is left for the OS to evict; the next save of
+      // the same name overwrites it.
+      const res = await FS.writeFile({ path: filename, data: await blobToBase64(blob), directory: 'CACHE' });
+      uri = res && res.uri;
+    } catch (_) {
+      uri = null;
+    }
+    if (!uri) throw new Error('Could not save the file on this phone. Try again.');
+    try {
+      await Share.share({ title, files: [uri] });
+    } catch (err) {
+      // A dismissed sheet rejects with "Share canceled": still a share offered.
+      if (!/cancel/i.test(String((err && err.message) || err || ''))) {
+        throw new Error('Could not open the share sheet. Try again.');
+      }
+    }
+    return 'shared';
+  }
+  if (/^image\//.test(mime) && typeof File === 'function' && navigator.canShare) {
+    // canShare({files}) is the only honest test: desktop Firefox has share() but rejects files.
+    const file = new File([blob], filename, { type: mime });
+    if (navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title });
+        return 'shared';
+      } catch (err) {
+        // AbortError = the user closed the sheet; anything else downloads instead.
+        if (err && err.name === 'AbortError') return 'shared';
+      }
+    }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  return 'saved';
+}
+
+/** A blob -> its bytes as bare base64 (no data: prefix), for Filesystem.writeFile. */
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).slice(String(r.result).indexOf(',') + 1));
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(blob);
+  });
+}
+
 let deviceLabel = null;
 
 /**

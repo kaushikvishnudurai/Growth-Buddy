@@ -17,7 +17,7 @@ public class WaterService {
     private static final int DEFAULT_GOAL_ML = 2000;
 
     /** How far ahead of the server a client's "now" may be (a phone clock running fast). */
-    static final java.time.Duration FUTURE_SLACK = java.time.Duration.ofMinutes(10);
+    public static final java.time.Duration FUTURE_SLACK = java.time.Duration.ofMinutes(10);
 
     private final WaterEntryRepository entries;
     private final WaterGoalRepository goals;

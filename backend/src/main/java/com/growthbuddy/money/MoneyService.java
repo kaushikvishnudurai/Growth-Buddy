@@ -9,6 +9,7 @@ import com.growthbuddy.common.ApiException;
 import com.growthbuddy.mentor.OpenAIClient;
 import com.growthbuddy.mentor.OpenAIClient.ChatTurn;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,6 +41,8 @@ public class MoneyService {
     private final ObjectMapper json;
     private final OpenAIClient openai;
     private final MoneyLedger ledger;
+    /** Tests pin it; production reads the system clock. */
+    java.time.Clock clock = java.time.Clock.systemUTC();
 
     public MoneyService(MoneyRepository repo, ObjectMapper json, OpenAIClient openai, MoneyLedger ledger) {
         this.repo = repo;
@@ -75,7 +78,7 @@ public class MoneyService {
                 + "\nTheir money context: " + cap(context, 800)
                 + "\n\nGive your honest recommendation.";
         try {
-            String advice = openai.complete(ADVISOR_PROMPT, List.of(new ChatTurn("user", user))).trim();
+            String advice = OpenAIClient.plainText(openai.complete(ADVISOR_PROMPT, List.of(new ChatTurn("user", user))));
             return StringUtils.hasText(advice) ? new AdviceResult(true, advice) : new AdviceResult(false, null);
         } catch (RuntimeException ex) {
             log.warn("Money advisor LLM call failed, falling back to heuristic: {}", ex.getMessage());
@@ -374,6 +377,15 @@ public class MoneyService {
      * Failing the whole batch made one bad entry (an old expense with no date,
      * edited later) a poison pill: the client kept it queued, and every save after
      * it failed with it.
+     *
+     * <p>A row dated after the user's today is refused too (EXM-1): it moved the
+     * balance at once while every list and total ends at today, so it could not be
+     * seen, edited or deleted until its day came. Recurring rules post only on or
+     * before today, so they never meet this. The water endpoint's clock slack lets a
+     * device a few minutes into tomorrow still log "today".
+     *
+     * <p>Each refusal is {@code {id, reason}}; one for an id deleted in the last
+     * 120 days also carries {@code code: "deleted"} (OFF-5).
      */
     public ObjectNode applyLedger(UUID userId, JsonNode body) {
         if (body.path("upserts").size() + body.path("deletes").size() > 2000) {
@@ -382,12 +394,31 @@ public class MoneyService {
         List<MoneyLedger.Row> upserts = new java.util.ArrayList<>();
         ObjectNode out = json.createObjectNode();
         ArrayNode rejected = out.putArray("rejected");
+        LocalDate latest = body.path("upserts").isEmpty() ? null
+                : java.time.ZonedDateTime.now(clock.withZone(ledger.zoneOf(userId)))
+                        .plus(com.growthbuddy.water.WaterService.FUTURE_SLACK).toLocalDate();
+        // OFF-5: an edit from a tab or phone that never saw the delete. Refused by id
+        // with a code, so the client can say why and drop its copy.
+        List<String> ids = new java.util.ArrayList<>();
+        body.path("upserts").forEach(u -> {
+            String id = u.path("id").asText("");
+            if (!id.isEmpty() && !MoneyLedger.derivedId(id)) ids.add(id);
+        });
+        Set<String> gone = ids.isEmpty() ? Set.of() : ledger.deletedIds(userId, ids);
         for (JsonNode u : body.path("upserts")) {
+            if (gone.contains(u.path("id").asText(""))) {
+                rejected.addObject().put("id", u.path("id").asText()).put("code", "deleted")
+                        .put("reason", "This entry was deleted on another device.");
+                continue;
+            }
             try {
                 MoneyLedger.Row row = ledger.toRow(u.path("kind").asText(), withoutKind(u));
                 // Not in toRow: a legacy document migrating through it must not lose a big expense.
                 if ("expense".equals(row.kind()) && row.amount().compareTo(MoneyLedger.EXPENSE_MAX) > 0) {
                     throw ApiException.badRequest("An expense can be at most 10,000,000.");
+                }
+                if (row.day().isAfter(latest)) {
+                    throw ApiException.badRequest("Pick a day up to today.");
                 }
                 upserts.add(row);
             } catch (ApiException ex) {
@@ -408,6 +439,30 @@ public class MoneyService {
             return c;
         }
         return u;
+    }
+
+    /**
+     * The account a write from outside the app books to, as the app's own dialogs
+     * would pick it: an expense the last "Paid from" (else the first cash account),
+     * income the first bank or wallet; an archived or missing pick falls to the
+     * first active account. Null when there are none: the row still saves.
+     */
+    public String defaultAccountId(UUID userId, String kind) {
+        String last = repo.peekData(userId).map(d -> d.path("settings").path("lastAccountId").asText(null)).orElse(null);
+        return pickAccount(ledger.accounts(userId), "expense".equals(kind) ? last : null, kind);
+    }
+
+    static String pickAccount(JsonNode accounts, String last, String kind) {
+        List<JsonNode> active = new java.util.ArrayList<>();
+        accounts.forEach(a -> {
+            if (!a.path("archived").asBoolean(false)) active.add(a);
+        });
+        if (active.isEmpty()) return null;
+        Set<String> kinds = "expense".equals(kind) ? Set.of("cash") : Set.of("bank", "wallet");
+        String want = last != null ? last : active.stream().filter(a -> kinds.contains(a.path("kind").asText()))
+                .map(a -> a.path("id").asText()).findFirst().orElse(null);
+        return active.stream().map(a -> a.path("id").asText()).filter(id -> id.equals(want)).findFirst()
+                .orElse(active.get(0).path("id").asText());
     }
 
     /** {@code noAmount}: the bill exists but has no amount, so nothing could be booked. */
@@ -434,7 +489,10 @@ public class MoneyService {
             return null;
         }
         migrate(state);
-        String name = applyPaid(data, subId, month, today);
+        // EXM-7: the month's payment was deleted after it was marked, so paidFor still
+        // names the month with nothing behind it; let this tap book it again.
+        boolean rebook = !ledger.deletedIds(userId, List.of("sub-" + subId + "-" + month)).isEmpty();
+        String name = applyPaid(data, subId, month, today, rebook);
         if (name == null) {
             String unpriced = unpricedName(data, subId);
             return unpriced == null ? null : new Paid(unpriced, false, true);
@@ -472,6 +530,11 @@ public class MoneyService {
 
     /** Idempotent: a second tap on the same message changes nothing. */
     static String applyPaid(ObjectNode data, String subId, String month, LocalDate today) {
+        return applyPaid(data, subId, month, today, false);
+    }
+
+    /** {@code rebook}: the month is marked paid but its payment was deleted; book it again. */
+    static String applyPaid(ObjectNode data, String subId, String month, LocalDate today, boolean rebook) {
         if (!(data.get("subscriptions") instanceof ArrayNode subs)) {
             return null;
         }
@@ -485,7 +548,8 @@ public class MoneyService {
                 // Forward only: tapping last month's message after this month is paid
                 // must not roll paidFor back (and re-open this month's bill).
                 // "YYYY-MM" strings order the same as the months they name.
-                if (month.compareTo(sub.path("paidFor").asText("")) <= 0) {
+                int vs = month.compareTo(sub.path("paidFor").asText(""));
+                if (vs < 0 || (vs == 0 && !rebook)) {
                     return sub.path("name").asText();
                 }
                 sub.put("paidFor", month);
