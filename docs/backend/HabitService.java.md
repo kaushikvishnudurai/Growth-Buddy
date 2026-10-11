@@ -19,7 +19,7 @@ reads the full history.
 | `update(userId, id, req)` | null = unchanged; a blank name is ignored; `clearReminder: true` is the only way to remove a reminder time; `active: false` pauses (out of the score, Home's count and reminders). A new cadence / target **recomputes the streak** — the cache is in the old cadence's units and the read path trusts it for long runs |
 | `delete(userId, id)` | |
 | `reorder(userId, ids)` | `PUT /api/habits/order` → the list in its new order. The numbering is `applyOrder` (static, `HabitOrderTest`): listed ids first in that order, every habit left out keeps its relative place after them (a stale client can't drop one), a repeated id counts once, an id that isn't one of the user's live habits 404s before anything is renumbered; only rows whose position changed are saved |
-| `checkin(userId, id, req)` | `date` defaults to today; refused: a date after the user's today, more than `CHECKIN_BACK_DAYS` (7, = `canEditDay`'s `maxBack` in `habit-stats.js`) before it, or before the habit's creation day in the user's zone, `done` defaults to true; an absent `note` leaves the stored one; **recomputes `HabitStreak`**. **XP once per habit per day:** awarded only when the day had no row yet, or was a protected day — un-ticking keeps the row, so tick/untick/tick no longer pays each round (and a fresh row now starts `done = false`; the entity default `true` used to make every first tick look like a re-tick). Known gap: tick / untick / protect / tick pays again, bounded by the freeze-token cap |
+| `checkin(userId, id, req)` | `date` defaults to today; refused: a date after the user's today, more than `CHECKIN_BACK_DAYS` (7, = `canEditDay`'s `maxBack` in `habit-stats.js`) before it, or before the habit's creation day in the user's zone, `done` defaults to true; an absent `note` leaves the stored one; **recomputes `HabitStreak`**. **XP once per habit per day**, tracked on the row: `habit_checkins.xp_paid` (`xpPaid(c)`; NULL on a row from before the column reads the old rule, paid unless protected). Tick/untick/tick and tick/untick/protect/tick each pay once (a fresh row starts `done = false`, `xp_paid = false`). **Ticking a protected day refunds its token** (`refundToken`, capped at `FREEZE_CAP`) and clears the protection: the freeze bought nothing. `HabitFreezeRefundTest` |
 | `toggleToday(userId, id)` | |
 | `freezeStatus(userId)` | wallet snapshot (`GET /api/habits/freeze`) |
 | `history(userId, id, days)` | `GET /api/habits/{id}/history` — `{since, days[]}` for the freeze calendar and the history panel; each day is `HabitDay.of(row)` = `{date, done, protectedDay, note}`. `since` is the habit's creation date in the user's zone, so the client can tell a missed day from one before the habit existed |
@@ -71,7 +71,8 @@ user id rather than reading `CurrentUser` because the digest scheduler reaches t
 - `HabitStreak` is a **cache**, recomputed on every check-in change. If a streak looks wrong, the bug
   is in the recompute inside `checkin`, not in the read path.
 - `StreakFreezeWallet` grants 1 free token per ISO week, capped at `FREEZE_CAP`. Nothing spends a
-  token on its own — `protect` is the only writer, and it is always a user action. The freeze
+  token on its own — `protect` is the only spender, and it is always a user action; `unprotect` and
+  a check-in on a protected day give it back. The freeze
   calendar (`openFreezeCalendar` in `app.js`) is what reaches it for an arbitrary past day; the
   at-risk prompt and the rest-day toggle still cover only yesterday and today.
 - Enums `Cadence` (`daily`/`weekly`/`custom`) and `HabitDomain` (`habit`/`fitness`/`study`/`journal`)

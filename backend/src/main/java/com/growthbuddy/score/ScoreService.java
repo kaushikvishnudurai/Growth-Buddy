@@ -4,6 +4,7 @@ import com.growthbuddy.habit.HabitService;
 import com.growthbuddy.user.UserClock;
 import com.growthbuddy.user.UserRepository;
 import com.growthbuddy.task.TaskRepository;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.UUID;
@@ -52,12 +53,22 @@ public class ScoreService {
             int habitsDone, int habitsTotal) {
     }
 
+    /**
+     * Tasks: "x/N" is the day's tasks, not the whole list. N = open tasks due by the
+     * end of today (overdue included) + tasks ticked off today (any due date, or
+     * none); x = the latter. An open undated task, or one due tomorrow, is not
+     * today's, so it neither counts nor drags the score.
+     */
     @Transactional(readOnly = true)
     public ScoreResponse today(UUID userId) {
-        long taskTotal = tasks.countByUserIdAndPausedFalseAndDeletedAtIsNull(userId);
-        long taskDone = tasks.countByUserIdAndDoneTrueAndPausedFalseAndDeletedAtIsNull(userId);
+        LocalDate today = clock.today(userId);
+        ZoneId zone = clock.zoneOf(userId);
+        Instant start = today.atStartOfDay(zone).toInstant();
+        Instant end = today.plusDays(1).atStartOfDay(zone).toInstant();
+        long taskDone = tasks.countDoneBetween(userId, start, end);
+        long taskTotal = taskDone + tasks.countOpenDueBefore(userId, end);
         HabitService.TodayCounts hc = habitsOn(userId) ? habits.todayCounts(userId) : NO_HABITS;
-        return build(clock.today(userId), taskDone, taskTotal, hc.done(), hc.total());
+        return build(today, taskDone, taskTotal, hc.done(), hc.total());
     }
 
     /**
@@ -68,18 +79,17 @@ public class ScoreService {
      *
      * <p>Completions come from {@code task_completion_history}, which the sweep
      * leaves alone. ponytail: the day's task <em>total</em> is reconstructed as
-     * "finished then + still open now", because nothing stores it. A task created
-     * since inflates it; snapshot into {@code daily_scores} at the sweep if that
-     * ever matters.
+     * "finished then + still open now and due by that day's end" (the same due
+     * rule as {@link #today}), because nothing stores it. A task created since
+     * inflates it; snapshot into {@code daily_scores} at the sweep if that ever
+     * matters.
      */
     @Transactional(readOnly = true)
     public ScoreResponse on(UUID userId, LocalDate day) {
         ZoneId zone = clock.zoneOf(userId);
-        long done = tasks.countCompletedBetween(userId,
-                day.atStartOfDay(zone).toInstant(),
-                day.plusDays(1).atStartOfDay(zone).toInstant());
-        long open = tasks.countByUserIdAndPausedFalseAndDeletedAtIsNull(userId)
-                - tasks.countByUserIdAndDoneTrueAndPausedFalseAndDeletedAtIsNull(userId);
+        Instant end = day.plusDays(1).atStartOfDay(zone).toInstant();
+        long done = tasks.countCompletedBetween(userId, day.atStartOfDay(zone).toInstant(), end);
+        long open = tasks.countOpenDueBefore(userId, end);
         HabitService.TodayCounts hc = habitsOn(userId) ? habits.countsOn(userId, day) : NO_HABITS;
         return build(day, done, done + open, hc.done(), hc.total());
     }

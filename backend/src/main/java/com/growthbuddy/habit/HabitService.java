@@ -196,7 +196,9 @@ public class HabitService {
                 c.setHabitId(id);
                 c.setLogDate(day);
                 c.setUserId(userId);
+                c.setXpPaid(false);
             }
+            c.setXpPaid(xpPaid(c)); // pinned before protected_day changes what the legacy rule reads
             c.setDone(false);
             c.setProtectedDay(true);
             checkins.save(c);
@@ -213,14 +215,29 @@ public class HabitService {
         LocalDate day = date != null ? date : today;
         HabitCheckin c = checkins.findByHabitIdAndLogDate(id, day).orElse(null);
         if (c != null && c.isProtectedDay()) {
+            c.setXpPaid(xpPaid(c));
             c.setProtectedDay(false);
             checkins.save(c);
-            StreakFreezeWallet w = wallet(userId, today);
-            w.setTokens(Math.min(FREEZE_CAP, w.getTokens() + 1));
-            wallets.save(w);
+            refundToken(userId, today);
             recomputeStreak(h, today);
         }
         return toResponse(h, today, userId);
+    }
+
+    /** One freeze token back, never past the cap. */
+    private void refundToken(UUID userId, LocalDate today) {
+        StreakFreezeWallet w = wallet(userId, today);
+        w.setTokens(Math.min(FREEZE_CAP, w.getTokens() + 1));
+        wallets.save(w);
+    }
+
+    /**
+     * Has this day's check-in XP been paid? The column when it is set; on a row
+     * from before it, the rule that came before it: an existing row had paid
+     * unless it was a protected day (which was never done).
+     */
+    static boolean xpPaid(HabitCheckin c) {
+        return c.getXpPaid() != null ? c.getXpPaid() : !c.isProtectedDay();
     }
 
     // Read-write (not readOnly): wallet() may persist a weekly token grant.
@@ -772,18 +789,23 @@ public class HabitService {
             // A fresh row starts undone. The entity's field default is done = true,
             // which made a first tick look like a re-tick.
             c.setDone(false);
+            c.setXpPaid(false);
         }
         boolean wasDone = c.isDone();
-        // XP once per habit per day. Un-ticking keeps the row (done = false), so a
-        // re-tick finds it and earns nothing: tick/untick/tick used to pay 10 XP
-        // every round. The one exception is completing a protected (freeze) day:
-        // it was never done, and each one cost a capped token.
-        // ponytail: tick / untick / protect / tick still pays a second time — the row
-        // can't tell a day that already paid; bounded by the token cap (one a week).
-        // A paid-flag column closes it if that ever matters.
-        boolean firstCompletion = existing == null || existing.isProtectedDay();
+        // XP once per habit per day, tracked on the row (xp_paid): tick/untick/tick
+        // and tick/untick/protect/tick both pay once. The second used to pay again,
+        // bounded by the token it cost; now that ticking a rest day refunds the
+        // token, only the flag stops that loop.
+        // A quit habit earns nothing here: done = true only takes a slip back (or
+        // carries a note), and its clean days are paid once by creditCleanDays.
+        boolean pays = !wasDone && done && !xpPaid(c) && !isQuit(h);
+        c.setXpPaid(pays || xpPaid(c));
         c.setUserId(userId);
         c.setDone(done);
+        if (done && c.isProtectedDay() && !isQuit(h)) {
+            // The day was done after all, so the freeze bought nothing: give it back.
+            refundToken(userId, today);
+        }
         if (done || isQuit(h)) {
             // A completed day supersedes a protected (rest/freeze) day. On a quit
             // habit done = false is a slip, which a freeze must not disguise.
@@ -805,9 +827,7 @@ public class HabitService {
         }
         checkins.save(c);
 
-        // A quit habit earns nothing here: done = true only takes a slip back (or
-        // carries a note), and its clean days are paid once by creditCleanDays.
-        if (!wasDone && done && firstCompletion && !isQuit(h)) {
+        if (pays) {
             progress.awardHabitCheckin(userId);
         }
 

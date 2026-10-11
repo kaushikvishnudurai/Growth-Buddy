@@ -15,12 +15,22 @@ public interface TaskRepository extends JpaRepository<Task, UUID> {
 
     Optional<Task> findByIdAndUserIdAndDeletedAtIsNull(UUID id, UUID userId);
 
-    /** Paused tasks are left out of both score counts: a paused task scores as no task. */
-    long countByUserIdAndPausedFalseAndDeletedAtIsNull(UUID userId);
+    /**
+     * The score's "due" open tasks: not done, not paused, due before {@code end}
+     * (the end of the day being scored), overdue included. An undated task is not
+     * due on any day, so it is left out until it is ticked off.
+     */
+    @Query("select count(t) from Task t where t.userId = :userId and t.deletedAt is null and t.paused = false "
+            + "and t.done = false and t.dueAt is not null and t.dueAt < :end")
+    long countOpenDueBefore(@Param("userId") UUID userId, @Param("end") Instant end);
+
+    /** Live tasks ticked off in {@code [from, to)}, whatever their due date: anything done today counts. */
+    @Query("select count(t) from Task t where t.userId = :userId and t.deletedAt is null and t.paused = false "
+            + "and t.done = true and t.doneAt >= :from and t.doneAt < :to")
+    long countDoneBetween(@Param("userId") UUID userId, @Param("from") Instant from, @Param("to") Instant to);
 
     List<Task> findByUserIdAndDoneAtAfter(UUID userId, Instant after);
 
-    long countByUserIdAndDoneTrueAndPausedFalseAndDeletedAtIsNull(UUID userId);
 
     /** Ids of everyone currently holding a ticked-off task. Drives the midnight sweep. */
     @Query("select distinct t.userId from Task t where t.done = true and t.deletedAt is null")

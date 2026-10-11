@@ -123,4 +123,19 @@ class MoneyLedgerMappingTest {
         // The facts read as a sentence.
         assertThat(MoneyDaySummary.rulesText(f)).contains("entertainment").contains("3.5/5").contains("Arcade");
     }
+
+    /** No ratings, a day 1000x the usual: called out, never "spent on purpose". */
+    @Test
+    void dayTextVouchesOnlyWithRatingsAndCallsOutAnOutlier() throws Exception {
+        ObjectNode f = MoneyDaySummary.facts(List.of(obj("{\"id\":\"1\",\"amount\":200000,\"category\":\"food\"}")),
+                Map.of("food", "Food"), json);
+        assertThat(MoneyDaySummary.rulesText(f)).doesNotContain("on purpose");
+        f.put("usualDaily", 200);
+        assertThat(MoneyDaySummary.rulesText(f)).contains("1000 times your usual day").doesNotContain("on purpose");
+        ObjectNode rated = MoneyDaySummary.facts(List.of(obj(
+                "{\"id\":\"1\",\"amount\":300,\"category\":\"food\",\"reflection\":{\"satisfaction\":5}}")),
+                Map.of("food", "Food"), json);
+        rated.put("usualDaily", 200);
+        assertThat(MoneyDaySummary.rulesText(rated)).contains("on purpose").doesNotContain("times your usual");
+    }
 }
