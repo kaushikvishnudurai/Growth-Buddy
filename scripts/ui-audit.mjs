@@ -254,7 +254,8 @@ await checkDialog('delete recurring reminder', 'calendar', () =>
     );
     // By label: Edit carries .gb-rem-del too, and comes first — the class alone
     // opened the edit sheet and reported the scope dialog checked.
-    const el = row && row.querySelector('[aria-label="Delete reminder"]');
+    // A prefix: the label names the reminder ("Delete reminder: Stand-up").
+    const el = row && row.querySelector('[aria-label^="Delete reminder"]');
     if (!el) return false;
     el.click();
     return true;
