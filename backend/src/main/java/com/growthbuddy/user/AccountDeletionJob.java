@@ -1,5 +1,7 @@
 package com.growthbuddy.user;
 
+import com.growthbuddy.money.BankFeedService;
+import java.util.List;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
@@ -24,10 +26,12 @@ public class AccountDeletionJob {
 
     private final UserRepository users;
     private final AuthService auth;
+    private final BankFeedService bankFeed;
 
-    public AccountDeletionJob(UserRepository users, AuthService auth) {
+    public AccountDeletionJob(UserRepository users, AuthService auth, BankFeedService bankFeed) {
         this.users = users;
         this.auth = auth;
+        this.bankFeed = bankFeed;
     }
 
     /** Hourly, so the purge lands within the hour of the date the email promised. */
@@ -37,8 +41,12 @@ public class AccountDeletionJob {
         int done = 0;
         for (UUID id : users.findIdsDueForDeletion(cutoff)) {
             try {
+                // Read before the purge deletes the rows; revoked at Setu only once the purge
+                // committed, so a cancel that wins the race keeps a working bank feed.
+                List<String> consents = bankFeed.consentIds(id);
                 if (auth.purgeScheduledAccount(id, cutoff)) {
                     done++;
+                    bankFeed.revokeQuietly(consents);
                 }
             } catch (RuntimeException ex) {
                 log.error("Scheduled deletion of account {} failed; will retry next run", id, ex);

@@ -187,7 +187,7 @@ Required (no defaults under the `prod` profile — the app won't start without t
 
 Optional: `DB_SSL_MODE` (defaults to `REQUIRED` in prod — set `DISABLED` only
 for a socket-local MySQL), `DB_POOL_SIZE`, `MAIL_USER`/`MAIL_PASS`,
-`OPENAI_API_KEY`, `VAPID_*`, `WHATSAPP_*`.
+`OPENAI_API_KEY`, `VAPID_*`, `WHATSAPP_*`, `SETU_*` (the bank feed, below).
 
 **Schema is not auto-created, and not checked either.** `prod` runs
 `ddl-auto: none` (`SPRING_JPA_DDL_AUTO` overrides it). Apply
@@ -317,3 +317,33 @@ What each rotation costs users:
 Rotate it (table above), check the Render and Cloudflare logs for use, and if
 user data may have been read, tell the affected users — the contact address in
 `public/privacy.html` is the one they know.
+
+## Bank feed (Account Aggregator via Setu)
+
+Money's "Connect your bank" pulls bank transactions through RBI's Account
+Aggregator framework, with Setu as the FIU gateway. It stays hidden until all of
+`SETU_CLIENT_ID`, `SETU_CLIENT_SECRET`, `SETU_PRODUCT_INSTANCE_ID` and
+`SETU_REDIRECT_URL` are set.
+
+1. On Setu Bridge (bridge.setu.co), create an Account Aggregator FIU product.
+   Sandbox gives credentials at once; going live needs Setu's FIU onboarding
+   (or your own FIU registration).
+2. Copy the client id, secret and product instance id into the variables above.
+   `SETU_AA_BASE_URL` is `https://fiu-sandbox.setu.co` for sandbox and
+   `https://fiu.setu.co` for live.
+3. Set `SETU_REDIRECT_URL` to the web app's URL. The AA sends the user there
+   after they approve.
+4. Generate `SETU_WEBHOOK_TOKEN` (`openssl rand -hex 24`). Register
+   `<api origin>/api/money/bank/webhook?token=<that value>` as the
+   notification URL on Bridge. Setu signs nothing, so the token is the only
+   gate, and the server re-reads every notified consent or session from Setu
+   before acting on it.
+5. Apply the `bank_feed_consents` table (the end of `migrations.sql`).
+
+Without the webhook it still works: `BankFeedService.tick` collects sessions
+every 15 minutes.
+
+| Rotating | Effect |
+|---|---|
+| `SETU_CLIENT_SECRET` | Calls fail until Render has the new one. Consents are unaffected. |
+| `SETU_WEBHOOK_TOKEN` | Notifications 401 until Bridge has the new URL. The 15-minute tick covers the gap. |

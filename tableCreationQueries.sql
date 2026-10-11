@@ -1160,3 +1160,34 @@ CREATE TABLE IF NOT EXISTS `idempotency_keys` (
   KEY `ix_idempotency_created` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ;
+
+-- Account Aggregator consents (Money's "Connect your bank", via Setu). One row per
+-- consent the user started. Holds the consent's id and status, the last four
+-- digits of each linked account, and where the feed has got to — never a full
+-- account number and never the bank's data itself: transactions land in
+-- money_transactions as ordinary rows (id 'bank-<hash of the bank txnId>', extra
+-- {"source":"bank"}), and the FI payload is dropped once mapped.
+-- synced_to: the end of the last COMPLETED data session; the next asks from here.
+-- pending_session / session_to: a data session asked for and not yet collected.
+-- requested_at: the claim that keeps two instances (or a second Sync now) from
+-- opening a session at once.
+CREATE TABLE IF NOT EXISTS `bank_feed_consents` (
+  `id` char(36) NOT NULL,
+  `user_id` char(36) NOT NULL,
+  `consent_id` varchar(64) NOT NULL,
+  `status` varchar(16) NOT NULL,
+  `accounts` json DEFAULT NULL,
+  `data_from` date NOT NULL,
+  `synced_to` datetime(6) DEFAULT NULL,
+  `pending_session` varchar(64) DEFAULT NULL,
+  `session_to` datetime(6) DEFAULT NULL,
+  `requested_at` datetime(6) DEFAULT NULL,
+  `last_synced_at` datetime(6) DEFAULT NULL,
+  `last_error` varchar(255) DEFAULT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_bank_feed_consent` (`consent_id`),
+  KEY `ix_bank_feed_user` (`user_id`),
+  CONSTRAINT `fk_bank_feed_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

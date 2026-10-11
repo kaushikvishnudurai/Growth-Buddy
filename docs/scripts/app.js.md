@@ -65,7 +65,10 @@ it silently landed on Home. Don't reintroduce a second list.
   app.js needs at boot (`emptyMoney`, `normalizeMoney`, `mergeMoney`, `ledgerDiff`,
   `applyLedgerDiff`, `docPart`, `LEDGER_ARRAYS`) comes from **`money-core.js`**, Home's card from
   `money-home.js`; Settings' Money pane (`customisePanes` → `moneyPane`) wraps
-  `MoneyCustomisePane` in `lazyScreen` too. The split took the boot chunk from 551,884 B to
+  `MoneyCustomisePane` in `lazyScreen` too, followed by **`bankFeedSection()`** (Connect your bank:
+  `GET /api/money/bank`, empty when the server says `configured: false`; `openConnectBank` asks
+  for the mobile number, POSTs `connect` and opens the AA's approval URL through the Capacitor
+  `Browser` plugin or `window.open`; Sync now merges the fresh `/api/money` in with `mergeMoney`). The split took the boot chunk from 551,884 B to
   447,141 B raw (170.4 → 137.8 kB gzip). Don't add a static `from './money.js'` import here —
   import from `money-core.js`, or reach the screen's code through `import()`. On Vite DEV the
   self-check block at the bottom imports `money.js` so its `_demo()` still runs at boot.

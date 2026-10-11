@@ -42,7 +42,7 @@ Three files so the ~6k-line screen stays out of the boot chunk (boot 551,884 B -
 ## Doc shape (`emptyMoney`)
 
 ```
-expenses[]  {id, amount, category, note, date, createdAt, accountId?, orig?{amount, currency, rate}, reflection?{reason, planned, satisfaction}}   ← ledger
+expenses[]  {id, amount, category, note, date, createdAt, accountId?, orig?{amount, currency, rate}, reflection?{reason, planned, satisfaction}, source?:'bank', bankMask?, mode?}   ← ledger (source 'bank' = imported by BankFeedService, id 'bank-<hash>'; the row shows a "Bank" tag and edits like any other)
 income[]    {id, amount, source:'salary'|'other', label, date, accountId?, orig?}                                       ← ledger
 transfers[] {id, amount, from?, to?, date, note}   (moving money; never spending or income. Both = between your accounts (`isMove`, the only kind in Recent moves). Only `from` = out to someone, only `to` = in from someone: the loans' one-sided moves. Never neither — MoneyLedger.toRow refuses it)     ← ledger
 accounts[]  {id, name, kind:'cash'|'bank'|'card'|'wallet', openingBalance, balance, archived}   (server's, read-only)
