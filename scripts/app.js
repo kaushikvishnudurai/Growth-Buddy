@@ -101,7 +101,7 @@ import {
   TAGS,
 } from './calendar.js';
 import { WORK_WEEKS, getWorkWeek, setWorkWeek, occursOn } from './recurrence.js';
-import { ScreenAchievements, computeAchievements, levelProgress } from './achievements.js';
+import { computeAchievements, levelProgress } from './achievements.js';
 import { celebrate } from './celebrate.js';
 import { usualSleep, stepsTarget, focusMinutesTarget } from './nudges.js';
 import {
@@ -133,7 +133,7 @@ import { registerToast } from './toast.js';
 import { initA11y, focusLocator, refocus } from './a11y.js';
 import { initErrorReporting } from './error-report.js';
 import { initVitals, markHomePainted } from './vitals.js';
-import { winLines } from './circle-core.js';
+import { winLines } from './circle-wins.js';
 import {
   CUSTOM_MAX_BYTES,
   CUSTOM_MAX_COUNT,
@@ -13376,7 +13376,11 @@ const SCREENS = {
   achievements: {
     headerLabel: () => 'Your badges',
     headerName: () => 'Achievements',
-    render: () => ScreenAchievements(achievementProps()),
+    render: () =>
+      lazyScreen(
+        () => import('./achievements-screen.js'),
+        (m) => m.ScreenAchievements(achievementProps())
+      ),
   },
   focus: {
     headerLabel: () => 'Deep work',
@@ -14223,6 +14227,9 @@ function captureScrollPosition() {
 
 function restoreScrollPosition(snapshot) {
   if (!snapshot || snapshot.screen !== state.screen) return;
+  // At the top there is nothing to restore (a fresh .gb-scroll starts there), and
+  // reading scrollHeight would force a layout of the tree just built.
+  if (!snapshot.top && !snapshot.left) return;
   const scroll = document.querySelector('.gb-scroll');
   if (!scroll) return;
   const apply = () => {
@@ -15348,8 +15355,13 @@ function tweenFromLast() {
     });
   }
   if (!moves.length) return;
-  void document.body.offsetWidth; // commit the old values as the start
-  for (const [el, prop, next] of moves) el.style[prop] = next;
+  // The old values paint one frame, then the new ones are set and transition from
+  // them. Was a forced layout (`void offsetWidth`) to commit the start values.
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      for (const [el, prop, next] of moves) el.style[prop] = next;
+    })
+  );
 }
 
 function render() {
