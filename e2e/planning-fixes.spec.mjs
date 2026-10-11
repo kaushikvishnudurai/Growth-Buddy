@@ -222,3 +222,32 @@ test('EXP-3: the done tick sits inside its circle', async ({ page, account }) =>
   if (test.info().project.name === 'desktop')
     await m.locator('.gb-rem-row').filter({ hasText: 'Water plants' }).screenshot({ path: 'docs/evidence/planning/EXP-3.jpg', type: 'jpeg', quality: 80 });
 });
+
+/* ---------------- Notes ---------------- */
+
+test('EXP-2 + CNT-16: a repaint mid-typing keeps the caret, and Notes fetches once', async ({ page, account }) => {
+  const gets = [];
+  page.on('request', (r) => {
+    const u = new URL(r.url());
+    if (r.method() === 'GET' && /^\/api\/notes(\/counts|\/draft)?$/.test(u.pathname)) gets.push(u.pathname);
+  });
+  await boot(page, account);
+  gets.length = 0;
+  await go(page, 'notes');
+  await settle(page);
+  const m = main(page);
+  await m.getByRole('button', { name: 'Jot something down…' }).click();
+  const area = m.locator('.gb-note-composer [contenteditable="true"]');
+  await area.click();
+  await page.keyboard.type('alpha');
+  // A system theme flip re-renders the whole app (followSystemTheme -> render()).
+  for (const scheme of ['dark', 'light', 'dark']) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await page.waitForTimeout(150);
+  }
+  await page.keyboard.type(' beta');
+  await expect(area).toHaveText('alpha beta');
+  await shot(page, 'EXP-2');
+  const count = (p) => gets.filter((x) => x === p).length;
+  expect([count('/api/notes'), count('/api/notes/counts'), count('/api/notes/draft')]).toEqual([1, 1, 1]);
+});

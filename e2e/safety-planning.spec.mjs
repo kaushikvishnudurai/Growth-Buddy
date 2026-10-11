@@ -306,8 +306,9 @@ test('Notes: archive, then trash and restore', async ({ page, account }) => {
   // Trash the seeded note from the main list, then restore it.
   await m.getByRole('button', { name: /^Notes/ }).first().click();
   await card(page, 'Ideas for the trip').click();
+  // No confirm: it only goes to the Trash, and the toast offers Undo.
   await page.getByRole('dialog', { name: 'Note' }).getByRole('button', { name: 'Delete note' }).click();
-  await page.getByRole('alertdialog', { name: 'Delete this note?' }).getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect(page.locator('.gb-toast').filter({ hasText: 'Note deleted.' }).getByRole('button', { name: 'Undo' })).toBeVisible();
   await expect(m.getByRole('heading', { name: 'Ideas for the trip' })).toHaveCount(0);
   await reload(page, 'notes');
   await expect(m.getByRole('heading', { name: 'Ideas for the trip' })).toHaveCount(0);
@@ -346,7 +347,7 @@ test('Goals: create, add and tick a milestone, delete', async ({ page, account }
 
   // Undo instead of a confirm (EXP-5): the DELETE goes when the toast does.
   await goal.getByRole('button', { name: 'Delete goal' }).click();
-  await expect(page.getByRole('button', { name: 'Undo' })).toBeVisible();
+  await expect(page.locator('.gb-toast').filter({ hasText: 'Goal deleted.' }).getByRole('button', { name: 'Undo' })).toBeVisible();
   await expect(m.getByRole('button', { name: 'Edit goal: Learn to swim' })).toHaveCount(0);
   await expect
     .poll(async () => (await api(page, account, '/api/goals')).some((s) => (s.goals || []).some((g) => g.title === 'Learn to swim')), { timeout: 12_000 })

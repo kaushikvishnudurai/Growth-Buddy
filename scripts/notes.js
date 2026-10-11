@@ -1155,6 +1155,16 @@ function revealMatch(area, words) {
 let composerDraft = null; // { title, html, color }
 const DRAFT_SAVE_MS = 800;
 
+/* One visit, one screen. render() calls ScreenNotes again for a theme flip, a
+   socket repaint or a day rollover; rebuilding refetched the list, counts and
+   draft each time and put a new composer under the caret, so typing landed at
+   the start. The node built for this visit is still in the document while
+   render() builds the next tree, so it is handed back as it is: a new visit
+   (the node gone) builds fresh. A repaint well after the last load still
+   refreshes the list, quietly: a note quick-added from the header shows up. */
+let liveScreen = null; // { node, userId, reuse }
+const RELOAD_AFTER_MS = 5000;
+
 function ScreenNotes({
   onList,
   onGet,
@@ -1175,6 +1185,10 @@ function ScreenNotes({
   onDeleteForever,
   userId,
 }) {
+  if (liveScreen && liveScreen.userId === userId && liveScreen.node.isConnected) {
+    liveScreen.reuse();
+    return liveScreen.node;
+  }
   const listEl = h('div', { class: 'gb-note-grid' });
   let notes = [];
   let query = '';
@@ -2297,8 +2311,10 @@ function ScreenNotes({
   const fetchView = () =>
     view === 'trash' ? onTrash() : view === 'archived' ? onList({ archived: true }) : onList();
 
+  let loadedAt = 0;
   const load = () => {
     const forView = view;
+    loadedAt = Date.now();
     return fetchView()
       .then((data) => {
         if (forView !== view) return; // switched while this was in flight
@@ -2356,7 +2372,29 @@ function ScreenNotes({
 
   // Search (with sort) is the top bar, sticky while the list scrolls; everything
   // else — banner, composer, views, label chips — sits under it.
-  return h('div', { class: 'gb-notes' }, tools, offlineBanner, composer, viewRow, labelRow, listEl);
+  const node = h('div', { class: 'gb-notes' }, tools, offlineBanner, composer, viewRow, labelRow, listEl);
+  liveScreen = {
+    node,
+    userId,
+    reuse() {
+      // Moving the node out of the old tree drops focus and the selection, and
+      // render() refocuses a contenteditable with its caret at offset 0. Keep
+      // the selection's points (the nodes survive the move) and put it back
+      // once render() is done.
+      const sel = window.getSelection();
+      const r = sel && sel.rangeCount && node.contains(sel.anchorNode) ? sel.getRangeAt(0) : null;
+      const pts = r && [r.startContainer, r.startOffset, r.endContainer, r.endOffset];
+      const had = node.contains(document.activeElement) ? document.activeElement : null;
+      if (had)
+        queueMicrotask(() => {
+          if (!had.isConnected) return;
+          had.focus({ preventScroll: true });
+          if (pts && had.isContentEditable) sel.setBaseAndExtent(...pts);
+        });
+      if (!offline && Date.now() - loadedAt > RELOAD_AFTER_MS) load();
+    },
+  };
+  return node;
 }
 
 /* =====================================================================
@@ -2428,6 +2466,7 @@ if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.DEV
 
 function clearNoteDraft() {
   composerDraft = null;
+  liveScreen = null;
 }
 
 export { ScreenNotes, sanitize, shrinkPhoto, clearNoteDraft };
