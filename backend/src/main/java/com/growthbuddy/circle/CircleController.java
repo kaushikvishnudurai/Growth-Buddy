@@ -111,6 +111,34 @@ public class CircleController {
         return service.toggleKudos(CurrentUser.id(), id, postId);
     }
 
+    /** A post's replies, oldest first. */
+    @GetMapping("/{id}/posts/{postId}/comments")
+    public List<CommentResponse> comments(@PathVariable UUID id, @PathVariable UUID postId) {
+        return service.comments(CurrentUser.id(), id, postId);
+    }
+
+    @PostMapping("/{id}/posts/{postId}/comments")
+    @ResponseStatus(HttpStatus.CREATED)
+    public CommentResponse comment(@PathVariable UUID id, @PathVariable UUID postId,
+            @Valid @RequestBody CreateCommentRequest req) {
+        return service.comment(CurrentUser.id(), id, postId, req);
+    }
+
+    /** The reply's author, or the circle's owner. */
+    @DeleteMapping("/{id}/posts/{postId}/comments/{commentId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteComment(@PathVariable UUID id, @PathVariable UUID postId, @PathVariable UUID commentId) {
+        service.deleteComment(CurrentUser.id(), id, postId, commentId);
+    }
+
+    /** One tap: a bell card for another member. Once per pair per day. */
+    @PostMapping("/{id}/members/{userId}/cheer")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void cheer(@PathVariable UUID id, @PathVariable UUID userId,
+            @Valid @RequestBody(required = false) CheerRequest req) {
+        service.cheer(CurrentUser.id(), id, userId, req == null ? null : req.text());
+    }
+
     /** Challenges for a circle, each with its current leaderboard. */
     @GetMapping("/{id}/challenges")
     public List<ChallengeResponse> challenges(@PathVariable UUID id) {

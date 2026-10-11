@@ -131,6 +131,7 @@ import { registerToast } from './toast.js';
 import { initA11y, focusLocator, refocus } from './a11y.js';
 import { initErrorReporting } from './error-report.js';
 import { initVitals, markHomePainted } from './vitals.js';
+import { winLines } from './circle-core.js';
 import {
   CUSTOM_MAX_BYTES,
   CUSTOM_MAX_COUNT,
@@ -6467,7 +6468,9 @@ function profileDropdown() {
     list of the same thing will drift; this one can't. Safe despite `SCREENS`
     being declared further down: nothing calls this until after boot. */
 function screenFromHash() {
-  const raw = (window.location.hash || '').replace(/^#\/?/, '').toLowerCase();
+  // A screen may carry a query (#/circle?join=CODE, a circle invite link): the
+  // screen reads it, the route is the part before it.
+  const raw = (window.location.hash || '').replace(/^#\/?/, '').split('?')[0].toLowerCase();
   if (Object.prototype.hasOwnProperty.call(SCREENS, raw)) return raw;
   // An unknown address (#/settings: Settings is a dialog, not a screen) shows
   // Home, so the bar says so too instead of keeping the address that isn't there.
@@ -6485,7 +6488,9 @@ function landAfterSignIn() {
     : 'home';
   returnToScreen = '';
   state.screen = target;
-  history.replaceState(null, '', '#/' + target);
+  // An invite link opened while signed out keeps its query through sign-in.
+  const query = screenFromHash() === target ? (window.location.hash.split('?')[1] || '') : '';
+  history.replaceState(null, '', '#/' + target + (query ? '?' + query : ''));
 }
 
 function setScreen(id, opts) {
@@ -13310,6 +13315,13 @@ const SCREENS = {
                 return res;
               }),
             currentUserId: state.user && state.user.id,
+            // "Share a win" chips over a circle's composer, read when a feed opens.
+            wins: () =>
+              winLines({
+                habits: state.habits || [],
+                goals: (state.goals || []).flatMap((sec) => sec.goals || []),
+                today: todayKeyNow(),
+              }),
             // Inside an accepted link ({id} = the request id): cheer/nudge, the
             // thread, the agreement, and the mentor's weekly card.
             mentorshipApi: {
@@ -13387,6 +13399,28 @@ const SCREENS = {
                     '/kudos',
                   { method: 'POST' }
                 ),
+              listComments: (id, postId) =>
+                api('/api/circles/' + encodeURIComponent(id) + '/posts/' + encodeURIComponent(postId) + '/comments'),
+              createComment: (id, postId, body) =>
+                api('/api/circles/' + encodeURIComponent(id) + '/posts/' + encodeURIComponent(postId) + '/comments', {
+                  method: 'POST',
+                  body: JSON.stringify({ body }),
+                }),
+              deleteComment: (id, postId, commentId) =>
+                api(
+                  '/api/circles/' +
+                    encodeURIComponent(id) +
+                    '/posts/' +
+                    encodeURIComponent(postId) +
+                    '/comments/' +
+                    encodeURIComponent(commentId),
+                  { method: 'DELETE' }
+                ),
+              cheer: (id, userId) =>
+                api('/api/circles/' + encodeURIComponent(id) + '/members/' + encodeURIComponent(userId) + '/cheer', {
+                  method: 'POST',
+                  body: JSON.stringify({}),
+                }),
               listChallenges: (id) => api('/api/circles/' + encodeURIComponent(id) + '/challenges'),
               createChallenge: (id, body) =>
                 api('/api/circles/' + encodeURIComponent(id) + '/challenges', {

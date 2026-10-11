@@ -515,6 +515,20 @@ CREATE TABLE IF NOT EXISTS circle_post_reactions (
   CONSTRAINT fk_cpr_user FOREIGN KEY (user_id) REFERENCES users(id)        ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- A reply under a circle post (CirclePostComment). Goes with its post.
+CREATE TABLE IF NOT EXISTS circle_post_comments (
+  id              CHAR(36)     NOT NULL,
+  post_id         CHAR(36)     NOT NULL,
+  user_id         CHAR(36)     NOT NULL,
+  body            VARCHAR(500) NOT NULL,
+  created_at      DATETIME(6)  NOT NULL,
+  PRIMARY KEY (id),
+  KEY ix_circle_comment_post_time (post_id, created_at),
+  KEY ix_circle_comment_user (user_id),
+  CONSTRAINT fk_cpc_post FOREIGN KEY (post_id) REFERENCES circle_posts(id) ON DELETE CASCADE,
+  CONSTRAINT fk_cpc_user FOREIGN KEY (user_id) REFERENCES users(id)        ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Time-boxed challenges for a circle; members are ranked by `metric`
 -- (habit_checkins | focus_minutes | water_days) during [start_date, end_date].
 -- start_date may be in the future (an upcoming challenge).
