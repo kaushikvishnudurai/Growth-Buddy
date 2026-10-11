@@ -47,30 +47,30 @@ const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 /* ---- Color tags ---- */
 const TAGS = {
-  work: { label: 'Work', color: 'var(--sky-500)', soft: 'var(--sky-50)', softFg: 'var(--sky-700)' },
+  work: { label: 'Work', color: 'var(--sky-500)', soft: 'var(--info-soft)', softFg: 'var(--info-soft-fg)' },
   personal: {
     label: 'Personal',
     color: 'var(--iris-500)',
-    soft: 'var(--iris-50)',
-    softFg: 'var(--iris-700)',
+    soft: 'var(--ai-soft)',
+    softFg: 'var(--ai-soft-fg)',
   },
   health: {
     label: 'Health',
     color: 'var(--leaf-500)',
-    soft: 'var(--leaf-50)',
-    softFg: 'var(--leaf-700)',
+    soft: 'var(--success-soft)',
+    softFg: 'var(--success-soft-fg)',
   },
   urgent: {
     label: 'Urgent',
     color: 'var(--coral-500)',
-    soft: 'var(--coral-50)',
-    softFg: 'var(--coral-700)',
+    soft: 'var(--brand-soft)',
+    softFg: 'var(--brand-soft-fg)',
   },
   other: {
     label: 'Other',
     color: 'var(--sun-500)',
-    soft: 'var(--sun-50)',
-    softFg: 'var(--sun-700)',
+    soft: 'var(--warning-soft)',
+    softFg: 'var(--warning-soft-fg)',
   },
 };
 const TAG_ORDER = ['work', 'personal', 'health', 'urgent', 'other'];

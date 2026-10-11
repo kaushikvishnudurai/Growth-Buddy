@@ -129,7 +129,10 @@ public class HabitReminderDeliveryScheduler {
                 continue;
             }
 
-            if (checkins.existsByHabitIdAndLogDateAndDoneTrue(habit.getId(), day)) {
+            // On a break (I-08) habit reminders stay quiet; read from the fresh user,
+            // so a break started a minute ago already holds.
+            if (OnBreak.on(user.getUiPrefs(), day)
+                    || checkins.existsByHabitIdAndLogDateAndDoneTrue(habit.getId(), day)) {
                 continue;
             }
 

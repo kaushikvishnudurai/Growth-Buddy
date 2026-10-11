@@ -131,8 +131,7 @@
 .gb-mini-cal-day.is-other-month {
   background: transparent;
   border-color: var(--border);
-  color: var(--fg3);
-  opacity: 0.75;
+  color: var(--fg3); /* no opacity: fg3 is already the 4.5:1 floor */
 }
 
 .gb-mini-cal-day.is-today {
@@ -193,10 +192,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--brand-fill);
   color: var(--fg-on-brand);
-  font-size: 0.625rem;
+  font-size: var(--text-2xs);
   font-weight: 800;
 }
 
@@ -208,7 +207,7 @@
   right: 5px;
   width: 6px;
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--iris-500);
 }
 
@@ -232,7 +231,7 @@
 .gb-mini-cal-legend-item .dot {
   width: 8px;
   height: 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 
 .gb-mini-cal-legend-item .dot.has-tasks {
@@ -294,7 +293,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-2);
   color: var(--fg2);
   font-size: 0.75rem;
@@ -343,7 +342,7 @@
 .gb-mini-cal-pill {
   flex: none;
   padding: 4px 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-3);
   color: var(--fg2);
   font-size: 0.6875rem;
@@ -433,6 +432,6 @@
   .gb-mini-cal-item-sub,
   .gb-mini-cal-pill,
   .gb-mini-cal-total {
-    font-size: 0.625rem;
+    font-size: var(--text-2xs);
   }
 }

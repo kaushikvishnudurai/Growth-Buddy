@@ -17,6 +17,9 @@ import {
   fmt,
   todayKey,
   uid,
+  salaryDue,
+  salaryDueRow,
+  fmtDateShort,
 } from './money-core.js';
 import { repeatExpense } from './nudges.js';
 
@@ -74,6 +77,50 @@ function RepeatExpenseNudge(money, onSaveMoney) {
           },
         },
         'Not today'
+      )
+    )
+  );
+  return node;
+}
+
+/* "Salary 60,000 arrived?" on Home (salaryDue, money-core.js; the Income tab has
+   the same card): one tap logs this month's salary on its usual day and account. */
+export function SalaryNudge(money, onSaveMoney) {
+  const today = todayKey();
+  const due = salaryDue(money);
+  if (!due || skippedNudges.has(today + '|salary')) return null;
+  const node = h(
+    'div',
+    { class: 'gb-nudge', role: 'group', 'aria-label': 'Salary' },
+    h('span', null, 'Salary ' + fmt(due.amount) + ' arrived?'),
+    h(
+      'div',
+      { class: 'gb-nudge-opts' },
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--soft gb-btn--compact',
+          onclick: () => {
+            const next = normalizeMoney(money);
+            next.income.unshift(salaryDueRow(money, due));
+            onSaveMoney(next, money);
+            toast.success('Salary logged for ' + fmtDateShort(due.date) + '.');
+          },
+        },
+        'Yes, log it'
+      ),
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--ghost gb-btn--compact',
+          onclick: () => {
+            skippedNudges.add(today + '|salary');
+            node.remove();
+          },
+        },
+        'Not yet'
       )
     )
   );
@@ -179,6 +226,7 @@ export function MoneyHomeCard({ money, onSaveMoney, onOpen, requestReceiptScan }
         'Open Money Buddy'
       )
     ),
+    SalaryNudge(money, onSaveMoney),
     RepeatExpenseNudge(money, onSaveMoney)
   );
 }

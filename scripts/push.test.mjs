@@ -9,6 +9,7 @@
    ones you cannot check by tapping around the app. */
 
 import assert from 'node:assert/strict';
+import { breakState, startBreak, endBreak, onBreakDay } from './break.js';
 import {
   upcomingReminderAlarms,
   upcomingWaterAlarms,
@@ -481,6 +482,38 @@ assert.equal(isStaleChannel(undefined, 2), false);
   );
   const today = queue.filter((n) => n.at.getDate() === 16).map((n) => n.at.getHours() + ':' + n.at.getMinutes());
   assert.deepEqual(today, ['18:0', '20:0', '22:30'], 'Walk and the 20:00 glass; the late call still rings');
+}
+
+/* A break (I-08) quiets habit alarms on its days, both ends included, never a
+   reminder the user timed; the first day after it rings again. */
+{
+  const queue = upcomingAlarms(
+    {
+      reminders: [{ id: 'r', text: 'dentist', date: '2026-09-17', time: '09:00', repeat: 'none' }],
+      habits: [{ id: 'h', name: 'Read', reminderTime: '21:00' }],
+      breakPrefs: { breakFrom: '2026-09-15', breakUntil: '2026-09-17' },
+    },
+    NOW
+  );
+  const days = queue.map((n) => n.body + '@' + n.at.getDate());
+  assert.ok(!days.includes('Read@16') && !days.includes('Read@17'), 'no habit alarm on a break day');
+  assert.ok(days.includes('Read@18'), 'the day after the break rings again');
+  assert.ok(queue.some((n) => n.at.getDate() === 17 && n.at.getHours() === 9), 'a timed reminder still rings');
+}
+
+/* What Home reads from the same pair (break.js). */
+{
+  const b = startBreak(3, '2026-10-07', true);
+  assert.deepEqual(b, { breakFrom: '2026-10-06', breakUntil: '2026-10-09' }, 'a rescue covers yesterday');
+  assert.deepEqual(startBreak(14, '2026-10-31'), { breakFrom: '2026-10-31', breakUntil: '2026-11-13' });
+  assert.equal(breakState(b, '2026-10-09').on, true);
+  assert.equal(breakState(b, '2026-10-10').back, true, 'the day after: Back on it');
+  assert.equal(breakState(b, '2026-10-11'), null);
+  const ended = Object.assign({}, b, endBreak('2026-10-07'));
+  assert.equal(ended.breakUntil, '2026-10-06');
+  assert.equal(breakState(ended, '2026-10-07').back, true, 'End now lands on Back on it');
+  assert.equal(breakState({ breakFrom: '2026-10-07', breakUntil: '2026-10-06' }, '2026-10-07'), null, 'ended on day one');
+  assert.equal(onBreakDay(null, '2026-10-07'), false);
 }
 
 console.log('push.test.mjs: all assertions passed');

@@ -13,8 +13,19 @@ export default defineConfig({
   reporter: [['list'], ['html', { open: 'never', outputFolder: 'e2e-report' }]],
   outputDir: 'e2e-results',
   use: { baseURL: base, screenshot: 'on', trace: 'retain-on-failure' },
+  // `engine` picks how the fixtures get a browser (e2e/fixtures.mjs): chrome attaches over CDP,
+  // firefox/webkit connect to the servers e2e/servers.sh starts. The default run stays on the two
+  // Chrome projects; GB_E2E_ALL=1 adds the rest.
   projects: [
-    { name: 'desktop', use: { ...devices['Desktop Chrome'], channel: 'chrome', viewport: { width: 1280, height: 800 } } },
-    { name: 'mobile', use: { ...devices['Pixel 7'], channel: 'chrome' } },
+    { name: 'desktop-chrome', use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 }, engine: 'chrome' } },
+    { name: 'mobile-chrome', use: { ...devices['Pixel 7'], engine: 'chrome' } },
+    ...(process.env.GB_E2E_ALL
+      ? [
+          { name: 'tablet-chrome', use: { ...devices['iPad (gen 7)'], defaultBrowserType: 'chromium', engine: 'chrome' } },
+          { name: 'desktop-firefox', use: { ...devices['Desktop Firefox'], viewport: { width: 1280, height: 800 }, engine: 'firefox' } },
+          { name: 'desktop-webkit', use: { ...devices['Desktop Safari'], viewport: { width: 1280, height: 800 }, engine: 'webkit' } },
+          { name: 'mobile-webkit', use: { ...devices['iPhone 14'], engine: 'webkit' } },
+        ]
+      : []),
   ],
 });

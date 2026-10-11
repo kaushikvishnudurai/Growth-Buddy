@@ -8,7 +8,7 @@ A missing value is a muted dash, never a zero. CSS: the "Health screen" section 
 ## Entry
 
 `ScreenHealth({native, today, readings, sleepByDate, phone, layout, onSaveLayout, onSave, onUpdate, onDelete, onEditSleep, onConnect, onSync})`
-→ `div.gb-health`: `Hero` (the sentence leads), `Header` (its footnote: source line + actions), then the three cards `Insights`, `LastNight`, `Ledger` **in the user's order, minus the ones they hid** (`resolveHealthLayout(layout).sections`). `props.shown(type)` (added here) is false for a hidden metric: it drops out of the sentence, the ledger, its chips and the insights.
+→ `div.gb-health`: `Header` (source line + actions), then the three cards `Insights`, `LastNight`, `Ledger` **in the user's order, minus the ones they hid** (`resolveHealthLayout(layout).sections`), then `Hero` (today's sentence closes the screen). `props.shown(type)` (added here) is false for a hidden metric: it drops out of the sentence, the ledger, its chips and the insights.
 
 | Prop | Shape / use |
 |---|---|

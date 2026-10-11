@@ -54,6 +54,9 @@ public class DigestScheduler {
             if (today.equals(user.getLastDigestOn())) {
                 continue; // already sent today
             }
+            if (com.growthbuddy.habit.OnBreak.on(user.getUiPrefs(), today)) {
+                continue; // on a break (I-08): no digest; nothing claimed, so it resumes after
+            }
             boolean weekly = "weekly".equalsIgnoreCase(freq);
             if (weekly && now.getDayOfWeek() != DayOfWeek.MONDAY) {
                 continue;

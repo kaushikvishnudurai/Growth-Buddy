@@ -51,6 +51,15 @@ import {
 
 const ONBOARD_KEY = 'gb.onboardDismissed';
 
+/* The checklist's "tick a habit" step: bring the first unticked habit's check
+   into view and onto the keyboard. */
+function focusFirstHabit() {
+  const btn = document.querySelector('.gb-habit-strip .gb-habit-line:not(.is-done) .gb-check');
+  if (!btn) return;
+  btn.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  btn.focus({ preventScroll: true });
+}
+
 /* First-run checklist: shown until the basics are set up (or dismissed). Each
    step marks itself done from existing data, so it doubles as live progress. */
 function OnboardingCard({
@@ -61,24 +70,40 @@ function OnboardingCard({
   onAddTask,
   onAddMood,
   onStarterPack,
+  remindersAsk,
+  onEnableReminders,
   onOnboardDismiss,
 }) {
   if (CacheStorage.getItem(ONBOARD_KEY) === '1') return null;
+  const hasHabits = (habits || []).length > 0;
+  // The step list is fixed for the card's lifetime: a step that came and went
+  // made "of 4" read "of 3" a minute later. Each one ticks on its own data, so
+  // one action never ticks two.
   const steps = [
     // One tap that sets up most of the rest: habits, reminders and targets for a goal.
     onStarterPack && {
-      done: (habits || []).length > 0,
+      done: hasHabits,
       label: 'Pick a goal, we set it up',
       hint: 'Sleep, money, fitness, food, focus or water',
       icon: 'target',
       action: onStarterPack,
     },
     {
-      done: (habits || []).length > 0,
-      label: 'Add your first habit',
-      hint: 'Something to do daily',
+      // Ever, not today: longestStreak keeps a tick from an earlier day.
+      done: (habits || []).some((hb) => hb.doneToday || Number(hb.longestStreak) > 0),
+      label: hasHabits ? 'Tick off your first habit' : 'Add your first habit',
+      hint: hasHabits ? 'Tap the circle next to it' : 'Something to do daily',
       icon: 'repeat',
-      action: onAddHabit,
+      action: hasHabits ? focusFirstHabit : onAddHabit,
+    },
+    // Asked here, once there is something to ring, not before the account had
+    // anything (it used to be setup's notifications step). Absent where push can't work.
+    remindersAsk && {
+      done: remindersAsk === 'done',
+      label: 'Get reminded on time',
+      hint: 'Turn on notifications for your reminders',
+      icon: 'bell',
+      action: onEnableReminders,
     },
     {
       done: (tasks || []).length > 0,
@@ -87,9 +112,7 @@ function OnboardingCard({
       icon: 'list-todo',
       action: onAddTask,
     },
-    // Only when the wellness card isn't on Home: that card asks "How are you
-    // feeling?" with one-tap answers, and the two sat one above the other.
-    onAddMood && {
+    {
       // Ever, not today: a today-only check re-opened the checklist every morning.
       done: !!(wellness && wellness.moodByDate && Object.keys(wellness.moodByDate).length),
       label: 'Log how you feel',
@@ -174,8 +197,8 @@ function OnboardingCard({
 }
 
 const PRIORITY = {
-  High: { bg: 'var(--coral-50)', fg: 'var(--coral-700)', dot: 'var(--coral-500)' },
-  Medium: { bg: 'var(--sun-50)', fg: 'var(--sun-700)', dot: 'var(--sun-500)' },
+  High: { bg: 'var(--brand-soft)', fg: 'var(--brand-soft-fg)', dot: 'var(--coral-500)' },
+  Medium: { bg: 'var(--warning-soft)', fg: 'var(--warning-soft-fg)', dot: 'var(--sun-500)' },
   Low: { bg: 'var(--surface-3)', fg: 'var(--fg2)', dot: 'var(--warm-400)' },
 };
 
@@ -296,8 +319,8 @@ function ScoreCard({ score, tasks: allTasks, habits, streakAsked }) {
       const pill = Pill({
         icon: 'flame',
         label: n + unit,
-        bg: 'var(--coral-50)',
-        fg: 'var(--coral-700)',
+        bg: 'var(--brand-soft)',
+        fg: 'var(--brand-soft-fg)',
       });
       pill.setAttribute('aria-label', 'Best ' + n + spoken);
       pills.push(pill);
@@ -358,7 +381,7 @@ function TaskRow(task, toggleTask, onEdit, onPause, onFocus) {
               'span',
               {
                 class: 'gb-task-when',
-                style: task.overdue ? { color: 'var(--coral-700)', fontWeight: 600 } : null,
+                style: task.overdue ? { color: 'var(--brand-ink)', fontWeight: 600 } : null,
               },
               when ? when + (/ · done \d+×$/.exec(task.time) || [''])[0] : task.time
             ),
@@ -521,7 +544,7 @@ function QuoteCard({ quote }) {
   });
 }
 
-function TodayPlanCard({ water, wellness, onPlanToday, skip }) {
+function TodayPlanCard({ water, wellness, onPlanToday, skip, onAddGlass }) {
   const key = todayKey();
   const sleep = wellness && wellness.sleepByDate ? wellness.sleepByDate[key] : null;
   const mood = wellness && wellness.moodByDate ? wellness.moodByDate[key] : null;
@@ -543,7 +566,9 @@ function TodayPlanCard({ water, wellness, onPlanToday, skip }) {
   // Finish everything and the row empties out, which is the point.
   const chips = [];
   const skipped = (k) => (skip || []).includes(k);
-  if (water && waterPct < 100 && !skipped('water')) chips.push({ label: waterPct + '% water' });
+  // The water one is a glass: it looked tappable and wasn't, and logging one
+  // from Home took three taps through More and Food.
+  if (water && waterPct < 100 && !skipped('water')) chips.push({ label: waterPct + '% water', add: onAddGlass });
   if (!sleep && !skipped('sleep')) chips.push({ label: 'Sleep not logged' });
   if (!mood && !skipped('mood')) chips.push({ label: 'Mood not logged' });
   return Card({
@@ -570,7 +595,19 @@ function TodayPlanCard({ water, wellness, onPlanToday, skip }) {
             'div',
             { class: 'gb-coach-chiprow' },
             chips.map((chip) =>
-              h('span', { class: 'gb-coach-chip gb-coach-chip--todo' }, chip.label)
+              chip.add
+                ? h(
+                    'button',
+                    {
+                      type: 'button',
+                      class: 'gb-coach-chip gb-coach-chip--todo gb-coach-chip--add',
+                      'aria-label': chip.label + '. Add 250 ml',
+                      onclick: chip.add,
+                    },
+                    Icon('plus', { size: 12, sw: 2.6 }),
+                    '250 ml · ' + chip.label
+                  )
+                : h('span', { class: 'gb-coach-chip gb-coach-chip--todo' }, chip.label)
             )
           )
         : null,
@@ -705,7 +742,7 @@ function WellnessCard({ wellness, phoneNight, onAddSleep, onAddMood, onConfirmSl
         { type: 'button', class: 'gb-wellness-tile', onclick: onAddSleep },
         h('span', { class: 'gb-wellness-icon' }, Icon('moon', { size: 18, sw: 2.4 })),
         h('span', { class: 'gb-wellness-label' }, 'Sleep'),
-        h('strong', null, hours == null ? 'Log' : hours + 'h'),
+        h('strong', null, hours == null ? 'Log sleep' : hours + 'h'),
         h('small', null, sleep ? sentence(sleep.quality) : 'Hours slept')
       ),
     showMood &&
@@ -714,7 +751,7 @@ function WellnessCard({ wellness, phoneNight, onAddSleep, onAddMood, onConfirmSl
         { type: 'button', class: 'gb-wellness-tile', onclick: onAddMood },
         h('span', { class: 'gb-wellness-icon' }, Icon('smile-plus', { size: 18, sw: 2.4 })),
         h('span', { class: 'gb-wellness-label' }, 'Mood'),
-        h('strong', null, mood ? mood.mood : 'Log'),
+        h('strong', null, mood ? mood.mood : 'Log mood'),
         // No energy picked, no energy line (a bare mood read "Medium Energy").
         mood ? (mood.energy ? h('small', null, sentence(mood.energy) + ' energy') : null) : h('small', null, 'How you feel')
       ),
@@ -1003,7 +1040,9 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
     })
   );
 
-  const lastThree = entries.slice(-3).reverse();
+  // Newest first; past three the rest sit behind "Show all", which used to be
+  // missing, so an earlier glass could be neither seen nor deleted.
+  const newestFirst = entries.slice().reverse();
   const latest = entries.length ? entries[entries.length - 1] : null;
   const latestAt = latest ? latest.loggedAt : null;
   const now = Date.now();
@@ -1384,14 +1423,14 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
         )
       ),
 
-      lastThree.length
+      newestFirst.length
         ? h(
             'div',
             { class: 'gb-water-log' },
-            lastThree.map((item) =>
+            newestFirst.map((item, i) =>
               h(
                 'div',
-                { class: 'gb-water-log-row' },
+                { class: 'gb-water-log-row', hidden: i >= 3 && !showAllWater },
                 h(
                   'div',
                   { class: 'gb-water-log-text' },
@@ -1425,9 +1464,32 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
             )
           )
         : null,
+      newestFirst.length > 3
+        ? h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-btn gb-btn--ghost gb-water-more',
+              'aria-expanded': String(showAllWater),
+              // In place: a re-render would cost the scroll position.
+              onclick: (e) => {
+                showAllWater = !showAllWater;
+                const btn = e.currentTarget;
+                btn.previousElementSibling
+                  .querySelectorAll('.gb-water-log-row')
+                  .forEach((r, i) => (r.hidden = i >= 3 && !showAllWater));
+                btn.setAttribute('aria-expanded', String(showAllWater));
+                btn.textContent = showAllWater ? 'Show latest 3' : 'Show all ' + newestFirst.length;
+              },
+            },
+            showAllWater ? 'Show latest 3' : 'Show all ' + newestFirst.length
+          )
+        : null,
     ],
   });
 }
+// The water log's "Show all", kept across repaints (a delete repaints the card).
+let showAllWater = false;
 
 /* Slots start at these local hours; "Copy yesterday's" is offered for an empty
    one only once it has begun (a snack, any time). */
@@ -2703,7 +2765,7 @@ function GoalsCard({ goals, goalProgress, onOpenGoals }) {
                   h(
                     'small',
                     r.daysLeft != null && r.daysLeft < 0
-                      ? { style: { color: 'var(--coral-700)', fontWeight: 600 } }
+                      ? { style: { color: 'var(--brand-ink)', fontWeight: 600 } }
                       : null,
                     [
                       dueLine(r),
@@ -2766,9 +2828,13 @@ function ScreenDashboard({
   onNextMonth,
   onRetryFood,
   onPlanToday,
+  onAddGlass,
   onAddSleep,
   onAddMood,
   onStarterPack,
+  remindersAsk,
+  onEnableReminders,
+  setupPending,
   onConfirmSleep,
   onQuickMood,
   onOnboardDismiss,
@@ -2786,6 +2852,7 @@ function ScreenDashboard({
   dismissedInsights,
   onDismissInsight,
   onInsightAction,
+  breakEntry,
 }) {
   const on = (k) => !features || features[k] !== false;
   homeFeatures = features || null;
@@ -2807,9 +2874,12 @@ function ScreenDashboard({
     (food && (food.entries || []).length > 0) ||
     (water && (water.entries || []).length > 0) ||
     (wellness && (any(wellness.moodByDate) || any(wellness.sleepByDate)));
-  // Once you've started, the wellness card asks "How are you feeling?" with
-  // one-tap answers; the checklist's mood step sat right above it.
-  const onboardMood = started && wellnessOnHome ? null : onAddMood;
+  // First run's plan sheet is open over Home: a checklist behind it counting
+  // its own steps ("4 quick steps" under "Step 1 of 3") said two things at once.
+  if (setupPending && !started) return h('div', { class: 'gb-rise gb-dash gb-dash--single' });
+  // The mood step stays for the checklist's lifetime (a fixed step list): while
+  // the checklist is up, an empty wellness card is not on Home to ask instead.
+  const onboardMood = onAddMood;
   const onboard = OnboardingCard({
     tasks,
     habits,
@@ -2818,6 +2888,8 @@ function ScreenDashboard({
     onAddTask,
     onAddMood: onboardMood,
     onStarterPack,
+    remindersAsk,
+    onEnableReminders,
     onOnboardDismiss,
   });
   // The checklist's "Log how you feel" step is showing while no mood exists yet.
@@ -2865,7 +2937,7 @@ function ScreenDashboard({
         onDismissInsight,
         onInsightAction,
       }),
-    plan: () => TodayPlanCard({ water: on('water') ? water : null, wellness, onPlanToday, skip: planSkip }),
+    plan: () => TodayPlanCard({ water: on('water') ? water : null, wellness, onPlanToday, skip: planSkip, onAddGlass }),
     // The card above owns its nudge: the check-in row asking the same thing goes.
     wellness: () =>
       WellnessCard({
@@ -2915,17 +2987,35 @@ function ScreenDashboard({
     money: () => MoneyHomeCard({ money, onSaveMoney, onOpen: onOpenMoney, requestReceiptScan }),
   };
 
-  const blocks = layout
-    .map((item) => {
-      if (!item.enabled) return null;
-      const def = HOME_WIDGETS.find((w) => w.id === item.id);
-      if (!def || (def.feature && !on(def.feature))) return null; // respect feature toggles
-      const content = renderers[item.id] && renderers[item.id]();
-      if (!content) return null;
-      const kids = Array.isArray(content) ? content : [content];
-      return h('div', { class: 'gb-dash-block' }, ...kids);
-    })
-    .filter(Boolean);
+  const blockFor = (item) => {
+    if (!item || !item.enabled) return null;
+    const def = HOME_WIDGETS.find((w) => w.id === item.id);
+    if (!def || (def.feature && !on(def.feature))) return null; // respect feature toggles
+    const content = renderers[item.id] && renderers[item.id]();
+    if (!content) return null;
+    const kids = Array.isArray(content) ? content : [content];
+    return h('div', { class: 'gb-dash-block' }, ...kids);
+  };
+  // A young account (the checklist is still up): what it has comes first, the
+  // habits it just made on top so the first tick needs no scrolling, then the
+  // checklist as the next steps. A widget with nothing in it yet stays out
+  // (its first action is a checklist step) and joins once it has data. It used
+  // to be the full layout, the new habits ~1,900 px down under eight empties.
+  const hasMoney = !!money && ['expenses', 'income', 'transfers'].some((k) => (money[k] || []).length > 0);
+  const has = {
+    habits: (habits || []).length > 0,
+    goals: allGoals(goals).some((g) => !g.completed),
+    calendar: (tasks || []).length > 0 || (reminders || []).length > 0,
+    tasks: (tasks || []).length > 0,
+    wellness: !!wellness && (any(wellness.moodByDate) || any(wellness.sleepByDate)),
+    score: score > 0,
+    money: hasMoney,
+  };
+  const young = !!onboard && started;
+  const pick = (id) => (has[id] ? blockFor(layout.find((item) => item.id === id)) : null);
+  const blocks = young
+    ? [pick('habits'), h('div', { class: 'gb-dash-block' }, onboard), ...['goals', 'calendar', 'tasks', 'wellness', 'score', 'money'].map(pick)].filter(Boolean)
+    : layout.map(blockFor).filter(Boolean);
 
   // Quick add is always first and is not a widget: one sentence logs anything,
   // so it can't be hidden or reordered from the Home layout.
@@ -2940,8 +3030,9 @@ function ScreenDashboard({
       h('div', { class: 'gb-dash-block' }, onboard)
     );
   }
-  if (onboard) blocks.unshift(h('div', { class: 'gb-dash-block' }, onboard));
   if (one) blocks.unshift(h('div', { class: 'gb-dash-block gb-dash-pin' }, OneThingCard(one)));
+  // A break (I-08): on one, back from one, or offered at a streak at risk (app.js homeBreakEntry).
+  if (breakEntry) blocks.unshift(h('div', { class: 'gb-dash-block gb-dash-pin' }, breakEntry));
   if (qa) blocks.unshift(qa);
 
   const root = h('div', { class: 'gb-rise gb-dash gb-dash--single' }, ...blocks);
@@ -2992,7 +3083,7 @@ function ScreenFood({
   const on = (k) => !features || features[k] !== false;
   return h(
     'div',
-    { class: 'gb-rise gb-food-screen', style: { padding: '0 0 24px' } },
+    { class: 'gb-rise gb-food-screen', style: { paddingBottom: '24px' } },
     on('water')
       ? h(
           'div',
@@ -3013,7 +3104,9 @@ function ScreenFood({
 function HabitSleepInsightCard({ habits, wellness }) {
   // Paused fitness habits are out: a paused one's frozen 6-day streak read as live.
   const fitnessHabits = (habits || []).filter((hab) => hab.domain === 'fitness' && hab.active !== false);
-  const allHabits = habits || [];
+  // Owed today, as the score and the Habits header count them: a paused habit
+  // made "1/3 Habits today" beside a header reading 1/2.
+  const allHabits = (habits || []).filter((hab) => hab.active !== false && (habitDue(hab) || hab.doneToday));
   const sleepEntries = Object.values((wellness && wellness.sleepByDate) || {}).sort((a, b) =>
     String(b.date || '').localeCompare(String(a.date || ''))
   );

@@ -7,9 +7,21 @@
    ponytail: heuristics, not an LLM. Real OCR / NL understanding would need
    a vision/LLM endpoint — marked at each spot below.
    ===================================================================== */
-import { h, Icon, Card, ProgressRing, refreshIcons, openModal, Thinking, fieldRefusal, focusSoon } from './gb-kit.js';
+import {
+  h,
+  Icon,
+  Card,
+  ProgressRing,
+  refreshIcons,
+  openModal,
+  Thinking,
+  focusSoon,
+  CrashCard,
+  fieldRefusal,
+} from './gb-kit.js';
 import { toast } from './toast.js';
 import { shareStoryCard, _demo as _shareCardDemo } from './share-card.js';
+import { saveFile } from './native.js';
 import {
   CUR,
   cur,
@@ -56,6 +68,9 @@ import {
   suggestCategory,
   buildInsights,
   budgetStatus,
+  salaryPattern,
+  salaryDue,
+  salaryDueRow,
 } from './money-core.js';
 // The document model moved to money-core.js (boot chunk); re-exported so the tests and
 // any import of these from money.js keep working.
@@ -107,10 +122,14 @@ function advise(money, item, price, reason) {
     'emergency',
     'must',
   ];
+  // Whole words (plus -s/-ed/-ing): a substring match read "workout" as work (a
+  // need) and "refund" as fun (a want).
+  const has = (w) => new RegExp('\\b' + w + '(s|ed|ing)?\\b').test(txt);
   let score = 0;
-  wantWords.forEach((w) => txt.includes(w) && score++);
-  needWords.forEach((w) => txt.includes(w) && score--);
+  wantWords.forEach((w) => has(w) && score++);
+  needWords.forEach((w) => has(w) && score--);
   const isWant = score > 0;
+  const isNeed = score < 0; // neither: no words either way, so undecided, not a need
   const st = budgetStatus(money).find((s) => s.cat.key === cat);
   const remaining = st ? st.remaining : 0;
   const hasBudget = st && st.base > 0;
@@ -121,7 +140,9 @@ function advise(money, item, price, reason) {
   reasons.push(
     isWant
       ? `This reads more like a want than a need — and wants are allowed, in balance.`
-      : `This sounds like a genuine need, which makes it easier to justify.`
+      : isNeed
+        ? `This sounds like a genuine need, which makes it easier to justify.`
+        : `Tell me why you want it and I can say whether it reads as a need or a want.`
   );
   if (hasBudget)
     reasons.push(
@@ -131,10 +152,13 @@ function advise(money, item, price, reason) {
     );
   else
     reasons.push(
-      `You haven't set a ${catOf(cat, money).label} budget yet, so I can't check the fit — setting one would help.`
+      `You haven't set a budget for ${catOf(cat, money).label} yet, so I can't check the fit — setting one would help.`
     );
+  // A buy that would cover over a quarter of what a goal still needs is a big hit to it.
+  let bigHit = false;
   if (goal) {
     const left = Math.max(0, (goal.target || 0) - goalSaved(goal));
+    bigHit = price > left * 0.25;
     reasons.push(
       `Skipping it would cover ${Math.min(100, Math.round((price / Math.max(1, left)) * 100))}% of what's left on "${goal.name}".`
     );
@@ -148,9 +172,12 @@ function advise(money, item, price, reason) {
     }
   }
   let verdict, tone;
-  if (!isWant && fits) {
+  if (isNeed && fits && !bigHit) {
     verdict = 'Go for it';
     tone = 'good';
+  } else if (!isWant && !isNeed && fits && !bigHit) {
+    verdict = 'Depends on why';
+    tone = 'info';
   } else if (isWant && fits && !goal) {
     verdict = 'Reasonable — enjoy it mindfully';
     tone = 'info';
@@ -179,10 +206,13 @@ function goalPlan(goal) {
   const weeklyRate = recent.length ? Math.round(sumAmt(recent) / 8) : 0;
   // 17 Future Purchase Planner: if a target date is set, pace to hit it.
   let requiredWeekly = 0;
+  let requiredDaily = 0;
   let etaKey = null;
   if (goal.dueDate && remaining > 0) {
-    const weeks = Math.max(1, Math.ceil(diffDays(goal.dueDate, todayKey()) / 7));
-    requiredWeekly = Math.ceil(remaining / weeks);
+    // Exact weeks, not rounded up: 172 days as 25 weeks asked 800 too little.
+    const days = Math.max(1, diffDays(goal.dueDate, todayKey()));
+    requiredWeekly = Math.ceil(remaining / (Math.max(7, days) / 7));
+    requiredDaily = Math.ceil(remaining / days);
     etaKey = goal.dueDate;
   }
   const suggestedWeekly = requiredWeekly || (remaining > 0 ? Math.ceil(remaining / 12) : 0);
@@ -197,7 +227,7 @@ function goalPlan(goal) {
     weeklyRate,
     suggestedWeekly,
     requiredWeekly,
-    requiredDaily: Math.ceil(suggestedWeekly / 7),
+    requiredDaily: requiredDaily || Math.ceil(suggestedWeekly / 7),
     etaKey,
     dueDate: goal.dueDate || null,
     done: remaining <= 0 && target > 0,
@@ -359,7 +389,8 @@ function weeklyReview(money) {
     motivation = `You moved ${fmt(setAside)} toward your goals this week. Future-you says thanks.`;
   else if (streak >= 3)
     motivation = `${streak} days of logging — consistency like this is what changes the numbers.`;
-  else motivation = `Every expense you log makes next week clearer. Proud of you for showing up.`;
+  else if (total > 0) motivation = `Every expense you log makes next week clearer. Proud of you for showing up.`;
+  else motivation = `Log what you spend this week and next week's review will have something to say.`;
   return {
     total,
     prevTotal,
@@ -448,42 +479,6 @@ function materialiseRecurring(m, today = todayKey()) {
     if (x) x.postedFor = ym;
   }
   return due.length;
-}
-
-/* Add income's Salary help: `last` = the newest salary (to prefill), `repeat` =
-   {amount, day} once two salaries of the same amount landed on the same day of
-   two different months, unless an active salary repeat already exists. A day past
-   the 28th is 'last' (the picker's own rule). Pure. */
-function salaryPattern(money) {
-  const sal = (money.income || [])
-    .filter((i) => i && i.source === 'salary' && Number(i.amount) > 0)
-    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-  const last = sal[0] || null;
-  let repeat = null;
-  for (let i = 0; i < sal.length && !repeat; i++)
-    for (let j = i + 1; j < sal.length && !repeat; j++) {
-      const a = sal[i];
-      const b = sal[j];
-      if (Number(a.amount) === Number(b.amount) && a.date.slice(8) === b.date.slice(8) && a.date.slice(0, 7) !== b.date.slice(0, 7)) {
-        const d = Number(a.date.slice(8));
-        repeat = { amount: Number(a.amount), day: d > 28 ? 'last' : d };
-      }
-    }
-  const has = (money.recurring || []).some((r) => r && r.active && r.kind === 'income' && r.category !== 'other');
-  return { last, repeat: has ? null : repeat };
-}
-
-/* This month's salary when its usual day (salaryPattern) has come and no salary
-   is logged this month yet: {amount, date, last}, else null. Add income dates
-   itself to it; the Income tab offers it as one tap. Pure. */
-function salaryDue(money) {
-  const pat = salaryPattern(money);
-  if (!pat.repeat) return null;
-  const ym = thisMonthPrefix();
-  const date = recurDate({ day: pat.repeat.day }, ym);
-  if (date > todayKey()) return null;
-  if ((money.income || []).some((i) => i && i.source === 'salary' && String(i.date || '').startsWith(ym))) return null;
-  return { amount: pat.repeat.amount, date, last: pat.last };
 }
 
 /* 9 / 24 — monthly forecast.
@@ -670,15 +665,19 @@ function challengeProgress(money, ch) {
   const today = todayKey();
   const start = ch.start || today;
   const end = ch.end || today;
+  // Every kind is judged on its own start..end, never on "this month": once the
+  // month rolled over, a finished challenge read the next month's first day.
+  const to = today < end ? today : end;
+  const done = today > end;
   const scopeMatch = (e) => ch.scope === 'all' || e.category === ch.scope;
-  const within = inRange(money.expenses, start, today < end ? today : end).filter(scopeMatch);
-  const elapsed = Math.max(0, diffDays(today < end ? today : end, start) + 1);
+  const within = inRange(money.expenses, start, to).filter(scopeMatch);
+  const elapsed = Math.max(0, diffDays(to, start) + 1);
   const totalDays = Math.max(1, diffDays(end, start) + 1);
   const timePct = Math.min(100, Math.round((elapsed / totalDays) * 100));
 
   if (ch.kind === 'nospend') {
     const broken = within.some((e) => (Number(e.amount) || 0) > 0);
-    const state = broken ? 'broken' : today > end ? 'won' : 'active';
+    const state = broken ? 'broken' : done ? 'won' : 'active';
     return {
       state,
       pct: broken ? 100 : timePct,
@@ -691,7 +690,7 @@ function challengeProgress(money, ch) {
     const spent = sumAmt(within);
     const cap = Number(ch.amount) || 0;
     const broken = spent > cap;
-    const state = broken ? 'broken' : today >= end ? 'won' : 'active';
+    const state = broken ? 'broken' : done ? 'won' : 'active';
     return {
       state,
       pct: cap > 0 ? Math.min(100, Math.round((spent / cap) * 100)) : 0,
@@ -699,41 +698,70 @@ function challengeProgress(money, ch) {
     };
   }
   if (ch.kind === 'save') {
-    const saved = setAsideThisMonth(money);
+    const saved = setAsideInRange(money, start, to);
     const target = Number(ch.amount) || 0;
     const pct = target > 0 ? Math.min(100, Math.round((saved / target) * 100)) : 0;
+    const won = saved >= target && target > 0;
     return {
-      state: saved >= target && target > 0 ? 'won' : 'active',
+      state: won ? 'won' : done ? 'broken' : 'active',
       pct,
       detail: `${fmt(saved)} of ${fmt(target)} saved`,
     };
   }
   if (ch.kind === 'logdays') {
-    const got = distinctLogDaysThisMonth(money);
-    const target = Number(ch.days) || daysInMonth();
+    const noSpend = (money.noSpendDays || []).filter((d) => d >= start && d <= to);
+    const got = loggedDays(inRange(money.expenses, start, to), noSpend).size;
+    // Older challenges were capped at month end whatever `days` said: aim at the days they have.
+    const target = Math.min(Number(ch.days) || totalDays, totalDays);
     const pct = Math.min(100, Math.round((got / target) * 100));
     return {
-      state: got >= target ? 'won' : 'active',
+      state: got >= target ? 'won' : done ? 'broken' : 'active',
       pct,
       detail: `${got} of ${target} days logged`,
     };
   }
   if (ch.kind === 'reduce') {
-    const cc = byCategory(inRange(money.expenses, thisMonthPrefix() + '-01', today), money);
-    const lc = byCategory(
-      inRange(money.expenses, lastMonthPrefix() + '-01', lastMonthPrefix() + '-31'),
-      money
-    );
+    // The challenge month (from its start) against the month before it.
+    const month = start.slice(0, 7);
+    const s0 = parseKey(start);
+    const prev = dkey(new Date(s0.getFullYear(), s0.getMonth() - 1, 1)).slice(0, 7);
+    const cc = byCategory(inRange(money.expenses, month + '-01', to), money);
+    const lc = byCategory(inRange(money.expenses, prev + '-01', prev + '-31'), money);
     const goal = Math.round((lc[ch.scope] || 0) * (1 - (Number(ch.pct) || 0) / 100));
     const now = cc[ch.scope] || 0;
-    const ok = now <= goal;
+    // Spend only grows, so over the aim is broken at once, like a cap.
+    const broken = now > goal;
     return {
-      state: today > end && ok ? 'won' : !ok && today > end ? 'broken' : 'active',
+      state: broken ? 'broken' : done ? 'won' : 'active',
       pct: goal > 0 ? Math.min(100, Math.round((now / goal) * 100)) : 0,
       detail: `${fmt(now)} now · aim ≤ ${fmt(goal)}`,
     };
   }
   return { state: 'active', pct: 0, detail: '' };
+}
+
+/* When a new challenge ends: a month challenge with the month, a log streak
+   after its full `days` (a 30-day one capped at month end could never be won),
+   the rest after `days` (default 1, today). */
+function challengeEnd(p) {
+  if (p.kind === 'save' || p.kind === 'reduce' || (p.kind === 'logdays' && !p.days)) {
+    return thisMonthPrefix() + '-' + pad2(daysInMonth());
+  }
+  return dkey(addDays(new Date(), (p.days || 1) - 1));
+}
+
+/* A bill added after this month's due day has almost always been paid already:
+   mark it paid for this month (books nothing) so it is not overdue at once, and
+   "Mark as paid" doesn't book a second expense. `paidFor` is forward-only, so
+   next month is due as usual. */
+function newSubscription(fields) {
+  const passed = Math.min(Number(fields.dueDay) || 1, daysInMonth()) < new Date().getDate();
+  return {
+    id: uid(),
+    ...fields,
+    ...(passed ? { paidFor: thisMonthPrefix() } : {}),
+    createdAt: Date.now(),
+  };
 }
 
 /* 11b — personalized challenge suggestions. Heuristics over the money doc:
@@ -758,7 +786,10 @@ const COMMON_CHALLENGES = [
     reason: 'Cook in and watch the savings add up.',
   },
   {
-    label: 'Spend under ₹500 today',
+    // Getters: the label follows the user's currency (`cur`), read when suggested.
+    get label() {
+      return 'Spend under ' + fmt(500) + ' today';
+    },
     kind: 'cap',
     scope: 'all',
     amount: 500,
@@ -766,7 +797,9 @@ const COMMON_CHALLENGES = [
     reason: 'A simple one-day money detox.',
   },
   {
-    label: 'Save ₹1,000 this month',
+    get label() {
+      return 'Save ' + fmt(1000) + ' this month';
+    },
     kind: 'save',
     amount: 1000,
     reason: 'Pay your future self first.',
@@ -1139,8 +1172,8 @@ function searchExpenses(money, query) {
   }
   let min = 0;
   let max = Infinity;
-  const above = q.match(/(above|over|more than|greater than|>)\s*₹?\s*(\d[\d,]*)/);
-  const below = q.match(/(below|under|less than|<)\s*₹?\s*(\d[\d,]*)/);
+  const above = q.match(/(above|over|more than|greater than|>)\s*[^\d\s]{0,3}\s*(\d[\d,]*)/);
+  const below = q.match(/(below|under|less than|<)\s*[^\d\s]{0,3}\s*(\d[\d,]*)/);
   if (above) min = Number(above[2].replace(/,/g, ''));
   if (below) max = Number(below[2].replace(/,/g, ''));
   const cat = mergedCats(money).find((c) => q.includes(c.label.toLowerCase()) || q.includes(c.key));
@@ -1161,7 +1194,7 @@ function searchExpenses(money, query) {
     if (!words.length)
       return {
         answer:
-          'I didn\'t catch that. Try "how much on food this month", "expenses over ₹500", or "what could I skip".',
+          'I didn\'t catch that. Try "how much on food this month", "expenses over ' + cur + '500", or "what could I skip".',
         results: [],
       };
   }
@@ -1189,7 +1222,7 @@ function searchExpenses(money, query) {
   const answer = results.length
     ? `You spent ${fmt(total)} on ${what} ${label} (${results.length} expense${results.length === 1 ? '' : 's'}).`
     : words.length
-      ? `Nothing matches ${what}. Try "how much on food this month", "expenses over ₹500", or "what could I skip".`
+      ? `Nothing matches ${what}. Try "how much on food this month", "expenses over ${cur}500", or "what could I skip".`
       : `No ${what} found ${label}.`;
   return { answer, results: results.slice(0, 40) };
 }
@@ -1229,16 +1262,18 @@ function achievementTimeline(money) {
     }
   });
   const byMonth = {};
+  const lastIn = {}; // the month's latest contribution: the event's date, never a future one
   money.goals.forEach((g) =>
-    (g.contribs || []).forEach(
-      (c) =>
-        (byMonth[c.date.slice(0, 7)] = (byMonth[c.date.slice(0, 7)] || 0) + (Number(c.amount) || 0))
-    )
+    (g.contribs || []).forEach((c) => {
+      const mo = c.date.slice(0, 7);
+      byMonth[mo] = (byMonth[mo] || 0) + (Number(c.amount) || 0);
+      if (!lastIn[mo] || c.date > lastIn[mo]) lastIn[mo] = c.date;
+    })
   );
   const topMonth = Object.keys(byMonth).sort((a, b) => byMonth[b] - byMonth[a])[0];
   if (topMonth)
     ev.push({
-      date: topMonth + '-15',
+      date: lastIn[topMonth],
       icon: 'piggy-bank',
       title: `Best saving month: ${fmt(byMonth[topMonth])}`,
       desc: parseKey(topMonth + '-01').toLocaleDateString(undefined, {
@@ -1973,7 +2008,11 @@ export function MoneyCustomisePane(money, save) {
       })
     )
   );
+  // The default-tag picker is rebuilt with the list, so a tag added here is offered there at once.
+  let defaultPicker = null;
+  const defaultSlot = h('div');
   function renderList() {
+    if (defaultPicker) buildDefaultPicker();
     const custom = money.customCategories || [];
     list.replaceChildren(
       ...(custom.length
@@ -2047,7 +2086,7 @@ export function MoneyCustomisePane(money, save) {
     class: 'gb-input',
     maxlength: '3',
     value: money.settings.currency || CUR,
-    placeholder: '₹',
+    placeholder: CUR,
     onchange: () => {
       const sym = currencyInput.value.trim().slice(0, 3) || CUR;
       currencyInput.value = sym;
@@ -2071,10 +2110,16 @@ export function MoneyCustomisePane(money, save) {
   });
   // "Last used" vs a picked tag, stored apart (`defaultTagSet`): every account
   // starts with defaultTag 'others', so the tag alone can't say "picked Others".
-  const defaultPicker = tagPicker(money, save, {
-    initial: money.settings.defaultTag || 'others',
-    onPick: (key) => setPref({ defaultTag: key, defaultTagSet: true }),
-  });
+  function buildDefaultPicker() {
+    const hidden = defaultPicker ? defaultPicker.node.style.display : '';
+    defaultPicker = tagPicker(money, save, {
+      initial: money.settings.defaultTag || 'others',
+      onPick: (key) => setPref({ defaultTag: key, defaultTagSet: true }),
+    });
+    defaultPicker.node.style.display = hidden;
+    defaultSlot.replaceChildren(defaultPicker.node);
+  }
+  buildDefaultPicker();
   const defaultMode = segmented(
     [
       { value: 'last', label: 'Last used' },
@@ -2229,7 +2274,7 @@ export function MoneyCustomisePane(money, save) {
     h('div', { class: 'gb-note-hint', style: { marginTop: '2px' } }, 'Set to 0 to never prompt.'),
     h('div', { class: 'gb-field-label' }, 'Default tag for new expenses'),
     defaultMode.node,
-    defaultPicker.node,
+    defaultSlot,
     h(
       'div',
       { class: 'gb-money-custom-head', style: { marginTop: '8px' } },
@@ -2250,6 +2295,19 @@ export function MoneyCustomisePane(money, save) {
 /* =====================================================================
    Module-scope modals (shared by screen + home widget)
    ===================================================================== */
+/* Deletes an expense. A bill's payment (`sub-<subId>-<YYYY-MM>`, from Mark as paid)
+   takes the bill's paid mark for that month with it, so the bill is due again and
+   can be paid again. ponytail: a 409 merge keeps the later paidFor of two copies,
+   so a conflicting save from another device can bring the mark back. */
+function dropExpense(m, id) {
+  m.expenses = m.expenses.filter((x) => x.id !== id);
+  const bill = /^sub-(.+)-(\d{4}-\d{2})$/.exec(id);
+  if (!bill) return;
+  for (const sub of m.subscriptions) {
+    if (sub.id === bill[1] && sub.paidFor === bill[2]) delete sub.paidFor;
+  }
+}
+
 function commitOn(money, save, mutator) {
   const next = clone(money);
   mutator(next);
@@ -2663,9 +2721,12 @@ function openExpenseModal(money, save, prefillDate, existing, scan) {
     placeholder: 'e.g. Lunch with team',
     value: ex ? ex.note || '' : '',
   });
+  // Up to today: every list and total ends at today, so a later date was booked,
+  // taken off the balance, and then shown nowhere until that day.
   const date = h('input', {
     type: 'date',
     class: 'gb-input',
+    max: todayKey(),
     value: (ex && ex.date) || prefillDate || todayKey(),
   });
   const hint = h('div', { class: 'gb-note-hint', style: { marginTop: '6px' } }, '');
@@ -2812,12 +2873,22 @@ function openExpenseModal(money, save, prefillDate, existing, scan) {
     danger: ex
       ? {
           label: 'Delete expense',
+          // At once, with Undo: the dialog was opened on this one entry on purpose.
           onClick: () => {
             focusAfterExpenseDelete(ex.id);
             const next = clone(money);
-            next.expenses = next.expenses.filter((x) => x.id !== ex.id);
+            dropExpense(next, ex.id);
             save(next, money);
-            toast.success('Expense deleted.');
+            toast.action('Expense deleted.', 'Undo', () => {
+              const back = clone(next);
+              // A new id: the server keeps a deleted id deleted (a stale edit from
+              // another device must not bring it back), so Undo re-adds it as new.
+              // ponytail: a bill payment's `sub-` id is not kept, so the restored row
+              // counts as day-to-day spend in the forecast; keep the id if that matters.
+              back.expenses.unshift({ ...ex, id: uid() });
+              back.subscriptions = clone(money.subscriptions);
+              save(back, next);
+            });
           },
         }
       : null,
@@ -2830,8 +2901,8 @@ function openExpenseModal(money, save, prefillDate, existing, scan) {
         : amt > Number(amount.max)
           ? 'An expense can be at most ' + fmt(Number(amount.max)) + '.'
           : '';
-      amount.setAttribute('aria-invalid', bad ? 'true' : 'false');
       if (bad) throw fieldRefusal(amount, bad);
+      if (!date.value || date.value > todayKey()) throw fieldRefusal(date, 'Pick a day up to today.');
       const cat = picker.get();
       const next = clone(money);
       const accountId = paidFrom.get();
@@ -2962,14 +3033,10 @@ export function ledgerCsv(money) {
 function downloadLedgerCsv(money) {
   const name = 'growth-buddy-money-' + todayKey() + '.csv';
   // BOM: Excel reads a BOM-less CSV as ANSI and mangles ₹ and names.
-  const blob = new Blob(['\uFEFF' + ledgerCsv(money)], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = h('a', { href: url, download: name, style: { display: 'none' } });
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
-  toast.success('Your money CSV is downloading.');
+  saveFile('\uFEFF' + ledgerCsv(money), name, 'text/csv;charset=utf-8', 'Growth Buddy money').then(
+    (r) => r === 'saved' && toast.success('Your money CSV is downloading.'),
+    (err) => toast.error(err, 'Could not export your money CSV.')
+  );
 }
 
 function ScreenMoney({
@@ -2980,10 +3047,21 @@ function ScreenMoney({
   accountRequest,
   requestDaySummary,
   requestOlderTx,
+  loadFailed,
+  onRetryLoad,
 }) {
   money = normalizeMoney(money);
   applyCurrency(money);
   const root = h('div', { class: 'gb-money gb-rise' });
+  // The load failed and nothing is cached: the empty doc is not "no data yet",
+  // so say so and offer the retry instead of the first-run screen.
+  const nothingHere = !['expenses', 'income', 'accounts', 'goals', 'subscriptions', 'loans'].some(
+    (k) => money[k].length
+  );
+  if (loadFailed && nothingHere) {
+    root.append(CrashCard(onRetryLoad));
+    return root;
+  }
   // app.js builds the new screen before swapping it in, so the previous root is
   // still in the document on a repaint and detached on a fresh visit.
   if (!(moneyRoot && moneyRoot.isConnected)) {
@@ -3117,7 +3195,8 @@ function ScreenMoney({
             )
           )
         ),
-        list.some((a) => Number(a.balance) < 0)
+        // A card below zero is what it owes; only cash / bank / wallet below zero is odd.
+        list.some((a) => a.kind !== 'card' && Number(a.balance) < 0)
           ? h(
               'p',
               { class: 'gb-money-intro' },
@@ -3274,11 +3353,12 @@ function ScreenMoney({
         kind.node,
         h('div', { class: 'gb-field-label' }, 'In it right now (' + (rate ? ac : cur) + ')'),
         bal,
-        h(
-          'div',
-          { class: 'gb-note-hint' },
-          'Removing an account with expenses archives it, so its history keeps its name.'
+        // Only said when it applies: an account nothing was booked to is removed outright.
+        ['expenses', 'income', 'transfers'].some((k) =>
+          (money[k] || []).some((x) => x.accountId === a.id || x.from === a.id || x.to === a.id)
         )
+          ? h('div', { class: 'gb-note-hint' }, 'It has history, so removing it archives it and its entries keep its name.')
+          : null
       ),
       primary: 'Save',
       danger: {
@@ -3687,7 +3767,8 @@ function ScreenMoney({
               Icon('sparkles', { size: 18, sw: 2.2 }),
               "Buddy's take"
             ),
-            h('p', { class: 'gb-money-coach-text', style: { marginTop: 'var(--space-2)' } }, res.advice)
+            // The model answers in markdown; asterisks and #s read as noise in a plain <p>.
+            h('p', { class: 'gb-money-coach-text', style: { marginTop: 'var(--space-2)' } }, String(res.advice).replace(/[*_#`]+/g, ''))
           );
           refreshIcons();
         })
@@ -3880,7 +3961,12 @@ function ScreenMoney({
       min: '1',
       placeholder: 'Optional, e.g. 8',
     });
-    const catSeg = tagPicker(money, save, { initial: 'entertainment' });
+    // The tag follows the name (Netflix -> Entertainment, Electricity -> Others) until one is picked.
+    let picked = false;
+    const catSeg = tagPicker(money, save, { initial: 'others', onPick: () => (picked = true) });
+    name.addEventListener('input', () => {
+      if (!picked) catSeg.set(suggestCategory(name.value, money) || 'others');
+    });
     openMoneyModal({
       title: 'Add subscription',
       sub: 'Recurring bills show up in reminders and your monthly forecast.',
@@ -3903,27 +3989,24 @@ function ScreenMoney({
         const a = readWhole(amount);
         const d = Math.round(Number(day.value));
         if (!name.value.trim()) {
-          name.focus();
-          throw new Error('Name is required.');
+          throw fieldRefusal(name, 'Name is required.');
         }
         if (!Number.isFinite(a) || a <= 0) {
-          amount.focus();
-          throw new Error('Enter a monthly amount.');
+          throw fieldRefusal(amount, 'Enter a monthly amount.');
         }
         if (!Number.isFinite(d) || d < 1 || d > 31) {
-          day.focus();
-          throw new Error('Due day must be 1–31.');
+          throw fieldRefusal(day, 'Due day must be 1–31.');
         }
         commit((m) =>
-          m.subscriptions.unshift({
-            id: uid(),
-            name: name.value.trim(),
-            amount: a,
-            dueDay: d,
-            category: catSeg.get(),
-            ...(Number(uses.value) > 0 ? { usesPerMonth: Math.round(Number(uses.value)) } : {}),
-            createdAt: Date.now(),
-          })
+          m.subscriptions.unshift(
+            newSubscription({
+              name: name.value.trim(),
+              amount: a,
+              dueDay: d,
+              category: catSeg.get(),
+              ...(Number(uses.value) > 0 ? { usesPerMonth: Math.round(Number(uses.value)) } : {}),
+            })
+          )
         );
         toast.success('Subscription added.');
       },
@@ -4022,10 +4105,7 @@ function ScreenMoney({
     let dialog;
     const make = (p) => {
       const today = todayKey();
-      const end =
-        p.kind === 'save' || p.kind === 'logdays' || p.kind === 'reduce'
-          ? thisMonthPrefix() + '-' + pad2(daysInMonth())
-          : dkey(addDays(new Date(), (p.days || 1) - 1));
+      const end = challengeEnd(p);
       commit((m) =>
         m.challenges.unshift({
           id: uid(),
@@ -4473,9 +4553,19 @@ function ScreenMoney({
     const dim = daysInMonth();
     const dayNum = new Date().getDate();
     const prefix = thisMonthPrefix();
+    // With budgets, the slip counts only the tags that have one, as the Budgets
+    // card does; the rest is its own line. Taking all spending off the budgeted
+    // tags' total said 819 left above a card that said 2,300.
+    const budgeted = new Set(st.filter((s) => s.budget > 0).map((s) => s.cat.key));
+    const known = new Set(mergedCats(money).map((c) => c.key));
+    const tagOf = (e) => (known.has(e.category) ? e.category : 'others');
     const byDay = {};
-    for (const e of inRange(money.expenses, prefix + '-01', today))
-      byDay[e.date] = (byDay[e.date] || 0) + (Number(e.amount) || 0);
+    let outside = 0;
+    for (const e of inRange(money.expenses, prefix + '-01', today)) {
+      const v = Number(e.amount) || 0;
+      if (hasBudget && !budgeted.has(tagOf(e))) outside += v;
+      else byDay[e.date] = (byDay[e.date] || 0) + v;
+    }
     const spentMonth = Object.values(byDay).reduce((a, v) => a + v, 0);
     const spentToday = byDay[today] || 0;
     const daysLeft = dim - dayNum + 1;
@@ -4528,7 +4618,8 @@ function ScreenMoney({
           spentMonth > totalBudget
             ? line('Over budget', fmt(spentMonth - totalBudget), 'is-total is-over')
             : line('Left this month', fmt(totalBudget - spentMonth), 'is-total'),
-        ]
+          outside > 0 ? line('Also spent, in tags with no budget', fmt(outside)) : null,
+        ].filter(Boolean)
       : [line('Spent today', fmt(spentToday)), line('Spent this month', fmt(spentMonth), 'is-total')];
 
     const hero = h(
@@ -4574,7 +4665,7 @@ function ScreenMoney({
       h('div', { class: 'gb-money-slip-tear', 'aria-hidden': 'true' }),
       h('div', { class: 'gb-money-slip-lines', role: 'group', 'aria-label': monthName + ' so far' }, statement),
       monthTape({ byDay, hasBudget, totalBudget, dim, dayNum, prefix, today }),
-      h('p', { class: 'gb-money-today-say' }, buddyLine())
+      h('p', { class: 'gb-money-today-say' }, buddyLine(!hasBudget || left >= 0))
     );
     // Overview stays a glance: where you stand, your health, where the money
     // goes, and where the month is heading. Spending/Coach own the detail.
@@ -4624,7 +4715,8 @@ function ScreenMoney({
     });
   }
 
-  function buddyLine() {
+  // `todayOk` = today is within its share: only then may the line reassure.
+  function buddyLine(todayOk = true) {
     const st = budgetStatus(money).filter((s) => s.base > 0);
     const over = st.filter((s) => s.pct > 100);
     const near = st.filter((s) => s.pct >= 80 && s.pct <= 100);
@@ -4637,6 +4729,7 @@ function ScreenMoney({
       return `You're close on ${near[0].cat.label} (${near[0].pct}% used), but there's room elsewhere.`;
     if (streak >= 3)
       return `${streak}-day logging streak — this is exactly how clarity is built.`;
+    if (st.length && !todayOk) return 'Today ran past its share. The figure above is what each day has from tomorrow.';
     if (st.length) return `Looking good — your budgets have breathing room this month.`;
     return `Set a budget or two and I can help you stay on track, gently.`;
   }
@@ -5490,7 +5583,7 @@ function ScreenMoney({
                   'Delete "' + (e.note || c.label) + '" (' + fmt(e.amount) + ')?',
                   async () => {
                     focusAfterExpenseDelete(e.id);
-                    commit((m) => (m.expenses = m.expenses.filter((x) => x.id !== e.id)));
+                    commit((m) => dropExpense(m, e.id));
                     toast.success('Expense deleted.');
                   }
                 ),
@@ -5669,8 +5762,57 @@ function ScreenMoney({
   function budgetsSection() {
     const st = budgetStatus(money);
     const anySet = st.some((s) => s.base > 0);
-    // Empty, it only repeats the health card's "Set budgets" as a tall blank card.
-    if (!anySet) return [];
+    // None set: one short card, with a one-tap set from the last 30 days when there
+    // is spending (10% under each tag, as the dialog's hints), so budgets aren't
+    // only reachable from the health card at the bottom.
+    if (!anySet) {
+      const last30 = byCategory(inRange(money.expenses, lastNDays(30)[0], todayKey()), money);
+      const sugg = mergedCats(money)
+        .filter((c) => last30[c.key] > 0)
+        .map((c) => ({ c, amt: Math.max(50, Math.round((last30[c.key] * 0.9) / 50) * 50) }));
+      return [
+        Card({
+          className: 'gb-money-card',
+          children: [
+            h('div', { class: 'gb-sectiontitle' }, h('h3', null, 'Monthly budgets')),
+            h(
+              'div',
+              { class: 'gb-money-intro' },
+              sugg.length
+                ? 'From your last 30 days: ' + sugg.map((x) => x.c.label + ' ' + fmt(x.amt)).join(', ') + '.'
+                : 'A gentle limit per tag, and I nudge you near 80%.'
+            ),
+            h(
+              'div',
+              { class: 'gb-money-head-actions' },
+              sugg.length
+                ? h(
+                    'button',
+                    {
+                      type: 'button',
+                      class: 'gb-btn gb-btn--soft gb-btn--compact',
+                      onclick: () => {
+                        commit((m) => sugg.forEach((x) => (m.budgets[x.c.key] = x.amt)));
+                        toast.success('Budgets set. Change them any time.');
+                      },
+                    },
+                    'Use these'
+                  )
+                : null,
+              h(
+                'button',
+                {
+                  type: 'button',
+                  class: 'gb-btn gb-btn--' + (sugg.length ? 'ghost' : 'soft') + ' gb-btn--compact',
+                  onclick: openSetBudgets,
+                },
+                sugg.length ? 'Adjust' : 'Set up'
+              )
+            ),
+          ],
+        }),
+      ];
+    }
     const headKids = [
       h(
         'div',
@@ -5963,7 +6105,7 @@ function ScreenMoney({
                     'span',
                     {
                       class: 'gb-money-cat-ic',
-                      style: { background: 'var(--sun-50)', color: 'var(--sun-700)' },
+                      style: { background: 'var(--warning-soft)', color: 'var(--warning-soft-fg)' },
                     },
                     Icon('star', { size: 15, sw: 2.2 })
                   ),
@@ -6025,7 +6167,8 @@ function ScreenMoney({
   /* =================================================================
      TAB: INCOME (salary + other inflow, loans given/received)
      ================================================================= */
-  function openAddIncome() {
+  // `ex` = an income entry to edit (same id, as openExpenseModal does).
+  function openAddIncome(ex = null) {
     // Selected on focus: typing over the prefilled salary appended to it (60000 -> 6000060000).
     const amt = h('input', {
       type: 'number',
@@ -6040,15 +6183,22 @@ function ScreenMoney({
       class: 'gb-input',
       maxlength: '60',
       placeholder: 'e.g. June salary',
+      value: ex ? ex.label || '' : '',
     });
     // This month's salary not in yet and its usual day has come: dated that day.
-    const due = salaryDue(money);
-    const date = h('input', { type: 'date', class: 'gb-input', value: due ? due.date : todayKey() });
+    const due = ex ? null : salaryDue(money);
+    // Up to today, as an expense: a later date was invisible in every list.
+    const date = h('input', {
+      type: 'date',
+      class: 'gb-input',
+      max: todayKey(),
+      value: ex ? ex.date : due ? due.date : todayKey(),
+    });
     // Salary starts on the last salary's amount and account; two equal ones on the
     // same day of the month offer to log it every month (a `recurring` rule).
-    const pat = salaryPattern(money);
+    const pat = ex ? { last: null, repeat: null } : salaryPattern(money);
     const prefill = pat.last ? String(pat.last.orig ? pat.last.orig.amount : pat.last.amount) : '';
-    amt.value = prefill;
+    amt.value = ex ? String(ex.orig ? ex.orig.amount : ex.amount) : prefill;
     const repeat = pat.repeat
       ? h('input', { type: 'checkbox', class: 'gb-money-roll-check', checked: true })
       : null;
@@ -6065,7 +6215,7 @@ function ScreenMoney({
         { value: 'salary', label: 'Salary' },
         { value: 'other', label: 'Other' },
       ],
-      'salary',
+      ex ? (ex.source === 'salary' ? 'salary' : 'other') : 'salary',
       (v) => {
         if (v !== 'salary' && amt.value === prefill) amt.value = '';
         if (v === 'salary' && !amt.value) amt.value = prefill;
@@ -6074,13 +6224,13 @@ function ScreenMoney({
     );
     const amtLabel = h('div', { class: 'gb-field-label' }, 'Amount (' + cur + ')');
     const lastAcc = pat.last && activeAccounts(money).some((a) => a.id === pat.last.accountId) ? pat.last.accountId : null;
-    const into = accountPicker(money, lastAcc || firstOfKind(money, ['bank', 'wallet']), (id) => {
+    const into = accountPicker(money, ex ? ex.accountId : lastAcc || firstOfKind(money, ['bank', 'wallet']), (id) => {
       amtLabel.textContent = 'Amount (' + (accCurrency(money, id) || cur) + ')';
     });
     amtLabel.textContent = 'Amount (' + (accCurrency(money, into.get()) || cur) + ')';
     openMoneyModal({
-      title: 'Add income',
-      sub: 'Salary, freelance, a gift — anything that came in.',
+      title: ex ? 'Edit income' : 'Add income',
+      sub: ex ? 'Fix the amount, account or date.' : 'Salary, freelance, a gift — anything that came in.',
       body: h(
         'div',
         { class: 'gb-form' },
@@ -6096,16 +6246,46 @@ function ScreenMoney({
         date,
         repeatRow
       ),
-      primary: 'Add income',
+      primary: ex ? 'Save changes' : 'Add income',
+      danger: ex
+        ? {
+            label: 'Delete income',
+            onClick: () => {
+              const next = clone(money);
+              next.income = next.income.filter((x) => x.id !== ex.id);
+              save(next, money);
+              toast.action('Income deleted.', 'Undo', () => {
+                const back = clone(next);
+                back.income.unshift({ ...ex, id: uid() }); // new id: see the expense Undo
+                save(back, next);
+              });
+            },
+          }
+        : null,
       onPrimary: async () => {
         const v = readAmount(amt);
         if (!Number.isFinite(v) || v <= 0) throw fieldRefusal(amt, 'Enter an amount greater than zero.');
+        if (!date.value || date.value > todayKey()) throw fieldRefusal(date, 'Pick a day up to today.');
         const source = src.get();
-        const home = toHomeAmount(money, into.get(), v);
+        const home = ex ? editedHomeAmount(money, ex, into.get(), v) : toHomeAmount(money, into.get(), v);
         // Past the server's cap it said "Income added." and then failed the sync.
         if (home.amount > AMOUNT_MAX) throw fieldRefusal(amt, 'That is more than ' + fmt(AMOUNT_MAX) + '. Check the amount.');
         const when = date.value || todayKey();
         const repeating = repeat && repeat.checked && source === 'salary';
+        if (ex) {
+          const row = {
+            id: ex.id,
+            amount: home.amount,
+            ...(home.orig ? { orig: home.orig } : {}),
+            source,
+            label: label.value.trim() || (source === 'salary' ? 'Salary' : 'Income'),
+            date: when,
+            ...(into.get() ? { accountId: into.get() } : {}),
+          };
+          commit((m) => (m.income = (m.income || []).map((x) => (x.id === ex.id ? row : x))));
+          toast.success('Income updated.');
+          return;
+        }
         commit((m) => {
           (m.income = m.income || []).unshift({
             id: uid(),
@@ -6301,6 +6481,9 @@ function ScreenMoney({
     [total, people].forEach((el) => el.addEventListener('input', paint));
     me.addEventListener('change', paint);
     paint();
+    // The whole bill left this account: your share is an expense on it, and the
+    // others' shares go out of it as the IOUs (loanMove). Default as the expense form.
+    const paidFrom = accountPicker(money, money.settings.lastAccountId);
     openMoneyModal({
       title: 'Split a bill',
       sub: 'You paid; everyone else owes you their share.',
@@ -6312,6 +6495,8 @@ function ScreenMoney({
         h('div', { class: 'gb-field-label' }, 'Split with'),
         people,
         h('label', { class: 'gb-money-split-me' }, me, 'Include my share'),
+        paidFrom.node ? h('div', { class: 'gb-field-label' }, 'Paid from') : null,
+        paidFrom.node,
         h('div', { class: 'gb-field-label' }, 'Note (optional)'),
         note,
         preview
@@ -6328,9 +6513,13 @@ function ScreenMoney({
           throw new Error('Who did you split it with?');
         }
         const label = note.value.trim();
+        const accountId = paidFrom.get();
+        const acc = accountId ? { accountId } : {};
+        const bill = Math.round(readAmount(total) * 100) / 100;
+        const mine = Math.round((bill - sh.reduce((a, x) => a + x.amount, 0)) * 100) / 100;
         commit((m) => {
           m.loans = m.loans || [];
-          sh.forEach((x) =>
+          sh.forEach((x) => {
             m.loans.unshift({
               id: uid(),
               direction: 'given',
@@ -6339,10 +6528,27 @@ function ScreenMoney({
               date: todayKey(),
               note: label ? 'Split: ' + label : 'Split bill',
               settled: false,
-            })
-          );
+              ...acc,
+            });
+            loanMove(m, m.loans[0]);
+          });
+          if (mine > 0) {
+            m.expenses.unshift({
+              id: uid(),
+              amount: mine,
+              category: suggestCategory(label, money),
+              date: todayKey(),
+              note: label || 'Split bill (my share)',
+              createdAt: Date.now(),
+              ...acc,
+            });
+          }
+          if (accountId) m.settings.lastAccountId = accountId;
         });
-        toast.success(sh.length === 1 ? 'IOU saved.' : sh.length + ' IOUs saved.');
+        toast.success(
+          (sh.length === 1 ? 'IOU saved' : sh.length + ' IOUs saved') +
+            (mine > 0 ? ', and your ' + exact(mine) + ' share logged.' : '.')
+        );
       },
     });
     focusSoon(total);
@@ -6353,22 +6559,10 @@ function ScreenMoney({
   function salaryDueCard() {
     const due = salaryDue(money);
     if (!due) return null;
-    const last = due.last;
-    const acc = last && activeAccounts(money).some((a) => a.id === last.accountId) ? last.accountId : null;
+    const row = salaryDueRow(money, due);
+    const acc = row.accountId || null;
     const logIt = () => {
-      // Same as the last salary when the amount matches: keeps its currency and rate.
-      const orig = last && last.orig && Number(last.amount) === due.amount ? last.orig : null;
-      commit((m) => {
-        (m.income = m.income || []).unshift({
-          id: uid(),
-          amount: due.amount,
-          ...(orig ? { orig } : {}),
-          source: 'salary',
-          label: 'Salary',
-          date: due.date,
-          ...(acc ? { accountId: acc } : {}),
-        });
-      });
+      commit((m) => (m.income = m.income || []).unshift(row));
       toast.success('Salary logged for ' + fmtDateShort(due.date) + '.');
     };
     return coachCard('wallet', 'Salary ' + fmt(due.amount) + ' arrived?', [
@@ -6388,7 +6582,7 @@ function ScreenMoney({
         ),
         h(
           'button',
-          { type: 'button', class: 'gb-btn gb-btn--ghost gb-btn--compact', onclick: openAddIncome },
+          { type: 'button', class: 'gb-btn gb-btn--ghost gb-btn--compact', onclick: () => openAddIncome() },
           'Different amount'
         )
       ),
@@ -6468,7 +6662,7 @@ function ScreenMoney({
           h('h3', null, 'Income'),
           h(
             'button',
-            { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--compact', onclick: openAddIncome },
+            { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--compact', onclick: () => openAddIncome() },
             Icon('plus', { size: 14, sw: 2.6 }),
             'Add income'
           )
@@ -6486,13 +6680,18 @@ function ScreenMoney({
                     'span',
                     {
                       class: 'gb-money-cat-ic',
-                      style: { background: 'var(--leaf-50)', color: 'var(--leaf-700)' },
+                      style: { background: 'var(--success-soft)', color: 'var(--success-soft-fg)' },
                     },
                     Icon(e.source === 'salary' ? 'briefcase' : 'coins', { size: 15, sw: 2.2 })
                   ),
                   h(
-                    'div',
-                    { class: 'gb-money-exp-main' },
+                    'button',
+                    {
+                      type: 'button',
+                      class: 'gb-money-exp-main gb-money-exp-edit',
+                      'aria-label': 'Edit ' + incomeName(e) + ', ' + fmt(e.amount),
+                      onclick: () => openAddIncome(e),
+                    },
                     h('div', { class: 'gb-money-exp-note' }, incomeName(e)),
                     h(
                       'div',
@@ -6504,7 +6703,7 @@ function ScreenMoney({
                   ),
                   h(
                     'div',
-                    { class: 'gb-money-exp-amt', style: { color: 'var(--leaf-700)' } },
+                    { class: 'gb-money-exp-amt', style: { color: 'var(--success-soft-fg)' } },
                     '+' + fmt(e.amount)
                   ),
                   h(
@@ -6546,8 +6745,8 @@ function ScreenMoney({
       const lent = l.direction === 'given';
       // Signed from your side of the IOU: lent = owed to you (+), borrowed = you owe (−).
       // It was the cash-flow sign, so a split read "Asha owes you" in the dialog and −₹334 here.
-      const accent = lent ? 'var(--leaf-700)' : 'var(--coral-700)';
-      const soft = lent ? 'var(--leaf-50)' : 'var(--coral-50)';
+      const accent = lent ? 'var(--success-soft-fg)' : 'var(--brand-ink)';
+      const soft = lent ? 'var(--success-soft)' : 'var(--brand-soft)';
       return h(
         'div',
         { class: 'gb-money-exp-row gb-money-loan-row' + (l.settled ? ' is-settled' : '') },
@@ -6720,7 +6919,7 @@ function ScreenMoney({
           {
             class: 'gb-money-cat-ic',
             style: isIn
-              ? { background: 'var(--leaf-50)', color: 'var(--leaf-700)' }
+              ? { background: 'var(--success-soft)', color: 'var(--success-soft-fg)' }
               : { background: c.soft, color: c.fg },
           },
           Icon('repeat', { size: 15, sw: 2.2 })
@@ -7215,7 +7414,7 @@ function _demo() {
       kind: 'save',
       amount: 1000,
       start: thisMonthPrefix() + '-01',
-      end: thisMonthPrefix() + '-28',
+      end: thisMonthPrefix() + '-' + pad2(daysInMonth()),
     }).pct === 50,
     'save challenge 50%'
   );
@@ -7318,4 +7517,10 @@ export const _calc = {
   editedHomeAmount,
   challengeProgress,
   financialHealth,
+  challengeEnd,
+  newSubscription,
+  dropExpense,
+  advise,
+  goalPlan,
+  achievementTimeline,
 };

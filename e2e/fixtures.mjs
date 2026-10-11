@@ -1,16 +1,24 @@
 // Shared test fixtures: a fresh seeded account per test, signed in through the real UI, and a
 // guard that fails the test on any console error or any HTTP 4xx/5xx (the evidence gate).
-import { test as base, expect, chromium } from '@playwright/test';
+import { test as base, expect, chromium, firefox, webkit } from '@playwright/test';
+import { existsSync, readFileSync } from 'node:fs';
 import { seedAccount } from './seed.mjs';
 
 export const test = base.extend({
   // Playwright can't launch a browser under this machine's sandbox (the child is killed with
-  // EPERM), so the suite attaches to a Chrome started by hand with --remote-debugging-port.
+  // EPERM), so the suite attaches to browsers started outside it: Chrome over CDP (started by
+  // hand with --remote-debugging-port), Firefox and WebKit over the servers e2e/servers.sh starts.
   // Each test still gets its own context, i.e. its own cookies and storage.
+  engine: ['chrome', { option: true, scope: 'worker' }],
   browser: [
-    async ({}, use) => {
-      const b = await chromium.connectOverCDP(process.env.GB_E2E_CDP || 'http://localhost:9591');
+    async ({ engine }, use) => {
+      // GB_E2E_CHROME=server: use servers.sh's own Chromium instead of the shared (often busy) CDP Chrome.
+      if (engine === 'chrome' && process.env.GB_E2E_CHROME !== 'server') return use(await chromium.connectOverCDP(process.env.GB_E2E_CDP || 'http://localhost:9591'));
+      const file = process.env.GB_E2E_SERVERS || new URL('./.servers.json', import.meta.url).pathname;
+      if (!existsSync(file)) throw new Error(`no ${engine} server: run e2e/servers.sh start`);
+      const b = await { chrome: chromium, firefox, webkit }[engine].connect(JSON.parse(readFileSync(file, 'utf8'))[engine === 'chrome' ? 'chromium' : engine]);
       await use(b);
+      await b.close();
     },
     { scope: 'worker' },
   ],
@@ -20,9 +28,8 @@ export const test = base.extend({
     async ({ page, allowed }, use) => {
       const problems = [];
       page.on('console', (m) => {
-        // sockjs-client (the bell's socket) adds an 'unload' listener; this Chrome reports it as a
-        // policy violation on every page. A browser deprecation in a dependency, not an app error.
-        if (m.text().includes('unload is not allowed')) return;
+        // Chrome 154 on a fresh profile logs an unload policy violation for its own pages; not the app's.
+        if (/Permissions policy violation: unload/.test(m.text())) return;
         if (m.type() === 'error' && !allowed.some((a) => m.text().includes(a))) problems.push('console: ' + m.text());
       });
       page.on('pageerror', (e) => problems.push('pageerror: ' + e.message));
@@ -49,6 +56,10 @@ export { expect };
 
 export async function signIn(page, { email, password }) {
   await page.goto('/');
+  // A browser with no session lands on sign-up first; sign-in is its secondary link.
+  await page.locator('input[type=email]').first().waitFor();
+  const toSignIn = page.getByText('Have an account? Sign in');
+  if (await toSignIn.isVisible()) await toSignIn.click();
   await page.locator('input[type=email]').first().fill(email);
   await page.locator('input[type=password]').first().fill(password);
   await page.locator('input[type=password]').first().press('Enter');

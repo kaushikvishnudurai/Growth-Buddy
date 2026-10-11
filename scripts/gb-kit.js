@@ -135,14 +135,14 @@ function Icon(name, { size = 20, sw = 2, color, style, className } = {}) {
 
 /* ---- Domain color map ---- */
 const DOMAIN = {
-  habit: { bg: 'var(--leaf-50)', fg: 'var(--leaf-600)', icon: 'repeat' },
-  fitness: { bg: 'var(--coral-50)', fg: 'var(--coral-600)', icon: 'dumbbell' },
-  ai: { bg: 'var(--iris-50)', fg: 'var(--iris-600)', icon: 'sparkles' },
-  journal: { bg: 'var(--sky-50)', fg: 'var(--sky-600)', icon: 'notebook-pen' },
-  social: { bg: 'var(--bloom-50)', fg: 'var(--bloom-600)', icon: 'users-round' },
-  reward: { bg: 'var(--sun-50)', fg: 'var(--sun-700)', icon: 'trophy' },
-  study: { bg: 'var(--iris-50)', fg: 'var(--iris-600)', icon: 'book-open' },
-  career: { bg: 'var(--sky-50)', fg: 'var(--sky-600)', icon: 'briefcase' },
+  habit: { bg: 'var(--success-soft)', fg: 'var(--success-soft-fg)', icon: 'repeat' },
+  fitness: { bg: 'var(--brand-soft)', fg: 'var(--brand-soft-fg)', icon: 'dumbbell' },
+  ai: { bg: 'var(--ai-soft)', fg: 'var(--ai-soft-fg)', icon: 'sparkles' },
+  journal: { bg: 'var(--info-soft)', fg: 'var(--info-soft-fg)', icon: 'notebook-pen' },
+  social: { bg: 'var(--social-soft)', fg: 'var(--social-soft-fg)', icon: 'users-round' },
+  reward: { bg: 'var(--warning-soft)', fg: 'var(--warning-soft-fg)', icon: 'trophy' },
+  study: { bg: 'var(--ai-soft)', fg: 'var(--ai-soft-fg)', icon: 'book-open' },
+  career: { bg: 'var(--info-soft)', fg: 'var(--info-soft-fg)', icon: 'briefcase' },
 };
 
 function IconChip({ domain = 'habit', icon, size = 40, iconSize = 20 } = {}) {
@@ -1119,7 +1119,7 @@ function Logo({ size = 48, radius = 14, alive = false } = {}) {
 // Theme and the premium skin used to sit here as two more icon buttons. They
 // are preferences, not daily actions — they live in Settings → Display now, so
 // the bar holds only what you reach for while using the app.
-function AppHeader({ label, name, userName, onAccount, unreadCount, onBell, onAdd } = {}) {
+function AppHeader({ label, name, userName, onAccount, unreadCount, onBell, onAdd, onSearch } = {}) {
   const bellChildren = [Icon('bell', { size: 20 })];
   if (unreadCount > 0) {
     bellChildren.push(
@@ -1143,6 +1143,21 @@ function AppHeader({ label, name, userName, onAccount, unreadCount, onBell, onAd
     h(
       'div',
       { class: 'gb-head-actions' },
+      // The command palette's door for touch; a keyboard also has Ctrl/Cmd K and "/".
+      onSearch
+        ? h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-iconbtn gb-head-search',
+              'aria-label': 'Search and commands',
+              'aria-keyshortcuts': 'Control+K Meta+K /',
+              'aria-haspopup': 'dialog',
+              onclick: onSearch,
+            },
+            Icon('search', { size: 20 })
+          )
+        : null,
       onAdd
         ? h(
             'button',

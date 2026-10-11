@@ -83,6 +83,24 @@ class HabitReminderDeliverySchedulerTest {
         verify(dispatchLog).save(any());
     }
 
+    /** I-08: a break quiets habit reminders on every channel, in the user's own day. */
+    @Test
+    void staysQuietOnABreakDay() {
+        UUID userId = UUID.randomUUID();
+        Habit habit = dueHabit(userId);
+        User u = user(userId);
+        u.setUiPrefs(new java.util.HashMap<>(java.util.Map.of(
+                "breakFrom", today().minusDays(1).toString(), "breakUntil", today().plusDays(1).toString())));
+        when(habits.findDeliverable(true, false)).thenReturn(List.of(habit));
+        when(habits.findAllById(any())).thenReturn(List.of(habit));
+        when(users.findAllById(any())).thenReturn(List.of(u));
+
+        scheduler.dispatchHabitReminders();
+
+        verify(notifications, never()).publish(any(), any(), any(), any(), any());
+        verify(dispatchLog, never()).saveAndFlush(any());
+    }
+
     @Test
     void skipsAHabitAlreadyCheckedInToday() {
         UUID userId = UUID.randomUUID();

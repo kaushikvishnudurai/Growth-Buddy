@@ -15,6 +15,7 @@ import {
   Check,
   DOMAIN,
   CrashCard,
+  Card,
   openOverlay,
   closeOverlays,
   trackOverlay,
@@ -30,7 +31,8 @@ import {
   focusSoon,
   SHEET_EXIT_MS,
 } from './gb-kit.js';
-import { setLocale, localeFromUser } from './i18n.js';
+import { setLocale, localeFromUser, fmtDate } from './i18n.js';
+import { BREAK_LENGTHS, breakState, startBreak, endBreak } from './break.js';
 import { dateKey, todayKey } from './dates.js';
 import {
   ScreenDashboard,
@@ -44,7 +46,7 @@ import {
   sleepHours,
   StreakChain,
 } from './dashboard.js';
-import { habitDue, tasksForToday } from './home-order.js';
+import { habitDue, tasksForToday, sortHabitsForHome } from './home-order.js';
 import { withProgressLog, needsProgressLog } from './goal-milestones.js';
 import { goalTaskStats, combinedGoalProgress, goalFinishedBy } from './goal-tasks.js';
 import {
@@ -155,6 +157,7 @@ import {
   healthAvailable,
   requestHealthAccess,
   onLocalNotificationAction,
+  saveFile,
 } from './native.js';
 import { registerToast } from './toast.js';
 import { initA11y, focusLocator, refocus } from './a11y.js';
@@ -439,7 +442,10 @@ const state = {
   // Auth flow: 'signin' | 'signup' | 'verify' | 'forgot' | 'reset' | 'totp' | 'deletion'
   // Restore a pending verify screen across reloads so a refresh doesn't strand
   // the user on sign-in (which then makes them re-signup and burn the code).
-  authMode: loadAuthDraft().mode || 'signin',
+  // A browser that has never held a session gets sign-up first; one that has
+  // (a sign-out, an expired session) gets sign-in.
+  authMode: loadAuthDraft().mode || (loadSession() ? 'signin' : 'signup'),
+  authReturning: !!loadSession(),
   authEmail: loadAuthDraft().email || '',
   authNotice: '',
   // {email, password, cancelDeletion, message} between a right password and the
@@ -503,10 +509,21 @@ function paintToasts() {
   refreshIcons();
 }
 
+/* A dismissed toast plays its exit (.is-leaving, gb-toast-out in app.css)
+   before it leaves state. The set, not a class on the node, so a render()
+   during the exit keeps it leaving. */
+const TOAST_OUT_MS = 160;
+const leavingToasts = new Set();
 function dismissToast(id) {
-  state.toasts = state.toasts.filter((t) => t.id !== id);
-  dropStaleToastTimers();
+  if (leavingToasts.has(id) || !state.toasts.some((t) => t.id === id)) return;
+  leavingToasts.add(id);
   paintToasts();
+  setTimeout(() => {
+    leavingToasts.delete(id);
+    state.toasts = state.toasts.filter((t) => t.id !== id);
+    dropStaleToastTimers();
+    paintToasts();
+  }, TOAST_OUT_MS);
 }
 
 /* Toast timers live outside the toast objects so a pointer resting on the
@@ -1497,15 +1514,29 @@ function checkAchievements() {
   const seen = new Set([...(Array.isArray(stored) ? stored : []), ...achSession.ids]);
   const fresh = all.filter((i) => i.unlocked && !seen.has(i.id));
   if (!fresh.length) return;
+  // Never over a form: not marked seen, so the next render with nothing open
+  // celebrates it.
+  if (!achQuiet && formInUse()) return;
   // Persist the union BEFORE celebrating so a re-render mid-animation can't
   // double-fire the same badge.
   const union = Array.from(new Set([...seen, ...unlockedIds]));
   union.forEach((id) => achSession.ids.add(id));
   saveUiPrefs({ achSeen: union });
-  fresh.forEach((item) => celebrate(item));
+  if (achQuiet) return;
+  // A badge for setting something up lands as a toast: the full-screen
+  // celebration over a goal just made blocked its milestone field.
+  fresh.forEach((item) => (SETUP_BADGES.has(item.id) ? toastSuccess('Achievement unlocked: ' + item.title + '.') : celebrate(item)));
 }
 /* Ids already seen this session, per account. Memory only; ui_prefs is the record. */
 let achSession = { uid: null, ids: new Set() };
+const SETUP_BADGES = new Set(['goal1']);
+/* True while a starter pack is writing: what it unlocks is marked seen, not celebrated. */
+let achQuiet = false;
+function formInUse() {
+  if (document.querySelector('.gb-modal-overlay:not(.is-closing)')) return true;
+  const el = document.activeElement;
+  return !!el && (el.isContentEditable || el.matches('textarea, select, input:not([type=checkbox]):not([type=radio]):not([type=button])'));
+}
 
 /* Card-facing view of a habit's freeze state, shaped like the old local model. */
 function habitFreezeState(habit) {
@@ -1571,6 +1602,98 @@ async function protectStreak(habitId) {
     'Could not protect your streak.'
   );
   if (ok) toastSuccess('Streak protected with a freeze.');
+}
+
+/* ---- Take a break (I-08) ----
+   ui_prefs.breakFrom..breakUntil (break.js). The server holds every streak over
+   it without a token, owes nothing those days (the score), and keeps habit
+   reminders, the evening reflection and the digest quiet; this device's habit
+   alarms follow (reSyncDeviceAlarms). Timed reminders still ring. Started from
+   Settings > Alerts or Home's at-risk entry; ended early with one tap. */
+function breakPrefs() {
+  return (state.user && state.user.uiPrefs) || {};
+}
+
+function breakUntilLabel(until) {
+  return fmtDate(until, 'weekdayDate');
+}
+
+async function setBreak(patch, message) {
+  const saved = saveUiPrefs(patch);
+  render();
+  reSyncDeviceAlarms();
+  await saved;
+  // Streaks, "owed today" and the score are the server's; read them back.
+  try {
+    state.habits = await api('/api/habits');
+    reconcileStreakFreeze();
+  } catch (_) {
+    /* the next load brings them */
+  }
+  await refreshScore();
+  render();
+  if (message) toastSuccess(message);
+}
+
+function takeBreak(days, rescue) {
+  const patch = startBreak(days, todayKey(), rescue);
+  return setBreak(patch, 'On a break until ' + breakUntilLabel(patch.breakUntil) + '. Your streaks are held.');
+}
+
+function endBreakNow() {
+  return setBreak(endBreak(todayKey()), 'Break ended.');
+}
+
+/* Home's one line about a break: on one, back from one, or offered when a
+   streak is at risk (a rescue, so it covers the missed yesterday too). */
+function homeBreakEntry() {
+  if (!featureOn('habits') || !(state.habits || []).length) return null;
+  const st = breakState(breakPrefs(), todayKey());
+  const btn = (label, onclick, primary) =>
+    h(
+      'button',
+      { type: 'button', class: 'gb-btn gb-btn--compact ' + (primary ? 'gb-btn--primary' : 'gb-btn--soft'), onclick },
+      label
+    );
+  const card = (kicker, title, why, buttons) =>
+    Card({
+      className: 'gb-coach-card gb-break-card',
+      children: [
+        h(
+          'div',
+          null,
+          h('div', { class: 'gb-coach-kicker' }, kicker),
+          h('div', { class: 'gb-coach-title' }, title),
+          h('div', { class: 'gb-coach-why' }, why)
+        ),
+        buttons.length ? h('div', { class: 'gb-coach-chiprow' }, ...buttons) : null,
+      ],
+    });
+  if (st && st.on) {
+    return card(
+      'On a break',
+      'Until ' + breakUntilLabel(st.until),
+      'Your streaks are held and habit reminders are off. Reminders you set a time for still ring.',
+      [btn('End now', endBreakNow, false)]
+    );
+  }
+  if (st && st.back) {
+    const build = (state.habits || []).filter((x) => x.active !== false && !isQuitHabit(x));
+    const next = sortHabitsForHome(build).find((x) => !x.doneToday && habitDue(x));
+    return card(
+      'Back on it',
+      'Your streaks are intact.',
+      next ? 'One to start with: ' + next.name + '.' : 'Pick up wherever suits you today.',
+      next ? [btn('Mark ' + next.name + ' done', () => toggleHabit(next.id), true)] : []
+    );
+  }
+  if (!(state.habits || []).some((x) => habitFreezeState(x).pendingBreak)) return null;
+  return card(
+    'Rough week?',
+    'Take a break',
+    'Your streaks hold and habit reminders go quiet. Reminders you set a time for still ring.',
+    BREAK_LENGTHS.map((n) => btn(n + ' days', () => takeBreak(n, true), n === BREAK_LENGTHS[0]))
+  );
 }
 
 /* ---- The freeze calendar ----
@@ -2036,6 +2159,20 @@ function deviceZone() {
     return ''; // no Intl zone: nothing to compare
   }
 }
+/* "Asia/Calcutta" reads as code. The city and the zone's own name read as a
+   place: "Calcutta (India Standard Time)". */
+const zoneCity = (tz) => String(tz || '').split('/').pop().replace(/_/g, ' ');
+function zoneName(tz) {
+  const city = zoneCity(tz);
+  try {
+    const part = new Intl.DateTimeFormat(undefined, { timeZone: tz, timeZoneName: 'long' })
+      .formatToParts(new Date())
+      .find((p) => p.type === 'timeZoneName');
+    return part && part.value !== city ? city + ' (' + part.value + ')' : city;
+  } catch (_) {
+    return city;
+  }
+}
 /* The one timezone write, shared by the offer below and first-run setup. */
 async function saveDeviceTimezone(tz) {
   const me = await api('/api/auth/timezone', {
@@ -2043,7 +2180,7 @@ async function saveDeviceTimezone(tz) {
     body: JSON.stringify({ timezone: tz }),
   });
   syncUserSession(me || {});
-  toastSuccess('Timezone set to ' + tz + '.');
+  toastSuccess('Timezone set to ' + zoneName(tz) + '.');
   loadData();
 }
 function offerDeviceTimezone() {
@@ -2062,16 +2199,16 @@ function offerDeviceTimezone() {
   }
   saveUiPrefs({ tzAsked: tz });
   openModal({
-    title: 'Switch to ' + tz + '?',
+    title: 'Switch to ' + zoneCity(tz) + ' time?',
     sub:
-      'Your phone is on ' +
-      tz +
+      'This device is on ' +
+      zoneName(tz) +
       ', your account on ' +
-      u.timezone +
+      zoneName(u.timezone) +
       '. Days, streaks and reminder times follow the account.',
     body: h('div', { class: 'gb-note-hint' }, 'You can change it later in Settings, Profile.'),
     primary: 'Switch',
-    dismiss: 'Keep ' + u.timezone,
+    dismiss: 'Keep ' + zoneCity(u.timezone) + ' time',
     onPrimary: () => saveDeviceTimezone(tz),
   });
 }
@@ -2106,9 +2243,8 @@ async function enablePushFlow(okMessage) {
 }
 
 /* ---- First-run setup ----
-   Once per account, after a NEW account's first data load: a goal (the
-   starter-pack picker, starterPicker), timezone, notifications, features —
-   four skippable steps in one sheet. Decided in
+   Once per account, after a NEW account's first data load: one sheet with a
+   ready-made starter plan (openFirstRunSetup, starterPicker). Decided in
    loadData() once wave 1 lands, because "new" is read from real data: an
    account that already has tasks, habits or reminders, or dismissed the Home
    checklist, is marked `ui_prefs.setupDone` silently and never sees it. Any
@@ -2121,12 +2257,6 @@ function maybeStartFirstRun() {
   if (!u || !u.id || firstRunOpen) return;
   const p = u.uiPrefs || {};
   if (p.setupDone) return maybeAskPermissions();
-  // Begun but never finished (the app was closed mid-way): its own goal step
-  // made the habits, so the data check below would end it unseen. Resume.
-  if (p.setupStep) {
-    setTimeout(() => openFirstRunSetup(p.setupStep), 600);
-    return;
-  }
   const hasData =
     (state.tasks || []).length > 0 ||
     (state.habits || []).length > 0 ||
@@ -2179,13 +2309,18 @@ async function maybeAskPermissions() {
 const HEALTH_PITCH =
   'Health data: steps, sleep, heart rate and workouts, so habits tick themselves and last night’s sleep logs itself. Read only; Growth Buddy never writes to it.';
 
-// `resumeAt`: the step key ui_prefs.setupStep saved, when an earlier run of
-// this sheet was left without finishing.
-const SETUP_ORDER = ['goal', 'timezone', 'notify', 'health', 'features'];
-async function openFirstRunSetup(resumeAt) {
+/* One sheet, one decision: a finished plan (the default pack, pre-filled) and
+   "Start with this plan". It used to be up to five steps (a goal picker that
+   opened empty, timezone, push, health, 13 feature switches), then a second
+   checklist on Home. Now: the timezone is the one signup sent, and the offer
+   asks only if this device disagrees, in words (syncDeviceTimezone, re-armed
+   on close); push is asked from Home's checklist once there is a reminder to
+   ring; health on the phone comes from maybeAskPermissions on a later launch;
+   features stay all on and live in Settings › Layout. One step has no middle
+   to resume from, so ui_prefs.setupStep (an older build's) is just cleared. */
+async function openFirstRunSetup() {
   if (firstRunOpen || !state.user || (state.user.uiPrefs || {}).setupDone) return;
   firstRunOpen = true;
-  // The goal step needs starter-packs.js; offline or a failed chunk just drops it.
   const mod = await import('./starter-packs.js').catch(() => null);
   // Signed out (or set up elsewhere) while the chunk loaded: no sheet, and no
   // firstRunOpen stuck true, which would skip the next account's setup in this tab.
@@ -2193,227 +2328,63 @@ async function openFirstRunSetup(resumeAt) {
     firstRunOpen = false;
     return;
   }
-  const tz = deviceZone();
+  if (!mod) {
+    // Offline or a failed chunk: Home's checklist still offers the packs.
+    firstRunOpen = false;
+    saveUiPrefs({ setupDone: true, setupStep: null });
+    render();
+    return;
+  }
+  const picker = starterPicker(mod, ['balanced']);
   const { sheet, close } = openOverlay({
-    label: 'Set up Growth Buddy',
+    label: 'Your starter plan',
     className: 'gb-setup-modal',
     onClose: () => {
       firstRunOpen = false;
-      // Whatever step it was left on, it has been seen: never again.
-      const done = isNative()
-        ? { setupDone: true, setupStep: null, healthAsked: true }
-        : { setupDone: true, setupStep: null };
-      saveUiPrefs(tz ? { ...done, tzAsked: tz } : done);
+      // However it was left, it has been seen: never again, on any device.
+      saveUiPrefs({ setupDone: true, setupStep: null });
+      render(); // Home held its checklist back while the sheet was up
       syncDeviceTimezone();
     },
   });
-
-  // The timezone step only when there is something to decide: the same zone
-  // (aliases like Calcutta/Kolkata included) cost a tap and said nothing.
-  const savedZone = state.user.timezone || '';
-  const zoneDiffers = !!tz && !(savedZone && sameZone(savedZone, tz));
-  const keyed = [
-    ['goal', mod && goalStep],
-    ['timezone', zoneDiffers && timezoneStep],
-    ['notify', notifyStep],
-    ['health', isNative() && healthStep],
-    ['features', featuresStep],
-  ].filter((x) => x[1]);
-  const steps = keyed.map((x) => x[1]);
-  const stepKey = (i) => keyed[i][0];
-  // Resume on the saved step, or the first one after it that is still offered.
-  const from = SETUP_ORDER.indexOf(resumeAt);
-  let at = Math.max(0, from < 0 ? 0 : keyed.findIndex((x) => SETUP_ORDER.indexOf(x[0]) >= from));
-  // Progress lives in ui_prefs, so a closed app comes back here, not to a
-  // silent "done" (the goal step's habits read as data that predates setup).
-  const saveStep = () => saveUiPrefs({ setupStep: stepKey(at) });
-  saveStep();
-  const dots = h(
-    'div',
-    { class: 'gb-setup-dots', 'aria-hidden': 'true' },
-    ...steps.map(() => h('span', { class: 'gb-setup-dot' }))
+  const primaryBtn = h(
+    'button',
+    {
+      type: 'button',
+      class: 'gb-btn gb-btn--primary',
+      style: { width: '100%', marginTop: '14px' },
+      onclick: async () => {
+        primaryBtn.disabled = true;
+        try {
+          await picker.apply();
+          close();
+        } catch (err) {
+          primaryBtn.disabled = false;
+          shakeRefusal(sheet);
+          toastError(err, 'Could not set that up.');
+        }
+      },
+    },
+    'Start with this plan'
   );
-  const stepLabel = h('div', { class: 'gb-setup-count' });
-  const titleEl = h('div', { class: 'gb-modal-title' });
-  const subEl = h('div', { class: 'gb-modal-sub' });
-  const bodyEl = h('div', { class: 'gb-modal-body' });
-  const primaryBtn = h('button', {
-    type: 'button',
-    class: 'gb-btn gb-btn--primary',
-    style: { width: '100%', marginTop: '14px' },
-  });
-  const skipBtn = h('button', { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel' });
-
+  const title = h('div', { class: 'gb-modal-title', tabindex: '-1' }, 'Your plan is ready');
   sheet.append(
     h(
       'div',
       { class: 'gb-modal-head' },
-      h('div', { class: 'gb-setup-top' }, stepLabel, dots),
-      titleEl,
-      subEl
+      title,
+      h(
+        'div',
+        { class: 'gb-modal-sub' },
+        'A balanced day to start. Pick another goal to change it, or switch off anything that doesn’t fit.'
+      )
     ),
-    bodyEl,
+    h('div', { class: 'gb-modal-body' }, picker.body),
     primaryBtn,
-    skipBtn
+    h('button', { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel', onclick: close }, 'I’ll set it up myself')
   );
-
-  function next() {
-    if (at >= steps.length - 1) {
-      toastSuccess('You’re all set.');
-      close();
-      return;
-    }
-    at += 1;
-    saveStep();
-    show();
-  }
-
-  function show() {
-    const s = steps[at]();
-    stepLabel.textContent = 'Step ' + (at + 1) + ' of ' + steps.length;
-    [...dots.children].forEach((d, i) => d.classList.toggle('is-on', i <= at));
-    titleEl.textContent = s.title;
-    subEl.textContent = s.sub;
-    bodyEl.replaceChildren(s.body);
-    primaryBtn.textContent = s.primary;
-    primaryBtn.disabled = false;
-    primaryBtn.onclick = async () => {
-      primaryBtn.disabled = true;
-      try {
-        if (s.onPrimary) await s.onPrimary();
-        next();
-      } catch (err) {
-        primaryBtn.disabled = false;
-        shakeRefusal(sheet);
-        toastError(err, 'Something went wrong.');
-      }
-    };
-    skipBtn.textContent = s.skip;
-    skipBtn.onclick = next;
-    refreshIcons();
-    titleEl.setAttribute('tabindex', '-1');
-    titleEl.focus({ preventScroll: true });
-  }
-
-  function badge(icon) {
-    return h('div', { class: 'gb-setup-badge' }, Icon(icon, { size: 22, sw: 2.2 }));
-  }
-
-  // First, so the one question that matters gets the fresh attention. Habit and
-  // reminder times are local and follow the user, so the timezone step after
-  // it changes nothing they hold. The loadData() inside apply() is a refresh:
-  // it never re-enters maybeStartFirstRun, and firstRunOpen is already true.
-  // ponytail: a new account has no spending, so planStarter offers no budget
-  // (budgetsFrom); offer one once Money has 30 days of spending.
-  function goalStep() {
-    const p = starterPicker(mod);
-    // The button says what it will do: "Next" until a chip is on.
-    p.body.addEventListener('click', () => {
-      if (steps[at] === goalStep) primaryBtn.textContent = p.picked() ? 'Set it up' : 'Next';
-    });
-    return {
-      title: 'What do you want to change?',
-      sub: 'Pick one or more. We set up habits, reminders and a 30-day goal.',
-      body: p.body,
-      primary: 'Next',
-      onPrimary: () => (p.picked() ? p.apply() : null),
-      skip: 'Skip',
-    };
-  }
-
-  // Offered only when the zones differ or the account has none (zoneDiffers).
-  function timezoneStep() {
-    const zoneRow = (label, value) =>
-      h(
-        'div',
-        { class: 'gb-setup-zone' },
-        h('span', { class: 'gb-setup-zone-lbl' }, label),
-        h('span', { class: 'gb-setup-zone-val' }, value || 'Not set')
-      );
-    return {
-      title: 'Your timezone',
-      sub: 'Days, streaks and reminder times follow it.',
-      body: h(
-        'div',
-        {},
-        badge('clock'),
-        zoneRow('This device', tz),
-        zoneRow('Your account', savedZone),
-        h(
-          'div',
-          { class: 'gb-field-hint' },
-          savedZone
-            ? 'They differ. Use this device’s zone unless you want to keep home time.'
-            : 'Your account has no timezone yet.'
-        )
-      ),
-      primary: 'Use ' + tz,
-      onPrimary: () => saveDeviceTimezone(tz),
-      skip: savedZone ? 'Keep ' + savedZone : 'Skip',
-    };
-  }
-
-  function notifyStep() {
-    const supported = pushSupported();
-    const status = h(
-      'div',
-      { class: 'gb-field-hint' },
-      supported ? '' : 'This browser can’t show notifications. The app on your phone can.'
-    );
-    const body = h(
-      'div',
-      {},
-      badge('bell'),
-      h(
-        'p',
-        { class: 'gb-setup-text' },
-        'Reminders, habit nudges and messages from your circle arrive as notifications — even with the app closed.'
-      ),
-      status
-    );
-    if (supported) {
-      pushSubscribed().then((on) => {
-        if (on && steps[at] === notifyStep) {
-          status.textContent = 'Notifications are already on for this device.';
-          primaryBtn.textContent = 'Next';
-          primaryBtn.onclick = next;
-        }
-      });
-    }
-    return {
-      title: 'Stay in the loop',
-      sub: 'You choose what rings in Settings › Alerts.',
-      body,
-      primary: supported ? 'Turn on notifications' : 'Next',
-      // A refusal still moves on: the toast says why, and Settings can retry.
-      onPrimary: supported ? () => enablePushFlow('Notifications on.') : null,
-      skip: 'Not now',
-    };
-  }
-
-  function healthStep() {
-    return {
-      title: 'Connect your health data',
-      sub: /android/i.test(navigator.userAgent) ? 'Through Health Connect.' : 'Through Apple Health.',
-      body: h('div', {}, badge('activity'), h('p', { class: 'gb-setup-text' }, HEALTH_PITCH)),
-      primary: 'Connect',
-      onPrimary: connectHealth,
-      skip: 'Not now',
-    };
-  }
-
-  function featuresStep() {
-    return {
-      title: 'Pick what you’ll use',
-      sub: 'Turn off anything you don’t need. It all comes back in Settings › Layout.',
-      body: h('div', { class: 'gb-setup-features' }, ...FEATURE_DEFS.map(featureSwitchRow)),
-      primary: 'Done',
-      onPrimary: null,
-      skip: 'Skip',
-    };
-  }
-
-  show();
+  refreshIcons();
+  title.focus({ preventScroll: true });
 }
 
 // In-flight dedup for idempotent GETs: if the same GET is already running,
@@ -2484,11 +2455,23 @@ async function apiFetch(path, options) {
     headers['Content-Type'] = 'application/json';
   }
 
+  const savedKey = savedGetKey(path, opts);
   let res;
   try {
     res = await fetch(API_BASE + path, Object.assign({}, opts, { headers }));
   } catch (_) {
+    const saved = savedKey && (await CacheStorage.ready(), CacheStorage.getItem(savedKey));
+    if (saved) {
+      servedSaved = true;
+      handleOffline(); // the banner: "You're offline — showing your last saved data."
+      return JSON.parse(saved);
+    }
     throw new Error(NO_CONNECTION);
+  }
+  if (servedSaved) {
+    // A response again: drop the banner and refetch what was painted from the copy.
+    servedSaved = false;
+    handleOnline();
   }
   if (res.status === 401) {
     // Token went stale (revoked, expired, server restarted with empty DB,
@@ -2520,7 +2503,27 @@ async function apiFetch(path, options) {
   if (opts.raw || res.status === 204) {
     return null;
   }
-  return res.json();
+  const body = await res.json();
+  if (savedKey) CacheStorage.setItem(savedKey, JSON.stringify(body));
+  return body;
+}
+
+/* The app's stand-in for the website's Workbox NetworkFirst cache (gb-api-get,
+   vite.config.js). The app removes the service worker (see the boot block), so
+   offline nothing answered its GETs and a cold start without a connection put
+   the crash card on every screen, over data the device already had. Native only:
+   on the web the worker does this. Every good JSON GET is mirrored into
+   CacheStorage under gb.apiGet.<uid>.<path>, and only a fetch that got no
+   response at all is answered from it; a server error is still an error.
+   purgeUserCache drops the copies with the account (the key holds .<uid>.).
+   ponytail: no eviction; the keys are bounded by the distinct GET paths the app
+   builds. Add an LRU like Workbox's maxEntries if dated paths ever pile up. */
+let servedSaved = false;
+function savedGetKey(path, opts) {
+  const id = state.user && state.user.id;
+  const get = !opts.method || String(opts.method).toUpperCase() === 'GET';
+  if (!isNative() || !id || !get || opts.body || opts.raw || path.startsWith('/api/auth/export')) return null;
+  return 'gb.apiGet.' + id + '.' + path;
 }
 
 /* POST that answers text/event-stream (Buddy's streamed reply). Resolves to the
@@ -2617,6 +2620,7 @@ function resetUserState() {
   state.phoneNight = null; // this phone's night, read for the last account
   state.score = 0;
   state.authMode = 'signin';
+  state.authReturning = true;
   state.authEmail = '';
   state.authPending = null;
   // A panel left open kept its mousedown listener alive on the sign-in screen,
@@ -3073,6 +3077,9 @@ async function loadSecondaryData() {
     if (!state.user || (state.user.id || state.user.email) !== who) return;
     if (me) syncUserSession(me);
     const accountChanged = !!me && accountShape(state.user) !== before;
+    // What didn't arrive, for a screen to say so in place of its empty state (Money:
+    // a failed load looked exactly like a first run once the toast went).
+    state.loadFailed = new Set(missed);
     if (missed.length) {
       pushToast("Couldn't load your " + new Intl.ListFormat('en').format(missed) + '.', 'error', 8000, {
         label: 'Retry',
@@ -4003,6 +4010,14 @@ async function deleteTask(id) {
     state.tasks = state.tasks.filter((t) => t.id !== id);
   });
   await refreshScore();
+}
+
+/* A plain daily habit by name, for Circle's shared goal and Report's weekly
+   focus. Resolves false, adding nothing, when one of that name exists. */
+function addHabitNamed(name) {
+  const key = name.trim().toLowerCase();
+  if (state.habits.some((x) => String(x.name || '').trim().toLowerCase() === key)) return Promise.resolve(false);
+  return createHabit({ name: name.trim(), domain: 'habit', icon: 'repeat', cadence: 'daily', metric: 'none' });
 }
 
 async function createHabit(body) {
@@ -5964,6 +5979,22 @@ async function addSuggestedReminder(text, time, tag) {
 /* The "recent foods" chips: GET /api/food/recent, kept for the session and
    dropped by every log. null = not asked yet. */
 let recentFoods = null;
+const FUTURE_FOOD = "You can't log food for a day that hasn't happened yet.";
+
+/* Log food closes on the tap: the save, and the estimate behind it when no
+   kcal was typed, carry on under the screen (they held the dialog ~11 s). A
+   failure keeps the entry on a Retry toast rather than losing what was typed. */
+function logFoodLater(payload) {
+  const wait = payload.kcal == null ? pushToast('Estimating calories for ' + payload.foodName + '.', 'info', 20000) : 0;
+  logFoodEntry(payload)
+    .catch((err) =>
+      pushToast((err && err.message) || 'Could not log ' + payload.foodName + '.', 'error', 10000, {
+        label: 'Retry',
+        run: () => logFoodLater(payload),
+      })
+    )
+    .finally(() => wait && dismissToast(wait));
+}
 
 /* opts.file: a plate photo already taken (the Photo option in Quick add);
    estimated as soon as the form opens, as if picked with its own button. */
@@ -5990,7 +6021,6 @@ function openAddFood(opts) {
      100 g, scaled at save) or a favourite (its own portion). Sent only while the
      name still matches, so typing a different food drops them. */
   let label = null; // { kind: 'barcode', name, product } | { kind: 'fav', name, fav }
-  let autoKcal = '';
 
   const foodNameInput = h('input', {
     type: 'text',
@@ -6025,7 +6055,7 @@ function openAddFood(opts) {
       quantityInput.min = String(UNITS[u].min);
       quantityInput.max = String(UNITS[u].max);
       quantityInput.setAttribute('aria-label', 'Amount in ' + UNITS[u].name);
-      quantityInput.focus();
+      if (!quietUnit) quantityInput.focus();
     }
   );
   unitSeg.node.setAttribute('aria-label', 'Unit');
@@ -6263,54 +6293,131 @@ function openAddFood(opts) {
   const field = (label, control) =>
     h('label', { class: 'gb-food-field' }, h('span', { class: 'gb-field-label' }, label), control);
 
-  /* One tap fills the form from a recent entry: name, grams and its calories,
-     typed, so saving it re-logs the same plate with no estimate. Filled, not
-     saved, so the day and meal above can still change. */
-  const recentRow = h('div', { class: 'gb-food-recent', role: 'group', 'aria-label': 'Recent foods' });
-  const fillGrams = (name, grams, kcal) => {
-    foodNameInput.value = name;
-    // segmented() has no setter; a click runs its own onChange (min/max/label).
-    if (unitSeg.get() !== 'g') unitSeg.node.children[1].click();
-    quantityInput.value = String(grams);
-    kcalInput.value = kcal != null ? String(kcal) : '';
+  /* "Had before": favourites (starred, first) then recent foods, one row under
+     the Food field. A tap logs that food at once with its own portion and
+     calories (typed, so no estimate) on the day and slot below. One line that
+     scrolls sideways, filtered by what is typed: wrapped, a full list pushed
+     Amount and Calories off a phone screen and buried the field itself. */
+  let closeDialog = () => {};
+  const chipRow = h('div', { class: 'gb-food-recent', role: 'group', 'aria-label': 'Foods you had before' });
+  const known = () => {
+    const seen = new Set();
+    return [
+      ...(favouriteFoods || []).map((f) => ({ foodName: f.foodName, quantityGrams: f.quantityGrams, kcal: f.kcal, fav: f })),
+      ...(recentFoods || []).map((r) => ({
+        foodName: r.foodName,
+        quantityGrams: r.quantityGrams,
+        kcal: r.kcalEstimated,
+        pieces: r.pieces || null,
+        mealType: r.mealType,
+      })),
+    ].filter((x) => {
+      const k = String(x.foodName || '').trim().toLowerCase();
+      if (!k || seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
   };
-  const fillRecent = (r) => {
-    label = null;
-    fillGrams(r.foodName, r.quantityGrams, r.kcalEstimated);
-    const mealIdx = { home: 0, hotel: 1 }[r.mealType];
-    if (mealIdx != null && mealTypeSeg.get() !== r.mealType) mealTypeSeg.node.children[mealIdx].click();
+  const logAgain = (x) => {
+    if (dateInput.value > todayKey()) {
+      toastError(null, FUTURE_FOOD);
+      return;
+    }
+    const f = x.fav;
+    closeDialog();
+    logFoodLater({
+      foodName: x.foodName,
+      quantityGrams: x.quantityGrams,
+      pieces: x.pieces || null,
+      mealType: x.mealType || mealTypeSeg.get(),
+      mealSlot: slotSeg.get(),
+      kcal: x.kcal,
+      loggedAt: loggedAtFor(dateInput.value),
+      note: null,
+      ...(f ? { proteinG: f.proteinG, carbsG: f.carbsG, fatG: f.fatG, fiberG: f.fiberG } : {}),
+    });
   };
-  // A dish typed by hand that was logged lately starts on that portion: the
-  // grams only, so the estimator still prices today's plate. Never over a number
-  // already in the box.
-  foodNameInput.addEventListener('change', () => {
-    const name = foodNameInput.value.trim().toLowerCase();
-    const r = name && (recentFoods || []).find((x) => (x.foodName || '').trim().toLowerCase() === name);
-    if (!r || !r.quantityGrams || quantityInput.value !== '') return;
-    if (unitSeg.get() !== 'g') unitSeg.node.children[1].click();
-    quantityInput.value = String(r.quantityGrams);
-  });
-  // A favourite: its own portion and kcal, and its macros go with it.
-  const fillFavourite = (f) => {
-    label = { kind: 'fav', name: f.foodName, fav: f };
-    fillGrams(f.foodName, f.quantityGrams, f.kcal);
-  };
-  const favRow = h('div', { class: 'gb-food-recent', role: 'group', 'aria-label': 'Favourite foods' });
-  const paintFavourites = (list) => {
-    favRow.replaceChildren(
-      ...(list || []).map((f) =>
+  const paintChips = () => {
+    const q = foodNameInput.value.trim().toLowerCase();
+    const list = known().filter((x) => !q || x.foodName.toLowerCase().includes(q));
+    chipRow.replaceChildren(
+      ...list.map((x) =>
         h(
           'button',
-          { type: 'button', class: 'gb-food-recent-chip is-fav', onclick: () => fillFavourite(f) },
-          Icon('star', { size: 12, sw: 2.4 }),
-          f.foodName
+          {
+            type: 'button',
+            class: 'gb-food-recent-chip' + (x.fav ? ' is-fav' : ''),
+            'aria-label': 'Log ' + x.foodName + ' again, ' + x.kcal + ' kcal',
+            onclick: () => logAgain(x),
+          },
+          x.fav ? Icon('star', { size: 12, sw: 2.4 }) : null,
+          x.foodName
         )
       )
     );
-    favRow.hidden = !(list && list.length);
+    chipRow.hidden = !list.length;
   };
-  paintFavourites(favouriteFoods);
-  if (!favouriteFoods) loadFavouriteFoods().then(paintFavourites);
+
+  /* Kcal the form filled in itself follows the grams until typed over: a
+     barcode's label, or the last portion of a food typed by name. */
+  let autoKcal = '';
+  let kcalFor = null; // (amount, unit) -> kcal for the food the form filled
+  let filledFor = ''; // ...and its name; typing another food drops both
+  let quietUnit = false;
+  const toGrams = () => {
+    if (unitSeg.get() === 'g') return;
+    // segmented() has no setter; a click runs its own onChange (min/max/label).
+    quietUnit = true;
+    unitSeg.node.children[1].click();
+    quietUnit = false;
+  };
+  quantityInput.addEventListener('input', () => {
+    if (!kcalFor || kcalInput.value !== autoKcal) return;
+    const n = Number(quantityInput.value);
+    const k = n >= UNITS[unitSeg.get()].min ? kcalFor(n, unitSeg.get()) : null;
+    kcalInput.value = k != null ? String(k) : '';
+    autoKcal = kcalInput.value;
+  });
+  // A food typed by hand that was had before starts on that portion (by the
+  // piece if it was counted) and its calories, so the save is instant (no
+  // estimate); both stay editable. Never over a number already typed.
+  const remember = () => {
+    const name = foodNameInput.value.trim().toLowerCase();
+    const r = name && known().find((x) => x.foodName.trim().toLowerCase() === name);
+    if (!r || !r.quantityGrams || quantityInput.value !== '') return;
+    label = r.fav ? { kind: 'fav', name: r.foodName, fav: r.fav } : null;
+    const unit = r.pieces ? 'pcs' : 'g';
+    const base = r.pieces || r.quantityGrams;
+    if (unit === 'g') toGrams();
+    else if (unitSeg.get() !== 'pcs') {
+      quietUnit = true;
+      unitSeg.node.children[0].click();
+      quietUnit = false;
+    }
+    quantityInput.value = String(base);
+    if (kcalInput.value === '' && r.kcal) {
+      kcalInput.value = autoKcal = String(r.kcal);
+      kcalFor = (n, u) => (u === unit ? Math.round((r.kcal * n) / base) : null);
+      filledFor = name;
+    }
+  };
+  foodNameInput.addEventListener('change', remember);
+  foodNameInput.addEventListener('input', () => {
+    paintChips();
+    if (!filledFor || foodNameInput.value.trim().toLowerCase() === filledFor) return;
+    if (kcalInput.value === autoKcal) kcalInput.value = '';
+    kcalFor = null;
+    filledFor = '';
+  });
+  if (!favouriteFoods) loadFavouriteFoods().then(paintChips);
+  if (!recentFoods)
+    api('/api/food/recent')
+      .then((list) => {
+        recentFoods = Array.isArray(list) ? list : [];
+        paintChips();
+      })
+      .catch(() => {});
+  paintChips();
 
   /* Barcode: the product's per-100 g label from OpenFoodFacts (GET
      /api/food/barcode/{code}, no AI) fills name, grams (its serving, else 100)
@@ -6319,16 +6426,14 @@ function openAddFood(opts) {
     label = { kind: 'barcode', name: p.name, product: p };
     const grams = p.servingGrams || 100;
     const k = labelFor(p, grams).kcal;
-    fillGrams(p.name, grams, k);
-    autoKcal = kcalInput.value;
+    foodNameInput.value = p.name;
+    toGrams();
+    quantityInput.value = String(grams);
+    kcalInput.value = autoKcal = k != null ? String(k) : '';
+    kcalFor = (n, u) => (u === 'g' ? labelFor(p, n).kcal : null);
+    filledFor = String(p.name || '').trim().toLowerCase();
+    paintChips();
   };
-  quantityInput.addEventListener('input', () => {
-    if (!label || label.kind !== 'barcode' || unitSeg.get() !== 'g') return;
-    if (kcalInput.value !== autoKcal) return; // typed over: theirs now
-    const k = labelFor(label.product, Number(quantityInput.value)).kcal;
-    kcalInput.value = k != null && Number(quantityInput.value) >= 10 ? String(k) : '';
-    autoKcal = kcalInput.value;
-  });
   const barcodeBtn = canScanBarcode()
     ? h(
         'button',
@@ -6352,49 +6457,13 @@ function openAddFood(opts) {
         'Scan a barcode'
       )
     : null;
-  const paintRecent = (list) => {
-    recentRow.replaceChildren(
-      ...(list || []).map((r) =>
-        h(
-          'button',
-          { type: 'button', class: 'gb-food-recent-chip', onclick: () => fillRecent(r) },
-          r.foodName
-        )
-      )
-    );
-    recentRow.hidden = !(list && list.length);
-  };
-  paintRecent(recentFoods);
-  if (!recentFoods)
-    api('/api/food/recent')
-      .then((list) => {
-        recentFoods = Array.isArray(list) ? list : [];
-        paintRecent(recentFoods);
-      })
-      .catch(() => {});
-
+  // The food first, focused, with what was had before right under it; the
+  // fields that have a default (day, home/hotel, slot) come after the amount.
   const body = h(
     'div',
     { class: 'gb-form gb-food-form' },
-    h(
-      'div',
-      { class: 'gb-food-pair' },
-      field('Day', dateInput),
-      h(
-        'div',
-        { class: 'gb-food-field' },
-        h('span', { class: 'gb-field-label' }, 'Meal'),
-        mealTypeSeg.node
-      )
-    ),
-    h('div', { class: 'gb-food-field' }, h('span', { class: 'gb-field-label' }, 'Slot'), slotSeg.node),
     field('Food', foodNameInput),
-    favRow,
-    recentRow,
-    barcodeBtn,
-    photoBtn,
-    platePhotoInput,
-    itemsContainer,
+    chipRow,
     h(
       'div',
       { class: 'gb-food-pair' },
@@ -6412,12 +6481,28 @@ function openAddFood(opts) {
     h(
       'div',
       { class: 'gb-field-hint gb-food-hint' },
-      'Leave either blank and we\u2019ll estimate it. Typed calories are used exactly.'
-    )
+      'Leave either blank and we’ll estimate it. Typed calories are used exactly.'
+    ),
+    h(
+      'div',
+      { class: 'gb-food-pair' },
+      field('Day', dateInput),
+      h(
+        'div',
+        { class: 'gb-food-field' },
+        h('span', { class: 'gb-field-label' }, 'Meal'),
+        mealTypeSeg.node
+      )
+    ),
+    h('div', { class: 'gb-food-field' }, h('span', { class: 'gb-field-label' }, 'Slot'), slotSeg.node),
+    barcodeBtn,
+    photoBtn,
+    platePhotoInput,
+    itemsContainer
   );
 
   const loggedItems = new Set();
-  openModal({
+  closeDialog = openModal({
     title: 'Log food',
     body,
     primary: 'Add food',
@@ -6426,10 +6511,7 @@ function openAddFood(opts) {
       let entriesToAdd = [];
       const mealType = mealTypeSeg.get();
       // A typed date skips the picker's max; YYYY-MM-DD compares as text.
-      if (dateInput.value > todayKey()) {
-        dateInput.focus();
-        throw new Error("You can't log food for a day that hasn't happened yet.");
-      }
+      if (dateInput.value > todayKey()) throw fieldRefusal(dateInput, FUTURE_FOOD);
 
       // If we have photo items, use them
       if (photoItems.length > 0) {
@@ -6444,20 +6526,18 @@ function openAddFood(opts) {
           note: photoDataUrl ? 'photo:' + (photoConfidence >= 0.7 ? 'used' : 'fallback') : null,
         }));
       } else {
-        // Otherwise use manual input
+        // Otherwise use manual input. Enter in the Food field can beat its
+        // change event here, so the remembered portion is applied first.
+        remember();
         const foodName = foodNameInput.value.trim();
         const quantityRaw = quantityInput.value ? Number(quantityInput.value) : null;
         const unit = UNITS[unitSeg.get()];
-        if (!foodName) {
-          foodNameInput.focus();
-          throw new Error('Food name or photo is required');
-        }
+        if (!foodName) throw fieldRefusal(foodNameInput, 'Type a food, or scan a photo.');
         if (
           quantityRaw != null &&
           (!Number.isFinite(quantityRaw) || quantityRaw < unit.min || quantityRaw > unit.max)
         ) {
-          quantityInput.focus();
-          throw new Error('Amount must be ' + unit.min + ' to ' + unit.max + ' ' + unit.name + '.');
+          throw fieldRefusal(quantityInput, 'Amount must be ' + unit.min + ' to ' + unit.max + ' ' + unit.name + '.');
         }
         const pieces = quantityRaw != null && unit === UNITS.pcs ? Math.round(quantityRaw) : null;
         const grams = quantityRaw != null && unit === UNITS.g ? Math.round(quantityRaw) : null;
@@ -6465,8 +6545,7 @@ function openAddFood(opts) {
         // The ceiling is one meal, not one day — a typed 50,000 is a slipped
         // finger. Say so here rather than letting the server answer 400.
         if (kcalRaw != null && (!Number.isFinite(kcalRaw) || kcalRaw < 1 || kcalRaw > 5000)) {
-          kcalInput.focus();
-          throw new Error('Calories must be between 1 and 5,000 for a single entry.');
+          throw fieldRefusal(kcalInput, 'Calories must be between 1 and 5,000 for a single entry.');
         }
         // A label's figures ride along only for the food it described, in grams,
         // with typed kcal (the server ignores them on an estimate anyway).
@@ -6480,23 +6559,24 @@ function openAddFood(opts) {
             figures = { proteinG: f.proteinG, carbsG: f.carbsG, fatG: f.fatG, fiberG: f.fiberG };
           }
         }
-        entriesToAdd = [
-          {
-            foodName: foodName,
-            quantityGrams: grams,
-            pieces,
-            mealType: mealType,
-            mealSlot: slotSeg.get(),
-            kcal: kcalRaw != null ? Math.round(kcalRaw) : null,
-            loggedAt: loggedAtFor(dateInput.value),
-            note: null,
-            ...figures,
-          },
-        ];
+        // The dialog closes on the tap; the save (and an estimate, ~10 s of AI)
+        // carries on under the screen.
+        logFoodLater({
+          foodName: foodName,
+          quantityGrams: grams,
+          pieces,
+          mealType: mealType,
+          mealSlot: slotSeg.get(),
+          kcal: kcalRaw != null ? Math.round(kcalRaw) : null,
+          loggedAt: loggedAtFor(dateInput.value),
+          note: null,
+          ...figures,
+        });
+        return;
       }
 
-      // Add all entries. The estimate is an AI call, so the wait gets the whole
-      // screen rather than a busy button.
+      // A plate's items, one after another. Each is an AI estimate, so the wait
+      // gets the whole screen rather than a busy button.
       const hideLoader = showFoodLoader(entriesToAdd.map((e) => e.foodName).join(', '));
       try {
         for (const { item, ...entry } of entriesToAdd) {
@@ -6509,7 +6589,7 @@ function openAddFood(opts) {
       }
 
       rememberPhotoFood(
-        photoItems.map((i) => i.foodName).join(', ') || foodNameInput.value.trim(),
+        photoItems.map((i) => i.foodName).join(', '),
         { confidence: photoConfidence, fallbackNeeded: photoFallbackNeeded },
         !!photoDataUrl
       );
@@ -6529,20 +6609,39 @@ const entryDeletesInFlight = new Set();
 function deleteWaterEntry(entryId) {
   // Still in flight from quickAddWater: there is no server id to delete yet.
   if (pendingWater.has(entryId)) return;
-  confirmDelete('Delete this water entry?', async () => {
-    const key = 'water:' + entryId;
-    if (entryDeletesInFlight.has(key)) return;
-    entryDeletesInFlight.add(key);
-    try {
-      const updated = await api('/api/water/entries/' + entryId, {
-        method: 'DELETE',
-      });
-      state.water = withPendingWater(updated);
-      invalidateWeek('water');
-      render();
-    } finally {
-      entryDeletesInFlight.delete(key);
-    }
+  confirmDelete('Delete this water entry?', () => removeWaterEntry(entryId));
+}
+async function removeWaterEntry(entryId) {
+  const key = 'water:' + entryId;
+  if (entryDeletesInFlight.has(key)) return;
+  entryDeletesInFlight.add(key);
+  try {
+    const updated = await api('/api/water/entries/' + entryId, {
+      method: 'DELETE',
+    });
+    state.water = withPendingWater(updated);
+    invalidateWeek('water');
+    render();
+  } finally {
+    entryDeletesInFlight.delete(key);
+  }
+}
+
+/* Home's water pill: one tap is a glass, Undo on the toast. Undo waits for
+   the glass to have a server id; one still queued offline has none, and stays.
+   ponytail: matched as the newest new 250 ml entry, not by its own id. */
+function addGlassFromHome() {
+  const entries = () => (state.water && state.water.entries) || [];
+  const before = new Set(entries().map((e) => e.id));
+  const saved = quickAddWater(250);
+  if (entries().length === before.size) return; // a double tap, already said so
+  pushToast('Logged 250 ml of water.', 'info', 6000, {
+    label: 'Undo',
+    run: async () => {
+      await saved;
+      const mine = entries().filter((e) => !before.has(e.id) && !pendingWater.has(e.id) && e.amountMl === 250);
+      if (mine.length) removeWaterEntry(mine[mine.length - 1].id).catch((err) => toastError(err, 'Could not undo that glass.'));
+    },
   });
 }
 
@@ -7839,8 +7938,10 @@ function weeklyReviewDue() {
   // "Something to review" means at least one number the review will actually
   // show is non-zero. Don't test activeDays — recordTrendsToday() writes a
   // zero-filled entry on every boot, so that only proves the app was opened.
+  // And on at least 3 of the 7 days: one tick on signup day made "your week"
+  // out of a few minutes. A 3-day streak proves it too (trends are per device).
   const s = weeklyReviewStats();
-  return s.avgScore > 0 || s.topStreak > 0 || s.moodLogs > 0 || s.spend > 0;
+  return s.loggedDays >= 3 || s.topStreak >= 3;
 }
 function weeklyReviewStats() {
   const days = last7Keys();
@@ -7859,7 +7960,10 @@ function weeklyReviewStats() {
   const topStreak = (state.habits || []).reduce((mx, hb) => Math.max(mx, effectiveStreak(hb)), 0);
   const moodByDate = (state.wellness && state.wellness.moodByDate) || {};
   const moodLogs = days.filter((k) => moodByDate[k]).length;
-  return { avgScore, activeDays, spend, topStreak, moodLogs };
+  const spentOn = new Set(((state.money && state.money.expenses) || []).map((e) => e.date));
+  // Days with something the review shows: a score, a mood, an expense.
+  const loggedDays = days.filter((k) => Number(byDate[k] && byDate[k].score) > 0 || moodByDate[k] || spentOn.has(k)).length;
+  return { avgScore, activeDays, spend, topStreak, moodLogs, loggedDays };
 }
 
 function openWeeklyReview() {
@@ -7979,9 +8083,8 @@ function openWeeklyReview() {
 
 /* ---- Delete account (destructive, password-confirmed) ---- */
 /* "Download my data": GET /api/auth/export (every table the account owns, minus
-   secrets) handed to the OS as growth-buddy-export.json. Share sheet first where
-   the platform takes files (the Capacitor WebView mostly does not), else a plain
-   download — the same ladder share-card.js uses. */
+   secrets) handed to the OS as growth-buddy-export.json through native.js
+   saveFile: the share sheet in the app, a plain download on the web. */
 async function downloadMyData(btn) {
   const label = btn && btn.lastChild && btn.lastChild.nodeType === 3 ? btn.lastChild : null;
   const was = label ? label.textContent : '';
@@ -7990,23 +8093,7 @@ async function downloadMyData(btn) {
   try {
     const data = await api('/api/auth/export');
     const name = 'growth-buddy-export-' + todayKey() + '.json';
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const file = typeof File === 'function' ? new File([blob], name, { type: 'application/json' }) : null;
-    if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
-      try {
-        await navigator.share({ files: [file], title: 'Growth Buddy data' });
-        return;
-      } catch (err) {
-        if (err && err.name === 'AbortError') return;
-      }
-    }
-    const url = URL.createObjectURL(blob);
-    const a = h('a', { href: url, download: name, style: { display: 'none' } });
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 10_000);
-    pushToast('Your data is downloading.', 'success', 3000);
+    if ((await saveFile(JSON.stringify(data, null, 2), name, 'application/json', 'Growth Buddy data')) === 'saved') pushToast('Your data is downloading.', 'success', 3000);
   } catch (err) {
     toastError(err, 'Could not export your data.');
   } finally {
@@ -9846,6 +9933,42 @@ function openProfileSettings(initialTab) {
     waterFields
   );
 
+  /* ---- Take a break (I-08): one tap for 3 / 7 / 14 days, one to end it. ---- */
+  const breakSectionBody = h('div');
+  const paintBreak = () => {
+    const st = breakState(breakPrefs(), todayKey());
+    const btn = (label, onclick, primary) =>
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--compact ' + (primary ? 'gb-btn--primary' : 'gb-btn--soft'),
+          onclick: () => onclick().then(paintBreak),
+        },
+        label
+      );
+    breakSectionBody.replaceChildren(
+      st && st.on
+        ? h(
+            'div',
+            { class: 'gb-feature-row' },
+            h(
+              'div',
+              { class: 'gb-feature-row-text' },
+              h('div', { class: 'gb-feature-row-label' }, 'On a break until ' + breakUntilLabel(st.until)),
+              h('div', { class: 'gb-feature-row-desc' }, 'Your streaks are held.')
+            ),
+            btn('End now', endBreakNow, false)
+          )
+        : h(
+            'div',
+            { class: 'gb-coach-chiprow', style: { marginTop: 0 } },
+            ...BREAK_LENGTHS.map((n) => btn(n + ' days', () => takeBreak(n, false), false))
+          )
+    );
+  };
+  paintBreak();
+
   /* ---- Quiet hours ----
      ui_prefs.quietStart / quietEnd, read by the server (ReminderPrefs.isQuiet:
      habit reminders, the digest) and by this device's alarm queue (push.js:
@@ -10532,6 +10655,13 @@ function openProfileSettings(initialTab) {
       'Steady sips beat one big glass. Needs notifications turned on above.'
     ),
     waterSectionBody,
+    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Take a break'),
+    h(
+      'div',
+      { class: 'gb-field-hint', style: { marginBottom: '12px' } },
+      'A rough week? Your habit streaks hold without using freezes, and habit reminders, the evening reflection and the digest go quiet. Reminders you set a time for still ring.'
+    ),
+    breakSectionBody,
     h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Quiet hours'),
     h(
       'div',
@@ -10602,7 +10732,7 @@ function openProfileSettings(initialTab) {
   // ---- Account pane ----
   const verifiedChip = h(
     'span',
-    { class: 'gb-pill', style: { background: 'var(--leaf-50)', color: 'var(--leaf-700)' } },
+    { class: 'gb-pill', style: { background: 'var(--success-soft)', color: 'var(--success-soft-fg)' } },
     u.emailVerified ? 'Verified' : 'Unverified'
   );
   const accountPane = h(
@@ -11141,23 +11271,7 @@ async function exportRemindersIcs(btn) {
       },
     });
     const name = 'growth-buddy-reminders.ics';
-    const blob = new Blob([text], { type: 'text/calendar' });
-    const file = typeof File === 'function' ? new File([blob], name, { type: 'text/calendar' }) : null;
-    if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
-      try {
-        await navigator.share({ files: [file], title: 'Growth Buddy reminders' });
-        return;
-      } catch (err) {
-        if (err && err.name === 'AbortError') return;
-      }
-    }
-    const url = URL.createObjectURL(blob);
-    const a = h('a', { href: url, download: name, style: { display: 'none' } });
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 10_000);
-    pushToast('Your calendar file is downloading. Open it in Google, Apple or Outlook Calendar.', 'success', 4000);
+    if ((await saveFile(text, name, 'text/calendar', 'Growth Buddy reminders')) === 'saved') pushToast('Your calendar file is downloading. Open it in Google, Apple or Outlook Calendar.', 'success', 4000);
   } catch (err) {
     toastError(err, 'Could not export your reminders.');
   } finally {
@@ -11438,6 +11552,7 @@ function reSyncDeviceAlarms() {
     sound: notifySound(),
     lead: getDefaultLead(),
     quiet: quietHours(),
+    breakPrefs: breakPrefs(),
     snoozeLabel: 'Snooze ' + minutesLabel(snoozeMinutes()),
   }).catch(() => {});
 }
@@ -11674,6 +11789,55 @@ const SNAP_ROUTES = {
   },
 };
 
+// Quick add's example sentence: the bar's placeholder and the can't-read-that toast.
+// No money example when Money is off.
+const quickAddExample = () => (featureOn('money') ? 'spent 200 on lunch, slept 7h' : 'slept 7h, call mom at 6');
+
+/* One sentence through Quick add: parse, then the preview (or straight through
+   when it is only controls). Shared by the bar below and the command palette.
+   false = nothing read, and it has already said why; true = onLeave ran and the
+   preview is up (onLogged once it is logged, onCancel if dismissed) or the
+   controls ran. A thrown error is the caller's to report. */
+async function runQuickAdd(text, { onLeave, onLogged, onCancel } = {}) {
+  const example = quickAddExample();
+  const r = await parseQuickAdd(text);
+  const rows = r.intents.map((it) => ({ it, d: describeIntent(it) })).filter((x) => x.d);
+  if (!rows.length) {
+    pushToast(
+      r.skipped.length
+        ? r.skipped.join(' ')
+        : r.unavailable
+          ? "Couldn't reach the assistant, and couldn't read that without it. Try again?"
+          : !r.configured || r.limited
+            ? 'Couldn’t read that. Try short phrases like “' + example + '”.'
+            : 'Couldn’t find anything to log there. Try short phrases like “' + example + '”.',
+      r.skipped.length ? 'info' : 'error',
+      4200
+    );
+    return false;
+  }
+  onLeave && onLeave();
+  // Only controls ("open money", "dark mode"): just do it — nothing is written
+  // that a preview would protect.
+  if (rows.every((x) => CONTROL_INTENTS.has(x.it.type) && !x.d.unknown)) {
+    await applyQuickAdd(rows.map((x) => x.it));
+    onLogged && onLogged();
+    return true;
+  }
+  const sub = [
+    r.limited
+      ? 'Read without AI this time — switch off anything it got wrong.'
+      : r.fallback
+        ? 'Read without the assistant — switch off anything it got wrong.'
+        : '',
+    ...r.skipped,
+  ]
+    .filter(Boolean)
+    .join(' ');
+  openQuickAddPreview(rows, sub, onLogged, onCancel);
+  return true;
+}
+
 // The Quick add bar: one sentence, sorted into the right trackers. Shared by
 // openAddSheet and the top of Home (homeQuickAdd); onLeave runs once a parse
 // found something, before the preview opens. The line is cleared only once it
@@ -11681,9 +11845,8 @@ const SNAP_ROUTES = {
 // closed by onLeave, reopens with it), else focuses this box again.
 function quickAddBox({ onLeave, onCancel, text = '' } = {}) {
   // Natural-language quick-add: type it once, we sort it into the right trackers.
-  // Short enough not to be cut off on a phone; no money example when Money is
-  // off. The placeholder and the can't-read-that toast share it.
-  const example = featureOn('money') ? 'spent 200 on lunch, slept 7h' : 'slept 7h, call mom at 6';
+  // Short enough not to be cut off on a phone.
+  const example = quickAddExample();
   const qaInput = h('input', {
     type: 'text',
     class: 'gb-input',
@@ -11703,56 +11866,28 @@ function quickAddBox({ onLeave, onCancel, text = '' } = {}) {
     if (!text) return;
     qaInput.disabled = true;
     const done = setThinking(qaBtn, 'Reading');
+    // The Home bar outlives the submit (the sheet closes), so hand it back usable.
+    const ready = () => {
+      done();
+      qaInput.disabled = false;
+    };
     try {
-      const r = await parseQuickAdd(text);
-      const rows = r.intents.map((it) => ({ it, d: describeIntent(it) })).filter((x) => x.d);
-      if (!rows.length) {
-        done();
-        qaInput.disabled = false;
-        pushToast(
-          r.skipped.length
-            ? r.skipped.join(' ')
-            : r.unavailable
-              ? "Couldn't reach the assistant, and couldn't read that without it. Try again?"
-              : !r.configured || r.limited
-                ? 'Couldn’t read that. Try short phrases like “' + example + '”.'
-                : 'Couldn’t find anything to log there. Try short phrases like “' + example + '”.',
-          r.skipped.length ? 'info' : 'error',
-          4200
-        );
-        return;
-      }
-      // The Home bar outlives the submit (the sheet closes), so hand it back usable.
-      done();
-      qaInput.disabled = false;
-      onLeave && onLeave();
-      // Only controls ("open money", "dark mode"): just do it — nothing is written
-      // that a preview would protect.
-      const logged = () => {
-        qaInput.value = '';
-      };
-      if (rows.every((x) => CONTROL_INTENTS.has(x.it.type) && !x.d.unknown)) {
-        await applyQuickAdd(rows.map((x) => x.it));
-        logged();
-        return;
-      }
-      const sub = [
-        r.limited
-          ? 'Read without AI this time — switch off anything it got wrong.'
-          : r.fallback
-            ? 'Read without the assistant — switch off anything it got wrong.'
-            : '',
-        ...r.skipped,
-      ]
-        .filter(Boolean)
-        .join(' ');
-      openQuickAddPreview(rows, sub, logged, () => {
-        if (onCancel) onCancel(qaInput.value);
-        else if (qaInput.isConnected) qaInput.focus();
+      const read = await runQuickAdd(text, {
+        onLeave: () => {
+          ready();
+          onLeave && onLeave();
+        },
+        onLogged: () => {
+          qaInput.value = '';
+        },
+        onCancel: () => {
+          if (onCancel) onCancel(qaInput.value);
+          else if (qaInput.isConnected) qaInput.focus();
+        },
       });
+      if (!read) ready();
     } catch (err) {
-      done();
-      qaInput.disabled = false;
+      ready();
       toastError(err, 'Quick add failed. Try again?');
     }
   }
@@ -13326,6 +13461,8 @@ function starterRow(it) {
       return { icon: 'wallet', label: 'Monthly budget', detail: it.category.charAt(0).toUpperCase() + it.category.slice(1) + ' · ' + fmtIn(it.amount, homeCur(state.money)) + ' (10% under last 30 days)' };
     case 'water':
       return { icon: 'droplets', label: 'Water goal', detail: it.goalMl + ' ml a day' };
+    case 'note':
+      return { icon: 'wallet', label: 'Monthly budget', detail: 'Suggested from your spending once you have logged some' };
     default:
       return null;
   }
@@ -13333,7 +13470,7 @@ function starterRow(it) {
 
 async function applyStarter(rows) {
   const today = todayKey();
-  let made = 0;
+  const counts = { total: 0 };
   const budgets = {};
   for (const it of rows) {
     try {
@@ -13365,23 +13502,36 @@ async function applyStarter(rows) {
       } else if (it.kind === 'budget') {
         budgets[it.category] = it.amount;
       } else continue;
-      made++;
+      counts[it.kind] = (counts[it.kind] || 0) + 1;
+      counts.total++;
     } catch (_) {
       /* one refusal doesn't stop the rest; the count says what landed */
     }
   }
-  if (Object.keys(budgets).length) {
+  const nBudgets = Object.keys(budgets).length;
+  if (nBudgets) {
     const base = state.money;
     saveMoney({ ...normalizeMoney(base), budgets: { ...base.budgets, ...budgets } }, base);
-    made += Object.keys(budgets).length;
+    counts.budget = nBudgets;
+    counts.total += nBudgets;
   }
-  return made;
+  return counts;
 }
 
-// The chips + live preview, shared by Home's modal and first-run step 1.
-// `mod` is the loaded starter-packs.js. apply() throws to keep the sheet open.
-function starterPicker({ PACKS, planStarter }) {
-  const picked = new Set();
+/* What a starter write added, in words: "Added 3 habits, 1 reminder and 1 goal." */
+const STARTER_NOUNS = { habit: 'habit', reminder: 'reminder', goal: 'goal', budget: 'budget', water: 'water goal' };
+function starterSummary(counts) {
+  const parts = Object.keys(STARTER_NOUNS)
+    .filter((k) => counts[k])
+    .map((k) => plural(counts[k], STARTER_NOUNS[k]));
+  return 'Added ' + (parts.length > 1 ? parts.slice(0, -1).join(', ') + ' and ' + parts.at(-1) : parts[0]) + '.';
+}
+
+// The chips + live preview, shared by Home's modal and the first-run sheet.
+// `mod` is the loaded starter-packs.js; `preselect` fills the preview before any
+// tap, so first run opens on a finished plan. apply() throws to keep the sheet open.
+function starterPicker({ PACKS, planStarter }, preselect) {
+  const picked = new Set(preselect || []);
   let rows = [];
   const chosen = new Map(); // row key -> on
   const keyOf = (r) => r.it.kind + ':' + r.d.detail;
@@ -13402,14 +13552,17 @@ function starterPicker({ PACKS, planStarter }) {
       ...(picked.size && !rows.length
         ? [h('p', { class: 'gb-field-hint' }, 'You already have everything these would add.')]
         : rows.map((r) => {
-            if (!chosen.has(keyOf(r))) chosen.set(keyOf(r), true);
+            // A note row says what isn't added and why; there is nothing to tick.
+            const info = r.it.kind === 'note';
+            if (!info && !chosen.has(keyOf(r))) chosen.set(keyOf(r), true);
             return h(
               'label',
-              { class: 'gb-qa-row' },
+              { class: 'gb-qa-row' + (info ? ' is-unknown' : '') },
               h('input', {
                 type: 'checkbox',
                 class: 'gb-qa-check',
-                checked: chosen.get(keyOf(r)),
+                checked: !info && chosen.get(keyOf(r)),
+                disabled: info,
                 'aria-label': r.d.label + ': ' + r.d.detail,
                 onchange: (e) => chosen.set(keyOf(r), e.target.checked),
               }),
@@ -13427,8 +13580,8 @@ function starterPicker({ PACKS, planStarter }) {
         'button',
         {
           type: 'button',
-          class: 'gb-chip',
-          'aria-pressed': 'false',
+          class: 'gb-chip' + (picked.has(p.id) ? ' is-on' : ''),
+          'aria-pressed': String(picked.has(p.id)),
           onclick: (e) => {
             const on = !picked.has(p.id);
             if (on) picked.add(p.id);
@@ -13443,17 +13596,25 @@ function starterPicker({ PACKS, planStarter }) {
       )
     )
   );
+  paint();
   return {
     body: h('div', null, chips, list),
-    picked: () => picked.size,
     apply: async () => {
-      const go = rows.filter((r) => chosen.get(keyOf(r))).map((r) => r.it);
+      const go = rows.filter((r) => r.it.kind !== 'note' && chosen.get(keyOf(r))).map((r) => r.it);
       if (!go.length) throw new Error(picked.size ? 'Nothing selected — switch at least one on.' : 'Pick a goal first.');
-      const made = await applyStarter(go);
-      if (!made) throw new Error('None of those could be added.');
-      toastSuccess('Added ' + made + (made > 1 ? ' things.' : ' thing.') + ' You’re set up.');
+      const counts = await applyStarter(go);
+      if (!counts.total) throw new Error('None of those could be added.');
+      toastSuccess(starterSummary(counts));
       reSyncDeviceAlarms();
-      await loadData();
+      // The pack wrote the first goal, so "Dreamer" would pop over the plan the
+      // user is about to look at. What a pack unlocks is marked seen, silently.
+      achQuiet = true;
+      try {
+        await Promise.all([loadData(), loadGoals()]);
+        checkAchievements();
+      } finally {
+        achQuiet = false;
+      }
     },
   };
 }
@@ -13865,7 +14026,7 @@ function notificationDropdown() {
    during it a negative animation-delay resumes at the point it had reached.
    Rebuild it as often as you like — the motion looks continuous.
 
-   Keep in step with gb-toast-in's duration in styles/premium.css. */
+   Keep in step with gb-toast-in's duration in styles/app.css. */
 const TOAST_IN_MS = 260;
 /* 'info' is the neutral one: a reminder coming due is neither good news nor an
    error, and the alert glyph on a nudge reads as something going wrong. */
@@ -13876,11 +14037,15 @@ function toastStack() {
   const now = Date.now();
   const nodes = state.toasts.map((t) => {
     const age = now - (t.at || 0);
-    const entering = age >= 0 && age < TOAST_IN_MS;
+    const entering = age >= 0 && age < TOAST_IN_MS && !leavingToasts.has(t.id);
     return h(
       'div',
       {
-        class: 'gb-toast is-' + (t.kind || 'error') + (entering ? '' : ' is-settled'),
+        class:
+          'gb-toast is-' +
+          (t.kind || 'error') +
+          (entering ? '' : ' is-settled') +
+          (leavingToasts.has(t.id) ? ' is-leaving' : ''),
         style: entering ? { animationDelay: '-' + age + 'ms' } : null,
       },
       h(
@@ -14188,6 +14353,8 @@ function ScreenHabits() {
         style: {
           padding: '6px var(--gutter) 10px',
           display: 'flex',
+          flexWrap: 'wrap', // large text: Add drops to a second line, not off screen
+          gap: '6px 12px',
           justifyContent: 'space-between',
           alignItems: 'center',
         },
@@ -14281,7 +14448,8 @@ function ScreenHabits() {
           Icon('snowflake', { size: 13, sw: 2.4 }),
           // The earning rule was in the title attribute above, which a phone
           // never shows — so on mobile the only place it existed was invisible.
-          left + ' freeze' + (left === 1 ? '' : 's') + ' left · 1 more each week',
+          // "Freeze" alone was jargon on first sight: say what one does.
+          left + ' streak freeze' + (left === 1 ? '' : 's') + ' · covers a missed day · +1 a week',
           Icon('chevron-right', { size: 13, sw: 2.6 })
         )
       );
@@ -14304,7 +14472,7 @@ function ScreenHabits() {
    Users can turn whole features on/off. A feature is ON unless explicitly set
    to false (opt-out), so existing users default to everything enabled. */
 const FEATURE_DEFS = [
-  { key: 'report', label: 'Report', desc: 'Progress overview, reflection & milestones' },
+  { key: 'report', label: 'Progress', desc: 'Progress overview, reflection & milestones' },
   { key: 'habits', label: 'Habits', desc: 'Daily habits & streaks' },
   { key: 'food', label: 'Food & meals', desc: 'Log meals and calories' },
   { key: 'water', label: 'Water tracking', desc: 'Track daily water intake' },
@@ -14356,9 +14524,10 @@ async function setFeature(key, value) {
   // Read it again now (it repaints Home when it lands).
   insightHistoryAt = 0;
   loadInsightHistory();
+  // The server's score drops what a switched-off feature held; the ring kept the old number.
+  refreshScoreLater();
 }
-/* One feature's on/off row: Settings › Layout and first-run setup both draw
-   this, so the switch and its rollback-on-failure live in one place. */
+/* One feature's on/off row (Settings › Layout), with its rollback-on-failure. */
 function featureSwitchRow(def) {
   const isOn = () => featureOn(def.key);
   const sw = h(
@@ -14461,6 +14630,13 @@ function requestReceiptScan(file, categories) {
     );
 }
 
+/* Home checklist's notifications step: 'ask' until this browser has answered,
+   then 'done'. Web push only; the phone asks from maybeAskPermissions. */
+function remindersAsk() {
+  if (isNative() || !pushSupported()) return null;
+  return Notification.permission === 'default' ? 'ask' : 'done';
+}
+
 const SCREENS = {
   home: {
     headerLabel: () => todayLabel(),
@@ -14497,9 +14673,16 @@ const SCREENS = {
         onNextMonth: calNextMonth,
         onRetryFood: retryCalendarFoodDate,
         onPlanToday: openDailyPlan,
+        onAddGlass: addGlassFromHome,
         onAddSleep: openSleepSchedule,
         onAddMood: openMoodCheckin,
         onStarterPack: openStarterPacks,
+        remindersAsk: remindersAsk(),
+        onEnableReminders: async () => {
+          await enablePushFlow('Notifications on. Your reminders will ring.');
+          render();
+        },
+        setupPending: !((state.user && state.user.uiPrefs) || {}).setupDone,
         onConfirmSleep: (u) => saveSleepEntry({ bedtime: u.bedtime, wakeTime: u.wakeTime }),
         onQuickMood: (mood) => saveMoodEntry({ mood }),
         onOnboardDismiss: (opts) => {
@@ -14515,6 +14698,7 @@ const SCREENS = {
         onQuickAddWater: featureOn('water') ? quickAddWater : null,
         homeLayout: (state.user && state.user.homeLayout) || null,
         quickAdd: homeQuickAdd(),
+        breakEntry: homeBreakEntry(),
         trends: state.trends,
         // Loaded once per session after wave 2 (loadSecondaryData), so Home's
         // top insight matches Report's on a cold start.
@@ -14561,6 +14745,8 @@ const SCREENS = {
               state.reportRange = days;
               repaintReport();
             },
+            weeklyReviews: state.weeklyReviews,
+            onMakeHabit: (name) => addHabitNamed(name).then(repaintReport),
           })
       );
     },
@@ -14760,6 +14946,7 @@ const SCREENS = {
               }),
             currentUserId: state.user && state.user.id,
             // "Share a win" chips over a circle's composer, read when a feed opens.
+            addHabit: addHabitNamed,
             wins: () =>
               winLines({
                 habits: state.habits || [],
@@ -15060,6 +15247,8 @@ const SCREENS = {
             // in money.js, never merged into state.money, so no save can send it back.
             requestOlderTx: (before) =>
               api('/api/money/tx?before=' + encodeURIComponent(before) + '&limit=200'),
+            loadFailed: !!(state.loadFailed && state.loadFailed.has('money')),
+            onRetryLoad: () => loadSecondaryData(),
           })
       ),
   },
@@ -16056,17 +16245,21 @@ function viewSignin() {
     })
   );
 
-  return authShell('Welcome back', 'Your habits, streaks and reminders are where you left them.', [
-    ...field('Email', emailInput, 'email'),
-    ...field('Password', pwField, 'password'),
-    primaryBtn('Sign in', submit),
-    h(
-      'div',
-      { class: 'gb-login-row' },
-      authLink('Forgot password?', () => setAuthMode('forgot', { email: emailInput.value.trim() })),
-      authLink('Create account', () => setAuthMode('signup', { email: emailInput.value.trim() }))
-    ),
-  ]);
+  return authShell(
+    state.authReturning ? 'Welcome back' : 'Sign in',
+    'Your habits, streaks and reminders are where you left them.',
+    [
+      ...field('Email', emailInput, 'email'),
+      ...field('Password', pwField, 'password'),
+      primaryBtn('Sign in', submit),
+      h(
+        'div',
+        { class: 'gb-login-row' },
+        authLink('Forgot password?', () => setAuthMode('forgot', { email: emailInput.value.trim() })),
+        authLink('Create account', () => setAuthMode('signup', { email: emailInput.value.trim() }))
+      ),
+    ]
+  );
 }
 
 /* ---- Sign-up ---- */
@@ -16082,9 +16275,12 @@ function viewSignup() {
   const nameInput = h('input', {
     type: 'text',
     class: 'gb-input gb-login-input',
-    placeholder: 'Your name',
+    placeholder: 'What should we call you?',
+    autocomplete: 'given-name',
     maxlength: 120,
   });
+  // One password field with its reveal eye: a confirm field doubled the typing
+  // to guard against a typo the eye already shows, and reset covers the rest.
   const pwInput = h('input', {
     type: 'password',
     class: 'gb-input gb-login-input',
@@ -16093,18 +16289,13 @@ function viewSignup() {
     autocomplete: 'new-password',
   });
   const pwField = passwordField(pwInput);
-  const pw2Input = h('input', {
-    type: 'password',
-    class: 'gb-input gb-login-input',
-    placeholder: 'Type it again',
-    maxlength: 128,
-    autocomplete: 'new-password',
-  });
-  const pw2Field = passwordField(pw2Input);
   // A hint, not a gate: the server's only rule is 8+ characters. Length and
   // variety are what a guesser pays for, so that is all it counts.
   const pwHint = h('p', { class: 'gb-field-hint', 'aria-live': 'polite' });
   pwInput.addEventListener('input', () => {
+    // The refusal under the field already says it: "Too short" beside "must be
+    // at least 8 characters" was one message twice.
+    if (state.error && state.errorField === 'password') return void (pwHint.textContent = '');
     const v = pwInput.value;
     const kinds = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].filter((r) => r.test(v)).length;
     const score = !v
@@ -16122,12 +16313,15 @@ function viewSignup() {
 
   function submit() {
     const email = emailInput.value.trim();
-    const displayName = nameInput.value.trim();
+    // Name is optional: without one the greeting read "Still up, asha.rao1990…"
+    // (the server's fallback is the whole local part). Its first word stands in
+    // until the user names themselves in Settings.
+    const word = (email.split('@')[0].match(/[a-z]{2,}/i) || [''])[0];
+    const displayName = nameInput.value.trim() || (word && word[0].toUpperCase() + word.slice(1).toLowerCase());
     const password = pwInput.value;
     if (!email) return authFail('Enter your email to create the account.', 'email');
     if (!emailInput.checkValidity()) return authFail('Enter a valid email address.', 'email');
     if (password.length < 8) return authFail('Password must be at least 8 characters.', 'password');
-    if (pw2Input.value !== password) return authFail('The two passwords don’t match.', 'confirm');
     runAuth(async () => {
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
       // Also the way back for an account that never verified: same password →
@@ -16138,7 +16332,7 @@ function viewSignup() {
     }, 'email');
   }
 
-  [emailInput, nameInput, pwInput, pw2Input].forEach((el) =>
+  [emailInput, nameInput, pwInput].forEach((el) =>
     el.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
@@ -16147,13 +16341,15 @@ function viewSignup() {
     })
   );
 
-  // No subtitle: the next screen is the code screen and explains itself there.
-  return authShell('Create your account', '', [
+  // The first screen a new visitor sees, so it says what the app is for.
+  return authShell(
+    'Create your account',
+    'Habits, reminders, money and goals in one place, with a ready-made plan to start you off.',
+    [
       ...field('Email', emailInput, 'email'),
-      ...field('Name', nameInput, 'name'),
       ...field('Password', pwField, 'password'),
       pwHint,
-      ...field('Confirm password', pw2Field, 'confirm'),
+      ...field('Name (optional)', nameInput, 'name'),
       primaryBtn('Create account', submit),
       h(
         'div',
@@ -16173,10 +16369,16 @@ function viewVerify() {
     inputmode: 'numeric',
     pattern: '\\d{6}',
     class: 'gb-input gb-login-input',
-    maxlength: 6,
+    // No maxlength: it cut a pasted "Your code is 123456" to "Your c" before
+    // otpBoxes could pull the digits out. otpBoxes keeps it to six.
     autocomplete: 'one-time-code',
   });
   const otpField = otpBoxes(otpInput, state.loading);
+  // The sixth digit submits. Trusted events only: renderAuth replays the value
+  // with a synthetic input event after a refusal, which must not resubmit it.
+  otpInput.addEventListener('input', (e) => {
+    if (e.isTrusted && !state.loading && otpInput.value.length === 6) submit();
+  });
   function submit() {
     const otp = (otpInput.value || '').replace(/\D/g, '');
     if (otp.length !== 6) return authFail('Enter the 6-digit code (must be exactly 6 digits).', 'otp');
@@ -16656,6 +16858,50 @@ function tweenFromLast() {
   for (const [el, prop, next] of moves) el.style[prop] = next;
 }
 
+/* ---- Command palette + keyboard shortcuts ----
+   Ctrl/Cmd+K anywhere, "/" or "?" outside a text field, "g" then a letter, and
+   the header's search button. Everything but this hook is the lazy palette.js
+   chunk (the go-to letters too: "g c" before it has loaded waits a frame for it).
+   paletteApp() is what it gets: the state already in memory and the openers,
+   featureOn / screenEnabled gates and Quick add path the rest of the app uses. */
+let paletteChunk = null;
+function openPalette(view) {
+  paletteChunk =
+    paletteChunk ||
+    import('./palette.js').catch((err) => {
+      paletteChunk = null; // offline now need not mean offline next time
+      throw err;
+    });
+  paletteChunk
+    .then((m) => m.openPalette(paletteApp(), view))
+    .catch((err) => toastError(err, 'Couldn’t open search. Check your connection?'));
+}
+const paletteApp = () => ({
+  state, api, featureOn, screenEnabled, SCREENS, SCREEN_LABEL, setScreen, applyIntent,
+  openProfileSettings, openAddTask, openEditTask, openAddHabit, openHabitForm, calGoTo, toggleTheme,
+  saveMoney, requestReceiptScan, saveUiPrefs, runQuickAdd,
+});
+let goPressedAt = 0; // "g", waiting for the letter of a go-to
+document.addEventListener('keydown', (e) => {
+  const k = e.key;
+  if (!state.user || e.isComposing || e.defaultPrevented || e.altKey) return;
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (k === 'k' || k === 'K')) {
+    e.preventDefault();
+    return openPalette(); // already open: palette.js refocuses that one
+  }
+  const el = document.activeElement;
+  const go = goPressedAt && Date.now() - goPressedAt < 1500;
+  goPressedAt = 0;
+  if (e.ctrlKey || e.metaKey || (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))))
+    return;
+  if (document.querySelector('[aria-modal="true"]')) return;
+  if (go) openPalette('go:' + k);
+  else if (k === '/' || k === '?') {
+    e.preventDefault();
+    openPalette(k === '?' ? 'help' : null);
+  } else if (k === 'g') goPressedAt = Date.now();
+});
+
 function render() {
   const sameScreen = renderedScreen === state.screen;
   // Leaving a screen files its scroll position; coming back to it (back, or its
@@ -16714,6 +16960,7 @@ function render() {
       name: cfg.headerName(),
       userName: state.user.displayName || 'Buddy',
       onAdd: openAddSheet,
+      onSearch: () => openPalette(),
       onAccount: toggleProfileOpen,
       unreadCount: unreadNotifs(),
       onBell: toggleNotifOpen,

@@ -91,6 +91,29 @@ class QuickAddFallbackTest {
         assertTrue(read("").isEmpty());
     }
 
+    /** FRC-1 in the patterns: TODAY is Saturday, NOW 14:05. */
+    @Test
+    void theAnchorFallsOnTheNamedWeekday() {
+        assertEquals(LocalDate.of(2026, 10, 12), read("remind me every Monday at 9am to water plants").get(0).date());
+        assertEquals(LocalDate.of(2026, 10, 16), read("remind me on Friday to call the bank").get(0).date());
+        assertEquals(LocalDate.of(2026, 10, 13), read("remind me next Tuesday at 4pm dentist").get(0).date());
+        assertEquals(TODAY, read("remind me every saturday at 6pm to call dad").get(0).date(), "6pm is still ahead");
+        assertEquals(TODAY.plusWeeks(1), read("remind me every saturday at 9am to call dad").get(0).date(),
+                "9am has passed: next Saturday");
+        var wd = read("remind me every weekday at 8am to stand up").get(0);
+        assertEquals("weekdays", wd.repeat());
+        assertEquals(LocalDate.of(2026, 10, 12), wd.date(), "not on the weekend");
+    }
+
+    /** EXS-5: "at 9am" at 14:05 with no day said is tomorrow's 9am, not a time already gone. */
+    @Test
+    void aPassedTimeWithNoDayIsTomorrow() {
+        assertEquals(TODAY.plusDays(1), read("remind me at 9am to call mom").get(0).date());
+        assertEquals(TODAY, read("remind me at 6pm to call mom").get(0).date(), "still ahead today");
+        assertEquals(TODAY, read("remind me today at 9am to call mom").get(0).date(), "today said out loud is kept");
+        assertEquals(TODAY, read("remind me every day at 9am to stretch").get(0).date(), "a series still has tomorrow");
+    }
+
     @Test
     void yesterdayAndAForeignCurrencyAreRead() {
         var l = QuickAddFallback.parse("spent $12 on coffee yesterday, slept 7h", List.of(), TODAY, NOW, "₹");

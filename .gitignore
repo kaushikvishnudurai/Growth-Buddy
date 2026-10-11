@@ -22,3 +22,5 @@ e2e-results/
 docs/evidence/audit-performance/*.report.*
 docs/evidence/**/*.jpg
 docs/evidence/**/*.png
+e2e/.servers.json
+e2e/.servers.log

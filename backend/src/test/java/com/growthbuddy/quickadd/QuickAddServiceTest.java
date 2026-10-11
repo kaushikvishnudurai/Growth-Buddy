@@ -132,6 +132,50 @@ class QuickAddServiceTest {
         assertTrue(prompt.getValue().contains("TODAY: 2026-10-10 (Saturday)"));
     }
 
+    private static final LocalDate SUNDAY = LocalDate.of(2026, 10, 11);
+
+    private static QuickAddService.Intent said(String text, String date, String time, String repeat, LocalTime now) {
+        OpenAIClient openai = mock(OpenAIClient.class);
+        when(openai.isConfigured()).thenReturn(true);
+        when(openai.complete(anyString(), anyList())).thenReturn("{\"intents\":[{\"type\":\"reminder\","
+                + "\"text\":\"x\",\"date\":\"" + date + "\",\"time\":" + (time == null ? "null" : "\"" + time + "\"")
+                + ",\"repeat\":\"" + repeat + "\"}]}");
+        return new QuickAddService(openai).parse(text, List.of(), SUNDAY, now).intents().get(0);
+    }
+
+    /** FRC-1: the model filed "every Monday" on Tuesday 13 Oct; a weekly series would ring every Tuesday. */
+    @Test
+    void theAnchorFallsOnTheWeekdayTheTextNames() {
+        LocalTime late = LocalTime.of(23, 12);
+        assertEquals(LocalDate.of(2026, 10, 12),
+                said("remind me every monday at 9am to water plants", "2026-10-13", "09:00", "weekly", late).date());
+        assertEquals(LocalDate.of(2026, 10, 16),
+                said("call the bank on Friday", "2026-10-11", null, "none", late).date(), "on Friday");
+        assertEquals(LocalDate.of(2026, 10, 13),
+                said("next Tuesday dentist at 4pm", "2026-10-08", "16:00", "none", late).date(), "a past day too");
+        assertEquals(LocalDate.of(2026, 10, 23),
+                said("Friday the 23rd at 5 pay rent", "2026-10-23", "17:00", "none", late).date(),
+                "a date already on that weekday is kept");
+        // Today is Sunday: "every Sunday" counts today while 9pm is still ahead, not after it.
+        assertEquals(SUNDAY, said("every sunday at 9pm plan the week", "2026-10-11", "21:00", "weekly",
+                LocalTime.of(20, 0)).date());
+        assertEquals(LocalDate.of(2026, 10, 18), said("every sunday at 9pm plan the week", "2026-10-11", "21:00",
+                "weekly", late).date());
+        assertEquals(LocalDate.of(2026, 10, 12),
+                said("every weekday at 8 stand up", "2026-10-11", "08:00", "weekdays", late).date(),
+                "a weekdays series does not start on a Sunday");
+        assertEquals(LocalDate.of(2026, 10, 13), said("gym on monday and wednesday", "2026-10-13", null, "none",
+                late).date(), "two weekdays named: trusted as read");
+    }
+
+    /** EXS-5 on the model path: 23:12, "at 9pm", the model says today. */
+    @Test
+    void aPassedTimeWithNoDaySaidIsTomorrow() {
+        LocalTime late = LocalTime.of(23, 12);
+        assertEquals(SUNDAY.plusDays(1), said("remind me at 9pm to call mom", "2026-10-11", "21:00", "none", late).date());
+        assertEquals(SUNDAY, said("remind me tonight at 9pm to call mom", "2026-10-11", "21:00", "none", late).date());
+    }
+
     /** A spent AI budget is not a dead box: the plain patterns answer, flagged limited. */
     @Test
     void aSpentBudgetFallsBackFlaggedLimited() {

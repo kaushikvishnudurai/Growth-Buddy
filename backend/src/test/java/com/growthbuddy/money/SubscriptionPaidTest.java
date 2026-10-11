@@ -44,6 +44,23 @@ class SubscriptionPaidTest {
         assertEquals(null, MoneyService.applyPaid(d, "nope", "2026-09", day));
     }
 
+    /** EXM-7: the month's payment was deleted; Mark as paid books it again, once. */
+    @Test
+    void aDeletedPaymentCanBeBookedAgain() throws Exception {
+        ObjectNode d = doc();
+        LocalDate day = LocalDate.of(2026, 9, 30);
+        MoneyService.applyPaid(d, "m1", "2026-09", day);
+        d.putArray("expenses"); // the payment was deleted from the list
+        assertEquals("Spotify", MoneyService.applyPaid(d, "m1", "2026-09", day));
+        assertEquals(0, d.get("expenses").size(), "without the delete known, a repeat tap books nothing");
+        MoneyService.applyPaid(d, "m1", "2026-09", day, true);
+        assertEquals(1, d.get("expenses").size());
+        assertEquals("sub-m1-2026-09", d.get("expenses").get(0).get("id").asText());
+        assertEquals("2026-09", d.get("subscriptions").get(0).get("paidFor").asText());
+        MoneyService.applyPaid(d, "m1", "2026-08", day, true);
+        assertEquals("2026-09", d.get("subscriptions").get(0).get("paidFor").asText(), "still never rolls back");
+    }
+
     @Test
     void anOldMonthsButtonNeverRollsPaidBack() throws Exception {
         ObjectNode d = doc();

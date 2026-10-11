@@ -92,8 +92,9 @@ class HabitFreezeRefundTest {
         verify(progress, times(1)).awardHabitCheckin(USER); // a legacy rest day was never paid
     }
 
+    /** Each un-tick hands its XP back (EXS-9), so the loop nets one tick's XP, not four. */
     @Test
-    void tickUntickProtectTickPaysOnce() {
+    void tickUntickProtectTickHoldsOneTicksXp() {
         tick(true);
         for (int i = 0; i < 3; i++) {
             tick(false);
@@ -101,6 +102,7 @@ class HabitFreezeRefundTest {
             tick(true);
         }
         assertThat(wallet.getTokens()).isEqualTo(1);
-        verify(progress, times(1)).awardHabitCheckin(USER);
+        verify(progress, times(4)).awardHabitCheckin(USER);
+        verify(progress, times(3)).revokeHabitCheckin(USER);
     }
 }
