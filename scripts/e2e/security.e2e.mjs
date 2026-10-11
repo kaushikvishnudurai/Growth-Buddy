@@ -118,11 +118,12 @@ if (BACKEND_LOG) {
   let otp = null;
   for (let i = 0; i < 20 && !otp; i++) {
     await wait(500);
+    // Mail off prints the email ("To: <email>" then its subject); a configured
+    // sender logs "Sent email to <email> (subject: ...)". Either carries the code.
+    const esc = email.replace(/\./g, '\\.');
     const m = readFileSync(BACKEND_LOG, 'utf8').match(
       new RegExp(
-        'Sent email to ' +
-          email.replace(/\./g, '\\.') +
-          ' \\(subject: Your Growth Buddy code: (\\d{6})\\)'
+        '(?:Sent email to ' + esc + ' \\(subject: |To: +' + esc + '\\s+Subject: )Your Growth Buddy code: (\\d{6})'
       )
     );
     otp = m && m[1];

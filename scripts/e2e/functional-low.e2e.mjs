@@ -168,9 +168,12 @@ async function quickAddExpense(ctx) {
   ctx.allowConsole = [/CRITICAL: saveMoney failed/]; // persistMoney logs the forced 429
   await go(page, 'home');
   await page.click('button[aria-label="Quick add"]');
-  await page.waitForSelector('input[aria-label="Quick log in your own words"]', { visible: true });
-  await page.type('input[aria-label="Quick log in your own words"]', 'spent 49.50 on coffee');
-  await clickText(page, 'button', /^Log it$/);
+  // The sheet's own box: Home's Quick add bar (main) carries the same label and
+  // comes first in the DOM, behind the sheet.
+  const box = '.gb-modal input[aria-label="Quick log in your own words"]';
+  await page.waitForSelector(box, { visible: true });
+  await page.type(box, 'spent 49.50 on coffee');
+  await clickText(page, '.gb-modal button', /^Log it$/);
   // The preview's confirm reads "Log it" for one item, "Log them" for more
   // (main's runQuickAdd); the sheet behind it has its own "Log it", so scope to the preview.
   const confirmBtn = () =>
