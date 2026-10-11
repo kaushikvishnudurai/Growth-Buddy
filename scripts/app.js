@@ -12046,6 +12046,8 @@ async function runQuickAdd(text, { onLeave, onLogged, onCancel } = {}) {
     onLeave && onLeave();
     onLogged && onLogged();
     announceQuickAdd(applied, 'Logged: ' + one.d.label + (one.d.detail ? ' \u00b7 ' + one.d.detail : ''));
+    // As the preview's Log it does: the screen behind shows what was just written.
+    await loadData();
     return true;
   }
   onLeave && onLeave();

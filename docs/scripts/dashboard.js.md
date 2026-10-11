@@ -24,8 +24,8 @@ reminders, money entries, food, water, mood or sleep), `ScreenDashboard` returns
 own "nothing yet" state, so a new account used to open on nine empty cards saying the same thing
 three ways. Adding anything — or dismissing the checklist — brings the full Home back. While
 first run's sheet is open (`setupPending`) Home renders empty behind it. **A young account** (data,
-checklist still up) gets its own order: habits first, the checklist, then only widgets that have
-data (goals, calendar with tasks or reminders, tasks, wellness, score > 0, money); empty ones
+checklist still up) gets its own order: habits first, the checklist, the daily brief (`plan`: Home is
+Plan my day's only door, so it is never left out), then only widgets that have data (goals, calendar with tasks or reminders, tasks, wellness, score > 0, money); empty ones
 stay out until they have something.
 
 **The Quick add bar is always first and is not a widget.** The `quickAdd` prop (app.js's
