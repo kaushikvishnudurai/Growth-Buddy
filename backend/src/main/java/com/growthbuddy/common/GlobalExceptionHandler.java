@@ -134,12 +134,32 @@ public class GlobalExceptionHandler {
      * A unique key that a check-then-insert race got past (two taps of the same
      * button): the row exists, so 409, not 500. Per-path handlers (signup) throw
      * their own wording first; this is the backstop.
+     *
+     * Only a duplicate key is a 409 (HOS-1, HOS-10). A date outside a column's
+     * range, a value too long for it, a missing NOT NULL are the same Spring
+     * exception, and "already saved, refresh and try again" sent the user round
+     * a retry that could never succeed. Those are 400.
      */
     @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
     public ResponseEntity<ApiError> handleConflict(org.springframework.dao.DataIntegrityViolationException ex) {
         log.warn("Constraint conflict: {}", rootMessage(ex));
-        return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(ApiError.of(HttpStatus.CONFLICT, "That was already saved. Refresh and try again."));
+        if (isDuplicateKey(ex)) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(ApiError.of(HttpStatus.CONFLICT, "That was already saved. Refresh and try again."));
+        }
+        return ResponseEntity.badRequest().body(ApiError.of(HttpStatus.BAD_REQUEST,
+                "A value is too long, out of range or missing. Check it and try again."));
+    }
+
+    /** MySQL/TiDB 1062, H2 23505, Spring's own subclass, or the bare "Duplicate entry" text. */
+    static boolean isDuplicateKey(Throwable ex) {
+        for (Throwable t = ex; t != null; t = t.getCause() == t ? null : t.getCause()) {
+            if (t instanceof org.springframework.dao.DuplicateKeyException) return true;
+            if (t instanceof java.sql.SQLException sql
+                    && (sql.getErrorCode() == 1062 || "23505".equals(sql.getSQLState()))) return true;
+            if (t.getMessage() != null && t.getMessage().contains("Duplicate entry")) return true;
+        }
+        return false;
     }
 
     /** Deadlock victim or lock-wait timeout: nothing was written, a retry will do. */
