@@ -136,3 +136,40 @@ test('CNT-3: a failed Goals load says so and retries in place', async ({ page, a
   await expect(m.getByRole('button', { name: 'Edit goal: Run a 10K' })).toBeVisible();
   await expect(m.getByText('Could not load your goals.')).toHaveCount(0);
 });
+
+/* ---------------- Calendar ---------------- */
+
+async function addReminder(page, { text, repeat }) {
+  const m = main(page);
+  await m.getByRole('textbox', { name: 'Reminder text' }).fill(text);
+  if (repeat) await m.getByRole('radiogroup', { name: 'Repeat' }).getByRole('radio', { name: repeat }).click();
+  await m.getByRole('button', { name: 'Add reminder' }).click();
+  await expect(m.getByRole('button', { name: 'Edit reminder: ' + text })).toBeVisible();
+}
+const dayButton = (page, offset) => {
+  const label = new Date(Date.now() + offset * 864e5).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  return main(page).getByRole('button', { name: new RegExp('^' + label + '\\b') }).first();
+};
+
+test('EXP-4: after "Only past days", the new first day offers no past-days delete', async ({ page, account }) => {
+  await boot(page, account, 'calendar');
+  const m = main(page);
+  await addReminder(page, { text: 'Stretch', repeat: 'Daily' });
+  // Today is the first day: no past to delete.
+  await m.getByRole('button', { name: 'Delete reminder: Stretch' }).click();
+  let dlg = page.getByRole('dialog', { name: 'Delete recurring reminder' });
+  await expect(dlg.getByRole('button', { name: /^Only past days/ })).toHaveCount(0);
+  await dlg.getByRole('button', { name: 'Cancel' }).click();
+  // Two days on, drop the days before: that day becomes the series' first.
+  await dayButton(page, 2).click();
+  await m.getByRole('button', { name: 'Delete reminder: Stretch' }).click();
+  await dlg.getByRole('button', { name: /^Only past days/ }).click();
+  await expect.poll(async () => (await api(page, account, '/api/reminders')).find((r) => r.text === 'Stretch')?.from).toBeTruthy();
+  await settle(page);
+  await m.getByRole('button', { name: 'Delete reminder: Stretch' }).click();
+  dlg = page.getByRole('dialog', { name: 'Delete recurring reminder' });
+  await expect(dlg.getByRole('button', { name: /^Only this day/ })).toBeVisible();
+  await expect(dlg.getByRole('button', { name: /^Only past days/ })).toHaveCount(0);
+  await expect(dlg.getByRole('button', { name: /^This & all future/ })).toHaveCount(0);
+  await shot(page, 'EXP-4');
+});

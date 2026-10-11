@@ -27,7 +27,7 @@ import { chimeOptionValue, chimeOptions, playChime } from './chime.js';
 import { usualReminderTime } from './nudges.js';
 import { fmtDate } from './i18n.js';
 import { toast } from './toast.js';
-import { pad2 as pad, dateKey as keyOf, todayKey } from './dates.js';
+import { pad2 as pad, dateKey as keyOf, localKey, todayKey } from './dates.js';
 
 const MONTHS = [
   'January',
@@ -1523,8 +1523,21 @@ function ScopeStrip(scope) {
   return h('span', { class: 'gb-scope-strip', 'aria-hidden': 'true' }, ticks);
 }
 
+/* No occurrence before `occKey` (ReminderService.nothingBefore): "Only past
+   days" would delete nothing and "This & all future" is the whole series. The
+   start is the later of `date` and `from` (a past-days delete moves `from`),
+   and a weekly series begun mid-week may first occur days after `date`. */
+function firstLiveDay(rem, occKey) {
+  const start = rem.from && rem.from > rem.date ? rem.from : rem.date;
+  const [y, m, d] = start.split('-').map(Number);
+  for (const t = new Date(y, m - 1, d); localKey(t) < occKey; t.setDate(t.getDate() + 1)) {
+    if (occursOn(rem, localKey(t))) return false;
+  }
+  return true;
+}
+
 function openDeleteDialog(rem, occKey, onDelete) {
-  const first = occKey === rem.date; // the series' first day: nothing before it to keep
+  const first = firstLiveDay(rem, occKey); // nothing before it to keep
   const opts = [
     { scope: 'this', icon: 'calendar-x', label: 'Only this day', sub: prettyDate(occKey) },
     {
@@ -1737,7 +1750,7 @@ function openEditDialog(rem, occKey, onEdit) {
       sub: 'Days changed on their own stay',
     },
     // On the series' first day "this & all future" is the series itself.
-  ].filter((o) => o.scope !== 'future' || occKey !== rem.date);
+  ].filter((o) => o.scope !== 'future' || !firstLiveDay(rem, occKey));
   let scope = repeats ? 'this' : 'all';
   const scopeRow = repeats
     ? h(
