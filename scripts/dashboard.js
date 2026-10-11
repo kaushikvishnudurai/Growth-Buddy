@@ -68,6 +68,7 @@ function OnboardingCard({
   wellness,
   onAddHabit,
   onAddTask,
+  onAddTodayTask,
   onAddMood,
   onStarterPack,
   remindersAsk,
@@ -75,6 +76,7 @@ function OnboardingCard({
   onOnboardDismiss,
 }) {
   if (CacheStorage.getItem(ONBOARD_KEY) === '1') return null;
+  const blocked = remindersAsk === 'blocked';
   const hasHabits = (habits || []).length > 0;
   // The step list is fixed for the card's lifetime: a step that came and went
   // made "of 4" read "of 3" a minute later. Each one ticks on its own data, so
@@ -84,7 +86,7 @@ function OnboardingCard({
     onStarterPack && {
       done: hasHabits,
       label: 'Pick a goal, we set it up',
-      hint: 'Sleep, money, fitness, food, focus or water',
+      hint: 'Sleep, money, fitness, food, focus, water or family meals',
       icon: 'target',
       action: onStarterPack,
     },
@@ -98,10 +100,14 @@ function OnboardingCard({
     },
     // Asked here, once there is something to ring, not before the account had
     // anything (it used to be setup's notifications step). Absent where push can't work.
+    // Blocked is not done: no reminder can ring. The step says how to undo it;
+    // the tap re-asks, and its toast says the same if the browser still refuses.
     remindersAsk && {
       done: remindersAsk === 'done',
-      label: 'Get reminded on time',
-      hint: 'Turn on notifications for your reminders',
+      label: blocked ? 'Notifications are blocked' : 'Get reminded on time',
+      hint: blocked
+        ? 'Allow them for this site in your browser’s settings, then tap here'
+        : 'Turn on notifications for your reminders',
       icon: 'bell',
       action: onEnableReminders,
     },
@@ -110,7 +116,8 @@ function OnboardingCard({
       label: 'Add a task for today',
       hint: 'One thing to get done',
       icon: 'list-todo',
-      action: onAddTask,
+      // Due today, as the step says (NEW-5); the generic Add opens blank.
+      action: onAddTodayTask || onAddTask,
     },
     {
       // Ever, not today: a today-only check re-opened the checklist every morning.
@@ -2351,6 +2358,25 @@ function ScreenSummary({
   );
 }
 
+/* A tick keeps the row where it is for a few seconds: re-sorting at once moved
+   the done habit to the bottom and slid the next one under the finger, so a
+   second quick tap ticked a habit nobody meant. The renders inside the window
+   (the optimistic one, the server's answer) keep the order shown at the tap;
+   the first render after it sorts again.
+   ponytail: a time window, nothing schedules that re-sort; a timer calling
+   render() if the stale order ever shows for too long. */
+const HABIT_HOLD_MS = 4000;
+let habitHold = null; // { ids, until }
+function heldHabitOrder(habits) {
+  const sorted = sortHabitsForHome(habits);
+  if (!habitHold || Date.now() > habitHold.until) return sorted;
+  const at = (hb) => {
+    const i = habitHold.ids.indexOf(hb.id);
+    return i < 0 ? habitHold.ids.length : i;
+  };
+  return sorted.map((hb, i) => ({ hb, i })).sort((a, b) => at(a.hb) - at(b.hb) || a.i - b.i).map((x) => x.hb);
+}
+
 function HabitStrip({ habits, onAdd, toggleHabit }) {
   if (!habits.length) {
     return Card({
@@ -2372,9 +2398,16 @@ function HabitStrip({ habits, onAdd, toggleHabit }) {
   }
   // All of them: the old slice(0, 4) meant a fifth habit simply didn't exist
   // on Home. What is still owed comes first.
+  const order = heldHabitOrder(habits);
+  const tick =
+    toggleHabit &&
+    ((id) => {
+      habitHold = { ids: order.map((hb) => hb.id), until: Date.now() + HABIT_HOLD_MS };
+      return toggleHabit(id);
+    });
   return Card({
     className: 'gb-habit-strip',
-    children: sortHabitsForHome(habits).map((h2) => HabitCard(h2, toggleHabit)),
+    children: order.map((h2) => HabitCard(h2, tick)),
   });
 }
 
@@ -2725,6 +2758,31 @@ function MiniCalendarCard({
 /* ---- Goals widget ----
    The nearest open goals: days to the target, the next unticked milestone, the
    day tracker's count. The whole card opens Goals; nothing is edited here. */
+/* Home's way to Family's meal plan, once there is a family: Family sat last in
+   More, and nothing on Home said a plan existed (NEW-3). One row, one tap.
+   ponytail: an entry, not the plan itself; showing the next meal means
+   fetching /api/family/meal-plan on Home, add it if the row proves too thin. */
+function FamilyMealsCard({ onOpen }) {
+  return Card({
+    className: 'gb-home-family',
+    children: [
+      h('div', { class: 'gb-card-titleline' }, Icon('utensils', { size: 18, sw: 2.4 }), 'Family meals'),
+      h(
+        'button',
+        { type: 'button', class: 'gb-onboard-step', onclick: onOpen },
+        h('span', { class: 'gb-onboard-step-ic' }, Icon('users', { size: 16, sw: 2.4 })),
+        h(
+          'span',
+          { class: 'gb-onboard-step-tx' },
+          h('span', { class: 'gb-onboard-step-l' }, 'Meals today'),
+          h('span', { class: 'gb-onboard-step-h' }, 'Breakfast to dinner, planned for everyone')
+        ),
+        Icon('chevron-right', { size: 16, sw: 2.4 })
+      ),
+    ],
+  });
+}
+
 function GoalsCard({ goals, goalProgress, onOpenGoals }) {
   const rows = homeGoals(goals, goalProgress, todayKey());
   const dueLine = (r) => {
@@ -2817,6 +2875,9 @@ function ScreenDashboard({
   dayFoodLoading,
   dayFoodError,
   onAddTask,
+  onAddTodayTask,
+  inFamily,
+  onOpenFamily,
   onEditTask,
   onPauseTask,
   onFocusTask,
@@ -2874,7 +2935,8 @@ function ScreenDashboard({
     (money && ['expenses', 'income', 'transfers'].some((k) => (money[k] || []).length > 0)) ||
     (food && (food.entries || []).length > 0) ||
     (water && (water.entries || []).length > 0) ||
-    (wellness && (any(wellness.moodByDate) || any(wellness.sleepByDate)));
+    (wellness && (any(wellness.moodByDate) || any(wellness.sleepByDate))) ||
+    !!inFamily;
   // First run's plan sheet is open over Home: a checklist behind it counting
   // its own steps ("4 quick steps" under "Step 1 of 3") said two things at once.
   if (setupPending && !started) return h('div', { class: 'gb-rise gb-dash gb-dash--single' });
@@ -2887,6 +2949,7 @@ function ScreenDashboard({
     wellness,
     onAddHabit,
     onAddTask,
+    onAddTodayTask,
     onAddMood: onboardMood,
     onStarterPack,
     remindersAsk,
@@ -2986,6 +3049,7 @@ function ScreenDashboard({
     reminders: () =>
       ReminderSuggestionsCard({ habits, water, wellness, reminders, onAddSuggestedReminder }),
     money: () => MoneyHomeCard({ money, onSaveMoney, onOpen: onOpenMoney, requestReceiptScan }),
+    family: () => (inFamily && onOpenFamily ? FamilyMealsCard({ onOpen: onOpenFamily }) : null),
   };
 
   const blockFor = (item) => {
@@ -3011,11 +3075,12 @@ function ScreenDashboard({
     wellness: !!wellness && (any(wellness.moodByDate) || any(wellness.sleepByDate)),
     score: score > 0,
     money: hasMoney,
+    family: !!inFamily,
   };
   const young = !!onboard && started;
   const pick = (id) => (has[id] ? blockFor(layout.find((item) => item.id === id)) : null);
   const blocks = young
-    ? [pick('habits'), h('div', { class: 'gb-dash-block' }, onboard), ...['goals', 'calendar', 'tasks', 'wellness', 'score', 'money'].map(pick)].filter(Boolean)
+    ? [pick('habits'), pick('family'), h('div', { class: 'gb-dash-block' }, onboard), ...['goals', 'calendar', 'tasks', 'wellness', 'score', 'money'].map(pick)].filter(Boolean)
     : layout.map(blockFor).filter(Boolean);
 
   // Quick add is always first and is not a widget: one sentence logs anything,

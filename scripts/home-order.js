@@ -45,6 +45,8 @@ export const HOME_WIDGETS = [
     desc: 'Your nearest goals and what is next',
     feature: 'goals',
   },
+  // Shown once the user is in a family: the way back to today's meal plan.
+  { id: 'family', label: 'Family meals', desc: "Today's meals for your family", feature: 'family' },
   {
     id: 'money',
     label: 'Money Buddy',

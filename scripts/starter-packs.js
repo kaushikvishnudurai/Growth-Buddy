@@ -80,10 +80,18 @@ export const PACKS = [
     // second "drink water" to tick beside the one the water card already counts.
     items: [{ kind: 'water' }, { kind: 'habit', name: 'Drink water', icon: 'droplets', domain: 'habit', unless: 'water' }],
   },
+  {
+    id: 'family',
+    label: 'Family meals',
+    icon: 'users',
+    // Nothing to write up front: who the family is comes first, so Start opens
+    // Family's Add member form (app.js openFamilyMeals) instead of guessing members.
+    items: [{ kind: 'family' }],
+  },
 ];
 
 /* Which feature a kind of item writes into: switched off, it is not offered. */
-const KIND_FEATURE = { habit: 'habits', reminder: 'calendar', goal: 'goals', budget: 'money', water: 'water' };
+const KIND_FEATURE = { habit: 'habits', reminder: 'calendar', goal: 'goals', budget: 'money', water: 'water', family: 'family' };
 
 const low = (s) => String(s || '').trim().toLowerCase();
 
@@ -155,6 +163,8 @@ export function planStarter(packIds, ctx) {
         // ponytail: 2.5 L when there's no weight to work from; Settings has the real field
         const ml = (ctx.suggestWater && ctx.suggestWater(ctx.weightKg)) || 2500;
         if (!(Number(ctx.waterGoalMl) >= ml)) out.push({ kind: 'water', pack: pack.id, goalMl: ml });
+      } else if (it.kind === 'family') {
+        out.push({ kind: 'family', pack: pack.id });
       }
     });
   });

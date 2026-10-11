@@ -162,7 +162,6 @@ test('family: add an unmapped member, add a chore for them, tick it; the meal pl
   await boot(page, account);
   await go(page, 'family');
   await page.getByRole('button', { name: 'Add your first member' }).click();
-  await page.getByRole('button', { name: /Create a profile/ }).click();
   await page.getByRole('textbox', { name: 'Name' }).fill('Amma');
   await page.getByRole('button', { name: 'Add member' }).click();
   await expect(page.getByRole('heading', { name: 'Family members' })).toBeVisible();
@@ -189,7 +188,7 @@ test('family: add an unmapped member, add a chore for them, tick it; the meal pl
     })
     .toBe(true);
 
-  await page.getByRole('button', { name: 'Today', exact: true }).click();
+  await page.getByRole('button', { name: 'Meals today', exact: true }).click();
   await page.getByRole('button', { name: 'Make a meal plan' }).click();
   const meals = page.getByRole('list', { name: 'Meals, in order' });
   await expect(meals).toBeVisible({ timeout: 30_000 });
