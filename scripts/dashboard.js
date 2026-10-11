@@ -621,22 +621,25 @@ function OneThingCard(one) {
       : one.title;
   return Card({
     className: 'gb-coach-card',
-    children: h(
-      'div',
-      { class: 'gb-coach-head' },
+    // An array: Card spreads it, and a bare node threw and blanked Home.
+    children: [
       h(
         'div',
-        null,
-        h('div', { class: 'gb-coach-kicker' }, 'One thing today'),
-        h('div', { class: 'gb-coach-title' }, title),
-        h('div', { class: 'gb-coach-why' }, one.why)
+        { class: 'gb-coach-head' },
+        h(
+          'div',
+          null,
+          h('div', { class: 'gb-coach-kicker' }, 'One thing today'),
+          h('div', { class: 'gb-coach-title' }, title),
+          h('div', { class: 'gb-coach-why' }, one.why)
+        ),
+        h(
+          'button',
+          { type: 'button', class: 'gb-btn gb-btn--primary gb-btn--compact', onclick: one.run },
+          one.label
+        )
       ),
-      h(
-        'button',
-        { type: 'button', class: 'gb-btn gb-btn--primary gb-btn--compact', onclick: one.run },
-        one.label
-      )
-    ),
+    ],
   });
 }
 
