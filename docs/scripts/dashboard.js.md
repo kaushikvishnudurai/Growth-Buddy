@@ -11,7 +11,7 @@ without migration. Persisted by `saveHomeLayout` in app.js. Both live in **`scri
 `habitDue`, `topStreaks`, `homeGoals` — checked by `node scripts/home-order.test.mjs`.
 
 **What Home actually renders** (the `renderers` map, one per `HOME_WIDGETS` id): `score` →
-`ScoreCard`, `plan` → `TodayPlanCard`, `wellness` → `WellnessCard`, `tasks` → `TasksCard`,
+`ScoreCard`, `outlook` → `OutlookCard` (outlook-card.js over outlook.js: the top insights.js card with its dismiss x and action, then savings / streak pace; dismissals share Report's `uiPrefs.insightsDismissed`; no history fetch on Home), `plan` → `TodayPlanCard`, `wellness` → `WellnessCard`, `tasks` → `TasksCard`,
 `calendar` → `MiniCalendarCard`, `habits` → `HabitStrip`, `goals` → `GoalsCard`, `money` →
 `MoneyHomeCard` (money-home.js; carries the repeat-expense "Add it?" nudge, `repeatExpense` in nudges.js, Not today dismisses in memory), `reminders` → `ReminderSuggestionsCard`; plus `OnboardingCard` on top.
 `QuoteCard`, `WeeklyReflectionCard`, `BadgeCard`, `GoalTimelineCard` and `HabitSleepInsightCard`

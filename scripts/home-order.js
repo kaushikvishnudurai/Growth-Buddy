@@ -14,6 +14,12 @@ export const HOME_WIDGETS = [
     desc: 'Your daily growth score and streak',
     feature: null,
   },
+  {
+    id: 'outlook',
+    label: 'Outlook',
+    desc: 'Your strongest pattern and where your pace leads',
+    feature: null,
+  },
   { id: 'plan', label: 'Daily brief', desc: 'A quick suggested plan for today', feature: null },
   { id: 'wellness', label: 'Sleep & mood', desc: 'Log sleep and mood check-ins', feature: null },
   { id: 'tasks', label: "Today's tasks", desc: 'Your tasks for today', feature: null },
