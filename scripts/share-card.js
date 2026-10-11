@@ -9,11 +9,11 @@
 
    Canvas, `toBlob` and the Web Share API are all platform features; this
    file adds no dependency and works offline. Inside the Capacitor app the
-   PNG goes through @capacitor/filesystem + @capacitor/share instead (both
-   installed in ../Growth-Buddy-Mobile, reached via the bridge).
+   PNG goes through native.js saveFile (@capacitor/filesystem +
+   @capacitor/share, installed in ../Growth-Buddy-Mobile).
    ===================================================================== */
 
-import { isNative, nativePlugin } from './native.js';
+import { saveFile } from './native.js';
 
 const W = 1080;
 const H = 1920;
@@ -234,90 +234,18 @@ export async function renderStoryCard(card) {
 }
 
 /**
- * Draw the card and offer it to the OS.
+ * Draw the card and offer it to the OS (native.js `saveFile`).
  *
- * @returns {Promise<'shared'|'saved'|'unsupported'>} — `shared` when the share
- *   sheet took it (Instagram lives in there), `saved` when the browser can
- *   only download, `unsupported` when the canvas itself failed. Dismissing
- *   the sheet also resolves `shared`; the platform doesn't tell us otherwise.
+ * @returns {Promise<'shared'|'saved'|'unsupported'>} — `shared` when a share
+ *   sheet took it (Instagram lives in there; a dismissed sheet counts too),
+ *   `saved` when the browser can only download, `unsupported` when the canvas
+ *   itself failed. Rejects with a user-facing message when the app could not
+ *   write or share the file.
  */
 export async function shareStoryCard(card, { filename = 'growth-buddy.png', title = 'Growth Buddy' } = {}) {
   const blob = await renderStoryCard(card);
   if (!blob) return 'unsupported';
-  const file = new File([blob], filename, { type: 'image/png' });
-
-  // Inside the app the WebView's canShare({files}) is false, so the image is
-  // written to the cache dir and its file:// URI handed to the native sheet.
-  if (isNative()) {
-    const native = await shareNatively(blob, filename, title);
-    if (native) return native;
-  }
-
-  // canShare({files}) is the only honest test — Android WebView and desktop
-  // Firefox have navigator.share but reject files.
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try {
-      await navigator.share({ files: [file], title });
-      return 'shared';
-    } catch (err) {
-      // AbortError = the user closed the sheet. Anything else falls through
-      // to the download so they still get the image.
-      if (err && err.name === 'AbortError') return 'shared';
-    }
-  }
-
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
-  return 'saved';
-}
-
-/** A blob -> its bytes as bare base64 (no data: prefix), for Filesystem.writeFile. */
-function blobToBase64(blob) {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(String(r.result).slice(String(r.result).indexOf(',') + 1));
-    r.onerror = () => reject(r.error);
-    r.readAsDataURL(blob);
-  });
-}
-
-/**
- * The Capacitor path: Filesystem.writeFile into the cache directory, then
- * Share.share with that file's URI. Resolves 'shared', or null when either
- * plugin is missing from this APK (or fails) so the caller falls back to the
- * download. `nativePlugin` hands back a proxy whether or not the native class
- * exists, so "missing" only shows up as a rejected call — hence the try.
- */
-async function shareNatively(blob, filename, title) {
-  const FS = nativePlugin('Filesystem');
-  const Share = nativePlugin('Share');
-  if (!FS || !Share) return null;
-  let uri;
-  try {
-    const data = await blobToBase64(blob);
-    // 'CACHE' is Directory.Cache's value; the enum lives in the plugin package.
-    const res = await FS.writeFile({ path: filename, data, directory: 'CACHE' });
-    uri = res && res.uri;
-  } catch (_) {
-    return null;
-  }
-  if (!uri) return null;
-  try {
-    await Share.share({ title, files: [uri] });
-    return 'shared';
-  } catch (err) {
-    // A dismissed sheet rejects with "Share canceled" — that is still a share
-    // offered, same as the web AbortError. Anything else (UNIMPLEMENTED on an
-    // older APK) falls back to the download.
-    const msg = String((err && err.message) || err || '');
-    return /cancel/i.test(msg) ? 'shared' : null;
-  }
+  return saveFile(blob, filename, 'image/png', title);
 }
 
 /* Dev self-check: the layout maths that would silently produce an overlapping

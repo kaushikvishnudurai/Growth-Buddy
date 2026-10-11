@@ -10,6 +10,7 @@
 import { h, Icon, Card, ProgressRing, refreshIcons, openModal, Thinking, fieldRefusal, focusSoon } from './gb-kit.js';
 import { toast } from './toast.js';
 import { shareStoryCard, _demo as _shareCardDemo } from './share-card.js';
+import { saveFile } from './native.js';
 import {
   CUR,
   cur,
@@ -2962,14 +2963,10 @@ export function ledgerCsv(money) {
 function downloadLedgerCsv(money) {
   const name = 'growth-buddy-money-' + todayKey() + '.csv';
   // BOM: Excel reads a BOM-less CSV as ANSI and mangles ₹ and names.
-  const blob = new Blob(['\uFEFF' + ledgerCsv(money)], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = h('a', { href: url, download: name, style: { display: 'none' } });
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
-  toast.success('Your money CSV is downloading.');
+  saveFile('\uFEFF' + ledgerCsv(money), name, 'text/csv;charset=utf-8', 'Growth Buddy money').then(
+    (r) => r === 'saved' && toast.success('Your money CSV is downloading.'),
+    (err) => toast.error(err, 'Could not export your money CSV.')
+  );
 }
 
 function ScreenMoney({
