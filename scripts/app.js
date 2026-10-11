@@ -1201,10 +1201,15 @@ function saveUiPrefs(patch) {
   // the calendar draws the wrong days; it was equally wrong for the rest.
   saveSession(state.user, state.user.token);
   // Returned so a caller that reads the pref back server-side (the focus goal's streak) can wait for it.
+  // keepalive: a reload right after a pref change (sign-in, theme) would
+  // otherwise cancel the PUT. The blob is a few hundred bytes, far under 64 KB.
   return api('/api/auth/ui-prefs', {
     method: 'PUT',
+    keepalive: true,
     body: JSON.stringify({ prefs: state.user.uiPrefs }),
   }).finally(() => uiPrefsSaves.out--).catch((err) => {
+    // The page is going (Firefox rejects the promise before it tears down): keepalive carries the PUT.
+    if (document.visibilityState === 'hidden') return;
     console.error('saveUiPrefs failed to reach database:', err);
     // The change shows on this device and would quietly undo itself on the next
     // sign-in. Offline is the banner's to say; a 401 signs out on its own.
