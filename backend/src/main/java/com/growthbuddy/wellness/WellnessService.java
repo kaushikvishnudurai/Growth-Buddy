@@ -49,7 +49,7 @@ public class WellnessService {
         DailyLog d = upsert(userId, orToday(userId, req.date()));
         d.setBedtime(req.bedtime());
         d.setWakeTime(req.wakeTime());
-        d.setSleepQuality(req.quality() != null ? req.quality() : "okay");
+        d.setSleepQuality(req.quality()); // untouched = null, never a guessed "okay"
         d.setSleepNote(req.note());
         logs.save(d);
     }
@@ -60,7 +60,7 @@ public class WellnessService {
         d.setMood(req.mood() != null ? req.mood() : "okay");
         // A quick mood tap sends no energy: store none rather than invent "medium".
         d.setEnergy(req.energy());
-        d.setStress(req.stress() != null ? req.stress() : "normal");
+        d.setStress(req.stress()); // untouched = null, never a guessed "normal"
         d.setMoodNote(req.note());
         logs.save(d);
     }

@@ -155,4 +155,37 @@ class ScoreServiceTest {
         assertThat(r.tasksTotal()).isEqualTo(7);
         assertThat(r.score()).isEqualTo(100);
     }
+
+    /**
+     * Report's history: one read each for completions, open due tasks and habits,
+     * bucketed by the user's local day. Today is dropped, a day with nothing to
+     * score is left out, and each day matches what on() would say for it.
+     */
+    @Test
+    void rangeScoresFinishedDaysFromOnePass() {
+        java.time.ZoneId ist = java.time.ZoneId.of("Asia/Kolkata");
+        when(clock.today(USER)).thenReturn(TODAY);
+        when(clock.zoneOf(USER)).thenReturn(ist);
+        LocalDate d1 = TODAY.minusDays(3);
+        LocalDate d2 = TODAY.minusDays(2);
+        UUID a = UUID.randomUUID();
+        // 00:30 IST on d2 is still d1 in UTC: the bucket must be the user's day.
+        Instant d2Early = d2.atTime(0, 30).atZone(ist).toInstant();
+        when(tasks.completionsBetween(eq(USER), any(), any())).thenReturn(java.util.List.of(
+                new Object[] {a, d1.atTime(10, 0).atZone(ist).toInstant()},
+                new Object[] {a, d1.atTime(11, 0).atZone(ist).toInstant()}, // the same task twice: once
+                new Object[] {UUID.randomUUID(), d2Early}));
+        // One open task, due on d2: counted from d2 on, not on d1.
+        when(tasks.openDueBefore(eq(USER), any())).thenReturn(java.util.List.of(d2.atTime(18, 0).atZone(ist).toInstant()));
+        java.util.Map<LocalDate, HabitService.TodayCounts> hc = new java.util.HashMap<>();
+        hc.put(d1, new HabitService.TodayCounts(1, 2));
+        when(habits.countsBetween(USER, d1.minusDays(1), TODAY.minusDays(1))).thenReturn(hc);
+
+        var r = service().range(USER, d1.minusDays(1), TODAY);
+
+        assertThat(r).containsExactly(
+                new ScoreService.DayScore(d1, 75),  // tasks 1/1, habits 1/2
+                new ScoreService.DayScore(d2, 50),  // tasks 1/2
+                new ScoreService.DayScore(TODAY.minusDays(1), 0)); // the open task, overdue
+    }
 }

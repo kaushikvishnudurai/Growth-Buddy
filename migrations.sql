@@ -98,6 +98,7 @@ FROM (
   UNION ALL SELECT 'reminder_dispatch_log'  AS table_name, 'snooze_of'
   UNION ALL SELECT 'reminder_dispatch_log'  AS table_name, 'attempts'
   UNION ALL SELECT 'habit_checkins'         AS table_name, 'xp_paid'
+  UNION ALL SELECT 'food_entries'           AS table_name, 'pieces'
 ) AS t
 LEFT JOIN information_schema.COLUMNS c
        ON c.table_schema = DATABASE()
@@ -643,3 +644,7 @@ CREATE TABLE IF NOT EXISTS `bank_feed_consents` (
 -- longer be guessed from protected_day. NULL: a row from before, read with the
 -- old rule (paid unless protected); nothing is rewritten.
 ALTER TABLE habit_checkins ADD COLUMN xp_paid BOOLEAN NULL;
+
+-- "2 idli": a food entry logged by the piece keeps its count, so the Food
+-- screen shows "2 pieces" and not "Idli (120g)". NULL: weighed, or from before.
+ALTER TABLE food_entries ADD COLUMN pieces SMALLINT NULL;

@@ -617,4 +617,50 @@ class FamilyServiceTest {
         verify(plans).save(any(FamilyMealPlan.class));
         verify(events).changed(any(), eq("plan"));
     }
+
+    /* ---- food safety: expired pantry items ---- */
+
+    /**
+     * The QA case: expired curd went to the prompt as available, and the plan
+     * cooked "Curd Rice (from pantry curd)". Now it is an avoid line, never an
+     * available one, and a dish that names it anyway is dropped before saving.
+     */
+    @Test
+    void anExpiredPantryItemIsAvoidedAndAnyDishNamingItIsDropped() throws Exception {
+        LocalDate today = LocalDate.of(2026, 10, 11);
+        Family f = family(OWNER);
+        FamilyMember self = row(f, OWNER, MemberStatus.mapped, Relationship.self);
+        livesIn(OWNER, self);
+        roster(f, self);
+        when(clock.today(OWNER)).thenReturn(today);
+        when(pantry.findByFamilyIdAndDeletedAtIsNullOrderByCreatedAtDesc(f.getId()))
+                .thenReturn(List.of(pantryItem("Fresh Curd", false, today.minusDays(1)),
+                        pantryItem("Tomatoes", false, today)));
+        when(openai.isConfigured()).thenReturn(true);
+        org.mockito.ArgumentCaptor<List<com.growthbuddy.mentor.OpenAIClient.ChatTurn>> turns =
+                org.mockito.ArgumentCaptor.forClass(List.class);
+        when(openai.complete(anyString(), turns.capture())).thenReturn("""
+                {"breakfast":["Idli","Fresh Curd (from pantry)"],"lunch":["Curd Rice (from pantry curd)","Tomato rasam"],
+                 "snack":["Sundal"],"dinner":["Dosa"],"suggestions":["Curd excluded as it has expired."]}""");
+
+        MealPlanResponse r = service.generateMealPlan(OWNER, new MealPlanRequest(
+                List.of(new GroceryItem("Old milk", "Dairy", "EXPIRED, do not use", "expired")), null));
+
+        String prompt = turns.getValue().get(0).content();
+        assertThat(prompt).contains("- Tomatoes (pantry)").doesNotContain("Fresh Curd (pantry)")
+                .doesNotContain("- Old milk").contains("EXPIRED - do NOT use").contains("Fresh Curd").contains("Old milk");
+        assertThat(r.plan().path("breakfast").toString()).isEqualTo("[\"Idli\"]");
+        assertThat(r.plan().path("lunch").toString()).isEqualTo("[\"Tomato rasam\"]");
+        assertThat(r.plan().path("suggestions").toString()).contains("Removed");
+    }
+
+    /** Whole words only: expired "Rice" does not take "Licorice"; plurals and multi-day plans are covered. */
+    @Test
+    void avoidedDishMatchIsWholeWordAndCoversMultiDay() throws Exception {
+        var plan = new com.fasterxml.jackson.databind.ObjectMapper().readTree("""
+                {"days":[{"lunch":["Licorice tea","Lemon rice"],"dinner":["Egg curry","Paneer tikka"]}]}""");
+        List<String> removed = FamilyService.dropAvoidedDishes(plan, List.of("Rice", "Eggs"));
+        assertThat(removed).containsExactlyInAnyOrder("Lemon rice", "Egg curry");
+        assertThat(plan.path("days").get(0).path("lunch").toString()).isEqualTo("[\"Licorice tea\"]");
+    }
 }

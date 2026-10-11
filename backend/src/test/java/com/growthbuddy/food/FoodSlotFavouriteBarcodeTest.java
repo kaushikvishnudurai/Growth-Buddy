@@ -103,7 +103,7 @@ class FoodSlotFavouriteBarcodeTest {
         FoodEntry e = entry("Dosa", MealSlot.breakfast, at(TODAY, 8, 0));
         when(entries.findById(e.getId())).thenReturn(Optional.of(e));
         service.updateEntry(USER, e.getId(), new UpdateFoodEntryRequest(null, null, null, null, null, null,
-                MealSlot.dinner));
+                MealSlot.dinner, null));
         assertThat(e.getMealSlot()).isEqualTo(MealSlot.dinner);
     }
 

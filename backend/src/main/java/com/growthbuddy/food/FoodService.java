@@ -364,6 +364,7 @@ public class FoodService {
         e.setKcalEstimated(kcal);
         e.setEstimateSource(estimate.source());
         e.setNote(StringUtils.hasText(req.note()) ? req.note().trim() : null);
+        e.setPieces(req.pieces());
         // Label figures (a barcode product, a favourite) only with typed calories:
         // an estimated entry's nutrients come from the same estimate as its kcal.
         if (req.kcal() != null) {
@@ -431,12 +432,22 @@ public class FoodService {
             foodChanged |= !name.equals(e.getFoodName());
             e.setFoodName(name);
         }
-        if (req.quantityGrams() != null && req.quantityGrams() != e.getQuantityGrams()) {
+        // A count with no grams sets the grams from it; grams with no count are weighed now.
+        Integer grams = req.quantityGrams() != null ? req.quantityGrams()
+                : req.pieces() != null && !req.pieces().equals(e.getPieces())
+                        ? Math.max(10, Math.min(2000, req.pieces() * FoodWeek.gramsPerPiece(e.getFoodName())))
+                        : null;
+        if (req.pieces() != null) {
+            e.setPieces(req.pieces());
+        } else if (req.quantityGrams() != null && req.quantityGrams() != e.getQuantityGrams()) {
+            e.setPieces(null);
+        }
+        if (grams != null && grams != e.getQuantityGrams()) {
             foodChanged = true;
-            e.setQuantityGrams(req.quantityGrams());
+            e.setQuantityGrams(grams);
             if (req.kcal() == null) {
                 e.setKcalEstimated(Math.max(1, Math.min(5000,
-                        (int) Math.round(e.getKcalPer100g() * req.quantityGrams() / 100.0))));
+                        (int) Math.round(e.getKcalPer100g() * grams / 100.0))));
             }
         }
         if (req.kcal() != null) {
