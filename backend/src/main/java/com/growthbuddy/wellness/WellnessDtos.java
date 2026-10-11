@@ -1,5 +1,6 @@
 package com.growthbuddy.wellness;
 
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
 import java.util.List;
@@ -13,19 +14,27 @@ interface DailyLogRepository extends JpaRepository<DailyLog, DailyLog.Key> {
 
 /* ---- Requests (date defaults to today server-side if omitted) ---- */
 
+/*
+ * SEC-8: these strings come back in GET /api/daily-logs and go into Buddy's
+ * prompt, so only the shapes the UI produces are accepted: "HH:MM" from a time
+ * input, and the option values of the sleep and check-in dialogs (plus "poor",
+ * which quick add's sleep can send). Mood stays words, not an allow-list: quick
+ * add files the "one or two words" the parser read.
+ */
 record SleepRequest(
         LocalDate date,
-        @Size(max = 5) String bedtime,
-        @Size(max = 5) String wakeTime,
-        @Size(max = 16) String quality,
+        @Pattern(regexp = HHMM) String bedtime,
+        @Pattern(regexp = HHMM) String wakeTime,
+        @Pattern(regexp = "poor|low|okay|good|great") String quality,
         @Size(max = 2000) String note) {
+    static final String HHMM = "([01]\\d|2[0-3]):[0-5]\\d";
 }
 
 record MoodRequest(
         LocalDate date,
-        @Size(max = 16) String mood,
-        @Size(max = 16) String energy,
-        @Size(max = 16) String stress,
+        @Size(max = 16) @Pattern(regexp = "[\\p{L}\\p{M}' -]*") String mood,
+        @Pattern(regexp = "low|medium|high") String energy,
+        @Pattern(regexp = "calm|normal|high") String stress,
         @Size(max = 2000) String note) {
 }
 
