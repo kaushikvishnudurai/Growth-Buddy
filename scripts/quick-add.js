@@ -82,3 +82,15 @@ export function quickMoney(money, it, kind, today) {
     label: fmtIn(v, rateKey) + ' (' + fmtIn(amount, home) + ')',
   };
 }
+
+/* The tag a quick expense books under: what the note hints at, else the tag
+   the user fixed in Money (Customise > "Always one tag"; before the
+   defaultTagSet flag, anything but Others counted as picked, as money.js
+   defaultTagOf), else Others. `hint` is suggestCategory's answer, which is
+   'others' when the note says nothing. */
+export function quickCategory(money, hint) {
+  if (hint && hint !== 'others') return hint;
+  const s = (money && money.settings) || {};
+  const fixed = s.defaultTagSet === false ? null : s.defaultTagSet || s.defaultTag !== 'others' ? s.defaultTag : null;
+  return fixed || hint || 'others';
+}

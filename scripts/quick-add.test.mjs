@@ -2,7 +2,7 @@
    What a spoken expense books: a wrong currency or account here is a wrong
    number in Money with nothing on screen to say so. */
 import assert from 'node:assert/strict';
-import { quickMoney, defaultAccount, dayWord, intentDay, stripEmoji, capitalise } from './quick-add.js';
+import { quickMoney, quickCategory, defaultAccount, dayWord, intentDay, stripEmoji, capitalise } from './quick-add.js';
 
 const money = {
   settings: { currency: '₹', fx: { $: 83 }, lastAccountId: 'card' },
@@ -63,4 +63,13 @@ assert.equal(stripEmoji('Logged lunch \u{1F355} and coffee \u2615\uFE0F'), 'Logg
 assert.equal(stripEmoji('family \u{1F468}\u200D\u{1F469}\u200D\u{1F467} dinner'), 'family dinner');
 assert.equal(capitalise('lunch'), 'Lunch');
 
+
+// The tag: the note's hint wins; no hint = the fixed default tag, else Others.
+{
+  assert.equal(quickCategory({ settings: { defaultTag: 'food', defaultTagSet: true } }, 'travel'), 'travel');
+  assert.equal(quickCategory({ settings: { defaultTag: 'food', defaultTagSet: true } }, 'others'), 'food');
+  assert.equal(quickCategory({ settings: { defaultTag: 'food', defaultTagSet: false } }, 'others'), 'others');
+  assert.equal(quickCategory({ settings: { defaultTag: 'others' } }, null), 'others');
+  assert.equal(quickCategory({ settings: { defaultTag: 'bills' } }, null), 'bills');
+}
 console.log('quick-add: ok');
