@@ -13,17 +13,17 @@ numbers: grep -n the symbol, read only that range. Never read all of app.js/app.
 Shared local stack (already running, do NOT restart or kill it; never kill other ports — other Claude
 sessions run servers on 8080/8082/8083/8383/8484/5173/5484/4176/4484):
 - Vite dev  http://localhost:5591  (use "localhost", never 127.0.0.1; it binds IPv6)
-- Backend   http://localhost:8591  (scratch DB gb_ov1011; mail printed to the log)
-- Backend log: /private/tmp/claude-502/-Users-kaush-zstch1550-github-Growth-Buddy/2a655a54-bc3a-47fc-b762-ad3406e52a3e/scratchpad/backend.log
+- Backend   http://localhost:8590  (scratch DB gb_ov1011; mail printed to the log)
+- Backend log: /private/tmp/claude-502/-Users-kaush-zstch1550-github-Growth-Buddy/2a655a54-bc3a-47fc-b762-ad3406e52a3e/scratchpad/backend2.log
 - Headless Chrome CDP: http://localhost:9591 (Playwright must use chromium.connectOverCDP; launching a
   browser is killed by the sandbox)
 - Always export no_proxy='localhost,127.0.0.1,::1' NO_PROXY='localhost,127.0.0.1,::1' (a corporate proxy
   answers 503 for localhost otherwise) and pass --noproxy '*' to curl.
-- Make a seeded account: GB_BACKEND_LOG=/private/tmp/claude-502/-Users-kaush-zstch1550-github-Growth-Buddy/2a655a54-bc3a-47fc-b762-ad3406e52a3e/scratchpad/backend.log node e2e/seed.mjs  (prints {email,password,token,user});
+- Make a seeded account: GB_BACKEND_LOG=/private/tmp/claude-502/-Users-kaush-zstch1550-github-Growth-Buddy/2a655a54-bc3a-47fc-b762-ad3406e52a3e/scratchpad/backend2.log node e2e/seed.mjs  (prints {email,password,token,user});
   add --empty for a fresh account with no data. Each run makes a new account; make your own, never share.
 - Sign in fast in a Playwright page: see signInFast in e2e/fixtures.mjs (sets cookies gb.token + gb.session).
   The page never scrolls; #gb-main is the scroll container.
-- Playwright test run: GB_BACKEND_LOG=/private/tmp/claude-502/-Users-kaush-zstch1550-github-Growth-Buddy/2a655a54-bc3a-47fc-b762-ad3406e52a3e/scratchpad/backend.log npx playwright test <file>
+- Playwright test run: GB_BACKEND_LOG=/private/tmp/claude-502/-Users-kaush-zstch1550-github-Growth-Buddy/2a655a54-bc3a-47fc-b762-ad3406e52a3e/scratchpad/backend2.log npx playwright test <file>
 - AI gateway key is rejected locally (401): AI features show their fallbacks. That is expected, not a bug,
   unless the fallback itself is broken or confusing.
 
