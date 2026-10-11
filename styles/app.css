@@ -7392,6 +7392,12 @@ button.gb-food-level {
 .gb-segnav-btn,
 .gb-msg-chip,
 .gb-rem-snoozed--btn,
+.gb-money-mini-head,
+.gb-note-view,
+.gb-rem-defaults-link,
+.gb-login-link,
+.gb-health-fact,
+.gb-home-goal,
 .gb-wa-toggle {
   position: relative;
 }
@@ -7420,6 +7426,12 @@ button.gb-food-level {
 .gb-msg-chip::before,
 .gb-pw-toggle::before,
 .gb-rem-snoozed--btn::before,
+.gb-money-mini-head::before,
+.gb-note-view::before,
+.gb-rem-defaults-link::before,
+.gb-login-link::before,
+.gb-health-fact::before,
+.gb-home-goal::before,
 .gb-wa-toggle::before {
   content: '';
   position: absolute;
@@ -9080,6 +9092,14 @@ button.gb-food-level {
   .gb-form--about-diet .gb-profile-suggest-btn,
   .gb-profile-suggest {
     grid-column: 1 / -1;
+  }
+}
+
+/* Month grids on the narrowest phones: 34-35px days were under a finger's 40. */
+@media (max-width: 360px) {
+  .gb-cal-day,
+  .gb-mini-cal-day {
+    min-height: 40px;
   }
 }
 
@@ -14487,6 +14507,13 @@ button.gb-tone-chip:focus-visible {
   background: transparent;
   color: var(--fg-on-brand);
   cursor: pointer;
+  position: relative;
+}
+/* ::before is the drawn circle, so the 44px hit area is the ::after (32 + 2*6). */
+.gb-rem-check::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
 }
 .gb-rem-check::before {
   content: '';
@@ -14494,7 +14521,7 @@ button.gb-tone-chip:focus-visible {
   width: 22px;
   height: 22px;
   border-radius: var(--radius-pill);
-  border: 2px solid var(--border-strong);
+  border: 2px solid var(--control-border);
   background: var(--surface);
 }
 .gb-rem-check svg {
@@ -14506,7 +14533,7 @@ button.gb-tone-chip:focus-visible {
   background: var(--brand-fill);
 }
 .gb-rem-check:focus-visible {
-  outline: 2px solid var(--brand);
+  outline: 2px solid var(--ring);
   outline-offset: 1px;
   border-radius: var(--radius-pill);
 }
