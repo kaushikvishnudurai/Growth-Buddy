@@ -473,6 +473,34 @@ class FamilyServiceTest {
         assertThat(row.name()).isEqualTo("Someone");
     }
 
+    /** ...nor is it planned for: its old profile copy never reaches the AI prompt. */
+    @Test
+    @SuppressWarnings("unchecked")
+    void anOldInviteRowIsNotADinerInEitherPlan() throws Exception {
+        Family f = family(OWNER);
+        FamilyMember owner = row(f, OWNER, MemberStatus.mapped, Relationship.self);
+        owner.setName("Owner Person");
+        livesIn(OWNER, owner);
+        FamilyMember legacy = row(f, INVITEE, MemberStatus.invited, Relationship.other);
+        legacy.setInviteOnly(true);
+        legacy.setName("Legacy Invitee");
+        legacy.setDietPreference("Vegan");
+        roster(f, owner, legacy);
+        when(openai.isConfigured()).thenReturn(true);
+        when(openai.complete(anyString(), any())).thenReturn("{}");
+
+        service.generateMealPlan(OWNER, new MealPlanRequest(List.of(), List.of()));
+        service.generateMultiDay(OWNER, new MultiDayPlanRequest(3, "normal", List.of(), List.of(), false));
+
+        var turns = org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(openai, org.mockito.Mockito.times(2)).complete(anyString(), turns.capture());
+        for (List<?> t : turns.getAllValues()) {
+            String prompt = ((OpenAIClient.ChatTurn) t.get(0)).content();
+            assertThat(prompt).contains("Family members (1)").contains("Owner Person")
+                    .doesNotContain("Legacy Invitee").doesNotContain("Vegan");
+        }
+    }
+
     /* ---- SEC-12: invites are capped ---- */
 
     @Test

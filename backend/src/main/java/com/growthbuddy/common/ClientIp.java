@@ -41,7 +41,10 @@ public class ClientIp {
 
     public String resolve(HttpServletRequest req) {
         if (!trustProxy) return req.getRemoteAddr();
-        String xf = req.getHeader("X-Forwarded-For");
+        // Every header line, in order: a proxy may append its own line instead of
+        // extending the first, and getHeader() reads only the first (the client's).
+        java.util.Enumeration<String> lines = req.getHeaders("X-Forwarded-For");
+        String xf = lines == null ? null : String.join(",", java.util.Collections.list(lines));
         String ip = pick(xf, hops);
         if (log.isDebugEnabled()) log.debug("X-Forwarded-For=\"{}\" peer={} -> {}", xf, req.getRemoteAddr(), ip);
         return ip != null ? ip : req.getRemoteAddr();

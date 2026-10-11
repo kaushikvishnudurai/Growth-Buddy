@@ -812,7 +812,7 @@ public class FamilyService {
         }
         requireMemberAccess(fam, userId);
 
-        List<FamilyMember> all = members.findByFamilyIdAndDeletedAtIsNullOrderByCreatedAtAsc(fam.getId());
+        List<FamilyMember> all = diners(fam.getId());
         List<FamilyMember> selected = all;
         if (req != null && req.memberIds() != null && !req.memberIds().isEmpty()) {
             List<FamilyMember> filtered = all.stream()
@@ -1009,7 +1009,7 @@ public class FamilyService {
         int days = req != null && req.days() != null ? Math.max(1, Math.min(14, req.days())) : 7;
         String occasion = normalizeOccasion(req != null ? req.occasion() : null);
 
-        List<FamilyMember> all = members.findByFamilyIdAndDeletedAtIsNullOrderByCreatedAtAsc(fam.getId());
+        List<FamilyMember> all = diners(fam.getId());
         List<FamilyMember> selected = all;
         if (req != null && req.memberIds() != null && !req.memberIds().isEmpty()) {
             List<FamilyMember> filtered =
@@ -1937,6 +1937,18 @@ public class FamilyService {
             }
         }
         return out;
+    }
+
+    /**
+     * Who a plan is cooked for: the roster without unaccepted invites. An invite row
+     * made before linkMember stopped copying the invitee's profile still holds their
+     * DOB, size and diet; it is not a diner until they accept, and the AI prompt must
+     * not see it (toMemberResponse masks the same rows for the family).
+     */
+    private List<FamilyMember> diners(UUID familyId) {
+        return members.findByFamilyIdAndDeletedAtIsNullOrderByCreatedAtAsc(familyId).stream()
+                .filter(m -> !(m.getStatus() == MemberStatus.invited && m.isInviteOnly()))
+                .toList();
     }
 
     private void appendMemberLines(StringBuilder sb, List<FamilyMember> selected) {

@@ -59,7 +59,9 @@ pantry, shopping). Docs name symbols — `grep -n` them.
   favourites, recipes. A write that skips it leaves other members on stale data.
 - **Prompt assembly:** `appendMemberLines` (age band, `memberPhysique`, diet, allergies, avoid,
   favourites, conditions) + `appendAvailableLines` (ingredients + pantry), `learnedDishesNote`,
-  `sanitize` on every user string. Shared by the one-day and multi-day plans.
+  `sanitize` on every user string. Shared by the one-day and multi-day plans, both over `diners(familyId)`:
+  the roster minus unaccepted invite rows (`invited` + `inviteOnly`), whose legacy profile copy must not
+  reach the prompt (`toMemberResponse` masks the same rows).
 - **Shopping:** `addToList` is the one writer for both builders: dedupe via `newShoppingLines`
   against UNTICKED lines + pantry; a candidate matching a ticked line re-opens it.
 - **Pantry expiry:** `toPantryResponse(item, today)` with the user's today; `EXPIRING_DAYS` is both

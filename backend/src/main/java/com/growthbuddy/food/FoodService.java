@@ -74,7 +74,9 @@ public class FoodService {
             - fallbackNeeded should be true when image is unclear or composition uncertain.
             """;
 
-    @Transactional(readOnly = true)
+    // Not @Transactional: the AI client's budget is an INSERT, which a read-only
+    // connection refuses (MySQL 1792), and a transaction would hold a pooled
+    // connection through the AI call.
     public PhotoFoodEstimateMultiResponse estimateFromPhotoMulti(PhotoFoodEstimateRequest req) {
         if (req == null || !StringUtils.hasText(req.imageDataUrl())) {
             throw ApiException.badRequest("imageDataUrl is required");
@@ -672,7 +674,9 @@ public class FoodService {
         return summary(userId, date);
     }
 
-    @Transactional(readOnly = true)
+    // Not @Transactional: the AI client's budget is an INSERT, which a read-only
+    // connection refuses (MySQL 1792), and a transaction would hold a pooled
+    // connection through the AI call.
     public PhotoFoodEstimateResponse estimateFromPhoto(PhotoFoodEstimateRequest req) {
         if (req == null || !StringUtils.hasText(req.imageDataUrl())) {
             throw ApiException.badRequest("imageDataUrl is required");

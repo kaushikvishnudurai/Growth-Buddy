@@ -40,7 +40,7 @@ class DataExportCoverageTest {
         // The purge's relationship-keyed deletes (purgeAccount), written out by hand there.
         assertThat(DataExportController.RELATED_QUERIES)
                 .containsKeys("mentor_messages", "habit_streaks", "calendar_reminder_skips",
-                        "mentorship_requests", "mentorship_messages", "family_members")
+                        "mentorship_requests", "mentorship_messages", "family_members", "families")
                 .doesNotContainKeys("circle_post_reactions", "circle_post_comments");
         // An exclusion that is not a purged child is a typo hiding a real table.
         assertThat(Arrays.stream(AuthService.CHILD_TABLES).map(cd -> cd[0]).toList())
@@ -68,5 +68,15 @@ class DataExportCoverageTest {
                 .forEach(sql -> assertThat(sql.chars().filter(c -> c == '?').count()).isEqualTo(1));
         assertThat(Set.copyOf(DataExportController.RELATED_QUERIES.keySet()))
                 .doesNotContainAnyElementsOf(DataExportController.SECRET_TABLES);
+    }
+
+    /** An owner's household goes out with the export: every family-owned table, keyed on the families they own. */
+    @Test
+    void anOwnersHouseholdIsExported() {
+        for (String t : AuthService.FAMILY_OWNED_TABLES) {
+            String sql = DataExportController.RELATED_QUERIES.get(t);
+            assertThat(sql).as("family table %s is not exported", t).isNotNull();
+            assertThat(sql).as(t).contains("owner_user_id").contains(t);
+        }
     }
 }

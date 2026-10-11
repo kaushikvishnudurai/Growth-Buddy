@@ -62,7 +62,8 @@ public class DataExportController {
      * Rows this account owns through a parent or a relationship column, one bound
      * parameter each: the purge deletes them too, and a portability copy without
      * every Buddy chat message, mentorship thread or the account's own family
-     * profile was missing the most personal data. Built from
+     * profile was missing the most personal data; an owner's household (families
+     * and AuthService.FAMILY_OWNED_TABLES) goes with it. Built from
      * {@link AuthService#CHILD_TABLES} so a new child reaches both at once;
      * {@code AccountDeletionCoverageTest} holds the two lists together.
      */
@@ -80,7 +81,16 @@ public class DataExportController {
         q.put("mentorship_requests", "SELECT * FROM mentorship_requests WHERE ? IN (from_user_id, to_user_id)");
         q.put("mentorship_messages", "SELECT * FROM mentorship_messages WHERE link_id IN"
                 + " (SELECT id FROM mentorship_requests WHERE ? IN (from_user_id, to_user_id))");
-        q.put("family_members", "SELECT * FROM family_members WHERE linked_user_id = ?");
+        // An owner's household is theirs too: the families row, the members they
+        // added (no account of their own, linked_user_id NULL) and everything the
+        // family holds. Members of a family someone else owns get their own row only.
+        String owned = " IN (SELECT id FROM families WHERE owner_user_id = ?)";
+        q.put("families", "SELECT * FROM families WHERE owner_user_id = ?");
+        for (String t : AuthService.FAMILY_OWNED_TABLES) {
+            if (!t.equals("family_members")) q.put(t, "SELECT * FROM " + t + " WHERE family_id" + owned);
+        }
+        q.put("family_members", "SELECT * FROM family_members WHERE ? IN (linked_user_id,"
+                + " (SELECT f.owner_user_id FROM families f WHERE f.id = family_members.family_id))");
         return q;
     }
 

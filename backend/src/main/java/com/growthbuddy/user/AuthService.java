@@ -116,7 +116,7 @@ public class AuthService {
      * Everything a family owns, child-first. Only ever deleted when a family is
      * being removed outright — see {@link #handOverOrRemoveFamilies}.
      */
-    private static final String[] FAMILY_OWNED_TABLES = {
+    static final String[] FAMILY_OWNED_TABLES = {
         "family_chores", "family_recipes",
         "family_dish_preferences", "family_pantry_items", "family_shopping_items",
         "family_favourite_menus", "family_multi_day_plans", "family_meal_plans",
@@ -948,16 +948,26 @@ public class AuthService {
     static final int MAX_PREFS_BYTES = 32 * 1024;
     private static final ObjectMapper PREFS_JSON = new ObjectMapper();
 
-    /** 400 when a merged prefs map has too many keys or serializes past MAX_PREFS_BYTES. */
-    static void requireBounded(java.util.Map<String, ?> merged, int maxKeys, String what) {
-        int bytes;
+    /**
+     * 400 when a merge grows a prefs map past maxKeys or MAX_PREFS_BYTES. Only growth
+     * is refused: an account already over a cap (from before it existed) can still
+     * save anything that leaves it no larger, or it could never save again.
+     */
+    static void requireBounded(java.util.Map<String, ?> before, java.util.Map<String, ?> merged, int maxKeys,
+            String what) {
+        int bytes = prefsBytes(merged, what);
+        int was = before == null ? 0 : prefsBytes(before, what);
+        int wasKeys = before == null ? 0 : before.size();
+        if ((merged.size() > maxKeys && merged.size() > wasKeys) || (bytes > MAX_PREFS_BYTES && bytes > was)) {
+            throw ApiException.badRequest(what + " preferences are too large to save.");
+        }
+    }
+
+    private static int prefsBytes(java.util.Map<String, ?> m, String what) {
         try {
-            bytes = PREFS_JSON.writeValueAsBytes(merged).length;
+            return PREFS_JSON.writeValueAsBytes(m).length;
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             throw ApiException.badRequest(what + " preferences could not be saved.");
-        }
-        if (merged.size() > maxKeys || bytes > MAX_PREFS_BYTES) {
-            throw ApiException.badRequest(what + " preferences are too large to save.");
         }
     }
 
@@ -974,7 +984,7 @@ public class AuthService {
                 if (k != null && v != null) prefs.put(k, v);
             });
         }
-        requireBounded(prefs, MAX_FEATURE_KEYS, "Feature");
+        requireBounded(user.getFeaturePrefs(), prefs, MAX_FEATURE_KEYS, "Feature");
         user.setFeaturePrefs(prefs);
         users.save(user);
         return AuthUserResponse.from(user);
@@ -993,7 +1003,7 @@ public class AuthService {
                 if (k != null) merged.put(k, v);
             });
         }
-        requireBounded(merged, MAX_UI_PREF_KEYS, "UI");
+        requireBounded(user.getUiPrefs(), merged, MAX_UI_PREF_KEYS, "UI");
         user.setUiPrefs(merged);
         users.save(user);
         return AuthUserResponse.from(user);
@@ -1063,7 +1073,9 @@ public class AuthService {
         return age;
     }
 
-    @Transactional(readOnly = true)
+    // Not @Transactional: the AI client's budget is an INSERT, which a read-only
+    // connection refuses (MySQL 1792), and a transaction would hold a pooled
+    // connection through the AI call.
     public NutritionSuggestionResponse nutritionSuggestion(UUID userId, UpdateProfileRequest form) {
         User user = users.findById(userId)
                 .orElseThrow(() -> ApiException.notFound("User not found"));

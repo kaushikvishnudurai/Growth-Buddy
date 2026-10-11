@@ -42,6 +42,15 @@ class ClientIpTest {
         assertThat(ip.resolve(req("203.0.113.9"))).as("shorter than the hop count").isEqualTo("203.0.113.9");
     }
 
+    /** A proxy that adds its own header line: the client's spoofed first line is not the answer. */
+    @Test
+    void everyHeaderLineCounts() {
+        MockHttpServletRequest r = req("6.6.6.6");
+        r.addHeader("X-Forwarded-For", "203.0.113.9");
+        assertThat(new ClientIp(true, 1).resolve(r)).isEqualTo("203.0.113.9");
+        assertThat(new ClientIp(true, 2).resolve(r)).isEqualTo("6.6.6.6");
+    }
+
     @Test
     void forwardedProtoCountsOnlyWhenTrusted() {
         MockHttpServletRequest r = req(null);
