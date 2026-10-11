@@ -39,6 +39,8 @@ async function shot(page, id, info) {
 // A browser that has refused notifications (headless Chrome answers the prompt with "denied").
 const denyNotifications = (page) =>
   page.addInitScript(() => {
+    // iOS Safari outside an installed web app has no Notification at all (mobile-webkit).
+    if (!('Notification' in window)) return;
     Object.defineProperty(Notification, 'permission', { get: () => 'denied', configurable: true });
     Notification.requestPermission = async () => 'denied';
   });
@@ -158,6 +160,8 @@ test('NEW-5: "Add a task for today" opens with Due on today', async ({ page, emp
 });
 
 test('NEW-8: a refused notification prompt does not tick "Get reminded on time"', async ({ page, emptyAccount }, info) => {
+  // No Notification there, so the app rightly never says "blocked" (pushSupported() is false).
+  test.skip(info.project.name === 'mobile-webkit', 'no web push on iOS Safari');
   await denyNotifications(page);
   await boot(page, emptyAccount, { setupDone: true });
   const card = page.locator('.gb-onboard');
@@ -182,6 +186,8 @@ test('NEW-9: a ticked habit keeps its row for a moment', async ({ page, account 
 });
 
 test('NEW-15: a toast from one screen does not follow to the next', async ({ page, emptyAccount }, info) => {
+  // The toast comes from the notification step, which iOS Safari never offers.
+  test.skip(info.project.name === 'mobile-webkit', 'no web push on iOS Safari');
   await denyNotifications(page);
   await boot(page, emptyAccount, { setupDone: true });
   await page.locator('.gb-onboard').getByRole('button', { name: /Notifications are blocked|Get reminded on time/ }).click();
