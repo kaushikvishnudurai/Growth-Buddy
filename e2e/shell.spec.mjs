@@ -178,11 +178,16 @@ const apiAs = (page, token, path) =>
 test('OFF-1: a task whose request is still out when the page reloads is sent after it', async ({ page, account, allowed }) => {
   allowed.push('/api/tasks');
   await signInFast(page, account);
-  // The request never answers: the page unloads with it in flight.
-  await page.route('**/api/tasks', (route) => (route.request().method() === 'POST' ? undefined : route.fallback()));
+  // The first POST never answers: the page unloads with it in flight. Held for good, not
+  // unrouted before the reload: unroute released it, its answer closed the sheet, and the
+  // sheet's history.back() landed on the reload and aborted it.
+  let held = false;
+  await page.route('**/api/tasks', (route) => {
+    if (route.request().method() !== 'POST' || held) return route.fallback();
+    held = true;
+  });
   await addTaskThroughSheet(page, 'Sent from the grave');
   await page.waitForTimeout(400);
-  await page.unroute('**/api/tasks');
   await page.reload();
   await expect(page.locator('#gb-main')).toBeVisible();
   await expect
