@@ -17092,6 +17092,26 @@ async function flushRevokes() {
   }
 }
 
+/* Leaving with revokes still queued: one more try, keepalive, so it outlives
+   the page. The queue lives in the Cache API, which a WebKit ephemeral store
+   (Safari Private Browsing) empties on reload, and the token would stay live.
+   Answered ones are dropped by the next flushRevokes (a 401 settles it). */
+window.addEventListener('pagehide', () => {
+  let q = [];
+  try {
+    q = JSON.parse(CacheStorage.getItem(REVOKE_KEY) || '[]');
+  } catch (_) {
+    return;
+  }
+  q.forEach((token) =>
+    fetch(API_BASE + '/api/auth/logout', {
+      method: 'POST',
+      keepalive: true,
+      headers: { Authorization: 'Bearer ' + token },
+    }).catch(() => {})
+  );
+});
+
 /* `revoked`: the server already ended the session (account deletion revokes
    every one), so only this device's half runs: no unsubscribe or logout call to
    401. The browser's own push subscription still goes, and the server prunes
