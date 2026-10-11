@@ -252,6 +252,15 @@ try {
         .click()
     );
     await page.waitForSelector('.gb-search-modal input', { timeout: 8000 });
+    // A mentor or mentee you have an active link with is not a stranger: the
+    // server shows them in full by design (UserController.toPublic).
+    const linked = new Set();
+    const onSearch = async (r) => {
+      if (!/\/api\/users\/search/.test(r.url()) || r.status() !== 200) return;
+      for (const u of await r.json().catch(() => []))
+        if (u.mentorLink === 'active' || u.menteeLink === 'active') linked.add(u.email);
+    };
+    page.on('response', onSearch);
     await page.type('.gb-search-modal input', 'qa');
     await page.waitForFunction(
       () => document.querySelectorAll('.gb-search-modal .gb-person-row').length > 0,
@@ -264,9 +273,11 @@ try {
       els.map((e) => e.textContent)
     );
     check(subs.length > 0, `[${width}] Circle search lists people (${subs.length})`);
+    page.off('response', onSearch);
+    const strangers = subs.filter((t) => /@/.test(t) && ![...linked].some((e) => t.includes(e)));
     check(
-      subs.every((t) => !/@/.test(t)),
-      `[${width}] no stranger's email domain on screen (${subs.slice(0, 2).join(' | ')})`
+      strangers.length === 0,
+      `[${width}] no stranger's email domain on screen (${strangers.slice(0, 2).join(' | ') || subs.slice(0, 2).join(' | ')})`
     );
     await shot('circle-search', width);
     await closeAll();
