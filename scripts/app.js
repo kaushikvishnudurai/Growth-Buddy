@@ -15,6 +15,7 @@ import {
   Check,
   DOMAIN,
   CrashCard,
+  Card,
   openOverlay,
   closeOverlays,
   openModal as sharedModal,
@@ -29,7 +30,8 @@ import {
   focusSoon,
   SHEET_EXIT_MS,
 } from './gb-kit.js';
-import { setLocale, localeFromUser } from './i18n.js';
+import { setLocale, localeFromUser, fmtDate } from './i18n.js';
+import { BREAK_LENGTHS, breakState, startBreak, endBreak } from './break.js';
 import { dateKey, todayKey } from './dates.js';
 import {
   ScreenDashboard,
@@ -43,7 +45,7 @@ import {
   sleepHours,
   StreakChain,
 } from './dashboard.js';
-import { habitDue, tasksForToday } from './home-order.js';
+import { habitDue, tasksForToday, sortHabitsForHome } from './home-order.js';
 import { withProgressLog, needsProgressLog } from './goal-milestones.js';
 import { goalTaskStats, combinedGoalProgress, goalFinishedBy } from './goal-tasks.js';
 import {
@@ -1569,6 +1571,98 @@ async function protectStreak(habitId) {
     'Could not protect your streak.'
   );
   if (ok) toastSuccess('Streak protected with a freeze.');
+}
+
+/* ---- Take a break (I-08) ----
+   ui_prefs.breakFrom..breakUntil (break.js). The server holds every streak over
+   it without a token, owes nothing those days (the score), and keeps habit
+   reminders, the evening reflection and the digest quiet; this device's habit
+   alarms follow (reSyncDeviceAlarms). Timed reminders still ring. Started from
+   Settings > Alerts or Home's at-risk entry; ended early with one tap. */
+function breakPrefs() {
+  return (state.user && state.user.uiPrefs) || {};
+}
+
+function breakUntilLabel(until) {
+  return fmtDate(until, 'weekdayDate');
+}
+
+async function setBreak(patch, message) {
+  const saved = saveUiPrefs(patch);
+  render();
+  reSyncDeviceAlarms();
+  await saved;
+  // Streaks, "owed today" and the score are the server's; read them back.
+  try {
+    state.habits = await api('/api/habits');
+    reconcileStreakFreeze();
+  } catch (_) {
+    /* the next load brings them */
+  }
+  await refreshScore();
+  render();
+  if (message) toastSuccess(message);
+}
+
+function takeBreak(days, rescue) {
+  const patch = startBreak(days, todayKey(), rescue);
+  return setBreak(patch, 'On a break until ' + breakUntilLabel(patch.breakUntil) + '. Your streaks are held.');
+}
+
+function endBreakNow() {
+  return setBreak(endBreak(todayKey()), 'Break ended.');
+}
+
+/* Home's one line about a break: on one, back from one, or offered when a
+   streak is at risk (a rescue, so it covers the missed yesterday too). */
+function homeBreakEntry() {
+  if (!featureOn('habits') || !(state.habits || []).length) return null;
+  const st = breakState(breakPrefs(), todayKey());
+  const btn = (label, onclick, primary) =>
+    h(
+      'button',
+      { type: 'button', class: 'gb-btn gb-btn--compact ' + (primary ? 'gb-btn--primary' : 'gb-btn--soft'), onclick },
+      label
+    );
+  const card = (kicker, title, why, buttons) =>
+    Card({
+      className: 'gb-coach-card gb-break-card',
+      children: [
+        h(
+          'div',
+          null,
+          h('div', { class: 'gb-coach-kicker' }, kicker),
+          h('div', { class: 'gb-coach-title' }, title),
+          h('div', { class: 'gb-coach-why' }, why)
+        ),
+        buttons.length ? h('div', { class: 'gb-coach-chiprow' }, ...buttons) : null,
+      ],
+    });
+  if (st && st.on) {
+    return card(
+      'On a break',
+      'Until ' + breakUntilLabel(st.until),
+      'Your streaks are held and habit reminders are off. Reminders you set a time for still ring.',
+      [btn('End now', endBreakNow, false)]
+    );
+  }
+  if (st && st.back) {
+    const build = (state.habits || []).filter((x) => x.active !== false && !isQuitHabit(x));
+    const next = sortHabitsForHome(build).find((x) => !x.doneToday && habitDue(x));
+    return card(
+      'Back on it',
+      'Your streaks are intact.',
+      next ? 'One to start with: ' + next.name + '.' : 'Pick up wherever suits you today.',
+      next ? [btn('Mark ' + next.name + ' done', () => toggleHabit(next.id), true)] : []
+    );
+  }
+  if (!(state.habits || []).some((x) => habitFreezeState(x).pendingBreak)) return null;
+  return card(
+    'Rough week?',
+    'Take a break',
+    'Your streaks hold and habit reminders go quiet. Reminders you set a time for still ring.',
+    BREAK_LENGTHS.map((n) => btn(n + ' days', () => takeBreak(n, true), n === BREAK_LENGTHS[0]))
+  );
 }
 
 /* ---- The freeze calendar ----
@@ -9804,6 +9898,42 @@ function openProfileSettings(initialTab) {
     waterFields
   );
 
+  /* ---- Take a break (I-08): one tap for 3 / 7 / 14 days, one to end it. ---- */
+  const breakSectionBody = h('div');
+  const paintBreak = () => {
+    const st = breakState(breakPrefs(), todayKey());
+    const btn = (label, onclick, primary) =>
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--compact ' + (primary ? 'gb-btn--primary' : 'gb-btn--soft'),
+          onclick: () => onclick().then(paintBreak),
+        },
+        label
+      );
+    breakSectionBody.replaceChildren(
+      st && st.on
+        ? h(
+            'div',
+            { class: 'gb-feature-row' },
+            h(
+              'div',
+              { class: 'gb-feature-row-text' },
+              h('div', { class: 'gb-feature-row-label' }, 'On a break until ' + breakUntilLabel(st.until)),
+              h('div', { class: 'gb-feature-row-desc' }, 'Your streaks are held.')
+            ),
+            btn('End now', endBreakNow, false)
+          )
+        : h(
+            'div',
+            { class: 'gb-coach-chiprow', style: { marginTop: 0 } },
+            ...BREAK_LENGTHS.map((n) => btn(n + ' days', () => takeBreak(n, false), false))
+          )
+    );
+  };
+  paintBreak();
+
   /* ---- Quiet hours ----
      ui_prefs.quietStart / quietEnd, read by the server (ReminderPrefs.isQuiet:
      habit reminders, the digest) and by this device's alarm queue (push.js:
@@ -10490,6 +10620,13 @@ function openProfileSettings(initialTab) {
       'Steady sips beat one big glass. Needs notifications turned on above.'
     ),
     waterSectionBody,
+    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Take a break'),
+    h(
+      'div',
+      { class: 'gb-field-hint', style: { marginBottom: '12px' } },
+      'A rough week? Your habit streaks hold without using freezes, and habit reminders, the evening reflection and the digest go quiet. Reminders you set a time for still ring.'
+    ),
+    breakSectionBody,
     h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Quiet hours'),
     h(
       'div',
@@ -11371,6 +11508,7 @@ function reSyncDeviceAlarms() {
     sound: notifySound(),
     lead: getDefaultLead(),
     quiet: quietHours(),
+    breakPrefs: breakPrefs(),
     snoozeLabel: 'Snooze ' + minutesLabel(snoozeMinutes()),
   }).catch(() => {});
 }
@@ -14428,6 +14566,7 @@ const SCREENS = {
         onQuickAddWater: featureOn('water') ? quickAddWater : null,
         homeLayout: (state.user && state.user.homeLayout) || null,
         quickAdd: homeQuickAdd(),
+        breakEntry: homeBreakEntry(),
         trends: state.trends,
         // Loaded once per session after wave 2 (loadSecondaryData), so Home's
         // top insight matches Report's on a cold start.

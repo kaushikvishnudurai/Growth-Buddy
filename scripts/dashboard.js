@@ -2826,6 +2826,7 @@ function ScreenDashboard({
   dismissedInsights,
   onDismissInsight,
   onInsightAction,
+  breakEntry,
 }) {
   const on = (k) => !features || features[k] !== false;
   homeFeatures = features || null;
@@ -2982,6 +2983,8 @@ function ScreenDashboard({
   }
   if (onboard) blocks.unshift(h('div', { class: 'gb-dash-block' }, onboard));
   if (one) blocks.unshift(h('div', { class: 'gb-dash-block gb-dash-pin' }, OneThingCard(one)));
+  // A break (I-08): on one, back from one, or offered at a streak at risk (app.js homeBreakEntry).
+  if (breakEntry) blocks.unshift(h('div', { class: 'gb-dash-block gb-dash-pin' }, breakEntry));
   if (qa) blocks.unshift(qa);
 
   const root = h('div', { class: 'gb-rise gb-dash gb-dash--single' }, ...blocks);

@@ -99,6 +99,7 @@ public class ReflectionScheduler {
         ZonedDateTime local = now.atZone(zone);
         if (!isDue(at, local, sentOn.get(u.getId()))) return false;
         if (ReminderPrefs.isQuiet(u.getUiPrefs(), at)) return false;
+        if (com.growthbuddy.habit.OnBreak.on(u.getUiPrefs(), local.toLocalDate())) return false; // I-08
         LocalDate day = local.toLocalDate();
         Instant midnight = day.atStartOfDay(zone).toInstant();
         if (notificationRows.findFirstByUserIdAndKindAndCreatedAtAfterOrderByCreatedAtDesc(

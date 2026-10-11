@@ -1026,7 +1026,10 @@ public class AuthService {
         User user = users.findById(userId)
                 .orElseThrow(() -> ApiException.notFound("User not found"));
         java.util.Map<String, Object> before = user.getUiPrefs() != null ? user.getUiPrefs() : java.util.Map.of();
-        java.util.Map<String, Object> merged = mergeUiPrefs(before, prefs);
+        // A break (I-08) may not be aimed at the past, and breakPast is the server's.
+        java.util.Map<String, Object> merged = com.growthbuddy.habit.OnBreak.settle(before,
+                mergeUiPrefs(before, prefs),
+                java.time.LocalDate.now(com.growthbuddy.common.UserZone.of(user.getTimezone())));
         String blob;
         try {
             blob = json.writeValueAsString(merged);

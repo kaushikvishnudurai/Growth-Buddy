@@ -190,6 +190,19 @@ still due: `MoneyRepository.peekData` reads the document unlocked first.
 keys the **server** reads (the WhatsApp scheduler needs it); the other is `shareProgress`, below. On the client it is module state in
 `recurrence.js`, seeded at boot from the cached session and again by `hydrateUiPrefs()`.
 
+**A break (I-08) is two `ui_prefs` keys the server reads**: `breakFrom` / `breakUntil`
+('YYYY-MM-DD', the user's zone, both inclusive), plus `breakPast` (older ranges, "from..until",
+written only by the server: `OnBreak.settle` in `AuthService.updateUiPrefs` files the previous range
+when a new one starts, drops any client-sent copy, and refuses a start before yesterday, an end
+before yesterday, or more than 15 days). The pure reader is `habit/OnBreak`: `HabitService` holds a
+streak over break days like a freeze (no row, no token; weekly runs skip a week a break touched),
+owes nothing on one (`dueToday` false, `countsOn` / `countsBetween` count only what was done, so the
+score does not drop), and `HabitReminderDeliveryScheduler`, `ReflectionScheduler` and
+`DigestScheduler` skip the day. Timed reminders still ring; Circle challenges are unaffected. Client:
+`scripts/break.js` (pure), app.js `homeBreakEntry` (Home: the at-risk offer, "On a break until",
+"Back on it") and Settings > Alerts > Take a break; push.js drops habit alarms on break days.
+`BreakStreakTest`, `e2e/break.spec.mjs`.
+
 **Mentorship progress flows one way.** A mentor opens their mentee's tasks and habit streaks via
 `GET /api/mentorship/connections/{id}/status`; the mentee gets no window back — the endpoint 403s
 that direction (`PartnerStatusAccessTest`), and `circle.js` only makes the mentor-side rows and

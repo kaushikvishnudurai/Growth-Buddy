@@ -114,6 +114,25 @@ class ReflectionSchedulerTest {
                 anyString(), anyString(), any());
     }
 
+    /** I-08: no evening reflection on a break day (the user's local day). */
+    @Test
+    void aBreakDayGetsNoReflection() {
+        // 15:30 UTC = 21:00 on 10 Oct in Kolkata; the break covers that local day only.
+        Instant now = Instant.parse("2026-10-10T15:30:00Z");
+        User kolkata = user("Asia/Kolkata", "21:00");
+        kolkata.getUiPrefs().put("breakFrom", "2026-10-10");
+        kolkata.getUiPrefs().put("breakUntil", "2026-10-10");
+        when(users.findWithReflectionPref()).thenReturn(List.of(kolkata));
+        when(rows.findFirstByUserIdAndKindAndCreatedAtAfterOrderByCreatedAtDesc(any(), any(), any()))
+                .thenReturn(Optional.empty());
+        assertThat(job.run(now)).isZero();
+        verify(notifications, never()).publish(any(UUID.class), any(NotificationKind.class),
+                anyString(), anyString(), any());
+        // The next evening, back from the break, it goes again.
+        kolkata.getUiPrefs().put("breakUntil", "2026-10-09");
+        assertThat(job.run(now.plusSeconds(86400))).isEqualTo(1);
+    }
+
     @Test
     void oneAlreadySentTodayIsNotSentAgainAfterARestart() {
         Instant now = Instant.parse("2026-10-10T15:30:00Z");
