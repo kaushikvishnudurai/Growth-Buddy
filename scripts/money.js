@@ -4317,7 +4317,9 @@ function ScreenMoney({
       ? [
           line('Budget for ' + monthName, fmt(totalBudget)),
           line('Spent so far', fmt(-spentMonth)),
-          line('Left this month', fmt(Math.max(0, totalBudget - spentMonth)), 'is-total'),
+          spentMonth > totalBudget
+            ? line('Over budget', fmt(spentMonth - totalBudget), 'is-total is-over')
+            : line('Left this month', fmt(totalBudget - spentMonth), 'is-total'),
         ]
       : [line('Spent today', fmt(spentToday)), line('Spent this month', fmt(spentMonth), 'is-total')];
 

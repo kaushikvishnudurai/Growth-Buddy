@@ -2591,6 +2591,10 @@
 .gb-money-slip.is-under .gb-money-slip-line.is-total .gb-money-slip-amt {
   color: var(--success-soft-fg);
 }
+.gb-money-slip .gb-money-slip-line.is-over .gb-money-slip-amt {
+  color: var(--danger);
+  border-bottom-color: var(--danger);
+}
 .gb-money-slip .gb-money-tape {
   height: 28px;
   gap: 2px;
