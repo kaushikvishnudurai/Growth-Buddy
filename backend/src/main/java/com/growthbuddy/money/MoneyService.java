@@ -9,6 +9,7 @@ import com.growthbuddy.common.ApiException;
 import com.growthbuddy.mentor.OpenAIClient;
 import com.growthbuddy.mentor.OpenAIClient.ChatTurn;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -415,6 +416,30 @@ public class MoneyService {
             return c;
         }
         return u;
+    }
+
+    /**
+     * The account a write from outside the app books to, as the app's own dialogs
+     * would pick it: an expense the last "Paid from" (else the first cash account),
+     * income the first bank or wallet; an archived or missing pick falls to the
+     * first active account. Null when there are none: the row still saves.
+     */
+    public String defaultAccountId(UUID userId, String kind) {
+        String last = repo.peekData(userId).map(d -> d.path("settings").path("lastAccountId").asText(null)).orElse(null);
+        return pickAccount(ledger.accounts(userId), "expense".equals(kind) ? last : null, kind);
+    }
+
+    static String pickAccount(JsonNode accounts, String last, String kind) {
+        List<JsonNode> active = new java.util.ArrayList<>();
+        accounts.forEach(a -> {
+            if (!a.path("archived").asBoolean(false)) active.add(a);
+        });
+        if (active.isEmpty()) return null;
+        Set<String> kinds = "expense".equals(kind) ? Set.of("cash") : Set.of("bank", "wallet");
+        String want = last != null ? last : active.stream().filter(a -> kinds.contains(a.path("kind").asText()))
+                .map(a -> a.path("id").asText()).findFirst().orElse(null);
+        return active.stream().map(a -> a.path("id").asText()).filter(id -> id.equals(want)).findFirst()
+                .orElse(active.get(0).path("id").asText());
     }
 
     /** {@code noAmount}: the bill exists but has no amount, so nothing could be booked. */

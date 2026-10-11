@@ -123,7 +123,7 @@ public class QuickAddApplier {
                 return "Mood: " + it.mood();
             }
             case "expense", "income" -> {
-                var res = money.applyLedger(userId, ledgerWrite(it, today));
+                var res = money.applyLedger(userId, ledgerWrite(it, today, money.defaultAccountId(userId, it.type())));
                 if (!res.path("rejected").isEmpty()) {
                     throw new IllegalArgumentException(res.path("rejected").get(0).path("reason").asText());
                 }
@@ -161,8 +161,11 @@ public class QuickAddApplier {
         return new String[] {String.format("%02d:%02d", bed / 60, bed % 60), "07:00"};
     }
 
-    /** One ledger upsert, in the shape POST /api/money/tx takes from the app. */
-    ObjectNode ledgerWrite(Intent it, LocalDate today) {
+    /**
+     * One ledger upsert, in the shape POST /api/money/tx takes from the app, on the
+     * account the app's own dialog would pick (FRC-3: with none, balances never moved).
+     */
+    ObjectNode ledgerWrite(Intent it, LocalDate today, String accountId) {
         ObjectNode body = json.createObjectNode();
         ObjectNode row = body.putArray("upserts").addObject()
                 .put("kind", it.type())
@@ -170,6 +173,7 @@ public class QuickAddApplier {
                 .put("amount", it.amount())
                 .put("date", today.toString())
                 .put("createdAt", System.currentTimeMillis());
+        if (accountId != null) row.put("accountId", accountId);
         if ("expense".equals(it.type())) {
             row.put("category", "others").put("note", it.note() == null ? "" : it.note());
         } else {
