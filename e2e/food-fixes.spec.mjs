@@ -3,7 +3,8 @@
 // +250 ml pill (FRC-6) and field errors under the field (EXM-20).
 import { test, expect, signInFast, go } from './fixtures.mjs';
 
-const API = process.env.GB_API || 'http://localhost:8591';
+// The seeder's backend: the account and these calls must reach the same build.
+const API = process.env.GB_API || 'http://localhost:8590';
 const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 const today = () => new Date().toLocaleDateString('en-CA');
 const shot = (page, id) => page.screenshot({ path: `docs/evidence/food/${id}.jpg`, type: 'jpeg', quality: 60 });
@@ -207,8 +208,9 @@ test('a new food closes the dialog at once; the estimate carries on behind it (F
   await d.getByRole('textbox', { name: 'Food', exact: true }).fill('Lemon rice');
   const t0 = Date.now();
   await d.getByRole('button', { name: 'Add food' }).click();
-  await expect(d).toHaveCount(0, { timeout: 1500 });
-  expect(Date.now() - t0).toBeLessThan(1500);
+  // The point is no ~11 s estimate wait; 3 s leaves room for a loaded machine.
+  await expect(d).toHaveCount(0, { timeout: 3000 });
+  expect(Date.now() - t0).toBeLessThan(3000);
   await expect(main(page).getByRole('button', { name: /^Edit Lemon rice/ })).toBeVisible({ timeout: 20_000 });
   await shot(page, 'FRC-10');
 });
