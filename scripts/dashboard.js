@@ -2208,6 +2208,9 @@ function MiniCalendarCard({
           onclick: () => onSelectDate(key),
         },
         h('span', { class: 'num' }, String(dt.getDate())),
+        // Not rendered (flex container), but it makes the text "12 3" rather than
+        // "123", which the label ("Mon, October 12, 3 items") then contains.
+        ' ',
         total
           ? h('span', { class: 'badge' }, String(total))
           : repeating
@@ -2559,7 +2562,7 @@ function ScreenDashboard({
     plan: () => TodayPlanCard({ water: on('water') ? water : null, wellness, onPlanToday }),
     wellness: () => WellnessCard({ wellness, onAddSleep, onAddMood, onConfirmSleep, onQuickMood }),
     tasks: () => [
-      SectionTitle({ title: "Today's tasks", action: '+ Add', onAction: onAddTask }),
+      SectionTitle({ title: "Today's tasks", level: 2, action: '+ Add', onAction: onAddTask }),
       TasksCard({
         tasks,
         toggleTask,
@@ -2585,7 +2588,7 @@ function ScreenDashboard({
         onRetryFood,
       }),
     habits: () => [
-      SectionTitle({ title: 'Habit streaks', action: '+ Add', onAction: onAddHabit }),
+      SectionTitle({ title: 'Habit streaks', level: 2, action: '+ Add', onAction: onAddHabit }),
       HabitStrip({ habits, onAdd: onAddHabit, toggleHabit }),
     ],
     goals: () => GoalsCard({ goals, goalProgress, onOpenGoals }),

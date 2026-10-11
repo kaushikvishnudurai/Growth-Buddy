@@ -183,11 +183,14 @@ function Card({ children, style, className = '', onClick } = {}) {
 }
 
 /* ---- Section title ---- */
-function SectionTitle({ title, action, onAction } = {}) {
+/* `level` is the outline level only (aria-level): the element stays an h3, so
+   every `.gb-sectiontitle h3` rule still styles it. Home passes 2: its titles
+   sit straight under the h1 greeting, and an h1 -> h3 jump fails heading-order. */
+function SectionTitle({ title, action, onAction, level } = {}) {
   return h(
     'div',
     { class: 'gb-sectiontitle' },
-    h('h3', null, title),
+    h('h3', level ? { 'aria-level': String(level) } : null, title),
     // A real <button>: an href-less <a role=button> took focus but ignored Enter
     // and Space. No handler means it is a count ("8 items"), not a control.
     action
@@ -318,7 +321,8 @@ function Avatar({
       type: onClick ? 'button' : null,
       class: 'gb-avatar',
       onclick: onClick,
-      'aria-label': onClick ? 'Account' : null,
+      // Starts with the initials it shows, so a voice user saying "click AR" finds it.
+      'aria-label': onClick ? initials + ', account' : null,
       style: {
         width: size + 'px',
         height: size + 'px',
