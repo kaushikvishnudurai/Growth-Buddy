@@ -884,53 +884,6 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
   const pctRaw = Math.round((consumedMl / goalMl) * 100);
   const pct = Math.max(0, Math.min(100, pctRaw));
 
-  const quotesLow = [
-    'Every sip is a vote for your future energy.',
-    'Hydration first. Momentum second. Greatness next.',
-    'Drink now, thank yourself in an hour.',
-    'Tiny sips create big focus.',
-    'Your brain loves water more than excuses.',
-  ];
-  const quotesMid = [
-    'Nice pace. Keep the flow going.',
-    'You are building consistency, one glass at a time.',
-    'Halfway hydrated is halfway heroic.',
-    'Keep pouring into yourself.',
-    'Steady hydration, steady mind.',
-  ];
-  const quotesHigh = [
-    'You are glowing. Keep cruising.',
-    'Hydration champion mode unlocked.',
-    'Your body is already saying thank you.',
-    'This is what disciplined self-care looks like.',
-    'You are finishing strong.',
-  ];
-
-  const pool = pct < 40 ? quotesLow : pct < 85 ? quotesMid : quotesHigh;
-  const quoteIdx = Math.floor(consumedMl / 100 + entries.length) % pool.length;
-  const quote = pool[quoteIdx];
-  const fishCount = Math.max(1, Math.min(8, Math.floor(pct / 15) + 1));
-  const fishPalette = ['sun', 'leaf', 'bloom', 'sky'];
-  const fishNodes = Array.from({ length: fishCount }, (_, i) => {
-    const left = 8 + ((i * 11) % 52);
-    const bottom = 10 + ((i * 13) % 66);
-    const size = 10 + (i % 3) * 3;
-    const delay = (i % 5) * 0.55;
-    const dur = 5.8 + (i % 4) * 1.1;
-    const tint = fishPalette[i % fishPalette.length];
-    return h('span', {
-      class: 'gb-water-fish f' + ((i % 3) + 1),
-      style: {
-        '--fish-left': left + 'px',
-        '--fish-bottom': bottom + 'px',
-        '--fish-size': size + 'px',
-        '--fish-delay': delay + 's',
-        '--fish-duration': dur + 's',
-        '--fish-hue': tint,
-      },
-    });
-  });
-
   const lastThree = entries.slice(-3).reverse();
   const latestAt = entries.length ? entries[entries.length - 1].loggedAt : null;
   const isPouring = !!latestAt && Date.now() - new Date(latestAt).getTime() < 2400;
@@ -1144,14 +1097,7 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
       h(
         'div',
         { class: 'gb-water-head' },
-        h(
-          'div',
-          null,
-          h('div', { class: 'gb-water-title' }, 'Water tracker'),
-          // No % chip beside it: the glass fills to the same number, and the
-          // big figure says what's left. Three readings of one value was noise.
-          h('div', { class: 'gb-water-meta' }, consumedMl + ' of ' + goalMl + ' ml')
-        )
+        h('div', { class: 'gb-water-title' }, 'Water tracker')
       ),
 
       h(
@@ -1164,31 +1110,38 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
           h(
             'div',
             // Full height, slid down by what's missing: a transform runs on the
-            // compositor where an animated height re-laid the card every frame,
-            // and unlike scaleY it doesn't squash the bubbles and wave inside.
+            // compositor where an animated height re-laid the card every frame.
             {
               class: 'gb-water-fill',
-              style: {
-                transform: 'translateY(' + (100 - pct) + '%)',
-                '--water-empty': 100 - pct + '%',
-              },
-            },
-            h('span', { class: 'gb-water-bubble b1' }),
-            h('span', { class: 'gb-water-bubble b2' }),
-            h('span', { class: 'gb-water-bubble b3' }),
-            fishNodes
+              style: { transform: 'translateY(' + (100 - pct) + '%)' },
+            }
+          )
+        ),
+        // The glass's graduations: quarters of the goal, goal on top. The
+        // reading is in the stats beside it, so this is decoration to a reader.
+        h(
+          'div',
+          { class: 'gb-water-scale', 'aria-hidden': 'true' },
+          [1, 0.75, 0.5, 0.25, 0].map((k) =>
+            h('span', null, fmtNumber(Math.round(goalMl * k)))
           )
         ),
         h(
           'div',
           { class: 'gb-water-stats' },
-          h('div', { class: 'gb-water-big' }, remainingMl + ' ml'),
+          // One reading of one value: drunk, of the goal, then what's left.
+          h(
+            'div',
+            { class: 'gb-water-big' },
+            fmtNumber(consumedMl),
+            h('small', null, 'ml')
+          ),
+          h('div', { class: 'gb-water-meta' }, 'of ' + fmtNumber(goalMl) + ' ml'),
           h(
             'div',
             { class: 'gb-water-sub' },
-            remainingMl > 0 ? 'to hit your goal' : 'goal reached, amazing'
-          ),
-          h('p', { class: 'gb-water-quote' }, '"' + quote + '"')
+            remainingMl > 0 ? fmtNumber(remainingMl) + ' ml to go' : 'Goal reached'
+          )
         )
       ),
 
@@ -1203,7 +1156,8 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
             'aria-label': 'Add 250 millilitres of water',
             onclick: () => onQuickAddWater && onQuickAddWater(250),
           },
-          '+250 ml'
+          '+250',
+          h('small', null, 'ml')
         ),
         h(
           'button',
@@ -1213,7 +1167,8 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
             'aria-label': 'Add 500 millilitres of water',
             onclick: () => onQuickAddWater && onQuickAddWater(500),
           },
-          '+500 ml'
+          '+500',
+          h('small', null, 'ml')
         ),
         h(
           'button',
@@ -1225,7 +1180,8 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
             'aria-label': 'Add 750 millilitres of water',
             onclick: () => onQuickAddWater && onQuickAddWater(750),
           },
-          '+750 ml'
+          '+750',
+          h('small', null, 'ml')
         )
       ),
 
@@ -1262,7 +1218,8 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
                 { class: 'gb-water-log-row' },
                 h(
                   'div',
-                  { style: { flex: 1 } },
+                  { class: 'gb-water-log-text' },
+                  h('span', { class: 'gb-water-log-time' }, timeLabel(item.loggedAt)),
                   h(
                     'span',
                     null,
@@ -1275,11 +1232,6 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
                           (item.effectiveMl ?? effectiveMl(item.amountMl, item.drinkType)) +
                           ')'
                         : '')
-                  ),
-                  h(
-                    'span',
-                    { style: { marginLeft: '8px', fontSize: '0.75rem', color: 'var(--fg3)' } },
-                    timeLabel(item.loggedAt)
                   )
                 ),
                 h(
@@ -1330,7 +1282,7 @@ function FoodCard({ food, onAddFood, onDeleteFood, onEditFood, onCopySlot, copya
             }
           : { style: { flex: 1 } },
         h('span', null, item.foodName + ' (' + item.quantityGrams + 'g)'),
-        h('span', { style: { marginLeft: '8px' } }, item.kcalEstimated + ' kcal')
+        h('span', { class: 'gb-food-row-kcal' }, item.kcalEstimated + ' kcal')
       ),
       h(
         'button',
@@ -1398,8 +1350,25 @@ function FoodCard({ food, onAddFood, onDeleteFood, onEditFood, onCopySlot, copya
           h('div', { class: 'gb-water-title' }, 'Food calories'),
           h('div', { class: 'gb-water-meta' }, 'Track meals with Indian average estimates')
         ),
-        h('div', { class: 'gb-food-total' }, total + ' kcal')
+        h('div', { class: 'gb-food-total' }, fmtNumber(total), h('small', null, 'kcal'))
       ),
+      // The day measured out by meal: each slot's share of today's kcal. The
+      // slot headings below carry the same numbers, so this is visual only.
+      total > 0
+        ? h(
+            'div',
+            { class: 'gb-food-measure', 'aria-hidden': 'true' },
+            groups
+              .filter((g) => g.kcal > 0)
+              .map((g) =>
+                h(
+                  'span',
+                  { class: 'gb-food-measure-seg is-' + g.slot, style: { flexGrow: g.kcal } },
+                  g.label
+                )
+              )
+          )
+        : null,
       h(
         'button',
         {
@@ -1424,7 +1393,7 @@ function FoodCard({ food, onAddFood, onDeleteFood, onEditFood, onCopySlot, copya
         ? filled
         : h(
             'p',
-            { class: 'gb-water-quote', style: { marginTop: '8px' } },
+            { class: 'gb-food-empty' },
             'No food logged yet today.'
           ),
       copies.length ? h('div', { class: 'gb-food-copies' }, copies) : null,
@@ -2722,7 +2691,7 @@ function ScreenFood({
   const on = (k) => !features || features[k] !== false;
   return h(
     'div',
-    { class: 'gb-rise', style: { padding: '0 0 24px' } },
+    { class: 'gb-rise gb-food-screen', style: { padding: '0 0 24px' } },
     on('water')
       ? h(
           'div',

@@ -192,6 +192,8 @@ function ScreenHealth({
       ),
       Stat('Duration', sleep ? minutes(sleep.minutes) : null)
     ),
+    null,
+    'gb-health-sleep'
   );
 
   const heart = Section(

@@ -5290,86 +5290,6 @@ button.gb-food-level {
   opacity: 0.7;
   animation: gb-water-wave 1.9s linear infinite;
 }
-.gb-water-bubble {
-  position: absolute;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.66);
-  bottom: 6px;
-  animation: gb-water-bubble 2.8s ease-in infinite;
-}
-.gb-water-bubble.b1 {
-  left: 14px;
-  animation-delay: 0s;
-}
-.gb-water-bubble.b2 {
-  left: 36px;
-  width: 8px;
-  height: 8px;
-  animation-delay: 0.65s;
-}
-.gb-water-bubble.b3 {
-  left: 50px;
-  width: 12px;
-  height: 12px;
-  animation-delay: 1.2s;
-}
-
-.gb-water-fish {
-  position: absolute;
-  width: var(--fish-size, 16px);
-  height: calc(var(--fish-size, 16px) * 0.5);
-  border-radius: 10px;
-  left: var(--fish-left, 10px);
-  /* The fill is full height and slid down (dashboard.js), so its bottom sits
-     below the glass: lift the fish by the same amount or they swim off-screen. */
-  bottom: calc(var(--fish-bottom, 12px) + var(--water-empty, 0%));
-  background: color-mix(in srgb, var(--sun-300) 78%, white 22%);
-  box-shadow: inset -2px 0 0 rgba(255, 255, 255, 0.45);
-}
-.gb-water-fish[style*='--fish-hue: leaf'] {
-  background: color-mix(in srgb, var(--leaf-300) 65%, white 35%);
-}
-.gb-water-fish[style*='--fish-hue: bloom'] {
-  background: color-mix(in srgb, var(--bloom-300) 60%, white 40%);
-}
-.gb-water-fish[style*='--fish-hue: sky'] {
-  background: color-mix(in srgb, var(--sky-300) 64%, white 36%);
-}
-.gb-water-fish::before {
-  content: '';
-  position: absolute;
-  right: calc(var(--fish-size, 16px) * -0.25);
-  top: calc(var(--fish-size, 16px) * 0.06);
-  border-left: calc(var(--fish-size, 16px) * 0.32) solid
-    color-mix(in srgb, var(--sun-500) 75%, white 25%);
-  border-top: calc(var(--fish-size, 16px) * 0.18) solid transparent;
-  border-bottom: calc(var(--fish-size, 16px) * 0.18) solid transparent;
-}
-.gb-water-fish::after {
-  content: '';
-  position: absolute;
-  left: calc(var(--fish-size, 16px) * 0.18);
-  top: calc(var(--fish-size, 16px) * 0.18);
-  width: calc(var(--fish-size, 16px) * 0.12);
-  height: calc(var(--fish-size, 16px) * 0.12);
-  border-radius: 50%;
-  background: rgba(24, 24, 24, 0.85);
-}
-.gb-water-fish.f1 {
-  animation: gb-fish-swim-1 var(--fish-duration, 9s) linear infinite;
-  animation-delay: var(--fish-delay, 0s);
-}
-.gb-water-fish.f2 {
-  animation: gb-fish-swim-2 var(--fish-duration, 8s) linear infinite;
-  animation-delay: var(--fish-delay, 0s);
-}
-.gb-water-fish.f3 {
-  animation: gb-fish-swim-3 var(--fish-duration, 7s) linear infinite;
-  animation-delay: var(--fish-delay, 0s);
-}
-
 .gb-water-stats {
   flex: 1;
   min-width: 0;
@@ -5387,15 +5307,6 @@ button.gb-food-level {
   color: var(--fg2);
   margin-bottom: 9px;
 }
-.gb-water-quote {
-  margin: 0;
-  font-size: 0.8125rem;
-  color: var(--info-soft-fg);
-  font-weight: 700;
-  line-height: 1.35;
-  animation: gb-water-quote-rise 480ms var(--ease-out);
-}
-
 .gb-water-actions {
   margin-top: 12px;
   display: grid;
@@ -5492,9 +5403,6 @@ button.gb-food-level {
 [data-theme='dark'] .gb-water-log-row {
   color: #c6d9e3;
 }
-[data-theme='dark'] .gb-water-quote {
-  color: #cfe6ff;
-}
 [data-theme='dark'] .gb-water-add {
   background: color-mix(in srgb, var(--sky-700) 42%, var(--surface-2) 58%);
   color: #d8ecff;
@@ -5552,67 +5460,6 @@ button.gb-food-level {
     opacity: 0;
   }
 }
-@keyframes gb-water-bubble {
-  0% {
-    transform: translateY(0) scale(0.85);
-    opacity: 0.25;
-  }
-  40% {
-    opacity: 0.9;
-  }
-  100% {
-    transform: translateY(-86px) scale(1.12);
-    opacity: 0;
-  }
-}
-@keyframes gb-fish-swim-1 {
-  0% {
-    transform: translateX(0) translateY(0) scaleX(1);
-  }
-  46% {
-    transform: translateX(45px) translateY(-4px) scaleX(1);
-  }
-  50% {
-    transform: translateX(45px) translateY(-4px) scaleX(-1);
-  }
-  96% {
-    transform: translateX(0) translateY(0) scaleX(-1);
-  }
-  100% {
-    transform: translateX(0) translateY(0) scaleX(1);
-  }
-}
-@keyframes gb-fish-swim-2 {
-  0% {
-    transform: translateX(0) translateY(0) scaleX(-1);
-  }
-  48% {
-    transform: translateX(-22px) translateY(4px) scaleX(-1);
-  }
-  52% {
-    transform: translateX(-22px) translateY(4px) scaleX(1);
-  }
-  100% {
-    transform: translateX(0) translateY(0) scaleX(1);
-  }
-}
-@keyframes gb-fish-swim-3 {
-  0% {
-    transform: translateX(0) translateY(0) scaleX(1);
-  }
-  45% {
-    transform: translateX(34px) translateY(2px) scaleX(1);
-  }
-  50% {
-    transform: translateX(34px) translateY(2px) scaleX(-1);
-  }
-  95% {
-    transform: translateX(0) translateY(0) scaleX(-1);
-  }
-  100% {
-    transform: translateX(0) translateY(0) scaleX(1);
-  }
-}
 @keyframes gb-water-pulse {
   0%,
   100% {
@@ -5622,17 +5469,6 @@ button.gb-food-level {
     box-shadow: 0 14px 30px rgba(17, 132, 224, 0.24);
   }
 }
-@keyframes gb-water-quote-rise {
-  from {
-    opacity: 0;
-    transform: translateY(5px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 /* ---- Goals screen ---- */
 .gb-goals {
   display: flex;
@@ -14870,7 +14706,7 @@ button.gb-tone-chip:focus-visible {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
   gap: var(--space-3);
-  padding: 0 var(--gutter) var(--space-8);
+  padding: var(--space-3) var(--gutter) var(--space-8);
 }
 .gb-health-top {
   grid-column: 1 / -1;
@@ -14914,16 +14750,26 @@ button.gb-tone-chip:focus-visible {
   grid-column: 1 / -1;
 }
 .gb-health-notice p {
+  max-width: 62ch;
   margin: var(--space-2) 0 0;
   color: var(--fg2);
   line-height: var(--leading-normal);
 }
+/* The measure: a ruler under every card head, a tick each 8px and a taller
+   one each 40px. The same graduations mark the water glass on Food and the
+   day's meals there, so the body's numbers read as one instrument. */
 .gb-health-head {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   margin-bottom: var(--space-3);
+  padding-bottom: 14px;
   color: var(--brand);
+  background:
+    repeating-linear-gradient(to right, var(--border-strong) 0 1px, transparent 1px 40px)
+      left bottom / 100% 9px no-repeat,
+    repeating-linear-gradient(to right, var(--border) 0 1px, transparent 1px 8px) left bottom /
+      100% 5px no-repeat;
 }
 .gb-health-head h2 {
   margin: 0;
@@ -14937,6 +14783,10 @@ button.gb-tone-chip:focus-visible {
   grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
   gap: var(--space-3);
 }
+/* Bed to wake is two times: give it the width of two readings. */
+.gb-health-sleep .gb-health-stat:first-child {
+  grid-column: span 2;
+}
 .gb-health-stat {
   display: flex;
   flex-direction: column;
@@ -14949,7 +14799,9 @@ button.gb-tone-chip:focus-visible {
 }
 .gb-health-val {
   font-family: var(--font-mono);
-  font-size: 1.125rem;
+  font-size: 1.375rem;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
   font-weight: 700;
   color: var(--fg1);
   overflow-wrap: anywhere;
@@ -15019,4 +14871,372 @@ button.gb-tone-chip:focus-visible {
 .gb-habit-link-target .gb-input {
   max-width: 140px;
   font-family: var(--font-mono);
+}
+
+/* =====================================================================
+   Food screen (dashboard.js ScreenFood: WaterCard, FoodCard). Scoped under
+   .gb-food-screen and placed last so it wins over the older water / food
+   rules at equal weight. Signature: the measure. The glass carries a
+   graduated scale in quarters of the goal; the day's food is measured out
+   by meal in one strip. Every amount in Space Mono.
+   ===================================================================== */
+.gb-food-screen .gb-water-card,
+.gb-food-screen .gb-food-card {
+  padding: var(--space-5);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  animation: none;
+}
+.gb-food-screen .gb-water-head {
+  align-items: flex-end;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.gb-food-screen .gb-water-title {
+  font-size: 1.25rem;
+}
+.gb-food-screen .gb-water-meta {
+  color: var(--fg2);
+  font-weight: 600;
+}
+
+/* The glass: a beaker with graduations at each eighth, longer at quarters. */
+.gb-food-screen .gb-water-visual {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-3) 10px;
+}
+.gb-food-screen .gb-water-glass {
+  width: 84px;
+  height: 160px;
+  border-radius: 6px 6px 20px 20px;
+  border: 2px solid color-mix(in srgb, var(--info) 45%, var(--border));
+  background: var(--info-soft);
+  box-shadow: none;
+}
+.gb-food-screen .gb-water-glass::after {
+  content: '';
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 30px;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(
+        to bottom,
+        color-mix(in srgb, var(--fg1) 38%, transparent) 0 1.5px,
+        transparent 1.5px 25%
+      )
+      right top / 100% 100% no-repeat,
+    repeating-linear-gradient(
+        to bottom,
+        color-mix(in srgb, var(--fg1) 26%, transparent) 0 1px,
+        transparent 1px 12.5%
+      )
+      right top / 50% 100% no-repeat;
+}
+.gb-food-screen .gb-water-fill {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--info) 62%, var(--surface)) 0%,
+    var(--info) 100%
+  );
+}
+.gb-food-screen .gb-water-fill::before {
+  background: color-mix(in srgb, var(--info) 45%, var(--surface));
+  opacity: 0.8;
+}
+.gb-water-scale {
+  height: 172px;
+  margin: -6px 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: 12px;
+  color: var(--fg3);
+}
+.gb-food-screen .gb-water-stats {
+  padding-left: var(--space-2);
+}
+.gb-food-screen .gb-water-big {
+  font-family: var(--font-mono);
+  font-size: 2.25rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  margin: 0 0 6px;
+  color: var(--fg1);
+  overflow-wrap: anywhere;
+}
+.gb-food-screen .gb-water-big small,
+.gb-food-screen .gb-food-total small {
+  margin-left: 4px;
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--fg3);
+}
+.gb-food-screen .gb-water-stats .gb-water-meta {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 400;
+}
+.gb-food-screen .gb-water-sub {
+  margin: var(--space-3) 0 0;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--info-soft-fg);
+}
+
+/* Quick adds: the amount in mono, its unit small. Custom and the goal are
+   quieter outlines under them. */
+.gb-food-screen .gb-water-actions {
+  margin-top: var(--space-4);
+}
+.gb-food-screen .gb-water-actions--custom {
+  margin-top: var(--space-2);
+}
+.gb-food-screen .gb-water-add {
+  min-height: 44px;
+  border-radius: var(--radius-md);
+  background: var(--info-soft);
+  color: var(--info-soft-fg);
+  font-family: var(--font-mono);
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
+.gb-food-screen .gb-water-add small {
+  margin-left: 3px;
+  font-family: var(--font-body);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+}
+.gb-food-screen .gb-water-add--custom {
+  background: none;
+  border: 1px solid var(--border-strong);
+  color: var(--fg2);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+@media (hover: hover) {
+  .gb-food-screen .gb-water-add:hover {
+    background: color-mix(in srgb, var(--info) 16%, var(--surface));
+    box-shadow: none;
+  }
+  .gb-food-screen .gb-water-add--custom:hover {
+    background: var(--surface-2);
+  }
+}
+.gb-food-screen .gb-water-add:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* Logged rows: time first in mono, then what was drunk or eaten. */
+.gb-food-screen .gb-water-log {
+  border-top: 1px solid var(--border);
+}
+.gb-food-screen .gb-water-log-row {
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+.gb-water-log-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.gb-food-screen .gb-water-log-row .gb-water-log-time {
+  min-width: 4.5em;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 400;
+  color: var(--fg3);
+}
+
+/* Food: the day's total as the reading, then the meals measured out. */
+.gb-food-screen .gb-food-total {
+  min-width: 0;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: var(--fg1);
+  white-space: nowrap;
+}
+.gb-food-measure {
+  display: flex;
+  gap: 2px;
+  height: 30px;
+  margin: 0 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.gb-food-measure-seg {
+  flex-basis: 0;
+  min-width: 6px;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  color: var(--fg1);
+  background: color-mix(in srgb, var(--brand) 26%, var(--surface));
+}
+.gb-food-measure-seg.is-lunch {
+  background: color-mix(in srgb, var(--brand) 38%, var(--surface));
+}
+.gb-food-measure-seg.is-dinner {
+  background: color-mix(in srgb, var(--brand) 50%, var(--surface));
+}
+.gb-food-measure-seg.is-snack {
+  background: color-mix(in srgb, var(--brand) 18%, var(--surface));
+}
+.gb-food-screen .gb-food-slot-head {
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.gb-food-screen .gb-food-slot-kcal,
+.gb-food-row-kcal {
+  font-family: var(--font-mono);
+  font-weight: 400;
+}
+.gb-food-row-kcal {
+  margin-left: auto;
+  padding-left: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--fg2);
+}
+.gb-food-screen .gb-food-slot .gb-water-log {
+  border-top: 0;
+  padding-top: 0;
+}
+.gb-food-empty {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-sm);
+  color: var(--fg3);
+}
+.gb-food-screen .gb-food-week-card {
+  padding: var(--space-5);
+}
+
+/* =====================================================================
+   Buddy chat (scripts/mentor.js). A calm conversation: Buddy's replies sit
+   on the page with a faint --ai edge and are named above each one, the
+   user's are coral. The composer is one pill holding the field and Send,
+   16px text so iOS doesn't zoom on focus.
+   ===================================================================== */
+.gb-mentor .gb-msg-list {
+  gap: var(--space-4);
+  padding-top: var(--space-4);
+}
+.gb-mentor .gb-msg-row.is-bot {
+  align-items: flex-start;
+}
+.gb-mentor .gb-msg-col {
+  max-width: min(86%, 64ch);
+  gap: 6px;
+}
+.gb-msg-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--fg1);
+}
+.gb-msg-ai {
+  padding: 1px 7px;
+  border: 1px solid var(--hairline-ai);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  color: var(--ai-soft-fg);
+  background: var(--ai-soft);
+}
+.gb-mentor .gb-msg-bubble {
+  font-size: 1rem;
+  line-height: 1.6;
+  padding: 12px 16px;
+}
+.gb-mentor .gb-msg-bubble.is-bot {
+  background: var(--surface);
+  border: 1px solid var(--hairline-ai);
+  border-radius: 4px 18px 18px 18px;
+  box-shadow: var(--shadow-xs);
+}
+.gb-mentor .gb-msg-bubble.is-user {
+  max-width: min(80%, 56ch);
+  border-radius: 18px 18px 4px 18px;
+}
+.gb-mentor .gb-msg-typing {
+  padding: 14px 16px;
+}
+.gb-mentor .gb-msg-bar {
+  background: none;
+  border-top: 0;
+  padding: var(--space-2) var(--space-4) max(env(safe-area-inset-bottom, 0px), 12px);
+}
+.gb-msg-field {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 3px 3px 3px 16px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 25px;
+  background: var(--surface-2);
+  transition:
+    border-color var(--dur-fast),
+    box-shadow var(--dur-fast);
+}
+.gb-msg-field:focus-within {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px var(--brand-soft);
+}
+.gb-mentor .gb-msg-input,
+.gb-mentor .gb-msg-input:focus {
+  min-height: 44px;
+  padding: 11px 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  outline: none;
+  font-size: 1rem;
+  line-height: 1.375;
+}
+.gb-mentor .gb-msg-send {
+  box-shadow: none;
+}
+.gb-mentor .gb-msg-send:active {
+  transform: scale(0.94);
+  box-shadow: none;
+}
+.gb-mentor .gb-msg-send:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .gb-msg-field {
+    transition: none;
+  }
 }
