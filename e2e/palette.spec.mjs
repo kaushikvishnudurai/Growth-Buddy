@@ -4,7 +4,8 @@ import { test, expect, signInFast } from './fixtures.mjs';
 
 const SHOTS = 'docs/evidence/palette/';
 const shot = (page, name) => page.screenshot({ path: SHOTS + name + '.jpg', type: 'jpeg', quality: 70 });
-const palette = (page) => page.getByRole('dialog', { name: 'Search and commands' });
+// Not one still in its 180 ms exit: Ctrl+K right after a pick opens a new palette beside the fading one.
+const palette = (page) => page.locator('.gb-modal-overlay:not(.is-closing)').getByRole('dialog', { name: 'Search and commands' });
 const input = (page) => palette(page).getByRole('combobox');
 const API = process.env.GB_E2E_API || 'http://localhost:8590';
 const apiGet = (request, token, path) =>
@@ -122,7 +123,7 @@ test.describe('keyboard', () => {
     await input(page).fill('alerts');
     await expect(palette(page).getByRole('option').first()).toHaveText('Settings: Alerts');
     await page.keyboard.press('Enter');
-    await expect(page.getByRole('dialog').first()).toContainText('Notify me about');
+    await expect(page.getByRole('dialog').filter({ hasText: 'Notify me about' })).toBeVisible();
   });
 
   test('"g c" goes to Calendar and "?" lists the shortcuts', async ({ page, account }) => {

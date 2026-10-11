@@ -257,7 +257,8 @@ export function openPalette(app, view, text = '') {
     if (id) app.applyIntent({ type: 'open', screen: id }); // gated by screenEnabled there
     return;
   }
-  const open = document.querySelector('.gb-palette input');
+  // Not one still fading out (SHEET_EXIT_MS): Ctrl+K right after a pick selected the dying input.
+  const open = document.querySelector('.gb-modal-overlay:not(.is-closing) .gb-palette input');
   if (open) return open.select();
   const { sheet, close } = openOverlay({ label: 'Search and commands', className: 'gb-palette' });
   const listId = 'gb-palette-list-' + ++uid;
