@@ -20,8 +20,28 @@ const API_TARGET = process.env.API_PROXY_TARGET || 'http://localhost:8080';
 const BUILD = 96;
 const buildNumber = () => Number(process.env.GB_BUILD) || BUILD;
 
+/* Home's first render waits for the Outlook chunk (dashboard.js loadOutlook, with
+   wave 1), so the browser should fetch it beside the boot chunk instead of after
+   it: requested from app code, it raced Home's fonts and held the first Home
+   render ~0.8 s on a throttled phone. Vite only preloads static imports. */
+const preloadOutlook = {
+  name: 'gb-preload-outlook',
+  apply: 'build',
+  transformIndexHtml: {
+    order: 'post',
+    handler(html, { bundle }) {
+      const chunk = Object.values(bundle || {}).find(
+        (c) => c.type === 'chunk' && Object.keys(c.modules).some((id) => id.endsWith('/scripts/outlook.js'))
+      );
+      if (!chunk) return html;
+      return [{ tag: 'link', attrs: { rel: 'modulepreload', crossorigin: true, href: '/' + chunk.fileName }, injectTo: 'head' }];
+    },
+  },
+};
+
 export default defineConfig({
   plugins: [
+    preloadOutlook,
     VitePWA({
       registerType: 'autoUpdate',
       // Registered by app.js, which skips it in the Capacitor app.
