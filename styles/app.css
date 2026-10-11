@@ -14607,12 +14607,11 @@ button.gb-tone-chip:focus-visible {
 /* =====================================================================
    Health screen (scripts/health.js): source line + "Log a reading", today
    told as a sentence (display type, every number a mono button), the "Last
-   night" band (the night on an 18:00 -> 12:00 track, 13 earlier nights
-   fading under it), then the ledger: one row per tracked metric, one column
+   night" card (14 nights as columns against the usual window), then the ledger: one row per tracked metric, one column
    per day (14, or 7 when the card is under 560px: a container query), with
    today lit as a column through every row. Then the history sheet and the
    log form. Every number in Space Mono; a missing value is a muted dash. The
-   band's grow-in is the screen's only motion. Touch sizes: the
+   entrance below is the screen's only motion. Touch sizes: the
    `pointer: coarse` block at the end, which must stay last here.
    ===================================================================== */
 .gb-health {
@@ -14665,6 +14664,7 @@ button.gb-tone-chip:focus-visible {
 .gb-health-sleep {
   grid-column: 1 / -1;
   min-width: 0;
+  container-type: inline-size;
   padding: var(--space-4);
 }
 .gb-health-sleep-head {
@@ -14729,86 +14729,122 @@ button.gb-tone-chip:focus-visible {
   font-weight: 700;
   color: var(--fg1);
 }
-.gb-health-band {
+/* The nights as columns (LastNight): evening at the top, morning at the
+   bottom. The usual window is a soft band behind them; last night is the one
+   lit column. An hour axis on the left, the wake dates under the columns.
+   14 nights, or the last 7 when the card is under 560px. */
+.gb-sleep-chart {
+  --n: 14;
+  display: grid;
+  grid-template-columns: 3rem 1fr;
+  grid-template-rows: 180px auto;
+  column-gap: var(--space-2);
   margin-top: var(--space-4);
 }
-.gb-health-ticks {
+.gb-sleep-axis {
   position: relative;
-  height: 1.25em;
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
   color: var(--fg3);
 }
-.gb-health-ticks span {
+.gb-sleep-axis span {
   position: absolute;
-  left: calc(var(--i) * 100% / 6);
-  transform: translateX(-50%);
+  right: 0;
+  transform: translateY(-50%);
 }
-.gb-health-ticks span:first-child {
-  transform: none;
-}
-.gb-health-ticks span:last-child {
-  transform: translateX(-100%);
-}
-/* One gridline every 3 h, under the bars. */
-.gb-health-track,
-.gb-health-nights {
-  background-image: linear-gradient(to right, var(--border) 1px, transparent 1px);
-  background-size: calc(100% / 6) 100%;
-}
-.gb-health-track {
+.gb-sleep-plot {
   position: relative;
-  height: 16px;
-  margin-top: 4px;
-  border-radius: var(--radius-pill);
-  background-color: var(--surface-2);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
 }
-.gb-health-track.is-empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 32px;
+.gb-sleep-grid {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--border);
+}
+.gb-sleep-usual {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-block: 1px dashed var(--brand);
+  background: var(--brand-soft);
+}
+.gb-sleep-cols,
+.gb-sleep-days {
+  display: grid;
+  grid-template-columns: repeat(var(--n), 1fr);
+}
+.gb-sleep-cols {
+  position: absolute;
+  inset: 0;
+}
+.gb-sleep-col {
+  position: relative;
+}
+.gb-sleep-col b {
+  position: absolute;
+  left: 50%;
+  width: min(10px, 50%);
+  transform: translateX(-50%);
+  transform-origin: top center;
+  border-radius: var(--radius-pill);
+  background: var(--fg3);
+}
+.gb-sleep-col.is-last b {
+  width: min(16px, 72%);
+  background: var(--brand-fill);
+  box-shadow: 0 0 0 3px var(--surface-2);
+}
+.gb-sleep-none {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
   font-size: var(--text-xs);
   color: var(--fg3);
 }
-.gb-health-lastbar {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: var(--from);
-  width: var(--len);
-  border-radius: var(--radius-pill);
-  background: var(--brand-fill);
-  transform-origin: left center;
+.gb-sleep-days {
+  margin-top: 6px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--fg3);
+}
+.gb-sleep-days span {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.gb-sleep-days b {
+  font-weight: 700;
+  color: var(--fg2);
+}
+.gb-sleep-days .is-last,
+.gb-sleep-days .is-last b {
+  color: var(--brand-ink);
+}
+@container (max-width: 560px) {
+  .gb-sleep-chart {
+    --n: 7;
+    grid-template-columns: 2.75rem 1fr;
+  }
+  .gb-sleep-col:nth-child(-n + 7),
+  .gb-sleep-days span:nth-child(-n + 7) {
+    display: none;
+  }
 }
 @media (prefers-reduced-motion: no-preference) {
-  .gb-health-lastbar.is-growing {
-    animation: gb-health-grow 420ms var(--ease-out) both;
+  .gb-sleep-chart.is-entering .gb-sleep-col b {
+    animation: gb-sleep-fall 520ms var(--ease-out) calc(240ms + var(--i) * 32ms) both;
   }
 }
-@keyframes gb-health-grow {
+/* Each night falls from its bedtime to its wake time. */
+@keyframes gb-sleep-fall {
   from {
-    transform: scaleX(0);
+    transform: translateX(-50%) scaleY(0);
   }
-}
-.gb-health-nights {
-  display: grid;
-  gap: 3px;
-  margin-top: 6px;
-}
-.gb-health-night {
-  position: relative;
-  height: 4px;
-}
-.gb-health-night i {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: var(--from);
-  width: var(--len);
-  border-radius: var(--radius-pill);
-  background: var(--fg2);
-  opacity: calc(0.75 - var(--age) * 0.045);
 }
 
 /* Today, in a sentence: display type, every number a mono button. */
@@ -15171,7 +15207,7 @@ button.gb-tone-chip:focus-visible {
    while its numbers count up (JS), the Today column draws down, then the
    marks rise column by column, oldest day first, each row a beat behind the
    one above; lines draw left to right; today's mark lands last with a small
-   settle. The night band's earlier nights slide in under the growing bar.
+   settle. The sleep card's nights fall from bedtime to wake, oldest first.
    Transform, opacity and stroke only; nothing here under reduced motion. */
 @media (prefers-reduced-motion: no-preference) {
   .gb-health.is-entering .gb-health-hero {
@@ -15202,9 +15238,6 @@ button.gb-tone-chip:focus-visible {
     stroke-dasharray: 1;
     animation: gb-health-draw 760ms var(--ease-out) calc(320ms + var(--r) * 26ms) both;
   }
-  .gb-health-band.is-entering .gb-health-night i {
-    animation: gb-health-night 440ms var(--ease-out) calc(360ms + var(--age) * 36ms) both;
-  }
 }
 @keyframes gb-health-rise {
   from {
@@ -15234,12 +15267,6 @@ button.gb-tone-chip:focus-visible {
   }
   to {
     stroke-dashoffset: 0;
-  }
-}
-@keyframes gb-health-night {
-  from {
-    opacity: 0;
-    transform: translateX(-14px);
   }
 }
 

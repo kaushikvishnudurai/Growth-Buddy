@@ -34,8 +34,6 @@ import {
 } from './health-logic.js';
 
 const DASH = '—';
-const BAND = 1080; // 18:00 -> 12:00, minutes
-const TICKS = ['18', '21', '00', '03', '06', '09', '12'];
 const NIGHTS = 14;
 const RANGES = [7, 30, 90];
 
@@ -275,23 +273,40 @@ function countUp(root) {
   requestAnimationFrame(step);
 }
 
+/* The nights as columns: evening at the top, morning at the bottom, one column
+   per night (wake date), oldest left, last night lit. Behind them, your usual
+   window (average bedtime to average wake), so each night reads against it:
+   a bar that starts below the band was a late night, one that stops above it
+   an early start. The window is 20:00-10:00 and widens to fit an outlier. */
+const HOUR_TICKS = [180, 360, 540, 720, 900]; // 21, 00, 03, 06, 09 as band minutes
+
 function LastNight(p) {
   const list = nights(p.sleepByDate, p.today, NIGHTS); // oldest first
   const last = list[list.length - 1].night;
   const known = list.map((n) => n.night).filter(Boolean);
-  const avgMin = known.length ? mean(known.map((n) => ({ value: n.minutes }))) : null;
-  const avgBed = known.length ? mean(known.map((n) => ({ value: n.from }))) : null;
-  // A bedtime after noon (from > 1080) has no place on the band: clamp, width 0.
-  const pos = (n) => {
-    const from = Math.min(n.from, BAND);
-    return {
-      '--from': (from / BAND) * 100 + '%',
-      '--len': (Math.max(0, n.to - from) / BAND) * 100 + '%',
-    };
-  };
+  const prev = list.slice(0, -1).map((n) => n.night).filter(Boolean);
+  const avg = (key, xs) => (xs.length ? mean(xs.map((n) => ({ value: n[key] }))) : null);
+  const avgMin = avg('minutes', known);
+  const usual = known.length >= 3 ? { from: avg('from', known), to: avg('to', known) } : null;
+  const prevMin = avg('minutes', prev);
 
-  const grow = last && !grown;
-  if (last) grown = true;
+  const top = Math.min(120, ...known.map((n) => Math.floor(n.from / 60) * 60));
+  const end = Math.max(960, ...known.map((n) => Math.ceil(n.to / 60) * 60));
+  const y = (m) => ((Math.min(Math.max(m, top), end) - top) / (end - top)) * 100 + '%';
+  const span = (a, b) => ({ top: y(a), height: 'calc(' + y(b) + ' - ' + y(a) + ')' });
+
+  const grow = known.length > 0 && !grown;
+  if (known.length) grown = true;
+
+  // Last night against the nights before it: the card's one comparison.
+  let versus = null;
+  if (last && prevMin != null) {
+    const d = Math.round(last.minutes - prevMin);
+    versus =
+      Math.abs(d) < 5
+        ? 'right on your usual'
+        : durationLabel(Math.abs(d)) + (d < 0 ? ' less' : ' more') + ' than usual';
+  }
 
   const said =
     (last
@@ -301,50 +316,59 @@ function LastNight(p) {
         formatTime(last.wakeTime) +
         ', ' +
         durationLabel(last.minutes) +
+        (versus ? ', ' + versus : '') +
         '.'
       : 'No sleep logged for last night.') +
-    (avgMin != null
-      ? ' ' +
-        known.length +
-        '-night average ' +
-        durationLabel(avgMin) +
-        ', average bedtime ' +
-        bandClock(avgBed) +
-        '.'
+    (usual
+      ? ' Usual window ' + bandClock(usual.from) + ' to ' + bandClock(usual.to) + '.'
       : '');
 
-  const band = h(
+  const chart = h(
     'div',
-    { class: 'gb-health-band' + (grow ? ' is-entering' : ''), role: 'img', 'aria-label': said },
+    { class: 'gb-sleep-chart' + (grow ? ' is-entering' : ''), role: 'img', 'aria-label': said },
     h(
       'div',
-      { class: 'gb-health-ticks', 'aria-hidden': 'true' },
-      TICKS.map((t, i) => h('span', { style: { '--i': i } }, t))
+      { class: 'gb-sleep-axis', 'aria-hidden': 'true' },
+      HOUR_TICKS.filter((m) => m > top && m < end).map((m) =>
+        h('span', { style: { top: y(m) } }, bandClock(m))
+      )
     ),
     h(
       'div',
-      { class: 'gb-health-track' + (last ? '' : ' is-empty'), 'aria-hidden': 'true' },
-      last
-        ? h('div', { class: 'gb-health-lastbar' + (grow ? ' is-growing' : ''), style: pos(last) })
-        : h('span', { class: 'gb-health-track-empty' }, 'No sleep logged for last night')
-    ),
-    // No history at all: 13 empty rows would only draw a grid of nothing.
-    !known.length
-      ? null
-      : h(
-          'div',
-          { class: 'gb-health-nights', 'aria-hidden': 'true' },
-          list
-            .slice(0, -1)
-            .reverse() // newest nearest the big bar
-            .map((n, i) =>
-              h(
-                'div',
-                { class: 'gb-health-night', style: { '--age': i } },
-                n.night ? h('i', { style: pos(n.night) }) : null
-              )
-            )
+      { class: 'gb-sleep-plot', 'aria-hidden': 'true' },
+      HOUR_TICKS.filter((m) => m > top && m < end).map((m) =>
+        h('i', { class: 'gb-sleep-grid', style: { top: y(m) } })
+      ),
+      usual ? h('div', { class: 'gb-sleep-usual', style: span(usual.from, usual.to) }) : null,
+      h(
+        'div',
+        { class: 'gb-sleep-cols' },
+        list.map((n, i) =>
+          h(
+            'div',
+            {
+              class: 'gb-sleep-col' + (i === list.length - 1 ? ' is-last' : ''),
+              style: { '--i': i },
+            },
+            n.night ? h('b', { style: span(n.night.from, n.night.to) }) : null
+          )
         )
+      ),
+      known.length ? null : h('span', { class: 'gb-sleep-none' }, 'No nights logged yet')
+    ),
+    h('span', { class: 'gb-sleep-corner' }),
+    h(
+      'div',
+      { class: 'gb-sleep-days', 'aria-hidden': 'true' },
+      list.map((n, i) =>
+        h(
+          'span',
+          { class: i === list.length - 1 ? 'is-last' : '' },
+          fmtDate(n.day, { weekday: 'narrow' }),
+          h('b', null, String(Number(n.day.slice(8))))
+        )
+      )
+    )
   );
 
   const stat = (label, value) =>
@@ -368,32 +392,38 @@ function LastNight(p) {
           last ? 'pencil' : 'moon'
         )
       ),
-      !known.length
-        ? null
-        : h(
-            'div',
-            { class: 'gb-health-sleep-figs' },
-            h(
-              'div',
-              { class: 'gb-health-sleep-main' },
-              // The duration is the hero sentence's; the card leads with when.
-              h(
-                'span',
-                { class: 'gb-health-dur' + (last ? '' : ' is-empty') },
-                last ? formatTime(last.bedtime) + ' \u2013 ' + formatTime(last.wakeTime) : DASH
-              ),
-              last
-                ? h('span', { class: 'gb-health-span' }, durationLabel(last.minutes) + ' asleep')
-                : null
-            ),
-            h(
+      h(
+        'div',
+        { class: 'gb-health-sleep-figs' },
+        h(
+          'div',
+          { class: 'gb-health-sleep-main' },
+          h(
+            'span',
+            { class: 'gb-health-dur' + (last ? '' : ' is-empty') },
+            last ? formatTime(last.bedtime) + ' – ' + formatTime(last.wakeTime) : DASH
+          ),
+          h(
+            'span',
+            { class: 'gb-health-span' },
+            last
+              ? durationLabel(last.minutes) + ' asleep' + (versus ? ' · ' + versus : '')
+              : 'No sleep logged for last night'
+          )
+        ),
+        known.length
+          ? h(
               'dl',
               { class: 'gb-health-sstats' },
-              stat(NIGHTS + '-night average', avgMin == null ? null : durationLabel(avgMin)),
-              stat('Average bedtime', avgBed == null ? null : bandClock(avgBed))
+              stat(
+                'Usual window',
+                usual ? bandClock(usual.from) + ' – ' + bandClock(usual.to) : null
+              ),
+              stat(known.length + '-night average', durationLabel(avgMin))
             )
-          ),
-      band,
+          : null
+      ),
+      chart,
     ],
   });
 }
