@@ -4433,12 +4433,27 @@ function deleteHabit(id) {
     message: 'Habit deleted.',
     errorText: 'Could not delete that habit.',
     ...listSlot(() => state.habits, (l) => (state.habits = l), id),
-    commit: async () => {
-      await api('/api/habits/' + encodeURIComponent(id), { method: 'DELETE', keepalive: true });
-      if (!state.user) return;
-      refreshScoreLater();
-      reSyncDeviceAlarms();
-    },
+    commit: () => sendHabitDelete(id),
+  });
+}
+
+async function sendHabitDelete(id) {
+  await api('/api/habits/' + encodeURIComponent(id), { method: 'DELETE', keepalive: true });
+  if (!state.user) return;
+  refreshScoreLater();
+  reSyncDeviceAlarms();
+}
+
+/* Undo of something just made (a Buddy chip): it goes now, with no second Undo
+   toast for undoing the Undo. A failed send puts it back and says so. */
+function unmake(get, set, id, send) {
+  const slot = listSlot(get, set, id);
+  slot.remove();
+  render();
+  send().catch((err) => {
+    slot.restore();
+    render();
+    toastError(err, 'Could not undo that.');
   });
 }
 
@@ -6611,7 +6626,8 @@ function mentorApi() {
     // Buddy's one-tap actions, after the user confirmed the sheet. Each throws to
     // keep the sheet open with the reason.
     // A task or habit chip saves on the tap; the toast's Undo deletes what it made
-    // (found by id against the list before, so createTask/createHabit stay as they are).
+    // at once (unmake), found by id against the list before, so createTask/createHabit
+    // stay as they are.
     act: {
       task: async (title) => {
         const had = new Set(state.tasks.map((t) => t.id));
@@ -6620,7 +6636,7 @@ function mentorApi() {
         if (!made) return toastSuccess('Task added.');
         pushToast('Task added.', 'success', 6000, {
           label: 'Undo',
-          run: () => deleteTask(made.id).catch((err) => toastError(err, 'Could not undo that.')),
+          run: () => unmake(() => state.tasks, (l) => (state.tasks = l), made.id, () => sendTaskDelete(made.id)),
         });
       },
       habit: async ({ title, time }) => {
@@ -6637,7 +6653,7 @@ function mentorApi() {
         if (!made) return toastSuccess('Habit added.');
         pushToast('Habit added.', 'success', 6000, {
           label: 'Undo',
-          run: () => deleteHabit(made.id).catch((err) => toastError(err, 'Could not undo that.')),
+          run: () => unmake(() => state.habits, (l) => (state.habits = l), made.id, () => sendHabitDelete(made.id)),
         });
       },
       reminder: async ({ title, date, time, timeInput }) => {
