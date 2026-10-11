@@ -199,3 +199,28 @@ await cache.put(cacheName, response.clone());
 - **Tested**: All frontend and backend suites
 - **Status**: Ready for staging deployment
 - **Risk Level**: Low (all critical fixes applied)
+
+---
+
+## 2026-10-11 audit (feat/overhaul `docs/audit/security.md`), branch feat/ov-sec
+
+One line per finding; tests named in brackets.
+
+- **SEC-01** `TRUST_PROXY` now binds: `growthbuddy.trust-proxy: ${TRUST_PROXY:false}` in `application.yml`. Before, nothing mapped it, so behind Render or Caddy every client shared the proxy's IP bucket. [ClientIpTest]
+- **SEC-04** `ClientIp` (now a bean) reads `X-Forwarded-For` from the RIGHT: the entry `TRUST_PROXY_HOPS` (default 1) from the end, the one our proxy appended, not the client-written left end. HSTS's `X-Forwarded-Proto` goes through the same switch (`ClientIp.isHttps`). [ClientIpTest]
+- **SEC-02** A family invite copies only the target's name. DOB, gender, height, weight and diet are copied in `acceptInvite`. `toMemberResponse` blanks them on any `invited` + `inviteOnly` row made before the fix. [FamilyServiceTest: anInviteCopiesOnlyTheName, acceptingCopiesTheProfileIn, anOldInviteRowShowsNoProfile]
+- **SEC-03** Push subscribe accepts only `https` endpoints on port 443 at a known push service host (FCM, Mozilla, WNS, Apple). Rows that fail the check are dropped at send time. At most 10 subscriptions per user, oldest dropped. `unsubscribe` touches only the caller's own row; it used to delete any user's by endpoint. `@Valid` added, so the `@NotBlank`/`@Size` checks run now. [PushEndpointTest]
+- **SEC-05** The CSP has `report-uri /api/csp-report`, handled by the new `CspReportController` (anonymous, per-IP rate-limited, clipped, log-only). `connect-src` is `'self'` plus `CSP_CONNECT_SRC`, instead of `ws: wss:` to any host. Still Report-Only. The `<meta>` CSP for the Capacitor shell was NOT added: a meta CSP always enforces, and the shell calls a remote API origin. [CspTest]
+- **SEC-06** People search (`/api/users/search`, `/api/users/browse`, `/api/family/search`) shares a per-user budget of 60 per 5 minutes. Family search needs 2+ characters. LIKE wildcards are escaped (`escape '!'`). The email mask dropped the domain (`a•••e`). [PeopleSearchTest, FamilyServiceTest.aOneCharacterSearchAsksNothing]
+- **SEC-08** `ui_prefs` merges are capped at 200 keys and `feature_prefs` merges at 50 keys; both are capped at 32 KB serialized. Past either cap the merge is refused with a 400. [PeopleSearchTest.prefsWithinTheCapsSaveAndBeyondThemAreRefused]
+- **SEC-10** Quick-add habit names are clipped to 120 characters each, and the joined prompt line to 4 KB (`QuickAddService.habitLine`). [QuickAddServiceTest]
+- **SEC-11** Mentorship invites are capped at 10 per sender per day. [MentorshipInviteRulesTest.invitesPastTheDailyCapAreRefused]
+- **SEC-12** Family invites are capped at 20 per owner per day and 3 per owner + target pair. [FamilyServiceTest.invitesPastTheDailyCapAreRefused]
+- **SEC-13** Confirmed with a real request: `GET /api/auth/export;x=1` and `/api/auth/me;x=1` reach the same handler (200), so a key built from the raw URI gave each spelling its own bucket. `RateLimitInterceptor` now keys on the matched route (`BEST_MATCHING_PATTERN_ATTRIBUTE`). Re-run after the fix: eleven `export;x=N` spellings got `200 x9, 429 x2`, all counted in one bucket. [ClientIpTest.theBucketIsTheMatchedRouteNotTheRawUri]
+- **SEC-14** A Circle invite link asks "Join this circle?" before it joins.
+- **SEC-16** Caddy's access log skips `/api/money/bank/webhook` (`log_skip`), because the secret is in its query string.
+- **SEC-17** `BankFeedService.connect` refuses any consent URL that is not `https://`. [BankFeedTest.aNonHttpsConsentUrlIsRefused]
+- **SEC-18** Notes `SAFE_HREF` refuses protocol-relative `//host` and `/\host` links.
+- **SEC-19** The WhatsApp webhook handles each `messages[].id` once, through a 1-per-24h `RateLimiter` key, so no new table was needed. [WhatsAppDedupTest]
+- **SEC-20** The three anonymous ticket links are per-IP limited at 60 per 5 minutes.
+- Not done on this branch: SEC-07 (PWA branch), SEC-09 and SEC-15 (moved to feat/ov-sec-low).

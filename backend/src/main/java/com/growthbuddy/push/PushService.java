@@ -74,20 +74,63 @@ public class PushService {
         return publicKey;
     }
 
+    /*
+     * The push services browsers actually hand out endpoints on: Chrome / Edge on
+     * Android / Opera / Samsung (FCM), Firefox (Mozilla autopush), Edge on Windows
+     * (WNS), Safari (Apple). The endpoint is a URL the SERVER then POSTs to, and
+     * /api/push/test reports whether that POST got a 2xx, so an unchecked one was
+     * a reachability probe of any internal address.
+     * ponytail: a fixed list; a new browser's push service needs adding here.
+     */
+    private static final List<String> PUSH_HOSTS = List.of(
+            "fcm.googleapis.com", "android.googleapis.com", ".push.services.mozilla.com",
+            ".notify.windows.com", ".push.apple.com");
+
+    /** Devices per account; the oldest is dropped past it. */
+    static final int MAX_SUBSCRIPTIONS = 10;
+
+    /** https on the default port, to a known push service's host. Pure, for the tests. */
+    static boolean allowedEndpoint(String endpoint) {
+        if (endpoint == null || endpoint.length() > 2048) return false;
+        java.net.URI u;
+        try {
+            u = new java.net.URI(endpoint);
+        } catch (java.net.URISyntaxException e) {
+            return false;
+        }
+        String host = u.getHost();
+        if (!"https".equalsIgnoreCase(u.getScheme()) || host == null || u.getUserInfo() != null
+                || (u.getPort() != -1 && u.getPort() != 443)) {
+            return false;
+        }
+        String h = host.toLowerCase(java.util.Locale.ROOT);
+        return PUSH_HOSTS.stream().anyMatch(p -> p.startsWith(".") ? h.endsWith(p) : h.equals(p));
+    }
+
     /** Store (or refresh) a browser subscription for the user. Dedupes by endpoint. */
     @Transactional
     public void subscribe(UUID userId, String endpoint, String p256dh, String auth) {
+        if (!allowedEndpoint(endpoint)) {
+            throw com.growthbuddy.common.ApiException.badRequest("That isn't a push service this app can deliver to.");
+        }
         PushSubscription sub = repo.findByEndpoint(endpoint).orElseGet(PushSubscription::new);
         sub.setUserId(userId);
         sub.setEndpoint(endpoint);
         sub.setP256dh(p256dh);
         sub.setAuth(auth);
         repo.save(sub);
+        List<PushSubscription> mine = new java.util.ArrayList<>(repo.findByUserId(userId));
+        if (mine.size() > MAX_SUBSCRIPTIONS) {
+            mine.sort(java.util.Comparator.comparing(PushSubscription::getCreatedAt,
+                    java.util.Comparator.nullsFirst(java.util.Comparator.naturalOrder())));
+            repo.deleteAll(mine.subList(0, mine.size() - MAX_SUBSCRIPTIONS));
+        }
     }
 
+    /** Only the caller's own: any signed-in user could delete anyone's by endpoint. */
     @Transactional
-    public void unsubscribe(String endpoint) {
-        repo.findByEndpoint(endpoint).ifPresent(repo::delete);
+    public void unsubscribe(UUID userId, String endpoint) {
+        repo.findByEndpoint(endpoint).filter(s -> userId.equals(s.getUserId())).ifPresent(repo::delete);
     }
 
     /**
@@ -147,6 +190,10 @@ public class PushService {
         String payload = json.append("}").toString();
         int sent = 0;
         for (PushSubscription s : subs) {
+            if (!allowedEndpoint(s.getEndpoint())) {
+                repo.delete(s); // stored before endpoints were checked
+                continue;
+            }
             try {
                 Subscription sub = new Subscription(s.getEndpoint(), new Subscription.Keys(s.getP256dh(), s.getAuth()));
                 var response = pushService.send(new Notification(sub, payload));

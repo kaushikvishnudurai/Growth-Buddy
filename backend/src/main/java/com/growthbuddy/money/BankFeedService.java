@@ -127,7 +127,9 @@ public class BankFeedService {
         LocalDate today = clock.today(userId);
         LocalDate from = today.minusDays(HISTORY_DAYS);
         BankFeedClient.Consent c = setu.createConsent(mobile, from, today.plusMonths(12));
-        if (c.id() == null || c.id().isBlank() || c.url() == null || c.url().isBlank()) {
+        // https only: the app opens this URL as is, so a javascript: or data: one
+        // from a misbehaving upstream would run in the app's own window.
+        if (c.id() == null || c.id().isBlank() || c.url() == null || !c.url().startsWith("https://")) {
             throw new ApiException(org.springframework.http.HttpStatus.BAD_GATEWAY, "The bank connection didn't start. Try again.");
         }
         Timestamp now = Timestamp.from(Instant.now());

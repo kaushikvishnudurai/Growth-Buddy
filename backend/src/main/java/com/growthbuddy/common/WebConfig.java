@@ -80,7 +80,13 @@ public class WebConfig implements WebMvcConfigurer {
                     // every table this account owns, and crash reports need no session.
                     "/api/auth/export",
                     "/api/client-errors",
-                    "/api/client-vitals"
+                    "/api/client-vitals",
+                    "/api/csp-report",
+                    // Anonymous, HMAC-ticketed buttons on a notification: a looser
+                    // flood limit (RateLimitInterceptor.LOOSE).
+                    "/api/reminders/snooze-link",
+                    "/api/reminders/done-link",
+                    "/api/habits/done-link"
                 );
         // Per-user cap on the pricey OpenAI-backed endpoints. EVERY path that can
         // reach OpenAIClient belongs here; the four vision ones (photo-estimate,

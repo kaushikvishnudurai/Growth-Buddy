@@ -127,4 +127,22 @@ class BankFeedTest {
         assertThrows(ApiException.class, () -> feed.connect(UUID.randomUUID(), "12345"));
         org.mockito.Mockito.verify(setu, org.mockito.Mockito.never()).createConsent(any(), any(), any());
     }
+
+    /** SEC-17: the app opens the consent URL as is, so only https comes back. */
+    @Test
+    void aNonHttpsConsentUrlIsRefused() {
+        BankFeedClient setu = mock(BankFeedClient.class);
+        when(setu.isConfigured()).thenReturn(true);
+        when(setu.createConsent(any(), any(), any()))
+                .thenReturn(new BankFeedClient.Consent("c1", "javascript:alert(1)", "PENDING", java.util.List.of()));
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        when(jdbc.queryForObject(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.eq(Integer.class),
+                org.mockito.ArgumentMatchers.<Object>any())).thenReturn(0);
+        UserClock clock = mock(UserClock.class);
+        when(clock.today(any())).thenReturn(LocalDate.of(2026, 10, 11));
+        var feed = new BankFeedService(setu, mock(MoneyLedger.class), jdbc, clock, JSON);
+        assertThrows(ApiException.class, () -> feed.connect(UUID.randomUUID(), "9876543210"));
+        org.mockito.Mockito.verify(jdbc, org.mockito.Mockito.never()).update(org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.<Object[]>any());
+    }
 }

@@ -1,6 +1,7 @@
 package com.growthbuddy.mentorship;
 
 import com.growthbuddy.common.ApiException;
+import com.growthbuddy.common.RateLimiter;
 import com.growthbuddy.mentorship.MentorshipRequest.Direction;
 import com.growthbuddy.mentorship.MentorshipRequest.Status;
 import com.growthbuddy.notification.NotificationKind;
@@ -25,13 +26,21 @@ public class MentorshipService {
     private final MentorshipRequestRepository requests;
     private final UserRepository users;
     private final NotificationService notifications;
+    private final RateLimiter limiter;
+
+    /* Each invite is a bell card, a socket frame and a push with sender-chosen
+       text; create / revoke / create used to repeat that against anyone. */
+    static final int INVITES_PER_DAY = 10;
+    private static final long DAY_MS = 24 * 60 * 60_000L;
 
     public MentorshipService(MentorshipRequestRepository requests,
                              UserRepository users,
-                             NotificationService notifications) {
+                             NotificationService notifications,
+                             RateLimiter limiter) {
         this.requests = requests;
         this.users = users;
         this.notifications = notifications;
+        this.limiter = limiter;
     }
 
     public record RequestDto(
@@ -61,6 +70,10 @@ public class MentorshipService {
 
         checkCanInvite(requests.findAllBetween(currentUserId, otherUserId),
                 currentUserId, direction, Instant.now());
+        if (!limiter.allow("mentorship-invite:" + currentUserId, INVITES_PER_DAY, DAY_MS)) {
+            throw new ApiException(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS,
+                    "That's a lot of mentorship invites for one day. Try again tomorrow.");
+        }
 
         MentorshipRequest r = new MentorshipRequest();
         r.setFromUserId(currentUserId);

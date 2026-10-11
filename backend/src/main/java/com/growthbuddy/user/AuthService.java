@@ -931,6 +931,27 @@ public class AuthService {
         return AuthUserResponse.from(user);
     }
 
+    /* Caps on the two merged JSON blobs. Unbounded, one account could grow its row
+       toward TiDB's 6 MB entry limit, and every scheduler tick reads ui_prefs for
+       every user. Real blobs are well under 1 KB; the caps are far above that. */
+    static final int MAX_UI_PREF_KEYS = 200;
+    static final int MAX_FEATURE_KEYS = 50;
+    static final int MAX_PREFS_BYTES = 32 * 1024;
+    private static final ObjectMapper PREFS_JSON = new ObjectMapper();
+
+    /** 400 when a merged prefs map has too many keys or serializes past MAX_PREFS_BYTES. */
+    static void requireBounded(java.util.Map<String, ?> merged, int maxKeys, String what) {
+        int bytes;
+        try {
+            bytes = PREFS_JSON.writeValueAsBytes(merged).length;
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw ApiException.badRequest(what + " preferences could not be saved.");
+        }
+        if (merged.size() > maxKeys || bytes > MAX_PREFS_BYTES) {
+            throw ApiException.badRequest(what + " preferences are too large to save.");
+        }
+    }
+
     /** Merge per-feature on/off toggles into the user's preferences. */
     @Transactional
     public AuthUserResponse updateFeatures(UUID userId, java.util.Map<String, Boolean> features) {
@@ -944,6 +965,7 @@ public class AuthService {
                 if (k != null && v != null) prefs.put(k, v);
             });
         }
+        requireBounded(prefs, MAX_FEATURE_KEYS, "Feature");
         user.setFeaturePrefs(prefs);
         users.save(user);
         return AuthUserResponse.from(user);
@@ -962,6 +984,7 @@ public class AuthService {
                 if (k != null) merged.put(k, v);
             });
         }
+        requireBounded(merged, MAX_UI_PREF_KEYS, "UI");
         user.setUiPrefs(merged);
         users.save(user);
         return AuthUserResponse.from(user);

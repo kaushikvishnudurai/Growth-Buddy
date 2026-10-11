@@ -14,9 +14,9 @@ pantry, shopping). Docs name symbols — `grep -n` them.
 | `updateMember` / `updateProfile` | owner, or the mapped member themselves (`requireManageOrSelf`) |
 | `removeMember` | owner only; tells a linked member |
 | `transferOwnership` | the only way an owner can then leave |
-| `searchUsers(userId, q)` | name or exact id, masked email |
-| `linkMember(userId, req)` | sends an invite |
-| `listInvites` / `acceptInvite` / `declineInvite` | accept locks the user's rows; a solo owner's household folds in (`foldSoloFamilyInto`) |
+| `searchUsers(userId, q)` | name or exact id, 2+ chars, masked email with no domain (`UserRepository.maskEmail`), per-user throttle shared with Circle's search (`UserRepository.throttleSearch`) |
+| `linkMember(userId, req)` | sends an invite. **A new invite row carries only the name**: the target's DOB, gender, height, weight and diet are copied in `acceptInvite`, never before (they used to be visible to the inviter's whole family, and in its meal-plan prompts, with no consent). Capped per owner (`INVITES_PER_DAY`) and per owner + target pair (`INVITES_PER_PAIR_PER_DAY`), 429 past it |
+| `listInvites` / `acceptInvite` / `declineInvite` | accept locks the user's rows, copies the user's profile onto an `inviteOnly` row, then a solo owner's household folds in (`foldSoloFamilyInto`, whose food profile wins). `toMemberResponse` blanks every profile field of an `invited` + `inviteOnly` row, for rows made before the fix |
 | `leaveFamily(userId)` | |
 
 ### Planning
