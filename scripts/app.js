@@ -17,6 +17,7 @@ import {
   CrashCard,
   openOverlay,
   closeOverlays,
+  trackOverlay,
   openModal as sharedModal,
   fieldRefusal,
   shakeRefusal,
@@ -118,6 +119,7 @@ import {
   pushSupported,
   pushTestLocal,
   syncDeviceAlarms,
+  cancelAllAlarms,
   usualDrinkHours,
   WATER_DEFAULTS,
   WATER_ACTION_ML,
@@ -139,7 +141,6 @@ import {
   readHealthForSync,
   healthAvailable,
   requestHealthAccess,
-  cancelPendingLocalNotifications,
   onLocalNotificationAction,
 } from './native.js';
 import { registerToast } from './toast.js';
@@ -1933,6 +1934,15 @@ function clearSession() {
   // The Notes list's offline copy (notes-core.js offlineKey) is that account's
   // notes in plain text on this device: it leaves with the session.
   CacheStorage.removeWhere((k) => k.startsWith('gb.notesOffline.')).catch(() => {});
+  // The Workbox NetworkFirst cache holds this account's API GETs (export, notes,
+  // money, health) and would serve them offline to whoever is next. Here, not in
+  // logout(): a 401 (signed out from another device, password changed) ends the
+  // session too, and that is the lost-phone case.
+  try {
+    if (typeof caches !== 'undefined') caches.delete('gb-api-get').catch(() => {});
+  } catch (_) {
+    /* no CacheStorage (insecure context) */
+  }
 }
 
 /* The ONLY way a signed-in user reaches `state` — sign-in, OTP verify, password
@@ -2319,7 +2329,8 @@ async function api(path, options) {
       try {
         return await apiFetch(path, opts);
       } finally {
-        _inflightGets.delete(path);
+        // Not a newer account's GET for the same path (resetUserState clears the map).
+        if (_inflightGets.get(path) === p) _inflightGets.delete(path);
       }
     })();
     _inflightGets.set(path, p);
@@ -2508,6 +2519,19 @@ function resetUserState() {
   state.notifOpen = false;
   state.moreOpen = false;
   popoverCleanup?.();
+  syncPanelHistory();
+  // A dialog open when the session ended (Settings' Sign out, a 401 under any
+  // sheet) stayed over the sign-in screen showing the old account. close(), not
+  // dismiss: the note editor's dismiss saves through api(), which has no token
+  // now (clearSession already dropped its draft).
+  closeOverlays({ discard: true });
+  // A GET still out for this account must not answer the next one's identical GET.
+  _inflightGets.clear();
+  // Unsent glasses live in module memory too: withPendingWater laid the last
+  // account's over the next one's day, and into its daily snapshot.
+  pendingWater.clear();
+  lastWaterTap = { amount: 0, at: 0 };
+  waterRefetch = false;
   state.screen = 'home';
 }
 
@@ -2784,6 +2808,9 @@ async function loadData() {
   // online used to swap the whole screen for the quote, then for the crash card
   // if any one of the five calls failed.
   const userKey = state.user.id || state.user.email;
+  // Signed out (or someone else signed in) while a wave was out: its answers are
+  // the old account's and must not land in state or under a .guest cache key.
+  const gone = () => !state.user || (state.user.id || state.user.email) !== userKey;
   const refresh = loadedFor === userKey && !state.error;
   if (!refresh) {
     // Refreshing on /family used to run quote card -> family skeleton -> family:
@@ -2808,6 +2835,7 @@ async function loadData() {
       api('/api/water'),
       api('/api/reminders'),
     ]);
+    if (gone()) return;
     state.tasks = tasksRaw.map(mapTask);
     state.habits = habits;
     reconcileStreakFreeze();
@@ -2820,6 +2848,7 @@ async function loadData() {
     // first paint doesn't wait on a replay; the flush refetches what it touched.
     // The queue itself is read only once CacheStorage has hydrated it.
     await CacheStorage.ready();
+    if (gone()) return;
     overlayOutbox();
     flushOutbox();
     reSyncDeviceAlarms();
@@ -2829,6 +2858,7 @@ async function loadData() {
     syncHealthFromPhone(); // ends with autoTickHealthHabits
     autoTickHealthHabits();
   } catch (err) {
+    if (gone()) return;
     if (refresh) {
       toastError(err, 'Could not refresh. Showing your last data.');
       return;
@@ -2888,6 +2918,8 @@ async function loadSecondaryData() {
   // and re-rendering would rebuild screens that own their subtree (family,
   // money, mentor, circle) and throw away their local view state.
   const bootScreen = state.screen;
+  if (!state.user) return;
+  const who = state.user.id || state.user.email;
   connectWebSocket();
   // A failed load used to look exactly like having no data: every one of these
   // caught to null, and the only trace was a console line nobody sees. Name what
@@ -2909,6 +2941,8 @@ async function loadSecondaryData() {
         api('/api/food/photo-history').catch(soft('food photos')),
         api('/api/weekly-review').catch(soft('weekly reviews')),
       ]);
+    // Signed out while these were out: see loadData's gone().
+    if (!state.user || (state.user.id || state.user.email) !== who) return;
     if (missed.length) {
       pushToast("Couldn't load your " + new Intl.ListFormat('en').format(missed) + '.', 'error', 8000, {
         label: 'Retry',
@@ -7582,18 +7616,10 @@ function openDeleteAccount() {
       });
       // Scheduled, not gone (AuthService.deleteAccount): every session was revoked
       // and the purge runs in 7 days; signing in before then offers to cancel.
-      // Drop the local session and return to the login screen. The device's own
-      // alarms and the offline API cache are ours to clear (see logout()).
-      cancelPendingLocalNotifications();
-      try {
-        if (typeof caches !== 'undefined') await caches.delete('gb-api-get');
-      } catch (_) {
-        /* no CacheStorage */
-      }
-      clearSession();
-      state.user = null;
+      // The rest is logout's device teardown: push, alarms, the account's caches.
       close();
-      location.reload();
+      logout({ revoked: true });
+      pushToast('Your account will be deleted in 7 days. Sign in before then to keep it.', 'info', 8000);
     } catch (err) {
       confirmBtn.disabled = false;
       confirmBtn.textContent = 'Delete my account';
@@ -10925,6 +10951,7 @@ function runInsightAction(action) {
    toast. Call it wherever any of the four inputs changes; the queue is
    rebuilt whole, so a stale one rings for a reminder already deleted. */
 function reSyncDeviceAlarms() {
+  if (!state.user) return; // signed out: logout's cancelAllAlarms is the last word
   syncDeviceAlarms({
     reminders: state.reminders,
     water: Object.assign(waterReminderPrefs(), { usualHours: state.waterUsualHours }),
@@ -14425,6 +14452,38 @@ function syncHeaderExpanded() {
   const head = document.querySelector('.gb-head');
   head?.querySelector('.gb-bell')?.setAttribute('aria-expanded', String(!!state.notifOpen));
   head?.querySelector('.gb-avatar')?.setAttribute('aria-expanded', String(!!state.profileOpen));
+  syncPanelHistory();
+}
+
+/* The bell, account and More panels in the back stack (gb-kit trackOverlay):
+   Android back and history.back() close an open panel instead of leaving the
+   screen, or at Home minimising the app. One entry for the three, since one
+   replaces another in a tap. Driven from syncHeaderExpanded, which every paint
+   of the flags goes through. */
+let panelUntrack = null;
+function syncPanelHistory() {
+  const open = state.notifOpen || state.profileOpen || state.moreOpen;
+  if (open && !panelUntrack) {
+    panelUntrack = trackOverlay({
+      close: () => {
+        state.notifOpen = state.profileOpen = state.moreOpen = false;
+        if (state.user) repaintOverlays();
+        else syncPanelHistory();
+      },
+    });
+  } else if (!open && panelUntrack) {
+    const untrack = panelUntrack;
+    panelUntrack = null;
+    untrack();
+  }
+}
+
+/* Both header panels into their slots. render() builds the header with them
+   empty; without this a render while one was open (a data load, the poll) left
+   the bell "expanded" over nothing. */
+function fillHeaderSlots() {
+  document.getElementById('gb-notif-slot')?.replaceChildren(...[notificationDropdown()].filter(Boolean));
+  document.getElementById('gb-profile-slot')?.replaceChildren(...[profileDropdown()].filter(Boolean));
 }
 
 function repaintOverlays() {
@@ -14435,8 +14494,7 @@ function repaintOverlays() {
     render();
     return;
   }
-  notif.replaceChildren(...[notificationDropdown()].filter(Boolean));
-  profile.replaceChildren(...[profileDropdown()].filter(Boolean));
+  fillHeaderSlots();
   syncHeaderExpanded();
   const wasInMore = !!document.activeElement?.closest('.gb-more-sheet');
   nav.replaceWith(bottomNav());
@@ -15444,9 +15502,46 @@ function loginCard() {
   }
 }
 
-function logout() {
+/* Sign-outs whose revoke never reached the server (offline): their tokens,
+   kept apart from any session, sent on the next 'online' and at boot. */
+const REVOKE_KEY = 'gb.revoke.pending';
+function queueRevoke(token) {
+  try {
+    const q = JSON.parse(CacheStorage.getItem(REVOKE_KEY) || '[]');
+    if (!q.includes(token)) CacheStorage.setItem(REVOKE_KEY, JSON.stringify([...q, token].slice(-5)));
+  } catch (_) {
+    /* nothing to keep it in */
+  }
+}
+async function flushRevokes() {
+  await CacheStorage.ready();
+  let q;
+  try {
+    q = JSON.parse(CacheStorage.getItem(REVOKE_KEY) || '[]');
+  } catch (_) {
+    return;
+  }
+  for (const token of q) {
+    try {
+      // Any answer settles it: 2xx revoked it, a 401 means it already was.
+      await fetch(API_BASE + '/api/auth/logout', { method: 'POST', headers: { Authorization: 'Bearer ' + token } });
+    } catch (_) {
+      return; // still offline: the rest wait too
+    }
+    const left = JSON.parse(CacheStorage.getItem(REVOKE_KEY) || '[]').filter((t) => t !== token);
+    if (left.length) CacheStorage.setItem(REVOKE_KEY, JSON.stringify(left));
+    else CacheStorage.removeItem(REVOKE_KEY);
+  }
+}
+
+/* `revoked`: the server already ended the session (account deletion revokes
+   every one), so only this device's half runs: no unsubscribe or logout call to
+   401. The browser's own push subscription still goes, and the server prunes
+   the dead endpoint on its next send (PushService, 404/410). */
+function logout({ revoked = false } = {}) {
   // Fire-and-forget; the token is invalidated locally either way.
-  const token = loadToken();
+  const token = revoked ? null : loadToken();
+  if (revoked) disablePush(async () => {}).catch(() => {});
   if (token) {
     // Unsubscribe this browser's Web Push endpoint BEFORE the token is revoked,
     // or the server keeps pushing this account's reminders to a device that is
@@ -15462,20 +15557,15 @@ function logout() {
     disablePush(withToken)
       .catch(() => {})
       .then(() => withToken('/api/auth/logout', { method: 'POST' }))
-      .catch(() => {
-        /* silent */
-      });
+      // No connection: the token is still live on the server. Keep it (alone,
+      // not as a session) and revoke it on the next 'online' or boot.
+      .catch(() => queueRevoke(token));
   }
   // On-device alarms (native only; a no-op on the web) were scheduled for this
   // account's reminders, water and habits — they must not ring for the next one.
-  cancelPendingLocalNotifications();
-  // The Workbox NetworkFirst cache holds this account's API GET responses and
-  // would serve them, offline, to whoever signs in next on this browser.
-  try {
-    if (typeof caches !== 'undefined') caches.delete('gb-api-get').catch(() => {});
-  } catch (_) {
-    /* no CacheStorage (insecure context) */
-  }
+  // Through push.js's chain, so a sync still running can't re-arm them after.
+  // (The Workbox gb-api-get cache goes in clearSession.)
+  cancelAllAlarms().catch(() => {});
   // A running focus timer would finish later and post under the next account.
   import('./timer.js').then((m) => m.resetFocusSession()).catch(() => {});
   disconnectWebSocket();
@@ -15618,6 +15708,7 @@ function handleOnline() {
     dropStaleToastTimers();
   }
   toastSuccess('Back online — syncing your latest data.');
+  flushRevokes();
   if (state.user) {
     // The outbox goes after wave 1 (loadData flushes it there too; flush is
     // single-flight), so its refetch can't be answered by wave 1's older GET.
@@ -15757,6 +15848,7 @@ function render() {
   );
 
   root.replaceChildren(app);
+  fillHeaderSlots(); // before refreshIcons and refocus: the panels hold icons and may hold focus
   refreshIcons();
   restoreScrollPosition(scrollSnapshot);
   lastScrollSnapshot = scrollSnapshot;
@@ -15889,6 +15981,7 @@ if (CacheStorage.init) {
 }
 initA11y();
 initPullToRefresh();
+if (navigator.onLine) flushRevokes(); // a sign-out made offline last time
 /* Coming back to the app after it was backgrounded. The socket may have been
    suspended without ever firing a disconnect, so `onConnect` never runs and the
    bell is quietly stale. Ask the server directly. */

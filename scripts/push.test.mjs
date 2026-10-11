@@ -19,6 +19,7 @@ import {
   notificationActionTypes,
   habitTickable,
   ACTION_TYPES,
+  serialAlarms,
 } from './push.js';
 import {
   SILENT_CHANNEL,
@@ -534,3 +535,24 @@ console.log('push.test.mjs: all assertions passed');
   assert.equal(types[0].actions[1].title, 'Snooze 10 min');
 }
 console.log('push.test.mjs: notification buttons passed');
+
+// Alarm syncs and the sign-out cancel run one at a time, in call order, and a
+// failed one doesn't stall the next (CRS-4).
+{
+  const log = [];
+  const step = (name, ms, fail) => () =>
+    new Promise((res, rej) =>
+      setTimeout(() => {
+        log.push(name);
+        fail ? rej(new Error(name)) : res(name);
+      }, ms)
+    );
+  const a = serialAlarms(step('sync A', 30));
+  const b = serialAlarms(step('sync B', 1, true));
+  const c = serialAlarms(step('cancel', 1));
+  assert.equal(await a, 'sync A');
+  await assert.rejects(b);
+  assert.equal(await c, 'cancel');
+  assert.deepEqual(log, ['sync A', 'sync B', 'cancel']);
+}
+console.log('push.test.mjs: alarm serialization passed');
