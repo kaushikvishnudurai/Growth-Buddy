@@ -271,61 +271,64 @@ function GoalProgressBar({ goal, progress, onUpdateProgress, linkedCount = 0 }) 
       ),
       leftEl
     ),
-    h(
-      'div',
-      { class: 'gb-goal-progress-actions' },
-      // One day a day. "Log a day" took any number of taps, so a double tap (or
-      // a second visit) counted the same day twice. `lastLoggedOn` lives in the
-      // progress blob with the count; today's log can be taken back.
-      auto
-        ? null
-        : loggedToday
-        ? h(
+    // A finished goal shows where it ended; Reopen brings the controls back.
+    goal.completed
+      ? null
+      : h(
+          'div',
+          { class: 'gb-goal-progress-actions' },
+          // One day a day. "Log a day" took any number of taps, so a double tap (or
+          // a second visit) counted the same day twice. `lastLoggedOn` lives in the
+          // progress blob with the count; today's log can be taken back.
+          auto
+            ? null
+            : loggedToday
+              ? h(
+                  'button',
+                  {
+                    type: 'button',
+                    class: 'gb-goal-day-btn is-logged',
+                    'aria-label': 'Logged today. Undo',
+                    onclick: () =>
+                      onUpdateProgress(goal.id, {
+                        durationDays: dur,
+                        daysFollowed: Math.max(0, followed - 1),
+                        lastLoggedOn: progress.prevLoggedOn || null,
+                        prevLoggedOn: null,
+                      }),
+                  },
+                  Icon('undo-2', { size: 15, sw: 2.4 }),
+                  'Logged today · Undo'
+                )
+              : !isDone
+                ? h(
+                    'button',
+                    {
+                      type: 'button',
+                      class: 'gb-goal-day-btn',
+                      onclick: () =>
+                        onUpdateProgress(goal.id, {
+                          durationDays: dur,
+                          daysFollowed: Math.min(dur, followed + 1),
+                          lastLoggedOn: today,
+                          prevLoggedOn: progress.lastLoggedOn || null,
+                        }),
+                    },
+                    Icon('calendar-check', { size: 15, sw: 2.4 }),
+                    'Log a day'
+                  )
+                : null,
+          h(
             'button',
             {
               type: 'button',
-              class: 'gb-goal-day-btn is-logged',
-              'aria-label': 'Logged today. Undo',
-              onclick: () =>
-                onUpdateProgress(goal.id, {
-                  durationDays: dur,
-                  daysFollowed: Math.max(0, followed - 1),
-                  lastLoggedOn: progress.prevLoggedOn || null,
-                  prevLoggedOn: null,
-                }),
+              class: 'gb-icon-btn',
+              'aria-label': 'Edit day tracker',
+              onclick: () => openEditProgress(goal, progress, onUpdateProgress, linkedCount),
             },
-            Icon('undo-2', { size: 15, sw: 2.4 }),
-            'Logged today · Undo'
+            Icon('pencil', { size: 15, sw: 2.4 })
           )
-        : !isDone
-          ? h(
-              'button',
-              {
-                type: 'button',
-                class: 'gb-goal-day-btn',
-                onclick: () =>
-                  onUpdateProgress(goal.id, {
-                    durationDays: dur,
-                    daysFollowed: Math.min(dur, followed + 1),
-                    lastLoggedOn: today,
-                    prevLoggedOn: progress.lastLoggedOn || null,
-                  }),
-              },
-              Icon('calendar-check', { size: 15, sw: 2.4 }),
-              'Log a day'
-            )
-          : null,
-      h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-icon-btn',
-          'aria-label': 'Edit day tracker',
-          onclick: () => openEditProgress(goal, progress, onUpdateProgress, linkedCount),
-        },
-        Icon('pencil', { size: 15, sw: 2.4 })
-      )
-    )
+        )
   );
 }
 
@@ -355,6 +358,9 @@ const DUE_LABEL = { overdue: 'Overdue', today: 'Due today', soon: 'Due', later: 
 
 function GoalMilestones({ goal, progress, onUpdateProgress }) {
   const { ms, done, total, pct } = milestoneStats(progress);
+  // A finished goal: the trail as it ended, no adding or editing (Reopen).
+  const frozen = !!goal.completed;
+  if (frozen && !total) return null;
   // "Count finished tasks toward progress" on: the bar is milestones and
   // finished linked tasks together (goal-tasks.js combinedGoalProgress).
   const work = progress && progress.work && progress.work.withTasks ? progress.work : null;
@@ -489,7 +495,7 @@ function GoalMilestones({ goal, progress, onUpdateProgress }) {
   }
 
   // The first open milestone is where the path stands now.
-  const nextId = (ms.find((m) => !m.done) || {}).id;
+  const nextId = frozen ? null : (ms.find((m) => !m.done) || {}).id;
 
   function viewRow(x) {
     const index = ms.findIndex((m) => m.id === x.id);
@@ -509,6 +515,7 @@ function GoalMilestones({ goal, progress, onUpdateProgress }) {
           role: 'checkbox',
           'aria-checked': x.done ? 'true' : 'false',
           'aria-label': (x.done ? 'Mark incomplete: ' : 'Mark complete: ') + x.title,
+          disabled: frozen,
           onclick: () => toggle(x.id),
         },
         // An open stop shows its place in the order; the label says the rest.
@@ -530,22 +537,24 @@ function GoalMilestones({ goal, progress, onUpdateProgress }) {
             )
           : null
       ),
-      h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-icon-btn gb-goal-ms-del',
-          'aria-label': 'Edit milestone: ' + x.title,
-          'data-ms-open': keyOf(x),
-          // Opening a row changes nothing stored: swap it in place, no save.
-          onclick: () => {
-            editingMs = keyOf(x);
-            node.replaceWith(editRow(x, index));
-            focusMs('[data-ms-edit="' + keyOf(x) + '"]');
-          },
-        },
-        Icon('pencil', { size: 13, sw: 2.4 })
-      )
+      frozen
+        ? null
+        : h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-icon-btn gb-goal-ms-del',
+              'aria-label': 'Edit milestone: ' + x.title,
+              'data-ms-open': keyOf(x),
+              // Opening a row changes nothing stored: swap it in place, no save.
+              onclick: () => {
+                editingMs = keyOf(x);
+                node.replaceWith(editRow(x, index));
+                focusMs('[data-ms-edit="' + keyOf(x) + '"]');
+              },
+            },
+            Icon('pencil', { size: 13, sw: 2.4 })
+          )
     );
     return node;
   }
@@ -560,7 +569,11 @@ function GoalMilestones({ goal, progress, onUpdateProgress }) {
       { class: 'gb-goal-ms-header' },
       h('span', { class: 'gb-goal-ms-label' }, work ? 'Milestones + tasks' : 'Milestones'),
       work
-        ? h('span', { class: 'gb-goal-ms-pct' }, work.done + '/' + work.total + ' · ' + work.pct + '%')
+        ? h(
+            'span',
+            { class: 'gb-goal-ms-pct' },
+            work.done + '/' + work.total + ' · ' + work.pct + '%'
+          )
         : total
           ? h('span', { class: 'gb-goal-ms-pct' }, done + '/' + total + ' · ' + pct + '%')
           : null
@@ -580,16 +593,23 @@ function GoalMilestones({ goal, progress, onUpdateProgress }) {
     rows.length ? h('div', { class: 'gb-goal-ms-list gb-goal-trail' }, rows) : null,
     // The + sits inside the field: a separate "+ Add" pill beside it squeezed
     // the input to a few characters on a card this narrow.
-    h(
-      'div',
-      { class: 'gb-affix gb-goal-ms-add' },
-      addInput,
-      h(
-        'button',
-        { type: 'button', class: 'gb-goal-ms-addbtn', 'aria-label': 'Add milestone', onclick: add },
-        Icon('plus', { size: 16, sw: 2.6 })
-      )
-    )
+    frozen
+      ? null
+      : h(
+          'div',
+          { class: 'gb-affix gb-goal-ms-add' },
+          addInput,
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-goal-ms-addbtn',
+              'aria-label': 'Add milestone',
+              onclick: add,
+            },
+            Icon('plus', { size: 16, sw: 2.6 })
+          )
+        )
   );
 }
 
@@ -646,7 +666,7 @@ function ActionRow(goal, action, onEditAction, onDeleteAction) {
    finished tasks toward progress" switch (`countTasks` in the progress blob,
    read by goal-tasks.js combinedGoalProgress). */
 function GoalTasks({ goal, progress, tasks, onUpdateProgress, taskOps }) {
-  const ops = taskOps || {};
+  const ops = goal.completed ? { onToggleTask: (taskOps || {}).onToggleTask } : taskOps || {};
   if (!ops.onAddTask && !tasks.total) return null;
   const counting = !!(progress && progress.countTasks);
   const addBtn = ops.onAddTask
@@ -705,12 +725,14 @@ function GoalTasks({ goal, progress, tasks, onUpdateProgress, taskOps }) {
           )
         )
       : null,
-    h(
-      'div',
-      { style: { display: 'flex', gap: '12px', alignItems: 'center', margin: '6px 0' } },
-      h('span', { style: { flex: 1 } }, 'Count finished tasks toward progress'),
-      countSwitch
-    ),
+    goal.completed
+      ? null
+      : h(
+          'div',
+          { style: { display: 'flex', gap: '12px', alignItems: 'center', margin: '6px 0' } },
+          h('span', { style: { flex: 1 } }, 'Count finished tasks toward progress'),
+          countSwitch
+        ),
     addBtn
   );
 }
@@ -865,17 +887,19 @@ function GoalRow(
     h(
       'div',
       { class: 'gb-goal-card-footer' },
-      h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-btn gb-btn--secondary gb-btn--compact',
-          onclick: () => onAddAction(goal),
-        },
-        Icon('notebook-pen', { size: 14, sw: 2.4 }),
-        'Log action'
-      ),
-      !(progress && progress.durationDays)
+      goal.completed
+        ? null
+        : h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-btn gb-btn--secondary gb-btn--compact',
+              onclick: () => onAddAction(goal),
+            },
+            Icon('notebook-pen', { size: 14, sw: 2.4 }),
+            'Log action'
+          ),
+      !goal.completed && !(progress && progress.durationDays)
         ? h(
             'button',
             {

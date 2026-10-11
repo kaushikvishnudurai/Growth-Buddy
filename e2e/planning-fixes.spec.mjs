@@ -97,3 +97,29 @@ test('EXP-8: goal form errors show under the field', async ({ page, account }) =
   await expect(dlg.locator('.gb-affix + .gb-field-error')).toHaveText(/1 to 1000/);
   await shot(page, 'EXP-8');
 });
+
+test('EXP-9: a completed goal keeps only Reopen, and Reopen brings the controls back', async ({ page, account }) => {
+  await boot(page, account, 'goals');
+  const m = main(page);
+  const card = m.locator('.gb-goal-card').filter({ has: page.getByRole('button', { name: 'Edit goal: Run a 10K' }) });
+  await card.getByRole('textbox', { name: 'New milestone' }).fill('Run 5K');
+  await card.getByRole('button', { name: 'Add milestone' }).click();
+  await expect(card.getByRole('checkbox', { name: /Run 5K/ })).toBeVisible();
+  await card.getByRole('button', { name: 'Mark done' }).click();
+  // A finished goal celebrates (and may unlock an achievement after it): one Nice! each.
+  const nice = page.locator('.gb-celebrate').getByRole('button', { name: 'Nice!' });
+  for (let i = 0; i < 3; i++) {
+    if (!(await nice.waitFor({ timeout: 2500 }).then(() => true, () => false))) break;
+    await nice.click();
+    await page.waitForTimeout(400);
+  }
+  await m.getByText(/^Completed \(1\)/).click();
+  await expect(card.getByRole('button', { name: 'Reopen' })).toBeVisible();
+  for (const name of ['Log action', 'Track days', 'Add a task', 'Add milestone', 'Edit milestone: Run 5K'])
+    await expect(card.getByRole('button', { name })).toHaveCount(0);
+  await expect(card.getByRole('checkbox', { name: /Run 5K/ })).toBeDisabled();
+  await shot(page, 'EXP-9');
+  await card.getByRole('button', { name: 'Reopen' }).click();
+  await expect(card.getByRole('button', { name: 'Log action' })).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Add milestone' })).toBeVisible();
+});
