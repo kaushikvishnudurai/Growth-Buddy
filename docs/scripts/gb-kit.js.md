@@ -15,13 +15,14 @@ Every screen builds DOM from these. Element-returning factories, no framework, n
 | Export | Notes |
 |---|---|
 | `activate(fn)` | spread into attrs to make a non-button keyboard-operable (click + Enter/Space + role) |
+| `rovingGroup(groupEl)` | **every `role=tablist` / `role=radiogroup` goes through this** (returns the element, so wrap the `h(...)`). Arrow keys (Left/Right; Up/Down too in a radiogroup) and Home/End move focus *and* select by calling the item's own `.click()`, so selection still happens in one place. The selected item (`aria-selected`/`aria-checked`) is the group's single Tab stop, kept by a MutationObserver, so items appended later or selected by `set()` stay right. A click that repaints the whole group (Money's tab bar) keeps focus only if the items carry ids. Used by `segmented` (app + money), Settings' `buildSegSlider`, Money's `tabBar`, the calendar Days/Tag/Repeat pickers, the colour, drink, horizon, tag and star pickers. A new group without it is a Tab stop per option and dead arrows |
 | `plural(count, singular, pluralForm)` | |
 | `refreshIcons()` | re-scan for icon placeholders after injecting DOM |
 | `DOMAIN` | domain → color map (`habit`, `fitness`, `study`, `journal`) |
 | `IconChip({domain, icon, size, iconSize})` | |
 | `Pill({icon, label, bg, fg, dot, style})` | |
 | `Card({children, style, className, onClick})` | **has no padding of its own** — content insets itself |
-| `SectionTitle({title, action, onAction})` | an **`<h2>`** (a section under the screen's h1; it was an h3 with no h2 above it — Lighthouse heading-order); action is a `<button>` with `onAction`, plain text (a count) without |
+| `SectionTitle({title, action, onAction, level})` | an `h2` by default (a section under the screen's one `h1`; `level: 3` under another section). Was an `h3`, which made Lighthouse's heading-order fail on Home. CSS styles `.gb-sectiontitle :is(h2, h3)`, so the level never changes the look. action is a `<button>` with `onAction`, plain text (a count) without |
 | `ProgressRing({value, size, stroke, color, children})` | SVG ring; children go in the middle |
 | `Check({done, onToggle, color, label})` | habit/task toggle; pass `label` (the item's name) so each one's aria-label is distinct. Paints the tick + pop itself and calls `onToggle` 400ms later (= `gb-pop`), since `onToggle` re-renders and would destroy the button mid-press |
 | `Avatar({...})` | |
@@ -40,7 +41,7 @@ Every screen builds DOM from these. Element-returning factories, no framework, n
 | `leave(el)` | a deleted row shrinks and fades; returns a promise that resolves once it has gone, so the caller drops it from the list then (400 ms timeout for background tabs) |
 | `confirmDialog({title, message, confirmLabel, cancelLabel, danger})` | returns a promise; dismissing any way that isn't the confirm button answers `false` |
 | `Logo({size, radius, alive})` | theme-aware inline SVG. `alive: true` returns the same mark as the header's live seedling — adds `.gb-sprout`, drops the img role, and leaves `display` to CSS (an inline value would leak it into the classic skin). |
-| `AppHeader({...})` | Four actions only — quick add, search (`onSearch`: the command palette's touch door, `.gb-head-search`, tooltip names Ctrl K / Cmd K), notifications, avatar. Theme and the premium skin were icon buttons here; they're preferences, not daily actions, and live in Settings → Display. Always renders `Logo({alive:true})` as its first child; CSS decides whether it shows, so the skin stays a stylesheet. |
+| `AppHeader({...})` | Four actions only — quick add, search (`onSearch`: the command palette's touch door, `.gb-head-search`, tooltip names Ctrl K / Cmd K), notifications, avatar. The bell's `aria-label` carries the count ("Notifications, 3 unread"): a label replaces the content, so the badge alone was never read. `paintBellBadge` in app.js keeps the same wording on every change. Theme and the premium skin were icon buttons here; they're preferences, not daily actions, and live in Settings → Display. Always renders `Logo({alive:true})` as its first child; CSS decides whether it shows, so the skin stays a stylesheet. |
 | `CrashCard(onRetry)` | render-error fallback |
 | `thinkingLabel(text)` / `setThinking(btn, text)` | **every AI wait's button.** `thinkingLabel` is the content (twinkling sparkle, text, three dots) for a button that also carries `.is-thinking`; `setThinking` does both to a live button and returns the undo. The button keeps its colour and gets a light running round its edge: a greyed button with new words read as broken |
 | `Thinking(label, steps)` | the panel that stands in for an AI answer: an orb, three steps shown in turn, lines writing in. **Always three steps** (the CSS gives each a third of a 7.5s cycle). `label` is the screen-reader text. While any `.is-thinking` / `.gb-thinking` is in the DOM, `body:has()` runs a bar along the top of the screen and glows its edge: no JS, no counter to leak |

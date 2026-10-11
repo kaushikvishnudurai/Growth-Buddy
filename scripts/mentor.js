@@ -830,7 +830,7 @@ function ScreenMentor({ api, threadId: initialThread, starter }) {
       type: 'button',
       class: 'gb-msg-chip gb-msg-chip--clear',
       onclick: clearAll,
-      'aria-label': 'Clear mentor chat',
+      'aria-label': 'Clear chat with mentor',
     },
     'Clear chat'
   );

@@ -16,6 +16,7 @@ import {
   thinkingLabel,
   Thinking,
   refreshIcons,
+  rovingGroup,
 } from './gb-kit.js';
 import { MoneyHomeCard } from './money-home.js';
 import { CacheStorage } from './cache-storage.js';
@@ -106,7 +107,7 @@ function OnboardingCard({
           null,
           h('div', { class: 'gb-onboard-kicker' }, 'Getting started'),
           h(
-            'div',
+            'h2',
             { class: 'gb-onboard-title' },
             doneCount
               ? doneCount + ' of ' + steps.length + ' done'
@@ -265,7 +266,7 @@ function ScoreCard({ score, tasks: allTasks, habits }) {
       h(
         'div',
         { style: { flex: 1 } },
-        h('div', { class: 'gb-score-heading' }, heading),
+        h('h2', { class: 'gb-score-heading' }, heading),
         h('div', { class: 'gb-score-sub' }, sub),
         pills.length ? h('div', { class: 'gb-pill-row' }, pills) : null
       ),
@@ -495,7 +496,7 @@ function TodayPlanCard({ water, wellness, onPlanToday, onQuickAddWater, onAddSle
           'div',
           null,
           h('div', { class: 'gb-coach-kicker' }, 'Daily brief'),
-          h('div', { class: 'gb-coach-title' }, 'Help me plan today')
+          h('h2', { class: 'gb-coach-title' }, 'Help me plan today')
         ),
         h(
           'button',
@@ -635,7 +636,7 @@ function WeeklyReflectionCard({ tasks, habits, food, goals, wellness }) {
     className: 'gb-reflect-card',
     children: [
       h(
-        'div',
+        'h2',
         { class: 'gb-card-titleline' },
         Icon('calendar-heart', { size: 18, sw: 2.4 }),
         'Weekly reflection'
@@ -665,7 +666,7 @@ function BadgeCard({ tasks, habits, water, goals, wellness }) {
   return Card({
     className: 'gb-badge-card',
     children: [
-      h('div', { class: 'gb-card-titleline' }, Icon('award', { size: 18, sw: 2.4 }), 'Milestones'),
+      h('h2', { class: 'gb-card-titleline' }, Icon('award', { size: 18, sw: 2.4 }), 'Milestones'),
       h(
         'div',
         { class: 'gb-badge-grid' },
@@ -751,7 +752,7 @@ function ReminderSuggestionsCard({ habits, water, wellness, reminders, onAddSugg
     className: 'gb-suggest-card',
     children: [
       h(
-        'div',
+        'h2',
         { class: 'gb-card-titleline' },
         Icon('bell-plus', { size: 18, sw: 2.4 }),
         'Smart reminders'
@@ -805,7 +806,7 @@ function GoalTimelineCard({ goals }) {
     className: 'gb-timeline-card',
     children: [
       h(
-        'div',
+        'h2',
         { class: 'gb-card-titleline' },
         Icon('route', { size: 18, sw: 2.4 }),
         'Goal timeline'
@@ -1027,7 +1028,7 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
           input,
           suggestBtn,
           drinkRow ? h('div', { class: 'gb-field-label' }, 'Drink') : null,
-          drinkRow,
+          drinkRow && rovingGroup(drinkRow),
           dayInput ? h('div', { class: 'gb-field-label' }, 'Day') : null,
           dayInput,
           error
@@ -1108,7 +1109,7 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
         h(
           'div',
           null,
-          h('div', { class: 'gb-water-title' }, 'Water tracker'),
+          h('h2', { class: 'gb-water-title' }, 'Water tracker'),
           // No % chip beside it: the glass fills to the same number, and the
           // big figure says what's left. Three readings of one value was noise.
           h('div', { class: 'gb-water-meta' }, consumedMl + ' of ' + goalMl + ' ml')
@@ -1161,7 +1162,7 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
           {
             type: 'button',
             class: 'gb-water-add',
-            'aria-label': 'Add 250 millilitres of water',
+            'aria-label': '+250 ml, add water',
             onclick: () => onQuickAddWater && onQuickAddWater(250),
           },
           '+250 ml'
@@ -1171,7 +1172,7 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
           {
             type: 'button',
             class: 'gb-water-add',
-            'aria-label': 'Add 500 millilitres of water',
+            'aria-label': '+500 ml, add water',
             onclick: () => onQuickAddWater && onQuickAddWater(500),
           },
           '+500 ml'
@@ -1183,7 +1184,7 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
             // One style for all three: a gradient on the largest read as a different
             // kind of button.
             class: 'gb-water-add',
-            'aria-label': 'Add 750 millilitres of water',
+            'aria-label': '+750 ml, add water',
             onclick: () => onQuickAddWater && onQuickAddWater(750),
           },
           '+750 ml'
@@ -1356,7 +1357,7 @@ function FoodCard({ food, onAddFood, onDeleteFood, onEditFood, onCopySlot, copya
         h(
           'div',
           null,
-          h('div', { class: 'gb-water-title' }, 'Food calories'),
+          h('h2', { class: 'gb-water-title' }, 'Food calories'),
           h('div', { class: 'gb-water-meta' }, 'Track meals with Indian average estimates')
         ),
         h('div', { class: 'gb-food-total' }, total + ' kcal')
@@ -1449,7 +1450,7 @@ function FoodSummaryLink({ onOpen }) {
         h(
           'div',
           null,
-          h('div', { class: 'gb-water-title' }, 'Summary'),
+          h('h2', { class: 'gb-water-title' }, 'Summary'),
           h('div', { class: 'gb-water-meta' }, 'Nutrition, water and calories for the last 7 days')
         )
       ),
@@ -2465,7 +2466,7 @@ function GoalsCard({ goals, goalProgress, onOpenGoals }) {
   return Card({
     className: 'gb-home-goals',
     children: [
-      h('div', { class: 'gb-card-titleline' }, Icon('target', { size: 18, sw: 2.4 }), 'Goals'),
+      h('h2', { class: 'gb-card-titleline' }, Icon('target', { size: 18, sw: 2.4 }), 'Goals'),
       rows.length
         ? h(
             'div',
@@ -2762,7 +2763,7 @@ function HabitSleepInsightCard({ habits, wellness }) {
     className: 'gb-habit-sleep-card',
     children: [
       h(
-        'div',
+        'h2',
         { class: 'gb-card-titleline' },
         Icon('activity', { size: 18, sw: 2.4 }),
         'Fitness \xd7 Sleep'

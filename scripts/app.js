@@ -28,6 +28,7 @@ import {
   setTimeFormat,
   detectTimeFormat,
   setThinking,
+  rovingGroup,
 } from './gb-kit.js';
 import { setLocale, localeFromUser } from './i18n.js';
 import {
@@ -703,6 +704,8 @@ registerToast({
   dismiss: dismissToast,
   // A toast with one button (e.g. "Undo") — the same action slot a reminder's Snooze uses.
   action: (message, label, run) => pushToast(message, 'info', 6000, { label, run }),
+  // Screen-reader-only status, for async results a repaint would otherwise swallow.
+  announce,
 });
 
 /* ---- Deferred deletes (scripts/undo-queue.js) ----
@@ -5639,6 +5642,7 @@ function openAddFood() {
       class: 'gb-input gb-input--inline',
       value: item.foodName || '',
       placeholder: 'Food name',
+      'aria-label': 'Food name',
       maxlength: 100,
       style: { flex: '1', marginRight: '8px' },
     });
@@ -5648,6 +5652,7 @@ function openAddFood() {
       class: 'gb-input gb-input--inline',
       value: item.quantityGrams || '',
       placeholder: 'g',
+      'aria-label': 'Grams of ' + (item.foodName || 'this item'),
       min: '10',
       max: '2000',
       style: { width: '70px', marginRight: '8px' },
@@ -5672,14 +5677,14 @@ function openAddFood() {
       {
         type: 'button',
         class: 'gb-btn gb-btn--icon',
-        title: 'Remove item',
+        'aria-label': 'Remove ' + (item.foodName || 'item'),
         onclick: () => {
           photoItems.splice(index, 1);
           renderItemsList();
         },
         style: { padding: '4px 8px', minHeight: '36px' },
       },
-      '✕'
+      Icon('x', { size: 14 })
     );
 
     const updateItem = () => {
@@ -7209,6 +7214,7 @@ function CountryPhoneInput(prefill) {
     type: 'tel',
     class: 'gb-input gb-phone-num',
     inputmode: 'numeric',
+    autocomplete: 'tel-national',
     placeholder: '98765 43210',
     maxlength: '15',
     value: local,
@@ -7228,6 +7234,7 @@ function CountryPhoneInput(prefill) {
 /* Segmented "slider": a track of segments with a brand thumb that glides to
    the active one, showing its pane. `slides` = [{ id, label, pane }]. Returns
    the bar element; panes are toggled by display. */
+let segSliderCount = 0;
 function buildSegSlider(slides, initialId) {
   const btnMap = {};
   const thumb = h('div', { class: 'gb-segnav-thumb' });
@@ -7248,12 +7255,21 @@ function buildSegSlider(slides, initialId) {
     thumb.style.transform = 'translateX(' + slides.findIndex((t) => t.id === id) * 100 + '%)';
   };
   const bar = h('div', { class: 'gb-segnav', role: 'tablist' }, thumb);
-  slides.forEach(({ id, label }) => {
+  const uid = 'gb-seg' + ++segSliderCount;
+  slides.forEach(({ id, label, pane }) => {
+    // Tab and pane name each other, as the tablist role promises.
+    if (pane) {
+      pane.id = uid + '-pane-' + id;
+      pane.setAttribute('role', 'tabpanel');
+      pane.setAttribute('aria-labelledby', uid + '-tab-' + id);
+    }
     const btn = h(
       'button',
       {
         type: 'button',
         role: 'tab',
+        id: uid + '-tab-' + id,
+        'aria-controls': pane ? pane.id : null,
         'aria-selected': id === initialId ? 'true' : 'false',
         class: 'gb-segnav-btn' + (id === initialId ? ' is-active' : ''),
         onclick: () => {
@@ -7279,7 +7295,7 @@ function buildSegSlider(slides, initialId) {
   });
   move(initialId);
   if (typeof ResizeObserver === 'function') new ResizeObserver(() => move(current)).observe(bar);
-  return bar;
+  return rovingGroup(bar);
 }
 
 /* ---- Settings panes that shape the app itself ----
@@ -7508,7 +7524,7 @@ function customisePanes() {
   const displayPane = h(
     'div',
     { class: 'gb-settings-pane' },
-    h('div', { class: 'gb-settings-sec-label' }, 'Text size'),
+    h('h3', { class: 'gb-settings-sec-label' }, 'Text size'),
     h(
       'div',
       { class: 'gb-field-hint' },
@@ -7529,7 +7545,7 @@ function customisePanes() {
       h('div', { class: 'gb-textsize-sample-title' }, 'Sample'),
       h('div', { class: 'gb-textsize-sample-body' }, 'Drink a glass of water · 8:00 in the morning')
     ),
-    h('div', { class: 'gb-settings-sec-label' }, 'Time format'),
+    h('h3', { class: 'gb-settings-sec-label' }, 'Time format'),
     h(
       'div',
       { class: 'gb-field-hint' },
@@ -7547,7 +7563,7 @@ function customisePanes() {
         render();
       }
     ).node,
-    h('div', { class: 'gb-settings-sec-label' }, 'Theme'),
+    h('h3', { class: 'gb-settings-sec-label' }, 'Theme'),
     h(
       'div',
       { class: 'gb-field-hint' },
@@ -7563,7 +7579,7 @@ function customisePanes() {
         if (v !== state.theme) toggleTheme();
       }
     ).node,
-    h('div', { class: 'gb-settings-sec-label' }, 'Look'),
+    h('h3', { class: 'gb-settings-sec-label' }, 'Look'),
     h(
       'div',
       { class: 'gb-field-hint' },
@@ -7587,13 +7603,13 @@ function customisePanes() {
   const layoutPane = h(
     'div',
     { class: 'gb-settings-pane', style: { display: 'none' } },
-    h('div', { class: 'gb-settings-sec-label' }, 'Features'),
+    h('h3', { class: 'gb-settings-sec-label' }, 'Features'),
     featuresPane,
-    h('div', { class: 'gb-settings-sec-label' }, 'Home cards'),
+    h('h3', { class: 'gb-settings-sec-label' }, 'Home cards'),
     homePane,
-    h('div', { class: 'gb-settings-sec-label' }, 'Bottom bar'),
+    h('h3', { class: 'gb-settings-sec-label' }, 'Bottom bar'),
     navPane,
-    ...(moneyPane ? [h('div', { class: 'gb-settings-sec-label' }, 'Money'), moneyPane] : [])
+    ...(moneyPane ? [h('h3', { class: 'gb-settings-sec-label' }, 'Money'), moneyPane] : [])
   );
   displayPane.style.display = 'none';
 
@@ -7990,14 +8006,14 @@ function securitySection() {
 
   loadSessions();
   return [
-    h('div', { class: 'gb-settings-sec-label' }, 'Signed-in devices'),
+    h('h3', { class: 'gb-settings-sec-label' }, 'Signed-in devices'),
     h(
       'div',
       { class: 'gb-field-hint' },
       'Sign out any device you no longer use.'
     ),
     sessionsWrap,
-    h('div', { class: 'gb-settings-sec-label' }, 'Change password'),
+    h('h3', { class: 'gb-settings-sec-label' }, 'Change password'),
     h(
       'div',
       { class: 'gb-form' },
@@ -8203,9 +8219,9 @@ function accountSecuritySections() {
     .catch(() => tfaBox.replaceChildren(h('div', { class: 'gb-empty-sm' }, 'Could not load two-step sign-in.')));
 
   return [
-    h('div', { class: 'gb-settings-sec-label' }, 'Email'),
+    h('h3', { class: 'gb-settings-sec-label' }, 'Email'),
     emailBox,
-    h('div', { class: 'gb-settings-sec-label' }, 'Two-step sign-in'),
+    h('h3', { class: 'gb-settings-sec-label' }, 'Two-step sign-in'),
     tfaBox,
   ];
 }
@@ -8697,14 +8713,14 @@ function reminderSettingsPane() {
   paintList();
 
   pane.append(
-    h('div', { class: 'gb-settings-sec-label' }, 'When to notify'),
+    h('h3', { class: 'gb-settings-sec-label' }, 'When to notify'),
     h(
       'div',
       { class: 'gb-field-hint' },
       'How far ahead of its time a reminder rings — in the app, on your phone and on WhatsApp. A reminder can set its own when you add or edit it.'
     ),
     h('div', { class: 'gb-remset-picker' }, leadPicker.node),
-    h('div', { class: 'gb-settings-sec-label' }, 'Snooze'),
+    h('h3', { class: 'gb-settings-sec-label' }, 'Snooze'),
     h(
       'div',
       { class: 'gb-field-hint' },
@@ -8714,12 +8730,12 @@ function reminderSettingsPane() {
     h(
       'div',
       { class: 'gb-sounds-head', style: { marginTop: '22px' } },
-      h('div', { class: 'gb-settings-sec-label', style: { margin: 0 } }, 'Your reminders'),
+      h('h3', { class: 'gb-settings-sec-label', style: { margin: 0 } }, 'Your reminders'),
       count
     ),
     addForm,
     list,
-    h('div', { class: 'gb-settings-sec-label' }, 'Other calendars'),
+    h('h3', { class: 'gb-settings-sec-label' }, 'Other calendars'),
     h(
       'div',
       { class: 'gb-field-hint' },
@@ -9020,6 +9036,7 @@ function openProfileSettings(initialTab) {
     class: 'gb-input',
     maxlength: '120',
     placeholder: 'Your display name',
+    autocomplete: 'nickname',
     value: u.displayName || '',
   });
   const fallbackDob = u.dob
@@ -9027,7 +9044,12 @@ function openProfileSettings(initialTab) {
     : u.ageYears
       ? now.getFullYear() - Number(u.ageYears) + '-01-01'
       : '';
-  const dobInput = h('input', { type: 'date', class: 'gb-input', value: fallbackDob });
+  const dobInput = h('input', {
+    type: 'date',
+    class: 'gb-input',
+    autocomplete: 'bday',
+    value: fallbackDob,
+  });
   const heightInput = h('input', {
     type: 'number',
     class: 'gb-input',
@@ -9452,7 +9474,7 @@ function openProfileSettings(initialTab) {
   const profilePane = h(
     'div',
     { class: 'gb-settings-pane' },
-    h('div', { class: 'gb-settings-sec-label' }, 'Personal'),
+    h('h3', { class: 'gb-settings-sec-label' }, 'Personal'),
     h('div', { class: 'gb-field-label' }, 'Display name'),
     displayNameInput,
     h('div', { class: 'gb-field-label' }, 'Date of birth'),
@@ -9466,9 +9488,9 @@ function openProfileSettings(initialTab) {
     h('div', { class: 'gb-field-label' }, 'Gender'),
     genderSel,
     h('div', { class: 'gb-field-label' }, 'Timezone'),
-    h('div', { class: 'gb-field-hint' }, 'e.g. Asia/Kolkata or America/New_York'),
     timezoneInput,
-    h('div', { class: 'gb-settings-sec-label' }, 'Diet & Goals'),
+    h('div', { class: 'gb-field-hint' }, 'e.g. Asia/Kolkata or America/New_York'),
+    h('h3', { class: 'gb-settings-sec-label' }, 'Diet & Goals'),
     h('div', { class: 'gb-field-label' }, 'Fitness goal'),
     fitnessGoalInput,
     h('div', { class: 'gb-field-label' }, 'Diet preference'),
@@ -9599,8 +9621,19 @@ function openProfileSettings(initialTab) {
       return o;
     })
   );
-  const waterFrom = h('input', { type: 'time', class: 'gb-input', value: waterPrefs.from });
-  const waterTo = h('input', { type: 'time', class: 'gb-input', value: waterPrefs.to });
+  // Two fields under one label: a11y.js can't name them, so each names itself.
+  const waterFrom = h('input', {
+    type: 'time',
+    class: 'gb-input',
+    'aria-label': 'Water reminders from',
+    value: waterPrefs.from,
+  });
+  const waterTo = h('input', {
+    type: 'time',
+    class: 'gb-input',
+    'aria-label': 'Water reminders until',
+    value: waterPrefs.to,
+  });
   const waterFields = h(
     'div',
     { style: { display: waterPrefs.on ? '' : 'none' } },
@@ -10348,30 +10381,30 @@ function openProfileSettings(initialTab) {
   const notifPane = h(
     'div',
     { class: 'gb-settings-pane', style: { display: 'none' } },
-    h('div', { class: 'gb-settings-sec-label' }, 'Push notifications'),
+    h('h3', { class: 'gb-settings-sec-label' }, 'Push notifications'),
     h(
       'div',
       { class: 'gb-field-hint' },
       'Get reminders and nudges on this device, even when the app is closed.'
     ),
     pushSectionBody,
-    h('div', { class: 'gb-settings-sec-label' }, 'Water reminders'),
+    h('h3', { class: 'gb-settings-sec-label' }, 'Water reminders'),
     h(
       'div',
       { class: 'gb-field-hint' },
       'Steady sips beat one big glass. Needs notifications turned on above.'
     ),
     waterSectionBody,
-    h('div', { class: 'gb-settings-sec-label' }, 'Quiet hours'),
+    h('h3', { class: 'gb-settings-sec-label' }, 'Quiet hours'),
     h(
       'div',
       { class: 'gb-field-hint' },
       'No habit reminders, water nudges or digest in this window, on any device or on WhatsApp. The digest waits until it ends. Reminders you set a time for still ring.'
     ),
     quietSectionBody,
-    h('div', { class: 'gb-settings-sec-label' }, 'Buddy'),
+    h('h3', { class: 'gb-settings-sec-label' }, 'Buddy'),
     reflectSectionBody,
-    h('div', { class: 'gb-settings-sec-label' }, 'Notification sound'),
+    h('h3', { class: 'gb-settings-sec-label' }, 'Notification sound'),
     h(
       'div',
       { class: 'gb-field-hint' },
@@ -10393,14 +10426,14 @@ function openProfileSettings(initialTab) {
         // and a Web Push notification rings with the browser's own sound.
         ' Plays in the app only — the lock screen uses built-in tones.'
     ),
-    h('div', { class: 'gb-settings-sec-label' }, 'Notify me about'),
+    h('h3', { class: 'gb-settings-sec-label' }, 'Notify me about'),
     h(
       'div',
       { class: 'gb-field-hint' },
       'Off means no push or phone notification for it. It still shows in the bell.'
     ),
     ...notifyMuteRows(),
-    h('div', { class: 'gb-settings-sec-label' }, 'Keep read notifications for'),
+    h('h3', { class: 'gb-settings-sec-label' }, 'Keep read notifications for'),
     h(
       'div',
       { class: 'gb-field-hint' },
@@ -10408,7 +10441,7 @@ function openProfileSettings(initialTab) {
     ),
     keepReadPicker(),
     h(
-      'div',
+      'h3',
       { class: 'gb-settings-sec-label' },
       'WhatsApp reminders'
     ),
@@ -10418,14 +10451,14 @@ function openProfileSettings(initialTab) {
       'Verify your number once — timed reminders then arrive on WhatsApp.'
     ),
     waSectionBody,
-    h('div', { class: 'gb-settings-sec-label' }, 'Progress digest'),
+    h('h3', { class: 'gb-settings-sec-label' }, 'Progress digest'),
     h(
       'div',
       { class: 'gb-field-hint' },
       'Get a short recap of your score, tasks and habits to stay on track.'
     ),
     digestSectionBody,
-    h('div', { class: 'gb-settings-sec-label' }, 'Working week'),
+    h('h3', { class: 'gb-settings-sec-label' }, 'Working week'),
     workWeekBody
   );
 
@@ -10438,7 +10471,7 @@ function openProfileSettings(initialTab) {
   const accountPane = h(
     'div',
     { class: 'gb-settings-pane', style: { display: 'none' } },
-    h('div', { class: 'gb-settings-sec-label' }, 'Account'),
+    h('h3', { class: 'gb-settings-sec-label' }, 'Account'),
     h(
       'div',
       { class: 'gb-account-row' },
@@ -10470,7 +10503,7 @@ function openProfileSettings(initialTab) {
       Icon('log-out', { size: 16 }),
       'Sign out'
     ),
-    h('div', { class: 'gb-settings-sec-label' }, 'Privacy'),
+    h('h3', { class: 'gb-settings-sec-label' }, 'Privacy'),
     shareProgressRow(),
     h(
       'div',
@@ -10479,7 +10512,7 @@ function openProfileSettings(initialTab) {
     ),
     downloadDataButton(),
     ...securitySection(),
-    h('div', { class: 'gb-settings-sec-label' }, 'Danger zone'),
+    h('h3', { class: 'gb-settings-sec-label' }, 'Danger zone'),
     h(
       'div',
       { class: 'gb-field-hint' },
@@ -10495,7 +10528,7 @@ function openProfileSettings(initialTab) {
       Icon('trash-2', { size: 16 }),
       'Delete account'
     ),
-    h('div', { class: 'gb-settings-sec-label' }, 'About'),
+    h('h3', { class: 'gb-settings-sec-label' }, 'About'),
     // The real build (vite.config.js BUILD), the number support asks for.
     h('div', { class: 'gb-field-hint' }, 'Growth Buddy · build ' + __GB_BUILD__, ' · ', privacyLink())
   );
@@ -11445,7 +11478,7 @@ function openModal(opts) {
 function segmented(options, initial, onChange) {
   let selected = initial;
   const segs = {};
-  const wrap = h('div', { class: 'gb-segmented', role: 'radiogroup' });
+  const wrap = rovingGroup(h('div', { class: 'gb-segmented', role: 'radiogroup' }));
   options.forEach((opt) => {
     const btn = h(
       'button',
@@ -12127,18 +12160,24 @@ function colorPicker(initial) {
     { v: '#EAB308', name: 'sun' },
   ];
   let selected = initial || '';
-  const wrap = h('div', { class: 'gb-color-pick', role: 'radiogroup', 'aria-label': 'Color' });
+  const wrap = rovingGroup(
+    h('div', { class: 'gb-color-pick', role: 'radiogroup', 'aria-label': 'Color' })
+  );
   const dots = {};
   swatches.forEach((s) => {
     const dot = h('button', {
       type: 'button',
       class: 'gb-color-dot' + (s.v === selected ? ' is-on' : ''),
       style: { background: s.v },
+      role: 'radio',
       'aria-label': s.name,
       'aria-checked': String(s.v === selected),
       onclick: () => {
         selected = selected === s.v ? '' : s.v;
-        for (const k in dots) dots[k].classList.toggle('is-on', k === selected);
+        for (const k in dots) {
+          dots[k].classList.toggle('is-on', k === selected);
+          dots[k].setAttribute('aria-checked', String(k === selected));
+        }
       },
     });
     dots[s.v] = dot;
@@ -13120,7 +13159,7 @@ function bankFeedSection() {
     });
     const live = (st.consents || []).some((c) => /ACTIVE|APPROVED|PENDING/.test(c.status));
     box.replaceChildren(
-      h('div', { class: 'gb-settings-sec-label' }, 'Bank feed'),
+      h('h3', { class: 'gb-settings-sec-label' }, 'Bank feed'),
       h(
         'div',
         { class: 'gb-field-hint' },
@@ -14764,11 +14803,12 @@ function paintBellBadge() {
   if (!bell) return;
   const n = unreadNotifs();
   const badge = bell.querySelector('.gb-bell-badge');
+  const text = n > 99 ? '99+' : String(n);
+  bell.setAttribute('aria-label', n ? 'Notifications, ' + text + ' unread' : 'Notifications');
   if (!n) {
     if (badge) badge.remove();
     return;
   }
-  const text = n > 99 ? '99+' : String(n);
   if (badge) badge.textContent = text;
   else bell.appendChild(h('span', { class: 'gb-bell-badge' }, text));
 }
@@ -15141,7 +15181,7 @@ function passwordField(input) {
   const toggle = h('button', {
     type: 'button',
     class: 'gb-pw-toggle',
-    tabindex: '-1', // the field, not its decoration, is what Tab should reach
+    // Reachable by Tab: a keyboard user must be able to check what they typed.
     onclick: () => {
       input.type = input.type === 'password' ? 'text' : 'password';
       paint();
@@ -15470,6 +15510,7 @@ function viewSignup() {
     type: 'text',
     class: 'gb-input gb-login-input',
     placeholder: 'Your name',
+    autocomplete: 'name',
     maxlength: 120,
   });
   const pwInput = h('input', {

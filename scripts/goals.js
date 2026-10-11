@@ -1,7 +1,7 @@
 /* =====================================================================
    Growth Buddy — Goals screen (short / mid / long term goals + actions)
    ===================================================================== */
-import { h, Icon, Pill, openModal, shakeRefusal } from './gb-kit.js';
+import { h, Icon, Pill, openModal, shakeRefusal, rovingGroup } from './gb-kit.js';
 import { todayKey as sharedTodayKey } from './home-order.js';
 import {
   moveItem,
@@ -1052,7 +1052,9 @@ function ScreenGoals({
         'div',
         { class: 'gb-form-field' },
         h('span', { class: 'gb-field-label' }, 'Horizon'),
-        h('div', { class: 'gb-segmented', role: 'radiogroup', 'aria-label': 'Horizon' }, segs),
+        rovingGroup(
+          h('div', { class: 'gb-segmented', role: 'radiogroup', 'aria-label': 'Horizon' }, segs)
+        ),
         hint
       ),
       descInput,

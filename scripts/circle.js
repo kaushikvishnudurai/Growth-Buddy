@@ -2800,7 +2800,7 @@ function ScreenCircle({
             h(
               'div',
               { class: 'gb-conn-group' },
-              h('h5', { class: 'gb-conn-group-head' }, g.title, h('span', null, g.items.length)),
+              h('h3', { class: 'gb-conn-group-head' }, g.title, h('span', null, g.items.length)),
               card
             )
           );
@@ -2832,7 +2832,7 @@ function ScreenCircle({
     outgoingEl.replaceChildren();
     // Sent invites only when there are some: "none pending" says nothing.
     if (invites.length) {
-      outgoingEl.appendChild(h('h5', { class: 'gb-conn-group-head' }, 'Invites you sent', h('span', null, invites.length)));
+      outgoingEl.appendChild(h('h3', { class: 'gb-conn-group-head' }, 'Invites you sent', h('span', null, invites.length)));
       const card = h('div', { class: 'gb-card', style: { padding: '4px 0' } });
       invites.forEach((r) =>
         card.appendChild(OutgoingRow(r, onLoadStatus, onRevoke ? revokeAndRefresh : null))

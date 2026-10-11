@@ -1242,7 +1242,7 @@ function HistoryCard() {
   loadHistory();
   return Card({
     className: 'gb-focus-histcard',
-    children: [h('div', { class: 'gb-score-heading' }, 'Last 30 days'), body],
+    children: [h('h2', { class: 'gb-score-heading' }, 'Last 30 days'), body],
   });
 }
 
@@ -1325,7 +1325,7 @@ function SoundCard() {
       h(
         'div',
         { class: 'gb-sound-head' },
-        h('div', null, h('div', { class: 'gb-score-heading' }, 'Focus sound'), statusEl),
+        h('div', null, h('h2', { class: 'gb-score-heading' }, 'Focus sound'), statusEl),
         toggle
       ),
       grid,
@@ -1410,7 +1410,7 @@ function StatsCard() {
   return Card({
     className: 'gb-focus-statscard',
     children: [
-      h('div', { class: 'gb-score-heading' }, 'Your focus'),
+      h('h2', { class: 'gb-score-heading' }, 'Your focus'),
       h(
         'div',
         { class: 'gb-focus-stats-grid' },

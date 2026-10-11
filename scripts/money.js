@@ -7,7 +7,16 @@
    ponytail: heuristics, not an LLM. Real OCR / NL understanding would need
    a vision/LLM endpoint — marked at each spot below.
    ===================================================================== */
-import { h, Icon, Card, ProgressRing, refreshIcons, openModal, Thinking } from './gb-kit.js';
+import {
+  h,
+  Icon,
+  Card,
+  ProgressRing,
+  refreshIcons,
+  openModal,
+  Thinking,
+  rovingGroup,
+} from './gb-kit.js';
 import { toast } from './toast.js';
 import { shareStoryCard, _demo as _shareCardDemo } from './share-card.js';
 import { offerFile } from './save-file.js';
@@ -1685,7 +1694,7 @@ function confirmDelete(title, body, onConfirm) {
 function segmented(options, initial, onChange) {
   let selected = initial;
   const segs = {};
-  const wrap = h('div', { class: 'gb-segmented', role: 'radiogroup' });
+  const wrap = rovingGroup(h('div', { class: 'gb-segmented', role: 'radiogroup' }));
   options.forEach((opt) => {
     const btn = h(
       'button',
@@ -1720,11 +1729,13 @@ function tagPicker(money, save, opts) {
   const all = mergedCats(money);
   let selected = opts.initial && all.some((c) => c.key === opts.initial) ? opts.initial : 'others';
   const wrap = h('div', { class: 'gb-money-tagpick' });
-  const chips = h('div', {
-    class: 'gb-money-tagpick-chips',
-    role: 'radiogroup',
-    'aria-label': 'Tag',
-  });
+  const chips = rovingGroup(
+    h('div', {
+      class: 'gb-money-tagpick-chips',
+      role: 'radiogroup',
+      'aria-label': 'Tag',
+    })
+  );
   const createBox = h('div', { class: 'gb-money-tagpick-create', style: { display: 'none' } });
   let pick = 0;
 
@@ -2179,11 +2190,13 @@ function starRating(initial) {
   let value = Number(initial) || 4;
   const caption = h('div', { class: 'gb-stars-caption', 'aria-live': 'polite' });
   const stars = [];
-  const row = h('div', {
-    class: 'gb-stars',
-    role: 'radiogroup',
-    'aria-label': 'How satisfied, 1 to 5',
-  });
+  const row = rovingGroup(
+    h('div', {
+      class: 'gb-stars',
+      role: 'radiogroup',
+      'aria-label': 'How satisfied, 1 to 5',
+    })
+  );
 
   function paint(picked) {
     stars.forEach((btn, i) => {
@@ -2327,6 +2340,7 @@ function openReceiptModal(money, save, requestReceiptScan, opts) {
           class: 'gb-input gb-input--inline',
           value: r.name,
           placeholder: 'Item',
+          'aria-label': 'Item name',
           style: { flex: '1' },
         });
         const amt = h('input', {
@@ -2335,6 +2349,7 @@ function openReceiptModal(money, save, requestReceiptScan, opts) {
           inputmode: 'decimal',
           value: r.amount || '',
           placeholder: cur,
+          'aria-label': 'Amount for ' + (r.name || 'this item'),
           min: '0',
           style: { width: '84px' },
         });
@@ -2850,7 +2865,7 @@ function ScreenMoney({
         h(
           'div',
           { class: 'gb-sectiontitle' },
-          h('h3', null, 'Where your money is'),
+          h('h2', null, 'Where your money is'),
           h(
             'div',
             { class: 'gb-money-head-actions' },
@@ -4400,7 +4415,7 @@ function ScreenMoney({
     return Card({
       className: 'gb-money-card',
       children: [
-        h('div', { class: 'gb-sectiontitle' }, h('h3', null, 'This month')),
+        h('div', { class: 'gb-sectiontitle' }, h('h2', null, 'This month')),
         h(
           'div',
           { class: 'gb-money-donut-row' },
@@ -4490,7 +4505,7 @@ function ScreenMoney({
           h(
             'div',
             null,
-            h('h3', { class: 'gb-money-health-title' }, 'Financial health'),
+            h('h2', { class: 'gb-money-health-title' }, 'Financial health'),
             h(
               'p',
               { class: 'gb-money-health-verdict' },
@@ -4586,7 +4601,7 @@ function ScreenMoney({
     return Card({
       className: 'gb-money-card',
       children: [
-        h('div', { class: 'gb-sectiontitle' }, h('h3', null, 'Insights & coaching')),
+        h('div', { class: 'gb-sectiontitle' }, h('h2', null, 'Insights & coaching')),
         h(
           'div',
           { class: 'gb-money-insights' },
@@ -4688,7 +4703,7 @@ function ScreenMoney({
         h(
           'div',
           { class: 'gb-sectiontitle' },
-          h('h3', null, 'Weekly review'),
+          h('h2', null, 'Weekly review'),
           h(
             'button',
             { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--compact', onclick: shareSummary },
@@ -4725,7 +4740,7 @@ function ScreenMoney({
     return Card({
       className: 'gb-money-card',
       children: [
-        h('div', { class: 'gb-sectiontitle' }, h('h3', null, 'Month forecast')),
+        h('div', { class: 'gb-sectiontitle' }, h('h2', null, 'Month forecast')),
         h(
           'div',
           { class: 'gb-money-forecast-top' },
@@ -4796,7 +4811,7 @@ function ScreenMoney({
     return Card({
       className: 'gb-money-card',
       children: [
-        h('div', { class: 'gb-sectiontitle' }, h('h3', null, 'Your money personality')),
+        h('div', { class: 'gb-sectiontitle' }, h('h2', null, 'Your money personality')),
         p
           ? h(
               'div',
@@ -4833,7 +4848,7 @@ function ScreenMoney({
     return Card({
       className: 'gb-money-card',
       children: [
-        h('div', { class: 'gb-sectiontitle' }, h('h3', null, 'Recovery plan')),
+        h('div', { class: 'gb-sectiontitle' }, h('h2', null, 'Recovery plan')),
         h(
           'div',
           { class: 'gb-money-recovery-sum' },
@@ -4886,6 +4901,7 @@ function ScreenMoney({
       type: 'search',
       class: 'gb-input',
       placeholder: 'e.g. what could I skip?',
+      'aria-label': 'Ask about your spending',
       value: lastSearch,
       // Kept as typed, so a save's repaint doesn't wipe a half-typed question.
       oninput: () => (lastSearch = searchInput.value),
@@ -4909,13 +4925,16 @@ function ScreenMoney({
         ].filter(Boolean)
       );
       refreshIcons();
+      return r;
     };
-    searchInput.addEventListener('keydown', (e) => e.key === 'Enter' && runSearch());
+    // Only an asked search is read out; the remount below restores it silently.
+    const askSearch = () => toast.announce(runSearch().answer);
+    searchInput.addEventListener('keydown', (e) => e.key === 'Enter' && askSearch());
     if (searchAsked) runSearch(searchAsked);
     const searchCard = Card({
       className: 'gb-money-card',
       children: [
-        h('div', { class: 'gb-sectiontitle' }, h('h3', null, 'Ask about your spending')),
+        h('div', { class: 'gb-sectiontitle' }, h('h2', null, 'Ask about your spending')),
         h(
           'div',
           { class: 'gb-money-searchbar' },
@@ -4923,7 +4942,7 @@ function ScreenMoney({
           searchInput,
           h(
             'button',
-            { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--compact', onclick: () => runSearch() },
+            { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--compact', onclick: askSearch },
             'Search'
           )
         ),
@@ -4935,7 +4954,7 @@ function ScreenMoney({
     const weekCard = Card({
       className: 'gb-money-card',
       children: [
-        h('div', { class: 'gb-sectiontitle' }, h('h3', null, 'Last 7 days')),
+        h('div', { class: 'gb-sectiontitle' }, h('h2', null, 'Last 7 days')),
         h(
           'div',
           { class: 'gb-money-week-total' },
@@ -4962,7 +4981,7 @@ function ScreenMoney({
     const breakdown = Card({
       className: 'gb-money-card',
       children: [
-        h('div', { class: 'gb-sectiontitle' }, h('h3', null, 'By tag')),
+        h('div', { class: 'gb-sectiontitle' }, h('h2', null, 'By tag')),
         h(
           'div',
           { class: 'gb-money-catlist' },
@@ -5068,7 +5087,7 @@ function ScreenMoney({
         h(
           'div',
           { class: 'gb-sectiontitle' },
-          h('h3', null, isThisMonth ? 'This month' : monthLabel(shownMonth)),
+          h('h2', null, isThisMonth ? 'This month' : monthLabel(shownMonth)),
           h(
             'div',
             { class: 'gb-money-list-tools' },
@@ -5284,7 +5303,7 @@ function ScreenMoney({
         h(
           'div',
           { class: 'gb-sectiontitle' },
-          h('h3', null, 'Subscriptions'),
+          h('h2', null, 'Subscriptions'),
           h(
             'button',
             {
@@ -5449,7 +5468,7 @@ function ScreenMoney({
       h(
         'div',
         { class: 'gb-sectiontitle' },
-        h('h3', null, 'Monthly budgets'),
+        h('h2', null, 'Monthly budgets'),
         h(
           'div',
           { class: 'gb-money-head-actions' },
@@ -5579,7 +5598,7 @@ function ScreenMoney({
       h(
         'div',
         { class: 'gb-sectiontitle' },
-        h('h3', null, 'Savings goals'),
+        h('h2', null, 'Savings goals'),
         h(
           'div',
           { class: 'gb-money-head-actions' },
@@ -5721,7 +5740,7 @@ function ScreenMoney({
         h(
           'div',
           { class: 'gb-sectiontitle' },
-          h('h3', null, 'Smart wishlist'),
+          h('h2', null, 'Smart wishlist'),
           h(
             'button',
             {
@@ -6098,7 +6117,7 @@ function ScreenMoney({
     const summary = Card({
       className: 'gb-money-card',
       children: [
-        h('div', { class: 'gb-sectiontitle' }, h('h3', null, 'This month')),
+        h('div', { class: 'gb-sectiontitle' }, h('h2', null, 'This month')),
         incomeMonth > 0
           ? h(
               'div',
@@ -6153,7 +6172,7 @@ function ScreenMoney({
         h(
           'div',
           { class: 'gb-sectiontitle' },
-          h('h3', null, 'Income'),
+          h('h2', null, 'Income'),
           h(
             'button',
             { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--compact', onclick: openAddIncome },
@@ -6325,7 +6344,7 @@ function ScreenMoney({
         h(
           'div',
           { class: 'gb-sectiontitle' },
-          h('h3', null, 'Loans'),
+          h('h2', null, 'Loans'),
           h(
             'div',
             { class: 'gb-money-head-actions' },
@@ -6462,7 +6481,7 @@ function ScreenMoney({
         h(
           'div',
           { class: 'gb-sectiontitle' },
-          h('h3', null, 'Every month'),
+          h('h2', null, 'Every month'),
           h(
             'div',
             { class: 'gb-money-head-actions' },
@@ -6617,7 +6636,7 @@ function ScreenMoney({
         h(
           'div',
           { class: 'gb-sectiontitle' },
-          h('h3', null, 'Challenges'),
+          h('h2', null, 'Challenges'),
           h(
             'button',
             {
@@ -6702,7 +6721,7 @@ function ScreenMoney({
     const timelineCard = Card({
       className: 'gb-money-card',
       children: [
-        h('div', { class: 'gb-sectiontitle' }, h('h3', null, 'Your journey')),
+        h('div', { class: 'gb-sectiontitle' }, h('h2', null, 'Your journey')),
         tl.length
           ? h(
               'div',
@@ -6732,7 +6751,7 @@ function ScreenMoney({
     const reflectCard = Card({
       className: 'gb-money-card',
       children: [
-        h('div', { class: 'gb-sectiontitle' }, h('h3', null, 'Reflection patterns')),
+        h('div', { class: 'gb-sectiontitle' }, h('h2', null, 'Reflection patterns')),
         ri
           ? h(
               'div',
@@ -6756,7 +6775,7 @@ function ScreenMoney({
     const shareCard = Card({
       className: 'gb-money-card',
       children: [
-        h('div', { class: 'gb-sectiontitle' }, h('h3', null, 'Share your progress')),
+        h('div', { class: 'gb-sectiontitle' }, h('h2', null, 'Share your progress')),
         h(
           'div',
           { class: 'gb-money-intro' },
@@ -6798,15 +6817,18 @@ function ScreenMoney({
     { key: 'coach', label: 'Coach', icon: 'sparkles' },
   ];
   function tabBar() {
-    return h(
+    const bar = h(
       'div',
-      { class: 'gb-money-tabs', role: 'tablist' },
+      { class: 'gb-money-tabs', role: 'tablist', 'aria-label': 'Money' },
       TABS.map((t) =>
         h(
           'button',
           {
             type: 'button',
             role: 'tab',
+            // Ids so rovingGroup's focus survives paint() rebuilding the bar.
+            id: 'gb-money-tab-' + t.key,
+            'aria-controls': activeTab === t.key ? 'gb-money-tabpanel' : null,
             'aria-selected': String(activeTab === t.key),
             // Below 540px the label span is display:none (money.css) and the icon is
             // aria-hidden, which left every tab with no accessible name at all.
@@ -6830,6 +6852,7 @@ function ScreenMoney({
         )
       )
     );
+    return rovingGroup(bar);
   }
   function renderTab() {
     const nodes =
@@ -6840,7 +6863,16 @@ function ScreenMoney({
           : activeTab === 'coach'
             ? tabCoach()
             : tabOverview();
-    return h('div', { class: 'gb-money-tabpanel', role: 'tabpanel' }, nodes.filter(Boolean));
+    return h(
+      'div',
+      {
+        class: 'gb-money-tabpanel',
+        role: 'tabpanel',
+        id: 'gb-money-tabpanel',
+        'aria-labelledby': 'gb-money-tab-' + activeTab,
+      },
+      nodes.filter(Boolean)
+    );
   }
   function paint() {
     root.replaceChildren(tabBar(), renderTab());

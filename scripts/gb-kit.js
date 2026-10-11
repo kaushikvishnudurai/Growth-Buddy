@@ -83,6 +83,60 @@ function activate(fn) {
   };
 }
 
+/* ---- Roving focus for a tablist / radiogroup ----
+     rovingGroup(groupEl) -> groupEl. The roles promise one Tab stop and arrow
+     keys; plain buttons gave every option its own Tab stop and ignored arrows.
+     Arrows (Left/Right; Up/Down too in a radiogroup) and Home/End move focus
+     AND select by clicking the item, so each caller's own onclick stays the one
+     place selection happens. The selected item (aria-selected / aria-checked)
+     is the group's Tab stop, kept current by an observer, so a click, a set()
+     or items appended after this call all keep it right. A click that repaints
+     the group is fine when the items carry ids: focus follows the id. */
+function rovingGroup(group) {
+  const items = () =>
+    [...group.querySelectorAll('[role=tab],[role=radio]')].filter((b) => !b.disabled);
+  const isOn = (b) =>
+    b.getAttribute('aria-selected') === 'true' || b.getAttribute('aria-checked') === 'true';
+  const sync = () => {
+    const all = items();
+    const stop = all.find(isOn) || all[0];
+    all.forEach((b) => b.setAttribute('tabindex', b === stop ? '0' : '-1'));
+  };
+  const vertical = group.getAttribute('role') === 'radiogroup';
+  group.addEventListener('keydown', (e) => {
+    const all = items();
+    const i = all.indexOf(e.target);
+    if (i < 0) return;
+    const step = {
+      ArrowRight: 1,
+      ArrowLeft: -1,
+      ...(vertical ? { ArrowDown: 1, ArrowUp: -1 } : {}),
+    }[e.key];
+    const to =
+      e.key === 'Home'
+        ? 0
+        : e.key === 'End'
+          ? all.length - 1
+          : step
+            ? (i + step + all.length) % all.length
+            : -1;
+    if (to < 0) return;
+    e.preventDefault();
+    const next = all[to];
+    const id = next.id;
+    next.click();
+    ((!next.isConnected && id && document.getElementById(id)) || next).focus();
+  });
+  new MutationObserver(sync).observe(group, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    attributeFilter: ['aria-selected', 'aria-checked', 'disabled'],
+  });
+  sync();
+  return group;
+}
+
 /* ---- Pluralize helper ----
      plural(1, 'task') -> '1 task'; plural(3, 'task') -> '3 tasks'.
      Pass an explicit plural for irregular words: plural(2, 'entry', 'entries'). */
@@ -183,13 +237,13 @@ function Card({ children, style, className = '', onClick } = {}) {
 }
 
 /* ---- Section title ---- */
-function SectionTitle({ title, action, onAction } = {}) {
+/* `level` 2: a section of the screen, under its one h1. Pass 3 for a title
+   that sits under another section's h2. Styled by class, so both look alike. */
+function SectionTitle({ title, action, onAction, level = 2 } = {}) {
   return h(
     'div',
     { class: 'gb-sectiontitle' },
-    // h2: a section of the screen, under the page's h1. It was an h3 with no h2
-    // above it, which skips a level (Lighthouse heading-order).
-    h('h2', null, title),
+    h('h' + level, null, title),
     // A real <button>: an href-less <a role=button> took focus but ignored Enter
     // and Space. No handler means it is a count ("8 items"), not a control.
     action
@@ -1155,7 +1209,12 @@ function AppHeader({ label, name, userName, onAccount, unreadCount, onBell, onAd
         {
           type: 'button',
           class: 'gb-iconbtn gb-bell',
-          'aria-label': 'Notifications',
+          // aria-label replaces the content, so the badge's count must be in it.
+          // paintBellBadge (app.js) keeps the same wording when the count changes.
+          'aria-label':
+            unreadCount > 0
+              ? 'Notifications, ' + (unreadCount > 99 ? '99+' : unreadCount) + ' unread'
+              : 'Notifications',
           onclick: onBell,
         },
         bellChildren
@@ -1274,6 +1333,7 @@ function Thinking(label, steps) {
 }
 
 export {
+  rovingGroup,
   h,
   activate,
   trackOverlay,

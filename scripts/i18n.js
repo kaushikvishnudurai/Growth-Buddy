@@ -4,7 +4,8 @@
                        plural form through Intl.PluralRules. Missing in the active
                        locale → English → the key itself (never undefined, never throws).
    setLocale(tag)      'hi-IN', 'ta', … — anything Intl accepts; junk falls back to the
-                       device. Also sets <html lang>.
+                       device. Also sets <html lang> to pageLang(): the catalog actually
+                       used (only en ships), never a language the page is not in.
    localeFromUser(u)   the profile's locale if one exists (uiPrefs.locale, then
                        user.locale / user.language), else navigator.language, else 'en'.
                        NOTE: uiPrefs.qaLang is the quick-add VOICE language, not the UI
@@ -65,7 +66,8 @@ function setLocale(tag) {
   locale = canonical(tag) || deviceLocale();
   cache.clear();
   if (typeof document !== 'undefined' && document.documentElement) {
-    document.documentElement.lang = locale;
+    // The page's language is the catalog's, not the device's: a ta-IN phone still reads English.
+    document.documentElement.lang = pageLang(locale);
   }
   return locale;
 }
@@ -94,6 +96,15 @@ function catalogFor(tag) {
   if (CATALOGS[tag]) return CATALOGS[tag];
   const base = tag.split('-')[0];
   return CATALOGS[base] || null;
+}
+
+/* <html lang>: the catalog the words actually come from, not the device. A
+   ta-IN phone reads English, and so does en-GB: the strings are one 'en'
+   catalog, so a region tag would claim a variant nobody wrote. */
+function pageLang(tag) {
+  if (CATALOGS[tag]) return tag;
+  const base = String(tag || '').split('-')[0];
+  return CATALOGS[base] ? base : 'en';
 }
 
 function plural(n, opts) {
@@ -214,6 +225,7 @@ function fmtRelativeDays(value, from) {
 export {
   t,
   setLocale,
+  pageLang,
   getLocale,
   localeFromUser,
   plural,
