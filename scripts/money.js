@@ -754,7 +754,10 @@ const COMMON_CHALLENGES = [
     reason: 'Cook in and watch the savings add up.',
   },
   {
-    label: 'Spend under ₹500 today',
+    // Getters: the label follows the user's currency (`cur`), read when suggested.
+    get label() {
+      return 'Spend under ' + fmt(500) + ' today';
+    },
     kind: 'cap',
     scope: 'all',
     amount: 500,
@@ -762,7 +765,9 @@ const COMMON_CHALLENGES = [
     reason: 'A simple one-day money detox.',
   },
   {
-    label: 'Save ₹1,000 this month',
+    get label() {
+      return 'Save ' + fmt(1000) + ' this month';
+    },
     kind: 'save',
     amount: 1000,
     reason: 'Pay your future self first.',
@@ -1130,8 +1135,8 @@ function searchExpenses(money, query) {
   }
   let min = 0;
   let max = Infinity;
-  const above = q.match(/(above|over|more than|greater than|>)\s*₹?\s*(\d[\d,]*)/);
-  const below = q.match(/(below|under|less than|<)\s*₹?\s*(\d[\d,]*)/);
+  const above = q.match(/(above|over|more than|greater than|>)\s*[^\d\s]{0,3}\s*(\d[\d,]*)/);
+  const below = q.match(/(below|under|less than|<)\s*[^\d\s]{0,3}\s*(\d[\d,]*)/);
   if (above) min = Number(above[2].replace(/,/g, ''));
   if (below) max = Number(below[2].replace(/,/g, ''));
   const cat = mergedCats(money).find((c) => q.includes(c.label.toLowerCase()) || q.includes(c.key));
@@ -1152,7 +1157,7 @@ function searchExpenses(money, query) {
     if (!words.length)
       return {
         answer:
-          'I didn\'t catch that. Try "how much on food this month", "expenses over ₹500", or "what could I skip".',
+          'I didn\'t catch that. Try "how much on food this month", "expenses over ' + cur + '500", or "what could I skip".',
         results: [],
       };
   }
@@ -1180,7 +1185,7 @@ function searchExpenses(money, query) {
   const answer = results.length
     ? `You spent ${fmt(total)} on ${what} ${label} (${results.length} expense${results.length === 1 ? '' : 's'}).`
     : words.length
-      ? `Nothing matches ${what}. Try "how much on food this month", "expenses over ₹500", or "what could I skip".`
+      ? `Nothing matches ${what}. Try "how much on food this month", "expenses over ${cur}500", or "what could I skip".`
       : `No ${what} found ${label}.`;
   return { answer, results: results.slice(0, 40) };
 }
@@ -1999,7 +2004,7 @@ export function MoneyCustomisePane(money, save) {
     class: 'gb-input',
     maxlength: '3',
     value: money.settings.currency || CUR,
-    placeholder: '₹',
+    placeholder: CUR,
     onchange: () => {
       const sym = currencyInput.value.trim().slice(0, 3) || CUR;
       currencyInput.value = sym;
@@ -7011,4 +7016,5 @@ export const _calc = {
   financialHealth,
   challengeEnd,
   newSubscription,
+  suggestChallenges,
 };

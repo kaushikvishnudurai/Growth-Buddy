@@ -18,7 +18,8 @@ globalThis.Date = class extends RealDate {
   }
 };
 
-const { _calc, normalizeMoney, ledgerCsv } = await import('./money.js');
+const { _calc, normalizeMoney, ledgerCsv, searchExpenses } = await import('./money.js');
+const { applyCurrency } = await import('./money-core.js');
 const {
   forecast,
   upcomingSubs,
@@ -37,6 +38,7 @@ const {
   financialHealth,
   challengeEnd,
   newSubscription,
+  suggestChallenges,
 } = _calc;
 
 const doc = (over) => normalizeMoney({ ...over });
@@ -376,3 +378,16 @@ console.log('money-calc no-spend logging: ok');
   assert.equal(forecast(m).committed, 0, 'not committed again');
 }
 console.log('money-calc challenges + new bills: ok');
+
+// ---- CNT-12: challenge labels and search hints follow the user's currency ----
+{
+  const m = doc({ settings: { currency: '$' }, expenses: [ex('a', 700, '2026-10-19'), ex('b', 90, '2026-10-19')] });
+  applyCurrency(m);
+  const labels = suggestChallenges(doc({ settings: { currency: '$' } })).map((c) => c.label).join(' | ');
+  assert.ok(!labels.includes('₹'), 'no rupee sign in ' + labels);
+  assert.match(labels, /Spend under \$500 today/);
+  assert.deepEqual(searchExpenses(m, 'expenses over $500').results.map((e) => e.id), ['a'], '"over $500" is read');
+  assert.match(searchExpenses(m, 'zzzz').answer, /over \$500/, 'the hint uses $');
+  applyCurrency(doc({}));
+}
+console.log('money-calc currency: ok');
