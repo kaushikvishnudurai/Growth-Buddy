@@ -1,7 +1,7 @@
 /* =====================================================================
    Growth Buddy — Goals screen (short / mid / long term goals + actions)
    ===================================================================== */
-import { h, Icon, Pill, openModal, shakeRefusal, focusSoon } from './gb-kit.js';
+import { h, Icon, Pill, openModal, shakeRefusal, focusSoon, fieldRefusal } from './gb-kit.js';
 import {
   moveItem,
   renameMilestone,
@@ -192,8 +192,7 @@ function openEditProgress(goal, progress, onUpdateProgress, linkedCount = 0) {
       const dur = parseInt(durationInput.value);
       const followed = parseInt(followedInput.value);
       if (!Number.isFinite(dur) || dur < 1) {
-        durationInput.focus();
-        throw new Error('Duration must be at least 1 day.');
+        throw fieldRefusal(durationInput, 'Duration must be at least 1 day.');
       }
       if (auto) {
         // Counted from the goal's own start, so linking habits to a goal that
@@ -206,12 +205,10 @@ function openEditProgress(goal, progress, onUpdateProgress, linkedCount = 0) {
         return;
       }
       if (!Number.isFinite(followed) || followed < 0) {
-        followedInput.focus();
-        throw new Error('Days followed cannot be negative.');
+        throw fieldRefusal(followedInput, 'Days followed cannot be negative.');
       }
       if (followed > dur) {
-        followedInput.focus();
-        throw new Error('Days followed cannot exceed duration.');
+        throw fieldRefusal(followedInput, 'Days followed cannot exceed duration.');
       }
       onUpdateProgress(goal.id, { durationDays: dur, daysFollowed: followed, autoDays: false });
     },
@@ -1111,8 +1108,7 @@ function ScreenGoals({
       onPrimary: async () => {
         const title = titleInput.value.trim();
         if (!title) {
-          titleInput.focus();
-          throw new Error('Give the goal a name first.');
+          throw fieldRefusal(titleInput, 'Give the goal a name first.');
         }
         if (editing) {
           // PUT: null = unchanged, so a removed date says so with its own flag.
@@ -1135,8 +1131,7 @@ function ScreenGoals({
         }
         const dur = durationInput.value ? Number(durationInput.value) : null;
         if (dur != null && (!Number.isInteger(dur) || dur < 1 || dur > 1000)) {
-          durationInput.focus();
-          throw new Error('Track daily takes a whole number of days, 1 to 1000.');
+          throw fieldRefusal(durationInput, 'Track daily takes a whole number of days, 1 to 1000.');
         }
         // Not `goal`: a const of that name here shadows the parameter for the
         // whole function, and the edit branch above then read it in its TDZ.
@@ -1190,13 +1185,11 @@ function ScreenGoals({
       onPrimary: async () => {
         const note = noteInput.value.trim();
         if (!note) {
-          noteInput.focus();
-          throw new Error('Action note is required');
+          throw fieldRefusal(noteInput, 'Action note is required');
         }
         // A typed date skips the picker's max; YYYY-MM-DD compares as text.
         if (dateInput.value && dateInput.value > todayKey()) {
-          dateInput.focus();
-          throw new Error("An action can't be dated in the future.");
+          throw fieldRefusal(dateInput, "An action can't be dated in the future.");
         }
         const payload = { note, actionDate: dateInput.value || null };
         if (action) await onUpdateAction(goal.id, action.id, payload);

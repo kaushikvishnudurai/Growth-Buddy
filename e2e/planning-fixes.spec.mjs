@@ -81,3 +81,19 @@ test('EXP-1: editing a goal saves the new title', async ({ page, account }) => {
     .toBe(true);
   await shot(page, 'EXP-1');
 });
+
+test('EXP-8: goal form errors show under the field', async ({ page, account }) => {
+  await boot(page, account, 'goals');
+  await main(page).getByRole('button', { name: 'New goal' }).click();
+  const dlg = page.getByRole('dialog', { name: 'New goal' });
+  await dlg.getByRole('button', { name: 'Save goal' }).click();
+  const title = dlg.getByRole('textbox', { name: 'Goal' });
+  await expect(title).toHaveAttribute('aria-invalid', 'true');
+  await expect(dlg.locator('.gb-field-error')).toHaveText('Give the goal a name first.');
+  await title.fill('Cut sugar');
+  await expect(dlg.locator('.gb-field-error')).toHaveCount(0);
+  await dlg.getByRole('spinbutton', { name: 'Track daily for how many days' }).fill('5000');
+  await dlg.getByRole('button', { name: 'Save goal' }).click();
+  await expect(dlg.locator('.gb-affix + .gb-field-error')).toHaveText(/1 to 1000/);
+  await shot(page, 'EXP-8');
+});

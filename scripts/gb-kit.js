@@ -936,11 +936,14 @@ function openModal({
    on the next keystroke. role=alert so a screen reader hears it at once. */
 let fieldErrorSeq = 0;
 function fieldError(input, message) {
-  const next = input.nextElementSibling;
+  // An input inside a `.gb-affix` (value + unit in one box) gets the line
+  // under the box, not between the value and its unit.
+  const anchor = input.closest('.gb-affix') || input;
+  const next = anchor.nextElementSibling;
   if (next && next.classList.contains('gb-field-error')) next.remove();
   const id = 'gb-field-err-' + ++fieldErrorSeq;
   const note = h('p', { class: 'gb-field-error', id, role: 'alert' }, message);
-  input.after(note);
+  anchor.after(note);
   input.classList.add('is-invalid');
   input.setAttribute('aria-invalid', 'true');
   input.setAttribute('aria-describedby', id);
