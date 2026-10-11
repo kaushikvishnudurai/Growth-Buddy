@@ -84,8 +84,11 @@ const SESSION_KEY = 'gb.focusSession';
 
 function saveSession() {
   try {
+    // A lined-up break, or a sprint lined up mid-cycle, is idle but is still
+    // where the cycle stands: keep it, so a reload doesn't fall back to
+    // "Sprint 1 of 4". restoredSession reads it as paused at full time.
     const idle = !T.running && (T.remainingSec <= 0 || T.remainingSec === T.durationSec);
-    if (idle) {
+    if (idle && (T.remainingSec <= 0 || (T.mode === 'focus' && !T.cycleDone))) {
       CacheStorage.removeItem(SESSION_KEY);
       return;
     }

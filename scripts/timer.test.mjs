@@ -35,6 +35,11 @@ assert.deepEqual(restoredSession(run, NOW, 'u1'), {
   durationSec: 1500,
   endsAt: NOW + 600 * 1000,
 });
+// An idle, lined-up break (EXF-5) comes back as itself, not as sprint 1.
+assert.deepEqual(
+  restoredSession({ owner: 'u1', mode: 'break', durationSec: 300, remainingSec: 300, running: false, cycle: 1 }, NOW, 'u1'),
+  { action: 'paused', mode: 'break', durationSec: 300, remainingSec: 300 }
+);
 assert.deepEqual(restoredSession({ ...run, endsAt: NOW - 1 }, NOW, 'u1'), {
   action: 'finish',
   mode: 'focus',

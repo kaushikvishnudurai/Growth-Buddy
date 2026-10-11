@@ -119,6 +119,21 @@ function weekStart(key) {
 }
 
 /**
+ * The "one focus for next week" that applies today: the latest weekly review
+ * filed for this week or last (a review saved on Sunday is filed under that
+ * week and names the week after it), else ''. `reviews` is app.js's
+ * `state.weeklyReviews`, `{weekStart: {focus}}`.
+ */
+export function weekFocus(reviews, today) {
+  const mon = weekStart(today || localKey(new Date()));
+  const prev = dayKey(dayNum(mon) - 7);
+  const keys = Object.keys(reviews || {})
+    .filter((k) => k >= prev && k <= mon && reviews[k] && String(reviews[k].focus || '').trim())
+    .sort();
+  return keys.length ? String(reviews[keys[keys.length - 1]].focus).trim() : '';
+}
+
+/**
  * Best-ever numbers from data already loaded. Each record is
  * {icon, label, value, sub}; one whose data is missing is left out.
  * `fmtMoney` formats a spend total in the user's currency.
@@ -221,11 +236,17 @@ export function weeklyWinsDraft({ finished, habits, trends, money, today, fmtMon
   if (done > 0) wins.push('Finished ' + done + (done === 1 ? ' task' : ' tasks'));
 
   const best = (habits || []).reduce((m, x) => ((x.streak || 0) > (m ? m.streak || 0 : 0) ? x : m), null);
-  if (best && best.streak >= 3) wins.push('Kept ' + best.name + ' going for ' + best.streak + ' days');
+  // A first week has no 3-day streak yet; a check-in is still the week's win.
+  if (best && best.streak >= 2) wins.push('Kept ' + best.name + ' going for ' + best.streak + ' days');
+  else if (best && best.streak === 1) wins.push('Checked in on ' + best.name);
 
   const by = (trends && trends.byDate) || {};
   const met = days.filter((k) => by[k] && by[k].waterGoalMl > 0 && by[k].waterMl >= by[k].waterGoalMl).length;
-  if (met >= 3) wins.push('Hit the water goal on ' + met + ' of 7 days');
+  const sipped = days.filter((k) => by[k] && by[k].waterMl > 0).length;
+  const ate = days.filter((k) => by[k] && by[k].kcal > 0).length;
+  if (met > 0) wins.push('Hit the water goal on ' + met + ' of 7 days');
+  else if (sipped > 0) wins.push('Logged water on ' + sipped + (sipped === 1 ? ' day' : ' days'));
+  if (ate > 0 && wins.length < 2) wins.push('Logged meals on ' + ate + (ate === 1 ? ' day' : ' days'));
 
   const avg = (keys) => {
     const xs = keys.map((k) => by[k] && Number(by[k].score)).filter((n) => Number.isFinite(n) && n > 0);

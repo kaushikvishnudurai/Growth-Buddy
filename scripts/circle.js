@@ -1318,7 +1318,7 @@ function SeatRing({ circle, members, currentUserId, onCheer, cheered }) {
   return ringEl;
 }
 
-function ChallengesPanel({ api, currentUserId, wins }) {
+function ChallengesPanel({ api, currentUserId, wins, addHabit }) {
   const el = h('div', { class: 'gb-challenges' }, sectionSkeleton(1));
 
   // What a challenge counts (ChallengeMetrics.Metric server-side). A challenge
@@ -1368,6 +1368,13 @@ function ChallengesPanel({ api, currentUserId, wins }) {
       },
       Icon('sparkles', { size: 14, sw: 2.4 })
     );
+    // Today's one cheer already sent (the server's cheeredByMe, as the seats read
+    // it): show it sent, so the row doesn't offer a cheer that would be refused.
+    if (member.cheeredByMe) {
+      btn.disabled = true;
+      btn.classList.add('is-sent');
+      btn.setAttribute('aria-label', 'Cheered ' + member.name + ' today');
+    }
     return btn;
   }
 
@@ -1502,6 +1509,13 @@ function ChallengesPanel({ api, currentUserId, wins }) {
           label: 'Private circle',
           hint: 'Hidden from Browse. People join with a code you share.',
         },
+        // A new circle's first step, so its card doesn't open on "No challenge running".
+        {
+          key: 'sprint',
+          type: 'checkbox',
+          value: true,
+          label: 'Start a ' + CHALLENGE_TEMPLATES[0].label + ' today',
+        },
       ],
       onSubmit: async (v, close) => {
         if (!v.name) throw new Error('Give the circle a name first.');
@@ -1510,11 +1524,22 @@ function ChallengesPanel({ api, currentUserId, wins }) {
           goal: v.goal || null,
           visibility: v.private ? 'private' : 'public',
         });
-        toast.success(
-          made && made.joinCode ? 'Circle created. Code: ' + made.joinCode : 'Circle created.'
-        );
         close();
+        if (v.sprint) {
+          const t = CHALLENGE_TEMPLATES[0];
+          // The circle exists either way; a refused sprint is one toast, not a failed create.
+          await api
+            .createChallenge(made.id, { title: t.title, days: t.days, metric: t.metric, startDate: localISO() })
+            .catch((err) => toast.error(err, 'Circle created, but the challenge did not start.'));
+        }
         addCard(made);
+        // The other first step is people. The share sheet needs a tap of its own
+        // (a browser opens it only from a gesture), so the toast carries it.
+        toast.action(
+          made.joinCode ? 'Circle created. Code: ' + made.joinCode : 'Circle created.',
+          'Invite',
+          () => shareInvite(made)
+        );
       },
     });
   }
@@ -1524,13 +1549,17 @@ function ChallengesPanel({ api, currentUserId, wins }) {
       title: 'Join with a code',
       sub: 'Private circles are joined with the code a member shares.',
       submitLabel: 'Join',
-      fields: [{ key: 'code', label: 'Circle code', placeholder: 'e.g. K7M2QX9P', maxlength: 12 }],
+      fields: [
+        { key: 'code', label: 'Circle code', placeholder: 'e.g. K7M2QX9P', maxlength: 12 },
+        ...goalField(null),
+      ],
       onSubmit: async (v, close) => {
         if (!v.code) throw new Error('Enter the code first.');
         const joined = await api.joinByCode(v.code);
         toast.success('Joined ' + joined.name + '.');
         close();
         if (!el.querySelector('[data-circle-id="' + joined.id + '"]')) addCard(joined);
+        if (v.addGoal) adoptGoal(joined);
       },
     });
   }
@@ -1745,19 +1774,80 @@ function ChallengesPanel({ api, currentUserId, wins }) {
     }
   }
 
-  /* Opened from an invite link: join, show the card, and drop the link's
-     query so a reload doesn't try again. Already a member is a quiet no-op. */
+  /* Opened from an invite link: ask first, then join, show the card, and drop
+     the link's query so a reload doesn't try again. The ask is the guard: a
+     link dropped in a chat must not pull anyone into a circle (and show it
+     their day) on its own. Already a member is a quiet no-op. */
   async function joinFromLink() {
     const invite = inviteFromHash(window.location.hash);
     if (!invite) return;
     history.replaceState(null, '', window.location.pathname + window.location.search + '#/circle');
-    try {
-      const joined = invite.code ? await api.joinByCode(invite.code) : await api.join(invite.id);
-      if (!el.querySelector('[data-circle-id="' + joined.id + '"]')) addCard(joined);
-      toast.success('You joined ' + joined.name + '.');
-    } catch (err) {
-      toast.error(err, 'That invite link did not work. Ask for a fresh one.');
+    // A public circle is in Browse's list, so the sheet can name it; a private
+    // one is only known by its code until it is joined.
+    let c = null;
+    if (invite.id) {
+      try {
+        c = (await api.listAll()).find((x) => x.id === invite.id) || null;
+      } catch (_) {
+        /* the sheet still asks, without the name */
+      }
+      if (c && c.joined) {
+        if (!el.querySelector('[data-circle-id="' + c.id + '"]')) addCard(c);
+        return;
+      }
     }
+    const name = c ? c.name : 'this private circle';
+    openFormModal({
+      title: 'Join ' + name + '?',
+      sub:
+        (c ? plural(c.memberCount, 'member') + '. ' : '') +
+        'Members will see whether you checked in today, and you will get the circle’s posts and cheers. ' +
+        'You can keep your progress private in Settings > Account > Privacy.',
+      submitLabel: 'Join',
+      fields: goalField(c),
+      onSubmit: async (v, close) => {
+        let joined;
+        try {
+          joined = invite.code ? await api.joinByCode(invite.code) : await api.join(invite.id);
+        } catch (err) {
+          close();
+          toast.error(err, 'That invite link did not work. Ask for a fresh one.');
+          return;
+        }
+        close();
+        if (!el.querySelector('[data-circle-id="' + joined.id + '"]')) addCard(joined);
+        toast.success('You joined ' + joined.name + '.');
+        if (v.addGoal) adoptGoal(joined);
+      },
+    });
+  }
+
+  /* The circle's shared goal as one of the joiner's habits, so their seat has
+     something to light. Offered pre-ticked on every join; a goal too long to be
+     a habit name, or no addHabit wired, offers nothing. */
+  function goalField(c) {
+    if (typeof addHabit !== 'function' || (c && !habitName(c.goal))) return [];
+    return [
+      {
+        key: 'addGoal',
+        type: 'checkbox',
+        value: true,
+        label: c ? 'Add “' + habitName(c.goal) + '” to my habits' : 'Add the circle’s goal to my habits',
+      },
+    ];
+  }
+  function habitName(goal) {
+    const g = (goal || '').trim();
+    return g && g.length <= 120 ? g : '';
+  }
+  function adoptGoal(joined) {
+    const name = habitName(joined.goal);
+    if (!name) return;
+    // addHabit resolves false when the user already has a habit of that name.
+    addHabit(name).then(
+      (made) => made !== false && toast.success('Added “' + name + '” to your habits.'),
+      (err) => toast.error(err, 'Could not add the habit.')
+    );
   }
 
   function removeCard(cardEl) {
@@ -1996,6 +2086,30 @@ function ChallengesPanel({ api, currentUserId, wins }) {
           sendReply();
         }
       });
+      /* Gone at once, sent once Undo has had its chance: the row leaves on
+         the tap, so a second tap has nothing to hit. */
+      function removeReply(r) {
+        const at = rows.indexOf(r);
+        rows = rows.filter((x) => x !== r);
+        paint();
+        const putBack = () => {
+          rows = rows.slice();
+          rows.splice(Math.min(at, rows.length), 0, r);
+          paint();
+        };
+        // ponytail: the undo window is the action toast's 6 s; a page closed
+        // inside it keeps the reply (the safe side).
+        const timer = setTimeout(() => {
+          api.deleteComment(c.id, p.id, r.id).catch((err) => {
+            putBack();
+            toast.error(err, 'Could not delete that reply.');
+          });
+        }, 6000);
+        toast.action('Reply deleted.', 'Undo', () => {
+          clearTimeout(timer);
+          putBack();
+        });
+      }
       function paint() {
         onCount(rows.length);
         listEl.replaceChildren();
@@ -2019,15 +2133,7 @@ function ChallengesPanel({ api, currentUserId, wins }) {
                       class: 'gb-iconbtn gb-circle-post-del',
                       'aria-label': 'Delete reply',
                       title: 'Delete',
-                      onclick: async () => {
-                        try {
-                          await api.deleteComment(c.id, p.id, r.id);
-                          rows = rows.filter((x) => x.id !== r.id);
-                          paint();
-                        } catch (err) {
-                          toast.error(err, 'Could not delete that reply.');
-                        }
-                      },
+                      onclick: () => removeReply(r),
                     },
                     Icon('trash-2', { size: 13, sw: 2.4 })
                   )
@@ -2040,7 +2146,9 @@ function ChallengesPanel({ api, currentUserId, wins }) {
       api
         .listComments(c.id, p.id)
         .then((list) => {
-          rows = list || [];
+          // A reply sent while this was in flight isn't in `list`: keep it.
+          list = list || [];
+          rows = list.concat(rows.filter((r) => !list.some((x) => x.id === r.id)));
           paint();
         })
         .catch(() =>
@@ -2513,6 +2621,7 @@ function ScreenCircle({
   mentorshipApi,
   currentUserId,
   wins,
+  addHabit,
 }) {
   const outgoingEl = h('div', { class: 'gb-circle-section' }, sectionSkeleton(1));
   // Pending invites TO me. Empty (no heading at all) until there is one.
@@ -2810,7 +2919,7 @@ function ScreenCircle({
   );
 
   const challenges = challengesApi
-    ? ChallengesPanel({ api: challengesApi, currentUserId, wins })
+    ? ChallengesPanel({ api: challengesApi, currentUserId, wins, addHabit })
     : null;
   const challengesPanel = challenges && challenges.node;
 
