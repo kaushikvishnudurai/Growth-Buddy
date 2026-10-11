@@ -278,8 +278,8 @@ function Check({ done = false, onToggle, color, label, list } = {}) {
       // onToggle re-renders the whole app, which replaced this button on the
       // tap's own frame — the press and the pop never got painted, so a tick
       // on a phone looked like a jump cut. Paint here first, hand over after.
-      onclick: () => {
-        if (list && !tapSettled(list)) return;
+      onclick: (e) => {
+        if (list && !tapSettled(list, btn, e.timeStamp)) return;
         if (btn.dataset.pending) return; // a second tap mid-pop would un-tick
         const ticking = !btn.classList.contains('is-done');
         btn.classList.toggle('is-done', ticking);
@@ -305,16 +305,35 @@ function Check({ done = false, onToggle, color, label, list } = {}) {
 
 /* A tap that deletes or re-sorts a list row slides the next row under the
    pointer, so a human double tap (about 250 ms) also hit that one: a second
-   reminder deleted, a second task ticked. False while taps on `list` keep
-   coming less than TAP_SETTLE_MS apart: a burst counts as its first tap.
-   Keyed by name, not element, because a tap re-renders the list. */
-const TAP_SETTLE_MS = 400;
-const lastListTap = new Map();
-function tapSettled(list) {
-  const now = Date.now();
-  const prev = lastListTap.get(list);
-  lastListTap.set(list, now);
-  return prev == null || now - prev >= TAP_SETTLE_MS;
+   reminder deleted, a second task ticked. After an accepted tap, taps on `list`
+   are dropped until the change has landed on screen: `el` (the tapped control)
+   has left the page — the re-render that moved the rows ran — then a frame,
+   then TAP_FLOOR_MS to see the new layout. Not a fixed clock: on a loaded
+   phone the re-render, and with it the slide, came later than 400 ms, and a
+   second tap after that went through. `at` is the tap's own time (the event's
+   timeStamp), not when a busy main thread got round to it. No `el` (a re-sort,
+   a control that stays): the next frame starts the floor. TAP_HOLD_MAX_MS caps
+   a control that never leaves (a dialog opened instead). Keyed by name, not
+   element, because a tap re-renders the list. */
+const TAP_FLOOR_MS = 300;
+const TAP_HOLD_MAX_MS = 1500;
+const listHolds = new Map(); // list -> { until }: Infinity while the change is still landing
+function tapSettled(list, el, at = performance.now()) {
+  const held = listHolds.get(list);
+  if (held && at < held.until) return false;
+  const hold = { until: Infinity };
+  listHolds.set(list, hold);
+  const t0 = performance.now();
+  const release = () => {
+    if (hold.until === Infinity) hold.until = performance.now() + TAP_FLOOR_MS;
+  };
+  const watch = () => {
+    if (el && el.isConnected && performance.now() - t0 < TAP_HOLD_MAX_MS) requestAnimationFrame(watch);
+    else requestAnimationFrame(release); // the frame after: the list has painted without the row
+  };
+  requestAnimationFrame(watch);
+  setTimeout(release, TAP_HOLD_MAX_MS + TAP_FLOOR_MS); // no frames in a hidden tab
+  return true;
 }
 
 /* What a person typed, as it is sent: trimmed, bidi overrides dropped (an

@@ -55,8 +55,17 @@ test('HOS-4: a double tap on a reminder delete removes only that reminder', asyn
   await boot(page, account, 'calendar');
   const del = main(page).getByRole('button', { name: 'Delete reminder: DBL a' });
   await expect(del).toBeVisible();
+  // A loaded phone: the first tap's work holds the main thread for 600 ms, so the second tap (200 ms
+  // later) is handled after that, on the row that slid under it. A fixed 400 ms window measured
+  // between the two handlers let it through and deleted DBL b too.
+  await page.evaluate(() =>
+    document.addEventListener('click', () => {
+      const t = performance.now();
+      while (performance.now() - t < 600);
+    }, { once: true })
+  );
   await tapsAt(page, del, 2, 200);
-  await page.waitForTimeout(1200);
+  await page.waitForTimeout(1500);
   const left = (await get(page, account, '/api/reminders')).map((r) => r.text);
   expect(left).not.toContain('DBL a');
   expect(left).toEqual(expect.arrayContaining(['DBL b', 'DBL c']));
