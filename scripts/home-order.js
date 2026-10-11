@@ -22,7 +22,7 @@ export const HOME_WIDGETS = [
   },
   { id: 'plan', label: 'Daily brief', desc: 'A quick suggested plan for today', feature: null },
   { id: 'wellness', label: 'Sleep & mood', desc: 'Log sleep and mood check-ins', feature: null },
-  { id: 'tasks', label: "Today's tasks", desc: 'Your tasks for today', feature: null },
+  { id: 'tasks', label: 'Tasks', desc: 'Overdue, today and coming up', feature: null },
   {
     id: 'calendar',
     label: 'Mini calendar',
@@ -92,6 +92,25 @@ export function taskRank(task, now) {
   if (Number.isNaN(due.getTime())) return 3;
   if (task.overdue || due.getTime() < now.getTime()) return 0;
   return localDayKey(due) === localDayKey(now) ? 1 : 2;
+}
+
+/* Today's share of the task list, for the score's "x/N tasks": open tasks due
+   by the end of today (overdue included) plus tasks done today. An undated open
+   task and tomorrow's task are not today's miss; paused ones are out. A done task
+   with no `doneAt` was just ticked (the optimistic toggle has none yet): today.
+   Shared with app.js score(), so the ring and its sub-line agree. */
+export function tasksForToday(tasks, now = new Date()) {
+  const today = localDayKey(now);
+  const dayOf = (iso) => {
+    const d = iso ? new Date(iso) : null;
+    return d && !Number.isNaN(d.getTime()) ? localDayKey(d) : null;
+  };
+  return (tasks || []).filter((t) => {
+    if (t.paused) return false;
+    if (t.done) return !t.doneAt || dayOf(t.doneAt) === today;
+    const due = dayOf(t.dueAt);
+    return !!due && due <= today;
+  });
 }
 
 /* Home's task list was the whole list in creation order, so this morning's

@@ -4143,6 +4143,11 @@ button.gb-seat:disabled {
   display: flex;
   flex-direction: column;
 }
+/* A desktop deal (balanceHome) seen below 1024px after a resize: one stack. */
+.gb-dash-cols,
+.gb-dash-cols > .gb-dash-col {
+  display: contents;
+}
 .gb-dash-block {
   padding: 0 var(--gutter);
   margin-top: 18px;
@@ -4271,6 +4276,10 @@ button.gb-seat:disabled {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+/* A lone tile (mood logged, sleep still asked above) fills the row. */
+.gb-wellness-grid > :only-child {
+  grid-column: 1 / -1;
 }
 .gb-wellness-tile {
   border: 1px solid var(--border);
@@ -5087,7 +5096,9 @@ button.gb-food-level {
   /* A grid, not wrapping flex: a last card alone on its row kept the same width. */
   .gb-habit-strip {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    /* 132px, not 150: a 1280px Home's ~460px column fits three, where 150 left
+       two a row and the third habit alone under them. */
+    grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
     overflow-x: hidden;
     overflow-y: auto;
     max-height: 284px; /* ~2 rows; the third peeks, which is the scroll hint */
@@ -8907,6 +8918,20 @@ button.gb-food-level {
   .gb-dash--single > .gb-dash-pin {
     column-span: all;
   }
+  /* The widgets dealt into balanced columns (dashboard.js balanceHome): CSS
+     columns could only split them in source order, which left 1280px Home with
+     columns ending 700px apart. */
+  .gb-dash-cols {
+    column-span: all;
+    display: flex;
+    align-items: flex-start;
+    gap: 28px;
+  }
+  .gb-dash-cols > .gb-dash-col {
+    display: flex;
+    flex: 1 1 0;
+    min-width: 0;
+  }
   /* First run on a wide screen: the checklist alone, centred, not one column
      of a two-column flow stranded top-left on an empty canvas. */
   .gb-dash.gb-dash--onboarding {
@@ -9269,7 +9294,9 @@ button.gb-food-level {
     grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
     column-gap: 28px;
     align-items: start;
-    max-width: 1100px;
+    /* The 40px left margin again on the right: a bare 1100px ran the cards flush
+       to the viewport's edge in a 1032px scroller. */
+    max-width: min(1100px, 100% - 80px);
   }
   .gb-food-screen > .gb-dash-block:last-child {
     grid-column: 1 / -1;

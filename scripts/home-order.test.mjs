@@ -8,6 +8,7 @@ import {
   topStreaks,
   homeGoals,
   daysBetween,
+  tasksForToday,
   taskWhen,
 } from './home-order.js';
 
@@ -141,6 +142,26 @@ test('a task row says when, relative to now', () => {
   assert.equal(taskWhen(at(20, 10), now, t, dt), '20 Oct · 10:00');
   assert.equal(taskWhen(null, now, t, dt), null);
   assert.equal(taskWhen('nope', now, t, dt), null);
+});
+
+test("the score counts today's tasks: due by tonight or done today", () => {
+  const now = new Date(2026, 9, 12, 12, 0);
+  const at = (d, hh) => new Date(2026, 9, d, hh, 0).toISOString();
+  const tasks = [
+    { id: 'overdue', dueAt: at(10, 9) },
+    { id: 'tonight', dueAt: at(12, 22) },
+    { id: 'tomorrow', dueAt: at(13, 9) },
+    { id: 'undated' },
+    { id: 'paused', dueAt: at(12, 9), paused: true },
+    { id: 'doneToday', done: true, doneAt: at(12, 8), dueAt: at(14, 9) },
+    { id: 'doneYesterday', done: true, doneAt: at(11, 8), dueAt: at(11, 9) },
+    { id: 'justTicked', done: true },
+  ];
+  assert.deepEqual(
+    tasksForToday(tasks, now).map((t) => t.id),
+    ['overdue', 'tonight', 'doneToday', 'justTicked']
+  );
+  assert.deepEqual(tasksForToday(null, now), []);
 });
 
 if (failures) {

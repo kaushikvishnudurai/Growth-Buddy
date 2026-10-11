@@ -32,6 +32,7 @@ import {
   homeGoals,
   taskWhen,
   localDayKey,
+  tasksForToday,
 } from './home-order.js';
 import { suggestReminderTime } from './habit-stats.js';
 import { waterFish, bubbleRise } from './water-fish.js';
@@ -196,9 +197,10 @@ function allGoals(sections) {
   return (sections || []).flatMap((section) => section.goals || []);
 }
 
-function ScoreCard({ score, tasks: allTasks, habits }) {
-  // Paused tasks are out of the score, so out of its "x/y tasks" line too.
-  const tasks = allTasks.filter((t) => !t.paused);
+function ScoreCard({ score, tasks: allTasks, habits, streakAsked }) {
+  // Today's tasks only (tasksForToday, shared with app.js score()): tomorrow's
+  // task and undated ones aren't today's miss, paused ones are out.
+  const tasks = tasksForToday(allTasks);
   const doneTasks = tasks.filter((t) => t.done).length;
   // The habits owed today, as the server's score counts them (HabitService.
   // countsOn): a weekly habit already done this week, or a paused one, is not
@@ -243,7 +245,16 @@ function ScoreCard({ score, tasks: allTasks, habits }) {
   });
 
   // At 0% beside a live streak, "Let's get started" read as if nothing had ever happened.
-  const run = best.days ? best.days + '-day' : best.weeks ? best.weeks + '-week' : '';
+  // The one-thing card already says "Keep your 6-day ... streak": then this
+  // line counts what is left instead of saying it again.
+  const left = tasks.length - doneTasks + dueHabits.length - doneHabits;
+  const run = streakAsked
+    ? ''
+    : best.days
+      ? best.days + '-day'
+      : best.weeks
+        ? best.weeks + '-week'
+        : '';
   const heading =
     score >= 70
       ? "You're on track 🔥"
@@ -251,7 +262,9 @@ function ScoreCard({ score, tasks: allTasks, habits }) {
         ? 'Keep it going'
         : run
           ? 'Keep your ' + run + ' run going'
-          : 'Let’s get started';
+          : streakAsked && left > 0
+            ? left + (left === 1 ? ' thing' : ' things') + ' left today'
+            : 'Let’s get started';
 
   // Days and weeks are different units, so each gets its own pill; one max
   // over both called a 6-week streak "6-day".
@@ -275,7 +288,11 @@ function ScoreCard({ score, tasks: allTasks, habits }) {
   const subParts = [];
   if (tasks.length) subParts.push(doneTasks + '/' + tasks.length + ' tasks');
   if (dueHabits.length) subParts.push(doneHabits + '/' + dueHabits.length + ' habits');
-  const sub = subParts.length ? subParts.join(' · ') : 'Add a task or habit to begin';
+  const sub = subParts.length
+    ? subParts.join(' · ')
+    : (allTasks || []).some((t) => !t.done && !t.paused)
+      ? 'Nothing due today'
+      : 'Add a task or habit to begin';
 
   return Card({
     className: 'gb-score-card',
@@ -548,7 +565,7 @@ function TodayPlanCard({ water, wellness, onPlanToday, skip }) {
 /* The one thing today (one-thing.js picks it): pinned above the layout, not a
    widget, so saved layouts never see it. One button, the existing handler; the
    render after it succeeds picks the next thing, or drops the card. */
-function oneThingFor({ tasks, habits, water, wellness, money, phoneNight, waterUsualHours, features, toggleTask, toggleHabit, onOpenMoney, onConfirmSleep, onQuickAddWater, onAddMood }) {
+function oneThingFor({ tasks, habits, water, wellness, money, phoneNight, waterUsualHours, features, skipKinds, toggleTask, toggleHabit, onOpenMoney, onConfirmSleep, onQuickAddWater, onAddMood }) {
   const act = {
     streak: toggleHabit,
     overdue: toggleTask,
@@ -557,7 +574,7 @@ function oneThingFor({ tasks, habits, water, wellness, money, phoneNight, waterU
     water: onQuickAddWater,
     mood: onAddMood && (() => onAddMood()),
   };
-  const one = pickOneThing({ tasks, habits, water, wellness, money, phoneNight, waterUsualHours, features, can: (k) => !!act[k] });
+  const one = pickOneThing({ tasks, habits, water, wellness, money, phoneNight, waterUsualHours, features, skipKinds, can: (k) => !!act[k] });
   return one && { ...one, run: () => act[one.kind](one.arg) };
 }
 
@@ -704,14 +721,26 @@ function WeeklyReflectionCard({ tasks, habits, food, goals, wellness }) {
     (t) => t.done && t.doneAt && new Date(t.doneAt).getTime() >= weekAgo.getTime()
   ).length;
   const checkIns = (habits || []).reduce((sum, habit) => sum + (Number(habit.doneThisWeek) || 0), 0);
-  const actionCount = allGoals(goals).reduce((sum, goal) => sum + (goal.actionCount || 0), 0);
+  // This week's, from each goal's recentActions: actionCount is all-time, so
+  // "12 goal actions logged" read as the week's. The server sends 3 a goal, so a
+  // goal with all 3 this week and more on record may have more: "3+".
+  let weekActions = 0;
+  let moreActions = false;
+  allGoals(goals).forEach((goal) => {
+    const recent = goal.recentActions || [];
+    const n = recent.filter((a) => inWeek(a.actionDate || a.createdAt)).length;
+    weekActions += n;
+    if (n === recent.length && n > 0 && (goal.actionCount || 0) > n) moreActions = true;
+  });
   const sleepDays = Object.keys((wellness && wellness.sleepByDate) || {}).filter(inWeek).length;
   const moodDays = Object.keys((wellness && wellness.moodByDate) || {}).filter(inWeek).length;
   const kcal = Math.max(0, (food && food.totalCalories) || 0);
   const lines = [
     plural(doneTasks, 'task') + ' completed this week',
     plural(checkIns, 'habit check-in') + ' this week',
-    plural(actionCount, 'goal action') + ' logged',
+    moreActions
+      ? weekActions + '+ goal actions this week'
+      : plural(weekActions, 'goal action') + ' this week',
     plural(sleepDays, 'sleep log') + ' and ' + plural(moodDays, 'mood log'),
     kcal ? kcal + ' kcal logged today' : null,
   ].filter(Boolean);
@@ -921,7 +950,14 @@ function GoalTimelineCard({ goals }) {
   });
 }
 
-let pouredMl = null; // the total the last pour animated to (WaterCard)
+// The pour in progress (WaterCard): the level it rises from, the total it rises
+// to, and when it began. Module-level so it outlives the card: the server's reply
+// re-renders ~60ms after the optimistic one, and a fresh card drew the final level
+// with no stream, so the pour was never seen.
+let pour = null;
+const POUR_MS = 1100; // .gb-water-pour.is-active's animation
+const RISE_AT = 180; // the stream reaches the water, then the level moves
+const RISE_MS = 520; // .gb-water-fill's transition
 
 function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, weightKg }) {
   const goalMl = Math.max(1, (water && water.goalMl) || 2000);
@@ -979,27 +1015,30 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
   const lastThree = entries.slice(-3).reverse();
   const latest = entries.length ? entries[entries.length - 1] : null;
   const latestAt = latest ? latest.loggedAt : null;
-  // Once per new total: the server's answer re-renders the card inside the
-  // window too, and replayed the pour (and the rise) a second time.
-  const isPouring =
-    !!latestAt && Date.now() - new Date(latestAt).getTime() < 2400 && consumedMl !== pouredMl;
-  if (isPouring) pouredMl = consumedMl;
-  // The card is rebuilt on every add, so a fill drawn at the new level never
-  // transitions: draw it at the level before this pour and move it once the
-  // stream has reached the water.
-  const fromPct = isPouring
-    ? Math.max(
-        0,
-        Math.min(
-          100,
-          Math.round(
-            ((consumedMl - (latest.effectiveMl ?? effectiveMl(latest.amountMl, latest.drinkType))) /
-              goalMl) *
-              100
-          )
-        )
-      )
-    : pct;
+  const now = Date.now();
+  const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // A new pour once per new total. Inside a running pour a new total (the server's
+  // effective figure, or a second glass) only moves its target; the same total
+  // (the server echoing the optimistic one) changes nothing.
+  if (!still && latestAt && now - new Date(latestAt).getTime() < 2400 && (!pour || pour.toMl !== consumedMl)) {
+    if (pour && now - pour.at < POUR_MS) pour.toMl = consumedMl;
+    else {
+      const added = latest.effectiveMl ?? effectiveMl(latest.amountMl, latest.drinkType);
+      pour = {
+        fromPct: Math.max(0, Math.min(100, Math.round(((consumedMl - added) / goalMl) * 100))),
+        toMl: consumedMl,
+        at: now,
+      };
+    }
+  }
+  const elapsed = pour && !still ? now - pour.at : Infinity;
+  const isPouring = elapsed < POUR_MS;
+  // The card is rebuilt on every render, so a fill drawn at the new level never
+  // transitions: draw it where this pour has got to and move it from there.
+  const fromPct =
+    elapsed < RISE_AT + RISE_MS
+      ? Math.round(pour.fromPct + (pct - pour.fromPct) * Math.max(0, (elapsed - RISE_AT) / RISE_MS))
+      : pct;
   const levelStyle = (p) => ({
     transform: 'translateY(' + (100 - p) + '%)',
     '--water-empty': 100 - p + '%',
@@ -1229,10 +1268,11 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
   // The stream reaches the water first (gb-water-pour), then the level rises.
   if (fromPct !== pct) {
     setTimeout(() => {
+      void fill.offsetWidth; // the start level is styled before it moves
       const to = levelStyle(pct);
       fill.style.transform = to.transform;
       fill.style.setProperty('--water-empty', to['--water-empty']);
-    }, 180);
+    }, Math.max(20, RISE_AT - elapsed));
   }
 
   return Card({
@@ -1257,7 +1297,11 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
         h(
           'div',
           { class: 'gb-water-glass' },
-          h('div', { class: 'gb-water-pour' + (isPouring ? ' is-active' : '') }),
+          h('div', {
+            class: 'gb-water-pour' + (isPouring ? ' is-active' : ''),
+            // A re-render picks the stream up where it was instead of restarting it.
+            style: isPouring ? { animationDelay: -elapsed + 'ms' } : null,
+          }),
           fill
         ),
         h(
@@ -1395,6 +1439,8 @@ const SLOT_STARTS = { breakfast: 4, lunch: 11, dinner: 18, snack: 0 };
 const foodAmount = (item) =>
   item.pieces ? plural(item.pieces, 'piece') : item.quantityGrams + ' g';
 
+const FIBRE_TARGET_G = 30; // FoodWeek's fiber target (a flat 30 g)
+
 function FoodCard({ food, onAddFood, onDeleteFood, onEditFood, onCopySlot, copyableSlots }) {
   const total = Math.max(0, (food && food.totalCalories) || 0);
   const entries = (food && food.entries) || [];
@@ -1507,7 +1553,10 @@ function FoodCard({ food, onAddFood, onDeleteFood, onEditFood, onCopySlot, copya
         ? h(
             'div',
             { class: 'gb-food-micros' },
-            micros.map((m) => h('span', null, m.label + ' ' + m.value + ' ' + m.unit))
+            // Fibre against FoodWeek's flat 30 g target: a lone "Fibre 0 g" had no scale.
+            micros.map((m) =>
+              h('span', null, m.label + ' ' + m.value + (m.key === 'fiber' ? ' of ' + FIBRE_TARGET_G : '') + ' ' + m.unit)
+            )
           )
         : null,
       entries.length
@@ -1654,7 +1703,7 @@ function NutrientThali(week) {
     h(
       'figcaption',
       { class: 'gb-thali-legend' },
-      'A full ring is your daily target. Today counts only when it is all you have logged.'
+      'A full ring is your daily target. The rings average the days you logged before today, or today if it is the only one.'
     )
   );
 }
@@ -1866,7 +1915,8 @@ function WaterWeekCard(water) {
       h(
         'p',
         { class: 'gb-summary-meta' },
-        litres(avg) + ' L a day on average. Goal reached on ' + hits + ' of 7 days.'
+        // "a day on average" beside 7 bars read as all 7: it is the logged days'.
+        litres(avg) + ' L on days you logged. Goal reached on ' + hits + ' of 7 days.'
       ),
       h(
         'figure',
@@ -2294,21 +2344,12 @@ function MiniCalendarCard({
   function dateKey(y, m, d) {
     return y + '-' + pad(m + 1) + '-' + pad(d);
   }
-  function parseKey(key) {
-    const bits = String(key || '')
-      .split('-')
-      .map(Number);
-    return { y: bits[0], m: bits[1] - 1, d: bits[2] };
-  }
   function todayKey() {
     const t = new Date();
     return dateKey(t.getFullYear(), t.getMonth(), t.getDate());
   }
-  function prettyDate(key) {
-    const p = parseKey(key);
-    const dt = new Date(p.y, p.m, p.d);
-    return DOW[dt.getDay()] + ', ' + MONTHS[p.m] + ' ' + p.d;
-  }
+  // The app's date style ("Sun, 11 Oct", i18n.js), not a hand-built "Sun, October 11".
+  const prettyDate = (key) => fmtDate(key, 'weekdayDate');
   const formatTime = (value) => sharedFormatTime(value, 'Any time');
   function prettyTaskTime(iso) {
     if (!iso) return 'No due time';
@@ -2745,23 +2786,6 @@ function ScreenDashboard({
   const on = (k) => !features || features[k] !== false;
   homeFeatures = features || null;
   const any = (o) => !!o && Object.keys(o).length > 0;
-  const one = oneThingFor({
-    tasks,
-    habits,
-    water,
-    wellness,
-    money,
-    phoneNight,
-    waterUsualHours,
-    features,
-    toggleTask,
-    toggleHabit,
-    onOpenMoney,
-    onConfirmSleep,
-    onQuickAddWater,
-    onAddMood,
-  });
-  const oneKind = one && one.kind;
   const layout = resolveHomeLayout(homeLayout);
   const wellnessOnHome = layout.some((i) => i.id === 'wellness' && i.enabled);
   const onboard = OnboardingCard({
@@ -2776,6 +2800,24 @@ function ScreenDashboard({
   });
   // The checklist's "Log how you feel" step is showing while no mood exists yet.
   const onboardAsksMood = !!onboard && !(wellness && any(wellness.moodByDate));
+  const one = oneThingFor({
+    tasks,
+    habits,
+    water,
+    wellness,
+    money,
+    phoneNight,
+    waterUsualHours,
+    features,
+    skipKinds: onboardAsksMood ? ['mood'] : [],
+    toggleTask,
+    toggleHabit,
+    onOpenMoney,
+    onConfirmSleep,
+    onQuickAddWater,
+    onAddMood,
+  });
+  const oneKind = one && one.kind;
   const planSkip = [oneKind];
   if (wellnessOnHome) planSkip.push('sleep', 'mood');
   if (onboardAsksMood) planSkip.push('mood');
@@ -2783,7 +2825,7 @@ function ScreenDashboard({
   // One renderer per widget id. Each returns the card node(s) for that widget.
   const renderers = {
     // A turned-off feature drops out of the cards that summarise it, not just its own card.
-    score: () => ScoreCard({ score, tasks, habits: on('habits') ? habits : [] }),
+    score: () => ScoreCard({ score, tasks, habits: on('habits') ? habits : [], streakAsked: oneKind === 'streak' }),
     outlook: () =>
       OutlookCard({
         outlook: outlook({
@@ -2814,7 +2856,8 @@ function ScreenDashboard({
         asked: oneKind,
       }),
     tasks: () => [
-      SectionTitle({ title: "Today's tasks", action: '+ Add', onAction: onAddTask }),
+      // "Tasks", not "Today's tasks": the list carries tomorrow's and undated ones too.
+      SectionTitle({ title: 'Tasks', action: '+ Add', onAction: onAddTask }),
       TasksCard({
         tasks,
         toggleTask,
@@ -2894,7 +2937,34 @@ function ScreenDashboard({
   if (one) blocks.unshift(h('div', { class: 'gb-dash-block gb-dash-pin' }, OneThingCard(one)));
   if (qa) blocks.unshift(qa);
 
-  return h('div', { class: 'gb-rise gb-dash gb-dash--single' }, ...blocks);
+  const root = h('div', { class: 'gb-rise gb-dash gb-dash--single' }, ...blocks);
+  requestAnimationFrame(() => balanceHome(root));
+  return root;
+}
+
+/* CSS columns split the widgets in source order, and a block can't break, so a
+   700px calendar sat on the knife edge: 1280px Home ended its columns 700px
+   apart either way. Once laid out (before the first paint), deal the widgets
+   into as many columns as CSS made, each to the shortest so far: the columns
+   end within one card of each other. Phone (one column) is left as it is.
+   ponytail: measured once per render; a window resized across the column count
+   keeps the old deal (display: contents in the CSS keeps it readable) until the
+   next render. A ResizeObserver if that ever matters. */
+function balanceHome(root) {
+  if (!root.isConnected) return;
+  const items = [...root.children].filter(
+    (el) => el.classList.contains('gb-dash-block') && !el.matches('.gb-dash-qa, .gb-dash-pin')
+  );
+  const lefts = [...new Set(items.map((el) => el.offsetLeft))].sort((x, y) => x - y);
+  if (lefts.length < 2) return;
+  const heights = items.map((el) => el.offsetHeight); // all before any move: one layout
+  const cols = lefts.map(() => ({ el: h('div', { class: 'gb-dash-col' }), height: 0 }));
+  items.forEach((el, i) => {
+    const c = cols.reduce((m, x) => (x.height < m.height ? x : m));
+    c.height += heights[i] + 22; // the gap between blocks
+    c.el.appendChild(el);
+  });
+  root.appendChild(h('div', { class: 'gb-dash-cols' }, cols.map((c) => c.el)));
 }
 
 function ScreenFood({
@@ -2934,7 +3004,8 @@ function ScreenFood({
 
 /* ---- Fitness × Sleep insight card ---- */
 function HabitSleepInsightCard({ habits, wellness }) {
-  const fitnessHabits = (habits || []).filter((hab) => hab.domain === 'fitness');
+  // Paused fitness habits are out: a paused one's frozen 6-day streak read as live.
+  const fitnessHabits = (habits || []).filter((hab) => hab.domain === 'fitness' && hab.active !== false);
   const allHabits = habits || [];
   const sleepEntries = Object.values((wellness && wellness.sleepByDate) || {}).sort((a, b) =>
     String(b.date || '').localeCompare(String(a.date || ''))
@@ -2982,6 +3053,12 @@ function HabitSleepInsightCard({ habits, wellness }) {
       fitnessStreak + ' days of fitness — good. A steady bedtime would lift your sleep too.';
   } else if (fitnessStreak === 0 && sleepEntries.some((e) => e.quality === 'low')) {
     insightText = 'Sleep has been low. Exercise is one of the best natural fixes — start small.';
+  } else if (fitnessStreak > 0) {
+    // A live streak: "Build a fitness streak" under a "6d" tile contradicted it.
+    insightText =
+      fitnessStreak +
+      (fitnessStreak === 1 ? ' day' : ' days') +
+      ' of fitness: log sleep each night to see the link.';
   } else if (fitnessToday) {
     insightText = "Fitness done today. Log tonight's sleep to see the effect.";
   } else {

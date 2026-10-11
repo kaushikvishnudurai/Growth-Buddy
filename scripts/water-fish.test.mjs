@@ -26,14 +26,21 @@ for (let pct = 0; pct <= 100; pct++) {
     }
     assert.ok(y1 <= depth, `pct ${pct}: fish leaves the water`);
   }
-  // No two fish start on top of each other.
+  // No two fish share a band: each one's whole bob (top fin to belly) is clear of
+  // every other's, so their swept boxes never meet, swimming or parked mid-swim
+  // under reduced motion.
+  const band = (f) => [f.bottom - f.bob, f.bottom + f.bob + f.size * 0.5];
   for (let i = 0; i < fish.length; i++)
     for (let j = i + 1; j < fish.length; j++) {
+      const [a0, a1] = band(fish[i]);
+      const [b0, b1] = band(fish[j]);
+      assert.ok(a1 <= b0 || b1 <= a0, `pct ${pct}: fish ${i} and ${j} share a band`);
       const a = fishStart(fish[i]);
       const b = fishStart(fish[j]);
       const overlap = a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
       assert.ok(!overlap, `pct ${pct}: fish ${i} and ${j} start on top of each other`);
     }
+  for (const f of fish) assert.ok(f.delay <= 0, `pct ${pct}: a positive delay parks a fish, then it snaps`);
   if (bubbleRise(pct)) assert.ok(6 + bubbleRise(pct) + 14 <= depth, `pct ${pct}: bubble rises out of the water`);
 }
 assert.equal(waterFish(0).length, 0, 'an empty glass has no fish on its dry floor');
@@ -41,7 +48,8 @@ assert.equal(waterFish(10).length, 1, 'shallow water keeps one fish');
 assert.equal(waterFish(10)[0].bob, 0, 'and it swims flat');
 assert.ok(waterFish(10)[0].left > 10, 'clear of the rounded corner');
 assert.equal(bubbleRise(0), 0);
-assert.equal(waterFish(30).length, 3, 'a third full glass shows all three fish');
+assert.equal(waterFish(30).length, 2, 'a third full glass holds two bands, so two fish');
+assert.ok(waterFish(50).length >= 3);
 assert.equal(waterFish(100).length, 7);
 assert.deepEqual(
   waterFish(100).map((f) => f.face).slice(0, 2),

@@ -11,7 +11,9 @@ import { budgetStatus, normalizeMoney } from './money-core.js';
 import { sleepToConfirm } from './nudges.js';
 
 /* `can(kind)` says whether the screen has a handler for that kind; a kind it
-   can't act on is skipped, so the card never shows a dead button. */
+   can't act on is skipped, so the card never shows a dead button. `skipKinds`
+   lists kinds another card on screen already asks for (Getting started's
+   "Log how you feel": mood), so the same nudge doesn't show twice. */
 export function pickOneThing({
   tasks,
   habits,
@@ -22,8 +24,10 @@ export function pickOneThing({
   waterUsualHours,
   now = new Date(),
   features,
-  can = () => true,
+  can: canAct = () => true,
+  skipKinds = [],
 }) {
+  const can = (k) => canAct(k) && !skipKinds.includes(k);
   const on = (k) => !features || features[k] !== false;
   const today = localDayKey(now);
   const hour = now.getHours() + now.getMinutes() / 60;

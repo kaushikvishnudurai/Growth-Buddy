@@ -141,6 +141,8 @@ assert.equal(
   null
 );
 assert.equal(pickOneThing({ wellness: {}, now: at(13) }).kind, 'mood');
+// Getting started is already asking "Log how you feel": the card doesn't ask too.
+assert.equal(pickOneThing({ wellness: {}, now: at(13), skipKinds: ['mood'] }), null);
 // No water habit (no usual hours) and nothing logged today: water is never nudged.
 const waterOnly = (k) => k === 'water';
 assert.equal(pickOneThing({ water: { consumedMl: 0, goalMl: 2000 }, can: waterOnly, now: at(20) }), null);

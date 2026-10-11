@@ -4,7 +4,7 @@
    so the water is drawn in a 72 x 122 box with 22px rounded corners (the glass's
    24px radius less the border); `pct` of it is full. Every fish stays inside
    that rounded box for its whole swim and under the waterline for its whole bob,
-   at any fill, and no two start on top of each other.
+   at any fill, and in a band of its own: no two fish ever cross.
    Checked by `node scripts/water-fish.test.mjs`.
    ===================================================================== */
 
@@ -31,26 +31,38 @@ export function wallInset(y) {
 export function waterFish(pct) {
   const p = Math.max(0, Math.min(100, Number(pct) || 0));
   const depth = (p / 100) * GLASS_H;
-  const count = Math.max(1, Math.min(8, Math.floor(p / 15) + 1));
+  const wanted = Math.max(1, Math.min(8, Math.floor(p / 15) + 1));
   // No sky fish: a blue fish in blue water was all but invisible.
   const hues = ['sun', 'leaf', 'bloom', 'iris'];
+  const sizeOf = (i) => 10 + (i % 3) * 3;
+  // Each fish owns a band (its whole bob, top fin to belly) that no other fish
+  // enters, so no two ever cross. The bands run from 2px off the floor to under
+  // the wave; shallow water holds fewer of them, so fewer fish.
+  const bandOf = (i) => Math.ceil(2 * BOB + sizeOf(i) * 0.5); // whole px, so rows never round into each other
+  const floor = 2;
+  const room = depth - WAVE - floor;
+  let count = wanted;
+  let used = 0;
+  for (let i = 0; i < wanted; i++) used += bandOf(i);
+  while (count > 0 && used > room) used -= bandOf(--count);
+  const gap = count ? Math.floor((room - used) / (count + 1)) : 0;
   const out = [];
-  for (let i = 0; i < count; i++) {
-    let size = 10 + (i % 3) * 3;
+  let cursor = floor;
+  const rows = count || (depth >= 10 ? 1 : 0);
+  for (let i = 0; i < rows; i++) {
+    let size = sizeOf(i);
     let bob = BOB;
-    const low = BOB + 2;
-    const high = depth - WAVE - BOB - size * 0.5; // highest bottom that keeps the fish under the wave
     let bottom;
-    if (high >= low) {
-      // One row each, evenly over the depth: golden-ratio rows landed three fish
-      // within 4px of each other at 30%.
-      bottom = Math.round(low + ((high - low) * (i + 0.5)) / count);
-    } else if (i === 0 && depth >= 10) {
+    if (count) {
+      cursor += gap;
+      bottom = cursor + bob;
+      cursor += bandOf(i);
+    } else {
       // Too shallow to bob: one small fish swims flat just off the floor.
       size = 8;
       bob = 0;
       bottom = 2;
-    } else continue;
+    }
     const tail = size * 0.25; // the fin sticks out this far, on whichever side it faces
     // The corners curve in hardest at the band's lowest (or highest) point.
     const inset = Math.max(wallInset(bottom - bob), wallInset(bottom + bob + size * 0.5));
@@ -58,19 +70,20 @@ export function waterFish(pct) {
     const maxX = Math.floor(GLASS_W - inset - tail - size); // rightmost body left
     const span = maxX - minX;
     if (span < MIN_SWIM) continue;
-    const swim = bob
-      ? Math.max(MIN_SWIM, Math.round(span * (0.45 + 0.15 * (i % 3))))
-      : span; // the floor fish uses the whole floor
-    const room = span - swim;
+    const swim = bob ? Math.max(MIN_SWIM, Math.round(span * (0.45 + 0.15 * (i % 3)))) : span; // the floor fish uses the whole floor
+    const slack = span - swim;
+    const duration = 5.8 + (i % 4) * 1.1;
     out.push({
       // Spread along the span (golden-ratio steps), so neighbouring rows start apart.
-      left: minX + Math.round(room * ((i * 0.618 + 0.15) % 1)),
+      left: minX + Math.round(slack * ((i * 0.618 + 0.15) % 1)),
       bottom,
       size,
       swim,
       bob,
-      delay: (i % 5) * 0.55,
-      duration: 5.8 + (i % 4) * 1.1,
+      // Negative: each fish is already mid-swim at first paint. A positive delay
+      // parked it at the keyframes' start until it began, then it snapped.
+      delay: -Math.round(((i * 0.37 + 0.2) % 1) * duration * 100) / 100,
+      duration,
       hue: hues[i % hues.length],
       lane: (i % 3) + 1,
       face: i % 2 ? 1 : -1, // reduced motion: parked mid-swim, alternating left / right
