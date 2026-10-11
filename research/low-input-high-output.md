@@ -250,7 +250,7 @@ Added on branch `feat/life-plan` in this round:
 | `feat/lp-onething` | one card first on Home naming the single most useful action today, with one button that does it | one verdict each morning |
 | `feat/lp-insight` | an Outlook card on Home: the strongest insight plus savings and streak pace | specific insight; projection |
 | `feat/lp-camera` | one camera button that routes a photo to Money, Food or the pantry | one photo |
-| `feat/lp-prefill` | check-ins filled in from last night or the phone, and a measured habit's last number offered | same as yesterday; passive capture as a question |
+| `feat/lp-prefill` | check-ins filled in from past nights (the phone's own night once `feat/health` lands; until then that part is a no-op), and a measured habit's last number offered | same as yesterday; passive capture as a question |
 
 ---
 
