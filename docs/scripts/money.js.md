@@ -20,7 +20,7 @@ Tone rule stated at the top of the file: money framed as growth, never guilt.
 
 Three files so the ~6k-line screen stays out of the boot chunk (boot 551,884 B -> 447,141 B raw):
 
-- **`money-core.js`** (boot, no imports): everything from `CUR` / `cur` / `applyCurrency` through
+- **`money-core.js`** (boot; imports only `dates.js`, whose `pad2` / `localKey` (as `dkey`) / `todayKey` it re-exports): everything from `CUR` / `cur` / `applyCurrency` through
   `budgetStatus` — categories (`DEFAULT_CATEGORIES`, `PALETTE`, `KEYWORDS`, `mergedCats`, `catOf`,
   `predictCategory` / `suggestCategory`, see below), date + currency helpers (`todayKey` … `fmtDateShort`, `toHomeAmount`,
   `readAmount` / `readWhole`, `uid`, `clone`, `slug`), the document model (`emptyMoney`,
@@ -121,13 +121,13 @@ Customise → Other currencies.
 
 | Fn | Contents |
 |---|---|
-| `tabOverview` | **today hero** (what's left for today; past its share, tomorrow's new daily share, never the overshoot as the headline) + **`monthTape`** (one cell per day: under / close / over a flat daily share, or depth by spend with no budget; no-spend ringed, today outlined; display-only, cells are far under a 44px target, so a day opens from Spending's 7-day graph; fills in on a visit's first paint only, `tapeShown`), `accountsCard`, `healthCard`, **`budgetsSection`**, **`goalsSection`**, donut, forecast |
-| `tabSpending` | actions row (No-spend day is disabled, with the reason under it, once today has spending), NL search card (12 rows, then "Showing 12 of N. Show all"; rows open the edit dialog), last-7-days bars, by-tag breakdown, weekly review, subscriptions (due and **overdue** cards carry **Mark as paid**; overdue = this month's due day passed unpaid, it stays listed until paid), **expense list** (this month by default, a month `<select>` over the loaded months — `expMonth`, reset on a fresh visit — tag filter (scrolls sideways under a right-edge fade), heading "Expenses" when the month picker is beside it, 60 rows then **Show more**, `expShown`; **Load older** fetches ~200 rows before the earliest loaded date through the `requestOlderTx(before)` prop (`GET /api/money/tx?before=`; pages hold whole days, `more` says if there is another) into module-level `older`, merged by `withOlder` into the month list and CSV only — never into the document, its rows are read-only; a **CSV** button downloads `ledgerCsv`: every loaded expense / income / transfer, newest first, a leading `= + - @` defused, `original` column for foreign-currency rows) |
-| `budgetsSection` | ONE card (title, intro, totals, bars) + ≥80% nudges + recovery card. Was the Budgets tab. |
+| `tabOverview` | **today hero = the statement slip** (date + "Day N of M" head; what's left for today; past its share, tomorrow's new daily share, never the overshoot as the headline; a perforated tear, then the month's statement lines: budget, spent, left under a rule and double underline, or spent today / this month with no budget) + **`monthTape`** (one cell per day: under / close / over a flat daily share, or depth by spend with no budget; no-spend ringed, today outlined; display-only, cells are far under a 44px target, so a day opens from Spending's 7-day graph; fills in on a visit's first paint only, `tapeShown`), then **`budgetsSection`**, `accountsCard`, donut, forecast, **`goalsSection`**, `healthCard` |
+| `tabSpending` | actions row (No-spend day is disabled, with the reason under it, once today has spending), last-7-days bars, by-tag breakdown, subscriptions, weekly review, NL search card (12 rows, then "Showing 12 of N. Show all"; rows open the edit dialog), then the expense list (a passbook page: `ledgerDay` heads each day, with the day's total when it has more than one entry; `expRow(..., underDay)` drops the repeated date under it). Subscriptions (due and **overdue** cards carry **Mark as paid**; overdue = this month's due day passed unpaid, it stays listed until paid), **expense list** (this month by default, a month `<select>` over the loaded months — `expMonth`, reset on a fresh visit — tag filter (scrolls sideways under a right-edge fade), heading "Expenses" when the month picker is beside it, 60 rows then **Show more**, `expShown`; **Load older** fetches ~200 rows before the earliest loaded date through the `requestOlderTx(before)` prop (`GET /api/money/tx?before=`; pages hold whole days, `more` says if there is another) into module-level `older`, merged by `withOlder` into the month list and CSV only — never into the document, its rows are read-only; a **CSV** button downloads `ledgerCsv`: every loaded expense / income / transfer, newest first, a leading `= + - @` defused, `original` column for foreign-currency rows) |
+| `budgetsSection` | ONE card (title, intro, bars; no totals row, the hero's statement says them) + ≥80% nudges + recovery card. Was the Budgets tab. |
 | `goalsSection` | ONE card (title, plan/new-goal actions, goal list). Was the Goals tab; its wishlist moved to Coach. |
 | `tabIncome` | one kept-vs-spent bar for the month, the latest 6 income entries with their account (a row with no note shows `incomeName`: Salary / Income) (`showAllIncome` toggles all), **Every month** (`recurringCard`), loans (stats only when there are loans) |
 | `tabCoach` | challenges, **wishlist**, journey, insights, personality, tips, share |
-| `tabBar` | sub-tab bar: overview, spending, income, coach |
+| `tabBar` | sub-tab bar: overview, spending, income, coach (words only, no icons) |
 
 `healthCard` turns each part's `fix` (`'budgets' | 'goal' | 'log' | null`, set in `financialHealth`) into a
 button, one per distinct fix; the "Next step" tip shows only once nothing is left at zero.
@@ -137,8 +137,8 @@ Subscriptions card: total per month **and per year**; each row shows its yearly 
 **Split a bill** (`openSplitBill`, `splitShares(total, parties, includeMe)` — worked in paise, odd paise go to the
 others, so the shares plus yours equal the bill to the paisa; exported, pinned in `money-ledger.test.mjs`). Loan rows are signed from your side: lent `+` green (owed to you), borrowed `−` red; the summary says **Owed to you** or **You owe**. Both helpers have asserts in `_demo()`.
 
-Shared row/card builders: `expRow(e, withDelete, editable = withDelete)` (search rows are editable without a trash button; trash and other delete buttons name the item in `aria-label`), `subscriptionsCard`, `coachCard`,
-`emptyHint`, `stat`, `weekBars`, `openMoneyModal`, `confirmDelete` (module level; every delete in Money goes through it, the customise pane's tag manager included).
+Shared row/card builders: `expRow(e, withDelete, underDay, editable = withDelete)` (`underDay` drops the date a `ledgerDay` head already says; search rows are editable without a trash button; trash and other delete buttons name the item in `aria-label`), `subscriptionsCard`, `coachCard`,
+`emptyHint`, `stat`, `weekBars`, `openMoneyModal` (adds `modalClass: 'gb-money-sheet gb-money-modal'`, which scope money.css's dialog rules: 44px segments and touch targets, Space Mono amounts), `confirmDelete` (module level; every delete in Money goes through it, the customise pane's tag manager included).
 
 **Share summary** is Money's use of `share-card.js` (Report's "Share my month" is the other). `shareSummary()` draws the week
 as a 1080×1920 PNG and opens the OS share sheet (Instagram Stories lives in there); `summaryText()` /

@@ -1,7 +1,7 @@
 # scripts/insights.js — Insights engine
 
 Pure pattern finder over the local wellness + trends + money stores, plus history the Report
-screen fetches on open. No AI; its one import is `money-core.js` (pure) for `fmtIn`/`homeCur`/`catOf`, so money cards read "₹1,200 on Food", the tag's label in the home currency. `push.js` imports `drinkRateByHour` from here.
+screen fetches on open. No AI; imports only `money-core.js` (pure: `fmtIn`/`homeCur`/`catOf`, so money cards read "₹1,200 on Food", the tag's label in the home currency) and `dates.js` (`localKey`). `push.js` imports `drinkRateByHour` from here.
 Two callers: `report.js` `insightsSection` (Report screen) and `outlook.js` `topInsight` (Home's Outlook card, `[0]` only; Home never fetches history, it reuses Report's `state.insightHistory` + year via `yearOf` once Report has loaded it, so history-only cards appear on Home only after a Report visit). Both draw the row with `outlook-card.js` `InsightRow`. Checked by
 `node scripts/insights.test.mjs`.
 

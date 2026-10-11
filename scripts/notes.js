@@ -11,6 +11,8 @@ import {
   submitOnEnter,
   landed,
   leave,
+  focusSoon,
+  SHEET_EXIT_MS,
 } from './gb-kit.js';
 import { toast } from './toast.js';
 import { CacheStorage } from './cache-storage.js';
@@ -110,8 +112,9 @@ const DROP = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'TEMPLATE'
 /* The only hrefs a note may carry. javascript: and data: are the two that turn
    a link into an exploit. sanitize() is the boundary that enforces it, and the
    link dialog tests the same rule so a bad URL is refused while it can still be
-   corrected, rather than silently losing its href on save. */
-const SAFE_HREF = /^(https?:|mailto:|#|\/)/i;
+   corrected, rather than silently losing its href on save. A bare "/" is an
+   in-app path, but "//host" and "/\host" are protocol-relative: another site. */
+const SAFE_HREF = /^(https?:|mailto:|#|\/(?![/\\]))/i;
 /* The only images a note may carry: raster data the editor embedded itself.
    A remote src is a tracking pixel that phones home every time the note is
    painted, and data:image/svg+xml is a document, not a picture. */
@@ -450,7 +453,7 @@ function richEditor({ html, placeholder, onInput } = {}) {
         if (onInput) onInput();
       },
     });
-    setTimeout(() => input.focus(), 60);
+    focusSoon(input);
   }
 
   /* The <ul> the caret is in, if it is in this editor. */
@@ -706,7 +709,7 @@ function richEditor({ html, placeholder, onInput } = {}) {
         if (onInput) onInput();
       },
     });
-    setTimeout(() => input.focus(), 60);
+    focusSoon(input);
   }
 
   // Semantic tags (<b>, <i>) rather than <span style>, so sanitize() keeps the
@@ -1473,8 +1476,8 @@ function ScreenNotes({
   }
 
   const cardOf = (id) => listEl.querySelector('[data-id="' + id + '"]');
-  // openOverlay's exit is 180ms; an effect on a card behind it waits that out.
-  const SHEET_EXIT = 200;
+  // An effect on a card behind a closing sheet waits out its exit.
+  const SHEET_EXIT = SHEET_EXIT_MS + 20;
 
   /* ---- one note ---- */
   // The parts filter() re-marks for a search: title, body and its snippet.
@@ -1500,7 +1503,8 @@ function ScreenNotes({
     const card = h('article', {
       class: 'gb-note-card' + (note.pinned ? ' is-pinned' : '') + (count ? ' has-cover' : ''),
       'data-id': note.id,
-      style: c ? { background: c.bg, borderColor: c.line } : null,
+      // The colour tints the paper and inks the margin rule (app.css .gb-note-card).
+      style: c ? { '--note-paper': c.bg, '--note-rule': c.line } : null,
       tabindex: '0',
       role: 'button',
       'aria-label':
@@ -2032,7 +2036,7 @@ function ScreenNotes({
         else dropEdit();
       },
     });
-    setTimeout(() => ed.focus(), 60);
+    focusSoon(ed);
     // Opened from a search: land on the first match, not the top of the note.
     const words = queryWords(query);
     if (words.length) setTimeout(() => revealMatch(ed.area, words), 90);

@@ -23,3 +23,5 @@ Cells are `aspect-ratio: 1` with `max-height: 56px` (a wide tablet card made the
 
 `.is-today:not(.is-selected)` sits after `.has-tasks` / `.is-free` on purpose: same specificity, and written before them today lost its ring on any day with tasks.
 `-nav-btn` is drawn at 32px with a `::before` overlay making the tap target 44px, and has a `:disabled` style (dimmed, no hover or press).
+
+A free day (`.is-free`) is an outline with no fill, and the legend's Free swatch a hollow ring to match; day numbers are Space Mono. A month of green cells out-shouted the days that had something on them.

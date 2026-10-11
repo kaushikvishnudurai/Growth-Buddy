@@ -5,7 +5,7 @@ Backs `/api/food`: food logging, a food search, and **photo → nutrition estima
 | Method | Notes |
 |---|---|
 | `estimateFromPhotoMulti(req)` | multi-dish estimate (~90 lines, the biggest method) — `POST /photo-estimate-multi` |
-| `estimateFromPhoto(req)` | single-dish — `POST /photo-estimate` |
+| `estimateFromPhoto(req)` | single-dish — `POST /photo-estimate`. Neither photo estimate is `@Transactional`: no DB, and the vision call must not hold a connection |
 | `search(query)` | OpenFoodFacts lookup behind `GET /search`; nothing in the app calls it (the form's suggestions are `recent`). Not `@Transactional`: no DB, one HTTP call |
 | `recent(userId)` | up to 8 distinct foods (by name, case-insensitive) from the latest 60 entries — `GET /recent`, the "Log food" chips |
 | `addEntry(userId, req)` | returns the refreshed `FoodSummaryResponse`. Also `POST /entries/manual` (kcal required), which is outside the AI rate limit. `mealSlot` absent → `defaultSlot` (the local hour of `loggedAt`, `MealSlot.forHour`: 04–10 breakfast, 11–15 lunch, 18–22 dinner, else snack). Label figures (`proteinG`…`sodiumMg`, from a barcode or a favourite) are stored only alongside a typed kcal |
@@ -16,7 +16,7 @@ Backs `/api/food`: food logging, a food search, and **photo → nutrition estima
 | `deleteEntry(userId, entryId)` | also returns the refreshed summary |
 | `summary(userId, date)` | the day's totals — what the Home food card reads. Also `fiberG` / `sugarG` / `sodiumMg` (`daySum`): the sum over the entries that carry the figure, **null when none does** — fibre is estimated (FoodWeek), sugar and sodium only ever come from a scanned label, so the card shows no made-up 0 |
 | `photoHistory(userId)` | the "recent scans" list |
-| `recordPhoto(userId, req)` | writes a `FoodPhotoLog` |
+| `recordPhoto(userId, req)` | writes a `FoodPhotoLog`; an undated one is filed under the user's today (`UserClock`) |
 
 Both mutating entry methods return the whole day summary, so the frontend never needs a follow-up
 GET after a write.

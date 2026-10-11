@@ -7,7 +7,7 @@
    ponytail: heuristics, not an LLM. Real OCR / NL understanding would need
    a vision/LLM endpoint — marked at each spot below.
    ===================================================================== */
-import { h, Icon, Card, ProgressRing, refreshIcons, openModal, Thinking, fieldRefusal } from './gb-kit.js';
+import { h, Icon, Card, ProgressRing, refreshIcons, openModal, Thinking, fieldRefusal, focusSoon } from './gb-kit.js';
 import { toast } from './toast.js';
 import { shareStoryCard, _demo as _shareCardDemo } from './share-card.js';
 import {
@@ -1715,8 +1715,9 @@ function firstOfKind(money, kinds) {
 }
 
 function openMoneyModal(opts) {
-  // .gb-money-sheet: scopes Money's dialog-only CSS (44px segments, money.css).
-  return { close: openModal(Object.assign({ modalClass: 'gb-money-sheet' }, opts)) };
+  // The classes only scope money.css's dialog rules: .gb-money-sheet the 44px
+  // segments and touch targets, .gb-money-modal amounts in Space Mono.
+  return { close: openModal({ modalClass: 'gb-money-sheet gb-money-modal', ...opts }) };
 }
 
 // Module level (not inside ScreenMoney) so the customise pane's tag manager uses it too.
@@ -2876,7 +2877,7 @@ function openExpenseModal(money, save, prefillDate, existing, scan) {
   });
   const sheet = amount.closest('.gb-modal');
   if (sheet) sheet.addEventListener('click', askJump, true);
-  setTimeout(() => amount.focus(), 60);
+  focusSoon(amount);
 }
 
 /* An amount over 20x what the entry was, or 20x its tag's average (3+ others),
@@ -3127,7 +3128,8 @@ function ScreenMoney({
           ? h(
               'div',
               { class: 'gb-money-accounts-total' },
-              'Total ' + fmt(total) + ' across ' + list.length + ' accounts'
+              h('span', null, 'Total across ' + list.length + ' accounts'),
+              h('span', { class: 'gb-money-slip-amt' }, fmt(total))
             )
           : null,
         // A transfer is in no spending view (it isn't spending), so this is the
@@ -3244,7 +3246,7 @@ function ScreenMoney({
         );
       },
     });
-    setTimeout(() => name.focus(), 60);
+    focusSoon(name);
   }
 
   function openEditAccount(a) {
@@ -3465,7 +3467,7 @@ function ScreenMoney({
         toast.success('Moved ' + fmt(v) + '.');
       },
     });
-    setTimeout(() => amount.focus(), 60);
+    focusSoon(amount);
   }
 
 
@@ -3725,7 +3727,7 @@ function ScreenMoney({
       ),
       primary: null,
     });
-    setTimeout(() => item.focus(), 60);
+    focusSoon(item);
   }
 
   function openAddGoal(planMode) {
@@ -3801,7 +3803,7 @@ function ScreenMoney({
         toast.success(planMode ? 'Purchase planned.' : 'Goal created.');
       },
     });
-    setTimeout(() => name.focus(), 60);
+    focusSoon(name);
   }
 
   function openContribute(goal) {
@@ -3843,7 +3845,7 @@ function ScreenMoney({
         toast.success('Nice — ' + fmt(v) + ' set aside.');
       },
     });
-    setTimeout(() => amt.focus(), 60);
+    focusSoon(amt);
   }
 
   function openAddSubscription() {
@@ -3926,7 +3928,7 @@ function ScreenMoney({
         toast.success('Subscription added.');
       },
     });
-    setTimeout(() => name.focus(), 60);
+    focusSoon(name);
   }
 
   function openSubscriptionUses(sub) {
@@ -3959,7 +3961,7 @@ function ScreenMoney({
         });
       },
     });
-    setTimeout(() => uses.focus(), 60);
+    focusSoon(uses);
   }
 
   function openAddWishlist() {
@@ -4010,7 +4012,7 @@ function ScreenMoney({
         toast.success('Added to wishlist — give it a few days.');
       },
     });
-    setTimeout(() => name.focus(), 60);
+    focusSoon(name);
   }
 
   function openChallenge() {
@@ -4491,7 +4493,7 @@ function ScreenMoney({
     } else if (left >= 0) {
       figure = fmt(left);
       label = 'left for today';
-      meta = fmt(Math.max(0, totalBudget - spentMonth)) + ' left this month · ' + daysLeft + (daysLeft === 1 ? ' day' : ' days') + ' to go';
+      meta = daysLeft + (daysLeft === 1 ? ' day' : ' days') + ' to go, today included';
       tone = 'is-under';
     } else if (daysLeft > 1) {
       // Past today's share: the useful number is the next one, not the overshoot.
@@ -4507,59 +4509,84 @@ function ScreenMoney({
       tone = '';
     }
 
-    const hero = h(
-      'div',
-      { class: 'gb-money-hero gb-money-today ' + tone },
+    // The month as a statement: what it started with, what went out, what is
+    // left, the total under an accountant's double rule. Without a budget there
+    // is no starting figure, so it shows what went out.
+    const monthName = parseKey(today).toLocaleDateString(undefined, { month: 'long' });
+    const line = (label, value, cls) =>
       h(
         'div',
-        { class: 'gb-money-today-top' },
+        { class: 'gb-money-slip-line' + (cls ? ' ' + cls : '') },
+        h('span', null, label),
+        h('span', { class: 'gb-money-slip-lead', 'aria-hidden': 'true' }),
+        h('span', { class: 'gb-money-slip-amt' }, value)
+      );
+    const statement = hasBudget
+      ? [
+          line('Budget for ' + monthName, fmt(totalBudget)),
+          line('Spent so far', fmt(-spentMonth)),
+          spentMonth > totalBudget
+            ? line('Over budget', fmt(spentMonth - totalBudget), 'is-total is-over')
+            : line('Left this month', fmt(totalBudget - spentMonth), 'is-total'),
+        ]
+      : [line('Spent today', fmt(spentToday)), line('Spent this month', fmt(spentMonth), 'is-total')];
+
+    const hero = h(
+      'div',
+      { class: 'gb-money-hero gb-money-today gb-money-slip ' + tone },
+      h(
+        'div',
+        { class: 'gb-money-slip-head' },
+        h(
+          'span',
+          { class: 'gb-money-hero-eyebrow' },
+          parseKey(today).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })
+        ),
+        h('span', { class: 'gb-money-slip-day' }, 'Day ' + dayNum + ' of ' + dim)
+      ),
+      h(
+        'div',
+        { class: 'gb-money-today-read' },
         h(
           'div',
-          { class: 'gb-money-today-read' },
-          h(
-            'div',
-            { class: 'gb-money-hero-eyebrow' },
-            Icon('wallet', { size: 14, sw: 2.4 }),
-            parseKey(today).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })
-          ),
-          h(
-            'div',
-            { class: 'gb-money-today-fig' },
-            h('span', { class: 'gb-money-today-num' }, figure),
-            h('span', { class: 'gb-money-today-label' }, label)
-          ),
-          h('div', { class: 'gb-money-today-meta' }, meta)
+          { class: 'gb-money-today-fig' },
+          h('span', { class: 'gb-money-today-num' }, figure),
+          h('span', { class: 'gb-money-today-label' }, label)
+        ),
+        h('div', { class: 'gb-money-today-meta' }, meta)
+      ),
+      h(
+        'div',
+        { class: 'gb-money-hero-actions' },
+        h(
+          'button',
+          { type: 'button', class: 'gb-btn gb-btn--primary gb-btn--compact', onclick: () => openAddExpense() },
+          Icon('plus', { size: 15, sw: 2.6 }),
+          'Add expense'
         ),
         h(
-          'div',
-          { class: 'gb-money-hero-actions' },
-          h(
-            'button',
-            { type: 'button', class: 'gb-btn gb-btn--primary gb-btn--compact', onclick: () => openAddExpense() },
-            Icon('plus', { size: 15, sw: 2.6 }),
-            'Add expense'
-          ),
-          h(
-            'button',
-            { type: 'button', class: 'gb-btn gb-btn--secondary gb-btn--compact', onclick: openPurchaseAdvisor },
-            Icon('sparkles', { size: 15, sw: 2.2 }),
-            'Should I buy this?'
-          )
+          'button',
+          { type: 'button', class: 'gb-btn gb-btn--secondary gb-btn--compact', onclick: openPurchaseAdvisor },
+          Icon('sparkles', { size: 15, sw: 2.2 }),
+          'Should I buy this?'
         )
       ),
+      h('div', { class: 'gb-money-slip-tear', 'aria-hidden': 'true' }),
+      h('div', { class: 'gb-money-slip-lines', role: 'group', 'aria-label': monthName + ' so far' }, statement),
       monthTape({ byDay, hasBudget, totalBudget, dim, dayNum, prefix, today }),
       h('p', { class: 'gb-money-today-say' }, buddyLine())
     );
     // Overview stays a glance: where you stand, your health, where the money
     // goes, and where the month is heading. Spending/Coach own the detail.
+    // Statement first, then the envelopes it came out of, then where it sits.
     return [
       hero,
-      accountsCard(),
-      healthCard(),
       ...budgetsSection(),
-      ...goalsSection(),
+      accountsCard(),
       donutCard(),
       forecastCard(),
+      ...goalsSection(),
+      healthCard(),
     ];
   }
 
@@ -4636,7 +4663,7 @@ function ScreenMoney({
         : hs.score >= 45
           ? 'Steady, with room to grow.'
           : hs.score > 0
-            ? 'A good start.'
+            ? 'Early days.'
             : 'Nothing scored yet.';
     const firstOf = new Set();
     return Card({
@@ -5089,7 +5116,7 @@ function ScreenMoney({
             ? h(
                 'div',
                 { class: 'gb-money-exp-list' },
-                shown.map((e) => expRow(e, false, true))
+                shown.map((e) => expRow(e, false, false, true))
               )
             : null,
           // The answer counts every match; say when the list holds fewer.
@@ -5291,9 +5318,14 @@ function ScreenMoney({
         list.length
           ? h(
               'div',
-              { class: 'gb-money-exp-list' },
+              { class: 'gb-money-exp-list gb-money-ledger' },
+              // A passbook page: each day under its own ruled heading with the
+              // day's total (over the whole filtered day, not just the rows shown).
               // An older page's rows are view-only: they aren't in the document.
-              list.slice(0, expShown).map((e) => expRow(e, !olderIds.has(e.id)))
+              list.slice(0, expShown).flatMap((e, i, shown) => [
+                i && shown[i - 1].date === e.date ? null : ledgerDay(e.date, list),
+                expRow(e, !olderIds.has(e.id), true),
+              ])
             )
           : emptyHint(
               'wallet',
@@ -5334,15 +5366,9 @@ function ScreenMoney({
       ],
     });
 
-    return [
-      actions,
-      searchCard,
-      weekCard,
-      breakdown,
-      weeklyReviewCard(),
-      subscriptionsCard(),
-      recent,
-    ];
+    // Where it went (the week, the tags, the bills), then the ledger itself,
+    // with the question box right above the entries it searches.
+    return [actions, weekCard, breakdown, subscriptionsCard(), weeklyReviewCard(), searchCard, recent];
   }
 
   /* The loaded document plus any older pages, for the expense list and the CSV. */
@@ -5382,9 +5408,21 @@ function ScreenMoney({
     }
   }
 
+  function ledgerDay(day, rows) {
+    const that = rows.filter((x) => x.date === day);
+    return h(
+      'div',
+      { class: 'gb-money-ledger-day' },
+      h('span', null, parseKey(day).toLocaleDateString(undefined, { weekday: 'short' }) + ' ' + fmtDateShort(day)),
+      // One entry's total is its own amount, a line below; it would only repeat.
+      that.length > 1 ? h('span', { class: 'gb-money-ledger-sum' }, fmt(sumAmt(that))) : null
+    );
+  }
+
+  // `underDay`: the row sits under a ledgerDay header, so its own date is dropped.
   // `editable` (default: withDelete): the text opens the edit dialog. Search rows
   // edit but carry no trash button; rows "Load older" fetched do neither.
-  function expRow(e, withDelete, editable = withDelete) {
+  function expRow(e, withDelete, underDay, editable = withDelete) {
     const c = catOf(e.category, money);
     return h(
       'div',
@@ -5425,7 +5463,7 @@ function ScreenMoney({
         h(
           'div',
           { class: 'gb-money-exp-meta' },
-          [c.label, fmtDateShort(e.date), (accountOf(money, e.accountId) || {}).name, e.why]
+          [c.label, underDay ? null : fmtDateShort(e.date), (accountOf(money, e.accountId) || {}).name, e.why]
             .filter(Boolean)
             .join(' · ')
         )
@@ -5739,21 +5777,11 @@ function ScreenMoney({
             'No budgets yet. Set a few to unlock gentle reminders and forecasts.'
           ),
         ];
-    const totalBudget = st.reduce((a, s) => a + s.budget, 0);
-    const totalSpent = st.reduce((a, s) => a + s.spent, 0);
-    const summary = anySet
-      ? h(
-          'div',
-          { class: 'gb-money-bsummary' },
-          stat('Total budget', fmt(totalBudget)),
-          stat('Spent', fmt(totalSpent)),
-          stat('Remaining', fmt(Math.max(0, totalBudget - totalSpent)))
-        )
-      : null;
+    // No total/spent/remaining row here: the statement right above says it.
     return [
       Card({
         className: 'gb-money-card',
-        children: [...headKids, summary, h('div', { class: 'gb-money-bcards' }, bars)],
+        children: [...headKids, h('div', { class: 'gb-money-bcards' }, bars)],
       }),
       ...reminders,
       recoveryCard(),
@@ -6107,7 +6135,7 @@ function ScreenMoney({
         toast.success(repeating ? 'Income added. It logs itself on ' + recurDayLabel(pat.repeat.day) + ' from now on.' : 'Income added.');
       },
     });
-    setTimeout(() => amt.focus(), 60);
+    focusSoon(amt);
   }
 
   function openAddLoan(direction) {
@@ -6173,7 +6201,7 @@ function ScreenMoney({
         toast.success('Saved.');
       },
     });
-    setTimeout(() => amt.focus(), 60);
+    focusSoon(amt);
   }
 
   /* Settle all of it, or record the part that came back. Nothing left = settled. */
@@ -6317,7 +6345,7 @@ function ScreenMoney({
         toast.success(sh.length === 1 ? 'IOU saved.' : sh.length + ' IOUs saved.');
       },
     });
-    setTimeout(() => total.focus(), 60);
+    focusSoon(total);
   }
 
   /* "Salary 60,000 arrived?": its usual day has come and this month's isn't logged.
@@ -6888,7 +6916,7 @@ function ScreenMoney({
         toast.success(r ? 'Saved.' : 'Added. It logs itself on ' + recurDayLabel(fields.day) + '.');
       },
     });
-    setTimeout(() => amt.focus(), 60);
+    focusSoon(amt);
   }
 
   /* =================================================================
@@ -7093,8 +7121,6 @@ function ScreenMoney({
             type: 'button',
             role: 'tab',
             'aria-selected': String(activeTab === t.key),
-            // Below 540px the label span is display:none (money.css) and the icon is
-            // aria-hidden, which left every tab with no accessible name at all.
             'aria-label': t.label,
             class: 'gb-money-tab' + (activeTab === t.key ? ' is-active' : ''),
             onclick: () => {
@@ -7110,7 +7136,7 @@ function ScreenMoney({
               if (bar && bar.getBoundingClientRect().top < top) bar.scrollIntoView({ block: 'start' });
             },
           },
-          Icon(t.icon, { size: 16, sw: activeTab === t.key ? 2.5 : 2.1 }),
+          // Words only: the four icons were decoration over labels that fit.
           h('span', null, t.label)
         )
       )

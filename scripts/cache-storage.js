@@ -238,8 +238,5 @@ function hydrate() {
   });
 }
 
-// Kept for any non-module access; the app imports the binding below.
-if (typeof window !== 'undefined') window.CacheStorage = CacheStorage;
-
 export { CacheStorage };
 export default CacheStorage;

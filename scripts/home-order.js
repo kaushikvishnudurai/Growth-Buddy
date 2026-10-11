@@ -3,6 +3,7 @@
    merge, and the order Home lists tasks, habits and goals in. No DOM, so
    `node scripts/home-order.test.mjs` can check them; dashboard.js renders.
    ===================================================================== */
+import { localKey as localDayKey } from './dates.js';
 
 /* ---- Home-screen widget catalog ----
    The set of cards a user can show/hide and reorder on Home. `feature` (if set)
@@ -73,14 +74,8 @@ export function resolveHomeLayout(saved) {
   return out;
 }
 
-function pad(n) {
-  return n < 10 ? '0' + n : String(n);
-}
-
 /* YYYY-MM-DD of a Date in the device's zone. */
-export function localDayKey(d) {
-  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
-}
+export { localDayKey };
 
 /* Where a task sits on Home: overdue, due today, upcoming, no date, paused,
    done. Lower comes first. */

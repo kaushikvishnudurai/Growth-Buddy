@@ -124,7 +124,7 @@ public class WebConfig implements WebMvcConfigurer {
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/api/**")
-                .allowedOriginPatterns(parseAllowedOrigins())
+                .allowedOriginPatterns(parseAllowedOrigins(allowedOrigins))
                 .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
                 .allowedHeaders("*");
     }
@@ -221,7 +221,8 @@ public class WebConfig implements WebMvcConfigurer {
         "https://localhost", "capacitor://localhost", "ionic://localhost"
     };
 
-    private String[] parseAllowedOrigins() {
+    /** The configured origins plus the native shell's. Also used by {@code WebSocketConfig}. */
+    public static String[] parseAllowedOrigins(String allowedOrigins) {
         return Stream.concat(
                         Arrays.stream(allowedOrigins.split(",")).map(String::trim).filter(s -> !s.isEmpty()),
                         Arrays.stream(NATIVE_SHELL_ORIGINS))

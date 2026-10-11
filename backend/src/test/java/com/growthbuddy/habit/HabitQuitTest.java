@@ -198,8 +198,10 @@ class HabitQuitTest {
     @Test
     void aQuitHabitStaysDailyAndUnmeasured() {
         service.update(USER, quit.getId(), new UpdateHabitRequest(null, null, null, null,
-                Cadence.weekly, 2, null, HabitMetric.km, null, null, null));
+                Cadence.weekly, 2, null, HabitMetric.km, null, null, null, "steps", 8000d));
         assertThat(quit.getCadence()).isEqualTo(Cadence.daily);
         assertThat(quit.getMetric()).isEqualTo(HabitMetric.none);
+        assertThat(quit.getHealthLink()).isNull();
+        assertThat(quit.getHealthTarget()).isNull();
     }
 }

@@ -410,9 +410,14 @@ public class HabitService {
         List<Habit> hs = habits.findByUserIdAndDeletedAtIsNullOrderByCreatedAtAsc(userId);
         if (hs.isEmpty()) return "Habits: none tracked.\n";
         LocalDate today = clock.today(userId);
+        // Two queries for the list, not two per habit (as streakLines does below).
+        Map<UUID, HabitStreak> byId = new HashMap<>();
+        streaks.findAllById(hs.stream().map(Habit::getId).toList()).forEach(s -> byId.put(s.getHabitId(), s));
+        Set<UUID> doneToday = new HashSet<>();
+        checkins.findByUserIdAndLogDateAndDoneTrue(userId, today).forEach(c -> doneToday.add(c.getHabitId()));
         StringBuilder sb = new StringBuilder("Habits:\n");
         for (Habit h : hs) {
-            HabitStreak s = streaks.findById(h.getId()).orElse(null);
+            HabitStreak s = byId.get(h.getId());
             if (isQuit(h)) {
                 // The cache's lastDoneOn is the last slip on a quit habit; its
                 // current streak goes stale a day at a time, so it is worked out.
@@ -424,7 +429,7 @@ public class HabitService {
                         .append(" days clean\n");
                 continue;
             }
-            boolean done = checkins.existsByHabitIdAndLogDateAndDoneTrue(h.getId(), today);
+            boolean done = doneToday.contains(h.getId());
             int streak = s == null ? 0 : s.getCurrentStreak();
             sb.append("  - ").append(h.getName())
                     .append(" — ").append(done ? "done today" : "not yet today")
@@ -624,6 +629,49 @@ public class HabitService {
         return icon;
     }
 
+    /** Every health link a habit can carry, and the largest daily target each takes (in its unit). */
+    static final Map<String, Double> HEALTH_LINK_MAX = Map.of(
+            "steps", 100_000d,   // count
+            "sleep", 24d,        // hours
+            "distance", 300d,    // km
+            "calories", 10_000d, // active kcal
+            "floors", 1_000d,
+            "workout", 1_440d);  // minutes
+
+    /**
+     * Apply a request's health link to {@code h}. {@code link} null = leave it,
+     * "" = clear the link and its target. A new link needs a target; the same
+     * link again keeps the one it has. A target alone retargets an existing link
+     * and is ignored on an unlinked habit. Create runs through here too, on a
+     * habit with no link yet, so there a null link just leaves it unlinked.
+     */
+    static void applyHealthLink(Habit h, String link, Double target) {
+        if (link != null && link.isBlank()) {
+            h.setHealthLink(null);
+            h.setHealthTarget(null);
+            return;
+        }
+        if (link != null) {
+            link = link.trim().toLowerCase(java.util.Locale.ROOT);
+            if (!HEALTH_LINK_MAX.containsKey(link)) {
+                throw ApiException.badRequest("Unknown health link: " + link
+                        + " (one of steps, sleep, distance, calories, floors, workout)");
+            }
+            if (target == null && !link.equals(h.getHealthLink())) {
+                throw ApiException.badRequest("A health link needs a daily target");
+            }
+            h.setHealthLink(link);
+        }
+        if (target != null && h.getHealthLink() != null) {
+            double max = HEALTH_LINK_MAX.get(h.getHealthLink());
+            if (!(target > 0 && target <= max)) {
+                throw ApiException.badRequest("A " + h.getHealthLink()
+                        + " target must be more than 0 and at most " + (long) max);
+            }
+            h.setHealthTarget(target);
+        }
+    }
+
     @Transactional
     public HabitResponse create(UUID userId, CreateHabitRequest req) {
         Habit h = new Habit();
@@ -637,6 +685,9 @@ public class HabitService {
         h.setMetric(req.metric() != null ? req.metric() : HabitMetric.none);
         h.setReminderTime(req.reminderTime());
         h.setSound(req.sound());
+        if (req.kind() != HabitKind.quit) {
+            applyHealthLink(h, req.healthLink(), req.healthTarget());
+        }
         if (req.kind() == HabitKind.quit) {
             // Breaking a habit is a daily thing with nothing to measure, and it
             // has been "paid" up to the day before it started.
@@ -754,10 +805,14 @@ public class HabitService {
             h.setSound(req.sound().isBlank() ? null : req.sound());
         }
         if (isQuit(h)) {
-            // A quit habit stays daily and unmeasured whatever the form sent.
+            // A quit habit stays daily, unmeasured and unlinked whatever the form sent.
             h.setCadence(Cadence.daily);
             h.setTargetPerWeek(7);
             h.setMetric(HabitMetric.none);
+            h.setHealthLink(null);
+            h.setHealthTarget(null);
+        } else {
+            applyHealthLink(h, req.healthLink(), req.healthTarget());
         }
         habits.save(h);
         LocalDate today = clock.today(userId);
@@ -1229,6 +1284,7 @@ public class HabitService {
 
     @Transactional
     public void createNamed(UUID userId, String name) {
-        create(userId, new CreateHabitRequest(name, null, "repeat", null, null, null, null, null, null, null));
+        create(userId, new CreateHabitRequest(name, null, "repeat", null, null, null, null, null, null, null,
+                null, null));
     }
 }

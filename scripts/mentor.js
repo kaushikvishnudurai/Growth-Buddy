@@ -165,7 +165,16 @@ function bubble(role, content, actions, onAction) {
     isUser
       ? null
       : h('div', { class: 'gb-msg-avatar' }, Icon('sparkles', { size: 16, color: '#fff' })),
-    isUser ? bubbleEl : h('div', { class: 'gb-msg-col' }, bubbleEl, actionsRow(actions, onAction))
+    isUser
+      ? bubbleEl
+      : h(
+          'div',
+          { class: 'gb-msg-col' },
+          // Who said it, in words: the avatar alone left a reader to guess.
+          h('span', { class: 'gb-msg-who' }, 'Buddy', h('span', { class: 'gb-msg-ai' }, 'AI coach')),
+          bubbleEl,
+          actionsRow(actions, onAction)
+        )
   );
 }
 
@@ -270,6 +279,7 @@ function ScreenMentor({ api, threadId: initialThread, starter }) {
     placeholder: "What's on your mind? You can vent — Buddy listens.",
     rows: 2,
     maxlength: 4000,
+    enterkeyhint: 'send',
   });
   let busy = false;
   let loaded = false;
@@ -895,7 +905,8 @@ function ScreenMentor({ api, threadId: initialThread, starter }) {
     threadBar,
     listEl,
     chipsRow,
-    h('div', { class: 'gb-msg-bar' }, input, sendBtn, stopBtn)
+    // The field and its send button are one pill, as in a phone's messages app.
+    h('div', { class: 'gb-msg-bar' }, h('div', { class: 'gb-msg-field' }, input, sendBtn, stopBtn))
   );
 }
 

@@ -360,6 +360,8 @@ assert.deepEqual(buildInsights({ wellness: {}, trends: {} }), []);
   const u2 = unusualExpense({ expenses: raw, settings: { currency: '$' } }, day(21));
   assert.ok(u2 && /^\$1,200 on Food \(Groceries\) is 4x your usual \$342\.$/.test(u2.text), u2 && u2.text);
   assert.ok(/earlier Food expenses/.test(u2.basis), u2.basis);
+  const usd = unusualExpense({ expenses, settings: { currency: '$' } }, day(21));
+  assert.ok(/^\$1,000 /.test(usd.text), 'in the user\'s own currency: ' + usd.text);
   assert.equal(unusualExpense({ expenses }, day(40)), null, 'only this week');
   const h = hiddenSubscription({ expenses }, '2026-06-20');
   assert.ok(h && /Netflix.*about ₹649 every month/.test(h.text), h && h.text);

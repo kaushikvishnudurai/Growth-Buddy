@@ -20,7 +20,7 @@ replies".
 | `actionChips(actions)` | `message.actions` (server-parsed, MentorActions.java) → ≤3 chip descriptors `{type, label, icon, title, time, aria}`; unknown types, blank titles, repeats and non-HH:MM times dropped |
 | `streamRich(text)` / `sendFailText(err, loaded)` | the streaming bubble is rich-rendered on every delta with an unclosed opening `**` held back (raw asterisks used to show until `done`); a 502/503/504 on a send after the chat loaded reads as the AI being down (the server just answered the load), unless the server's own `error` event said something |
 | `streamVisible(text)` | what a streaming bubble shows: everything before the first ````` (the actions fence), and a trailing half-arrived `` ` `` / ` `` ` held back. The saved reply never has the fence — the server strips it |
-| `actionsRow(actions, onAction)` / `bubble(role, content, actions, onAction)` / `typingBubble()` | the chips row; message row (a bot row is avatar + `.gb-msg-col` = bubble + chips) / the three-dot "Buddy is typing" row |
+| `actionsRow(actions, onAction)` / `bubble(role, content, actions, onAction)` / `typingBubble()` | the chips row; message row (a bot row is avatar + `.gb-msg-col` = `.gb-msg-who` "Buddy · AI coach" label + bubble + chips) / the three-dot "Buddy is typing" row |
 
 ## `ScreenMentor` — inner functions
 
@@ -57,4 +57,4 @@ Owns its thread and messages locally so a keystroke never round-trips global sta
 - **A send is pinned to its thread** (`sendThread`): the thread buttons are disabled while `busy`, so a reply can't land in a chat you switched to.
 - **`starter`** (evening reflection) prefills the composer once, after the first load; it is never auto-sent.
 
-Styles: `app.css` (`.gb-msg-*`, `.gb-mentor-*`, `.gb-thread-*`).
+Styles: `app.css` (`.gb-msg-*`, `.gb-mentor-*`, `.gb-thread-*`), plus the "Buddy chat" section at the end (scoped `.gb-mentor`; the composer is `.gb-msg-field`, one pill around the textarea and Send/Stop).

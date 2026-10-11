@@ -23,7 +23,11 @@ record CreateHabitRequest(
         @Size(max = 16) String sound,
         // build (default) or quit. Create-only: switching an existing habit's
         // kind would turn its ticks into slips and back.
-        HabitKind kind) {
+        HabitKind kind,
+        // Phone health reading that auto-ticks it (HabitService.HEALTH_LINK_MAX);
+        // a link needs a target. A target without a link is ignored.
+        String healthLink,
+        Double healthTarget) {
 }
 
 record UpdateHabitRequest(
@@ -38,7 +42,10 @@ record UpdateHabitRequest(
         Boolean active,
         @Size(max = 16) String sound,
         // A null reminderTime means "leave it", so taking a reminder off needs its own flag.
-        Boolean clearReminder) {
+        Boolean clearReminder,
+        // null = unchanged; "" clears the link and its target.
+        String healthLink,
+        Double healthTarget) {
 }
 
 /**
@@ -122,7 +129,9 @@ record HabitResponse(
         String todayNote,
         // build or quit. On a quit habit doneToday means "clean today" (no slip
         // logged) and streak is the days since the last slip.
-        HabitKind kind) {
+        HabitKind kind,
+        String healthLink,
+        Double healthTarget) {
 
     static HabitResponse of(Habit h, HabitStreak streak, int currentStreak, boolean doneToday,
                             boolean protectedToday, boolean atRisk, int riskStreak, int freezeTokens) {
@@ -145,6 +154,7 @@ record HabitResponse(
                 h.isActive(), currentStreak, longest, doneToday,
                 protectedToday, atRisk, riskStreak, freezeTokens,
                 h.getMetric(), todayValue, todayDurationMin, lastValue, lastDurationMin, h.getSound(),
-                dueToday, doneThisWeek, todayNote, h.getKind());
+                dueToday, doneThisWeek, todayNote, h.getKind(),
+                h.getHealthLink(), h.getHealthTarget());
     }
 }

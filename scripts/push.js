@@ -32,6 +32,7 @@ import {
 import { occursOn } from './recurrence.js';
 import { drinkRateByHour } from './insights.js';
 import { SOUNDS } from './chime.js';
+import { localKey as dayKey } from './dates.js';
 
 export function pushSupported() {
   if (localNotificationsAvailable()) return true;
@@ -41,10 +42,6 @@ export function pushSupported() {
     'PushManager' in window &&
     'Notification' in window
   );
-}
-
-export function pushPermission() {
-  return typeof Notification !== 'undefined' ? Notification.permission : 'denied';
 }
 
 function urlBase64ToUint8Array(base64) {
@@ -176,10 +173,6 @@ const MAX_QUEUED = 100;
 /** Defaults for the water nudge, and the shape `ui_prefs.water` is stored in. */
 export const WATER_DEFAULTS = { on: false, everyMins: 120, from: '09:00', to: '21:00' };
 
-function dayKey(d) {
-  const p = (n) => String(n).padStart(2, '0');
-  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
-}
 
 /** 'HH:MM' as minutes past local midnight. */
 function minuteOfDay(hhmm, fallback) {

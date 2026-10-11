@@ -265,6 +265,13 @@ public class MoneyLedger {
     /* Transactions                                                        */
     /* ------------------------------------------------------------------ */
 
+    /** The user's zone, for dating a legacy entry that carries no date of its own. */
+    java.time.ZoneId zoneOf(UUID userId) {
+        List<String> tz = jdbc.queryForList("SELECT timezone FROM users WHERE id = ?", String.class,
+                userId.toString());
+        return com.growthbuddy.common.UserZone.of(tz.isEmpty() ? null : tz.get(0));
+    }
+
     /** The document arrays, rebuilt from rows, for the last {@link #WINDOW_DAYS} days. */
     public ObjectNode load(UUID userId, LocalDate today) {
         ObjectNode out = json.createObjectNode();
@@ -535,10 +542,10 @@ public class MoneyLedger {
     /**
      * Legacy document entries: the same mapping, repaired first, because whatever
      * is not turned into a row here is gone once the arrays are stripped. A missing
-     * date comes from createdAt (else today); a missing id becomes a stable one
+     * date comes from createdAt (else today), on the user's own calendar; a missing id becomes a stable one
      * derived from the entry. Only an entry with no usable amount is dropped.
      */
-    List<Row> rowsFromDoc(ObjectNode doc) {
+    List<Row> rowsFromDoc(ObjectNode doc, java.time.ZoneId zone) {
         List<Row> out = new ArrayList<>();
         for (Map.Entry<String, String> e : ARRAYS.entrySet()) {
             JsonNode arr = doc.get(e.getKey());
@@ -553,8 +560,8 @@ public class MoneyLedger {
                 if (!item.hasNonNull("date") || item.path("date").asText().isBlank()) {
                     long ms = item.path("createdAt").asLong(0);
                     item.put("date", (ms > 0
-                            ? java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneOffset.UTC).toLocalDate()
-                            : LocalDate.now()).toString());
+                            ? java.time.Instant.ofEpochMilli(ms).atZone(zone).toLocalDate()
+                            : LocalDate.now(zone)).toString());
                 }
                 if (!item.hasNonNull("id") || item.path("id").asText().isBlank()
                         || item.path("id").asText().length() > 64) {

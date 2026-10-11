@@ -3,6 +3,7 @@ package com.growthbuddy.user;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.growthbuddy.common.ApiException;
+import com.growthbuddy.common.DeliveryCache;
 import com.growthbuddy.common.LoginAttemptGuard;
 import com.growthbuddy.common.RateLimiter;
 import com.growthbuddy.mail.MailService;
@@ -136,7 +137,7 @@ public class AuthService {
         "push_subscriptions", "notifications", "custom_sounds", "focus_sessions", "weekly_reviews",
         "money_state", "money_accounts", "money_transactions", "bank_feed_consents",
         "calendar_reminders", "reminder_done", "note_drafts", "note_edit_drafts", "notes", "sessions",
-        "idempotency_keys",
+        "idempotency_keys", "health_readings",
     };
 
     @PersistenceContext
@@ -318,10 +319,26 @@ public class AuthService {
      * inside the caller's transaction that would roll the change back.
      */
     private void notifyQuietly(String to, String subject, String body) {
-        try {
-            mail.sendPlain(to, subject, body);
-        } catch (RuntimeException ex) {
-            log.warn("Courtesy email to {} failed ({}): {}", to, subject, ex.getMessage());
+        Runnable send = () -> {
+            try {
+                mail.sendPlain(to, subject, body);
+            } catch (RuntimeException ex) {
+                log.warn("Courtesy email to {} failed ({}): {}", to, subject, ex.getMessage());
+            }
+        };
+        // After commit: a courtesy mail can't fail the request anyway, so there is
+        // no reason to hold the caller's transaction (and its connection) open
+        // through SMTP — nor to announce a change that then rolls back.
+        if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                    new org.springframework.transaction.support.TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            send.run();
+                        }
+                    });
+        } else {
+            send.run();
         }
     }
 
@@ -361,7 +378,8 @@ public class AuthService {
         // Do not signal whether the email exists.
     }
 
-    @Transactional
+    // Not @Transactional: one token insert, then an SMTP call that must not hold
+    // a pooled connection (issuePasswordResetOtp no longer deletes anything).
     public void forgotPassword(EmailOnlyRequest req) {
         // Over the address cap: skip silently, as resendVerification does — same
         // answer for an unknown address, and only a real mail spends the budget,
@@ -393,8 +411,9 @@ public class AuthService {
             throw ApiException.badRequest("Invalid or expired code. Request a new one.");
         }
         loginGuard.recordSuccess("reset:" + email);
-        match.setConsumedAt(Instant.now());
-        resetTokens.save(match);
+        // Every outstanding code goes, not just this one: issuing no longer
+        // clears the earlier ones (see issuePasswordResetOtp).
+        resetTokens.deleteAllForUser(user.getId());
 
         PasswordCredential c = creds.findById(user.getId()).orElseGet(() -> {
             PasswordCredential fresh = new PasswordCredential();
@@ -865,12 +884,18 @@ public class AuthService {
     public AuthUserResponse verifyWhatsAppOtp(UUID userId, VerifyWhatsAppOtpRequest req) {
         User user = users.findById(userId).orElseThrow(() -> ApiException.notFound("User not found"));
         String normalized = normalizePhone(req.number());
+        // Six digits like the email code, so the same per-account backoff: the
+        // per-IP limit alone lets a spread-out guesser through.
+        String guardKey = "waverify:" + userId;
+        loginGuard.check(guardKey);
 
         List<WhatsAppOtpToken> tokens = waOtpTokens.findByUserIdAndConsumedAtIsNull(userId);
         WhatsAppOtpToken match = findMatchingWaToken(tokens, req.otp(), normalized);
         if (match == null) {
+            loginGuard.recordFailure(guardKey);
             throw ApiException.badRequest("Invalid or expired code. Request a new one.");
         }
+        loginGuard.recordSuccess(guardKey);
         match.setConsumedAt(Instant.now());
         waOtpTokens.save(match);
 
@@ -949,22 +974,59 @@ public class AuthService {
         return AuthUserResponse.from(user);
     }
 
-    /** Merge client UI prefs (theme, language, onboarding flag, seen achievements). */
+    /** Past either, a save is refused: the blob rides along on every /me and session cache. */
+    static final int MAX_UI_PREF_KEYS = 200;
+    static final int MAX_UI_PREF_BYTES = 64 * 1024;
+    /**
+     * The ui_prefs keys the per-minute delivery schedulers decide due-ness from
+     * in their cached snapshot (ReminderPrefs.leadFor, WorkWeek.fromPrefs). Quiet
+     * hours, snooze and mutes are read from a fresh user at send time, so they
+     * need no reload. A new key a snapshot reads belongs here.
+     */
+    static final java.util.Set<String> SCHEDULER_PREF_KEYS = java.util.Set.of("reminderLead", "workWeek");
+
+    /**
+     * Merge client UI prefs (theme, language, onboarding flag, seen achievements).
+     * A null value removes the key. Written by a bulk update, so the User
+     * listener doesn't make every theme toggle reload the delivery schedulers;
+     * {@link DeliveryCache#changed} fires only when a key they read moved.
+     */
     @Transactional
     public AuthUserResponse updateUiPrefs(UUID userId, java.util.Map<String, Object> prefs) {
         User user = users.findById(userId)
                 .orElseThrow(() -> ApiException.notFound("User not found"));
-        java.util.Map<String, Object> merged = user.getUiPrefs() != null
-                ? new java.util.HashMap<>(user.getUiPrefs())
-                : new java.util.HashMap<>();
-        if (prefs != null) {
-            prefs.forEach((k, v) -> {
-                if (k != null) merged.put(k, v);
+        java.util.Map<String, Object> before = user.getUiPrefs() != null ? user.getUiPrefs() : java.util.Map.of();
+        java.util.Map<String, Object> merged = mergeUiPrefs(before, prefs);
+        String blob;
+        try {
+            blob = json.writeValueAsString(merged);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw ApiException.badRequest("Preferences must be plain JSON.");
+        }
+        if (merged.size() > MAX_UI_PREF_KEYS
+                || blob.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > MAX_UI_PREF_BYTES) {
+            throw ApiException.badRequest("Too many preferences saved. Clear some and try again.");
+        }
+        users.updateUiPrefs(userId.toString(), blob);
+        if (SCHEDULER_PREF_KEYS.stream().anyMatch(k -> !java.util.Objects.equals(before.get(k), merged.get(k)))) {
+            DeliveryCache.changed();
+        }
+        user.setUiPrefs(merged); // detached by the bulk update's clear: never flushed
+        return AuthUserResponse.from(user);
+    }
+
+    /** {@code base} with {@code patch} laid over it; a null value deletes the key. */
+    static java.util.Map<String, Object> mergeUiPrefs(java.util.Map<String, Object> base,
+                                                      java.util.Map<String, Object> patch) {
+        java.util.Map<String, Object> merged = new java.util.HashMap<>(base);
+        if (patch != null) {
+            patch.forEach((k, v) -> {
+                if (k == null) return;
+                if (v == null) merged.remove(k);
+                else merged.put(k, v);
             });
         }
-        user.setUiPrefs(merged);
-        users.save(user);
-        return AuthUserResponse.from(user);
+        return merged;
     }
 
     /** Update the progress-digest cadence and preferred send hour. */
@@ -1031,7 +1093,7 @@ public class AuthService {
         return age;
     }
 
-    @Transactional(readOnly = true)
+    // Not @Transactional: one user read, then an AI call that must not hold a pooled connection.
     public NutritionSuggestionResponse nutritionSuggestion(UUID userId, UpdateProfileRequest form) {
         User user = users.findById(userId)
                 .orElseThrow(() -> ApiException.notFound("User not found"));
@@ -1150,8 +1212,13 @@ public class AuthService {
         return true;
     }
 
+    /**
+     * Adds a code without deleting the earlier ones: anyone can ask for a reset
+     * mail, and if each request voided the last, a stranger could keep voiding
+     * the code the owner is typing. The address cap ({@link #takeOtpMail}) bounds
+     * how many are live at once; a successful reset deletes them all.
+     */
     private void issuePasswordResetOtp(User user) {
-        resetTokens.deleteAllForUser(user.getId());
         String otp = newOtp();
         PasswordResetToken t = new PasswordResetToken();
         t.setTokenHash(bcrypt.encode(otp));

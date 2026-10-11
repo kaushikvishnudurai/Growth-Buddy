@@ -148,6 +148,10 @@ import {
   Code,
   Redo2,
   WifiOff,
+  Wind,
+  Scale,
+  Ruler,
+  Percent,
 } from 'lucide';
 
 export const icons = {
@@ -293,4 +297,8 @@ export const icons = {
   Code,
   Redo2,
   WifiOff,
+  Wind,
+  Scale,
+  Ruler,
+  Percent,
 };

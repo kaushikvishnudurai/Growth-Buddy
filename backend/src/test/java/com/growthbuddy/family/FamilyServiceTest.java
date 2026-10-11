@@ -135,6 +135,32 @@ class FamilyServiceTest {
         verify(members).save(kid);
     }
 
+    /* ---- member birth dates ---- */
+
+    /** The roast: "Mother, 0 yrs, Infant, 60 kg" saved, and the planner served her infant portions. */
+    @Test
+    void aParentCannotBeGivenAChildsBirthDate() {
+        clockAt(LocalDate.of(2026, 10, 11));
+        Family f = family(OWNER);
+        FamilyMember mum = row(f, null, MemberStatus.unmapped, Relationship.mother);
+        assertThatThrownBy(() -> service.updateMember(OWNER, mum.getId(), new UpdateMemberRequest(
+                "Amma", null, LocalDate.of(2026, 1, 1), "Female", null, 60)))
+                .isInstanceOf(ApiException.class)
+                .extracting(e -> ((ApiException) e).getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+        verify(members, never()).save(any());
+    }
+
+    @Test
+    void aChildMayBeAnInfant() {
+        clockAt(LocalDate.of(2026, 10, 11));
+        Family f = family(OWNER);
+        FamilyMember kid = row(f, null, MemberStatus.unmapped, Relationship.child);
+        livesIn(OWNER, row(f, OWNER, MemberStatus.mapped, Relationship.self));
+        service.updateMember(OWNER, kid.getId(), new UpdateMemberRequest(
+                "Baby", null, LocalDate.of(2026, 1, 1), null, null, 8));
+        verify(members).save(kid);
+    }
+
     /* ---- invite lifecycle ---- */
 
     /**

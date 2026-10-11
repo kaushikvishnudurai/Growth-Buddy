@@ -29,6 +29,16 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     @Query("select u.id, u.uiPrefs from User u where u.uiPrefs is not null")
     List<Object[]> findIdsWithUiPrefs();
 
+    /**
+     * ui_prefs alone, as bulk SQL: it skips the DeliveryCache listener on purpose
+     * (AuthService.updateUiPrefs bumps it itself when a scheduler-read key moved).
+     * updated_at follows by its ON UPDATE. Clears the persistence context, so the
+     * caller's loaded User is detached.
+     */
+    @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = "update users set ui_prefs = :prefs where id = :id", nativeQuery = true)
+    int updateUiPrefs(@Param("id") String id, @Param("prefs") String prefsJson);
+
     /** Everyone a bill-due WhatsApp may go to: only a number its owner proved by OTP. */
 
     /**

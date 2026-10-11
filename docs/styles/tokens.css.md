@@ -6,10 +6,10 @@ via `@fontsource` — plus Space Mono for `--font-mono`.
 
 | Section |
 |---|
-| primitives (color ramps, type scale, spacing, radii, shadows, motion) |
+| primitives (color ramps, type scale, spacing, radii, shadows, motion, layers) |
 | **LIGHT THEME** — `:root, [data-theme="light"]` |
 | **DARK THEME** — `[data-theme="dark"]` (sets `color-scheme: dark`) |
-| **SEMANTIC TYPOGRAPHY ROLES** — apply as classes (`.gb-display`, `.gb-h1`, …) |
+| **SEMANTIC TYPOGRAPHY ROLES** — only `.gb-stat` now; the unused `.gb-h1`…`.gb-mono` role classes were removed |
 
 ## Token groups
 
@@ -36,6 +36,9 @@ via `@fontsource` — plus Space Mono for `--font-mono`.
 - **Elevation:** `--shadow-xs|sm|md|lg|xl`. `xl` is the overlay tier — dialogs and the two header
   panels, which sit above a dimmed page. Three surfaces were already naming it before it existed.
 - **Motion:** `--dur-fast|base|slow`, `--ease-standard|out|bounce`.
+- **Layers:** `--z-sticky` 5 < `--z-ptr` 40 < `--z-popover` 50 (bell/profile) < `--z-sheet-backdrop` 60
+  < `--z-sheet` 61 < `--z-modal` 100 < `--z-loader` 150 < `--z-toast` 160 < `--z-celebrate` 200
+  < `--z-skip` 2000 < `--z-thinking` 2100. A new fixed layer picks a slot here, not a fresh number.
 
 ## Rules
 

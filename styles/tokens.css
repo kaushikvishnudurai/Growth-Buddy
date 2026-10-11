@@ -168,6 +168,22 @@
   --dur-fast: 120ms;
   --dur-base: 200ms;
   --dur-slow: 360ms;
+
+  /* =================================================================
+     LAYERS (z-index) — fixed and sticky layers only; local 1/2/-1
+     stacking inside a component stays a bare number.
+     ================================================================= */
+  --z-sticky: 5;          /* in-screen sticky bars (tabs, section nav, editor tools) */
+  --z-ptr: 40;            /* pull-to-refresh indicator */
+  --z-popover: 50;        /* header panels: bell, profile */
+  --z-sheet-backdrop: 60; /* More sheet scrim */
+  --z-sheet: 61;          /* More sheet */
+  --z-modal: 100;         /* .gb-modal-overlay */
+  --z-loader: 150;        /* food photo loader, over a modal */
+  --z-toast: 160;
+  --z-celebrate: 200;
+  --z-skip: 2000;         /* skip link */
+  --z-thinking: 2100;     /* body::before/::after AI-wait glow, above everything */
 }
 
 /* =====================================================================
@@ -314,85 +330,12 @@
 
 /* =====================================================================
    SEMANTIC TYPOGRAPHY ROLES
-   Apply as classes (.gb-h1) or copy the rules into product CSS.
+   .gb-stat is the one role class in use; the rest live in component CSS.
    ===================================================================== */
-.gb-display {
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: var(--text-display);
-  line-height: var(--leading-tight);
-  letter-spacing: var(--tracking-tight);
-  color: var(--fg1);
-}
-.gb-h1 {
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: var(--text-h1);
-  line-height: var(--leading-snug);
-  letter-spacing: var(--tracking-tight);
-  color: var(--fg1);
-}
-.gb-h2 {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: var(--text-h2);
-  line-height: var(--leading-snug);
-  letter-spacing: var(--tracking-tight);
-  color: var(--fg1);
-}
-.gb-h3 {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: var(--text-h3);
-  line-height: var(--leading-snug);
-  color: var(--fg1);
-}
-.gb-h4 {
-  font-family: var(--font-body);
-  font-weight: 700;
-  font-size: var(--text-h4);
-  line-height: var(--leading-normal);
-  color: var(--fg1);
-}
-.gb-body {
-  font-family: var(--font-body);
-  font-weight: 400;
-  font-size: var(--text-body);
-  line-height: var(--leading-relaxed);
-  color: var(--fg2);
-}
-.gb-body-strong {
-  font-family: var(--font-body);
-  font-weight: 600;
-  font-size: var(--text-body);
-  line-height: var(--leading-normal);
-  color: var(--fg1);
-}
-.gb-sm {
-  font-family: var(--font-body);
-  font-weight: 500;
-  font-size: var(--text-sm);
-  line-height: var(--leading-normal);
-  color: var(--fg2);
-}
-.gb-label {
-  font-family: var(--font-body);
-  font-weight: 700;
-  font-size: var(--text-2xs);
-  line-height: 1;
-  letter-spacing: var(--tracking-caps);
-  text-transform: uppercase;
-  color: var(--fg3);
-}
 .gb-stat {
   font-family: var(--font-display);
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   letter-spacing: var(--tracking-tight);
   color: var(--fg1);
-}
-.gb-mono {
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  color: var(--fg2);
 }

@@ -1,7 +1,7 @@
 package com.growthbuddy.notification;
 
 import com.growthbuddy.common.ApiException;
-import jakarta.transaction.Transactional;
+import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.List;

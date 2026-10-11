@@ -32,20 +32,27 @@ public interface TaskRepository extends JpaRepository<Task, UUID> {
     List<Task> findByUserIdAndDoneAtAfter(UUID userId, Instant after);
 
 
-    /** Ids of everyone currently holding a ticked-off task. Drives the midnight sweep. */
-    @Query("select distinct t.userId from Task t where t.done = true and t.deletedAt is null")
-    List<UUID> findUserIdsWithCompletedTasks();
+    /**
+     * {@code [userId, oldest doneAt]} for everyone holding a ticked-off task. Drives
+     * the midnight sweep; the oldest tick says whether any of it predates their today.
+     */
+    @Query("select t.userId, min(t.doneAt) from Task t where t.done = true and t.deletedAt is null "
+            + "group by t.userId")
+    List<Object[]> findOldestCompletedByUser();
 
     /**
-     * Soft-delete every task this user has already ticked off. History rows are
+     * Soft-delete every task this user ticked off before {@code before} (their
+     * local midnight; a legacy row with no doneAt counts as old). History rows are
      * left alone on purpose — they are what the report and the completion count
      * are built from, and {@code TaskService.delete} wiping them is a different
      * intent (the user removing a task) from this one (the day ending).
      */
     @Modifying(clearAutomatically = true)
     @Query("update Task t set t.deletedAt = :now, t.updatedAt = :now "
-            + "where t.userId = :userId and t.done = true and t.deletedAt is null")
-    int clearCompletedFor(@Param("userId") UUID userId, @Param("now") Instant now);
+            + "where t.userId = :userId and t.done = true and t.deletedAt is null "
+            + "and (t.doneAt is null or t.doneAt < :before)")
+    int clearCompletedFor(@Param("userId") UUID userId, @Param("before") Instant before,
+                          @Param("now") Instant now);
 
     /**
      * How many distinct tasks were ticked off inside a window. Once the midnight

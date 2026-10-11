@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { waterFish, fishStart, bubbleRise, GLASS_W, GLASS_H, GLASS_R } from './water-fish.js';
 
-// Inside the water's rounded rect (72 x 122, 22px corners), y up from the floor.
+// Inside the water's rounded rect (GLASS_W x GLASS_H, GLASS_R corners), y up from the floor.
 const inGlass = (x, y) => {
   const cx = Math.min(Math.max(x, GLASS_R), GLASS_W - GLASS_R);
   const cy = Math.min(Math.max(y, GLASS_R), GLASS_H - GLASS_R);

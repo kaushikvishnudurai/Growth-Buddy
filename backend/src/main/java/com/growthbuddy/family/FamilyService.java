@@ -143,12 +143,26 @@ public class FamilyService {
     /* Against the user's own day, not the server's: @PastOrPresent used the
        server clock, so for someone ahead of UTC a birth date of "today" was
        refused for the first hours after their midnight. */
-    private LocalDate checkedDob(UUID userId, LocalDate dob) {
-        if (dob != null && dob.isAfter(clock.today(userId))) {
+    private LocalDate checkedDob(UUID userId, LocalDate dob, Relationship rel) {
+        if (dob == null) return null;
+        LocalDate today = clock.today(userId);
+        if (dob.isAfter(today)) {
             throw ApiException.badRequest("Date of birth cannot be in the future.");
+        }
+        // "Mother, 0 yrs, Infant" got saved and planned infant portions for an adult.
+        // The relationship is the manager's view of them, and these four can't be a child.
+        if (ADULT_RELATIONSHIPS.contains(rel) && dob.isAfter(today.minusYears(MIN_ADULT_REL_AGE))) {
+            throw ApiException.badRequest("That birth date makes your " + rel + " under "
+                    + MIN_ADULT_REL_AGE + ". Check the year.");
         }
         return dob;
     }
+
+    private static final java.util.Set<Relationship> ADULT_RELATIONSHIPS = java.util.EnumSet.of(
+            Relationship.mother, Relationship.father, Relationship.grandmother,
+            Relationship.grandfather, Relationship.spouse);
+    // ponytail: one floor for all five; a per-relationship minimum (grandparents ~30) if anyone asks.
+    static final int MIN_ADULT_REL_AGE = 12;
 
     // ------------------------------------------------------------------
     // Family + members
@@ -175,7 +189,7 @@ public class FamilyService {
         m.setFamilyId(fam.getId());
         m.setName(req.name().trim());
         m.setRelationship(req.relationship() != null ? req.relationship() : Relationship.other);
-        m.setDob(checkedDob(userId, req.dob()));
+        m.setDob(checkedDob(userId, req.dob(), m.getRelationship()));
         m.setGender(StringUtils.hasText(req.gender()) ? req.gender().trim() : null);
         m.setHeightCm(req.heightCm());
         m.setWeightKg(req.weightKg());
@@ -198,7 +212,7 @@ public class FamilyService {
         if (req.relationship() != null && m.getRelationship() != Relationship.self) {
             m.setRelationship(req.relationship());
         }
-        m.setDob(checkedDob(userId, req.dob()));
+        m.setDob(checkedDob(userId, req.dob(), m.getRelationship()));
         m.setGender(StringUtils.hasText(req.gender()) ? req.gender().trim() : null);
         m.setHeightCm(req.heightCm());
         m.setWeightKg(req.weightKg());
@@ -2319,6 +2333,9 @@ public class FamilyService {
         try {
             return json.readValue(raw, new TypeReference<List<String>>() {});
         } catch (Exception ex) {
+            // Unreadable reads as empty so the screen still opens, but say so:
+            // otherwise a corrupt allergy list is indistinguishable from none.
+            log.warn("Unreadable family list column ({} chars): {}", raw.length(), ex.toString());
             return List.of();
         }
     }
@@ -2330,6 +2347,7 @@ public class FamilyService {
         try {
             return json.readTree(raw);
         } catch (Exception ex) {
+            log.warn("Unreadable family JSON column ({} chars): {}", raw.length(), ex.toString());
             return null;
         }
     }

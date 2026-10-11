@@ -18,6 +18,7 @@
    plain `node` (see insights.test.mjs).
    ===================================================================== */
 import { fmtIn, homeCur, catOf } from './money-core.js'; // pure, no DOM: money's own formatter + tag labels
+import { localKey } from './dates.js';
 
 // Ordinal value maps for the categorical check-ins.
 const ORD = { low: 1, okay: 2, good: 3, great: 4, medium: 2, high: 3, calm: 1, normal: 2 };
@@ -484,11 +485,6 @@ const hh = (h) => String(h % 24).padStart(2, '0') + ':00';
 // Money reads like the Money screen: home-currency symbol, en-IN grouping, whole units.
 const fmtMoney = (v, m) => fmtIn(Math.round(v), homeCur(m));
 
-/** Local YYYY-MM-DD of a Date. */
-function localKey(d) {
-  const p = (n) => String(n).padStart(2, '0');
-  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
-}
 
 /** The two-hour window in which focus sessions run longest. */
 export function focusHours(sessions) {

@@ -358,6 +358,7 @@ const NAV_OVERFLOW = [
   { id: 'notes', icon: 'notebook-pen', label: 'Notes', feature: 'notes', group: 'plan' },
   { id: 'food', icon: 'utensils-crossed', label: 'Food', feature: 'food|water', group: 'track' },
   { id: 'money', icon: 'wallet', label: 'Money', feature: 'money', group: 'track' },
+  { id: 'health', icon: 'activity', label: 'Health', feature: 'health', group: 'track' },
   { id: 'circle', icon: 'users-round', label: 'Circle', feature: 'circle', group: 'people' },
   { id: 'family', icon: 'users', label: 'Family', feature: 'family', group: 'people' },
 ];
@@ -460,7 +461,13 @@ function moreSections(overflow, active, onNav) {
   return out;
 }
 
+/* The nav is rebuilt on every render(), so a sprout that grew on creation would
+   regrow after every save. It grows only when the destination actually changed. */
+let lastNavActive = null;
+
 function BottomNav({ active, onNav, onMore, features, moreOpen, layout } = {}) {
+  const arriving = active !== lastNavActive;
+  lastNavActive = active;
   const tab = (item, opts) =>
     h(
       'button',
@@ -470,7 +477,8 @@ function BottomNav({ active, onNav, onMore, features, moreOpen, layout } = {}) {
           'gb-nav-tab' +
           ((opts && opts.active) || active === item.id ? ' is-active' : '') +
           (opts && opts.overflow ? ' gb-nav-tab--overflow' : '') +
-          (opts && opts.more ? ' gb-nav-tab--more' : ''),
+          (opts && opts.more ? ' gb-nav-tab--more' : '') +
+          (arriving && ((opts && opts.active) || active === item.id) ? ' is-sprouting' : ''),
         // Below 360px .gb-nav-tab span is display:none (app.css) and the icon is
         // aria-hidden — without this the whole nav is unnamed buttons.
         'aria-label': item.label,
@@ -499,7 +507,15 @@ function BottomNav({ active, onNav, onMore, features, moreOpen, layout } = {}) {
     );
   }
 
-  const children = [h('nav', { class: 'gb-nav', 'aria-label': 'Primary' }, ...tabs)];
+  // The wordmark heads the desktop sidebar only (CSS hides it on a phone, where
+  // the header carries the screen and the bar has no room).
+  const brand = h(
+    'div',
+    { class: 'gb-nav-brand', 'aria-hidden': 'true' },
+    Logo({ size: 30, radius: 9 }),
+    h('span', null, 'Growth Buddy')
+  );
+  const children = [h('nav', { class: 'gb-nav', 'aria-label': 'Primary' }, brand, ...tabs)];
 
   if (moreOpen && overflow.length) {
     children.push(
@@ -672,6 +688,13 @@ if (typeof window !== 'undefined') {
   }
 }
 
+/* How long a closing sheet fades before it is removed (the overlay's closing
+   fade in app.css). Effects on the screen behind it wait this out. */
+const SHEET_EXIT_MS = 180;
+/* Focus a field a beat after its dialog mounts: an immediate focus() lands before
+   the sheet is in the DOM and painted, and mobile keyboards ignore it. */
+const focusSoon = (el) => setTimeout(() => el.focus(), 60);
+
 function openOverlay({ label, className, role = 'dialog', onClose, onDismiss } = {}) {
   let closed = false;
   const sheet = h('div', {
@@ -688,7 +711,7 @@ function openOverlay({ label, className, role = 'dialog', onClose, onDismiss } =
     if (vv) vv.removeEventListener('resize', fitViewport);
     overlay.classList.remove('is-open');
     overlay.classList.add('is-closing');
-    setTimeout(() => overlay.remove(), 180);
+    setTimeout(() => overlay.remove(), SHEET_EXIT_MS);
     syncSheetHistory();
     if (onClose) onClose();
   }
@@ -1282,6 +1305,8 @@ export {
   confirmDialog,
   fieldRefusal,
   openOverlay,
+  SHEET_EXIT_MS,
+  focusSoon,
   closeOverlays,
   openModal,
   shakeRefusal,

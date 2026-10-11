@@ -39,13 +39,11 @@
   align-items: center;
   justify-content: center;
   transition: background var(--dur-fast), color var(--dur-fast), transform var(--dur-fast);
+  position: relative;
 }
 
 /* Drawn at 32px; the ::before overlay makes the tap target 44px. Inset is
    measured from inside the 1px border, so -7, not -6 (which measured 42). */
-.gb-mini-cal-nav-btn {
-  position: relative;
-}
 .gb-mini-cal-nav-btn::before {
   content: '';
   position: absolute;
@@ -162,10 +160,12 @@
   box-shadow: inset 0 -3px 0 var(--iris-500);
 }
 
+/* A free day is the quiet default: an outline, no fill. A month of green
+   cells out-shouted the days that actually had something on them. */
 .gb-mini-cal-day.is-free {
-  background: var(--success-soft);
-  color: var(--success-soft-fg);
-  border-color: var(--leaf-500);
+  background: transparent;
+  color: var(--fg1);
+  border-color: var(--border);
 }
 
 /* Same specificity as .has-tasks / .is-free and written before them, so on a
@@ -178,6 +178,7 @@
 
 .gb-mini-cal-day .num {
   display: block;
+  font-family: var(--font-mono);
 }
 
 .gb-mini-cal-day .badge {
@@ -255,7 +256,7 @@
 }
 
 .gb-mini-cal-legend-item .dot.is-free {
-  background: var(--leaf-500);
+  box-shadow: inset 0 0 0 1.5px var(--border-strong);
 }
 
 .gb-mini-cal-day-title {
@@ -383,18 +384,14 @@
   gap: 8px;
 }
 
-/* Small inline spinner for loading states */
-.gb-spinner {
+/* Smaller, brand-tipped ring for the day panel. Scoped: this file loads after
+   app.css, and an unscoped .gb-spinner here turned the sign-in button's ring
+   brand-on-brand, i.e. invisible. Size, shape and spin come from app.css. */
+.gb-mini-cal-empty--loading .gb-spinner {
   width: 14px;
   height: 14px;
   border: 2px solid color-mix(in srgb, var(--fg3) 35%, transparent);
   border-top-color: var(--brand);
-  border-radius: 50%;
-  display: inline-block;
-  animation: gb-spin 0.7s linear infinite;
-}
-@keyframes gb-spin {
-  to { transform: rotate(360deg); }
 }
 
 .gb-mini-cal-retry {

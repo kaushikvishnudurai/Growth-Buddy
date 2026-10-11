@@ -4,15 +4,14 @@
 import {
   h,
   Card,
-  SectionTitle,
   Icon,
-  Pill,
   plural,
   refreshIcons,
   openOverlay,
   submitOnEnter,
   confirmDialog,
   formatTime,
+  focusSoon,
 } from './gb-kit.js';
 import {
   occursOn,
@@ -28,6 +27,7 @@ import { chimeOptionValue, chimeOptions, playChime } from './chime.js';
 import { usualReminderTime } from './nudges.js';
 import { fmtDate } from './i18n.js';
 import { toast } from './toast.js';
+import { pad2 as pad, dateKey as keyOf, todayKey } from './dates.js';
 
 const MONTHS = [
   'January',
@@ -95,23 +95,10 @@ const REPEATS = {
 };
 const REPEAT_ORDER = ['none', 'daily', 'weekdays', 'weekly', 'monthly', 'yearly'];
 
-function pad(n) {
-  return n < 10 ? '0' + n : String(n);
-}
-
-/* Build a 'YYYY-MM-DD' key from y / m(0-11) / d. */
-function keyOf(y, m, d) {
-  return y + '-' + pad(m + 1) + '-' + pad(d);
-}
 
 function parseKey(key) {
   const [y, m, d] = key.split('-').map(Number);
   return { y: y, m: m - 1, d: d };
-}
-
-function todayKey() {
-  const t = new Date();
-  return keyOf(t.getFullYear(), t.getMonth(), t.getDate());
 }
 
 function isFutureKey(key) {
@@ -1065,6 +1052,82 @@ function prettyTaskTime(iso) {
   }
 }
 
+/* ---- The day line ----
+   The screen's one drawing: a day is a line from midnight to midnight, and a
+   reminder is a mark where it falls (a block spans its start to its end). The
+   month draws one per cell, the selected day draws it large with the hours.
+   Reminders with no time sit at the head of the line as a dot: "any time". */
+function DayLine(list, className, extra) {
+  const marks = [];
+  let anytime = 0;
+  list.forEach((r) => {
+    if (!r.time) return void anytime++;
+    const a = toMin(r.time);
+    const b = r.endTime ? toMin(r.endTime) : null;
+    marks.push(
+      h('span', {
+        class: 'gb-line-mark' + (b != null && b > a ? ' is-block' : ''),
+        style: {
+          left: (a / 1440) * 100 + '%',
+          width: b != null && b > a ? ((b - a) / 1440) * 100 + '%' : null,
+          '--tag-color': (TAGS[r.tag] || TAGS.other).color,
+        },
+      })
+    );
+  });
+  return h(
+    'span',
+    { class: 'gb-line ' + className, 'aria-hidden': 'true' },
+    anytime ? h('span', { class: 'gb-line-any' }) : null,
+    h('span', { class: 'gb-line-track' }, marks, extra || null)
+  );
+}
+
+/* Hour labels for the large line, short enough to sit under it on a phone:
+   "00 06 12 18 24", or "12a 6a 12p 6p 12a" for a 12-hour clock. */
+function rulerHours() {
+  const h24 = /^13/.test(formatTime('13:00'));
+  return h24 ? ['00', '06', '12', '18', '24'] : ['12a', '6a', '12p', '6p', '12a'];
+}
+
+function DayRuler(list, key) {
+  let now = null;
+  if (key === todayKey()) {
+    const d = new Date();
+    now = h('span', {
+      class: 'gb-line-now',
+      style: { left: ((d.getHours() * 60 + d.getMinutes()) / 1440) * 100 + '%' },
+    });
+  }
+  // Each mark's start time above it; one that would crowd the last shown
+  // (under 2.5 hours on) gives way, the list below still names them all.
+  const labels = [];
+  let last = -Infinity;
+  list.forEach((r) => {
+    if (!r.time || toMin(r.time) - last < 150) return;
+    last = toMin(r.time);
+    const at = (last / 1440) * 100;
+    labels.push(
+      h(
+        'span',
+        { class: at > 88 ? 'is-end' : at < 8 ? 'is-start' : null, style: { left: at + '%' } },
+        formatTime(r.time)
+      )
+    );
+  });
+  return h(
+    'div',
+    { class: 'gb-ruler' },
+    labels.length ? h('div', { class: 'gb-ruler-labels', 'aria-hidden': 'true' }, labels) : null,
+    DayLine(list, 'gb-ruler-line', now),
+    h(
+      'div',
+      { class: 'gb-ruler-hours', 'aria-hidden': 'true' },
+      rulerHours().map((t) => h('span', null, t))
+    )
+  );
+}
+
 /* ---- Month grid ---- */
 /* The tasks the screen last rendered with. app.js repaints the grid without
    them (and without the toolbar) after every reminder change.
@@ -1096,26 +1159,10 @@ function MonthGrid({ year, month, selectedDate, reminders, tasks, onSelectDate }
     const todays = remindersOn(reminders, key);
     const due = tasksOn(tasks, key).length;
 
-    // Up to 3 distinct tag-colored dots.
-    const seen = [];
-    for (const r of todays) {
-      if (seen.indexOf(r.tag) === -1) seen.push(r.tag);
-      if (seen.length >= 3) break;
-    }
-    const dots =
-      seen.length || due
-        ? h(
-            'span',
-            { class: 'gb-cal-dots' },
-            seen.map((tag) =>
-              h('span', {
-                class: 'gb-cal-dot',
-                style: { background: (TAGS[tag] || TAGS.other).color },
-              })
-            ),
-            due ? h('span', { class: 'gb-cal-dot is-task' }) : null
-          )
-        : null;
+    // The day as a line, midnight to midnight, marked where things happen; a
+    // task due adds a square at its tail (never one more tag colour).
+    const line = todays.length || due ? DayLine(todays, 'gb-cal-line') : null;
+    if (line && due) line.append(h('span', { class: 'gb-line-any gb-cal-dot is-task' }));
 
     const cls =
       'gb-cal-day' +
@@ -1139,7 +1186,7 @@ function MonthGrid({ year, month, selectedDate, reminders, tasks, onSelectDate }
           onclick: () => onSelectDate(key),
         },
         h('span', { class: 'num' }, String(dt.getDate())),
-        dots
+        line
       )
     );
   }
@@ -1464,6 +1511,18 @@ function dateEcho(input) {
 }
 
 /* ---- Scoped delete dialog for recurring reminders ---- */
+/* How far a scoped edit or delete reaches, drawn: seven occurrences of the
+   series with this one (the taller) in the middle, the reached ones filled. */
+const SCOPE_REACH = { this: [3, 3], future: [3, 6], before: [0, 2], all: [0, 6] };
+function ScopeStrip(scope) {
+  const [a, b] = SCOPE_REACH[scope] || [0, -1];
+  const ticks = [];
+  for (let i = 0; i < 7; i++) {
+    ticks.push(h('span', { class: (i >= a && i <= b ? 'is-on' : '') + (i === 3 ? ' is-this' : '') }));
+  }
+  return h('span', { class: 'gb-scope-strip', 'aria-hidden': 'true' }, ticks);
+}
+
 function openDeleteDialog(rem, occKey, onDelete) {
   const first = occKey === rem.date; // the series' first day: nothing before it to keep
   const opts = [
@@ -1524,7 +1583,8 @@ function openDeleteDialog(rem, occKey, onDelete) {
             { class: 'gb-modal-opt-tx' },
             h('span', { class: 'gb-modal-opt-l' }, o.label),
             h('span', { class: 'gb-modal-opt-s' }, o.sub)
-          )
+          ),
+          ScopeStrip(o.scope)
         )
       )
     ),
@@ -1703,7 +1763,8 @@ function openEditDialog(rem, occKey, onEdit) {
               { class: 'gb-modal-opt-tx' },
               h('span', { class: 'gb-modal-opt-l' }, o.label),
               h('span', { class: 'gb-modal-opt-s' }, o.sub)
-            )
+            ),
+            ScopeStrip(o.scope)
           )
         )
       )
@@ -1829,7 +1890,7 @@ function openEditDialog(rem, occKey, onEdit) {
     )
   );
   refreshIcons();
-  setTimeout(() => textInput.focus(), 60);
+  focusSoon(textInput);
 }
 
 /** "HH:MM" local, from a snooze's instant — what formatTime takes. */
@@ -1854,14 +1915,6 @@ function ReminderRow(rem, occKey, onDelete, whatsappEnabled, onEdit, onCancelSno
   // Per occurrence: ticking off today's leaves tomorrow's ringing.
   const done = Array.isArray(rem.doneDates) && rem.doneDates.indexOf(occKey) !== -1;
   if (rem.time) {
-    meta.push(
-      h(
-        'span',
-        { class: 'meta-item' },
-        Icon('clock', { size: 13, color: 'var(--fg3)' }),
-        formatTime(rem.time) + (rem.endTime ? ' to ' + formatTime(rem.endTime) : '')
-      )
-    );
     // Only the reminder's own choice: the default is in Settings, and badging
     // every row with it would say the same thing down the whole list.
     if (rem.notifyBefore) {
@@ -1970,6 +2023,13 @@ function ReminderRow(rem, occKey, onDelete, whatsappEnabled, onEdit, onCancelSno
     h(
       'div',
       { style: { flex: 1, minWidth: 0 } },
+      h(
+        'div',
+        { class: 'gb-rem-when' },
+        rem.time
+          ? formatTime(rem.time) + (rem.endTime ? ' to ' + formatTime(rem.endTime) : '')
+          : 'Any time'
+      ),
       h('div', { class: 'gb-rem-text' }, rem.text),
       rem.notes ? h('div', { class: 'gb-rem-notes' }, rem.notes) : null,
       h('div', { class: 'gb-rem-meta' }, tagPill, meta)
@@ -2665,6 +2725,8 @@ function ReminderPanel({
         h('p', null, 'No wins saved here yet. Finish a task, log food, or add a goal action.')
       );
 
+  const sp = parseKey(selectedDate);
+  const sel = new Date(sp.y, sp.m, sp.d);
   const totalCount = list.length + dayTasks.length + (!futureDate ? dayFood.length : 0);
   const futurePlanningHint =
     futureDate && !dayTasks.length && !list.length
@@ -2689,11 +2751,21 @@ function ReminderPanel({
       { class: 'gb-cal-col gb-cal-reminders' },
       h(
         'div',
-        { 'data-cal-section': 'title' },
-        SectionTitle({
-          title: prettyDate(selectedDate),
-          action: totalCount ? totalCount + (totalCount === 1 ? ' item' : ' items') : null,
-        })
+        { class: 'gb-cal-block gb-cal-dayhead', 'data-cal-section': 'title' },
+        h(
+          'div',
+          { class: 'gb-cal-dayhead-top' },
+          h(
+            'h2',
+            { class: 'gb-cal-dayhead-date' },
+            h('span', { class: 'wd' }, DAY_LONG[sel.getDay()]),
+            h('span', { class: 'md' }, MONTHS[sel.getMonth()] + ' ' + sel.getDate())
+          ),
+          totalCount
+            ? h('span', { class: 'gb-cal-dayhead-count' }, plural(totalCount, 'item'))
+            : null
+        ),
+        DayRuler(list, selectedDate)
       ),
     futurePlanningHint,
       h(
@@ -2810,8 +2882,12 @@ function ScreenCalendar({
         'div',
         // Says what it is: as a bare row of coloured labels it read as the tag
         // filter, and people tapped it.
-        { class: 'gb-cal-block gb-cal-legend', role: 'note', 'aria-label': 'Dot colours' },
-        h('span', { class: 'gb-legend-title', 'aria-hidden': 'true' }, 'Dot colours'),
+        { class: 'gb-cal-block gb-cal-legend', role: 'note', 'aria-label': 'How to read the month' },
+        h(
+          'span',
+          { class: 'gb-legend-title' },
+          'Each day is a line from midnight to midnight. A mark shows when; a dot at the start means any time.'
+        ),
         TAG_ORDER.map((tag) =>
           h(
             'span',
@@ -2872,9 +2948,7 @@ function MonthCount(year, month, reminders, tasks) {
   return h(
     'div',
     { class: 'gb-cal-toolbar-actions', hidden: !parts.length },
-    parts.length
-      ? Pill({ icon: 'list-checks', label: parts.join(' · ') + ' this month', bg: 'var(--brand-soft)', fg: 'var(--brand-soft-fg)' })
-      : null
+    parts.length ? h('span', { class: 'gb-cal-monthcount' }, parts.join(' · ') + ' this month') : null
   );
 }
 

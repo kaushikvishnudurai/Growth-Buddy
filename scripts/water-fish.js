@@ -1,16 +1,18 @@
 /* =====================================================================
    Growth Buddy — where the water card's fish and bubbles go, pure.
-   The glass (styles/app.css .gb-water-glass) is 76 x 126 with a 2px border,
-   so the water is drawn in a 72 x 122 box with 22px rounded corners (the glass's
-   24px radius less the border); `pct` of it is full. Every fish stays inside
+   The card only renders on the Food screen, where the glass is the beaker
+   (styles/app.css `.gb-food-screen .gb-water-glass`): 84 x 160 with a 2px
+   border, so the water is drawn in an 80 x 156 box whose bottom corners are
+   18px (20px less the border; the top's 4px is inside that, so one radius is
+   the safe bound); `pct` of it is full. Change the beaker, change these. Every fish stays inside
    that rounded box for its whole swim and under the waterline for its whole bob,
    at any fill, and in a band of its own: no two fish ever cross.
    Checked by `node scripts/water-fish.test.mjs`.
    ===================================================================== */
 
-export const GLASS_W = 72;
-export const GLASS_H = 122;
-export const GLASS_R = 22;
+export const GLASS_W = 80;
+export const GLASS_H = 156;
+export const GLASS_R = 18;
 const BOB = 4; // the keyframes' translateY (--fish-bob), either way
 const WAVE = 6; // the surface's wave band (.gb-water-fill::before)
 const MIN_SWIM = 8;

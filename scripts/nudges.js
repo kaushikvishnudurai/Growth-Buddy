@@ -200,3 +200,45 @@ export function focusMinutesTarget(name) {
   const v = Number(m[1]) * (/^h/i.test(m[2]) ? 60 : 1);
   return v >= 1 && v <= 1440 ? Math.round(v) : 25;
 }
+
+/**
+ * What a habit can be linked to on the phone (habits.health_link). The target
+ * is in `unit`; `max` mirrors the server's check. A linked habit ticks itself
+ * once the day's reading reaches the target (app.js autoTickHealthHabits).
+ */
+export const HEALTH_LINKS = {
+  steps: { label: 'Steps', unit: 'steps', def: 8000, max: 100000, step: 100 },
+  sleep: { label: 'Sleep', unit: 'hours', def: 7, max: 24, step: 0.5 },
+  distance: { label: 'Distance', unit: 'km', def: 5, max: 300, step: 0.5 },
+  calories: { label: 'Active calories', unit: 'kcal', def: 400, max: 10000, step: 10 },
+  floors: { label: 'Floors climbed', unit: 'floors', def: 10, max: 1000, step: 1 },
+  workout: { label: 'Workout', unit: 'minutes', def: 30, max: 1440, step: 5 },
+};
+
+/**
+ * The link a habit's name implies, with its target, or null: "Sleep well"
+ * {sleep, 7}, "Sleep 8h" {sleep, 8}, "Walk 10k steps" {steps, 10000}, "Run 5 km"
+ * {distance, 5}, "Gym 45 min" {workout, 45}. Only a suggestion for the form.
+ */
+export function suggestHealthLink(name) {
+  const s = String(name || '');
+  const num = (re) => {
+    const m = re.exec(s);
+    return m ? Number(m[1]) : null;
+  };
+  if (/\bsleep|\bbed\s?time\b/i.test(s)) {
+    const h = num(/(\d+(?:\.\d+)?)\s*(?:h|hrs?|hours?)\b/i);
+    return { link: 'sleep', target: h > 0 && h <= 24 ? h : 7 };
+  }
+  const km = num(/(\d+(?:\.\d+)?)\s*km\b/i);
+  if (km > 0 && km <= 300) return { link: 'distance', target: km };
+  const steps = stepsTarget(s);
+  if (steps != null || /\bsteps?\b|\bwalk/i.test(s)) return { link: 'steps', target: steps || 8000 };
+  if (/\b(stairs|floors?)\b/i.test(s)) return { link: 'floors', target: num(/(\d+)\s*(?:floors?|flights?)/i) || 10 };
+  if (/\b(calories|kcal|burn)\b/i.test(s)) return { link: 'calories', target: num(/(\d+)\s*(?:kcal|cal)/i) || 400 };
+  if (/\b(workout|exercise|gym|train|training|yoga|cardio)\b/i.test(s)) {
+    const m = num(/(\d+)\s*(?:m|min|mins|minutes?)\b/i);
+    return { link: 'workout', target: m > 0 && m <= 1440 ? m : 30 };
+  }
+  return null;
+}

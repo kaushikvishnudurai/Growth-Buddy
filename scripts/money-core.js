@@ -5,12 +5,15 @@
    (emptyMoney / normalizeMoney / mergeMoney, tombstones), the ledger split
    app.js saves through (ledgerDiff / applyLedgerDiff / docPart), and the
    few engines Home's Money card reads (budgetStatus, buildInsights), with
-   the date / currency / category helpers under them. No DOM, no imports.
+   the date / currency / category helpers under them. No DOM; imports only
+   the pure dates.js.
    money.js imports all of it and re-exports what it used to export, so the
    tests and older import paths keep working; the screen itself is a lazy
    chunk (app.js SCREENS.money → lazyScreen).
    `cur` is a live binding: applyCurrency() here sets it, money.js reads it.
    ===================================================================== */
+import { pad2, localKey as dkey, todayKey } from './dates.js';
+
 const CUR = '₹';
 // Display currency symbol — customizable via settings.currency; applied from
 // the money doc whenever the screen/widget/modals render. ponytail: a single
@@ -205,15 +208,6 @@ const KEYWORDS = {
 /* =====================================================================
    Date + money helpers
    ===================================================================== */
-function pad2(n) {
-  return n < 10 ? '0' + n : String(n);
-}
-function dkey(d) {
-  return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
-}
-function todayKey() {
-  return dkey(new Date());
-}
 function parseKey(k) {
   const [y, m, d] = k.split('-').map(Number);
   return new Date(y, m - 1, d);

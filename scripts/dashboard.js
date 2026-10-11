@@ -2,6 +2,7 @@
    Growth Buddy — Dashboard (Home) screen
    ===================================================================== */
 import {
+  ProgressRing,
   h,
   Card,
   SectionTitle,
@@ -9,7 +10,6 @@ import {
   IconChip,
   Icon,
   Check,
-  ProgressRing,
   plural,
   openOverlay,
   formatTime as sharedFormatTime,
@@ -38,6 +38,7 @@ import { suggestReminderTime } from './habit-stats.js';
 import { waterFish, bubbleRise } from './water-fish.js';
 import { sleepToConfirm } from './nudges.js';
 import { pickOneThing } from './one-thing.js';
+import { dateKey, todayKey } from './dates.js';
 import { fmtDate, fmtNumber } from './i18n.js';
 import {
   groupBySlot,
@@ -86,7 +87,9 @@ function OnboardingCard({
       icon: 'list-todo',
       action: onAddTask,
     },
-    {
+    // Only when the wellness card isn't on Home: that card asks "How are you
+    // feeling?" with one-tap answers, and the two sat one above the other.
+    onAddMood && {
       // Ever, not today: a today-only check re-opened the checklist every morning.
       done: !!(wellness && wellness.moodByDate && Object.keys(wellness.moodByDate).length),
       label: 'Log how you feel',
@@ -176,12 +179,6 @@ const PRIORITY = {
   Low: { bg: 'var(--surface-3)', fg: 'var(--fg2)', dot: 'var(--warm-400)' },
 };
 
-function todayKey() {
-  const d = new Date();
-  const pad = (n) => (n < 10 ? '0' + n : String(n));
-  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
-}
-
 function sleepHours(entry) {
   if (!entry || !entry.bedtime || !entry.wakeTime) return null;
   const bed = entry.bedtime.split(':').map(Number);
@@ -195,6 +192,28 @@ function sleepHours(entry) {
 
 function allGoals(sections) {
   return (sections || []).flatMap((section) => section.goals || []);
+}
+
+/* A habit's streak as its last seven days, today on the right; filled = inside
+   the current run. ponytail: drawn from `streak` + `doneToday` alone (Home has
+   no per-day history loaded), so a day before the run reads "not in the streak"
+   rather than a confirmed miss. Load /api/habits/history if it must say more. */
+function StreakChain({ streak, doneToday, owed }) {
+  const n = Number(streak) || 0;
+  const before = doneToday ? n - 1 : n; // days of the run before today
+  const links = [];
+  for (let k = 6; k >= 0; k--) {
+    const on = k === 0 ? !!doneToday : k <= before;
+    links.push(
+      h('i', { class: 'gb-chain-link' + (on ? ' is-on' : '') + (k === 0 && !on && owed ? ' is-owed' : '') })
+    );
+  }
+  return h(
+    'span',
+    { class: 'gb-chain', role: 'img', 'aria-label': n + '-day streak', title: n + '-day streak' },
+    h('span', { class: 'gb-chain-links', 'aria-hidden': 'true' }, links),
+    h('span', { class: 'gb-chain-n', 'aria-hidden': 'true' }, Icon('flame', { size: 12 }), String(n))
+  );
 }
 
 function ScoreCard({ score, tasks: allTasks, habits, streakAsked }) {
@@ -257,7 +276,7 @@ function ScoreCard({ score, tasks: allTasks, habits, streakAsked }) {
         : '';
   const heading =
     score >= 70
-      ? "You're on track 🔥"
+      ? "You're on track"
       : score > 0
         ? 'Keep it going'
         : run
@@ -457,35 +476,32 @@ function TasksCard(props) {
   return card;
 }
 
+/* One habit on Home: name over its seven-day chain, tick on the right. Weekly
+   and N-a-week habits count weeks, which seven day-links can't show, so they
+   keep the figure alone. */
 function HabitCard(habit, toggleHabit) {
-  return Card({
-    className: 'gb-habit-card' + (habit.doneToday ? ' is-done' : ''),
-    children: [
-      IconChip({ domain: habit.domain, icon: habit.icon }),
+  const daily = (habit.cadence || 'daily') === 'daily';
+  const n = habit.streak || 0;
+  return h(
+    'div',
+    { class: 'gb-habit-line' + (habit.doneToday ? ' is-done' : '') },
+    IconChip({ domain: habit.domain, icon: habit.icon, size: 36, iconSize: 18 }),
+    h(
+      'div',
+      { class: 'gb-habit-line-main' },
       h('div', { class: 'name' }, habit.name),
-      // The flame and a bare number said nothing to a screen reader.
-      h(
-        'div',
-        {
-          class: 'streak',
-          role: 'img',
-          'aria-label':
-            (habit.streak || 0) +
-            ((habit.cadence || 'daily') === 'daily' ? '-day' : '-week') +
-            ' streak',
-        },
-        Icon('flame', { size: 14, color: 'var(--coral-500)' }),
-        String(habit.streak || 0)
-      ),
-      toggleHabit
-        ? Check({
-            done: !!habit.doneToday,
-            onToggle: () => toggleHabit(habit.id),
-            label: habit.name,
-          })
-        : null,
-    ],
-  });
+      daily
+        ? StreakChain({ streak: n, doneToday: habit.doneToday, owed: habitDue(habit) })
+        : h(
+            'span',
+            { class: 'gb-chain', role: 'img', 'aria-label': n + '-week streak' },
+            h('span', { class: 'gb-chain-n', 'aria-hidden': 'true' }, Icon('flame', { size: 12 }), n + '-week')
+          )
+    ),
+    toggleHabit
+      ? Check({ done: !!habit.doneToday, onToggle: () => toggleHabit(habit.id), label: habit.name })
+      : null
+  );
 }
 
 function QuoteCard({ quote }) {
@@ -967,31 +983,6 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
   const pctRaw = Math.round((consumedMl / goalMl) * 100);
   const pct = Math.max(0, Math.min(100, pctRaw));
 
-  const quotesLow = [
-    'Every sip is a vote for your future energy.',
-    'Hydration first. Momentum second. Greatness next.',
-    'Drink now, thank yourself in an hour.',
-    'Tiny sips create big focus.',
-    'Your brain loves water more than excuses.',
-  ];
-  const quotesMid = [
-    'Nice pace. Keep the flow going.',
-    'You are building consistency, one glass at a time.',
-    'Halfway hydrated is halfway heroic.',
-    'Keep pouring into yourself.',
-    'Steady hydration, steady mind.',
-  ];
-  const quotesHigh = [
-    'You are glowing. Keep cruising.',
-    'Hydration champion mode unlocked.',
-    'Your body is already saying thank you.',
-    'This is what disciplined self-care looks like.',
-    'You are finishing strong.',
-  ];
-
-  const pool = pct < 40 ? quotesLow : pct < 85 ? quotesMid : quotesHigh;
-  const quoteIdx = Math.floor(consumedMl / 100 + entries.length) % pool.length;
-  const quote = pool[quoteIdx];
   // Placed by water-fish.js so each one stays inside the glass and under the
   // surface for its whole swim; they used to swim through the walls, ride the
   // waterline and flop on a dry floor.
@@ -1281,14 +1272,7 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
       h(
         'div',
         { class: 'gb-water-head' },
-        h(
-          'div',
-          null,
-          h('div', { class: 'gb-water-title' }, 'Water tracker'),
-          // No % chip beside it: the glass fills to the same number, and the
-          // big figure says what's left. Three readings of one value was noise.
-          h('div', { class: 'gb-water-meta' }, consumedMl + ' of ' + goalMl + ' ml')
-        )
+        h('div', { class: 'gb-water-title' }, 'Water tracker')
       ),
 
       h(
@@ -1304,21 +1288,36 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
           }),
           fill
         ),
+        // The glass's graduations: quarters of the goal, goal on top. The
+        // reading is in the stats beside it, so this is decoration to a reader.
+        h(
+          'div',
+          { class: 'gb-water-scale', 'aria-hidden': 'true' },
+          [1, 0.75, 0.5, 0.25, 0].map((k) =>
+            h('span', null, fmtNumber(Math.round(goalMl * k)))
+          )
+        ),
         h(
           'div',
           { class: 'gb-water-stats' },
-          // Past the goal it counts up: "0 ml / goal reached" hid the extra 500.
+          // One reading of one value: drunk, of the goal, then what's left.
           h(
             'div',
             { class: 'gb-water-big' },
-            remainingMl > 0 || consumedMl === goalMl ? remainingMl + ' ml' : '+' + (consumedMl - goalMl) + ' ml'
+            fmtNumber(consumedMl),
+            h('small', null, 'ml')
           ),
+          h('div', { class: 'gb-water-meta' }, 'of ' + fmtNumber(goalMl) + ' ml'),
           h(
             'div',
             { class: 'gb-water-sub' },
-            remainingMl > 0 ? 'to hit your goal' : consumedMl > goalMl ? 'over goal' : 'goal reached, amazing'
-          ),
-          h('p', { class: 'gb-water-quote' }, '"' + quote + '"')
+            remainingMl > 0
+              ? fmtNumber(remainingMl) + ' ml to go'
+              : // Past the goal it counts up: "Goal reached" alone hid the extra 500.
+                consumedMl > goalMl
+                ? fmtNumber(consumedMl - goalMl) + ' ml over goal'
+                : 'Goal reached'
+          )
         )
       ),
 
@@ -1333,7 +1332,8 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
             'aria-label': 'Add 250 millilitres of water',
             onclick: () => onQuickAddWater && onQuickAddWater(250),
           },
-          '+250 ml'
+          '+250',
+          h('small', null, 'ml')
         ),
         h(
           'button',
@@ -1343,7 +1343,8 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
             'aria-label': 'Add 500 millilitres of water',
             onclick: () => onQuickAddWater && onQuickAddWater(500),
           },
-          '+500 ml'
+          '+500',
+          h('small', null, 'ml')
         ),
         h(
           'button',
@@ -1355,7 +1356,8 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
             'aria-label': 'Add 750 millilitres of water',
             onclick: () => onQuickAddWater && onQuickAddWater(750),
           },
-          '+750 ml'
+          '+750',
+          h('small', null, 'ml')
         )
       ),
 
@@ -1392,7 +1394,8 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
                 { class: 'gb-water-log-row' },
                 h(
                   'div',
-                  { style: { flex: 1 } },
+                  { class: 'gb-water-log-text' },
+                  h('span', { class: 'gb-water-log-time' }, timeLabel(item.loggedAt)),
                   h(
                     'span',
                     null,
@@ -1405,11 +1408,6 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
                           (item.effectiveMl ?? effectiveMl(item.amountMl, item.drinkType)) +
                           ')'
                         : '')
-                  ),
-                  h(
-                    'span',
-                    { style: { marginLeft: '8px', fontSize: '0.75rem', color: 'var(--fg3)' } },
-                    timeLabel(item.loggedAt)
                   )
                 ),
                 h(
@@ -1466,7 +1464,7 @@ function FoodCard({ food, onAddFood, onDeleteFood, onEditFood, onCopySlot, copya
             }
           : { style: { flex: 1 } },
         h('span', null, item.foodName + ' (' + foodAmount(item) + ')'),
-        h('span', { style: { marginLeft: '8px' } }, item.kcalEstimated + ' kcal')
+        h('span', { class: 'gb-food-row-kcal' }, item.kcalEstimated + ' kcal')
       ),
       h(
         'button',
@@ -1534,8 +1532,25 @@ function FoodCard({ food, onAddFood, onDeleteFood, onEditFood, onCopySlot, copya
           h('div', { class: 'gb-water-title' }, 'Food calories'),
           h('div', { class: 'gb-water-meta' }, 'Track meals with Indian average estimates')
         ),
-        h('div', { class: 'gb-food-total' }, total + ' kcal')
+        h('div', { class: 'gb-food-total' }, fmtNumber(total), h('small', null, 'kcal'))
       ),
+      // The day measured out by meal: each slot's share of today's kcal. The
+      // slot headings below carry the same numbers, so this is visual only.
+      total > 0
+        ? h(
+            'div',
+            { class: 'gb-food-measure', 'aria-hidden': 'true' },
+            groups
+              .filter((g) => g.kcal > 0)
+              .map((g) =>
+                h(
+                  'span',
+                  { class: 'gb-food-measure-seg is-' + g.slot, style: { flexGrow: g.kcal } },
+                  g.label
+                )
+              )
+          )
+        : null,
       h(
         'button',
         {
@@ -1563,7 +1578,7 @@ function FoodCard({ food, onAddFood, onDeleteFood, onEditFood, onCopySlot, copya
         ? filled
         : h(
             'p',
-            { class: 'gb-water-quote', style: { marginTop: '8px' } },
+            { class: 'gb-food-empty' },
             'No food logged yet today.'
           ),
       copies.length ? h('div', { class: 'gb-food-copies' }, copies) : null,
@@ -2292,13 +2307,12 @@ function HabitStrip({ habits, onAdd, toggleHabit }) {
       ],
     });
   }
-  return h(
-    'div',
-    { class: 'gb-habit-strip' },
-    // All of them. The old slice(0, 4) meant a fifth habit simply didn't exist
-    // on Home — not scrolled off, not rendered. What is still owed comes first.
-    sortHabitsForHome(habits).map((h2) => HabitCard(h2, toggleHabit))
-  );
+  // All of them: the old slice(0, 4) meant a fifth habit simply didn't exist
+  // on Home. What is still owed comes first.
+  return Card({
+    className: 'gb-habit-strip',
+    children: sortHabitsForHome(habits).map((h2) => HabitCard(h2, toggleHabit)),
+  });
 }
 
 /* ---- Mini Calendar Card ---- */
@@ -2338,16 +2352,6 @@ function MiniCalendarCard({
   const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const foodOn = !features || features.food !== false;
 
-  function pad(n) {
-    return n < 10 ? '0' + n : String(n);
-  }
-  function dateKey(y, m, d) {
-    return y + '-' + pad(m + 1) + '-' + pad(d);
-  }
-  function todayKey() {
-    const t = new Date();
-    return dateKey(t.getFullYear(), t.getMonth(), t.getDate());
-  }
   // The app's date style ("Sun, 11 Oct", i18n.js), not a hand-built "Sun, October 11".
   const prettyDate = (key) => fmtDate(key, 'weekdayDate');
   const formatTime = (value) => sharedFormatTime(value, 'Any time');
@@ -2788,18 +2792,36 @@ function ScreenDashboard({
   const any = (o) => !!o && Object.keys(o).length > 0;
   const layout = resolveHomeLayout(homeLayout);
   const wellnessOnHome = layout.some((i) => i.id === 'wellness' && i.enabled);
+  // Before you've added anything, the checklist IS the screen. Every widget
+  // below it renders its own "nothing yet" state, so a new account used to open
+  // on nine empty cards saying the same thing three ways — a checklist, a zero
+  // score and a row of grey chips. One instruction beats nine blanks. Dismissing
+  // the checklist (or adding anything at all) brings the full Home back. Any
+  // data counts: an account with reminders and expenses but no task used to
+  // see only the checklist, its own reminders and spending hidden behind it.
+  const started =
+    (tasks || []).length > 0 ||
+    (habits || []).length > 0 ||
+    (reminders || []).length > 0 ||
+    (money && ['expenses', 'income', 'transfers'].some((k) => (money[k] || []).length > 0)) ||
+    (food && (food.entries || []).length > 0) ||
+    (water && (water.entries || []).length > 0) ||
+    (wellness && (any(wellness.moodByDate) || any(wellness.sleepByDate)));
+  // Once you've started, the wellness card asks "How are you feeling?" with
+  // one-tap answers; the checklist's mood step sat right above it.
+  const onboardMood = started && wellnessOnHome ? null : onAddMood;
   const onboard = OnboardingCard({
     tasks,
     habits,
     wellness,
     onAddHabit,
     onAddTask,
-    onAddMood,
+    onAddMood: onboardMood,
     onStarterPack,
     onOnboardDismiss,
   });
   // The checklist's "Log how you feel" step is showing while no mood exists yet.
-  const onboardAsksMood = !!onboard && !(wellness && any(wellness.moodByDate));
+  const onboardAsksMood = !!onboard && !!onboardMood && !(wellness && any(wellness.moodByDate));
   const one = oneThingFor({
     tasks,
     habits,
@@ -2905,21 +2927,6 @@ function ScreenDashboard({
     })
     .filter(Boolean);
 
-  // Before you've added anything, the checklist IS the screen. Every widget
-  // below it renders its own "nothing yet" state, so a new account used to open
-  // on nine empty cards saying the same thing three ways — a checklist, a zero
-  // score and a row of grey chips. One instruction beats nine blanks. Dismissing
-  // the checklist (or adding anything at all) brings the full Home back. Any
-  // data counts: an account with reminders and expenses but no task used to
-  // see only the checklist, its own reminders and spending hidden behind it.
-  const started =
-    (tasks || []).length > 0 ||
-    (habits || []).length > 0 ||
-    (reminders || []).length > 0 ||
-    (money && ['expenses', 'income', 'transfers'].some((k) => (money[k] || []).length > 0)) ||
-    (food && (food.entries || []).length > 0) ||
-    (water && (water.entries || []).length > 0) ||
-    (wellness && (any(wellness.moodByDate) || any(wellness.sleepByDate)));
   // Quick add is always first and is not a widget: one sentence logs anything,
   // so it can't be hidden or reordered from the Home layout.
   const qa = quickAdd
@@ -3123,6 +3130,8 @@ function HabitSleepInsightCard({ habits, wellness }) {
 }
 
 export {
+  sleepHours,
+  StreakChain,
   ScreenDashboard,
   HOME_WIDGETS,
   resolveHomeLayout,
