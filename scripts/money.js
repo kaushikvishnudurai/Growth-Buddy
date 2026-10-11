@@ -2787,6 +2787,7 @@ function ScreenMoney({
   accountRequest,
   requestDaySummary,
   requestOlderTx,
+  moneySettled,
 }) {
   money = normalizeMoney(money);
   applyCurrency(money);
@@ -5037,6 +5038,20 @@ function ScreenMoney({
             'div',
             { class: 'gb-money-list-tools' },
             monthPick,
+            h(
+              'button',
+              {
+                type: 'button',
+                class: 'gb-btn gb-btn--ghost gb-btn--compact gb-money-import',
+                title: 'From another app, a bank statement or a sheet',
+                onclick: () =>
+                  import('./import-ui.js')
+                    .then((m) => m.openCsvImport({ money, known: withOlder(money), save: onSaveMoney, settled: moneySettled }))
+                    .catch(() => toast.error(null, 'Couldn’t open the importer. Check your connection and try again.')),
+              },
+              Icon('upload', { size: 14, sw: 2.4 }),
+              'Import'
+            ),
             money.expenses.length || money.income.length
               ? h(
                   'button',
