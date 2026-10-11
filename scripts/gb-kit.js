@@ -187,7 +187,9 @@ function SectionTitle({ title, action, onAction } = {}) {
   return h(
     'div',
     { class: 'gb-sectiontitle' },
-    h('h3', null, title),
+    // h2: a section of the screen, under the page's h1. It was an h3 with no h2
+    // above it, which skips a level (Lighthouse heading-order).
+    h('h2', null, title),
     // A real <button>: an href-less <a role=button> took focus but ignored Enter
     // and Space. No handler means it is a count ("8 items"), not a control.
     action
