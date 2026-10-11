@@ -121,8 +121,10 @@ try {
 
   await page.reload({ waitUntil: 'networkidle2' });
   await wait(2000);
-  const restored = await page.evaluate(() => {
-    const u = JSON.parse(window.CacheStorage.getItem('gb.session') || 'null');
+  const restored = await page.evaluate(async () => {
+    // The app's own in-memory store (Vite serves the module; window.CacheStorage is gone).
+    const CacheStorage = (await import('/scripts/cache-storage.js')).CacheStorage;
+    const u = JSON.parse(CacheStorage.getItem('gb.session') || 'null');
     return u && u.email;
   });
   check(restored === EMAIL, 'after a reload the in-app profile is whole again (email restored)');

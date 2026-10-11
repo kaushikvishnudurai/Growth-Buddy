@@ -312,7 +312,8 @@ async function runAt(width, height) {
     frag: '/api/habits/',
     del: async () => {
       await page.evaluate((n) => [...document.querySelectorAll('.gb-row-open')].find((b) => b.textContent.includes(n)).click(), name);
-      await page.waitForSelector('.gb-modal .gb-btn--danger', { visible: true });
+      // A quiet text button now (habit-dialogs.js restyles the danger bar), found by its label.
+      await waitFor(() => [...document.querySelectorAll('.gb-modal button')].some((b) => /^delete habit$/i.test(b.textContent.trim()) && b.offsetParent));
       await clickButton(/^delete habit$/i, '.gb-modal');
     },
   });

@@ -38,7 +38,8 @@ page.on('response', (r) => {
 const authed = (path, opts = {}) =>
   page.evaluate(
     async (path, opts) => {
-      const token = window.CacheStorage.getItem('gb.token');
+      // The app's own store (Vite serves the module; window.CacheStorage is gone).
+      const token = (await import('/scripts/cache-storage.js')).CacheStorage.getItem('gb.token');
       const res = await fetch(path, {
         ...opts,
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
@@ -162,7 +163,8 @@ try {
     check(last === 'Add with Quick add: drank 300 ml water', `[${width}] last row hands it to Quick add`);
     await page.$$eval('.gb-palette-opt', (o) => o[o.length - 1].click());
     await page.waitForFunction(
-      () => [...document.querySelectorAll('.gb-modal-title')].some((t) => t.textContent === 'Log these?'),
+      // One item reads "Log this?", more "Log these?" (runQuickAdd's preview).
+      () => [...document.querySelectorAll('.gb-modal-title')].some((t) => /^Log th(is|ese)\?$/.test(t.textContent)),
       { timeout: 20000 }
     );
     await wait(400);

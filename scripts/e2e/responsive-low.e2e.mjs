@@ -188,7 +188,8 @@ try {
   await pause(500);
   g = await page.evaluate(() => document.querySelector('.gb-note-modal').getBoundingClientRect().width);
   await shot('r21-note-1280');
-  check(Math.round(g) === 640, `R-21 note editor is 640 wide at 1280 (${Math.round(g)})`);
+  // The note sheet is a page from 720 up: ~65 characters a line (app.css, main's rule).
+  check(Math.round(g) === 660, `R-21 note editor is 660 wide at 1280 (${Math.round(g)})`);
   await page.keyboard.press('Escape');
   await pause(400);
 

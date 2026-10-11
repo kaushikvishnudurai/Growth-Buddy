@@ -195,10 +195,15 @@ async function goTo(screen) {
   await wait(200);
 }
 
+/* Tomorrow in the ACCOUNT's zone: "tomorrow" is read on the account's day (the
+   app's todayKey), which differs from the device's for hours each night. */
+let accountZone = '';
 const tomorrowKey = () => {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const day = (d) =>
+    new Intl.DateTimeFormat('en-CA', { timeZone: accountZone || undefined, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+  const [y, m, dd] = day(new Date()).split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1, dd + 1));
+  return t.toISOString().slice(0, 10);
 };
 
 async function run(width, height) {
@@ -424,6 +429,7 @@ async function run(width, height) {
   );
 
   // F05: + -> Reminder -> words with a time -> Enter. The time is read from the words.
+  accountZone = ((await apiCall('GET', '/api/auth/me')).json || {}).timezone || '';
   await goTo('home');
   n = sent('POST', /^\/api\/reminders$/).length;
   taps = 0;

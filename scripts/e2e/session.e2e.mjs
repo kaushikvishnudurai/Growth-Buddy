@@ -320,7 +320,15 @@ for (const [vpName, vp] of VIEWPORTS) {
   };
   page.on('request', onReq);
   offline = true; // the dropped POST logs a net:: error
-  check(await clickText('button.gb-water-add', /^\s*\+250 ml\s*$/), '+250 ml tapped');
+  // By its name: the visible text is "+250" over a small "ml".
+  check(
+    await page.evaluate(() => {
+      const b = document.querySelector('button.gb-water-add[aria-label="+250 ml, add water"]');
+      if (b) b.click();
+      return !!b;
+    }),
+    '+250 ml tapped'
+  );
   await page
     .waitForFunction(() => /Saved on this phone/.test(document.body.innerText), { timeout: 10000 })
     .catch(() => {});

@@ -325,8 +325,18 @@ try {
     check(taps === 1, `[${vpName}] solo planner in 1 tap (got ${taps})`);
     check(await waitVisible('h2', /Today's meal plan/), `[${vpName}] lands on Today's meal plan`);
     const stock = pantry.filter((p) => !p.expired);
+    // main seeds Available groceries from the pantry: its items are the chips.
     if (stock.length)
-      check(await visible('.gb-family-empty-note', /Planning from your pantry/), `[${vpName}] planner names the pantry`);
+      check(
+        await page.evaluate(
+          (names) => {
+            const chips = [...document.querySelectorAll('.gb-family-chip')].map((c) => c.textContent.toLowerCase());
+            return names.some((n) => chips.some((c) => c.startsWith(n)));
+          },
+          stock.map((p) => String(p.name).toLowerCase())
+        ),
+        `[${vpName}] planner names the pantry (its items are the chips)`
+      );
     await shot('family-solo-plan-' + vpName);
     fakes.clear();
 

@@ -167,13 +167,14 @@ try {
       continue;
     }
     await page
-      .waitForFunction(() => /Log these\?/.test(document.body.textContent || ''), { timeout: 40000 })
+      // One item reads "Log this?", more "Log these?" (runQuickAdd's preview).
+      .waitForFunction(() => /Log th(is|ese)\?/.test(document.body.textContent || ''), { timeout: 40000 })
       .catch(() => {});
     break;
   }
   await sleep(400);
   const preview = await topSheet();
-  check(/Log these\?/.test(preview), 'share opens the Quick add preview');
+  check(/Log th(is|ese)\?/.test(preview), 'share opens the Quick add preview');
   check(/200/.test(preview) && /lunch/i.test(preview), 'the preview shows the shared words');
   check((await page.evaluate(() => location.search)) === '', 'the share query is taken off the address');
   await shot('share-preview');

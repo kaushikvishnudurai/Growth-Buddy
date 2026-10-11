@@ -4,7 +4,7 @@
    A brand new account through the UI, at 390 and 1280: sign-up has no
    Confirm password, the pasted code verifies with no tap, first-run setup
    shows no timezone step (the browser emulates the zone the account got) and
-   no features step, Home is set up after it, and the first timed reminder
+   no features step, Home is set up after it (the pack's water goal), and the first timed reminder
    asks for notifications exactly once. Counts taps and fields from opening
    the app to the set-up Home.
 
@@ -50,7 +50,10 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 async function codeFor(email) {
   for (let i = 0; i < 40; i++) {
     const log = readFileSync(OTP_LOG, 'utf8');
-    const at = log.lastIndexOf('To:      ' + email);
+    // Console mail (no sender configured) prints "To:      <email>" then the
+    // body; a configured sender (Mailjet API key in .env) logs one line,
+    // "Sent email to <email> (subject: Your Growth Buddy code: NNNNNN)".
+    const at = Math.max(log.lastIndexOf('To:      ' + email), log.lastIndexOf('Sent email to ' + email + ' '));
     const m = at >= 0 && /Your Growth Buddy code: (\d{6})/.exec(log.slice(at));
     if (m) return m[1];
     await wait(250);
@@ -186,12 +189,20 @@ for (const [name, vp] of Object.entries(VIEWPORTS)) {
     check(!titles.includes('Stay in the loop'), name + ': no notifications step');
     check((await page.evaluate(() => window.__permAsks)) === 0, name + ': nothing asked for push during setup');
 
-    const home = await page
-      .waitForFunction(() => /Drink water/.test(document.querySelector('#gb-main')?.textContent || ''), {
-        timeout: 10000,
-      })
-      .then(() => true, () => false);
-    check(home, name + ': Home is set up (the picked pack’s habit is on it)');
+    // With Water on, Stay hydrated sets the water goal (2.5 L with no weight
+    // to work from) instead of a second "Drink water" habit (starter-packs.js
+    // `unless: 'water'`). A new account's Home leads with Getting started, not
+    // the water card, so the goal is read from the server.
+    let goalMl = 0;
+    for (let i = 0; i < 40 && goalMl !== 2500; i++) {
+      goalMl = await page.evaluate(async () => {
+        const { CacheStorage } = await import('/scripts/cache-storage.js');
+        const r = await fetch('/api/water', { headers: { Authorization: 'Bearer ' + CacheStorage.getItem('gb.token') } });
+        return r.ok ? (await r.json()).goalMl : 0;
+      });
+      if (goalMl !== 2500) await wait(250);
+    }
+    check(goalMl === 2500, name + ': set up after it (the picked pack’s water goal saved: ' + goalMl + ' ml)');
     await shot('3-home');
     console.log('     ' + name + ': opening the app to a set-up Home: ' + taps + ' taps, ' + fields + ' fields');
 

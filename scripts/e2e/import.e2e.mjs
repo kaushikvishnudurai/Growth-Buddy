@@ -45,7 +45,8 @@ page.on('response', (r) => {
 const authed = (path, opts = {}) =>
   page.evaluate(
     async (path, opts) => {
-      const token = window.CacheStorage.getItem('gb.token');
+      // The app's own store (Vite serves the module; window.CacheStorage is gone).
+      const token = (await import('/scripts/cache-storage.js')).CacheStorage.getItem('gb.token');
       const res = await fetch(path, {
         ...opts,
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },

@@ -45,12 +45,14 @@ page.on('response', (r) => {
 
 // The QA account isn't WhatsApp-verified, so the Profile pane would build no
 // switch. This context's signed-in session (the app's CacheStorage shim,
-// gb.session) is marked verified; the context is thrown away at the end.
+// gb.session, imported from /scripts/cache-storage.js) is marked verified; the context is thrown away at the end.
 let patched = false;
 const patchSession = () =>
-  page.evaluate(() => {
-    const u = JSON.parse(window.CacheStorage.getItem('gb.session') || '{}');
-    window.CacheStorage.setItem(
+  page.evaluate(async () => {
+    // The app's own store (Vite serves the module; window.CacheStorage is gone).
+    const CacheStorage = (await import('/scripts/cache-storage.js')).CacheStorage;
+    const u = JSON.parse(CacheStorage.getItem('gb.session') || '{}');
+    CacheStorage.setItem(
       'gb.session',
       JSON.stringify({
         ...u,

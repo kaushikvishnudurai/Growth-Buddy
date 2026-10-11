@@ -416,6 +416,9 @@ try {
         fail(`[${where}] could not open`);
         continue;
       }
+      // A note sheet opens after GET /api/notes/:id (the list copy has no photos):
+      // wait for the sheet itself, then its entrance.
+      await page.waitForSelector('.gb-modal-overlay', { timeout: 10000 }).catch(() => {});
       await pause(650);
       (await unnamedControls('.gb-modal-overlay')).forEach((b) => fail(`[${where}] unnamed ${b}`));
       (await headingSkips('.gb-modal-overlay', `[${where}]`)).out.forEach(fail);

@@ -150,6 +150,7 @@ async function quickAddExpense(ctx) {
   const before = await call('/api/money');
   const lastId = before.settings && before.settings.lastAccountId;
   const note = 'e2e fn17 coffee ' + name;
+  const stored = "E" + note.slice(1); // quick-add.js capitalise(): Money keeps "E2e fn17 ..."
   let sent = null;
   ctx.force = [
     {
@@ -170,11 +171,15 @@ async function quickAddExpense(ctx) {
   await page.waitForSelector('input[aria-label="Quick log in your own words"]', { visible: true });
   await page.type('input[aria-label="Quick log in your own words"]', 'spent 49.50 on coffee');
   await clickText(page, 'button', /^Log it$/);
-  await page.waitForFunction(
-    () => [...document.querySelectorAll('button')].some((b) => /^Log them$/.test(b.textContent.trim())),
-    { timeout: 8000 }
-  );
-  await clickText(page, 'button', /^Log them$/);
+  // The preview's confirm reads "Log it" for one item, "Log them" for more
+  // (main's runQuickAdd); the sheet behind it has its own "Log it", so scope to the preview.
+  const confirmBtn = () =>
+    [...document.querySelectorAll('.gb-modal')]
+      .filter((m) => /Log this\?/.test(m.textContent))
+      .flatMap((m) => [...m.querySelectorAll('button')])
+      .find((b) => /^Log (it|them)$/.test(b.textContent.trim()));
+  await page.waitForFunction(confirmBtn, { timeout: 8000 });
+  await page.evaluate((src) => new Function('return (' + src + ')()')().click(), confirmBtn.toString());
   await page.waitForSelector('.gb-toast', { timeout: 8000 });
   await page.screenshot({ path: `${OUT}/fn16-queued-toast-${name}.png` });
   const ts = await toasts(page);
@@ -183,7 +188,7 @@ async function quickAddExpense(ctx) {
     `[${name}] FN-16 a 429 on the ledger says "Saved on this phone"`
   );
   check(!ts.some((t) => /not saved/i.test(t.text)), `[${name}] FN-16 no "not saved" error`);
-  const up = sent && (sent.upserts || []).find((u) => u.note === note);
+  const up = sent && (sent.upserts || []).find((u) => u.note === stored);
   check(!!up && up.amount === 49.5, `[${name}] FN-17 amount kept its paise (sent ${up && up.amount})`);
   check(
     !!up && !!lastId && up.accountId === lastId,
@@ -196,7 +201,7 @@ async function quickAddExpense(ctx) {
   let landed = null;
   for (let i = 0; i < 20 && !landed; i++) {
     await sleep(500);
-    landed = ((await call('/api/money')).expenses || []).find((x) => x.note === note);
+    landed = ((await call('/api/money')).expenses || []).find((x) => x.note === stored);
   }
   check(!!landed && landed.amount === 49.5, `[${name}] FN-16 the queued expense landed once the server took it`);
   if (landed) await call('/api/money/tx', 'POST', { upserts: [], deletes: [landed.id] });
@@ -391,7 +396,7 @@ for (const [name, vp] of Object.entries(VIEWPORTS)) {
   }
 }
 // A step that failed midway may have left its Quick add expense behind.
-const strays = ((await call('/api/money')).expenses || []).filter((x) => /^e2e fn17 coffee/.test(x.note || ''));
+const strays = ((await call('/api/money')).expenses || []).filter((x) => /^e2e fn17 coffee/i.test(x.note || ''));
 if (strays.length) await call('/api/money/tx', 'POST', { upserts: [], deletes: strays.map((x) => x.id) });
 browser.disconnect();
 
