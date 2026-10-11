@@ -60,6 +60,7 @@ import {
   latestSeq,
   restoreKey,
   inFlightKeys,
+  sameZone,
 } from './app-logic.js';
 import {
   MEAL_SLOTS,
@@ -2224,15 +2225,6 @@ let tzOfferTimer = 0;
 function syncDeviceTimezone() {
   clearTimeout(tzOfferTimer);
   tzOfferTimer = setTimeout(offerDeviceTimezone, 1500);
-}
-/* Chrome still reports India as "Asia/Calcutta"; the account says "Asia/Kolkata".
-   Same place, so run the stored name through Intl to get the browser's spelling. */
-function sameZone(stored, device) {
-  try {
-    return new Intl.DateTimeFormat('en', { timeZone: stored }).resolvedOptions().timeZone === device;
-  } catch (_) {
-    return stored === device;
-  }
 }
 function deviceZone() {
   try {

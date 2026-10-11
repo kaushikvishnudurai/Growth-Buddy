@@ -97,3 +97,22 @@ export function inFlightKeys() {
   };
   return set;
 }
+
+/* Two zone names for the same place: "Asia/Calcutta" and "Asia/Kolkata",
+   "Europe/Kiev" and "Europe/Kyiv". Chrome and Firefox map the alias to one
+   spelling but WebKit hands back the name it was given, so a string compare
+   asked every Safari user with an account made elsewhere to "switch". Same
+   UTC offset now, mid-January and mid-July (one inside and one outside any
+   summer time, north or south; "now + 6 months" can land both inside) is the
+   same zone for everything the app does with it. */
+export function sameZone(stored, device, now = Date.now()) {
+  if (stored === device) return true;
+  try {
+    const off = (tz, t) =>
+      new Intl.DateTimeFormat('en', { timeZone: tz, timeZoneName: 'longOffset' }).format(t).split(' ').pop();
+    const y = new Date(now).getUTCFullYear();
+    return [now, Date.UTC(y, 0, 15), Date.UTC(y, 6, 15)].every((t) => off(stored, t) === off(device, t));
+  } catch (_) {
+    return false; // a name this Intl does not know
+  }
+}

@@ -13,6 +13,7 @@ import {
   latestSeq,
   restoreKey,
   inFlightKeys,
+  sameZone,
 } from './app-logic.js';
 import { timeRangeOk, reminderEditPatch } from './calendar.js';
 import { resolveNavLayout, splitNavBar, NAV_CATALOG, NAV_MAX_PRIMARY } from './gb-kit.js';
@@ -333,6 +334,16 @@ await test('a slot freed by a turned-off feature is refilled from "More"', () =>
   assert.equal(off.primary.length, on.primary.length, 'the bar keeps its size');
   assert.equal(off.primary.some((i) => i.id === gated.id), false);
   assert.equal(off.primary[off.primary.length - 1].id, on.overflow[0].id, 'first More item moves up');
+});
+
+await test('sameZone: an alias is the same zone, a different offset or DST rule is not', () => {
+  assert.equal(sameZone('Asia/Calcutta', 'Asia/Kolkata'), true);
+  assert.equal(sameZone('Europe/Kiev', 'Europe/Kyiv'), true);
+  assert.equal(sameZone('America/Buenos_Aires', 'America/Argentina/Buenos_Aires'), true);
+  assert.equal(sameZone('Asia/Kolkata', 'Asia/Dubai'), false);
+  // Same offset in one half of the year only: London and Lisbon agree, Lagos does not.
+  assert.equal(sameZone('Europe/London', 'Africa/Lagos'), false);
+  assert.equal(sameZone('Not/AZone', 'Asia/Kolkata'), false);
 });
 
 if (failures) {
