@@ -321,7 +321,6 @@ public class FamilyService {
         if (q == null || q.trim().length() < 2) {
             return List.of();
         }
-        UserRepository.throttleSearch(limiter, userId);
         Family fam = currentFamily(userId);
         List<User> found = users.searchForFamily(q.trim(), userId, PageRequest.of(0, 10));
         List<UserSearchResult> out = new ArrayList<>();
