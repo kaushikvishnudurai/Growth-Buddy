@@ -27,5 +27,7 @@ child is killed with EPERM), but it can from a shell, so:
 
 The `engine` option on each project picks the path in the `browser` fixture: `chrome` attaches over CDP,
 `firefox`/`webkit` connect to those servers. Chrome projects need only the CDP Chrome, not the servers.
+The shared CDP Chrome slows down badly when several sessions use it (60 s timeouts on screenshot/fill);
+`GB_E2E_CHROME=server` points the Chrome projects at servers.sh's own Chromium on :9613 instead.
 Fixtures: `signIn` (the real form), `signInFast` (boot cookies), `go(page, 'money')`.
 `node e2e/seed.mjs` prints a seeded account for manual use.

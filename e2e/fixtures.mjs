@@ -12,10 +12,11 @@ export const test = base.extend({
   engine: ['chrome', { option: true, scope: 'worker' }],
   browser: [
     async ({ engine }, use) => {
-      if (engine === 'chrome') return use(await chromium.connectOverCDP(process.env.GB_E2E_CDP || 'http://localhost:9591'));
+      // GB_E2E_CHROME=server: use servers.sh's own Chromium instead of the shared (often busy) CDP Chrome.
+      if (engine === 'chrome' && process.env.GB_E2E_CHROME !== 'server') return use(await chromium.connectOverCDP(process.env.GB_E2E_CDP || 'http://localhost:9591'));
       const file = process.env.GB_E2E_SERVERS || new URL('./.servers.json', import.meta.url).pathname;
       if (!existsSync(file)) throw new Error(`no ${engine} server: run e2e/servers.sh start`);
-      const b = await { firefox, webkit }[engine].connect(JSON.parse(readFileSync(file, 'utf8'))[engine]);
+      const b = await { chrome: chromium, firefox, webkit }[engine].connect(JSON.parse(readFileSync(file, 'utf8'))[engine === 'chrome' ? 'chromium' : engine]);
       await use(b);
       await b.close();
     },
