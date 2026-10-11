@@ -957,6 +957,8 @@ function ScreenGoals({
   linkedHabits = {},
   onAddTask,
   onToggleTask,
+  loadFailed = false,
+  onRetry,
 }) {
   userZone = timezone || '';
   const createBtn = h(
@@ -1349,7 +1351,34 @@ function ScreenGoals({
         'Set short, mid or long-term goals, then log small daily actions toward them.'
       )
     ),
-    h('div', { class: 'gb-dash-block' }, horizonCards)
+    // The server always sends the three horizons, so none at all after a
+    // failed load means "not loaded", not "no goals": say so, offer the retry.
+    loadFailed && !sections.length
+      ? h(
+          'div',
+          { class: 'gb-card gb-note-state' },
+          h(
+            'div',
+            { class: 'gb-empty' },
+            Icon('circle-alert', { size: 26, color: 'var(--fg3)' }),
+            h('p', null, 'Could not load your goals.'),
+            onRetry
+              ? h(
+                  'button',
+                  {
+                    type: 'button',
+                    class: 'gb-btn gb-btn--secondary gb-btn--compact',
+                    onclick: (e) => {
+                      e.currentTarget.disabled = true;
+                      onRetry();
+                    },
+                  },
+                  'Try again'
+                )
+              : null
+          )
+        )
+      : h('div', { class: 'gb-dash-block' }, horizonCards)
   );
 }
 

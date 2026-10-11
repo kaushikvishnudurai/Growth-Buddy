@@ -3011,6 +3011,7 @@ async function loadSecondaryData() {
         api('/api/food/photo-history').catch(soft('food photos')),
         api('/api/weekly-review').catch(soft('weekly reviews')),
       ]);
+    state.goalsFailed = missed.includes('goals'); // Goals' inline error card
     if (missed.length) {
       pushToast("Couldn't load your " + new Intl.ListFormat('en').format(missed) + '.', 'error', 8000, {
         label: 'Retry',
@@ -4612,10 +4613,12 @@ function escapeHtml(s) {
 async function loadGoals() {
   try {
     state.goals = await api('/api/goals');
-    render();
+    state.goalsFailed = false;
   } catch (err) {
+    state.goalsFailed = true;
     toastError(err, 'Could not load goals.');
   }
+  render();
 }
 
 async function createGoal(body) {
@@ -15001,6 +15004,8 @@ const SCREENS = {
             linkedHabits: goalHabitSummary(),
             // Action dates are checked against the account's zone (UserClock).
             timezone: (state.user && state.user.timezone) || '',
+            loadFailed: !!state.goalsFailed,
+            onRetry: loadGoals,
           })
       ),
   },

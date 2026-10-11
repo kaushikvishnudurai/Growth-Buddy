@@ -123,3 +123,16 @@ test('EXP-9: a completed goal keeps only Reopen, and Reopen brings the controls 
   await expect(card.getByRole('button', { name: 'Log action' })).toBeVisible();
   await expect(card.getByRole('button', { name: 'Add milestone' })).toBeVisible();
 });
+
+test('CNT-3: a failed Goals load says so and retries in place', async ({ page, account }) => {
+  let fail = true;
+  await page.route('**/api/goals', (r) => (fail && r.request().method() === 'GET' ? r.abort('aborted') : r.continue()));
+  await boot(page, account, 'goals');
+  const m = main(page);
+  await expect(m.getByText('Could not load your goals.')).toBeVisible();
+  await shot(page, 'CNT-3');
+  fail = false;
+  await m.getByRole('button', { name: 'Try again' }).click();
+  await expect(m.getByRole('button', { name: 'Edit goal: Run a 10K' })).toBeVisible();
+  await expect(m.getByText('Could not load your goals.')).toHaveCount(0);
+});
