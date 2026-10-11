@@ -760,7 +760,8 @@ function GoalRow(
 
   return h(
     'div',
-    { class: 'gb-goal-card' + (goal.completed ? ' is-complete' : '') },
+    // data-goal-id: the command palette finds the card by it to bring it into view.
+    { class: 'gb-goal-card' + (goal.completed ? ' is-complete' : ''), 'data-goal-id': goal.id },
     h(
       'div',
       { class: 'gb-goal-card-header' },
