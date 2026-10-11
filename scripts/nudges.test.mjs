@@ -12,7 +12,10 @@ import {
 assert.equal(usualSleep({}, '2026-10-11'), null);
 assert.equal(
   usualSleep(
-    { '2026-10-10': { bedtime: '23:00', wakeTime: '07:00' }, '2026-10-09': { bedtime: '23:30', wakeTime: '07:00' } },
+    {
+      '2026-10-10': { bedtime: '23:00', wakeTime: '07:00' },
+      '2026-10-09': { bedtime: '23:30', wakeTime: '07:00' },
+    },
     '2026-10-11'
   ),
   null
@@ -48,22 +51,37 @@ assert.deepEqual(repeatExpense(coffee, '2026-10-11', nine), {
   category: 'food',
   accountId: 'acc-1',
 });
-assert.equal(repeatExpense(coffee, '2026-10-11', new Date('2026-10-11T15:00:00')), null, 'wrong time of day');
+assert.equal(
+  repeatExpense(coffee, '2026-10-11', new Date('2026-10-11T15:00:00')),
+  null,
+  'wrong time of day'
+);
 assert.equal(repeatExpense(coffee.slice(1), '2026-10-11', nine), null, 'three days is not a habit');
 assert.equal(
-  repeatExpense(coffee.concat({ date: '2026-10-11', amount: 120, note: 'COFFEE' }), '2026-10-11', nine),
+  repeatExpense(
+    coffee.concat({ date: '2026-10-11', amount: 120, note: 'COFFEE' }),
+    '2026-10-11',
+    nine
+  ),
   null,
   'already logged today'
 );
 assert.equal(
-  repeatExpense(coffee.map((e) => ({ ...e, createdAt: undefined })), '2026-10-11', nine),
+  repeatExpense(
+    coffee.map((e) => ({ ...e, createdAt: undefined })),
+    '2026-10-11',
+    nine
+  ),
   null,
   'no times, so "around now" is unknowable'
 );
 
 // usualReminderTime: the most frequent, twice at least.
 assert.equal(usualReminderTime([{ time: '09:00:00' }]), null);
-assert.equal(usualReminderTime([{ time: '09:00:00' }, { time: '18:30' }, { time: '09:00' }, { time: null }]), '09:00');
+assert.equal(
+  usualReminderTime([{ time: '09:00:00' }, { time: '18:30' }, { time: '09:00' }, { time: null }]),
+  '09:00'
+);
 
 // stepsTarget
 assert.equal(stepsTarget('Walk 8k steps'), 8000);

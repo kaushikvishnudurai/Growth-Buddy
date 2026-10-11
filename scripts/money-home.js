@@ -33,7 +33,11 @@ function RepeatExpenseNudge(money, onSaveMoney) {
   const node = h(
     'div',
     { class: 'gb-nudge', role: 'group', 'aria-label': 'Usual expense' },
-    h('span', null, 'You usually log ' + fmt(guess.amount) + ' ' + guess.note + ' around now. Add it?'),
+    h(
+      'span',
+      null,
+      'You usually log ' + fmt(guess.amount) + ' ' + guess.note + ' around now. Add it?'
+    ),
     h(
       'div',
       { class: 'gb-nudge-opts' },
