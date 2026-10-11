@@ -299,4 +299,11 @@ public class NoteService {
         String t = s.trim();
         return t.isEmpty() ? null : t;
     }
+
+    /** Quick add from WhatsApp (QuickAddApplier): plain text, escaped into the editor's HTML. */
+    @Transactional
+    public void createText(UUID userId, String text) {
+        String safe = org.springframework.web.util.HtmlUtils.htmlEscape(text == null ? "" : text.strip());
+        create(userId, new CreateNoteRequest(null, "<p>" + safe + "</p>", null, null, null, null));
+    }
 }

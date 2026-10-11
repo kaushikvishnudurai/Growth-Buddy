@@ -253,4 +253,10 @@ public class GoalService {
         Instant latest = recent.isEmpty() ? null : recent.get(0).createdAt();
         return GoalResponse.from(goal, actionCount, latest, recent).withClearedTaskCount(clearedTasks);
     }
+
+    /** Quick add from WhatsApp (QuickAddApplier). */
+    @Transactional
+    public void createTitled(UUID userId, String title) {
+        create(userId, new CreateGoalRequest(title, null, GoalHorizon.short_term, null));
+    }
 }

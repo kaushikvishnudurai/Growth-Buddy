@@ -750,4 +750,12 @@ public class ReminderService {
         }
         return seen;
     }
+
+    /** Quick add from WhatsApp (QuickAddApplier): the fields a sentence can carry. */
+    @Transactional
+    public void createSpoken(UUID userId, String text, LocalDate date, LocalTime time, LocalTime endTime,
+                             String tag, String repeat, LocalDate until, Integer notifyBefore) {
+        create(userId, new CreateReminderRequest(text, date, time, endTime, ReminderTag.valueOf(tag),
+                RepeatFreq.valueOf(repeat), until, null, notifyBefore, null, null, null, null, null, null));
+    }
 }

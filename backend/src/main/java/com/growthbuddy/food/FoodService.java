@@ -881,4 +881,12 @@ public class FoodService {
     /** One AI answer for a typed entry. per100g is protein, carbs, fat, fiber, or null if any is missing. */
     private record AiGuess(Integer kcalPer100g, Integer quantityGrams, double[] per100g) {
     }
+
+    /** Quick add from WhatsApp (QuickAddApplier): a dish by name, its calories estimated unless given. */
+    @Transactional
+    public void addNamed(UUID userId, String name, String meal, Integer kcal) {
+        MealSlot slot = meal == null ? null : MealSlot.valueOf(meal);
+        addEntry(userId, new AddFoodEntryRequest(name, null, null, null, null, null, null, kcal, null, slot,
+                null, null, null, null, null, null));
+    }
 }

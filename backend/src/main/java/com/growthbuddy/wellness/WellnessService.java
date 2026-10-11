@@ -160,4 +160,16 @@ public class WellnessService {
     private static int nz(Integer v) {
         return v != null ? v : 0;
     }
+
+    /* ---- Quick add from WhatsApp (QuickAddApplier) ---- */
+
+    @Transactional
+    public void saveSleepTimes(UUID userId, String bedtime, String wakeTime, String quality) {
+        saveSleep(userId, new SleepRequest(null, bedtime, wakeTime, quality, null));
+    }
+
+    @Transactional
+    public void saveMoodWords(UUID userId, String mood, String energy) {
+        saveMood(userId, new MoodRequest(null, mood, energy, null, null));
+    }
 }

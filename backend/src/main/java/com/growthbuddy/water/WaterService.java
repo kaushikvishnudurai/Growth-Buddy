@@ -154,4 +154,10 @@ public class WaterService {
                 .or(() -> users.findById(userId).map(u -> u.getDailyWaterGoalMl()))
                 .orElse(DEFAULT_GOAL_ML);
     }
+
+    /** Quick add from WhatsApp (QuickAddApplier). */
+    @Transactional
+    public void addMl(UUID userId, int ml) {
+        addEntry(userId, new AddWaterEntryRequest(ml, null, null, DrinkType.water));
+    }
 }

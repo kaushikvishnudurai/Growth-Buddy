@@ -1429,7 +1429,12 @@ function ScreenFocus(props) {
       setMode('focus', T.lastFocusMins || 25);
     saveSession();
   }
-  return h('div', { class: 'gb-rise gb-focus' }, TimerCard(), StatsCard(), HistoryCard(), SoundCard());
+  // Quick add's "start a 25 minute focus": set and run it, unless one is already running.
+  const go = props && props.autoStart;
+  if (go && !T.running) setMode('focus', typeof go === 'number' ? go : T.lastFocusMins || 25);
+  const screen = h('div', { class: 'gb-rise gb-focus' }, TimerCard(), StatsCard(), HistoryCard(), SoundCard());
+  if (go && !T.running) setTimeout(start, 0); // once the ring it paints is on screen
+  return screen;
 }
 
 /* app.js's boot calls this once the Cache API has hydrated, when a session

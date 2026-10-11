@@ -3526,6 +3526,19 @@ function addQuickExpense(amount, note) {
   });
   saveMoney(next);
 }
+function addQuickIncome(amount, label) {
+  const next = normalizeMoney(state.money);
+  const salary = /salary/i.test(label || '');
+  (next.income = next.income || []).unshift({
+    id:
+      typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+    amount: Math.round(amount),
+    source: salary ? 'salary' : 'other',
+    label: label || (salary ? 'Salary' : 'Income'),
+    date: todayKeyNow(),
+  });
+  saveMoney(next);
+}
 /* Read the sentence; write nothing. Applying straight from the parse meant one
    misread — "spent 200 on lunch" landing as 200ml of water — wrote itself into a
    tracker with no way to see it coming or take it back. */
@@ -3534,19 +3547,77 @@ async function parseQuickAdd(text) {
     .map((hb) => hb.name)
     .filter(Boolean)
     .slice(0, 100);
-  // The device's own date: it is what "tomorrow" means to the person speaking.
+  // The device's own date and clock: what "tomorrow" and "in 20 minutes" mean
+  // to the person speaking.
+  const d = new Date();
+  const now = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
   const res = await api('/api/quick-add', {
     method: 'POST',
-    body: JSON.stringify({ text, habits, today: todayKeyNow() }),
+    body: JSON.stringify({ text, habits, today: todayKeyNow(), now }),
   });
-  if (!res || res.configured === false) return { configured: false, intents: [] };
-  if (res.unavailable) return { configured: true, unavailable: true, intents: [] };
   // A sentence can't write into a tracker the user switched off.
-  const INTENT_FEATURE = { habit: 'habits', water: 'water', expense: 'money' };
-  const intents = (res.intents || []).filter(
+  const intents = ((res && res.intents) || []).filter(
     (it) => !INTENT_FEATURE[it.type] || featureOn(INTENT_FEATURE[it.type])
   );
+  // No model (or it failed): the server's plain patterns may still have read it.
+  if (!res || res.configured === false) return { configured: false, fallback: true, intents };
+  if (res.unavailable) return { configured: true, unavailable: true, fallback: true, intents };
   return { configured: true, intents, note: res.note };
+}
+
+/* Intent type -> the feature toggle it writes into (QuickAddApplier.FEATURE). */
+const INTENT_FEATURE = {
+  habit: 'habits',
+  habit_new: 'habits',
+  water: 'water',
+  expense: 'money',
+  income: 'money',
+  food: 'food',
+  goal: 'goals',
+  note: 'notes',
+  reminder: 'calendar',
+  focus: 'focus',
+};
+
+/* Controls act on the app rather than log anything, so a sentence made only of
+   them ("open money", "dark mode", "start a focus") runs without a preview. */
+const CONTROL_INTENTS = new Set(['open', 'focus', 'setting']);
+const SCREEN_LABEL = {
+  home: 'Home',
+  money: 'Money',
+  calendar: 'Calendar',
+  notes: 'Notes',
+  goals: 'Goals',
+  habits: 'Habits',
+  food: 'Food',
+  summary: 'Food summary',
+  focus: 'Focus',
+  report: 'Report',
+  family: 'Family',
+  circle: 'Circle',
+  mentor: 'Buddy',
+  achievements: 'Achievements',
+  settings: 'Settings',
+};
+
+/* The open task a "done with …" means: same title, else one inside the other,
+   the closest length winning (TaskService.bestMatch). */
+function matchOpenTask(words) {
+  const w = String(words || '').trim().toLowerCase();
+  if (!w) return null;
+  let best = null;
+  let bestScore = Infinity;
+  (state.tasks || []).forEach((t) => {
+    const title = String(t.title || '').trim().toLowerCase();
+    if (t.done || !title) return;
+    const score =
+      title === w ? 0 : title.includes(w) || w.includes(title) ? 1 + Math.abs(title.length - w.length) : Infinity;
+    if (score < bestScore) {
+      best = t;
+      bestScore = score;
+    }
+  });
+  return best;
 }
 
 /* One intent, in the words the user would use. This is what they are agreeing
@@ -3583,11 +3654,38 @@ function describeIntent(it) {
     case 'reminder':
       return { icon: 'bell', label: 'Reminder', detail: reminderSummary(it) };
     case 'expense':
+    case 'income':
       return {
         icon: 'wallet',
-        label: 'Expense',
+        label: it.type === 'expense' ? 'Expense' : 'Income',
         detail: ((state.money && state.money.currency) || '₹') + it.amount + (it.note ? ' · ' + it.note : ''),
       };
+    case 'task_done': {
+      const t = matchOpenTask(it.title);
+      return t
+        ? { icon: 'check', label: 'Finish task', detail: t.title }
+        : { icon: 'check', label: 'No such open task', detail: it.title, unknown: true };
+    }
+    case 'habit_new':
+      return { icon: 'repeat', label: 'New habit', detail: it.name };
+    case 'goal':
+      return { icon: 'target', label: 'New goal', detail: it.title };
+    case 'food':
+      return {
+        icon: 'utensils',
+        label: 'Food',
+        detail: it.name + (it.meal ? ' · ' + it.meal : '') + (it.kcal ? ' · ' + it.kcal + ' kcal' : ''),
+      };
+    case 'note':
+      return { icon: 'notebook-pen', label: 'Note', detail: it.text };
+    case 'focus':
+      return { icon: 'timer', label: 'Start focus', detail: (it.minutes || 'Usual') + (it.minutes ? ' min' : ' length') };
+    case 'open':
+      return { icon: 'chevron-right', label: 'Open', detail: SCREEN_LABEL[it.screen] || it.screen };
+    case 'setting':
+      return it.key === 'theme'
+        ? { icon: 'moon', label: 'Theme', detail: it.value === 'system' ? 'Follow the phone' : it.value === 'dark' ? 'Dark' : 'Light' }
+        : { icon: 'droplets', label: 'Water goal', detail: it.value + ' ml a day' };
     default:
       return null;
   }
@@ -3730,8 +3828,10 @@ async function captureReminder(btn) {
   try {
     const r = await parseQuickAdd(said);
     const reminder = (r.intents || []).find((x) => x.type === 'reminder') || null;
-    if (!r.configured) {
-      pushToast('Heard you. Reading the time and day needs the assistant, so set those yourself.', 'info', 4200);
+    if (reminder) {
+      // Read, by the model or the plain patterns: the form shows every field for a check.
+    } else if (!r.configured) {
+      pushToast('Heard you. Couldn’t read a time and day from that, so set those yourself.', 'info', 4200);
     } else if (r.unavailable) {
       pushToast('Heard you, but couldn’t reach the assistant — set the time and day yourself.', 'info', 4200);
     }
@@ -3745,52 +3845,146 @@ async function captureReminder(btn) {
   }
 }
 
+/* Every intent through the handler its own screen uses. Controls (open a
+   screen, start the timer, switch the theme) run last, so the logging lands
+   first and the screen the sentence asked for is where the user ends up. */
 async function applyQuickAdd(intents) {
   let applied = 0;
-  for (const it of intents) {
+  const ordered = intents
+    .filter((it) => !CONTROL_INTENTS.has(it.type))
+    .concat(intents.filter((it) => CONTROL_INTENTS.has(it.type)));
+  for (const it of ordered) {
     try {
-      if (it.type === 'task' && it.title) {
-        await createTask({ title: it.title });
-        applied++;
-      } else if (it.type === 'habit' && it.name) {
-        const hb = (state.habits || []).find(
-          (x) => (x.name || '').toLowerCase() === it.name.toLowerCase()
-        );
-        if (hb && !hb.doneToday) await toggleHabit(hb.id);
-        if (hb) applied++;
-      } else if (it.type === 'water' && it.amountMl) {
-        await quickAddWater(it.amountMl);
-        applied++;
-      } else if (it.type === 'sleep' && it.hours) {
-        await saveSleepEntry(sleepPayloadFromHours(it.hours, it.quality));
-        applied++;
-      } else if (it.type === 'mood' && it.mood) {
-        await saveMoodEntry({ mood: it.mood, energy: it.energy || 'medium' });
-        applied++;
-      } else if (it.type === 'expense' && it.amount) {
-        addQuickExpense(it.amount, it.note);
-        applied++;
-      } else if (it.type === 'reminder' && it.text) {
-        // Every field the sentence gave, through the same path as the calendar's
-        // own form — so the past-day and past-time refusals apply here too.
-        const made = await addReminder(
-          it.date || todayKeyNow(),
-          it.text,
-          hhmm(it.time),
-          it.tag || 'personal',
-          it.repeat || 'none',
-          it.until || '',
-          '',
-          hhmm(it.endTime),
-          it.notifyBefore === null || it.notifyBefore === undefined ? null : it.notifyBefore
-        );
-        if (made) applied++;
-      }
+      if (await applyIntent(it)) applied++;
     } catch (_) {
       /* skip a single bad intent; keep applying the rest */
     }
   }
   return applied;
+}
+
+async function applyIntent(it) {
+  switch (it.type) {
+    case 'task':
+      if (!it.title) return false;
+      await createTask({ title: it.title });
+      return true;
+    case 'task_done': {
+      const t = matchOpenTask(it.title);
+      if (!t) return false;
+      await toggleTask(t.id);
+      return true;
+    }
+    case 'habit': {
+      const hb = (state.habits || []).find((x) => (x.name || '').toLowerCase() === String(it.name || '').toLowerCase());
+      if (hb && !hb.doneToday) await toggleHabit(hb.id);
+      return !!hb;
+    }
+    case 'habit_new':
+      if (!it.name) return false;
+      if ((state.habits || []).some((x) => (x.name || '').toLowerCase() === it.name.toLowerCase())) return false;
+      await createHabit({ name: it.name, domain: 'habit', icon: 'repeat', cadence: 'daily', metric: 'none' });
+      return true;
+    case 'goal':
+      if (!it.title) return false;
+      await createGoal({ title: it.title, horizon: 'short_term' });
+      return true;
+    case 'water':
+      if (!it.amountMl) return false;
+      await quickAddWater(it.amountMl);
+      return true;
+    case 'food':
+      if (!it.name) return false;
+      await logFoodEntry({
+        foodName: it.name,
+        mealSlot: it.meal || null,
+        kcal: it.kcal || null,
+        loggedAt: new Date().toISOString(),
+      });
+      return true;
+    case 'sleep':
+      if (!it.hours) return false;
+      await saveSleepEntry(sleepPayloadFromHours(it.hours, it.quality));
+      return true;
+    case 'mood':
+      if (!it.mood) return false;
+      await saveMoodEntry({ mood: it.mood, energy: it.energy || 'medium' });
+      return true;
+    case 'expense':
+      if (!it.amount) return false;
+      addQuickExpense(it.amount, it.note);
+      return true;
+    case 'income':
+      if (!it.amount) return false;
+      addQuickIncome(it.amount, it.note);
+      return true;
+    case 'note':
+      if (!it.text) return false;
+      await api('/api/notes', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': newIdemKey() },
+        body: JSON.stringify({ body: '<p>' + escapeHtml(it.text) + '</p>' }),
+      });
+      return true;
+    case 'reminder': {
+      if (!it.text) return false;
+      // Every field the sentence gave, through the same path as the calendar's
+      // own form — so the past-day and past-time refusals apply here too.
+      const made = await addReminder(
+        it.date || todayKeyNow(),
+        it.text,
+        hhmm(it.time),
+        it.tag || 'personal',
+        it.repeat || 'none',
+        it.until || '',
+        '',
+        hhmm(it.endTime),
+        it.notifyBefore === null || it.notifyBefore === undefined ? null : it.notifyBefore
+      );
+      return !!made;
+    }
+    case 'focus':
+      focusAutoStart = it.minutes || true;
+      if (state.screen === 'focus') render();
+      else setScreen('focus');
+      return true;
+    case 'open':
+      if (it.screen === 'settings') openProfileSettings();
+      else if (SCREENS[it.screen] && screenEnabled(it.screen)) setScreen(it.screen);
+      else return false;
+      return true;
+    case 'setting':
+      if (it.key === 'theme') return setThemeChoice(it.value);
+      if (it.key === 'waterGoal' && Number(it.value) >= 500) {
+        await updateWaterGoal(Number(it.value));
+        return true;
+      }
+      return false;
+    default:
+      return false;
+  }
+}
+
+/* "dark mode" / "light mode" / "follow the phone": the same writes the theme
+   button makes, plus clearing the pick so the system setting decides again. */
+function setThemeChoice(value) {
+  if (value === 'system') {
+    try {
+      CacheStorage.removeItem(THEME_KEY);
+    } catch (_) {}
+    saveUiPrefs({ theme: null });
+    state.theme = systemDark && systemDark.matches ? 'dark' : 'light';
+    applyTheme(state.theme);
+    render();
+    return true;
+  }
+  if (value !== 'dark' && value !== 'light') return false;
+  if (state.theme !== value) toggleTheme();
+  return true;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 }
 
 async function loadGoals() {
@@ -9924,6 +10118,8 @@ async function addReminder(key, text, time, tag, repeat, until, sound, endTime, 
 function focusProps() {
   const link = focusPreselect;
   focusPreselect = null; // taken once: the next visit opens on whatever the timer holds
+  const autoStart = focusAutoStart;
+  focusAutoStart = null;
   return {
     // link: { taskId } | { goalId } | null — what the session was spent on.
     onFocusSession: (mode, durationSec, link) =>
@@ -9949,6 +10145,7 @@ function focusProps() {
         .map((g) => ({ id: g.id, title: g.title })),
     },
     preselect: link,
+    autoStart,
     // Daily focus goal, minutes (0 = off). In ui_prefs, where FocusService reads it for the streak.
     focusGoalMins: (state.user && state.user.uiPrefs && state.user.uiPrefs.focusGoalMins) || 0,
     onSetFocusGoal: (mins) => saveUiPrefs({ focusGoalMins: mins }),
@@ -9957,6 +10154,7 @@ function focusProps() {
 
 /* A task or goal row's "Start focus": open the timer with it picked. */
 let focusPreselect = null;
+let focusAutoStart = null; // minutes, or true for the last length: Quick add's "start a focus"
 function startFocusOn(link) {
   focusPreselect = link;
   if (state.screen === 'focus') render();
@@ -10445,7 +10643,7 @@ function openAddSheet() {
   const qaInput = h('input', {
     type: 'text',
     class: 'gb-input',
-    placeholder: 'e.g. remind me tomorrow at 9 to call mom, spent 200 on lunch, slept 7h',
+    placeholder: 'e.g. spent 200 on lunch, had 2 idli, slept 7h, remind me at 9 to call mom, open money',
     'aria-label': 'Quick log in your own words',
   });
   const qaBtn = h(
@@ -10460,26 +10658,32 @@ function openAddSheet() {
     const done = setThinking(qaBtn, 'Reading');
     try {
       const r = await parseQuickAdd(text);
-      if (!r.configured) {
-        close();
-        pushToast('Quick add needs an AI key configured on the server.', 'error', 3600);
-        return;
-      }
-      if (r.unavailable) {
-        done();
-        qaInput.disabled = false;
-        pushToast("Couldn't reach the assistant, try again.", 'error', 3600);
-        return;
-      }
       const rows = r.intents.map((it) => ({ it, d: describeIntent(it) })).filter((x) => x.d);
       if (!rows.length) {
         done();
         qaInput.disabled = false;
-        pushToast("Couldn't find anything to log there — try being more specific.", 'error', 3600);
+        pushToast(
+          r.unavailable
+            ? "Couldn't reach the assistant, and couldn't read that without it. Try again?"
+            : !r.configured
+              ? 'Couldn’t read that. Try short phrases like “spent 200 on lunch, slept 7h, remind me at 6 to call mom”.'
+              : "Couldn't find anything to log there — try being more specific.",
+          'error',
+          4200
+        );
         return;
       }
       close();
-      openQuickAddPreview(rows, r.note);
+      // Only controls ("open money", "dark mode"): just do it — nothing is written
+      // that a preview would protect.
+      if (rows.every((x) => CONTROL_INTENTS.has(x.it.type) && !x.d.unknown)) {
+        await applyQuickAdd(rows.map((x) => x.it));
+        return;
+      }
+      openQuickAddPreview(
+        rows,
+        r.fallback ? 'Read without the assistant — switch off anything it got wrong.' : r.note
+      );
     } catch (err) {
       done();
       qaInput.disabled = false;

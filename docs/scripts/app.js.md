@@ -189,6 +189,14 @@ it silently landed on Home. Don't reintroduce a second list.
   A failed model call comes back `unavailable: true` ("Couldn't reach the assistant"), distinct
   from an empty parse ("try being more specific"). A **reminder** intent previews as every field
   it carries (`reminderSummary`) and is saved through `addReminder`, so the past-day/time refusals hold.
+  **It is the one command box.** `applyIntent` covers every type the server returns — logs (task,
+  `task_done` via `matchOpenTask`, habit, `habit_new`, goal, water, food via `logFoodEntry`, sleep,
+  mood, expense, income via `addQuickIncome`, note, reminder) and controls (`focus` sets
+  `focusAutoStart`, which timer.js's `autoStart` prop starts; `open` → `setScreen` /
+  `openProfileSettings`; `setting` → `setThemeChoice` / `updateWaterGoal`). Controls run last, and a
+  sentence made only of controls (`CONTROL_INTENTS`) skips the preview. `INTENT_FEATURE` drops an
+  intent whose tracker is off. A `fallback` answer (no model / model down, read by the server's
+  regexes) still previews, under "Read without the assistant".
 - **Voice input is one helper, `listenOnce(btn, lang)`** (Web Speech API in a browser, the native
   SpeechRecognition plugin in the Capacitor app; a second tap stops; it says why when it can't). Used
   by Quick add's mic, and by **`captureReminder`** — listen, then Quick add's parser — behind the mic
