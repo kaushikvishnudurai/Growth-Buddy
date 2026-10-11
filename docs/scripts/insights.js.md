@@ -1,7 +1,7 @@
 # scripts/insights.js — Insights engine
 
 Pure pattern finder over the local wellness + trends + money stores, plus history the Report
-screen fetches on open. No AI, no imports. `push.js` imports `drinkRateByHour` from here.
+screen fetches on open. No AI. Its one import is `drinkRateByHour` from `water-stats.js` (re-exported here): it lives there so `push.js`, a boot module, can use it without pulling this whole engine into the boot chunk.
 One caller: `report.js` `insightsSection` (Report screen only). Checked by
 `node scripts/insights.test.mjs`.
 
@@ -45,7 +45,7 @@ A quit ("break a habit") habit is skipped by the habit series: its clean days ha
 | `paceSlope(log, frac, today)` / `goalPace` | least-squares slope through the blob's `progressLog` (last 90 days, today's value replacing today's entry; 3+ points over 5+ days), run on from today's progress; a slope ≤ 0 is "has stalled" (target still ahead). Without a usable log, the old straight line from creation (0%). Reported when the finish lands 3+ days past `targetDate`. Progress = milestones, else day tracker |
 | `taskTiming` / `pushedTask` / `taskWeekday` | created→done days per priority (3+ each); open task with `pushCount` 3+; weekday with the most finishes (10+) |
 | `unusualExpense` / `hiddenSubscription` | an expense this week 3x the category median (5+ before it); same note, amounts within 15%, gaps of 25–35 days, 3+ times, not matching a subscription name |
-| `drinkRateByHour` / `waterGap` | share of logged days with water in each local hour; longest 3h+ run between 09:00 and 21:00 under 20% |
+| `drinkRateByHour` (in `water-stats.js`) / `waterGap` | share of logged days with water in each local hour; longest 3h+ run between 09:00 and 21:00 under 20% |
 | `scoreChange` | yesterday vs the day before, 10+ points, names the part (tasks or habits) whose rate moved most |
 
 **Traps**

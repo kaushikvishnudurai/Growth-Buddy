@@ -16,6 +16,15 @@
    main was already over (boot 470,661 B). Measured boot 495,155 B -> 519,913 B,
    precache 1,403,472 B -> 1,473,646 B. day-plan.js and starter-packs.js were
    moved out to on-tap imports first.
+   Lowered 2026-10-11 (build 88, feat/ov-perf): Settings and the habit dialogs
+   became lazy chunks (settings.js, habit-dialogs.js), insights.js left boot
+   (water-stats.js), money.css and premium.css left the blocking CSS. Boot
+   497,595 B / 154.2 kB gzip -> 405,233 B / 125.7 kB gzip -> budget 425,495 B.
+   Precache left at 1,473,646 B (measured 1,428,737 B): bytes moved, not removed.
+   Merged with feat/overhaul (15 branches, build 88+): boot there was 513,626 B,
+   with this split 422,254 B / 132.0 kB gzip -> budget 443,367 B. Precache raised
+   to 1,594,052 B (measured 1,518,145 B + 5%): the overhaul's new lazy chunks
+   (palette, import, achievements screen, ...) are precached by design.
    (Workbox prints "41 entries": the icons are listed twice, once by the glob
    and once by includeAssets/manifest; they are fetched and stored once.)
    Raw bytes, not gzip: deterministic and what the precache actually stores.
@@ -28,8 +37,8 @@ import { readFileSync, statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 
-const BOOT_BUDGET = 519_913;
-const PRECACHE_BUDGET = 1_473_646;
+const BOOT_BUDGET = 443_367;
+const PRECACHE_BUDGET = 1_594_052;
 
 const dist = process.argv[2] || 'dist';
 const fail = (msg) => {

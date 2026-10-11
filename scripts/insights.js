@@ -17,6 +17,7 @@
    on one scale. Exported functions are pure so they can be unit-checked with
    plain `node` (see insights.test.mjs).
    ===================================================================== */
+import { drinkRateByHour } from './water-stats.js';
 
 // Ordinal value maps for the categorical check-ins.
 const ORD = { low: 1, okay: 2, good: 3, great: 4, medium: 2, high: 3, calm: 1, normal: 2 };
@@ -955,19 +956,7 @@ export function hiddenSubscription(m, today) {
   return null;
 }
 
-/** Per local hour, the share of logged days with a glass in it. */
-export function drinkRateByHour(times) {
-  const days = new Set();
-  const hours = Array.from({ length: 24 }, () => new Set());
-  for (const t of times || []) {
-    const d = new Date(t);
-    if (!Number.isFinite(d.getTime())) continue;
-    const k = localKey(d);
-    days.add(k);
-    hours[d.getHours()].add(k);
-  }
-  return { days: days.size, rate: hours.map((s) => (days.size ? s.size / days.size : 0)) };
-}
+export { drinkRateByHour };
 
 /** The longest stretch of waking hours with almost no water. */
 export function waterGap(times) {
