@@ -1904,7 +1904,7 @@
   inset: -12px -18px;
   z-index: -1;
   border-radius: var(--radius-pill);
-  background: radial-gradient(closest-side, rgba(255, 176, 32, 0.32), transparent);
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--sun-500) 32%, transparent), transparent);
   animation: gb-star-flare 620ms var(--ease-out) both;
   pointer-events: none;
 }

@@ -59,7 +59,7 @@ html[data-premium='on'] {
     0 40px 72px -20px rgba(38, 24, 16, 0.20);
   --shadow-brand:
     0 2px 4px rgba(150, 60, 8, 0.22),
-    0 12px 26px -8px rgba(249, 115, 22, 0.48);
+    0 12px 26px -8px color-mix(in srgb, var(--coral-500) 48%, transparent);
 
   --nav-bg: rgba(255, 255, 255, 0.62);
 
@@ -97,30 +97,30 @@ html[data-premium='on'][data-theme='dark'] {
    --------------------------------------------------------------------- */
 html[data-premium='on'] .gb-app {
   background:
-    radial-gradient(120% 68% at 0% 0%, rgba(249, 115, 22, 0.13) 0%, transparent 56%),
-    radial-gradient(100% 58% at 100% 6%, rgba(108, 92, 231, 0.11) 0%, transparent 52%),
-    radial-gradient(90% 50% at 50% 100%, rgba(255, 176, 32, 0.10) 0%, transparent 55%),
+    radial-gradient(120% 68% at 0% 0%, color-mix(in srgb, var(--coral-500) 13%, transparent) 0%, transparent 56%),
+    radial-gradient(100% 58% at 100% 6%, color-mix(in srgb, var(--iris-500) 11%, transparent) 0%, transparent 52%),
+    radial-gradient(90% 50% at 50% 100%, color-mix(in srgb, var(--sun-500) 10%, transparent) 0%, transparent 55%),
     linear-gradient(180deg, var(--warm-50) 0%, var(--warm-100) 100%);
 }
 html[data-premium='on'][data-theme='dark'] .gb-app {
   background:
-    radial-gradient(120% 68% at 0% 0%, rgba(249, 115, 22, 0.16) 0%, transparent 56%),
-    radial-gradient(100% 58% at 100% 6%, rgba(108, 92, 231, 0.16) 0%, transparent 52%),
-    radial-gradient(90% 50% at 50% 100%, rgba(255, 176, 32, 0.08) 0%, transparent 55%),
+    radial-gradient(120% 68% at 0% 0%, color-mix(in srgb, var(--coral-500) 16%, transparent) 0%, transparent 56%),
+    radial-gradient(100% 58% at 100% 6%, color-mix(in srgb, var(--iris-500) 16%, transparent) 0%, transparent 52%),
+    radial-gradient(90% 50% at 50% 100%, color-mix(in srgb, var(--sun-500) 8%, transparent) 0%, transparent 55%),
     linear-gradient(180deg, #1B1410 0%, #0D0907 100%);
 }
 
 /* Desktop page frame gets the same treatment, one step deeper. */
 html[data-premium='on'] .gb-page {
   background:
-    radial-gradient(90% 70% at 8% -6%, rgba(249, 115, 22, 0.16) 0%, transparent 55%),
-    radial-gradient(80% 60% at 96% 104%, rgba(108, 92, 231, 0.18) 0%, transparent 55%),
+    radial-gradient(90% 70% at 8% -6%, color-mix(in srgb, var(--coral-500) 16%, transparent) 0%, transparent 55%),
+    radial-gradient(80% 60% at 96% 104%, color-mix(in srgb, var(--iris-500) 18%, transparent) 0%, transparent 55%),
     radial-gradient(120% 120% at 50% 40%, var(--warm-50) 0%, var(--warm-200) 100%);
 }
 html[data-premium='on'][data-theme='dark'] .gb-page {
   background:
-    radial-gradient(90% 70% at 8% -6%, rgba(249, 115, 22, 0.22) 0%, transparent 55%),
-    radial-gradient(80% 60% at 96% 104%, rgba(108, 92, 231, 0.24) 0%, transparent 55%),
+    radial-gradient(90% 70% at 8% -6%, color-mix(in srgb, var(--coral-500) 22%, transparent) 0%, transparent 55%),
+    radial-gradient(80% 60% at 96% 104%, color-mix(in srgb, var(--iris-500) 24%, transparent) 0%, transparent 55%),
     radial-gradient(120% 120% at 50% 40%, #17110D 0%, #090705 100%);
 }
 
@@ -154,8 +154,8 @@ html[data-premium='on'] .gb-login-card {
    align to. Premium just gives it a warmer face and a hairline to sit on. */
 html[data-premium='on'] .gb-week-nudge {
   padding: 13px 16px;
-  background: linear-gradient(135deg, rgba(249, 115, 22, 0.15), rgba(255, 176, 32, 0.08));
-  border-bottom: 1px solid rgba(249, 115, 22, 0.22);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--coral-500) 15%, transparent), color-mix(in srgb, var(--sun-500) 8%, transparent));
+  border-bottom: 1px solid color-mix(in srgb, var(--coral-500) 22%, transparent);
 }
 
 /* ---------------------------------------------------------------------
@@ -186,12 +186,12 @@ html[data-premium='on'] .gb-week-nudge {
   html[data-premium='on'] .gb-nav-tab.is-active {
     /* --brand-soft is near-white in light theme and vanishes against the
        nav's own glass — this needs its own, stronger tint. */
-    background: rgba(249, 115, 22, 0.15);
+    background: color-mix(in srgb, var(--coral-500) 15%, transparent);
     border-radius: var(--radius-lg);
     padding: 6px 0 5px;
   }
   html[data-premium='on'][data-theme='dark'] .gb-nav-tab.is-active {
-    background: rgba(249, 115, 22, 0.22);
+    background: color-mix(in srgb, var(--coral-500) 22%, transparent);
   }
   /* The floating pill has no soil line to stand on, and the filled tab already
      marks the place; the header's live seedling carries the brand here. */
@@ -381,7 +381,7 @@ html[data-premium='on'] .gb-head .gb-sprout {
   height: 32px;
   margin-right: 10px;
   transform-origin: 50% 100%; /* rooted at the base of the stem */
-  filter: drop-shadow(0 4px 10px rgba(249, 115, 22, 0.32));
+  filter: drop-shadow(0 4px 10px color-mix(in srgb, var(--coral-500) 32%, transparent));
   /* Rest, then a brief settle. NOT a continuous sway — a slow oscillation in
      persistent chrome is exactly the vestibular trigger to avoid, and it would
      read as fidgeting on a header you see all day. 13.5s apart, ~600ms long. */
