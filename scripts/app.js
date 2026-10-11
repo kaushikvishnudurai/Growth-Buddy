@@ -3430,9 +3430,12 @@ async function toggleTask(id) {
   // Offline (or a task whose create is still queued): the tick stays, the PATCH waits in the outbox.
   // One key for the live PATCH and its replay: a flip that landed unanswered must not flip back.
   const idemKey = newIdemKey();
+  // The state the user saw and asked for, not a flip: a stale tab's tap on a task
+  // done elsewhere used to un-do it (HOS-6). A server without the field ignores it.
   const op = {
     method: 'PATCH',
     path: '/api/tasks/' + encodeURIComponent(realId(id)) + '/toggle',
+    body: { done: nowDone },
     kind: 'task.toggle',
     toggleKey: 'task:' + realId(id),
     local: { id },
@@ -3444,7 +3447,7 @@ async function toggleTask(id) {
       return;
     }
     const updated = await sendAhead(op, () =>
-      api(op.path, { method: 'PATCH', headers: { 'Idempotency-Key': idemKey } })
+      api(op.path, { method: 'PATCH', headers: { 'Idempotency-Key': idemKey }, body: JSON.stringify(op.body) })
     );
     const painted = toggleSignature();
     state.tasks = state.tasks.map((t) => (t.id === id || t.id === updated.id ? mapTask(updated) : t));
@@ -3692,7 +3695,7 @@ async function plainToggleHabit(id) {
   };
   try {
     const updated = await sendAhead(op, () =>
-      api('/api/habits/' + encodeURIComponent(id) + '/toggle', { method: 'PATCH' })
+      api('/api/habits/' + encodeURIComponent(id) + '/toggle', { method: 'PATCH', body: JSON.stringify({ done }) })
     );
     const painted = toggleSignature();
     state.habits = state.habits.map((h) => (h.id === updated.id ? updated : h));
@@ -17482,8 +17485,13 @@ if (navigator.onLine) flushRevokes(); // a sign-out made offline last time
 /* Coming back to the app after it was backgrounded. The socket may have been
    suspended without ever firing a disconnect, so `onConnect` never runs and the
    bell is quietly stale. Ask the server directly. */
+let hiddenAt = 0;
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && state.user) {
+  if (document.hidden) hiddenAt = Date.now();
+  else if (state.user) {
+    // Away over a minute (a backgrounded phone, another tab): ticks made on another
+    // device were still shown undone, and tapping one again un-did it (HOS-6).
+    if (hiddenAt && Date.now() - hiddenAt > 60_000) refreshOutboxStores(new Set(['task', 'habit']));
     flushQueued(); // back from the background: the connection may be too
     refreshNotifications();
     syncDeviceTimezone(); // reopened after a flight
