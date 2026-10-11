@@ -12313,6 +12313,8 @@ function paletteProps() {
     },
     // Notes live on their screen, not in state: the list once, when the palette opens.
     listNotes: on('notes') ? () => api('/api/notes') : null,
+    // palette.js shows cached note titles only to the account that cached them.
+    userId: state.user && state.user.id,
     openNote: openNoteById,
     runQuickAdd,
     recent: (state.user && state.user.uiPrefs && state.user.uiPrefs.paletteRecent) || [],
