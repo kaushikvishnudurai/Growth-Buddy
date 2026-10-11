@@ -44,14 +44,6 @@ export function InsightRow(it, { onDismiss, onAction } = {}) {
   );
 }
 
-/* The numbers in a projection line, in the mono face (split keeps them at odd indexes). */
-const mono = (text) =>
-  text
-    .split(/([^\s,]*\d[\d,.]*)/)
-    .map((part, i) =>
-      i % 2 ? h('span', { style: { fontFamily: 'var(--font-mono)' } }, part) : part
-    );
-
 function paceRow(icon, title, text) {
   return h(
     'div',
@@ -61,7 +53,9 @@ function paceRow(icon, title, text) {
       'div',
       { style: { minWidth: 0 } },
       h('div', { class: 'gb-insight-title' }, title),
-      h('div', { class: 'gb-insight-text' }, ...mono(text))
+      // Body face, not mono: mono inside a sentence spaced out "₹2,60,388" and caught
+      // the digits in a habit's own name ("Read 10 pages").
+      h('div', { class: 'gb-insight-text' }, text)
     )
   );
 }

@@ -103,18 +103,24 @@ export function streakPace(habits, now = Date.now()) {
     .sort((a, b) => (Number(b.streak) || 0) - (Number(a.streak) || 0))[0];
   const streak = best ? Number(best.streak) || 0 : 0;
   if (streak < 2) return null;
+  // A streak not ticked yet today still counts through yesterday, so today is the next day of it.
+  const today = num(localKey(new Date(now)));
+  const last = today - (best.doneToday ? 0 : 1); // the day the streak reaches `streak` (+1 if ticked today)
+  const reach = (m) => key(last + m - streak);
+  const name = best.name || 'habit';
   const next = MILESTONES.find((x) => x > streak);
   if (!next) return null; // ponytail: past a year there is no next milestone; add yearly ones if anyone gets there
-  // A streak not ticked yet today still counts through yesterday, so today is the next day of it.
-  const byDate = key(num(localKey(new Date(now))) + next - streak - (best.doneToday ? 0 : 1));
-  const name = best.name || 'habit';
-  return {
-    name,
-    streak,
-    next,
-    byDate,
-    text: 'Keep it up: a ' + next + '-day ' + name + ' streak on ' + dayLabel(byDate),
-  };
+  let byDate = reach(next);
+  let text = name + ': ' + next + ' days in a row by ' + dayLabel(byDate);
+  // A milestone that lands today is the one-thing card's job ("keep your streak");
+  // the outlook looks one further, so it still says something new.
+  const after = MILESTONES.find((x) => x > next);
+  if (byDate === key(today) && after) {
+    text = name + ': ' + next + ' days in a row today, ' + after + ' by ' + dayLabel(reach(after));
+    byDate = reach(after);
+    return { name, streak, next: after, byDate, text };
+  }
+  return { name, streak, next, byDate, text };
 }
 
 /** Home's card data; null when there is nothing to say, so the card hides. */

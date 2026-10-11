@@ -114,7 +114,11 @@ const expenses = [inc('2025-11-02', 500)];
     { name: s.name, streak: s.streak, next: s.next, byDate: s.byDate },
     { name: 'Read', streak: 12, next: 14, byDate: '2026-01-22' }
   );
-  assert.equal(s.text, 'Keep it up: a 14-day Read streak on Jan 22');
+  assert.equal(s.text, 'Read: 14 days in a row by Jan 22');
+  // A milestone landing today (6 done, not ticked yet: today makes 7) looks one further.
+  const t = streakPace([{ name: 'Read 10 pages', streak: 6 }], NOW);
+  assert.equal(t.next, 14);
+  assert.equal(t.text, 'Read 10 pages: 7 days in a row today, 14 by ' + t.byDate.slice(5).replace(/^(\d\d)-(\d\d)$/, (m, mo, d) => ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][mo - 1] + ' ' + Number(d)));
   // not ticked yet today: today is day 13
   assert.equal(streakPace([{ name: 'Read', streak: 12 }], NOW).byDate, '2026-01-21');
   assert.equal(streakPace([{ name: 'Read', streak: 30, doneToday: true }], NOW).next, 50);

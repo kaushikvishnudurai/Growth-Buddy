@@ -5220,7 +5220,8 @@ button.gb-food-level {
   height: 10px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.66);
-  bottom: 6px;
+  /* Off the glass floor, not the fill's (the fill is slid down below the glass). */
+  bottom: calc(6px + var(--water-empty, 0%));
   animation: gb-water-bubble 2.8s ease-in infinite;
 }
 .gb-water-bubble.b1 {
@@ -5249,25 +5250,29 @@ button.gb-food-level {
   /* The fill is full height and slid down (dashboard.js), so its bottom sits
      below the glass: lift the fish by the same amount or they swim off-screen. */
   bottom: calc(var(--fish-bottom, 12px) + var(--water-empty, 0%));
+  --fish-fin: color-mix(in srgb, var(--sun-500) 75%, white 25%);
   background: color-mix(in srgb, var(--sun-300) 78%, white 22%);
   box-shadow: inset -2px 0 0 rgba(255, 255, 255, 0.45);
 }
+/* Each fin matches its own body; every fin used to be the sun fish's yellow. */
 .gb-water-fish[style*='--fish-hue: leaf'] {
+  --fish-fin: color-mix(in srgb, var(--leaf-500) 70%, white 30%);
   background: color-mix(in srgb, var(--leaf-300) 65%, white 35%);
 }
 .gb-water-fish[style*='--fish-hue: bloom'] {
+  --fish-fin: color-mix(in srgb, var(--bloom-500) 70%, white 30%);
   background: color-mix(in srgb, var(--bloom-300) 60%, white 40%);
 }
-.gb-water-fish[style*='--fish-hue: sky'] {
-  background: color-mix(in srgb, var(--sky-300) 64%, white 36%);
+.gb-water-fish[style*='--fish-hue: iris'] {
+  --fish-fin: color-mix(in srgb, var(--iris-500) 70%, white 30%);
+  background: color-mix(in srgb, var(--iris-300) 65%, white 35%);
 }
 .gb-water-fish::before {
   content: '';
   position: absolute;
   right: calc(var(--fish-size, 16px) * -0.25);
   top: calc(var(--fish-size, 16px) * 0.06);
-  border-left: calc(var(--fish-size, 16px) * 0.32) solid
-    color-mix(in srgb, var(--sun-500) 75%, white 25%);
+  border-left: calc(var(--fish-size, 16px) * 0.32) solid var(--fish-fin);
   border-top: calc(var(--fish-size, 16px) * 0.18) solid transparent;
   border-bottom: calc(var(--fish-size, 16px) * 0.18) solid transparent;
 }
@@ -5506,56 +5511,60 @@ button.gb-food-level {
     opacity: 0.9;
   }
   100% {
-    transform: translateY(-86px) scale(1.12);
+    /* --bubble-rise (water-fish.js): pops below the surface at any fill. */
+    transform: translateY(calc(-1 * var(--bubble-rise, 86px))) scale(1.12);
     opacity: 0;
   }
 }
+/* The eye is on the left, so a fish faces left at scaleX(1): it flips to
+   scaleX(-1) to swim right. All three used to swim tail first both ways.
+   --fish-swim and --fish-bob come from water-fish.js, sized to the glass. */
 @keyframes gb-fish-swim-1 {
   0% {
-    transform: translateX(0) translateY(0) scaleX(1);
-  }
-  46% {
-    transform: translateX(45px) translateY(-4px) scaleX(1);
-  }
-  50% {
-    transform: translateX(45px) translateY(-4px) scaleX(-1);
-  }
-  96% {
     transform: translateX(0) translateY(0) scaleX(-1);
   }
-  100% {
+  46% {
+    transform: translateX(var(--fish-swim, 24px)) translateY(calc(-1 * var(--fish-bob, 4px))) scaleX(-1);
+  }
+  50% {
+    transform: translateX(var(--fish-swim, 24px)) translateY(calc(-1 * var(--fish-bob, 4px))) scaleX(1);
+  }
+  96% {
     transform: translateX(0) translateY(0) scaleX(1);
+  }
+  100% {
+    transform: translateX(0) translateY(0) scaleX(-1);
   }
 }
 @keyframes gb-fish-swim-2 {
   0% {
-    transform: translateX(0) translateY(0) scaleX(-1);
+    transform: translateX(var(--fish-swim, 24px)) translateY(0) scaleX(1);
   }
   48% {
-    transform: translateX(-22px) translateY(4px) scaleX(-1);
+    transform: translateX(0) translateY(var(--fish-bob, 4px)) scaleX(1);
   }
   52% {
-    transform: translateX(-22px) translateY(4px) scaleX(1);
+    transform: translateX(0) translateY(var(--fish-bob, 4px)) scaleX(-1);
   }
   100% {
-    transform: translateX(0) translateY(0) scaleX(1);
+    transform: translateX(var(--fish-swim, 24px)) translateY(0) scaleX(-1);
   }
 }
 @keyframes gb-fish-swim-3 {
   0% {
-    transform: translateX(0) translateY(0) scaleX(1);
-  }
-  45% {
-    transform: translateX(34px) translateY(2px) scaleX(1);
-  }
-  50% {
-    transform: translateX(34px) translateY(2px) scaleX(-1);
-  }
-  95% {
     transform: translateX(0) translateY(0) scaleX(-1);
   }
-  100% {
+  45% {
+    transform: translateX(var(--fish-swim, 24px)) translateY(calc(0.5 * var(--fish-bob, 4px))) scaleX(-1);
+  }
+  50% {
+    transform: translateX(var(--fish-swim, 24px)) translateY(calc(0.5 * var(--fish-bob, 4px))) scaleX(1);
+  }
+  95% {
     transform: translateX(0) translateY(0) scaleX(1);
+  }
+  100% {
+    transform: translateX(0) translateY(0) scaleX(-1);
   }
 }
 @keyframes gb-water-pulse {

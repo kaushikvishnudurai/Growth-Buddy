@@ -178,7 +178,9 @@ function Card({ children, style, className = '', onClick } = {}) {
     style,
     onclick: onClick,
   });
-  appendChildren(node, children || []);
+  // A single child is fine too: `children: h(...)` threw "kids is not iterable"
+  // inside render and blanked the whole Home.
+  appendChildren(node, [children]);
   return node;
 }
 

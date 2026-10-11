@@ -32,6 +32,7 @@ import {
   homeGoals,
 } from './home-order.js';
 import { suggestReminderTime } from './habit-stats.js';
+import { waterFish, bubbleRise } from './water-fish.js';
 import { sleepToConfirm } from './nudges.js';
 import { pickOneThing } from './one-thing.js';
 import { fmtDate, fmtNumber } from './i18n.js';
@@ -916,27 +917,24 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
   const pool = pct < 40 ? quotesLow : pct < 85 ? quotesMid : quotesHigh;
   const quoteIdx = Math.floor(consumedMl / 100 + entries.length) % pool.length;
   const quote = pool[quoteIdx];
-  const fishCount = Math.max(1, Math.min(8, Math.floor(pct / 15) + 1));
-  const fishPalette = ['sun', 'leaf', 'bloom', 'sky'];
-  const fishNodes = Array.from({ length: fishCount }, (_, i) => {
-    const left = 8 + ((i * 11) % 52);
-    const bottom = 10 + ((i * 13) % 66);
-    const size = 10 + (i % 3) * 3;
-    const delay = (i % 5) * 0.55;
-    const dur = 5.8 + (i % 4) * 1.1;
-    const tint = fishPalette[i % fishPalette.length];
-    return h('span', {
-      class: 'gb-water-fish f' + ((i % 3) + 1),
+  // Placed by water-fish.js so each one stays inside the glass and under the
+  // surface for its whole swim; they used to swim through the walls, ride the
+  // waterline and flop on a dry floor.
+  const fishNodes = waterFish(pct).map((f) =>
+    h('span', {
+      class: 'gb-water-fish f' + f.lane,
       style: {
-        '--fish-left': left + 'px',
-        '--fish-bottom': bottom + 'px',
-        '--fish-size': size + 'px',
-        '--fish-delay': delay + 's',
-        '--fish-duration': dur + 's',
-        '--fish-hue': tint,
+        '--fish-left': f.left + 'px',
+        '--fish-bottom': f.bottom + 'px',
+        '--fish-size': f.size + 'px',
+        '--fish-swim': f.swim + 'px',
+        '--fish-bob': f.bob + 'px',
+        '--fish-delay': f.delay + 's',
+        '--fish-duration': f.duration + 's',
+        '--fish-hue': f.hue,
       },
-    });
-  });
+    })
+  );
 
   const lastThree = entries.slice(-3).reverse();
   const latestAt = entries.length ? entries[entries.length - 1].loggedAt : null;
@@ -1178,11 +1176,16 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
               style: {
                 transform: 'translateY(' + (100 - pct) + '%)',
                 '--water-empty': 100 - pct + '%',
+                '--bubble-rise': bubbleRise(pct) + 'px',
               },
             },
-            h('span', { class: 'gb-water-bubble b1' }),
-            h('span', { class: 'gb-water-bubble b2' }),
-            h('span', { class: 'gb-water-bubble b3' }),
+            bubbleRise(pct)
+              ? [
+                  h('span', { class: 'gb-water-bubble b1' }),
+                  h('span', { class: 'gb-water-bubble b2' }),
+                  h('span', { class: 'gb-water-bubble b3' }),
+                ]
+              : null,
             fishNodes
           )
         ),
