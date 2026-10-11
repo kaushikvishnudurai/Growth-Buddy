@@ -1586,11 +1586,16 @@ body:has(.is-thinking, .gb-thinking)::after {
   flex-direction: column;
   gap: 10px;
 }
+/* Merged with a later rule that overrode the centring; these are the values
+   that actually rendered. */
 .gb-mentor-empty {
-  margin: auto;
-  text-align: center;
+  margin: 0;
+  text-align: left;
   padding: 24px 18px;
   max-width: 360px;
+  color: var(--fg2);
+  font-size: 0.875rem;
+  line-height: 1.5;
 }
 .gb-mentor-empty h3 {
   font-family: var(--font-display);
@@ -2609,13 +2614,6 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 .gb-circle-screen .gb-circle-section {
   min-height: 0; /* the reserve left a blank band under every empty list */
-}
-.gb-mentor-empty {
-  text-align: left;
-  margin: 0;
-  color: var(--fg2);
-  font-size: 0.875rem;
-  line-height: 1.5;
 }
 .gb-challenges-actions {
   display: flex;
@@ -6289,12 +6287,15 @@ button.gb-food-level {
   color: var(--danger);
 }
 
+/* One rule. There were two, 3,000 lines apart, and what rendered was neither:
+   this one's case and tracking with the later one's size, weight and colour.
+   These are those rendered values, so nothing on screen moves. */
 .gb-field-label {
-  font-size: 0.71875rem;
-  font-weight: 800;
+  font-size: 0.84375rem;
+  font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: var(--fg3);
+  color: var(--fg2);
   margin-top: 4px;
 }
 .gb-rem-form > .gb-field-label:first-child {
@@ -9275,11 +9276,6 @@ select.gb-input {
   gap: 6px;
   margin-bottom: 14px;
 }
-.gb-field-label {
-  font-weight: 700;
-  font-size: 0.84375rem;
-  color: var(--fg2);
-}
 .gb-field-hint {
   font-size: 0.75rem;
   color: var(--fg3);
@@ -9316,10 +9312,6 @@ select.gb-input {
    The sticky tab strip is excluded on purpose: it has to stay full-bleed or
    content scrolls visibly through the 20px gutters beside its backdrop. */
 .gb-family > *:not(.gb-family-sectionnav) {
-  padding-left: 20px;
-  padding-right: 20px;
-}
-.gb-family-sectionnav {
   padding-left: 20px;
   padding-right: 20px;
 }
@@ -9906,9 +9898,6 @@ select.gb-input {
   background: var(--warning-soft);
   color: var(--warning-soft-fg);
 }
-.gb-family-sectionnav {
-  margin-bottom: 4px;
-}
 /* The strip scrolls; the wrapper above stays put and stays opaque. The last tab
    used to be sliced mid-glyph with the scrollbar hidden, which reads as broken
    rather than as "there's more". The mask fades the final 28px instead.
@@ -10228,8 +10217,7 @@ select.gb-input {
      border makes the boundary deliberate instead of a colour seam. */
   background: var(--surface);
   border-bottom: 1px solid var(--border);
-  padding-top: 4px;
-  padding-bottom: 10px;
+  padding: 4px 20px 10px;
   margin-bottom: 0;
 }
 /* Must come after the rule above, not up in the 1024px block earlier in this

@@ -4428,7 +4428,7 @@ function ScreenMoney({
         : hs.score >= 45
           ? 'Steady, with room to grow.'
           : hs.score > 0
-            ? 'A good start.'
+            ? 'Early days.'
             : 'Nothing scored yet.';
     const firstOf = new Set();
     return Card({

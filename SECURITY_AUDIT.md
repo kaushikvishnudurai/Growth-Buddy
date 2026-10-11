@@ -84,6 +84,10 @@
 
 ## ⚠️ ISSUES FOUND & FIXES NEEDED
 
+> **2026-10-11:** Issues 4–6 describe code that no longer exists. `scripts/custom-sound.js` is
+> gone, custom sounds are stored in the database as validated data URLs (see the addendum), and
+> there is no signed-URL endpoint or Stratus integration to validate. They are kept as history.
+
 ### Issue 1: Base64 Decoding Without Error Handling
 - **Severity**: 🟡 Medium
 - **Location**: `backend/.../CustomSoundService.java:40`

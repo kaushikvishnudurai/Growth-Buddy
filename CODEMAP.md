@@ -378,7 +378,9 @@ snooze to the one-off, a `future` edit carries one from the cut on to the new se
   the mentor-only weekly card. Each line rings the partner's bell (`system`) + web push and goes out
   as a transient `mentorship_message` frame (`MentorshipEvents`, the `FamilyEvents` pattern) that
   app.js re-dispatches as `gb:mentorship-message`. `MentorshipChatServiceTest`.
-- `config/DataSeeder` — demo user + starter data, keyed on `growthbuddy.demo-user-id`.
+- `config/DataSeeder` — demo user (not in prod) + quotes, keyed on `growthbuddy.demo-user-id`. Also
+  creates four JdbcTemplate-only tables if missing, and widens two legacy enum columns only when
+  `information_schema` says they are still enums.
 - `task/TaskMidnightSweep` — soft-deletes each user's **done** tasks at their own local
   midnight: every hourly tick clears what was finished before that user's last local midnight, so a
   missed hour or a DST-skipped midnight catches up and today's ticks are never touched. Tasks have no day

@@ -1079,7 +1079,12 @@ function saveUiPrefs(patch) {
     method: 'PUT',
     body: JSON.stringify({ prefs: state.user.uiPrefs }),
   }).catch((err) => {
-    console.error('CRITICAL: saveUiPrefs failed to reach database:', err);
+    console.error('saveUiPrefs failed to reach database:', err);
+    // The change shows on this device and would quietly undo itself on the next
+    // sign-in. Offline is the banner's to say; a 401 signs out on its own.
+    if (navigator.onLine && !(err && err.status === 401)) {
+      toastError(null, "Couldn't save that setting. It applies here, but may not on your next sign-in.");
+    }
   });
 }
 
@@ -1299,7 +1304,6 @@ function hydrateUiPrefs() {
       CacheStorage.setItem(PREMIUM_KEY, p.premium ? '1' : '0');
       applyPremium(p.premium);
     }
-    if (typeof p.qaLang === 'string') localStorage.setItem('gb.qa.lang', p.qaLang);
     // Before this runs, every "Mon-Fri" reminder answers with the default —
     // so it has to happen before the calendar or Home paints their dots.
     setWorkWeek(p.workWeek);
@@ -2821,26 +2825,32 @@ async function loadSecondaryData() {
   // money, mentor, circle) and throw away their local view state.
   const bootScreen = state.screen;
   connectWebSocket();
+  // A failed load used to look exactly like having no data: every one of these
+  // caught to null, and the only trace was a console line nobody sees. Name what
+  // didn't arrive and offer the retry. Not when offline (the banner says so) and
+  // not on 401 (that path signs the user out by itself).
+  const missed = [];
+  const soft = (label) => (err) => {
+    if (navigator.onLine && !(err && err.status === 401)) missed.push(label);
+    return null;
+  };
   try {
     const [goals, notifications, food, money, dailyLogs, photoHistory, weekly] =
       await Promise.all([
-        api('/api/goals').catch(() => null),
-        api(notifPageUrl('all')).catch(() => null),
-        api('/api/food').catch(() => null),
-        api('/api/money', { onResponse: rememberMoneyVersion }).catch((err) => {
-          console.error('Money API failed - data will NOT persist!', err);
-          return null;
-        }),
-        api('/api/daily-logs?days=60').catch((err) => {
-          console.error('Daily logs API failed - sleep/mood data will NOT persist!', err);
-          return null;
-        }),
-        api('/api/food/photo-history').catch((err) => {
-          console.error('Photo history API failed - photos will NOT persist!', err);
-          return null;
-        }),
-        api('/api/weekly-review').catch(() => null),
+        api('/api/goals').catch(soft('goals')),
+        api(notifPageUrl('all')).catch(soft('notifications')),
+        api('/api/food').catch(soft('food')),
+        api('/api/money', { onResponse: rememberMoneyVersion }).catch(soft('money')),
+        api('/api/daily-logs?days=60').catch(soft('sleep and mood')),
+        api('/api/food/photo-history').catch(soft('food photos')),
+        api('/api/weekly-review').catch(soft('weekly reviews')),
       ]);
+    if (missed.length) {
+      pushToast("Couldn't load your " + new Intl.ListFormat('en').format(missed) + '.', 'error', 8000, {
+        label: 'Retry',
+        run: () => loadSecondaryData(),
+      });
+    }
 
     if (goals) {
       state.goals = goals;
@@ -3861,7 +3871,6 @@ function reminderSummary(it) {
    Settings → Reminders all listen the same way. */
 function speechLang() {
   return (
-    localStorage.getItem('gb.qa.lang') ||
     ((state.user && state.user.uiPrefs) || {}).qaLang ||
     navigator.language ||
     'en-IN'
@@ -10999,7 +11008,7 @@ function openAddSheet() {
     const device = navigator.language || 'en-IN';
     const sameBase = (a, b) => a.split('-')[0] === b.split('-')[0];
     let langCode =
-      localStorage.getItem('gb.qa.lang') ||
+      ((state.user && state.user.uiPrefs) || {}).qaLang ||
       (LANGS.find((l) => l.code === device) || LANGS.find((l) => sameBase(l.code, device)) || {})
         .code ||
       device;
@@ -11027,7 +11036,6 @@ function openAddSheet() {
     });
     langBtn.addEventListener('change', () => {
       langCode = langBtn.value;
-      localStorage.setItem('gb.qa.lang', langCode);
       saveUiPrefs({ qaLang: langCode });
     });
     micBtn = h(

@@ -116,7 +116,8 @@ it silently landed on Home. Don't reintroduce a second list.
   Home went from 1448 ms to 900 ms.
   Two ordering constraints in wave 2: `recordTrendsToday()` reads `state.food`, and `state.achReady`
   must stay last so achievements never fire on partial data. Wave 2 never throws into the UI — a
-  failure leaves Home on wave-1 data instead of replacing it with a crash. It also skips its final
+  failure leaves Home on wave-1 data instead of replacing it with a crash, and names what didn't
+  load in one error toast with Retry (not when offline, not on 401). It also skips its final
   `render()` if `state.screen` has changed since it started, so it can't rebuild a screen that owns
   its own subtree out from under the user.
 - **All fetches go through `api()`**. Don't add a bare `fetch` — you'd lose auth headers and
@@ -210,7 +211,7 @@ it silently landed on Home. Don't reintroduce a second list.
   beside the reminder text in the calendar form (`setVoiceReminder`) and Settings → Reminders.
   Speaking fills **every** field it named for a check before Add; nothing is saved by the mic. With
   no assistant (no key, or down) the words alone go in, and a toast says so. Language: `speechLang()`
-  = Quick add's picker (`gb.qa.lang`), else `ui_prefs.qaLang`, else the device's.
+  = `ui_prefs.qaLang` (Quick add's picker writes it), else the device's. No localStorage copy.
 - **Pull to refresh is hand-rolled** (`initPullToRefresh`). A WebView gives you none, and the
   app had none — swiping down at the top of a screen did nothing. Listeners sit on `document`, not on
   `.gb-scroll`, because `render()` replaces that element and would throw a listener on it away. A drag

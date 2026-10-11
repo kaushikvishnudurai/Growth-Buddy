@@ -800,6 +800,9 @@ public class FoodService {
             return new AiGuess(numberAsInt(node, "kcalPer100g"), numberAsInt(node, "quantityGrams"),
                     all ? new double[] {n[0], n[1], n[2], n[3]} : null);
         } catch (Exception ex) {
+            // The caller falls back to the table estimate; without this line an AI
+            // outage looked exactly like a quiet day.
+            log.warn("Food estimate fallback: AI call failed: {}", ex.toString());
             return null;
         }
     }
@@ -839,7 +842,11 @@ public class FoodService {
                 out.add(new FoodSearchItem(name.trim(), kcal != null ? clamp(kcal) : null, "openfoodfacts"));
             }
             return out.stream().limit(8).toList();
-        } catch (Exception ignored) {
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            return List.of();
+        } catch (Exception ex) {
+            log.debug("OpenFoodFacts search failed for {}: {}", query, ex.toString());
             return List.of();
         }
     }

@@ -393,9 +393,14 @@ public class HabitService {
         List<Habit> hs = habits.findByUserIdAndDeletedAtIsNullOrderByCreatedAtAsc(userId);
         if (hs.isEmpty()) return "Habits: none tracked.\n";
         LocalDate today = clock.today(userId);
+        // Two queries for the list, not two per habit (as streakLines does below).
+        Map<UUID, HabitStreak> byId = new HashMap<>();
+        streaks.findAllById(hs.stream().map(Habit::getId).toList()).forEach(s -> byId.put(s.getHabitId(), s));
+        Set<UUID> doneToday = new HashSet<>();
+        checkins.findByUserIdAndLogDateAndDoneTrue(userId, today).forEach(c -> doneToday.add(c.getHabitId()));
         StringBuilder sb = new StringBuilder("Habits:\n");
         for (Habit h : hs) {
-            HabitStreak s = streaks.findById(h.getId()).orElse(null);
+            HabitStreak s = byId.get(h.getId());
             if (isQuit(h)) {
                 // The cache's lastDoneOn is the last slip on a quit habit; its
                 // current streak goes stale a day at a time, so it is worked out.
@@ -407,7 +412,7 @@ public class HabitService {
                         .append(" days clean\n");
                 continue;
             }
-            boolean done = checkins.existsByHabitIdAndLogDateAndDoneTrue(h.getId(), today);
+            boolean done = doneToday.contains(h.getId());
             int streak = s == null ? 0 : s.getCurrentStreak();
             sb.append("  - ").append(h.getName())
                     .append(" — ").append(done ? "done today" : "not yet today")
