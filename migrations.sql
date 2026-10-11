@@ -97,6 +97,7 @@ FROM (
   UNION ALL SELECT 'mentor_messages'        AS table_name, 'actions_json'
   UNION ALL SELECT 'reminder_dispatch_log'  AS table_name, 'snooze_of'
   UNION ALL SELECT 'reminder_dispatch_log'  AS table_name, 'attempts'
+  UNION ALL SELECT 'habit_checkins'         AS table_name, 'xp_paid'
 ) AS t
 LEFT JOIN information_schema.COLUMNS c
        ON c.table_schema = DATABASE()
@@ -636,3 +637,9 @@ CREATE TABLE IF NOT EXISTS `bank_feed_consents` (
   KEY `ix_bank_feed_user` (`user_id`),
   CONSTRAINT `fk_bank_feed_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- A habit day's check-in XP is paid (HabitCheckin.xpPaid). Completing a rest
+-- (freeze) day now refunds its token, so "was this day already paid" can no
+-- longer be guessed from protected_day. NULL: a row from before, read with the
+-- old rule (paid unless protected); nothing is rewritten.
+ALTER TABLE habit_checkins ADD COLUMN xp_paid BOOLEAN NULL;

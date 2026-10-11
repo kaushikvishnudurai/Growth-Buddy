@@ -10,6 +10,7 @@ import com.growthbuddy.task.TaskRepository;
 import com.growthbuddy.user.User;
 import com.growthbuddy.user.UserClock;
 import com.growthbuddy.user.UserRepository;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.Map;
@@ -40,10 +41,35 @@ class ScoreServiceTest {
         return new ScoreService(tasks, habits, scores, clock, users);
     }
 
+    private static final LocalDate TODAY = LocalDate.of(2026, 10, 11);
+
+    /** taskTotal = done today + open and due by today's end; the stubs take it apart again. */
     private void stub(long taskTotal, long taskDone, int habitDone, int habitTotal) {
-        when(tasks.countByUserIdAndPausedFalseAndDeletedAtIsNull(USER)).thenReturn(taskTotal);
-        when(tasks.countByUserIdAndDoneTrueAndPausedFalseAndDeletedAtIsNull(USER)).thenReturn(taskDone);
+        stubTasks(taskDone, taskTotal - taskDone);
         when(habits.todayCounts(USER)).thenReturn(new HabitService.TodayCounts(habitDone, habitTotal));
+    }
+
+    private void stubTasks(long doneToday, long openDue) {
+        when(clock.today(USER)).thenReturn(TODAY);
+        when(clock.zoneOf(USER)).thenReturn(ZoneOffset.UTC);
+        Instant start = TODAY.atStartOfDay(ZoneOffset.UTC).toInstant();
+        Instant end = TODAY.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+        when(tasks.countDoneBetween(USER, start, end)).thenReturn(doneToday);
+        when(tasks.countOpenDueBefore(USER, end)).thenReturn(openDue);
+    }
+
+    /**
+     * The QA case: one task due today and ticked, one due tomorrow, one undated.
+     * Only today's counts: 1/1, not 1/3. The repository's bound is the end of
+     * today, so tomorrow's and the undated one never reach countOpenDueBefore.
+     */
+    @Test
+    void onlyTodaysTasksCount() {
+        stub(1, 1, 0, 0);
+        ScoreService.ScoreResponse r = service().today(USER);
+        assertThat(r.tasksDone()).isEqualTo(1);
+        assertThat(r.tasksTotal()).isEqualTo(1);
+        assertThat(r.date()).isEqualTo(TODAY);
     }
 
     @Test
@@ -81,8 +107,7 @@ class ScoreServiceTest {
         User u = new User();
         u.setFeaturePrefs(Map.of("habits", false));
         when(users.findById(USER)).thenReturn(Optional.of(u));
-        when(tasks.countByUserIdAndPausedFalseAndDeletedAtIsNull(USER)).thenReturn(1L);
-        when(tasks.countByUserIdAndDoneTrueAndPausedFalseAndDeletedAtIsNull(USER)).thenReturn(1L);
+        stubTasks(1, 0);
         ScoreService.ScoreResponse r = service().today(USER);
         assertThat(r.score()).isEqualTo(100);
         assertThat(r.habitsTotal()).isZero();
@@ -106,8 +131,7 @@ class ScoreServiceTest {
         LocalDate day = LocalDate.of(2026, 9, 17);
         when(clock.zoneOf(USER)).thenReturn(ZoneOffset.UTC);
         when(tasks.countCompletedBetween(eq(USER), any(), any())).thenReturn(2L);
-        when(tasks.countByUserIdAndPausedFalseAndDeletedAtIsNull(USER)).thenReturn(2L);
-        when(tasks.countByUserIdAndDoneTrueAndPausedFalseAndDeletedAtIsNull(USER)).thenReturn(0L);
+        when(tasks.countOpenDueBefore(USER, day.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant())).thenReturn(2L);
         when(habits.countsOn(USER, day)).thenReturn(new HabitService.TodayCounts(2, 2));
 
         ScoreService.ScoreResponse r = service().on(USER, day);
@@ -123,8 +147,7 @@ class ScoreServiceTest {
         LocalDate to = LocalDate.of(2026, 9, 17);
         when(clock.zoneOf(USER)).thenReturn(ZoneOffset.UTC);
         when(tasks.countCompletedBetween(eq(USER), any(), any())).thenReturn(1L);
-        when(tasks.countByUserIdAndPausedFalseAndDeletedAtIsNull(USER)).thenReturn(0L);
-        when(tasks.countByUserIdAndDoneTrueAndPausedFalseAndDeletedAtIsNull(USER)).thenReturn(0L);
+        when(tasks.countOpenDueBefore(eq(USER), any())).thenReturn(0L);
         when(habits.countsOn(eq(USER), any())).thenReturn(new HabitService.TodayCounts(0, 0));
 
         ScoreService.ScoreResponse r = service().between(USER, to.minusDays(6), to);

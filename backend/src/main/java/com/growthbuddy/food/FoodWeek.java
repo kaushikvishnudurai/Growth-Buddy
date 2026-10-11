@@ -499,9 +499,16 @@ public class FoodWeek {
 
     /** The stored answer for this scope, only if it answered this exact prompt. */
     private DietCheckResponse storedCheck(UUID userId, String scope, String prompt) {
-        List<Map<String, Object>> rows = jdbc.queryForList(
-                "SELECT prompt, answer FROM food_diet_checks WHERE user_id = ? AND scope = ?",
-                userId.toString(), scope);
+        List<Map<String, Object>> rows;
+        try {
+            rows = jdbc.queryForList(
+                    "SELECT prompt, answer FROM food_diet_checks WHERE user_id = ? AND scope = ?",
+                    userId.toString(), scope);
+        } catch (Exception ex) {
+            // A cache, like store(): a missing table or a hiccup is a miss, never a 500.
+            log.warn("Diet check cache not read: {}", ex.toString());
+            return null;
+        }
         if (rows.isEmpty() || !prompt.equals(rows.get(0).get("prompt"))) {
             return null;
         }

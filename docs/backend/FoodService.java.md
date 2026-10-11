@@ -27,7 +27,11 @@ GET after a write.
   degrade gracefully rather than 500 — check that before changing the response shape.
 - `FoodPhotoLog` is a lightweight log (not the image itself). Its card is gone; it still feeds the
   photo achievement (`achievements.js`) and a Home insight (`dashboard.js`); the frontend also caches its own copy via `rememberPhotoFood` in app.js.
-- These endpoints are behind `AiRateLimitInterceptor` (per-user limit on AI-backed routes).
+- The AI endpoints are behind `AiRateLimitInterceptor` (per-user limit on AI-backed routes) — **except
+  `POST /entries`**: a plain log must never be blocked by a spent AI budget. There `askAi` swallows
+  `OpenAIClient`'s own 429 and the estimate drops to the table one.
+- `FoodWeek`'s `food_diet_checks` cache is best-effort both ways: a failed read (`storedCheck`, e.g. the
+  table missing) is a miss and a failed write (`store`) is logged; neither 500s the diet check.
 - Entries are per (user, date); `FoodEntry` holds the nutrition columns.
 - **Calories, in order:** the AI (when configured), then `FoodWeek.kcalPer100g` (the keyword
   table's macros as 4/4/9, `estimateSource` "table"), then OpenFoodFacts, then the flat 220/300.

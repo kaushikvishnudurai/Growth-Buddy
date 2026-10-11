@@ -345,6 +345,20 @@ public class MoneyLedger {
         return out;
     }
 
+    /**
+     * The average spend of a day that had any spending in [from, to]; null with
+     * fewer than {@code minDays} such days (too little to call anything usual).
+     */
+    public BigDecimal usualDailySpend(UUID userId, LocalDate from, LocalDate to, int minDays) {
+        return jdbc.query("""
+                SELECT COUNT(*) AS days, AVG(d.total) AS usual FROM (
+                  SELECT SUM(amount) AS total FROM money_transactions
+                  WHERE user_id = ? AND kind = 'expense' AND occurred_on BETWEEN ? AND ?
+                  GROUP BY occurred_on) d
+                """, rs -> rs.next() && rs.getInt("days") >= minDays ? rs.getBigDecimal("usual") : null,
+                userId.toString(), Date.valueOf(from), Date.valueOf(to));
+    }
+
     /** One day's expenses, for the day summary. */
     public List<ObjectNode> expensesOn(UUID userId, LocalDate day) {
         List<ObjectNode> out = new ArrayList<>();
