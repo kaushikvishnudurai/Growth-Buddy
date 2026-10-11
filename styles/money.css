@@ -1749,7 +1749,7 @@
   vertical-align: middle;
   margin-left: 6px;
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: 0.68rem;
   font-weight: 600;
   background: var(--surface-2);

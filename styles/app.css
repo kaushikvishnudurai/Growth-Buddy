@@ -1432,11 +1432,11 @@ body:has(.is-thinking, .gb-thinking)::after {
   min-width: 18px;
   height: 18px;
   padding: 0 5px;
-  border-radius: 9px;
+  border-radius: var(--radius-sm);
   background: var(--brand-fill);
   color: var(--fg-on-brand);
   font-family: var(--font-mono);
-  font-size: 0.65625rem;
+  font-size: var(--text-2xs);
   font-weight: 700;
   display: inline-flex;
   align-items: center;
@@ -1511,7 +1511,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   cursor: pointer;
 }
 .gb-notif-title {
-  font-size: 0.84375rem;
+  font-size: var(--text-sm);
   font-weight: 700;
   color: var(--fg1);
 }
@@ -1522,7 +1522,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 .gb-notif-time {
   margin-top: 4px;
-  font-size: 0.71875rem;
+  font-size: var(--text-xs);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--fg3);
@@ -1660,7 +1660,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 .gb-mentor-empty p {
   color: var(--fg3);
-  font-size: 0.84375rem;
+  font-size: var(--text-sm);
   margin: 0 0 14px;
 }
 .gb-mentor-suggestions {
@@ -1782,10 +1782,10 @@ body:has(.is-thinking, .gb-thinking)::after {
 .gb-msg-crisis {
   align-self: stretch;
   border: 1px solid var(--border-strong);
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
   padding: 12px 14px;
-  font-size: 0.84375rem;
+  font-size: var(--text-sm);
   color: var(--fg2);
   line-height: 1.45;
 }
@@ -1822,7 +1822,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   min-height: 46px;
   max-height: 120px;
   font-family: var(--font-body);
-  font-size: 0.90625rem;
+  font-size: var(--text-sm);
   padding: 10px 12px;
   border: 1.5px solid var(--control-border);
   border-radius: var(--radius-lg);
@@ -2111,7 +2111,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   gap: 4px;
   flex: none;
   white-space: nowrap;
-  font-size: 0.71875rem;
+  font-size: var(--text-xs);
   font-weight: 800;
   padding: 3px 9px;
   border-radius: var(--radius-pill);
@@ -2322,12 +2322,12 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 .gb-range::-webkit-slider-runnable-track {
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-3);
 }
 .gb-range::-moz-range-track {
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-3);
 }
 .gb-range::-webkit-slider-thumb {
@@ -2360,7 +2360,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   position: relative;
   width: 46px;
   height: 26px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: none;
   background: var(--surface-3);
   cursor: pointer;
@@ -2612,7 +2612,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   height: 34px;
   align-items: center;
   justify-content: center;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--surface-3);
 }
 .gb-insight-title {
@@ -2658,7 +2658,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   height: 44px;
   margin: -10px -12px -10px auto;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: none;
   color: var(--fg3);
   cursor: pointer;
@@ -2899,7 +2899,7 @@ button.gb-seat {
   bottom: 100%;
   margin-bottom: 4px;
   font-family: var(--font-mono);
-  font-size: 0.625rem;
+  font-size: var(--text-2xs);
   font-weight: 400;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -3041,7 +3041,7 @@ button.gb-seat:disabled {
   font-size: 0.6875rem;
   font-weight: 700;
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-3);
   color: var(--fg3);
 }
@@ -3246,7 +3246,7 @@ button.gb-seat:disabled {
   min-height: 32px;
   padding: 4px 10px;
   border: 1px solid var(--surface-3);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: transparent;
   color: var(--fg2);
   font-size: 0.8125rem;
@@ -3554,7 +3554,7 @@ button.gb-seat:disabled {
 }
 .gb-chat-bubble {
   padding: 8px 12px;
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   background: var(--surface-3);
   color: var(--fg1);
   font-size: 0.875rem;
@@ -3604,7 +3604,7 @@ button.gb-seat:disabled {
   align-items: center;
   justify-content: center;
   min-width: 86px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 6px 12px;
   font-size: 0.75rem;
   font-weight: 800;
@@ -3725,7 +3725,7 @@ button.gb-seat:disabled {
   background: var(--surface);
   color: var(--fg1);
   font-weight: 700;
-  font-size: 0.84375rem;
+  font-size: var(--text-sm);
   cursor: pointer;
 }
 .gb-mentor-thread-name {
@@ -3919,18 +3919,18 @@ button.gb-seat:disabled {
 }
 .gb-profile-pop-xp-bar {
   height: 5px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--border);
   overflow: hidden;
 }
 .gb-profile-pop-xp-fill {
   height: 100%;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--brand);
   transition: width 0.4s;
 }
 .gb-profile-pop-xp-label {
-  font-size: 0.65625rem;
+  font-size: var(--text-2xs);
   color: var(--fg3);
   margin-top: 4px;
 }
@@ -3950,7 +3950,7 @@ button.gb-seat:disabled {
   cursor: pointer;
   font-family: var(--font-body);
   font-weight: 600;
-  font-size: 0.84375rem;
+  font-size: var(--text-sm);
   color: var(--fg1);
   text-align: left;
 }
@@ -3999,7 +3999,7 @@ button.gb-seat:disabled {
   list-style: none;
   padding: 0;
   margin: 0;
-  font-size: 0.84375rem;
+  font-size: var(--text-sm);
   color: var(--fg2);
 }
 .gb-status-list li {
@@ -4423,14 +4423,14 @@ button.gb-seat:disabled {
 .gb-timeline-dot {
   width: 9px;
   height: 9px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--brand);
   box-shadow: 0 0 0 4px var(--brand-soft);
   flex: none;
 }
 .gb-empty-slim {
   color: var(--fg2);
-  font-size: 0.84375rem;
+  font-size: var(--text-sm);
   line-height: 1.5;
 }
 /* `button.` on purpose: the Summary's shared button reset further down
@@ -4438,7 +4438,7 @@ button.gb-seat:disabled {
    coming later, was stripping this pill to bare body text. */
 button.gb-food-level {
   flex: none;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 5px 10px;
   font-size: 0.75rem;
   font-weight: 800;
@@ -4542,7 +4542,7 @@ button.gb-food-level {
   margin: 0;
   padding-left: 18px;
   color: var(--fg1);
-  font-size: 0.84375rem;
+  font-size: var(--text-sm);
   line-height: 1.6;
 }
 @media (prefers-reduced-motion: reduce) {
@@ -4733,7 +4733,7 @@ button.gb-food-level {
 .gb-katori-in span {
   margin-top: 4px;
   font-family: var(--font-mono);
-  font-size: 0.625rem;
+  font-size: var(--text-2xs);
   letter-spacing: 0.04em;
   color: var(--n-ink);
 }
@@ -4750,7 +4750,7 @@ button.gb-food-level {
   display: flex;
   gap: 2px;
   height: 18px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   overflow: hidden;
 }
 .gb-split-bar > div {
@@ -4788,13 +4788,13 @@ button.gb-food-level {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 4px;
   padding: 4px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--bg);
 }
 .gb-nutrient-tabs button {
   min-height: 44px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: transparent;
   color: var(--fg2);
   font-size: 0.8125rem;
@@ -4856,12 +4856,12 @@ button.gb-food-level {
 }
 .gb-source-track {
   height: 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-3);
 }
 .gb-source-bar {
   height: 100%;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--n, var(--success));
 }
 
@@ -4882,7 +4882,7 @@ button.gb-food-level {
 }
 .gb-tumbler-col small {
   font-family: var(--font-mono);
-  font-size: 0.625rem;
+  font-size: var(--text-2xs);
   color: var(--fg3);
 }
 .gb-tumbler {
@@ -4952,7 +4952,7 @@ button.gb-food-level {
 .gb-split-legend > button,
 .gb-food-week-col {
   background: transparent;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
 }
 .gb-split-legend > button {
   padding: 6px 8px;
@@ -5144,7 +5144,7 @@ button.gb-food-level {
 .gb-water-glass {
   width: 76px;
   height: 126px;
-  border-radius: 24px;
+  border-radius: var(--radius-xl);
   border: 2px solid color-mix(in srgb, var(--sky-500) 55%, white 45%);
   background: color-mix(in srgb, var(--sky-100) 40%, white 60%);
   position: relative;
@@ -5159,7 +5159,7 @@ button.gb-food-level {
   height: 112px;
   transform: translateX(-50%) scaleY(0);
   transform-origin: top;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: linear-gradient(
     180deg,
     rgba(255, 255, 255, 0.92),
@@ -5340,7 +5340,7 @@ button.gb-food-level {
   }
   .gb-msg-bubble {
     max-width: 84%;
-    font-size: 0.90625rem;
+    font-size: var(--text-sm);
   }
 }
 
@@ -5442,7 +5442,7 @@ button.gb-food-level {
   min-width: 24px;
   height: 24px;
   padding: 0 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-2);
   color: var(--fg2);
   font-size: 0.75rem;
@@ -5528,12 +5528,12 @@ button.gb-food-level {
   min-width: 0;
 }
 .gb-goal-status-chip {
-  font-size: 0.625rem;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   padding: 3px 9px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--success-soft);
   color: var(--success-soft-fg);
   flex: 0 0 auto;
@@ -5728,7 +5728,7 @@ button.gb-food-level {
 .gb-btn.gb-cal-today {
   width: auto;
   padding: 9px 16px;
-  font-size: 0.84375rem;
+  font-size: var(--text-sm);
 }
 
 /* Month grid card */
@@ -5765,7 +5765,7 @@ button.gb-food-level {
   justify-content: center;
   font-family: var(--font-body);
   font-weight: 700;
-  font-size: 0.90625rem;
+  font-size: var(--text-sm);
   color: var(--fg1);
   transition:
     background var(--dur-fast),
@@ -5959,7 +5959,7 @@ button.gb-food-level {
 }
 .gb-wins-sub {
   color: var(--fg3);
-  font-size: 0.71875rem;
+  font-size: var(--text-xs);
 }
 .gb-wins-empty {
   padding: 16px;
@@ -6105,7 +6105,7 @@ button.gb-food-level {
 }
 .gb-rem-empty p {
   margin: 0;
-  font-size: 0.84375rem;
+  font-size: var(--text-sm);
   color: var(--fg2);
 }
 .gb-rem-row {
@@ -6127,7 +6127,7 @@ button.gb-food-level {
 }
 .gb-rem-text {
   font-weight: 700;
-  font-size: 0.90625rem;
+  font-size: var(--text-sm);
   color: var(--fg1);
   line-height: 1.35;
   white-space: normal;
@@ -6151,7 +6151,7 @@ button.gb-food-level {
 .gb-tag-pill {
   display: inline-flex;
   align-items: center;
-  font-size: 0.71875rem;
+  font-size: var(--text-xs);
   font-weight: 800;
   letter-spacing: 0.02em;
   padding: 3px 9px;
@@ -7024,7 +7024,7 @@ button.gb-food-level {
   color: var(--fg2);
   background: transparent;
   border: none;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   padding: 9px 6px;
   cursor: pointer;
   transition:
@@ -7313,7 +7313,7 @@ button.gb-food-level {
 }
 .gb-modal-body::-webkit-scrollbar-thumb {
   background: var(--border-strong);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 .gb-modal-title {
   font-family: var(--font-display);
@@ -8180,7 +8180,7 @@ button.gb-food-level {
 .gb-toast-icon {
   width: 22px;
   height: 22px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -8308,15 +8308,15 @@ button.gb-food-level {
   }
 
   .gb-day-row-title {
-    font-size: 0.84375rem;
+    font-size: var(--text-sm);
   }
 
   .gb-day-row-sub {
-    font-size: 0.71875rem;
+    font-size: var(--text-xs);
   }
 
   .gb-day-pill {
-    font-size: 0.65625rem;
+    font-size: var(--text-2xs);
     padding: 2px 8px;
   }
 
@@ -8360,7 +8360,7 @@ button.gb-food-level {
 }
 .gb-placeholder p {
   margin: 0;
-  font-size: 0.90625rem;
+  font-size: var(--text-sm);
   color: var(--fg2);
   line-height: 1.55;
   max-width: 28ch;
@@ -8714,7 +8714,7 @@ button.gb-food-level {
     padding: 18px;
   }
   .gb-cal-day {
-    font-size: 0.96875rem;
+    font-size: var(--text-body);
   }
 
   /* Placeholder (non-home tabs) fills & centers the whole canvas. */
@@ -8842,14 +8842,14 @@ button.gb-food-level {
 }
 .gb-goal-progress-track {
   height: 8px;
-  border-radius: 99px;
+  border-radius: var(--radius-pill);
   background: var(--surface-2);
   overflow: hidden;
   margin-bottom: 8px;
 }
 .gb-goal-progress-fill {
   height: 100%;
-  border-radius: 99px;
+  border-radius: var(--radius-pill);
   background: var(--brand);
   transition: width 0.4s ease;
 }
@@ -8875,7 +8875,7 @@ button.gb-food-level {
   color: var(--leaf-700);
   background: var(--leaf-50);
   padding: 2px 8px;
-  border-radius: 99px;
+  border-radius: var(--radius-pill);
 }
 .gb-goal-progress-actions {
   display: flex;
@@ -9061,7 +9061,7 @@ button.gb-food-level {
 /* ---- Small phones (≤380px): tighten card/block padding further ---- */
 @media (max-width: 380px) {
   .gb-card {
-    border-radius: 14px;
+    border-radius: var(--radius-lg);
   }
   .gb-modal {
     padding: 14px;
@@ -9098,7 +9098,7 @@ button.gb-food-level {
   position: relative;
   width: 44px;
   height: 26px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--border);
   border: none;
   cursor: pointer;
@@ -9146,7 +9146,7 @@ button.gb-food-level {
 .gb-wa-badge {
   color: var(--gb-wa-green-fg);
   background: var(--gb-wa-green-soft);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 0 6px;
   font-size: 0.6875rem;
   font-weight: 600;
@@ -9222,7 +9222,7 @@ button.gb-food-level {
   font-size: 0.6875rem;
   font-weight: 700;
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 
 /* Settings section nav — segmented slider (thumb glides under active section) */
@@ -9239,7 +9239,7 @@ button.gb-food-level {
   top: 4px;
   bottom: 4px;
   left: 4px;
-  border-radius: 9px;
+  border-radius: var(--radius-sm);
   background: var(--brand-fill);
   box-shadow: var(--shadow-xs);
   transition:
@@ -9261,7 +9261,7 @@ button.gb-food-level {
   color: var(--fg2);
   background: none;
   border: none;
-  border-radius: 9px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   white-space: nowrap;
   transition: color var(--dur-fast);
@@ -9362,7 +9362,7 @@ select.gb-input {
   font-size: 0.8125rem;
   font-weight: 600;
   padding: 6px 12px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   width: fit-content;
 }
 
@@ -9398,7 +9398,7 @@ select.gb-input {
   font-size: 0.8125rem;
   font-weight: 600;
   padding: 6px 12px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -9408,9 +9408,9 @@ select.gb-input {
 .gb-wa-verified-label {
   background: var(--gb-wa-green);
   color: var(--fg-on-brand);
-  font-size: 0.625rem;
+  font-size: var(--text-2xs);
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   margin-left: 4px;
   flex-shrink: 0;
 }
@@ -9563,7 +9563,7 @@ select.gb-input {
   align-items: center;
   gap: 7px;
   font-weight: 800;
-  font-size: 0.96875rem;
+  font-size: var(--text-body);
   color: var(--fg1);
 }
 .gb-family-card-rel {
@@ -9618,7 +9618,7 @@ select.gb-input {
   color: var(--fg1);
 }
 .gb-family-panel-sub {
-  font-size: 0.84375rem;
+  font-size: var(--text-sm);
   color: var(--fg3);
   margin: 0 2px 16px;
 }
@@ -9645,7 +9645,7 @@ select.gb-input {
   min-width: 0;
 }
 .gb-family-empty-note {
-  font-size: 0.84375rem;
+  font-size: var(--text-sm);
   color: var(--fg3);
   padding: 6px 2px;
 }
@@ -9656,7 +9656,7 @@ select.gb-input {
   gap: 10px;
   margin: 12px 0;
   padding: 10px 14px;
-  font-size: 0.84375rem;
+  font-size: var(--text-sm);
 }
 .gb-family-section-error > span {
   flex: 1;
@@ -10112,7 +10112,7 @@ select.gb-input {
   background: var(--surface-2);
   color: var(--fg2);
   font-weight: 700;
-  font-size: 0.84375rem;
+  font-size: var(--text-sm);
   padding: 9px 14px;
   border-radius: var(--radius-pill);
   transition:
@@ -10175,7 +10175,7 @@ select.gb-input {
 .gb-family-weekday-meal {
   display: flex;
   gap: 8px;
-  font-size: 0.84375rem;
+  font-size: var(--text-sm);
   color: var(--fg2);
   padding: 3px 0;
 }
@@ -10718,7 +10718,7 @@ select.gb-input {
   gap: 5px;
   margin-top: 6px;
   padding: 3px 9px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--brand-soft);
   color: var(--brand-soft-fg);
   font-size: var(--text-xs);
@@ -10733,7 +10733,7 @@ select.gb-input {
   align-items: center;
   gap: 3px;
   padding: 1px 7px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--brand-soft);
   color: var(--brand-soft-fg);
   font-weight: 700;
@@ -10742,7 +10742,7 @@ select.gb-input {
 .gb-freeze-alert {
   margin: 2px 16px 10px;
   padding: 10px 12px;
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   background: var(--warning-soft);
   border: 1px solid var(--warning);
   display: flex;
@@ -10834,7 +10834,7 @@ select.gb-input {
 .gb-range-toggle {
   display: inline-flex;
   background: var(--surface-2);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 3px;
   gap: 2px;
 }
@@ -10845,7 +10845,7 @@ select.gb-input {
   font-size: var(--text-xs);
   font-weight: 700;
   padding: 6px 12px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   cursor: pointer;
   transition:
     background 0.15s ease,
@@ -11171,13 +11171,13 @@ select.gb-input {
 }
 .gb-ach-summary-bar {
   height: 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-2);
   overflow: hidden;
 }
 .gb-ach-summary-fill {
   height: 100%;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--brand);
   transition: width 0.4s ease;
 }
@@ -11209,7 +11209,7 @@ select.gb-input {
   align-items: center;
   gap: 12px;
   padding: 12px 14px;
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
   border: 1px solid var(--border);
 }
@@ -11258,7 +11258,7 @@ select.gb-input {
   justify-content: center;
   width: 24px;
   height: 24px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--leaf-600);
   color: var(--fg-on-brand);
   flex: none;
@@ -11270,13 +11270,13 @@ select.gb-input {
 }
 .gb-ach-progress-bar {
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-2);
   overflow: hidden;
 }
 .gb-ach-progress-fill {
   height: 100%;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--brand);
 }
 .gb-ach-progress-label {
@@ -11320,14 +11320,14 @@ select.gb-input {
 }
 .gb-goal-ms-track {
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-2);
   overflow: hidden;
   margin-bottom: 10px;
 }
 .gb-goal-ms-fill {
   height: 100%;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--brand);
   transition: width 0.3s ease;
 }
@@ -12155,7 +12155,7 @@ textarea:focus-visible,
 }
 .gb-note-card-time {
   margin-top: 8px;
-  font-size: 0.71875rem;
+  font-size: var(--text-xs);
   font-weight: 600;
   color: var(--fg3);
 }
@@ -12919,7 +12919,7 @@ h2[tabindex='-1']:focus {
 .gb-pixels-day,
 .gb-pixels-month {
   font-family: var(--font-mono);
-  font-size: 0.625rem;
+  font-size: var(--text-2xs);
   font-weight: 400;
   line-height: 1;
   color: var(--fg3);
@@ -13076,7 +13076,7 @@ h2[tabindex='-1']:focus {
   top: 76px;
   width: 96px;
   height: 46px;
-  border-radius: 24px;
+  border-radius: var(--radius-xl);
   background:
     linear-gradient(var(--leaf-500), var(--leaf-500)) 26px 26px / 44px 6px no-repeat,
     linear-gradient(var(--coral-500), var(--coral-500)) 18px 12px / 60px 6px no-repeat,
@@ -13720,7 +13720,7 @@ button.gb-sound-name:focus-visible {
 }
 .gb-remset-text {
   font-weight: 700;
-  font-size: 0.90625rem;
+  font-size: var(--text-sm);
   color: var(--fg1);
   overflow-wrap: anywhere;
 }
@@ -14515,7 +14515,7 @@ button.gb-tone-chip:focus-visible {
   gap: 8px;
 }
 .gb-rule-word {
-  font-size: 0.84375rem;
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--fg2);
 }
