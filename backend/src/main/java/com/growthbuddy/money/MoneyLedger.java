@@ -411,6 +411,42 @@ public class MoneyLedger {
             jdbc.update("DELETE FROM money_transactions WHERE user_id = ? AND id IN ("
                     + placeholders(chunk.size()) + ")", prepend(userId.toString(), chunk));
         }
+        if (!deletes.isEmpty()) {
+            List<Object[]> stones = new ArrayList<>();
+            for (String id : deletes) {
+                stones.add(new Object[] {userId.toString(), id, now});
+            }
+            jdbc.batchUpdate("""
+                    INSERT INTO money_tx_tombstones (user_id, id, deleted_at) VALUES (?, ?, ?)
+                    ON DUPLICATE KEY UPDATE deleted_at = VALUES(deleted_at)
+                    """, stones);
+            jdbc.update("DELETE FROM money_tx_tombstones WHERE user_id = ? AND deleted_at < ?", userId.toString(),
+                    Timestamp.from(now.toInstant().minus(java.time.Duration.ofDays(TOMBSTONE_DAYS))));
+        }
+    }
+
+    /** How long a deleted id is remembered; the client's document tombstones keep 120 days too. */
+    static final int TOMBSTONE_DAYS = 120;
+
+    /**
+     * Ids rebuilt from the document on every save (a loan's moves, a bill's
+     * payment, a recurring rule's month) are re-created on purpose after a delete
+     * (settle, undo, settle again; mark a bill paid again), and the document's own
+     * merge already resolves a stale copy of their parent. Only ids the user's
+     * entries were minted with are checked against the tombstones.
+     */
+    static boolean derivedId(String id) {
+        return id.startsWith("loan-") || id.startsWith("sub-") || id.startsWith("rec-");
+    }
+
+    /** Which of {@code ids} were deleted in the last {@link #TOMBSTONE_DAYS} days (OFF-5). */
+    public Set<String> deletedIds(UUID userId, Collection<String> ids) {
+        Set<String> out = new HashSet<>();
+        for (List<String> chunk : chunks(new ArrayList<>(ids))) {
+            out.addAll(jdbc.queryForList("SELECT id FROM money_tx_tombstones WHERE user_id = ? AND id IN ("
+                    + placeholders(chunk.size()) + ")", String.class, prepend(userId.toString(), chunk)));
+        }
+        return out;
     }
 
     /** Old document entries moved in once: an id already in the table is left alone. */

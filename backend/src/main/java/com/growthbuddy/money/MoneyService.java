@@ -376,6 +376,9 @@ public class MoneyService {
      * seen, edited or deleted until its day came. Recurring rules post only on or
      * before today, so they never meet this. The water endpoint's clock slack lets a
      * device a few minutes into tomorrow still log "today".
+     *
+     * <p>Each refusal is {@code {id, reason}}; one for an id deleted in the last
+     * 120 days also carries {@code code: "deleted"} (OFF-5).
      */
     public ObjectNode applyLedger(UUID userId, JsonNode body) {
         if (body.path("upserts").size() + body.path("deletes").size() > 2000) {
@@ -387,7 +390,20 @@ public class MoneyService {
         LocalDate latest = body.path("upserts").isEmpty() ? null
                 : java.time.ZonedDateTime.now(clock.withZone(ledger.zoneOf(userId)))
                         .plus(com.growthbuddy.water.WaterService.FUTURE_SLACK).toLocalDate();
+        // OFF-5: an edit from a tab or phone that never saw the delete. Refused by id
+        // with a code, so the client can say why and drop its copy.
+        List<String> ids = new java.util.ArrayList<>();
+        body.path("upserts").forEach(u -> {
+            String id = u.path("id").asText("");
+            if (!id.isEmpty() && !MoneyLedger.derivedId(id)) ids.add(id);
+        });
+        Set<String> gone = ids.isEmpty() ? Set.of() : ledger.deletedIds(userId, ids);
         for (JsonNode u : body.path("upserts")) {
+            if (gone.contains(u.path("id").asText(""))) {
+                rejected.addObject().put("id", u.path("id").asText()).put("code", "deleted")
+                        .put("reason", "This entry was deleted on another device.");
+                continue;
+            }
             try {
                 MoneyLedger.Row row = ledger.toRow(u.path("kind").asText(), withoutKind(u));
                 // Not in toRow: a legacy document migrating through it must not lose a big expense.

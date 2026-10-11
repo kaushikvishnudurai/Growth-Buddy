@@ -37,7 +37,16 @@ class MoneyApplyLedgerTest {
         java.time.ZoneId zoneOf(UUID userId) {
             return ZONE;
         }
+
+        @Override
+        public java.util.Set<String> deletedIds(UUID userId, Collection<String> ids) {
+            asked.addAll(ids);
+            return new java.util.HashSet<>(ids.stream().filter(DELETED::contains).toList());
+        }
     };
+
+    private static final java.util.Set<String> DELETED = java.util.Set.of("e1", "loan-7-s");
+    private final List<String> asked = new ArrayList<>();
 
     private static final java.time.ZoneId ZONE = java.time.ZoneId.of("Asia/Kolkata");
 
@@ -83,5 +92,22 @@ class MoneyApplyLedgerTest {
         assertThat(out.get("rejected")).extracting(r -> r.path("id").asText())
                 .containsExactly("concert", "pay", "mv");
         assertThat(out.get("rejected").get(0).path("reason").asText()).isEqualTo("Pick a day up to today.");
+    }
+
+    /** OFF-5: a stale tab's edit of an expense deleted elsewhere is refused, not re-inserted. */
+    @Test
+    void anEditOfADeletedEntryIsRefusedWithACode() throws Exception {
+        var body = json.readTree("""
+                {"upserts":[
+                  {"kind":"expense","id":"e1","amount":99,"date":"2026-09-30"},
+                  {"kind":"expense","id":"e2","amount":10,"date":"2026-09-30"},
+                  {"kind":"transfer","id":"loan-7-s","amount":50,"to":"a","date":"2026-09-30"}]}""");
+        ObjectNode out = service.applyLedger(UUID.randomUUID(), body);
+
+        assertThat(saved).extracting(MoneyLedger.Row::id).containsExactly("e2", "loan-7-s");
+        assertThat(out.get("rejected")).hasSize(1);
+        assertThat(out.get("rejected").get(0).path("id").asText()).isEqualTo("e1");
+        assertThat(out.get("rejected").get(0).path("code").asText()).isEqualTo("deleted");
+        assertThat(asked).as("ids rebuilt from the document are re-created on purpose").doesNotContain("loan-7-s");
     }
 }
