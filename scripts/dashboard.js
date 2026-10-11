@@ -30,6 +30,8 @@ import {
   habitDue,
   topStreaks,
   homeGoals,
+  taskWhen,
+  localDayKey,
 } from './home-order.js';
 import { suggestReminderTime } from './habit-stats.js';
 import { waterFish, bubbleRise } from './water-fish.js';
@@ -240,8 +242,16 @@ function ScoreCard({ score, tasks: allTasks, habits }) {
     children: [ringNumber, ringLabel],
   });
 
+  // At 0% beside a live streak, "Let's get started" read as if nothing had ever happened.
+  const run = best.days ? best.days + '-day' : best.weeks ? best.weeks + '-week' : '';
   const heading =
-    score >= 70 ? "You're on track 🔥" : score > 0 ? 'Keep it going' : 'Let’s get started';
+    score >= 70
+      ? "You're on track 🔥"
+      : score > 0
+        ? 'Keep it going'
+        : run
+          ? 'Keep your ' + run + ' run going'
+          : 'Let’s get started';
 
   // Days and weeks are different units, so each gets its own pill; one max
   // over both called a 6-week streak "6-day".
@@ -284,6 +294,9 @@ function ScoreCard({ score, tasks: allTasks, habits }) {
 
 function TaskRow(task, toggleTask, onEdit, onPause, onFocus) {
   const p = PRIORITY[task.priority] || PRIORITY.Low;
+  const when = task.done
+    ? null
+    : taskWhen(task.dueAt, new Date(), sharedFormatTime, (d) => fmtDate(d, 'dayMonth'));
   return h(
     'div',
     {
@@ -300,14 +313,18 @@ function TaskRow(task, toggleTask, onEdit, onPause, onFocus) {
       h(
         'div',
         { class: 'sub' },
-        // task.time is already formatted ("Overdue · 1 Jan · 10:00") by
-        // mapTask; formatTime() could not parse it and blanked every row.
+        // An open task's due line is relative (taskWhen: "2 days overdue",
+        // "Tomorrow 10:00"); a done one keeps mapTask's text. The span is
+        // nowrap so the date-time never breaks mid-value; the pill wraps instead.
         task.paused
           ? 'Paused'
           : h(
               'span',
-              task.overdue ? { style: { color: 'var(--coral-700)', fontWeight: 600 } } : null,
-              task.time
+              {
+                class: 'gb-task-when',
+                style: task.overdue ? { color: 'var(--coral-700)', fontWeight: 600 } : null,
+              },
+              when ? when + (/ · done \d+×$/.exec(task.time) || [''])[0] : task.time
             ),
         Pill({
           label: task.priority,
@@ -487,12 +504,15 @@ function TodayPlanCard({ water, wellness, onPlanToday, skip }) {
   //     opposite polarity, one card apart.
   //   - It doesn't congratulate. "Sleep logged" sat directly above a card
   //     showing "7.5h · Good", so the chip said less than the thing beneath it.
-  //   - It doesn't repeat the one-thing card (`skip` is its kind): that card asks it already.
+  //   - It doesn't repeat what another card asks (`skip`, a list of kinds): the
+  //     one-thing card's kind, sleep + mood when the Sleep & mood card is on
+  //     Home, mood while the Getting started checklist still lists it.
   // Finish everything and the row empties out, which is the point.
   const chips = [];
-  if (water && waterPct < 100 && skip !== 'water') chips.push({ label: waterPct + '% water' });
-  if (!sleep && skip !== 'sleep') chips.push({ label: 'Sleep not logged' });
-  if (!mood && skip !== 'mood') chips.push({ label: 'Mood not logged' });
+  const skipped = (k) => (skip || []).includes(k);
+  if (water && waterPct < 100 && !skipped('water')) chips.push({ label: waterPct + '% water' });
+  if (!sleep && !skipped('sleep')) chips.push({ label: 'Sleep not logged' });
+  if (!mood && !skipped('mood')) chips.push({ label: 'Mood not logged' });
   return Card({
     className: 'gb-coach-card',
     children: [
@@ -528,7 +548,7 @@ function TodayPlanCard({ water, wellness, onPlanToday, skip }) {
 /* The one thing today (one-thing.js picks it): pinned above the layout, not a
    widget, so saved layouts never see it. One button, the existing handler; the
    render after it succeeds picks the next thing, or drops the card. */
-function oneThingFor({ tasks, habits, water, wellness, money, phoneNight, features, toggleTask, toggleHabit, onOpenMoney, onConfirmSleep, onQuickAddWater, onAddMood }) {
+function oneThingFor({ tasks, habits, water, wellness, money, phoneNight, waterUsualHours, features, toggleTask, toggleHabit, onOpenMoney, onConfirmSleep, onQuickAddWater, onAddMood }) {
   const act = {
     streak: toggleHabit,
     overdue: toggleTask,
@@ -537,7 +557,7 @@ function oneThingFor({ tasks, habits, water, wellness, money, phoneNight, featur
     water: onQuickAddWater,
     mood: onAddMood && (() => onAddMood()),
   };
-  const one = pickOneThing({ tasks, habits, water, wellness, money, phoneNight, features, can: (k) => !!act[k] });
+  const one = pickOneThing({ tasks, habits, water, wellness, money, phoneNight, waterUsualHours, features, can: (k) => !!act[k] });
   return one && { ...one, run: () => act[one.kind](one.arg) };
 }
 
@@ -571,12 +591,8 @@ function OneThingCard(one) {
    the usual night, or the last logged one (sleepToConfirm, nudges.js), and the
    mood scale itself. Each row goes the moment its entry exists; Edit is the full
    sleep dialog for a night that wasn't the guessed one. */
-function WellnessQuick({ wellness, sleep, mood, phoneNight, onConfirmSleep, onQuickMood, onAddSleep }) {
+function WellnessQuick({ usual, askMood, onConfirmSleep, onQuickMood, onAddSleep }) {
   const rows = [];
-  const usual =
-    !sleep && onConfirmSleep
-      ? sleepToConfirm(wellness && wellness.sleepByDate, todayKey(), new Date(), phoneNight)
-      : null;
   if (usual) {
     rows.push(
       h(
@@ -602,7 +618,7 @@ function WellnessQuick({ wellness, sleep, mood, phoneNight, onConfirmSleep, onQu
       )
     );
   }
-  if (!mood && onQuickMood) {
+  if (askMood) {
     rows.push(
       h(
         'div',
@@ -631,53 +647,74 @@ function WellnessQuick({ wellness, sleep, mood, phoneNight, onConfirmSleep, onQu
   return rows.length ? h('div', { class: 'gb-wellness-quick' }, rows) : null;
 }
 
-function WellnessCard({ wellness, phoneNight, onAddSleep, onAddMood, onConfirmSleep, onQuickMood }) {
+const sentence = (s) => (s ? String(s).charAt(0).toUpperCase() + String(s).slice(1) : '');
+
+/* One ask per thing: a tile still waiting for its entry is hidden while the
+   check-in row above it (or the one-thing card, `asked`) is asking the same
+   thing; a logged tile shows its value. */
+function WellnessCard({ wellness, phoneNight, onAddSleep, onAddMood, onConfirmSleep, onQuickMood, asked }) {
   const key = todayKey();
   const sleep = wellness && wellness.sleepByDate ? wellness.sleepByDate[key] : null;
   const mood = wellness && wellness.moodByDate ? wellness.moodByDate[key] : null;
   const hours = sleepHours(sleep);
+  const usual =
+    !sleep && onConfirmSleep
+      ? sleepToConfirm(wellness && wellness.sleepByDate, todayKey(), new Date(), phoneNight)
+      : null;
+  const askMood = !mood && !!onQuickMood;
+  const showSleep = !!sleep || !(usual || asked === 'sleep');
+  const showMood = !!mood || !(askMood || asked === 'mood');
+  const quick = WellnessQuick({ usual, askMood, onConfirmSleep, onQuickMood, onAddSleep });
+  const tiles = [
+    showSleep &&
+      h(
+        'button',
+        { type: 'button', class: 'gb-wellness-tile', onclick: onAddSleep },
+        h('span', { class: 'gb-wellness-icon' }, Icon('moon', { size: 18, sw: 2.4 })),
+        h('span', { class: 'gb-wellness-label' }, 'Sleep'),
+        h('strong', null, hours == null ? 'Log' : hours + 'h'),
+        h('small', null, sleep ? sentence(sleep.quality) : 'Hours slept')
+      ),
+    showMood &&
+      h(
+        'button',
+        { type: 'button', class: 'gb-wellness-tile', onclick: onAddMood },
+        h('span', { class: 'gb-wellness-icon' }, Icon('smile-plus', { size: 18, sw: 2.4 })),
+        h('span', { class: 'gb-wellness-label' }, 'Mood'),
+        h('strong', null, mood ? mood.mood : 'Log'),
+        // No energy picked, no energy line (a bare mood read "Medium Energy").
+        mood ? (mood.energy ? h('small', null, sentence(mood.energy) + ' energy') : null) : h('small', null, 'How you feel')
+      ),
+  ].filter(Boolean);
+  if (!quick && !tiles.length) return null;
   return Card({
     className: 'gb-wellness-card',
-    children: [
-      WellnessQuick({ wellness, sleep, mood, phoneNight, onConfirmSleep, onQuickMood, onAddSleep }),
-      h(
-        'div',
-        { class: 'gb-wellness-grid' },
-        h(
-          'button',
-          { type: 'button', class: 'gb-wellness-tile', onclick: onAddSleep },
-          h('span', { class: 'gb-wellness-icon' }, Icon('moon', { size: 18, sw: 2.4 })),
-          h('span', { class: 'gb-wellness-label' }, 'Sleep'),
-          h('strong', null, hours == null ? 'Log' : hours + 'h'),
-          h('small', null, sleep ? sleep.quality : 'hours slept')
-        ),
-        h(
-          'button',
-          { type: 'button', class: 'gb-wellness-tile', onclick: onAddMood },
-          h('span', { class: 'gb-wellness-icon' }, Icon('smile-plus', { size: 18, sw: 2.4 })),
-          h('span', { class: 'gb-wellness-label' }, 'Mood'),
-          h('strong', null, mood ? mood.mood : 'Log'),
-          h('small', null, mood ? mood.energy + ' energy' : 'how you feel')
-        )
-      ),
-    ],
+    children: [quick, tiles.length ? h('div', { class: 'gb-wellness-grid' }, tiles) : null],
   });
 }
 
 function WeeklyReflectionCard({ tasks, habits, food, goals, wellness }) {
-  const doneTasks = (tasks || []).filter((t) => t.done).length;
-  const doneHabits = (habits || []).filter((habit) => habit.doneToday).length;
+  // The last 7 days, today included: a weekly card counts the week.
+  const weekAgo = new Date();
+  weekAgo.setDate(weekAgo.getDate() - 6);
+  weekAgo.setHours(0, 0, 0, 0);
+  const fromKey = localDayKey(weekAgo);
+  const inWeek = (key) => !!key && String(key).slice(0, 10) >= fromKey;
+  const doneTasks = (tasks || []).filter(
+    (t) => t.done && t.doneAt && new Date(t.doneAt).getTime() >= weekAgo.getTime()
+  ).length;
+  const checkIns = (habits || []).reduce((sum, habit) => sum + (Number(habit.doneThisWeek) || 0), 0);
   const actionCount = allGoals(goals).reduce((sum, goal) => sum + (goal.actionCount || 0), 0);
-  const sleepDays = Object.keys((wellness && wellness.sleepByDate) || {}).length;
-  const moodDays = Object.keys((wellness && wellness.moodByDate) || {}).length;
+  const sleepDays = Object.keys((wellness && wellness.sleepByDate) || {}).filter(inWeek).length;
+  const moodDays = Object.keys((wellness && wellness.moodByDate) || {}).filter(inWeek).length;
   const kcal = Math.max(0, (food && food.totalCalories) || 0);
   const lines = [
-    plural(doneTasks, 'task') + ' completed',
-    plural(doneHabits, 'habit') + ' done today',
+    plural(doneTasks, 'task') + ' completed this week',
+    plural(checkIns, 'habit check-in') + ' this week',
     plural(actionCount, 'goal action') + ' logged',
     plural(sleepDays, 'sleep log') + ' and ' + plural(moodDays, 'mood log'),
-    kcal ? kcal + ' kcal logged today' : 'food log ready when needed',
-  ];
+    kcal ? kcal + ' kcal logged today' : null,
+  ].filter(Boolean);
   return Card({
     className: 'gb-reflect-card',
     children: [
@@ -884,6 +921,8 @@ function GoalTimelineCard({ goals }) {
   });
 }
 
+let pouredMl = null; // the total the last pour animated to (WaterCard)
+
 function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, weightKg }) {
   const goalMl = Math.max(1, (water && water.goalMl) || 2000);
   const consumedMl = Math.max(0, (water && water.consumedMl) || 0);
@@ -932,13 +971,39 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
         '--fish-delay': f.delay + 's',
         '--fish-duration': f.duration + 's',
         '--fish-hue': f.hue,
+        '--fish-face': f.face,
       },
     })
   );
 
   const lastThree = entries.slice(-3).reverse();
-  const latestAt = entries.length ? entries[entries.length - 1].loggedAt : null;
-  const isPouring = !!latestAt && Date.now() - new Date(latestAt).getTime() < 2400;
+  const latest = entries.length ? entries[entries.length - 1] : null;
+  const latestAt = latest ? latest.loggedAt : null;
+  // Once per new total: the server's answer re-renders the card inside the
+  // window too, and replayed the pour (and the rise) a second time.
+  const isPouring =
+    !!latestAt && Date.now() - new Date(latestAt).getTime() < 2400 && consumedMl !== pouredMl;
+  if (isPouring) pouredMl = consumedMl;
+  // The card is rebuilt on every add, so a fill drawn at the new level never
+  // transitions: draw it at the level before this pour and move it once the
+  // stream has reached the water.
+  const fromPct = isPouring
+    ? Math.max(
+        0,
+        Math.min(
+          100,
+          Math.round(
+            ((consumedMl - (latest.effectiveMl ?? effectiveMl(latest.amountMl, latest.drinkType))) /
+              goalMl) *
+              100
+          )
+        )
+      )
+    : pct;
+  const levelStyle = (p) => ({
+    transform: 'translateY(' + (100 - p) + '%)',
+    '--water-empty': 100 - p + '%',
+  });
 
   function timeLabel(iso) {
     if (!iso) return 'Now';
@@ -1143,6 +1208,33 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
     });
   }
 
+  // Full height, slid down by what's missing: a transform runs on the
+  // compositor where an animated height re-laid the card every frame, and
+  // unlike scaleY it doesn't squash the bubbles and wave inside.
+  const fill = h(
+    'div',
+    {
+      class: 'gb-water-fill' + (pct === 0 ? ' is-empty' : ''),
+      style: { ...levelStyle(fromPct), '--bubble-rise': bubbleRise(pct) + 'px' },
+    },
+    bubbleRise(pct)
+      ? [
+          h('span', { class: 'gb-water-bubble b1' }),
+          h('span', { class: 'gb-water-bubble b2' }),
+          h('span', { class: 'gb-water-bubble b3' }),
+        ]
+      : null,
+    fishNodes
+  );
+  // The stream reaches the water first (gb-water-pour), then the level rises.
+  if (fromPct !== pct) {
+    setTimeout(() => {
+      const to = levelStyle(pct);
+      fill.style.transform = to.transform;
+      fill.style.setProperty('--water-empty', to['--water-empty']);
+    }, 180);
+  }
+
   return Card({
     className: 'gb-water-card' + (pct >= 100 ? ' is-goal' : ''),
     children: [
@@ -1166,37 +1258,21 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
           'div',
           { class: 'gb-water-glass' },
           h('div', { class: 'gb-water-pour' + (isPouring ? ' is-active' : '') }),
-          h(
-            'div',
-            // Full height, slid down by what's missing: a transform runs on the
-            // compositor where an animated height re-laid the card every frame,
-            // and unlike scaleY it doesn't squash the bubbles and wave inside.
-            {
-              class: 'gb-water-fill',
-              style: {
-                transform: 'translateY(' + (100 - pct) + '%)',
-                '--water-empty': 100 - pct + '%',
-                '--bubble-rise': bubbleRise(pct) + 'px',
-              },
-            },
-            bubbleRise(pct)
-              ? [
-                  h('span', { class: 'gb-water-bubble b1' }),
-                  h('span', { class: 'gb-water-bubble b2' }),
-                  h('span', { class: 'gb-water-bubble b3' }),
-                ]
-              : null,
-            fishNodes
-          )
+          fill
         ),
         h(
           'div',
           { class: 'gb-water-stats' },
-          h('div', { class: 'gb-water-big' }, remainingMl + ' ml'),
+          // Past the goal it counts up: "0 ml / goal reached" hid the extra 500.
+          h(
+            'div',
+            { class: 'gb-water-big' },
+            remainingMl > 0 || consumedMl === goalMl ? remainingMl + ' ml' : '+' + (consumedMl - goalMl) + ' ml'
+          ),
           h(
             'div',
             { class: 'gb-water-sub' },
-            remainingMl > 0 ? 'to hit your goal' : 'goal reached, amazing'
+            remainingMl > 0 ? 'to hit your goal' : consumedMl > goalMl ? 'over goal' : 'goal reached, amazing'
           ),
           h('p', { class: 'gb-water-quote' }, '"' + quote + '"')
         )
@@ -1315,6 +1391,10 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
    one only once it has begun (a snack, any time). */
 const SLOT_STARTS = { breakfast: 4, lunch: 11, dinner: 18, snack: 0 };
 
+/* "2 pieces" for a food logged by the piece, else "120 g". */
+const foodAmount = (item) =>
+  item.pieces ? plural(item.pieces, 'piece') : item.quantityGrams + ' g';
+
 function FoodCard({ food, onAddFood, onDeleteFood, onEditFood, onCopySlot, copyableSlots }) {
   const total = Math.max(0, (food && food.totalCalories) || 0);
   const entries = (food && food.entries) || [];
@@ -1339,7 +1419,7 @@ function FoodCard({ food, onAddFood, onDeleteFood, onEditFood, onCopySlot, copya
               'aria-label': 'Edit ' + item.foodName,
             }
           : { style: { flex: 1 } },
-        h('span', null, item.foodName + ' (' + item.quantityGrams + 'g)'),
+        h('span', null, item.foodName + ' (' + foodAmount(item) + ')'),
         h('span', { style: { marginLeft: '8px' } }, item.kcalEstimated + ' kcal')
       ),
       h(
@@ -1455,7 +1535,7 @@ const NUTRIENTS = [
   { key: 'protein', label: 'Protein' },
   { key: 'carbs', label: 'Carbs' },
   { key: 'fat', label: 'Fat' },
-  { key: 'fiber', label: 'Fiber' },
+  { key: 'fiber', label: 'Fibre' },
 ];
 // Protein and fiber can't really be too high here; carbs and fat can.
 const isGood = (key, v) =>
@@ -1679,10 +1759,12 @@ function NutrientPanel(week, n, onPickDay) {
               ". Buddy's read on this day",
             onclick: () => onPickDay && onPickDay(d.date),
           },
-          h('span', { class: 'gb-food-week-val', 'aria-hidden': 'true' }, d.count ? d[key] : ''),
+          // The value rides the top of its own bar; pinned to the column top it
+          // floated ~170px over a short one.
           h(
             'div',
             { class: 'gb-food-week-track', 'aria-hidden': 'true' },
+            d.count ? h('span', { class: 'gb-food-week-val' }, String(d[key])) : null,
             h('div', {
               class: 'gb-food-week-bar',
               style: { height: d.count ? Math.max(4, (d[key] / top) * 100) + '%' : '0' },
@@ -1863,7 +1945,7 @@ function DietCheckCard({ check, canCheck, onCheck, week, water, onOpenDay }) {
   if (st.loading) {
     body = Thinking('Buddy is reading ' + what, [
       'Reading the dishes you logged',
-      'Weighing protein, carbs, fat and fiber',
+      'Weighing protein, carbs, fat and fibre',
       'Writing your tips',
     ]);
   } else if (st.error) {
@@ -2037,8 +2119,25 @@ function ScreenSummary({
     fmtDate(k, 'dayMonth');
   const food = on('food') && logged.length > 0;
   const lv = (week && week.levels) || {};
-  const short = NUTRIENTS.filter((n) => lv[n.key] === 'low');
-  const heavy = NUTRIENTS.filter((n) => lv[n.key] === 'high' && !isGood(n.key, 'high'));
+  // On a light week every gram reads low against a full day's target, so
+  // "short on protein, carbs, fat and fibre" sat over a plate 80% carbs. A gap
+  // is real only when it is deeper than the calorie shortfall explains; and a
+  // macro well over its share of what was eaten is heavy even if its grams aren't.
+  const avg = (week && week.averages) || {};
+  const tgt = (week && week.targets) || {};
+  const ate = week && week.goalKcal ? Math.min(1, (week.avgKcal || 0) / week.goalKcal) : 1;
+  const ratio = (k) => (tgt[k + 'G'] ? (avg[k + 'G'] || 0) / tgt[k + 'G'] : 1);
+  const short = NUTRIENTS.filter(
+    (n) => lv[n.key] === 'low' && (lv.calories !== 'low' || ratio(n.key) < ate * 0.85)
+  );
+  const macroKcal = { protein: (avg.proteinG || 0) * 4, carbs: (avg.carbsG || 0) * 4, fat: (avg.fatG || 0) * 9 };
+  const macroTotal = macroKcal.protein + macroKcal.carbs + macroKcal.fat;
+  const aim = { carbs: 50, fat: 30 }; // CalorieSplit's aims
+  const heavy = NUTRIENTS.filter(
+    (n) =>
+      (lv[n.key] === 'high' && !isGood(n.key, 'high')) ||
+      (aim[n.key] && macroTotal > 0 && (macroKcal[n.key] / macroTotal) * 100 >= aim[n.key] + 15)
+  );
   // "protein and fiber." with each name in its own colour, the full stop inside the last.
   const named = (list) =>
     list.flatMap((n, i) => [
@@ -2051,7 +2150,11 @@ function ScreenSummary({
   if (!food) headline = ['Your week shows up here as you log it.'];
   else if (lv.calories === 'high') headline = ['Your plate is over your calorie goal.'];
   else if (short.length) headline = ['Your plate is short on ', ...named(short)];
-  else if (heavy.length) headline = ['Your plate is heavy on ', ...named(heavy)];
+  else if (heavy.length)
+    headline = [
+      lv.calories === 'low' ? 'Your plate is under your calorie goal and heavy on ' : 'Your plate is heavy on ',
+      ...named(heavy),
+    ];
   else if (lv.calories === 'low') headline = ['Your plate is under your calorie goal.'];
   else headline = ['Your plate is close to target on calories and all four.'];
 
@@ -2149,7 +2252,12 @@ function HabitStrip({ habits, onAdd, toggleHabit }) {
 }
 
 /* ---- Mini Calendar Card ---- */
+/* app.js repaints the mini calendar in place (rerenderHomeMiniCalendarIfActive)
+   without a features prop; it keeps the ones ScreenDashboard last rendered with. */
+let homeFeatures = null;
+
 function MiniCalendarCard({
+  features = homeFeatures,
   tasks,
   reminders,
   foodSummary,
@@ -2178,6 +2286,7 @@ function MiniCalendarCard({
     'December',
   ];
   const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const foodOn = !features || features.food !== false;
 
   function pad(n) {
     return n < 10 ? '0' + n : String(n);
@@ -2250,7 +2359,8 @@ function MiniCalendarCard({
     const dt = new Date(calYear, calMonth, startDay + i);
     const key = dateKey(dt.getFullYear(), dt.getMonth(), dt.getDate());
     const inMonth = dt.getFullYear() === calYear && dt.getMonth() === calMonth;
-    const taskCount = dueTasksOn(key).length + completedTasksOn(key).length;
+    // Only what is still to do: a done or paused task is not a busy day.
+    const taskCount = dueTasksOn(key).filter((t) => !t.done && !t.paused).length;
     const rems = remindersOn(key);
     // A daily reminder put a "1" on every day ahead, so the badge said nothing.
     // The number counts one-off items only; a repeating one is a dot, and a day
@@ -2344,7 +2454,7 @@ function MiniCalendarCard({
             h(
               'div',
               { class: 'gb-mini-cal-item-sub' },
-              item.quantityGrams + 'g · ' + item.kcalEstimated + ' kcal'
+              foodAmount(item) + ' · ' + item.kcalEstimated + ' kcal'
             )
           ),
           h('span', { class: 'gb-mini-cal-pill' }, item.mealType || 'meal')
@@ -2460,8 +2570,8 @@ function MiniCalendarCard({
           : null,
         'No completed tasks on this day.'
       ),
-      daySection('Food', selectedFood.length, foodContent, 'No food logged for this day.'),
-      foodSummary && typeof foodSummary.totalCalories === 'number'
+      foodOn ? daySection('Food', selectedFood.length, foodContent, 'No food logged for this day.') : null,
+      foodOn && foodSummary && typeof foodSummary.totalCalories === 'number'
         ? h(
             'div',
             { class: 'gb-mini-cal-total' },
@@ -2593,6 +2703,7 @@ function ScreenDashboard({
   water,
   wellness,
   phoneNight,
+  waterUsualHours,
   reminders,
   foodSummary,
   dayFoodLoading,
@@ -2632,6 +2743,8 @@ function ScreenDashboard({
   onInsightAction,
 }) {
   const on = (k) => !features || features[k] !== false;
+  homeFeatures = features || null;
+  const any = (o) => !!o && Object.keys(o).length > 0;
   const one = oneThingFor({
     tasks,
     habits,
@@ -2639,6 +2752,7 @@ function ScreenDashboard({
     wellness,
     money,
     phoneNight,
+    waterUsualHours,
     features,
     toggleTask,
     toggleHabit,
@@ -2648,6 +2762,23 @@ function ScreenDashboard({
     onAddMood,
   });
   const oneKind = one && one.kind;
+  const layout = resolveHomeLayout(homeLayout);
+  const wellnessOnHome = layout.some((i) => i.id === 'wellness' && i.enabled);
+  const onboard = OnboardingCard({
+    tasks,
+    habits,
+    wellness,
+    onAddHabit,
+    onAddTask,
+    onAddMood,
+    onStarterPack,
+    onOnboardDismiss,
+  });
+  // The checklist's "Log how you feel" step is showing while no mood exists yet.
+  const onboardAsksMood = !!onboard && !(wellness && any(wellness.moodByDate));
+  const planSkip = [oneKind];
+  if (wellnessOnHome) planSkip.push('sleep', 'mood');
+  if (onboardAsksMood) planSkip.push('mood');
 
   // One renderer per widget id. Each returns the card node(s) for that widget.
   const renderers = {
@@ -2670,7 +2801,7 @@ function ScreenDashboard({
         onDismissInsight,
         onInsightAction,
       }),
-    plan: () => TodayPlanCard({ water: on('water') ? water : null, wellness, onPlanToday, skip: oneKind }),
+    plan: () => TodayPlanCard({ water: on('water') ? water : null, wellness, onPlanToday, skip: planSkip }),
     // The card above owns its nudge: the check-in row asking the same thing goes.
     wellness: () =>
       WellnessCard({
@@ -2680,6 +2811,7 @@ function ScreenDashboard({
         onAddMood,
         onConfirmSleep: oneKind === 'sleep' ? null : onConfirmSleep,
         onQuickMood: oneKind === 'mood' ? null : onQuickMood,
+        asked: oneKind,
       }),
     tasks: () => [
       SectionTitle({ title: "Today's tasks", action: '+ Add', onAction: onAddTask }),
@@ -2694,6 +2826,7 @@ function ScreenDashboard({
     ],
     calendar: () =>
       MiniCalendarCard({
+        features,
         tasks,
         reminders,
         foodSummary,
@@ -2717,7 +2850,7 @@ function ScreenDashboard({
     money: () => MoneyHomeCard({ money, onSaveMoney, onOpen: onOpenMoney, requestReceiptScan }),
   };
 
-  const blocks = resolveHomeLayout(homeLayout)
+  const blocks = layout
     .map((item) => {
       if (!item.enabled) return null;
       const def = HOME_WIDGETS.find((w) => w.id === item.id);
@@ -2729,17 +2862,6 @@ function ScreenDashboard({
     })
     .filter(Boolean);
 
-  const onboard = OnboardingCard({
-    tasks,
-    habits,
-    wellness,
-    onAddHabit,
-    onAddTask,
-    onAddMood,
-    onStarterPack,
-    onOnboardDismiss,
-  });
-
   // Before you've added anything, the checklist IS the screen. Every widget
   // below it renders its own "nothing yet" state, so a new account used to open
   // on nine empty cards saying the same thing three ways — a checklist, a zero
@@ -2747,7 +2869,6 @@ function ScreenDashboard({
   // the checklist (or adding anything at all) brings the full Home back. Any
   // data counts: an account with reminders and expenses but no task used to
   // see only the checklist, its own reminders and spending hidden behind it.
-  const any = (o) => !!o && Object.keys(o).length > 0;
   const started =
     (tasks || []).length > 0 ||
     (habits || []).length > 0 ||
@@ -2770,7 +2891,7 @@ function ScreenDashboard({
     );
   }
   if (onboard) blocks.unshift(h('div', { class: 'gb-dash-block' }, onboard));
-  if (one) blocks.unshift(h('div', { class: 'gb-dash-block' }, OneThingCard(one)));
+  if (one) blocks.unshift(h('div', { class: 'gb-dash-block gb-dash-pin' }, OneThingCard(one)));
   if (qa) blocks.unshift(qa);
 
   return h('div', { class: 'gb-rise gb-dash gb-dash--single' }, ...blocks);
@@ -2794,7 +2915,7 @@ function ScreenFood({
   const on = (k) => !features || features[k] !== false;
   return h(
     'div',
-    { class: 'gb-rise', style: { padding: '0 0 24px' } },
+    { class: 'gb-rise gb-food-screen', style: { padding: '0 0 24px' } },
     on('water')
       ? h(
           'div',
@@ -2833,7 +2954,9 @@ function HabitSleepInsightCard({ habits, wellness }) {
 
   const fitnessStreak = fitnessHabits.reduce((m, hab) => Math.max(m, hab.streak || 0), 0);
   const fitnessToday = fitnessHabits.some((hab) => hab.doneToday);
-  const habitsDoneToday = allHabits.filter((hab) => hab.doneToday).length;
+  // Home's rule (ScoreCard): only habits owed today, so a paused one is not a miss.
+  const dueHabits = allHabits.filter((hab) => habitDue(hab) || hab.doneToday);
+  const habitsDoneToday = dueHabits.filter((hab) => hab.doneToday).length;
 
   const qualityLabel =
     avgQualityScore == null
@@ -2912,7 +3035,7 @@ function HabitSleepInsightCard({ habits, wellness }) {
           h(
             'div',
             { class: 'gb-habit-sleep-metric-val' },
-            habitsDoneToday + '/' + allHabits.length
+            habitsDoneToday + '/' + dueHabits.length
           ),
           h('div', { class: 'gb-habit-sleep-metric-label' }, 'Habits today')
         )

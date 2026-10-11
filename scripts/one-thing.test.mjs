@@ -42,6 +42,7 @@ const all = {
   },
   wellness: { sleepByDate: nights, moodByDate: {} },
   water: { consumedMl: 0, goalMl: 2000 },
+  waterUsualHours: [9, 13, 17],
   now: at(19),
 };
 const order = [];
@@ -140,6 +141,18 @@ assert.equal(
   null
 );
 assert.equal(pickOneThing({ wellness: {}, now: at(13) }).kind, 'mood');
+// No water habit (no usual hours) and nothing logged today: water is never nudged.
+const waterOnly = (k) => k === 'water';
+assert.equal(pickOneThing({ water: { consumedMl: 0, goalMl: 2000 }, can: waterOnly, now: at(20) }), null);
+assert.equal(
+  pickOneThing({ water: { consumedMl: 0, goalMl: 2000 }, waterUsualHours: [], can: waterOnly, now: at(20) }),
+  null
+);
+// Logged some today, no pattern yet: behind is behind.
+assert.equal(
+  pickOneThing({ water: { consumedMl: 250, goalMl: 2000 }, can: waterOnly, now: at(20) }).kind,
+  'water'
+);
 // Nothing at all: null.
 assert.equal(pickOneThing({ now: at(10) }), null);
 

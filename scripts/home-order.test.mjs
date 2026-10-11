@@ -8,6 +8,7 @@ import {
   topStreaks,
   homeGoals,
   daysBetween,
+  taskWhen,
 } from './home-order.js';
 
 let failures = 0;
@@ -125,6 +126,21 @@ test('home goals: open only, nearest target first, undated last, with what is ne
 test('days between crosses a month and a DST change without drifting', () => {
   assert.equal(daysBetween('2026-10-30', '2026-11-02'), 3);
   assert.equal(daysBetween('2026-03-28', '2026-03-30'), 2);
+});
+
+test('a task row says when, relative to now', () => {
+  const now = new Date(2026, 9, 12, 12, 0);
+  const at = (d, hh) => new Date(2026, 9, d, hh, 0).toISOString();
+  const t = (d) => String(d.getHours()).padStart(2, '0') + ':00';
+  const dt = (d) => d.getDate() + ' Oct';
+  assert.equal(taskWhen(at(10, 18), now, t, dt), '2 days overdue');
+  assert.equal(taskWhen(at(11, 18), now, t, dt), '1 day overdue');
+  assert.equal(taskWhen(at(12, 9), now, t, dt), 'Overdue · 09:00');
+  assert.equal(taskWhen(at(12, 18), now, t, dt), 'Today 18:00');
+  assert.equal(taskWhen(at(13, 10), now, t, dt), 'Tomorrow 10:00');
+  assert.equal(taskWhen(at(20, 10), now, t, dt), '20 Oct · 10:00');
+  assert.equal(taskWhen(null, now, t, dt), null);
+  assert.equal(taskWhen('nope', now, t, dt), null);
 });
 
 if (failures) {

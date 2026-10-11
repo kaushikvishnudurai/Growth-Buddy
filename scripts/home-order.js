@@ -136,6 +136,23 @@ export function topStreaks(habits) {
   return { days, weeks };
 }
 
+/* A Home task row's due line, relative: "2 days overdue", "Overdue · 18:42",
+   "Today 10:00", "Tomorrow 10:00", else "<date> · <time>". The formatters are
+   passed in (gb-kit's time format follows a user pref). null = no usable dueAt. */
+export function taskWhen(dueAt, now, fmtTime, fmtDate) {
+  if (!dueAt) return null;
+  const due = new Date(dueAt);
+  if (Number.isNaN(due.getTime())) return null;
+  const days = daysBetween(localDayKey(now), localDayKey(due));
+  const t = fmtTime(due);
+  if (due.getTime() < now.getTime()) {
+    return days < 0 ? -days + (days === -1 ? ' day' : ' days') + ' overdue' : 'Overdue · ' + t;
+  }
+  if (days === 0) return 'Today ' + t;
+  if (days === 1) return 'Tomorrow ' + t;
+  return fmtDate(due) + ' · ' + t;
+}
+
 /* Whole days from `todayKey` to a YYYY-MM-DD target (negative = past). */
 export function daysBetween(todayKey, dateKey) {
   if (!todayKey || !dateKey) return null;

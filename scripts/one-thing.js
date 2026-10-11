@@ -19,6 +19,7 @@ export function pickOneThing({
   wellness,
   money,
   phoneNight,
+  waterUsualHours,
   now = new Date(),
   features,
   can = () => true,
@@ -77,7 +78,11 @@ export function pickOneThing({
       arg: u,
     };
 
-  if (on('water') && can('water') && water) {
+  // Only someone who drinks to a pattern (usualDrinkHours, push.js) or has logged
+  // today gets nudged: a new user who never logs water was told at 20:40 on day one.
+  const logsWater =
+    (waterUsualHours && waterUsualHours.length > 0) || (water && Number(water.consumedMl) > 0);
+  if (on('water') && can('water') && water && logsWater) {
     const goal = Number(water.goalMl) || 2000;
     // ponytail: linear pace 08:00 to 21:00; the median hourly curve from
     // /api/water/times (as insights.js reads it) when this nags early drinkers.
