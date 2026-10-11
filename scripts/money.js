@@ -6105,7 +6105,7 @@ function ScreenMoney({
                     'span',
                     {
                       class: 'gb-money-cat-ic',
-                      style: { background: 'var(--sun-50)', color: 'var(--sun-700)' },
+                      style: { background: 'var(--warning-soft)', color: 'var(--warning-soft-fg)' },
                     },
                     Icon('star', { size: 15, sw: 2.2 })
                   ),
@@ -6680,7 +6680,7 @@ function ScreenMoney({
                     'span',
                     {
                       class: 'gb-money-cat-ic',
-                      style: { background: 'var(--leaf-50)', color: 'var(--leaf-700)' },
+                      style: { background: 'var(--success-soft)', color: 'var(--success-soft-fg)' },
                     },
                     Icon(e.source === 'salary' ? 'briefcase' : 'coins', { size: 15, sw: 2.2 })
                   ),
@@ -6703,7 +6703,7 @@ function ScreenMoney({
                   ),
                   h(
                     'div',
-                    { class: 'gb-money-exp-amt', style: { color: 'var(--leaf-700)' } },
+                    { class: 'gb-money-exp-amt', style: { color: 'var(--success-soft-fg)' } },
                     '+' + fmt(e.amount)
                   ),
                   h(
@@ -6745,8 +6745,8 @@ function ScreenMoney({
       const lent = l.direction === 'given';
       // Signed from your side of the IOU: lent = owed to you (+), borrowed = you owe (−).
       // It was the cash-flow sign, so a split read "Asha owes you" in the dialog and −₹334 here.
-      const accent = lent ? 'var(--leaf-700)' : 'var(--coral-700)';
-      const soft = lent ? 'var(--leaf-50)' : 'var(--coral-50)';
+      const accent = lent ? 'var(--success-soft-fg)' : 'var(--brand-ink)';
+      const soft = lent ? 'var(--success-soft)' : 'var(--brand-soft)';
       return h(
         'div',
         { class: 'gb-money-exp-row gb-money-loan-row' + (l.settled ? ' is-settled' : '') },
@@ -6919,7 +6919,7 @@ function ScreenMoney({
           {
             class: 'gb-money-cat-ic',
             style: isIn
-              ? { background: 'var(--leaf-50)', color: 'var(--leaf-700)' }
+              ? { background: 'var(--success-soft)', color: 'var(--success-soft-fg)' }
               : { background: c.soft, color: c.fg },
           },
           Icon('repeat', { size: 15, sw: 2.2 })

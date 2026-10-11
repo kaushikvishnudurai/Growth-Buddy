@@ -12,6 +12,12 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Form controls don't inherit the page font (they fell back to Arial); one reset
+   here instead of a `font: inherit` on every control class. */
+button, input, select, textarea {
+  font: inherit;
+}
+
 /* No double-tap-zoom wait on anything tappable. */
 a, button, input, select, textarea, label, [role='button'], [onclick] {
   touch-action: manipulation;
@@ -77,8 +83,8 @@ body {
 }
 [data-theme='dark'] .gb-page {
   background:
-    radial-gradient(120% 90% at 12% 0%, rgba(249, 115, 22, 0.18) 0%, transparent 46%),
-    radial-gradient(120% 90% at 92% 100%, rgba(108, 92, 231, 0.2) 0%, transparent 46%), #0e0a08;
+    radial-gradient(120% 90% at 12% 0%, color-mix(in srgb, var(--coral-500) 18%, transparent) 0%, transparent 46%),
+    radial-gradient(120% 90% at 92% 100%, color-mix(in srgb, var(--iris-500) 20%, transparent) 0%, transparent 46%), #0e0a08;
 }
 
 /* ---- App container ----
@@ -141,7 +147,9 @@ body {
 .gb-head .greet-name {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 1.5rem;
+  /* Capped by the viewport so a 200% system font size can't split "Calendar"
+     mid-word beside the header buttons; 24px at the default size either way. */
+  font-size: min(1.5rem, 8.5vw);
   letter-spacing: -0.02em;
   color: var(--fg1);
   line-height: 1.15;
@@ -226,6 +234,8 @@ button.gb-avatar:active {
 /* ---- Section title ---- */
 .gb-sectiontitle {
   display: flex;
+  flex-wrap: wrap; /* large text: the action wraps under the title, not off screen */
+  gap: 4px 12px;
   align-items: center;
   justify-content: space-between;
   padding: 6px var(--gutter) 10px;
@@ -239,7 +249,6 @@ button.gb-avatar:active {
   margin: 0;
 }
 .gb-sectiontitle-act {
-  font: inherit;
   font-size: 0.8125rem;
   font-weight: 700;
   color: var(--fg3);
@@ -554,7 +563,7 @@ button.gb-sectiontitle-act {
   background: var(--surface-3);
   box-shadow: 0 2px 0 var(--border-strong);
   color: transparent;
-  border: 1.5px solid var(--border-strong);
+  border: 1.5px solid var(--control-border);
   transition:
     transform var(--dur-fast) var(--ease-bounce),
     background var(--dur-base);
@@ -1384,7 +1393,6 @@ body:has(.is-thinking, .gb-thinking)::after {
   background: none;
   border: 0;
   padding: 0;
-  font-family: inherit;
   font-size: 0.8125rem;
   font-weight: 700;
   color: var(--brand-ink);
@@ -1428,11 +1436,11 @@ body:has(.is-thinking, .gb-thinking)::after {
   min-width: 18px;
   height: 18px;
   padding: 0 5px;
-  border-radius: 9px;
+  border-radius: var(--radius-sm);
   background: var(--brand-fill);
   color: var(--fg-on-brand);
   font-family: var(--font-mono);
-  font-size: 0.65625rem;
+  font-size: var(--text-2xs);
   font-weight: 700;
   display: inline-flex;
   align-items: center;
@@ -1507,7 +1515,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   cursor: pointer;
 }
 .gb-notif-title {
-  font-size: 0.84375rem;
+  font-size: var(--text-sm);
   font-weight: 700;
   color: var(--fg1);
 }
@@ -1518,7 +1526,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 .gb-notif-time {
   margin-top: 4px;
-  font-size: 0.71875rem;
+  font-size: var(--text-xs);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--fg3);
@@ -1656,7 +1664,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 .gb-mentor-empty p {
   color: var(--fg3);
-  font-size: 0.84375rem;
+  font-size: var(--text-sm);
   margin: 0 0 14px;
 }
 .gb-mentor-suggestions {
@@ -1778,10 +1786,10 @@ body:has(.is-thinking, .gb-thinking)::after {
 .gb-msg-crisis {
   align-self: stretch;
   border: 1px solid var(--border-strong);
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
   padding: 12px 14px;
-  font-size: 0.84375rem;
+  font-size: var(--text-sm);
   color: var(--fg2);
   line-height: 1.45;
 }
@@ -1818,16 +1826,15 @@ body:has(.is-thinking, .gb-thinking)::after {
   min-height: 46px;
   max-height: 120px;
   font-family: var(--font-body);
-  font-size: 0.90625rem;
+  font-size: var(--text-sm);
   padding: 10px 12px;
-  border: 1.5px solid var(--border-strong);
+  border: 1.5px solid var(--control-border);
   border-radius: var(--radius-lg);
   background: var(--surface-2);
   color: var(--fg1);
 }
 .gb-msg-input:focus {
-  outline: none;
-  border-color: var(--brand);
+  border-color: var(--ring);
   box-shadow: 0 0 0 3px var(--brand-soft);
 }
 .gb-msg-send {
@@ -2108,7 +2115,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   gap: 4px;
   flex: none;
   white-space: nowrap;
-  font-size: 0.71875rem;
+  font-size: var(--text-xs);
   font-weight: 800;
   padding: 3px 9px;
   border-radius: var(--radius-pill);
@@ -2243,8 +2250,8 @@ body:has(.is-thinking, .gb-thinking)::after {
   padding: 20px;
   transition: opacity var(--dur-fast);
 }
-.gb-sound-card.is-muted {
-  opacity: 0.74;
+.gb-sound-card.is-muted .gb-icon {
+  opacity: 0.6;
 }
 .gb-sound-head {
   display: flex;
@@ -2319,12 +2326,12 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 .gb-range::-webkit-slider-runnable-track {
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-3);
 }
 .gb-range::-moz-range-track {
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-3);
 }
 .gb-range::-webkit-slider-thumb {
@@ -2357,7 +2364,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   position: relative;
   width: 46px;
   height: 26px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: none;
   background: var(--surface-3);
   cursor: pointer;
@@ -2609,7 +2616,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   height: 34px;
   align-items: center;
   justify-content: center;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--surface-3);
 }
 .gb-insight-title {
@@ -2655,7 +2662,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   height: 44px;
   margin: -10px -12px -10px auto;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: none;
   color: var(--fg3);
   cursor: pointer;
@@ -2697,6 +2704,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 .gb-circle-block-head {
   display: flex;
+  flex-wrap: wrap; /* large text: the actions drop under the heading */
   align-items: center;
   justify-content: space-between;
   gap: 10px;
@@ -2730,6 +2738,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 .gb-challenges-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
 }
@@ -2896,7 +2905,7 @@ button.gb-seat {
   bottom: 100%;
   margin-bottom: 4px;
   font-family: var(--font-mono);
-  font-size: 0.625rem;
+  font-size: var(--text-2xs);
   font-weight: 400;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -3038,7 +3047,7 @@ button.gb-seat:disabled {
   font-size: 0.6875rem;
   font-weight: 700;
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-3);
   color: var(--fg3);
 }
@@ -3243,10 +3252,9 @@ button.gb-seat:disabled {
   min-height: 32px;
   padding: 4px 10px;
   border: 1px solid var(--surface-3);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: transparent;
   color: var(--fg2);
-  font: inherit;
   font-size: 0.8125rem;
   font-variant-numeric: tabular-nums;
   cursor: pointer;
@@ -3328,7 +3336,7 @@ button.gb-seat:disabled {
   margin-left: 4px;
 }
 .gb-circle-cheer.is-sent {
-  color: var(--brand);
+  color: var(--brand-ink);
   opacity: 0.7;
 }
 .gb-conn-item + .gb-conn-item {
@@ -3382,7 +3390,6 @@ button.gb-seat:disabled {
   border-radius: var(--radius-pill);
   background: none;
   color: var(--fg3);
-  font: inherit;
   text-transform: none;
   letter-spacing: 0;
   font-weight: 700;
@@ -3553,7 +3560,7 @@ button.gb-seat:disabled {
 }
 .gb-chat-bubble {
   padding: 8px 12px;
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   background: var(--surface-3);
   color: var(--fg1);
   font-size: 0.875rem;
@@ -3603,7 +3610,7 @@ button.gb-seat:disabled {
   align-items: center;
   justify-content: center;
   min-width: 86px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 6px 12px;
   font-size: 0.75rem;
   font-weight: 800;
@@ -3724,9 +3731,8 @@ button.gb-seat:disabled {
   border-radius: var(--radius-pill);
   background: var(--surface);
   color: var(--fg1);
-  font: inherit;
   font-weight: 700;
-  font-size: 0.84375rem;
+  font-size: var(--text-sm);
   cursor: pointer;
 }
 .gb-mentor-thread-name,
@@ -3778,7 +3784,6 @@ button.gb-seat:disabled {
   border: 0;
   background: none;
   color: var(--fg1);
-  font: inherit;
   text-align: left;
   cursor: pointer;
 }
@@ -3791,6 +3796,10 @@ button.gb-seat:disabled {
   flex: none;
   color: var(--fg3);
   font-size: 0.75rem;
+}
+/* On the selected (tinted) row fg3 was 3.96:1. */
+.gb-thread-pick[aria-current='true'] .gb-thread-date {
+  color: var(--fg2);
 }
 .gb-thread-rename {
   flex: 1;
@@ -3815,7 +3824,6 @@ button.gb-seat:disabled {
   border-radius: var(--radius-md);
   background: none;
   color: var(--fg2);
-  font: inherit;
   font-size: 0.8125rem;
   text-align: left;
   cursor: pointer;
@@ -3933,18 +3941,18 @@ button.gb-seat:disabled {
 }
 .gb-profile-pop-xp-bar {
   height: 5px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--border);
   overflow: hidden;
 }
 .gb-profile-pop-xp-fill {
   height: 100%;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--brand);
   transition: width 0.4s;
 }
 .gb-profile-pop-xp-label {
-  font-size: 0.65625rem;
+  font-size: var(--text-2xs);
   color: var(--fg3);
   margin-top: 4px;
 }
@@ -3964,7 +3972,7 @@ button.gb-seat:disabled {
   cursor: pointer;
   font-family: var(--font-body);
   font-weight: 600;
-  font-size: 0.84375rem;
+  font-size: var(--text-sm);
   color: var(--fg1);
   text-align: left;
 }
@@ -4013,7 +4021,7 @@ button.gb-seat:disabled {
   list-style: none;
   padding: 0;
   margin: 0;
-  font-size: 0.84375rem;
+  font-size: var(--text-sm);
   color: var(--fg2);
 }
 .gb-status-list li {
@@ -4123,7 +4131,6 @@ button.gb-seat:disabled {
   border: 0;
   background: none;
   color: inherit;
-  font: inherit;
   text-align: left;
   cursor: pointer;
   border-radius: var(--radius-sm);
@@ -4472,14 +4479,14 @@ button.gb-seat:disabled {
 .gb-timeline-dot {
   width: 9px;
   height: 9px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--brand);
   box-shadow: 0 0 0 4px var(--brand-soft);
   flex: none;
 }
 .gb-empty-slim {
   color: var(--fg2);
-  font-size: 0.84375rem;
+  font-size: var(--text-sm);
   line-height: 1.5;
 }
 /* `button.` on purpose: the Summary's shared button reset further down
@@ -4487,7 +4494,7 @@ button.gb-seat:disabled {
    coming later, was stripping this pill to bare body text. */
 button.gb-food-level {
   flex: none;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 5px 10px;
   font-size: 0.75rem;
   font-weight: 800;
@@ -4596,7 +4603,7 @@ button.gb-food-level {
   margin: 0;
   padding-left: 18px;
   color: var(--fg1);
-  font-size: 0.84375rem;
+  font-size: var(--text-sm);
   line-height: 1.6;
 }
 @media (prefers-reduced-motion: reduce) {
@@ -4787,7 +4794,7 @@ button.gb-food-level {
 .gb-katori-in span {
   margin-top: 4px;
   font-family: var(--font-mono);
-  font-size: 0.625rem;
+  font-size: var(--text-2xs);
   letter-spacing: 0.04em;
   color: var(--n-ink);
 }
@@ -4804,7 +4811,7 @@ button.gb-food-level {
   display: flex;
   gap: 2px;
   height: 18px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   overflow: hidden;
 }
 .gb-split-bar > div {
@@ -4842,16 +4849,15 @@ button.gb-food-level {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 4px;
   padding: 4px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--bg);
 }
 .gb-nutrient-tabs button {
   min-height: 44px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: transparent;
   color: var(--fg2);
-  font: inherit;
   font-size: 0.8125rem;
   font-weight: 700;
   cursor: pointer;
@@ -4911,12 +4917,12 @@ button.gb-food-level {
 }
 .gb-source-track {
   height: 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-3);
 }
 .gb-source-bar {
   height: 100%;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--n, var(--success));
 }
 
@@ -4937,7 +4943,7 @@ button.gb-food-level {
 }
 .gb-tumbler-col small {
   font-family: var(--font-mono);
-  font-size: 0.625rem;
+  font-size: var(--text-2xs);
   color: var(--fg3);
 }
 .gb-tumbler {
@@ -4997,7 +5003,6 @@ button.gb-food-level {
 .gb-food-week-col {
   border: 0;
   padding: 0;
-  font: inherit;
   color: inherit;
   text-align: inherit;
   cursor: pointer;
@@ -5008,7 +5013,7 @@ button.gb-food-level {
 .gb-split-legend > button,
 .gb-food-week-col {
   background: transparent;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
 }
 .gb-split-legend > button {
   padding: 6px 8px;
@@ -5166,7 +5171,7 @@ button.gb-food-level {
       var(--surface) 100%
     );
   border: 1px solid color-mix(in srgb, var(--sky-300) 34%, var(--border) 66%);
-  box-shadow: 0 10px 24px rgba(17, 132, 224, 0.14);
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--sky-600) 14%, transparent);
   overflow: hidden;
   position: relative;
 }
@@ -5200,7 +5205,7 @@ button.gb-food-level {
 .gb-water-glass {
   width: 76px;
   height: 126px;
-  border-radius: 24px;
+  border-radius: var(--radius-xl);
   border: 2px solid color-mix(in srgb, var(--sky-500) 55%, white 45%);
   background: color-mix(in srgb, var(--sky-100) 40%, white 60%);
   position: relative;
@@ -5215,7 +5220,7 @@ button.gb-food-level {
   height: 112px;
   transform: translateX(-50%) scaleY(0);
   transform-origin: top;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: linear-gradient(
     180deg,
     rgba(255, 255, 255, 0.92),
@@ -5410,7 +5415,7 @@ button.gb-food-level {
   .gb-water-add:hover {
     background: color-mix(in srgb, var(--sky-300) 36%, white 64%);
     transform: translateY(-1px);
-    box-shadow: 0 5px 12px rgba(17, 132, 224, 0.2);
+    box-shadow: 0 5px 12px color-mix(in srgb, var(--sky-600) 20%, transparent);
   }
 }
 .gb-water-add:active {
@@ -5473,7 +5478,7 @@ button.gb-food-level {
 
 [data-theme='dark'] .gb-water-card {
   background:
-    radial-gradient(120% 90% at 10% 0%, rgba(17, 132, 224, 0.22) 0%, transparent 48%),
+    radial-gradient(120% 90% at 10% 0%, color-mix(in srgb, var(--sky-600) 22%, transparent) 0%, transparent 48%),
     linear-gradient(
       180deg,
       color-mix(in srgb, var(--surface-2) 76%, #0f2734 24%) 0%,
@@ -5522,7 +5527,7 @@ button.gb-food-level {
   }
   .gb-msg-bubble {
     max-width: 84%;
-    font-size: 0.90625rem;
+    font-size: var(--text-sm);
   }
 }
 
@@ -5620,10 +5625,10 @@ button.gb-food-level {
 @keyframes gb-water-pulse {
   0%,
   100% {
-    box-shadow: 0 10px 24px rgba(17, 132, 224, 0.14);
+    box-shadow: 0 10px 24px color-mix(in srgb, var(--sky-600) 14%, transparent);
   }
   50% {
-    box-shadow: 0 14px 30px rgba(17, 132, 224, 0.24);
+    box-shadow: 0 14px 30px color-mix(in srgb, var(--sky-600) 24%, transparent);
   }
 }
 /* ---- Goals screen ---- */
@@ -5693,7 +5698,7 @@ button.gb-food-level {
   min-width: 24px;
   height: 24px;
   padding: 0 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-2);
   color: var(--fg2);
   font-size: 0.75rem;
@@ -5779,12 +5784,12 @@ button.gb-food-level {
   min-width: 0;
 }
 .gb-goal-status-chip {
-  font-size: 0.625rem;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   padding: 3px 9px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--success-soft);
   color: var(--success-soft-fg);
   flex: 0 0 auto;
@@ -5952,6 +5957,9 @@ button.gb-food-level {
   align-items: center;
   gap: 10px;
 }
+.gb-cal-monthbar {
+  flex-wrap: wrap; /* large text: Today wraps under the month instead of off screen */
+}
 .gb-cal-monthlabel {
   display: flex;
   align-items: baseline;
@@ -5982,7 +5990,7 @@ button.gb-food-level {
 .gb-btn.gb-cal-today {
   width: auto;
   padding: 9px 16px;
-  font-size: 0.84375rem;
+  font-size: var(--text-sm);
 }
 
 /* Month grid card */
@@ -6019,7 +6027,7 @@ button.gb-food-level {
   justify-content: center;
   font-family: var(--font-body);
   font-weight: 700;
-  font-size: 0.90625rem;
+  font-size: var(--text-sm);
   color: var(--fg1);
   transition:
     background var(--dur-fast),
@@ -6050,8 +6058,7 @@ button.gb-food-level {
   transform: scale(0.9);
 }
 .gb-cal-day.is-other-month {
-  color: var(--fg3);
-  opacity: 0.72;
+  color: var(--fg3); /* no opacity: fg3 is already the 4.5:1 floor */
 }
 .gb-cal-day.is-today {
   color: var(--brand-ink);
@@ -6203,7 +6210,7 @@ button.gb-food-level {
 }
 .gb-wins-sub {
   color: var(--fg3);
-  font-size: 0.71875rem;
+  font-size: var(--text-xs);
 }
 .gb-wins-empty {
   padding: 16px;
@@ -6349,7 +6356,7 @@ button.gb-food-level {
 }
 .gb-rem-empty p {
   margin: 0;
-  font-size: 0.84375rem;
+  font-size: var(--text-sm);
   color: var(--fg2);
 }
 .gb-rem-row {
@@ -6371,7 +6378,7 @@ button.gb-food-level {
 }
 .gb-rem-text {
   font-weight: 700;
-  font-size: 0.90625rem;
+  font-size: var(--text-sm);
   color: var(--fg1);
   line-height: 1.35;
   white-space: normal;
@@ -6395,7 +6402,7 @@ button.gb-food-level {
 .gb-tag-pill {
   display: inline-flex;
   align-items: center;
-  font-size: 0.71875rem;
+  font-size: var(--text-xs);
   font-weight: 800;
   letter-spacing: 0.02em;
   padding: 3px 9px;
@@ -6524,7 +6531,7 @@ button.gb-food-level {
   font-weight: 500;
   color: var(--fg1);
   background: var(--surface-2);
-  border: 1.5px solid var(--border-strong);
+  border: 1.5px solid var(--control-border);
   border-radius: var(--radius-lg);
   padding: 13px 14px;
   width: 100%;
@@ -6537,8 +6544,9 @@ button.gb-food-level {
   color: var(--fg3);
 }
 .gb-input:focus {
-  outline: none;
-  border-color: var(--brand);
+  /* No outline: none. The global :focus-visible ring is the indicator (a 2.8:1
+     border change alone was too faint); the border follows it. */
+  border-color: var(--ring);
   box-shadow: 0 0 0 3px var(--brand-soft);
 }
 /* A disabled field looked exactly as editable as a live one. */
@@ -6653,7 +6661,6 @@ button.gb-food-level {
   display: none;
 }
 .gb-food-recent-chip {
-  font: inherit;
   font-size: 0.8125rem;
   font-weight: 600;
   min-height: 44px;
@@ -6679,7 +6686,6 @@ button.gb-food-level {
   padding: 0;
   border: 0;
   background: none;
-  font: inherit;
   color: inherit;
   text-align: left;
   cursor: pointer;
@@ -6731,7 +6737,6 @@ button.gb-food-level {
   border: 1px dashed var(--border);
   border-radius: var(--radius-pill);
   background: none;
-  font: inherit;
   font-size: 0.8125rem;
   font-weight: 600;
   color: var(--fg2);
@@ -6793,7 +6798,6 @@ button.gb-food-level {
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
   background: var(--surface-2);
-  font: inherit;
   font-size: 0.8125rem;
   font-weight: 600;
   color: var(--fg1);
@@ -6811,7 +6815,6 @@ button.gb-food-level {
   border: 1px dashed var(--brand);
   border-radius: var(--radius-pill);
   background: none;
-  font: inherit;
   font-size: 0.8125rem;
   font-weight: 600;
   color: var(--brand-ink);
@@ -6956,6 +6959,7 @@ button.gb-food-level {
   padding: 14px;
 }
 .gb-sched-headrow {
+  flex-wrap: wrap; /* large text: Set routine wraps instead of running off screen */
   align-items: center;
   gap: 8px;
 }
@@ -6980,7 +6984,7 @@ button.gb-food-level {
 }
 .gb-sched-tab.is-on {
   background: var(--surface);
-  color: var(--brand-fill);
+  color: var(--brand-ink);
   box-shadow: var(--shadow-sm);
 }
 .gb-sched-routine {
@@ -7024,7 +7028,7 @@ button.gb-food-level {
 }
 .gb-sched-stat.is-busy {
   background: var(--brand-soft);
-  color: var(--brand-fill);
+  color: var(--brand-soft-fg);
 }
 .gb-sched-stat.is-lunch {
   background: var(--warning-soft);
@@ -7294,7 +7298,7 @@ button.gb-food-level {
   color: var(--fg2);
   background: transparent;
   border: none;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   padding: 9px 6px;
   cursor: pointer;
   transition:
@@ -7520,7 +7524,7 @@ button.gb-food-level {
      indicator: with viewport-fit=cover, 100dvh runs underneath both. */
   padding: calc(20px + env(safe-area-inset-top, 0px)) 20px
     calc(20px + env(safe-area-inset-bottom, 0px));
-  background: color-mix(in srgb, var(--warm-900) 45%, transparent);
+  background: var(--scrim);
   opacity: 0;
   transition: opacity var(--dur-fast) ease;
   /* The page behind must not rubber-band or scroll-chain from a sheet. */
@@ -7583,7 +7587,7 @@ button.gb-food-level {
 }
 .gb-modal-body::-webkit-scrollbar-thumb {
   background: var(--border-strong);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 .gb-modal-title {
   font-family: var(--font-display);
@@ -7652,6 +7656,12 @@ button.gb-food-level {
 .gb-segnav-btn,
 .gb-msg-chip,
 .gb-rem-snoozed--btn,
+.gb-money-mini-head,
+.gb-note-view,
+.gb-rem-defaults-link,
+.gb-login-link,
+.gb-health-fact,
+.gb-home-goal,
 .gb-wa-toggle {
   position: relative;
 }
@@ -7680,6 +7690,12 @@ button.gb-food-level {
 .gb-msg-chip::before,
 .gb-pw-toggle::before,
 .gb-rem-snoozed--btn::before,
+.gb-money-mini-head::before,
+.gb-note-view::before,
+.gb-rem-defaults-link::before,
+.gb-login-link::before,
+.gb-health-fact::before,
+.gb-home-goal::before,
 .gb-wa-toggle::before {
   content: '';
   position: absolute;
@@ -8430,6 +8446,29 @@ button.gb-food-level {
   box-shadow: var(--shadow-lg);
 }
 
+/* Enters from the edge the stack is pinned to; leaves the same way (dismissToast
+   holds the node TOAST_OUT_MS for it). Both skins. The global reduced-motion
+   kill switch stills both. Keep the durations in step with app.js. */
+.gb-toast:not(.is-settled) {
+  animation: gb-toast-in 260ms var(--ease-out) both;
+}
+.gb-toast.is-leaving {
+  animation: gb-toast-out 160ms var(--ease-standard) both;
+  pointer-events: none;
+}
+@keyframes gb-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(18px) scale(0.96);
+  }
+}
+@keyframes gb-toast-out {
+  to {
+    opacity: 0;
+    transform: translateX(18px) scale(0.96);
+  }
+}
+
 .gb-toast.is-error {
   /* Red, not the brand peach: an error that looks like "Saved" reads as one. */
   border-color: color-mix(in srgb, var(--danger) 70%, var(--border-strong) 30%);
@@ -8450,7 +8489,7 @@ button.gb-food-level {
 .gb-toast-icon {
   width: 22px;
   height: 22px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -8583,15 +8622,15 @@ button.gb-food-level {
   }
 
   .gb-day-row-title {
-    font-size: 0.84375rem;
+    font-size: var(--text-sm);
   }
 
   .gb-day-row-sub {
-    font-size: 0.71875rem;
+    font-size: var(--text-xs);
   }
 
   .gb-day-pill {
-    font-size: 0.65625rem;
+    font-size: var(--text-2xs);
     padding: 2px 8px;
   }
 
@@ -8635,7 +8674,7 @@ button.gb-food-level {
 }
 .gb-placeholder p {
   margin: 0;
-  font-size: 0.90625rem;
+  font-size: var(--text-sm);
   color: var(--fg2);
   line-height: 1.55;
   max-width: 28ch;
@@ -8650,7 +8689,7 @@ button.gb-food-level {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(20, 16, 13, 0.5);
+  background: var(--scrim);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
   animation: gb-cele-fade var(--dur-base) var(--ease-out);
@@ -9010,7 +9049,7 @@ button.gb-food-level {
     padding: 18px;
   }
   .gb-cal-day {
-    font-size: 0.96875rem;
+    font-size: var(--text-body);
   }
 
   /* Placeholder (non-home tabs) fills & centers the whole canvas. */
@@ -9138,14 +9177,14 @@ button.gb-food-level {
 }
 .gb-goal-progress-track {
   height: 8px;
-  border-radius: 99px;
+  border-radius: var(--radius-pill);
   background: var(--surface-2);
   overflow: hidden;
   margin-bottom: 8px;
 }
 .gb-goal-progress-fill {
   height: 100%;
-  border-radius: 99px;
+  border-radius: var(--radius-pill);
   background: var(--brand);
   transition: width 0.4s ease;
 }
@@ -9171,7 +9210,7 @@ button.gb-food-level {
   color: var(--leaf-700);
   background: var(--leaf-50);
   padding: 2px 8px;
-  border-radius: 99px;
+  border-radius: var(--radius-pill);
 }
 .gb-goal-progress-actions {
   display: flex;
@@ -9314,7 +9353,22 @@ button.gb-food-level {
      names someone remembered. */
   :where(.gb-scroll) > :where(.gb-rise:not(.gb-goals):not(.gb-mentor)) {
     max-width: 900px;
-    margin-left: 40px;
+    margin-left: calc(40px - var(--gutter));
+    margin-right: auto;
+    padding-inline: var(--gutter);
+  }
+  /* One left edge on every screen: content starts under the header title (40px
+     in), whatever the screen's own width. These used to centre (margin: 0 auto),
+     so each screen began somewhere else and, at 2560px and up, the content sat
+     a thousand pixels from its title. Mentor (a chat column) stays centred. */
+  .gb-dash,
+  .gb-cal,
+  .gb-goals {
+    margin-left: 0;
+    margin-right: auto;
+  }
+  .gb-scroll > :is(.gb-notes, .gb-focus, .gb-summary-page, .gb-health) {
+    margin-left: calc(40px - var(--gutter));
     margin-right: auto;
   }
 
@@ -9369,10 +9423,18 @@ button.gb-food-level {
   }
 }
 
+/* Month grids on the narrowest phones: 34-35px days were under a finger's 40. */
+@media (max-width: 360px) {
+  .gb-cal-day,
+  .gb-mini-cal-day {
+    min-height: 40px;
+  }
+}
+
 /* ---- Small phones (≤380px): tighten card/block padding further ---- */
 @media (max-width: 380px) {
   .gb-card {
-    border-radius: 14px;
+    border-radius: var(--radius-lg);
   }
   .gb-modal {
     padding: 14px;
@@ -9409,7 +9471,7 @@ button.gb-food-level {
   position: relative;
   width: 44px;
   height: 26px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--border);
   border: none;
   cursor: pointer;
@@ -9457,7 +9519,7 @@ button.gb-food-level {
 .gb-wa-badge {
   color: var(--gb-wa-green-fg);
   background: var(--gb-wa-green-soft);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 0 6px;
   font-size: 0.6875rem;
   font-weight: 600;
@@ -9533,7 +9595,7 @@ button.gb-food-level {
   font-size: 0.6875rem;
   font-weight: 700;
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 
 /* Settings section nav — segmented slider (thumb glides under active section) */
@@ -9550,7 +9612,7 @@ button.gb-food-level {
   top: 4px;
   bottom: 4px;
   left: 4px;
-  border-radius: 9px;
+  border-radius: var(--radius-sm);
   background: var(--brand-fill);
   box-shadow: var(--shadow-xs);
   transition:
@@ -9572,7 +9634,7 @@ button.gb-food-level {
   color: var(--fg2);
   background: none;
   border: none;
-  border-radius: 9px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   white-space: nowrap;
   transition: color var(--dur-fast);
@@ -9673,7 +9735,7 @@ select.gb-input {
   font-size: 0.8125rem;
   font-weight: 600;
   padding: 6px 12px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   width: fit-content;
 }
 
@@ -9709,7 +9771,7 @@ select.gb-input {
   font-size: 0.8125rem;
   font-weight: 600;
   padding: 6px 12px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -9719,9 +9781,9 @@ select.gb-input {
 .gb-wa-verified-label {
   background: var(--gb-wa-green);
   color: var(--fg-on-brand);
-  font-size: 0.625rem;
+  font-size: var(--text-2xs);
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   margin-left: 4px;
   flex-shrink: 0;
 }
@@ -9875,7 +9937,7 @@ select.gb-input {
   align-items: baseline;
   gap: 7px;
   font-weight: 800;
-  font-size: 0.96875rem;
+  font-size: var(--text-body);
   color: var(--fg1);
 }
 .gb-family-card-rel {
@@ -9930,7 +9992,7 @@ select.gb-input {
   color: var(--fg1);
 }
 .gb-family-panel-sub {
-  font-size: 0.84375rem;
+  font-size: var(--text-sm);
   color: var(--fg3);
   margin: 0 2px 16px;
 }
@@ -9957,7 +10019,7 @@ select.gb-input {
   min-width: 0;
 }
 .gb-family-empty-note {
-  font-size: 0.84375rem;
+  font-size: var(--text-sm);
   color: var(--fg3);
   padding: 6px 2px;
 }
@@ -9968,7 +10030,7 @@ select.gb-input {
   gap: 10px;
   margin: 12px 0;
   padding: 10px 14px;
-  font-size: 0.84375rem;
+  font-size: var(--text-sm);
 }
 .gb-family-section-error > span {
   flex: 1;
@@ -10423,7 +10485,7 @@ select.gb-input {
   background: var(--surface-2);
   color: var(--fg2);
   font-weight: 700;
-  font-size: 0.84375rem;
+  font-size: var(--text-sm);
   padding: 9px 14px;
   border-radius: var(--radius-pill);
   transition:
@@ -10486,7 +10548,7 @@ select.gb-input {
 .gb-family-weekday-meal {
   display: flex;
   gap: 8px;
-  font-size: 0.84375rem;
+  font-size: var(--text-sm);
   color: var(--fg2);
   padding: 3px 0;
 }
@@ -10840,7 +10902,6 @@ select.gb-input {
   border: 1.5px solid var(--border-strong);
   background: var(--surface-2);
   color: var(--fg2);
-  font: inherit;
   font-size: 0.78125rem;
   font-weight: 600;
   cursor: pointer;
@@ -10863,7 +10924,6 @@ select.gb-input {
   border: 0;
   background: none;
   color: inherit;
-  font: inherit;
   text-align: left;
   cursor: pointer;
 }
@@ -10894,7 +10954,6 @@ select.gb-input {
 .gb-family-recipe-text {
   min-height: 120px;
   resize: vertical;
-  font-family: inherit;
 }
 .gb-family-recipe-count {
   font-size: var(--text-xs);
@@ -11038,7 +11097,7 @@ select.gb-input {
   gap: 5px;
   margin-top: 6px;
   padding: 3px 9px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--brand-soft);
   color: var(--brand-soft-fg);
   font-size: var(--text-xs);
@@ -11053,7 +11112,7 @@ select.gb-input {
   align-items: center;
   gap: 3px;
   padding: 1px 7px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--brand-soft);
   color: var(--brand-soft-fg);
   font-weight: 700;
@@ -11062,7 +11121,7 @@ select.gb-input {
 .gb-freeze-alert {
   margin: 2px 16px 10px;
   padding: 10px 12px;
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   background: var(--warning-soft);
   border: 1px solid var(--warning);
   display: flex;
@@ -11094,7 +11153,6 @@ select.gb-input {
   align-items: center;
   gap: 14px;
   width: 100%;
-  font: inherit; /* a <button> doesn't inherit the body font: it rendered in Arial */
   text-align: left;
   padding: 16px;
   border: 1px solid var(--border);
@@ -11155,7 +11213,7 @@ select.gb-input {
 .gb-range-toggle {
   display: inline-flex;
   background: var(--surface-2);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 3px;
   gap: 2px;
 }
@@ -11166,7 +11224,7 @@ select.gb-input {
   font-size: var(--text-xs);
   font-weight: 700;
   padding: 6px 12px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   cursor: pointer;
   transition:
     background 0.15s ease,
@@ -11492,13 +11550,13 @@ select.gb-input {
 }
 .gb-ach-summary-bar {
   height: 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-2);
   overflow: hidden;
 }
 .gb-ach-summary-fill {
   height: 100%;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--brand);
   transition: width 0.4s ease;
 }
@@ -11530,12 +11588,13 @@ select.gb-input {
   align-items: center;
   gap: 12px;
   padding: 12px 14px;
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
   border: 1px solid var(--border);
 }
-.gb-ach-tile.is-locked {
-  opacity: 0.72;
+/* Locked: the icon and bar fade, the text stays readable (it says what unlocks it). */
+.gb-ach-tile.is-locked :is(.gb-ach-icon, .gb-ach-progress-bar) {
+  opacity: 0.6;
 }
 .gb-ach-tile.is-unlocked {
   border-color: var(--brand-soft);
@@ -11578,7 +11637,7 @@ select.gb-input {
   justify-content: center;
   width: 24px;
   height: 24px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--leaf-600);
   color: var(--fg-on-brand);
   flex: none;
@@ -11590,13 +11649,13 @@ select.gb-input {
 }
 .gb-ach-progress-bar {
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-2);
   overflow: hidden;
 }
 .gb-ach-progress-fill {
   height: 100%;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--brand);
 }
 .gb-ach-progress-label {
@@ -11640,14 +11699,14 @@ select.gb-input {
 }
 .gb-goal-ms-track {
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-2);
   overflow: hidden;
   margin-bottom: 10px;
 }
 .gb-goal-ms-fill {
   height: 100%;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--brand);
   transition: width 0.3s ease;
 }
@@ -11821,7 +11880,7 @@ textarea:focus-visible,
   position: fixed;
   inset: 0;
   z-index: var(--z-sheet-backdrop);
-  background: rgba(20, 16, 13, 0.32);
+  background: var(--scrim);
   animation: gb-more-fade var(--dur-fast) var(--ease-out);
 }
 .gb-more-sheet {
@@ -12083,7 +12142,6 @@ textarea:focus-visible,
   border-radius: var(--radius-md);
   background: transparent;
   color: var(--fg3);
-  font: inherit;
   font-size: 0.9375rem;
   text-align: left;
   cursor: pointer;
@@ -12518,7 +12576,7 @@ textarea:focus-visible,
 }
 .gb-note-card-time {
   margin-top: 8px;
-  font-size: 0.71875rem;
+  font-size: var(--text-xs);
   font-weight: 600;
   color: var(--fg3);
 }
@@ -12611,7 +12669,7 @@ textarea:focus-visible,
   color: var(--fg2);
 }
 .gb-note-card.has-cover .gb-note-pin.is-on {
-  color: var(--brand);
+  color: var(--brand-ink);
 }
 .gb-note-skel {
   padding: 18px;
@@ -12679,7 +12737,6 @@ textarea:focus-visible,
   border-radius: var(--radius-pill);
   background: transparent;
   color: var(--fg2);
-  font: inherit;
   font-size: 0.8125rem;
   cursor: pointer;
 }
@@ -12730,7 +12787,6 @@ textarea:focus-visible,
   border-radius: var(--radius-pill);
   background: var(--surface);
   color: var(--fg2);
-  font: inherit;
   font-size: 0.875rem;
   font-weight: 600;
   cursor: pointer;
@@ -12859,7 +12915,6 @@ textarea:focus-visible,
   border: none;
   background: transparent;
   color: var(--fg1);
-  font: inherit;
   font-size: 0.875rem;
 }
 .gb-note-label-input:focus {
@@ -13129,7 +13184,6 @@ textarea:focus-visible,
   cursor: pointer;
   /* family only: the `font` shorthand also reset the size and weight above,
      which blew the chip up to body text and wrapped it onto two lines. */
-  font-family: inherit;
 }
 .gb-freeze-modal {
   max-width: 420px;
@@ -13286,7 +13340,7 @@ h2[tabindex='-1']:focus {
 .gb-pixels-day,
 .gb-pixels-month {
   font-family: var(--font-mono);
-  font-size: 0.625rem;
+  font-size: var(--text-2xs);
   font-weight: 400;
   line-height: 1;
   color: var(--fg3);
@@ -13443,7 +13497,7 @@ h2[tabindex='-1']:focus {
   top: 76px;
   width: 96px;
   height: 46px;
-  border-radius: 24px;
+  border-radius: var(--radius-xl);
   background:
     linear-gradient(var(--leaf-500), var(--leaf-500)) 26px 26px / 44px 6px no-repeat,
     linear-gradient(var(--coral-500), var(--coral-500)) 18px 12px / 60px 6px no-repeat,
@@ -13827,7 +13881,6 @@ button.gb-sound-name {
   border: none;
   border-radius: var(--radius-sm);
   background: none;
-  font: inherit;
   text-align: left;
   color: inherit;
   cursor: pointer;
@@ -14113,7 +14166,7 @@ button.gb-sound-name:focus-visible {
 }
 .gb-remset-text {
   font-weight: 700;
-  font-size: 0.90625rem;
+  font-size: var(--text-sm);
   color: var(--fg1);
   overflow-wrap: anywhere;
 }
@@ -14132,7 +14185,6 @@ button.gb-sound-name:focus-visible {
   border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--sky-50) 70%, transparent);
   color: var(--fg1);
-  font: inherit;
   font-size: 0.75rem;
   font-weight: 700;
   cursor: pointer;
@@ -14153,7 +14205,6 @@ button.gb-sound-name:focus-visible {
   border: 1px solid color-mix(in srgb, var(--sky-500) 45%, transparent);
   border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--sky-50) 70%, transparent);
-  font: inherit;
   font-weight: 700;
   cursor: pointer;
 }
@@ -14185,7 +14236,6 @@ button.gb-sound-name:focus-visible {
   border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--fg1);
-  font: inherit;
   font-size: 0.8125rem;
   font-weight: 700;
   cursor: pointer;
@@ -14205,12 +14255,12 @@ button.gb-sound-name:focus-visible {
   white-space: nowrap;
 }
 .gb-rem-defaults-link {
+  font: inherit; /* drops .gb-login-link's 700 */
   align-self: flex-start;
   margin: 6px 0 2px;
   padding: 4px 0;
   border: none;
   background: none;
-  font: inherit;
   font-size: 0.75rem;
   text-align: left;
   cursor: pointer;
@@ -14370,7 +14420,6 @@ select.gb-input {
   color: var(--fg1);
 }
 button.gb-tone-chip {
-  font: inherit;
   font-size: 0.8125rem;
   font-weight: 600;
   min-height: 34px;
@@ -14445,7 +14494,6 @@ button.gb-tone-chip:focus-visible {
   border: 1px solid transparent;
   border-radius: 4px;
   background: var(--surface);
-  font: inherit;
 }
 .gb-hh-day.is-done {
   background: var(--leaf-500);
@@ -14464,6 +14512,10 @@ button.gb-tone-chip:focus-visible {
 .gb-hh-day.is-before,
 .gb-hh-day.is-future {
   background: transparent;
+}
+/* Before the habit started: a faint outline, so a new habit's 12 weeks still read as a grid. */
+.gb-hh-day.is-before {
+  border: 1px dashed var(--border-strong);
 }
 /* Today: ink, not the focus ring's coral, which is the "missed" hue too. */
 .gb-hh-day.is-now {
@@ -14650,7 +14702,6 @@ button.gb-tone-chip:focus-visible {
   border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--fg1);
-  font: inherit;
   font-size: 0.875rem;
 }
 .gb-goal-ms-due-field {
@@ -14857,6 +14908,13 @@ button.gb-tone-chip:focus-visible {
   background: transparent;
   color: var(--fg-on-brand);
   cursor: pointer;
+  position: relative;
+}
+/* ::before is the drawn circle, so the 44px hit area is the ::after (32 + 2*6). */
+.gb-rem-check::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
 }
 .gb-rem-check::before {
   content: '';
@@ -14864,7 +14922,7 @@ button.gb-tone-chip:focus-visible {
   width: 22px;
   height: 22px;
   border-radius: var(--radius-pill);
-  border: 2px solid var(--border-strong);
+  border: 2px solid var(--control-border);
   background: var(--surface);
 }
 .gb-rem-check svg {
@@ -14876,7 +14934,7 @@ button.gb-tone-chip:focus-visible {
   background: var(--brand-fill);
 }
 .gb-rem-check:focus-visible {
-  outline: 2px solid var(--brand);
+  outline: 2px solid var(--ring);
   outline-offset: 1px;
   border-radius: var(--radius-pill);
 }
@@ -14895,7 +14953,7 @@ button.gb-tone-chip:focus-visible {
 .gb-rem-notes-input {
   resize: vertical;
   min-height: 52px;
-  font: inherit;
+  font: inherit; /* not .gb-input's 15px: the notes read at body size */
 }
 .gb-rule {
   display: flex;
@@ -14910,7 +14968,7 @@ button.gb-tone-chip:focus-visible {
   gap: 8px;
 }
 .gb-rule-word {
-  font-size: 0.84375rem;
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--fg2);
 }
@@ -14931,7 +14989,6 @@ button.gb-tone-chip:focus-visible {
   border-radius: var(--radius-pill);
   background: var(--surface);
   color: var(--fg1);
-  font: inherit;
   font-size: 0.8125rem;
   font-weight: 700;
   cursor: pointer;
@@ -15273,7 +15330,6 @@ button.gb-tone-chip:focus-visible {
   padding: 0;
   border: 0;
   background: none;
-  font: inherit;
   font-family: var(--font-mono);
   font-weight: 700;
   /* Space Mono's space is a full cell wide: pull "6h 58m" back into one word. */
@@ -15406,7 +15462,6 @@ button.gb-tone-chip:focus-visible {
   border: 0;
   border-top: 1px solid var(--border);
   background: none;
-  font: inherit;
   text-align: left;
   color: inherit;
   cursor: pointer;
@@ -15581,7 +15636,6 @@ button.gb-tone-chip:focus-visible {
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
   background: var(--surface);
-  font: inherit;
   font-size: var(--text-xs);
   font-weight: 600;
   color: var(--fg2);

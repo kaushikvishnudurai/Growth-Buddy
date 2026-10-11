@@ -1229,15 +1229,21 @@ function paintHistory() {
       h('span', null, days.length ? dayLabel(days[0].date) : ''),
       h('span', null, 'Today')
     ),
+    // In a div: a table ignores width: 1px, so at a large text size the hidden
+    // table still widened the screen (151px of sideways scroll on a phone).
     h(
-      'table',
+      'div',
       { class: 'gb-sr-only' },
-      h('caption', null, 'Focus minutes per day, last ' + days.length + ' days'),
-      h('thead', null, h('tr', null, h('th', { scope: 'col' }, 'Day'), h('th', { scope: 'col' }, 'Minutes'))),
       h(
-        'tbody',
+        'table',
         null,
-        days.map((d) => h('tr', null, h('td', null, dayLabel(d.date)), h('td', null, String(d.minutes || 0))))
+        h('caption', null, 'Focus minutes per day, last ' + days.length + ' days'),
+        h('thead', null, h('tr', null, h('th', { scope: 'col' }, 'Day'), h('th', { scope: 'col' }, 'Minutes'))),
+        h(
+          'tbody',
+          null,
+          days.map((d) => h('tr', null, h('td', null, dayLabel(d.date)), h('td', null, String(d.minutes || 0))))
+        )
       )
     )
   );

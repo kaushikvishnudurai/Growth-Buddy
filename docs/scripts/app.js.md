@@ -351,7 +351,9 @@ it silently landed on Home. Don't reintroduce a second list.
   several call sites do `toastSuccess(...); render();` — which replaces the node mid-entrance. So
   `toastStack` compares `Date.now()` to the toast's `at` and resumes the animation with a negative
   `animation-delay`; past `TOAST_IN_MS` it stamps `is-settled` and the animation is dropped. Keep
-  `TOAST_IN_MS` in step with `gb-toast-in` in `styles/premium.css`.
+  `TOAST_IN_MS` in step with `gb-toast-in` in `styles/app.css` (both skins). A dismissed toast
+  is held `TOAST_OUT_MS` in `leavingToasts` (rendered `.is-leaving`, `gb-toast-out`) before it
+  leaves `state.toasts`; a set, not a class, so a render during the exit keeps it leaving.
 - **Settings' tap targets are real 44px** on tabs (`.gb-segnav-btn`) and segments (`.gb-seg`) inside
   `.gb-settings-body`; Layout's up/down arrows sit side by side there (32px, 12px apart, each with a
   44px `::before`); switches keep their 46x26 look over the shared 46x44 `::before`. The water

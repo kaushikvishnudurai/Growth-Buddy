@@ -10,7 +10,7 @@
    text (bars, dots); orange text is --brand-ink, orange fills --brand-fill.
    --surface-3 is a hover / chip fill and is not a text background here.
    Run: node scripts/contrast.test.mjs */
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 
@@ -86,6 +86,9 @@ const PAIRS = [
   ['--social-soft-fg', '--social-soft', TEXT],
   // focus indicator
   ...CANVASES.map((bg) => ['--ring', bg, UI]),
+  // a control's edge: text fields, the unchecked tick (1.4.11)
+  ['--control-border', '--surface', UI],
+  ['--control-border', '--surface-2', UI],
 ];
 
 const failures = [];
@@ -105,3 +108,21 @@ for (const [themeName, theme] of [
 }
 assert.deepEqual(failures, [], 'token pairs under WCAG contrast');
 console.log(`contrast: ${PAIRS.length * 2} token pairs pass (text ${TEXT}:1, UI ${UI}:1) in light and dark`);
+
+/* Inline styles in JS can't be checked as pairs, so check what they name: a
+   ramp's -50 tint is light-only (no dark twin), and every pill / chip / tag
+   that used one stayed a pastel block in dark mode. Use the themed *-soft /
+   *-soft-fg pair instead. */
+const scriptsDir = import.meta.dirname;
+const rampTint = /var\(--(coral|sun|leaf|iris|sky|bloom)-50\)/;
+const tinted = readdirSync(scriptsDir)
+  .filter((f) => f.endsWith('.js'))
+  .flatMap((f) =>
+    readFileSync(path.join(scriptsDir, f), 'utf8')
+      .split('\n')
+      .map((l, i) => (rampTint.test(l) ? `${f}:${i + 1}: ${l.trim()}` : null))
+      .filter(Boolean)
+  );
+assert.deepEqual(tinted, [], 'scripts name a light-only ramp tint; use a themed -soft token');
+console.log('contrast: no light-only ramp tints in scripts/*.js');
+

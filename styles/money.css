@@ -547,7 +547,6 @@
   border-radius: var(--radius-md);
   background: transparent;
   cursor: pointer;
-  font: inherit;
   color: inherit;
   transition: background-color var(--dur-fast) var(--ease-standard);
 }
@@ -723,7 +722,6 @@
   padding: 12px 6px;
   margin: -12px -6px;
   background: none;
-  font: inherit;
   font-weight: 700;
   color: var(--brand-soft-fg);
   text-decoration: underline;
@@ -744,7 +742,6 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--surface);
-  font: inherit;
   color: inherit;
   text-align: left;
   cursor: pointer;
@@ -1790,7 +1787,7 @@
   vertical-align: middle;
   margin-left: 6px;
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: 0.68rem;
   font-weight: 600;
   background: var(--surface-2);
@@ -1945,7 +1942,7 @@
   inset: -12px -18px;
   z-index: -1;
   border-radius: var(--radius-pill);
-  background: radial-gradient(closest-side, rgba(255, 176, 32, 0.32), transparent);
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--sun-500) 32%, transparent), transparent);
   animation: gb-star-flare 620ms var(--ease-out) both;
   pointer-events: none;
 }
@@ -2004,10 +2001,10 @@
   .gb-money-review-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  /* Four equal columns of ~85px fit "Overview" at this size. */
+  /* Four equal columns of ~85px fit "Overview" at this size. No min-width: 0:
+     at a large text size the labels overprinted; now the strip scrolls. */
   .gb-money-tab {
     flex: 1 1 0;
-    min-width: 0;
     padding-inline: 4px;
   }
 }
@@ -2022,7 +2019,6 @@
   padding: 2px 4px;
   margin: -2px -4px;
   background: none;
-  font: inherit;
   color: inherit;
   text-align: left;
   cursor: pointer;
@@ -2093,7 +2089,7 @@
   row-gap: var(--space-2);
 }
 .gb-money-card > .gb-sectiontitle > h3 {
-  flex: 1 0 auto;
+  flex: 1 1 auto; /* shrinks (wraps) only once it is alone on its line */
 }
 
 .gb-seg:disabled {
@@ -2216,7 +2212,6 @@
   border: 0;
   border-radius: 4px;
   background: var(--surface-2);
-  font: inherit;
 }
 .gb-money-tape-day.is-future {
   background: transparent;

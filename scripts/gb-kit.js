@@ -135,14 +135,14 @@ function Icon(name, { size = 20, sw = 2, color, style, className } = {}) {
 
 /* ---- Domain color map ---- */
 const DOMAIN = {
-  habit: { bg: 'var(--leaf-50)', fg: 'var(--leaf-600)', icon: 'repeat' },
-  fitness: { bg: 'var(--coral-50)', fg: 'var(--coral-600)', icon: 'dumbbell' },
-  ai: { bg: 'var(--iris-50)', fg: 'var(--iris-600)', icon: 'sparkles' },
-  journal: { bg: 'var(--sky-50)', fg: 'var(--sky-600)', icon: 'notebook-pen' },
-  social: { bg: 'var(--bloom-50)', fg: 'var(--bloom-600)', icon: 'users-round' },
-  reward: { bg: 'var(--sun-50)', fg: 'var(--sun-700)', icon: 'trophy' },
-  study: { bg: 'var(--iris-50)', fg: 'var(--iris-600)', icon: 'book-open' },
-  career: { bg: 'var(--sky-50)', fg: 'var(--sky-600)', icon: 'briefcase' },
+  habit: { bg: 'var(--success-soft)', fg: 'var(--success-soft-fg)', icon: 'repeat' },
+  fitness: { bg: 'var(--brand-soft)', fg: 'var(--brand-soft-fg)', icon: 'dumbbell' },
+  ai: { bg: 'var(--ai-soft)', fg: 'var(--ai-soft-fg)', icon: 'sparkles' },
+  journal: { bg: 'var(--info-soft)', fg: 'var(--info-soft-fg)', icon: 'notebook-pen' },
+  social: { bg: 'var(--social-soft)', fg: 'var(--social-soft-fg)', icon: 'users-round' },
+  reward: { bg: 'var(--warning-soft)', fg: 'var(--warning-soft-fg)', icon: 'trophy' },
+  study: { bg: 'var(--ai-soft)', fg: 'var(--ai-soft-fg)', icon: 'book-open' },
+  career: { bg: 'var(--info-soft)', fg: 'var(--info-soft-fg)', icon: 'briefcase' },
 };
 
 function IconChip({ domain = 'habit', icon, size = 40, iconSize = 20 } = {}) {
