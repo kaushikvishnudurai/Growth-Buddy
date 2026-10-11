@@ -40,6 +40,8 @@ public class MoneyService {
     private final ObjectMapper json;
     private final OpenAIClient openai;
     private final MoneyLedger ledger;
+    /** Tests pin it; production reads the system clock. */
+    java.time.Clock clock = java.time.Clock.systemUTC();
 
     public MoneyService(MoneyRepository repo, ObjectMapper json, OpenAIClient openai, MoneyLedger ledger) {
         this.repo = repo;
@@ -367,6 +369,12 @@ public class MoneyService {
      * Failing the whole batch made one bad entry (an old expense with no date,
      * edited later) a poison pill: the client kept it queued, and every save after
      * it failed with it.
+     *
+     * <p>A row dated after the user's today is refused too (EXM-1): it moved the
+     * balance at once while every list and total ends at today, so it could not be
+     * seen, edited or deleted until its day came. Recurring rules post only on or
+     * before today, so they never meet this. The water endpoint's clock slack lets a
+     * device a few minutes into tomorrow still log "today".
      */
     public ObjectNode applyLedger(UUID userId, JsonNode body) {
         if (body.path("upserts").size() + body.path("deletes").size() > 2000) {
@@ -375,12 +383,18 @@ public class MoneyService {
         List<MoneyLedger.Row> upserts = new java.util.ArrayList<>();
         ObjectNode out = json.createObjectNode();
         ArrayNode rejected = out.putArray("rejected");
+        LocalDate latest = body.path("upserts").isEmpty() ? null
+                : java.time.ZonedDateTime.now(clock.withZone(ledger.zoneOf(userId)))
+                        .plus(com.growthbuddy.water.WaterService.FUTURE_SLACK).toLocalDate();
         for (JsonNode u : body.path("upserts")) {
             try {
                 MoneyLedger.Row row = ledger.toRow(u.path("kind").asText(), withoutKind(u));
                 // Not in toRow: a legacy document migrating through it must not lose a big expense.
                 if ("expense".equals(row.kind()) && row.amount().compareTo(MoneyLedger.EXPENSE_MAX) > 0) {
                     throw ApiException.badRequest("An expense can be at most 10,000,000.");
+                }
+                if (row.day().isAfter(latest)) {
+                    throw ApiException.badRequest("Pick a day up to today.");
                 }
                 upserts.add(row);
             } catch (ApiException ex) {

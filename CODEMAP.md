@@ -166,7 +166,7 @@ merged in: `expenses` / `income` / `transfers` (last 400 days, `MoneyLedger.WIND
 `accounts` balances. Saving splits again: `saveMoney` diffs before/after with `ledgerDiff` (pure,
 `money-ledger.test.mjs`) and sends only changed items to `POST /api/money/tx`; the rest goes to `PUT`
 only if it changed. Unconfirmed ledger writes wait in storage (`<money key>.pending`, with an `idemKey` that `queueLedger` re-mints whenever the batch changes) and replay on the
-next launch. An invalid entry is refused by id, never the whole batch. A transfer may have only `from` (money out of your accounts: lent, a loan paid back) or only `to` (in from outside: borrowed, repaid to you), never neither; that is how loans move balances (`loanMove`), and the balance query already reads each side on its own.
+next launch. An invalid entry is refused by id, never the whole batch; so is one dated after the user's today (their zone, plus the water endpoint's 10-minute clock slack: "Pick a day up to today."). A transfer may have only `from` (money out of your accounts: lent, a loan paid back) or only `to` (in from outside: borrowed, repaid to you), never neither; that is how loans move balances (`loanMove`), and the balance query already reads each side on its own.
 The document part is still versioned: `PUT` sends `If-Match`, a stale one is **409**, the client
 merges (`mergeMoney`, `money-merge.test.mjs`, keeps the later `paidFor`, and drops an item either side
 deleted: `removeDocItem` leaves a 120-day tombstone in `tombstones`) and writes once more. **The
