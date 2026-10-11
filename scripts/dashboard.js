@@ -521,7 +521,7 @@ function QuoteCard({ quote }) {
   });
 }
 
-function TodayPlanCard({ water, wellness, onPlanToday, skip }) {
+function TodayPlanCard({ water, wellness, onPlanToday, skip, onAddGlass }) {
   const key = todayKey();
   const sleep = wellness && wellness.sleepByDate ? wellness.sleepByDate[key] : null;
   const mood = wellness && wellness.moodByDate ? wellness.moodByDate[key] : null;
@@ -543,7 +543,9 @@ function TodayPlanCard({ water, wellness, onPlanToday, skip }) {
   // Finish everything and the row empties out, which is the point.
   const chips = [];
   const skipped = (k) => (skip || []).includes(k);
-  if (water && waterPct < 100 && !skipped('water')) chips.push({ label: waterPct + '% water' });
+  // The water one is a glass: it looked tappable and wasn't, and logging one
+  // from Home took three taps through More and Food.
+  if (water && waterPct < 100 && !skipped('water')) chips.push({ label: waterPct + '% water', add: onAddGlass });
   if (!sleep && !skipped('sleep')) chips.push({ label: 'Sleep not logged' });
   if (!mood && !skipped('mood')) chips.push({ label: 'Mood not logged' });
   return Card({
@@ -570,7 +572,19 @@ function TodayPlanCard({ water, wellness, onPlanToday, skip }) {
             'div',
             { class: 'gb-coach-chiprow' },
             chips.map((chip) =>
-              h('span', { class: 'gb-coach-chip gb-coach-chip--todo' }, chip.label)
+              chip.add
+                ? h(
+                    'button',
+                    {
+                      type: 'button',
+                      class: 'gb-coach-chip gb-coach-chip--todo gb-coach-chip--add',
+                      'aria-label': chip.label + '. Add 250 ml',
+                      onclick: chip.add,
+                    },
+                    Icon('plus', { size: 12, sw: 2.6 }),
+                    '250 ml · ' + chip.label
+                  )
+                : h('span', { class: 'gb-coach-chip gb-coach-chip--todo' }, chip.label)
             )
           )
         : null,
@@ -1003,7 +1017,9 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
     })
   );
 
-  const lastThree = entries.slice(-3).reverse();
+  // Newest first; past three the rest sit behind "Show all", which used to be
+  // missing, so an earlier glass could be neither seen nor deleted.
+  const newestFirst = entries.slice().reverse();
   const latest = entries.length ? entries[entries.length - 1] : null;
   const latestAt = latest ? latest.loggedAt : null;
   const now = Date.now();
@@ -1384,14 +1400,14 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
         )
       ),
 
-      lastThree.length
+      newestFirst.length
         ? h(
             'div',
             { class: 'gb-water-log' },
-            lastThree.map((item) =>
+            newestFirst.map((item, i) =>
               h(
                 'div',
-                { class: 'gb-water-log-row' },
+                { class: 'gb-water-log-row', hidden: i >= 3 && !showAllWater },
                 h(
                   'div',
                   { class: 'gb-water-log-text' },
@@ -1425,9 +1441,32 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
             )
           )
         : null,
+      newestFirst.length > 3
+        ? h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-btn gb-btn--ghost gb-water-more',
+              'aria-expanded': String(showAllWater),
+              // In place: a re-render would cost the scroll position.
+              onclick: (e) => {
+                showAllWater = !showAllWater;
+                const btn = e.currentTarget;
+                btn.previousElementSibling
+                  .querySelectorAll('.gb-water-log-row')
+                  .forEach((r, i) => (r.hidden = i >= 3 && !showAllWater));
+                btn.setAttribute('aria-expanded', String(showAllWater));
+                btn.textContent = showAllWater ? 'Show latest 3' : 'Show all ' + newestFirst.length;
+              },
+            },
+            showAllWater ? 'Show latest 3' : 'Show all ' + newestFirst.length
+          )
+        : null,
     ],
   });
 }
+// The water log's "Show all", kept across repaints (a delete repaints the card).
+let showAllWater = false;
 
 /* Slots start at these local hours; "Copy yesterday's" is offered for an empty
    one only once it has begun (a snack, any time). */
@@ -2766,6 +2805,7 @@ function ScreenDashboard({
   onNextMonth,
   onRetryFood,
   onPlanToday,
+  onAddGlass,
   onAddSleep,
   onAddMood,
   onStarterPack,
@@ -2865,7 +2905,7 @@ function ScreenDashboard({
         onDismissInsight,
         onInsightAction,
       }),
-    plan: () => TodayPlanCard({ water: on('water') ? water : null, wellness, onPlanToday, skip: planSkip }),
+    plan: () => TodayPlanCard({ water: on('water') ? water : null, wellness, onPlanToday, skip: planSkip, onAddGlass }),
     // The card above owns its nudge: the check-in row asking the same thing goes.
     wellness: () =>
       WellnessCard({
