@@ -243,9 +243,13 @@ public class AuthService {
             // Only someone holding the right password gets here, so saying
             // "unverified" reveals nothing a stranger could use. Answering "Wrong
             // email or password" left the owner looping against signup's 409.
-            // 403 is the frontend's cue to open the code screen.
+            // 403 email_unverified is the frontend's cue to open the code screen;
+            // a bare 403 (a CORS refusal, say) must not send it there, since no
+            // code went out for that one.
             issueVerificationOtpLimited(user);
-            throw ApiException.forbidden("Verify your email to finish signing up. We sent a new code to " + email + ".");
+            throw new ApiException(org.springframework.http.HttpStatus.FORBIDDEN,
+                    "Verify your email to finish signing up. We sent a new code to " + email + ".",
+                    "email_unverified");
         }
         // Both checks come after the password, so neither says anything to a
         // stranger: 401 totp_required / 409 deletion_scheduled each mean "right

@@ -97,3 +97,22 @@ export function inFlightKeys() {
   };
   return set;
 }
+
+/* Sleep / mood check-ins still in the offline outbox, laid over the logs just
+   read from the server, which has not seen them. Without this the next load
+   replaced them with the server's copy and they were gone without a word. Ops
+   are oldest first, so the newest check-in for a day wins. */
+export function overlayQueuedWellness(wellness, ops) {
+  const w = {
+    ...wellness,
+    sleepByDate: { ...(wellness && wellness.sleepByDate) },
+    moodByDate: { ...(wellness && wellness.moodByDate) },
+  };
+  for (const op of ops || []) {
+    const l = op && op.local;
+    if (!l || !l.date) continue;
+    if (op.kind === 'wellness.sleep') w.sleepByDate[l.date] = l;
+    else if (op.kind === 'wellness.mood') w.moodByDate[l.date] = l;
+  }
+  return w;
+}

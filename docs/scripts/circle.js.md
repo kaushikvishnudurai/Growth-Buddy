@@ -3,7 +3,9 @@
 Exports `ScreenCircle`. People search + mentorship invites + circle challenges. Repaints its
 own subtree (`paint()`). `refreshAll` is the ONLY loader: it awaits outgoing and
 incoming together and paints once. Loading them separately made the screen paint twice with half
-the data and visibly jump, so don't reintroduce per-list refreshers.
+the data and visibly jump, so don't reintroduce per-list refreshers. A later failed load keeps the
+lists it has; a failed FIRST load (no cache yet) paints `paintLoadError` — "Could not load your
+mentors and requests." with Try again — instead of the empty state, which hid waiting requests.
 
 | Piece | What |
 |---|---|

@@ -50,6 +50,7 @@ import {
   latestSeq,
   restoreKey,
   inFlightKeys,
+  overlayQueuedWellness,
 } from './app-logic.js';
 import { MEAL_SLOTS, mealSlotAt, effectiveMl, labelFor, suggestWaterGoalMl, slotOf } from './nutrition.js';
 import {
@@ -68,9 +69,10 @@ import {
 import {
   emptyMoney,
   normalizeMoney,
-  mergeMoney,
   ledgerDiff,
   applyLedgerDiff,
+  docDiff,
+  applyDocDiff,
   docPart,
   LEDGER_ARRAYS,
   suggestCategory,
@@ -876,6 +878,45 @@ function overlayPending(money) {
   return applyLedgerDiff(money, { upserts: Object.values(p.upserts), deletes: p.deletes });
 }
 
+/* The document's twin of the queue above: docDiff ops (money-core.js) the server
+   has not accepted yet. A loan repayment, a goal contribution or a bill marked
+   paid offline used to be replaced by the server's copy at the next load, after
+   "will sync" was promised. Now the server's copy is taken with these laid over
+   it, and re-sent. */
+function docPendingKey() {
+  return moneyStorageKey(state.user) + '.docPending';
+}
+function loadPendingDoc() {
+  try {
+    const p = JSON.parse(CacheStorage.getItem(docPendingKey()) || 'null');
+    if (p && typeof p === 'object' && !Array.isArray(p)) return p;
+  } catch (_) {
+    /* unreadable → nothing pending */
+  }
+  return {};
+}
+function storePendingDoc(p) {
+  try {
+    if (Object.keys(p).length) CacheStorage.setItem(docPendingKey(), JSON.stringify(p));
+    else CacheStorage.removeItem(docPendingKey());
+  } catch (err) {
+    console.error('Failed to keep unsaved money changes:', err);
+  }
+}
+/* Drop the ops in `sent` that are still exactly as sent: the server has them. */
+function clearPendingDoc(sent) {
+  const now = loadPendingDoc();
+  for (const [k, op] of Object.entries(sent))
+    if (JSON.stringify(now[k]) === JSON.stringify(op)) delete now[k];
+  storePendingDoc(now);
+}
+/* A copy fresh from the server becomes the live state with everything not yet
+   accepted laid over it: ledger rows, then document ops. */
+function adoptServerMoney(theirs) {
+  state.money = normalizeMoney(applyDocDiff(overlayPending(theirs), loadPendingDoc()));
+  lastDocBody = JSON.stringify(docPart(normalizeMoney(theirs)));
+}
+
 /* What the server last accepted of the document part, so an unchanged document
    (the usual case: most saves are one new expense) is not re-sent at all. */
 let lastDocBody = null;
@@ -891,13 +932,19 @@ function saveMoney(next, base) {
   // onto the live state. Balances are always the live ones; they come only from
   // the server.
   const nextN = normalizeMoney(next);
-  const diff = ledgerDiff(base ? normalizeMoney(base) : state.money, nextN);
+  const baseN = base ? normalizeMoney(base) : state.money;
+  const diff = ledgerDiff(baseN, nextN);
+  // The document the same way: only the keys and items this save changed. Laying
+  // the snapshot's whole document over the live one lost a goal that arrived
+  // from the laptop while Home's "Add expense" was open.
+  const ops = docDiff(baseN, nextN);
   state.money = normalizeMoney(
-    Object.assign(applyLedgerDiff(state.money, diff), docPart(nextN), {
+    Object.assign(applyDocDiff(applyLedgerDiff(state.money, diff), ops), {
       accounts: state.money.accounts,
     })
   );
   queueLedger(diff);
+  if (Object.keys(ops).length) storePendingDoc(Object.assign(loadPendingDoc(), ops));
   cacheMoney();
   render();
   persistMoney();
@@ -918,7 +965,9 @@ function persistMoney() {
       // in the cache and the ledger queue, and is replayed on the next flush
       // (handleOnline → loadData, or the timer below). Saying "not saved" made
       // people enter it twice. Only a refusal is worth an error.
-      const queued = !navigator.onLine || !err || !err.status || err.status >= 500;
+      // RETRYABLE: flushLedger keeps the batch on these too, so it is still queued.
+      const queued =
+        !navigator.onLine || !err || !err.status || err.status >= 500 || RETRYABLE.has(err.status);
       if (queued) pushToast('Saved on this phone — will sync when you’re back online.', 'info');
       else toastError(err, 'Money changes were not saved. Check your connection and try again.');
     })
@@ -1037,7 +1086,8 @@ function applyAccounts(accounts) {
 
 async function putDocIfChanged() {
   const body = JSON.stringify(docPart(state.money));
-  if (body === lastDocBody) return;
+  const sent = loadPendingDoc();
+  if (body === lastDocBody) return clearPendingDoc(sent); // the server already holds it
   try {
     // No version yet means the boot load failed: a PUT now would be blind and
     // overwrite whatever another device saved. Treat it like a conflict: load,
@@ -1045,18 +1095,23 @@ async function putDocIfChanged() {
     if (!moneyVersion) throw { status: 409 };
     await putMoney(body, moneyVersion);
     lastDocBody = body;
+    clearPendingDoc(sent);
   } catch (err) {
     if (!err || err.status !== 409) throw err;
-    // Someone else wrote first. Take their copy, fold ours into it, and
-    // write once more — unconditionally, so a third writer can't spin this.
+    // Someone else wrote first. Take their copy, lay what we changed over it, and
+    // write once more — unconditionally, so a third writer can't spin this. (A
+    // union by id here kept their version of any item we had edited, and brought
+    // back a cleared budget or a deleted tag.)
     const theirs = await api('/api/money', { onResponse: rememberMoneyVersion });
-    state.money = normalizeMoney(overlayPending(mergeMoney(state.money, theirs)));
+    const ops = loadPendingDoc();
+    adoptServerMoney(theirs);
     cacheMoney();
     render();
     toastSuccess('Merged money changes from your other device.');
     const merged = JSON.stringify(docPart(state.money));
     await putMoney(merged, null);
     lastDocBody = merged;
+    clearPendingDoc(ops);
   }
 }
 
@@ -1066,7 +1121,17 @@ async function putDocIfChanged() {
    as a synchronous mirror for the views that read them. The DB is the source
    of truth so these follow the user across devices; the cache is just the fast
    local read path. ponytail: one JSON blob + mirror, exactly like saveMoney. */
-function saveUiPrefs(patch) {
+/* Patches whose PUT hasn't answered yet, laid over any /me that lands first
+   (syncUserSession): refreshCurrentUser runs after every task or habit tick, and
+   an answer read before the PUT committed flipped the pref back here. */
+const uiPrefsInFlight = new Map();
+let uiPrefsSeq = 0;
+
+/* Sends only `patch`: the server merges key by key (AuthService.updateUiPrefs).
+   Sending the whole blob let a tab open since yesterday write its old copy of
+   every other key over what another device had saved since. `quiet`: a write
+   the app makes on its own (a baseline, a detected default), not worth a toast. */
+function saveUiPrefs(patch, { quiet = false } = {}) {
   if (!state.user || !patch) return;
   state.user.uiPrefs = Object.assign({}, state.user.uiPrefs || {}, patch);
   // Mirror into the cached session too. That cache is what the app boots from,
@@ -1076,12 +1141,17 @@ function saveUiPrefs(patch) {
   // the calendar draws the wrong days; it was equally wrong for the rest.
   saveSession(state.user, state.user.token);
   // Returned so a caller that reads the pref back server-side (the focus goal's streak) can wait for it.
+  const seq = ++uiPrefsSeq;
+  uiPrefsInFlight.set(seq, patch);
   return api('/api/auth/ui-prefs', {
     method: 'PUT',
-    body: JSON.stringify({ prefs: state.user.uiPrefs }),
-  }).catch((err) => {
-    console.error('CRITICAL: saveUiPrefs failed to reach database:', err);
-  });
+    body: JSON.stringify({ prefs: patch }),
+  })
+    .catch((err) => {
+      console.error('CRITICAL: saveUiPrefs failed to reach database:', err);
+      if (!quiet) toastError(err, 'That setting was not saved to your account. Try again.');
+    })
+    .finally(() => uiPrefsInFlight.delete(seq));
 }
 
 /* Which chime a notification makes in the app. Lives in ui_prefs like every
@@ -1315,7 +1385,7 @@ function hydrateUiPrefs() {
     // to ui_prefs, so from the second load on this is the server's answer and
     // the same on every device the account signs in from.
     if (p.timeFormat !== '12' && p.timeFormat !== '24') {
-      saveUiPrefs({ timeFormat: detectTimeFormat() });
+      saveUiPrefs({ timeFormat: detectTimeFormat() }, { quiet: true });
     }
     // The device copy follows the account: set only, it hid the checklist (and the
     // starter packs on it) from every later account signed in on the same phone.
@@ -1455,7 +1525,7 @@ function checkAchievements() {
   if (!Array.isArray(stored) && !achSession.ids.size) {
     // First run with real data — baseline, don't celebrate the back-catalogue.
     unlockedIds.forEach((id) => achSession.ids.add(id));
-    saveUiPrefs({ achSeen: unlockedIds });
+    saveUiPrefs({ achSeen: unlockedIds }, { quiet: true });
     return;
   }
   const seen = new Set([...(Array.isArray(stored) ? stored : []), ...achSession.ids]);
@@ -1465,7 +1535,7 @@ function checkAchievements() {
   // double-fire the same badge.
   const union = Array.from(new Set([...seen, ...unlockedIds]));
   union.forEach((id) => achSession.ids.add(id));
-  saveUiPrefs({ achSeen: union });
+  saveUiPrefs({ achSeen: union }, { quiet: true });
   fresh.forEach((item) => celebrate(item));
 }
 /* Ids already seen this session, per account. Memory only; ui_prefs is the record. */
@@ -1898,9 +1968,10 @@ function purgeUserCache() {
   const id = state.user && state.user.id;
   if (!id) return;
   const p = loadPendingLedger();
-  const keep = Object.keys(p.upserts).length || p.deletes.length ? pendingKey() : null;
+  const keep = new Set([docPendingKey()]); // stored only while non-empty
+  if (Object.keys(p.upserts).length || p.deletes.length) keep.add(pendingKey());
   CacheStorage.removeWhere(
-    (k) => k !== keep && (k.endsWith('.' + id) || k.includes('.' + id + '.'))
+    (k) => !keep.has(k) && (k.endsWith('.' + id) || k.includes('.' + id + '.'))
   );
   // The offline outbox (gb.outbox.<uid>) goes too — the pattern above already
   // matches it; this says so. Unlike the money queue it is not kept: a task tick
@@ -1935,6 +2006,10 @@ function clearSession() {
    A token on the payload wins over the stored one: at sign-in nothing is stored
    yet, and after a password change the stored one has just been revoked. */
 function syncUserSession(userPatch) {
+  if (userPatch && userPatch.uiPrefs && uiPrefsInFlight.size)
+    userPatch = Object.assign({}, userPatch, {
+      uiPrefs: Object.assign({}, userPatch.uiPrefs, ...uiPrefsInFlight.values()),
+    });
   const token = (userPatch && userPatch.token) || loadToken();
   state.user = Object.assign({}, state.user || {}, userPatch || {});
   if (token) {
@@ -1995,7 +2070,7 @@ function offerDeviceTimezone() {
   // same question itself. maybeStartFirstRun() re-arms this when it says no.
   if (!(u.uiPrefs && u.uiPrefs.setupDone)) return;
   if ((u.uiPrefs && u.uiPrefs.tzAsked) === tz) return;
-  saveUiPrefs({ tzAsked: tz });
+  saveUiPrefs({ tzAsked: tz }, { quiet: true });
   openModal({
     title: 'Switch to ' + tz + '?',
     sub:
@@ -2729,6 +2804,9 @@ async function loadData() {
     state.habits = habits;
     reconcileStreakFreeze();
     state.score = todayScore && typeof todayScore.score === 'number' ? todayScore.score : 0;
+    // The water queue is Cache-API-only: read before hydration it is [], and the
+    // next store would overwrite last session's unsent glasses.
+    await CacheStorage.ready();
     restoreWaterQueue();
     state.water = withPendingWater(water);
     flushWaterQueue();
@@ -2846,8 +2924,7 @@ async function loadSecondaryData() {
       cacheFoodSummary(food);
     }
     if (money) {
-      state.money = normalizeMoney(overlayPending(money));
-      lastDocBody = JSON.stringify(docPart(normalizeMoney(money)));
+      adoptServerMoney(money);
       cacheMoney();
       persistMoney(); // replays anything left unsaved by the last session
     }
@@ -2855,11 +2932,15 @@ async function loadSecondaryData() {
     // the local-only photo history, and mirror to cache for offline paint.
     if (dailyLogs) {
       const localWell = loadWellness();
-      state.wellness = {
-        sleepByDate: dailyLogs.sleepByDate || {},
-        moodByDate: dailyLogs.moodByDate || {},
-        photoHistory: photoHistory != null ? photoHistory : localWell.photoHistory || [],
-      };
+      await CacheStorage.ready(); // the outbox reads as empty until it has hydrated
+      state.wellness = overlayQueuedWellness(
+        {
+          sleepByDate: dailyLogs.sleepByDate || {},
+          moodByDate: dailyLogs.moodByDate || {},
+          photoHistory: photoHistory != null ? photoHistory : localWell.photoHistory || [],
+        },
+        outbox.list()
+      );
       state.trends = { byDate: dailyLogs.byDate || {} };
       persistWellness();
       persistTrends();
@@ -3310,6 +3391,30 @@ async function plainToggleHabit(id) {
   state.score = optimisticScore();
   render();
   if (state.habits.some((h) => h.id === id && h.doneToday)) buddyReact('yes');
+  // Queued as a dated check-in, not /toggle: the server's "today" when this
+  // replays may be tomorrow, and a toggle would tick the wrong day. Two taps on
+  // the same day cancel in the outbox (toggleKey).
+  const day = todayKeyNow();
+  const queue = () => {
+    const done = state.habits.some((h) => h.id === id && h.doneToday);
+    queueWrite({
+      method: 'POST',
+      path: '/api/habits/' + encodeURIComponent(id) + '/checkin',
+      body: { date: day, done },
+      kind: 'habit.checkin',
+      toggleKey: 'habit:' + id + ':' + day,
+      local: { id, day, done },
+    });
+    reSyncDeviceAlarms();
+  };
+  // A check-in for this day still queued (its flush stalled): a live /toggle
+  // would flip the server from its pre-queue state, the opposite of this tap.
+  // Queue it too; the pair cancels.
+  if (outbox.list().some((op) => op.toggleKey === 'habit:' + id + ':' + day)) {
+    queue();
+    togglesInFlight.delete(id);
+    return;
+  }
   try {
     const updated = await api('/api/habits/' + encodeURIComponent(id) + '/toggle', {
       method: 'PATCH',
@@ -3330,20 +3435,7 @@ async function plainToggleHabit(id) {
       return;
     }
     if (networkError(err)) {
-      // Queued as a dated check-in, not /toggle: the server's "today" when this
-      // replays may be tomorrow, and a toggle would tick the wrong day. Two taps
-      // on the same day cancel in the outbox (toggleKey).
-      const day = todayKeyNow();
-      const done = state.habits.some((h) => h.id === id && h.doneToday);
-      queueWrite({
-        method: 'POST',
-        path: '/api/habits/' + encodeURIComponent(id) + '/checkin',
-        body: { date: day, done },
-        kind: 'habit.checkin',
-        toggleKey: 'habit:' + id + ':' + day,
-        local: { id, day, done },
-      });
-      reSyncDeviceAlarms();
+      queue();
       return;
     }
     state.habits = state.habits.map((h) => (h.id === id ? { ...h, doneToday: !h.doneToday } : h));
@@ -3477,11 +3569,11 @@ async function createTask(body) {
 }
 
 async function updateTask(id, body) {
-  const updated = await api('/api/tasks/' + encodeURIComponent(id), {
+  const updated = await api('/api/tasks/' + encodeURIComponent(liveId(id)), {
     method: 'PUT',
     body: JSON.stringify(body),
   });
-  state.tasks = state.tasks.map((t) => (t.id === updated.id ? mapTask(updated) : t));
+  state.tasks = state.tasks.map((t) => (t.id === updated.id || t.id === id ? mapTask(updated) : t));
   landSoon('[data-task-id="' + updated.id + '"]');
   refreshScoreLater();
 }
@@ -3494,15 +3586,16 @@ async function patchTaskNow(id, patch, errorMessage) {
   if (togglesInFlight.has(key)) return false;
   const prev = state.tasks.find((t) => t.id === id);
   if (!prev) return false;
+  if (isTempId(realId(id))) return toastError(null, STILL_SYNCING), false;
   togglesInFlight.add(key);
   state.tasks = state.tasks.map((t) => (t.id === id ? mapTask({ ...t, ...patch }) : t));
   render();
   try {
-    const updated = await api('/api/tasks/' + encodeURIComponent(id), {
+    const updated = await api('/api/tasks/' + encodeURIComponent(realId(id)), {
       method: 'PUT',
       body: JSON.stringify(patch),
     });
-    state.tasks = state.tasks.map((t) => (t.id === updated.id ? mapTask(updated) : t));
+    state.tasks = state.tasks.map((t) => (t.id === updated.id || t.id === id ? mapTask(updated) : t));
     render();
     refreshScoreLater();
     return true;
@@ -4452,6 +4545,14 @@ function outboxKey() {
 const outbox = createOutbox(CacheStorage, outboxKey);
 const outboxIds = new Map();
 const realId = (id) => outboxIds.get(id) || id;
+/* The id to put in a path for an edit, pause, done or snooze. A row made offline
+   whose create hasn't landed has none yet: a `tmp-` id in the path is a 400. */
+const STILL_SYNCING = 'That was made offline and is still syncing. Try again in a moment.';
+function liveId(id) {
+  const r = realId(id);
+  if (isTempId(r)) throw Object.assign(new Error(STILL_SYNCING), { status: 0, local: true });
+  return r;
+}
 /* No response at all. A 5xx is the server answering; those roll back and toast. */
 const networkError = (err) => !navigator.onLine || !err || !err.status;
 
@@ -4549,6 +4650,7 @@ async function flushWaterQueue() {
   if (waterFlushing || !state.user) return;
   waterFlushing = true;
   try {
+    await CacheStorage.ready();
     const send = (x) =>
       api('/api/water/entries', {
         method: 'POST',
@@ -4655,6 +4757,7 @@ async function quickAddWater(amountMl, dayKey, drinkType) {
   } catch (err) {
     if (offlineError(err)) {
       // Keep the glass on the card and on this phone; 'online' sends it.
+      await CacheStorage.ready();
       storeWaterQueue(loadWaterQueue().concat({ id: tempId, amountMl, loggedAt, drinkType: drink, idemKey }));
       pushToast('Saved on this phone — will sync when you’re back online.', 'info');
       return;
@@ -4943,69 +5046,76 @@ function loggedAtFor(dayKey) {
   return new Date(y, m - 1, d, 12, 0, 0).toISOString();
 }
 
-async function saveSleepEntry(payload) {
-  const key = payload.date || todayKeyNow();
-  // Optimistic local update + cache mirror, then persist to the backend.
+/* Sleep and mood: paint, POST, and on no connection or a 5xx (Render waking)
+   queue the same POST in the outbox — both are upserts by date, so a replay is
+   safe — and loadSecondaryData lays queued ones over the server's logs. They
+   used to say "saved locally" and be wiped by the next load. A refusal (4xx)
+   puts the day back and says so. */
+async function postWellness(kind, byDate, entry, body, okMsg, failMsg) {
+  const key = entry.date;
   state.wellness = Object.assign(emptyWellness(), state.wellness || {});
-  state.wellness.sleepByDate = Object.assign({}, state.wellness.sleepByDate || {}, {
-    [key]: {
-      date: key,
-      bedtime: payload.bedtime || '',
-      wakeTime: payload.wakeTime || '',
-      quality: payload.quality || 'okay',
-      note: payload.note || '',
-      updatedAt: new Date().toISOString(),
-    },
-  });
+  const prev = (state.wellness[byDate] || {})[key];
+  state.wellness[byDate] = Object.assign({}, state.wellness[byDate] || {}, { [key]: entry });
   persistWellness();
   render();
+  const path = '/api/daily-logs/' + kind;
+  const idemKey = newIdemKey();
   try {
-    await api('/api/daily-logs/sleep', {
-      method: 'POST',
-      body: JSON.stringify({
-        date: key,
-        bedtime: payload.bedtime || null,
-        wakeTime: payload.wakeTime || null,
-        quality: payload.quality || 'okay',
-        note: payload.note || null,
-      }),
-    });
-    toastSuccess('Sleep saved.');
+    await api(path, { method: 'POST', body, headers: { 'Idempotency-Key': idemKey } });
+    toastSuccess(okMsg);
   } catch (err) {
-    toastError(err, 'Saved locally, but could not sync sleep.');
+    if (networkError(err) || err.status >= 500) {
+      await queueWrite({ method: 'POST', path, body, kind: 'wellness.' + kind, idemKey, local: entry });
+      return;
+    }
+    const map = Object.assign({}, state.wellness[byDate]);
+    if (prev) map[key] = prev;
+    else delete map[key];
+    state.wellness = Object.assign({}, state.wellness, { [byDate]: map });
+    persistWellness();
+    render();
+    toastError(err, failMsg);
   }
+}
+
+async function saveSleepEntry(payload) {
+  const key = payload.date || todayKeyNow();
+  const entry = {
+    date: key,
+    bedtime: payload.bedtime || '',
+    wakeTime: payload.wakeTime || '',
+    quality: payload.quality || 'okay',
+    note: payload.note || '',
+    updatedAt: new Date().toISOString(),
+  };
+  const body = JSON.stringify({
+    date: key,
+    bedtime: payload.bedtime || null,
+    wakeTime: payload.wakeTime || null,
+    quality: payload.quality || 'okay',
+    note: payload.note || null,
+  });
+  await postWellness('sleep', 'sleepByDate', entry, body, 'Sleep saved.', 'Sleep was not saved.');
 }
 
 async function saveMoodEntry(payload) {
   const key = payload.date || todayKeyNow();
-  state.wellness = Object.assign(emptyWellness(), state.wellness || {});
-  state.wellness.moodByDate = Object.assign({}, state.wellness.moodByDate || {}, {
-    [key]: {
-      date: key,
-      mood: payload.mood || 'okay',
-      energy: payload.energy || 'medium',
-      stress: payload.stress || 'normal',
-      note: payload.note || '',
-      updatedAt: new Date().toISOString(),
-    },
+  const entry = {
+    date: key,
+    mood: payload.mood || 'okay',
+    energy: payload.energy || 'medium',
+    stress: payload.stress || 'normal',
+    note: payload.note || '',
+    updatedAt: new Date().toISOString(),
+  };
+  const body = JSON.stringify({
+    date: key,
+    mood: payload.mood || 'okay',
+    energy: payload.energy || 'medium',
+    stress: payload.stress || 'normal',
+    note: payload.note || null,
   });
-  persistWellness();
-  render();
-  try {
-    await api('/api/daily-logs/mood', {
-      method: 'POST',
-      body: JSON.stringify({
-        date: key,
-        mood: payload.mood || 'okay',
-        energy: payload.energy || 'medium',
-        stress: payload.stress || 'normal',
-        note: payload.note || null,
-      }),
-    });
-    toastSuccess('Check-in saved.');
-  } catch (err) {
-    toastError(err, 'Saved locally, but could not sync mood.');
-  }
+  await postWellness('mood', 'moodByDate', entry, body, 'Check-in saved.', 'Check-in was not saved.');
 }
 
 function rememberPhotoFood(foodName, estimate, usedPhoto) {
@@ -10337,13 +10447,16 @@ function focusProps() {
   return {
     // link: { taskId } | { goalId } | null — what the session was spent on.
     onFocusSession: (mode, durationSec, link) => {
+      // A task made offline: its server id once the create has landed, else no
+      // link at all. A `tmp-` id fails the UUID binding (400) and lost the minutes.
+      const id = (v) => (v && !isTempId(realId(v)) ? realId(v) : null);
       const saved = api('/api/focus/sessions', {
         method: 'POST',
         body: JSON.stringify({
           mode,
           durationSec,
-          taskId: (link && link.taskId) || null,
-          goalId: (link && link.goalId) || null,
+          taskId: id(link && link.taskId),
+          goalId: id(link && link.goalId),
         }),
       });
       // A finished focus session may be what a "Deep work 2h" habit was waiting for.
@@ -10397,6 +10510,7 @@ function keepDone(old, saved) {
 async function toggleReminderDone(id, key, done) {
   const rem = (state.reminders || []).find((r) => r.id === id);
   if (!rem) return;
+  if (isTempId(realId(id))) return void toastError(null, STILL_SYNCING);
   const before = { doneDates: rem.doneDates, snoozedUntil: rem.snoozedUntil };
   const dates = (rem.doneDates || []).filter((d) => d !== key);
   rem.doneDates = done ? dates.concat(key) : dates;
@@ -10409,7 +10523,7 @@ async function toggleReminderDone(id, key, done) {
   repaint();
   try {
     await api(
-      '/api/reminders/' + encodeURIComponent(id) + '/done?date=' + encodeURIComponent(key),
+      '/api/reminders/' + encodeURIComponent(realId(id)) + '/done?date=' + encodeURIComponent(key),
       { method: done ? 'POST' : 'DELETE' }
     );
   } catch (err) {
@@ -10482,7 +10596,7 @@ function clockOf(iso) {
    marked read — a snoozed reminder is dealt with for now. */
 async function snoozeReminder(id, minutes, notifId) {
   try {
-    const saved = await api('/api/reminders/' + encodeURIComponent(id) + '/snooze', {
+    const saved = await api('/api/reminders/' + encodeURIComponent(liveId(id)) + '/snooze', {
       method: 'POST',
       body: JSON.stringify(minutes ? { minutes } : {}),
     });
@@ -10788,7 +10902,7 @@ async function editReminder(scope, id, occKey, patch) {
     const qs = new URLSearchParams();
     qs.set('scope', scope || 'all');
     if (occKey) qs.set('date', occKey);
-    const saved = await api('/api/reminders/' + encodeURIComponent(id) + '?' + qs.toString(), {
+    const saved = await api('/api/reminders/' + encodeURIComponent(liveId(id)) + '?' + qs.toString(), {
       method: 'PATCH',
       body: JSON.stringify(patch),
     });
@@ -12487,8 +12601,9 @@ function bankFeedSection() {
                     const r = await api('/api/money/bank/sync', { method: 'POST' });
                     if (r.imported > 0) {
                       const theirs = await api('/api/money', { onResponse: rememberMoneyVersion });
-                      state.money = normalizeMoney(overlayPending(mergeMoney(state.money, theirs)));
+                      adoptServerMoney(theirs);
                       cacheMoney();
+                      persistMoney();
                       render();
                     }
                     toastSuccess(
@@ -14750,7 +14865,9 @@ function viewSignin() {
         user = await authPost('/api/auth/login', { email, password });
       } catch (err) {
         if (routeSignInStep(err, email, password)) return;
-        if (err.status !== 403) throw err;
+        // Only the server's own "unverified" 403: any other 403 (a CORS refusal)
+        // would open the code screen saying a code was sent when none was.
+        if (err.status !== 403 || err.code !== 'email_unverified') throw err;
         // Right password, email never verified: the server just sent a fresh
         // code (AuthService.login), so this is the code screen, not a refusal.
         return setAuthMode('verify', {

@@ -21,7 +21,7 @@
 - **Actual:** `429` with "You've used the AI features a lot…". Family's meal plan also fails to load, and day checks on the Food summary return 429.
 - **Evidence:** about 70 `429 GET /api/family/meal-plan*` responses in the console log; Buddy chips returned 429.
 - **Suggested fix:** apply the interceptor only to requests that actually call the AI (the POSTs that generate content), not to reads or manual logging.
-- **Status:** Partly fixed (verified in code): `AiRateLimitInterceptor` now passes every non-POST, so the Family GETs and the chat DELETE are free. `POST /food/entries` still counts even when the entry carries its own kcal and `FoodService` never asks the AI.
+- **Status:** Fixed (verified in code, 2026-10-11): `AiRateLimitInterceptor` passes every non-POST, so the Family GETs and the chat DELETE are free. An entry with its own kcal goes to `POST /food/entries/manual` (`FoodController.addManualEntry`, kcal required), which is outside the limiter's exact-path list; `logFoodEntry` picks it whenever `kcal` is set, and copy-slot is `/entries/copy`. Only an entry the server has to estimate still counts. This status line was stale.
 
 **QA-03: Tapping outside a header panel also triggers what's underneath**
 - **Where:** Notifications and Account panels, at all widths. Category: accidental clicks. **Severity: Medium.**
@@ -36,7 +36,7 @@
 - **Actual:** at 390×844 the tapped column is at y=366, but its result or error renders at y=994, below the fold, and the page doesn't scroll.
 - **Evidence:** `.playwright-mcp/qa-summary-429.png`.
 - **Suggested fix:** scroll the result into view, or render it next to the chart.
-- **Status:** Confirmed.
+- **Status:** Fixed (verified in a browser, 2026-10-11): `runDietCheck` calls `revealBuddyCard()` on the tap and again when the answer lands. `scripts/e2e/functional.e2e.mjs` taps a day at 390×844 and finds the card's top at y≈315–400. The original report was most likely taken in a background tab, where `requestAnimationFrame` (which the reveal runs in) never fires; the e2e now brings its tab to the front and asserts `visibilityState === 'visible'`.
 
 **QA-05: Touch targets under 44px on phones**
 - **Category:** touch usability. **Severity: Medium.** Measured identically at 320, 375, 390 and 430px.
@@ -86,7 +86,7 @@
 
 **QA-11: A click in the first frame of a dialog opening hits the page underneath**
 - **Severity: Low.** The window is under 50ms, so people are very unlikely to hit it.
-- **Status:** Suspected.
+- **Status:** Not reproducible; impossible in the current code (2026-10-11). gb-kit `openOverlay` appends the full-viewport `.gb-modal-overlay` synchronously, in the same task as the opening click, and nothing gives it `pointer-events: none` except `.is-closing` (the old `:not(.is-open)` rule that matched the opening frame is gone). The e2e opens a dialog and, in the same task, `elementFromPoint` on the button's own spot returns the overlay, at 390 and 1280.
 
 ## 2026-10-10 — audit areas addressed today (working tree, not yet committed)
 

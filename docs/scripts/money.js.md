@@ -1,6 +1,6 @@
 # scripts/money.js — Money Buddy
 
-Exports: `emptyMoney()`, `normalizeMoney(m)` (returns COPIES of the ledger arrays: aliasing them lost quick-add expenses), `mergeMoney`, `ledgerDiff`, `applyLedgerDiff`, `docPart`, `LEDGER_ARRAYS`,
+Exports: `emptyMoney()`, `normalizeMoney(m)` (returns COPIES of the ledger arrays: aliasing them lost quick-add expenses), `mergeMoney` (no longer called by app.js; kept for `money-merge.test.mjs`), `docDiff` / `applyDocDiff` (from core), `ledgerDiff`, `applyLedgerDiff`, `docPart`, `LEDGER_ARRAYS`,
 `MoneyCustomisePane(money, save)`, `ScreenMoney`, `openExpenseModal` (for money-home.js), `MoneyHomeCard` (re-export), `searchExpenses` (for its test),
 `removeDocItem(m, key, id)` + `TOMBSTONED`, `ledgerCsv(money)`, and `_calc` (the pure engines —
 `forecast`, `upcomingSubs`, `budgetStatus`, `logStreak`, `bestStreak`, `loanLeft`, `loanOutstanding`,
@@ -24,7 +24,8 @@ Three files so the ~6k-line screen stays out of the boot chunk (boot 551,884 B -
   `budgetStatus` — categories (`DEFAULT_CATEGORIES`, `PALETTE`, `KEYWORDS`, `mergedCats`, `catOf`,
   `predictCategory` / `suggestCategory`, see below), date + currency helpers (`todayKey` … `fmtDateShort`, `toHomeAmount`,
   `readAmount` / `readWhole`, `uid`, `clone`, `slug`), the document model (`emptyMoney`,
-  `normalizeMoney`, tombstones + `removeDocItem`, `mergeMoney`), the ledger split (`LEDGER_ARRAYS`,
+  `normalizeMoney`, tombstones + `removeDocItem`, `mergeMoney`, **`docDiff` / `applyDocDiff`** — see
+  "Document ops" below), the ledger split (`LEDGER_ARRAYS`,
   `stable`, `ledgerDiff`, `applyLedgerDiff`, `docPart`) and the two engines Home reads
   (`buildInsights`, `budgetStatus`, with `inRange` / `sumAmt` / `byCategory` / `pctChange` / `goalSaved`).
   app.js imports the model from here. `cur` is a live binding: `applyCurrency` in core sets it, money.js
@@ -50,7 +51,7 @@ loans[]     {id, direction:'given'|'received', party, amount, date, note, settle
 goals[]     {id, name, target, dueDate, contribs[{amount,date}]}
 recurring[] {id, kind:'income'|'expense', amount, category (income: 'salary'|'other'), accountId?, day: 1-28|'last', note, active, start:'YYYY-MM-DD', postedFor?:'YYYY-MM'}   (see Recurring below)
 subscriptions[] {id, name, amount, dueDay, category, paidFor?:'YYYY-MM', usesPerMonth?}  (paid → drops out of upcomingSubs; expense id `sub-<id>-<month>`, same as the server's WhatsApp path; paid is forward-only on both sides; Mark as paid refuses a bill with no amount, as `applyPaid` does)
-tombstones{} "<list>:<id>" -> ms deleted, for the TOMBSTONED doc lists (loans, goals, subscriptions, challenges, wishlist, recurring); written by `removeDocItem`, honoured by `mergeMoney`, pruned after 120 days by `normalizeMoney`
+tombstones{} "<list>:<id>" -> ms deleted, for the TOMBSTONED doc lists (loans, goals, subscriptions, challenges, wishlist, recurring); written by `removeDocItem`, honoured by `applyDocDiff` and `mergeMoney`, pruned after 120 days by `normalizeMoney`
 budgets{}   categoryKey -> monthly limit
 rollover{}  categoryKey -> 'YYYY-MM' switched on | null (off is null, not deleted, so a merge can't turn it back on; merged mine-wins like budgets)
 challenges[], wishlist[], customCategories[], noSpendDays[]
@@ -94,7 +95,7 @@ All keys are `YYYY-MM-DD` strings; **all range filtering is string comparison**:
 `postedFor` this month and with no ledger row of id `rec-<ruleId>-<YYYY-MM>`. `ScreenMoney` posts them
 on every render where any are due (`materialiseRecurring` in a `setTimeout`, guarded by `recurPosting`:
 a save repaints synchronously). The id is deterministic, so two devices posting the same month upsert
-one row; `postedFor` (forward-only, later month wins in `mergeMoney`) stops a deleted occurrence coming
+one row; `postedFor` (forward-only, later month wins in `applyDocDiff` and `mergeMoney`) stops a deleted occurrence coming
 back. Only the current month posts — a missed month is not backfilled. `day: 'last'` (and the picker's
 1–28) means every month has the day. Resume sets `start` to today so a day passed while paused isn't
 posted late. Amounts are home currency. UI: `recurringCard` / `openRecurring` on the Income tab
@@ -148,8 +149,8 @@ the Coach tab) call `shareSummary`.
 - Currency: module-level `cur`, set by `applyCurrency(money)` on every render. Not threaded through `fmt()`. Another currency's figure goes through `fmtIn(n, sym)` (see Other currencies).
 - Amount fields: `readAmount(input)` keeps paise (the ledger is decimal(14,2)) and refuses a value `type=number` couldn't parse (`validity.badInput`, e.g. "1,250") instead of reading it as 0. Used by expense, income, loan, transfer, goal target and contribution, wishlist price, split total and account balances. Subscriptions, budgets and the reflection threshold stay whole units on purpose (the server's WhatsApp path rounds a subscription's amount, and its expense id is shared with ours): those fields are `inputmode=numeric step=1`, labelled "whole amounts" (not "rupees": the currency symbol is a setting), and read through `readWhole`, which refuses a decimal rather than rounding it. `fmt()` still displays whole units. The expense modal checks its own `max` (10,000,000) in JS, since a number input's `max` is never enforced outside a `<form>` submit; the server holds the same cap for client-written expenses (`MoneyService.applyLedger`, `MoneyLedger.EXPENSE_MAX`) and rounds to paise before its > 0 check, so 0.001 is refused rather than stored as 0.
 - `commit(fn)` mutates the doc then persists via the injected `save`; `money` is the live object.
-- **Delete a doc-list item with `removeDocItem`, never a bare `filter`**: without its tombstone the
-  next 409 merge brings it back from the other device's copy.
+- **Delete a doc-list item with `removeDocItem`, never a bare `filter`**: without its tombstone an
+  edit to it on the other device brings it back at the next merge.
 - **Every save re-renders the screen**: app.js calls `ScreenMoney` again. View state therefore lives at module level (`activeTab`, `spendFilter` + `filterScroll`, `lastSearch` typed / `searchAsked` run, `pickedDay`, `showAllIncome`, `tapeShown`, `expShown`, `expMonth`, `loanOrder`, `older`, `daySummaries`). The second group resets on a fresh visit, detected by the previous root being detached (`moneyRoot.isConnected`; app.js builds the new screen before swapping). `loanOrder` keeps loan rows where they were on Settle/Undo until a tab switch.
 - The "Quick reflection" sheet opens after a new expense only at or above `settings.reflectThreshold` (0 = off).
 - Self-check `_demo()` at the bottom runs **only on Vite DEV**, wrapped in try/catch so it never
@@ -201,4 +202,17 @@ the Coach tab) call `shareSummary`.
   reason on each row (`e.why`); a question it can't narrow tries its words against notes and tags, then says
   it didn't understand — it used to return every expense as "matching".
 - `fmtDateShort` adds the year only when it isn't this year (two "1 Oct" salaries were different Octobers).
-- Every save passes its snapshot: `save(next, money)` / `commitOn`. app.js `saveMoney(next, base)` diffs against `base` and lays the change onto the live state (`applyLedgerDiff`), so an item that arrived after the snapshot is never sent as a delete.
+- Every save passes its snapshot: `save(next, money)` / `commitOn`. app.js `saveMoney(next, base)` diffs against `base` and lays the change onto the live state (`applyLedgerDiff` for ledger rows, `applyDocDiff` for the document), so an item that arrived after the snapshot is never sent as a delete, and a document key the save didn't touch is never overwritten from the snapshot.
+
+## Document ops (`docDiff` / `applyDocDiff`, money-core.js)
+
+`docDiff(before, after)` is what one save changed in the document part, as ops keyed by what they touch:
+`"<list>:<docId>"` for a list item (`docId`: `id`, else a tag's `key`, else the value — no-spend days),
+`"<obj>.<key>"` for one key of budgets / rollover / settings / tombstones (`gone: true` = removed),
+`"<key>"` for a scalar. Ops combine with `Object.assign` (newest per key wins). `applyDocDiff(copy, ops)`
+lays them on any copy: an edited item replaces theirs (keeping the later `paidFor` / `postedFor`), a new
+one is appended unless the copy has a tombstone for it, a removed one goes. app.js keeps the ops the
+server has not accepted in `<money key>.docPending` and replays them over every copy it adopts from the
+server (boot load, back online, a 409, bank Sync now). `money-doc.test.mjs` pins the scenarios: an offline
+loan repayment surviving the next load, a stale Home snapshot not dropping the laptop's goal, a 409
+keeping our goal contribution and their Mark as paid, a cleared budget and a deleted tag staying gone.

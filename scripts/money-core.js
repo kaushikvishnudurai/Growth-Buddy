@@ -433,9 +433,10 @@ export function normalizeMoney(m) {
 }
 /* ---- Deletes that survive a merge ----
    The document's own lists (loans, goals, subscriptions, challenges, wishlist) are
-   unioned by mergeMoney after a 409, so a delete on one device came back from the
-   other device's copy. A delete now leaves a tombstone ("loans:<id>" -> when),
-   and mergeMoney drops any item either side has a tombstone for. Kept 120 days:
+   merged after a 409, so a delete on one device came back from the other device's
+   copy. A delete now leaves a tombstone ("loans:<id>" -> when): applyDocDiff won't
+   re-add an item the copy has one for, and mergeMoney drops any item either side
+   has one for. Kept 120 days:
    a device offline longer than that can resurrect an item, which is the old
    behaviour, not lost money. (The ledger lists don't need this: their deletes
    are server rows.) */
@@ -518,6 +519,85 @@ export function docPart(m) {
   const out = Object.assign({}, m);
   for (const k of Object.keys(LEDGER_ARRAYS)) delete out[k];
   delete out.accounts;
+  return out;
+}
+
+/* ---- The document part of a save, as ops ----
+   What one save changed in the document, keyed by what it touches: an item of a
+   list (by id, a tag by key, a no-spend day by value), one key of an object
+   (budgets, rollover, settings, tombstones), or a whole scalar. Two saves' ops
+   combine with Object.assign, newest per key wins. Laid onto any copy with
+   applyDocDiff, so a save built from an older snapshot changes only what its own
+   edit changed (it used to replace the live document whole), and an edit the
+   server never accepted is replayed onto the server's copy at the next load or
+   conflict instead of being dropped by it. Pure; pinned in money-doc.test.mjs. */
+function docId(x) {
+  if (x && typeof x === 'object') {
+    if (x.id != null) return 'i' + x.id;
+    if (x.key != null) return 'k' + x.key;
+  }
+  return 'v' + stable(x);
+}
+const isPlain = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+
+export function docDiff(before, after) {
+  const a = docPart(before || {});
+  const b = docPart(after || {});
+  const ops = {};
+  for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
+    const was = a[key];
+    const now = b[key];
+    if (stable(was) === stable(now)) continue;
+    if (Array.isArray(was) && Array.isArray(now)) {
+      const old = new Map(was.map((x) => [docId(x), x]));
+      const kept = new Set();
+      for (const x of now) {
+        const id = docId(x);
+        kept.add(id);
+        if (!old.has(id) || stable(old.get(id)) !== stable(x))
+          ops[key + ':' + id] = { key, id, item: x };
+      }
+      for (const id of old.keys()) if (!kept.has(id)) ops[key + ':' + id] = { key, id, gone: true };
+    } else if (isPlain(was) && isPlain(now)) {
+      for (const k of new Set([...Object.keys(was), ...Object.keys(now)])) {
+        if (stable(was[k]) === stable(now[k])) continue;
+        ops[key + '.' + k] =
+          now[k] === undefined ? { key, sub: k, gone: true } : { key, sub: k, value: now[k] };
+      }
+    } else ops[key] = { key, value: now };
+  }
+  return ops;
+}
+
+export function applyDocDiff(money, ops) {
+  const out = Object.assign({}, money);
+  for (const op of Object.values(ops || {})) {
+    const cur = out[op.key];
+    if (op.id !== undefined) {
+      const list = Array.isArray(cur) ? cur.slice() : [];
+      const i = list.findIndex((x) => docId(x) === op.id);
+      if (op.gone) {
+        if (i >= 0) list.splice(i, 1);
+      } else if (i >= 0) {
+        // paidFor / postedFor only move forward: a WhatsApp "Mark as paid" on the
+        // server's copy survives an edit to the same bill made here.
+        const item = Object.assign({}, op.item);
+        for (const f of ['paidFor', 'postedFor'])
+          if (list[i] && list[i][f] && list[i][f] > (item[f] || '')) item[f] = list[i][f];
+        list[i] = item;
+      } else if (
+        !(op.item && op.item.id != null && (out.tombstones || {})[op.key + ':' + op.item.id])
+      ) {
+        list.push(op.item); // not when the other copy deleted it: the delete wins
+      }
+      out[op.key] = list;
+    } else if (op.sub !== undefined) {
+      const obj = Object.assign({}, isPlain(cur) ? cur : {});
+      if (op.gone) delete obj[op.sub];
+      else obj[op.sub] = op.value;
+      out[op.key] = obj;
+    } else out[op.key] = op.value;
+  }
   return out;
 }
 

@@ -2,7 +2,6 @@ package com.growthbuddy.focus;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
-import com.growthbuddy.common.ApiException;
 import com.growthbuddy.user.User;
 import com.growthbuddy.user.UserClock;
 import com.growthbuddy.user.UserRepository;
@@ -78,9 +77,12 @@ public class FocusService {
 
     /**
      * A finished session, optionally linked to one of the user's tasks or goals.
-     * A link that isn't theirs is refused (404, the same answer as a task that
-     * doesn't exist, so an id can't be probed). A break is never linked: it
-     * wasn't spent on anything.
+     * A link that isn't theirs, or no longer exists (deleted, or ticked and swept
+     * at midnight while the session ran), is dropped and the session saved
+     * unlinked. It used to be refused with a 404, which lost the minutes, and the
+     * timer kept the dead link, so every later session failed the same way. The
+     * answer is the same either way, so an id still can't be probed. A break is
+     * never linked: it wasn't spent on anything.
      */
     @Transactional
     public FocusStats record(UUID userId, String mode, int durationSec, UUID taskId, UUID goalId) {
@@ -89,8 +91,8 @@ public class FocusService {
             taskId = null;
             goalId = null;
         }
-        if (taskId != null && !links.ownsTask(userId, taskId)) throw ApiException.notFound("that task");
-        if (goalId != null && !links.ownsGoal(userId, goalId)) throw ApiException.notFound("that goal");
+        if (taskId != null && !links.ownsTask(userId, taskId)) taskId = null;
+        if (goalId != null && !links.ownsGoal(userId, goalId)) goalId = null;
         FocusSession s = new FocusSession();
         s.setUserId(userId);
         s.setMode(m);
