@@ -56,7 +56,7 @@ test('circle: create private, post, kudos; a second account joins by code and se
   await page.getByRole('button', { name: 'New circle' }).first().click();
   const dlg = page.getByRole('dialog', { name: 'New circle' });
   await dlg.getByRole('textbox', { name: 'Name' }).fill('Dawn Club');
-  await dlg.getByRole('checkbox').check();
+  await dlg.getByRole('checkbox', { name: /^Private circle/ }).check();
   await dlg.getByRole('button', { name: 'Create' }).click();
   await expect(page.getByRole('heading', { name: 'Dawn Club' })).toBeVisible();
 
@@ -162,7 +162,7 @@ test('family: add an unmapped member, add a chore for them, tick it; the meal pl
   await boot(page, account);
   await go(page, 'family');
   await page.getByRole('button', { name: 'Add your first member' }).click();
-  await page.getByRole('button', { name: /Create a profile/ }).click();
+  // The add form opens straight on a profile (FRS-10); inviting is the link inside it.
   await page.getByRole('textbox', { name: 'Name' }).fill('Amma');
   await page.getByRole('button', { name: 'Add member' }).click();
   await expect(page.getByRole('heading', { name: 'Family members' })).toBeVisible();
@@ -221,7 +221,8 @@ test('notifications: the bell shows an unread card and mark all read clears it',
     .toBeGreaterThan(0);
 
   await boot(page, emptyAccount);
-  await page.getByRole('button', { name: 'Notifications' }).click();
+  // exact: the empty account's first-run card has a "Notifications" step of its own.
+  await page.getByRole('button', { name: 'Notifications', exact: true }).click();
   const mark = page.getByText('Mark all read', { exact: true });
   await expect(mark).toBeVisible();
   await mark.click();
