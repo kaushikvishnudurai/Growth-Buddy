@@ -363,7 +363,7 @@ it silently landed on Home. Don't reintroduce a second list.
   `maybeStartFirstRun()`: no `ui_prefs.setupDone` and no tasks / habits / reminders /
   `onboardingDone` → `openFirstRunSetup()`, one `openOverlay` sheet (`.gb-setup-modal`, CSS in
   app.css "First-run setup") with four skippable steps — goal (`starterPicker`, the Home starter-pack picker, so one to three chip
-  taps plus "Set it up" leave Home already set up; nothing picked just moves on), timezone (`saveDeviceTimezone`), push
+  taps plus "Set it up" leave Home already set up; the button reads "Next" until a chip is on; a sign-out while starter-packs.js loads opens nothing and resets `firstRunOpen`), timezone (`saveDeviceTimezone`), push
   (`enablePushFlow`), features (`featureSwitchRow`, the same row as Settings › Layout). An account
   with data is marked `setupDone` silently. Every way out (Done, Skip, Escape, backdrop) goes
   through `onClose`, which saves `setupDone` + `tzAsked` and re-arms the timezone offer — which

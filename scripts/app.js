@@ -2076,6 +2076,12 @@ async function openFirstRunSetup() {
   firstRunOpen = true;
   // The goal step needs starter-packs.js; offline or a failed chunk just drops it.
   const mod = await import('./starter-packs.js').catch(() => null);
+  // Signed out (or set up elsewhere) while the chunk loaded: no sheet, and no
+  // firstRunOpen stuck true, which would skip the next account's setup in this tab.
+  if (!state.user || (state.user.uiPrefs || {}).setupDone) {
+    firstRunOpen = false;
+    return;
+  }
   const tz = deviceZone();
   const { sheet, close } = openOverlay({
     label: 'Set up Growth Buddy',
@@ -2168,11 +2174,15 @@ async function openFirstRunSetup() {
   // (budgetsFrom); offer one once Money has 30 days of spending.
   function goalStep() {
     const p = starterPicker(mod);
+    // The button says what it will do: "Next" until a chip is on.
+    p.body.addEventListener('click', () => {
+      if (steps[at] === goalStep) primaryBtn.textContent = p.picked() ? 'Set it up' : 'Next';
+    });
     return {
       title: 'What do you want to change?',
       sub: 'Pick one or more. We set up habits, reminders and a 30-day goal.',
       body: p.body,
-      primary: 'Set it up',
+      primary: 'Next',
       onPrimary: () => (p.picked() ? p.apply() : null),
       skip: 'Skip',
     };
