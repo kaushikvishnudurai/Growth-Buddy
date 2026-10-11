@@ -94,19 +94,25 @@ function ourCookieNames() {
 }
 
 /* ---- Cache API helpers (async) ---- */
+// Writes to one key run one after another. Two Cache API ops are otherwise
+// unordered: the timer's Reset did set-then-remove, the put landed last, and
+// the discarded session came back on reload. One chain per key, for every caller.
+const chains = new Map();
+function serial(key, op) {
+  const p = (chains.get(key) || Promise.resolve()).then(op).catch(() => {});
+  chains.set(key, p);
+  p.then(() => chains.get(key) === p && chains.delete(key));
+  return p;
+}
 function cachePut(key, val) {
   if (typeof caches === 'undefined') return Promise.resolve();
-  return caches
-    .open(CACHE_NAME)
-    .then((c) => c.put(STORE_URL + encodeURIComponent(key), new Response(val)))
-    .catch(() => {});
+  return serial(key, () =>
+    caches.open(CACHE_NAME).then((c) => c.put(STORE_URL + encodeURIComponent(key), new Response(val)))
+  );
 }
 function cacheDelete(key) {
   if (typeof caches === 'undefined') return Promise.resolve();
-  return caches
-    .open(CACHE_NAME)
-    .then((c) => c.delete(STORE_URL + encodeURIComponent(key)))
-    .catch(() => {});
+  return serial(key, () => caches.open(CACHE_NAME).then((c) => c.delete(STORE_URL + encodeURIComponent(key))));
 }
 function cacheReadAll() {
   if (typeof caches === 'undefined') return Promise.resolve({});

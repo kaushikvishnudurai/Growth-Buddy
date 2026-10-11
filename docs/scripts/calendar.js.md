@@ -81,7 +81,7 @@ Day-key helpers: `pad`, `keyOf(y,m,d)`, `parseKey`, `todayKey`, `isFutureKey`, `
 - **Scoped edit mirrors scoped delete.** `openEditDialog` asks the same question the delete dialog
   does, because the row on screen is one occurrence of a series. The model has no per-occurrence
   overrides, so `this` can only mean *skip that day and leave a one-off in its place*; `future` cuts
-  the series at the day before and starts a new one; `all` edits the row. The server does the split
+  the series at the day before and starts a new one; `all` edits the row — **only this row**, so the option reads "This series, from <anchor>" (delete: "Delete this series, from …"), never "the whole series": a day split off earlier is a row of its own and is not reached. The server does the split
   (`ReminderService.update`). An `all` edit answers with the same reminder, so `editReminder` in
   app.js swaps that row in place; any other answer is a brand-new reminder and the list is refetched.
   The dialog awaits the save and closes only on success — `editReminder` toasts and rethrows on
@@ -132,16 +132,16 @@ Day-key helpers: `pad`, `keyOf(y,m,d)`, `parseKey`, `todayKey`, `isFutureKey`, `
 
 | Fn | Notes |
 |---|---|
-| `MonthGrid` | the month cells + tag dots. Always 42 cells, so the card never changes height between months. Arrow keys move focus between days (`moveFocus`, focus only; Enter selects) |
+| `MonthGrid` | the month cells + tag dots, plus a square `.gb-cal-dot.is-task` on a day with a task due ("Task due" in the legend). app.js repaints it after every reminder change without `tasks` and without the toolbar, so it keeps the last `tasks` it was given (`lastTasks`) and swaps the toolbar's `.gb-cal-toolbar-actions` itself (`MonthCount`). Always 42 cells, so the card never changes height between months. Arrow keys move focus between days (`moveFocus`, focus only; Enter selects) |
 | `TagPicker` | color chips |
 | `RepeatPicker` | segmented recurrence; `RuleExtras` holds its details (see above) |
 | `openDeleteDialog` | **scoped delete** for recurring reminders: this occurrence vs the whole series → app.js `deleteReminder(scope, id, occKey)` |
 | `ReminderRow` | one reminder: done checkbox, text, notes, then meta (time, own lead, second alert, `describeRepeat`). Shows a WhatsApp marker when enabled. "Snoozed till" (`snoozeLabel`, also used by Settings → Reminders) names the day when it isn't today, and is a button that cancels the snooze (`onCancelSnooze` → app.js `cancelReminderSnooze`) |
 | form cache | `resetCalendarForm`, `buildForm` — the add-reminder form persists across repaints on purpose; `ReminderPanel` re-syncs its `UsualTimeChip` from the reminder list each paint |
 | `UsualTimeChip(timeInput, onSet)` (export) | "Usual time: 9:00 AM" under an empty Time field (`usualReminderTime`, nudges.js). A tap, not a prefill: an empty Time means no time of day, and a native time input can't reliably be emptied. Also under Settings → Reminders' add form |
-| `ReminderPanel` | the selected day, as **one node** (`.gb-cal-side`, which app.js swaps whole to repaint) holding two blocks: `.gb-cal-reminders` (date title, reminders, add form, schedule) and `.gb-cal-daylog` (wins, tasks, food). `.gb-cal-side` is `display: contents`, so `.gb-cal` lays the blocks out: on desktop a grid with the month and the day log on the left and reminders spanning the right (the second row is `1fr` so the tall reminders column can't open a gap under the month); on a phone, month → reminders → day log. The food-loading height hold goes on `.gb-cal-daylog` — the panel has no box |
+| `ReminderPanel` | the selected day, as **one node** (`.gb-cal-side`, which app.js swaps whole to repaint) holding two blocks: `.gb-cal-reminders` (date title, reminders, add form, schedule) and `.gb-cal-daylog` (wins, tasks, food). Wins include habits checked in that day (`habitsDoneOn(habits, habitHistory, key)`: today from `doneToday`, other days from `{[id]: {days}}`) — **only once app.js passes `habits` / `habitHistory`**, which it doesn't yet. `.gb-cal-side` is `display: contents`, so `.gb-cal` lays the blocks out: on desktop a grid with the month and the day log on the left and reminders spanning the right (the second row is `1fr` so the tall reminders column can't open a gap under the month); on a phone, month → reminders → day log. The food-loading height hold goes on `.gb-cal-daylog` — the panel has no box |
 | `ScreenCalendar` | assembles grid + panel |
-| `CalendarToolbar` | month nav + counts |
+| `CalendarToolbar` | month nav + counts: `monthCounts` gives **distinct** reminders occurring this month and tasks due ("1 reminder · 6 tasks this month"), never occurrences |
 
 **Time blocks / free-busy.** A reminder with both `time` and `endTime` is a busy block
 ("Meeting 15:00 to 16:00"). `freeBusy(list, key, routine)` paints the day minute by minute (1440

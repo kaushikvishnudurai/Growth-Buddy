@@ -607,6 +607,16 @@ function richEditor({ html, placeholder, onInput } = {}) {
         sel.removeAllRanges();
         sel.addRange(end);
       }
+      // In a checklist the photo would become part of the item: put it after the list.
+      const node = sel.rangeCount && sel.getRangeAt(0).startContainer;
+      const list = node && (node.nodeType === 1 ? node : node.parentElement).closest('ul[data-checklist]');
+      if (list && area.contains(list)) {
+        const after = document.createRange();
+        after.setStartAfter(list);
+        after.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(after);
+      }
       document.execCommand(
         'insertHTML',
         false,
@@ -1182,7 +1192,8 @@ function ScreenNotes({
   const searchInput = h('input', {
     type: 'search',
     class: 'gb-input',
-    placeholder: 'Search notes and photo descriptions',
+    // Short enough not to clip on a phone; photo descriptions are searched too.
+    placeholder: 'Search notes',
     'aria-label': 'Search notes',
     // Debounced, and it only hides cards: rebuilding them on every keystroke
     // re-decoded every cover image, so the grid blinked while you typed.
@@ -1446,7 +1457,10 @@ function ScreenNotes({
       sortNotes();
       closeComposer();
       paint();
-      landed(cardOf(created.id));
+      const card = cardOf(created.id);
+      landed(card);
+      // Focus follows the note; the folded composer left it on <body>.
+      if (card) card.focus({ preventScroll: true });
     } catch (err) {
       toast.error(err, 'Could not save that note.');
     } finally {
@@ -1874,14 +1888,9 @@ function ScreenNotes({
         class: 'gb-iconbtn gb-iconbtn--danger gb-note-del',
         'aria-label': 'Delete note',
         title: 'Delete note',
+        // No "Delete this note?": it only goes to the Trash for 30 days, and the
+        // toast offers Undo. Asking first and offering Undo after was both.
         onclick: async () => {
-          const ok = await confirmDialog({
-            title: 'Delete this note?',
-            confirmLabel: 'Delete',
-            cancelLabel: 'Keep',
-            danger: true,
-          });
-          if (!ok) return;
           try {
             await onDelete(note.id);
             clearTimeout(editTimer); // the server dropped the draft with the note
@@ -1893,9 +1902,14 @@ function ScreenNotes({
             }
             // The card is behind the closing sheet: let the sheet go first.
             setTimeout(async () => {
+              const cards = Array.from(listEl.querySelectorAll('.gb-note-card:not([hidden])'));
+              const at = cards.indexOf(cardOf(note.id));
               await leave(cardOf(note.id));
               notes = notes.filter((n) => n.id !== note.id);
               paint();
+              // The opener is gone: focus the card that took its place, else search.
+              const left = Array.from(listEl.querySelectorAll('.gb-note-card:not([hidden])'));
+              (left[Math.min(Math.max(at, 0), left.length - 1)] || searchInput).focus({ preventScroll: true });
             }, SHEET_EXIT);
           } catch (err) {
             toast.error(err, 'Could not delete that note.');
