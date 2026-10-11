@@ -9,6 +9,10 @@ class ValidationMessageTest {
 
     @Test
     void readsLikeASentence() {
+        assertEquals("Bedtime is not a value we accept.",
+                GlobalExceptionHandler.humanMessage("bedtime", "Pattern", "must match \"([01]\\d|2[0-3]):[0-5]\\d\""));
+        assertEquals("Otp must be a 6-digit code.",
+                GlobalExceptionHandler.humanMessage("otp", "Pattern", "must be a 6-digit code"));
         assertEquals("Enter a valid email address.",
                 GlobalExceptionHandler.humanMessage("email", "Email", "must be a well-formed email address"));
         assertEquals("Weight (kg) must be 400 or less.",

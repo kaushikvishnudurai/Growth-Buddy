@@ -53,6 +53,11 @@ public class GlobalExceptionHandler {
      */
     static String humanMessage(String field, String code, String defaultMessage) {
         if ("Email".equals(code)) return "Enter a valid email address.";
+        // A bare regex is internal shape and means nothing to the person reading it
+        // (a @Pattern with its own message= keeps that message).
+        if ("Pattern".equals(code) && defaultMessage != null && defaultMessage.startsWith("must match \"")) {
+            return fieldLabel(field) + " is not a value we accept.";
+        }
         String m = defaultMessage == null ? "is not valid" : defaultMessage
                 .replaceFirst("^must be less than or equal to (\\S+)$", "must be $1 or less")
                 .replaceFirst("^must be greater than or equal to (\\S+)$", "must be at least $1")
