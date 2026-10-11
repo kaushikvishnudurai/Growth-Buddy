@@ -2,7 +2,8 @@
 
 Single source of truth for color, type, spacing, radius, shadow, motion. **Nothing else should
 declare a raw hex.** Fonts: Bricolage Grotesque (display) + Hanken Grotesk (body/UI), self-hosted
-via `@fontsource` — plus Space Mono for `--font-mono`.
+via `@fontsource` — plus Space Mono for `--font-mono`. Dropping or renaming a face here: check the
+`rel=preload` links in `index.html`, which name three of these files.
 
 | Section |
 |---|

@@ -2,7 +2,6 @@
 import assert from 'node:assert/strict';
 import {
   standingLine,
-  winLines,
   inviteLink,
   inviteFromHash,
   CHALLENGE_TEMPLATES,
@@ -10,6 +9,7 @@ import {
   formatAgreement,
   latestSave,
 } from './circle-core.js';
+import { winLines } from './circle-wins.js';
 
 const unit = (n) => n + (n === 1 ? ' check-in' : ' check-ins');
 const board = [

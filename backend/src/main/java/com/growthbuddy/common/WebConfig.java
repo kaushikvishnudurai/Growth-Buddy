@@ -194,8 +194,11 @@ public class WebConfig implements WebMvcConfigurer {
         // pointing them all at dist/ turns /assets/x.js into a lookup for dist/x.js.
         registry.addResourceHandler("/assets/**").addResourceLocations(prefixed(dist, "assets/"))
                 .setCacheControl(immutable).resourceChain(false);
+        // public/icons/ is copied unhashed, so a regenerated icon keeps its URL: a day,
+        // then a Last-Modified revalidation, instead of the year the hashed assets get.
         registry.addResourceHandler("/icons/**").addResourceLocations(prefixed(dist, "icons/"))
-                .setCacheControl(immutable).resourceChain(false);
+                .setCacheControl(CacheControl.maxAge(1, TimeUnit.DAYS).cachePublic().mustRevalidate())
+                .resourceChain(false);
 
         // Everything else Vite emits unhashed: the service worker, the manifest,
         // favicons, privacy.html, robots.txt, sitemap.xml, the link-preview image,

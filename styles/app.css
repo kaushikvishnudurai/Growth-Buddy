@@ -543,42 +543,6 @@ button.gb-sectiontitle-act {
   border-radius: 8px;
 }
 
-.gb-fab {
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  background: var(--brand-fill);
-  border: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--fg-on-brand);
-  flex: none;
-  margin: 0 6px -2px;
-  box-shadow:
-    0 5px 0 var(--brand-edge),
-    var(--shadow-brand);
-  transition:
-    transform var(--dur-fast) var(--ease-bounce),
-    box-shadow var(--dur-fast);
-}
-@media (hover: hover) {
-  .gb-fab:hover {
-    background: var(--brand-fill-hover);
-  }
-}
-.gb-fab:active {
-  transform: translateY(4px) scale(0.97);
-  box-shadow:
-    0 1px 0 var(--brand-edge),
-    var(--shadow-brand);
-}
-.gb-fab:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 3px;
-}
-
 /* ---- Habit / task check ---- */
 .gb-check {
   width: 30px;
@@ -1399,12 +1363,6 @@ body:has(.is-thinking, .gb-thinking)::after {
   .gb-think-steps > span:first-child {
     opacity: 1;
   }
-}
-
-.gb-login-hint {
-  margin: 6px 0 0;
-  color: var(--fg3);
-  font-size: 0.75rem;
 }
 
 .gb-login-notice {
@@ -4284,12 +4242,6 @@ button.gb-seat:disabled {
   font-weight: 800;
   padding: 7px 9px;
 }
-/* Finished items in the daily brief read green so progress pops; anything
-   still open stays neutral (the default above). */
-.gb-coach-chip--done {
-  background: var(--success-soft);
-  color: var(--success-soft-fg);
-}
 /* An open item that is its own fix (+250 ml, the sleep or mood dialog). */
 button.gb-coach-chip {
   min-height: 44px;
@@ -5635,21 +5587,6 @@ button.gb-food-level {
   }
 }
 
-.gb-workout-card {
-  padding: 16px;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-.gb-workout-card .title {
-  font-weight: 700;
-  font-size: 0.9375rem;
-  color: var(--fg1);
-}
-.gb-workout-card .bar {
-  margin-top: 8px;
-}
-
 /* ---- Goals screen ---- */
 .gb-goals {
   display: flex;
@@ -5737,25 +5674,6 @@ button.gb-food-level {
   align-items: center;
   gap: 9px;
   line-height: 1.4;
-}
-.gb-goal-row {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 14px 16px;
-}
-.gb-goal-row + .gb-goal-row {
-  border-top: 1px solid var(--border);
-}
-.gb-goal-row.is-complete {
-  opacity: 0.78;
-}
-.gb-goal-row.is-complete .gb-goal-title {
-  text-decoration: line-through;
-  color: var(--fg3);
-}
-.gb-goal-main {
-  min-width: 0;
 }
 .gb-goal-title {
   font-weight: 800;
@@ -5887,8 +5805,7 @@ button.gb-food-level {
   gap: 6px;
   padding-top: 2px;
 }
-.gb-goal-action-row,
-.gb-gratitude-row {
+.gb-goal-action-row {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -5897,13 +5814,11 @@ button.gb-food-level {
   border-radius: 8px;
   background: var(--surface-2);
 }
-.gb-goal-action-text,
-.gb-gratitude-main {
+.gb-goal-action-text {
   min-width: 0;
   flex: 1;
 }
-.gb-goal-action-note,
-.gb-gratitude-note {
+.gb-goal-action-note {
   color: var(--fg1);
   font-size: 0.8125rem;
   line-height: 1.4;
@@ -5961,30 +5876,6 @@ button.gb-food-level {
 .gb-icon-btn:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
-}
-.gb-gratitude-panel {
-  padding: 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
-  background: var(--surface);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.gb-gratitude-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-.gb-gratitude-head .gb-btn {
-  width: auto;
-  flex: 0 0 auto;
-}
-.gb-gratitude-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
 }
 .gb-note-hint {
   font-size: 0.75rem;
@@ -6484,17 +6375,6 @@ button.gb-food-level {
   .gb-rem-del:hover {
     background: var(--surface-3);
     color: var(--fg1);
-  }
-}
-/* Only the destructive one reads destructive. This class is shared with the
-   rest-day toggle, which used to turn coral on hover too — danger colouring on
-   an action that just protects a streak. */
-.gb-rem-del--danger:focus-visible {
-  color: var(--danger);
-}
-@media (hover: hover) {
-  .gb-rem-del--danger:hover {
-    color: var(--danger);
   }
 }
 .gb-rem-del:focus-visible {
@@ -7287,12 +7167,6 @@ button.gb-food-level {
   color: var(--fg1);
   font-size: 0.78125rem;
   line-height: 1.45;
-}
-
-.gb-btn.gb-profile-apply {
-  margin-top: 10px;
-  width: auto;
-  padding: 8px 12px;
 }
 
 /* Tag picker (color chips) */
@@ -8303,11 +8177,6 @@ button.gb-food-level {
 .gb-tfa-codes {
   line-height: 1.7;
 }
-.gb-sec-divider {
-  height: 1px;
-  background: var(--border);
-  margin: 16px 0;
-}
 .gb-field-label--sub {
   text-transform: none;
   letter-spacing: 0;
@@ -8828,15 +8697,6 @@ button.gb-food-level {
   transform-origin: 80px 80px;
   animation: gb-twinkle 2.8s var(--ease-standard) infinite;
 }
-/* Raw error text: present for support, but quiet so it never reads as "500 in your face". */
-.gb-crash-detail {
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  color: var(--fg3);
-  background: var(--surface-2);
-  padding: 4px 10px;
-  border-radius: var(--radius-pill);
-}
 @keyframes gb-woozy {
   0%,
   100% {
@@ -9133,23 +8993,6 @@ button.gb-food-level {
   .gb-more-backdrop {
     display: none;
   }
-
-  /* Quick-add FAB → pill button inside the sidebar */
-  .gb-fab {
-    width: 100%;
-    height: 46px;
-    border-radius: 14px;
-    margin: 14px 0;
-    box-shadow:
-      0 4px 0 var(--brand-edge),
-      var(--shadow-brand);
-  }
-  .gb-fab:active {
-    transform: translateY(3px);
-    box-shadow:
-      0 1px 0 var(--brand-edge),
-      var(--shadow-brand);
-  }
 }
 
 /* =====================================================================
@@ -9408,9 +9251,6 @@ button.gb-food-level {
   .gb-modal {
     padding: 14px;
     border-radius: 18px;
-  }
-  .gb-goal-row {
-    padding: 12px 14px;
   }
   .gb-goal-card {
     padding: 12px 14px;
@@ -11475,8 +11315,7 @@ select.gb-input {
   font-size: 1.25rem;
   color: var(--brand-ink);
 }
-.gb-ach-summary-bar,
-.gb-ach-summary-xpbar {
+.gb-ach-summary-bar {
   height: 8px;
   border-radius: 999px;
   background: var(--surface-2);
@@ -11498,21 +11337,6 @@ select.gb-input {
   font-size: var(--text-2xs);
   color: var(--fg3);
   margin-top: 5px;
-}
-.gb-ach-summary-xp {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-.gb-ach-summary-xpfill {
-  height: 100%;
-  border-radius: 999px;
-  background: var(--sun-500);
-  transition: width 0.4s ease;
-}
-.gb-ach-summary-xplabel {
-  font-size: var(--text-2xs);
-  color: var(--fg3);
 }
 .gb-ach-grid {
   display: grid;
@@ -13551,11 +13375,6 @@ h2[tabindex='-1']:focus {
   }
   .gb-nav-tab span {
     display: none;
-  }
-  .gb-fab {
-    width: 44px;
-    height: 44px;
-    margin: 0;
   }
   /* "More" rose out of the bottom nav (bottom: 100%), which from the rail is off
      the top of the screen. Here it is a panel beside the rail instead. */

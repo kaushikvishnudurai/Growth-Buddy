@@ -49,6 +49,13 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Growth Buddy" />
+    <!-- The first-paint faces: body (Hanken 400) and display (Bricolage 700/800).
+         Without these the fonts are found only once the CSS has parsed. Vite
+         rewrites each href to the same hashed file the @font-face rules use;
+         crossorigin is required or the preload is fetched twice. -->
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="./node_modules/@fontsource/hanken-grotesk/files/hanken-grotesk-latin-400-normal.woff2" />
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="./node_modules/@fontsource/bricolage-grotesque/files/bricolage-grotesque-latin-700-normal.woff2" />
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="./node_modules/@fontsource/bricolage-grotesque/files/bricolage-grotesque-latin-800-normal.woff2" />
     <!-- iOS ignores the manifest's background colour and shows white while a
          home-screen app boots; these are its launch images, one per portrait
          screen size (CSS px x DPR). An unlisted size still gets white. -->

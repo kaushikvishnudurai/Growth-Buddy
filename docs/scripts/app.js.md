@@ -277,7 +277,9 @@ it silently landed on Home. Don't reintroduce a second list.
   does the same when a dialog closes over a re-rendered screen. A real screen change focuses
   `#gb-main`. Each screen's scroll is filed in `scrollByScreen` when you leave and restored when you
   come back. `tweenFromLast()` starts the score ring, water fill and goal bars from their last
-  value so their CSS transition plays instead of jumping (`TWEENED` lists them).
+  value so their CSS transition plays instead of jumping (`TWEENED` lists them): the old value
+  paints one frame and the new one is set two rAFs later, with no forced layout. A snapshot at the
+  top restores nothing (no `scrollHeight` read).
 - **A dynamic import that 404s reloads the page once** (`isStaleChunkError` + `CHUNK_RELOAD_KEY`). A
   deploy renames every hashed chunk, so an already-open tab asks for a name the server no longer has
   and `import('./circle.js')` rejects — which is why Circle and Family "sometimes" refused to open and

@@ -230,8 +230,8 @@ VITE_API_BASE=https://api.example.com npm run build
 ```
 
 Spring serves `dist/` when it finds one, with a one-year immutable cache on the
-content-hashed assets and `no-cache` on `sw.js` (a hard-cached service worker
-pins clients to a dead build). With no `dist/` it falls back to the raw source
+content-hashed assets, one day then revalidation on the unhashed `/icons/`, and
+`no-cache` on `sw.js` (a hard-cached service worker pins clients to a dead build). With no `dist/` it falls back to the raw source
 tree with caching off — that fallback is what `./run.sh` uses for local
 development, and it has no service worker or bundling.
 
