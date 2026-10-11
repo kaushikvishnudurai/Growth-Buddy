@@ -16,6 +16,7 @@ import {
 } from './native.js';
 import { CacheStorage } from './cache-storage.js';
 import { playChime } from './chime.js';
+import { pad2 as pad } from './dates.js';
 import {
   remainingFrom,
   restoredSession,
@@ -47,6 +48,8 @@ const T = {
   cycleDone: 0, // sprints finished in this cycle of four (timer-math.js afterSession)
   link: null, // what this session is on: { taskId } | { goalId } | null ("Focusing on…")
   refs: null, // live DOM refs, rebuilt on every (re)mount
+  seq: 0, // bumped by setMode: which session a pending confirm was asked about
+  closeAsk: null, // dismisses that confirm (askAboutSession)
 };
 
 /* The session end, queued with the OS so a phone rings even when the WebView
@@ -237,9 +240,6 @@ document.addEventListener('visibilitychange', function () {
 });
 window.addEventListener('focus', resync);
 
-function pad(n) {
-  return n < 10 ? '0' + n : String(n);
-}
 function fmt(s) {
   return pad(Math.floor(s / 60)) + ':' + pad(s % 60);
 }
@@ -465,37 +465,73 @@ function paintRing() {
     c = 2 * Math.PI * r;
   const off = c * (1 - pct / 100);
   T.refs.ringFg.setAttribute('stroke-dashoffset', String(off));
-  T.refs.ringFg.setAttribute('stroke', T.mode === 'focus' ? 'var(--iris-500)' : 'var(--leaf-500)');
+  T.refs.ringFg.setAttribute('stroke', T.mode === 'focus' ? 'var(--brand)' : 'var(--leaf-500)');
   T.refs.timeEl.textContent = fmt(T.remainingSec);
   T.refs.modeEl.textContent = T.mode;
   T.refs.cycleEl.textContent = cycleLabel(T.mode, T.cycleDone);
-  T.refs.subEl.textContent = T.running
-    ? 'In session — keep going.'
-    : T.remainingSec === 0
-      ? 'Session complete! Reset to start a new sprint.'
-      : 'Start a study sprint.';
+  if (T.refs.card) T.refs.card.classList.toggle('is-running', T.running);
+  T.refs.subEl.textContent = subText();
   if (T.suggest && !T.running && T.remainingSec === T.durationSec) T.refs.subEl.textContent = T.suggest;
-  // The button only changes when running does. Rebuilding it every tick meant
+  // The button only changes with its label. Rebuilding it every tick meant
   // a lucide.createIcons() sweep of the whole document once a second.
-  if (T.refs.paintedRunning !== T.running) {
-    T.refs.paintedRunning = T.running;
+  const label = startLabel();
+  if (T.refs.paintedLabel !== label) {
+    T.refs.paintedLabel = label;
     T.refs.startBtn.textContent = '';
     T.refs.startBtn.append(
       T.running ? Icon('pause', { size: 16, sw: 2.4 }) : Icon('play', { size: 16, sw: 2.4 }),
-      document.createTextNode(T.running ? 'Pause' : 'Start')
+      document.createTextNode(label)
     );
     T.refs.startBtn.classList.toggle('gb-btn--primary', !T.running);
     T.refs.startBtn.classList.toggle('gb-btn--secondary', T.running);
     refreshIcons();
   }
+  // A length can't change under a session: the segments lock, and say why.
+  const locked = inSession();
+  T.refs.lockHint.hidden = !locked;
+  // Nothing started, nothing to reset.
+  T.refs.resetBtn.disabled = !locked;
   Object.keys(T.refs.chips).forEach(function (k) {
     const on = k === T.mode + ':' + T.durationSec / 60;
     T.refs.chips[k].classList.toggle('is-on', on);
     T.refs.chips[k].setAttribute('aria-pressed', String(on));
+    T.refs.chips[k].disabled = locked;
   });
+  T.refs.chipCustom.disabled = locked;
+}
+
+/* Started and not over: running, or paused with time both used and left. */
+function inSession() {
+  return T.running || (T.remainingSec > 0 && T.remainingSec < T.durationSec);
+}
+function startLabel() {
+  return T.running ? 'Pause' : inSession() ? 'Resume' : 'Start';
+}
+function subText() {
+  if (T.running) return 'In session — keep going.';
+  if (T.remainingSec === 0) return 'Session complete! Reset to start a new sprint.';
+  if (inSession()) return 'Paused, ' + fmt(T.remainingSec) + ' left';
+  return 'Ready when you are.';
+}
+
+/* A confirm about the session on the clock (Reset, switching length) must not
+   outlive it: a session that ends under it closes it (setMode bumps T.seq and
+   calls T.closeAsk), and an answer that arrives for a session no longer there
+   counts as Cancel. */
+async function askAboutSession(opts) {
+  const seq = T.seq;
+  const answer = confirmDialog(opts);
+  // confirmDialog focuses its own Cancel; clicking it is the dialog's dismiss path.
+  const cancel = document.activeElement;
+  T.closeAsk = cancel && cancel.classList && cancel.classList.contains('gb-modal-cancel') ? () => cancel.click() : null;
+  const ok = await answer;
+  T.closeAsk = null;
+  return ok && seq === T.seq;
 }
 
 function setMode(mode, mins, suggest) {
+  T.seq++;
+  if (T.closeAsk) T.closeAsk();
   T.mode = mode;
   T.durationSec = mins * 60;
   T.remainingSec = T.durationSec;
@@ -517,9 +553,8 @@ function setMode(mode, mins, suggest) {
    a word. Ask first when there is something to lose. */
 async function switchMode(mode, mins) {
   if (T.mode === mode && T.durationSec === mins * 60 && !T.running) return;
-  const inProgress = T.running || (T.remainingSec > 0 && T.remainingSec < T.durationSec);
-  if (inProgress) {
-    const ok = await confirmDialog({
+  if (inSession()) {
+    const ok = await askAboutSession({
       title: 'End this ' + (T.mode === 'break' ? 'break' : 'session') + '?',
       message: fmt(T.remainingSec) + ' is left on the clock. Switching starts over and this one won’t count.',
       confirmLabel: 'Switch',
@@ -649,7 +684,18 @@ function pause() {
   paintRing();
 }
 
-function reset() {
+async function reset() {
+  // More than a minute in, Reset throws real focus away: ask first.
+  const left = T.running ? remainingFrom(T.endsAt, Date.now()) : T.remainingSec;
+  if (left > 0 && T.durationSec - left > 60) {
+    const ok = await askAboutSession({
+      title: 'Reset this ' + (T.mode === 'break' ? 'break' : 'session') + '?',
+      message: Math.floor((T.durationSec - left) / 60) + ' min done so far won’t count.',
+      confirmLabel: 'Reset',
+      danger: true,
+    });
+    if (!ok) return;
+  }
   if (T.running) pause();
   T.remainingSec = T.durationSec;
   saveSession();
@@ -679,14 +725,31 @@ function chime() {
   }
 }
 
+/* The timer face: a thin progress arc over a quiet track, with a dial of 60
+   ticks inside it (every fifth longer). Sized by CSS (.gb-focus-ring); `size`
+   is the viewBox. */
 function buildRing(size, stroke) {
   const NS = 'http://www.w3.org/2000/svg';
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
   const svg = document.createElementNS(NS, 'svg');
-  svg.setAttribute('width', size);
-  svg.setAttribute('height', size);
+  svg.setAttribute('viewBox', '0 0 ' + size + ' ' + size);
+  svg.setAttribute('aria-hidden', 'true');
   svg.style.transform = 'rotate(-90deg)';
+  const mid = size / 2;
+  for (let i = 0; i < 60; i++) {
+    const a = (i / 60) * 2 * Math.PI;
+    const major = i % 5 === 0;
+    const r1 = r - stroke - 6;
+    const r0 = r1 - (major ? 9 : 4);
+    const tick = document.createElementNS(NS, 'line');
+    tick.setAttribute('x1', String(mid + r0 * Math.cos(a)));
+    tick.setAttribute('y1', String(mid + r0 * Math.sin(a)));
+    tick.setAttribute('x2', String(mid + r1 * Math.cos(a)));
+    tick.setAttribute('y2', String(mid + r1 * Math.sin(a)));
+    tick.setAttribute('class', 'gb-focus-tick' + (major ? ' is-major' : ''));
+    svg.appendChild(tick);
+  }
   const bg = document.createElementNS(NS, 'circle');
   bg.setAttribute('cx', size / 2);
   bg.setAttribute('cy', size / 2);
@@ -700,12 +763,12 @@ function buildRing(size, stroke) {
   fg.setAttribute('cy', size / 2);
   fg.setAttribute('r', r);
   fg.setAttribute('fill', 'none');
-  fg.setAttribute('stroke', 'var(--iris-500)');
+  fg.setAttribute('stroke', 'var(--brand)');
   fg.setAttribute('stroke-width', stroke);
   fg.setAttribute('stroke-linecap', 'round');
   fg.setAttribute('stroke-dasharray', c);
   fg.setAttribute('stroke-dashoffset', 0);
-  fg.style.transition = 'stroke-dashoffset 0.4s var(--ease-out, ease)';
+  fg.setAttribute('class', 'gb-focus-arc');
   svg.appendChild(fg);
   return { svg, fg, r };
 }
@@ -771,12 +834,7 @@ function TimerCard() {
   const timeEl = h(
     'span',
     {
-      style: {
-        fontFamily: 'var(--font-display)',
-        fontWeight: 800,
-        fontSize: '2.125rem',
-        color: 'var(--fg1)',
-      },
+      class: 'gb-focus-time',
       // role=timer is implicitly aria-live="off": read on demand, not every second.
       role: 'timer',
       'aria-label': 'Time left',
@@ -784,24 +842,13 @@ function TimerCard() {
     fmt(T.remainingSec)
   );
   const liveEl = h('div', { class: 'gb-sr-only', role: 'status', 'aria-live': 'polite' });
-  const modeEl = h(
-    'span',
-    {
-      style: {
-        fontSize: '0.6875rem',
-        fontWeight: 700,
-        color: 'var(--fg3)',
-        textTransform: 'uppercase',
-        letterSpacing: '.06em',
-      },
-    },
-    T.mode
-  );
+  const modeEl = h('span', { class: 'gb-focus-mode' }, T.mode);
+  const cycleEl = h('span', { class: 'gb-focus-cycle' }, cycleLabel(T.mode, T.cycleDone));
 
-  const ring = buildRing(184, 14);
+  const ring = buildRing(300, 6);
   const ringWrap = h('div', { class: 'gb-focus-ring' });
   ringWrap.appendChild(ring.svg);
-  ringWrap.appendChild(h('div', { class: 'gb-focus-ring-inner' }, timeEl, modeEl));
+  ringWrap.appendChild(h('div', { class: 'gb-focus-ring-inner' }, modeEl, timeEl, cycleEl));
 
   function modeChip(label, mode, mins) {
     const btn = h(
@@ -828,14 +875,11 @@ function TimerCard() {
     'Custom…'
   );
 
-  const subEl = h(
+  const subEl = h('div', { class: 'gb-score-sub' }, subText());
+  const lockHint = h(
     'div',
-    { class: 'gb-score-sub' },
-    T.running
-      ? 'In session — keep going.'
-      : T.remainingSec === 0
-        ? 'Session complete! Reset to start a new sprint.'
-        : 'Start a study sprint.'
+    { class: 'gb-focus-lock-hint', id: 'gb-focus-lock-hint', hidden: true },
+    'Reset to change the length.'
   );
   const startBtn = h(
     'button',
@@ -847,7 +891,7 @@ function TimerCard() {
       },
     },
     Icon(T.running ? 'pause' : 'play', { size: 16, sw: 2.4 }),
-    document.createTextNode(T.running ? 'Pause' : 'Start')
+    document.createTextNode(startLabel())
   );
   const resetBtn = h(
     'button',
@@ -861,7 +905,6 @@ function TimerCard() {
     'Reset'
   );
 
-  const cycleEl = h('div', { class: 'gb-focus-cycle' }, cycleLabel(T.mode, T.cycleDone));
   const goalEl = h('div', { class: 'gb-focus-goal' });
   Focus.goalEl = goalEl;
   paintGoal();
@@ -874,37 +917,44 @@ function TimerCard() {
     cycleEl,
     subEl,
     startBtn,
+    resetBtn,
     liveEl,
-    paintedRunning: T.running,
+    lockHint,
+    paintedLabel: startLabel(),
     chips: { ['focus:25']: chipFocus25, ['focus:50']: chipFocus50, ['break:5']: chipBreak5 },
+    chipCustom,
   };
-  paintRing();
-
-  return Card({
-    className: 'gb-focus-card',
+  // One column: the face, what to do, then the setup. While a session runs the
+  // setup (length, "Focusing on…") folds away and the face is all there is;
+  // Pause brings it back. paintRing toggles .is-running.
+  const card = Card({
+    className: 'gb-focus-card' + (T.running ? ' is-running' : ''),
     children: [
       ringWrap,
+      // No "Focus timer" heading: the page is titled Timer and the ring says FOCUS.
+      subEl,
+      h('div', { class: 'gb-timer-actions' }, startBtn, resetBtn),
       h(
         'div',
-        { class: 'gb-focus-controls' },
-        cycleEl,
-        // No "Focus timer" heading: the page is titled Timer and the ring says FOCUS.
-        subEl,
-        FocusPicker(),
+        { class: 'gb-focus-setup' },
         h(
           'div',
-          { class: 'gb-segmented', style: { marginTop: '12px' } },
+          { class: 'gb-segmented', 'aria-describedby': 'gb-focus-lock-hint' },
           chipFocus25,
           chipFocus50,
           chipBreak5,
           chipCustom
         ),
-        h('div', { class: 'gb-timer-actions' }, startBtn, resetBtn),
-        goalEl,
-        liveEl
+        lockHint,
+        FocusPicker()
       ),
+      goalEl,
+      liveEl,
     ],
   });
+  T.refs.card = card;
+  paintRing();
+  return card;
 }
 
 /* "Focusing on…": the session can be spent on one of the user's open tasks or
@@ -917,7 +967,8 @@ function linkValue(l) {
 
 function FocusPicker() {
   const targets = Focus.targets || { tasks: [], goals: [] };
-  const tasks = targets.tasks || [];
+  // A paused task isn't one to focus on (app.js passes `paused` through).
+  const tasks = (targets.tasks || []).filter((t) => !t.paused);
   const goals = targets.goals || [];
   const current = linkValue(T.link);
   const known = tasks.some((t) => 'task:' + t.id === current) || goals.some((g) => 'goal:' + g.id === current);
@@ -1002,7 +1053,11 @@ function paintGoal() {
         'aria-valuetext': today + ' of ' + goal + ' minutes',
       },
       h('div', { class: 'gb-focus-goal-fill', style: { width: pct + '%' } })
-    )
+    ),
+    // Spread, not `cond ? node : null`: el.append prints a null as the text "null".
+    ...(pct >= 100
+      ? [h('div', { class: 'gb-focus-goal-met' }, Icon('trophy', { size: 14, sw: 2.4 }), 'Daily goal met. Nice work.')]
+      : [])
   );
   refreshIcons();
 }
@@ -1180,6 +1235,10 @@ function paintHistory() {
   const goal = goalMinutes(Focus.goalMins);
   const total = days.reduce((a, d) => a + (d.minutes || 0), 0);
   const active = days.filter((d) => d.minutes > 0).length;
+  if (!total) {
+    el.append(h('div', { class: 'gb-focus-hist-note' }, 'No focus time in the last 30 days yet. Finished sprints show up here.'));
+    return;
+  }
   const summary =
     fmtMins(total) + ' over ' + days.length + ' days · ' + active + (active === 1 ? ' day' : ' days') + ' with focus' +
     (goal ? ' · ' + days.filter((d) => d.minutes >= goal).length + ' met your goal' : '');
@@ -1275,7 +1334,8 @@ function paintSound() {
     ? 'Off — silent focus.'
     : (Sound.playing ? 'Playing' : 'Ready') + ' · ' + cur.label + ' · ' + cur.hint;
   Object.keys(Sound.refs.tiles).forEach(function (k) {
-    Sound.refs.tiles[k].classList.toggle('is-on', k === Sound.current);
+    // Sound off: no tile is the one playing, so none looks picked.
+    Sound.refs.tiles[k].classList.toggle('is-on', Sound.enabled && k === Sound.current);
   });
   Sound.refs.card.classList.toggle('is-muted', !Sound.enabled);
 }
@@ -1305,7 +1365,7 @@ function SoundCard() {
       'button',
       {
         type: 'button',
-        class: 'gb-sound-tile' + (s.key === Sound.current ? ' is-on' : ''),
+        class: 'gb-sound-tile' + (Sound.enabled && s.key === Sound.current ? ' is-on' : ''),
         title: s.hint,
         onclick: function () {
           setSoundscape(s.key);

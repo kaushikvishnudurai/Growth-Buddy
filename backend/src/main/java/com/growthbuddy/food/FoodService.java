@@ -76,7 +76,7 @@ public class FoodService {
 
     // Not @Transactional: the AI client's budget is an INSERT, which a read-only
     // connection refuses (MySQL 1792), and a transaction would hold a pooled
-    // connection through the AI call.
+    // connection through the vision call.
     public PhotoFoodEstimateMultiResponse estimateFromPhotoMulti(PhotoFoodEstimateRequest req) {
         if (req == null || !StringUtils.hasText(req.imageDataUrl())) {
             throw ApiException.badRequest("imageDataUrl is required");
@@ -196,7 +196,7 @@ public class FoodService {
     public List<PhotoHistoryItem> recordPhoto(UUID userId, PhotoHistoryRequest req) {
         FoodPhotoLog p = new FoodPhotoLog();
         p.setUserId(userId);
-        p.setLogDate(req.date() != null ? req.date() : LocalDate.now());
+        p.setLogDate(req.date() != null ? req.date() : clock.today(userId));
         p.setFoodName(req.foodName().trim());
         p.setMealType(req.mealType());
         p.setConfidence(req.confidence());
@@ -366,6 +366,7 @@ public class FoodService {
         e.setKcalEstimated(kcal);
         e.setEstimateSource(estimate.source());
         e.setNote(StringUtils.hasText(req.note()) ? req.note().trim() : null);
+        e.setPieces(req.pieces());
         // Label figures (a barcode product, a favourite) only with typed calories:
         // an estimated entry's nutrients come from the same estimate as its kcal.
         if (req.kcal() != null) {
@@ -433,12 +434,22 @@ public class FoodService {
             foodChanged |= !name.equals(e.getFoodName());
             e.setFoodName(name);
         }
-        if (req.quantityGrams() != null && req.quantityGrams() != e.getQuantityGrams()) {
+        // A count with no grams sets the grams from it; grams with no count are weighed now.
+        Integer grams = req.quantityGrams() != null ? req.quantityGrams()
+                : req.pieces() != null && !req.pieces().equals(e.getPieces())
+                        ? Math.max(10, Math.min(2000, req.pieces() * FoodWeek.gramsPerPiece(e.getFoodName())))
+                        : null;
+        if (req.pieces() != null) {
+            e.setPieces(req.pieces());
+        } else if (req.quantityGrams() != null && req.quantityGrams() != e.getQuantityGrams()) {
+            e.setPieces(null);
+        }
+        if (grams != null && grams != e.getQuantityGrams()) {
             foodChanged = true;
-            e.setQuantityGrams(req.quantityGrams());
+            e.setQuantityGrams(grams);
             if (req.kcal() == null) {
                 e.setKcalEstimated(Math.max(1, Math.min(5000,
-                        (int) Math.round(e.getKcalPer100g() * req.quantityGrams() / 100.0))));
+                        (int) Math.round(e.getKcalPer100g() * grams / 100.0))));
             }
         }
         if (req.kcal() != null) {
@@ -676,7 +687,7 @@ public class FoodService {
 
     // Not @Transactional: the AI client's budget is an INSERT, which a read-only
     // connection refuses (MySQL 1792), and a transaction would hold a pooled
-    // connection through the AI call.
+    // connection through the vision call.
     public PhotoFoodEstimateResponse estimateFromPhoto(PhotoFoodEstimateRequest req) {
         if (req == null || !StringUtils.hasText(req.imageDataUrl())) {
             throw ApiException.badRequest("imageDataUrl is required");
@@ -802,6 +813,9 @@ public class FoodService {
             return new AiGuess(numberAsInt(node, "kcalPer100g"), numberAsInt(node, "quantityGrams"),
                     all ? new double[] {n[0], n[1], n[2], n[3]} : null);
         } catch (Exception ex) {
+            // The caller falls back to the table estimate; without this line an AI
+            // outage looked exactly like a quiet day.
+            log.warn("Food estimate fallback: AI call failed: {}", ex.toString());
             return null;
         }
     }
@@ -841,7 +855,11 @@ public class FoodService {
                 out.add(new FoodSearchItem(name.trim(), kcal != null ? clamp(kcal) : null, "openfoodfacts"));
             }
             return out.stream().limit(8).toList();
-        } catch (Exception ignored) {
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            return List.of();
+        } catch (Exception ex) {
+            log.debug("OpenFoodFacts search failed for {}: {}", query, ex.toString());
             return List.of();
         }
     }

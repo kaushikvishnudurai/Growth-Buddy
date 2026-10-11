@@ -449,44 +449,281 @@ export function hideNativeSplash() {
   );
 }
 
-/* ---- Steps ---------------------------------------------------------------
+/* ---- Health ---------------------------------------------------------------
    Read from the OS health store (HealthKit / Health Connect), never from a
-   sensor of ours. The phone already counts steps all day on its low-power
-   motion chip; asking for today's total is one query, so there is no service,
-   no listener and no battery cost. Plugin: @capgo/capacitor-health — NOT
-   installed in the mobile repo yet, so nativePlugin('Health') is null in every
-   shipped build and this returns null at once: no native call, no error, and
-   the steps box simply waits for a typed number. Installing it needs the Health
-   Connect READ_STEPS permission + privacy-policy activity on Android and the
-   HealthKit entitlement on iOS.
-   ponytail: read on demand, today only. Back-filling earlier days needs a
-   target the habit doesn't have yet. */
+   sensor of ours. The phone already counts steps and the watch already records
+   sleep; asking is one query, so there is no service, no listener and no battery
+   cost. Plugin: @capgo/capacitor-health in the mobile repo, read-only — its
+   manifest keeps READ_* for exactly HEALTH_READ and strips the rest.
+   Only requestHealthAccess() opens a permission sheet. Every read below just
+   reads: without access Health Connect throws and HealthKit answers empty, and
+   both come back as null, so a boot-time read can never pop a dialog. */
 
-/** Today's steps so far, or null: off-device, no health store, or no access. */
-export async function readTodaySteps() {
-  const Health = isNative() ? nativePlugin('Health') : null;
-  if (!Health) return null;
+/** What the Health screen shows. Each needs its READ_* in the mobile manifest. */
+export const HEALTH_READ = [
+  'steps',
+  'distance',
+  'calories',
+  'flightsClimbed',
+  'sleep',
+  'heartRate',
+  'restingHeartRate',
+  'heartRateVariability',
+  'oxygenSaturation',
+  'respiratoryRate',
+  'weight',
+  'height',
+  'bodyFat',
+  'bloodPressure',
+  'workouts',
+];
+
+function healthPlugin() {
+  return isNative() ? nativePlugin('Health') : null;
+}
+
+/** True when this phone has a health store we can reach. */
+export async function healthAvailable() {
+  const Health = healthPlugin();
+  if (!Health) return false;
   try {
-    const { available } = await Health.isAvailable();
-    if (!available) return null;
-    // Opens the permission sheet once; already granted, it returns at once.
-    await Health.requestAuthorization({ read: ['steps'] });
-    const midnight = new Date();
-    midnight.setHours(0, 0, 0, 0);
+    return !!(await Health.isAvailable()).available;
+  } catch (_) {
+    return false; // an older APK without the plugin
+  }
+}
+
+/** Opens the OS sheet for every HEALTH_READ type. True unless it failed. */
+export async function requestHealthAccess() {
+  if (!(await healthAvailable())) return false;
+  try {
+    await healthPlugin().requestAuthorization({ read: HEALTH_READ });
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function midnightToday() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+/* Sum of one type since local midnight, or null. Summed: a day bucket the
+   store cuts on UTC can come back as two. HealthKit never says a read was
+   denied, it just answers 0, so 0 is "don't know". */
+async function sumToday(Health, dataType) {
+  try {
     const { samples } = await Health.queryAggregated({
-      dataType: 'steps',
-      startDate: midnight.toISOString(),
+      dataType,
+      startDate: midnightToday().toISOString(),
       endDate: new Date().toISOString(),
       bucket: 'day',
       aggregation: 'sum',
     });
-    // Summed: a day bucket the store cuts on UTC can come back as two.
     const total = (samples || []).reduce((n, s) => n + (Number(s.value) || 0), 0);
-    // HealthKit never says a read was denied, it just answers 0, so a 0 is
-    // treated as "don't know" rather than pre-filled.
-    return total > 0 ? Math.round(total) : null;
+    return total > 0 ? total : null;
   } catch (_) {
-    // An older APK without the plugin, or the sheet dismissed: type it in.
     return null;
   }
+}
+
+/** Today's steps so far, or null: off-device, no health store, or no access. */
+export async function readTodaySteps() {
+  if (!(await healthAvailable())) return null;
+  // Asked here too: a Steps habit predates the setup step on older installs.
+  // Already granted, it returns at once.
+  await healthPlugin()
+    .requestAuthorization({ read: ['steps'] })
+    .catch(() => {});
+  const n = await sumToday(healthPlugin(), 'steps');
+  return n == null ? null : Math.round(n);
+}
+
+async function readSamples(Health, dataType, startDate, limit) {
+  try {
+    const { samples } = await Health.readSamples({
+      dataType,
+      startDate: startDate.toISOString(),
+      endDate: new Date().toISOString(),
+      limit,
+      ascending: false,
+    });
+    return samples || [];
+  } catch (_) {
+    return [];
+  }
+}
+
+const hhmm = (d) => String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+const localKey = (d) =>
+  d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+
+/* The night that ended on `dayKey` (local YYYY-MM-DD), from raw sleep samples,
+   or null. HealthKit sends one sample per stage, Health Connect one per
+   session; both are merged into stretches where a gap under 90 min (a trip to
+   the kitchen, a watch taken off to charge) doesn't split the night. The
+   longest stretch of 3 h+ ending that day wins, so an afternoon nap never
+   becomes "last night". Awake samples are left out: they'd only stretch it. */
+export function nightFromSamples(samples, dayKey) {
+  const parts = (samples || [])
+    .filter((s) => s && s.sleepState !== 'awake')
+    .map((s) => ({ a: new Date(s.startDate), b: new Date(s.endDate) }))
+    .filter((p) => p.b > p.a)
+    .sort((x, y) => x.a - y.a);
+  const runs = [];
+  for (const p of parts) {
+    const last = runs[runs.length - 1];
+    if (last && p.a - last.b <= 90 * 60000) {
+      if (p.b > last.b) last.b = p.b;
+    } else runs.push({ a: p.a, b: p.b });
+  }
+  const best = runs
+    .filter((r) => localKey(r.b) === dayKey && r.b - r.a >= 3 * 3600000)
+    .sort((x, y) => y.b - y.a - (x.b - x.a))[0];
+  if (!best) return null;
+  return {
+    bedtime: hhmm(best.a),
+    wakeTime: hhmm(best.b),
+    minutes: Math.round((best.b - best.a) / 60000),
+  };
+}
+
+/* Today's reading for a habit's health link (nudges.js HEALTH_LINKS), in that
+   link's unit, or null. Sleep is not here: it is read from today's sleep
+   entry, which autoLogSleep fills from the phone and the user can edit. */
+const LINK_TYPE = { steps: 'steps', distance: 'distance', calories: 'calories', floors: 'flightsClimbed' };
+export async function readHealthValue(link) {
+  if (!(await healthAvailable())) return null;
+  const Health = healthPlugin();
+  if (link === 'workout') {
+    const workouts = await Health.queryWorkouts({
+      startDate: midnightToday().toISOString(),
+      endDate: new Date().toISOString(),
+      limit: 50,
+    })
+      .then((r) => (r && r.workouts) || [])
+      .catch(() => []);
+    const min = workouts.reduce((n, w) => n + (Number(w.duration) || 0), 0) / 60; // seconds
+    return min > 0 ? Math.round(min) : null;
+  }
+  if (!LINK_TYPE[link]) return null;
+  const v = await sumToday(Health, LINK_TYPE[link]);
+  if (v == null) return null;
+  return link === 'distance' ? Math.round(v / 100) / 10 : Math.round(v);
+}
+
+/** Last night (the one that ended today), or null. Never asks for access. */
+export async function readLastNight() {
+  if (!(await healthAvailable())) return null;
+  const from = midnightToday();
+  from.setHours(-12); // noon yesterday: covers any bedtime
+  const samples = await readSamples(healthPlugin(), 'sleep', from, 500);
+  return nightFromSamples(samples, localKey(new Date()));
+}
+
+/* ---- Sync to the account ---------------------------------------------------
+   The phone's numbers go to /api/health/sync so the Health screen can show
+   history, and the web can show the phone's days. One row per type per day:
+   daily totals for the sum metrics, the newest reading of each day for the
+   rest. Re-sending a day overwrites it on the server, so a day still in
+   progress is simply sent again later. */
+
+const SYNC_SUMS = { steps: 'steps', distance: 'distance', calories: 'calories', floors: 'flightsClimbed' };
+const SYNC_LATEST = {
+  restingHeartRate: 'restingHeartRate',
+  heartRateVariability: 'heartRateVariability',
+  oxygenSaturation: 'oxygenSaturation',
+  respiratoryRate: 'respiratoryRate',
+  weight: 'weight',
+  height: 'height',
+  bodyFat: 'bodyFat',
+  bloodPressure: 'bloodPressure',
+};
+// HealthKit's percent unit is 0-1, Health Connect's 0-100. No real SpO2 or
+// body-fat reading is at or under 1%, so <= 1 means a fraction.
+const PERCENT = new Set(['oxygenSaturation', 'bodyFat']);
+
+/* Sum of one type over [from, to), or null. Every bucket is added: the store
+   may cut its day buckets on UTC, so one local day can come back as two. */
+async function sumBetween(Health, dataType, from, to) {
+  try {
+    const { samples } = await Health.queryAggregated({
+      dataType,
+      startDate: from.toISOString(),
+      endDate: to.toISOString(),
+      bucket: 'day',
+      aggregation: 'sum',
+    });
+    const total = (samples || []).reduce((n, s) => n + (Number(s.value) || 0), 0);
+    return total > 0 ? total : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/** Readings for /api/health/sync covering the last `days` local days (today included), or null off-device. */
+export async function readHealthForSync(days = 7) {
+  if (!(await healthAvailable())) return null;
+  const Health = healthPlugin();
+  const out = [];
+  const start = midnightToday();
+  start.setDate(start.getDate() - (days - 1));
+  const dayStarts = Array.from({ length: days }, (_, i) => {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    return d;
+  });
+
+  await Promise.all(
+    Object.entries(SYNC_SUMS).flatMap(([type, dataType]) =>
+      dayStarts.map(async (from) => {
+        const to = new Date(from);
+        to.setDate(from.getDate() + 1);
+        const v = await sumBetween(Health, dataType, from, to > new Date() ? new Date() : to);
+        if (v == null) return;
+        out.push({ type, day: localKey(from), value: type === 'distance' ? Math.round(v / 100) / 10 : Math.round(v) });
+      })
+    )
+  );
+
+  // Workouts: total minutes per day; the note names what they were.
+  const workouts = await Health.queryWorkouts({ startDate: start.toISOString(), endDate: new Date().toISOString(), limit: 200 })
+    .then((r) => (r && r.workouts) || [])
+    .catch(() => []);
+  const byDay = {};
+  workouts.forEach((w) => {
+    const day = localKey(new Date(w.startDate));
+    const e = (byDay[day] = byDay[day] || { min: 0, kinds: new Set() });
+    e.min += (Number(w.duration) || 0) / 60; // seconds
+    if (w.workoutType) e.kinds.add(String(w.workoutType).replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase());
+  });
+  Object.entries(byDay).forEach(([day, e]) => {
+    if (e.min >= 1) out.push({ type: 'workout', day, value: Math.round(e.min), note: [...e.kinds].join(', ').slice(0, 280) || null });
+  });
+
+  // The newest reading of each day for everything measured rather than counted.
+  await Promise.all(
+    Object.entries(SYNC_LATEST).map(async ([type, dataType]) => {
+      const samples = await readSamples(Health, dataType, start, 200);
+      const seen = new Set();
+      samples
+        .slice()
+        .sort((a, b) => Date.parse(b.endDate || b.startDate) - Date.parse(a.endDate || a.startDate))
+        .forEach((s) => {
+          const at = new Date(s.endDate || s.startDate);
+          const day = localKey(at);
+          if (seen.has(day)) return;
+          let value = type === 'bloodPressure' ? Number(s.systolic) : Number(s.value);
+          if (!Number.isFinite(value) || value <= 0) return;
+          if (PERCENT.has(type) && value <= 1) value *= 100;
+          seen.add(day);
+          const r = { type, day, value: Math.round(value * 10) / 10, measuredAt: at.toISOString() };
+          if (type === 'bloodPressure') r.value2 = Number(s.diastolic);
+          out.push(r);
+        });
+    })
+  );
+  return out;
 }

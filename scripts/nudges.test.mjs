@@ -2,10 +2,12 @@
 import assert from 'node:assert/strict';
 import {
   usualSleep,
+  lastNightGuess,
   repeatExpense,
   usualReminderTime,
   stepsTarget,
   focusMinutesTarget,
+  suggestHealthLink,
 } from './nudges.js';
 
 // usualSleep: median across midnight, 3 nights minimum, today and >14 days ignored.
@@ -33,6 +35,37 @@ assert.deepEqual(
   ),
   { bedtime: '00:00', wakeTime: '07:00' }
 );
+
+// lastNightGuess: phone wins, then usual (3 nights), then last night (1-3 days old).
+const night3 = {
+  '2026-10-10': { bedtime: '23:30', wakeTime: '06:50', quality: 'good' },
+  '2026-10-09': { bedtime: '00:30', wakeTime: '07:10' },
+  '2026-10-08': { bedtime: '00:00', wakeTime: '07:00' },
+};
+assert.deepEqual(lastNightGuess(night3, '2026-10-11', { bedtime: '23:10', wakeTime: '06:45', minutes: 455 }), {
+  bedtime: '23:10',
+  wakeTime: '06:45',
+  quality: 'good',
+  source: 'phone',
+});
+assert.deepEqual(lastNightGuess(night3, '2026-10-11'), {
+  bedtime: '00:00',
+  wakeTime: '07:00',
+  quality: 'good',
+  source: 'usual',
+});
+assert.deepEqual(lastNightGuess({ '2026-10-10': { bedtime: '22:45:00', wakeTime: '06:30:00' } }, '2026-10-11'), {
+  bedtime: '22:45',
+  wakeTime: '06:30',
+  quality: 'okay',
+  source: 'last',
+});
+assert.equal(lastNightGuess({ '2026-10-06': { bedtime: '23:00', wakeTime: '07:00' } }, '2026-10-11'), null);
+// Yesterday's phone night (app left open past midnight) is not offered as last night.
+assert.equal(lastNightGuess({}, '2026-10-11', { bedtime: '23:10', wakeTime: '06:45', date: '2026-10-10' }), null);
+assert.equal(lastNightGuess({}, '2026-10-11', { bedtime: '23:10', wakeTime: '06:45', date: '2026-10-11' }).source, 'phone');
+assert.equal(lastNightGuess({}, '2026-10-11'), null);
+assert.equal(lastNightGuess(undefined, '2026-10-11', null), null);
 
 // repeatExpense: 4+ days, near the usual time, not already logged today.
 const at = (date, h, m = 0) => new Date(date + 'T00:00:00').getTime() + (h * 60 + m) * 60000;
@@ -95,5 +128,16 @@ assert.equal(focusMinutesTarget('Read 20 min'), null);
 assert.equal(focusMinutesTarget('Deep work 2h'), 120);
 assert.equal(focusMinutesTarget('Focus 45 min'), 45);
 assert.equal(focusMinutesTarget('Pomodoro'), 25);
+
+// suggestHealthLink: the form's guess at what a habit's name means.
+assert.deepEqual(suggestHealthLink('Sleep well'), { link: 'sleep', target: 7 });
+assert.deepEqual(suggestHealthLink('Sleep 8h'), { link: 'sleep', target: 8 });
+assert.deepEqual(suggestHealthLink('Walk 10k steps'), { link: 'steps', target: 10000 });
+assert.deepEqual(suggestHealthLink('Evening walk'), { link: 'steps', target: 8000 });
+assert.deepEqual(suggestHealthLink('Run 5 km'), { link: 'distance', target: 5 });
+assert.deepEqual(suggestHealthLink('Gym 45 min'), { link: 'workout', target: 45 });
+assert.deepEqual(suggestHealthLink('Take the stairs'), { link: 'floors', target: 10 });
+assert.equal(suggestHealthLink('Meditate'), null);
+assert.equal(suggestHealthLink('Read 20 min'), null);
 
 console.log('nudges: ok');

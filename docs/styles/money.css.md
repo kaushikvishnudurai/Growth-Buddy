@@ -1,7 +1,9 @@
 # styles/money.css — Money Buddy styles
 
-Reuses the app's tokens, cards and buttons. Signature elements: the "safe to spend" hero ring and a
-growth/sprout motif. All classes are `gb-money-*`. Numbers in the banners map to the Money feature
+Reuses the app's tokens, cards and buttons. Signature: **the statement** — the Overview hero is a
+bank slip (`gb-money-slip*`: mono date head, perforated `gb-money-slip-tear` with notches clipped by the
+slip's `overflow: hidden`, dotted-leader `gb-money-slip-line`s, the total double-underlined). The rest
+keeps the ledger habits quietly: every amount in Space Mono, hairline rules instead of tinted boxes. All classes are `gb-money-*`. Numbers in the banners map to the Money feature
 list (e.g. "(14)" = financial health).
 
 **Loads with the screen, not at boot:** `scripts/money-screen.js` imports it (Vite emits
@@ -13,7 +15,7 @@ bank-feed row) and `.gb-seg:disabled` (every segmented control).
 
 | Section | Used by |
 |---|---|
-| Sub-tabs — `position: sticky` at the top of `.gb-scroll`, full-bleed `--surface` bar (same recipe as `.gb-family-sectionnav`) | `tabBar` |
+| Sub-tabs — `position: sticky` at the top of `.gb-scroll`, full-bleed `--surface` bar (same recipe as `.gb-family-sectionnav`); words on a rule, the open tab underlined in `--brand` | `tabBar` |
 | Hero: safe-to-spend ring | `tabOverview` |
 | Insights | overview |
 | Donut | spending breakdown |
@@ -50,17 +52,23 @@ bank-feed row) and `.gb-seg:disabled` (every segmented control).
 | Home widget (mini card): moved to `styles/money-home.css` | `MoneyHomeCard` |
 | Star rating (reflection, 12) — `.gb-stars` + its caption; the amber fill is decoration, the caption carries the meaning | reflection modal |
 | Every month (`gb-money-rec-row`, `.is-paused` dims; `gb-money-exp-amt.is-in` green; `gb-money-forecast-in`) | income tab, forecast |
-| Budget rollover (`gb-money-roll` 44px checkbox label in the set-budgets row, `gb-money-bcard-carry` "+₹X carried", `.is-less` when negative) | set-budgets modal, budgets |
+| Budget rollover (`gb-money-roll` 44px checkbox label in the set-budgets row, which is a grid so every amount box starts at one x (≤440px, every phone: Roll over drops to a second row; the name wraps at word breaks only, `overflow-wrap: break-word`); `gb-money-bcard-carry` "+₹X carried", `.is-less` when negative) | set-budgets modal, budgets |
 | Other currencies (`gb-money-fx*` rate rows + account selects, `gb-money-exp-orig` under an amount, `gb-money-account-home` under a foreign balance) | customise pane, rows, accounts |
 | Load older (`gb-money-older`, sits with `.gb-money-showall`) | expense list |
-| Responsive — the review stats on a 540px viewport; the screen padding and icon-over-label tabs on `@container gb-main` (33.75rem, tighter under 20rem), so the tablet frame and Largest text get them; `.gb-money-swatch` takes a 44px tap from an `::after` | — |
+| Slip check (`gb-money-jump-warn`: the 20x question as a warning above Save) and quiet deletes (`.gb-money-sheet .gb-btn--primary ~ .gb-btn--danger`: a dialog's Delete under its Save is red text, not a red block; a confirm's red primary is untouched) | expense dialog, every Money dialog with a delete |
+| Responsive — the review stats on a 540px viewport; the screen padding and four equal word-only tabs on `@container gb-main` (33.75rem, tighter under 20rem), so the tablet frame and Largest text get them; `.gb-money-swatch` takes a 44px tap from an `::after` | — |
+| The statement (last section before pressed feedback, so it wins same-specificity fights): the slip, the Space Mono amount list, the passbook expense list (`gb-money-ledger`, `gb-money-ledger-day`), accounts as ruled lines + double-underlined total, budgets on hairlines, `bsummary` / `review-stats` as label-left amount-right lines, `.gb-money-modal` number inputs in mono, the set-budgets row as a grid (icon / tag over Roll over / amount) | overview, spending, income, dialogs |
 
 Threshold colours: `is-near` at ≥80% of a budget, `is-over` above 100% — the JS in
 `scripts/money.js` (`tabBudgets`) picks these class names, so keep the names in sync.
 
 Every `:hover` rule sits inside `@media (hover: hover)`: touch keeps `:hover` after a tap, so bars and
-chips stayed recoloured. Pressed (`:active`) feedback for Money's own buttons is the last block in the
+chips stayed recoloured. Pressed (`:active`) feedback for Money's own buttons is the block before Touch targets at the end of the
 file (`.gb-btn` / `.gb-icon-btn` get theirs from app.css). Small pills take a 44px tap with an
-`::after` overlay (`.gb-money-health-fix`, `.gb-money-quick-amt`). Settled loans and paused recurring rows dim their note and amount to `--fg3` and fade only
-the icon; unearned badges use a `--fg2` label (opacity took all three under 4.5:1). Loan rows (`.gb-money-loan-row`)
+`::after` overlay (`.gb-money-health-fix`, `.gb-money-quick-amt`), or `::before` (`.gb-money-tagchip`,
+`.gb-money-chip`; "Touch targets" block at the end). Money's dialogs carry `.gb-money-sheet`
+(`openMoneyModal`), which scopes the 44px `.gb-seg` there and on the screen (`.gb-money .gb-seg`)
+without touching app.css; the receipt row's remove button is 44px square. Settled loans and paused recurring
+rows dim their note and amount to `--fg3` and fade only the icon; unearned badges use a `--fg2` label (opacity
+took all three under 4.5:1). Loan rows (`.gb-money-loan-row`)
 wrap their amount and buttons onto a second line when the name can't keep 9rem.

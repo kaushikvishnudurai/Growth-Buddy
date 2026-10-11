@@ -69,6 +69,7 @@ public class SessionService {
 
     private final SessionRepository sessions;
     private final String hmacSecret;
+    private final com.growthbuddy.common.ClientIp clientIp;
     private final SecureRandom rng = new SecureRandom();
 
     /** The built-in dev fallback (see application.yml). Must never be used in prod. */
@@ -76,13 +77,15 @@ public class SessionService {
 
     public SessionService(SessionRepository sessions,
                           @Value("${growthbuddy.session.hmac-secret}") String hmacSecret,
-                          @Value("${spring.profiles.active:}") String activeProfiles) {
+                          @Value("${spring.profiles.active:}") String activeProfiles,
+                          com.growthbuddy.common.ClientIp clientIp) {
         boolean prod = activeProfiles != null && activeProfiles.toLowerCase().contains("prod");
         if (prod) {
             rejectWeakSecret(hmacSecret);
         }
         this.sessions   = sessions;
         this.hmacSecret = hmacSecret;
+        this.clientIp = clientIp;
     }
 
     /**
@@ -122,7 +125,7 @@ public class SessionService {
         s.setExpiresAt(Instant.now().plus(SESSION_TTL));
         if (request != null) {
             s.setUserAgent(truncate(request.getHeader("User-Agent"), 4000));
-            s.setIp(clientIp(request));
+            s.setIp(clientIp.resolve(request));
             // The native shell knows its own model; a browser's UA no longer does
             // (Chrome reduces Android to "Android 10; K"). Trust the client label
             // when it sends one, fall back to parsing the UA when it doesn't.
@@ -247,15 +250,6 @@ public class SessionService {
         } catch (NoSuchAlgorithmException | InvalidKeyException e) {
             throw new IllegalStateException("HmacSHA256 unavailable", e);
         }
-    }
-
-    private static String clientIp(HttpServletRequest req) {
-        String xf = req.getHeader("X-Forwarded-For");
-        if (xf != null && !xf.isBlank()) {
-            int comma = xf.indexOf(',');
-            return comma > 0 ? xf.substring(0, comma).trim() : xf.trim();
-        }
-        return req.getRemoteAddr();
     }
 
     private static String truncate(String s, int max) {

@@ -7,7 +7,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 /**
- * Per-user rate limit on the OpenAI-backed endpoints (mentor, quick-add, money
+ * Per-user rate limit on the OpenAI-backed endpoints (mentor, money
  * advice, nutrition suggestion). These cost money per call, so an authenticated
  * user shouldn't be able to hammer them. Keyed by user id (falls back to IP).
  * Runs after {@link CurrentUserInterceptor}, so the user is already resolved.

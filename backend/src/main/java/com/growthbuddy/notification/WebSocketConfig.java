@@ -2,7 +2,6 @@ package com.growthbuddy.notification;
 
 import com.growthbuddy.user.SessionService;
 import java.security.Principal;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -59,7 +58,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
-        String[] origins = parseAllowedOrigins();
+        String[] origins = com.growthbuddy.common.WebConfig.parseAllowedOrigins(allowedOrigins);
         registry.addEndpoint("/ws")
             .setAllowedOriginPatterns(origins)
                 .withSockJS();
@@ -164,19 +163,6 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     private static String firstHeader(StompHeaderAccessor acc, String name) {
         List<String> values = acc.getNativeHeader(name);
         return (values == null || values.isEmpty()) ? null : values.get(0);
-    }
-
-    /** Same reason as {@code WebConfig.NATIVE_SHELL_ORIGINS}: the app is not a website. */
-    private static final String[] NATIVE_SHELL_ORIGINS = {
-        "https://localhost", "capacitor://localhost", "ionic://localhost"
-    };
-
-    private String[] parseAllowedOrigins() {
-        return java.util.stream.Stream.concat(
-                        Arrays.stream(allowedOrigins.split(",")).map(String::trim).filter(s -> !s.isEmpty()),
-                        Arrays.stream(NATIVE_SHELL_ORIGINS))
-                .distinct()
-                .toArray(String[]::new);
     }
 
     /** Tiny Principal so Spring's user destination resolver can target this user. */

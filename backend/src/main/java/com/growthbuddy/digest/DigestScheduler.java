@@ -15,7 +15,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 /**
- * Sends progress digests near each user's preferred local hour. Runs hourly and
+ * Sends progress digests from each user's preferred local hour on. Runs hourly and
  * dispatches at most one digest per user per local day (weekly digests fire on
  * Mondays). Honours the user's timezone like {@code ReminderDeliveryScheduler}.
  */
@@ -47,7 +47,7 @@ public class DigestScheduler {
             }
             ZoneId zone = UserZone.of(user.getTimezone());
             LocalDateTime now = LocalDateTime.now(zone);
-            if (now.getHour() != digestHourFor(user.getDigestHour(), user.getUiPrefs())) {
+            if (!due(now, user.getDigestHour(), user.getUiPrefs())) {
                 continue;
             }
             LocalDate today = now.toLocalDate();
@@ -62,16 +62,25 @@ public class DigestScheduler {
                 digest.sendDigest(user, weekly, today);
             } catch (Exception ex) {
                 // Don't stamp lastDigestOn on a failure: that records a digest as
-                // delivered when it never left the building, and the `already sent
-                // today` check above then skips the retry for good. Leaving the
-                // stamp alone lets the next tick inside the user's digest hour try
-                // again, and cannot spam — the send is gated on the hour matching.
+                // delivered when it never left the building. Left unstamped, the
+                // next hourly tick that day tries again; lastDigestOn is what keeps
+                // it to one send per local day.
                 log.warn("Failed to send digest for user {}: {}", user.getId(), ex.getMessage());
                 continue;
             }
             user.setLastDigestOn(today);
             users.save(user);
         }
+    }
+
+    /**
+     * Any tick at or after the digest hour, outside quiet hours, until the day's
+     * digest is stamped. Not just the one matching hour: a failed send or a host
+     * asleep through that hour (Render idles) would otherwise lose the whole day.
+     */
+    static boolean due(LocalDateTime now, int hour, java.util.Map<String, Object> uiPrefs) {
+        return now.getHour() >= digestHourFor(hour, uiPrefs)
+                && !com.growthbuddy.reminder.ReminderPrefs.isQuiet(uiPrefs, now.toLocalTime());
     }
 
     /**

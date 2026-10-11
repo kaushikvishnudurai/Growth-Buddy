@@ -212,6 +212,12 @@ html[data-premium='on'] .gb-week-nudge {
   html[data-premium='on'][data-theme='dark'] .gb-nav-tab.is-active {
     background: rgba(249, 115, 22, 0.22);
   }
+  /* The floating pill has no soil line to stand on, and the filled tab already
+     marks the place; the header's live seedling carries the brand here. */
+  html[data-premium='on'] .gb-nav-tab.is-active::before,
+  html[data-premium='on'] .gb-nav-tab.is-active::after {
+    display: none;
+  }
 }
 
 /* Desktop sidebar: keep it opaque (it's a structural region, not floating
@@ -219,6 +225,10 @@ html[data-premium='on'] .gb-week-nudge {
 @media (min-width: 1024px) {
   html[data-premium='on'] .gb-nav-tab {
     border-radius: var(--radius-md);
+  }
+  /* The header's live seedling is the mark in this skin; one logo per screen. */
+  html[data-premium='on'] .gb-nav-brand svg {
+    display: none !important;
   }
 }
 
@@ -360,23 +370,18 @@ html[data-premium='on'] body {
 }
 html[data-premium='on'] .greet-name,
 html[data-premium='on'] .gb-login-title,
-html[data-premium='on'] .gb-display,
-html[data-premium='on'] .gb-h1,
 html[data-premium='on'] .gb-stat {
   letter-spacing: -0.032em;
 }
 html[data-premium='on'] .gb-h2,
-html[data-premium='on'] .gb-sectiontitle h2,
 html[data-premium='on'] .gb-sectiontitle :is(h2, h3) {
   letter-spacing: -0.022em;
 }
-html[data-premium='on'] .gb-label,
 html[data-premium='on'] .gb-settings-sec-label {
   letter-spacing: 0.09em;
 }
 /* Numbers in a column should line up; they never do with proportional figures. */
-html[data-premium='on'] .gb-stat,
-html[data-premium='on'] .gb-mono {
+html[data-premium='on'] .gb-stat {
   font-variant-numeric: tabular-nums;
 }
 

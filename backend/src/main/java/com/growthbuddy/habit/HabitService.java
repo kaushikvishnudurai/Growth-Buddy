@@ -196,7 +196,9 @@ public class HabitService {
                 c.setHabitId(id);
                 c.setLogDate(day);
                 c.setUserId(userId);
+                c.setXpPaid(false);
             }
+            c.setXpPaid(xpPaid(c)); // pinned before protected_day changes what the legacy rule reads
             c.setDone(false);
             c.setProtectedDay(true);
             checkins.save(c);
@@ -213,14 +215,29 @@ public class HabitService {
         LocalDate day = date != null ? date : today;
         HabitCheckin c = checkins.findByHabitIdAndLogDate(id, day).orElse(null);
         if (c != null && c.isProtectedDay()) {
+            c.setXpPaid(xpPaid(c));
             c.setProtectedDay(false);
             checkins.save(c);
-            StreakFreezeWallet w = wallet(userId, today);
-            w.setTokens(Math.min(FREEZE_CAP, w.getTokens() + 1));
-            wallets.save(w);
+            refundToken(userId, today);
             recomputeStreak(h, today);
         }
         return toResponse(h, today, userId);
+    }
+
+    /** One freeze token back, never past the cap. */
+    private void refundToken(UUID userId, LocalDate today) {
+        StreakFreezeWallet w = wallet(userId, today);
+        w.setTokens(Math.min(FREEZE_CAP, w.getTokens() + 1));
+        wallets.save(w);
+    }
+
+    /**
+     * Has this day's check-in XP been paid? The column when it is set; on a row
+     * from before it, the rule that came before it: an existing row had paid
+     * unless it was a protected day (which was never done).
+     */
+    static boolean xpPaid(HabitCheckin c) {
+        return c.getXpPaid() != null ? c.getXpPaid() : !c.isProtectedDay();
     }
 
     // Read-write (not readOnly): wallet() may persist a weekly token grant.
@@ -393,9 +410,14 @@ public class HabitService {
         List<Habit> hs = habits.findByUserIdAndDeletedAtIsNullOrderByCreatedAtAsc(userId);
         if (hs.isEmpty()) return "Habits: none tracked.\n";
         LocalDate today = clock.today(userId);
+        // Two queries for the list, not two per habit (as streakLines does below).
+        Map<UUID, HabitStreak> byId = new HashMap<>();
+        streaks.findAllById(hs.stream().map(Habit::getId).toList()).forEach(s -> byId.put(s.getHabitId(), s));
+        Set<UUID> doneToday = new HashSet<>();
+        checkins.findByUserIdAndLogDateAndDoneTrue(userId, today).forEach(c -> doneToday.add(c.getHabitId()));
         StringBuilder sb = new StringBuilder("Habits:\n");
         for (Habit h : hs) {
-            HabitStreak s = streaks.findById(h.getId()).orElse(null);
+            HabitStreak s = byId.get(h.getId());
             if (isQuit(h)) {
                 // The cache's lastDoneOn is the last slip on a quit habit; its
                 // current streak goes stale a day at a time, so it is worked out.
@@ -407,7 +429,7 @@ public class HabitService {
                         .append(" days clean\n");
                 continue;
             }
-            boolean done = checkins.existsByHabitIdAndLogDateAndDoneTrue(h.getId(), today);
+            boolean done = doneToday.contains(h.getId());
             int streak = s == null ? 0 : s.getCurrentStreak();
             sb.append("  - ").append(h.getName())
                     .append(" — ").append(done ? "done today" : "not yet today")
@@ -500,6 +522,25 @@ public class HabitService {
     }
 
     /**
+     * {@link #countsOn} for every day in {@code [from, to]}, from two reads instead
+     * of two per day: the habits once, and every check-in from the ISO week
+     * {@code from} falls in through {@code to}. countDue ignores rows outside the
+     * day's own week, so one list serves every day.
+     */
+    @Transactional(readOnly = true)
+    public Map<LocalDate, TodayCounts> countsBetween(UUID userId, LocalDate from, LocalDate to) {
+        Map<LocalDate, TodayCounts> out = new java.util.LinkedHashMap<>();
+        List<Habit> list = habits.findByUserIdAndDeletedAtIsNullOrderByCreatedAtAsc(userId);
+        List<HabitCheckin> rows = list.isEmpty() ? List.of()
+                : checkins.findByUserIdAndLogDateBetween(userId, weekStart(from), to);
+        ZoneId zone = clock.zoneOf(userId);
+        for (LocalDate d = from; !d.isAfter(to); d = d.plusDays(1)) {
+            out.put(d, list.isEmpty() ? new TodayCounts(0, 0) : countDue(list, rows, d, zone));
+        }
+        return out;
+    }
+
+    /**
      * Which habits count on {@code day}, and how many of those were done. A habit
      * counts when it is active (not paused), existed by that day, and is still owed:
      * a daily habit always is; a weekly / N-per-week habit is owed until the week's
@@ -588,6 +629,49 @@ public class HabitService {
         return icon;
     }
 
+    /** Every health link a habit can carry, and the largest daily target each takes (in its unit). */
+    static final Map<String, Double> HEALTH_LINK_MAX = Map.of(
+            "steps", 100_000d,   // count
+            "sleep", 24d,        // hours
+            "distance", 300d,    // km
+            "calories", 10_000d, // active kcal
+            "floors", 1_000d,
+            "workout", 1_440d);  // minutes
+
+    /**
+     * Apply a request's health link to {@code h}. {@code link} null = leave it,
+     * "" = clear the link and its target. A new link needs a target; the same
+     * link again keeps the one it has. A target alone retargets an existing link
+     * and is ignored on an unlinked habit. Create runs through here too, on a
+     * habit with no link yet, so there a null link just leaves it unlinked.
+     */
+    static void applyHealthLink(Habit h, String link, Double target) {
+        if (link != null && link.isBlank()) {
+            h.setHealthLink(null);
+            h.setHealthTarget(null);
+            return;
+        }
+        if (link != null) {
+            link = link.trim().toLowerCase(java.util.Locale.ROOT);
+            if (!HEALTH_LINK_MAX.containsKey(link)) {
+                throw ApiException.badRequest("Unknown health link: " + link
+                        + " (one of steps, sleep, distance, calories, floors, workout)");
+            }
+            if (target == null && !link.equals(h.getHealthLink())) {
+                throw ApiException.badRequest("A health link needs a daily target");
+            }
+            h.setHealthLink(link);
+        }
+        if (target != null && h.getHealthLink() != null) {
+            double max = HEALTH_LINK_MAX.get(h.getHealthLink());
+            if (!(target > 0 && target <= max)) {
+                throw ApiException.badRequest("A " + h.getHealthLink()
+                        + " target must be more than 0 and at most " + (long) max);
+            }
+            h.setHealthTarget(target);
+        }
+    }
+
     @Transactional
     public HabitResponse create(UUID userId, CreateHabitRequest req) {
         Habit h = new Habit();
@@ -601,6 +685,9 @@ public class HabitService {
         h.setMetric(req.metric() != null ? req.metric() : HabitMetric.none);
         h.setReminderTime(req.reminderTime());
         h.setSound(req.sound());
+        if (req.kind() != HabitKind.quit) {
+            applyHealthLink(h, req.healthLink(), req.healthTarget());
+        }
         if (req.kind() == HabitKind.quit) {
             // Breaking a habit is a daily thing with nothing to measure, and it
             // has been "paid" up to the day before it started.
@@ -718,10 +805,14 @@ public class HabitService {
             h.setSound(req.sound().isBlank() ? null : req.sound());
         }
         if (isQuit(h)) {
-            // A quit habit stays daily and unmeasured whatever the form sent.
+            // A quit habit stays daily, unmeasured and unlinked whatever the form sent.
             h.setCadence(Cadence.daily);
             h.setTargetPerWeek(7);
             h.setMetric(HabitMetric.none);
+            h.setHealthLink(null);
+            h.setHealthTarget(null);
+        } else {
+            applyHealthLink(h, req.healthLink(), req.healthTarget());
         }
         habits.save(h);
         LocalDate today = clock.today(userId);
@@ -772,18 +863,23 @@ public class HabitService {
             // A fresh row starts undone. The entity's field default is done = true,
             // which made a first tick look like a re-tick.
             c.setDone(false);
+            c.setXpPaid(false);
         }
         boolean wasDone = c.isDone();
-        // XP once per habit per day. Un-ticking keeps the row (done = false), so a
-        // re-tick finds it and earns nothing: tick/untick/tick used to pay 10 XP
-        // every round. The one exception is completing a protected (freeze) day:
-        // it was never done, and each one cost a capped token.
-        // ponytail: tick / untick / protect / tick still pays a second time — the row
-        // can't tell a day that already paid; bounded by the token cap (one a week).
-        // A paid-flag column closes it if that ever matters.
-        boolean firstCompletion = existing == null || existing.isProtectedDay();
+        // XP once per habit per day, tracked on the row (xp_paid): tick/untick/tick
+        // and tick/untick/protect/tick both pay once. The second used to pay again,
+        // bounded by the token it cost; now that ticking a rest day refunds the
+        // token, only the flag stops that loop.
+        // A quit habit earns nothing here: done = true only takes a slip back (or
+        // carries a note), and its clean days are paid once by creditCleanDays.
+        boolean pays = !wasDone && done && !xpPaid(c) && !isQuit(h);
+        c.setXpPaid(pays || xpPaid(c));
         c.setUserId(userId);
         c.setDone(done);
+        if (done && c.isProtectedDay() && !isQuit(h)) {
+            // The day was done after all, so the freeze bought nothing: give it back.
+            refundToken(userId, today);
+        }
         if (done || isQuit(h)) {
             // A completed day supersedes a protected (rest/freeze) day. On a quit
             // habit done = false is a slip, which a freeze must not disguise.
@@ -805,9 +901,7 @@ public class HabitService {
         }
         checkins.save(c);
 
-        // A quit habit earns nothing here: done = true only takes a slip back (or
-        // carries a note), and its clean days are paid once by creditCleanDays.
-        if (!wasDone && done && firstCompletion && !isQuit(h)) {
+        if (pays) {
             progress.awardHabitCheckin(userId);
         }
 
@@ -1039,9 +1133,12 @@ public class HabitService {
         Set<LocalDate> done = new HashSet<>();
         Set<LocalDate> prot = new HashSet<>();
         HabitCheckin todayRow = null;
+        HabitCheckin lastRow = null; // newest earlier day with a number (rows are newest first)
         for (HabitCheckin c : checkinsDesc) {
             if (c.getLogDate().isEqual(today)) {
                 todayRow = c;
+            } else if (lastRow == null && c.getLogDate().isBefore(today) && c.getMetricValue() != null) {
+                lastRow = c;
             }
             if (c.isDone()) {
                 done.add(c.getLogDate());
@@ -1106,7 +1203,9 @@ public class HabitService {
                 measured && todayRow != null ? todayRow.getMetricValue() : null,
                 measured && todayRow != null ? todayRow.getDurationMin() : null,
                 dueToday, doneThisWeek,
-                todayRow != null ? todayRow.getNote() : null);
+                todayRow != null ? todayRow.getNote() : null,
+                measured && lastRow != null ? lastRow.getMetricValue() : null,
+                measured && lastRow != null ? lastRow.getDurationMin() : null);
     }
 
     /**
@@ -1144,7 +1243,7 @@ public class HabitService {
         boolean active = h.isActive();
         return HabitResponse.of(h, s, streak, active && !slippedToday, false, false, 0, tokens,
                 null, null, isDue(h, 0, today, zone), cleanThisWeek,
-                todayRow != null ? todayRow.getNote() : null);
+                todayRow != null ? todayRow.getNote() : null, null, null);
     }
 
     /**
@@ -1185,6 +1284,7 @@ public class HabitService {
 
     @Transactional
     public void createNamed(UUID userId, String name) {
-        create(userId, new CreateHabitRequest(name, null, "repeat", null, null, null, null, null, null, null));
+        create(userId, new CreateHabitRequest(name, null, "repeat", null, null, null, null, null, null, null,
+                null, null));
     }
 }

@@ -68,11 +68,11 @@ public class FoodController {
     }
 
     /**
-     * The same add, for an entry whose calories the user typed. Its own path so it
-     * sits outside the AI rate limit (WebConfig limits POST /entries by exact
-     * path): with kcal present addEntry makes no AI call and no lookup, and kcal is
-     * required here so this path can never reach one. Logging from a label used to
-     * spend the same budget as a photo estimate.
+     * The same add, for an entry whose calories the user typed: kcal is required
+     * here, so this path never reaches an AI call or a lookup. Neither path sits
+     * behind AiRateLimitInterceptor any more: on POST /entries a spent AI budget
+     * only degrades the estimate to the table one (FoodService.askAi swallows
+     * OpenAIClient's 429), it never blocks the log.
      */
     @PostMapping("/entries/manual")
     @ResponseStatus(HttpStatus.CREATED)

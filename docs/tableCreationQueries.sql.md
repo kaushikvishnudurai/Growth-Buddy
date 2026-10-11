@@ -1,11 +1,11 @@
-# SQL schema — `tableCreationQueries.sql` + `growth_buddy.sql`
+# SQL schema — `tableCreationQueries.sql` + `migrations.sql`
 
 **Two files, different jobs:**
 
 | File | What it is |
 |---|---|
 | `tableCreationQueries.sql` | hand-written DDL, the schema of record. One guarded `CREATE TABLE IF NOT EXISTS` per table (count them with `grep -c '^CREATE TABLE'`; a number written here went stale), with old migrations left as comments — the one live `ALTER` is the idempotent `MODIFY COLUMN` widening `family_members.status`'s ENUM; column adds go to `migrations.sql`. **Runnable against a fresh database, against prod, and twice.** **In sync with the live DB as of v6** — the 11 tables ddl-auto had created but nobody had written down were captured from `SHOW CREATE TABLE` and appended, and 11 phantom tables that had no entity and existed nowhere were deleted. |
-| `growth_buddy.sql` | a real `mysqldump` of a working DB (backticked identifiers). Untracked in git, and **stale** — it still holds the dropped Google tables. Re-dump it when you care. |
+| `migrations.sql` | the `ALTER`s that bring an existing database (prod) up to the schema of record. The only thing that can change a live table: prod runs `ddl-auto: none`. |
 
 `application.yml` sets `ddl-auto: ${SPRING_JPA_DDL_AUTO:update}`, so dev papers over any gap:
 Hibernate creates missing tables and columns on the fly. **`application-prod.yml` sets
@@ -37,9 +37,9 @@ so it provably matches the running database.
 | email_verification_tokens · password_reset_tokens · whatsapp_otp_tokens | one-time codes (bcrypt hashes only) |
 | email_change_tokens · user_totp | change-email codes (bcrypt hash + the `new_email` they prove); authenticator 2FA — `secret_enc` is AES-GCM ciphertext (`TotpService`), `recovery_codes` a JSON array of bcrypt hashes, `enabled_at` NULL = setup pending. `users.deletion_requested_at` = account scheduled for deletion (purged 7 days later) |
 | tasks · task_completion_history | tasks (`tasks.goal_id` NULL = on no goal; no FK, since `tasks` is created before `goals` — `GoalService.delete` clears it) |
-| habits · habit_checkins · habit_streaks · streak_freeze_wallets | habits |
+| habits · habit_checkins · habit_streaks · streak_freeze_wallets | habits (`habit_checkins.xp_paid`: the day's XP is paid; NULL on pre-column rows, read as "paid unless protected") |
 | water_goals · water_entries | water |
-| food_entries · food_favourites · food_photo_logs · food_diet_checks | food (`food_entries.meal_slot` null on pre-slot rows; `sugar_g`/`sodium_mg` only from a barcode label; `food_favourites` is a copy of a starred entry); `water_entries.drink_type` null = water; the last one stores Buddy's diet check per `(user_id, scope)` with the prompt it answered, so a changed day is a miss rather than something to invalidate |
+| food_entries · food_favourites · food_photo_logs · food_diet_checks | food (`food_entries.meal_slot` null on pre-slot rows; `food_entries.pieces` the count it was logged by, null when weighed; `sugar_g`/`sodium_mg` only from a barcode label; `food_favourites` is a copy of a starred entry); `water_entries.drink_type` null = water; the last one stores Buddy's diet check per `(user_id, scope)` with the prompt it answered, so a changed day is a miss rather than something to invalidate |
 | goals · goal_actions | goals |
 | daily_scores · daily_logs | scoring & wellness |
 | quotes | quotes |
@@ -57,6 +57,7 @@ so it provably matches the running database.
 | money_state | **the Money document minus the ledger: `user_id`, `data` JSON, `updated_at`** |
 | money_accounts · money_transactions | Money ledger: accounts (balance computed), one row per expense/income/transfer keyed `(user_id, id)`. (`money_day_summaries`, the old AI day-summary cache, is dropped by `migrations.sql`.) |
 | bank_feed_consents | Account Aggregator consents for the bank feed (`BankFeedService`): consent id + status, last 4 digits per linked account, `synced_to` / `pending_session` / `requested_at` progress. No account numbers, no FI data. In `USER_OWNED_TABLES`. |
+| health_readings | health readings (`HealthReadingService`): `source` manual (any number a day) or phone (one per `(user_id, type, day)`, upserted by sync); `day` = the user's local day; `value2` = diastolic, bloodPressure only. In `USER_OWNED_TABLES`. |
 
 ## `users.timezone` is load-bearing
 

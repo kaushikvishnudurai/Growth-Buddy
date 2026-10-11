@@ -1,7 +1,7 @@
 /* =====================================================================
    Growth Buddy — Goals screen (short / mid / long term goals + actions)
    ===================================================================== */
-import { h, Icon, Pill, openModal, shakeRefusal, rovingGroup } from './gb-kit.js';
+import { h, Icon, Pill, openModal, shakeRefusal, rovingGroup, focusSoon } from './gb-kit.js';
 import { todayKey as sharedTodayKey } from './home-order.js';
 import {
   moveItem,
@@ -12,15 +12,23 @@ import {
 } from './goal-milestones.js';
 
 const HORIZON_LABEL = {
-  short_term: 'Short Term',
-  mid_term: 'Mid Term',
-  long_term: 'Long Term',
+  short_term: 'Short term',
+  mid_term: 'Mid term',
+  long_term: 'Long term',
 };
 
 const HORIZON_META = {
   short_term: { bg: 'var(--success-soft)', fg: 'var(--success-soft-fg)', dot: 'var(--leaf-500)' },
   mid_term: { bg: 'var(--warning-soft)', fg: 'var(--warning-soft-fg)', dot: 'var(--sun-500)' },
   long_term: { bg: 'var(--ai-soft)', fg: 'var(--ai-soft-fg)', dot: 'var(--iris-500)' },
+};
+
+// How far each horizon reaches: the hint under the form's horizon buttons and
+// the line under each section's heading.
+const HORIZON_HINT = {
+  short_term: 'Weeks to a few months',
+  mid_term: 'About 3 to 12 months',
+  long_term: 'A year or more',
 };
 
 function fmtDate(value) {
@@ -190,7 +198,7 @@ function openEditProgress(goal, progress, onUpdateProgress, linkedCount = 0) {
       onUpdateProgress(goal.id, { durationDays: dur, daysFollowed: followed, autoDays: false });
     },
   });
-  setTimeout(() => durationInput.focus(), 60);
+  focusSoon(durationInput);
 }
 
 /* ---- Goal progress bar component ---- */
@@ -465,13 +473,19 @@ function GoalMilestones({ goal, progress, onUpdateProgress }) {
     return node;
   }
 
+  // The first open milestone is where the path stands now.
+  const nextId = (ms.find((m) => !m.done) || {}).id;
+
   function viewRow(x) {
     const index = ms.findIndex((m) => m.id === x.id);
     const dueState = milestoneDueState(x, today);
     let node = null;
     node = h(
       'div',
-      { class: 'gb-goal-ms-row' + (x.done ? ' is-done' : '') },
+      {
+        class:
+          'gb-goal-ms-row' + (x.done ? ' is-done' : '') + (x.id === nextId ? ' is-next' : ''),
+      },
       h(
         'button',
         {
@@ -482,12 +496,16 @@ function GoalMilestones({ goal, progress, onUpdateProgress }) {
           'aria-label': (x.done ? 'Mark incomplete: ' : 'Mark complete: ') + x.title,
           onclick: () => toggle(x.id),
         },
-        x.done ? Icon('check', { size: 13, sw: 3, color: '#fff' }) : null
+        // An open stop shows its place in the order; the label says the rest.
+        x.done
+          ? Icon('check', { size: 13, sw: 3, color: '#fff' })
+          : h('span', { class: 'gb-goal-ms-n', 'aria-hidden': 'true' }, String(index + 1))
       ),
       h(
         'span',
         { class: 'gb-goal-ms-title' },
         x.title,
+        x.id === nextId ? h('span', { class: 'gb-goal-ms-nexttag' }, 'Next') : null,
         x.due
           ? h(
               'span',
@@ -532,7 +550,9 @@ function GoalMilestones({ goal, progress, onUpdateProgress }) {
           ? h('span', { class: 'gb-goal-ms-pct' }, done + '/' + total + ' · ' + pct + '%')
           : null
     ),
-    work || total
+    // Milestones alone: the trail below is the progress. The bar stays for the
+    // combined count, which the trail can't show (tasks aren't stops on it).
+    work
       ? h(
           'div',
           { class: 'gb-goal-ms-track' },
@@ -542,7 +562,7 @@ function GoalMilestones({ goal, progress, onUpdateProgress }) {
           })
         )
       : null,
-    rows.length ? h('div', { class: 'gb-goal-ms-list' }, rows) : null,
+    rows.length ? h('div', { class: 'gb-goal-ms-list gb-goal-trail' }, rows) : null,
     // The + sits inside the field: a separate "+ Add" pill beside it squeezed
     // the input to a few characters on a card this narrow.
     h(
@@ -715,19 +735,15 @@ function GoalRow(
     ms.done === ms.total &&
     tasks.done === tasks.total;
 
-  const statusChip = h(
-    'span',
-    {
-      class: 'gb-goal-status-chip' + (goal.completed ? ' is-complete' : ''),
-    },
-    goal.completed ? 'Complete' : 'Active'
-  );
+  // Only a finished goal says so: every open one was "Active", which said nothing.
+  const statusChip = goal.completed
+    ? h('span', { class: 'gb-goal-status-chip is-complete' }, 'Complete')
+    : null;
 
   return h(
     'div',
     {
       class: 'gb-goal-card' + (goal.completed ? ' is-complete' : ''),
-      style: { borderLeftColor: meta.dot },
       // The command palette finds a goal's card by this to bring it into view.
       'data-goal-id': goal.id,
     },
@@ -920,13 +936,6 @@ function ScreenGoals({
     'New goal'
   );
 
-  // Horizon first and as three buttons, not a select: it's the one choice
-  // every goal needs, and the hint under it says what each one means.
-  const HORIZON_HINT = {
-    short_term: 'Weeks to a few months',
-    mid_term: 'About 3 to 12 months',
-    long_term: 'A year or more',
-  };
 
   /* New goal, or edit one (`goal` given): same fields, prefilled. The day
      tracker is edited from its own pencil, so editing hides that field. */
@@ -1132,7 +1141,7 @@ function ScreenGoals({
         }
       },
     });
-    setTimeout(() => titleInput.focus(), 60);
+    focusSoon(titleInput);
   }
 
   function openActionModal(goal, action) {
@@ -1180,7 +1189,7 @@ function ScreenGoals({
         else await onAddAction(goal.id, payload);
       },
     });
-    setTimeout(() => noteInput.focus(), 60);
+    focusSoon(noteInput);
   }
 
   function openAddAction(goal) {
@@ -1254,8 +1263,15 @@ function ScreenGoals({
         { class: 'gb-goal-section-head' },
         h(
           'div',
-          { class: 'gb-goal-section-title' },
-          HORIZON_LABEL[section.horizon] || section.horizon
+          { class: 'gb-goal-section-name' },
+          h(
+            'h3',
+            { class: 'gb-goal-section-title' },
+            HORIZON_LABEL[section.horizon] || section.horizon
+          ),
+          HORIZON_HINT[section.horizon]
+            ? h('div', { class: 'gb-goal-section-reach' }, HORIZON_HINT[section.horizon])
+            : null
         ),
         h('div', { class: 'gb-goal-section-count' }, goals.length)
       ),

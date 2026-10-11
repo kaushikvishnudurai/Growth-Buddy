@@ -1,8 +1,8 @@
 # scripts/insights.js — Insights engine
 
 Pure pattern finder over the local wellness + trends + money stores, plus history the Report
-screen fetches on open. No AI. Its one import is `drinkRateByHour` from `water-stats.js` (re-exported here): it lives there so `push.js`, a boot module, can use it without pulling this whole engine into the boot chunk.
-One caller: `report.js` `insightsSection` (Report screen only). Checked by
+screen fetches on open. No AI; imports only `money-core.js` (pure: `fmtIn`/`homeCur`/`catOf`, so money cards read "₹1,200 on Food", the tag's label in the home currency) and `dates.js` (`localKey`). `drinkRateByHour` lives in `water-stats.js` (re-exported here) so `push.js`, a boot module, can use it without pulling this engine into the boot chunk.
+Two callers: `report.js` `insightsSection` (Report screen) and `outlook.js` `topInsight` (Home's Outlook card, `[0]` only; Home never fetches history, it reuses Report's `state.insightHistory` + year via `yearOf` once Report has loaded it, so history-only cards appear on Home only after a Report visit). Both draw the row with `outlook-card.js` `InsightRow`. Checked by
 `node scripts/insights.test.mjs`.
 
 Exports `buildInsights({wellness, trends, money, habits, tasks, goals, goalProgress, history, features, dismissed, now})`
@@ -12,7 +12,7 @@ optional; a card whose data is missing just doesn't appear. Each rule is exporte
 drops its cards. `dismissed` ids are filtered **before** the cap, so the next card fills the slot; ids
 of this-week/today cards carry the week's Monday or the day (`sleepDebt:2026-10-05`), so a dismissal
 doesn't silence next month's. `basis` is what the card stands on ("23 days", "12 sessions"); each rule
-sets its own. `insightProgress(wellness)` → `{days, need}` for the empty state.
+sets its own, and `buildInsights` appends ", an early pattern" to any basis whose number is under `MIN_DAYS` (7), on every card alike. `insightProgress(wellness)` → `{days, need}` for the empty state.
 `action` `{label, kind, params}` is the card's next step, as **data only** — app.js `runInsightAction`
 does it (Report draws the button). Kinds: `bedtimeReminder` {time, repeat} (bestBedtime),
 `waterNudge` {hour, from, to} (waterGap), `editTask` {taskId} (pushedTask), `habitReminder`
@@ -21,7 +21,7 @@ hiddenSubscription). A new kind needs a `case` there or its button does nothing.
 
 `history` is `state.insightHistory`, filled by app.js `loadInsightHistory`:
 `{focus: [{durationSec, completedAt}], finished: [{priority, createdAt, doneAt}],
-waterTimes: [instant], scores: [dayBeforeYesterday, yesterday], habits: {id: {since, days}}}`.
+waterTimes: [instant], scores: [dayBeforeYesterday, yesterday] (with tasks/habits parts, for scoreChange), habits: {id: {since, days}}}`.
 A quit ("break a habit") habit is skipped by the habit series: its clean days have no row.
 
 | Piece | What |
@@ -39,14 +39,14 @@ A quit ("break a habit") habit is skipped by the habit series: its clean days ha
 | `weekdayPattern(sig, key, 'min'｜'max')` | needs 14 days total, 2 per weekday |
 | `bestBedtime` | hour buckets of bedtime, needs 10 nights and 3 in the best bucket |
 | `focusHours` | 2-hour window by session START hour with the longest sessions; 10 sessions, 3 inside, +20% |
-| `habitDays` | daily habits only, `since` to yesterday; a frozen day counts as done |
+| `habitDays` | daily habits only, from the **first done day** on or after `since` to yesterday (a run of misses before the habit got going made every early weekday a "skip day"); a frozen day counts as done |
 | `earlierReminder(time)` | the habit miss card's offer: an hour before the habit's reminder, 09:00 with none, null before 06:00 (no check-in times are stored, so it is a nudge, not a measured hour) |
-| `habitWeekdayMiss` / `missTwice` / `keystoneHabit` | weekday miss rate 25 points over the habit's own; one miss turning into two in half of 4+ cases, shown only while a habit missed yesterday is still undone today; mood on done vs skipped days |
+| `habitWeekdayMiss` / `missTwice` / `keystoneHabit` | weekday miss rate 25 points over the habit's **other** weekdays in the same span, 14+ days, 3+ of that weekday, 2+ misses; under 4 of it is "an early pattern" (in `basis`) at half the effect; one miss turning into two in half of 4+ cases, shown only while a habit missed yesterday is still undone today; mood on done vs skipped days |
 | `paceSlope(log, frac, today)` / `goalPace` | least-squares slope through the blob's `progressLog` (last 90 days, today's value replacing today's entry; 3+ points over 5+ days), run on from today's progress; a slope ≤ 0 is "has stalled" (target still ahead). Without a usable log, the old straight line from creation (0%). Reported when the finish lands 3+ days past `targetDate`. Progress = milestones, else day tracker |
 | `taskTiming` / `pushedTask` / `taskWeekday` | created→done days per priority (3+ each); open task with `pushCount` 3+; weekday with the most finishes (10+) |
 | `unusualExpense` / `hiddenSubscription` | an expense this week 3x the category median (5+ before it); same note, amounts within 15%, gaps of 25–35 days, 3+ times, not matching a subscription name |
 | `drinkRateByHour` (in `water-stats.js`) / `waterGap` | share of logged days with water in each local hour; longest 3h+ run between 09:00 and 21:00 under 20% |
-| `scoreChange` | yesterday vs the day before, 10+ points, names the part (tasks or habits) whose rate moved most |
+| `scoreChange` | yesterday vs the day before, 10+ points, names the part (tasks or habits) that moved most **the score's way** (a rise in habits never explains a fall). 0 of 0 is no data, not 0%; a part due on only one of the two days is measured against the other day's score, and a newly due task with none done reads "a task came due and wasn't done". No part moving that way → no card. Icon `trending-down` on a fall |
 
 **Traps**
 

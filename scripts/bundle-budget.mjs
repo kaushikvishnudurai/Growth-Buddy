@@ -27,6 +27,11 @@
    (palette, import, achievements screen, ...) are precached by design.
    (Workbox prints "41 entries": the icons are listed twice, once by the glob
    and once by includeAssets/manifest; they are fetched and stored once.)
+   Raised 2026-10-12 (ov-integration merged with main build 94: life-plan's Home
+   Quick add bar, one-thing card, Outlook, water fish and camera are on the boot
+   path; Health stays lazy). Boot 500,664 B / 160.3 kB gzip -> 525,697 B,
+   precache 1,662,489 B -> 1,745,613 B. Next candidates to move out: outlook.js
+   and snap.js (on-tap imports).
    Raw bytes, not gzip: deterministic and what the precache actually stores.
 
    Over budget on purpose (a new feature that has to live in the boot chunk)?
@@ -37,8 +42,8 @@ import { readFileSync, statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 
-const BOOT_BUDGET = 443_367;
-const PRECACHE_BUDGET = 1_594_052;
+const BOOT_BUDGET = 525_697;
+const PRECACHE_BUDGET = 1_745_613;
 
 const dist = process.argv[2] || 'dist';
 const fail = (msg) => {

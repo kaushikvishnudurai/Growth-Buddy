@@ -18,7 +18,7 @@ export const toast = {
   dismiss() {
     /* no-op until registered */
   },
-  /** action(message, label, run): a toast with one button, e.g. "Undo". */
+  /** action(message, label, run, {icon}?): a toast with one button, e.g. "Undo"; icon is an icons.js name. */
   action() {
     /* no-op until registered */
   },

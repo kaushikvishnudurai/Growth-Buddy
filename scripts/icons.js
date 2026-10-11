@@ -149,6 +149,13 @@ import {
   Redo2,
   WifiOff,
   Upload,
+  Wind,
+  Scale,
+  Ruler,
+  Percent,
+  HeartPulse,
+  Gauge,
+  SlidersHorizontal,
 } from 'lucide';
 
 export const icons = {
@@ -295,4 +302,11 @@ export const icons = {
   Redo2,
   WifiOff,
   Upload,
+  Wind,
+  Scale,
+  Ruler,
+  Percent,
+  HeartPulse,
+  Gauge,
+  SlidersHorizontal,
 };

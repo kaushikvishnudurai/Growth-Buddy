@@ -202,6 +202,11 @@ CREATE TABLE IF NOT EXISTS habits (
   kind            VARCHAR(8)   NOT NULL DEFAULT 'build',
   -- A quit habit's clean days are paid XP up to and including this day, once.
   clean_credited_through DATE NULL,
+  -- Phone health reading that auto-ticks it: steps | sleep | distance | calories
+  -- | floors | workout (NULL = not linked); health_target is the daily goal in
+  -- that link's unit (count, hours, km, kcal, floors, minutes).
+  health_link     VARCHAR(16)  NULL,
+  health_target   DOUBLE       NULL,
   PRIMARY KEY (id),
   KEY ix_habits_user (user_id),
   CONSTRAINT fk_habits_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -218,6 +223,8 @@ CREATE TABLE IF NOT EXISTS habit_checkins (
   -- The habit's metric for this day (km, steps, minutes) and how long it took.
   metric_value    DOUBLE       NULL,
   duration_min    INT          NULL,
+  -- This day's check-in XP is paid (NULL: a row from before the column).
+  xp_paid         BOOLEAN      NULL,
   PRIMARY KEY (habit_id, log_date),
   KEY ix_habit_checkin_user_date (user_id, log_date),
   CONSTRAINT fk_habit_checkin_habit FOREIGN KEY (habit_id) REFERENCES habits(id) ON DELETE CASCADE,
@@ -290,6 +297,7 @@ CREATE TABLE IF NOT EXISTS food_entries (
   sugar_g         SMALLINT     NULL,
   sodium_mg       INT          NULL,
   meal_slot       VARCHAR(10)  NULL,
+  pieces          SMALLINT     NULL,
   logged_at       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   log_date        DATE         NOT NULL,
   created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1190,4 +1198,25 @@ CREATE TABLE IF NOT EXISTS `bank_feed_consents` (
   UNIQUE KEY `uk_bank_feed_consent` (`consent_id`),
   KEY `ix_bank_feed_user` (`user_id`),
   CONSTRAINT `fk_bank_feed_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Health readings, typed by hand (source 'manual', any number a day) or synced
+-- from Apple Health / Health Connect (source 'phone', one row per user + type +
+-- day, upserted). day is the user's local day; value2 is diastolic, bloodPressure only.
+CREATE TABLE IF NOT EXISTS `health_readings` (
+  `id` char(36) NOT NULL,
+  `user_id` char(36) NOT NULL,
+  `type` varchar(24) NOT NULL,
+  `value` double NOT NULL,
+  `value2` double DEFAULT NULL,
+  `day` date NOT NULL,
+  `measured_at` timestamp NULL DEFAULT NULL,
+  `source` varchar(8) NOT NULL DEFAULT 'manual',
+  `note` varchar(280) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `ix_health_user_day` (`user_id`,`day`),
+  KEY `ix_health_user_type_day` (`user_id`,`type`,`day`),
+  CONSTRAINT `fk_health_readings_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

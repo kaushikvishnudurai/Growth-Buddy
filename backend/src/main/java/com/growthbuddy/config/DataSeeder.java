@@ -84,11 +84,20 @@ public class DataSeeder implements CommandLineRunner {
                 """).executeUpdate();
 
         // Older schema versions created enum columns that reject newly added values.
-        em.createNativeQuery("""
-                alter table calendar_reminders
-                    modify column repeat_freq varchar(16) not null,
-                    modify column tag varchar(16) not null
-                """).executeUpdate();
+        // Only when one is still an enum: this ran on every boot, prod included, and
+        // a MODIFY to the same type can still rebuild the table.
+        Number enums = (Number) em.createNativeQuery("""
+                select count(*) from information_schema.columns
+                where table_schema = database() and table_name = 'calendar_reminders'
+                  and column_name in ('repeat_freq', 'tag') and data_type = 'enum'
+                """).getSingleResult();
+        if (enums.intValue() > 0) {
+            em.createNativeQuery("""
+                    alter table calendar_reminders
+                        modify column repeat_freq varchar(16) not null,
+                        modify column tag varchar(16) not null
+                    """).executeUpdate();
+        }
     }
 
     /**

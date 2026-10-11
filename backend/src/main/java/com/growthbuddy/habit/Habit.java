@@ -104,6 +104,20 @@ public class Habit {
     @Column(name = "clean_credited_through")
     private java.time.LocalDate cleanCreditedThrough;
 
+    /**
+     * A phone health reading the app reads to tick this habit on its own (the
+     * reading and the tick are client-side; this is only the link). A plain
+     * String, not an enum: nullable, so there is no implicit-first-member
+     * default to dodge, and the allowed set is {@code HabitService.HEALTH_LINK_MAX}.
+     * Null = not linked.
+     */
+    @Column(name = "health_link", length = 16)
+    private String healthLink;
+
+    /** The daily goal in the link's unit: steps, sleep hours, km, kcal, floors, workout minutes. */
+    @Column(name = "health_target")
+    private Double healthTarget;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

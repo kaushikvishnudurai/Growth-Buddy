@@ -5,7 +5,7 @@ Backs `/api/food`: food logging, a food search, and **photo → nutrition estima
 | Method | Notes |
 |---|---|
 | `estimateFromPhotoMulti(req)` | multi-dish estimate (~90 lines, the biggest method) — `POST /photo-estimate-multi` |
-| `estimateFromPhoto(req)` | single-dish — `POST /photo-estimate`. Neither photo estimate is `@Transactional`: the AI budget's INSERT fails on a read-only connection (`AiCallsNotReadOnlyTest`) |
+| `estimateFromPhoto(req)` | single-dish — `POST /photo-estimate`. Neither photo estimate is `@Transactional`: the AI budget's INSERT fails on a read-only connection, and the vision call must not hold a connection (`AiCallsNotReadOnlyTest`) |
 | `search(query)` | OpenFoodFacts lookup behind `GET /search`; nothing in the app calls it (the form's suggestions are `recent`). Not `@Transactional`: no DB, one HTTP call |
 | `recent(userId)` | up to 8 distinct foods (by name, case-insensitive) from the latest 60 entries — `GET /recent`, the "Log food" chips |
 | `addEntry(userId, req)` | returns the refreshed `FoodSummaryResponse`. Also `POST /entries/manual` (kcal required), which is outside the AI rate limit. `mealSlot` absent → `defaultSlot` (the local hour of `loggedAt`, `MealSlot.forHour`: 04–10 breakfast, 11–15 lunch, 18–22 dinner, else snack). Label figures (`proteinG`…`sodiumMg`, from a barcode or a favourite) are stored only alongside a typed kcal |
@@ -16,7 +16,7 @@ Backs `/api/food`: food logging, a food search, and **photo → nutrition estima
 | `deleteEntry(userId, entryId)` | also returns the refreshed summary |
 | `summary(userId, date)` | the day's totals — what the Home food card reads. Also `fiberG` / `sugarG` / `sodiumMg` (`daySum`): the sum over the entries that carry the figure, **null when none does** — fibre is estimated (FoodWeek), sugar and sodium only ever come from a scanned label, so the card shows no made-up 0 |
 | `photoHistory(userId)` | the "recent scans" list |
-| `recordPhoto(userId, req)` | writes a `FoodPhotoLog` |
+| `recordPhoto(userId, req)` | writes a `FoodPhotoLog`; an undated one is filed under the user's today (`UserClock`) |
 
 Both mutating entry methods return the whole day summary, so the frontend never needs a follow-up
 GET after a write.
@@ -27,7 +27,11 @@ GET after a write.
   degrade gracefully rather than 500 — check that before changing the response shape.
 - `FoodPhotoLog` is a lightweight log (not the image itself). Its card is gone; it still feeds the
   photo achievement (`achievements.js`) and a Home insight (`dashboard.js`); the frontend also caches its own copy via `rememberPhotoFood` in app.js.
-- These endpoints are behind `AiRateLimitInterceptor` (per-user limit on AI-backed routes).
+- The AI endpoints are behind `AiRateLimitInterceptor` (per-user limit on AI-backed routes) — **except
+  `POST /entries`**: a plain log must never be blocked by a spent AI budget. There `askAi` swallows
+  `OpenAIClient`'s own 429 and the estimate drops to the table one.
+- `FoodWeek`'s `food_diet_checks` cache is best-effort both ways: a failed read (`storedCheck`, e.g. the
+  table missing) is a miss and a failed write (`store`) is logged; neither 500s the diet check.
 - Entries are per (user, date); `FoodEntry` holds the nutrition columns.
 - **Calories, in order:** the AI (when configured), then `FoodWeek.kcalPer100g` (the keyword
   table's macros as 4/4/9, `estimateSource` "table"), then OpenFoodFacts, then the flat 220/300.
@@ -35,7 +39,9 @@ GET after a write.
   batter mix. Hotel adds 18% to the table and OpenFoodFacts figures.
 - **`pieces`** ("2 dosa") is turned into grams: the AI's answer (told the count), else
   `pieces x FoodWeek.gramsPerPiece(name)` (100 g for anything not in its table). `quantityGrams`
-  wins when both are sent. A counted portion is held to the column's 10..2000, not the 80..700 a
+  wins when both are sent. The count itself is stored (`food_entries.pieces`) and returned as
+  `FoodEntryResponse.pieces`, so the list says "2 pieces", not "Idli (120g)". `updateEntry`: a
+  new `pieces` alone re-derives the grams; new grams alone clear it (weighed now). A counted portion is held to the column's 10..2000, not the 80..700 a
   guessed plate gets, so one idli can be 40 g.
 - `addEntry` makes **at most one** AI call (`askAi`): grams, kcal/100 g and the four nutrients come
   back together, asked only when a typed gram figure or an OpenFoodFacts hit leaves something
@@ -51,7 +57,9 @@ are filled for the week's missing rows in one AI batch through a guarded `coales
 `save()`, which would re-insert an entry deleted mid-call; until then a per-100 g keyword table stands
 in, unstored. Targets: protein 1.6 g/kg for a gain goal, else 1.2, else 60 g; carbs 50% and fat 30%
 of the kcal goal; fiber 30 g. The response also carries `averages` (finished days with meals; today
-only when it's all there is), `levels` (low/ok/high, under 80% / over 120%) and top-5 `sourcesBy`
+only when it's all there is), `levels` (low/ok/high, under 80% / over 120%; carbs and fat are also "high" when their share of
+the plate's calories is over 120% of the target's share, `macroLevel`, so a small carb-heavy week
+reads "Carbs high", not "low" under a "heavy on carbs" headline) and top-5 `sourcesBy`
 nutrient; `proteinTargetG` / `sources` are the older protein-only fields, kept for stale builds) and
 `POST /diet-check[?date=YYYY-MM-DD]` (rate-limited; with `date`, one of the last 7 days judged alone, today worded "so far" and told to the AI as in progress. **A day still in progress** (a check of today, or a week whose only meals are today's — `averagesOnlyToday`, which also drives `GET /week`'s `levels`) is judged "low" against `dayShare(now)` of the targets: whole hours of a fixed 07:00–23:00 waking day in the user's zone (`UserClock.zoneOf`), floored at 0.25; "high" stays against the full day, since meals are lumpy (`level(avg, target, share)`, `rules(..., share)`; ponytail at `dayShare`). Under 1 the AI is told the share too. Water (via `WaterService.totalsByDay`/`goalMl`) is judged as a fifth gap unless the user turned the `water` feature off (`waterOn(user)`: `users.feature_prefs.water === false`; opt-out, so an unknown user or no prefs is on) — none logged is then 0 ml, "low"; off is `water: null`; the last AI answer is stored in `food_diet_checks` per user and scope with its prompt, and served only to the identical prompt; levels come from the same numbers via `rules()`, the AI only writes
 the summary and the foods to add, and `rules()` is the whole answer when the AI is off or fails, answering `source: "rules"`, which the
@@ -85,3 +93,5 @@ database, so every instance and a restart share them.
 - The per-100g figure is back-derived from the typed total so every row reports in the same unit,
   and **clamped to 40..900** because that column is CHECKed too. 90 kcal of coffee over a 250g
   default is 36, which the database refuses. The typed total is never adjusted.
+- Diet check copy is British English: the prompt says "fibre", and `FoodWeek.british` rewrites any
+  "fiber" in the AI's summary and tips. The prompt also tells the AI the Verdict line is final.

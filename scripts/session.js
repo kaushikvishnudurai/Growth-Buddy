@@ -67,6 +67,10 @@ export function freshUserState(empty) {
     errorField: '',
     loading: false,
     authPending: null,
+    // This phone's night, read for the last account (health sync).
+    phoneNight: null,
+    // Unknown until GET /api/family answers for this account (Quick add's Groceries).
+    inFamily: undefined,
   };
 }
 

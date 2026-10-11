@@ -48,6 +48,12 @@ public class MoneyService {
         this.ledger = ledger;
     }
 
+    /** {@link MoneyLedger#rowsFromDoc}; the zone lookup only when there are arrays to date. */
+    private List<MoneyLedger.Row> legacyRows(UUID userId, ObjectNode doc) {
+        return MoneyLedger.ARRAYS.keySet().stream().anyMatch(doc::has)
+                ? ledger.rowsFromDoc(doc, ledger.zoneOf(userId)) : List.of();
+    }
+
     /** Clamp free-text fields that flow into the LLM prompt (trust boundary). */
     private static String cap(String s, int max) {
         if (s == null) return "";
@@ -185,6 +191,13 @@ public class MoneyService {
      * (top 6), and bills due in the next 7 days that are not marked paid. Category
      * keys and bill names are the user's; the mentor wraps this in its data block.
      */
+    /** The user's Money currency as stored (a symbol such as "₹"); "₹" when they have no Money doc yet. */
+    @Transactional(readOnly = true)
+    public String currencyOf(UUID userId) {
+        JsonNode doc = repo.peekData(userId).orElse(null);
+        return doc == null ? "₹" : doc.path("settings").path("currency").asText("₹");
+    }
+
     @Transactional(readOnly = true)
     public String contextSummary(UUID userId, LocalDate today) {
         JsonNode doc = repo.peekData(userId).orElse(null);
@@ -308,7 +321,7 @@ public class MoneyService {
         if (!hasArrays) {
             return;
         }
-        int moved = ledger.importIgnore(state.getUserId(), ledger.rowsFromDoc(data));
+        int moved = ledger.importIgnore(state.getUserId(), legacyRows(state.getUserId(), data));
         MoneyLedger.stripArrays(data);
         state.setData(data);
         repo.save(state);
@@ -342,7 +355,7 @@ public class MoneyService {
         ObjectNode doc = ((ObjectNode) body).deepCopy();
         // An old build re-sends the whole history every 5 minutes. Adds only: letting
         // it overwrite put back amounts and deleted entries a new build had changed.
-        List<MoneyLedger.Row> legacy = ledger.rowsFromDoc(doc);
+        List<MoneyLedger.Row> legacy = legacyRows(userId, doc);
         if (!legacy.isEmpty()) {
             ledger.importIgnore(userId, legacy);
         }
@@ -438,7 +451,7 @@ public class MoneyService {
                     }
                 }
             }
-            ledger.apply(userId, ledger.rowsFromDoc(data), List.of());
+            ledger.apply(userId, legacyRows(userId, data), List.of());
             MoneyLedger.stripArrays(data);
             state.setData(data);
             repo.save(state);

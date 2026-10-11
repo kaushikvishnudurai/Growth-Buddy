@@ -47,6 +47,23 @@ export function streamVisible(text) {
   return s.replace(/`{1,2}$/, '');
 }
 
+/** A streaming bubble, rich as it arrives: an opening `**` whose close has not come yet
+    is held back, so the bold appears whole instead of as raw asterisks. Pure. */
+export function streamRich(text) {
+  const v = streamVisible(text);
+  const opens = v.split('**').length - 1;
+  return opens % 2 ? v.slice(0, v.lastIndexOf('**')) + v.slice(v.lastIndexOf('**') + 2) : v;
+}
+
+/* A 502/503/504 once the chat has loaded is the AI behind Buddy, not the server asleep:
+   the server just answered the load. app.js's generic words said "waking up". */
+export function sendFailText(err, loaded) {
+  const st = err && err.status;
+  if (loaded && (st === 502 || st === 503 || st === 504) && !err.serverError)
+    return "Buddy's AI is not answering right now. Try again in a few minutes.";
+  return (err && err.message) || 'Could not reach Buddy.';
+}
+
 /** A thread still on its starting name; the server renames it from the first message. */
 const STARTING_TITLES = ['New conversation', 'Talk to Buddy'];
 
@@ -150,7 +167,16 @@ function bubble(role, content, actions, onAction) {
     isUser
       ? null
       : h('div', { class: 'gb-msg-avatar' }, Icon('sparkles', { size: 16, color: '#fff' })),
-    isUser ? bubbleEl : h('div', { class: 'gb-msg-col' }, bubbleEl, actionsRow(actions, onAction))
+    isUser
+      ? bubbleEl
+      : h(
+          'div',
+          { class: 'gb-msg-col' },
+          // Who said it, in words: the avatar alone left a reader to guess.
+          h('span', { class: 'gb-msg-who' }, 'Buddy', h('span', { class: 'gb-msg-ai' }, 'AI coach')),
+          bubbleEl,
+          actionsRow(actions, onAction)
+        )
   );
 }
 
@@ -255,6 +281,7 @@ function ScreenMentor({ api, threadId: initialThread, starter }) {
     placeholder: "What's on your mind? You can vent — Buddy listens.",
     rows: 2,
     maxlength: 4000,
+    enterkeyhint: 'send',
   });
   let busy = false;
   let loaded = false;
@@ -434,7 +461,7 @@ function ScreenMentor({ api, threadId: initialThread, starter }) {
       Icon('message-circle', { size: 16 }),
       h('span', { class: 'gb-thread-name' }, t.title || 'Untitled chat'),
       t.createdAt
-        ? h('span', { class: 'gb-thread-date' }, new Date(t.createdAt).toLocaleDateString())
+        ? h('span', { class: 'gb-thread-date' }, new Date(t.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }))
         : null
     );
     const row = h('div', { class: 'gb-thread-row' + (t.id === threadId ? ' is-current' : ''), role: 'listitem' });
@@ -646,8 +673,9 @@ function ScreenMentor({ api, threadId: initialThread, starter }) {
   }
 
   /* The streaming half of a send. Resolves to {userMessage, assistantMessage}
-     once the server says done; the bubble fills in as plain text while the words
-     arrive, and gets its bold/italic only then (half a "**" would flash). Throws
+     once the server says done; the bubble is drawn rich as the words arrive
+     (`streamRich` holds back an unclosed "**", so the bold appears whole), and
+     the server's final text replaces it on done. Throws
      with .fallback when nothing came back that could be read as a stream, so the
      caller can send the plain way instead; with .partial when some words came
      and then the reply stopped (Stop, or the line dropped). */
@@ -679,7 +707,7 @@ function ScreenMentor({ api, threadId: initialThread, starter }) {
           if (ev.event === 'delta' && ev.data && typeof ev.data.text === 'string') {
             ensureRow();
             got += ev.data.text;
-            bubbleEl.textContent = streamVisible(got);
+            bubbleEl.replaceChildren(renderRich(streamRich(got)));
             toBottom();
           } else if (ev.event === 'done' && ev.data && ev.data.message) {
             ensureRow();
@@ -755,7 +783,7 @@ function ScreenMentor({ api, threadId: initialThread, starter }) {
         // wrong); this used to be one "something glitched" for every failure, and
         // it was cached as if Buddy had said it. A Stop before any word lands here
         // too: the server took the message back out, so it is offered again.
-        const msg = (err && err.message) || 'Could not reach Buddy.';
+        const msg = sendFailText(err, loaded);
         const row = failRow(msg, () => {
           userRow.remove();
           row.remove();
@@ -764,7 +792,8 @@ function ScreenMentor({ api, threadId: initialThread, starter }) {
           send();
         });
         append(row);
-        if (!err || !err.stopped) console.error(err);
+        // The words shown, not app.js's message on the error ("waking up" for an AI 503).
+        if (!err || !err.stopped) console.error('Buddy: ' + msg, (err && err.status) || '');
       }
     } finally {
       busy = false;
@@ -895,7 +924,8 @@ function ScreenMentor({ api, threadId: initialThread, starter }) {
     threadBar,
     listEl,
     chipsRow,
-    h('div', { class: 'gb-msg-bar' }, input, sendBtn, stopBtn)
+    // The field and its send button are one pill, as in a phone's messages app.
+    h('div', { class: 'gb-msg-bar' }, h('div', { class: 'gb-msg-field' }, input, sendBtn, stopBtn))
   );
 }
 

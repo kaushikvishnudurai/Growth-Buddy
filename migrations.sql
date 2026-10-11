@@ -97,6 +97,10 @@ FROM (
   UNION ALL SELECT 'mentor_messages'        AS table_name, 'actions_json'
   UNION ALL SELECT 'reminder_dispatch_log'  AS table_name, 'snooze_of'
   UNION ALL SELECT 'reminder_dispatch_log'  AS table_name, 'attempts'
+  UNION ALL SELECT 'habit_checkins'         AS table_name, 'xp_paid'
+  UNION ALL SELECT 'food_entries'           AS table_name, 'pieces'
+  UNION ALL SELECT 'habits'                 AS table_name, 'health_link'
+  UNION ALL SELECT 'habits'                 AS table_name, 'health_target'
 ) AS t
 LEFT JOIN information_schema.COLUMNS c
        ON c.table_schema = DATABASE()
@@ -635,4 +639,41 @@ CREATE TABLE IF NOT EXISTS `bank_feed_consents` (
   UNIQUE KEY `uk_bank_feed_consent` (`consent_id`),
   KEY `ix_bank_feed_user` (`user_id`),
   CONSTRAINT `fk_bank_feed_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- A habit day's check-in XP is paid (HabitCheckin.xpPaid). Completing a rest
+-- (freeze) day now refunds its token, so "was this day already paid" can no
+-- longer be guessed from protected_day. NULL: a row from before, read with the
+-- old rule (paid unless protected); nothing is rewritten.
+ALTER TABLE habit_checkins ADD COLUMN xp_paid BOOLEAN NULL;
+
+-- "2 idli": a food entry logged by the piece keeps its count, so the Food
+-- screen shows "2 pieces" and not "Idli (120g)". NULL: weighed, or from before.
+ALTER TABLE food_entries ADD COLUMN pieces SMALLINT NULL;
+
+-- A habit linked to a phone health reading, which the app reads to tick it on
+-- its own. health_link: steps | sleep | distance | calories | floors | workout;
+-- health_target: the daily goal in that link's unit (count, hours, km, kcal,
+-- floors, minutes). Existing rows: NULL, not linked.
+ALTER TABLE habits ADD COLUMN health_link VARCHAR(16) NULL;
+ALTER TABLE habits ADD COLUMN health_target DOUBLE NULL;
+
+-- Health readings (manual + phone sync). A new table, so a guarded CREATE
+-- rather than an ALTER; identical to the CREATE TABLE in tableCreationQueries.sql.
+CREATE TABLE IF NOT EXISTS `health_readings` (
+  `id` char(36) NOT NULL,
+  `user_id` char(36) NOT NULL,
+  `type` varchar(24) NOT NULL,
+  `value` double NOT NULL,
+  `value2` double DEFAULT NULL,
+  `day` date NOT NULL,
+  `measured_at` timestamp NULL DEFAULT NULL,
+  `source` varchar(8) NOT NULL DEFAULT 'manual',
+  `note` varchar(280) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `ix_health_user_day` (`user_id`,`day`),
+  KEY `ix_health_user_type_day` (`user_id`,`type`,`day`),
+  CONSTRAINT `fk_health_readings_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

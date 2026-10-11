@@ -20,7 +20,7 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
 | Buttons |
 | Chips / pills |
 | Icon chip |
-| Bottom nav |
+| Bottom nav — incl. the shell's signature: the active tab's sprout (`.gb-nav-tab.is-active::before/::after`, the logo's coral + sun leaves above the icon; grows only on `.is-sprouting`; `--sprout-lift` places it, the landscape rail overrides it; hidden on premium's floating pill) and `.gb-nav-brand` (the sidebar wordmark, ≥1024px only) |
 | Habit / task check |
 | Login |
 | Notification bell — incl. the header links (`.gb-notif-link`: Mark all read / Clear read), filter chips (`.gb-notif-chips`, `.gb-notif-chip.is-on`) and `.gb-notif-more` (Load older) |
@@ -40,7 +40,7 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
 | Mentor prompt chips |
 | Color picker (habit customize) |
 | List rows |
-| Dashboard blocks — `.gb-dash-main` / `.gb-dash-side`, stack on phones |
+| Dashboard blocks — one `.gb-dash-block` list; ≥1024px flows it into two columns (`.gb-dash--single`) |
 | Goals screen |
 | Enhanced goal card UI |
 | Tasks scrollable list |
@@ -67,6 +67,9 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
 | Settings — Home screen customizer |
 | Settings — Display (text size preview) |
 | Notes — composer, editor (photos: develop-in animation, drop zone, picked ring), cards with a photo cover |
+| Notes: the page (inside the Notes views block: margin rule on cards, opener and editor, reading measure, headline title, 660px sheet) |
+| Goals: the trail (after the milestone edit row: numbered stops on one path, Next stop, mono counts, horizon reach line) |
+| Health screen (`.gb-health-*`: header row, the "Last night" night columns (`.gb-sleep-chart`, `.gb-sleep-usual` window band, `.gb-sleep-col.is-last`, 7 under 560px), tile grids with SVG traces (`.gb-health-trace`), the history sheet (`.gb-health-sheet`, chart axes, rows) and the log form (`.gb-health-valrow`); a `pointer: coarse` block that must stay LAST in the section), then the habit form's `.gb-habit-link-target` — last in the file |
 
 ## Editing rules
 
@@ -75,6 +78,9 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
   ramp step: ramps don't change with the theme, and `contrast.test.mjs` fails one with no
   `[data-theme='dark']` twin. Content dims by colour (`--fg3`), never `opacity` (that took locked
   badges, settled loans and failed messages to 2-3.9:1).
+- Focus rings come from one global `:focus-visible` rule (Accessibility banner: `2px solid var(--ring)`,
+  offset 2px) on buttons, links, inputs, `[role=switch|checkbox]` and `[tabindex]`. Don't restate it per
+  component; write one only to change the offset/shape, or for an element the list misses (`summary`).
 - Focus: `--ring`, never `--brand` (2.8:1). Text fields (`.gb-input`, `.gb-msg-input`, `.gb-affix`,
   the OTP box, an open select) show it as a `--ring` border plus a 35% `--ring` halo; the note
   editor shows it on `.gb-editor-wrap:focus-within`. A control's resting edge (field border,
@@ -83,8 +89,9 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
 - `.gb-btn--icon` is the transparent 44px variant; inside the list rows (`.gb-food-item-row`,
   `.gb-water-log-row`, `.gb-sound-row`) it is the filled 36px chip. That block used to be bare
   and overrode the base everywhere. Nothing renders under `--text-2xs` (11px).
-- Responsive breakpoints are grouped in the layout sections, **not** inline per component. Put media
-  queries there so the phone-first base stays readable.
+- Responsive breakpoints are grouped under the "Laptop / desktop layout", "Responsive improvements"
+  and "Small phones" banners, **not** inline per component. Put media queries there so the
+  phone-first base stays readable.
 - One switch: `.gb-switch` + `.gb-switch-knob` (`role="switch"`, `aria-checked`). WhatsApp's is the
   same switch with `.is-wa` (green when on). One compact pill segmented: `.gb-range-toggle` +
   `.gb-range-opt.is-active` (Report's ranges, Calendar's Day/Week via `.gb-sched-tabs`, which only
@@ -92,7 +99,7 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
 - Settings section rhythm is CSS only: `.gb-settings-sec-label` has `margin-top: var(--space-5)`
   (0 as a pane's first child) and the hint under a section label gets `--space-3` below it. No
   inline `marginTop` / `marginBottom` on either in `app.js`.
-- Page-level `z-index` and scrims come from the `--z-*` / `--scrim*` tokens (`tokens.css.md`).
+- Fixed/sticky layers use the `--z-*` scale and dims the `--scrim*` tokens (`tokens.css.md`); only local 1/2/-1 stacking is a bare number.
 - A screen component sized by the width it has uses `@container gb-main (max-width: N rem)`, not a
   viewport query: `#gb-main` is the size container, so the 440/600px tablet frame counts, and rem
   thresholds follow Settings > Display text size (media queries ignore it). Only for things inside
@@ -117,6 +124,7 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
   A quit habit's days are `.is-clean` / `.is-slipped`, and its row's tick is `.gb-slip-btn` (44px).
 - Fixed layers on a phone pad for `env(safe-area-inset-*)` (`index.html` has `viewport-fit=cover`,
   so `100dvh` runs under the notch and home indicator): header, nav, modal overlay, toasts, PTR.
+- Home on desktop is a CSS column flow (`.gb-dash--single`, `column-width: 440px`); `.gb-dash-qa` and `.gb-dash-pin` (Quick add, the one-thing card) are `column-span: all` so they read first. Once laid out, dashboard.js `balanceHome` deals the widgets into `.gb-dash-cols > .gb-dash-col` (as many as CSS made, each block to the shortest): source-order columns can't balance unbreakable blocks. Below 1024px `.gb-dash-cols` is `display: contents`. The habit strip there is an `auto-fill` grid (`minmax(132px, 1fr)`: three a row in a 1280px column). A lone `.gb-wellness-grid` tile spans the row. `.gb-food-screen` caps at `min(1100px, 100% - 80px)` so it keeps a right gutter. A landscape phone tightens Quick add (one row, no hint) and the week-review nudge.
 - The tablet phone-frame (both rules) also needs `min-height: 560px`: a landscape phone stays full-screen. Its height is fixed (`min(900px, 100dvh - margins)`), not `auto`: sized to content, the frame and its nav jumped on every tab switch.
 - A landscape phone (`orientation: landscape` and `max-height: 500px`, under 1024 wide) turns `.gb-app` into a grid with the nav as a 60px icon rail on the left and the More sheet as a panel beside it; content gets ~85% of the height instead of 71% (QA-09). The header, `#gb-main` and toasts pad for `env(safe-area-inset-right)` there, the More panel for the bottom inset. The premium half of the rail rule is `html[data-premium='on'] .gb-nav-wrap > .gb-nav`, one class heavier than premium.css's floating pill (which loads last and matches too). The same block drops the toast stack to the bottom (no nav to clear) and scales the food loader's art to 0.6.
 - The phone frame centres the toast stack on the frame, above its nav. In portrait the More sheet caps at `100dvh - 120px` and scrolls. `.gb-modal.gb-search-modal` / `.gb-modal.gb-note-modal` carry `.gb-modal` so the later desktop `.gb-modal { max-width: 480px }` can't win (search 520, note editor 640 at >=1024).

@@ -11,6 +11,8 @@ import {
   submitOnEnter,
   landed,
   leave,
+  focusSoon,
+  SHEET_EXIT_MS,
 } from './gb-kit.js';
 import { toast } from './toast.js';
 import { CacheStorage } from './cache-storage.js';
@@ -110,8 +112,8 @@ const DROP = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'TEMPLATE'
 /* The only hrefs a note may carry. javascript: and data: are the two that turn
    a link into an exploit. sanitize() is the boundary that enforces it, and the
    link dialog tests the same rule so a bad URL is refused while it can still be
-   corrected, rather than silently losing its href on save. A bare "/" means a
-   path on this app; "//host" and "/\host" are protocol-relative and leave it. */
+   corrected, rather than silently losing its href on save. A bare "/" is an
+   in-app path, but "//host" and "/\host" are protocol-relative: another site. */
 const SAFE_HREF = /^(https?:|mailto:|#|\/(?![/\\]))/i;
 /* The only images a note may carry: raster data the editor embedded itself.
    A remote src is a tracking pixel that phones home every time the note is
@@ -402,7 +404,9 @@ function richEditor({ html, placeholder, onInput } = {}) {
               ? !!caretCode()
               : tool.state
                 ? document.queryCommandValue('formatBlock').toLowerCase() === tool.state
-                : document.queryCommandState(tool.cmd);
+                : document.queryCommandState(tool.cmd) &&
+                  // A checklist is a <ul> too, but it is the Checklist button's, not Bullet's.
+                  !(tool.cmd === 'insertUnorderedList' && caretList() && caretList().hasAttribute('data-checklist'));
       } catch (_) {
         /* queryCommandState throws on some commands in some browsers */
       }
@@ -449,7 +453,7 @@ function richEditor({ html, placeholder, onInput } = {}) {
         if (onInput) onInput();
       },
     });
-    setTimeout(() => input.focus(), 60);
+    focusSoon(input);
   }
 
   /* The <ul> the caret is in, if it is in this editor. */
@@ -608,11 +612,23 @@ function richEditor({ html, placeholder, onInput } = {}) {
         sel.removeAllRanges();
         sel.addRange(end);
       }
-      document.execCommand(
-        'insertHTML',
-        false,
-        '<img src="' + src + '" alt="' + escAttr(altOf(file)) + '" class="is-new">'
-      );
+      const img = '<img src="' + src + '" alt="' + escAttr(altOf(file)) + '" class="is-new">';
+      /* In a checklist the photo would become part of the item. A caret set just
+         after the list didn't help: Chrome's insertHTML moves it back into the
+         last <li>. So it goes in as a node after the list, caret after it.
+         ponytail: off the browser's undo stack, like a tick; Ctrl+Z skips it. */
+      const node = sel.rangeCount && sel.getRangeAt(0).startContainer;
+      const list = node && (node.nodeType === 1 ? node : node.parentElement).closest('ul[data-checklist]');
+      if (list && area.contains(list)) {
+        list.insertAdjacentHTML('afterend', img);
+        const after = document.createRange();
+        after.setStartAfter(list.nextSibling);
+        after.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(after);
+      } else {
+        document.execCommand('insertHTML', false, img);
+      }
       area.querySelectorAll('img.is-new').forEach((img) => {
         img.classList.replace('is-new', 'is-developing');
         img.addEventListener('animationend', () => img.classList.remove('is-developing'), {
@@ -693,7 +709,7 @@ function richEditor({ html, placeholder, onInput } = {}) {
         if (onInput) onInput();
       },
     });
-    setTimeout(() => input.focus(), 60);
+    focusSoon(input);
   }
 
   // Semantic tags (<b>, <i>) rather than <span style>, so sanitize() keeps the
@@ -1184,7 +1200,8 @@ function ScreenNotes({
   const searchInput = h('input', {
     type: 'search',
     class: 'gb-input',
-    placeholder: 'Search notes and photo descriptions',
+    // Short enough not to clip on a phone; photo descriptions are searched too.
+    placeholder: 'Search notes',
     'aria-label': 'Search notes',
     // Debounced, and it only hides cards: rebuilding them on every keystroke
     // re-decoded every cover image, so the grid blinked while you typed.
@@ -1455,7 +1472,10 @@ function ScreenNotes({
       sortNotes();
       closeComposer();
       paint();
-      landed(cardOf(created.id));
+      const card = cardOf(created.id);
+      landed(card);
+      // Focus follows the note; the folded composer left it on <body>.
+      if (card) card.focus({ preventScroll: true });
     } catch (err) {
       toast.error(err, 'Could not save that note.');
     } finally {
@@ -1464,8 +1484,8 @@ function ScreenNotes({
   }
 
   const cardOf = (id) => listEl.querySelector('[data-id="' + id + '"]');
-  // openOverlay's exit is 180ms; an effect on a card behind it waits that out.
-  const SHEET_EXIT = 200;
+  // An effect on a card behind a closing sheet waits out its exit.
+  const SHEET_EXIT = SHEET_EXIT_MS + 20;
 
   /* ---- one note ---- */
   // The parts filter() re-marks for a search: title, body and its snippet.
@@ -1491,7 +1511,8 @@ function ScreenNotes({
     const card = h('article', {
       class: 'gb-note-card' + (note.pinned ? ' is-pinned' : '') + (count ? ' has-cover' : ''),
       'data-id': note.id,
-      style: c ? { background: c.bg, borderColor: c.line } : null,
+      // The colour tints the paper and inks the margin rule (app.css .gb-note-card).
+      style: c ? { '--note-paper': c.bg, '--note-rule': c.line } : null,
       tabindex: '0',
       role: 'button',
       'aria-label':
@@ -1883,7 +1904,8 @@ function ScreenNotes({
         class: 'gb-iconbtn gb-iconbtn--danger gb-note-del',
         'aria-label': 'Delete note',
         title: 'Delete note',
-        // No confirm: it goes to the Trash, with Undo on the toast.
+        // No "Delete this note?": it only goes to the Trash for 30 days, and the
+        // toast offers Undo. Asking first and offering Undo after was both.
         onclick: async () => {
           try {
             await onDelete(note.id);
@@ -1892,13 +1914,18 @@ function ScreenNotes({
             refreshCounts(); // one more in the Trash
             // Soft delete, so it can come straight back.
             if (onRestore && toast.action) {
-              toast.action('Note deleted.', 'Undo', () => restoreNote(note));
+              toast.action('Note deleted.', 'Undo', () => restoreNote(note), { icon: 'trash-2' });
             }
             // The card is behind the closing sheet: let the sheet go first.
             setTimeout(async () => {
+              const cards = Array.from(listEl.querySelectorAll('.gb-note-card:not([hidden])'));
+              const at = cards.indexOf(cardOf(note.id));
               await leave(cardOf(note.id));
               notes = notes.filter((n) => n.id !== note.id);
               paint();
+              // The opener is gone: focus the card that took its place, else search.
+              const left = Array.from(listEl.querySelectorAll('.gb-note-card:not([hidden])'));
+              (left[Math.min(Math.max(at, 0), left.length - 1)] || searchInput).focus({ preventScroll: true });
             }, SHEET_EXIT);
           } catch (err) {
             toast.error(err, 'Could not delete that note.');
@@ -2017,7 +2044,7 @@ function ScreenNotes({
         else dropEdit();
       },
     });
-    setTimeout(() => ed.focus(), 60);
+    focusSoon(ed);
     // Opened from a search: land on the first match, not the top of the note.
     const words = queryWords(query);
     if (words.length) setTimeout(() => revealMatch(ed.area, words), 90);
@@ -2106,6 +2133,8 @@ function ScreenNotes({
       paint();
       refreshCounts();
       landed(cardOf(note.id));
+      // Undo came from a toast, after the card's sheet had gone: focus was on <body>.
+      if (cardOf(note.id)) cardOf(note.id).focus({ preventScroll: true });
     } catch (err) {
       toast.error(err, 'Could not bring that note back.');
     }
@@ -2121,6 +2150,8 @@ function ScreenNotes({
       paint();
       refreshCounts();
       landed(cardOf(note.id));
+      // Undo came from a toast, after the card's sheet had gone: focus was on <body>.
+      if (cardOf(note.id)) cardOf(note.id).focus({ preventScroll: true });
     } catch (err) {
       toast.error(err, 'Could not change that note.');
     }

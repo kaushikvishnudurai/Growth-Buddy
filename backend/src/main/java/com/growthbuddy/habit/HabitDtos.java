@@ -23,7 +23,11 @@ record CreateHabitRequest(
         @Size(max = 16) String sound,
         // build (default) or quit. Create-only: switching an existing habit's
         // kind would turn its ticks into slips and back.
-        HabitKind kind) {
+        HabitKind kind,
+        // Phone health reading that auto-ticks it (HabitService.HEALTH_LINK_MAX);
+        // a link needs a target. A target without a link is ignored.
+        String healthLink,
+        Double healthTarget) {
 }
 
 record UpdateHabitRequest(
@@ -38,7 +42,10 @@ record UpdateHabitRequest(
         Boolean active,
         @Size(max = 16) String sound,
         // A null reminderTime means "leave it", so taking a reminder off needs its own flag.
-        Boolean clearReminder) {
+        Boolean clearReminder,
+        // null = unchanged; "" clears the link and its target.
+        String healthLink,
+        Double healthTarget) {
 }
 
 /**
@@ -107,6 +114,10 @@ record HabitResponse(
         HabitMetric metric,
         Double todayValue,
         Integer todayDurationMin,
+        // The newest earlier day's number on a measured habit, so the check-in
+        // can open on "same as last time". Null when there is none in the window.
+        Double lastValue,
+        Integer lastDurationMin,
         String sound,
         // Whether this habit is still owed today: a daily one always is; a weekly or
         // N-per-week one only until the week's quota is met (or it was done today).
@@ -118,18 +129,21 @@ record HabitResponse(
         String todayNote,
         // build or quit. On a quit habit doneToday means "clean today" (no slip
         // logged) and streak is the days since the last slip.
-        HabitKind kind) {
+        HabitKind kind,
+        String healthLink,
+        Double healthTarget) {
 
     static HabitResponse of(Habit h, HabitStreak streak, int currentStreak, boolean doneToday,
                             boolean protectedToday, boolean atRisk, int riskStreak, int freezeTokens) {
         return of(h, streak, currentStreak, doneToday, protectedToday, atRisk, riskStreak,
-                freezeTokens, null, null, doneToday || h.isActive(), doneToday ? 1 : 0, null);
+                freezeTokens, null, null, doneToday || h.isActive(), doneToday ? 1 : 0, null, null, null);
     }
 
     static HabitResponse of(Habit h, HabitStreak streak, int currentStreak, boolean doneToday,
                             boolean protectedToday, boolean atRisk, int riskStreak, int freezeTokens,
                             Double todayValue, Integer todayDurationMin,
-                            boolean dueToday, int doneThisWeek, String todayNote) {
+                            boolean dueToday, int doneThisWeek, String todayNote,
+                            Double lastValue, Integer lastDurationMin) {
         // Current streak is computed live (date-aware) by the caller so a streak
         // that broke from a missed day shows immediately on read — without waiting
         // for the next check-in to recompute the stored value. Longest comes from
@@ -139,7 +153,8 @@ record HabitResponse(
                 h.getCadence(), h.getTargetPerWeek(), h.getReminderTime(),
                 h.isActive(), currentStreak, longest, doneToday,
                 protectedToday, atRisk, riskStreak, freezeTokens,
-                h.getMetric(), todayValue, todayDurationMin, h.getSound(),
-                dueToday, doneThisWeek, todayNote, h.getKind());
+                h.getMetric(), todayValue, todayDurationMin, lastValue, lastDurationMin, h.getSound(),
+                dueToday, doneThisWeek, todayNote, h.getKind(),
+                h.getHealthLink(), h.getHealthTarget());
     }
 }

@@ -20,6 +20,7 @@ import {
   detectTimeFormat,
   setThinking,
   rovingGroup,
+  focusSoon,
 } from './gb-kit.js';
 import { HOME_WIDGETS, resolveHomeLayout } from './dashboard.js';
 import {
@@ -82,7 +83,8 @@ let PREMIUM_KEY,
   api,
   withPendingWater,
   invalidateWeek,
-  toggleTheme,
+  pickedTheme,
+  setThemeChoice,
   notifyMuted,
   keyOfDate,
   shortDay,
@@ -136,7 +138,8 @@ function bind(ctx) {
     api,
     withPendingWater,
     invalidateWeek,
-    toggleTheme,
+    pickedTheme,
+    setThemeChoice,
     notifyMuted,
     keyOfDate,
     shortDay,
@@ -657,17 +660,18 @@ function customisePanes() {
     h(
       'div',
       { class: 'gb-field-hint' },
-      'Light is easier to read in daylight. Dark is easier at night.'
+      'Light is easier to read in daylight. Dark is easier at night. System follows the phone.'
     ),
+    // Nothing picked = following the phone, and that is shown as a choice so
+    // it can be picked again after trying Light or Dark.
     segmented(
       [
+        { value: 'system', label: 'System' },
         { value: 'light', label: 'Light' },
         { value: 'dark', label: 'Dark' },
       ],
-      state.theme,
-      (v) => {
-        if (v !== state.theme) toggleTheme();
-      }
+      pickedTheme() || (state.user && state.user.uiPrefs && state.user.uiPrefs.theme) || 'system',
+      (v) => setThemeChoice(v)
     ).node,
     h('h3', { class: 'gb-settings-sec-label' }, 'Look'),
     h(
@@ -813,7 +817,7 @@ function openDeleteAccount() {
     )
   );
   refreshIcons();
-  setTimeout(() => pw.focus(), 60);
+  focusSoon(pw);
 }
 
 /* ---- Security modal: active sessions + change password ---- */
@@ -821,6 +825,16 @@ function openDeleteAccount() {
    Signed-in devices + password change. Used to be its own modal reachable from
    a third "Security" item in the account menu; it's a section of Settings →
    Account now. Returns the nodes; the caller mounts them. */
+/* A session's address in words where the raw one means nothing to a person:
+   "0:0:0:0:0:0:0:1" is the machine itself, 192.168.x a home network. Real
+   public addresses stay as they are. */
+function ipLabel(ip) {
+  const a = String(ip || '').trim().toLowerCase();
+  if (!a) return 'unknown IP';
+  if (/^(127\.|::1$|0:0:0:0:0:0:0:1$|::ffff:127\.)/.test(a)) return 'This computer';
+  if (/^(::ffff:)?(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.)|^f[cd][0-9a-f]{2}:|^fe80:/.test(a)) return 'Local network';
+  return ip;
+}
 function securitySection() {
   const sessionsWrap = h(
     'div',
@@ -847,7 +861,7 @@ function securitySection() {
               h(
                 'div',
                 { class: 'gb-sec-row-meta' },
-                (s.ip || 'unknown IP') + ' · last used ' + relativeTime(s.lastUsedAt)
+                ipLabel(s.ip) + ' · last used ' + relativeTime(s.lastUsedAt)
               )
             ),
             s.current
@@ -1254,7 +1268,7 @@ function accountSecuritySections() {
     );
 
   return [
-    h('h3', { class: 'gb-settings-sec-label' }, 'Email'),
+    h('h3', { class: 'gb-settings-sec-label' }, 'Change email'),
     emailBox,
     h('h3', { class: 'gb-settings-sec-label' }, 'Two-step sign-in'),
     tfaBox,
@@ -1371,7 +1385,7 @@ function keepReadPicker() {
       saveUiPrefs({ notifyKeepReadDays: Number(v) });
       toastSuccess('Read notifications now stay ' + v + ' days.');
     }
-  );
+  ).node;
 }
 
 /* ---- Settings modal (Profile / Alerts / Account) ---- */

@@ -100,29 +100,35 @@ function ScreenAchievements(props) {
             h(
               'div',
               { style: { flex: 1, minWidth: 0 } },
-              h('div', { class: 'gb-ach-summary-title' }, unlocked + ' of ' + total + ' unlocked'),
+              h(
+                'div',
+                { class: 'gb-ach-summary-title' },
+                h('span', { class: 'gb-ach-summary-n' }, String(unlocked)),
+                ' of ' + total + ' unlocked'
+              ),
               h(
                 'div',
                 { class: 'gb-ach-summary-sub' },
                 'Level ' + level + ' · ' + xp + ' XP'
               )
-            ),
-            h('div', { class: 'gb-ach-summary-pct' }, pct + '%')
+            )
           ),
-          // Badge completion — this is what the big % refers to.
+          // The shelf: one slot per badge, in the order the sections below list
+          // them, filled once earned. Replaced a % bar plus a "% earned" caption
+          // (and the big "32%" beside "6 of 19 unlocked" that repeated it).
           h(
             'div',
             {
-              class: 'gb-ach-summary-bar',
+              class: 'gb-ach-shelf',
               role: 'progressbar',
               'aria-valuemin': '0',
-              'aria-valuemax': '100',
-              'aria-valuenow': String(pct),
+              'aria-valuemax': String(total),
+              'aria-valuenow': String(unlocked),
+              'aria-valuetext': unlocked + ' of ' + total + ' badges, ' + pct + '%',
               'aria-label': 'Badges earned',
             },
-            h('div', { class: 'gb-ach-summary-fill', style: { width: pct + '%' } })
+            all.map((i) => h('span', { class: i.unlocked ? 'is-on' : null }))
           ),
-          h('div', { class: 'gb-ach-summary-caption' }, pct + '% of badges earned'),
           // XP toward the next level — a separate metric, so give it its own
           // labelled bar (previously the label sat under the badge bar, which
           // made "% to next level" look like it belonged to the badge %).

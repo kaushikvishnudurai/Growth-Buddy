@@ -39,7 +39,22 @@ splash control, no device name, "this browser doesn't support push notifications
 | `deepLinkHash(url)` | pure: the link's `#/route?query`, null when it names no route |
 | `onDeepLink(cb)` | App plugin: `getLaunchUrl` (cold start) + `appUrlOpen` (already running, via `Capacitor.addListener`). app.js writes the hash to `location.hash`. The intent-filter / Associated Domains that make the OS hand links over are in `docs/mobile-native-changes.md` |
 | `hideNativeSplash()` | two rAFs after the first real render |
-| `readTodaySteps()` | `@capgo/capacitor-health` (HealthKit / Health Connect) today's total, once, when `openMeasuredCheckin` opens on a Steps habit, and from `autoTickStepHabits`; app.js fills the box only if empty. Buckets summed (UTC cut). **0 → null**: HealthKit answers 0 rather than saying denied. **The plugin is not installed in the mobile repo**, so in every current build `nativePlugin('Health')` is null and this returns null with no native call — nothing ticks, nothing errors, the box waits for a number. Installing it needs Health Connect's READ_STEPS + a privacy-policy activity (`public/privacy.html`) and the iOS HealthKit entitlement |
+
+## Health (HealthKit / Health Connect, read only)
+
+`@capgo/capacitor-health`. **Only `requestHealthAccess()` opens a permission sheet**; every read just
+reads (Health Connect throws without access, HealthKit answers empty — both become null), so the
+boot-time reads can never pop a dialog. The mobile manifest keeps READ_* for exactly `HEALTH_READ`.
+
+| Export | What |
+|---|---|
+| `HEALTH_READ` | the 15 types the Health screen shows. **Adding one = a READ_* kept in the mobile manifest** (+ a Play justification line in MOBILE.md), or Health Connect silently returns nothing |
+| `healthAvailable()` / `requestHealthAccess()` | store reachable (false on an APK without the plugin) / the OS sheet for all of `HEALTH_READ` |
+| `readTodaySteps()` | today's total; still asks for `steps` itself (Steps habits predate the setup step). **0 → null**: HealthKit answers 0 rather than saying denied |
+| `nightFromSamples(samples, dayKey)` | pure: the night that **ended** on `dayKey` (sleep is keyed on the wake date) → `{bedtime, wakeTime, minutes}`. Stages/sessions merged across gaps ≤ 90 min, awake left out, longest 3 h+ run wins (a nap is never "last night"). `node scripts/health.test.mjs` |
+| `readHealthValue(link)` | today's reading for a habit link in its unit (steps, km, kcal, floors, workout minutes); `sleep` is not here — it comes from the sleep entry |
+| `readLastNight()` | `readSamples('sleep')` from noon yesterday → `nightFromSamples` |
+| `readHealthForSync(days = 7)` | rows for `POST /api/health/sync`: per local day, sums of steps / distance (km) / active kcal / floors (one aggregate query per type per day, buckets added — UTC cuts), workout minutes (note = the kinds), and the newest reading of each day for resting HR, HRV, SpO2, breathing rate, weight, height, body fat, BP (`value2` = diastolic). Percent types normalised (HealthKit 0-1). The server upserts one phone row per type per day, so re-sending a day overwrites it. Health Connect returns only 30 days before the first grant without `READ_HEALTH_DATA_HISTORY` (not requested) |
 
 ## Channels (Android)
 

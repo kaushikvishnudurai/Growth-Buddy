@@ -4,7 +4,8 @@
    Pure, DOM-free. Each answer is a guess the user confirms with one tap
    (Home's morning check-in, the repeat-expense prompt, a form's usual time,
    a habit that ticks itself); none of them writes anything. A guess needs a
-   pattern to stand on — too little history means null, never a default.
+   pattern to stand on — too little history means null, never a default. The
+   one exception is sleep: one night is enough for "same as last night".
    Checked by `node scripts/nudges.test.mjs`.
    ===================================================================== */
 
@@ -45,6 +46,59 @@ export function usualSleep(sleepByDate, today) {
   }
   if (beds.length < 3) return null;
   return { bedtime: toHHMM(round5(median(beds))), wakeTime: toHHMM(round5(median(wakes))) };
+}
+
+/**
+ * What to offer for last night: the phone's own record (`phoneNight`, from
+ * native.js readLastNight), else the usual night, else the newest logged night
+ * 1 to 3 days old ("same as last night"). {bedtime, wakeTime, quality, source}
+ * with source 'phone' | 'usual' | 'last', or null. quality is the newest
+ * logged one, else 'okay'.
+ */
+export function lastNightGuess(sleepByDate, today, phoneNight) {
+  const t = dayNum(today);
+  const recent = Object.entries(sleepByDate || {})
+    .filter(
+      ([key, e]) =>
+        e && t - dayNum(key) >= 1 && toMin(e.bedtime) != null && toMin(e.wakeTime) != null
+    )
+    .sort(([a], [b]) => (a < b ? 1 : -1))[0];
+  const last = recent && recent[1];
+  const quality = (last && last.quality) || 'okay';
+  // A phone night stamped with another day (read before midnight) is not last night.
+  if (
+    phoneNight &&
+    phoneNight.bedtime &&
+    phoneNight.wakeTime &&
+    (!phoneNight.date || phoneNight.date === today)
+  ) {
+    return { bedtime: phoneNight.bedtime, wakeTime: phoneNight.wakeTime, quality, source: 'phone' };
+  }
+  const usual = usualSleep(sleepByDate, today);
+  if (usual) return { ...usual, quality, source: 'usual' };
+  if (recent && t - dayNum(recent[0]) <= 3) {
+    return {
+      bedtime: toHHMM(toMin(last.bedtime)),
+      wakeTime: toHHMM(toMin(last.wakeTime)),
+      quality,
+      source: 'last',
+    };
+  }
+  return null;
+}
+
+/**
+ * Last night, ready to confirm: lastNightGuess while today has no entry and,
+ * unless the phone recorded it (that night has already ended), only once its
+ * wake time has passed. Home's check-in row and the one-thing card both ask
+ * this, so they can't disagree. Same shape as lastNightGuess, or null.
+ */
+export function sleepToConfirm(sleepByDate, today, now, phoneNight) {
+  if (sleepByDate && sleepByDate[today]) return null;
+  const g = lastNightGuess(sleepByDate, today, phoneNight);
+  return g && (g.source === 'phone' || now.getHours() * 60 + now.getMinutes() >= toMin(g.wakeTime))
+    ? g
+    : null;
 }
 
 const noteKey = (e) =>
@@ -145,4 +199,46 @@ export function focusMinutesTarget(name) {
   if (!m) return 25;
   const v = Number(m[1]) * (/^h/i.test(m[2]) ? 60 : 1);
   return v >= 1 && v <= 1440 ? Math.round(v) : 25;
+}
+
+/**
+ * What a habit can be linked to on the phone (habits.health_link). The target
+ * is in `unit`; `max` mirrors the server's check. A linked habit ticks itself
+ * once the day's reading reaches the target (app.js autoTickHealthHabits).
+ */
+export const HEALTH_LINKS = {
+  steps: { label: 'Steps', unit: 'steps', def: 8000, max: 100000, step: 100 },
+  sleep: { label: 'Sleep', unit: 'hours', def: 7, max: 24, step: 0.5 },
+  distance: { label: 'Distance', unit: 'km', def: 5, max: 300, step: 0.5 },
+  calories: { label: 'Active calories', unit: 'kcal', def: 400, max: 10000, step: 10 },
+  floors: { label: 'Floors climbed', unit: 'floors', def: 10, max: 1000, step: 1 },
+  workout: { label: 'Workout', unit: 'minutes', def: 30, max: 1440, step: 5 },
+};
+
+/**
+ * The link a habit's name implies, with its target, or null: "Sleep well"
+ * {sleep, 7}, "Sleep 8h" {sleep, 8}, "Walk 10k steps" {steps, 10000}, "Run 5 km"
+ * {distance, 5}, "Gym 45 min" {workout, 45}. Only a suggestion for the form.
+ */
+export function suggestHealthLink(name) {
+  const s = String(name || '');
+  const num = (re) => {
+    const m = re.exec(s);
+    return m ? Number(m[1]) : null;
+  };
+  if (/\bsleep|\bbed\s?time\b/i.test(s)) {
+    const h = num(/(\d+(?:\.\d+)?)\s*(?:h|hrs?|hours?)\b/i);
+    return { link: 'sleep', target: h > 0 && h <= 24 ? h : 7 };
+  }
+  const km = num(/(\d+(?:\.\d+)?)\s*km\b/i);
+  if (km > 0 && km <= 300) return { link: 'distance', target: km };
+  const steps = stepsTarget(s);
+  if (steps != null || /\bsteps?\b|\bwalk/i.test(s)) return { link: 'steps', target: steps || 8000 };
+  if (/\b(stairs|floors?)\b/i.test(s)) return { link: 'floors', target: num(/(\d+)\s*(?:floors?|flights?)/i) || 10 };
+  if (/\b(calories|kcal|burn)\b/i.test(s)) return { link: 'calories', target: num(/(\d+)\s*(?:kcal|cal)/i) || 400 };
+  if (/\b(workout|exercise|gym|train|training|yoga|cardio)\b/i.test(s)) {
+    const m = num(/(\d+)\s*(?:m|min|mins|minutes?)\b/i);
+    return { link: 'workout', target: m > 0 && m <= 1440 ? m : 30 };
+  }
+  return null;
 }

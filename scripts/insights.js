@@ -18,6 +18,8 @@
    plain `node` (see insights.test.mjs).
    ===================================================================== */
 import { drinkRateByHour } from './water-stats.js';
+import { fmtIn, homeCur, catOf } from './money-core.js'; // pure, no DOM: money's own formatter + tag labels
+import { localKey } from './dates.js';
 
 // Ordinal value maps for the categorical check-ins.
 const ORD = { low: 1, okay: 2, good: 3, great: 4, medium: 2, high: 3, calm: 1, normal: 2 };
@@ -481,13 +483,9 @@ function bestBedtime(sig) {
 
 const pct = (v) => Math.round(v * 100) + '%';
 const hh = (h) => String(h % 24).padStart(2, '0') + ':00';
-const fmtMoney = (v) => Math.round(v).toLocaleString();
+// Money reads like the Money screen: home-currency symbol, en-IN grouping, whole units.
+const fmtMoney = (v, m) => fmtIn(Math.round(v), homeCur(m));
 
-/** Local YYYY-MM-DD of a Date. */
-function localKey(d) {
-  const p = (n) => String(n).padStart(2, '0');
-  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
-}
 
 /** The two-hour window in which focus sessions run longest. */
 export function focusHours(sessions) {
@@ -529,8 +527,10 @@ export function focusHours(sessions) {
 }
 
 /**
- * Each daily habit as {name, days: [{key, done}]}, from the day it started (or
- * the history window) to yesterday. A protected (frozen) day is not a miss.
+ * Each daily habit as {name, days: [{key, done}]}, from its first done day (in
+ * the history window, on or after `since`) to yesterday. A run of misses before
+ * the habit ever got going is not a pattern, and read as one it made every early
+ * weekday a "skip day". A protected (frozen) day is not a miss.
  */
 export function habitDays(habits, history, today) {
   const out = [];
@@ -546,7 +546,7 @@ export function habitDays(habits, history, today) {
     const days = [];
     for (let n = dayNum(String(hist.since)); n <= end; n++) {
       const key = dayKey(n);
-      days.push({ key, done: done.has(key) });
+      if (days.length || done.has(key)) days.push({ key, done: done.has(key) });
     }
     if (days.length)
       out.push({
@@ -560,20 +560,23 @@ export function habitDays(habits, history, today) {
   return out;
 }
 
-/** The weekday one daily habit is missed on far more than the others. */
+/** The weekday one daily habit is missed on far more than its other weekdays (same span).
+    3+ of that weekday; under 4 it is an early pattern, labelled and ranked at half. */
 export function habitWeekdayMiss(hdays) {
   let best = null;
   for (const hab of hdays) {
     if (hab.days.length < 14) continue;
     const by = [[], [], [], [], [], [], []];
     for (const d of hab.days) by[new Date(dayNum(d.key) * DAY_MS).getUTCDay()].push(!d.done);
-    const overall = hab.days.filter((d) => !d.done).length / hab.days.length;
+    const allMissed = hab.days.filter((d) => !d.done).length;
     by.forEach((g, i) => {
       const missed = g.filter(Boolean).length;
-      if (g.length < 2 || missed < 2) return;
-      const gap = missed / g.length - overall;
+      if (g.length < 3 || missed < 2) return;
+      const others = (allMissed - missed) / (hab.days.length - g.length);
+      const early = g.length < 4;
+      const gap = (missed / g.length - others) * (early ? 0.5 : 1);
       if (gap >= 0.25 && (!best || gap > best.gap))
-        best = { hab, name: hab.name, i, missed, of: g.length, gap, days: hab.days.length };
+        best = { hab, name: hab.name, i, missed, of: g.length, gap, early, days: hab.days.length };
     });
   }
   if (!best) return null;
@@ -591,7 +594,7 @@ export function habitWeekdayMiss(hdays) {
       ' of ' +
       best.of +
       '. Plan a smaller version for that day.',
-    basis: best.days + ' days',
+    basis: best.days + ' days' + (best.early ? ', an early pattern' : ''),
     effect: best.gap,
     action: to && {
       label: (best.hab.reminderTime ? 'Move reminder to ' : 'Remind me at ') + to,
@@ -784,10 +787,9 @@ export function goalPace(goals, progressById, now) {
       effect: 0.45,
     };
   }
-  const d = new Date(worst.finish).toLocaleDateString(undefined, {
-    day: 'numeric',
-    month: 'short',
-  });
+  const d = new Date(worst.finish)
+    .toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+    .replace(/\bSept\b/, 'Sep'); // en-GB's "Sept"; the app writes "Sep" 
   return {
     icon: 'target',
     title: worst.g.title + ' is behind pace',
@@ -893,20 +895,21 @@ export function unusualExpense(m, today) {
     if (x >= 3 && (!best || x > best.x)) best = { e, usual, x, n: before.length };
   }
   if (!best) return null;
+  const cat = catOf(best.e.category, m).label;
   return {
     icon: 'wallet',
     title: 'Unusual expense',
     text:
-      fmtMoney(best.e.amount) +
+      fmtMoney(best.e.amount, m) +
       ' on ' +
-      best.e.category +
+      cat +
       (best.e.note ? ' (' + best.e.note + ')' : '') +
       ' is ' +
       Math.round(best.x) +
       'x your usual ' +
-      fmtMoney(best.usual) +
+      fmtMoney(best.usual, m) +
       '.',
-    basis: best.n + ' earlier ' + best.e.category + ' expenses',
+    basis: best.n + ' earlier ' + cat + ' expenses',
     effect: Math.min(0.5, best.x / 10),
     action: { label: 'Open in Money', kind: 'openMoney', params: { expenseId: best.e.id || null } },
   };
@@ -944,7 +947,7 @@ export function hiddenSubscription(m, today) {
         '“' +
         g[0].note +
         '”: about ' +
-        fmtMoney(amt) +
+        fmtMoney(amt, m) +
         ' every month (' +
         g.length +
         ' times). Track it as a subscription in Money?',
@@ -998,37 +1001,52 @@ export function waterGap(times) {
   };
 }
 
-/** Why yesterday's score moved from the day before: the part that moved most. */
+/**
+ * Why yesterday's score moved from the day before: the part that moved the same
+ * way as the score, most. 0 of 0 is no data, not 0%: a day with nothing due
+ * neither helped nor hurt. A part due on only one of the two days is measured
+ * against the other day's score (the level it joined or left). No part moving
+ * the score's way -> no card, rather than a wrong cause.
+ */
 export function scoreChange(days) {
   const [a, b] = days || [];
   if (!a || !b) return null;
   const delta = b.score - a.score;
   if (Math.abs(delta) < 10) return null;
+  const fell = delta < 0;
   const rate = (s, k) => (s[k + 'Total'] > 0 ? s[k + 'Done'] / s[k + 'Total'] : null);
   const move = ['tasks', 'habits']
-    .map((k) => ({ k, d: (rate(b, k) ?? 0) - (rate(a, k) ?? 0) }))
+    .map((k) => {
+      const ra = rate(a, k);
+      const rb = rate(b, k);
+      if (ra == null && rb == null) return null;
+      const d = ra == null ? rb - a.score / 100 : rb == null ? b.score / 100 - ra : rb - ra;
+      return { k, d, fresh: ra == null };
+    })
+    .filter((m) => m && (fell ? m.d < 0 : m.d > 0))
     .sort((x, y) => Math.abs(y.d) - Math.abs(x.d))[0];
+  if (!move) return null;
   const k = move.k;
+  const n = b[k + 'Total'];
+  const side = (s) => (s[k + 'Total'] > 0 ? s[k + 'Done'] + ' of ' + s[k + 'Total'] + ' done' : 'none due');
+  const why =
+    move.fresh && fell && !b[k + 'Done']
+      ? n === 1
+        ? ': a ' + k.slice(0, -1) + " came due and wasn't done"
+        : ': ' + n + ' ' + k + ' came due and none were done'
+      : ', mostly from ' + k + ': ' + side(b) + ' vs ' + side(a);
   return {
-    icon: 'trending-up',
-    title: 'Why your score ' + (delta < 0 ? 'fell' : 'rose'),
+    icon: fell ? 'trending-down' : 'trending-up',
+    title: 'Why your score ' + (fell ? 'fell' : 'rose'),
     text:
       'Yesterday scored ' +
       b.score +
       '%, ' +
       Math.abs(delta) +
       ' points ' +
-      (delta < 0 ? 'down' : 'up') +
-      ' on the day before, mostly from ' +
-      k +
-      ': ' +
-      b[k + 'Done'] +
-      ' of ' +
-      b[k + 'Total'] +
-      ' done vs ' +
-      a[k + 'Done'] +
-      ' of ' +
-      a[k + 'Total'] +
+      (fell ? 'down' : 'up') +
+      ' on the day before' +
+      why +
       '.',
     basis: '2 days',
     effect: Math.abs(delta) / 100,
@@ -1092,6 +1110,9 @@ export function buildInsights({
     off('water') ? null : tag('waterGap', waterGap(hist.waterTimes)),
     tag('scoreChange:' + today, scoreChange(hist.scores)),
   ].filter(Boolean);
+  // Under MIN_DAYS samples reads as an early pattern, on every card alike.
+  for (const c of found)
+    if (parseInt(c.basis, 10) < MIN_DAYS && !/early pattern/.test(c.basis)) c.basis += ', an early pattern';
   const gone = new Set(Array.isArray(dismissed) ? dismissed : []);
   return found
     .filter((c) => !gone.has(c.id))

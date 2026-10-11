@@ -49,4 +49,15 @@ const byId = (props) => Object.fromEntries(items(props).map((i) => [i.id, i]));
   assert.equal(byId({ seen: 'nonsense' }).log7.unlocked, false);
 }
 
+// --- active days are days with any log, not days the app was opened ---
+{
+  const sleepByDate = {};
+  for (let i = 1; i <= 10; i++) sleepByDate['2026-10-' + String(i).padStart(2, '0')] = {};
+  const a = byId({ wellness: { sleepByDate }, trends: { byDate: { '2026-10-11': { score: 40 } } } });
+  assert.equal(a.log3.unlocked, true, '11 days, not 1');
+  assert.equal(a.log7.current, 11);
+  const m = byId({ money: { expenses: [{ date: '2026-10-01' }, { date: '2026-10-02' }] } });
+  assert.equal(m.log3.current, 2);
+}
+
 console.log('achievements.test.mjs: all assertions passed');

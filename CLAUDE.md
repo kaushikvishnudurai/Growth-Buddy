@@ -23,6 +23,7 @@ open — don't go looking for a doc that isn't in this list.
 | Notes, the rich-text editor, photos in notes | `docs/scripts/notes.js.md` |
 | Report screen, charts | `docs/scripts/report.js.md` |
 | Insights (Report's pattern finder) | `docs/scripts/insights.js.md` |
+| Health screen, health readings, phone sync | `docs/scripts/health.js.md` |
 | Buddy (AI mentor) chat, streaming replies, crisis card | `docs/scripts/mentor.js.md` |
 | push / notifications, the phone's alarm queue | `docs/scripts/push.js.md` |
 | notification sounds, custom tones, `gen-chimes` | `docs/scripts/chime.js.md` |
@@ -54,9 +55,11 @@ fix the doc line if it was wrong. A doc you touch and don't update is worse than
 - Checks that exist (CI runs every `scripts/*.test.mjs` in one loop, so a new one joins by existing — list it here too): `node scripts/insights.test.mjs`, `node scripts/recurrence.test.mjs`,
   `node scripts/calendar.test.mjs`,
   `node scripts/i18n.test.mjs` (a `YYYY-MM-DD` key formats as that local day — re-runs itself in LA and Kolkata time; plurals, number grouping, `t()` falls back to the key),
-  `node scripts/money-merge.test.mjs`, `node scripts/circle-core.test.mjs`, `node scripts/money-calc.test.mjs` (forecast, due/overdue bills, budgets, streaks, loans, CSV; pinned clock), `node scripts/money-category.test.mjs` (the tag a new expense starts on: history, then words), `node scripts/review.test.mjs`, `node scripts/timer.test.mjs`, `node scripts/home-order.test.mjs`, `node scripts/starter-packs.test.mjs`, `node scripts/day-plan.test.mjs`, **`node scripts/money-ledger.test.mjs`** (what a Money save
+  `node scripts/money-merge.test.mjs`, `node scripts/circle-core.test.mjs`, `node scripts/money-calc.test.mjs` (forecast, due/overdue bills, budgets, streaks, loans, CSV; pinned clock), `node scripts/money-category.test.mjs` (the tag a new expense starts on: history, then words), `node scripts/review.test.mjs`, `node scripts/outlook.test.mjs`, `node scripts/water-fish.test.mjs` (every fish inside the glass and under the water at every fill), `node scripts/quick-add.test.mjs`, `node scripts/cache-storage.test.mjs` (set-then-remove on one key always ends removed) (Home's Outlook: top insight, savings and streak pace; any TZ), `node scripts/snap.test.mjs` (the Photo picker offers only switched-on kinds and whitelists the AI's guess), `node scripts/timer.test.mjs`, `node scripts/home-order.test.mjs`, `node scripts/starter-packs.test.mjs`, `node scripts/day-plan.test.mjs`, **`node scripts/money-ledger.test.mjs`** (what a Money save
   sends: an item missed is an expense that never reaches the server, a false delete removes one the
-  user still has), `node scripts/push.test.mjs`, `node scripts/nudges.test.mjs` (Home's one-tap guesses), `node scripts/app-logic.test.mjs` (water overlay +
+  user still has), `node scripts/push.test.mjs`, `node scripts/health.test.mjs` (which stretch of
+  sleep becomes "last night"), `node scripts/health-logic.test.mjs` (how a day's health value is built
+  from phone + typed readings: sums add, measurements take the newest), `node scripts/nudges.test.mjs` (Home's one-tap guesses), `node scripts/one-thing.test.mjs` (the priority order of Home's one-thing card), `node scripts/app-logic.test.mjs` (water overlay +
   offline replay order, backdated-summary guard, week generation, goal-progress rollback, double-tap
   guard, reminder edit PATCH + time range, nav layout split; helpers in `app-logic.js`), `node scripts/habit-stats.test.mjs`,
   **`node scripts/bundle-budget.mjs`** after `npm run build` (CI runs it: boot chunk and precache

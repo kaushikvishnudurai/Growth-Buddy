@@ -14,6 +14,7 @@ import {
   fieldRefusal,
   formatTime,
   rovingGroup,
+  focusSoon,
 } from './gb-kit.js';
 import {
   habitStats,
@@ -21,23 +22,26 @@ import {
   canEditDay,
   pctLabel,
   daysFrom,
+  addDays,
+  isoWeekStart,
   isSlipRow,
   recentNotes,
   suggestReminderTime,
 } from './habit-stats.js';
 import { chimeOptionValue, chimeOptions, playChime } from './chime.js';
+import { HEALTH_LINKS, suggestHealthLink } from './nudges.js';
 
 // Bound from app.js before every open (bind()), before any code below runs.
 let state, announce, pushToast, toastError, toastSuccess, todayKey, reconcileStreakFreeze,
   isQuitHabit, freezeTokensLeft, api, habitNoteInput, refreshScoreLater, createHabit, updateHabit,
   forgetGoalHabitHistory, deleteHabit, reSyncDeviceAlarms, openModal, segmented, METRIC_LABEL,
-  accountTodayKey, render;
+  accountTodayKey, metricSummary, render;
 export function bind(ctx) {
   ({
     state, announce, pushToast, toastError, toastSuccess, todayKey, reconcileStreakFreeze,
     isQuitHabit, freezeTokensLeft, api, habitNoteInput, refreshScoreLater, createHabit, updateHabit,
     forgetGoalHabitHistory, deleteHabit, reSyncDeviceAlarms, openModal, segmented, METRIC_LABEL,
-    accountTodayKey, render,
+    accountTodayKey, metricSummary, render,
   } = ctx);
 }
 
@@ -106,6 +110,13 @@ async function openFreezeCalendar() {
     }
     if (!covered && freezeTokensLeft() <= 0) {
       toastError(new Error('No freezes left this week.'), 'Out of freezes.');
+      return;
+    }
+    // A freeze bridges a run; after a miss there is no run to bridge, and the
+    // token was spent on nothing.
+    const prevRow = byDate[addDays(key, -1)];
+    if (!covered && !(prevRow && (prevRow.done || prevRow.protectedDay))) {
+      pushToast('Nothing to protect: the day before wasn’t done, so there’s no streak to keep.', 'info', 4200);
       return;
     }
     toggling = true;
@@ -358,7 +369,7 @@ const HABIT_TEMPLATES = [
   { key: 'read', name: 'Read 20 min', domain: 'study', icon: 'book-open' },
   { key: 'walk', name: 'Walk 8k steps', domain: 'fitness', icon: 'footprints', metric: 'steps' },
   { key: 'nosugar', name: 'No sugar', domain: 'habit', icon: 'ban', kind: 'quit' },
-  { key: 'meditate', name: 'Meditate', domain: 'habit', icon: 'leaf' },
+  { key: 'meditate', name: 'Meditate', domain: 'habit', icon: 'leaf', metric: 'minutes' },
 ];
 
 const HEAT_LABEL = {
@@ -496,6 +507,20 @@ function habitHistoryPanel(habit) {
       toggleLabel = done ? 'Un-tick' : 'Mark done';
       toggleIcon = done ? 'undo-2' : 'check';
     }
+    // What was logged that day ("7,300 steps"). History rows carry `value` /
+    // `durationMin` once the server sends them; today's comes off the habit.
+    const isToday = key === accountTodayKey();
+    const logged =
+      done && !quit
+        ? metricSummary(
+            habit.metric,
+            row && row.value != null ? row.value : isToday ? habit.todayValue : null,
+            row && row.durationMin != null ? row.durationMin : isToday ? habit.todayDurationMin : null
+          )
+        : '';
+    // On a done day the likely act is the note, so Save note leads and
+    // Un-tick steps back; on an open day Mark done is the point.
+    const untick = done && !quit;
     return h(
       'div',
       { class: 'gb-hh-pop', role: 'group', 'aria-label': fmtDayKey(key) },
@@ -519,6 +544,7 @@ function habitHistoryPanel(habit) {
           Icon('x', { size: 16, sw: 2.4 })
         )
       ),
+      logged ? h('div', { class: 'gb-field-hint' }, 'Logged ' + logged) : null,
       note,
       h(
         'div',
@@ -527,7 +553,7 @@ function habitHistoryPanel(habit) {
           'button',
           {
             type: 'button',
-            class: 'gb-btn ' + (quit && done ? 'gb-btn--soft' : 'gb-btn--primary'),
+            class: 'gb-btn ' + ((quit && done) || untick ? 'gb-btn--soft' : 'gb-btn--primary'),
             disabled: busy,
             onclick: () => saveDay(key, !done, note.value.trim()),
           },
@@ -538,7 +564,7 @@ function habitHistoryPanel(habit) {
           'button',
           {
             type: 'button',
-            class: 'gb-btn gb-btn--soft',
+            class: 'gb-btn ' + (untick ? 'gb-btn--primary' : 'gb-btn--soft'),
             disabled: busy,
             onclick: () => saveDay(key, done, note.value.trim()),
           },
@@ -563,11 +589,24 @@ function habitHistoryPanel(habit) {
     });
     // The server's longest only grows, and remembers runs older than this window.
     const best = Math.max(stats.best, Number(habit.longestStreak) || 0);
-    const weeks = heatmapWeeks({ days: rows, since, today, cadence, kind });
+    // From the habit's first week, not a fixed 12: a new habit's grid was
+    // mostly "before this habit started" with its real days packed in a corner.
+    // At least 3 weeks, so a habit started this week still reads as a grid.
+    const sinceWeeks = since
+      ? Math.floor(daysFrom(isoWeekStart(since), isoWeekStart(today)) / 7) + 1
+      : 12;
+    const weekCount = Math.min(12, Math.max(3, sinceWeeks));
+    const weeks = heatmapWeeks({ days: rows, since, today, cadence, kind, weeks: weekCount });
     let openState = null;
     const grid = h(
       'div',
-      { class: 'gb-hh-grid', role: 'group', 'aria-label': 'Last 12 weeks' },
+      {
+        class: 'gb-hh-grid',
+        role: 'group',
+        'aria-label': 'Last ' + weekCount + ' weeks',
+        // The CSS assumes 12 columns; fewer get cell-sized ones, not 1fr strips.
+        style: weekCount < 12 ? { gridTemplateColumns: 'repeat(' + weekCount + ', minmax(0, 28px))' } : null,
+      },
       weeks.map((w) =>
         h(
           'div',
@@ -613,7 +652,8 @@ function habitHistoryPanel(habit) {
     const notes = recentNotes({ days: rows, since, today, cadence, kind });
     let allLabel = clipped ? 'Last 2 years' : 'All time';
     if (quit) allLabel = 'Clean, ' + allLabel.toLowerCase();
-    panel.replaceChildren(
+    // Filtered: replaceChildren prints a null child as the text "null".
+    const parts = [
       h(
         'div',
         { class: 'gb-hh-stats' },
@@ -656,8 +696,9 @@ function habitHistoryPanel(habit) {
               )
             )
           )
-        : null
-    );
+        : null,
+    ];
+    panel.replaceChildren(...parts.filter(Boolean));
   }
 
   load();
@@ -765,7 +806,7 @@ function openHabitForm(habit) {
   );
   const metricField = h(
     'div',
-    { style: { display: 'none' } },
+    null,
     h('div', { class: 'gb-field-label' }, 'Records'),
     metricSel
   );
@@ -793,21 +834,74 @@ function openHabitForm(habit) {
       )
     )
   );
-  // The presets and the unit only make sense for fitness; everything else is a
-  // plain tick, which is what every habit was before this.
+  // The presets are fitness-only; what a habit records is any build habit's
+  // (Minutes for Meditate is normal). Switching category keeps the metric: it
+  // used to reset to none off Fitness, so saving an unchanged General habit
+  // that records minutes wiped its metric and last value.
   syncDomain = (d) => {
     const fitness = d === 'fitness';
     presetRow.style.display = fitness ? '' : 'none';
-    metricField.style.display = fitness ? '' : 'none';
-    if (!fitness) {
-      metricSel.value = 'none';
-      presetIcon = null;
-    }
+    metricField.style.display = '';
+    if (!fitness) presetIcon = null;
   };
   if (habit) {
     syncDomain(domain.get());
-    if (habit.domain === 'fitness') metricSel.value = habit.metric || 'none';
+    metricSel.value = habit.metric || 'none';
   }
+
+  // A health reading that ticks the habit by itself (autoTickHealthHabits).
+  // A new habit's name picks one ("Sleep well" -> sleep, 7 h) until the user
+  // chooses; editing keeps what the habit has. Ticking by hand still works.
+  const linkSel = h(
+    'select',
+    { class: 'gb-input', 'aria-label': 'Health reading' },
+    h('option', { value: '' }, 'Off, I tick it myself'),
+    ...Object.entries(HEALTH_LINKS).map(([k, L]) => h('option', { value: k }, L.label))
+  );
+  const linkTarget = h('input', {
+    type: 'number',
+    class: 'gb-input',
+    inputmode: 'decimal',
+    'aria-label': 'Daily target',
+  });
+  const linkUnit = h('span', { class: 'gb-field-hint' });
+  const linkTargetRow = h('div', { class: 'gb-habit-link-target' }, linkTarget, linkUnit);
+  let linkTouched = !!habit;
+  const syncLink = (fromUser) => {
+    const L = HEALTH_LINKS[linkSel.value];
+    linkTargetRow.style.display = L ? '' : 'none';
+    if (!L) return;
+    Object.assign(linkTarget, { min: String(L.step), max: String(L.max), step: String(L.step) });
+    linkUnit.textContent = L.unit + ' a day';
+    if (fromUser || !linkTarget.value) linkTarget.value = String(L.def);
+  };
+  const suggestLink = () => {
+    if (linkTouched) return;
+    const g = suggestHealthLink(nameInput.value);
+    linkSel.value = g ? g.link : '';
+    linkTarget.value = g ? String(g.target) : '';
+    syncLink(false);
+  };
+  linkSel.value = (habit && habit.healthLink) || '';
+  linkTarget.value = habit && habit.healthTarget != null ? String(habit.healthTarget) : '';
+  syncLink(false);
+  linkSel.addEventListener('change', () => {
+    linkTouched = true;
+    syncLink(true);
+  });
+  nameInput.addEventListener('input', suggestLink);
+  const linkField = h(
+    'div',
+    null,
+    h('div', { class: 'gb-field-label' }, 'Tick it from health data'),
+    linkSel,
+    linkTargetRow,
+    h(
+      'div',
+      { class: 'gb-field-hint' },
+      'Ticks itself once today’s reading reaches the target. Steps, distance, calories, floors and workouts come from the phone app; sleep from your sleep log, which the phone fills in.'
+    )
+  );
 
   // Build (tick it) or break (quit: clean unless a slip is logged). Chosen at
   // creation only — the server refuses to turn ticks into slips — so editing
@@ -825,6 +919,7 @@ function openHabitForm(habit) {
     const quit = k === 'quit';
     cadenceBlock.style.display = quit ? 'none' : '';
     nameInput.placeholder = quit ? 'e.g. No sugar' : 'e.g. Meditate';
+    linkField.style.display = quit ? 'none' : '';
     if (quit) {
       presetRow.style.display = 'none';
       metricField.style.display = 'none';
@@ -858,11 +953,12 @@ function openHabitForm(habit) {
               onclick: () => {
                 nameInput.value = presetName = t.name;
                 nameInput.setAttribute('aria-invalid', 'false');
+                suggestLink();
                 // Category first, then the kind: a quit kind hides what fitness showed.
                 const di = DOMAIN_ORDER.indexOf(t.domain || 'habit');
                 if (di >= 0) domain.node.children[di].click();
                 kindSeg.node.children[t.kind === 'quit' ? 1 : 0].click();
-                if (t.metric) metricSel.value = t.metric;
+                metricSel.value = t.metric || 'none';
                 // After the category click: syncDomain clears a non-fitness icon.
                 presetIcon = t.icon;
               },
@@ -901,6 +997,7 @@ function openHabitForm(habit) {
     domain.node,
     presetRow,
     metricField,
+    linkField,
     h('div', { class: 'gb-field-label' }, 'Color (optional)'),
     color.node,
     cadenceBlock,
@@ -949,12 +1046,22 @@ function openHabitForm(habit) {
           throw fieldRefusal(targetInput, 'Pick 1 to 7 times a week.');
         }
       }
+      const healthLink = quit ? '' : linkSel.value;
+      let healthTarget = null;
+      if (healthLink) {
+        const L = HEALTH_LINKS[healthLink];
+        healthTarget = Number(linkTarget.value);
+        if (!(healthTarget > 0 && healthTarget <= L.max)) {
+          throw fieldRefusal(linkTarget, 'Pick a target up to ' + L.max.toLocaleString() + ' ' + L.unit + '.');
+        }
+      }
       const fields = {
         name,
         domain: d,
         icon,
         cadence: cad,
-        metric: d === 'fitness' && !quit ? metricSel.value : 'none',
+        metric: quit ? 'none' : metricSel.value,
+        healthTarget,
         ...(targetPerWeek ? { targetPerWeek } : {}),
       };
       if (habit) {
@@ -962,6 +1069,7 @@ function openHabitForm(habit) {
         // removed reminder as its own flag.
         await updateHabit(habit.id, {
           ...fields,
+          healthLink, // '' clears the link (PUT reads null as unchanged)
           color: color.get() || '',
           reminderTime: reminderInput.value || null,
           clearReminder: !reminderInput.value,
@@ -977,6 +1085,7 @@ function openHabitForm(habit) {
       const created = await createHabit({
         ...fields,
         kind,
+        healthLink: healthLink || null,
         color: color.get() || null,
         reminderTime: reminderInput.value || null,
         sound: toneSel.value || null,
@@ -998,9 +1107,17 @@ function openHabitForm(habit) {
       }
     },
   });
+  // Delete is a quiet text button: a full red bar between Save and Cancel took
+  // a third of a phone screen for the action least often wanted. It deletes
+  // with Undo on the toast (app.js deferDelete), no confirm.
+  const del = habit && body.closest('.gb-modal') && body.closest('.gb-modal').querySelector(':scope > .gb-btn--danger');
+  if (del) {
+    del.className = 'gb-btn gb-btn--ghost';
+    Object.assign(del.style, { color: 'var(--danger)', width: 'auto', alignSelf: 'center', marginTop: '4px' });
+  }
   // A new habit starts at its name. Editing opens on the history: focusing the
   // name scrolled it away and raised a phone keyboard over it.
-  if (!habit) setTimeout(() => nameInput.focus(), 60);
+  if (!habit) focusSoon(nameInput);
 }
 
 export { openHabitForm, openFreezeCalendar };

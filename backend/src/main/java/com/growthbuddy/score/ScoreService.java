@@ -4,8 +4,16 @@ import com.growthbuddy.habit.HabitService;
 import com.growthbuddy.user.UserClock;
 import com.growthbuddy.user.UserRepository;
 import com.growthbuddy.task.TaskRepository;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -52,12 +60,22 @@ public class ScoreService {
             int habitsDone, int habitsTotal) {
     }
 
+    /**
+     * Tasks: "x/N" is the day's tasks, not the whole list. N = open tasks due by the
+     * end of today (overdue included) + tasks ticked off today (any due date, or
+     * none); x = the latter. An open undated task, or one due tomorrow, is not
+     * today's, so it neither counts nor drags the score.
+     */
     @Transactional(readOnly = true)
     public ScoreResponse today(UUID userId) {
-        long taskTotal = tasks.countByUserIdAndPausedFalseAndDeletedAtIsNull(userId);
-        long taskDone = tasks.countByUserIdAndDoneTrueAndPausedFalseAndDeletedAtIsNull(userId);
+        LocalDate today = clock.today(userId);
+        ZoneId zone = clock.zoneOf(userId);
+        Instant start = today.atStartOfDay(zone).toInstant();
+        Instant end = today.plusDays(1).atStartOfDay(zone).toInstant();
+        long taskDone = tasks.countDoneBetween(userId, start, end);
+        long taskTotal = taskDone + tasks.countOpenDueBefore(userId, end);
         HabitService.TodayCounts hc = habitsOn(userId) ? habits.todayCounts(userId) : NO_HABITS;
-        return build(clock.today(userId), taskDone, taskTotal, hc.done(), hc.total());
+        return build(today, taskDone, taskTotal, hc.done(), hc.total());
     }
 
     /**
@@ -68,18 +86,17 @@ public class ScoreService {
      *
      * <p>Completions come from {@code task_completion_history}, which the sweep
      * leaves alone. ponytail: the day's task <em>total</em> is reconstructed as
-     * "finished then + still open now", because nothing stores it. A task created
-     * since inflates it; snapshot into {@code daily_scores} at the sweep if that
-     * ever matters.
+     * "finished then + still open now and due by that day's end" (the same due
+     * rule as {@link #today}), because nothing stores it. A task created since
+     * inflates it; snapshot into {@code daily_scores} at the sweep if that ever
+     * matters.
      */
     @Transactional(readOnly = true)
     public ScoreResponse on(UUID userId, LocalDate day) {
         ZoneId zone = clock.zoneOf(userId);
-        long done = tasks.countCompletedBetween(userId,
-                day.atStartOfDay(zone).toInstant(),
-                day.plusDays(1).atStartOfDay(zone).toInstant());
-        long open = tasks.countByUserIdAndPausedFalseAndDeletedAtIsNull(userId)
-                - tasks.countByUserIdAndDoneTrueAndPausedFalseAndDeletedAtIsNull(userId);
+        Instant end = day.plusDays(1).atStartOfDay(zone).toInstant();
+        long done = tasks.countCompletedBetween(userId, day.atStartOfDay(zone).toInstant(), end);
+        long open = tasks.countOpenDueBefore(userId, end);
         HabitService.TodayCounts hc = habitsOn(userId) ? habits.countsOn(userId, day) : NO_HABITS;
         return build(day, done, done + open, hc.done(), hc.total());
     }
@@ -103,6 +120,55 @@ public class ScoreService {
             habitTotal += s.habitsTotal();
         }
         return build(to, taskDone, taskTotal, habitDone, habitTotal);
+    }
+
+    /** Longest {@link #range} asked for in one go: a year and a bit, the Report's widest view. */
+    static final int RANGE_MAX_DAYS = 400;
+
+    public record DayScore(LocalDate date, int score) {
+    }
+
+    /**
+     * Finished days' scores in {@code [from, to]}, oldest first, by the same rule
+     * as {@link #on}: Report's trend and pixels and Achievements' "On a Roll" had
+     * only the ~2 days {@code daily_scores} held. Today is never included (it is
+     * not finished; {@code to} is pulled back to yesterday). A day with nothing to
+     * score (no task due or done, no habit owed) is left out rather than sent as 0.
+     * Four reads for the whole range, not four per day.
+     */
+    @Transactional(readOnly = true)
+    public List<DayScore> range(UUID userId, LocalDate from, LocalDate to) {
+        LocalDate yesterday = clock.today(userId).minusDays(1);
+        if (to.isAfter(yesterday)) {
+            to = yesterday;
+        }
+        if (from.isAfter(to)) {
+            return List.of();
+        }
+        ZoneId zone = clock.zoneOf(userId);
+        Instant end = to.plusDays(1).atStartOfDay(zone).toInstant();
+        Map<LocalDate, Set<Object>> doneBy = new HashMap<>();
+        for (Object[] row : tasks.completionsBetween(userId, from.atStartOfDay(zone).toInstant(), end)) {
+            doneBy.computeIfAbsent(LocalDate.ofInstant((Instant) row[1], zone), k -> new HashSet<>()).add(row[0]);
+        }
+        List<Instant> due = new ArrayList<>(tasks.openDueBefore(userId, end));
+        Collections.sort(due);
+        Map<LocalDate, HabitService.TodayCounts> hc = habitsOn(userId) ? habits.countsBetween(userId, from, to) : Map.of();
+        List<DayScore> out = new ArrayList<>();
+        int open = 0;
+        for (LocalDate d = from; !d.isAfter(to); d = d.plusDays(1)) {
+            Instant dayEnd = d.plusDays(1).atStartOfDay(zone).toInstant();
+            while (open < due.size() && due.get(open).isBefore(dayEnd)) {
+                open++; // due is sorted: the count of open tasks due by this day's end only grows
+            }
+            long done = doneBy.getOrDefault(d, Set.of()).size();
+            HabitService.TodayCounts h = hc.getOrDefault(d, NO_HABITS);
+            ScoreResponse s = build(d, done, done + open, h.done(), h.total());
+            if (s.tasksTotal() > 0 || s.habitsTotal() > 0) {
+                out.add(new DayScore(d, s.score()));
+            }
+        }
+        return out;
     }
 
     private static ScoreResponse build(LocalDate date, long taskDone, long taskTotal,

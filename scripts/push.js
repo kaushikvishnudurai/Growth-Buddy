@@ -17,7 +17,6 @@
    same recurrence rules the calendar draws from.
    ===================================================================== */
 
-import { localDayKey as dayKey } from './home-order.js';
 import {
   localNotificationsAvailable,
   localNotificationPermission,
@@ -33,6 +32,7 @@ import {
 import { occursOn } from './recurrence.js';
 import { drinkRateByHour } from './water-stats.js';
 import { SOUNDS } from './chime.js';
+import { localKey as dayKey } from './dates.js';
 
 export function pushSupported() {
   if (localNotificationsAvailable()) return true;

@@ -21,8 +21,13 @@ const has = planStarter(['sleep'], { ...base, habits: [{ name: 'screens off by 1
 assert.ok(!has.some((r) => r.kind === 'habit'));
 
 // The same habit from two packs is created once.
-const both = planStarter(['water', 'water'], base);
+const both = planStarter(['water', 'water'], { ...base, features: { water: false } });
 assert.equal(both.filter((r) => r.kind === 'habit').length, 1);
+
+// With Water on, Stay hydrated sets the water goal and adds no "Drink water"
+// habit beside the tracker; with Water off the habit stands in for it.
+assert.deepEqual(planStarter(['water'], base).map((r) => r.kind), ['water']);
+assert.deepEqual(planStarter(['water'], { ...base, features: { water: false } }).map((r) => r.kind), ['habit']);
 
 // A switched-off feature is not offered: no habits, and Eat better's lunch reminder needs Food.
 const off = planStarter(['eat'], { ...base, features: { habits: false, food: false } });
