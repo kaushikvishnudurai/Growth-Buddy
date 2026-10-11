@@ -6,6 +6,7 @@
    the profile menu.
    ===================================================================== */
 import { h, Card, SectionTitle, Icon } from './gb-kit.js';
+import { activeDates } from './review.js';
 
 // The server owns the level curve (ProgressService.XP_PER_LEVEL) and sends each
 // user's progress through it; this is only the fallback for an older cached user.
@@ -36,7 +37,18 @@ function countKeys(obj) {
  * Build the grouped achievement list from the current state. Each item is
  * either unlocked, or carries { current, target } so we can show progress.
  */
-function computeAchievements({ user, topStreak, goals, wellness, trends, food, water, seen }) {
+function computeAchievements({
+  user,
+  topStreak,
+  goals,
+  wellness,
+  trends,
+  food,
+  water,
+  seen,
+  money,
+  history,
+}) {
   const { xp, level } = levelProgress(user);
   // A badge once earned stays earned: the day counts below only see the 60 days
   // boot loads, so "Be active 14 days" would relock as old days slid out.
@@ -47,7 +59,6 @@ function computeAchievements({ user, topStreak, goals, wellness, trends, food, w
 
   const byDate = (trends && trends.byDate) || {};
   const trendDays = Object.values(byDate);
-  const daysLogged = trendDays.length;
   // Day counts are sets of dates: adding today's live numbers to a history that
   // may already hold today counted it twice (two plates on day 1 unlocked "3 days").
   const today = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD, local
@@ -62,6 +73,18 @@ function computeAchievements({ user, topStreak, goals, wellness, trends, food, w
   if (food && food.entries && food.entries.length) foodDates.add(today);
   if (water && water.goalMl > 0 && (water.consumedMl || 0) >= water.goalMl) waterDates.add(today);
   const waterGoalDays = waterDates.size;
+  // Active = logged anything, not "opened the app" (byDate holds only those days' snapshots).
+  // `money` and `history` (state.insightHistory) are optional: without them sleep, mood,
+  // water and food still count.
+  const active = activeDates({
+    trends,
+    wellness,
+    money,
+    habitHistory: history && history.habits,
+    finished: history && history.finished,
+  });
+  if ((food && food.entries && food.entries.length) || (water && water.consumedMl > 0)) active.add(today);
+  const daysLogged = active.size;
   const foodDays = foodDates.size;
 
   // helper: a milestone with a numeric threshold.

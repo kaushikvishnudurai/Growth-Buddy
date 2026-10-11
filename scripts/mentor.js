@@ -45,6 +45,23 @@ export function streamVisible(text) {
   return s.replace(/`{1,2}$/, '');
 }
 
+/** A streaming bubble, rich as it arrives: an opening `**` whose close has not come yet
+    is held back, so the bold appears whole instead of as raw asterisks. Pure. */
+export function streamRich(text) {
+  const v = streamVisible(text);
+  const opens = v.split('**').length - 1;
+  return opens % 2 ? v.slice(0, v.lastIndexOf('**')) + v.slice(v.lastIndexOf('**') + 2) : v;
+}
+
+/* A 502/503/504 once the chat has loaded is the AI behind Buddy, not the server asleep:
+   the server just answered the load. app.js's generic words said "waking up". */
+export function sendFailText(err, loaded) {
+  const st = err && err.status;
+  if (loaded && (st === 502 || st === 503 || st === 504) && !err.serverError)
+    return "Buddy's AI is not answering right now. Try again in a few minutes.";
+  return (err && err.message) || 'Could not reach Buddy.';
+}
+
 /** A thread still on its starting name; the server renames it from the first message. */
 const STARTING_TITLES = ['New conversation', 'Talk to Buddy'];
 
@@ -660,7 +677,7 @@ function ScreenMentor({ api, threadId: initialThread, starter }) {
           if (ev.event === 'delta' && ev.data && typeof ev.data.text === 'string') {
             ensureRow();
             got += ev.data.text;
-            bubbleEl.textContent = streamVisible(got);
+            bubbleEl.replaceChildren(renderRich(streamRich(got)));
             toBottom();
           } else if (ev.event === 'done' && ev.data && ev.data.message) {
             ensureRow();
@@ -736,7 +753,7 @@ function ScreenMentor({ api, threadId: initialThread, starter }) {
         // wrong); this used to be one "something glitched" for every failure, and
         // it was cached as if Buddy had said it. A Stop before any word lands here
         // too: the server took the message back out, so it is offered again.
-        const msg = (err && err.message) || 'Could not reach Buddy.';
+        const msg = sendFailText(err, loaded);
         const row = failRow(msg, () => {
           userRow.remove();
           row.remove();

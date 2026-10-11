@@ -1,7 +1,7 @@
 /* Run with: node scripts/mentor.test.mjs
    The chat bubble's markdown split and the on-device crisis check. */
 import assert from 'node:assert/strict';
-import { richParts, crisisMatch, parseSse, actionChips, streamVisible, streamFailure } from './mentor.js';
+import { richParts, crisisMatch, parseSse, actionChips, streamVisible, streamFailure, streamRich, sendFailText } from './mentor.js';
 
 const shape = (s) => richParts(s).map((p) => p.type + ':' + p.text);
 
@@ -120,6 +120,22 @@ assert.equal(streamVisible(null), '');
   assert.equal(removed, 1, 'and the empty assistant row goes');
   const early = streamFailure(Object.assign(new Error('x'), { name: 'AbortError' }), '', null);
   assert.ok(early.stopped && !early.partial, 'a Stop before any word is offered again');
+}
+
+// --- streamRich: a half-arrived bold is held back, a closed one renders mid-stream ---
+assert.equal(streamRich('Try **one sm'), 'Try one sm');
+assert.equal(streamRich('Try **one small** step'), 'Try **one small** step');
+assert.deepEqual(shape(streamRich('**a** and **b')), ['b:a', 't: and b']);
+assert.equal(streamRich('plain'), 'plain');
+
+// --- sendFailText: a 503 after the chat loaded is the AI, not the server waking ---
+{
+  const e503 = Object.assign(new Error('The server is waking up. Give it a moment and try again.'), { status: 503 });
+  assert.match(sendFailText(e503, true), /Buddy's AI/);
+  assert.match(sendFailText(e503, false), /waking up/);
+  const own = Object.assign(new Error('AI quota reached'), { status: 503, serverError: true });
+  assert.equal(sendFailText(own, true), 'AI quota reached');
+  assert.equal(sendFailText(null, true), 'Could not reach Buddy.');
 }
 
 console.log('mentor.test.mjs: all assertions passed');

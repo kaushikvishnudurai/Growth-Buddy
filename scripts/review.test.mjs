@@ -7,6 +7,7 @@ import {
   personalRecords,
   periodDelta,
   monthReview,
+  activeDates,
   weeklyBuckets,
   monthTicks,
   correlate,
@@ -103,6 +104,43 @@ assert.deepEqual(daysEnding('2026-03-30', 2), ['2026-03-29', '2026-03-30']);
   assert.equal(one.length, 0);
 }
 
+// the week the ledger began in mid-week is partial, never the lowest week
+{
+  const recs = personalRecords({
+    today: '2026-09-23',
+    money: {
+      expenses: [
+        { date: '2026-08-28', amount: 1223 }, // Fri: week of 24 Aug holds 4 days
+        { date: '2026-09-01', amount: 2400 }, // week of 31 Aug
+        { date: '2026-09-08', amount: 2600 }, // week of 7 Sep
+        { date: '2026-09-15', amount: 2500 }, // week of 14 Sep
+      ],
+    },
+    fmtMoney: (v) => 'Rs' + v,
+  });
+  const low = recs.find((r) => r.label === 'Lowest-spend week');
+  assert.equal(low.value, 'Rs2400');
+  assert.match(low.sub, /31/);
+}
+
+// --- activeDates: any log counts, an opened-but-empty snapshot does not ---
+{
+  const d = activeDates({
+    trends: { byDate: { '2026-10-11': { score: 0, waterMl: 0, kcal: 0 }, '2026-10-10': { waterMl: 250 } } },
+    wellness: { sleepByDate: { '2026-10-01': {} }, moodByDate: { '2026-10-02': {} } },
+    money: { expenses: [{ date: '2026-10-03', amount: 5 }] },
+    habitHistory: { h: { days: [{ date: '2026-10-04', done: true }, { date: '2026-10-05', done: false }] } },
+    finished: [{ doneAt: '2026-10-06T09:00:00' }],
+  });
+  assert.deepEqual([...d].sort(), ['2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04', '2026-10-06', '2026-10-10']);
+  // ten nights of sleep and no snapshot but today's: the month card still has a story
+  const sleepByDate = {};
+  for (let i = 1; i <= 10; i++) sleepByDate['2026-10-' + String(i).padStart(2, '0')] = {};
+  const card = monthReview({ today: '2026-10-11', wellness: { sleepByDate }, trends: { byDate: { '2026-10-11': {} } } });
+  assert.equal(card.headline, '10 days');
+  assert.equal(card.sub, 'days logged');
+}
+
 // --- periodDelta ---
 assert.equal(periodDelta([1, null], [1, 2]), null);
 {
@@ -149,8 +187,9 @@ assert.equal(monthReview({ today: '2026-06-17' }), null);
   assert.match(card.eyebrow, /in review$/);
   assert.deepEqual(
     card.stats.map((s) => s.label),
-    ['Tasks finished']
+    ['Tasks finished', 'Days logged']
   );
+  assert.equal(card.stats[1].value, '3 days'); // 2 scored days + the task's
 }
 
 // 3 Oct: (33 + 61) / 2 = 47%, not (33 + 61 + 0) / 3 = 31%

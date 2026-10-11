@@ -3700,10 +3700,23 @@ button.gb-seat:disabled {
   font-size: 0.84375rem;
   cursor: pointer;
 }
-.gb-mentor-thread-name {
+.gb-mentor-thread-name,
+.gb-thread-name {
+  /* Two lines before the cut: one line ended a chat's name at about 14 characters. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  text-align: left;
+  line-height: 1.25;
+}
+/* As tall as the thread pill beside it; a 30px plus read as an afterthought. */
+.gb-mentor-new {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-pill);
 }
 .gb-mentor-thread:focus-visible,
 .gb-thread-pick:focus-visible,
@@ -3748,9 +3761,6 @@ button.gb-seat:disabled {
 .gb-thread-name {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-weight: 700;
 }
 .gb-thread-date {

@@ -155,30 +155,35 @@ export async function renderStoryCard(card) {
   ctx.fillText('Growth Buddy', brandX, BRAND_Y + 46);
 
   // ---- headline block ----
+  // No stats (the streak was the headline and the only number): no empty panel, and the
+  // headline and note move down by half of it so the card is not blank below.
+  const stats = (card.stats || []).slice(0, 3);
+  const top = EYEBROW_Y + (stats.length ? 0 : (3 * 132 + 48) / 2);
   ctx.textBaseline = 'alphabetic';
   if ('letterSpacing' in ctx) ctx.letterSpacing = '6px';
   ctx.fillStyle = 'rgba(255,255,255,0.72)';
   ctx.font = '700 34px ' + BODY;
-  ctx.fillText(fit(ctx, String(card.eyebrow || '').toUpperCase(), W - PAD * 2), PAD, EYEBROW_Y);
+  ctx.fillText(fit(ctx, String(card.eyebrow || '').toUpperCase(), W - PAD * 2), PAD, top);
   if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
 
   ctx.fillStyle = '#FFFFFF';
   ctx.font = '800 148px ' + DISPLAY;
-  ctx.fillText(fit(ctx, card.headline, W - PAD * 2), PAD, EYEBROW_Y + 160);
+  ctx.fillText(fit(ctx, card.headline, W - PAD * 2), PAD, top + 160);
 
   ctx.fillStyle = 'rgba(255,255,255,0.78)';
   ctx.font = '500 46px ' + BODY;
-  ctx.fillText(fit(ctx, card.sub, W - PAD * 2), PAD, EYEBROW_Y + 230);
+  ctx.fillText(fit(ctx, card.sub, W - PAD * 2), PAD, top + 230);
 
   // ---- stats panel ----
-  const stats = (card.stats || []).slice(0, 3);
-  const panelY = EYEBROW_Y + 340;
+  const panelY = top + 340;
   const rowH = 132;
-  const panelH = stats.length * rowH + 48;
-  ctx.fillStyle = 'rgba(255,255,255,0.16)';
-  ctx.beginPath();
-  roundRect(ctx, PAD, panelY, W - PAD * 2, panelH, 44);
-  ctx.fill();
+  const panelH = stats.length ? stats.length * rowH + 48 : -60;
+  if (stats.length) {
+    ctx.fillStyle = 'rgba(255,255,255,0.16)';
+    ctx.beginPath();
+    roundRect(ctx, PAD, panelY, W - PAD * 2, panelH, 44);
+    ctx.fill();
+  }
 
   stats.forEach((s, i) => {
     const y = panelY + 24 + rowH * i + rowH / 2;
@@ -331,6 +336,8 @@ export function _demo() {
   const panelH = 3 * 132 + 48;
   const noteEnd = EYEBROW_Y + 340 + panelH + 120 + 68 * 2;
   a(noteEnd < H - FOOTER_UP, 'three stats + three note lines clear the footer');
+  const bareEnd = EYEBROW_Y + 222 + 340 - 60 + 120 + 68 * 2;
+  a(bareEnd < H - FOOTER_UP, 'no stats: the shifted note still clears the footer');
   a(BRAND_Y > 250, 'the brand row clears Instagram\'s top chrome');
   a(EYEBROW_Y > BRAND_Y + 92, 'the eyebrow clears the brand row');
   console.log('[share-card] self-check ran');

@@ -235,6 +235,37 @@ assert.deepEqual(buildInsights({ wellness: {}, trends: {} }), []);
   assert.equal(hd[0].days.length, 28);
   const c = habitWeekdayMiss(hd);
   assert.ok(c && /Gym most on Fridays: missed 4 of 4/.test(c.text), c && c.text);
+  assert.equal(c.basis, '28 days');
+
+  // 13 misses before it ever got going, then 6 done: the series starts at the first done
+  // day, so no weekday is a "skip day" (it was "missed 2 of 2 on Sundays").
+  const late = [];
+  for (let i = 13; i < 19; i++) late.push({ date: day(i), done: true });
+  const lh = habitDays(
+    [{ id: 'r', name: 'Read', cadence: 'daily' }],
+    { r: { since: day(0), days: late } },
+    day(19)
+  );
+  assert.equal(lh[0].days.length, 6);
+  assert.equal(lh[0].days[0].key, day(13));
+  assert.equal(habitWeekdayMiss(lh), null);
+
+  // 2 of 2 is not enough; 2 of 3 Sundays against no other misses is an early pattern,
+  // ranked at half its gap.
+  const sun = (n) => {
+    const d = [];
+    for (let i = 0; i < n; i++) if (i !== 6 && i !== 13) d.push({ date: day(i), done: true });
+    return habitDays(
+      [{ id: 'r', name: 'Read', cadence: 'daily' }],
+      { r: { since: day(0), days: d } },
+      day(n)
+    );
+  };
+  assert.equal(habitWeekdayMiss(sun(14)), null, 'two Sundays only');
+  const e = habitWeekdayMiss(sun(21));
+  assert.ok(e && /most on Sundays: missed 2 of 3/.test(e.text), e && e.text);
+  assert.equal(e.basis, '21 days, an early pattern');
+  assert.equal(e.effect, (2 / 3) * 0.5);
 
   // A frozen day is not a miss.
   const frozen = habitDays(
@@ -388,7 +419,10 @@ assert.deepEqual(buildInsights({}), []);
 
   // Every card carries an id and what it stands on; a dismissed id stays gone.
   const all = buildInsights(args);
-  assert.ok(all.every((c) => c.id && c.basis), JSON.stringify(all));
+  assert.ok(
+    all.every((c) => c.id && c.basis),
+    JSON.stringify(all)
+  );
   const water = all.find((c) => c.title === 'When water slips');
   assert.equal(water.basis, '5 days');
   const left = buildInsights({ ...args, dismissed: [water.id] });
