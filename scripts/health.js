@@ -1052,12 +1052,12 @@ function ScreenHealth(props = {}) {
   const root = h(
     'div',
     { class: 'gb-health' + (entering ? ' is-entering' : '') },
-    // The sentence is the screen's thesis: it leads, and where the numbers came
-    // from (plus the way to add one) reads as its footnote.
-    Hero(props),
+    // Where the numbers come from (plus the way to add one), the night and the
+    // ledger first; today's sentence sums them up at the end.
     Header(props),
     LastNight(props),
-    Ledger(props)
+    Ledger(props),
+    Hero(props)
   );
   if (entering && !calm()) countUp(root);
   return root;

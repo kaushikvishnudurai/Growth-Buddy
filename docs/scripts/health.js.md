@@ -8,7 +8,7 @@ A missing value is a muted dash, never a zero. CSS: the "Health screen" section 
 ## Entry
 
 `ScreenHealth({native, today, readings, sleepByDate, phone, onSave, onUpdate, onDelete, onEditSleep, onConnect, onSync})`
-→ `div.gb-health`: `Hero` (the sentence leads), `Header` (its footnote: source line + actions), `LastNight`, then `Ledger`.
+→ `div.gb-health`: `Header` (source line + actions), `LastNight`, `Ledger`, then `Hero` (today's sentence closes the screen, after the ledger).
 
 | Prop | Shape / use |
 |---|---|

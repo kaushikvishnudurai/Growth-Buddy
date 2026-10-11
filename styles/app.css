@@ -14605,12 +14605,12 @@ button.gb-tone-chip:focus-visible {
 }
 
 /* =====================================================================
-   Health screen (scripts/health.js): source line + "Log a reading", today
-   told as a sentence (display type, every number a mono button), the "Last
+   Health screen (scripts/health.js): source line + "Log a reading", the "Last
    night" band (the night on an 18:00 -> 12:00 track, 13 earlier nights
-   fading under it), then the ledger: one row per tracked metric, one column
+   fading under it), the ledger: one row per tracked metric, one column
    per day (14, or 7 when the card is under 560px: a container query), with
-   today lit as a column through every row. Then the history sheet and the
+   today lit as a column through every row, then today told as a sentence
+   (display type, every number a mono button). Then the history sheet and the
    log form. Every number in Space Mono; a missing value is a muted dash. The
    band's grow-in is the screen's only motion. Touch sizes: the
    `pointer: coarse` block at the end, which must stay last here.
@@ -14627,10 +14627,9 @@ button.gb-tone-chip:focus-visible {
   margin: 0;
 }
 
-/* Header row: under the sentence, as its footnote */
+/* Header row: opens the screen */
 .gb-health-top {
   grid-column: 1 / -1;
-  margin-top: calc(var(--space-2) - var(--space-5));
   display: flex;
   flex-wrap: wrap;
   align-items: center;
