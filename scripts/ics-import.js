@@ -18,7 +18,7 @@
    gone. Past one-offs are reported, never sent.
    ===================================================================== */
 
-import { occursOn, DAY_CODES } from './recurrence.js';
+import { occursOn, DAY_CODES, WEEK_ORDER } from './recurrence.js';
 
 export const MAX_EVENTS = 10_000;
 const TAGS = ['work', 'personal', 'health', 'urgent', 'other'];
@@ -69,14 +69,17 @@ export function parseIcs(text) {
   let alarm = null;
   for (const line of lines) {
     const p = property(line);
-    if (p.name === 'BEGIN' && /^VEVENT$/i.test(p.value)) ev = { exdates: [], alarms: [], categories: '' };
+    if (p.name === 'BEGIN' && /^VEVENT$/i.test(p.value)) {
+      ev = { exdates: [], alarms: [], categories: '' };
+      alarm = null;
+    }
     else if (p.name === 'END' && /^VEVENT$/i.test(p.value)) {
       if (ev) events.push(ev);
       ev = null;
     } else if (!ev) continue;
     else if (p.name === 'BEGIN' && /^VALARM$/i.test(p.value)) alarm = {};
     else if (p.name === 'END' && /^VALARM$/i.test(p.value)) {
-      ev.alarms.push(alarm);
+      if (alarm) ev.alarms.push(alarm); // a stray END:VALARM has nothing to push
       alarm = null;
     } else if (alarm) {
       if (p.name === 'TRIGGER') alarm.trigger = p;
@@ -192,7 +195,8 @@ export function triggerMinutes(t) {
  * RRULE → our rule fields, with the anchor the rule needs. `{repeat, interval,
  * days?, nth?, monthDay?, count?, until?, unsupported?}`. `monthDay` is the
  * month day a by-date rule means (31 for "the last day", our export's
- * BYMONTHDAY=28,29,30,31;BYSETPOS=-1).
+ * BYMONTHDAY=28,29,30,31;BYSETPOS=-1); `lastDay` marks a rule that means the
+ * month's last day, which is exactly what the app's clamp does.
  */
 export function readRule(rrule) {
   const r = {};
@@ -221,9 +225,16 @@ export function readRule(rrule) {
       if (byday.length && out.interval === 1 && plainDays) return Object.assign(out, { repeat: 'weekly', days: byday });
       if (byday.length || monthDays.length || r.BYMONTH) return why('repeats daily on some days only');
       return Object.assign(out, { repeat: 'daily' });
-    case 'WEEKLY':
+    case 'WEEKLY': {
       if (!plainDays || monthDays.length || r.BYMONTH || r.BYSETPOS) return why('a weekly pattern the app can’t follow');
+      // recurrence.js counts every-N weeks from Monday; another WKST groups the days differently
+      // when BYDAY falls on both sides of it.
+      const wk = WEEK_ORDER.indexOf(r.WKST);
+      const pos = byday.map((d) => WEEK_ORDER.indexOf(d));
+      if (out.interval > 1 && wk > 0 && pos.some((x) => x < wk) && pos.some((x) => x >= wk))
+        return why('counts its weeks from ' + DAY_NAMES[DAY_CODES.indexOf(r.WKST)]);
       return Object.assign(out, { repeat: 'weekly', days: byday });
+    }
     case 'MONTHLY': {
       if (r.BYMONTH) return why('repeats in some months only');
       if (byday.length === 1 && !monthDays.length) {
@@ -235,8 +246,8 @@ export function readRule(rrule) {
         return why('repeats on every ' + (day || byday[0]) + ' of the month');
       }
       if (byday.length) return why('repeats on several weekdays a month');
-      if (clamp) return Object.assign(out, { repeat: 'monthly', monthDay: clamp });
-      if (monthDays.length === 1 && monthDays[0] === -1) return Object.assign(out, { repeat: 'monthly', monthDay: 31 });
+      if (clamp) return Object.assign(out, { repeat: 'monthly', monthDay: clamp, lastDay: true });
+      if (monthDays.length === 1 && monthDays[0] === -1) return Object.assign(out, { repeat: 'monthly', monthDay: 31, lastDay: true });
       if (monthDays.length === 1 && monthDays[0] >= 1 && monthDays[0] <= 31 && !r.BYSETPOS)
         return Object.assign(out, { repeat: 'monthly', monthDay: monthDays[0] });
       if (monthDays.length || r.BYSETPOS) return why('repeats on several days a month');
@@ -245,8 +256,11 @@ export function readRule(rrule) {
     case 'YEARLY': {
       if (byday.length || (r.BYMONTH && r.BYMONTH.includes(','))) return why('a yearly pattern the app can’t follow');
       const month = r.BYMONTH ? Number(r.BYMONTH) : 0;
-      if (clamp === 29 && month === 2) return Object.assign(out, { repeat: 'yearly', month, monthDay: 29 });
+      if (clamp === 29 && month === 2) return Object.assign(out, { repeat: 'yearly', month, monthDay: 29, lastDay: true });
       if (monthDays.length > 1 || r.BYSETPOS) return why('repeats on several days a year');
+      // -1: the month's longest last day (Feb 29), which the clamp brings back to the real one.
+      if (monthDays[0] === -1)
+        return Object.assign(out, { repeat: 'yearly', month, monthDay: new Date(Date.UTC(2024, month || 12, 0)).getUTCDate(), lastDay: true });
       return Object.assign(out, { repeat: 'yearly', month, monthDay: monthDays[0] || 0 });
     }
     default:
@@ -322,7 +336,7 @@ export function toReminders(events, opts) {
       date: start.date,
       time: start.time,
       endTime: end && end.time && end.date === start.date && end.time > start.time ? end.time : null,
-      tag: TAGS.find((t) => ev.categories.toLowerCase().split(',').includes(t)) || 'personal',
+      tag: TAGS.find((t) => ev.categories.toLowerCase().split(',').map((c) => c.trim()).includes(t)) || 'personal',
       repeat: 'none',
       until: null,
       notes: ev.description ? ev.description.trim().slice(0, 1000) || null : null,
@@ -376,6 +390,9 @@ function series(item, body, rule, start, shift, ev, overridden, zone, today) {
   }
   // A by-date rule keeps its day: a clamped 30th must not become the anchor of a 31st series.
   if ((rule.repeat === 'monthly' && !rule.nth) || rule.repeat === 'yearly') rule.monthDay = +anchor.slice(8);
+  // RFC skips a month without the day; the app clamps. Same series otherwise, so say it.
+  if (rule.repeat === 'monthly' && rule.monthDay > 28 && !rule.lastDay)
+    item.flags.push('Months without day ' + rule.monthDay + ' get the last day instead.');
   Object.assign(body, {
     repeat: rule.repeat,
     date: anchor,
@@ -386,7 +403,8 @@ function series(item, body, rule, start, shift, ev, overridden, zone, today) {
   });
   if (rule.until) {
     const u = readTime({ value: rule.until, params: /Z$/.test(rule.until) ? {} : ev.start.params }, zone);
-    if (u) body.until = u.date;
+    // A UTC UNTIL can land before the start time on its local day: that day's occurrence is past it.
+    if (u) body.until = u.time && start.time && u.time < start.time ? keyOfDay(epochDay(u.date) - 1) : u.date;
   }
   if (rule.count) {
     if (rule.count > 999) item.flags.push('Ends after 999 times here (the file says ' + rule.count + ').');
@@ -410,6 +428,12 @@ function series(item, body, rule, start, shift, ev, overridden, zone, today) {
     Object.assign(item, { status: 'ended', reason: 'The series has ended.' });
     return;
   }
+  // The app's clamp needs a real day-31 (Feb 29) anchor, so a last-day series can't start on a
+  // shorter month's end: say which month-ends it misses. ponytail: flagged, not added; a one-off
+  // per missed date is the upgrade.
+  const begin = keyOfDay(Math.max(epochDay(start.date), epochDay(today)));
+  if (rule.lastDay && next.slice(0, 7) !== begin.slice(0, 7))
+    item.flags.push('Starts on ' + next + ' here: the app can only start a last-day repeat on day ' + rule.monthDay + ', so the month-ends before it are left out.');
   if (next !== anchor) {
     if (body.repeatCount) {
       let used = 0;

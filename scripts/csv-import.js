@@ -19,6 +19,8 @@
 export const MAX_ROWS = 10_000;
 /** Same cap as MoneyLedger.EXPENSE_MAX: the server refuses a bigger expense. */
 export const EXPENSE_MAX = 10_000_000;
+/** MoneyLedger.MAX_AMOUNT: the cap on any amount, income included. */
+export const INCOME_MAX = 1_000_000_000;
 
 /** What a column can be. `ignore` is everything else (balance, cheque number…). */
 export const ROLES = {
@@ -35,7 +37,7 @@ export const ROLES = {
 
 /* ---- The table ---- */
 
-/** RFC 4180 rows. A BOM is dropped; blank lines are dropped. Each row carries
+/** RFC 4180 rows. A BOM is dropped; blank lines (and lines of only delimiters, Excel's `,,,`) are dropped. Each row carries
     `.line`, the 1-based line of the file it starts on, for the preview. */
 export function parseCsv(text, delim = ',') {
   const s = String(text || '').replace(/^\uFEFF/, '');
@@ -48,7 +50,7 @@ export function parseCsv(text, delim = ',') {
   let start = 1;
   const endRow = () => {
     row.push(field);
-    if (row.length > 1 || row[0].trim() !== '') {
+    if (row.some((f) => f.trim() !== '')) {
       row.line = start;
       rows.push(row);
     }
@@ -225,9 +227,10 @@ export function parseAmount(raw, style = 'dot') {
 // ("value date" before "value", "closing balance" before everything).
 const HEADER_RULES = [
   ['ignore', /balance|ref(erence)?\s*no|cheque|chq|^ref$|^s\.?\s*no|^sr|^#$|original/],
-  ['debit', /debit|withdraw|paid out|money out|^dr$|outflow|spent/],
-  ['credit', /credit|deposit|paid in|money in|^cr$|inflow|received/],
-  ['type', /^type$|transaction type|^kind$|dr\s*\/\s*cr|cr\s*\/\s*dr|income\s*\/\s*expense|^direction$/],
+  // Before debit / credit: "Debit/Credit" names the kind, not an amount.
+  ['type', /^type$|transaction type|^kind$|(dr|debit)\s*\/\s*(cr|credit)|(cr|credit)\s*\/\s*(dr|debit)|income\s*\/\s*expense|^direction$/],
+  ['debit', /debit|withdraw|paid out|money out|^dr$|outflow|spent|^expenses?$/],
+  ['credit', /credit|deposit|paid in|money in|^cr$|inflow|received|^income$/],
   ['date', /date|^day$|^when$|^dt$|posted/],
   ['amount', /amount|^amt|^value$|^sum$|^price$|^cost$|^total$/],
   ['category', /categor|^tag|^group$|^head$/],
@@ -263,7 +266,8 @@ export function findHeader(table) {
 
 /** One role per column. From the header names, then from the values for what is still missing. */
 export function detectColumns(header, rows) {
-  const width = Math.max(header ? header.length : 0, ...rows.slice(0, 50).map((r) => r.length));
+  // With a header, its width: a longer row is an error in readRows, not an extra column.
+  const width = header ? header.length : Math.max(...rows.slice(0, 50).map((r) => r.length));
   const roles = new Array(width).fill('ignore');
   const taken = new Set();
   if (header) {
@@ -399,6 +403,10 @@ export function readRows(rows, roles, firstLine = 1) {
   rows.forEach((r, idx) => {
     const line = r.line || firstLine + idx;
     const cell = (i) => (i >= 0 && r[i] != null ? String(r[i]).trim() : '');
+    if (r.slice(roles.length).some((v) => String(v).trim())) {
+      out.errors.push({ line, reason: 'This row has more columns than the header (an unquoted 1,234?).' });
+      return;
+    }
     const date = parseDate(cell(c.date), order);
     if (!date) {
       out.errors.push({ line, reason: cell(c.date) ? 'Can’t read the date “' + cell(c.date) + '”.' : 'No date.' });
@@ -425,6 +433,8 @@ export function readRows(rows, roles, firstLine = 1) {
         amount = Math.abs(n);
         if (INCOME_WORDS.test(typeText)) kind = 'income';
         else if (EXPENSE_WORDS.test(typeText)) kind = 'expense';
+        else if (/cr\.?$/i.test(cell(c.amount))) kind = 'income'; // an explicit marker beats the sign guess
+        else if (/dr\.?$/i.test(cell(c.amount))) kind = 'expense';
         else kind = mixed && n > 0 ? 'income' : 'expense';
       }
     }
@@ -443,6 +453,10 @@ export function readRows(rows, roles, firstLine = 1) {
     }
     if (kind === 'expense' && amount > EXPENSE_MAX) {
       out.errors.push({ line, reason: 'An expense can be at most 10,000,000.' });
+      return;
+    }
+    if (amount > INCOME_MAX) {
+      out.errors.push({ line, reason: 'An amount can be at most 1,000,000,000.' });
       return;
     }
     out.entries.push({
@@ -470,16 +484,19 @@ const dupKey = (kind, date, amount, note) =>
  * instead of doubling them.
  */
 export function markDuplicates(entries, money) {
-  const have = new Set();
-  for (const e of (money && money.expenses) || []) have.add(dupKey('expense', e.date, e.amount, e.note));
-  for (const i of (money && money.income) || []) have.add(dupKey('income', i.date, i.amount, i.label));
+  const have = new Map(); // key -> how many Money already holds
+  const add = (k) => have.set(k, (have.get(k) || 0) + 1);
+  for (const e of (money && money.expenses) || []) add(dupKey('expense', e.date, e.amount, e.note));
+  for (const i of (money && money.income) || []) add(dupKey('income', i.date, i.amount, i.label));
   const seen = new Map();
   for (const e of entries) {
     const k = dupKey(e.kind, e.date, e.amount, e.note);
     const n = seen.get(k) || 0;
     seen.set(k, n + 1);
-    e.dup = have.has(k) ? 'existing' : n ? 'file' : null;
-    e.id = 'csv-' + hash(k + '|' + n);
+    const m = have.get(k) || 0;
+    e.dup = m ? 'existing' : n ? 'file' : null;
+    // A ticked 'existing' row is a second copy: the count keeps its id off the one already saved.
+    e.id = 'csv-' + hash(k + '|' + n + (m ? '|' + m : ''));
   }
   return entries;
 }

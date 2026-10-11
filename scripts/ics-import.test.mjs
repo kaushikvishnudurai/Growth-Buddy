@@ -331,4 +331,43 @@ const google = cal(
   assert.deepEqual(list.map((i) => i.dup || null), [null, 'file']);
 }
 
+
+/* ---- Edge cases reviewers reproduced ---- */
+const one = (...props) => run(cal('BEGIN:VEVENT', 'UID:e@x', 'SUMMARY:E', ...props, 'END:VEVENT'))[0];
+{
+  // A stray END:VALARM (no BEGIN) is ignored, and an alarm left open never leaks into the next event.
+  const evs = parseIcs(cal('BEGIN:VEVENT', 'DTSTART:20261020T033000Z', 'END:VALARM', 'BEGIN:VALARM', 'TRIGGER:-PT5M', 'END:VEVENT',
+    'BEGIN:VEVENT', 'DTSTART:20261021T033000Z', 'BEGIN:VALARM', 'TRIGGER:-PT10M', 'END:VALARM', 'END:VEVENT'));
+  assert.deepEqual(evs.map((e) => e.alarms.length), [0, 1]);
+  assert.doesNotThrow(() => toReminders(evs, { zone: ZONE, today: TODAY }));
+}
+// UNTIL 2026-10-20T00:00Z is 05:30 local, before the 09:00 start: the 20th is past the end.
+assert.equal(one('DTSTART;TZID=Asia/Kolkata:20261015T090000', 'RRULE:FREQ=DAILY;UNTIL=20261020T000000Z').body.until, '2026-10-19');
+assert.equal(one('DTSTART;TZID=Asia/Kolkata:20261015T090000', 'RRULE:FREQ=DAILY;UNTIL=20261020T040000Z').body.until, '2026-10-20');
+// Every 2 weeks on Sun + Mon counted from Sunday weeks: recurrence.js counts from Monday.
+assert.match(readRule('FREQ=WEEKLY;INTERVAL=2;WKST=SU;BYDAY=SU,MO').unsupported, /Sunday/);
+assert.equal(readRule('FREQ=WEEKLY;INTERVAL=2;WKST=SU;BYDAY=MO,TU').unsupported, undefined, 'no Sunday, same weeks');
+assert.equal(readRule('FREQ=WEEKLY;WKST=SU;BYDAY=SU,MO').unsupported, undefined, 'every week: WKST is moot');
+// Day 31: RFC skips short months, the app clamps; said in the preview.
+{
+  const flagged = (rule, start = '20261031T090000') => one('DTSTART;TZID=Asia/Kolkata:' + start, 'RRULE:' + rule).flags.join(' ');
+  assert.match(flagged('FREQ=MONTHLY;BYMONTHDAY=31'), /without day 31 get the last day/);
+  assert.match(flagged('FREQ=MONTHLY'), /without day 31/);
+  assert.doesNotMatch(flagged('FREQ=MONTHLY;BYMONTHDAY=-1'), /without day/, 'the last day is what the clamp gives');
+  // BYMONTHDAY=-1 from Nov 30: the app can't anchor on a 30th, so the missed month-end is named.
+  const last = one('DTSTART;TZID=Asia/Kolkata:20261130T090000', 'RRULE:FREQ=MONTHLY;BYMONTHDAY=-1');
+  assert.equal(last.body.date, '2026-12-31');
+  assert.match(last.flags.join(' '), /Starts on 2026-12-31.*left out/);
+  assert.deepEqual(one('DTSTART;TZID=Asia/Kolkata:20261031T090000', 'RRULE:FREQ=MONTHLY;BYMONTHDAY=-1').flags, []);
+}
+// Yearly on the last day of February: a series, not 'bad'.
+{
+  const feb = one('DTSTART;VALUE=DATE:20280201', 'RRULE:FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=-1');
+  assert.equal(feb.status, 'new');
+  assert.equal(feb.body.date, '2028-02-29');
+  assert.ok(occursOn({ ...feb.body, skip: [] }, '2029-02-28'), 'clamped in a common year');
+}
+// CATEGORIES with spaces after the commas still pick the tag.
+assert.equal(one('DTSTART:20261020T033000Z', 'CATEGORIES:Meetings, Work').body.tag, 'work');
+
 console.log('ics-import: all checks passed');

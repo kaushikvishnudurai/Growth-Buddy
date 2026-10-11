@@ -186,6 +186,35 @@ assert.throws(() => detect('a\n' + '2026-10-01,1,x\n'.repeat(MAX_ROWS + 1)), /up
   assert.match(r.errors[0].reason, /date/);
 }
 
+// Edge rows from real exports.
+assert.deepEqual(plain(parseCsv('a,b\n,,\n , \n1,2\n')), [['a', 'b'], ['1', '2']], "Excel's trailing ,,, rows are blank lines");
+for (const name of ['Debit/Credit', 'Credit/Debit', 'Debit / Credit']) {
+  const { d, entries } = read(`Date,Note,Amount,${name}\n2026-10-01,Salary,50000,Credit\n2026-10-02,Rent,9000,Debit\n`);
+  assert.equal(d.roles[3], 'type', name + ' is the type column');
+  assert.deepEqual(entries.map((e) => e.kind), ['income', 'expense'], name);
+}
+{
+  const { d, entries } = read('Date,Note,Expense,Income\n2026-10-01,Rent,9000,\n2026-10-02,Salary,,50000\n');
+  assert.deepEqual(d.roles, ['date', 'note', 'debit', 'credit']);
+  assert.deepEqual(entries.map((e) => e.kind), ['expense', 'income']);
+  assert.deepEqual(read('Date,Expenses,Note\n2026-10-01,10,x\n').d.roles, ['date', 'debit', 'note']);
+}
+assert.deepEqual(
+  read('Date,Note,Amount\n2026-10-01,Pay,1200 Cr\n2026-10-02,Tea,20\n').entries.map((e) => e.kind),
+  ['income', 'expense'],
+  'an explicit Cr is income even when no amount is negative'
+);
+{
+  const { entries, errors } = read('Date,Note,Amount\n2026-10-01,Laptop,1,234\n2026-10-02,Tea,20,\n');
+  assert.deepEqual(entries.map((e) => e.amount), [20], 'a trailing empty cell is not an extra column');
+  assert.deepEqual([errors[0].line, errors[0].reason], [2, 'This row has more columns than the header (an unquoted 1,234?).']);
+}
+{
+  const { entries, errors } = read('Date,Type,Amount\n2026-10-01,income,2000000000\n2026-10-02,income,500000000\n');
+  assert.deepEqual(entries.map((e) => e.amount), [500000000]);
+  assert.deepEqual([errors[0].line, errors[0].reason], [2, 'An amount can be at most 1,000,000,000.']);
+}
+
 // Duplicates: one already in Money, one repeated in the file. Ids are stable.
 {
   const { entries } = read('date,amount,note\n2026-10-01,20,Chai\n2026-10-01,20,Chai\n2026-10-02,50,Bus\n');
@@ -196,6 +225,8 @@ assert.throws(() => detect('a\n' + '2026-10-01,1,x\n'.repeat(MAX_ROWS + 1)), /up
   const again = markDuplicates(read('date,amount,note\n2026-10-01,20,Chai\n').entries, { expenses: [] });
   assert.equal(again[0].id, entries[0].id, 'the same file imported twice upserts, not doubles');
   assert.ok(entries.every((e) => e.id.length <= 64));
+  const fresh = markDuplicates(read('date,amount,note\n2026-10-02,50,Bus\n').entries, { expenses: [] });
+  assert.notEqual(entries[2].id, fresh[0].id, 'a ticked "already in Money" row is a second copy, not an overwrite of the first');
 }
 
 // 5,000 rows read fast.
