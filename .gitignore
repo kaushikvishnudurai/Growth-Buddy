@@ -20,3 +20,5 @@ prod.env
 e2e-report/
 e2e-results/
 docs/evidence/audit-performance/*.report.*
+docs/evidence/**/*.jpg
+docs/evidence/**/*.png

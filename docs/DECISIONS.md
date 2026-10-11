@@ -9,3 +9,4 @@
 | D-05 | Local backend prints mail to its log (Mailjet and SMTP keys blanked) and has WhatsApp off | Seeding sends no real email or messages. |
 | D-06 | Audit agents write `docs/audit/<area>.md` with prefixed IDs; only the orchestrator writes `LEDGER.md` | Twenty agents editing one table concurrently clobber each other. The orchestrator merges, dedupes and assigns owners. |
 | D-07 | 18 audit agents instead of the 8 listed (Explorer split in 4 by module, Code Reviewer in 3, plus offline/integrity, first-run and content/empty-state audits) | The user asked for more agents; the split keeps each agent's area small enough to cover completely. The machine caps concurrent agents at 20. |
+| D-08 | Only screenshots an audit file names are committed; the full sets stay on disk, ignored | 30+ MB of jpegs would live in history forever. The referenced ones carry the evidence. |
