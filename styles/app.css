@@ -147,7 +147,9 @@ body {
 .gb-head .greet-name {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 1.5rem;
+  /* Capped by the viewport so a 200% system font size can't split "Calendar"
+     mid-word beside the header buttons; 24px at the default size either way. */
+  font-size: min(1.5rem, 8.5vw);
   letter-spacing: -0.02em;
   color: var(--fg1);
   line-height: 1.15;
@@ -232,6 +234,8 @@ button.gb-avatar:active {
 /* ---- Section title ---- */
 .gb-sectiontitle {
   display: flex;
+  flex-wrap: wrap; /* large text: the action wraps under the title, not off screen */
+  gap: 4px 12px;
   align-items: center;
   justify-content: space-between;
   padding: 6px var(--gutter) 10px;
@@ -2700,6 +2704,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 .gb-circle-block-head {
   display: flex;
+  flex-wrap: wrap; /* large text: the actions drop under the heading */
   align-items: center;
   justify-content: space-between;
   gap: 10px;
@@ -2733,6 +2738,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 .gb-challenges-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
 }
@@ -5701,6 +5707,9 @@ button.gb-food-level {
   align-items: center;
   gap: 10px;
 }
+.gb-cal-monthbar {
+  flex-wrap: wrap; /* large text: Today wraps under the month instead of off screen */
+}
 .gb-cal-monthlabel {
   display: flex;
   align-items: baseline;
@@ -6686,6 +6695,7 @@ button.gb-food-level {
   padding: 14px;
 }
 .gb-sched-headrow {
+  flex-wrap: wrap; /* large text: Set routine wraps instead of running off screen */
   align-items: center;
   gap: 8px;
 }

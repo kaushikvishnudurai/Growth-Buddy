@@ -1963,10 +1963,10 @@
   .gb-money-review-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  /* Four equal columns of ~85px fit "Overview" at this size. */
+  /* Four equal columns of ~85px fit "Overview" at this size. No min-width: 0:
+     at a large text size the labels overprinted; now the strip scrolls. */
   .gb-money-tab {
     flex: 1 1 0;
-    min-width: 0;
     padding-inline: 4px;
   }
 }
@@ -2051,7 +2051,7 @@
   row-gap: var(--space-2);
 }
 .gb-money-card > .gb-sectiontitle > h3 {
-  flex: 1 0 auto;
+  flex: 1 1 auto; /* shrinks (wraps) only once it is alone on its line */
 }
 
 .gb-seg:disabled {

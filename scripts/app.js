@@ -13344,6 +13344,8 @@ function ScreenHabits() {
         style: {
           padding: '6px var(--gutter) 10px',
           display: 'flex',
+          flexWrap: 'wrap', // large text: Add drops to a second line, not off screen
+          gap: '6px 12px',
           justifyContent: 'space-between',
           alignItems: 'center',
         },
