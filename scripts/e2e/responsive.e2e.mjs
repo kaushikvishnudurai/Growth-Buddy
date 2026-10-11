@@ -347,6 +347,9 @@ await page.screenshot({ path: `${OUT}/r12-notif-panel.png` });
 await page.click('.gb-bell');
 await sleep(300);
 
+// money.css loads with the Money screen (money-screen.js): the swatch probe needs it.
+await navTo('Money');
+await page.waitForFunction(() => [...document.styleSheets].some((s) => { try { return [...s.cssRules].some((r) => r.selectorText === '.gb-money-swatch'); } catch { return false; } }), { timeout: 15000 });
 await page.evaluate(() => {
   const box = document.createElement('div');
   box.id = 'gb-r12-probe';
