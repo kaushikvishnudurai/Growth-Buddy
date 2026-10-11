@@ -271,3 +271,18 @@ test('FRS-7: with no budgets, Overview offers them from the last 30 days in one 
   await card.getByRole('button', { name: 'Use these' }).click();
   await expect.poll(async () => (await moneyDoc(page, account)).budgets).toEqual({ food: 1800 });
 });
+
+test('EXM-20: Money dialogs say what is wrong under the field', async ({ page, account }) => {
+  await openMoney(page, account, 'Spending');
+  await page.locator('#gb-main').getByRole('button', { name: 'Add subscription' }).click();
+  const d = dialog(page);
+  await expect(d.getByPlaceholder('e.g. Netflix')).toBeFocused();
+  await d.getByPlaceholder('e.g. Netflix').fill('Gym');
+  await d.getByPlaceholder('e.g. 199').fill('12.5');
+  await d.getByRole('button', { name: 'Add subscription' }).click();
+  await expect(d.locator('.gb-field-error')).toHaveText('Whole amounts only, like 1250.');
+  await d.getByPlaceholder('e.g. 199').fill('1200');
+  await d.getByRole('button', { name: 'Add subscription' }).click();
+  await expect(d.locator('.gb-field-error')).toHaveText('Due day must be 1–31.');
+  await shot(page, 'EXM-20');
+});

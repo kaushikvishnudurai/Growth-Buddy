@@ -3992,16 +3992,13 @@ function ScreenMoney({
         const a = readWhole(amount);
         const d = Math.round(Number(day.value));
         if (!name.value.trim()) {
-          name.focus();
-          throw new Error('Name is required.');
+          throw fieldRefusal(name, 'Name is required.');
         }
         if (!Number.isFinite(a) || a <= 0) {
-          amount.focus();
-          throw new Error('Enter a monthly amount.');
+          throw fieldRefusal(amount, 'Enter a monthly amount.');
         }
         if (!Number.isFinite(d) || d < 1 || d > 31) {
-          day.focus();
-          throw new Error('Due day must be 1–31.');
+          throw fieldRefusal(day, 'Due day must be 1–31.');
         }
         commit((m) =>
           m.subscriptions.unshift(

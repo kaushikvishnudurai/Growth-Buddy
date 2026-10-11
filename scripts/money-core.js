@@ -323,18 +323,23 @@ function fmtBalance(money, a) {
    "greater than zero" — so say what is actually wrong. */
 function readAmount(input) {
   if (input.validity && input.validity.badInput) {
-    input.focus();
-    throw new Error('Use digits only, like 1250 or 1250.50.');
+    throw underField(input, 'Use digits only, like 1250 or 1250.50.');
   }
   return Math.round(Number(input.value) * 100) / 100;
+}
+/* gb-kit's fieldRefusal contract (an Error with `.field`), without importing the
+   kit into core: openModal shows the message under that input, not as a toast. */
+function underField(input, message) {
+  const err = new Error(message);
+  err.field = input;
+  return err;
 }
 /* readAmount's twin for the fields kept in whole rupees on purpose (budgets,
    subscriptions). They carry step=1 and a numeric keyboard; a decimal pasted or
    typed anyway is refused, not rounded behind the user's back. */
 function readWhole(input) {
   if (input.validity && (input.validity.badInput || input.validity.stepMismatch)) {
-    input.focus();
-    throw new Error('Whole amounts only, like 1250.');
+    throw underField(input, 'Whole amounts only, like 1250.');
   }
   return Number(input.value);
 }
