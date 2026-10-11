@@ -8,6 +8,7 @@ via `@fontsource` — plus Space Mono for `--font-mono`. Dropping or renaming a 
 | Section |
 |---|
 | primitives (color ramps, type scale, spacing, radii, shadows, motion) |
+| **LAYERS + SCRIMS** — a second theme-independent `:root` block |
 | **LIGHT THEME** — `:root, [data-theme="light"]` |
 | **DARK THEME** — `[data-theme="dark"]` (sets `color-scheme: dark`) |
 | **SEMANTIC TYPOGRAPHY ROLES** — apply as classes (`.gb-display`, `.gb-h1`, …) |
@@ -39,6 +40,16 @@ via `@fontsource` — plus Space Mono for `--font-mono`. Dropping or renaming a 
 - **Elevation:** `--shadow-xs|sm|md|lg|xl`. `xl` is the overlay tier — dialogs and the two header
   panels, which sit above a dimmed page. Three surfaces were already naming it before it existed.
 - **Motion:** `--dur-fast|base|slow`, `--ease-standard|out|bounce`.
+- **Layers:** `--z-sticky` 5 < `--z-ptr` 40 < `--z-header-panel` 50 < `--z-sheet` 60 (the More
+  sheet is `+ 1`) < `--z-modal` 100 < `--z-loader` 150 < `--z-celebrate` 200 < `--z-toast` 300 <
+  `--z-skip` 2000 < `--z-top` 2100 (the AI edge glow). Every page-level `z-index` uses one; only
+  a component ordering its own children (-1 / 1 / 2) stays literal. Toasts sit above the
+  celebration so an Undo raised under one stays pressable.
+- **Scrims:** `--scrim` (dialog overlay, More sheet backdrop) and `--scrim-strong` (the
+  celebration, which also blurs). Dark in both themes, so they live outside the theme blocks.
+- **Use the scale, not the value.** A literal `8|12|16px` radius or a `0.75rem`-style size equal to
+  a token is a bug: premium raises every `--radius-*`, and a type-scale change can't reach a
+  literal. Off-scale sizes (0.8125rem and friends) are still literal; there is no token for them yet.
 
 ## Rules
 

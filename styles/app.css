@@ -275,7 +275,7 @@ button.gb-avatar:active {
 .gb-sectiontitle h3 {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 1.125rem;
+  font-size: var(--text-h4);
   letter-spacing: -0.01em;
   color: var(--fg1);
   margin: 0;
@@ -343,7 +343,7 @@ button.gb-sectiontitle-act {
 .gb-btn {
   font-family: var(--font-body);
   font-weight: 700;
-  font-size: 1rem;
+  font-size: var(--text-body);
   border: none;
   cursor: pointer;
   display: inline-flex;
@@ -433,7 +433,7 @@ button.gb-sectiontitle-act {
   /* Compact is about width, not about being hard to hit: keep the 44px floor. */
   min-height: 44px;
   padding: 10px 14px;
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   border-radius: var(--radius-md);
 }
 .gb-btn--icon {
@@ -527,7 +527,7 @@ button.gb-sectiontitle-act {
   opacity: 0.6;
 }
 .gb-nav-tab span {
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   font-weight: 700;
 }
 /* Mobile: overflow destinations live behind "More", not inline. */
@@ -540,7 +540,7 @@ button.gb-sectiontitle-act {
 .gb-nav-tab:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
 }
 
 /* ---- Habit / task check ---- */
@@ -1148,7 +1148,7 @@ button.gb-sectiontitle-act {
 }
 .gb-think-steps {
   display: grid;
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   font-weight: 700;
   line-height: 1.4;
   color: var(--fg1);
@@ -1281,13 +1281,13 @@ button.gb-sectiontitle-act {
 /* The whole screen says it too: while any button or panel is thinking, a light
    runs along the top edge and the screen's border glows. Driven by :has(), so
    every AI wait gets it with no bookkeeping, and it ends the moment the last
-   thinking element leaves the DOM. Above every layer (toasts are 2000) but
+   thinking element leaves the DOM. Above every layer (the skip link is 2000) but
    never in the way: no pointer events, nothing dimmed. */
 body::before,
 body::after {
   content: '';
   position: fixed;
-  z-index: 2100;
+  z-index: var(--z-top);
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.3s var(--ease-out);
@@ -1465,7 +1465,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-xl);
-  z-index: 50;
+  z-index: var(--z-header-panel);
 }
 .gb-notif-head {
   display: flex;
@@ -1475,7 +1475,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   border-bottom: 1px solid var(--border);
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
 }
 .gb-notif-empty {
   padding: var(--space-6);
@@ -1524,7 +1524,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 .gb-notif-time {
   margin-top: var(--space-1);
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   color: var(--fg3);
   font-weight: 600;
 }
@@ -1572,7 +1572,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   background: var(--surface);
   color: var(--fg2);
   font-family: var(--font-body);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 600;
   cursor: pointer;
   transition:
@@ -1692,7 +1692,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 .gb-msg-bubble {
   max-width: 78%;
   padding: 11px 14px;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   font-size: 0.9375rem;
   line-height: 1.5;
   white-space: pre-wrap;
@@ -1715,7 +1715,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   height: 42px;
   width: 58%;
   max-width: 78%;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
 }
 .gb-msg-avatar.gb-msg-avatar--skel {
   background: var(--surface-3);
@@ -1971,11 +1971,11 @@ body:has(.is-thinking, .gb-thinking)::after {
   }
 
   .gb-head .greet-label {
-    font-size: 0.75rem;
+    font-size: var(--text-xs);
   }
 
   .gb-head .greet-name {
-    font-size: 1.125rem;
+    font-size: var(--text-h4);
     line-height: 1.15;
   }
 
@@ -2100,14 +2100,14 @@ body:has(.is-thinking, .gb-thinking)::after {
   align-items: center;
   gap: 6px;
   margin: 0 0 6px 2px;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--fg3);
 }
 .gb-conn-group-head span {
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   padding: 1px 7px;
   border-radius: var(--radius-pill);
   background: var(--surface-2);
@@ -2246,7 +2246,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   box-shadow: var(--shadow-xs);
 }
 .gb-sound-tile-label {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 700;
   text-align: center;
 }
@@ -2263,7 +2263,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 .gb-sound-hint {
   margin-top: var(--space-3);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   line-height: 1.5;
   color: var(--fg3);
 }
@@ -2280,12 +2280,12 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 .gb-range::-webkit-slider-runnable-track {
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-3);
 }
 .gb-range::-moz-range-track {
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-3);
 }
 .gb-range::-webkit-slider-thumb {
@@ -2385,7 +2385,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   margin-bottom: var(--space-2);
 }
 .gb-setup-count {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 700;
   color: var(--fg3);
   text-transform: uppercase;
@@ -2504,7 +2504,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 .gb-report .gb-sectiontitle h3 {
   font-family: var(--font-body);
   font-weight: 700;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
   color: var(--fg3);
@@ -2549,7 +2549,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 .gb-report-stat-sub {
   margin-top: 1px;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--fg3);
 }
 @media (max-width: 380px) {
@@ -2557,7 +2557,7 @@ body:has(.is-thinking, .gb-thinking)::after {
     padding: 13px var(--space-3);
   }
   .gb-report-stat-value {
-    font-size: 1.375rem;
+    font-size: var(--text-h3);
   }
 }
 
@@ -2584,7 +2584,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 .gb-insight-title {
   font-weight: 700;
   color: var(--fg1);
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
 }
 .gb-insight-text {
   font-size: 0.8125rem;
@@ -2602,7 +2602,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 /* "Based on N days": how much data a card stands on. */
 .gb-insight-basis {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--fg3);
   margin-top: var(--space-1);
 }
@@ -2700,7 +2700,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   text-align: left;
   margin: 0;
   color: var(--fg2);
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   line-height: 1.5;
 }
 .gb-challenges-actions {
@@ -2731,11 +2731,11 @@ body:has(.is-thinking, .gb-thinking)::after {
 .gb-circle-name--plain {
   margin: var(--space-2) var(--space-4) var(--space-3);
   font-family: var(--font-display);
-  font-size: 1.375rem;
+  font-size: var(--text-h3);
 }
 .gb-circle-sub {
   font-family: var(--font-mono);
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   letter-spacing: 0.04em;
   color: var(--fg3);
   margin-top: 2px;
@@ -2808,7 +2808,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 .gb-seat-count {
   font-family: var(--font-mono);
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--brand-ink);
@@ -2862,7 +2862,7 @@ button.gb-seat {
 }
 .gb-seat.is-more {
   font-family: var(--font-mono);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 400;
 }
 .gb-seat.is-me::after {
@@ -2937,7 +2937,7 @@ button.gb-seat:disabled {
 }
 .gb-seat-ring--empty .gb-seat-name {
   color: var(--fg3);
-  font-size: 1rem;
+  font-size: var(--text-body);
 }
 .gb-circle-empty-title {
   margin: 0 0 6px;
@@ -2951,7 +2951,7 @@ button.gb-seat:disabled {
   max-width: 34ch;
   margin: 0 0 var(--space-4);
   color: var(--fg2);
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   line-height: 1.5;
 }
 .gb-circle-empty-actions {
@@ -2999,7 +2999,7 @@ button.gb-seat:disabled {
 .gb-challenge-empty p {
   margin: 0;
   color: var(--fg2);
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   line-height: 1.45;
 }
 .gb-challenge-head {
@@ -3015,7 +3015,7 @@ button.gb-seat:disabled {
   font-size: 0.9375rem;
 }
 .gb-challenge-badge {
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   font-weight: 700;
   padding: 2px var(--space-2);
   border-radius: var(--radius-pill);
@@ -3028,7 +3028,7 @@ button.gb-seat:disabled {
 }
 .gb-challenge-dates {
   font-family: var(--font-mono);
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   letter-spacing: 0.02em;
   color: var(--fg3);
   margin: 3px 0 10px;
@@ -3045,7 +3045,7 @@ button.gb-seat:disabled {
   align-items: baseline;
   gap: var(--space-3);
   padding: var(--space-2) 2px;
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
 }
 .gb-lb-row + .gb-lb-row {
   border-top: 1px solid var(--surface-3);
@@ -3075,7 +3075,7 @@ button.gb-seat:disabled {
 .gb-lb-val {
   flex: none;
   font-family: var(--font-mono);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--fg2);
 }
 
@@ -3132,7 +3132,7 @@ button.gb-seat:disabled {
   margin: 18px 0 10px;
 }
 .gb-circle-count {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 700;
   color: var(--fg3);
 }
@@ -3181,7 +3181,7 @@ button.gb-seat:disabled {
   display: flex;
   justify-content: space-between;
   gap: var(--space-2);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--fg3);
 }
 .gb-circle-post-meta strong {
@@ -3189,7 +3189,7 @@ button.gb-seat:disabled {
 }
 .gb-circle-post-body {
   margin-top: var(--space-1);
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -3198,7 +3198,7 @@ button.gb-seat:disabled {
   justify-content: space-between;
   align-items: center;
   padding: 10px var(--space-3);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--surface-3);
   font-size: 0.8125rem;
 }
@@ -3222,7 +3222,7 @@ button.gb-seat:disabled {
   min-height: 32px;
   padding: var(--space-1) 10px;
   border: 1px solid var(--surface-3);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: transparent;
   color: var(--fg2);
   font: inherit;
@@ -3279,7 +3279,7 @@ button.gb-seat:disabled {
   gap: 6px;
 }
 .gb-circle-presets-label {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--fg3);
 }
 .gb-circle-presets .gb-chip {
@@ -3328,7 +3328,7 @@ button.gb-seat:disabled {
   flex-direction: column;
   gap: var(--space-1);
   padding: 10px var(--space-3);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--surface-2);
 }
 .gb-agree + .gb-agree {
@@ -3340,7 +3340,7 @@ button.gb-seat:disabled {
   gap: 6px;
   min-height: 28px;
   color: var(--fg3);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -3391,7 +3391,7 @@ button.gb-seat:disabled {
   flex: 1;
   min-width: 0;
   color: var(--fg1);
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   line-height: 1.35;
   overflow-wrap: anywhere;
 }
@@ -3440,7 +3440,7 @@ button.gb-seat:disabled {
   flex: 1;
   min-width: 0;
   min-height: 40px;
-  font-size: 1rem; /* under 16px, iOS Safari zooms the page on focus */
+  font-size: var(--text-body); /* under 16px, iOS Safari zooms the page on focus */
 }
 .gb-conn-tools {
   display: flex;
@@ -3461,12 +3461,12 @@ button.gb-seat:disabled {
     gap: 2px;
     min-height: 52px;
     padding: 6px 2px;
-    font-size: 0.75rem;
+    font-size: var(--text-xs);
   }
 }
 .gb-week-card {
   padding: 10px var(--space-3);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--surface-3);
   font-size: 0.8125rem;
 }
@@ -3546,7 +3546,7 @@ button.gb-seat:disabled {
   border-radius: 14px;
   background: var(--surface-3);
   color: var(--fg1);
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -3556,7 +3556,7 @@ button.gb-seat:disabled {
 }
 .gb-chat-time {
   margin-top: 2px;
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   color: var(--fg3);
 }
 .gb-chat-event {
@@ -3566,7 +3566,7 @@ button.gb-seat:disabled {
   justify-content: center;
   gap: 6px;
   align-self: center;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--fg3);
   text-align: center;
 }
@@ -3577,12 +3577,12 @@ button.gb-seat:disabled {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
 }
 .gb-form-check small {
   display: block;
   color: var(--fg3);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
 }
 
 .gb-food-card {
@@ -3593,9 +3593,9 @@ button.gb-seat:disabled {
   align-items: center;
   justify-content: center;
   min-width: 86px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 6px var(--space-3);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 800;
   color: var(--info-soft-fg);
   background: var(--info-soft);
@@ -3783,7 +3783,7 @@ button.gb-seat:disabled {
 .gb-thread-date {
   flex: none;
   color: var(--fg3);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
 }
 .gb-thread-rename {
   flex: 1;
@@ -3794,7 +3794,7 @@ button.gb-seat:disabled {
   padding: 0 10px;
   color: var(--danger);
   font-weight: 800;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
 }
 .gb-thread-reflect {
   display: flex;
@@ -3858,7 +3858,7 @@ button.gb-seat:disabled {
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-xl);
-  z-index: 50;
+  z-index: var(--z-header-panel);
   overflow: hidden;
 }
 .gb-profile-pop-head {
@@ -3878,7 +3878,7 @@ button.gb-seat:disabled {
   justify-content: center;
   font-family: var(--font-display);
   font-weight: 900;
-  font-size: 1.125rem;
+  font-size: var(--text-h4);
   flex-shrink: 0;
 }
 .gb-profile-pop-info {
@@ -3888,14 +3888,14 @@ button.gb-seat:disabled {
 .gb-profile-pop-name {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   color: var(--fg1);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .gb-profile-pop-email {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--fg2);
   margin-top: 1px;
   overflow: hidden;
@@ -3904,7 +3904,7 @@ button.gb-seat:disabled {
 }
 .gb-profile-pop-meta {
   margin-top: 3px;
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   color: var(--fg3);
   font-weight: 700;
 }
@@ -3918,7 +3918,7 @@ button.gb-seat:disabled {
   border-radius: var(--radius-pill);
   background: var(--warning-soft);
   color: var(--warning-soft-fg);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 700;
 }
 .gb-profile-pop-xp {
@@ -3926,13 +3926,13 @@ button.gb-seat:disabled {
 }
 .gb-profile-pop-xp-bar {
   height: 5px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--border);
   overflow: hidden;
 }
 .gb-profile-pop-xp-fill {
   height: 100%;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--brand);
   transition: width 0.4s;
 }
@@ -3998,7 +3998,7 @@ button.gb-seat:disabled {
 }
 .gb-status-summary {
   margin: 0 0 var(--space-2);
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   color: var(--fg1);
   font-weight: 600;
 }
@@ -4191,7 +4191,7 @@ button.gb-seat:disabled {
 .gb-score-heading {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 1.125rem;
+  font-size: var(--text-h4);
   color: var(--fg1);
   margin-bottom: var(--space-1);
 }
@@ -4233,7 +4233,7 @@ button.gb-seat:disabled {
   margin-bottom: var(--space-3);
 }
 .gb-coach-kicker {
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   font-weight: 800;
   color: var(--brand-ink);
   text-transform: uppercase;
@@ -4242,7 +4242,7 @@ button.gb-seat:disabled {
 .gb-coach-title {
   margin-top: 2px;
   font-family: var(--font-display);
-  font-size: 1.125rem;
+  font-size: var(--text-h4);
   font-weight: 800;
   color: var(--fg1);
 }
@@ -4258,7 +4258,7 @@ button.gb-seat:disabled {
   border-radius: var(--radius-sm);
   background: var(--surface-2);
   color: var(--fg2);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 800;
   padding: 7px 9px;
 }
@@ -4314,7 +4314,7 @@ button.gb-coach-chip:focus-visible {
 .gb-wellness-label,
 .gb-wellness-tile small {
   color: var(--fg3);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 700;
   text-transform: capitalize;
 }
@@ -4340,7 +4340,7 @@ button.gb-coach-chip:focus-visible {
 }
 .gb-wellness-quick-ask {
   color: var(--fg1);
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   font-weight: 750;
 }
 .gb-wellness-quick-opts {
@@ -4360,7 +4360,7 @@ button.gb-coach-chip:focus-visible {
   border-radius: var(--radius-md);
   background: var(--surface-2);
   color: var(--fg1);
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   font-weight: 700;
 }
 .gb-nudge-opts {
@@ -4422,14 +4422,14 @@ button.gb-coach-chip:focus-visible {
 .gb-timeline-copy small,
 .gb-plan-copy span {
   color: var(--fg3);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   line-height: 1.35;
 }
 .gb-plan-time {
   flex: none;
   width: 3.75rem;
   color: var(--fg2);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -4453,7 +4453,7 @@ button.gb-coach-chip:focus-visible {
 .gb-timeline-dot {
   width: 9px;
   height: 9px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--brand);
   box-shadow: 0 0 0 4px var(--brand-soft);
   flex: none;
@@ -4468,9 +4468,9 @@ button.gb-coach-chip:focus-visible {
    coming later, was stripping this pill to bare body text. */
 button.gb-food-level {
   flex: none;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 5px 10px;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 800;
   color: var(--warning-soft-fg);
   background: var(--warning-soft);
@@ -4511,7 +4511,7 @@ button.gb-food-level {
 .gb-food-week-val {
   position: absolute;
   top: -18px;
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   font-weight: 800;
   color: var(--fg3);
 }
@@ -4535,7 +4535,7 @@ button.gb-food-level {
 .gb-food-week-day {
   position: absolute;
   bottom: -22px;
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   font-weight: 700;
   color: var(--fg3);
   white-space: nowrap;
@@ -4565,7 +4565,7 @@ button.gb-food-level {
 .gb-food-check-text {
   margin: 0;
   color: var(--fg2);
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   line-height: 1.5;
 }
 .gb-food-check-add {
@@ -4614,7 +4614,7 @@ button.gb-food-level {
 }
 .gb-summary-eyebrow {
   font-family: var(--font-mono);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--fg3);
@@ -4666,7 +4666,7 @@ button.gb-food-level {
 }
 .gb-summary-card-head span,
 .gb-summary-note {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--fg3);
 }
 .gb-summary-meta {
@@ -4720,12 +4720,12 @@ button.gb-food-level {
   color: var(--fg1);
 }
 .gb-thali-unit {
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   font-weight: 600;
   color: var(--fg2);
 }
 .gb-thali-of {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 600;
   color: var(--fg3);
 }
@@ -4758,7 +4758,7 @@ button.gb-food-level {
   color: var(--fg1);
 }
 .gb-katori-in strong small {
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
 }
 .gb-katori-in span {
   margin-top: var(--space-1);
@@ -4780,7 +4780,7 @@ button.gb-food-level {
   display: flex;
   gap: 2px;
   height: 18px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   overflow: hidden;
 }
 .gb-split-bar > div {
@@ -4798,17 +4798,17 @@ button.gb-food-level {
   gap: 2px;
 }
 .gb-split-legend span {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 700;
   color: var(--n-ink);
 }
 .gb-split-legend b {
   font-family: var(--font-mono);
-  font-size: 1.125rem;
+  font-size: var(--text-h4);
   color: var(--fg1);
 }
 .gb-split-legend small {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--fg3);
 }
 
@@ -4818,13 +4818,13 @@ button.gb-food-level {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-1);
   padding: var(--space-1);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--bg);
 }
 .gb-nutrient-tabs button {
   min-height: 44px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: transparent;
   color: var(--fg2);
   font: inherit;
@@ -4874,7 +4874,7 @@ button.gb-food-level {
   justify-content: space-between;
   align-items: baseline;
   gap: var(--space-3);
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--fg1);
   overflow-wrap: anywhere;
@@ -4891,12 +4891,12 @@ button.gb-food-level {
 }
 .gb-source-track {
   height: 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-3);
 }
 .gb-source-bar {
   height: 100%;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--n, var(--success));
 }
 
@@ -4948,7 +4948,7 @@ button.gb-food-level {
   transition: transform 0.4s var(--ease-out);
 }
 .gb-tumbler-day {
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   font-weight: 700;
   color: var(--fg3);
   white-space: nowrap;
@@ -5021,7 +5021,7 @@ button.gb-food-level {
 }
 .gb-summary-hint {
   margin: 0;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--fg3);
 }
 @media (prefers-reduced-motion: reduce) {
@@ -5130,7 +5130,7 @@ button.gb-food-level {
   align-items: center;
   gap: 7px;
   margin-bottom: var(--space-2);
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   font-weight: 800;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -5176,7 +5176,7 @@ button.gb-food-level {
 }
 .gb-water-title {
   font-family: var(--font-display);
-  font-size: 1.125rem;
+  font-size: var(--text-h4);
   font-weight: 800;
   letter-spacing: -0.01em;
 }
@@ -5208,7 +5208,7 @@ button.gb-food-level {
   height: 112px;
   transform: translateX(-50%) scaleY(0);
   transform-origin: top;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: linear-gradient(
     180deg,
     rgba(255, 255, 255, 0.92),
@@ -5331,7 +5331,7 @@ button.gb-food-level {
 }
 .gb-water-big {
   font-family: var(--font-display);
-  font-size: 1.75rem;
+  font-size: var(--text-h2);
   font-weight: 800;
   line-height: 1;
   margin-bottom: var(--space-1);
@@ -5363,7 +5363,7 @@ button.gb-food-level {
 }
 .gb-water-add {
   border: none;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   padding: 9px var(--space-2);
   font-size: 0.78125rem;
   font-weight: 800;
@@ -5404,7 +5404,7 @@ button.gb-food-level {
 .gb-water-log-row {
   display: flex;
   justify-content: space-between;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--fg2);
   padding: 3px 0;
 }
@@ -5649,7 +5649,7 @@ button.gb-food-level {
 }
 .gb-goal-section-title {
   font-family: var(--font-display);
-  font-size: 1rem;
+  font-size: var(--text-body);
   font-weight: 800;
   color: var(--fg1);
 }
@@ -5659,7 +5659,7 @@ button.gb-food-level {
   align-items: center;
   gap: 6px;
   min-height: 44px;
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   color: var(--fg2);
   cursor: pointer;
   list-style: none;
@@ -5682,10 +5682,10 @@ button.gb-food-level {
   min-width: 24px;
   height: 24px;
   padding: 0 var(--space-2);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-2);
   color: var(--fg2);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 700;
   display: inline-flex;
   align-items: center;
@@ -5719,7 +5719,7 @@ button.gb-food-level {
   flex-wrap: wrap;
   gap: var(--space-2) 10px;
   margin-top: 10px;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--fg3);
   align-items: center;
 }
@@ -5781,7 +5781,7 @@ button.gb-food-level {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   padding: 3px 9px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--success-soft);
   color: var(--success-soft-fg);
   flex: 0 0 auto;
@@ -5839,7 +5839,7 @@ button.gb-food-level {
   justify-content: space-between;
   gap: 10px;
   padding: 10px var(--space-3);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--surface-2);
 }
 .gb-goal-action-text {
@@ -5855,7 +5855,7 @@ button.gb-food-level {
 .gb-goal-action-date {
   margin-top: 3px;
   color: var(--fg3);
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
 }
 .gb-goal-action-tools {
   display: flex;
@@ -5906,7 +5906,7 @@ button.gb-food-level {
   outline-offset: 2px;
 }
 .gb-note-hint {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--fg3);
 }
 
@@ -5994,7 +5994,7 @@ button.gb-food-level {
 }
 .gb-cal-dow span {
   text-align: center;
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   font-weight: 800;
   letter-spacing: 0.04em;
   color: var(--fg3);
@@ -6146,14 +6146,14 @@ button.gb-food-level {
   align-items: flex-start;
   gap: 9px;
   padding: 9px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--surface-2);
 }
 .gb-wins-icon {
   flex: 0 0 auto;
   width: 24px;
   height: 24px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--brand-soft);
   color: var(--brand-soft-fg);
   display: inline-flex;
@@ -6213,14 +6213,14 @@ button.gb-food-level {
   gap: 10px;
 }
 .gb-day-head-title {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--fg3);
   font-weight: 800;
 }
 .gb-day-head-count {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--fg2);
   font-weight: 700;
 }
@@ -6240,7 +6240,7 @@ button.gb-food-level {
   flex: 1;
 }
 .gb-day-row-title {
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   font-weight: 700;
   color: var(--fg1);
   line-height: 1.35;
@@ -6249,7 +6249,7 @@ button.gb-food-level {
 }
 .gb-day-row-sub {
   margin-top: var(--space-1);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 600;
   color: var(--fg2);
 }
@@ -6261,7 +6261,7 @@ button.gb-food-level {
   background: var(--surface-2);
   border: 1px solid var(--border);
   color: var(--fg2);
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   font-weight: 700;
   text-transform: capitalize;
   white-space: nowrap;
@@ -6299,7 +6299,7 @@ button.gb-food-level {
   font-size: 0.78125rem;
 }
 .gb-day-total {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--fg2);
   font-weight: 700;
   text-align: right;
@@ -6447,7 +6447,7 @@ button.gb-food-level {
 .gb-empty p {
   margin: 0;
   color: var(--fg2);
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   font-weight: 600;
   max-width: 30ch;
 }
@@ -6455,7 +6455,7 @@ button.gb-food-level {
   width: auto;
   min-height: 44px;
   padding: 11px 18px;
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
 }
 
 /* Add-reminder form */
@@ -6657,7 +6657,7 @@ button.gb-food-level {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -6706,7 +6706,7 @@ button.gb-food-level {
   flex-wrap: wrap;
   gap: var(--space-1) var(--space-3);
   margin-top: var(--space-2);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 600;
   color: var(--fg3);
 }
@@ -6807,7 +6807,7 @@ button.gb-food-level {
   outline: none;
   padding: 0;
   font-family: var(--font-body);
-  font-size: 1rem;
+  font-size: var(--text-body);
   font-weight: 700;
   color: var(--fg1);
 }
@@ -6826,7 +6826,7 @@ button.gb-food-level {
 }
 .gb-affix > .gb-segmented > .gb-seg {
   padding: 6px 9px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
 }
 .gb-affix-unit {
   flex: none;
@@ -6854,7 +6854,7 @@ button.gb-food-level {
   margin-bottom: 0;
 }
 .gb-input--inline {
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   padding: 10px var(--space-3);
   min-height: 36px;
   border-radius: var(--radius-md);
@@ -6905,7 +6905,7 @@ button.gb-food-level {
 .gb-rem-to {
   align-self: center;
   color: var(--fg3);
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
 }
 .gb-rem-range {
   align-items: center;
@@ -6930,35 +6930,21 @@ button.gb-food-level {
   gap: var(--space-2);
 }
 .gb-sched-tabs {
-  display: inline-flex;
+  /* The Day/Week switch is the shared .gb-range-toggle; this only places it. */
   margin-left: auto;
-  padding: 2px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  background: var(--surface-2);
-}
-.gb-sched-tab,
-.gb-sched-routine {
-  font: 700 0.75rem var(--font-body);
-  border: 0;
-  cursor: pointer;
-  min-height: 28px;
-  padding: 0 10px;
-  border-radius: var(--radius-pill);
-  background: transparent;
-  color: var(--fg2);
-}
-.gb-sched-tab.is-on {
-  background: var(--surface);
-  color: var(--brand-ink);
-  box-shadow: var(--shadow-sm);
 }
 .gb-sched-routine {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  font: 700 0.75rem var(--font-body);
+  cursor: pointer;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--border);
   background: var(--surface);
+  color: var(--fg2);
 }
 /* Four kinds, told apart by lightness as well as hue: free is the palest,
    then sleep, lunch, and busy the darkest. */
@@ -6980,11 +6966,11 @@ button.gb-food-level {
   border-radius: var(--radius-md);
 }
 .gb-sched-stat-l {
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   font-weight: 700;
 }
 .gb-sched-stat-v {
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
@@ -7037,7 +7023,7 @@ button.gb-food-level {
   position: relative;
   height: 16px;
   margin-top: var(--space-1);
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   color: var(--fg3);
 }
 .gb-sched-ticks > span {
@@ -7302,8 +7288,7 @@ button.gb-food-level {
 .gb-segnav-btn:active,
 .gb-sound-tile:active,
 .gb-preset:active,
-.gb-switch:active,
-.gb-wa-toggle:active {
+.gb-switch:active {
   transform: scale(0.96);
 }
 /* Six repeat options never fit one line on a phone, and flex-wrap left five up
@@ -7328,7 +7313,7 @@ button.gb-food-level {
   /* Its own row: title plus five tags is a hair too wide for a phone, and the
      last tag wrapped alone under it. */
   flex-basis: 100%;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 700;
   color: var(--fg3);
 }
@@ -7336,7 +7321,7 @@ button.gb-food-level {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 600;
   color: var(--fg2);
 }
@@ -7361,7 +7346,7 @@ button.gb-food-level {
 .gb-modal-overlay {
   position: fixed;
   inset: 0;
-  z-index: 100;
+  z-index: var(--z-modal);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -7369,7 +7354,7 @@ button.gb-food-level {
      indicator: with viewport-fit=cover, 100dvh runs underneath both. */
   padding: calc(20px + env(safe-area-inset-top, 0px)) 20px
     calc(20px + env(safe-area-inset-bottom, 0px));
-  background: color-mix(in srgb, var(--warm-900) 45%, transparent);
+  background: var(--scrim);
   opacity: 0;
   transition: opacity var(--dur-fast) ease;
   /* The page behind must not rubber-band or scroll-chain from a sheet. */
@@ -7432,7 +7417,7 @@ button.gb-food-level {
 }
 .gb-modal-body::-webkit-scrollbar-thumb {
   background: var(--border-strong);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 .gb-modal-title {
   font-family: var(--font-display, var(--font-body));
@@ -7485,7 +7470,6 @@ button.gb-food-level {
 .gb-onboard-dismiss,
 .gb-sectiontitle-act,
 .gb-range-opt,
-.gb-sched-tab,
 .gb-sched-routine,
 .gb-freeze-chip,
 .gb-switch,
@@ -7497,8 +7481,7 @@ button.gb-food-level {
 .gb-water-add,
 .gb-segnav-btn,
 .gb-msg-chip,
-.gb-rem-snoozed--btn,
-.gb-wa-toggle {
+.gb-rem-snoozed--btn {
   position: relative;
 }
 .gb-iconbtn::before,
@@ -7512,7 +7495,6 @@ button.gb-food-level {
 .gb-onboard-dismiss::before,
 .gb-sectiontitle-act::before,
 .gb-range-opt::before,
-.gb-sched-tab::before,
 .gb-sched-routine::before,
 .gb-freeze-chip::before,
 .gb-switch::before,
@@ -7525,8 +7507,7 @@ button.gb-food-level {
 .gb-segnav-btn::before,
 .gb-msg-chip::before,
 .gb-pw-toggle::before,
-.gb-rem-snoozed--btn::before,
-.gb-wa-toggle::before {
+.gb-rem-snoozed--btn::before {
   content: '';
   position: absolute;
   top: 50%;
@@ -7610,7 +7591,7 @@ button.gb-food-level {
   color: var(--fg1);
 }
 .gb-qa-copy span {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--fg2);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -7787,7 +7768,7 @@ button.gb-food-level {
   border-radius: var(--radius-pill);
   background: var(--brand-soft);
   color: var(--brand-soft-fg);
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -7804,7 +7785,7 @@ button.gb-food-level {
   position: fixed;
   top: calc(-42px + env(safe-area-inset-top, 0px));
   left: 50%;
-  z-index: 40;
+  z-index: var(--z-ptr);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -7870,19 +7851,19 @@ button.gb-food-level {
 .gb-focus-stat-val {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 1.375rem;
+  font-size: var(--text-h3);
   color: var(--fg1);
   letter-spacing: -0.02em;
 }
 .gb-focus-stat-lbl {
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   color: var(--fg3);
   margin-top: 3px;
 }
 
 /* Timer card extras: "Sprint n of 4", "Focusing on…", the daily goal bar. */
 .gb-focus-cycle {
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   font-weight: 700;
   color: var(--brand-soft-fg);
   text-transform: uppercase;
@@ -7978,12 +7959,12 @@ button.gb-food-level {
   display: flex;
   justify-content: space-between;
   margin-top: var(--space-1);
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   color: var(--fg3);
 }
 .gb-focus-hist-sub {
   margin-top: 14px;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 700;
   color: var(--fg2);
 }
@@ -8041,7 +8022,7 @@ button.gb-food-level {
 .gb-onboard-title {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 1.125rem;
+  font-size: var(--text-h4);
   color: var(--fg1);
   letter-spacing: -0.01em;
   margin-top: 2px;
@@ -8096,11 +8077,11 @@ button.gb-food-level {
 }
 .gb-onboard-step-l {
   font-weight: 700;
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   color: var(--fg1);
 }
 .gb-onboard-step-h {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--fg3);
 }
 .gb-onboard-step > svg {
@@ -8122,7 +8103,7 @@ button.gb-food-level {
   color: var(--brand-soft-fg);
   font-family: var(--font-body);
   font-weight: 700;
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
 }
 /* Only the label stretches. `Icon()` also renders a <span>, so a bare
    `span` selector gave flex:1 to the calendar and chevron too — all three
@@ -8151,7 +8132,7 @@ button.gb-food-level {
   letter-spacing: -0.02em;
 }
 .gb-wr-tile-lbl {
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   color: var(--fg3);
   margin-top: 2px;
 }
@@ -8177,17 +8158,17 @@ button.gb-food-level {
 }
 .gb-sec-row-device {
   font-weight: 700;
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   color: var(--fg1);
 }
 .gb-sec-row-meta {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--fg3);
   margin-top: 2px;
 }
 .gb-sec-badge {
   flex: none;
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.02em;
   color: var(--success-soft-fg);
@@ -8212,7 +8193,7 @@ button.gb-food-level {
   white-space: pre-wrap;
 }
 .gb-tfa-uri {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   letter-spacing: 0;
 }
 .gb-tfa-codes {
@@ -8252,7 +8233,7 @@ button.gb-food-level {
 }
 .gb-quickadd-hint {
   margin-top: 6px;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--fg3);
 }
 .gb-mic.is-listening {
@@ -8267,7 +8248,7 @@ button.gb-food-level {
 }
 .gb-quickadd-or {
   text-align: center;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 700;
   letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
@@ -8330,10 +8311,10 @@ button.gb-food-level {
 }
 .gb-modal-opt-l {
   font-weight: 700;
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
 }
 .gb-modal-opt-s {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--fg2);
 }
 .gb-modal-opt.is-danger .gb-modal-opt-ic {
@@ -8355,7 +8336,7 @@ button.gb-food-level {
 
 .gb-confirm-text {
   margin: 0;
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   color: var(--fg2);
   line-height: 1.45;
 }
@@ -8366,7 +8347,7 @@ button.gb-food-level {
   /* Clear the bottom nav, which grows by the home-indicator inset. */
   bottom: calc(88px + env(safe-area-inset-bottom, 0px));
   /* Above the food loader (150): its failure toast hid behind it. */
-  z-index: 160;
+  z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
@@ -8405,7 +8386,7 @@ button.gb-food-level {
 .gb-toast-icon {
   width: 22px;
   height: 22px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -8524,7 +8505,7 @@ button.gb-food-level {
   }
 
   .gb-cal-monthlabel .m {
-    font-size: 1.125rem;
+    font-size: var(--text-h4);
   }
 
   .gb-cal-monthnav {
@@ -8560,7 +8541,7 @@ button.gb-food-level {
   }
 
   .gb-rem-text {
-    font-size: 0.875rem;
+    font-size: var(--text-sm);
   }
 }
 
@@ -8605,12 +8586,12 @@ button.gb-food-level {
 .gb-celebrate {
   position: fixed;
   inset: 0;
-  z-index: 200;
+  z-index: var(--z-celebrate);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: var(--space-6);
-  background: rgba(20, 16, 13, 0.5);
+  background: var(--scrim-strong);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
   animation: gb-cele-fade var(--dur-base) var(--ease-out);
@@ -8869,7 +8850,7 @@ button.gb-food-level {
     background: var(--surface);
   }
   .gb-head .greet-name {
-    font-size: 1.375rem;
+    font-size: var(--text-h3);
   }
 
   /* ---- Main content ---- */
@@ -8997,7 +8978,7 @@ button.gb-food-level {
     justify-content: flex-start;
     gap: 14px;
     padding: var(--space-3) 14px;
-    border-radius: 12px;
+    border-radius: var(--radius-md);
     transition:
       background var(--dur-fast),
       color var(--dur-fast);
@@ -9012,7 +8993,7 @@ button.gb-food-level {
     color: var(--brand-soft-fg);
   }
   .gb-nav-tab span {
-    font-size: 0.875rem;
+    font-size: var(--text-sm);
   }
 
   /* The nav is wrapped in .gb-nav-wrap, so the WRAPPER is the real grid child —
@@ -9057,27 +9038,27 @@ button.gb-food-level {
   margin-bottom: var(--space-2);
 }
 .gb-goal-progress-label {
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   font-weight: 700;
   color: var(--fg3);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 .gb-goal-progress-pct {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 800;
   color: var(--brand-ink);
 }
 .gb-goal-progress-track {
   height: 8px;
-  border-radius: 99px;
+  border-radius: var(--radius-pill);
   background: var(--surface-2);
   overflow: hidden;
   margin-bottom: var(--space-2);
 }
 .gb-goal-progress-fill {
   height: 100%;
-  border-radius: 99px;
+  border-radius: var(--radius-pill);
   background: var(--brand);
   transition: width 0.4s ease;
 }
@@ -9089,7 +9070,7 @@ button.gb-food-level {
   justify-content: space-between;
   align-items: center;
   gap: var(--space-2);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--fg2);
   margin-bottom: 10px;
 }
@@ -9098,7 +9079,7 @@ button.gb-food-level {
   color: var(--fg1);
 }
 .gb-goal-progress-done-chip {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 700;
   color: var(--success-soft-fg);
   background: var(--success-soft);
@@ -9167,7 +9148,7 @@ button.gb-food-level {
   line-height: 1.1;
 }
 .gb-habit-sleep-metric-label {
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   color: var(--fg3);
   margin-top: 3px;
 }
@@ -9310,15 +9291,15 @@ button.gb-food-level {
     gap: 5px;
   }
   .gb-goal-actions .gb-btn {
-    font-size: 0.75rem;
+    font-size: var(--text-xs);
     padding: 7px 10px;
   }
   .gb-goal-card-footer .gb-btn {
-    font-size: 0.75rem;
+    font-size: var(--text-xs);
     padding: 7px 10px;
   }
   .gb-goal-progress-stats {
-    font-size: 0.6875rem;
+    font-size: var(--text-2xs);
   }
 }
 
@@ -9333,39 +9314,10 @@ button.gb-food-level {
   --gb-wa-green-fg: #4ade80;
 }
 
-/* Toggle switch: the same geometry, off track and timing as .gb-switch; only
-   the on colour is WhatsApp's. */
-.gb-wa-toggle {
-  position: relative;
-  width: 46px;
-  height: 26px;
-  border-radius: var(--radius-pill);
-  background: var(--border-strong);
-  box-shadow: inset 0 0 0 1px var(--control-edge);
-  border: none;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: background var(--dur-fast);
-  padding: 0;
-}
-.gb-wa-toggle.is-on {
+/* The WhatsApp switch is the shared .gb-switch in WhatsApp green. */
+.gb-switch.is-wa.is-on {
   background: var(--gb-wa-green);
   box-shadow: none;
-}
-.gb-wa-toggle-thumb {
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: var(--shadow-xs);
-  transition: transform var(--dur-fast);
-  pointer-events: none;
-}
-.gb-wa-toggle.is-on .gb-wa-toggle-thumb {
-  transform: translateX(20px);
 }
 
 /* Toggle row (label + switch side by side) */
@@ -9379,11 +9331,11 @@ button.gb-food-level {
 
 /* Connection status line */
 .gb-wa-status-line {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--fg3);
   margin-bottom: 14px;
   padding: 6px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--surface-2);
 }
 .gb-wa-status-line.is-connected {
@@ -9394,7 +9346,7 @@ button.gb-food-level {
 
 /* Small hint text under labels */
 .gb-field-hint {
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   color: var(--fg3);
   margin-bottom: 6px;
   margin-top: -4px;
@@ -9418,9 +9370,9 @@ button.gb-food-level {
 .gb-wa-badge {
   color: var(--gb-wa-green-fg);
   background: var(--gb-wa-green-soft);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 0 6px;
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   font-weight: 600;
   display: inline-flex;
   align-items: center;
@@ -9472,7 +9424,7 @@ button.gb-food-level {
 .gb-settings-profile-name {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 1rem;
+  font-size: var(--text-body);
   color: var(--fg1);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -9491,10 +9443,10 @@ button.gb-food-level {
   margin-top: 5px;
   background: var(--brand-soft, #e8f4fd);
   color: var(--brand-ink);
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   font-weight: 700;
   padding: 2px var(--space-2);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 
 /* Settings section nav — segmented slider (thumb glides under active section) */
@@ -9502,7 +9454,7 @@ button.gb-food-level {
   position: relative;
   display: flex;
   background: var(--surface-3);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   padding: var(--space-1);
   margin-bottom: 18px;
 }
@@ -9542,7 +9494,7 @@ button.gb-food-level {
    whole bar rather than let a label clip — half a word is worse than small
    type. Thumb is child 1, so :nth-child(6) means "5 buttons or more". */
 .gb-segnav:has(> .gb-segnav-btn:nth-child(6)) .gb-segnav-btn {
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   padding: var(--space-2) 2px;
   letter-spacing: -0.01em;
 }
@@ -9571,19 +9523,25 @@ button.gb-food-level {
 .gb-settings-sec-label {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--fg3);
   padding: 18px 0 var(--space-2);
   border-top: 1px solid var(--border);
-  margin-top: var(--space-2);
+  /* Every Settings section's rhythm lives here; the panes set none inline. */
+  margin-top: var(--space-5);
 }
 .gb-settings-body > .gb-settings-sec-label:first-of-type,
 .gb-settings-pane > .gb-settings-sec-label:first-child {
   margin-top: 0;
   border-top: none;
   padding-top: 10px;
+}
+/* A section's one-line description, and a pane's intro line. */
+.gb-settings-sec-label + .gb-field-hint,
+.gb-settings-pane > .gb-field-hint:first-child {
+  margin-bottom: var(--space-3);
 }
 
 /* Two-column grid for paired inputs (height/weight, food/water) */
@@ -9626,7 +9584,7 @@ select.gb-input {
   font-size: 0.8125rem;
   font-weight: 600;
   padding: 6px var(--space-3);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   width: fit-content;
 }
 
@@ -9640,7 +9598,7 @@ select.gb-input {
 
 /* "Change number" as a subtle link-style button */
 .gb-wa-change-link {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   padding: var(--space-1) 0;
   color: var(--fg3);
   margin-top: 6px;
@@ -9662,7 +9620,7 @@ select.gb-input {
   font-size: 0.8125rem;
   font-weight: 600;
   padding: 6px var(--space-3);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -9675,7 +9633,7 @@ select.gb-input {
   color: var(--gb-wa-green-fg);
   font-size: var(--text-2xs);
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   margin-left: var(--space-1);
   flex-shrink: 0;
 }
@@ -9708,7 +9666,7 @@ select.gb-input {
 .gb-btn--sm {
   width: auto;
   padding: 9px 13px;
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   min-height: 38px;
   border-radius: var(--radius-md);
 }
@@ -9732,7 +9690,7 @@ select.gb-input {
   color: var(--fg2);
 }
 .gb-field-hint {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--fg3);
 }
 /* Family-only despite the generic name (six uses, all in family.js). The 2px
@@ -9776,7 +9734,7 @@ select.gb-input {
 }
 .gb-family-subhead {
   font-weight: 800;
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   color: var(--fg2);
   margin: 0 0 10px;
 }
@@ -9819,7 +9777,7 @@ select.gb-input {
   justify-content: center;
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 1rem;
+  font-size: var(--text-body);
   background: var(--brand-soft);
   color: var(--brand-soft-fg);
 }
@@ -9968,7 +9926,7 @@ select.gb-input {
 /* The section head's right side: when the plan was made, in the count face. */
 .gb-family-head-meta {
   font-family: var(--font-mono);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--fg3);
 }
 .gb-family-grocery-actions {
@@ -10130,7 +10088,7 @@ select.gb-input {
   margin: 0;
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 1rem;
+  font-size: var(--text-body);
   color: var(--fg1);
 }
 .gb-family-meal-list {
@@ -10148,7 +10106,7 @@ select.gb-input {
 }
 /* The weekly cards' tips still read as a bulleted list. */
 .gb-family-suggestions .gb-family-meal-list li {
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   padding-left: 14px;
   position: relative;
 }
@@ -10183,12 +10141,12 @@ select.gb-input {
 }
 .gb-family-stat-unit {
   margin-left: 3px;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 400;
   color: var(--fg3);
 }
 .gb-family-balanced {
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   line-height: 1.5;
   color: var(--fg2);
   margin-top: var(--space-3);
@@ -10209,7 +10167,7 @@ select.gb-input {
   display: flex;
   align-items: flex-start;
   gap: var(--space-2);
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   line-height: 1.45;
   color: var(--fg2);
 }
@@ -10262,7 +10220,7 @@ select.gb-input {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   line-height: 1.5;
   color: var(--fg2);
 }
@@ -10271,7 +10229,7 @@ select.gb-input {
 }
 .gb-family-count {
   font-family: var(--font-mono);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 700;
   padding: 1px 7px;
   border-radius: var(--radius-pill);
@@ -10283,7 +10241,7 @@ select.gb-input {
   font-weight: 700;
 }
 .gb-family-stat-label {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--fg3);
   margin-top: 2px;
 }
@@ -10413,7 +10371,7 @@ select.gb-input {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   color: var(--fg2);
   margin-bottom: 14px;
 }
@@ -10454,7 +10412,7 @@ select.gb-input {
 }
 .gb-family-weekday-label {
   font-weight: 800;
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   color: var(--fg1);
   margin: 0 0 var(--space-2);
 }
@@ -10524,7 +10482,7 @@ select.gb-input {
 }
 .gb-family-shop-cost {
   font-weight: 800;
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   color: var(--fg1);
 }
 .gb-family-shop-total {
@@ -10532,12 +10490,12 @@ select.gb-input {
   align-items: center;
   justify-content: space-between;
   padding: 14px var(--space-4);
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   color: var(--fg2);
 }
 .gb-family-shop-total strong {
   font-family: var(--font-display);
-  font-size: 1.125rem;
+  font-size: var(--text-h4);
   color: var(--fg1);
 }
 
@@ -10680,7 +10638,7 @@ select.gb-input {
 .gb-family-sectionnav {
   position: sticky;
   top: 0;
-  z-index: 5;
+  z-index: var(--z-sticky);
   /* A solid card-colour bar, not `--bg` and not a blur. `--bg` matched only a
      flat canvas (the premium skin paints `.gb-app` with radial gradients, so it
      showed as a dark rectangle), and a backdrop blur re-rasterises the strip on
@@ -10718,7 +10676,7 @@ select.gb-input {
   padding: 0 5px;
   border-radius: var(--radius-pill);
   font-family: var(--font-mono);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 700;
   background: var(--surface-3);
   color: var(--fg2);
@@ -11009,7 +10967,7 @@ select.gb-input {
   gap: 5px;
   margin-top: 6px;
   padding: 3px 9px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--brand-soft);
   color: var(--brand-soft-fg);
   font-size: var(--text-xs);
@@ -11024,7 +10982,7 @@ select.gb-input {
   align-items: center;
   gap: 3px;
   padding: 1px 7px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--brand-soft);
   color: var(--brand-soft-fg);
   font-weight: 700;
@@ -11069,7 +11027,7 @@ select.gb-input {
   text-align: left;
   padding: var(--space-4);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
   cursor: pointer;
   transition:
@@ -11093,7 +11051,7 @@ select.gb-input {
   flex: none;
   width: 44px;
   height: 44px;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--brand-soft);
 }
 .gb-family-add-choice-text {
@@ -11126,7 +11084,7 @@ select.gb-input {
 .gb-range-toggle {
   display: inline-flex;
   background: var(--surface-2);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 3px;
   gap: 2px;
 }
@@ -11137,7 +11095,7 @@ select.gb-input {
   font-size: var(--text-xs);
   font-weight: 700;
   padding: 6px var(--space-3);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   cursor: pointer;
   transition:
     background 0.15s ease,
@@ -11176,7 +11134,7 @@ select.gb-input {
 .gb-trend-latest {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 1.125rem;
+  font-size: var(--text-h4);
   color: var(--brand-ink); /* the line is --brand; as text that is 2.8:1 */
 }
 .gb-trend-svg {
@@ -11347,14 +11305,14 @@ select.gb-input {
   justify-content: center;
   width: 44px;
   height: 44px;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--brand-soft);
   flex: none;
 }
 .gb-ach-summary-title {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 1.125rem;
+  font-size: var(--text-h4);
   color: var(--fg1);
 }
 .gb-ach-summary-sub {
@@ -11369,13 +11327,13 @@ select.gb-input {
 }
 .gb-ach-summary-bar {
   height: 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-2);
   overflow: hidden;
 }
 .gb-ach-summary-fill {
   height: 100%;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--brand);
   transition: width 0.4s ease;
 }
@@ -11454,7 +11412,7 @@ select.gb-input {
   justify-content: center;
   width: 24px;
   height: 24px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--leaf-600);
   color: var(--fg-on-brand);
   flex: none;
@@ -11466,13 +11424,13 @@ select.gb-input {
 }
 .gb-ach-progress-bar {
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-2);
   overflow: hidden;
 }
 .gb-ach-progress-fill {
   height: 100%;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--brand);
 }
 .gb-ach-progress-label {
@@ -11515,14 +11473,14 @@ select.gb-input {
 }
 .gb-goal-ms-track {
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-2);
   overflow: hidden;
   margin-bottom: 10px;
 }
 .gb-goal-ms-fill {
   height: 100%;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--brand);
   transition: width 0.3s ease;
 }
@@ -11581,7 +11539,7 @@ select.gb-input {
   padding: 3px 3px 3px var(--space-3);
 }
 .gb-goal-ms-add > input {
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   font-weight: 500;
 }
 /* The + inside the milestone field. */
@@ -11609,7 +11567,7 @@ select.gb-input {
 /* The goal itself is the headline, so it reads like one. */
 .gb-goal-title-input {
   font-family: var(--font-display);
-  font-size: 1.125rem;
+  font-size: var(--text-h4);
   font-weight: 700;
   padding: 14px var(--space-4);
 }
@@ -11648,7 +11606,7 @@ select.gb-input {
   position: fixed;
   top: -56px;
   left: 12px;
-  z-index: 2000;
+  z-index: var(--z-skip);
   padding: 10px var(--space-4);
   background: var(--brand-fill);
   color: var(--fg-on-brand);
@@ -11690,8 +11648,8 @@ textarea:focus-visible,
 .gb-more-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 60;
-  background: rgba(20, 16, 13, 0.32);
+  z-index: var(--z-sheet);
+  background: var(--scrim);
   animation: gb-more-fade var(--dur-fast) var(--ease-out);
 }
 .gb-more-sheet {
@@ -11699,7 +11657,7 @@ textarea:focus-visible,
   left: 0;
   right: 0;
   bottom: 100%;
-  z-index: 61;
+  z-index: calc(var(--z-sheet) + 1);
   background: var(--surface);
   border-top: 1px solid var(--border);
   border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
@@ -11722,7 +11680,7 @@ textarea:focus-visible,
 .gb-more-group-label {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--fg3);
@@ -11869,7 +11827,7 @@ textarea:focus-visible,
 .gb-textsize-sample-title {
   font-family: var(--font-body);
   font-weight: 700;
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
   color: var(--fg3);
@@ -11878,7 +11836,7 @@ textarea:focus-visible,
 .gb-textsize-sample-body {
   font-family: var(--font-body);
   font-weight: 500;
-  font-size: 1rem;
+  font-size: var(--text-body);
   line-height: var(--leading-relaxed);
   color: var(--fg1);
 }
@@ -12336,7 +12294,7 @@ textarea:focus-visible,
 }
 .gb-note-card-body {
   overflow-wrap: anywhere;
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   line-height: var(--leading-relaxed);
   color: var(--fg2);
   /* Cards stay a card. The whole note is one tap away.
@@ -12447,7 +12405,7 @@ textarea:focus-visible,
   background: rgba(20, 14, 10, 0.6);
   backdrop-filter: blur(6px);
   color: var(--fg-on-brand);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -12506,7 +12464,7 @@ textarea:focus-visible,
   gap: var(--space-1);
   min-height: 60px;
   padding: var(--space-2) var(--space-1);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   line-height: 1.2;
   text-align: center;
   white-space: normal;
@@ -12582,7 +12540,7 @@ textarea:focus-visible,
   background: var(--surface);
   color: var(--fg2);
   font: inherit;
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   font-weight: 600;
   cursor: pointer;
   transition:
@@ -12618,7 +12576,7 @@ textarea:focus-visible,
   align-items: center;
   position: sticky;
   top: 0;
-  z-index: 5;
+  z-index: var(--z-sticky);
   margin: 0 calc(-1 * var(--gutter));
   padding: var(--space-2) var(--gutter);
   background: var(--surface);
@@ -12659,7 +12617,7 @@ textarea:focus-visible,
   border-radius: var(--radius-pill);
   background: var(--surface-3);
   color: var(--fg2);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 600;
   overflow-wrap: anywhere;
 }
@@ -12716,7 +12674,7 @@ textarea:focus-visible,
   background: transparent;
   color: var(--fg1);
   font: inherit;
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
 }
 .gb-note-label-input:focus {
   outline: none;
@@ -12736,7 +12694,7 @@ textarea:focus-visible,
 .gb-note-card-snippet {
   margin: 0;
   color: var(--fg2);
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   line-height: var(--leading-relaxed);
   overflow-wrap: anywhere;
 }
@@ -12764,7 +12722,7 @@ textarea:focus-visible,
   border-radius: var(--radius-md);
   background: var(--warning-soft);
   color: var(--warning-soft-fg);
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   font-weight: 600;
 }
 .gb-note-offline > span {
@@ -13097,7 +13055,7 @@ h2[tabindex='-1']:focus {
 .gb-food-loader {
   position: fixed;
   inset: 0;
-  z-index: 150;
+  z-index: var(--z-loader);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -13236,7 +13194,7 @@ h2[tabindex='-1']:focus {
   position: relative;
   width: 260px;
   height: 22px;
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--fg2);
 }
@@ -13395,7 +13353,7 @@ h2[tabindex='-1']:focus {
     display: none;
   }
   .gb-head .greet-name {
-    font-size: 1.125rem;
+    font-size: var(--text-h4);
     -webkit-line-clamp: 1;
   }
   .gb-app {
@@ -13580,7 +13538,7 @@ button.gb-sound-name:focus-visible {
   color: var(--fg1);
 }
 .gb-sound-meta {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--fg3);
 }
 .gb-sound-row.is-default .gb-sound-meta {
@@ -13683,7 +13641,7 @@ button.gb-sound-name:focus-visible {
   margin-top: 6px;
   border: 1px dashed var(--border-strong);
   border-radius: var(--radius-md);
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   color: var(--fg3);
   line-height: var(--leading-snug);
 }
@@ -13789,7 +13747,7 @@ button.gb-sound-name:focus-visible {
   flex-direction: column;
   gap: var(--space-1);
   min-width: 0;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 700;
   color: var(--fg3);
 }
@@ -13833,7 +13791,7 @@ button.gb-sound-name:focus-visible {
   overflow-wrap: anywhere;
 }
 .gb-remset-meta {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--fg3);
 }
 .gb-remset-snoozed {
@@ -13848,7 +13806,7 @@ button.gb-sound-name:focus-visible {
   background: var(--info-soft);
   color: var(--info-soft-fg);
   font: inherit;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 700;
   cursor: pointer;
 }
@@ -13917,7 +13875,7 @@ button.gb-sound-name:focus-visible {
   gap: var(--space-1);
   min-height: 32px;
   padding: var(--space-1) 10px;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   white-space: nowrap;
 }
 .gb-rem-defaults-link {
@@ -13927,7 +13885,7 @@ button.gb-sound-name:focus-visible {
   border: none;
   background: none;
   font: inherit;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   text-align: left;
   cursor: pointer;
 }
@@ -14015,7 +13973,7 @@ select.gb-input {
   .gb-segnav-btn {
     padding-left: 2px;
     padding-right: 2px;
-    font-size: 0.75rem;
+    font-size: var(--text-xs);
     letter-spacing: -0.01em;
   }
 }
@@ -14053,7 +14011,7 @@ select.gb-input {
   min-width: 0;
 }
 .gb-notify-hint {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--fg3);
 }
 .gb-remset-field--wide {
@@ -14118,7 +14076,7 @@ button.gb-tone-chip:focus-visible {
   padding: 18px 0;
   text-align: center;
   color: var(--fg3);
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
 }
 .gb-hh-stats {
   display: grid;
@@ -14139,7 +14097,7 @@ button.gb-tone-chip:focus-visible {
   color: var(--fg1);
 }
 .gb-hh-stat-label {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--fg3);
 }
 .gb-hh-grid {
@@ -14222,7 +14180,7 @@ button.gb-tone-chip:focus-visible {
   flex-wrap: wrap;
   gap: var(--space-3);
   margin: 10px 0 var(--space-1);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--fg2);
 }
 .gb-hh-legend-item {
@@ -14303,7 +14261,7 @@ button.gb-tone-chip:focus-visible {
   justify-content: space-between;
   gap: var(--space-2);
   font-weight: 700;
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   color: var(--fg1);
 }
 .gb-hh-pop-actions {
@@ -14371,7 +14329,7 @@ button.gb-tone-chip:focus-visible {
   background: var(--surface);
   color: var(--fg1);
   font: inherit;
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
 }
 .gb-goal-ms-due-field {
   display: flex;

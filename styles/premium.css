@@ -252,15 +252,16 @@ html[data-premium='on'] .gb-btn--primary:active {
     inset 0 1px 0 rgba(255, 255, 255, 0.2),
     0 1px 2px rgba(150, 60, 8, 0.3);
 }
-/* This rule outranks .gb-btn--primary:hover and .gb-btn:disabled, so both are
-   restated here: a hover that answers, and a disabled button with no glow or press. */
+/* The rules above outrank app.css's primary :hover and .gb-btn:disabled, so
+   both are restated here: a hover that answers (the darker fill, which keeps
+   white text at AA), and a disabled button with no glow or press (after
+   :active, same specificity, so it wins). */
 @media (hover: hover) {
-  html[data-premium='on'] .gb-btn--primary:hover {
+  html[data-premium='on'] .gb-btn--primary:hover:not(:disabled) {
     background: var(--brand-fill-hover);
   }
 }
-html[data-premium='on'] .gb-btn--primary:disabled,
-html[data-premium='on'] .gb-btn--primary[disabled] {
+html[data-premium='on'] .gb-btn--primary:is(:disabled, [disabled]) {
   box-shadow: none;
   transform: none;
 }

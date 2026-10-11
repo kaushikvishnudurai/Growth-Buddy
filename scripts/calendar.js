@@ -564,7 +564,7 @@ function ScheduleSection(reminders, list, key, onSelectDate, onSaveRoutine) {
       'button',
       {
         type: 'button',
-        class: 'gb-sched-tab' + (scheduleView === v ? ' is-on' : ''),
+        class: 'gb-range-opt' + (scheduleView === v ? ' is-active' : ''),
         'aria-pressed': String(scheduleView === v),
         onclick: (e) => {
           scheduleView = v;
@@ -593,7 +593,7 @@ function ScheduleSection(reminders, list, key, onSelectDate, onSaveRoutine) {
       'div',
       { class: 'gb-day-head gb-sched-headrow' },
       h('span', { class: 'gb-day-head-title' }, 'Schedule'),
-      h('span', { class: 'gb-sched-tabs' }, viewBtn('day', 'Day'), viewBtn('week', 'Week')),
+      h('span', { class: 'gb-range-toggle gb-sched-tabs' }, viewBtn('day', 'Day'), viewBtn('week', 'Week')),
       onSaveRoutine
         ? h(
             'button',
