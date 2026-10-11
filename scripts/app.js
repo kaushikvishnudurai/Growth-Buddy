@@ -16401,12 +16401,11 @@ function tweenFromLast() {
 }
 
 /* ---- Command palette + keyboard shortcuts ----
-   Ctrl/Cmd+K anywhere, "/" or "?" outside a text field, and the header's search
-   button. The UI (palette.js, palette-core.js, palette.css) loads on first open;
-   only this hook rides in the boot chunk. palette.js builds its items from what
-   paletteApp() hands it: the state already in memory, and the same openers,
+   Ctrl/Cmd+K anywhere, "/" or "?" outside a text field, "g" then a letter, and
+   the header's search button. Everything but this hook is the lazy palette.js
+   chunk (the go-to letters too: "g c" before it has loaded waits a frame for it).
+   paletteApp() is what it gets: the state already in memory and the openers,
    featureOn / screenEnabled gates and Quick add path the rest of the app uses. */
-const GO_KEYS = { h: 'home', c: 'calendar', m: 'money', n: 'notes', o: 'goals', f: 'focus', r: 'report', s: 'settings' };
 let paletteChunk = null;
 function openPalette(view) {
   paletteChunk =
@@ -16420,39 +16419,26 @@ function openPalette(view) {
     .catch((err) => toastError(err, 'Couldn’t open search. Check your connection?'));
 }
 const paletteApp = () => ({
-  state, api, featureOn, screenEnabled, SCREENS, SCREEN_LABEL, GO_KEYS, setScreen, applyIntent,
+  state, api, featureOn, screenEnabled, SCREENS, SCREEN_LABEL, setScreen, applyIntent,
   openProfileSettings, openAddTask, openEditTask, openAddHabit, openHabitForm, calGoTo, toggleTheme,
   saveMoney, requestReceiptScan, saveUiPrefs, runQuickAdd,
 });
 let goPressedAt = 0; // "g", waiting for the letter of a go-to
 document.addEventListener('keydown', (e) => {
-  if (!state.user || e.isComposing || e.defaultPrevented) return;
   const k = e.key;
-  if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (k === 'k' || k === 'K')) {
+  if (!state.user || e.isComposing || e.defaultPrevented || e.altKey) return;
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (k === 'k' || k === 'K')) {
     e.preventDefault();
-    const open = document.querySelector('.gb-palette input');
-    if (open) open.select();
-    else openPalette();
-    return;
+    return openPalette(); // already open: palette.js refocuses that one
   }
-  if (e.ctrlKey || e.metaKey || e.altKey) return;
   const el = document.activeElement;
-  const typing = el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
-  if (typing || document.querySelector('[aria-modal="true"]')) {
-    goPressedAt = 0;
-    return;
-  }
-  if (goPressedAt && Date.now() - goPressedAt < 1500) {
-    goPressedAt = 0;
-    const id = GO_KEYS[k];
-    if (id) {
-      e.preventDefault();
-      applyIntent({ type: 'open', screen: id }); // gated by screenEnabled there
-    }
-    return;
-  }
+  const go = goPressedAt && Date.now() - goPressedAt < 1500;
   goPressedAt = 0;
-  if (k === '/' || k === '?') {
+  if (e.ctrlKey || e.metaKey || (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))))
+    return;
+  if (document.querySelector('[aria-modal="true"]')) return;
+  if (go) openPalette('go:' + k);
+  else if (k === '/' || k === '?') {
     e.preventDefault();
     openPalette(k === '?' ? 'help' : null);
   } else if (k === 'g') goPressedAt = Date.now();

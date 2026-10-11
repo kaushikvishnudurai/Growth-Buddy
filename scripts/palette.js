@@ -46,6 +46,8 @@ const iconOf = (item) =>
   (item.kind === 'screen'
     ? SCREEN_ICON[item.screen] || (NAV_CATALOG.find((n) => n.id === item.screen) || {}).icon || 'circle'
     : KIND_ICON[item.kind] || 'circle');
+// "g" then one of these (app.js's key hook hands the letter over as view 'go:<key>').
+const GO_KEYS = { h: 'home', c: 'calendar', m: 'money', n: 'notes', o: 'goals', f: 'focus', r: 'report', s: 'settings' };
 const isMac = () => /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
 /* Notes and circles live on their own screens, not in app state: listed once
@@ -246,9 +248,17 @@ function buildItems(app, openHelp) {
 
 let uid = 0;
 
-/** view: 'help' for the shortcut sheet; text: a line to start with (a cancelled Quick add). */
+/** view: 'help' for the shortcut sheet, 'go:<key>' for a go-to, else the palette;
+    text: a line to start with (a cancelled Quick add). */
 export function openPalette(app, view, text = '') {
   if (view === 'help') return openShortcutHelp(app);
+  if (view && view.startsWith('go:')) {
+    const id = GO_KEYS[view.slice(3)];
+    if (id) app.applyIntent({ type: 'open', screen: id }); // gated by screenEnabled there
+    return;
+  }
+  const open = document.querySelector('.gb-palette input');
+  if (open) return open.select();
   const { sheet, close } = openOverlay({ label: 'Search and commands', className: 'gb-palette' });
   const listId = 'gb-palette-list-' + ++uid;
   const prefs = (app.state.user && app.state.user.uiPrefs) || {};
@@ -435,7 +445,7 @@ export function openPalette(app, view, text = '') {
   if (text) input.setSelectionRange(text.length, text.length);
 }
 
-/* "?": every shortcut, from the same GO_KEYS the key hook reads; a go-to whose
+/* "?": every shortcut, from the same GO_KEYS the go-to reads; a go-to whose
    screen is switched off is left out, since the key would do nothing. */
 function openShortcutHelp(app) {
   const { sheet, close } = openOverlay({ label: 'Keyboard shortcuts', className: 'gb-shortcuts' });
@@ -446,7 +456,7 @@ function openShortcutHelp(app) {
       { class: 'gb-shortcut-keys' },
       ks.map((k) => (k === 'then' ? h('span', { class: 'gb-shortcut-then' }, 'then') : h('kbd', null, k)))
     );
-  const goes = Object.entries(app.GO_KEYS).filter(([, id]) => id === 'settings' || app.screenEnabled(id));
+  const goes = Object.entries(GO_KEYS).filter(([, id]) => id === 'settings' || app.screenEnabled(id));
   const rows = [
     [keys(mod, 'K'), 'Search and commands, even while typing'],
     [keys('/'), 'Search and commands'],
