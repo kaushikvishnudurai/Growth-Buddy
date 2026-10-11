@@ -8885,7 +8885,9 @@ button.gb-food-level {
   .gb-app {
     width: 100%;
     max-width: 440px;
-    height: auto;
+    /* A fixed height, not auto: a frame as tall as its content moved the bottom
+       nav between tabs and left Notes a short floating card. #gb-main scrolls. */
+    height: min(900px, calc(100dvh - 2 * clamp(20px, 4vh, 40px)));
     min-height: 0;
     max-height: min(900px, calc(100dvh - 2 * clamp(20px, 4vh, 40px)));
     border-radius: var(--radius-3xl);
