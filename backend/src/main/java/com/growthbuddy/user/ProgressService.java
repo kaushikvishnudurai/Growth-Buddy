@@ -30,6 +30,17 @@ public class ProgressService {
         addXp(userId, HABIT_CHECKIN_XP);
     }
 
+    /** An un-ticked day hands back what its tick paid (EXS-9); never below zero. */
+    @Transactional
+    public void revokeHabitCheckin(UUID userId) {
+        User user = users.findById(userId)
+                .orElseThrow(() -> ApiException.notFound("User not found"));
+        int nextXp = Math.max(0, Math.max(0, user.getXpTotal()) - HABIT_CHECKIN_XP);
+        user.setXpTotal(nextXp);
+        user.setLevel(levelForXp(nextXp));
+        users.save(user);
+    }
+
     /** A "break a habit" habit's clean days, each paid like one check-in (HabitService credits each once). */
     @Transactional
     public void awardHabitCleanDays(UUID userId, int days) {
