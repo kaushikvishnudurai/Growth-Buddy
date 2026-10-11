@@ -257,7 +257,7 @@ test('OFF-7: a sign-out made offline is revoked on the next boot', async ({ page
 });
 
 test('OFF-6: a screen never loaded, opened offline, says so instead of reloading', async ({ page, account, context, allowed }) => {
-  allowed.push('Screen failed to load', 'Failed to fetch', 'ERR_INTERNET_DISCONNECTED', 'goals.js', 'logomark.svg');
+  allowed.push('Screen failed to load', 'Failed to fetch', 'ERR_INTERNET_DISCONNECTED', 'goals.js', 'active-dates.js', 'logomark.svg');
   await signInFast(page, account);
   await context.setOffline(true);
   await go(page, 'goals');
