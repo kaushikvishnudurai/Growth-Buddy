@@ -23,6 +23,7 @@ open — don't go looking for a doc that isn't in this list.
 | Notes, the rich-text editor, photos in notes | `docs/scripts/notes.js.md` |
 | Report screen, charts | `docs/scripts/report.js.md` |
 | Insights (Report's pattern finder) | `docs/scripts/insights.js.md` |
+| Health screen, health readings, phone sync | `docs/scripts/health.js.md` |
 | Buddy (AI mentor) chat, streaming replies, crisis card | `docs/scripts/mentor.js.md` |
 | push / notifications, the phone's alarm queue | `docs/scripts/push.js.md` |
 | notification sounds, custom tones, `gen-chimes` | `docs/scripts/chime.js.md` |
@@ -57,7 +58,8 @@ fix the doc line if it was wrong. A doc you touch and don't update is worse than
   `node scripts/money-merge.test.mjs`, `node scripts/circle-core.test.mjs`, `node scripts/money-calc.test.mjs` (forecast, due/overdue bills, budgets, streaks, loans, CSV; pinned clock), `node scripts/money-category.test.mjs` (the tag a new expense starts on: history, then words), `node scripts/review.test.mjs`, `node scripts/timer.test.mjs`, `node scripts/home-order.test.mjs`, `node scripts/starter-packs.test.mjs`, `node scripts/day-plan.test.mjs`, **`node scripts/money-ledger.test.mjs`** (what a Money save
   sends: an item missed is an expense that never reaches the server, a false delete removes one the
   user still has), `node scripts/push.test.mjs`, `node scripts/health.test.mjs` (which stretch of
-  sleep becomes "last night"), `node scripts/nudges.test.mjs` (Home's one-tap guesses), `node scripts/app-logic.test.mjs` (water overlay +
+  sleep becomes "last night"), `node scripts/health-logic.test.mjs` (how a day's health value is built
+  from phone + typed readings: sums add, measurements take the newest), `node scripts/nudges.test.mjs` (Home's one-tap guesses), `node scripts/app-logic.test.mjs` (water overlay +
   offline replay order, backdated-summary guard, week generation, goal-progress rollback, double-tap
   guard, reminder edit PATCH + time range, nav layout split; helpers in `app-logic.js`), `node scripts/habit-stats.test.mjs`,
   **`node scripts/bundle-budget.mjs`** after `npm run build` (CI runs it: boot chunk and precache

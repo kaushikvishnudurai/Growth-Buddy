@@ -67,7 +67,7 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
 | Settings — Home screen customizer |
 | Settings — Display (text size preview) |
 | Notes — composer, editor (photos: develop-in animation, drop zone, picked ring), cards with a photo cover |
-| Health screen (`.gb-health-*`: auto-fit card grid, mono values, `.is-empty` dash, `.gb-health-asof`) — last in the file |
+| Health screen (`.gb-health-*`: header row, the "Last night" band (`.gb-health-track`, `.gb-health-lastbar.is-growing`, `.gb-health-night` fading by `--age`), tile grids with SVG traces (`.gb-health-trace`), the history sheet (`.gb-health-sheet`, chart axes, rows) and the log form (`.gb-health-valrow`); a `pointer: coarse` block that must stay LAST in the section), then the habit form's `.gb-habit-link-target` — last in the file |
 
 ## Editing rules
 

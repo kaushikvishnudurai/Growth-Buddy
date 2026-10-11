@@ -57,6 +57,7 @@ so it provably matches the running database.
 | money_state | **the Money document minus the ledger: `user_id`, `data` JSON, `updated_at`** |
 | money_accounts · money_transactions | Money ledger: accounts (balance computed), one row per expense/income/transfer keyed `(user_id, id)`. (`money_day_summaries`, the old AI day-summary cache, is dropped by `migrations.sql`.) |
 | bank_feed_consents | Account Aggregator consents for the bank feed (`BankFeedService`): consent id + status, last 4 digits per linked account, `synced_to` / `pending_session` / `requested_at` progress. No account numbers, no FI data. In `USER_OWNED_TABLES`. |
+| health_readings | health readings (`HealthReadingService`): `source` manual (any number a day) or phone (one per `(user_id, type, day)`, upserted by sync); `day` = the user's local day; `value2` = diastolic, bloodPressure only. In `USER_OWNED_TABLES`. |
 
 ## `users.timezone` is load-bearing
 
