@@ -6,7 +6,7 @@
    the profile menu.
    ===================================================================== */
 import { h, Card, SectionTitle, Icon } from './gb-kit.js';
-import { activeDates } from './review.js';
+import { activeDates } from './active-dates.js';
 
 // The server owns the level curve (ProgressService.XP_PER_LEVEL) and sends each
 // user's progress through it; this is only the fallback for an older cached user.

@@ -26,6 +26,8 @@ export default defineConfig({
       // Registered by app.js, which skips it in the Capacitor app.
       injectRegister: false,
       includeAssets: ['icons/apple-touch-icon.png', 'favicon-32.png'],
+      // See globIgnores: the manifest's install icons are not precached.
+      includeManifestIcons: false,
       manifest: {
         name: 'Growth Buddy',
         short_name: 'Growth Buddy',
@@ -70,6 +72,10 @@ export default defineConfig({
         // Code-splitting still earns its keep: it keeps first paint from blocking
         // on screens you may never open.
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        // Install-time icons: the OS fetches them once when the app is added to
+        // a home screen, and no screen draws them, so they are not shell. ~39 kB.
+        // icon-192 stays: notifications and the share card use it.
+        globIgnores: ['icons/icon-512.png', 'icons/maskable-*.png'],
         navigateFallback: '/index.html',
         // Pull our Web Push 'push' / 'notificationclick' handlers into the
         // generated service worker (keeps Workbox precaching intact).
@@ -125,6 +131,10 @@ export default defineConfig({
     // there is nothing to upload them to either. GB_SOURCEMAP=1 brings 'hidden'
     // back for a local build you want to debug or feed to a tracker.
     sourcemap: process.env.GB_SOURCEMAP === '1' ? 'hidden' : false,
+    // terser, not esbuild's minifier: ~5% smaller JS (boot chunk -28 kB, precache
+    // -31 kB at build 95) for a slower build. Nothing unsafe is switched on.
+    minify: 'terser',
+    terserOptions: { compress: { passes: 2 } },
   },
   // `vite preview` serves the production build, and without the same proxy every
   // /api call is cross-origin and dies on CORS — so the prod bundle can't be
@@ -172,7 +182,7 @@ export default defineConfig({
         changeOrigin: true,
         ws: true,
         configure: (proxy) => {
-          // SockJS uses both XHR (proxyReq) and a WebSocket upgrade (proxyReqWs).
+          // The STOMP WebSocket upgrade (proxyReqWs) and any plain request (proxyReq).
           // Rewrite Origin on both so the backend's CORS check passes.
           proxy.on('proxyReq', (proxyReq) => proxyReq.setHeader('origin', API_TARGET));
           proxy.on('proxyReqWs', (proxyReq) => proxyReq.setHeader('origin', API_TARGET));

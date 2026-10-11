@@ -42,6 +42,7 @@ import {
   resolveHomeLayout,
   sleepHours,
   StreakChain,
+  loadOutlook,
 } from './dashboard.js';
 import { habitDue, tasksForToday } from './home-order.js';
 import { withProgressLog, needsProgressLog } from './goal-milestones.js';
@@ -2908,6 +2909,9 @@ async function loadData() {
       api('/api/score/today'),
       api('/api/water'),
       api('/api/reminders'),
+      // Home's Outlook card code (lazy for the boot chunk's sake); a failed load
+      // only leaves that card out.
+      loadOutlook().catch(() => null),
     ]);
     state.tasks = tasksRaw.map(mapTask);
     state.habits = habits;

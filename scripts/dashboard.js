@@ -19,7 +19,11 @@ import {
 } from './gb-kit.js';
 import { MoneyHomeCard } from './money-home.js';
 import { OutlookCard } from './outlook-card.js';
-import { outlook } from './outlook.js';
+/* outlook.js drags the whole Insights engine (insights.js) with it, ~20 kB of the
+   boot chunk. It loads beside wave 1 instead: app.js loadData awaits
+   loadOutlook() with the five boot calls, so it is here by Home's first render. */
+let outlook = null;
+export const loadOutlook = () => import('./outlook.js').then((m) => (outlook = m.outlook));
 import { CacheStorage } from './cache-storage.js';
 import { occursOn } from './recurrence.js';
 import {
@@ -2852,6 +2856,7 @@ function ScreenDashboard({
     // A turned-off feature drops out of the cards that summarise it, not just its own card.
     score: () => ScoreCard({ score, tasks, habits: on('habits') ? habits : [], streakAsked: oneKind === 'streak' }),
     outlook: () =>
+      outlook &&
       OutlookCard({
         outlook: outlook({
           trends,
