@@ -157,10 +157,12 @@
   box-shadow: inset 0 -3px 0 var(--iris-500);
 }
 
+/* A free day is the quiet default: an outline, no fill. A month of green
+   cells out-shouted the days that actually had something on them. */
 .gb-mini-cal-day.is-free {
-  background: var(--success-soft);
-  color: var(--success-soft-fg);
-  border-color: var(--leaf-500);
+  background: transparent;
+  color: var(--fg1);
+  border-color: var(--border);
 }
 
 /* Same specificity as .has-tasks / .is-free and written before them, so on a
@@ -173,6 +175,7 @@
 
 .gb-mini-cal-day .num {
   display: block;
+  font-family: var(--font-mono);
 }
 
 .gb-mini-cal-day .badge {
@@ -250,7 +253,7 @@
 }
 
 .gb-mini-cal-legend-item .dot.is-free {
-  background: var(--leaf-500);
+  box-shadow: inset 0 0 0 1.5px var(--border-strong);
 }
 
 .gb-mini-cal-day-title {

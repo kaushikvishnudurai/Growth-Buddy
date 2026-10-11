@@ -4047,11 +4047,114 @@ button.gb-seat:disabled {
   padding-right: 0;
 }
 
-.gb-score-card {
+/* Home's "where today stands" (ScoreCard). The signature: one bead per thing
+   owed today, habits round, tasks square, filled when done; a big Space Mono
+   count over them, and the one thing to do next under them. */
+.gb-today {
   padding: 20px;
   display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.gb-today-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.25rem;
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-tight);
+  color: var(--fg1);
+}
+.gb-today-count {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  font-family: var(--font-mono);
+  line-height: 1;
+}
+.gb-today-n {
+  font-size: 3rem;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  color: var(--brand-ink);
+}
+.gb-today-of {
+  font-size: 0.9375rem;
+  color: var(--fg2);
+}
+.gb-today-sub {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--fg2);
+}
+.gb-today-beads {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 18px;
+  gap: 6px;
+}
+.gb-bead,
+.gb-chain-link {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--border-strong);
+}
+.gb-bead--task {
+  border-radius: 3px;
+}
+.gb-bead.is-on,
+.gb-chain-link.is-on {
+  background: var(--brand-fill);
+  box-shadow: none;
+}
+.gb-today-more {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--fg3);
+}
+.gb-today-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--fg2);
+}
+.gb-today-streak {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--brand-ink);
+  font-weight: 700;
+}
+.gb-today-next {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 2px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.gb-today-next-k {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  color: var(--brand-ink);
+}
+.gb-today-next-t {
+  flex: 1;
+  min-width: 0;
+  font-weight: 700;
+  font-size: 0.9375rem;
+  color: var(--fg1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .gb-score-heading {
   font-family: var(--font-display);
@@ -4877,88 +4980,75 @@ button.gb-food-level {
   }
 }
 
+/* Home's habits (HabitStrip): one card of rows, each habit's name over its
+   seven-day chain, the same beads as the day above. The Habits screen draws the
+   same chain (StreakChain) in its rows. */
 .gb-habit-strip {
+  padding: 4px 0;
+}
+.gb-habit-line {
   display: flex;
+  align-items: center;
   gap: 12px;
-  padding: 4px 0 2px;
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
+  padding: 10px 16px;
 }
-.gb-habit-strip::-webkit-scrollbar {
-  display: none;
+.gb-habit-line + .gb-habit-line {
+  border-top: 1px solid var(--border);
 }
-.gb-habit-card {
-  padding: 14px;
-  min-width: 130px;
-  flex: none;
-  scroll-snap-align: start;
+.gb-habit-line-main {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  position: relative;
-  transition: opacity var(--dur-fast);
 }
-.gb-habit-card.is-done {
-  opacity: 0.78;
+.gb-habit-line .name {
+  font-weight: 700;
+  font-size: 0.875rem;
+  color: var(--fg1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.gb-habit-card.is-done .name {
-  text-decoration: line-through;
+.gb-habit-line.is-done .name {
   color: var(--fg3);
 }
-.gb-habit-card .name {
-  font-weight: 700;
-  font-size: 0.84375rem;
-  color: var(--fg1);
-  margin: 10px 0 2px;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-}
-.gb-habit-card .streak {
-  display: flex;
+.gb-chain {
+  display: inline-flex;
   align-items: center;
+  gap: 8px;
+}
+/* Beads on a thread: the line runs behind the links, so a run reads as one. */
+.gb-chain-links {
+  display: inline-flex;
   gap: 4px;
+  background: linear-gradient(var(--border-strong), var(--border-strong)) center / 100% 1.5px
+    no-repeat;
+}
+.gb-chain-link {
+  width: 10px;
+  height: 10px;
+  background: var(--surface);
+}
+.gb-chain-link.is-owed {
+  box-shadow: inset 0 0 0 1.5px var(--brand);
+}
+.gb-chain-n {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 700;
   color: var(--brand-ink);
-  font-weight: 800;
+}
+.gb-habits-today {
+  margin-left: 10px;
+  white-space: nowrap;
+  font-family: var(--font-mono);
   font-size: 0.8125rem;
-}
-.gb-habit-card .gb-check {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-}
-
-/* Desktop has the width to lay every habit out, so the strip wraps into rows
-   and scrolls down rather than running off to the right where the fifth habit
-   was never reachable. The phone keeps the horizontal snap strip — that one
-   already works. */
-@media (min-width: 1024px) {
-  .gb-habit-strip {
-    flex-wrap: wrap;
-    overflow-x: hidden;
-    overflow-y: auto;
-    max-height: 284px; /* ~2 rows; the third peeks, which is the scroll hint */
-    scroll-snap-type: none;
-    scrollbar-width: thin;
-    scrollbar-color: var(--border) transparent;
-  }
-  .gb-habit-strip::-webkit-scrollbar {
-    display: block;
-    width: 4px;
-  }
-  .gb-habit-strip::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  .gb-habit-strip::-webkit-scrollbar-thumb {
-    background: var(--border);
-    border-radius: 2px;
-  }
-  .gb-habit-card {
-    flex: 1 1 150px;
-    max-width: 220px;
-  }
+  font-weight: 400;
+  color: var(--fg3);
 }
 
 .gb-quote-card {

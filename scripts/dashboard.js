@@ -9,7 +9,6 @@ import {
   IconChip,
   Icon,
   Check,
-  ProgressRing,
   plural,
   openOverlay,
   formatTime as sharedFormatTime,
@@ -187,90 +186,139 @@ function allGoals(sections) {
   return (sections || []).flatMap((section) => section.goals || []);
 }
 
-function ScoreCard({ score, tasks: allTasks, habits }) {
-  // Paused tasks are out of the score, so out of its "x/y tasks" line too.
+/* A habit's streak as its last seven days, today on the right; filled = inside
+   the current run. ponytail: drawn from `streak` + `doneToday` alone (Home has
+   no per-day history loaded), so a day before the run reads "not in the streak"
+   rather than a confirmed miss. Load /api/habits/history if it must say more. */
+function StreakChain({ streak, doneToday, owed }) {
+  const n = Number(streak) || 0;
+  const before = doneToday ? n - 1 : n; // days of the run before today
+  const links = [];
+  for (let k = 6; k >= 0; k--) {
+    const on = k === 0 ? !!doneToday : k <= before;
+    links.push(
+      h('i', { class: 'gb-chain-link' + (on ? ' is-on' : '') + (k === 0 && !on && owed ? ' is-owed' : '') })
+    );
+  }
+  return h(
+    'span',
+    { class: 'gb-chain', role: 'img', 'aria-label': n + '-day streak', title: n + '-day streak' },
+    h('span', { class: 'gb-chain-links', 'aria-hidden': 'true' }, links),
+    h('span', { class: 'gb-chain-n', 'aria-hidden': 'true' }, Icon('flame', { size: 12 }), String(n))
+  );
+}
+
+/* Today, as beads: one per thing owed today, habits round and tasks square,
+   filled when done. Same arithmetic as the sub-line (and the server's score):
+   paused tasks are out, habits are the ones owed today (habitDue). */
+const BEADS_SHOWN = 36;
+
+function ScoreCard({ score, tasks: allTasks, habits, toggleTask, toggleHabit }) {
   const tasks = allTasks.filter((t) => !t.paused);
   const doneTasks = tasks.filter((t) => t.done).length;
-  // The habits owed today, as the server's score counts them (HabitService.
-  // countsOn): a weekly habit already done this week, or a paused one, is not
-  // today's miss. "2/3 habits" used to count every habit.
   const dueHabits = habits.filter((hb) => habitDue(hb) || hb.doneToday);
   const doneHabits = dueHabits.filter((hb) => hb.doneToday).length;
   const best = topStreaks(habits);
+  const total = tasks.length + dueHabits.length;
+  const done = doneTasks + doneHabits;
 
-  const ringNumber = h(
-    'span',
+  // Done first in each group, so the filled run reads left to right like progress.
+  const byDone = (key) => (a, b) => Number(!!b[key]) - Number(!!a[key]);
+  const items = [
+    ...dueHabits.slice().sort(byDone('doneToday')).map((hb) => ['habit', hb.doneToday]),
+    ...tasks.slice().sort(byDone('done')).map((t) => ['task', t.done]),
+  ];
+  const more = Math.max(0, items.length - BEADS_SHOWN);
+  const beads = h(
+    'div',
     {
-      style: {
-        fontFamily: 'var(--font-display)',
-        fontWeight: 800,
-        // The hole is 70px (92 - 2 x 11 stroke). "100%" at the old 1.625rem
-        // filled it edge to edge and a larger text size pushed it into the
-        // ring, so the number shrinks at three digits and is capped in px:
-        // a fixed-size ring can't grow with the text.
-        fontSize: score >= 100 ? 'min(1.25rem, 20px)' : 'min(1.625rem, 26px)',
-        color: 'var(--fg1)',
-        lineHeight: 1,
-      },
+      class: 'gb-today-beads',
+      role: 'img',
+      'aria-label':
+        done + ' of ' + total + ' done today: ' + doneHabits + ' of ' + dueHabits.length +
+        ' habits, ' + doneTasks + ' of ' + tasks.length + ' tasks',
     },
-    score + '%'
-  );
-  // The unit lives in the number ("17%"), not in the label. "17" over "SCORE"
-  // named a currency nobody could price; the percent sign says it's a share of
-  // something, and the sub-line beside it ("0/4 tasks · 1/3 habits") says of
-  // what. The word stays "score" because Progress calls it that too, in the
-  // summary tile and in the "Daily score" trend — one number, one name.
-  const ringLabel = h(
-    'span',
-    { style: { fontSize: '0.625rem', fontWeight: 700, color: 'var(--fg3)' } },
-    'SCORE'
+    items
+      .slice(0, BEADS_SHOWN)
+      .map(([kind, on]) => h('i', { class: 'gb-bead gb-bead--' + kind + (on ? ' is-on' : '') })),
+    more ? h('span', { class: 'gb-today-more' }, '+' + more) : null
   );
 
-  const ring = ProgressRing({
-    value: score,
-    size: 92,
-    color: 'var(--brand)',
-    children: [ringNumber, ringLabel],
-  });
+  // What to do next: an overdue task beats everything, then a habit still owed
+  // today, then the first open task (home-order.js orders both lists).
+  const openTasks = sortTasksForHome(tasks).filter((t) => !t.done);
+  const owed = sortHabitsForHome(dueHabits).filter((hb) => !hb.doneToday);
+  const next =
+    openTasks[0] && openTasks[0].overdue
+      ? { title: openTasks[0].title, kind: 'Overdue', toggle: toggleTask, id: openTasks[0].id }
+      : owed[0]
+        ? { title: owed[0].name, kind: 'Next habit', toggle: toggleHabit, id: owed[0].id }
+        : openTasks[0]
+          ? { title: openTasks[0].title, kind: 'Next task', toggle: toggleTask, id: openTasks[0].id }
+          : null;
 
-  const heading =
-    score >= 70 ? "You're on track 🔥" : score > 0 ? 'Keep it going' : 'Let’s get started';
+  const heading = !total
+    ? 'Nothing planned yet'
+    : done === total
+      ? 'All done for today'
+      : score >= 70
+        ? 'You’re on track'
+        : done > 0
+          ? 'Keep it going'
+          : 'Let’s get started';
 
-  // Days and weeks are different units, so each gets its own pill; one max
+  // Days and weeks are different units, so each gets its own figure; one max
   // over both called a 6-week streak "6-day".
-  const pills = [];
-  [
+  const streaks = [
     [best.days, '-day', ' day streak'],
     [best.weeks, '-week', ' week streak'],
-  ].forEach(([n, unit, spoken]) => {
-    if (n > 0) {
-      const pill = Pill({
-        icon: 'flame',
-        label: n + unit,
-        bg: 'var(--coral-50)',
-        fg: 'var(--coral-700)',
-      });
-      pill.setAttribute('aria-label', 'Best ' + n + spoken);
-      pills.push(pill);
-    }
-  });
+  ]
+    .filter(([n]) => n > 0)
+    .map(([n, unit, spoken]) =>
+      h(
+        'span',
+        { class: 'gb-today-streak', 'aria-label': 'Best ' + n + spoken },
+        Icon('flame', { size: 13 }),
+        n + unit
+      )
+    );
 
   const subParts = [];
   if (tasks.length) subParts.push(doneTasks + '/' + tasks.length + ' tasks');
   if (dueHabits.length) subParts.push(doneHabits + '/' + dueHabits.length + ' habits');
-  const sub = subParts.length ? subParts.join(' · ') : 'Add a task or habit to begin';
 
   return Card({
-    className: 'gb-score-card',
+    className: 'gb-today',
     children: [
-      ring,
-      h(
-        'div',
-        { style: { flex: 1 } },
-        h('div', { class: 'gb-score-heading' }, heading),
-        h('div', { class: 'gb-score-sub' }, sub),
-        pills.length ? h('div', { class: 'gb-pill-row' }, pills) : null
-      ),
+      h('h2', { class: 'gb-today-title' }, heading),
+      total
+        ? h(
+            'div',
+            { class: 'gb-today-count' },
+            h('span', { class: 'gb-today-n' }, String(done)),
+            h('span', { class: 'gb-today-of' }, '/' + total + ' done')
+          )
+        : h('p', { class: 'gb-today-sub' }, 'Add a task or habit to begin'),
+      total ? beads : null,
+      subParts.length || streaks.length
+        ? h(
+            'div',
+            { class: 'gb-today-meta' },
+            subParts.length ? h('span', null, subParts.join(' · ')) : null,
+            // The server's daily score, the same number Progress trends.
+            total ? h('span', null, 'Score ' + score + '%') : null,
+            ...streaks
+          )
+        : null,
+      next && next.toggle
+        ? h(
+            'div',
+            { class: 'gb-today-next' },
+            h('span', { class: 'gb-today-next-k' }, next.kind),
+            h('span', { class: 'gb-today-next-t' }, next.title),
+            Check({ done: false, onToggle: () => next.toggle(next.id), label: next.title })
+          )
+        : null,
     ],
   });
 }
@@ -416,35 +464,32 @@ function TasksCard(props) {
   return card;
 }
 
+/* One habit on Home: name over its seven-day chain, tick on the right. Weekly
+   and N-a-week habits count weeks, which seven day-links can't show, so they
+   keep the figure alone. */
 function HabitCard(habit, toggleHabit) {
-  return Card({
-    className: 'gb-habit-card' + (habit.doneToday ? ' is-done' : ''),
-    children: [
-      IconChip({ domain: habit.domain, icon: habit.icon }),
+  const daily = (habit.cadence || 'daily') === 'daily';
+  const n = habit.streak || 0;
+  return h(
+    'div',
+    { class: 'gb-habit-line' + (habit.doneToday ? ' is-done' : '') },
+    IconChip({ domain: habit.domain, icon: habit.icon, size: 36, iconSize: 18 }),
+    h(
+      'div',
+      { class: 'gb-habit-line-main' },
       h('div', { class: 'name' }, habit.name),
-      // The flame and a bare number said nothing to a screen reader.
-      h(
-        'div',
-        {
-          class: 'streak',
-          role: 'img',
-          'aria-label':
-            (habit.streak || 0) +
-            ((habit.cadence || 'daily') === 'daily' ? '-day' : '-week') +
-            ' streak',
-        },
-        Icon('flame', { size: 14, color: 'var(--coral-500)' }),
-        String(habit.streak || 0)
-      ),
-      toggleHabit
-        ? Check({
-            done: !!habit.doneToday,
-            onToggle: () => toggleHabit(habit.id),
-            label: habit.name,
-          })
-        : null,
-    ],
-  });
+      daily
+        ? StreakChain({ streak: n, doneToday: habit.doneToday, owed: habitDue(habit) })
+        : h(
+            'span',
+            { class: 'gb-chain', role: 'img', 'aria-label': n + '-week streak' },
+            h('span', { class: 'gb-chain-n', 'aria-hidden': 'true' }, Icon('flame', { size: 12 }), n + '-week')
+          )
+    ),
+    toggleHabit
+      ? Check({ done: !!habit.doneToday, onToggle: () => toggleHabit(habit.id), label: habit.name })
+      : null
+  );
 }
 
 function QuoteCard({ quote }) {
@@ -2084,13 +2129,12 @@ function HabitStrip({ habits, onAdd, toggleHabit }) {
       ],
     });
   }
-  return h(
-    'div',
-    { class: 'gb-habit-strip' },
-    // All of them. The old slice(0, 4) meant a fifth habit simply didn't exist
-    // on Home — not scrolled off, not rendered. What is still owed comes first.
-    sortHabitsForHome(habits).map((h2) => HabitCard(h2, toggleHabit))
-  );
+  // All of them: the old slice(0, 4) meant a fifth habit simply didn't exist
+  // on Home. What is still owed comes first.
+  return Card({
+    className: 'gb-habit-strip',
+    children: sortHabitsForHome(habits).map((h2) => HabitCard(h2, toggleHabit)),
+  });
 }
 
 /* ---- Mini Calendar Card ---- */
@@ -2567,7 +2611,8 @@ function ScreenDashboard({
   // One renderer per widget id. Each returns the card node(s) for that widget.
   const renderers = {
     // A turned-off feature drops out of the cards that summarise it, not just its own card.
-    score: () => ScoreCard({ score, tasks, habits: on('habits') ? habits : [] }),
+    score: () =>
+      ScoreCard({ score, tasks, habits: on('habits') ? habits : [], toggleTask, toggleHabit }),
     plan: () => TodayPlanCard({ water: on('water') ? water : null, wellness, onPlanToday }),
     wellness: () => WellnessCard({ wellness, onAddSleep, onAddMood, onConfirmSleep, onQuickMood }),
     tasks: () => [
@@ -2807,6 +2852,7 @@ function HabitSleepInsightCard({ habits, wellness }) {
 
 export {
   sleepHours,
+  StreakChain,
   ScreenDashboard,
   HOME_WIDGETS,
   resolveHomeLayout,
