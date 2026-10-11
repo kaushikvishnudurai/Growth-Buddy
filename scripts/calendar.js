@@ -1810,7 +1810,7 @@ function openEditDialog(rem, occKey, onEdit) {
       // Closes only once the save lands: closing first lost every edit when
       // it failed (onEdit has toasted why and rethrown).
       onclick: async (e) => {
-        const text = textInput.value.trim();
+        const text = visibleText(textInput.value);
         if (!text) {
           textErr.set('Write what to be reminded of first.');
           textInput.focus();
@@ -2284,7 +2284,7 @@ function buildForm() {
   });
 
   async function submit() {
-    const text = textInput.value.trim();
+    const text = visibleText(textInput.value);
     if (!text) {
       textErr.set('Write what to be reminded of first.');
       textInput.focus();

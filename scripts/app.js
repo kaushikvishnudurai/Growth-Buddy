@@ -30,6 +30,7 @@ import {
   setThinking,
   focusSoon,
   SHEET_EXIT_MS,
+  visibleText,
 } from './gb-kit.js';
 import { setLocale, localeFromUser, fmtDate } from './i18n.js';
 import { BREAK_LENGTHS, breakState, startBreak, endBreak } from './break.js';
@@ -11192,7 +11193,7 @@ function openProfileSettings(initialTab) {
       };
 
       const profilePayload = {
-        displayName: (displayNameInput.value || '').trim() || null,
+        displayName: visibleText(displayNameInput.value) || null,
         timezone: (timezoneInput.value || '').trim() || null,
         dob: dobInput.value || null,
         ageYears: parseDobToAge(dobInput.value, dobInput),
@@ -12504,6 +12505,8 @@ function taskForm(task, presetGoalId) {
   const dueInput = h('input', {
     type: 'datetime-local',
     class: 'gb-input',
+    min: '1970-01-02T00:00',
+    max: '2037-12-31T23:59',
     value: task && task.dueAt ? toDateTimeLocal(task.dueAt) : '',
   });
   // Goal (optional): the open goals, plus the one the task is already on even
@@ -12591,8 +12594,11 @@ function taskForm(task, presetGoalId) {
     ),
     focus: () => focusSoon(titleInput),
     read: () => {
-      const title = when ? when.rest : titleInput.value.trim();
+      const title = visibleText(when ? when.rest : titleInput.value);
       if (!title) throw fieldRefusal(titleInput, 'Give the task a title.');
+      // The server's TIMESTAMP column holds 1970 to 2038 (HOS-1).
+      if (dueInput.value && (dueInput.value < dueInput.min || dueInput.value > dueInput.max))
+        throw fieldRefusal(dueInput, 'Pick a due date between 1970 and 2037.');
       return {
         title,
         priority: priority.get(),
@@ -13590,7 +13596,7 @@ function openHabitForm(habit) {
         }
       : null,
     onPrimary: async () => {
-      const name = nameInput.value.trim();
+      const name = visibleText(nameInput.value);
       if (!name) throw fieldRefusal(nameInput, 'Give the habit a name.');
       const d = domain.get();
       // Editing keeps the habit's own icon unless a preset or a new category says otherwise.

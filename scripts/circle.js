@@ -12,6 +12,7 @@ import {
   confirmDialog,
   openOverlay,
   focusSoon,
+  visibleText,
 } from './gb-kit.js';
 import { toast } from './toast.js';
 import {
@@ -611,7 +612,7 @@ function openChat(mApi, linkId, partnerName, currentUserId) {
       type: 'button',
       class: 'gb-btn gb-btn--primary gb-btn--compact',
       onclick: async () => {
-        const body = input.value.trim();
+        const body = visibleText(input.value);
         if (!body || sendBtn.disabled) return;
         sendBtn.disabled = true;
         try {
@@ -1169,7 +1170,7 @@ function openFormModal({ title, sub, fields, submitLabel, onSubmit, presets }) {
       onclick: async () => {
         const values = {};
         for (const k in inputs) {
-          values[k] = inputs[k].type === 'checkbox' ? inputs[k].checked : inputs[k].value.trim();
+          values[k] = inputs[k].type === 'checkbox' ? inputs[k].checked : visibleText(inputs[k].value);
         }
         try {
           submitBtn.disabled = true;
@@ -1914,7 +1915,7 @@ function ChallengesPanel({ api, currentUserId, wins, addHabit }) {
         type: 'button',
         class: 'gb-btn gb-btn--primary gb-btn--compact',
         onclick: async () => {
-          const body = input.value.trim();
+          const body = visibleText(input.value);
           if (!body || send.disabled) return;
           send.disabled = true;
           try {
@@ -2066,7 +2067,7 @@ function ChallengesPanel({ api, currentUserId, wins, addHabit }) {
         'Reply'
       );
       async function sendReply() {
-        const body = field.value.trim();
+        const body = visibleText(field.value);
         if (!body || sendBtn.disabled) return;
         sendBtn.disabled = true;
         try {
