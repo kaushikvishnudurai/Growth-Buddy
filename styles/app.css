@@ -748,6 +748,8 @@ button.gb-sectiontitle-act {
 .gb-login-sub {
   margin: 0 0 8px;
   color: var(--fg3);
+  /* The verify screen names the address, one unbroken word that widened the card past a phone. */
+  overflow-wrap: anywhere;
 }
 
 .gb-login-label {
@@ -2430,14 +2432,6 @@ body:has(.is-thinking, .gb-thinking)::after {
   text-align: right;
   min-width: 0;
   overflow-wrap: anywhere;
-}
-.gb-setup-text {
-  margin: 0 0 8px;
-  color: var(--fg2);
-  line-height: 1.45;
-}
-.gb-setup-features .gb-feature-row {
-  padding: 10px 2px;
 }
 /* "Use <zone>" / "Keep <zone>" carry a zone name: let it wrap, never overflow. */
 .gb-setup-modal .gb-btn {

@@ -97,3 +97,31 @@ export function inFlightKeys() {
   };
   return set;
 }
+
+/* Chrome still reports India as "Asia/Calcutta"; the account says "Asia/Kolkata".
+   Same place, so run the stored name through Intl to get the browser's spelling. */
+export function sameZone(stored, device) {
+  try {
+    return new Intl.DateTimeFormat('en', { timeZone: stored }).resolvedOptions().timeZone === device;
+  } catch (_) {
+    return stored === device;
+  }
+}
+
+/* Which first-run steps a new account sees. The goal picker when its chunk
+   loaded; the timezone step only when the device and the account disagree —
+   signup sends the device zone, so for nearly everyone there is nothing to ask.
+   Push is asked at the first timed save (pushAskDue), features live in
+   Settings › Layout. */
+export function firstRunSteps({ hasGoal, accountZone, deviceZone }) {
+  const differs = !!deviceZone && !!accountZone && !sameZone(accountZone, deviceZone);
+  return [hasGoal && 'goal', differs && 'timezone'].filter(Boolean);
+}
+
+/* Whether saving something timed should ask for notifications now: once per
+   account (`asked` = ui_prefs.pushAsked), never inside first-run, only where
+   the platform can notify, push is off on this device and the user hasn't
+   already refused it (`permission` 'denied'). */
+export function pushAskDue({ needs, setupOpen, asked, supported, subscribed, permission }) {
+  return !!needs && !setupOpen && !asked && !!supported && !subscribed && permission !== 'denied';
+}

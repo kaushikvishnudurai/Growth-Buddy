@@ -50,6 +50,9 @@ import {
   latestSeq,
   restoreKey,
   inFlightKeys,
+  sameZone,
+  firstRunSteps,
+  pushAskDue,
 } from './app-logic.js';
 import { MEAL_SLOTS, mealSlotAt, effectiveMl, labelFor, suggestWaterGoalMl, slotOf } from './nutrition.js';
 import {
@@ -110,6 +113,7 @@ import {
   disablePush,
   pushSubscribed,
   pushSupported,
+  pushPermission,
   pushTestLocal,
   syncDeviceAlarms,
   usualDrinkHours,
@@ -123,6 +127,7 @@ import {
   isNative,
   deviceLabelHeader,
   localNotificationsAvailable,
+  localNotificationPermission,
   nativePlugin,
   applyNativeStatusBar,
   hideNativeSplash,
@@ -1962,15 +1967,6 @@ function syncDeviceTimezone() {
   clearTimeout(tzOfferTimer);
   tzOfferTimer = setTimeout(offerDeviceTimezone, 1500);
 }
-/* Chrome still reports India as "Asia/Calcutta"; the account says "Asia/Kolkata".
-   Same place, so run the stored name through Intl to get the browser's spelling. */
-function sameZone(stored, device) {
-  try {
-    return new Intl.DateTimeFormat('en', { timeZone: stored }).resolvedOptions().timeZone === device;
-  } catch (_) {
-    return stored === device;
-  }
-}
 function deviceZone() {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || '';
@@ -2013,7 +2009,7 @@ function offerDeviceTimezone() {
 }
 
 /* Ask for notification permission and say how it went. Settings › Alerts and
-   first-run setup share it. Resolves true only when push is on. */
+   the first timed save (askPushOnce) share it. Resolves true only when push is on. */
 async function enablePushFlow(okMessage) {
   const native = localNotificationsAvailable();
   const r = await enablePush(api);
@@ -2041,16 +2037,46 @@ async function enablePushFlow(okMessage) {
   return false;
 }
 
+/* The notification ask, at the moment it makes sense: the first time a timed
+   reminder or a habit with a reminder time is saved (and once at the end of
+   first-run when the goal step made timed ones). Once per account
+   (`ui_prefs.pushAsked`, recorded before asking, so a refusal is never
+   re-asked), only when this device can notify and push is off. In the app the
+   permission is the native one (localNotificationPermission), never the
+   WebView's Notification. The rules are pushAskDue in app-logic.js. */
+async function askPushOnce(needs) {
+  if (!needs || !state.user || firstRunOpen || !pushSupported()) return;
+  const native = localNotificationsAvailable();
+  const [subscribed, permission] = await Promise.all([
+    pushSubscribed(),
+    native ? localNotificationPermission() : pushPermission(),
+  ]);
+  // Re-read after the awaits: two quick saves must not both ask.
+  const due = pushAskDue({
+    needs,
+    setupOpen: firstRunOpen,
+    asked: !!(state.user && (state.user.uiPrefs || {}).pushAsked),
+    supported: true,
+    subscribed,
+    permission,
+  });
+  if (!due || !state.user) return;
+  saveUiPrefs({ pushAsked: true });
+  enablePushFlow('Notifications on. Your reminders will ring here.');
+}
+
 /* ---- First-run setup ----
    Once per account, after a NEW account's first data load: a goal (the
-   starter-pack picker, starterPicker), timezone, notifications, features —
-   four skippable steps in one sheet. Decided in
+   starter-pack picker, starterPicker), then the timezone only when the device
+   and the account disagree (firstRunSteps, app-logic.js). Notifications are
+   asked at the first timed save (askPushOnce); features stay in Settings ›
+   Layout, all on. Decided in
    loadData() once wave 1 lands, because "new" is read from real data: an
    account that already has tasks, habits or reminders, or dismissed the Home
    checklist, is marked `ui_prefs.setupDone` silently and never sees it. Any
    way out (Done, Skip on the last step, Escape, the backdrop) sets setupDone,
    so it can't come back on another device either. While it is undecided,
-   offerDeviceTimezone() stands down — the first step asks the same thing. */
+   offerDeviceTimezone() stands down — the timezone step asks the same thing. */
 let firstRunOpen = false;
 function maybeStartFirstRun() {
   const u = state.user;
@@ -2084,6 +2110,19 @@ async function openFirstRunSetup() {
     return;
   }
   const tz = deviceZone();
+  const STEP_FNS = { goal: goalStep, timezone: timezoneStep };
+  const steps = firstRunSteps({
+    hasGoal: !!mod,
+    accountZone: state.user.timezone,
+    deviceZone: tz,
+  }).map((k) => STEP_FNS[k]);
+  if (!steps.length) {
+    // No goal chunk (offline) and nothing to ask about the zone: setup is done.
+    firstRunOpen = false;
+    saveUiPrefs(tz ? { setupDone: true, tzAsked: tz } : { setupDone: true });
+    syncDeviceTimezone();
+    return;
+  }
   const { sheet, close } = openOverlay({
     label: 'Set up Growth Buddy',
     className: 'gb-setup-modal',
@@ -2092,11 +2131,16 @@ async function openFirstRunSetup() {
       // Whatever step it was left on, it has been seen: never again.
       saveUiPrefs(tz ? { setupDone: true, tzAsked: tz } : { setupDone: true });
       syncDeviceTimezone();
+      // The goal step may have made timed habits and reminders: they are the
+      // first thing worth a notification, and the sheet is gone now.
+      askPushOnce(
+        (state.reminders || []).some((r) => r.time) || (state.habits || []).some((x) => x.reminderTime)
+      );
     },
   });
 
-  const steps = [mod && goalStep, timezoneStep, notifyStep, featuresStep].filter(Boolean);
   let at = 0;
+  let saidDone = false; // the goal step's apply() already toasts "You're set up"
   const dots = h(
     'div',
     { class: 'gb-setup-dots', 'aria-hidden': 'true' },
@@ -2117,7 +2161,8 @@ async function openFirstRunSetup() {
     h(
       'div',
       { class: 'gb-modal-head' },
-      h('div', { class: 'gb-setup-top' }, stepLabel, dots),
+      // One step needs no "Step 1 of 1".
+      steps.length > 1 ? h('div', { class: 'gb-setup-top' }, stepLabel, dots) : null,
       titleEl,
       subEl
     ),
@@ -2128,7 +2173,7 @@ async function openFirstRunSetup() {
 
   function next() {
     if (at >= steps.length - 1) {
-      toastSuccess('You’re all set.');
+      if (!saidDone) toastSuccess('You’re all set.');
       close();
       return;
     }
@@ -2175,23 +2220,24 @@ async function openFirstRunSetup() {
   // (budgetsFrom); offer one once Money has 30 days of spending.
   function goalStep() {
     const p = starterPicker(mod);
-    // The button says what it will do: "Next" until a chip is on.
+    // The button says what it will do: "Next" (or "Done" when nothing follows) until a chip is on.
+    const idle = steps.length > 1 ? 'Next' : 'Done';
     p.body.addEventListener('click', () => {
-      if (steps[at] === goalStep) primaryBtn.textContent = p.picked() ? 'Set it up' : 'Next';
+      if (steps[at] === goalStep) primaryBtn.textContent = p.picked() ? 'Set it up' : idle;
     });
     return {
       title: 'What do you want to change?',
       sub: 'Pick one or more. We set up habits, reminders and a 30-day goal.',
       body: p.body,
-      primary: 'Next',
-      onPrimary: () => (p.picked() ? p.apply() : null),
+      primary: idle,
+      onPrimary: () => (p.picked() ? p.apply().then(() => (saidDone = true)) : null),
       skip: 'Skip',
     };
   }
 
+  // Only in the list when the device and the account disagree (firstRunSteps).
   function timezoneStep() {
     const saved = (state.user && state.user.timezone) || '';
-    const differs = !!tz && !!saved && !sameZone(saved, tz);
     const zoneRow = (label, value) =>
       h(
         'div',
@@ -2208,66 +2254,11 @@ async function openFirstRunSetup() {
         badge('clock'),
         zoneRow('This device', tz),
         zoneRow('Your account', saved),
-        h(
-          'div',
-          { class: 'gb-field-hint' },
-          differs
-            ? 'They differ. Use this device’s zone unless you want to keep home time.'
-            : 'They match. You can change it later in Settings › Profile.'
-        )
+        h('div', { class: 'gb-field-hint' }, 'They differ. Use this device’s zone unless you want to keep home time.')
       ),
-      primary: differs ? 'Use ' + tz : 'Looks right',
-      onPrimary: differs ? () => saveDeviceTimezone(tz) : null,
-      skip: differs ? 'Keep ' + saved : 'Skip',
-    };
-  }
-
-  function notifyStep() {
-    const supported = pushSupported();
-    const status = h(
-      'div',
-      { class: 'gb-field-hint' },
-      supported ? '' : 'This browser can’t show notifications. The app on your phone can.'
-    );
-    const body = h(
-      'div',
-      {},
-      badge('bell'),
-      h(
-        'p',
-        { class: 'gb-setup-text' },
-        'Reminders, habit nudges and messages from your circle arrive as notifications — even with the app closed.'
-      ),
-      status
-    );
-    if (supported) {
-      pushSubscribed().then((on) => {
-        if (on && steps[at] === notifyStep) {
-          status.textContent = 'Notifications are already on for this device.';
-          primaryBtn.textContent = 'Next';
-          primaryBtn.onclick = next;
-        }
-      });
-    }
-    return {
-      title: 'Stay in the loop',
-      sub: 'You choose what rings in Settings › Alerts.',
-      body,
-      primary: supported ? 'Turn on notifications' : 'Next',
-      // A refusal still moves on: the toast says why, and Settings can retry.
-      onPrimary: supported ? () => enablePushFlow('Notifications on.') : null,
-      skip: 'Not now',
-    };
-  }
-
-  function featuresStep() {
-    return {
-      title: 'Pick what you’ll use',
-      sub: 'Turn off anything you don’t need. It all comes back in Settings › Layout.',
-      body: h('div', { class: 'gb-setup-features' }, ...FEATURE_DEFS.map(featureSwitchRow)),
-      primary: 'Done',
-      onPrimary: null,
-      skip: 'Skip',
+      primary: 'Use ' + tz,
+      onPrimary: () => saveDeviceTimezone(tz),
+      skip: 'Keep ' + saved,
     };
   }
 
@@ -3605,6 +3596,7 @@ async function createHabit(body) {
   state.habits = [...state.habits, created];
   refreshScoreLater();
   reSyncDeviceAlarms();
+  askPushOnce(!!body.reminderTime);
 }
 
 /* ---- Habit order (PUT /api/habits/order) ----
@@ -3665,6 +3657,7 @@ async function updateHabit(id, body) {
   });
   state.habits = state.habits.map((x) => (x.id === id ? updated : x));
   reSyncDeviceAlarms();
+  askPushOnce(!!body.reminderTime);
 }
 
 /* ---- Natural-language quick-add ----
@@ -10359,6 +10352,7 @@ async function addReminder(key, text, time, tag, repeat, until, sound, endTime, 
     }
     state.reminders.push(created);
     reSyncDeviceAlarms();
+    askPushOnce(!!body.time);
     resetCalendarForm();
     if (state.screen === 'calendar') {
       rerenderCalendarSideIfActive();
@@ -14978,15 +14972,9 @@ function viewSignup() {
     maxlength: 128,
     autocomplete: 'new-password',
   });
+  // One password field: its reveal eye catches a typo better than typing it
+  // twice, and a forgotten one still has reset.
   const pwField = passwordField(pwInput);
-  const pw2Input = h('input', {
-    type: 'password',
-    class: 'gb-input gb-login-input',
-    placeholder: 'Type it again',
-    maxlength: 128,
-    autocomplete: 'new-password',
-  });
-  const pw2Field = passwordField(pw2Input);
   // A hint, not a gate: the server's only rule is 8+ characters. Length and
   // variety are what a guesser pays for, so that is all it counts.
   const pwHint = h('p', { class: 'gb-field-hint', 'aria-live': 'polite' });
@@ -15013,7 +15001,6 @@ function viewSignup() {
     if (!email) return authFail('Enter your email to create the account.', 'email');
     if (!emailInput.checkValidity()) return authFail('Enter a valid email address.', 'email');
     if (password.length < 8) return authFail('Password must be at least 8 characters.', 'password');
-    if (pw2Input.value !== password) return authFail('The two passwords don’t match.', 'confirm');
     runAuth(async () => {
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
       // Also the way back for an account that never verified: same password →
@@ -15024,7 +15011,7 @@ function viewSignup() {
     }, 'email');
   }
 
-  [emailInput, nameInput, pwInput, pw2Input].forEach((el) =>
+  [emailInput, nameInput, pwInput].forEach((el) =>
     el.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
@@ -15039,7 +15026,6 @@ function viewSignup() {
       ...field('Name', nameInput, 'name'),
       ...field('Password', pwField, 'password'),
       pwHint,
-      ...field('Confirm password', pw2Field, 'confirm'),
       primaryBtn('Create account', submit),
       h(
         'div',
@@ -15064,6 +15050,7 @@ function viewVerify() {
   });
   const otpField = otpBoxes(otpInput, state.loading);
   function submit() {
+    if (state.loading) return; // the auto-submit and a tap on Verify are one request
     const otp = (otpInput.value || '').replace(/\D/g, '');
     if (otp.length !== 6) return authFail('Enter the 6-digit code (must be exactly 6 digits).', 'otp');
     runAuth(async () => {
@@ -15090,6 +15077,13 @@ function viewVerify() {
       e.preventDefault();
       submit();
     }
+  });
+  // The sixth digit (typed, pasted or autofilled) sends it. Only a real input
+  // event: renderAuth replays a synthetic one to repaint the boxes after a
+  // refusal, and answering that would resend a wrong code forever. After an
+  // error the code stays in the field; editing it back to six sends again.
+  otpInput.addEventListener('input', (e) => {
+    if (e.isTrusted && (otpInput.value || '').replace(/\D/g, '').length === 6) submit();
   });
   setTimeout(() => otpInput.focus(), 60);
 
