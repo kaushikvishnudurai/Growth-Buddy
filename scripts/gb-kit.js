@@ -638,13 +638,16 @@ const liveOverlays = new Set();
    old screen again. */
 let sheetBackPending = false;
 let sheetSyncQueued = false;
+// The page is on its way out (a reload, a link): a sheet closed now, by the
+// answer to a save sent just before, must not back() — that cancelled the reload.
+let pageLeaving = false;
 
 function syncSheetHistory() {
   if (sheetSyncQueued) return;
   sheetSyncQueued = true;
   setTimeout(() => {
     sheetSyncQueued = false;
-    if (sheetBackPending) return; // popstate re-syncs once that back() lands
+    if (sheetBackPending || pageLeaving) return; // popstate re-syncs once that back() lands
     const ours = !!(history.state && history.state.gbSheet);
     if (liveOverlays.size && !ours) {
       history.pushState({ gbSheet: true }, '');
@@ -659,6 +662,12 @@ if (typeof window !== 'undefined') {
   // A reload keeps history.state: an entry we can't own any more would make
   // the first sheet's close step back off the page.
   if (history.state && history.state.gbSheet) history.replaceState(null, '');
+  // Cleared again if the page is still here: a mailto: or tel: link fires
+  // beforeunload and stays. ponytail: a reload slower than 2 s to commit can still be cancelled.
+  window.addEventListener('beforeunload', () => {
+    pageLeaving = true;
+    setTimeout(() => (pageLeaving = false), 2000);
+  });
   window.addEventListener('popstate', () => {
     if (sheetBackPending) {
       sheetBackPending = false;

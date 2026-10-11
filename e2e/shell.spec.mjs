@@ -179,8 +179,7 @@ test('OFF-1: a task whose request is still out when the page reloads is sent aft
   allowed.push('/api/tasks');
   await signInFast(page, account);
   // The first POST never answers: the page unloads with it in flight. Held for good, not
-  // unrouted before the reload: unroute released it, its answer closed the sheet, and the
-  // sheet's history.back() landed on the reload and aborted it.
+  // unrouted before the reload: unroute released it, so it was no longer still out.
   let held = false;
   await page.route('**/api/tasks', (route) => {
     if (route.request().method() !== 'POST' || held) return route.fallback();
