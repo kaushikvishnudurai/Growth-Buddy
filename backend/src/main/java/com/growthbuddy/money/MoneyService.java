@@ -424,6 +424,12 @@ public class MoneyService {
                 if (row.day().isAfter(latest)) {
                     throw ApiException.badRequest("Pick a day up to today.");
                 }
+                // HOS-7: MoneyLedger.LEDGER_FLOOR is where the ledger stops paging,
+                // so a row before it moved the balance and could never be listed
+                // or deleted. Not tighter: old loans and imports are real.
+                if (row.day().isBefore(MoneyLedger.LEDGER_FLOOR)) {
+                    throw ApiException.badRequest("Pick a day in 1900 or later.");
+                }
                 upserts.add(row);
             } catch (ApiException ex) {
                 rejected.addObject().put("id", u.path("id").asText()).put("reason", ex.getMessage());

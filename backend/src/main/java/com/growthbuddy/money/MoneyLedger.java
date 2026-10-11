@@ -57,6 +57,9 @@ public class MoneyLedger {
     /** The Add expense field's own max; applied to client writes only (MoneyService.applyLedger). */
     static final BigDecimal EXPENSE_MAX = new BigDecimal("10000000");
 
+    /** The oldest day a row may carry: page() lists nothing before it (HOS-7). */
+    static final LocalDate LEDGER_FLOOR = LocalDate.of(1900, 1, 1);
+
     private final JdbcTemplate jdbc;
     private final ObjectMapper json;
 
@@ -313,7 +316,7 @@ public class MoneyLedger {
                 WHERE user_id = ? AND occurred_on < ?
                 ORDER BY occurred_on DESC LIMIT 1 OFFSET ?
                 """, java.sql.Date.class, userId.toString(), Date.valueOf(before), n - 1);
-        LocalDate from = cut.isEmpty() ? LocalDate.of(1900, 1, 1) : cut.get(0).toLocalDate();
+        LocalDate from = cut.isEmpty() ? LEDGER_FLOOR : cut.get(0).toLocalDate();
         jdbc.query("""
                 SELECT id, kind, account_id, to_account_id, amount, category, note, occurred_on, extra
                 FROM money_transactions
