@@ -11,6 +11,8 @@
         That is the service worker's path, so it needs a build (`vite preview`); on the dev
         server it is reported as skipped. The phone app's own path (session.js boot
         snapshot) can't run in a browser: scripts/session.test.mjs covers its logic.
+     4. Sign out with writes still out: a glass queued by a dropped POST is sent by the
+        sign-out; a task create answered after it is not queued for the next account.
    Runs in its own incognito context: cookies ignore the port, so signing out in the shared
    browser's default context would sign every other localhost tab out too. */
 import puppeteer from 'puppeteer-core';
@@ -288,6 +290,93 @@ for (const [vpName, vp] of VIEWPORTS) {
     await sleep(3000); // the socket's reconnect attempt from the offline spell still reports
     offline = false;
   }
+
+  // ---- 4. Sign out with writes still out ----
+  // A glass queued by a dropped POST goes with the sign-out; a task create
+  // still in flight answers after the session ended and must not be queued
+  // (it used to land in gb.outbox.guest and replay under whoever came next).
+  step('sign out with a glass queued and a task create in flight');
+  await page.goto(BASE + '/#food', { waitUntil: 'networkidle2' }); // the water tracker
+  await sleep(1500);
+  await page.setBypassServiceWorker(true);
+  await page.setRequestInterception(true);
+  let held = null;
+  let dropped = false;
+  const glasses = []; // replayed water POST bodies
+  const onReq = (req) => {
+    const u = req.url();
+    if (req.method() === 'POST' && /\/api\/water\/entries$/.test(u)) {
+      if (!dropped) {
+        dropped = true;
+        return req.abort('internetdisconnected');
+      }
+      glasses.push(JSON.parse(req.postData() || '{}'));
+    }
+    if (req.method() === 'POST' && /\/api\/tasks$/.test(u) && !held) {
+      held = req;
+      return;
+    }
+    req.continue();
+  };
+  page.on('request', onReq);
+  offline = true; // the dropped POST logs a net:: error
+  check(await clickText('button.gb-water-add', /^\s*\+250 ml\s*$/), '+250 ml tapped');
+  await page
+    .waitForFunction(() => /Saved on this phone/.test(document.body.innerText), { timeout: 10000 })
+    .catch(() => {});
+  offline = false;
+  await clickText('button', /^\s*quick add\s*$/);
+  if (!(await page.$('.gb-modal-opt')))
+    await page.click('button[aria-label="Quick add"]').catch(() => {});
+  await page.waitForSelector('.gb-modal-opt', { visible: true, timeout: 10000 });
+  await clickText('.gb-modal-opts button', /^\s*Task/);
+  const taskInput = 'input[placeholder="e.g. Finish the design review"]';
+  await page.waitForSelector(taskInput, { visible: true });
+  await page.$eval(taskInput, (el) => {
+    el.value = 'E2E session in flight';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await clickText('.gb-modal button', /^\s*add task\s*$/);
+  for (let i = 0; i < 50 && !held; i++) await sleep(100);
+  check(!!held, 'task POST held in flight');
+  // The sheet waits on its save; close it (the request stays out) to reach Settings.
+  await page.keyboard.press('Escape');
+  await sleep(600);
+  await page.click('.gb-avatar[aria-label="Account"]');
+  await sleep(300);
+  await clickText('.gb-profile-pop-item', /settings/);
+  await page.waitForSelector('.gb-modal-overlay.is-open');
+  await clickText('[role=tab]', /account/);
+  await sleep(300);
+  await clickText('.gb-account-signout', /sign out/);
+  await page.waitForSelector('input[type=password]', { timeout: 15000 });
+  check(glasses.length === 1, 'sign-out sent the queued glass (' + glasses.length + ')');
+  // Its token is revoked by now: the late create is answered 401, after the session ended.
+  expect401 = true;
+  if (held) held.continue();
+  await sleep(2500);
+  expect401 = false;
+  const outboxes = await page.evaluate(async () =>
+    (await (await caches.open('gb-store-v2')).keys())
+      .map((r) => decodeURIComponent(r.url.replace('https://gb-store/', '')))
+      .filter((k) => k.startsWith('gb.outbox.'))
+  );
+  check(outboxes.length === 0, 'the late answer queued nothing for the next account (' + outboxes + ')');
+  page.off('request', onReq);
+  await page.setRequestInterception(false);
+  await page.setBypassServiceWorker(false);
+  // Clean up the glass the sign-out sent.
+  await signIn();
+  const tok = (await page.cookies()).find((c) => c.name === 'gb.token');
+  const left = await page.evaluate(async (at, t) => {
+    const auth = { Authorization: 'Bearer ' + decodeURIComponent(t) };
+    const w = await (await fetch('/api/water', { headers: auth })).json();
+    // The server keeps whole seconds.
+    const mine = (w.entries || []).filter((e) => at && e.amountMl === 250 && Math.abs(Date.parse(e.loggedAt) - Date.parse(at)) < 1000);
+    for (const e of mine) await fetch('/api/water/entries/' + e.id, { method: 'DELETE', headers: auth });
+    return mine.length;
+  }, glasses[0] && glasses[0].loggedAt, tok ? tok.value : '');
+  check(left === 1, 'cleanup: the synced glass found and deleted (' + left + ')');
 
   // Leave signed out, through Settings again: no session of ours left behind.
   await page.click('.gb-avatar[aria-label="Account"]');

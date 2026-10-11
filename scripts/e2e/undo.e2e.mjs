@@ -2,8 +2,9 @@
    For a task, a habit and a water entry, at 390 and 1280 wide: delete it, it is
    gone and no DELETE has gone out; Undo puts it back in the same place and still
    nothing is sent; delete again and wait out the window, the DELETE lands
-   (200/204) and the item stays gone after a reload. Zero console errors and no
-   4xx/5xx.
+   (200/204) and the item stays gone after a reload. A delete whose item is
+   already gone on the server (404) stays gone, with no error. Zero console
+   errors and no other 4xx/5xx.
 
      node scripts/e2e/undo.e2e.mjs
    env: GB_E2E_BASE (http://localhost:5173), GB_E2E_CDP (http://127.0.0.1:9223),
@@ -48,13 +49,17 @@ await page.evaluateOnNewDocument(() => {
   Object.defineProperty(document, 'visibilityState', { get: () => 'visible' });
   window.addEventListener('visibilitychange', (e) => e.stopImmediatePropagation(), true);
 });
+let expect404 = ''; // a path whose 404 a check provokes on purpose
 page.on('console', (m) => {
-  if (m.type() === 'error') problems.push('console: ' + m.text().slice(0, 200));
+  if (m.type() !== 'error') return;
+  if (expect404 && /status of 404/.test(m.text())) return;
+  problems.push('console: ' + m.text().slice(0, 200));
 });
 page.on('pageerror', (e) => problems.push('pageerror: ' + String(e).slice(0, 200)));
 page.on('response', (r) => {
   const req = r.request();
   if (req.method() === 'DELETE') deletes.push({ url: r.url(), status: r.status() });
+  if (r.status() === 404 && expect404 && r.url().includes(expect404)) return;
   if (r.status() >= 400) problems.push(`HTTP ${r.status()} ${req.method()} ${r.url().slice(0, 140)}`);
 });
 // A DELETE that never got an answer still went out.
@@ -254,6 +259,36 @@ async function runAt(width, height) {
   // events to it, so ask the server itself.
   check(!(await serverTaskIds()).includes(id2), `flush-${tag}: the page going sent the DELETE (gone on the server)`);
   check(!(await readList()).includes(id2), `flush-${tag}: gone after the reload`);
+
+  // ---- Already gone when the window ends (a one-tap Undo of its create got there first) ----
+  await goTo('home');
+  const title3 = title + ' c';
+  await clickButton(/^quick add$/i);
+  await page.waitForSelector('.gb-modal-opt', { visible: true });
+  await clickButton(/^Task/, '.gb-modal-opts');
+  await page.waitForSelector('input[placeholder="e.g. Finish the design review"]', { visible: true });
+  await fill('input[placeholder="e.g. Finish the design review"]', title3);
+  const made3 = page.waitForResponse((r) => r.url().endsWith('/api/tasks') && r.request().method() === 'POST', { timeout: 20000 });
+  await clickButton(/^add task$/i);
+  const id3 = (await (await made3).json()).id;
+  await waitFor((k) => window.__gbList().includes(k), id3);
+  await clickButton(new RegExp('^Edit ' + title3 + '$'));
+  await page.waitForSelector('.gb-modal .gb-btn--danger', { visible: true });
+  await clickButton(/^delete task$/i, '.gb-modal');
+  await waitFor((k) => !window.__gbList().includes(k), id3);
+  const tok = (await page.cookies()).find((c) => c.name === 'gb.token');
+  await page.evaluate(
+    (id, t) => fetch('/api/tasks/' + id, { method: 'DELETE', headers: { Authorization: 'Bearer ' + decodeURIComponent(t) } }),
+    id3,
+    tok ? tok.value : ''
+  );
+  expect404 = '/api/tasks/' + id3; // the deferred DELETE's answer, which is the point here
+  await moveAway();
+  await wait(WINDOW_MS + 2500);
+  expect404 = '';
+  check(deletesTo(id3).some((d) => d.status === 404), `gone-${tag}: the deferred DELETE was answered 404`);
+  check(!(await readList()).includes(id3), `gone-${tag}: a 404 is done, not a restored ghost row`);
+  check(!(await page.evaluate(() => /Could not delete/.test(document.body.innerText))), `gone-${tag}: no error toast`);
 
   // ---- Habit ----
   const name = 'Undo e2e habit ' + stamp;
