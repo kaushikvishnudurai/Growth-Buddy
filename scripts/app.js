@@ -60,6 +60,7 @@ import {
   latestSeq,
   restoreKey,
   inFlightKeys,
+  sameZone,
 } from './app-logic.js';
 import {
   MEAL_SLOTS,
@@ -1200,10 +1201,15 @@ function saveUiPrefs(patch) {
   // the calendar draws the wrong days; it was equally wrong for the rest.
   saveSession(state.user, state.user.token);
   // Returned so a caller that reads the pref back server-side (the focus goal's streak) can wait for it.
+  // keepalive: a reload right after a pref change (sign-in, theme) would
+  // otherwise cancel the PUT. The blob is a few hundred bytes, far under 64 KB.
   return api('/api/auth/ui-prefs', {
     method: 'PUT',
+    keepalive: true,
     body: JSON.stringify({ prefs: state.user.uiPrefs }),
   }).finally(() => uiPrefsSaves.out--).catch((err) => {
+    // The page is going (Firefox rejects the promise before it tears down): keepalive carries the PUT.
+    if (document.visibilityState === 'hidden') return;
     console.error('saveUiPrefs failed to reach database:', err);
     // The change shows on this device and would quietly undo itself on the next
     // sign-in. Offline is the banner's to say; a 401 signs out on its own.
@@ -2224,15 +2230,6 @@ let tzOfferTimer = 0;
 function syncDeviceTimezone() {
   clearTimeout(tzOfferTimer);
   tzOfferTimer = setTimeout(offerDeviceTimezone, 1500);
-}
-/* Chrome still reports India as "Asia/Calcutta"; the account says "Asia/Kolkata".
-   Same place, so run the stored name through Intl to get the browser's spelling. */
-function sameZone(stored, device) {
-  try {
-    return new Intl.DateTimeFormat('en', { timeZone: stored }).resolvedOptions().timeZone === device;
-  } catch (_) {
-    return stored === device;
-  }
 }
 function deviceZone() {
   try {
@@ -17094,6 +17091,26 @@ async function flushRevokes() {
     else CacheStorage.removeItem(REVOKE_KEY);
   }
 }
+
+/* Leaving with revokes still queued: one more try, keepalive, so it outlives
+   the page. The queue lives in the Cache API, which a WebKit ephemeral store
+   (Safari Private Browsing) empties on reload, and the token would stay live.
+   Answered ones are dropped by the next flushRevokes (a 401 settles it). */
+window.addEventListener('pagehide', () => {
+  let q = [];
+  try {
+    q = JSON.parse(CacheStorage.getItem(REVOKE_KEY) || '[]');
+  } catch (_) {
+    return;
+  }
+  q.forEach((token) =>
+    fetch(API_BASE + '/api/auth/logout', {
+      method: 'POST',
+      keepalive: true,
+      headers: { Authorization: 'Bearer ' + token },
+    }).catch(() => {})
+  );
+});
 
 /* `revoked`: the server already ended the session (account deletion revokes
    every one), so only this device's half runs: no unsubscribe or logout call to

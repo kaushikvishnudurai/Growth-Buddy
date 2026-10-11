@@ -8885,7 +8885,9 @@ button.gb-food-level {
   .gb-app {
     width: 100%;
     max-width: 440px;
-    height: auto;
+    /* A fixed height, not auto: a frame as tall as its content moved the bottom
+       nav between tabs and left Notes a short floating card. #gb-main scrolls. */
+    height: min(900px, calc(100dvh - 2 * clamp(20px, 4vh, 40px)));
     min-height: 0;
     max-height: min(900px, calc(100dvh - 2 * clamp(20px, 4vh, 40px)));
     border-radius: var(--radius-3xl);
@@ -12654,6 +12656,7 @@ textarea:focus-visible,
   border-radius: var(--radius-pill);
   background: rgba(20, 14, 10, 0.6);
   backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   color: var(--fg-on-brand);
   font-size: 0.75rem;
   font-weight: 700;
@@ -12664,6 +12667,7 @@ textarea:focus-visible,
   z-index: 1;
   background: color-mix(in srgb, var(--surface) 88%, transparent);
   backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   box-shadow: var(--shadow-xs);
   color: var(--fg2);
 }
@@ -16455,5 +16459,80 @@ button.gb-tone-chip:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .gb-msg-field {
     transition: none;
+  }
+}
+
+/* =====================================================================
+   color-mix() fallback: iOS 15.0-16.1 (the iOS app still targets 15.0).
+   There a color-mix() holding a var() is dropped at computed time, so the
+   property falls to its initial value: a toast, a heatmap cell or the water
+   fill turns transparent, a spinner loses its ring. These are the ones where
+   that loses meaning; a plain token stands in. !important because the
+   color-mix() rule still wins the cascade before it is found invalid, and
+   this block only applies where color-mix() does not parse. Tints, glows,
+   gradients and hover shades degrade to their base colour or to none.
+   ===================================================================== */
+@supports not (color: color-mix(in srgb, red, blue)) {
+  .gb-spinner {
+    border: 2.5px solid var(--border-strong) !important;
+    border-top-color: currentColor !important;
+  }
+  .gb-mini-cal-empty--loading .gb-spinner {
+    border: 2px solid var(--border-strong) !important;
+    border-top-color: var(--brand) !important;
+  }
+  .gb-toast.is-error,
+  .gb-toast.is-success,
+  .gb-toast.is-info,
+  .gb-note-card.has-cover .gb-note-pin,
+  .gb-trend-end,
+  .gb-editor-wrap.is-dropping::after {
+    background: var(--surface) !important;
+  }
+  .gb-toast.is-error {
+    border-color: var(--danger) !important;
+  }
+  .gb-toast.is-success {
+    border-color: var(--success) !important;
+  }
+  .gb-toast.is-info {
+    border-color: var(--info) !important;
+  }
+  .gb-input.is-invalid,
+  .gb-otp-field.is-invalid ~ .gb-otp-boxes .gb-otp-box {
+    background: var(--surface-2) !important;
+  }
+  .gb-notif-row.is-unread,
+  html[data-premium='on'] .gb-nav-tab.is-active,
+  .gb-food-measure-seg,
+  .gb-pixel.lv-1 {
+    background: var(--brand-soft) !important;
+  }
+  .gb-pixel.lv-2 {
+    background: var(--coral-300) !important;
+  }
+  .gb-pixel.lv-3 {
+    background: var(--brand) !important;
+  }
+  .gb-remset-snoozed,
+  .gb-rem-snoozed--btn {
+    background: var(--info-soft) !important;
+    border-color: var(--info) !important;
+  }
+  .gb-water-glass {
+    background: var(--surface) !important;
+    border-color: var(--sky-500) !important;
+  }
+  .gb-water-fill {
+    background: var(--sky-300) !important;
+  }
+  .gb-food-screen .gb-water-fill {
+    background: var(--info) !important;
+  }
+  .gb-water-add {
+    background: var(--sky-100) !important;
+  }
+  [data-theme='dark'] .gb-water-add {
+    background: var(--surface-2) !important;
   }
 }

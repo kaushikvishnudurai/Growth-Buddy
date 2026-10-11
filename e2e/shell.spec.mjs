@@ -175,7 +175,10 @@ const apiAs = (page, token, path) =>
     [token, path]
   );
 
-test('OFF-1: a task whose request is still out when the page reloads is sent after it', async ({ page, account, allowed }) => {
+test('OFF-1: a task whose request is still out when the page reloads is sent after it', async ({ page, account, allowed }, info) => {
+  // Ephemeral WebKit sessions (Playwright's default context, Safari Private Browsing) drop Cache API
+  // entries on reload, and the runner cannot give WebKit a persistent one: docs/audit/cross-device.md XD-3.
+  test.skip(info.project.use.engine === 'webkit', 'ephemeral WebKit sessions lose Cache API data on reload (XD-3)');
   allowed.push('/api/tasks');
   await signInFast(page, account);
   // The first POST never answers: the page unloads with it in flight. Held for good, not
@@ -234,7 +237,10 @@ test('OFF-2: a glass queued by one account does not show on the next', async ({ 
   await shot(page, 'OFF-2');
 });
 
-test('OFF-7: a sign-out made offline is revoked on the next boot', async ({ page, account, allowed }) => {
+test('OFF-7: a sign-out made offline is revoked on the next boot', async ({ page, account, allowed }, info) => {
+  // Ephemeral WebKit sessions (Playwright's default context, Safari Private Browsing) drop Cache API
+  // entries on reload, and the runner cannot give WebKit a persistent one: docs/audit/cross-device.md XD-3.
+  test.skip(info.project.use.engine === 'webkit', 'ephemeral WebKit sessions lose Cache API data on reload (XD-3)');
   // The last check's own /me is meant to 401.
   allowed.push('/api/auth/logout', '/api/auth/me', 'net::ERR_FAILED', 'Failed to load resource');
   await signInFast(page, account);
@@ -251,7 +257,7 @@ test('OFF-7: a sign-out made offline is revoked on the next boot', async ({ page
 });
 
 test('OFF-6: a screen never loaded, opened offline, says so instead of reloading', async ({ page, account, context, allowed }) => {
-  allowed.push('Screen failed to load', 'Failed to fetch', 'ERR_INTERNET_DISCONNECTED', 'goals.js', 'logomark.svg');
+  allowed.push('Screen failed to load', 'Failed to fetch', 'ERR_INTERNET_DISCONNECTED', 'goals.js', 'active-dates.js', 'logomark.svg');
   await signInFast(page, account);
   await context.setOffline(true);
   await go(page, 'goals');

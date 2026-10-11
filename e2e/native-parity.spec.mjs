@@ -72,7 +72,10 @@ test('an export in the app goes to the share sheet, and a failure says so', asyn
   expect((await exportCalls(page)).map((c) => c.plugin)).toEqual(['Filesystem']);
 });
 
-test('offline cold start in the app shows saved data, not the crash card', async ({ page, account }) => {
+test('offline cold start in the app shows saved data, not the crash card', async ({ page, account }, info) => {
+  // Ephemeral WebKit sessions (Playwright's default context, Safari Private Browsing) drop Cache API
+  // entries on reload, and the runner cannot give WebKit a persistent one: docs/audit/cross-device.md XD-3.
+  test.skip(info.project.use.engine === 'webkit', 'ephemeral WebKit sessions lose Cache API data on reload (XD-3)');
   await page.addInitScript(fakeCapacitor);
   await signInFast(page, account);
   await expect(page.getByText('Book the dentist').first()).toBeVisible();
