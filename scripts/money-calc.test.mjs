@@ -41,6 +41,7 @@ const {
   suggestChallenges,
   advise,
   goalPlan,
+  achievementTimeline,
 } = _calc;
 
 const doc = (over) => normalizeMoney({ ...over });
@@ -487,3 +488,11 @@ console.log('money-calc advisor + goal pace: ok');
   assert.ok(!suggestChallenges(busy).some((c) => c.kind === 'cap'), 'no daily cap already blown');
 }
 console.log('money-calc QA round: ok');
+
+// ---- EXM-13: the best saving month is dated by its last contribution, never ahead of today ----
+{
+  const m = doc({ goals: [{ id: 'g', name: 'Trip', target: 9000, contribs: [{ amount: 500, date: '2026-10-03' }, { amount: 2000, date: '2026-10-08' }] }] });
+  const best = achievementTimeline(m).find((e) => /Best saving month/.test(e.title));
+  assert.equal(best.date, '2026-10-08');
+}
+console.log('money-calc journey date: ok');

@@ -388,7 +388,8 @@ function weeklyReview(money) {
     motivation = `You moved ${fmt(setAside)} toward your goals this week. Future-you says thanks.`;
   else if (streak >= 3)
     motivation = `${streak} days of logging — consistency like this is what changes the numbers.`;
-  else motivation = `Every expense you log makes next week clearer. Proud of you for showing up.`;
+  else if (total > 0) motivation = `Every expense you log makes next week clearer. Proud of you for showing up.`;
+  else motivation = `Log what you spend this week and next week's review will have something to say.`;
   return {
     total,
     prevTotal,
@@ -1260,16 +1261,18 @@ function achievementTimeline(money) {
     }
   });
   const byMonth = {};
+  const lastIn = {}; // the month's latest contribution: the event's date, never a future one
   money.goals.forEach((g) =>
-    (g.contribs || []).forEach(
-      (c) =>
-        (byMonth[c.date.slice(0, 7)] = (byMonth[c.date.slice(0, 7)] || 0) + (Number(c.amount) || 0))
-    )
+    (g.contribs || []).forEach((c) => {
+      const mo = c.date.slice(0, 7);
+      byMonth[mo] = (byMonth[mo] || 0) + (Number(c.amount) || 0);
+      if (!lastIn[mo] || c.date > lastIn[mo]) lastIn[mo] = c.date;
+    })
   );
   const topMonth = Object.keys(byMonth).sort((a, b) => byMonth[b] - byMonth[a])[0];
   if (topMonth)
     ev.push({
-      date: topMonth + '-15',
+      date: lastIn[topMonth],
       icon: 'piggy-bank',
       title: `Best saving month: ${fmt(byMonth[topMonth])}`,
       desc: parseKey(topMonth + '-01').toLocaleDateString(undefined, {
@@ -2004,7 +2007,11 @@ export function MoneyCustomisePane(money, save) {
       })
     )
   );
+  // The default-tag picker is rebuilt with the list, so a tag added here is offered there at once.
+  let defaultPicker = null;
+  const defaultSlot = h('div');
   function renderList() {
+    if (defaultPicker) buildDefaultPicker();
     const custom = money.customCategories || [];
     list.replaceChildren(
       ...(custom.length
@@ -2102,10 +2109,16 @@ export function MoneyCustomisePane(money, save) {
   });
   // "Last used" vs a picked tag, stored apart (`defaultTagSet`): every account
   // starts with defaultTag 'others', so the tag alone can't say "picked Others".
-  const defaultPicker = tagPicker(money, save, {
-    initial: money.settings.defaultTag || 'others',
-    onPick: (key) => setPref({ defaultTag: key, defaultTagSet: true }),
-  });
+  function buildDefaultPicker() {
+    const hidden = defaultPicker ? defaultPicker.node.style.display : '';
+    defaultPicker = tagPicker(money, save, {
+      initial: money.settings.defaultTag || 'others',
+      onPick: (key) => setPref({ defaultTag: key, defaultTagSet: true }),
+    });
+    defaultPicker.node.style.display = hidden;
+    defaultSlot.replaceChildren(defaultPicker.node);
+  }
+  buildDefaultPicker();
   const defaultMode = segmented(
     [
       { value: 'last', label: 'Last used' },
@@ -2260,7 +2273,7 @@ export function MoneyCustomisePane(money, save) {
     h('div', { class: 'gb-note-hint', style: { marginTop: '2px' } }, 'Set to 0 to never prompt.'),
     h('div', { class: 'gb-field-label' }, 'Default tag for new expenses'),
     defaultMode.node,
-    defaultPicker.node,
+    defaultSlot,
     h(
       'div',
       { class: 'gb-money-custom-head', style: { marginTop: '8px' } },
@@ -3185,7 +3198,8 @@ function ScreenMoney({
             )
           )
         ),
-        list.some((a) => Number(a.balance) < 0)
+        // A card below zero is what it owes; only cash / bank / wallet below zero is odd.
+        list.some((a) => a.kind !== 'card' && Number(a.balance) < 0)
           ? h(
               'p',
               { class: 'gb-money-intro' },
@@ -3342,11 +3356,12 @@ function ScreenMoney({
         kind.node,
         h('div', { class: 'gb-field-label' }, 'In it right now (' + (rate ? ac : cur) + ')'),
         bal,
-        h(
-          'div',
-          { class: 'gb-note-hint' },
-          'Removing an account with expenses archives it, so its history keeps its name.'
+        // Only said when it applies: an account nothing was booked to is removed outright.
+        ['expenses', 'income', 'transfers'].some((k) =>
+          (money[k] || []).some((x) => x.accountId === a.id || x.from === a.id || x.to === a.id)
         )
+          ? h('div', { class: 'gb-note-hint' }, 'It has history, so removing it archives it and its entries keep its name.')
+          : null
       ),
       primary: 'Save',
       danger: {
@@ -3755,7 +3770,8 @@ function ScreenMoney({
               Icon('sparkles', { size: 18, sw: 2.2 }),
               "Buddy's take"
             ),
-            h('p', { class: 'gb-money-coach-text', style: { marginTop: 'var(--space-2)' } }, res.advice)
+            // The model answers in markdown; asterisks and #s read as noise in a plain <p>.
+            h('p', { class: 'gb-money-coach-text', style: { marginTop: 'var(--space-2)' } }, String(res.advice).replace(/[*_#`]+/g, ''))
           );
           refreshIcons();
         })
@@ -5752,8 +5768,57 @@ function ScreenMoney({
   function budgetsSection() {
     const st = budgetStatus(money);
     const anySet = st.some((s) => s.base > 0);
-    // Empty, it only repeats the health card's "Set budgets" as a tall blank card.
-    if (!anySet) return [];
+    // None set: one short card, with a one-tap set from the last 30 days when there
+    // is spending (10% under each tag, as the dialog's hints), so budgets aren't
+    // only reachable from the health card at the bottom.
+    if (!anySet) {
+      const last30 = byCategory(inRange(money.expenses, lastNDays(30)[0], todayKey()), money);
+      const sugg = mergedCats(money)
+        .filter((c) => last30[c.key] > 0)
+        .map((c) => ({ c, amt: Math.max(50, Math.round((last30[c.key] * 0.9) / 50) * 50) }));
+      return [
+        Card({
+          className: 'gb-money-card',
+          children: [
+            h('div', { class: 'gb-sectiontitle' }, h('h3', null, 'Monthly budgets')),
+            h(
+              'div',
+              { class: 'gb-money-intro' },
+              sugg.length
+                ? 'From your last 30 days: ' + sugg.map((x) => x.c.label + ' ' + fmt(x.amt)).join(', ') + '.'
+                : 'A gentle limit per tag, and I nudge you near 80%.'
+            ),
+            h(
+              'div',
+              { class: 'gb-money-head-actions' },
+              sugg.length
+                ? h(
+                    'button',
+                    {
+                      type: 'button',
+                      class: 'gb-btn gb-btn--soft gb-btn--compact',
+                      onclick: () => {
+                        commit((m) => sugg.forEach((x) => (m.budgets[x.c.key] = x.amt)));
+                        toast.success('Budgets set. Change them any time.');
+                      },
+                    },
+                    'Use these'
+                  )
+                : null,
+              h(
+                'button',
+                {
+                  type: 'button',
+                  class: 'gb-btn gb-btn--' + (sugg.length ? 'ghost' : 'soft') + ' gb-btn--compact',
+                  onclick: openSetBudgets,
+                },
+                sugg.length ? 'Adjust' : 'Set budgets'
+              )
+            ),
+          ],
+        }),
+      ];
+    }
     const headKids = [
       h(
         'div',
@@ -7463,4 +7528,5 @@ export const _calc = {
   dropExpense,
   advise,
   goalPlan,
+  achievementTimeline,
 };
