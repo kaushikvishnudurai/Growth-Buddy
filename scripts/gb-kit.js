@@ -312,8 +312,8 @@ function Check({ done = false, onToggle, color, label, list } = {}) {
    phone the re-render, and with it the slide, came later than 400 ms, and a
    second tap after that went through. `at` is the tap's own time (the event's
    timeStamp), not when a busy main thread got round to it. No `el` (a re-sort,
-   a control that stays): the next frame starts the floor. TAP_HOLD_MAX_MS caps
-   a control that never leaves (a dialog opened instead). Keyed by name, not
+   a control that stays): the next frame starts the floor. A dialog opening ends
+   the hold (nothing slid); TAP_HOLD_MAX_MS caps a control that never leaves. Keyed by name, not
    element, because a tap re-renders the list. */
 const TAP_FLOOR_MS = 300;
 const TAP_HOLD_MAX_MS = 1500;
@@ -328,7 +328,10 @@ function tapSettled(list, el, at = performance.now()) {
     if (hold.until === Infinity) hold.until = performance.now() + TAP_FLOOR_MS;
   };
   const watch = () => {
-    if (el && el.isConnected && performance.now() - t0 < TAP_HOLD_MAX_MS) requestAnimationFrame(watch);
+    // A tap that opened a dialog (a delete's confirm) moved no rows: holding
+    // past it dropped the deliberate tap after a Cancel.
+    const dialogUp = [...document.querySelectorAll('[aria-modal="true"]')].some((m) => !m.closest('[inert]'));
+    if (el && el.isConnected && !dialogUp && performance.now() - t0 < TAP_HOLD_MAX_MS) requestAnimationFrame(watch);
     else requestAnimationFrame(release); // the frame after: the list has painted without the row
   };
   requestAnimationFrame(watch);
