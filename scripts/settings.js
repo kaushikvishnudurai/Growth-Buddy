@@ -3265,6 +3265,7 @@ async function exportRemindersIcs(btn) {
         text = await res.text();
       },
     });
+    const name = 'growth-buddy-reminders.ics';
     const blob = new Blob([text], { type: 'text/calendar' });
     if ((await offerFile(blob, name, 'Growth Buddy reminders')) === 'saved') {
       pushToast(

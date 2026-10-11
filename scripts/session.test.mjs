@@ -3,8 +3,9 @@
    Sign-out is one path (app.js endSession) and this pins what it resets. A
    field missed here is one account's data shown to the next; a late answer that
    lands is the old account's tasks written over the sign-in screen. Also reads
-   app.js itself, so a new `state` field, or a sign-out path that skips
-   endSession, fails here instead of on a shared phone. */
+   app.js, settings.js and habit-dialogs.js themselves, so a new `state` field,
+   or a sign-out path that skips endSession, fails here instead of on a shared
+   phone. */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
@@ -29,7 +30,11 @@ const empty = {
   streakFreeze: () => ({}),
   trends: () => ({}),
 };
-const app = readFileSync(new URL('./app.js', import.meta.url), 'utf8');
+const read = (f) => readFileSync(new URL(f, import.meta.url), 'utf8');
+const app = read('./app.js');
+// Settings and the habit dialogs moved out of app.js and write state.* through
+// their context object: they are scanned with it.
+const src = [app, read('./settings.js'), read('./habit-dialogs.js')].join('\n');
 
 // Generation: an answer captured before a bump is stale; one after is not.
 {
@@ -60,7 +65,7 @@ const app = readFileSync(new URL('./app.js', import.meta.url), 'utf8');
     app.indexOf('\n};', app.indexOf('\nconst state = {'))
   );
   const keys = new Set([...literal.matchAll(/^ {2}([a-zA-Z_]+):/gm)].map((m) => m[1]));
-  for (const m of app.matchAll(/\bstate\.([a-zA-Z_]+)\s*(?:=(?!=)|\+\+|--|\+=|-=)/g))
+  for (const m of src.matchAll(/\bstate\.([a-zA-Z_]+)\s*(?:=(?!=)|\+\+|--|\+=|-=)/g))
     keys.add(m[1]);
   assert.ok(keys.size > 30, 'parsed the state fields (' + keys.size + ')');
   const reset = new Set(Object.keys(freshUserState(empty)));
@@ -83,14 +88,14 @@ const app = readFileSync(new URL('./app.js', import.meta.url), 'utf8');
   };
   assert.match(body('logout'), /endSession\(/);
   assert.match(body('handleAuthExpired'), /endSession\(/);
-  const nulls = app.match(/state\.user = null/g) || [];
+  const nulls = src.match(/state\.user = null/g) || [];
   assert.equal(nulls.length, 0, 'state.user is only cleared by freshUserState inside endSession');
   assert.ok(
     app.includes('USER_CACHES.map((c) => caches.delete(c))'),
     'endSession deletes USER_CACHES'
   );
   for (const c of USER_CACHES)
-    assert.ok(!app.includes("caches.delete('" + c + "')"), c + ' deleted by hand somewhere');
+    assert.ok(!src.includes("caches.delete('" + c + "')"), c + ' deleted by hand somewhere');
 }
 
 // Per-user keys: the account's own, not another id that merely contains it.

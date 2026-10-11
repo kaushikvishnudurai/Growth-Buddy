@@ -7170,12 +7170,12 @@ function habitDialogs() {
 function openHabitForm(habit) {
   habitDialogs()
     .then((m) => m.openHabitForm(habit))
-    .catch((err) => toastError(err, 'Could not open the habit form.'));
+    .catch((err) => reloadIfStaleChunk(err) || toastError(err, 'Could not open the habit form.'));
 }
 function openFreezeCalendar() {
   habitDialogs()
     .then((m) => m.openFreezeCalendar())
-    .catch((err) => toastError(err, 'Could not open the freeze calendar.'));
+    .catch((err) => reloadIfStaleChunk(err) || toastError(err, 'Could not open the freeze calendar.'));
 }
 
 /* ---- Settings ----
@@ -7188,7 +7188,7 @@ function openProfileSettings(initialTab) {
       settingsModule = m;
       m.openSettings(settingsContext(), initialTab);
     })
-    .catch((err) => toastError(err, 'Could not open Settings.'));
+    .catch((err) => reloadIfStaleChunk(err) || toastError(err, 'Could not open Settings.'));
 }
 /* What settings.js uses from here, by the same names. */
 function settingsContext() {
@@ -10797,15 +10797,7 @@ function lazyScreen(loader, build) {
       // new index and the new chunk names; the flag makes it once per tab, so
       // a genuinely broken module still lands on the crash card instead of
       // reloading forever.
-      if (isStaleChunkError(err) && !sessionStorage.getItem(CHUNK_RELOAD_KEY)) {
-        try {
-          sessionStorage.setItem(CHUNK_RELOAD_KEY, '1');
-        } catch (_) {
-          /* private mode: fall through to the crash card */
-        }
-        location.reload();
-        return;
-      }
+      if (reloadIfStaleChunk(err)) return;
       if (!placeholder.isConnected) return;
       placeholder.replaceWith(CrashCard(() => render()));
       refreshIcons();
@@ -10814,6 +10806,19 @@ function lazyScreen(loader, build) {
 }
 
 const CHUNK_RELOAD_KEY = 'gb.chunkReloaded';
+
+/* Every lazy chunk's failure goes through here (lazyScreen, Settings, the habit
+   dialogs): true when it reloaded the page for a stale chunk. */
+function reloadIfStaleChunk(err) {
+  if (!isStaleChunkError(err) || sessionStorage.getItem(CHUNK_RELOAD_KEY)) return false;
+  try {
+    sessionStorage.setItem(CHUNK_RELOAD_KEY, '1');
+  } catch (_) {
+    /* private mode: the caller's own error path */
+  }
+  location.reload();
+  return true;
+}
 
 /* A dynamic import that failed because the file is gone, not because the module
    threw. Browsers word this differently and none of them give it a code, so the

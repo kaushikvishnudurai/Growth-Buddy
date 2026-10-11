@@ -315,7 +315,7 @@ it silently landed on Home. Don't reintroduce a second list.
   and `import('./circle.js')` rejects — which is why Circle and Family "sometimes" refused to open and
   were fine after a manual reload. The guard flag is cleared when a chunk **loads**, never on boot:
   clearing it on boot wiped the guard on the way back up and a genuinely missing chunk reloaded
-  forever. Second failure lands on the crash card with its retry button.
+  forever. Second failure lands on the crash card with its retry button. Settings (`openProfileSettings`) and the habit dialogs (`openHabitForm` / `openFreezeCalendar`) are lazy chunks too and go through the same `reloadIfStaleChunk(err)` before their toast.
 - **Insights history loads when Report opens, not at boot.** `loadInsightHistory()` (called from
   the `report` entry in `SCREENS`, throttled to once per ten minutes — stamped only when some part
   came back, one fetch in flight at a time via `insightReq`, which sign-out clears so a late reply
