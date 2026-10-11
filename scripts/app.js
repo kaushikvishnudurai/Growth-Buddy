@@ -3416,13 +3416,24 @@ async function autoTickStepHabits() {
 /* Last night from the phone's health store, for Home's "Save it?" row. Memory
    only: the user's tap is what saves it. Read through a dynamic import so a
    native.js without readLastNight (no health build) just means no phone row.
+   Stamped with today, so a night read before midnight is never offered as the
+   next one. Skipped while the Sleep & mood card is hidden: the read can open the
+   health permission sheet, and nothing would show its answer.
    ponytail: read once per load/resume */
 async function loadPhoneNight() {
-  if (((state.wellness && state.wellness.sleepByDate) || {})[todayKeyNow()]) return;
-  const { readLastNight } = await import('./native.js');
-  if (typeof readLastNight !== 'function') return;
-  state.phoneNight = await readLastNight().catch(() => null);
-  if (state.phoneNight) render();
+  const today = todayKeyNow();
+  if (((state.wellness && state.wellness.sleepByDate) || {})[today]) return;
+  const card = resolveHomeLayout(state.user && state.user.homeLayout).find((w) => w.id === 'wellness');
+  if (!card || !card.enabled) return;
+  try {
+    const { readLastNight } = await import('./native.js');
+    if (typeof readLastNight !== 'function') return;
+    const night = await readLastNight();
+    state.phoneNight = night ? { ...night, date: today } : null;
+    if (state.phoneNight) render();
+  } catch (_) {
+    // No health store or access: the guess falls back to the logged nights.
+  }
 }
 
 /* After a saved focus session: today's focus minutes from the server, so two
@@ -15158,6 +15169,7 @@ function logout() {
   state.habits = [];
   state.reminders = [];
   state.quote = null;
+  state.phoneNight = null; // this phone's night, read for the last account
   state.score = 0;
   state.error = '';
   state.loading = false;

@@ -62,7 +62,8 @@ export function lastNightGuess(sleepByDate, today, phoneNight) {
     .sort(([a], [b]) => (a < b ? 1 : -1))[0];
   const last = recent && recent[1];
   const quality = (last && last.quality) || 'okay';
-  if (phoneNight && phoneNight.bedtime && phoneNight.wakeTime) {
+  // A phone night stamped with another day (read before midnight) is not last night.
+  if (phoneNight && phoneNight.bedtime && phoneNight.wakeTime && (!phoneNight.date || phoneNight.date === today)) {
     return { bedtime: phoneNight.bedtime, wakeTime: phoneNight.wakeTime, quality, source: 'phone' };
   }
   const usual = usualSleep(sleepByDate, today);

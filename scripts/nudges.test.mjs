@@ -60,6 +60,9 @@ assert.deepEqual(lastNightGuess({ '2026-10-10': { bedtime: '22:45:00', wakeTime:
   source: 'last',
 });
 assert.equal(lastNightGuess({ '2026-10-06': { bedtime: '23:00', wakeTime: '07:00' } }, '2026-10-11'), null);
+// Yesterday's phone night (app left open past midnight) is not offered as last night.
+assert.equal(lastNightGuess({}, '2026-10-11', { bedtime: '23:10', wakeTime: '06:45', date: '2026-10-10' }), null);
+assert.equal(lastNightGuess({}, '2026-10-11', { bedtime: '23:10', wakeTime: '06:45', date: '2026-10-11' }).source, 'phone');
 assert.equal(lastNightGuess({}, '2026-10-11'), null);
 assert.equal(lastNightGuess(undefined, '2026-10-11', null), null);
 
