@@ -35,6 +35,8 @@ const {
   editedHomeAmount,
   challengeProgress,
   financialHealth,
+  challengeEnd,
+  newSubscription,
 } = _calc;
 
 const doc = (over) => normalizeMoney({ ...over });
@@ -313,3 +315,64 @@ console.log('money-calc.test.mjs: all assertions passed');
   assert.equal(logging.note, '4/14 recent days logged');
 }
 console.log('money-calc no-spend logging: ok');
+
+// ---- challenges are judged on their own window (CRM-1..3) ----
+{
+  // CRM-1: "Cut food 15%" ran in September (Aug 5,000 -> aim 4,250). Judged now, on 20 Oct.
+  const food = (sep) =>
+    doc({ expenses: [ex('a', 5000, '2026-08-10'), ex('b', sep, '2026-09-10'), ex('c', 100, '2026-10-02')] });
+  const ch = { kind: 'reduce', scope: 'food', pct: 15, start: '2026-09-05', end: '2026-09-30' };
+  assert.equal(challengeProgress(food(9000), ch).state, 'broken', 'September went up: broken, not won');
+  const won = challengeProgress(food(4000), ch);
+  assert.equal(won.state, 'won', 'September came in under the aim');
+  assert.match(won.detail, /4,000.*4,250/, 'the challenge month against 85% of the month before');
+  // Still running this month: October against September.
+  const live = challengeProgress(food(3000), { ...ch, start: '2026-10-05', end: '2026-10-31' });
+  assert.equal(live.state, 'active');
+  assert.match(live.detail, /100.*2,550/, 'October so far against 85% of September');
+}
+{
+  // CRM-2: a September save challenge that fell short is over, and October's money is not its.
+  const m = doc({
+    goals: [{ id: 'g', name: 'Trip', target: 5000, contribs: [{ amount: 400, date: '2026-09-10' }, { amount: 800, date: '2026-10-02' }] }],
+  });
+  const p = challengeProgress(m, { kind: 'save', amount: 1000, start: '2026-09-05', end: '2026-09-30' });
+  assert.equal(p.state, 'broken', 'ended short of its target');
+  assert.match(p.detail, /400 of .*1,000/, 'counts only its own window');
+  const live = challengeProgress(m, { kind: 'save', amount: 1000, start: '2026-10-01', end: '2026-10-31' });
+  assert.equal(live.state, 'active');
+}
+{
+  // CRM-2: an old "30 days" log challenge capped at month end: the target is the days it has.
+  const days = ['25', '26', '27', '28', '29', '30'].map((d, i) => ex('l' + i, 10, '2026-09-' + d));
+  const m = doc({ expenses: days.concat(ex('o', 10, '2026-10-01')) });
+  const p = challengeProgress(m, { kind: 'logdays', days: 30, start: '2026-09-25', end: '2026-09-30' });
+  assert.equal(p.detail, '6 of 6 days logged');
+  assert.equal(p.state, 'won');
+  const short = challengeProgress(doc({ expenses: days.slice(1) }), { kind: 'logdays', days: 30, start: '2026-09-25', end: '2026-09-30' });
+  assert.equal(short.state, 'broken', 'ended with a day missed');
+  // A new one runs its full length, past the month end.
+  assert.equal(challengeEnd({ kind: 'logdays', days: 30 }), '2026-11-18', '30 days from today');
+  assert.equal(challengeEnd({ kind: 'logdays', days: 14 }), '2026-11-02');
+  assert.equal(challengeEnd({ kind: 'save' }), '2026-10-31', 'a month challenge ends with the month');
+  assert.equal(challengeEnd({ kind: 'cap', days: 1 }), '2026-10-20', 'a one-day cap is today');
+}
+{
+  // CRM-3: a daily cap is only won once its day is over.
+  const m = doc({ expenses: [] });
+  assert.equal(challengeProgress(m, { kind: 'cap', amount: 500, start: '2026-10-20', end: '2026-10-20' }).state, 'active');
+  assert.equal(challengeProgress(m, { kind: 'cap', amount: 500, start: '2026-10-19', end: '2026-10-19' }).state, 'won');
+}
+// ---- CRM-4: a bill added after its due day is already paid for this month ----
+{
+  const fields = { name: 'Netflix', amount: 649, category: 'entertainment' };
+  const late = newSubscription({ ...fields, dueDay: 5 });
+  assert.equal(late.paidFor, '2026-10', 'due day 5 passed: paid for October');
+  assert.ok(late.id && late.createdAt);
+  assert.equal(newSubscription({ ...fields, dueDay: 20 }).paidFor, undefined, 'due today: still to pay');
+  assert.equal(newSubscription({ ...fields, dueDay: 25 }).paidFor, undefined, 'still ahead');
+  const m = doc({ subscriptions: [late] });
+  assert.deepEqual(upcomingSubs(m), [], 'not overdue');
+  assert.equal(forecast(m).committed, 0, 'not committed again');
+}
+console.log('money-calc challenges + new bills: ok');

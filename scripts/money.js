@@ -633,15 +633,19 @@ function challengeProgress(money, ch) {
   const today = todayKey();
   const start = ch.start || today;
   const end = ch.end || today;
+  // Every kind is judged on its own start..end, never on "this month": once the
+  // month rolled over, a finished challenge read the next month's first day.
+  const to = today < end ? today : end;
+  const done = today > end;
   const scopeMatch = (e) => ch.scope === 'all' || e.category === ch.scope;
-  const within = inRange(money.expenses, start, today < end ? today : end).filter(scopeMatch);
-  const elapsed = Math.max(0, diffDays(today < end ? today : end, start) + 1);
+  const within = inRange(money.expenses, start, to).filter(scopeMatch);
+  const elapsed = Math.max(0, diffDays(to, start) + 1);
   const totalDays = Math.max(1, diffDays(end, start) + 1);
   const timePct = Math.min(100, Math.round((elapsed / totalDays) * 100));
 
   if (ch.kind === 'nospend') {
     const broken = within.some((e) => (Number(e.amount) || 0) > 0);
-    const state = broken ? 'broken' : today > end ? 'won' : 'active';
+    const state = broken ? 'broken' : done ? 'won' : 'active';
     return {
       state,
       pct: broken ? 100 : timePct,
@@ -654,7 +658,7 @@ function challengeProgress(money, ch) {
     const spent = sumAmt(within);
     const cap = Number(ch.amount) || 0;
     const broken = spent > cap;
-    const state = broken ? 'broken' : today >= end ? 'won' : 'active';
+    const state = broken ? 'broken' : done ? 'won' : 'active';
     return {
       state,
       pct: cap > 0 ? Math.min(100, Math.round((spent / cap) * 100)) : 0,
@@ -662,41 +666,70 @@ function challengeProgress(money, ch) {
     };
   }
   if (ch.kind === 'save') {
-    const saved = setAsideThisMonth(money);
+    const saved = setAsideInRange(money, start, to);
     const target = Number(ch.amount) || 0;
     const pct = target > 0 ? Math.min(100, Math.round((saved / target) * 100)) : 0;
+    const won = saved >= target && target > 0;
     return {
-      state: saved >= target && target > 0 ? 'won' : 'active',
+      state: won ? 'won' : done ? 'broken' : 'active',
       pct,
       detail: `${fmt(saved)} of ${fmt(target)} saved`,
     };
   }
   if (ch.kind === 'logdays') {
-    const got = distinctLogDaysThisMonth(money);
-    const target = Number(ch.days) || daysInMonth();
+    const noSpend = (money.noSpendDays || []).filter((d) => d >= start && d <= to);
+    const got = loggedDays(inRange(money.expenses, start, to), noSpend).size;
+    // Older challenges were capped at month end whatever `days` said: aim at the days they have.
+    const target = Math.min(Number(ch.days) || totalDays, totalDays);
     const pct = Math.min(100, Math.round((got / target) * 100));
     return {
-      state: got >= target ? 'won' : 'active',
+      state: got >= target ? 'won' : done ? 'broken' : 'active',
       pct,
       detail: `${got} of ${target} days logged`,
     };
   }
   if (ch.kind === 'reduce') {
-    const cc = byCategory(inRange(money.expenses, thisMonthPrefix() + '-01', today), money);
-    const lc = byCategory(
-      inRange(money.expenses, lastMonthPrefix() + '-01', lastMonthPrefix() + '-31'),
-      money
-    );
+    // The challenge month (from its start) against the month before it.
+    const month = start.slice(0, 7);
+    const s0 = parseKey(start);
+    const prev = dkey(new Date(s0.getFullYear(), s0.getMonth() - 1, 1)).slice(0, 7);
+    const cc = byCategory(inRange(money.expenses, month + '-01', to), money);
+    const lc = byCategory(inRange(money.expenses, prev + '-01', prev + '-31'), money);
     const goal = Math.round((lc[ch.scope] || 0) * (1 - (Number(ch.pct) || 0) / 100));
     const now = cc[ch.scope] || 0;
-    const ok = now <= goal;
+    // Spend only grows, so over the aim is broken at once, like a cap.
+    const broken = now > goal;
     return {
-      state: today > end && ok ? 'won' : !ok && today > end ? 'broken' : 'active',
+      state: broken ? 'broken' : done ? 'won' : 'active',
       pct: goal > 0 ? Math.min(100, Math.round((now / goal) * 100)) : 0,
       detail: `${fmt(now)} now · aim ≤ ${fmt(goal)}`,
     };
   }
   return { state: 'active', pct: 0, detail: '' };
+}
+
+/* When a new challenge ends: a month challenge with the month, a log streak
+   after its full `days` (a 30-day one capped at month end could never be won),
+   the rest after `days` (default 1, today). */
+function challengeEnd(p) {
+  if (p.kind === 'save' || p.kind === 'reduce' || (p.kind === 'logdays' && !p.days)) {
+    return thisMonthPrefix() + '-' + pad2(daysInMonth());
+  }
+  return dkey(addDays(new Date(), (p.days || 1) - 1));
+}
+
+/* A bill added after this month's due day has almost always been paid already:
+   mark it paid for this month (books nothing) so it is not overdue at once, and
+   "Mark as paid" doesn't book a second expense. `paidFor` is forward-only, so
+   next month is due as usual. */
+function newSubscription(fields) {
+  const passed = Math.min(Number(fields.dueDay) || 1, daysInMonth()) < new Date().getDate();
+  return {
+    id: uid(),
+    ...fields,
+    ...(passed ? { paidFor: thisMonthPrefix() } : {}),
+    createdAt: Date.now(),
+  };
 }
 
 /* 11b — personalized challenge suggestions. Heuristics over the money doc:
@@ -3707,15 +3740,15 @@ function ScreenMoney({
           throw new Error('Due day must be 1–31.');
         }
         commit((m) =>
-          m.subscriptions.unshift({
-            id: uid(),
-            name: name.value.trim(),
-            amount: a,
-            dueDay: d,
-            category: catSeg.get(),
-            ...(Number(uses.value) > 0 ? { usesPerMonth: Math.round(Number(uses.value)) } : {}),
-            createdAt: Date.now(),
-          })
+          m.subscriptions.unshift(
+            newSubscription({
+              name: name.value.trim(),
+              amount: a,
+              dueDay: d,
+              category: catSeg.get(),
+              ...(Number(uses.value) > 0 ? { usesPerMonth: Math.round(Number(uses.value)) } : {}),
+            })
+          )
         );
         toast.success('Subscription added.');
       },
@@ -3814,10 +3847,7 @@ function ScreenMoney({
     let dialog;
     const make = (p) => {
       const today = todayKey();
-      const end =
-        p.kind === 'save' || p.kind === 'logdays' || p.kind === 'reduce'
-          ? thisMonthPrefix() + '-' + pad2(daysInMonth())
-          : dkey(addDays(new Date(), (p.days || 1) - 1));
+      const end = challengeEnd(p);
       commit((m) =>
         m.challenges.unshift({
           id: uid(),
@@ -6880,7 +6910,7 @@ function _demo() {
       kind: 'save',
       amount: 1000,
       start: thisMonthPrefix() + '-01',
-      end: thisMonthPrefix() + '-28',
+      end: thisMonthPrefix() + '-' + pad2(daysInMonth()),
     }).pct === 50,
     'save challenge 50%'
   );
@@ -6979,4 +7009,6 @@ export const _calc = {
   editedHomeAmount,
   challengeProgress,
   financialHealth,
+  challengeEnd,
+  newSubscription,
 };

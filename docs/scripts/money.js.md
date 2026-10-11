@@ -4,7 +4,7 @@ Exports: `emptyMoney()`, `normalizeMoney(m)` (returns COPIES of the ledger array
 `MoneyCustomisePane(money, save)`, `ScreenMoney`, `openExpenseModal` (for money-home.js), `MoneyHomeCard` (re-export), `searchExpenses` (for its test),
 `removeDocItem(m, key, id)` + `TOMBSTONED`, `ledgerCsv(money)`, and `_calc` (the pure engines —
 `forecast`, `upcomingSubs`, `budgetStatus`, `logStreak`, `bestStreak`, `loanLeft`, `loanOutstanding`,
-`loanMove`, `recurringDue`, `recurringToCome`, `materialiseRecurring`, `toHomeAmount` — for
+`loanMove`, `recurringDue`, `recurringToCome`, `materialiseRecurring`, `toHomeAmount`, `challengeProgress`, `challengeEnd`, `newSubscription` — for
 `money-calc.test.mjs`, which pins the clock by swapping `Date`).
 
 The screen still sees **one doc** (`GET /api/money`), but it is stored in two places: `expenses`,
@@ -49,7 +49,7 @@ accounts[]  {id, name, kind:'cash'|'bank'|'card'|'wallet', openingBalance, balan
 loans[]     {id, direction:'given'|'received', party, amount, date, note, settled, accountId?, repaid?[{amount, date, accountId?, final?}]}   (accountId = optional "Given from" / "Received into". `loanMove(m, loan, gone)` rebuilds the loan's transfers whole: `loan-<id>` for the full amount on the loan's date (lent = out, no `to`; borrowed = in, no `from`), and `loan-<id>-r<i>` per repayment on ITS date through its own account ("Repaid into" / "Paid from" in `openRepay`, default the loan's; Skip = no move). Settling records the last part as `final` too; Undo drops it. A loan settled before that (no `final`) gets `loan-<id>-s` for the rest, so old balances come out as before. `gone` = deleted: every move goes)   ("Split a bill" writes one 'given' row per person, note `Split: …`)
 goals[]     {id, name, target, dueDate, contribs[{amount,date}]}
 recurring[] {id, kind:'income'|'expense', amount, category (income: 'salary'|'other'), accountId?, day: 1-28|'last', note, active, start:'YYYY-MM-DD', postedFor?:'YYYY-MM'}   (see Recurring below)
-subscriptions[] {id, name, amount, dueDay, category, paidFor?:'YYYY-MM', usesPerMonth?}  (paid → drops out of upcomingSubs; expense id `sub-<id>-<month>`, same as the server's WhatsApp path; paid is forward-only on both sides; Mark as paid refuses a bill with no amount, as `applyPaid` does)
+subscriptions[] {id, name, amount, dueDay, category, paidFor?:'YYYY-MM', usesPerMonth?}  (built by `newSubscription`: one added after this month's due day starts `paidFor` this month, booking nothing; paid → drops out of upcomingSubs; expense id `sub-<id>-<month>`, same as the server's WhatsApp path; paid is forward-only on both sides; Mark as paid refuses a bill with no amount, as `applyPaid` does)
 tombstones{} "<list>:<id>" -> ms deleted, for the TOMBSTONED doc lists (loans, goals, subscriptions, challenges, wishlist, recurring); written by `removeDocItem`, honoured by `mergeMoney`, pruned after 120 days by `normalizeMoney`
 budgets{}   categoryKey -> monthly limit
 rollover{}  categoryKey -> 'YYYY-MM' switched on | null (off is null, not deleted, so a merge can't turn it back on; merged mine-wins like budgets)
@@ -79,12 +79,12 @@ All keys are `YYYY-MM-DD` strings; **all range filtering is string comparison**:
 | `setAsideThisMonth` / `setAsideInRange` | goal contributions as savings |
 | `incomeInRange` / `sumIncome` | income filtering |
 | `forecast` | `projectSpend` per list: bill expenses (`sub-…` ids) as they are, the single largest expense as a one-off when it is over half the list's total, the rest at its daily pace × days in month; plus `committed` = `bills` not yet paid this month + `recurringOut` (expense repeats still ahead); also `expectedIncome` (income repeats still ahead). Posted repeats (`rec-…` ids) count as fixed, like bills. `willExceed` reads `budgetStatus`'s effective limit. A paid bill is counted once (it used to be run-rated and committed again); a front-loaded one-off no longer projects ×31 into `willExceed` |
-| `challengeProgress(money, ch)` | no-spend / daily-cap / monthly save / log / reduce kinds |
+| `challengeProgress(money, ch)` | no-spend / daily-cap / save / log / reduce kinds, each judged on its own `start`..`min(today, end)`, never "this month"; won or broken once `today > end` (cap and reduce break at once when over). Reduce = the start's month against the month before it. `challengeEnd(p)` sets a new one's end: month end for save / reduce, `days` from today otherwise (a 30-day log streak runs 30 days) |
 | `suggestChallenges(money)` | personalized when data is rich, common presets when thin |
 | daily tip | deterministic by day-of-month |
 | `financialHealth(money)` | 0–100; **an empty account must score 0** (no phantom points) |
 | `searchExpenses(money, q)` | NL-ish query: "how much on food last month" |
-| `logStreak` / `bestStreak` | consecutive logging days. A day is logged when it has an expense **or** is in `noSpendDays` (`loggedDays`); the same rule feeds the "log N days" challenge (`distinctLogDaysThisMonth`) and the health score's "Expense logging" part |
+| `logStreak` / `bestStreak` | consecutive logging days. A day is logged when it has an expense **or** is in `noSpendDays` (`loggedDays`); the same rule feeds the "log N days" challenge (over its own window) and the health score's "Expense logging" part |
 | scenario projection | "cut X% of category for N months" |
 | `recoveryPlan` | reallocate from categories with room when over budget |
 
