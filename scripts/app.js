@@ -52,7 +52,6 @@ import {
   inFlightKeys,
 } from './app-logic.js';
 import { MEAL_SLOTS, mealSlotAt, effectiveMl, labelFor, suggestWaterGoalMl } from './nutrition.js';
-import { PACKS, planStarter } from './starter-packs.js';
 import {
   habitStats,
   heatmapWeeks,
@@ -101,7 +100,6 @@ import {
   TAGS,
 } from './calendar.js';
 import { WORK_WEEKS, getWorkWeek, setWorkWeek, occursOn } from './recurrence.js';
-import { buildDayPlan } from './day-plan.js';
 import { ScreenAchievements, computeAchievements, levelProgress } from './achievements.js';
 import { celebrate } from './celebrate.js';
 import { usualSleep, stepsTarget, focusMinutesTarget } from './nudges.js';
@@ -5109,7 +5107,9 @@ function openMoodCheckin() {
    due, habits not yet done and the three most pressing tasks, each task given a
    free hour (day-plan.js). Accepting turns the ticked task blocks into today's
    reminders, so the plan rings; everything else is already in the app. No AI. */
-function openDailyPlan() {
+// day-plan.js loads on the tap: it is only ever needed here, and the boot chunk is over budget.
+async function openDailyPlan() {
+  const { buildDayPlan } = await import('./day-plan.js');
   const today = todayKeyNow();
   const now = new Date();
   const plan = buildDayPlan({
@@ -12257,7 +12257,9 @@ async function applyStarter(rows) {
   return made;
 }
 
-function openStarterPacks() {
+// starter-packs.js loads on the tap, like day-plan.js: kept out of the boot chunk.
+async function openStarterPacks() {
+  const { PACKS, planStarter } = await import('./starter-packs.js');
   const picked = new Set();
   let rows = [];
   const chosen = new Map(); // row key -> on
