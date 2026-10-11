@@ -528,8 +528,10 @@ export function focusHours(sessions) {
 }
 
 /**
- * Each daily habit as {name, days: [{key, done}]}, from the day it started (or
- * the history window) to yesterday. A protected (frozen) day is not a miss.
+ * Each daily habit as {name, days: [{key, done}]}, from its first done day (in
+ * the history window, on or after `since`) to yesterday. A run of misses before
+ * the habit ever got going is not a pattern, and read as one it made every early
+ * weekday a "skip day". A protected (frozen) day is not a miss.
  */
 export function habitDays(habits, history, today) {
   const out = [];
@@ -545,7 +547,7 @@ export function habitDays(habits, history, today) {
     const days = [];
     for (let n = dayNum(String(hist.since)); n <= end; n++) {
       const key = dayKey(n);
-      days.push({ key, done: done.has(key) });
+      if (days.length || done.has(key)) days.push({ key, done: done.has(key) });
     }
     if (days.length)
       out.push({
@@ -559,20 +561,23 @@ export function habitDays(habits, history, today) {
   return out;
 }
 
-/** The weekday one daily habit is missed on far more than the others. */
+/** The weekday one daily habit is missed on far more than its other weekdays (same span).
+    3+ of that weekday; under 4 it is an early pattern, labelled and ranked at half. */
 export function habitWeekdayMiss(hdays) {
   let best = null;
   for (const hab of hdays) {
     if (hab.days.length < 14) continue;
     const by = [[], [], [], [], [], [], []];
     for (const d of hab.days) by[new Date(dayNum(d.key) * DAY_MS).getUTCDay()].push(!d.done);
-    const overall = hab.days.filter((d) => !d.done).length / hab.days.length;
+    const allMissed = hab.days.filter((d) => !d.done).length;
     by.forEach((g, i) => {
       const missed = g.filter(Boolean).length;
-      if (g.length < 2 || missed < 2) return;
-      const gap = missed / g.length - overall;
+      if (g.length < 3 || missed < 2) return;
+      const others = (allMissed - missed) / (hab.days.length - g.length);
+      const early = g.length < 4;
+      const gap = (missed / g.length - others) * (early ? 0.5 : 1);
       if (gap >= 0.25 && (!best || gap > best.gap))
-        best = { hab, name: hab.name, i, missed, of: g.length, gap, days: hab.days.length };
+        best = { hab, name: hab.name, i, missed, of: g.length, gap, early, days: hab.days.length };
     });
   }
   if (!best) return null;
@@ -590,7 +595,7 @@ export function habitWeekdayMiss(hdays) {
       ' of ' +
       best.of +
       '. Plan a smaller version for that day.',
-    basis: best.days + ' days',
+    basis: best.days + ' days' + (best.early ? ', an early pattern' : ''),
     effect: best.gap,
     action: to && {
       label: (best.hab.reminderTime ? 'Move reminder to ' : 'Remind me at ') + to,
@@ -783,10 +788,9 @@ export function goalPace(goals, progressById, now) {
       effect: 0.45,
     };
   }
-  const d = new Date(worst.finish).toLocaleDateString(undefined, {
-    day: 'numeric',
-    month: 'short',
-  });
+  const d = new Date(worst.finish)
+    .toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+    .replace(/\bSept\b/, 'Sep'); // en-GB's "Sept"; the app writes "Sep" 
   return {
     icon: 'target',
     title: worst.g.title + ' is behind pace',

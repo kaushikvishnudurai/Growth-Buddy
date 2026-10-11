@@ -4,7 +4,7 @@
    settings, its report section is replaced with a prompt to turn it
    back on (so the data the report needs can start being collected).
    ===================================================================== */
-import { h, Card, SectionTitle, Icon } from './gb-kit.js';
+import { h, Card, SectionTitle, Icon, openOverlay, refreshIcons } from './gb-kit.js';
 import { WeeklyReflectionCard, BadgeCard, GoalTimelineCard } from './dashboard.js';
 import { buildInsights, insightProgress } from './insights.js';
 import { InsightRow } from './outlook-card.js';
@@ -24,8 +24,15 @@ import {
 } from './review.js';
 // The Compare card reads the same daily series the insight cards do.
 import { signals } from './insights.js';
-import { shareStoryCard } from './share-card.js';
+import { shareStoryCard, renderStoryCard } from './share-card.js';
 import { toast } from './toast.js';
+
+/** "22 Sep" / "Tue, 22 Sep": one short month style. en-GB's Intl writes "Sept", the
+    rest of the app (pixels, Outlook) "Sep". */
+function shortDay(k, weekday) {
+  const opts = weekday ? { weekday: 'short', day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short' };
+  return new Date(k + 'T00:00:00').toLocaleDateString(undefined, opts).replace(/\bSept\b/, 'Sep');
+}
 
 /** Patterns across the user's logged signals, plus habits, tasks, goals, focus and money.
     `loading`: the history fetch is still out, so an empty list is not yet "nothing found".
@@ -189,8 +196,7 @@ function trendChart(values, color, days, fmt, title, opts = {}) {
     'aria-hidden': 'true',
     focusable: 'false',
   });
-  const dayLabel = (k) =>
-    new Date(k + 'T00:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  const dayLabel = (k) => shortDay(k);
   const lows = present.reduce((a, b) => (b.v < a.v ? b : a));
   const highs = present.reduce((a, b) => (b.v > a.v ? b : a));
   const summary =
@@ -276,11 +282,7 @@ function trendChart(values, color, days, fmt, title, opts = {}) {
     dot.setAttribute('cy', y(p.v).toFixed(1));
     guide.setAttribute('visibility', 'visible');
     dot.setAttribute('visibility', 'visible');
-    const date = new Date(days[p.i] + 'T00:00:00').toLocaleDateString(undefined, {
-      weekday: 'short',
-      day: 'numeric',
-      month: 'short',
-    });
+    const date = shortDay(days[p.i], true);
     tip.textContent = weekly
       ? 'Week of ' + dayLabel(days[p.i]) + ' · avg ' + fmt(p.v)
       : date + ' · ' + fmt(p.v);
@@ -399,8 +401,12 @@ function trendsSection({ on, trends, wellness, range, onRange }) {
     const all = monthTicks(b.keys, 3);
     const ticks = all.filter((_, j) => (all.length - 1 - j) % 2 === 0).map((t) => ({
       i: t.i,
-      label: new Date(t.month + '-01T00:00:00').toLocaleDateString(undefined, { month: 'short' }),
+      label: MONTH_SHORT[Number(t.month.slice(5, 7)) - 1],
     }));
+    // The headline is the latest week too: a daily "Good" over a chart whose summary said
+    // "latest weekly average Okay" read as two answers.
+    const lastWeek = b.values.filter((v) => v != null && !Number.isNaN(v)).pop();
+    if (lastWeek != null) latest = fmt(lastWeek);
     return trendCard(title, latest, sub, b.values, color, b.keys, fmt, vs, {
       bucket: 'week',
       ticks,
@@ -683,8 +689,7 @@ function scatterChart(res, mx, my) {
   });
   svg.appendChild(dot);
   const tip = h('div', { class: 'gb-trend-tip', hidden: true });
-  const dayLabel = (k) =>
-    new Date(k + 'T00:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  const dayLabel = (k) => shortDay(k);
   const show = (e) => {
     const box = svg.getBoundingClientRect();
     const px = ((e.clientX - box.left) / box.width) * W;
@@ -889,7 +894,15 @@ function nearestDay(grid, e) {
   return best && bestD < 12 ? best : null;
 }
 
-function pixelGrid(values, today, readout) {
+// Mood is a 1-4 check-in, not a percentage: "average 57%" meant nothing.
+const MOOD_WORD = ['Low', 'Okay', 'Good', 'Great'];
+const pixelFmt = {
+  mood: { day: (v) => MOOD_WORD[Math.round(v * 3)], avg: (v) => (1 + v * 3).toFixed(1) + ' of 4' },
+};
+const pctOf = (v) => Math.round(v * 100) + '%';
+
+function pixelGrid(values, today, readout, metric) {
+  const fmt = pixelFmt[metric] || { day: pctOf, avg: pctOf };
   const [ty, tm] = today.split('-').map(Number);
   const rows = [];
   const summary = { logged: 0, sum: 0 };
@@ -928,9 +941,8 @@ function pixelGrid(values, today, readout) {
       );
     }
   }
-  const avg = summary.logged ? Math.round((summary.sum / summary.logged) * 100) : 0;
   const total = summary.logged
-    ? summary.logged + ' days logged · average ' + avg + '%'
+    ? summary.logged + ' days logged · average ' + fmt.avg(summary.sum / summary.logged)
     : 'Nothing logged in the last year yet';
   readout.textContent = total;
 
@@ -947,15 +959,11 @@ function pixelGrid(values, today, readout) {
     cell.classList.add('is-picked');
     const k = cell.dataset.day;
     const v = values[k];
-    const date = new Date(k + 'T00:00:00').toLocaleDateString(undefined, {
-      weekday: 'short',
-      day: 'numeric',
-      month: 'short',
-    });
+    const date = shortDay(k, true);
     readout.textContent =
       date +
       ' · ' +
-      (k === today ? 'today, still counting' : v == null ? 'nothing logged' : Math.round(v * 100) + '%');
+      (k === today ? 'today, still counting' : v == null ? 'nothing logged' : fmt.day(v));
   };
   // Rows are a month label + 31 cells, so a column step is 32 children.
   const STEP = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -32, ArrowDown: 32 };
@@ -1032,7 +1040,12 @@ function pixelsSection({ trends, wellness, insightHistory }) {
       )
     );
     slot.replaceChildren(
-      pixelGrid(pixelValues(pixelMetric, { trends, wellness, habitHistory, today }), today, readout)
+      pixelGrid(
+        pixelValues(pixelMetric, { trends, wellness, habitHistory, today }),
+        today,
+        readout,
+        pixelMetric
+      )
     );
     key.replaceChildren(
       metric.low,
@@ -1074,8 +1087,8 @@ function recordsSection({ habits, trends, wellness, money, insightHistory }) {
   });
   const past = reviewMonth();
   const card =
-    (past && monthReview({ trends, wellness, habits, history: insightHistory, month: past })) ||
-    monthReview({ trends, wellness, habits, history: insightHistory });
+    (past && monthReview({ trends, wellness, habits, money, history: insightHistory, month: past })) ||
+    monthReview({ trends, wellness, habits, money, history: insightHistory });
   if (!records.length && !card) return null;
   const share = async () => {
     try {
@@ -1089,6 +1102,48 @@ function recordsSection({ habits, trends, wellness, money, insightHistory }) {
       toast.error(err, 'Could not draw the card here.');
     }
   };
+  // See the card before it goes anywhere: drawn once here, again by share (cheap, ~1 frame).
+  const preview = async () => {
+    let blob = null;
+    try {
+      blob = await renderStoryCard(card);
+    } catch (_) {
+      /* fall through to sharing directly */
+    }
+    if (!blob) return share();
+    const url = URL.createObjectURL(blob);
+    const { sheet, close } = openOverlay({
+      label: card.eyebrow,
+      onClose: () => URL.revokeObjectURL(url),
+    });
+    sheet.append(
+      h('div', { class: 'gb-modal-head' }, h('div', { class: 'gb-modal-title' }, card.eyebrow)),
+      h(
+        'div',
+        { class: 'gb-modal-body' },
+        h('img', {
+          src: url,
+          alt: card.eyebrow + ': ' + card.headline + ' ' + card.sub,
+          style: { display: 'block', margin: '0 auto', maxWidth: '100%', maxHeight: '60vh', borderRadius: '12px' },
+        })
+      ),
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--primary',
+          onclick: () => {
+            close();
+            share();
+          },
+        },
+        Icon('share-2', { size: 14, sw: 2.4 }),
+        'Share'
+      ),
+      h('button', { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel', onclick: close }, 'Cancel')
+    );
+    refreshIcons();
+  };
   return h(
     'div',
     { class: 'gb-dash-block' },
@@ -1099,7 +1154,7 @@ function recordsSection({ habits, trends, wellness, money, insightHistory }) {
       card
         ? h(
             'button',
-            { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--compact', onclick: share },
+            { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--compact', onclick: preview },
             Icon('share-2', { size: 14, sw: 2.4 }),
             past && card.month === past ? 'Share last month' : 'Share my month'
           )
