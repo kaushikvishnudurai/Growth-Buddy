@@ -197,11 +197,12 @@ export default defineConfig({
             },
           },
           {
-            // Read-through cache for API GETs: the network, and the last cached
-            // response only when the fetch fails (offline) so the UI still renders.
+            // Read-through cache for API GETs: prefer the network, fall back to
+            // the last cached response when offline so the UI still renders.
             // No networkTimeoutSeconds: with one, a merely slow answer was
-            // replaced by the cached one, so a refresh after a save could paint
-            // the state from before it.
+            // replaced by the cached one, so a refresh after a write repainted
+            // the pre-write state. The cache answers only when the fetch fails.
+            // Keyed by URL only, so every sign-out deletes it (app.js endSession).
             // Not the two downloads: the full data export and the .ics are one-off
             // files, and the export is every row the account owns — it must not
             // sit in Cache Storage afterwards.

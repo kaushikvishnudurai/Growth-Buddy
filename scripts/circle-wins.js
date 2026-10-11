@@ -4,6 +4,8 @@
    without pulling the rest of circle-core.js into the boot chunk.
    ===================================================================== */
 
+import { shiftDayKey } from './home-order.js';
+
 /**
  * Wins worth a post, from what the app already holds: a streak of 3+ days, a
  * goal finished in the last week, a full habit day. Newest-sounding first, at
@@ -16,7 +18,7 @@ export function winLines({ habits = [], goals = [], today = '' } = {}) {
     .sort((a, b) => b.streak - a.streak)
     .slice(0, 2)
     .forEach((x) => out.push('Day ' + x.streak + ' of ' + x.name + ' in a row.'));
-  const weekAgo = today ? shiftDay(today, -7) : '';
+  const weekAgo = today ? shiftDayKey(today, -7) : '';
   goals
     .filter(
       (g) => g && g.completed && (!weekAgo || String(g.completedAt || '').slice(0, 10) >= weekAgo)
@@ -30,8 +32,3 @@ export function winLines({ habits = [], goals = [], today = '' } = {}) {
   return out.slice(0, 4);
 }
 
-function shiftDay(iso, days) {
-  const d = new Date(iso + 'T12:00:00');
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
-}

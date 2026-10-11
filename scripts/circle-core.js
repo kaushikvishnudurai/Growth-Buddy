@@ -5,6 +5,7 @@
    circle-wins.js, because app.js needs them at boot and this file is Circle's.
    ===================================================================== */
 
+
 /** One-tap starts for "Start a challenge": each fills the form, Start sends it. */
 export const CHALLENGE_TEMPLATES = [
   { label: '7-day habit sprint', title: '7-day habit sprint', metric: 'habit_checkins', days: 7 },

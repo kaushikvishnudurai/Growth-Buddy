@@ -12,6 +12,7 @@ which also runs `_demo` on DEV boot).
 |---|---|
 | `renderStoryCard(card)` | → PNG blob. `card = {eyebrow, headline, sub, stats: [{label, value}] (≤3), note (≤3 wrapped lines), footer}` |
 | `shareStoryCard(card, {filename, title})` | → `'shared'｜'saved'｜'unavailable'｜'unsupported'`. Draws, then hands the PNG to `offerFile` (`scripts/save-file.js`): native path, `navigator.share({files})`, a download (`'saved'`), or in the app `'unavailable'` (already toasted). `'unsupported'` = the canvas failed. **A dismissed sheet counts as `'shared'`** (web `AbortError`, native "Share canceled") — the platform doesn't say otherwise |
+| (file hand-off) | `shareStoryCard` ends in `offerFile` from `save-file.js`, the one ladder every export uses: native Filesystem + Share in the app when those plugins are present, then `navigator.share({files})`, then a download; in the app with neither, a toast offering the website (`'unavailable'`). Callers toast "downloading" only on `'saved'` |
 | `_demo()` | DEV self-check: wrap/fit never overflow, three stats + three note lines clear the footer, brand row clears Instagram's chrome |
 
 ## Layout

@@ -28,6 +28,7 @@ import {
   habitDue,
   topStreaks,
   homeGoals,
+  todayKey,
 } from './home-order.js';
 import { suggestReminderTime } from './habit-stats.js';
 import { usualSleep } from './nudges.js';
@@ -168,12 +169,6 @@ const PRIORITY = {
   Medium: { bg: 'var(--sun-50)', fg: 'var(--sun-700)', dot: 'var(--sun-500)' },
   Low: { bg: 'var(--surface-3)', fg: 'var(--fg2)', dot: 'var(--warm-400)' },
 };
-
-function todayKey() {
-  const d = new Date();
-  const pad = (n) => (n < 10 ? '0' + n : String(n));
-  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
-}
 
 function sleepHours(entry) {
   if (!entry || !entry.bedtime || !entry.wakeTime) return null;
@@ -2146,10 +2141,6 @@ function MiniCalendarCard({
       .split('-')
       .map(Number);
     return { y: bits[0], m: bits[1] - 1, d: bits[2] };
-  }
-  function todayKey() {
-    const t = new Date();
-    return dateKey(t.getFullYear(), t.getMonth(), t.getDate());
   }
   function prettyDate(key) {
     const p = parseKey(key);

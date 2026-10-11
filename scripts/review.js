@@ -9,6 +9,7 @@
    ===================================================================== */
 
 import { fmtDate } from './i18n.js';
+import { todayKey as deviceToday } from './home-order.js';
 
 const DAY_MS = 86400000;
 const MOOD = { low: 1, okay: 2, good: 3, great: 4 };
@@ -68,7 +69,7 @@ export function pixelValues(metric, { trends, wellness, habitHistory, today } = 
   if (metric === 'score') {
     // Today's score is still climbing: as a finished day it shaded the square as
     // the worst level and dragged the average. Blank until the day is over.
-    const todayKey = today || localKey(new Date());
+    const todayKey = today || deviceToday();
     const by = (trends && trends.byDate) || {};
     for (const k in by) {
       if (k >= todayKey) continue;
@@ -82,7 +83,7 @@ export function pixelValues(metric, { trends, wellness, habitHistory, today } = 
       if (v) out[k] = (v - 1) / 3;
     }
   } else if (metric === 'habits') {
-    Object.assign(out, habitShares(habitHistory, today || localKey(new Date())));
+    Object.assign(out, habitShares(habitHistory, today || deviceToday()));
   }
   return out;
 }
@@ -101,7 +102,7 @@ function weekStart(key) {
  */
 export function personalRecords({ habits, trends, focus, money, today, fmtMoney } = {}) {
   const out = [];
-  const todayKey = today || localKey(new Date());
+  const todayKey = today || deviceToday();
 
   const best = (habits || []).reduce(
     (m, x) => ((x.longestStreak || 0) > (m ? m.longestStreak || 0 : 0) ? x : m),
@@ -183,7 +184,7 @@ export function personalRecords({ habits, trends, focus, money, today, fmtMoney 
  * `finished` is `/api/tasks/finished` ({doneAt}); `today` is a date key.
  */
 export function weeklyWinsDraft({ finished, habits, trends, money, today, fmtMoney } = {}) {
-  const todayKey = today || localKey(new Date());
+  const todayKey = today || deviceToday();
   const days = daysEnding(todayKey, 7);
   const week = new Set(days);
   const wins = [];
@@ -241,7 +242,7 @@ export function periodDelta(current, previous) {
  * the month has nothing to show.
  */
 export function monthReview({ trends, wellness, habits, history, today, month } = {}) {
-  const todayKey = today || localKey(new Date());
+  const todayKey = today || deviceToday();
   // `month` ('YYYY-MM') reviews an earlier month: Report offers last month on the
   // 1st to 3rd, when this one has a day or two in it.
   const prefix = month || todayKey.slice(0, 7);

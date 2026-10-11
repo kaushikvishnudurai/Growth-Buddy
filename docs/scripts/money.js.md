@@ -20,9 +20,9 @@ Tone rule stated at the top of the file: money framed as growth, never guilt.
 
 Three files so the ~6k-line screen stays out of the boot chunk (boot 551,884 B -> 447,141 B raw):
 
-- **`money-core.js`** (boot, no imports): everything from `CUR` / `cur` / `applyCurrency` through
+- **`money-core.js`** (boot; one import, `todayKey` from home-order.js): everything from `CUR` / `cur` / `applyCurrency` through
   `budgetStatus` — categories (`DEFAULT_CATEGORIES`, `PALETTE`, `KEYWORDS`, `mergedCats`, `catOf`,
-  `predictCategory` / `suggestCategory`, see below; `quickAccount`, the account a Quick add books to, tested in money-category.test.mjs), date + currency helpers (`todayKey` … `fmtDateShort`, `toHomeAmount`,
+  `predictCategory` / `suggestCategory`, see below; `quickAccount`, the account a Quick add books to, tested in money-category.test.mjs), date + currency helpers (`todayKey` (re-exported from home-order.js) … `fmtDateShort`, `toHomeAmount`,
   `readAmount` / `readWhole`, `uid`, `clone`, `slug`), the document model (`emptyMoney`,
   `normalizeMoney`, tombstones + `removeDocItem`, `mergeMoney`), the ledger split (`LEDGER_ARRAYS`,
   `stable`, `ledgerDiff`, `applyLedgerDiff`, `docPart`) and the two engines Home reads

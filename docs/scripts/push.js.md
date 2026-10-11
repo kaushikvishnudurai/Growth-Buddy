@@ -13,7 +13,6 @@ notifications through `native.js`, and timed reminders / habit reminders / the w
 | Export | What |
 |---|---|
 | `pushSupported()` | native LocalNotifications, else SW + PushManager + Notification |
-| `pushPermission()` | `Notification.permission`, `'denied'` when absent |
 | `pushSubscribed()` | native: permission granted; web: an existing `pushManager` subscription |
 | `enablePush(api)` | → `'ok'｜'unsupported'｜'unconfigured'｜'denied'｜'error'`. Web: `/api/push/public-key` (no `configured`/`publicKey` → `'unconfigured'`), permission, subscribe, POST `/api/push/subscribe`. Native: the app's own permission sheet ("Growth Buddy", not Chrome) |
 | `disablePush(api)` | web: unsubscribe + `/api/push/unsubscribe`. **Native: no-op** — an app can't revoke its own permission; the caller points at the system toggle |

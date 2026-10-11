@@ -40,7 +40,7 @@ import {
   HOME_WIDGETS,
   resolveHomeLayout,
 } from './dashboard.js';
-import { habitDue } from './home-order.js';
+import { habitDue, todayKey as sharedTodayKey, shiftDayKey } from './home-order.js';
 import { withProgressLog, needsProgressLog } from './goal-milestones.js';
 import { goalTaskStats, combinedGoalProgress, goalFinishedBy } from './goal-tasks.js';
 import {
@@ -104,6 +104,7 @@ import {
   REPEATS,
   REPEAT_ORDER,
   TAGS,
+  clearReminderForm,
 } from './calendar.js';
 import { WORK_WEEKS, getWorkWeek, setWorkWeek, occursOn } from './recurrence.js';
 import { computeAchievements, levelProgress } from './achievements.js';
@@ -122,6 +123,20 @@ import {
   notificationTarget,
 } from './push.js';
 import { CacheStorage } from './cache-storage.js';
+import {
+  sessionGen,
+  bumpSession,
+  isStaleSession,
+  sessionEndedError,
+  SESSION_ENDED,
+  freshUserState,
+  USER_CACHES,
+  isUserKey,
+  bootKey,
+  bootSnapshot,
+  readBootSnapshot,
+  bootFromSnapshot,
+} from './session.js';
 import { createOutbox, tempId, isTempId, newIdemKey } from './outbox.js';
 import {
   initNative,
@@ -608,6 +623,10 @@ function isConnectionToast(t) {
    Tapping it runs it and dismisses the toast. */
 function pushToast(message, kind, durationMs, action) {
   let text = message || 'Something went wrong.';
+  // A late answer for a session that has ended (session.js) has nobody to tell,
+  // and "session expired" from the requests a 401 cut short is what the sign-in
+  // card's notice already says.
+  if (text === SESSION_ENDED || (text === SESSION_EXPIRED && !state.user)) return 0;
   // The banner already says the connection is down; repeating "Check your
   // internet" under it said it twice. What's left to say is what happened to
   // the thing just tried.
@@ -1346,7 +1365,6 @@ function hydrateUiPrefs() {
       CacheStorage.setItem(PREMIUM_KEY, p.premium ? '1' : '0');
       applyPremium(p.premium);
     }
-    if (typeof p.qaLang === 'string') localStorage.setItem('gb.qa.lang', p.qaLang);
     // Before this runs, every "Mon-Fri" reminder answers with the default —
     // so it has to happen before the calendar or Home paints their dots.
     setWorkWeek(p.workWeek);
@@ -1381,15 +1399,14 @@ function hydrateUiPrefs() {
    can still rescue), `protectedToday`, and the current `freezeTokens` balance.
    This layer just reads those fields and calls the protect/unprotect endpoints. */
 
+/* The account's today (home-order.js todayKey): the day the server checks a
+   check-in or rest day against and stamps on its water/food summaries. */
 function todayKey() {
-  const d = new Date();
-  return dateKey(d.getFullYear(), d.getMonth(), d.getDate());
+  return sharedTodayKey(state.user && state.user.timezone);
 }
 
 function yesterdayKey() {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return dateKey(d.getFullYear(), d.getMonth(), d.getDate());
+  return shiftDayKey(todayKey(), -1);
 }
 
 // At-risk banners the user chose to let reset — session-only, don't nag again.
@@ -1935,24 +1952,24 @@ function recordTrendsToday() {
 }
 
 /* Sign-out leaves nothing of this account on the device: money, wellness, goal
-   progress, trends — every key built as gb.<thing>.<userId>[.<more>]. Except a
-   money pending queue that still holds writes: those are expenses the server
-   never got, the only copy there is, and they replay when this account signs
-   back in. Session expiry (handleAuthExpired) keeps everything, since the same
-   person is about to sign back in. */
-function purgeUserCache() {
+   progress, trends, the app's boot snapshot — every key built as
+   gb.<thing>.<userId>[.<more>] (session.js isUserKey). Every way out runs it, a
+   401 included: whoever signs in next on this device is not necessarily the
+   same person. Except writes the server never got, the only copy there is:
+   a money pending queue that still holds some is kept (it replays when this
+   account signs back in), and so is the offline outbox when the session
+   expired rather than being ended on purpose. */
+function purgeUserCache(reason) {
   const id = state.user && state.user.id;
   if (!id) return;
   const p = loadPendingLedger();
-  const keep = Object.keys(p.upserts).length || p.deletes.length ? pendingKey() : null;
-  CacheStorage.removeWhere(
-    (k) => k !== keep && (k.endsWith('.' + id) || k.includes('.' + id + '.'))
-  );
-  // The offline outbox (gb.outbox.<uid>) goes too — the pattern above already
-  // matches it; this says so. Unlike the money queue it is not kept: a task tick
-  // replayed into a later session is worth less than a clean sign-out.
-  outbox.clear();
+  const keepMoney = reason !== 'deleted' && (Object.keys(p.upserts).length || p.deletes.length);
+  const keepOutbox = reason === 'expired' && outbox.size() ? outboxKey() : null;
+  const keep = keepMoney ? pendingKey() : null;
+  const gone = CacheStorage.removeWhere((k) => k !== keepOutbox && isUserKey(k, id, keep));
+  if (!keepOutbox) outbox.clear();
   outboxIds.clear();
+  return gone;
 }
 
 function clearSession() {
@@ -2299,7 +2316,10 @@ const SESSION_EXPIRED = 'Your session expired. Please sign in again.';
 async function api(path, options) {
   const opts = options || {};
   const method = (opts.method || 'GET').toUpperCase();
-  if (method === 'GET' && !opts.body) {
+  // Only a plain GET is shared. One with onResponse (the money ETag), raw or its
+  // own headers needs its own response: handed the first caller's promise, its
+  // onResponse never ran and the next PUT sent a stale If-Match.
+  if (method === 'GET' && !opts.body && !opts.onResponse && !opts.raw && !opts.headers) {
     const existing = _inflightGets.get(path);
     if (existing) return existing;
     const p = (async () => {
@@ -2338,7 +2358,21 @@ function statusMessage(status) {
   return "That didn't work. Please try again.";
 }
 
+/* The session generation (session.js) is noted before the request goes out:
+   an answer that lands after a sign-out rejects with sessionEndedError() and
+   writes nothing, and its 401 doesn't end the NEXT session. */
 async function apiFetch(path, options) {
+  const gen = sessionGen();
+  try {
+    const out = await apiFetchNow(path, options, gen);
+    if (isStaleSession(gen)) throw sessionEndedError();
+    return out;
+  } catch (err) {
+    throw isStaleSession(gen) ? sessionEndedError() : err;
+  }
+}
+
+async function apiFetchNow(path, options, gen) {
   const opts = options || {};
   const headers = Object.assign({ Accept: 'application/json' }, opts.headers || {});
   const token = loadToken();
@@ -2361,6 +2395,7 @@ async function apiFetch(path, options) {
   } catch (_) {
     throw new Error(NO_CONNECTION);
   }
+  if (isStaleSession(gen)) throw sessionEndedError();
   if (res.status === 401) {
     // Token went stale (revoked, expired, server restarted with empty DB,
     // etc.) — wipe local state and bounce to the sign-in screen.
@@ -2411,6 +2446,7 @@ async function apiStream(path, body, signal) {
   const device = deviceLabelHeader();
   if (device) headers['X-GB-Device'] = device;
   const fallback = (msg) => Object.assign(new Error(msg), { fallback: true });
+  const gen = sessionGen();
   let res;
   try {
     res = await fetch(API_BASE + path, {
@@ -2423,6 +2459,7 @@ async function apiStream(path, body, signal) {
     if (err && err.name === 'AbortError') throw err;
     throw fallback(NO_CONNECTION);
   }
+  if (isStaleSession(gen)) throw sessionEndedError();
   if (res.status === 401) {
     handleAuthExpired();
     throw new Error(SESSION_EXPIRED);
@@ -2443,51 +2480,11 @@ async function apiStream(path, body, signal) {
   return res;
 }
 
+/* A 401 from api() or the stream: the token was revoked, expired, or signed
+   out everywhere. Same teardown as Sign out, minus the server calls the dead
+   token can't make. */
 function handleAuthExpired() {
-  disconnectWebSocket();
-  clearSession();
-  state.user = null;
-  state.tasks = [];
-  state.habits = [];
-  state.goals = [];
-  state.reminders = [];
-  state.goals = [];
-  state.wellness = emptyWellness();
-  state.goalProgress = {};
-  // Another account must not see this one's Insights, nor wait out its throttle.
-  state.insightHistory = null;
-  state.waterUsualHours = null;
-  loadedFor = null; // the next sign-in is a first load, not a refresh
-  insightHistoryAt = 0;
-  insightReq = null; // a fetch still in flight belongs to the old account: drop it
-  state.money = emptyMoney();
-  state.streakFreeze = emptyStreakFreeze();
-  state.trends = emptyTrends();
-  state.water = null;
-  state.food = null;
-  state.calendarFoodByDate = {};
-  state.calendarFoodErrorByDate = {};
-  state.calendarFoodLoadingFor = '';
-  setNotifFirstPage([]); // also drops the last account's unread-past-the-page count
-  notifFilter = 'all';
-  state.quote = null;
-  state.score = 0;
-  state.authMode = 'signin';
-  state.authEmail = '';
-  try {
-    sessionStorage.removeItem('gb.authDraft');
-  } catch (_) {
-    /* ignore */
-  }
-  state.authNotice = 'Your session ended. Sign in again.';
-  state.profileOpen = false;
-  state.notifOpen = false;
-  state.moreOpen = false;
-  state.toasts = [];
-  returnToScreen = state.screen; // signing back in returns here, not to Home
-  state.screen = 'home';
-  if (window.location.hash) history.replaceState(null, '', window.location.pathname);
-  render();
+  endSession('expired');
 }
 
 function formatTaskTime(task) {
@@ -2748,6 +2745,7 @@ async function loadData() {
   // if any one of the five calls failed.
   const userKey = state.user.id || state.user.email;
   const refresh = loadedFor === userKey && !state.error;
+  const gen = sessionGen();
   if (!refresh) {
     // Refreshing on /family used to run quote card -> family skeleton -> family:
     // the boot screen was waiting on five calls that screen never reads. Screens
@@ -2783,16 +2781,20 @@ async function loadData() {
     // first paint doesn't wait on a replay; the flush refetches what it touched.
     // The queue itself is read only once CacheStorage has hydrated it.
     await CacheStorage.ready();
+    if (isStaleSession(gen)) return; // signed out while the queue hydrated
+    saveBootSnapshot();
     overlayOutbox();
     flushOutbox();
     reSyncDeviceAlarms();
     loadWaterUsualHours();
     autoTickStepHabits();
   } catch (err) {
+    if (err && err.sessionEnded) return; // that session is gone; this answer is nobody's
     if (refresh) {
       toastError(err, 'Could not refresh. Showing your last data.');
       return;
     }
+    if (bootFromSnapshot(err, isNative()) && (await paintBootSnapshot(userKey))) return;
     state.error = err.message || 'Failed to load data from backend.';
     state.loading = false;
     render();
@@ -2814,6 +2816,32 @@ async function loadData() {
   // it until a listener attaches) finds the habit or reminder it names.
   armNotificationActions();
   loadSecondaryData();
+}
+
+/* The phone app has no service worker, so with no connection a cold start's
+   wave 1 had nothing to answer it and Home was the crash card. The last good
+   wave 1 (+ goals) is kept per account (session.js bootKey; every sign-out
+   removes it) and painted instead, under the offline banner, or a toast when
+   the device thinks it is online (a server that never answered). It counts as
+   loaded, so coming back online refreshes in place. Web: the worker's
+   gb-api-get already does this, so nothing is stored twice there. */
+function saveBootSnapshot() {
+  if (!isNative() || !state.user || !state.user.id) return;
+  CacheStorage.setItem(bootKey(state.user.id), bootSnapshot(state));
+}
+async function paintBootSnapshot(userKey) {
+  await CacheStorage.ready();
+  const snap =
+    state.user && state.user.id && readBootSnapshot(CacheStorage.getItem(bootKey(state.user.id)));
+  if (!snap) return false;
+  Object.assign(state, snap);
+  overlayOutbox();
+  state.loading = false;
+  loadedFor = userKey;
+  if (!SELF_LOADING_SCREENS.has(state.screen)) render();
+  if (navigator.onLine)
+    pushToast('Couldn’t reach Growth Buddy. Showing your last data.', 'info', 5000);
+  return true;
 }
 
 /* Screens that own their subtree: they fetch through their own api callbacks
@@ -2850,6 +2878,7 @@ async function loadSecondaryData() {
   // and re-rendering would rebuild screens that own their subtree (family,
   // money, mentor, circle) and throw away their local view state.
   const bootScreen = state.screen;
+  const gen = sessionGen();
   connectWebSocket();
   try {
     const [goals, notifications, food, money, dailyLogs, photoHistory, weekly] =
@@ -2858,22 +2887,24 @@ async function loadSecondaryData() {
         api(notifPageUrl('all')).catch(() => null),
         api('/api/food').catch(() => null),
         api('/api/money', { onResponse: rememberMoneyVersion }).catch((err) => {
-          console.error('Money API failed - data will NOT persist!', err);
+          if (!err.sessionEnded) console.error('Money API failed - data will NOT persist!', err);
           return null;
         }),
         api('/api/daily-logs?days=60').catch((err) => {
-          console.error('Daily logs API failed - sleep/mood data will NOT persist!', err);
+          if (!err.sessionEnded) console.error('Daily logs API failed - sleep/mood data will NOT persist!', err);
           return null;
         }),
         api('/api/food/photo-history').catch((err) => {
-          console.error('Photo history API failed - photos will NOT persist!', err);
+          if (!err.sessionEnded) console.error('Photo history API failed - photos will NOT persist!', err);
           return null;
         }),
         api('/api/weekly-review').catch(() => null),
       ]);
+    if (isStaleSession(gen)) return; // signed out meanwhile: none of this is the next account's
 
     if (goals) {
       state.goals = goals;
+      saveBootSnapshot();
       // Per-goal progress (milestones, day-tracker) rides on each goal from the
       // backend; rebuild the id-keyed map and mirror it to the local cache.
       const gp = {};
@@ -3381,7 +3412,7 @@ async function plainToggleHabit(id) {
       // Queued as a dated check-in, not /toggle: the server's "today" when this
       // replays may be tomorrow, and a toggle would tick the wrong day. Two taps
       // on the same day cancel in the outbox (toggleKey).
-      const day = todayKeyNow();
+      const day = todayKey();
       const done = state.habits.some((h) => h.id === id && h.doneToday);
       queueWrite({
         method: 'POST',
@@ -3685,7 +3716,7 @@ function addQuickExpense(amount, note) {
     ...quickAccount(state.money, 'expense'),
     // The tag Money's own form would start on: this note's past tag, then keywords.
     category: (note && suggestCategory(note, state.money)) || 'others',
-    date: todayKeyNow(),
+    date: todayKey(),
     note: note || '',
     createdAt: Date.now(),
   });
@@ -3701,7 +3732,7 @@ function addQuickIncome(amount, label) {
     ...quickAccount(state.money, 'income'),
     source: salary ? 'salary' : 'other',
     label: label || (salary ? 'Salary' : 'Income'),
-    date: todayKeyNow(),
+    date: todayKey(),
   });
   saveMoney(next);
 }
@@ -3719,7 +3750,7 @@ async function parseQuickAdd(text) {
   const now = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
   const res = await api('/api/quick-add', {
     method: 'POST',
-    body: JSON.stringify({ text, habits, today: todayKeyNow(), now }),
+    body: JSON.stringify({ text, habits, today: todayKey(), now }),
   });
   // A sentence can't write into a tracker the user switched off.
   const intents = ((res && res.intents) || []).filter(
@@ -3868,8 +3899,8 @@ function hhmm(v) {
    until 31 Dec · 10 min before · Work". */
 function reminderSummary(it) {
   const bits = [it.text];
-  const day = it.date || todayKeyNow();
-  const when = day === todayKeyNow() ? 'Today' : shortDay(day);
+  const day = it.date || todayKey();
+  const when = day === todayKey() ? 'Today' : shortDay(day);
   bits.push(
     when +
       (it.time ? ', ' + formatTime(hhmm(it.time)) : '') +
@@ -3892,13 +3923,30 @@ function reminderSummary(it) {
    Capacitor app's WebView doesn't, so there the native SpeechRecognition plugin
    takes over. One helper, so Quick add, the calendar's reminder form and
    Settings → Reminders all listen the same way. */
+const VOICE_LANGS = [
+  { code: 'en-IN', label: 'English' },
+  { code: 'hi-IN', label: 'हिन्दी' },
+  { code: 'ta-IN', label: 'தமிழ்' },
+  { code: 'te-IN', label: 'తెలుగు' },
+  { code: 'kn-IN', label: 'ಕನ್ನಡ' },
+  { code: 'ml-IN', label: 'മലയാളം' },
+  { code: 'bn-IN', label: 'বাংলা' },
+  { code: 'mr-IN', label: 'मराठी' },
+  { code: 'gu-IN', label: 'ગુજરાતી' },
+  { code: 'pa-IN', label: 'ਪੰਜਾਬੀ' },
+];
+/* The picked language (ui_prefs.qaLang, the account's), else the device's own
+   matched against VOICE_LANGS: Quick add's picker and every other mic read this
+   one answer, so they can't default differently. */
 function speechLang() {
-  return (
-    localStorage.getItem('gb.qa.lang') ||
-    ((state.user && state.user.uiPrefs) || {}).qaLang ||
-    navigator.language ||
-    'en-IN'
-  );
+  const saved = ((state.user && state.user.uiPrefs) || {}).qaLang;
+  if (saved) return saved;
+  const device = navigator.language || 'en-IN';
+  const base = (c) => c.split('-')[0];
+  const match =
+    VOICE_LANGS.find((l) => l.code === device) ||
+    VOICE_LANGS.find((l) => base(l.code) === base(device));
+  return match ? match.code : device;
 }
 
 function voiceSupported() {
@@ -4097,7 +4145,7 @@ async function applyIntent(it) {
       // Every field the sentence gave, through the same path as the calendar's
       // own form — so the past-day and past-time refusals apply here too.
       const made = await addReminder(
-        it.date || todayKeyNow(),
+        it.date || todayKey(),
         it.text,
         hhmm(it.time),
         it.tag || 'personal',
@@ -4482,7 +4530,7 @@ const localDayOf = (iso) => {
 /* Taps not yet on the server, laid over a summary from it. Only the summary's
    own day: a glass queued last night is yesterday's, not today's. */
 function withPendingWater(water) {
-  return overlayPendingWater(water, pendingWater, { today: todayKeyNow(), dayOf: localDayOf, effectiveMl });
+  return overlayPendingWater(water, pendingWater, { today: todayKey(), dayOf: localDayOf, effectiveMl });
 }
 
 /* No connection, or a server that's down: worth queueing. A 4xx is a refusal. */
@@ -4522,7 +4570,7 @@ async function queueWrite(op) {
 /* Lay what's queued over lists just read from the server, which has not seen
    it yet. Called right after state.tasks / habits / reminders are replaced. */
 function overlayOutbox() {
-  const today = todayKeyNow();
+  const today = todayKey();
   for (const op of outbox.list()) {
     const l = op.local || {};
     if (op.kind === 'task.create' && !state.tasks.some((t) => t.id === l.id)) state.tasks = [l, ...state.tasks];
@@ -4613,7 +4661,7 @@ async function flushWaterQueue() {
       onSent: (x, updated) => {
         pendingWater.delete(x.id);
         storeWaterQueue(loadWaterQueue().filter((y) => y.id !== x.id));
-        if (summaryIsForToday(updated, todayKeyNow())) state.water = withPendingWater(updated);
+        if (summaryIsForToday(updated, todayKey())) state.water = withPendingWater(updated);
         invalidateWeek('water');
       },
       onRefused: (x, err) => {
@@ -4641,8 +4689,8 @@ async function flushWaterQueue() {
    quick buttons are water): tea/coffee/... count for less, nutrition.js HYDRATION. */
 async function quickAddWater(amountMl, dayKey, drinkType) {
   const drink = drinkType && drinkType !== 'water' ? drinkType : null;
-  if (dayKey && dayKey !== todayKeyNow()) {
-    if (dayKey > todayKeyNow()) {
+  if (dayKey && dayKey !== todayKey()) {
+    if (dayKey > todayKey()) {
       toastError(null, "You can't log water for a day that hasn't happened yet.");
       return;
     }
@@ -4725,7 +4773,7 @@ async function quickAddWater(amountMl, dayKey, drinkType) {
       waterRefetch = false;
       const fresh = await api('/api/water').catch(() => null);
       // A tap made while this GET was out has its own answer coming; let it paint.
-      if (fresh && waterInFlight === 0 && summaryIsForToday(fresh, todayKeyNow())) {
+      if (fresh && waterInFlight === 0 && summaryIsForToday(fresh, todayKey())) {
         state.water = withPendingWater(fresh);
         render();
       }
@@ -4786,7 +4834,7 @@ async function logFoodEntry(payload, opts) {
   // and that is not today — `state.food` drives the Home card, so only today's
   // may land there. The date-keyed cache below takes every day, which is what
   // the Calendar reads.
-  const forToday = summaryIsForToday(updated, todayKeyNow());
+  const forToday = summaryIsForToday(updated, todayKey());
   if (forToday) state.food = updated;
   cacheFoodSummary(updated);
   render();
@@ -4819,7 +4867,7 @@ async function logFoodEntry(payload, opts) {
 async function undoFoodLog(id) {
   try {
     const updated = await api('/api/food/entries/' + encodeURIComponent(id), { method: 'DELETE' });
-    if (summaryIsForToday(updated, todayKeyNow())) state.food = updated;
+    if (summaryIsForToday(updated, todayKey())) state.food = updated;
     cacheFoodSummary(updated);
     recentFoods = null;
     invalidateWeek('food');
@@ -5005,23 +5053,18 @@ function showFoodLoader(foodName) {
   };
 }
 
-function todayKeyNow() {
-  const t = new Date();
-  return dateKey(t.getFullYear(), t.getMonth(), t.getDate());
-}
-
 /* The instant to file an entry under, from a picked day. Today keeps the real
    clock time so the day's list stays in order and shows a sensible one. A past
    day gets local noon: the server re-derives the date in the user's own zone,
    and noon is the one hour that lands on the same day whatever that zone is. */
 function loggedAtFor(dayKey) {
-  if (!dayKey || dayKey === todayKeyNow()) return new Date().toISOString();
+  if (!dayKey || dayKey === todayKey()) return new Date().toISOString();
   const [y, m, d] = dayKey.split('-').map(Number);
   return new Date(y, m - 1, d, 12, 0, 0).toISOString();
 }
 
 async function saveSleepEntry(payload) {
-  const key = payload.date || todayKeyNow();
+  const key = payload.date || todayKey();
   // Optimistic local update + cache mirror, then persist to the backend.
   state.wellness = Object.assign(emptyWellness(), state.wellness || {});
   state.wellness.sleepByDate = Object.assign({}, state.wellness.sleepByDate || {}, {
@@ -5054,7 +5097,7 @@ async function saveSleepEntry(payload) {
 }
 
 async function saveMoodEntry(payload) {
-  const key = payload.date || todayKeyNow();
+  const key = payload.date || todayKey();
   state.wellness = Object.assign(emptyWellness(), state.wellness || {});
   state.wellness.moodByDate = Object.assign({}, state.wellness.moodByDate || {}, {
     [key]: {
@@ -5100,7 +5143,7 @@ function rememberPhotoFood(foodName, estimate, usedPhoto) {
     photoHistory: [
       {
         id: String(Date.now()),
-        date: todayKeyNow(),
+        date: todayKey(),
         foodName,
         mealType,
         confidence,
@@ -5114,14 +5157,14 @@ function rememberPhotoFood(foodName, estimate, usedPhoto) {
   // Persist to the backend (optimistic; cache already updated).
   api('/api/food/photo-history', {
     method: 'POST',
-    body: JSON.stringify({ foodName, mealType, confidence, fallbackNeeded, date: todayKeyNow() }),
+    body: JSON.stringify({ foodName, mealType, confidence, fallbackNeeded, date: todayKey() }),
   }).catch((err) => {
     console.error('CRITICAL: rememberPhotoFood failed to reach database:', err);
   });
 }
 
 function openSleepSchedule() {
-  const today = todayKeyNow();
+  const today = todayKey();
   const existing = (state.wellness.sleepByDate || {})[today] || {};
   // An unlogged night opens on the usual one, so a normal night is one tap on Save.
   const usual = usualSleep(state.wellness.sleepByDate, today) || { bedtime: '23:00', wakeTime: '07:00' };
@@ -5180,7 +5223,7 @@ function openSleepSchedule() {
 }
 
 function openMoodCheckin() {
-  const today = todayKeyNow();
+  const today = todayKey();
   const existing = (state.wellness.moodByDate || {})[today] || {};
   const mood = segmented(
     [
@@ -5246,7 +5289,7 @@ function openMoodCheckin() {
 // day-plan.js loads on the tap: it is only ever needed here, and the boot chunk is over budget.
 async function openDailyPlan() {
   const { buildDayPlan } = await import('./day-plan.js');
-  const today = todayKeyNow();
+  const today = todayKey();
   const now = new Date();
   const plan = buildDayPlan({
     tasks: state.tasks,
@@ -5345,7 +5388,7 @@ function addMinutesHHMM(hhmmStr, mins) {
 }
 
 async function addSuggestedReminder(text, time, tag) {
-  await addReminder(todayKeyNow(), text, time || '19:00', tag || 'personal', 'none', null);
+  await addReminder(todayKey(), text, time || '19:00', tag || 'personal', 'none', null);
 }
 
 /* The "recent foods" chips: GET /api/food/recent, kept for the session and
@@ -5622,8 +5665,8 @@ function openAddFood() {
   const dateInput = h('input', {
     type: 'date',
     class: 'gb-input',
-    value: todayKeyNow(),
-    max: todayKeyNow(),
+    value: todayKey(),
+    max: todayKey(),
     'aria-label': 'Day this food was eaten',
   });
 
@@ -5907,7 +5950,7 @@ function openAddFood() {
       let entriesToAdd = [];
       const mealType = mealTypeSeg.get();
       // A typed date skips the picker's max; YYYY-MM-DD compares as text.
-      if (dateInput.value > todayKeyNow()) {
+      if (dateInput.value > todayKey()) {
         dateInput.focus();
         throw new Error("You can't log food for a day that hasn't happened yet.");
       }
@@ -6134,8 +6177,8 @@ function openEditFood(entry) {
   const day = h('input', {
     type: 'date',
     class: 'gb-input',
-    value: entry.logDate || todayKeyNow(),
-    max: todayKeyNow(),
+    value: entry.logDate || todayKey(),
+    max: todayKey(),
     'aria-label': 'Day this food was eaten',
   });
   const meal = segmented(
@@ -6222,7 +6265,7 @@ function openEditFood(entry) {
         kcal.focus();
         throw new Error('Calories must be between 1 and 5,000 for a single entry.');
       }
-      if (day.value > todayKeyNow()) {
+      if (day.value > todayKey()) {
         day.focus();
         throw new Error("You can't log food for a day that hasn't happened yet.");
       }
@@ -6236,7 +6279,7 @@ function openEditFood(entry) {
       });
       recentFoods = null;
       // Moved to another day: today's card loses it, so refetch today's.
-      if (updated && updated.date === todayKeyNow()) state.food = updated;
+      if (updated && updated.date === todayKey()) state.food = updated;
       else if (state.food && (state.food.entries || []).some((e) => e.id === entry.id))
         state.food = await api('/api/food').catch(() => state.food);
       cacheFoodSummary(updated);
@@ -6368,16 +6411,20 @@ async function loadOlderNotifs() {
 
 /* Read at once, then told to the server; a failure puts it all back. */
 async function markAllNotificationsRead() {
-  const prev = state.notifications;
+  // On failure only these ids go back to unread: a card pushed (or an older page
+  // loaded) while the POST was out must survive the rollback.
+  const wereUnread = new Set(state.notifications.filter((n) => !n.readAt).map((n) => n.id));
   const prevBeyond = notifPaging.beyond;
   const now = new Date().toISOString();
-  state.notifications = prev.map((n) => (n.readAt ? n : { ...n, readAt: now }));
+  state.notifications = state.notifications.map((n) => (n.readAt ? n : { ...n, readAt: now }));
   notifPaging.beyond = 0;
   repaintOverlays();
   try {
     await api('/api/notifications/mark-all-read', { method: 'POST' });
   } catch (err) {
-    state.notifications = prev;
+    state.notifications = state.notifications.map((n) =>
+      wereUnread.has(n.id) && n.readAt === now ? { ...n, readAt: null } : n
+    );
     notifPaging.beyond = prevBeyond;
     repaintOverlays();
     toastError(err, 'Could not mark them read.');
@@ -6386,13 +6433,18 @@ async function markAllNotificationsRead() {
 
 /* Read cards go; unread ones stay. Server-wide for the user, not just the loaded pages. */
 async function clearReadNotifications() {
-  const prev = state.notifications;
-  state.notifications = prev.filter((n) => !n.readAt);
+  // On failure the removed cards are put back, in their place, beside anything
+  // that arrived meanwhile — never a snapshot over it.
+  const removed = state.notifications.filter((n) => n.readAt);
+  state.notifications = state.notifications.filter((n) => !n.readAt);
   repaintOverlays();
   try {
     await api('/api/notifications/read', { method: 'DELETE' });
   } catch (err) {
-    state.notifications = prev;
+    const have = new Set(state.notifications.map((n) => n.id));
+    state.notifications = [...state.notifications, ...removed.filter((n) => !have.has(n.id))].sort(
+      (a, b) => notifTime(b) - notifTime(a)
+    );
     repaintOverlays();
     toastError(err, 'Could not clear read notifications.');
   }
@@ -6507,7 +6559,7 @@ function mentorApi() {
     onThread: (id) => {
       mentorThreadId = id;
     },
-    today: todayKeyNow,
+    today: todayKey,
     reflection: { label: reflectionLabel, open: () => openProfileSettings('notifications') },
     // Buddy's one-tap actions, after the user confirmed the sheet. Each throws to
     // keep the sheet open with the reason.
@@ -7425,7 +7477,7 @@ function openWeeklyReview() {
           habits: state.habits,
           trends: state.trends,
           money: state.money,
-          today: todayKeyNow(),
+          today: todayKey(),
           fmtMoney: (n) => cur() + Math.round(n),
         });
         if (draft && !typed && !wins.value) wins.value = draft.slice(0, 400);
@@ -7569,18 +7621,9 @@ function openDeleteAccount() {
       });
       // Scheduled, not gone (AuthService.deleteAccount): every session was revoked
       // and the purge runs in 7 days; signing in before then offers to cancel.
-      // Drop the local session and return to the login screen. The device's own
-      // alarms and the offline API cache are ours to clear (see logout()).
-      cancelPendingLocalNotifications();
-      try {
-        if (typeof caches !== 'undefined') await caches.delete('gb-api-get');
-      } catch (_) {
-        /* no CacheStorage */
-      }
-      clearSession();
-      state.user = null;
+      // Everything on this device goes the way a sign-out's does, then a reload.
       close();
-      location.reload();
+      endSession('deleted');
     } catch (err) {
       confirmBtn.disabled = false;
       confirmBtn.textContent = 'Delete my account';
@@ -8104,7 +8147,7 @@ function nextOccurrence(rem) {
 }
 
 function shortDay(key) {
-  const today = todayKeyNow();
+  const today = todayKey();
   const d = new Date(key + 'T00:00:00');
   const tomorrow = keyOfDate(new Date(Date.now() + 864e5));
   if (key === today) return 'Today';
@@ -8128,8 +8171,8 @@ function reminderQuickAdd(onAdded) {
   const dateInput = h('input', {
     type: 'date',
     class: 'gb-input',
-    value: todayKeyNow(),
-    min: todayKeyNow(),
+    value: todayKey(),
+    min: todayKey(),
     'aria-label': 'Reminder date',
   });
   const timeInput = h('input', {
@@ -10523,7 +10566,7 @@ async function addReminder(key, text, time, tag, repeat, until, sound, endTime, 
   // the form on past days, and this is the same rule for every other caller.
   // The anchor date is what a recurrence counts from, so an anchor in the past
   // is a series the user never got to choose the start of.
-  if (key < todayKeyNow()) {
+  if (key < todayKey()) {
     toastError(
       new Error('That day has already passed — pick today or later.'),
       'Could not add reminder.'
@@ -10708,7 +10751,6 @@ async function exportRemindersIcs(btn) {
         text = await res.text();
       },
     });
-    const name = 'growth-buddy-reminders.ics';
     const blob = new Blob([text], { type: 'text/calendar' });
     if ((await offerFile(blob, name, 'Growth Buddy reminders')) === 'saved') {
       pushToast('Your calendar file is downloading. Open it in Google, Apple or Outlook Calendar.', 'success', 4000);
@@ -11049,7 +11091,7 @@ async function handleNotificationAction(ev) {
   } else if (x.kind === 'habit' && act === 'done' && x.id) {
     const hb = (state.habits || []).find((h) => h.id === x.id);
     if (!hb) return;
-    if (!x.day || x.day === todayKeyNow()) {
+    if (!x.day || x.day === todayKey()) {
       if (!hb.doneToday) await plainToggleHabit(hb.id);
       return;
     }
@@ -11289,25 +11331,8 @@ function openAddSheet(prefill) {
   let micBtn = null;
   let langBtn = null;
   if (SR || capSR) {
-    const LANGS = [
-      { code: 'en-IN', label: 'English' },
-      { code: 'hi-IN', label: 'हिन्दी' },
-      { code: 'ta-IN', label: 'தமிழ்' },
-      { code: 'te-IN', label: 'తెలుగు' },
-      { code: 'kn-IN', label: 'ಕನ್ನಡ' },
-      { code: 'ml-IN', label: 'മലയാളം' },
-      { code: 'bn-IN', label: 'বাংলা' },
-      { code: 'mr-IN', label: 'मराठी' },
-      { code: 'gu-IN', label: 'ગુજરાતી' },
-      { code: 'pa-IN', label: 'ਪੰਜਾਬੀ' },
-    ];
-    const device = navigator.language || 'en-IN';
-    const sameBase = (a, b) => a.split('-')[0] === b.split('-')[0];
-    let langCode =
-      localStorage.getItem('gb.qa.lang') ||
-      (LANGS.find((l) => l.code === device) || LANGS.find((l) => sameBase(l.code, device)) || {})
-        .code ||
-      device;
+    const LANGS = VOICE_LANGS.slice(); // the device's own may be added below
+    let langCode = speechLang();
     if (!LANGS.some((l) => l.code === langCode)) {
       // Device speaks something we didn't list — offer it anyway, by name.
       let label = langCode;
@@ -11332,7 +11357,6 @@ function openAddSheet(prefill) {
     });
     langBtn.addEventListener('change', () => {
       langCode = langBtn.value;
-      localStorage.setItem('gb.qa.lang', langCode);
       saveUiPrefs({ qaLang: langCode });
     });
     micBtn = h(
@@ -12685,7 +12709,7 @@ function starterRow(it) {
 }
 
 async function applyStarter(rows) {
-  const today = todayKeyNow();
+  const today = todayKey();
   let made = 0;
   const budgets = {};
   for (const it of rows) {
@@ -12748,7 +12772,7 @@ async function openStarterPacks() {
       waterGoalMl: state.water && state.water.goalMl,
       weightKg: state.user && state.user.weightKg,
       money: state.money,
-      today: todayKeyNow(),
+      today: todayKey(),
       suggestWater: suggestWaterGoalMl,
     }).map((it) => ({ it, d: starterRow(it) }));
     list.replaceChildren(
@@ -13947,7 +13971,7 @@ const SCREENS = {
               winLines({
                 habits: state.habits || [],
                 goals: (state.goals || []).flatMap((sec) => sec.goals || []),
-                today: todayKeyNow(),
+                today: todayKey(),
               }),
             // Inside an accepted link ({id} = the request id): cheer/nudge, the
             // thread, the agreement, and the mentor's weekly card.
@@ -15067,8 +15091,12 @@ function routeSignInStep(err, email, password, cancelDeletion) {
   return true;
 }
 
+/* Every sign-in lands here (password, OTP verify, reset, 2FA, cancel-deletion).
+   It starts from session.js's fresh state, not whatever is in memory: an answer
+   the last session sent before it ended can still have rolled something back
+   into `state` on its way out. */
 async function completeSignIn(user) {
-  state.authPending = null;
+  Object.assign(state, freshUserState(EMPTY_STATE), { loading: state.loading });
   syncUserSession(user);
   state.wellness = loadWellness();
   state.goalProgress = loadGoalProgress();
@@ -15202,14 +15230,7 @@ function viewSignin() {
           notice: 'Your email isn’t verified yet, so we sent you a fresh code.',
         });
       }
-      syncUserSession(user);
-      state.wellness = loadWellness();
-      state.goalProgress = loadGoalProgress();
-      state.money = loadMoney();
-      state.streakFreeze = loadStreakFreeze();
-      state.trends = loadTrends();
-      landAfterSignIn();
-      await loadData();
+      await completeSignIn(user);
     }, 'password');
   }
 
@@ -15348,14 +15369,7 @@ function viewVerify() {
     if (otp.length !== 6) return authFail('Enter the 6-digit code (must be exactly 6 digits).', 'otp');
     runAuth(async () => {
       const user = await authPost('/api/auth/verify', { email: state.authEmail, otp });
-      syncUserSession(user);
-      state.wellness = loadWellness();
-      state.goalProgress = loadGoalProgress();
-      state.money = loadMoney();
-      state.streakFreeze = loadStreakFreeze();
-      state.trends = loadTrends();
-      landAfterSignIn();
-      await loadData();
+      await completeSignIn(user);
     }, 'otp');
   }
   function resend() {
@@ -15475,14 +15489,7 @@ function viewReset() {
         if (routeSignInStep(err, state.authEmail, password)) return;
         throw err;
       }
-      syncUserSession(user);
-      state.wellness = loadWellness();
-      state.goalProgress = loadGoalProgress();
-      state.money = loadMoney();
-      state.streakFreeze = loadStreakFreeze();
-      state.trends = loadTrends();
-      landAfterSignIn();
-      await loadData();
+      await completeSignIn(user);
     }, 'otp');
   }
   [otpInput, pwInput, pw2Input].forEach((el) =>
@@ -15540,81 +15547,123 @@ function loginCard() {
 }
 
 function logout() {
-  // Fire-and-forget; the token is invalidated locally either way.
+  return endSession('logout');
+}
+
+/* ---- The one way out of a session ----
+   Sign out, a 401 and account deletion all end here. They used to keep three
+   hand-written reset lists that had drifted: a 401 left a running focus timer,
+   the device alarms, the money cache and the service worker's gb-api-get cache
+   for whoever signed in next, and Sign out left the goals, water, food and the
+   bell. What a sign-out resets is session.js `freshUserState` (session.test.mjs
+   fails on a state field it doesn't classify), the rest is module memory here.
+   `reason`: 'logout' | 'expired' | 'deleted'. */
+async function endSession(reason) {
+  if (!state.user) return;
+  // Every sheet goes, by close() not dismiss(): the note editor's dismiss saves,
+  // and nothing should save on the way out. Settings' "Sign out" used to leave
+  // the sheet up over the sign-in card, the last account's name and email in it.
+  closeOverlays({ discard: true });
+  popoverCleanup?.();
+  // Pending writes go before the token does. Not on a 401: that token can't send them.
+  if (reason === 'logout') await flushPendingWrites();
+  if (!state.user) return; // a 401 during the flush already ended it
   const token = loadToken();
-  if (token) {
-    // Unsubscribe this browser's Web Push endpoint BEFORE the token is revoked,
-    // or the server keeps pushing this account's reminders to a device that is
-    // now someone else's. disablePush awaits the service worker before it calls
-    // api(), by which time clearSession() has dropped the stored token — so it
-    // gets a fetch bound to the token captured here, and the logout POST waits
-    // for it (revoking first would 401 the unsubscribe).
-    const withToken = (path, o = {}) =>
-      fetch(API_BASE + path, {
-        ...o,
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-      });
-    disablePush(withToken)
-      .catch(() => {})
-      .then(() => withToken('/api/auth/logout', { method: 'POST' }))
-      .catch(() => {
-        /* silent */
-      });
-  }
+  // From here on an answer to anything already sent lands nowhere (session.js).
+  bumpSession();
+  _inflightGets.clear();
+  if (reason === 'logout' && token) revokeOnServer(token);
   // On-device alarms (native only; a no-op on the web) were scheduled for this
   // account's reminders, water and habits — they must not ring for the next one.
   cancelPendingLocalNotifications();
-  // Log food's chip rows are this account's foods, not the next one's.
-  recentFoods = null;
-  favouriteFoods = null;
-  // The Workbox NetworkFirst cache holds this account's API GET responses and
-  // would serve them, offline, to whoever signs in next on this browser.
-  try {
-    if (typeof caches !== 'undefined') caches.delete('gb-api-get').catch(() => {});
-  } catch (_) {
-    /* no CacheStorage (insecure context) */
-  }
   // A running focus timer would finish later and post under the next account.
   import('./timer.js').then((m) => m.resetFocusSession()).catch(() => {});
   disconnectWebSocket();
-  purgeUserCache();
+  const purged = Promise.all([purgeUserCache(reason), deleteUserCaches()]).catch(() => {});
   clearSession();
-  state.user = null;
-  state.tasks = [];
-  state.habits = [];
-  state.reminders = [];
-  state.quote = null;
-  state.score = 0;
-  state.error = '';
-  state.loading = false;
+  clearReminderForm(); // a half-typed reminder in the calendar's kept form
+  Object.assign(state, freshUserState(EMPTY_STATE));
+  setNotifFirstPage([]); // also drops the last account's unread-past-the-page count
+  notifFilter = 'all';
+  toastTimers.forEach((t) => clearTimeout(t.handle));
+  toastTimers.clear();
+  loadedFor = null; // the next sign-in is a first load, not a refresh
+  // Another account must not see this one's Insights, nor wait out its throttle.
+  insightHistoryAt = 0;
+  insightReq = null;
+  // Log food's chip rows are this account's foods, not the next one's.
+  recentFoods = null;
+  favouriteFoods = null;
+  weekGen.bump();
+  try {
+    sessionStorage.removeItem('gb.authDraft');
+  } catch (_) {
+    /* ignore */
+  }
+  if (reason === 'deleted') {
+    await purged; // a reload mid-delete would leave the caches behind
+    location.reload();
+    return;
+  }
+  if (reason === 'expired') returnToScreen = state.screen; // signing back in returns here, not to Home
   state.screen = 'home';
   state.authMode = 'signin';
   state.authEmail = '';
-  state.authNotice = '';
-  state.authPending = null;
-  // A panel left open kept its mousedown listener alive on the sign-in screen,
-  // where the first press "closed" it with a full render() that rebuilt the form
-  // under the pointer: no request, both fields blanked.
-  state.notifOpen = false;
-  state.profileOpen = false;
-  state.moreOpen = false;
-  popoverCleanup?.();
-  state.goalProgress = {};
-  // Another account must not see this one's Insights, nor wait out its throttle.
-  state.insightHistory = null;
-  state.waterUsualHours = null;
-  loadedFor = null; // the next sign-in is a first load, not a refresh
-  insightHistoryAt = 0;
-  insightReq = null; // a fetch still in flight belongs to the old account: drop it
-  state.money = emptyMoney();
-  weekGen.bump();
-  state.foodWeek = null;
-  state.waterWeek = null;
-  state.dietCheck = null;
-  state.weekError = '';
+  state.authNotice = reason === 'expired' ? 'Your session ended. Sign in again.' : '';
   // Drop the hash so the URL doesn't say "#/circle" on the sign-in screen.
   if (window.location.hash) history.replaceState(null, '', window.location.pathname);
   render();
+}
+
+const EMPTY_STATE = {
+  wellness: emptyWellness,
+  money: emptyMoney,
+  streakFreeze: emptyStreakFreeze,
+  trends: emptyTrends,
+};
+
+/* Step one of a sign-out: send what is queued while the token still works.
+   The offline outbox's queue (sends only: the refetch after it would land on
+   nobody), capped so an asleep server can't hold Sign out for long; whatever
+   didn't go stays queued and purgeUserCache decides. Undoable deletes still
+   waiting on their Undo toast commit here too (feat/ov-undo). */
+async function flushPendingWrites() {
+  if (!navigator.onLine) return;
+  await CacheStorage.ready();
+  if (!outbox.size()) return;
+  await Promise.race([outbox.flush(api).catch(() => {}), new Promise((r) => setTimeout(r, 4000))]);
+}
+
+/* Fire-and-forget; the token is invalidated locally either way. Unsubscribe
+   this browser's Web Push endpoint BEFORE the token is revoked, or the server
+   keeps pushing this account's reminders to a device that is now someone
+   else's. disablePush awaits the service worker before it calls api(), by which
+   time clearSession() has dropped the stored token — so it gets a fetch bound
+   to the token captured here, and the logout POST waits for it (revoking first
+   would 401 the unsubscribe). */
+function revokeOnServer(token) {
+  const withToken = (path, o = {}) =>
+    fetch(API_BASE + path, {
+      ...o,
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+    });
+  disablePush(withToken)
+    .catch(() => {})
+    .then(() => withToken('/api/auth/logout', { method: 'POST' }))
+    .catch(() => {
+      /* silent */
+    });
+}
+
+/* The service worker's runtime caches hold this account's GET responses, keyed
+   by URL only: left behind, they answer the next account's requests offline. */
+function deleteUserCaches() {
+  try {
+    if (typeof caches !== 'undefined') return Promise.all(USER_CACHES.map((c) => caches.delete(c)));
+  } catch (_) {
+    /* no CacheStorage (insecure context) */
+  }
+  return Promise.resolve();
 }
 
 /* ---- Loading splash (shown while data loads, e.g. on reload) ----
@@ -16185,7 +16234,7 @@ document.addEventListener('visibilitychange', () => {
    yesterday's totals (and a tap added to them) until something else reloaded.
    Each summary carries its own date, so a stale one is a cheap check. */
 function refreshDayIfStale() {
-  const today = todayKeyNow();
+  const today = todayKey();
   const stale = (s) => s && s.date && s.date !== today;
   if (!stale(state.water) && !stale(state.food)) return;
   Promise.all([
@@ -16211,22 +16260,23 @@ if (state.user) {
   // Restore the screen from the URL fragment, so refreshing on /circle stays there.
   state.screen = screenFromHash();
   loadData();
-
-  // Re-push the money blob every 5 minutes in case a save was lost to a dropped
-  // connection. Wellness rode along here too, PUTting to an endpoint that has
-  // never existed — a failure on a timer, forever. Sleep and mood are saved by
-  // their own POSTs at the moment you enter them.
-  setInterval(
-    () => {
-      if (!state.user || !navigator.onLine) return;
-      if (state.money && moneyDirty()) persistMoney();
-    },
-    5 * 60 * 1000
-  );
 } else {
   // Opened a link (#/money) while signed out: go there once signed in.
   returnToScreen = screenFromHash();
 }
+// Re-push the money blob every 5 minutes in case a save was lost to a dropped
+// connection, or to a 5xx while still online (no 'online' event ever fires for
+// that). Armed whether or not this boot is signed in: it used to be armed only
+// then, so anyone who signed in during the session never got it. Wellness rode
+// along here too, PUTting to an endpoint that has never existed — a failure on
+// a timer, forever. Sleep and mood are saved by their own POSTs.
+setInterval(
+  () => {
+    if (!state.user || !navigator.onLine) return;
+    if (state.money && moneyDirty()) persistMoney();
+  },
+  5 * 60 * 1000
+);
 // Resolve the device model before anything signs in — the label rides along on
 // the request that creates the session.
 initNative();

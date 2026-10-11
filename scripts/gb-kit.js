@@ -796,9 +796,12 @@ function trackOverlay({ close }) {
    reminder") that navigates FROM the note editor, which is exactly the case
    this function exists for.
 
-   Snapshot the set first: each close() removes its own entry from it. */
-function closeOverlays() {
-  [...liveOverlays].forEach((entry) => (entry.dismiss ? entry.dismiss() : entry.close()));
+   Snapshot the set first: each close() removes its own entry from it.
+
+   `discard` (sign-out, app.js endSession) closes every sheet without its
+   dismiss: there is no session left for a note to be saved under. */
+function closeOverlays({ discard = false } = {}) {
+  [...liveOverlays].forEach((entry) => (entry.dismiss && !discard ? entry.dismiss() : entry.close()));
 }
 
 /* ---- The standard dialog ----
