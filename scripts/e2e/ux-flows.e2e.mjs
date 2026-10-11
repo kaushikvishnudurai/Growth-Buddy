@@ -327,8 +327,9 @@ async function run(width, height) {
   n = sent('POST', /^\/api\/habits$/).length;
   taps = 0;
   await page.evaluate(() => {
-    const h3 = [...document.querySelectorAll('.gb-sectiontitle h3')].find((x) => /Habit streaks/.test(x.textContent));
-    h3.parentElement.setAttribute('data-e2e', 'habits');
+    // SectionTitle's heading level follows the page outline (h2 by default).
+    const head = [...document.querySelectorAll('.gb-sectiontitle > :is(h2, h3)')].find((x) => /Habit streaks/.test(x.textContent));
+    head.parentElement.setAttribute('data-e2e', 'habits');
   });
   await tap(/^\+ Add$/, '[data-e2e=habits]');
   await sheetOpen();

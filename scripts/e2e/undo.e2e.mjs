@@ -95,9 +95,10 @@ const fill = (sel, text) =>
   }, text);
 const waitFor = (fn, arg, timeout = 15000) => page.waitForFunction(fn, { timeout, polling: 100 }, arg);
 const clickUndo = async () => {
-  await page.waitForSelector('.gb-toast-action', { visible: true });
+  // The Undo one: a new habit's "Remind you at ...?" toast can still be on the stack.
+  await page.waitForFunction(() => [...document.querySelectorAll('.gb-toast-action')].some((b) => b.textContent.trim() === 'Undo'));
   // Keyboard reachable: focus it and press Enter, as a keyboard user would.
-  await page.focus('.gb-toast-action');
+  await page.evaluate(() => [...document.querySelectorAll('.gb-toast-action')].reverse().find((b) => b.textContent.trim() === 'Undo').focus());
   await page.keyboard.press('Enter');
 };
 // Off the toast stack so its hold-on-hover/focus doesn't pause the window
@@ -285,7 +286,7 @@ async function runAt(width, height) {
   await goTo('food');
   const waterIds = () => page.evaluate(() => [...document.querySelectorAll('[data-water-id]')].map((r) => r.dataset.waterId));
   const posted = page.waitForResponse((r) => r.url().includes('/api/water/entries') && r.request().method() === 'POST');
-  await clickButton(/^add 250 millilitres of water$/i);
+  await clickButton(/^\+250 ml, add water$/i); // a11y: the name starts with the visible text
   await posted;
   await wait(800);
   const ids = await waterIds();
