@@ -74,7 +74,8 @@ public class FoodService {
             - fallbackNeeded should be true when image is unclear or composition uncertain.
             """;
 
-    @Transactional(readOnly = true)
+    // Not @Transactional: no database here, and a transaction would hold a
+    // pooled connection through the vision call.
     public PhotoFoodEstimateMultiResponse estimateFromPhotoMulti(PhotoFoodEstimateRequest req) {
         if (req == null || !StringUtils.hasText(req.imageDataUrl())) {
             throw ApiException.badRequest("imageDataUrl is required");
@@ -194,7 +195,7 @@ public class FoodService {
     public List<PhotoHistoryItem> recordPhoto(UUID userId, PhotoHistoryRequest req) {
         FoodPhotoLog p = new FoodPhotoLog();
         p.setUserId(userId);
-        p.setLogDate(req.date() != null ? req.date() : LocalDate.now());
+        p.setLogDate(req.date() != null ? req.date() : clock.today(userId));
         p.setFoodName(req.foodName().trim());
         p.setMealType(req.mealType());
         p.setConfidence(req.confidence());
@@ -672,7 +673,8 @@ public class FoodService {
         return summary(userId, date);
     }
 
-    @Transactional(readOnly = true)
+    // Not @Transactional: no database here, and a transaction would hold a
+    // pooled connection through the vision call.
     public PhotoFoodEstimateResponse estimateFromPhoto(PhotoFoodEstimateRequest req) {
         if (req == null || !StringUtils.hasText(req.imageDataUrl())) {
             throw ApiException.badRequest("imageDataUrl is required");

@@ -25,7 +25,7 @@ don't yet know which file you need. Files with their own doc are listed in
   mentor, notes, **money**) and the realtime stack (sockjs + stompjs) are dynamic imports — and **precached anyway**
   (no `globIgnores`: excluding them let an old shell ask for a chunk the new deploy had deleted;
   why: the `workbox` comment in `vite.config.js`). Fonts are latin-subset only. Money got there by a split: `money-core.js` (document model, ledger diff, `budgetStatus` /
-  `buildInsights`, no imports) and `money-home.js` (Home's card) are boot; `money.js` (the screen,
+  `buildInsights`; imports only `dates.js`) and `money-home.js` (Home's card) are boot; `money.js` (the screen,
   Customise pane, expense modal) loads on first visit, from Settings, or on the card's "Add expense";
   never import `money.js` statically from a boot module or the split is undone. After the split
   (2026-10-10): boot chunk 447,141 B raw / 137.8 kB gzip (from 551,884 B / 170.4 kB), budget lowered to
@@ -46,6 +46,7 @@ don't yet know which file you need. Files with their own doc are listed in
 |---|---|
 | `insights.js` | Insights on Report: plain statistics over sleep, mood, check-ins, water, kcal and spend, plus focus hours, habit misses, goal pace, task follow-through, unusual and repeating expenses, water gaps and score changes. No AI. Has its own doc (`docs/scripts/insights.js.md`). Listed here for one trap: sleep is keyed on the WAKE date, so stress -> sleep must look at the next day. |
 | `insights.test.mjs` | Plain-assert check for the above. `node scripts/insights.test.mjs`. |
+| `dates.js` | The device-local day keys every module shares: `pad2`, `dateKey(d)`, `localKey`, `todayKey()`. Not the account-timezone `todayKey` in goals.js, nor the UTC `dayKey` review/insights count with (DST can't skip a day there). |
 | `home-order.js` | Home's DOM-free rules: `HOME_WIDGETS` + `resolveHomeLayout` (re-exported by dashboard.js), `sortTasksForHome` (overdue → today → upcoming → no date, paused and done last), `sortHabitsForHome` / `habitDue` (the server's `dueToday`), `topStreaks` (days and weeks kept apart), `homeGoals` (the Goals widget's rows). Checked by `node scripts/home-order.test.mjs`. |
 | `habit-stats.js` | A habit's history as numbers, DOM-free: `heatmapWeeks` (12 ISO weeks of `done`/`missed`/`frozen`/`open`/`today`/`before`/`future` — `missed` only for daily habits), `completionRate` (done ÷ owed; owed = target/7 a day, frozen days and an unticked today not owed, capped at 100%), `bestStreak` (HabitService's daily / weekly run rules), `canEditDay` (today and the 7 days before, never before `since`), `suggestReminderTime` (median of the other habits' reminder times, else 19:00 — the server keeps no check-in time of day), `linkedHabitActivity` (a goal's linked habits). Quit ("break a habit") habits: `kind: 'quit'` turns days into `clean`/`slipped` (`isSlipRow`: a not-done, not-frozen row), `quitStreak` / `longestQuitRun` mirror HabitService's; `recentNotes` (days with a note, newest first). Checked by `node scripts/habit-stats.test.mjs`. |
 | `goal-milestones.js` | Milestone list edits as data (`moveItem`, `renameMilestone`, `setMilestoneDue`, `milestoneDueState`), `liveLinkedIds`, and the dated progress log (`progressFraction`, `appendProgressLog`, `withProgressLog`, `needsProgressLog`: `progressLog` [{date, pct}] in the blob, one per day, last wins, newest 120 — app.js `updateGoalProgress` writes it, insights.js `goalPace` fits it). Checked by `node scripts/goal-milestones.test.mjs`. |
@@ -217,7 +218,7 @@ checks off.
 | `/api/score` | `today`, `today/snapshot`, `day?date=` (a finished day's parts, via `ScoreService.on`) |
 | `/api/focus` | `stats` (focus-mode only; today = since the user's local midnight, week = since their local Monday, via `UserClock`; `goalMinutes` + `goalStreak` from `ui_prefs.focusGoalMins`, a today not yet met doesn't break the streak), `sessions` POST (`{mode, durationSec, taskId?, goalId?}` — the link must be the caller's own task/goal (`FocusLinks`) or 404; a break is never linked), `sessions?days=` GET (focus-mode only: durationSec, completedAt), `history?days=30` GET (1..90: `days` [{date, minutes}] oldest first on the user's local days, `week` [{kind, id, title, minutes}] since local Monday per linked task/goal, title null once deleted) |
 | `/api/weekly-review` | GET (all, newest first) / PUT (upsert; wins + one focus, keyed by ISO week start) |
-| `/api/quotes` | GET (all), `today` |
+| `/api/quotes` | GET (all), `today` (the user's local day; a `QuoteResponse`, not the entity) |
 | `/api/mentor` | `chat`, `chat/messages` POST/DELETE, `chat/messages/stream` POST (SSE), `threads` GET/POST, `threads/{id}/messages` GET/POST/DELETE (DELETE = clear that thread), `threads/{id}/messages/stream` POST (SSE), `threads/{id}` PATCH (rename) / DELETE |
 | `/api/mentorship` | `requests` POST, `requests/{id}/accept|reject|revoke`, `requests/incoming`, `requests/outgoing`, `connections/{partnerId}/status`; and in `MentorshipChatController`: `{id}/nudge` POST (`kind` cheer|nudge, 3 a day per sender per link, then 429), `{id}/messages` GET (newest 50, `?before=`) / POST (≤2000 chars), `{id}/agreement` PUT (≤500 chars), `{id}/week` GET (mentor only; honours the mentee's `shareProgress`) |
 | `/api/circles` | (members carry `doneToday`, null when that member keeps progress private, and `cheeredByMe`) GET (every circle, with a joined flag), `mine`, POST (`visibility: private` mints a `joinCode`), `join-code` POST, `{id}/join` (403 on a private circle), `{id}/leave` (owner refused), `{id}` DELETE (owner), `{id}/members` GET, `{id}/members/{userId}` DELETE (owner; a private circle gets a fresh `joinCode` so the removed member can't rejoin, answers the circle), `{id}/transfer` POST (owner), `{id}/posts` GET (newest 50, `?before=`) / POST (≤2000 chars), `{id}/posts/{postId}` DELETE (author or owner; takes its kudos and replies), `{id}/posts/{postId}/kudos` POST (toggle, one per member, answers the count), `{id}/posts/{postId}/comments` GET (oldest first, ≤100) / POST (≤500 chars; rings the post's author, never yourself; 30 per sender per hour) and `/{commentId}` DELETE (author or owner), `{id}/members/{userId}/cheer` POST (a bell card; once per pair per day, 10 per sender per day, members only), `{id}/challenges` GET/POST (≤10 running; `metric` habit_checkins|focus_minutes|water_days; `startDate` ≥ the creator's local today, ≤60 days out, absent = today) |
@@ -326,8 +327,9 @@ snooze to the one-off, a `future` edit carries one from the cut on to the new se
   as `snooze:<id>`; without it the plain template, plus " — reply SNOOZE to hear it again in 10 min."
   only when the webhook can hear the reply (`WHATSAPP_APP_SECRET` set). One line on purpose: Meta
   refuses a template parameter with a newline.
-- `digest/DigestScheduler` + `DigestService` — progress digest near each user's preferred
-  local hour, honouring their timezone. Reports the **last day that finished**, never the live
+- `digest/DigestScheduler` + `DigestService` — progress digest on the first hourly tick at or
+  after each user's preferred local hour (outside quiet hours) not yet sent that day (`lastDigestOn`),
+  so a failed send or a sleeping host retries next hour. Reports the **last day that finished**, never the live
   score: a digest fires in the morning, by which point `TaskMidnightSweep` has cleared yesterday's
   ticked tasks and the habit check-ins belong to a new log date, so a live reading is a truthful 0
   about a day nobody has lived yet. `ScoreService.on(user, day)` / `.between(...)` rebuild a past
@@ -378,7 +380,8 @@ snooze to the one-off, a `future` edit carries one from the cut on to the new se
   app.js re-dispatches as `gb:mentorship-message`. `MentorshipChatServiceTest`.
 - `config/DataSeeder` — demo user + starter data, keyed on `growthbuddy.demo-user-id`.
 - `task/TaskMidnightSweep` — soft-deletes each user's **done** tasks at their own local
-  midnight (hourly cron, hour-0-in-their-zone, same shape as `DigestScheduler`). Tasks have no day
+  midnight: every hourly tick clears what was finished before that user's last local midnight, so a
+  missed hour or a DST-skipped midnight catches up and today's ticks are never touched. Tasks have no day
   of their own, so yesterday's ticks used to sit in today's list and still count towards today's
   score (`ScoreService` counts live rows). Unfinished tasks carry forward — they're still to do.
   `task_history` is left alone, so the report and the "done 3×" count survive.

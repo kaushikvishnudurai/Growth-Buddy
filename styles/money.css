@@ -27,7 +27,7 @@
      full-bleed over the gutter so cards don't show through beside it. */
   position: sticky;
   top: 0;
-  z-index: 5;
+  z-index: var(--z-sticky);
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   margin-inline: calc(-1 * var(--gutter));
@@ -118,13 +118,6 @@
 }
 .gb-money-hero-actions .gb-btn {
   width: auto;
-}
-.gb-money-ring-val {
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: var(--text-h3);
-  letter-spacing: var(--tracking-tight);
-  font-variant-numeric: tabular-nums;
 }
 .gb-money-ring-lbl {
   font-family: var(--font-body);
@@ -574,17 +567,15 @@
 .gb-money-bar-col.is-zero .gb-money-bar-amt {
   color: var(--fg3);
   font-weight: 600;
+  white-space: normal;
+  text-align: center;
+  line-height: 1.1;
 }
 .gb-money-bar-col.is-nospend .gb-money-bar-amt {
   color: var(--success-soft-fg);
 }
 /* "No spend" / "No log" are wider than a 320px screen's column and ran into each
    other ("No spendNo log"). The words wrap onto two lines; amounts stay on one. */
-.gb-money-bar-col.is-zero .gb-money-bar-amt {
-  white-space: normal;
-  text-align: center;
-  line-height: 1.1;
-}
 .gb-money-bar-track {
   width: 100%;
   display: flex;
@@ -759,10 +750,6 @@
     border-color: var(--border-strong);
     background: var(--surface-2);
   }
-}
-.gb-money-account:focus-visible {
-  outline: 2px solid var(--brand);
-  outline-offset: 2px;
 }
 .gb-money-account-ic {
   flex: none;
@@ -1324,10 +1311,6 @@
   .gb-money-health-fix:hover {
     background: var(--surface-3);
   }
-}
-.gb-money-health-fix:focus-visible {
-  outline: 2px solid var(--brand);
-  outline-offset: 2px;
 }
 
 /* ---- Daily tip (13) ---- */
@@ -2011,10 +1994,6 @@
     color: var(--brand-soft-fg);
   }
 }
-.gb-money-exp-edit:focus-visible {
-  outline: 2px solid var(--brand);
-  outline-offset: 2px;
-}
 
 .gb-money-day-actions {
   display: flex;
@@ -2107,6 +2086,7 @@
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   cursor: pointer;
+  position: relative;
 }
 @media (hover: hover) {
   .gb-money-quick-amt:hover {
@@ -2115,17 +2095,10 @@
 }
 /* The pills are ~28px tall; the overlay makes each a 44px tap without spacing
    them out (same trick as .gb-money-health-fix). */
-.gb-money-quick-amt {
-  position: relative;
-}
 .gb-money-quick-amt::after {
   content: '';
   position: absolute;
   inset: -8px -4px;
-}
-.gb-money-quick-amt:focus-visible {
-  outline: 2px solid var(--brand);
-  outline-offset: 2px;
 }
 
 /* ---- Overview hero: today's money and the month as a tape of days ---- */

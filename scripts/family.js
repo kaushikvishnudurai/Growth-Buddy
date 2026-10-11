@@ -2501,6 +2501,8 @@ function ScreenFamily({ api }) {
             { class: 'gb-family-empty-note' },
             'List is empty. Build one from a plan or add items.'
           ),
+      // '₹', not the Money currency: the server's estimates are INR by contract
+      // (FamilyService's prompt), so another symbol would mislabel them.
       list.totalEstimatedCost > 0
         ? h(
             'div',

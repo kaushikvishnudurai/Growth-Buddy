@@ -201,10 +201,6 @@ body {
 .gb-iconbtn:active {
   transform: scale(0.92);
 }
-.gb-iconbtn:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
 [data-theme='dark'] .gb-iconbtn {
   border: 1px solid var(--border);
 }
@@ -221,10 +217,6 @@ body {
   box-shadow: var(--shadow-xs);
   cursor: pointer;
   border: none;
-}
-.gb-avatar:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
 }
 /* Pressed feedback on touch, where :hover never fires. */
 button.gb-avatar:active {
@@ -329,10 +321,6 @@ button.gb-sectiontitle-act {
    ghost). Primary and secondary override it below; :disabled resets it. */
 .gb-btn:active {
   transform: scale(0.97);
-}
-.gb-btn:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
 }
 .gb-btn--primary {
   background: var(--brand-fill);
@@ -509,42 +497,6 @@ button.gb-sectiontitle-act {
   border-radius: 8px;
 }
 
-.gb-fab {
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  background: var(--brand-fill);
-  border: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--fg-on-brand);
-  flex: none;
-  margin: 0 6px -2px;
-  box-shadow:
-    0 5px 0 var(--brand-edge),
-    var(--shadow-brand);
-  transition:
-    transform var(--dur-fast) var(--ease-bounce),
-    box-shadow var(--dur-fast);
-}
-@media (hover: hover) {
-  .gb-fab:hover {
-    background: var(--brand-fill-hover);
-  }
-}
-.gb-fab:active {
-  transform: translateY(4px) scale(0.97);
-  box-shadow:
-    0 1px 0 var(--brand-edge),
-    var(--shadow-brand);
-}
-.gb-fab:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 3px;
-}
-
 /* ---- Habit / task check ---- */
 .gb-check {
   width: 30px;
@@ -608,16 +560,14 @@ button.gb-sectiontitle-act {
   padding: 26px;
   display: grid;
   gap: 10px;
+  position: relative;
+  margin-top: 78px;
 }
 /* ---- The crest: a week of growth on the card's top edge ----
    Seven plants, a seed on the left to a bloom on the right, rooted on the
    card's edge as if it were the soil line. The one decorative thing on the
    auth screens, so everything else stays plain. It grows in once per load
    (.is-growing, set by authShell), and is drawn grown otherwise. */
-.gb-login-card {
-  position: relative;
-  margin-top: 78px;
-}
 .gb-garden {
   position: absolute;
   bottom: calc(100% - 1px);
@@ -892,7 +842,7 @@ button.gb-sectiontitle-act {
 @media (hover: hover) {
   .gb-pw-toggle:hover {
     color: var(--fg1);
-    background: var(--surface-3, var(--surface-2));
+    background: var(--surface-3);
   }
 }
 .gb-pw-toggle:focus-visible {
@@ -1282,13 +1232,13 @@ button.gb-sectiontitle-act {
 /* The whole screen says it too: while any button or panel is thinking, a light
    runs along the top edge and the screen's border glows. Driven by :has(), so
    every AI wait gets it with no bookkeeping, and it ends the moment the last
-   thinking element leaves the DOM. Above every layer (toasts are 2000) but
+   thinking element leaves the DOM. Above every layer (--z-thinking) but
    never in the way: no pointer events, nothing dimmed. */
 body::before,
 body::after {
   content: '';
   position: fixed;
-  z-index: 2100;
+  z-index: var(--z-thinking);
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.3s var(--ease-out);
@@ -1365,12 +1315,6 @@ body:has(.is-thinking, .gb-thinking)::after {
   .gb-think-steps > span:first-child {
     opacity: 1;
   }
-}
-
-.gb-login-hint {
-  margin: 6px 0 0;
-  color: var(--fg3);
-  font-size: 0.75rem;
 }
 
 .gb-login-notice {
@@ -1469,7 +1413,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-xl);
-  z-index: 50;
+  z-index: var(--z-popover);
 }
 .gb-notif-head {
   display: flex;
@@ -1589,12 +1533,6 @@ body:has(.is-thinking, .gb-thinking)::after {
   border-color: var(--brand-fill);
   color: var(--fg-on-brand);
 }
-.gb-notif-link:focus-visible,
-.gb-notif-chip:focus-visible,
-.gb-notif-more:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
 @media (hover: hover) {
   .gb-notif-link:hover,
   .gb-notif-more:hover {
@@ -1670,7 +1608,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   gap: 8px;
 }
 .gb-mentor-suggestion {
-  width: auto !important;
+  width: auto;
   font-size: 0.8125rem;
   padding: 10px 14px;
 }
@@ -1857,10 +1795,6 @@ body:has(.is-thinking, .gb-thinking)::after {
   transform: translateY(2px);
   box-shadow: 0 1px 0 var(--brand-edge);
 }
-.gb-msg-send:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
 .gb-msg-send:disabled {
   opacity: 0.55;
   cursor: not-allowed;
@@ -1987,6 +1921,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   }
 
   .gb-avatar {
+    /* !important: Avatar() sets its size as inline style. */
     width: 38px !important;
     height: 38px !important;
     font-size: 0.6875rem !important;
@@ -2007,8 +1942,9 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 
 /* ---- Circle (person rows + status pills) ---- */
-.gb-person-row {
-  gap: 12px !important;
+/* Two classes so it beats the later .gb-row gap. */
+.gb-row.gb-person-row {
+  gap: 12px;
 }
 .gb-person-id {
   flex: 1;
@@ -2058,15 +1994,11 @@ body:has(.is-thinking, .gb-thinking)::after {
   .gb-revoke-btn:hover {
     background: var(--brand-soft);
     color: var(--brand-ink);
-    border-color: var(--coral-200, var(--border));
+    border-color: var(--coral-200);
   }
 }
 .gb-revoke-btn:active {
   transform: scale(0.92);
-}
-.gb-revoke-btn:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
 }
 .gb-circle-empty {
   text-align: center;
@@ -2246,10 +2178,6 @@ body:has(.is-thinking, .gb-thinking)::after {
   font-weight: 700;
   text-align: center;
 }
-.gb-sound-tile:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
 
 .gb-sound-volume {
   display: flex;
@@ -2337,10 +2265,6 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 .gb-switch.is-on .gb-switch-knob {
   transform: translateX(20px);
-}
-.gb-switch:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
 }
 
 /* ---- Feature on/off rows (Features modal) ---- */
@@ -2571,7 +2495,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   align-items: center;
   justify-content: center;
   border-radius: 10px;
-  background: var(--brand-50, var(--surface-3));
+  background: var(--surface-3);
 }
 .gb-insight-title {
   font-weight: 700;
@@ -3188,7 +3112,7 @@ button.gb-seat:disabled {
   font-size: 0.8125rem;
 }
 .gb-circle-code strong {
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-mono);
   letter-spacing: 0.12em;
   user-select: all;
 }
@@ -3197,8 +3121,9 @@ button.gb-seat:disabled {
 .gb-circle-post-foot {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   margin-top: 6px;
+  gap: 8px;
 }
 .gb-kudos {
   display: inline-flex;
@@ -3225,10 +3150,6 @@ button.gb-seat:disabled {
 }
 /* Circle: replies under a post, one-tap picks (challenge templates, "Share a
    win"), the standing line over a board and the leaderboard's cheer button. */
-.gb-circle-post-foot {
-  justify-content: flex-start;
-  gap: 8px;
-}
 .gb-circle-post-foot .gb-circle-post-del {
   margin-left: auto;
 }
@@ -3626,10 +3547,6 @@ button.gb-seat:disabled {
 .gb-msg-chip:active {
   transform: scale(0.96);
 }
-.gb-msg-chip:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
 .gb-msg-chip--clear {
   color: var(--brand-soft-fg);
   background: var(--brand-soft);
@@ -3704,12 +3621,6 @@ button.gb-seat:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.gb-mentor-thread:focus-visible,
-.gb-thread-pick:focus-visible,
-.gb-thread-reflect:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
 }
 .gb-mentor-thread:disabled {
   opacity: 0.6;
@@ -3831,7 +3742,7 @@ button.gb-seat:disabled {
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-xl);
-  z-index: 50;
+  z-index: var(--z-popover);
   overflow: hidden;
 }
 .gb-profile-pop-head {
@@ -3940,11 +3851,11 @@ button.gb-seat:disabled {
   }
 }
 .gb-profile-pop-item.is-danger {
-  color: var(--coral-600, #e53e3e);
+  color: var(--coral-600);
 }
 @media (hover: hover) {
   .gb-profile-pop-item.is-danger:hover {
-    background: var(--coral-50, #fff5f5);
+    background: var(--coral-50);
   }
 }
 
@@ -4043,10 +3954,6 @@ button.gb-seat:disabled {
 .gb-color-dot.is-on {
   border-color: var(--fg1);
 }
-.gb-color-dot:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
 
 /* ---- List rows ---- */
 .gb-row {
@@ -4098,10 +4005,6 @@ button.gb-seat:disabled {
   cursor: pointer;
   border-radius: var(--radius-sm);
 }
-.gb-row-open:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
 .gb-row .sub {
   font-size: 0.78125rem;
   color: var(--fg2);
@@ -4113,25 +4016,16 @@ button.gb-seat:disabled {
 
 /* ---- Dashboard-specific blocks ---- */
 
-/* Dashboard layout — mobile-first single column.
-   Two logical columns (.gb-dash-main / .gb-dash-side) stack vertically on
-   phones and sit side-by-side on desktop (see ≥1024px query). Each column
-   stacks independently, so there are never shared-row gaps. */
+/* Dashboard layout — mobile-first single column; ≥1024px flows the blocks into
+   two balanced columns (.gb-dash--single). */
 .gb-dash {
   display: flex;
   flex-direction: column;
   padding-bottom: 16px;
 }
-.gb-dash-col {
-  display: flex;
-  flex-direction: column;
-}
 .gb-dash-block {
   padding: 0 var(--gutter);
   margin-top: 18px;
-}
-.gb-dash-col:first-child > .gb-dash-block:first-child {
-  margin-top: 8px;
 }
 /* Customizable single-column home: blocks are direct children (no column wrap). */
 .gb-dash--single > .gb-dash-block:first-child {
@@ -4234,12 +4128,6 @@ button.gb-seat:disabled {
   font-size: 0.75rem;
   font-weight: 800;
   padding: 7px 9px;
-}
-/* Finished items in the daily brief read green so progress pops; anything
-   still open stays neutral (the default above). */
-.gb-coach-chip--done {
-  background: var(--success-soft);
-  color: var(--success-soft-fg);
 }
 .gb-wellness-grid {
   display: grid;
@@ -4799,10 +4687,6 @@ button.gb-food-level {
   background: var(--n);
   color: var(--warm-900);
 }
-.gb-nutrient-tabs button:focus-visible {
-  outline: 2px solid var(--brand);
-  outline-offset: 2px;
-}
 .gb-nutrient-panel {
   display: flex;
   flex-direction: column;
@@ -5349,10 +5233,6 @@ button.gb-food-level {
 .gb-water-add:active {
   transform: scale(0.96);
 }
-.gb-water-add:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
 
 .gb-water-log {
   margin-top: 12px;
@@ -5567,21 +5447,6 @@ button.gb-food-level {
   }
 }
 
-.gb-workout-card {
-  padding: 16px;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-.gb-workout-card .title {
-  font-weight: 700;
-  font-size: 0.9375rem;
-  color: var(--fg1);
-}
-.gb-workout-card .bar {
-  margin-top: 8px;
-}
-
 /* ---- Goals screen ---- */
 .gb-goals {
   display: flex;
@@ -5670,25 +5535,6 @@ button.gb-food-level {
   gap: 9px;
   line-height: 1.4;
 }
-.gb-goal-row {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 14px 16px;
-}
-.gb-goal-row + .gb-goal-row {
-  border-top: 1px solid var(--border);
-}
-.gb-goal-row.is-complete {
-  opacity: 0.78;
-}
-.gb-goal-row.is-complete .gb-goal-title {
-  text-decoration: line-through;
-  color: var(--fg3);
-}
-.gb-goal-main {
-  min-width: 0;
-}
 .gb-goal-title {
   font-weight: 800;
   font-size: 0.9375rem;
@@ -5711,14 +5557,6 @@ button.gb-food-level {
 }
 .gb-goal-meta > span {
   white-space: nowrap;
-}
-.gb-goal-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.gb-goal-actions .gb-btn {
-  width: auto;
 }
 
 /* ---- Enhanced goal card UI ---- */
@@ -5797,12 +5635,12 @@ button.gb-food-level {
 }
 .gb-goal-delete-btn {
   margin-left: auto;
-  color: var(--fg3) !important;
+  color: var(--fg3);
 }
 @media (hover: hover) {
   .gb-goal-delete-btn:hover {
-    color: var(--brand-ink) !important;
-    border-color: var(--coral-200) !important;
+    color: var(--brand-ink);
+    border-color: var(--coral-200);
   }
 }
 
@@ -5819,8 +5657,7 @@ button.gb-food-level {
   gap: 6px;
   padding-top: 2px;
 }
-.gb-goal-action-row,
-.gb-gratitude-row {
+.gb-goal-action-row {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -5829,13 +5666,11 @@ button.gb-food-level {
   border-radius: 8px;
   background: var(--surface-2);
 }
-.gb-goal-action-text,
-.gb-gratitude-main {
+.gb-goal-action-text {
   min-width: 0;
   flex: 1;
 }
-.gb-goal-action-note,
-.gb-gratitude-note {
+.gb-goal-action-note {
   color: var(--fg1);
   font-size: 0.8125rem;
   line-height: 1.4;
@@ -5889,34 +5724,6 @@ button.gb-food-level {
 }
 .gb-icon-btn:active {
   transform: scale(0.92);
-}
-.gb-icon-btn:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
-.gb-gratitude-panel {
-  padding: 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
-  background: var(--surface);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.gb-gratitude-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-.gb-gratitude-head .gb-btn {
-  width: auto;
-  flex: 0 0 auto;
-}
-.gb-gratitude-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
 }
 .gb-note-hint {
   font-size: 0.75rem;
@@ -6063,10 +5870,6 @@ button.gb-food-level {
 .gb-cal-day.is-other-month {
   color: var(--fg3);
   opacity: 0.72;
-}
-.gb-cal-day:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
 }
 .gb-cal-day.is-today {
   color: var(--brand-ink);
@@ -6418,21 +6221,6 @@ button.gb-food-level {
     color: var(--fg1);
   }
 }
-/* Only the destructive one reads destructive. This class is shared with the
-   rest-day toggle, which used to turn coral on hover too — danger colouring on
-   an action that just protects a streak. */
-.gb-rem-del--danger:focus-visible {
-  color: var(--danger);
-}
-@media (hover: hover) {
-  .gb-rem-del--danger:hover {
-    color: var(--danger);
-  }
-}
-.gb-rem-del:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
 
 /* Modal form (task/habit add) */
 .gb-form {
@@ -6642,10 +6430,6 @@ button.gb-food-level {
   white-space: nowrap;
   cursor: pointer;
 }
-.gb-food-recent-chip:focus-visible {
-  outline: 2px solid var(--brand);
-  outline-offset: 2px;
-}
 /* A food row's text is its edit button (openEditFood). */
 .gb-food-row-edit {
   flex: 1;
@@ -6714,13 +6498,6 @@ button.gb-food-level {
   font-weight: 600;
   color: var(--fg2);
   cursor: pointer;
-}
-.gb-food-copy:focus-visible,
-.gb-food-star:focus-visible,
-.gb-water-drink:focus-visible,
-.gb-water-suggest:focus-visible {
-  outline: 2px solid var(--brand);
-  outline-offset: 2px;
 }
 /* Fibre / sugar / sodium: only the figures the day actually has. */
 .gb-food-micros {
@@ -6898,7 +6675,7 @@ button.gb-food-level {
 }
 @media (hover: hover) {
   .gb-btn--icon:hover {
-    background: var(--surface-3-hover, rgba(0, 0, 0, 0.1));
+    background: rgba(0, 0, 0, 0.1);
     color: var(--brand-ink);
   }
 }
@@ -7200,13 +6977,6 @@ button.gb-food-level {
   padding: 12px;
 }
 
-.gb-profile-suggest-title {
-  font-weight: 800;
-  color: var(--fg1);
-  font-size: 0.84375rem;
-  margin-bottom: 8px;
-}
-
 .gb-profile-suggest-line {
   font-size: 0.78125rem;
   color: var(--fg2);
@@ -7219,12 +6989,6 @@ button.gb-food-level {
   color: var(--fg1);
   font-size: 0.78125rem;
   line-height: 1.45;
-}
-
-.gb-btn.gb-profile-apply {
-  margin-top: 10px;
-  width: auto;
-  padding: 8px 12px;
 }
 
 /* Tag picker (color chips) */
@@ -7268,10 +7032,6 @@ button.gb-food-level {
   background: var(--tag-soft);
   border-color: var(--tag-color);
 }
-.gb-tagchip:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
 
 /* Segmented control (repeat) */
 .gb-segmented {
@@ -7313,10 +7073,6 @@ button.gb-food-level {
   background: var(--surface);
   color: var(--brand-ink);
   box-shadow: var(--shadow-xs);
-}
-.gb-seg:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
 }
 .gb-seg:active,
 .gb-tagchip:active,
@@ -7382,7 +7138,7 @@ button.gb-food-level {
 .gb-modal-overlay {
   position: fixed;
   inset: 0;
-  z-index: 100;
+  z-index: var(--z-modal);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -7456,7 +7212,7 @@ button.gb-food-level {
   border-radius: 999px;
 }
 .gb-modal-title {
-  font-family: var(--font-display, var(--font-body));
+  font-family: var(--font-display);
   font-weight: 800;
   font-size: 1.0625rem;
   color: var(--fg1);
@@ -7668,10 +7424,6 @@ button.gb-food-level {
   border-color: var(--brand);
   color: var(--brand-soft-fg);
 }
-.gb-preset:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
 .gb-metric-chip {
   display: inline-flex;
   align-items: center;
@@ -7696,7 +7448,7 @@ button.gb-food-level {
   position: fixed;
   top: calc(-42px + env(safe-area-inset-top, 0px));
   left: 50%;
-  z-index: 40;
+  z-index: var(--z-ptr);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -8102,11 +7854,6 @@ button.gb-food-level {
 .gb-tfa-codes {
   line-height: 1.7;
 }
-.gb-sec-divider {
-  height: 1px;
-  background: var(--border);
-  margin: 16px 0;
-}
 .gb-field-label--sub {
   text-transform: none;
   letter-spacing: 0;
@@ -8196,10 +7943,6 @@ button.gb-food-level {
 .gb-modal-opt:active {
   transform: scale(0.98);
 }
-.gb-modal-opt:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
 .gb-modal-opt-ic {
   width: 36px;
   height: 36px;
@@ -8231,7 +7974,7 @@ button.gb-food-level {
 }
 @media (hover: hover) {
   .gb-modal-opt.is-danger:hover {
-    border-color: var(--coral-300, var(--coral-500));
+    border-color: var(--coral-300);
   }
 }
 .gb-modal-opt.is-danger .gb-modal-opt-l {
@@ -8242,20 +7985,13 @@ button.gb-food-level {
   margin-top: 12px;
 }
 
-.gb-confirm-text {
-  margin: 0;
-  font-size: 0.875rem;
-  color: var(--fg2);
-  line-height: 1.45;
-}
-
 .gb-toast-stack {
   position: fixed;
   right: 14px;
   /* Clear the bottom nav, which grows by the home-indicator inset. */
   bottom: calc(88px + env(safe-area-inset-bottom, 0px));
   /* Above the food loader (150): its failure toast hid behind it. */
-  z-index: 160;
+  z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -8484,7 +8220,7 @@ button.gb-food-level {
 .gb-celebrate {
   position: fixed;
   inset: 0;
-  z-index: 200;
+  z-index: var(--z-celebrate);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -8623,15 +8359,6 @@ button.gb-food-level {
   transform-origin: 80px 80px;
   animation: gb-twinkle 2.8s var(--ease-standard) infinite;
 }
-/* Raw error text: present for support, but quiet so it never reads as "500 in your face". */
-.gb-crash-detail {
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  color: var(--fg3);
-  background: var(--surface-2);
-  padding: 4px 10px;
-  border-radius: var(--radius-pill);
-}
 @keyframes gb-woozy {
   0%,
   100% {
@@ -8766,18 +8493,9 @@ button.gb-food-level {
     margin: 0 auto;
     padding: 28px 40px 40px;
   }
-  .gb-dash-main {
-    flex: 1.5 1 0;
-  }
-  .gb-dash-side {
-    flex: 1 1 0;
-  }
   .gb-dash-block {
     padding: 0;
     margin-top: 22px;
-  }
-  .gb-dash-col > .gb-dash-block:first-child {
-    margin-top: 0;
   }
   /* Customizable home: flow the one ordered block list into two balanced
      columns so wide screens fill instead of leaving half the canvas empty.
@@ -8870,6 +8588,7 @@ button.gb-food-level {
     background: var(--surface);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
+    flex: 1 1 auto;
   }
   .gb-nav-tab {
     flex: 0 0 auto;
@@ -8904,9 +8623,6 @@ button.gb-food-level {
     flex-direction: column;
     min-height: 0;
   }
-  .gb-nav {
-    flex: 1 1 auto;
-  }
 
   /* The sidebar has room for every destination, so show overflow tabs inline
      and drop "More" (and its sheet) entirely. */
@@ -8919,23 +8635,6 @@ button.gb-food-level {
   .gb-more-sheet,
   .gb-more-backdrop {
     display: none;
-  }
-
-  /* Quick-add FAB → pill button inside the sidebar */
-  .gb-fab {
-    width: 100%;
-    height: 46px;
-    border-radius: 14px;
-    margin: 14px 0;
-    box-shadow:
-      0 4px 0 var(--brand-edge),
-      var(--shadow-brand);
-  }
-  .gb-fab:active {
-    transform: translateY(3px);
-    box-shadow:
-      0 1px 0 var(--brand-edge),
-      var(--shadow-brand);
   }
 }
 
@@ -8979,7 +8678,7 @@ button.gb-food-level {
   transition: width 0.4s ease;
 }
 .gb-goal-progress-fill.is-done {
-  background: var(--leaf-500, #22c55e);
+  background: var(--leaf-500);
 }
 .gb-goal-progress-stats {
   display: flex;
@@ -8997,8 +8696,8 @@ button.gb-food-level {
 .gb-goal-progress-done-chip {
   font-size: 0.75rem;
   font-weight: 700;
-  color: var(--leaf-700, #15803d);
-  background: var(--leaf-50, #f0fdf4);
+  color: var(--leaf-700);
+  background: var(--leaf-50);
   padding: 2px 8px;
   border-radius: 99px;
 }
@@ -9053,7 +8752,7 @@ button.gb-food-level {
 }
 .gb-habit-sleep-metric {
   background: var(--surface-2);
-  border-radius: var(--radius-lg, 12px);
+  border-radius: var(--radius-lg);
   padding: 10px 12px;
 }
 .gb-habit-sleep-metric-val {
@@ -9069,9 +8768,9 @@ button.gb-food-level {
   margin-top: 3px;
 }
 .gb-habit-sleep-insight {
-  background: var(--brand-soft, #fff7ed);
-  color: var(--brand-soft-fg, #9a3412);
-  border-radius: var(--radius-lg, 12px);
+  background: var(--brand-soft);
+  color: var(--brand-soft-fg);
+  border-radius: var(--radius-lg);
   padding: 10px 14px;
   font-size: 0.8125rem;
   line-height: 1.5;
@@ -9192,22 +8891,11 @@ button.gb-food-level {
     padding: 14px;
     border-radius: 18px;
   }
-  .gb-goal-row {
-    padding: 12px 14px;
-  }
   .gb-goal-card {
     padding: 12px 14px;
   }
-  .gb-goal-actions {
-    flex-wrap: wrap;
-    gap: 6px;
-  }
   .gb-goal-card-footer {
     gap: 5px;
-  }
-  .gb-goal-actions .gb-btn {
-    font-size: 0.75rem;
-    padding: 7px 10px;
   }
   .gb-goal-card-footer .gb-btn {
     font-size: 0.75rem;
@@ -9270,41 +8958,12 @@ button.gb-food-level {
   margin-top: 16px;
 }
 
-/* Connection status line */
-.gb-wa-status-line {
-  font-size: 0.75rem;
-  color: var(--fg3);
-  margin-bottom: 14px;
-  padding: 6px 10px;
-  border-radius: 8px;
-  background: var(--surface-2);
-}
-.gb-wa-status-line.is-connected {
-  background: var(--gb-wa-green-soft);
-  color: var(--gb-wa-green-fg);
-  font-weight: 600;
-}
-
 /* Small hint text under labels */
 .gb-field-hint {
   font-size: 0.6875rem;
   color: var(--fg3);
   margin-bottom: 6px;
   margin-top: -4px;
-}
-
-/* Status dot in profile dropdown next to menu item */
-.gb-wa-dot {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--border);
-  margin-left: auto;
-  flex-shrink: 0;
-}
-.gb-wa-dot.is-on {
-  background: var(--gb-wa-green);
 }
 
 /* WhatsApp badge on reminder rows with a time set */
@@ -9382,7 +9041,7 @@ button.gb-food-level {
 .gb-settings-level-badge {
   display: inline-block;
   margin-top: 5px;
-  background: var(--brand-soft, #e8f4fd);
+  background: var(--brand-soft);
   color: var(--brand-ink);
   font-size: 0.6875rem;
   font-weight: 700;
@@ -9446,10 +9105,6 @@ button.gb-food-level {
 }
 .gb-segnav-btn.is-active {
   color: var(--fg-on-brand);
-}
-.gb-segnav-btn:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
 }
 
 /* Tab pane — each section rendered inside its own pane */
@@ -9761,9 +9416,6 @@ select.gb-input {
   width: 36px;
   height: 36px;
 }
-.gb-family-link-btn {
-  margin-top: 6px;
-}
 
 /* Panels (add / edit / profile / link) */
 .gb-family-panel {
@@ -9895,10 +9547,6 @@ select.gb-input {
   background: var(--surface-3);
   color: var(--fg2);
 }
-.gb-family-chip--ok {
-  background: var(--success-soft);
-  color: var(--success-soft-fg);
-}
 .gb-family-chip--soft {
   background: var(--brand-soft);
   color: var(--brand-soft-fg);
@@ -9913,11 +9561,9 @@ select.gb-input {
   cursor: pointer;
   padding: 0;
   opacity: 0.65;
-}
-/* The x stays 14px; the ::before overlay gives it a 44px hit area. */
-.gb-family-chip-x {
   position: relative;
 }
+/* The x stays 14px; the ::before overlay gives it a 44px hit area. */
 .gb-family-chip-x::before {
   content: '';
   position: absolute;
@@ -10572,7 +10218,7 @@ select.gb-input {
 .gb-family-sectionnav {
   position: sticky;
   top: 0;
-  z-index: 5;
+  z-index: var(--z-sticky);
   /* A solid card-colour bar, not `--bg` and not a blur. `--bg` matched only a
      flat canvas (the premium skin paints `.gb-app` with radial gradients, so it
      showed as a dark rectangle), and a backdrop blur re-rasterises the strip on
@@ -11258,8 +10904,7 @@ select.gb-input {
   font-size: 1.25rem;
   color: var(--brand-ink);
 }
-.gb-ach-summary-bar,
-.gb-ach-summary-xpbar {
+.gb-ach-summary-bar {
   height: 8px;
   border-radius: 999px;
   background: var(--surface-2);
@@ -11281,21 +10926,6 @@ select.gb-input {
   font-size: var(--text-2xs);
   color: var(--fg3);
   margin-top: 5px;
-}
-.gb-ach-summary-xp {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-.gb-ach-summary-xpfill {
-  height: 100%;
-  border-radius: 999px;
-  background: var(--sun-500);
-  transition: width 0.4s ease;
-}
-.gb-ach-summary-xplabel {
-  font-size: var(--text-2xs);
-  color: var(--fg3);
 }
 .gb-ach-grid {
   display: grid;
@@ -11555,7 +11185,7 @@ select.gb-input {
   position: fixed;
   top: -56px;
   left: 12px;
-  z-index: 2000;
+  z-index: var(--z-skip);
   padding: 10px 16px;
   background: var(--brand-fill);
   color: var(--fg-on-brand);
@@ -11582,7 +11212,7 @@ textarea:focus-visible,
 [role='switch']:focus-visible,
 [role='checkbox']:focus-visible,
 [tabindex]:focus-visible {
-  outline: 2px solid var(--brand);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 /* (global prefers-reduced-motion kill switch lives earlier in this file) */
@@ -11597,7 +11227,7 @@ textarea:focus-visible,
 .gb-more-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 60;
+  z-index: var(--z-sheet-backdrop);
   background: rgba(20, 16, 13, 0.32);
   animation: gb-more-fade var(--dur-fast) var(--ease-out);
 }
@@ -11606,7 +11236,7 @@ textarea:focus-visible,
   left: 0;
   right: 0;
   bottom: 100%;
-  z-index: 61;
+  z-index: var(--z-sheet);
   background: var(--surface);
   border-top: 1px solid var(--border);
   border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
@@ -12132,8 +11762,6 @@ textarea:focus-visible,
   background: var(--surface-2);
   color: var(--fg3);
   cursor: pointer;
-}
-.gb-note-swatch {
   position: relative;
 }
 .gb-note-swatch:active {
@@ -12210,10 +11838,6 @@ textarea:focus-visible,
 }
 .gb-note-grid > [hidden] {
   display: none;
-}
-.gb-note-card:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
 }
 .gb-note-card.is-pinned {
   border-color: var(--brand);
@@ -12385,14 +12009,12 @@ textarea:focus-visible,
   margin-top: 14px;
   padding-top: 14px;
   border-top: 1px solid var(--border);
-}
-/* Four equal tiles, icon over label. As wrapping pills they ran to two rows
-   with "Pin to top" left alone on the second. */
-.gb-note-modal .gb-note-actions {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
 }
+/* Four equal tiles, icon over label. As wrapping pills they ran to two rows
+   with "Pin to top" left alone on the second. */
 .gb-note-modal .gb-note-actions .gb-btn {
   flex-direction: column;
   gap: 4px;
@@ -12495,11 +12117,6 @@ textarea:focus-visible,
   background: var(--brand-soft);
   color: var(--brand-ink);
 }
-.gb-note-view:focus-visible,
-.gb-note-chip:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
 /* The Notes top bar: search + sort, first on the screen and sticky while the
    list scrolls. Same treatment as .gb-family-sectionnav: a solid surface bar
    (not --bg, which the premium skin's gradients show through, and not a blur,
@@ -12510,7 +12127,7 @@ textarea:focus-visible,
   align-items: center;
   position: sticky;
   top: 0;
-  z-index: 5;
+  z-index: var(--z-sticky);
   margin: 0 calc(-1 * var(--gutter));
   padding: 8px var(--gutter);
   background: var(--surface);
@@ -12715,10 +12332,6 @@ textarea:focus-visible,
      which blew the chip up to body text and wrapped it onto two lines. */
   font-family: inherit;
 }
-.gb-freeze-chip:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
 .gb-freeze-modal {
   max-width: 420px;
 }
@@ -12759,11 +12372,6 @@ textarea:focus-visible,
   background: var(--brand-fill);
   border-color: var(--brand-fill);
   color: var(--fg-on-brand);
-}
-.gb-freeze-habits .gb-chip:focus-visible,
-.gb-starter-packs .gb-chip:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
 }
 /* Starter packs: the goal picker above the preview list. 44px tall, a full tap target. */
 .gb-starter-packs {
@@ -12974,7 +12582,7 @@ h2[tabindex='-1']:focus {
 .gb-food-loader {
   position: fixed;
   inset: 0;
-  z-index: 150;
+  z-index: var(--z-loader);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -13267,6 +12875,7 @@ h2[tabindex='-1']:focus {
   .gb-head {
     --head-pad-b: 6px;
     padding-top: max(env(safe-area-inset-top, 0px), 8px);
+    grid-area: header;
   }
   .gb-head .greet-label {
     display: none;
@@ -13282,9 +12891,6 @@ h2[tabindex='-1']:focus {
     grid-template-areas:
       'rail header'
       'rail content';
-  }
-  .gb-head {
-    grid-area: header;
   }
   #gb-main {
     grid-area: content;
@@ -13315,11 +12921,6 @@ h2[tabindex='-1']:focus {
   }
   .gb-nav-tab span {
     display: none;
-  }
-  .gb-fab {
-    width: 44px;
-    height: 44px;
-    margin: 0;
   }
   /* "More" rose out of the bottom nav (bottom: 100%), which from the rail is off
      the top of the screen. Here it is a panel beside the rail instead. */
@@ -13430,6 +13031,8 @@ button.gb-sound-name:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-weight: 600;
+  color: var(--fg1);
 }
 .gb-sound-title-edit {
   flex-shrink: 0;
@@ -13439,10 +13042,6 @@ button.gb-sound-name:focus-visible {
 .gb-sound-row.is-renaming .gb-sound-play,
 .gb-sound-row.is-renaming .gb-sound-remove {
   display: none;
-}
-.gb-sound-title-text {
-  font-weight: 600;
-  color: var(--fg1);
 }
 .gb-sound-meta {
   font-size: 0.75rem;
@@ -14138,10 +13737,6 @@ button.gb-tone-chip:focus-visible {
   border-color: var(--coral-500);
   color: var(--coral-600);
 }
-.gb-slip-btn:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
 @media (hover: hover) {
   .gb-slip-btn:hover {
     border-color: var(--border-strong);
@@ -14377,10 +13972,6 @@ button.gb-tone-chip:focus-visible {
   border-color: var(--brand-fill);
   background: var(--brand-fill);
   color: var(--fg-on-brand);
-}
-.gb-rule-day:focus-visible {
-  outline: 2px solid var(--brand);
-  outline-offset: 2px;
 }
 
 /* ---- Saying a reminder: the mic beside its text (calendar form, Settings) ---- */

@@ -45,5 +45,4 @@ three ways. Adding anything — or dismissing the checklist — brings the full 
 | `HabitSleepInsightCard` | fitness × sleep correlation. **Returns `null`** without at least one fitness habit *and* one sleep entry — it has no correlation to report, and it used to say so at full card size. Callers must guard on the returned node, not on the function. |
 | `ScreenFood` | the standalone Food screen |
 
-Styles: `styles/app.css` §"Dashboard-specific blocks" — two logical columns
-(`.gb-dash-main` / `.gb-dash-side`) that stack on phones.
+Styles: `styles/app.css` §"Dashboard-specific blocks".

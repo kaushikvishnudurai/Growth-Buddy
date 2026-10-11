@@ -99,7 +99,7 @@ class MoneyLedgerMappingTest {
                 {"expenses":[{"id":"e1","amount":10,"date":"2026-09-01"},{"id":"broken"}],
                  "income":[{"id":"i1","amount":5,"source":"other","date":"2026-09-02"}],
                  "budgets":{"food":900},"accounts":[{"id":"a","balance":1}]}""");
-        List<MoneyLedger.Row> rows = ledger.rowsFromDoc(doc);
+        List<MoneyLedger.Row> rows = ledger.rowsFromDoc(doc, java.time.ZoneOffset.UTC);
         assertThat(rows).extracting(MoneyLedger.Row::id).containsExactlyInAnyOrder("e1", "i1");
         assertThat(MoneyLedger.stripArrays(doc)).isTrue();
         assertThat(doc.has("expenses") || doc.has("income") || doc.has("accounts")).isFalse();

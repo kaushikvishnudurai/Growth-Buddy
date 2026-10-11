@@ -9,6 +9,7 @@
    ===================================================================== */
 
 import { fmtDate } from './i18n.js';
+import { localKey } from './dates.js';
 
 const DAY_MS = 86400000;
 const MOOD = { low: 1, okay: 2, good: 3, great: 4 };
@@ -18,12 +19,7 @@ const dayNum = (key) => Math.floor(Date.parse(key + 'T00:00:00Z') / DAY_MS);
 const dayKey = (n) => new Date(n * DAY_MS).toISOString().slice(0, 10);
 const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
 
-/** Local YYYY-MM-DD of a Date or an instant. */
-export function localKey(d) {
-  const t = d instanceof Date ? d : new Date(d);
-  const p = (n) => String(n).padStart(2, '0');
-  return t.getFullYear() + '-' + p(t.getMonth() + 1) + '-' + p(t.getDate());
-}
+export { localKey }; // report.js and the tests import it from here
 
 /** `n` date keys ending at `endKey`, oldest first. */
 export function daysEnding(endKey, n) {

@@ -1,11 +1,11 @@
-# SQL schema — `tableCreationQueries.sql` + `growth_buddy.sql`
+# SQL schema — `tableCreationQueries.sql` + `migrations.sql`
 
 **Two files, different jobs:**
 
 | File | What it is |
 |---|---|
 | `tableCreationQueries.sql` | hand-written DDL, the schema of record. One guarded `CREATE TABLE IF NOT EXISTS` per table (count them with `grep -c '^CREATE TABLE'`; a number written here went stale), with old migrations left as comments — the one live `ALTER` is the idempotent `MODIFY COLUMN` widening `family_members.status`'s ENUM; column adds go to `migrations.sql`. **Runnable against a fresh database, against prod, and twice.** **In sync with the live DB as of v6** — the 11 tables ddl-auto had created but nobody had written down were captured from `SHOW CREATE TABLE` and appended, and 11 phantom tables that had no entity and existed nowhere were deleted. |
-| `growth_buddy.sql` | a real `mysqldump` of a working DB (backticked identifiers). Untracked in git, and **stale** — it still holds the dropped Google tables. Re-dump it when you care. |
+| `migrations.sql` | the `ALTER`s that bring an existing database (prod) up to the schema of record. The only thing that can change a live table: prod runs `ddl-auto: none`. |
 
 `application.yml` sets `ddl-auto: ${SPRING_JPA_DDL_AUTO:update}`, so dev papers over any gap:
 Hibernate creates missing tables and columns on the fly. **`application-prod.yml` sets

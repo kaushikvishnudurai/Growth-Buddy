@@ -20,7 +20,7 @@ Tone rule stated at the top of the file: money framed as growth, never guilt.
 
 Three files so the ~6k-line screen stays out of the boot chunk (boot 551,884 B -> 447,141 B raw):
 
-- **`money-core.js`** (boot, no imports): everything from `CUR` / `cur` / `applyCurrency` through
+- **`money-core.js`** (boot; imports only `dates.js`, whose `pad2` / `localKey` (as `dkey`) / `todayKey` it re-exports): everything from `CUR` / `cur` / `applyCurrency` through
   `budgetStatus` — categories (`DEFAULT_CATEGORIES`, `PALETTE`, `KEYWORDS`, `mergedCats`, `catOf`,
   `predictCategory` / `suggestCategory`, see below), date + currency helpers (`todayKey` … `fmtDateShort`, `toHomeAmount`,
   `readAmount` / `readWhole`, `uid`, `clone`, `slug`), the document model (`emptyMoney`,

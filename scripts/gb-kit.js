@@ -670,6 +670,13 @@ if (typeof window !== 'undefined') {
   }
 }
 
+/* How long a closing sheet fades before it is removed (the overlay's closing
+   fade in app.css). Effects on the screen behind it wait this out. */
+const SHEET_EXIT_MS = 180;
+/* Focus a field a beat after its dialog mounts: an immediate focus() lands before
+   the sheet is in the DOM and painted, and mobile keyboards ignore it. */
+const focusSoon = (el) => setTimeout(() => el.focus(), 60);
+
 function openOverlay({ label, className, role = 'dialog', onClose, onDismiss } = {}) {
   let closed = false;
   const sheet = h('div', {
@@ -686,7 +693,7 @@ function openOverlay({ label, className, role = 'dialog', onClose, onDismiss } =
     if (vv) vv.removeEventListener('resize', fitViewport);
     overlay.classList.remove('is-open');
     overlay.classList.add('is-closing');
-    setTimeout(() => overlay.remove(), 180);
+    setTimeout(() => overlay.remove(), SHEET_EXIT_MS);
     syncSheetHistory();
     if (onClose) onClose();
   }
@@ -1280,6 +1287,8 @@ export {
   confirmDialog,
   fieldRefusal,
   openOverlay,
+  SHEET_EXIT_MS,
+  focusSoon,
   closeOverlays,
   openModal,
   shakeRefusal,

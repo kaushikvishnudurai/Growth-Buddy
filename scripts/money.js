@@ -7,7 +7,7 @@
    ponytail: heuristics, not an LLM. Real OCR / NL understanding would need
    a vision/LLM endpoint — marked at each spot below.
    ===================================================================== */
-import { h, Icon, Card, ProgressRing, refreshIcons, openModal, Thinking } from './gb-kit.js';
+import { h, Icon, Card, ProgressRing, refreshIcons, openModal, Thinking, focusSoon } from './gb-kit.js';
 import { toast } from './toast.js';
 import { shareStoryCard, _demo as _shareCardDemo } from './share-card.js';
 import {
@@ -2700,7 +2700,7 @@ function openExpenseModal(money, save, prefillDate, existing, scan) {
       if (thr > 0 && amt >= thr) setTimeout(() => openReflection(next, save, id), 220);
     },
   });
-  setTimeout(() => amount.focus(), 60);
+  focusSoon(amount);
 }
 
 /* =====================================================================
@@ -3050,7 +3050,7 @@ function ScreenMoney({
         );
       },
     });
-    setTimeout(() => name.focus(), 60);
+    focusSoon(name);
   }
 
   function openEditAccount(a) {
@@ -3260,7 +3260,7 @@ function ScreenMoney({
         toast.success('Moved ' + fmt(v) + '.');
       },
     });
-    setTimeout(() => amount.focus(), 60);
+    focusSoon(amount);
   }
 
 
@@ -3517,7 +3517,7 @@ function ScreenMoney({
       ),
       primary: null,
     });
-    setTimeout(() => item.focus(), 60);
+    focusSoon(item);
   }
 
   function openAddGoal(planMode) {
@@ -3593,7 +3593,7 @@ function ScreenMoney({
         toast.success(planMode ? 'Purchase planned.' : 'Goal created.');
       },
     });
-    setTimeout(() => name.focus(), 60);
+    focusSoon(name);
   }
 
   function openContribute(goal) {
@@ -3635,7 +3635,7 @@ function ScreenMoney({
         toast.success('Nice — ' + fmt(v) + ' set aside.');
       },
     });
-    setTimeout(() => amt.focus(), 60);
+    focusSoon(amt);
   }
 
   function openAddSubscription() {
@@ -3718,7 +3718,7 @@ function ScreenMoney({
         toast.success('Subscription added.');
       },
     });
-    setTimeout(() => name.focus(), 60);
+    focusSoon(name);
   }
 
   function openSubscriptionUses(sub) {
@@ -3751,7 +3751,7 @@ function ScreenMoney({
         });
       },
     });
-    setTimeout(() => uses.focus(), 60);
+    focusSoon(uses);
   }
 
   function openAddWishlist() {
@@ -3802,7 +3802,7 @@ function ScreenMoney({
         toast.success('Added to wishlist — give it a few days.');
       },
     });
-    setTimeout(() => name.focus(), 60);
+    focusSoon(name);
   }
 
   function openChallenge() {
@@ -5821,7 +5821,7 @@ function ScreenMoney({
         toast.success('Income added.');
       },
     });
-    setTimeout(() => amt.focus(), 60);
+    focusSoon(amt);
   }
 
   function openAddLoan(direction) {
@@ -5887,7 +5887,7 @@ function ScreenMoney({
         toast.success('Saved.');
       },
     });
-    setTimeout(() => amt.focus(), 60);
+    focusSoon(amt);
   }
 
   /* Settle all of it, or record the part that came back. Nothing left = settled. */
@@ -6031,7 +6031,7 @@ function ScreenMoney({
         toast.success(sh.length === 1 ? 'IOU saved.' : sh.length + ' IOUs saved.');
       },
     });
-    setTimeout(() => total.focus(), 60);
+    focusSoon(total);
   }
 
   function tabIncome() {
@@ -6554,7 +6554,7 @@ function ScreenMoney({
         toast.success(r ? 'Saved.' : 'Added. It logs itself on ' + recurDayLabel(fields.day) + '.');
       },
     });
-    setTimeout(() => amt.focus(), 60);
+    focusSoon(amt);
   }
 
   /* =================================================================

@@ -31,6 +31,7 @@ import {
 } from './home-order.js';
 import { suggestReminderTime } from './habit-stats.js';
 import { usualSleep } from './nudges.js';
+import { dateKey, todayKey } from './dates.js';
 import { fmtDate, fmtNumber } from './i18n.js';
 import {
   groupBySlot,
@@ -168,12 +169,6 @@ const PRIORITY = {
   Medium: { bg: 'var(--sun-50)', fg: 'var(--sun-700)', dot: 'var(--sun-500)' },
   Low: { bg: 'var(--surface-3)', fg: 'var(--fg2)', dot: 'var(--warm-400)' },
 };
-
-function todayKey() {
-  const d = new Date();
-  const pad = (n) => (n < 10 ? '0' + n : String(n));
-  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
-}
 
 function sleepHours(entry) {
   if (!entry || !entry.bedtime || !entry.wakeTime) return null;
@@ -2121,12 +2116,6 @@ function MiniCalendarCard({
   ];
   const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-  function pad(n) {
-    return n < 10 ? '0' + n : String(n);
-  }
-  function dateKey(y, m, d) {
-    return y + '-' + pad(m + 1) + '-' + pad(d);
-  }
   function parseKey(key) {
     const bits = String(key || '')
       .split('-')

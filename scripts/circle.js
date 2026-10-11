@@ -11,6 +11,7 @@ import {
   refreshIcons,
   confirmDialog,
   openOverlay,
+  focusSoon,
 } from './gb-kit.js';
 import { toast } from './toast.js';
 import {
@@ -663,7 +664,7 @@ function openChat(mApi, linkId, partnerName, currentUserId) {
   log.replaceChildren(h('div', { class: 'gb-empty-sm' }, 'Loading…'));
   refreshIcons();
   load(null);
-  setTimeout(() => input.focus(), 60);
+  focusSoon(input);
 }
 
 /* The mentor's "This week" card: the mentee's check-ins Monday → today (their
@@ -2583,7 +2584,7 @@ function ScreenCircle({
       )
     );
     refreshIcons();
-    setTimeout(() => noteInput.focus(), 60);
+    focusSoon(noteInput);
   }
 
   function promptAndSend(person, direction) {

@@ -24,6 +24,7 @@ import {
 import { signals } from './insights.js';
 import { shareStoryCard } from './share-card.js';
 import { toast } from './toast.js';
+import { pad2 } from './dates.js';
 
 /** Patterns across the user's logged signals, plus habits, tasks, goals, focus and money.
     `loading`: the history fetch is still out, so an empty list is not yet "nothing found".
@@ -156,12 +157,6 @@ function svgEl(tag, attrs) {
 const SCALE_NUM = { low: 1, poor: 1, okay: 2, good: 3, great: 4 };
 const SCALE_LABEL = { 1: 'Low', 2: 'Okay', 3: 'Good', 4: 'Great' };
 
-function pad2(n) {
-  return n < 10 ? '0' + n : String(n);
-}
-function dayKeyOf(d) {
-  return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
-}
 // Array of the last n calendar days (oldest first), ending today.
 function lastNDays(n) {
   const out = [];
@@ -170,7 +165,7 @@ function lastNDays(n) {
   for (let i = n - 1; i >= 0; i--) {
     const d = new Date(base);
     d.setDate(base.getDate() - i);
-    out.push(dayKeyOf(d));
+    out.push(localKey(d));
   }
   return out;
 }

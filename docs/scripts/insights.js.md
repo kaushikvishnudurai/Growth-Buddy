@@ -1,7 +1,7 @@
 # scripts/insights.js — Insights engine
 
 Pure pattern finder over the local wellness + trends + money stores, plus history the Report
-screen fetches on open. No AI, no imports. `push.js` imports `drinkRateByHour` from here.
+screen fetches on open. No AI; imports only `money-core.js` (`fmtIn` / `homeCur`, so amounts carry the user's currency) and `dates.js` (`localKey`). `push.js` imports `drinkRateByHour` from here.
 One caller: `report.js` `insightsSection` (Report screen only). Checked by
 `node scripts/insights.test.mjs`.
 

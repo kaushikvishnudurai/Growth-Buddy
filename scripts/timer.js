@@ -16,6 +16,7 @@ import {
 } from './native.js';
 import { CacheStorage } from './cache-storage.js';
 import { playChime } from './chime.js';
+import { pad2 as pad } from './dates.js';
 import {
   remainingFrom,
   restoredSession,
@@ -222,9 +223,6 @@ document.addEventListener('visibilitychange', function () {
 });
 window.addEventListener('focus', resync);
 
-function pad(n) {
-  return n < 10 ? '0' + n : String(n);
-}
 function fmt(s) {
   return pad(Math.floor(s / 60)) + ':' + pad(s % 60);
 }

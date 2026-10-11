@@ -39,13 +39,11 @@
   align-items: center;
   justify-content: center;
   transition: background var(--dur-fast), color var(--dur-fast), transform var(--dur-fast);
+  position: relative;
 }
 
 /* Drawn at 32px; the ::before overlay makes the tap target 44px. Inset is
    measured from inside the 1px border, so -7, not -6 (which measured 42). */
-.gb-mini-cal-nav-btn {
-  position: relative;
-}
 .gb-mini-cal-nav-btn::before {
   content: '';
   position: absolute;
