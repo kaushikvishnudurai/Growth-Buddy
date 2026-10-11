@@ -1,0 +1,697 @@
+{
+ "desk/light/quick add": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Quick add",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<div class=\"gb-modal\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Quick add\" tabindex=\"-1\"><div class=\"gb-modal-head\"><d",
+   "cls": "gb-modal"
+  },
+  "v": []
+ },
+ "desk/light/add task": {
+  "ok": false,
+  "meta": null,
+  "v": null
+ },
+ "desk/light/add habit": {
+  "ok": false,
+  "meta": null,
+  "v": null
+ },
+ "desk/light/add food": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Log food",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<input type=\"text\" class=\"gb-input\" placeholder=\"e.g. Rava dosa with chutney\" maxlength=\"255\" aria-label=\"Food\">",
+   "cls": "gb-modal"
+  },
+  "v": []
+ },
+ "desk/light/custom water": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Add custom water",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<input type=\"number\" class=\"gb-input\" min=\"1\" max=\"5000\" step=\"1\" value=\"300\" aria-label=\"Amount (ml)\">",
+   "cls": "gb-modal"
+  },
+  "v": []
+ },
+ "desk/light/new goal": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "New goal",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<input type=\"text\" class=\"gb-input gb-goal-title-input\" maxlength=\"255\" placeholder=\"What do you want to achieve?\" aria-",
+   "cls": "gb-modal"
+  },
+  "v": []
+ },
+ "desk/light/add expense": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Add expense",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<input type=\"number\" class=\"gb-input\" inputmode=\"decimal\" min=\"1\" max=\"10000000\" placeholder=\"e.g. 250\" value=\"\" aria-la",
+   "cls": "gb-modal gb-money-modal"
+  },
+  "v": []
+ },
+ "desk/light/custom focus": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Custom focus minutes",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<input type=\"number\" class=\"gb-input\" aria-label=\"Minutes\" min=\"1\" max=\"180\" step=\"1\" value=\"15\">",
+   "cls": "gb-modal"
+  },
+  "v": []
+ },
+ "desk/light/find someone": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Find people",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<input type=\"search\" class=\"gb-input\" placeholder=\"Search by name…\" autofocus=\"\" maxlength=\"80\">",
+   "cls": "gb-modal gb-search-modal"
+  },
+  "v": []
+ },
+ "desk/light/note sheet": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Note",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<div class=\"gb-editor\" contenteditable=\"true\" role=\"textbox\" aria-multiline=\"true\" aria-label=\"Write something…\" data-pl",
+   "cls": "gb-modal gb-note-modal"
+  },
+  "v": []
+ },
+ "desk/light/new reminder": {
+  "ok": true,
+  "meta": null,
+  "v": null
+ },
+ "desk/light/edit reminder": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Edit reminder",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<input type=\"text\" class=\"gb-input\" value=\"Call mom\" maxlength=\"255\" aria-label=\"Reminder text\">",
+   "cls": "gb-modal"
+  },
+  "v": []
+ },
+ "desk/light/settings": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Settings",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<div class=\"gb-modal gb-modal--settings\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Settings\" tabindex=\"-1\"><div class=",
+   "cls": "gb-modal gb-modal--settings"
+  },
+  "v": []
+ },
+ "desk/light/buddy chats": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Your chats with Buddy",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<div class=\"gb-modal gb-thread-modal\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Your chats with Buddy\" tabindex=\"-1\"><",
+   "cls": "gb-modal gb-thread-modal"
+  },
+  "v": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "help": "Elements must meet minimum color contrast ratio thresholds",
+    "tags": [
+     "wcag2aa",
+     "wcag143"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-thread-date",
+      "h": "<span class=\"gb-thread-date\">11/10/2026</span>",
+      "s": "  Element has insufficient color contrast of 3.96 (foreground color: #96877c, background color: #412716, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "desk/dark/quick add": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Quick add",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<div class=\"gb-modal\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Quick add\" tabindex=\"-1\"><div class=\"gb-modal-head\"><d",
+   "cls": "gb-modal"
+  },
+  "v": []
+ },
+ "desk/dark/add task": {
+  "ok": false,
+  "meta": null,
+  "v": null
+ },
+ "desk/dark/add habit": {
+  "ok": false,
+  "meta": null,
+  "v": null
+ },
+ "desk/dark/add food": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Log food",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<input type=\"text\" class=\"gb-input\" placeholder=\"e.g. Rava dosa with chutney\" maxlength=\"255\" aria-label=\"Food\">",
+   "cls": "gb-modal"
+  },
+  "v": []
+ },
+ "desk/dark/custom water": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Add custom water",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<input type=\"number\" class=\"gb-input\" min=\"1\" max=\"5000\" step=\"1\" value=\"300\" aria-label=\"Amount (ml)\">",
+   "cls": "gb-modal"
+  },
+  "v": []
+ },
+ "desk/dark/new goal": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "New goal",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<input type=\"text\" class=\"gb-input gb-goal-title-input\" maxlength=\"255\" placeholder=\"What do you want to achieve?\" aria-",
+   "cls": "gb-modal"
+  },
+  "v": []
+ },
+ "desk/dark/add expense": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Add expense",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<input type=\"number\" class=\"gb-input\" inputmode=\"decimal\" min=\"1\" max=\"10000000\" placeholder=\"e.g. 250\" value=\"\" aria-la",
+   "cls": "gb-modal gb-money-modal"
+  },
+  "v": []
+ },
+ "desk/dark/custom focus": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Custom focus minutes",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<input type=\"number\" class=\"gb-input\" aria-label=\"Minutes\" min=\"1\" max=\"180\" step=\"1\" value=\"15\">",
+   "cls": "gb-modal"
+  },
+  "v": []
+ },
+ "desk/dark/find someone": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Find people",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<input type=\"search\" class=\"gb-input\" placeholder=\"Search by name…\" autofocus=\"\" maxlength=\"80\">",
+   "cls": "gb-modal gb-search-modal"
+  },
+  "v": []
+ },
+ "desk/dark/note sheet": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Note",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<div class=\"gb-editor\" contenteditable=\"true\" role=\"textbox\" aria-multiline=\"true\" aria-label=\"Write something…\" data-pl",
+   "cls": "gb-modal gb-note-modal"
+  },
+  "v": []
+ },
+ "desk/dark/new reminder": {
+  "ok": true,
+  "meta": null,
+  "v": null
+ },
+ "desk/dark/edit reminder": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Edit reminder",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<input type=\"text\" class=\"gb-input\" value=\"Call mom\" maxlength=\"255\" aria-label=\"Reminder text\">",
+   "cls": "gb-modal"
+  },
+  "v": []
+ },
+ "desk/dark/settings": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Settings",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<div class=\"gb-modal gb-modal--settings\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Settings\" tabindex=\"-1\"><div class=",
+   "cls": "gb-modal gb-modal--settings"
+  },
+  "v": []
+ },
+ "desk/dark/buddy chats": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Your chats with Buddy",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<div class=\"gb-modal gb-thread-modal\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Your chats with Buddy\" tabindex=\"-1\"><",
+   "cls": "gb-modal gb-thread-modal"
+  },
+  "v": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "help": "Elements must meet minimum color contrast ratio thresholds",
+    "tags": [
+     "wcag2aa",
+     "wcag143"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-thread-date",
+      "h": "<span class=\"gb-thread-date\">11/10/2026</span>",
+      "s": "  Element has insufficient color contrast of 3.96 (foreground color: #96877c, background color: #412716, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "phone/light/quick add": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Quick add",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<div class=\"gb-modal\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Quick add\" tabindex=\"-1\"><div class=\"gb-modal-head\"><d",
+   "cls": "gb-modal"
+  },
+  "v": []
+ },
+ "phone/light/add task": {
+  "ok": false,
+  "meta": null,
+  "v": null
+ },
+ "phone/light/add habit": {
+  "ok": false,
+  "meta": null,
+  "v": null
+ },
+ "phone/light/add food": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Log food",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<input type=\"text\" class=\"gb-input\" placeholder=\"e.g. Rava dosa with chutney\" maxlength=\"255\" aria-label=\"Food\">",
+   "cls": "gb-modal"
+  },
+  "v": []
+ },
+ "phone/light/custom water": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Add custom water",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<input type=\"number\" class=\"gb-input\" min=\"1\" max=\"5000\" step=\"1\" value=\"300\" aria-label=\"Amount (ml)\">",
+   "cls": "gb-modal"
+  },
+  "v": []
+ },
+ "phone/light/new goal": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "New goal",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<input type=\"text\" class=\"gb-input gb-goal-title-input\" maxlength=\"255\" placeholder=\"What do you want to achieve?\" aria-",
+   "cls": "gb-modal"
+  },
+  "v": []
+ },
+ "phone/light/add expense": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Add expense",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<input type=\"number\" class=\"gb-input\" inputmode=\"decimal\" min=\"1\" max=\"10000000\" placeholder=\"e.g. 250\" value=\"\" aria-la",
+   "cls": "gb-modal gb-money-modal"
+  },
+  "v": []
+ },
+ "phone/light/custom focus": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Custom focus minutes",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<input type=\"number\" class=\"gb-input\" aria-label=\"Minutes\" min=\"1\" max=\"180\" step=\"1\" value=\"15\">",
+   "cls": "gb-modal"
+  },
+  "v": []
+ },
+ "phone/light/find someone": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Find people",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<input type=\"search\" class=\"gb-input\" placeholder=\"Search by name…\" autofocus=\"\" maxlength=\"80\">",
+   "cls": "gb-modal gb-search-modal"
+  },
+  "v": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "help": "Elements must meet minimum color contrast ratio thresholds",
+    "tags": [
+     "wcag2aa",
+     "wcag143"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-person-row.gb-row:nth-child(1) > .gb-person-actions > .gb-btn--soft.gb-btn",
+      "h": "<button type=\"button\" class=\"gb-btn gb-btn--soft\" style=\"width: auto; padding: 8px 12px; font-size: 0.78125rem;\">",
+      "s": "  Element has insufficient color contrast of 4.31 (foreground color: #be4a0a, background color: #feeadc, font size: 9.4pt (12.5px), font weight: bold). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": ".gb-person-row.gb-row:nth-child(1) > .gb-person-actions > .gb-btn--secondary.gb-btn",
+      "h": "<button type=\"button\" class=\"gb-btn gb-btn--secondary\" style=\"width: auto; padding: 8px 12px; font-size: 0.78125rem;\">",
+      "s": "  Element has insufficient color contrast of 1.03 (foreground color: #1e1713, background color: #211a16, font size: 9.4pt (12.5px), font weight: bold). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": ".gb-person-row.gb-row:nth-child(2) > .gb-person-actions > .gb-btn--soft.gb-btn",
+      "h": "<button type=\"button\" class=\"gb-btn gb-btn--soft\" style=\"width: auto; padding: 8px 12px; font-size: 0.78125rem;\">",
+      "s": "  Element has insufficient color contrast of 4.31 (foreground color: #be4a0a, background color: #feeadc, font size: 9.4pt (12.5px), font weight: bold). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": ".gb-person-row.gb-row:nth-child(2) > .gb-person-actions > .gb-btn--secondary.gb-btn",
+      "h": "<button type=\"button\" class=\"gb-btn gb-btn--secondary\" style=\"width: auto; padding: 8px 12px; font-size: 0.78125rem;\">",
+      "s": "  Element has insufficient color contrast of 1.03 (foreground color: #1e1713, background color: #211a16, font size: 9.4pt (12.5px), font weight: bold). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": ".gb-person-row.gb-row:nth-child(3) > .gb-person-actions > .gb-btn--soft.gb-btn",
+      "h": "<button type=\"button\" class=\"gb-btn gb-btn--soft\" style=\"width: auto; padding: 8px 12px; font-size: 0.78125rem;\">",
+      "s": "  Element has insufficient color contrast of 4.31 (foreground color: #be4a0a, background color: #feeadc, font size: 9.4pt (12.5px), font weight: bold). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": ".gb-person-row.gb-row:nth-child(3) > .gb-person-actions > .gb-btn--secondary.gb-btn",
+      "h": "<button type=\"button\" class=\"gb-btn gb-btn--secondary\" style=\"width: auto; padding: 8px 12px; font-size: 0.78125rem;\">",
+      "s": "  Element has insufficient color contrast of 1.03 (foreground color: #1e1713, background color: #211a16, font size: 9.4pt (12.5px), font weight: bold). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": ".gb-person-row.gb-row:nth-child(4) > .gb-person-actions > .gb-btn--soft.gb-btn",
+      "h": "<button type=\"button\" class=\"gb-btn gb-btn--soft\" style=\"width: auto; padding: 8px 12px; font-size: 0.78125rem;\">",
+      "s": "  Element has insufficient color contrast of 4.31 (foreground color: #be4a0a, background color: #feeadc, font size: 9.4pt (12.5px), font weight: bold). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": ".gb-person-row.gb-row:nth-child(4) > .gb-person-actions > .gb-btn--secondary.gb-btn",
+      "h": "<button type=\"button\" class=\"gb-btn gb-btn--secondary\" style=\"width: auto; padding: 8px 12px; font-size: 0.78125rem;\">",
+      "s": "  Element has insufficient color contrast of 1.03 (foreground color: #1e1713, background color: #211a16, font size: 9.4pt (12.5px), font weight: bold). Expected contrast ratio of 4.5:1"
+     }
+    ],
+    "n": 8
+   }
+  ]
+ },
+ "phone/light/note sheet": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Note",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<div class=\"gb-editor\" contenteditable=\"true\" role=\"textbox\" aria-multiline=\"true\" aria-label=\"Write something…\" data-pl",
+   "cls": "gb-modal gb-note-modal"
+  },
+  "v": []
+ },
+ "phone/light/new reminder": {
+  "ok": true,
+  "meta": null,
+  "v": null
+ },
+ "phone/light/edit reminder": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Edit reminder",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<input type=\"text\" class=\"gb-input\" value=\"Call mom\" maxlength=\"255\" aria-label=\"Reminder text\">",
+   "cls": "gb-modal"
+  },
+  "v": []
+ },
+ "phone/light/settings": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Settings",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<div class=\"gb-modal gb-modal--settings\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Settings\" tabindex=\"-1\"><div class=",
+   "cls": "gb-modal gb-modal--settings"
+  },
+  "v": []
+ },
+ "phone/light/buddy chats": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Your chats with Buddy",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<div class=\"gb-modal gb-thread-modal\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Your chats with Buddy\" tabindex=\"-1\"><",
+   "cls": "gb-modal gb-thread-modal"
+  },
+  "v": []
+ },
+ "phone/dark/quick add": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Quick add",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<div class=\"gb-modal\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Quick add\" tabindex=\"-1\"><div class=\"gb-modal-head\"><d",
+   "cls": "gb-modal"
+  },
+  "v": []
+ },
+ "phone/dark/add task": {
+  "ok": false,
+  "meta": null,
+  "v": null
+ },
+ "phone/dark/add habit": {
+  "ok": false,
+  "meta": null,
+  "v": null
+ },
+ "phone/dark/add food": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Log food",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<input type=\"text\" class=\"gb-input\" placeholder=\"e.g. Rava dosa with chutney\" maxlength=\"255\" aria-label=\"Food\">",
+   "cls": "gb-modal"
+  },
+  "v": []
+ },
+ "phone/dark/custom water": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Add custom water",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<input type=\"number\" class=\"gb-input\" min=\"1\" max=\"5000\" step=\"1\" value=\"300\" aria-label=\"Amount (ml)\">",
+   "cls": "gb-modal"
+  },
+  "v": []
+ },
+ "phone/dark/new goal": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "New goal",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<input type=\"text\" class=\"gb-input gb-goal-title-input\" maxlength=\"255\" placeholder=\"What do you want to achieve?\" aria-",
+   "cls": "gb-modal"
+  },
+  "v": []
+ },
+ "phone/dark/add expense": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Add expense",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<input type=\"number\" class=\"gb-input\" inputmode=\"decimal\" min=\"1\" max=\"10000000\" placeholder=\"e.g. 250\" value=\"\" aria-la",
+   "cls": "gb-modal gb-money-modal"
+  },
+  "v": []
+ },
+ "phone/dark/custom focus": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Custom focus minutes",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<input type=\"number\" class=\"gb-input\" aria-label=\"Minutes\" min=\"1\" max=\"180\" step=\"1\" value=\"15\">",
+   "cls": "gb-modal"
+  },
+  "v": []
+ },
+ "phone/dark/find someone": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Find people",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<input type=\"search\" class=\"gb-input\" placeholder=\"Search by name…\" autofocus=\"\" maxlength=\"80\">",
+   "cls": "gb-modal gb-search-modal"
+  },
+  "v": []
+ },
+ "phone/dark/note sheet": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Note",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<div class=\"gb-editor\" contenteditable=\"true\" role=\"textbox\" aria-multiline=\"true\" aria-label=\"Write something…\" data-pl",
+   "cls": "gb-modal gb-note-modal"
+  },
+  "v": []
+ },
+ "phone/dark/new reminder": {
+  "ok": true,
+  "meta": null,
+  "v": null
+ },
+ "phone/dark/edit reminder": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Edit reminder",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<input type=\"text\" class=\"gb-input\" value=\"Call mom\" maxlength=\"255\" aria-label=\"Reminder text\">",
+   "cls": "gb-modal"
+  },
+  "v": []
+ },
+ "phone/dark/settings": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Settings",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<div class=\"gb-modal gb-modal--settings\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Settings\" tabindex=\"-1\"><div class=",
+   "cls": "gb-modal gb-modal--settings"
+  },
+  "v": []
+ },
+ "phone/dark/buddy chats": {
+  "ok": true,
+  "meta": {
+   "role": "dialog",
+   "label": "Your chats with Buddy",
+   "labelledby": null,
+   "lbText": null,
+   "active": "<div class=\"gb-modal gb-thread-modal\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Your chats with Buddy\" tabindex=\"-1\"><",
+   "cls": "gb-modal gb-thread-modal"
+  },
+  "v": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "help": "Elements must meet minimum color contrast ratio thresholds",
+    "tags": [
+     "wcag2aa",
+     "wcag143"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-thread-date",
+      "h": "<span class=\"gb-thread-date\">11/10/2026</span>",
+      "s": "  Element has insufficient color contrast of 3.96 (foreground color: #96877c, background color: #412716, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ }
+}

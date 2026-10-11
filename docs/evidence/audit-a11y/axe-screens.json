@@ -1,0 +1,2635 @@
+{
+ "desk/light/home": {
+  "hash": "#home",
+  "v": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "help": "Elements must meet minimum color contrast ratio thresholds",
+    "tags": [
+     "wcag2aa",
+     "wcag143"
+    ],
+    "nodes": [
+     {
+      "t": "button[aria-label=\"Sun, September 27, free\"] > .num",
+      "h": "<span class=\"num\">27</span>",
+      "s": "  Element has insufficient color contrast of 3.03 (foreground color: #9e9286, background color: #ffffff, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "button[aria-label=\"Mon, September 28, free\"] > .num",
+      "h": "<span class=\"num\">28</span>",
+      "s": "  Element has insufficient color contrast of 3.03 (foreground color: #9e9286, background color: #ffffff, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "button[aria-label=\"Tue, September 29, free\"] > .num",
+      "h": "<span class=\"num\">29</span>",
+      "s": "  Element has insufficient color contrast of 3.03 (foreground color: #9e9286, background color: #ffffff, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "button[aria-label=\"Wed, September 30, free\"] > .num",
+      "h": "<span class=\"num\">30</span>",
+      "s": "  Element has insufficient color contrast of 3.03 (foreground color: #9e9286, background color: #ffffff, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1"
+     }
+    ],
+    "n": 4
+   },
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "help": "Heading levels should only increase by one",
+    "tags": [],
+    "nodes": [
+     {
+      "t": ".gb-dash-block:nth-child(4) > .gb-sectiontitle > h3",
+      "h": "<h3>Today's tasks</h3>",
+      "s": "  Heading order invalid"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": ".has-tasks.gb-mini-cal-day",
+      "h": "<button type=\"button\" class=\"gb-mini-cal-day has-tasks\" aria-label=\"Mon, October 12, 1 item, 2 repeating reminders\"><span class=\"num\">12</span><span class=\"badg",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 2
+   }
+  ]
+ },
+ "desk/light/calendar": {
+  "hash": "#calendar",
+  "v": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "help": "Elements must meet minimum color contrast ratio thresholds",
+    "tags": [
+     "wcag2aa",
+     "wcag143"
+    ],
+    "nodes": [
+     {
+      "t": "button[data-day-key=\"2026-09-27\"] > .num",
+      "h": "<span class=\"num\">27</span>",
+      "s": "  Element has insufficient color contrast of 2.86 (foreground color: #a2978a, background color: #ffffff, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "button[data-day-key=\"2026-09-28\"] > .num",
+      "h": "<span class=\"num\">28</span>",
+      "s": "  Element has insufficient color contrast of 2.86 (foreground color: #a2978a, background color: #ffffff, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "button[data-day-key=\"2026-09-29\"] > .num",
+      "h": "<span class=\"num\">29</span>",
+      "s": "  Element has insufficient color contrast of 2.86 (foreground color: #a2978a, background color: #ffffff, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "button[data-day-key=\"2026-09-30\"] > .num",
+      "h": "<span class=\"num\">30</span>",
+      "s": "  Element has insufficient color contrast of 2.86 (foreground color: #a2978a, background color: #ffffff, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+     }
+    ],
+    "n": 4
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "desk/light/money": {
+  "hash": "#money",
+  "v": [
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "help": "Heading levels should only increase by one",
+    "tags": [],
+    "nodes": [
+     {
+      "t": ".gb-sectiontitle > h3",
+      "h": "<h3>Where your money is</h3>",
+      "s": "  Heading order invalid"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "desk/light/notes": {
+  "hash": "#notes",
+  "v": [
+   {
+    "id": "aria-allowed-role",
+    "impact": "minor",
+    "help": "ARIA role should be appropriate for the element",
+    "tags": [],
+    "nodes": [
+     {
+      "t": "article",
+      "h": "<article class=\"gb-note-card\" data-id=\"5af45999-5295-4cfc-a58f-fa4ecaf85f68\" tabindex=\"0\" role=\"button\" aria-label=\"Ideas for the trip\">",
+      "s": "  ARIA role button is not allowed for given element"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "help": "Heading levels should only increase by one",
+    "tags": [],
+    "nodes": [
+     {
+      "t": "h3",
+      "h": "<h3 class=\"gb-note-card-title\">Ideas for the trip</h3>",
+      "s": "  Heading order invalid"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": "article",
+      "h": "<article class=\"gb-note-card\" data-id=\"5af45999-5295-4cfc-a58f-fa4ecaf85f68\" tabindex=\"0\" role=\"button\" aria-label=\"Ideas for the trip\">",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 2
+   },
+   {
+    "id": "nested-interactive",
+    "impact": "serious",
+    "help": "Interactive controls must not be nested",
+    "tags": [
+     "wcag2a",
+     "wcag412"
+    ],
+    "nodes": [
+     {
+      "t": "article",
+      "h": "<article class=\"gb-note-card\" data-id=\"5af45999-5295-4cfc-a58f-fa4ecaf85f68\" tabindex=\"0\" role=\"button\" aria-label=\"Ideas for the trip\">",
+      "s": "  Element has focusable descendants. Move them outside of the element, or remove them."
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "desk/light/goals": {
+  "hash": "#goals",
+  "v": [
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "help": "Heading levels should only increase by one",
+    "tags": [],
+    "nodes": [
+     {
+      "t": ".gb-sectiontitle > h3",
+      "h": "<h3>Goal activities</h3>",
+      "s": "  Heading order invalid"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "desk/light/report": {
+  "hash": "#report",
+  "v": [
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "help": "Heading levels should only increase by one",
+    "tags": [],
+    "nodes": [
+     {
+      "t": ".gb-dash-block:nth-child(1) > .gb-sectiontitle > h3",
+      "h": "<h3>Today</h3>",
+      "s": "  Heading order invalid"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "desk/light/focus": {
+  "hash": "#focus",
+  "v": [
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "desk/light/food": {
+  "hash": "#food",
+  "v": [
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": "button[aria-label=\"Add 250 millilitres of water\"]",
+      "h": "<button type=\"button\" class=\"gb-water-add\" aria-label=\"Add 250 millilitres of water\">+250<small>ml</small></button>",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": "button[aria-label=\"Add 500 millilitres of water\"]",
+      "h": "<button type=\"button\" class=\"gb-water-add\" aria-label=\"Add 500 millilitres of water\">+500<small>ml</small></button>",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": "button[aria-label=\"Add 750 millilitres of water\"]",
+      "h": "<button type=\"button\" class=\"gb-water-add\" aria-label=\"Add 750 millilitres of water\">+750<small>ml</small></button>",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": ".gb-food-row-edit",
+      "h": "<button type=\"button\" class=\"gb-food-row-edit\" aria-label=\"Edit Idli\"><span>Idli (150g)</span><span class=\"gb-food-row-kcal\">220 kcal</span></button>",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 5
+   }
+  ]
+ },
+ "desk/light/family": {
+  "hash": "#family",
+  "v": [
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "desk/light/circle": {
+  "hash": "#circle",
+  "v": [
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "desk/light/health": {
+  "hash": "#health",
+  "v": [
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "desk/light/mentor": {
+  "hash": "#mentor",
+  "v": [
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "help": "Heading levels should only increase by one",
+    "tags": [],
+    "nodes": [
+     {
+      "t": "h3",
+      "h": "<h3>Talk to Buddy</h3>",
+      "s": "  Heading order invalid"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": ".gb-mentor-thread",
+      "h": "<button type=\"button\" class=\"gb-mentor-thread\" aria-label=\"Your chats with Buddy\" aria-haspopup=\"dialog\">",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 2
+   }
+  ]
+ },
+ "desk/light/habits": {
+  "hash": "#habits",
+  "v": [
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "help": "Heading levels should only increase by one",
+    "tags": [],
+    "nodes": [
+     {
+      "t": "h3",
+      "h": "<h3 style=\"font-family: var(--font-display); font-weight: 800; font-size: 1.125rem; margin: 0px;\">Your habits<span class=\"gb-habits-today\" title=\"1 of 2 done to",
+      "s": "  Heading order invalid"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": "button[aria-label=\"Edit habit: Morning run\"]",
+      "h": "<button type=\"button\" class=\"gb-row-open\" aria-label=\"Edit habit: Morning run\">",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": "button[aria-label=\"Edit habit: Read 20 pages\"]",
+      "h": "<button type=\"button\" class=\"gb-row-open\" aria-label=\"Edit habit: Read 20 pages\">",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 3
+   }
+  ]
+ },
+ "desk/light/achievements": {
+  "hash": "#achievements",
+  "v": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "help": "Elements must meet minimum color contrast ratio thresholds",
+    "tags": [
+     "wcag2aa",
+     "wcag143"
+    ],
+    "nodes": [
+     {
+      "t": "div[aria-label=\"Rising Star — 1 of 3\"] > .gb-ach-body > .gb-ach-desc",
+      "h": "<div class=\"gb-ach-desc\">Reach Level 3<span class=\"gb-ach-tier\"> · Bronze</span></div>",
+      "s": "  Element has insufficient color contrast of 2.87 (foreground color: #a2968a, background color: #fffefe, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "div[aria-label=\"Rising Star — 1 of 3\"] > .gb-ach-body > .gb-ach-desc > .gb-ach-tier",
+      "h": "<span class=\"gb-ach-tier\"> · Bronze</span>",
+      "s": "  Element has insufficient color contrast of 2.87 (foreground color: #a2968a, background color: #fffefe, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "div[aria-label=\"Rising Star — 1 of 3\"] > .gb-ach-progress > .gb-ach-progress-label",
+      "h": "<div class=\"gb-ach-progress-label\">1 / 3</div>",
+      "s": "  Element has insufficient color contrast of 2.87 (foreground color: #a2968a, background color: #fffefe, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "div[aria-label=\"Achiever — 1 of 8\"] > .gb-ach-body > .gb-ach-desc",
+      "h": "<div class=\"gb-ach-desc\">Reach Level 8<span class=\"gb-ach-tier\"> · Silver</span></div>",
+      "s": "  Element has insufficient color contrast of 2.87 (foreground color: #a2968a, background color: #fffefe, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "div[aria-label=\"Achiever — 1 of 8\"] > .gb-ach-body > .gb-ach-desc > .gb-ach-tier",
+      "h": "<span class=\"gb-ach-tier\"> · Silver</span>",
+      "s": "  Element has insufficient color contrast of 2.87 (foreground color: #a2968a, background color: #fffefe, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "div[aria-label=\"Achiever — 1 of 8\"] > .gb-ach-progress > .gb-ach-progress-label",
+      "h": "<div class=\"gb-ach-progress-label\">1 / 8</div>",
+      "s": "  Element has insufficient color contrast of 2.87 (foreground color: #a2968a, background color: #fffefe, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "div[aria-label=\"Growth Guru — 1 of 15\"] > .gb-ach-body > .gb-ach-desc",
+      "h": "<div class=\"gb-ach-desc\">Reach Level 15<span class=\"gb-ach-tier\"> · Gold</span></div>",
+      "s": "  Element has insufficient color contrast of 2.87 (foreground color: #a2968a, background color: #fffefe, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "div[aria-label=\"Growth Guru — 1 of 15\"] > .gb-ach-body > .gb-ach-desc > .gb-ach-tier",
+      "h": "<span class=\"gb-ach-tier\"> · Gold</span>",
+      "s": "  Element has insufficient color contrast of 2.87 (foreground color: #a2968a, background color: #fffefe, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+     }
+    ],
+    "n": 24
+   },
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "help": "Heading levels should only increase by one",
+    "tags": [],
+    "nodes": [
+     {
+      "t": ".gb-dash-block:nth-child(2) > .gb-sectiontitle > h3",
+      "h": "<h3>Progress</h3>",
+      "s": "  Heading order invalid"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "scrollable-region-focusable",
+    "impact": "serious",
+    "help": "Scrollable region must have keyboard access",
+    "tags": [
+     "wcag2a",
+     "wcag211",
+     "wcag213"
+    ],
+    "nodes": [
+     {
+      "t": "#gb-main",
+      "h": "<div class=\"gb-scroll\" id=\"gb-main\" role=\"main\" tabindex=\"-1\">",
+      "s": "  Element should have focusable content"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "desk/light/summary": {
+  "hash": "#summary",
+  "v": [
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "desk/dark/home": {
+  "hash": "#home",
+  "v": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "help": "Elements must meet minimum color contrast ratio thresholds",
+    "tags": [
+     "wcag2aa",
+     "wcag143"
+    ],
+    "nodes": [
+     {
+      "t": "button[aria-label=\"Sun, September 27, free\"] > .num",
+      "h": "<span class=\"num\">27</span>",
+      "s": "  Element has insufficient color contrast of 3.38 (foreground color: #796c63, background color: #211a16, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "button[aria-label=\"Mon, September 28, free\"] > .num",
+      "h": "<span class=\"num\">28</span>",
+      "s": "  Element has insufficient color contrast of 3.38 (foreground color: #796c63, background color: #211a16, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "button[aria-label=\"Tue, September 29, free\"] > .num",
+      "h": "<span class=\"num\">29</span>",
+      "s": "  Element has insufficient color contrast of 3.38 (foreground color: #796c63, background color: #211a16, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "button[aria-label=\"Wed, September 30, free\"] > .num",
+      "h": "<span class=\"num\">30</span>",
+      "s": "  Element has insufficient color contrast of 3.38 (foreground color: #796c63, background color: #211a16, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1"
+     }
+    ],
+    "n": 4
+   },
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "help": "Heading levels should only increase by one",
+    "tags": [],
+    "nodes": [
+     {
+      "t": ".gb-dash-block:nth-child(4) > .gb-sectiontitle > h3",
+      "h": "<h3>Today's tasks</h3>",
+      "s": "  Heading order invalid"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": ".has-tasks.gb-mini-cal-day",
+      "h": "<button type=\"button\" class=\"gb-mini-cal-day has-tasks\" aria-label=\"Mon, October 12, 1 item, 2 repeating reminders\"><span class=\"num\">12</span><span class=\"badg",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 2
+   }
+  ]
+ },
+ "desk/dark/calendar": {
+  "hash": "#calendar",
+  "v": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "help": "Elements must meet minimum color contrast ratio thresholds",
+    "tags": [
+     "wcag2aa",
+     "wcag143"
+    ],
+    "nodes": [
+     {
+      "t": "button[data-day-key=\"2026-09-27\"] > .num",
+      "h": "<span class=\"num\">27</span>",
+      "s": "  Element has insufficient color contrast of 3.18 (foreground color: #75685f, background color: #211a16, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "button[data-day-key=\"2026-09-28\"] > .num",
+      "h": "<span class=\"num\">28</span>",
+      "s": "  Element has insufficient color contrast of 3.18 (foreground color: #75685f, background color: #211a16, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "button[data-day-key=\"2026-09-29\"] > .num",
+      "h": "<span class=\"num\">29</span>",
+      "s": "  Element has insufficient color contrast of 3.18 (foreground color: #75685f, background color: #211a16, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "button[data-day-key=\"2026-09-30\"] > .num",
+      "h": "<span class=\"num\">30</span>",
+      "s": "  Element has insufficient color contrast of 3.18 (foreground color: #75685f, background color: #211a16, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+     }
+    ],
+    "n": 4
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "desk/dark/money": {
+  "hash": "#money",
+  "v": [
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "help": "Heading levels should only increase by one",
+    "tags": [],
+    "nodes": [
+     {
+      "t": ".gb-sectiontitle > h3",
+      "h": "<h3>Where your money is</h3>",
+      "s": "  Heading order invalid"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "desk/dark/notes": {
+  "hash": "#notes",
+  "v": [
+   {
+    "id": "aria-allowed-role",
+    "impact": "minor",
+    "help": "ARIA role should be appropriate for the element",
+    "tags": [],
+    "nodes": [
+     {
+      "t": "article",
+      "h": "<article class=\"gb-note-card\" data-id=\"5af45999-5295-4cfc-a58f-fa4ecaf85f68\" tabindex=\"0\" role=\"button\" aria-label=\"Ideas for the trip\">",
+      "s": "  ARIA role button is not allowed for given element"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "help": "Heading levels should only increase by one",
+    "tags": [],
+    "nodes": [
+     {
+      "t": "h3",
+      "h": "<h3 class=\"gb-note-card-title\">Ideas for the trip</h3>",
+      "s": "  Heading order invalid"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": "article",
+      "h": "<article class=\"gb-note-card\" data-id=\"5af45999-5295-4cfc-a58f-fa4ecaf85f68\" tabindex=\"0\" role=\"button\" aria-label=\"Ideas for the trip\">",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 2
+   },
+   {
+    "id": "nested-interactive",
+    "impact": "serious",
+    "help": "Interactive controls must not be nested",
+    "tags": [
+     "wcag2a",
+     "wcag412"
+    ],
+    "nodes": [
+     {
+      "t": "article",
+      "h": "<article class=\"gb-note-card\" data-id=\"5af45999-5295-4cfc-a58f-fa4ecaf85f68\" tabindex=\"0\" role=\"button\" aria-label=\"Ideas for the trip\">",
+      "s": "  Element has focusable descendants. Move them outside of the element, or remove them."
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "desk/dark/goals": {
+  "hash": "#goals",
+  "v": [
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "help": "Heading levels should only increase by one",
+    "tags": [],
+    "nodes": [
+     {
+      "t": ".gb-sectiontitle > h3",
+      "h": "<h3>Goal activities</h3>",
+      "s": "  Heading order invalid"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "desk/dark/report": {
+  "hash": "#report",
+  "v": [
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "help": "Heading levels should only increase by one",
+    "tags": [],
+    "nodes": [
+     {
+      "t": ".gb-dash-block:nth-child(1) > .gb-sectiontitle > h3",
+      "h": "<h3>Today</h3>",
+      "s": "  Heading order invalid"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "desk/dark/focus": {
+  "hash": "#focus",
+  "v": [
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "desk/dark/food": {
+  "hash": "#food",
+  "v": [
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": "button[aria-label=\"Add 250 millilitres of water\"]",
+      "h": "<button type=\"button\" class=\"gb-water-add\" aria-label=\"Add 250 millilitres of water\">+250<small>ml</small></button>",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": "button[aria-label=\"Add 500 millilitres of water\"]",
+      "h": "<button type=\"button\" class=\"gb-water-add\" aria-label=\"Add 500 millilitres of water\">+500<small>ml</small></button>",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": "button[aria-label=\"Add 750 millilitres of water\"]",
+      "h": "<button type=\"button\" class=\"gb-water-add\" aria-label=\"Add 750 millilitres of water\">+750<small>ml</small></button>",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": ".gb-food-row-edit",
+      "h": "<button type=\"button\" class=\"gb-food-row-edit\" aria-label=\"Edit Idli\"><span>Idli (150g)</span><span class=\"gb-food-row-kcal\">220 kcal</span></button>",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 5
+   }
+  ]
+ },
+ "desk/dark/family": {
+  "hash": "#family",
+  "v": [
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "desk/dark/circle": {
+  "hash": "#circle",
+  "v": [
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "desk/dark/health": {
+  "hash": "#health",
+  "v": [
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "desk/dark/mentor": {
+  "hash": "#mentor",
+  "v": [
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "help": "Heading levels should only increase by one",
+    "tags": [],
+    "nodes": [
+     {
+      "t": "h3",
+      "h": "<h3>Talk to Buddy</h3>",
+      "s": "  Heading order invalid"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": ".gb-mentor-thread",
+      "h": "<button type=\"button\" class=\"gb-mentor-thread\" aria-label=\"Your chats with Buddy\" aria-haspopup=\"dialog\">",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 2
+   }
+  ]
+ },
+ "desk/dark/habits": {
+  "hash": "#habits",
+  "v": [
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "help": "Heading levels should only increase by one",
+    "tags": [],
+    "nodes": [
+     {
+      "t": "h3",
+      "h": "<h3 style=\"font-family: var(--font-display); font-weight: 800; font-size: 1.125rem; margin: 0px;\">Your habits<span class=\"gb-habits-today\" title=\"1 of 2 done to",
+      "s": "  Heading order invalid"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": "button[aria-label=\"Edit habit: Morning run\"]",
+      "h": "<button type=\"button\" class=\"gb-row-open\" aria-label=\"Edit habit: Morning run\">",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": "button[aria-label=\"Edit habit: Read 20 pages\"]",
+      "h": "<button type=\"button\" class=\"gb-row-open\" aria-label=\"Edit habit: Read 20 pages\">",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 3
+   }
+  ]
+ },
+ "desk/dark/achievements": {
+  "hash": "#achievements",
+  "v": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "help": "Elements must meet minimum color contrast ratio thresholds",
+    "tags": [
+     "wcag2aa",
+     "wcag143"
+    ],
+    "nodes": [
+     {
+      "t": "div[aria-label=\"Rising Star — 1 of 3\"] > .gb-ach-body > .gb-ach-desc",
+      "h": "<div class=\"gb-ach-desc\">Reach Level 3<span class=\"gb-ach-tier\"> · Bronze</span></div>",
+      "s": "  Element has insufficient color contrast of 3.27 (foreground color: #74685f, background color: #1e1714, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "div[aria-label=\"Rising Star — 1 of 3\"] > .gb-ach-body > .gb-ach-desc > .gb-ach-tier",
+      "h": "<span class=\"gb-ach-tier\"> · Bronze</span>",
+      "s": "  Element has insufficient color contrast of 3.27 (foreground color: #74685f, background color: #1e1714, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "div[aria-label=\"Rising Star — 1 of 3\"] > .gb-ach-progress > .gb-ach-progress-label",
+      "h": "<div class=\"gb-ach-progress-label\">1 / 3</div>",
+      "s": "  Element has insufficient color contrast of 3.27 (foreground color: #74685f, background color: #1e1714, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "div[aria-label=\"Achiever — 1 of 8\"] > .gb-ach-body > .gb-ach-desc",
+      "h": "<div class=\"gb-ach-desc\">Reach Level 8<span class=\"gb-ach-tier\"> · Silver</span></div>",
+      "s": "  Element has insufficient color contrast of 3.27 (foreground color: #74685f, background color: #1e1714, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "div[aria-label=\"Achiever — 1 of 8\"] > .gb-ach-body > .gb-ach-desc > .gb-ach-tier",
+      "h": "<span class=\"gb-ach-tier\"> · Silver</span>",
+      "s": "  Element has insufficient color contrast of 3.27 (foreground color: #74685f, background color: #1e1714, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "div[aria-label=\"Achiever — 1 of 8\"] > .gb-ach-progress > .gb-ach-progress-label",
+      "h": "<div class=\"gb-ach-progress-label\">1 / 8</div>",
+      "s": "  Element has insufficient color contrast of 3.27 (foreground color: #74685f, background color: #1e1714, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "div[aria-label=\"Growth Guru — 1 of 15\"] > .gb-ach-body > .gb-ach-desc",
+      "h": "<div class=\"gb-ach-desc\">Reach Level 15<span class=\"gb-ach-tier\"> · Gold</span></div>",
+      "s": "  Element has insufficient color contrast of 3.27 (foreground color: #74685f, background color: #1e1714, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "div[aria-label=\"Growth Guru — 1 of 15\"] > .gb-ach-body > .gb-ach-desc > .gb-ach-tier",
+      "h": "<span class=\"gb-ach-tier\"> · Gold</span>",
+      "s": "  Element has insufficient color contrast of 3.27 (foreground color: #74685f, background color: #1e1714, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+     }
+    ],
+    "n": 24
+   },
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "help": "Heading levels should only increase by one",
+    "tags": [],
+    "nodes": [
+     {
+      "t": ".gb-dash-block:nth-child(2) > .gb-sectiontitle > h3",
+      "h": "<h3>Progress</h3>",
+      "s": "  Heading order invalid"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "scrollable-region-focusable",
+    "impact": "serious",
+    "help": "Scrollable region must have keyboard access",
+    "tags": [
+     "wcag2a",
+     "wcag211",
+     "wcag213"
+    ],
+    "nodes": [
+     {
+      "t": "#gb-main",
+      "h": "<div class=\"gb-scroll\" id=\"gb-main\" role=\"main\" tabindex=\"-1\">",
+      "s": "  Element should have focusable content"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "desk/dark/summary": {
+  "hash": "#summary",
+  "v": [
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": ".gb-katori.is-protein",
+      "h": "<button type=\"button\" class=\"gb-katori is-protein\" aria-label=\"Protein: 6 grams a day, target 60 grams. Show day by day\" style=\"left: 13.5815%; top: 13.5815%; -",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": ".gb-katori.is-carbs",
+      "h": "<button type=\"button\" class=\"gb-katori is-carbs\" aria-label=\"Carbs: 45 grams a day, target 250 grams. Show day by day\" style=\"left: 59.5435%; top: 13.5815%; --p",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": ".gb-katori.is-fat",
+      "h": "<button type=\"button\" class=\"gb-katori is-fat\" aria-label=\"Fat: 2 grams a day, target 67 grams. Show day by day\" style=\"left: 13.5815%; top: 59.5435%; --pct: 3%",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": ".gb-katori.is-fiber",
+      "h": "<button type=\"button\" class=\"gb-katori is-fiber\" aria-label=\"Fiber: 2 grams a day, target 30 grams. Show day by day\" style=\"left: 59.5435%; top: 59.5435%; --pct",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": ".gb-nutrient-panel.is-protein[data-nutrient=\"protein\"] > .gb-food-week-bars[role=\"group\"] > .is-today.gb-food-week-col",
+      "h": "<button type=\"button\" class=\"gb-food-week-col is-today\" aria-label=\"Today: 6 grams. Buddy's read on this day\">",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 6
+   }
+  ]
+ },
+ "phone/light/home": {
+  "hash": "#home",
+  "v": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "help": "Elements must meet minimum color contrast ratio thresholds",
+    "tags": [
+     "wcag2aa",
+     "wcag143"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-row:nth-child(3) > div > .sub > .gb-pill",
+      "h": "<span class=\"gb-pill\" style=\"padding: 2px 8px; background: var(--sun-50); color: var(--sun-700);\"><span class=\"dot\" style=\"background: var(--sun-500);\"></span>M",
+      "s": "  Element has insufficient color contrast of 3.49 (foreground color: #b97505, background color: #fff7e0, font size: 9.4pt (12.5px), font weight: bold). Expected contrast ratio of 4.5:1"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "help": "Heading levels should only increase by one",
+    "tags": [],
+    "nodes": [
+     {
+      "t": ".gb-dash-block:nth-child(4) > .gb-sectiontitle > h3",
+      "h": "<h3>Today's tasks</h3>",
+      "s": "  Heading order invalid"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "phone/light/calendar": {
+  "hash": "#calendar",
+  "v": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "help": "Elements must meet minimum color contrast ratio thresholds",
+    "tags": [
+     "wcag2aa",
+     "wcag143"
+    ],
+    "nodes": [
+     {
+      "t": "button[data-day-key=\"2026-09-27\"] > .num",
+      "h": "<span class=\"num\">27</span>",
+      "s": "  Element has insufficient color contrast of 2.86 (foreground color: #a2978a, background color: #ffffff, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "button[data-day-key=\"2026-09-28\"] > .num",
+      "h": "<span class=\"num\">28</span>",
+      "s": "  Element has insufficient color contrast of 2.86 (foreground color: #a2978a, background color: #ffffff, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "button[data-day-key=\"2026-09-29\"] > .num",
+      "h": "<span class=\"num\">29</span>",
+      "s": "  Element has insufficient color contrast of 2.86 (foreground color: #a2978a, background color: #ffffff, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "button[data-day-key=\"2026-09-30\"] > .num",
+      "h": "<span class=\"num\">30</span>",
+      "s": "  Element has insufficient color contrast of 2.86 (foreground color: #a2978a, background color: #ffffff, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+     }
+    ],
+    "n": 4
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "phone/light/money": {
+  "hash": "#money",
+  "v": [
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "help": "Heading levels should only increase by one",
+    "tags": [],
+    "nodes": [
+     {
+      "t": ".gb-sectiontitle > h3",
+      "h": "<h3>Where your money is</h3>",
+      "s": "  Heading order invalid"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "phone/light/notes": {
+  "hash": "#notes",
+  "v": [
+   {
+    "id": "aria-allowed-role",
+    "impact": "minor",
+    "help": "ARIA role should be appropriate for the element",
+    "tags": [],
+    "nodes": [
+     {
+      "t": "article",
+      "h": "<article class=\"gb-note-card\" data-id=\"5af45999-5295-4cfc-a58f-fa4ecaf85f68\" tabindex=\"0\" role=\"button\" aria-label=\"Ideas for the trip\">",
+      "s": "  ARIA role button is not allowed for given element"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "help": "Heading levels should only increase by one",
+    "tags": [],
+    "nodes": [
+     {
+      "t": "h3",
+      "h": "<h3 class=\"gb-note-card-title\">Ideas for the trip</h3>",
+      "s": "  Heading order invalid"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": "article",
+      "h": "<article class=\"gb-note-card\" data-id=\"5af45999-5295-4cfc-a58f-fa4ecaf85f68\" tabindex=\"0\" role=\"button\" aria-label=\"Ideas for the trip\">",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 2
+   },
+   {
+    "id": "nested-interactive",
+    "impact": "serious",
+    "help": "Interactive controls must not be nested",
+    "tags": [
+     "wcag2a",
+     "wcag412"
+    ],
+    "nodes": [
+     {
+      "t": "article",
+      "h": "<article class=\"gb-note-card\" data-id=\"5af45999-5295-4cfc-a58f-fa4ecaf85f68\" tabindex=\"0\" role=\"button\" aria-label=\"Ideas for the trip\">",
+      "s": "  Element has focusable descendants. Move them outside of the element, or remove them."
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "phone/light/goals": {
+  "hash": "#goals",
+  "v": [
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "help": "Heading levels should only increase by one",
+    "tags": [],
+    "nodes": [
+     {
+      "t": ".gb-sectiontitle > h3",
+      "h": "<h3>Goal activities</h3>",
+      "s": "  Heading order invalid"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "phone/light/report": {
+  "hash": "#report",
+  "v": [
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "help": "Heading levels should only increase by one",
+    "tags": [],
+    "nodes": [
+     {
+      "t": ".gb-dash-block:nth-child(1) > .gb-sectiontitle > h3",
+      "h": "<h3>Today</h3>",
+      "s": "  Heading order invalid"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "phone/light/focus": {
+  "hash": "#focus",
+  "v": [
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "phone/light/food": {
+  "hash": "#food",
+  "v": [
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": "button[aria-label=\"Add 250 millilitres of water\"]",
+      "h": "<button type=\"button\" class=\"gb-water-add\" aria-label=\"Add 250 millilitres of water\">+250<small>ml</small></button>",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": "button[aria-label=\"Add 500 millilitres of water\"]",
+      "h": "<button type=\"button\" class=\"gb-water-add\" aria-label=\"Add 500 millilitres of water\">+500<small>ml</small></button>",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": "button[aria-label=\"Add 750 millilitres of water\"]",
+      "h": "<button type=\"button\" class=\"gb-water-add\" aria-label=\"Add 750 millilitres of water\">+750<small>ml</small></button>",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": ".gb-food-row-edit",
+      "h": "<button type=\"button\" class=\"gb-food-row-edit\" aria-label=\"Edit Idli\"><span>Idli (150g)</span><span class=\"gb-food-row-kcal\">220 kcal</span></button>",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 5
+   }
+  ]
+ },
+ "phone/light/family": {
+  "hash": "#family",
+  "v": [
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "phone/light/circle": {
+  "hash": "#circle",
+  "v": [
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "phone/light/health": {
+  "hash": "#health",
+  "v": [
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "phone/light/mentor": {
+  "hash": "#mentor",
+  "v": [
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "help": "Heading levels should only increase by one",
+    "tags": [],
+    "nodes": [
+     {
+      "t": "h3",
+      "h": "<h3>Talk to Buddy</h3>",
+      "s": "  Heading order invalid"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": ".gb-mentor-thread",
+      "h": "<button type=\"button\" class=\"gb-mentor-thread\" aria-label=\"Your chats with Buddy\" aria-haspopup=\"dialog\">",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 2
+   }
+  ]
+ },
+ "phone/light/habits": {
+  "hash": "#habits",
+  "v": [
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "help": "Heading levels should only increase by one",
+    "tags": [],
+    "nodes": [
+     {
+      "t": "h3",
+      "h": "<h3 style=\"font-family: var(--font-display); font-weight: 800; font-size: 1.125rem; margin: 0px;\">Your habits<span class=\"gb-habits-today\" title=\"1 of 2 done to",
+      "s": "  Heading order invalid"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": "button[aria-label=\"Edit habit: Morning run\"]",
+      "h": "<button type=\"button\" class=\"gb-row-open\" aria-label=\"Edit habit: Morning run\">",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": "button[aria-label=\"Edit habit: Read 20 pages\"]",
+      "h": "<button type=\"button\" class=\"gb-row-open\" aria-label=\"Edit habit: Read 20 pages\">",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 3
+   }
+  ]
+ },
+ "phone/light/achievements": {
+  "hash": "#achievements",
+  "v": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "help": "Elements must meet minimum color contrast ratio thresholds",
+    "tags": [
+     "wcag2aa",
+     "wcag143"
+    ],
+    "nodes": [
+     {
+      "t": "div[aria-label=\"Rising Star — 1 of 3\"] > .gb-ach-body > .gb-ach-desc",
+      "h": "<div class=\"gb-ach-desc\">Reach Level 3<span class=\"gb-ach-tier\"> · Bronze</span></div>",
+      "s": "  Element has insufficient color contrast of 2.87 (foreground color: #a2968a, background color: #fffefe, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "div[aria-label=\"Rising Star — 1 of 3\"] > .gb-ach-body > .gb-ach-desc > .gb-ach-tier",
+      "h": "<span class=\"gb-ach-tier\"> · Bronze</span>",
+      "s": "  Element has insufficient color contrast of 2.87 (foreground color: #a2968a, background color: #fffefe, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "div[aria-label=\"Rising Star — 1 of 3\"] > .gb-ach-progress > .gb-ach-progress-label",
+      "h": "<div class=\"gb-ach-progress-label\">1 / 3</div>",
+      "s": "  Element has insufficient color contrast of 2.87 (foreground color: #a2968a, background color: #fffefe, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "div[aria-label=\"Achiever — 1 of 8\"] > .gb-ach-body > .gb-ach-desc",
+      "h": "<div class=\"gb-ach-desc\">Reach Level 8<span class=\"gb-ach-tier\"> · Silver</span></div>",
+      "s": "  Element has insufficient color contrast of 2.87 (foreground color: #a2968a, background color: #fffefe, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "div[aria-label=\"Achiever — 1 of 8\"] > .gb-ach-body > .gb-ach-desc > .gb-ach-tier",
+      "h": "<span class=\"gb-ach-tier\"> · Silver</span>",
+      "s": "  Element has insufficient color contrast of 2.87 (foreground color: #a2968a, background color: #fffefe, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "div[aria-label=\"Achiever — 1 of 8\"] > .gb-ach-progress > .gb-ach-progress-label",
+      "h": "<div class=\"gb-ach-progress-label\">1 / 8</div>",
+      "s": "  Element has insufficient color contrast of 2.87 (foreground color: #a2968a, background color: #fffefe, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "div[aria-label=\"Growth Guru — 1 of 15\"] > .gb-ach-body > .gb-ach-desc",
+      "h": "<div class=\"gb-ach-desc\">Reach Level 15<span class=\"gb-ach-tier\"> · Gold</span></div>",
+      "s": "  Element has insufficient color contrast of 2.87 (foreground color: #a2968a, background color: #fffefe, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "div[aria-label=\"Growth Guru — 1 of 15\"] > .gb-ach-body > .gb-ach-desc > .gb-ach-tier",
+      "h": "<span class=\"gb-ach-tier\"> · Gold</span>",
+      "s": "  Element has insufficient color contrast of 2.87 (foreground color: #a2968a, background color: #fffefe, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+     }
+    ],
+    "n": 18
+   },
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "help": "Heading levels should only increase by one",
+    "tags": [],
+    "nodes": [
+     {
+      "t": ".gb-dash-block:nth-child(2) > .gb-sectiontitle > h3",
+      "h": "<h3>Progress</h3>",
+      "s": "  Heading order invalid"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "scrollable-region-focusable",
+    "impact": "serious",
+    "help": "Scrollable region must have keyboard access",
+    "tags": [
+     "wcag2a",
+     "wcag211",
+     "wcag213"
+    ],
+    "nodes": [
+     {
+      "t": "#gb-main",
+      "h": "<div class=\"gb-scroll\" id=\"gb-main\" role=\"main\" tabindex=\"-1\">",
+      "s": "  Element should have focusable content"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "phone/light/summary": {
+  "hash": "#summary",
+  "v": [
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": ".gb-katori.is-protein",
+      "h": "<button type=\"button\" class=\"gb-katori is-protein\" aria-label=\"Protein: 6 grams a day, target 60 grams. Show day by day\" style=\"left: 13.5815%; top: 13.5815%; -",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": ".gb-katori.is-carbs",
+      "h": "<button type=\"button\" class=\"gb-katori is-carbs\" aria-label=\"Carbs: 45 grams a day, target 250 grams. Show day by day\" style=\"left: 59.5435%; top: 13.5815%; --p",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": ".gb-katori.is-fat",
+      "h": "<button type=\"button\" class=\"gb-katori is-fat\" aria-label=\"Fat: 2 grams a day, target 67 grams. Show day by day\" style=\"left: 13.5815%; top: 59.5435%; --pct: 3%",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": ".gb-katori.is-fiber",
+      "h": "<button type=\"button\" class=\"gb-katori is-fiber\" aria-label=\"Fiber: 2 grams a day, target 30 grams. Show day by day\" style=\"left: 59.5435%; top: 59.5435%; --pct",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 5
+   }
+  ]
+ },
+ "phone/dark/home": {
+  "hash": "#home",
+  "v": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "help": "Elements must meet minimum color contrast ratio thresholds",
+    "tags": [
+     "wcag2aa",
+     "wcag143"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-row:nth-child(3) > div > .sub > .gb-pill",
+      "h": "<span class=\"gb-pill\" style=\"padding: 2px 8px; background: var(--sun-50); color: var(--sun-700);\"><span class=\"dot\" style=\"background: var(--sun-500);\"></span>M",
+      "s": "  Element has insufficient color contrast of 3.49 (foreground color: #b97505, background color: #fff7e0, font size: 9.4pt (12.5px), font weight: bold). Expected contrast ratio of 4.5:1"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "help": "Heading levels should only increase by one",
+    "tags": [],
+    "nodes": [
+     {
+      "t": ".gb-dash-block:nth-child(4) > .gb-sectiontitle > h3",
+      "h": "<h3>Today's tasks</h3>",
+      "s": "  Heading order invalid"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "phone/dark/calendar": {
+  "hash": "#calendar",
+  "v": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "help": "Elements must meet minimum color contrast ratio thresholds",
+    "tags": [
+     "wcag2aa",
+     "wcag143"
+    ],
+    "nodes": [
+     {
+      "t": "button[data-day-key=\"2026-09-27\"] > .num",
+      "h": "<span class=\"num\">27</span>",
+      "s": "  Element has insufficient color contrast of 3.18 (foreground color: #75685f, background color: #211a16, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "button[data-day-key=\"2026-09-28\"] > .num",
+      "h": "<span class=\"num\">28</span>",
+      "s": "  Element has insufficient color contrast of 3.18 (foreground color: #75685f, background color: #211a16, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "button[data-day-key=\"2026-09-29\"] > .num",
+      "h": "<span class=\"num\">29</span>",
+      "s": "  Element has insufficient color contrast of 3.18 (foreground color: #75685f, background color: #211a16, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "button[data-day-key=\"2026-09-30\"] > .num",
+      "h": "<span class=\"num\">30</span>",
+      "s": "  Element has insufficient color contrast of 3.18 (foreground color: #75685f, background color: #211a16, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+     }
+    ],
+    "n": 4
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "phone/dark/money": {
+  "hash": "#money",
+  "v": [
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "help": "Heading levels should only increase by one",
+    "tags": [],
+    "nodes": [
+     {
+      "t": ".gb-sectiontitle > h3",
+      "h": "<h3>Where your money is</h3>",
+      "s": "  Heading order invalid"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "phone/dark/notes": {
+  "hash": "#notes",
+  "v": [
+   {
+    "id": "aria-allowed-role",
+    "impact": "minor",
+    "help": "ARIA role should be appropriate for the element",
+    "tags": [],
+    "nodes": [
+     {
+      "t": "article",
+      "h": "<article class=\"gb-note-card\" data-id=\"5af45999-5295-4cfc-a58f-fa4ecaf85f68\" tabindex=\"0\" role=\"button\" aria-label=\"Ideas for the trip\">",
+      "s": "  ARIA role button is not allowed for given element"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "help": "Heading levels should only increase by one",
+    "tags": [],
+    "nodes": [
+     {
+      "t": "h3",
+      "h": "<h3 class=\"gb-note-card-title\">Ideas for the trip</h3>",
+      "s": "  Heading order invalid"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": "article",
+      "h": "<article class=\"gb-note-card\" data-id=\"5af45999-5295-4cfc-a58f-fa4ecaf85f68\" tabindex=\"0\" role=\"button\" aria-label=\"Ideas for the trip\">",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 2
+   },
+   {
+    "id": "nested-interactive",
+    "impact": "serious",
+    "help": "Interactive controls must not be nested",
+    "tags": [
+     "wcag2a",
+     "wcag412"
+    ],
+    "nodes": [
+     {
+      "t": "article",
+      "h": "<article class=\"gb-note-card\" data-id=\"5af45999-5295-4cfc-a58f-fa4ecaf85f68\" tabindex=\"0\" role=\"button\" aria-label=\"Ideas for the trip\">",
+      "s": "  Element has focusable descendants. Move them outside of the element, or remove them."
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "phone/dark/goals": {
+  "hash": "#goals",
+  "v": [
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "help": "Heading levels should only increase by one",
+    "tags": [],
+    "nodes": [
+     {
+      "t": ".gb-sectiontitle > h3",
+      "h": "<h3>Goal activities</h3>",
+      "s": "  Heading order invalid"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "phone/dark/report": {
+  "hash": "#report",
+  "v": [
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "help": "Heading levels should only increase by one",
+    "tags": [],
+    "nodes": [
+     {
+      "t": ".gb-dash-block:nth-child(1) > .gb-sectiontitle > h3",
+      "h": "<h3>Today</h3>",
+      "s": "  Heading order invalid"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "phone/dark/focus": {
+  "hash": "#focus",
+  "v": [
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "phone/dark/food": {
+  "hash": "#food",
+  "v": [
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": "button[aria-label=\"Add 250 millilitres of water\"]",
+      "h": "<button type=\"button\" class=\"gb-water-add\" aria-label=\"Add 250 millilitres of water\">+250<small>ml</small></button>",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": "button[aria-label=\"Add 500 millilitres of water\"]",
+      "h": "<button type=\"button\" class=\"gb-water-add\" aria-label=\"Add 500 millilitres of water\">+500<small>ml</small></button>",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": "button[aria-label=\"Add 750 millilitres of water\"]",
+      "h": "<button type=\"button\" class=\"gb-water-add\" aria-label=\"Add 750 millilitres of water\">+750<small>ml</small></button>",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": ".gb-food-row-edit",
+      "h": "<button type=\"button\" class=\"gb-food-row-edit\" aria-label=\"Edit Idli\"><span>Idli (150g)</span><span class=\"gb-food-row-kcal\">220 kcal</span></button>",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 5
+   }
+  ]
+ },
+ "phone/dark/family": {
+  "hash": "#family",
+  "v": [
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "phone/dark/circle": {
+  "hash": "#circle",
+  "v": [
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "phone/dark/health": {
+  "hash": "#health",
+  "v": [
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "phone/dark/mentor": {
+  "hash": "#mentor",
+  "v": [
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "help": "Heading levels should only increase by one",
+    "tags": [],
+    "nodes": [
+     {
+      "t": "h3",
+      "h": "<h3>Talk to Buddy</h3>",
+      "s": "  Heading order invalid"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": ".gb-mentor-thread",
+      "h": "<button type=\"button\" class=\"gb-mentor-thread\" aria-label=\"Your chats with Buddy\" aria-haspopup=\"dialog\">",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 2
+   }
+  ]
+ },
+ "phone/dark/habits": {
+  "hash": "#habits",
+  "v": [
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "help": "Heading levels should only increase by one",
+    "tags": [],
+    "nodes": [
+     {
+      "t": "h3",
+      "h": "<h3 style=\"font-family: var(--font-display); font-weight: 800; font-size: 1.125rem; margin: 0px;\">Your habits<span class=\"gb-habits-today\" title=\"1 of 2 done to",
+      "s": "  Heading order invalid"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": "button[aria-label=\"Edit habit: Morning run\"]",
+      "h": "<button type=\"button\" class=\"gb-row-open\" aria-label=\"Edit habit: Morning run\">",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": "button[aria-label=\"Edit habit: Read 20 pages\"]",
+      "h": "<button type=\"button\" class=\"gb-row-open\" aria-label=\"Edit habit: Read 20 pages\">",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 3
+   }
+  ]
+ },
+ "phone/dark/achievements": {
+  "hash": "#achievements",
+  "v": [
+   {
+    "id": "color-contrast",
+    "impact": "serious",
+    "help": "Elements must meet minimum color contrast ratio thresholds",
+    "tags": [
+     "wcag2aa",
+     "wcag143"
+    ],
+    "nodes": [
+     {
+      "t": "div[aria-label=\"Rising Star — 1 of 3\"] > .gb-ach-body > .gb-ach-desc",
+      "h": "<div class=\"gb-ach-desc\">Reach Level 3<span class=\"gb-ach-tier\"> · Bronze</span></div>",
+      "s": "  Element has insufficient color contrast of 3.27 (foreground color: #74685f, background color: #1e1714, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "div[aria-label=\"Rising Star — 1 of 3\"] > .gb-ach-body > .gb-ach-desc > .gb-ach-tier",
+      "h": "<span class=\"gb-ach-tier\"> · Bronze</span>",
+      "s": "  Element has insufficient color contrast of 3.27 (foreground color: #74685f, background color: #1e1714, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "div[aria-label=\"Rising Star — 1 of 3\"] > .gb-ach-progress > .gb-ach-progress-label",
+      "h": "<div class=\"gb-ach-progress-label\">1 / 3</div>",
+      "s": "  Element has insufficient color contrast of 3.27 (foreground color: #74685f, background color: #1e1714, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "div[aria-label=\"Achiever — 1 of 8\"] > .gb-ach-body > .gb-ach-desc",
+      "h": "<div class=\"gb-ach-desc\">Reach Level 8<span class=\"gb-ach-tier\"> · Silver</span></div>",
+      "s": "  Element has insufficient color contrast of 3.27 (foreground color: #74685f, background color: #1e1714, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "div[aria-label=\"Achiever — 1 of 8\"] > .gb-ach-body > .gb-ach-desc > .gb-ach-tier",
+      "h": "<span class=\"gb-ach-tier\"> · Silver</span>",
+      "s": "  Element has insufficient color contrast of 3.27 (foreground color: #74685f, background color: #1e1714, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "div[aria-label=\"Achiever — 1 of 8\"] > .gb-ach-progress > .gb-ach-progress-label",
+      "h": "<div class=\"gb-ach-progress-label\">1 / 8</div>",
+      "s": "  Element has insufficient color contrast of 3.27 (foreground color: #74685f, background color: #1e1714, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "div[aria-label=\"Growth Guru — 1 of 15\"] > .gb-ach-body > .gb-ach-desc",
+      "h": "<div class=\"gb-ach-desc\">Reach Level 15<span class=\"gb-ach-tier\"> · Gold</span></div>",
+      "s": "  Element has insufficient color contrast of 3.27 (foreground color: #74685f, background color: #1e1714, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+     },
+     {
+      "t": "div[aria-label=\"Growth Guru — 1 of 15\"] > .gb-ach-body > .gb-ach-desc > .gb-ach-tier",
+      "h": "<span class=\"gb-ach-tier\"> · Gold</span>",
+      "s": "  Element has insufficient color contrast of 3.27 (foreground color: #74685f, background color: #1e1714, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+     }
+    ],
+    "n": 18
+   },
+   {
+    "id": "heading-order",
+    "impact": "moderate",
+    "help": "Heading levels should only increase by one",
+    "tags": [],
+    "nodes": [
+     {
+      "t": ".gb-dash-block:nth-child(2) > .gb-sectiontitle > h3",
+      "h": "<h3>Progress</h3>",
+      "s": "  Heading order invalid"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 1
+   },
+   {
+    "id": "scrollable-region-focusable",
+    "impact": "serious",
+    "help": "Scrollable region must have keyboard access",
+    "tags": [
+     "wcag2a",
+     "wcag211",
+     "wcag213"
+    ],
+    "nodes": [
+     {
+      "t": "#gb-main",
+      "h": "<div class=\"gb-scroll\" id=\"gb-main\" role=\"main\" tabindex=\"-1\">",
+      "s": "  Element should have focusable content"
+     }
+    ],
+    "n": 1
+   }
+  ]
+ },
+ "phone/dark/summary": {
+  "hash": "#summary",
+  "v": [
+   {
+    "id": "label-content-name-mismatch",
+    "impact": "serious",
+    "help": "Elements must have their visible text as part of their accessible name",
+    "tags": [
+     "wcag21a",
+     "wcag253"
+    ],
+    "nodes": [
+     {
+      "t": ".gb-avatar",
+      "h": "<button type=\"button\" class=\"gb-avatar\" aria-label=\"Account\" aria-expanded=\"false\" style=\"width: 42px; height: 42px; background: var(--coral-100); color: var(--",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": ".gb-katori.is-protein",
+      "h": "<button type=\"button\" class=\"gb-katori is-protein\" aria-label=\"Protein: 6 grams a day, target 60 grams. Show day by day\" style=\"left: 13.5815%; top: 13.5815%; -",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": ".gb-katori.is-carbs",
+      "h": "<button type=\"button\" class=\"gb-katori is-carbs\" aria-label=\"Carbs: 45 grams a day, target 250 grams. Show day by day\" style=\"left: 59.5435%; top: 13.5815%; --p",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": ".gb-katori.is-fat",
+      "h": "<button type=\"button\" class=\"gb-katori is-fat\" aria-label=\"Fat: 2 grams a day, target 67 grams. Show day by day\" style=\"left: 13.5815%; top: 59.5435%; --pct: 3%",
+      "s": "  Text inside the element is not included in the accessible name"
+     },
+     {
+      "t": ".gb-katori.is-fiber",
+      "h": "<button type=\"button\" class=\"gb-katori is-fiber\" aria-label=\"Fiber: 2 grams a day, target 30 grams. Show day by day\" style=\"left: 59.5435%; top: 59.5435%; --pct",
+      "s": "  Text inside the element is not included in the accessible name"
+     }
+    ],
+    "n": 5
+   }
+  ]
+ }
+}
