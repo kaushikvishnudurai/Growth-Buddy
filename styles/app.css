@@ -3785,6 +3785,10 @@ button.gb-seat:disabled {
   color: var(--fg3);
   font-size: 0.75rem;
 }
+/* On the selected (tinted) row fg3 was 3.96:1. */
+.gb-thread-pick[aria-current='true'] .gb-thread-date {
+  color: var(--fg2);
+}
 .gb-thread-rename {
   flex: 1;
   min-width: 0;
