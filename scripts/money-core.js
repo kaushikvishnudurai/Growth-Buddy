@@ -698,6 +698,20 @@ function suggestCategory(text, money) {
   return predictCategory(text, money && money.expenses, mergedCats(money));
 }
 
+/* The account a quick-add books to: the one Money's own form starts on (an
+   expense: the last account used, else the first cash; income: the first bank
+   or wallet). Home-currency accounts only, since the sentence's amount is in the
+   home currency. With no account the entry moved no balance at all. Spread into
+   the entry: `{ accountId }`, or nothing. */
+function quickAccount(money, kind) {
+  const ok = (a) => a && !a.archived && !accCurrency(money, a.id);
+  const accts = (money && money.accounts) || [];
+  const last = kind === 'expense' && accts.find((a) => a.id === (money.settings || {}).lastAccountId);
+  const kinds = kind === 'expense' ? ['cash'] : ['bank', 'wallet'];
+  const a = ok(last) ? last : accts.find((x) => ok(x) && kinds.includes(x.kind));
+  return a ? { accountId: a.id } : {};
+}
+
 /* 2 — weekly + monthly insights, plain language. */
 function buildInsights(money) {
   const out = [];
@@ -832,6 +846,7 @@ export {
   byCategory,
   pctChange,
   suggestCategory,
+  quickAccount,
   predictCategory,
   buildInsights,
   budgetStatus,
