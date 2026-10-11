@@ -21,6 +21,7 @@ import {
   correlationWords,
   focusMinutesByDay,
   weekOverWeek,
+  weekFocus,
 } from './review.js';
 // The Compare card reads the same daily series the insight cards do.
 import { signals } from './insights.js';
@@ -1248,6 +1249,43 @@ function recordsSection({ habits, trends, wellness, money, insightHistory }) {
   );
 }
 
+/* The weekly review's "one focus for next week", for the week it names. It was
+   saved and never shown again. One tap makes it a habit, unless it already is
+   one or no onMakeHabit is wired. Nothing at all when there is no focus. */
+function focusCard(focus, habits, onMakeHabit) {
+  if (!focus) return null;
+  const isHabit = habits.some((x) => String(x.name || '').trim().toLowerCase() === focus.toLowerCase());
+  const btn =
+    typeof onMakeHabit === 'function' && !isHabit && focus.length <= 120
+      ? h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-btn gb-btn--soft gb-btn--compact',
+            onclick: async (e) => {
+              const b = e.currentTarget;
+              b.disabled = true;
+              try {
+                await onMakeHabit(focus);
+                b.remove();
+                toast.success('Added “' + focus + '” to your habits.');
+              } catch (err) {
+                b.disabled = false;
+                toast.error(err, 'Could not add the habit.');
+              }
+            },
+          },
+          'Make it a habit'
+        )
+      : null;
+  return h(
+    'div',
+    { class: 'gb-dash-block' },
+    SectionTitle({ title: 'This week’s focus' }),
+    Card({ className: 'gb-report-focus', children: [h('p', null, focus), btn] })
+  );
+}
+
 function ScreenReport({
   features,
   score,
@@ -1267,6 +1305,8 @@ function ScreenReport({
   onInsightAction,
   range,
   onRange,
+  weeklyReviews,
+  onMakeHabit,
 }) {
   const on = (k) => !features || features[k] !== false;
   const t = tasks || [];
@@ -1286,6 +1326,8 @@ function ScreenReport({
   return h(
     'div',
     { class: 'gb-rise gb-report' },
+
+    focusCard(weekFocus(weeklyReviews), hb, onMakeHabit),
 
     // ---- Today, one card ----
     // Was five titled sections (summary, habits, water, food, goals) that

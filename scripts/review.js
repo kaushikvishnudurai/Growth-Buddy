@@ -119,6 +119,21 @@ function weekStart(key) {
 }
 
 /**
+ * The "one focus for next week" that applies today: the latest weekly review
+ * filed for this week or last (a review saved on Sunday is filed under that
+ * week and names the week after it), else ''. `reviews` is app.js's
+ * `state.weeklyReviews`, `{weekStart: {focus}}`.
+ */
+export function weekFocus(reviews, today) {
+  const mon = weekStart(today || localKey(new Date()));
+  const prev = dayKey(dayNum(mon) - 7);
+  const keys = Object.keys(reviews || {})
+    .filter((k) => k >= prev && k <= mon && reviews[k] && String(reviews[k].focus || '').trim())
+    .sort();
+  return keys.length ? String(reviews[keys[keys.length - 1]].focus).trim() : '';
+}
+
+/**
  * Best-ever numbers from data already loaded. Each record is
  * {icon, label, value, sub}; one whose data is missing is left out.
  * `fmtMoney` formats a spend total in the user's currency.

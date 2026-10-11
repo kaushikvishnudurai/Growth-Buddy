@@ -7,6 +7,7 @@ Insights. A switched-off feature drops its tile and its later sections; there is
 
 | Piece | What |
 |---|---|
+| `focusCard(focus, habits, onMakeHabit)` | "This week's focus", first on the screen: `weekFocus(weeklyReviews)` (review.js: the latest weekly review filed this week or last) with **Make it a habit** (`onMakeHabit(name)`, hidden when a habit of that name exists or the prop is absent). Nothing when there is no focus. Needs app.js to pass `weeklyReviews` (state.weeklyReviews) and `onMakeHabit` |
 | `insightsSection(data, {loading, onDismiss, onAction})` | renders `buildInsights(data)` from `scripts/insights.js`. `ScreenReport` passes `yearOf(...)` trends + wellness (the year once it lands), money, habits, tasks, flattened goals, `goalProgress`, `insightHistory` as `history`, `features` and `dismissedInsights` (`ui_prefs.insightsDismissed`, last 50, written by app.js `onDismissInsight`). Each card shows "Based on …" (`basis`) and a dismiss ✕, plus its `action` as a `.gb-insight-action` button when `onAction` (`ScreenReport`'s `onInsightAction` = app.js `runInsightAction`) is passed. Empty: a skeleton while `insightLoading`, else "N of 7 days logged" + a progressbar (`insightProgress`) |
 | `shortDay(k, weekday?)` | "22 Sep" / "Tue, 22 Sep" for the charts and pixel readout; en-GB's Intl "Sept" is cut to "Sep" like the rest of the app. Month ticks use `MONTH_SHORT` |
 | `statTile(label, value, sub)` | a `null`/`NaN` value renders as a dash. Values are Space Mono in ink; no per-metric colour (text never wears a series colour) |

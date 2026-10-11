@@ -15,6 +15,7 @@ import {
   focusMinutesByDay,
   weekOverWeek,
   weeklyWinsDraft,
+  weekFocus,
 } from './review.js';
 
 // --- daysEnding walks keys, across a month end and a DST change ---
@@ -395,6 +396,20 @@ assert.match(correlationWords(-0.6).text, /lower/);
     weeklyWinsDraft({ today, trends: { byDate: { [today]: { kcal: 600 } } } }),
     'Logged meals on 1 day.'
   );
+}
+
+// --- weekFocus: last week's review names this week's focus (FRS-12) ---
+{
+  const reviews = {
+    '2026-09-28': { focus: 'Old one' },
+    '2026-10-05': { focus: 'Sleep by 11 every night' },
+  };
+  assert.equal(weekFocus(reviews, '2026-10-14'), 'Sleep by 11 every night', "last week's review, this week");
+  assert.equal(weekFocus(reviews, '2026-10-11'), 'Sleep by 11 every night', 'saved Sunday, shown the same week');
+  assert.equal(weekFocus({ ...reviews, '2026-10-12': { focus: ' Walk daily ' } }, '2026-10-14'), 'Walk daily');
+  assert.equal(weekFocus({ ...reviews, '2026-10-12': { focus: '' } }, '2026-10-14'), 'Sleep by 11 every night');
+  assert.equal(weekFocus(reviews, '2026-10-21'), '', 'two weeks on, it has run its course');
+  assert.equal(weekFocus(null, '2026-10-21'), '');
 }
 
 console.log('review.test.mjs: all assertions passed');
