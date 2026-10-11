@@ -114,10 +114,11 @@ export function tasksForToday(tasks, now = new Date()) {
 /* Home's task list was the whole list in creation order, so this morning's
    overdue task could sit under a dozen done ones. Overdue → today → upcoming
    → no date, paused and done last; soonest first within a group, and the
-   original order on a tie (Array.prototype.sort is stable). */
-export function sortTasksForHome(tasks, now = new Date()) {
+   original order on a tie (Array.prototype.sort is stable). `pinned` (id ->
+   rank) holds a just-ticked task where it was until it settles (dashboard.js). */
+export function sortTasksForHome(tasks, now = new Date(), pinned) {
   return (tasks || [])
-    .map((t) => ({ t, r: taskRank(t, now), at: t.dueAt ? new Date(t.dueAt).getTime() || 0 : 0 }))
+    .map((t) => ({ t, r: pinned && pinned.has(t.id) ? pinned.get(t.id) : taskRank(t, now), at: t.dueAt ? new Date(t.dueAt).getTime() || 0 : 0 }))
     .sort((a, b) => a.r - b.r || (a.r <= 2 ? a.at - b.at : 0))
     .map((x) => x.t);
 }

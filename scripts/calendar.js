@@ -12,6 +12,8 @@ import {
   confirmDialog,
   formatTime,
   focusSoon,
+  tapSettled,
+  visibleText,
 } from './gb-kit.js';
 import {
   occursOn,
@@ -1995,6 +1997,7 @@ function ReminderRow(rem, occKey, onDelete, whatsappEnabled, onEdit, onCancelSno
   }
 
   async function handleDelete() {
+    if (!tapSettled('reminders')) return; // a double tap's second half lands on the next row
     if (rem.repeat && rem.repeat !== 'none') {
       openDeleteDialog(rem, occKey, onDelete);
       return;
@@ -2491,6 +2494,9 @@ let lastReminders = [];
    still ahead (the server refuses a past anchor) and only scope `all`; its
    done ticks and skipped days aren't brought back. Upgrade: a server-side
    restore. */
+const UNDO_TOAST_MS = 6000; // toast.action's own lifetime (app.js registerToast)
+let undoBurst = [];
+let undoBurstUntil = 0;
 async function deleteWithUndo(onDelete, onAdd, scope, id, occKey) {
   const rem = lastReminders.find((r) => r.id === id);
   const rows = () => [...document.querySelectorAll('[data-cal-section="reminders"] .gb-rem-row')];
@@ -2508,8 +2514,14 @@ async function deleteWithUndo(onDelete, onAdd, scope, id, occKey) {
   const repeats = rem && rem.repeat && rem.repeat !== 'none';
   if (!gone || scope !== 'all' || typeof onAdd !== 'function') return;
   if (rem.date < todayKey() || (!repeats && isPastSlot(rem.date, rem.time))) return;
-  toast.action('Reminder deleted.', 'Undo', () =>
-    onAdd(
+  // One Undo for every reminder deleted while its toast is up, not only the last.
+  if (Date.now() > undoBurstUntil) undoBurst = [];
+  undoBurst.push(rem);
+  undoBurstUntil = Date.now() + UNDO_TOAST_MS;
+  const batch = undoBurst;
+  const restore = (rem) => {
+    const repeats = rem.repeat && rem.repeat !== 'none';
+    return onAdd(
       rem.date,
       rem.text,
       (rem.time || '').slice(0, 5),
@@ -2531,7 +2543,11 @@ async function deleteWithUndo(onDelete, onAdd, scope, id, occKey) {
             }
           : null),
       }
-    )
+    );
+  };
+  // One at a time: the add guards against a double submit and dropped the second.
+  toast.action(batch.length > 1 ? batch.length + ' reminders deleted.' : 'Reminder deleted.', 'Undo', () =>
+    batch.splice(0).reduce((done, r) => done.then(() => restore(r)), Promise.resolve())
   );
 }
 
