@@ -1188,9 +1188,14 @@ async function putDocIfChanged() {
    local read path. ponytail: one JSON blob + mirror, exactly like saveMoney. */
 // Saves made / still out, so a /api/auth/me read that raced one can keep this
 // device's prefs (loadSecondaryData).
-const uiPrefsSaves = { made: 0, out: 0 };
+const uiPrefsSaves = { made: 0, out: 0, pending: false };
+window.addEventListener('online', () => {
+  if (uiPrefsSaves.pending) saveUiPrefs({});
+});
+
 function saveUiPrefs(patch) {
   if (!state.user || !patch) return;
+  uiPrefsSaves.pending = false;
   uiPrefsSaves.made++;
   uiPrefsSaves.out++;
   state.user.uiPrefs = Object.assign({}, state.user.uiPrefs || {}, patch);
@@ -1210,6 +1215,12 @@ function saveUiPrefs(patch) {
   }).finally(() => uiPrefsSaves.out--).catch((err) => {
     // The page is going (Firefox rejects the promise before it tears down): keepalive carries the PUT.
     if (document.visibilityState === 'hidden') return;
+    // No connection: each save sends the whole blob, so one resend once back
+    // online carries every change made meanwhile. Not an error, and no toast.
+    if (err && err.message === NO_CONNECTION) {
+      uiPrefsSaves.pending = true;
+      return;
+    }
     console.error('saveUiPrefs failed to reach database:', err);
     // The change shows on this device and would quietly undo itself on the next
     // sign-in. Offline is the banner's to say; a 401 signs out on its own.
