@@ -1282,7 +1282,8 @@ function focusCard(focus, habits, onMakeHabit) {
     'div',
     { class: 'gb-dash-block' },
     SectionTitle({ title: 'This week’s focus' }),
-    Card({ className: 'gb-report-focus', children: [h('p', null, focus), btn] })
+    // The trend card's padding and head row: a focus line with its one action beside it.
+    Card({ className: 'gb-trend-card', children: h('div', { class: 'gb-trend-head' }, h('div', null, focus), btn) })
   );
 }
 

@@ -43,9 +43,13 @@ test('SEC-2 / FRS-11: an invite link asks before joining, and offers the shared 
   expect((await call(account.token, '/api/circles/mine')).some((x) => x.id === c.id)).toBe(false);
   if (info.project.name === 'mobile') await shot(page, 'SEC-2');
 
+  // FRS-11: the circle's goal comes with it, pre-ticked.
+  await expect(dialog.getByLabel('Add “Walk 30 minutes” to my habits')).toBeChecked();
   await dialog.getByRole('button', { name: 'Join', exact: true }).click();
   await expect(page.locator('[data-circle-id="' + c.id + '"]')).toBeVisible();
   expect((await call(account.token, '/api/circles/mine')).some((x) => x.id === c.id)).toBe(true);
+  await expect(page.locator('.gb-toast-msg', { hasText: 'Added “Walk 30 minutes” to your habits.' })).toBeVisible();
+  expect((await call(account.token, '/api/habits')).map((x) => x.name)).toContain('Walk 30 minutes');
 });
 
 test('SEC-2: Cancel on the join sheet leaves the user out', async ({ page, account }) => {
@@ -110,7 +114,7 @@ test('FRS-10: Add member opens on the form, reads the name, and adds another in 
   await name.fill('Appa');
   await expect(rel).toHaveValue('father');
   await page.getByRole('button', { name: 'Save and add another' }).click();
-  await expect(page.getByText('Added Appa.')).toBeVisible();
+  await expect(page.locator('.gb-toast-msg', { hasText: 'Added Appa.' })).toBeVisible();
   await expect(name).toHaveValue('');
   await name.fill('Akka');
   await expect(rel).toHaveValue('sister');
@@ -137,4 +141,20 @@ test('FRS-18: a new circle starts with a sprint running and an Invite one tap aw
   const mine = await call(account.token, '/api/circles/mine');
   const c = mine.find((x) => x.name === 'Sprinters');
   expect((await call(account.token, '/api/circles/' + c.id + '/challenges')).length).toBe(1);
+});
+
+test('FRS-12: the weekly review focus shows on Report and becomes a habit in one tap', async ({ page, account }, info) => {
+  const d = new Date();
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); // this Monday
+  const weekStart = d.toLocaleDateString('en-CA');
+  await call(account.token, '/api/weekly-review', 'PUT', { weekStart, wins: 'Ran twice', focus: 'Sleep by 11' });
+  await signInPinned(page, account);
+  await go(page, 'report');
+  await expect(page.getByText('This week’s focus')).toBeVisible();
+  await expect(page.getByText('Sleep by 11', { exact: true })).toBeVisible();
+  if (info.project.name === 'mobile') await shot(page, 'FRS-12');
+  await page.getByRole('button', { name: 'Make it a habit' }).click();
+  await expect(page.locator('.gb-toast-msg', { hasText: 'Added “Sleep by 11” to your habits.' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Make it a habit' })).toHaveCount(0);
+  expect((await call(account.token, '/api/habits')).map((x) => x.name)).toContain('Sleep by 11');
 });

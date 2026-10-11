@@ -3927,6 +3927,14 @@ async function deleteTask(id) {
   await refreshScore();
 }
 
+/* A plain daily habit by name, for Circle's shared goal and Report's weekly
+   focus. Resolves false, adding nothing, when one of that name exists. */
+function addHabitNamed(name) {
+  const key = name.trim().toLowerCase();
+  if (state.habits.some((x) => String(x.name || '').trim().toLowerCase() === key)) return Promise.resolve(false);
+  return createHabit({ name: name.trim(), domain: 'habit', icon: 'repeat', cadence: 'daily', metric: 'none' });
+}
+
 async function createHabit(body) {
   const created = await api('/api/habits', {
     method: 'POST',
@@ -14389,6 +14397,8 @@ const SCREENS = {
               state.reportRange = days;
               repaintReport();
             },
+            weeklyReviews: state.weeklyReviews,
+            onMakeHabit: (name) => addHabitNamed(name).then(repaintReport),
           })
       );
     },
@@ -14588,6 +14598,7 @@ const SCREENS = {
               }),
             currentUserId: state.user && state.user.id,
             // "Share a win" chips over a circle's composer, read when a feed opens.
+            addHabit: addHabitNamed,
             wins: () =>
               winLines({
                 habits: state.habits || [],
