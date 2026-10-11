@@ -65,7 +65,7 @@ test('expense: add, edit amount, delete; totals, reload and the ledger agree', a
   expect((await money(page, account)).expenses.find((e) => e.note === 'Team lunch').id).toBe(row.id);
 
   // Delete it from the row.
-  await page.locator('.gb-money-exp-row', { hasText: 'Team lunch' }).getByRole('button', { name: 'Delete expense' }).click();
+  await page.locator('.gb-money-exp-row', { hasText: 'Team lunch' }).getByRole('button', { name: /^Delete Team lunch/ }).click();
   await dialog(page).getByRole('button', { name: 'Delete', exact: true }).click();
   await expect(page.getByRole('button', { name: /^Edit Team lunch/ })).toHaveCount(0);
   await expect.poll(async () => (await money(page, account)).expenses.filter((e) => e.note === 'Team lunch').length).toBe(0);
