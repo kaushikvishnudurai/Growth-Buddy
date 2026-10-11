@@ -32,7 +32,8 @@ reminders off the end), `MAX_QUEUED` 100. ponytail: an app unopened past the hor
 | `upcomingWaterAlarms(prefs, now, days)` | `WATER_DEFAULTS` `{on, everyMins: 120, from, to}` (= `ui_prefs.water`). 30-minute floor; inverted/empty window → silence; a slot right after a usual hour is dropped. Not recurrence |
 | `upcomingHabitAlarms(habits, now, days)` | daily at `reminderTime` regardless of cadence; `doneToday` skips **today only** |
 | `upcomingAlarms({reminders, water, habits, sound, lead, quiet}, now)` | merge, quiet-filter, sort, cap, then stamp `id`, `sound`, `channelId` |
-| `syncDeviceAlarms(opts)` | native + granted only. `cancelPendingLocalNotifications({keep: [TIMER_ALARM_ID]})` then schedule the whole set. Returns count. Called by app.js `reSyncDeviceAlarms` whenever any input changes |
+| `notificationActionTypes(snoozeLabel)` | the three button sets (`ACTION_TYPES`): `gb-reminder` Done + Snooze, `gb-habit` Done, `gb-water` +`WATER_ACTION_ML` (250) ml. Each alarm builder stamps `actionTypeId` + `extra {kind, id?, day?}`; a reminder's `day` is the occurrence, **null on a snoozed ring** (its occurrence isn't known, so Done only dismisses); a habit gets Done only when `habitTickable` (not quit, not measured). app.js `handleNotificationAction` carries a press out |
+| `syncDeviceAlarms(opts)` | native + granted only. Registers the button sets (`opts.snoozeLabel`), then `cancelPendingLocalNotifications({keep: [TIMER_ALARM_ID]})` then schedule the whole set. Returns count. Called by app.js `reSyncDeviceAlarms` whenever any input changes |
 
 ## Traps
 

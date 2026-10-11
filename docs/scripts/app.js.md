@@ -324,6 +324,13 @@ it silently landed on Home. Don't reintroduce a second list.
   soonest-first by `nextOccurrence` (`recurrence.js`), with a two-tap delete of the whole series and
   a tap-to-cancel snooze chip. `repaintReminderSettings()` is called by add/delete/snooze and is a
   no-op once the pane leaves the page.
+- **Buttons on the phone's notifications**: `armNotificationActions()` (once, after wave 1 of
+  `loadData`, so a press that cold-started the app finds its habit / reminder) listens through
+  native.js `onLocalNotificationAction`; `handleNotificationAction` routes a press to the in-app
+  handlers: water → `quickAddWater(WATER_ACTION_ML)`, reminder Snooze → `snoozeReminder`, Done →
+  `toggleReminderDone(id, day, true)` (no day = a snoozed ring: nothing), habit Done →
+  `plainToggleHabit` today or a dated `/checkin` for the day it rang. `reSyncDeviceAlarms` passes
+  `snoozeLabel`. The web's buttons never reach the page: the service worker POSTs a signed ticket.
 - **Snooze in the app**: `snoozeReminder(id, minutes, notifId)` / `cancelReminderSnooze(id)`. Offered
   on the toast a reminder raises over the websocket (`pushToast`'s 4th argument, `{label, run}`, is
   a single action button) and on **unread** reminder cards in the bell — a snooze marks its card

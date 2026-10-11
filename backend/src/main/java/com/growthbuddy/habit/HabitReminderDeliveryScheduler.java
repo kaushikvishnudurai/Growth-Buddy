@@ -6,6 +6,7 @@ import com.growthbuddy.notification.NotificationKind;
 import com.growthbuddy.notification.NotifyCategory;
 import com.growthbuddy.notification.NotificationService;
 import com.growthbuddy.push.PushService;
+import com.growthbuddy.reminder.SnoozeLinks;
 import com.growthbuddy.reminder.WhatsAppService;
 import com.growthbuddy.user.User;
 import com.growthbuddy.user.UserRepository;
@@ -52,6 +53,7 @@ public class HabitReminderDeliveryScheduler {
     private final PushService push;
     private final NotificationService notifications;
     private final WhatsAppService whatsapp;
+    private final SnoozeLinks links;
 
     public HabitReminderDeliveryScheduler(
             HabitRepository habits,
@@ -60,7 +62,9 @@ public class HabitReminderDeliveryScheduler {
             UserRepository users,
             PushService push,
             NotificationService notifications,
-            WhatsAppService whatsapp) {
+            WhatsAppService whatsapp,
+            SnoozeLinks links) {
+        this.links = links;
         this.habits = habits;
         this.checkins = checkins;
         this.dispatchLog = dispatchLog;
@@ -218,7 +222,17 @@ public class HabitReminderDeliveryScheduler {
 
         if (push.isConfigured()) {
             try {
-                int n = push.sendToUser(user.getId(), NotifyCategory.habits, "Habit reminder", habit.getName(), "/#habits");
+                // tag: one card per habit. done: a Done button, but only on a plain
+                // habit — a measured one needs its number and a quit one has
+                // nothing to tick, so those open the app as before.
+                Map<String, String> extra = new HashMap<>();
+                extra.put("tag", "habit-" + habit.getId());
+                if (habit.getKind() != HabitKind.quit && habit.getMetric() == HabitMetric.none) {
+                    extra.put("done", links.sign(SnoozeLinks.HABIT_DONE, user.getId(), habit.getId(), day, Instant.now()));
+                    extra.put("doneLink", "/api/habits/done-link");
+                }
+                int n = push.sendToUser(user.getId(), NotifyCategory.habits, "Habit reminder", habit.getName(),
+                        "/#habits", extra);
                 if (n > 0) {
                     channels.append(channels.length() > 0 ? "+push" : "push");
                     sent = true;

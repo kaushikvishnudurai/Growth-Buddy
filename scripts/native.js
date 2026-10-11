@@ -22,8 +22,9 @@ export function isNative() {
  * "this browser doesn't support push notifications" on a phone. The bridge's own
  * `nativePromise(plugin, method, options)` reaches the same native class without
  * any of that JS, so proxy onto it.
- * ponytail: promise-style methods only. A plugin listener would need
- * `cap.nativeCallback`; nothing here uses one.
+ * Promise-style methods only. The one listener the app needs (a tap on a
+ * notification's button) goes through `onLocalNotificationAction` below, which
+ * calls `cap.nativeCallback` itself.
  */
 export function nativePlugin(name) {
   const cap = typeof window !== 'undefined' ? window.Capacitor : null;
@@ -235,12 +236,57 @@ export async function scheduleLocalNotifications(items) {
         // sound is the one that plays. It is what ensureChannel built the
         // channel from, and it is still what rings on iOS and pre-8 Android.
         sound: n.sound,
+        // The buttons (registerNotificationActions) and what they act on.
+        actionTypeId: n.actionTypeId,
+        extra: n.extra,
         schedule: n.at ? { at: n.at, allowWhileIdle: true } : undefined,
       })),
     });
     return true;
   } catch (_) {
     return false;
+  }
+}
+
+/* ---- Notification buttons ------------------------------------------------
+   "Done", "Snooze", "+250 ml" on the card itself. The button sets live on the
+   phone under an id (registerActionTypes, idempotent: it overwrites), and each
+   notification names its set with `actionTypeId`. A press reaches the page as
+   a `localNotificationActionPerformed` event; Android delivers it by opening
+   the app (the plugin's buttons are activity intents), iOS too since each
+   action is `foreground`. The plugin retains the event until a listener is
+   attached, so a press that cold-starts the app is not lost. */
+
+/** Register the button sets (`[{ id, actions: [{ id, title }] }]`). No-op off-device. */
+export async function registerNotificationActions(types) {
+  const LN = nativePlugin('LocalNotifications');
+  if (!LN) return;
+  try {
+    await LN.registerActionTypes({ types });
+  } catch (_) {
+    /* an older plugin without buttons: the notifications still post */
+  }
+}
+
+/**
+ * Call `cb({ actionId, notification })` for every press on one of our
+ * notifications (`actionId` 'tap' for the card itself). Once per page; there
+ * is no remove because nothing ever needs to stop listening.
+ */
+export function onLocalNotificationAction(cb) {
+  if (!isNative()) return;
+  const cap = window.Capacitor;
+  const eventName = 'localNotificationActionPerformed';
+  const registered = cap.Plugins && cap.Plugins.LocalNotifications;
+  try {
+    if (registered && typeof registered.addListener === 'function') {
+      registered.addListener(eventName, cb);
+    } else if (typeof cap.nativeCallback === 'function') {
+      // What a registered plugin's addListener does under the hood.
+      cap.nativeCallback('LocalNotifications', 'addListener', { eventName }, cb);
+    }
+  } catch (_) {
+    /* no plugin on this build */
   }
 }
 

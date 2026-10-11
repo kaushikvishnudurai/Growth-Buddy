@@ -147,7 +147,7 @@ class HabitHistoryBatchTest {
         when(svc.historyAll(USER, 60)).thenReturn(expected);
         CurrentUser.set(USER);
 
-        assertThat(new HabitController(svc).historyAll(60)).isSameAs(expected);
+        assertThat(new HabitController(svc, null).historyAll(60)).isSameAs(expected);
 
         assertThat(HabitController.class.getAnnotation(RequestMapping.class).value())
                 .containsExactly("/api/habits");

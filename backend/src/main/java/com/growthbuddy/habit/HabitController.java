@@ -1,7 +1,12 @@
 package com.growthbuddy.habit;
 
+import com.growthbuddy.common.ApiException;
 import com.growthbuddy.common.CurrentUser;
+import com.growthbuddy.reminder.ReminderSnoozeService;
+import com.growthbuddy.reminder.SnoozeLinks;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -23,9 +28,33 @@ import org.springframework.web.bind.annotation.RestController;
 public class HabitController {
 
     private final HabitService service;
+    private final ReminderSnoozeService tickets;
 
-    public HabitController(HabitService service) {
+    public HabitController(HabitService service, ReminderSnoozeService tickets) {
         this.service = service;
+        this.tickets = tickets;
+    }
+
+    /**
+     * The Done button on a habit reminder's push, sent by the service worker,
+     * which holds no session: the signed ticket names the user, the habit and the
+     * day it rang for (anonymous in CurrentUserInterceptor). The same check-in as
+     * a tap in the app, so a second press earns nothing. One 404 for anything
+     * wrong — a bad ticket, a deleted habit, a day outside the editable window.
+     */
+    @PostMapping("/done-link")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void doneByLink(@Valid @RequestBody DoneLinkRequest req) {
+        SnoozeLinks.Ticket t = tickets.ticketFor(SnoozeLinks.HABIT_DONE, req.token()).filter(x -> x.day() != null)
+                .orElseThrow(() -> ApiException.notFound("Habit"));
+        try {
+            service.checkin(t.userId(), t.targetId(), new CheckinRequest(t.day(), true, null, null, null));
+        } catch (ApiException ex) {
+            throw ApiException.notFound("Habit");
+        }
+    }
+
+    record DoneLinkRequest(@NotBlank @Size(max = 300) String token) {
     }
 
     @GetMapping
