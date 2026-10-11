@@ -14,7 +14,7 @@ every endpoint, repo traps) or the per-file docs listed in **CLAUDE.md**; it poi
 | Styles | tokens → app.css (15.8k lines) → module CSS → premium.css skin | `docs/styles/*.md` |
 | Storage | No localStorage: in-memory map + cookie allowlist (`gb.token`, `gb.session`, theme…) + Cache API `gb-store-v2` | `scripts/cache-storage.js` |
 | Offline | Workbox precache (vite-plugin-pwa), NetworkFirst API GETs, outbox replay with Idempotency-Key | `vite.config.js`, `scripts/outbox.js` |
-| Realtime | STOMP over SockJS (`/ws`), notification + family + mentorship frames | app.js `connectWebSocket` |
+| Realtime | STOMP over a native WebSocket (`/ws`), notification + family + mentorship frames | app.js `connectWebSocket` |
 | Backend | Spring Boot, package per feature (26 packages), MySQL locally, TiDB in prod (`ddl-auto: none`) | CODEMAP "Backend" + endpoint index |
 | AI | Claude via Cloudflare AI Gateway (OpenAI wire format), every feature has a no-AI fallback | `mentor/OpenAIClient`, CODEMAP |
 | Build | `vite build` → `dist/`; `BUILD` int in `vite.config.js`; bundle budget `scripts/bundle-budget.mjs`; Docker image serves API + `dist/` | `DEPLOYING.md` |
