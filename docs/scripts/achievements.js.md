@@ -39,7 +39,7 @@ Invariants:
 | Fn | What |
 |---|---|
 | `badgeTile(item)` | unlocked: check; locked: `role=progressbar` + `current / target` |
-| `ScreenAchievements` | summary card with **two separate labelled bars** — badges earned %, and XP % to next level (they used to share one caption and read as the same metric) — then a `role=list` grid per group |
+| `ScreenAchievements` | summary card ("N of M unlocked", level + XP) with **two separate labelled bars** — badges earned %, and XP % to next level (they used to share one caption and read as the same metric); the badge % is said once, in its caption — then a `role=list` grid per group |
 
 The celebration on first unlock is **not here**: app.js `checkAchievements` diffs unlocked ids
 against `ui_prefs.achSeen` ∪ the session's ids, baselines silently on the first run with data, and

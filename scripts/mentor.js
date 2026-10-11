@@ -644,8 +644,9 @@ function ScreenMentor({ api, threadId: initialThread, starter }) {
   }
 
   /* The streaming half of a send. Resolves to {userMessage, assistantMessage}
-     once the server says done; the bubble fills in as plain text while the words
-     arrive, and gets its bold/italic only then (half a "**" would flash). Throws
+     once the server says done; the bubble is drawn rich as the words arrive
+     (`streamRich` holds back an unclosed "**", so the bold appears whole), and
+     the server's final text replaces it on done. Throws
      with .fallback when nothing came back that could be read as a stream, so the
      caller can send the plain way instead; with .partial when some words came
      and then the reply stopped (Stop, or the line dropped). */
@@ -762,7 +763,8 @@ function ScreenMentor({ api, threadId: initialThread, starter }) {
           send();
         });
         append(row);
-        if (!err || !err.stopped) console.error(err);
+        // The words shown, not app.js's message on the error ("waking up" for an AI 503).
+        if (!err || !err.stopped) console.error('Buddy: ' + msg, (err && err.status) || '');
       }
     } finally {
       busy = false;

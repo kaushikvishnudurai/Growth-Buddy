@@ -30,10 +30,12 @@ const dayLabel = (k) => Number(k.slice(8, 10)) + ' ' + MON[Number(k.slice(5, 7))
     server's finished-day scores (`insightHistory.scores`, the two days before today) replace it. */
 export function yearOf(trends, wellness, insightHistory) {
   const y = insightHistory && insightHistory.year;
-  const sc = ((insightHistory && insightHistory.scores) || []).filter((s) => s && s.date);
+  // Finished-day scores from the server: `scoreRange` (GET /api/score/range, the year) and
+  // `scores` (the two days before today). They replace the snapshot a day was last opened with.
+  const h = insightHistory || {};
+  const sc = [...(Array.isArray(h.scoreRange) ? h.scoreRange : []), ...(h.scores || [])].filter((s) => s && s.date);
   if (!y && !sc.length) return { trends, wellness };
   const byDate = { ...((y && y.byDate) || {}), ...((trends && trends.byDate) || {}) };
-  // ponytail: only two server days reach the client; a /api/score range would fill the year
   for (const s of sc) byDate[s.date] = { ...byDate[s.date], date: s.date, score: Number(s.score) || 0 };
   if (!y) return { trends: { byDate }, wellness };
   const w = wellness || {};

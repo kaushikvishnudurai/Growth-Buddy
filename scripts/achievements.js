@@ -284,10 +284,10 @@ function ScreenAchievements(props) {
                 { class: 'gb-ach-summary-sub' },
                 'Level ' + level + ' · ' + xp + ' XP'
               )
-            ),
-            h('div', { class: 'gb-ach-summary-pct' }, pct + '%')
+            )
           ),
-          // Badge completion — this is what the big % refers to.
+          // Badge completion. The % is said once, in the caption: a big "32%" beside
+          // "6 of 19 unlocked" repeated it.
           h(
             'div',
             {

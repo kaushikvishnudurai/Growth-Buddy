@@ -47,7 +47,11 @@ function habitShares(habitHistory, today) {
     const hit = new Set(
       (hist.days || []).filter((d) => d.done || d.protectedDay).map((d) => String(d.date))
     );
-    for (let n = dayNum(String(hist.since)); n <= last; n++) {
+    // From the first done day on or after `since`, as insights' habitDays does: the days
+    // before a habit got going (or before the history window) are not 0% days.
+    const first = [...hit].filter((k) => k >= String(hist.since)).sort()[0];
+    if (!first) continue;
+    for (let n = dayNum(first); n <= last; n++) {
       const k = dayKey(n);
       total[k] = (total[k] || 0) + 1;
       if (hit.has(k)) done[k] = (done[k] || 0) + 1;
@@ -321,7 +325,10 @@ export function monthReview({ trends, wellness, habits, history, money, today, m
   return {
     eyebrow: monthName + ' in review',
     headline: scores.length ? Math.round(mean(scores)) + '%' : stats[0].value,
-    sub: scores.length ? 'average daily score' : stats[0].label.toLowerCase(),
+    // "over N days": a month with two scored days must not read as the month's average.
+    sub: scores.length
+      ? 'average daily score over ' + scores.length + (scores.length === 1 ? ' day' : ' days')
+      : stats[0].label.toLowerCase(),
     stats: (scores.length ? stats : stats.slice(1)).slice(0, 3),
     note:
       moods.length >= 3
