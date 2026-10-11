@@ -4346,7 +4346,7 @@ button.gb-seat:disabled {
 }
 .gb-wellness-tile strong {
   font-size: 1.25rem;
-  font-weight: 850;
+  font-weight: 800;
   text-transform: capitalize;
 }
 /* Morning check-in (WellnessQuick): a question and its one-tap answers per
@@ -4367,7 +4367,7 @@ button.gb-seat:disabled {
 .gb-wellness-quick-ask {
   color: var(--fg1);
   font-size: 0.875rem;
-  font-weight: 750;
+  font-weight: 800;
 }
 .gb-wellness-quick-opts {
   display: flex;
