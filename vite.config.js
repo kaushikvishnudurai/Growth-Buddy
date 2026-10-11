@@ -124,8 +124,12 @@ export default defineConfig({
             // Read-through cache for API GETs: prefer the network, fall back to
             // the last cached response when offline so the UI still renders.
             // Not /api/auth/*: the cached session is the account offline (app.js savedGetKey).
+            // Not /api/notes*: Notes keeps its own offline copy (read-only, with its banner);
+            // answered from here it read as online and offered edits that could not save.
             urlPattern: ({ url, request }) =>
-              request.method === 'GET' && /\/api\//.test(url.pathname) && !/\/api\/auth\//.test(url.pathname),
+              request.method === 'GET' &&
+              /\/api\//.test(url.pathname) &&
+              !/\/api\/(auth\/|notes)/.test(url.pathname),
             handler: 'NetworkFirst',
             options: {
               cacheName: 'gb-api-get',

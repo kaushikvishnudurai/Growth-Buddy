@@ -160,6 +160,8 @@ test('EXP-4: after "Only past days", the new first day offers no past-days delet
   let dlg = page.getByRole('dialog', { name: 'Delete recurring reminder' });
   await expect(dlg.getByRole('button', { name: /^Only past days/ })).toHaveCount(0);
   await dlg.getByRole('button', { name: 'Cancel' }).click();
+  // A second Delete inside 400ms of the first is a double tap (tapSettled), and is dropped by design.
+  await page.waitForTimeout(400);
   // Two days on, drop the days before: that day becomes the series' first.
   await dayButton(page, 2).click();
   await m.getByRole('button', { name: 'Delete reminder: Stretch' }).click();
@@ -294,4 +296,16 @@ test('OFF-10: offline before Notes ever loaded says so, and a note made then is 
   await expect(m.getByText('Offline — showing saved copy, editing disabled')).toBeHidden();
   await expect(m.getByText(/notes haven't been saved to this device yet/)).toBeVisible();
   await shot(page, 'OFF-10');
+});
+
+test('NQA-1: a note sheet that is closing is not a second dialog', async ({ page, account }) => {
+  await boot(page, account, 'notes');
+  const m = main(page);
+  const open = m.getByRole('button', { name: 'Open Ideas for the trip' });
+  await open.click();
+  await page.getByRole('dialog', { name: 'Note' }).getByRole('button', { name: 'Close' }).click();
+  // Reopened inside the first sheet's 180ms fade: one dialog, one Delete note.
+  await open.click();
+  expect(await page.getByRole('dialog').count()).toBe(1);
+  expect(await page.getByRole('button', { name: 'Delete note' }).count()).toBe(1);
 });
