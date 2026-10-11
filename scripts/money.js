@@ -7,7 +7,7 @@
    ponytail: heuristics, not an LLM. Real OCR / NL understanding would need
    a vision/LLM endpoint — marked at each spot below.
    ===================================================================== */
-import { h, Icon, Card, ProgressRing, refreshIcons, openModal, Thinking } from './gb-kit.js';
+import { h, Icon, Card, ProgressRing, refreshIcons, openModal, Thinking, fieldRefusal } from './gb-kit.js';
 import { toast } from './toast.js';
 import { shareStoryCard, _demo as _shareCardDemo } from './share-card.js';
 import {
@@ -473,6 +473,19 @@ function salaryPattern(money) {
   return { last, repeat: has ? null : repeat };
 }
 
+/* This month's salary when its usual day (salaryPattern) has come and no salary
+   is logged this month yet: {amount, date, last}, else null. Add income dates
+   itself to it; the Income tab offers it as one tap. Pure. */
+function salaryDue(money) {
+  const pat = salaryPattern(money);
+  if (!pat.repeat) return null;
+  const ym = thisMonthPrefix();
+  const date = recurDate({ day: pat.repeat.day }, ym);
+  if (date > todayKey()) return null;
+  if ((money.income || []).some((i) => i && i.source === 'salary' && String(i.date || '').startsWith(ym))) return null;
+  return { amount: pat.repeat.amount, date, last: pat.last };
+}
+
 /* 9 / 24 — monthly forecast.
 
    Only day-to-day spending is extrapolated. Fixed amounts are added as they are:
@@ -738,7 +751,7 @@ const COMMON_CHALLENGES = [
     reason: 'A classic reset for impulse buys.',
   },
   {
-    label: 'No food delivery · this week',
+    label: 'No food delivery · 7 days',
     kind: 'nospend',
     scope: 'food',
     days: 7,
@@ -1620,23 +1633,25 @@ function accountOf(money, id) {
 }
 /* "Paid from" / "Received in". Null node when there are no accounts yet (offline
    first run): an entry without one still saves, it just isn't counted in a balance. */
-function accountPicker(money, initial, onChange) {
+function accountPicker(money, initial, onChange, opts) {
   const list = activeAccounts(money);
+  // allowNone: a last "None" segment (value ''), for an entry that names no account.
+  const none = !!(opts && opts.allowNone);
   // An entry booked to an archived account keeps it: falling back to list[0]
   // would silently move (and re-currency) the entry on an unrelated edit.
   const held = !list.some((a) => a.id === initial) && accountOf(money, initial);
   if (held) list.push(held);
   if (!list.length) return { node: null, get: () => null, set() {}, disable() {} };
-  const start = list.some((a) => a.id === initial) ? initial : list[0].id;
+  const start = list.some((a) => a.id === initial) ? initial : none && !initial ? '' : list[0].id;
   const seg = segmented(
-    list.map((a) => ({ value: a.id, label: a.name })),
+    list.map((a) => ({ value: a.id, label: a.name })).concat(none ? [{ value: '', label: 'None' }] : []),
     start,
     onChange
   );
   const btns = [...seg.node.children];
   return {
     node: seg.node,
-    get: seg.get,
+    get: () => seg.get() || null,
     set: (id) => {
       const i = list.findIndex((a) => a.id === id);
       if (i >= 0) btns[i].click();
@@ -1713,6 +1728,29 @@ function confirmDelete(title, body, onConfirm) {
     destructive: true,
     onPrimary: onConfirm,
   });
+}
+
+/* Focus somewhere real once a save has repainted the screen and its dialog is gone:
+   a11y.js puts focus back on the dialog's trigger, but a delete or Save balances just
+   removed it, so focus fell to <body>. First selector found in the screen wins.
+   ponytail: timed past the overlay's 180ms exit + a11y's rAF; a hook in a11y.js if that moves. */
+function focusAfterSave(...sels) {
+  setTimeout(() => {
+    for (const sel of sels) {
+      const el = sel && moneyRoot && moneyRoot.querySelector(sel);
+      if (el) return el.focus();
+    }
+  }, 260);
+}
+const ADD_EXPENSE_BTN = '.gb-money-hero-actions .gb-btn--primary, .gb-money-actions .gb-btn--primary';
+/* After deleting expense `id`: the row after it (or before), else Add expense. */
+function focusAfterExpenseDelete(id) {
+  const row = moneyRoot && moneyRoot.querySelector('.gb-money-exp-row[data-exp-id="' + CSS.escape(id) + '"]');
+  const rows = row ? [...row.parentElement.querySelectorAll(':scope > .gb-money-exp-row')] : [];
+  const i = rows.indexOf(row);
+  const near = rows[i + 1] || rows[i - 1];
+  const nid = near && near.dataset.expId;
+  focusAfterSave(nid && '.gb-money-exp-row[data-exp-id="' + CSS.escape(nid) + '"] .gb-money-exp-edit', ADD_EXPENSE_BTN);
 }
 
 /* The tag a new expense starts on, or null for "the last one logged". A picked
@@ -2357,6 +2395,10 @@ function logNoSpendDay(money, save) {
    per row. Nothing is saved until "Save items". `opts.file`: a photo already
    taken (Add expense's camera button), scanned the moment this opens. Module
    level so Home's Add expense reaches it too. */
+// The server's caps (MoneyLedger): EXPENSE_MAX for an expense, MAX_AMOUNT for any other row.
+const EXPENSE_MAX = 10000000;
+const AMOUNT_MAX = 1000000000;
+
 function openReceiptModal(money, save, requestReceiptScan, opts) {
   money = normalizeMoney(money);
   applyCurrency(money);
@@ -2568,6 +2610,9 @@ function openReceiptModal(money, save, requestReceiptScan, opts) {
     onPrimary: async () => {
       const valid = rows.filter((r) => (Number(r.amount) || 0) > 0);
       if (!valid.length) throw new Error('Add at least one item with an amount.');
+      // The server refuses an expense past EXPENSE_MAX (MoneyLedger), as the expense form does.
+      const big = valid.find((r) => r.amount > EXPENSE_MAX);
+      if (big) throw new Error((big.name || 'An item') + ' is over ' + fmt(EXPENSE_MAX) + ', the most one expense can be.');
       const accountId = paidFrom.get();
       commit((m) => {
         valid.forEach((r) =>
@@ -2603,8 +2648,10 @@ function openExpenseModal(money, save, prefillDate, existing, scan) {
     class: 'gb-input',
     inputmode: 'decimal',
     min: '1',
-    max: '10000000',
+    max: String(EXPENSE_MAX),
     placeholder: 'e.g. 250',
+    // An edit's amount is selected, so typing replaces it instead of appending.
+    onfocus: (e) => e.target.select(),
     // Booked in another currency: edit what was actually paid, not the converted figure.
     value: ex ? String(ex.orig ? ex.orig.amount : ex.amount) : '',
   });
@@ -2654,15 +2701,61 @@ function openExpenseModal(money, save, prefillDate, existing, scan) {
       ? 'Amount (' + c + (fxRate(money, c) ? ', 1 ' + c + ' = ' + fmtIn(fxRate(money, c), cur) : ', no rate set') + ')'
       : 'Amount (' + cur + ')';
   };
+  // An edit keeps what it had, no account included: falling back to Cash moved an
+  // untouched balance on a note fix. Edits can pick None too.
   const paidFrom = accountPicker(
     money,
-    (ex && ex.accountId) || money.settings.lastAccountId || firstOfKind(money, ['cash']),
-    labelFor
+    ex ? ex.accountId || null : money.settings.lastAccountId || firstOfKind(money, ['cash']),
+    labelFor,
+    { allowNone: !!ex }
   );
   labelFor(paidFrom.get());
   let modal = null;
   let scanRow = null;
   let jumpAsked = ''; // the amount|tag the big-jump question was already asked for
+  // The big-jump question sits above the button as a warning (it was a red toast over
+  // the title, and once gone nothing said a second tap saves).
+  const jumpNote = h('p', { class: 'gb-money-jump-warn', role: 'status', hidden: true });
+  const primaryLabel = ex ? 'Save changes' : 'Add expense';
+  const primaryBtn = () => {
+    const b = amount.closest('.gb-modal-body');
+    return b && b.nextElementSibling;
+  };
+  // The question is asked from a capture listener (below), not by throwing from
+  // onPrimary: openModal toasts and shakes on every throw, and this is a warning.
+  const askJump = (e) => {
+    const b = primaryBtn();
+    if (!b || b.disabled || !b.contains(e.target)) return;
+    let q = '';
+    let key = '';
+    let shown = '';
+    try {
+      const amt = readAmount(amount);
+      if (!(amt > 0) || amt > Number(amount.max)) return; // onPrimary says what is wrong
+      const cat = picker.get();
+      const accountId = paidFrom.get();
+      const home = ex ? editedHomeAmount(money, ex, accountId, amt) : toHomeAmount(money, accountId, amt);
+      q = amountJumpQuestion(money, ex, cat, amt, home.amount);
+      key = amt + '|' + cat;
+      shown = fmtIn(amt, accCurrency(money, accountId) || cur);
+    } catch (_) {
+      return; // onPrimary refuses it with the reason
+    }
+    if (!q || jumpAsked === key) return;
+    e.stopImmediatePropagation();
+    e.preventDefault();
+    jumpAsked = key;
+    jumpNote.textContent = q;
+    jumpNote.hidden = false;
+    b.textContent = 'Save ' + shown + ' anyway';
+  };
+  amount.addEventListener('input', () => {
+    if (!jumpAsked) return;
+    jumpAsked = '';
+    jumpNote.hidden = true;
+    const b = primaryBtn();
+    if (b) b.textContent = primaryLabel;
+  });
   if (!ex && typeof scan === 'function') {
     const pick = h('input', {
       type: 'file',
@@ -2711,13 +2804,15 @@ function openExpenseModal(money, save, prefillDate, existing, scan) {
       paidFrom.node ? h('div', { class: 'gb-field-label' }, 'Paid from') : null,
       paidFrom.node,
       h('div', { class: 'gb-field-label' }, 'Date'),
-      date
+      date,
+      jumpNote
     ),
-    primary: ex ? 'Save changes' : 'Add expense',
+    primary: primaryLabel,
     danger: ex
       ? {
           label: 'Delete expense',
           onClick: () => {
+            focusAfterExpenseDelete(ex.id);
             const next = clone(money);
             next.expenses = next.expenses.filter((x) => x.id !== ex.id);
             save(next, money);
@@ -2735,21 +2830,12 @@ function openExpenseModal(money, save, prefillDate, existing, scan) {
           ? 'An expense can be at most ' + fmt(Number(amount.max)) + '.'
           : '';
       amount.setAttribute('aria-invalid', bad ? 'true' : 'false');
-      if (bad) {
-        amount.focus();
-        throw new Error(bad);
-      }
+      if (bad) throw fieldRefusal(amount, bad);
       const cat = picker.get();
       const next = clone(money);
       const accountId = paidFrom.get();
       // Another currency's account: stored converted, with what was paid kept as `orig`.
       const home = ex ? editedHomeAmount(money, ex, accountId, amt) : toHomeAmount(money, accountId, amt);
-      const jump = amountJumpQuestion(money, ex, cat, amt, home.amount);
-      if (jump && jumpAsked !== amt + '|' + cat) {
-        jumpAsked = amt + '|' + cat;
-        amount.focus();
-        throw new Error(jump);
-      }
       const fields = {
         amount: home.amount,
         orig: home.orig,
@@ -2763,6 +2849,7 @@ function openExpenseModal(money, save, prefillDate, existing, scan) {
           const edited = Object.assign({}, x, fields);
           if (!edited.orig) delete edited.orig;
           if (accountId) edited.accountId = accountId;
+          else delete edited.accountId;
           return edited;
         });
         save(next, money);
@@ -2787,6 +2874,8 @@ function openExpenseModal(money, save, prefillDate, existing, scan) {
       if (thr > 0 && amt >= thr) setTimeout(() => openReflection(next, save, id), 220);
     },
   });
+  const sheet = amount.closest('.gb-modal');
+  if (sheet) sheet.addEventListener('click', askJump, true);
   setTimeout(() => amount.focus(), 60);
 }
 
@@ -2796,11 +2885,11 @@ function openExpenseModal(money, save, prefillDate, existing, scan) {
 function amountJumpQuestion(money, ex, cat, typed, home) {
   const was = ex ? Number(ex.orig ? ex.orig.amount : ex.amount) || 0 : 0;
   if (was > 0 && typed > was * 20)
-    return 'That is ' + Math.round(typed / was) + ' times the ' + fmt(was) + ' it was. Save again if it is right.';
+    return 'That is ' + Math.round(typed / was) + ' times the ' + fmt(was) + ' it was. Check it, or save it as it is.';
   const others = (money.expenses || []).filter((e) => e.category === cat && (!ex || e.id !== ex.id));
   const avg = others.length >= 3 ? sumAmt(others) / others.length : 0;
   if (avg > 0 && home > avg * 20)
-    return 'That is ' + Math.round(home / avg) + ' times your usual ' + catOf(cat, money).label + ' spend (' + fmt(avg) + '). Save again if it is right.';
+    return 'That is ' + Math.round(home / avg) + ' times your usual ' + catOf(cat, money).label + ' spend (' + fmt(avg) + '). Check it, or save it as it is.';
   return '';
 }
 
@@ -3214,13 +3303,21 @@ function ScreenMoney({
 
   function openSetBalances() {
     const list = activeAccounts(money);
-    const inputs = list.map((a) =>
+    // Prefilled with what each holds now (a cash/bank balance below zero as 0, what
+    // it would take to clear it), selected on focus: "rough is fine" is one edit.
+    // An account in another currency stays blank (its balance is held in home units).
+    const start = list.map((a) =>
+      accCurrency(money, a.id) ? null : a.kind !== 'card' && Number(a.balance) < 0 ? 0 : Number(a.balance) || 0
+    );
+    const inputs = list.map((a, i) =>
       h('input', {
         type: 'number',
         class: 'gb-input',
         inputmode: 'decimal',
         placeholder: '0',
         id: 'bal-' + a.id,
+        value: start[i] === null ? '' : String(start[i]),
+        onfocus: (e) => e.target.select(),
       })
     );
     openMoneyModal({
@@ -3244,8 +3341,11 @@ function ScreenMoney({
         // Converted up front too: an account with no rate refuses before any saves.
         const home = vals.map((v, i) => (v === null ? null : toHomeAmount(money, list[i].id, v).amount));
         for (let i = 0; i < list.length; i++) {
-          if (home[i] !== null) await accountRequest('PUT', '/' + list[i].id, { balance: home[i] });
+          if (home[i] !== null && home[i] !== Number(list[i].balance))
+            await accountRequest('PUT', '/' + list[i].id, { balance: home[i] });
         }
+        // Its prompt (the trigger) goes with the save: land on the balances instead.
+        focusAfterSave('.gb-money-accounts button', '.gb-money-head-actions button');
         commit((m) => (m.settings.accountsSetUp = true));
         toast.success('Balances saved.');
       },
@@ -4509,7 +4609,7 @@ function ScreenMoney({
     if (near.length)
       return `You're close on ${near[0].cat.label} (${near[0].pct}% used), but there's room elsewhere.`;
     if (streak >= 3)
-      return `${streak}-day logging streak — this is exactly how clarity is built. Keep going!`;
+      return `${streak}-day logging streak — this is exactly how clarity is built.`;
     if (st.length) return `Looking good — your budgets have breathing room this month.`;
     return `Set a budget or two and I can help you stay on track, gently.`;
   }
@@ -4862,13 +4962,7 @@ function ScreenMoney({
                 h('span', null, 'No budgets projected to overflow. Nicely paced.')
               )
             : null,
-        f.topDisc && f.potential > 0
-          ? h(
-              'div',
-              { class: 'gb-note-hint' },
-              `Trimming ${f.topDisc.label} ~20% could free about ${fmt(f.potential)} this month.`
-            )
-          : null,
+        // No "Trimming X ~20% could free ..." line: the figure beside the total says it.
       ],
     });
   }
@@ -5294,7 +5388,7 @@ function ScreenMoney({
     const c = catOf(e.category, money);
     return h(
       'div',
-      { class: 'gb-money-exp-row' },
+      { class: 'gb-money-exp-row', 'data-exp-id': e.id },
       h(
         'span',
         { class: 'gb-money-cat-ic', style: { background: c.soft, color: c.fg } },
@@ -5357,6 +5451,7 @@ function ScreenMoney({
                   'Delete expense',
                   'Delete "' + (e.note || c.label) + '" (' + fmt(e.amount) + ')?',
                   async () => {
+                    focusAfterExpenseDelete(e.id);
                     commit((m) => (m.expenses = m.expenses.filter((x) => x.id !== e.id)));
                     toast.success('Expense deleted.');
                   }
@@ -5903,14 +5998,24 @@ function ScreenMoney({
      TAB: INCOME (salary + other inflow, loans given/received)
      ================================================================= */
   function openAddIncome() {
-    const amt = h('input', { type: 'number', class: 'gb-input', inputmode: 'decimal', min: '1', placeholder: 'e.g. 45000' });
+    // Selected on focus: typing over the prefilled salary appended to it (60000 -> 6000060000).
+    const amt = h('input', {
+      type: 'number',
+      class: 'gb-input',
+      inputmode: 'decimal',
+      min: '1',
+      placeholder: 'e.g. 45000',
+      onfocus: (e) => e.target.select(),
+    });
     const label = h('input', {
       type: 'text',
       class: 'gb-input',
       maxlength: '60',
       placeholder: 'e.g. June salary',
     });
-    const date = h('input', { type: 'date', class: 'gb-input', value: todayKey() });
+    // This month's salary not in yet and its usual day has come: dated that day.
+    const due = salaryDue(money);
+    const date = h('input', { type: 'date', class: 'gb-input', value: due ? due.date : todayKey() });
     // Salary starts on the last salary's amount and account; two equal ones on the
     // same day of the month offer to log it every month (a `recurring` rule).
     const pat = salaryPattern(money);
@@ -5966,12 +6071,11 @@ function ScreenMoney({
       primary: 'Add income',
       onPrimary: async () => {
         const v = readAmount(amt);
-        if (!Number.isFinite(v) || v <= 0) {
-          amt.focus();
-          throw new Error('Enter an amount greater than zero.');
-        }
+        if (!Number.isFinite(v) || v <= 0) throw fieldRefusal(amt, 'Enter an amount greater than zero.');
         const source = src.get();
         const home = toHomeAmount(money, into.get(), v);
+        // Past the server's cap it said "Income added." and then failed the sync.
+        if (home.amount > AMOUNT_MAX) throw fieldRefusal(amt, 'That is more than ' + fmt(AMOUNT_MAX) + '. Check the amount.');
         const when = date.value || todayKey();
         const repeating = repeat && repeat.checked && source === 'salary';
         commit((m) => {
@@ -6216,6 +6320,53 @@ function ScreenMoney({
     setTimeout(() => total.focus(), 60);
   }
 
+  /* "Salary 60,000 arrived?": its usual day has come and this month's isn't logged.
+     One tap logs it on the account the last one went to. */
+  function salaryDueCard() {
+    const due = salaryDue(money);
+    if (!due) return null;
+    const last = due.last;
+    const acc = last && activeAccounts(money).some((a) => a.id === last.accountId) ? last.accountId : null;
+    const logIt = () => {
+      // Same as the last salary when the amount matches: keeps its currency and rate.
+      const orig = last && last.orig && Number(last.amount) === due.amount ? last.orig : null;
+      commit((m) => {
+        (m.income = m.income || []).unshift({
+          id: uid(),
+          amount: due.amount,
+          ...(orig ? { orig } : {}),
+          source: 'salary',
+          label: 'Salary',
+          date: due.date,
+          ...(acc ? { accountId: acc } : {}),
+        });
+      });
+      toast.success('Salary logged for ' + fmtDateShort(due.date) + '.');
+    };
+    return coachCard('wallet', 'Salary ' + fmt(due.amount) + ' arrived?', [
+      h(
+        'p',
+        { class: 'gb-money-coach-text' },
+        'It usually lands by ' + fmtDateShort(due.date) + (acc ? ' in ' + accountOf(money, acc).name : '') + '.'
+      ),
+      h(
+        'div',
+        { class: 'gb-money-head-actions' },
+        h(
+          'button',
+          { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--compact', onclick: logIt },
+          Icon('check', { size: 14, sw: 2.6 }),
+          'Yes, log it'
+        ),
+        h(
+          'button',
+          { type: 'button', class: 'gb-btn gb-btn--ghost gb-btn--compact', onclick: openAddIncome },
+          'Different amount'
+        )
+      ),
+    ]);
+  }
+
   function tabIncome() {
     const mStart = thisMonthPrefix() + '-01';
     const today = todayKey();
@@ -6294,6 +6445,7 @@ function ScreenMoney({
             'Add income'
           )
         ),
+        salaryDueCard(),
         incomeList.length
           ? h(
               'div',
@@ -7133,6 +7285,7 @@ export const _calc = {
   recurringToCome,
   materialiseRecurring,
   salaryPattern,
+  salaryDue,
   amountJumpQuestion,
   suggestChallenges,
   toHomeAmount,

@@ -1018,7 +1018,9 @@
   border-radius: var(--radius-md);
 }
 .gb-money-budget-field-label {
-  overflow-wrap: anywhere;
+  /* break-word, not anywhere: a tag name wraps between words, never "Shoppi/ng" */
+  overflow-wrap: break-word;
+  min-width: 0;
   font-family: var(--font-body);
   font-weight: 600;
   font-size: var(--text-sm);
@@ -1026,6 +1028,32 @@
 }
 .gb-money-budget-field .gb-input {
   min-width: 0;
+}
+
+/* The expense form's "20x your usual" question: a warning above Save, not a red
+   toast over the title. The button reads "Save X anyway" while it shows. */
+.gb-money-jump-warn {
+  margin: var(--space-3) 0 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--warning-soft);
+  color: var(--warning-soft-fg);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+}
+.gb-money-jump-warn[hidden] {
+  display: none;
+}
+/* A dialog's delete under its Save (Delete expense, Remove account): quiet, so it
+   never weighs the same as Save. A confirm's red primary is not matched here. */
+.gb-money-sheet .gb-btn--primary ~ .gb-btn--danger {
+  background: transparent;
+  color: var(--danger);
+}
+@media (hover: hover) {
+  .gb-money-sheet .gb-btn--primary ~ .gb-btn--danger:hover {
+    background: transparent;
+  }
 }
 
 /* ---- Purchase advisor ---- */
@@ -2444,8 +2472,8 @@
 .gb-money-bcard-carry.is-less {
   color: var(--warning-soft-fg);
 }
-/* A narrow phone: Roll over drops under the name, the amount column stays put. */
-@media (max-width: 380px) {
+/* A phone (390px saw "Transp/ort"): Roll over drops under the name, the amount column stays put. */
+@media (max-width: 440px) {
   .gb-money-budget-field {
     grid-template-columns: 32px minmax(0, 1fr) 104px;
     row-gap: 0;

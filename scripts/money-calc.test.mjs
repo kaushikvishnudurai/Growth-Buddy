@@ -352,6 +352,21 @@ console.log('money-calc no-spend logging: ok');
   );
   assert.equal(salaryPattern(doc({ income: [inc[0], { ...inc[1], amount: 59000 }] })).repeat, null, 'amounts differ');
 
+  // salaryDue (clock: 2026-10-20): pattern on the 1st, October's not logged -> due on the 1st.
+  const { salaryDue } = _calc;
+  const sep = [
+    { id: 's1', amount: 60000, source: 'salary', label: '', date: '2026-09-01', accountId: 'b' },
+    { id: 's2', amount: 60000, source: 'salary', label: '', date: '2026-08-01' },
+  ];
+  const d = salaryDue(doc({ income: sep }));
+  assert.equal(d.date, '2026-10-01');
+  assert.equal(d.amount, 60000);
+  assert.equal(d.last.id, 's1');
+  assert.equal(salaryDue(doc({ income: inc })), null, 'this month already logged');
+  const late = sep.map((i) => ({ ...i, date: i.date.slice(0, 8) + '25' }));
+  assert.equal(salaryDue(doc({ income: late })), null, 'its day (the 25th) has not come yet');
+  assert.equal(salaryDue(doc({ income: [sep[0]] })), null, 'no pattern from one salary');
+
   // 349 -> 349399 asks; 349 -> 400 doesn't.
   const old = ex('x', 349, '2026-10-20');
   assert.ok(amountJumpQuestion(doc({ expenses: [old] }), old, 'food', 349399, 349399));
