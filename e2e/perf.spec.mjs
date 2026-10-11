@@ -63,12 +63,20 @@ test('PRF-2: a first visit paints the sign-up card from index.html before the ap
   await page.goto('/', { waitUntil: 'commit' });
   await expect(page.locator('.gb-login-title')).toHaveText('Create your account');
   await expect(page.locator('main')).toHaveCount(1);
-  if (info.project.name.startsWith('mobile')) await shot(page, 'PRF-2');
+  // Chrome only: a screenshot waits on document.fonts.ready, which Gecko and WebKit hold while loading.
+  if (info.project.name === 'mobile-chrome') await shot(page, 'PRF-2');
   const look = () =>
     page.evaluate(async () => {
-      await document.fonts.ready; // a face swapping in between would move the text, not the swap
-      document.activeElement.blur(); // the app focuses the email field; the card styles :focus-within
       const card = document.querySelector('.gb-login-card');
+      // A face swapping in between would move the text, not the swap. The faces themselves, not
+      // document.fonts.ready: Gecko and WebKit keep that pending until the document has loaded,
+      // and holdEntry keeps it loading (XD-7).
+      const faces = new Set([card, ...card.querySelectorAll('*')].map((el) => {
+        const cs = getComputedStyle(el);
+        return `${cs.fontStyle} ${cs.fontWeight} 1em ${cs.fontFamily}`;
+      }));
+      await Promise.all([...faces].map((f) => document.fonts.load(f)));
+      document.activeElement.blur(); // the app focuses the email field; the card styles :focus-within
       const r = (sel) => {
         const b = (sel ? card.querySelector(sel) : card).getBoundingClientRect();
         return [Math.round(b.x), Math.round(b.y), Math.round(b.width), Math.round(b.height)];
