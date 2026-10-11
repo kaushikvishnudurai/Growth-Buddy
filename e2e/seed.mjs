@@ -63,7 +63,11 @@ export async function seedAccount({ seed = true, tag = 'e2e' } = {}) {
   const token = v.json && v.json.token;
   const user = v.json && (v.json.user || v.json);
   if (!token) throw new Error('verify ' + v.status + ' ' + v.text);
-  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  // The IANA name, not Node's: V8 (and Intl.supportedValuesOf) still say Asia/Calcutta, WebKit says
+  // Asia/Kolkata (XD-8). ponytail: the aliases this team's machines report; add one when a run asks.
+  const ALIAS = { 'Asia/Calcutta': 'Asia/Kolkata', 'Europe/Kiev': 'Europe/Kyiv', 'Asia/Saigon': 'Asia/Ho_Chi_Minh', 'Asia/Katmandu': 'Asia/Kathmandu', 'America/Buenos_Aires': 'America/Argentina/Buenos_Aires' };
+  const local = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const tz = ALIAS[local] || local;
   await call('/api/auth/timezone', 'PUT', { timezone: tz }, token);
   // The verify answer predates the PUT; a cookie carrying its UTC zone makes the app offer a switch.
   user.timezone = tz;
