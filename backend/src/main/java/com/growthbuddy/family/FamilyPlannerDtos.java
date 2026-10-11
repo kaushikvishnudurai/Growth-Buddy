@@ -2,9 +2,11 @@ package com.growthbuddy.family;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -189,6 +191,13 @@ record ChoreRequest(
         UUID assigneeMemberId, // null = anyone
         LocalDate dueDate,
         String repeat) { // none | daily | weekly
+}
+
+record ChoreRemindRequest(@NotNull LocalTime time) {
+}
+
+/** sentTo: the assignee's name when it went to their calendar; null = the caller's own. */
+record ChoreRemindResponse(String sentTo) {
 }
 
 /** Absent body / null = flip; a value = set it (as the shopping tick). */

@@ -175,6 +175,11 @@ public class FamilyController {
         return service.toggleChore(CurrentUser.id(), id, req != null ? req.done() : null);
     }
 
+    @PostMapping("/chores/{id}/remind")
+    public ChoreRemindResponse remindChore(@PathVariable UUID id, @Valid @RequestBody ChoreRemindRequest req) {
+        return service.remindChore(CurrentUser.id(), id, req.time());
+    }
+
     @DeleteMapping("/chores/{id}")
     public List<ChoreResponse> deleteChore(@PathVariable UUID id) {
         return service.deleteChore(CurrentUser.id(), id);

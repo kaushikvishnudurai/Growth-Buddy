@@ -11,6 +11,7 @@ import {
   CrashCard,
   confirmDialog,
   openModal,
+  fieldRefusal,
   thinkingLabel,
   trackOverlay,
 } from './gb-kit.js';
@@ -111,6 +112,40 @@ function onEnter(fn, ...inputs) {
       }
     })
   );
+}
+
+/* The next time a `YYYY-MM-DD` birthday comes round, today included. A 29 Feb
+   one lands on the 28th in a common year: the yearly rule then keeps the 28th. */
+function nextBirthday(dob) {
+  const [, m, d] = dob.split('-').map(Number);
+  const now = new Date();
+  const today = now.toLocaleDateString('en-CA');
+  for (const y of [now.getFullYear(), now.getFullYear() + 1]) {
+    const day = Math.min(d, new Date(y, m, 0).getDate());
+    const key = y + '-' + String(m).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+    if (key >= today) return key;
+  }
+}
+
+/* A small "at what time?" dialog; `onTime('HH:MM')` does the saving. */
+function askReminderTime(title, sub, onTime) {
+  const timeI = h('input', {
+    type: 'time',
+    class: 'gb-input',
+    value: '09:00',
+    'aria-label': 'Time',
+  });
+  openModal({
+    title,
+    sub,
+    body: field('Remind at', timeI),
+    primary: 'Set reminder',
+    errorMessage: 'Could not set that reminder.',
+    onPrimary: () => {
+      if (!timeI.value) throw fieldRefusal(timeI, 'Pick a time.');
+      return onTime(timeI.value);
+    },
+  });
 }
 
 function field(labelText, control, hint) {
@@ -405,6 +440,32 @@ function ScreenFamily({ api }) {
     const actions = h(
       'div',
       { class: 'gb-family-card-actions' },
+      m.dob && !m.isSelf
+        ? h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-iconbtn',
+              'aria-label': 'Remind me of ' + m.name + "'s birthday",
+              title: 'Birthday reminder',
+              onclick: () => {
+                const day = nextBirthday(m.dob);
+                askReminderTime(m.name + "'s birthday", 'Every year, from ' + fmtDay(day), (time) =>
+                  api
+                    .addReminder({
+                      text: m.name + "'s birthday",
+                      date: day,
+                      time,
+                      tag: 'personal',
+                      repeat: 'yearly',
+                    })
+                    .then(() => toast.success('Birthday reminder set for ' + fmtDay(day) + '.'))
+                );
+              },
+            },
+            Icon('calendar-heart', { size: 16 })
+          )
+        : null,
       canEdit
         ? h(
             'button',
@@ -2853,6 +2914,33 @@ function ScreenFamily({ api }) {
         )
       ),
       reassign,
+      c.done
+        ? null
+        : h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-iconbtn',
+              'aria-label': 'Set a reminder for ' + c.title,
+              title: 'Remind',
+              onclick: () =>
+                askReminderTime(
+                  'Remind about this chore',
+                  c.assigneeName ? c.title + ' · for ' + c.assigneeName : c.title,
+                  (time) =>
+                    api
+                      .remindChore(c.id, time)
+                      .then((res) =>
+                        toast.success(
+                          res && res.sentTo
+                            ? 'Reminder sent to ' + res.sentTo + '.'
+                            : 'Reminder added to your calendar.'
+                        )
+                      )
+                ),
+            },
+            Icon('bell-plus', { size: 15 })
+          ),
       h(
         'button',
         {

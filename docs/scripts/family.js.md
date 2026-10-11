@@ -14,7 +14,7 @@ Almost everything lives inside `ScreenFamily` as closures (`grep -n` the name):
 | members | `statusPill`, `memberCard` (profile/edit buttons only for the owner or the member themselves, matching `requireManageOrSelf`), `removeMember`, `transferOwner`, `membersSection`, `familySummary`, `leaveFamily` |
 | panels (in-place forms) | `openPanel`/`closePanel`/`panelHeader` (close restores the list's scroll offset; an open panel is on gb-kit's back stack via `trackOverlay`, so back closes it), `memberFormControls`, `addChooserPanel`, `addPanel`, `editPanel`, `profilePanel`, `linkPanel`, `recipePanel` |
 | invites | `invitesSection` |
-| chores | `choresSection`, `choreRow`, `tickChore` (optimistic, `pendingChoreTicks` overlay), `assigneeChips` |
+| chores | `choresSection`, `choreRow`, `tickChore` (optimistic, `pendingChoreTicks` overlay), `assigneeChips`; an open chore's bell → `askReminderTime` → `api.remindChore` |
 | today's plan | `plannerSection` — the plan first (`planView(resp, actions)`), then the `builder` card (groceries + Plan for + Generate; `picked` = selected members still in the family; none picked disables Generate — the server reads an empty list as everyone), then `pastPlans`. `planView`: the **day rail** (`mealStop` per meal: node, name, `cookPicker`, `dishItem`s), actions, nutrition (mono numbers, `nutriStat`) with allergens as a checklist, and Buddy's notes folded in a `<details>`. `saveMenu` (openModal, not `window.prompt`), `assignCook` |
 | weekly plan | `weeklySection`, `weeklyView`, `weekDayCard` |
 | pantry | `pantrySection`, `pantryRow`, `restockButton` |
@@ -22,7 +22,7 @@ Almost everything lives inside `ScreenFamily` as closures (`grep -n` the name):
 | saved menus | `favouritesSection`, `favCard` (View, Use today, Delete) |
 | shell | `sectionNav`, `switchSection` (a section dropped to null reloads through `loadSection`), `activeSection`, `sectionBadge`, `emptyState`, `skeleton`, `paint` |
 
-Helpers: `initials`, `cap`, `onEnter(fn, ...inputs)` (Enter adds, as a form submit would), `toList`/`fromList` (comma string ↔ array), `fmtDay` (a LocalDate as a local
+Helpers: `nextBirthday(dob)` (29 Feb → 28th in a common year), `askReminderTime(title, sub, onTime)` (the time dialog both reminders use; a member card with a `dob` and not you gets a `calendar-heart` button that adds a yearly reminder via `api.addReminder`), `initials`, `cap`, `onEnter(fn, ...inputs)` (Enter adds, as a form submit would), `toList`/`fromList` (comma string ↔ array), `fmtDay` (a LocalDate as a local
 day, never `slice(0, 10)` of an ISO string), `field`. The grocery and
 pantry photo scans send `shrinkPhoto(file)` from notes.js (≤1280px JPEG), not the raw 4-12 MB photo.
 Messages go through `toast` (toast.js), never `alert()`.

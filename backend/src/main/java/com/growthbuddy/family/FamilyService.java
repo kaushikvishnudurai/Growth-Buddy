@@ -11,10 +11,14 @@ import com.growthbuddy.mentor.OpenAIClient.ChatTurn;
 import com.growthbuddy.notification.NotificationKind;
 import com.growthbuddy.notification.NotifyCategory;
 import com.growthbuddy.notification.NotificationService;
+import com.growthbuddy.reminder.ReminderService;
+import com.growthbuddy.reminder.RepeatFreq;
 import com.growthbuddy.user.User;
 import com.growthbuddy.user.UserClock;
 import com.growthbuddy.user.UserRepository;
 import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -98,6 +102,7 @@ public class FamilyService {
     private final FamilyEvents events;
     private final FamilyChoreRepository chores;
     private final FamilyRecipeRepository recipes;
+    private final ReminderService reminders;
     private final ObjectMapper json = new ObjectMapper();
 
     public FamilyService(
@@ -115,7 +120,8 @@ public class FamilyService {
             NotificationService notifications,
             FamilyEvents events,
             FamilyChoreRepository chores,
-            FamilyRecipeRepository recipes) {
+            FamilyRecipeRepository recipes,
+            ReminderService reminders) {
         this.families = families;
         this.members = members;
         this.plans = plans;
@@ -131,6 +137,7 @@ public class FamilyService {
         this.events = events;
         this.chores = chores;
         this.recipes = recipes;
+        this.reminders = reminders;
     }
 
     /* Against the user's own day, not the server's: @PastOrPresent used the
@@ -1568,6 +1575,45 @@ public class FamilyService {
         chores.delete(requireChore(fam, id));
         changed(fam, userId, "chores");
         return buildChores(fam, userId);
+    }
+
+    /**
+     * A calendar reminder for the chore, in the calendar of whoever does it: the
+     * assignee when they have an account here, otherwise the person asking (an
+     * unassigned chore, or one given to a profile with no account). It lands on
+     * the due day (today when there is none or it has passed; tomorrow when that
+     * time has already gone today) and repeats as the chore does.
+     * Returns who it went to, for the toast.
+     */
+    @Transactional
+    public ChoreRemindResponse remindChore(UUID userId, UUID id, LocalTime time) {
+        Family fam = requireMyFamily(userId);
+        requireMemberAccess(fam, userId);
+        FamilyChore c = requireChore(fam, id);
+        Optional<FamilyMember> assignee = c.getAssigneeMemberId() == null ? Optional.empty()
+                : members.findById(c.getAssigneeMemberId())
+                        .filter(m -> m.getDeletedAt() == null && m.getStatus() == MemberStatus.mapped
+                                && m.getLinkedUserId() != null);
+        UUID target = assignee.map(FamilyMember::getLinkedUserId).orElse(userId);
+        ZonedDateTime now = ZonedDateTime.now(clock.zoneOf(target));
+        LocalDate day = c.getDueDate() != null && c.getDueDate().isAfter(now.toLocalDate())
+                ? c.getDueDate() : now.toLocalDate();
+        if (day.equals(now.toLocalDate()) && time.isBefore(now.toLocalTime())) {
+            day = day.plusDays(1);
+        }
+        RepeatFreq repeat = switch (c.getRepeatRule() == null ? "none" : c.getRepeatRule()) {
+            case "daily" -> RepeatFreq.daily;
+            case "weekly" -> RepeatFreq.weekly;
+            default -> RepeatFreq.none;
+        };
+        reminders.create(target, "Chore: " + c.getTitle(), day, time, repeat);
+        if (target.equals(userId)) {
+            return new ChoreRemindResponse(null);
+        }
+        notifications.publish(target, NotificationKind.system, NotifyCategory.people,
+                displayName(userId) + " set a reminder for your chore: " + c.getTitle(),
+                day + " at " + time, fam.getId());
+        return new ChoreRemindResponse(assignee.get().getName());
     }
 
     private FamilyChore requireChore(Family fam, UUID id) {

@@ -16,10 +16,13 @@ import com.growthbuddy.mentor.OpenAIClient;
 import com.growthbuddy.notification.NotificationKind;
 import com.growthbuddy.notification.NotifyCategory;
 import com.growthbuddy.notification.NotificationService;
+import com.growthbuddy.reminder.ReminderService;
+import com.growthbuddy.reminder.RepeatFreq;
 import com.growthbuddy.user.UserClock;
 import com.growthbuddy.user.UserRepository;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
@@ -54,8 +57,9 @@ class FamilyServiceTest {
     private final FamilyEvents events = mock(FamilyEvents.class);
     private final FamilyChoreRepository chores = mock(FamilyChoreRepository.class);
     private final FamilyRecipeRepository recipes = mock(FamilyRecipeRepository.class);
+    private final ReminderService reminders = mock(ReminderService.class);
     private final FamilyService service = new FamilyService(families, members, plans, users, openai,
-            favourites, multiDay, pantry, shopping, dishPrefs, clock, notifications, events, chores, recipes);
+            favourites, multiDay, pantry, shopping, dishPrefs, clock, notifications, events, chores, recipes, reminders);
 
     private Family family(UUID owner) {
         Family f = new Family();
@@ -361,6 +365,35 @@ class FamilyServiceTest {
 
         service.addChore(OWNER, new ChoreRequest("Water the plants", owner.getId(), null, null));
         verify(notifications, never()).publish(eq(OWNER), any(), any(), anyString(), any(), any());
+    }
+
+    /** The reminder goes to the calendar of whoever does the chore; unassigned, to the asker's. */
+    @Test
+    void aChoreReminderLandsInTheAssigneesCalendar() {
+        clockAt(LocalDate.of(2026, 10, 10));
+        Family f = family(OWNER);
+        FamilyMember owner = row(f, OWNER, MemberStatus.mapped, Relationship.self);
+        FamilyMember partner = row(f, PARTNER, MemberStatus.mapped, Relationship.spouse);
+        partner.setName("Asha");
+        livesIn(OWNER, owner);
+        roster(f, owner, partner);
+        FamilyChore c = new FamilyChore();
+        c.setId(UUID.randomUUID());
+        c.setFamilyId(f.getId());
+        c.setTitle("Take out the bins");
+        c.setAssigneeMemberId(partner.getId());
+        c.setDueDate(LocalDate.of(2099, 1, 1));
+        c.setRepeatRule("weekly");
+        when(chores.findById(c.getId())).thenReturn(Optional.of(c));
+
+        assertThat(service.remindChore(OWNER, c.getId(), LocalTime.of(19, 0)).sentTo()).isEqualTo("Asha");
+        verify(reminders).create(PARTNER, "Chore: Take out the bins", LocalDate.of(2099, 1, 1),
+                LocalTime.of(19, 0), RepeatFreq.weekly);
+
+        c.setAssigneeMemberId(null);
+        assertThat(service.remindChore(OWNER, c.getId(), LocalTime.of(19, 0)).sentTo()).isNull();
+        verify(reminders).create(eq(OWNER), eq("Chore: Take out the bins"), any(), eq(LocalTime.of(19, 0)),
+                eq(RepeatFreq.weekly));
     }
 
     /** Invited is not mapped: an invitee cannot add to the chores of a family they have not joined. */
