@@ -8476,6 +8476,11 @@ button.gb-food-level {
 /* On a phone an open dialog is a bottom-heavy sheet, and the stack sat on its
    Cancel and Save. With one open the stack moves to the top of the screen. */
 @media (max-width: 1023px) {
+  /* Centred on a phone: pinned right at 340px it left a wide gap on the left. */
+  .gb-toast-stack {
+    right: 50%;
+    transform: translateX(50%);
+  }
   body:has(.gb-modal-overlay.is-open) .gb-toast-stack {
     top: calc(10px + env(safe-area-inset-top, 0px));
     bottom: auto;
@@ -11872,6 +11877,32 @@ textarea:focus-visible,
   opacity: 0.4;
   cursor: default;
 }
+/* Settings on a phone: real 44px targets, not only the ::before overlay (a
+   tab measured 28px, a segment 35px). The Layout arrows sit side by side at
+   32px, 12px apart, so each centred 44px overlay fills its pitch exactly and
+   neither overlaps the other; stacked they could only reach ~35px. */
+.gb-settings-body .gb-segnav-btn,
+.gb-settings-body .gb-seg {
+  min-height: 44px;
+}
+.gb-settings-body .gb-home-cust-moves {
+  flex-direction: row;
+  gap: 12px;
+}
+.gb-settings-body .gb-home-cust-move {
+  width: 32px;
+  height: 32px;
+}
+.gb-settings-body .gb-home-cust-move:first-child::before,
+.gb-settings-body .gb-home-cust-move:last-child::before {
+  top: 50%;
+  bottom: auto;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+/* The switch keeps its 46x26 look; its ::before (shared rule above) is the
+   46x44 target. */
 @media (hover: hover) {
   .gb-home-cust-move:not(:disabled):hover {
     border-color: var(--brand);

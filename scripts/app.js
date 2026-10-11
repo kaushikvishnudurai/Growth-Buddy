@@ -58,6 +58,8 @@ import {
   canEditDay,
   pctLabel,
   daysFrom,
+  addDays,
+  isoWeekStart,
   linkedHabitActivity,
   monthStart,
   isSlipRow,
@@ -75,7 +77,7 @@ import {
   LEDGER_ARRAYS,
   suggestCategory,
 } from './money-core.js';
-import { quickMoney, intentDay, dayWord, stripEmoji, capitalise } from './quick-add.js';
+import { quickMoney, quickCategory, currencySymbol, intentDay, dayWord, stripEmoji, capitalise } from './quick-add.js';
 import {
   ScreenCalendar,
   RenderCalendarToolbar,
@@ -564,7 +566,7 @@ function isConnectionToast(t) {
 
 /* `action` ({label, run}) puts one button on the toast — a reminder's Snooze.
    Tapping it runs it and dismisses the toast. */
-function pushToast(message, kind, durationMs, action) {
+function pushToast(message, kind, durationMs, action, opts) {
   let text = message || 'Something went wrong.';
   // The banner already says the connection is down; repeating "Check your
   // internet" under it said it twice. What's left to say is what happened to
@@ -576,6 +578,7 @@ function pushToast(message, kind, durationMs, action) {
     kind: kind || 'error',
     at: Date.now(), // when it arrived — toastStack resumes its entrance from here
     action: action || null,
+    icon: (opts && opts.icon) || null, // its own glyph over TOAST_ICON's (notes: 'trash-2')
   };
   state.toasts = [...state.toasts.filter((t) => t.message !== text), toast].slice(-4);
   dropStaleToastTimers();
@@ -613,8 +616,15 @@ function toastError(err, fallback) {
   return pushToast((err && err.message) || fallback || 'Something went wrong.', 'error');
 }
 
-function toastSuccess(message) {
-  pushToast(message, 'success', 1800);
+/* Quick add applies several trackers at once and says it in one summary
+   toast; each saver's own "Sleep saved." on top of it read as two answers.
+   ponytail: a counter, not a flag per saver; it also hushes an unrelated
+   success that lands during the apply (errors still show). Per-call `quiet`
+   options if that ever matters. */
+let quietSuccess = 0;
+function toastSuccess(message, opts) {
+  if (quietSuccess) return;
+  pushToast(message, 'success', 1800, null, opts);
 }
 
 // Hand the real implementations to the late-bound bridge that screens import.
@@ -623,7 +633,8 @@ registerToast({
   error: toastError,
   dismiss: dismissToast,
   // A toast with one button (e.g. "Undo") — the same action slot a reminder's Snooze uses.
-  action: (message, label, run) => pushToast(message, 'info', 6000, { label, run }),
+  // `opts.icon` swaps the kind's glyph ('trash-2' on "Note deleted.").
+  action: (message, label, run, opts) => pushToast(message, 'info', 6000, { label, run }, opts),
 });
 
 function score() {
@@ -632,8 +643,8 @@ function score() {
   }
   let sum = 0,
     parts = 0;
-  // Paused tasks count as no task, as on the server (ScoreService).
-  const tasks = state.tasks.filter((t) => !t.paused);
+  // Today's tasks only: tomorrow's and undated ones are not today's miss.
+  const tasks = tasksDueToday(state.tasks, new Date());
   if (tasks.length) {
     sum += tasks.filter((t) => t.done).length / tasks.length;
     parts++;
@@ -647,6 +658,24 @@ function score() {
     parts++;
   }
   return parts === 0 ? 0 : Math.round((sum / parts) * 100);
+}
+
+/* What today's score counts: open tasks due by the end of today (overdue
+   included) plus tasks finished today; undated open tasks and paused ones
+   don't count.
+   ponytail: same rule as home-order.js tasksForToday; drop this copy once both land. */
+function tasksDueToday(tasks, now) {
+  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime();
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  return (tasks || []).filter((t) => {
+    if (!t || t.paused) return false;
+    if (t.done) {
+      const at = t.doneAt ? new Date(t.doneAt).getTime() : NaN;
+      return at >= start && at < end;
+    }
+    const due = t.dueAt ? new Date(t.dueAt).getTime() : NaN;
+    return due < end;
+  });
 }
 
 /* score() prefers the server's number, which is exactly wrong in the moment
@@ -1607,6 +1636,13 @@ async function openFreezeCalendar() {
     }
     if (!covered && freezeTokensLeft() <= 0) {
       toastError(new Error('No freezes left this week.'), 'Out of freezes.');
+      return;
+    }
+    // A freeze bridges a run; after a miss there is no run to bridge, and the
+    // token was spent on nothing.
+    const prevRow = byDate[addDays(key, -1)];
+    if (!covered && !(prevRow && (prevRow.done || prevRow.protectedDay))) {
+      pushToast('Nothing to protect: the day before wasn’t done, so there’s no streak to keep.', 'info', 4200);
       return;
     }
     toggling = true;
@@ -3289,7 +3325,16 @@ function openMeasuredCheckin(habit) {
     inputmode: 'decimal',
     min: '0',
     step: habit.metric === 'steps' ? '1' : '0.1',
-    placeholder: habit.metric === 'steps' ? 'e.g. 6500' : 'e.g. 5.2',
+    // Last time's number when there is one (any metric), else an example in
+    // the habit's own unit: "e.g. 5.2" on a minutes habit read as kilometres.
+    placeholder:
+      habit.lastValue != null
+        ? 'Last time ' + (Math.round(habit.lastValue * 10) / 10).toLocaleString()
+        : habit.metric === 'steps'
+          ? 'e.g. 6500'
+          : habit.metric === 'minutes'
+            ? 'e.g. 10'
+            : 'e.g. 5.2',
     autofocus: true,
     // Not done yet: last time's number ("same as last time"), so a usual day is one tap.
     value: String((editing ? habit.todayValue : habit.metric !== 'steps' ? habit.lastValue : null) ?? ''),
@@ -3321,7 +3366,7 @@ function openMeasuredCheckin(habit) {
           min: '1',
           max: '1440',
           step: '1',
-          placeholder: 'e.g. 26',
+          placeholder: habit.lastDurationMin ? 'Last time ' + habit.lastDurationMin : 'e.g. 26',
           value: String((editing ? habit.todayDurationMin : habit.lastDurationMin) ?? ''),
         })
       : null;
@@ -3397,6 +3442,9 @@ async function plainToggleHabit(id) {
   if (!togglesInFlight.claim(id)) return;
   const before = { score: state.score };
   let saved = false;
+  // Ticking a rest day hands its freeze back (the server refunds it).
+  const wasRest = state.habits.some((h) => h.id === id && h.protectedToday && !h.doneToday);
+  const tokensBefore = freezeTokensLeft();
   state.habits = state.habits.map((h) => (h.id === id ? { ...h, doneToday: !h.doneToday } : h));
   state.score = optimisticScore();
   render();
@@ -3409,6 +3457,10 @@ async function plainToggleHabit(id) {
     state.habits = state.habits.map((h) => (h.id === updated.id ? updated : h));
     saved = true;
     reconcileStreakFreeze(updated);
+    // Said only when the count really went back up, not on the hope it did.
+    if (wasRest && updated.doneToday && freezeTokensLeft() > tokensBefore) {
+      toastSuccess('Done. Freeze returned, ' + freezeTokensLeft() + ' left.');
+    }
     const todayScore = await api('/api/score/today');
     state.score = todayScore && typeof todayScore.score === 'number' ? todayScore.score : score();
     await refreshCurrentUser();
@@ -3737,7 +3789,7 @@ function sleepPayloadFromHours(hours, quality) {
   return {
     bedtime: fmt(bed),
     wakeTime: '07:00',
-    quality: quality === 'ok' ? 'okay' : quality || 'okay',
+    quality: quality === 'ok' ? 'okay' : quality || null,
     note: '',
   };
 }
@@ -3757,7 +3809,8 @@ function addQuickExpense(it) {
     amount: q.amount,
     ...(q.orig ? { orig: q.orig } : {}),
     // The tag Money's own form would start on: this note's past tag, then keywords.
-    category: (note && suggestCategory(note, base)) || 'others',
+    // Then the user's fixed default tag (Money settings), then Others.
+    category: quickCategory(base, note && suggestCategory(note, base)),
     date: q.date,
     note,
     createdAt: Date.now(),
@@ -3947,11 +4000,15 @@ function describeIntent(it) {
       // such and starts unticked, so it is never booked 1:1 unseen.
       const q = quickMoney(state.money, it, it.type, todayKeyNow());
       const note = capitalise(String(it.note || '').trim());
+      // The account it will move, as Money's own form would pick it.
+      const acc = q.accountId && ((state.money && state.money.accounts) || []).find((a) => a.id === q.accountId);
       return {
         icon: 'wallet',
         label: it.type === 'expense' ? 'Expense' : 'Income',
-        detail: withDay(q.label + (note ? ' · ' + note : ''), it),
+        detail: withDay(q.label + (note ? ' · ' + note : '') + (acc && acc.name ? ' · ' + acc.name : ''), it),
         unticked: !!q.noRate,
+        // The symbol a rate is missing for: the preview offers to set it.
+        noRate: q.noRate ? currencySymbol(String(it.currency).toUpperCase()) : null,
       };
     }
     case 'task_done': {
@@ -4153,13 +4210,18 @@ async function applyQuickAdd(intents) {
   const ordered = intents
     .filter((it) => !CONTROL_INTENTS.has(it.type))
     .concat(intents.filter((it) => CONTROL_INTENTS.has(it.type)));
-  for (const it of ordered) {
-    try {
-      const ref = await applyIntent(it);
-      if (ref) applied.push({ it, ref });
-    } catch (_) {
-      /* skip a single bad intent; keep applying the rest */
+  quietSuccess++;
+  try {
+    for (const it of ordered) {
+      try {
+        const ref = await applyIntent(it);
+        if (ref) applied.push({ it, ref });
+      } catch (_) {
+        /* skip a single bad intent; keep applying the rest */
+      }
     }
+  } finally {
+    quietSuccess--;
   }
   return applied;
 }
@@ -4308,7 +4370,15 @@ function setThemeChoice(value) {
     return true;
   }
   if (value !== 'dark' && value !== 'light') return false;
+  // Saved even when it already looks that way: Dark picked while the phone
+  // is dark has to stop following the phone.
   if (state.theme !== value) toggleTheme();
+  else {
+    try {
+      CacheStorage.setItem(THEME_KEY, value);
+    } catch (_) {}
+    saveUiPrefs({ theme: value });
+  }
   return true;
 }
 
@@ -5157,16 +5227,19 @@ function loggedAtFor(dayKey) {
   return new Date(y, m - 1, d, 12, 0, 0).toISOString();
 }
 
-async function saveSleepEntry(payload) {
+async function saveSleepEntry(payload, opts) {
   const key = payload.date || todayKeyNow();
   // Optimistic local update + cache mirror, then persist to the backend.
   state.wellness = Object.assign(emptyWellness(), state.wellness || {});
+  // A quick "Yes" names the times only: keep the day's own quality, never
+  // invent one (it used to save "okay"/last night's and Report averaged it).
+  const quality = payload.quality || ((state.wellness.sleepByDate || {})[key] || {}).quality || null;
   state.wellness.sleepByDate = Object.assign({}, state.wellness.sleepByDate || {}, {
     [key]: {
       date: key,
       bedtime: payload.bedtime || '',
       wakeTime: payload.wakeTime || '',
-      quality: payload.quality || 'okay',
+      quality,
       note: payload.note || '',
       updatedAt: new Date().toISOString(),
     },
@@ -5180,11 +5253,11 @@ async function saveSleepEntry(payload) {
         date: key,
         bedtime: payload.bedtime || null,
         wakeTime: payload.wakeTime || null,
-        quality: payload.quality || 'okay',
+        quality,
         note: payload.note || null,
       }),
     });
-    toastSuccess('Sleep saved.');
+    if (!(opts && opts.quiet)) toastSuccess('Sleep saved.');
   } catch (err) {
     toastError(err, 'Saved locally, but could not sync sleep.');
   }
@@ -5197,7 +5270,7 @@ async function saveMoodEntry(payload) {
   // and invents no energy (it used to record "medium" nobody chose).
   const prev = (state.wellness.moodByDate || {})[key] || {};
   const energy = payload.energy || prev.energy || null;
-  const stress = payload.stress || prev.stress || 'normal';
+  const stress = payload.stress || prev.stress || null;
   const note = payload.note !== undefined ? payload.note : prev.note;
   state.wellness.moodByDate = Object.assign({}, state.wellness.moodByDate || {}, {
     [key]: {
@@ -7313,17 +7386,18 @@ function customisePanes() {
     h(
       'div',
       { class: 'gb-field-hint', style: { marginBottom: '8px' } },
-      'Light is easier to read in daylight. Dark is easier at night.'
+      'Light is easier to read in daylight. Dark is easier at night. System follows the phone.'
     ),
+    // Nothing picked = following the phone, and that is shown as a choice so
+    // it can be picked again after trying Light or Dark.
     segmented(
       [
+        { value: 'system', label: 'System' },
         { value: 'light', label: 'Light' },
         { value: 'dark', label: 'Dark' },
       ],
-      state.theme,
-      (v) => {
-        if (v !== state.theme) toggleTheme();
-      }
+      pickedTheme() || (state.user && state.user.uiPrefs && state.user.uiPrefs.theme) || 'system',
+      (v) => setThemeChoice(v)
     ).node,
     h('div', { class: 'gb-settings-sec-label', style: { marginTop: '18px' } }, 'Look'),
     h(
@@ -7669,6 +7743,17 @@ function openDeleteAccount() {
    Signed-in devices + password change. Used to be its own modal reachable from
    a third "Security" item in the account menu; it's a section of Settings →
    Account now. Returns the nodes; the caller mounts them. */
+/* A session's address in words where the raw one means nothing to a person:
+   "0:0:0:0:0:0:0:1" is the machine itself, 192.168.x a home network. Real
+   public addresses stay as they are. */
+function ipLabel(ip) {
+  const a = String(ip || '').trim().toLowerCase();
+  if (!a) return 'unknown IP';
+  if (/^(127\.|::1$|0:0:0:0:0:0:0:1$|::ffff:127\.)/.test(a)) return 'This computer';
+  if (/^(::ffff:)?(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.)|^f[cd][0-9a-f]{2}:|^fe80:/.test(a)) return 'Local network';
+  return ip;
+}
+
 function securitySection() {
   const sessionsWrap = h(
     'div',
@@ -7695,7 +7780,7 @@ function securitySection() {
               h(
                 'div',
                 { class: 'gb-sec-row-meta' },
-                (s.ip || 'unknown IP') + ' · last used ' + relativeTime(s.lastUsedAt)
+                ipLabel(s.ip) + ' · last used ' + relativeTime(s.lastUsedAt)
               )
             ),
             s.current
@@ -7987,7 +8072,7 @@ function accountSecuritySections() {
     .catch(() => tfaBox.replaceChildren(h('div', { class: 'gb-empty-sm' }, 'Could not load two-step sign-in.')));
 
   return [
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '20px' } }, 'Email'),
+    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '20px' } }, 'Change email'),
     emailBox,
     h('div', { class: 'gb-settings-sec-label', style: { marginTop: '20px' } }, 'Two-step sign-in'),
     tfaBox,
@@ -9325,8 +9410,8 @@ function openProfileSettings(initialTab) {
       return o;
     })
   );
-  const waterFrom = h('input', { type: 'time', class: 'gb-input', value: waterPrefs.from });
-  const waterTo = h('input', { type: 'time', class: 'gb-input', value: waterPrefs.to });
+  const waterFrom = h('input', { type: 'time', class: 'gb-input', value: waterPrefs.from, 'aria-label': 'Water reminders from' });
+  const waterTo = h('input', { type: 'time', class: 'gb-input', value: waterPrefs.to, 'aria-label': 'Water reminders until' });
   const waterFields = h(
     'div',
     { style: { display: waterPrefs.on ? '' : 'none' } },
@@ -11226,12 +11311,14 @@ const SNAP_ROUTES = {
 // closed by onLeave, reopens with it), else focuses this box again.
 function quickAddBox({ onLeave, onCancel, text = '' } = {}) {
   // Natural-language quick-add: type it once, we sort it into the right trackers.
+  // Short enough not to be cut off on a phone; no money example when Money is
+  // off. The placeholder and the can't-read-that toast share it.
+  const example = featureOn('money') ? 'spent 200 on lunch, slept 7h' : 'slept 7h, call mom at 6';
   const qaInput = h('input', {
     type: 'text',
     class: 'gb-input',
     value: text,
-    // Short enough not to be cut off on a phone; no money example when Money is off.
-    placeholder: featureOn('money') ? 'e.g. spent 200 on lunch, slept 7h' : 'e.g. slept 7h, call mom at 6',
+    placeholder: 'e.g. ' + example,
     'aria-label': 'Quick log in your own words',
     enterkeyhint: 'send',
     autocomplete: 'off',
@@ -11258,8 +11345,8 @@ function quickAddBox({ onLeave, onCancel, text = '' } = {}) {
             : r.unavailable
               ? "Couldn't reach the assistant, and couldn't read that without it. Try again?"
               : !r.configured || r.limited
-                ? 'Couldn’t read that. Try short phrases like “spent 200 on lunch, slept 7h”.'
-                : "Couldn't find anything to log there — try being more specific.",
+                ? 'Couldn’t read that. Try short phrases like “' + example + '”.'
+                : 'Couldn’t find anything to log there. Try short phrases like “' + example + '”.',
           r.skipped.length ? 'info' : 'error',
           4200
         );
@@ -11920,7 +12007,7 @@ const METRIC_UNIT = { km: 'km', steps: 'steps', minutes: 'min' };
 function metricSummary(metric, value, durationMin) {
   if (!metric || metric === 'none' || value == null) return '';
   const unit = METRIC_UNIT[metric] || '';
-  const parts = [metric === 'steps' ? Math.round(value) + ' steps' : value + ' ' + unit];
+  const parts = [metric === 'steps' ? Math.round(value).toLocaleString() + ' steps' : value + ' ' + unit];
   if (durationMin) {
     parts.push(durationMin + ' min');
     if (metric === 'km' && durationMin > 0) {
@@ -12089,6 +12176,20 @@ function habitHistoryPanel(habit) {
       toggleLabel = done ? 'Un-tick' : 'Mark done';
       toggleIcon = done ? 'undo-2' : 'check';
     }
+    // What was logged that day ("7,300 steps"). History rows carry `value` /
+    // `durationMin` once the server sends them; today's comes off the habit.
+    const isToday = key === accountTodayKey();
+    const logged =
+      done && !quit
+        ? metricSummary(
+            habit.metric,
+            row && row.value != null ? row.value : isToday ? habit.todayValue : null,
+            row && row.durationMin != null ? row.durationMin : isToday ? habit.todayDurationMin : null
+          )
+        : '';
+    // On a done day the likely act is the note, so Save note leads and
+    // Un-tick steps back; on an open day Mark done is the point.
+    const untick = done && !quit;
     return h(
       'div',
       { class: 'gb-hh-pop', role: 'group', 'aria-label': fmtDayKey(key) },
@@ -12112,6 +12213,7 @@ function habitHistoryPanel(habit) {
           Icon('x', { size: 16, sw: 2.4 })
         )
       ),
+      logged ? h('div', { class: 'gb-field-hint' }, 'Logged ' + logged) : null,
       note,
       h(
         'div',
@@ -12120,7 +12222,7 @@ function habitHistoryPanel(habit) {
           'button',
           {
             type: 'button',
-            class: 'gb-btn ' + (quit && done ? 'gb-btn--soft' : 'gb-btn--primary'),
+            class: 'gb-btn ' + ((quit && done) || untick ? 'gb-btn--soft' : 'gb-btn--primary'),
             disabled: busy,
             onclick: () => saveDay(key, !done, note.value.trim()),
           },
@@ -12131,7 +12233,7 @@ function habitHistoryPanel(habit) {
           'button',
           {
             type: 'button',
-            class: 'gb-btn gb-btn--soft',
+            class: 'gb-btn ' + (untick ? 'gb-btn--primary' : 'gb-btn--soft'),
             disabled: busy,
             onclick: () => saveDay(key, done, note.value.trim()),
           },
@@ -12156,11 +12258,24 @@ function habitHistoryPanel(habit) {
     });
     // The server's longest only grows, and remembers runs older than this window.
     const best = Math.max(stats.best, Number(habit.longestStreak) || 0);
-    const weeks = heatmapWeeks({ days: rows, since, today, cadence, kind });
+    // From the habit's first week, not a fixed 12: a new habit's grid was
+    // mostly "before this habit started" with its real days packed in a corner.
+    // At least 3 weeks, so a habit started this week still reads as a grid.
+    const sinceWeeks = since
+      ? Math.floor(daysFrom(isoWeekStart(since), isoWeekStart(today)) / 7) + 1
+      : 12;
+    const weekCount = Math.min(12, Math.max(3, sinceWeeks));
+    const weeks = heatmapWeeks({ days: rows, since, today, cadence, kind, weeks: weekCount });
     let openState = null;
     const grid = h(
       'div',
-      { class: 'gb-hh-grid', role: 'group', 'aria-label': 'Last 12 weeks' },
+      {
+        class: 'gb-hh-grid',
+        role: 'group',
+        'aria-label': 'Last ' + weekCount + ' weeks',
+        // The CSS assumes 12 columns; fewer get cell-sized ones, not 1fr strips.
+        style: weekCount < 12 ? { gridTemplateColumns: 'repeat(' + weekCount + ', minmax(0, 28px))' } : null,
+      },
       weeks.map((w) =>
         h(
           'div',
@@ -12582,6 +12697,14 @@ function openHabitForm(habit) {
       });
     },
   });
+  // Delete is a quiet text button: a full red bar between Save and Cancel took
+  // a third of a phone screen for the action least often wanted. It still
+  // asks first (confirmDelete).
+  const del = habit && body.closest('.gb-modal') && body.closest('.gb-modal').querySelector(':scope > .gb-btn--danger');
+  if (del) {
+    del.className = 'gb-btn gb-btn--ghost';
+    Object.assign(del.style, { color: 'var(--danger)', width: 'auto', alignSelf: 'center', marginTop: '4px' });
+  }
   // A new habit starts at its name. Editing opens on the history: focusing the
   // name scrolled it away and raised a phone keyboard over it.
   if (!habit) setTimeout(() => nameInput.focus(), 60);
@@ -12595,6 +12718,10 @@ function openQuickAddPreview(rows, note, onLogged, onCancel) {
   // A foreign amount with no rate set (`unticked`) starts off: the user decides.
   const chosen = rows.map((r) => !r.d.unknown && !r.d.unticked);
   let logged = false;
+  let primaryBtn = null;
+  // Nothing ticked = nothing to log: the button says so by being off.
+  const syncPrimary = () => primaryBtn && (primaryBtn.disabled = !chosen.some(Boolean));
+  const boxes = [];
   const list = h(
     'div',
     { class: 'gb-qa-preview' },
@@ -12607,27 +12734,86 @@ function openQuickAddPreview(rows, note, onLogged, onCancel) {
         'aria-label': r.d.label + ': ' + r.d.detail,
         onchange: (e) => {
           chosen[i] = e.target.checked;
+          syncPrimary();
         },
       });
-      return h(
-        'label',
-        { class: 'gb-qa-row' + (r.d.unknown ? ' is-unknown' : '') },
-        box,
-        h('span', { class: 'gb-qa-icon' }, Icon(r.d.icon, { size: 16, sw: 2.4 })),
+      boxes[i] = box;
+      const detail = h('span', null, r.d.detail || '');
+      return [
         h(
-          'span',
-          { class: 'gb-qa-copy' },
-          h('strong', null, r.d.label),
-          h('span', null, r.d.detail || '')
-        )
-      );
+          'label',
+          { class: 'gb-qa-row' + (r.d.unknown ? ' is-unknown' : '') },
+          box,
+          h('span', { class: 'gb-qa-icon' }, Icon(r.d.icon, { size: 16, sw: 2.4 })),
+          h('span', { class: 'gb-qa-copy' }, h('strong', null, r.d.label), detail)
+        ),
+        r.d.noRate ? rateRow(r, i, detail) : null,
+      ];
     })
   );
+  /* A foreign amount with no rate: "1 $ = ₹ [  ] Set" writes the rate into the
+     Money doc (settings.fx, the same key Customise > Other currencies keeps),
+     then re-reads the row converted and ticks it. */
+  function rateRow(r, i, detail) {
+    const home = (state.money && state.money.currency) || '₹';
+    const sym = r.d.noRate;
+    const input = h('input', {
+      type: 'number',
+      inputmode: 'decimal',
+      min: '0',
+      step: 'any',
+      class: 'gb-input',
+      style: { width: '6.5rem', minHeight: '44px' },
+      'aria-label': 'Value of 1 ' + sym + ' in ' + home,
+      // Enter sets the rate; it must not reach the sheet's submit-on-Enter.
+      onkeydown: (e) => {
+        if (e.key !== 'Enter' || e.isComposing) return;
+        e.preventDefault();
+        e.stopPropagation();
+        setBtn.click();
+      },
+    });
+    let setBtn = null;
+    const wrap = h(
+      'div',
+      // Inline layout: the preview's CSS isn't this change's to touch.
+      { class: 'gb-qa-rate', style: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', fontSize: '0.8125rem', padding: '0 4px' } },
+      h('span', null, 'Set a ' + sym + ' rate: 1 ' + sym + ' = ' + home),
+      input,
+      (setBtn = h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--soft gb-btn--compact',
+          onclick: () => {
+            const rate = Number(input.value);
+            if (!(rate > 0)) {
+              input.focus();
+              return;
+            }
+            const base = state.money;
+            const next = normalizeMoney(base);
+            next.settings.fx = { ...(next.settings.fx || {}), [sym]: rate };
+            saveMoney(next, base);
+            r.d = describeIntent(r.it);
+            detail.textContent = r.d.detail || '';
+            chosen[i] = boxes[i].checked = true;
+            syncPrimary();
+            wrap.remove();
+            if (primaryBtn) primaryBtn.focus();
+          },
+        },
+        'Set'
+      ))
+    );
+    return wrap;
+  }
+  const one = rows.length === 1;
   openModal({
-    title: 'Log these?',
+    title: one ? 'Log this?' : 'Log these?',
     sub: note || 'Switch off anything it read wrong.',
     body: list,
-    primary: 'Log them',
+    primary: one ? 'Log it' : 'Log them',
     errorMessage: 'Could not log that.',
     onPrimary: async () => {
       const picked = rows.filter((_, i) => chosen[i]).map((r) => r.it);
@@ -12635,18 +12821,20 @@ function openQuickAddPreview(rows, note, onLogged, onCancel) {
       const applied = await applyQuickAdd(picked);
       if (!applied.length) throw new Error('None of those could be logged.');
       logged = true;
-      // Says where things went. Undo is offered when all of it was Money
-      // entries, the one kind removable in place. ponytail: other kinds have
-      // their own delete paths (task, water, food); wire them here if asked.
+      // One toast says where things went. Undo is offered whenever Money got
+      // an entry (the one kind removable in place) and takes back just that
+      // part. ponytail: other kinds have their own delete paths (task, water,
+      // food); wire them here if asked.
       const moneyIds = new Set(
         applied.filter((a) => a.it.type === 'expense' || a.it.type === 'income').map((a) => a.ref)
       );
-      if (moneyIds.size === applied.length) {
+      if (moneyIds.size) {
+        const all = moneyIds.size === applied.length;
         pushToast(loggedToLine(applied), 'success', 6000, {
-          label: 'Undo',
+          label: all ? 'Undo' : 'Undo Money',
           run: () => {
             removeQuickMoney(moneyIds);
-            toastSuccess('Removed from Money.');
+            pushToast(all ? 'Undone.' : 'Undone in Money. The rest stays logged.', 'success', 3000);
           },
         });
       } else {
@@ -12656,6 +12844,15 @@ function openQuickAddPreview(rows, note, onLogged, onCancel) {
       await loadData();
     },
   });
+  // The sheet opened focused on itself, which drew the focus ring round the
+  // whole dialog. Start on the primary instead (a11y.js honours [autofocus]),
+  // so Enter logs what was read.
+  primaryBtn = list.closest('.gb-modal') && list.closest('.gb-modal').querySelector('.gb-btn--primary');
+  // Nothing ticked because a rate is missing: start on the rate box instead.
+  const firstRate = list.querySelector('.gb-qa-rate input');
+  const start = chosen.some(Boolean) || !firstRate ? primaryBtn : firstRate;
+  if (start) start.setAttribute('autofocus', '');
+  syncPrimary();
   // openModal has no close hook: the preview's own node leaving the page is
   // the close. Not logged by then = cancelled, and the typed line goes back.
   if (onCancel) {
@@ -13005,6 +13202,32 @@ function relativeTime(iso) {
   });
 }
 
+/* What an empty bell still owes the user: the most overdue High task and the
+   longest daily streak that breaks at midnight if today stays unticked. */
+function bellPressing() {
+  const out = [];
+  const now = Date.now();
+  const late = (state.tasks || [])
+    .filter((t) => !t.done && !t.paused && t.priority === 'High' && t.dueAt && new Date(t.dueAt).getTime() < now)
+    .sort((a, b) => new Date(a.dueAt) - new Date(b.dueAt))[0];
+  if (late) {
+    out.push({ title: late.title, sub: 'High priority, overdue: due ' + relativeTime(late.dueAt).replace('Just now', 'just now'), run: () => openEditTask(late) });
+  }
+  const risk = featureOn('habits')
+    ? (state.habits || [])
+        .filter((x) => !isQuitHabit(x) && (x.cadence || 'daily') === 'daily' && habitDue(x) && !x.doneToday && !x.protectedToday && effectiveStreak(x) > 0)
+        .sort((a, b) => effectiveStreak(b) - effectiveStreak(a))[0]
+    : null;
+  if (risk) {
+    out.push({
+      title: risk.name,
+      sub: 'Your ' + effectiveStreak(risk) + '-day streak ends at midnight. Tick it today.',
+      run: () => setScreen('habits'),
+    });
+  }
+  return out;
+}
+
 /* ---- Bell dropdown ---- */
 function notificationDropdown() {
   if (!state.notifOpen) return null;
@@ -13034,7 +13257,8 @@ function notificationDropdown() {
         : null
     )
   );
-  card.appendChild(
+  // Nothing at all to filter: the chips only took room above the empty line.
+  if (state.notifications.length) card.appendChild(
     h(
       'div',
       { class: 'gb-notif-chips', role: 'group', 'aria-label': 'Show notifications about' },
@@ -13055,7 +13279,33 @@ function notificationDropdown() {
       )
     )
   );
-  if (!items.length) {
+  const pressing = !items.length && notifFilter === 'all' ? bellPressing() : [];
+  if (pressing.length) {
+    // "All caught up" was untrue with a High task overdue and a streak ending
+    // tonight: those are what's waiting, one line each, a tap to act.
+    pressing.forEach((p) =>
+      card.appendChild(
+        h(
+          'div',
+          { class: 'gb-notif-row is-unread' },
+          h('div', { class: 'gb-notif-dot' }),
+          h(
+            'div',
+            {
+              class: 'gb-notif-body',
+              ...activate(() => {
+                state.notifOpen = false;
+                repaintOverlays();
+                p.run();
+              }),
+            },
+            h('div', { class: 'gb-notif-title' }, p.title),
+            h('div', { class: 'gb-notif-sub' }, p.sub)
+          )
+        )
+      )
+    );
+  } else if (!items.length) {
     card.appendChild(
       h(
         'div',
@@ -13178,7 +13428,7 @@ function toastStack() {
       h(
         'span',
         { class: 'gb-toast-icon', 'aria-hidden': 'true' },
-        Icon(TOAST_ICON[t.kind] || 'circle-alert', {
+        Icon(t.icon || TOAST_ICON[t.kind] || 'circle-alert', {
           size: 15,
           sw: 2.4,
         })
@@ -13361,31 +13611,40 @@ function ScreenHabits() {
         : null,
       !reordering &&
         !isQuitHabit(habit) &&
+        habit.active !== false &&
         (habit.cadence || 'daily') === 'daily' &&
         !habit.doneToday
         ? (function () {
             const resting = !!habit.protectedToday;
             const noTokens = !resting && freezeTokensLeft() <= 0;
+            // A 0- or 1-day streak has nothing worth a freeze: it was spent for nothing.
+            const tooShort = !resting && effectiveStreak(habit) <= 1;
             return h(
               'button',
               {
                 type: 'button',
                 class: 'gb-rem-del' + (resting ? ' is-active' : ''),
-                disabled: noTokens,
+                disabled: noTokens || tooShort,
                 'aria-pressed': String(resting),
-                'aria-label': (resting ? 'Remove rest day: ' : 'Mark today a rest day: ') + habit.name,
+                'aria-label':
+                  (resting ? 'Remove rest day: ' : 'Mark today a rest day: ') +
+                  habit.name +
+                  (tooShort ? '. Available once the streak is 2 days' : ''),
                 title: resting
                   ? 'Rest day — your streak holds today. Tap to undo.'
                   : noTokens
                     ? 'No freezes left this week'
-                    : 'Mark today a rest day (spends a freeze)',
+                    : tooShort
+                      ? 'Rest days protect a streak of 2 days or more'
+                      : 'Mark today a rest day (spends a freeze)',
                 onclick: () => toggleRestDay(habit.id, !resting),
               },
               Icon('snowflake', { size: 16, color: resting ? 'var(--brand)' : undefined })
             );
           })()
         : null,
-      reordering
+      // Paused: nothing is owed, so there is nothing to tick (the row says "Paused").
+      reordering || habit.active === false
         ? null
         : isQuitHabit(habit)
           ? h(
@@ -13609,6 +13868,11 @@ async function setFeature(key, value) {
   state.user = Object.assign({}, state.user, updated, { token });
   saveSession(state.user, token);
   render();
+  // Home's Outlook ranks over the insight history, which was read under the
+  // old switches: with Water off it showed no top insight until a reload.
+  // Read it again now (it repaints Home when it lands).
+  insightHistoryAt = 0;
+  loadInsightHistory();
 }
 /* One feature's on/off row: Settings › Layout and first-run setup both draw
    this, so the switch and its rollback-on-failure live in one place. */
@@ -13753,7 +14017,7 @@ const SCREENS = {
         onAddSleep: openSleepSchedule,
         onAddMood: openMoodCheckin,
         onStarterPack: openStarterPacks,
-        onConfirmSleep: (u) => saveSleepEntry({ bedtime: u.bedtime, wakeTime: u.wakeTime, quality: u.quality || 'okay' }),
+        onConfirmSleep: (u) => saveSleepEntry({ bedtime: u.bedtime, wakeTime: u.wakeTime }),
         onQuickMood: (mood) => saveMoodEntry({ mood }),
         onOnboardDismiss: (opts) => {
           saveUiPrefs({ onboardingDone: true });
