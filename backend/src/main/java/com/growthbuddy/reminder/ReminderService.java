@@ -191,11 +191,19 @@ public class ReminderService {
                 null, null, null, null, null, null, null, null, null));
     }
 
+    static final int MAX_OCCURRENCE_SPAN_DAYS = 400;
+
     /** Expand all of a user's reminders into concrete occurrences within [from, to]. */
     @Transactional(readOnly = true)
     public List<OccurrenceResponse> occurrences(UUID userId, LocalDate from, LocalDate to) {
         if (from == null || to == null || to.isBefore(from)) {
             throw ApiException.badRequest("valid 'from' and 'to' dates are required");
+        }
+        // The whole list is built in heap before it is serialised: an open range
+        // (0001..9999) was one 725 MB response (CRB-3). 400 days, like the
+        // history endpoints' clamp; the calendar asks for a month.
+        if (java.time.temporal.ChronoUnit.DAYS.between(from, to) > MAX_OCCURRENCE_SPAN_DAYS) {
+            throw ApiException.badRequest("Ask for at most " + MAX_OCCURRENCE_SPAN_DAYS + " days at a time.");
         }
         List<CalendarReminder> reminders = repo.findByUserId(userId);
         // Resolved once for the whole expansion: it is the same answer for every
