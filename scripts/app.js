@@ -1615,6 +1615,22 @@ function todayKey() {
   return sharedTodayKey(state.user && state.user.timezone);
 }
 
+/* The clock that goes with todayKey(): HH:MM in the account's zone, the one
+   reminders ring in. The device's when the account has none (or an unknown id). */
+function accountNowHHMM() {
+  const zone = state.user && state.user.timezone;
+  try {
+    return new Intl.DateTimeFormat('en-GB', {
+      timeZone: zone || undefined,
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).format(new Date());
+  } catch (_) {
+    return new Date().toTimeString().slice(0, 5);
+  }
+}
+
 function yesterdayKey() {
   return shiftDayKey(todayKey(), -1);
 }
@@ -4074,13 +4090,12 @@ async function parseQuickAdd(text) {
     .map((hb) => hb.name)
     .filter(Boolean)
     .slice(0, 100);
-  // The device's own date and clock: what "tomorrow" and "in 20 minutes" mean
-  // to the person speaking.
-  const d = new Date();
-  const now = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  // The account's date and clock, as one pair: what "tomorrow" and "in 20
+  // minutes" mean where its reminders ring. The device clock beside the
+  // account's day read "at 9" against the wrong hour for part of every night.
   const res = await api('/api/quick-add', {
     method: 'POST',
-    body: JSON.stringify({ text, habits, today: todayKey(), now }),
+    body: JSON.stringify({ text, habits, today: todayKey(), now: accountNowHHMM() }),
   });
   // A sentence can't write into a tracker the user switched off, and the
   // preview says which were dropped. Model text loses its emoji here, so what
@@ -5135,6 +5150,7 @@ let waterFlushing = false;
 async function flushWaterQueue() {
   if (waterFlushing || !state.user) return;
   waterFlushing = true;
+  let sentAny = false; // nothing queued: nothing changed, so no repaint (perf.e2e counts boot paints)
   try {
     await CacheStorage.ready();
     const send = (x) =>
@@ -5144,7 +5160,9 @@ async function flushWaterQueue() {
         headers: { 'Idempotency-Key': x.idemKey || 'water-' + x.id },
         body: JSON.stringify({ amountMl: x.amountMl, loggedAt: x.loggedAt, drinkType: x.drinkType || null }),
       });
-    await replayOldestFirst(loadWaterQueue(), send, {
+    const queued = loadWaterQueue();
+    sentAny = queued.length > 0;
+    await replayOldestFirst(queued, send, {
       isOffline: offlineError,
       onSent: (x, updated) => {
         pendingWater.delete(x.id);
@@ -5168,7 +5186,7 @@ async function flushWaterQueue() {
     });
   } finally {
     waterFlushing = false;
-    render();
+    if (sentAny) render();
   }
 }
 
@@ -8540,13 +8558,6 @@ async function toggleReminderDone(id, key, done) {
    Times land in the account's zone, the one the scheduler rings them in. */
 function openIcsImportDialog() {
   const zone = (state.user && state.user.timezone) || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-  const nowHHMM = () => {
-    try {
-      return new Intl.DateTimeFormat('en-GB', { timeZone: zone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date());
-    } catch (_) {
-      return new Date().toTimeString().slice(0, 5);
-    }
-  };
   import('./import-ui.js')
     .then((m) =>
       m.openIcsImport({
@@ -8554,7 +8565,7 @@ function openIcsImportDialog() {
         existing: state.reminders,
         zone,
         today: accountTodayKey,
-        now: nowHHMM,
+        now: accountNowHHMM,
         onDone: async () => {
           state.reminders = await api('/api/reminders');
           reSyncDeviceAlarms();
@@ -8665,7 +8676,8 @@ function loadWaterUsualHours() {
       const changed = JSON.stringify(hours) !== JSON.stringify(state.waterUsualHours);
       state.waterUsualHours = hours;
       if (nudge) reSyncDeviceAlarms();
-      if (changed && state.screen === 'home' && !state.loading) render();
+      // Before wave 2 lands (achReady), loadSecondaryData's own repaint shows it.
+      if (changed && state.screen === 'home' && !state.loading && state.achReady) render();
     })
     .catch(() => {});
 }
@@ -10716,6 +10728,10 @@ function ScreenHabits() {
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
+          // Heading + its count, Reorder and Add: at 320px with Largest text they
+          // don't fit one line, and the buttons ran off the screen.
+          flexWrap: 'wrap',
+          gap: 'var(--space-2)',
         },
       },
       h(

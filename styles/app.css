@@ -5208,6 +5208,10 @@ button.gb-food-level {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
+  /* The count drops under the beads where a row is narrower than both (a
+     320px Habits row with its rest-day and tick buttons): it ran past the row. */
+  flex-wrap: wrap;
+  row-gap: var(--space-1);
 }
 /* Beads on a thread: the line runs behind the links, so a run reads as one. */
 .gb-chain-links {
@@ -9537,11 +9541,6 @@ button.gb-tone-chip::before,
     max-width: 480px;
     padding: var(--space-6);
   }
-  /* The rich-text editor was a 480px column on any desktop. */
-  .gb-modal.gb-note-modal {
-    max-width: 640px;
-  }
-
   /* Goals screen — constrain and center, extra breathing room */
   .gb-goals {
     max-width: 940px;
@@ -15348,6 +15347,7 @@ button.gb-tone-chip:focus-visible {
   flex-direction: column;
   gap: var(--space-5);
   max-width: 1080px;
+  margin-inline: auto; /* centred like every capped screen (wide-screen centre line) */
   padding: var(--space-4) var(--gutter) var(--space-8);
 }
 .gb-health h2,
