@@ -95,7 +95,9 @@ public class MoneyService {
 
     /**
      * Line items read off a receipt photo. {@code configured=false} when no AI is
-     * available or the call fails, so the client keeps its type-them-in form.
+     * set up; {@code unavailable=true} when it is but the call failed (a rejected
+     * key, a timeout). Both keep the client's type-them-in form, but they used to
+     * share one answer, so a dead key read to the user as "your photo is bad".
      */
     public ReceiptScan scanReceipt(String imageDataUrl) {
         if (!openai.isConfigured()) {
@@ -106,7 +108,7 @@ public class MoneyService {
             return parseReceipt(json.readTree(OpenAIClient.jsonOf(raw)));
         } catch (Exception ex) {
             log.warn("Receipt scan failed, falling back to manual entry: {}", ex.getMessage());
-            return new ReceiptScan(false, List.of(), null, null);
+            return new ReceiptScan(true, true, List.of(), null, null);
         }
     }
 
@@ -142,7 +144,12 @@ public class MoneyService {
 
     public record ReceiptItem(String name, java.math.BigDecimal amount) {}
 
-    public record ReceiptScan(boolean configured, List<ReceiptItem> items, String date, String merchant) {}
+    public record ReceiptScan(boolean configured, boolean unavailable, List<ReceiptItem> items, String date,
+                              String merchant) {
+        ReceiptScan(boolean configured, List<ReceiptItem> items, String date, String merchant) {
+            this(configured, false, items, date, merchant);
+        }
+    }
 
     /** The whole document plus the version a later write must match. */
     public record Versioned(JsonNode data, String version) {}

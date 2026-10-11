@@ -49,4 +49,25 @@ class ReceiptParseTest {
         assertThat(r.date()).isNull();
         assertThat(r.merchant()).isNull();
     }
+
+    /** A rejected AI key is "unavailable", not an empty photo: the client says which. */
+    @Test
+    void aFailedAiCallIsUnavailableNotAnEmptyRead() {
+        var openai = org.mockito.Mockito.mock(com.growthbuddy.mentor.OpenAIClient.class);
+        org.mockito.Mockito.when(openai.isConfigured()).thenReturn(true);
+        org.mockito.Mockito.when(openai.completeWithImage(org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
+                .thenThrow(new IllegalStateException("AI gateway 401"));
+        var service = new MoneyService(org.mockito.Mockito.mock(MoneyRepository.class), new ObjectMapper(), openai,
+                org.mockito.Mockito.mock(MoneyLedger.class));
+        var r = service.scanReceipt("data:image/jpeg;base64,AAAA");
+        assertThat(r.configured()).isTrue();
+        assertThat(r.unavailable()).isTrue();
+        assertThat(r.items()).isEmpty();
+
+        org.mockito.Mockito.when(openai.isConfigured()).thenReturn(false);
+        var none = service.scanReceipt("data:image/jpeg;base64,AAAA");
+        assertThat(none.configured()).isFalse();
+        assertThat(none.unavailable()).isFalse();
+    }
 }

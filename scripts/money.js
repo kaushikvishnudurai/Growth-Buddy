@@ -2400,15 +2400,24 @@ function openReceiptModal(money, save, requestReceiptScan, opts) {
       Thinking('Reading your receipt', ['Reading the receipt', 'Finding each item', 'Tagging them'])
     );
     let res = null;
+    let failed = null;
     try {
       res = await requestReceiptScan(f);
-    } catch (_) {
-      /* offline, rate-limited or an unreadable photo: same as no AI */
+    } catch (err) {
+      failed = err; // offline, the AI cap (429), or the server refusing the photo
     }
     if (seq !== scanSeq) return;
     const items = (res && res.configured && res.items) || [];
     if (!items.length) {
-      status.textContent = "Couldn't read items from this photo. Add them below.";
+      // Say which of four things happened: only the last one is about the photo.
+      status.textContent =
+        failed && failed.status === 429
+          ? 'You’ve used the photo reader a lot this hour. Add the items below, or try again later.'
+          : failed || (res && res.unavailable)
+            ? 'Couldn’t reach the receipt reader just now. Add the items below, or pick the photo again in a minute.'
+            : res && res.configured === false
+              ? 'Reading receipts needs the assistant, which isn’t set up here. Add the items below.'
+              : 'Couldn’t find any items in this photo. A flat, well-lit shot works best, or add them below.';
       if (!rows.length) {
         rows = [{ name: '', amount: 0, category: 'others' }];
         renderRows();
