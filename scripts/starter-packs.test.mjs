@@ -1,6 +1,6 @@
 // node scripts/starter-packs.test.mjs — what a starter pack would create.
 import assert from 'node:assert/strict';
-import { PACKS, planStarter } from './starter-packs.js';
+import { PACKS, planStarter, budgetsFrom, budgetOffer } from './starter-packs.js';
 
 const today = '2026-10-11';
 const base = { habits: [], reminders: [], goals: [], features: null, money: null, today };
@@ -41,6 +41,19 @@ const money = {
 };
 const budgets = planStarter(['money'], { ...base, money }).filter((r) => r.kind === 'budget');
 assert.deepEqual(budgets.map((b) => [b.category, b.amount]), [['food', 3600], ['shopping', 1800]]);
+
+// Money's Set budgets asks for every tag, not just the top two.
+assert.deepEqual(budgetsFrom(money, today, Infinity).map((b) => b.category), ['food', 'shopping']);
+
+// The 5th expense this month in a tag with no budget offers one, once; a budgeted tag never.
+const five = (cat) => Array.from({ length: 5 }, (_, i) => ({ date: '2026-10-0' + (i + 1), category: cat, amount: 500 }));
+assert.deepEqual(budgetOffer({ expenses: five('food') }, 'food', today), { category: 'food', amount: 2300 });
+assert.equal(budgetOffer({ expenses: five('food').slice(0, 4) }, 'food', today), null);
+assert.equal(budgetOffer({ expenses: five('food').concat(five('food')[0]) }, 'food', today), null);
+assert.equal(budgetOffer({ expenses: five('food'), budgets: { food: 1000 } }, 'food', today), null);
+assert.equal(budgetOffer({ expenses: five('others') }, 'others', today), null);
+// Last month's rows don't count toward this month's five.
+assert.equal(budgetOffer({ expenses: five('food').slice(0, 4).concat({ date: '2026-09-30', category: 'food', amount: 1 }) }, 'food', today), null);
 
 // Water: from weight when known, skipped when the goal is already that high.
 const w = planStarter(['water'], { ...base, weightKg: 70, suggestWater: (kg) => (kg ? 2250 : null) });

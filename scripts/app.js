@@ -6563,12 +6563,21 @@ function mentorApi() {
     reflection: { label: reflectionLabel, open: () => openProfileSettings('notifications') },
     // Buddy's one-tap actions, after the user confirmed the sheet. Each throws to
     // keep the sheet open with the reason.
+    // A task or habit chip saves on the tap; the toast's Undo deletes what it made
+    // (found by id against the list before, so createTask/createHabit stay as they are).
     act: {
       task: async (title) => {
+        const had = new Set(state.tasks.map((t) => t.id));
         await createTask({ title });
-        toastSuccess('Task added.');
+        const made = state.tasks.find((t) => !had.has(t.id));
+        if (!made) return toastSuccess('Task added.');
+        pushToast('Task added.', 'success', 6000, {
+          label: 'Undo',
+          run: () => deleteTask(made.id).catch((err) => toastError(err, 'Could not undo that.')),
+        });
       },
       habit: async ({ title, time }) => {
+        const had = new Set(state.habits.map((x) => x.id));
         await createHabit({
           name: title,
           domain: 'habit',
@@ -6577,7 +6586,12 @@ function mentorApi() {
           metric: 'none',
           reminderTime: time || null,
         });
-        toastSuccess('Habit added.');
+        const made = state.habits.find((x) => !had.has(x.id));
+        if (!made) return toastSuccess('Habit added.');
+        pushToast('Habit added.', 'success', 6000, {
+          label: 'Undo',
+          run: () => deleteHabit(made.id).catch((err) => toastError(err, 'Could not undo that.')),
+        });
       },
       reminder: async ({ title, date, time, timeInput }) => {
         if (time && isPastSlot(date, time)) {
@@ -11423,6 +11437,7 @@ function openAddSheet(prefill) {
       sub: 'Jot something down',
       action: () => {
         close();
+        pendingNoteOpen = 'new'; // Notes opens with the composer open and focused
         setScreen('notes');
       },
     },
@@ -14095,6 +14110,7 @@ const SCREENS = {
           m.ScreenFamily({
             api: {
               getFamily: () => api('/api/family'),
+              startSolo: () => api('/api/family/solo', { method: 'POST' }),
               addMember: (body) =>
                 api('/api/family/members', { method: 'POST', body: JSON.stringify(body) }),
               updateMember: (id, body) =>

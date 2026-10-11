@@ -1415,6 +1415,13 @@ function ScreenNotes({
     composer.classList.add('is-open');
     editor.focus();
   }
+  // 'new' (+ then Note, or the palette's New note): open and focused on arrival,
+  // once the screen is in the page, without waiting for the list. A note id
+  // waits for the list (below).
+  if (openOnMount === 'new') {
+    openOnMount = null;
+    requestAnimationFrame(() => composer.isConnected && openComposer());
+  }
   function closeComposer() {
     composer.classList.remove('is-open');
     dropDraft();

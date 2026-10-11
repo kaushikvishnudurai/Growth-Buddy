@@ -161,7 +161,7 @@ function field(labelText, control, hint) {
 
 /**
  * ScreenFamily({ api })
- *   api: { getFamily, addMember, updateMember, updateProfile, removeMember,
+ *   api: { getFamily, startSolo, addMember, updateMember, updateProfile, removeMember,
  *          searchUsers, linkMember, scanGrocery, generateMealPlan, getMealPlan }
  */
 function ScreenFamily({ api }) {
@@ -1133,10 +1133,18 @@ function ScreenFamily({ api }) {
 
   function ingredientChips() {
     if (!model.ingredients.length) {
+      // The server adds the pantry to every plan (FamilyService.appendAvailableLines),
+      // so with a stocked pantry there is nothing to type: say what it will use.
+      const stock = (model.pantryItems || []).filter((p) => !p.expired).map((p) => p.name);
       return h(
         'p',
         { class: 'gb-family-empty-note' },
-        'No ingredients yet. Scan a photo or add some.'
+        stock.length
+          ? 'Planning from your pantry: ' +
+              stock.slice(0, 6).join(', ') +
+              (stock.length > 6 ? ' and ' + (stock.length - 6) + ' more' : '') +
+              '. Add anything else you have.'
+          : 'No ingredients yet. Scan a photo or add some.'
       );
     }
     return h(
@@ -1922,6 +1930,22 @@ function ScreenFamily({ api }) {
         },
         Icon('plus', { size: 17, color: '#fff' }),
         'Add your first member'
+      ),
+      // A household of one, your row copied from Profile: straight to the planner.
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--soft',
+          style: { marginTop: '10px', maxWidth: '280px' },
+          onclick: () =>
+            run(api.startSolo(), (fam) => {
+              applyFamily(fam);
+              switchSection('plan');
+            }),
+        },
+        Icon('utensils', { size: 17 }),
+        'Plan meals for just me'
       )
     );
   }

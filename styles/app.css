@@ -2981,6 +2981,11 @@ button.gb-seat:disabled {
   gap: 10px;
   padding: 14px 16px;
 }
+.gb-challenge-offer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 .gb-challenge-empty p {
   margin: 0;
   color: var(--fg2);
@@ -3678,6 +3683,11 @@ button.gb-seat:disabled {
   gap: 6px;
   white-space: normal;
   text-align: left;
+}
+/* Saved on the tap (a task or habit chip): stays put, reads as done. */
+.gb-msg-action:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 .gb-msg-action-form .gb-input {
   width: 100%;

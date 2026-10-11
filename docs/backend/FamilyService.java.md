@@ -10,6 +10,7 @@ pantry, shopping). Docs name symbols — `grep -n` them.
 | Method | Notes |
 |---|---|
 | `getFamily(userId)` | read-only snapshot |
+| `startSolo(userId)` | "Plan meals for just me": `resolveOrCreateFamily` and nothing else, so the self row is copied from Profile; in a family already = that one, unchanged (`FamilyServiceTest`) |
 | `addMember(userId, req)` | member may be **unmapped** (no account) |
 | `updateMember` / `updateProfile` | owner, or the mapped member themselves (`requireManageOrSelf`) |
 | `removeMember` | owner only; tells a linked member |
@@ -51,7 +52,8 @@ pantry, shopping). Docs name symbols — `grep -n` them.
   `requireMember`, `requireFamilyMember`, `requireOwner`, `requireManageOrSelf`,
   `requireMemberAccess`, `requirePantry`, `requireChore`. `currentFamily` only follows a **mapped**
   row: an invite grants nothing.
-- `resolveOrCreateFamily` / `currentFamily` — a user gets a family lazily on first add / invite.
+- `resolveOrCreateFamily` / `currentFamily` — a user gets a family lazily on first add / invite, or on `startSolo`.
+- The one-day plan's prompt always carries the whole pantry (`pantryNames`), expired items included; the client only names the in-date ones.
 - **Live sync:** every write calls `changed(fam, actor, section)` → `FamilyEvents` (after commit) →
   the client's `gb:family-changed`. Sections: members, chores, plan, weekly, pantry, shopping,
   favourites, recipes. A write that skips it leaves other members on stale data.

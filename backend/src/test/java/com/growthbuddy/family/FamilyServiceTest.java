@@ -335,6 +335,47 @@ class FamilyServiceTest {
 
     /* ---- chores ---- */
 
+    /* ---- "Plan meals for just me" ---- */
+
+    @Test
+    void aSoloCookGetsAHouseholdOfOneCopiedFromProfile() {
+        com.growthbuddy.user.User me = new com.growthbuddy.user.User();
+        me.setId(OWNER);
+        me.setDisplayName("Asha");
+        me.setDietPreference("Vegetarian");
+        me.setHeightCm(160);
+        me.setWeightKg(55);
+        when(users.findById(OWNER)).thenReturn(Optional.of(me));
+
+        service.startSolo(OWNER);
+
+        org.mockito.ArgumentCaptor<Family> fam = org.mockito.ArgumentCaptor.forClass(Family.class);
+        verify(families).save(fam.capture());
+        assertThat(fam.getValue().getOwnerUserId()).isEqualTo(OWNER);
+        org.mockito.ArgumentCaptor<FamilyMember> self = org.mockito.ArgumentCaptor.forClass(FamilyMember.class);
+        verify(members).save(self.capture());
+        assertThat(self.getValue().getRelationship()).isEqualTo(Relationship.self);
+        assertThat(self.getValue().getStatus()).isEqualTo(MemberStatus.mapped);
+        assertThat(self.getValue().getLinkedUserId()).isEqualTo(OWNER);
+        assertThat(self.getValue().getName()).isEqualTo("Asha");
+        assertThat(self.getValue().getDietPreference()).isEqualTo("Vegetarian");
+        assertThat(self.getValue().getHeightCm()).isEqualTo(160);
+    }
+
+    @Test
+    void startingSoloInsideAFamilyChangesNothing() {
+        Family f = family(OWNER);
+        FamilyMember mine = row(f, OWNER, MemberStatus.mapped, Relationship.self);
+        livesIn(OWNER, mine);
+        roster(f, mine);
+
+        FamilyResponse res = service.startSolo(OWNER);
+
+        assertThat(res.familyId()).isEqualTo(f.getId());
+        verify(families, never()).save(any());
+        verify(members, never()).save(any());
+    }
+
     /* ---- an account scheduled for deletion is not invitable ---- */
 
     @Test
