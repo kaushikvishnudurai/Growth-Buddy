@@ -53,7 +53,10 @@ store before it is posted**, so it counts exactly once. The decision is `restore
   carries one; the server 404s a link that isn't the caller's). A pick that has left the lists stays as
   "The task you picked". A task/goal row's timer button → app.js `startFocusOn(link)` → `focusPreselect`,
   handed once as `props.preselect` (a running sprint is moved over to it, with a toast; an idle break
-  becomes a sprint).
+  becomes a sprint). A task row also sets `props.autoStart = true`, so the clock starts (a paused
+  sprint resumes rather than resetting; a running one is left alone). A sprint that ends on a task
+  still in `Focus.targets.tasks` toasts 'Mark "<title>" done?' (`offerTaskDone`, from `finish` and from a restored session that ended while away) →
+  `props.onFinishTask(id)` (app.js: `toggleTask`, skipped if the task was ticked meanwhile).
 - **Daily goal** (`paintGoal` into `Focus.goalEl`, under the buttons): `ui_prefs.focusGoalMins`
   (`props.focusGoalMins`, 0 = off, "Set a daily focus goal" link), a `role=progressbar` bar of today's
   minutes and the server's `goalStreak` (shown only once `stats.goalMinutes` matches the local goal).
