@@ -8138,6 +8138,29 @@ button.gb-food-level {
   box-shadow: var(--shadow-lg);
 }
 
+/* Enters from the edge the stack is pinned to; leaves the same way (dismissToast
+   holds the node TOAST_OUT_MS for it). Both skins. The global reduced-motion
+   kill switch stills both. Keep the durations in step with app.js. */
+.gb-toast:not(.is-settled) {
+  animation: gb-toast-in 260ms var(--ease-out) both;
+}
+.gb-toast.is-leaving {
+  animation: gb-toast-out 160ms var(--ease-standard) both;
+  pointer-events: none;
+}
+@keyframes gb-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(18px) scale(0.96);
+  }
+}
+@keyframes gb-toast-out {
+  to {
+    opacity: 0;
+    transform: translateX(18px) scale(0.96);
+  }
+}
+
 .gb-toast.is-error {
   /* Red, not the brand peach: an error that looks like "Saved" reads as one. */
   border-color: color-mix(in srgb, var(--danger) 70%, var(--border-strong) 30%);

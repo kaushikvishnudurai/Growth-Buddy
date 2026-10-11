@@ -488,10 +488,21 @@ function paintToasts() {
   refreshIcons();
 }
 
+/* A dismissed toast plays its exit (.is-leaving, gb-toast-out in app.css)
+   before it leaves state. The set, not a class on the node, so a render()
+   during the exit keeps it leaving. */
+const TOAST_OUT_MS = 160;
+const leavingToasts = new Set();
 function dismissToast(id) {
-  state.toasts = state.toasts.filter((t) => t.id !== id);
-  dropStaleToastTimers();
+  if (leavingToasts.has(id) || !state.toasts.some((t) => t.id === id)) return;
+  leavingToasts.add(id);
   paintToasts();
+  setTimeout(() => {
+    leavingToasts.delete(id);
+    state.toasts = state.toasts.filter((t) => t.id !== id);
+    dropStaleToastTimers();
+    paintToasts();
+  }, TOAST_OUT_MS);
 }
 
 /* Toast timers live outside the toast objects so a pointer resting on the
@@ -13015,7 +13026,7 @@ function notificationDropdown() {
    during it a negative animation-delay resumes at the point it had reached.
    Rebuild it as often as you like — the motion looks continuous.
 
-   Keep in step with gb-toast-in's duration in styles/premium.css. */
+   Keep in step with gb-toast-in's duration in styles/app.css. */
 const TOAST_IN_MS = 260;
 /* 'info' is the neutral one: a reminder coming due is neither good news nor an
    error, and the alert glyph on a nudge reads as something going wrong. */
@@ -13026,11 +13037,15 @@ function toastStack() {
   const now = Date.now();
   const nodes = state.toasts.map((t) => {
     const age = now - (t.at || 0);
-    const entering = age >= 0 && age < TOAST_IN_MS;
+    const entering = age >= 0 && age < TOAST_IN_MS && !leavingToasts.has(t.id);
     return h(
       'div',
       {
-        class: 'gb-toast is-' + (t.kind || 'error') + (entering ? '' : ' is-settled'),
+        class:
+          'gb-toast is-' +
+          (t.kind || 'error') +
+          (entering ? '' : ' is-settled') +
+          (leavingToasts.has(t.id) ? ' is-leaving' : ''),
         style: entering ? { animationDelay: '-' + age + 'ms' } : null,
       },
       h(
