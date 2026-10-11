@@ -137,6 +137,18 @@ public class WaterService {
         return totals;
     }
 
+    /** Buddy's view: effective ml per day for the last 7 days, oldest first, against the goal. */
+    @Transactional(readOnly = true)
+    public String contextSummary(UUID userId) {
+        LocalDate today = clock.today(userId);
+        java.util.Map<LocalDate, Integer> totals = totalsByDay(userId, today.minusDays(6), today);
+        if (totals.isEmpty()) return "Water: nothing logged in the last 7 days.\n";
+        List<String> days = new java.util.ArrayList<>();
+        for (int i = 6; i >= 0; i--) days.add(String.valueOf(totals.getOrDefault(today.minusDays(i), 0)));
+        return "Water ml per day, last 7 days oldest first (goal " + goal(userId) + "): "
+                + String.join(", ", days) + "\n";
+    }
+
     @Transactional(readOnly = true)
     public int goalMl(UUID userId) {
         return goal(userId);

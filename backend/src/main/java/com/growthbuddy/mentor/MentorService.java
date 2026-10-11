@@ -1,12 +1,17 @@
 package com.growthbuddy.mentor;
 
 import com.growthbuddy.common.ApiException;
+import com.growthbuddy.food.FoodService;
+import com.growthbuddy.goal.GoalService;
 import com.growthbuddy.habit.HabitService;
 import com.growthbuddy.mentor.OpenAIClient.ChatTurn;
+import com.growthbuddy.money.MoneyService;
+import com.growthbuddy.reminder.ReminderService;
 import com.growthbuddy.score.ScoreService;
 import com.growthbuddy.task.Task;
 import com.growthbuddy.task.TaskRepository;
 import com.growthbuddy.user.UserClock;
+import com.growthbuddy.water.WaterService;
 import com.growthbuddy.wellness.WellnessService;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -15,6 +20,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -98,6 +104,11 @@ public class MentorService {
     private final ScoreService scoreService;
     private final WellnessService wellness;
     private final UserClock clock;
+    private final WaterService water;
+    private final FoodService food;
+    private final MoneyService money;
+    private final GoalService goals;
+    private final ReminderService reminders;
 
     public MentorService(MentorThreadRepository threads,
                          MentorMessageRepository messages,
@@ -106,7 +117,12 @@ public class MentorService {
                          HabitService habitService,
                          ScoreService scoreService,
                          WellnessService wellness,
-                         UserClock clock) {
+                         UserClock clock,
+                         WaterService water,
+                         FoodService food,
+                         MoneyService money,
+                         GoalService goals,
+                         ReminderService reminders) {
         this.threads = threads;
         this.messages = messages;
         this.openai = openai;
@@ -115,6 +131,11 @@ public class MentorService {
         this.scoreService = scoreService;
         this.wellness = wellness;
         this.clock = clock;
+        this.water = water;
+        this.food = food;
+        this.money = money;
+        this.goals = goals;
+        this.reminders = reminders;
     }
 
     @Transactional(readOnly = true)
@@ -237,7 +258,9 @@ public class MentorService {
     }
 
     /**
-     * Snapshot of the user's open tasks + habits + streaks + the week's check-ins.
+     * Snapshot of the user's open tasks, habits and streaks, the week's check-ins
+     * (mood, sleep quality and hours), water and kcal per day, this month's spend
+     * against budgets and bills due, open goals, and the next 3 days' reminders.
      * Injected silently into the system prompt so Buddy can answer "help me
      * plan my day" without the user having to paste their list. Never shown
      * back to the user in the chat UI.
@@ -265,12 +288,31 @@ public class MentorService {
         sb.append(taskLines(tasks.findByUserIdAndDeletedAtIsNullOrderByCreatedAtAsc(userId), today, zone));
         sb.append(dataSafe(habitService.contextSummary(userId)));
         sb.append(dataSafe(wellness.contextSummary(userId)));
+        sb.append(section(() -> water.contextSummary(userId)));
+        sb.append(section(() -> food.contextSummary(userId)));
+        sb.append(section(() -> money.contextSummary(userId, today)));
+        sb.append(section(() -> goals.contextSummary(userId)));
+        sb.append(section(() -> reminders.contextSummary(userId)));
         sb.append("</user_data>\n");
         sb.append("\nUse this context silently. Don't list it back unless asked. ")
                 .append("If they ask for a daily plan, anchor it to these items. When it ")
                 .append("fits naturally, reference their momentum (score, streaks, what's ")
                 .append("left today) to motivate — but don't recite the numbers mechanically.");
         return sb.toString();
+    }
+
+    /**
+     * One tracker's lines, made data-safe. A tracker that fails to read is left
+     * out with a log line: a chat reply is worth more than a complete context.
+     */
+    private static String section(Supplier<String> read) {
+        try {
+            String s = read.get();
+            return s == null ? "" : dataSafe(s);
+        } catch (RuntimeException ex) {
+            log.warn("Mentor context section skipped: {}", ex.getMessage());
+            return "";
+        }
     }
 
     /**

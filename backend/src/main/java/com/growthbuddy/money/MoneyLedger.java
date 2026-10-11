@@ -330,6 +330,21 @@ public class MoneyLedger {
         return out;
     }
 
+    /** Expense totals per category in [from, to], largest first. */
+    public java.util.LinkedHashMap<String, BigDecimal> spendByCategory(UUID userId, LocalDate from, LocalDate to) {
+        java.util.LinkedHashMap<String, BigDecimal> out = new java.util.LinkedHashMap<>();
+        jdbc.query("""
+                SELECT COALESCE(category, 'others') AS cat, SUM(amount) AS total
+                FROM money_transactions
+                WHERE user_id = ? AND kind = 'expense' AND occurred_on BETWEEN ? AND ?
+                GROUP BY COALESCE(category, 'others')
+                ORDER BY total DESC
+                """, rs -> {
+            out.put(rs.getString("cat"), rs.getBigDecimal("total"));
+        }, userId.toString(), Date.valueOf(from), Date.valueOf(to));
+        return out;
+    }
+
     /** One day's expenses, for the day summary. */
     public List<ObjectNode> expensesOn(UUID userId, LocalDate day) {
         List<ObjectNode> out = new ArrayList<>();

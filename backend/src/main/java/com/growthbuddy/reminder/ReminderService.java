@@ -208,6 +208,23 @@ public class ReminderService {
         return out;
     }
 
+    /** Buddy's view: reminders today and the next two days, at most 15, in time order. */
+    @Transactional(readOnly = true)
+    public String contextSummary(UUID userId) {
+        LocalDate today = clock.today(userId);
+        List<OccurrenceResponse> next = occurrences(userId, today, today.plusDays(2));
+        if (next.isEmpty()) return "Reminders: none in the next 3 days.\n";
+        StringBuilder sb = new StringBuilder("Reminders, today and the next 2 days:\n");
+        for (OccurrenceResponse o : next.subList(0, Math.min(15, next.size()))) {
+            String t = o.text() == null ? "" : o.text().replaceAll("\\s+", " ").trim();
+            sb.append("  - ").append(o.date().equals(today) ? "today" : o.date().toString())
+                    .append(o.time() != null ? " " + o.time() : "")
+                    .append(": ").append(t.length() > 80 ? t.substring(0, 80) : t).append('\n');
+        }
+        if (next.size() > 15) sb.append("  (+").append(next.size() - 15).append(" more)\n");
+        return sb.toString();
+    }
+
     /** Every reminder as an iCalendar file, local times in the user's zone (see {@link ReminderIcs}). */
     @Transactional(readOnly = true)
     public String exportIcs(UUID userId) {
