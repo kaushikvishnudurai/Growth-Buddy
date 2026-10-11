@@ -70,7 +70,18 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
 
 ## Editing rules
 
-- Colors come from tokens (`var(--coral-500)`, `var(--leaf-50)`, …) — no raw hex here.
+- Colors come from tokens — no raw hex here. A tinted surface uses a themed `-soft` / `-soft-fg`
+  pair (or `color-mix(in srgb, var(--<semantic>) N%, var(--surface))`), not a raw `-50`/`-100`
+  ramp step: ramps don't change with the theme, and `contrast.test.mjs` fails one with no
+  `[data-theme='dark']` twin. Content dims by colour (`--fg3`), never `opacity` (that took locked
+  badges, settled loans and failed messages to 2-3.9:1).
+- Focus: `--ring`, never `--brand` (2.8:1). Text fields (`.gb-input`, `.gb-msg-input`, `.gb-affix`,
+  the OTP box, an open select) show it as a `--ring` border plus a 35% `--ring` halo; the note
+  editor shows it on `.gb-editor-wrap:focus-within`. A control's resting edge (field border,
+  unchecked `.gb-check` / `.gb-goal-ms-check` / `.gb-rem-check`, off `.gb-switch` / `.gb-wa-toggle`
+  track hairline) is `--control-edge`. `.gb-wa-toggle` shares `.gb-switch`'s geometry and timing.
+- `.gb-btn--icon` is the transparent variant everywhere; only `.gb-food-item-row .gb-btn--icon`
+  (photo estimate rows) is the filled 36px chip. Nothing renders under `--text-2xs` (11px).
 - Responsive breakpoints are grouped at 4886 / 5226 / 5303, **not** inline per component. Put media
   queries there so the phone-first base stays readable.
 - Modal markup comes from `openOverlay` in `gb-kit.js` — don't hand-roll it. It is `.gb-modal-overlay > .gb-modal[role=dialog]` because `scripts/a11y.js`
@@ -93,6 +104,6 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
 - Fixed layers on a phone pad for `env(safe-area-inset-*)` (`index.html` has `viewport-fit=cover`,
   so `100dvh` runs under the notch and home indicator): header, nav, modal overlay, toasts, PTR.
 - The tablet phone-frame (both rules) also needs `min-height: 560px`: a landscape phone stays full-screen.
-- A landscape phone (`orientation: landscape` and `max-height: 500px`, under 1024 wide) turns `.gb-app` into a grid with the nav as a 60px icon rail on the left and the More sheet as a panel beside it; content gets ~85% of the height instead of 71%.
+- A landscape phone (`orientation: landscape` and `max-height: 500px`, under 1024 wide) turns `.gb-app` into a grid with the nav as a 60px icon rail on the left and the More sheet as a panel beside it; content gets ~85% of the height instead of 71%. The premium half of the rail rule is `html[data-premium='on'] .gb-nav-wrap > .gb-nav`, one class heavier than premium.css's floating pill (which loads last and matches too). Toasts drop to 12px off the bottom there.
 - The tablet phone-frame widens 440 -> 600px at 560px, the lowest viewport breakpoint any grid
   goes two-up at. A new `min-width` grid rule below 560 would split a 440px frame.

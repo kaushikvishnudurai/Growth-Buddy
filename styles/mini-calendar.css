@@ -130,8 +130,9 @@
 .gb-mini-cal-day.is-other-month {
   background: transparent;
   border-color: var(--border);
+  /* --fg3 alone is the dimming (4.5:1); the 0.75 opacity on top took the
+     other month's day numbers to 3.2:1. */
   color: var(--fg3);
-  opacity: 0.75;
 }
 
 .gb-mini-cal-day.is-today {
@@ -192,7 +193,7 @@
   border-radius: 999px;
   background: var(--brand-fill);
   color: var(--fg-on-brand);
-  font-size: 0.625rem;
+  font-size: var(--text-2xs);
   font-weight: 800;
 }
 
@@ -410,11 +411,14 @@
     font-size: 0.75rem;
   }
 
+  /* 11px is the type floor (--text-2xs); the badge keeps its 14px by giving up
+     padding and line-height, not by shrinking the digits. */
   .gb-mini-cal-day .badge {
     min-width: 14px;
     height: 14px;
-    font-size: 0.5625rem;
-    padding: 0 3px;
+    font-size: var(--text-2xs);
+    line-height: 1;
+    padding: 0 2px;
   }
 
   .gb-mini-cal-legend {
@@ -433,6 +437,6 @@
   .gb-mini-cal-item-sub,
   .gb-mini-cal-pill,
   .gb-mini-cal-total {
-    font-size: 0.625rem;
+    font-size: var(--text-2xs);
   }
 }

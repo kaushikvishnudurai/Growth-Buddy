@@ -164,8 +164,8 @@ function OnboardingCard({
 }
 
 const PRIORITY = {
-  High: { bg: 'var(--coral-50)', fg: 'var(--coral-700)', dot: 'var(--coral-500)' },
-  Medium: { bg: 'var(--sun-50)', fg: 'var(--sun-700)', dot: 'var(--sun-500)' },
+  High: { bg: 'var(--brand-soft)', fg: 'var(--brand-soft-fg)', dot: 'var(--coral-500)' },
+  Medium: { bg: 'var(--warning-soft)', fg: 'var(--warning-soft-fg)', dot: 'var(--sun-500)' },
   Low: { bg: 'var(--surface-3)', fg: 'var(--fg2)', dot: 'var(--warm-400)' },
 };
 

@@ -193,6 +193,10 @@
   /* Lines */
   --border: #ECE0D6;
   --border-strong: #DFCFC1;
+  /* The edge of an interactive control (field, unchecked check, off switch):
+     3:1+ on bg and surface-1/2/3, which a WCAG 1.4.11 boundary needs.
+     --border-strong is 1.4:1 and only separates content. */
+  --control-edge: #958271;
   /* focus ring: coral-600, 3.3:1 on surface-2 (coral-500 was 2.6-2.8:1, under
      the 3:1 a focus indicator needs). scripts/contrast.test.mjs holds it. */
   --ring: var(--coral-600);
@@ -271,6 +275,7 @@
 
   --border: #382C25;
   --border-strong: #4A3B32;
+  --control-edge: #877669;
   --ring: var(--coral-400);
 
   --brand: var(--coral-500);

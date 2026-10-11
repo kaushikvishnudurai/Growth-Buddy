@@ -558,7 +558,7 @@ button.gb-sectiontitle-act {
   background: var(--surface-3);
   box-shadow: 0 2px 0 var(--border-strong);
   color: transparent;
-  border: 1.5px solid var(--border-strong);
+  border: 1.5px solid var(--control-edge);
   transition:
     transform var(--dur-fast) var(--ease-bounce),
     background var(--dur-base);
@@ -574,7 +574,8 @@ button.gb-sectiontitle-act {
   }
 }
 .gb-check.is-done {
-  background: var(--success);
+  /* leaf-600 in both themes: dark's --success (leaf-500) put the white tick at 2.4:1. */
+  background: var(--leaf-600);
   box-shadow: 0 2px 0 var(--leaf-700);
   border-color: transparent;
   color: var(--fg-on-brand);
@@ -951,8 +952,8 @@ button.gb-sectiontitle-act {
   transform: translateY(-1px);
 }
 .gb-otp-box.is-active {
-  border-color: var(--brand);
-  box-shadow: 0 0 0 3px var(--brand-soft);
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 35%, transparent);
 }
 /* The real caret is hidden, so the empty box being typed into grows one. */
 .gb-otp-box.is-active:empty::after {
@@ -1440,10 +1441,10 @@ body:has(.is-thinking, .gb-thinking)::after {
   min-width: 18px;
   height: 18px;
   padding: 0 5px;
-  border-radius: 9px;
-  background: var(--coral-500);
+  border-radius: var(--radius-pill);
+  background: var(--brand-fill);
   color: var(--fg-on-brand);
-  font-size: 0.65625rem;
+  font-size: var(--text-2xs);
   font-weight: 800;
   display: inline-flex;
   align-items: center;
@@ -1550,9 +1551,9 @@ body:has(.is-thinking, .gb-thinking)::after {
   border: 0;
   border-radius: var(--radius-pill);
   background: none;
-  color: var(--brand);
+  color: var(--brand-ink);
   font-family: var(--font-body);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 700;
   cursor: pointer;
 }
@@ -1613,7 +1614,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   border: 0;
   border-top: 1px solid var(--border);
   background: none;
-  color: var(--brand);
+  color: var(--brand-ink);
   font-family: var(--font-body);
   font-size: 0.8125rem;
   font-weight: 700;
@@ -1776,8 +1777,12 @@ body:has(.is-thinking, .gb-thinking)::after {
 .gb-msg-fail .gb-msg-error {
   padding: 0;
 }
-.gb-msg-row.is-failed .gb-msg-bubble {
-  opacity: 0.6;
+/* A failed message stays readable (opacity took it to 2-3:1): it loses its
+   fill and keeps a dashed outline in the brand ink. */
+.gb-msg-row.is-failed .gb-msg-bubble.is-user {
+  background: var(--surface-2);
+  color: var(--fg1);
+  border: 1.5px dashed var(--brand-ink);
 }
 /* Shown under a message that reads like a crisis; never sent or saved. */
 .gb-msg-crisis {
@@ -1825,15 +1830,15 @@ body:has(.is-thinking, .gb-thinking)::after {
   font-family: var(--font-body);
   font-size: 0.90625rem;
   padding: 10px 12px;
-  border: 1.5px solid var(--border-strong);
+  border: 1.5px solid var(--control-edge);
   border-radius: var(--radius-lg);
   background: var(--surface-2);
   color: var(--fg1);
 }
 .gb-msg-input:focus {
   outline: none;
-  border-color: var(--brand);
-  box-shadow: 0 0 0 3px var(--brand-soft);
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 35%, transparent);
 }
 .gb-msg-send {
   width: 44px;
@@ -2236,8 +2241,8 @@ body:has(.is-thinking, .gb-thinking)::after {
   }
 }
 .gb-sound-tile.is-on {
-  border-color: var(--iris-500);
-  color: var(--iris-500);
+  border-color: var(--ai);
+  color: var(--ai-soft-fg);
   background: var(--surface);
   box-shadow: var(--shadow-xs);
 }
@@ -2308,21 +2313,24 @@ body:has(.is-thinking, .gb-thinking)::after {
   outline-offset: -8px;
 }
 
-/* Toggle switch */
+/* Toggle switch. The off track carries a --control-edge hairline (3:1+):
+   --surface-3 on a card was 1.17:1, so an off switch read as empty space. */
 .gb-switch {
   flex: none;
   position: relative;
   width: 46px;
   height: 26px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: none;
-  background: var(--surface-3);
+  background: var(--border-strong);
+  box-shadow: inset 0 0 0 1px var(--control-edge);
   cursor: pointer;
   padding: 0;
   transition: background var(--dur-fast);
 }
 .gb-switch.is-on {
   background: var(--brand-fill);
+  box-shadow: none;
 }
 .gb-switch-knob {
   position: absolute;
@@ -2618,9 +2626,11 @@ body:has(.is-thinking, .gb-thinking)::after {
   color: var(--fg3);
   cursor: pointer;
 }
-.gb-insight-dismiss:hover {
-  background: var(--surface-3);
-  color: var(--fg1);
+@media (hover: hover) {
+  .gb-insight-dismiss:hover {
+    background: var(--surface-3);
+    color: var(--fg1);
+  }
 }
 /* Empty state's "4 of 7 days logged" meter. */
 .gb-insight-meter {
@@ -2861,7 +2871,7 @@ button.gb-seat {
   bottom: 100%;
   margin-bottom: 4px;
   font-family: var(--font-mono);
-  font-size: 0.625rem;
+  font-size: var(--text-2xs);
   font-weight: 400;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -3003,9 +3013,9 @@ button.gb-seat:disabled {
   font-size: 0.6875rem;
   font-weight: 700;
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-3);
-  color: var(--fg3);
+  color: var(--fg2);
 }
 .gb-challenge-badge[data-active='true'] {
   background: var(--success-soft);
@@ -3217,8 +3227,8 @@ button.gb-seat:disabled {
 }
 .gb-kudos.is-on {
   border-color: transparent;
-  background: var(--iris-100);
-  color: var(--iris-700);
+  background: var(--ai-soft);
+  color: var(--ai-soft-fg);
 }
 .gb-kudos:disabled {
   opacity: 0.6;
@@ -3341,7 +3351,7 @@ button.gb-seat:disabled {
   letter-spacing: 0;
 }
 .gb-agree-count.is-all {
-  color: var(--success);
+  color: var(--success-soft-fg);
 }
 .gb-agree-end {
   min-height: 32px;
@@ -3529,8 +3539,8 @@ button.gb-seat:disabled {
   overflow-wrap: anywhere;
 }
 .gb-chat-msg.is-mine .gb-chat-bubble {
-  background: var(--iris-100);
-  color: var(--iris-700);
+  background: var(--ai-soft);
+  color: var(--ai-soft-fg);
 }
 .gb-chat-time {
   margin-top: 2px;
@@ -3576,7 +3586,7 @@ button.gb-seat:disabled {
   font-size: 0.75rem;
   font-weight: 800;
   color: var(--info-soft-fg);
-  background: color-mix(in srgb, var(--sky-100) 80%, white 20%);
+  background: var(--info-soft);
 }
 .gb-food-add {
   margin-top: 10px;
@@ -3636,7 +3646,7 @@ button.gb-seat:disabled {
 }
 @media (hover: hover) {
   .gb-msg-chip--clear:hover {
-    background: color-mix(in srgb, var(--coral-50) 84%, var(--coral-200) 16%);
+    background: color-mix(in srgb, var(--brand) 8%, var(--brand-soft));
   }
 }
 
@@ -3910,7 +3920,7 @@ button.gb-seat:disabled {
   transition: width 0.4s;
 }
 .gb-profile-pop-xp-label {
-  font-size: 0.65625rem;
+  font-size: var(--text-2xs);
   color: var(--fg3);
   margin-top: 4px;
 }
@@ -3940,11 +3950,11 @@ button.gb-seat:disabled {
   }
 }
 .gb-profile-pop-item.is-danger {
-  color: var(--coral-600, #e53e3e);
+  color: var(--danger);
 }
 @media (hover: hover) {
   .gb-profile-pop-item.is-danger:hover {
-    background: var(--coral-50, #fff5f5);
+    background: color-mix(in srgb, var(--danger) 10%, var(--surface));
   }
 }
 
@@ -4346,10 +4356,12 @@ button.gb-seat:disabled {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  opacity: 0.52;
+}
+/* Locked: --fg3 on the tile (4.5:1), not opacity (3.6:1). */
+.gb-badge:not(.is-on) {
+  color: var(--fg3);
 }
 .gb-badge.is-on {
-  opacity: 1;
   background: var(--success-soft);
   color: var(--success-soft-fg);
 }
@@ -4723,7 +4735,7 @@ button.gb-food-level {
 .gb-katori-in span {
   margin-top: 4px;
   font-family: var(--font-mono);
-  font-size: 0.625rem;
+  font-size: var(--text-2xs);
   letter-spacing: 0.04em;
   color: var(--n-ink);
 }
@@ -4800,7 +4812,7 @@ button.gb-food-level {
   color: var(--warm-900);
 }
 .gb-nutrient-tabs button:focus-visible {
-  outline: 2px solid var(--brand);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 .gb-nutrient-panel {
@@ -4877,7 +4889,7 @@ button.gb-food-level {
 }
 .gb-tumbler-col small {
   font-family: var(--font-mono);
-  font-size: 0.625rem;
+  font-size: var(--text-2xs);
   color: var(--fg3);
 }
 .gb-tumbler {
@@ -4976,7 +4988,7 @@ button.gb-food-level {
 .gb-food-level:focus-visible,
 .gb-split-legend > button:focus-visible,
 .gb-food-week-col:focus-visible {
-  outline: 2px solid var(--brand);
+  outline: 2px solid var(--ring);
   outline-offset: 3px;
 }
 .gb-summary-hint {
@@ -5421,6 +5433,12 @@ button.gb-food-level {
 [data-theme='dark'] .gb-water-add--custom {
   border-color: color-mix(in srgb, var(--sky-300) 60%, #7db9df 40%);
 }
+/* Its light hover mixes sky-300 with white: a pale flash under light text here. */
+@media (hover: hover) {
+  [data-theme='dark'] .gb-water-add:hover {
+    background: color-mix(in srgb, var(--sky-700) 60%, var(--surface-2) 40%);
+  }
+}
 
 @media (max-width: 460px) {
   .gb-focus {
@@ -5738,12 +5756,12 @@ button.gb-food-level {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--shadow-sm);
   transition: box-shadow var(--dur-fast);
 }
 @media (hover: hover) {
   .gb-goal-card:hover {
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.09);
+    box-shadow: var(--shadow-md);
   }
 }
 .gb-goal-card.is-complete {
@@ -5764,7 +5782,7 @@ button.gb-food-level {
   min-width: 0;
 }
 .gb-goal-status-chip {
-  font-size: 0.625rem;
+  font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -5804,7 +5822,7 @@ button.gb-food-level {
 @media (hover: hover) {
   .gb-goal-delete-btn:hover {
     color: var(--brand-ink) !important;
-    border-color: var(--coral-200) !important;
+    border-color: color-mix(in srgb, var(--brand) 40%, var(--border)) !important;
   }
 }
 
@@ -5859,7 +5877,7 @@ button.gb-food-level {
   /* Never let a tight flex row (a task row on a narrow phone) squash it. */
   flex: none;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--fg2);
   display: inline-flex;
@@ -6522,7 +6540,7 @@ button.gb-food-level {
   font-weight: 500;
   color: var(--fg1);
   background: var(--surface-2);
-  border: 1.5px solid var(--border-strong);
+  border: 1.5px solid var(--control-edge);
   border-radius: var(--radius-lg);
   padding: 13px 14px;
   width: 100%;
@@ -6534,10 +6552,12 @@ button.gb-food-level {
 .gb-input::placeholder {
   color: var(--fg3);
 }
+/* Focus is --ring (3:1+ on every canvas, contrast.test.mjs), not --brand-soft:
+   coral-50 on surface-2 was a 1.08:1 halo a keyboard user could not see. */
 .gb-input:focus {
   outline: none;
-  border-color: var(--brand);
-  box-shadow: 0 0 0 3px var(--brand-soft);
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 35%, transparent);
 }
 /* A disabled field looked exactly as editable as a live one. */
 .gb-input:disabled {
@@ -6645,7 +6665,7 @@ button.gb-food-level {
   cursor: pointer;
 }
 .gb-food-recent-chip:focus-visible {
-  outline: 2px solid var(--brand);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 /* A food row's text is its edit button (openEditFood). */
@@ -6669,7 +6689,7 @@ button.gb-food-level {
   font-weight: 700;
 }
 .gb-food-row-edit:focus-visible {
-  outline: 2px solid var(--brand);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
   border-radius: 6px;
 }
@@ -6721,7 +6741,7 @@ button.gb-food-level {
 .gb-food-star:focus-visible,
 .gb-water-drink:focus-visible,
 .gb-water-suggest:focus-visible {
-  outline: 2px solid var(--brand);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 /* Fibre / sugar / sodium: only the figures the day actually has. */
@@ -6819,8 +6839,8 @@ button.gb-food-level {
     box-shadow var(--dur-fast);
 }
 .gb-affix:focus-within {
-  border-color: var(--brand);
-  box-shadow: 0 0 0 3px var(--brand-soft);
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 35%, transparent);
 }
 .gb-affix > input {
   flex: 1;
@@ -6883,12 +6903,14 @@ button.gb-food-level {
   min-height: 36px;
   border-radius: var(--radius-md);
 }
-.gb-btn--icon {
+/* The photo-estimate rows' filled remove chip. Scoped: unscoped, it turned
+   every .gb-btn--icon in the app into a filled 36px chip. */
+.gb-food-item-row .gb-btn--icon {
   background: var(--surface-3);
   color: var(--fg2);
   border: none;
   border-radius: var(--radius-md);
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   padding: 6px 10px;
   min-width: 36px;
   min-height: 36px;
@@ -6899,9 +6921,9 @@ button.gb-food-level {
   flex-shrink: 0;
 }
 @media (hover: hover) {
-  .gb-btn--icon:hover {
-    background: var(--surface-3-hover, rgba(0, 0, 0, 0.1));
-    color: var(--brand-ink);
+  .gb-food-item-row .gb-btn--icon:hover {
+    background: color-mix(in srgb, var(--fg1) 8%, var(--surface-3));
+    color: var(--fg1);
   }
 }
 .gb-form--about-diet {
@@ -6967,7 +6989,7 @@ button.gb-food-level {
 }
 .gb-sched-tab.is-on {
   background: var(--surface);
-  color: var(--brand-fill);
+  color: var(--brand-ink);
   box-shadow: var(--shadow-sm);
 }
 .gb-sched-routine {
@@ -7011,7 +7033,7 @@ button.gb-food-level {
 }
 .gb-sched-stat.is-busy {
   background: var(--brand-soft);
-  color: var(--brand-fill);
+  color: var(--brand-soft-fg);
 }
 .gb-sched-stat.is-lunch {
   background: var(--warning-soft);
@@ -7606,8 +7628,10 @@ button.gb-food-level {
   cursor: pointer;
 }
 .gb-qa-row.is-unknown {
-  opacity: 0.6;
   cursor: default;
+}
+.gb-qa-row.is-unknown .gb-qa-copy :is(strong, span) {
+  color: var(--fg3);
 }
 .gb-qa-check {
   width: 18px;
@@ -7851,9 +7875,11 @@ button.gb-food-level {
 .gb-focus-hist-hit {
   fill: transparent;
 }
-.gb-focus-hist-hit:hover {
-  fill: var(--surface-3);
-  fill-opacity: 0.5;
+@media (hover: hover) {
+  .gb-focus-hist-hit:hover {
+    fill: var(--surface-3);
+    fill-opacity: 0.5;
+  }
 }
 .gb-focus-hist-goal {
   stroke: var(--fg3);
@@ -8310,7 +8336,7 @@ button.gb-food-level {
 
 .gb-toast.is-success .gb-toast-icon {
   color: var(--success-soft-fg);
-  background: color-mix(in srgb, var(--leaf-100) 80%, transparent);
+  background: color-mix(in srgb, var(--success) 18%, transparent);
 }
 
 .gb-toast-msg {
@@ -8349,7 +8375,7 @@ button.gb-food-level {
 
 @media (hover: hover) {
   .gb-toast.is-success .gb-toast-close:hover {
-    background: color-mix(in srgb, var(--leaf-100) 72%, transparent);
+    background: color-mix(in srgb, var(--success) 16%, transparent);
     color: var(--success-soft-fg);
   }
 }
@@ -8360,6 +8386,12 @@ button.gb-food-level {
 
 [data-theme='dark'] .gb-toast.is-success {
   background: color-mix(in srgb, var(--leaf-500) 18%, var(--surface) 82%);
+}
+
+/* sky-50 is a ramp step, not themed: without this the reminder toast was a pale
+   tile under light text in dark mode (2.3:1). */
+[data-theme='dark'] .gb-toast.is-info {
+  background: color-mix(in srgb, var(--sky-500) 18%, var(--surface) 82%);
 }
 
 .gb-toast-close:focus-visible {
@@ -8432,7 +8464,7 @@ button.gb-food-level {
   }
 
   .gb-day-pill {
-    font-size: 0.65625rem;
+    font-size: var(--text-2xs);
     padding: 2px 8px;
   }
 
@@ -8999,10 +9031,10 @@ button.gb-food-level {
 .gb-goal-progress-done-chip {
   font-size: 0.75rem;
   font-weight: 700;
-  color: var(--leaf-700, #15803d);
-  background: var(--leaf-50, #f0fdf4);
+  color: var(--success-soft-fg);
+  background: var(--success-soft);
   padding: 2px 8px;
-  border-radius: 99px;
+  border-radius: var(--radius-pill);
 }
 .gb-goal-progress-actions {
   display: flex;
@@ -9231,21 +9263,24 @@ button.gb-food-level {
   --gb-wa-green-fg: #4ade80;
 }
 
-/* Toggle switch */
+/* Toggle switch: the same geometry, off track and timing as .gb-switch; only
+   the on colour is WhatsApp's. */
 .gb-wa-toggle {
   position: relative;
-  width: 44px;
+  width: 46px;
   height: 26px;
-  border-radius: 999px;
-  background: var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--border-strong);
+  box-shadow: inset 0 0 0 1px var(--control-edge);
   border: none;
   cursor: pointer;
   flex-shrink: 0;
-  transition: background 0.18s;
+  transition: background var(--dur-fast);
   padding: 0;
 }
 .gb-wa-toggle.is-on {
   background: var(--gb-wa-green);
+  box-shadow: none;
 }
 .gb-wa-toggle-thumb {
   position: absolute;
@@ -9255,12 +9290,12 @@ button.gb-food-level {
   height: 20px;
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-  transition: transform 0.18s;
+  box-shadow: var(--shadow-xs);
+  transition: transform var(--dur-fast);
   pointer-events: none;
 }
 .gb-wa-toggle.is-on .gb-wa-toggle-thumb {
-  transform: translateX(18px);
+  transform: translateX(20px);
 }
 
 /* Toggle row (label + switch side by side) */
@@ -9564,10 +9599,11 @@ select.gb-input {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The soft pair: white on WhatsApp's own green was 2.0:1. */
 .gb-wa-verified-label {
-  background: var(--gb-wa-green);
-  color: var(--fg-on-brand);
-  font-size: 0.625rem;
+  background: var(--gb-wa-green-soft);
+  color: var(--gb-wa-green-fg);
+  font-size: var(--text-2xs);
   padding: 1px 6px;
   border-radius: 999px;
   margin-left: 4px;
@@ -10618,8 +10654,9 @@ select.gb-input {
   color: var(--fg2);
 }
 .gb-family-sectiontab.is-active .gb-family-tab-badge {
-  background: rgba(255, 255, 255, 0.25);
-  color: var(--fg-on-brand);
+  /* Inverted on the filled tab: white at 25% over --brand-fill was 3:1. */
+  background: var(--fg-on-brand);
+  color: var(--brand-fill);
 }
 .gb-family-tab-badge.is-danger {
   background: var(--danger-fill); /* white on coral-500 was 2.8:1; 6:1 on this */
@@ -11451,7 +11488,7 @@ select.gb-input {
   width: 20px;
   height: 20px;
   border-radius: 6px;
-  border: 2px solid var(--border-strong);
+  border: 2px solid var(--control-edge);
   background: var(--surface);
   display: inline-flex;
   align-items: center;
@@ -11502,7 +11539,7 @@ select.gb-input {
   height: 36px;
   border: 0;
   border-radius: 50%;
-  background: var(--brand);
+  background: var(--brand-fill);
   color: var(--fg-on-brand);
   cursor: pointer;
   transition: transform var(--dur-fast);
@@ -11584,7 +11621,7 @@ textarea:focus-visible,
 [role='switch']:focus-visible,
 [role='checkbox']:focus-visible,
 [tabindex]:focus-visible {
-  outline: 2px solid var(--brand);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 /* (global prefers-reduced-motion kill switch lives earlier in this file) */
@@ -11703,8 +11740,13 @@ textarea:focus-visible,
   border-radius: var(--radius-lg);
   background: var(--surface);
 }
+/* Off: the label greys to --fg3 rather than the whole row fading, since the
+   row's switch stays live and opacity took the label to 2.7:1. */
 .gb-home-cust-row.is-off {
-  opacity: 0.6;
+  background: var(--surface-2);
+}
+.gb-home-cust-row.is-off .gb-home-cust-label {
+  color: var(--fg3);
 }
 .gb-home-cust-moves {
   display: flex;
@@ -12093,6 +12135,11 @@ textarea:focus-visible,
   transition:
     border-color var(--dur-fast) ease,
     box-shadow var(--dur-fast) ease;
+}
+/* The editor itself drops its outline (it is the whole box), so the box shows focus. */
+.gb-editor-wrap:focus-within {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 1px var(--ring);
 }
 .gb-editor-wrap.is-dropping {
   border-color: var(--brand);
@@ -12797,23 +12844,24 @@ textarea:focus-visible,
   cursor: pointer;
   color: var(--fg2);
 }
+/* Themed -soft pairs, not ramp steps: those stayed pastel in dark mode, and
+   coral-700 on coral-100 was 4.1:1. */
 .gb-freeze-cal .gb-freeze-day.is-missed {
-  background: var(--coral-100);
-  color: var(--coral-700);
+  background: var(--brand-soft);
+  color: var(--brand-soft-fg);
 }
 .gb-freeze-cal .gb-freeze-day.is-done {
-  background: var(--leaf-100);
-  color: var(--leaf-700);
+  background: var(--success-soft);
+  color: var(--success-soft-fg);
 }
 .gb-freeze-cal .gb-freeze-day.is-frozen {
-  background: var(--sky-100);
-  color: var(--sky-700);
+  background: var(--info-soft);
+  color: var(--info-soft-fg);
 }
 /* Not yet happened: present so the month keeps its shape, but inert. */
 .gb-freeze-cal .gb-freeze-day.is-future {
   background: transparent;
   color: var(--fg3);
-  opacity: 0.45;
   cursor: default;
 }
 .gb-freeze-cal .gb-freeze-day:disabled {
@@ -12885,7 +12933,7 @@ h2[tabindex='-1']:focus {
 .gb-pixels-corner,
 .gb-pixels-day,
 .gb-pixels-month {
-  font-size: 0.625rem;
+  font-size: var(--text-2xs);
   font-weight: 600;
   line-height: 1;
   color: var(--fg3);
@@ -13296,8 +13344,11 @@ h2[tabindex='-1']:focus {
     display: flex;
     min-height: 0;
   }
+  /* The premium half is one class heavier than premium.css's floating-pill rule
+     (same media match, and premium.css loads last), or the rail lost its notch
+     padding and turned into a 40px-radius pill. */
   .gb-nav,
-  html[data-premium='on'] .gb-nav {
+  html[data-premium='on'] .gb-nav-wrap > .gb-nav {
     flex-direction: column;
     align-items: center;
     justify-content: space-evenly;
@@ -13307,6 +13358,10 @@ h2[tabindex='-1']:focus {
     border-top: none;
     border-right: 1px solid var(--border);
     border-radius: 0;
+  }
+  html[data-premium='on'] .gb-nav-wrap > .gb-nav {
+    border-width: 0 1px 0 0;
+    box-shadow: none;
   }
   .gb-nav-tab {
     flex: 0 0 auto;
@@ -13338,6 +13393,10 @@ h2[tabindex='-1']:focus {
     border-right: 1px solid var(--border);
     border-radius: 0 var(--radius-2xl) var(--radius-2xl) 0;
     animation: gb-more-fade var(--dur-fast) var(--ease-out);
+  }
+  /* No bottom bar to clear here: 88px left toasts a quarter of the way up. */
+  .gb-toast-stack {
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
   }
 }
 
@@ -13476,7 +13535,7 @@ button.gb-sound-name:focus-visible {
 /* Playing: the Play button turns into a filled Pause, the title takes the
    brand colour, and the chip's icon gives way to three moving bars. */
 .gb-sound-play.is-on {
-  background: var(--brand);
+  background: var(--brand-fill);
   color: var(--fg-on-brand);
 }
 .gb-sound-row.is-playing .gb-sound-title-text {
@@ -13712,8 +13771,8 @@ button.gb-sound-name:focus-visible {
   padding: 2px 8px;
   border: 1px solid color-mix(in srgb, var(--sky-500) 45%, transparent);
   border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--sky-50) 70%, transparent);
-  color: var(--fg1);
+  background: var(--info-soft);
+  color: var(--info-soft-fg);
   font: inherit;
   font-size: 0.75rem;
   font-weight: 700;
@@ -13734,7 +13793,8 @@ button.gb-sound-name:focus-visible {
   padding: 2px 8px;
   border: 1px solid color-mix(in srgb, var(--sky-500) 45%, transparent);
   border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--sky-50) 70%, transparent);
+  background: var(--info-soft);
+  color: var(--info-soft-fg);
   font: inherit;
   font-weight: 700;
   cursor: pointer;
@@ -13836,8 +13896,8 @@ select.gb-input {
     transition: rotate var(--dur-fast);
   }
   select.gb-input:open {
-    border-color: var(--brand);
-    box-shadow: 0 0 0 3px var(--brand-soft);
+    border-color: var(--ring);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 35%, transparent);
   }
   select.gb-input:open::picker-icon {
     rotate: 180deg;
@@ -14033,10 +14093,10 @@ button.gb-tone-chip:focus-visible {
   background: var(--leaf-500);
 }
 .gb-hh-day.is-missed {
-  background: var(--coral-100);
+  background: color-mix(in srgb, var(--brand) 22%, var(--surface));
 }
 .gb-hh-day.is-frozen {
-  background: var(--sky-100);
+  background: color-mix(in srgb, var(--info) 22%, var(--surface));
   border-color: var(--sky-500);
 }
 .gb-hh-day.is-open,
@@ -14136,9 +14196,9 @@ button.gb-tone-chip:focus-visible {
   cursor: pointer;
 }
 .gb-slip-btn.is-slipped {
-  background: var(--coral-50);
-  border-color: var(--coral-500);
-  color: var(--coral-600);
+  background: var(--brand-soft);
+  border-color: var(--brand);
+  color: var(--brand-soft-fg);
 }
 .gb-slip-btn:focus-visible {
   outline: 2px solid var(--ring);
@@ -14303,7 +14363,7 @@ button.gb-tone-chip:focus-visible {
   width: 22px;
   height: 22px;
   border-radius: var(--radius-pill);
-  border: 2px solid var(--border-strong);
+  border: 2px solid var(--control-edge);
   background: var(--surface);
 }
 .gb-rem-check svg {
@@ -14315,7 +14375,7 @@ button.gb-tone-chip:focus-visible {
   background: var(--brand-fill);
 }
 .gb-rem-check:focus-visible {
-  outline: 2px solid var(--brand);
+  outline: 2px solid var(--ring);
   outline-offset: 1px;
   border-radius: var(--radius-pill);
 }
@@ -14381,7 +14441,7 @@ button.gb-tone-chip:focus-visible {
   color: var(--fg-on-brand);
 }
 .gb-rule-day:focus-visible {
-  outline: 2px solid var(--brand);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 

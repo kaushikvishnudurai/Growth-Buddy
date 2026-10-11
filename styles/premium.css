@@ -135,6 +135,23 @@ html[data-premium='on'] .gb-login-card {
     inset 0 1px 0 var(--glass-top),
     var(--shadow-md);
 }
+/* Goals and Notes build their own cards, not .gb-card. Face and light only:
+   their borders carry meaning (the goal's colour stripe, a pinned note). */
+html[data-premium='on'] .gb-goal-card,
+html[data-premium='on'] .gb-note-card {
+  background: var(--glass-face);
+  box-shadow:
+    inset 0 1px 0 var(--glass-top),
+    var(--shadow-sm);
+}
+@media (hover: hover) {
+  html[data-premium='on'] .gb-goal-card:hover,
+  html[data-premium='on'] .gb-note-card:hover {
+    box-shadow:
+      inset 0 1px 0 var(--glass-top),
+      var(--shadow-md);
+  }
+}
 /* The blur is the login card's alone. On .gb-card it re-blurred every card on
    every scroll frame, a dozen of them on Home, over a backdrop (the app's own
    flat background) that has nothing in it to blur. */
@@ -154,7 +171,8 @@ html[data-premium='on'] .gb-login-card {
    align to. Premium just gives it a warmer face and a hairline to sit on. */
 html[data-premium='on'] .gb-week-nudge {
   padding: 13px 16px;
-  background: linear-gradient(135deg, rgba(249, 115, 22, 0.15), rgba(255, 176, 32, 0.08));
+  /* 10%, not 15%: the coral-700 text on the 15% tint was 4.3:1. */
+  background: linear-gradient(135deg, rgba(249, 115, 22, 0.1), rgba(255, 176, 32, 0.08));
   border-bottom: 1px solid rgba(249, 115, 22, 0.22);
 }
 
@@ -185,8 +203,9 @@ html[data-premium='on'] .gb-week-nudge {
      hard to read at a glance on a 5-tab bar. */
   html[data-premium='on'] .gb-nav-tab.is-active {
     /* --brand-soft is near-white in light theme and vanishes against the
-       nav's own glass — this needs its own, stronger tint. */
-    background: rgba(249, 115, 22, 0.15);
+       nav's own glass — this needs its own, stronger tint. 10% is the most
+       it can take: the --brand-ink label on 15% was 4.3:1. */
+    background: rgba(249, 115, 22, 0.1);
     border-radius: var(--radius-lg);
     padding: 6px 0 5px;
   }
@@ -218,8 +237,10 @@ html[data-premium='on'] .gb-btn,
 html[data-premium='on'] .gb-btn--compact {
   border-radius: var(--radius-pill);
 }
+/* The face stays on the --brand-fill ramp: white on coral-700 is 5.0:1, where
+   the old coral-400 -> 600 face was 2.3-3.6:1 under the label. */
 html[data-premium='on'] .gb-btn--primary {
-  background: linear-gradient(180deg, var(--coral-400) 0%, var(--coral-600) 100%);
+  background: linear-gradient(180deg, var(--brand-fill) 0%, var(--brand-fill-hover) 100%);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.38),
     inset 0 -1px 0 rgba(120, 50, 5, 0.25),
@@ -230,6 +251,18 @@ html[data-premium='on'] .gb-btn--primary:active {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.2),
     0 1px 2px rgba(150, 60, 8, 0.3);
+}
+/* This rule outranks .gb-btn--primary:hover and .gb-btn:disabled, so both are
+   restated here: a hover that answers, and a disabled button with no glow or press. */
+@media (hover: hover) {
+  html[data-premium='on'] .gb-btn--primary:hover {
+    background: var(--brand-fill-hover);
+  }
+}
+html[data-premium='on'] .gb-btn--primary:disabled,
+html[data-premium='on'] .gb-btn--primary[disabled] {
+  box-shadow: none;
+  transform: none;
 }
 html[data-premium='on'] .gb-btn--secondary {
   background: var(--glass-face);
@@ -260,6 +293,11 @@ html[data-premium='on'] .gb-iconbtn {
     transform 140ms var(--ease-out),
     background 140ms var(--ease-out);
 }
+/* Row-level icon buttons (delete, edit) follow the header's round shape, without
+   the glass: there are dozens of them inside scrolling cards. */
+html[data-premium='on'] .gb-icon-btn {
+  border-radius: 50%;
+}
 html[data-premium='on'] .gb-iconbtn:active,
 html[data-premium='on'] .gb-avatar:active {
   transform: scale(0.9);
@@ -284,7 +322,7 @@ html[data-premium='on'] .gb-nav-tab:active {
    with things pressed into it. */
 html[data-premium='on'] .gb-input {
   background: rgba(255, 255, 255, 0.55);
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--control-edge);
   box-shadow: inset 0 1px 2px rgba(38, 24, 16, 0.06);
 }
 html[data-premium='on'][data-theme='dark'] .gb-input {
@@ -292,10 +330,10 @@ html[data-premium='on'][data-theme='dark'] .gb-input {
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
 }
 html[data-premium='on'] .gb-input:focus {
-  border-color: var(--brand);
+  border-color: var(--ring);
   box-shadow:
     inset 0 1px 2px rgba(38, 24, 16, 0.06),
-    0 0 0 3px var(--brand-soft);
+    0 0 0 3px color-mix(in srgb, var(--ring) 35%, transparent);
 }
 
 /* Touch fires a phantom :hover on tap, so lift is pointer-gated. */

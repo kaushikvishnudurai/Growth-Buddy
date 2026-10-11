@@ -353,14 +353,13 @@
   border-radius: var(--radius-lg);
   background: var(--surface-2);
   border: 1px solid var(--border);
-  opacity: 0.55;
+  /* Not earned yet: told by the grey icon and --fg2 label, not opacity (which
+     took the label to 3.6:1). */
   transition:
-    opacity var(--dur-base) var(--ease-standard),
     background-color var(--dur-base) var(--ease-standard),
     border-color var(--dur-base) var(--ease-standard);
 }
 .gb-money-badge.is-earned {
-  opacity: 1;
   background: var(--success-soft);
   border-color: transparent;
 }
@@ -379,6 +378,9 @@
   font-size: var(--text-xs);
   color: var(--fg1);
   line-height: 1.2;
+}
+.gb-money-badge:not(.is-earned) .gb-money-badge-lbl {
+  color: var(--fg2);
 }
 .gb-money-badge-prog {
   flex: none;
@@ -478,7 +480,7 @@
   justify-content: center;
   border-radius: var(--radius-lg);
   background: var(--ai-soft);
-  color: var(--iris-600);
+  color: var(--ai-soft-fg);
 }
 .gb-money-personality-type {
   font-family: var(--font-display);
@@ -557,7 +559,7 @@
   }
 }
 .gb-money-bar-col:focus-visible {
-  outline: 2px solid var(--brand);
+  outline: 2px solid var(--ring);
   outline-offset: 1px;
 }
 .gb-money-bar-col.is-selected {
@@ -761,7 +763,7 @@
   }
 }
 .gb-money-account:focus-visible {
-  outline: 2px solid var(--brand);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 .gb-money-account-ic {
@@ -907,7 +909,14 @@
 }
 
 /* ---- Income / loans: settled row dims, amount struck through ---- */
-.gb-money-exp-row.is-settled {
+/* Settled and paused rows dim by colour, not opacity: 0.6 took the user's own
+   history to 2.7:1. Text drops to --fg3 (4.5:1); only the icon fades. */
+.gb-money-exp-row.is-settled :is(.gb-money-exp-note, .gb-money-exp-amt),
+.gb-money-rec-row.is-paused :is(.gb-money-exp-note, .gb-money-exp-amt) {
+  color: var(--fg3);
+}
+.gb-money-exp-row.is-settled .gb-money-cat-ic,
+.gb-money-rec-row.is-paused .gb-money-cat-ic {
   opacity: 0.6;
 }
 .gb-money-exp-row.is-settled .gb-money-exp-amt {
@@ -1326,7 +1335,7 @@
   }
 }
 .gb-money-health-fix:focus-visible {
-  outline: 2px solid var(--brand);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 
@@ -2012,7 +2021,7 @@
   }
 }
 .gb-money-exp-edit:focus-visible {
-  outline: 2px solid var(--brand);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 
@@ -2124,7 +2133,7 @@
   inset: -8px -4px;
 }
 .gb-money-quick-amt:focus-visible {
-  outline: 2px solid var(--brand);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 
@@ -2397,9 +2406,6 @@
 }
 
 /* ---- Every month (recurring rules, Income tab) ---- */
-.gb-money-rec-row.is-paused {
-  opacity: 0.6;
-}
 .gb-money-exp-amt.is-in {
   color: var(--leaf-700);
 }
