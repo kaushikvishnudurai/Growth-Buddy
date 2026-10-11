@@ -90,4 +90,18 @@ class QuickAddFallbackTest {
         assertTrue(read("hello there").isEmpty());
         assertTrue(read("").isEmpty());
     }
+
+    /** FRC-1 in the patterns: TODAY is Saturday, NOW 14:05. */
+    @Test
+    void theAnchorFallsOnTheNamedWeekday() {
+        assertEquals(LocalDate.of(2026, 10, 12), read("remind me every Monday at 9am to water plants").get(0).date());
+        assertEquals(LocalDate.of(2026, 10, 16), read("remind me on Friday to call the bank").get(0).date());
+        assertEquals(LocalDate.of(2026, 10, 13), read("remind me next Tuesday at 4pm dentist").get(0).date());
+        assertEquals(TODAY, read("remind me every saturday at 6pm to call dad").get(0).date(), "6pm is still ahead");
+        assertEquals(TODAY.plusWeeks(1), read("remind me every saturday at 9am to call dad").get(0).date(),
+                "9am has passed: next Saturday");
+        var wd = read("remind me every weekday at 8am to stand up").get(0);
+        assertEquals("weekdays", wd.repeat());
+        assertEquals(LocalDate.of(2026, 10, 12), wd.date(), "not on the weekend");
+    }
 }

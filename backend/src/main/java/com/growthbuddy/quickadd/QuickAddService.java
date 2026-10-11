@@ -250,7 +250,7 @@ public class QuickAddService {
             JsonNode root = json.readTree(OpenAIClient.jsonOf(raw));
             List<Intent> out = new ArrayList<>();
             for (JsonNode n : root.path("intents")) {
-                Intent it = toIntent(n, today);
+                Intent it = toIntent(n, clean, today, now);
                 if (it != null) out.add(it);
             }
             String note = root.path("note").asText("");
@@ -263,7 +263,7 @@ public class QuickAddService {
         }
     }
 
-    private Intent toIntent(JsonNode n, LocalDate today) {
+    private Intent toIntent(JsonNode n, String said, LocalDate today, LocalTime now) {
         String type = n.path("type").asText("");
         switch (type) {
             case "task", "task_done", "goal": {
@@ -290,7 +290,7 @@ public class QuickAddService {
                         .energy(oneOf(n.path("energy").asText(""), "medium", "low", "medium", "high"));
             }
             case "reminder":
-                return reminder(n, today);
+                return reminder(n, said, today, now);
             case "expense", "income": {
                 int amt = clamp(n.path("amount").asInt(0), 0, 100_000_000);
                 return amt <= 0 ? null : Intent.of(type).amount(amt).note(cap(n.path("note").asText(""), 120));
@@ -342,8 +342,10 @@ public class QuickAddService {
      * unknown repeat drops that field, not the reminder. A date before today (the
      * model misreading "Monday" as last Monday) becomes today — the reminder API
      * refuses a past day, and the preview shows the date before anything is saved.
+     * A date on another weekday than the one {@code said} names is moved onto it
+     * ({@link QuickAddFallback#anchor}).
      */
-    private static Intent reminder(JsonNode n, LocalDate today) {
+    private static Intent reminder(JsonNode n, String said, LocalDate today, LocalTime now) {
         String text = cap(n.path("text").asText(""), 120);
         if (text.isEmpty()) return null;
         LocalDate date = date(n.path("date").asText(""));
@@ -353,6 +355,7 @@ public class QuickAddService {
         if (end != null && !end.isAfter(time)) end = null;
         String repeat = n.path("repeat").asText("none").trim().toLowerCase();
         if (!REPEATS.contains(repeat)) repeat = "none";
+        date = QuickAddFallback.anchor(said, date, repeat, today, time, now);
         LocalDate until = "none".equals(repeat) ? null : date(n.path("until").asText(""));
         if (until != null && until.isBefore(date)) until = null;
         String tag = n.path("tag").asText("personal").trim().toLowerCase();
