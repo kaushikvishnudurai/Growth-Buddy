@@ -5809,7 +5809,7 @@ function ScreenMoney({
                   class: 'gb-btn gb-btn--' + (sugg.length ? 'ghost' : 'soft') + ' gb-btn--compact',
                   onclick: openSetBudgets,
                 },
-                sugg.length ? 'Adjust' : 'Set budgets'
+                sugg.length ? 'Adjust' : 'Set up'
               )
             ),
           ],
