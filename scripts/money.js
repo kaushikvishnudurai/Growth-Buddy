@@ -118,10 +118,14 @@ function advise(money, item, price, reason) {
     'emergency',
     'must',
   ];
+  // Whole words (plus -s/-ed/-ing): a substring match read "workout" as work (a
+  // need) and "refund" as fun (a want).
+  const has = (w) => new RegExp('\\b' + w + '(s|ed|ing)?\\b').test(txt);
   let score = 0;
-  wantWords.forEach((w) => txt.includes(w) && score++);
-  needWords.forEach((w) => txt.includes(w) && score--);
+  wantWords.forEach((w) => has(w) && score++);
+  needWords.forEach((w) => has(w) && score--);
   const isWant = score > 0;
+  const isNeed = score < 0; // neither: no words either way, so undecided, not a need
   const st = budgetStatus(money).find((s) => s.cat.key === cat);
   const remaining = st ? st.remaining : 0;
   const hasBudget = st && st.base > 0;
@@ -132,7 +136,9 @@ function advise(money, item, price, reason) {
   reasons.push(
     isWant
       ? `This reads more like a want than a need — and wants are allowed, in balance.`
-      : `This sounds like a genuine need, which makes it easier to justify.`
+      : isNeed
+        ? `This sounds like a genuine need, which makes it easier to justify.`
+        : `Tell me why you want it and I can say whether it reads as a need or a want.`
   );
   if (hasBudget)
     reasons.push(
@@ -142,10 +148,13 @@ function advise(money, item, price, reason) {
     );
   else
     reasons.push(
-      `You haven't set a ${catOf(cat, money).label} budget yet, so I can't check the fit — setting one would help.`
+      `You haven't set a budget for ${catOf(cat, money).label} yet, so I can't check the fit — setting one would help.`
     );
+  // A buy that would cover over a quarter of what a goal still needs is a big hit to it.
+  let bigHit = false;
   if (goal) {
     const left = Math.max(0, (goal.target || 0) - goalSaved(goal));
+    bigHit = price > left * 0.25;
     reasons.push(
       `Skipping it would cover ${Math.min(100, Math.round((price / Math.max(1, left)) * 100))}% of what's left on "${goal.name}".`
     );
@@ -159,9 +168,12 @@ function advise(money, item, price, reason) {
     }
   }
   let verdict, tone;
-  if (!isWant && fits) {
+  if (isNeed && fits && !bigHit) {
     verdict = 'Go for it';
     tone = 'good';
+  } else if (!isWant && !isNeed && fits && !bigHit) {
+    verdict = 'Depends on why';
+    tone = 'info';
   } else if (isWant && fits && !goal) {
     verdict = 'Reasonable — enjoy it mindfully';
     tone = 'info';
@@ -190,10 +202,13 @@ function goalPlan(goal) {
   const weeklyRate = recent.length ? Math.round(sumAmt(recent) / 8) : 0;
   // 17 Future Purchase Planner: if a target date is set, pace to hit it.
   let requiredWeekly = 0;
+  let requiredDaily = 0;
   let etaKey = null;
   if (goal.dueDate && remaining > 0) {
-    const weeks = Math.max(1, Math.ceil(diffDays(goal.dueDate, todayKey()) / 7));
-    requiredWeekly = Math.ceil(remaining / weeks);
+    // Exact weeks, not rounded up: 172 days as 25 weeks asked 800 too little.
+    const days = Math.max(1, diffDays(goal.dueDate, todayKey()));
+    requiredWeekly = Math.ceil(remaining / (Math.max(7, days) / 7));
+    requiredDaily = Math.ceil(remaining / days);
     etaKey = goal.dueDate;
   }
   const suggestedWeekly = requiredWeekly || (remaining > 0 ? Math.ceil(remaining / 12) : 0);
@@ -208,7 +223,7 @@ function goalPlan(goal) {
     weeklyRate,
     suggestedWeekly,
     requiredWeekly,
-    requiredDaily: Math.ceil(suggestedWeekly / 7),
+    requiredDaily: requiredDaily || Math.ceil(suggestedWeekly / 7),
     etaKey,
     dueDate: goal.dueDate || null,
     done: remaining <= 0 && target > 0,
@@ -3752,7 +3767,12 @@ function ScreenMoney({
       min: '1',
       placeholder: 'Optional, e.g. 8',
     });
-    const catSeg = tagPicker(money, save, { initial: 'entertainment' });
+    // The tag follows the name (Netflix -> Entertainment, Electricity -> Others) until one is picked.
+    let picked = false;
+    const catSeg = tagPicker(money, save, { initial: 'others', onPick: () => (picked = true) });
+    name.addEventListener('input', () => {
+      if (!picked) catSeg.set(suggestCategory(name.value, money) || 'others');
+    });
     openMoneyModal({
       title: 'Add subscription',
       sub: 'Recurring bills show up in reminders and your monthly forecast.',
@@ -4342,9 +4362,19 @@ function ScreenMoney({
     const dim = daysInMonth();
     const dayNum = new Date().getDate();
     const prefix = thisMonthPrefix();
+    // With budgets, the slip counts only the tags that have one, as the Budgets
+    // card does; the rest is its own line. Taking all spending off the budgeted
+    // tags' total said 819 left above a card that said 2,300.
+    const budgeted = new Set(st.filter((s) => s.budget > 0).map((s) => s.cat.key));
+    const known = new Set(mergedCats(money).map((c) => c.key));
+    const tagOf = (e) => (known.has(e.category) ? e.category : 'others');
     const byDay = {};
-    for (const e of inRange(money.expenses, prefix + '-01', today))
-      byDay[e.date] = (byDay[e.date] || 0) + (Number(e.amount) || 0);
+    let outside = 0;
+    for (const e of inRange(money.expenses, prefix + '-01', today)) {
+      const v = Number(e.amount) || 0;
+      if (hasBudget && !budgeted.has(tagOf(e))) outside += v;
+      else byDay[e.date] = (byDay[e.date] || 0) + v;
+    }
     const spentMonth = Object.values(byDay).reduce((a, v) => a + v, 0);
     const spentToday = byDay[today] || 0;
     const daysLeft = dim - dayNum + 1;
@@ -4397,7 +4427,8 @@ function ScreenMoney({
           spentMonth > totalBudget
             ? line('Over budget', fmt(spentMonth - totalBudget), 'is-total is-over')
             : line('Left this month', fmt(totalBudget - spentMonth), 'is-total'),
-        ]
+          outside > 0 ? line('Also spent, in tags with no budget', fmt(outside)) : null,
+        ].filter(Boolean)
       : [line('Spent today', fmt(spentToday)), line('Spent this month', fmt(spentMonth), 'is-total')];
 
     const hero = h(
@@ -4443,7 +4474,7 @@ function ScreenMoney({
       h('div', { class: 'gb-money-slip-tear', 'aria-hidden': 'true' }),
       h('div', { class: 'gb-money-slip-lines', role: 'group', 'aria-label': monthName + ' so far' }, statement),
       monthTape({ byDay, hasBudget, totalBudget, dim, dayNum, prefix, today }),
-      h('p', { class: 'gb-money-today-say' }, buddyLine())
+      h('p', { class: 'gb-money-today-say' }, buddyLine(!hasBudget || left >= 0))
     );
     // Overview stays a glance: where you stand, your health, where the money
     // goes, and where the month is heading. Spending/Coach own the detail.
@@ -4493,7 +4524,8 @@ function ScreenMoney({
     });
   }
 
-  function buddyLine() {
+  // `todayOk` = today is within its share: only then may the line reassure.
+  function buddyLine(todayOk = true) {
     const st = budgetStatus(money).filter((s) => s.base > 0);
     const over = st.filter((s) => s.pct > 100);
     const near = st.filter((s) => s.pct >= 80 && s.pct <= 100);
@@ -4506,6 +4538,7 @@ function ScreenMoney({
       return `You're close on ${near[0].cat.label} (${near[0].pct}% used), but there's room elsewhere.`;
     if (streak >= 3)
       return `${streak}-day logging streak — this is exactly how clarity is built. Keep going!`;
+    if (st.length && !todayOk) return 'Today ran past its share. The figure above is what each day has from tomorrow.';
     if (st.length) return `Looking good — your budgets have breathing room this month.`;
     return `Set a budget or two and I can help you stay on track, gently.`;
   }
@@ -6125,6 +6158,9 @@ function ScreenMoney({
     [total, people].forEach((el) => el.addEventListener('input', paint));
     me.addEventListener('change', paint);
     paint();
+    // The whole bill left this account: your share is an expense on it, and the
+    // others' shares go out of it as the IOUs (loanMove). Default as the expense form.
+    const paidFrom = accountPicker(money, money.settings.lastAccountId);
     openMoneyModal({
       title: 'Split a bill',
       sub: 'You paid; everyone else owes you their share.',
@@ -6136,6 +6172,8 @@ function ScreenMoney({
         h('div', { class: 'gb-field-label' }, 'Split with'),
         people,
         h('label', { class: 'gb-money-split-me' }, me, 'Include my share'),
+        paidFrom.node ? h('div', { class: 'gb-field-label' }, 'Paid from') : null,
+        paidFrom.node,
         h('div', { class: 'gb-field-label' }, 'Note (optional)'),
         note,
         preview
@@ -6152,9 +6190,13 @@ function ScreenMoney({
           throw new Error('Who did you split it with?');
         }
         const label = note.value.trim();
+        const accountId = paidFrom.get();
+        const acc = accountId ? { accountId } : {};
+        const bill = Math.round(readAmount(total) * 100) / 100;
+        const mine = Math.round((bill - sh.reduce((a, x) => a + x.amount, 0)) * 100) / 100;
         commit((m) => {
           m.loans = m.loans || [];
-          sh.forEach((x) =>
+          sh.forEach((x) => {
             m.loans.unshift({
               id: uid(),
               direction: 'given',
@@ -6163,10 +6205,27 @@ function ScreenMoney({
               date: todayKey(),
               note: label ? 'Split: ' + label : 'Split bill',
               settled: false,
-            })
-          );
+              ...acc,
+            });
+            loanMove(m, m.loans[0]);
+          });
+          if (mine > 0) {
+            m.expenses.unshift({
+              id: uid(),
+              amount: mine,
+              category: suggestCategory(label, money),
+              date: todayKey(),
+              note: label || 'Split bill (my share)',
+              createdAt: Date.now(),
+              ...acc,
+            });
+          }
+          if (accountId) m.settings.lastAccountId = accountId;
         });
-        toast.success(sh.length === 1 ? 'IOU saved.' : sh.length + ' IOUs saved.');
+        toast.success(
+          (sh.length === 1 ? 'IOU saved' : sh.length + ' IOUs saved') +
+            (mine > 0 ? ', and your ' + exact(mine) + ' share logged.' : '.')
+        );
       },
     });
     focusSoon(total);
@@ -7100,4 +7159,6 @@ export const _calc = {
   newSubscription,
   suggestChallenges,
   dropExpense,
+  advise,
+  goalPlan,
 };

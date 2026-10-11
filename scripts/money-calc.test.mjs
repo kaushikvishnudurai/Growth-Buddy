@@ -19,7 +19,7 @@ globalThis.Date = class extends RealDate {
 };
 
 const { _calc, normalizeMoney, ledgerCsv, searchExpenses } = await import('./money.js');
-const { applyCurrency, usualSalary } = await import('./money-core.js');
+const { applyCurrency, usualSalary, fmt } = await import('./money-core.js');
 const {
   forecast,
   upcomingSubs,
@@ -39,6 +39,8 @@ const {
   challengeEnd,
   newSubscription,
   suggestChallenges,
+  advise,
+  goalPlan,
 } = _calc;
 
 const doc = (over) => normalizeMoney({ ...over });
@@ -406,3 +408,31 @@ console.log('money-calc currency: ok');
   assert.equal(usualSalary(doc({ income: paid, recurring: [rule] })), null, 'a monthly repeat posts it already');
 }
 console.log('money-calc salary guess: ok');
+
+// ---- EXM-11: a half rounds the same way signed or not ----
+applyCurrency(doc({}));
+assert.equal(fmt(-1200.5), '\u2212₹1,201');
+assert.equal(fmt(1200.5), '₹1,201');
+assert.equal(fmt(-0.4), '₹0', 'no minus on a zero');
+console.log('money-calc fmt: ok');
+
+// ---- EXM-4: the advisor doesn't wave through any price with no reason given ----
+{
+  const m = doc({ goals: [{ id: 'g', name: 'Emergency fund', target: 50000, contribs: [{ amount: 3000, date: '2026-10-01' }] }] });
+  const phone = advise(m, 'New phone', 25000, '');
+  assert.notEqual(phone.verdict, 'Go for it', 'no reason and half a goal: not a yes');
+  assert.equal(advise(doc({}), 'Earbuds', 500, '').verdict, 'Depends on why', 'no words either way: undecided');
+  assert.equal(advise(doc({}), 'Workout shoes', 500, '').isWant, false);
+  assert.equal(advise(doc({}), 'Workout shoes', 500, '').verdict, 'Depends on why', '"workout" is not "work"');
+  assert.equal(advise(doc({}), 'Refund fee', 500, '').isWant, false, '"refund" is not "fun"');
+  assert.equal(advise(doc({}), 'Charger', 500, 'my old one broke, I need it').verdict, 'Go for it');
+}
+// ---- EXM-10: the pace for a dated goal reaches the target ----
+{
+  const g = { id: 'g', name: 'Car', target: 50000, dueDate: '2027-04-10', contribs: [] }; // 172 days out
+  const p = goalPlan(g);
+  assert.ok((p.requiredWeekly * 172) / 7 >= 50000, 'weekly x weeks covers it: ' + p.requiredWeekly);
+  assert.ok(p.requiredDaily * 172 >= 50000, 'daily x days covers it: ' + p.requiredDaily);
+  assert.equal(p.requiredDaily, 291);
+}
+console.log('money-calc advisor + goal pace: ok');

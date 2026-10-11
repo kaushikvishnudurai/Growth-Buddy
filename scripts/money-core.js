@@ -248,9 +248,12 @@ function lastNDays(n) {
   return out;
 }
 function fmt(n) {
-  const v = Math.round(Number(n) || 0);
+  const x = Number(n) || 0;
+  // Round the size, then sign it: Math.round(-1200.5) is -1200 but 1200.5 is 1201,
+  // so the same expense read 1,200 spent on the slip and 1,201 on the card.
+  const v = Math.round(Math.abs(x));
   // Sign before the symbol, as a true minus: "₹-240" beside an account's "−₹240".
-  return (v < 0 ? '\u2212' : '') + cur + Math.abs(v).toLocaleString('en-IN');
+  return (x < 0 && v ? '\u2212' : '') + cur + v.toLocaleString('en-IN');
 }
 /* ---- Other currencies (light) ----
    An account can hold another currency: `settings.accountCurrency{accountId: '$'}`,
