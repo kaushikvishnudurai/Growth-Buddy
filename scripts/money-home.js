@@ -80,16 +80,16 @@ function RepeatExpenseNudge(money, onSaveMoney) {
   return node;
 }
 
-function addExpense(money, onSaveMoney) {
+function addExpense(money, onSaveMoney, requestReceiptScan) {
   import('./money.js')
-    .then((m) => m.openExpenseModal(money, onSaveMoney))
+    .then((m) => m.openExpenseModal(money, onSaveMoney, null, null, requestReceiptScan))
     .catch((err) => {
       console.error('Money failed to load', err);
       toast.error("Couldn't open the expense form. Check your connection and try again.");
     });
 }
 
-export function MoneyHomeCard({ money, onSaveMoney, onOpen }) {
+export function MoneyHomeCard({ money, onSaveMoney, onOpen, requestReceiptScan }) {
   money = normalizeMoney(money);
   applyCurrency(money);
   const st = budgetStatus(money);
@@ -168,7 +168,7 @@ export function MoneyHomeCard({ money, onSaveMoney, onOpen }) {
         {
           type: 'button',
           class: 'gb-btn gb-btn--soft gb-btn--compact',
-          onclick: () => addExpense(money, onSaveMoney),
+          onclick: () => addExpense(money, onSaveMoney, requestReceiptScan),
         },
         Icon('plus', { size: 14, sw: 2.6 }),
         'Add expense'

@@ -12583,6 +12583,19 @@ async function saveNavLayout(layout) {
   }
 }
 
+/* Money's receipt reader, for Add expense on the Money screen and on Home.
+   Shrunk the way Notes shrinks a photo: 1280px is enough to read a bill. */
+function requestReceiptScan(file) {
+  return import('./notes.js')
+    .then((m) => m.shrinkPhoto(file))
+    .then((imageDataUrl) =>
+      api('/api/money/receipt-scan', {
+        method: 'POST',
+        body: JSON.stringify({ imageDataUrl }),
+      })
+    );
+}
+
 const SCREENS = {
   home: {
     headerLabel: () => todayLabel(),
@@ -12630,6 +12643,7 @@ const SCREENS = {
         onAddSuggestedReminder: addSuggestedReminder,
         money: state.money,
         onSaveMoney: saveMoney,
+        requestReceiptScan,
         onOpenMoney: () => setScreen('money'),
         homeLayout: (state.user && state.user.homeLayout) || null,
       }),
@@ -13064,16 +13078,7 @@ const SCREENS = {
             onSaveMoney: saveMoney,
             requestAdvice: (payload) =>
               api('/api/money/advice', { method: 'POST', body: JSON.stringify(payload) }),
-            // Shrunk the way Notes shrinks a photo: 1280px is enough to read a bill.
-            requestReceiptScan: (file) =>
-              import('./notes.js')
-                .then((m) => m.shrinkPhoto(file))
-                .then((imageDataUrl) =>
-                  api('/api/money/receipt-scan', {
-                    method: 'POST',
-                    body: JSON.stringify({ imageDataUrl }),
-                  })
-                ),
+            requestReceiptScan,
             accountRequest,
             // Behind the save queue, like accountRequest: asked the moment an expense is
             // added, it read the day without it, and money.js kept that under the new key.

@@ -2284,9 +2284,208 @@ function logNoSpendDay(money, save) {
   toast.success('No-spend day logged — that’s money kept.');
 }
 
+/* Scan a receipt: the photo's line items (MoneyService.scanReceipt) as rows to
+   check, each starting on the tag predictCategory gives its name and changeable
+   per row. Nothing is saved until "Save items". `opts.file`: a photo already
+   taken (Add expense's camera button), scanned the moment this opens. Module
+   level so Home's Add expense reaches it too. */
+function openReceiptModal(money, save, requestReceiptScan, opts) {
+  money = normalizeMoney(money);
+  applyCurrency(money);
+  const commit = (mutator) => commitOn(money, save, mutator);
+  const cats = mergedCats(money);
+  const file = h('input', {
+    type: 'file',
+    class: 'gb-input',
+    accept: 'image/*',
+    capture: 'environment',
+  });
+  const preview = h('div', { class: 'gb-money-receipt-preview' });
+  const rowsWrap = h('div', { class: 'gb-money-receipt-rows' });
+  const totalEl = h('div', { class: 'gb-money-receipt-total' }, 'Total: ' + fmt(0));
+  let rows = [];
+  const recompute = () =>
+    (totalEl.textContent =
+      'Total: ' + fmt(rows.reduce((a, r) => a + (Number(r.amount) || 0), 0)));
+  function renderRows() {
+    rowsWrap.replaceChildren(
+      ...rows.map((r, i) => {
+        const name = h('input', {
+          type: 'text',
+          class: 'gb-input gb-input--inline',
+          value: r.name,
+          placeholder: 'Item',
+          style: { flex: '1' },
+        });
+        const amt = h('input', {
+          type: 'number',
+          class: 'gb-input gb-input--inline',
+          inputmode: 'decimal',
+          value: r.amount || '',
+          placeholder: cur,
+          min: '0',
+          style: { width: '84px' },
+        });
+        // The predicted tag, changeable; once changed by hand, renaming the
+        // item no longer re-guesses it. What they pick is saved on the expense,
+        // so it is also what predictCategory reads next time.
+        const tag = h(
+          'select',
+          {
+            class: 'gb-input gb-input--inline gb-money-receipt-tag',
+            'aria-label': 'Tag for ' + (r.name || 'this item'),
+            onchange: () => {
+              r.category = tag.value;
+              r.picked = true;
+            },
+          },
+          cats.map((c) => h('option', { value: c.key, selected: c.key === r.category }, c.label))
+        );
+        name.addEventListener('input', () => {
+          r.name = name.value;
+          tag.setAttribute('aria-label', 'Tag for ' + (r.name || 'this item'));
+          if (r.picked) return;
+          r.category = suggestCategory(name.value, money) || 'others';
+          tag.value = r.category;
+        });
+        amt.addEventListener('input', () => {
+          r.amount = Math.round((Number(amt.value) || 0) * 100) / 100;
+          recompute();
+        });
+        const del = h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-icon-btn',
+            'aria-label': 'Remove item',
+            onclick: () => {
+              rows.splice(i, 1);
+              renderRows();
+              recompute();
+            },
+          },
+          Icon('trash-2', { size: 15, sw: 2.4 })
+        );
+        return h('div', { class: 'gb-money-receipt-row' }, name, amt, del, tag);
+      })
+    );
+  }
+  const addRowBtn = h(
+    'button',
+    {
+      type: 'button',
+      class: 'gb-btn gb-btn--soft gb-btn--compact',
+      onclick: () => {
+        rows.push({ name: '', amount: 0, category: 'others' });
+        renderRows();
+      },
+    },
+    Icon('plus', { size: 14, sw: 2.6 }),
+    'Add item'
+  );
+  const date = h('input', { type: 'date', class: 'gb-input', value: todayKey(), max: todayKey() });
+  const status = h('div', { class: 'gb-note-hint', 'aria-live': 'polite' });
+  let scanSeq = 0; // a second photo picked mid-scan wins; the first answer is dropped
+  async function scanFile(f) {
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      preview.style.backgroundImage = 'url(' + reader.result + ')';
+      preview.classList.add('has-img');
+    };
+    reader.readAsDataURL(f);
+    if (typeof requestReceiptScan !== 'function') return;
+    const seq = ++scanSeq;
+    status.replaceChildren(
+      Thinking('Reading your receipt', ['Reading the receipt', 'Finding each item', 'Tagging them'])
+    );
+    let res = null;
+    try {
+      res = await requestReceiptScan(f);
+    } catch (_) {
+      /* offline, rate-limited or an unreadable photo: same as no AI */
+    }
+    if (seq !== scanSeq) return;
+    const items = (res && res.configured && res.items) || [];
+    if (!items.length) {
+      status.textContent = "Couldn't read items from this photo. Add them below.";
+      if (!rows.length) {
+        rows = [{ name: '', amount: 0, category: 'others' }];
+        renderRows();
+      }
+      return;
+    }
+    const scanned = items.map((it) => ({
+      name: it.name,
+      amount: Number(it.amount) || 0,
+      category: suggestCategory(it.name, money) || 'others',
+    }));
+    // Rows the user already filled in stay; empty ones make way for the scan.
+    rows = rows.filter((r) => (Number(r.amount) || 0) > 0).concat(scanned);
+    if (res.date && res.date <= todayKey()) date.value = res.date;
+    renderRows();
+    recompute();
+    status.textContent =
+      'Read ' +
+      items.length +
+      ' item' +
+      (items.length === 1 ? '' : 's') +
+      (res.merchant ? ' from ' + res.merchant : '') +
+      '. Check the amounts before saving.';
+  }
+  file.addEventListener('change', () => scanFile(file.files && file.files[0]));
+  openMoneyModal({
+    title: 'Scan a receipt',
+    // The AI reads the items (MoneyService.scanReceipt); nothing is saved until
+    // the user confirms them. Without AI the photo is only a reference.
+    sub: "Snap your receipt and I'll read the items. Check them, then save.",
+    body: h(
+      'div',
+      { class: 'gb-form' },
+      h('div', { class: 'gb-field-label' }, 'Receipt photo'),
+      file,
+      preview,
+      status,
+      h('div', { class: 'gb-field-label' }, 'Date'),
+      date,
+      h('div', { class: 'gb-field-label' }, 'Items'),
+      rowsWrap,
+      addRowBtn,
+      totalEl,
+      h(
+        'div',
+        { class: 'gb-note-hint', style: { marginTop: '8px' } },
+        'Each item is saved as a dated expense in your history.'
+      )
+    ),
+    primary: 'Save items',
+    onPrimary: async () => {
+      const valid = rows.filter((r) => (Number(r.amount) || 0) > 0);
+      if (!valid.length) throw new Error('Add at least one item with an amount.');
+      commit((m) =>
+        valid.forEach((r) =>
+          m.expenses.unshift({
+            id: uid(),
+            amount: r.amount,
+            category: catOf(r.category, money).key,
+            date: date.value && date.value <= todayKey() ? date.value : todayKey(),
+            note: r.name.trim() || 'Receipt item',
+            createdAt: Date.now(),
+          })
+        )
+      );
+      toast.success(valid.length + ' item' + (valid.length === 1 ? '' : 's') + ' saved.');
+    },
+  });
+  if (opts && opts.file) scanFile(opts.file);
+}
+
 /* Add, or — with `existing` — edit in place. Editing keeps the id (so the ledger
-   updates the same row), the reflection and createdAt; only what the form shows changes. */
-function openExpenseModal(money, save, prefillDate, existing) {
+   updates the same row), the reflection and createdAt; only what the form shows changes.
+   `scan` (the receipt reader, Money's and Home's requestReceiptScan): a new
+   expense offers "Scan a receipt" right here, so adding and scanning are one
+   button — the photo goes straight into openReceiptModal's item rows. */
+function openExpenseModal(money, save, prefillDate, existing, scan) {
   money = normalizeMoney(money);
   applyCurrency(money);
   const ex = existing || null;
@@ -2352,14 +2551,46 @@ function openExpenseModal(money, save, prefillDate, existing) {
     labelFor
   );
   labelFor(paidFrom.get());
-  openMoneyModal({
+  let modal = null;
+  let scanRow = null;
+  if (!ex && typeof scan === 'function') {
+    const pick = h('input', {
+      type: 'file',
+      accept: 'image/*',
+      capture: 'environment',
+      tabindex: '-1',
+      'aria-hidden': 'true',
+      style: { display: 'none' },
+    });
+    pick.addEventListener('change', () => {
+      const f = pick.files && pick.files[0];
+      if (!f) return;
+      if (modal) modal.close();
+      // A beat for this sheet to leave before the receipt's opens over it.
+      setTimeout(() => openReceiptModal(money, save, scan, { file: f }), 200);
+    });
+    scanRow = h(
+      'div',
+      { class: 'gb-money-scan-cta' },
+      pick,
+      h(
+        'button',
+        { type: 'button', class: 'gb-btn gb-btn--secondary gb-btn--compact', onclick: () => pick.click() },
+        Icon('camera', { size: 15, sw: 2.2 }),
+        'Scan a receipt'
+      ),
+      h('span', { class: 'gb-note-hint' }, 'Every item read and tagged for you.')
+    );
+  }
+  modal = openMoneyModal({
     title: ex ? 'Edit expense' : 'Add expense',
     sub: ex
       ? 'Fix the amount, tag, account or date.'
-      : "Add what you spent. I'll suggest a tag from your note.",
+      : "Add what you spent, or scan the receipt. I'll suggest a tag from your note.",
     body: h(
       'div',
       { class: 'gb-form' },
+      scanRow,
       amountLabel,
       amount,
       h('div', { class: 'gb-field-label' }, 'Note (optional)'),
@@ -3034,178 +3265,10 @@ function ScreenMoney({
     );
   }
 
-  const openAddExpense = (prefillDate) => openExpenseModal(money, save, prefillDate);
+  const openAddExpense = (prefillDate) => openExpenseModal(money, save, prefillDate, null, requestReceiptScan);
   const openEditExpense = (e) => openExpenseModal(money, save, null, e);
 
   /* ---- MODALS ---- */
-  function openReceiptScan() {
-    const file = h('input', {
-      type: 'file',
-      class: 'gb-input',
-      accept: 'image/*',
-      capture: 'environment',
-    });
-    const preview = h('div', { class: 'gb-money-receipt-preview' });
-    const rowsWrap = h('div', { class: 'gb-money-receipt-rows' });
-    const totalEl = h('div', { class: 'gb-money-receipt-total' }, 'Total: ' + fmt(0));
-    let rows = [];
-    const recompute = () =>
-      (totalEl.textContent =
-        'Total: ' + fmt(rows.reduce((a, r) => a + (Number(r.amount) || 0), 0)));
-    function renderRows() {
-      rowsWrap.replaceChildren(
-        ...rows.map((r, i) => {
-          const name = h('input', {
-            type: 'text',
-            class: 'gb-input gb-input--inline',
-            value: r.name,
-            placeholder: 'Item',
-            style: { flex: '1' },
-          });
-          const amt = h('input', {
-            type: 'number',
-            class: 'gb-input gb-input--inline',
-            inputmode: 'decimal',
-            value: r.amount || '',
-            placeholder: cur,
-            min: '0',
-            style: { width: '84px' },
-          });
-          name.addEventListener('input', () => {
-            r.name = name.value;
-            r.category = suggestCategory(name.value, money) || 'others';
-          });
-          amt.addEventListener('input', () => {
-            r.amount = Math.round((Number(amt.value) || 0) * 100) / 100;
-            recompute();
-          });
-          const del = h(
-            'button',
-            {
-              type: 'button',
-              class: 'gb-icon-btn',
-              'aria-label': 'Remove item',
-              onclick: () => {
-                rows.splice(i, 1);
-                renderRows();
-                recompute();
-              },
-            },
-            Icon('trash-2', { size: 15, sw: 2.4 })
-          );
-          return h('div', { class: 'gb-money-receipt-row' }, name, amt, del);
-        })
-      );
-    }
-    const addRowBtn = h(
-      'button',
-      {
-        type: 'button',
-        class: 'gb-btn gb-btn--soft gb-btn--compact',
-        onclick: () => {
-          rows.push({ name: '', amount: 0, category: 'others' });
-          renderRows();
-        },
-      },
-      Icon('plus', { size: 14, sw: 2.6 }),
-      'Add item'
-    );
-    const date = h('input', { type: 'date', class: 'gb-input', value: todayKey(), max: todayKey() });
-    const status = h('div', { class: 'gb-note-hint', 'aria-live': 'polite' });
-    let scanSeq = 0; // a second photo picked mid-scan wins; the first answer is dropped
-    file.addEventListener('change', async () => {
-      const f = file.files && file.files[0];
-      if (!f) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        preview.style.backgroundImage = 'url(' + reader.result + ')';
-        preview.classList.add('has-img');
-      };
-      reader.readAsDataURL(f);
-      if (typeof requestReceiptScan !== 'function') return;
-      const seq = ++scanSeq;
-      status.replaceChildren(
-        Thinking('Reading your receipt', ['Reading the receipt', 'Finding each item', 'Tagging them'])
-      );
-      let res = null;
-      try {
-        res = await requestReceiptScan(f);
-      } catch (_) {
-        /* offline, rate-limited or an unreadable photo: same as no AI */
-      }
-      if (seq !== scanSeq) return;
-      const items = (res && res.configured && res.items) || [];
-      if (!items.length) {
-        status.textContent = "Couldn't read items from this photo. Add them below.";
-        if (!rows.length) {
-          rows = [{ name: '', amount: 0, category: 'others' }];
-          renderRows();
-        }
-        return;
-      }
-      const scanned = items.map((it) => ({
-        name: it.name,
-        amount: Number(it.amount) || 0,
-        category: suggestCategory(it.name, money) || 'others',
-      }));
-      // Rows the user already filled in stay; empty ones make way for the scan.
-      rows = rows.filter((r) => (Number(r.amount) || 0) > 0).concat(scanned);
-      if (res.date && res.date <= todayKey()) date.value = res.date;
-      renderRows();
-      recompute();
-      status.textContent =
-        'Read ' +
-        items.length +
-        ' item' +
-        (items.length === 1 ? '' : 's') +
-        (res.merchant ? ' from ' + res.merchant : '') +
-        '. Check the amounts before saving.';
-    });
-    openMoneyModal({
-      title: 'Scan a receipt',
-      // The AI reads the items (MoneyService.scanReceipt); nothing is saved until
-      // the user confirms them. Without AI the photo is only a reference.
-      sub: "Snap your receipt and I'll read the items. Check them, then save.",
-      body: h(
-        'div',
-        { class: 'gb-form' },
-        h('div', { class: 'gb-field-label' }, 'Receipt photo'),
-        file,
-        preview,
-        status,
-        h('div', { class: 'gb-field-label' }, 'Date'),
-        date,
-        h('div', { class: 'gb-field-label' }, 'Items'),
-        rowsWrap,
-        addRowBtn,
-        totalEl,
-        h(
-          'div',
-          { class: 'gb-note-hint', style: { marginTop: '8px' } },
-          'Each item is saved as a dated expense in your history.'
-        )
-      ),
-      primary: 'Save items',
-      onPrimary: async () => {
-        const valid = rows.filter((r) => (Number(r.amount) || 0) > 0);
-        if (!valid.length) throw new Error('Add at least one item with an amount.');
-        commit((m) =>
-          valid.forEach((r) =>
-            m.expenses.unshift({
-              id: uid(),
-              amount: r.amount,
-              category: catOf(r.category, money).key,
-              date: date.value && date.value <= todayKey() ? date.value : todayKey(),
-              note: r.name.trim() || 'Receipt item',
-              createdAt: Date.now(),
-            })
-          )
-        );
-        toast.success(valid.length + ' item' + (valid.length === 1 ? '' : 's') + ' saved.');
-      },
-    });
-  }
-
   function openSetBudgets() {
     const inputs = mergedCats(money).map((c) => ({
       c,
@@ -4738,16 +4801,6 @@ function ScreenMoney({
         },
         Icon('plus', { size: 15, sw: 2.6 }),
         'Add expense'
-      ),
-      h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-btn gb-btn--secondary gb-btn--compact',
-          onclick: openReceiptScan,
-        },
-        Icon('receipt', { size: 15, sw: 2.2 }),
-        'Scan receipt'
       ),
       (() => {
         const noSpendToday = (money.noSpendDays || []).includes(todayKey());

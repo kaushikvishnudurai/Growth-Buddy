@@ -2533,6 +2533,7 @@ function ScreenDashboard({
   food,
   money,
   onSaveMoney,
+  requestReceiptScan,
   onOpenMoney,
   homeLayout,
 }) {
@@ -2577,7 +2578,7 @@ function ScreenDashboard({
     goals: () => GoalsCard({ goals, goalProgress, onOpenGoals }),
     reminders: () =>
       ReminderSuggestionsCard({ habits, water, wellness, reminders, onAddSuggestedReminder }),
-    money: () => MoneyHomeCard({ money, onSaveMoney, onOpen: onOpenMoney }),
+    money: () => MoneyHomeCard({ money, onSaveMoney, onOpen: onOpenMoney, requestReceiptScan }),
   };
 
   const blocks = resolveHomeLayout(homeLayout)
