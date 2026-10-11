@@ -810,6 +810,39 @@ function persistGoalProgress() {
    so only the newest one's failure is worth rolling back — an older one's is
    already superseded by whatever was sent after it. */
 const goalProgressSeq = latestSeq();
+const goalSaves = new Map(); // goal key -> the tail of its save chain
+const goalUnsent = new Set(); // goal keys with an edit no PUT has carried yet
+
+/* Leaving (reload, tab closed) while an edit waits behind a save in flight:
+   send the newest blob now, keepalive, so the chain's wait cannot lose it.
+   No If-Match: it is the newest copy, and the queued save would have won. */
+window.addEventListener('pagehide', () => {
+  goalUnsent.forEach((key) =>
+    api('/api/goals/' + encodeURIComponent(key) + '/progress', {
+      method: 'PUT',
+      keepalive: true,
+      body: JSON.stringify(state.goalProgress[key]),
+    }).catch(() => {})
+  );
+  goalUnsent.clear();
+});
+
+/* One progress PUT (goal-merge.js putProgress: If-Match, and on a 409 this
+   tab's edits put onto the server's copy and sent once more). Lazy: the
+   merge is off the boot chunk, and the import is cached after the first save. */
+async function putGoalProgress(goalId, key) {
+  const goal = (state.goals || []).flatMap((sec) => sec.goals || []).find((g) => String(g.id) === key);
+  const { putProgress } = await import('./goal-merge.js');
+  const read = () => {
+    goalUnsent.delete(key);
+    return state.goalProgress[key];
+  };
+  return putProgress(api, goalId, goal, read, (blob) => {
+    state.goalProgress[key] = blob;
+    persistGoalProgress();
+    render();
+  });
+}
 
 function updateGoalProgress(goalId, patch) {
   if (!state.goalProgress) state.goalProgress = {};
@@ -826,10 +859,12 @@ function updateGoalProgress(goalId, patch) {
   render();
   // Optimistic, but not silent: a failure used to be a console line only, so
   // the tick stayed on screen and was gone after the next reload.
-  api('/api/goals/' + encodeURIComponent(goalId) + '/progress', {
-    method: 'PUT',
-    body: JSON.stringify(state.goalProgress[key]),
-  }).catch((err) => {
+  // Chained per goal: two saves in flight landed out of order and the older
+  // blob won (HOS-3). Each sends what the tab holds when its turn comes.
+  goalUnsent.add(key);
+  const run = (goalSaves.get(key) || Promise.resolve()).then(() => putGoalProgress(goalId, key));
+  goalSaves.set(key, run.catch(() => {}));
+  run.catch((err) => {
     if (!goalProgressSeq.isLatest(key, seq)) return;
     restoreKey(state.goalProgress, key, prev);
     persistGoalProgress();
@@ -2502,15 +2537,17 @@ async function apiFetch(path, options) {
   if (!res.ok) {
     let msg = statusMessage(res.status);
     let code;
+    let body;
     try {
-      const err = await res.json();
-      msg = err.message || msg;
-      code = err.code;
+      body = await res.json();
+      msg = body.message || msg;
+      code = body.code;
     } catch (_) {
       // ignored
     }
     const err = new Error(msg);
     err.status = res.status;
+    err.body = body; // a 409 can carry the current copy (goal progress)
     // ApiError.code, e.g. 'idempotency_in_progress' (a replay racing its first try).
     if (code) err.code = code;
     throw err;
