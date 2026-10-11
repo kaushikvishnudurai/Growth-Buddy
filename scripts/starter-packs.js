@@ -62,7 +62,9 @@ export const PACKS = [
     id: 'water',
     label: 'Stay hydrated',
     icon: 'droplets',
-    items: [{ kind: 'water' }, { kind: 'habit', name: 'Drink water', icon: 'droplets', domain: 'habit' }],
+    // The habit only stands in for the tracker: with Water on it would be a
+    // second "drink water" to tick beside the one the water card already counts.
+    items: [{ kind: 'water' }, { kind: 'habit', name: 'Drink water', icon: 'droplets', domain: 'habit', unless: 'water' }],
   },
 ];
 
@@ -115,7 +117,7 @@ export function planStarter(packIds, ctx) {
   let waterDone = false;
   PACKS.filter((p) => packIds.includes(p.id)).forEach((pack) => {
     pack.items.forEach((it) => {
-      if (!on(KIND_FEATURE[it.kind]) || (it.feature && !on(it.feature))) return;
+      if (!on(KIND_FEATURE[it.kind]) || (it.feature && !on(it.feature)) || (it.unless && on(it.unless))) return;
       if (it.kind === 'habit' || it.kind === 'reminder' || it.kind === 'goal') {
         const key = low(it.name || it.text || it.title);
         if (seen[it.kind].has(key)) return;

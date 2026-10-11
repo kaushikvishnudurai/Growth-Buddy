@@ -97,6 +97,8 @@ FROM (
   UNION ALL SELECT 'mentor_messages'        AS table_name, 'actions_json'
   UNION ALL SELECT 'reminder_dispatch_log'  AS table_name, 'snooze_of'
   UNION ALL SELECT 'reminder_dispatch_log'  AS table_name, 'attempts'
+  UNION ALL SELECT 'habit_checkins'         AS table_name, 'xp_paid'
+  UNION ALL SELECT 'food_entries'           AS table_name, 'pieces'
   UNION ALL SELECT 'habits'                 AS table_name, 'health_link'
   UNION ALL SELECT 'habits'                 AS table_name, 'health_target'
 ) AS t
@@ -638,6 +640,16 @@ CREATE TABLE IF NOT EXISTS `bank_feed_consents` (
   KEY `ix_bank_feed_user` (`user_id`),
   CONSTRAINT `fk_bank_feed_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- A habit day's check-in XP is paid (HabitCheckin.xpPaid). Completing a rest
+-- (freeze) day now refunds its token, so "was this day already paid" can no
+-- longer be guessed from protected_day. NULL: a row from before, read with the
+-- old rule (paid unless protected); nothing is rewritten.
+ALTER TABLE habit_checkins ADD COLUMN xp_paid BOOLEAN NULL;
+
+-- "2 idli": a food entry logged by the piece keeps its count, so the Food
+-- screen shows "2 pieces" and not "Idli (120g)". NULL: weighed, or from before.
+ALTER TABLE food_entries ADD COLUMN pieces SMALLINT NULL;
 
 -- A habit linked to a phone health reading, which the app reads to tick it on
 -- its own. health_link: steps | sleep | distance | calories | floors | workout;

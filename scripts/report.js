@@ -4,9 +4,11 @@
    settings, its report section is replaced with a prompt to turn it
    back on (so the data the report needs can start being collected).
    ===================================================================== */
-import { h, Card, SectionTitle, Icon } from './gb-kit.js';
+import { h, Card, SectionTitle, Icon, openOverlay, refreshIcons } from './gb-kit.js';
 import { WeeklyReflectionCard, BadgeCard, GoalTimelineCard } from './dashboard.js';
 import { buildInsights, insightProgress } from './insights.js';
+import { InsightRow } from './outlook-card.js';
+import { yearOf } from './outlook.js';
 import {
   localKey,
   pixelValues,
@@ -22,9 +24,16 @@ import {
 } from './review.js';
 // The Compare card reads the same daily series the insight cards do.
 import { signals } from './insights.js';
-import { shareStoryCard } from './share-card.js';
+import { shareStoryCard, renderStoryCard } from './share-card.js';
 import { toast } from './toast.js';
 import { pad2 } from './dates.js';
+
+/** "22 Sep" / "Tue, 22 Sep": one short month style. en-GB's Intl writes "Sept", the
+    rest of the app (pixels, Outlook) "Sep". */
+function shortDay(k, weekday) {
+  const opts = weekday ? { weekday: 'short', day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short' };
+  return new Date(k + 'T00:00:00').toLocaleDateString(undefined, opts).replace(/\bSept\b/, 'Sep');
+}
 
 /** Patterns across the user's logged signals, plus habits, tasks, goals, focus and money.
     `loading`: the history fetch is still out, so an empty list is not yet "nothing found".
@@ -35,44 +44,7 @@ function insightsSection(data, { loading, onDismiss, onAction } = {}) {
   let body;
   if (insights.length) {
     body = Card({
-      children: insights.map((it) =>
-        h(
-          'div',
-          { class: 'gb-insight-row' },
-          h('span', { class: 'gb-insight-ic' }, Icon(it.icon, { size: 18, color: 'var(--brand)' })),
-          h(
-            'div',
-            { style: { minWidth: 0 } },
-            h('div', { class: 'gb-insight-title' }, it.title),
-            h('div', { class: 'gb-insight-text' }, it.text),
-            it.basis ? h('div', { class: 'gb-insight-basis' }, 'Based on ' + it.basis) : null,
-            it.action && onAction
-              ? h(
-                  'button',
-                  {
-                    type: 'button',
-                    class: 'gb-btn gb-btn--soft gb-btn--compact gb-insight-action',
-                    onclick: () => onAction(it.action, it),
-                  },
-                  it.action.label
-                )
-              : null
-          ),
-          onDismiss && it.id
-            ? h(
-                'button',
-                {
-                  type: 'button',
-                  class: 'gb-insight-dismiss',
-                  'aria-label': 'Dismiss insight: ' + it.title,
-                  title: 'Dismiss',
-                  onclick: () => onDismiss(it.id),
-                },
-                Icon('x', { size: 16, sw: 2.4 })
-              )
-            : null
-        )
-      ),
+      children: insights.map((it) => InsightRow(it, { onDismiss, onAction })),
     });
   } else if (loading) {
     body = Card({
@@ -223,8 +195,7 @@ function trendChart(values, color, days, fmt, title, opts = {}) {
     'aria-hidden': 'true',
     focusable: 'false',
   });
-  const dayLabel = (k) =>
-    new Date(k + 'T00:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  const dayLabel = (k) => shortDay(k);
   const lows = present.reduce((a, b) => (b.v < a.v ? b : a));
   const highs = present.reduce((a, b) => (b.v > a.v ? b : a));
   const summary =
@@ -358,11 +329,7 @@ function trendChart(values, color, days, fmt, title, opts = {}) {
     dot.setAttribute('cy', y(p.v).toFixed(1));
     guide.setAttribute('visibility', 'visible');
     dot.setAttribute('visibility', 'visible');
-    const date = new Date(days[p.i] + 'T00:00:00').toLocaleDateString(undefined, {
-      weekday: 'short',
-      day: 'numeric',
-      month: 'short',
-    });
+    const date = shortDay(days[p.i], true);
     tip.textContent = weekly
       ? 'Week of ' + dayLabel(days[p.i]) + ' · avg ' + fmt(p.v)
       : date + ' · ' + fmt(p.v);
@@ -507,8 +474,12 @@ function trendsSection({ on, trends, wellness, range, onRange }) {
     const all = monthTicks(b.keys, 3);
     const ticks = all.filter((_, j) => (all.length - 1 - j) % 2 === 0).map((t) => ({
       i: t.i,
-      label: new Date(t.month + '-01T00:00:00').toLocaleDateString(undefined, { month: 'short' }),
+      label: MONTH_SHORT[Number(t.month.slice(5, 7)) - 1],
     }));
+    // The headline is the latest week too: a daily "Good" over a chart whose summary said
+    // "latest weekly average Okay" read as two answers.
+    const lastWeek = b.values.filter((v) => v != null && !Number.isNaN(v)).pop();
+    if (lastWeek != null) latest = fmt(lastWeek);
     return trendCard(title, latest, sub, b.values, color, b.keys, fmt, vs, {
       bucket: 'week',
       ticks,
@@ -517,9 +488,10 @@ function trendsSection({ on, trends, wellness, range, onRange }) {
 
   const cards = [];
 
-  // Score — always available.
+  // Score — always available. Finished days only (`curDays`, today left out): today's
+  // score is still climbing, and as the line's last point it read as a 0% drop.
   {
-    const vals = seriesFrom((d) => (d.score != null ? d.score : null));
+    const vals = seriesFrom((d) => (d.score != null ? d.score : null), curDays);
     const s = summarize(vals);
     cards.push(
       card(
@@ -528,7 +500,7 @@ function trendsSection({ on, trends, wellness, range, onRange }) {
         s.avg != null ? Math.round(s.avg) + '% avg over ' + nDays(s.count) : null,
         vals,
         'var(--brand)',
-        days,
+        curDays,
         (v) => Math.round(v) + '%',
         vsLine(
           (keys) => seriesFrom((d) => (d.score != null ? d.score : null), keys),
@@ -727,8 +699,9 @@ const COMPARE_METRICS = [
   { key: 'focus', label: 'Focus minutes', feature: 'focus', fmt: (v) => Math.round(v) + ' min' },
   { key: 'habits', label: 'Habits done', feature: 'habits', fmt: (v) => Math.round(v) + '%' },
 ];
-let compareX = 'sleepHours';
-let compareY = 'mood';
+let compareX = null;
+let compareY = null;
+let comparePicked = false; // until the user picks, show the strongest pair
 
 function scatterChart(res, mx, my) {
   const W = 320;
@@ -791,8 +764,7 @@ function scatterChart(res, mx, my) {
   });
   svg.appendChild(dot);
   const tip = h('div', { class: 'gb-trend-tip', hidden: true });
-  const dayLabel = (k) =>
-    new Date(k + 'T00:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  const dayLabel = (k) => shortDay(k);
   const show = (e) => {
     const box = svg.getBoundingClientRect();
     const px = ((e.clientX - box.left) / box.width) * W;
@@ -894,6 +866,10 @@ function compareSection({ on, trends, wellness, money, insightHistory }) {
 
   const slot = h('div');
   const paint = () => {
+    if (!comparePicked) {
+      const best = Object.keys(pairs).sort((a, b) => Math.abs(pairs[b].r) - Math.abs(pairs[a].r))[0];
+      [compareX, compareY] = best.split('|');
+    }
     if (!xs.some((m) => m.key === compareX)) compareX = xs[0].key;
     const ys = partners(compareX);
     if (!ys.some((m) => m.key === compareY)) compareY = ys[0].key;
@@ -926,8 +902,8 @@ function compareSection({ on, trends, wellness, money, insightHistory }) {
       h(
         'div',
         { class: 'gb-compare-pick' },
-        select('gb-compare-x', 'Compare', xs, compareX, (v) => (compareX = v)),
-        select('gb-compare-y', 'with', ys, compareY, (v) => (compareY = v))
+        select('gb-compare-x', 'Compare', xs, compareX, (v) => ((comparePicked = true), (compareX = v))),
+        select('gb-compare-y', 'with', ys, compareY, (v) => ((comparePicked = true), (compareY = v)))
       ),
       scatterChart(res, mx, my),
       h(
@@ -997,7 +973,15 @@ function nearestDay(grid, e) {
   return best && bestD < 12 ? best : null;
 }
 
-function pixelGrid(values, today, readout) {
+// Mood is a 1-4 check-in, not a percentage: "average 57%" meant nothing.
+const MOOD_WORD = ['Low', 'Okay', 'Good', 'Great'];
+const pixelFmt = {
+  mood: { day: (v) => MOOD_WORD[Math.round(v * 3)], avg: (v) => (1 + v * 3).toFixed(1) + ' of 4' },
+};
+const pctOf = (v) => Math.round(v * 100) + '%';
+
+function pixelGrid(values, today, readout, metric) {
+  const fmt = pixelFmt[metric] || { day: pctOf, avg: pctOf };
   const [ty, tm] = today.split('-').map(Number);
   const rows = [];
   const summary = { logged: 0, sum: 0 };
@@ -1036,9 +1020,8 @@ function pixelGrid(values, today, readout) {
       );
     }
   }
-  const avg = summary.logged ? Math.round((summary.sum / summary.logged) * 100) : 0;
   const total = summary.logged
-    ? nDays(summary.logged) + ' logged · average ' + avg + '%'
+    ? nDays(summary.logged) + ' logged · average ' + fmt.avg(summary.sum / summary.logged)
     : 'Nothing logged in the last year yet';
   readout.textContent = total;
 
@@ -1055,15 +1038,11 @@ function pixelGrid(values, today, readout) {
     cell.classList.add('is-picked');
     const k = cell.dataset.day;
     const v = values[k];
-    const date = new Date(k + 'T00:00:00').toLocaleDateString(undefined, {
-      weekday: 'short',
-      day: 'numeric',
-      month: 'short',
-    });
+    const date = shortDay(k, true);
     readout.textContent =
       date +
       ' · ' +
-      (k === today ? 'today, still counting' : v == null ? 'nothing logged' : Math.round(v * 100) + '%');
+      (k === today ? 'today, still counting' : v == null ? 'nothing logged' : fmt.day(v));
   };
   // Rows are a month label + 31 cells, so a column step is 32 children.
   const STEP = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -32, ArrowDown: 32 };
@@ -1140,7 +1119,12 @@ function pixelsSection({ trends, wellness, insightHistory }) {
       )
     );
     slot.replaceChildren(
-      pixelGrid(pixelValues(pixelMetric, { trends, wellness, habitHistory, today }), today, readout)
+      pixelGrid(
+        pixelValues(pixelMetric, { trends, wellness, habitHistory, today }),
+        today,
+        readout,
+        pixelMetric
+      )
     );
     key.replaceChildren(
       metric.low,
@@ -1158,24 +1142,6 @@ function pixelsSection({ trends, wellness, insightHistory }) {
       children: [slot, h('div', { class: 'gb-pixels-key' }, readout, key)],
     })
   );
-}
-
-/* Boot holds 60 days of daily logs; Report fetches the year (`insightHistory.year`,
-   same shape as /api/daily-logs) after first paint. Use it once it lands. */
-function yearOf(trends, wellness, insightHistory) {
-  const y = insightHistory && insightHistory.year;
-  if (!y) return { trends, wellness };
-  // The live stores win a shared day: they hold today's edits, the year fetch
-  // is whatever the server had when Report opened.
-  const w = wellness || {};
-  return {
-    trends: { byDate: { ...(y.byDate || {}), ...((trends && trends.byDate) || {}) } },
-    wellness: {
-      ...w,
-      sleepByDate: { ...(y.sleepByDate || {}), ...(w.sleepByDate || {}) },
-      moodByDate: { ...(y.moodByDate || {}), ...(w.moodByDate || {}) },
-    },
-  };
 }
 
 /** This month's YYYY-MM, or last month's on the 1st to 3rd (this one is too new to share). */
@@ -1200,8 +1166,8 @@ function recordsSection({ habits, trends, wellness, money, insightHistory }) {
   });
   const past = reviewMonth();
   const card =
-    (past && monthReview({ trends, wellness, habits, history: insightHistory, month: past })) ||
-    monthReview({ trends, wellness, habits, history: insightHistory });
+    (past && monthReview({ trends, wellness, habits, money, history: insightHistory, month: past })) ||
+    monthReview({ trends, wellness, habits, money, history: insightHistory });
   if (!records.length && !card) return null;
   const share = async () => {
     try {
@@ -1215,6 +1181,48 @@ function recordsSection({ habits, trends, wellness, money, insightHistory }) {
       toast.error(err, 'Could not draw the card here.');
     }
   };
+  // See the card before it goes anywhere: drawn once here, again by share (cheap, ~1 frame).
+  const preview = async () => {
+    let blob = null;
+    try {
+      blob = await renderStoryCard(card);
+    } catch (_) {
+      /* fall through to sharing directly */
+    }
+    if (!blob) return share();
+    const url = URL.createObjectURL(blob);
+    const { sheet, close } = openOverlay({
+      label: card.eyebrow,
+      onClose: () => URL.revokeObjectURL(url),
+    });
+    sheet.append(
+      h('div', { class: 'gb-modal-head' }, h('div', { class: 'gb-modal-title' }, card.eyebrow)),
+      h(
+        'div',
+        { class: 'gb-modal-body' },
+        h('img', {
+          src: url,
+          alt: card.eyebrow + ': ' + card.headline + ' ' + card.sub,
+          style: { display: 'block', margin: '0 auto', maxWidth: '100%', maxHeight: '60vh', borderRadius: '12px' },
+        })
+      ),
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--primary',
+          onclick: () => {
+            close();
+            share();
+          },
+        },
+        Icon('share-2', { size: 14, sw: 2.4 }),
+        'Share'
+      ),
+      h('button', { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel', onclick: close }, 'Cancel')
+    );
+    refreshIcons();
+  };
   return h(
     'div',
     { class: 'gb-dash-block' },
@@ -1225,7 +1233,7 @@ function recordsSection({ habits, trends, wellness, money, insightHistory }) {
       card
         ? h(
             'button',
-            { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--compact', onclick: share },
+            { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--compact', onclick: preview },
             Icon('share-2', { size: 14, sw: 2.4 }),
             past && card.month === past ? 'Share last month' : 'Share my month'
           )
