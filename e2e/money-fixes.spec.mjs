@@ -263,13 +263,18 @@ test('EXM-3: the statement counts budgeted tags only, the rest on its own line',
 });
 
 test('FRS-7: with no budgets, Overview offers them from the last 30 days in one tap', async ({ page, account }) => {
-  await postTx(page, account, [{ kind: 'expense', id: 'e2e-g', amount: 2000, category: 'food', note: 'Groceries', date: today() }]);
+  // Three weeks of history (NEW-1: a single day is not offered), scaled to a month:
+  // 1,500 over 21 days -> 2,143 a month, 10% under, down to 50 -> 1,900.
+  await postTx(page, account, [
+    { kind: 'expense', id: 'e2e-g0', amount: 1000, category: 'food', note: 'Groceries', date: addDays(-20) },
+    { kind: 'expense', id: 'e2e-g', amount: 500, category: 'food', note: 'Groceries', date: today() },
+  ]);
   await openMoney(page, account);
   const card = page.locator('.gb-money-card', { hasText: 'Monthly budgets' });
   await expect(card).toContainText('From your last 30 days: Food');
   await shot(page, 'FRS-7');
   await card.getByRole('button', { name: 'Use these' }).click();
-  await expect.poll(async () => (await moneyDoc(page, account)).budgets).toEqual({ food: 1800 });
+  await expect.poll(async () => (await moneyDoc(page, account)).budgets).toEqual({ food: 1900 });
 });
 
 test('EXM-20: Money dialogs say what is wrong under the field', async ({ page, account }) => {
