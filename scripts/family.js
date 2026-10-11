@@ -49,6 +49,31 @@ const MEALS = [
   { key: 'dinner', label: 'Dinner', icon: 'utensils-crossed' },
 ];
 
+/* A pantry item's category from its name ("Toor dal" -> Pulse), so the form
+   stops filing everything as a Vegetable. First match wins; none -> null. */
+const CATEGORY_WORDS = [
+  ['Pulse', /\b(dal|dhal|lentils?|gram|chana|rajma|moong|urad|toor|masoor|chickpeas?)\b/],
+  ['Dairy', /\b(curd|milk|paneer|ghee|butter|cheese|yog(h)?urt|cream|buttermilk)\b/],
+  [
+    'Grain',
+    /\b(rice|atta|flour|wheat|rava|sooji|semolina|ragi|oats|millet|poha|bread|maida|vermicelli)\b/,
+  ],
+  ['Protein', /\b(eggs?|chicken|mutton|fish|prawns?|meat|tofu|soya)\b/],
+  [
+    'Spice',
+    /\b(salt|chill?i(es)? powder|turmeric|masala|cumin|jeera|mustard|pepper|cardamom|cloves?|cinnamon|hing|asafoetida)\b/,
+  ],
+  [
+    'Fruit',
+    /\b(apples?|bananas?|mangoe?s?|oranges?|grapes?|papaya|guava|pomegranate|lemons?|watermelon|pineapple)\b/,
+  ],
+];
+function pantryCategory(name) {
+  const n = String(name || '').toLowerCase();
+  const hit = CATEGORY_WORDS.find(([, re]) => re.test(n));
+  return hit ? hit[0] : null;
+}
+
 function initials(name) {
   const parts = String(name || '?')
     .trim()
@@ -210,7 +235,9 @@ function ScreenFamily({ api }) {
     if (!plan) return;
     model.plan = plan;
     if (Array.isArray(plan.groceryItems) && !model.ingredients.length) {
-      model.ingredients = plan.groceryItems.map((g) => ({
+      // The expired pantry items went in as "do not use" (see generate); they
+      // come back in the plan's groceries and are not something to cook with.
+      model.ingredients = plan.groceryItems.filter((g) => g.freshness !== 'expired').map((g) => ({
         name: g.name,
         category: g.category || 'Other',
         quantity: g.quantity || '',
@@ -473,7 +500,7 @@ function ScreenFamily({ api }) {
             {
               type: 'button',
               class: 'gb-iconbtn',
-              'aria-label': 'Edit food profile',
+              'aria-label': 'Edit ' + m.name + '’s food profile',
               title: 'Food profile',
               onclick: () => openPanel({ type: 'profile', member: m }),
             },
@@ -486,7 +513,7 @@ function ScreenFamily({ api }) {
             {
               type: 'button',
               class: 'gb-iconbtn',
-              'aria-label': 'Edit member',
+              'aria-label': 'Edit ' + m.name,
               title: 'Edit',
               onclick: () => openPanel({ type: 'edit', member: m }),
             },
@@ -526,7 +553,7 @@ function ScreenFamily({ api }) {
             {
               type: 'button',
               class: 'gb-iconbtn gb-iconbtn--danger',
-              'aria-label': 'Remove member',
+              'aria-label': 'Remove ' + m.name,
               title: 'Remove',
               onclick: () => removeMember(m),
             },
@@ -1160,9 +1187,46 @@ function ScreenFamily({ api }) {
     );
   }
 
+  /* Expired pantry items are kept out of the chips (the plan is told not to use
+     them), so say so instead of letting them vanish. */
+  function expiredNote() {
+    // Same pick as generate(): one added back by hand is the user's call.
+    const have = new Set(model.ingredients.map((g) => g.name.toLowerCase()));
+    const names = (model.pantryItems || [])
+      .filter((p) => p.expired && p.name && !have.has(p.name.toLowerCase()))
+      .map((p) => p.name + ' (expired)');
+    return names.length ? h('p', { class: 'gb-family-empty-note' }, 'Not using: ' + names.join(', ')) : null;
+  }
+
+  /* The Generate button the user pressed is rebuilt by every paint, so focus
+     fell to <body> while the plan cooked and again when it arrived. */
+  function focusPlanHead() {
+    const head = root.querySelector('#gb-family-plan-head');
+    // Only when focus has nowhere to be: never pull it out of a field.
+    const lost = !document.activeElement || document.activeElement === document.body;
+    if (head && lost) head.focus({ preventScroll: true });
+  }
+
   function plannerSection() {
     const fam = model.family;
     const members = (fam && fam.members) || [];
+    // The pantry is what's in the house: seed Available groceries from it once,
+    // leaving out anything expired (that goes to the planner as "do not use").
+    const pantry = model.pantryItems;
+    if (pantry && !model.pantrySeeded) {
+      model.pantrySeeded = true;
+      const seen = new Set(model.ingredients.map((g) => g.name.toLowerCase()));
+      pantry.forEach((p) => {
+        if (p.expired || !p.name || seen.has(p.name.toLowerCase())) return;
+        seen.add(p.name.toLowerCase());
+        model.ingredients.push({
+          name: p.name,
+          category: p.category || 'Other',
+          quantity: p.quantity || '',
+          freshness: '',
+        });
+      });
+    }
 
     const photoInput = h('input', {
       type: 'file',
@@ -1262,9 +1326,21 @@ function ScreenFamily({ api }) {
       model.planBusy = true;
       model.planError = '';
       paint();
+      focusPlanHead();
       const memberIds = picked;
+      // The server adds the whole pantry, expired items included, and takes no
+      // avoid list; the quantity is the free text it does print, so say it there.
+      const have = new Set(model.ingredients.map((g) => g.name.toLowerCase()));
+      const expired = (model.pantryItems || [])
+        .filter((p) => p.expired && p.name && !have.has(p.name.toLowerCase()))
+        .map((p) => ({
+          name: p.name,
+          category: p.category || 'Other',
+          quantity: 'EXPIRED, do not use',
+          freshness: 'expired',
+        }));
       api
-        .generateMealPlan({ ingredients: model.ingredients, memberIds })
+        .generateMealPlan({ ingredients: model.ingredients.concat(expired), memberIds })
         .then((res) => {
           model.plan = res;
           // The plan it replaced is now history.
@@ -1276,6 +1352,7 @@ function ScreenFamily({ api }) {
         .finally(() => {
           model.planBusy = false;
           paint();
+          focusPlanHead();
         });
     };
 
@@ -1286,7 +1363,7 @@ function ScreenFamily({ api }) {
     const builder = h(
       'div',
       { class: 'gb-card gb-family-builder' },
-      hasPlan ? h('h3', { class: 'gb-family-builder-title' }, 'Make a new plan') : null,
+      hasPlan ? h('h3', { class: 'gb-family-builder-title' }, 'Plan again with') : null,
       h('h4', { class: 'gb-family-subhead' }, 'Available groceries'),
       h(
         'div',
@@ -1321,6 +1398,7 @@ function ScreenFamily({ api }) {
         )
       ),
       ingredientChips(),
+      expiredNote(),
       members.length
         ? h(
             'div',
@@ -1358,7 +1436,7 @@ function ScreenFamily({ api }) {
       h(
         'div',
         { class: 'gb-section-head' },
-        h('h2', null, "Today's meal plan"),
+        h('h2', { id: 'gb-family-plan-head', tabindex: '-1' }, "Today's meal plan"),
         hasPlan && model.plan.createdAt
           ? h('span', { class: 'gb-family-head-meta' }, fmtDay(planDay(model.plan.createdAt)))
           : null
@@ -1664,7 +1742,13 @@ function ScreenFamily({ api }) {
                 )
               : null,
             ns.balancedFor
-              ? h('p', { class: 'gb-family-balanced' }, 'Balanced for ' + ns.balancedFor)
+              ? h(
+                  'p',
+                  { class: 'gb-family-balanced' },
+                  'Balanced for ' +
+                    String(ns.balancedFor).toLowerCase() +
+                    '. A rough AI estimate for the whole menu, not worked out per person.'
+                )
               : null,
             avoided.length
               ? h(
@@ -1983,6 +2067,7 @@ function ScreenFamily({ api }) {
             {
               type: 'button',
               class: 'gb-family-sectiontab' + (model.section === id ? ' is-active' : ''),
+              'aria-current': model.section === id ? 'true' : null,
               onclick: () => switchSection(id),
             },
             Icon(icon, { size: 16 }),
@@ -2199,11 +2284,16 @@ function ScreenFamily({ api }) {
     const nameI = h('input', {
       type: 'text',
       class: 'gb-input',
+      id: 'gb-pantry-name',
       placeholder: 'e.g. Tomatoes',
+      // The category follows the name until the user picks one themselves.
+      oninput: () => {
+        if (!catI.dataset.picked) catI.value = pantryCategory(nameI.value) || 'Vegetable';
+      },
     });
     const catI = h(
       'select',
-      { class: 'gb-input' },
+      { class: 'gb-input', onchange: () => (catI.dataset.picked = '1') },
       ['Vegetable', 'Fruit', 'Grain', 'Pulse', 'Dairy', 'Protein', 'Spice', 'Other'].map((c) =>
         h('option', { value: c, selected: c === 'Vegetable' }, c)
       )
@@ -2230,6 +2320,11 @@ function ScreenFamily({ api }) {
         }),
         (item) => {
           model.pantryItems = [item].concat(model.pantryItems || []);
+          // The repaint rebuilds the form; the next item starts where this one did.
+          setTimeout(() => {
+            const next = document.getElementById('gb-pantry-name');
+            if (next) next.focus();
+          }, 0);
         }
       );
     };
@@ -2358,7 +2453,11 @@ function ScreenFamily({ api }) {
       );
     else if (it.expiryDate)
       badge = h('span', { class: 'gb-pill gb-pill--muted' }, 'Exp ' + fmtDay(it.expiryDate));
-    const meta = [it.category, it.quantity].filter(Boolean).join(' · ');
+    // Each part stays whole: "Vegetable ·" over "500 g" read as two items.
+    const metaParts = [it.category, it.quantity].filter(Boolean);
+    const meta = metaParts.length
+      ? metaParts.flatMap((m, i) => [i ? ' · ' : '', h('span', { class: 'gb-family-meta-part' }, m)])
+      : null;
     return h(
       'div',
       { class: 'gb-card gb-family-pantry-item' },
@@ -2371,7 +2470,7 @@ function ScreenFamily({ api }) {
           it.name,
           it.leftover ? h('span', { class: 'gb-pill gb-pill--soft' }, 'Leftover') : null
         ),
-        meta ? h('div', { class: 'gb-family-card-meta' }, meta) : null
+        meta ? h('div', { class: 'gb-family-card-meta' }, ...meta) : null
       ),
       badge,
       h(
@@ -2380,6 +2479,7 @@ function ScreenFamily({ api }) {
           type: 'button',
           class: 'gb-family-chip gb-family-chip--toggle gb-family-low' + (it.low ? ' is-on' : ''),
           'aria-pressed': String(!!it.low),
+          'aria-label': it.name + ' running low',
           title: it.low ? 'Marked as running low' : 'Mark as running low',
           onclick: () =>
             run(
@@ -2405,7 +2505,7 @@ function ScreenFamily({ api }) {
         {
           type: 'button',
           class: 'gb-iconbtn gb-iconbtn--danger',
-          'aria-label': 'Remove',
+          'aria-label': 'Remove ' + it.name,
           onclick: () =>
             run(api.deletePantry(it.id), () => {
               model.pantryItems = (model.pantryItems || []).filter((x) => x.id !== it.id);

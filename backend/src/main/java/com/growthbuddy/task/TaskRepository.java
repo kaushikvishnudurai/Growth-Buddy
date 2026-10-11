@@ -15,12 +15,22 @@ public interface TaskRepository extends JpaRepository<Task, UUID> {
 
     Optional<Task> findByIdAndUserIdAndDeletedAtIsNull(UUID id, UUID userId);
 
-    /** Paused tasks are left out of both score counts: a paused task scores as no task. */
-    long countByUserIdAndPausedFalseAndDeletedAtIsNull(UUID userId);
+    /**
+     * The score's "due" open tasks: not done, not paused, due before {@code end}
+     * (the end of the day being scored), overdue included. An undated task is not
+     * due on any day, so it is left out until it is ticked off.
+     */
+    @Query("select count(t) from Task t where t.userId = :userId and t.deletedAt is null and t.paused = false "
+            + "and t.done = false and t.dueAt is not null and t.dueAt < :end")
+    long countOpenDueBefore(@Param("userId") UUID userId, @Param("end") Instant end);
+
+    /** Live tasks ticked off in {@code [from, to)}, whatever their due date: anything done today counts. */
+    @Query("select count(t) from Task t where t.userId = :userId and t.deletedAt is null and t.paused = false "
+            + "and t.done = true and t.doneAt >= :from and t.doneAt < :to")
+    long countDoneBetween(@Param("userId") UUID userId, @Param("from") Instant from, @Param("to") Instant to);
 
     List<Task> findByUserIdAndDoneAtAfter(UUID userId, Instant after);
 
-    long countByUserIdAndDoneTrueAndPausedFalseAndDeletedAtIsNull(UUID userId);
 
     /**
      * {@code [userId, oldest doneAt]} for everyone holding a ticked-off task. Drives
@@ -53,6 +63,17 @@ public interface TaskRepository extends JpaRepository<Task, UUID> {
             + "where h.userId = :userId and h.changedAt >= :from and h.changedAt < :to")
     long countCompletedBetween(@Param("userId") UUID userId,
                                @Param("from") Instant from, @Param("to") Instant to);
+
+    /** {@code [taskId, changedAt]} completions in a window: the score range buckets them by local day. */
+    @Query("select h.taskId, h.changedAt from TaskHistory h "
+            + "where h.userId = :userId and h.changedAt >= :from and h.changedAt < :to")
+    List<Object[]> completionsBetween(@Param("userId") UUID userId,
+                                      @Param("from") Instant from, @Param("to") Instant to);
+
+    /** The due instants behind {@link #countOpenDueBefore}, so a range counts every day from one read. */
+    @Query("select t.dueAt from Task t where t.userId = :userId and t.deletedAt is null and t.paused = false "
+            + "and t.done = false and t.dueAt is not null and t.dueAt < :end")
+    List<Instant> openDueBefore(@Param("userId") UUID userId, @Param("end") Instant end);
 
     /** Take every task off a goal that is being deleted. */
     @Modifying(clearAutomatically = true)

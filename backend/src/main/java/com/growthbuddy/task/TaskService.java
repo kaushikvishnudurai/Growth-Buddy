@@ -39,14 +39,9 @@ public class TaskService {
 
     @Transactional(readOnly = true)
     public List<TaskResponse> list(UUID userId) {
+        // The stored priority, never a display override: overdue sorts first on the
+        // client (taskRank). Writing High here overruled a user who set it back to Low.
         List<Task> tasks = repo.findByUserIdAndDeletedAtIsNullOrderByCreatedAtAsc(userId);
-        boolean changed = false;
-        for (Task t : tasks) {
-            changed = escalateOverduePriority(t) || changed;
-        }
-        if (changed) {
-            repo.saveAll(tasks);
-        }
         return tasks.stream().map(t -> responseFor(userId, t)).toList();
     }
 
@@ -59,7 +54,6 @@ public class TaskService {
         t.setPriority(req.priority() != null ? req.priority() : Priority.Medium);
         t.setDueAt(req.dueAt());
         t.setGoalId(ownGoal(userId, req.goalId()));
-        escalateOverduePriority(t);
         return responseFor(userId, repo.save(t));
     }
 
@@ -91,7 +85,6 @@ public class TaskService {
         } else if (req.goalId() != null) {
             t.setGoalId(ownGoal(userId, req.goalId()));
         }
-        escalateOverduePriority(t);
         return responseFor(userId, repo.save(t));
     }
 
@@ -99,7 +92,6 @@ public class TaskService {
     public TaskResponse toggle(UUID userId, UUID id) {
         Task t = require(userId, id);
         setDone(t, !t.isDone());
-        escalateOverduePriority(t);
         return responseFor(userId, repo.save(t));
     }
 
@@ -173,17 +165,6 @@ public class TaskService {
             return null;
         }
         return requested != null ? requested : current;
-    }
-
-    private boolean escalateOverduePriority(Task t) {
-        if (t.isDone() || t.isPaused() || t.getDueAt() == null || !t.getDueAt().isBefore(Instant.now())) {
-            return false;
-        }
-        if (t.getPriority() == Priority.High) {
-            return false;
-        }
-        t.setPriority(Priority.High);
-        return true;
     }
 
     private TaskResponse responseFor(UUID userId, Task t) {

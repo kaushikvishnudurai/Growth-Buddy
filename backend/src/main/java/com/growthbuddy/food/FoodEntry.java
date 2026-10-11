@@ -78,6 +78,10 @@ public class FoodEntry {
     @Column(name = "sodium_mg")
     private Integer sodiumMg;
 
+    /** "2 idli": the count the user logged by; null for a weighed entry (shown as grams). */
+    @Column(name = "pieces")
+    private Integer pieces;
+
     @Column(name = "logged_at", nullable = false)
     private Instant loggedAt;
 

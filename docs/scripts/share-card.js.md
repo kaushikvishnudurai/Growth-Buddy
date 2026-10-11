@@ -20,7 +20,7 @@ Constants `W`, `H`, `PAD`, `BRAND_Y`, `EYEBROW_Y`, `FOOTER_UP`: Instagram overla
 the top and bottom ~250 px, so everything readable sits between `BRAND_Y` (300) and
 `H - FOOTER_UP`. Order: brand row (logo on a white rounded tile, `loadLogo` — same-origin
 `/icons/icon-192.png` so the canvas stays untainted and `toBlob` works; never rejects), eyebrow,
-headline, sub, stats panel, note, footer. Fonts: `DISPLAY` (Bricolage Grotesque), `BODY` (Hanken Grotesk).
+headline, sub, stats panel, note, footer. **No stats** (the streak was the headline and the month's only number): no panel, and the headline block and note move down by half a full panel so the card is not blank below. Fonts: `DISPLAY` (Bricolage Grotesque), `BODY` (Hanken Grotesk).
 
 | Fn | What |
 |---|---|

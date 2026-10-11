@@ -2283,8 +2283,8 @@ body:has(.is-thinking, .gb-thinking)::after {
   }
 }
 .gb-sound-tile.is-on {
-  border-color: var(--iris-500);
-  color: var(--iris-500);
+  border-color: var(--brand);
+  color: var(--brand-ink);
   background: var(--surface);
   box-shadow: var(--shadow-xs);
 }
@@ -2335,7 +2335,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: var(--iris-500);
+  background: var(--brand);
   border: 2px solid var(--surface);
   box-shadow: var(--shadow-xs);
 }
@@ -2343,7 +2343,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: var(--iris-500);
+  background: var(--brand);
   border: 2px solid var(--surface);
 }
 .gb-range:focus-visible {
@@ -3608,7 +3608,8 @@ button.gb-seat:disabled {
   font-size: 0.75rem;
   font-weight: 800;
   color: var(--info-soft-fg);
-  background: color-mix(in srgb, var(--sky-100) 80%, white 20%);
+  /* The themed token: a hard-coded light sky read 1.6:1 in dark mode. */
+  background: var(--info-soft);
 }
 .gb-food-add {
   margin-top: 10px;
@@ -3728,10 +3729,24 @@ button.gb-seat:disabled {
   font-size: 0.84375rem;
   cursor: pointer;
 }
-.gb-mentor-thread-name {
+.gb-mentor-thread-name,
+.gb-thread-name {
+  /* Two lines before the cut: one line ended a chat's name at about 14 characters. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  text-align: left;
+  line-height: 1.25;
+}
+/* As tall as the thread pill beside it; a 30px plus read as an afterthought.
+   Two classes: the later `.gb-icon-btn` 30px rule won at equal specificity. */
+.gb-icon-btn.gb-mentor-new {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-pill);
 }
 .gb-mentor-thread:disabled {
   opacity: 0.6;
@@ -3770,9 +3785,6 @@ button.gb-seat:disabled {
 .gb-thread-name {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-weight: 700;
 }
 .gb-thread-date {
@@ -4121,8 +4133,13 @@ button.gb-seat:disabled {
   color: var(--fg2);
   margin-top: 2px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 5px;
+  gap: 2px 5px;
+}
+/* A task's date-time stays one piece; at 390px the priority pill wraps under it. */
+.gb-task-when {
+  white-space: nowrap;
 }
 
 /* ---- Dashboard-specific blocks ---- */
@@ -4133,6 +4150,15 @@ button.gb-seat:disabled {
   display: flex;
   flex-direction: column;
   padding-bottom: 16px;
+}
+.gb-dash-col {
+  display: flex;
+  flex-direction: column;
+}
+/* A desktop deal (balanceHome) seen below 1024px after a resize: one stack. */
+.gb-dash-cols,
+.gb-dash-cols > .gb-dash-col {
+  display: contents;
 }
 .gb-dash-block {
   padding: 0 var(--gutter);
@@ -4235,6 +4261,15 @@ button.gb-seat:disabled {
   font-weight: 800;
   color: var(--fg1);
 }
+/* The one-thing card's reason line, and its button never squeezed by a long title. */
+.gb-coach-why {
+  margin-top: 2px;
+  font-size: 0.8125rem;
+  color: var(--fg2);
+}
+.gb-coach-head > .gb-btn {
+  flex-shrink: 0;
+}
 .gb-coach-chiprow,
 .gb-badge-grid {
   display: flex;
@@ -4255,6 +4290,10 @@ button.gb-seat:disabled {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+/* A lone tile (mood logged, sleep still asked above) fills the row. */
+.gb-wellness-grid > :only-child {
+  grid-column: 1 / -1;
 }
 .gb-wellness-tile {
   border: 1px solid var(--border);
@@ -4283,12 +4322,12 @@ button.gb-seat:disabled {
   color: var(--brand-ink);
   background: var(--brand-soft);
 }
+/* Sentence case comes from dashboard.js; capitalize made "Hours Slept". */
 .gb-wellness-label,
 .gb-wellness-tile small {
   color: var(--fg3);
   font-size: 0.75rem;
   font-weight: 700;
-  text-transform: capitalize;
 }
 .gb-wellness-tile strong {
   font-size: 1.25rem;
@@ -4479,20 +4518,25 @@ button.gb-food-level {
   height: 100%;
 }
 .gb-food-week-val {
-  position: absolute;
-  top: -18px;
+  margin-bottom: 2px;
   font-size: 0.6875rem;
   font-weight: 800;
+  line-height: 1;
   color: var(--fg3);
 }
+/* A column: the value sits on its bar. The tallest bar's value spills into the
+   18px row the bars box keeps above the tracks. */
 .gb-food-week-track {
   flex: 1;
   width: 100%;
+  min-height: 0;
   display: flex;
-  align-items: flex-end;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
 }
 .gb-food-week-bar {
+  flex-shrink: 0; /* keeps its % height; the value above spills, the bar doesn't squash */
   width: 100%;
   max-width: 30px;
   border-radius: 8px 8px 4px 4px;
@@ -5188,6 +5232,9 @@ button.gb-food-level {
   top: 0;
   transition: transform 520ms var(--ease-bounce);
 }
+.gb-water-fill.is-empty::before {
+  display: none; /* no wave lying on a dry floor */
+}
 .gb-water-fill::before {
   content: '';
   position: absolute;
@@ -5198,6 +5245,109 @@ button.gb-food-level {
   opacity: 0.7;
   animation: gb-water-wave 1.9s linear infinite;
 }
+.gb-water-bubble {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.66);
+  /* Off the glass floor, not the fill's (the fill is slid down below the glass). */
+  bottom: calc(6px + var(--water-empty, 0%));
+  animation: gb-water-bubble 2.8s ease-in infinite;
+  /* --water-empty moves with the fill's transform (same curve), so the bubbles
+     and fish hold still in the glass while the water rises round them. */
+  transition: bottom 520ms var(--ease-bounce);
+}
+.gb-water-bubble.b1 {
+  left: 14px;
+  animation-delay: 0s;
+}
+.gb-water-bubble.b2 {
+  left: 36px;
+  width: 8px;
+  height: 8px;
+  animation-delay: 0.65s;
+}
+.gb-water-bubble.b3 {
+  left: 50px;
+  width: 12px;
+  height: 12px;
+  animation-delay: 1.2s;
+}
+
+.gb-water-fish {
+  position: absolute;
+  width: var(--fish-size, 16px);
+  height: calc(var(--fish-size, 16px) * 0.5);
+  border-radius: 10px;
+  left: var(--fish-left, 10px);
+  /* The fill is full height and slid down (dashboard.js), so its bottom sits
+     below the glass: lift the fish by the same amount or they swim off-screen. */
+  bottom: calc(var(--fish-bottom, 12px) + var(--water-empty, 0%));
+  transition: bottom 520ms var(--ease-bounce);
+  --fish-fin: color-mix(in srgb, var(--sun-500) 75%, white 25%);
+  background: color-mix(in srgb, var(--sun-300) 78%, white 22%);
+  box-shadow: inset -2px 0 0 rgba(255, 255, 255, 0.45);
+}
+/* Each fin matches its own body; every fin used to be the sun fish's yellow. */
+.gb-water-fish[style*='--fish-hue: leaf'] {
+  --fish-fin: color-mix(in srgb, var(--leaf-500) 70%, white 30%);
+  background: color-mix(in srgb, var(--leaf-300) 65%, white 35%);
+}
+.gb-water-fish[style*='--fish-hue: bloom'] {
+  --fish-fin: color-mix(in srgb, var(--bloom-500) 70%, white 30%);
+  background: color-mix(in srgb, var(--bloom-300) 60%, white 40%);
+}
+.gb-water-fish[style*='--fish-hue: iris'] {
+  --fish-fin: color-mix(in srgb, var(--iris-500) 70%, white 30%);
+  background: color-mix(in srgb, var(--iris-300) 65%, white 35%);
+}
+.gb-water-fish::before {
+  content: '';
+  position: absolute;
+  right: calc(var(--fish-size, 16px) * -0.25);
+  top: calc(var(--fish-size, 16px) * 0.06);
+  border-left: calc(var(--fish-size, 16px) * 0.32) solid var(--fish-fin);
+  border-top: calc(var(--fish-size, 16px) * 0.18) solid transparent;
+  border-bottom: calc(var(--fish-size, 16px) * 0.18) solid transparent;
+}
+.gb-water-fish::after {
+  content: '';
+  position: absolute;
+  left: calc(var(--fish-size, 16px) * 0.18);
+  top: calc(var(--fish-size, 16px) * 0.18);
+  width: calc(var(--fish-size, 16px) * 0.12);
+  height: calc(var(--fish-size, 16px) * 0.12);
+  border-radius: 50%;
+  background: rgba(24, 24, 24, 0.85);
+}
+.gb-water-fish.f1 {
+  animation: gb-fish-swim-1 var(--fish-duration, 9s) linear infinite;
+  animation-delay: var(--fish-delay, 0s);
+}
+.gb-water-fish.f2 {
+  animation: gb-fish-swim-2 var(--fish-duration, 8s) linear infinite;
+  animation-delay: var(--fish-delay, 0s);
+}
+.gb-water-fish.f3 {
+  animation: gb-fish-swim-3 var(--fish-duration, 7s) linear infinite;
+  animation-delay: var(--fish-delay, 0s);
+}
+/* Still water: the global kill switch ran each swim to its last frame, so every
+   fish sat at the left wall facing one way and the bubbles lay on the floor.
+   Each fish parks mid-swim instead, facing alternately (--fish-face, water-fish.js). */
+@media (prefers-reduced-motion: reduce) {
+  .gb-water-fish.f1,
+  .gb-water-fish.f2,
+  .gb-water-fish.f3 {
+    animation: none;
+    transform: translateX(calc(var(--fish-swim, 24px) * 0.5)) scaleX(var(--fish-face, 1));
+  }
+  .gb-water-bubble {
+    display: none;
+  }
+}
+
 .gb-water-stats {
   flex: 1;
   min-width: 0;
@@ -5229,6 +5379,7 @@ button.gb-food-level {
   border: none;
   border-radius: 12px;
   padding: 9px 8px;
+  min-height: 44px;
   font-size: 0.78125rem;
   font-weight: 800;
   font-family: var(--font-body);
@@ -5264,6 +5415,7 @@ button.gb-food-level {
 .gb-water-log-row {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   font-size: 0.75rem;
   color: var(--fg2);
   padding: 3px 0;
@@ -5271,6 +5423,15 @@ button.gb-food-level {
 .gb-water-log-row span:first-child {
   color: var(--fg1);
   font-weight: 700;
+}
+/* The delete x on a blue card: tinted to it, not the warm surface grey. */
+.gb-water-card .gb-water-log-row .gb-btn--icon {
+  background: color-mix(in srgb, var(--sky-100) 60%, transparent);
+  color: var(--sky-800);
+}
+[data-theme='dark'] .gb-water-card .gb-water-log-row .gb-btn--icon {
+  background: color-mix(in srgb, var(--sky-700) 40%, transparent);
+  color: var(--sky-100);
 }
 
 .gb-water-prompt-actions {
@@ -5354,18 +5515,87 @@ button.gb-food-level {
     transform: translateX(8px) scaleX(1.05);
   }
 }
+/* Reaches the water in 165ms (the fill starts rising at 180ms, dashboard.js),
+   then drains from the top: its tail falls into the glass instead of the whole
+   stream retracting upward like a rod. 112px = the stream's height. */
 @keyframes gb-water-pour {
   0% {
-    transform: translateX(-50%) scaleY(0);
+    transform: translateX(-50%) translateY(0) scaleY(0);
     opacity: 0;
   }
-  20% {
-    transform: translateX(-50%) scaleY(1);
+  15%,
+  55% {
+    transform: translateX(-50%) translateY(0) scaleY(1);
     opacity: 0.95;
   }
   100% {
-    transform: translateX(-50%) scaleY(0.232);
+    transform: translateX(-50%) translateY(112px) scaleY(0);
+    opacity: 0.4;
+  }
+}
+@keyframes gb-water-bubble {
+  0% {
+    transform: translateY(0) scale(0.85);
+    opacity: 0.25;
+  }
+  40% {
+    opacity: 0.9;
+  }
+  100% {
+    /* --bubble-rise (water-fish.js): pops below the surface at any fill. */
+    transform: translateY(calc(-1 * var(--bubble-rise, 86px))) scale(1.12);
     opacity: 0;
+  }
+}
+/* The eye is on the left, so a fish faces left at scaleX(1): it flips to
+   scaleX(-1) to swim right. All three used to swim tail first both ways.
+   --fish-swim and --fish-bob come from water-fish.js, sized to the glass. */
+@keyframes gb-fish-swim-1 {
+  0% {
+    transform: translateX(0) translateY(0) scaleX(-1);
+  }
+  46% {
+    transform: translateX(var(--fish-swim, 24px)) translateY(calc(-1 * var(--fish-bob, 4px))) scaleX(-1);
+  }
+  50% {
+    transform: translateX(var(--fish-swim, 24px)) translateY(calc(-1 * var(--fish-bob, 4px))) scaleX(1);
+  }
+  96% {
+    transform: translateX(0) translateY(0) scaleX(1);
+  }
+  100% {
+    transform: translateX(0) translateY(0) scaleX(-1);
+  }
+}
+@keyframes gb-fish-swim-2 {
+  0% {
+    transform: translateX(var(--fish-swim, 24px)) translateY(0) scaleX(1);
+  }
+  48% {
+    transform: translateX(0) translateY(var(--fish-bob, 4px)) scaleX(1);
+  }
+  52% {
+    transform: translateX(0) translateY(var(--fish-bob, 4px)) scaleX(-1);
+  }
+  100% {
+    transform: translateX(var(--fish-swim, 24px)) translateY(0) scaleX(-1);
+  }
+}
+@keyframes gb-fish-swim-3 {
+  0% {
+    transform: translateX(0) translateY(0) scaleX(-1);
+  }
+  45% {
+    transform: translateX(var(--fish-swim, 24px)) translateY(calc(0.5 * var(--fish-bob, 4px))) scaleX(-1);
+  }
+  50% {
+    transform: translateX(var(--fish-swim, 24px)) translateY(calc(0.5 * var(--fish-bob, 4px))) scaleX(1);
+  }
+  95% {
+    transform: translateX(0) translateY(0) scaleX(1);
+  }
+  100% {
+    transform: translateX(0) translateY(0) scaleX(-1);
   }
 }
 @keyframes gb-water-pulse {
@@ -5727,6 +5957,9 @@ button.gb-food-level {
   align-items: center;
   gap: 10px;
 }
+.gb-cal-toolbar-actions[hidden] {
+  display: none;
+}
 .gb-btn.gb-cal-today {
   width: auto;
   padding: 9px 16px;
@@ -5889,6 +6122,12 @@ button.gb-food-level {
 .gb-cal-day.is-selected .gb-line-any {
   background: var(--fg-on-brand);
 }
+/* A task due: a square, so it never reads as one more tag colour. */
+.gb-cal-dot.is-task,
+.gb-legend-dot.is-task {
+  border-radius: 1.5px;
+  background: var(--fg2);
+}
 
 /* Reminder panel */
 .gb-day-section {
@@ -5905,23 +6144,6 @@ button.gb-food-level {
   flex-direction: column;
   gap: 12px;
   border-color: color-mix(in srgb, var(--brand) 24%, var(--border));
-}
-.gb-wins-score {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-.gb-wins-number {
-  font-family: var(--font-display);
-  font-weight: 900;
-  font-size: 1.875rem;
-  line-height: 1;
-  color: var(--brand-ink);
-}
-.gb-wins-copy {
-  color: var(--fg2);
-  font-size: 0.8125rem;
-  font-weight: 700;
 }
 .gb-wins-list {
   display: flex;
@@ -7685,11 +7907,28 @@ button.gb-food-level {
 .gb-focus-goal-fill {
   height: 100%;
   border-radius: inherit;
-  background: var(--iris-500);
+  background: var(--brand);
   transition: width var(--dur-base) var(--ease-out);
 }
 .gb-focus-goal-bar.is-met .gb-focus-goal-fill {
   background: var(--leaf-500);
+}
+.gb-focus-goal-met {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-weight: 700;
+  color: var(--success);
+}
+.gb-focus-lock-hint {
+  margin-top: 6px;
+  font-size: 0.75rem;
+  color: var(--fg3);
+}
+.gb-focus-card .gb-seg:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* History card: 30-day bars (inline SVG; the table beside it is sr-only). */
@@ -7707,10 +7946,10 @@ button.gb-food-level {
   height: 96px;
 }
 .gb-focus-hist-bar {
-  fill: var(--iris-300);
+  fill: var(--coral-300);
 }
 .gb-focus-hist-bar.is-today {
-  fill: var(--iris-600);
+  fill: var(--brand);
 }
 .gb-focus-hist-hit {
   fill: transparent;
@@ -7991,6 +8230,9 @@ button.gb-food-level {
 }
 .gb-quickadd-row .gb-mic {
   flex: none;
+  /* The bare .gb-btn grey read as disabled next to the outlined language select. */
+  background: var(--brand-soft);
+  color: var(--brand-soft-fg);
 }
 .gb-quickadd-row select.gb-input {
   flex: 1 1 auto;
@@ -7999,6 +8241,9 @@ button.gb-food-level {
   flex: none;
   margin-left: auto;
   white-space: nowrap;
+}
+.gb-dash-qa .gb-card {
+  padding: 16px;
 }
 .gb-quickadd-hint {
   margin-top: 6px;
@@ -8244,6 +8489,11 @@ button.gb-food-level {
 /* On a phone an open dialog is a bottom-heavy sheet, and the stack sat on its
    Cancel and Save. With one open the stack moves to the top of the screen. */
 @media (max-width: 1023px) {
+  /* Centred on a phone: pinned right at 340px it left a wide gap on the left. */
+  .gb-toast-stack {
+    right: 50%;
+    transform: translateX(50%);
+  }
   body:has(.gb-modal-overlay.is-open) .gb-toast-stack {
     top: calc(10px + env(safe-area-inset-top, 0px));
     bottom: auto;
@@ -8644,6 +8894,27 @@ button.gb-food-level {
     break-inside: avoid;
     margin: 0 0 22px;
   }
+  /* Quick add and the one thing read first, across both columns; the widgets
+     flow (and balance) under them. Beside them, the second column's first card
+     read as the screen's second thing. */
+  .gb-dash--single > .gb-dash-qa,
+  .gb-dash--single > .gb-dash-pin {
+    column-span: all;
+  }
+  /* The widgets dealt into balanced columns (dashboard.js balanceHome): CSS
+     columns could only split them in source order, which left 1280px Home with
+     columns ending 700px apart. */
+  .gb-dash-cols {
+    column-span: all;
+    display: flex;
+    align-items: flex-start;
+    gap: 28px;
+  }
+  .gb-dash-cols > .gb-dash-col {
+    display: flex;
+    flex: 1 1 0;
+    min-width: 0;
+  }
   /* First run on a wide screen: the checklist alone, centred, not one column
      of a two-column flow stranded top-left on an empty canvas. */
   .gb-dash.gb-dash--onboarding {
@@ -9004,6 +9275,21 @@ button.gb-food-level {
     max-width: 900px;
     margin-left: 40px;
     margin-right: auto;
+  }
+
+  /* Food: water and meals side by side. One column let both cards run the
+     full canvas with a 76px glass stranded at the far left. */
+  .gb-food-screen {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    column-gap: 28px;
+    align-items: start;
+    /* The 40px left margin again on the right: a bare 1100px ran the cards flush
+       to the viewport's edge in a 1032px scroller. */
+    max-width: min(1100px, 100% - 80px);
+  }
+  .gb-food-screen > .gb-dash-block:last-child {
+    grid-column: 1 / -1;
   }
 
   /* Fitness × Sleep card: 4-column metric grid on desktop */
@@ -9544,7 +9830,8 @@ select.gb-input {
 }
 .gb-family-card-name {
   display: flex;
-  align-items: center;
+  /* Baseline, not center: the smaller "You" pill sat off the name's line. */
+  align-items: baseline;
   gap: 7px;
   font-weight: 800;
   font-size: 0.96875rem;
@@ -9724,16 +10011,15 @@ select.gb-input {
   cursor: pointer;
   padding: 0;
   opacity: 0.65;
-  position: relative;
 }
-/* The x stays 14px; the ::before overlay gives it a 44px hit area. */
-.gb-family-chip-x::before {
-  content: '';
-  position: absolute;
-  inset: 50% auto auto 50%;
+/* The glyph stays small; the button itself is 44px, its margins pulled in so
+   the chip keeps its size. (A ::before overlay gave the same hit area, but the
+   button measured 12px to anything reading its box.) */
+.gb-family-chip-x {
+  flex: none;
   width: 44px;
   height: 44px;
-  transform: translate(-50%, -50%);
+  margin: -15px -15px -15px -15px;
 }
 .gb-family-chip-x:active {
   opacity: 1;
@@ -10213,7 +10499,8 @@ select.gb-input {
   width: 22px;
   height: 22px;
   margin: 0;
-  accent-color: var(--brand);
+  /* --brand-fill, not --brand: the white tick needs 4.5:1 (--brand is 2.8). */
+  accent-color: var(--brand-fill);
   cursor: pointer;
 }
 .gb-family-shop-item.is-checked .gb-family-card-name {
@@ -10603,6 +10890,11 @@ select.gb-input {
 .gb-family-low {
   flex: none;
   min-height: 32px;
+  border-radius: var(--radius-pill);
+}
+/* "Vegetable · 500 g": each part stays whole, the row wraps between them. */
+.gb-family-meta-part {
+  white-space: nowrap;
 }
 .gb-family-restock {
   align-self: flex-start;
@@ -11620,6 +11912,32 @@ textarea:focus-visible,
   opacity: 0.4;
   cursor: default;
 }
+/* Settings on a phone: real 44px targets, not only the ::before overlay (a
+   tab measured 28px, a segment 35px). The Layout arrows sit side by side at
+   32px, 12px apart, so each centred 44px overlay fills its pitch exactly and
+   neither overlaps the other; stacked they could only reach ~35px. */
+.gb-settings-body .gb-segnav-btn,
+.gb-settings-body .gb-seg {
+  min-height: 44px;
+}
+.gb-settings-body .gb-home-cust-moves {
+  flex-direction: row;
+  gap: 12px;
+}
+.gb-settings-body .gb-home-cust-move {
+  width: 32px;
+  height: 32px;
+}
+.gb-settings-body .gb-home-cust-move:first-child::before,
+.gb-settings-body .gb-home-cust-move:last-child::before {
+  top: 50%;
+  bottom: auto;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+/* The switch keeps its 46x26 look; its ::before (shared rule above) is the
+   46x44 target. */
 @media (hover: hover) {
   .gb-home-cust-move:not(:disabled):hover {
     border-color: var(--brand);
@@ -11686,6 +12004,17 @@ textarea:focus-visible,
    the screen look like a form; this looks like a place to jot. */
 .gb-notes-search {
   position: relative;
+}
+/* The native clear button, in the theme's ink rather than the UA's blue/grey. */
+.gb-notes-search input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  background: var(--fg3);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round'%3E%3Cpath d='M18 6 6 18M6 6l12 12'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round'%3E%3Cpath d='M18 6 6 18M6 6l12 12'/%3E%3C/svg%3E") center / contain no-repeat;
+  cursor: pointer;
 }
 .gb-notes-search[hidden] {
   display: none;
@@ -11764,6 +12093,11 @@ textarea:focus-visible,
      second row that pushes the writing area off-screen. */
   overflow-x: auto;
   scrollbar-width: none;
+  /* Half the tools sit past the edge on a phone: the fade says there are more,
+     and the end padding lets the last one scroll clear of it. */
+  padding-right: 28px;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
 }
 .gb-editor-bar::-webkit-scrollbar {
   display: none;
@@ -11794,7 +12128,7 @@ textarea:focus-visible,
 /* 30px suits a mouse; a finger needs 44. The bar scrolls, so it can grow. */
 @media (pointer: coarse) {
   .gb-editor-bar {
-    padding: 2px 4px;
+    padding: 2px 28px 2px 4px;
   }
   .gb-editor-btn {
     width: 44px;
@@ -12349,7 +12683,7 @@ textarea:focus-visible,
 }
 .gb-note-view,
 .gb-note-chip {
-  min-height: 40px;
+  min-height: 44px;
   padding: 6px 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
@@ -13358,6 +13692,26 @@ h2[tabindex='-1']:focus {
     border-right: 1px solid var(--border);
     border-radius: 0 var(--radius-2xl) var(--radius-2xl) 0;
     animation: gb-more-fade var(--dur-fast) var(--ease-out);
+  }
+  /* 390px tall: the review nudge plus Quick add (field on its own line, a
+     hint under it) filled the whole screen. One row, no hint, less padding. */
+  .gb-week-nudge {
+    padding: 6px 16px;
+  }
+  .gb-dash-qa .gb-card {
+    padding: 10px 12px;
+  }
+  .gb-dash-qa .gb-quickadd-row {
+    flex-wrap: nowrap;
+  }
+  .gb-dash-qa .gb-quickadd-row .gb-input {
+    flex: 1 1 0;
+  }
+  .gb-dash-qa .gb-quickadd-hint {
+    display: none;
+  }
+  .gb-dash--single > .gb-dash-block:first-child {
+    margin-top: 4px;
   }
 }
 
