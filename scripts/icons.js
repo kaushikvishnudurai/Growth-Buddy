@@ -152,6 +152,9 @@ import {
   Scale,
   Ruler,
   Percent,
+  HeartPulse,
+  Gauge,
+  SlidersHorizontal,
 } from 'lucide';
 
 export const icons = {
@@ -301,4 +304,7 @@ export const icons = {
   Scale,
   Ruler,
   Percent,
+  HeartPulse,
+  Gauge,
+  SlidersHorizontal,
 };

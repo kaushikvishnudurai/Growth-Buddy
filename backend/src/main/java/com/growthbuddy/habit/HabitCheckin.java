@@ -63,6 +63,14 @@ public class HabitCheckin {
     @Column(columnDefinition = "TEXT")
     private String note;
 
+    /**
+     * This day's check-in XP has been paid. NULL on a row from before the column:
+     * read by {@code HabitService.xpPaid} with the rule that came before it (an
+     * existing row had paid unless it was a protected day).
+     */
+    @Column(name = "xp_paid")
+    private Boolean xpPaid;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

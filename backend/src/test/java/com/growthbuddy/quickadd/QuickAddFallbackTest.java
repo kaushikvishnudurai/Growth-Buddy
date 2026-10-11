@@ -90,4 +90,18 @@ class QuickAddFallbackTest {
         assertTrue(read("hello there").isEmpty());
         assertTrue(read("").isEmpty());
     }
+
+    @Test
+    void yesterdayAndAForeignCurrencyAreRead() {
+        var l = QuickAddFallback.parse("spent $12 on coffee yesterday, slept 7h", List.of(), TODAY, NOW, "₹");
+        assertEquals("expense", l.get(0).type());
+        assertEquals(12, l.get(0).amount());
+        assertEquals("coffee", l.get(0).note());
+        assertEquals("USD", l.get(0).currency());
+        assertEquals(TODAY.minusDays(1), l.get(0).date());
+        assertEquals(null, l.get(1).date(), "no day said = today");
+        assertEquals(null, l.get(1).quality(), "quality not said");
+        assertEquals(null, QuickAddFallback.parse("paid $5 for tea", List.of(), TODAY, NOW, "$").get(0).currency(),
+                "their own currency is not named");
+    }
 }

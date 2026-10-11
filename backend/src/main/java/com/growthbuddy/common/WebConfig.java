@@ -94,6 +94,10 @@ public class WebConfig implements WebMvcConfigurer {
         // path missing from this list is capped anyway. This layer stays because
         // only an interceptor can answer 429 BEFORE the handler runs, which is the
         // difference between a clean refusal and a silent fallback.
+        // NOT here, on purpose: /api/quick-add and /api/food/entries. Both have a
+        // no-AI answer (QuickAddFallback, the food table estimate) and must keep
+        // working once the budget is spent; OpenAIClient's own budget still stops
+        // the model call, and the caller degrades. Quick add has its own request cap.
         registry.addInterceptor(aiRateLimitInterceptor)
                 .addPathPatterns(
                     "/api/mentor/chat/messages",
@@ -103,19 +107,18 @@ public class WebConfig implements WebMvcConfigurer {
                     // The streamed twins of the two above (SSE; same model call).
                     "/api/mentor/chat/messages/stream",
                     "/api/mentor/threads/*/messages/stream",
-                    "/api/quick-add",
                     "/api/money/advice",
                     "/api/money/receipt-scan",
                     "/api/auth/nutrition-suggestion",
                     "/api/food/photo-estimate",
                     "/api/food/photo-estimate-multi",
                     "/api/food/diet-check",
-                    "/api/food/entries",
                     "/api/family/grocery-scan",
                     "/api/family/pantry/scan",
                     "/api/family/meal-plan",
                     "/api/family/meal-plan/multi",
-                    "/api/family/shopping/generate"
+                    "/api/family/shopping/generate",
+                    "/api/photo/route"
                 );
     }
 

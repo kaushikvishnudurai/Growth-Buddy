@@ -31,11 +31,14 @@ import {
   readingError,
   nights,
   durationLabel,
+  HEALTH_SECTIONS,
+  resolveHealthLayout,
+  moveHealthMetric,
+  moveHealthSection,
+  healthInsights,
 } from './health-logic.js';
 
 const DASH = '—';
-const BAND = 1080; // 18:00 -> 12:00, minutes
-const TICKS = ['18', '21', '00', '03', '06', '09', '12'];
 const NIGHTS = 14;
 const RANGES = [7, 30, 90];
 
@@ -214,7 +217,20 @@ function Header(p) {
       });
     }
   } else {
-    src = h('span', null, 'Typed in by you. The phone app adds Apple Health or Health Connect.');
+    // Say where today's numbers came from: an account used on the phone has
+    // phone rows here too, and "typed in by you" was wrong for those.
+    const rows = p.readings || [];
+    const fromPhone = rows.some((r) => r.source === 'phone');
+    const typed = rows.some((r) => r.source !== 'phone');
+    src = h(
+      'span',
+      null,
+      fromPhone && typed
+        ? 'From your phone and typed in by you.'
+        : fromPhone
+          ? 'From your phone. Sync happens in the phone app.'
+          : 'Typed in by you. The phone app adds Apple Health or Health Connect.'
+    );
   }
   return h(
     'div',
@@ -224,6 +240,11 @@ function Header(p) {
       'div',
       { class: 'gb-health-actions' },
       action,
+      p.onSaveLayout
+        ? smallBtn('Customise', () => openCustomise(p), 'sliders-horizontal', {
+            'aria-label': 'Customise the Health screen: show, hide and reorder',
+          })
+        : null,
       h(
         'button',
         {
@@ -275,23 +296,40 @@ function countUp(root) {
   requestAnimationFrame(step);
 }
 
+/* The nights as columns: evening at the top, morning at the bottom, one column
+   per night (wake date), oldest left, last night lit. Behind them, your usual
+   window (average bedtime to average wake), so each night reads against it:
+   a bar that starts below the band was a late night, one that stops above it
+   an early start. The window is 20:00-10:00 and widens to fit an outlier. */
+const HOUR_TICKS = [180, 360, 540, 720, 900]; // 21, 00, 03, 06, 09 as band minutes
+
 function LastNight(p) {
   const list = nights(p.sleepByDate, p.today, NIGHTS); // oldest first
   const last = list[list.length - 1].night;
   const known = list.map((n) => n.night).filter(Boolean);
-  const avgMin = known.length ? mean(known.map((n) => ({ value: n.minutes }))) : null;
-  const avgBed = known.length ? mean(known.map((n) => ({ value: n.from }))) : null;
-  // A bedtime after noon (from > 1080) has no place on the band: clamp, width 0.
-  const pos = (n) => {
-    const from = Math.min(n.from, BAND);
-    return {
-      '--from': (from / BAND) * 100 + '%',
-      '--len': (Math.max(0, n.to - from) / BAND) * 100 + '%',
-    };
-  };
+  const prev = list.slice(0, -1).map((n) => n.night).filter(Boolean);
+  const avg = (key, xs) => (xs.length ? mean(xs.map((n) => ({ value: n[key] }))) : null);
+  const avgMin = avg('minutes', known);
+  const usual = known.length >= 3 ? { from: avg('from', known), to: avg('to', known) } : null;
+  const prevMin = avg('minutes', prev);
 
-  const grow = last && !grown;
-  if (last) grown = true;
+  const top = Math.min(120, ...known.map((n) => Math.floor(n.from / 60) * 60));
+  const end = Math.max(960, ...known.map((n) => Math.ceil(n.to / 60) * 60));
+  const y = (m) => ((Math.min(Math.max(m, top), end) - top) / (end - top)) * 100 + '%';
+  const span = (a, b) => ({ top: y(a), height: 'calc(' + y(b) + ' - ' + y(a) + ')' });
+
+  const grow = known.length > 0 && !grown;
+  if (known.length) grown = true;
+
+  // Last night against the nights before it: the card's one comparison.
+  let versus = null;
+  if (last && prevMin != null) {
+    const d = Math.round(last.minutes - prevMin);
+    versus =
+      Math.abs(d) < 5
+        ? 'right on your usual'
+        : durationLabel(Math.abs(d)) + (d < 0 ? ' less' : ' more') + ' than usual';
+  }
 
   const said =
     (last
@@ -301,50 +339,59 @@ function LastNight(p) {
         formatTime(last.wakeTime) +
         ', ' +
         durationLabel(last.minutes) +
+        (versus ? ', ' + versus : '') +
         '.'
       : 'No sleep logged for last night.') +
-    (avgMin != null
-      ? ' ' +
-        known.length +
-        '-night average ' +
-        durationLabel(avgMin) +
-        ', average bedtime ' +
-        bandClock(avgBed) +
-        '.'
+    (usual
+      ? ' Usual window ' + bandClock(usual.from) + ' to ' + bandClock(usual.to) + '.'
       : '');
 
-  const band = h(
+  const chart = h(
     'div',
-    { class: 'gb-health-band' + (grow ? ' is-entering' : ''), role: 'img', 'aria-label': said },
+    { class: 'gb-sleep-chart' + (grow ? ' is-entering' : ''), role: 'img', 'aria-label': said },
     h(
       'div',
-      { class: 'gb-health-ticks', 'aria-hidden': 'true' },
-      TICKS.map((t, i) => h('span', { style: { '--i': i } }, t))
+      { class: 'gb-sleep-axis', 'aria-hidden': 'true' },
+      HOUR_TICKS.filter((m) => m > top && m < end).map((m) =>
+        h('span', { style: { top: y(m) } }, bandClock(m))
+      )
     ),
     h(
       'div',
-      { class: 'gb-health-track' + (last ? '' : ' is-empty'), 'aria-hidden': 'true' },
-      last
-        ? h('div', { class: 'gb-health-lastbar' + (grow ? ' is-growing' : ''), style: pos(last) })
-        : h('span', { class: 'gb-health-track-empty' }, 'No sleep logged for last night')
-    ),
-    // No history at all: 13 empty rows would only draw a grid of nothing.
-    !known.length
-      ? null
-      : h(
-          'div',
-          { class: 'gb-health-nights', 'aria-hidden': 'true' },
-          list
-            .slice(0, -1)
-            .reverse() // newest nearest the big bar
-            .map((n, i) =>
-              h(
-                'div',
-                { class: 'gb-health-night', style: { '--age': i } },
-                n.night ? h('i', { style: pos(n.night) }) : null
-              )
-            )
+      { class: 'gb-sleep-plot', 'aria-hidden': 'true' },
+      HOUR_TICKS.filter((m) => m > top && m < end).map((m) =>
+        h('i', { class: 'gb-sleep-grid', style: { top: y(m) } })
+      ),
+      usual ? h('div', { class: 'gb-sleep-usual', style: span(usual.from, usual.to) }) : null,
+      h(
+        'div',
+        { class: 'gb-sleep-cols' },
+        list.map((n, i) =>
+          h(
+            'div',
+            {
+              class: 'gb-sleep-col' + (i === list.length - 1 ? ' is-last' : ''),
+              style: { '--i': i },
+            },
+            n.night ? h('b', { style: span(n.night.from, n.night.to) }) : null
+          )
         )
+      ),
+      known.length ? null : h('span', { class: 'gb-sleep-none' }, 'No nights logged yet')
+    ),
+    h('span', { class: 'gb-sleep-corner' }),
+    h(
+      'div',
+      { class: 'gb-sleep-days', 'aria-hidden': 'true' },
+      list.map((n, i) =>
+        h(
+          'span',
+          { class: i === list.length - 1 ? 'is-last' : '' },
+          fmtDate(n.day, { weekday: 'narrow' }),
+          h('b', null, String(Number(n.day.slice(8))))
+        )
+      )
+    )
   );
 
   const stat = (label, value) =>
@@ -368,32 +415,38 @@ function LastNight(p) {
           last ? 'pencil' : 'moon'
         )
       ),
-      !known.length
-        ? null
-        : h(
-            'div',
-            { class: 'gb-health-sleep-figs' },
-            h(
-              'div',
-              { class: 'gb-health-sleep-main' },
-              // The duration is the hero sentence's; the card leads with when.
-              h(
-                'span',
-                { class: 'gb-health-dur' + (last ? '' : ' is-empty') },
-                last ? formatTime(last.bedtime) + ' \u2013 ' + formatTime(last.wakeTime) : DASH
-              ),
-              last
-                ? h('span', { class: 'gb-health-span' }, durationLabel(last.minutes) + ' asleep')
-                : null
-            ),
-            h(
+      h(
+        'div',
+        { class: 'gb-health-sleep-figs' },
+        h(
+          'div',
+          { class: 'gb-health-sleep-main' },
+          h(
+            'span',
+            { class: 'gb-health-dur' + (last ? '' : ' is-empty') },
+            last ? formatTime(last.bedtime) + ' – ' + formatTime(last.wakeTime) : DASH
+          ),
+          h(
+            'span',
+            { class: 'gb-health-span' },
+            last
+              ? durationLabel(last.minutes) + ' asleep' + (versus ? ' · ' + versus : '')
+              : 'No sleep logged for last night'
+          )
+        ),
+        known.length
+          ? h(
               'dl',
               { class: 'gb-health-sstats' },
-              stat(NIGHTS + '-night average', avgMin == null ? null : durationLabel(avgMin)),
-              stat('Average bedtime', avgBed == null ? null : bandClock(avgBed))
+              stat(
+                'Usual window',
+                usual ? bandClock(usual.from) + ' – ' + bandClock(usual.to) : null
+              ),
+              stat(known.length + '-night average', durationLabel(avgMin))
             )
-          ),
-      band,
+          : null
+      ),
+      chart,
     ],
   });
 }
@@ -431,7 +484,7 @@ function Hero(p) {
     fmt: (v) =>
       numText(type, HEALTH_METRICS[type].dp ? Math.round(v * 10) / 10 : Math.round(v)) + suffix,
   });
-  const today = (type) => (p.readings ? dayValue(p.readings, type, p.today) : null);
+  const today = (type) => (p.readings && p.shown(type) ? dayValue(p.readings, type, p.today) : null);
   const open = (type) => () => openDetail(type, p);
   const unit = (type) => HEALTH_METRICS[type].unit;
 
@@ -669,7 +722,12 @@ function LedgerRow(type, p, r = 0) {
     h(
       'span',
       { class: 'gb-ledger-label' },
-      h('span', { class: 'gb-ledger-name' }, m.label),
+      h(
+        'span',
+        { class: 'gb-ledger-name' },
+        h('span', { class: 'gb-ledger-ic gb-health-ic is-' + m.group, 'aria-hidden': 'true' }, Icon(m.icon, { size: 15 })),
+        m.label
+      ),
       cur
         ? h(
             'span',
@@ -700,8 +758,11 @@ function Ledger(p) {
     });
   }
   const days = lastDays(p.today, LEDGER_DAYS);
-  const tracked = HEALTH_TYPES.filter((t) => isTracked(p.readings, t, p.today));
-  const untracked = HEALTH_TYPES.filter((t) => !tracked.includes(t));
+  // The user's order and choices (Customise); hidden metrics leave the ledger and its chips.
+  const ordered = p.layout.metrics.map((x) => x.type);
+  const hidden = ordered.filter((t) => !p.shown(t));
+  const tracked = ordered.filter((t) => p.shown(t) && isTracked(p.readings, t, p.today));
+  const untracked = ordered.filter((t) => p.shown(t) && !tracked.includes(t));
   const chip = (t) =>
     h(
       'button',
@@ -709,6 +770,14 @@ function Ledger(p) {
       Icon('plus', { size: 14 }),
       HEALTH_METRICS[t].label
     );
+  const hiddenNote = hidden.length && p.onSaveLayout
+    ? h(
+        'button',
+        { type: 'button', class: 'gb-ledger-hidden', onclick: () => openCustomise(p) },
+        Icon('eye-off', { size: 14 }),
+        hidden.length + ' hidden. Customise'
+      )
+    : null;
 
   if (!tracked.length) {
     return Card({
@@ -723,8 +792,9 @@ function Ledger(p) {
         h(
           'div',
           { class: 'gb-ledger-chips' },
-          ['weight', 'steps', 'bloodPressure', 'restingHeartRate'].map(chip)
+          ['weight', 'steps', 'bloodPressure', 'restingHeartRate'].filter((t) => p.shown(t)).map(chip)
         ),
+        hiddenNote,
       ],
     });
   }
@@ -766,7 +836,178 @@ function Ledger(p) {
             h('div', { class: 'gb-ledger-chips' }, untracked.map(chip))
           )
         : null,
+      hiddenNote,
     ],
+  });
+}
+
+/* ---- insights ------------------------------------------------------------------ */
+
+/* What changed lately, from health-logic's healthInsights: the user against
+   their own recent days, never a diagnosis. Each row opens that metric's
+   history. Watch items lead. */
+function Insights(p) {
+  if (!p.readings) return null;
+  const list = healthInsights(p.readings, p.sleepByDate, p.today, {
+    shown: p.shown,
+    fmt: (n) => fmtNumber(n, { maximumFractionDigits: 0 }),
+  });
+  return Card({
+    className: 'gb-health-insights',
+    children: [
+      h('h2', null, 'Insights'),
+      list.length
+        ? h(
+            'ul',
+            { class: 'gb-health-insight-list' },
+            list.map((x) =>
+              h(
+                'li',
+                null,
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    class: 'gb-health-insight is-' + x.tone,
+                    onclick: () => openDetail(x.metric, p),
+                    'aria-label': x.title + '. ' + x.text + ' Open ' + HEALTH_METRICS[x.metric].label + ' history.',
+                  },
+                  h('span', { class: 'gb-health-ic gb-health-insight-ic', 'aria-hidden': 'true' }, Icon(x.icon, { size: 18 })),
+                  h(
+                    'span',
+                    { class: 'gb-health-insight-text' },
+                    h('strong', null, x.title),
+                    h('span', null, x.text),
+                    h('small', null, 'Based on ' + x.basis)
+                  )
+                )
+              )
+            )
+          )
+        : h(
+            'p',
+            { class: 'gb-health-insight-empty' },
+            'Insights show up after about a week of readings: how your steps, heart rate, weight and sleep are moving against your own usual.'
+          ),
+    ],
+  });
+}
+
+/* ---- customise ----------------------------------------------------------------- */
+
+/* Show, hide and reorder: the three cards, and every metric within its group.
+   Saves as it goes (ui_prefs.healthLayout through app.js), the screen behind
+   repaints, and the sheet redraws in place with focus kept on the moved row. */
+function openCustomise(p) {
+  let layout = p.layout;
+  const body = h('div', { class: 'gb-health-cust' });
+  const save = (next) => {
+    layout = next;
+    p.onSaveLayout({
+      sections: layout.sections.map(({ id, on }) => ({ id, on })),
+      metrics: layout.metrics.map(({ type, on }) => ({ type, on })),
+    });
+    draw();
+  };
+  const sw = (label, on, flip) =>
+    h(
+      'button',
+      {
+        type: 'button',
+        role: 'switch',
+        'aria-checked': on ? 'true' : 'false',
+        'aria-label': 'Show ' + label,
+        class: 'gb-switch' + (on ? ' is-on' : ''),
+        onclick: flip,
+      },
+      h('span', { class: 'gb-switch-knob' })
+    );
+  const moveBtn = (label, icon, next, key) =>
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'gb-home-cust-move',
+        'aria-label': label,
+        disabled: !next,
+        dataset: { key },
+        onclick: next ? () => save(next) : null,
+      },
+      Icon(icon, { size: 16, sw: 2.4 })
+    );
+  const row = ({ key, icon, label, desc, on, up, down, flip, cls = '' }) =>
+    h(
+      'div',
+      { class: 'gb-home-cust-row' + (on ? '' : ' is-off') },
+      h(
+        'div',
+        { class: 'gb-home-cust-moves' },
+        moveBtn('Move ' + label + ' up', 'chevron-up', up, key + ':up'),
+        moveBtn('Move ' + label + ' down', 'chevron-down', down, key + ':down')
+      ),
+      h('span', { class: 'gb-health-ic ' + cls, 'aria-hidden': 'true' }, Icon(icon, { size: 16 })),
+      h(
+        'div',
+        { class: 'gb-home-cust-text' },
+        h('div', { class: 'gb-home-cust-label' }, label),
+        desc ? h('div', { class: 'gb-home-cust-desc' }, desc) : null
+      ),
+      sw(label, on, flip)
+    );
+  function draw() {
+    const focusKey = document.activeElement && document.activeElement.dataset && document.activeElement.dataset.key;
+    const sections = layout.sections.map((x) => {
+      const def = HEALTH_SECTIONS.find((d) => d.id === x.id);
+      return row({
+        key: 's-' + x.id,
+        icon: def.icon,
+        label: def.label,
+        desc: def.desc,
+        on: x.on,
+        up: moveHealthSection(layout, x.id, -1),
+        down: moveHealthSection(layout, x.id, 1),
+        flip: () => save({ ...layout, sections: layout.sections.map((y) => (y.id === x.id ? { ...y, on: !y.on } : y)) }),
+      });
+    });
+    const groups = HEALTH_GROUPS.map((g) => {
+      const rows = layout.metrics
+        .filter((x) => HEALTH_METRICS[x.type].group === g.id)
+        .map((x) => {
+          const m = HEALTH_METRICS[x.type];
+          return row({
+            key: 'm-' + x.type,
+            icon: m.icon,
+            label: m.label,
+            // "Steps / steps" said nothing twice; the unit only when it adds something.
+            desc: m.unit.toLowerCase() === m.label.toLowerCase() || m.unit === 'floors' ? '' : m.unit,
+            on: x.on,
+            cls: 'is-' + g.id,
+            up: moveHealthMetric(layout, x.type, -1),
+            down: moveHealthMetric(layout, x.type, 1),
+            flip: () => save({ ...layout, metrics: layout.metrics.map((y) => (y.type === x.type ? { ...y, on: !y.on } : y)) }),
+          });
+        });
+      return [h('h3', { class: 'gb-health-cust-group' }, g.label), h('div', { class: 'gb-home-cust-list' }, rows)];
+    });
+    body.replaceChildren(
+      h('h3', { class: 'gb-health-cust-group' }, 'Cards'),
+      h('div', { class: 'gb-home-cust-list' }, sections),
+      ...groups.flat()
+    );
+    if (focusKey) {
+      const again = body.querySelector('[data-key="' + focusKey + '"]');
+      // At an end the moved arrow is disabled; land on its partner instead.
+      const other = body.querySelector('[data-key="' + focusKey.replace(/:(up|down)$/, (m0, d) => (d === 'up' ? ':down' : ':up')) + '"]');
+      (again && !again.disabled ? again : other)?.focus();
+    }
+  }
+  draw();
+  openModal({
+    title: 'Customise Health',
+    sub: 'Show or hide each card and metric, and reorder with the arrows. Saves as you go.',
+    body,
+    dismiss: 'Done',
+    modalClass: 'gb-health-sheet',
   });
 }
 
@@ -1046,18 +1287,23 @@ function openLogForm(p, { type, reading } = {}) {
 
 /* ---- screen ------------------------------------------------------------------ */
 
-function ScreenHealth(props = {}) {
+function ScreenHealth(raw = {}) {
+  // The user's layout (Customise), made whole; `shown(type)` is false for a hidden metric.
+  const layout = resolveHealthLayout(raw.layout);
+  const on = new Set(layout.metrics.filter((x) => x.on).map((x) => x.type));
+  const props = { ...raw, layout, shown: (t) => on.has(t) };
   const entering = !entered && props.readings != null;
   if (entering) entered = true;
+  const cards = { insights: Insights, sleep: LastNight, ledger: Ledger };
   const root = h(
     'div',
     { class: 'gb-health' + (entering ? ' is-entering' : '') },
     // The sentence is the screen's thesis: it leads, and where the numbers came
-    // from (plus the way to add one) reads as its footnote.
+    // from (plus the way to add one) reads as its footnote. The cards below
+    // follow the user's order and choices.
     Hero(props),
     Header(props),
-    LastNight(props),
-    Ledger(props)
+    ...layout.sections.filter((x) => x.on).map((x) => cards[x.id](props))
   );
   if (entering && !calm()) countUp(root);
   return root;
