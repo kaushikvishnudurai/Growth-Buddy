@@ -260,7 +260,12 @@ export default defineConfig({
         ws: true,
         configure: (proxy) => {
           proxy.on('proxyReq', (proxyReq) => proxyReq.setHeader('origin', API_TARGET));
-          proxy.on('proxyReqWs', (proxyReq) => proxyReq.setHeader('origin', API_TARGET));
+          proxy.on('proxyReqWs', (proxyReq, req, socket) => {
+            proxyReq.setHeader('origin', API_TARGET);
+            // A tab closed mid-handshake leaves this socket to EPIPE / ECONNRESET;
+            // unhandled, that error took the whole dev server down.
+            socket.on('error', () => {});
+          });
         },
       },
     },
@@ -290,7 +295,12 @@ export default defineConfig({
           // SockJS uses both XHR (proxyReq) and a WebSocket upgrade (proxyReqWs).
           // Rewrite Origin on both so the backend's CORS check passes.
           proxy.on('proxyReq', (proxyReq) => proxyReq.setHeader('origin', API_TARGET));
-          proxy.on('proxyReqWs', (proxyReq) => proxyReq.setHeader('origin', API_TARGET));
+          proxy.on('proxyReqWs', (proxyReq, req, socket) => {
+            proxyReq.setHeader('origin', API_TARGET);
+            // A tab closed mid-handshake leaves this socket to EPIPE / ECONNRESET;
+            // unhandled, that error took the whole dev server down.
+            socket.on('error', () => {});
+          });
         },
       },
     },
