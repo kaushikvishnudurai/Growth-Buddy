@@ -26,7 +26,11 @@ Three files so the ~6k-line screen stays out of the boot chunk (boot 551,884 B -
   `readAmount` / `readWhole`, `uid`, `clone`, `slug`), the document model (`emptyMoney`,
   `normalizeMoney`, tombstones + `removeDocItem`, `mergeMoney`), the ledger split (`LEDGER_ARRAYS`,
   `stable`, `ledgerDiff`, `applyLedgerDiff`, `docPart`) and the two engines Home reads
-  (`buildInsights`, `budgetStatus`, with `inRange` / `sumAmt` / `byCategory` / `pctChange` / `goalSaved`).
+  (`buildInsights`, `budgetStatus`, with `inRange` / `sumAmt` / `byCategory` / `pctChange` / `goalSaved`),
+  and `weekVsLast(money)`: this week so far against the **same days** of last week, the one
+  week-over-week window (`buildInsights` for Home's card and Coach, `weeklyReview`). `buildInsights`
+  says "steady" only when no tag moved more than 25%, and its week lines start "This week" (Home
+  shows them under a month figure).
   app.js imports the model from here. `cur` is a live binding: `applyCurrency` in core sets it, money.js
   only reads it (an import can't be assigned).
 - **`money-home.js`** (boot): `MoneyHomeCard`, painted from core only. Its "Add expense" does
@@ -54,7 +58,7 @@ tombstones{} "<list>:<id>" -> ms deleted, for the TOMBSTONED doc lists (loans, g
 budgets{}   categoryKey -> monthly limit
 rollover{}  categoryKey -> 'YYYY-MM' switched on | null (off is null, not deleted, so a merge can't turn it back on; merged mine-wins like budgets)
 challenges[], wishlist[], customCategories[], noSpendDays[]
-settings{reflectThreshold:1000, currency:'₹', defaultTag:'others', lastAccountId?, accountsSetUp?, fx?{'$': 83.2}, accountCurrency?{accountId: '$'|null}}
+settings{reflectThreshold:1000, currency:'₹', defaultTag:'others', defaultTagSet?, lastAccountId?, accountsSetUp?, fx?{'$': 83.2}, accountCurrency?{accountId: '$'|null}}
 ```
 
 `normalizeMoney` is the trust boundary — every array/object defaulted (**a top-level field it doesn't list is dropped**: a new doc field goes in `emptyMoney` AND `normalizeMoney`), `contribs` backfilled, and a
@@ -78,9 +82,11 @@ All keys are `YYYY-MM-DD` strings; **all range filtering is string comparison**:
 | savings plan + ETA | from contributions + `dueDate`, no income needed |
 | `setAsideThisMonth` / `setAsideInRange` | goal contributions as savings |
 | `incomeInRange` / `sumIncome` | income filtering |
-| `forecast` | `projectSpend` per list: bill expenses (`sub-…` ids) as they are, the single largest expense as a one-off when it is over half the list's total, the rest at its daily pace × days in month; plus `committed` = `bills` not yet paid this month + `recurringOut` (expense repeats still ahead); also `expectedIncome` (income repeats still ahead). Posted repeats (`rec-…` ids) count as fixed, like bills. `willExceed` reads `budgetStatus`'s effective limit. A paid bill is counted once (it used to be run-rated and committed again); a front-loaded one-off no longer projects ×31 into `willExceed` |
+| `forecast` (card: "No budgets projected to overflow" only when a budget is set; `potential` is labelled "if you trim <tag> 20%", a what-if, not money left) | `projectSpend` per list: bill expenses (`sub-…` ids) as they are, the single largest expense as a one-off when it is over half the list's total, the rest at its daily pace × days in month; plus `committed` = `bills` not yet paid this month + `recurringOut` (expense repeats still ahead); also `expectedIncome` (income repeats still ahead). Posted repeats (`rec-…` ids) count as fixed, like bills. `willExceed` reads `budgetStatus`'s effective limit. A paid bill is counted once (it used to be run-rated and committed again); a front-loaded one-off no longer projects ×31 into `willExceed` |
 | `challengeProgress(money, ch)` | no-spend / daily-cap / monthly save / log / reduce kinds |
-| `suggestChallenges(money)` | personalized when data is rich, common presets when thin |
+| `suggestChallenges(money)` | personalized when data is rich, common presets when thin; a "spend under X today" is never offered once today's spend has reached X; its average is named "this month" (Spending's says "over these 7 days") |
+| `salaryPattern(money)` | `{last, repeat}`: the newest salary (Add income prefills amount + account from it) and `{amount, day}` once two equal salaries fell on the same day of two months, null while an active salary repeat exists. Add income then offers **Repeat monthly**, a `recurring` rule with `postedFor` = the entry's month so it doesn't post a second one beside it |
+| `amountJumpQuestion(money, ex, cat, typed, home)` | the expense modal's slip check: over 20x the entry's old amount, or 20x its tag's average (3+ others), the first Save throws the question and the second (same amount + tag) saves |
 | daily tip | deterministic by day-of-month |
 | `financialHealth(money)` | 0–100; **an empty account must score 0** (no phantom points) |
 | `searchExpenses(money, q)` | NL-ish query: "how much on food last month" |
@@ -116,10 +122,10 @@ Customise → Other currencies.
 | Fn | Contents |
 |---|---|
 | `tabOverview` | **today hero** (what's left for today; past its share, tomorrow's new daily share, never the overshoot as the headline) + **`monthTape`** (one cell per day: under / close / over a flat daily share, or depth by spend with no budget; no-spend ringed, today outlined; display-only, cells are far under a 44px target, so a day opens from Spending's 7-day graph; fills in on a visit's first paint only, `tapeShown`), `accountsCard`, `healthCard`, **`budgetsSection`**, **`goalsSection`**, donut, forecast |
-| `tabSpending` | actions row, NL search card, last-7-days bars, by-tag breakdown, weekly review, subscriptions (due and **overdue** cards carry **Mark as paid**; overdue = this month's due day passed unpaid, it stays listed until paid), **expense list** (this month by default, a month `<select>` over the loaded months — `expMonth`, reset on a fresh visit — tag filter, 60 rows then **Show more**, `expShown`; **Load older** fetches ~200 rows before the earliest loaded date through the `requestOlderTx(before)` prop (`GET /api/money/tx?before=`; pages hold whole days, `more` says if there is another) into module-level `older`, merged by `withOlder` into the month list and CSV only — never into the document, its rows are read-only; a **CSV** button downloads `ledgerCsv`: every loaded expense / income / transfer, newest first, a leading `= + - @` defused, `original` column for foreign-currency rows) |
+| `tabSpending` | actions row (No-spend day is disabled, with the reason under it, once today has spending), NL search card (12 rows, then "Showing 12 of N. Show all"; rows open the edit dialog), last-7-days bars, by-tag breakdown, weekly review, subscriptions (due and **overdue** cards carry **Mark as paid**; overdue = this month's due day passed unpaid, it stays listed until paid), **expense list** (this month by default, a month `<select>` over the loaded months — `expMonth`, reset on a fresh visit — tag filter (scrolls sideways under a right-edge fade), heading "Expenses" when the month picker is beside it, 60 rows then **Show more**, `expShown`; **Load older** fetches ~200 rows before the earliest loaded date through the `requestOlderTx(before)` prop (`GET /api/money/tx?before=`; pages hold whole days, `more` says if there is another) into module-level `older`, merged by `withOlder` into the month list and CSV only — never into the document, its rows are read-only; a **CSV** button downloads `ledgerCsv`: every loaded expense / income / transfer, newest first, a leading `= + - @` defused, `original` column for foreign-currency rows) |
 | `budgetsSection` | ONE card (title, intro, totals, bars) + ≥80% nudges + recovery card. Was the Budgets tab. |
 | `goalsSection` | ONE card (title, plan/new-goal actions, goal list). Was the Goals tab; its wishlist moved to Coach. |
-| `tabIncome` | one kept-vs-spent bar for the month, the latest 6 income entries with their account (`showAllIncome` toggles all), **Every month** (`recurringCard`), loans (stats only when there are loans) |
+| `tabIncome` | one kept-vs-spent bar for the month, the latest 6 income entries with their account (a row with no note shows `incomeName`: Salary / Income) (`showAllIncome` toggles all), **Every month** (`recurringCard`), loans (stats only when there are loans) |
 | `tabCoach` | challenges, **wishlist**, journey, insights, personality, tips, share |
 | `tabBar` | sub-tab bar: overview, spending, income, coach |
 
@@ -131,7 +137,7 @@ Subscriptions card: total per month **and per year**; each row shows its yearly 
 **Split a bill** (`openSplitBill`, `splitShares(total, parties, includeMe)` — worked in paise, odd paise go to the
 others, so the shares plus yours equal the bill to the paisa; exported, pinned in `money-ledger.test.mjs`). Loan rows are signed from your side: lent `+` green (owed to you), borrowed `−` red; the summary says **Owed to you** or **You owe**. Both helpers have asserts in `_demo()`.
 
-Shared row/card builders: `expRow(e, withDelete)`, `subscriptionsCard`, `coachCard`,
+Shared row/card builders: `expRow(e, withDelete, editable = withDelete)` (search rows are editable without a trash button; trash and other delete buttons name the item in `aria-label`), `subscriptionsCard`, `coachCard`,
 `emptyHint`, `stat`, `weekBars`, `openMoneyModal`, `confirmDelete` (module level; every delete in Money goes through it, the customise pane's tag manager included).
 
 **Share summary** is Money's use of `share-card.js` (Report's "Share my month" is the other). `shareSummary()` draws the week
@@ -161,13 +167,15 @@ the Coach tab) call `shareSummary`.
 
 - `accountsCard` (Overview, under the hero): balances, `openAddAccount` / `openEditAccount` ("in it right now"
   moves the opening balance, history untouched; remove = archive when it has history) / `openSetBalances`
-  (first-run prompt), `openTransfer` (From disables itself in To, Swap, quick amounts, "X has ₹… now"),
+  (prompt: shown until `settings.accountsSetUp` or any opening balance, and again while a non-card balance is negative; an expense booked to an account no longer counts as answered), `openTransfer` (From disables itself in To, Swap, quick amounts, "X has ₹… now"),
   and the last 3 transfers with undo — a transfer appears in no spending view, so this is where it's seen.
   Account writes go through the injected `accountRequest`, which app.js queues behind unsent ledger writes.
 - "Paid from" / "Received in" = `accountPicker` over `segmented`; the expense modal defaults to
   `settings.lastAccountId`, bills to the first bank/card account (same rule as the WhatsApp path).
-  Its tag starts on `settings.defaultTag` when that is not `others` (every account's starting value),
-  else the newest expense's tag; typing a note still re-guesses it until a tag is picked.
+  Its tag starts on `defaultTagOf(money)`: Customise's "Default tag" is **Last used** (the newest
+  expense's tag) or **Always one tag**, stored as `defaultTagSet` beside `defaultTag` because every
+  account starts with `defaultTag: 'others'`, so the tag alone can't say "picked Others" (a doc
+  without the flag counts anything but Others as picked); typing a note still re-guesses it until a tag is picked.
   The picker lists active accounts plus `initial` when it is archived, so editing an entry never
   silently moves it. An edit is booked by `editedHomeAmount` (money-core.js): an untouched amount keeps
   `amount` + `orig` as stored, a changed one on the same account keeps the row's currency and rate,
@@ -175,7 +183,9 @@ the Coach tab) call `shareSummary`.
 - **Adding and scanning are one button.** A new expense's dialog (`openExpenseModal(money, save, prefillDate,
   existing, scan)`, `scan` = `requestReceiptScan`) leads with "Scan a receipt": a camera pick closes it and
   opens `openReceiptModal(money, save, scan, {file})` (module level, so Home reaches it), which scans that
-  photo at once. There is no separate Scan receipt button on Spending any more. Each receipt row is name,
+  photo at once; with a file handed in the native file input is hidden behind a **Retake** button. It
+  has the same **Paid from** as the expense form (default `settings.lastAccountId`, remembered on save;
+  amounts stay home currency, ponytail). There is no separate Scan receipt button on Spending any more. Each receipt row is name,
   amount, remove, and under them a tag `<select>` (`gb-money-receipt-tag`) on the predicted tag; changing
   it by hand stops renaming from re-guessing (`r.picked`). The scan sends the user's tags
   (`mergedCats` as `{key, label}`) and the AI tags each line from them (`MoneyService.parseReceipt`

@@ -43,7 +43,7 @@ list (e.g. "(14)" = financial health).
 | Home widget (mini card) | `MoneyHomeCard` |
 | Star rating (reflection, 12) — `.gb-stars` + its caption; the amber fill is decoration, the caption carries the meaning | reflection modal |
 | Every month (`gb-money-rec-row`, `.is-paused` dims; `gb-money-exp-amt.is-in` green; `gb-money-forecast-in`) | income tab, forecast |
-| Budget rollover (`gb-money-roll` 44px checkbox label in the set-budgets row, `gb-money-bcard-carry` "+₹X carried", `.is-less` when negative) | set-budgets modal, budgets |
+| Budget rollover (`gb-money-roll` 44px checkbox label in the set-budgets row, which is a grid so every amount box starts at one x (≤380px: Roll over drops to a second row); `gb-money-bcard-carry` "+₹X carried", `.is-less` when negative) | set-budgets modal, budgets |
 | Other currencies (`gb-money-fx*` rate rows + account selects, `gb-money-exp-orig` under an amount, `gb-money-account-home` under a foreign balance) | customise pane, rows, accounts |
 | Load older (`gb-money-older`, sits with `.gb-money-showall`) | expense list |
 | Responsive | — |
@@ -52,7 +52,10 @@ Threshold colours: `is-near` at ≥80% of a budget, `is-over` above 100% — the
 `scripts/money.js` (`tabBudgets`) picks these class names, so keep the names in sync.
 
 Every `:hover` rule sits inside `@media (hover: hover)`: touch keeps `:hover` after a tap, so bars and
-chips stayed recoloured. Pressed (`:active`) feedback for Money's own buttons is the last block in the
+chips stayed recoloured. Pressed (`:active`) feedback for Money's own buttons is the block before Touch targets at the end of the
 file (`.gb-btn` / `.gb-icon-btn` get theirs from app.css). Small pills take a 44px tap with an
-`::after` overlay (`.gb-money-health-fix`, `.gb-money-quick-amt`). Loan rows (`.gb-money-loan-row`)
+`::after` overlay (`.gb-money-health-fix`, `.gb-money-quick-amt`), or `::before` (`.gb-money-tagchip`,
+`.gb-money-chip`; "Touch targets" block at the end). Money's dialogs carry `.gb-money-sheet`
+(`openMoneyModal`), which scopes the 44px `.gb-seg` there and on the screen (`.gb-money .gb-seg`)
+without touching app.css; the receipt row's remove button is 44px square. Loan rows (`.gb-money-loan-row`)
 wrap their amount and buttons onto a second line when the name can't keep 9rem.

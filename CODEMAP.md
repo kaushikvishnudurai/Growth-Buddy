@@ -84,7 +84,7 @@ don't yet know which file you need. Files with their own doc are listed in
 | `timer-math.js` | The focus timer's DOM-free decisions: `remainingFrom`, `restoredSession` (what a session saved before a reload becomes — resume, paused, or *finish*: counted once), `titleWith`/`stripTitle` (the countdown in the tab title), the 4-sprint cycle (`afterSession`, `cycleLabel`, `sprintNumber`: the 4th break is 15 min), the daily goal (`goalMinutes`, `goalProgress`) and the history chart's `barLayout`. `node scripts/timer.test.mjs`. |
 | `calendar.test.mjs` | Checks `calendar.js`'s `isPastSlot` (refuses a past one-off; decides whether a row claims it will reach WhatsApp), `freeBusy`, `wholeHours`. `node scripts/calendar.test.mjs`. |
 | `money-core.js` / `money-home.js` | The light half of Money, split out of `money.js` so the screen can be lazy; documented in `docs/scripts/money.js.md` (Module split). |
-| `money-calc.test.mjs` | Checks `money.js`'s `_calc` engines on a pinned clock (forecast, due/overdue bills, budget status, logging streaks, loan balance) plus `normalizeMoney` and `ledgerCsv`. `node scripts/money-calc.test.mjs`. |
+| `money-calc.test.mjs` | Checks `money.js`'s `_calc` engines on a pinned clock (forecast, due/overdue bills, budget status, logging streaks, loan balance, the salary-repeat offer, the amount slip check, today's cap challenge) plus `normalizeMoney`, `ledgerCsv` and core's `weekVsLast` / `buildInsights` (same-days week window, no "steady" beside a big tag move). `node scripts/money-calc.test.mjs`. |
 
 ---
 
