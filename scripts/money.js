@@ -5079,6 +5079,9 @@ function ScreenMoney({
           'div',
           { class: 'gb-money-exp-note' },
           e.note || c.label,
+          e.source === 'bank'
+            ? h('span', { class: 'gb-money-bank-tag', title: 'Imported from your bank' + (e.bankMask ? ' (\u2022\u2022' + e.bankMask + ')' : '') }, 'Bank')
+            : null,
           e.reflection
             ? h(
                 'span',

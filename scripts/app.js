@@ -6622,7 +6622,8 @@ function customisePanes() {
         lazyScreen(
           () => import('./money.js'),
           (m) => m.MoneyCustomisePane(state.money, saveMoney)
-        )
+        ),
+        bankFeedSection()
       )
     : null;
 
@@ -11780,6 +11781,159 @@ function openQuickAddPreview(rows, note) {
       } else {
         throw new Error('None of those could be logged.');
       }
+    },
+  });
+}
+
+/* ---- Connect your bank (Account Aggregator via Setu; BankFeedService) ----
+   Consent once on the user's AA, then debits and credits arrive in Money as
+   ordinary, editable entries marked "Bank". The whole section stays empty when
+   the server has no Setu credentials. */
+function bankFeedSection() {
+  const box = h('div', { class: 'gb-bank-feed' });
+  const paint = (st) => {
+    if (!st || !st.configured) {
+      box.replaceChildren();
+      return;
+    }
+    const rows = (st.consents || []).map((c) => {
+      const accts = (c.accounts || []).map((a) => '\u2022\u2022' + a.mask).join(', ');
+      const what =
+        c.status === 'PENDING'
+          ? 'Waiting for your approval'
+          : /ACTIVE|APPROVED/.test(c.status)
+            ? (accts || 'Connected') +
+              (c.syncing ? ' \u00b7 Fetching\u2026' : c.lastSyncedAt ? ' \u00b7 Synced ' + relativeTime(c.lastSyncedAt) : '')
+            : 'Ended (' + c.status.toLowerCase() + ')';
+      return h(
+        'div',
+        { class: 'gb-bank-row' },
+        h('span', { class: 'gb-money-cat-ic' }, Icon('landmark', { size: 15, sw: 2.2 })),
+        h(
+          'div',
+          { class: 'gb-bank-copy' },
+          h('strong', null, 'Bank feed'),
+          h('span', null, what),
+          c.error ? h('span', { class: 'gb-field-hint' }, c.error) : null
+        ),
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-btn gb-btn--ghost gb-btn--compact',
+            onclick: () =>
+              openModal({
+                title: 'Disconnect this bank?',
+                sub: 'Nothing more is fetched. Entries already imported stay in Money.',
+                body: null,
+                primary: 'Disconnect',
+                destructive: true,
+                errorMessage: 'Could not disconnect.',
+                onPrimary: async () => {
+                  try {
+                    await api('/api/money/bank/' + encodeURIComponent(c.id), { method: 'DELETE' });
+                    toastSuccess('Bank disconnected.');
+                  } finally {
+                    load();
+                  }
+                },
+              }),
+          },
+          'Disconnect'
+        )
+      );
+    });
+    const live = (st.consents || []).some((c) => /ACTIVE|APPROVED|PENDING/.test(c.status));
+    box.replaceChildren(
+      h('div', { class: 'gb-settings-sec-label', style: { marginTop: '18px' } }, 'Bank feed'),
+      h(
+        'div',
+        { class: 'gb-field-hint', style: { marginBottom: '8px' } },
+        'Approve once through an RBI Account Aggregator and your bank spends and income show up here on their own. Every entry stays editable.'
+      ),
+      ...rows,
+      h(
+        'div',
+        { class: 'gb-bank-actions' },
+        live
+          ? h(
+              'button',
+              {
+                type: 'button',
+                class: 'gb-btn gb-btn--compact',
+                onclick: async (e) => {
+                  const done = setThinking(e.currentTarget, 'Syncing');
+                  try {
+                    const r = await api('/api/money/bank/sync', { method: 'POST' });
+                    if (r.imported > 0) {
+                      const theirs = await api('/api/money', { onResponse: rememberMoneyVersion });
+                      state.money = normalizeMoney(overlayPending(mergeMoney(state.money, theirs)));
+                      cacheMoney();
+                      render();
+                    }
+                    toastSuccess(
+                      r.imported > 0
+                        ? r.imported + ' new from your bank.'
+                        : r.pending > 0
+                          ? 'Your bank is preparing the data. It will show up shortly.'
+                          : 'Up to date.'
+                    );
+                  } catch (err) {
+                    toastError(err, 'Could not sync right now.');
+                  } finally {
+                    done();
+                  }
+                  load();
+                },
+              },
+              'Sync now'
+            )
+          : null,
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-btn gb-btn--primary gb-btn--compact',
+            onclick: () => openConnectBank(load),
+          },
+          live ? 'Add another bank' : 'Connect your bank'
+        )
+      )
+    );
+    refreshIcons();
+  };
+  const load = () => api('/api/money/bank').then(paint).catch(() => paint(null));
+  load();
+  return box;
+}
+
+function openConnectBank(onDone) {
+  const phone = String((state.user && state.user.whatsappNumber) || '').replace(/^\+91/, '');
+  const input = h('input', {
+    type: 'tel',
+    class: 'gb-input',
+    inputmode: 'numeric',
+    autocomplete: 'tel-national',
+    maxlength: '14',
+    value: /^\d{10}$/.test(phone) ? phone : '',
+    placeholder: '10-digit mobile',
+  });
+  openModal({
+    title: 'Connect your bank',
+    sub: 'Your Account Aggregator asks you to pick accounts and approve. Only transactions are shared, read-only, and you can revoke it any time.',
+    body: h('div', null, h('label', { class: 'gb-field-label' }, 'Mobile number registered with your bank'), input),
+    primary: 'Continue',
+    errorMessage: 'Could not start the connection.',
+    onPrimary: async () => {
+      const r = await api('/api/money/bank/connect', {
+        method: 'POST',
+        body: JSON.stringify({ mobile: input.value.trim() }),
+      });
+      const browser = nativePlugin('Browser');
+      if (browser) await browser.open({ url: r.url });
+      else window.open(r.url, '_blank', 'noopener');
+      toastSuccess('Approve on the next screen. Entries start arriving once you do.');
+      onDone();
     },
   });
 }

@@ -1738,6 +1738,20 @@
   color: var(--bloom-500);
 }
 
+/* An entry the bank feed imported (BankFeedService); still edits like any other. */
+.gb-money-bank-tag {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  background: var(--surface-2);
+  color: var(--fg3);
+  border: 1px solid var(--border);
+}
+
 /* ---- Home widget (mini card) ---- */
 .gb-money-mini {
   display: flex;

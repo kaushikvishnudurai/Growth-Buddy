@@ -13463,3 +13463,37 @@ button.gb-tone-chip:focus-visible {
   margin: 6px 0 0;
   color: var(--fg2);
 }
+
+/* Settings -> Money -> Bank feed (bankFeedSection in app.js). */
+.gb-bank-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.gb-bank-copy {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+}
+.gb-bank-copy > span {
+  color: var(--fg3);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+.gb-bank-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.gb-bank-actions .gb-btn,
+.gb-bank-row .gb-btn {
+  min-height: 44px;
+}

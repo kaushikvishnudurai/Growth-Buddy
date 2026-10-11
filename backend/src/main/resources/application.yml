@@ -144,6 +144,19 @@ growthbuddy:
     public-key: ${VAPID_PUBLIC_KEY:}
     private-key: ${VAPID_PRIVATE_KEY:}
     subject: ${VAPID_SUBJECT:mailto:hello@growthbuddy.app}
+  bankfeed:
+    # Money's "Connect your bank": RBI Account Aggregator through Setu (an FIU gateway).
+    # Inert until client-id, client-secret, product-instance-id and redirect-url are all
+    # set: the app hides the button and every /api/money/bank route says "not configured".
+    base-url: ${SETU_AA_BASE_URL:https://fiu-sandbox.setu.co}
+    auth-url: ${SETU_AUTH_URL:https://accountservice.setu.co/v1/users/login}
+    client-id: ${SETU_CLIENT_ID:}
+    client-secret: ${SETU_CLIENT_SECRET:}
+    product-instance-id: ${SETU_PRODUCT_INSTANCE_ID:}
+    # Where the AA sends the user back after approving (the app's URL).
+    redirect-url: ${SETU_REDIRECT_URL:}
+    # Our own secret in the webhook URL registered on Bridge (Setu signs nothing).
+    webhook-token: ${SETU_WEBHOOK_TOKEN:}
   whatsapp:
     # Set enabled=true + Meta WhatsApp Cloud API credentials to send reminder messages.
     enabled: ${WHATSAPP_ENABLED:false}
