@@ -2610,7 +2610,10 @@ let servedSaved = false;
 function savedGetKey(path, opts) {
   const id = state.user && state.user.id;
   const get = !opts.method || String(opts.method).toUpperCase() === 'GET';
-  if (!isNative() || !id || !get || opts.body || opts.raw || path.startsWith('/api/auth/')) return null;
+  // Not /api/notes*: Notes keeps its own read-only offline copy (gb.notesOffline), and a
+  // list answered from here read as online, with edits that could not save.
+  if (!isNative() || !id || !get || opts.body || opts.raw) return null;
+  if (path.startsWith('/api/auth/') || path.startsWith('/api/notes')) return null;
   return 'gb.apiGet.' + id + '.' + path;
 }
 

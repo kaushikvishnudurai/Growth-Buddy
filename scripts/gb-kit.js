@@ -751,6 +751,12 @@ function openOverlay({ label, className, role = 'dialog', onClose, onDismiss } =
     if (vv) vv.removeEventListener('resize', fitViewport);
     overlay.classList.remove('is-open');
     overlay.classList.add('is-closing');
+    // Gone the moment it closes, not 180ms later: a fading sheet still read as
+    // a second open dialog (two "Delete note" buttons once the next note opened
+    // inside the fade) and kept its controls reachable by keyboard. inert first,
+    // so focus leaves before aria-hidden lands on it.
+    overlay.inert = true;
+    overlay.setAttribute('aria-hidden', 'true');
     setTimeout(() => overlay.remove(), SHEET_EXIT_MS);
     syncSheetHistory();
     if (onClose) onClose();

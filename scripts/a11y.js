@@ -44,7 +44,8 @@ function openOverlays() {
   const out = [];
   for (const d of document.querySelectorAll(MODAL)) {
     const o = overlayOf(d);
-    if (!out.includes(o)) out.push(o);
+    // A closing one (inert while it fades) is not up: Escape and Tab go past it.
+    if (!o.inert && !out.includes(o)) out.push(o);
   }
   return out;
 }
