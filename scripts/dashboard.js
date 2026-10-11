@@ -167,8 +167,8 @@ function OnboardingCard({
 }
 
 const PRIORITY = {
-  High: { bg: 'var(--coral-50)', fg: 'var(--coral-700)', dot: 'var(--coral-500)' },
-  Medium: { bg: 'var(--sun-50)', fg: 'var(--sun-700)', dot: 'var(--sun-500)' },
+  High: { bg: 'var(--brand-soft)', fg: 'var(--brand-soft-fg)', dot: 'var(--coral-500)' },
+  Medium: { bg: 'var(--warning-soft)', fg: 'var(--warning-soft-fg)', dot: 'var(--sun-500)' },
   Low: { bg: 'var(--surface-3)', fg: 'var(--fg2)', dot: 'var(--warm-400)' },
 };
 
@@ -269,8 +269,8 @@ function ScoreCard({ score, tasks: allTasks, habits }) {
       const pill = Pill({
         icon: 'flame',
         label: n + unit,
-        bg: 'var(--coral-50)',
-        fg: 'var(--coral-700)',
+        bg: 'var(--brand-soft)',
+        fg: 'var(--brand-soft-fg)',
       });
       pill.setAttribute('aria-label', 'Best ' + n + spoken);
       pills.push(pill);
@@ -321,7 +321,7 @@ function TaskRow(task, toggleTask, onEdit, onPause, onFocus) {
           ? 'Paused'
           : h(
               'span',
-              task.overdue ? { style: { color: 'var(--coral-700)', fontWeight: 600 } } : null,
+              task.overdue ? { style: { color: 'var(--brand-ink)', fontWeight: 600 } } : null,
               task.time
             ),
         Pill({
@@ -2474,7 +2474,7 @@ function GoalsCard({ goals, goalProgress, onOpenGoals }) {
                   h(
                     'small',
                     r.daysLeft != null && r.daysLeft < 0
-                      ? { style: { color: 'var(--coral-700)', fontWeight: 600 } }
+                      ? { style: { color: 'var(--brand-ink)', fontWeight: 600 } }
                       : null,
                     [
                       dueLine(r),

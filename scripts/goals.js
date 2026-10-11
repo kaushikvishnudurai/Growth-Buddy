@@ -17,9 +17,9 @@ const HORIZON_LABEL = {
 };
 
 const HORIZON_META = {
-  short_term: { bg: 'var(--leaf-50)', fg: 'var(--leaf-700)', dot: 'var(--leaf-500)' },
-  mid_term: { bg: 'var(--sun-50)', fg: 'var(--sun-700)', dot: 'var(--sun-500)' },
-  long_term: { bg: 'var(--iris-50)', fg: 'var(--iris-700)', dot: 'var(--iris-500)' },
+  short_term: { bg: 'var(--success-soft)', fg: 'var(--success-soft-fg)', dot: 'var(--leaf-500)' },
+  mid_term: { bg: 'var(--warning-soft)', fg: 'var(--warning-soft-fg)', dot: 'var(--sun-500)' },
+  long_term: { bg: 'var(--ai-soft)', fg: 'var(--ai-soft-fg)', dot: 'var(--iris-500)' },
 };
 
 // How far each horizon reaches: the hint under the form's horizon buttons and
@@ -808,7 +808,7 @@ function GoalRow(
         ? h(
             'span',
             overdue
-              ? { class: 'gb-goal-overdue', style: { color: 'var(--coral-700)', fontWeight: 600 } }
+              ? { class: 'gb-goal-overdue', style: { color: 'var(--brand-ink)', fontWeight: 600 } }
               : null,
             overdue
               ? 'Overdue · target ' + fmtDate(goal.targetDate)

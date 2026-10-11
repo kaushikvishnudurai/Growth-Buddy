@@ -10127,7 +10127,7 @@ function openProfileSettings(initialTab) {
   // ---- Account pane ----
   const verifiedChip = h(
     'span',
-    { class: 'gb-pill', style: { background: 'var(--leaf-50)', color: 'var(--leaf-700)' } },
+    { class: 'gb-pill', style: { background: 'var(--success-soft)', color: 'var(--success-soft-fg)' } },
     u.emailVerified ? 'Verified' : 'Unverified'
   );
   const accountPane = h(

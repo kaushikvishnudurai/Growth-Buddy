@@ -30,59 +30,59 @@ const DEFAULT_CATEGORIES = [
     label: 'Food',
     icon: 'utensils',
     color: 'var(--coral-500)',
-    soft: 'var(--coral-50)',
-    fg: 'var(--coral-700)',
+    soft: 'var(--brand-soft)',
+    fg: 'var(--brand-soft-fg)',
   },
   {
     key: 'shopping',
     label: 'Shopping',
     icon: 'shopping-bag',
     color: 'var(--bloom-500)',
-    soft: 'var(--bloom-50)',
-    fg: 'var(--bloom-700)',
+    soft: 'var(--social-soft)',
+    fg: 'var(--social-soft-fg)',
   },
   {
     key: 'transport',
     label: 'Transport',
     icon: 'bus',
     color: 'var(--sky-500)',
-    soft: 'var(--sky-50)',
-    fg: 'var(--sky-700)',
+    soft: 'var(--info-soft)',
+    fg: 'var(--info-soft-fg)',
   },
   {
     key: 'entertainment',
     label: 'Entertainment',
     icon: 'clapperboard',
     color: 'var(--iris-500)',
-    soft: 'var(--iris-50)',
-    fg: 'var(--iris-700)',
+    soft: 'var(--ai-soft)',
+    fg: 'var(--ai-soft-fg)',
   },
   {
     key: 'education',
     label: 'Education',
     icon: 'graduation-cap',
     color: 'var(--leaf-600)',
-    soft: 'var(--leaf-50)',
-    fg: 'var(--leaf-700)',
+    soft: 'var(--success-soft)',
+    fg: 'var(--success-soft-fg)',
   },
   {
     key: 'others',
     label: 'Others',
     icon: 'shapes',
     color: 'var(--sun-600)',
-    soft: 'var(--sun-50)',
-    fg: 'var(--sun-700)',
+    soft: 'var(--warning-soft)',
+    fg: 'var(--warning-soft-fg)',
   },
 ];
 
 /* Swatches a user picks from when creating a custom tag. */
 const PALETTE = [
-  { color: 'var(--coral-500)', soft: 'var(--coral-50)', fg: 'var(--coral-700)' },
-  { color: 'var(--bloom-500)', soft: 'var(--bloom-50)', fg: 'var(--bloom-700)' },
-  { color: 'var(--sky-500)', soft: 'var(--sky-50)', fg: 'var(--sky-700)' },
-  { color: 'var(--iris-500)', soft: 'var(--iris-50)', fg: 'var(--iris-700)' },
-  { color: 'var(--leaf-600)', soft: 'var(--leaf-50)', fg: 'var(--leaf-700)' },
-  { color: 'var(--sun-600)', soft: 'var(--sun-50)', fg: 'var(--sun-700)' },
+  { color: 'var(--coral-500)', soft: 'var(--brand-soft)', fg: 'var(--brand-soft-fg)' },
+  { color: 'var(--bloom-500)', soft: 'var(--social-soft)', fg: 'var(--social-soft-fg)' },
+  { color: 'var(--sky-500)', soft: 'var(--info-soft)', fg: 'var(--info-soft-fg)' },
+  { color: 'var(--iris-500)', soft: 'var(--ai-soft)', fg: 'var(--ai-soft-fg)' },
+  { color: 'var(--leaf-600)', soft: 'var(--success-soft)', fg: 'var(--success-soft-fg)' },
+  { color: 'var(--sun-600)', soft: 'var(--warning-soft)', fg: 'var(--warning-soft-fg)' },
 ];
 
 const KEYWORDS = {
@@ -576,14 +576,19 @@ const goalSaved = (g) => (g.contribs || []).reduce((a, c) => a + (Number(c.amoun
 function mergedCats(money) {
   const custom = (money && money.customCategories) || [];
   return DEFAULT_CATEGORIES.concat(
-    custom.map((c) => ({
-      key: c.key,
-      label: c.label,
-      icon: c.icon || 'tag',
-      color: c.color || 'var(--sun-600)',
-      soft: c.soft || 'var(--sun-50)',
-      fg: c.fg || 'var(--sun-700)',
-    }))
+    custom.map((c) => {
+      // Saved tags carry the swatch's soft/fg as they were then (raw ramp steps,
+      // light-only); read them from today's PALETTE by colour so dark mode follows.
+      const p = PALETTE.find((x) => x.color === c.color) || c;
+      return {
+        key: c.key,
+        label: c.label,
+        icon: c.icon || 'tag',
+        color: c.color || 'var(--sun-600)',
+        soft: p.soft || 'var(--warning-soft)',
+        fg: p.fg || 'var(--warning-soft-fg)',
+      };
+    })
   );
 }
 function catOf(key, money) {
@@ -593,8 +598,8 @@ function catOf(key, money) {
       label: key || 'Others',
       icon: 'tag',
       color: 'var(--sun-600)',
-      soft: 'var(--sun-50)',
-      fg: 'var(--sun-700)',
+      soft: 'var(--warning-soft)',
+      fg: 'var(--warning-soft-fg)',
     }
   );
 }
