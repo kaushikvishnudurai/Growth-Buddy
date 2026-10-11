@@ -20,7 +20,7 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
 | Buttons |
 | Chips / pills |
 | Icon chip |
-| Bottom nav |
+| Bottom nav — incl. the shell's signature: the active tab's sprout (`.gb-nav-tab.is-active::before/::after`, the logo's coral + sun leaves above the icon; grows only on `.is-sprouting`; `--sprout-lift` places it, the landscape rail overrides it; hidden on premium's floating pill) and `.gb-nav-brand` (the sidebar wordmark, ≥1024px only) |
 | Habit / task check |
 | Login |
 | Notification bell — incl. the header links (`.gb-notif-link`: Mark all read / Clear read), filter chips (`.gb-notif-chips`, `.gb-notif-chip.is-on`) and `.gb-notif-more` (Load older) |

@@ -491,6 +491,50 @@ button.gb-sectiontitle-act {
 .gb-nav-tab.is-active {
   color: var(--brand-ink);
 }
+/* The shell's signature: the active destination grows a sprout, the logo's two
+   leaves (coral and sun) meeting at one point just above its icon. The sidebar moves it to
+   the end of the active row (Laptop / desktop layout). It grows only when the
+   destination changes (`is-sprouting`, set by BottomNav), not on every render. */
+.gb-nav-tab {
+  position: relative;
+}
+.gb-nav-brand {
+  display: none;
+}
+.gb-nav-tab.is-active::before,
+.gb-nav-tab.is-active::after {
+  content: '';
+  position: absolute;
+  /* Inside the nav's top padding, clear of the hairline and of the icon: on
+     the hairline it stood over the screen's content and read as part of it. */
+  bottom: calc(100% + var(--sprout-lift, -3px));
+  width: 9px;
+  height: 9px;
+  pointer-events: none;
+}
+.gb-nav-tab.is-active::before {
+  right: 50%;
+  background: var(--brand);
+  border-radius: 0 100%;
+  transform-origin: 100% 100%;
+}
+.gb-nav-tab.is-active::after {
+  left: 50%;
+  background: var(--sun-500);
+  border-radius: 100% 0;
+  transform-origin: 0 100%;
+}
+.gb-nav-tab.is-sprouting::before {
+  animation: gb-sprout-grow 420ms var(--ease-bounce) both;
+}
+.gb-nav-tab.is-sprouting::after {
+  animation: gb-sprout-grow 420ms 90ms var(--ease-bounce) both;
+}
+@keyframes gb-sprout-grow {
+  from {
+    transform: scale(0);
+  }
+}
 .gb-nav-tab:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
@@ -1385,10 +1429,11 @@ body:has(.is-thinking, .gb-thinking)::after {
   height: 18px;
   padding: 0 5px;
   border-radius: 9px;
-  background: var(--coral-500);
+  background: var(--brand-fill);
   color: var(--fg-on-brand);
+  font-family: var(--font-mono);
   font-size: 0.65625rem;
-  font-weight: 800;
+  font-weight: 700;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1423,7 +1468,8 @@ body:has(.is-thinking, .gb-thinking)::after {
   border-bottom: 1px solid var(--border);
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 0.875rem;
+  font-size: 1rem;
+  letter-spacing: -0.01em;
 }
 .gb-notif-empty {
   padding: 24px;
@@ -1442,7 +1488,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   border-bottom: none;
 }
 .gb-notif-row.is-unread {
-  background: var(--brand-soft);
+  background: color-mix(in srgb, var(--brand-soft) 30%, transparent);
 }
 .gb-notif-dot {
   flex: none;
@@ -1472,9 +1518,15 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 .gb-notif-time {
   margin-top: 4px;
-  font-size: 0.6875rem;
-  color: var(--fg3);
+  font-size: 0.71875rem;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg3);
+}
+/* Read rows step back so the unread ones lead without a slab of colour. */
+.gb-notif-row:not(.is-unread) .gb-notif-title {
+  font-weight: 600;
+  color: var(--fg2);
 }
 .gb-notif-actions {
   display: flex;
@@ -1494,7 +1546,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   border: 0;
   border-radius: var(--radius-pill);
   background: none;
-  color: var(--brand);
+  color: var(--brand-ink);
   font-family: var(--font-body);
   font-size: 0.75rem;
   font-weight: 700;
@@ -1551,7 +1603,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   border: 0;
   border-top: 1px solid var(--border);
   background: none;
-  color: var(--brand);
+  color: var(--brand-ink);
   font-family: var(--font-body);
   font-size: 0.8125rem;
   font-weight: 700;
@@ -6291,10 +6343,11 @@ button.gb-food-level {
    this one's case and tracking with the later one's size, weight and colour.
    These are those rendered values, so nothing on screen moves. */
 .gb-field-label {
-  font-size: 0.84375rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  /* Sentence case: every label is already written that way, and capitals
+     at this size competed with the section labels they sit under. */
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0;
   color: var(--fg2);
   margin-top: 4px;
 }
@@ -7198,7 +7251,7 @@ button.gb-food-level {
   transform: translateY(0) scale(1);
 }
 .gb-modal-head {
-  margin-bottom: 14px;
+  margin-bottom: 16px;
 }
 .gb-modal-body {
   overflow-y: auto;
@@ -7217,14 +7270,17 @@ button.gb-food-level {
 .gb-modal-title {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 1.0625rem;
+  font-size: 1.25rem;
+  letter-spacing: -0.02em;
+  line-height: var(--leading-tight);
   color: var(--fg1);
+  margin: 0;
 }
 .gb-modal-sub {
-  margin-top: 4px;
-  font-size: 0.8125rem;
+  margin-top: 6px;
+  font-size: 0.875rem;
   color: var(--fg2);
-  line-height: 1.4;
+  line-height: 1.45;
 }
 /* The edit control sits beside delete on a reminder row and shares its shape;
    only the hover colour differs, because one of them destroys something. */
@@ -8613,8 +8669,34 @@ button.gb-food-level {
     background: var(--brand-soft);
     color: var(--brand-soft-fg);
   }
+  /* The sprout moves to the end of the active row, standing on its text line. */
+  .gb-nav-tab.is-active::before,
+  .gb-nav-tab.is-active::after {
+    bottom: calc(50% - 5px);
+  }
+  .gb-nav-tab.is-active::before {
+    right: 26px;
+  }
+  .gb-nav-tab.is-active::after {
+    left: auto;
+    right: 17px;
+  }
   .gb-nav-tab span {
     font-size: 0.875rem;
+  }
+  /* The wordmark that heads the sidebar: the desktop app had no brand on it. */
+  .gb-nav-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 14px 26px;
+    margin: 0 0 10px;
+    border-bottom: 1px solid var(--border);
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: 1.0625rem;
+    letter-spacing: -0.02em;
+    color: var(--fg1);
   }
 
   /* The nav is wrapped in .gb-nav-wrap, so the WRAPPER is the real grid child —
@@ -9068,7 +9150,7 @@ button.gb-food-level {
   left: 4px;
   border-radius: 9px;
   background: var(--brand-fill);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--shadow-xs);
   transition:
     transform 0.28s cubic-bezier(0.34, 1.2, 0.64, 1),
     width 0.28s cubic-bezier(0.34, 1.2, 0.64, 1);
@@ -9137,6 +9219,18 @@ button.gb-food-level {
   padding-top: 10px;
 }
 
+/* Field rhythm: a label belongs to the field under it (6px) and stands apart
+   from the field above it (14px). It hugged both at 4px and 0, so every label
+   read as the caption of the input before it. */
+.gb-settings-pane .gb-field-label {
+  margin: 14px 0 6px;
+}
+.gb-settings-pane .gb-settings-sec-label + .gb-field-label {
+  margin-top: 2px;
+}
+.gb-settings-pane .gb-field-label + .gb-field-hint {
+  margin: -2px 0 6px;
+}
 /* Two-column grid for paired inputs (height/weight, food/water) */
 .gb-settings-2col {
   display: grid;
@@ -9144,8 +9238,8 @@ button.gb-food-level {
   gap: 12px;
   margin-bottom: 2px;
 }
-.gb-settings-2col .gb-field-label {
-  margin-top: 0;
+.gb-settings-pane .gb-settings-2col .gb-field-label {
+  margin-top: 14px;
 }
 
 /* select element inherits gb-input but needs a small fix for arrow */
@@ -11205,6 +11299,11 @@ textarea:focus-visible,
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
+/* a11y.js focuses the dialog itself (tabindex=-1) before the first Tab; a ring
+   round the whole sheet read as an error state. The sheet's edge is its focus. */
+.gb-modal[tabindex='-1']:focus-visible {
+  outline: none;
+}
 /* (global prefers-reduced-motion kill switch lives earlier in this file) */
 
 /* =====================================================================
@@ -12907,7 +13006,8 @@ h2[tabindex='-1']:focus {
     width: 48px;
     min-height: 44px;
     gap: 0;
-    padding: 0;
+    padding: 0;    /* The rail spaces its tabs apart, so the sprout stands in the gap above each icon. */
+    --sprout-lift: 1px;
   }
   .gb-nav-tab span {
     display: none;
