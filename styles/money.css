@@ -508,10 +508,15 @@
 /* ---- Actions row ---- */
 .gb-money-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
 }
 .gb-money-actions .gb-btn {
   flex: 1;
+}
+/* Why No-spend day is off: its own line under the two buttons. */
+.gb-money-actions .gb-note-hint {
+  flex-basis: 100%;
 }
 /* Beside a secondary button the primary's 4px ledge and brand glow read as a
    heavier, taller button. Same weight as its neighbour here; colour alone says
@@ -872,6 +877,12 @@
 .gb-money-filter {
   overflow-x: auto;
   scrollbar-width: none;
+  /* The strip runs past the card: a fade on the right says there is more (a mask
+     reads only alpha, so any opaque token does), and
+     the end padding lets the last chip scroll clear of it. */
+  padding-right: var(--space-8);
+  -webkit-mask-image: linear-gradient(to right, var(--fg1) calc(100% - var(--space-8)), transparent);
+  mask-image: linear-gradient(to right, var(--fg1) calc(100% - var(--space-8)), transparent);
 }
 .gb-money-filter::-webkit-scrollbar {
   display: none;
@@ -989,8 +1000,10 @@
 }
 
 /* ---- Budget modal fields ---- */
+/* A grid, not flex: the amount boxes start at one x whatever the tag's name. */
 .gb-money-budget-field {
-  display: flex;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto 112px;
   align-items: center;
   gap: var(--space-3);
   margin-bottom: var(--space-3);
@@ -1005,16 +1018,13 @@
   border-radius: var(--radius-md);
 }
 .gb-money-budget-field-label {
-  flex: 1;
+  overflow-wrap: anywhere;
   font-family: var(--font-body);
   font-weight: 600;
   font-size: var(--text-sm);
   color: var(--fg1);
 }
-/* 120px, but it gives way: on a 320px phone "Entertainment" can't shrink, and a
-   fixed box was pushed 18px past the sheet's edge. */
 .gb-money-budget-field .gb-input {
-  flex: 0 1 120px;
   min-width: 0;
 }
 
@@ -2434,9 +2444,19 @@
 .gb-money-bcard-carry.is-less {
   color: var(--warning-soft-fg);
 }
+/* A narrow phone: Roll over drops under the name, the amount column stays put. */
 @media (max-width: 380px) {
   .gb-money-budget-field {
-    flex-wrap: wrap;
+    grid-template-columns: 32px minmax(0, 1fr) 104px;
+    row-gap: 0;
+  }
+  .gb-money-budget-field .gb-input {
+    grid-row: 1;
+    grid-column: 3;
+  }
+  .gb-money-budget-field .gb-money-roll {
+    grid-row: 2;
+    grid-column: 2 / -1;
   }
 }
 
@@ -2526,4 +2546,34 @@
 .gb-money-exp-edit:active,
 .gb-money-day-retry:active {
   opacity: 0.7;
+}
+
+/* ---- Touch targets: 44px to hit, whatever the drawn size ----
+   Where the look must stay small, a transparent ::before carries the hit area
+   (same trick as .gb-money-quick-amt::after). The checkboxes (Roll over, Split a
+   bill, Repeat monthly) are hit through their 44px-tall <label>. Money's dialogs
+   carry .gb-money-sheet (openMoneyModal), so these never reach other screens. */
+.gb-money-tagchip,
+.gb-money-chip {
+  position: relative;
+}
+.gb-money-tagchip::before,
+.gb-money-chip::before {
+  content: '';
+  position: absolute;
+  inset: -4px 0;
+}
+.gb-money-chip::before {
+  inset: -8px 0;
+}
+.gb-money-goal-chips {
+  row-gap: var(--space-4);
+}
+.gb-money .gb-seg,
+.gb-money-sheet .gb-seg {
+  min-height: 44px;
+}
+.gb-money-receipt-row .gb-icon-btn {
+  width: 44px;
+  height: 44px;
 }

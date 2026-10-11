@@ -698,48 +698,60 @@ function suggestCategory(text, money) {
   return predictCategory(text, money && money.expenses, mergedCats(money));
 }
 
-/* 2 — weekly + monthly insights, plain language. */
-function buildInsights(money) {
-  const out = [];
-  const tw = weekStartKey();
-  const today = todayKey();
+/* This week so far against the same days of last week (Mon..today vs last
+   Mon..same weekday). The one week-over-week window: Home's card, Coach and the
+   weekly review all read it, so their numbers agree. Comparing a partial week with
+   a whole one said "less than last week" every Monday. */
+function weekVsLast(money, today = todayKey()) {
+  const tw = weekStartKey(parseKey(today));
+  const n = diffDays(today, tw);
   const lwS = dkey(addDays(parseKey(tw), -7));
-  const lwE = dkey(addDays(parseKey(tw), -1));
+  const lwE = dkey(addDays(parseKey(lwS), n));
   const cur = inRange(money.expenses, tw, today);
   const prev = inRange(money.expenses, lwS, lwE);
-  const curT = sumAmt(cur);
-  const prevT = sumAmt(prev);
-  if (cur.length && prevT > 0) {
-    const ch = pctChange(curT, prevT);
-    if (ch <= -10)
-      out.push({
-        tone: 'down',
-        text: `You're spending ${Math.abs(ch)}% less than last week so far.`,
-      });
-    else if (ch >= 10)
-      out.push({
-        tone: 'up',
-        text: `You've spent ${ch}% more than last week. Worth a quick glance.`,
-      });
-    else out.push({ tone: 'flat', text: `Your spending is steady — about the same as last week.` });
-  }
+  return { from: tw, cur, prev, curT: sumAmt(cur), prevT: sumAmt(prev) };
+}
+
+/* 2 — weekly + monthly insights, plain language. The week lines say "this week",
+   since Home shows them under a month figure. */
+function buildInsights(money) {
+  const out = [];
+  const today = todayKey();
+  const { cur, prev, curT, prevT } = weekVsLast(money, today);
+  // The tag that moved most, worked out first: "steady" above "Transport is up
+  // 67%" contradicted itself, so a tag moving more than 25% rules steady out.
+  let best = null;
   if (cur.length) {
     const cc = byCategory(cur, money);
     const pc = byCategory(prev, money);
-    let best = null;
     mergedCats(money).forEach((c) => {
       if (pc[c.key] > 0 && cc[c.key] > 0) {
         const ch = pctChange(cc[c.key], pc[c.key]);
         if (!best || Math.abs(ch) > Math.abs(best.ch)) best = { c, ch };
       }
     });
-    if (best && Math.abs(best.ch) >= 15)
-      out.push(
-        best.ch > 0
-          ? { tone: 'up', text: `${best.c.label} is up ${best.ch}% vs last week.` }
-          : { tone: 'down', text: `${best.c.label} is down ${Math.abs(best.ch)}% — nice control.` }
-      );
   }
+  if (cur.length && prevT > 0) {
+    const ch = pctChange(curT, prevT);
+    if (ch <= -10)
+      out.push({
+        tone: 'down',
+        text: `This week you're spending ${Math.abs(ch)}% less than by this point last week.`,
+      });
+    else if (ch >= 10)
+      out.push({
+        tone: 'up',
+        text: `This week you've spent ${ch}% more than by this point last week. Worth a quick glance.`,
+      });
+    else if (!best || Math.abs(best.ch) <= 25)
+      out.push({ tone: 'flat', text: `Your spending this week is steady, about the same as last week.` });
+  }
+  if (best && Math.abs(best.ch) >= 15)
+    out.push(
+      best.ch > 0
+        ? { tone: 'up', text: `${best.c.label} is up ${best.ch}% vs the same days last week.` }
+        : { tone: 'down', text: `${best.c.label} is down ${Math.abs(best.ch)}% vs the same days last week. Nice control.` }
+    );
   const mExp = inRange(money.expenses, thisMonthPrefix() + '-01', today);
   if (mExp.length) {
     const mc = byCategory(mExp, money);
@@ -831,6 +843,7 @@ export {
   sumAmt,
   byCategory,
   pctChange,
+  weekVsLast,
   suggestCategory,
   predictCategory,
   buildInsights,
