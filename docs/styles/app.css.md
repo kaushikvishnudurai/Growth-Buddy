@@ -93,6 +93,8 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
 - Fixed layers on a phone pad for `env(safe-area-inset-*)` (`index.html` has `viewport-fit=cover`,
   so `100dvh` runs under the notch and home indicator): header, nav, modal overlay, toasts, PTR.
 - The tablet phone-frame (both rules) also needs `min-height: 560px`: a landscape phone stays full-screen.
-- A landscape phone (`orientation: landscape` and `max-height: 500px`, under 1024 wide) turns `.gb-app` into a grid with the nav as a 60px icon rail on the left and the More sheet as a panel beside it; content gets ~85% of the height instead of 71%.
+- A landscape phone (`orientation: landscape` and `max-height: 500px`, under 1024 wide) turns `.gb-app` into a grid with the nav as a 60px icon rail on the left and the More sheet as a panel beside it; content gets ~85% of the height instead of 71%. The same block drops the toast stack to the bottom (no nav to clear) and scales the food loader's art to 0.6.
+- The phone frame centres the toast stack on the frame, above its nav. In portrait the More sheet caps at `100dvh - 120px` and scrolls. `.gb-modal.gb-search-modal` / `.gb-modal.gb-note-modal` carry `.gb-modal` so the later desktop `.gb-modal { max-width: 480px }` can't win (search 520, note editor 640 at >=1024).
+- Every phone-layout `max-width` is `1023.98px`, never `1023px`: fractional widths (zoom, display scaling) fell between the two. The <=360 avatar shrink is scoped to `.gb-head-actions`: `Avatar()` sizes itself inline and `!important` beat every other avatar.
 - The tablet phone-frame widens 440 -> 600px at 560px, the lowest viewport breakpoint any grid
   goes two-up at. A new `min-width` grid rule below 560 would split a 440px frame.

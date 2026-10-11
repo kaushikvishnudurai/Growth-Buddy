@@ -112,8 +112,9 @@ completed sessions POST to `/api/focus/sessions` (`FocusSession` rows are retent
 **History** (`HistoryCard`, between stats and sound): `GET /api/focus/history?days=30`
 (`props.getFocusHistory`), re-fetched after every saved focus session. 30 bars in an inline SVG
 (`barLayout`, scaled to max(busiest day, goal); the goal is a dashed line; today's bar darker; each
-day's full-height hit rect carries a `<title>` tooltip), `aria-hidden`, with a `gb-sr-only` table of
-the same days. Under it, this week's minutes per linked task/goal (`week`; a deleted one is "A removed
+day's full-height hit rect carries a `<title>` tooltip, and a tap on it reads the day out in the
+summary line, `.is-picked`; tap again for the summary), `aria-hidden`, with a `gb-sr-only` table of
+the same days. `paintSound`'s status line carries the playing sound's `hint` (the tile's `title` is mouse-only). Under it, this week's minutes per linked task/goal (`week`; a deleted one is "A removed
 task"). `History.last` is cleared with `Focus.last` when the owner changes.
 
 Styles: `app.css` §"Focus screen" and §"Focus stats card".

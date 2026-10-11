@@ -1462,6 +1462,9 @@ body:has(.is-thinking, .gb-thinking)::after {
   right: 0;
   width: min(360px, calc(100vw - 36px));
   max-height: 70vh;
+  /* vh is iOS Safari's large viewport: with the toolbar up the panel's end,
+     and "Load older", ran under it. */
+  max-height: min(70dvh, calc(100dvh - 120px));
   overflow-y: auto;
   /* At the end of the list, a fling scrolled the screen behind the panel. */
   overscroll-behavior: contain;
@@ -1885,7 +1888,9 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 
 /* ---- Search modal (Find someone) ---- */
-.gb-search-modal {
+/* .gb-modal too: at the same specificity the later desktop .gb-modal 480px won,
+   so the sheet was narrower on a monitor than in the tablet frame. */
+.gb-modal.gb-search-modal {
   max-width: 520px;
   width: 100%;
 }
@@ -1935,7 +1940,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 
 @media (max-width: 520px) {
-  .gb-search-modal {
+  .gb-modal.gb-search-modal {
     max-width: none;
   }
   .gb-search-results {
@@ -1986,7 +1991,9 @@ body:has(.is-thinking, .gb-thinking)::after {
     height: 38px;
   }
 
-  .gb-avatar {
+  /* The header's only: Avatar() sizes itself inline, and an unscoped rule
+     shrank the Circle profile sheet's 64px avatar too. */
+  .gb-head-actions .gb-avatar {
     width: 38px !important;
     height: 38px !important;
     font-size: 0.6875rem !important;
@@ -3406,6 +3413,13 @@ button.gb-seat:disabled {
   }
   .gb-agree-end:hover {
     color: var(--danger);
+  }
+}
+/* A touchscreen laptop reports hover: hover (its primary pointer is the
+   trackpad), so a finger there never revealed the button. */
+@media (any-pointer: coarse) {
+  .gb-agree-del {
+    opacity: 1;
   }
 }
 .gb-agree-add {
@@ -7850,6 +7864,12 @@ button.gb-food-level {
 }
 .gb-focus-hist-hit {
   fill: transparent;
+  cursor: pointer;
+}
+/* The tapped column whose day the summary line is reading out. */
+.gb-focus-hist-hit.is-picked {
+  fill: var(--surface-3);
+  fill-opacity: 0.8;
 }
 .gb-focus-hist-hit:hover {
   fill: var(--surface-3);
@@ -8318,6 +8338,10 @@ button.gb-food-level {
   font-weight: 700;
   line-height: 1.4;
   flex: 1;
+  /* An unbroken email or URL kept its min-content width and pushed the close
+     button out of the toast. */
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .gb-toast-close {
@@ -8375,7 +8399,7 @@ button.gb-food-level {
 }
 /* On a phone an open dialog is a bottom-heavy sheet, and the stack sat on its
    Cancel and Save. With one open the stack moves to the top of the screen. */
-@media (max-width: 1023px) {
+@media (max-width: 1023.98px) {
   body:has(.gb-modal-overlay.is-open) .gb-toast-stack {
     top: calc(10px + env(safe-area-inset-top, 0px));
     bottom: auto;
@@ -8706,6 +8730,14 @@ button.gb-food-level {
   }
   [data-theme='dark'] .gb-app {
     border-color: var(--border-strong);
+  }
+  /* Anchored to the viewport's right edge it straddled the frame's border and
+     covered half its nav. Centred on the frame, above the nav. */
+  .gb-toast-stack {
+    right: 50%;
+    transform: translateX(50%);
+    /* The gap under a centred frame at its max-height, plus the nav. */
+    bottom: calc((100dvh - min(900px, 100dvh - 2 * clamp(20px, 4vh, 40px))) / 2 + 96px);
   }
 }
 
@@ -9098,6 +9130,10 @@ button.gb-food-level {
   .gb-modal {
     max-width: 480px;
     padding: 24px;
+  }
+  /* The rich-text editor was a 480px column on any desktop. */
+  .gb-modal.gb-note-modal {
+    max-width: 640px;
   }
 
   /* Goals screen — constrain and center, extra breathing room */
@@ -11614,6 +11650,11 @@ textarea:focus-visible,
   border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
   box-shadow: var(--shadow-lg);
   padding: 16px;
+  /* With most destinations moved into More it outgrew a 320x568 screen, and
+     .gb-app's overflow: hidden cut its top row off. */
+  max-height: calc(100dvh - 120px - env(safe-area-inset-top, 0px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
   animation: gb-more-rise var(--dur-base) var(--ease-out);
 }
 .gb-more-grid {
@@ -13331,6 +13372,7 @@ h2[tabindex='-1']:focus {
     right: auto;
     top: 0;
     bottom: 0;
+    max-height: none;
     width: min(360px, 70vw);
     overflow-y: auto;
     overscroll-behavior: contain;
@@ -13338,6 +13380,15 @@ h2[tabindex='-1']:focus {
     border-right: 1px solid var(--border);
     border-radius: 0 var(--radius-2xl) var(--radius-2xl) 0;
     animation: gb-more-fade var(--dur-fast) var(--ease-out);
+  }
+  /* No bottom nav to clear here. */
+  .gb-toast-stack {
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+  /* The loader's ~450px of art and text ran off a 375px-tall screen. */
+  .gb-fl-art {
+    transform: scale(0.6);
+    margin: -50px 0;
   }
 }
 
