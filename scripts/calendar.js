@@ -1999,7 +1999,9 @@ function ReminderRow(rem, occKey, onDelete, whatsappEnabled, onEdit, onCancelSno
       openDeleteDialog(rem, occKey, onDelete);
       return;
     }
-    // A one-off went on a single tap, next to Edit, with no undo.
+    // One that hasn't happened yet goes on one tap: deleteWithUndo offers Undo
+    // for it. One already past can't be re-created, so that one still asks.
+    if (!isPastSlot(rem.date, rem.time)) return onDelete('all', rem.id, occKey);
     const ok = await confirmDialog({
       title: 'Delete "' + rem.text + '"?',
       confirmLabel: 'Delete',

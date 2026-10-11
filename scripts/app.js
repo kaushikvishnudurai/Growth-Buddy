@@ -4833,8 +4833,8 @@ function loadGoalActions(id) {
 /* The DELETE is the whole answer: drop the goal where it sits rather than
    reload every goal, and take its cached progress with it (that blob used to
    stay in CacheStorage for good). */
-async function deleteGoal(id) {
-  await api('/api/goals/' + encodeURIComponent(id), { method: 'DELETE' });
+async function deleteGoal(id, keepalive) {
+  await api('/api/goals/' + encodeURIComponent(id), { method: 'DELETE', keepalive: !!keepalive });
   state.goals = (state.goals || []).map((sec) => ({
     ...sec,
     goals: (sec.goals || []).filter((g) => g.id !== id),
@@ -4845,6 +4845,55 @@ async function deleteGoal(id) {
     delete state.goalProgress[String(id)];
     persistGoalProgress();
   }
+}
+
+/* Goals' trash icon: the card goes at once and the DELETE waits out an Undo
+   toast, as a note's delete does (a goal has no server-side restore, so the
+   request is what waits). A tab closed inside the window still sends it,
+   keepalive. ponytail: a sign-out inside the window drops the delete (no
+   token to send it with); the goal is simply still there next time. */
+function deleteGoalWithUndo(id, goal) {
+  const horizon = goal && goal.horizon;
+  const strip = () => {
+    state.goals = (state.goals || []).map((sec) => ({
+      ...sec,
+      goals: (sec.goals || []).filter((g) => g.id !== id),
+    }));
+  };
+  let settled = false;
+  const settle = () => {
+    settled = true;
+    clearTimeout(timer);
+    window.removeEventListener('pagehide', onHide);
+  };
+  const send = (keepalive) => {
+    if (settled) return;
+    settle();
+    if (!loadToken()) return;
+    deleteGoal(id, keepalive)
+      .then(render)
+      .catch((err) => {
+        loadGoals(); // put it back as the server has it
+        toastError(err, 'Could not delete the goal.');
+      });
+  };
+  const onHide = () => send(true);
+  const timer = setTimeout(() => send(false), 6000);
+  window.addEventListener('pagehide', onHide);
+  strip();
+  render();
+  pushToast('Goal deleted.', 'info', 6000, {
+    label: 'Undo',
+    run: () => {
+      if (settled || !goal) return;
+      settle();
+      strip(); // never twice
+      state.goals = (state.goals || []).map((sec) =>
+        sec.horizon === horizon ? { ...sec, goals: [goal, ...(sec.goals || [])] } : sec
+      );
+      render();
+    },
+  });
 }
 
 async function addGoalAction(id, body) {
@@ -14980,13 +15029,8 @@ const SCREENS = {
             sections: state.goals,
             onCreateGoal: createGoal,
             onToggleGoal: toggleGoal,
-            // The trash icon deleted on one tap, with no confirm and no error path.
-            onDeleteGoal: (id, goal) =>
-              confirmDelete(
-                goal ? 'Delete “' + goal.title + '”?' : 'Delete this goal?',
-                () => deleteGoal(id),
-                'Its actions and progress are deleted with it. Its tasks stay, on no goal.'
-              ),
+            // Undo instead of a confirm (deleteGoalWithUndo); its tasks stay, on no goal.
+            onDeleteGoal: deleteGoalWithUndo,
             // Linked tasks: "Add a task" opens New task on this goal; the open
             // ones listed on the card tick like Home's rows.
             onAddTask: (goal) => openAddTask(goal),

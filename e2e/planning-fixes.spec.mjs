@@ -173,3 +173,35 @@ test('EXP-4: after "Only past days", the new first day offers no past-days delet
   await expect(dlg.getByRole('button', { name: /^This & all future/ })).toHaveCount(0);
   await shot(page, 'EXP-4');
 });
+
+test('EXP-5: deleting a goal offers Undo instead of a confirm', async ({ page, account }) => {
+  await boot(page, account, 'goals');
+  const m = main(page);
+  const edit = m.getByRole('button', { name: 'Edit goal: Run a 10K' });
+  const card = m.locator('.gb-goal-card').filter({ has: page.getByRole('button', { name: 'Edit goal: Run a 10K' }) });
+  await card.getByRole('button', { name: 'Delete goal' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(edit).toHaveCount(0);
+  await shot(page, 'EXP-5');
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await expect(edit).toBeVisible();
+  // Undone inside the window: the DELETE never went.
+  await page.waitForTimeout(6500);
+  expect((await goals(page, account)).some((g) => g.title === 'Run a 10K')).toBe(true);
+  // Without Undo it goes for good.
+  await card.getByRole('button', { name: 'Delete goal' }).click();
+  await expect(edit).toHaveCount(0);
+  await expect.poll(async () => (await goals(page, account)).some((g) => g.title === 'Run a 10K'), { timeout: 12_000 }).toBe(false);
+});
+
+test('EXP-5: a one-off reminder still ahead deletes on one tap, with Undo', async ({ page, account }) => {
+  await boot(page, account, 'calendar');
+  const m = main(page);
+  await addReminder(page, { text: 'Call the bank' });
+  await m.getByRole('button', { name: 'Delete reminder: Call the bank' }).click();
+  await expect(page.getByRole('alertdialog')).toHaveCount(0);
+  await expect(m.getByRole('button', { name: 'Edit reminder: Call the bank' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await expect(m.getByRole('button', { name: 'Edit reminder: Call the bank' })).toBeVisible();
+  await expect.poll(async () => (await api(page, account, '/api/reminders')).some((r) => r.text === 'Call the bank')).toBe(true);
+});

@@ -76,23 +76,26 @@ const main = (page) => page.locator('#gb-main');
 test('Home: ticking a task updates the count and score, unticking restores them', async ({ page, account }) => {
   await boot(page, account);
   const m = main(page);
-  await expect(m.getByText('0/3 tasks')).toBeVisible();
+  // "0/1 tasks": the denominator is what is due today, so read it rather than pin it.
+  const tally = async () => {
+    const t = await m.getByText(/\d+\/\d+ tasks/).first().textContent();
+    const [, done, total] = t.match(/(\d+)\/(\d+) tasks/);
+    return { done: Number(done), total: Number(total) };
+  };
   const scoreText = async () => (await m.getByText(/^\d+%$/).first().textContent()).trim();
+  const start = await tally();
   const before = await scoreText();
-  await m.getByRole('button', { name: 'Mark as done: Renew passport' }).click();
-  await expect(m.getByText('1/3 tasks')).toBeVisible();
+  const doneOnServer = async () => (await api(page, account, '/api/tasks')).find((t) => t.title === 'Book the dentist').done;
+  await m.getByRole('button', { name: 'Mark as done: Book the dentist' }).click();
+  await expect.poll(async () => (await tally()).done).toBe(start.done + 1);
   await expect.poll(scoreText).not.toBe(before);
-  await expect
-    .poll(async () => (await api(page, account, '/api/tasks')).find((t) => t.title === 'Renew passport').done)
-    .toBe(true);
+  await expect.poll(doneOnServer).toBe(true);
   await reload(page);
-  await expect(m.getByText('1/3 tasks')).toBeVisible();
-  await m.getByRole('button', { name: 'Mark as not done: Renew passport' }).click();
-  await expect(m.getByText('0/3 tasks')).toBeVisible();
+  await expect.poll(async () => (await tally()).done).toBe(start.done + 1);
+  await m.getByRole('button', { name: 'Mark as not done: Book the dentist' }).click();
+  await expect.poll(tally).toEqual(start);
   await expect.poll(scoreText).toBe(before);
-  await expect
-    .poll(async () => (await api(page, account, '/api/tasks')).find((t) => t.title === 'Renew passport').done)
-    .toBe(false);
+  await expect.poll(doneOnServer).toBe(false);
 });
 
 test('Home: ticking a habit counts it and survives a reload', async ({ page, account }) => {
@@ -223,7 +226,7 @@ test('Calendar: a daily reminder repeats, and deleting one day keeps the series'
   await expect(m.getByRole('button', { name: 'Edit reminder: Take vitamins' })).toHaveCount(0);
   // Tomorrow still has it.
   const tomorrow = new Date(Date.now() + 864e5);
-  const label = tomorrow.toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric' });
+  const label = tomorrow.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
   await m.getByRole('button', { name: new RegExp('^' + label + '\\b') }).first().click();
   await expect(m.getByRole('button', { name: 'Edit reminder: Take vitamins' })).toBeVisible();
 });
@@ -233,7 +236,7 @@ test('Calendar: deleting the whole series removes a daily reminder', async ({ pa
   const m = main(page);
   await addReminder(page, { text: 'Water the garden', repeat: 'Daily' });
   await m.getByRole('button', { name: 'Delete reminder: Water the garden' }).click();
-  await page.getByRole('dialog', { name: 'Delete recurring reminder' }).getByRole('button', { name: /^Delete whole series/ }).click();
+  await page.getByRole('dialog', { name: 'Delete recurring reminder' }).getByRole('button', { name: /^Delete this series/ }).click();
   await expect(m.getByRole('button', { name: 'Edit reminder: Water the garden' })).toHaveCount(0);
   await expect.poll(async () => !!(await reminderNamed(page, account, 'Water the garden'))).toBe(false);
   await reload(page, 'calendar');
@@ -341,9 +344,13 @@ test('Goals: create, add and tick a milestone, delete', async ({ page, account }
   await reload(page, 'goals');
   await expect(goal.getByRole('checkbox', { name: /Float for 30 seconds/ })).toBeChecked();
 
+  // Undo instead of a confirm (EXP-5): the DELETE goes when the toast does.
   await goal.getByRole('button', { name: 'Delete goal' }).click();
-  await page.getByRole('dialog', { name: 'Delete “Learn to swim”?' }).getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Undo' })).toBeVisible();
   await expect(m.getByRole('button', { name: 'Edit goal: Learn to swim' })).toHaveCount(0);
+  await expect
+    .poll(async () => (await api(page, account, '/api/goals')).some((s) => (s.goals || []).some((g) => g.title === 'Learn to swim')), { timeout: 12_000 })
+    .toBe(false);
   await reload(page, 'goals');
   await expect(m.getByText('Learn to swim')).toHaveCount(0);
 });
