@@ -1158,6 +1158,7 @@ function ScreenNotes({
   onCounts,
   onDeleteForever,
   userId,
+  openOnMount = null,
 }) {
   const listEl = h('div', { class: 'gb-note-grid' });
   let notes = [];
@@ -2294,6 +2295,16 @@ function ScreenNotes({
         paint();
         paintViews();
         refreshCounts();
+        // The command palette's pick (a note id, or 'new'), once the list is in.
+        if (openOnMount) {
+          const want = openOnMount;
+          openOnMount = null;
+          if (want === 'new') openComposer();
+          else {
+            const n = notes.find((x) => String(x.id) === String(want));
+            if (n) openNote(n, cardOf(n.id));
+          }
+        }
       })
       .catch((err) => {
         if (forView !== view) return;

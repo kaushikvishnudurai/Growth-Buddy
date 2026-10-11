@@ -10900,6 +10900,39 @@ function segmented(options, initial, onChange) {
   return { node: wrap, get: () => selected };
 }
 
+/* Quick add's one sentence -> preview (or straight through for controls only).
+   Shared by the add sheet and the command palette. `beforeShow` closes the
+   caller's sheet once there is something to show; false = nothing read (it has
+   already said why), and a thrown error is the caller's to report. */
+async function runQuickAdd(text, beforeShow) {
+  const r = await parseQuickAdd(text);
+  const rows = r.intents.map((it) => ({ it, d: describeIntent(it) })).filter((x) => x.d);
+  if (!rows.length) {
+    pushToast(
+      r.unavailable
+        ? "Couldn't reach the assistant, and couldn't read that without it. Try again?"
+        : !r.configured
+          ? 'Couldn’t read that. Try short phrases like “spent 200 on lunch, slept 7h, remind me at 6 to call mom”.'
+          : "Couldn't find anything to log there — try being more specific.",
+      'error',
+      4200
+    );
+    return false;
+  }
+  if (beforeShow) beforeShow();
+  // Only controls ("open money", "dark mode"): just do it — nothing is written
+  // that a preview would protect.
+  if (rows.every((x) => CONTROL_INTENTS.has(x.it.type) && !x.d.unknown)) {
+    await applyQuickAdd(rows.map((x) => x.it));
+    return true;
+  }
+  openQuickAddPreview(
+    rows,
+    r.fallback ? 'Read without the assistant — switch off anything it got wrong.' : r.note
+  );
+  return true;
+}
+
 function openAddSheet() {
   const { sheet, close } = openOverlay({ label: 'Quick add' });
 
@@ -10921,38 +10954,12 @@ function openAddSheet() {
     qaInput.disabled = true;
     const done = setThinking(qaBtn, 'Reading');
     try {
-      const r = await parseQuickAdd(text);
-      const rows = r.intents.map((it) => ({ it, d: describeIntent(it) })).filter((x) => x.d);
-      if (!rows.length) {
-        done();
-        qaInput.disabled = false;
-        pushToast(
-          r.unavailable
-            ? "Couldn't reach the assistant, and couldn't read that without it. Try again?"
-            : !r.configured
-              ? 'Couldn’t read that. Try short phrases like “spent 200 on lunch, slept 7h, remind me at 6 to call mom”.'
-              : "Couldn't find anything to log there — try being more specific.",
-          'error',
-          4200
-        );
-        return;
-      }
-      close();
-      // Only controls ("open money", "dark mode"): just do it — nothing is written
-      // that a preview would protect.
-      if (rows.every((x) => CONTROL_INTENTS.has(x.it.type) && !x.d.unknown)) {
-        await applyQuickAdd(rows.map((x) => x.it));
-        return;
-      }
-      openQuickAddPreview(
-        rows,
-        r.fallback ? 'Read without the assistant — switch off anything it got wrong.' : r.note
-      );
+      if (await runQuickAdd(text, close)) return;
     } catch (err) {
-      done();
-      qaInput.disabled = false;
       toastError(err, 'Quick add failed. Try again?');
     }
+    done();
+    qaInput.disabled = false;
   }
   qaBtn.addEventListener('click', submitQuickAdd);
   qaInput.addEventListener('keydown', (e) => {
@@ -13893,6 +13900,12 @@ const SCREENS = {
             onDeleteEditDraft: (id) =>
               api('/api/notes/' + encodeURIComponent(id) + '/draft', { method: 'DELETE' }),
             onMakeTask: (title) => createTask({ title }),
+            // The palette's pick: a note id to open, or 'new' for the composer. Taken once.
+            openOnMount: (() => {
+              const id = pendingNoteOpen;
+              pendingNoteOpen = null;
+              return id;
+            })(),
             onMakeReminder: (text) => {
               // Hand it to the calendar rather than growing a second reminder
               // form here — the date, repeat and tag pickers all live there.
@@ -15352,6 +15365,149 @@ function tweenFromLast() {
   for (const [el, prop, next] of moves) el.style[prop] = next;
 }
 
+/* ---- Command palette + keyboard shortcuts ----
+   Ctrl/Cmd+K anywhere, "/" or "?" outside a text field, and the header's search
+   button. The UI (palette.js + palette-core.js) loads on first open; only this
+   listener and paletteProps() ride in the boot chunk. */
+const GO_KEYS = { h: 'home', c: 'calendar', m: 'money', n: 'notes', r: 'report', s: 'settings' };
+let palettePromise = null;
+function openPalette(help) {
+  palettePromise =
+    palettePromise ||
+    import('./palette.js').catch((err) => {
+      palettePromise = null; // a failed fetch (offline) may succeed next time
+      throw err;
+    });
+  palettePromise
+    .then((m) => (help ? m.openShortcutHelp(GO_KEYS, SCREEN_LABEL) : m.openPalette(paletteProps())))
+    .catch((err) => toastError(err, 'Couldn’t open search. Check your connection?'));
+}
+function goToScreen(id) {
+  if (id === 'settings') openProfileSettings();
+  else if (SCREENS[id] && screenEnabled(id)) setScreen(id);
+}
+/* A note the palette picked ('new' = the composer), taken once by the Notes
+   screen's next mount. force: Notes may already be the screen. */
+let pendingNoteOpen = null;
+function openNoteById(id) {
+  pendingNoteOpen = id;
+  setScreen('notes', { force: true });
+}
+/* What the palette searches and does: every item already in state, gated by the
+   same featureOn / screenEnabled the nav and Quick add use. */
+function paletteProps() {
+  const on = featureOn;
+  const act = (key, label, icon, run, alt) => ({ key: 'act:' + key, kind: 'action', label, icon, run, alt });
+  const dark = state.theme === 'dark';
+  const items = [
+    act('new-task', 'New task', 'list-todo', () => openAddTask(), ['add task', 'to-do']),
+    on('habits') && act('new-habit', 'New habit', 'repeat', openAddHabit, ['add habit']),
+    on('calendar') &&
+      act('new-reminder', 'New reminder', 'calendar-plus', () => {
+        calToday();
+        setScreen('calendar');
+      }, ['add reminder', 'remind me']),
+    on('notes') && act('new-note', 'New note', 'notebook-pen', () => openNoteById('new'), ['add note', 'jot']),
+    on('water') && act('water', 'Log water 250 ml', 'droplets', () => quickAddWater(250), ['drink', 'glass']),
+    on('focus') && act('focus', 'Start focus', 'timer', () => applyIntent({ type: 'focus' }), ['pomodoro', 'deep work']),
+    act('plan', 'Plan my day', 'sparkles', openDailyPlan, ['schedule today']),
+    act('theme', dark ? 'Switch to light mode' : 'Switch to dark mode', dark ? 'sun' : 'moon', toggleTheme, [
+      'toggle dark mode',
+      'theme',
+    ]),
+    act('settings', 'Open Settings', 'settings', () => openProfileSettings(), ['preferences', 'account']),
+    ...Object.keys(SCREENS)
+      .filter(screenEnabled)
+      .map((id) => ({
+        key: 'screen:' + id,
+        kind: 'screen',
+        label: SCREEN_LABEL[id] || SCREENS[id].headerName(),
+        alt: id === 'home' ? [] : [SCREENS[id].headerName()],
+        screen: id,
+        run: () => setScreen(id),
+      })),
+    ...(state.tasks || []).map((t) => ({
+      key: 'task:' + t.id,
+      kind: 'task',
+      label: t.title,
+      sub: t.done ? 'Done' : t.dueAt ? t.time : '', // not "No due time" on every row
+      run: () => openEditTask(t),
+    })),
+    ...(on('habits') ? state.habits || [] : []).map((hb) => ({
+      key: 'habit:' + hb.id,
+      kind: 'habit',
+      label: hb.name,
+      run: () => openHabitForm(hb),
+    })),
+    ...(on('goals') ? (state.goals || []).flatMap((sec) => sec.goals || []) : []).map((g) => ({
+      key: 'goal:' + g.id,
+      kind: 'goal',
+      label: g.title,
+      sub: g.completed ? 'Complete' : '',
+      goalId: g.id,
+      run: () => setScreen('goals'),
+    })),
+    ...(on('calendar') ? state.reminders || [] : []).map((r) => ({
+      key: 'reminder:' + r.id,
+      kind: 'reminder',
+      label: r.text,
+      reminder: r,
+    })),
+  ].filter((x) => x && x.label);
+  return {
+    items,
+    // On the reminder's next day (recurrence.js), or its own date: palette.js works out which.
+    openDay: (key) => {
+      const [y, m, d] = key.split('-').map(Number);
+      calGoTo(new Date(y, m - 1, d));
+      setScreen('calendar');
+    },
+    // Notes live on their screen, not in state: the list once, when the palette opens.
+    listNotes: on('notes') ? () => api('/api/notes') : null,
+    openNote: openNoteById,
+    runQuickAdd,
+    recent: (state.user && state.user.uiPrefs && state.user.uiPrefs.paletteRecent) || [],
+    saveRecent: (list) => saveUiPrefs({ paletteRecent: list }),
+  };
+}
+let goPending = 0; // when "g" was pressed, for the g-then-letter jumps
+document.addEventListener('keydown', (e) => {
+  if (!state.user || e.isComposing) return;
+  const k = e.key;
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (k === 'k' || k === 'K')) {
+    e.preventDefault();
+    const input = document.querySelector('.gb-palette input');
+    if (input) input.focus();
+    else openPalette();
+    return;
+  }
+  if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
+  const el = document.activeElement;
+  const typing = el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+  if (typing || document.querySelector('[aria-modal="true"]')) {
+    goPending = 0;
+    return;
+  }
+  if (goPending && Date.now() - goPending < 1500) {
+    goPending = 0;
+    if (GO_KEYS[k]) {
+      e.preventDefault();
+      goToScreen(GO_KEYS[k]);
+    }
+    return;
+  }
+  goPending = 0;
+  if (k === '/' || k === '?') {
+    e.preventDefault();
+    openPalette(k === '?');
+  } else if (k === 'n') {
+    e.preventDefault();
+    openAddTask();
+  } else if (k === 'g') {
+    goPending = Date.now();
+  }
+});
+
 function render() {
   const sameScreen = renderedScreen === state.screen;
   // Leaving a screen files its scroll position; coming back to it (back, or its
@@ -15410,6 +15566,7 @@ function render() {
       name: cfg.headerName(),
       userName: state.user.displayName || 'Buddy',
       onAdd: openAddSheet,
+      onSearch: () => openPalette(),
       onAccount: toggleProfileOpen,
       unreadCount: unreadNotifs(),
       onBell: toggleNotifOpen,

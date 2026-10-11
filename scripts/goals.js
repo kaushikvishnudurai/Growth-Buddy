@@ -746,6 +746,8 @@ function GoalRow(
     {
       class: 'gb-goal-card' + (goal.completed ? ' is-complete' : ''),
       style: { borderLeftColor: meta.dot },
+      // The command palette finds a goal's card by this to bring it into view.
+      'data-goal-id': goal.id,
     },
     h(
       'div',
