@@ -1091,7 +1091,7 @@ function Logo({ size = 48, radius = 14, alive = false } = {}) {
 // Theme and the premium skin used to sit here as two more icon buttons. They
 // are preferences, not daily actions — they live in Settings → Display now, so
 // the bar holds only what you reach for while using the app.
-function AppHeader({ label, name, userName, onAccount, unreadCount, onBell, onAdd } = {}) {
+function AppHeader({ label, name, userName, onAccount, unreadCount, onBell, onAdd, onSearch } = {}) {
   const bellChildren = [Icon('bell', { size: 20 })];
   if (unreadCount > 0) {
     bellChildren.push(
@@ -1125,6 +1125,24 @@ function AppHeader({ label, name, userName, onAccount, unreadCount, onBell, onAd
               onclick: onAdd,
             },
             Icon('plus', { size: 20 })
+          )
+        : null,
+      // The command palette's door for touch; keyboards also have Ctrl/Cmd K.
+      onSearch
+        ? h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-iconbtn gb-head-search',
+              'aria-label': 'Search and commands',
+              'aria-keyshortcuts': 'Control+K Meta+K',
+              title:
+                'Search and commands (' +
+                (/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent) ? 'Cmd' : 'Ctrl') +
+                ' K)',
+              onclick: onSearch,
+            },
+            Icon('search', { size: 20 })
           )
         : null,
       h(
