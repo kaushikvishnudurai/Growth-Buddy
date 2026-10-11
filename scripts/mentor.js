@@ -449,7 +449,7 @@ function ScreenMentor({ api, threadId: initialThread, starter }) {
       Icon('message-circle', { size: 16 }),
       h('span', { class: 'gb-thread-name' }, t.title || 'Untitled chat'),
       t.createdAt
-        ? h('span', { class: 'gb-thread-date' }, new Date(t.createdAt).toLocaleDateString())
+        ? h('span', { class: 'gb-thread-date' }, new Date(t.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }))
         : null
     );
     const row = h('div', { class: 'gb-thread-row' + (t.id === threadId ? ' is-current' : ''), role: 'listitem' });

@@ -1427,6 +1427,9 @@ function achievementProps() {
     trends: state.trends,
     food: state.food,
     water: state.water,
+    // Expenses, habit check-ins and finished tasks count as active days too.
+    money: state.money,
+    history: state.insightHistory,
     // Earned badges stay unlocked even after their days slide out of the 60-day window.
     seen: (state.user && state.user.uiPrefs && state.user.uiPrefs.achSeen) || [],
   };
@@ -2651,6 +2654,8 @@ function repaintCalendarSideNow(forAdd) {
     selectedDate: state.selectedDate,
     reminders: state.reminders,
     tasks: state.tasks,
+    habits: state.habits,
+    habitHistory: state.insightHistory && state.insightHistory.habits,
     goals: state.goals,
     wellness: state.wellness,
     foodSummary: state.calendarFoodByDate[state.selectedDate] || null,
@@ -10606,7 +10611,7 @@ function focusProps() {
     chimeKey: notifySound(),
     // "Focusing on…": the open tasks and goals, and a "Start focus" row's pick.
     focusTargets: {
-      tasks: (state.tasks || []).filter((t) => !t.done).map((t) => ({ id: t.id, title: t.title })),
+      tasks: (state.tasks || []).filter((t) => !t.done).map((t) => ({ id: t.id, title: t.title, paused: t.paused })),
       goals: (state.goals || [])
         .flatMap((sec) => sec.goals || [])
         .filter((g) => !g.completed)
@@ -13894,6 +13899,8 @@ const SCREENS = {
         selectedDate: state.selectedDate,
         reminders: state.reminders,
         tasks: state.tasks,
+        habits: state.habits,
+        habitHistory: state.insightHistory && state.insightHistory.habits,
         goals: state.goals,
         wellness: state.wellness,
         foodSummary: state.calendarFoodByDate[state.selectedDate] || null,

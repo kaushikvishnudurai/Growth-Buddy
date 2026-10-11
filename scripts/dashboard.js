@@ -741,7 +741,7 @@ function BadgeCard({ tasks, habits, water, goals, wellness }) {
   const photoCount = ((wellness && wellness.photoHistory) || []).length;
   const badges = [
     { on: (tasks || []).some((t) => t.done), icon: 'check-circle-2', label: 'Task finisher' },
-    { on: topStreak >= 3, icon: 'flame', label: '3-day streak' },
+    { on: topStreak >= 5, icon: 'flame', label: '5-day streak' }, // same bar as Achievements' Spark
     { on: waterHit, icon: 'droplets', label: 'Hydrated' },
     { on: actionCount > 0, icon: 'target', label: 'Goal mover' },
     { on: photoCount > 0, icon: 'camera', label: 'Plate logged' },

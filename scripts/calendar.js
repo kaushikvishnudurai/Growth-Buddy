@@ -2541,7 +2541,7 @@ function ReminderPanel({
   if (dayMood)
     winItems.push({
       icon: 'smile-plus',
-      title: dayMood.mood + ' mood, ' + dayMood.energy + ' energy',
+      title: dayMood.mood + ' mood' + (dayMood.energy ? ', ' + dayMood.energy + ' energy' : ''),
       sub: 'Mood check-in',
     });
   dayFood.slice(0, 2).forEach((f) =>

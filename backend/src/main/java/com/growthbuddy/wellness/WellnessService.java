@@ -58,7 +58,8 @@ public class WellnessService {
     public void saveMood(UUID userId, MoodRequest req) {
         DailyLog d = upsert(userId, orToday(userId, req.date()));
         d.setMood(req.mood() != null ? req.mood() : "okay");
-        d.setEnergy(req.energy() != null ? req.energy() : "medium");
+        // A quick mood tap sends no energy: store none rather than invent "medium".
+        d.setEnergy(req.energy());
         d.setStress(req.stress() != null ? req.stress() : "normal");
         d.setMoodNote(req.note());
         logs.save(d);
