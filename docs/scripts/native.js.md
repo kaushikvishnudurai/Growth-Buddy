@@ -1,7 +1,7 @@
 # scripts/native.js — Capacitor shell helpers
 
 Everything that only means something inside the Capacitor app. **Every export is a no-op on the
-web.** Plugins are reached through the bridge, never imported: the plugin packages live in
+web** except `saveFile`, which downloads there. Plugins are reached through the bridge, never imported: the plugin packages live in
 `../Growth-Buddy-Mobile`, so an import would break the web build. Pure parts are checked by
 `node scripts/push.test.mjs`.
 
@@ -21,8 +21,20 @@ splash control, no device name, "this browser doesn't support push notifications
   event until a listener attaches, so a press that cold-starts the app still arrives.
 - The proxy answers `undefined` for `then`, so an accidental `await` on it can't hang forever.
 - It exists whether or not the native class does: a missing plugin shows up only as a rejected
-  call, so callers wrap in `try` (see share-card.js `shareNatively`). Also used by app.js's
+  call, so callers wrap in `try` (see `saveFile`). Also used by app.js's
   speech recognition.
+
+## `saveFile(data, filename, mime, title)` — every file the app hands out
+
+Story cards (share-card.js), Download my data, the reminders .ics and the money CSV all go through it.
+A Capacitor WebView drops `<a download href=blob:>` silently (no download handler), so **native** writes
+the bytes with `Filesystem.writeFile` (bare base64, `directory: 'CACHE'`) and opens
+`Share.share({files: [uri]})`: needs **`@capacitor/filesystem` + `@capacitor/share`** in the mobile
+package.json (and `cap sync`). **Web**: an `image/*` goes to `navigator.share({files})` where
+`canShare` says yes, everything else (and that fallback) is a plain download. Resolves `'shared'`
+(a sheet took it; a dismissed sheet counts) or `'saved'` (a download started). On native a failed
+write or share **rejects** with a user-facing message, so call sites toast "downloading" only on
+`'saved'` and let their `catch` show the error. Checked by `e2e/native-parity.spec.mjs`.
 
 ## Boot / shell
 

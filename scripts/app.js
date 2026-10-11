@@ -141,6 +141,7 @@ import {
   requestHealthAccess,
   cancelPendingLocalNotifications,
   onLocalNotificationAction,
+  saveFile,
 } from './native.js';
 import { registerToast } from './toast.js';
 import { initA11y, focusLocator, refocus } from './a11y.js';
@@ -2367,11 +2368,23 @@ async function apiFetch(path, options) {
     headers['Content-Type'] = 'application/json';
   }
 
+  const savedKey = savedGetKey(path, opts);
   let res;
   try {
     res = await fetch(API_BASE + path, Object.assign({}, opts, { headers }));
   } catch (_) {
+    const saved = savedKey && (await CacheStorage.ready(), CacheStorage.getItem(savedKey));
+    if (saved) {
+      servedSaved = true;
+      handleOffline(); // the banner: "You're offline — showing your last saved data."
+      return JSON.parse(saved);
+    }
     throw new Error(NO_CONNECTION);
+  }
+  if (servedSaved) {
+    // A response again: drop the banner and refetch what was painted from the copy.
+    servedSaved = false;
+    handleOnline();
   }
   if (res.status === 401) {
     // Token went stale (revoked, expired, server restarted with empty DB,
@@ -2403,7 +2416,27 @@ async function apiFetch(path, options) {
   if (opts.raw || res.status === 204) {
     return null;
   }
-  return res.json();
+  const body = await res.json();
+  if (savedKey) CacheStorage.setItem(savedKey, JSON.stringify(body));
+  return body;
+}
+
+/* The app's stand-in for the website's Workbox NetworkFirst cache (gb-api-get,
+   vite.config.js). The app removes the service worker (see the boot block), so
+   offline nothing answered its GETs and a cold start without a connection put
+   the crash card on every screen, over data the device already had. Native only:
+   on the web the worker does this. Every good JSON GET is mirrored into
+   CacheStorage under gb.apiGet.<uid>.<path>, and only a fetch that got no
+   response at all is answered from it; a server error is still an error.
+   purgeUserCache drops the copies with the account (the key holds .<uid>.).
+   ponytail: no eviction; the keys are bounded by the distinct GET paths the app
+   builds. Add an LRU like Workbox's maxEntries if dated paths ever pile up. */
+let servedSaved = false;
+function savedGetKey(path, opts) {
+  const id = state.user && state.user.id;
+  const get = !opts.method || String(opts.method).toUpperCase() === 'GET';
+  if (!isNative() || !id || !get || opts.body || opts.raw || path.startsWith('/api/auth/export')) return null;
+  return 'gb.apiGet.' + id + '.' + path;
 }
 
 /* POST that answers text/event-stream (Buddy's streamed reply). Resolves to the
@@ -5111,7 +5144,7 @@ function openBarcodeScanner(onCode) {
       stop();
       status.textContent =
         err && err.name === 'NotAllowedError'
-          ? 'Camera permission was refused. Type the food in instead.'
+          ? 'Camera access is off. Allow it for Growth Buddy in your settings, or type the food in.'
           : 'The camera could not start here. Type the food in instead.';
     }
   })();
@@ -7507,9 +7540,8 @@ function openWeeklyReview() {
 
 /* ---- Delete account (destructive, password-confirmed) ---- */
 /* "Download my data": GET /api/auth/export (every table the account owns, minus
-   secrets) handed to the OS as growth-buddy-export.json. Share sheet first where
-   the platform takes files (the Capacitor WebView mostly does not), else a plain
-   download — the same ladder share-card.js uses. */
+   secrets) handed to the OS as growth-buddy-export.json through native.js
+   saveFile: the share sheet in the app, a plain download on the web. */
 async function downloadMyData(btn) {
   const label = btn && btn.lastChild && btn.lastChild.nodeType === 3 ? btn.lastChild : null;
   const was = label ? label.textContent : '';
@@ -7518,23 +7550,7 @@ async function downloadMyData(btn) {
   try {
     const data = await api('/api/auth/export');
     const name = 'growth-buddy-export-' + todayKey() + '.json';
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const file = typeof File === 'function' ? new File([blob], name, { type: 'application/json' }) : null;
-    if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
-      try {
-        await navigator.share({ files: [file], title: 'Growth Buddy data' });
-        return;
-      } catch (err) {
-        if (err && err.name === 'AbortError') return;
-      }
-    }
-    const url = URL.createObjectURL(blob);
-    const a = h('a', { href: url, download: name, style: { display: 'none' } });
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 10_000);
-    pushToast('Your data is downloading.', 'success', 3000);
+    if ((await saveFile(JSON.stringify(data, null, 2), name, 'application/json', 'Growth Buddy data')) === 'saved') pushToast('Your data is downloading.', 'success', 3000);
   } catch (err) {
     toastError(err, 'Could not export your data.');
   } finally {
@@ -10658,23 +10674,7 @@ async function exportRemindersIcs(btn) {
       },
     });
     const name = 'growth-buddy-reminders.ics';
-    const blob = new Blob([text], { type: 'text/calendar' });
-    const file = typeof File === 'function' ? new File([blob], name, { type: 'text/calendar' }) : null;
-    if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
-      try {
-        await navigator.share({ files: [file], title: 'Growth Buddy reminders' });
-        return;
-      } catch (err) {
-        if (err && err.name === 'AbortError') return;
-      }
-    }
-    const url = URL.createObjectURL(blob);
-    const a = h('a', { href: url, download: name, style: { display: 'none' } });
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 10_000);
-    pushToast('Your calendar file is downloading. Open it in Google, Apple or Outlook Calendar.', 'success', 4000);
+    if ((await saveFile(text, name, 'text/calendar', 'Growth Buddy reminders')) === 'saved') pushToast('Your calendar file is downloading. Open it in Google, Apple or Outlook Calendar.', 'success', 4000);
   } catch (err) {
     toastError(err, 'Could not export your reminders.');
   } finally {

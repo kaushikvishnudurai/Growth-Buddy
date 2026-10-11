@@ -13290,11 +13290,14 @@ h2[tabindex='-1']:focus {
    still left content 266px (71%), so the nav becomes an icon rail on the left,
    the way the >=1024px sidebar does, and height goes to the content: a
    one-line header and nothing below. Tabs stay icon-only (each keeps its
-   aria-label); the rail pads for the notch on the left. */
+   aria-label); the rail pads for the notch on the left, the header and content
+   for one on the right. */
 @media (orientation: landscape) and (max-height: 500px) and (max-width: 1023.98px) {
   .gb-head {
     --head-pad-b: 6px;
     padding-top: max(env(safe-area-inset-top, 0px), 8px);
+    /* Turned the other way, the cutout is on the right: the bell and avatar sat under it. */
+    padding-right: max(20px, env(safe-area-inset-right, 0px));
     grid-area: header;
   }
   .gb-head .greet-label {
@@ -13314,6 +13317,8 @@ h2[tabindex='-1']:focus {
   }
   #gb-main {
     grid-area: content;
+    /* On top of each screen's own 20px gutter, so cards clear a right-hand cutout. */
+    padding-right: env(safe-area-inset-right, 0px);
   }
   .gb-nav-wrap {
     grid-area: rail;
