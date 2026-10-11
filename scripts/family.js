@@ -211,11 +211,13 @@ function field(labelText, control, hint) {
 }
 
 /**
- * ScreenFamily({ api })
+ * ScreenFamily({ api, open })
+ *   open: 'add' (Add member form) | 'plan' (Meals today) | null, from Home's
+ *         Family meals pack and card; applied once, when the first load lands.
  *   api: { getFamily, addMember, updateMember, updateProfile, removeMember,
  *          searchUsers, linkMember, scanGrocery, generateMealPlan, getMealPlan }
  */
-function ScreenFamily({ api }) {
+function ScreenFamily({ api, open }) {
   const root = h('div', { class: 'gb-family gb-rise' });
 
   const model = {
@@ -227,6 +229,7 @@ function ScreenFamily({ api }) {
     // Meal planner
     ingredients: [], // [{ name, category, quantity, freshness }]
     selectedMemberIds: null, // null = everyone
+    planDiet: null, // the Food row's pick while nobody planned for has a diet (DIETS[0] shown)
     scanMsg: '',
     scanBusy: false,
     plan: null, // last MealPlanResponse { plan, groceryItems, source, createdAt }
@@ -377,7 +380,11 @@ function ScreenFamily({ api }) {
       model.error = err.message || 'Could not load your family.';
     } finally {
       model.loading = false;
-      paint();
+      const o = open;
+      open = null;
+      if (o === 'plan' && model.family && model.family.familyId) model.section = 'plan';
+      if (o === 'add' && !model.error) openPanel({ type: 'add' });
+      else paint();
     }
   }
 
@@ -702,8 +709,10 @@ function ScreenFamily({ api }) {
     );
   }
 
+  // A new member starts with no relationship and no gender: the form used to
+  // open on Mother / Female, so "Anu, Child" saved as a girl nobody said she was.
   function memberFormControls(member) {
-    const initialRel = (member && member.relationship) || RELATIONSHIPS[0];
+    const initialRel = (member && member.relationship) || '';
     const initialGender = (member && member.gender) || REL_GENDER[initialRel] || '';
 
     const nameInput = h('input', {
@@ -720,17 +729,21 @@ function ScreenFamily({ api }) {
         h('option', { value: g, selected: initialGender === g }, g || 'Prefer not to say')
       )
     );
+    // Gender follows the relationship until it is picked by hand: Mother fills
+    // Female, and Child after it clears it again instead of keeping Female.
+    let genderPicked = !!(member && member.gender);
+    genderSelect.addEventListener('change', () => (genderPicked = true));
+    const syncGender = () => {
+      if (!genderPicked) genderSelect.value = REL_GENDER[relSelect.value] || '';
+    };
     const relSelect = h(
       'select',
       {
         class: 'gb-input',
         disabled: member && member.relationship === 'self',
-        // Auto-fill gender from the relationship (still switchable afterwards).
-        onchange: (e) => {
-          const inferred = REL_GENDER[e.target.value];
-          if (inferred) genderSelect.value = inferred;
-        },
+        onchange: () => syncGender(),
       },
+      member ? null : h('option', { value: '', selected: true }, 'Choose'),
       RELATIONSHIPS.map((r) => h('option', { value: r, selected: initialRel === r }, cap(r)))
     );
     const dobInput = h('input', {
@@ -756,7 +769,7 @@ function ScreenFamily({ api }) {
       value: member && member.weightKg != null ? member.weightKg : '',
       placeholder: 'Weight (kg)',
     });
-    return { nameInput, relSelect, dobInput, genderSelect, heightInput, weightInput };
+    return { nameInput, relSelect, dobInput, genderSelect, heightInput, weightInput, syncGender };
   }
 
   function intOrNull(input) {
@@ -775,7 +788,7 @@ function ScreenFamily({ api }) {
       const rel = !relPicked && relFromName(c.nameInput.value);
       if (!rel || c.relSelect.value === rel) return;
       c.relSelect.value = rel;
-      c.genderSelect.value = REL_GENDER[rel] || '';
+      c.syncGender();
     });
     const save = (again) => {
       const name = c.nameInput.value.trim();
@@ -800,7 +813,7 @@ function ScreenFamily({ api }) {
       run(
         api.addMember({
           name,
-          relationship: c.relSelect.value,
+          relationship: c.relSelect.value || null, // not chosen: the server saves Other
           dob: c.dobInput.value || null,
           gender: c.genderSelect.value || null,
           heightCm: intOrNull(c.heightInput),
@@ -836,8 +849,8 @@ function ScreenFamily({ api }) {
       ),
       field('Name', c.nameInput),
       field('Relationship', c.relSelect),
-      field('Date of birth', c.dobInput),
-      field('Gender', c.genderSelect),
+      field('Date of birth (optional)', c.dobInput),
+      field('Gender (optional)', c.genderSelect),
       h(
         'div',
         { class: 'gb-family-form-row' },
@@ -1337,12 +1350,36 @@ function ScreenFamily({ api }) {
       })
     );
 
+    // Diet, asked once: while nobody being planned for has one, the planner
+    // assumed vegetarian and said so only in fine print under the plan. Now the
+    // assumption is a visible default, saved to their food profiles on Generate,
+    // after which the row is gone.
+    const noDiet = members.filter((m) => picked.includes(m.id) && !(m.profile && m.profile.dietPreference));
+    const askDiet = !!(fam && fam.isOwner) && picked.length > 0 && noDiet.length === picked.length;
+    const dietSelect = askDiet
+      ? h(
+          'select',
+          {
+            class: 'gb-input',
+            'aria-label': 'Food preference',
+            onchange: (e) => (model.planDiet = e.currentTarget.value),
+          },
+          DIETS.map((d) => h('option', { value: d, selected: (model.planDiet || DIETS[0]) === d }, d))
+        )
+      : null;
+
     const generate = () => {
       model.planBusy = true;
       model.planError = '';
       paint();
       focusPlanHead();
       const memberIds = picked;
+      const diet = askDiet ? model.planDiet || DIETS[0] : null;
+      const dietSaved = diet
+        ? Promise.all(
+            noDiet.map((m) => api.updateProfile(m.id, { ...(m.profile || {}), dietPreference: diet }))
+          ).then((all) => all.length && applyFamily(all[all.length - 1]))
+        : Promise.resolve();
       // The server adds the whole pantry, expired items included, and takes no
       // avoid list; the quantity is the free text it does print, so say it there.
       const have = new Set(model.ingredients.map((g) => g.name.toLowerCase()));
@@ -1354,8 +1391,8 @@ function ScreenFamily({ api }) {
           quantity: 'EXPIRED, do not use',
           freshness: 'expired',
         }));
-      api
-        .generateMealPlan({ ingredients: model.ingredients.concat(expired), memberIds })
+      dietSaved
+        .then(() => api.generateMealPlan({ ingredients: model.ingredients.concat(expired), memberIds }))
         .then((res) => {
           model.plan = res;
           // The plan it replaced is now history.
@@ -1425,6 +1462,15 @@ function ScreenFamily({ api }) {
             picked.length
               ? null
               : h('p', { class: 'gb-family-empty-note' }, 'Pick at least one person to plan for.')
+          )
+        : null,
+      askDiet
+        ? h(
+            'div',
+            { class: 'gb-family-builder-group' },
+            h('h4', { class: 'gb-family-subhead' }, 'Food'),
+            dietSelect,
+            h('p', { class: 'gb-field-hint' }, 'Saved to everyone’s food profile. Change it per person later.')
           )
         : null,
       h(
@@ -1622,8 +1668,13 @@ function ScreenFamily({ api }) {
   }
 
   /* "Who cooks this?" — a member per meal, kept on the plan JSON (`cooks`). */
+  // Children are not offered as cooks; one already assigned stays listed.
+  const isKid = (m) =>
+    m.ageCategory === 'Infant' || m.ageCategory === 'Child' || (m.relationship === 'child' && m.age == null);
   function cookPicker(mealLabel, currentId, onPick) {
-    const members = (model.family && model.family.members) || [];
+    const members = ((model.family && model.family.members) || []).filter(
+      (m) => m.id === currentId || !isKid(m)
+    );
     if (!members.length) return null;
     const known = members.some((m) => m.id === currentId);
     return h(
@@ -1894,6 +1945,31 @@ function ScreenFamily({ api }) {
     run(api.leaveFamily(), () => load());
   }
 
+  /* The step the empty state promised, once there is someone to cook for and
+     no plan yet: adding the first member used to leave the user on Members,
+     with the meal plan behind a tab called "Today". */
+  function nextStepCard(members) {
+    const others = members.filter((m) => !m.isSelf);
+    if (model.plan || !others.length || !(model.family && model.family.isOwner)) return null;
+    const parts = others
+      .slice(0, 2)
+      .map((m) => m.name)
+      .concat(others.length > 2 ? [others.length - 2 + ' more'] : [], members.some((m) => m.isSelf) ? ['you'] : []);
+    const who = parts.length > 1 ? parts.slice(0, -1).join(', ') + ' and ' + parts.at(-1) : parts[0];
+    return h(
+      'div',
+      { class: 'gb-card gb-family-builder gb-family-next' },
+      h('h3', { class: 'gb-family-builder-title' }, 'Next: today’s meals'),
+      h('p', { class: 'gb-family-card-meta' }, 'Breakfast to dinner for ' + who + '.'),
+      h(
+        'button',
+        { type: 'button', class: 'gb-btn gb-btn--primary', onclick: () => switchSection('plan') },
+        Icon('utensils', { size: 17, color: '#fff' }),
+        'Plan today’s meals'
+      )
+    );
+  }
+
   function membersSection() {
     const fam = model.family;
     const members = (fam && fam.members) || [];
@@ -1918,6 +1994,7 @@ function ScreenFamily({ api }) {
           : null
       ),
       familySummary(),
+      nextStepCard(members),
       h(
         'div',
         { class: 'gb-family-card-grid' },
@@ -2059,7 +2136,7 @@ function ScreenFamily({ api }) {
     const items = [
       ['members', 'Members', 'users'],
       ['chores', 'Chores', 'list-todo'],
-      ['plan', 'Today', 'utensils'],
+      ['plan', 'Meals today', 'utensils'],
       ['weekly', 'Weekly', 'calendar-days'],
       ['pantry', 'Pantry', 'sprout'],
       ['shopping', 'Shopping', 'list-checks'],

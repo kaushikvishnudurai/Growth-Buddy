@@ -189,7 +189,7 @@ test('family: add an unmapped member, add a chore for them, tick it; the meal pl
     })
     .toBe(true);
 
-  await page.getByRole('button', { name: 'Today', exact: true }).click();
+  await page.getByRole('button', { name: 'Meals today', exact: true }).click();
   await page.getByRole('button', { name: 'Make a meal plan' }).click();
   const meals = page.getByRole('list', { name: 'Meals, in order' });
   await expect(meals).toBeVisible({ timeout: 30_000 });

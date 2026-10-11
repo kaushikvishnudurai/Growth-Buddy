@@ -535,6 +535,19 @@ function dismissToast(id) {
   }, TOAST_OUT_MS);
 }
 
+/* A toast belongs to the screen it was said on: on a screen change the ones
+   with no button go ("Task added." stood on the Habits tab under a second
+   one). One said in the last second stays, since it is usually what the
+   navigation is the result of ("Added 3 habits..." then Home).
+   ponytail: an age cut-off, not a per-toast owner screen; a caller that
+   navigates more than a second after its toast passes keepToasts. */
+function clearScreenToasts() {
+  const now = Date.now();
+  state.toasts.forEach((t) => {
+    if (!t.action && now - t.at > 1000) dismissToast(t.id);
+  });
+}
+
 /* Toast timers live outside the toast objects so a pointer resting on the
    stack (or a tap on it, or focus inside it) can hold every toast until it
    leaves. A three-line error was gone before it could be read. */
@@ -2355,7 +2368,6 @@ async function openFirstRunSetup() {
     render();
     return;
   }
-  const picker = starterPicker(mod, ['balanced']);
   const { sheet, close } = openOverlay({
     label: 'Your starter plan',
     className: 'gb-setup-modal',
@@ -2376,8 +2388,9 @@ async function openFirstRunSetup() {
       onclick: async () => {
         primaryBtn.disabled = true;
         try {
-          await picker.apply();
+          const r = await picker.apply();
           close();
+          if (r.family) openFamilyMeals();
         } catch (err) {
           primaryBtn.disabled = false;
           shakeRefusal(sheet);
@@ -2387,18 +2400,19 @@ async function openFirstRunSetup() {
     },
     'Start with this plan'
   );
-  const title = h('div', { class: 'gb-modal-title', tabindex: '-1' }, 'Your plan is ready');
+  const title = h('div', { class: 'gb-modal-title', tabindex: '-1' });
+  const sub = h('div', { class: 'gb-modal-sub' });
+  // The copy and Start follow the picks: with nothing picked it used to say
+  // "Your plan is ready" over an empty list, and Start stayed live.
+  const picker = starterPicker(mod, ['balanced'], ({ labels, count }) => {
+    title.textContent = labels.length ? 'Your plan is ready' : 'Pick a goal';
+    sub.textContent = labels.length
+      ? labels.join(', ') + '. Pick another goal to change it, or switch off anything that doesn’t fit.'
+      : 'Pick one or more and we set up the rest, or set it up yourself.';
+    primaryBtn.disabled = !count;
+  });
   sheet.append(
-    h(
-      'div',
-      { class: 'gb-modal-head' },
-      title,
-      h(
-        'div',
-        { class: 'gb-modal-sub' },
-        'A balanced day to start. Pick another goal to change it, or switch off anything that doesn’t fit.'
-      )
-    ),
+    h('div', { class: 'gb-modal-head' }, title, sub),
     h('div', { class: 'gb-modal-body' }, picker.body),
     primaryBtn,
     h('button', { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel', onclick: close }, 'I’ll set it up myself')
@@ -7620,6 +7634,7 @@ function setScreen(id, opts) {
   // the screen that opened it. Safe here because the early return above means
   // this only runs on a real screen change, never a same-screen repaint.
   closeOverlays();
+  if (!opts.keepToasts) clearScreenToasts();
   if (!opts.fromHash) {
     const target = '#/' + id;
     if (window.location.hash !== target) {
@@ -12431,7 +12446,7 @@ function toDateTimeLocal(iso) {
 
 /* Title / priority / due — the same three fields whether you're adding a task
    or editing one, so both modals build the form from here. */
-function taskForm(task, presetGoalId) {
+function taskForm(task, presetGoalId, presetDue) {
   const titleInput = h('input', {
     type: 'text',
     class: 'gb-input',
@@ -12450,8 +12465,9 @@ function taskForm(task, presetGoalId) {
   const dueInput = h('input', {
     type: 'datetime-local',
     class: 'gb-input',
-    value: task && task.dueAt ? toDateTimeLocal(task.dueAt) : '',
+    value: task && task.dueAt ? toDateTimeLocal(task.dueAt) : presetDue ? toDateTimeLocal(presetDue.toISOString()) : '',
   });
+  const dueDefault = dueInput.value; // what Due goes back to when the title stops naming a time
   // Goal (optional): the open goals, plus the one the task is already on even
   // if that goal is done, so editing never silently drops the link.
   const goalNow = (task && task.goalId) || presetGoalId || '';
@@ -12492,7 +12508,7 @@ function taskForm(task, presetGoalId) {
                 onclick: () => {
                   dismissed = when.phrase.toLowerCase();
                   when = null;
-                  dueInput.value = '';
+                  dueInput.value = dueDefault;
                   paintWhen();
                   titleInput.focus();
                 },
@@ -12511,7 +12527,7 @@ function taskForm(task, presetGoalId) {
       if (dueByHand) return;
       const w = parseWhen(titleInput.value);
       when = w && w.phrase.toLowerCase() !== dismissed ? w : null;
-      dueInput.value = when ? toDateTimeLocal(when.at.toISOString()) : '';
+      dueInput.value = when ? toDateTimeLocal(when.at.toISOString()) : dueDefault;
       paintWhen();
     });
     dueInput.addEventListener('input', () => {
@@ -12560,9 +12576,19 @@ function taskForm(task, presetGoalId) {
 }
 
 /* `goal` — Goals' "Add a task" — preselects that goal. Anything else (a click
-   event from a plain onclick) means none. */
+   event from a plain onclick) means none. `{ dueToday: true }` (Home's "Add a
+   task for today") fills Due with today: an hour from now, 18:00 at the
+   earliest, 23:59 when the day is nearly over. It used to open blank, and the
+   task landed under "No tasks due on this day". */
 function openAddTask(goal) {
-  const form = taskForm(null, goal && typeof goal.id === 'string' ? goal.id : null);
+  let due = null;
+  if (goal && goal.dueToday) {
+    due = new Date();
+    const hr = Math.max(18, due.getHours() + 1);
+    if (hr > 23) due.setHours(23, 59, 0, 0);
+    else due.setHours(hr, 0, 0, 0);
+  }
+  const form = taskForm(null, goal && typeof goal.id === 'string' ? goal.id : null, due);
   const close = openModal({
     title: 'New task',
     body: h(
@@ -13773,6 +13799,8 @@ function starterRow(it) {
       return { icon: 'droplets', label: 'Water goal', detail: it.goalMl + ' ml a day' };
     case 'note':
       return { icon: 'wallet', label: 'Monthly budget', detail: 'Suggested from your spending once you have logged some' };
+    case 'family':
+      return { icon: 'users', label: 'Family', detail: 'Add who you cook for, then plan today’s meals' };
     default:
       return null;
   }
@@ -13840,8 +13868,15 @@ function starterSummary(counts) {
 // The chips + live preview, shared by Home's modal and the first-run sheet.
 // `mod` is the loaded starter-packs.js; `preselect` fills the preview before any
 // tap, so first run opens on a finished plan. apply() throws to keep the sheet open.
-function starterPicker({ PACKS, planStarter }, preselect) {
+function starterPicker({ PACKS, planStarter }, preselect, onChange) {
   const picked = new Set(preselect || []);
+  // What is picked, for the first-run sheet's title, subtitle and Start button.
+  const changed = () =>
+    onChange &&
+    onChange({
+      labels: PACKS.filter((p) => picked.has(p.id)).map((p) => p.label),
+      count: rows.filter((r) => r.it.kind !== 'note' && chosen.get(keyOf(r))).length,
+    });
   let rows = [];
   const chosen = new Map(); // row key -> on
   const keyOf = (r) => r.it.kind + ':' + r.d.detail;
@@ -13874,13 +13909,17 @@ function starterPicker({ PACKS, planStarter }, preselect) {
                 checked: !info && chosen.get(keyOf(r)),
                 disabled: info,
                 'aria-label': r.d.label + ': ' + r.d.detail,
-                onchange: (e) => chosen.set(keyOf(r), e.target.checked),
+                onchange: (e) => {
+                  chosen.set(keyOf(r), e.target.checked);
+                  changed();
+                },
               }),
               h('span', { class: 'gb-qa-icon' }, Icon(r.d.icon, { size: 16, sw: 2.4 })),
               h('span', { class: 'gb-qa-copy' }, h('strong', null, r.d.label), h('span', null, r.d.detail))
             );
           }))
     );
+    changed();
   };
   const chips = h(
     'div',
@@ -13910,8 +13949,12 @@ function starterPicker({ PACKS, planStarter }, preselect) {
   return {
     body: h('div', null, chips, list),
     apply: async () => {
-      const go = rows.filter((r) => r.it.kind !== 'note' && chosen.get(keyOf(r))).map((r) => r.it);
-      if (!go.length) throw new Error(picked.size ? 'Nothing selected — switch at least one on.' : 'Pick a goal first.');
+      const all = rows.filter((r) => r.it.kind !== 'note' && chosen.get(keyOf(r))).map((r) => r.it);
+      if (!all.length) throw new Error(picked.size ? 'Nothing selected — switch at least one on.' : 'Pick a goal first.');
+      // Family meals writes nothing here: the caller opens Family (openFamilyMeals).
+      const family = all.some((it) => it.kind === 'family');
+      const go = all.filter((it) => it.kind !== 'family');
+      if (!go.length) return { family };
       const counts = await applyStarter(go);
       if (!counts.total) throw new Error('None of those could be added.');
       toastSuccess(starterSummary(counts));
@@ -13925,8 +13968,22 @@ function starterPicker({ PACKS, planStarter }, preselect) {
       } finally {
         achQuiet = false;
       }
+      return { family };
     },
   };
+}
+
+/* The Family meals pack's step: who the family is comes first, so Family opens
+   on its Add member form; a family that already exists opens on today's meals.
+   The flag is read once by SCREENS.family. */
+function takeFamilyOpen() {
+  const o = state.familyOpen || null;
+  state.familyOpen = null;
+  return o;
+}
+function openFamilyMeals() {
+  state.familyOpen = state.inFamily ? 'plan' : 'add';
+  setScreen('family', { keepToasts: true, force: state.screen === 'family' });
 }
 
 // starter-packs.js loads on the tap, like day-plan.js: kept out of the boot chunk.
@@ -13939,8 +13996,9 @@ async function openStarterPacks() {
     primary: 'Set it up',
     errorMessage: 'Could not set that up.',
     onPrimary: async () => {
-      await p.apply();
-      if (state.screen !== 'home') setScreen('home');
+      const r = await p.apply();
+      if (r.family) openFamilyMeals();
+      else if (state.screen !== 'home') setScreen('home', { keepToasts: true });
     },
   });
 }
@@ -14941,10 +14999,13 @@ function requestReceiptScan(file, categories) {
 }
 
 /* Home checklist's notifications step: 'ask' until this browser has answered,
-   then 'done'. Web push only; the phone asks from maybeAskPermissions. */
+   'done' once it allowed, 'blocked' when it refused (a refusal used to tick the
+   step, with no reminder able to ring). Web push only; the phone asks from
+   maybeAskPermissions. */
 function remindersAsk() {
   if (isNative() || !pushSupported()) return null;
-  return Notification.permission === 'default' ? 'ask' : 'done';
+  const p = Notification.permission;
+  return p === 'granted' ? 'done' : p === 'denied' ? 'blocked' : 'ask';
 }
 
 const SCREENS = {
@@ -14971,6 +15032,9 @@ const SCREENS = {
         dayFoodLoading: state.calendarFoodLoadingFor === state.selectedDate,
         dayFoodError: state.calendarFoodErrorByDate[state.selectedDate] || '',
         onAddTask: openAddTask,
+        onAddTodayTask: () => openAddTask({ dueToday: true }),
+        inFamily: state.inFamily === true,
+        onOpenFamily: openFamilyMeals,
         onEditTask: openEditTask,
         onPauseTask: pauseTask,
         onFocusTask: featureOn('focus') ? (task) => startFocusOn({ taskId: task.id }) : null,
@@ -15380,10 +15444,13 @@ const SCREENS = {
         () => import('./family.js'),
         (m) =>
           m.ScreenFamily({
+            // Once: the Family meals pack's 'add' / 'plan' (openFamilyMeals).
+            open: takeFamilyOpen(),
             api: {
               getFamily: () => api('/api/family').then(noteFamily),
+              // The first member creates the family: Home's Family meals card follows it.
               addMember: (body) =>
-                api('/api/family/members', { method: 'POST', body: JSON.stringify(body) }),
+                api('/api/family/members', { method: 'POST', body: JSON.stringify(body) }).then(noteFamily),
               updateMember: (id, body) =>
                 api('/api/family/members/' + encodeURIComponent(id), {
                   method: 'PUT',

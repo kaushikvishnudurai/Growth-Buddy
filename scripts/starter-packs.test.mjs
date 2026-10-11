@@ -72,4 +72,8 @@ const w = planStarter(['water'], { ...base, weightKg: 70, suggestWater: (kg) => 
 assert.equal(w.find((r) => r.kind === 'water').goalMl, 2250);
 assert.ok(!planStarter(['water'], { ...base, waterGoalMl: 3000 }).some((r) => r.kind === 'water'));
 
+// Family meals writes nothing itself (app.js opens Family's Add member form); switched off, not offered.
+assert.deepEqual(planStarter(['family'], base).map((r) => r.kind), ['family']);
+assert.deepEqual(planStarter(['family'], { ...base, features: { family: false } }), []);
+
 console.log('starter-packs: ok');
