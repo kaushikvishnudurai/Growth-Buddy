@@ -51,7 +51,7 @@ import {
   restoreKey,
   inFlightKeys,
 } from './app-logic.js';
-import { MEAL_SLOTS, mealSlotAt, effectiveMl, labelFor, suggestWaterGoalMl } from './nutrition.js';
+import { MEAL_SLOTS, mealSlotAt, effectiveMl, labelFor, suggestWaterGoalMl, slotOf } from './nutrition.js';
 import {
   habitStats,
   heatmapWeeks,
@@ -1474,7 +1474,10 @@ let achSession = { uid: null, ids: new Set() };
 /* Card-facing view of a habit's freeze state, shaped like the old local model. */
 function habitFreezeState(habit) {
   return {
-    pendingBreak: !!habit.atRisk && !dismissedRisk.has(String(habit.id)),
+    // Not for a 1-day streak: a freeze is a week's earnings, and a banner over
+    // one day is noise. The freeze chip still covers any day by hand.
+    pendingBreak:
+      !!habit.atRisk && (Number(habit.riskStreak) || 0) >= 2 && !dismissedRisk.has(String(habit.id)),
     brokenFrom: Number(habit.riskStreak) || 0,
     frozen: habit.protectedToday ? ['today'] : [],
   };
@@ -4769,6 +4772,27 @@ async function copyYesterdaySlot(slot) {
   } catch (err) {
     toastError(err, 'Could not copy yesterday’s ' + label + ' right now.');
   }
+}
+
+/* The slots yesterday has entries in, for the Copy chips; null until known.
+   Reuses the calendar's per-day cache, so a day already opened there costs
+   nothing. A failed read leaves it null: no chips rather than chips that
+   copy nothing. */
+const yesterdayAsked = new Set();
+function yesterdaySlots() {
+  const y = yesterdayKey();
+  const hit = state.calendarFoodByDate[y];
+  if (hit) return new Set((hit.entries || []).map(slotOf));
+  if (!yesterdayAsked.has(y)) {
+    yesterdayAsked.add(y);
+    api('/api/food?date=' + encodeURIComponent(y))
+      .then((summary) => {
+        cacheFoodSummary(summary);
+        if (state.screen === 'food') render();
+      })
+      .catch(() => {});
+  }
+  return null;
 }
 
 /* Starred foods (GET /api/food/favourites), the first chip row in Log food.
@@ -13387,6 +13411,7 @@ const SCREENS = {
         onDeleteFood: deleteFoodEntry,
         onEditFood: openEditFood,
         onCopySlot: copyYesterdaySlot,
+        copyableSlots: yesterdaySlots(),
         weightKg: (state.user && state.user.weightKg) || null,
       }),
   },

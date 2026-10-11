@@ -5145,15 +5145,6 @@ button.gb-food-level {
   font-size: 0.78125rem;
   font-weight: 700;
 }
-.gb-water-chip {
-  background: color-mix(in srgb, var(--sky-500) 82%, white 18%);
-  color: var(--fg-on-brand);
-  border-radius: var(--radius-pill);
-  padding: 6px 10px;
-  font-size: 0.75rem;
-  font-weight: 800;
-  box-shadow: 0 5px 12px rgba(17, 132, 224, 0.28);
-}
 .gb-water-visual {
   display: flex;
   gap: 14px;
@@ -5424,9 +5415,6 @@ button.gb-food-level {
 [data-theme='dark'] .gb-water-add {
   background: color-mix(in srgb, var(--sky-700) 42%, var(--surface-2) 58%);
   color: #d8ecff;
-}
-[data-theme='dark'] .gb-water-chip {
-  background: linear-gradient(135deg, #58b8ff, #7f7bff);
 }
 [data-theme='dark'] .gb-water-add--custom {
   border-color: color-mix(in srgb, var(--sky-300) 60%, #7db9df 40%);

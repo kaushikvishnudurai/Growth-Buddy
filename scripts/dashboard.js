@@ -1106,9 +1106,10 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
           'div',
           null,
           h('div', { class: 'gb-water-title' }, 'Water tracker'),
-          h('div', { class: 'gb-water-meta' }, consumedMl + ' ml / ' + goalMl + ' ml')
-        ),
-        h('div', { class: 'gb-water-chip' }, pct + '%')
+          // No % chip beside it: the glass fills to the same number, and the
+          // big figure says what's left. Three readings of one value was noise.
+          h('div', { class: 'gb-water-meta' }, consumedMl + ' of ' + goalMl + ' ml')
+        )
       ),
 
       h(
@@ -1256,7 +1257,7 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
    one only once it has begun (a snack, any time). */
 const SLOT_STARTS = { breakfast: 4, lunch: 11, dinner: 18, snack: 0 };
 
-function FoodCard({ food, onAddFood, onDeleteFood, onEditFood, onCopySlot }) {
+function FoodCard({ food, onAddFood, onDeleteFood, onEditFood, onCopySlot, copyableSlots }) {
   const total = Math.max(0, (food && food.totalCalories) || 0);
   const entries = (food && food.entries) || [];
   const groups = groupBySlot(entries);
@@ -1297,9 +1298,14 @@ function FoodCard({ food, onAddFood, onDeleteFood, onEditFood, onCopySlot }) {
       )
     );
 
-  // An empty slot that has begun (or the one we're in) offers yesterday's.
+  // An empty slot that has begun (or the one we're in) offers yesterday's,
+  // when yesterday had that meal at all (`copyableSlots`, null until known).
   const copyBtn = (g) =>
-    onCopySlot && isToday && (hourNow >= SLOT_STARTS[g.slot] || g.slot === nowSlot)
+    onCopySlot &&
+    isToday &&
+    copyableSlots &&
+    copyableSlots.has(g.slot) &&
+    (hourNow >= SLOT_STARTS[g.slot] || g.slot === nowSlot)
       ? h(
           'button',
           {
@@ -2666,6 +2672,7 @@ function ScreenFood({
   onDeleteFood,
   onEditFood,
   onCopySlot,
+  copyableSlots,
   weightKg,
 }) {
   const on = (k) => !features || features[k] !== false;
@@ -2680,7 +2687,7 @@ function ScreenFood({
         )
       : null,
     on('food')
-      ? h('div', { class: 'gb-dash-block' }, FoodCard({ food, onAddFood, onDeleteFood, onEditFood, onCopySlot }))
+      ? h('div', { class: 'gb-dash-block' }, FoodCard({ food, onAddFood, onDeleteFood, onEditFood, onCopySlot, copyableSlots }))
       : null,
     on('food') || on('water')
       ? h('div', { class: 'gb-dash-block' }, FoodSummaryLink({ onOpen: onOpenSummary }))
