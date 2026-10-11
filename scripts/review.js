@@ -43,7 +43,11 @@ function habitShares(habitHistory, today) {
     const hit = new Set(
       (hist.days || []).filter((d) => d.done || d.protectedDay).map((d) => String(d.date))
     );
-    for (let n = dayNum(String(hist.since)); n <= last; n++) {
+    // From the first done day on or after `since`, as insights' habitDays does: the days
+    // before a habit got going (or before the history window) are not 0% days.
+    const first = [...hit].filter((k) => k >= String(hist.since)).sort()[0];
+    if (!first) continue;
+    for (let n = dayNum(first); n <= last; n++) {
       const k = dayKey(n);
       total[k] = (total[k] || 0) + 1;
       if (hit.has(k)) done[k] = (done[k] || 0) + 1;
@@ -80,6 +84,30 @@ export function pixelValues(metric, { trends, wellness, habitHistory, today } = 
   } else if (metric === 'habits') {
     Object.assign(out, habitShares(habitHistory, today || localKey(new Date())));
   }
+  return out;
+}
+
+/**
+ * Every date key the user did something on: sleep, mood, a habit check-in, an expense,
+ * water, food or a finished task. `trends.byDate` alone holds only the days the app was
+ * opened (its snapshot), so ten nights of logs read as "active 1 day". Each input optional.
+ * `habitHistory` is `{id: {days: [{date, done}]}}`, `finished` `[{doneAt}]`.
+ */
+export function activeDates({ trends, wellness, money, habitHistory, finished } = {}) {
+  const out = new Set();
+  const by = (trends && trends.byDate) || {};
+  for (const k in by) {
+    const e = by[k] || {};
+    if (e.score > 0 || e.waterMl > 0 || e.kcal > 0) out.add(k);
+  }
+  const w = wellness || {};
+  Object.keys(w.sleepByDate || {}).forEach((k) => out.add(k));
+  Object.keys(w.moodByDate || {}).forEach((k) => out.add(k));
+  (w.photoHistory || []).forEach((p) => p && p.date && out.add(p.date));
+  ((money && money.expenses) || []).forEach((e) => e && e.date && out.add(e.date));
+  for (const id in habitHistory || {})
+    ((habitHistory[id] && habitHistory[id].days) || []).forEach((d) => d.done && out.add(String(d.date)));
+  (finished || []).forEach((t) => t && t.doneAt && out.add(localKey(Date.parse(t.doneAt))));
   return out;
 }
 
@@ -147,16 +175,21 @@ export function personalRecords({ habits, trends, focus, money, today, fmtMoney 
     });
 
   // Only finished weeks with something logged: an untracked week is not a frugal one.
+  // Nor is the week the ledger began in, unless it began on its Monday: from a
+  // Thursday it holds four days and always "won" ("week of 24 Aug" for a 28 Aug start).
   const thisWeek = weekStart(todayKey);
+  const exps = ((money && money.expenses) || []).filter((e) => e && e.date);
+  const noSpend = (money && money.noSpendDays) || [];
+  const first = exps.map((e) => e.date).concat(noSpend).sort()[0];
+  const full = (w) => w < thisWeek && w >= first;
   const weeks = {};
-  for (const e of (money && money.expenses) || []) {
-    if (!e || !e.date) continue;
+  for (const e of exps) {
     const w = weekStart(e.date);
-    if (w < thisWeek) weeks[w] = (weeks[w] || 0) + (Number(e.amount) || 0);
+    if (full(w)) weeks[w] = (weeks[w] || 0) + (Number(e.amount) || 0);
   }
-  for (const k of (money && money.noSpendDays) || []) {
+  for (const k of noSpend) {
     const w = weekStart(k);
-    if (w < thisWeek && !(w in weeks)) weeks[w] = 0;
+    if (full(w) && !(w in weeks)) weeks[w] = 0;
   }
   const keys = Object.keys(weeks);
   if (keys.length >= 2) {
@@ -236,7 +269,7 @@ export function periodDelta(current, previous) {
  * The month-in-review story card (shape `share-card.js` draws), or null when
  * the month has nothing to show.
  */
-export function monthReview({ trends, wellness, habits, history, today, month } = {}) {
+export function monthReview({ trends, wellness, habits, history, money, today, month } = {}) {
   const todayKey = today || localKey(new Date());
   // `month` ('YYYY-MM') reviews an earlier month: Report offers last month on the
   // 1st to 3rd, when this one has a day or two in it.
@@ -268,6 +301,9 @@ export function monthReview({ trends, wellness, habits, history, today, month } 
     .filter(inMonth)
     .map((k) => MOOD[wellness.moodByDate[k].mood])
     .filter(Boolean);
+  const active = [
+    ...activeDates({ trends, wellness, money, habitHistory: h.habits, finished: h.finished }),
+  ].filter((k) => inMonth(k) && k < todayKey).length; // finished days, like the scores
 
   const stats = [
     finished && { label: 'Tasks finished', value: String(finished) },
@@ -277,6 +313,7 @@ export function monthReview({ trends, wellness, habits, history, today, month } 
       label: 'Water goal hit',
       value: waterDays + (waterDays === 1 ? ' day' : ' days'),
     },
+    active && { label: 'Days logged', value: active + (active === 1 ? ' day' : ' days') },
   ].filter(Boolean);
   if (!scores.length && !stats.length) return null;
 
@@ -284,7 +321,10 @@ export function monthReview({ trends, wellness, habits, history, today, month } 
   return {
     eyebrow: monthName + ' in review',
     headline: scores.length ? Math.round(mean(scores)) + '%' : stats[0].value,
-    sub: scores.length ? 'average daily score' : stats[0].label.toLowerCase(),
+    // "over N days": a month with two scored days must not read as the month's average.
+    sub: scores.length
+      ? 'average daily score over ' + scores.length + (scores.length === 1 ? ' day' : ' days')
+      : stats[0].label.toLowerCase(),
     stats: (scores.length ? stats : stats.slice(1)).slice(0, 3),
     note:
       moods.length >= 3
@@ -440,5 +480,5 @@ function fmtMinutes(min) {
 }
 
 function shortDate(key) {
-  return fmtDate(key, 'dayMonth');
+  return fmtDate(key, 'dayMonth').replace(/\bSept\b/, 'Sep'); // en-GB's "Sept", the app's "Sep"
 }

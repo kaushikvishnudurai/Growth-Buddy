@@ -70,6 +70,12 @@ public class MoneyDaySummary {
         List<ObjectNode> expenses = ledger.expensesOn(userId, day);
         MoneyState doc = docs.findById(userId).orElse(null);
         ObjectNode out = facts(expenses, labels(doc), json);
+        // The 30 days before, so the day itself can't pull its own "usual" up.
+        BigDecimal usual = expenses.isEmpty() ? null
+                : ledger.usualDailySpend(userId, day.minusDays(30), day.minusDays(1), 3);
+        if (usual != null && usual.signum() > 0) {
+            out.put("usualDaily", usual.setScale(0, java.math.RoundingMode.HALF_UP).longValue());
+        }
         out.put("currency", doc != null && doc.getData() != null
                 ? doc.getData().path("settings").path("currency").asText("₹") : "₹");
         out.put("date", day.toString());
@@ -101,6 +107,7 @@ public class MoneyDaySummary {
         Map<String, BigDecimal> byCat = new LinkedHashMap<>();
         int entRated = 0;
         int entSum = 0;
+        int reflected = 0;
         List<JsonNode> avoidable = new ArrayList<>();
         for (JsonNode e : expenses) {
             BigDecimal amt = e.path("amount").decimalValue();
@@ -112,6 +119,9 @@ public class MoneyDaySummary {
             byCat.merge(cat, amt, BigDecimal::add);
             JsonNode r = e.path("reflection");
             int sat = r.path("satisfaction").asInt(0);
+            if ((sat >= 1 && sat <= 5) || r.has("planned")) {
+                reflected++;
+            }
             if ("entertainment".equals(cat) && sat >= 1 && sat <= 5) {
                 entRated++;
                 entSum += sat;
@@ -125,6 +135,7 @@ public class MoneyDaySummary {
         }
         out.put("total", total.setScale(0, java.math.RoundingMode.HALF_UP).longValueExact());
         out.put("count", expenses.size());
+        out.put("reflected", reflected);
         ArrayNode cats = out.putArray("categories");
         byCat.entrySet().stream()
                 .sorted(Map.Entry.<String, BigDecimal>comparingByValue().reversed())
@@ -161,11 +172,26 @@ public class MoneyDaySummary {
         return out;
     }
 
-    /** The facts as a short paragraph: where it went, how the fun felt, one thing to skip. */
+    /** A day this many times the usual is called out, and never vouched for. */
+    static final int OUTLIER_TIMES = 10;
+
+    /**
+     * The facts as a short paragraph: where it went, how big against the usual,
+     * how the fun felt, one thing to skip. "Spent on purpose" only when the user
+     * reflected on something and the day is not an outlier: with no ratings there
+     * is nothing to vouch with.
+     */
     static String rulesText(ObjectNode f) {
         JsonNode top = f.path("categories").path(0);
         StringBuilder sb = new StringBuilder("Most of the day went on ")
                 .append(top.path("label").asText("expenses").toLowerCase()).append('.');
+        long usual = f.path("usualDaily").asLong(0);
+        long total = f.path("total").asLong(0);
+        boolean outlier = usual > 0 && total > usual * OUTLIER_TIMES;
+        if (outlier) {
+            sb.append(" That is about ").append(Math.round((double) total / usual))
+                    .append(" times your usual day (around ").append(usual).append("), worth a second look.");
+        }
         JsonNode ent = f.path("entertainment");
         if (!ent.path("avgSatisfaction").isNull()) {
             sb.append(" Your fun spending felt ").append(ent.path("avgSatisfaction").asText()).append("/5.");
@@ -173,8 +199,8 @@ public class MoneyDaySummary {
         JsonNode first = f.path("avoidable").path(0);
         if (!first.isMissingNode()) {
             sb.append(" Next time, ").append(first.path("note").asText()).append(" is one to think twice about.");
-        } else {
-            sb.append(" Nothing here looks like a regret, so this was money spent on purpose.");
+        } else if (f.path("reflected").asInt(0) > 0 && !outlier) {
+            sb.append(" Nothing you rated looks like a regret, so this was money spent on purpose.");
         }
         return sb.toString();
     }

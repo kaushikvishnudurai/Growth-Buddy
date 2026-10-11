@@ -12,7 +12,7 @@ The server owns the curve (`ProgressService.XP_PER_LEVEL`, 100) and sends `level
 for an older cached user. Returns `{xp, level, into, toNext, pct}`. The client once said 500 and
 showed the wrong % — here and in the profile dropdown's bar, which also uses it.
 
-## `computeAchievements({user, topStreak, goals, wellness, trends, food, water, seen})`
+## `computeAchievements({user, topStreak, goals, wellness, trends, food, water, seen, money?, history?})`
 
 → groups `[{title, items, note?}]`: Progress, Streaks, Consistency, Wellness, Hydration, Goals,
 Nutrition. Each item `{id, icon, title, desc, tier, target, current, unlocked}`, built by the inner
@@ -29,13 +29,17 @@ Invariants:
 - **Day counts are sets of dates.** Today's live food/water is added to a history that may already
   hold today; counting instead of set-adding counted it twice (two plates on day 1 unlocked "3 days").
   Today = `toLocaleDateString('en-CA')`. Photo-log dates count as food days.
+- **"Be active N days" counts days with any log** (review.js `activeDates`: sleep, mood, photos,
+  water/kcal/score in a snapshot, plus expenses / done habits / finished tasks when `money` and
+  `history` = `state.insightHistory` are passed). `trends.byDate` alone holds only days the app was
+  opened. app.js `achievementProps` does not pass `money`/`history` yet.
 
 ## Rendering
 
 | Fn | What |
 |---|---|
 | `badgeTile(item)` | unlocked: check; locked: `role=progressbar` + `current / target` |
-| `ScreenAchievements` | summary card with **two separate labelled bars** — badges earned %, and XP % to next level (they used to share one caption and read as the same metric) — then a `role=list` grid per group |
+| `ScreenAchievements` | summary card ("N of M unlocked", level + XP) with **two separate labelled bars** — badges earned %, and XP % to next level (they used to share one caption and read as the same metric); the badge % is said once, in its caption — then a `role=list` grid per group |
 
 The celebration on first unlock is **not here**: app.js `checkAchievements` diffs unlocked ids
 against `ui_prefs.achSeen` ∪ the session's ids, baselines silently on the first run with data, and

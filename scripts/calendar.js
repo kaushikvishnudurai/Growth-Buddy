@@ -25,6 +25,8 @@ import {
 } from './recurrence.js';
 import { chimeOptionValue, chimeOptions, playChime } from './chime.js';
 import { usualReminderTime } from './nudges.js';
+import { fmtDate } from './i18n.js';
+import { toast } from './toast.js';
 import { pad2 as pad, dateKey as keyOf, todayKey } from './dates.js';
 
 const MONTHS = [
@@ -116,11 +118,9 @@ function isPastSlot(key, time) {
   return time < hhmm;
 }
 
-/* Pretty label for a date key, e.g. "Mon, June 8". */
+/* Label for a date key in the app's own short style, e.g. "Mon, 8 Jun". */
 function prettyDate(key) {
-  const p = parseKey(key);
-  const date = new Date(p.y, p.m, p.d);
-  return DOW[date.getDay()] + ', ' + MONTHS[p.m] + ' ' + p.d;
+  return fmtDate(key, 'weekdayDate');
 }
 
 function remindersOn(reminders, key) {
@@ -944,10 +944,17 @@ function TimeRange(timeInput, endInput, clearLabel = 'Remove end time') {
     error.style.display = msg ? '' : 'none';
     endInput.setAttribute('aria-invalid', msg ? 'true' : 'false');
   }
+  /* The native time picker draws the OS's clock (10:50 PM) whatever the app's
+     12/24h setting; `lang` doesn't move Chrome's. So the app's own reading
+     sits under it. */
+  const echo = h('p', { class: 'gb-field-hint', 'aria-hidden': 'true' });
   function sync() {
     if (!timeInput.value) endInput.value = '';
     endInput.disabled = !timeInput.value;
     clearBtn.style.visibility = endInput.value ? 'visible' : 'hidden';
+    echo.textContent = timeInput.value
+      ? formatTime(timeInput.value) + (endInput.value ? ' to ' + formatTime(endInput.value) : '')
+      : '';
     setError('');
   }
   timeInput.addEventListener('input', sync);
@@ -964,6 +971,7 @@ function TimeRange(timeInput, endInput, clearLabel = 'Remove end time') {
       endInput,
       clearBtn
     ),
+    echo,
     error
   );
   return {
@@ -1023,6 +1031,16 @@ function goalActionsOn(sections, key) {
     });
   });
   return rows;
+}
+
+/* Habits checked in on `key`: today from `doneToday`, other days from
+   `history` ({ [habitId]: {days: [{date, done}]} }, GET /api/habits/history). */
+function habitsDoneOn(habits, history, key) {
+  return (habits || []).filter((x) => {
+    if (key === todayKey() && x.doneToday) return true;
+    const days = history && history[x.id] && history[x.id].days;
+    return Array.isArray(days) && days.some((d) => d.date === key && d.done);
+  });
 }
 
 function prettyTaskTime(iso) {
@@ -1111,7 +1129,18 @@ function DayRuler(list, key) {
 }
 
 /* ---- Month grid ---- */
-function MonthGrid({ year, month, selectedDate, reminders, onSelectDate }) {
+/* The tasks the screen last rendered with. app.js repaints the grid without
+   them (and without the toolbar) after every reminder change.
+   ponytail: module copy; the upgrade is app.js repaintCalendarGrid passing
+   `tasks` and calling rerenderCalendarToolbarIfActive. */
+let lastTasks = [];
+
+function MonthGrid({ year, month, selectedDate, reminders, tasks, onSelectDate }) {
+  if (tasks) lastTasks = tasks;
+  else tasks = lastTasks;
+  // The toolbar's counts go stale with the grid, so they repaint together.
+  const oldCount = typeof document !== 'undefined' && document.querySelector('.gb-cal-toolbar-actions');
+  if (oldCount) oldCount.replaceWith(MonthCount(year, month, reminders, tasks));
   const firstDow = new Date(year, month, 1).getDay();
   const today = todayKey();
 
@@ -1128,16 +1157,19 @@ function MonthGrid({ year, month, selectedDate, reminders, onSelectDate }) {
     const key = keyOf(dt.getFullYear(), dt.getMonth(), dt.getDate());
     const inMonth = dt.getFullYear() === year && dt.getMonth() === month;
     const todays = remindersOn(reminders, key);
+    const due = tasksOn(tasks, key).length;
 
-    // The day as a line, midnight to midnight, marked where things happen.
-    const line = todays.length ? DayLine(todays, 'gb-cal-line') : null;
+    // The day as a line, midnight to midnight, marked where things happen; a
+    // task due adds a square at its tail (never one more tag colour).
+    const line = todays.length || due ? DayLine(todays, 'gb-cal-line') : null;
+    if (line && due) line.append(h('span', { class: 'gb-line-any gb-cal-dot is-task' }));
 
     const cls =
       'gb-cal-day' +
       (inMonth ? '' : ' is-other-month') +
       (key === today ? ' is-today' : '') +
       (key === selectedDate ? ' is-selected' : '') +
-      (todays.length ? ' has-rem' : '');
+      (todays.length || due ? ' has-rem' : '');
     cells.push(
       h(
         'button',
@@ -1148,7 +1180,8 @@ function MonthGrid({ year, month, selectedDate, reminders, onSelectDate }) {
           'aria-label':
             prettyDate(key) +
             (key === today ? ', today' : '') +
-            (todays.length ? ' — ' + plural(todays.length, 'reminder') : ''),
+            (todays.length ? ' — ' + plural(todays.length, 'reminder') : '') +
+            (due ? (todays.length ? ', ' : ' — ') + plural(due, 'task') + ' due' : ''),
           'aria-pressed': String(key === selectedDate),
           onclick: () => onSelectDate(key),
         },
@@ -1466,6 +1499,17 @@ function notesInput(value) {
   );
 }
 
+/* A native date input draws the OS's style (11/10/2026, which reads two ways);
+   the app's "11 Oct 2026" sits under it. */
+function dateEcho(input) {
+  const echo = h('p', { class: 'gb-field-hint', 'aria-hidden': 'true' });
+  const sync = () => (echo.textContent = fmtDate(input.value, 'medium'));
+  input.addEventListener('input', sync);
+  input.addEventListener('change', sync);
+  sync();
+  return echo;
+}
+
 /* ---- Scoped delete dialog for recurring reminders ---- */
 /* How far a scoped edit or delete reaches, drawn: seven occurrences of the
    series with this one (the taller) in the middle, the reached ones filled. */
@@ -1480,6 +1524,7 @@ function ScopeStrip(scope) {
 }
 
 function openDeleteDialog(rem, occKey, onDelete) {
+  const first = occKey === rem.date; // the series' first day: nothing before it to keep
   const opts = [
     { scope: 'this', icon: 'calendar-x', label: 'Only this day', sub: prettyDate(occKey) },
     {
@@ -1494,8 +1539,15 @@ function openDeleteDialog(rem, occKey, onDelete) {
       label: 'Only past days',
       sub: 'Delete everything before ' + prettyDate(occKey),
     },
-    { scope: 'all', icon: 'trash-2', label: 'Delete whole series', sub: 'Every occurrence' },
-  ];
+    // "Whole series" over-promised: a day split off earlier ("only this day",
+    // "this & all future") is its own row now, and `all` reaches only this one.
+    {
+      scope: 'all',
+      icon: 'trash-2',
+      label: 'Delete this series' + (rem.date ? ', from ' + prettyDate(rem.date) : ''),
+      sub: 'Days changed on their own stay',
+    },
+  ].filter((o) => !first || (o.scope !== 'future' && o.scope !== 'before'));
 
   const { sheet, close } = openOverlay({ label: 'Delete recurring reminder' });
 
@@ -1594,7 +1646,7 @@ function openEditDialog(rem, occKey, onEdit) {
   };
   timeInput.addEventListener('input', syncNoTime);
   syncNoTime();
-  const toneSel = toneSelect('Silent in the app');
+  const toneSel = toneSelect();
   toneSel.setTone(rem.sound);
   const notifySel = notifySelect();
   notifySel.setLead(rem.notifyBefore);
@@ -1620,6 +1672,7 @@ function openEditDialog(rem, occKey, onEdit) {
     null,
     h('div', { class: 'gb-field-label' }, 'Day'),
     dateInput,
+    dateEcho(dateInput),
     dateErr.node
   );
 
@@ -1638,6 +1691,7 @@ function openEditDialog(rem, occKey, onEdit) {
       class: 'gb-login-link',
       onclick: () => {
         untilInput.value = '';
+        untilInput.dispatchEvent(new Event('input'));
         untilErr.set('');
       },
     },
@@ -1648,6 +1702,7 @@ function openEditDialog(rem, occKey, onEdit) {
     null,
     h('div', { class: 'gb-field-label' }, 'Repeat until (optional)'),
     untilInput,
+    dateEcho(untilInput),
     untilClear,
     untilErr.node
   );
@@ -1674,8 +1729,15 @@ function openEditDialog(rem, occKey, onEdit) {
       label: 'This & all future',
       sub: 'From ' + prettyDate(occKey) + ' onward',
     },
-    { scope: 'all', icon: 'repeat', label: 'The whole series', sub: 'Every occurrence' },
-  ];
+    // Not "the whole series": rows split off earlier aren't part of this one.
+    {
+      scope: 'all',
+      icon: 'repeat',
+      label: 'This series' + (rem.date ? ', from ' + prettyDate(rem.date) : ''),
+      sub: 'Days changed on their own stay',
+    },
+    // On the series' first day "this & all future" is the series itself.
+  ].filter((o) => o.scope !== 'future' || occKey !== rem.date);
   let scope = repeats ? 'this' : 'all';
   const scopeRow = repeats
     ? h(
@@ -2057,7 +2119,7 @@ function setVoiceReminder(v) {
    Silent, then "Add your own sound…". Refilled on focus when the list has changed, because the add form is
    built once and cached, and a sound added in Settings since must show up. */
 const ADD_TONE = '__add';
-function toneSelect(offLabel) {
+function toneSelect(offLabel = 'Silent, no alert') {
   const sel = h('select', { class: 'gb-input', 'aria-label': 'Reminder tone' });
   let sig = null;
   const fill = () => {
@@ -2069,7 +2131,8 @@ function toneSelect(offLabel) {
     sel.replaceChildren(
       h('option', { value: '' }, 'Default tone'),
       ...opts.map((c) => h('option', { value: c.key }, c.key === 'off' ? offLabel : c.label)),
-      addCustomTone ? h('option', { value: ADD_TONE }, '+ Add your own sound\u2026') : null
+      // Spread, not `cond ? node : null`: replaceChildren prints a null as "null".
+      ...(addCustomTone ? [h('option', { value: ADD_TONE }, '+ Add your own sound\u2026')] : [])
     );
     sel.value = chimeOptionValue(v);
   };
@@ -2155,7 +2218,7 @@ function buildForm() {
   // 'Silent' means no sound anywhere now: the app plays nothing on this key
   // and push.js queues no device alarm for it, because Android has no
   // soundless channel to queue one against.
-  const soundInput = toneSelect('Silent — no alert');
+  const soundInput = toneSelect();
   // Picking one is the preview, the same rule as the Alerts pane. Nothing plays
   // for 'Default tone': this file doesn't know which tone that is, and guessing
   // the built-in default would preview a sound the reminder won't make.
@@ -2403,11 +2466,67 @@ function buildForm() {
 }
 
 /* ---- Reminder list + add form for the selected day ---- */
+/* The reminders the panel last painted with: after a delete, whether the row
+   is still in them says whether it went (app.js restores it on a failure). */
+let lastReminders = [];
+
+/* Delete, then an Undo and somewhere for focus to land: the row's own button
+   went with the row and left focus on <body>. Undo re-creates a whole deleted
+   row through the add form's own call. ponytail: only a row whose start is
+   still ahead (the server refuses a past anchor) and only scope `all`; its
+   done ticks and skipped days aren't brought back. Upgrade: a server-side
+   restore. */
+async function deleteWithUndo(onDelete, onAdd, scope, id, occKey) {
+  const rem = lastReminders.find((r) => r.id === id);
+  const rows = () => [...document.querySelectorAll('[data-cal-section="reminders"] .gb-rem-row')];
+  // Its place in the day's list (focus is in a dialog by now, not on the row).
+  const at = remindersOn(lastReminders, occKey).findIndex((r) => r.id === id);
+  await onDelete(scope, id, occKey);
+  setTimeout(() => {
+    const left = rows();
+    const next = left[Math.min(Math.max(at, 0), left.length - 1)];
+    const head = document.querySelector('[data-cal-section="reminders"] .gb-day-head-title');
+    const target = (next && next.querySelector('.gb-rem-del')) || head;
+    if (target) target.focus();
+  }, 0);
+  const gone = rem && !lastReminders.some((r) => r.id === id);
+  const repeats = rem && rem.repeat && rem.repeat !== 'none';
+  if (!gone || scope !== 'all' || typeof onAdd !== 'function') return;
+  if (rem.date < todayKey() || (!repeats && isPastSlot(rem.date, rem.time))) return;
+  toast.action('Reminder deleted.', 'Undo', () =>
+    onAdd(
+      rem.date,
+      rem.text,
+      (rem.time || '').slice(0, 5),
+      rem.tag,
+      rem.repeat || 'none',
+      rem.until || '',
+      rem.sound || '',
+      (rem.endTime || '').slice(0, 5),
+      rem.notifyBefore == null ? null : rem.notifyBefore,
+      {
+        notes: rem.notes || null,
+        notifyBefore2: rem.notifyBefore2 == null ? null : rem.notifyBefore2,
+        ...(repeats
+          ? {
+              repeatInterval: rem.repeatInterval || 1,
+              repeatDays: rem.repeatDays || '',
+              repeatNth: rem.repeatNth || 0,
+              repeatCount: rem.repeatCount || 0,
+            }
+          : null),
+      }
+    )
+  );
+}
+
 function ReminderPanel({
   selectedDate,
   reminders,
   tasks,
   goals,
+  habits,
+  habitHistory,
   wellness,
   foodSummary,
   dayFoodLoading,
@@ -2422,16 +2541,19 @@ function ReminderPanel({
   onSelectDate,
   onSaveRoutine,
 }) {
+  lastReminders = reminders || [];
+  const onDelete = (scope, id, occKey) => deleteWithUndo(onDeleteReminder, onAddReminder, scope, id, occKey);
   const list = remindersOn(reminders, selectedDate);
   const dayTasks = tasksOn(tasks, selectedDate);
   const dayCompletedTasks = completedTasksOn(tasks, selectedDate);
   const dayGoalActions = goalActionsOn(goals, selectedDate);
+  const dayHabits = habitsDoneOn(habits, habitHistory, selectedDate);
   const daySleep = wellness && wellness.sleepByDate ? wellness.sleepByDate[selectedDate] : null;
   const dayMood = wellness && wellness.moodByDate ? wellness.moodByDate[selectedDate] : null;
   const dayFood = foodSummary && Array.isArray(foodSummary.entries) ? foodSummary.entries : [];
   const wellnessCount = (daySleep ? 1 : 0) + (dayMood ? 1 : 0);
   const winCount =
-    dayCompletedTasks.length + dayGoalActions.length + dayFood.length + wellnessCount;
+    dayCompletedTasks.length + dayHabits.length + dayGoalActions.length + dayFood.length + wellnessCount;
   const futureDate = isFutureKey(selectedDate);
   // A day that has already gone is read-only. The form used to sit under every
   // day, so a reminder could be filed against last Tuesday and then never fire.
@@ -2458,7 +2580,7 @@ function ReminderPanel({
   if (list.length) {
     listNode = Card({
       children: list.map((r) =>
-        ReminderRow(r, selectedDate, onDeleteReminder, whatsappEnabled, onEditReminder, onCancelSnooze, onToggleDone)
+        ReminderRow(r, selectedDate, onDelete, whatsappEnabled, onEditReminder, onCancelSnooze, onToggleDone)
       ),
     });
   } else {
@@ -2547,6 +2669,7 @@ function ReminderPanel({
     .forEach((t) =>
       winItems.push({ icon: 'check-circle-2', title: t.title, sub: 'Task completed' })
     );
+  dayHabits.slice(0, 3).forEach((x) => winItems.push({ icon: 'flame', title: x.name, sub: 'Habit checked in' }));
   dayGoalActions
     .slice(0, 3)
     .forEach((a) => winItems.push({ icon: 'target', title: a.note, sub: 'Progress on ' + a.goal }));
@@ -2559,7 +2682,7 @@ function ReminderPanel({
   if (dayMood)
     winItems.push({
       icon: 'smile-plus',
-      title: dayMood.mood + ' mood, ' + dayMood.energy + ' energy',
+      title: dayMood.mood + ' mood' + (dayMood.energy ? ', ' + dayMood.energy + ' energy' : ''),
       sub: 'Mood check-in',
     });
   dayFood.slice(0, 2).forEach((f) =>
@@ -2572,17 +2695,8 @@ function ReminderPanel({
   const winsNode = winCount
     ? Card({
         className: 'gb-wins-card',
+        // The count is the section head's badge; saying it again here was twice.
         children: [
-          h(
-            'div',
-            { class: 'gb-wins-score' },
-            h('span', { class: 'gb-wins-number' }, String(winCount)),
-            h(
-              'span',
-              { class: 'gb-wins-copy' },
-              winCount === 1 ? 'win saved for this day' : 'wins saved for this day'
-            )
-          ),
           h(
             'div',
             { class: 'gb-wins-list' },
@@ -2660,7 +2774,7 @@ function ReminderPanel({
         h(
           'div',
           { class: 'gb-day-head' },
-          h('span', { class: 'gb-day-head-title' }, 'Reminders'),
+          h('span', { class: 'gb-day-head-title', tabindex: '-1' }, 'Reminders'),
           h('span', { class: 'gb-day-head-count' }, String(list.length))
         ),
         listNode
@@ -2723,6 +2837,8 @@ function ScreenCalendar({
   reminders,
   tasks,
   goals,
+  habits,
+  habitHistory,
   wellness,
   foodSummary,
   dayFoodLoading,
@@ -2760,7 +2876,7 @@ function ScreenCalendar({
       h(
         'div',
         { class: 'gb-cal-block' },
-        MonthGrid({ year, month, selectedDate, reminders, onSelectDate })
+        MonthGrid({ year, month, selectedDate, reminders, tasks, onSelectDate })
       ),
       h(
         'div',
@@ -2779,7 +2895,8 @@ function ScreenCalendar({
             h('span', { class: 'gb-legend-dot', style: { background: TAGS[tag].color } }),
             TAGS[tag].label
           )
-        )
+        ),
+        h('span', { class: 'gb-legend-item' }, h('span', { class: 'gb-legend-dot is-task' }), 'Task due')
       )
     ),
     ReminderPanel({
@@ -2787,6 +2904,8 @@ function ScreenCalendar({
       reminders,
       tasks,
       goals,
+      habits,
+      habitHistory,
       wellness,
       foodSummary,
       dayFoodLoading,
@@ -2804,18 +2923,37 @@ function ScreenCalendar({
   );
 }
 
-function CalendarToolbar({ year, month, reminders, tasks, onPrevMonth, onNextMonth, onToday }) {
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  let monthCount = 0;
-  for (let d = 1; d <= daysInMonth; d++) {
-    monthCount += remindersOn(reminders, keyOf(year, month, d)).length;
-  }
-  const monthTasks = (tasks || []).filter((t) => {
+/* "1 reminder · 6 tasks this month": distinct items, so a daily reminder is one. */
+/* One per series. An "only this day" edit or a "this & all future" split is a
+   row of its own with nothing linking it back, so counting rows read one
+   series as two. ponytail: rows grouped by title; two different reminders
+   with the same title count once. Upgrade: a series id on the split rows. */
+function monthCounts(year, month, reminders, tasks) {
+  const ids = new Set();
+  const days = new Date(year, month + 1, 0).getDate();
+  for (let d = 1; d <= days; d++)
+    remindersOn(reminders, keyOf(year, month, d)).forEach((r) => ids.add(String(r.text || '').trim().toLowerCase()));
+  const due = (tasks || []).filter((t) => {
     const dt = new Date(t.dueAt || '');
     return !Number.isNaN(dt.getTime()) && dt.getFullYear() === year && dt.getMonth() === month;
   }).length;
-  monthCount += monthTasks;
+  return { reminders: ids.size, tasks: due };
+}
 
+function MonthCount(year, month, reminders, tasks) {
+  const c = monthCounts(year, month, reminders, tasks);
+  const parts = [];
+  if (c.reminders) parts.push(plural(c.reminders, 'reminder'));
+  if (c.tasks) parts.push(plural(c.tasks, 'task'));
+  return h(
+    'div',
+    { class: 'gb-cal-toolbar-actions', hidden: !parts.length },
+    parts.length ? h('span', { class: 'gb-cal-monthcount' }, parts.join(' · ') + ' this month') : null
+  );
+}
+
+function CalendarToolbar({ year, month, reminders, tasks, onPrevMonth, onNextMonth, onToday }) {
+  if (tasks) lastTasks = tasks;
   return h(
     'div',
     { class: 'gb-cal-block gb-cal-toolbar' },
@@ -2854,13 +2992,7 @@ function CalendarToolbar({ year, month, reminders, tasks, onPrevMonth, onNextMon
         'Today'
       )
     ),
-    monthCount
-      ? h(
-          'div',
-          { class: 'gb-cal-toolbar-actions' },
-          h('span', { class: 'gb-cal-monthcount' }, plural(monthCount, 'item') + ' this month')
-        )
-      : null
+    MonthCount(year, month, reminders, tasks)
   );
 }
 
@@ -2869,6 +3001,7 @@ export {
   isPastSlot,
   freeBusy,
   wholeHours,
+  monthCounts,
   timeRangeOk,
   reminderEditPatch,
   setRoutine,

@@ -18,6 +18,7 @@ replies".
 | `crisisCard()` | helpline card (Tele-MANAS 14416, US 988, findahelpline.com) appended under the user's bubble. **Never sent or saved** — it is DOM only, and a Retry removes it with the failed row |
 | `parseSse(buf)` | buffered SSE text → `{events: [{event, data}], rest}`. `rest` is the partial event still waiting for its blank line — the caller prepends it to the next chunk. `data` is JSON-parsed; a non-JSON event is **dropped**, not fatal. `:` lines are keep-alives. CRLF normalised |
 | `actionChips(actions)` | `message.actions` (server-parsed, MentorActions.java) → ≤3 chip descriptors `{type, label, icon, title, time, aria}`; unknown types, blank titles, repeats and non-HH:MM times dropped |
+| `streamRich(text)` / `sendFailText(err, loaded)` | the streaming bubble is rich-rendered on every delta with an unclosed opening `**` held back (raw asterisks used to show until `done`); a 502/503/504 on a send after the chat loaded reads as the AI being down (the server just answered the load), unless the server's own `error` event said something |
 | `streamVisible(text)` | what a streaming bubble shows: everything before the first ````` (the actions fence), and a trailing half-arrived `` ` `` / ` `` ` held back. The saved reply never has the fence — the server strips it |
 | `actionsRow(actions, onAction)` / `bubble(role, content, actions, onAction)` / `typingBubble()` | the chips row; message row (a bot row is avatar + `.gb-msg-col` = `.gb-msg-who` "Buddy · AI coach" label + bubble + chips) / the three-dot "Buddy is typing" row |
 
@@ -32,7 +33,7 @@ Owns its thread and messages locally so a keystroke never round-trips global sta
 | `append(node)` | everything else. Removes the welcome if showing |
 | `load()` | GET. A failure shows **only** the error + Retry (`.gb-mentor-loadfail`), chips hidden — the welcome under an error used to invite a send into a chat that never loaded. `loaded` gates send |
 | `failRow(message, onRetry)` | error + Retry under a failed send |
-| `streamReply(text, typing)` | reads `api.stream(text, signal)` with a `ReadableStream` reader + `parseSse`. `delta {text}` → plain `textContent` (no rich render mid-stream: half a `**` would flash); `done {message, userMessage}` → `renderRich`, resolves; `error {status, message}` → throws with the server's words. Every other break goes through `streamFailure(err, got, row)` (exported, tested): once any word arrived, a close without `done`, a Stop (`AbortError`) or a network `TypeError` mid-read all throw `{partial, row}` (+`stopped` for Stop); the server's `error` event and a break before the first word pass through, and an empty assistant row is removed |
+| `streamReply(text, typing)` | reads `api.stream(text, signal)` with a `ReadableStream` reader + `parseSse`. `delta {text}` → `renderRich(streamRich(got))` (a half-arrived `**` is held back, not flashed); `done {message, userMessage}` → `renderRich`, resolves; `error {status, message}` → throws with the server's words. Every other break goes through `streamFailure(err, got, row)` (exported, tested): once any word arrived, a close without `done`, a Stop (`AbortError`) or a network `TypeError` mid-read all throw `{partial, row}` (+`stopped` for Stop); the server's `error` event and a break before the first word pass through, and an empty assistant row is removed |
 | `send()` | appends user bubble, crisis card if `crisisMatch`, typing bubble. Tries `streamReply` when `api.stream` exists; **only an error carrying `.fallback`** (no response, 404/405, not `text/event-stream` — thrown by app.js `apiStream`) drops to `api.post`; a 429 or Stop does not |
 | `clearAll()` | `confirmDialog` → `api.clear(threadId)` → `renderMessages([])` |
 | `setTitle` / `refreshTitle` | the thread bar's name; `refreshTitle` re-reads the list after a send into a thread still on a starting title (the server auto-titles it) |
@@ -48,7 +49,7 @@ Owns its thread and messages locally so a keystroke never round-trips global sta
   so the bubble stays, is rich-rendered and cached as Buddy's, and there is **no Retry** — it would
   ask the same question twice. A non-Stop partial adds an error line.
 - **Stop before any word** lands on the failure path: the server deleted the user's message again,
-  so it is offered back with Retry (no `console.error` for a Stop).
+  so it is offered back with Retry (no `console.error` for a Stop). The console line is the shown text (`sendFailText`) + status, not the error's own message: app.js words an AI 503 as "waking up".
 - Offline (`navigator.onLine`) fails fast with `OFFLINE`, for both load and send.
 - a11y: the list is `role=log` + `aria-live=polite`, which is why a send **appends** rather than
   repainting (a repaint re-reads the conversation). Enter sends, Shift+Enter is a newline.
