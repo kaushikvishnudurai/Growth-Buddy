@@ -101,6 +101,11 @@ management:
 
 # Cross-origin so the static file:// / localhost frontend can call the API.
 growthbuddy:
+  # true ONLY behind a proxy that appends X-Forwarded-For (Render, Caddy): per-IP
+  # limits, session IPs and HSTS then use its right-most entry (ClientIp). Bound
+  # here so the documented TRUST_PROXY works; before, only the relaxed-binding
+  # name GROWTHBUDDY_TRUST_PROXY did, and .env.example's TRUST_PROXY bound nothing.
+  trust-proxy: ${TRUST_PROXY:false}
   cors:
     # Comma-separated origins; default is local development only.
     # Override via CORS_ALLOWED_ORIGINS in deployment.

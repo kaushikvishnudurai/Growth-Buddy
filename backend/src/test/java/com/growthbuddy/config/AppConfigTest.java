@@ -21,4 +21,10 @@ class AppConfigTest {
     void lazyCollectionsAreBatchFetched() {
         assertThat(yml().getProperty("spring.jpa.properties.hibernate.default_batch_fetch_size")).isEqualTo("100");
     }
+
+    /* CRB-9: .env.example documents TRUST_PROXY, and nothing bound it. */
+    @Test
+    void trustProxyBindsTheDocumentedVariable() {
+        assertThat(yml().getProperty("growthbuddy.trust-proxy")).isEqualTo("${TRUST_PROXY:false}");
+    }
 }

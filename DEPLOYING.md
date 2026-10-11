@@ -53,7 +53,8 @@ which silently kills the schedulers (see below).
    Oracle images ship with iptables rules that drop traffic the security list
    already allowed — a box unreachable despite correct cloud config is almost
    always this.
-4. `cp prod.env.example prod.env`, fill it in, then `docker compose up -d --build`.
+4. `cp prod.env.example prod.env`, fill it in (add `TRUST_PROXY=true`: Caddy is
+   the proxy in front of the app), then `docker compose up -d --build`.
 
 Caddy issues and renews the certificate; port 80 must stay open for renewal.
 
@@ -100,6 +101,7 @@ Environment variables, beyond the ones in `prod.env.example`:
 | `MAILJET_API_KEY` / `MAILJET_SECRET_KEY` | from Mailjet — see above |
 | `CORS_ALLOWED_ORIGINS` | `https://<service-name>.onrender.com` |
 | `PORT` | `8080` |
+| `TRUST_PROXY` | `true` — Render's proxy appends the real client to `X-Forwarded-For`. Unset (false), every visitor shares the proxy's address for per-IP limits (one abuser 429s sign-in for everyone), HSTS is never sent and the sessions list shows the proxy. `GROWTHBUDDY_TRUST_PROXY` also binds; `TRUST_PROXY` is the documented name. Only the right-most entry is trusted (`ClientIp`), which assumes one proxy hop |
 
 **`MAILJET_API_KEY` / `MAILJET_SECRET_KEY` are not optional here.** Render's
 free tier blocks outbound SMTP (25/465/587), so Gmail can only time out and
