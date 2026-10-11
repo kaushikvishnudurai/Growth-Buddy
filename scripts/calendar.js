@@ -1996,8 +1996,8 @@ function ReminderRow(rem, occKey, onDelete, whatsappEnabled, onEdit, onCancelSno
     );
   }
 
-  async function handleDelete() {
-    if (!tapSettled('reminders')) return; // a double tap's second half lands on the next row
+  async function handleDelete(e) {
+    if (!tapSettled('reminders', e.currentTarget, e.timeStamp)) return; // a double tap's second half lands on the next row
     if (rem.repeat && rem.repeat !== 'none') {
       openDeleteDialog(rem, occKey, onDelete);
       return;
