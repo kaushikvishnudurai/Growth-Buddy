@@ -45,7 +45,10 @@ class CircleServiceTest {
     private final CirclePostReactionRepository reactions = mock(CirclePostReactionRepository.class);
     private final ChallengeMetrics metrics = mock(ChallengeMetrics.class);
     private final CircleService service =
-            new CircleService(circles, members, posts, challenges, reactions, users, habits, metrics, clock);
+            new CircleService(circles, members, posts, challenges, reactions,
+                    org.mockito.Mockito.mock(CirclePostCommentRepository.class), users, habits, metrics, clock,
+                    org.mockito.Mockito.mock(com.growthbuddy.notification.NotificationService.class),
+                    org.mockito.Mockito.mock(com.growthbuddy.common.RateLimiter.class));
 
     private Circle circle(String visibility) {
         Circle c = new Circle();

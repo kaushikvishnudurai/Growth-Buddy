@@ -2,9 +2,13 @@ package com.growthbuddy.circle;
 
 import com.growthbuddy.circle.ChallengeMetrics.Metric;
 import com.growthbuddy.common.ApiException;
+import com.growthbuddy.common.RateLimiter;
 import com.growthbuddy.common.UserZone;
 import com.growthbuddy.habit.HabitService;
 import com.growthbuddy.mentorship.ProgressSharing;
+import com.growthbuddy.notification.NotificationKind;
+import com.growthbuddy.notification.NotificationService;
+import com.growthbuddy.notification.NotifyCategory;
 import com.growthbuddy.user.User;
 import com.growthbuddy.user.UserClock;
 import com.growthbuddy.user.UserRepository;
@@ -23,6 +27,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,12 +43,20 @@ public class CircleService {
     private static final int CODE_LENGTH = 8;
     /** How far ahead a challenge may be scheduled. */
     static final int MAX_START_LEAD_DAYS = 60;
+    static final int MAX_REPLIES = 100;
+    static final int REPLIES_PER_HOUR = 30;
+    static final int CHEERS_PER_DAY = 10;
+    private static final long HOUR_MS = 3_600_000L;
+    private static final long DAY_MS = 24 * HOUR_MS;
 
     private final CircleRepository circles;
     private final CircleMemberRepository members;
     private final CirclePostRepository posts;
     private final CircleChallengeRepository challenges;
     private final CirclePostReactionRepository reactions;
+    private final CirclePostCommentRepository comments;
+    private final NotificationService notifications;
+    private final RateLimiter limiter;
     private final UserRepository users;
     private final HabitService habits;
     private final ChallengeMetrics metrics;
@@ -52,14 +65,17 @@ public class CircleService {
 
     public CircleService(CircleRepository circles, CircleMemberRepository members,
                          CirclePostRepository posts, CircleChallengeRepository challenges,
-                         CirclePostReactionRepository reactions,
+                         CirclePostReactionRepository reactions, CirclePostCommentRepository comments,
                          UserRepository users, HabitService habits, ChallengeMetrics metrics,
-                         UserClock clock) {
+                         UserClock clock, NotificationService notifications, RateLimiter limiter) {
         this.circles = circles;
         this.members = members;
         this.posts = posts;
         this.challenges = challenges;
         this.reactions = reactions;
+        this.comments = comments;
+        this.notifications = notifications;
+        this.limiter = limiter;
         this.users = users;
         this.habits = habits;
         this.metrics = metrics;
@@ -257,6 +273,7 @@ public class CircleService {
     public void delete(UUID userId, UUID circleId) {
         Circle c = requireOwner(userId, circleId);
         reactions.deleteAllByCircle(circleId);
+        comments.deleteAllByCircle(circleId);
         posts.deleteAllByCircle(circleId);
         challenges.deleteAllByCircle(circleId);
         members.deleteAllByCircle(circleId);
@@ -277,16 +294,21 @@ public class CircleService {
         // Two grouped queries for the whole page, not a count per post.
         List<UUID> ids = list.stream().map(CirclePost::getId).toList();
         Map<UUID, Long> kudos = new HashMap<>();
+        Map<UUID, Long> replies = new HashMap<>();
         Set<UUID> mine = new HashSet<>();
         if (!ids.isEmpty()) {
             for (Object[] row : reactions.countByPostIds(ids)) {
                 kudos.put((UUID) row[0], ((Number) row[1]).longValue());
             }
+            for (Object[] row : comments.countByPostIds(ids)) {
+                replies.put((UUID) row[0], ((Number) row[1]).longValue());
+            }
             mine.addAll(reactions.reactedAmong(userId, ids));
         }
         return list.stream()
                 .map(p -> PostResponse.from(p, names.getOrDefault(p.getUserId(), "Member"),
-                        kudos.getOrDefault(p.getId(), 0L), mine.contains(p.getId())))
+                        kudos.getOrDefault(p.getId(), 0L), mine.contains(p.getId()),
+                        replies.getOrDefault(p.getId(), 0L)))
                 .toList();
     }
 
@@ -298,7 +320,7 @@ public class CircleService {
         p.setUserId(userId);
         p.setBody(req.body().trim());
         String name = users.findById(userId).map(User::getDisplayName).orElse("Member");
-        return PostResponse.from(posts.save(p), name, 0, false);
+        return PostResponse.from(posts.save(p), name, 0, false, 0);
     }
 
     /**
@@ -340,7 +362,101 @@ public class CircleService {
             throw ApiException.forbidden("Only the author or the circle's owner can delete a post.");
         }
         reactions.deleteAllByPost(postId);
+        comments.deleteAllByPost(postId);
         posts.delete(p);
+    }
+
+    /* ---- Replies ---- */
+
+    /** Oldest first, like a thread; capped, since a reply is a line, not a second feed. */
+    @Transactional(readOnly = true)
+    public List<CommentResponse> comments(UUID userId, UUID circleId, UUID postId) {
+        requireMember(userId, circleId);
+        requirePost(circleId, postId);
+        List<CirclePostComment> list = comments.findByPostIdOrderByCreatedAtAsc(postId, PageRequest.of(0, MAX_REPLIES));
+        Map<UUID, String> names = names(list.stream().map(CirclePostComment::getUserId).distinct().toList());
+        return list.stream().map(c -> CommentResponse.from(c, names.getOrDefault(c.getUserId(), "Member"))).toList();
+    }
+
+    /**
+     * A reply, and a bell card for the post's author (never for replying to
+     * yourself). Capped per sender per hour: every reply rings someone else's phone.
+     */
+    @Transactional
+    public CommentResponse comment(UUID userId, UUID circleId, UUID postId, CreateCommentRequest req) {
+        Circle c = require(circleId);
+        requireMember(userId, circleId);
+        CirclePost post = requirePost(circleId, postId);
+        if (comments.countByPostId(postId) >= MAX_REPLIES) {
+            throw ApiException.badRequest("This post has " + MAX_REPLIES + " replies. Start a new post instead.");
+        }
+        if (!limiter.allow("circle-reply:" + userId, REPLIES_PER_HOUR, HOUR_MS)) {
+            throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, "That's a lot of replies for one hour. Try again later.");
+        }
+        CirclePostComment cm = new CirclePostComment();
+        cm.setPostId(postId);
+        cm.setUserId(userId);
+        cm.setBody(req.body().trim());
+        comments.save(cm);
+        String name = users.findById(userId).map(User::getDisplayName).orElse("Member");
+        if (!userId.equals(post.getUserId())) {
+            notifications.publish(post.getUserId(), NotificationKind.system, NotifyCategory.people,
+                    name + " replied in " + c.getName(), snippet(cm.getBody()), circleId);
+        }
+        return CommentResponse.from(cm, name);
+    }
+
+    /** The reply's author, or the circle's owner. */
+    @Transactional
+    public void deleteComment(UUID userId, UUID circleId, UUID postId, UUID commentId) {
+        Circle c = require(circleId);
+        requirePost(circleId, postId);
+        CirclePostComment cm = comments.findById(commentId)
+                .filter(x -> postId.equals(x.getPostId()))
+                .orElseThrow(() -> ApiException.notFound("Reply"));
+        if (!userId.equals(cm.getUserId()) && !userId.equals(c.getCreatedBy())) {
+            throw ApiException.forbidden("Only the author or the circle's owner can delete a reply.");
+        }
+        comments.delete(cm);
+    }
+
+    /* ---- Cheer a member ---- */
+
+    /**
+     * One tap from the leaderboard or the member list: a bell card saying who is
+     * cheering them on. Both must be members; once per pair per day and
+     * {@link #CHEERS_PER_DAY} per sender per day, counted only when sent, so the
+     * button can't be used to flood someone's phone.
+     */
+    @Transactional
+    public void cheer(UUID userId, UUID circleId, UUID targetId, String text) {
+        Circle c = require(circleId);
+        requireMember(userId, circleId);
+        if (userId.equals(targetId)) {
+            throw ApiException.badRequest("You can't cheer yourself on. Nice try.");
+        }
+        if (!members.existsByCircleIdAndUserId(circleId, targetId)) {
+            throw ApiException.notFound("that member");
+        }
+        String pair = "circle-cheer:" + circleId + ":" + userId + ":" + targetId;
+        String mine = "circle-cheer:" + userId;
+        if (!limiter.peek(pair, 1, DAY_MS)) {
+            throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, "You've already cheered them on today.");
+        }
+        if (!limiter.peek(mine, CHEERS_PER_DAY, DAY_MS)) {
+            throw new ApiException(HttpStatus.TOO_MANY_REQUESTS,
+                    "That's " + CHEERS_PER_DAY + " cheers today. Save some for tomorrow.");
+        }
+        limiter.record(pair, DAY_MS);
+        limiter.record(mine, DAY_MS);
+        String name = users.findById(userId).map(User::getDisplayName).orElse("A member");
+        String line = text == null || text.isBlank() ? "From your circle " + c.getName() + "." : text.trim();
+        notifications.publish(targetId, NotificationKind.system, NotifyCategory.people,
+                name + " is cheering you on", line, circleId);
+    }
+
+    private static String snippet(String body) {
+        return body.length() <= 120 ? body : body.substring(0, 117) + "...";
     }
 
     /** A post of THIS circle — a post id from another circle is not found here. */

@@ -12,6 +12,7 @@ import {
   openOverlay,
 } from './gb-kit.js';
 import { toast } from './toast.js';
+import { CHALLENGE_TEMPLATES, standingLine, inviteLink, inviteFromHash } from './circle-core.js';
 
 /* Placeholder rows, so a section has its real height before the data lands.
    Every section on this screen used to start empty: the page rendered as three
@@ -962,10 +963,35 @@ function openSearchModal({ onBrowse, onSearch, onOffer, onRequest, onView, curre
 
 /* Minimal styled modal with a list of text/number fields; resolves the entered
    values via onSubmit. Reuses the app's modal CSS (see openNoteModal above). */
-function openFormModal({ title, sub, fields, submitLabel, onSubmit }) {
+function openFormModal({ title, sub, fields, submitLabel, onSubmit, presets }) {
   const { sheet, close } = openOverlay({ label: title });
   const inputs = {};
   const fieldNodes = [];
+  // One-tap presets ({label, values}) fill every field they name; the submit
+  // button still sends, so what goes out is on screen first.
+  if (presets && presets.length) {
+    fieldNodes.push(
+      h(
+        'div',
+        { class: 'gb-circle-presets', role: 'group', 'aria-label': 'Quick picks' },
+        presets.map((p) =>
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-chip',
+              onclick: () => {
+                Object.keys(p.values).forEach((k) => {
+                  if (inputs[k]) inputs[k].value = String(p.values[k]);
+                });
+              },
+            },
+            p.label
+          )
+        )
+      )
+    );
+  }
   fields.forEach((f) => {
     if (f.type === 'checkbox') {
       // A yes/no field: label and box on one line, value read as a boolean.
@@ -1058,7 +1084,7 @@ function openFormModal({ title, sub, fields, submitLabel, onSubmit }) {
  * leaderboard (members ranked by the challenge's metric — habit check-ins, focus
  * minutes or water-goal days — over the window; a future start shows "Upcoming").
  */
-function ChallengesPanel({ api, currentUserId }) {
+function ChallengesPanel({ api, currentUserId, wins }) {
   const el = h('div', { class: 'gb-challenges' }, sectionSkeleton(1));
 
   // Gold, silver, bronze for the top three; the rest keep their number. These
@@ -1084,6 +1110,36 @@ function ChallengesPanel({ api, currentUserId }) {
     },
   };
   const metricOf = (c) => METRICS[c && c.metric] || METRICS.habit_checkins;
+
+  /* One tap: a bell card for that member. The server allows one per pair per
+     day, and the button says so by going quiet once sent. */
+  function cheerButton(circleId, member) {
+    const btn = h(
+      'button',
+      {
+        type: 'button',
+        class: 'gb-iconbtn gb-circle-cheer',
+        'aria-label': 'Cheer ' + member.name + ' on',
+        title: 'Cheer on',
+        onclick: async () => {
+          if (btn.disabled) return;
+          btn.disabled = true;
+          try {
+            await api.cheer(circleId, member.userId);
+            btn.classList.add('is-sent');
+            btn.setAttribute('aria-label', 'Cheered ' + member.name);
+            toast.success('Cheered ' + member.name + ' on.');
+          } catch (err) {
+            btn.disabled = false;
+            toast.error(err, 'Could not send that cheer.');
+          }
+        },
+      },
+      Icon('sparkles', { size: 14, sw: 2.4 })
+    );
+    return btn;
+  }
+
   function leaderboardRows(entries, c) {
     const metric = metricOf(c);
     if (c && c.startDate > localISO()) {
@@ -1106,7 +1162,10 @@ function ChallengesPanel({ api, currentUserId }) {
               )
             : h('span', { class: 'gb-lb-rank' }, '#' + m.rank),
           h('span', { class: 'gb-lb-name' }, m.userId === currentUserId ? 'You' : m.name),
-          h('span', { class: 'gb-lb-val' }, metric.unit(m.value))
+          h('span', { class: 'gb-lb-val' }, metric.unit(m.value)),
+          c && c.active && m.userId !== currentUserId && api.cheer
+            ? cheerButton(c.circleId, m)
+            : null
         )
       );
   }
@@ -1132,6 +1191,12 @@ function ChallengesPanel({ api, currentUserId }) {
         { class: 'gb-challenge-dates' },
         metricOf(c).label + ' · ' + c.startDate + ' → ' + c.endDate
       ),
+      (() => {
+        const line = upcoming
+          ? null
+          : standingLine(c.leaderboard, currentUserId, metricOf(c).unit, !c.active);
+        return line ? h('div', { class: 'gb-challenge-standing' }, line) : null;
+      })(),
       h('div', { class: 'gb-lb' }, ...leaderboardRows(c.leaderboard, c)),
       // Members with progress sharing off (Settings → Privacy) are left off the
       // board server-side; say so, or the roster just looks short.
@@ -1152,6 +1217,10 @@ function ChallengesPanel({ api, currentUserId }) {
       title: 'Start a challenge',
       sub: 'Pick what counts. Most over the window wins.',
       submitLabel: 'Start',
+      presets: CHALLENGE_TEMPLATES.map((t) => ({
+        label: t.label,
+        values: { title: t.title, metric: t.metric, days: t.days },
+      })),
       fields: [
         {
           key: 'title',
@@ -1244,11 +1313,13 @@ function ChallengesPanel({ api, currentUserId }) {
       list.replaceChildren();
       rows.forEach((m) => {
         const isMe = m.userId === currentUserId;
+        const cheer = !isMe && api.cheer ? cheerButton(c.id, m) : null;
         const tools =
           c.owner && !isMe
             ? h(
                 'div',
                 { class: 'gb-request-actions' },
+                cheer,
                 h(
                   'button',
                   {
@@ -1316,7 +1387,7 @@ function ChallengesPanel({ api, currentUserId }) {
               h('div', { class: 'gb-circle-name' }, isMe ? 'You' : m.name),
               h('div', { class: 'gb-circle-sub' }, m.role === 'owner' ? 'Owner' : 'Member')
             ),
-            tools
+            tools || cheer
           )
         );
       });
@@ -1407,6 +1478,7 @@ function ChallengesPanel({ api, currentUserId }) {
                 h('strong', null, c.joinCode)
               )
             : null,
+          action('Share invite link', 'share-2', 'gb-btn--soft', () => shareInvite(c)),
           action('Members', 'users', 'gb-btn--soft', () => {
             close();
             openMembers(c, onChanged);
@@ -1421,6 +1493,42 @@ function ChallengesPanel({ api, currentUserId }) {
       )
     );
     refreshIcons();
+  }
+
+  /* The link joins in one tap (inviteFromHash on the far side). The OS share
+     sheet where there is one, else the clipboard. */
+  async function shareInvite(c) {
+    const url = inviteLink(window.location.href, c);
+    const text = 'Join my circle ' + c.name + ' on Growth Buddy';
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: c.name, text, url });
+        return;
+      }
+      await navigator.clipboard.writeText(text + ': ' + url);
+      toast.success('Invite link copied.');
+    } catch (err) {
+      if (err && err.name === 'AbortError') return; // closed the share sheet
+      toast.error(
+        err,
+        'Could not share the link. The code is ' + (c.joinCode || 'not needed: it is public') + '.'
+      );
+    }
+  }
+
+  /* Opened from an invite link: join, show the card, and drop the link's
+     query so a reload doesn't try again. Already a member is a quiet no-op. */
+  async function joinFromLink() {
+    const invite = inviteFromHash(window.location.hash);
+    if (!invite) return;
+    history.replaceState(null, '', window.location.pathname + window.location.search + '#/circle');
+    try {
+      const joined = invite.code ? await api.joinByCode(invite.code) : await api.join(invite.id);
+      if (!el.querySelector('[data-circle-id="' + joined.id + '"]')) addCard(joined);
+      toast.success('You joined ' + joined.name + '.');
+    } catch (err) {
+      toast.error(err, 'That invite link did not work. Ask for a fresh one.');
+    }
   }
 
   function removeCard(cardEl) {
@@ -1457,6 +1565,30 @@ function ChallengesPanel({ api, currentUserId }) {
       placeholder: 'Share an update with the circle…',
       'aria-label': 'Write a post',
     });
+    // Wins worth sharing, from the user's own habits and goals: a tap fills the
+    // box, Post sends it. Nothing is posted without that second tap.
+    const winLinesNow = typeof wins === 'function' ? wins() : [];
+    const winChips = winLinesNow.length
+      ? h(
+          'div',
+          { class: 'gb-circle-presets', role: 'group', 'aria-label': 'Share a win' },
+          h('span', { class: 'gb-circle-presets-label' }, 'Share a win'),
+          winLinesNow.map((line) =>
+            h(
+              'button',
+              {
+                type: 'button',
+                class: 'gb-chip',
+                onclick: () => {
+                  input.value = line;
+                  input.focus();
+                },
+              },
+              line
+            )
+          )
+        )
+      : null;
     const send = h(
       'button',
       {
@@ -1553,6 +1685,25 @@ function ChallengesPanel({ api, currentUserId }) {
             Icon('trash-2', { size: 14, sw: 2.4 })
           )
         : null;
+      const thread = h('div', { class: 'gb-circle-replies', hidden: true });
+      const replyBtn = h(
+        'button',
+        { type: 'button', class: 'gb-kudos', 'aria-expanded': 'false' },
+        Icon('message-circle', { size: 14, sw: 2.4 }),
+        h('span', null, String(p.comments || 0))
+      );
+      replyBtn.setAttribute('aria-label', 'Replies (' + (p.comments || 0) + ')');
+      replyBtn.onclick = () => {
+        const open = replyBtn.getAttribute('aria-expanded') !== 'true';
+        replyBtn.setAttribute('aria-expanded', String(open));
+        thread.hidden = !open;
+        if (open && !thread.firstChild)
+          RepliesThread(p, thread, (n) => {
+            p.comments = n;
+            replyBtn.lastChild.textContent = String(n);
+            replyBtn.setAttribute('aria-label', 'Replies (' + n + ')');
+          });
+      };
       return h(
         'div',
         { class: 'gb-circle-post' },
@@ -1570,8 +1721,103 @@ function ChallengesPanel({ api, currentUserId }) {
           )
         ),
         h('div', { class: 'gb-circle-post-body' }, p.body),
-        h('div', { class: 'gb-circle-post-foot' }, kudosBtn, delBtn)
+        h('div', { class: 'gb-circle-post-foot' }, kudosBtn, replyBtn, delBtn),
+        thread
       );
+    }
+    /* A post's replies, oldest first, with a one-line composer. Fetched when
+       first opened; `onCount` keeps the post's reply count in step. */
+    function RepliesThread(p, box, onCount) {
+      let rows = [];
+      const listEl = h(
+        'div',
+        { class: 'gb-circle-replies-list' },
+        h('div', { class: 'gb-empty-sm' }, 'Loading…')
+      );
+      const field = h('input', {
+        type: 'text',
+        class: 'gb-input',
+        maxlength: '500',
+        placeholder: 'Reply…',
+        'aria-label': 'Write a reply',
+      });
+      const sendBtn = h(
+        'button',
+        { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--compact' },
+        'Reply'
+      );
+      async function sendReply() {
+        const body = field.value.trim();
+        if (!body || sendBtn.disabled) return;
+        sendBtn.disabled = true;
+        try {
+          rows = rows.concat(await api.createComment(c.id, p.id, body));
+          field.value = '';
+          paint();
+        } catch (err) {
+          toast.error(err, 'Could not send that reply.');
+        } finally {
+          sendBtn.disabled = false;
+        }
+      }
+      sendBtn.onclick = sendReply;
+      field.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          sendReply();
+        }
+      });
+      function paint() {
+        onCount(rows.length);
+        listEl.replaceChildren();
+        if (!rows.length) {
+          listEl.appendChild(h('div', { class: 'gb-empty-sm' }, 'No replies yet.'));
+          return;
+        }
+        rows.forEach((r) => {
+          const mine = r.userId === currentUserId;
+          listEl.appendChild(
+            h(
+              'div',
+              { class: 'gb-circle-reply' },
+              h('strong', null, mine ? 'You' : r.authorName || 'Member'),
+              h('span', null, r.body),
+              mine || c.owner
+                ? h(
+                    'button',
+                    {
+                      type: 'button',
+                      class: 'gb-iconbtn gb-circle-post-del',
+                      'aria-label': 'Delete reply',
+                      title: 'Delete',
+                      onclick: async () => {
+                        try {
+                          await api.deleteComment(c.id, p.id, r.id);
+                          rows = rows.filter((x) => x.id !== r.id);
+                          paint();
+                        } catch (err) {
+                          toast.error(err, 'Could not delete that reply.');
+                        }
+                      },
+                    },
+                    Icon('trash-2', { size: 13, sw: 2.4 })
+                  )
+                : null
+            )
+          );
+        });
+        refreshIcons();
+      }
+      api
+        .listComments(c.id, p.id)
+        .then((list) => {
+          rows = list || [];
+          paint();
+        })
+        .catch(() =>
+          listEl.replaceChildren(h('div', { class: 'gb-empty-sm' }, 'Could not load replies.'))
+        );
+      box.append(listEl, h('div', { class: 'gb-circle-composer' }, field, sendBtn));
     }
     function load(before) {
       api
@@ -1601,6 +1847,7 @@ function ChallengesPanel({ api, currentUserId }) {
     return h(
       'div',
       { class: 'gb-circle-posts' },
+      winChips,
       h('div', { class: 'gb-circle-composer' }, input, send),
       list,
       more
@@ -1721,7 +1968,7 @@ function ChallengesPanel({ api, currentUserId }) {
   }
 
   function refresh() {
-    api
+    return api
       .listMine()
       .then((mine) => {
         el.replaceChildren();
@@ -1768,7 +2015,8 @@ function ChallengesPanel({ api, currentUserId }) {
       });
   }
 
-  refresh();
+  // After the first load, so a joined circle isn't painted over by the list.
+  refresh().then(joinFromLink);
 
   const actions = h(
     'div',
@@ -1881,6 +2129,7 @@ function ScreenCircle({
   challengesApi,
   mentorshipApi,
   currentUserId,
+  wins,
 }) {
   const outgoingEl = h('div', { class: 'gb-circle-section' }, sectionSkeleton(1));
   // Pending invites TO me. Empty (no heading at all) until there is one.
@@ -2157,7 +2406,9 @@ function ScreenCircle({
     'Find someone'
   );
 
-  const challenges = challengesApi ? ChallengesPanel({ api: challengesApi, currentUserId }) : null;
+  const challenges = challengesApi
+    ? ChallengesPanel({ api: challengesApi, currentUserId, wins })
+    : null;
   const challengesPanel = challenges && challenges.node;
 
   screenEl = h(
