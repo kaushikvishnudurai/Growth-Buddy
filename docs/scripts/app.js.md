@@ -182,6 +182,10 @@ it silently landed on Home. Don't reintroduce a second list.
   simply aren't in `/api/tasks` any more. A client-side reset on top of that would resurrect
   whatever the sweep hadn't reached yet.
 - **Quick add previews before it writes.** `parseQuickAdd` reads the sentence and writes nothing;
+  (**Starter packs** reuse that preview: `openStarterPacks` = goal chips over a live checkbox list from
+  `planStarter` (starter-packs.js), `starterRow` words each row, `applyStarter` writes habits through
+  `createHabit`, reminders and goals straight to the API (no per-row toast), water through
+  `updateWaterGoal`, budgets in one `saveMoney`, then `loadData()`.)
   `openQuickAddPreview` lists each intent in plain words with a checkbox; `applyQuickAdd` runs only
   what is still ticked. It used to parse and apply in one call, so a single misread — "spent 200 on
   lunch" landing as 200 ml of water — wrote itself into a tracker with no way to see it coming or

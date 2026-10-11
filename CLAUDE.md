@@ -54,7 +54,7 @@ fix the doc line if it was wrong. A doc you touch and don't update is worse than
 - Checks that exist (CI runs every `scripts/*.test.mjs` in one loop, so a new one joins by existing — list it here too): `node scripts/insights.test.mjs`, `node scripts/recurrence.test.mjs`,
   `node scripts/calendar.test.mjs`,
   `node scripts/i18n.test.mjs` (a `YYYY-MM-DD` key formats as that local day — re-runs itself in LA and Kolkata time; plurals, number grouping, `t()` falls back to the key),
-  `node scripts/money-merge.test.mjs`, `node scripts/money-calc.test.mjs` (forecast, due/overdue bills, budgets, streaks, loans, CSV; pinned clock), `node scripts/review.test.mjs`, `node scripts/timer.test.mjs`, `node scripts/home-order.test.mjs`, **`node scripts/money-ledger.test.mjs`** (what a Money save
+  `node scripts/money-merge.test.mjs`, `node scripts/money-calc.test.mjs` (forecast, due/overdue bills, budgets, streaks, loans, CSV; pinned clock), `node scripts/review.test.mjs`, `node scripts/timer.test.mjs`, `node scripts/home-order.test.mjs`, `node scripts/starter-packs.test.mjs`, **`node scripts/money-ledger.test.mjs`** (what a Money save
   sends: an item missed is an expense that never reaches the server, a false delete removes one the
   user still has), `node scripts/push.test.mjs`, `node scripts/app-logic.test.mjs` (water overlay +
   offline replay order, backdated-summary guard, week generation, goal-progress rollback, double-tap
