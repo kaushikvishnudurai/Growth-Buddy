@@ -37,17 +37,27 @@ public class TaskService {
         return goalId;
     }
 
-    @Transactional(readOnly = true)
+    /**
+     * Read-write on purpose: the overdue escalation below is a write, and a
+     * read-only transaction (flush mode MANUAL) silently dropped it, so the row
+     * kept its old priority for every other reader (CRB-5).
+     */
+    @Transactional
     public List<TaskResponse> list(UUID userId) {
         List<Task> tasks = repo.findByUserIdAndDeletedAtIsNullOrderByCreatedAtAsc(userId);
-        boolean changed = false;
         for (Task t : tasks) {
-            changed = escalateOverduePriority(t) || changed;
+            escalateOverduePriority(t); // managed entity: flushed at commit
         }
-        if (changed) {
-            repo.saveAll(tasks);
+        // One grouped query, not one history read per task (CRB-6).
+        java.util.Map<UUID, Object[]> stats = new java.util.HashMap<>();
+        for (Object[] row : historyRepo.statsByTask(userId)) {
+            stats.put((UUID) row[0], row);
         }
-        return tasks.stream().map(t -> responseFor(userId, t)).toList();
+        return tasks.stream().map(t -> {
+            Object[] st = stats.get(t.getId());
+            return st == null ? TaskResponse.from(t, 0, null)
+                    : TaskResponse.from(t, ((Number) st[1]).longValue(), (Instant) st[2]);
+        }).toList();
     }
 
     @Transactional
