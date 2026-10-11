@@ -381,7 +381,20 @@ assert.match(correlationWords(-0.6).text, /lower/);
   assert.match(spendy, /Lightest spend on .+ \(Rs120\)\.$/);
 
   // A quiet week drafts nothing, so the placeholder shows.
-  assert.equal(weeklyWinsDraft({ today, habits: [{ name: 'X', streak: 1 }] }), '');
+  assert.equal(weeklyWinsDraft({ today, habits: [{ name: 'X', streak: 0 }] }), '');
+
+  // A first week (FRS-13): a 1-day streak and some water, under every old rung, still drafts.
+  const first = weeklyWinsDraft({
+    today,
+    habits: [{ name: 'Morning run', streak: 1 }],
+    trends: { byDate: { [today]: { waterMl: 750, waterGoalMl: 2500, kcal: 600 } } },
+  });
+  assert.equal(first, 'Checked in on Morning run. Logged water on 1 day.');
+  // Meals fill in only when the draft has room for them.
+  assert.equal(
+    weeklyWinsDraft({ today, trends: { byDate: { [today]: { kcal: 600 } } } }),
+    'Logged meals on 1 day.'
+  );
 }
 
 console.log('review.test.mjs: all assertions passed');
