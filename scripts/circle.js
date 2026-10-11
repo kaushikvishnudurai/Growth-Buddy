@@ -27,6 +27,7 @@ import {
   AGREEMENT_MAX,
   parseAgreement,
   formatAgreement,
+  latestSave,
 } from './circle-core.js';
 
 /* Placeholder rows, so a section has its real height before the data lands.
@@ -739,6 +740,7 @@ function WeekCard(mApi, linkId, partnerName) {
    tick paints at once and rolls back if the save fails. */
 function AgreementList(req, mApi, heading, onEnd) {
   let items = parseAgreement(req.agreement);
+  const saves = latestSave();
   const el = h('div', { class: 'gb-agree' });
   const input = h('input', {
     type: 'text',
@@ -753,15 +755,20 @@ function AgreementList(req, mApi, heading, onEnd) {
       toast.error(null, 'The list is full. Remove a finished item first.');
       return false;
     }
-    const before = items;
+    const n = saves.start();
     items = next;
     paint();
     try {
       const res = await mApi.setAgreement(req.id, text || null);
       req.agreement = res && res.agreement;
+      if (saves.ok(n)) {
+        items = parseAgreement(req.agreement);
+        paint();
+      }
       return true;
     } catch (err) {
-      items = before;
+      if (!saves.fail(n)) return false; // a newer list is on its way
+      items = parseAgreement(req.agreement); // the last list the server accepted
       paint();
       toast.error(err, 'Could not save the agreement.');
       return false;
@@ -2056,7 +2063,9 @@ function ChallengesPanel({ api, currentUserId, wins }) {
           more.hidden = page.length < PAGE;
           paintPosts();
         })
-        .catch(() =>
+        .catch((err) => {
+          // Older posts failing keeps the ones shown; "Load older" is still there to retry.
+          if (before && posts.length) return toast.error(err, 'Could not load older posts.');
           list.replaceChildren(
             h('div', { class: 'gb-empty-sm' }, 'Could not load posts.'),
             h(
@@ -2068,8 +2077,8 @@ function ChallengesPanel({ api, currentUserId, wins }) {
               },
               'Try again'
             )
-          )
-        );
+          );
+        });
     }
     load(null);
     return h(

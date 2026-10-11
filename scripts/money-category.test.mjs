@@ -4,7 +4,7 @@
    add) starts on. The user's own history first, so a tag they corrected
    becomes the next guess; then keywords, by whole word. */
 import assert from 'node:assert/strict';
-import { predictCategory, suggestCategory, mergedCats } from './money-core.js';
+import { predictCategory, suggestCategory, mergedCats, quickAccount } from './money-core.js';
 
 const cats = mergedCats({
   customCategories: [
@@ -81,5 +81,22 @@ assert.equal(
   'groceries'
 );
 assert.equal(suggestCategory('Lunch at cafe'), 'food');
+
+// quickAccount: the account a Quick add books to, as Money's own form would.
+const accts = [
+  { id: 'card', kind: 'card' },
+  { id: 'cash', kind: 'cash' },
+  { id: 'usd', kind: 'bank' },
+  { id: 'bank', kind: 'bank' },
+  { id: 'old', kind: 'cash', archived: true },
+];
+const m = (settings) => ({ accounts: accts, settings: { currency: '₹', accountCurrency: { usd: '$' }, ...settings } });
+assert.deepEqual(quickAccount(m({ lastAccountId: 'card' }), 'expense'), { accountId: 'card' });
+assert.deepEqual(quickAccount(m({}), 'expense'), { accountId: 'cash' }); // no last: first cash
+assert.deepEqual(quickAccount(m({ lastAccountId: 'old' }), 'expense'), { accountId: 'cash' }); // archived
+assert.deepEqual(quickAccount(m({ lastAccountId: 'usd' }), 'expense'), { accountId: 'cash' }); // other currency
+assert.deepEqual(quickAccount(m({ lastAccountId: 'card' }), 'income'), { accountId: 'bank' }); // skips the $ bank
+assert.deepEqual(quickAccount({ accounts: [], settings: {} }, 'expense'), {}); // no accounts: none
+assert.deepEqual(quickAccount({}, 'income'), {});
 
 console.log('money-category.test.mjs: ok');

@@ -74,6 +74,7 @@ import {
   docPart,
   LEDGER_ARRAYS,
   suggestCategory,
+  quickAccount,
 } from './money-core.js';
 import {
   ScreenCalendar,
@@ -917,8 +918,10 @@ function persistMoney() {
       // No connection (or a server that's down) is not "not saved": the change is
       // in the cache and the ledger queue, and is replayed on the next flush
       // (handleOnline → loadData, or the timer below). Saying "not saved" made
-      // people enter it twice. Only a refusal is worth an error.
-      const queued = !navigator.onLine || !err || !err.status || err.status >= 500;
+      // people enter it twice. Only a refusal is worth an error; what flushLedger
+      // keeps for a retry (RETRYABLE: 401, 408, 409, 429) is queued too.
+      const queued =
+        !navigator.onLine || !err || !err.status || err.status >= 500 || RETRYABLE.has(err.status);
       if (queued) pushToast('Saved on this phone — will sync when you’re back online.', 'info');
       else toastError(err, 'Money changes were not saved. Check your connection and try again.');
     })
@@ -3632,7 +3635,8 @@ function addQuickExpense(amount, note) {
   next.expenses.unshift({
     id:
       typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
-    amount: Math.round(amount),
+    amount: Math.round(amount * 100) / 100,
+    ...quickAccount(state.money, 'expense'),
     // The tag Money's own form would start on: this note's past tag, then keywords.
     category: (note && suggestCategory(note, state.money)) || 'others',
     date: todayKeyNow(),
@@ -3647,7 +3651,8 @@ function addQuickIncome(amount, label) {
   (next.income = next.income || []).unshift({
     id:
       typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
-    amount: Math.round(amount),
+    amount: Math.round(amount * 100) / 100,
+    ...quickAccount(state.money, 'income'),
     source: salary ? 'salary' : 'other',
     label: label || (salary ? 'Salary' : 'Income'),
     date: todayKeyNow(),

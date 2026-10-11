@@ -2869,16 +2869,20 @@ function ScreenFamily({ api }) {
       {
         class: 'gb-family-chip gb-family-chore-assignee' + (c.assigneeMemberId ? ' is-set' : ''),
         'aria-label': 'Assign ' + c.title,
-        onchange: (e) =>
+        onchange: (e) => {
+          const sel = e.currentTarget;
           run(
-            api.updateChore(
-              c.id,
-              Object.assign(choreBody(c), { assigneeMemberId: e.currentTarget.value || null })
-            ),
+            api
+              .updateChore(c.id, Object.assign(choreBody(c), { assigneeMemberId: sel.value || null }))
+              .catch((err) => {
+                sel.value = c.assigneeMemberId || ''; // not handed over: show who still has it
+                throw err;
+              }),
             (res) => {
               model.chores = overlayChoreTicks(res || []);
             }
-          ),
+          );
+        },
       },
       h('option', { value: '', selected: !c.assigneeMemberId }, 'Anyone'),
       members.map((m) =>

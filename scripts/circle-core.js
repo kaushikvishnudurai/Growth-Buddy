@@ -185,3 +185,22 @@ export function parseAgreement(text) {
 export function formatAgreement(items) {
   return items.map((it) => (it.done ? '[x] ' : '[ ] ') + it.text).join('\n');
 }
+
+/* Overlapping whole-list saves (the agreement checklist: every PUT carries the
+   whole list). Only the newest save's outcome may change what is shown: an older
+   one failing is moot, a newer list is already on its way, and rolling back to
+   the list from before it undid a later save that had landed. `fail(n)` /
+   `ok(n)` answer "show the server's last accepted list now?". */
+export function latestSave() {
+  let issued = 0;
+  let failed = 0;
+  return {
+    start: () => ++issued,
+    fail(n) {
+      if (n === issued) failed = n;
+      return n === issued;
+    },
+    // An older save landing after the newest one failed: it is what the server holds.
+    ok: (n) => n !== issued && failed === issued,
+  };
+}
