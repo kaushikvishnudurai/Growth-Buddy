@@ -67,6 +67,8 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
 | Settings — Home screen customizer |
 | Settings — Display (text size preview) |
 | Notes — composer, editor (photos: develop-in animation, drop zone, picked ring), cards with a photo cover |
+| Notes: the page (inside the Notes views block: margin rule on cards, opener and editor, reading measure, headline title, 660px sheet) |
+| Goals: the trail (after the milestone edit row: numbered stops on one path, Next stop, mono counts, horizon reach line) |
 | Health screen (`.gb-health-*`: auto-fit card grid, mono values, `.is-empty` dash, `.gb-health-asof`) — last in the file |
 
 ## Editing rules
