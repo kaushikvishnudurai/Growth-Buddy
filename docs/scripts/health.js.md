@@ -51,17 +51,18 @@ input; any other rejection toasts. An unknown key lands under the value field.
 ## The "Last night" card
 
 - `nights(sleepByDate, today, 14)`: the last entry is last night (keyed on today, the wake day).
-- Band 18:00 → 12:00 = `BAND` 1080 minutes; bars are positioned with `--from` / `--len`
-  percentages. A bedtime after noon (`from` > 1080) clamps to a zero-width bar instead of a
-  negative one. Ticks every 3 h (`TICKS`, placed by `--i`), gridlines are a CSS background.
-- The thick bar is `--brand-fill`; the 13 earlier nights sit under it newest first, each fading by
-  `--age` (`opacity` steps, no new colours), so a drifting bedtime reads as a slant.
-- Averages (duration, bedtime) are over the nights that have times, labelled "14-night average".
-- **The one motion:** `.is-growing` (scaleX from the left, 420 ms `--ease-out`, none under
-  reduced motion). Module flag `grown` limits it to the first paint per page load: a save
-  re-renders the screen, and the bar should not re-grow every time.
-- Empty (no entry for today): an `is-empty` track with "No sleep logged for last night", the
-  button becomes "Log last night"; earlier nights still draw.
+- The nights are **columns**: evening at the top, morning at the bottom, oldest left, last night the
+  one `--brand-fill` column (`.gb-sleep-col.is-last`); the rest are `--fg3`. Positions use the
+  band minutes `nightOnBand` gives (`from`/`to`, minutes after 18:00), mapped onto a 20:00-10:00
+  window that widens to the nearest hour for an outlier. Hour axis at 21/00/03/06/09
+  (`HOUR_TICKS`, through `bandClock`), wake dates under the columns.
+- Behind them, the **usual window** (`.gb-sleep-usual`): average bedtime to average wake over the
+  known nights, shown once there are 3+. Same pair is the "Usual window" stat.
+- The head compares last night with the nights before it: "36m less than usual" / "more" /
+  "right on your usual" (under 5 minutes).
+- 14 columns, 7 when the card is under 560px (container query on `.gb-health-sleep`).
+- **Motion:** once per load (`grown`), each night falls from bedtime to wake (`gb-sleep-fall`,
+  scaleY from the top, staggered by `--i` oldest first); none under reduced motion.
 
 ## The entrance
 
@@ -72,8 +73,8 @@ Once per page load (`entered`), on the first render that has readings: `ScreenHe
 `prefers-reduced-motion: no-preference`: the Today spine draws down, bars and dots rise column by
 column oldest first (`--c` per cell, offset by `--c0` = the first visible column, so the 7-day view
 starts at once) with each row a beat later (`--r` per row), lines draw via `pathLength="1"` +
-dashoffset, today's mark settles with `--ease-bounce`, and the night band's earlier nights slide in
-under the growing bar (`.gb-health-band.is-entering`, keyed on the band's own `grown`). Re-renders
+dashoffset, today's mark settles with `--ease-bounce`, and the sleep card's nights fall in column by column
+(`.gb-sleep-chart.is-entering`, keyed on the card's own `grown`). Re-renders
 after a save never replay it.
 
 ## Narrow screens
