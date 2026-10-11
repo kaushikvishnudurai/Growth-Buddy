@@ -89,6 +89,7 @@ import {
   setDefaultLead,
   getDefaultLead,
   setReminderSettingsOpener,
+  setCalendarImporter,
   setCustomToneAdder,
   setVoiceReminder,
   NotifySelect,
@@ -457,6 +458,7 @@ setWorkWeek(state.user && state.user.uiPrefs && state.user.uiPrefs.workWeek);
 setRoutine(state.user && state.user.uiPrefs && state.user.uiPrefs.routine);
 setDefaultLead(state.user && state.user.uiPrefs && state.user.uiPrefs.reminderLead);
 setReminderSettingsOpener(() => openProfileSettings('reminders'));
+setCalendarImporter(() => openIcsImportDialog());
 setCustomToneAdder(() => openCustomToneDialog());
 setVoiceReminder({ supported: () => voiceSupported(), capture: (btn) => captureReminder(btn) });
 setTimeFormat(state.user && state.user.uiPrefs && state.user.uiPrefs.timeFormat);
@@ -8217,6 +8219,17 @@ function reminderSettingsPane() {
       },
       Icon('calendar-plus', { size: 16 }),
       'Export calendar (.ics)'
+    ),
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'gb-btn gb-btn--ghost',
+        style: { marginTop: '8px' },
+        onclick: () => openIcsImportDialog(),
+      },
+      Icon('upload', { size: 16 }),
+      'Import .ics'
     )
   );
   return pane;
@@ -10456,6 +10469,40 @@ async function exportRemindersIcs(btn) {
   } finally {
     if (btn) btn.disabled = false;
   }
+}
+
+/* Google / Apple / Outlook events in as reminders (import-ui.js, loaded on tap).
+   Times land in the account's zone, the one the scheduler rings them in. */
+function openIcsImportDialog() {
+  const zone = (state.user && state.user.timezone) || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  const nowHHMM = () => {
+    try {
+      return new Intl.DateTimeFormat('en-GB', { timeZone: zone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date());
+    } catch (_) {
+      return new Date().toTimeString().slice(0, 5);
+    }
+  };
+  import('./import-ui.js')
+    .then((m) =>
+      m.openIcsImport({
+        api,
+        existing: state.reminders,
+        zone,
+        today: accountTodayKey,
+        now: nowHHMM,
+        onDone: async () => {
+          state.reminders = await api('/api/reminders');
+          reSyncDeviceAlarms();
+          repaintReminderSettings();
+          if (state.screen === 'calendar') {
+            rerenderCalendarSideIfActive();
+            repaintCalendarGrid();
+            rerenderCalendarToolbarIfActive();
+          } else render();
+        },
+      })
+    )
+    .catch((err) => toastError(err, 'Couldn’t open the importer. Check your connection and try again.'));
 }
 
 function snoozeMinutes() {
@@ -13828,6 +13875,12 @@ const SCREENS = {
             // in money.js, never merged into state.money, so no save can send it back.
             requestOlderTx: (before) =>
               api('/api/money/tx?before=' + encodeURIComponent(before) + '&limit=200'),
+            // The CSV import waits on this between batches: true once nothing is left unsent.
+            moneySettled: () =>
+              moneySaveQueue.then(() => {
+                const p = loadPendingLedger();
+                return !Object.keys(p.upserts).length && !p.deletes.length;
+              }),
           })
       ),
   },

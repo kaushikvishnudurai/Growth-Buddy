@@ -148,6 +148,7 @@ import {
   Code,
   Redo2,
   WifiOff,
+  Upload,
 } from 'lucide';
 
 export const icons = {
@@ -293,4 +294,5 @@ export const icons = {
   Code,
   Redo2,
   WifiOff,
+  Upload,
 };

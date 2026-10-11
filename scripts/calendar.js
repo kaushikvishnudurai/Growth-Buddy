@@ -216,6 +216,11 @@ let openReminderSettings = null;
 function setReminderSettingsOpener(fn) {
   openReminderSettings = fn;
 }
+// "Import .ics" on the toolbar: app.js holds the reminders and the API, so it hands this in.
+let openCalendarImport = null;
+function setCalendarImporter(fn) {
+  openCalendarImport = fn;
+}
 
 function validLead(n) {
   const v = Number(n);
@@ -2778,16 +2783,31 @@ function CalendarToolbar({ year, month, reminders, tasks, onPrevMonth, onNextMon
         'Today'
       )
     ),
-    monthCount
+    monthCount || openCalendarImport
       ? h(
           'div',
           { class: 'gb-cal-toolbar-actions' },
-          Pill({
-            icon: 'bell',
-            label: plural(monthCount, 'item') + ' this month',
-            bg: 'var(--brand-soft)',
-            fg: 'var(--brand-soft-fg)',
-          })
+          monthCount
+            ? Pill({
+                icon: 'bell',
+                label: plural(monthCount, 'item') + ' this month',
+                bg: 'var(--brand-soft)',
+                fg: 'var(--brand-soft-fg)',
+              })
+            : null,
+          openCalendarImport
+            ? h(
+                'button',
+                {
+                  type: 'button',
+                  class: 'gb-btn gb-btn--ghost gb-btn--compact gb-cal-import',
+                  title: 'From Google, Apple or Outlook Calendar',
+                  onclick: () => openCalendarImport(),
+                },
+                Icon('upload', { size: 14, sw: 2.4 }),
+                'Import .ics'
+              )
+            : null
         )
       : null
   );
@@ -2804,6 +2824,7 @@ export {
   setDefaultLead,
   getDefaultLead,
   setReminderSettingsOpener,
+  setCalendarImporter,
   setCustomToneAdder,
   setVoiceReminder,
   notifySelect as NotifySelect,

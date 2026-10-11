@@ -68,6 +68,16 @@ Day-key helpers: `pad`, `keyOf(y,m,d)`, `parseKey`, `todayKey`, `isFutureKey`, `
 - **Export.** Settings → Reminders ends with "Export calendar (.ics)" (app.js `exportRemindersIcs`,
   `GET /api/reminders/export.ics`, read through `apiFetch`'s `raw` option, then share sheet or
   download).
+- **Import.** "Import .ics" sits on the toolbar (`CalendarToolbar`, shown once app.js has called
+  `setCalendarImporter`, like `setReminderSettingsOpener`) and under the export in Settings →
+  Reminders; both open app.js `openIcsImportDialog` → `import-ui.js` `openIcsImport` (lazy).
+  Parsing is `ics-import.js` (times into the account's zone; see CODEMAP). Each picked event is a
+  plain `POST /api/reminders` (not `addReminder`, which toasts and resets the form per call), then
+  `DELETE ?scope=this&date=` per EXDATE; afterwards the list is refetched and the side, grid and
+  toolbar repaint. **Past one-offs are listed, never sent**: the calendar takes no reminder before
+  today, the same rule as the form and `ReminderService.create`; a series that began in the past
+  starts at its next occurrence. Duplicates (same text, time, and an existing reminder that
+  `occursOn` the day) start unticked.
 - `remindersOn` (149), `tasksOn` (162), `completedTasksOn` (179), `goalActionsOn` (185), `dueKey` (155).
 - **"Repeat until" before the start date makes a reminder that can never fire.** `occursOn` returns
   false for every day, so it sits in the list forever advertising an end date in the past. The form
