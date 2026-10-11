@@ -121,3 +121,20 @@ test('FRS-10: Add member opens on the form, reads the name, and adds another in 
   const got = fam.members.map((m) => m.name + ':' + m.relationship);
   expect(got).toEqual(expect.arrayContaining(['Appa:father', 'Akka:sister']));
 });
+
+test('FRS-18: a new circle starts with a sprint running and an Invite one tap away', async ({ page, account }, info) => {
+  await signInPinned(page, account);
+  await go(page, 'circle');
+  await page.getByRole('button', { name: 'New circle' }).first().click();
+  const dialog = page.getByRole('dialog', { name: 'New circle' });
+  await dialog.getByPlaceholder('e.g. Morning Runners').fill('Sprinters');
+  await expect(dialog.getByLabel(/Start a 7-day habit sprint today/)).toBeChecked();
+  await dialog.getByRole('button', { name: 'Create' }).click();
+  const card = page.locator('.gb-circle-card', { hasText: 'Sprinters' });
+  await expect(card).toContainText('7-day habit sprint');
+  await expect(page.getByRole('button', { name: 'Invite', exact: true })).toBeVisible();
+  if (info.project.name === 'mobile') await shot(page, 'FRS-18');
+  const mine = await call(account.token, '/api/circles/mine');
+  const c = mine.find((x) => x.name === 'Sprinters');
+  expect((await call(account.token, '/api/circles/' + c.id + '/challenges')).length).toBe(1);
+});

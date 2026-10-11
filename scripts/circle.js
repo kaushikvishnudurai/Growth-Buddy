@@ -1502,6 +1502,13 @@ function ChallengesPanel({ api, currentUserId, wins, addHabit }) {
           label: 'Private circle',
           hint: 'Hidden from Browse. People join with a code you share.',
         },
+        // A new circle's first step, so its card doesn't open on "No challenge running".
+        {
+          key: 'sprint',
+          type: 'checkbox',
+          value: true,
+          label: 'Start a ' + CHALLENGE_TEMPLATES[0].label + ' today',
+        },
       ],
       onSubmit: async (v, close) => {
         if (!v.name) throw new Error('Give the circle a name first.');
@@ -1510,11 +1517,22 @@ function ChallengesPanel({ api, currentUserId, wins, addHabit }) {
           goal: v.goal || null,
           visibility: v.private ? 'private' : 'public',
         });
-        toast.success(
-          made && made.joinCode ? 'Circle created. Code: ' + made.joinCode : 'Circle created.'
-        );
         close();
+        if (v.sprint) {
+          const t = CHALLENGE_TEMPLATES[0];
+          // The circle exists either way; a refused sprint is one toast, not a failed create.
+          await api
+            .createChallenge(made.id, { title: t.title, days: t.days, metric: t.metric, startDate: localISO() })
+            .catch((err) => toast.error(err, 'Circle created, but the challenge did not start.'));
+        }
         addCard(made);
+        // The other first step is people. The share sheet needs a tap of its own
+        // (a browser opens it only from a gesture), so the toast carries it.
+        toast.action(
+          made.joinCode ? 'Circle created. Code: ' + made.joinCode : 'Circle created.',
+          'Invite',
+          () => shareInvite(made)
+        );
       },
     });
   }
