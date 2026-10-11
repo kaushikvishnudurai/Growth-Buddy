@@ -26,9 +26,11 @@ export function wallInset(y) {
  * `left` is the body's left edge at the start of the swim, `swim` how far right it
  * goes (keyframes run 0 -> swim and back), `bottom` from the glass floor, `bob`
  * how far it drifts up or down. Shallow water keeps one small fish that swims
- * flat along the floor; a dry glass has none.
+ * flat along the floor; a dry glass has none. `nowMs` sets each fish's phase
+ * from the clock: the card is rebuilt on every repaint, and a fixed phase sent
+ * every fish back to the same spot on each tap.
  */
-export function waterFish(pct) {
+export function waterFish(pct, nowMs = 0) {
   const p = Math.max(0, Math.min(100, Number(pct) || 0));
   const depth = (p / 100) * GLASS_H;
   const wanted = Math.max(1, Math.min(8, Math.floor(p / 15) + 1));
@@ -82,7 +84,8 @@ export function waterFish(pct) {
       bob,
       // Negative: each fish is already mid-swim at first paint. A positive delay
       // parked it at the keyframes' start until it began, then it snapped.
-      delay: -Math.round(((i * 0.37 + 0.2) % 1) * duration * 100) / 100,
+      // Phase = its own offset + the clock, so a rebuilt card carries on mid-swim.
+      delay: -Math.round(((i * 0.37 + 0.2) * duration + nowMs / 1000) % duration * 100) / 100,
       duration,
       hue: hues[i % hues.length],
       lane: (i % 3) + 1,

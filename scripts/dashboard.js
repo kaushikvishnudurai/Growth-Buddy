@@ -995,7 +995,7 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
   // Placed by water-fish.js so each one stays inside the glass and under the
   // surface for its whole swim; they used to swim through the walls, ride the
   // waterline and flop on a dry floor.
-  const fishNodes = waterFish(pct).map((f) =>
+  const fishNodes = waterFish(pct, Date.now()).map((f) =>
     h('span', {
       class: 'gb-water-fish f' + f.lane,
       style: {

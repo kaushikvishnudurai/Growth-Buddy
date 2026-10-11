@@ -56,4 +56,14 @@ assert.deepEqual(
   [-1, 1],
   'reduced-motion facing alternates'
 );
+// A repaint a moment later keeps every fish mid-swim where the clock has it, not back at the start.
+{
+  const a = waterFish(60, 10_000), b = waterFish(60, 10_400);
+  a.forEach((f, i) => {
+    // 0.4 s later the delay is 0.4 s more negative (mod one swim), i.e. the fish moved on.
+    const moved = (((a[i].delay - b[i].delay) % f.duration) + f.duration) % f.duration;
+    assert.ok(Math.abs(moved - 0.4) < 0.02, `fish ${i} phase follows the clock`);
+    assert.ok(b[i].delay <= 0 && b[i].delay > -f.duration);
+  });
+}
 console.log('water-fish ok');

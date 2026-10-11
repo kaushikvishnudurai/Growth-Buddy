@@ -8229,6 +8229,9 @@ button.gb-food-level {
 }
 .gb-quickadd-row .gb-mic {
   flex: none;
+  /* The bare .gb-btn grey read as disabled next to the outlined language select. */
+  background: var(--brand-soft);
+  color: var(--brand-soft-fg);
 }
 .gb-quickadd-row select.gb-input {
   flex: 1 1 auto;
