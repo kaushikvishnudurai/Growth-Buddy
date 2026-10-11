@@ -1883,14 +1883,8 @@ function ScreenNotes({
         class: 'gb-iconbtn gb-iconbtn--danger gb-note-del',
         'aria-label': 'Delete note',
         title: 'Delete note',
+        // No confirm: it goes to the Trash, with Undo on the toast.
         onclick: async () => {
-          const ok = await confirmDialog({
-            title: 'Delete this note?',
-            confirmLabel: 'Delete',
-            cancelLabel: 'Keep',
-            danger: true,
-          });
-          if (!ok) return;
           try {
             await onDelete(note.id);
             clearTimeout(editTimer); // the server dropped the draft with the note

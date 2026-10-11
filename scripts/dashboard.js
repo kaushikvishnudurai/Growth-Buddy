@@ -1220,7 +1220,7 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
             lastThree.map((item) =>
               h(
                 'div',
-                { class: 'gb-water-log-row' },
+                { class: 'gb-water-log-row', 'data-water-id': item.id },
                 h(
                   'div',
                   { style: { flex: 1 } },
