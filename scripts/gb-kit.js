@@ -1184,7 +1184,8 @@ function AppHeader({ label, name, userName, onAccount, unreadCount, onBell, onAd
 
 /* Friendly full-screen error state — a woozy little mascot + warm copy, no raw
    status codes. Shared so every screen shows the same on-brand failure UI. */
-function CrashCard(onRetry) {
+/* `copy` ({ title, body }) for a cause the default words don't fit. */
+function CrashCard(onRetry, copy = {}) {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('viewBox', '0 0 160 160');
   svg.setAttribute('class', 'gb-crash-art');
@@ -1214,8 +1215,8 @@ function CrashCard(onRetry) {
     'div',
     { class: 'gb-placeholder gb-rise gb-crash' },
     svg,
-    h('h2', null, 'That didn’t go through'),
-    h('p', null, "We couldn't reach your data just now. Check your connection and give it another go."),
+    h('h2', null, copy.title || 'That didn’t go through'),
+    h('p', null, copy.body || "We couldn't reach your data just now. Check your connection and give it another go."),
     h(
       'button',
       { type: 'button', class: 'gb-btn gb-btn--primary', style: { marginTop: '6px', maxWidth: '260px' }, onclick: onRetry },

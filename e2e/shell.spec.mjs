@@ -245,3 +245,15 @@ test('OFF-7: a sign-out made offline is revoked on the next boot', async ({ page
   const me = await page.evaluate((t) => fetch('/api/auth/me', { headers: { Authorization: 'Bearer ' + t } }).then((r) => r.status), account.token);
   expect(me).toBe(401);
 });
+
+test('OFF-6: a screen never loaded, opened offline, says so instead of reloading', async ({ page, account, context, allowed }) => {
+  allowed.push('Screen failed to load', 'Failed to fetch', 'ERR_INTERNET_DISCONNECTED', 'goals.js', 'logomark.svg');
+  await signInFast(page, account);
+  await context.setOffline(true);
+  await go(page, 'goals');
+  await expect(page.getByText('This screen needs a connection the first time')).toBeVisible();
+  await shot(page, 'OFF-6');
+  await context.setOffline(false);
+  await expect(page.getByText('This screen needs a connection the first time')).toHaveCount(0, { timeout: 15_000 });
+  expect(new URL(page.url()).hash).toBe('#goals');
+});

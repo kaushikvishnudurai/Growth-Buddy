@@ -15196,6 +15196,21 @@ function lazyScreen(loader, build) {
       // new index and the new chunk names; the flag makes it once per tab, so
       // a genuinely broken module still lands on the crash card instead of
       // reloading forever.
+      // Offline it is not a stale deploy: the screen was never fetched on this
+      // device, and a reload with no controlling service worker lands on the
+      // browser's own offline page, with the app gone. Say so, and open it
+      // when the connection comes back.
+      if (isStaleChunkError(err) && !navigator.onLine) {
+        if (!placeholder.isConnected) return;
+        const card = CrashCard(() => render(), {
+          title: 'This screen needs a connection the first time',
+          body: 'It hasn’t been opened on this device yet. It opens by itself once you’re back online.',
+        });
+        placeholder.replaceWith(card);
+        refreshIcons();
+        window.addEventListener('online', () => card.isConnected && render(), { once: true });
+        return;
+      }
       if (isStaleChunkError(err) && !sessionStorage.getItem(CHUNK_RELOAD_KEY)) {
         try {
           sessionStorage.setItem(CHUNK_RELOAD_KEY, '1');
