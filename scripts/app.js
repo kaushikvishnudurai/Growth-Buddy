@@ -75,6 +75,7 @@ import {
   LEDGER_ARRAYS,
   suggestCategory,
 } from './money-core.js';
+import { quickMoney, intentDay, dayWord, stripEmoji, capitalise } from './quick-add.js';
 import {
   ScreenCalendar,
   RenderCalendarToolbar,
@@ -1819,7 +1820,14 @@ async function toggleRestDay(habitId, makeRest) {
     makeRest ? -1 : 1,
     makeRest ? 'Could not set a rest day.' : 'Could not remove the rest day.'
   );
-  if (ok) toastSuccess(makeRest ? 'Rest day set — your streak holds.' : 'Rest day removed.');
+  if (!ok) return;
+  if (!makeRest) return toastSuccess('Rest day removed — the freeze is back.');
+  // One tap spends a freeze, so the receipt says so and can take it back.
+  const left = freezeTokensLeft();
+  pushToast('1 freeze used, ' + left + ' left.', 'success', 6000, {
+    label: 'Undo',
+    run: () => toggleRestDay(habitId, false),
+  });
 }
 
 /* ---- Trends — local daily time-series for the Report drill-down ----
@@ -2057,6 +2065,12 @@ function maybeStartFirstRun() {
   if (!u || !u.id || firstRunOpen) return;
   const p = u.uiPrefs || {};
   if (p.setupDone) return;
+  // Begun but never finished (the app was closed mid-way): its own goal step
+  // made the habits, so the data check below would end it unseen. Resume.
+  if (p.setupStep) {
+    setTimeout(() => openFirstRunSetup(p.setupStep), 600);
+    return;
+  }
   const hasData =
     (state.tasks || []).length > 0 ||
     (state.habits || []).length > 0 ||
@@ -2072,7 +2086,10 @@ function maybeStartFirstRun() {
   setTimeout(openFirstRunSetup, 600);
 }
 
-async function openFirstRunSetup() {
+// `resumeAt`: the step key ui_prefs.setupStep saved, when an earlier run of
+// this sheet was left without finishing.
+const SETUP_ORDER = ['goal', 'timezone', 'notify', 'features'];
+async function openFirstRunSetup(resumeAt) {
   if (firstRunOpen || !state.user || (state.user.uiPrefs || {}).setupDone) return;
   firstRunOpen = true;
   // The goal step needs starter-packs.js; offline or a failed chunk just drops it.
@@ -2090,13 +2107,30 @@ async function openFirstRunSetup() {
     onClose: () => {
       firstRunOpen = false;
       // Whatever step it was left on, it has been seen: never again.
-      saveUiPrefs(tz ? { setupDone: true, tzAsked: tz } : { setupDone: true });
+      saveUiPrefs(tz ? { setupDone: true, setupStep: null, tzAsked: tz } : { setupDone: true, setupStep: null });
       syncDeviceTimezone();
     },
   });
 
-  const steps = [mod && goalStep, timezoneStep, notifyStep, featuresStep].filter(Boolean);
-  let at = 0;
+  // The timezone step only when there is something to decide: the same zone
+  // (aliases like Calcutta/Kolkata included) cost a tap and said nothing.
+  const savedZone = state.user.timezone || '';
+  const zoneDiffers = !!tz && !(savedZone && sameZone(savedZone, tz));
+  const keyed = [
+    ['goal', mod && goalStep],
+    ['timezone', zoneDiffers && timezoneStep],
+    ['notify', notifyStep],
+    ['features', featuresStep],
+  ].filter((x) => x[1]);
+  const steps = keyed.map((x) => x[1]);
+  const stepKey = (i) => keyed[i][0];
+  // Resume on the saved step, or the first one after it that is still offered.
+  const from = SETUP_ORDER.indexOf(resumeAt);
+  let at = Math.max(0, from < 0 ? 0 : keyed.findIndex((x) => SETUP_ORDER.indexOf(x[0]) >= from));
+  // Progress lives in ui_prefs, so a closed app comes back here, not to a
+  // silent "done" (the goal step's habits read as data that predates setup).
+  const saveStep = () => saveUiPrefs({ setupStep: stepKey(at) });
+  saveStep();
   const dots = h(
     'div',
     { class: 'gb-setup-dots', 'aria-hidden': 'true' },
@@ -2133,6 +2167,7 @@ async function openFirstRunSetup() {
       return;
     }
     at += 1;
+    saveStep();
     show();
   }
 
@@ -2189,9 +2224,8 @@ async function openFirstRunSetup() {
     };
   }
 
+  // Offered only when the zones differ or the account has none (zoneDiffers).
   function timezoneStep() {
-    const saved = (state.user && state.user.timezone) || '';
-    const differs = !!tz && !!saved && !sameZone(saved, tz);
     const zoneRow = (label, value) =>
       h(
         'div',
@@ -2207,18 +2241,18 @@ async function openFirstRunSetup() {
         {},
         badge('clock'),
         zoneRow('This device', tz),
-        zoneRow('Your account', saved),
+        zoneRow('Your account', savedZone),
         h(
           'div',
           { class: 'gb-field-hint' },
-          differs
+          savedZone
             ? 'They differ. Use this device’s zone unless you want to keep home time.'
-            : 'They match. You can change it later in Settings › Profile.'
+            : 'Your account has no timezone yet.'
         )
       ),
-      primary: differs ? 'Use ' + tz : 'Looks right',
-      onPrimary: differs ? () => saveDeviceTimezone(tz) : null,
-      skip: differs ? 'Keep ' + saved : 'Skip',
+      primary: 'Use ' + tz,
+      onPrimary: () => saveDeviceTimezone(tz),
+      skip: savedZone ? 'Keep ' + savedZone : 'Skip',
     };
   }
 
@@ -2443,6 +2477,7 @@ function handleAuthExpired() {
   // Another account must not see this one's Insights, nor wait out its throttle.
   state.insightHistory = null;
   state.waterUsualHours = null;
+  state.inFamily = undefined;
   loadedFor = null; // the next sign-in is a first load, not a refresh
   insightHistoryAt = 0;
   insightReq = null; // a fetch still in flight belongs to the old account: drop it
@@ -2925,6 +2960,13 @@ async function loadSecondaryData() {
     // (every day "No log") until something else happened to redraw it.
     const arrived = { money: !!money, goals: !!goals, food: !!food };
     if (state.screen === bootScreen || arrived[state.screen]) render();
+    // Home's Outlook ranks insights off the same history Report loads. Once
+    // per session (null until it lands; sign-out clears it); it repaints Home.
+    if (!state.insightHistory) loadInsightHistory();
+    // Whether Quick add's Photo can offer Groceries (snapRoutes).
+    if (featureOn('family') && state.inFamily === undefined) {
+      api('/api/family').then(noteFamily).catch(() => {});
+    }
   } catch (err) {
     console.error('Secondary data load failed', err);
   }
@@ -3249,9 +3291,19 @@ function openMeasuredCheckin(habit) {
   });
   // The phone already counted them. Fill in only while the box is still empty,
   // so a number the user started typing is never overwritten.
+  // No phone count (the web, or no permission): last time's number, selected,
+  // so typing replaces it — the box used to sit blank.
   if (habit.metric === 'steps' && !editing) {
+    if (habit.lastValue != null) {
+      valueInput.placeholder = 'Last time ' + Math.round(habit.lastValue).toLocaleString();
+    }
     readTodaySteps().then((n) => {
-      if (n != null && valueInput.value === '') valueInput.value = String(n);
+      if (valueInput.value !== '') return;
+      const v = n != null ? n : habit.lastValue;
+      if (v == null) return;
+      valueInput.value = String(Math.round(v));
+      if (document.activeElement === valueInput) valueInput.select();
+      else valueInput.addEventListener('focus', () => valueInput.select(), { once: true });
     });
   }
   // Only where it means something: minutes against a distance give you a speed,
@@ -3684,32 +3736,58 @@ function sleepPayloadFromHours(hours, quality) {
     note: '',
   };
 }
-function addQuickExpense(amount, note) {
-  const next = normalizeMoney(state.money);
+const newMoneyId = () =>
+  typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : String(Date.now());
+/* Booked as Money's own form would: its date, the default account (so the
+   balance moves), a named currency converted (quick-add.js quickMoney). Returns
+   the new id, for Undo. */
+function addQuickExpense(it) {
+  const base = state.money;
+  const next = normalizeMoney(base);
+  const q = quickMoney(base, it, 'expense', todayKeyNow());
+  const note = capitalise(String(it.note || '').trim());
+  const id = newMoneyId();
   next.expenses.unshift({
-    id:
-      typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
-    amount: Math.round(amount),
+    id,
+    amount: q.amount,
+    ...(q.orig ? { orig: q.orig } : {}),
     // The tag Money's own form would start on: this note's past tag, then keywords.
-    category: (note && suggestCategory(note, state.money)) || 'others',
-    date: todayKeyNow(),
-    note: note || '',
+    category: (note && suggestCategory(note, base)) || 'others',
+    date: q.date,
+    note,
     createdAt: Date.now(),
+    ...(q.accountId ? { accountId: q.accountId } : {}),
   });
-  saveMoney(next);
+  if (q.accountId) next.settings.lastAccountId = q.accountId;
+  saveMoney(next, base);
+  return id;
 }
-function addQuickIncome(amount, label) {
-  const next = normalizeMoney(state.money);
-  const salary = /salary/i.test(label || '');
+function addQuickIncome(it) {
+  const base = state.money;
+  const next = normalizeMoney(base);
+  const label = capitalise(String(it.note || '').trim());
+  const salary = /salary/i.test(label);
+  const q = quickMoney(base, it, 'income', todayKeyNow());
+  const id = newMoneyId();
   (next.income = next.income || []).unshift({
-    id:
-      typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
-    amount: Math.round(amount),
+    id,
+    amount: q.amount,
+    ...(q.orig ? { orig: q.orig } : {}),
     source: salary ? 'salary' : 'other',
     label: label || (salary ? 'Salary' : 'Income'),
-    date: todayKeyNow(),
+    date: q.date,
+    ...(q.accountId ? { accountId: q.accountId } : {}),
   });
-  saveMoney(next);
+  saveMoney(next, base);
+  return id;
+}
+/* Quick add's Undo for what it put in Money. */
+function removeQuickMoney(ids) {
+  const base = state.money;
+  const next = normalizeMoney(base);
+  next.expenses = next.expenses.filter((x) => !ids.has(x.id));
+  next.income = (next.income || []).filter((x) => !ids.has(x.id));
+  saveMoney(next, base);
 }
 /* Read the sentence; write nothing. Applying straight from the parse meant one
    misread — "spent 200 on lunch" landing as 200ml of water — wrote itself into a
@@ -3727,14 +3805,46 @@ async function parseQuickAdd(text) {
     method: 'POST',
     body: JSON.stringify({ text, habits, today: todayKeyNow(), now }),
   });
-  // A sentence can't write into a tracker the user switched off.
-  const intents = ((res && res.intents) || []).filter(
-    (it) => !INTENT_FEATURE[it.type] || featureOn(INTENT_FEATURE[it.type])
-  );
+  // A sentence can't write into a tracker the user switched off, and the
+  // preview says which were dropped. Model text loses its emoji here, so what
+  // the preview shows is what gets saved.
+  const intents = [];
+  const skipped = [];
+  ((res && res.intents) || []).forEach((raw) => {
+    const it = {};
+    for (const k in raw) it[k] = typeof raw[k] === 'string' ? stripEmoji(raw[k]) : raw[k];
+    const feat = INTENT_FEATURE[it.type];
+    if (!feat || featureOn(feat)) intents.push(it);
+    else skipped.push(skippedLine(feat, it.type));
+  });
+  const out = { intents, skipped: [...new Set(skipped)] };
   // No model (or it failed): the server's plain patterns may still have read it.
-  if (!res || res.configured === false) return { configured: false, fallback: true, intents };
-  if (res.unavailable) return { configured: true, unavailable: true, fallback: true, intents };
-  return { configured: true, intents, note: res.note };
+  if (!res || res.configured === false) return { ...out, configured: false, fallback: true };
+  if (res.unavailable) return { ...out, configured: true, unavailable: true, fallback: true };
+  // Today's AI budget is spent: the server read it with its plain patterns.
+  // A success, said quietly — not an error.
+  if (res.limited) return { ...out, configured: true, limited: true, fallback: true };
+  // res.note is not passed on: the model writes it in the past tense ("Logged
+  // ...") above a preview nothing has been logged from yet.
+  return { ...out, configured: true };
+}
+
+/* "Money Buddy is off, so the expense was skipped." */
+const INTENT_NOUN = {
+  habit: 'habit tick',
+  habit_new: 'new habit',
+  water: 'water',
+  expense: 'expense',
+  income: 'income',
+  food: 'food',
+  goal: 'goal',
+  note: 'note',
+  reminder: 'reminder',
+  focus: 'focus session',
+};
+function skippedLine(feat, type) {
+  const def = FEATURE_DEFS.find((f) => f.key === feat);
+  return (def ? def.label : feat) + ' is off, so the ' + (INTENT_NOUN[type] || type) + ' was skipped.';
 }
 
 /* Intent type -> the feature toggle it writes into (QuickAddApplier.FEATURE). */
@@ -3812,10 +3922,11 @@ function describeIntent(it) {
     case 'water':
       return { icon: 'droplets', label: 'Water', detail: it.amountMl + ' ml' };
     case 'sleep':
+      // Quality only when the user gave one: the parser sends null otherwise.
       return {
         icon: 'moon',
         label: 'Sleep',
-        detail: it.hours + ' h' + (it.quality ? ' · ' + it.quality : ''),
+        detail: withDay(it.hours + ' h' + (it.quality ? ' · ' + it.quality : ''), it),
       };
     case 'mood':
       return {
@@ -3826,12 +3937,18 @@ function describeIntent(it) {
     case 'reminder':
       return { icon: 'bell', label: 'Reminder', detail: reminderSummary(it) };
     case 'expense':
-    case 'income':
+    case 'income': {
+      // Money's own formatting; a foreign amount with no rate set is shown as
+      // such and starts unticked, so it is never booked 1:1 unseen.
+      const q = quickMoney(state.money, it, it.type, todayKeyNow());
+      const note = capitalise(String(it.note || '').trim());
       return {
         icon: 'wallet',
         label: it.type === 'expense' ? 'Expense' : 'Income',
-        detail: ((state.money && state.money.currency) || '₹') + it.amount + (it.note ? ' · ' + it.note : ''),
+        detail: withDay(q.label + (note ? ' · ' + note : ''), it),
+        unticked: !!q.noRate,
       };
+    }
     case 'task_done': {
       const t = matchOpenTask(it.title);
       return t
@@ -3846,7 +3963,7 @@ function describeIntent(it) {
       return {
         icon: 'utensils',
         label: 'Food',
-        detail: it.name + (it.meal ? ' · ' + it.meal : '') + (it.kcal ? ' · ' + it.kcal + ' kcal' : ''),
+        detail: withDay(it.name + (it.meal ? ' · ' + it.meal : '') + (it.kcal ? ' · ' + it.kcal + ' kcal' : ''), it),
       };
     case 'note':
       return { icon: 'notebook-pen', label: 'Note', detail: it.text };
@@ -3861,6 +3978,12 @@ function describeIntent(it) {
     default:
       return null;
   }
+}
+
+/* A row's detail plus its day, when the sentence named one that isn't today. */
+function withDay(detail, it) {
+  const w = dayWord(intentDay(it, todayKeyNow()), todayKeyNow());
+  return w ? detail + ' · ' + w : detail;
 }
 
 /** "09:00:00" (the API's LocalTime) -> "09:00"; anything else -> "". */
@@ -4021,18 +4144,42 @@ async function captureReminder(btn) {
    screen, start the timer, switch the theme) run last, so the logging lands
    first and the screen the sentence asked for is where the user ends up. */
 async function applyQuickAdd(intents) {
-  let applied = 0;
+  const applied = []; // [{ it, ref }]; ref = the Money id an expense/income got
   const ordered = intents
     .filter((it) => !CONTROL_INTENTS.has(it.type))
     .concat(intents.filter((it) => CONTROL_INTENTS.has(it.type)));
   for (const it of ordered) {
     try {
-      if (await applyIntent(it)) applied++;
+      const ref = await applyIntent(it);
+      if (ref) applied.push({ it, ref });
     } catch (_) {
       /* skip a single bad intent; keep applying the rest */
     }
   }
   return applied;
+}
+
+/* Where each logged intent went, for the toast: "Logged to Money and Food." */
+const INTENT_PLACE = {
+  task: 'Tasks',
+  task_done: 'Tasks',
+  habit: 'Habits',
+  habit_new: 'Habits',
+  water: 'Water',
+  food: 'Food',
+  sleep: 'Sleep',
+  mood: 'Mood',
+  expense: 'Money',
+  income: 'Money',
+  note: 'Notes',
+  reminder: 'Calendar',
+  goal: 'Goals',
+};
+function loggedToLine(applied) {
+  const places = [...new Set(applied.map((a) => INTENT_PLACE[a.it.type]).filter(Boolean))];
+  if (!places.length) return 'Done.';
+  const list = places.length > 1 ? places.slice(0, -1).join(', ') + ' and ' + places[places.length - 1] : places[0];
+  return 'Logged to ' + list + '.';
 }
 
 async function applyIntent(it) {
@@ -4065,31 +4212,36 @@ async function applyIntent(it) {
       if (!it.amountMl) return false;
       await quickAddWater(it.amountMl);
       return true;
-    case 'food':
+    case 'food': {
       if (!it.name) return false;
+      // A named past day ("yesterday") lands at that day's noon.
+      const day = intentDay(it, todayKeyNow());
       await logFoodEntry({
         foodName: it.name,
         mealSlot: it.meal || null,
         kcal: it.kcal || null,
-        loggedAt: new Date().toISOString(),
+        loggedAt: (day === todayKeyNow() ? new Date() : new Date(day + 'T12:00:00')).toISOString(),
       });
       return true;
+    }
     case 'sleep':
       if (!it.hours) return false;
-      await saveSleepEntry(sleepPayloadFromHours(it.hours, it.quality));
+      await saveSleepEntry({
+        ...sleepPayloadFromHours(it.hours, it.quality),
+        date: intentDay(it, todayKeyNow()),
+      });
       return true;
     case 'mood':
       if (!it.mood) return false;
-      await saveMoodEntry({ mood: it.mood, energy: it.energy || 'medium' });
+      // Energy only when the sentence said it.
+      await saveMoodEntry({ mood: it.mood, energy: it.energy || null });
       return true;
     case 'expense':
       if (!it.amount) return false;
-      addQuickExpense(it.amount, it.note);
-      return true;
+      return addQuickExpense(it);
     case 'income':
       if (!it.amount) return false;
-      addQuickIncome(it.amount, it.note);
-      return true;
+      return addQuickIncome(it);
     case 'note':
       if (!it.text) return false;
       await api('/api/notes', {
@@ -5036,13 +5188,19 @@ async function saveSleepEntry(payload) {
 async function saveMoodEntry(payload) {
   const key = payload.date || todayKeyNow();
   state.wellness = Object.assign(emptyWellness(), state.wellness || {});
+  // A quick mood tap names the mood only: it keeps what the day already had
+  // and invents no energy (it used to record "medium" nobody chose).
+  const prev = (state.wellness.moodByDate || {})[key] || {};
+  const energy = payload.energy || prev.energy || null;
+  const stress = payload.stress || prev.stress || 'normal';
+  const note = payload.note !== undefined ? payload.note : prev.note;
   state.wellness.moodByDate = Object.assign({}, state.wellness.moodByDate || {}, {
     [key]: {
       date: key,
       mood: payload.mood || 'okay',
-      energy: payload.energy || 'medium',
-      stress: payload.stress || 'normal',
-      note: payload.note || '',
+      energy,
+      stress,
+      note: note || '',
       updatedAt: new Date().toISOString(),
     },
   });
@@ -5054,9 +5212,9 @@ async function saveMoodEntry(payload) {
       body: JSON.stringify({
         date: key,
         mood: payload.mood || 'okay',
-        energy: payload.energy || 'medium',
-        stress: payload.stress || 'normal',
-        note: payload.note || null,
+        energy,
+        stress,
+        note: note || null,
       }),
     });
     toastSuccess('Check-in saved.');
@@ -5133,13 +5291,39 @@ function openSleepSchedule() {
     { class: 'gb-input gb-input--about', maxlength: '280', placeholder: 'Optional note' },
     existing.note || ''
   );
+  // Which night the date means (the one that ended that morning) and how long
+  // it was, live: it used to say "for today" whatever night was being edited.
+  const nightLine = h('div', { class: 'gb-field-hint', 'aria-live': 'polite' });
+  const paintNight = () => {
+    const day = dateInput.value || today;
+    const y = new Date(today + 'T12:00:00');
+    y.setDate(y.getDate() - 1);
+    const night =
+      day === today
+        ? 'Last night'
+        : day === keyOfDate(y)
+          ? 'The night before last'
+          : 'The night into ' + new Date(day + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+    const toMin = (v) => {
+      const m = /^(\d{2}):(\d{2})/.exec(v || '');
+      return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+    };
+    const b = toMin(bedInput.value);
+    const w = toMin(wakeInput.value);
+    const mins = b == null || w == null ? null : (w - b + 1440) % 1440;
+    nightLine.textContent =
+      night + (mins ? ' · ' + Math.floor(mins / 60) + ' h' + (mins % 60 ? ' ' + (mins % 60) + ' min' : '') : '');
+  };
+  [dateInput, bedInput, wakeInput].forEach((el) => el.addEventListener('input', paintNight));
+  paintNight();
   openModal({
-    title: 'Sleep schedule',
-    sub: 'Save bedtime, wake time, and quality for today.',
+    title: 'Sleep',
+    sub: 'Bedtime, wake time and quality for one night.',
     body: h(
       'div',
       { class: 'gb-form' },
-      h('div', { class: 'gb-field-label' }, 'Date'),
+      nightLine,
+      h('div', { class: 'gb-field-label' }, 'Morning you woke up'),
       dateInput,
       h('div', { class: 'gb-field-label' }, 'Bedtime'),
       bedInput,
@@ -6150,9 +6334,21 @@ function deleteFoodEntry(entryId) {
         method: 'DELETE',
       });
       invalidateWeek('food');
+      // Where focus goes once the row is gone (it fell to <body>): the next
+      // row's edit button, else the previous one's, else Log food.
+      const ids = [...root.querySelectorAll('[data-food-id]')].map((el) => el.dataset.foodId);
+      const at = ids.indexOf(String(entryId));
+      const nextId = at < 0 ? null : ids[at + 1] || ids[at - 1] || null;
       removeSoon('[data-food-id="' + entryId + '"]', () => {
         state.food = updated;
         cacheFoodSummary(updated);
+        // After the render() that follows this drop.
+        queueMicrotask(() => {
+          const target =
+            (nextId && root.querySelector('[data-food-id="' + nextId + '"] .gb-food-row-edit')) ||
+            root.querySelector('.gb-food-add');
+          if (target) target.focus();
+        });
       });
     } finally {
       entryDeletesInFlight.delete(key);
@@ -7904,7 +8100,7 @@ function keepReadPicker() {
       saveUiPrefs({ notifyKeepReadDays: Number(v) });
       toastSuccess('Read notifications now stay ' + v + ' days.');
     }
-  );
+  ).node;
 }
 
 /* ---- Settings modal (Profile / Alerts / Account) ---- */
@@ -10593,14 +10789,21 @@ function repaintCalendarGrid() {
 
 /* The water nudge's settings. In ui_prefs like every other preference, so they
    follow the user to their next device; the alarms themselves are per-device. */
-/* When the water nudge is on, learn the hours the user drinks in anyway so the
-   nudge right after them is dropped (push.js usualDrinkHours). */
+/* The hours the user drinks in anyway (push.js usualDrinkHours): the water
+   nudge drops the alarm right after them, and Home's one-thing card reads it
+   (`waterUsualHours`, [] = doesn't log water regularly) to nudge water only
+   for people who log it. Fetched when either can use it; Home repaints only
+   when the answer changed. */
 function loadWaterUsualHours() {
-  if (!waterReminderPrefs().on) return;
+  const nudge = waterReminderPrefs().on;
+  if (!nudge && !featureOn('water')) return;
   api('/api/water/times?days=14')
     .then((times) => {
-      state.waterUsualHours = usualDrinkHours(times);
-      reSyncDeviceAlarms();
+      const hours = usualDrinkHours(times);
+      const changed = JSON.stringify(hours) !== JSON.stringify(state.waterUsualHours);
+      state.waterUsualHours = hours;
+      if (nudge) reSyncDeviceAlarms();
+      if (changed && state.screen === 'home' && !state.loading) render();
     })
     .catch(() => {});
 }
@@ -10651,6 +10854,7 @@ function loadInsightHistory() {
       state.insightHistory = { focus, finished, waterTimes, scores, habits, year, failed: !anyPart };
     }
     if (state.screen === 'report') repaintReport();
+    else if (state.screen === 'home') render();
   });
 }
 
@@ -10969,9 +11173,20 @@ function segmented(options, initial, onChange) {
    (snap.js). Each one is the existing scanner, entered with the photo in hand. */
 const shrinkForSnap = (file) => import('./notes.js').then((m) => m.shrinkPhoto(file));
 const SNAP_FEATURE = { receipt: 'money', plate: 'food', groceries: 'family' };
-/** SNAP_ROUTES minus the ones whose feature is switched off in Settings. */
+/** SNAP_ROUTES minus the ones whose feature is switched off in Settings, and
+    Groceries unless the user is in a family (the pantry is a family's; without
+    one the scan 400s). `state.inFamily` comes from GET /api/family: after wave 2
+    and whenever the Family screen reads it; unknown = not offered. */
 const snapRoutes = () =>
-  Object.fromEntries(Object.entries(SNAP_ROUTES).filter(([k]) => featureOn(SNAP_FEATURE[k])));
+  Object.fromEntries(
+    Object.entries(SNAP_ROUTES).filter(
+      ([k]) => featureOn(SNAP_FEATURE[k]) && (k !== 'groceries' || state.inFamily === true)
+    )
+  );
+const noteFamily = (r) => {
+  state.inFamily = !!(r && r.familyId);
+  return r;
+};
 const SNAP_ROUTES = {
   receipt: (file) =>
     import('./money.js').then((m) =>
@@ -11002,13 +11217,16 @@ const SNAP_ROUTES = {
 // The Quick add bar: one sentence, sorted into the right trackers. Shared by
 // openAddSheet and the top of Home (homeQuickAdd); onLeave runs once a parse
 // found something, before the preview opens. The line is cleared only once it
-// is logged, so cancelling the preview leaves it there to fix.
-function quickAddBox({ onLeave } = {}) {
+// is logged. Cancelling the preview hands the text to onCancel (the sheet,
+// closed by onLeave, reopens with it), else focuses this box again.
+function quickAddBox({ onLeave, onCancel, text = '' } = {}) {
   // Natural-language quick-add: type it once, we sort it into the right trackers.
   const qaInput = h('input', {
     type: 'text',
     class: 'gb-input',
-    placeholder: 'e.g. spent 200 on lunch, had 2 idli, slept 7h, remind me at 9 to call mom, open money',
+    value: text,
+    // Short enough not to be cut off on a phone; no money example when Money is off.
+    placeholder: featureOn('money') ? 'e.g. spent 200 on lunch, slept 7h' : 'e.g. slept 7h, call mom at 6',
     'aria-label': 'Quick log in your own words',
     enterkeyhint: 'send',
     autocomplete: 'off',
@@ -11030,12 +11248,14 @@ function quickAddBox({ onLeave } = {}) {
         done();
         qaInput.disabled = false;
         pushToast(
-          r.unavailable
-            ? "Couldn't reach the assistant, and couldn't read that without it. Try again?"
-            : !r.configured
-              ? 'Couldn’t read that. Try short phrases like “spent 200 on lunch, slept 7h, remind me at 6 to call mom”.'
-              : "Couldn't find anything to log there — try being more specific.",
-          'error',
+          r.skipped.length
+            ? r.skipped.join(' ')
+            : r.unavailable
+              ? "Couldn't reach the assistant, and couldn't read that without it. Try again?"
+              : !r.configured || r.limited
+                ? 'Couldn’t read that. Try short phrases like “spent 200 on lunch, slept 7h”.'
+                : "Couldn't find anything to log there — try being more specific.",
+          r.skipped.length ? 'info' : 'error',
           4200
         );
         return;
@@ -11054,11 +11274,20 @@ function quickAddBox({ onLeave } = {}) {
         logged();
         return;
       }
-      openQuickAddPreview(
-        rows,
-        r.fallback ? 'Read without the assistant — switch off anything it got wrong.' : r.note,
-        logged
-      );
+      const sub = [
+        r.limited
+          ? 'Read without AI this time — switch off anything it got wrong.'
+          : r.fallback
+            ? 'Read without the assistant — switch off anything it got wrong.'
+            : '',
+        ...r.skipped,
+      ]
+        .filter(Boolean)
+        .join(' ');
+      openQuickAddPreview(rows, sub, logged, () => {
+        if (onCancel) onCancel(qaInput.value);
+        else if (qaInput.isConnected) qaInput.focus();
+      });
     } catch (err) {
       done();
       qaInput.disabled = false;
@@ -11176,8 +11405,11 @@ function homeQuickAdd() {
   return (homeQaNode = quickAddBox());
 }
 
-function openAddSheet() {
+// `prefill`: the Quick add line coming back from a cancelled preview (onAdd
+// passes a click event, hence the type check).
+function openAddSheet(prefill) {
   const { sheet, close } = openOverlay({ label: 'Quick add' });
+  const qaText = typeof prefill === 'string' ? prefill : '';
 
   const routes = snapRoutes();
   const opts = [
@@ -11290,7 +11522,7 @@ function openAddSheet() {
       )
     ),
     h('div', { class: 'gb-quickadd-or' }, 'or describe it in one line'),
-    quickAddBox({ onLeave: close }),
+    quickAddBox({ onLeave: close, onCancel: openAddSheet, text: qaText }),
     h(
       'button',
       { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel', onclick: close },
@@ -11298,6 +11530,15 @@ function openAddSheet() {
     )
   );
   refreshIcons();
+  // Back from a cancelled preview: the caret at the end of the line, ready to fix.
+  if (qaText) {
+    setTimeout(() => {
+      const i = sheet.querySelector('.gb-quickadd-row .gb-input');
+      if (!i) return;
+      i.focus();
+      i.setSelectionRange(i.value.length, i.value.length);
+    }, 60);
+  }
 }
 
 /* `<input type="datetime-local">` wants wall-clock local time, not the UTC an
@@ -11662,7 +11903,7 @@ const HABIT_TEMPLATES = [
   { key: 'read', name: 'Read 20 min', domain: 'study', icon: 'book-open' },
   { key: 'walk', name: 'Walk 8k steps', domain: 'fitness', icon: 'footprints', metric: 'steps' },
   { key: 'nosugar', name: 'No sugar', domain: 'habit', icon: 'ban', kind: 'quit' },
-  { key: 'meditate', name: 'Meditate', domain: 'habit', icon: 'leaf' },
+  { key: 'meditate', name: 'Meditate', domain: 'habit', icon: 'leaf', metric: 'minutes' },
 ];
 
 const METRIC_LABEL = { none: 'Just a tick', km: 'Distance (km)', steps: 'Steps', minutes: 'Minutes' };
@@ -11960,7 +12201,8 @@ function habitHistoryPanel(habit) {
     const notes = recentNotes({ days: rows, since, today, cadence, kind });
     let allLabel = clipped ? 'Last 2 years' : 'All time';
     if (quit) allLabel = 'Clean, ' + allLabel.toLowerCase();
-    panel.replaceChildren(
+    // Filtered: replaceChildren prints a null child as the text "null".
+    const parts = [
       h(
         'div',
         { class: 'gb-hh-stats' },
@@ -12003,8 +12245,9 @@ function habitHistoryPanel(habit) {
               )
             )
           )
-        : null
-    );
+        : null,
+    ];
+    panel.replaceChildren(...parts.filter(Boolean));
   }
 
   load();
@@ -12112,7 +12355,7 @@ function openHabitForm(habit) {
   );
   const metricField = h(
     'div',
-    { style: { display: 'none' } },
+    null,
     h('div', { class: 'gb-field-label' }, 'Records'),
     metricSel
   );
@@ -12140,20 +12383,19 @@ function openHabitForm(habit) {
       )
     )
   );
-  // The presets and the unit only make sense for fitness; everything else is a
-  // plain tick, which is what every habit was before this.
+  // The presets are fitness-only; what a habit records is any build habit's
+  // (Minutes for Meditate is normal). Switching category keeps the metric: it
+  // used to reset to none off Fitness, so saving an unchanged General habit
+  // that records minutes wiped its metric and last value.
   syncDomain = (d) => {
     const fitness = d === 'fitness';
     presetRow.style.display = fitness ? '' : 'none';
-    metricField.style.display = fitness ? '' : 'none';
-    if (!fitness) {
-      metricSel.value = 'none';
-      presetIcon = null;
-    }
+    metricField.style.display = '';
+    if (!fitness) presetIcon = null;
   };
   if (habit) {
     syncDomain(domain.get());
-    if (habit.domain === 'fitness') metricSel.value = habit.metric || 'none';
+    metricSel.value = habit.metric || 'none';
   }
 
   // Build (tick it) or break (quit: clean unless a slip is logged). Chosen at
@@ -12209,7 +12451,7 @@ function openHabitForm(habit) {
                 const di = DOMAIN_ORDER.indexOf(t.domain || 'habit');
                 if (di >= 0) domain.node.children[di].click();
                 kindSeg.node.children[t.kind === 'quit' ? 1 : 0].click();
-                if (t.metric) metricSel.value = t.metric;
+                metricSel.value = t.metric || 'none';
                 // After the category click: syncDomain clears a non-fitness icon.
                 presetIcon = t.icon;
               },
@@ -12306,7 +12548,7 @@ function openHabitForm(habit) {
         domain: d,
         icon,
         cadence: cad,
-        metric: d === 'fitness' && !quit ? metricSel.value : 'none',
+        metric: quit ? 'none' : metricSel.value,
         ...(targetPerWeek ? { targetPerWeek } : {}),
       };
       if (habit) {
@@ -12344,8 +12586,10 @@ function openHabitForm(habit) {
    and can be switched off, so one wrong reading costs a tap instead of a wrong
    number in a tracker. A habit it couldn't match is off and stays off — there is
    nothing to tick. */
-function openQuickAddPreview(rows, note, onLogged) {
-  const chosen = rows.map((r) => !r.d.unknown);
+function openQuickAddPreview(rows, note, onLogged, onCancel) {
+  // A foreign amount with no rate set (`unticked`) starts off: the user decides.
+  const chosen = rows.map((r) => !r.d.unknown && !r.d.unticked);
+  let logged = false;
   const list = h(
     'div',
     { class: 'gb-qa-preview' },
@@ -12384,15 +12628,39 @@ function openQuickAddPreview(rows, note, onLogged) {
       const picked = rows.filter((_, i) => chosen[i]).map((r) => r.it);
       if (!picked.length) throw new Error('Nothing selected — switch at least one on.');
       const applied = await applyQuickAdd(picked);
-      if (applied > 0) {
-        toastSuccess('Logged ' + applied + (applied > 1 ? ' things.' : ' thing.'));
-        onLogged && onLogged();
-        await loadData();
+      if (!applied.length) throw new Error('None of those could be logged.');
+      logged = true;
+      // Says where things went. Undo is offered when all of it was Money
+      // entries, the one kind removable in place. ponytail: other kinds have
+      // their own delete paths (task, water, food); wire them here if asked.
+      const moneyIds = new Set(
+        applied.filter((a) => a.it.type === 'expense' || a.it.type === 'income').map((a) => a.ref)
+      );
+      if (moneyIds.size === applied.length) {
+        pushToast(loggedToLine(applied), 'success', 6000, {
+          label: 'Undo',
+          run: () => {
+            removeQuickMoney(moneyIds);
+            toastSuccess('Removed from Money.');
+          },
+        });
       } else {
-        throw new Error('None of those could be logged.');
+        toastSuccess(loggedToLine(applied));
       }
+      onLogged && onLogged();
+      await loadData();
     },
   });
+  // openModal has no close hook: the preview's own node leaving the page is
+  // the close. Not logged by then = cancelled, and the typed line goes back.
+  if (onCancel) {
+    const watch = new MutationObserver(() => {
+      if (list.isConnected) return;
+      watch.disconnect();
+      if (!logged) onCancel();
+    });
+    watch.observe(document.body, { childList: true });
+  }
 }
 
 /* ---- Starter packs (Home's "Getting started") ----
@@ -12723,7 +12991,13 @@ function relativeTime(iso) {
   if (diffSec < 3600) return Math.round(diffSec / 60) + ' min ago';
   if (diffSec < 86400) return Math.round(diffSec / 3600) + ' h ago';
   if (diffSec < 604800) return Math.round(diffSec / 86400) + ' d ago';
-  return new Date(iso).toLocaleDateString();
+  // "11 Oct", never "11/10/2026" (which reads as November in half the world).
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    ...(d.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}),
+  });
 }
 
 /* ---- Bell dropdown ---- */
@@ -13490,8 +13764,10 @@ const SCREENS = {
         homeLayout: (state.user && state.user.homeLayout) || null,
         quickAdd: homeQuickAdd(),
         trends: state.trends,
-        // ponytail: Home never fetches history; it reuses Report's once loaded. Fetch here if Home must match Report on a cold start
+        // Loaded once per session after wave 2 (loadSecondaryData), so Home's
+        // top insight matches Report's on a cold start.
         insightHistory: state.insightHistory,
+        waterUsualHours: state.waterUsualHours,
         dismissedInsights: dismissedInsights(),
         onDismissInsight: (id) => {
           dismissInsight(id);
@@ -13816,7 +14092,7 @@ const SCREENS = {
         (m) =>
           m.ScreenFamily({
             api: {
-              getFamily: () => api('/api/family'),
+              getFamily: () => api('/api/family').then(noteFamily),
               addMember: (body) =>
                 api('/api/family/members', { method: 'POST', body: JSON.stringify(body) }),
               updateMember: (id, body) =>
@@ -15324,6 +15600,7 @@ function logout() {
   // Another account must not see this one's Insights, nor wait out its throttle.
   state.insightHistory = null;
   state.waterUsualHours = null;
+  state.inFamily = undefined;
   loadedFor = null; // the next sign-in is a first load, not a refresh
   insightHistoryAt = 0;
   insightReq = null; // a fetch still in flight belongs to the old account: drop it
