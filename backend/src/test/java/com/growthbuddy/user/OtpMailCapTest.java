@@ -45,8 +45,9 @@ class OtpMailCapTest {
     private final MailService mail = mock(MailService.class);
     private final RateLimiter limiter = mock(RateLimiter.class);
     private final Map<String, Integer> hits = new HashMap<>();
+    private final PasswordResetTokenRepository resetTokens = mock(PasswordResetTokenRepository.class);
     private final AuthService auth = new AuthService(users, creds,
-            mock(EmailVerificationTokenRepository.class), mock(PasswordResetTokenRepository.class),
+            mock(EmailVerificationTokenRepository.class), resetTokens,
             mock(WhatsAppOtpTokenRepository.class), mail, mock(SessionService.class), null, limiter,
             mock(LoginAttemptGuard.class), null, "");
     private final User user = new User();
@@ -167,5 +168,15 @@ class OtpMailCapTest {
         assert429(() -> auth.signup(new SignupRequest(fresh, PASSWORD, null, null)));
         verify(users, never()).save(any());
         assertThat(hits).containsKey("otpmail:" + fresh);
+    }
+
+    /* Anyone can ask for a reset mail, so a request must not void the code the
+       owner already has: each one adds a code, none deletes. */
+    @Test
+    void aNewResetCodeDoesNotVoidTheOneBeingTyped() {
+        auth.forgotPassword(new EmailOnlyRequest(EMAIL));
+        auth.forgotPassword(new EmailOnlyRequest(EMAIL));
+        verify(resetTokens, times(2)).save(any());
+        verify(resetTokens, never()).deleteAllForUser(any());
     }
 }

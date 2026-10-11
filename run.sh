@@ -18,15 +18,18 @@ fi
 jar="$repo_root/backend/target/growth-buddy-backend-0.1.0.jar"
 if [[ ! -f "$jar" ]] || find "$repo_root/backend/src" "$repo_root/backend/pom.xml" -newer "$jar" -print -quit | grep -q .; then
   echo "Building backend..."
-  ( cd backend && mvn -q -DskipTests package )
+  ( cd backend && ./mvnw -q -DskipTests package )
 fi
 
 # Stop any existing instance on 8080.
 pids="$(lsof -nP -iTCP:8080 -sTCP:LISTEN -t || true)"
 if [[ -n "${pids// /}" ]]; then
   echo "Stopping existing backend on 8080: $pids"
-  kill -9 $pids || true
-  sleep 1
+  # TERM first so Spring shuts down cleanly; -9 only for what is still there.
+  kill $pids || true
+  sleep 2
+  pids="$(lsof -nP -iTCP:8080 -sTCP:LISTEN -t || true)"
+  [[ -n "${pids// /}" ]] && kill -9 $pids || true
 fi
 
 if [[ "${1:-}" == "--bg" ]]; then

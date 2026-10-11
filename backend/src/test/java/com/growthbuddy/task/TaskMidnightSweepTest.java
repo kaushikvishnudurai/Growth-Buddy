@@ -6,37 +6,34 @@ import java.time.Instant;
 import org.junit.jupiter.api.Test;
 
 /**
- * The sweep runs hourly and fires on whichever tick lands in the user's first
- * local hour of the day. Everything else about the job is two repository calls;
- * this is the only decision it makes.
+ * The sweep clears ticks from before the user's own local midnight, on any hourly
+ * tick. Everything else about the job is two repository calls; the midnight is
+ * the only decision it makes.
  */
 class TaskMidnightSweepTest {
 
-    /** 2026-09-15T18:30:00Z — 00:00 in Kolkata (+5:30), 19:30 in London (+1). */
+    /** 2026-09-15T18:30:00Z — 00:00 on the 16th in Kolkata (+5:30), 19:30 on the 15th in London (+1). */
     private static final Instant AT = Instant.parse("2026-09-15T18:30:00Z");
 
     @Test
-    void firesOnlyInsideEachZonesOwnFirstHour() {
-        assertThat(TaskMidnightSweep.isLocalMidnightHour("Asia/Kolkata", AT)).isTrue();
-        assertThat(TaskMidnightSweep.isLocalMidnightHour("Europe/London", AT)).isFalse();
-        assertThat(TaskMidnightSweep.isLocalMidnightHour("UTC", AT)).isFalse();
-        assertThat(TaskMidnightSweep.isLocalMidnightHour("UTC", Instant.parse("2026-09-15T00:20:00Z")))
-                .isTrue();
+    void midnightIsEachZonesOwn() {
+        assertThat(TaskMidnightSweep.localMidnight("Asia/Kolkata", AT)).isEqualTo(AT);
+        assertThat(TaskMidnightSweep.localMidnight("Europe/London", AT))
+                .isEqualTo(Instant.parse("2026-09-14T23:00:00Z"));
+        // Hours later the same midnight still stands, so a missed hour-0 tick is caught up.
+        assertThat(TaskMidnightSweep.localMidnight("Asia/Kolkata", AT.plusSeconds(5 * 3600))).isEqualTo(AT);
     }
 
     @Test
-    void offsetZonesStillCatchExactlyOneHourlyTick() {
-        // Kathmandu is +5:45, so the hourly ticks land at :15 past each local
-        // hour. 18:30Z is 00:15 local — inside the first hour, and the next
-        // tick an hour later is already past it.
-        assertThat(TaskMidnightSweep.isLocalMidnightHour("Asia/Kathmandu", AT)).isTrue();
-        assertThat(TaskMidnightSweep.isLocalMidnightHour("Asia/Kathmandu", AT.plusSeconds(3600)))
-                .isFalse();
+    void aZoneSpringingForwardAtMidnightStillHasADayStart() {
+        // Santiago skips 00:00 to 01:00 on 2026-09-06; the day starts at 01:00 local (04:00Z).
+        assertThat(TaskMidnightSweep.localMidnight("America/Santiago", Instant.parse("2026-09-06T12:00:00Z")))
+                .isEqualTo(Instant.parse("2026-09-06T04:00:00Z"));
     }
 
     @Test
     void unknownZoneFallsBackToUtcRatherThanThrowing() {
-        assertThat(TaskMidnightSweep.isLocalMidnightHour("Mars/Olympus", Instant.parse("2026-09-15T00:20:00Z")))
-                .isTrue();
+        assertThat(TaskMidnightSweep.localMidnight("Mars/Olympus", Instant.parse("2026-09-15T05:20:00Z")))
+                .isEqualTo(Instant.parse("2026-09-15T00:00:00Z"));
     }
 }

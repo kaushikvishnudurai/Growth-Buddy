@@ -31,6 +31,7 @@ import {
 } from './home-order.js';
 import { suggestReminderTime } from './habit-stats.js';
 import { usualSleep } from './nudges.js';
+import { dateKey, todayKey } from './dates.js';
 import { fmtDate, fmtNumber } from './i18n.js';
 import {
   groupBySlot,
@@ -79,7 +80,9 @@ function OnboardingCard({
       icon: 'list-todo',
       action: onAddTask,
     },
-    {
+    // Only when the wellness card isn't on Home: that card asks "How are you
+    // feeling?" with one-tap answers, and the two sat one above the other.
+    onAddMood && {
       // Ever, not today: a today-only check re-opened the checklist every morning.
       done: !!(wellness && wellness.moodByDate && Object.keys(wellness.moodByDate).length),
       label: 'Log how you feel',
@@ -168,12 +171,6 @@ const PRIORITY = {
   Medium: { bg: 'var(--sun-50)', fg: 'var(--sun-700)', dot: 'var(--sun-500)' },
   Low: { bg: 'var(--surface-3)', fg: 'var(--fg2)', dot: 'var(--warm-400)' },
 };
-
-function todayKey() {
-  const d = new Date();
-  const pad = (n) => (n < 10 ? '0' + n : String(n));
-  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
-}
 
 function sleepHours(entry) {
   if (!entry || !entry.bedtime || !entry.wakeTime) return null;
@@ -2127,12 +2124,6 @@ function MiniCalendarCard({
   ];
   const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-  function pad(n) {
-    return n < 10 ? '0' + n : String(n);
-  }
-  function dateKey(y, m, d) {
-    return y + '-' + pad(m + 1) + '-' + pad(d);
-  }
   function parseKey(key) {
     const bits = String(key || '')
       .split('-')
@@ -2615,7 +2606,9 @@ function ScreenDashboard({
     money: () => MoneyHomeCard({ money, onSaveMoney, onOpen: onOpenMoney, requestReceiptScan }),
   };
 
-  const blocks = resolveHomeLayout(homeLayout)
+  const layout = resolveHomeLayout(homeLayout);
+  const wellnessShown = layout.some((item) => item.id === 'wellness' && item.enabled);
+  const blocks = layout
     .map((item) => {
       if (!item.enabled) return null;
       const def = HOME_WIDGETS.find((w) => w.id === item.id);
@@ -2626,17 +2619,6 @@ function ScreenDashboard({
       return h('div', { class: 'gb-dash-block' }, ...kids);
     })
     .filter(Boolean);
-
-  const onboard = OnboardingCard({
-    tasks,
-    habits,
-    wellness,
-    onAddHabit,
-    onAddTask,
-    onAddMood,
-    onStarterPack,
-    onOnboardDismiss,
-  });
 
   // Before you've added anything, the checklist IS the screen. Every widget
   // below it renders its own "nothing yet" state, so a new account used to open
@@ -2654,6 +2636,17 @@ function ScreenDashboard({
     (food && (food.entries || []).length > 0) ||
     (water && (water.entries || []).length > 0) ||
     (wellness && (any(wellness.moodByDate) || any(wellness.sleepByDate)));
+
+  const onboard = OnboardingCard({
+    tasks,
+    habits,
+    wellness,
+    onAddHabit,
+    onAddTask,
+    onAddMood: started && wellnessShown ? null : onAddMood,
+    onStarterPack,
+    onOnboardDismiss,
+  });
   if (onboard && !started) {
     return h(
       'div',

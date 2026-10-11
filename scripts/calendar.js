@@ -13,6 +13,7 @@ import {
   submitOnEnter,
   confirmDialog,
   formatTime,
+  focusSoon,
 } from './gb-kit.js';
 import {
   occursOn,
@@ -26,6 +27,7 @@ import {
 } from './recurrence.js';
 import { chimeOptionValue, chimeOptions, playChime } from './chime.js';
 import { usualReminderTime } from './nudges.js';
+import { pad2 as pad, dateKey as keyOf, todayKey } from './dates.js';
 
 const MONTHS = [
   'January',
@@ -93,23 +95,10 @@ const REPEATS = {
 };
 const REPEAT_ORDER = ['none', 'daily', 'weekdays', 'weekly', 'monthly', 'yearly'];
 
-function pad(n) {
-  return n < 10 ? '0' + n : String(n);
-}
-
-/* Build a 'YYYY-MM-DD' key from y / m(0-11) / d. */
-function keyOf(y, m, d) {
-  return y + '-' + pad(m + 1) + '-' + pad(d);
-}
 
 function parseKey(key) {
   const [y, m, d] = key.split('-').map(Number);
   return { y: y, m: m - 1, d: d };
-}
-
-function todayKey() {
-  const t = new Date();
-  return keyOf(t.getFullYear(), t.getMonth(), t.getDate());
 }
 
 function isFutureKey(key) {
@@ -1767,7 +1756,7 @@ function openEditDialog(rem, occKey, onEdit) {
     )
   );
   refreshIcons();
-  setTimeout(() => textInput.focus(), 60);
+  focusSoon(textInput);
 }
 
 /** "HH:MM" local, from a snooze's instant — what formatTime takes. */

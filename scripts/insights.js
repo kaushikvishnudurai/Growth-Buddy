@@ -17,6 +17,8 @@
    on one scale. Exported functions are pure so they can be unit-checked with
    plain `node` (see insights.test.mjs).
    ===================================================================== */
+import { fmtIn, homeCur } from './money-core.js';
+import { localKey } from './dates.js';
 
 // Ordinal value maps for the categorical check-ins.
 const ORD = { low: 1, okay: 2, good: 3, great: 4, medium: 2, high: 3, calm: 1, normal: 2 };
@@ -480,13 +482,9 @@ function bestBedtime(sig) {
 
 const pct = (v) => Math.round(v * 100) + '%';
 const hh = (h) => String(h % 24).padStart(2, '0') + ':00';
-const fmtMoney = (v) => Math.round(v).toLocaleString();
+// Money's own formatter in the user's home currency; it used to print a bare number.
+const fmtMoney = (v, m) => fmtIn(Math.round(v), homeCur(m));
 
-/** Local YYYY-MM-DD of a Date. */
-function localKey(d) {
-  const p = (n) => String(n).padStart(2, '0');
-  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
-}
 
 /** The two-hour window in which focus sessions run longest. */
 export function focusHours(sessions) {
@@ -896,14 +894,14 @@ export function unusualExpense(m, today) {
     icon: 'wallet',
     title: 'Unusual expense',
     text:
-      fmtMoney(best.e.amount) +
+      fmtMoney(best.e.amount, m) +
       ' on ' +
       best.e.category +
       (best.e.note ? ' (' + best.e.note + ')' : '') +
       ' is ' +
       Math.round(best.x) +
       'x your usual ' +
-      fmtMoney(best.usual) +
+      fmtMoney(best.usual, m) +
       '.',
     basis: best.n + ' earlier ' + best.e.category + ' expenses',
     effect: Math.min(0.5, best.x / 10),
@@ -943,7 +941,7 @@ export function hiddenSubscription(m, today) {
         '“' +
         g[0].note +
         '”: about ' +
-        fmtMoney(amt) +
+        fmtMoney(amt, m) +
         ' every month (' +
         g.length +
         ' times). Track it as a subscription in Money?',

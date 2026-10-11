@@ -10,7 +10,7 @@ pantry, shopping). Docs name symbols — `grep -n` them.
 | Method | Notes |
 |---|---|
 | `getFamily(userId)` | read-only snapshot |
-| `addMember(userId, req)` | member may be **unmapped** (no account) |
+| `addMember(userId, req)` | member may be **unmapped** (no account). `checkedDob` refuses a future birth date and, for mother/father/grandparents/spouse, one under `MIN_ADULT_REL_AGE` (12) |
 | `updateMember` / `updateProfile` | owner, or the mapped member themselves (`requireManageOrSelf`) |
 | `removeMember` | owner only; tells a linked member |
 | `transferOwnership` | the only way an owner can then leave |

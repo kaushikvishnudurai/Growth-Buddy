@@ -23,4 +23,14 @@ class DigestQuietHoursTest {
         assertThat(DigestScheduler.digestHourFor(6, Map.of("quietStart", "22:00", "quietEnd", "07:30")))
                 .isEqualTo(8);
     }
+
+    @Test
+    void aMissedHourIsCaughtUpLaterThatDayButNotInsideQuietHours() {
+        Map<String, Object> night = Map.of("quietStart", "22:00", "quietEnd", "07:00");
+        java.time.LocalDate d = java.time.LocalDate.of(2026, 10, 11);
+        assertThat(DigestScheduler.due(d.atTime(7, 0), 8, night)).isFalse();
+        assertThat(DigestScheduler.due(d.atTime(8, 0), 8, night)).isTrue();
+        assertThat(DigestScheduler.due(d.atTime(15, 0), 8, night)).isTrue();
+        assertThat(DigestScheduler.due(d.atTime(23, 0), 8, night)).isFalse();
+    }
 }

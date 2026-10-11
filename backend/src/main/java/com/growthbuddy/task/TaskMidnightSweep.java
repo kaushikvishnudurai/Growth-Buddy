@@ -4,7 +4,8 @@ import com.growthbuddy.common.UserZone;
 import com.growthbuddy.user.User;
 import com.growthbuddy.user.UserRepository;
 import java.time.Instant;
-import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,14 +25,11 @@ import org.springframework.transaction.annotation.Transactional;
  * forward: it is still to do. History rows are untouched, so the report,
  * the completion count and the "done 3×" sub-line survive the sweep.
  *
- * <p>Runs hourly rather than at one fixed time because midnight is a local
- * event — the same pattern {@code DigestScheduler} uses. Re-running is
- * harmless: the second pass finds nothing left to clear.
- *
- * <p>ponytail: an hourly tick, not a per-user timer. In the handful of zones
- * that spring forward AT midnight, hour 0 doesn't exist that night and the
- * sweep is skipped — the next midnight clears both days. A per-user scheduled
- * job would fix that and is not worth it.
+ * <p>Runs hourly because midnight is a local event. Any tick may sweep a user
+ * whose oldest tick predates their local today, not only the hour-0 one: a host
+ * asleep through midnight (Render idles), or a zone springing forward AT
+ * midnight, would otherwise leave yesterday's ticks in today's list. Only ticks
+ * from before that midnight go, so re-running is harmless and today's survive.
  */
 @Component
 public class TaskMidnightSweep {
@@ -49,28 +47,30 @@ public class TaskMidnightSweep {
     @Scheduled(cron = "0 0 * * * *")
     @Transactional
     public void clearCompletedAtLocalMidnight() {
-        List<UUID> candidates = tasks.findUserIdsWithCompletedTasks();
-        if (candidates.isEmpty()) {
+        Map<UUID, Instant> oldest = new HashMap<>();
+        for (Object[] row : tasks.findOldestCompletedByUser()) {
+            oldest.put((UUID) row[0], (Instant) row[1]);
+        }
+        if (oldest.isEmpty()) {
             return;
         }
         Instant now = Instant.now();
         int cleared = 0;
-        for (User user : users.findAllById(candidates)) {
-            if (!isLocalMidnightHour(user.getTimezone(), now)) {
-                continue;
+        for (User user : users.findAllById(oldest.keySet())) {
+            Instant midnight = localMidnight(user.getTimezone(), now);
+            Instant first = oldest.get(user.getId());
+            if (first != null && !first.isBefore(midnight)) {
+                continue; // everything ticked off today: nothing to sweep yet
             }
-            cleared += tasks.clearCompletedFor(user.getId(), now);
+            cleared += tasks.clearCompletedFor(user.getId(), midnight, now);
         }
         if (cleared > 0) {
             log.info("Midnight sweep cleared {} completed task(s)", cleared);
         }
     }
 
-    /**
-     * Is {@code at} inside the first hour of a new day for someone in this zone?
-     * Zones on a :30 or :45 offset still match exactly one hourly tick.
-     */
-    static boolean isLocalMidnightHour(String timezone, Instant at) {
-        return at.atZone(UserZone.of(timezone)).getHour() == 0;
+    /** The instant today began for someone in this zone (DST-safe: atStartOfDay). */
+    static Instant localMidnight(String timezone, Instant at) {
+        return UserZone.today(timezone, at).atStartOfDay(UserZone.of(timezone)).toInstant();
     }
 }

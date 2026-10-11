@@ -321,7 +321,9 @@ assert.deepEqual(buildInsights({ wellness: {}, trends: {} }), []);
   for (const d of ['2026-03-05', '2026-04-04', '2026-05-05', '2026-06-04'])
     expenses.push({ amount: 649, category: 'Bills', date: d, note: 'Netflix' });
   const u = unusualExpense({ expenses }, day(21));
-  assert.ok(u && /1,000 on Food \(party\) is 5x your usual 200/.test(u.text), u && u.text);
+  assert.ok(u && /₹1,000 on Food \(party\) is 5x your usual ₹200/.test(u.text), u && u.text);
+  const usd = unusualExpense({ expenses, settings: { currency: '$' } }, day(21));
+  assert.ok(/^\$1,000 /.test(usd.text), 'in the user\'s own currency: ' + usd.text);
   assert.equal(unusualExpense({ expenses }, day(40)), null, 'only this week');
   const h = hiddenSubscription({ expenses }, '2026-06-20');
   assert.ok(h && /Netflix/.test(h.text), h && h.text);

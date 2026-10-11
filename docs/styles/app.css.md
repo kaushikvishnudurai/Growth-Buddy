@@ -40,7 +40,7 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
 | Mentor prompt chips |
 | Color picker (habit customize) |
 | List rows |
-| Dashboard blocks — `.gb-dash-main` / `.gb-dash-side`, stack on phones |
+| Dashboard blocks — one `.gb-dash-block` list; ≥1024px flows it into two columns (`.gb-dash--single`) |
 | Goals screen |
 | Enhanced goal card UI |
 | Tasks scrollable list |
@@ -72,8 +72,13 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
 ## Editing rules
 
 - Colors come from tokens (`var(--coral-500)`, `var(--leaf-50)`, …) — no raw hex here.
-- Responsive breakpoints are grouped at 4886 / 5226 / 5303, **not** inline per component. Put media
-  queries there so the phone-first base stays readable.
+- Responsive breakpoints are grouped under the "Laptop / desktop layout", "Responsive improvements"
+  and "Small phones" banners, **not** inline per component. Put media queries there so the
+  phone-first base stays readable.
+- Focus rings come from one global `:focus-visible` rule (Accessibility banner: `2px solid var(--ring)`,
+  offset 2px) on buttons, links, inputs, `[role=switch|checkbox]` and `[tabindex]`. Don't restate it per
+  component; write one only to change the offset/shape, or for an element the list misses (`summary`).
+- Fixed/sticky layers use the `--z-*` scale from `tokens.css`; only local 1/2/-1 stacking is a bare number.
 - Modal markup comes from `openOverlay` in `gb-kit.js` — don't hand-roll it. It is `.gb-modal-overlay > .gb-modal[role=dialog]` because `scripts/a11y.js`
   keys off it for focus trapping. Don't restyle it into a different structure.
 - Every `:hover` rule sits inside `@media (hover: hover)` (nested inside another `@media` where it

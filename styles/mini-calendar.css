@@ -39,13 +39,11 @@
   align-items: center;
   justify-content: center;
   transition: background var(--dur-fast), color var(--dur-fast), transform var(--dur-fast);
+  position: relative;
 }
 
 /* Drawn at 32px; the ::before overlay makes the tap target 44px. Inset is
    measured from inside the 1px border, so -7, not -6 (which measured 42). */
-.gb-mini-cal-nav-btn {
-  position: relative;
-}
 .gb-mini-cal-nav-btn::before {
   content: '';
   position: absolute;
@@ -380,18 +378,14 @@
   gap: 8px;
 }
 
-/* Small inline spinner for loading states */
-.gb-spinner {
+/* Smaller, brand-tipped ring for the day panel. Scoped: this file loads after
+   app.css, and an unscoped .gb-spinner here turned the sign-in button's ring
+   brand-on-brand, i.e. invisible. Size, shape and spin come from app.css. */
+.gb-mini-cal-empty--loading .gb-spinner {
   width: 14px;
   height: 14px;
   border: 2px solid color-mix(in srgb, var(--fg3) 35%, transparent);
   border-top-color: var(--brand);
-  border-radius: 50%;
-  display: inline-block;
-  animation: gb-spin 0.7s linear infinite;
-}
-@keyframes gb-spin {
-  to { transform: rotate(360deg); }
 }
 
 .gb-mini-cal-retry {

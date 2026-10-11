@@ -1,7 +1,7 @@
 /* =====================================================================
    Growth Buddy — Goals screen (short / mid / long term goals + actions)
    ===================================================================== */
-import { h, Icon, Pill, openModal, shakeRefusal } from './gb-kit.js';
+import { h, Icon, Pill, openModal, shakeRefusal, focusSoon } from './gb-kit.js';
 import {
   moveItem,
   renameMilestone,
@@ -208,7 +208,7 @@ function openEditProgress(goal, progress, onUpdateProgress, linkedCount = 0) {
       onUpdateProgress(goal.id, { durationDays: dur, daysFollowed: followed, autoDays: false });
     },
   });
-  setTimeout(() => durationInput.focus(), 60);
+  focusSoon(durationInput);
 }
 
 /* ---- Goal progress bar component ---- */
@@ -1146,7 +1146,7 @@ function ScreenGoals({
         }
       },
     });
-    setTimeout(() => titleInput.focus(), 60);
+    focusSoon(titleInput);
   }
 
   function openActionModal(goal, action) {
@@ -1194,7 +1194,7 @@ function ScreenGoals({
         else await onAddAction(goal.id, payload);
       },
     });
-    setTimeout(() => noteInput.focus(), 60);
+    focusSoon(noteInput);
   }
 
   function openAddAction(goal) {
