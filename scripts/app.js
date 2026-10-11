@@ -103,6 +103,7 @@ import {
 import { WORK_WEEKS, getWorkWeek, setWorkWeek, occursOn } from './recurrence.js';
 import { ScreenAchievements, computeAchievements, levelProgress } from './achievements.js';
 import { celebrate } from './celebrate.js';
+import { openSnap } from './snap.js';
 import { lastNightGuess, stepsTarget, focusMinutesTarget } from './nudges.js';
 import {
   enablePush,
@@ -5334,7 +5335,9 @@ async function addSuggestedReminder(text, time, tag) {
    dropped by every log. null = not asked yet. */
 let recentFoods = null;
 
-function openAddFood() {
+/* opts.file: a plate photo already taken (the Photo option in Quick add);
+   estimated as soon as the form opens, as if picked with its own button. */
+function openAddFood(opts) {
   let photoDataUrl = '';
   let photoItems = [];
   let photoConfidence = 0;
@@ -5420,15 +5423,6 @@ function openAddFood() {
     class: 'gb-food-items-container',
     style: { marginTop: '16px', display: 'none' },
   });
-
-  async function readImageDataUrl(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result || ''));
-      reader.onerror = () => reject(new Error('Could not read image file.'));
-      reader.readAsDataURL(file);
-    });
-  }
 
   function createItemRow(item, index) {
     const nameInput = h('input', {
@@ -5538,15 +5532,13 @@ function openAddFood() {
     });
   }
 
-  async function estimateFromPhoto() {
-    const file = platePhotoInput.files && platePhotoInput.files[0];
+  async function estimateFromPhoto(file = platePhotoInput.files && platePhotoInput.files[0]) {
     if (!file) {
       throw new Error('Please choose a photo first.');
     }
-    if (file.size > 5 * 1024 * 1024) {
-      throw new Error('Photo is too large. Use an image under 5 MB.');
-    }
-    const dataUrl = await readImageDataUrl(file);
+    // Shrunk like every other scan: a raw camera photo (3+ MB) is over the
+    // server's 2,000,000-char cap once base64'd, so it always 400'd.
+    const dataUrl = await import('./notes.js').then((m) => m.shrinkPhoto(file));
     if (!dataUrl || dataUrl.indexOf('data:image/') !== 0) {
       throw new Error('Invalid image file.');
     }
@@ -5621,12 +5613,11 @@ function openAddFood() {
     Icon('camera', { size: 16, sw: 2.2 }),
     'Scan a plate photo instead'
   );
-  platePhotoInput.addEventListener('change', async () => {
-    if (!platePhotoInput.files || !platePhotoInput.files[0]) return;
+  async function estimatePlate(file) {
     // One estimate at a time: a second tap mid-call used to send the photo twice.
     const done = setThinking(photoBtn, 'Looking at your plate');
     try {
-      await estimateFromPhoto();
+      await estimateFromPhoto(file);
     } catch {
       const safeMsg = 'Could not analyze photo. Please enter manually.';
       toastError({ message: safeMsg }, safeMsg);
@@ -5634,6 +5625,9 @@ function openAddFood() {
       done();
       platePhotoInput.value = ''; // picking the same photo again must fire again
     }
+  }
+  platePhotoInput.addEventListener('change', () => {
+    if (platePhotoInput.files && platePhotoInput.files[0]) estimatePlate();
   });
 
   const field = (label, control) =>
@@ -5892,7 +5886,8 @@ function openAddFood() {
     },
   });
 
-  setTimeout(() => foodNameInput.focus(), 60);
+  if (opts && opts.file instanceof Blob) estimatePlate(opts.file);
+  else setTimeout(() => foodNameInput.focus(), 60);
 }
 
 /* A second tap on a row's delete before the first answered sent a second
@@ -10970,6 +10965,40 @@ function segmented(options, initial, onChange) {
   return { node: wrap, get: () => selected };
 }
 
+/* Where the Quick add Photo option hands a photo once its kind is picked
+   (snap.js). Each one is the existing scanner, entered with the photo in hand. */
+const shrinkForSnap = (file) => import('./notes.js').then((m) => m.shrinkPhoto(file));
+const SNAP_FEATURE = { receipt: 'money', plate: 'food', groceries: 'family' };
+/** SNAP_ROUTES minus the ones whose feature is switched off in Settings. */
+const snapRoutes = () =>
+  Object.fromEntries(Object.entries(SNAP_ROUTES).filter(([k]) => featureOn(SNAP_FEATURE[k])));
+const SNAP_ROUTES = {
+  receipt: (file) =>
+    import('./money.js').then((m) =>
+      m.openReceiptModal(state.money, saveMoney, requestReceiptScan, { file })
+    ),
+  plate: (file) => openAddFood({ file }),
+  // The pantry is a family's: with no family the server 400s, and that message
+  // plus a way to the Family tab is the answer.
+  groceries: async (_file, shrunk) => {
+    const toFamily = { label: 'View', run: () => setScreen('family') };
+    try {
+      const res = await api('/api/family/pantry/scan', {
+        method: 'POST',
+        body: JSON.stringify({ imageDataUrl: await shrunk }),
+      });
+      const n = (res && res.added && res.added.length) || 0;
+      const msg = n
+        ? 'Added ' + plural(n, 'item') + ' to your pantry'
+        : (res && res.message) || 'Nothing to add from that photo.';
+      pushToast(msg, n ? 'success' : 'info', 6000, toFamily);
+    } catch (err) {
+      const msg = (err && err.message) || 'Join or create a family to use the pantry.';
+      pushToast(msg, 'error', 6000, toFamily);
+    }
+  },
+};
+
 // The Quick add bar: one sentence, sorted into the right trackers. Shared by
 // openAddSheet and the top of Home (homeQuickAdd); onLeave runs once a parse
 // found something, before the preview opens. The line is cleared only once it
@@ -11150,7 +11179,22 @@ function homeQuickAdd() {
 function openAddSheet() {
   const { sheet, close } = openOverlay({ label: 'Quick add' });
 
+  const routes = snapRoutes();
   const opts = [
+    {
+      key: 'snap',
+      // Money, Food and Family all off: no destination, no button.
+      hidden: !Object.keys(routes).length,
+      icon: 'camera',
+      label: 'Photo',
+      sub: 'Receipt, meal or groceries',
+      action: () => {
+        close();
+        // Static import: the camera opens inside this tap's gesture (WebKit
+        // drops a file-input click that follows an await).
+        openSnap({ shrink: shrinkForSnap, api, routes });
+      },
+    },
     {
       key: 'task',
       icon: 'list-todo',
@@ -11230,7 +11274,7 @@ function openAddSheet() {
       'div',
       { class: 'gb-modal-opts' },
       opts
-        .filter((o) => !o.feature || featureOn(o.feature))
+        .filter((o) => !o.hidden && (!o.feature || featureOn(o.feature)))
         .map((o) =>
         h(
           'button',

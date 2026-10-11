@@ -6934,7 +6934,7 @@ if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.DEV
   }
 }
 
-export { ScreenMoney, searchExpenses, openExpenseModal };
+export { ScreenMoney, searchExpenses, openExpenseModal, openReceiptModal };
 // Lives in money-home.js now (Home imports it from there); re-exported for older imports.
 export { MoneyHomeCard } from './money-home.js';
 // The pure engines, for money-calc.test.mjs (node, no DOM). Not for screens.
