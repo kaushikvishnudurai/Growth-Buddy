@@ -16,7 +16,8 @@ const tomorrow = () => keyOf(new Date(Date.now() + 864e5));
 test.describe.configure({ timeout: 180_000 });
 
 const boot = (page, account) => signInFast(page, { ...account, user: { ...account.user, timezone: tz } });
-const dialog = (page) => page.locator('.gb-modal[role=dialog]');
+// Not one still fading out: a model read closes the sheet at once, and the next tap can beat its 180 ms exit.
+const dialog = (page) => page.locator('.gb-modal-overlay:not(.is-closing) > .gb-modal[role=dialog]');
 
 async function get(page, account, path) {
   const r = await page.request.get(API + path, { headers: { Authorization: 'Bearer ' + account.token } });
@@ -52,6 +53,9 @@ async function quickAdd(page, text, inspect) {
   await expect(preview).toHaveCount(0);
   return { taps, fallback, res };
 }
+// Tasks' own + Add: Home's order is the user's, and a young account's puts Habits first.
+const addTask = (page) =>
+  page.locator('#gb-main .gb-sectiontitle', { has: page.getByRole('heading', { name: 'Tasks', exact: true }) }).getByRole('button', { name: '+ Add' });
 const toast = (page, re) => page.locator('.gb-toast').filter({ hasText: re });
 // The toast after a Quick add: what it was (one model read) or where it went (the preview).
 const undoToast = (page) => page.locator('.gb-toast').filter({ has: page.getByRole('button', { name: 'Undo' }) });
@@ -175,7 +179,7 @@ test('quick add: a note is one line; the Note row opens the composer focused (FR
 test('task: "Call plumber tomorrow 5pm" sets the due time from the title, removable chip (FRC-11)', async ({ page, account }) => {
   await boot(page, account);
   let taps = 0;
-  await page.locator('#gb-main').getByRole('button', { name: '+ Add', exact: true }).first().click();
+  await addTask(page).click();
   taps++;
   const d = dialog(page);
   const title = d.locator('input[type=text]').first();
@@ -194,7 +198,7 @@ test('task: "Call plumber tomorrow 5pm" sets the due time from the title, remova
   expect(taps).toBeLessThanOrEqual(2); // before: 7 taps (3 + about 4 in the date-time picker)
 
   // The chip's x keeps the words as the title and leaves no due time.
-  await page.locator('#gb-main').getByRole('button', { name: '+ Add', exact: true }).first().click();
+  await addTask(page).click();
   await expect(title).toBeFocused();
   await title.pressSequentially('Plan offsite friday', { delay: 5 });
   await chip.click();
