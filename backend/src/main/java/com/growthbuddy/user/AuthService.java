@@ -1123,7 +1123,7 @@ public class AuthService {
         // Prefer the values the user just typed (unsaved form) over stored ones.
         Integer age = pick(form == null ? null : form.ageYears(), user.getAgeYears());
         Integer heightCm = pick(form == null ? null : form.heightCm(), user.getHeightCm());
-        Integer weightKg = pick(form == null ? null : form.weightKg(), user.getWeightKg());
+        java.math.BigDecimal weightKg = pick(form == null ? null : form.weightKg(), user.getWeightKg());
         String fitnessGoal = pick(form == null ? null : form.fitnessGoal(), user.getFitnessGoal());
         String diet = pick(form == null ? null : form.dietPreference(), user.getDietPreference());
         String about = pick(form == null ? null : form.aboutMe(), user.getAboutMe());
@@ -1133,7 +1133,7 @@ public class AuthService {
         Integer waterGoal = pick(form == null ? null : form.dailyWaterGoalMl(), user.getDailyWaterGoalMl());
 
         NutritionSuggestionResponse base =
-                heuristicSuggestion(weightKg, fitnessGoal, diet, allergicTo, foodGoal, waterGoal);
+                heuristicSuggestion(weightKg == null ? null : weightKg.intValue(), fitnessGoal, diet, allergicTo, foodGoal, waterGoal);
         if (!openai.isConfigured()) {
             return base;
         }

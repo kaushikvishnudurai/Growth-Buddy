@@ -175,7 +175,7 @@ class FoodWeekRulesTest {
     void targetsFollowWeightGoalAndCalories() {
         com.growthbuddy.user.User u = new com.growthbuddy.user.User();
         assertEquals(60, FoodWeek.proteinTarget(u));
-        u.setWeightKg(70);
+        u.setWeightKg(java.math.BigDecimal.valueOf(70));
         assertEquals(84, FoodWeek.proteinTarget(u));
         u.setFitnessGoal("Gain weight , dirty bulk");
         assertEquals(new Nutrients(112, 325, 87, 30), FoodWeek.targets(u, 2600));

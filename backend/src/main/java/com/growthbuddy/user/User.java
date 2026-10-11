@@ -62,8 +62,9 @@ public class User {
     @Column(name = "height_cm")
     private Integer heightCm;
 
-    @Column(name = "weight_kg")
-    private Integer weightKg;
+    /** DECIMAL(5,1) in the schema: an Integer here could never store 72.5 (CRB-12). */
+    @Column(name = "weight_kg", precision = 5, scale = 1)
+    private java.math.BigDecimal weightKg;
 
     @Column(name = "diet_preference", length = 64)
     private String dietPreference;
