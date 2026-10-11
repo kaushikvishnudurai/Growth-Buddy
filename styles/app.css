@@ -1994,8 +1994,8 @@ body:has(.is-thinking, .gb-thinking)::after {
   }
 }
 
-/* 359, not 360: the 360px Galaxy phones fit five labelled tabs (~69px each). */
-@media (max-width: 359px) {
+/* The header tightens at 360 (five actions beside the title)... */
+@media (max-width: 360px) {
   .gb-head {
     padding-left: 14px;
     padding-right: 14px;
@@ -2027,7 +2027,11 @@ body:has(.is-thinking, .gb-thinking)::after {
     height: 38px !important;
     font-size: 0.6875rem !important;
   }
+}
 
+/* ...the tabs drop their labels only below it: 359, not 360, because the 360px
+   Galaxy phones fit five labelled tabs (~69px each). */
+@media (max-width: 359px) {
   .gb-nav {
     padding: var(--space-2) var(--space-2) calc(18px + env(safe-area-inset-bottom, 0px));
   }
@@ -6972,6 +6976,8 @@ button.gb-food-level {
 .gb-sched-headrow {
   align-items: center;
   gap: var(--space-2);
+  /* Title, Day/Week and Routine don't fit one line at 320px with large text. */
+  flex-wrap: wrap;
 }
 .gb-sched-tabs {
   /* The Day/Week switch is the shared .gb-range-toggle; this only places it. */
