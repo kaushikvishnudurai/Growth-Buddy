@@ -14446,3 +14446,164 @@ button.gb-tone-chip:focus-visible {
 .gb-bank-row .gb-btn {
   min-height: 44px;
 }
+
+/* =====================================================================
+   Health screen (scripts/health.js): today's Apple Health / Health Connect
+   readings in grouped cards. Cards flow two-up once there is room, so no
+   media query. Labels in body type, every number in Space Mono, a missing
+   reading is a muted dash.
+   ===================================================================== */
+.gb-health {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+  gap: var(--space-3);
+  padding: 0 var(--gutter) var(--space-8);
+}
+.gb-health-top {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.gb-health-top p {
+  margin: 0;
+  color: var(--fg3);
+  font-size: var(--text-sm);
+}
+.gb-health-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.gb-health-notice .gb-health-actions,
+.gb-health-card > .gb-health-actions {
+  margin-top: var(--space-3);
+}
+.gb-health-link {
+  min-height: 44px;
+  padding: 0 var(--space-2);
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--brand-ink);
+  cursor: pointer;
+}
+.gb-health-card {
+  min-width: 0;
+  padding: var(--space-4);
+}
+.gb-health-notice {
+  grid-column: 1 / -1;
+}
+.gb-health-notice p {
+  margin: var(--space-2) 0 0;
+  color: var(--fg2);
+  line-height: var(--leading-normal);
+}
+.gb-health-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  color: var(--brand);
+}
+.gb-health-head h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.0625rem;
+  color: var(--fg1);
+}
+.gb-health-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: var(--space-3);
+}
+.gb-health-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.gb-health-label {
+  font-size: var(--text-xs);
+  color: var(--fg3);
+}
+.gb-health-val {
+  font-family: var(--font-mono);
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--fg1);
+  overflow-wrap: anywhere;
+}
+.gb-health-val small {
+  margin-left: 4px;
+  font-size: var(--text-xs);
+  font-weight: 400;
+  color: var(--fg3);
+}
+.gb-health-val.is-empty {
+  color: var(--fg3);
+  font-weight: 400;
+}
+.gb-health-asof {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--fg3);
+}
+.gb-health-workouts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.gb-health-workouts li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--border);
+}
+.gb-health-workouts li:first-child {
+  border-top: 0;
+}
+.gb-health-wk-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.gb-health-wk-name strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gb-health-wk-name span,
+.gb-health-none {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--fg3);
+}
+.gb-health-wk-nums {
+  display: flex;
+  gap: var(--space-3);
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+/* Habit form: the health link's target and its unit on one row. */
+.gb-habit-link-target {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 8px;
+}
+.gb-habit-link-target .gb-input {
+  max-width: 140px;
+  font-family: var(--font-mono);
+}

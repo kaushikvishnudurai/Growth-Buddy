@@ -202,6 +202,11 @@ CREATE TABLE IF NOT EXISTS habits (
   kind            VARCHAR(8)   NOT NULL DEFAULT 'build',
   -- A quit habit's clean days are paid XP up to and including this day, once.
   clean_credited_through DATE NULL,
+  -- Phone health reading that auto-ticks it: steps | sleep | distance | calories
+  -- | floors | workout (NULL = not linked); health_target is the daily goal in
+  -- that link's unit (count, hours, km, kcal, floors, minutes).
+  health_link     VARCHAR(16)  NULL,
+  health_target   DOUBLE       NULL,
   PRIMARY KEY (id),
   KEY ix_habits_user (user_id),
   CONSTRAINT fk_habits_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE

@@ -67,6 +67,7 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
 | Settings — Home screen customizer |
 | Settings — Display (text size preview) |
 | Notes — composer, editor (photos: develop-in animation, drop zone, picked ring), cards with a photo cover |
+| Health screen (`.gb-health-*`: auto-fit card grid, mono values, `.is-empty` dash, `.gb-health-asof`) — last in the file |
 
 ## Editing rules
 
