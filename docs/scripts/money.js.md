@@ -166,6 +166,8 @@ the Coach tab) call `shareSummary`.
   Account writes go through the injected `accountRequest`, which app.js queues behind unsent ledger writes.
 - "Paid from" / "Received in" = `accountPicker` over `segmented`; the expense modal defaults to
   `settings.lastAccountId`, bills to the first bank/card account (same rule as the WhatsApp path).
+  Its tag starts on `settings.defaultTag` when that is not `others` (every account's starting value),
+  else the newest expense's tag; typing a note still re-guesses it until a tag is picked.
   The picker lists active accounts plus `initial` when it is archived, so editing an entry never
   silently moves it. An edit is booked by `editedHomeAmount` (money-core.js): an untouched amount keeps
   `amount` + `orig` as stored, a changed one on the same account keeps the row's currency and rate,

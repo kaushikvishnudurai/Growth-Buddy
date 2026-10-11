@@ -3752,6 +3752,50 @@ body:has(.is-thinking, .gb-thinking)::after {
   font-weight: 850;
   text-transform: capitalize;
 }
+/* Morning check-in (WellnessQuick): a question and its one-tap answers per
+   row, above the tiles. Wraps on a phone rather than squeezing the buttons. */
+.gb-wellness-quick {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.gb-wellness-quick-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.gb-wellness-quick-ask {
+  color: var(--fg1);
+  font-size: 0.875rem;
+  font-weight: 750;
+}
+.gb-wellness-quick-opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+/* A one-tap nudge inside a Home card (the repeat-expense prompt, money-home.js). */
+.gb-nudge {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-top: 10px;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  color: var(--fg1);
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+.gb-nudge-opts {
+  display: flex;
+  gap: 6px;
+}
 .gb-reflect-list,
 .gb-suggest-list,
 .gb-timeline-list,
@@ -12849,6 +12893,15 @@ button.gb-sound-name:focus-visible {
 .gb-rem-notime {
   display: block;
   margin-top: 6px;
+}
+/* "Usual time: 9:00 AM" under an empty Time field (UsualTimeChip, calendar.js).
+   Padded to the 44px floor; display stays the button's own so [hidden] still hides it. */
+.gb-rem-usual {
+  min-height: 44px;
+  padding: 0 2px;
+  background: none;
+  border: 0;
+  text-align: left;
 }
 
 /* Snooze on a reminder's toast and its bell card. */

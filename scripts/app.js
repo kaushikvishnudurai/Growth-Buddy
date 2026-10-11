@@ -92,6 +92,7 @@ import {
   setCustomToneAdder,
   setVoiceReminder,
   NotifySelect,
+  UsualTimeChip,
   LEAD_OPTIONS,
   leadLabel,
   minutesLabel,
@@ -103,6 +104,7 @@ import { WORK_WEEKS, getWorkWeek, setWorkWeek, occursOn } from './recurrence.js'
 import { buildDayPlan } from './day-plan.js';
 import { ScreenAchievements, computeAchievements, levelProgress } from './achievements.js';
 import { celebrate } from './celebrate.js';
+import { usualSleep, stepsTarget, focusMinutesTarget } from './nudges.js';
 import {
   enablePush,
   disablePush,
@@ -2704,6 +2706,7 @@ async function loadData() {
     flushOutbox();
     reSyncDeviceAlarms();
     loadWaterUsualHours();
+    autoTickStepHabits();
   } catch (err) {
     if (refresh) {
       toastError(err, 'Could not refresh. Showing your last data.');
@@ -3316,6 +3319,75 @@ async function plainToggleHabit(id) {
   } finally {
     togglesInFlight.delete(id);
   }
+}
+
+/* ---- Habits that tick themselves ----
+   A Steps habit whose name gives a target ("Walk 8k steps", stepsTarget) ticks
+   once the phone's own count reaches it; a focus habit ("Deep work 2h",
+   focusMinutesTarget) once today's focus minutes do. Same dated check-in as a
+   manual tick, with the number, and Undo on the toast. Tried once per habit per
+   day, so an Undo is never re-ticked behind the user's back. */
+const autoTickTried = new Set(); // 'habitId|YYYY-MM-DD'
+async function autoTickHabit(habit, value, why) {
+  const day = accountTodayKey();
+  const key = habit.id + '|' + day;
+  if (autoTickTried.has(key) || habit.doneToday || isQuitHabit(habit) || !habitDue(habit)) return;
+  if (togglesInFlight.has(habit.id)) return;
+  autoTickTried.add(key);
+  togglesInFlight.add(habit.id);
+  let updated;
+  try {
+    updated = await api('/api/habits/' + encodeURIComponent(habit.id) + '/checkin', {
+      method: 'POST',
+      body: JSON.stringify({
+        date: day,
+        done: true,
+        value: habit.metric && habit.metric !== 'none' ? value : null,
+      }),
+    });
+  } catch (_) {
+    return; // nothing changed; the user can still tick it themselves
+  } finally {
+    togglesInFlight.delete(habit.id);
+  }
+  state.habits = state.habits.map((x) => (x.id === updated.id ? updated : x));
+  reconcileStreakFreeze(updated);
+  reSyncDeviceAlarms();
+  refreshScoreLater();
+  render();
+  pushToast(habit.name + ' ticked: ' + why + '.', 'success', 6000, {
+    label: 'Undo',
+    run: () => plainToggleHabit(habit.id),
+  });
+}
+
+/* Steps from the OS health store (native only; null on the web). Run after a
+   load and on coming back to the app — the count grows through the day. */
+async function autoTickStepHabits() {
+  if (!featureOn('habits')) return;
+  const open = (state.habits || []).filter(
+    (hb) => hb.metric === 'steps' && !hb.doneToday && stepsTarget(hb.name) != null
+  );
+  if (!open.length) return;
+  const steps = await readTodaySteps();
+  if (steps == null) return;
+  open
+    .filter((hb) => steps >= stepsTarget(hb.name))
+    .forEach((hb) => autoTickHabit(hb, steps, steps.toLocaleString() + ' steps on your phone'));
+}
+
+/* After a saved focus session: today's focus minutes from the server, so two
+   sessions on two devices add up. */
+async function autoTickFocusHabits() {
+  if (!featureOn('habits')) return;
+  const open = (state.habits || []).filter((hb) => !hb.doneToday && focusMinutesTarget(hb.name) != null);
+  if (!open.length) return;
+  const stats = await api('/api/focus/stats').catch(() => null);
+  const mins = stats && Number(stats.todayMinutes);
+  if (!(mins > 0)) return;
+  open
+    .filter((hb) => mins >= focusMinutesTarget(hb.name))
+    .forEach((hb) => autoTickHabit(hb, hb.metric === 'minutes' ? mins : null, mins + ' focus minutes today'));
 }
 
 async function refreshScore() {
@@ -4917,16 +4989,18 @@ function rememberPhotoFood(foodName, estimate, usedPhoto) {
 function openSleepSchedule() {
   const today = todayKeyNow();
   const existing = (state.wellness.sleepByDate || {})[today] || {};
+  // An unlogged night opens on the usual one, so a normal night is one tap on Save.
+  const usual = usualSleep(state.wellness.sleepByDate, today) || { bedtime: '23:00', wakeTime: '07:00' };
   const dateInput = h('input', { type: 'date', class: 'gb-input', value: existing.date || today });
   const bedInput = h('input', {
     type: 'time',
     class: 'gb-input',
-    value: existing.bedtime || '23:00',
+    value: existing.bedtime || usual.bedtime,
   });
   const wakeInput = h('input', {
     type: 'time',
     class: 'gb-input',
-    value: existing.wakeTime || '07:00',
+    value: existing.wakeTime || usual.wakeTime,
   });
   const quality = segmented(
     [
@@ -5464,6 +5538,16 @@ function openAddFood() {
     const mealIdx = { home: 0, hotel: 1 }[r.mealType];
     if (mealIdx != null && mealTypeSeg.get() !== r.mealType) mealTypeSeg.node.children[mealIdx].click();
   };
+  // A dish typed by hand that was logged lately starts on that portion: the
+  // grams only, so the estimator still prices today's plate. Never over a number
+  // already in the box.
+  foodNameInput.addEventListener('change', () => {
+    const name = foodNameInput.value.trim().toLowerCase();
+    const r = name && (recentFoods || []).find((x) => (x.foodName || '').trim().toLowerCase() === name);
+    if (!r || !r.quantityGrams || quantityInput.value !== '') return;
+    if (unitSeg.get() !== 'g') unitSeg.node.children[1].click();
+    quantityInput.value = String(r.quantityGrams);
+  });
   // A favourite: its own portion and kcal, and its macros go with it.
   const fillFavourite = (f) => {
     label = { kind: 'fav', name: f.foodName, fav: f };
@@ -7798,6 +7882,8 @@ function reminderSettingsPane() {
     class: 'gb-input gb-input--time',
     'aria-label': 'Reminder time',
   });
+  const usualTime = UsualTimeChip(timeInput);
+  usualTime.sync(state.reminders);
   const repeatSel = h(
     'select',
     { class: 'gb-input', 'aria-label': 'Repeat' },
@@ -7848,6 +7934,7 @@ function reminderSettingsPane() {
         voiceNote.style.display = 'none';
         textInput.value = '';
         timeInput.value = '';
+        usualTime.sync(state.reminders);
         repeatSel.value = 'none';
         notifySel.setLead(null);
         textInput.focus();
@@ -7921,6 +8008,7 @@ function reminderSettingsPane() {
       h('label', { class: 'gb-remset-field' }, h('span', null, 'Time'), timeInput),
       h('label', { class: 'gb-remset-field gb-remset-field--wide' }, h('span', null, 'Repeat'), repeatSel)
     ),
+    usualTime.node,
     addBtn
   );
 
@@ -10184,8 +10272,8 @@ function focusProps() {
   focusAutoStart = null;
   return {
     // link: { taskId } | { goalId } | null — what the session was spent on.
-    onFocusSession: (mode, durationSec, link) =>
-      api('/api/focus/sessions', {
+    onFocusSession: (mode, durationSec, link) => {
+      const saved = api('/api/focus/sessions', {
         method: 'POST',
         body: JSON.stringify({
           mode,
@@ -10193,7 +10281,11 @@ function focusProps() {
           taskId: (link && link.taskId) || null,
           goalId: (link && link.goalId) || null,
         }),
-      }),
+      });
+      // A finished focus session may be what a "Deep work 2h" habit was waiting for.
+      if (mode === 'focus') saved.then(autoTickFocusHabits, () => {});
+      return saved;
+    },
     getFocusStats: () => api('/api/focus/stats'),
     getFocusHistory: () => api('/api/focus/history?days=30'),
     statsOwner: state.user && state.user.id,
@@ -12992,6 +13084,8 @@ const SCREENS = {
         onAddSleep: openSleepSchedule,
         onAddMood: openMoodCheckin,
         onStarterPack: openStarterPacks,
+        onConfirmSleep: (u) => saveSleepEntry({ bedtime: u.bedtime, wakeTime: u.wakeTime, quality: 'okay' }),
+        onQuickMood: (mood) => saveMoodEntry({ mood }),
         onOnboardDismiss: (opts) => {
           saveUiPrefs({ onboardingDone: true });
           // Only from the ✕ click — the all-done path fires mid-render.
@@ -15208,6 +15302,7 @@ document.addEventListener('visibilitychange', () => {
     refreshNotifications();
     syncDeviceTimezone(); // reopened after a flight
     refreshDayIfStale();
+    autoTickStepHabits(); // walked since the app was last open
   }
 });
 
