@@ -17,7 +17,7 @@ assert.deepEqual(sleep.map((r) => r.kind), ['habit', 'reminder', 'goal']);
 assert.equal(sleep[2].targetDate, '2026-11-10');
 
 // What exists is skipped, case-insensitively.
-const has = planStarter(['sleep'], { ...base, habits: [{ name: 'screens off by 10:30 PM' }] });
+const has = planStarter(['sleep'], { ...base, habits: [{ name: 'screens OFF before bed' }] });
 assert.ok(!has.some((r) => r.kind === 'habit'));
 
 // The same habit from two packs is created once.
@@ -33,8 +33,13 @@ assert.deepEqual(planStarter(['water'], { ...base, features: { water: false } })
 const off = planStarter(['eat'], { ...base, features: { habits: false, food: false } });
 assert.deepEqual(off.map((r) => r.kind), ['goal']);
 
-// No spending means no invented budget; real spending gives the top two, 10% under.
-assert.ok(!planStarter(['money'], base).some((r) => r.kind === 'budget'));
+// No spending means no invented budget, but the preview says why (a note row), and the goal
+// is one a new account can meet: there is no last month to beat.
+const fresh = planStarter(['money'], base);
+assert.ok(!fresh.some((r) => r.kind === 'budget'));
+assert.deepEqual(fresh.find((r) => r.kind === 'note'), { kind: 'note', pack: 'money', about: 'budget' });
+assert.equal(fresh.find((r) => r.kind === 'goal').title, 'Track spending for a month');
+// Real spending gives the top two, 10% under, and the comparison goal.
 const money = {
   budgets: { transport: 500 },
   expenses: [
@@ -46,6 +51,21 @@ const money = {
 };
 const budgets = planStarter(['money'], { ...base, money }).filter((r) => r.kind === 'budget');
 assert.deepEqual(budgets.map((b) => [b.category, b.amount]), [['food', 3600], ['shopping', 1800]]);
+const withHistory = planStarter(['money'], { ...base, money });
+assert.equal(withHistory.find((r) => r.kind === 'goal').title, 'Spend less than last month');
+assert.ok(!withHistory.some((r) => r.kind === 'note'));
+
+// The default pack: one-tap habits (no measured metric, so the first tick is one tap), each with
+// a reminder time, and no hard-coded clock in a name (the time is formatted per device).
+const balanced = planStarter(['balanced'], base);
+assert.equal(PACKS[0].id, 'balanced');
+assert.ok(balanced.filter((r) => r.kind === 'habit').length >= 2);
+balanced.filter((r) => r.kind === 'habit').forEach((r) => {
+  assert.ok(!r.metric || r.metric === 'none', r.name);
+  assert.match(r.reminderTime, /^\d\d:\d\d$/);
+});
+PACKS.flatMap((p) => p.items).forEach((i) =>
+  assert.ok(!/\d\s*(am|pm)\b|\d:\d\d/i.test(i.name || i.text || i.title || ''), 'clock in a name: ' + (i.name || i.text || i.title)));
 
 // Water: from weight when known, skipped when the goal is already that high.
 const w = planStarter(['water'], { ...base, weightKg: 70, suggestWater: (kg) => (kg ? 2250 : null) });
