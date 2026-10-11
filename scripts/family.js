@@ -1201,6 +1201,8 @@ function ScreenFamily({ api }) {
         } finally {
           model.scanBusy = false;
           paint();
+          // paint() rebuilds the tree, and a live region born full is skipped.
+          toast.announce(model.scanMsg);
         }
       },
     });
@@ -1267,6 +1269,11 @@ function ScreenFamily({ api }) {
         .generateMealPlan({ ingredients: model.ingredients, memberIds })
         .then((res) => {
           model.plan = res;
+          toast.announce(
+            res && res.source === 'fallback'
+              ? 'Meal plan ready. AI was unavailable, so this is a simple template.'
+              : 'Meal plan ready.'
+          );
           // The plan it replaced is now history.
           loadSection('history').then(paintSoon);
         })
@@ -1304,7 +1311,7 @@ function ScreenFamily({ api }) {
         ),
         photoInput
       ),
-      model.scanMsg ? h('p', { class: 'gb-family-scan-msg', role: 'status' }, model.scanMsg) : null,
+      model.scanMsg ? h('p', { class: 'gb-family-scan-msg' }, model.scanMsg) : null,
       h(
         'div',
         { class: 'gb-family-manual-add' },
@@ -1632,7 +1639,7 @@ function ScreenFamily({ api }) {
       isFallback
         ? h(
             'div',
-            { class: 'gb-family-plan-banner', role: 'status' },
+            { class: 'gb-family-plan-banner' },
             Icon('circle-alert', { size: 15 }),
             h('span', null, 'AI was unavailable, so this is a simple template.')
           )
@@ -2261,6 +2268,7 @@ function ScreenFamily({ api }) {
         } finally {
           model.pantryScanBusy = false;
           paint();
+          if (model.pantryScanMsg) toast.announce(model.pantryScanMsg);
         }
       },
     });
@@ -2561,7 +2569,7 @@ function ScreenFamily({ api }) {
       { class: 'gb-family-shop-tools' },
       h(
         'span',
-        { class: 'gb-family-shop-left', role: 'status' },
+        { class: 'gb-family-shop-left' },
         left ? left + ' to buy' : 'All bought'
       ),
       h(
@@ -2663,6 +2671,8 @@ function ScreenFamily({ api }) {
     it.checked = want;
     pendingTicks.set(it.id, want);
     paint();
+    const left = model.shoppingList ? model.shoppingList.items.filter((i) => !i.checked).length : 0;
+    toast.announce(left ? left + ' to buy' : 'All bought');
     api
       .toggleShopping(it.id, want)
       .then((res) => {

@@ -2074,7 +2074,7 @@
   flex-wrap: wrap;
   row-gap: var(--space-2);
 }
-.gb-money-card > .gb-sectiontitle > h3 {
+.gb-money-card > .gb-sectiontitle > :is(h2, h3) {
   flex: 1 0 auto;
 }
 

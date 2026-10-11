@@ -13,6 +13,7 @@ import {
   submitOnEnter,
   confirmDialog,
   formatTime,
+  rovingGroup,
 } from './gb-kit.js';
 import {
   occursOn,
@@ -682,7 +683,7 @@ function DaysPicker(initial, label) {
       )
     )
   );
-  return { node, get: () => picked };
+  return { node: rovingGroup(node), get: () => picked };
 }
 
 /* Set once, shown on every day. Sleep may run past midnight, so bedtime and
@@ -1145,7 +1146,9 @@ function TagPicker(initial) {
       chips[k].setAttribute('aria-checked', String(on));
     }
   }
-  const wrap = h('div', { class: 'gb-tagpick', role: 'radiogroup', 'aria-label': 'Tag' });
+  const wrap = rovingGroup(
+    h('div', { class: 'gb-tagpick', role: 'radiogroup', 'aria-label': 'Tag' })
+  );
   TAG_ORDER.forEach((tag) => {
     const t = TAGS[tag];
     const chip = h(
@@ -1181,11 +1184,13 @@ function RepeatPicker(initial, onChange) {
     }
     if (fireChange && onChange) onChange(rep);
   }
-  const wrap = h('div', {
-    class: 'gb-segmented gb-segmented--repeat',
-    role: 'radiogroup',
-    'aria-label': 'Repeat',
-  });
+  const wrap = rovingGroup(
+    h('div', {
+      class: 'gb-segmented gb-segmented--repeat',
+      role: 'radiogroup',
+      'aria-label': 'Repeat',
+    })
+  );
   REPEAT_ORDER.forEach((rep) => {
     const seg = h(
       'button',

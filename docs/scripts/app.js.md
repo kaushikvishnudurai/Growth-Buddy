@@ -295,7 +295,7 @@ it silently landed on Home. Don't reintroduce a second list.
   only when no field owns the error. Both the client-side checks (`authFail`) and server refusals
   (`runAuth(action, errField)`) route through it — a `runAuth` without an `errField` is for failures
   that are nobody's field, like a dropped connection, and stays a toast.
-- **Every hidden password has a reveal** (`passwordField`), and whether it is revealed lives on the
+- **Every hidden password has a reveal** (`passwordField`), reachable by Tab (it was `tabindex=-1`, so keyboard users could not check what they typed), and whether it is revealed lives on the
   input's own `type` — never a closure flag — so `renderAuth` restoring the type after an error
   restores the eye with it. Sign-up and reset also carry a confirm field (`errorField` key
   `'confirm'`).
@@ -321,7 +321,9 @@ it silently landed on Home. Don't reintroduce a second list.
 - **There is exactly one Settings modal.** `openProfileSettings` owns all six tabs — Profile,
   Display, Alerts, Reminders, Layout, Account. The tab bar (`buildSegSlider`) sizes each tab by its
   label and the thumb measures the tab under it (a `ResizeObserver` re-measures); six equal tabs
-  cut "Reminders" to "Reminde" on a phone. **Reminders** is `reminderSettingsPane()`: the default
+  cut "Reminders" to "Reminde" on a phone. Each tab and pane name each other (`aria-controls` /
+  `role=tabpanel` + `aria-labelledby`) and the bar is a gb-kit `rovingGroup` (arrows, Home/End).
+  Section labels are `h3.gb-settings-sec-label` under the dialog's `h2`. **Reminders** is `reminderSettingsPane()`: the default
   lead and snooze length (`ui_prefs.reminderLead` / `snoozeMinutes`, both read by the server), a
   quick add (through `addReminder`, which now returns the reminder or null), and every reminder
   soonest-first by `nextOccurrence` (`recurrence.js`), with a two-tap delete of the whole series and

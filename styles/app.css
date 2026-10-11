@@ -231,6 +231,22 @@ button.gb-avatar:active {
   transform: scale(0.94);
 }
 
+/* Titles that used to be divs and are real headings now (screen readers list
+   them). Zero specificity: the UA's heading margin and size go, and each
+   class's own rules still win, so every one looks exactly as the div did. */
+:where(h2, h3):where(
+    .gb-water-title,
+    .gb-card-titleline,
+    .gb-score-heading,
+    .gb-coach-title,
+    .gb-onboard-title,
+    .gb-settings-sec-label
+  ) {
+  margin: 0;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
 /* ---- Section title ---- */
 .gb-sectiontitle {
   display: flex;
@@ -238,7 +254,7 @@ button.gb-avatar:active {
   justify-content: space-between;
   padding: 6px var(--gutter) 10px;
 }
-.gb-sectiontitle h3 {
+.gb-sectiontitle :is(h2, h3) {
   font-family: var(--font-display);
   font-weight: 800;
   font-size: 1.125rem;
@@ -2493,7 +2509,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 .gb-report .gb-sectiontitle {
   padding-bottom: 8px;
 }
-.gb-report .gb-sectiontitle h3 {
+.gb-report .gb-sectiontitle :is(h2, h3) {
   font-family: var(--font-body);
   font-weight: 700;
   font-size: 0.75rem;
@@ -12502,6 +12518,16 @@ textarea:focus-visible,
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
+/* WCAG 2.4.11: a control focused from below (Shift+Tab) is scrolled to the
+   scroller's top edge, which is under these three sticky bars (55-67px tall).
+   Current Chrome steps clear of a sticky bar by itself; WKWebView does not.
+   A margin on the controls, not scroll-padding on the scroller: Money's tab
+   switch scrolls the bar itself to the top, and padding would stop it short. */
+.gb-scroll:has(.gb-money-tabs, .gb-family-sectionnav, .gb-notes-tools)
+  :is(a, button, input, select, textarea, [tabindex]) {
+  scroll-margin-top: 72px;
+}
+
 /* The Notes top bar: search + sort, first on the screen and sticky while the
    list scrolls. Same treatment as .gb-family-sectionnav: a solid surface bar
    (not --bg, which the premium skin's gradients show through, and not a blur,

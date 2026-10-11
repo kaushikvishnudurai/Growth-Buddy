@@ -1537,7 +1537,7 @@ function ScreenNotes({
         )
       );
     }
-    const titleEl = note.title ? h('h3', { class: 'gb-note-card-title' }, note.title) : null;
+    const titleEl = note.title ? h('h2', { class: 'gb-note-card-title' }, note.title) : null;
     const snippetEl = h('p', { class: 'gb-note-card-snippet', hidden: true });
     if (titleEl) card.appendChild(titleEl);
     if (preview) card.appendChild(bodyEl);
