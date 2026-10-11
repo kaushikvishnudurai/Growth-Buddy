@@ -19,3 +19,4 @@ prod.env
 .playwright-mcp/
 e2e-report/
 e2e-results/
+docs/evidence/audit-performance/*.report.*
