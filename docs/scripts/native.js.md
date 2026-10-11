@@ -20,9 +20,12 @@ splash control, no device name, "this browser doesn't support push notifications
   app (Android buttons are activity intents; iOS actions are `foreground`), and the plugin holds the
   event until a listener attaches, so a press that cold-starts the app still arrives.
 - The proxy answers `undefined` for `then`, so an accidental `await` on it can't hang forever.
-- It exists whether or not the native class does: a missing plugin shows up only as a rejected
-  call, so callers wrap in `try` (see share-card.js `shareNatively`). Also used by app.js's
-  speech recognition.
+- **A plugin the binary wasn't built with returns null.** Both platforms set
+  `Capacitor.PluginHeaders` (one `{name, methods}` per native plugin) before the page runs; a name
+  not in it gets null, not a proxy. Before that a missing plugin was a truthy proxy whose every call
+  rejected: the iOS build (no speech plugin in SPM) showed a mic that always failed, and every
+  `readTodaySteps` made a doomed native call. Callers still wrap in `try` — an installed plugin
+  can reject too. Also used by app.js's speech recognition (`voiceSupported`).
 
 ## Boot / shell
 
@@ -31,9 +34,11 @@ splash control, no device name, "this browser doesn't support push notifications
 | `isNative()` | `Capacitor.isNativePlatform()` |
 | `initNative()` | 4 s splash `hide()` backstop (the splash is held open by hand, `launchAutoHide:false`, so a throw before render would strand the user), `pruneStaleChannels()` (not awaited), device model → `deviceLabel` |
 | `deviceLabelHeader()` | `"Growth Buddy on <model>"` — sent as `X-GB-Device` for the signed-in-devices list (Chrome redacts the Android UA to "K") |
-| `applyNativeStatusBar(theme)` | solid bar (no overlay — the header already reserves the inset) in `--bg`; call on boot **and every theme change**. Capacitor's `DARK` style means a dark bar |
+| `applyNativeStatusBar(theme)` | solid bar (no overlay — the header already reserves the inset) in `--bg`; call on boot **and every theme change**. Capacitor's `DARK` style means a dark bar. **Each call in its own try**: iOS has no `setBackgroundColor` and Android 15+ ignores the first two (edge-to-edge), and one rejection used to skip `setStyle`, leaving the icon colour wrong |
+| `deepLinkHash(url)` | pure: the link's `#/route?query`, null when it names no route |
+| `onDeepLink(cb)` | App plugin: `getLaunchUrl` (cold start) + `appUrlOpen` (already running, via `Capacitor.addListener`). app.js writes the hash to `location.hash`. The intent-filter / Associated Domains that make the OS hand links over are in `docs/mobile-native-changes.md` |
 | `hideNativeSplash()` | two rAFs after the first real render |
-| `readTodaySteps()` | `@capgo/capacitor-health` (HealthKit / Health Connect) today's total, once, when `openMeasuredCheckin` opens on a Steps habit; app.js fills the box only if empty. Buckets summed (UTC cut). **0 → null**: HealthKit answers 0 rather than saying denied. No sensor/service/listener of ours. Health Connect's sheet links `public/privacy.html` |
+| `readTodaySteps()` | `@capgo/capacitor-health` (HealthKit / Health Connect) today's total, once, when `openMeasuredCheckin` opens on a Steps habit, and from `autoTickStepHabits`; app.js fills the box only if empty. Buckets summed (UTC cut). **0 → null**: HealthKit answers 0 rather than saying denied. **The plugin is not installed in the mobile repo**, so in every current build `nativePlugin('Health')` is null and this returns null with no native call — nothing ticks, nothing errors, the box waits for a number. Installing it needs Health Connect's READ_STEPS + a privacy-policy activity (`public/privacy.html`) and the iOS HealthKit entitlement |
 
 ## Channels (Android)
 

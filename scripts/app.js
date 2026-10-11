@@ -17,6 +17,7 @@ import {
   CrashCard,
   openOverlay,
   closeOverlays,
+  trackOverlay,
   openModal as sharedModal,
   fieldRefusal,
   shakeRefusal,
@@ -114,6 +115,7 @@ import {
   usualDrinkHours,
   WATER_DEFAULTS,
   WATER_ACTION_ML,
+  notificationTarget,
 } from './push.js';
 import { CacheStorage } from './cache-storage.js';
 import { createOutbox, tempId, isTempId, newIdemKey } from './outbox.js';
@@ -128,6 +130,8 @@ import {
   readTodaySteps,
   cancelPendingLocalNotifications,
   onLocalNotificationAction,
+  onDeepLink,
+  deepLinkHash,
 } from './native.js';
 import { registerToast } from './toast.js';
 import { initA11y, focusLocator, refocus } from './a11y.js';
@@ -6400,6 +6404,30 @@ async function respondMentorshipRequest(requestId, notifId, accept) {
   }
 }
 
+/* The bell, avatar and More panels are one entry on the shared back stack
+   (gb-kit trackOverlay): hardware Back or the browser's closes the open one
+   before it leaves the screen, and on Home before it minimises the app.
+   Synced from installOutsideClickToCloseHeaderPopovers, which every path that
+   opens or shuts a panel goes through (setScreen and logout via render()). */
+let untrackPanels = null;
+function syncPanelBackEntry() {
+  const open = state.notifOpen || state.profileOpen || state.moreOpen;
+  if (open && !untrackPanels) untrackPanels = trackOverlay({ close: closeHeaderPanels });
+  else if (!open && untrackPanels) {
+    untrackPanels();
+    untrackPanels = null;
+  }
+}
+function closeHeaderPanels() {
+  const wasOpen = state.notifOpen || state.profileOpen || state.moreOpen;
+  state.notifOpen = false;
+  state.profileOpen = false;
+  state.moreOpen = false;
+  syncPanelBackEntry();
+  // setScreen has already shut them and renders next; only Back needs a repaint.
+  if (wasOpen) repaintOverlays();
+}
+
 function toggleNotifOpen() {
   state.notifOpen = !state.notifOpen;
   state.profileOpen = false;
@@ -6591,7 +6619,9 @@ window.addEventListener('hashchange', () => {
     returnToScreen = screenFromHash();
     return;
   }
-  setScreen(screenFromHash(), { fromHash: true });
+  // A link with a query (#/circle?join=CODE) on the screen already showing:
+  // force the repaint, or the screen that reads the query never sees it.
+  setScreen(screenFromHash(), { fromHash: true, force: window.location.hash.includes('?') });
 });
 
 /**
@@ -10717,8 +10747,9 @@ function reSyncDeviceAlarms() {
    Done / Snooze on a reminder, Done on a plain habit, +250 ml on the water
    nudge (push.js builds the sets and stamps `extra`). A press opens the app
    and lands here, through the same handlers the in-app taps use, so the toast
-   it shows is the confirmation. A plain tap on the card does what it always
-   did: nothing beyond opening the app. On the web the service worker carries
+   it shows is the confirmation. A plain tap on the card opens what it is
+   about (push.js notificationTarget): the reminder's day on the calendar,
+   Habits, Home for water, the timer. On the web the service worker carries
    these out itself, with a signed ticket (public/push-handlers.js). */
 let notificationActionsArmed = false;
 function armNotificationActions() {
@@ -10732,7 +10763,15 @@ function armNotificationActions() {
 async function handleNotificationAction(ev) {
   const act = ev && ev.actionId;
   const x = (ev && ev.notification && ev.notification.extra) || {};
-  if (!state.user || !act || act === 'tap' || act === 'dismiss') return;
+  if (!state.user || !act || act === 'dismiss') return;
+  if (act === 'tap') {
+    const to = notificationTarget(x);
+    if (!to) return;
+    setScreen(to.screen);
+    // After the switch: calGoTo repaints the month in place, already on Calendar or not.
+    if (to.day) calGoTo(new Date(to.day + 'T12:00:00'));
+    return;
+  }
   if (x.kind === 'water' && act === 'water') {
     await quickAddWater(WATER_ACTION_ML);
   } else if (x.kind === 'reminder' && act === 'snooze' && x.id) {
@@ -15631,6 +15670,7 @@ function installOutsideClickToCloseHeaderPopovers() {
     popoverCleanup();
     popoverCleanup = null;
   }
+  syncPanelBackEntry();
   // The More sheet too: it had a backdrop to tap but nothing for Escape.
   if (!state.notifOpen && !state.profileOpen && !state.moreOpen) return;
   function cleanup() {
@@ -15788,6 +15828,12 @@ if (state.user) {
 // Resolve the device model before anything signs in — the label rides along on
 // the request that creates the session.
 initNative();
+// A link that opened the app (or arrived while it ran): its hash is the route,
+// and the hashchange handler above routes it, signed in or not.
+onDeepLink((url) => {
+  const hash = deepLinkHash(url);
+  if (hash) window.location.hash = hash;
+});
 render();
 // The splash is held open by launchAutoHide:false — nothing else drops it.
 hideNativeSplash();
