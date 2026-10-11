@@ -2314,8 +2314,19 @@ function openExpenseModal(money, save, prefillDate, existing) {
   });
   const hint = h('div', { class: 'gb-note-hint', style: { marginTop: '6px' } }, '');
   let userPicked = !!ex; // an existing tag was chosen on purpose; don't re-guess it
+  // A new expense starts on the tag of the last one logged, unless Settings picks a
+  // default other than Others (which every account starts with, so it says nothing);
+  // typing a note still re-guesses it (suggestCategory) until a tag is picked.
+  const last = money.expenses.reduce(
+    (a, e) => (!a || e.date > a.date || (e.date === a.date && (e.createdAt || 0) > (a.createdAt || 0)) ? e : a),
+    null
+  );
   const picker = tagPicker(money, save, {
-    initial: (ex && ex.category) || money.settings.defaultTag || 'others',
+    initial:
+      (ex && ex.category) ||
+      (money.settings.defaultTag !== 'others' && money.settings.defaultTag) ||
+      (last && last.category) ||
+      'others',
     allowCreate: true,
     onPick: () => (userPicked = true),
   });

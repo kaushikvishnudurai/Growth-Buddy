@@ -25,6 +25,7 @@ import {
   nthWeekdayOf,
 } from './recurrence.js';
 import { chimeOptionValue, chimeOptions, playChime } from './chime.js';
+import { usualReminderTime } from './nudges.js';
 
 const MONTHS = [
   'January',
@@ -907,6 +908,32 @@ function reminderEditPatch(rem, { text, time, endTime, tag, sound, lead, movedDa
     }
   }
   return patch;
+}
+
+/* The time the user gives reminders most often (usualReminderTime, nudges.js) as
+   a one-tap fill under an empty Time field — not a prefill, because an empty
+   Time is a real answer here (no time of day) and a native time input can't be
+   reliably emptied again. `sync(reminders)` re-reads the list; `sync()` only
+   re-checks the field. Hidden once the field holds a time. */
+function UsualTimeChip(timeInput, onSet) {
+  let time = null;
+  const btn = h('button', {
+    type: 'button',
+    class: 'gb-login-link gb-rem-usual',
+    onclick: () => {
+      timeInput.value = time;
+      if (onSet) onSet();
+      sync();
+    },
+  });
+  function sync(reminders) {
+    if (reminders) time = usualReminderTime(reminders);
+    btn.textContent = time ? 'Usual time: ' + formatTime(time) : '';
+    btn.hidden = !time || !!timeInput.value;
+  }
+  timeInput.addEventListener('input', () => sync());
+  sync();
+  return { node: btn, sync };
 }
 
 function TimeRange(timeInput, endInput, clearLabel = 'Remove end time') {
@@ -2055,6 +2082,7 @@ function buildForm() {
     'aria-label': 'End time (optional, makes it a busy block)',
   });
   const range = TimeRange(timeInput, endInput);
+  const usualTime = UsualTimeChip(timeInput, range.sync);
   const textErr = requiredError(textInput);
 
   const tagPicker = TagPicker('personal');
@@ -2279,6 +2307,7 @@ function buildForm() {
       ),
       h('div', { class: 'gb-field-label' }, 'Time'),
       range.node,
+      usualTime.node,
       h('p', { class: 'gb-field-hint' }, 'Add an end time to block it out as busy on the day.'),
       h('div', { class: 'gb-field-label' }, 'Tag'),
       tagPicker.node,
@@ -2308,6 +2337,7 @@ function buildForm() {
       rule,
       notes,
       secondSel,
+      usualTime,
     },
   };
 }
@@ -2356,6 +2386,7 @@ function ReminderPanel({
     cachedForm = built.node;
     cachedFormRefs = built.refs;
   }
+  cachedFormRefs.usualTime.sync(reminders);
   cachedFormRefs.untilInput.min = selectedDate;
   // The rule's labels ("the 2nd Tuesday") are about the day the form is on.
   cachedFormRefs.rule.sync(cachedFormRefs.repeatPicker.get(), selectedDate);
@@ -2763,6 +2794,7 @@ function CalendarToolbar({ year, month, reminders, tasks, onPrevMonth, onNextMon
 }
 
 export {
+  UsualTimeChip,
   isPastSlot,
   freeBusy,
   wholeHours,

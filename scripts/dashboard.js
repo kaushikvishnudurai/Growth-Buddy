@@ -30,6 +30,7 @@ import {
   homeGoals,
 } from './home-order.js';
 import { suggestReminderTime } from './habit-stats.js';
+import { usualSleep } from './nudges.js';
 import { fmtDate, fmtNumber } from './i18n.js';
 import {
   groupBySlot,
@@ -498,7 +499,68 @@ function TodayPlanCard({ water, wellness, onPlanToday }) {
   });
 }
 
-function WellnessCard({ wellness, onAddSleep, onAddMood }) {
+/* The morning check-in, one tap each: last night as the usual night
+   (usualSleep, nudges.js) once the usual wake time has passed, and the mood
+   scale itself. Each row goes the moment its entry exists; Edit is the full
+   sleep dialog for a night that wasn't the usual one. */
+function WellnessQuick({ wellness, sleep, mood, onConfirmSleep, onQuickMood, onAddSleep }) {
+  const rows = [];
+  const usual = !sleep && onConfirmSleep ? usualSleep(wellness && wellness.sleepByDate, todayKey()) : null;
+  const now = new Date();
+  const [wh, wm] = usual ? usual.wakeTime.split(':').map(Number) : [0, 0];
+  if (usual && now.getHours() * 60 + now.getMinutes() >= wh * 60 + wm) {
+    rows.push(
+      h(
+        'div',
+        { class: 'gb-wellness-quick-row' },
+        h(
+          'span',
+          { class: 'gb-wellness-quick-ask' },
+          'Slept ' + sharedFormatTime(usual.bedtime) + ' to ' + sharedFormatTime(usual.wakeTime) + '?'
+        ),
+        h(
+          'div',
+          { class: 'gb-wellness-quick-opts' },
+          h(
+            'button',
+            { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--compact', onclick: () => onConfirmSleep(usual) },
+            'Yes'
+          ),
+          h('button', { type: 'button', class: 'gb-btn gb-btn--ghost gb-btn--compact', onclick: onAddSleep }, 'Edit')
+        )
+      )
+    );
+  }
+  if (!mood && onQuickMood) {
+    rows.push(
+      h(
+        'div',
+        { class: 'gb-wellness-quick-row', role: 'group', 'aria-label': 'How are you feeling?' },
+        h('span', { class: 'gb-wellness-quick-ask' }, 'How are you feeling?'),
+        h(
+          'div',
+          { class: 'gb-wellness-quick-opts' },
+          // The mood dialog's own scale, so a one-tap answer reads like a full one.
+          [
+            ['low', 'Low'],
+            ['okay', 'Okay'],
+            ['good', 'Good'],
+            ['great', 'Great'],
+          ].map(([value, label]) =>
+            h(
+              'button',
+              { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--compact', onclick: () => onQuickMood(value) },
+              label
+            )
+          )
+        )
+      )
+    );
+  }
+  return rows.length ? h('div', { class: 'gb-wellness-quick' }, rows) : null;
+}
+
+function WellnessCard({ wellness, onAddSleep, onAddMood, onConfirmSleep, onQuickMood }) {
   const key = todayKey();
   const sleep = wellness && wellness.sleepByDate ? wellness.sleepByDate[key] : null;
   const mood = wellness && wellness.moodByDate ? wellness.moodByDate[key] : null;
@@ -506,6 +568,7 @@ function WellnessCard({ wellness, onAddSleep, onAddMood }) {
   return Card({
     className: 'gb-wellness-card',
     children: [
+      WellnessQuick({ wellness, sleep, mood, onConfirmSleep, onQuickMood, onAddSleep }),
       h(
         'div',
         { class: 'gb-wellness-grid' },
@@ -2463,6 +2526,8 @@ function ScreenDashboard({
   onPlanToday,
   onAddSleep,
   onAddMood,
+  onConfirmSleep,
+  onQuickMood,
   onOnboardDismiss,
   onAddSuggestedReminder,
   food,
@@ -2478,7 +2543,7 @@ function ScreenDashboard({
     // A turned-off feature drops out of the cards that summarise it, not just its own card.
     score: () => ScoreCard({ score, tasks, habits: on('habits') ? habits : [] }),
     plan: () => TodayPlanCard({ water: on('water') ? water : null, wellness, onPlanToday }),
-    wellness: () => WellnessCard({ wellness, onAddSleep, onAddMood }),
+    wellness: () => WellnessCard({ wellness, onAddSleep, onAddMood, onConfirmSleep, onQuickMood }),
     tasks: () => [
       SectionTitle({ title: "Today's tasks", action: '+ Add', onAction: onAddTask }),
       TasksCard({

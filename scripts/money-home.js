@@ -9,7 +9,72 @@
    ===================================================================== */
 import { h, Icon, ProgressRing } from './gb-kit.js';
 import { toast } from './toast.js';
-import { normalizeMoney, applyCurrency, budgetStatus, buildInsights, fmt } from './money-core.js';
+import {
+  normalizeMoney,
+  applyCurrency,
+  budgetStatus,
+  buildInsights,
+  fmt,
+  todayKey,
+  uid,
+} from './money-core.js';
+import { repeatExpense } from './nudges.js';
+
+/* "You usually log 120 Coffee around now. Add it?" (repeatExpense, nudges.js).
+   Add books it exactly as the expense form would; Not today hides it.
+   ponytail: the dismissal is in memory, so a relaunch the same morning asks again;
+   move it to ui_prefs if that turns out to nag. */
+const skippedNudges = new Set(); // 'YYYY-MM-DD|note'
+
+function RepeatExpenseNudge(money, onSaveMoney) {
+  const today = todayKey();
+  const guess = repeatExpense(money.expenses, today, new Date());
+  if (!guess || skippedNudges.has(today + '|' + guess.note.toLowerCase())) return null;
+  const node = h(
+    'div',
+    { class: 'gb-nudge', role: 'group', 'aria-label': 'Usual expense' },
+    h('span', null, 'You usually log ' + fmt(guess.amount) + ' ' + guess.note + ' around now. Add it?'),
+    h(
+      'div',
+      { class: 'gb-nudge-opts' },
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--soft gb-btn--compact',
+          onclick: () => {
+            const next = normalizeMoney(money);
+            next.expenses.unshift({
+              id: uid(),
+              amount: guess.amount,
+              category: guess.category,
+              date: today,
+              note: guess.note,
+              ...(guess.accountId ? { accountId: guess.accountId } : {}),
+              createdAt: Date.now(),
+            });
+            onSaveMoney(next, money);
+            toast.success('Added ' + fmt(guess.amount) + ' ' + guess.note + '.');
+          },
+        },
+        'Add'
+      ),
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--ghost gb-btn--compact',
+          onclick: () => {
+            skippedNudges.add(today + '|' + guess.note.toLowerCase());
+            node.remove();
+          },
+        },
+        'Not today'
+      )
+    )
+  );
+  return node;
+}
 
 function addExpense(money, onSaveMoney) {
   import('./money.js')
@@ -109,6 +174,7 @@ export function MoneyHomeCard({ money, onSaveMoney, onOpen }) {
         { type: 'button', class: 'gb-btn gb-btn--ghost gb-btn--compact', onclick: onOpen },
         'Open Money Buddy'
       )
-    )
+    ),
+    RepeatExpenseNudge(money, onSaveMoney)
   );
 }
