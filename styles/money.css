@@ -542,7 +542,6 @@
   border-radius: var(--radius-md);
   background: transparent;
   cursor: pointer;
-  font: inherit;
   color: inherit;
   transition: background-color var(--dur-fast) var(--ease-standard);
 }
@@ -718,7 +717,6 @@
   padding: 12px 6px;
   margin: -12px -6px;
   background: none;
-  font: inherit;
   font-weight: 700;
   color: var(--brand-soft-fg);
   text-decoration: underline;
@@ -739,7 +737,6 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--surface);
-  font: inherit;
   color: inherit;
   text-align: left;
   cursor: pointer;
@@ -1984,7 +1981,6 @@
   padding: 2px 4px;
   margin: -2px -4px;
   background: none;
-  font: inherit;
   color: inherit;
   text-align: left;
   cursor: pointer;
@@ -2178,7 +2174,6 @@
   border: 0;
   border-radius: 4px;
   background: var(--surface-2);
-  font: inherit;
 }
 .gb-money-tape-day.is-future {
   background: transparent;

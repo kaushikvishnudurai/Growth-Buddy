@@ -12,6 +12,12 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Form controls don't inherit the page font (they fell back to Arial); one reset
+   here instead of a `font: inherit` on every control class. */
+button, input, select, textarea {
+  font: inherit;
+}
+
 /* No double-tap-zoom wait on anything tappable. */
 a, button, input, select, textarea, label, [role='button'], [onclick] {
   touch-action: manipulation;
@@ -239,7 +245,6 @@ button.gb-avatar:active {
   margin: 0;
 }
 .gb-sectiontitle-act {
-  font: inherit;
   font-size: 0.8125rem;
   font-weight: 700;
   color: var(--fg3);
@@ -1384,7 +1389,6 @@ body:has(.is-thinking, .gb-thinking)::after {
   background: none;
   border: 0;
   padding: 0;
-  font-family: inherit;
   font-size: 0.8125rem;
   font-weight: 700;
   color: var(--brand-ink);
@@ -3246,7 +3250,6 @@ button.gb-seat:disabled {
   border-radius: 999px;
   background: transparent;
   color: var(--fg2);
-  font: inherit;
   font-size: 0.8125rem;
   font-variant-numeric: tabular-nums;
   cursor: pointer;
@@ -3382,7 +3385,6 @@ button.gb-seat:disabled {
   border-radius: var(--radius-pill);
   background: none;
   color: var(--fg3);
-  font: inherit;
   text-transform: none;
   letter-spacing: 0;
   font-weight: 700;
@@ -3723,7 +3725,6 @@ button.gb-seat:disabled {
   border-radius: var(--radius-pill);
   background: var(--surface);
   color: var(--fg1);
-  font: inherit;
   font-weight: 700;
   font-size: 0.84375rem;
   cursor: pointer;
@@ -3763,7 +3764,6 @@ button.gb-seat:disabled {
   border: 0;
   background: none;
   color: var(--fg1);
-  font: inherit;
   text-align: left;
   cursor: pointer;
 }
@@ -3803,7 +3803,6 @@ button.gb-seat:disabled {
   border-radius: var(--radius-md);
   background: none;
   color: var(--fg2);
-  font: inherit;
   font-size: 0.8125rem;
   text-align: left;
   cursor: pointer;
@@ -4111,7 +4110,6 @@ button.gb-seat:disabled {
   border: 0;
   background: none;
   color: inherit;
-  font: inherit;
   text-align: left;
   cursor: pointer;
   border-radius: var(--radius-sm);
@@ -4288,7 +4286,10 @@ button.gb-seat:disabled {
   color: var(--fg3);
   font-size: 0.75rem;
   font-weight: 700;
-  text-transform: capitalize;
+}
+/* Sentence case ("Hours slept", "High energy"), not Title Case: the strings arrive lower case. */
+.gb-wellness-tile small::first-letter {
+  text-transform: uppercase;
 }
 .gb-wellness-tile strong {
   font-size: 1.25rem;
@@ -4797,7 +4798,6 @@ button.gb-food-level {
   border-radius: 999px;
   background: transparent;
   color: var(--fg2);
-  font: inherit;
   font-size: 0.8125rem;
   font-weight: 700;
   cursor: pointer;
@@ -4943,7 +4943,6 @@ button.gb-food-level {
 .gb-food-week-col {
   border: 0;
   padding: 0;
-  font: inherit;
   color: inherit;
   text-align: inherit;
   cursor: pointer;
@@ -6390,7 +6389,6 @@ button.gb-food-level {
   display: none;
 }
 .gb-food-recent-chip {
-  font: inherit;
   font-size: 0.8125rem;
   font-weight: 600;
   min-height: 44px;
@@ -6416,7 +6414,6 @@ button.gb-food-level {
   padding: 0;
   border: 0;
   background: none;
-  font: inherit;
   color: inherit;
   text-align: left;
   cursor: pointer;
@@ -6468,7 +6465,6 @@ button.gb-food-level {
   border: 1px dashed var(--border);
   border-radius: var(--radius-pill);
   background: none;
-  font: inherit;
   font-size: 0.8125rem;
   font-weight: 600;
   color: var(--fg2);
@@ -6530,7 +6526,6 @@ button.gb-food-level {
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
   background: var(--surface-2);
-  font: inherit;
   font-size: 0.8125rem;
   font-weight: 600;
   color: var(--fg1);
@@ -6548,7 +6543,6 @@ button.gb-food-level {
   border: 1px dashed var(--brand);
   border-radius: var(--radius-pill);
   background: none;
-  font: inherit;
   font-size: 0.8125rem;
   font-weight: 600;
   color: var(--brand-ink);
@@ -10512,7 +10506,6 @@ select.gb-input {
   border: 1.5px solid var(--border-strong);
   background: var(--surface-2);
   color: var(--fg2);
-  font: inherit;
   font-size: 0.78125rem;
   font-weight: 600;
   cursor: pointer;
@@ -10535,7 +10528,6 @@ select.gb-input {
   border: 0;
   background: none;
   color: inherit;
-  font: inherit;
   text-align: left;
   cursor: pointer;
 }
@@ -10566,7 +10558,6 @@ select.gb-input {
 .gb-family-recipe-text {
   min-height: 120px;
   resize: vertical;
-  font-family: inherit;
 }
 .gb-family-recipe-count {
   font-size: var(--text-xs);
@@ -10761,7 +10752,6 @@ select.gb-input {
   align-items: center;
   gap: 14px;
   width: 100%;
-  font: inherit; /* a <button> doesn't inherit the body font: it rendered in Arial */
   text-align: left;
   padding: 16px;
   border: 1px solid var(--border);
@@ -11713,7 +11703,6 @@ textarea:focus-visible,
   border-radius: var(--radius-md);
   background: transparent;
   color: var(--fg3);
-  font: inherit;
   font-size: 0.9375rem;
   text-align: left;
   cursor: pointer;
@@ -12304,7 +12293,6 @@ textarea:focus-visible,
   border-radius: var(--radius-pill);
   background: transparent;
   color: var(--fg2);
-  font: inherit;
   font-size: 0.8125rem;
   cursor: pointer;
 }
@@ -12355,7 +12343,6 @@ textarea:focus-visible,
   border-radius: var(--radius-pill);
   background: var(--surface);
   color: var(--fg2);
-  font: inherit;
   font-size: 0.875rem;
   font-weight: 600;
   cursor: pointer;
@@ -12484,7 +12471,6 @@ textarea:focus-visible,
   border: none;
   background: transparent;
   color: var(--fg1);
-  font: inherit;
   font-size: 0.875rem;
 }
 .gb-note-label-input:focus {
@@ -12754,7 +12740,6 @@ textarea:focus-visible,
   cursor: pointer;
   /* family only: the `font` shorthand also reset the size and weight above,
      which blew the chip up to body text and wrapped it onto two lines. */
-  font-family: inherit;
 }
 .gb-freeze-modal {
   max-width: 420px;
@@ -13427,7 +13412,6 @@ button.gb-sound-name {
   border: none;
   border-radius: var(--radius-sm);
   background: none;
-  font: inherit;
   text-align: left;
   color: inherit;
   cursor: pointer;
@@ -13732,7 +13716,6 @@ button.gb-sound-name:focus-visible {
   border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--sky-50) 70%, transparent);
   color: var(--fg1);
-  font: inherit;
   font-size: 0.75rem;
   font-weight: 700;
   cursor: pointer;
@@ -13753,7 +13736,6 @@ button.gb-sound-name:focus-visible {
   border: 1px solid color-mix(in srgb, var(--sky-500) 45%, transparent);
   border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--sky-50) 70%, transparent);
-  font: inherit;
   font-weight: 700;
   cursor: pointer;
 }
@@ -13785,7 +13767,6 @@ button.gb-sound-name:focus-visible {
   border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--fg1);
-  font: inherit;
   font-size: 0.8125rem;
   font-weight: 700;
   cursor: pointer;
@@ -13805,12 +13786,12 @@ button.gb-sound-name:focus-visible {
   white-space: nowrap;
 }
 .gb-rem-defaults-link {
+  font: inherit; /* drops .gb-login-link's 700 */
   align-self: flex-start;
   margin: 6px 0 2px;
   padding: 4px 0;
   border: none;
   background: none;
-  font: inherit;
   font-size: 0.75rem;
   text-align: left;
   cursor: pointer;
@@ -13970,7 +13951,6 @@ select.gb-input {
   color: var(--fg1);
 }
 button.gb-tone-chip {
-  font: inherit;
   font-size: 0.8125rem;
   font-weight: 600;
   min-height: 34px;
@@ -14045,7 +14025,6 @@ button.gb-tone-chip:focus-visible {
   border: 1px solid transparent;
   border-radius: 4px;
   background: var(--surface);
-  font: inherit;
 }
 .gb-hh-day.is-done {
   background: var(--leaf-500);
@@ -14254,7 +14233,6 @@ button.gb-tone-chip:focus-visible {
   border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--fg1);
-  font: inherit;
   font-size: 0.875rem;
 }
 .gb-goal-ms-due-field {
@@ -14499,7 +14477,7 @@ button.gb-tone-chip:focus-visible {
 .gb-rem-notes-input {
   resize: vertical;
   min-height: 52px;
-  font: inherit;
+  font: inherit; /* not .gb-input's 15px: the notes read at body size */
 }
 .gb-rule {
   display: flex;
@@ -14535,7 +14513,6 @@ button.gb-tone-chip:focus-visible {
   border-radius: var(--radius-pill);
   background: var(--surface);
   color: var(--fg1);
-  font: inherit;
   font-size: 0.8125rem;
   font-weight: 700;
   cursor: pointer;
@@ -14841,7 +14818,6 @@ button.gb-tone-chip:focus-visible {
   padding: 0;
   border: 0;
   background: none;
-  font: inherit;
   font-family: var(--font-mono);
   font-weight: 700;
   /* Space Mono's space is a full cell wide: pull "6h 58m" back into one word. */
@@ -14974,7 +14950,6 @@ button.gb-tone-chip:focus-visible {
   border: 0;
   border-top: 1px solid var(--border);
   background: none;
-  font: inherit;
   text-align: left;
   color: inherit;
   cursor: pointer;
@@ -15145,7 +15120,6 @@ button.gb-tone-chip:focus-visible {
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
   background: var(--surface);
-  font: inherit;
   font-size: var(--text-xs);
   font-weight: 600;
   color: var(--fg2);
