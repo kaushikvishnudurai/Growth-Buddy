@@ -19,7 +19,7 @@ globalThis.Date = class extends RealDate {
 };
 
 const { _calc, normalizeMoney, ledgerCsv, searchExpenses } = await import('./money.js');
-const { applyCurrency, usualSalary, fmt } = await import('./money-core.js');
+const { applyCurrency, fmt } = await import('./money-core.js');
 const {
   forecast,
   upcomingSubs,
@@ -394,20 +394,6 @@ console.log('money-calc challenges + new bills: ok');
 }
 console.log('money-calc currency: ok');
 
-// ---- FRC-16: "Salary arrived?" from income history (clock: 20 Oct) ----
-{
-  const sal = (id, date, amount = 50000) => ({ id, amount, source: 'salary', label: 'Salary', date, accountId: 'bank' });
-  const paid = [sal('a', '2026-07-19'), sal('b', '2026-08-20'), sal('c', '2026-09-21', 52000)];
-  const g = usualSalary(doc({ income: paid }));
-  assert.deepEqual(g, { amount: 52000, accountId: 'bank', label: 'Salary', day: 21 }, 'the last one, on its day');
-  assert.equal(usualSalary(doc({ income: paid.concat(sal('d', '2026-10-19')) })), null, 'already logged this month');
-  assert.equal(usualSalary(doc({ income: [sal('c', '2026-09-21')] })), null, 'one month is not a pattern');
-  assert.equal(usualSalary(doc({ income: [sal('a', '2026-08-28'), sal('b', '2026-09-28')] })), null, 'payday not near yet');
-  assert.equal(usualSalary(doc({ income: [sal('a', '2026-08-02'), sal('b', '2026-09-03')] })).day, 3, 'payday passed, not logged: still asks');
-  const rule = { id: 'r', kind: 'income', amount: 50000, category: 'salary', day: 21, active: true, start: '2026-09-01' };
-  assert.equal(usualSalary(doc({ income: paid, recurring: [rule] })), null, 'a monthly repeat posts it already');
-}
-console.log('money-calc salary guess: ok');
 
 // ---- EXM-11: a half rounds the same way signed or not ----
 applyCurrency(doc({}));
@@ -436,3 +422,68 @@ console.log('money-calc fmt: ok');
   assert.equal(p.requiredDaily, 291);
 }
 console.log('money-calc advisor + goal pace: ok');
+// ---- QA round (Money): week-over-week, salary repeat, big-jump, today's cap ----
+{
+  const { buildInsights, weekVsLast } = await import('./money-core.js');
+  const { salaryPattern, amountJumpQuestion, suggestChallenges } = _calc;
+  // Mon 19 + Tue 20 against Mon 12 + Tue 13 only: last week's Sunday is not in the window.
+  const m = doc({
+    expenses: [
+      ex('a', 100, '2026-10-19'),
+      ex('b', 100, '2026-10-20', 'transport'),
+      ex('c', 140, '2026-10-12'),
+      ex('d', 60, '2026-10-13', 'transport'),
+      ex('e', 5000, '2026-10-18'),
+    ],
+  });
+  const w = weekVsLast(m);
+  assert.equal(w.curT, 200);
+  assert.equal(w.prevT, 200, 'same days of last week, not the whole week');
+  const lines = buildInsights(m).map((x) => x.text);
+  // Total flat, but Transport +67%: "steady" would contradict the next line.
+  assert.ok(!lines.some((t) => /steady/.test(t)), 'no steady beside a 67% move');
+  assert.ok(lines.some((t) => /Transport is up 67%/.test(t)));
+  const up = buildInsights(doc({ expenses: [ex('a', 300, '2026-10-20'), ex('c', 100, '2026-10-13')] }));
+  assert.ok(up[0].text.startsWith('This week'), 'the week line names its period for Home');
+
+  // Two equal salaries on the 1st offer a repeat; an active salary repeat stops the offer.
+  const inc = [
+    { id: 'i1', amount: 60000, source: 'salary', label: '', date: '2026-10-01' },
+    { id: 'i2', amount: 60000, source: 'salary', label: '', date: '2026-09-01' },
+  ];
+  const p = salaryPattern(doc({ income: inc }));
+  assert.equal(p.last.id, 'i1');
+  assert.deepEqual(p.repeat, { amount: 60000, day: 1 });
+  assert.equal(
+    salaryPattern(doc({ income: inc, recurring: [{ id: 'r', kind: 'income', category: 'salary', active: true, amount: 1, day: 1 }] })).repeat,
+    null
+  );
+  assert.equal(salaryPattern(doc({ income: [inc[0], { ...inc[1], amount: 59000 }] })).repeat, null, 'amounts differ');
+
+  // salaryDue (clock: 2026-10-20): pattern on the 1st, October's not logged -> due on the 1st.
+  const { salaryDue } = _calc;
+  const sep = [
+    { id: 's1', amount: 60000, source: 'salary', label: '', date: '2026-09-01', accountId: 'b' },
+    { id: 's2', amount: 60000, source: 'salary', label: '', date: '2026-08-01' },
+  ];
+  const d = salaryDue(doc({ income: sep }));
+  assert.equal(d.date, '2026-10-01');
+  assert.equal(d.amount, 60000);
+  assert.equal(d.last.id, 's1');
+  assert.equal(salaryDue(doc({ income: inc })), null, 'this month already logged');
+  const late = sep.map((i) => ({ ...i, date: i.date.slice(0, 8) + '25' }));
+  assert.equal(salaryDue(doc({ income: late })), null, 'its day (the 25th) has not come yet');
+  assert.equal(salaryDue(doc({ income: [sep[0]] })), null, 'no pattern from one salary');
+
+  // 349 -> 349399 asks; 349 -> 400 doesn't.
+  const old = ex('x', 349, '2026-10-20');
+  assert.ok(amountJumpQuestion(doc({ expenses: [old] }), old, 'food', 349399, 349399));
+  assert.equal(amountJumpQuestion(doc({ expenses: [old] }), old, 'food', 400, 400), '');
+
+  // 789 spent today: no "spend under X today" can be offered.
+  const busy = doc({
+    expenses: [1, 2, 3, 4, 5, 6, 7].map((d) => ex('s' + d, 400, '2026-10-0' + d)).concat(ex('t', 789, '2026-10-20')),
+  });
+  assert.ok(!suggestChallenges(busy).some((c) => c.kind === 'cap'), 'no daily cap already blown');
+}
+console.log('money-calc QA round: ok');

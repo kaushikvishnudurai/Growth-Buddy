@@ -13,7 +13,6 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
-import org.springframework.transaction.annotation.Transactional;
 
 class TaskListTest {
 
@@ -30,14 +29,6 @@ class TaskListTest {
         t.setTitle("t");
         t.setPriority(Priority.Low);
         return t;
-    }
-
-    /* CRB-5: a read-only transaction never flushed the overdue escalation. */
-    @Test
-    void listRunsReadWriteSoTheEscalationIsSaved() throws Exception {
-        Transactional tx = TaskService.class.getMethod("list", UUID.class).getAnnotation(Transactional.class);
-        assertThat(tx).isNotNull();
-        assertThat(tx.readOnly()).isFalse();
     }
 
     /* CRB-6: one grouped history read for the whole list, not one per task. */
@@ -58,6 +49,7 @@ class TaskListTest {
         assertThat(out.get(0).lastCompletedAt()).isEqualTo(last);
         assertThat(out.get(1).completionCount()).isZero();
         assertThat(out.get(1).lastCompletedAt()).isNull();
-        assertThat(out.get(2).priority()).isEqualTo(Priority.High);
+        // The stored priority comes back as set: overdue sorts first on the client, not by a rewrite.
+        assertThat(out.get(2).priority()).isEqualTo(Priority.Low);
     }
 }

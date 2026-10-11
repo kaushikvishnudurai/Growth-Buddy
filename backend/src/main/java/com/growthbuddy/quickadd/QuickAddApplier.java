@@ -168,7 +168,7 @@ public class QuickAddApplier {
                 .put("kind", it.type())
                 .put("id", UUID.randomUUID().toString())
                 .put("amount", it.amount())
-                .put("date", today.toString())
+                .put("date", (it.date() != null ? it.date() : today).toString())
                 .put("createdAt", System.currentTimeMillis());
         if ("expense".equals(it.type())) {
             row.put("category", "others").put("note", it.note() == null ? "" : it.note());

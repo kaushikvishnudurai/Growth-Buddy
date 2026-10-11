@@ -12,6 +12,12 @@ import {
   lastDays,
   durationLabel,
   entriesFor,
+  resolveHealthLayout,
+  moveHealthMetric,
+  moveHealthSection,
+  healthInsights,
+  HEALTH_TYPES,
+  HEALTH_METRICS,
 } from './health-logic.js';
 
 const R = (type, value, day, source = 'manual', extra = {}) => ({ id: Math.random().toString(36), type, value, day, source, ...extra });
@@ -75,5 +81,73 @@ assert.deepEqual(
 );
 assert.equal(durationLabel(460), '7h 40m');
 assert.equal(durationLabel(45), '45m');
+
+// ---- layout: saved order kept, junk dropped, new things appended and shown ----
+{
+  const L = resolveHealthLayout({ sections: [{ id: 'ledger' }, { id: 'nope' }, { id: 'ledger' }, { id: 'sleep', on: false }], metrics: [{ type: 'weight' }, { type: 'steps', on: false }] });
+  assert.deepEqual(L.sections, [{ id: 'ledger', on: true }, { id: 'sleep', on: false }, { id: 'insights', on: true }]);
+  assert.equal(L.metrics.length, HEALTH_TYPES.length);
+  assert.deepEqual(L.metrics.slice(0, 2), [{ type: 'weight', on: true }, { type: 'steps', on: false }]);
+  assert.deepEqual(resolveHealthLayout(null).sections.map((x) => x.id), ['insights', 'sleep', 'ledger']);
+  assert.deepEqual(resolveHealthLayout('junk').metrics.map((x) => x.type), HEALTH_TYPES);
+  // Moving a metric swaps it with the next one in its own group, skipping other groups' rows.
+  const D = resolveHealthLayout(null);
+  const moved = moveHealthMetric(D, 'distance', -1);
+  const activity = moved.metrics.filter((m) => HEALTH_METRICS[m.type].group === 'activity').map((m) => m.type);
+  assert.deepEqual(activity.slice(0, 2), ['distance', 'steps']);
+  assert.equal(moveHealthMetric(D, 'steps', -1), null, 'first in its group cannot go up');
+  const W = { ...D, metrics: [{ type: 'weight', on: true }, ...D.metrics.filter((m) => m.type !== 'weight')] };
+  assert.equal(moveHealthMetric(W, 'weight', -1), null);
+  assert.equal(moveHealthMetric(W, 'bodyFat', -1).metrics[0].type, 'bodyFat', 'swaps across an other-group row');
+  assert.deepEqual(moveHealthSection(D, 'ledger', -1).sections.map((x) => x.id), ['insights', 'ledger', 'sleep']);
+  assert.equal(moveHealthSection(D, 'insights', -1), null);
+}
+
+// ---- insights: the user against themselves, only with enough days ----
+{
+  const T = '2026-10-11';
+  const day = (n) => addDays(T, -n);
+  const rs2 = [];
+  for (let n = 1; n <= 7; n++) rs2.push(R('steps', 9000, day(n), 'phone'));
+  for (let n = 8; n <= 14; n++) rs2.push(R('steps', 6000, day(n), 'phone'));
+  for (let n = 0; n < 7; n++) rs2.push(R('restingHeartRate', 66, day(n), 'phone'));
+  for (let n = 7; n < 37; n++) rs2.push(R('restingHeartRate', 60, day(n), 'phone'));
+  for (let n = 27; n >= 0; n -= 3) rs2.push(R('weight', 78 - (27 - n) * 0.05, day(n)));
+  for (let n = 0; n < 4; n++) rs2.push(R('bloodPressure', 132, day(n * 3), 'manual', { value2: 84 }));
+  const sleep = {};
+  for (let n = 0; n < 14; n++) sleep[day(n)] = n % 2 ? { bedtime: '23:00', wakeTime: '07:00' } : { bedtime: '23:30', wakeTime: '06:30' };
+  const all = healthInsights(rs2, sleep, T, { max: 10 });
+  const ids = all.map((x) => x.id);
+  assert.ok(ids.includes('steps-week') && ids.includes('rhr-usual') && ids.includes('weight-trend') && ids.includes('bp-average'));
+  const steps = all.find((x) => x.id === 'steps-week');
+  assert.equal(steps.tone, 'good');
+  assert.match(steps.text, /9000 steps a day.*50% more.*6000/);
+  assert.equal(all.find((x) => x.id === 'rhr-usual').tone, 'watch');
+  assert.match(all.find((x) => x.id === 'weight-trend').text, /^Down 1\.\d kg in 4 weeks/);
+  assert.match(all.find((x) => x.id === 'bp-average').text, /both numbers are at or above 130\/80/);
+  // 126/81: high on the bottom number alone, and it says so.
+  const bp = [0, 3, 6].map((n) => R('bloodPressure', 126, day(n), 'manual', { value2: 81 }));
+  const one = healthInsights(bp, {}, T).find((x) => x.id === 'bp-average');
+  assert.equal(one.title, 'Blood pressure averages 126/81');
+  assert.match(one.text, /the bottom number is 80 or more/);
+  // Watch items lead, and the list is capped.
+  assert.equal(all[0].tone, 'watch');
+  assert.equal(healthInsights(rs2, sleep, T).length, 3);
+  // A hidden metric says nothing.
+  assert.ok(!healthInsights(rs2, sleep, T, { max: 10, shown: (t) => t !== 'bloodPressure' }).some((x) => x.metric === 'bloodPressure'));
+  // Too little data: nothing.
+  assert.deepEqual(healthInsights([R('steps', 9000, day(1))], {}, T), []);
+  // No emoji, ever.
+  assert.ok(all.every((x) => !/\p{Extended_Pictographic}/u.test(x.title + x.text)));
+  // Steps and sleep: needs 3+ nights each side of the median, then says the gap.
+  const rs3 = [], sl3 = {};
+  for (let n = 1; n <= 10; n++) {
+    rs3.push(R('steps', n % 2 ? 11000 : 4000, day(n), 'phone'));
+    sl3[day(n - 1)] = n % 2 ? { bedtime: '22:30', wakeTime: '07:00' } : { bedtime: '23:30', wakeTime: '06:30' };
+  }
+  const ss = healthInsights(rs3, sl3, T, { max: 10 }).find((x) => x.id === 'steps-sleep');
+  assert.ok(ss, 'steps-sleep insight');
+  assert.match(ss.text, /longer/);
+}
 
 console.log('health-logic: ok');

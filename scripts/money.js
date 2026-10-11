@@ -20,7 +20,6 @@ import {
   fieldRefusal,
 } from './gb-kit.js';
 import { toast } from './toast.js';
-import { SalaryNudge } from './money-home.js';
 import { shareStoryCard, _demo as _shareCardDemo } from './share-card.js';
 import {
   CUR,
@@ -64,9 +63,13 @@ import {
   sumAmt,
   byCategory,
   pctChange,
+  weekVsLast,
   suggestCategory,
   buildInsights,
   budgetStatus,
+  salaryPattern,
+  salaryDue,
+  salaryDueRow,
 } from './money-core.js';
 // The document model moved to money-core.js (boot chunk); re-exported so the tests and
 // any import of these from money.js keep working.
@@ -310,6 +313,10 @@ function setAsideThisMonth(money) {
 function incomeInRange(money, from, to) {
   return (money.income || []).filter((e) => e.date >= from && e.date <= to);
 }
+// What an income row is called: its note, else its source ("1 Oct +60,000" said nothing).
+function incomeName(e) {
+  return (e && e.label) || (e && e.source === 'salary' ? 'Salary' : 'Income');
+}
 function sumIncome(list) {
   return list.reduce((a, e) => a + (Number(e.amount) || 0), 0);
 }
@@ -332,13 +339,9 @@ function loanOutstanding(money, direction) {
 
 /* 8 / 25 — weekly review + motivation. */
 function weeklyReview(money) {
-  const tw = weekStartKey();
   const today = todayKey();
-  const cur = inRange(money.expenses, tw, today);
-  const total = sumAmt(cur);
-  const lwS = dkey(addDays(parseKey(tw), -7));
-  const lwE = dkey(addDays(parseKey(tw), -1));
-  const prevTotal = sumAmt(inRange(money.expenses, lwS, lwE));
+  // Same days of last week, the window Home and Coach compare (weekVsLast).
+  const { from: tw, cur, curT: total, prevT: prevTotal } = weekVsLast(money, today);
   const setAside = setAsideInRange(money, tw, today);
   const cc = byCategory(cur, money);
   const topCat =
@@ -378,9 +381,9 @@ function weeklyReview(money) {
   // 25 weekly motivation: one warm message from the week's trajectory.
   let motivation;
   if (prevTotal > 0 && total < prevTotal && setAside > 0)
-    motivation = `You spent ${fmt(prevTotal - total)} less than last week and set aside ${fmt(setAside)}. You're building a strong habit — keep going!`;
+    motivation = `You spent ${fmt(prevTotal - total)} less than by this point last week and set aside ${fmt(setAside)}. You're building a strong habit — keep going!`;
   else if (prevTotal > 0 && total < prevTotal)
-    motivation = `You spent ${fmt(prevTotal - total)} less than last week. Momentum looks great!`;
+    motivation = `You spent ${fmt(prevTotal - total)} less than by this point last week. Momentum looks great!`;
   else if (setAside > 0)
     motivation = `You moved ${fmt(setAside)} toward your goals this week. Future-you says thanks.`;
   else if (streak >= 3)
@@ -774,7 +777,7 @@ const COMMON_CHALLENGES = [
     reason: 'A classic reset for impulse buys.',
   },
   {
-    label: 'No food delivery · this week',
+    label: 'No food delivery · 7 days',
     kind: 'nospend',
     scope: 'food',
     days: 7,
@@ -812,9 +815,12 @@ const roundTo = (n, step) => Math.max(step, Math.round(n / step) * step);
 function suggestChallenges(money) {
   const today = todayKey();
   const mExp = inRange(money.expenses, thisMonthPrefix() + '-01', today);
+  const spentToday = sumAmt(inRange(money.expenses, today, today));
   // Not enough signal yet → keep it common (the requirement's fallback).
   if (mExp.length < 6) {
-    return COMMON_CHALLENGES.map((c) => Object.assign({ personalized: false }, c));
+    return COMMON_CHALLENGES.filter((c) => !(c.kind === 'cap' && spentToday >= c.amount)).map((c) =>
+      Object.assign({ personalized: false }, c)
+    );
   }
   const cc = byCategory(mExp, money);
   const lc = byCategory(
@@ -899,9 +905,10 @@ function suggestChallenges(money) {
     });
   }
 
-  // 5 — a daily cap ~20% under the recent average.
+  // 5 — a daily cap ~20% under this month's average. Not once today's spending
+  // has already passed it: "under 300 today" after 789 can only be failed.
   const avgDaily = sumAmt(mExp) / Math.max(1, elapsed);
-  if (avgDaily > 100) {
+  if (avgDaily > 100 && spentToday < roundTo(avgDaily * 0.8, 50)) {
     const cap = roundTo(avgDaily * 0.8, 50);
     out.push({
       label: 'Spend under ' + fmt(cap) + ' today',
@@ -909,7 +916,7 @@ function suggestChallenges(money) {
       scope: 'all',
       amount: cap,
       days: 1,
-      reason: 'About 20% under your ' + fmt(avgDaily) + '/day average.',
+      reason: 'About 20% under your ' + fmt(avgDaily) + '/day average this month.',
       personalized: true,
     });
   }
@@ -917,6 +924,7 @@ function suggestChallenges(money) {
   // Top up with common challenges that don't duplicate a suggested kind+scope.
   for (const c of COMMON_CHALLENGES) {
     if (out.length >= 5) break;
+    if (c.kind === 'cap' && spentToday >= c.amount) continue;
     if (!out.some((o) => o.kind === c.kind && (o.scope || 'all') === (c.scope || 'all'))) {
       out.push(Object.assign({ personalized: false }, c));
     }
@@ -1349,8 +1357,13 @@ function coachTips(money) {
     if (lc[c.key] > 0 && ch >= 30 && out.length < 3)
       out.push(`${c.label} is up ${ch}% from last month — worth a look.`);
   });
+  // "A couple of weeks" only while there aren't two weeks of logging yet.
   if (!out.length)
-    out.push(`Log a couple of weeks of spending and your insights will get more specific.`);
+    out.push(
+      loggedDays(money.expenses, money.noSpendDays).size < 14
+        ? `Log a couple of weeks of spending and your insights will get more specific.`
+        : `No big shifts in your spending right now. I'll flag one when it shows up.`
+    );
   return out.slice(0, 3);
 }
 
@@ -1651,23 +1664,25 @@ function accountOf(money, id) {
 }
 /* "Paid from" / "Received in". Null node when there are no accounts yet (offline
    first run): an entry without one still saves, it just isn't counted in a balance. */
-function accountPicker(money, initial, onChange) {
+function accountPicker(money, initial, onChange, opts) {
   const list = activeAccounts(money);
+  // allowNone: a last "None" segment (value ''), for an entry that names no account.
+  const none = !!(opts && opts.allowNone);
   // An entry booked to an archived account keeps it: falling back to list[0]
   // would silently move (and re-currency) the entry on an unrelated edit.
   const held = !list.some((a) => a.id === initial) && accountOf(money, initial);
   if (held) list.push(held);
   if (!list.length) return { node: null, get: () => null, set() {}, disable() {} };
-  const start = list.some((a) => a.id === initial) ? initial : list[0].id;
+  const start = list.some((a) => a.id === initial) ? initial : none && !initial ? '' : list[0].id;
   const seg = segmented(
-    list.map((a) => ({ value: a.id, label: a.name })),
+    list.map((a) => ({ value: a.id, label: a.name })).concat(none ? [{ value: '', label: 'None' }] : []),
     start,
     onChange
   );
   const btns = [...seg.node.children];
   return {
     node: seg.node,
-    get: seg.get,
+    get: () => seg.get() || null,
     set: (id) => {
       const i = list.findIndex((a) => a.id === id);
       if (i >= 0) btns[i].click();
@@ -1731,8 +1746,9 @@ function firstOfKind(money, kinds) {
 }
 
 function openMoneyModal(opts) {
-  // The class only scopes money.css's dialog rules (amounts in Space Mono).
-  return { close: openModal({ modalClass: 'gb-money-modal', ...opts }) };
+  // The classes only scope money.css's dialog rules: .gb-money-sheet the 44px
+  // segments and touch targets, .gb-money-modal amounts in Space Mono.
+  return { close: openModal({ modalClass: 'gb-money-sheet gb-money-modal', ...opts }) };
 }
 
 // Module level (not inside ScreenMoney) so the customise pane's tag manager uses it too.
@@ -1744,6 +1760,37 @@ function confirmDelete(title, body, onConfirm) {
     destructive: true,
     onPrimary: onConfirm,
   });
+}
+
+/* Focus somewhere real once a save has repainted the screen and its dialog is gone:
+   a11y.js puts focus back on the dialog's trigger, but a delete or Save balances just
+   removed it, so focus fell to <body>. First selector found in the screen wins.
+   ponytail: timed past the overlay's 180ms exit + a11y's rAF; a hook in a11y.js if that moves. */
+function focusAfterSave(...sels) {
+  setTimeout(() => {
+    for (const sel of sels) {
+      const el = sel && moneyRoot && moneyRoot.querySelector(sel);
+      if (el) return el.focus();
+    }
+  }, 260);
+}
+const ADD_EXPENSE_BTN = '.gb-money-hero-actions .gb-btn--primary, .gb-money-actions .gb-btn--primary';
+/* After deleting expense `id`: the row after it (or before), else Add expense. */
+function focusAfterExpenseDelete(id) {
+  const row = moneyRoot && moneyRoot.querySelector('.gb-money-exp-row[data-exp-id="' + CSS.escape(id) + '"]');
+  const rows = row ? [...row.parentElement.querySelectorAll(':scope > .gb-money-exp-row')] : [];
+  const i = rows.indexOf(row);
+  const near = rows[i + 1] || rows[i - 1];
+  const nid = near && near.dataset.expId;
+  focusAfterSave(nid && '.gb-money-exp-row[data-exp-id="' + CSS.escape(nid) + '"] .gb-money-exp-edit', ADD_EXPENSE_BTN);
+}
+
+/* The tag a new expense starts on, or null for "the last one logged". A picked
+   tag is `defaultTagSet`; before that flag, anything but Others counted as picked. */
+function defaultTagOf(money) {
+  const s = money.settings || {};
+  if (s.defaultTagSet === false) return null;
+  return s.defaultTagSet || s.defaultTag !== 'others' ? s.defaultTag || null : null;
 }
 
 function segmented(options, initial, onChange) {
@@ -1976,7 +2023,7 @@ export function MoneyCustomisePane(money, save) {
                 {
                   type: 'button',
                   class: 'gb-icon-btn',
-                  'aria-label': 'Remove tag',
+                  'aria-label': 'Remove tag ' + c.label,
                   onclick: () =>
                     confirmDelete('Remove tag', 'Remove the "' + c.label + '" tag?', () => {
                       money.customCategories = (money.customCategories || []).filter(
@@ -2053,10 +2100,24 @@ export function MoneyCustomisePane(money, save) {
       setPref({ reflectThreshold: thr });
     },
   });
+  // "Last used" vs a picked tag, stored apart (`defaultTagSet`): every account
+  // starts with defaultTag 'others', so the tag alone can't say "picked Others".
   const defaultPicker = tagPicker(money, save, {
     initial: money.settings.defaultTag || 'others',
-    onPick: (key) => setPref({ defaultTag: key }),
+    onPick: (key) => setPref({ defaultTag: key, defaultTagSet: true }),
   });
+  const defaultMode = segmented(
+    [
+      { value: 'last', label: 'Last used' },
+      { value: 'fixed', label: 'Always one tag' },
+    ],
+    defaultTagOf(money) ? 'fixed' : 'last',
+    (v) => {
+      defaultPicker.node.style.display = v === 'fixed' ? '' : 'none';
+      setPref(v === 'fixed' ? { defaultTag: defaultPicker.get(), defaultTagSet: true } : { defaultTagSet: false, defaultTag: 'others' });
+    }
+  );
+  defaultPicker.node.style.display = defaultTagOf(money) ? '' : 'none';
 
   /* Other currencies: a rate table typed by the person (no network FX) and which
      account holds which. See toHomeAmount for how an entry is booked. */
@@ -2198,6 +2259,7 @@ export function MoneyCustomisePane(money, save) {
     thresholdInput,
     h('div', { class: 'gb-note-hint', style: { marginTop: '2px' } }, 'Set to 0 to never prompt.'),
     h('div', { class: 'gb-field-label' }, 'Default tag for new expenses'),
+    defaultMode.node,
     defaultPicker.node,
     h(
       'div',
@@ -2378,6 +2440,10 @@ function logNoSpendDay(money, save) {
    per row. Nothing is saved until "Save items". `opts.file`: a photo already
    taken (Add expense's camera button), scanned the moment this opens. Module
    level so Home's Add expense reaches it too. */
+// The server's caps (MoneyLedger): EXPENSE_MAX for an expense, MAX_AMOUNT for any other row.
+const EXPENSE_MAX = 10000000;
+const AMOUNT_MAX = 1000000000;
+
 function openReceiptModal(money, save, requestReceiptScan, opts) {
   money = normalizeMoney(money);
   applyCurrency(money);
@@ -2389,6 +2455,22 @@ function openReceiptModal(money, save, requestReceiptScan, opts) {
     accept: 'image/*',
     capture: 'environment',
   });
+  const handed = !!(opts && opts.file);
+  // A photo handed in (Add expense's camera) is already being read: no native
+  // "Choose file" over it, just a Retake that opens the camera again.
+  if (handed) file.style.display = 'none';
+  const retake = handed
+    ? h(
+        'button',
+        { type: 'button', class: 'gb-btn gb-btn--secondary gb-btn--compact', onclick: () => file.click() },
+        Icon('camera', { size: 15, sw: 2.2 }),
+        'Retake'
+      )
+    : null;
+  // Same "Paid from" as the expense form, so scanned items move a balance too.
+  // ponytail: amounts stay home currency (no toHomeAmount) like quick add; convert
+  // per row if receipts from a foreign-currency account turn up.
+  const paidFrom = accountPicker(money, money.settings.lastAccountId || firstOfKind(money, ['cash']));
   const preview = h('div', { class: 'gb-money-receipt-preview' });
   const rowsWrap = h('div', { class: 'gb-money-receipt-rows' });
   const totalEl = h('div', { class: 'gb-money-receipt-total' }, 'Total: ' + fmt(0));
@@ -2446,7 +2528,7 @@ function openReceiptModal(money, save, requestReceiptScan, opts) {
           {
             type: 'button',
             class: 'gb-icon-btn',
-            'aria-label': 'Remove item',
+            'aria-label': 'Remove ' + (r.name || 'this item'),
             onclick: () => {
               rows.splice(i, 1);
               renderRows();
@@ -2553,7 +2635,10 @@ function openReceiptModal(money, save, requestReceiptScan, opts) {
       h('div', { class: 'gb-field-label' }, 'Receipt photo'),
       file,
       preview,
+      retake,
       status,
+      paidFrom.node ? h('div', { class: 'gb-field-label' }, 'Paid from') : null,
+      paidFrom.node,
       h('div', { class: 'gb-field-label' }, 'Date'),
       date,
       h('div', { class: 'gb-field-label' }, 'Items'),
@@ -2570,7 +2655,11 @@ function openReceiptModal(money, save, requestReceiptScan, opts) {
     onPrimary: async () => {
       const valid = rows.filter((r) => (Number(r.amount) || 0) > 0);
       if (!valid.length) throw new Error('Add at least one item with an amount.');
-      commit((m) =>
+      // The server refuses an expense past EXPENSE_MAX (MoneyLedger), as the expense form does.
+      const big = valid.find((r) => r.amount > EXPENSE_MAX);
+      if (big) throw new Error((big.name || 'An item') + ' is over ' + fmt(EXPENSE_MAX) + ', the most one expense can be.');
+      const accountId = paidFrom.get();
+      commit((m) => {
         valid.forEach((r) =>
           m.expenses.unshift({
             id: uid(),
@@ -2579,9 +2668,11 @@ function openReceiptModal(money, save, requestReceiptScan, opts) {
             date: date.value && date.value <= todayKey() ? date.value : todayKey(),
             note: r.name.trim() || 'Receipt item',
             createdAt: Date.now(),
+            ...(accountId ? { accountId } : {}),
           })
-        )
-      );
+        );
+        if (accountId) m.settings.lastAccountId = accountId;
+      });
       toast.success(valid.length + ' item' + (valid.length === 1 ? '' : 's') + ' saved.');
     },
   });
@@ -2602,8 +2693,10 @@ function openExpenseModal(money, save, prefillDate, existing, scan) {
     class: 'gb-input',
     inputmode: 'decimal',
     min: '1',
-    max: '10000000',
+    max: String(EXPENSE_MAX),
     placeholder: 'e.g. 250',
+    // An edit's amount is selected, so typing replaces it instead of appending.
+    onfocus: (e) => e.target.select(),
     // Booked in another currency: edit what was actually paid, not the converted figure.
     value: ex ? String(ex.orig ? ex.orig.amount : ex.amount) : '',
   });
@@ -2634,7 +2727,7 @@ function openExpenseModal(money, save, prefillDate, existing, scan) {
   const picker = tagPicker(money, save, {
     initial:
       (ex && ex.category) ||
-      (money.settings.defaultTag !== 'others' && money.settings.defaultTag) ||
+      defaultTagOf(money) ||
       (last && last.category) ||
       'others',
     allowCreate: true,
@@ -2656,14 +2749,61 @@ function openExpenseModal(money, save, prefillDate, existing, scan) {
       ? 'Amount (' + c + (fxRate(money, c) ? ', 1 ' + c + ' = ' + fmtIn(fxRate(money, c), cur) : ', no rate set') + ')'
       : 'Amount (' + cur + ')';
   };
+  // An edit keeps what it had, no account included: falling back to Cash moved an
+  // untouched balance on a note fix. Edits can pick None too.
   const paidFrom = accountPicker(
     money,
-    (ex && ex.accountId) || money.settings.lastAccountId || firstOfKind(money, ['cash']),
-    labelFor
+    ex ? ex.accountId || null : money.settings.lastAccountId || firstOfKind(money, ['cash']),
+    labelFor,
+    { allowNone: !!ex }
   );
   labelFor(paidFrom.get());
   let modal = null;
   let scanRow = null;
+  let jumpAsked = ''; // the amount|tag the big-jump question was already asked for
+  // The big-jump question sits above the button as a warning (it was a red toast over
+  // the title, and once gone nothing said a second tap saves).
+  const jumpNote = h('p', { class: 'gb-money-jump-warn', role: 'status', hidden: true });
+  const primaryLabel = ex ? 'Save changes' : 'Add expense';
+  const primaryBtn = () => {
+    const b = amount.closest('.gb-modal-body');
+    return b && b.nextElementSibling;
+  };
+  // The question is asked from a capture listener (below), not by throwing from
+  // onPrimary: openModal toasts and shakes on every throw, and this is a warning.
+  const askJump = (e) => {
+    const b = primaryBtn();
+    if (!b || b.disabled || !b.contains(e.target)) return;
+    let q = '';
+    let key = '';
+    let shown = '';
+    try {
+      const amt = readAmount(amount);
+      if (!(amt > 0) || amt > Number(amount.max)) return; // onPrimary says what is wrong
+      const cat = picker.get();
+      const accountId = paidFrom.get();
+      const home = ex ? editedHomeAmount(money, ex, accountId, amt) : toHomeAmount(money, accountId, amt);
+      q = amountJumpQuestion(money, ex, cat, amt, home.amount);
+      key = amt + '|' + cat;
+      shown = fmtIn(amt, accCurrency(money, accountId) || cur);
+    } catch (_) {
+      return; // onPrimary refuses it with the reason
+    }
+    if (!q || jumpAsked === key) return;
+    e.stopImmediatePropagation();
+    e.preventDefault();
+    jumpAsked = key;
+    jumpNote.textContent = q;
+    jumpNote.hidden = false;
+    b.textContent = 'Save ' + shown + ' anyway';
+  };
+  amount.addEventListener('input', () => {
+    if (!jumpAsked) return;
+    jumpAsked = '';
+    jumpNote.hidden = true;
+    const b = primaryBtn();
+    if (b) b.textContent = primaryLabel;
+  });
   if (!ex && typeof scan === 'function') {
     const pick = h('input', {
       type: 'file',
@@ -2712,14 +2852,16 @@ function openExpenseModal(money, save, prefillDate, existing, scan) {
       paidFrom.node ? h('div', { class: 'gb-field-label' }, 'Paid from') : null,
       paidFrom.node,
       h('div', { class: 'gb-field-label' }, 'Date'),
-      date
+      date,
+      jumpNote
     ),
-    primary: ex ? 'Save changes' : 'Add expense',
+    primary: primaryLabel,
     danger: ex
       ? {
           label: 'Delete expense',
           // At once, with Undo: the dialog was opened on this one entry on purpose.
           onClick: () => {
+            focusAfterExpenseDelete(ex.id);
             const next = clone(money);
             dropExpense(next, ex.id);
             save(next, money);
@@ -2761,6 +2903,7 @@ function openExpenseModal(money, save, prefillDate, existing, scan) {
           const edited = Object.assign({}, x, fields);
           if (!edited.orig) delete edited.orig;
           if (accountId) edited.accountId = accountId;
+          else delete edited.accountId;
           return edited;
         });
         save(next, money);
@@ -2785,7 +2928,23 @@ function openExpenseModal(money, save, prefillDate, existing, scan) {
       if (thr > 0 && amt >= thr) setTimeout(() => openReflection(next, save, id), 220);
     },
   });
+  const sheet = amount.closest('.gb-modal');
+  if (sheet) sheet.addEventListener('click', askJump, true);
   focusSoon(amount);
+}
+
+/* An amount over 20x what the entry was, or 20x its tag's average (3+ others),
+   is most likely a slip (349 -> 349399): the first Save asks, the second goes
+   through. Returns the question, or '' to save. Pure. */
+function amountJumpQuestion(money, ex, cat, typed, home) {
+  const was = ex ? Number(ex.orig ? ex.orig.amount : ex.amount) || 0 : 0;
+  if (was > 0 && typed > was * 20)
+    return 'That is ' + Math.round(typed / was) + ' times the ' + fmt(was) + ' it was. Check it, or save it as it is.';
+  const others = (money.expenses || []).filter((e) => e.category === cat && (!ex || e.id !== ex.id));
+  const avg = others.length >= 3 ? sumAmt(others) / others.length : 0;
+  if (avg > 0 && home > avg * 20)
+    return 'That is ' + Math.round(home / avg) + ' times your usual ' + catOf(cat, money).label + ' spend (' + fmt(avg) + '). Check it, or save it as it is.';
+  return '';
 }
 
 /* =====================================================================
@@ -2922,12 +3081,14 @@ function ScreenMoney({
     const list = activeAccounts(money);
     if (!list.length) return null;
     const total = list.reduce((a, x) => a + (Number(x.balance) || 0), 0);
-    // Nothing tells us what was in the purse before the app, so ask once. Any
-    // non-zero balance, or any entry booked to an account, means it was answered.
+    // Nothing tells us what was in the purse before the app, so ask once:
+    // answered = Set balances saved, or any opening balance typed. An expense booked
+    // to an account is not an answer (the first one left Cash at -349). A cash or
+    // bank balance below zero asks again; a card's owed amount is fine.
+    const negative = list.find((a) => a.kind !== 'card' && Number(a.balance) < 0);
     const needsSetup =
-      !money.settings.accountsSetUp &&
-      list.every((a) => !Number(a.openingBalance)) &&
-      !money.expenses.concat(money.income).some((e) => e.accountId);
+      negative ||
+      (!money.settings.accountsSetUp && list.every((a) => !Number(a.openingBalance)));
     return Card({
       className: 'gb-money-card',
       children: [
@@ -2967,7 +3128,9 @@ function ScreenMoney({
               h(
                 'p',
                 { class: 'gb-money-coach-text' },
-                'Tell me once and every expense after that keeps your cash and bank balances right.'
+                negative
+                  ? negative.name + ' shows ' + fmtBalance(money, negative) + '. Tell me what is in each right now and the balances line up again.'
+                  : 'Tell me once and every expense after that keeps your cash and bank balances right.'
               ),
               h(
                 'button',
@@ -3206,13 +3369,21 @@ function ScreenMoney({
 
   function openSetBalances() {
     const list = activeAccounts(money);
-    const inputs = list.map((a) =>
+    // Prefilled with what each holds now (a cash/bank balance below zero as 0, what
+    // it would take to clear it), selected on focus: "rough is fine" is one edit.
+    // An account in another currency stays blank (its balance is held in home units).
+    const start = list.map((a) =>
+      accCurrency(money, a.id) ? null : a.kind !== 'card' && Number(a.balance) < 0 ? 0 : Number(a.balance) || 0
+    );
+    const inputs = list.map((a, i) =>
       h('input', {
         type: 'number',
         class: 'gb-input',
         inputmode: 'decimal',
         placeholder: '0',
         id: 'bal-' + a.id,
+        value: start[i] === null ? '' : String(start[i]),
+        onfocus: (e) => e.target.select(),
       })
     );
     openMoneyModal({
@@ -3236,8 +3407,11 @@ function ScreenMoney({
         // Converted up front too: an account with no rate refuses before any saves.
         const home = vals.map((v, i) => (v === null ? null : toHomeAmount(money, list[i].id, v).amount));
         for (let i = 0; i < list.length; i++) {
-          if (home[i] !== null) await accountRequest('PUT', '/' + list[i].id, { balance: home[i] });
+          if (home[i] !== null && home[i] !== Number(list[i].balance))
+            await accountRequest('PUT', '/' + list[i].id, { balance: home[i] });
         }
+        // Its prompt (the trigger) goes with the save: land on the balances instead.
+        focusAfterSave('.gb-money-accounts button', '.gb-money-head-actions button');
         commit((m) => (m.settings.accountsSetUp = true));
         toast.success('Balances saved.');
       },
@@ -3396,6 +3570,8 @@ function ScreenMoney({
 
   /* ---- MODALS ---- */
   function openSetBudgets() {
+    // Each box hints 10% under that tag's last 30 days, not a row of zeros.
+    const last30 = byCategory(inRange(money.expenses, lastNDays(30)[0], todayKey()), money);
     const inputs = mergedCats(money).map((c) => ({
       c,
       inp: h('input', {
@@ -3405,7 +3581,8 @@ function ScreenMoney({
         min: '0',
         step: '1',
         max: '10000000',
-        placeholder: '0',
+        placeholder: last30[c.key] > 0 ? String(Math.max(50, Math.round((last30[c.key] * 0.9) / 50) * 50)) : '',
+        'aria-label': c.label + ' monthly budget',
         value: money.budgets[c.key] ? String(money.budgets[c.key]) : '',
       }),
       roll: h('input', {
@@ -3417,7 +3594,7 @@ function ScreenMoney({
     }));
     openMoneyModal({
       title: 'Monthly budgets',
-      sub: 'Set what feels realistic, in whole amounts. Leave blank to skip a tag.',
+      sub: 'Set what feels realistic, in whole amounts. Leave blank to skip a tag. The grey figures are 10% under your last 30 days.',
       body: h(
         'div',
         { class: 'gb-form' },
@@ -4537,7 +4714,7 @@ function ScreenMoney({
     if (near.length)
       return `You're close on ${near[0].cat.label} (${near[0].pct}% used), but there's room elsewhere.`;
     if (streak >= 3)
-      return `${streak}-day logging streak — this is exactly how clarity is built. Keep going!`;
+      return `${streak}-day logging streak — this is exactly how clarity is built.`;
     if (st.length && !todayOk) return 'Today ran past its share. The figure above is what each day has from tomorrow.';
     if (st.length) return `Looking good — your budgets have breathing room this month.`;
     return `Set a budget or two and I can help you stay on track, gently.`;
@@ -4824,6 +5001,8 @@ function ScreenMoney({
   function forecastCard() {
     const f = forecast(money);
     if (!f.hasData) return null;
+    // "No budgets projected to overflow" with no budgets set was praise for nothing.
+    const hasBudgets = budgetStatus(money).some((s) => s.base > 0);
     return Card({
       className: 'gb-money-card',
       children: [
@@ -4861,7 +5040,12 @@ function ScreenMoney({
                   { class: 'gb-money-forecast-num', style: { color: 'var(--success)' } },
                   fmt(f.potential)
                 ),
-                h('div', { class: 'gb-money-forecast-lbl' }, 'savable / month')
+                // A what-if, not money left over: say which trim it is.
+                h(
+                  'div',
+                  { class: 'gb-money-forecast-lbl' },
+                  f.topDisc ? 'if you trim ' + f.topDisc.label + ' 20%' : 'with a 20% trim'
+                )
               )
             : null
         ),
@@ -4876,19 +5060,15 @@ function ScreenMoney({
                 'On track to exceed: ' + f.willExceed.map((w) => w.cat.label).join(', ') + '.'
               )
             )
-          : h(
-              'div',
-              { class: 'gb-money-forecast-ok' },
-              Icon('check-circle-2', { size: 15, sw: 2.2 }),
-              h('span', null, 'No budgets projected to overflow. Nicely paced.')
-            ),
-        f.topDisc && f.potential > 0
-          ? h(
-              'div',
-              { class: 'gb-note-hint' },
-              `Trimming ${f.topDisc.label} ~20% could free about ${fmt(f.potential)} this month.`
-            )
-          : null,
+          : hasBudgets
+            ? h(
+                'div',
+                { class: 'gb-money-forecast-ok' },
+                Icon('check-circle-2', { size: 15, sw: 2.2 }),
+                h('span', null, 'No budgets projected to overflow. Nicely paced.')
+              )
+            : null,
+        // No "Trimming X ~20% could free ..." line: the figure beside the total says it.
       ],
     });
   }
@@ -4970,17 +5150,25 @@ function ScreenMoney({
       ),
       (() => {
         const noSpendToday = (money.noSpendDays || []).includes(todayKey());
-        return h(
+        // Off, with the reason beside it, once today has spending: it used to stay
+        // live and only say no after the tap.
+        const spent = money.expenses.some((e) => e.date === todayKey() && Number(e.amount) > 0);
+        const btn = h(
           'button',
           {
             type: 'button',
             class:
               'gb-btn gb-btn--compact ' + (noSpendToday ? 'gb-btn--success' : 'gb-btn--soft'),
+            disabled: spent,
+            'aria-describedby': spent ? 'gb-money-nospend-why' : null,
             onclick: () => logNoSpendDay(money, save),
           },
           Icon('circle-check', { size: 15, sw: 2.4 }),
           noSpendToday ? 'Logged: no spend' : 'No-spend day'
         );
+        return spent
+          ? [btn, h('span', { class: 'gb-note-hint', id: 'gb-money-nospend-why' }, 'You spent today, so it isn’t a no-spend day.')]
+          : btn;
       })()
     );
 
@@ -4993,9 +5181,11 @@ function ScreenMoney({
       oninput: () => (lastSearch = searchInput.value),
     });
     const searchOut = h('div', { class: 'gb-money-search-out' });
-    const runSearch = (q = searchInput.value) => {
+    const SEARCH_ROWS = 12;
+    const runSearch = (q = searchInput.value, all = false) => {
       searchAsked = q;
       const r = searchExpenses(money, q);
+      const shown = all ? r.results : r.results.slice(0, SEARCH_ROWS);
       // replaceChildren is native DOM: a null child stringifies into the literal
       // text "null" under the answer. Drop it instead.
       searchOut.replaceChildren(
@@ -5005,7 +5195,19 @@ function ScreenMoney({
             ? h(
                 'div',
                 { class: 'gb-money-exp-list' },
-                r.results.slice(0, 12).map((e) => expRow(e))
+                shown.map((e) => expRow(e, false, false, true))
+              )
+            : null,
+          // The answer counts every match; say when the list holds fewer.
+          shown.length < r.results.length
+            ? h(
+                'button',
+                {
+                  type: 'button',
+                  class: 'gb-btn gb-btn--ghost gb-btn--compact',
+                  onclick: () => runSearch(q, true),
+                },
+                'Showing ' + shown.length + ' of ' + r.results.length + '. Show all'
               )
             : null,
         ].filter(Boolean)
@@ -5042,7 +5244,7 @@ function ScreenMoney({
           'div',
           { class: 'gb-money-week-total' },
           fmt(weekTotal),
-          h('span', { class: 'gb-money-week-avg' }, 'spent · ' + fmt(weekTotal / 7) + ' a day on average')
+          h('span', { class: 'gb-money-week-avg' }, 'spent · ' + fmt(weekTotal / 7) + ' a day on average over these 7 days')
         ),
         weekBars(money.expenses, {
           noSpendDays: money.noSpendDays,
@@ -5170,7 +5372,8 @@ function ScreenMoney({
         h(
           'div',
           { class: 'gb-sectiontitle' },
-          h('h3', null, isThisMonth ? 'This month' : monthLabel(shownMonth)),
+          // With the month picker beside it, the picker names the month.
+          h('h3', null, monthPick ? 'Expenses' : isThisMonth ? 'This month' : monthLabel(shownMonth)),
           h(
             'div',
             { class: 'gb-money-list-tools' },
@@ -5295,19 +5498,22 @@ function ScreenMoney({
     );
   }
 
-  function expRow(e, withDelete, underDay) {
+  // `underDay`: the row sits under a ledgerDay header, so its own date is dropped.
+  // `editable` (default: withDelete): the text opens the edit dialog. Search rows
+  // edit but carry no trash button; rows "Load older" fetched do neither.
+  function expRow(e, withDelete, underDay, editable = withDelete) {
     const c = catOf(e.category, money);
     return h(
       'div',
-      { class: 'gb-money-exp-row' },
+      { class: 'gb-money-exp-row', 'data-exp-id': e.id },
       h(
         'span',
         { class: 'gb-money-cat-ic', style: { background: c.soft, color: c.fg } },
         Icon(c.icon, { size: 15, sw: 2.2 })
       ),
       h(
-        withDelete ? 'button' : 'div',
-        withDelete
+        editable ? 'button' : 'div',
+        editable
           ? {
               type: 'button',
               class: 'gb-money-exp-main gb-money-exp-edit',
@@ -5356,12 +5562,13 @@ function ScreenMoney({
             {
               type: 'button',
               class: 'gb-icon-btn',
-              'aria-label': 'Delete expense',
+              'aria-label': 'Delete ' + (e.note || c.label) + ', ' + fmt(e.amount),
               onclick: () =>
                 confirmDelete(
                   'Delete expense',
                   'Delete "' + (e.note || c.label) + '" (' + fmt(e.amount) + ')?',
                   async () => {
+                    focusAfterExpenseDelete(e.id);
                     commit((m) => dropExpense(m, e.id));
                     toast.success('Expense deleted.');
                   }
@@ -5512,7 +5719,7 @@ function ScreenMoney({
                     {
                       type: 'button',
                       class: 'gb-icon-btn',
-                      'aria-label': 'Delete subscription',
+                      'aria-label': 'Delete ' + s.name + ', ' + fmt(s.amount),
                       onclick: () =>
                         confirmDelete('Delete subscription', 'Delete "' + s.name + '"?', () => {
                           commit((m) => removeDocItem(m, 'subscriptions', s.id));
@@ -5770,7 +5977,7 @@ function ScreenMoney({
                 {
                   type: 'button',
                   class: 'gb-icon-btn',
-                  'aria-label': 'Delete goal',
+                  'aria-label': 'Delete goal ' + g.name,
                   onclick: () =>
                     confirmDelete(
                       'Delete goal',
@@ -5877,7 +6084,7 @@ function ScreenMoney({
                     {
                       type: 'button',
                       class: 'gb-icon-btn',
-                      'aria-label': 'Remove',
+                      'aria-label': 'Remove ' + it.name + ' from wishlist',
                       onclick: () =>
                         confirmDelete('Remove item', 'Remove "' + it.name + '" from your wishlist?', () => {
                           commit((m) => removeDocItem(m, 'wishlist', it.id));
@@ -5899,20 +6106,14 @@ function ScreenMoney({
      ================================================================= */
   // `ex` = an income entry to edit (same id, as openExpenseModal does).
   function openAddIncome(ex = null) {
-    // A new one starts on the last salary: its amount and account, so a payday is
-    // Add and nothing else.
-    const lastSalary = ex
-      ? null
-      : (money.income || [])
-          .filter((i) => i.source === 'salary')
-          .sort((a, b) => (a.date < b.date ? 1 : -1))[0];
+    // Selected on focus: typing over the prefilled salary appended to it (60000 -> 6000060000).
     const amt = h('input', {
       type: 'number',
       class: 'gb-input',
       inputmode: 'decimal',
       min: '1',
       placeholder: 'e.g. 45000',
-      value: ex ? String(ex.orig ? ex.orig.amount : ex.amount) : lastSalary ? String(lastSalary.orig ? lastSalary.orig.amount : lastSalary.amount) : '',
+      onfocus: (e) => e.target.select(),
     });
     const label = h('input', {
       type: 'text',
@@ -5921,17 +6122,46 @@ function ScreenMoney({
       placeholder: 'e.g. June salary',
       value: ex ? ex.label || '' : '',
     });
-    const date = h('input', { type: 'date', class: 'gb-input', max: todayKey(), value: (ex && ex.date) || todayKey() });
+    // This month's salary not in yet and its usual day has come: dated that day.
+    const due = ex ? null : salaryDue(money);
+    // Up to today, as an expense: a later date was invisible in every list.
+    const date = h('input', {
+      type: 'date',
+      class: 'gb-input',
+      max: todayKey(),
+      value: ex ? ex.date : due ? due.date : todayKey(),
+    });
+    // Salary starts on the last salary's amount and account; two equal ones on the
+    // same day of the month offer to log it every month (a `recurring` rule).
+    const pat = ex ? { last: null, repeat: null } : salaryPattern(money);
+    const prefill = pat.last ? String(pat.last.orig ? pat.last.orig.amount : pat.last.amount) : '';
+    amt.value = ex ? String(ex.orig ? ex.orig.amount : ex.amount) : prefill;
+    const repeat = pat.repeat
+      ? h('input', { type: 'checkbox', class: 'gb-money-roll-check', checked: true })
+      : null;
+    const repeatRow = repeat
+      ? h(
+          'label',
+          { class: 'gb-money-roll' },
+          repeat,
+          'Repeat monthly on ' + recurDayLabel(pat.repeat.day) + ' (logged for you)'
+        )
+      : null;
     const src = segmented(
       [
         { value: 'salary', label: 'Salary' },
         { value: 'other', label: 'Other' },
       ],
-      ex ? ex.source || 'other' : 'salary'
+      ex ? (ex.source === 'salary' ? 'salary' : 'other') : 'salary',
+      (v) => {
+        if (v !== 'salary' && amt.value === prefill) amt.value = '';
+        if (v === 'salary' && !amt.value) amt.value = prefill;
+        if (repeatRow) repeatRow.style.display = v === 'salary' ? '' : 'none';
+      }
     );
     const amtLabel = h('div', { class: 'gb-field-label' }, 'Amount (' + cur + ')');
-    const initialAcc = ex ? ex.accountId : (lastSalary && lastSalary.accountId) || firstOfKind(money, ['bank', 'wallet']);
-    const into = accountPicker(money, initialAcc, (id) => {
+    const lastAcc = pat.last && activeAccounts(money).some((a) => a.id === pat.last.accountId) ? pat.last.accountId : null;
+    const into = accountPicker(money, ex ? ex.accountId : lastAcc || firstOfKind(money, ['bank', 'wallet']), (id) => {
       amtLabel.textContent = 'Amount (' + (accCurrency(money, id) || cur) + ')';
     });
     amtLabel.textContent = 'Amount (' + (accCurrency(money, into.get()) || cur) + ')';
@@ -5950,7 +6180,8 @@ function ScreenMoney({
         h('div', { class: 'gb-field-label' }, 'Note (optional)'),
         label,
         h('div', { class: 'gb-field-label' }, 'Date'),
-        date
+        date,
+        repeatRow
       ),
       primary: ex ? 'Save changes' : 'Add income',
       danger: ex
@@ -5973,23 +6204,52 @@ function ScreenMoney({
         if (!Number.isFinite(v) || v <= 0) throw fieldRefusal(amt, 'Enter an amount greater than zero.');
         if (!date.value || date.value > todayKey()) throw fieldRefusal(date, 'Pick a day up to today.');
         const source = src.get();
-        const accountId = into.get();
-        const home = ex ? editedHomeAmount(money, ex, accountId, v) : toHomeAmount(money, accountId, v);
-        const row = {
-          id: ex ? ex.id : uid(),
-          amount: home.amount,
-          ...(home.orig ? { orig: home.orig } : {}),
-          source,
-          label: label.value.trim() || (source === 'salary' ? 'Salary' : 'Income'),
-          date: date.value,
-          ...(accountId ? { accountId } : {}),
-        };
+        const home = ex ? editedHomeAmount(money, ex, into.get(), v) : toHomeAmount(money, into.get(), v);
+        // Past the server's cap it said "Income added." and then failed the sync.
+        if (home.amount > AMOUNT_MAX) throw fieldRefusal(amt, 'That is more than ' + fmt(AMOUNT_MAX) + '. Check the amount.');
+        const when = date.value || todayKey();
+        const repeating = repeat && repeat.checked && source === 'salary';
+        if (ex) {
+          const row = {
+            id: ex.id,
+            amount: home.amount,
+            ...(home.orig ? { orig: home.orig } : {}),
+            source,
+            label: label.value.trim() || (source === 'salary' ? 'Salary' : 'Income'),
+            date: when,
+            ...(into.get() ? { accountId: into.get() } : {}),
+          };
+          commit((m) => (m.income = (m.income || []).map((x) => (x.id === ex.id ? row : x))));
+          toast.success('Income updated.');
+          return;
+        }
         commit((m) => {
-          m.income = m.income || [];
-          if (ex) m.income = m.income.map((x) => (x.id === ex.id ? row : x));
-          else m.income.unshift(row);
+          (m.income = m.income || []).unshift({
+            id: uid(),
+            amount: home.amount,
+            ...(home.orig ? { orig: home.orig } : {}),
+            source,
+            label: label.value.trim() || (source === 'salary' ? 'Salary' : 'Income'),
+            date: when,
+            ...(into.get() ? { accountId: into.get() } : {}),
+          });
+          // postedFor = this entry's month: the salary just added IS that month's,
+          // so the repeat doesn't post a second one alongside it.
+          if (repeating)
+            (m.recurring = m.recurring || []).push({
+              id: uid(),
+              kind: 'income',
+              amount: home.amount,
+              category: 'salary',
+              day: pat.repeat.day,
+              note: label.value.trim(),
+              active: true,
+              start: todayKey(),
+              postedFor: when.slice(0, 7),
+              ...(into.get() ? { accountId: into.get() } : {}),
+            });
         });
-        toast.success(ex ? 'Income updated.' : 'Income added.');
+        toast.success(repeating ? 'Income added. It logs itself on ' + recurDayLabel(pat.repeat.day) + ' from now on.' : 'Income added.');
       },
     });
     focusSoon(amt);
@@ -6231,6 +6491,41 @@ function ScreenMoney({
     focusSoon(total);
   }
 
+  /* "Salary 60,000 arrived?": its usual day has come and this month's isn't logged.
+     One tap logs it on the account the last one went to. */
+  function salaryDueCard() {
+    const due = salaryDue(money);
+    if (!due) return null;
+    const row = salaryDueRow(money, due);
+    const acc = row.accountId || null;
+    const logIt = () => {
+      commit((m) => (m.income = m.income || []).unshift(row));
+      toast.success('Salary logged for ' + fmtDateShort(due.date) + '.');
+    };
+    return coachCard('wallet', 'Salary ' + fmt(due.amount) + ' arrived?', [
+      h(
+        'p',
+        { class: 'gb-money-coach-text' },
+        'It usually lands by ' + fmtDateShort(due.date) + (acc ? ' in ' + accountOf(money, acc).name : '') + '.'
+      ),
+      h(
+        'div',
+        { class: 'gb-money-head-actions' },
+        h(
+          'button',
+          { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--compact', onclick: logIt },
+          Icon('check', { size: 14, sw: 2.6 }),
+          'Yes, log it'
+        ),
+        h(
+          'button',
+          { type: 'button', class: 'gb-btn gb-btn--ghost gb-btn--compact', onclick: () => openAddIncome() },
+          'Different amount'
+        )
+      ),
+    ]);
+  }
+
   function tabIncome() {
     const mStart = thisMonthPrefix() + '-01';
     const today = todayKey();
@@ -6309,7 +6604,7 @@ function ScreenMoney({
             'Add income'
           )
         ),
-        SalaryNudge(money, save),
+        salaryDueCard(),
         incomeList.length
           ? h(
               'div',
@@ -6331,10 +6626,10 @@ function ScreenMoney({
                     {
                       type: 'button',
                       class: 'gb-money-exp-main gb-money-exp-edit',
-                      'aria-label': 'Edit ' + e.label + ', ' + fmt(e.amount),
+                      'aria-label': 'Edit ' + incomeName(e) + ', ' + fmt(e.amount),
                       onclick: () => openAddIncome(e),
                     },
-                    h('div', { class: 'gb-money-exp-note' }, e.label),
+                    h('div', { class: 'gb-money-exp-note' }, incomeName(e)),
                     h(
                       'div',
                       { class: 'gb-money-exp-meta' },
@@ -6353,9 +6648,9 @@ function ScreenMoney({
                     {
                       type: 'button',
                       class: 'gb-icon-btn',
-                      'aria-label': 'Delete income',
+                      'aria-label': 'Delete ' + incomeName(e) + ', ' + fmt(e.amount),
                       onclick: () =>
-                        confirmDelete('Delete income', 'Delete "' + e.label + '"?', async () => {
+                        confirmDelete('Delete income', 'Delete "' + incomeName(e) + '"?', async () => {
                           commit((m) => (m.income = m.income.filter((x) => x.id !== e.id)));
                           toast.success('Income deleted.');
                         }),
@@ -6448,7 +6743,7 @@ function ScreenMoney({
           {
             type: 'button',
             class: 'gb-icon-btn',
-            'aria-label': 'Delete loan',
+            'aria-label': 'Delete loan ' + (lent ? 'to ' : 'from ') + l.party + ', ' + fmt(l.amount),
             onclick: () =>
               confirmDelete('Delete record', 'Remove this loan record?', async () => {
                 commit((m) => {
@@ -6819,7 +7114,7 @@ function ScreenMoney({
                       {
                         type: 'button',
                         class: 'gb-icon-btn',
-                        'aria-label': 'Delete challenge',
+                        'aria-label': 'Delete challenge ' + ch.title,
                         onclick: () =>
                           confirmDelete('Delete challenge', 'Delete "' + ch.title + '"?', () => {
                             commit((m) => removeDocItem(m, 'challenges', ch.id));
@@ -7135,7 +7430,7 @@ if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.DEV
   }
 }
 
-export { ScreenMoney, searchExpenses, openExpenseModal };
+export { ScreenMoney, searchExpenses, openExpenseModal, openReceiptModal };
 // Lives in money-home.js now (Home imports it from there); re-exported for older imports.
 export { MoneyHomeCard } from './money-home.js';
 // The pure engines, for money-calc.test.mjs (node, no DOM). Not for screens.
@@ -7151,13 +7446,16 @@ export const _calc = {
   recurringDue,
   recurringToCome,
   materialiseRecurring,
+  salaryPattern,
+  salaryDue,
+  amountJumpQuestion,
+  suggestChallenges,
   toHomeAmount,
   editedHomeAmount,
   challengeProgress,
   financialHealth,
   challengeEnd,
   newSubscription,
-  suggestChallenges,
   dropExpense,
   advise,
   goalPlan,

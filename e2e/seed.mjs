@@ -1,10 +1,10 @@
 // Creates a verified, seeded account against a running backend and prints {email, password, token}.
-// Usage: GB_API=http://localhost:8591 GB_BACKEND_LOG=<path> node e2e/seed.mjs [--empty]
-// The OTP is read from the backend log: run the backend with --spring.mail.username= so the
+// Usage: GB_API=http://localhost:8590 GB_BACKEND_LOG=<path> node e2e/seed.mjs [--empty]
+// The OTP is read from the backend2.log: run the backend with --spring.mail.username= so the
 // mail service prints the email instead of sending it.
 import { readFileSync } from 'node:fs';
 
-const API = process.env.GB_API || 'http://localhost:8591';
+const API = process.env.GB_API || 'http://localhost:8590';
 const LOG = process.env.GB_BACKEND_LOG;
 const empty = process.argv.includes('--empty');
 
@@ -54,7 +54,7 @@ export async function seedAccount({ seed = true, tag = 'e2e' } = {}) {
     otp = otpFor(email);
     if (!otp) await new Promise((r) => setTimeout(r, 250));
   }
-  if (!otp) throw new Error('no OTP in backend log for ' + email);
+  if (!otp) throw new Error('no OTP in backend2.log for ' + email);
   const v = await call('/api/auth/verify', 'POST', { email, otp });
   const token = v.json && v.json.token;
   const user = v.json && (v.json.user || v.json);
@@ -89,7 +89,7 @@ export async function seedAccount({ seed = true, tag = 'e2e' } = {}) {
   await post('/api/water/entries', { amountMl: 500 });
   await post('/api/food/entries', { foodName: 'Idli', quantityGrams: 150, mealType: 'home', kcal: 220 });
   await post('/api/daily-logs/sleep', { date: today, bedtime: '23:00', wakeTime: '06:30', quality: 'good' });
-  await post('/api/daily-logs/mood', { date: today, mood: 'good', energy: 'high', stress: 'low' });
+  await post('/api/daily-logs/mood', { date: today, mood: 'good', energy: 'high', stress: 'calm' });
   if (failures.length) console.error('seed warnings:\n  ' + failures.join('\n  '));
   return { email, password, token, user };
 }

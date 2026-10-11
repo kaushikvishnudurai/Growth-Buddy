@@ -16,6 +16,7 @@ import {
   suggestWaterGoalMl,
   labelFor,
   dayMicros,
+  cameraErrorMessage,
 } from './nutrition.js';
 
 // Slots: the same hours as MealSlot.forHour.
@@ -102,5 +103,20 @@ assert.deepEqual(dayMicros({ fiberG: 12, sugarG: null }), [
 ]);
 assert.deepEqual(dayMicros({ fiberG: 0 }).length, 1, 'a real 0 is shown');
 assert.deepEqual(dayMicros(null), []);
+
+// Barcode camera: only a refusal says "blocked", and it says where to allow it.
+const cam = (name, native, message) => cameraErrorMessage({ name, message }, native);
+assert.match(cam('NotAllowedError', false), /blocked for this site.*Site settings/);
+assert.match(cam('SecurityError', false), /blocked for this site/);
+assert.match(cam('NotAllowedError', false, 'Permission denied by system'), /privacy settings/);
+assert.match(cam('NotAllowedError', true), /Settings > Apps > Growth Buddy/);
+assert.match(cam('NotFoundError', false), /No camera found/);
+assert.match(cam('OverconstrainedError', false), /No camera found/);
+assert.match(cam('NotReadableError', true), /in use by another app/);
+assert.match(cam('AbortError', false), /stopped before it started/);
+assert.match(cam('TypeError', false), /cannot read barcodes/);
+for (const n of ['NotFoundError', 'NotReadableError', 'AbortError', 'TypeError', 'Weird', ''])
+  assert.doesNotMatch(cam(n, false), /refused|blocked/i, n + ' is not a refusal');
+assert.match(cameraErrorMessage(null, false), /could not start/);
 
 console.log('nutrition: ok');

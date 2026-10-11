@@ -181,11 +181,13 @@ record UpdateFoodEntryRequest(
         MealType mealType,
         LocalDate date,
         @Size(max = 255) String note,
-        MealSlot mealSlot) {
+        MealSlot mealSlot,
+        /** A new count; with no quantityGrams the grams follow it. New grams without it clear the count. */
+        @Min(1) @Max(30) Integer pieces) {
 
     UpdateFoodEntryRequest(String foodName, Integer quantityGrams, Integer kcal, MealType mealType,
             LocalDate date, String note) {
-        this(foodName, quantityGrams, kcal, mealType, date, note, null);
+        this(foodName, quantityGrams, kcal, mealType, date, note, null, null);
     }
 }
 
@@ -286,7 +288,9 @@ record FoodEntryResponse(
         Integer fatG,
         Integer fiberG,
         Integer sugarG,
-        Integer sodiumMg) {
+        Integer sodiumMg,
+        /** The count it was logged by ("2 pieces"); null when weighed. */
+        Integer pieces) {
 
     static FoodEntryResponse from(FoodEntry e) {
         return new FoodEntryResponse(
@@ -306,7 +310,8 @@ record FoodEntryResponse(
                 e.getFatG(),
                 e.getFiberG(),
                 e.getSugarG(),
-                e.getSodiumMg());
+                e.getSodiumMg(),
+                e.getPieces());
     }
 }
 

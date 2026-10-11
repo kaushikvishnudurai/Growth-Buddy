@@ -695,48 +695,60 @@ function suggestCategory(text, money) {
   return predictCategory(text, money && money.expenses, mergedCats(money));
 }
 
-/* 2 — weekly + monthly insights, plain language. */
-function buildInsights(money) {
-  const out = [];
-  const tw = weekStartKey();
-  const today = todayKey();
+/* This week so far against the same days of last week (Mon..today vs last
+   Mon..same weekday). The one week-over-week window: Home's card, Coach and the
+   weekly review all read it, so their numbers agree. Comparing a partial week with
+   a whole one said "less than last week" every Monday. */
+function weekVsLast(money, today = todayKey()) {
+  const tw = weekStartKey(parseKey(today));
+  const n = diffDays(today, tw);
   const lwS = dkey(addDays(parseKey(tw), -7));
-  const lwE = dkey(addDays(parseKey(tw), -1));
+  const lwE = dkey(addDays(parseKey(lwS), n));
   const cur = inRange(money.expenses, tw, today);
   const prev = inRange(money.expenses, lwS, lwE);
-  const curT = sumAmt(cur);
-  const prevT = sumAmt(prev);
-  if (cur.length && prevT > 0) {
-    const ch = pctChange(curT, prevT);
-    if (ch <= -10)
-      out.push({
-        tone: 'down',
-        text: `You're spending ${Math.abs(ch)}% less than last week so far.`,
-      });
-    else if (ch >= 10)
-      out.push({
-        tone: 'up',
-        text: `You've spent ${ch}% more than last week. Worth a quick glance.`,
-      });
-    else out.push({ tone: 'flat', text: `Your spending is steady — about the same as last week.` });
-  }
+  return { from: tw, cur, prev, curT: sumAmt(cur), prevT: sumAmt(prev) };
+}
+
+/* 2 — weekly + monthly insights, plain language. The week lines say "this week",
+   since Home shows them under a month figure. */
+function buildInsights(money) {
+  const out = [];
+  const today = todayKey();
+  const { cur, prev, curT, prevT } = weekVsLast(money, today);
+  // The tag that moved most, worked out first: "steady" above "Transport is up
+  // 67%" contradicted itself, so a tag moving more than 25% rules steady out.
+  let best = null;
   if (cur.length) {
     const cc = byCategory(cur, money);
     const pc = byCategory(prev, money);
-    let best = null;
     mergedCats(money).forEach((c) => {
       if (pc[c.key] > 0 && cc[c.key] > 0) {
         const ch = pctChange(cc[c.key], pc[c.key]);
         if (!best || Math.abs(ch) > Math.abs(best.ch)) best = { c, ch };
       }
     });
-    if (best && Math.abs(best.ch) >= 15)
-      out.push(
-        best.ch > 0
-          ? { tone: 'up', text: `${best.c.label} is up ${best.ch}% vs last week.` }
-          : { tone: 'down', text: `${best.c.label} is down ${Math.abs(best.ch)}% — nice control.` }
-      );
   }
+  if (cur.length && prevT > 0) {
+    const ch = pctChange(curT, prevT);
+    if (ch <= -10)
+      out.push({
+        tone: 'down',
+        text: `This week you're spending ${Math.abs(ch)}% less than by this point last week.`,
+      });
+    else if (ch >= 10)
+      out.push({
+        tone: 'up',
+        text: `This week you've spent ${ch}% more than by this point last week. Worth a quick glance.`,
+      });
+    else if (!best || Math.abs(best.ch) <= 25)
+      out.push({ tone: 'flat', text: `Your spending this week is steady, about the same as last week.` });
+  }
+  if (best && Math.abs(best.ch) >= 15)
+    out.push(
+      best.ch > 0
+        ? { tone: 'up', text: `${best.c.label} is up ${best.ch}% vs the same days last week.` }
+        : { tone: 'down', text: `${best.c.label} is down ${Math.abs(best.ch)}% vs the same days last week. Nice control.` }
+    );
   const mExp = inRange(money.expenses, thisMonthPrefix() + '-01', today);
   if (mExp.length) {
     const mc = byCategory(mExp, money);
@@ -789,35 +801,59 @@ function budgetStatus(money) {
   });
 }
 
-/* "Salary arrived?": a salary on about the same day (±2) in 2 of the last 3 months,
-   none logged this month yet, and today from 2 days before that day on. Returns the
-   last salary's {amount, orig?, accountId?, label, day}, or null. Off once a monthly
-   salary repeat exists (Money posts that by itself).
-   ponytail: no wrap across a month end (a salary on the 30th, then the 1st, reads as
-   two different days); fix when someone is paid on the turn of the month. */
-function usualSalary(money, today = todayKey()) {
-  const salaries = (money.income || [])
-    .filter((i) => i.source === 'salary' && i.date && i.date <= today)
-    .sort((a, b) => (a.date < b.date ? 1 : -1));
-  const month = today.slice(0, 7);
-  const last = salaries[0];
-  if (!last || last.date.slice(0, 7) === month) return null;
-  if ((money.recurring || []).some((r) => r.active !== false && r.kind === 'income' && r.category === 'salary')) {
-    return null;
-  }
-  const day = Number(last.date.slice(8));
-  const t = parseKey(today);
-  const back = [1, 2, 3].map((k) => dkey(new Date(t.getFullYear(), t.getMonth() - k, 1)).slice(0, 7));
-  const hits = back.filter((m) =>
-    salaries.some((i) => i.date.slice(0, 7) === m && Math.abs(Number(i.date.slice(8)) - day) <= 2)
-  ).length;
-  if (hits < 2 || t.getDate() < day - 2) return null;
+/* Add income's Salary help: `last` = the newest salary (to prefill), `repeat` =
+   {amount, day} once two salaries of the same amount landed on the same day of
+   two different months, unless an active salary repeat already exists. A day past
+   the 28th is 'last' (the picker's own rule). Pure. */
+function salaryPattern(money) {
+  const sal = (money.income || [])
+    .filter((i) => i && i.source === 'salary' && Number(i.amount) > 0)
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  const last = sal[0] || null;
+  let repeat = null;
+  for (let i = 0; i < sal.length && !repeat; i++)
+    for (let j = i + 1; j < sal.length && !repeat; j++) {
+      const a = sal[i];
+      const b = sal[j];
+      if (Number(a.amount) === Number(b.amount) && a.date.slice(8) === b.date.slice(8) && a.date.slice(0, 7) !== b.date.slice(0, 7)) {
+        const d = Number(a.date.slice(8));
+        repeat = { amount: Number(a.amount), day: d > 28 ? 'last' : d };
+      }
+    }
+  const has = (money.recurring || []).some((r) => r && r.active && r.kind === 'income' && r.category !== 'other');
+  return { last, repeat: has ? null : repeat };
+}
+
+/* This month's salary when its usual day (salaryPattern) has come and no salary
+   is logged this month yet: {amount, date, last}, else null. Add income dates
+   itself to it; the Income tab and Home offer it as one tap. Pure. */
+function salaryDue(money) {
+  const pat = salaryPattern(money);
+  if (!pat.repeat) return null;
+  const ym = thisMonthPrefix();
+  const dim = daysInMonth();
+  const date = ym + '-' + pad2(pat.repeat.day === 'last' ? dim : Math.min(dim, pat.repeat.day));
+  if (date > todayKey()) return null;
+  if ((money.income || []).some((i) => i && i.source === 'salary' && String(i.date || '').startsWith(ym))) return null;
+  return { amount: pat.repeat.amount, date, last: pat.last };
+}
+
+/* The income row "Salary arrived?" logs: the due amount on its day, on the account
+   the last salary went to, keeping that one's currency and rate when the amount
+   matches. Shared by the Income tab and Home's Money card. */
+function salaryDueRow(money, due) {
+  const last = due.last;
+  const acc =
+    last && (money.accounts || []).some((a) => !a.archived && a.id === last.accountId) ? last.accountId : null;
+  const orig = last && last.orig && Number(last.amount) === due.amount ? last.orig : null;
   return {
-    amount: last.amount,
-    ...(last.orig ? { orig: last.orig } : {}),
-    ...(last.accountId ? { accountId: last.accountId } : {}),
-    label: last.label || 'Salary',
-    day,
+    id: uid(),
+    amount: due.amount,
+    ...(orig ? { orig } : {}),
+    source: 'salary',
+    label: 'Salary',
+    date: due.date,
+    ...(acc ? { accountId: acc } : {}),
   };
 }
 
@@ -860,9 +896,12 @@ export {
   sumAmt,
   byCategory,
   pctChange,
+  weekVsLast,
   suggestCategory,
   predictCategory,
   buildInsights,
   budgetStatus,
-  usualSalary,
+  salaryPattern,
+  salaryDue,
+  salaryDueRow,
 };

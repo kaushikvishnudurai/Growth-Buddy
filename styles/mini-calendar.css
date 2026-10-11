@@ -88,7 +88,10 @@
 }
 
 .gb-mini-cal-day {
+  /* Square on a phone; on a wide card (768-1024px) a square cell was ~140px
+     tall, so the height stops at 56px and the cell widens instead. */
   aspect-ratio: 1;
+  max-height: 56px;
   display: flex;
   align-items: center;
   justify-content: center;

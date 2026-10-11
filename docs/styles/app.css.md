@@ -69,7 +69,7 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
 | Notes — composer, editor (photos: develop-in animation, drop zone, picked ring), cards with a photo cover |
 | Notes: the page (inside the Notes views block: margin rule on cards, opener and editor, reading measure, headline title, 660px sheet) |
 | Goals: the trail (after the milestone edit row: numbered stops on one path, Next stop, mono counts, horizon reach line) |
-| Health screen (`.gb-health-*`: header row, the "Last night" band (`.gb-health-track`, `.gb-health-lastbar.is-growing`, `.gb-health-night` fading by `--age`), tile grids with SVG traces (`.gb-health-trace`), the history sheet (`.gb-health-sheet`, chart axes, rows) and the log form (`.gb-health-valrow`); a `pointer: coarse` block that must stay LAST in the section), then the habit form's `.gb-habit-link-target` — last in the file |
+| Health screen (`.gb-health-*`: header row, the "Last night" night columns (`.gb-sleep-chart`, `.gb-sleep-usual` window band, `.gb-sleep-col.is-last`, 7 under 560px), tile grids with SVG traces (`.gb-health-trace`), the history sheet (`.gb-health-sheet`, chart axes, rows) and the log form (`.gb-health-valrow`); a `pointer: coarse` block that must stay LAST in the section), then the habit form's `.gb-habit-link-target` — last in the file |
 
 ## Editing rules
 
@@ -100,6 +100,7 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
   A quit habit's days are `.is-clean` / `.is-slipped`, and its row's tick is `.gb-slip-btn` (44px).
 - Fixed layers on a phone pad for `env(safe-area-inset-*)` (`index.html` has `viewport-fit=cover`,
   so `100dvh` runs under the notch and home indicator): header, nav, modal overlay, toasts, PTR.
+- Home on desktop is a CSS column flow (`.gb-dash--single`, `column-width: 440px`); `.gb-dash-qa` and `.gb-dash-pin` (Quick add, the one-thing card) are `column-span: all` so they read first. Once laid out, dashboard.js `balanceHome` deals the widgets into `.gb-dash-cols > .gb-dash-col` (as many as CSS made, each block to the shortest): source-order columns can't balance unbreakable blocks. Below 1024px `.gb-dash-cols` is `display: contents`. The habit strip there is an `auto-fill` grid (`minmax(132px, 1fr)`: three a row in a 1280px column). A lone `.gb-wellness-grid` tile spans the row. `.gb-food-screen` caps at `min(1100px, 100% - 80px)` so it keeps a right gutter. A landscape phone tightens Quick add (one row, no hint) and the week-review nudge.
 - The tablet phone-frame (both rules) also needs `min-height: 560px`: a landscape phone stays full-screen.
 - A landscape phone (`orientation: landscape` and `max-height: 500px`, under 1024 wide) turns `.gb-app` into a grid with the nav as a 60px icon rail on the left and the More sheet as a panel beside it; content gets ~85% of the height instead of 71%.
 - The tablet phone-frame widens 440 -> 600px at 560px, the lowest viewport breakpoint any grid

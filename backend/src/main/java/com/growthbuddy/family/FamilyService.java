@@ -805,7 +805,10 @@ public class FamilyService {
         StringBuilder ctx = new StringBuilder();
         appendMemberLines(ctx, selected);
         ctx.append("\nAvailable groceries:\n");
-        appendAvailableLines(ctx, ingredients, pantryNames(fam.getId()));
+        LocalDate today = clock.today(userId);
+        List<String> avoid = expiredNames(fam.getId(), ingredients, today);
+        appendAvailableLines(ctx, usable(ingredients), pantryNames(fam.getId(), today));
+        appendAvoidLine(ctx, avoid);
         ctx.append(learnedDishesNote(fam.getId()));
         ctx.append("\nReturn the meal plan as strict JSON in the required shape.");
         String context = ctx.toString();
@@ -831,6 +834,7 @@ public class FamilyService {
             }
         }
 
+        dropAvoidedDishes(plan, avoid);
         FamilyMealPlan saved = new FamilyMealPlan();
         saved.setFamilyId(fam.getId());
         saved.setGeneratedByUserId(userId);
@@ -1003,7 +1007,10 @@ public class FamilyService {
         ctx.append("Make a ").append(days).append("-day plan. occasion=").append(occasion).append(".\n");
         appendMemberLines(ctx, selected);
         ctx.append("\nAvailable groceries:\n");
-        appendAvailableLines(ctx, ingredients, usePantry ? pantryNames(fam.getId()) : List.of());
+        LocalDate today = clock.today(userId);
+        List<String> avoid = expiredNames(fam.getId(), ingredients, today);
+        appendAvailableLines(ctx, usable(ingredients), usePantry ? pantryNames(fam.getId(), today) : List.of());
+        appendAvoidLine(ctx, avoid);
         ctx.append(learnedDishesNote(fam.getId()));
         ctx.append("\nReturn the ").append(days).append("-day plan as strict JSON in the required shape.");
 
@@ -1026,6 +1033,7 @@ public class FamilyService {
             }
         }
 
+        dropAvoidedDishes(plan, avoid);
         FamilyMultiDayPlan saved = new FamilyMultiDayPlan();
         saved.setFamilyId(fam.getId());
         saved.setDays(days);
@@ -1248,7 +1256,7 @@ public class FamilyService {
         }
         boolean estimateCost = req == null || req.estimateCost() == null || req.estimateCost();
         JsonNode plan = readJson(src.getPlanJson());
-        List<String> have = pantryNames(fam.getId());
+        List<String> have = pantryNames(fam.getId(), clock.today(userId)); // expired is not "have": buy it fresh
         // The family's own recipes come first; only the dishes without one go
         // to the AI / the built-in map.
         RecipeSplit split = splitByRecipe(extractDishNames(plan), recipeIngredients(fam.getId()));
@@ -1843,9 +1851,105 @@ public class FamilyService {
                 i.getExpiryDate(), dte, soon, expired, i.isLeftover(), i.isLow(), i.getCreatedAt());
     }
 
-    private List<String> pantryNames(UUID familyId) {
+    /** The pantry the family can cook from: never an item past its expiry date (user-local {@code today}). */
+    private List<String> pantryNames(UUID familyId, LocalDate today) {
         return pantry.findByFamilyIdAndDeletedAtIsNullOrderByCreatedAtDesc(familyId).stream()
+                .filter(i -> !isExpired(i, today))
                 .map(FamilyPantryItem::getName).filter(StringUtils::hasText).toList();
+    }
+
+    private static boolean isExpired(FamilyPantryItem i, LocalDate today) {
+        return i.getExpiryDate() != null && i.getExpiryDate().isBefore(today);
+    }
+
+    /** The client marks an expired grocery with freshness "expired" (quantity "EXPIRED, do not use"). */
+    private static boolean isExpired(GroceryItem g) {
+        return "expired".equalsIgnoreCase(g.freshness())
+                || (g.quantity() != null && g.quantity().toUpperCase(Locale.ROOT).startsWith("EXPIRED"));
+    }
+
+    private static List<GroceryItem> usable(List<GroceryItem> ingredients) {
+        return ingredients.stream().filter(g -> !isExpired(g)).toList();
+    }
+
+    /**
+     * Food safety: every expired pantry row (read from the rows, not the client's
+     * say-so) plus anything the client sent marked expired. These never reach the
+     * prompt as available; they go in as an explicit avoid list, and
+     * {@link #dropAvoidedDishes} strips any dish the AI names them in anyway.
+     */
+    private List<String> expiredNames(UUID familyId, List<GroceryItem> ingredients, LocalDate today) {
+        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
+        pantry.findByFamilyIdAndDeletedAtIsNullOrderByCreatedAtDesc(familyId).stream()
+                .filter(i -> isExpired(i, today) && StringUtils.hasText(i.getName()))
+                .forEach(i -> out.add(i.getName().trim()));
+        ingredients.stream().filter(FamilyService::isExpired).forEach(g -> out.add(g.name().trim()));
+        return List.copyOf(out);
+    }
+
+    private static void appendAvoidLine(StringBuilder sb, List<String> avoid) {
+        if (avoid.isEmpty()) {
+            return;
+        }
+        sb.append("\nEXPIRED - do NOT use in any dish, not even as a side or garnish: ")
+                .append(avoid.stream().map(FamilyService::sanitize).collect(java.util.stream.Collectors.joining(", ")))
+                .append(".\n");
+    }
+
+    /** Descriptors that say nothing about which food it is: "Fresh Curd" is curd. */
+    private static final java.util.Set<String> FOOD_DESCRIPTORS = java.util.Set.of(
+            "fresh", "organic", "homemade", "home", "made", "leftover", "packet", "pack", "of",
+            "a", "the", "some", "local", "farm", "frozen", "store", "bought", "old", "expired");
+
+    /**
+     * Remove (in place) every dish naming an avoided item, as a case-insensitive
+     * whole-word match on the item's name and on its name without descriptors, a
+     * trailing plural allowed. Runs on AI and fallback plans alike (the fallback
+     * template has curd too). Each removal is said in "suggestions".
+     * ponytail: word match, not an ingredient parser; "Toor dal" will not catch a
+     * dish just called "Sambar". The prompt's avoid line carries that case.
+     */
+    static List<String> dropAvoidedDishes(JsonNode plan, List<String> avoid) {
+        List<String> removed = new ArrayList<>();
+        if (!(plan instanceof ObjectNode root) || avoid.isEmpty()) {
+            return removed;
+        }
+        List<java.util.regex.Pattern> pats = new ArrayList<>();
+        for (String a : avoid) {
+            String full = a.toLowerCase(Locale.ROOT).replaceAll("[^\\p{L}\\p{N} ]", " ").trim();
+            String core = java.util.Arrays.stream(full.split("\\s+"))
+                    .filter(w -> !FOOD_DESCRIPTORS.contains(w)).collect(java.util.stream.Collectors.joining(" "));
+            for (String phrase : List.of(full, core)) {
+                if (phrase.length() >= 3) {
+                    String stem = phrase.replaceAll("(es|s)$", "");
+                    pats.add(java.util.regex.Pattern.compile("\\b" + java.util.regex.Pattern.quote(stem.length() >= 3 ? stem : phrase)
+                            + "(?:e?s)?\\b", java.util.regex.Pattern.CASE_INSENSITIVE | java.util.regex.Pattern.UNICODE_CASE));
+                }
+            }
+        }
+        List<JsonNode> meals = new ArrayList<>();
+        meals.add(root);
+        plan.path("days").forEach(meals::add);
+        for (JsonNode m : meals) {
+            for (String key : new String[] {"breakfast", "lunch", "snack", "dinner"}) {
+                if (!(m.path(key) instanceof ArrayNode arr)) {
+                    continue;
+                }
+                for (int i = arr.size() - 1; i >= 0; i--) {
+                    String dish = arr.get(i).asText("");
+                    if (pats.stream().anyMatch(p -> p.matcher(dish).find())) {
+                        removed.add(dish);
+                        arr.remove(i);
+                    }
+                }
+            }
+        }
+        if (!removed.isEmpty()) {
+            ArrayNode sugg = root.path("suggestions") instanceof ArrayNode a ? a : root.putArray("suggestions");
+            sugg.add("Removed " + String.join(", ", new java.util.LinkedHashSet<>(removed))
+                    + ": it uses something in your pantry that has expired (" + String.join(", ", avoid) + ").");
+        }
+        return removed;
     }
 
     /** Pull individual dish names out of a (single or multi-day) plan node. */

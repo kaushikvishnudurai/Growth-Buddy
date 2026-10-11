@@ -103,4 +103,18 @@ class WellnessServiceTest {
 
         assertThat(r.byDate().get("2026-06-29").waterMl()).isEqualTo(2250);
     }
+
+    /** An untouched stress or sleep-quality picker is stored as nothing, not a guessed "normal" / "okay". */
+    @Test
+    void untouchedStressAndQualityStayNull() {
+        LocalDate day = LocalDate.of(2026, 6, 29);
+        WellnessService svc = new WellnessService(logs, clock, water);
+        org.mockito.ArgumentCaptor<DailyLog> saved = org.mockito.ArgumentCaptor.forClass(DailyLog.class);
+        when(logs.findById(any())).thenReturn(java.util.Optional.empty());
+        svc.saveMood(USER, new MoodRequest(day, "good", null, null, null));
+        svc.saveSleep(USER, new SleepRequest(day, "23:00", "07:00", null, null));
+        org.mockito.Mockito.verify(logs, org.mockito.Mockito.times(2)).save(saved.capture());
+        assertThat(saved.getAllValues().get(0).getStress()).isNull();
+        assertThat(saved.getAllValues().get(1).getSleepQuality()).isNull();
+    }
 }

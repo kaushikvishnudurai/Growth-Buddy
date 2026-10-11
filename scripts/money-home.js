@@ -17,7 +17,9 @@ import {
   fmt,
   todayKey,
   uid,
-  usualSalary,
+  salaryDue,
+  salaryDueRow,
+  fmtDateShort,
 } from './money-core.js';
 import { repeatExpense } from './nudges.js';
 
@@ -81,54 +83,16 @@ function RepeatExpenseNudge(money, onSaveMoney) {
   return node;
 }
 
-/* "Salary 50,000 arrived?" (usualSalary, money-core.js): one tap books the last
-   salary again, same amount and account, dated today. "Add, every month" also makes
-   it a monthly repeat; today's entry carries the repeat's id for this month, so the
-   repeat doesn't post it a second time. Used on Home and on Money's Income tab. */
+/* "Salary 60,000 arrived?" on Home (salaryDue, money-core.js; the Income tab has
+   the same card): one tap logs this month's salary on its usual day and account. */
 export function SalaryNudge(money, onSaveMoney) {
   const today = todayKey();
-  const guess = usualSalary(money, today);
-  if (!guess || skippedNudges.has(today + '|salary')) return null;
-  const book = (repeat) => {
-    const next = normalizeMoney(money);
-    const ruleId = uid();
-    const acc = guess.accountId ? { accountId: guess.accountId } : {};
-    next.income.unshift({
-      id: repeat ? 'rec-' + ruleId + '-' + today.slice(0, 7) : uid(),
-      amount: guess.amount,
-      ...(guess.orig ? { orig: guess.orig } : {}),
-      source: 'salary',
-      label: guess.label,
-      date: today,
-      ...acc,
-    });
-    if (repeat) {
-      // concat, not push: normalizeMoney shares this array with the live doc.
-      next.recurring = next.recurring.concat({
-        id: ruleId,
-        kind: 'income',
-        amount: guess.amount,
-        category: 'salary',
-        day: guess.day > 28 ? 'last' : guess.day,
-        note: guess.label,
-        active: true,
-        start: today,
-        ...acc,
-      });
-    }
-    onSaveMoney(next, money);
-    toast.success(
-      'Added ' +
-        fmt(guess.amount) +
-        ' ' +
-        guess.label +
-        (repeat ? '. It logs itself every month.' : '.')
-    );
-  };
+  const due = salaryDue(money);
+  if (!due || skippedNudges.has(today + '|salary')) return null;
   const node = h(
     'div',
     { class: 'gb-nudge', role: 'group', 'aria-label': 'Salary' },
-    h('span', null, guess.label + ' ' + fmt(guess.amount) + ' arrived?'),
+    h('span', null, 'Salary ' + fmt(due.amount) + ' arrived?'),
     h(
       'div',
       { class: 'gb-nudge-opts' },
@@ -137,18 +101,14 @@ export function SalaryNudge(money, onSaveMoney) {
         {
           type: 'button',
           class: 'gb-btn gb-btn--soft gb-btn--compact',
-          onclick: () => book(false),
+          onclick: () => {
+            const next = normalizeMoney(money);
+            next.income.unshift(salaryDueRow(money, due));
+            onSaveMoney(next, money);
+            toast.success('Salary logged for ' + fmtDateShort(due.date) + '.');
+          },
         },
-        'Add'
-      ),
-      h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-btn gb-btn--ghost gb-btn--compact',
-          onclick: () => book(true),
-        },
-        'Add, every month'
+        'Yes, log it'
       ),
       h(
         'button',
@@ -207,7 +167,7 @@ export function MoneyHomeCard({ money, onSaveMoney, onOpen, requestReceiptScan }
         'div',
         { class: 'gb-money-mini-figure' },
         h('div', { class: 'gb-money-mini-spent' }, fmt(spentMonth)),
-        h('div', { class: 'gb-money-mini-lbl' }, 'this month')
+        h('div', { class: 'gb-money-mini-lbl' }, 'spent so far this month')
       );
   return h(
     'div',
@@ -235,11 +195,11 @@ export function MoneyHomeCard({ money, onSaveMoney, onOpen, requestReceiptScan }
       h(
         'div',
         { class: 'gb-money-mini-main' },
-        h(
-          'div',
-          { class: 'gb-money-mini-cap' },
-          hasBudget ? (safe >= 0 ? 'safe to spend' : 'over budget') : 'spent so far'
-        ),
+        // No budget: the figure carries "spent so far this month"; an eyebrow
+        // here sat over a sentence about the week and named the wrong thing.
+        hasBudget
+          ? h('div', { class: 'gb-money-mini-cap' }, safe >= 0 ? 'safe to spend' : 'over budget')
+          : null,
         h(
           'div',
           { class: 'gb-money-mini-say' },

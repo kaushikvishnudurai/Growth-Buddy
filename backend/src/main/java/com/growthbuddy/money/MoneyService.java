@@ -191,6 +191,13 @@ public class MoneyService {
      * (top 6), and bills due in the next 7 days that are not marked paid. Category
      * keys and bill names are the user's; the mentor wraps this in its data block.
      */
+    /** The user's Money currency as stored (a symbol such as "₹"); "₹" when they have no Money doc yet. */
+    @Transactional(readOnly = true)
+    public String currencyOf(UUID userId) {
+        JsonNode doc = repo.peekData(userId).orElse(null);
+        return doc == null ? "₹" : doc.path("settings").path("currency").asText("₹");
+    }
+
     @Transactional(readOnly = true)
     public String contextSummary(UUID userId, LocalDate today) {
         JsonNode doc = repo.peekData(userId).orElse(null);

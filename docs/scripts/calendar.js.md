@@ -20,7 +20,7 @@ and per-day food. app.js drives month navigation and does
 | `REPEATS` / `REPEAT_ORDER` (70/77) | `none`, `daily`, `weekly`, `monthly`, `yearly` |
 | `MONTHS`, `DOW` (15/29) | display labels |
 
-Day-key helpers: `pad`, `keyOf(y,m,d)`, `todayKey` (imported from `dates.js` as `pad2` / `dateKey` / `todayKey`), `parseKey`, `isFutureKey`, `prettyDate`,
+Day-key helpers: `pad`, `keyOf(y,m,d)`, `todayKey` (imported from `dates.js` as `pad2` / `dateKey` / `todayKey`), `parseKey`, `isFutureKey`, `prettyDate` (i18n.js `fmtDate(key, 'weekdayDate')`, the app's "Sun, 11 Oct"),
 `formatTime`, `keyFromInstant`, `prettyTaskTime`.
 
 ## Occurrence logic (the part to read before editing)
@@ -81,7 +81,7 @@ Day-key helpers: `pad`, `keyOf(y,m,d)`, `todayKey` (imported from `dates.js` as 
 - **Scoped edit mirrors scoped delete.** `openEditDialog` asks the same question the delete dialog
   does, because the row on screen is one occurrence of a series. The model has no per-occurrence
   overrides, so `this` can only mean *skip that day and leave a one-off in its place*; `future` cuts
-  the series at the day before and starts a new one; `all` edits the row. The server does the split
+  the series at the day before and starts a new one; `all` edits the row — **only this row**, so the option reads "This series, from <anchor>" (delete: "Delete this series, from …"), never "the whole series": a day split off earlier is a row of its own and is not reached. The server does the split
   (`ReminderService.update`). An `all` edit answers with the same reminder, so `editReminder` in
   app.js swaps that row in place; any other answer is a brand-new reminder and the list is refetched.
   The dialog awaits the save and closes only on success — `editReminder` toasts and rethrows on
@@ -93,7 +93,7 @@ Day-key helpers: `pad`, `keyOf(y,m,d)`, `todayKey` (imported from `dates.js` as 
   **"This & all future" from the first occurrence deletes the row.** The server compares the cut
   against the series' first live day (`ReminderService.nothingBefore`: max of anchor and `from`);
   comparing `from` alone left a row ending the day before it began (`ReminderScopedSplitTest`).
-- **Each reminder can carry its own tone.** The form's Tone `<select>` sends a chime key from
+- **Each reminder can carry its own tone.** Silent reads "Silent, no alert" in both forms (`toneSelect`'s default label). The form's Tone `<select>` sends a chime key from
   `chime.js`; an empty value means "the default from Alerts", which is stored as null so the
   reminder keeps following that setting when it changes. A `<select>` and not the segmented control
   the Alerts pane uses — six options don't fit the side panel. Picking one previews it; picking
@@ -134,16 +134,16 @@ Day-key helpers: `pad`, `keyOf(y,m,d)`, `todayKey` (imported from `dates.js` as 
 |---|---|
 | `DayLine` / `DayRuler` | the screen's signature: a day drawn as a line from midnight to midnight, a tag-coloured mark at each reminder's time (a block spans start to end), a dot at the head for untimed ones. `MonthGrid` draws one per cell; `DayRuler` draws it large in the day head (`.gb-cal-dayhead`) with start-time labels, hours and, today, a now needle. Both `aria-hidden`: the list is the accessible version |
 | `ScopeStrip(scope)` | seven ticks in each option of the scoped delete and edit dialogs, the reached occurrences filled |
-| `MonthGrid` | the month cells + a `DayLine` each. Always 42 cells, so the card never changes height between months. Arrow keys move focus between days (`moveFocus`, focus only; Enter selects) |
+| `MonthGrid` | the month cells + a `DayLine` each, with a square `.gb-cal-dot.is-task` at the line's tail on a day with a task due ("Task due" in the legend). app.js repaints it after every reminder change without `tasks` and without the toolbar, so it keeps the last `tasks` it was given (`lastTasks`) and swaps the toolbar's `.gb-cal-toolbar-actions` itself (`MonthCount`, "N reminders · N tasks this month" in `.gb-cal-monthcount`, one per series via `monthCounts`). Always 42 cells, so the card never changes height between months. Arrow keys move focus between days (`moveFocus`, focus only; Enter selects) |
 | `TagPicker` | color chips |
 | `RepeatPicker` | segmented recurrence; `RuleExtras` holds its details (see above) |
-| `openDeleteDialog` | **scoped delete** for recurring reminders: this occurrence vs the whole series → app.js `deleteReminder(scope, id, occKey)` |
+| `openDeleteDialog` | **scoped delete** for recurring reminders: this occurrence vs the whole series → app.js `deleteReminder(scope, id, occKey)`. On the series' first day (`occKey === rem.date`) "This & all future" and "Only past days" are hidden (the series option does the first, the second deletes nothing); the edit dialog hides its "This & all future" the same way. Rows call it through `deleteWithUndo`: focus goes to the next row's delete button, else the Reminders head, and a whole row deleted (scope `all`, start not past) gets an Undo toast that re-creates it through `onAddReminder` (the add form's call; done ticks and skipped days aren't restored). Whether the delete landed is read from `lastReminders`, the list the panel last painted with |
 | `ReminderRow` | one reminder: done checkbox, its time (mono `.gb-rem-when`, "Any time" when untimed), text, notes, then meta (own lead, second alert, `describeRepeat`). Shows a WhatsApp marker when enabled. "Snoozed till" (`snoozeLabel`, also used by Settings → Reminders) names the day when it isn't today, and is a button that cancels the snooze (`onCancelSnooze` → app.js `cancelReminderSnooze`) |
 | form cache | `resetCalendarForm`, `buildForm` — the add-reminder form persists across repaints on purpose; `ReminderPanel` re-syncs its `UsualTimeChip` from the reminder list each paint |
 | `UsualTimeChip(timeInput, onSet)` (export) | "Usual time: 9:00 AM" under an empty Time field (`usualReminderTime`, nudges.js). A tap, not a prefill: an empty Time means no time of day, and a native time input can't reliably be emptied. Also under Settings → Reminders' add form |
-| `ReminderPanel` | the selected day, as **one node** (`.gb-cal-side`, which app.js swaps whole to repaint) holding two blocks: `.gb-cal-reminders` (date title, reminders, add form, schedule) and `.gb-cal-daylog` (wins, tasks, food). `.gb-cal-side` is `display: contents`, so `.gb-cal` lays the blocks out: on desktop a grid with the month and the day log on the left and reminders spanning the right (the second row is `1fr` so the tall reminders column can't open a gap under the month); on a phone, month → reminders → day log. The food-loading height hold goes on `.gb-cal-daylog` — the panel has no box |
+| `ReminderPanel` | the selected day, as **one node** (`.gb-cal-side`, which app.js swaps whole to repaint) holding two blocks: `.gb-cal-reminders` (date title, reminders, add form, schedule) and `.gb-cal-daylog` (wins, tasks, food). Wins include habits checked in that day (`habitsDoneOn(habits, habitHistory, key)`: today from `doneToday`, other days from `{[id]: {days}}`) — **only once app.js passes `habits` / `habitHistory`**, which it doesn't yet. `.gb-cal-side` is `display: contents`, so `.gb-cal` lays the blocks out: on desktop a grid with the month and the day log on the left and reminders spanning the right (the second row is `1fr` so the tall reminders column can't open a gap under the month); on a phone, month → reminders → day log. The food-loading height hold goes on `.gb-cal-daylog` — the panel has no box |
 | `ScreenCalendar` | assembles grid + panel |
-| `CalendarToolbar` | month nav + counts |
+| `CalendarToolbar` | month nav + counts: `monthCounts` gives **distinct** reminders occurring this month and tasks due ("1 reminder · 6 tasks this month"), never occurrences. Distinct by **title**: a split row ("only this day", "this & all future") has no link back to its series, so counting rows read one series as two. The pill's icon is `list-checks` |
 
 **Time blocks / free-busy.** A reminder with both `time` and `endTime` is a busy block
 ("Meeting 15:00 to 16:00"). `freeBusy(list, key, routine)` paints the day minute by minute (1440
@@ -163,7 +163,7 @@ Routine button; `ScheduleCard` is one day, `WeekCard` Monday to Sunday around th
 row a button that opens that day. Point reminders (no end) never count as busy. No reminder block
 crosses midnight. `scripts/calendar.test.mjs` covers `freeBusy`, routine cases included.
 
-`TimeRange(start, end)` is the start/end pair in both the add form and the edit dialog: the end is
+`TimeRange(start, end)` is the start/end pair in both the add form and the edit dialog (under it, a `.gb-field-hint` echoes the range in the app's 12/24h via `formatTime`, because a native time input draws the OS clock and `lang` doesn't change Chrome's; `dateEcho` does the same for the edit dialog's Day and Repeat until): the end is
 disabled until there is a start, and has its own clear button, because a native time input has no
 reliable way to empty it. Its check is the exported pure `timeRangeOk`, and the edit dialog's PATCH
 is built by the exported pure `reminderEditPatch` (both tested in `app-logic.test.mjs`). **In a PATCH, a start sent with a null end clears the end** (the edit
