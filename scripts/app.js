@@ -45,6 +45,7 @@ import {
   resolveHomeLayout,
   sleepHours,
   StreakChain,
+  loadOutlook,
 } from './dashboard.js';
 import { habitDue, tasksForToday, sortHabitsForHome } from './home-order.js';
 import { withProgressLog, needsProgressLog } from './goal-milestones.js';
@@ -2969,6 +2970,9 @@ async function loadData() {
       api('/api/score/today'),
       api('/api/water'),
       api('/api/reminders'),
+      // Home's Outlook card code (lazy for the boot chunk's sake); a failed load
+      // only leaves that card out.
+      loadOutlook().catch(() => null),
     ]);
     if (gone()) return;
     state.tasks = tasksRaw.map(mapTask);
@@ -3014,6 +3018,10 @@ async function loadData() {
   }
   state.loading = false;
   loadedFor = userKey;
+  // Wave 2's requests go out BEFORE the render below, not after it: on a slow
+  // phone the first Home render is a 120 ms task, and nothing was in flight
+  // during it. Only its sends happen now; every handler lands after the render.
+  loadSecondaryData();
   // <- first paint happens here, on five calls instead of twelve. Unless we're
   // still on a self-loading screen, which painted at the top of this function:
   // re-rendering would rebuild its subtree and restart its own fetch.
@@ -3025,7 +3033,6 @@ async function loadData() {
   // After wave 1, so a button press that cold-started the app (the plugin holds
   // it until a listener attaches) finds the habit or reminder it names.
   armNotificationActions();
-  loadSecondaryData();
 }
 
 /* What of the account shows on screen, to tell whether a fresh /me changed it. */
@@ -3200,11 +3207,13 @@ async function loadSecondaryData() {
 }
 
 /* ---- WebSocket: realtime notification push ---- */
-/* Realtime bell notifications. `sockjs-client` + `@stomp/stompjs` + their
-   `url-parse` dependency are ~155 KB of source — 15% of the bundle — and they
-   exist for this one channel. They're imported dynamically so they land after
-   first paint instead of blocking it: nothing awaits this call, and a channel
-   that opens a few hundred ms late is invisible.
+/* Realtime bell notifications. `@stomp/stompjs` over the browser's own
+   WebSocket, to the backend's plain (non-SockJS) /ws endpoint. sockjs-client
+   used to sit underneath it: 47 KB of IE-era fallbacks, a `global` shim script
+   in <head>, and an unload listener that kept every page out of the bf-cache.
+   Imported dynamically so it lands after first paint instead of blocking it:
+   nothing awaits this call, and a channel that opens a few hundred ms late is
+   invisible.
    `connecting` guards the await window — without it two calls in quick
    succession both pass the `stomp` check before either has assigned it. */
 let wsConnecting = false;
@@ -3215,15 +3224,15 @@ async function connectWebSocket() {
   if (!token) return;
   wsConnecting = true;
   try {
-    const [{ default: SockJS }, { Client: StompClient }] = await Promise.all([
-      import('sockjs-client'),
-      import('@stomp/stompjs'),
-    ]);
+    const { Client: StompClient } = await import('@stomp/stompjs');
     // Logged out (or already connected) while the chunks were in flight.
     if (!state.user || stomp) return;
     let reconnect = false;
     stomp = new StompClient({
-      webSocketFactory: () => new SockJS(API_BASE + '/ws'),
+      // http(s)://host -> ws(s)://host/ws. API_BASE is '' when the API is this
+      // origin (web, vite preview/dev proxy) and absolute in the Capacitor app,
+      // whose own origin (https://localhost) is not the backend.
+      brokerURL: (API_BASE || location.origin).replace(/^http/, 'ws') + '/ws',
       connectHeaders: { Authorization: 'Bearer ' + token },
       reconnectDelay: 5000,
       // Re-read the token before EVERY (re)connect. It used to be captured once
@@ -16154,15 +16163,20 @@ const GARDEN_SVG = (() => {
 })();
 
 function authShell(title, subtitle, children) {
-  const garden = h('div', { class: 'gb-garden' + (gardenGrown ? '' : ' is-growing') });
+  // A re-render of the card already on screen (index.html's static shell on the
+  // first render, or a typo's renderAuth) is not an entrance: replaying the rise
+  // or the grow there reads as a flash. A different view still rises.
+  const prev = document.querySelector('.gb-login-card .gb-login-title');
+  const same = !!prev && prev.textContent === title;
+  const garden = h('div', { class: 'gb-garden' + (gardenGrown || same ? '' : ' is-growing') });
   garden.innerHTML = GARDEN_SVG;
   gardenGrown = true;
   return h(
-    'div',
+    'main',
     { class: 'gb-login-wrap' },
     h(
       'div',
-      { class: 'gb-login-card gb-rise' },
+      { class: 'gb-login-card' + (same ? '' : ' gb-rise') },
       garden,
       h(
         'div',

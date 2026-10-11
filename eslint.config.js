@@ -21,7 +21,6 @@ export default [
         ...globals.browser,
         ...globals.node,
         // CDN/global libs still referenced via window shims.
-        SockJS: 'readonly',
         StompJs: 'readonly',
         lucide: 'readonly',
         // Vite `define` substitutes this at build time.

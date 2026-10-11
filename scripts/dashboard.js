@@ -19,7 +19,11 @@ import {
 } from './gb-kit.js';
 import { MoneyHomeCard } from './money-home.js';
 import { OutlookCard } from './outlook-card.js';
-import { outlook } from './outlook.js';
+/* outlook.js drags the whole Insights engine (insights.js) with it, ~20 kB of the
+   boot chunk. It loads beside wave 1 instead: app.js loadData awaits
+   loadOutlook() with the five boot calls, so it is here by Home's first render. */
+let outlook = null;
+export const loadOutlook = () => import('./outlook.js').then((m) => (outlook = m.outlook));
 import { CacheStorage } from './cache-storage.js';
 import { occursOn } from './recurrence.js';
 import {
@@ -2500,6 +2504,9 @@ function MiniCalendarCard({
           onclick: () => onSelectDate(key),
         },
         h('span', { class: 'num' }, String(dt.getDate())),
+        // Not rendered (flex container), but it makes the text "12 3" rather than
+        // "123", which the label ("Mon, October 12, 3 items") then contains.
+        ' ',
         total
           ? h('span', { class: 'badge' }, String(total))
           : repeating
@@ -2922,6 +2929,7 @@ function ScreenDashboard({
     // A turned-off feature drops out of the cards that summarise it, not just its own card.
     score: () => ScoreCard({ score, tasks, habits: on('habits') ? habits : [], streakAsked: oneKind === 'streak' }),
     outlook: () =>
+      outlook &&
       OutlookCard({
         outlook: outlook({
           trends,
@@ -2952,7 +2960,7 @@ function ScreenDashboard({
       }),
     tasks: () => [
       // "Tasks", not "Today's tasks": the list carries tomorrow's and undated ones too.
-      SectionTitle({ title: 'Tasks', action: '+ Add', onAction: onAddTask }),
+      SectionTitle({ title: 'Tasks', level: 2, action: '+ Add', onAction: onAddTask }),
       TasksCard({
         tasks,
         toggleTask,
@@ -2979,7 +2987,7 @@ function ScreenDashboard({
         onRetryFood,
       }),
     habits: () => [
-      SectionTitle({ title: 'Habit streaks', action: '+ Add', onAction: onAddHabit }),
+      SectionTitle({ title: 'Habit streaks', level: 2, action: '+ Add', onAction: onAddHabit }),
       HabitStrip({ habits, onAdd: onAddHabit, toggleHabit }),
     ],
     goals: () => GoalsCard({ goals, goalProgress, onOpenGoals }),

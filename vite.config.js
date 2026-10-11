@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import { fileURLToPath } from 'node:url';
 
 // Backend dev server (Spring Boot). Override with VITE_API_BASE / API_PROXY_TARGET.
 const API_TARGET = process.env.API_PROXY_TARGET || 'http://localhost:8080';
@@ -19,13 +20,35 @@ const API_TARGET = process.env.API_PROXY_TARGET || 'http://localhost:8080';
 const BUILD = 96;
 const buildNumber = () => Number(process.env.GB_BUILD) || BUILD;
 
+/* Home's first render waits for the Outlook chunk (dashboard.js loadOutlook, with
+   wave 1), so the browser should fetch it beside the boot chunk instead of after
+   it: requested from app code, it raced Home's fonts and held the first Home
+   render ~0.8 s on a throttled phone. Vite only preloads static imports. */
+const preloadOutlook = {
+  name: 'gb-preload-outlook',
+  apply: 'build',
+  transformIndexHtml: {
+    order: 'post',
+    handler(html, { bundle }) {
+      const chunk = Object.values(bundle || {}).find(
+        (c) => c.type === 'chunk' && Object.keys(c.modules).some((id) => id.endsWith('/scripts/outlook.js'))
+      );
+      if (!chunk) return html;
+      return [{ tag: 'link', attrs: { rel: 'modulepreload', crossorigin: true, href: '/' + chunk.fileName }, injectTo: 'head' }];
+    },
+  },
+};
+
 export default defineConfig({
   plugins: [
+    preloadOutlook,
     VitePWA({
       registerType: 'autoUpdate',
       // Registered by app.js, which skips it in the Capacitor app.
       injectRegister: false,
       includeAssets: ['icons/apple-touch-icon.png', 'favicon-32.png'],
+      // See globIgnores: the manifest's install icons are not precached.
+      includeManifestIcons: false,
       manifest: {
         name: 'Growth Buddy',
         short_name: 'Growth Buddy',
@@ -70,6 +93,14 @@ export default defineConfig({
         // Code-splitting still earns its keep: it keeps first paint from blocking
         // on screens you may never open.
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        // Not shell, so not precached. Install-time icons: the OS fetches them
+        // once when the app is added to a home screen, and no screen draws them
+        // (~39 kB; icon-192 stays: notifications and the share card use it).
+        // privacy.html: a standalone page for the store listing, linked from
+        // nowhere in the app (~8 kB); the denylist keeps an offline visit to it
+        // from being answered with the app shell.
+        globIgnores: ['icons/icon-512.png', 'icons/maskable-*.png', 'privacy.html'],
+        navigateFallbackDenylist: [/^\/privacy\.html$/],
         navigateFallback: '/index.html',
         // Pull our Web Push 'push' / 'notificationclick' handlers into the
         // generated service worker (keeps Workbox precaching intact).
@@ -110,6 +141,13 @@ export default defineConfig({
     }),
   ],
   define: { __GB_BUILD__: buildNumber() },
+  // The package's "browser" export is its UMD bundle; the ES build tree-shakes
+  // to what connectWebSocket uses (~1 kB smaller in the precache).
+  resolve: {
+    alias: {
+      '@stomp/stompjs': fileURLToPath(new URL('./node_modules/@stomp/stompjs/esm6/index.js', import.meta.url)),
+    },
+  },
   // index.html at the project root is the entry; it pulls in scripts/app.js as a module.
   root: '.',
   // The repo's assets/ holds dev screenshots we don't want copied verbatim;
@@ -126,6 +164,10 @@ export default defineConfig({
     // there is nothing to upload them to either. GB_SOURCEMAP=1 brings 'hidden'
     // back for a local build you want to debug or feed to a tracker.
     sourcemap: process.env.GB_SOURCEMAP === '1' ? 'hidden' : false,
+    // terser, not esbuild's minifier: ~5% smaller JS (boot chunk -28 kB, precache
+    // -31 kB at build 95) for a slower build. Nothing unsafe is switched on.
+    minify: 'terser',
+    terserOptions: { compress: { passes: 2 } },
   },
   // `vite preview` serves the production build, and without the same proxy every
   // /api call is cross-origin and dies on CORS — so the prod bundle can't be
@@ -173,7 +215,7 @@ export default defineConfig({
         changeOrigin: true,
         ws: true,
         configure: (proxy) => {
-          // SockJS uses both XHR (proxyReq) and a WebSocket upgrade (proxyReqWs).
+          // The STOMP WebSocket upgrade (proxyReqWs) and any plain request (proxyReq).
           // Rewrite Origin on both so the backend's CORS check passes.
           proxy.on('proxyReq', (proxyReq) => proxyReq.setHeader('origin', API_TARGET));
           proxy.on('proxyReqWs', (proxyReq) => proxyReq.setHeader('origin', API_TARGET));

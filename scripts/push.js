@@ -30,7 +30,7 @@ import {
   versionedChannel,
 } from './native.js';
 import { occursOn } from './recurrence.js';
-import { drinkRateByHour } from './insights.js';
+import { drinkRateByHour } from './water-hours.js';
 import { SOUNDS } from './chime.js';
 import { localKey as dayKey } from './dates.js';
 import { onBreakDay } from './break.js';

@@ -16,6 +16,14 @@
    main was already over (boot 470,661 B). Measured boot 495,155 B -> 519,913 B,
    precache 1,403,472 B -> 1,473,646 B. day-plan.js and starter-packs.js were
    moved out to on-tap imports first.
+   Build 95 went over both (boot 554,860 B, precache 1,515,681 B) and was brought
+   back under WITHOUT raising them: terser instead of esbuild's minifier, Home's
+   Outlook (outlook.js + insights.js) loaded beside wave 1 instead of in boot,
+   activeDates split out of review.js, sockjs-client removed, and the install-only
+   manifest icons and the standalone privacy.html left out of the precache.
+   Measured after the design merge (build 96): boot 507,307 B (97.6%), precache
+   1,471,982 B (99.9%). The precache has no headroom left: the next lever is the
+   fonts (ten static faces, 164 kB), not this number.
    (Workbox prints "41 entries": the icons are listed twice, once by the glob
    and once by includeAssets/manifest; they are fetched and stored once.)
    Raw bytes, not gzip: deterministic and what the precache actually stores.
