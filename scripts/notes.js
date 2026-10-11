@@ -401,7 +401,9 @@ function richEditor({ html, placeholder, onInput } = {}) {
               ? !!caretCode()
               : tool.state
                 ? document.queryCommandValue('formatBlock').toLowerCase() === tool.state
-                : document.queryCommandState(tool.cmd);
+                : document.queryCommandState(tool.cmd) &&
+                  // A checklist is a <ul> too, but it is the Checklist button's, not Bullet's.
+                  !(tool.cmd === 'insertUnorderedList' && caretList() && caretList().hasAttribute('data-checklist'));
       } catch (_) {
         /* queryCommandState throws on some commands in some browsers */
       }
@@ -607,21 +609,23 @@ function richEditor({ html, placeholder, onInput } = {}) {
         sel.removeAllRanges();
         sel.addRange(end);
       }
-      // In a checklist the photo would become part of the item: put it after the list.
+      const img = '<img src="' + src + '" alt="' + escAttr(altOf(file)) + '" class="is-new">';
+      /* In a checklist the photo would become part of the item. A caret set just
+         after the list didn't help: Chrome's insertHTML moves it back into the
+         last <li>. So it goes in as a node after the list, caret after it.
+         ponytail: off the browser's undo stack, like a tick; Ctrl+Z skips it. */
       const node = sel.rangeCount && sel.getRangeAt(0).startContainer;
       const list = node && (node.nodeType === 1 ? node : node.parentElement).closest('ul[data-checklist]');
       if (list && area.contains(list)) {
+        list.insertAdjacentHTML('afterend', img);
         const after = document.createRange();
-        after.setStartAfter(list);
+        after.setStartAfter(list.nextSibling);
         after.collapse(true);
         sel.removeAllRanges();
         sel.addRange(after);
+      } else {
+        document.execCommand('insertHTML', false, img);
       }
-      document.execCommand(
-        'insertHTML',
-        false,
-        '<img src="' + src + '" alt="' + escAttr(altOf(file)) + '" class="is-new">'
-      );
       area.querySelectorAll('img.is-new').forEach((img) => {
         img.classList.replace('is-new', 'is-developing');
         img.addEventListener('animationend', () => img.classList.remove('is-developing'), {
@@ -2117,6 +2121,8 @@ function ScreenNotes({
       paint();
       refreshCounts();
       landed(cardOf(note.id));
+      // Undo came from a toast, after the card's sheet had gone: focus was on <body>.
+      if (cardOf(note.id)) cardOf(note.id).focus({ preventScroll: true });
     } catch (err) {
       toast.error(err, 'Could not bring that note back.');
     }
@@ -2132,6 +2138,8 @@ function ScreenNotes({
       paint();
       refreshCounts();
       landed(cardOf(note.id));
+      // Undo came from a toast, after the card's sheet had gone: focus was on <body>.
+      if (cardOf(note.id)) cardOf(note.id).focus({ preventScroll: true });
     } catch (err) {
       toast.error(err, 'Could not change that note.');
     }

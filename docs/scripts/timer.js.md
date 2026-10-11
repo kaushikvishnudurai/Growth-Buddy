@@ -42,7 +42,7 @@ store before it is posted**, so it counts exactly once. The decision is `restore
 
 ## Around the clock
 
-- **States** (`inSession()` = running, or paused with time both used and left): the button reads Start / Pause / **Resume**, the sub line "Paused, 24:57 left" (`startLabel` / `subText`). While in session the length segments (and Custom) are **disabled**, with "Reset to change the length." under them (`T.refs.lockHint`); `switchMode` still asks first for the preselect path. **Reset asks** (`confirmDialog`) once more than a minute has been done.
+- **States** (`inSession()` = running, or paused with time both used and left): the button reads Start / Pause / **Resume**, the sub line "Paused, 24:57 left" (`startLabel` / `subText`). While in session the length segments (and Custom) are **disabled**, with "Reset to change the length." under them (`T.refs.lockHint`); `switchMode` still asks first for the preselect path. **Reset asks** (`confirmDialog`) once more than a minute has been done, and is disabled when nothing is in session. Reset's and a length switch's confirm go through `askAboutSession`: a session that ends under it closes it (`setMode` bumps `T.seq` and calls `T.closeAsk`, which clicks the dialog's own Cancel), and an answer for a session no longer on the clock counts as Cancel. The idle sub line is "Ready when you are." (it assumed a study sprint).
 - Colours: the focus ring, the selected sound tile, the volume thumb, the goal bar and the history bars are `--brand` (they were `--iris`, off-brand); a break's ring stays `--leaf-500`.
 - **The cycle**: four sprints, `T.cycleDone` (0..4) counts the finished ones. A finished sprint lines
   up a 5-minute break, the 4th a 15-minute one; a finished break lines up the last sprint length, and
@@ -58,7 +58,7 @@ store before it is posted**, so it counts exactly once. The decision is `restore
 - **Daily goal** (`paintGoal` into `Focus.goalEl`, under the buttons): `ui_prefs.focusGoalMins`
   (`props.focusGoalMins`, 0 = off, "Set a daily focus goal" link), a `role=progressbar` bar of today's
   minutes and the server's `goalStreak` (shown only once `stats.goalMinutes` matches the local goal).
-  goal met shows "Daily goal met. Nice work." (`.gb-focus-goal-met`) under the bar. `openGoalSheet` → `setGoal` → `props.onSetFocusGoal` (= `saveUiPrefs`, whose promise it waits on)
+  goal met shows "Daily goal met. Nice work." (`.gb-focus-goal-met`) under the bar (spread into `el.append`, never `cond ? node : null`: native append prints a null as "null"). `openGoalSheet` → `setGoal` → `props.onSetFocusGoal` (= `saveUiPrefs`, whose promise it waits on)
   → `Focus.reloadStats`.
 - The end rings the user's alert tone (`Focus.chimeKey` = app.js `notifySound()`, via `playChime`;
   the old 880 Hz beep is the fallback) and, on the web, shows a Notification when one is already
@@ -98,7 +98,7 @@ store before it is posted**, so it counts exactly once. The decision is `restore
 | `buildGraph(key)` | per-soundscape node graph |
 | `stopGraph` | full teardown |
 | `playSound` / `stopSound` / `setVolume` / `setSoundEnabled` / `setSoundscape` | |
-| `paintSound` / `SoundCard` | UI |
+| `paintSound` / `SoundCard` | UI; with sound Off no tile shows as picked |
 
 ## Stats
 

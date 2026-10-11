@@ -6219,23 +6219,6 @@ button.gb-food-level {
   gap: 12px;
   border-color: color-mix(in srgb, var(--brand) 24%, var(--border));
 }
-.gb-wins-score {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-.gb-wins-number {
-  font-family: var(--font-display);
-  font-weight: 900;
-  font-size: 1.875rem;
-  line-height: 1;
-  color: var(--brand-ink);
-}
-.gb-wins-copy {
-  color: var(--fg2);
-  font-size: 0.8125rem;
-  font-weight: 700;
-}
 .gb-wins-list {
   display: flex;
   flex-direction: column;
@@ -10042,17 +10025,14 @@ select.gb-input {
   padding: 0;
   opacity: 0.65;
 }
-/* The x stays 14px; the ::before overlay gives it a 44px hit area. */
+/* The glyph stays small; the button itself is 44px, its margins pulled in so
+   the chip keeps its size. (A ::before overlay gave the same hit area, but the
+   button measured 12px to anything reading its box.) */
 .gb-family-chip-x {
-  position: relative;
-}
-.gb-family-chip-x::before {
-  content: '';
-  position: absolute;
-  inset: 50% auto auto 50%;
+  flex: none;
   width: 44px;
   height: 44px;
-  transform: translate(-50%, -50%);
+  margin: -15px -15px -15px -15px;
 }
 .gb-family-chip-x:active {
   opacity: 1;
@@ -10927,6 +10907,11 @@ select.gb-input {
 .gb-family-low {
   flex: none;
   min-height: 32px;
+  border-radius: var(--radius-pill);
+}
+/* "Vegetable · 500 g": each part stays whole, the row wraps between them. */
+.gb-family-meta-part {
+  white-space: nowrap;
 }
 .gb-family-restock {
   align-self: flex-start;
