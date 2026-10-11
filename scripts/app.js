@@ -10931,15 +10931,19 @@ function segmented(options, initial, onChange) {
   return { node: wrap, get: () => selected };
 }
 
-function openAddSheet() {
-  const { sheet, close } = openOverlay({ label: 'Quick add' });
-
+// The Quick add bar: one sentence, sorted into the right trackers. Shared by
+// openAddSheet and the top of Home (homeQuickAdd); onLeave runs once a parse
+// found something, before the preview opens. The line is cleared only once it
+// is logged, so cancelling the preview leaves it there to fix.
+function quickAddBox({ onLeave } = {}) {
   // Natural-language quick-add: type it once, we sort it into the right trackers.
   const qaInput = h('input', {
     type: 'text',
     class: 'gb-input',
     placeholder: 'e.g. spent 200 on lunch, had 2 idli, slept 7h, remind me at 9 to call mom, open money',
     'aria-label': 'Quick log in your own words',
+    enterkeyhint: 'send',
+    autocomplete: 'off',
   });
   const qaBtn = h(
     'button',
@@ -10968,16 +10972,24 @@ function openAddSheet() {
         );
         return;
       }
-      close();
+      // The Home bar outlives the submit (the sheet closes), so hand it back usable.
+      done();
+      qaInput.disabled = false;
+      onLeave && onLeave();
       // Only controls ("open money", "dark mode"): just do it — nothing is written
       // that a preview would protect.
+      const logged = () => {
+        qaInput.value = '';
+      };
       if (rows.every((x) => CONTROL_INTENTS.has(x.it.type) && !x.d.unknown)) {
         await applyQuickAdd(rows.map((x) => x.it));
+        logged();
         return;
       }
       openQuickAddPreview(
         rows,
-        r.fallback ? 'Read without the assistant — switch off anything it got wrong.' : r.note
+        r.fallback ? 'Read without the assistant — switch off anything it got wrong.' : r.note,
+        logged
       );
     } catch (err) {
       done();
@@ -10987,7 +10999,8 @@ function openAddSheet() {
   }
   qaBtn.addEventListener('click', submitQuickAdd);
   qaInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
+    // isComposing: Enter that confirms an IME word (Hindi, Tamil keyboards) isn't a submit.
+    if (e.key === 'Enter' && !e.isComposing) {
       e.preventDefault();
       submitQuickAdd();
     }
@@ -11070,7 +11083,7 @@ function openAddSheet() {
     });
   }
 
-  const quickAddBox = h(
+  return h(
     'div',
     { class: 'gb-quickadd' },
     h('div', { class: 'gb-quickadd-row' }, qaInput, micBtn, langBtn, qaBtn),
@@ -11082,6 +11095,21 @@ function openAddSheet() {
         : 'Type in your own language — I’ll file it into the right place.'
     )
   );
+}
+
+let homeQaNode = null;
+let homeQaUser = null;
+function homeQuickAdd() {
+  // ponytail: one cached node so a Home re-render keeps the typed text and the mic state; rebuild per render if focus loss ever shows up
+  // Keyed to the account so a half-typed line never carries over to whoever signs in next.
+  const uid = state.user && state.user.id;
+  if (homeQaNode && homeQaUser === uid) return homeQaNode;
+  homeQaUser = uid;
+  return (homeQaNode = quickAddBox());
+}
+
+function openAddSheet() {
+  const { sheet, close } = openOverlay({ label: 'Quick add' });
 
   const opts = [
     {
@@ -11179,7 +11207,7 @@ function openAddSheet() {
       )
     ),
     h('div', { class: 'gb-quickadd-or' }, 'or describe it in one line'),
-    quickAddBox,
+    quickAddBox({ onLeave: close }),
     h(
       'button',
       { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel', onclick: close },
@@ -12233,7 +12261,7 @@ function openHabitForm(habit) {
    and can be switched off, so one wrong reading costs a tap instead of a wrong
    number in a tracker. A habit it couldn't match is off and stays off — there is
    nothing to tick. */
-function openQuickAddPreview(rows, note) {
+function openQuickAddPreview(rows, note, onLogged) {
   const chosen = rows.map((r) => !r.d.unknown);
   const list = h(
     'div',
@@ -12275,6 +12303,7 @@ function openQuickAddPreview(rows, note) {
       const applied = await applyQuickAdd(picked);
       if (applied > 0) {
         toastSuccess('Logged ' + applied + (applied > 1 ? ' things.' : ' thing.'));
+        onLogged && onLogged();
         await loadData();
       } else {
         throw new Error('None of those could be logged.');
@@ -13374,6 +13403,7 @@ const SCREENS = {
         requestReceiptScan,
         onOpenMoney: () => setScreen('money'),
         homeLayout: (state.user && state.user.homeLayout) || null,
+        quickAdd: homeQuickAdd(),
       }),
   },
   report: {
