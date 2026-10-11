@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import {
   usualSleep,
+  sleepFromHours,
   lastNightGuess,
   repeatExpense,
   usualReminderTime,
@@ -66,6 +67,23 @@ assert.equal(lastNightGuess({}, '2026-10-11', { bedtime: '23:10', wakeTime: '06:
 assert.equal(lastNightGuess({}, '2026-10-11', { bedtime: '23:10', wakeTime: '06:45', date: '2026-10-11' }).source, 'phone');
 assert.equal(lastNightGuess({}, '2026-10-11'), null);
 assert.equal(lastNightGuess(undefined, '2026-10-11', null), null);
+
+// sleepFromHours (FRC-2): "slept 7h" ends on the logged wake, keeps its quality and note.
+assert.deepEqual(sleepFromHours(7, null, { bedtime: '23:00', wakeTime: '06:30', quality: 'good', note: 'n' }, null), {
+  bedtime: '23:30',
+  wakeTime: '06:30',
+  quality: 'good',
+  note: 'n',
+});
+assert.deepEqual(sleepFromHours(7.5, 'ok', null, { bedtime: '23:00', wakeTime: '06:45' }), {
+  bedtime: '23:15',
+  wakeTime: '06:45',
+  quality: 'okay',
+  note: '',
+});
+assert.deepEqual(sleepFromHours(8, null, null, null), { bedtime: '23:00', wakeTime: '07:00', quality: null, note: '' });
+assert.equal(sleepFromHours(7, 'poor', null, null).quality, 'low');
+assert.equal(sleepFromHours(7, null, { wakeTime: '07:15:00' }, null).wakeTime, '07:15', 'API LocalTime');
 
 // repeatExpense: 4+ days, near the usual time, not already logged today.
 const at = (date, h, m = 0) => new Date(date + 'T00:00:00').getTime() + (h * 60 + m) * 60000;

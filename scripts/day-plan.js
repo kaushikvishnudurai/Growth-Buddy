@@ -52,6 +52,17 @@ function billsToday(subscriptions, today) {
 }
 
 /**
+ * Which day Plan my day drafts: today while an hour-long block can still start
+ * by DAY_END, else tomorrow from the start of the day, so a late-evening tap
+ * plans something it can act on. {day: 'YYYY-MM-DD', nowMin, tomorrow}.
+ */
+export function planTarget(today, nowMin) {
+  if (Math.ceil(((nowMin || 0) + 1) / 30) * 30 <= DAY_END) return { day: today, nowMin, tomorrow: false };
+  const [y, m, d] = today.split('-').map(Number);
+  return { day: localKeyOf(new Date(y, m - 1, d + 1)), nowMin: 0, tomorrow: true };
+}
+
+/**
  * @param {object} o
  * @param {Array} o.tasks      mapped tasks ({id, title, done, paused, dueAt, priority})
  * @param {Array} o.habits     ({id, name, doneToday, reminderTime})
@@ -76,6 +87,7 @@ export function buildDayPlan({
     if (!r || !r.text || !occursOn(r, today, workWeek)) continue;
     if (Array.isArray(r.doneDates) && r.doneDates.includes(today)) continue;
     const t = toMin(r.time);
+    if (t !== null && nowMin && t < nowMin) continue; // already rung: nothing left to plan around
     if (t !== null) busy.push([t, Math.max(t + 30, toMin(r.endTime) || 0)]);
     items.push({ kind: 'reminder', title: r.text, time: t === null ? null : toHHMM(t) });
   }

@@ -1,6 +1,6 @@
 // node scripts/day-plan.test.mjs: Plan my day's draft, without the AI.
 import assert from 'node:assert/strict';
-import { buildDayPlan } from './day-plan.js';
+import { buildDayPlan, planTarget } from './day-plan.js';
 
 const today = '2026-10-14'; // a Wednesday
 const plan = buildDayPlan({
@@ -77,5 +77,41 @@ assert.equal(late[0].block, false);
 
 // Nothing at all is an empty plan, not a throw.
 assert.deepEqual(buildDayPlan({ today, nowMin: 0 }), []);
+
+// A reminder whose time has gone today is not on the plan (FRC-8: 08:00 listed at 23:30).
+const evening = buildDayPlan({
+  today,
+  nowMin: 18 * 60,
+  reminders: [
+    { text: 'Vitamins', date: '2026-10-01', repeat: 'daily', time: '08:00' },
+    { text: 'Call home', date: today, repeat: 'none', time: '19:00' },
+    { text: 'Untimed', date: today, repeat: 'none' },
+  ],
+});
+assert.deepEqual(
+  evening.filter((x) => x.kind === 'reminder').map((x) => x.title),
+  ['Call home', 'Untimed']
+);
+
+// After 21:00 no block fits today, so the plan is tomorrow's, from the morning.
+assert.deepEqual(planTarget(today, 10 * 60), { day: today, nowMin: 600, tomorrow: false });
+assert.deepEqual(planTarget(today, 20 * 60 + 29), { day: today, nowMin: 1229, tomorrow: false });
+assert.deepEqual(planTarget(today, 23 * 60 + 30), { day: '2026-10-15', nowMin: 0, tomorrow: true });
+assert.deepEqual(planTarget('2026-10-31', 22 * 60).day, '2026-11-01', 'month rolls over');
+// Tomorrow's draft lists tomorrow's 08:00 and gives the task a 09:00 block.
+const t = planTarget(today, 23 * 60 + 30);
+const tom = buildDayPlan({
+  today: t.day,
+  nowMin: t.nowMin,
+  tasks: [{ id: 'x', title: 'X' }],
+  reminders: [{ text: 'Vitamins', date: '2026-10-01', repeat: 'daily', time: '08:00' }],
+});
+assert.deepEqual(
+  tom.map((x) => [x.kind, x.time]),
+  [
+    ['reminder', '08:00'],
+    ['task', '09:00'],
+  ]
+);
 
 console.log('day-plan: ok');

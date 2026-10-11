@@ -1175,6 +1175,7 @@ function ScreenNotes({
   onCounts,
   onDeleteForever,
   userId,
+  openComposer: openOnMount,
 }) {
   const listEl = h('div', { class: 'gb-note-grid' });
   let notes = [];
@@ -1431,6 +1432,8 @@ function ScreenNotes({
     composer.classList.add('is-open');
     editor.focus();
   }
+  // Quick add's Note row: straight into the composer, once it is on the page.
+  if (openOnMount) setTimeout(openComposer, 60);
   function closeComposer() {
     composer.classList.remove('is-open');
     dropDraft();

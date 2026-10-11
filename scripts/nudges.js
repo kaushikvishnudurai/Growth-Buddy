@@ -49,6 +49,26 @@ export function usualSleep(sleepByDate, today) {
 }
 
 /**
+ * "Slept 7h" as a night: the duration ends on the wake time already logged for
+ * the day, else the usual one, else 07:00. The quality is the sentence's, else
+ * the logged night's, else null (none is invented); a logged note is kept.
+ * The payload for saveSleepEntry.
+ */
+export function sleepFromHours(hours, quality, logged, usual) {
+  const wakeTime =
+    (logged && toMin(logged.wakeTime) != null && String(logged.wakeTime).slice(0, 5)) ||
+    (usual && usual.wakeTime) ||
+    '07:00';
+  const q = { ok: 'okay', poor: 'low' }[quality] || quality; // the parser's words -> the dialog's
+  return {
+    bedtime: toHHMM(toMin(wakeTime) - Math.round(hours * 60)),
+    wakeTime,
+    quality: q || (logged && logged.quality) || null,
+    note: (logged && logged.note) || '',
+  };
+}
+
+/**
  * What to offer for last night: the phone's own record (`phoneNight`, from
  * native.js readLastNight), else the usual night, else the newest logged night
  * 1 to 3 days old ("same as last night"). {bedtime, wakeTime, quality, source}
