@@ -51,6 +51,7 @@ rest of the roadmap in `docs/ROADMAP.md`, research in `docs/RESEARCH.md`.
   start shows saved data, microphone permission, right cutout.
 - **Wow features:** command palette (Ctrl/Cmd+K, `/`, `g` shortcuts, search across your items, free
   text into Quick add) and Take a break (streaks hold for 3/7/14 days, nudges quiet, one tap each way).
+- **Cross-browser fixes:** time zones compared by offset (Safari and iOS no longer get a false "Switch to Kolkata time?"), tablet frame full height, keepalive on prefs and revoke, an offline prefs save resent when back online, color-mix fallbacks for iOS 15-16.1.
 - **Hostile fixes:** taps settle on lists (no double delete or tick), Undo restores the burst, goal
   saves chained and merged.
 
@@ -61,7 +62,7 @@ rest of the roadmap in `docs/ROADMAP.md`, research in `docs/RESEARCH.md`.
 | `./mvnw test` | 778 run, 0 failures |
 | `npm run lint`, every `scripts/*.test.mjs` | clean / pass |
 | Playwright, 22 specs, desktop + mobile Chrome | 331/334 on the last full run; the 3 were fixed and re-run 88/88 (each twice) |
-| Cross-browser smoke (Firefox, WebKit, tablet) | 72/72 on six projects (infra agent); the full-suite cross-device run was still going at release |
+| Cross-browser (desktop/mobile/tablet Chrome, Firefox, desktop/mobile WebKit) | 390/402 on smoke + safety + shell + native + perf + planning + xbrowser specs; the 6 failures were OFF-6 (a stale allow-list), since fixed; 6 WebKit skips by design (ephemeral sessions) |
 | Bundle budget | boot 98.8%, precache 99.1%, budgets never raised |
 
 ## Lighthouse (production build)
@@ -78,6 +79,7 @@ Before: Home Best Practices 81, Accessibility 94, SEO 91.
 - **Home on mobile is below 90 Performance.** The rest is bytes on the critical path (boot chunk
   about 164 kB gzip, CSS 55 kB); next levers are splitting calendar and settings out of the boot
   chunk and moving money.css out of the render-blocking sheet.
+- **iOS 15.0-16.1:** decorative tints and gradients that use color-mix() render plain (core colours have fallbacks).
 - **Budgets are tight** (98.8% / 99.1%): the next feature must be lazy or pay for itself.
 - **Not verified on a real device:** share sheet, mic and camera prompts, offline cold start in the
   APK, right-cutout padding. Needs `npm run sync` and a phone.

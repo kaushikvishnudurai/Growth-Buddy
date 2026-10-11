@@ -24,3 +24,4 @@ Severity: Critical / High / Medium / Low. Evidence = test path and/or `docs/evid
 | L-015 | Hostile findings HOS-1..10 | hb, hf | verified | High | `e2e/hostile-fixes.spec.mjs`, JUnit |
 | L-016 | Home mobile Lighthouse Performance 81-83 (target 90) | perf | blocked (needs boot split of calendar/settings) | Medium | docs/evidence/perf/SCORES.md |
 | L-017 | Device-only checks: share sheet, mic/camera prompts, APK offline start | owner | blocked (needs a phone + npm run sync) | Medium | — |
+| L-018 | Cross-browser findings XD-1..10 (false time-zone prompt on WebKit, tablet frame, keepalive, iOS 15 color-mix) | xd | verified | Medium | `e2e/xbrowser.spec.mjs`, 390/402 on six projects then OFF-6 6/6 |
