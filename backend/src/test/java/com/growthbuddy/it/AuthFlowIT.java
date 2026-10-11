@@ -128,6 +128,31 @@ class AuthFlowIT {
         assertThat(get("/api/auth/me", verified.json.path("token").asText()).status).isEqualTo(200);
     }
 
+    /* CRB-1/CRB-2: parallel signups used to deadlock on the token table's gap
+       locks (500), and a double tap with one email answered 500, not 409. */
+    @Test
+    void parallelSignupsNeitherDeadlockNorDuplicate() throws Exception {
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(8);
+        try {
+            List<java.util.concurrent.Future<Res>> distinct = new java.util.ArrayList<>();
+            for (int i = 0; i < 6; i++) {
+                String email = freshEmail();
+                distinct.add(pool.submit(() -> post("/api/auth/signup", body("email", email, "password", PASSWORD), null)));
+            }
+            for (var f : distinct) assertThat(f.get().status).as(f.get().text).isEqualTo(201);
+
+            jdbc.update("DELETE FROM rate_limit_counters");
+            String same = freshEmail();
+            List<java.util.concurrent.Future<Res>> dup = new java.util.ArrayList<>();
+            for (int i = 0; i < 3; i++) {
+                dup.add(pool.submit(() -> post("/api/auth/signup", body("email", same, "password", PASSWORD), null)));
+            }
+            for (var f : dup) assertThat(f.get().status).as(f.get().text).isIn(201, 409);
+        } finally {
+            pool.shutdown();
+        }
+    }
+
     @Test
     void wrongPasswordIsRefused() throws Exception {
         String email = verifiedUser();

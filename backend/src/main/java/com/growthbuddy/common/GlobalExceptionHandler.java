@@ -125,6 +125,26 @@ public class GlobalExceptionHandler {
         return t.getMessage();
     }
 
+    /**
+     * A unique key that a check-then-insert race got past (two taps of the same
+     * button): the row exists, so 409, not 500. Per-path handlers (signup) throw
+     * their own wording first; this is the backstop.
+     */
+    @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
+    public ResponseEntity<ApiError> handleConflict(org.springframework.dao.DataIntegrityViolationException ex) {
+        log.warn("Constraint conflict: {}", rootMessage(ex));
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiError.of(HttpStatus.CONFLICT, "That was already saved. Refresh and try again."));
+    }
+
+    /** Deadlock victim or lock-wait timeout: nothing was written, a retry will do. */
+    @ExceptionHandler(org.springframework.dao.PessimisticLockingFailureException.class)
+    public ResponseEntity<ApiError> handleLockFailure(org.springframework.dao.PessimisticLockingFailureException ex) {
+        log.warn("Lock conflict: {}", rootMessage(ex));
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(ApiError.of(HttpStatus.SERVICE_UNAVAILABLE, "We were busy for a moment. Please try again."));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiError> handleOther(Exception ex) {
         // Never surface the raw exception message to the client — it can leak
