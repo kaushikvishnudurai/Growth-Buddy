@@ -213,19 +213,33 @@ public class CircleService {
         List<CircleMember> roster = members.findByCircleIdOrderByJoinedAtAsc(circleId);
         Map<UUID, String> names = new HashMap<>();
         Set<UUID> leaving = new HashSet<>();
+        // Today is each member's own: one batched count per timezone in the circle.
+        Map<ZoneId, List<UUID>> sharingByZone = new HashMap<>();
         if (!roster.isEmpty()) {
             for (User u : users.findAllById(roster.stream().map(CircleMember::getUserId).toList())) {
                 names.put(u.getId(), u.getDisplayName());
                 // Scheduled for deletion: gone from the roster for everyone else.
                 if (u.isPendingDeletion()) {
                     leaving.add(u.getId());
+                } else if (u.getId().equals(userId) || ProgressSharing.sharesProgress(u)) {
+                    sharingByZone.computeIfAbsent(UserZone.of(u.getTimezone()), z -> new ArrayList<>()).add(u.getId());
                 }
             }
         }
+        Map<UUID, Long> today = new HashMap<>();
+        sharingByZone.forEach((zone, ids) -> {
+            LocalDate day = LocalDate.now(zone);
+            Map<UUID, Long> counts = habits.countDoneBetween(ids, day, day);
+            ids.forEach(id -> today.put(id, counts.getOrDefault(id, 0L)));
+        });
         return roster.stream()
                 .filter(m -> !leaving.contains(m.getUserId()))
+                // ponytail: one limiter read per member; fine for a friends-sized circle,
+                // batch the pair keys if circles grow into the hundreds.
                 .map(m -> new MemberResponse(m.getUserId(), names.getOrDefault(m.getUserId(), "Member"),
-                        m.getRole().name(), m.getJoinedAt()))
+                        m.getRole().name(), m.getJoinedAt(), today.get(m.getUserId()),
+                        !m.getUserId().equals(userId)
+                                && !limiter.peek(cheerPair(circleId, userId, m.getUserId()), 1, DAY_MS)))
                 .toList();
     }
 
@@ -428,6 +442,11 @@ public class CircleService {
      * {@link #CHEERS_PER_DAY} per sender per day, counted only when sent, so the
      * button can't be used to flood someone's phone.
      */
+    /** The limiter key for one sender's cheers to one member in one circle (one a day). */
+    private static String cheerPair(UUID circleId, UUID from, UUID to) {
+        return "circle-cheer:" + circleId + ":" + from + ":" + to;
+    }
+
     @Transactional
     public void cheer(UUID userId, UUID circleId, UUID targetId, String text) {
         Circle c = require(circleId);
@@ -438,7 +457,7 @@ public class CircleService {
         if (!members.existsByCircleIdAndUserId(circleId, targetId)) {
             throw ApiException.notFound("that member");
         }
-        String pair = "circle-cheer:" + circleId + ":" + userId + ":" + targetId;
+        String pair = cheerPair(circleId, userId, targetId);
         String mine = "circle-cheer:" + userId;
         if (!limiter.peek(pair, 1, DAY_MS)) {
             throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, "You've already cheered them on today.");

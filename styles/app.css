@@ -2655,7 +2655,60 @@ body:has(.is-thinking, .gb-thinking)::after {
   padding: 14px 16px;
 }
 
-/* ---- Circle challenges + leaderboard ---- */
+/* ---- Circle screen ----
+   Importance order (requests, your circles, mentorship), one gutter on the
+   outer wrapper. Each circle card leads with the seat ring: the circle drawn as
+   its members, lit by who has checked in today. Display face for the circle's
+   name, mono for everything counted. */
+.gb-circle-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  padding: 4px var(--gutter) 28px;
+}
+.gb-circle-screen > :empty {
+  display: none; /* "Requests for you" with none: no slot, no gap */
+}
+.gb-circle-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.gb-circle-block-head .gb-btn {
+  white-space: nowrap;
+}
+/* A 320px phone: Browse keeps its icon, the title keeps one line. */
+@media (max-width: 359px) {
+  .gb-circle-browse-label {
+    display: none;
+  }
+}
+.gb-circle-block-title {
+  white-space: nowrap;
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.0625rem;
+  letter-spacing: -0.01em;
+  color: var(--fg1);
+}
+.gb-circle-screen .gb-circle-section-title {
+  margin: 0 0 12px;
+  font-size: 1.0625rem;
+  letter-spacing: -0.01em;
+}
+.gb-circle-screen .gb-circle-section {
+  min-height: 0; /* the reserve left a blank band under every empty list */
+}
+.gb-mentor-empty {
+  text-align: left;
+  margin: 0;
+  color: var(--fg2);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
 .gb-challenges-actions {
   display: flex;
   justify-content: flex-end;
@@ -2663,32 +2716,292 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 .gb-circle-card {
   padding: 0;
-  margin-bottom: 14px;
+  margin-bottom: 16px;
   overflow: hidden;
+}
+.gb-circle-card:last-child {
+  margin-bottom: 0;
 }
 .gb-circle-card-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--surface-3);
+  padding: 10px 10px 0 16px;
 }
 .gb-circle-name {
   font-weight: 800;
   color: var(--fg1);
   font-size: 0.9375rem;
 }
+.gb-circle-name--plain {
+  margin: 8px 16px 12px;
+  font-family: var(--font-display);
+  font-size: 1.375rem;
+}
 .gb-circle-sub {
-  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
   color: var(--fg3);
   margin-top: 2px;
 }
+
+/* The seat ring. Sized by its own width (container units), so the seats and
+   the name scale together from a 320px phone to the desktop column. */
+.gb-seat-ring-slot {
+  display: flex;
+  justify-content: center;
+  padding: 18px 20px 0; /* room for the "You" label over the top seat */
+}
+.gb-seat-ring {
+  position: relative;
+  width: min(100%, 300px);
+  aspect-ratio: 1;
+  container-type: inline-size;
+}
+.gb-seat-ring.is-loading::before {
+  content: '';
+  position: absolute;
+  inset: 10%;
+  border-radius: 50%;
+  border: 2px solid var(--surface-3);
+}
+.gb-seat-track {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.gb-seat-track-bg,
+.gb-seat-track-fill {
+  fill: none;
+  stroke-width: 1.2;
+}
+.gb-seat-track-bg {
+  stroke: var(--surface-3);
+}
+.gb-seat-track-fill {
+  stroke: var(--brand);
+  stroke-linecap: round;
+  stroke-dasharray: var(--len);
+  stroke-dashoffset: var(--len);
+  transition: stroke-dashoffset 900ms var(--ease-out) 240ms;
+}
+.gb-seat-ring.is-on .gb-seat-track-fill {
+  stroke-dashoffset: var(--off);
+}
+.gb-seat-core {
+  position: absolute;
+  inset: 23%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+}
+.gb-seat-name {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(1.125rem, 8.4cqi, 1.875rem);
+  line-height: 1.02;
+  letter-spacing: -0.03em;
+  color: var(--fg1);
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+.gb-seat-count {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--brand-ink);
+}
+.gb-seat {
+  position: absolute;
+  width: clamp(44px, 16cqi, 54px);
+  height: clamp(44px, 16cqi, 54px);
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--surface-2);
+  color: var(--fg2);
+  box-shadow: inset 0 0 0 1.5px var(--border-strong);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(0.8125rem, 4.4cqi, 1rem);
+  letter-spacing: 0.01em;
+  opacity: 0.45;
+  transform: translate(-50%, -50%) scale(0.86);
+  transition:
+    opacity 320ms var(--ease-out),
+    transform 460ms var(--ease-bounce),
+    background-color 320ms var(--ease-out),
+    color 320ms var(--ease-out),
+    box-shadow 320ms var(--ease-out);
+  /* One seat after another, clockwise from yours. */
+  transition-delay: calc(var(--i) * 80ms);
+}
+button.gb-seat {
+  cursor: pointer;
+}
+.gb-seat-ring.is-on .gb-seat {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+.gb-seat-ring.is-on .gb-seat.is-lit {
+  background: var(--brand-fill);
+  color: var(--fg-on-brand);
+  box-shadow:
+    0 0 0 5px var(--brand-soft),
+    0 8px 18px -8px var(--brand);
+}
+.gb-seat.is-private {
+  background: transparent;
+  box-shadow: none;
+  border: 1.5px dashed var(--border-strong);
+  color: var(--fg3);
+}
+.gb-seat.is-more {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+.gb-seat.is-me::after {
+  content: 'You';
+  position: absolute;
+  bottom: 100%;
+  margin-bottom: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg3);
+}
+/* Cheered today: a small sun on the seat, so the ring remembers the tap. */
+.gb-seat.is-cheered::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--sun-500);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+@media (hover: hover) {
+  button.gb-seat.is-ash:hover {
+    box-shadow:
+      inset 0 0 0 1.5px var(--brand),
+      0 0 0 5px var(--brand-soft);
+    color: var(--brand-ink);
+  }
+}
+button.gb-seat:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+button.gb-seat:disabled {
+  cursor: default;
+}
+@media (prefers-reduced-motion: reduce) {
+  .gb-seat,
+  .gb-seat-track-fill {
+    transition: none;
+  }
+}
+
+/* No circle yet: an empty ring, then the two ways in. */
+.gb-circle-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 22px 20px 20px;
+  text-align: center;
+}
+.gb-seat-ring--empty {
+  width: min(100%, 200px);
+  margin-bottom: 14px;
+  border-radius: 50%;
+}
+.gb-seat-ring--empty::before {
+  content: '';
+  position: absolute;
+  inset: 10%;
+  border-radius: 50%;
+  border: 1.5px dashed var(--border-strong);
+}
+.gb-seat-ring--empty .gb-seat {
+  width: 30px;
+  height: 30px;
+}
+.gb-seat-ring--empty .gb-seat-name {
+  color: var(--fg3);
+  font-size: 1rem;
+}
+.gb-circle-empty-title {
+  margin: 0 0 6px;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.25rem;
+  letter-spacing: -0.02em;
+  color: var(--fg1);
+}
+.gb-circle-empty-copy {
+  max-width: 34ch;
+  margin: 0 0 16px;
+  color: var(--fg2);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+.gb-circle-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* The one thing to do about today, under the ring. */
+.gb-circle-nudge {
+  display: flex;
+  justify-content: center;
+  padding: 14px 16px 18px;
+}
+.gb-circle-nudge-line {
+  margin: 0;
+  color: var(--fg2);
+  font-size: 0.8125rem;
+  text-align: center;
+}
+
+/* Challenges and the board: read, not tapped. */
+.gb-challenge-body {
+  border-top: 1px solid var(--surface-3);
+}
 .gb-challenge {
-  padding: 12px 16px;
+  padding: 14px 16px;
 }
 .gb-challenge + .gb-challenge {
   border-top: 1px solid var(--surface-3);
+}
+.gb-challenge-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 16px;
+}
+.gb-challenge-empty p {
+  margin: 0;
+  color: var(--fg2);
+  font-size: 0.875rem;
+  line-height: 1.45;
 }
 .gb-challenge-head {
   display: flex;
@@ -2697,9 +3010,10 @@ body:has(.is-thinking, .gb-thinking)::after {
   gap: 8px;
 }
 .gb-challenge-title {
-  font-weight: 700;
+  font-family: var(--font-display);
+  font-weight: 800;
   color: var(--fg1);
-  font-size: 0.875rem;
+  font-size: 0.9375rem;
 }
 .gb-challenge-badge {
   font-size: 0.6875rem;
@@ -2710,30 +3024,46 @@ body:has(.is-thinking, .gb-thinking)::after {
   color: var(--fg3);
 }
 .gb-challenge-badge[data-active='true'] {
-  background: var(--leaf-50, var(--surface-3));
-  color: var(--leaf-600, var(--brand));
+  background: var(--success-soft);
+  color: var(--success-soft-fg);
 }
 .gb-challenge-dates {
-  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.02em;
   color: var(--fg3);
-  margin: 2px 0 8px;
+  margin: 3px 0 10px;
+}
+.gb-challenge-standing {
+  margin-bottom: 6px;
+  color: var(--fg1);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.35;
 }
 .gb-lb-row {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 8px;
-  border-radius: 9px;
-  font-size: 0.8125rem;
+  align-items: baseline;
+  gap: 12px;
+  padding: 8px 2px;
+  font-size: 0.875rem;
+}
+.gb-lb-row + .gb-lb-row {
+  border-top: 1px solid var(--surface-3);
 }
 .gb-lb-row.is-me {
-  background: var(--brand-50, var(--surface-2));
   font-weight: 700;
 }
 .gb-lb-rank {
   flex: none;
-  width: 28px;
-  text-align: center;
+  width: 18px;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  color: var(--fg3);
+}
+.gb-lb-row.is-lead .gb-lb-rank {
+  color: var(--brand-ink);
+  font-weight: 700;
 }
 .gb-lb-name {
   flex: 1;
@@ -2745,8 +3075,39 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 .gb-lb-val {
   flex: none;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
   color: var(--fg2);
-  font-variant-numeric: tabular-nums;
+}
+
+/* Wide: the ring beside its challenge, posts across the bottom. */
+@media (min-width: 760px) {
+  .gb-circle-card {
+    display: grid;
+    grid-template-columns: minmax(280px, 340px) 1fr;
+    grid-template-rows: auto auto 1fr auto auto;
+  }
+  .gb-circle-card-head,
+  .gb-circle-card-foot,
+  .gb-circle-posts-slot {
+    grid-column: 1 / -1;
+  }
+  .gb-seat-ring-slot {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .gb-circle-nudge {
+    grid-column: 1;
+    grid-row: 3;
+    align-self: start;
+  }
+  .gb-challenge-body {
+    grid-column: 2;
+    grid-row: 2 / 4;
+    border-top: 0;
+    border-left: 1px solid var(--surface-3);
+    margin: 12px 0;
+  }
 }
 .gb-empty-sm {
   padding: 10px 8px;

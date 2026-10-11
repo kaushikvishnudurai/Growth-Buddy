@@ -277,6 +277,23 @@ class CircleServiceTest {
         assertThat(service.members(OWNER, CIRCLE)).extracting(MemberResponse::name).containsExactly("Owner");
     }
 
+    /** A seat lights from today's check-ins; a private member's count is never sent. Yours always is. */
+    @Test
+    void membersCarryTodaysCheckInsOnlyForThoseWhoShare() {
+        circle("public");
+        UUID quiet = UUID.randomUUID();
+        when(members.findByCircleIdOrderByJoinedAtAsc(CIRCLE)).thenReturn(List.of(
+                member(OWNER, CircleMember.Role.owner), member(MEMBER, CircleMember.Role.member),
+                member(quiet, CircleMember.Role.member)));
+        when(users.findAllById(any())).thenReturn(List.of(
+                named(OWNER, "Owner", false), named(MEMBER, "Member", null), named(quiet, "Quiet", false)));
+        when(habits.countDoneBetween(any(List.class), any(), any())).thenReturn(Map.of(MEMBER, 2L));
+
+        var out = service.members(OWNER, CIRCLE);
+        assertThat(out).extracting(MemberResponse::doneToday).containsExactly(0L, 2L, null);
+        assertThat(out.get(0).cheeredByMe()).as("never 'cheered' yourself").isFalse();
+    }
+
     private static User named(UUID id, String name, Boolean shareProgress) {
         User u = new User();
         u.setId(id);

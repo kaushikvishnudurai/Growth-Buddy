@@ -147,7 +147,17 @@ record CircleResponse(
     }
 }
 
-record MemberResponse(UUID userId, String name, String role, Instant joinedAt) {
+/**
+ * {@code doneToday}: habit check-ins on the member's own today (their zone), what
+ * lights their seat on the Circle screen; null when they keep progress private
+ * (Settings, Privacy). You always get your own. {@code cheeredByMe}: the caller
+ * has used today's one cheer for this member, so the seat doesn't offer another.
+ */
+record MemberResponse(UUID userId, String name, String role, Instant joinedAt, Long doneToday,
+                      boolean cheeredByMe) {
+    MemberResponse(UUID userId, String name, String role, Instant joinedAt) {
+        this(userId, name, role, joinedAt, null, false);
+    }
 }
 
 /**

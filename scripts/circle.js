@@ -12,7 +12,18 @@ import {
   openOverlay,
 } from './gb-kit.js';
 import { toast } from './toast.js';
-import { CHALLENGE_TEMPLATES, standingLine, inviteLink, inviteFromHash } from './circle-core.js';
+import {
+  CHALLENGE_TEMPLATES,
+  standingLine,
+  inviteLink,
+  inviteFromHash,
+  MAX_SEATS,
+  seatLayout,
+  presence,
+  seatOrder,
+  initials,
+  challengeDay,
+} from './circle-core.js';
 
 /* Placeholder rows, so a section has its real height before the data lands.
    Every section on this screen used to start empty: the page rendered as three
@@ -1084,12 +1095,116 @@ function openFormModal({ title, sub, fields, submitLabel, onSubmit, presets }) {
  * leaderboard (members ranked by the challenge's metric — habit check-ins, focus
  * minutes or water-goal days — over the window; a future start shows "Upcoming").
  */
+/* ---- The seat ring ----
+   The circle drawn as its members: a seat each around a ring, the circle's name
+   in the middle. A seat glows when that member has checked in today (their own
+   today), sits as ash when they haven't, and is blank for someone who keeps
+   progress private. The track fills by the share who are in. Tapping someone
+   else's seat cheers them (once a day per pair, server-side). The seats light in
+   turn once, on first paint; prefers-reduced-motion skips it (app.css). */
+const RING_R = 40; // percent of the ring's box; the SVG track uses the same
+function SeatRing({ circle, members, currentUserId, onCheer, cheered }) {
+  const ordered = seatOrder(members, currentUserId);
+  const overflow = ordered.length > MAX_SEATS ? ordered.length - (MAX_SEATS - 1) : 0;
+  const seated = overflow ? ordered.slice(0, MAX_SEATS - 1) : ordered;
+  const spots = seatLayout(seated.length + (overflow ? 1 : 0), RING_R);
+  const p = presence(members, currentUserId);
+  // Lit seats over all seats (a private seat is a sector too), so the arc ends on a seat boundary.
+  const share = ordered.length ? p.lit / ordered.length : 0;
+
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 100 100');
+  svg.setAttribute('class', 'gb-seat-track');
+  svg.setAttribute('aria-hidden', 'true');
+  // Start half a seat before twelve o'clock, so the fill spans whole seats.
+  // Rotated inside the SVG: rotating the element itself made its box a tilted
+  // square wider than the screen.
+  const g = document.createElementNS(NS, 'g');
+  g.setAttribute('transform', 'rotate(' + (-90 - 180 / Math.max(1, spots.length)) + ' 50 50)');
+  svg.appendChild(g);
+  const C = 2 * Math.PI * RING_R;
+  [
+    ['gb-seat-track-bg', 0],
+    ['gb-seat-track-fill', C * (1 - share)],
+  ].forEach(([cls, off]) => {
+    const ci = document.createElementNS(NS, 'circle');
+    ci.setAttribute('cx', '50');
+    ci.setAttribute('cy', '50');
+    ci.setAttribute('r', String(RING_R));
+    ci.setAttribute('class', cls);
+    ci.style.setProperty('--len', String(C));
+    ci.style.setProperty('--off', String(off));
+    g.appendChild(ci);
+  });
+
+  const seat = (m, i) => {
+    const me = m.userId === currentUserId;
+    const state = m.doneToday == null ? 'private' : m.doneToday > 0 ? 'lit' : 'ash';
+    const said =
+      state === 'private' ? 'keeps progress private' : state === 'lit' ? 'checked in today' : 'not checked in yet';
+    const name = me ? 'You' : m.name;
+    const attrs = {
+      class: 'gb-seat is-' + state + (me ? ' is-me' : '') + (cheered.has(m.userId) ? ' is-cheered' : ''),
+      style: { left: spots[i].x + '%', top: spots[i].y + '%', '--i': String(i) },
+      title: name + ', ' + said,
+    };
+    const label = h('span', { class: 'gb-seat-initials', 'aria-hidden': 'true' }, initials(m.name));
+    if (me || !onCheer) {
+      return h('span', { ...attrs, role: 'img', 'aria-label': name + ', ' + said }, label);
+    }
+    return h(
+      'button',
+      {
+        ...attrs,
+        type: 'button',
+        'aria-label': cheered.has(m.userId) ? 'Cheered ' + m.name + ' today' : 'Cheer ' + m.name + ' on, ' + said,
+        onclick: (e) => onCheer(m, e.currentTarget),
+      },
+      label
+    );
+  };
+
+  const ringEl = h(
+    'div',
+    {
+      class: 'gb-seat-ring',
+      role: 'group',
+      'aria-label': circle.name + ': ' + (p.known ? p.lit + ' of ' + p.known + ' checked in today' : 'members'),
+    },
+    svg,
+    h(
+      'div',
+      { class: 'gb-seat-core' },
+      h('h3', { class: 'gb-seat-name' }, circle.name),
+      h(
+        'div',
+        { class: 'gb-seat-count' },
+        p.known ? p.lit + ' of ' + p.known + ' in today' : plural(members.length, 'member')
+      )
+    ),
+    ...seated.map(seat),
+    overflow
+      ? h(
+          'span',
+          {
+            class: 'gb-seat is-more',
+            style: { left: spots[seated.length].x + '%', top: spots[seated.length].y + '%', '--i': String(seated.length) },
+            role: 'img',
+            'aria-label': overflow + ' more members',
+          },
+          '+' + overflow
+        )
+      : null
+  );
+  // Light the seats once, after first paint, so the sequence is seen.
+  requestAnimationFrame(() => requestAnimationFrame(() => ringEl.classList.add('is-on')));
+  return ringEl;
+}
+
 function ChallengesPanel({ api, currentUserId, wins }) {
   const el = h('div', { class: 'gb-challenges' }, sectionSkeleton(1));
 
-  // Gold, silver, bronze for the top three; the rest keep their number. These
-  // shades clear 3:1 on both light and dark cards (the 500s fade out on white).
-  const MEDAL_COLOR = { 1: 'var(--sun-700)', 2: 'var(--warm-500)', 3: 'var(--coral-600)' };
   // What a challenge counts (ChallengeMetrics.Metric server-side). A challenge
   // from before the column has no metric and counted check-ins.
   const METRICS = {
@@ -1148,26 +1263,28 @@ function ChallengesPanel({ api, currentUserId, wins }) {
     if (!entries || !entries.length) {
       return [h('div', { class: 'gb-empty-sm' }, metric.empty)];
     }
-    return entries
-      .slice(0, 10)
-      .map((m) =>
-        h(
-          'div',
-          { class: 'gb-lb-row' + (m.userId === currentUserId ? ' is-me' : '') },
-          m.rank <= 3
-            ? h(
-                'span',
-                { class: 'gb-lb-rank', 'aria-label': 'Rank ' + m.rank, title: 'Rank ' + m.rank },
-                Icon('medal', { size: 18, sw: 2.2, color: MEDAL_COLOR[m.rank] })
-              )
-            : h('span', { class: 'gb-lb-rank' }, '#' + m.rank),
-          h('span', { class: 'gb-lb-name' }, m.userId === currentUserId ? 'You' : m.name),
-          h('span', { class: 'gb-lb-val' }, metric.unit(m.value)),
-          c && c.active && m.userId !== currentUserId && api.cheer
-            ? cheerButton(c.circleId, m)
-            : null
-        )
-      );
+    // The rank is the board's own number: a tie shares it. Cheering lives on
+    // the seats above, so a row is read, not tapped.
+    return entries.slice(0, 10).map((m) =>
+      h(
+        'div',
+        { class: 'gb-lb-row' + (m.userId === currentUserId ? ' is-me' : '') + (m.rank === 1 ? ' is-lead' : '') },
+        h('span', { class: 'gb-lb-rank', 'aria-label': 'Rank ' + m.rank }, String(m.rank)),
+        h('span', { class: 'gb-lb-name' }, m.userId === currentUserId ? 'You' : m.name),
+        h('span', { class: 'gb-lb-val' }, metric.unit(m.value))
+      )
+    );
+  }
+
+  /* "Habit check-ins · Day 1 of 7 · ends Sat 17 Oct" — where the window is, in words. */
+  function challengeMeta(c, upcoming) {
+    const day = challengeDay(c.startDate, c.endDate, localISO());
+    const when = upcoming
+      ? 'starts ' + shortDay(c.startDate)
+      : day
+        ? 'Day ' + day.day + ' of ' + day.total + ' · ends ' + shortDay(c.endDate)
+        : 'ended ' + shortDay(c.endDate);
+    return metricOf(c).label + ' · ' + when;
   }
 
   function challengeBlock(c) {
@@ -1186,11 +1303,7 @@ function ChallengesPanel({ api, currentUserId, wins }) {
           c.active ? 'Active' : upcoming ? 'Upcoming' : 'Ended'
         )
       ),
-      h(
-        'div',
-        { class: 'gb-challenge-dates' },
-        metricOf(c).label + ' · ' + c.startDate + ' → ' + c.endDate
-      ),
+      h('div', { class: 'gb-challenge-dates' }, challengeMeta(c, upcoming)),
       (() => {
         const line = upcoming
           ? null
@@ -1854,7 +1967,10 @@ function ChallengesPanel({ api, currentUserId, wins }) {
     );
   }
 
-  function circleCard(c) {
+  /* One circle: the seat ring (who is in today), one line to act on it, the
+     challenges, then the circle's posts. `openPosts` opens the feed at once
+     (the first circle on the screen); the rest open on demand, one fetch each. */
+  function circleCard(c, { openPosts = false } = {}) {
     const body = h(
       'div',
       { class: 'gb-challenge-body' },
@@ -1865,16 +1981,34 @@ function ChallengesPanel({ api, currentUserId, wins }) {
         .listChallenges(c.id)
         .then((list) => {
           body.replaceChildren();
-          if (!list || !list.length) {
-            body.appendChild(h('div', { class: 'gb-empty-sm' }, 'No challenges yet — start one!'));
+          // The one running now leads; the rest follow, newest first as served.
+          const ordered = (list || []).slice().sort((a, b) => Number(!!b.active) - Number(!!a.active));
+          if (!ordered.length) {
+            body.appendChild(
+              h(
+                'div',
+                { class: 'gb-challenge-empty' },
+                h('p', null, 'No challenge running. Pick one and everyone’s check-ins count from today.'),
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    class: 'gb-btn gb-btn--soft gb-btn--compact',
+                    onclick: () => startChallenge(c.id, loadChallenges),
+                  },
+                  Icon('flag', { size: 14, sw: 2.4 }),
+                  'Start a challenge'
+                )
+              )
+            );
           } else {
-            list.forEach((c2) => body.appendChild(challengeBlock(c2)));
+            ordered.forEach((c2) => body.appendChild(challengeBlock(c2)));
           }
           refreshIcons();
         })
         .catch(() =>
           body.replaceChildren(
-            h('div', { class: 'gb-empty-sm' }, 'Could not load challenges.'),
+            h('div', { class: 'gb-empty-sm' }, 'Couldn’t load challenges.'),
             h(
               'button',
               {
@@ -1889,12 +2023,108 @@ function ChallengesPanel({ api, currentUserId, wins }) {
     }
     loadChallenges();
 
+    // Who is in today: the ring, and the one action it suggests.
+    const cheered = new Set(); // members cheered from this card today
+    let members = [];
+    const ringSlot = h(
+      'div',
+      { class: 'gb-seat-ring-slot' },
+      h('div', { class: 'gb-seat-ring is-loading', 'aria-hidden': 'true' })
+    );
+    const nudgeSlot = h('div', { class: 'gb-circle-nudge' });
+
+    async function cheerOne(m) {
+      await api.cheer(c.id, m.userId);
+      cheered.add(m.userId);
+    }
+    async function onSeat(m, btn) {
+      if (cheered.has(m.userId) || btn.disabled) return;
+      btn.disabled = true;
+      try {
+        await cheerOne(m);
+        toast.success('Cheered ' + m.name + ' on.');
+        paintRing();
+      } catch (err) {
+        btn.disabled = false;
+        toast.error(err, 'Couldn’t send that cheer.');
+      }
+    }
+    function paintNudge() {
+      const p = presence(members, currentUserId);
+      const quiet = p.quiet.filter((m) => !cheered.has(m.userId));
+      nudgeSlot.replaceChildren();
+      if (!p.known) return;
+      if (!quiet.length) {
+        nudgeSlot.appendChild(
+          h(
+            'p',
+            { class: 'gb-circle-nudge-line' },
+            p.lit === p.known
+              ? 'Everyone’s in today.'
+              : p.quiet.length
+                ? 'You’ve cheered everyone still to check in.'
+                : p.meIn
+                  ? 'You’re in. Nobody else has checked in yet.'
+                  : 'You’re the one still to check in today.'
+          )
+        );
+        return;
+      }
+      const btn = h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--primary gb-btn--compact gb-circle-nudge-btn',
+          onclick: async () => {
+            if (btn.disabled) return;
+            btn.disabled = true;
+            let sent = 0;
+            for (const m of quiet) {
+              try {
+                await cheerOne(m);
+                sent++;
+              } catch (_) {
+                /* already cheered today, or the daily cap: the rest still go */
+              }
+            }
+            if (sent) toast.success('Cheered ' + plural(sent, 'person', 'people') + ' on.');
+            else toast.error(null, 'Couldn’t send those cheers. You may have cheered them already today.');
+            paintRing();
+          },
+        },
+        Icon('sparkles', { size: 14, sw: 2.4 }),
+        quiet.length === 1 ? 'Cheer ' + quiet[0].name.split(' ')[0] + ' on' : 'Cheer the ' + quiet.length + ' still to check in'
+      );
+      nudgeSlot.appendChild(btn);
+    }
+    function paintRing() {
+      ringSlot.replaceChildren(
+        SeatRing({ circle: c, members, currentUserId, onCheer: api.cheer ? onSeat : null, cheered })
+      );
+      if (api.cheer) paintNudge();
+      refreshIcons();
+    }
+    function loadMembers() {
+      api
+        .listMembers(c.id)
+        .then((list) => {
+          members = list || [];
+          // Today's one cheer per person, as the server counts it: a reload
+          // must not offer a cheer it would refuse.
+          members.forEach((m) => m.cheeredByMe && cheered.add(m.userId));
+          paintRing();
+        })
+        .catch(() => {
+          ringSlot.replaceChildren(h('h3', { class: 'gb-circle-name gb-circle-name--plain' }, c.name));
+        });
+    }
+    loadMembers();
+
     const subEl = h('div', { class: 'gb-circle-sub' });
     const paintSub = () => {
       subEl.textContent =
         (c.visibility === 'private' ? 'Private · ' : '') +
-        plural(c.memberCount, 'member') +
-        (c.owner ? ' · Owner' : '');
+        plural(c.memberCount, 'member');
     };
     paintSub();
 
@@ -1907,17 +2137,19 @@ function ChallengesPanel({ api, currentUserId, wins }) {
         type: 'button',
         class: 'gb-btn gb-btn--ghost gb-btn--compact',
         'aria-expanded': 'false',
-        onclick: () => {
-          const open = postsBtn.getAttribute('aria-expanded') !== 'true';
-          postsBtn.setAttribute('aria-expanded', String(open));
-          if (open && !feed) feed = PostsFeed(c);
-          postsSlot.replaceChildren(...(open ? [feed] : []));
-          refreshIcons();
-        },
+        onclick: () => togglePosts(),
       },
       Icon('message-circle', { size: 14, sw: 2.4 }),
-      'Posts'
+      h('span', null, 'Show posts')
     );
+    function togglePosts(force) {
+      const open = force !== undefined ? force : postsBtn.getAttribute('aria-expanded') !== 'true';
+      postsBtn.setAttribute('aria-expanded', String(open));
+      postsBtn.lastChild.textContent = open ? 'Hide posts' : 'Show posts';
+      if (open && !feed) feed = PostsFeed(c);
+      postsSlot.replaceChildren(...(open ? [feed] : []));
+      refreshIcons();
+    }
 
     const card = h(
       'div',
@@ -1925,7 +2157,7 @@ function ChallengesPanel({ api, currentUserId, wins }) {
       h(
         'div',
         { class: 'gb-circle-card-head' },
-        h('div', { style: { minWidth: 0 } }, h('div', { class: 'gb-circle-name' }, c.name), subEl),
+        subEl,
         h(
           'div',
           { class: 'gb-circle-card-tools' },
@@ -1933,18 +2165,18 @@ function ChallengesPanel({ api, currentUserId, wins }) {
             'button',
             {
               type: 'button',
-              class: 'gb-btn gb-btn--soft gb-btn--compact',
+              class: 'gb-btn gb-btn--ghost gb-btn--compact',
               onclick: () => startChallenge(c.id, loadChallenges),
             },
             Icon('flag', { size: 14, sw: 2.4 }),
-            'Start challenge'
+            'New challenge'
           ),
           h(
             'button',
             {
               type: 'button',
               class: 'gb-iconbtn',
-              'aria-label': 'Circle options',
+              'aria-label': 'Options for ' + c.name,
               title: 'Options',
               onclick: () => openCircleMenu(c, card, paintSub),
             },
@@ -1952,10 +2184,13 @@ function ChallengesPanel({ api, currentUserId, wins }) {
           )
         )
       ),
+      ringSlot,
+      nudgeSlot,
       body,
       h('div', { class: 'gb-circle-card-foot' }, postsBtn),
       postsSlot
     );
+    if (openPosts) togglePosts(true);
     return card;
   }
 
@@ -1973,20 +2208,52 @@ function ChallengesPanel({ api, currentUserId, wins }) {
       .then((mine) => {
         el.replaceChildren();
         if (!mine || !mine.length) {
+          // An empty ring: what a circle will look like once people are in it.
+          const spots = seatLayout(5, RING_R);
           el.appendChild(
             h(
               'div',
-              { class: 'gb-card' },
+              { class: 'gb-card gb-circle-empty' },
               h(
                 'div',
-                { class: 'gb-empty' },
-                Icon('trophy', { size: 26, color: 'var(--fg3)' }),
-                h('p', null, 'Join or create a circle to run habit challenges with friends.')
+                { class: 'gb-seat-ring is-on gb-seat-ring--empty', 'aria-hidden': 'true' },
+                h(
+                  'div',
+                  { class: 'gb-seat-core' },
+                  h('div', { class: 'gb-seat-name' }, 'Your circle')
+                ),
+                ...spots.map((pt, i) =>
+                  h('span', {
+                    class: 'gb-seat ' + (i === 0 ? 'is-lit' : 'is-ash'),
+                    style: { left: pt.x + '%', top: pt.y + '%', '--i': String(i) },
+                  })
+                )
+              ),
+              h('h3', { class: 'gb-circle-empty-title' }, 'Start a circle'),
+              h(
+                'p',
+                { class: 'gb-circle-empty-copy' },
+                'A few friends, one habit. Each seat lights up when that person checks in, and one tap cheers on whoever hasn’t.'
+              ),
+              h(
+                'div',
+                { class: 'gb-circle-empty-actions' },
+                h(
+                  'button',
+                  { type: 'button', class: 'gb-btn gb-btn--primary gb-btn--compact', onclick: newCircle },
+                  Icon('plus', { size: 14, sw: 2.6 }),
+                  'New circle'
+                ),
+                h(
+                  'button',
+                  { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--compact', onclick: openBrowse },
+                  'Find one to join'
+                )
               )
             )
           );
         } else {
-          mine.forEach((c) => el.appendChild(circleCard(c)));
+          mine.forEach((c, i) => el.appendChild(circleCard(c, { openPosts: i === 0 })));
         }
         refreshIcons();
       })
@@ -2023,9 +2290,9 @@ function ChallengesPanel({ api, currentUserId, wins }) {
     { class: 'gb-challenges-actions' },
     h(
       'button',
-      { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--compact', onclick: openBrowse },
+      { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--compact', onclick: openBrowse, 'aria-label': 'Browse circles' },
       Icon('search', { size: 14, sw: 2.4 }),
-      'Browse'
+      h('span', { class: 'gb-circle-browse-label' }, 'Browse')
     ),
     h(
       'button',
@@ -2260,16 +2527,12 @@ function ScreenCircle({
 
     incomingEl.replaceChildren();
     if (!accepted.length) {
+      // One quiet line, not a card: an empty box was the first thing on the screen.
       incomingEl.appendChild(
         h(
-          'div',
-          { class: 'gb-card' },
-          h(
-            'div',
-            { class: 'gb-empty' },
-            Icon('users', { size: 26, color: 'var(--fg3)' }),
-            h('p', null, 'No connections yet. Send an invite to get started.')
-          )
+          'p',
+          { class: 'gb-mentor-empty' },
+          'No mentors or mentees yet. Find someone to learn from, or offer to guide.'
         )
       );
     } else {
@@ -2315,20 +2578,9 @@ function ScreenCircle({
       (r) => r.status !== 'accepted' && r.status !== 'cancelled'
     );
     outgoingEl.replaceChildren();
-    if (!invites.length) {
-      outgoingEl.appendChild(
-        h(
-          'div',
-          { class: 'gb-card' },
-          h(
-            'div',
-            { class: 'gb-empty' },
-            Icon('mail', { size: 26, color: 'var(--fg3)' }),
-            h('p', null, 'No pending invites right now.')
-          )
-        )
-      );
-    } else {
+    // Sent invites only when there are some: "none pending" says nothing.
+    if (invites.length) {
+      outgoingEl.appendChild(h('h5', { class: 'gb-conn-group-head' }, 'Invites you sent', h('span', null, invites.length)));
       const card = h('div', { class: 'gb-card', style: { padding: '4px 0' } });
       invites.forEach((r) =>
         card.appendChild(OutgoingRow(r, onLoadStatus, onRevoke ? revokeAndRefresh : null))
@@ -2390,19 +2642,8 @@ function ScreenCircle({
 
   const addBtn = h(
     'button',
-    {
-      type: 'button',
-      class: 'gb-btn gb-btn--primary',
-      style: {
-        width: 'auto',
-        flex: 'none',
-        whiteSpace: 'nowrap',
-        padding: '8px 14px',
-        fontSize: '0.8125rem',
-      },
-      onclick: launchSearch,
-    },
-    Icon('plus', { size: 14, sw: 2.6 }),
+    { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--compact', onclick: launchSearch },
+    Icon('search', { size: 14, sw: 2.4 }),
     'Find someone'
   );
 
@@ -2411,111 +2652,22 @@ function ScreenCircle({
     : null;
   const challengesPanel = challenges && challenges.node;
 
+  /* Order is importance: invites waiting on you, then your circles (who is in
+     today), then mentorship. It opened on Mentorship's two empty cards, with
+     the circle itself below the fold under a "Challenges" heading. */
+  const section = (title, action, ...kids) =>
+    h(
+      'section',
+      { class: 'gb-circle-block' },
+      h('div', { class: 'gb-circle-block-head' }, h('h2', { class: 'gb-circle-block-title' }, title), action || null),
+      ...kids
+    );
   screenEl = h(
     'div',
-    { class: 'gb-rise', style: { padding: '0 0 24px' } },
-    h(
-      'div',
-      {
-        style: {
-          padding: '6px var(--gutter) 10px',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'flex-end',
-          gap: '10px',
-        },
-      },
-      h(
-        'div',
-        null,
-        h(
-          'h3',
-          {
-            style: {
-              fontFamily: 'var(--font-display)',
-              fontWeight: 800,
-              fontSize: '1.125rem',
-              margin: '0 0 4px',
-            },
-          },
-          // Not "Growth Circle": the screen header already says that.
-          'Mentorship'
-        ),
-        h(
-          'p',
-          { style: { color: 'var(--fg3)', fontSize: '0.8125rem', margin: 0 } },
-          'Your mentors, your mentees, and your sent invites.'
-        )
-      ),
-      addBtn
-    ),
-    h('div', { class: 'gb-circle-requests', style: { padding: '0 var(--gutter)' } }, requestsEl),
-    h(
-      'div',
-      { style: { padding: '18px var(--gutter) 6px' } },
-      h(
-        'h4',
-        {
-          style: {
-            fontFamily: 'var(--font-display)',
-            fontWeight: 800,
-            fontSize: '0.9375rem',
-            margin: '0 0 10px',
-          },
-        },
-        'Connections'
-      )
-    ),
-    h('div', { style: { padding: '0 var(--gutter)' } }, incomingEl),
-    h(
-      'div',
-      { style: { padding: '18px var(--gutter) 6px' } },
-      h(
-        'h4',
-        {
-          style: {
-            fontFamily: 'var(--font-display)',
-            fontWeight: 800,
-            fontSize: '0.9375rem',
-            margin: '0 0 10px',
-          },
-        },
-        'Your invites'
-      )
-    ),
-    h('div', { style: { padding: '0 var(--gutter)' } }, outgoingEl),
-    challengesPanel
-      ? h(
-          'div',
-          { style: { padding: '22px var(--gutter) 6px' }, class: 'gb-challenges-head-wrap' },
-          h(
-            'div',
-            {
-              style: {
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: '10px',
-                marginBottom: '10px',
-              },
-            },
-            h(
-              'h4',
-              {
-                style: {
-                  fontFamily: 'var(--font-display)',
-                  fontWeight: 800,
-                  fontSize: '0.9375rem',
-                  margin: 0,
-                },
-              },
-              'Challenges'
-            ),
-            challenges.actions
-          )
-        )
-      : null,
-    challengesPanel ? h('div', { style: { padding: '0 var(--gutter)' } }, challengesPanel) : null
+    { class: 'gb-rise gb-circle-screen' },
+    requestsEl,
+    challengesPanel ? section('Your circles', challenges.actions, challengesPanel) : null,
+    section('Mentorship', addBtn, incomingEl, outgoingEl)
   );
   requestAnimationFrame(() => {
     if (screenEl.isConnected) wasMounted = true;
