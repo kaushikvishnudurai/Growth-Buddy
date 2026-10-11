@@ -146,7 +146,10 @@ it silently landed on Home. Don't reintroduce a second list.
   `state.trends`, which isn't there yet mid-boot (next rule).
 - **Only cookie-eligible keys are readable synchronously at module load.** `CacheStorage` seeds its
   in-memory map from cookies, and `cookieEligible()` is a short allowlist (token, session, theme,
-  premium, textScale, apiBase; achSeen left it for ui_prefs, see `checkAchievements`). Everything else — quote, trends, money, wellness — lives in
+  premium, textScale, apiBase; achSeen left it for ui_prefs, see `checkAchievements`). The session
+  cookie is a slim projection (`cookieValue`: no email, phone, body, diet or token copy), so at
+  module init `state.user` lacks those fields; the `init().then()` block fills them in from the
+  Cache API copy. Everything else — quote, trends, money, wellness — lives in
   the Cache API and arrives when `CacheStorage.init()` resolves. A `loadFooCache()` called at module
   init therefore always returns null; re-read it in the `init().then()` block at the bottom of the
   file, which then `render()`s. The quote-of-day cache sat unused for exactly this reason, so every

@@ -493,19 +493,24 @@ public class AuthService {
     }
 
     /** The hard delete: every user-owned row, then the users row. No checks — callers gate it. */
+    /**
+     * Children keyed by a parent id ({table, fk column, parent table}): the purge
+     * deletes them via the user's parent rows first, and {@code DataExportController}
+     * exports them the same way (except the two that are other members' rows).
+     */
+    static final String[][] CHILD_TABLES = {
+        {"habit_streaks", "habit_id", "habits"},
+        {"habit_reminder_dispatch_log", "habit_id", "habits"},
+        {"mentor_messages", "thread_id", "mentor_threads"},
+        {"calendar_reminder_skips", "reminder_id", "calendar_reminders"},
+        {"reminder_dispatch_log", "reminder_id", "calendar_reminders"},
+        // Other members' kudos on this account's posts (its own kudos: USER_OWNED_TABLES).
+        {"circle_post_reactions", "post_id", "circle_posts"},
+        // Other members' replies under this account's posts (its own: USER_OWNED_TABLES).
+        {"circle_post_comments", "post_id", "circle_posts"},
+    };
+
     private void purgeAccount(UUID userId) {
-        // Children keyed by a parent id → delete via the user's parent rows first.
-        String[][] childDeletes = {
-            {"habit_streaks", "habit_id", "habits"},
-            {"habit_reminder_dispatch_log", "habit_id", "habits"},
-            {"mentor_messages", "thread_id", "mentor_threads"},
-            {"calendar_reminder_skips", "reminder_id", "calendar_reminders"},
-            {"reminder_dispatch_log", "reminder_id", "calendar_reminders"},
-            // Other members' kudos on this account's posts (its own kudos: USER_OWNED_TABLES).
-            {"circle_post_reactions", "post_id", "circle_posts"},
-            // Other members' replies under this account's posts (its own: USER_OWNED_TABLES).
-            {"circle_post_comments", "post_id", "circle_posts"},
-        };
         // Kept as a guard even though every table above now exists: a DELETE against
         // a missing table throws, which marks the whole transaction rollback-only and
         // aborts the purge — so a future rename fails safe instead of half-deleting.
@@ -533,7 +538,7 @@ public class AuthService {
             // This account's own membership of someone ELSE's family.
             em.createNativeQuery("DELETE FROM family_members WHERE linked_user_id = ?1")
                     .setParameter(1, userId).executeUpdate();
-            for (String[] cd : childDeletes) {
+            for (String[] cd : CHILD_TABLES) {
                 if (existing.contains(cd[0]) && existing.contains(cd[2])) {
                     exec("DELETE FROM " + cd[0] + " WHERE " + cd[1]
                             + " IN (SELECT id FROM " + cd[2] + " WHERE user_id = ?1)", userId);

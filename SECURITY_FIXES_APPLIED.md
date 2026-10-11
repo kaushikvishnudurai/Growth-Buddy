@@ -199,3 +199,35 @@ await cache.put(cacheName, response.clone());
 - **Tested**: All frontend and backend suites
 - **Status**: Ready for staging deployment
 - **Risk Level**: Low (all critical fixes applied)
+
+---
+
+## 2026-10-11: Low findings SEC-09 and SEC-15 (docs/audit/security.md)
+
+### SEC-09: token and profile in long-lived, JS-readable cookies
+**Files**: `scripts/cache-storage.js` (`cookieValue`, `writeCookie`, `setCookie`, `hydrate`), `scripts/app.js` (boot `init().then()`)
+**Change**: the `gb.token` and `gb.session` cookies now live 60 days, the server's session TTL (every boot's
+`/api/auth/me` rewrites both, so an active device slides with the server), not a year. The `gb.session`
+cookie is an allowlisted projection of the profile: no email, WhatsApp number, date of birth, height,
+weight, gender, diet, allergies or token copy. The full profile stays in memory and the Cache API (never
+sent on a request); `hydrate()` swaps it back in and the boot block fills the missing fields into
+`state.user`. Not done on purpose: httpOnly. The app calls the API cross-origin from `https://localhost`
+in the Capacitor shell, where an httpOnly cookie is a third-party cookie WKWebView blocks (CODEMAP,
+"The session token is a bearer header, and stays one").
+**Test**: `node scripts/session-cookie.test.mjs`.
+
+### SEC-15: data export omitted tables the user owns
+**Files**: `backend/.../user/DataExportController.java` (`RELATED_QUERIES`, `NOT_EXPORTED_CHILDREN`), `backend/.../user/AuthService.java` (`CHILD_TABLES`, hoisted from `purgeAccount`)
+**Change**: the export now also carries every parent-keyed child the purge deletes (`mentor_messages`,
+`habit_streaks`, `habit_reminder_dispatch_log`, `calendar_reminder_skips`, `reminder_dispatch_log`), both
+sides' `mentorship_requests` and `mentorship_messages`, and the account's own `family_members` rows. Other
+members' kudos and replies under the account's posts are purged but not exported (their rows, not this
+account's). Each query binds only the user's id.
+**Test**: `DataExportCoverageTest` (every purged child is exported or excluded on purpose; the export
+returns the new tables scoped to the user).
+
+### SEC-10, 11, 12, 13, 14, 16, 17, 18, 19, 20
+Implemented on `feat/ov-sec` alongside SEC-01..08 (same methods: `QuickAddService.parse`,
+`MentorshipService.create`, `FamilyService.linkMember`, `RateLimitInterceptor.preHandle`, `circle.js`
+`joinFromLink`, `Caddyfile`, `BankFeedService.connect`, `notes.js` `SAFE_HREF`,
+`WhatsAppWebhookController.receive`, `WebConfig`), so they are not repeated here.

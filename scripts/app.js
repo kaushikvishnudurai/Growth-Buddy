@@ -450,8 +450,8 @@ const state = {
 /* The working week decides which days a "working days" reminder lands on, so it
    has to be right for the FIRST paint — not after /api/auth/me comes back, by
    which time the calendar and Home's dots have already been drawn from the
-   default. The session cache carries uiPrefs and `gb.session` is cookie-backed
-   (read synchronously at module init), so it is available here. hydrateUiPrefs()
+   default. The session cache carries uiPrefs and `gb.session`'s slim cookie keeps
+   them (read synchronously at module init), so it is available here. hydrateUiPrefs()
    sets it again on every refresh; this is the same value, earlier. */
 setWorkWeek(state.user && state.user.uiPrefs && state.user.uiPrefs.workWeek);
 setRoutine(state.user && state.user.uiPrefs && state.user.uiPrefs.routine);
@@ -15546,6 +15546,11 @@ if (window.CacheStorage && window.CacheStorage.init) {
           .catch(() => {});
       }
       if (hydrated && state.user) {
+        // The session cookie is slim (cache-storage.js cookieValue): the profile
+        // fields it leaves out come from the Cache API copy, without overwriting
+        // anything /api/auth/me may already have refreshed.
+        const full = loadSession();
+        if (full) Object.keys(full).forEach((k) => k in state.user || (state.user[k] = full[k]));
         state.wellness = loadWellness();
         state.goalProgress = loadGoalProgress();
         state.money = loadMoney();
