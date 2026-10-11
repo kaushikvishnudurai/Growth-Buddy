@@ -276,3 +276,34 @@ test('OFF-9: renaming a task with no connection queues it, then sends it', async
     .poll(async () => (await apiAs(page, account.token, '/api/tasks')).some((t) => t.title === 'Book the dentist for Friday'), { timeout: 10_000 })
     .toBe(true);
 });
+
+test('EXS-3: a reload picks up a name changed on another device', async ({ page, account }) => {
+  await signInFast(page, account);
+  const status = await page.evaluate(
+    (t) =>
+      fetch('/api/auth/profile', {
+        method: 'PUT',
+        headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ displayName: 'Zed Quinn' }),
+      }).then((r) => r.status),
+    account.token
+  );
+  expect(status).toBe(200);
+  await page.reload();
+  await expect(page.locator('.gb-avatar')).toContainText('Z', { timeout: 15_000 });
+  await shot(page, 'EXS-3');
+});
+
+test.describe('away from the account timezone', () => {
+  test.use({ timezoneId: 'America/New_York' });
+  test('EXS-6: the timezone offer waits for an open sheet to close', async ({ page, account }) => {
+    await signInFast(page, account);
+    await page.getByRole('button', { name: 'Quick add' }).click();
+    await page.waitForTimeout(3500);
+    await expect(page.locator('.gb-modal-overlay.is-open')).toHaveCount(1);
+    await expect(page.getByText('Switch to America/New_York?')).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await expect(page.getByText('Switch to America/New_York?')).toBeVisible({ timeout: 8000 });
+    await shot(page, 'EXS-6');
+  });
+});

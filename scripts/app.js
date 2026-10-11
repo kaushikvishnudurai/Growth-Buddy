@@ -2053,6 +2053,12 @@ function offerDeviceTimezone() {
   // same question itself. maybeStartFirstRun() re-arms this when it says no.
   if (!(u.uiPrefs && u.uiPrefs.setupDone)) return;
   if ((u.uiPrefs && u.uiPrefs.tzAsked) === tz) return;
+  // Never on top of a sheet the user opened: wait until it is closed, and only
+  // then count the question as asked.
+  if (document.querySelector('.gb-modal-overlay.is-open')) {
+    tzOfferTimer = setTimeout(offerDeviceTimezone, 3000);
+    return;
+  }
   saveUiPrefs({ tzAsked: tz });
   openModal({
     title: 'Switch to ' + tz + '?',
@@ -2995,6 +3001,10 @@ async function loadData() {
   loadSecondaryData();
 }
 
+/* What of the account shows on screen, to tell whether a fresh /me changed it. */
+const accountShape = (u) =>
+  JSON.stringify(u ? [u.displayName, u.timezone, u.features, u.navLayout, u.uiPrefs, u.level, u.xpTotal] : null);
+
 /* Screens that own their subtree: they fetch through their own api callbacks
    AND paint their own loading state, so they don't need wave 1 and can't
    survive a render() they didn't ask for. Mentor is deliberately absent — it
@@ -3044,7 +3054,10 @@ async function loadSecondaryData() {
     return null;
   };
   try {
-    const [goals, notifications, food, money, dailyLogs, photoHistory, weekly] =
+    // The account itself too: a reload boots from the cached session, so a name,
+    // timezone, feature or preference changed on another device never arrived.
+    const before = accountShape(state.user);
+    const [goals, notifications, food, money, dailyLogs, photoHistory, weekly, me] =
       await Promise.all([
         api('/api/goals').catch(soft('goals')),
         api(notifPageUrl('all')).catch(soft('notifications')),
@@ -3053,9 +3066,12 @@ async function loadSecondaryData() {
         api('/api/daily-logs?days=60').catch(soft('sleep and mood')),
         api('/api/food/photo-history').catch(soft('food photos')),
         api('/api/weekly-review').catch(soft('weekly reviews')),
+        api('/api/auth/me').catch(() => null),
       ]);
     // Signed out while these were out: see loadData's gone().
     if (!state.user || (state.user.id || state.user.email) !== who) return;
+    if (me) syncUserSession(me);
+    const accountChanged = !!me && accountShape(state.user) !== before;
     if (missed.length) {
       pushToast("Couldn't load your " + new Intl.ListFormat('en').format(missed) + '.', 'error', 8000, {
         label: 'Retry',
@@ -3134,6 +3150,7 @@ async function loadSecondaryData() {
     // (every day "No log") until something else happened to redraw it.
     const arrived = { money: !!money, goals: !!goals, food: !!food };
     if (state.screen === bootScreen || arrived[state.screen]) render();
+    else if (accountChanged && !SELF_LOADING_SCREENS.has(state.screen)) render();
     // Home's Outlook ranks insights off the same history Report loads. Once
     // per session (null until it lands; sign-out clears it); it repaints Home.
     if (!state.insightHistory) loadInsightHistory();
