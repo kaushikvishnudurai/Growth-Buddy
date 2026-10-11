@@ -205,3 +205,20 @@ test('EXP-5: a one-off reminder still ahead deletes on one tap, with Undo', asyn
   await expect(m.getByRole('button', { name: 'Edit reminder: Call the bank' })).toBeVisible();
   await expect.poll(async () => (await api(page, account, '/api/reminders')).some((r) => r.text === 'Call the bank')).toBe(true);
 });
+
+test('EXP-3: the done tick sits inside its circle', async ({ page, account }) => {
+  await boot(page, account, 'calendar');
+  const m = main(page);
+  await addReminder(page, { text: 'Water plants' });
+  const check = m.getByRole('checkbox', { name: 'Mark done: Water plants' });
+  await check.click();
+  await expect(m.getByRole('checkbox', { name: /Water plants/ })).toBeChecked();
+  const off = await m.locator('.gb-rem-check.is-on').first().evaluate((b) => {
+    const r = b.getBoundingClientRect();
+    const i = b.firstElementChild.getBoundingClientRect();
+    return Math.max(Math.abs(r.x + r.width / 2 - (i.x + i.width / 2)), Math.abs(r.y + r.height / 2 - (i.y + i.height / 2)));
+  });
+  expect(off).toBeLessThan(2);
+  if (test.info().project.name === 'desktop')
+    await m.locator('.gb-rem-row').filter({ hasText: 'Water plants' }).screenshot({ path: 'docs/evidence/planning/EXP-3.jpg', type: 'jpeg', quality: 80 });
+});

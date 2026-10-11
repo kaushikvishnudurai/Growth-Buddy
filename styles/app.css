@@ -14821,7 +14821,9 @@ button.gb-tone-chip:focus-visible {
   border: 2px solid var(--border-strong);
   background: var(--surface);
 }
-.gb-rem-check svg {
+/* The child, not the svg: Icon() wraps the svg in a span, and that span is the
+   grid item; left to auto-place, it dropped into a second row under the circle. */
+.gb-rem-check > * {
   grid-area: 1 / 1;
   position: relative;
 }
