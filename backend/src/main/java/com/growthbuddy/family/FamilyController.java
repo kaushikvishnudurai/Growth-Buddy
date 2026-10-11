@@ -32,6 +32,11 @@ public class FamilyController {
         return service.getFamily(CurrentUser.id());
     }
 
+    @PostMapping("/solo")
+    public FamilyResponse startSolo() {
+        return service.startSolo(CurrentUser.id());
+    }
+
     @PostMapping("/members")
     @ResponseStatus(HttpStatus.CREATED)
     public FamilyResponse addMember(@Valid @RequestBody AddMemberRequest req) {

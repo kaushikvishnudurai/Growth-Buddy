@@ -57,6 +57,8 @@ challenges[], wishlist[], customCategories[], noSpendDays[]
 settings{reflectThreshold:1000, currency:'₹', defaultTag:'others', lastAccountId?, accountsSetUp?, fx?{'$': 83.2}, accountCurrency?{accountId: '$'|null}}
 ```
 
+**Home currency for an account that never set one** (`currency` missing from the stored doc): `normalizeMoney` fills it from the device (`currencyFor(locale, timeZone)` in money-core.js: the language's region through `REGION_CUR` / `EURO`; an Indian timezone is always ₹, since many Indian phones run en-US; unknown = ₹). A stored currency always wins. It is seeded, not written: it reaches the server with the next document save (ponytail there; until then WhatsApp and the day summary still say ₹). Asserted in `money-merge.test.mjs`.
+
 `normalizeMoney` is the trust boundary — every array/object defaulted (**a top-level field it doesn't list is dropped**: a new doc field goes in `emptyMoney` AND `normalizeMoney`), `contribs` backfilled, and a
 `noSpendDays` entry dropped once that day has a real expense (one place, for every path that logs one).
 
@@ -151,7 +153,8 @@ the Coach tab) call `shareSummary`.
 - **Delete a doc-list item with `removeDocItem`, never a bare `filter`**: without its tombstone the
   next 409 merge brings it back from the other device's copy.
 - **Every save re-renders the screen**: app.js calls `ScreenMoney` again. View state therefore lives at module level (`activeTab`, `spendFilter` + `filterScroll`, `lastSearch` typed / `searchAsked` run, `pickedDay`, `showAllIncome`, `tapeShown`, `expShown`, `expMonth`, `loanOrder`, `older`, `daySummaries`). The second group resets on a fresh visit, detected by the previous root being detached (`moneyRoot.isConnected`; app.js builds the new screen before swapping). `loanOrder` keeps loan rows where they were on Settle/Undo until a tab switch.
-- The "Quick reflection" sheet opens after a new expense only at or above `settings.reflectThreshold` (0 = off).
+- A new expense at or above `settings.reflectThreshold` (0 = off) gets a toast with **Reflect**, which opens the "Quick reflection" sheet; it no longer opens by itself. Otherwise, when it is this month's 5th in a tag with no budget, the toast offers **Set budget** at `budgetOffer`'s figure (starter-packs.js, same 30-day rule as below), one tap.
+- **Set budgets** (`openSetBudgets`) prefills every tag without a budget from `budgetsFrom(money, today, Infinity)` (starter-packs.js: last 30 days, 10% under, nearest 100, capped at the field's 10,000,000), marked "Suggested from your spending" until typed over. Save accepts them as they are.
 - Self-check `_demo()` at the bottom runs **only on Vite DEV**, wrapped in try/catch so it never
   blocks boot. It covers: challenge progress, empty-account health = 0, income/loan sums,
   challenge suggestions. Add an assert here when you touch an engine. It also calls `share-card.js`'s

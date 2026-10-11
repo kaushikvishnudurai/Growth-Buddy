@@ -163,6 +163,16 @@ public class FamilyService {
         return buildResponse(fam, userId);
     }
 
+    /**
+     * "Plan meals for just me": the household with only the caller in it, their
+     * row copied from Profile, so a solo cook reaches the planner without adding
+     * anyone. Already in a family: that family, unchanged.
+     */
+    @Transactional
+    public FamilyResponse startSolo(UUID userId) {
+        return buildResponse(resolveOrCreateFamily(userId), userId);
+    }
+
     @Transactional
     public FamilyResponse addMember(UUID userId, AddMemberRequest req) {
         if (req == null || !StringUtils.hasText(req.name())) {

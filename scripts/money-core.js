@@ -16,6 +16,34 @@ const CUR = '₹';
 // the money doc whenever the screen/widget/modals render. ponytail: a single
 // module-level display var beats threading currency through every fmt() call.
 let cur = CUR;
+
+/* The home currency for an account that never picked one: the device's region,
+   read from its language (`en-GB` -> GB -> £). An Indian timezone wins over the
+   language, since plenty of phones in India run en-US. Anything not listed keeps
+   CUR. A currency the user set (Customise) is stored and always wins. */
+const REGION_CUR = { US: '$', CA: '$', AU: '$', NZ: '$', SG: '$', HK: '$', GB: '£', JP: '¥', CN: '¥', KR: '₩', NG: '₦', PH: '₱', AE: 'AED', SA: 'SAR', ZA: 'R', LK: 'Rs', PK: 'Rs', NP: 'Rs', BD: '৳', MY: 'RM', ID: 'Rp', TH: '฿', VN: '₫', BR: 'R$', MX: '$', CH: 'CHF', SE: 'kr', NO: 'kr', DK: 'kr', PL: 'zł', TR: '₺', RU: '₽', IL: '₪', EG: 'E£', KE: 'KSh' };
+const EURO = new Set(['DE', 'FR', 'IT', 'ES', 'NL', 'BE', 'AT', 'IE', 'PT', 'FI', 'GR', 'SK', 'SI', 'LT', 'LV', 'EE', 'LU', 'MT', 'CY', 'HR']);
+export function currencyFor(locale, timeZone) {
+  if (/^Asia\/(Kolkata|Calcutta)$/.test(timeZone || '')) return CUR;
+  let region = '';
+  try {
+    region = new Intl.Locale(locale).maximize().region || '';
+  } catch (_) {
+    /* no or bad locale: the default */
+  }
+  return REGION_CUR[region] || (EURO.has(region) ? '€' : CUR);
+}
+let deviceCur = null;
+function deviceCurrency() {
+  if (deviceCur) return deviceCur;
+  try {
+    deviceCur = currencyFor(navigator.language, Intl.DateTimeFormat().resolvedOptions().timeZone);
+  } catch (_) {
+    deviceCur = CUR;
+  }
+  return deviceCur;
+}
+
 function applyCurrency(money) {
   cur = (money && money.settings && money.settings.currency) || CUR;
 }
@@ -427,7 +455,10 @@ export function normalizeMoney(m) {
     // Live balances from the server; read-only here, never saved back.
     accounts: Array.isArray(m.accounts) ? m.accounts : [],
     tombstones: pruneTombstones(m.tombstones),
-    settings: Object.assign({}, e.settings, m.settings || {}),
+    // ponytail: the device's currency is seeded here, not written: it reaches the
+    // server with the next document save (any budget, goal or setting). Until then
+    // the server's own messages (WhatsApp, day summary) still say ₹.
+    settings: Object.assign({}, e.settings, { currency: deviceCurrency() }, m.settings || {}),
     currency: CUR,
   };
 }

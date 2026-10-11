@@ -10,6 +10,7 @@
 import { h, Icon, Card, ProgressRing, refreshIcons, openModal, Thinking } from './gb-kit.js';
 import { toast } from './toast.js';
 import { shareStoryCard, _demo as _shareCardDemo } from './share-card.js';
+import { budgetsFrom, budgetOffer } from './starter-packs.js';
 import {
   CUR,
   cur,
@@ -2692,12 +2693,24 @@ function openExpenseModal(money, save, prefillDate, existing, scan) {
       });
       if (accountId) next.settings.lastAccountId = accountId;
       save(next, money);
-      toast.success('Expense added.');
       // A quick "why" reflection for buys at or above the user's threshold (Customise;
-      // 0 turns it off). It used to open for every expense: the setting was never read.
-      // Operate on `next` so the new expense id resolves regardless of re-render timing.
+      // 0 turns it off), offered on the toast: it used to open as a sheet by itself,
+      // a third tap on a two-tap log. Operate on `next` so the new id resolves.
       const thr = Number(money.settings.reflectThreshold) || 0;
-      if (thr > 0 && amt >= thr) setTimeout(() => openReflection(next, save, id), 220);
+      const offer = budgetOffer(next, cat, todayKey());
+      if (thr > 0 && amt >= thr)
+        toast.action('Expense added.', 'Reflect', () => openReflection(next, save, id));
+      else if (offer)
+        // The 5th this month in a tag with no budget: the figure Set budgets would suggest.
+        toast.action(
+          'Expense added. Set ' + catOf(cat, next).label + ' to about ' + fmt(offer.amount) + ' a month?',
+          'Set budget',
+          () => {
+            commitOn(next, save, (m) => (m.budgets[cat] = offer.amount));
+            toast.success('Budget set.');
+          }
+        );
+      else toast.success('Expense added.');
     },
   });
   setTimeout(() => amount.focus(), 60);
@@ -3299,32 +3312,51 @@ function ScreenMoney({
 
   /* ---- MODALS ---- */
   function openSetBudgets() {
-    const inputs = mergedCats(money).map((c) => ({
-      c,
-      inp: h('input', {
-        type: 'number',
-        class: 'gb-input',
-        inputmode: 'numeric',
-        min: '0',
-        step: '1',
-        max: '10000000',
-        placeholder: '0',
-        value: money.budgets[c.key] ? String(money.budgets[c.key]) : '',
-      }),
-      roll: h('input', {
-        type: 'checkbox',
-        class: 'gb-money-roll-check',
-        checked: typeof (money.rollover || {})[c.key] === 'string',
-        'aria-label': 'Roll ' + c.label + ' over to next month',
-      }),
-    }));
+    // A tag with no budget starts on what its last 30 days suggest (budgetsFrom,
+    // 10% under), marked as such: Save accepts it, typing over it drops the mark.
+    const suggested = {};
+    // Capped at the field's max: one outlier month must not make Save refuse the form.
+    budgetsFrom(money, todayKey(), Infinity).forEach((b) => (suggested[b.category] = Math.min(b.amount, 10000000)));
+    const inputs = mergedCats(money).map((c) => {
+      const mark = suggested[c.key]
+        ? h('span', { class: 'gb-money-budget-suggested' }, 'Suggested from your spending')
+        : null;
+      return {
+        c,
+        mark,
+        inp: h('input', {
+          type: 'number',
+          class: 'gb-input',
+          inputmode: 'numeric',
+          min: '0',
+          step: '1',
+          max: '10000000',
+          placeholder: '0',
+          value: money.budgets[c.key]
+            ? String(money.budgets[c.key])
+            : suggested[c.key]
+              ? String(suggested[c.key])
+              : '',
+          'aria-label': c.label + ' monthly budget',
+          oninput: () => mark && mark.remove(),
+        }),
+        roll: h('input', {
+          type: 'checkbox',
+          class: 'gb-money-roll-check',
+          checked: typeof (money.rollover || {})[c.key] === 'string',
+          'aria-label': 'Roll ' + c.label + ' over to next month',
+        }),
+      };
+    });
     openMoneyModal({
       title: 'Monthly budgets',
-      sub: 'Set what feels realistic, in whole amounts. Leave blank to skip a tag.',
+      sub: Object.keys(suggested).length
+        ? 'Tags you spend on start 10% under their last 30 days. Change any, in whole amounts; blank skips a tag.'
+        : 'Set what feels realistic, in whole amounts. Leave blank to skip a tag.',
       body: h(
         'div',
         { class: 'gb-form' },
-        inputs.map(({ c, inp, roll }) =>
+        inputs.map(({ c, mark, inp, roll }) =>
           h(
             'div',
             { class: 'gb-money-budget-field' },
@@ -3333,7 +3365,7 @@ function ScreenMoney({
               { class: 'gb-money-budget-field-ic', style: { background: c.soft, color: c.fg } },
               Icon(c.icon, { size: 16, sw: 2.2 })
             ),
-            h('span', { class: 'gb-money-budget-field-label' }, c.label),
+            h('span', { class: 'gb-money-budget-field-label' }, c.label, mark),
             h('label', { class: 'gb-money-roll', title: 'Carry what is left (or over) into next month' }, roll, 'Roll over'),
             inp
           )

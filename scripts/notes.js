@@ -1158,6 +1158,7 @@ function ScreenNotes({
   onCounts,
   onDeleteForever,
   userId,
+  compose,
 }) {
   const listEl = h('div', { class: 'gb-note-grid' });
   let notes = [];
@@ -1413,6 +1414,8 @@ function ScreenNotes({
     composer.classList.add('is-open');
     editor.focus();
   }
+  // + then Note: open and focused on arrival, once the screen is in the page.
+  if (compose) requestAnimationFrame(() => composer.isConnected && openComposer());
   function closeComposer() {
     composer.classList.remove('is-open');
     dropDraft();

@@ -1011,6 +1011,13 @@
   font-size: var(--text-sm);
   color: var(--fg1);
 }
+/* A tag that starts on budgetsFrom's figure, until it is typed over. */
+.gb-money-budget-suggested {
+  display: block;
+  font-weight: 500;
+  font-size: var(--text-xs);
+  color: var(--fg3);
+}
 /* 120px, but it gives way: on a 320px phone "Entertainment" can't shrink, and a
    fixed box was pushed 18px past the sheet's edge. */
 .gb-money-budget-field .gb-input {
