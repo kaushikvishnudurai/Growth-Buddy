@@ -171,7 +171,7 @@ public class QuickAddApplier {
                 .put("kind", it.type())
                 .put("id", UUID.randomUUID().toString())
                 .put("amount", it.amount())
-                .put("date", today.toString())
+                .put("date", (it.date() != null ? it.date() : today).toString())
                 .put("createdAt", System.currentTimeMillis());
         if (accountId != null) row.put("accountId", accountId);
         if ("expense".equals(it.type())) {

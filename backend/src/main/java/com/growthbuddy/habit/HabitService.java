@@ -196,7 +196,9 @@ public class HabitService {
                 c.setHabitId(id);
                 c.setLogDate(day);
                 c.setUserId(userId);
+                c.setXpPaid(false);
             }
+            c.setXpPaid(xpPaid(c)); // pinned before protected_day changes what the legacy rule reads
             c.setDone(false);
             c.setProtectedDay(true);
             checkins.save(c);
@@ -213,14 +215,29 @@ public class HabitService {
         LocalDate day = date != null ? date : today;
         HabitCheckin c = checkins.findByHabitIdAndLogDate(id, day).orElse(null);
         if (c != null && c.isProtectedDay()) {
+            c.setXpPaid(xpPaid(c));
             c.setProtectedDay(false);
             checkins.save(c);
-            StreakFreezeWallet w = wallet(userId, today);
-            w.setTokens(Math.min(FREEZE_CAP, w.getTokens() + 1));
-            wallets.save(w);
+            refundToken(userId, today);
             recomputeStreak(h, today);
         }
         return toResponse(h, today, userId);
+    }
+
+    /** One freeze token back, never past the cap. */
+    private void refundToken(UUID userId, LocalDate today) {
+        StreakFreezeWallet w = wallet(userId, today);
+        w.setTokens(Math.min(FREEZE_CAP, w.getTokens() + 1));
+        wallets.save(w);
+    }
+
+    /**
+     * Has this day's check-in XP been paid? The column when it is set; on a row
+     * from before it, the rule that came before it: an existing row had paid
+     * unless it was a protected day (which was never done).
+     */
+    static boolean xpPaid(HabitCheckin c) {
+        return c.getXpPaid() != null ? c.getXpPaid() : !c.isProtectedDay();
     }
 
     // Read-write (not readOnly): wallet() may persist a weekly token grant.
@@ -502,6 +519,25 @@ public class HabitService {
         List<HabitCheckin> week = checkins.findByUserIdAndLogDateBetween(
                 userId, weekStart(day), day);
         return countDue(list, week, day, clock.zoneOf(userId));
+    }
+
+    /**
+     * {@link #countsOn} for every day in {@code [from, to]}, from two reads instead
+     * of two per day: the habits once, and every check-in from the ISO week
+     * {@code from} falls in through {@code to}. countDue ignores rows outside the
+     * day's own week, so one list serves every day.
+     */
+    @Transactional(readOnly = true)
+    public Map<LocalDate, TodayCounts> countsBetween(UUID userId, LocalDate from, LocalDate to) {
+        Map<LocalDate, TodayCounts> out = new java.util.LinkedHashMap<>();
+        List<Habit> list = habits.findByUserIdAndDeletedAtIsNullOrderByCreatedAtAsc(userId);
+        List<HabitCheckin> rows = list.isEmpty() ? List.of()
+                : checkins.findByUserIdAndLogDateBetween(userId, weekStart(from), to);
+        ZoneId zone = clock.zoneOf(userId);
+        for (LocalDate d = from; !d.isAfter(to); d = d.plusDays(1)) {
+            out.put(d, list.isEmpty() ? new TodayCounts(0, 0) : countDue(list, rows, d, zone));
+        }
+        return out;
     }
 
     /**
@@ -827,10 +863,25 @@ public class HabitService {
             // A fresh row starts undone. The entity's field default is done = true,
             // which made a first tick look like a re-tick.
             c.setDone(false);
+            c.setXpPaid(false);
         }
         boolean wasDone = c.isDone();
+        // xp_paid = this day's check-in XP is held now. A tick pays when it isn't,
+        // an un-tick hands it back (EXS-9), so a day holds one tick's XP however it
+        // is toggled (tick/untick/protect/tick included) and a mistaken tap leaves
+        // nothing behind. A quit habit earns nothing here: done = true only takes a
+        // slip back (or carries a note), and its clean days are paid once by
+        // creditCleanDays.
+        boolean held = xpPaid(c);
+        boolean pays = !isQuit(h) && !wasDone && done && !held;
+        boolean revokes = !isQuit(h) && wasDone && !done && held;
+        c.setXpPaid(pays || (held && !revokes));
         c.setUserId(userId);
         c.setDone(done);
+        if (done && c.isProtectedDay() && !isQuit(h)) {
+            // The day was done after all, so the freeze bought nothing: give it back.
+            refundToken(userId, today);
+        }
         if (done || isQuit(h)) {
             // A completed day supersedes a protected (rest/freeze) day. On a quit
             // habit done = false is a slip, which a freeze must not disguise.
@@ -852,15 +903,9 @@ public class HabitService {
         }
         checkins.save(c);
 
-        // XP follows the tick (EXS-9): a tick pays, an un-tick hands it back, so a
-        // day holds one check-in's XP however often it is toggled, and a mistaken
-        // tap leaves nothing behind. A quit habit earns nothing here: done = true
-        // only takes a slip back, and its clean days are paid once by creditCleanDays.
-        // ponytail: a day un-ticked before this rule kept its XP; re-ticking it pays
-        // once more (10 XP, inside the 7-day edit window). Not worth a paid flag.
-        if (!isQuit(h) && !wasDone && done) {
+        if (pays) {
             progress.awardHabitCheckin(userId);
-        } else if (!isQuit(h) && wasDone && !done) {
+        } else if (revokes) {
             progress.revokeHabitCheckin(userId);
         }
 
@@ -1129,9 +1174,12 @@ public class HabitService {
         Set<LocalDate> done = new HashSet<>();
         Set<LocalDate> prot = new HashSet<>();
         HabitCheckin todayRow = null;
+        HabitCheckin lastRow = null; // newest earlier day with a number (rows are newest first)
         for (HabitCheckin c : checkinsDesc) {
             if (c.getLogDate().isEqual(today)) {
                 todayRow = c;
+            } else if (lastRow == null && c.getLogDate().isBefore(today) && c.getMetricValue() != null) {
+                lastRow = c;
             }
             if (c.isDone()) {
                 done.add(c.getLogDate());
@@ -1196,7 +1244,9 @@ public class HabitService {
                 measured && todayRow != null ? todayRow.getMetricValue() : null,
                 measured && todayRow != null ? todayRow.getDurationMin() : null,
                 dueToday, doneThisWeek,
-                todayRow != null ? todayRow.getNote() : null);
+                todayRow != null ? todayRow.getNote() : null,
+                measured && lastRow != null ? lastRow.getMetricValue() : null,
+                measured && lastRow != null ? lastRow.getDurationMin() : null);
     }
 
     /**
@@ -1234,7 +1284,7 @@ public class HabitService {
         boolean active = h.isActive();
         return HabitResponse.of(h, s, streak, active && !slippedToday, false, false, 0, tokens,
                 null, null, isDue(h, 0, today, zone), cleanThisWeek,
-                todayRow != null ? todayRow.getNote() : null);
+                todayRow != null ? todayRow.getNote() : null, null, null);
     }
 
     /**

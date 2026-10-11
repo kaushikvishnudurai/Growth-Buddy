@@ -47,8 +47,10 @@ public class FoodWeek {
             You are Buddy, the nutrition coach inside the Growth Buddy app, and you know
             Indian food well. You get the meals a user logged (over the last few days,
             or on one day — the Scope line says which), their estimated daily protein,
-            carbs, fat and fiber against targets, their water against its goal when
+            carbs, fat and fibre against targets, their water against its goal when
             given, and their profile. Say how to close the gaps. Be practical, kind and specific.
+            The Verdict line is final: call a nutrient light or heavy only as it says, never the opposite.
+            Use British spelling ("fibre", not "fiber").
             Return strict JSON only:
             {"summary":"two short sentences, second person, no numbers",
              "add":["up to 4 short, specific Indian foods to add or swap, respecting diet and allergies, each under 70 characters"]}
@@ -437,7 +439,7 @@ public class FoodWeek {
         sb.append("\nEstimated grams a day (target): protein ").append(avg.proteinG()).append(" (").append(target.proteinG())
                 .append("), carbs ").append(avg.carbsG()).append(" (").append(target.carbsG())
                 .append("), fat ").append(avg.fatG()).append(" (").append(target.fatG())
-                .append("), fiber ").append(avg.fiberG()).append(" (").append(target.fiberG()).append(").");
+                .append("), fibre ").append(avg.fiberG()).append(" (").append(target.fiberG()).append(").");
         if (waterMl != null) {
             sb.append("\nWater ml a day (goal): ").append(waterMl).append(" (").append(waterGoal).append(").");
         }
@@ -471,8 +473,8 @@ public class FoodWeek {
             String summary = n.path("summary").asText("").strip();
             DietCheckResponse out = new DietCheckResponse(rules.protein(), rules.carbs(), rules.fat(), rules.fiber(),
                     rules.water(),
-                    summary.isEmpty() ? rules.summary() : cap(summary, 400),
-                    add.isEmpty() ? rules.add() : add,
+                    summary.isEmpty() ? rules.summary() : british(cap(summary, 400)),
+                    add.isEmpty() ? rules.add() : add.stream().map(FoodWeek::british).toList(),
                     "ai");
             store(userId, scope, prompt, out);
             return out;
@@ -499,9 +501,16 @@ public class FoodWeek {
 
     /** The stored answer for this scope, only if it answered this exact prompt. */
     private DietCheckResponse storedCheck(UUID userId, String scope, String prompt) {
-        List<Map<String, Object>> rows = jdbc.queryForList(
-                "SELECT prompt, answer FROM food_diet_checks WHERE user_id = ? AND scope = ?",
-                userId.toString(), scope);
+        List<Map<String, Object>> rows;
+        try {
+            rows = jdbc.queryForList(
+                    "SELECT prompt, answer FROM food_diet_checks WHERE user_id = ? AND scope = ?",
+                    userId.toString(), scope);
+        } catch (Exception ex) {
+            // A cache, like store(): a missing table or a hiccup is a miss, never a 500.
+            log.warn("Diet check cache not read: {}", ex.toString());
+            return null;
+        }
         if (rows.isEmpty() || !prompt.equals(rows.get(0).get("prompt"))) {
             return null;
         }
@@ -585,6 +594,33 @@ public class FoodWeek {
         return r < 0.8 * share ? "low" : r > 1.2 ? "high" : "ok";
     }
 
+    /**
+     * Carbs or fat: also "high" when its share of the plate's calories is over
+     * 120% of the target's share, whatever the grams. A carb-heavy week that is
+     * short on calories overall read "Carbs · low" under a headline (the AI's,
+     * which sees the plate) saying "heavy on carbs". Shares are what the plate is
+     * made of; grams alone said only that it was small.
+     */
+    static String macroLevel(int avgG, int targetG, int kcalPerG, Nutrients avg, Nutrients target, double share) {
+        String byGrams = level(avgG, targetG, share);
+        double plate = macroKcal(avg);
+        if (plate <= 0 || "high".equals(byGrams)) {
+            return byGrams;
+        }
+        double mine = avgG * kcalPerG / plate;
+        double want = targetG * kcalPerG / Math.max(1.0, macroKcal(target));
+        return mine > 1.2 * want ? "high" : byGrams;
+    }
+
+    private static double macroKcal(Nutrients n) {
+        return n.proteinG() * 4.0 + n.carbsG() * 4.0 + n.fatG() * 9.0;
+    }
+
+    /** The app writes British English; the model drifts to "fiber". */
+    static String british(String s) {
+        return s == null ? null : s.replace("fiber", "fibre").replace("Fiber", "Fibre").replace("FIBER", "FIBRE");
+    }
+
     /** No AI: the verdict from the numbers, and a stock suggestion per gap. */
     static DietCheckResponse rules(Nutrients avg, Nutrients target) {
         return rules(avg, target, "Your week");
@@ -605,8 +641,8 @@ public class FoodWeek {
                                    double share) {
         String w = waterMl == null ? null : level(waterMl, waterGoalMl, share);
         String p = level(avg.proteinG(), target.proteinG(), share);
-        String c = level(avg.carbsG(), target.carbsG(), share);
-        String f = level(avg.fatG(), target.fatG(), share);
+        String c = macroLevel(avg.carbsG(), target.carbsG(), 4, avg, target, share);
+        String f = macroLevel(avg.fatG(), target.fatG(), 9, avg, target, share);
         String fi = level(avg.fiberG(), target.fiberG(), share);
         // One tip per gap the summary names, extras after: with a cap of 4, two
         // tips each for protein and fiber used to push "heavy on carbs" out of
@@ -621,7 +657,7 @@ public class FoodWeek {
             more.add("Eggs or paneer at breakfast");
         }
         if ("low".equals(fi)) {
-            light.add("fiber");
+            light.add("fibre");
             first.add("A vegetable poriyal or salad");
             more.add("A fruit as an evening snack");
         }
@@ -647,7 +683,7 @@ public class FoodWeek {
         add.addAll(more);
         String summary;
         if (light.isEmpty() && heavy.isEmpty()) {
-            summary = label + " is close to target on protein, carbs, fat and fiber"
+            summary = label + " is close to target on protein, carbs, fat and fibre"
                     + (w == null ? "" : ", and water is on track") + ". Keep the variety going.";
         } else {
             List<String> said = new ArrayList<>();

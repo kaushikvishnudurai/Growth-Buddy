@@ -408,7 +408,7 @@ public class OpenAIClient {
     }
 
     private static final java.util.regex.Pattern EMOJI = java.util.regex.Pattern.compile(
-            "[\\x{1F000}-\\x{1FAFF}\\x{2600}-\\x{27BF}\\x{2B00}-\\x{2BFF}\\x{FE0F}\\x{200D}]");
+            "[\\p{So}\\p{Sk}\\x{1F1E6}-\\x{1F1FF}\\x{FE0F}\\x{200D}\\x{20E3}]");
 
     /**
      * A model's prose for a plain-text slot: Markdown marks and emoji out, words

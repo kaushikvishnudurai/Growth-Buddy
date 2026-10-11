@@ -3,8 +3,8 @@
 Read docs/audit/BRIEF.md first (stack, ports, seeding, CDP Chrome, rules). Then:
 
 - Work ONLY in your own worktree and branch (named in your prompt). Run your own Vite there:
-  `API_PROXY_TARGET=http://localhost:8591 npx vite --port <your port> --strictPort` (background), and point tests
-  at it with GB_E2E_BASE=http://localhost:<your port>. Never use or restart :5591/:8591's processes beyond calling them.
+  `API_PROXY_TARGET=http://localhost:8590 npx vite --port <your port> --strictPort` (background), and point tests
+  at it with GB_E2E_BASE=http://localhost:<your port>. Never use or restart :5591/:8590's processes beyond calling them.
 - The GUIDING RULE: low input, high outcome. Where a fix touches a flow, prefer the version that needs fewer taps,
   fields or decisions (smart default, inference from existing data, remembering the last choice).
 - Root cause, shortest correct diff, match the surrounding code style and comment density. Read CLAUDE.md's

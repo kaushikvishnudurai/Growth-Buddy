@@ -71,6 +71,10 @@ final class QuickAddFallback {
     private static final Pattern REPEAT = Pattern.compile("\\b(every\\s*day|everyday|daily|every\\s+(?:week\\s*day|working\\s+day)s?|weekdays|on\\s+weekdays|every\\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)|weekly|every\\s+week|every\\s+month|monthly|every\\s+year|yearly)\\b", F);
     private static final Pattern LEAD = Pattern.compile("\\b(\\d{1,3}|an?|half\\s+an)\\s*(min|mins|minutes?|h|hrs?|hours?|days?)\\s+(?:before|early|earlier|ahead)\\b", F);
 
+    private static final Pattern YESTERDAY = Pattern.compile("\\byesterday\\b", F);
+    // ponytail: the three currencies people type a symbol for; the model covers the rest.
+    private static final Pattern CURRENCY = Pattern.compile(
+            "(\\$|€|£|\\busd\\b|\\beur\\b|\\bgbp\\b|\\bdollars?\\b|\\bbucks\\b|\\beuros?\\b|\\bpounds?\\b)", F);
     private static final Map<String, Integer> WORDS = Map.of(
             "a", 1, "an", 1, "one", 1, "two", 2, "three", 3, "four", 4, "five", 5, "six", 6);
     private static final Map<String, String> SCREENS = Map.ofEntries(
@@ -84,15 +88,52 @@ final class QuickAddFallback {
             Map.entry("settings", "settings"), Map.entry("food summary", "summary"), Map.entry("nutrition", "summary"));
 
     static List<Intent> parse(String text, List<String> habits, LocalDate today, LocalTime now) {
+        return parse(text, habits, today, now, null);
+    }
+
+    /**
+     * {@code ownCurrency} is the user's Money symbol or code: "$12" from a dollar
+     * user is their own money and carries no currency. "yesterday" anywhere in a
+     * clause backdates the expense, income, food or sleep it holds by one day.
+     */
+    static List<Intent> parse(String text, List<String> habits, LocalDate today, LocalTime now, String ownCurrency) {
         List<Intent> out = new ArrayList<>();
         if (text == null) return out;
         for (String part : text.split("(?<!\\d),|,(?!\\d{3}\\b)|[;\\n]+|\\.\\s+")) {
             for (String clause : CLAUSE_AND.split(part)) {
                 String c = clause.strip().replaceAll("[.!?]+$", "");
-                if (!c.isEmpty()) clause(c, habits, today, now, out);
+                if (c.isEmpty()) continue;
+                int from = out.size();
+                boolean yesterday = YESTERDAY.matcher(c).find();
+                String cur = currencyIn(c, ownCurrency);
+                clause(yesterday ? YESTERDAY.matcher(c).replaceAll(" ").strip() : c, habits, today, now, out);
+                for (Intent it : out.subList(from, out.size())) {
+                    boolean money = "expense".equals(it.type()) || "income".equals(it.type());
+                    if (yesterday && (money || "food".equals(it.type()) || "sleep".equals(it.type()))) {
+                        it.date(today.minusDays(1));
+                    }
+                    if (money) it.currency(cur);
+                }
             }
         }
         return out;
+    }
+
+    /** USD/EUR/GBP when the clause names one that is not the user's own; null otherwise. */
+    static String currencyIn(String c, String own) {
+        Matcher m = CURRENCY.matcher(c);
+        if (!m.find()) return null;
+        String w = m.group(1).toLowerCase(Locale.ROOT);
+        String iso = w.startsWith("€") || w.startsWith("eur") ? "EUR"
+                : w.startsWith("£") || w.equals("gbp") || w.startsWith("pound") ? "GBP" : "USD";
+        String mine = own == null ? "" : own.strip().toUpperCase(Locale.ROOT);
+        String mineIso = switch (mine) {
+            case "$" -> "USD";
+            case "€" -> "EUR";
+            case "£" -> "GBP";
+            default -> mine;
+        };
+        return iso.equals(mineIso) ? null : iso;
     }
 
     private static void clause(String c, List<String> habits, LocalDate today, LocalTime now, List<Intent> out) {
@@ -388,7 +429,8 @@ final class QuickAddFallback {
         if (s.matches(".*\\b(badly|poorly|bad|terrible|awful|restless)\\b.*")) return "poor";
         if (s.matches(".*\\b(great|amazing|excellent)\\b.*")) return "great";
         if (s.matches(".*\\b(well|good|nicely|deeply)\\b.*")) return "good";
-        return "ok";
+        if (s.matches(".*\\b(ok|okay|alright|fine)\\b.*")) return "ok";
+        return null; // not said: the client asks or leaves it blank, never a made-up "ok"
     }
 
     private static String energyOf(String mood) {

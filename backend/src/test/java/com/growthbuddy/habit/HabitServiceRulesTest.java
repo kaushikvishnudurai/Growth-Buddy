@@ -196,6 +196,20 @@ class HabitServiceRulesTest {
     }
 
     @Test
+    void aMeasuredHabitCarriesLastTimesNumber() {
+        habit.setMetric(HabitMetric.km);
+        HabitCheckin yesterday = done(habit, TODAY.minusDays(1));
+        yesterday.setMetricValue(5.2);
+        yesterday.setDurationMin(30);
+        when(checkins.findByHabitIdAndLogDateGreaterThanEqualOrderByLogDateDesc(eq(habit.getId()), any()))
+                .thenReturn(List.of(yesterday));
+        HabitResponse r = service.checkin(USER, habit.getId(), new CheckinRequest(TODAY, false, null, null, null));
+        assertThat(r.lastValue()).isEqualTo(5.2);
+        assertThat(r.lastDurationMin()).isEqualTo(30);
+        assertThat(r.todayValue()).isNull();
+    }
+
+    @Test
     void aFutureDayIsRefused() {
         assertThatThrownBy(() -> service.checkin(USER, habit.getId(),
                 new CheckinRequest(TODAY.plusDays(1), true, null, null, null)))

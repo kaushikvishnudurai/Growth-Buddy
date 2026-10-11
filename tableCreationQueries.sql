@@ -223,6 +223,8 @@ CREATE TABLE IF NOT EXISTS habit_checkins (
   -- The habit's metric for this day (km, steps, minutes) and how long it took.
   metric_value    DOUBLE       NULL,
   duration_min    INT          NULL,
+  -- This day's check-in XP is paid (NULL: a row from before the column).
+  xp_paid         BOOLEAN      NULL,
   PRIMARY KEY (habit_id, log_date),
   KEY ix_habit_checkin_user_date (user_id, log_date),
   CONSTRAINT fk_habit_checkin_habit FOREIGN KEY (habit_id) REFERENCES habits(id) ON DELETE CASCADE,
@@ -295,6 +297,7 @@ CREATE TABLE IF NOT EXISTS food_entries (
   sugar_g         SMALLINT     NULL,
   sodium_mg       INT          NULL,
   meal_slot       VARCHAR(10)  NULL,
+  pieces          SMALLINT     NULL,
   logged_at       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   log_date        DATE         NOT NULL,
   created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,

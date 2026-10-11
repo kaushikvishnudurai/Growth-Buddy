@@ -175,4 +175,36 @@ class QuickAddServiceTest {
         assertEquals(SUNDAY.plusDays(1), said("remind me at 9pm to call mom", "2026-10-11", "21:00", "none", late).date());
         assertEquals(SUNDAY, said("remind me tonight at 9pm to call mom", "2026-10-11", "21:00", "none", late).date());
     }
+
+    /** A spent AI budget is not a dead box: the plain patterns answer, flagged limited. */
+    @Test
+    void aSpentBudgetFallsBackFlaggedLimited() {
+        OpenAIClient openai = mock(OpenAIClient.class);
+        when(openai.isConfigured()).thenReturn(true);
+        when(openai.complete(anyString(), anyList())).thenThrow(
+                new com.growthbuddy.common.ApiException(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS, "spent"));
+        var r = new QuickAddService(openai).parse("spent 200 on lunch", List.of(), TODAY);
+        assertTrue(r.limited());
+        assertTrue(r.fallback());
+        assertFalse(r.unavailable());
+        assertEquals("expense", r.intents().get(0).type());
+    }
+
+    /** The logging types may carry a past day; money a foreign currency; sleep no made-up quality; no emoji. */
+    @Test
+    void datesCurrencyQualityAndANeutralNote() {
+        var r = parse("{\"intents\":[{\"type\":\"expense\",\"amount\":12,\"note\":\"Coffee\",\"currency\":\"usd\",\"date\":\"2026-10-09\"},"
+                + "{\"type\":\"income\",\"amount\":5,\"currency\":\"dollars\",\"date\":\"2026-10-11\"},"
+                + "{\"type\":\"sleep\",\"hours\":7},"
+                + "{\"type\":\"food\",\"name\":\"Dosa\",\"date\":\"2025-01-01\"}],"
+                + "\"note\":\"Logs coffee \uD83D\uDE00\u2615\uFE0F and sleep\"}");
+        var l = r.intents();
+        assertEquals(LocalDate.of(2026, 10, 9), l.get(0).date(), "yesterday stays");
+        assertEquals("USD", l.get(0).currency());
+        assertEquals(null, l.get(1).date(), "a future day is dropped (means today)");
+        assertEquals(null, l.get(1).currency(), "not an ISO code");
+        assertEquals(null, l.get(2).quality(), "not said = null, not ok");
+        assertEquals(null, l.get(3).date(), "older than a month is a misread");
+        assertEquals("Logs coffee and sleep", r.note());
+    }
 }

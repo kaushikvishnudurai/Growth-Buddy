@@ -18,6 +18,7 @@ import java.util.Set;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 /**
@@ -52,13 +53,21 @@ public class QuickAddService {
               {"type":"habit_new","name":"..."}             "start a habit of reading", "new habit: stretch"
               {"type":"goal","title":"..."}                 "my goal is to run a 10k", "new goal: save for a bike"
               {"type":"water","amountMl":<int>}             a glass ~= 250, a bottle ~= 500, a litre = 1000
-              {"type":"food","name":"<one dish>","meal":"breakfast|lunch|dinner|snack"|null,"kcal":<int>|null}
+              {"type":"food","name":"<one dish>","meal":"breakfast|lunch|dinner|snack"|null,"kcal":<int>|null,"date":"YYYY-MM-DD"|null}
                                                             one intent PER dish eaten ("2 idli and a dosa" = two);
                                                             keep the quantity in the name; kcal only if they said it
-              {"type":"sleep","hours":<number 0-24>,"quality":"poor|ok|good|great"}
+              {"type":"sleep","hours":<number 0-24>,"quality":"poor|ok|good|great"|null,"date":"YYYY-MM-DD"|null}
+                                                            quality ONLY if they described it ("slept badly"); else null
               {"type":"mood","mood":"<one or two words>","energy":"low|medium|high"}
-              {"type":"expense","amount":<int>,"note":"<short label>"}   money spent, integer, user's currency
-              {"type":"income","amount":<int>,"note":"<short label>"}    money received: salary, refund, gift
+              {"type":"expense","amount":<int>,"note":"<short label>","currency":"<ISO 4217>"|null,"date":"YYYY-MM-DD"|null}
+                                                            money spent, integer
+              {"type":"income","amount":<int>,"note":"<short label>","currency":"<ISO 4217>"|null,"date":"YYYY-MM-DD"|null}
+                                                            money received: salary, refund, gift
+            "date" on food, sleep, expense and income: ONLY when they said a past day
+            ("yesterday", "on Monday" = the most recent Monday before TODAY), resolved
+            from TODAY below; null when no day was said (it means today). Never a future day.
+            "currency": ONLY when they named a currency other than the USER'S CURRENCY
+            below ("$12" -> "USD", "20 euros" -> "EUR"); null when none was named or it is theirs.
               {"type":"note","text":"..."}                  "note: ...", "jot down ...", an idea to keep
               {"type":"focus","minutes":<int 1-240>|null}   "start a 25 minute focus", "pomodoro"
               {"type":"open","screen":"home|money|calendar|notes|goals|habits|food|summary|focus|report|family|circle|mentor|achievements|settings"}
@@ -93,7 +102,9 @@ public class QuickAddService {
             {"intents":[],"note":"..."}. Never invent numbers that weren't stated.
             The text may be in ANY language, or a mix of languages (e.g. Tanglish,
             Hinglish) — understand it regardless. Keep titles in the user's language;
-            write "note" in the same language the user wrote in.
+            write "note" in the same language the user wrote in. "note" is a neutral,
+            present-tense summary of what will be saved ("Logs 200 for lunch and 7 h of
+            sleep"), never past tense as if already done, and never any emoji.
             """;
 
     private final OpenAIClient openai;
@@ -134,6 +145,7 @@ public class QuickAddService {
         @JsonProperty private String screen;
         @JsonProperty private String key;
         @JsonProperty private String value;
+        @JsonProperty private String currency;
 
         private Intent(String type) {
             this.type = type;
@@ -158,6 +170,8 @@ public class QuickAddService {
         Intent minutes(Integer v) { minutes = v; return this; }
         Intent screen(String v) { screen = v; return this; }
         Intent kv(String k, String v) { key = k; value = v; return this; }
+        Intent date(LocalDate v) { date = v; return this; }
+        Intent currency(String v) { currency = v; return this; }
 
         Intent when(LocalDate d, LocalTime t, String rep, String tg, Integer lead) {
             date = d;
@@ -198,6 +212,7 @@ public class QuickAddService {
         public String screen() { return screen; }
         public String key() { return key; }
         public String value() { return value; }
+        public String currency() { return currency; }
     }
 
     private static final Set<String> REPEATS = Set.of("none", "daily", "weekdays", "weekly", "monthly", "yearly");
@@ -206,16 +221,25 @@ public class QuickAddService {
     private static final Set<String> SCREENS = Set.of("home", "money", "calendar", "notes", "goals", "habits",
             "food", "summary", "focus", "report", "family", "circle", "mentor", "achievements", "settings");
     private static final Set<String> THEMES = Set.of("dark", "light", "system");
+    private static final Pattern ISO_CURRENCY = Pattern.compile("[A-Z]{3}");
+    /** How far back a "yesterday"/"on Monday" log may land; older is a misread, not a log. */
+    private static final int MAX_BACKDATE_DAYS = 31;
     private static final Pattern HHMM = Pattern.compile("([01]?\\d|2[0-3]):([0-5]\\d)(:\\d\\d)?");
 
     /**
      * {@code fallback}: these intents came from the plain patterns, not the model
      * (no key, or the call failed) — the client says so above the preview.
+     * {@code limited}: the user's hourly AI budget is spent, so the model was not
+     * asked at all; the plain patterns answered instead of a 429.
      */
     public record QuickAddResult(boolean configured, boolean unavailable, List<Intent> intents, String note,
-                                 boolean fallback) {
+                                 boolean fallback, boolean limited) {
         QuickAddResult(boolean configured, boolean unavailable, List<Intent> intents, String note) {
-            this(configured, unavailable, intents, note, false);
+            this(configured, unavailable, intents, note, false, false);
+        }
+
+        QuickAddResult(boolean configured, boolean unavailable, List<Intent> intents, String note, boolean fallback) {
+            this(configured, unavailable, intents, note, fallback, false);
         }
     }
 
@@ -234,16 +258,24 @@ public class QuickAddService {
      * the caller hear "not configured" / "unavailable" with an empty list.
      */
     public QuickAddResult parse(String text, List<String> habitNames, LocalDate today, LocalTime now) {
+        return parse(text, habitNames, today, now, null);
+    }
+
+    /** {@code currency}: the user's own Money currency (a symbol or code), so the model only names a different one. */
+    public QuickAddResult parse(String text, List<String> habitNames, LocalDate today, LocalTime now,
+                                String currency) {
         String clean = cap(text);
         if (clean.isEmpty()) {
             return new QuickAddResult(openai.isConfigured(), false, List.of(), null);
         }
         if (!openai.isConfigured()) {
-            return new QuickAddResult(false, false, QuickAddFallback.parse(clean, habitNames, today, now), null, true);
+            return new QuickAddResult(false, false, QuickAddFallback.parse(clean, habitNames, today, now, currency),
+                    null, true);
         }
         String context = PROMPT + "\nTODAY: " + today + " ("
                 + today.getDayOfWeek().getDisplayName(TextStyle.FULL, Locale.ENGLISH) + ")"
                 + "\nNOW: " + now.withSecond(0).withNano(0)
+                + "\nUSER'S CURRENCY: " + (currency == null || currency.isBlank() ? "unknown" : cap(currency, 8))
                 + "\nUser's habits: "
                 + (habitNames == null || habitNames.isEmpty() ? "(none)" : String.join(", ", habitNames));
         try {
@@ -257,11 +289,23 @@ public class QuickAddService {
             String note = OpenAIClient.plainText(root.path("note").asText(""));
             return new QuickAddResult(true, false, out, note.isBlank() ? null : cap(note, 120));
         } catch (ApiException ex) {
-            throw ex; // the AI budget's 429 already says something true; let it through
+            if (ex.getStatus() != HttpStatus.TOO_MANY_REQUESTS) throw ex;
+            // OpenAIClient refused before any call: the budget is spent. Quick add
+            // still answers from the plain patterns; the request-rate cap lives in
+            // QuickAddController.
+            return new QuickAddResult(true, false, QuickAddFallback.parse(clean, habitNames, today, now, currency),
+                    null, true, true);
         } catch (Exception ex) {
             log.warn("Quick-add parse failed: {}", ex.getMessage());
-            return new QuickAddResult(true, true, QuickAddFallback.parse(clean, habitNames, today, now), null, true);
+            return new QuickAddResult(true, true, QuickAddFallback.parse(clean, habitNames, today, now, currency),
+                    null, true);
         }
+    }
+
+    /** A said past day within {@link #MAX_BACKDATE_DAYS}; anything else (today, future, garbage) is null = today. */
+    private static LocalDate pastDay(JsonNode n, LocalDate today) {
+        LocalDate d = date(n.path("date").asText(""));
+        return d != null && d.isBefore(today) && !d.isBefore(today.minusDays(MAX_BACKDATE_DAYS)) ? d : null;
     }
 
     private Intent toIntent(JsonNode n, String said, LocalDate today, LocalTime now) {
@@ -282,8 +326,8 @@ public class QuickAddService {
             case "sleep": {
                 double hrs = n.path("hours").asDouble(0);
                 if (hrs <= 0 || hrs > 24) return null;
-                return Intent.of(type).hours(hrs)
-                        .quality(oneOf(n.path("quality").asText(""), "ok", "poor", "ok", "good", "great"));
+                return Intent.of(type).hours(hrs).date(pastDay(n, today))
+                        .quality(oneOf(n.path("quality").asText(""), null, "poor", "ok", "good", "great"));
             }
             case "mood": {
                 String mood = cap(n.path("mood").asText(""), 40);
@@ -294,7 +338,9 @@ public class QuickAddService {
                 return reminder(n, said, today, now);
             case "expense", "income": {
                 int amt = clamp(n.path("amount").asInt(0), 0, 100_000_000);
-                return amt <= 0 ? null : Intent.of(type).amount(amt).note(cap(n.path("note").asText(""), 120));
+                String cur = n.path("currency").asText("").trim().toUpperCase(Locale.ROOT);
+                return amt <= 0 ? null : Intent.of(type).amount(amt).note(cap(n.path("note").asText(""), 120))
+                        .date(pastDay(n, today)).currency(ISO_CURRENCY.matcher(cur).matches() ? cur : null);
             }
             case "food": {
                 String name = cap(n.path("name").asText(""), 255);
@@ -303,7 +349,7 @@ public class QuickAddService {
                 String meal = n.path("meal").asText("").trim().toLowerCase(Locale.ROOT);
                 return Intent.of(type).name(name)
                         .kcal(kcal >= 1 && kcal <= 5000 ? kcal : null)
-                        .meal(MEALS.contains(meal) ? meal : null);
+                        .meal(MEALS.contains(meal) ? meal : null).date(pastDay(n, today));
             }
             case "note": {
                 String text = cap(n.path("text").asText(""), 2000);
