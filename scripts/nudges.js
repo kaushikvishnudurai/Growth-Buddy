@@ -47,6 +47,17 @@ export function usualSleep(sleepByDate, today) {
   return { bedtime: toHHMM(round5(median(beds))), wakeTime: toHHMM(round5(median(wakes))) };
 }
 
+/**
+ * Last night, offered as the usual one: usualSleep's guess, but only while
+ * today has no entry and the usual wake time has passed. Home's check-in row
+ * and the one-thing card both ask this. {bedtime, wakeTime} | null.
+ */
+export function sleepToConfirm(sleepByDate, today, now) {
+  if (sleepByDate && sleepByDate[today]) return null;
+  const u = usualSleep(sleepByDate, today);
+  return u && now.getHours() * 60 + now.getMinutes() >= toMin(u.wakeTime) ? u : null;
+}
+
 const noteKey = (e) =>
   String((e && e.note) || '')
     .toLowerCase()
