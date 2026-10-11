@@ -18,6 +18,8 @@ import {
   refreshIcons,
 } from './gb-kit.js';
 import { MoneyHomeCard } from './money-home.js';
+import { OutlookCard } from './outlook-card.js';
+import { outlook } from './outlook.js';
 import { CacheStorage } from './cache-storage.js';
 import { occursOn } from './recurrence.js';
 import {
@@ -2619,6 +2621,11 @@ function ScreenDashboard({
   onQuickAddWater,
   homeLayout,
   quickAdd,
+  trends,
+  insightHistory,
+  dismissedInsights,
+  onDismissInsight,
+  onInsightAction,
 }) {
   const on = (k) => !features || features[k] !== false;
   const one = oneThingFor({
@@ -2642,6 +2649,23 @@ function ScreenDashboard({
   const renderers = {
     // A turned-off feature drops out of the cards that summarise it, not just its own card.
     score: () => ScoreCard({ score, tasks, habits: on('habits') ? habits : [] }),
+    outlook: () =>
+      OutlookCard({
+        outlook: outlook({
+          trends,
+          wellness,
+          money,
+          habits,
+          tasks,
+          goals: (goals || []).flatMap((s) => s.goals || []),
+          goalProgress,
+          history: insightHistory || undefined,
+          features,
+          dismissed: dismissedInsights,
+        }),
+        onDismissInsight,
+        onInsightAction,
+      }),
     plan: () => TodayPlanCard({ water: on('water') ? water : null, wellness, onPlanToday }),
     // The card above owns its nudge: the check-in row asking the same thing goes.
     wellness: () =>

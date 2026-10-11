@@ -10699,6 +10699,17 @@ function waterReminderPrefs() {
   return Object.assign({}, WATER_DEFAULTS, (p && p.water) || {});
 }
 
+/* Insight ids the user waved away; Report and Home's Outlook share the list. */
+function dismissedInsights() {
+  const d = state.user && state.user.uiPrefs && state.user.uiPrefs.insightsDismissed;
+  return Array.isArray(d) ? d : [];
+}
+function dismissInsight(id) {
+  // Last 50 only: a dismissed card's id is stable, the list must not grow forever.
+  const next = [...dismissedInsights().filter((x) => x !== id), id].slice(-50);
+  saveUiPrefs({ insightsDismissed: next });
+}
+
 /* An insight card's button (insights.js `action` {label, kind, params}). Report
    draws the button; what it does lives here, because it reaches into reminders,
    prefs, tasks and screens that insights.js must not know about. */
@@ -13434,6 +13445,15 @@ const SCREENS = {
         onQuickAddWater: featureOn('water') ? quickAddWater : null,
         homeLayout: (state.user && state.user.homeLayout) || null,
         quickAdd: homeQuickAdd(),
+        trends: state.trends,
+        // ponytail: Home never fetches history; it reuses Report's once loaded. Fetch here if Home must match Report on a cold start
+        insightHistory: state.insightHistory,
+        dismissedInsights: dismissedInsights(),
+        onDismissInsight: (id) => {
+          dismissInsight(id);
+          render();
+        },
+        onInsightAction: runInsightAction,
       }),
   },
   report: {
@@ -13458,12 +13478,9 @@ const SCREENS = {
             goalProgress: state.goalProgress,
             insightHistory: state.insightHistory,
             insightLoading: !!insightReq && !state.insightHistory,
-            dismissedInsights: (state.user && state.user.uiPrefs && state.user.uiPrefs.insightsDismissed) || [],
+            dismissedInsights: dismissedInsights(),
             onDismissInsight: (id) => {
-              const p = (state.user && state.user.uiPrefs) || {};
-              const prev = Array.isArray(p.insightsDismissed) ? p.insightsDismissed : [];
-              // Last 50 only: a dismissed card's id is stable, the list must not grow forever.
-              saveUiPrefs({ insightsDismissed: [...prev.filter((x) => x !== id), id].slice(-50) });
+              dismissInsight(id);
               repaintReport();
             },
             onInsightAction: runInsightAction,
