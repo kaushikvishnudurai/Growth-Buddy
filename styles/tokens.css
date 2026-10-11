@@ -19,13 +19,22 @@
 @import '@fontsource/bricolage-grotesque/latin-600.css';
 @import '@fontsource/bricolage-grotesque/latin-700.css';
 @import '@fontsource/bricolage-grotesque/latin-800.css';
-@import '@fontsource/hanken-grotesk/latin-400.css';
-@import '@fontsource/hanken-grotesk/latin-500.css';
-@import '@fontsource/hanken-grotesk/latin-600.css';
-@import '@fontsource/hanken-grotesk/latin-700.css';
-@import '@fontsource/hanken-grotesk/latin-800.css';
 @import '@fontsource/space-mono/latin-400.css';
 @import '@fontsource/space-mono/latin-700.css';
+
+/* Hanken Grotesk is ONE variable latin file (35 kB) instead of five static
+   weights (5 x 13.8 kB). Same family name, so nothing else changes. The range
+   stops at 800 like the static set did: a 900 asked for anywhere still draws
+   as 800, exactly as before. Declared here, not via the package's wght.css,
+   which would emit (and precache) its latin-ext / vietnamese / cyrillic files. */
+@font-face {
+  font-family: 'Hanken Grotesk';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400 800;
+  src: url('../node_modules/@fontsource-variable/hanken-grotesk/files/hanken-grotesk-latin-wght-normal.woff2')
+    format('woff2-variations');
+}
 
 :root {
   /* ---- Brand font families ---- */

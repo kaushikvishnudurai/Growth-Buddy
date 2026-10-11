@@ -23,7 +23,9 @@
    manifest icons and the standalone privacy.html left out of the precache.
    Measured after the design merge (build 96): boot 507,307 B (97.6%), precache
    1,471,982 B (99.9%). The precache has no headroom left: the next lever is the
-   fonts (ten static faces, 164 kB), not this number.
+   fonts, not this number. Integration (ov1011/int-design) went 12,703 B over
+   again; Hanken Grotesk's five static weights (69 kB) became one variable face
+   (35 kB): precache 1,486,349 B -> 1,451,280 B (98.5%), boot unchanged.
    (Workbox prints "41 entries": the icons are listed twice, once by the glob
    and once by includeAssets/manifest; they are fetched and stored once.)
    Raw bytes, not gzip: deterministic and what the precache actually stores.

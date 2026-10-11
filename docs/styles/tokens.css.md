@@ -2,7 +2,8 @@
 
 Single source of truth for color, type, spacing, radius, shadow, motion. **Nothing else should
 declare a raw hex.** Fonts: Bricolage Grotesque (display) + Hanken Grotesk (body/UI), self-hosted
-via `@fontsource` — plus Space Mono for `--font-mono`.
+via `@fontsource` — plus Space Mono for `--font-mono`. Hanken is one variable latin file
+(`@fontsource-variable`, its own `@font-face` in tokens.css, `font-weight: 400 800` so a 900 still draws as 800).
 
 | Section |
 |---|
