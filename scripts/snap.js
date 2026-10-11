@@ -35,15 +35,22 @@ export const KINDS = [
 ];
 const ROUTE_MS = 4000;
 
-/** The server's guess, whitelisted: anything but the three kinds is "no guess". */
-export function pickDefault(kind) {
-  return KINDS.some((k) => k.kind === kind) ? kind : null;
+/** The server's guess, whitelisted: anything but the kinds offered is "no guess". */
+export function pickDefault(kind, kinds = KINDS) {
+  return kinds.some((k) => k.kind === kind) ? kind : null;
+}
+
+/** The choices to offer: only kinds with a route (a feature switched off has none). */
+export function kindsFor(routes) {
+  return KINDS.filter((k) => routes && typeof routes[k.kind] === 'function');
 }
 
 /**
  * shrink(file) -> Promise<dataUrl>; api(path, init) -> Promise<json>;
  * routes: { receipt(file, shrunk), plate(file, shrunk), groceries(file, shrunk) },
  * where shrunk is the Promise of the shrunk data URL (shared, so it runs once).
+ * A kind left out of routes is not offered. Call it straight from the tap: the
+ * file picker needs the user's gesture, which an await before it would lose.
  */
 export function openSnap({ shrink, api, routes }) {
   const input = h('input', {
@@ -67,7 +74,8 @@ export function openSnap({ shrink, api, routes }) {
     const title = h('div', { class: 'gb-modal-title' }, 'Where should this go?');
     const sub = h('div', { class: 'gb-modal-sub' }, 'Reading the photo. Pick one any time.');
     const shrunk = shrink(file);
-    const buttons = KINDS.map((k) =>
+    const kinds = kindsFor(routes);
+    const buttons = kinds.map((k) =>
       h(
         'button',
         {
@@ -103,17 +111,17 @@ export function openSnap({ shrink, api, routes }) {
       .then((imageDataUrl) =>
         api('/api/photo/route', { method: 'POST', body: JSON.stringify({ imageDataUrl }) })
       )
-      .then((r) => pickDefault(r && r.kind));
+      .then((r) => pickDefault(r && r.kind, kinds));
     Promise.race([guess, timeout])
       .catch(() => null)
       .then((kind) => {
         if (!sheet.isConnected) return;
-        const i = KINDS.findIndex((k) => k.kind === kind);
+        const i = kinds.findIndex((k) => k.kind === kind);
         if (i < 0) {
           sub.textContent = 'Pick where it goes.';
           return;
         }
-        title.textContent = KINDS[i].guess;
+        title.textContent = kinds[i].guess;
         sub.textContent = 'Tap to confirm, or pick another.';
         buttons[i].classList.add('is-on');
         buttons[i].focus();

@@ -2,10 +2,14 @@ package com.growthbuddy.common;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.growthbuddy.mentor.OpenAIClient;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -23,6 +27,8 @@ public class PhotoRouteController {
     static final String PROMPT = "Classify this photo as exactly one of receipt, plate (cooked food or a meal), "
             + "groceries (fridge, pantry shelf, shopping haul). Strict JSON {\"kind\":\"receipt\"|\"plate\"|\"groceries\"}";
     private static final Set<String> KINDS = Set.of("receipt", "plate", "groceries");
+    private static final Pattern IMAGE =
+            Pattern.compile("data:image/(jpeg|jpg|png|webp);base64,", Pattern.CASE_INSENSITIVE);
     private static final ObjectMapper JSON = new ObjectMapper();
 
     private final OpenAIClient openai;
@@ -31,14 +37,14 @@ public class PhotoRouteController {
         this.openai = openai;
     }
 
-    public record RouteRequest(String imageDataUrl) {}
+    // Same cap as the other scan requests (GroceryScanRequest: 2,000,000 chars).
+    public record RouteRequest(@NotBlank @Size(max = 2_000_000) String imageDataUrl) {}
 
     @PostMapping("/api/photo/route")
-    public Map<String, Object> route(@RequestBody RouteRequest req) {
+    public Map<String, Object> route(@Valid @RequestBody RouteRequest req) {
         String img = req == null ? null : req.imageDataUrl();
-        // Same cap as the other scan requests (GroceryScanRequest: 2,000,000 chars).
-        if (img == null || !img.toLowerCase(Locale.ROOT).startsWith("data:image/") || img.length() > 2_000_000) {
-            throw ApiException.badRequest("Send a photo (JPEG, PNG or WebP) under 1.5 MB.");
+        if (img == null || !IMAGE.matcher(img).lookingAt()) {
+            throw ApiException.badRequest("Send a JPEG, PNG or WebP photo.");
         }
         Map<String, Object> out = new HashMap<>();
         out.put("kind", classify(img));

@@ -103,6 +103,7 @@ import {
 import { WORK_WEEKS, getWorkWeek, setWorkWeek, occursOn } from './recurrence.js';
 import { ScreenAchievements, computeAchievements, levelProgress } from './achievements.js';
 import { celebrate } from './celebrate.js';
+import { openSnap } from './snap.js';
 import { usualSleep, stepsTarget, focusMinutesTarget } from './nudges.js';
 import {
   enablePush,
@@ -5364,15 +5365,6 @@ function openAddFood(opts) {
     style: { marginTop: '16px', display: 'none' },
   });
 
-  async function readImageDataUrl(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result || ''));
-      reader.onerror = () => reject(new Error('Could not read image file.'));
-      reader.readAsDataURL(file);
-    });
-  }
-
   function createItemRow(item, index) {
     const nameInput = h('input', {
       type: 'text',
@@ -5485,10 +5477,9 @@ function openAddFood(opts) {
     if (!file) {
       throw new Error('Please choose a photo first.');
     }
-    if (file.size > 5 * 1024 * 1024) {
-      throw new Error('Photo is too large. Use an image under 5 MB.');
-    }
-    const dataUrl = await readImageDataUrl(file);
+    // Shrunk like every other scan: a raw camera photo (3+ MB) is over the
+    // server's 2,000,000-char cap once base64'd, so it always 400'd.
+    const dataUrl = await import('./notes.js').then((m) => m.shrinkPhoto(file));
     if (!dataUrl || dataUrl.indexOf('data:image/') !== 0) {
       throw new Error('Invalid image file.');
     }
@@ -10907,6 +10898,10 @@ function segmented(options, initial, onChange) {
 /* Where the Quick add Photo option hands a photo once its kind is picked
    (snap.js). Each one is the existing scanner, entered with the photo in hand. */
 const shrinkForSnap = (file) => import('./notes.js').then((m) => m.shrinkPhoto(file));
+const SNAP_FEATURE = { receipt: 'money', plate: 'food', groceries: 'family' };
+/** SNAP_ROUTES minus the ones whose feature is switched off in Settings. */
+const snapRoutes = () =>
+  Object.fromEntries(Object.entries(SNAP_ROUTES).filter(([k]) => featureOn(SNAP_FEATURE[k])));
 const SNAP_ROUTES = {
   receipt: (file) =>
     import('./money.js').then((m) =>
@@ -11086,17 +11081,20 @@ function openAddSheet() {
     )
   );
 
+  const routes = snapRoutes();
   const opts = [
     {
       key: 'snap',
+      // Money, Food and Family all off: no destination, no button.
+      hidden: !Object.keys(routes).length,
       icon: 'camera',
       label: 'Photo',
       sub: 'Receipt, meal or groceries',
       action: () => {
         close();
-        import('./snap.js').then((m) =>
-          m.openSnap({ shrink: shrinkForSnap, api, routes: SNAP_ROUTES })
-        );
+        // Static import: the camera opens inside this tap's gesture (WebKit
+        // drops a file-input click that follows an await).
+        openSnap({ shrink: shrinkForSnap, api, routes });
       },
     },
     {
@@ -11178,7 +11176,7 @@ function openAddSheet() {
       'div',
       { class: 'gb-modal-opts' },
       opts
-        .filter((o) => !o.feature || featureOn(o.feature))
+        .filter((o) => !o.hidden && (!o.feature || featureOn(o.feature)))
         .map((o) =>
         h(
           'button',

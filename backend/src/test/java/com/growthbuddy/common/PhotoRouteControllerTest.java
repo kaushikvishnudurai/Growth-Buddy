@@ -2,6 +2,7 @@ package com.growthbuddy.common;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -40,5 +41,13 @@ class PhotoRouteControllerTest {
         when(openai.completeWithImage(anyString(), anyString(), anyString()))
                 .thenReturn("```json\n{\"kind\": \"Plate\"}\n```");
         assertEquals("plate", ctl.route(new PhotoRouteController.RouteRequest(IMG)).get("kind"));
+    }
+
+    @Test
+    void nonPhotoIsRefusedBeforeAnyCall() {
+        when(openai.isConfigured()).thenReturn(true);
+        assertThrows(ApiException.class,
+                () -> ctl.route(new PhotoRouteController.RouteRequest("data:image/svg+xml;base64,AAAA")));
+        verify(openai, never()).completeWithImage(anyString(), anyString(), anyString());
     }
 }
