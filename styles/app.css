@@ -106,6 +106,14 @@ body {
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
 }
+/* The content column is the size container for screen components: a
+   `@container gb-main (...)` follows the 440/600px tablet frame (which viewport
+   queries can't see) and, written in rem, the text-size setting. Nothing fixed
+   lives in here (toasts, overlays and the PTR mount outside), so the layout
+   containment this brings moves nothing. */
+#gb-main {
+  container: gb-main / inline-size;
+}
 .gb-scroll::-webkit-scrollbar {
   width: 0;
 }
@@ -1893,6 +1901,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   padding: 4px 0;
   margin: 12px 0 14px;
   max-height: 46vh;
+  max-height: 46dvh;
   overflow-y: auto;
   /* The list scrolls, and with two or three people it ends flush with the card
      edge — which reads as "that's everyone". A hairline inset at the bottom
@@ -1940,6 +1949,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   }
   .gb-search-results {
     max-height: 50vh;
+    max-height: 50dvh;
   }
   /* Both actions stay side by side — stacking them made each row ~230px tall,
      so only two people fit on screen. They share the row instead, which keeps
@@ -1961,7 +1971,8 @@ body:has(.is-thinking, .gb-thinking)::after {
   }
 }
 
-@media (max-width: 360px) {
+/* 359, not 360: the 360px Galaxy phones fit five labelled tabs (~69px each). */
+@media (max-width: 359px) {
   .gb-head {
     padding-left: 14px;
     padding-right: 14px;
@@ -2132,7 +2143,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   background: var(--success-soft);
   color: var(--success-soft-fg);
 }
-@media (max-width: 420px) {
+@container gb-main (max-width: 26.25rem) {
   /* Phone rows already carry a chevron and a remove button — keep the tick,
      drop its label. */
   .gb-check-pill span {
@@ -2544,7 +2555,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   font-size: 0.75rem;
   color: var(--fg3);
 }
-@media (max-width: 380px) {
+@container gb-main (max-width: 23.75rem) {
   .gb-report-stat {
     padding: 13px 12px;
   }
@@ -2655,6 +2666,8 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 .gb-circle-block-head {
   display: flex;
+  /* Largest text at 320px: the buttons drop under the title, not off the edge. */
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
@@ -2664,7 +2677,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   white-space: nowrap;
 }
 /* A 320px phone: Browse keeps its icon, the title keeps one line. */
-@media (max-width: 359px) {
+@container gb-main (max-width: 22.4375rem) {
   .gb-circle-browse-label {
     display: none;
   }
@@ -3065,7 +3078,7 @@ button.gb-seat:disabled {
 }
 
 /* Wide: the ring beside its challenge, posts across the bottom. */
-@media (min-width: 760px) {
+@container gb-main (min-width: 47.5rem) {
   .gb-circle-card {
     display: grid;
     grid-template-columns: minmax(280px, 340px) 1fr;
@@ -3427,7 +3440,7 @@ button.gb-seat:disabled {
 }
 /* On a phone the four tools wrapped "This week" onto a line of its own: stack
    each icon over its label so all of them share one row. */
-@media (max-width: 480px) {
+@container gb-main (max-width: 30rem) {
   .gb-conn-tools {
     display: grid;
     grid-auto-flow: column;
@@ -3506,6 +3519,10 @@ button.gb-seat:disabled {
   gap: 8px;
   width: 100%;
   max-height: min(52vh, 460px);
+  /* A cap, not the fit: with a keyboard up openOverlay pins the sheet to the
+     visible viewport and this scroller is what shrinks (it is a column flex
+     item with no min-height), keeping the composer and the newest lines in view. */
+  max-height: min(52dvh, 460px);
   overflow-y: auto;
   padding: 4px 2px;
 }
@@ -5422,7 +5439,10 @@ button.gb-food-level {
   border-color: color-mix(in srgb, var(--sky-300) 60%, #7db9df 40%);
 }
 
-@media (max-width: 460px) {
+/* The Focus screen stacks by the width it has, not the viewport's: a container
+   query on #gb-main, so the 440/600px tablet frame and the text-size setting
+   (rem thresholds follow the root size) both count. */
+@container gb-main (max-width: 28.75rem) {
   .gb-focus {
     padding: 14px var(--gutter) 8px;
   }
@@ -5446,6 +5466,9 @@ button.gb-food-level {
   .gb-sound-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+@media (max-width: 460px) {
   :root {
     --gutter: 16px;
   }
@@ -6045,7 +6068,7 @@ button.gb-food-level {
   position: absolute;
   inset: -2px;
 }
-@media (max-width: 359px) {
+@container gb-main (max-width: 22.4375rem) {
   .gb-cal-card {
     padding: 10px;
   }
@@ -7521,7 +7544,13 @@ button.gb-food-level {
 .gb-segnav-btn,
 .gb-msg-chip,
 .gb-rem-snoozed--btn,
-.gb-wa-toggle {
+.gb-wa-toggle,
+.gb-notif-link,
+.gb-notif-chip,
+.gb-btn.gb-notif-snooze,
+.gb-note-label-opt,
+button.gb-tone-chip,
+.gb-agree-del {
   position: relative;
 }
 .gb-iconbtn::before,
@@ -7549,7 +7578,13 @@ button.gb-food-level {
 .gb-msg-chip::before,
 .gb-pw-toggle::before,
 .gb-rem-snoozed--btn::before,
-.gb-wa-toggle::before {
+.gb-wa-toggle::before,
+.gb-notif-link::before,
+.gb-notif-chip::before,
+.gb-btn.gb-notif-snooze::before,
+.gb-note-label-opt::before,
+button.gb-tone-chip::before,
+.gb-agree-del::before {
   content: '';
   position: absolute;
   top: 50%;
@@ -8394,7 +8429,7 @@ button.gb-food-level {
   white-space: nowrap;
 }
 
-@media (max-width: 520px) {
+@container gb-main (max-width: 32.5rem) {
   .gb-cal-toolbar {
     gap: 10px;
   }
@@ -8694,10 +8729,12 @@ button.gb-food-level {
   .gb-page {
     padding: clamp(20px, 4vh, 40px) 20px;
   }
+  /* A fixed height, not auto: sized to its content, a sparse screen made the
+     centred frame (and its bottom nav) jump up and down on every tab switch. */
   .gb-app {
     width: 100%;
     max-width: 440px;
-    height: auto;
+    height: min(900px, calc(100dvh - 2 * clamp(20px, 4vh, 40px)));
     min-height: 0;
     max-height: min(900px, calc(100dvh - 2 * clamp(20px, 4vh, 40px)));
     border-radius: var(--radius-3xl);
@@ -8747,6 +8784,9 @@ button.gb-food-level {
     grid-area: header;
     --head-pad-b: 18px;
     padding: 22px 40px var(--head-pad-b);
+    /* The row caps at 1180px, centred like the screens below it: uncapped, the
+       greeting and the bell sat ~3500px apart at 3840 wide. */
+    padding-inline: max(40px, calc((100% - 1180px) / 2));
     border-bottom: 1px solid var(--border);
     background: var(--surface);
   }
@@ -8906,8 +8946,13 @@ button.gb-food-level {
     flex-direction: column;
     min-height: 0;
   }
+  /* Twelve tabs come to ~676px; a 1366x768 laptop's window is ~620-660 tall.
+     The sidebar scrolls rather than clip Circle and Family. */
   .gb-nav {
     flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
   /* The sidebar has room for every destination, so show overflow tabs inline
@@ -9130,8 +9175,9 @@ button.gb-food-level {
   }
 
   /* Habits, Food, Circle — single-column screens. Cap the width for readability
-     but LEFT-align to the header's 40px inset (not centered) so the content sits
-     under the title instead of floating in the middle of a wide canvas.
+     and centre it, like every screen with a cap of its own (Notes, Goals,
+     Calendar, Home): left-aligned here and centred there, content jumped ~1300px
+     sideways between tabs at 3840 wide.
 
      Wrapped in :where() so the whole selector weighs ZERO. It is a fallback for
      screens that declare no desktop width of their own, and it was written as a
@@ -9145,7 +9191,7 @@ button.gb-food-level {
      names someone remembered. */
   :where(.gb-scroll) > :where(.gb-rise:not(.gb-goals):not(.gb-mentor)) {
     max-width: 900px;
-    margin-left: 40px;
+    margin-left: auto;
     margin-right: auto;
   }
 
@@ -9400,6 +9446,15 @@ button.gb-food-level {
   border-radius: 12px;
   padding: 4px;
   margin-bottom: 18px;
+  /* Six labels need ~280px; a 320px phone (or 125% text at 390) has less, so
+     the bar scrolls sideways rather than overlap them. y is hidden, so the
+     36px tabs keep their 44px overlay inside the 4px padding. */
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.gb-segnav::-webkit-scrollbar {
+  display: none;
 }
 .gb-segnav-thumb {
   position: absolute;
@@ -9419,9 +9474,10 @@ button.gb-food-level {
   z-index: 1;
   /* Sized by the label, then the slack shared out: six equal tabs cut the
      longest. The thumb follows the measured tab (buildSegSlider). */
-  flex: 1 1 auto;
+  flex: 1 0 auto;
   white-space: nowrap;
   min-width: 0;
+  min-height: 36px;
   padding: 8px 4px;
   font-size: 0.78125rem;
   font-weight: 700;
@@ -11926,8 +11982,9 @@ textarea:focus-visible,
   position: relative;
   min-height: 110px;
   max-height: 45vh;
-  /* dvh tracks the on-screen keyboard and the collapsing URL bar; vh above is
-     the fallback for browsers without it. */
+  /* dvh tracks the collapsing URL bar, not the keyboard: with a keyboard up
+     openOverlay pins the sheet to the visual viewport, which scrolls instead.
+     vh above is the fallback for browsers without dvh. */
   max-height: 45dvh;
   overflow-y: auto;
   /* Scrolling past the note's end chained to the sheet and the page. */
@@ -13266,9 +13323,18 @@ h2[tabindex='-1']:focus {
    one-line header and nothing below. Tabs stay icon-only (each keeps its
    aria-label); the rail pads for the notch on the left. */
 @media (orientation: landscape) and (max-height: 500px) and (max-width: 1023.98px) {
+  /* iOS insets both sides in landscape; the rail covers the left, these the
+     right (sensor housing) and the home indicator under the More panel. */
   .gb-head {
     --head-pad-b: 6px;
     padding-top: max(env(safe-area-inset-top, 0px), 8px);
+    padding-right: max(20px, env(safe-area-inset-right, 0px));
+  }
+  #gb-main {
+    padding-right: env(safe-area-inset-right, 0px);
+  }
+  .gb-toast-stack {
+    right: calc(14px + env(safe-area-inset-right, 0px));
   }
   .gb-head .greet-label {
     display: none;
@@ -13332,6 +13398,7 @@ h2[tabindex='-1']:focus {
     top: 0;
     bottom: 0;
     width: min(360px, 70vw);
+    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
     overflow-y: auto;
     overscroll-behavior: contain;
     border-top: none;

@@ -76,7 +76,7 @@
 - **Where:** phones at 667×375. **Severity: Low.**
 - **Actual:** the header (81px) and bottom nav (83px) leave 212px for content.
 - **Evidence:** `.playwright-mcp/qa-landscape-calendar.png`.
-- **Status:** Confirmed.
+- **Status:** Fixed (verified at runtime: a landscape phone gets a one-line header and the nav as a 60px icon rail on the left; at 667x375 content is 607x319, 85% of the height, and at 844x390 it is 93% wide by 86% tall. The rail now also pads for the right safe-area inset. `scripts/e2e/responsive.e2e.mjs` asserts it).
 
 **QA-10: A second water tap within 600ms is silently ignored**
 - **Where:** Food. **Severity: Low.**

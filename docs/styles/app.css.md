@@ -32,7 +32,7 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
 | Settings: Account pane |
 | Settings: your own notification sounds (`.gb-sounds`, rows, the recording panel) |
 | Settings: Reminders (`.gb-remset-*`: the lead/snooze pickers, quick add, the list), the toast's action button (`.gb-toast-action`), the bell card's Snooze (`.gb-notif-snooze`) |
-| Dropdowns: every `select.gb-input` — one line, ellipsised; under `@supports (appearance: base-select)` (current Chrome / Android WebView) the open list is the app's own popover (`::picker(select)`, tinted `option:checked`, `::checkmark`), elsewhere the native list. Then the six-tab `.gb-segnav` tightening under 420px. Last in the file |
+| Dropdowns: every `select.gb-input` — one line, ellipsised; under `@supports (appearance: base-select)` (current Chrome / Android WebView) the open list is the app's own popover (`::picker(select)`, tinted `option:checked`, `::checkmark`), elsewhere the native list. Then the six-tab `.gb-segnav` tightening under 420px (the bar itself, in the Profile Settings section, scrolls sideways once the labels no longer fit: 320px, or Largest text at 390). Last in the file |
 | Loading splash (quote of the day) |
 | Report screen |
 | Insights |
@@ -47,11 +47,11 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
 | **Calendar screen** (large) |
 | Delete-scope modal |
 | Focus stats card |
-| **Laptop / desktop layout (≥1024px)** |
+| **Laptop / desktop layout (≥1024px)** — the sidebar `.gb-nav` scrolls (`overflow-y: auto`) when a short window can't fit its twelve tabs; `.gb-head` caps its row at 1180px, centred |
 | Goal day-tracker progress bar |
 | Fitness × Sleep insight card |
 | Responsive improvements — tablet + desktop widths |
-| Desktop content-screen layout |
+| Desktop content-screen layout — the `.gb-rise` fallback (900px) is centred like every capped screen, so content holds one centre line across tabs |
 | Small phones (≤380px) |
 | WhatsApp reminders |
 | Profile Settings modal |
@@ -71,8 +71,13 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
 ## Editing rules
 
 - Colors come from tokens (`var(--coral-500)`, `var(--leaf-50)`, …) — no raw hex here.
-- Responsive breakpoints are grouped at 4886 / 5226 / 5303, **not** inline per component. Put media
+- Responsive breakpoints are grouped in the layout sections, **not** inline per component. Put media
   queries there so the phone-first base stays readable.
+- A screen component sized by the width it has uses `@container gb-main (max-width: N rem)`, not a
+  viewport query: `#gb-main` is the size container, so the 440/600px tablet frame counts, and rem
+  thresholds follow Settings > Display text size (media queries ignore it). Only for things inside
+  `#gb-main`; the header, nav, toasts and every overlay sit outside it and keep media queries. Nothing
+  `position: fixed` may live inside `#gb-main` (its layout containment would anchor it there).
 - Modal markup comes from `openOverlay` in `gb-kit.js` — don't hand-roll it. It is `.gb-modal-overlay > .gb-modal[role=dialog]` because `scripts/a11y.js`
   keys off it for focus trapping. Don't restyle it into a different structure.
 - Every `:hover` rule sits inside `@media (hover: hover)` (nested inside another `@media` where it
@@ -92,7 +97,7 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
   A quit habit's days are `.is-clean` / `.is-slipped`, and its row's tick is `.gb-slip-btn` (44px).
 - Fixed layers on a phone pad for `env(safe-area-inset-*)` (`index.html` has `viewport-fit=cover`,
   so `100dvh` runs under the notch and home indicator): header, nav, modal overlay, toasts, PTR.
-- The tablet phone-frame (both rules) also needs `min-height: 560px`: a landscape phone stays full-screen.
-- A landscape phone (`orientation: landscape` and `max-height: 500px`, under 1024 wide) turns `.gb-app` into a grid with the nav as a 60px icon rail on the left and the More sheet as a panel beside it; content gets ~85% of the height instead of 71%.
+- The tablet phone-frame (both rules) also needs `min-height: 560px`: a landscape phone stays full-screen. Its height is fixed (`min(900px, 100dvh - margins)`), not `auto`: sized to content, the frame and its nav jumped on every tab switch.
+- A landscape phone (`orientation: landscape` and `max-height: 500px`, under 1024 wide) turns `.gb-app` into a grid with the nav as a 60px icon rail on the left and the More sheet as a panel beside it; content gets ~85% of the height instead of 71% (QA-09). The header, `#gb-main` and toasts pad for `env(safe-area-inset-right)` there, the More panel for the bottom inset.
 - The tablet phone-frame widens 440 -> 600px at 560px, the lowest viewport breakpoint any grid
   goes two-up at. A new `min-width` grid rule below 560 would split a 440px frame.

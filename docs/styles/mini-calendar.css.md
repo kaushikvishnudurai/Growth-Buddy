@@ -23,3 +23,4 @@ The `.badge` counts one-off items only (tasks + non-repeating reminders, and `.h
 
 `.is-today:not(.is-selected)` sits after `.has-tasks` / `.is-free` on purpose: same specificity, and written before them today lost its ring on any day with tasks.
 `-nav-btn` is drawn at 32px with a `::before` overlay making the tap target 44px, and has a `:disabled` style (dimmed, no hover or press).
+The compact sizes switch on `@container gb-main (max-width: 40rem)` (the content column, see app.css.md), not a viewport query.
