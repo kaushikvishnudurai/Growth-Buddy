@@ -1298,12 +1298,11 @@ function ScreenHealth(raw = {}) {
   const root = h(
     'div',
     { class: 'gb-health' + (entering ? ' is-entering' : '') },
-    // The sentence is the screen's thesis: it leads, and where the numbers came
-    // from (plus the way to add one) reads as its footnote. The cards below
-    // follow the user's order and choices.
-    Hero(props),
+    // Where the numbers come from (plus the way to add one), then the cards in
+    // the user's order and choices; today's sentence sums them up at the end.
     Header(props),
-    ...layout.sections.filter((x) => x.on).map((x) => cards[x.id](props))
+    ...layout.sections.filter((x) => x.on).map((x) => cards[x.id](props)),
+    Hero(props)
   );
   if (entering && !calm()) countUp(root);
   return root;

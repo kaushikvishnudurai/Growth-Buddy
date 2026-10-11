@@ -3138,6 +3138,9 @@ async function loadSecondaryData() {
         api('/api/food/photo-history').catch(soft('food photos')),
         api('/api/weekly-review').catch(soft('weekly reviews')),
       ]);
+    // What didn't arrive, for a screen to say so in place of its empty state (Money:
+    // a failed load looked exactly like a first run once the toast went).
+    state.loadFailed = new Set(missed);
     if (missed.length) {
       pushToast("Couldn't load your " + new Intl.ListFormat('en').format(missed) + '.', 'error', 8000, {
         label: 'Retry',
@@ -15112,6 +15115,8 @@ const SCREENS = {
             // in money.js, never merged into state.money, so no save can send it back.
             requestOlderTx: (before) =>
               api('/api/money/tx?before=' + encodeURIComponent(before) + '&limit=200'),
+            loadFailed: !!(state.loadFailed && state.loadFailed.has('money')),
+            onRetryLoad: () => loadSecondaryData(),
           })
       ),
   },
