@@ -5,7 +5,7 @@
 .gb-mini-cal-card {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-3);
   /* .gb-card ships without padding; without this the grid sat flush on the card edges. */
   padding: 14px;
 }
@@ -14,8 +14,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 0 4px;
+  gap: var(--space-3);
+  padding: 0 var(--space-1);
 }
 
 .gb-mini-cal-month {
@@ -70,8 +70,8 @@
 .gb-mini-cal-dow {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 4px;
-  margin-bottom: 4px;
+  gap: var(--space-1);
+  margin-bottom: var(--space-1);
 }
 
 .gb-mini-cal-dow-cell {
@@ -80,13 +80,13 @@
   font-weight: 700;
   color: var(--fg3);
   text-transform: uppercase;
-  padding: 4px 0;
+  padding: var(--space-1) 0;
 }
 
 .gb-mini-cal-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .gb-mini-cal-day {
@@ -186,7 +186,7 @@
   right: 3px;
   min-width: 16px;
   height: 16px;
-  padding: 0 4px;
+  padding: 0 var(--space-1);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -212,8 +212,8 @@
 .gb-mini-cal-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  padding: 8px 4px;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-1);
   font-size: 0.75rem;
   color: var(--fg2);
   border-top: 1px solid var(--border);
@@ -266,7 +266,7 @@
 .gb-mini-cal-section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .gb-mini-cal-section-head {
@@ -287,7 +287,7 @@
 .gb-mini-cal-section-count {
   min-width: 22px;
   height: 22px;
-  padding: 0 8px;
+  padding: 0 var(--space-2);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -309,7 +309,7 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
-  padding: 10px 12px;
+  padding: 10px var(--space-3);
   background: var(--surface-2);
   border-radius: var(--radius-sm);
   border-left: 3px solid var(--sky-500);
@@ -339,7 +339,7 @@
 
 .gb-mini-cal-pill {
   flex: none;
-  padding: 4px 8px;
+  padding: var(--space-1) var(--space-2);
   border-radius: 999px;
   background: var(--surface-3);
   color: var(--fg2);
@@ -359,7 +359,7 @@
 }
 
 .gb-mini-cal-empty {
-  padding: 12px 10px;
+  padding: var(--space-3) 10px;
   text-align: center;
   font-size: 0.8125rem;
   color: var(--fg2);
@@ -378,7 +378,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 /* Small inline spinner for loading states */
@@ -427,7 +427,7 @@
   }
 
   .gb-mini-cal-item {
-    padding: 8px 10px;
+    padding: var(--space-2) 10px;
   }
 
   .gb-mini-cal-item-title {

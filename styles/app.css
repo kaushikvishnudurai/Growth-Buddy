@@ -120,7 +120,7 @@ body {
      for free, but the actions row ends inside this padding — so the gap below
      is measured, not guessed. Redeclare it anywhere this padding changes. */
   --head-pad-b: 12px;
-  padding: max(env(safe-area-inset-top, 0px), 22px) 20px var(--head-pad-b);
+  padding: max(env(safe-area-inset-top, 0px), 22px) var(--space-5) var(--head-pad-b);
   flex: none;
 }
 /* The live seedling ships in the markup on every screen but only the premium
@@ -257,7 +257,7 @@ button.gb-sectiontitle-act {
   background: none;
   border: 0;
   /* 24px tall without moving the text: the old link was a 17px tap target. */
-  padding: 4px 0;
+  padding: var(--space-1) 0;
   margin: -4px 0;
   cursor: pointer;
 }
@@ -315,7 +315,7 @@ button.gb-sectiontitle-act {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: var(--space-2);
   border-radius: var(--radius-lg);
   padding: 15px 22px;
   transition:
@@ -404,7 +404,7 @@ button.gb-sectiontitle-act {
 }
 .gb-btn--icon {
   width: auto;
-  padding: 4px 6px;
+  padding: var(--space-1) 6px;
   min-height: 44px;
   background: transparent;
   color: var(--fg3);
@@ -466,7 +466,7 @@ button.gb-sectiontitle-act {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  padding: 10px 16px calc(22px + env(safe-area-inset-bottom, 0px));
+  padding: 10px var(--space-4) calc(22px + env(safe-area-inset-bottom, 0px));
   background: var(--nav-bg);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
@@ -476,13 +476,13 @@ button.gb-sectiontitle-act {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   color: var(--fg3);
   cursor: pointer;
   background: none;
   border: none;
   flex: 1;
-  padding: 4px 0;
+  padding: var(--space-1) 0;
   min-height: 48px;
   transition:
     color var(--dur-fast),
@@ -598,7 +598,7 @@ button.gb-sectiontitle-act {
   min-height: 100dvh;
   display: grid;
   place-items: center;
-  padding: 24px;
+  padding: var(--space-6);
 }
 
 .gb-login-card {
@@ -734,7 +734,7 @@ button.gb-sectiontitle-act {
 .gb-login-brand {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   color: var(--fg2);
   font-weight: 700;
 }
@@ -747,7 +747,7 @@ button.gb-sectiontitle-act {
 }
 
 .gb-login-sub {
-  margin: 0 0 8px;
+  margin: 0 0 var(--space-2);
   color: var(--fg3);
 }
 
@@ -767,7 +767,7 @@ button.gb-sectiontitle-act {
 }
 
 .gb-login-error {
-  margin: 4px 0 0;
+  margin: var(--space-1) 0 0;
   color: var(--danger);
   font-size: 0.8125rem;
   font-weight: 700;
@@ -929,7 +929,7 @@ button.gb-sectiontitle-act {
 .gb-otp-boxes {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
-  gap: 8px;
+  gap: var(--space-2);
 }
 .gb-otp-box {
   height: 56px;
@@ -1170,8 +1170,8 @@ button.gb-sectiontitle-act {
 .gb-think-lines {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 12px;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
 }
 .gb-think-lines i {
   display: block;
@@ -1375,8 +1375,8 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 
 .gb-login-notice {
-  margin: 0 0 4px;
-  padding: 10px 12px;
+  margin: 0 0 var(--space-1);
+  padding: 10px var(--space-3);
   border-radius: var(--radius-md);
   background: var(--brand-soft);
   color: var(--brand-soft-fg);
@@ -1387,7 +1387,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 .gb-login-row {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
   margin-top: 6px;
   flex-wrap: wrap;
 }
@@ -1476,14 +1476,14 @@ body:has(.is-thinking, .gb-thinking)::after {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 14px 16px;
+  padding: 14px var(--space-4);
   border-bottom: 1px solid var(--border);
   font-family: var(--font-display);
   font-weight: 800;
   font-size: 0.875rem;
 }
 .gb-notif-empty {
-  padding: 24px;
+  padding: var(--space-6);
   text-align: center;
   color: var(--fg3);
   font-size: 0.8125rem;
@@ -1491,7 +1491,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 .gb-notif-row {
   display: flex;
   gap: 10px;
-  padding: 12px 14px;
+  padding: var(--space-3) 14px;
   align-items: flex-start;
   border-bottom: 1px solid var(--border);
 }
@@ -1528,7 +1528,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   color: var(--fg2);
 }
 .gb-notif-time {
-  margin-top: 4px;
+  margin-top: var(--space-1);
   font-size: 0.6875rem;
   color: var(--fg3);
   font-weight: 600;
@@ -1542,12 +1542,12 @@ body:has(.is-thinking, .gb-thinking)::after {
    notificationDropdown). */
 .gb-notif-head-actions {
   display: flex;
-  gap: 4px;
+  gap: var(--space-1);
   align-items: center;
 }
 .gb-notif-link {
   min-height: 32px;
-  padding: 4px 8px;
+  padding: var(--space-1) var(--space-2);
   border: 0;
   border-radius: var(--radius-pill);
   background: none;
@@ -1571,7 +1571,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 .gb-notif-chip {
   flex: none;
   min-height: 32px;
-  padding: 5px 12px;
+  padding: 5px var(--space-3);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-pill);
   background: var(--surface);
@@ -1610,7 +1610,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   display: block;
   width: 100%;
   min-height: 44px;
-  padding: 12px;
+  padding: var(--space-3);
   border: 0;
   border-top: 1px solid var(--border);
   background: none;
@@ -1644,7 +1644,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 .gb-msg-list {
   flex: 1;
   overflow-y: auto;
-  padding: 12px 16px 6px;
+  padding: var(--space-3) var(--space-4) 6px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -1652,12 +1652,12 @@ body:has(.is-thinking, .gb-thinking)::after {
 .gb-mentor-empty {
   margin: auto;
   text-align: center;
-  padding: 24px 18px;
+  padding: var(--space-6) 18px;
   max-width: 360px;
 }
 .gb-mentor-empty h3 {
   font-family: var(--font-display);
-  margin: 8px 0 4px;
+  margin: var(--space-2) 0 var(--space-1);
   font-weight: 800;
 }
 .gb-mentor-empty p {
@@ -1668,7 +1668,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 .gb-mentor-suggestions {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .gb-mentor-suggestion {
   width: auto !important;
@@ -1678,7 +1678,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 
 .gb-msg-row {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: flex-end;
 }
 .gb-msg-row.is-user {
@@ -1733,7 +1733,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 
 .gb-msg-typing {
   display: inline-flex;
-  gap: 4px;
+  gap: var(--space-1);
   padding: 14px;
 }
 .gb-msg-typing .d {
@@ -1771,7 +1771,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--space-2);
   flex-wrap: wrap;
 }
 .gb-msg-fail .gb-msg-error {
@@ -1790,7 +1790,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   border: 1px solid var(--border-strong);
   border-radius: 14px;
   background: var(--surface);
-  padding: 12px 14px;
+  padding: var(--space-3) 14px;
   font-size: 0.84375rem;
   color: var(--fg2);
   line-height: 1.45;
@@ -1798,7 +1798,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 .gb-msg-crisis strong {
   display: block;
   color: var(--fg1);
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
 }
 .gb-msg-crisis a {
   /* --brand is 2.8:1 on the light surface; this is the crisis helpline link. */
@@ -1811,13 +1811,13 @@ body:has(.is-thinking, .gb-thinking)::after {
   align-items: center;
   gap: 10px;
   text-align: center;
-  padding: 24px 18px;
+  padding: var(--space-6) 18px;
 }
 
 .gb-msg-bar {
   display: flex;
-  gap: 8px;
-  padding: 10px 16px max(env(safe-area-inset-bottom, 0px), 14px);
+  gap: var(--space-2);
+  padding: 10px var(--space-4) max(env(safe-area-inset-bottom, 0px), 14px);
   border-top: 1px solid var(--border);
   background: var(--surface);
   align-items: flex-end;
@@ -1829,7 +1829,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   max-height: 120px;
   font-family: var(--font-body);
   font-size: 0.90625rem;
-  padding: 10px 12px;
+  padding: 10px var(--space-3);
   border: 1.5px solid var(--control-edge);
   border-radius: var(--radius-lg);
   background: var(--surface-2);
@@ -1895,8 +1895,8 @@ body:has(.is-thinking, .gb-thinking)::after {
   width: 100%;
 }
 .gb-search-results {
-  padding: 4px 0;
-  margin: 12px 0 14px;
+  padding: var(--space-1) 0;
+  margin: var(--space-3) 0 14px;
   max-height: 46vh;
   overflow-y: auto;
   /* The list scrolls, and with two or three people it ends flush with the card
@@ -1911,7 +1911,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   flex-wrap: wrap;
   row-gap: 10px;
   align-items: center;
-  padding: 14px 16px 16px;
+  padding: 14px var(--space-4) var(--space-4);
 }
 /* Rows ran together with nothing between them — a separator is what makes a
    list of people scannable rather than one block of text. */
@@ -1923,7 +1923,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   justify-content: flex-end;
   flex-wrap: wrap;
   align-items: stretch;
-  gap: 8px;
+  gap: var(--space-2);
 }
 /* Both mentorship directions always occupy a slot, and a slot is either a
    button or a status pill. Give them a common height so a row with one of
@@ -1936,7 +1936,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   width: auto;
 }
 .gb-search-results .gb-person-actions .gb-tag-pill {
-  padding: 0 12px;
+  padding: 0 var(--space-3);
 }
 
 @media (max-width: 520px) {
@@ -1953,15 +1953,15 @@ body:has(.is-thinking, .gb-thinking)::after {
     min-height: 44px;
     flex: 1 1 0;
     justify-content: center;
-    padding-left: 8px;
-    padding-right: 8px;
+    padding-left: var(--space-2);
+    padding-right: var(--space-2);
   }
   .gb-person-row {
     flex-wrap: wrap;
   }
   .gb-person-actions {
     width: 100%;
-    margin-top: 8px;
+    margin-top: var(--space-2);
     justify-content: flex-end;
   }
 }
@@ -1998,7 +1998,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   }
 
   .gb-nav {
-    padding: 8px 8px calc(18px + env(safe-area-inset-bottom, 0px));
+    padding: var(--space-2) var(--space-2) calc(18px + env(safe-area-inset-bottom, 0px));
   }
 
   .gb-nav-tab {
@@ -2013,7 +2013,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 
 /* ---- Circle (person rows + status pills) ---- */
 .gb-person-row {
-  gap: 12px !important;
+  gap: var(--space-3) !important;
 }
 .gb-person-id {
   flex: 1;
@@ -2121,7 +2121,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 .gb-check-pill {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   flex: none;
   white-space: nowrap;
   font-size: 0.71875rem;
@@ -2155,7 +2155,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   gap: 14px;
   max-width: 640px;
   margin: 0 auto;
-  padding: 16px var(--gutter) 8px;
+  padding: var(--space-4) var(--gutter) var(--space-2);
 }
 
 /* Timer card */
@@ -2186,8 +2186,8 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 .gb-timer-actions {
   display: flex;
-  gap: 8px;
-  margin-top: 12px;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
   flex-wrap: wrap;
 }
 .gb-timer-actions .gb-btn {
@@ -2198,7 +2198,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 
 /* Ambient sound card */
 .gb-sound-card {
-  padding: 20px;
+  padding: var(--space-5);
   transition: opacity var(--dur-fast);
 }
 .gb-sound-card.is-muted {
@@ -2208,13 +2208,13 @@ body:has(.is-thinking, .gb-thinking)::after {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
   margin-bottom: 14px;
 }
 .gb-sound-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
+  gap: var(--space-2);
 }
 .gb-sound-tile {
   display: flex;
@@ -2259,11 +2259,11 @@ body:has(.is-thinking, .gb-thinking)::after {
 .gb-sound-volume {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-top: 16px;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
 }
 .gb-sound-hint {
-  margin-top: 12px;
+  margin-top: var(--space-3);
   font-size: 0.75rem;
   line-height: 1.5;
   color: var(--fg3);
@@ -2356,7 +2356,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--space-4);
   padding: 14px 2px;
   border-bottom: 1px solid var(--surface-3);
 }
@@ -2382,8 +2382,8 @@ body:has(.is-thinking, .gb-thinking)::after {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 8px;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
 }
 .gb-setup-count {
   font-size: 0.75rem;
@@ -2411,7 +2411,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   place-items: center;
   width: 44px;
   height: 44px;
-  margin-bottom: 12px;
+  margin-bottom: var(--space-3);
   border-radius: var(--radius-md);
   background: var(--brand-soft);
   color: var(--brand-soft-fg);
@@ -2420,9 +2420,9 @@ body:has(.is-thinking, .gb-thinking)::after {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px;
-  margin-bottom: 8px;
+  gap: var(--space-3);
+  padding: 10px var(--space-3);
+  margin-bottom: var(--space-2);
   border-radius: var(--radius-md);
   background: var(--surface-2);
 }
@@ -2440,7 +2440,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   overflow-wrap: anywhere;
 }
 .gb-setup-text {
-  margin: 0 0 8px;
+  margin: 0 0 var(--space-2);
   color: var(--fg2);
   line-height: 1.45;
 }
@@ -2458,14 +2458,14 @@ body:has(.is-thinking, .gb-thinking)::after {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 12px 0;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
   border-bottom: 1px solid var(--surface-3);
 }
 .gb-account-value {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
   color: var(--fg1);
   font-weight: 600;
@@ -2480,7 +2480,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   flex-shrink: 0;
 }
 .gb-account-signout {
-  margin-top: 16px;
+  margin-top: var(--space-4);
   width: 100%;
 }
 
@@ -2489,7 +2489,7 @@ body:has(.is-thinking, .gb-thinking)::after {
    (via per-tile padding) — that keeps the 22px corner radius reading evenly
    instead of content hugging the edges. Tiles are a divided stat strip. */
 .gb-report {
-  padding-bottom: 24px;
+  padding-bottom: var(--space-6);
 }
 /* The Report is a stats dashboard. Demote the repeated section headers to quiet
    uppercase labels (matching the app's existing label vernacular) and give each
@@ -2499,7 +2499,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   margin-top: 26px;
 }
 .gb-report .gb-sectiontitle {
-  padding-bottom: 8px;
+  padding-bottom: var(--space-2);
 }
 .gb-report .gb-sectiontitle h3 {
   font-family: var(--font-body);
@@ -2516,7 +2516,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 .gb-report-stat {
   flex: 1;
   min-width: 0;
-  padding: 16px 18px;
+  padding: var(--space-4) 18px;
   border-left: 1px solid var(--surface-3);
 }
 .gb-report-stat:first-child {
@@ -2542,7 +2542,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   letter-spacing: -0.01em;
 }
 .gb-report-stat-label {
-  margin-top: 4px;
+  margin-top: var(--space-1);
   font-weight: 600;
   font-size: 0.8125rem;
   color: var(--fg2);
@@ -2554,7 +2554,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 @media (max-width: 380px) {
   .gb-report-stat {
-    padding: 13px 12px;
+    padding: 13px var(--space-3);
   }
   .gb-report-stat-value {
     font-size: 1.375rem;
@@ -2565,8 +2565,8 @@ body:has(.is-thinking, .gb-thinking)::after {
 .gb-insight-row {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
-  padding: 13px 16px;
+  gap: var(--space-3);
+  padding: 13px var(--space-4);
 }
 .gb-insight-row + .gb-insight-row {
   border-top: 1px solid var(--surface-3);
@@ -2596,7 +2596,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 16px 18px;
+  padding: var(--space-4) 18px;
   font-size: 0.8125rem;
   color: var(--fg3);
 }
@@ -2604,11 +2604,11 @@ body:has(.is-thinking, .gb-thinking)::after {
 .gb-insight-basis {
   font-size: 0.75rem;
   color: var(--fg3);
-  margin-top: 4px;
+  margin-top: var(--space-1);
 }
 /* A card's next step (insights.js `action`): under the text, never full width. */
 .gb-insight-action {
-  margin-top: 8px;
+  margin-top: var(--space-2);
   align-self: flex-start;
 }
 .gb-insight-dismiss {
@@ -2635,7 +2635,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 /* Empty state's "4 of 7 days logged" meter. */
 .gb-insight-meter {
   height: 6px;
-  margin: 0 18px 16px;
+  margin: 0 18px var(--space-4);
   border-radius: 3px;
   background: var(--surface-3);
   overflow: hidden;
@@ -2646,7 +2646,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   background: var(--brand);
 }
 .gb-insight-skel {
-  padding: 14px 16px;
+  padding: 14px var(--space-4);
 }
 
 /* ---- Circle screen ----
@@ -2658,7 +2658,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   display: flex;
   flex-direction: column;
   gap: 28px;
-  padding: 4px var(--gutter) 28px;
+  padding: var(--space-1) var(--gutter) 28px;
 }
 .gb-circle-screen > :empty {
   display: none; /* "Requests for you" with none: no slot, no gap */
@@ -2668,7 +2668,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 12px;
+  margin-bottom: var(--space-3);
 }
 .gb-circle-block-head .gb-btn {
   white-space: nowrap;
@@ -2689,7 +2689,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   color: var(--fg1);
 }
 .gb-circle-screen .gb-circle-section-title {
-  margin: 0 0 12px;
+  margin: 0 0 var(--space-3);
   font-size: 1.0625rem;
   letter-spacing: -0.01em;
 }
@@ -2706,11 +2706,11 @@ body:has(.is-thinking, .gb-thinking)::after {
 .gb-challenges-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .gb-circle-card {
   padding: 0;
-  margin-bottom: 16px;
+  margin-bottom: var(--space-4);
   overflow: hidden;
 }
 .gb-circle-card:last-child {
@@ -2721,7 +2721,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 10px 10px 0 16px;
+  padding: 10px 10px 0 var(--space-4);
 }
 .gb-circle-name {
   font-weight: 800;
@@ -2729,7 +2729,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   font-size: 0.9375rem;
 }
 .gb-circle-name--plain {
-  margin: 8px 16px 12px;
+  margin: var(--space-2) var(--space-4) var(--space-3);
   font-family: var(--font-display);
   font-size: 1.375rem;
 }
@@ -2746,7 +2746,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 .gb-seat-ring-slot {
   display: flex;
   justify-content: center;
-  padding: 18px 20px 0; /* room for the "You" label over the top seat */
+  padding: 18px var(--space-5) 0; /* room for the "You" label over the top seat */
 }
 .gb-seat-ring {
   position: relative;
@@ -2792,7 +2792,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: var(--space-2);
   text-align: center;
 }
 .gb-seat-name {
@@ -2869,7 +2869,7 @@ button.gb-seat {
   content: 'You';
   position: absolute;
   bottom: 100%;
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
   font-weight: 400;
@@ -2916,7 +2916,7 @@ button.gb-seat:disabled {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 22px 20px 20px;
+  padding: 22px var(--space-5) var(--space-5);
   text-align: center;
 }
 .gb-seat-ring--empty {
@@ -2949,7 +2949,7 @@ button.gb-seat:disabled {
 }
 .gb-circle-empty-copy {
   max-width: 34ch;
-  margin: 0 0 16px;
+  margin: 0 0 var(--space-4);
   color: var(--fg2);
   font-size: 0.875rem;
   line-height: 1.5;
@@ -2958,14 +2958,14 @@ button.gb-seat:disabled {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 /* The one thing to do about today, under the ring. */
 .gb-circle-nudge {
   display: flex;
   justify-content: center;
-  padding: 14px 16px 18px;
+  padding: 14px var(--space-4) 18px;
 }
 .gb-circle-nudge-line {
   margin: 0;
@@ -2979,7 +2979,7 @@ button.gb-seat:disabled {
   border-top: 1px solid var(--surface-3);
 }
 .gb-challenge {
-  padding: 14px 16px;
+  padding: 14px var(--space-4);
 }
 .gb-challenge + .gb-challenge {
   border-top: 1px solid var(--surface-3);
@@ -2989,7 +2989,7 @@ button.gb-seat:disabled {
   flex-direction: column;
   align-items: flex-start;
   gap: 10px;
-  padding: 14px 16px;
+  padding: 14px var(--space-4);
 }
 .gb-challenge-empty p {
   margin: 0;
@@ -3001,7 +3001,7 @@ button.gb-seat:disabled {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .gb-challenge-title {
   font-family: var(--font-display);
@@ -3012,7 +3012,7 @@ button.gb-seat:disabled {
 .gb-challenge-badge {
   font-size: 0.6875rem;
   font-weight: 700;
-  padding: 2px 8px;
+  padding: 2px var(--space-2);
   border-radius: var(--radius-pill);
   background: var(--surface-3);
   color: var(--fg2);
@@ -3038,8 +3038,8 @@ button.gb-seat:disabled {
 .gb-lb-row {
   display: flex;
   align-items: baseline;
-  gap: 12px;
-  padding: 8px 2px;
+  gap: var(--space-3);
+  padding: var(--space-2) 2px;
   font-size: 0.875rem;
 }
 .gb-lb-row + .gb-lb-row {
@@ -3100,11 +3100,11 @@ button.gb-seat:disabled {
     grid-row: 2 / 4;
     border-top: 0;
     border-left: 1px solid var(--surface-3);
-    margin: 12px 0;
+    margin: var(--space-3) 0;
   }
 }
 .gb-empty-sm {
-  padding: 10px 8px;
+  padding: 10px var(--space-2);
   font-size: 0.8125rem;
   color: var(--fg3);
 }
@@ -3120,7 +3120,7 @@ button.gb-seat:disabled {
 .gb-circle-section-title {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   font-family: var(--font-display);
   font-weight: 800;
   font-size: 0.9375rem;
@@ -3136,7 +3136,7 @@ button.gb-seat:disabled {
 }
 .gb-request-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   flex: none;
   margin-left: auto;
 }
@@ -3149,18 +3149,18 @@ button.gb-seat:disabled {
 .gb-circle-card-foot {
   display: flex;
   justify-content: flex-end;
-  padding: 6px 12px;
+  padding: 6px var(--space-3);
   border-top: 1px solid var(--surface-3);
 }
 .gb-circle-posts {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 4px 16px 14px;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-4) 14px;
 }
 .gb-circle-composer {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: flex-end;
 }
 .gb-circle-post-input {
@@ -3169,13 +3169,13 @@ button.gb-seat:disabled {
   resize: vertical;
 }
 .gb-circle-post {
-  padding: 8px 0;
+  padding: var(--space-2) 0;
   border-bottom: 1px solid var(--surface-3);
 }
 .gb-circle-post-meta {
   display: flex;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2);
   font-size: 0.75rem;
   color: var(--fg3);
 }
@@ -3183,7 +3183,7 @@ button.gb-seat:disabled {
   color: var(--fg1);
 }
 .gb-circle-post-body {
-  margin-top: 4px;
+  margin-top: var(--space-1);
   font-size: 0.875rem;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -3192,7 +3192,7 @@ button.gb-seat:disabled {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 12px;
+  padding: 10px var(--space-3);
   border-radius: 12px;
   background: var(--surface-3);
   font-size: 0.8125rem;
@@ -3215,7 +3215,7 @@ button.gb-seat:disabled {
   align-items: center;
   gap: 6px;
   min-height: 32px;
-  padding: 4px 10px;
+  padding: var(--space-1) 10px;
   border: 1px solid var(--surface-3);
   border-radius: 999px;
   background: transparent;
@@ -3237,18 +3237,18 @@ button.gb-seat:disabled {
    win"), the standing line over a board and the leaderboard's cheer button. */
 .gb-circle-post-foot {
   justify-content: flex-start;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .gb-circle-post-foot .gb-circle-post-del {
   margin-left: auto;
 }
 .gb-circle-replies {
-  margin-top: 8px;
-  padding-left: 12px;
+  margin-top: var(--space-2);
+  padding-left: var(--space-3);
   border-left: 2px solid var(--surface-3);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .gb-circle-replies-list {
   display: flex;
@@ -3279,7 +3279,7 @@ button.gb-seat:disabled {
 }
 .gb-circle-presets .gb-chip {
   min-height: 44px;
-  padding: 6px 12px;
+  padding: 6px var(--space-3);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-pill);
   background: var(--surface);
@@ -3297,13 +3297,13 @@ button.gb-seat:disabled {
   }
 }
 .gb-challenge-standing {
-  margin: 4px 0 2px;
+  margin: var(--space-1) 0 2px;
   font-size: 0.8125rem;
   font-weight: 600;
   color: var(--fg1);
 }
 .gb-circle-cheer {
-  margin-left: 4px;
+  margin-left: var(--space-1);
 }
 .gb-circle-cheer.is-sent {
   color: var(--brand);
@@ -3316,13 +3316,13 @@ button.gb-seat:disabled {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 0 16px 10px;
+  padding: 0 var(--space-4) 10px;
 }
 .gb-agree {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 10px 12px;
+  gap: var(--space-1);
+  padding: 10px var(--space-3);
   border-radius: 12px;
   background: var(--surface-2);
 }
@@ -3355,7 +3355,7 @@ button.gb-seat:disabled {
 }
 .gb-agree-end {
   min-height: 32px;
-  padding: 0 8px;
+  padding: 0 var(--space-2);
   border: 0;
   border-radius: var(--radius-pill);
   background: none;
@@ -3422,7 +3422,7 @@ button.gb-seat:disabled {
   display: flex;
   gap: 6px;
   align-items: center;
-  margin-top: 4px;
+  margin-top: var(--space-1);
 }
 .gb-agree-input {
   flex: 1;
@@ -3453,7 +3453,7 @@ button.gb-seat:disabled {
   }
 }
 .gb-week-card {
-  padding: 10px 12px;
+  padding: 10px var(--space-3);
   border-radius: 12px;
   background: var(--surface-3);
   font-size: 0.8125rem;
@@ -3461,7 +3461,7 @@ button.gb-seat:disabled {
 .gb-week-head {
   display: flex;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2);
   color: var(--fg3);
 }
 .gb-week-head strong {
@@ -3470,7 +3470,7 @@ button.gb-seat:disabled {
 .gb-week-stat {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--space-2);
   margin: 6px 0;
   color: var(--fg2);
 }
@@ -3488,7 +3488,7 @@ button.gb-seat:disabled {
 .gb-week-streaks li {
   display: flex;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2);
   padding: 3px 0;
 }
 .gb-week-habit {
@@ -3513,11 +3513,11 @@ button.gb-seat:disabled {
 .gb-chat-log {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
   width: 100%;
   max-height: min(52vh, 460px);
   overflow-y: auto;
-  padding: 4px 2px;
+  padding: var(--space-1) 2px;
 }
 .gb-chat-msg {
   display: flex;
@@ -3530,7 +3530,7 @@ button.gb-seat:disabled {
   align-items: flex-end;
 }
 .gb-chat-bubble {
-  padding: 8px 12px;
+  padding: var(--space-2) var(--space-3);
   border-radius: 14px;
   background: var(--surface-3);
   color: var(--fg1);
@@ -3574,7 +3574,7 @@ button.gb-seat:disabled {
 }
 
 .gb-food-card {
-  padding: 16px;
+  padding: var(--space-4);
 }
 .gb-food-total {
   display: inline-flex;
@@ -3582,7 +3582,7 @@ button.gb-seat:disabled {
   justify-content: center;
   min-width: 86px;
   border-radius: 999px;
-  padding: 6px 12px;
+  padding: 6px var(--space-3);
   font-size: 0.75rem;
   font-weight: 800;
   color: var(--info-soft-fg);
@@ -3596,7 +3596,7 @@ button.gb-seat:disabled {
 .gb-msg-chips {
   display: flex;
   gap: 6px;
-  padding: 8px 16px 8px;
+  padding: var(--space-2) var(--space-4) var(--space-2);
   overflow-x: auto;
   scrollbar-width: none;
   flex-wrap: nowrap;
@@ -3654,7 +3654,7 @@ button.gb-seat:disabled {
   .gb-msg-chips {
     flex-wrap: wrap;
     overflow-x: visible;
-    row-gap: 8px;
+    row-gap: var(--space-2);
   }
 }
 
@@ -3690,17 +3690,17 @@ button.gb-seat:disabled {
 .gb-mentor-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 16px 0;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4) 0;
 }
 .gb-mentor-thread {
   flex: 1;
   min-width: 0;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   min-height: 44px;
-  padding: 0 12px;
+  padding: 0 var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
   background: var(--surface);
@@ -3728,12 +3728,12 @@ button.gb-seat:disabled {
 .gb-thread-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
 }
 .gb-thread-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   flex-wrap: wrap;
   border-radius: var(--radius-md);
 }
@@ -3745,7 +3745,7 @@ button.gb-seat:disabled {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   min-height: 44px;
   padding: 0 10px;
   border: 0;
@@ -3782,10 +3782,10 @@ button.gb-seat:disabled {
 .gb-thread-reflect {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   width: 100%;
   min-height: 44px;
-  margin-top: 12px;
+  margin-top: var(--space-3);
   padding: 0 10px;
   border: 1px dashed var(--border);
   border-radius: var(--radius-md);
@@ -3847,8 +3847,8 @@ button.gb-seat:disabled {
 .gb-profile-pop-head {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 16px 16px 12px;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-4) var(--space-3);
 }
 .gb-profile-pop-avatar {
   width: 42px;
@@ -3896,8 +3896,8 @@ button.gb-seat:disabled {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin: 0 16px 12px;
-  padding: 4px 10px;
+  margin: 0 var(--space-4) var(--space-3);
+  padding: var(--space-1) 10px;
   border-radius: var(--radius-pill);
   background: var(--warning-soft);
   color: var(--warning-soft-fg);
@@ -3905,7 +3905,7 @@ button.gb-seat:disabled {
   font-weight: 700;
 }
 .gb-profile-pop-xp {
-  padding: 0 16px 12px;
+  padding: 0 var(--space-4) var(--space-3);
 }
 .gb-profile-pop-xp-bar {
   height: 5px;
@@ -3922,7 +3922,7 @@ button.gb-seat:disabled {
 .gb-profile-pop-xp-label {
   font-size: var(--text-2xs);
   color: var(--fg3);
-  margin-top: 4px;
+  margin-top: var(--space-1);
 }
 .gb-profile-pop-divider {
   height: 1px;
@@ -3934,7 +3934,7 @@ button.gb-seat:disabled {
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 11px 16px;
+  padding: 11px var(--space-4);
   background: transparent;
   border: none;
   cursor: pointer;
@@ -3963,7 +3963,7 @@ button.gb-seat:disabled {
   display: flex;
   gap: 14px;
   align-items: center;
-  margin-bottom: 16px;
+  margin-bottom: var(--space-4);
 }
 
 /* Partner-status modal sections */
@@ -3980,7 +3980,7 @@ button.gb-seat:disabled {
   letter-spacing: 0.06em;
 }
 .gb-status-summary {
-  margin: 0 0 8px;
+  margin: 0 0 var(--space-2);
   font-size: 0.875rem;
   color: var(--fg1);
   font-weight: 600;
@@ -4001,7 +4001,7 @@ button.gb-seat:disabled {
 }
 .gb-status-pre {
   margin: 0;
-  padding: 10px 12px;
+  padding: 10px var(--space-3);
   background: var(--surface-2);
   border-radius: var(--radius-md);
   font-family: var(--font-body);
@@ -4014,7 +4014,7 @@ button.gb-seat:disabled {
 /* ---- Color picker (habit customize) ---- */
 .gb-color-pick {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   flex-wrap: wrap;
 }
 .gb-color-dot {
@@ -4042,7 +4042,7 @@ button.gb-seat:disabled {
    overlay fills it, so the dot keeps its 28px look. */
 @media (pointer: coarse) {
   .gb-color-pick {
-    gap: 16px;
+    gap: var(--space-4);
   }
   .gb-color-dot::before {
     content: '';
@@ -4063,7 +4063,7 @@ button.gb-seat:disabled {
   display: flex;
   align-items: center;
   gap: 13px;
-  padding: 14px 16px;
+  padding: 14px var(--space-4);
   min-height: 56px;
 }
 .gb-row + .gb-row {
@@ -4098,7 +4098,7 @@ button.gb-seat:disabled {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  padding: 4px 0;
+  padding: var(--space-1) 0;
   margin: -4px 0;
   border: 0;
   background: none;
@@ -4130,7 +4130,7 @@ button.gb-seat:disabled {
 .gb-dash {
   display: flex;
   flex-direction: column;
-  padding-bottom: 16px;
+  padding-bottom: var(--space-4);
 }
 .gb-dash-col {
   display: flex;
@@ -4141,11 +4141,11 @@ button.gb-seat:disabled {
   margin-top: 18px;
 }
 .gb-dash-col:first-child > .gb-dash-block:first-child {
-  margin-top: 8px;
+  margin-top: var(--space-2);
 }
 /* Customizable single-column home: blocks are direct children (no column wrap). */
 .gb-dash--single > .gb-dash-block:first-child {
-  margin-top: 8px;
+  margin-top: var(--space-2);
 }
 
 /* First run: the setup checklist is the only card on Home. Centre it in the
@@ -4166,7 +4166,7 @@ button.gb-seat:disabled {
 }
 
 .gb-score-card {
-  padding: 20px;
+  padding: var(--space-5);
   display: flex;
   align-items: center;
   gap: 18px;
@@ -4176,13 +4176,13 @@ button.gb-seat:disabled {
   font-weight: 800;
   font-size: 1.125rem;
   color: var(--fg1);
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
 }
 .gb-score-sub {
   font-size: 0.8125rem;
   color: var(--fg2);
   line-height: 1.45;
-  margin-bottom: 12px;
+  margin-bottom: var(--space-3);
 }
 .gb-pill-row {
   display: flex;
@@ -4200,20 +4200,20 @@ button.gb-seat:disabled {
 .gb-food-week-card,
 .gb-ach-summary,
 .gb-focus-statscard {
-  padding: 16px;
+  padding: var(--space-4);
 }
 .gb-coach-head,
 .gb-card-titleline {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
 }
 .gb-card-titleline {
   justify-content: flex-start;
   font-weight: 800;
   color: var(--fg1);
-  margin-bottom: 12px;
+  margin-bottom: var(--space-3);
 }
 .gb-coach-kicker {
   font-size: 0.6875rem;
@@ -4232,7 +4232,7 @@ button.gb-seat:disabled {
 .gb-coach-chiprow,
 .gb-badge-grid {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   flex-wrap: wrap;
   margin-top: 14px;
 }
@@ -4301,14 +4301,14 @@ button.gb-seat:disabled {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin-bottom: 12px;
+  margin-bottom: var(--space-3);
 }
 .gb-wellness-quick-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .gb-wellness-quick-ask {
   color: var(--fg1);
@@ -4326,8 +4326,8 @@ button.gb-seat:disabled {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 10px 12px;
+  gap: var(--space-2);
+  padding: 10px var(--space-3);
   margin-top: 10px;
   border-radius: var(--radius-md);
   background: var(--surface-2);
@@ -4407,7 +4407,7 @@ button.gb-seat:disabled {
 }
 .gb-plan-row--pick {
   min-height: 44px;
-  padding: 8px 10px;
+  padding: var(--space-2) 10px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
   background: var(--surface-2);
@@ -4458,9 +4458,9 @@ button.gb-food-level {
   position: relative;
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 8px;
+  gap: var(--space-2);
   height: 150px;
-  margin: 16px 0 14px;
+  margin: var(--space-4) 0 14px;
   /* Room for the value row above and the day row below the tracks. */
   padding: 18px 0 22px;
 }
@@ -4517,7 +4517,7 @@ button.gb-food-level {
 }
 .gb-food-check-btns {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .gb-food-check-btn {
   flex: 1;
@@ -4531,7 +4531,7 @@ button.gb-food-level {
 }
 .gb-food-levels {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   flex-wrap: wrap;
 }
 .gb-food-check-text {
@@ -4559,10 +4559,10 @@ button.gb-food-level {
 .gb-summary-page {
   max-width: 1180px;
   margin: 0 auto;
-  padding: 0 var(--gutter) 32px;
+  padding: 0 var(--gutter) var(--space-8);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-3);
 }
 .gb-summary-back {
   align-self: flex-start;
@@ -4570,13 +4570,13 @@ button.gb-food-level {
 .gb-summary-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
-  gap: 24px;
+  gap: var(--space-6);
   align-items: start;
 }
 .gb-summary-col {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: var(--space-6);
   min-width: 0;
 }
 .gb-summary-hero {
@@ -4621,13 +4621,13 @@ button.gb-food-level {
 .gb-summary-card {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-3);
 }
 .gb-summary-card-head {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  gap: 12px;
+  gap: var(--space-3);
 }
 .gb-summary-card-head h2 {
   margin: 0;
@@ -4657,7 +4657,7 @@ button.gb-food-level {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
+  gap: var(--space-4);
 }
 /* The steel plate: a lit rim, a darker well, and the plate's own shadow. */
 .gb-thali {
@@ -4733,7 +4733,7 @@ button.gb-food-level {
   font-size: 0.6875rem;
 }
 .gb-katori-in span {
-  margin-top: 4px;
+  margin-top: var(--space-1);
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
   letter-spacing: 0.04em;
@@ -4788,8 +4788,8 @@ button.gb-food-level {
 .gb-nutrient-tabs {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 4px;
-  padding: 4px;
+  gap: var(--space-1);
+  padding: var(--space-1);
   border-radius: 999px;
   background: var(--bg);
 }
@@ -4818,7 +4818,7 @@ button.gb-food-level {
 .gb-nutrient-panel {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
 }
 .gb-nutrient-panel[hidden] {
   display: none;
@@ -4826,7 +4826,7 @@ button.gb-food-level {
 .gb-nutrient-sources {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-3);
   padding-top: 14px;
   border-top: 1px solid var(--border);
 }
@@ -4845,7 +4845,7 @@ button.gb-food-level {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  gap: 12px;
+  gap: var(--space-3);
   font-size: 0.875rem;
   font-weight: 600;
   color: var(--fg1);
@@ -4877,7 +4877,7 @@ button.gb-food-level {
   height: 128px;
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 8px;
+  gap: var(--space-2);
 }
 .gb-tumbler-col {
   min-width: 0;
@@ -4935,7 +4935,7 @@ button.gb-food-level {
 .gb-buddy-eyebrow {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   font-size: 0.8125rem;
   font-weight: 700;
   color: var(--ai);
@@ -4963,7 +4963,7 @@ button.gb-food-level {
   border-radius: 10px;
 }
 .gb-split-legend > button {
-  padding: 6px 8px;
+  padding: 6px var(--space-2);
   margin: -6px -8px;
 }
 .gb-katori:active,
@@ -5009,8 +5009,8 @@ button.gb-food-level {
 
 .gb-habit-strip {
   display: flex;
-  gap: 12px;
-  padding: 4px 0 2px;
+  gap: var(--space-3);
+  padding: var(--space-1) 0 2px;
   overflow-x: auto;
   scroll-snap-type: x mandatory;
 }
@@ -5049,7 +5049,7 @@ button.gb-food-level {
 .gb-habit-card .streak {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   color: var(--brand-ink);
   font-weight: 800;
   font-size: 0.8125rem;
@@ -5101,7 +5101,7 @@ button.gb-food-level {
   display: flex;
   align-items: center;
   gap: 7px;
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
   font-size: 0.6875rem;
   font-weight: 800;
   letter-spacing: 0.06em;
@@ -5118,7 +5118,7 @@ button.gb-food-level {
 }
 
 .gb-water-card {
-  padding: 16px;
+  padding: var(--space-4);
   background:
     radial-gradient(
       120% 90% at 10% 0%,
@@ -5306,7 +5306,7 @@ button.gb-food-level {
   font-size: 1.75rem;
   font-weight: 800;
   line-height: 1;
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
 }
 .gb-water-sub {
   font-size: 0.78125rem;
@@ -5324,19 +5324,19 @@ button.gb-food-level {
 }
 
 .gb-water-actions {
-  margin-top: 12px;
+  margin-top: var(--space-3);
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  gap: var(--space-2);
 }
 .gb-water-actions--custom {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin-top: 8px;
+  margin-top: var(--space-2);
 }
 .gb-water-add {
   border: none;
   border-radius: 12px;
-  padding: 9px 8px;
+  padding: 9px var(--space-2);
   font-size: 0.78125rem;
   font-weight: 800;
   font-family: var(--font-body);
@@ -5369,9 +5369,9 @@ button.gb-food-level {
 }
 
 .gb-water-log {
-  margin-top: 12px;
+  margin-top: var(--space-3);
   border-top: 1px dashed color-mix(in srgb, var(--sky-300) 45%, var(--border) 55%);
-  padding-top: 8px;
+  padding-top: var(--space-2);
 }
 .gb-water-log-row {
   display: flex;
@@ -5390,7 +5390,7 @@ button.gb-food-level {
      A right-aligned Cancel-then-primary row made these the odd ones out. */
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-3);
   margin-top: 14px;
 }
 .gb-water-prompt-actions .gb-btn {
@@ -5442,12 +5442,12 @@ button.gb-food-level {
 
 @media (max-width: 460px) {
   .gb-focus {
-    padding: 14px var(--gutter) 8px;
+    padding: 14px var(--gutter) var(--space-2);
   }
   .gb-focus-card {
     flex-direction: column;
     align-items: stretch;
-    gap: 16px;
+    gap: var(--space-4);
   }
   .gb-focus-ring {
     margin: 0 auto;
@@ -5476,7 +5476,7 @@ button.gb-food-level {
       100%,
       calc(100dvh - 24px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))
     );
-    padding: 16px;
+    padding: var(--space-4);
   }
   .gb-msg-bubble {
     max-width: 84%;
@@ -5588,7 +5588,7 @@ button.gb-food-level {
 }
 
 .gb-workout-card {
-  padding: 16px;
+  padding: var(--space-4);
   display: flex;
   align-items: center;
   gap: 14px;
@@ -5599,7 +5599,7 @@ button.gb-food-level {
   color: var(--fg1);
 }
 .gb-workout-card .bar {
-  margin-top: 8px;
+  margin-top: var(--space-2);
 }
 
 /* ---- Goals screen ---- */
@@ -5626,7 +5626,7 @@ button.gb-food-level {
 .gb-goal-section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .gb-goal-section-head {
   display: flex;
@@ -5668,7 +5668,7 @@ button.gb-food-level {
 .gb-goal-section-count {
   min-width: 24px;
   height: 24px;
-  padding: 0 8px;
+  padding: 0 var(--space-2);
   border-radius: 999px;
   background: var(--surface-2);
   color: var(--fg2);
@@ -5694,7 +5694,7 @@ button.gb-food-level {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 14px 16px;
+  padding: 14px var(--space-4);
 }
 .gb-goal-row + .gb-goal-row {
   border-top: 1px solid var(--border);
@@ -5715,7 +5715,7 @@ button.gb-food-level {
   color: var(--fg1);
 }
 .gb-goal-desc {
-  margin-top: 4px;
+  margin-top: var(--space-1);
   font-size: 0.8125rem;
   color: var(--fg2);
   line-height: 1.45;
@@ -5723,7 +5723,7 @@ button.gb-food-level {
 .gb-goal-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 10px;
+  gap: var(--space-2) 10px;
   margin-top: 10px;
   font-size: 0.75rem;
   color: var(--fg3);
@@ -5734,7 +5734,7 @@ button.gb-food-level {
 }
 .gb-goal-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   flex-wrap: wrap;
 }
 .gb-goal-actions .gb-btn {
@@ -5752,7 +5752,7 @@ button.gb-food-level {
   background: var(--surface);
   border: 1px solid var(--border);
   border-left: 4px solid var(--leaf-500);
-  padding: 14px 16px;
+  padding: 14px var(--space-4);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -5802,7 +5802,7 @@ button.gb-food-level {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
-  padding-top: 8px;
+  padding-top: var(--space-2);
   border-top: 1px solid var(--border);
   margin-top: 2px;
 }
@@ -5831,7 +5831,7 @@ button.gb-food-level {
    "Show all" button instead. */
 .gb-tasks-more {
   width: 100%;
-  margin-top: 8px;
+  margin-top: var(--space-2);
 }
 .gb-goal-action-list {
   display: flex;
@@ -5845,7 +5845,7 @@ button.gb-food-level {
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
-  padding: 10px 12px;
+  padding: 10px var(--space-3);
   border-radius: 8px;
   background: var(--surface-2);
 }
@@ -5868,7 +5868,7 @@ button.gb-food-level {
 }
 .gb-goal-action-tools {
   display: flex;
-  gap: 4px;
+  gap: var(--space-1);
   flex: 0 0 auto;
 }
 .gb-icon-btn {
@@ -5927,7 +5927,7 @@ button.gb-food-level {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
 }
 .gb-gratitude-head .gb-btn {
   width: auto;
@@ -5936,7 +5936,7 @@ button.gb-food-level {
 .gb-gratitude-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .gb-note-hint {
   font-size: 0.75rem;
@@ -5949,7 +5949,7 @@ button.gb-food-level {
 .gb-cal {
   display: flex;
   flex-direction: column;
-  padding-bottom: 16px;
+  padding-bottom: var(--space-4);
 }
 .gb-cal-col {
   display: flex;
@@ -5962,7 +5962,7 @@ button.gb-food-level {
 }
 .gb-cal-block {
   padding: 0 var(--gutter);
-  margin-top: 16px;
+  margin-top: var(--space-4);
 }
 .gb-cal-col:first-child > .gb-cal-block:first-child {
   margin-top: 10px;
@@ -5977,7 +5977,7 @@ button.gb-food-level {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
   flex-wrap: wrap;
 }
 .gb-cal-monthbar,
@@ -6012,7 +6012,7 @@ button.gb-food-level {
 }
 .gb-btn.gb-cal-today {
   width: auto;
-  padding: 9px 16px;
+  padding: 9px var(--space-4);
   font-size: 0.84375rem;
 }
 
@@ -6036,7 +6036,7 @@ button.gb-food-level {
 .gb-cal-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 4px;
+  gap: var(--space-1);
 }
 .gb-cal-day {
   position: relative;
@@ -6140,7 +6140,7 @@ button.gb-food-level {
 .gb-day-section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .gb-day-section .gb-card {
   overflow: hidden;
@@ -6149,13 +6149,13 @@ button.gb-food-level {
   padding: 14px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-3);
   border-color: color-mix(in srgb, var(--brand) 24%, var(--border));
 }
 .gb-wins-score {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .gb-wins-number {
   font-family: var(--font-display);
@@ -6211,7 +6211,7 @@ button.gb-food-level {
   font-size: 0.71875rem;
 }
 .gb-wins-empty {
-  padding: 16px;
+  padding: var(--space-4);
   border: 1px dashed var(--border);
   border-radius: var(--radius-xl);
   background: var(--surface);
@@ -6226,8 +6226,8 @@ button.gb-food-level {
   margin: 0;
 }
 .gb-future-note {
-  margin: 14px 20px 0;
-  padding: 12px 14px;
+  margin: 14px var(--space-5) 0;
+  padding: var(--space-3) 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   background: var(--surface);
@@ -6262,7 +6262,7 @@ button.gb-food-level {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 12px 14px;
+  padding: var(--space-3) 14px;
   background: var(--surface);
 }
 .gb-day-row + .gb-day-row {
@@ -6281,7 +6281,7 @@ button.gb-food-level {
   overflow-wrap: anywhere;
 }
 .gb-day-row-sub {
-  margin-top: 4px;
+  margin-top: var(--space-1);
   font-size: 0.75rem;
   font-weight: 600;
   color: var(--fg2);
@@ -6328,7 +6328,7 @@ button.gb-food-level {
 .gb-btn.gb-day-retry {
   width: auto;
   align-self: flex-start;
-  padding: 8px 12px;
+  padding: var(--space-2) var(--space-3);
   font-size: 0.78125rem;
 }
 .gb-day-total {
@@ -6336,13 +6336,13 @@ button.gb-food-level {
   color: var(--fg2);
   font-weight: 700;
   text-align: right;
-  padding-right: 4px;
+  padding-right: var(--space-1);
 }
 .gb-rem-empty {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   text-align: center;
   padding: 26px 18px;
   background: var(--surface);
@@ -6360,7 +6360,7 @@ button.gb-food-level {
 .gb-rem-row {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
+  gap: var(--space-3);
   padding: 13px 14px;
 }
 .gb-rem-row + .gb-rem-row {
@@ -6386,13 +6386,13 @@ button.gb-food-level {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
   margin-top: 5px;
 }
 .gb-rem-meta .meta-item {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   font-size: 0.78125rem;
   font-weight: 600;
   color: var(--fg2);
@@ -6469,7 +6469,7 @@ button.gb-food-level {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
   padding: 28px 18px;
   text-align: center;
 }
@@ -6507,7 +6507,7 @@ button.gb-food-level {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 16px;
+  padding: var(--space-4);
 }
 /* Inline field error. The reminder form's "repeat until" uses it instead of the
    browser's native validation bubble, which needs focus to appear and vanishes
@@ -6525,7 +6525,7 @@ button.gb-food-level {
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--fg3);
-  margin-top: 4px;
+  margin-top: var(--space-1);
 }
 .gb-rem-form > .gb-field-label:first-child {
   margin-top: 0;
@@ -6588,7 +6588,7 @@ button.gb-food-level {
 /* Country-code + local-number picker */
 .gb-phone-input {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: stretch;
 }
 .gb-phone-cc {
@@ -6633,7 +6633,7 @@ button.gb-food-level {
 }
 .gb-food-photo-btn {
   width: 100%;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .gb-food-hint {
   margin: -6px 0 0;
@@ -6695,7 +6695,7 @@ button.gb-food-level {
 }
 /* The Food card grouped by meal slot (nutrition.js groupBySlot). */
 .gb-food-slot {
-  margin-top: 12px;
+  margin-top: var(--space-3);
 }
 .gb-food-slot-head {
   display: flex;
@@ -6714,7 +6714,7 @@ button.gb-food-level {
   color: var(--fg3);
 }
 .gb-food-slot .gb-water-log {
-  margin-top: 4px;
+  margin-top: var(--space-1);
 }
 .gb-food-copies {
   display: flex;
@@ -6727,7 +6727,7 @@ button.gb-food-level {
   align-items: center;
   gap: 6px;
   min-height: 44px;
-  padding: 0 12px;
+  padding: 0 var(--space-3);
   border: 1px dashed var(--border);
   border-radius: var(--radius-pill);
   background: none;
@@ -6748,8 +6748,8 @@ button.gb-food-level {
 .gb-food-micros {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 12px;
-  margin-top: 8px;
+  gap: var(--space-1) var(--space-3);
+  margin-top: var(--space-2);
   font-size: 0.75rem;
   font-weight: 600;
   color: var(--fg3);
@@ -6814,7 +6814,7 @@ button.gb-food-level {
 .gb-water-suggest {
   align-self: flex-start;
   min-height: 44px;
-  padding: 0 12px;
+  padding: 0 var(--space-3);
   border: 1px dashed var(--brand);
   border-radius: var(--radius-pill);
   background: none;
@@ -6830,7 +6830,7 @@ button.gb-food-level {
   align-items: center;
   gap: 6px;
   min-height: 48px;
-  padding: 4px 4px 4px 14px;
+  padding: var(--space-1) var(--space-1) var(--space-1) 14px;
   background: var(--surface-2);
   border: 1.5px solid var(--border-strong);
   border-radius: var(--radius-lg);
@@ -6885,13 +6885,13 @@ button.gb-food-level {
   background: var(--surface-2);
   border: 1.5px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: 12px 14px;
-  margin-top: 12px;
+  padding: var(--space-3) 14px;
+  margin-top: var(--space-3);
 }
 .gb-food-item-row {
   display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
   align-items: center;
 }
 .gb-food-item-row:last-child {
@@ -6899,7 +6899,7 @@ button.gb-food-level {
 }
 .gb-input--inline {
   font-size: 0.875rem;
-  padding: 10px 12px;
+  padding: 10px var(--space-3);
   min-height: 36px;
   border-radius: var(--radius-md);
 }
@@ -6927,7 +6927,7 @@ button.gb-food-level {
   }
 }
 .gb-form--about-diet {
-  gap: 8px;
+  gap: var(--space-2);
 }
 .gb-form--about-diet .gb-profile-suggest {
   max-height: 220px;
@@ -6948,7 +6948,7 @@ button.gb-food-level {
 }
 .gb-rem-range {
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .gb-rem-range .gb-input--time {
   padding-inline: 10px;
@@ -6966,7 +6966,7 @@ button.gb-food-level {
 }
 .gb-sched-headrow {
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .gb-sched-tabs {
   display: inline-flex;
@@ -7015,7 +7015,7 @@ button.gb-food-level {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 8px;
+  padding: var(--space-2);
   border-radius: var(--radius-md);
 }
 .gb-sched-stat-l {
@@ -7050,7 +7050,7 @@ button.gb-food-level {
 .gb-sched-bar {
   position: relative;
   height: 12px;
-  margin-top: 12px;
+  margin-top: var(--space-3);
   border-radius: var(--radius-pill);
   background: var(--success-soft);
   overflow: hidden;
@@ -7075,7 +7075,7 @@ button.gb-food-level {
 .gb-sched-ticks {
   position: relative;
   height: 16px;
-  margin-top: 4px;
+  margin-top: var(--space-1);
   font-size: 0.6875rem;
   color: var(--fg3);
 }
@@ -7100,8 +7100,8 @@ button.gb-food-level {
 .gb-sched-row {
   display: flex;
   align-items: baseline;
-  gap: 12px;
-  padding: 8px 10px;
+  gap: var(--space-3);
+  padding: var(--space-2) 10px;
   border-radius: var(--radius-md);
   border-left: 3px solid transparent;
   font-size: 0.8125rem;
@@ -7173,11 +7173,11 @@ button.gb-food-level {
 .gb-week-row {
   display: grid;
   grid-template-columns: 52px minmax(0, 1fr) 58px;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: center;
   width: 100%;
   min-height: 44px;
-  padding: 6px 4px;
+  padding: 6px var(--space-1);
   border: 0;
   border-radius: var(--radius-md);
   background: transparent;
@@ -7203,7 +7203,7 @@ button.gb-food-level {
   color: var(--success-soft-fg);
 }
 .gb-sched-len {
-  margin-left: 8px;
+  margin-left: var(--space-2);
   font-weight: 600;
   color: var(--fg3);
 }
@@ -7221,14 +7221,14 @@ button.gb-food-level {
   border: 1px solid var(--border);
   background: var(--surface-2);
   border-radius: var(--radius-lg);
-  padding: 12px;
+  padding: var(--space-3);
 }
 
 .gb-profile-suggest-title {
   font-weight: 800;
   color: var(--fg1);
   font-size: 0.84375rem;
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
 }
 
 .gb-profile-suggest-line {
@@ -7238,7 +7238,7 @@ button.gb-food-level {
 }
 
 .gb-profile-suggest-list {
-  margin: 8px 0 0;
+  margin: var(--space-2) 0 0;
   padding-left: 18px;
   color: var(--fg1);
   font-size: 0.78125rem;
@@ -7248,14 +7248,14 @@ button.gb-food-level {
 .gb-btn.gb-profile-apply {
   margin-top: 10px;
   width: auto;
-  padding: 8px 12px;
+  padding: var(--space-2) var(--space-3);
 }
 
 /* Tag picker (color chips) */
 .gb-tagpick {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .gb-tagchip {
   display: inline-flex;
@@ -7268,7 +7268,7 @@ button.gb-food-level {
   background: var(--surface-2);
   border: 1.5px solid var(--border);
   border-radius: var(--radius-pill);
-  padding: 7px 12px 7px 9px;
+  padding: 7px var(--space-3) 7px 9px;
   cursor: pointer;
   transition:
     border-color var(--dur-fast),
@@ -7306,11 +7306,11 @@ button.gb-food-level {
      rather than wrapping. Basis is 0, so whatever lands on a line splits it
      evenly. */
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--space-1);
   background: var(--surface-2);
   border: 1.5px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: 4px;
+  padding: var(--space-1);
 }
 .gb-seg {
   flex: 1;
@@ -7365,9 +7365,9 @@ button.gb-food-level {
 .gb-cal-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px 16px;
+  gap: 10px var(--space-4);
   /* On a phone the day's heading came next with no gap and read as part of it. */
-  padding-bottom: 12px;
+  padding-bottom: var(--space-3);
 }
 .gb-legend-title {
   /* Its own row: title plus five tags is a hair too wide for a phone, and the
@@ -7445,7 +7445,7 @@ button.gb-food-level {
   border-radius: var(--radius-2xl);
   box-shadow: var(--shadow-xl);
   border: 1px solid var(--border);
-  padding: 20px;
+  padding: var(--space-5);
   display: flex;
   flex-direction: column;
   /* auto, not hidden: half the dialogs in the app are hand-built and have no
@@ -7486,7 +7486,7 @@ button.gb-food-level {
   color: var(--fg1);
 }
 .gb-modal-sub {
-  margin-top: 4px;
+  margin-top: var(--space-1);
   font-size: 0.8125rem;
   color: var(--fg2);
   line-height: 1.4;
@@ -7614,14 +7614,14 @@ button.gb-food-level {
 .gb-qa-preview {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .gb-qa-row {
   display: flex;
   align-items: center;
   gap: 10px;
   min-height: 44px;
-  padding: 10px 12px;
+  padding: 10px var(--space-3);
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
   background: var(--surface-2);
@@ -7666,15 +7666,15 @@ button.gb-food-level {
 .gb-preset-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 8px;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
 }
 .gb-preset {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   min-height: 44px;
-  padding: 8px 14px;
+  padding: var(--space-2) 14px;
   border-radius: var(--radius-pill);
   border: 1px solid var(--border);
   background: var(--surface-2);
@@ -7701,7 +7701,7 @@ button.gb-food-level {
 .gb-metric-chip {
   display: inline-flex;
   align-items: center;
-  padding: 2px 8px;
+  padding: 2px var(--space-2);
   border-radius: var(--radius-pill);
   background: var(--brand-soft);
   color: var(--brand-soft-fg);
@@ -7771,7 +7771,7 @@ button.gb-food-level {
   display: none;
 }
 .gb-focus-statscard {
-  margin-top: 16px;
+  margin-top: var(--space-4);
 }
 .gb-focus-stats-grid {
   display: grid;
@@ -7782,7 +7782,7 @@ button.gb-food-level {
 .gb-focus-stat {
   background: var(--surface-2);
   border-radius: var(--radius-md);
-  padding: 14px 8px;
+  padding: 14px var(--space-2);
   text-align: center;
 }
 .gb-focus-stat-val {
@@ -7812,7 +7812,7 @@ button.gb-food-level {
 }
 .gb-focus-on .gb-field-label {
   display: block;
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
 }
 .gb-focus-goal {
   margin-top: 14px;
@@ -7832,7 +7832,7 @@ button.gb-food-level {
 .gb-focus-goal-streak {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   font-weight: 700;
   color: var(--sun-700);
 }
@@ -7854,10 +7854,10 @@ button.gb-food-level {
 
 /* History card: 30-day bars (inline SVG; the table beside it is sr-only). */
 .gb-focus-histcard {
-  padding: 16px;
+  padding: var(--space-4);
 }
 .gb-focus-hist-sum {
-  margin: 4px 0 10px;
+  margin: var(--space-1) 0 10px;
   font-size: 0.8125rem;
   color: var(--fg2);
 }
@@ -7889,7 +7889,7 @@ button.gb-food-level {
 .gb-focus-hist-axis {
   display: flex;
   justify-content: space-between;
-  margin-top: 4px;
+  margin-top: var(--space-1);
   font-size: 0.6875rem;
   color: var(--fg3);
 }
@@ -7912,7 +7912,7 @@ button.gb-food-level {
 .gb-focus-link {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   padding: 7px 0;
   border-top: 1px solid var(--border);
   font-size: 0.8125rem;
@@ -7934,14 +7934,14 @@ button.gb-food-level {
 /* .gb-card ships without padding by design (each widget sets its own);
    this one was missing it, so the checklist sat flush on the card edges. */
 .gb-onboard {
-  padding: 16px;
+  padding: var(--space-4);
 }
 .gb-onboard-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 12px;
+  margin-bottom: var(--space-3);
 }
 .gb-onboard-kicker {
   font-size: var(--text-2xs);
@@ -7974,18 +7974,18 @@ button.gb-food-level {
 .gb-onboard-steps {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .gb-onboard-step {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
   width: 100%;
   text-align: left;
   border: 1px solid var(--border);
   background: var(--surface);
   border-radius: var(--radius-md);
-  padding: 12px;
+  padding: var(--space-3);
   cursor: pointer;
   font-family: var(--font-body);
 }
@@ -8029,7 +8029,7 @@ button.gb-food-level {
   border: none;
   cursor: pointer;
   text-align: left;
-  padding: 12px 16px;
+  padding: var(--space-3) var(--space-4);
   background: var(--brand-soft);
   color: var(--brand-soft-fg);
   font-family: var(--font-body);
@@ -8046,13 +8046,13 @@ button.gb-food-level {
 .gb-wr-tiles {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
-  gap: 8px;
+  gap: var(--space-2);
   margin-bottom: 14px;
 }
 .gb-wr-tile {
   background: var(--surface-2);
   border-radius: var(--radius-md);
-  padding: 12px 8px;
+  padding: var(--space-3) var(--space-2);
   text-align: center;
 }
 .gb-wr-tile-val {
@@ -8072,14 +8072,14 @@ button.gb-food-level {
 .gb-sec-sessions {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-bottom: 4px;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
 }
 .gb-sec-row {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
+  padding: 10px var(--space-3);
   background: var(--surface-2);
   border-radius: var(--radius-md);
 }
@@ -8115,7 +8115,7 @@ button.gb-food-level {
   font-family: var(--font-mono);
   font-size: 0.9375rem;
   letter-spacing: 0.04em;
-  padding: 10px 12px;
+  padding: 10px var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--surface-2);
@@ -8133,7 +8133,7 @@ button.gb-food-level {
 .gb-sec-divider {
   height: 1px;
   background: var(--border);
-  margin: 16px 0;
+  margin: var(--space-4) 0;
 }
 .gb-field-label--sub {
   text-transform: none;
@@ -8149,7 +8149,7 @@ button.gb-food-level {
 .gb-quickadd-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: stretch;
 }
 .gb-quickadd-row .gb-input {
@@ -8189,25 +8189,25 @@ button.gb-food-level {
   letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
   color: var(--fg3);
-  margin: 16px 0 12px;
+  margin: var(--space-4) 0 var(--space-3);
 }
 
 .gb-modal-opts {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .gb-modal-opt {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
   text-align: left;
   width: 100%;
   font-family: var(--font-body);
   background: var(--surface-2);
   border: 1.5px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: 12px 14px;
+  padding: var(--space-3) 14px;
   cursor: pointer;
   color: var(--fg1);
   transition:
@@ -8267,7 +8267,7 @@ button.gb-food-level {
 }
 .gb-btn.gb-modal-cancel {
   width: 100%;
-  margin-top: 12px;
+  margin-top: var(--space-3);
 }
 
 .gb-confirm-text {
@@ -8286,7 +8286,7 @@ button.gb-food-level {
   z-index: 160;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
   width: min(92vw, 340px);
 }
 
@@ -8294,7 +8294,7 @@ button.gb-food-level {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 11px 12px;
+  padding: 11px var(--space-3);
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-strong);
   background: var(--surface);
@@ -8441,18 +8441,18 @@ button.gb-food-level {
   }
 
   .gb-cal-monthnav {
-    gap: 4px;
+    gap: var(--space-1);
   }
 
   .gb-btn.gb-cal-today {
-    padding: 8px 13px;
+    padding: var(--space-2) 13px;
     font-size: 0.8125rem;
   }
 
   .gb-day-row {
     align-items: flex-start;
-    gap: 8px;
-    padding: 11px 12px;
+    gap: var(--space-2);
+    padding: 11px var(--space-3);
   }
 
   .gb-day-row-title {
@@ -8465,11 +8465,11 @@ button.gb-food-level {
 
   .gb-day-pill {
     font-size: var(--text-2xs);
-    padding: 2px 8px;
+    padding: 2px var(--space-2);
   }
 
   .gb-rem-row {
-    padding: 12px;
+    padding: var(--space-3);
   }
 
   .gb-rem-text {
@@ -8485,7 +8485,7 @@ button.gb-food-level {
   justify-content: center;
   text-align: center;
   padding: 80px 28px;
-  gap: 16px;
+  gap: var(--space-4);
 }
 .gb-placeholder .chip {
   width: 64px;
@@ -8496,7 +8496,7 @@ button.gb-food-level {
   justify-content: center;
   background: var(--brand-soft);
   color: var(--brand-soft-fg);
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
 }
 .gb-placeholder h2 {
   font-family: var(--font-display);
@@ -8522,7 +8522,7 @@ button.gb-food-level {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px;
+  padding: var(--space-6);
   background: rgba(20, 16, 13, 0.5);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
@@ -8538,10 +8538,10 @@ button.gb-food-level {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   width: 100%;
   max-width: 320px;
-  padding: 30px 26px 24px;
+  padding: 30px 26px var(--space-6);
   text-align: center;
   background: var(--surface);
   border-radius: var(--radius-2xl);
@@ -8558,7 +8558,7 @@ button.gb-food-level {
   color: var(--fg-on-brand);
   background: var(--brand-fill);
   box-shadow: var(--shadow-brand);
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
   animation: gb-badge-pop 0.5s var(--ease-bounce) 0.12s both;
 }
 .gb-celebrate-kicker {
@@ -8585,7 +8585,7 @@ button.gb-food-level {
   max-width: 26ch;
 }
 .gb-celebrate-card .gb-btn {
-  margin-top: 12px;
+  margin-top: var(--space-3);
   min-width: 130px;
 }
 .gb-confetti {
@@ -8663,7 +8663,7 @@ button.gb-food-level {
   font-size: 0.75rem;
   color: var(--fg3);
   background: var(--surface-2);
-  padding: 4px 10px;
+  padding: var(--space-1) 10px;
   border-radius: var(--radius-pill);
 }
 @keyframes gb-woozy {
@@ -8724,7 +8724,7 @@ button.gb-food-level {
    ===================================================================== */
 @media (min-width: 480px) and (max-width: 1023.98px) and (min-height: 560px) {
   .gb-page {
-    padding: clamp(20px, 4vh, 40px) 20px;
+    padding: clamp(var(--space-5), 4vh, var(--space-10)) var(--space-5);
   }
   .gb-app {
     width: 100%;
@@ -8778,7 +8778,7 @@ button.gb-food-level {
   .gb-head {
     grid-area: header;
     --head-pad-b: 18px;
-    padding: 22px 40px var(--head-pad-b);
+    padding: 22px var(--space-10) var(--head-pad-b);
     border-bottom: 1px solid var(--border);
     background: var(--surface);
   }
@@ -8798,7 +8798,7 @@ button.gb-food-level {
     gap: 28px;
     max-width: 1180px;
     margin: 0 auto;
-    padding: 28px 40px 40px;
+    padding: 28px var(--space-10) var(--space-10);
   }
   .gb-dash-main {
     flex: 1.5 1 0;
@@ -8857,7 +8857,7 @@ button.gb-food-level {
     column-gap: 28px;
     max-width: 1180px;
     margin: 0 auto;
-    padding: 28px 40px 40px;
+    padding: 28px var(--space-10) var(--space-10);
   }
   .gb-cal-main {
     grid-area: main;
@@ -8897,7 +8897,7 @@ button.gb-food-level {
     flex-direction: column;
     align-items: stretch;
     justify-content: flex-start;
-    gap: 4px;
+    gap: var(--space-1);
     padding: 28px 14px;
     border-top: none;
     border-right: 1px solid var(--border);
@@ -8910,7 +8910,7 @@ button.gb-food-level {
     flex-direction: row;
     justify-content: flex-start;
     gap: 14px;
-    padding: 12px 14px;
+    padding: var(--space-3) 14px;
     border-radius: 12px;
     transition:
       background var(--dur-fast),
@@ -8977,7 +8977,7 @@ button.gb-food-level {
    Goal day-tracker progress bar
    ===================================================================== */
 .gb-goal-progress {
-  padding: 12px 0 4px;
+  padding: var(--space-3) 0 var(--space-1);
   border-top: 1px solid var(--border);
   margin-top: 6px;
 }
@@ -8985,7 +8985,7 @@ button.gb-food-level {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
 }
 .gb-goal-progress-label {
   font-size: 0.6875rem;
@@ -9004,7 +9004,7 @@ button.gb-food-level {
   border-radius: 99px;
   background: var(--surface-2);
   overflow: hidden;
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
 }
 .gb-goal-progress-fill {
   height: 100%;
@@ -9019,7 +9019,7 @@ button.gb-food-level {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   font-size: 0.75rem;
   color: var(--fg2);
   margin-bottom: 10px;
@@ -9033,12 +9033,12 @@ button.gb-food-level {
   font-weight: 700;
   color: var(--success-soft-fg);
   background: var(--success-soft);
-  padding: 2px 8px;
+  padding: 2px var(--space-2);
   border-radius: var(--radius-pill);
 }
 .gb-goal-progress-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: center;
 }
 .gb-goal-progress-actions > .gb-icon-btn {
@@ -9077,18 +9077,18 @@ button.gb-food-level {
    Fitness × Sleep insight card
    ===================================================================== */
 .gb-habit-sleep-card {
-  padding: 14px 16px;
+  padding: 14px var(--space-4);
 }
 .gb-habit-sleep-metrics {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin: 12px 0;
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
 }
 .gb-habit-sleep-metric {
   background: var(--surface-2);
   border-radius: var(--radius-lg, 12px);
-  padding: 10px 12px;
+  padding: 10px var(--space-3);
 }
 .gb-habit-sleep-metric-val {
   font-family: var(--font-display);
@@ -9129,21 +9129,21 @@ button.gb-food-level {
   /* Modal: slightly wider on desktop for more comfortable forms */
   .gb-modal {
     max-width: 480px;
-    padding: 24px;
+    padding: var(--space-6);
   }
 
   /* Goals screen — constrain and center, extra breathing room */
   .gb-goals {
     max-width: 940px;
     margin: 0 auto;
-    padding: 28px 40px 48px;
+    padding: 28px var(--space-10) var(--space-12);
   }
 
   /* Goals — render the three horizon sections side-by-side */
   .gb-goals > .gb-dash-block:last-child {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    gap: 20px;
+    gap: var(--space-5);
     align-items: start;
   }
   .gb-goal-section {
@@ -9177,7 +9177,7 @@ button.gb-food-level {
      names someone remembered. */
   :where(.gb-scroll) > :where(.gb-rise:not(.gb-goals):not(.gb-mentor)) {
     max-width: 900px;
-    margin-left: 40px;
+    margin-left: var(--space-10);
     margin-right: auto;
   }
 
@@ -9193,7 +9193,7 @@ button.gb-food-level {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 40px 20px;
+    padding: var(--space-10) var(--space-5);
   }
   .gb-login-card {
     max-width: 420px;
@@ -9204,7 +9204,7 @@ button.gb-food-level {
   .gb-form--about-diet {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    column-gap: 20px;
+    column-gap: var(--space-5);
   }
   .gb-form--about-diet .gb-field-label {
     margin-top: 14px;
@@ -9227,10 +9227,10 @@ button.gb-food-level {
     border-radius: 18px;
   }
   .gb-goal-row {
-    padding: 12px 14px;
+    padding: var(--space-3) 14px;
   }
   .gb-goal-card {
-    padding: 12px 14px;
+    padding: var(--space-3) 14px;
   }
   .gb-goal-actions {
     flex-wrap: wrap;
@@ -9303,8 +9303,8 @@ button.gb-food-level {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-top: 16px;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
 }
 
 /* Connection status line */
@@ -9379,7 +9379,7 @@ button.gb-food-level {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 4px 0 20px;
+  padding: var(--space-1) 0 var(--space-5);
 }
 .gb-settings-avatar-circle {
   width: 56px;
@@ -9423,7 +9423,7 @@ button.gb-food-level {
   color: var(--brand-ink);
   font-size: 0.6875rem;
   font-weight: 700;
-  padding: 2px 8px;
+  padding: 2px var(--space-2);
   border-radius: 999px;
 }
 
@@ -9433,7 +9433,7 @@ button.gb-food-level {
   display: flex;
   background: var(--surface-3);
   border-radius: 12px;
-  padding: 4px;
+  padding: var(--space-1);
   margin-bottom: 18px;
 }
 .gb-segnav-thumb {
@@ -9443,7 +9443,7 @@ button.gb-food-level {
   left: 4px;
   border-radius: 9px;
   background: var(--brand-fill);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--shadow-sm);
   transition:
     transform 0.28s cubic-bezier(0.34, 1.2, 0.64, 1),
     width 0.28s cubic-bezier(0.34, 1.2, 0.64, 1);
@@ -9457,7 +9457,7 @@ button.gb-food-level {
   flex: 1 1 auto;
   white-space: nowrap;
   min-width: 0;
-  padding: 8px 4px;
+  padding: var(--space-2) var(--space-1);
   font-size: 0.78125rem;
   font-weight: 700;
   color: var(--fg2);
@@ -9473,7 +9473,7 @@ button.gb-food-level {
    type. Thumb is child 1, so :nth-child(6) means "5 buttons or more". */
 .gb-segnav:has(> .gb-segnav-btn:nth-child(6)) .gb-segnav-btn {
   font-size: 0.6875rem;
-  padding: 8px 2px;
+  padding: var(--space-2) 2px;
   letter-spacing: -0.01em;
 }
 @media (hover: hover) {
@@ -9494,7 +9494,7 @@ button.gb-food-level {
   display: flex;
   flex-direction: column;
   gap: 0;
-  padding-top: 4px;
+  padding-top: var(--space-1);
 }
 
 /* Section dividers inside the settings body */
@@ -9505,9 +9505,9 @@ button.gb-food-level {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--fg3);
-  padding: 18px 0 8px;
+  padding: 18px 0 var(--space-2);
   border-top: 1px solid var(--border);
-  margin-top: 8px;
+  margin-top: var(--space-2);
 }
 .gb-settings-body > .gb-settings-sec-label:first-of-type,
 .gb-settings-pane > .gb-settings-sec-label:first-child {
@@ -9520,7 +9520,7 @@ button.gb-food-level {
 .gb-settings-2col {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  gap: var(--space-3);
   margin-bottom: 2px;
 }
 .gb-settings-2col .gb-field-label {
@@ -9535,7 +9535,7 @@ select.gb-input {
   background-repeat: no-repeat;
   background-position: right 10px center;
   background-size: 16px;
-  padding-right: 32px;
+  padding-right: var(--space-8);
   cursor: pointer;
 }
 
@@ -9555,7 +9555,7 @@ select.gb-input {
   color: var(--gb-wa-green-fg);
   font-size: 0.8125rem;
   font-weight: 600;
-  padding: 6px 12px;
+  padding: 6px var(--space-3);
   border-radius: 999px;
   width: fit-content;
 }
@@ -9563,7 +9563,7 @@ select.gb-input {
 /* Verify + Resend action row */
 .gb-wa-otp-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   margin-top: 10px;
   align-items: center;
 }
@@ -9571,7 +9571,7 @@ select.gb-input {
 /* "Change number" as a subtle link-style button */
 .gb-wa-change-link {
   font-size: 0.75rem;
-  padding: 4px 0;
+  padding: var(--space-1) 0;
   color: var(--fg3);
   margin-top: 6px;
   width: fit-content;
@@ -9591,7 +9591,7 @@ select.gb-input {
   color: var(--gb-wa-green-fg);
   font-size: 0.8125rem;
   font-weight: 600;
-  padding: 6px 12px;
+  padding: 6px var(--space-3);
   border-radius: 999px;
   flex: 1;
   min-width: 0;
@@ -9606,7 +9606,7 @@ select.gb-input {
   font-size: var(--text-2xs);
   padding: 1px 6px;
   border-radius: 999px;
-  margin-left: 4px;
+  margin-left: var(--space-1);
   flex-shrink: 0;
 }
 
@@ -9614,7 +9614,7 @@ select.gb-input {
 .gb-wa-number-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   margin-bottom: 14px;
 }
 
@@ -9673,7 +9673,7 @@ select.gb-input {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin: 4px 0 12px;
+  margin: var(--space-1) 0 var(--space-3);
 }
 .gb-section-head h2 {
   margin: 0; /* the browser's 0.83em put 18px above and below every Family heading */
@@ -9688,7 +9688,7 @@ select.gb-input {
   display: flex;
   flex-direction: column;
   gap: 26px;
-  padding-bottom: 16px;
+  padding-bottom: var(--space-4);
 }
 /* Every other screen root insets its content by 20px — `.gb-dash-block`,
    `.gb-goal-section`, `.gb-cal-block`, the achievements grid's parent. Family
@@ -9697,12 +9697,12 @@ select.gb-input {
    The sticky tab strip is excluded on purpose: it has to stay full-bleed or
    content scrolls visibly through the 20px gutters beside its backdrop. */
 .gb-family > *:not(.gb-family-sectionnav) {
-  padding-left: 20px;
-  padding-right: 20px;
+  padding-left: var(--space-5);
+  padding-right: var(--space-5);
 }
 .gb-family-sectionnav {
-  padding-left: 20px;
-  padding-right: 20px;
+  padding-left: var(--space-5);
+  padding-right: var(--space-5);
 }
 .gb-family-subhead {
   font-weight: 800;
@@ -9715,7 +9715,7 @@ select.gb-input {
 .gb-family-card-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr); /* same trap as the two-column rule below, on phones */
-  gap: 12px;
+  gap: var(--space-3);
 }
 @media (min-width: 620px) {
   /* minmax(0, 1fr), not 1fr. A bare `1fr` is `minmax(auto, 1fr)`, so a column
@@ -9737,7 +9737,7 @@ select.gb-input {
   display: flex;
   flex-wrap: wrap; /* the status pill drops under the name instead of off the card */
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
 }
 .gb-family-avatar {
   width: 46px;
@@ -9792,7 +9792,7 @@ select.gb-input {
 .gb-family-card-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
   justify-content: flex-end;
 }
 .gb-family-card-actions .gb-iconbtn {
@@ -9827,13 +9827,13 @@ select.gb-input {
 .gb-family-panel-sub {
   font-size: 0.84375rem;
   color: var(--fg3);
-  margin: 0 2px 16px;
+  margin: 0 2px var(--space-4);
 }
 
 /* Search / link */
 .gb-family-search-bar {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   margin-bottom: 14px;
 }
 .gb-family-search-results {
@@ -9844,8 +9844,8 @@ select.gb-input {
 .gb-family-result {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px;
+  gap: var(--space-3);
+  padding: var(--space-3);
 }
 .gb-family-result-id {
   flex: 1;
@@ -9861,7 +9861,7 @@ select.gb-input {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin: 12px 0;
+  margin: var(--space-3) 0;
   padding: 10px 14px;
   font-size: 0.84375rem;
 }
@@ -9880,14 +9880,14 @@ select.gb-input {
 .gb-family-builder,
 .gb-family-nutrition,
 .gb-family-suggestions {
-  padding: 16px;
+  padding: var(--space-4);
 }
 .gb-family-builder-title {
   font-family: var(--font-display);
   font-size: 1.0625rem;
   font-weight: 800;
   color: var(--fg1);
-  margin: 0 0 12px;
+  margin: 0 0 var(--space-3);
 }
 .gb-family-builder-group {
   margin-top: 18px;
@@ -9902,7 +9902,7 @@ select.gb-input {
   color: var(--fg3);
 }
 .gb-family-grocery-actions {
-  margin-bottom: 12px;
+  margin-bottom: var(--space-3);
 }
 .gb-family-grocery-actions .gb-btn {
   width: 100%;
@@ -9910,17 +9910,17 @@ select.gb-input {
 .gb-family-scan-msg {
   font-size: 0.78125rem;
   color: var(--fg3);
-  margin: -4px 0 12px;
+  margin: -4px 0 var(--space-3);
 }
 .gb-family-manual-add {
   display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
 }
 .gb-family-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .gb-family-chip {
   display: inline-flex;
@@ -9997,11 +9997,11 @@ select.gb-input {
 .gb-family-plan-banner {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   font-size: 0.8125rem;
   color: var(--warning-soft-fg);
   background: var(--warning-soft);
-  padding: 10px 12px;
+  padding: 10px var(--space-3);
   border-radius: var(--radius-md);
 }
 /* The day rail — today's meals in the order they're eaten, threaded on one
@@ -10011,16 +10011,16 @@ select.gb-input {
 .gb-family-rail {
   list-style: none;
   margin: 0;
-  padding: 18px 16px;
+  padding: 18px var(--space-4);
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--space-5);
 }
 .gb-family-stop {
   position: relative;
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr);
-  gap: 12px;
+  gap: var(--space-3);
 }
 .gb-family-stop:not(:last-child)::before {
   content: '';
@@ -10053,7 +10053,7 @@ select.gb-input {
 .gb-family-meal-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   min-height: 44px;
 }
 .gb-family-meal-head h3 {
@@ -10096,13 +10096,13 @@ select.gb-input {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
   gap: 10px;
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
 }
 .gb-family-stat {
   text-align: center;
   background: var(--surface-2);
   border-radius: var(--radius-md);
-  padding: 12px 6px;
+  padding: var(--space-3) 6px;
 }
 .gb-family-stat-value {
   font-family: var(--font-mono);
@@ -10121,10 +10121,10 @@ select.gb-input {
   font-size: 0.875rem;
   line-height: 1.5;
   color: var(--fg2);
-  margin-top: 12px;
+  margin-top: var(--space-3);
 }
 .gb-family-nutrition-grid + .gb-family-balanced {
-  margin-top: 4px;
+  margin-top: var(--space-1);
 }
 .gb-family-safe-list {
   list-style: none;
@@ -10133,12 +10133,12 @@ select.gb-input {
   border-top: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .gb-family-safe-list li {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: var(--space-2);
   font-size: 0.875rem;
   line-height: 1.45;
   color: var(--fg2);
@@ -10154,12 +10154,12 @@ select.gb-input {
 }
 /* Buddy's notes, folded. */
 .gb-family-notes {
-  padding: 0 16px;
+  padding: 0 var(--space-4);
 }
 .gb-family-notes summary {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   min-height: 52px;
   font-weight: 800;
   font-size: 0.9375rem;
@@ -10184,10 +10184,10 @@ select.gb-input {
   transform: rotate(180deg);
 }
 .gb-family-notes[open] {
-  padding-bottom: 16px;
+  padding-bottom: var(--space-4);
 }
 .gb-family-note-list {
-  margin: 0 0 12px;
+  margin: 0 0 var(--space-3);
   padding-left: 18px;
   display: flex;
   flex-direction: column;
@@ -10228,7 +10228,7 @@ select.gb-input {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
   padding: 14px;
   border-left: 3px solid var(--brand);
 }
@@ -10240,16 +10240,16 @@ select.gb-input {
 }
 .gb-family-invite-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   flex: none;
 }
 
 /* Family summary strip */
 .gb-family-summary {
-  padding: 14px 16px;
+  padding: 14px var(--space-4);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-3);
   /* 18px, not the grid's 12px. This card summarises the ones below it, so it
      needs the app's block separation (`.gb-dash-block`), not its item spacing —
      at 12px it sat exactly as far from the cards as they sit from each other,
@@ -10259,7 +10259,7 @@ select.gb-input {
 .gb-family-summary-top {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
 }
 .gb-family-summary .gb-family-avatar--sm {
   background: var(--brand-fill);
@@ -10278,7 +10278,7 @@ select.gb-input {
 /* Age-category avatar accents */
 /* Leave family */
 .gb-family-leave-btn {
-  margin-top: 4px;
+  margin-top: var(--space-1);
   color: var(--brand-ink);
 }
 @media (hover: hover) {
@@ -10297,7 +10297,7 @@ select.gb-input {
   color: var(--warning-soft-fg);
 }
 .gb-family-sectionnav {
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
 }
 /* The strip scrolls; the wrapper above stays put and stays opaque. The last tab
    used to be sliced mid-glyph with the scrollbar hidden, which reads as broken
@@ -10310,7 +10310,7 @@ select.gb-input {
   gap: 6px;
   overflow-x: auto;
   overscroll-behavior-x: contain;
-  padding-bottom: 4px;
+  padding-bottom: var(--space-1);
   scrollbar-width: none;
   -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
   mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
@@ -10342,7 +10342,7 @@ select.gb-input {
 .gb-family-check {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   font-size: 0.875rem;
   color: var(--fg2);
   margin-bottom: 14px;
@@ -10350,7 +10350,7 @@ select.gb-input {
 .gb-family-plan-actions {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 8px;
+  gap: var(--space-2);
 }
 .gb-family-plan-actions .gb-btn {
   width: 100%;
@@ -10372,7 +10372,7 @@ select.gb-input {
 .gb-family-week-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 12px;
+  gap: var(--space-3);
 }
 @media (min-width: 620px) {
   .gb-family-week-grid {
@@ -10386,11 +10386,11 @@ select.gb-input {
   font-weight: 800;
   font-size: 0.875rem;
   color: var(--fg1);
-  margin: 0 0 8px;
+  margin: 0 0 var(--space-2);
 }
 .gb-family-weekday-meal {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   font-size: 0.84375rem;
   color: var(--fg2);
   padding: 3px 0;
@@ -10407,7 +10407,7 @@ select.gb-input {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin-top: 12px;
+  margin-top: var(--space-3);
 }
 .gb-family-pantry-list,
 .gb-family-shop-list,
@@ -10420,8 +10420,8 @@ select.gb-input {
 .gb-family-shop-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
+  gap: var(--space-3);
+  padding: var(--space-3) 14px;
 }
 .gb-family-pantry-id,
 .gb-family-shop-id {
@@ -10436,7 +10436,7 @@ select.gb-input {
   min-height: 44px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
@@ -10461,7 +10461,7 @@ select.gb-input {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 16px;
+  padding: 14px var(--space-4);
   font-size: 0.875rem;
   color: var(--fg2);
 }
@@ -10488,7 +10488,7 @@ select.gb-input {
 /* Two-column form row (e.g. height + weight) */
 .gb-family-form-row {
   display: flex;
-  gap: 12px;
+  gap: var(--space-3);
 }
 /* .gb-family-form-row > .gb-field (below) is flex: 1 — a zero basis never wraps.
    The extra class wins over it regardless of order. */
@@ -10506,19 +10506,19 @@ select.gb-input {
 .gb-family-checks {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 20px;
+  gap: var(--space-1) var(--space-5);
 }
 .gb-family-checks .gb-family-check {
   margin-bottom: 0;
 }
 .gb-family-add-item {
-  margin-top: 4px;
+  margin-top: var(--space-1);
 }
 .gb-family-shop-builds {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); /* one column on a phone: 140px wrapped "From today's plan" onto three lines */
-  gap: 8px;
-  margin-bottom: 16px;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
 }
 .gb-family-shop-builds .gb-btn {
   width: 100%;
@@ -10543,12 +10543,12 @@ select.gb-input {
 
 /* Skeleton loading */
 .gb-family-skeleton {
-  gap: 12px;
+  gap: var(--space-3);
 }
 .gb-skel-card {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
   padding: 14px;
 }
 .gb-skel-avatar {
@@ -10564,13 +10564,13 @@ select.gb-input {
 .gb-lazy-skeleton {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 12px 20px 0;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5) 0;
 }
 /* The whole boot screen: one quote card, same gutters the skeleton used, no
    grey rows under it (see loadingContent). */
 .gb-boot-quote {
-  padding: 12px 20px 0;
+  padding: var(--space-3) var(--space-5) 0;
 }
 .gb-boot-quote > .gb-quote-card {
   margin: 0;
@@ -10618,7 +10618,7 @@ select.gb-input {
      border makes the boundary deliberate instead of a colour seam. */
   background: var(--surface);
   border-bottom: 1px solid var(--border);
-  padding-top: 4px;
+  padding-top: var(--space-1);
   padding-bottom: 10px;
   margin-bottom: 0;
 }
@@ -10736,12 +10736,12 @@ select.gb-input {
   margin-left: auto;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
 }
 .gb-family-cook-select {
   min-height: 32px;
   max-width: 140px;
-  padding: 4px 8px;
+  padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-pill);
   border: 1.5px solid var(--border-strong);
   background: var(--surface-2);
@@ -10765,7 +10765,7 @@ select.gb-input {
   gap: 10px;
   width: 100%;
   min-height: 36px;
-  padding: 4px 0;
+  padding: var(--space-1) 0;
   border: 0;
   background: none;
   color: inherit;
@@ -10849,7 +10849,7 @@ select.gb-input {
 .gb-family-shop-tools {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .gb-family-shop-left {
   margin-right: auto;
@@ -10926,7 +10926,7 @@ select.gb-input {
     justify-content: center;
   }
   .gb-family-checks {
-    gap: 0 20px;
+    gap: 0 var(--space-5);
   }
 }
 
@@ -10961,8 +10961,8 @@ select.gb-input {
   font-size: var(--text-2xs);
 }
 .gb-freeze-alert {
-  margin: 2px 16px 10px;
-  padding: 10px 12px;
+  margin: 2px var(--space-4) 10px;
+  padding: 10px var(--space-3);
   border-radius: 14px;
   background: var(--warning-soft);
   border: 1px solid var(--warning);
@@ -10973,22 +10973,22 @@ select.gb-input {
 .gb-freeze-alert__text {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   color: var(--warning-soft-fg);
   font-size: var(--text-sm);
   font-weight: 600;
 }
 .gb-freeze-alert__actions {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 /* Family — "Add member" chooser (single entry point for the two add paths) */
 .gb-family-add-choices {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  margin-top: 8px;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
 }
 .gb-family-add-choice {
   display: flex;
@@ -10997,7 +10997,7 @@ select.gb-input {
   width: 100%;
   font: inherit; /* a <button> doesn't inherit the body font: it rendered in Arial */
   text-align: left;
-  padding: 16px;
+  padding: var(--space-4);
   border: 1px solid var(--border);
   border-radius: 16px;
   background: var(--surface);
@@ -11050,7 +11050,7 @@ select.gb-input {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
   flex-wrap: wrap;
 }
 .gb-range-toggle {
@@ -11066,7 +11066,7 @@ select.gb-input {
   color: var(--fg3);
   font-size: var(--text-xs);
   font-weight: 700;
-  padding: 6px 12px;
+  padding: 6px var(--space-3);
   border-radius: 999px;
   cursor: pointer;
   transition:
@@ -11076,12 +11076,12 @@ select.gb-input {
 .gb-range-opt.is-active {
   background: var(--surface);
   color: var(--fg1);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-sm);
 }
 .gb-trend-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 12px;
+  gap: var(--space-3);
   margin-top: 10px;
 }
 @media (min-width: 560px) {
@@ -11090,13 +11090,13 @@ select.gb-input {
   }
 }
 .gb-trend-card {
-  padding: 14px 16px;
+  padding: 14px var(--space-4);
 }
 .gb-trend-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .gb-trend-title {
   font-weight: 700;
@@ -11128,7 +11128,7 @@ select.gb-input {
   position: absolute;
   top: 0;
   transform: translate(-50%, -100%);
-  padding: 4px 8px;
+  padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-sm);
   background: var(--fg1);
   color: var(--surface);
@@ -11148,14 +11148,14 @@ select.gb-input {
 .gb-trend-empty {
   font-size: var(--text-xs);
   color: var(--fg3);
-  padding: 20px 4px;
+  padding: var(--space-5) var(--space-1);
   text-align: center;
 }
 /* 1-year range: month labels under the weekly line, centred on each month's first week. */
 .gb-trend-ticks {
   position: relative;
   height: 14px;
-  margin: -2px 0 4px;
+  margin: -2px 0 var(--space-1);
 }
 .gb-trend-ticks > span {
   position: absolute;
@@ -11175,12 +11175,12 @@ select.gb-input {
 .gb-compare-pick {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 12px;
+  gap: var(--space-2) var(--space-3);
 }
 .gb-compare-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
   flex: 1 1 130px;
   min-width: 0;
   font-size: var(--text-xs);
@@ -11209,7 +11209,7 @@ select.gb-input {
   font-family: inherit;
 }
 .gb-compare-result {
-  margin: 4px 0 6px;
+  margin: var(--space-1) 0 6px;
 }
 .gb-compare-r {
   font-family: var(--font-display);
@@ -11223,17 +11223,17 @@ select.gb-input {
 }
 /* This week vs last (water + food). */
 .gb-wow-card {
-  padding: 12px 16px 14px;
+  padding: var(--space-3) var(--space-4) 14px;
 }
 .gb-wow {
   width: 100%;
   border-collapse: collapse;
   font-size: var(--text-sm);
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
 }
 .gb-wow th,
 .gb-wow td {
-  padding: 6px 4px;
+  padding: 6px var(--space-1);
   text-align: right;
   border-bottom: 1px solid var(--surface-3);
   vertical-align: top;
@@ -11264,12 +11264,12 @@ select.gb-input {
 .gb-ach-summary {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-3);
 }
 .gb-ach-summary-top {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
 }
 .gb-ach-summary-ic {
   display: inline-flex;
@@ -11311,7 +11311,7 @@ select.gb-input {
   transition: width 0.4s ease;
 }
 .gb-ach-summary-bar--xp {
-  margin-top: 12px;
+  margin-top: var(--space-3);
 }
 .gb-ach-summary-fill--xp {
   background: var(--sun-500);
@@ -11340,7 +11340,7 @@ select.gb-input {
   display: grid;
   grid-template-columns: 1fr;
   gap: 10px;
-  margin-top: 8px;
+  margin-top: var(--space-2);
 }
 @media (min-width: 560px) {
   .gb-ach-grid {
@@ -11350,8 +11350,8 @@ select.gb-input {
 .gb-ach-tile {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
+  gap: var(--space-3);
+  padding: var(--space-3) 14px;
   border-radius: 14px;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -11422,7 +11422,7 @@ select.gb-input {
   background: var(--brand);
 }
 .gb-ach-progress-label {
-  margin-top: 4px;
+  margin-top: var(--space-1);
   font-size: var(--text-2xs);
   color: var(--fg3);
 }
@@ -11431,21 +11431,21 @@ select.gb-input {
    Goal milestones / sub-tasks
    ===================================================================== */
 .gb-goal-ms {
-  margin-top: 12px;
-  padding-top: 12px;
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
   border-top: 1px solid var(--border);
 }
 /* A goal's linked tasks (goals.js GoalTasks): the milestone list's look; with
    none yet it is just the "Add a task" button. */
 .gb-goal-tasks:not(.gb-goal-ms) {
-  margin-top: 8px;
+  margin-top: var(--space-2);
 }
 .gb-goal-ms-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 8px;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
 }
 .gb-goal-ms-label {
   font-size: var(--text-xs);
@@ -11524,7 +11524,7 @@ select.gb-input {
 }
 .gb-goal-ms-add.gb-affix {
   min-height: 44px;
-  padding: 3px 3px 3px 12px;
+  padding: 3px 3px 3px var(--space-3);
 }
 .gb-goal-ms-add > input {
   font-size: 0.875rem;
@@ -11557,7 +11557,7 @@ select.gb-input {
   font-family: var(--font-display);
   font-size: 1.125rem;
   font-weight: 700;
-  padding: 14px 16px;
+  padding: 14px var(--space-4);
 }
 .gb-goal-desc-input {
   min-height: 0;
@@ -11578,8 +11578,8 @@ select.gb-input {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 8px 14px;
+  gap: var(--space-2);
+  padding: var(--space-2) 14px;
   background: var(--warning-soft);
   color: var(--warning-soft-fg);
   font-size: var(--text-xs);
@@ -11595,7 +11595,7 @@ select.gb-input {
   top: -56px;
   left: 12px;
   z-index: 2000;
-  padding: 10px 16px;
+  padding: 10px var(--space-4);
   background: var(--brand-fill);
   color: var(--fg-on-brand);
   border-radius: 0 0 12px 12px;
@@ -11650,7 +11650,7 @@ textarea:focus-visible,
   border-top: 1px solid var(--border);
   border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
   box-shadow: var(--shadow-lg);
-  padding: 16px;
+  padding: var(--space-4);
   animation: gb-more-rise var(--dur-base) var(--ease-out);
 }
 .gb-more-grid {
@@ -11667,13 +11667,13 @@ textarea:focus-visible,
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--fg3);
-  padding: 14px 2px 8px;
+  padding: 14px 2px var(--space-2);
 }
 .gb-more-group-label:first-child {
   padding-top: 2px;
 }
 .gb-more-grid + .gb-more-group-label {
-  padding-top: 16px;
+  padding-top: var(--space-4);
 }
 .gb-more-item {
   display: flex;
@@ -11681,7 +11681,7 @@ textarea:focus-visible,
   align-items: center;
   justify-content: center;
   gap: 7px;
-  padding: 16px 8px;
+  padding: var(--space-4) var(--space-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--surface-2);
@@ -11729,13 +11729,13 @@ textarea:focus-visible,
 .gb-home-cust-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .gb-home-cust-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
+  gap: var(--space-3);
+  padding: 10px var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--surface);
@@ -11801,7 +11801,7 @@ textarea:focus-visible,
    user leaves the modal.
    ===================================================================== */
 .gb-textsize-sample {
-  margin-top: 12px;
+  margin-top: var(--space-3);
   padding: 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -11852,7 +11852,7 @@ textarea:focus-visible,
   pointer-events: none;
 }
 .gb-notes-search .gb-input {
-  padding-left: 40px;
+  padding-left: var(--space-10);
 }
 .gb-note-composer {
   padding: 6px;
@@ -11860,9 +11860,9 @@ textarea:focus-visible,
 .gb-note-opener {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   width: 100%;
-  padding: 12px 12px;
+  padding: var(--space-3) var(--space-3);
   border: none;
   border-radius: var(--radius-md);
   background: transparent;
@@ -11888,7 +11888,7 @@ textarea:focus-visible,
   display: block;
 }
 .gb-note-title-input {
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
   font-weight: 700;
 }
 .gb-note-composer-foot {
@@ -11948,7 +11948,7 @@ textarea:focus-visible,
 /* 30px suits a mouse; a finger needs 44. The bar scrolls, so it can grow. */
 @media (pointer: coarse) {
   .gb-editor-bar {
-    padding: 2px 4px;
+    padding: 2px var(--space-1);
   }
   .gb-editor-btn {
     width: 44px;
@@ -11974,7 +11974,7 @@ textarea:focus-visible,
   overflow-y: auto;
   /* Scrolling past the note's end chained to the sheet and the page. */
   overscroll-behavior: contain;
-  padding: 12px;
+  padding: var(--space-3);
   font-size: 0.9375rem;
   line-height: var(--leading-relaxed);
   color: var(--fg1);
@@ -12005,11 +12005,11 @@ textarea:focus-visible,
   font-family: var(--font-display);
   font-size: 1.0625rem;
   font-weight: 800;
-  margin: 6px 0 4px;
+  margin: 6px 0 var(--space-1);
 }
 .gb-editor ul,
 .gb-editor ol {
-  margin: 4px 0;
+  margin: var(--space-1) 0;
   padding-left: 22px;
 }
 /* Checklist: a <ul data-checklist>, its ticked items [data-checked]. The box is
@@ -12065,7 +12065,7 @@ textarea:focus-visible,
 .gb-note-conflict {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
   margin-top: 14px;
 }
 .gb-editor a {
@@ -12078,7 +12078,7 @@ textarea:focus-visible,
   flex: none;
   width: 1px;
   height: 18px;
-  margin: 0 4px;
+  margin: 0 var(--space-1);
   background: var(--border);
 }
 /* Natural aspect ratio under both caps: a replaced element with width and
@@ -12167,7 +12167,7 @@ textarea:focus-visible,
   margin-top: 10px;
   /* Room for the selected ring (4px box-shadow): the sheet clips its overflow,
      and the first swatch's ring was cut off at the left edge. */
-  padding: 4px;
+  padding: var(--space-1);
 }
 .gb-note-swatch {
   display: inline-flex;
@@ -12191,7 +12191,7 @@ textarea:focus-visible,
 /* 24px drawn, 44px to a finger: wider gaps plus a ::before overlay. */
 @media (pointer: coarse) {
   .gb-note-colors {
-    gap: 20px;
+    gap: var(--space-5);
   }
   .gb-note-swatch::before {
     content: '';
@@ -12215,7 +12215,7 @@ textarea:focus-visible,
    anywhere yet; swap to it when it is. */
 .gb-note-grid {
   columns: 1;
-  column-gap: 12px;
+  column-gap: var(--space-3);
 }
 @media (min-width: 640px) {
   .gb-note-grid {
@@ -12226,7 +12226,7 @@ textarea:focus-visible,
 .gb-note-card,
 .gb-note-skel {
   break-inside: avoid;
-  margin-bottom: 12px;
+  margin-bottom: var(--space-3);
 }
 /* The empty and load-error cards are one message, not a column item: without
    this the multi-column grid sliced the empty state into three fragments (an
@@ -12271,7 +12271,7 @@ textarea:focus-visible,
   font-family: var(--font-display);
   font-size: 0.9375rem;
   font-weight: 800;
-  margin: 0 26px 4px 0;
+  margin: 0 26px var(--space-1) 0;
   color: var(--fg1);
   overflow-wrap: anywhere;
 }
@@ -12299,15 +12299,15 @@ textarea:focus-visible,
 .gb-note-card-body ul,
 .gb-note-card-body ol {
   margin: 2px 0;
-  padding-left: 20px;
+  padding-left: var(--space-5);
 }
 .gb-note-card-body h2 {
   font-size: 0.9375rem;
   font-weight: 800;
-  margin: 4px 0 2px;
+  margin: var(--space-1) 0 2px;
 }
 .gb-note-card-time {
-  margin-top: 8px;
+  margin-top: var(--space-2);
   font-size: 0.71875rem;
   font-weight: 600;
   color: var(--fg3);
@@ -12382,8 +12382,8 @@ textarea:focus-visible,
   bottom: 8px;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 8px;
+  gap: var(--space-1);
+  padding: 3px var(--space-2);
   border-radius: var(--radius-pill);
   background: rgba(20, 14, 10, 0.6);
   backdrop-filter: blur(6px);
@@ -12409,8 +12409,8 @@ textarea:focus-visible,
 .gb-note-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
 }
 .gb-note-modal .gb-note-title-input {
   margin-bottom: 10px;
@@ -12422,7 +12422,7 @@ textarea:focus-visible,
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 12px;
+  margin-bottom: var(--space-3);
 }
 .gb-note-del {
   flex: none;
@@ -12440,13 +12440,13 @@ textarea:focus-visible,
 .gb-note-modal .gb-note-actions {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
+  gap: var(--space-2);
 }
 .gb-note-modal .gb-note-actions .gb-btn {
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
   min-height: 60px;
-  padding: 8px 4px;
+  padding: var(--space-2) var(--space-1);
   font-size: 0.75rem;
   line-height: 1.2;
   text-align: center;
@@ -12456,7 +12456,7 @@ textarea:focus-visible,
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 8px;
+  margin-top: var(--space-2);
 }
 .gb-note-label-sugg[hidden] {
   display: none;
@@ -12464,9 +12464,9 @@ textarea:focus-visible,
 .gb-note-label-opt {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   min-height: 32px;
-  padding: 4px 12px 4px 8px;
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-2);
   border: 1px dashed var(--border-strong);
   border-radius: var(--radius-pill);
   background: transparent;
@@ -12485,7 +12485,7 @@ textarea:focus-visible,
 .gb-note-foot {
   display: flex;
   gap: 10px;
-  margin-top: 16px;
+  margin-top: var(--space-4);
 }
 .gb-note-foot .gb-btn {
   flex: 1 1 0;
@@ -12555,13 +12555,13 @@ textarea:focus-visible,
    which re-rasterises every scroll frame) bled to the gutter edges. */
 .gb-notes-tools {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: center;
   position: sticky;
   top: 0;
   z-index: 5;
   margin: 0 calc(-1 * var(--gutter));
-  padding: 8px var(--gutter);
+  padding: var(--space-2) var(--gutter);
   background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
@@ -12596,7 +12596,7 @@ textarea:focus-visible,
   align-items: center;
   gap: 2px;
   max-width: 100%;
-  padding: 2px 8px;
+  padding: 2px var(--space-2);
   border-radius: var(--radius-pill);
   background: var(--surface-3);
   color: var(--fg2);
@@ -12607,15 +12607,15 @@ textarea:focus-visible,
 .gb-note-card-labels {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 8px;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
 }
 .gb-note-labels-edit {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   margin-top: 10px;
-  padding: 4px 10px;
+  padding: var(--space-1) 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--surface);
@@ -12734,13 +12734,13 @@ textarea:focus-visible,
 .gb-editor blockquote,
 .gb-note-card-body blockquote {
   margin: 6px 0;
-  padding: 2px 0 2px 12px;
+  padding: 2px 0 2px var(--space-3);
   border-left: 3px solid var(--border);
   color: var(--fg2);
 }
 .gb-editor code,
 .gb-note-card-body code {
-  padding: 1px 4px;
+  padding: 1px var(--space-1);
   border-radius: var(--radius-sm);
   background: var(--surface-3);
   font-family: var(--font-mono);
@@ -12774,7 +12774,7 @@ textarea:focus-visible,
 .gb-freeze-habits {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
   margin: 14px 0 6px;
 }
 /* The habit picker. `.gb-chip` had no rule anywhere, so these rendered as the
@@ -12818,8 +12818,8 @@ textarea:focus-visible,
 .gb-starter-packs {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin: 4px 0 14px;
+  gap: var(--space-2);
+  margin: var(--space-1) 0 14px;
 }
 .gb-starter-packs .gb-chip {
   display: inline-flex;
@@ -12914,7 +12914,7 @@ h2[tabindex='-1']:focus {
   border-top: none;
 }
 .gb-pixels-card {
-  padding: 14px 16px;
+  padding: 14px var(--space-4);
 }
 /* A row per month, a column per day of the month, with a month label down the
    side and day numbers along the top. Fits the card width instead of scrolling. */
@@ -12988,8 +12988,8 @@ h2[tabindex='-1']:focus {
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 6px 12px;
-  margin-top: 12px;
+  gap: 6px var(--space-3);
+  margin-top: var(--space-3);
   font-size: var(--text-xs);
   color: var(--fg3);
 }
@@ -13000,7 +13000,7 @@ h2[tabindex='-1']:focus {
 .gb-pixels-legend {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   margin-left: auto;
 }
 .gb-pixels-legend .gb-pixel {
@@ -13009,7 +13009,7 @@ h2[tabindex='-1']:focus {
 /* A 320px phone: 31 columns at 2px gaps left ~5px cells. */
 @media (max-width: 380px) {
   .gb-pixels-card {
-    padding: 12px;
+    padding: var(--space-3);
   }
   .gb-pixels {
     grid-template-columns: 24px repeat(31, minmax(0, 1fr));
@@ -13030,7 +13030,7 @@ h2[tabindex='-1']:focus {
   align-items: center;
   justify-content: center;
   gap: 14px;
-  padding: 24px;
+  padding: var(--space-6);
   background: var(--bg);
   color: var(--fg1);
   text-align: center;
@@ -13278,7 +13278,7 @@ h2[tabindex='-1']:focus {
 .gb-routine-item {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
   padding: 10px;
   border: 1.5px solid var(--border);
   border-radius: var(--radius-lg);
@@ -13286,10 +13286,10 @@ h2[tabindex='-1']:focus {
 .gb-routine-item-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .gb-routine-item .gb-input--time {
-  padding-inline: 8px;
+  padding-inline: var(--space-2);
 }
 .gb-routine-item-head > .gb-input {
   flex: 1;
@@ -13316,7 +13316,7 @@ h2[tabindex='-1']:focus {
 @media (orientation: landscape) and (max-height: 500px) and (max-width: 1023.98px) {
   .gb-head {
     --head-pad-b: 6px;
-    padding-top: max(env(safe-area-inset-top, 0px), 8px);
+    padding-top: max(env(safe-area-inset-top, 0px), var(--space-2));
   }
   .gb-head .greet-label {
     display: none;
@@ -13415,7 +13415,7 @@ h2[tabindex='-1']:focus {
   font-size: 0.8125rem;
   font-weight: 700;
   color: var(--fg2);
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
 }
 .gb-sound-count {
   font-weight: 600;
@@ -13430,7 +13430,7 @@ h2[tabindex='-1']:focus {
   align-items: center;
   gap: 10px;
   min-height: 56px;
-  padding: 4px 0;
+  padding: var(--space-1) 0;
   border-bottom: 1px solid var(--surface-3);
 }
 .gb-sound-chip {
@@ -13461,7 +13461,7 @@ button.gb-sound-name {
   align-items: flex-start;
   justify-content: center;
   min-height: 44px;
-  padding: 2px 4px;
+  padding: 2px var(--space-1);
   margin-left: -4px;
   border: none;
   border-radius: var(--radius-sm);
@@ -13525,8 +13525,8 @@ button.gb-sound-name:focus-visible {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  padding-left: 4px;
-  padding-right: 4px;
+  padding-left: var(--space-1);
+  padding-right: var(--space-1);
 }
 .gb-sound-row .gb-btn--icon {
   flex-shrink: 0;
@@ -13594,7 +13594,7 @@ button.gb-sound-name:focus-visible {
 }
 .gb-sound-rename.gb-input {
   min-height: 40px;
-  padding: 8px 10px;
+  padding: var(--space-2) 10px;
   font-size: 0.9375rem;
   font-weight: 600;
 }
@@ -13602,7 +13602,7 @@ button.gb-sound-name:focus-visible {
   color: var(--danger);
   font-size: 0.8125rem;
   font-weight: 700;
-  padding: 4px 10px;
+  padding: var(--space-1) 10px;
 }
 .gb-sound-empty {
   padding: 14px;
@@ -13619,14 +13619,14 @@ button.gb-sound-name:focus-visible {
 .gb-sound-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
 }
 .gb-sound-actions .gb-btn {
   flex: 1 1 120px;
 }
 .gb-sound-rec {
-  margin-top: 12px;
+  margin-top: var(--space-3);
   padding: 14px;
   border-radius: var(--radius-md);
   background: var(--surface-2);
@@ -13634,7 +13634,7 @@ button.gb-sound-name:focus-visible {
 .gb-sound-rec-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   font-weight: 700;
   color: var(--fg1);
 }
@@ -13667,7 +13667,7 @@ button.gb-sound-name:focus-visible {
   border-radius: inherit;
 }
 .gb-sound-rec .gb-sound-actions {
-  margin-top: 12px;
+  margin-top: var(--space-3);
 }
 @media (prefers-reduced-motion: no-preference) {
   .gb-sound-rec-dot {
@@ -13692,15 +13692,15 @@ button.gb-sound-name:focus-visible {
 }
 .gb-remset-picker .gb-seg {
   white-space: nowrap;
-  padding-left: 4px;
-  padding-right: 4px;
+  padding-left: var(--space-1);
+  padding-right: var(--space-1);
 }
 .gb-remset-add {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin-top: 8px;
-  padding: 12px;
+  margin-top: var(--space-2);
+  padding: var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--surface-2);
@@ -13713,7 +13713,7 @@ button.gb-sound-name:focus-visible {
 .gb-remset-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
   min-width: 0;
   font-size: 0.75rem;
   font-weight: 700;
@@ -13765,10 +13765,10 @@ button.gb-sound-name:focus-visible {
 .gb-remset-snoozed {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  margin-top: 4px;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
   min-height: 28px;
-  padding: 2px 8px;
+  padding: 2px var(--space-2);
   border: 1px solid color-mix(in srgb, var(--sky-500) 45%, transparent);
   border-radius: var(--radius-pill);
   background: var(--info-soft);
@@ -13790,7 +13790,7 @@ button.gb-sound-name:focus-visible {
 /* ...as a button that cancels it: the row's own way to call a snooze off. */
 .gb-rem-snoozed--btn {
   min-height: 28px;
-  padding: 2px 8px;
+  padding: 2px var(--space-2);
   border: 1px solid color-mix(in srgb, var(--sky-500) 45%, transparent);
   border-radius: var(--radius-pill);
   background: var(--info-soft);
@@ -13822,7 +13822,7 @@ button.gb-sound-name:focus-visible {
 .gb-toast-action {
   flex: none;
   min-height: 32px;
-  padding: 4px 10px;
+  padding: var(--space-1) 10px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   background: var(--surface);
@@ -13840,16 +13840,16 @@ button.gb-sound-name:focus-visible {
   width: auto;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   min-height: 32px;
-  padding: 4px 10px;
+  padding: var(--space-1) 10px;
   font-size: 0.75rem;
   white-space: nowrap;
 }
 .gb-rem-defaults-link {
   align-self: flex-start;
   margin: 6px 0 2px;
-  padding: 4px 0;
+  padding: var(--space-1) 0;
   border: none;
   background: none;
   font: inherit;
@@ -13882,9 +13882,9 @@ select.gb-input {
   select.gb-input {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
     background-image: none;
-    padding-right: 12px;
+    padding-right: var(--space-3);
   }
   select.gb-input::picker-icon {
     content: '';
@@ -13913,8 +13913,8 @@ select.gb-input {
     box-shadow: var(--shadow-lg);
   }
   select.gb-input option {
-    gap: 8px;
-    padding: 10px 12px;
+    gap: var(--space-2);
+    padding: 10px var(--space-3);
     border-radius: var(--radius-md);
     font-weight: 500;
     cursor: pointer;
@@ -13953,21 +13953,21 @@ select.gb-input {
 }
 .gb-remset-field .gb-input {
   padding-left: 10px;
-  padding-right: 8px;
+  padding-right: var(--space-2);
 }
 
 /* ---- A reminder's Notify: presets, or Custom… minutes / hours ---- */
 .gb-notify {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
 }
 .gb-notify-custom {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .gb-notify-custom .gb-notify-amount {
   width: 88px;
@@ -13997,7 +13997,7 @@ select.gb-input {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 12px;
+  margin-top: var(--space-3);
 }
 .gb-tone-chip {
   display: inline-flex;
@@ -14035,7 +14035,7 @@ button.gb-tone-chip:focus-visible {
    ===================================================================== */
 .gb-hh {
   margin-bottom: 14px;
-  padding: 12px;
+  padding: var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface-2);
@@ -14049,8 +14049,8 @@ button.gb-tone-chip:focus-visible {
 .gb-hh-stats {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
 }
 .gb-hh-stat {
   display: flex;
@@ -14146,8 +14146,8 @@ button.gb-tone-chip:focus-visible {
 .gb-hh-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  margin: 10px 0 4px;
+  gap: var(--space-3);
+  margin: 10px 0 var(--space-1);
   font-size: 0.75rem;
   color: var(--fg2);
 }
@@ -14164,7 +14164,7 @@ button.gb-tone-chip:focus-visible {
 /* Habits screen, reorder mode: two arrows replace the rest-day and tick. */
 .gb-habit-move {
   display: inline-flex;
-  gap: 4px;
+  gap: var(--space-1);
 }
 .gb-habit-move .gb-icon-btn:disabled {
   opacity: 0.35;
@@ -14184,7 +14184,7 @@ button.gb-tone-chip:focus-visible {
   align-items: center;
   gap: 6px;
   min-height: 44px;
-  padding: 6px 12px;
+  padding: 6px var(--space-3);
   border-radius: var(--radius-pill);
   border: 1px solid var(--border);
   background: var(--surface-2);
@@ -14216,7 +14216,7 @@ button.gb-tone-chip:focus-visible {
 .gb-hh-pop {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
   margin-top: 10px;
   padding: 10px;
   border: 1px solid var(--border);
@@ -14227,7 +14227,7 @@ button.gb-tone-chip:focus-visible {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2);
   font-weight: 700;
   font-size: 0.875rem;
   color: var(--fg1);
@@ -14235,11 +14235,11 @@ button.gb-tone-chip:focus-visible {
 .gb-hh-pop-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .gb-hh-pop-actions .gb-btn {
   width: auto;
-  padding: 7px 12px;
+  padding: 7px var(--space-3);
 }
 /* Recent notes, under the legend. */
 .gb-hh-notes {
@@ -14252,7 +14252,7 @@ button.gb-tone-chip:focus-visible {
 }
 .gb-hh-note {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: baseline;
   font-size: 0.8125rem;
   color: var(--fg2);
@@ -14275,7 +14275,7 @@ button.gb-tone-chip:focus-visible {
 .gb-goal-ms-row.is-editing {
   flex-wrap: wrap;
   align-items: flex-end;
-  padding: 8px;
+  padding: var(--space-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface-2);
@@ -14284,7 +14284,7 @@ button.gb-tone-chip:focus-visible {
   flex: 1 1 200px;
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
 }
 .gb-goal-ms-edit .gb-goal-ms-input {
@@ -14318,7 +14318,7 @@ button.gb-tone-chip:focus-visible {
 }
 .gb-goal-ms-due {
   display: inline-block;
-  margin-left: 8px;
+  margin-left: var(--space-2);
   font-size: var(--text-xs);
   color: var(--fg3);
   white-space: nowrap;
@@ -14399,14 +14399,14 @@ button.gb-tone-chip:focus-visible {
 .gb-rule {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
   margin-top: 10px;
 }
 .gb-rule-row {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .gb-rule-word {
   font-size: 0.84375rem;
@@ -14425,7 +14425,7 @@ button.gb-tone-chip:focus-visible {
 .gb-rule-day {
   min-width: 44px;
   min-height: 36px;
-  padding: 4px 8px;
+  padding: var(--space-1) var(--space-2);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-pill);
   background: var(--surface);
@@ -14449,7 +14449,7 @@ button.gb-tone-chip:focus-visible {
 .gb-rem-text-row {
   display: flex;
   align-items: stretch;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .gb-rem-text-row > .gb-input {
   flex: 1 1 auto;
@@ -14479,8 +14479,8 @@ button.gb-tone-chip:focus-visible {
   align-items: center;
   gap: 10px;
   min-height: 44px;
-  padding: 10px 12px;
-  margin-bottom: 8px;
+  padding: 10px var(--space-3);
+  margin-bottom: var(--space-2);
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
   background: var(--surface-2);
@@ -14500,7 +14500,7 @@ button.gb-tone-chip:focus-visible {
 .gb-bank-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .gb-bank-actions .gb-btn,
 .gb-bank-row .gb-btn {

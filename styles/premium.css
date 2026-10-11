@@ -170,7 +170,7 @@ html[data-premium='on'] .gb-login-card {
    it overhung whatever it sat above. Spanning edge to edge has nothing to
    align to. Premium just gives it a warmer face and a hairline to sit on. */
 html[data-premium='on'] .gb-week-nudge {
-  padding: 13px 16px;
+  padding: 13px var(--space-4);
   /* 10%, not 15%: the coral-700 text on the 15% tint was 4.3:1. */
   background: linear-gradient(135deg, rgba(249, 115, 22, 0.1), rgba(255, 176, 32, 0.08));
   border-bottom: 1px solid rgba(249, 115, 22, 0.22);
@@ -184,7 +184,7 @@ html[data-premium='on'] .gb-week-nudge {
 @media (max-width: 1023.98px) {
   html[data-premium='on'] .gb-nav {
     margin: 0 10px calc(10px + env(safe-area-inset-bottom, 0px));
-    padding: 8px 6px 10px;
+    padding: var(--space-2) 6px 10px;
     border: 1px solid var(--glass-edge);
     border-radius: var(--radius-3xl);
     backdrop-filter: blur(28px) saturate(190%);
