@@ -15453,10 +15453,12 @@ const GARDEN_SVG = (() => {
 })();
 
 function authShell(title, subtitle, children) {
-  // Replacing index.html's static shell (PRF-2), which is already on screen,
-  // grown and risen: replaying either entrance here would read as a flash.
-  const fromShell = !!document.querySelector('[data-gb-shell]');
-  const garden = h('div', { class: 'gb-garden' + (gardenGrown || fromShell ? '' : ' is-growing') });
+  // A re-render of the card already on screen (index.html's static shell on the
+  // first render, or a typo's renderAuth) is not an entrance: replaying the rise
+  // or the grow there reads as a flash. A different view still rises.
+  const prev = document.querySelector('.gb-login-card .gb-login-title');
+  const same = !!prev && prev.textContent === title;
+  const garden = h('div', { class: 'gb-garden' + (gardenGrown || same ? '' : ' is-growing') });
   garden.innerHTML = GARDEN_SVG;
   gardenGrown = true;
   return h(
@@ -15464,7 +15466,7 @@ function authShell(title, subtitle, children) {
     { class: 'gb-login-wrap' },
     h(
       'div',
-      { class: 'gb-login-card' + (fromShell ? '' : ' gb-rise') },
+      { class: 'gb-login-card' + (same ? '' : ' gb-rise') },
       garden,
       h(
         'div',

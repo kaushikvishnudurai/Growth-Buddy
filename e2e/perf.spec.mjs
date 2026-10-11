@@ -64,6 +64,18 @@ test('PRF-2: the sign-in screen paints from index.html before the app module run
   await expect(page.locator('.gb-login-title')).toHaveText('Welcome back');
   await expect(page.locator('main')).toHaveCount(1);
   if (info.project.name === 'mobile') await shot(page, 'PRF-2');
+  const look = () =>
+    page.evaluate(async () => {
+      await document.fonts.ready; // a face swapping in between would move the text, not the swap
+      document.activeElement.blur(); // the app focuses the email field; the card styles :focus-within
+      const card = document.querySelector('.gb-login-card');
+      const r = (sel) => {
+        const b = (sel ? card.querySelector(sel) : card).getBoundingClientRect();
+        return [Math.round(b.x), Math.round(b.y), Math.round(b.width), Math.round(b.height)];
+      };
+      return { text: card.innerText, title: r('.gb-login-title'), button: r('.gb-login-btn'), card: r() };
+    });
+  const shell = await look();
   release();
   // The app's own card replaces the shell, once, without replaying its entrance.
   await expect(page.locator('[data-gb-shell]')).toHaveCount(0);
@@ -71,6 +83,8 @@ test('PRF-2: the sign-in screen paints from index.html before the app module run
   await expect(page.locator('.gb-login-card.gb-rise, .gb-garden.is-growing')).toHaveCount(0);
   await expect(page.locator('input[type=email]')).toBeEditable();
   await expect(page.locator('main')).toHaveCount(1);
+  // Same words in the same places: the swap moves nothing (index.html is a copy of viewSignin).
+  expect(await look()).toEqual(shell);
 });
 
 test('PRF-2: a signed-in load never shows the static sign-in shell', async ({ page, account }) => {
