@@ -602,7 +602,7 @@ function badges(money) {
       key: 'no_want',
       icon: 'leaf',
       label: 'Mindful Week',
-      desc: 'No shopping/entertainment splurge this week',
+      desc: 'No shopping or entertainment splurge this week',
       earned: !wantThisWeek && wkExp.length > 0,
     },
     {
@@ -4630,9 +4630,10 @@ function ScreenMoney({
           badges(money).map((b) =>
             h(
               'div',
-              { class: 'gb-money-badge' + (b.earned ? ' is-earned' : ''), title: b.desc },
+              { class: 'gb-money-badge' + (b.earned ? ' is-earned' : '') },
               h('span', { class: 'gb-money-badge-ic' }, Icon(b.icon, { size: 18, sw: 2.2 })),
-              h('span', { class: 'gb-money-badge-lbl' }, b.label),
+              // The rule shows under the name: as a title tooltip a phone never saw it.
+              h('span', { class: 'gb-money-badge-lbl' }, b.label, h('small', null, b.desc)),
               b.progress && !b.earned
                 ? h('span', { class: 'gb-money-badge-prog' }, b.progress)
                 : b.earned

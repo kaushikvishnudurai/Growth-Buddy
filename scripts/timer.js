@@ -1103,6 +1103,7 @@ function historyChart(days, goal) {
     hit.setAttribute('width', String(slot));
     hit.setAttribute('height', String(H));
     hit.setAttribute('class', 'gb-focus-hist-hit');
+    hit.dataset.i = String(i);
     const tip = document.createElementNS(NS, 'title');
     tip.textContent = dayLabel(days[i].date) + ': ' + fmtMins(values[i]);
     hit.appendChild(tip);
@@ -1154,14 +1155,30 @@ function paintHistory() {
   const goal = goalMinutes(Focus.goalMins);
   const total = days.reduce((a, d) => a + (d.minutes || 0), 0);
   const active = days.filter((d) => d.minutes > 0).length;
+  const summary =
+    fmtMins(total) + ' over ' + days.length + ' days · ' + active + (active === 1 ? ' day' : ' days') + ' with focus' +
+    (goal ? ' · ' + days.filter((d) => d.minutes >= goal).length + ' met your goal' : '');
+  const sumEl = h('div', { class: 'gb-focus-hist-sum' }, summary);
+  const chart = historyChart(days, goal);
+  // A tap on a column reads its day out in the summary line (the <title>
+  // tooltip is mouse-only); a second tap on it goes back to the summary.
+  let picked = null;
+  chart.addEventListener('click', function (e) {
+    const hit = e.target.closest('.gb-focus-hist-hit');
+    if (picked) picked.classList.remove('is-picked');
+    if (!hit || hit === picked) {
+      picked = null;
+      sumEl.textContent = summary;
+      return;
+    }
+    picked = hit;
+    hit.classList.add('is-picked');
+    const d = days[Number(hit.dataset.i)];
+    sumEl.textContent = dayLabel(d.date) + ': ' + fmtMins(d.minutes || 0);
+  });
   el.append(
-    h(
-      'div',
-      { class: 'gb-focus-hist-sum' },
-      fmtMins(total) + ' over ' + days.length + ' days · ' + active + (active === 1 ? ' day' : ' days') + ' with focus' +
-        (goal ? ' · ' + days.filter((d) => d.minutes >= goal).length + ' met your goal' : '')
-    ),
-    historyChart(days, goal),
+    sumEl,
+    chart,
     h(
       'div',
       { class: 'gb-focus-hist-axis', 'aria-hidden': 'true' },
@@ -1224,15 +1241,14 @@ function paintSound() {
   if (!Sound.refs) return;
   Sound.refs.toggle.classList.toggle('is-on', Sound.enabled);
   Sound.refs.toggle.setAttribute('aria-checked', Sound.enabled ? 'true' : 'false');
+  const cur =
+    SOUNDSCAPES.find(function (s) {
+      return s.key === Sound.current;
+    }) || {};
+  // The hint was only a title tooltip; picking a tile is how a phone reads it.
   Sound.refs.statusEl.textContent = !Sound.enabled
     ? 'Off — silent focus.'
-    : (Sound.playing ? 'Playing' : 'Ready') +
-      ' · ' +
-      (
-        SOUNDSCAPES.find(function (s) {
-          return s.key === Sound.current;
-        }) || {}
-      ).label;
+    : (Sound.playing ? 'Playing' : 'Ready') + ' · ' + cur.label + ' · ' + cur.hint;
   Object.keys(Sound.refs.tiles).forEach(function (k) {
     Sound.refs.tiles[k].classList.toggle('is-on', k === Sound.current);
   });

@@ -374,11 +374,21 @@
 }
 .gb-money-badge-lbl {
   flex: 1;
+  /* "shopping/entertainment" in a rule is one unbroken word at 390. */
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-family: var(--font-body);
   font-weight: 700;
   font-size: var(--text-xs);
   color: var(--fg1);
   line-height: 1.2;
+}
+.gb-money-badge-lbl small {
+  display: block;
+  margin-top: 2px;
+  font-weight: 500;
+  font-size: var(--text-2xs);
+  color: var(--fg2);
 }
 .gb-money-badge-prog {
   flex: none;
