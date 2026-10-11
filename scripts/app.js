@@ -14426,6 +14426,12 @@ const SCREENS = {
             onEditSleep: openSleepSchedule,
             onConnect: connectHealth,
             onSync: () => syncHealthFromPhone({ force: true }),
+            // Customise: card order, metric order and what is hidden, in ui_prefs so it follows the user.
+            layout: (state.user && state.user.uiPrefs && state.user.uiPrefs.healthLayout) || null,
+            onSaveLayout: (healthLayout) => {
+              saveUiPrefs({ healthLayout });
+              render();
+            },
           })
       );
     },
