@@ -26,6 +26,11 @@
    fonts, not this number. Integration (ov1011/int-design) went 12,703 B over
    again; Hanken Grotesk's five static weights (69 kB) became one variable face
    (35 kB): precache 1,486,349 B -> 1,451,280 B (98.5%), boot unchanged.
+   After every fix branch merged (ov1011/int-design a34b1bb) boot was 3,307 B
+   over. achievements.js + celebrate.js load on first use (levelProgress moved
+   to level.js for the header) and circle.js runs winLines itself, so
+   circle-core.js leaves boot: boot 523,220 B -> 513,146 B (98.7%, 6.7 kB
+   headroom).
    (Workbox prints "41 entries": the icons are listed twice, once by the glob
    and once by includeAssets/manifest; they are fetched and stored once.)
    Raw bytes, not gzip: deterministic and what the precache actually stores.

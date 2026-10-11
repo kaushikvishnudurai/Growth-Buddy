@@ -1,6 +1,6 @@
 # scripts/achievements.js — badge gallery
 
-Exports `ScreenAchievements(props)`, `computeAchievements(props)`, `levelProgress(user)`. All
+Exports `ScreenAchievements(props)`, `computeAchievements(props)`, `levelProgress(user)` (the last defined in `level.js` so the boot header need not load this module, which is lazy). All
 client-side, derived from data already tracked (XP/level, freeze-protected habit streaks, goals,
 wellness, trends, today's food and water). Reached from the profile menu. Checked by
 `node scripts/achievements.test.mjs`.
