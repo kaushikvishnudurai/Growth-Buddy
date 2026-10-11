@@ -15,5 +15,5 @@ Severity: Critical / High / Medium / Low. Evidence = test path and/or `docs/evid
 | L-006 | App exports silently fail; offline cold start shows error cards; mic permission; right cutout (RSP-1/2/5/8) | native (ov1011/native, GBM ov1011/mobile) | verified (web) / needs device | High | `e2e/native-parity.spec.mjs` |
 | L-007 | W3 Take a break (I-08) | break (ov1011/break) | verified | Feature | `e2e/break.spec.mjs`, docs/evidence/break/ |
 | L-008 | Cross-browser projects (Firefox, WebKit, tablet) | xbrowser | verified | Infra | smoke 72/72 on six projects |
-| L-009 | Money PUT 409 when Mark as paid saves twice in a row (pre-existing on main build 95, self-healing merge) | money | todo (release 2) | Low | `e2e/safety-money.spec.mjs:124` guard sees 409 |
+| L-009 | Money PUT 409 after a new user's first save: the account-seed flag landed on the next GET and changed the version (server) | qa3 | verified | Low | `MoneyVersionTest.aFirstDocumentWithoutTheSeedFlagKeepsItsVersionOnTheNextRead`, safety-money:124 32/32 |
 | L-010 | Bundle budget over on main build 95 (boot +35 KB, precache +83 KB) | perf (ov1011/perf) | in-progress | Medium | `node scripts/bundle-budget.mjs` |
