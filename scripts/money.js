@@ -7,8 +7,20 @@
    ponytail: heuristics, not an LLM. Real OCR / NL understanding would need
    a vision/LLM endpoint — marked at each spot below.
    ===================================================================== */
-import { h, Icon, Card, ProgressRing, refreshIcons, openModal, Thinking, focusSoon, CrashCard } from './gb-kit.js';
+import {
+  h,
+  Icon,
+  Card,
+  ProgressRing,
+  refreshIcons,
+  openModal,
+  Thinking,
+  focusSoon,
+  CrashCard,
+  fieldRefusal,
+} from './gb-kit.js';
 import { toast } from './toast.js';
+import { SalaryNudge } from './money-home.js';
 import { shareStoryCard, _demo as _shareCardDemo } from './share-card.js';
 import {
   CUR,
@@ -2192,6 +2204,19 @@ export function MoneyCustomisePane(money, save) {
 /* =====================================================================
    Module-scope modals (shared by screen + home widget)
    ===================================================================== */
+/* Deletes an expense. A bill's payment (`sub-<subId>-<YYYY-MM>`, from Mark as paid)
+   takes the bill's paid mark for that month with it, so the bill is due again and
+   can be paid again. ponytail: a 409 merge keeps the later paidFor of two copies,
+   so a conflicting save from another device can bring the mark back. */
+function dropExpense(m, id) {
+  m.expenses = m.expenses.filter((x) => x.id !== id);
+  const bill = /^sub-(.+)-(\d{4}-\d{2})$/.exec(id);
+  if (!bill) return;
+  for (const sub of m.subscriptions) {
+    if (sub.id === bill[1] && sub.paidFor === bill[2]) delete sub.paidFor;
+  }
+}
+
 function commitOn(money, save, mutator) {
   const next = clone(money);
   mutator(next);
@@ -2574,9 +2599,12 @@ function openExpenseModal(money, save, prefillDate, existing, scan) {
     placeholder: 'e.g. Lunch with team',
     value: ex ? ex.note || '' : '',
   });
+  // Up to today: every list and total ends at today, so a later date was booked,
+  // taken off the balance, and then shown nowhere until that day.
   const date = h('input', {
     type: 'date',
     class: 'gb-input',
+    max: todayKey(),
     value: (ex && ex.date) || prefillDate || todayKey(),
   });
   const hint = h('div', { class: 'gb-note-hint', style: { marginTop: '6px' } }, '');
@@ -2675,11 +2703,17 @@ function openExpenseModal(money, save, prefillDate, existing, scan) {
     danger: ex
       ? {
           label: 'Delete expense',
+          // At once, with Undo: the dialog was opened on this one entry on purpose.
           onClick: () => {
             const next = clone(money);
-            next.expenses = next.expenses.filter((x) => x.id !== ex.id);
+            dropExpense(next, ex.id);
             save(next, money);
-            toast.success('Expense deleted.');
+            toast.action('Expense deleted.', 'Undo', () => {
+              const back = clone(next);
+              back.expenses.unshift(ex);
+              back.subscriptions = clone(money.subscriptions);
+              save(back, next);
+            });
           },
         }
       : null,
@@ -2692,11 +2726,8 @@ function openExpenseModal(money, save, prefillDate, existing, scan) {
         : amt > Number(amount.max)
           ? 'An expense can be at most ' + fmt(Number(amount.max)) + '.'
           : '';
-      amount.setAttribute('aria-invalid', bad ? 'true' : 'false');
-      if (bad) {
-        amount.focus();
-        throw new Error(bad);
-      }
+      if (bad) throw fieldRefusal(amount, bad);
+      if (!date.value || date.value > todayKey()) throw fieldRefusal(date, 'Pick a day up to today.');
       const cat = picker.get();
       const next = clone(money);
       const accountId = paidFrom.get();
@@ -5298,7 +5329,7 @@ function ScreenMoney({
                   'Delete expense',
                   'Delete "' + (e.note || c.label) + '" (' + fmt(e.amount) + ')?',
                   async () => {
-                    commit((m) => (m.expenses = m.expenses.filter((x) => x.id !== e.id)));
+                    commit((m) => dropExpense(m, e.id));
                     toast.success('Expense deleted.');
                   }
                 ),
@@ -5833,30 +5864,47 @@ function ScreenMoney({
   /* =================================================================
      TAB: INCOME (salary + other inflow, loans given/received)
      ================================================================= */
-  function openAddIncome() {
-    const amt = h('input', { type: 'number', class: 'gb-input', inputmode: 'decimal', min: '1', placeholder: 'e.g. 45000' });
+  // `ex` = an income entry to edit (same id, as openExpenseModal does).
+  function openAddIncome(ex = null) {
+    // A new one starts on the last salary: its amount and account, so a payday is
+    // Add and nothing else.
+    const lastSalary = ex
+      ? null
+      : (money.income || [])
+          .filter((i) => i.source === 'salary')
+          .sort((a, b) => (a.date < b.date ? 1 : -1))[0];
+    const amt = h('input', {
+      type: 'number',
+      class: 'gb-input',
+      inputmode: 'decimal',
+      min: '1',
+      placeholder: 'e.g. 45000',
+      value: ex ? String(ex.orig ? ex.orig.amount : ex.amount) : lastSalary ? String(lastSalary.orig ? lastSalary.orig.amount : lastSalary.amount) : '',
+    });
     const label = h('input', {
       type: 'text',
       class: 'gb-input',
       maxlength: '60',
       placeholder: 'e.g. June salary',
+      value: ex ? ex.label || '' : '',
     });
-    const date = h('input', { type: 'date', class: 'gb-input', value: todayKey() });
+    const date = h('input', { type: 'date', class: 'gb-input', max: todayKey(), value: (ex && ex.date) || todayKey() });
     const src = segmented(
       [
         { value: 'salary', label: 'Salary' },
         { value: 'other', label: 'Other' },
       ],
-      'salary'
+      ex ? ex.source || 'other' : 'salary'
     );
     const amtLabel = h('div', { class: 'gb-field-label' }, 'Amount (' + cur + ')');
-    const into = accountPicker(money, firstOfKind(money, ['bank', 'wallet']), (id) => {
+    const initialAcc = ex ? ex.accountId : (lastSalary && lastSalary.accountId) || firstOfKind(money, ['bank', 'wallet']);
+    const into = accountPicker(money, initialAcc, (id) => {
       amtLabel.textContent = 'Amount (' + (accCurrency(money, id) || cur) + ')';
     });
     amtLabel.textContent = 'Amount (' + (accCurrency(money, into.get()) || cur) + ')';
     openMoneyModal({
-      title: 'Add income',
-      sub: 'Salary, freelance, a gift — anything that came in.',
+      title: ex ? 'Edit income' : 'Add income',
+      sub: ex ? 'Fix the amount, account or date.' : 'Salary, freelance, a gift — anything that came in.',
       body: h(
         'div',
         { class: 'gb-form' },
@@ -5871,27 +5919,44 @@ function ScreenMoney({
         h('div', { class: 'gb-field-label' }, 'Date'),
         date
       ),
-      primary: 'Add income',
+      primary: ex ? 'Save changes' : 'Add income',
+      danger: ex
+        ? {
+            label: 'Delete income',
+            onClick: () => {
+              const next = clone(money);
+              next.income = next.income.filter((x) => x.id !== ex.id);
+              save(next, money);
+              toast.action('Income deleted.', 'Undo', () => {
+                const back = clone(next);
+                back.income.unshift(ex);
+                save(back, next);
+              });
+            },
+          }
+        : null,
       onPrimary: async () => {
         const v = readAmount(amt);
-        if (!Number.isFinite(v) || v <= 0) {
-          amt.focus();
-          throw new Error('Enter an amount greater than zero.');
-        }
+        if (!Number.isFinite(v) || v <= 0) throw fieldRefusal(amt, 'Enter an amount greater than zero.');
+        if (!date.value || date.value > todayKey()) throw fieldRefusal(date, 'Pick a day up to today.');
         const source = src.get();
-        const home = toHomeAmount(money, into.get(), v);
-        commit((m) =>
-          (m.income = m.income || []).unshift({
-            id: uid(),
-            amount: home.amount,
-            ...(home.orig ? { orig: home.orig } : {}),
-            source,
-            label: label.value.trim() || (source === 'salary' ? 'Salary' : 'Income'),
-            date: date.value || todayKey(),
-            ...(into.get() ? { accountId: into.get() } : {}),
-          })
-        );
-        toast.success('Income added.');
+        const accountId = into.get();
+        const home = ex ? editedHomeAmount(money, ex, accountId, v) : toHomeAmount(money, accountId, v);
+        const row = {
+          id: ex ? ex.id : uid(),
+          amount: home.amount,
+          ...(home.orig ? { orig: home.orig } : {}),
+          source,
+          label: label.value.trim() || (source === 'salary' ? 'Salary' : 'Income'),
+          date: date.value,
+          ...(accountId ? { accountId } : {}),
+        };
+        commit((m) => {
+          m.income = m.income || [];
+          if (ex) m.income = m.income.map((x) => (x.id === ex.id ? row : x));
+          else m.income.unshift(row);
+        });
+        toast.success(ex ? 'Income updated.' : 'Income added.');
       },
     });
     focusSoon(amt);
@@ -6180,11 +6245,12 @@ function ScreenMoney({
           h('h3', null, 'Income'),
           h(
             'button',
-            { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--compact', onclick: openAddIncome },
+            { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--compact', onclick: () => openAddIncome() },
             Icon('plus', { size: 14, sw: 2.6 }),
             'Add income'
           )
         ),
+        SalaryNudge(money, save),
         incomeList.length
           ? h(
               'div',
@@ -6202,8 +6268,13 @@ function ScreenMoney({
                     Icon(e.source === 'salary' ? 'briefcase' : 'coins', { size: 15, sw: 2.2 })
                   ),
                   h(
-                    'div',
-                    { class: 'gb-money-exp-main' },
+                    'button',
+                    {
+                      type: 'button',
+                      class: 'gb-money-exp-main gb-money-exp-edit',
+                      'aria-label': 'Edit ' + e.label + ', ' + fmt(e.amount),
+                      onclick: () => openAddIncome(e),
+                    },
                     h('div', { class: 'gb-money-exp-note' }, e.label),
                     h(
                       'div',
@@ -7028,4 +7099,5 @@ export const _calc = {
   challengeEnd,
   newSubscription,
   suggestChallenges,
+  dropExpense,
 };

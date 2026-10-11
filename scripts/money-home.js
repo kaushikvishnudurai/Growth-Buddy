@@ -17,6 +17,7 @@ import {
   fmt,
   todayKey,
   uid,
+  usualSalary,
 } from './money-core.js';
 import { repeatExpense } from './nudges.js';
 
@@ -74,6 +75,92 @@ function RepeatExpenseNudge(money, onSaveMoney) {
           },
         },
         'Not today'
+      )
+    )
+  );
+  return node;
+}
+
+/* "Salary 50,000 arrived?" (usualSalary, money-core.js): one tap books the last
+   salary again, same amount and account, dated today. "Add, every month" also makes
+   it a monthly repeat; today's entry carries the repeat's id for this month, so the
+   repeat doesn't post it a second time. Used on Home and on Money's Income tab. */
+export function SalaryNudge(money, onSaveMoney) {
+  const today = todayKey();
+  const guess = usualSalary(money, today);
+  if (!guess || skippedNudges.has(today + '|salary')) return null;
+  const book = (repeat) => {
+    const next = normalizeMoney(money);
+    const ruleId = uid();
+    const acc = guess.accountId ? { accountId: guess.accountId } : {};
+    next.income.unshift({
+      id: repeat ? 'rec-' + ruleId + '-' + today.slice(0, 7) : uid(),
+      amount: guess.amount,
+      ...(guess.orig ? { orig: guess.orig } : {}),
+      source: 'salary',
+      label: guess.label,
+      date: today,
+      ...acc,
+    });
+    if (repeat) {
+      // concat, not push: normalizeMoney shares this array with the live doc.
+      next.recurring = next.recurring.concat({
+        id: ruleId,
+        kind: 'income',
+        amount: guess.amount,
+        category: 'salary',
+        day: guess.day > 28 ? 'last' : guess.day,
+        note: guess.label,
+        active: true,
+        start: today,
+        ...acc,
+      });
+    }
+    onSaveMoney(next, money);
+    toast.success(
+      'Added ' +
+        fmt(guess.amount) +
+        ' ' +
+        guess.label +
+        (repeat ? '. It logs itself every month.' : '.')
+    );
+  };
+  const node = h(
+    'div',
+    { class: 'gb-nudge', role: 'group', 'aria-label': 'Salary' },
+    h('span', null, guess.label + ' ' + fmt(guess.amount) + ' arrived?'),
+    h(
+      'div',
+      { class: 'gb-nudge-opts' },
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--soft gb-btn--compact',
+          onclick: () => book(false),
+        },
+        'Add'
+      ),
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--ghost gb-btn--compact',
+          onclick: () => book(true),
+        },
+        'Add, every month'
+      ),
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--ghost gb-btn--compact',
+          onclick: () => {
+            skippedNudges.add(today + '|salary');
+            node.remove();
+          },
+        },
+        'Not yet'
       )
     )
   );
@@ -179,6 +266,7 @@ export function MoneyHomeCard({ money, onSaveMoney, onOpen, requestReceiptScan }
         'Open Money Buddy'
       )
     ),
+    SalaryNudge(money, onSaveMoney),
     RepeatExpenseNudge(money, onSaveMoney)
   );
 }

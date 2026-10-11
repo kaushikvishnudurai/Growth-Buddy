@@ -786,6 +786,38 @@ function budgetStatus(money) {
   });
 }
 
+/* "Salary arrived?": a salary on about the same day (±2) in 2 of the last 3 months,
+   none logged this month yet, and today from 2 days before that day on. Returns the
+   last salary's {amount, orig?, accountId?, label, day}, or null. Off once a monthly
+   salary repeat exists (Money posts that by itself).
+   ponytail: no wrap across a month end (a salary on the 30th, then the 1st, reads as
+   two different days); fix when someone is paid on the turn of the month. */
+function usualSalary(money, today = todayKey()) {
+  const salaries = (money.income || [])
+    .filter((i) => i.source === 'salary' && i.date && i.date <= today)
+    .sort((a, b) => (a.date < b.date ? 1 : -1));
+  const month = today.slice(0, 7);
+  const last = salaries[0];
+  if (!last || last.date.slice(0, 7) === month) return null;
+  if ((money.recurring || []).some((r) => r.active !== false && r.kind === 'income' && r.category === 'salary')) {
+    return null;
+  }
+  const day = Number(last.date.slice(8));
+  const t = parseKey(today);
+  const back = [1, 2, 3].map((k) => dkey(new Date(t.getFullYear(), t.getMonth() - k, 1)).slice(0, 7));
+  const hits = back.filter((m) =>
+    salaries.some((i) => i.date.slice(0, 7) === m && Math.abs(Number(i.date.slice(8)) - day) <= 2)
+  ).length;
+  if (hits < 2 || t.getDate() < day - 2) return null;
+  return {
+    amount: last.amount,
+    ...(last.orig ? { orig: last.orig } : {}),
+    ...(last.accountId ? { accountId: last.accountId } : {}),
+    label: last.label || 'Salary',
+    day,
+  };
+}
+
 // Used by money.js / money-home.js; not a public API.
 export {
   CUR,
@@ -829,4 +861,5 @@ export {
   predictCategory,
   buildInsights,
   budgetStatus,
+  usualSalary,
 };

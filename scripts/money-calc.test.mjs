@@ -19,7 +19,7 @@ globalThis.Date = class extends RealDate {
 };
 
 const { _calc, normalizeMoney, ledgerCsv, searchExpenses } = await import('./money.js');
-const { applyCurrency } = await import('./money-core.js');
+const { applyCurrency, usualSalary } = await import('./money-core.js');
 const {
   forecast,
   upcomingSubs,
@@ -391,3 +391,18 @@ console.log('money-calc challenges + new bills: ok');
   applyCurrency(doc({}));
 }
 console.log('money-calc currency: ok');
+
+// ---- FRC-16: "Salary arrived?" from income history (clock: 20 Oct) ----
+{
+  const sal = (id, date, amount = 50000) => ({ id, amount, source: 'salary', label: 'Salary', date, accountId: 'bank' });
+  const paid = [sal('a', '2026-07-19'), sal('b', '2026-08-20'), sal('c', '2026-09-21', 52000)];
+  const g = usualSalary(doc({ income: paid }));
+  assert.deepEqual(g, { amount: 52000, accountId: 'bank', label: 'Salary', day: 21 }, 'the last one, on its day');
+  assert.equal(usualSalary(doc({ income: paid.concat(sal('d', '2026-10-19')) })), null, 'already logged this month');
+  assert.equal(usualSalary(doc({ income: [sal('c', '2026-09-21')] })), null, 'one month is not a pattern');
+  assert.equal(usualSalary(doc({ income: [sal('a', '2026-08-28'), sal('b', '2026-09-28')] })), null, 'payday not near yet');
+  assert.equal(usualSalary(doc({ income: [sal('a', '2026-08-02'), sal('b', '2026-09-03')] })).day, 3, 'payday passed, not logged: still asks');
+  const rule = { id: 'r', kind: 'income', amount: 50000, category: 'salary', day: 21, active: true, start: '2026-09-01' };
+  assert.equal(usualSalary(doc({ income: paid, recurring: [rule] })), null, 'a monthly repeat posts it already');
+}
+console.log('money-calc salary guess: ok');

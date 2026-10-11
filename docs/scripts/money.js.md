@@ -189,7 +189,8 @@ the Coach tab) call `shareSummary`.
   "chocolate" used to be Transport, from "ola"), else 'others'. A user's correction is saved on the
   expense, so it is the next guess with nothing stored for it. Quick add can call it as is.
 - `openExpenseModal` also edits: same id, reflection and createdAt kept;
-  the expense row's text is the edit button (`gb-money-exp-edit`), delete sits in the dialog and the row.
+  the expense row's text is the edit button (`gb-money-exp-edit`), delete sits in the dialog (at once, with an Undo toast) and the row (`confirmDelete`). Both go through `dropExpense(m, id)`, which also clears the bill's `paidFor` when the row was its `sub-<id>-<month>` payment. The date is `max` today and refused past it (`fieldRefusal`, under the field): every list ends at today, so a later date vanished. Income has the same edit mode (`openAddIncome(existing)`, row text = edit button); a new one starts on the last salary's amount and account.
+- **"Salary arrived?"** = `SalaryNudge` (money-home.js, on the Home card and the Income tab) over `usualSalary(money, today)` (money-core.js, pure, in `money-calc.test.mjs`): a salary about the same day in 2 of the last 3 months, none yet this month, no monthly salary repeat. Add books the last one again; "Add, every month" also writes a `recurring[]` income rule and books today's under that rule's `rec-` id, so it doesn't post twice.
 - `weekBars(expenses, {selected, onPick, noSpendDays})`: amount over each bar, weekday + date under, "No log"
   for an empty day (worked out, not stored), "No spend" for one marked so. An outlier over 3x the next day
   caps the scale at 1.5x the next and draws that bar cut off (`is-clipped`), keeping its real label.
