@@ -98,3 +98,26 @@ test('CRM-5: a reply sent while replies load stays, and Delete can be undone', a
   await page.waitForTimeout(6500);
   expect(deletes).toEqual([]);
 });
+
+test('FRS-10: Add member opens on the form, reads the name, and adds another in place', async ({ page, account }, info) => {
+  await signInPinned(page, account);
+  await go(page, 'family');
+  await page.getByRole('button', { name: /Add (your first )?member/ }).first().click();
+  // No profile-or-invite chooser first: the form is the first step.
+  const name = page.getByPlaceholder('e.g. Amma');
+  await expect(name).toBeVisible();
+  const rel = page.locator('.gb-family-panel select').first();
+  await name.fill('Appa');
+  await expect(rel).toHaveValue('father');
+  await page.getByRole('button', { name: 'Save and add another' }).click();
+  await expect(page.getByText('Added Appa.')).toBeVisible();
+  await expect(name).toHaveValue('');
+  await name.fill('Akka');
+  await expect(rel).toHaveValue('sister');
+  if (info.project.name === 'mobile') await shot(page, 'FRS-10');
+  await page.getByRole('button', { name: 'Add member', exact: true }).click();
+  await expect(page.getByPlaceholder('e.g. Amma')).toHaveCount(0);
+  const fam = await call(account.token, '/api/family');
+  const got = fam.members.map((m) => m.name + ':' + m.relationship);
+  expect(got).toEqual(expect.arrayContaining(['Appa:father', 'Akka:sister']));
+});
