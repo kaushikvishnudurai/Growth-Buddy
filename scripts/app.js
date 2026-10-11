@@ -1288,7 +1288,10 @@ function hydrateUiPrefs() {
     if (p.timeFormat !== '12' && p.timeFormat !== '24') {
       saveUiPrefs({ timeFormat: detectTimeFormat() });
     }
+    // The device copy follows the account: set only, it hid the checklist (and the
+    // starter packs on it) from every later account signed in on the same phone.
     if (p.onboardingDone) CacheStorage.setItem('gb.onboardDismissed', '1');
+    else CacheStorage.removeItem('gb.onboardDismissed');
     // achSeen is read straight from ui_prefs (checkAchievements): no local mirror.
   } catch (_) {
     /* silent — cache mirror is best-effort */

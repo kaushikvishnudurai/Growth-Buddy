@@ -199,7 +199,11 @@ function ScoreCard({ score, tasks: allTasks, habits }) {
       style: {
         fontFamily: 'var(--font-display)',
         fontWeight: 800,
-        fontSize: '1.625rem',
+        // The hole is 70px (92 - 2 x 11 stroke). "100%" at the old 1.625rem
+        // filled it edge to edge and a larger text size pushed it into the
+        // ring, so the number shrinks at three digits and is capped in px:
+        // a fixed-size ring can't grow with the text.
+        fontSize: score >= 100 ? 'min(1.25rem, 20px)' : 'min(1.625rem, 26px)',
         color: 'var(--fg1)',
         lineHeight: 1,
       },

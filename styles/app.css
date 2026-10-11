@@ -3730,6 +3730,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 .gb-badge-card,
 .gb-suggest-card,
 .gb-timeline-card,
+.gb-home-goals,
 .gb-food-week-card,
 .gb-ach-summary,
 .gb-focus-statscard {
