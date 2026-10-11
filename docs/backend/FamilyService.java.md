@@ -53,6 +53,9 @@ The assignee must be a live row of the same family (`requireFamilyMember`, else 
 chores read as unassigned. `notifyAssignee` sends a bell notification on create, and on update only when
 the assignee changed — never to the actor. **Repeating chores** (`repeat_rule` daily | weekly) keep
 `done_at` and `choreDone` compares it to the viewer's today (`UserClock`), so a tick lasts its day / week.
+`remindChore(userId, id, time)` writes a `CalendarReminder` (via `ReminderService.create(userId, text, date, time, repeat)`) into the
+**assignee's** calendar when they are mapped with an account, else the caller's; due day or today (tomorrow when the time has
+gone), repeating as the chore does. The assignee also gets a bell notification; `sentTo` names them for the toast.
 
 ### Recipes
 `listRecipes`, `saveRecipe` (upsert on `family_recipes.dish_key` = `shoppingKey(dish)`; ingredients +

@@ -184,6 +184,13 @@ public class ReminderService {
         return ReminderResponse.from(repo.save(r));
     }
 
+    /** A plain reminder another feature sets up for {@code userId} (Family's chore reminder). */
+    @Transactional
+    public void create(UUID userId, String text, LocalDate date, LocalTime time, RepeatFreq repeat) {
+        create(userId, new CreateReminderRequest(text, date, time, null, null, repeat,
+                null, null, null, null, null, null, null, null, null));
+    }
+
     /** Expand all of a user's reminders into concrete occurrences within [from, to]. */
     @Transactional(readOnly = true)
     public List<OccurrenceResponse> occurrences(UUID userId, LocalDate from, LocalDate to) {

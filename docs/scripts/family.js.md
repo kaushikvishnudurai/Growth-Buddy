@@ -18,14 +18,14 @@ Almost everything lives inside `ScreenFamily` as closures:
 | meal planner | `ingredientChips`, `plannerSection`, `planActions`, `mealList(meal, items, {live, cookId, onCook})`, `chipRow`, `planView`, `nutriStat`. On the **live** plan only (not a favourite's copy) each meal has a `cookPicker` (`assignCook` → `plan.cooks[meal] = memberId`, stored in the plan JSON) and each dish is a `dishItem` button that opens `recipePanel` |
 | plan history | `pastPlans` (`model.planHistory`, the current plan filtered out) — **Use again** calls `reusePlan`, which copies the row forward server-side; `planDishes` summarises a plan |
 | recipes | `recipePanel(dish)` (ingredients one per line + steps ≤4000 together + cook minutes; saving it empty deletes it), `recipeFor` / `dishKey` — the same key as the server's `shoppingKey` |
-| chores | `choresSection` (draft lives in `model.choreDraft` so a chip tap's repaint keeps the typed title), `assigneeChips` (Anyone + members), `choreRow` (assignee `select` styled as a chip → `updateChore`; Undo on delete re-adds), `tickChore` + `pendingChoreTicks` / `overlayChoreTicks` (optimistic, as the shopping tick) |
+| chores | `choresSection` (draft lives in `model.choreDraft` so a chip tap's repaint keeps the typed title), `assigneeChips` (Anyone + members), `choreRow` (assignee `select` styled as a chip → `updateChore`; Undo on delete re-adds), `tickChore` + `pendingChoreTicks` / `overlayChoreTicks` (optimistic, as the shopping tick); an open chore's bell → `askReminderTime` → `api.remindChore` |
 | multi-day plan | `weeklySection`, `weeklyView`, `weekDayCard(d, index, wk)` — a cook per meal per day; the server addresses the day by **position** (`index + 1`), not `d.day` |
 | pantry | `pantrySection`, `pantryRow` (a **Low** toggle → `updatePantry` with the whole item), `restockButton` ("Add expiring & low items to list" → `shoppingFromPantry`; also on Shopping) |
 | shopping | `shoppingSection`, `shopRow`, `tickShopping` (optimistic tick, rolled back on failure; `pendingTicks` is laid back over any list that lands meanwhile via `overlayPending`), `restoreShopping` (the delete toast's Undo re-adds the line). Build-from-plan toasts the server's `message`. `shopTools`: **Share** (`shareShopping` — `navigator.share`, else clipboard; unticked lines only, `shoppingText`) and **Print** (`printShopping` puts `gb-print-shopping` on `<body>` for the length of the print; `@media print` in app.css then shows only `shopPrintout`, which is `display:none` on screen) |
 | favourites | `favouritesSection`, `favCard` |
 | shell | `sectionNav`, `switchSection`, `activeSection`, `sectionBadge`, `emptyState`, `skeleton`, `paint` |
 
-Helpers: `initials`, `cap`, `toList`/`fromList` (comma string ↔ array), `field`. The grocery and
+Helpers: `nextBirthday(dob)` (29 Feb → 28th in a common year), `askReminderTime(title, sub, onTime)` (the time dialog both reminders use; a member card with a `dob` and not you gets a `calendar-heart` button that adds a yearly reminder through `api.addReminder`), `initials`, `cap`, `toList`/`fromList` (comma string ↔ array), `field`. The grocery and
 pantry photo scans send `shrinkPhoto(file)` from notes.js (≤1280px JPEG), not the raw 4-12 MB photo.
 Messages go through `toast` (toast.js), never `alert()`.
 

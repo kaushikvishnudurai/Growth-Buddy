@@ -12934,6 +12934,27 @@ const SCREENS = {
                 }),
               deleteChore: (id) =>
                 api('/api/family/chores/' + encodeURIComponent(id), { method: 'DELETE' }),
+              // In the assignee's calendar when they have an account here, else in ours:
+              // sentTo null means ours, so our list and device alarms need the new row.
+              remindChore: (id, time) =>
+                api('/api/family/chores/' + encodeURIComponent(id) + '/remind', {
+                  method: 'POST',
+                  body: JSON.stringify({ time }),
+                }).then(async (res) => {
+                  if (!res || !res.sentTo) {
+                    state.reminders = await api('/api/reminders');
+                    reSyncDeviceAlarms();
+                  }
+                  return res;
+                }),
+              addReminder: (body) =>
+                api('/api/reminders', { method: 'POST', body: JSON.stringify(body) }).then(
+                  (created) => {
+                    state.reminders.push(created);
+                    reSyncDeviceAlarms();
+                    return created;
+                  }
+                ),
               // Plan history + cook per meal
               planHistory: () => api('/api/family/plans/history'),
               reusePlan: (planId) =>
