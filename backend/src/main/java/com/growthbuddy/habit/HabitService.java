@@ -271,10 +271,11 @@ public class HabitService {
         if (zone != null) {
             creditCleanDays(userId, rows, byHabit, today, zone);
         }
+        Set<LocalDate> rest = OnBreak.days(clock.prefsOf(userId), today);
         return rows.stream()
                 .map(h -> toResponse(h, today,
                         byHabit.getOrDefault(h.getId(), List.of()),
-                        streakById.get(h.getId()), tokens, zone))
+                        streakById.get(h.getId()), tokens, zone, rest))
                 .toList();
     }
 
@@ -518,7 +519,7 @@ public class HabitService {
         // Every row, not just the done ones: a quit habit's slip is a not-done row.
         List<HabitCheckin> week = checkins.findByUserIdAndLogDateBetween(
                 userId, weekStart(day), day);
-        return countDue(list, week, day, clock.zoneOf(userId));
+        return countDue(list, week, day, clock.zoneOf(userId), OnBreak.on(clock.prefsOf(userId), day));
     }
 
     /**
@@ -534,8 +535,9 @@ public class HabitService {
         List<HabitCheckin> rows = list.isEmpty() ? List.of()
                 : checkins.findByUserIdAndLogDateBetween(userId, weekStart(from), to);
         ZoneId zone = clock.zoneOf(userId);
+        Set<LocalDate> rest = OnBreak.days(clock.prefsOf(userId), to);
         for (LocalDate d = from; !d.isAfter(to); d = d.plusDays(1)) {
-            out.put(d, list.isEmpty() ? new TodayCounts(0, 0) : countDue(list, rows, d, zone));
+            out.put(d, list.isEmpty() ? new TodayCounts(0, 0) : countDue(list, rows, d, zone, rest.contains(d)));
         }
         return out;
     }
@@ -550,9 +552,16 @@ public class HabitService {
      * Soft-deleted habits are not in {@code habitsList}, so their check-ins are ignored.
      * A quit habit counts every day it is active and existed, and counts as done
      * unless {@code day} holds its slip (a not-done, not-frozen row).
+     * On a break day ({@code rest}, I-08) nothing is owed: only what was done
+     * counts, so a rest day never pulls the score down.
      */
     static TodayCounts countDue(List<Habit> habitsList, List<HabitCheckin> weekDone,
                                 LocalDate day, ZoneId zone) {
+        return countDue(habitsList, weekDone, day, zone, false);
+    }
+
+    static TodayCounts countDue(List<Habit> habitsList, List<HabitCheckin> weekDone,
+                                LocalDate day, ZoneId zone, boolean rest) {
         Map<UUID, Integer> earlier = new HashMap<>();
         Set<UUID> doneOnDay = new HashSet<>();
         Set<UUID> slipOnDay = new HashSet<>();
@@ -573,16 +582,17 @@ public class HabitService {
         int total = 0;
         for (Habit h : habitsList) {
             if (isQuit(h)) {
-                if (isDue(h, 0, day, zone)) {
+                boolean slipped = slipOnDay.contains(h.getId());
+                if (isDue(h, 0, day, zone) && !(rest && slipped)) {
                     total++;
-                    if (!slipOnDay.contains(h.getId())) {
+                    if (!slipped) {
                         done++;
                     }
                 }
                 continue;
             }
             boolean doneThatDay = doneOnDay.contains(h.getId());
-            if (doneThatDay || isDue(h, earlier.getOrDefault(h.getId(), 0), day, zone)) {
+            if (doneThatDay || (!rest && isDue(h, earlier.getOrDefault(h.getId(), 0), day, zone))) {
                 total++;
                 if (doneThatDay) {
                     done++;
@@ -954,6 +964,9 @@ public class HabitService {
                 protectedDates.add(c.getLogDate());
             }
         }
+        // Break days (I-08) hold the run like a freeze, with no row and no token.
+        Set<LocalDate> rest = OnBreak.days(clock.prefsOf(habit.getUserId()), today);
+        protectedDates.addAll(rest);
 
         HabitStreak s = streaks.findById(habit.getId()).orElseGet(() -> {
             HabitStreak n = new HabitStreak();
@@ -993,7 +1006,7 @@ public class HabitService {
         if (habit.getCadence() == Cadence.daily) {
             current = currentDailyRun(today, doneDates, protectedDates);
         } else {
-            current = currentWeeklyRun(today, completedWeekBuckets(done, weeklyRequired(habit)));
+            current = currentWeeklyRun(today, completedWeekBuckets(done, weeklyRequired(habit)), restWeeks(rest));
         }
 
         s.setCurrentStreak(current);
@@ -1104,27 +1117,35 @@ public class HabitService {
     }
 
     int currentWeeklyRun(LocalDate today, List<LocalDate> completedWeeksDesc) {
-        if (completedWeeksDesc.isEmpty()) {
-            return 0;
-        }
-        LocalDate currentWeek = weekStart(today);
-        LocalDate mostRecent = completedWeeksDesc.get(0);
-        // Weekly/custom streak is still current if the latest completed week is
-        // this week or last week.
-        if (mostRecent.isBefore(currentWeek.minusWeeks(1))) {
-            return 0;
+        return currentWeeklyRun(today, completedWeeksDesc, Set.of());
+    }
+
+    /**
+     * Weeks back from this one: a completed week counts, a week a break touched
+     * ({@code restWeeks}, I-08) holds the run without counting, anything else ends
+     * it. This week, not yet complete, is skipped: the run is still current while
+     * last week (or the last unrested one) was met.
+     */
+    int currentWeeklyRun(LocalDate today, List<LocalDate> completedWeeksDesc, Set<LocalDate> restWeeks) {
+        Set<LocalDate> completed = new HashSet<>(completedWeeksDesc);
+        LocalDate w = weekStart(today);
+        if (!completed.contains(w)) {
+            w = w.minusWeeks(1);
         }
         int run = 0;
-        LocalDate expected = mostRecent;
-        for (LocalDate w : completedWeeksDesc) {
-            if (w.isEqual(expected)) {
+        for (; completed.contains(w) || restWeeks.contains(w); w = w.minusWeeks(1)) {
+            if (completed.contains(w)) {
                 run++;
-                expected = expected.minusWeeks(1);
-            } else if (w.isBefore(expected)) {
-                break;
             }
         }
         return run;
+    }
+
+    /** The ISO weeks (their Mondays) that hold at least one break day. */
+    private static Set<LocalDate> restWeeks(Set<LocalDate> rest) {
+        Set<LocalDate> out = new HashSet<>();
+        rest.forEach(d -> out.add(weekStartOf(d)));
+        return out;
     }
 
     private int longestWeeklyRun(List<LocalDate> completedWeeksDesc) {
@@ -1158,16 +1179,18 @@ public class HabitService {
                         h.getId(), today.minusDays(HISTORY_WINDOW_DAYS)),
                 streaks.findById(h.getId()).orElse(null),
                 wallet(userId, today).getTokens(),
-                isQuit(h) ? clock.zoneOf(userId) : null);
+                isQuit(h) ? clock.zoneOf(userId) : null,
+                OnBreak.days(clock.prefsOf(userId), today));
     }
 
     /**
      * Core: builds the response from already-loaded check-ins, streak, and token
      * count. {@code zone} is needed only by a quit habit (its start day).
+     * {@code rest}: the break days through today (I-08), held like protected days.
      */
     private HabitResponse toResponse(Habit h, LocalDate today,
                                      List<HabitCheckin> checkinsDesc, HabitStreak s, int tokens,
-                                     ZoneId zone) {
+                                     ZoneId zone, Set<LocalDate> rest) {
         if (isQuit(h)) {
             return quitResponse(h, today, checkinsDesc, s, tokens, zone);
         }
@@ -1188,7 +1211,8 @@ public class HabitService {
             }
         }
         boolean doneToday = done.contains(today);
-        boolean protectedToday = prot.contains(today);
+        boolean protectedToday = prot.contains(today); // a freeze row, not a break day
+        prot.addAll(rest);
 
         // Compute the current streak live from the check-ins + today's date, so a
         // streak that broke from a missed day is reflected on read (the stored
@@ -1207,7 +1231,7 @@ public class HabitService {
                 if (e.getValue() >= required) completedWeeks.add(e.getKey());
             }
             completedWeeks.sort((a, b) -> b.compareTo(a));
-            currentStreak = currentWeeklyRun(today, completedWeeks);
+            currentStreak = currentWeeklyRun(today, completedWeeks, restWeeks(rest));
         }
         currentStreak = liveOrCached(currentStreak, s);
 
@@ -1235,7 +1259,8 @@ public class HabitService {
             }
         }
         // Same rule as countsOn, so Home's "x/y habits" and the score agree.
-        boolean dueToday = doneToday || isDue(h, doneEarlierThisWeek, today, null);
+        // Nothing is owed on a break day (I-08), as in countDue.
+        boolean dueToday = doneToday || (!rest.contains(today) && isDue(h, doneEarlierThisWeek, today, null));
         // todayRow comes from the check-ins already loaded: this used to be one more
         // query per measured habit on every list read.
         boolean measured = h.getMetric() != HabitMetric.none;

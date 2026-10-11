@@ -39,6 +39,11 @@ public class UserClock {
                 .orElse(UserZone.FALLBACK);
     }
 
+    /** The user's ui_prefs (null when unknown): what OnBreak reads, alongside today. */
+    public java.util.Map<String, Object> prefsOf(UUID userId) {
+        return userId == null ? null : users.findById(userId).map(User::getUiPrefs).orElse(null);
+    }
+
     /** The calendar day it currently is where this user lives. */
     public LocalDate today(UUID userId) {
         return LocalDate.now(zoneOf(userId));
