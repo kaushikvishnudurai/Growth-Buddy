@@ -325,3 +325,12 @@ test('FRS-15 + EXS-12: the bell links to its settings, and every filter chip is 
   await expect(page.locator('#gb-notif-slot > *')).toHaveCount(0);
   await shot(page, 'FRS-15');
 });
+
+test('FRS-6: a habit template fills its reminder time', async ({ page, account }) => {
+  await signInFast(page, account);
+  await page.getByRole('button', { name: 'Quick add' }).click();
+  await page.locator('.gb-modal').getByText('Habit', { exact: true }).first().click();
+  await page.locator('.gb-preset', { hasText: 'Read 20 min' }).click();
+  await expect(page.locator('.gb-modal input[type=time]').first()).toHaveValue('21:30');
+  await shot(page, 'FRS-6');
+});

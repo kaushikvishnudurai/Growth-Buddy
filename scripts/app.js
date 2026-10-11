@@ -78,6 +78,7 @@ import {
   monthStart,
   isSlipRow,
   recentNotes,
+  suggestReminderTime,
 } from './habit-stats.js';
 // The Money document model only; the screen and its Customise pane are lazy
 // (SCREENS.money, moneyPane), so money.js stays out of the boot chunk.
@@ -12358,11 +12359,12 @@ const FITNESS_PRESETS = [
    (for a quit one) the kind, then the form is the user's to change. Icons must
    be in HabitService.HABIT_ICONS (HabitIconsTest reads this list). */
 const HABIT_TEMPLATES = [
-  { key: 'water', name: 'Drink water', domain: 'habit', icon: 'droplets' },
-  { key: 'read', name: 'Read 20 min', domain: 'study', icon: 'book-open' },
-  { key: 'walk', name: 'Walk 8k steps', domain: 'fitness', icon: 'footprints', metric: 'steps' },
+  // reminderTime: the starter packs' time for the same habit (starter-packs.js) where there is one.
+  { key: 'water', name: 'Drink water', domain: 'habit', icon: 'droplets', reminderTime: '10:00' },
+  { key: 'read', name: 'Read 20 min', domain: 'study', icon: 'book-open', reminderTime: '21:30' },
+  { key: 'walk', name: 'Walk 8k steps', domain: 'fitness', icon: 'footprints', metric: 'steps', reminderTime: '18:00' },
   { key: 'nosugar', name: 'No sugar', domain: 'habit', icon: 'ban', kind: 'quit' },
-  { key: 'meditate', name: 'Meditate', domain: 'habit', icon: 'leaf', metric: 'minutes' },
+  { key: 'meditate', name: 'Meditate', domain: 'habit', icon: 'leaf', metric: 'minutes', reminderTime: '07:00' },
 ];
 
 const METRIC_LABEL = { none: 'Just a tick', km: 'Distance (km)', steps: 'Steps', minutes: 'Minutes' };
@@ -12816,7 +12818,13 @@ function openHabitForm(habit) {
   const reminderInput = h('input', {
     type: 'time',
     class: 'gb-input',
-    value: habit && habit.reminderTime ? String(habit.reminderTime).slice(0, 5) : '',
+    // A new habit starts at the time this user already likes to be nudged (the
+    // median of their other habits' reminders); none set anywhere, none here.
+    value: habit
+      ? habit.reminderTime
+        ? String(habit.reminderTime).slice(0, 5)
+        : ''
+      : suggestReminderTime(state.habits, ''),
   });
   const toneSel = h(
     'select',
@@ -12995,6 +13003,7 @@ function openHabitForm(habit) {
                 if (di >= 0) domain.node.children[di].click();
                 kindSeg.node.children[t.kind === 'quit' ? 1 : 0].click();
                 metricSel.value = t.metric || 'none';
+                if (t.reminderTime) reminderInput.value = t.reminderTime;
                 // After the category click: syncDomain clears a non-fitness icon.
                 presetIcon = t.icon;
               },
