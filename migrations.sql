@@ -97,6 +97,8 @@ FROM (
   UNION ALL SELECT 'mentor_messages'        AS table_name, 'actions_json'
   UNION ALL SELECT 'reminder_dispatch_log'  AS table_name, 'snooze_of'
   UNION ALL SELECT 'reminder_dispatch_log'  AS table_name, 'attempts'
+  UNION ALL SELECT 'habits'                 AS table_name, 'health_link'
+  UNION ALL SELECT 'habits'                 AS table_name, 'health_target'
 ) AS t
 LEFT JOIN information_schema.COLUMNS c
        ON c.table_schema = DATABASE()
@@ -636,3 +638,10 @@ CREATE TABLE IF NOT EXISTS `bank_feed_consents` (
   KEY `ix_bank_feed_user` (`user_id`),
   CONSTRAINT `fk_bank_feed_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- A habit linked to a phone health reading, which the app reads to tick it on
+-- its own. health_link: steps | sleep | distance | calories | floors | workout;
+-- health_target: the daily goal in that link's unit (count, hours, km, kcal,
+-- floors, minutes). Existing rows: NULL, not linked.
+ALTER TABLE habits ADD COLUMN health_link VARCHAR(16) NULL;
+ALTER TABLE habits ADD COLUMN health_target DOUBLE NULL;

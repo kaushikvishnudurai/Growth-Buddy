@@ -2813,6 +2813,7 @@ function HabitSleepInsightCard({ habits, wellness }) {
 }
 
 export {
+  sleepHours,
   ScreenDashboard,
   HOME_WIDGETS,
   resolveHomeLayout,

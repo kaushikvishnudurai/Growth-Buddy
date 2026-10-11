@@ -6,6 +6,7 @@ import {
   usualReminderTime,
   stepsTarget,
   focusMinutesTarget,
+  suggestHealthLink,
 } from './nudges.js';
 
 // usualSleep: median across midnight, 3 nights minimum, today and >14 days ignored.
@@ -95,5 +96,16 @@ assert.equal(focusMinutesTarget('Read 20 min'), null);
 assert.equal(focusMinutesTarget('Deep work 2h'), 120);
 assert.equal(focusMinutesTarget('Focus 45 min'), 45);
 assert.equal(focusMinutesTarget('Pomodoro'), 25);
+
+// suggestHealthLink: the form's guess at what a habit's name means.
+assert.deepEqual(suggestHealthLink('Sleep well'), { link: 'sleep', target: 7 });
+assert.deepEqual(suggestHealthLink('Sleep 8h'), { link: 'sleep', target: 8 });
+assert.deepEqual(suggestHealthLink('Walk 10k steps'), { link: 'steps', target: 10000 });
+assert.deepEqual(suggestHealthLink('Evening walk'), { link: 'steps', target: 8000 });
+assert.deepEqual(suggestHealthLink('Run 5 km'), { link: 'distance', target: 5 });
+assert.deepEqual(suggestHealthLink('Gym 45 min'), { link: 'workout', target: 45 });
+assert.deepEqual(suggestHealthLink('Take the stairs'), { link: 'floors', target: 10 });
+assert.equal(suggestHealthLink('Meditate'), null);
+assert.equal(suggestHealthLink('Read 20 min'), null);
 
 console.log('nudges: ok');

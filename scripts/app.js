@@ -37,6 +37,7 @@ import {
   QuoteCard,
   HOME_WIDGETS,
   resolveHomeLayout,
+  sleepHours,
 } from './dashboard.js';
 import { habitDue } from './home-order.js';
 import { withProgressLog, needsProgressLog } from './goal-milestones.js';
@@ -103,7 +104,7 @@ import {
 import { WORK_WEEKS, getWorkWeek, setWorkWeek, occursOn } from './recurrence.js';
 import { ScreenAchievements, computeAchievements, levelProgress } from './achievements.js';
 import { celebrate } from './celebrate.js';
-import { usualSleep, stepsTarget, focusMinutesTarget } from './nudges.js';
+import { usualSleep, stepsTarget, focusMinutesTarget, HEALTH_LINKS, suggestHealthLink } from './nudges.js';
 import {
   enablePush,
   disablePush,
@@ -122,10 +123,16 @@ import {
   isNative,
   deviceLabelHeader,
   localNotificationsAvailable,
+  localNotificationPermission,
   nativePlugin,
   applyNativeStatusBar,
   hideNativeSplash,
   readTodaySteps,
+  readLastNight,
+  readHealthValue,
+  readHealthSummary,
+  healthAvailable,
+  requestHealthAccess,
   cancelPendingLocalNotifications,
   onLocalNotificationAction,
 } from './native.js';
@@ -2054,7 +2061,7 @@ function maybeStartFirstRun() {
   const u = state.user;
   if (!u || !u.id || firstRunOpen) return;
   const p = u.uiPrefs || {};
-  if (p.setupDone) return;
+  if (p.setupDone) return maybeAskPermissions();
   const hasData =
     (state.tasks || []).length > 0 ||
     (state.habits || []).length > 0 ||
@@ -2063,12 +2070,49 @@ function maybeStartFirstRun() {
   if (hasData) {
     saveUiPrefs({ setupDone: true });
     syncDeviceTimezone(); // the offer stood down while this was undecided
+    maybeAskPermissions();
     return;
   }
   // A beat after first paint, like the timezone offer, so it lands on Home
   // rather than on the loading card.
   setTimeout(openFirstRunSetup, 600);
 }
+
+/* Accounts set up before health data existed: ask once, on the phone, for
+   notifications (if this phone hasn't answered yet) and health access. New
+   accounts get the same two as first-run steps. Marked asked the moment it
+   shows, so a dismissed sheet never comes back; Settings and the Health
+   screen can still connect. */
+async function maybeAskPermissions() {
+  const p = (state.user && state.user.uiPrefs) || {};
+  if (!isNative() || p.healthAsked || firstRunOpen) return;
+  if (!(await healthAvailable())) return;
+  // Android 13+ can answer 'prompt-with-rationale' after one refusal.
+  const askNotify = String(await localNotificationPermission()).startsWith('prompt');
+  saveUiPrefs({ healthAsked: true });
+  setTimeout(
+    () =>
+      openModal({
+        title: askNotify ? 'Two quick permissions' : 'Connect your health data',
+        sub: 'Your phone asks next. You can change either later in its settings.',
+        body: h(
+          'div',
+          { class: 'gb-form' },
+          askNotify ? h('p', { class: 'gb-setup-text' }, 'Notifications: reminders and habit nudges, even with the app closed.') : null,
+          h('p', { class: 'gb-setup-text' }, HEALTH_PITCH)
+        ),
+        primary: 'Allow',
+        onPrimary: async () => {
+          if (askNotify) await enablePushFlow('Notifications on.');
+          await connectHealth();
+        },
+      }),
+    600
+  );
+}
+
+const HEALTH_PITCH =
+  'Health data: steps, sleep, heart rate and workouts, so habits tick themselves and last night’s sleep logs itself. Read only; Growth Buddy never writes to it.';
 
 function openFirstRunSetup() {
   if (firstRunOpen || !state.user || (state.user.uiPrefs || {}).setupDone) return;
@@ -2080,12 +2124,14 @@ function openFirstRunSetup() {
     onClose: () => {
       firstRunOpen = false;
       // Whatever step it was left on, it has been seen: never again.
-      saveUiPrefs(tz ? { setupDone: true, tzAsked: tz } : { setupDone: true });
+      const done = isNative() ? { setupDone: true, healthAsked: true } : { setupDone: true };
+      saveUiPrefs(tz ? { ...done, tzAsked: tz } : done);
       syncDeviceTimezone();
     },
   });
 
-  const steps = [timezoneStep, notifyStep, featuresStep];
+  // healthStep after notifyStep: notifyStep's "already on" check assumes index 1.
+  const steps = isNative() ? [timezoneStep, notifyStep, healthStep, featuresStep] : [timezoneStep, notifyStep, featuresStep];
   let at = 0;
   const dots = h(
     'div',
@@ -2224,6 +2270,17 @@ function openFirstRunSetup() {
       primary: supported ? 'Turn on notifications' : 'Next',
       // A refusal still moves on: the toast says why, and Settings can retry.
       onPrimary: supported ? () => enablePushFlow('Notifications on.') : null,
+      skip: 'Not now',
+    };
+  }
+
+  function healthStep() {
+    return {
+      title: 'Connect your health data',
+      sub: /android/i.test(navigator.userAgent) ? 'Through Health Connect.' : 'Through Apple Health.',
+      body: h('div', {}, badge('activity'), h('p', { class: 'gb-setup-text' }, HEALTH_PITCH)),
+      primary: 'Connect',
+      onPrimary: connectHealth,
       skip: 'Not now',
     };
   }
@@ -2741,7 +2798,7 @@ async function loadData() {
     flushOutbox();
     reSyncDeviceAlarms();
     loadWaterUsualHours();
-    autoTickStepHabits();
+    autoTickHealthHabits();
   } catch (err) {
     if (refresh) {
       toastError(err, 'Could not refresh. Showing your last data.');
@@ -2863,6 +2920,9 @@ async function loadSecondaryData() {
       state.trends = { byDate: dailyLogs.byDate || {} };
       persistWellness();
       persistTrends();
+      // Only now: before the server's nights are in, an empty day here may be
+      // one already logged on another device, and this would overwrite it.
+      autoLogSleep();
     } else if (photoHistory != null) {
       state.wellness = Object.assign(emptyWellness(), state.wellness || {}, { photoHistory });
       persistWellness();
@@ -3396,19 +3456,93 @@ async function autoTickHabit(habit, value, why) {
   });
 }
 
-/* Steps from the OS health store (native only; null on the web). Run after a
-   load and on coming back to the app — the count grows through the day. */
-async function autoTickStepHabits() {
+/* Habits linked to a health reading (healthLink + healthTarget) tick
+   themselves once today's reading reaches the target. Steps, distance,
+   calories, floors and workouts come from the phone (null on the web); sleep
+   comes from today's sleep entry, which autoLogSleep fills from the phone and
+   the user can edit by hand, so an edited night counts as edited. An older
+   Steps habit with no link still ticks off the target in its name. Run after a
+   load, on coming back to the app, and after a sleep save. Ticking goes
+   through autoTickHabit: once per habit per day, with Undo on the toast. */
+async function autoTickHealthHabits() {
   if (!featureOn('habits')) return;
-  const open = (state.habits || []).filter(
-    (hb) => hb.metric === 'steps' && !hb.doneToday && stepsTarget(hb.name) != null
-  );
+  const linkOf = (hb) => hb.healthLink || (hb.metric === 'steps' && stepsTarget(hb.name) != null ? 'steps' : null);
+  const open = (state.habits || []).filter((hb) => !hb.doneToday && hb.active !== false && linkOf(hb));
   if (!open.length) return;
-  const steps = await readTodaySteps();
-  if (steps == null) return;
-  open
-    .filter((hb) => steps >= stepsTarget(hb.name))
-    .forEach((hb) => autoTickHabit(hb, steps, steps.toLocaleString() + ' steps on your phone'));
+  const values = {};
+  await Promise.all(
+    [...new Set(open.map(linkOf))].map(async (link) => {
+      values[link] =
+        link === 'sleep'
+          ? sleepHours((state.wellness.sleepByDate || {})[todayKeyNow()])
+          : await readHealthValue(link);
+    })
+  );
+  // A habit that records a number gets the reading when it is the same thing.
+  const SAME = { steps: 'steps', distance: 'km', workout: 'minutes' };
+  open.forEach((hb) => {
+    const link = linkOf(hb);
+    const target = hb.healthLink ? Number(hb.healthTarget) : stepsTarget(hb.name);
+    const v = values[link];
+    if (v == null || !(target > 0) || v < target) return;
+    const L = HEALTH_LINKS[link];
+    const why = link === 'sleep' ? v + ' h of sleep' : v.toLocaleString() + ' ' + L.unit + ' on your phone';
+    autoTickHabit(hb, SAME[link] === hb.metric ? v : null, why);
+  });
+}
+
+/* Last night from the phone's health store, saved as today's sleep when none is
+   logged yet: a watch or a sleep-tracking phone already knows when you slept.
+   Quality stays 'okay' (the store has no opinion); the sleep dialog edits it.
+   Never asks for access (readLastNight only reads), so it is safe on every
+   load and resume. One read in flight at a time. */
+let sleepReadInFlight = false;
+async function autoLogSleep() {
+  const today = todayKeyNow();
+  if (sleepReadInFlight || !state.user) return;
+  // Already logged: nothing to read, but a sleep-linked habit still checks it.
+  if ((state.wellness.sleepByDate || {})[today]) return autoTickHealthHabits();
+  sleepReadInFlight = true;
+  try {
+    const night = await readLastNight();
+    // Typed in by hand while the store answered: that one stands.
+    if (!night || (state.wellness.sleepByDate || {})[today]) return;
+    await saveSleepEntry({ date: today, bedtime: night.bedtime, wakeTime: night.wakeTime, quality: 'okay' });
+  } finally {
+    sleepReadInFlight = false;
+  }
+}
+
+/* The Health screen's data. Read on opening it and on Refresh, never cached:
+   it is the phone's own data, and a stale copy would only disagree with it. */
+const health = { loading: false, summary: null, available: null };
+async function loadHealth() {
+  if (health.loading) return;
+  health.loading = true;
+  if (state.screen === 'health') render();
+  try {
+    health.available = await healthAvailable();
+    health.summary = health.available ? await readHealthSummary() : null;
+  } finally {
+    health.loading = false;
+    if (state.screen === 'health') render();
+  }
+}
+
+async function connectHealth() {
+  if (!(await requestHealthAccess())) {
+    pushToast(
+      /android/i.test(navigator.userAgent)
+        ? 'Health Connect isn’t available. Install or update it from the Play Store.'
+        : 'Health data isn’t available on this device.',
+      'error',
+      4200
+    );
+    return;
+  }
+  autoLogSleep();
+  autoTickHealthHabits();
+  await loadHealth();
 }
 
 /* After a saved focus session: today's focus minutes from the server, so two
@@ -3708,6 +3842,7 @@ const SCREEN_LABEL = {
   summary: 'Food summary',
   focus: 'Focus',
   report: 'Report',
+  health: 'Health',
   family: 'Family',
   circle: 'Circle',
   mentor: 'Buddy',
@@ -4974,6 +5109,7 @@ async function saveSleepEntry(payload) {
   } catch (err) {
     toastError(err, 'Saved locally, but could not sync sleep.');
   }
+  autoTickHealthHabits(); // a "Sleep well" habit linked to sleep
 }
 
 async function saveMoodEntry(payload) {
@@ -12014,6 +12150,60 @@ function openHabitForm(habit) {
     if (habit.domain === 'fitness') metricSel.value = habit.metric || 'none';
   }
 
+  // A health reading that ticks the habit by itself (autoTickHealthHabits).
+  // A new habit's name picks one ("Sleep well" -> sleep, 7 h) until the user
+  // chooses; editing keeps what the habit has. Ticking by hand still works.
+  const linkSel = h(
+    'select',
+    { class: 'gb-input', 'aria-label': 'Health reading' },
+    h('option', { value: '' }, 'Off, I tick it myself'),
+    ...Object.entries(HEALTH_LINKS).map(([k, L]) => h('option', { value: k }, L.label))
+  );
+  const linkTarget = h('input', {
+    type: 'number',
+    class: 'gb-input',
+    inputmode: 'decimal',
+    'aria-label': 'Daily target',
+  });
+  const linkUnit = h('span', { class: 'gb-field-hint' });
+  const linkTargetRow = h('div', { class: 'gb-habit-link-target' }, linkTarget, linkUnit);
+  let linkTouched = !!habit;
+  const syncLink = (fromUser) => {
+    const L = HEALTH_LINKS[linkSel.value];
+    linkTargetRow.style.display = L ? '' : 'none';
+    if (!L) return;
+    Object.assign(linkTarget, { min: String(L.step), max: String(L.max), step: String(L.step) });
+    linkUnit.textContent = L.unit + ' a day';
+    if (fromUser || !linkTarget.value) linkTarget.value = String(L.def);
+  };
+  const suggestLink = () => {
+    if (linkTouched) return;
+    const g = suggestHealthLink(nameInput.value);
+    linkSel.value = g ? g.link : '';
+    linkTarget.value = g ? String(g.target) : '';
+    syncLink(false);
+  };
+  linkSel.value = (habit && habit.healthLink) || '';
+  linkTarget.value = habit && habit.healthTarget != null ? String(habit.healthTarget) : '';
+  syncLink(false);
+  linkSel.addEventListener('change', () => {
+    linkTouched = true;
+    syncLink(true);
+  });
+  nameInput.addEventListener('input', suggestLink);
+  const linkField = h(
+    'div',
+    null,
+    h('div', { class: 'gb-field-label' }, 'Tick it from health data'),
+    linkSel,
+    linkTargetRow,
+    h(
+      'div',
+      { class: 'gb-field-hint' },
+      'Ticks itself once today’s reading reaches the target. Steps, distance, calories, floors and workouts come from the phone app; sleep from your sleep log, which the phone fills in.'
+    )
+  );
+
   // Build (tick it) or break (quit: clean unless a slip is logged). Chosen at
   // creation only — the server refuses to turn ticks into slips — so editing
   // shows a line instead. A quit habit is daily and measures nothing.
@@ -12030,6 +12220,7 @@ function openHabitForm(habit) {
     const quit = k === 'quit';
     cadenceBlock.style.display = quit ? 'none' : '';
     nameInput.placeholder = quit ? 'e.g. No sugar' : 'e.g. Meditate';
+    linkField.style.display = quit ? 'none' : '';
     if (quit) {
       presetRow.style.display = 'none';
       metricField.style.display = 'none';
@@ -12063,6 +12254,7 @@ function openHabitForm(habit) {
               onclick: () => {
                 nameInput.value = presetName = t.name;
                 nameInput.setAttribute('aria-invalid', 'false');
+                suggestLink();
                 // Category first, then the kind: a quit kind hides what fitness showed.
                 const di = DOMAIN_ORDER.indexOf(t.domain || 'habit');
                 if (di >= 0) domain.node.children[di].click();
@@ -12106,6 +12298,7 @@ function openHabitForm(habit) {
     domain.node,
     presetRow,
     metricField,
+    linkField,
     h('div', { class: 'gb-field-label' }, 'Color (optional)'),
     color.node,
     cadenceBlock,
@@ -12159,12 +12352,22 @@ function openHabitForm(habit) {
           throw fieldRefusal(targetInput, 'Pick 1 to 7 times a week.');
         }
       }
+      const healthLink = quit ? '' : linkSel.value;
+      let healthTarget = null;
+      if (healthLink) {
+        const L = HEALTH_LINKS[healthLink];
+        healthTarget = Number(linkTarget.value);
+        if (!(healthTarget > 0 && healthTarget <= L.max)) {
+          throw fieldRefusal(linkTarget, 'Pick a target up to ' + L.max.toLocaleString() + ' ' + L.unit + '.');
+        }
+      }
       const fields = {
         name,
         domain: d,
         icon,
         cadence: cad,
         metric: d === 'fitness' && !quit ? metricSel.value : 'none',
+        healthTarget,
         ...(targetPerWeek ? { targetPerWeek } : {}),
       };
       if (habit) {
@@ -12172,6 +12375,7 @@ function openHabitForm(habit) {
         // removed reminder as its own flag.
         await updateHabit(habit.id, {
           ...fields,
+          healthLink, // '' clears the link (PUT reads null as unchanged)
           color: color.get() || '',
           reminderTime: reminderInput.value || null,
           clearReminder: !reminderInput.value,
@@ -12187,6 +12391,7 @@ function openHabitForm(habit) {
       await createHabit({
         ...fields,
         kind,
+        healthLink: healthLink || null,
         color: color.get() || null,
         reminderTime: reminderInput.value || null,
         sound: toneSel.value || null,
@@ -13134,6 +13339,7 @@ const FEATURE_DEFS = [
   { key: 'habits', label: 'Habits', desc: 'Daily habits & streaks' },
   { key: 'food', label: 'Food & meals', desc: 'Log meals and calories' },
   { key: 'water', label: 'Water tracking', desc: 'Track daily water intake' },
+  { key: 'health', label: 'Health data', desc: 'Steps, sleep and heart from your phone' },
   { key: 'goals', label: 'Goals', desc: 'Short, mid & long-term goals' },
   { key: 'notes', label: 'Notes', desc: 'Quick notes and jottings' },
   { key: 'money', label: 'Money Buddy', desc: 'Expenses, budgets & AI money coach' },
@@ -13146,6 +13352,7 @@ const FEATURE_DEFS = [
 // Screen id -> the feature that must be ON to view it (home is always on).
 const SCREEN_FEATURE = {
   report: 'report',
+  health: 'health',
   focus: 'focus',
   habits: 'habits',
   goals: 'goals',
@@ -13377,6 +13584,25 @@ const SCREENS = {
     headerLabel: () => 'Your badges',
     headerName: () => 'Achievements',
     render: () => ScreenAchievements(achievementProps()),
+  },
+  health: {
+    headerLabel: () => 'From your phone',
+    headerName: () => 'Health',
+    render: () => {
+      if (health.available == null && !health.loading && isNative()) loadHealth();
+      return lazyScreen(
+        () => import('./health.js'),
+        (m) =>
+          m.ScreenHealth({
+            native: isNative(),
+            available: health.available !== false,
+            loading: health.loading || (isNative() && health.available == null),
+            summary: health.summary,
+            onConnect: connectHealth,
+            onRefresh: loadHealth,
+          })
+      );
+    },
   },
   focus: {
     headerLabel: () => 'Deep work',
@@ -15578,7 +15804,8 @@ document.addEventListener('visibilitychange', () => {
     refreshNotifications();
     syncDeviceTimezone(); // reopened after a flight
     refreshDayIfStale();
-    autoTickStepHabits(); // walked since the app was last open
+    autoTickHealthHabits(); // walked since the app was last open
+    autoLogSleep(); // woke up and opened the app
   }
 });
 

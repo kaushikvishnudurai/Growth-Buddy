@@ -356,6 +356,7 @@ const NAV_OVERFLOW = [
   { id: 'notes', icon: 'notebook-pen', label: 'Notes', feature: 'notes', group: 'plan' },
   { id: 'food', icon: 'utensils-crossed', label: 'Food', feature: 'food|water', group: 'track' },
   { id: 'money', icon: 'wallet', label: 'Money', feature: 'money', group: 'track' },
+  { id: 'health', icon: 'activity', label: 'Health', feature: 'health', group: 'track' },
   { id: 'circle', icon: 'users-round', label: 'Circle', feature: 'circle', group: 'people' },
   { id: 'family', icon: 'users', label: 'Family', feature: 'family', group: 'people' },
 ];
