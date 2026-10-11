@@ -29,6 +29,7 @@ import {
   AGREEMENT_MAX,
   parseAgreement,
   formatAgreement,
+  winLines,
 } from './circle-core.js';
 
 /* Placeholder rows, so a section has its real height before the data lands.
@@ -1887,7 +1888,8 @@ function ChallengesPanel({ api, currentUserId, wins, addHabit }) {
     });
     // Wins worth sharing, from the user's own habits and goals: a tap fills the
     // box, Post sends it. Nothing is posted without that second tap.
-    const winLinesNow = typeof wins === 'function' ? wins() : [];
+    // `wins()` hands over the inputs; winLines lives here, in the lazy chunk.
+    const winLinesNow = typeof wins === 'function' ? winLines(wins()) : [];
     const winChips = winLinesNow.length
       ? h(
           'div',

@@ -125,8 +125,15 @@ import {
   TAGS,
 } from './calendar.js';
 import { WORK_WEEKS, getWorkWeek, setWorkWeek, occursOn } from './recurrence.js';
-import { ScreenAchievements, computeAchievements, levelProgress } from './achievements.js';
-import { celebrate } from './celebrate.js';
+import { levelProgress } from './level.js';
+/* The badge engine and the celebration overlay are not first paint: both load on
+   first use (precached, so that is a cache hit, not a network wait). */
+let achMod = null;
+const loadAchievements = () => import('./achievements.js').then((m) => (achMod = m));
+const celebrate = (item) =>
+  import('./celebrate.js')
+    .then((m) => m.celebrate(item))
+    .catch((err) => console.warn('[celebrate] failed to load:', err));
 import { openSnap } from './snap.js';
 import {
   lastNightGuess,
@@ -173,7 +180,6 @@ import { registerToast } from './toast.js';
 import { initA11y, focusLocator, refocus } from './a11y.js';
 import { initErrorReporting } from './error-report.js';
 import { initVitals, markHomePainted } from './vitals.js';
-import { winLines } from './circle-core.js';
 import {
   CUSTOM_MAX_BYTES,
   CUSTOM_MAX_COUNT,
@@ -1556,9 +1562,16 @@ function achievementProps() {
    then celebrate anything new that crosses its threshold thereafter. */
 function checkAchievements() {
   if (!state.user || !state.achReady) return;
+  // First call loads the engine and runs again; until then nothing can be new.
+  if (!achMod) {
+    loadAchievements()
+      .then(() => checkAchievements())
+      .catch((err) => console.warn('[achievements] failed to load:', err));
+    return;
+  }
   let all;
   try {
-    all = computeAchievements(achievementProps()).flatMap((g) => g.items);
+    all = achMod.computeAchievements(achievementProps()).flatMap((g) => g.items);
   } catch (err) {
     // A bug in a badge rule, not a missing feature: say so, or badges just stop.
     console.warn('[achievements] compute failed:', err);
@@ -15188,7 +15201,11 @@ const SCREENS = {
   achievements: {
     headerLabel: () => 'Your badges',
     headerName: () => 'Achievements',
-    render: () => ScreenAchievements(achievementProps()),
+    render: () =>
+      lazyScreen(
+        () => import('./achievements.js'),
+        (m) => m.ScreenAchievements(achievementProps())
+      ),
   },
   health: {
     headerLabel: () => (isNative() ? 'Your phone and you' : 'Readings you log'),
@@ -15381,12 +15398,11 @@ const SCREENS = {
             currentUserId: state.user && state.user.id,
             // "Share a win" chips over a circle's composer, read when a feed opens.
             addHabit: addHabitNamed,
-            wins: () =>
-              winLines({
-                habits: state.habits || [],
-                goals: (state.goals || []).flatMap((sec) => sec.goals || []),
-                today: todayKey(),
-              }),
+            wins: () => ({
+              habits: state.habits || [],
+              goals: (state.goals || []).flatMap((sec) => sec.goals || []),
+              today: todayKey(),
+            }),
             // Inside an accepted link ({id} = the request id): cheer/nudge, the
             // thread, the agreement, and the mentor's weekly card.
             mentorshipApi: {
