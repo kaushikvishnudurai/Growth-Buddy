@@ -1287,7 +1287,8 @@ function ScreenGoals({
                   h(
                     'summary',
                     { class: 'gb-goal-section-title' },
-                    'Completed (' + finished.length + ')'
+                    'Completed (' + finished.length + ')',
+                    Icon('chevron-down', { size: 16, className: 'gb-goal-done-caret' })
                   ),
                   finished.map(row)
                 )

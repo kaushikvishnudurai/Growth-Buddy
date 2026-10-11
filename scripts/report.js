@@ -138,39 +138,6 @@ function statTile(label, value, sub, color) {
   );
 }
 
-/** Shown in place of a section when its feature is disabled. */
-function disabledCard(featureKey, title, icon, onEnableFeature) {
-  return Card({
-    className: 'gb-report-off',
-    children: [
-      h(
-        'div',
-        { class: 'gb-report-off-text' },
-        h('span', { class: 'gb-report-off-ic' }, Icon(icon, { size: 18, color: 'var(--fg3)' })),
-        h(
-          'div',
-          null,
-          h('div', { class: 'gb-report-off-title' }, title + ' is turned off'),
-          h(
-            'div',
-            { class: 'gb-report-off-sub' },
-            'Turn it on to start tracking and see this report.'
-          )
-        )
-      ),
-      h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-btn gb-btn--soft gb-btn--compact',
-          onclick: () => onEnableFeature && onEnableFeature(featureKey),
-        },
-        'Turn on'
-      ),
-    ],
-  });
-}
-
 /* ---- Trends drill-down ---------------------------------------------------
    Small SVG line charts over a 7- or 30-day window. Data comes from the local
    `trends` history (score/water/calories) plus the date-keyed `wellness` store
@@ -1200,15 +1167,6 @@ function recordsSection({ habits, trends, wellness, money, insightHistory }) {
   );
 }
 
-function section(featureKey, title, icon, enabled, onEnableFeature, contentFn) {
-  return h(
-    'div',
-    { class: 'gb-dash-block' },
-    SectionTitle({ title }),
-    enabled ? contentFn() : disabledCard(featureKey, title, icon, onEnableFeature)
-  );
-}
-
 function ScreenReport({
   features,
   score,
@@ -1228,7 +1186,6 @@ function ScreenReport({
   onInsightAction,
   range,
   onRange,
-  onEnableFeature,
 }) {
   const on = (k) => !features || features[k] !== false;
   const t = tasks || [];
@@ -1240,7 +1197,6 @@ function ScreenReport({
   const tasksDone = scored.filter((x) => x.done).length;
   const habitsDone = hb.filter((x) => x.doneToday).length;
   const topStreak = hb.reduce((m, x) => Math.max(m, x.streak || 0), 0);
-  const goalsDone = flatGoals.filter((g) => g.completed).length;
   const waterMl = (water && water.consumedMl) || 0;
   const waterGoal = Math.max(1, (water && water.goalMl) || 2000);
   const waterPct = Math.min(100, Math.round((waterMl / waterGoal) * 100));
@@ -1250,69 +1206,26 @@ function ScreenReport({
     'div',
     { class: 'gb-rise gb-report' },
 
-    // ---- Overall (always shown) ----
+    // ---- Today, one card ----
+    // Was five titled sections (summary, habits, water, food, goals) that
+    // repeated Done today twice and pushed Insights below the first screen.
+    // A switched-off feature drops its tile; Settings turns it back on.
     h(
       'div',
       { class: 'gb-dash-block' },
-      SectionTitle({ title: "Today's summary" }),
+      SectionTitle({ title: 'Today' }),
       Card({
-        className: 'gb-report-grid',
+        className: 'gb-report-grid gb-report-grid--wrap',
         children: [
           statTile('Score', Number.isFinite(score) ? Math.round(score) + '%' : null, null, 'var(--brand)'),
-          statTile('Tasks', tasksDone + '/' + scored.length, 'done today'),
-          statTile('Habits', habitsDone + '/' + hb.length, 'done today'),
-        ],
+          statTile('Tasks', tasksDone + '/' + scored.length, 'done'),
+          on('habits') ? statTile('Habits', habitsDone + '/' + hb.length, 'done') : null,
+          on('habits') ? statTile('Top streak', topStreak, 'days', 'var(--coral-600)') : null,
+          on('water') ? statTile('Water', waterPct + '%', waterMl + ' of ' + waterGoal + ' ml', 'var(--sky-600)') : null,
+          on('food') ? statTile('Calories', kcal, 'kcal logged', 'var(--sun-700)') : null,
+        ].filter(Boolean),
       })
     ),
-
-    on('habits')
-      ? section('habits', 'Habits', 'repeat', true, onEnableFeature, () =>
-          Card({
-            className: 'gb-report-grid',
-            children: [
-              statTile('Top streak', topStreak, 'days', 'var(--coral-600)'),
-              statTile('Active', hb.length, 'habits'),
-              statTile('Done today', habitsDone, 'of ' + hb.length),
-            ],
-          })
-        )
-      : section('habits', 'Habits', 'repeat', false, onEnableFeature),
-
-    on('water')
-      ? section('water', 'Water', 'droplets', true, onEnableFeature, () =>
-          Card({
-            className: 'gb-report-grid',
-            children: [
-              statTile('Today', waterMl + ' ml', 'of ' + waterGoal + ' ml', 'var(--sky-600)'),
-              statTile('Goal', waterPct + '%', 'reached'),
-            ],
-          })
-        )
-      : section('water', 'Water', 'droplets', false, onEnableFeature),
-
-    on('food')
-      ? section('food', 'Food', 'utensils-crossed', true, onEnableFeature, () =>
-          Card({
-            className: 'gb-report-grid',
-            children: [
-              statTile('Calories', kcal, 'logged today', 'var(--sun-700)'),
-              statTile('Entries', food && food.entries ? food.entries.length : 0, 'meals'),
-            ],
-          })
-        )
-      : section('food', 'Food', 'utensils-crossed', false, onEnableFeature),
-
-    on('goals')
-      ? section('goals', 'Goals', 'target', true, onEnableFeature, () =>
-          Card({
-            className: 'gb-report-grid',
-            children: [
-              statTile('Total', flatGoals.length, 'goals'),
-              statTile('Completed', goalsDone, 'of ' + flatGoals.length, 'var(--leaf-600)'),
-            ],
-          })
-        )
-      : section('goals', 'Goals', 'target', false, onEnableFeature),
 
     // ---- Cross-signal correlation insights ----
     // The year of logs once it lands: sixty days is thin for a weekday pattern.

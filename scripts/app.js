@@ -179,7 +179,8 @@ if ('serviceWorker' in navigator) {
         )
         .catch(() => {});
     }
-  } else {
+  } else if (!import.meta.env.DEV) {
+    // vite-plugin-pwa emits sw.js only in a build; on the dev server it is the SPA fallback.
     window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js', { scope: '/' }));
   }
 }
@@ -13009,45 +13010,18 @@ function ScreenHabits() {
           alignItems: 'center',
         },
       },
-      (function () {
-        const left = freezeTokensLeft();
-        return h(
-          'div',
-          { style: { minWidth: 0 } },
-          h(
-            'h3',
-            {
-              style: {
-                fontFamily: 'var(--font-display)',
-                fontWeight: 800,
-                fontSize: '1.125rem',
-                margin: 0,
-              },
-            },
-            'Your habits'
-          ),
-          // A button, not a label: the wallet was the only place freezes were
-          // mentioned and there was nowhere to go from it. Protecting a day was
-          // reachable only through the at-risk prompt, which covers yesterday
-          // and nothing else — so a miss from earlier in the week could not be
-          // rescued at all, however many tokens were sitting unspent.
-          h(
-            'button',
-            {
-              type: 'button',
-              class: 'gb-freeze-chip',
-              'data-empty': left > 0 ? 'false' : 'true',
-              title: 'Choose which day a freeze covers',
-              onclick: openFreezeCalendar,
-            },
-            Icon('snowflake', { size: 13, sw: 2.4 }),
-            // The earning rule was in the title attribute above, which a phone
-            // never shows — so on mobile the only place it existed was invisible.
-            left + ' freeze' + (left === 1 ? '' : 's') + ' left · 1 more each week',
-            Icon('chevron-right', { size: 13, sw: 2.6 })
-          )
-        );
-      })(),
+      h(
+        'h3',
+        {
+          style: {
+            fontFamily: 'var(--font-display)',
+            fontWeight: 800,
+            fontSize: '1.125rem',
+            margin: 0,
+          },
+        },
+        'Your habits'
+      ),
       h(
         'div',
         { style: { display: 'flex', gap: '8px', alignItems: 'center' } },
@@ -13086,6 +13060,34 @@ function ScreenHabits() {
             )
       )
     ),
+    // Its own row: beside Reorder and Add it wrapped to two lines on a phone.
+    (function () {
+      const left = freezeTokensLeft();
+      return h(
+        'div',
+        { style: { padding: '0 var(--gutter) 10px', marginTop: '-6px' } },
+        // A button, not a label: the wallet was the only place freezes were
+        // mentioned and there was nowhere to go from it. Protecting a day was
+        // reachable only through the at-risk prompt, which covers yesterday
+        // and nothing else — so a miss from earlier in the week could not be
+        // rescued at all, however many tokens were sitting unspent.
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-freeze-chip',
+            'data-empty': left > 0 ? 'false' : 'true',
+            title: 'Choose which day a freeze covers',
+            onclick: openFreezeCalendar,
+          },
+          Icon('snowflake', { size: 13, sw: 2.4 }),
+          // The earning rule was in the title attribute above, which a phone
+          // never shows — so on mobile the only place it existed was invisible.
+          left + ' freeze' + (left === 1 ? '' : 's') + ' left · 1 more each week',
+          Icon('chevron-right', { size: 13, sw: 2.6 })
+        )
+      );
+    })(),
     h(
       'div',
       { style: { padding: '0 var(--gutter)' } },
@@ -13342,9 +13344,6 @@ const SCREENS = {
             onRange: (days) => {
               state.reportRange = days;
               repaintReport();
-            },
-            onEnableFeature: (key) => {
-              setFeature(key, true).catch((err) => toastError(err, 'Could not turn on feature.'));
             },
           })
       );

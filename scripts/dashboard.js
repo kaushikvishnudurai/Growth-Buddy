@@ -56,7 +56,6 @@ function OnboardingCard({
   onOnboardDismiss,
 }) {
   if (CacheStorage.getItem(ONBOARD_KEY) === '1') return null;
-  const today = todayKey();
   const steps = [
     // One tap that sets up most of the rest: habits, reminders and targets for a goal.
     onStarterPack && {
@@ -81,7 +80,8 @@ function OnboardingCard({
       action: onAddTask,
     },
     {
-      done: !!(wellness && wellness.moodByDate && wellness.moodByDate[today]),
+      // Ever, not today: a today-only check re-opened the checklist every morning.
+      done: !!(wellness && wellness.moodByDate && Object.keys(wellness.moodByDate).length),
       label: 'Log how you feel',
       hint: 'A quick mood check-in',
       icon: 'smile-plus',
@@ -104,7 +104,13 @@ function OnboardingCard({
           'div',
           null,
           h('div', { class: 'gb-onboard-kicker' }, 'Getting started'),
-          h('div', { class: 'gb-onboard-title' }, 'Set up in ' + steps.length + ' quick steps')
+          h(
+            'div',
+            { class: 'gb-onboard-title' },
+            doneCount
+              ? doneCount + ' of ' + steps.length + ' done'
+              : 'Set up in ' + steps.length + ' quick steps'
+          )
         ),
         h(
           'button',
@@ -127,29 +133,31 @@ function OnboardingCard({
       h(
         'div',
         { class: 'gb-onboard-steps' },
-        ...steps.map((s) =>
-          h(
-            'button',
-            {
-              type: 'button',
-              class: 'gb-onboard-step' + (s.done ? ' is-done' : ''),
-              onclick: s.done ? null : s.action,
-              disabled: s.done,
-            },
+        // Only what's left: three ticked rows took half a phone screen to say "done".
+        ...steps
+          .filter((s) => !s.done)
+          .map((s) =>
             h(
-              'span',
-              { class: 'gb-onboard-step-ic' },
-              Icon(s.done ? 'check' : s.icon, { size: 16, sw: 2.4 })
-            ),
-            h(
-              'span',
-              { class: 'gb-onboard-step-tx' },
-              h('span', { class: 'gb-onboard-step-l' }, s.label),
-              h('span', { class: 'gb-onboard-step-h' }, s.hint)
-            ),
-            s.done ? null : Icon('chevron-right', { size: 16, sw: 2.4 })
+              'button',
+              {
+                type: 'button',
+                class: 'gb-onboard-step',
+                onclick: s.action,
+              },
+              h(
+                'span',
+                { class: 'gb-onboard-step-ic' },
+                Icon(s.icon, { size: 16, sw: 2.4 })
+              ),
+              h(
+                'span',
+                { class: 'gb-onboard-step-tx' },
+                h('span', { class: 'gb-onboard-step-l' }, s.label),
+                h('span', { class: 'gb-onboard-step-h' }, s.hint)
+              ),
+              Icon('chevron-right', { size: 16, sw: 2.4 })
+            )
           )
-        )
       ),
     ],
   });

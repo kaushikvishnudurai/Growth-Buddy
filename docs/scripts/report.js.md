@@ -1,15 +1,14 @@
 # scripts/report.js — Report screen
 
-Exports `ScreenReport`. A per-feature progress overview. When a feature is switched off in
-settings, `section(featureKey, title, icon, enabled, onEnableFeature, contentFn)` swaps that
-section for `disabledCard` — a "turn it back on" prompt — so the report explains *why* it's
-empty instead of showing zeros.
+Exports `ScreenReport`. A progress overview that opens on one **Today** card (score, tasks,
+habits, top streak, water, calories; `.gb-report-grid--wrap`, three tiles a row) and then
+Insights. A switched-off feature drops its tile and its later sections; there is no in-report
+"turn it back on" prompt any more (Settings has the toggles).
 
 | Piece | What |
 |---|---|
 | `insightsSection(data, {loading, onDismiss, onAction})` | renders `buildInsights(data)` from `scripts/insights.js`. `ScreenReport` passes `yearOf(...)` trends + wellness (the year once it lands), money, habits, tasks, flattened goals, `goalProgress`, `insightHistory` as `history`, `features` and `dismissedInsights` (`ui_prefs.insightsDismissed`, last 50, written by app.js `onDismissInsight`). Each card shows "Based on …" (`basis`) and a dismiss ✕, plus its `action` as a `.gb-insight-action` button when `onAction` (`ScreenReport`'s `onInsightAction` = app.js `runInsightAction`) is passed. Empty: a skeleton while `insightLoading`, else "N of 7 days logged" + a progressbar (`insightProgress`) |
 | `statTile(label, value, sub, color)` | a `null`/`NaN` value renders as a dash |
-| `disabledCard` | feature-off placeholder |
 | **hand-rolled SVG charts** | `svgEl`, `trendChart(values, color, days, fmt, title, opts)` (the SVG is `aria-hidden`, a `.gb-sr-only` table with a summary caption carries the data; `opts.bucket: 'week'` makes each point a week's daily average keyed by its Monday — summary, table header and tip say "week of" — and `opts.ticks` `[{i, label}]` prints month labels under it, `.gb-trend-ticks`, edge labels hang inward), `trendCard(..., vs, opts)`. No chart library. Hover/drag shows one day's value via `.gb-trend-tip`, snapped to the nearest logged day. `pointerleave` hides it for a mouse only: on touch it fires right after the lift, so a tap's readout stays until the next tap or a scroll. The Calories series drops 0 kcal like `vsLine` does `vs` = `{dir, text}` line under the chart |
 | `SCALE_NUM` / `SCALE_LABEL` | categorical check-ins → 1–4 and back (`low/poor`=1 … `great`=4) |
 | day helpers | `pad2`, `dayKeyOf`, `lastNDays(n)`, `nDays(n)` |
@@ -21,7 +20,6 @@ empty instead of showing zeros.
 | `pixelsSection` / `pixelGrid` | **year in pixels**: a row per month for the last 12 (oldest on top) x 31 day columns, shade = `pixelValues(metric)`, blank = nothing logged, outline = a day still to come. Tapping a day reads it out under the grid (`.gb-pixels-readout`, aria-live, one delegated listener); the grid is a focusable `role=group`, arrow keys walk the pick (left/right by day, up/down by month), Home/End jump to the first/last day, Escape clears; otherwise that line is the year's summary. Legend words come from `PIXEL_METRICS` (`low`/`high`). **Today's score is blank** (still climbing; as a finished day it read as 0%), and `monthReview` averages finished days only. Score / Mood / Habits toggle repaints in place (`pixelMetric`, module-level, not app state, not persisted) |
 | `yearOf(trends, wellness, insightHistory)` | boot holds only 60 days of daily logs; Report fetches 366 (`insightHistory.year`) and insights, trends, pixels + records use it once it lands. **Merged**, live stores winning a shared day (they hold today's edits); sleep is included |
 | `recordsSection` | `personalRecords` tiles (money in lakh grouping for ₹ only, the device's grouping otherwise) + **Share my month** (`monthReview` → `share-card.js`); on the 1st–3rd it shares **last month** (`reviewMonth`). Section is omitted when both are empty |
-| `section(...)` | feature-gated section wrapper |
 | `ScreenReport({...})` | assembles all sections |
 
 The look-back maths (pixels, records, period delta, month card, `weeklyBuckets`, `monthTicks`, `correlate`, `correlationWords`, `focusMinutesByDay`, `weekOverWeek`) lives in **`scripts/review.js`** — pure,

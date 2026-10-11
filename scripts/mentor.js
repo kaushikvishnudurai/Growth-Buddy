@@ -819,7 +819,6 @@ function ScreenMentor({ api, threadId: initialThread, starter }) {
   const chipsRow = h(
     'div',
     { class: 'gb-msg-chips is-hidden' },
-    clearChip,
     PROMPTS.map((p) =>
       h(
         'button',
@@ -835,7 +834,9 @@ function ScreenMentor({ api, threadId: initialThread, starter }) {
         },
         p
       )
-    )
+    ),
+    // Last: the prompts are what a tap should find first, not a reset.
+    clearChip
   );
 
   // The thread bar: which chat this is, the list of them, and a new one.
