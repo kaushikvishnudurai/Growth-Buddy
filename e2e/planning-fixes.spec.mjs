@@ -20,6 +20,8 @@ test.use({ screenshot: 'off' });
 
 const auth = (token) => ({ headers: { Authorization: 'Bearer ' + token } });
 const api = async (page, account, path) => (await page.request.get(path, auth(account.token))).json();
+// /api/goals answers sections by horizon.
+const goals = async (page, account) => (await api(page, account, '/api/goals')).flatMap((s) => s.goals || []);
 const main = (page) => page.locator('#gb-main');
 const shot = (page, id) =>
   test.info().project.name === 'desktop' &&
@@ -75,7 +77,7 @@ test('EXP-1: editing a goal saves the new title', async ({ page, account }) => {
   await expect(dlg).toBeHidden();
   await expect(m.getByRole('button', { name: 'Edit goal: Swim one kilometre' })).toBeVisible();
   await expect
-    .poll(async () => (await api(page, account, '/api/goals')).some((g) => g.title === 'Swim one kilometre'))
+    .poll(async () => (await goals(page, account)).some((g) => g.title === 'Swim one kilometre'))
     .toBe(true);
   await shot(page, 'EXP-1');
 });

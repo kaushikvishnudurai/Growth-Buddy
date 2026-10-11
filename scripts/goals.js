@@ -1138,15 +1138,17 @@ function ScreenGoals({
           durationInput.focus();
           throw new Error('Track daily takes a whole number of days, 1 to 1000.');
         }
-        const goal = await onCreateGoal({
+        // Not `goal`: a const of that name here shadows the parameter for the
+        // whole function, and the edit branch above then read it in its TDZ.
+        const created = await onCreateGoal({
           title,
           description: descInput.value.trim() || null,
           horizon,
           targetDate: targetInput.value || null,
         });
         const ids = pickedIds();
-        if (goal && goal.id && (dur != null || ids.length)) {
-          onUpdateGoalProgress(goal.id, {
+        if (created && created.id && (dur != null || ids.length)) {
+          onUpdateGoalProgress(created.id, {
             ...(dur != null ? { durationDays: dur, daysFollowed: 0 } : {}),
             ...(ids.length ? { linkedHabitIds: ids } : {}),
           });
