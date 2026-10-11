@@ -73,6 +73,7 @@ import {
   applyLedgerDiff,
   docPart,
   LEDGER_ARRAYS,
+  suggestCategory,
 } from './money-core.js';
 import {
   ScreenCalendar,
@@ -3597,7 +3598,8 @@ function addQuickExpense(amount, note) {
     id:
       typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
     amount: Math.round(amount),
-    category: 'others',
+    // The tag Money's own form would start on: this note's past tag, then keywords.
+    category: (note && suggestCategory(note, state.money)) || 'others',
     date: todayKeyNow(),
     note: note || '',
     createdAt: Date.now(),
