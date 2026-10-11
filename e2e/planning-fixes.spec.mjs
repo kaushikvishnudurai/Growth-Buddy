@@ -251,3 +251,27 @@ test('EXP-2 + CNT-16: a repaint mid-typing keeps the caret, and Notes fetches on
   const count = (p) => gets.filter((x) => x === p).length;
   expect([count('/api/notes'), count('/api/notes/counts'), count('/api/notes/draft')]).toEqual([1, 1, 1]);
 });
+
+test('A11-8: a note card is read as a note, opened by its own button, with Pin beside it', async ({ page, account }) => {
+  await boot(page, account, 'notes');
+  const m = main(page);
+  const card = m.locator('.gb-note-card').filter({ has: page.getByRole('heading', { name: 'Ideas for the trip' }) });
+  await expect(card).not.toHaveAttribute('role', 'button');
+  await expect(card).not.toHaveAttribute('tabindex', /.*/);
+  const open = card.getByRole('button', { name: 'Open Ideas for the trip' });
+  await expect(open).toHaveAccessibleDescription(/\S/);
+  // No control inside another: the pin is the open button's sibling.
+  expect(await card.locator('button button, [role=button] button').count()).toBe(0);
+  await expect(card.getByRole('button', { name: 'Pin this note' })).toBeVisible();
+  // Keyboard: Tab reaches it, Enter opens the note.
+  await open.focus();
+  if (test.info().project.name === 'desktop')
+    await card.screenshot({ path: 'docs/evidence/planning/A11-8.jpg', type: 'jpeg', quality: 80 });
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('dialog', { name: 'Note' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog', { name: 'Note' })).toHaveCount(0);
+  // A pointer tap anywhere on the card still opens it.
+  await card.click({ position: { x: 60, y: 60 } });
+  await expect(page.getByRole('dialog', { name: 'Note' })).toBeVisible();
+});

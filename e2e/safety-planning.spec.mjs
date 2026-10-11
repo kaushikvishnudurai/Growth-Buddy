@@ -256,7 +256,8 @@ async function newNote(page, title, body) {
   await m.getByRole('button', { name: 'Save note' }).click();
   await expect(m.getByRole('heading', { name: title })).toBeVisible();
 }
-const card = (page, title) => main(page).getByRole('button', { name: title }).filter({ has: page.getByRole('heading', { name: title }) });
+// A plain <article> opened through its stretched "Open <title>" button (A11-8).
+const card = (page, title) => main(page).locator('.gb-note-card').filter({ has: page.getByRole('heading', { name: title }) });
 
 test('Notes: create, edit, and the edit survives a reload', async ({ page, account }) => {
   await boot(page, account, 'notes');

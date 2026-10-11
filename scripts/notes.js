@@ -1480,7 +1480,7 @@ function ScreenNotes({
       const card = cardOf(created.id);
       landed(card);
       // Focus follows the note; the folded composer left it on <body>.
-      if (card) card.focus({ preventScroll: true });
+      focusCard(card);
     } catch (err) {
       toast.error(err, 'Could not save that note.');
     } finally {
@@ -1489,6 +1489,8 @@ function ScreenNotes({
   }
 
   const cardOf = (id) => listEl.querySelector('[data-id="' + id + '"]');
+  // A card is opened (and focused) through its .gb-note-open button.
+  const focusCard = (el) => el && (el.querySelector('.gb-note-open') || el).focus({ preventScroll: true });
   // An effect on a card behind a closing sheet waits out its exit.
   const SHEET_EXIT = SHEET_EXIT_MS + 20;
 
@@ -1513,28 +1515,35 @@ function ScreenNotes({
     const coverSrc = SAFE_IMG.test(note.cover || '')
       ? note.cover
       : photos[0] && photos[0].getAttribute('src');
+    /* A plain article, so a reader reads the note; opening it is a real button
+       stretched over the card (app.css .gb-note-open), named by the title and
+       described by the preview. Pin, Restore and Delete forever are its
+       siblings, not controls nested in a button. A tap on the cover (painted
+       above the stretch) still opens through the card's own click. */
+    const bodyId = 'gb-note-body-' + String(note.id).replace(/[^\w-]/g, '');
+    bodyEl.id = bodyId;
     const card = h('article', {
       class: 'gb-note-card' + (note.pinned ? ' is-pinned' : '') + (count ? ' has-cover' : ''),
       'data-id': note.id,
       // The colour tints the paper and inks the margin rule (app.css .gb-note-card).
       style: c ? { '--note-paper': c.bg, '--note-rule': c.line } : null,
-      tabindex: '0',
-      role: 'button',
-      'aria-label':
-        (note.title || preview.slice(0, 60) || (count ? 'Photo note' : 'Untitled note')) +
-        (count ? ', ' + count + (count === 1 ? ' photo' : ' photos') : ''),
       onclick: (e) => {
-        if (e.target.closest('button')) return; // the pin, Restore, Delete forever
+        if (e.target.closest('button')) return; // the open button, pin, Restore, Delete forever
         activate(note, card);
       },
-      onkeydown: (e) => {
-        if (e.target !== card) return; // Enter on a button inside is that button's
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          activate(note, card);
-        }
-      },
     });
+    card.appendChild(
+      h('button', {
+        type: 'button',
+        class: 'gb-note-open',
+        'aria-label':
+          'Open ' +
+          (note.title || preview.slice(0, 60) || (count ? 'photo note' : 'untitled note')) +
+          (count ? ', ' + count + (count === 1 ? ' photo' : ' photos') : ''),
+        'aria-describedby': preview ? bodyId : null,
+        onclick: () => activate(note, card),
+      })
+    );
     // The Trash has no pin: a deleted note has no place in the order.
     if (view !== 'trash') {
       card.appendChild(
@@ -1634,6 +1643,12 @@ function ScreenNotes({
 
   /* A card's tap: the editor, or (offline, or in the Trash) a read-only view. */
   function activate(note, card) {
+    // One note sheet at a time: a second tap landing as the first opens (or a
+    // tap and the card's own click both arriving) stacked two of the same note.
+    const up = Array.from(document.querySelectorAll('.gb-note-modal')).some(
+      (m) => !m.parentElement.classList.contains('is-closing')
+    );
+    if (up) return;
     if (offline || view === 'trash') readOnly(note);
     else openNote(note, card);
   }
@@ -1930,7 +1945,7 @@ function ScreenNotes({
               paint();
               // The opener is gone: focus the card that took its place, else search.
               const left = Array.from(listEl.querySelectorAll('.gb-note-card:not([hidden])'));
-              (left[Math.min(Math.max(at, 0), left.length - 1)] || searchInput).focus({ preventScroll: true });
+              focusCard(left[Math.min(Math.max(at, 0), left.length - 1)] || searchInput);
             }, SHEET_EXIT);
           } catch (err) {
             toast.error(err, 'Could not delete that note.');
@@ -2139,7 +2154,7 @@ function ScreenNotes({
       refreshCounts();
       landed(cardOf(note.id));
       // Undo came from a toast, after the card's sheet had gone: focus was on <body>.
-      if (cardOf(note.id)) cardOf(note.id).focus({ preventScroll: true });
+      focusCard(cardOf(note.id));
     } catch (err) {
       toast.error(err, 'Could not bring that note back.');
     }
@@ -2156,7 +2171,7 @@ function ScreenNotes({
       refreshCounts();
       landed(cardOf(note.id));
       // Undo came from a toast, after the card's sheet had gone: focus was on <body>.
-      if (cardOf(note.id)) cardOf(note.id).focus({ preventScroll: true });
+      focusCard(cardOf(note.id));
     } catch (err) {
       toast.error(err, 'Could not change that note.');
     }
