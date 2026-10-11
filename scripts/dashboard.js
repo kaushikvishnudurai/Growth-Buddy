@@ -30,7 +30,8 @@ import {
   homeGoals,
 } from './home-order.js';
 import { suggestReminderTime } from './habit-stats.js';
-import { usualSleep } from './nudges.js';
+import { sleepToConfirm } from './nudges.js';
+import { pickOneThing } from './one-thing.js';
 import { fmtDate, fmtNumber } from './i18n.js';
 import {
   groupBySlot,
@@ -520,16 +521,57 @@ function TodayPlanCard({ water, wellness, onPlanToday }) {
   });
 }
 
+/* The one thing today (one-thing.js picks it): pinned above the layout, not a
+   widget, so saved layouts never see it. One button, the existing handler; the
+   render after it succeeds picks the next thing, or drops the card. */
+function oneThingFor({ tasks, habits, water, wellness, money, features, toggleTask, toggleHabit, onOpenMoney, onConfirmSleep, onQuickAddWater, onAddMood }) {
+  const act = {
+    streak: toggleHabit,
+    overdue: toggleTask,
+    budget: onOpenMoney && (() => onOpenMoney()),
+    sleep: onConfirmSleep,
+    water: onQuickAddWater,
+    mood: onAddMood && (() => onAddMood()),
+  };
+  const one = pickOneThing({ tasks, habits, water, wellness, money, features, can: (k) => !!act[k] });
+  return one && { ...one, run: () => act[one.kind](one.arg) };
+}
+
+function OneThingCard(one) {
+  const title =
+    one.kind === 'sleep'
+      ? 'Slept ' + sharedFormatTime(one.arg.bedtime) + ' to ' + sharedFormatTime(one.arg.wakeTime) + '?'
+      : one.title;
+  return Card({
+    className: 'gb-coach-card',
+    children: h(
+      'div',
+      { class: 'gb-coach-head' },
+      h(
+        'div',
+        null,
+        h('div', { class: 'gb-coach-kicker' }, 'One thing today'),
+        h('div', { class: 'gb-coach-title' }, title),
+        h('div', { class: 'gb-coach-why' }, one.why)
+      ),
+      h(
+        'button',
+        { type: 'button', class: 'gb-btn gb-btn--primary gb-btn--compact', onclick: one.run },
+        one.label
+      )
+    ),
+  });
+}
+
 /* The morning check-in, one tap each: last night as the usual night
    (usualSleep, nudges.js) once the usual wake time has passed, and the mood
    scale itself. Each row goes the moment its entry exists; Edit is the full
    sleep dialog for a night that wasn't the usual one. */
 function WellnessQuick({ wellness, sleep, mood, onConfirmSleep, onQuickMood, onAddSleep }) {
   const rows = [];
-  const usual = !sleep && onConfirmSleep ? usualSleep(wellness && wellness.sleepByDate, todayKey()) : null;
-  const now = new Date();
-  const [wh, wm] = usual ? usual.wakeTime.split(':').map(Number) : [0, 0];
-  if (usual && now.getHours() * 60 + now.getMinutes() >= wh * 60 + wm) {
+  const usual =
+    !sleep && onConfirmSleep ? sleepToConfirm(wellness && wellness.sleepByDate, todayKey(), new Date()) : null;
+  if (usual) {
     rows.push(
       h(
         'div',
@@ -2569,17 +2611,41 @@ function ScreenDashboard({
   onSaveMoney,
   requestReceiptScan,
   onOpenMoney,
+  onQuickAddWater,
   homeLayout,
   quickAdd,
 }) {
   const on = (k) => !features || features[k] !== false;
+  const one = oneThingFor({
+    tasks,
+    habits,
+    water,
+    wellness,
+    money,
+    features,
+    toggleTask,
+    toggleHabit,
+    onOpenMoney,
+    onConfirmSleep,
+    onQuickAddWater,
+    onAddMood,
+  });
+  const oneKind = one && one.kind;
 
   // One renderer per widget id. Each returns the card node(s) for that widget.
   const renderers = {
     // A turned-off feature drops out of the cards that summarise it, not just its own card.
     score: () => ScoreCard({ score, tasks, habits: on('habits') ? habits : [] }),
     plan: () => TodayPlanCard({ water: on('water') ? water : null, wellness, onPlanToday }),
-    wellness: () => WellnessCard({ wellness, onAddSleep, onAddMood, onConfirmSleep, onQuickMood }),
+    // The card above owns its nudge: the check-in row asking the same thing goes.
+    wellness: () =>
+      WellnessCard({
+        wellness,
+        onAddSleep,
+        onAddMood,
+        onConfirmSleep: oneKind === 'sleep' ? null : onConfirmSleep,
+        onQuickMood: oneKind === 'mood' ? null : onQuickMood,
+      }),
     tasks: () => [
       SectionTitle({ title: "Today's tasks", action: '+ Add', onAction: onAddTask }),
       TasksCard({
@@ -2669,6 +2735,7 @@ function ScreenDashboard({
     );
   }
   if (onboard) blocks.unshift(h('div', { class: 'gb-dash-block' }, onboard));
+  if (one) blocks.unshift(h('div', { class: 'gb-dash-block' }, OneThingCard(one)));
   if (qa) blocks.unshift(qa);
 
   return h('div', { class: 'gb-rise gb-dash gb-dash--single' }, ...blocks);

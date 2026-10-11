@@ -13402,6 +13402,7 @@ const SCREENS = {
         onSaveMoney: saveMoney,
         requestReceiptScan,
         onOpenMoney: () => setScreen('money'),
+        onQuickAddWater: featureOn('water') ? quickAddWater : null,
         homeLayout: (state.user && state.user.homeLayout) || null,
         quickAdd: homeQuickAdd(),
       }),
