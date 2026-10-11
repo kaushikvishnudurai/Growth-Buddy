@@ -1902,7 +1902,7 @@ function ScreenNotes({
             refreshCounts(); // one more in the Trash
             // Soft delete, so it can come straight back.
             if (onRestore && toast.action) {
-              toast.action('Note deleted.', 'Undo', () => restoreNote(note));
+              toast.action('Note deleted.', 'Undo', () => restoreNote(note), { icon: 'trash-2' });
             }
             // The card is behind the closing sheet: let the sheet go first.
             setTimeout(async () => {

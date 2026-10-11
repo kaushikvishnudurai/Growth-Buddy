@@ -38,7 +38,7 @@ import {
   HOME_WIDGETS,
   resolveHomeLayout,
 } from './dashboard.js';
-import { habitDue } from './home-order.js';
+import { habitDue, tasksForToday } from './home-order.js';
 import { withProgressLog, needsProgressLog } from './goal-milestones.js';
 import { goalTaskStats, combinedGoalProgress, goalFinishedBy } from './goal-tasks.js';
 import {
@@ -644,7 +644,8 @@ function score() {
   let sum = 0,
     parts = 0;
   // Today's tasks only: tomorrow's and undated ones are not today's miss.
-  const tasks = tasksDueToday(state.tasks, new Date());
+  // Same rule as Home's score card (home-order.js): due by tonight, overdue, or done today.
+  const tasks = tasksForToday(state.tasks, new Date());
   if (tasks.length) {
     sum += tasks.filter((t) => t.done).length / tasks.length;
     parts++;
@@ -658,24 +659,6 @@ function score() {
     parts++;
   }
   return parts === 0 ? 0 : Math.round((sum / parts) * 100);
-}
-
-/* What today's score counts: open tasks due by the end of today (overdue
-   included) plus tasks finished today; undated open tasks and paused ones
-   don't count.
-   ponytail: same rule as home-order.js tasksForToday; drop this copy once both land. */
-function tasksDueToday(tasks, now) {
-  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime();
-  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  return (tasks || []).filter((t) => {
-    if (!t || t.paused) return false;
-    if (t.done) {
-      const at = t.doneAt ? new Date(t.doneAt).getTime() : NaN;
-      return at >= start && at < end;
-    }
-    const due = t.dueAt ? new Date(t.dueAt).getTime() : NaN;
-    return due < end;
-  });
 }
 
 /* score() prefers the server's number, which is exactly wrong in the moment
@@ -10929,19 +10912,21 @@ function loadInsightHistory() {
       ),
     // Boot loads 60 days of daily logs; the year in pixels and records want the year.
     soft(api('/api/daily-logs?days=366')),
-  ]).then(([focus, finished, waterTimes, scores, hist, year]) => {
+    // Every finished day's score, so the trend and pixels are not limited to the two above.
+    soft(api('/api/score/range?from=' + day(366) + '&to=' + day(1))),
+  ]).then(([focus, finished, waterTimes, scores, hist, year, scoreRange]) => {
     if (insightReq !== req) return; // signed out (or in as someone else) meanwhile
     insightReq = null;
     // Stamped on success only: stamping before the fetch left a failed one (offline,
     // a server blip) unretried for ten minutes. Every part failing is a failure.
-    const anyPart = [focus, finished, waterTimes, scores, year].some(Boolean) || hist.some(Boolean);
+    const anyPart = [focus, finished, waterTimes, scores, year, scoreRange].some(Boolean) || hist.some(Boolean);
     if (anyPart) insightHistoryAt = Date.now();
     const habits = {};
     daily.forEach((x, i) => {
       if (hist[i]) habits[x.id] = hist[i];
     });
     if (anyPart || !state.insightHistory) {
-      state.insightHistory = { focus, finished, waterTimes, scores, habits, year, failed: !anyPart };
+      state.insightHistory = { focus, finished, waterTimes, scores, scoreRange, habits, year, failed: !anyPart };
     }
     if (state.screen === 'report') repaintReport();
     else if (state.screen === 'home') render();

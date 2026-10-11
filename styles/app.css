@@ -11399,12 +11399,6 @@ select.gb-input {
   font-size: var(--text-xs);
   color: var(--fg3);
 }
-.gb-ach-summary-pct {
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: 1.25rem;
-  color: var(--brand-ink);
-}
 .gb-ach-summary-bar,
 .gb-ach-summary-xpbar {
   height: 8px;
