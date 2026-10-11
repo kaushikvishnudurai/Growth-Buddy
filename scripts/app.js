@@ -2992,11 +2992,13 @@ async function loadSecondaryData() {
 }
 
 /* ---- WebSocket: realtime notification push ---- */
-/* Realtime bell notifications. `sockjs-client` + `@stomp/stompjs` + their
-   `url-parse` dependency are ~155 KB of source — 15% of the bundle — and they
-   exist for this one channel. They're imported dynamically so they land after
-   first paint instead of blocking it: nothing awaits this call, and a channel
-   that opens a few hundred ms late is invisible.
+/* Realtime bell notifications. `@stomp/stompjs` over the browser's own
+   WebSocket, to the backend's plain (non-SockJS) /ws endpoint. sockjs-client
+   used to sit underneath it: 47 KB of IE-era fallbacks, a `global` shim script
+   in <head>, and an unload listener that kept every page out of the bf-cache.
+   Imported dynamically so it lands after first paint instead of blocking it:
+   nothing awaits this call, and a channel that opens a few hundred ms late is
+   invisible.
    `connecting` guards the await window — without it two calls in quick
    succession both pass the `stomp` check before either has assigned it. */
 let wsConnecting = false;
@@ -3007,15 +3009,15 @@ async function connectWebSocket() {
   if (!token) return;
   wsConnecting = true;
   try {
-    const [{ default: SockJS }, { Client: StompClient }] = await Promise.all([
-      import('sockjs-client'),
-      import('@stomp/stompjs'),
-    ]);
+    const { Client: StompClient } = await import('@stomp/stompjs');
     // Logged out (or already connected) while the chunks were in flight.
     if (!state.user || stomp) return;
     let reconnect = false;
     stomp = new StompClient({
-      webSocketFactory: () => new SockJS(API_BASE + '/ws'),
+      // http(s)://host -> ws(s)://host/ws. API_BASE is '' when the API is this
+      // origin (web, vite preview/dev proxy) and absolute in the Capacitor app,
+      // whose own origin (https://localhost) is not the backend.
+      brokerURL: (API_BASE || location.origin).replace(/^http/, 'ws') + '/ws',
       connectHeaders: { Authorization: 'Bearer ' + token },
       reconnectDelay: 5000,
       // Re-read the token before EVERY (re)connect. It used to be captured once
