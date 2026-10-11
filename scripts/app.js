@@ -119,6 +119,7 @@ import { CacheStorage } from './cache-storage.js';
 import { createOutbox, tempId, isTempId, newIdemKey } from './outbox.js';
 import {
   initNative,
+  isNative,
   deviceLabelHeader,
   localNotificationsAvailable,
   nativePlugin,
@@ -155,6 +156,33 @@ import {
 // Replaced by Vite's `define` at build time — see vite.config.js.
 window.GB_BUILD = __GB_BUILD__;
 console.log('[gb] build', __GB_BUILD__);
+
+/* The service worker is for the website only. In the phone app the files are
+   already on the device and reminders go through LocalNotifications, so all a
+   worker did there was keep serving the previous build's precache after an APK
+   update, until the app had been fully closed once or twice. The app removes any
+   worker an older build left behind, and its caches, but not gb-store-v2 (the
+   session lives there). */
+if ('serviceWorker' in navigator) {
+  if (isNative()) {
+    navigator.serviceWorker
+      .getRegistrations()
+      .then((regs) => regs.forEach((r) => r.unregister()))
+      .catch(() => {});
+    if (window.caches) {
+      caches
+        .keys()
+        .then((keys) =>
+          keys
+            .filter((k) => k.startsWith('workbox-') || k === 'gb-chunks' || k === 'gb-api-get')
+            .forEach((k) => caches.delete(k))
+        )
+        .catch(() => {});
+    }
+  } else {
+    window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js', { scope: '/' }));
+  }
+}
 
 // Prefer the build-time env (VITE_API_BASE). In dev, fall back to '' so requests
 // are same-origin (relative) and flow through the Vite proxy to the backend.

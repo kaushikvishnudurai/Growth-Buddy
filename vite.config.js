@@ -16,13 +16,15 @@ const API_TARGET = process.env.API_PROXY_TARGET || 'http://localhost:8080';
    A literal is readable by any build anywhere, which is the whole requirement.
 
    GB_BUILD=<n> in the environment overrides it for a one-off build. */
-const BUILD = 84;
+const BUILD = 85;
 const buildNumber = () => Number(process.env.GB_BUILD) || BUILD;
 
 export default defineConfig({
   plugins: [
     VitePWA({
       registerType: 'autoUpdate',
+      // Registered by app.js, which skips it in the Capacitor app.
+      injectRegister: false,
       includeAssets: ['icons/apple-touch-icon.png', 'favicon-32.png'],
       manifest: {
         name: 'Growth Buddy',
