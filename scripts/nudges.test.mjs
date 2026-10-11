@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import {
   usualSleep,
+  lastNightGuess,
   repeatExpense,
   usualReminderTime,
   stepsTarget,
@@ -33,6 +34,34 @@ assert.deepEqual(
   ),
   { bedtime: '00:00', wakeTime: '07:00' }
 );
+
+// lastNightGuess: phone wins, then usual (3 nights), then last night (1-3 days old).
+const night3 = {
+  '2026-10-10': { bedtime: '23:30', wakeTime: '06:50', quality: 'good' },
+  '2026-10-09': { bedtime: '00:30', wakeTime: '07:10' },
+  '2026-10-08': { bedtime: '00:00', wakeTime: '07:00' },
+};
+assert.deepEqual(lastNightGuess(night3, '2026-10-11', { bedtime: '23:10', wakeTime: '06:45', minutes: 455 }), {
+  bedtime: '23:10',
+  wakeTime: '06:45',
+  quality: 'good',
+  source: 'phone',
+});
+assert.deepEqual(lastNightGuess(night3, '2026-10-11'), {
+  bedtime: '00:00',
+  wakeTime: '07:00',
+  quality: 'good',
+  source: 'usual',
+});
+assert.deepEqual(lastNightGuess({ '2026-10-10': { bedtime: '22:45:00', wakeTime: '06:30:00' } }, '2026-10-11'), {
+  bedtime: '22:45',
+  wakeTime: '06:30',
+  quality: 'okay',
+  source: 'last',
+});
+assert.equal(lastNightGuess({ '2026-10-06': { bedtime: '23:00', wakeTime: '07:00' } }, '2026-10-11'), null);
+assert.equal(lastNightGuess({}, '2026-10-11'), null);
+assert.equal(lastNightGuess(undefined, '2026-10-11', null), null);
 
 // repeatExpense: 4+ days, near the usual time, not already logged today.
 const at = (date, h, m = 0) => new Date(date + 'T00:00:00').getTime() + (h * 60 + m) * 60000;

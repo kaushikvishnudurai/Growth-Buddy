@@ -103,7 +103,7 @@ import {
 import { WORK_WEEKS, getWorkWeek, setWorkWeek, occursOn } from './recurrence.js';
 import { ScreenAchievements, computeAchievements, levelProgress } from './achievements.js';
 import { celebrate } from './celebrate.js';
-import { usualSleep, stepsTarget, focusMinutesTarget } from './nudges.js';
+import { lastNightGuess, stepsTarget, focusMinutesTarget } from './nudges.js';
 import {
   enablePush,
   disablePush,
@@ -2742,6 +2742,7 @@ async function loadData() {
     reSyncDeviceAlarms();
     loadWaterUsualHours();
     autoTickStepHabits();
+    loadPhoneNight();
   } catch (err) {
     if (refresh) {
       toastError(err, 'Could not refresh. Showing your last data.');
@@ -3211,7 +3212,8 @@ function openMeasuredCheckin(habit) {
     step: habit.metric === 'steps' ? '1' : '0.1',
     placeholder: habit.metric === 'steps' ? 'e.g. 6500' : 'e.g. 5.2',
     autofocus: true,
-    value: editing && habit.todayValue != null ? String(habit.todayValue) : '',
+    // Not done yet: last time's number ("same as last time"), so a usual day is one tap.
+    value: String((editing ? habit.todayValue : habit.metric !== 'steps' ? habit.lastValue : null) ?? ''),
   });
   // The phone already counted them. Fill in only while the box is still empty,
   // so a number the user started typing is never overwritten.
@@ -3231,7 +3233,7 @@ function openMeasuredCheckin(habit) {
           max: '1440',
           step: '1',
           placeholder: 'e.g. 26',
-          value: editing && habit.todayDurationMin != null ? String(habit.todayDurationMin) : '',
+          value: String((editing ? habit.todayDurationMin : habit.lastDurationMin) ?? ''),
         })
       : null;
   // Today's note rides along (todayNote), so re-saving the number keeps it.
@@ -3409,6 +3411,18 @@ async function autoTickStepHabits() {
   open
     .filter((hb) => steps >= stepsTarget(hb.name))
     .forEach((hb) => autoTickHabit(hb, steps, steps.toLocaleString() + ' steps on your phone'));
+}
+
+/* Last night from the phone's health store, for Home's "Save it?" row. Memory
+   only: the user's tap is what saves it. Read through a dynamic import so a
+   native.js without readLastNight (no health build) just means no phone row.
+   ponytail: read once per load/resume */
+async function loadPhoneNight() {
+  if (((state.wellness && state.wellness.sleepByDate) || {})[todayKeyNow()]) return;
+  const { readLastNight } = await import('./native.js');
+  if (typeof readLastNight !== 'function') return;
+  state.phoneNight = await readLastNight().catch(() => null);
+  if (state.phoneNight) render();
 }
 
 /* After a saved focus session: today's focus minutes from the server, so two
@@ -5046,8 +5060,11 @@ function rememberPhotoFood(foodName, estimate, usedPhoto) {
 function openSleepSchedule() {
   const today = todayKeyNow();
   const existing = (state.wellness.sleepByDate || {})[today] || {};
-  // An unlogged night opens on the usual one, so a normal night is one tap on Save.
-  const usual = usualSleep(state.wellness.sleepByDate, today) || { bedtime: '23:00', wakeTime: '07:00' };
+  // An unlogged night opens on the phone's, the usual or the last one, so a normal night is one tap on Save.
+  const usual = lastNightGuess(state.wellness.sleepByDate, today, state.phoneNight) || {
+    bedtime: '23:00',
+    wakeTime: '07:00',
+  };
   const dateInput = h('input', { type: 'date', class: 'gb-input', value: existing.date || today });
   const bedInput = h('input', {
     type: 'time',
@@ -5066,7 +5083,7 @@ function openSleepSchedule() {
       { value: 'good', label: 'Good' },
       { value: 'great', label: 'Great' },
     ],
-    existing.quality || 'okay'
+    existing.quality || usual.quality || 'okay'
   );
   const noteInput = h(
     'textarea',
@@ -13299,6 +13316,7 @@ const SCREENS = {
         goalProgress: effectiveGoalProgress(),
         onOpenGoals: () => setScreen('goals'),
         wellness: state.wellness,
+        phoneNight: state.phoneNight,
         foodSummary: state.calendarFoodByDate[state.selectedDate] || null,
         dayFoodLoading: state.calendarFoodLoadingFor === state.selectedDate,
         dayFoodError: state.calendarFoodErrorByDate[state.selectedDate] || '',
@@ -13318,7 +13336,7 @@ const SCREENS = {
         onAddSleep: openSleepSchedule,
         onAddMood: openMoodCheckin,
         onStarterPack: openStarterPacks,
-        onConfirmSleep: (u) => saveSleepEntry({ bedtime: u.bedtime, wakeTime: u.wakeTime, quality: 'okay' }),
+        onConfirmSleep: (u) => saveSleepEntry({ bedtime: u.bedtime, wakeTime: u.wakeTime, quality: u.quality || 'okay' }),
         onQuickMood: (mood) => saveMoodEntry({ mood }),
         onOnboardDismiss: (opts) => {
           saveUiPrefs({ onboardingDone: true });
@@ -15579,6 +15597,7 @@ document.addEventListener('visibilitychange', () => {
     syncDeviceTimezone(); // reopened after a flight
     refreshDayIfStale();
     autoTickStepHabits(); // walked since the app was last open
+    loadPhoneNight(); // woke up since
   }
 });
 

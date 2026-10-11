@@ -30,7 +30,7 @@ import {
   homeGoals,
 } from './home-order.js';
 import { suggestReminderTime } from './habit-stats.js';
-import { usualSleep } from './nudges.js';
+import { lastNightGuess } from './nudges.js';
 import { fmtDate, fmtNumber } from './i18n.js';
 import {
   groupBySlot,
@@ -520,16 +520,17 @@ function TodayPlanCard({ water, wellness, onPlanToday }) {
   });
 }
 
-/* The morning check-in, one tap each: last night as the usual night
-   (usualSleep, nudges.js) once the usual wake time has passed, and the mood
-   scale itself. Each row goes the moment its entry exists; Edit is the full
-   sleep dialog for a night that wasn't the usual one. */
-function WellnessQuick({ wellness, sleep, mood, onConfirmSleep, onQuickMood, onAddSleep }) {
+/* The morning check-in, one tap each: last night as the phone recorded it, or
+   the usual night, or the last logged one (lastNightGuess, nudges.js) once that
+   wake time has passed (a phone night has already ended), and the mood scale
+   itself. Each row goes the moment its entry exists; Edit is the full sleep
+   dialog for a night that wasn't the guessed one. */
+function WellnessQuick({ wellness, sleep, mood, phoneNight, onConfirmSleep, onQuickMood, onAddSleep }) {
   const rows = [];
-  const usual = !sleep && onConfirmSleep ? usualSleep(wellness && wellness.sleepByDate, todayKey()) : null;
+  const usual = !sleep && onConfirmSleep ? lastNightGuess(wellness && wellness.sleepByDate, todayKey(), phoneNight) : null;
   const now = new Date();
   const [wh, wm] = usual ? usual.wakeTime.split(':').map(Number) : [0, 0];
-  if (usual && now.getHours() * 60 + now.getMinutes() >= wh * 60 + wm) {
+  if (usual && (usual.source === 'phone' || now.getHours() * 60 + now.getMinutes() >= wh * 60 + wm)) {
     rows.push(
       h(
         'div',
@@ -537,7 +538,9 @@ function WellnessQuick({ wellness, sleep, mood, onConfirmSleep, onQuickMood, onA
         h(
           'span',
           { class: 'gb-wellness-quick-ask' },
-          'Slept ' + sharedFormatTime(usual.bedtime) + ' to ' + sharedFormatTime(usual.wakeTime) + '?'
+          usual.source === 'phone'
+            ? 'Your phone logged ' + sharedFormatTime(usual.bedtime) + ' to ' + sharedFormatTime(usual.wakeTime) + '. Save it?'
+            : 'Slept ' + sharedFormatTime(usual.bedtime) + ' to ' + sharedFormatTime(usual.wakeTime) + '?'
         ),
         h(
           'div',
@@ -581,7 +584,7 @@ function WellnessQuick({ wellness, sleep, mood, onConfirmSleep, onQuickMood, onA
   return rows.length ? h('div', { class: 'gb-wellness-quick' }, rows) : null;
 }
 
-function WellnessCard({ wellness, onAddSleep, onAddMood, onConfirmSleep, onQuickMood }) {
+function WellnessCard({ wellness, phoneNight, onAddSleep, onAddMood, onConfirmSleep, onQuickMood }) {
   const key = todayKey();
   const sleep = wellness && wellness.sleepByDate ? wellness.sleepByDate[key] : null;
   const mood = wellness && wellness.moodByDate ? wellness.moodByDate[key] : null;
@@ -589,7 +592,7 @@ function WellnessCard({ wellness, onAddSleep, onAddMood, onConfirmSleep, onQuick
   return Card({
     className: 'gb-wellness-card',
     children: [
-      WellnessQuick({ wellness, sleep, mood, onConfirmSleep, onQuickMood, onAddSleep }),
+      WellnessQuick({ wellness, sleep, mood, phoneNight, onConfirmSleep, onQuickMood, onAddSleep }),
       h(
         'div',
         { class: 'gb-wellness-grid' },
@@ -2540,6 +2543,7 @@ function ScreenDashboard({
   score,
   water,
   wellness,
+  phoneNight,
   reminders,
   foodSummary,
   dayFoodLoading,
@@ -2578,7 +2582,7 @@ function ScreenDashboard({
     // A turned-off feature drops out of the cards that summarise it, not just its own card.
     score: () => ScoreCard({ score, tasks, habits: on('habits') ? habits : [] }),
     plan: () => TodayPlanCard({ water: on('water') ? water : null, wellness, onPlanToday }),
-    wellness: () => WellnessCard({ wellness, onAddSleep, onAddMood, onConfirmSleep, onQuickMood }),
+    wellness: () => WellnessCard({ wellness, phoneNight, onAddSleep, onAddMood, onConfirmSleep, onQuickMood }),
     tasks: () => [
       SectionTitle({ title: "Today's tasks", action: '+ Add', onAction: onAddTask }),
       TasksCard({

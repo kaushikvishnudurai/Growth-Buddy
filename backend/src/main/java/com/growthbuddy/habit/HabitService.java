@@ -1039,9 +1039,12 @@ public class HabitService {
         Set<LocalDate> done = new HashSet<>();
         Set<LocalDate> prot = new HashSet<>();
         HabitCheckin todayRow = null;
+        HabitCheckin lastRow = null; // newest earlier day with a number (rows are newest first)
         for (HabitCheckin c : checkinsDesc) {
             if (c.getLogDate().isEqual(today)) {
                 todayRow = c;
+            } else if (lastRow == null && c.getLogDate().isBefore(today) && c.getMetricValue() != null) {
+                lastRow = c;
             }
             if (c.isDone()) {
                 done.add(c.getLogDate());
@@ -1106,7 +1109,9 @@ public class HabitService {
                 measured && todayRow != null ? todayRow.getMetricValue() : null,
                 measured && todayRow != null ? todayRow.getDurationMin() : null,
                 dueToday, doneThisWeek,
-                todayRow != null ? todayRow.getNote() : null);
+                todayRow != null ? todayRow.getNote() : null,
+                measured && lastRow != null ? lastRow.getMetricValue() : null,
+                measured && lastRow != null ? lastRow.getDurationMin() : null);
     }
 
     /**
@@ -1144,7 +1149,7 @@ public class HabitService {
         boolean active = h.isActive();
         return HabitResponse.of(h, s, streak, active && !slippedToday, false, false, 0, tokens,
                 null, null, isDue(h, 0, today, zone), cleanThisWeek,
-                todayRow != null ? todayRow.getNote() : null);
+                todayRow != null ? todayRow.getNote() : null, null, null);
     }
 
     /**

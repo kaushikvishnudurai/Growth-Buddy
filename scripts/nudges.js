@@ -4,7 +4,8 @@
    Pure, DOM-free. Each answer is a guess the user confirms with one tap
    (Home's morning check-in, the repeat-expense prompt, a form's usual time,
    a habit that ticks itself); none of them writes anything. A guess needs a
-   pattern to stand on — too little history means null, never a default.
+   pattern to stand on — too little history means null, never a default. The
+   one exception is sleep: one night is enough for "same as last night".
    Checked by `node scripts/nudges.test.mjs`.
    ===================================================================== */
 
@@ -45,6 +46,31 @@ export function usualSleep(sleepByDate, today) {
   }
   if (beds.length < 3) return null;
   return { bedtime: toHHMM(round5(median(beds))), wakeTime: toHHMM(round5(median(wakes))) };
+}
+
+/**
+ * What to offer for last night: the phone's own record (`phoneNight`, from
+ * native.js readLastNight), else the usual night, else the newest logged night
+ * 1 to 3 days old ("same as last night"). {bedtime, wakeTime, quality, source}
+ * with source 'phone' | 'usual' | 'last', or null. quality is the newest
+ * logged one, else 'okay'.
+ */
+export function lastNightGuess(sleepByDate, today, phoneNight) {
+  const t = dayNum(today);
+  const recent = Object.entries(sleepByDate || {})
+    .filter(([key, e]) => e && t - dayNum(key) >= 1 && toMin(e.bedtime) != null && toMin(e.wakeTime) != null)
+    .sort(([a], [b]) => (a < b ? 1 : -1))[0];
+  const last = recent && recent[1];
+  const quality = (last && last.quality) || 'okay';
+  if (phoneNight && phoneNight.bedtime && phoneNight.wakeTime) {
+    return { bedtime: phoneNight.bedtime, wakeTime: phoneNight.wakeTime, quality, source: 'phone' };
+  }
+  const usual = usualSleep(sleepByDate, today);
+  if (usual) return { ...usual, quality, source: 'usual' };
+  if (recent && t - dayNum(recent[0]) <= 3) {
+    return { bedtime: toHHMM(toMin(last.bedtime)), wakeTime: toHHMM(toMin(last.wakeTime)), quality, source: 'last' };
+  }
+  return null;
 }
 
 const noteKey = (e) =>
