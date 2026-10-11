@@ -275,3 +275,23 @@ test('A11-8: a note card is read as a note, opened by its own button, with Pin b
   await card.click({ position: { x: 60, y: 60 } });
   await expect(page.getByRole('dialog', { name: 'Note' })).toBeVisible();
 });
+
+test('OFF-10: offline before Notes ever loaded says so, and a note made then is not a "saved copy"', async ({ page, account }) => {
+  // No network for notes: a failure with no status, which Notes reads as offline.
+  await page.route('**/api/notes**', (r) => r.abort('aborted'));
+  await boot(page, account, 'notes');
+  const m = main(page);
+  await expect(m.getByText(/notes haven't been saved to this device yet/)).toBeVisible();
+  // A note written now waits in the outbox; it must not become this device's copy.
+  await m.getByRole('button', { name: 'Jot something down…' }).click();
+  await m.getByRole('textbox', { name: 'Note title' }).fill('Written offline');
+  await m.getByRole('button', { name: 'Save note' }).click();
+  await expect(m.getByRole('heading', { name: 'Written offline' })).toBeVisible();
+  await page.reload();
+  await expect(page.locator('#gb-main')).toBeVisible({ timeout: 20_000 });
+  await go(page, 'notes');
+  await settle(page);
+  await expect(m.getByText('Offline — showing saved copy, editing disabled')).toBeHidden();
+  await expect(m.getByText(/notes haven't been saved to this device yet/)).toBeVisible();
+  await shot(page, 'OFF-10');
+});

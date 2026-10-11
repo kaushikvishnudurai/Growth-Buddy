@@ -1328,8 +1328,12 @@ function ScreenNotes({
       'Try again'
     )
   );
+  // Only a list the server sent is a copy worth keeping: a note created offline
+  // before any load painted a "saved copy" of just that one, which then stood
+  // in for every note the account has.
+  let fromServer = false;
   function saveOffline() {
-    if (!userId || offline || view !== 'notes') return;
+    if (!userId || offline || view !== 'notes' || !fromServer) return;
     try {
       CacheStorage.setItem(offlineKey(userId), JSON.stringify(offlineCopy(notes)));
     } catch (_) {
@@ -2346,6 +2350,7 @@ function ScreenNotes({
           notes = fetched; // the offline copy is replaced whole
         }
         offline = false;
+        if (view === 'notes') fromServer = true;
         sortNotes();
         paint();
         paintViews();
@@ -2356,6 +2361,8 @@ function ScreenNotes({
         // The list this device last saw, read-only, beats an error card.
         if (view === 'notes' && looksOffline(err) && showOffline()) return;
         if (offline) return; // still offline: keep showing the copy
+        // Offline with nothing kept here yet: not a fault, and not "no notes".
+        const unsaved = view === 'notes' && looksOffline(err);
         listEl.replaceChildren(
           h(
             'div',
@@ -2363,8 +2370,14 @@ function ScreenNotes({
             h(
               'div',
               { class: 'gb-empty' },
-              Icon('circle-alert', { size: 26, color: 'var(--fg3)' }),
-              h('p', null, 'Could not load your notes.'),
+              Icon(unsaved ? 'wifi-off' : 'circle-alert', { size: 26, color: 'var(--fg3)' }),
+              h(
+                'p',
+                null,
+                unsaved
+                  ? "You're offline, and your notes haven't been saved to this device yet. They show here once you're back online."
+                  : 'Could not load your notes.'
+              ),
               h(
                 'button',
                 {
