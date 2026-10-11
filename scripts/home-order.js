@@ -15,6 +15,15 @@ export const HOME_WIDGETS = [
     desc: 'Your daily growth score and streak',
     feature: null,
   },
+  // Right under the score, above the outlook, tasks and the month calendar:
+  // ticking a habit, the most frequent act on Home, took 3 swipes at 390x844
+  // from 6th place. Saved layouts keep their order (resolveHomeLayout).
+  {
+    id: 'habits',
+    label: 'Habit streaks',
+    desc: 'Your daily habits and streaks',
+    feature: 'habits',
+  },
   {
     id: 'outlook',
     label: 'Outlook',
@@ -29,12 +38,6 @@ export const HOME_WIDGETS = [
     label: 'Mini calendar',
     desc: 'Month view with reminders & food',
     feature: 'calendar',
-  },
-  {
-    id: 'habits',
-    label: 'Habit streaks',
-    desc: 'Your daily habits and streaks',
-    feature: 'habits',
   },
   {
     id: 'goals',

@@ -21,6 +21,7 @@ import {
   correlationWords,
   focusMinutesByDay,
   weekOverWeek,
+  weekFocus,
 } from './review.js';
 // The Compare card reads the same daily series the insight cards do.
 import { signals } from './insights.js';
@@ -212,10 +213,15 @@ function trendChart(values, color, days, fmt, title, opts = {}) {
     (weekly ? ' in the week of ' : ' on ') +
     dayLabel(days[highs.i]) +
     '.';
+  // In a div: a <table> never shrinks below its rows, so a clipped 1px table
+  // still widened the scroller and Report slid sideways on a phone.
   const table = h(
-    'table',
+    'div',
     { class: 'gb-sr-only' },
-    h('caption', null, summary),
+    h(
+      'table',
+      null,
+      h('caption', null, summary),
     h(
       'tr',
       null,
@@ -223,6 +229,7 @@ function trendChart(values, color, days, fmt, title, opts = {}) {
       h('th', { scope: 'col' }, weekly ? 'Daily average' : 'Value')
     ),
     present.map((p) => h('tr', null, h('td', null, dayLabel(days[p.i])), h('td', null, fmt(p.v))))
+    )
   );
   // Soft area under the line.
   const areaPts =
@@ -790,9 +797,12 @@ function scatterChart(res, mx, my) {
   svg.addEventListener('pointercancel', hide);
   // As trendChart: the picture is for the eye, the days go to a screen reader.
   const table = h(
-    'table',
+    'div',
     { class: 'gb-sr-only' },
-    h('caption', null, mx.label + ' against ' + my.label.toLowerCase() + ', one row per day'),
+    h(
+      'table',
+      null,
+      h('caption', null, mx.label + ' against ' + my.label.toLowerCase() + ', one row per day'),
     h(
       'tr',
       null,
@@ -802,6 +812,7 @@ function scatterChart(res, mx, my) {
     ),
     res.points.map((p) =>
       h('tr', null, h('td', null, dayLabel(p.key)), h('td', null, mx.fmt(p.x)), h('td', null, my.fmt(p.y)))
+      )
     )
   );
   return h('div', { class: 'gb-trend-plot' }, svg, tip, table);
@@ -1248,6 +1259,44 @@ function recordsSection({ habits, trends, wellness, money, insightHistory }) {
   );
 }
 
+/* The weekly review's "one focus for next week", for the week it names. It was
+   saved and never shown again. One tap makes it a habit, unless it already is
+   one or no onMakeHabit is wired. Nothing at all when there is no focus. */
+function focusCard(focus, habits, onMakeHabit) {
+  if (!focus) return null;
+  const isHabit = habits.some((x) => String(x.name || '').trim().toLowerCase() === focus.toLowerCase());
+  const btn =
+    typeof onMakeHabit === 'function' && !isHabit && focus.length <= 120
+      ? h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-btn gb-btn--soft gb-btn--compact',
+            onclick: async (e) => {
+              const b = e.currentTarget;
+              b.disabled = true;
+              try {
+                await onMakeHabit(focus);
+                b.remove();
+                toast.success('Added “' + focus + '” to your habits.');
+              } catch (err) {
+                b.disabled = false;
+                toast.error(err, 'Could not add the habit.');
+              }
+            },
+          },
+          'Make it a habit'
+        )
+      : null;
+  return h(
+    'div',
+    { class: 'gb-dash-block' },
+    SectionTitle({ title: 'This week’s focus' }),
+    // The trend card's padding and head row: a focus line with its one action beside it.
+    Card({ className: 'gb-trend-card', children: h('div', { class: 'gb-trend-head' }, h('div', null, focus), btn) })
+  );
+}
+
 function ScreenReport({
   features,
   score,
@@ -1267,6 +1316,8 @@ function ScreenReport({
   onInsightAction,
   range,
   onRange,
+  weeklyReviews,
+  onMakeHabit,
 }) {
   const on = (k) => !features || features[k] !== false;
   const t = tasks || [];
@@ -1286,6 +1337,8 @@ function ScreenReport({
   return h(
     'div',
     { class: 'gb-rise gb-report' },
+
+    focusCard(weekFocus(weeklyReviews), hb, onMakeHabit),
 
     // ---- Today, one card ----
     // Was five titled sections (summary, habits, water, food, goals) that

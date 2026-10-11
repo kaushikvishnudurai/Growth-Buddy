@@ -30,59 +30,59 @@ const DEFAULT_CATEGORIES = [
     label: 'Food',
     icon: 'utensils',
     color: 'var(--coral-500)',
-    soft: 'var(--coral-50)',
-    fg: 'var(--coral-700)',
+    soft: 'var(--brand-soft)',
+    fg: 'var(--brand-soft-fg)',
   },
   {
     key: 'shopping',
     label: 'Shopping',
     icon: 'shopping-bag',
     color: 'var(--bloom-500)',
-    soft: 'var(--bloom-50)',
-    fg: 'var(--bloom-700)',
+    soft: 'var(--social-soft)',
+    fg: 'var(--social-soft-fg)',
   },
   {
     key: 'transport',
     label: 'Transport',
     icon: 'bus',
     color: 'var(--sky-500)',
-    soft: 'var(--sky-50)',
-    fg: 'var(--sky-700)',
+    soft: 'var(--info-soft)',
+    fg: 'var(--info-soft-fg)',
   },
   {
     key: 'entertainment',
     label: 'Entertainment',
     icon: 'clapperboard',
     color: 'var(--iris-500)',
-    soft: 'var(--iris-50)',
-    fg: 'var(--iris-700)',
+    soft: 'var(--ai-soft)',
+    fg: 'var(--ai-soft-fg)',
   },
   {
     key: 'education',
     label: 'Education',
     icon: 'graduation-cap',
     color: 'var(--leaf-600)',
-    soft: 'var(--leaf-50)',
-    fg: 'var(--leaf-700)',
+    soft: 'var(--success-soft)',
+    fg: 'var(--success-soft-fg)',
   },
   {
     key: 'others',
     label: 'Others',
     icon: 'shapes',
     color: 'var(--sun-600)',
-    soft: 'var(--sun-50)',
-    fg: 'var(--sun-700)',
+    soft: 'var(--warning-soft)',
+    fg: 'var(--warning-soft-fg)',
   },
 ];
 
 /* Swatches a user picks from when creating a custom tag. */
 const PALETTE = [
-  { color: 'var(--coral-500)', soft: 'var(--coral-50)', fg: 'var(--coral-700)' },
-  { color: 'var(--bloom-500)', soft: 'var(--bloom-50)', fg: 'var(--bloom-700)' },
-  { color: 'var(--sky-500)', soft: 'var(--sky-50)', fg: 'var(--sky-700)' },
-  { color: 'var(--iris-500)', soft: 'var(--iris-50)', fg: 'var(--iris-700)' },
-  { color: 'var(--leaf-600)', soft: 'var(--leaf-50)', fg: 'var(--leaf-700)' },
-  { color: 'var(--sun-600)', soft: 'var(--sun-50)', fg: 'var(--sun-700)' },
+  { color: 'var(--coral-500)', soft: 'var(--brand-soft)', fg: 'var(--brand-soft-fg)' },
+  { color: 'var(--bloom-500)', soft: 'var(--social-soft)', fg: 'var(--social-soft-fg)' },
+  { color: 'var(--sky-500)', soft: 'var(--info-soft)', fg: 'var(--info-soft-fg)' },
+  { color: 'var(--iris-500)', soft: 'var(--ai-soft)', fg: 'var(--ai-soft-fg)' },
+  { color: 'var(--leaf-600)', soft: 'var(--success-soft)', fg: 'var(--success-soft-fg)' },
+  { color: 'var(--sun-600)', soft: 'var(--warning-soft)', fg: 'var(--warning-soft-fg)' },
 ];
 
 const KEYWORDS = {
@@ -248,9 +248,12 @@ function lastNDays(n) {
   return out;
 }
 function fmt(n) {
-  const v = Math.round(Number(n) || 0);
+  const x = Number(n) || 0;
+  // Round the size, then sign it: Math.round(-1200.5) is -1200 but 1200.5 is 1201,
+  // so the same expense read 1,200 spent on the slip and 1,201 on the card.
+  const v = Math.round(Math.abs(x));
   // Sign before the symbol, as a true minus: "₹-240" beside an account's "−₹240".
-  return (v < 0 ? '\u2212' : '') + cur + Math.abs(v).toLocaleString('en-IN');
+  return (x < 0 && v ? '\u2212' : '') + cur + v.toLocaleString('en-IN');
 }
 /* ---- Other currencies (light) ----
    An account can hold another currency: `settings.accountCurrency{accountId: '$'}`,
@@ -320,18 +323,23 @@ function fmtBalance(money, a) {
    "greater than zero" — so say what is actually wrong. */
 function readAmount(input) {
   if (input.validity && input.validity.badInput) {
-    input.focus();
-    throw new Error('Use digits only, like 1250 or 1250.50.');
+    throw underField(input, 'Use digits only, like 1250 or 1250.50.');
   }
   return Math.round(Number(input.value) * 100) / 100;
+}
+/* gb-kit's fieldRefusal contract (an Error with `.field`), without importing the
+   kit into core: openModal shows the message under that input, not as a toast. */
+function underField(input, message) {
+  const err = new Error(message);
+  err.field = input;
+  return err;
 }
 /* readAmount's twin for the fields kept in whole rupees on purpose (budgets,
    subscriptions). They carry step=1 and a numeric keyboard; a decimal pasted or
    typed anyway is refused, not rounded behind the user's back. */
 function readWhole(input) {
   if (input.validity && (input.validity.badInput || input.validity.stepMismatch)) {
-    input.focus();
-    throw new Error('Whole amounts only, like 1250.');
+    throw underField(input, 'Whole amounts only, like 1250.');
   }
   return Number(input.value);
 }
@@ -576,14 +584,19 @@ const goalSaved = (g) => (g.contribs || []).reduce((a, c) => a + (Number(c.amoun
 function mergedCats(money) {
   const custom = (money && money.customCategories) || [];
   return DEFAULT_CATEGORIES.concat(
-    custom.map((c) => ({
-      key: c.key,
-      label: c.label,
-      icon: c.icon || 'tag',
-      color: c.color || 'var(--sun-600)',
-      soft: c.soft || 'var(--sun-50)',
-      fg: c.fg || 'var(--sun-700)',
-    }))
+    custom.map((c) => {
+      // Saved tags carry the swatch's soft/fg as they were then (raw ramp steps,
+      // light-only); read them from today's PALETTE by colour so dark mode follows.
+      const p = PALETTE.find((x) => x.color === c.color) || c;
+      return {
+        key: c.key,
+        label: c.label,
+        icon: c.icon || 'tag',
+        color: c.color || 'var(--sun-600)',
+        soft: p.soft || 'var(--warning-soft)',
+        fg: p.fg || 'var(--warning-soft-fg)',
+      };
+    })
   );
 }
 function catOf(key, money) {
@@ -593,8 +606,8 @@ function catOf(key, money) {
       label: key || 'Others',
       icon: 'tag',
       color: 'var(--sun-600)',
-      soft: 'var(--sun-50)',
-      fg: 'var(--sun-700)',
+      soft: 'var(--warning-soft)',
+      fg: 'var(--warning-soft-fg)',
     }
   );
 }
@@ -798,6 +811,62 @@ function budgetStatus(money) {
   });
 }
 
+/* Add income's Salary help: `last` = the newest salary (to prefill), `repeat` =
+   {amount, day} once two salaries of the same amount landed on the same day of
+   two different months, unless an active salary repeat already exists. A day past
+   the 28th is 'last' (the picker's own rule). Pure. */
+function salaryPattern(money) {
+  const sal = (money.income || [])
+    .filter((i) => i && i.source === 'salary' && Number(i.amount) > 0)
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  const last = sal[0] || null;
+  let repeat = null;
+  for (let i = 0; i < sal.length && !repeat; i++)
+    for (let j = i + 1; j < sal.length && !repeat; j++) {
+      const a = sal[i];
+      const b = sal[j];
+      if (Number(a.amount) === Number(b.amount) && a.date.slice(8) === b.date.slice(8) && a.date.slice(0, 7) !== b.date.slice(0, 7)) {
+        const d = Number(a.date.slice(8));
+        repeat = { amount: Number(a.amount), day: d > 28 ? 'last' : d };
+      }
+    }
+  const has = (money.recurring || []).some((r) => r && r.active && r.kind === 'income' && r.category !== 'other');
+  return { last, repeat: has ? null : repeat };
+}
+
+/* This month's salary when its usual day (salaryPattern) has come and no salary
+   is logged this month yet: {amount, date, last}, else null. Add income dates
+   itself to it; the Income tab and Home offer it as one tap. Pure. */
+function salaryDue(money) {
+  const pat = salaryPattern(money);
+  if (!pat.repeat) return null;
+  const ym = thisMonthPrefix();
+  const dim = daysInMonth();
+  const date = ym + '-' + pad2(pat.repeat.day === 'last' ? dim : Math.min(dim, pat.repeat.day));
+  if (date > todayKey()) return null;
+  if ((money.income || []).some((i) => i && i.source === 'salary' && String(i.date || '').startsWith(ym))) return null;
+  return { amount: pat.repeat.amount, date, last: pat.last };
+}
+
+/* The income row "Salary arrived?" logs: the due amount on its day, on the account
+   the last salary went to, keeping that one's currency and rate when the amount
+   matches. Shared by the Income tab and Home's Money card. */
+function salaryDueRow(money, due) {
+  const last = due.last;
+  const acc =
+    last && (money.accounts || []).some((a) => !a.archived && a.id === last.accountId) ? last.accountId : null;
+  const orig = last && last.orig && Number(last.amount) === due.amount ? last.orig : null;
+  return {
+    id: uid(),
+    amount: due.amount,
+    ...(orig ? { orig } : {}),
+    source: 'salary',
+    label: 'Salary',
+    date: due.date,
+    ...(acc ? { accountId: acc } : {}),
+  };
+}
+
 // Used by money.js / money-home.js; not a public API.
 export {
   CUR,
@@ -842,4 +911,7 @@ export {
   predictCategory,
   buildInsights,
   budgetStatus,
+  salaryPattern,
+  salaryDue,
+  salaryDueRow,
 };

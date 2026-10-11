@@ -8,12 +8,25 @@
    ===================================================================== */
 
 export const PACKS = [
+  // The default: what a new account sees ready-made before it has said anything.
+  {
+    id: 'balanced',
+    label: 'Balanced day',
+    icon: 'sun',
+    items: [
+      { kind: 'habit', name: 'Drink a glass of water', icon: 'droplets', domain: 'habit', reminderTime: '09:00' },
+      { kind: 'habit', name: 'Walk 10 minutes', icon: 'footprints', domain: 'fitness', reminderTime: '18:00' },
+      { kind: 'habit', name: 'Read 20 min', icon: 'book-open', domain: 'study', reminderTime: '21:30' },
+      { kind: 'reminder', text: 'Wind down for bed', time: '22:00', repeat: 'daily', tag: 'health' },
+      { kind: 'goal', title: 'Keep a steady routine for 30 days', days: 30 },
+    ],
+  },
   {
     id: 'sleep',
     label: 'Sleep better',
     icon: 'moon',
     items: [
-      { kind: 'habit', name: 'Screens off by 10:30 pm', icon: 'leaf', domain: 'habit', reminderTime: '22:15' },
+      { kind: 'habit', name: 'Screens off before bed', icon: 'leaf', domain: 'habit', reminderTime: '22:15' },
       { kind: 'reminder', text: 'Wind down for bed', time: '22:00', repeat: 'daily', tag: 'health' },
       { kind: 'goal', title: 'Sleep 7+ hours most nights', days: 30 },
     ],
@@ -25,7 +38,8 @@ export const PACKS = [
     items: [
       { kind: 'habit', name: 'Log every expense', icon: 'notebook-pen', domain: 'habit', reminderTime: '21:00' },
       { kind: 'budget' },
-      { kind: 'goal', title: 'Spend less than last month', days: 30 },
+      // No spending yet means no "last month" to beat: the goal starts the record instead.
+      { kind: 'goal', title: 'Spend less than last month', noHistoryTitle: 'Track spending for a month', days: 30 },
     ],
   },
   {
@@ -83,11 +97,13 @@ function addDays(key, n) {
 /* Budgets from what was really spent: the two biggest categories of the last 30
    days, 10% under, to the nearest 100. No spending yet means no number to stand
    on, so no budget — a made-up one is a target the user never chose. */
-function budgetsFrom(money, today) {
+function recentExpenses(money, today) {
   const since = addDays(today, -30);
+  return ((money && money.expenses) || []).filter((e) => e && e.date && e.date >= since && e.date <= today);
+}
+function budgetsFrom(money, today) {
   const spent = {};
-  ((money && money.expenses) || []).forEach((e) => {
-    if (!e || !e.date || e.date < since || e.date > today) return;
+  recentExpenses(money, today).forEach((e) => {
     const c = e.category || 'others';
     spent[c] = (spent[c] || 0) + (Number(e.amount) || 0);
   });
@@ -122,11 +138,18 @@ export function planStarter(packIds, ctx) {
         const key = low(it.name || it.text || it.title);
         if (seen[it.kind].has(key)) return;
         seen[it.kind].add(key);
-        if (it.kind === 'goal') out.push({ ...it, pack: pack.id, targetDate: addDays(ctx.today, it.days) });
+        if (it.kind === 'goal') {
+          const title = it.noHistoryTitle && !recentExpenses(ctx.money, ctx.today).length ? it.noHistoryTitle : it.title;
+          out.push({ ...it, title, pack: pack.id, targetDate: addDays(ctx.today, it.days) });
+        }
         else out.push({ ...it, pack: pack.id });
       } else if (it.kind === 'budget' && !budgetDone) {
         budgetDone = true;
-        budgetsFrom(ctx.money, ctx.today).forEach((b) => out.push({ kind: 'budget', pack: pack.id, ...b }));
+        const budgets = budgetsFrom(ctx.money, ctx.today);
+        budgets.forEach((b) => out.push({ kind: 'budget', pack: pack.id, ...b }));
+        // No spending to stand on: said, not silently dropped. A row the preview
+        // shows and nothing writes.
+        if (!recentExpenses(ctx.money, ctx.today).length) out.push({ kind: 'note', pack: pack.id, about: 'budget' });
       } else if (it.kind === 'water' && !waterDone) {
         waterDone = true;
         // ponytail: 2.5 L when there's no weight to work from; Settings has the real field

@@ -73,6 +73,20 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
 
 ## Editing rules
 
+- Form controls get the page font from one reset at the top (`button, input, select, textarea
+  { font: inherit }`). Don't add `font: inherit` / `font-family: inherit` per class; the three left
+  (`.gb-rem-notes-input`, `.gb-rem-defaults-link`, plus `.gb-circle-presets .gb-chip`) override a
+  sibling class's size or weight and say so.
+- Dim a "locked" / "other month" / "muted" thing by fading its icon or bar, never by `opacity` on
+  text: fg3 is already the 4.5:1 floor, and opacity took it to 2.5-3:1.
+- Text fields keep the global `:focus-visible` ring; `.gb-input:focus` only moves the border to
+  `--ring`. Don't add `outline: none` to a field.
+- Desktop (>=1024px): every screen's content starts under the header title (the header's 40px
+  inset); wide screens get a wider `max-width`, never `margin: 0 auto`. The fallback width rule
+  (`:where(.gb-scroll) > :where(.gb-rise...)`) pads with `--gutter` and sits at `40px - --gutter`.
+  Mentor is the one centred column.
+- Toasts enter (`gb-toast-in`) and leave (`.is-leaving`, `gb-toast-out`, held by `dismissToast`
+  for `TOAST_OUT_MS`) on both skins; premium.css only adds the cascade delays.
 - Colors come from tokens (`var(--coral-500)`, `var(--leaf-50)`, …) — no raw hex here.
 - Responsive breakpoints are grouped under the "Laptop / desktop layout", "Responsive improvements"
   and "Small phones" banners, **not** inline per component. Put media queries there so the
@@ -89,7 +103,8 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
   `.gb-btn` gets a `scale(0.97)` press; small controls share one `scale(0.96)` rule (grep `.gb-seg:active`).
 - A panel or editor that scrolls on its own sets `overscroll-behavior: contain` (`.gb-modal`,
   `.gb-modal-body`, `.gb-notif-pop`, `.gb-editor`), or reaching its end scrolls the page behind.
-- A control drawn under 44px joins the "Tap targets" `::before` overlay list (grep the banner)
+- A control drawn under 44px joins the "Tap targets" `::before` overlay list (grep the banner;
+  `.gb-rem-check` draws its circle with `::before`, so its 44px is an `::after` with `inset: -6px`)
   rather than growing. Skip any control that already has a `::before` of its own. An overlay is
   clipped by the control's own `overflow: hidden` (why `.gb-msg-chip` has no ellipsis), and two
   controls stacked closer than 44px need their overlays split, not centred (`.gb-home-cust-move`);

@@ -155,6 +155,8 @@ import {
   HeartPulse,
   Gauge,
   SlidersHorizontal,
+  Keyboard,
+  CornerDownLeft,
 } from 'lucide';
 
 export const icons = {
@@ -307,4 +309,6 @@ export const icons = {
   HeartPulse,
   Gauge,
   SlidersHorizontal,
+  Keyboard,
+  CornerDownLeft,
 };

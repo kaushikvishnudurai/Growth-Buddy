@@ -29,6 +29,8 @@ Screen modules are leaves it calls into; they get thin `api` wrapper objects, ne
 | auth: `authPost`, `loadAuthDraft`, `setAuthMode`, `authShell` (draws `GARDEN_SVG`, the crest, growing once per load via `gardenGrown`; renders a `<main>`; skips the `gb-rise` entrance and the grow when the card on screen already has the same title (index.html's static sign-in shell `[data-gb-shell]` on the first render, a typo's re-render), so only a view change rises; hides a `SESSION_EXPIRED` error under the notice that already says it), `field`, `renderAuth`, `authFail`, `refuseFocus`, `runAuth`, `shakeRefusal`, `viewSignin`, `viewSignup`, `viewVerify` (OTP), `viewForgot`, `viewReset`, **`routeSignInStep`** (a login/reset refusal carrying `err.code` `totp_required` → `viewTotp`, `deletion_scheduled` → `viewDeletion`; holds email + password in `state.authPending`, memory only — a reload lands on sign-in), `completeSignIn`, `backToSignin`, `viewTotp` (authenticator or recovery code; re-POSTs `/login`, or `/cancel-deletion` when the cancel needed 2FA), `viewDeletion` ("Cancel deletion"), `loginCard` |
 | `logout` (before the token goes: unsubscribes web push with a token-bound fetch, then revokes; cancels on-device alarms; deletes the Workbox `gb-api-get` cache), `downloadMyData` / `downloadDataButton` (GET `/api/auth/export` → JSON file via `native.js` `saveFile`, which is also the only way out for the .ics export, the money CSV and the share cards; Account settings + the delete-account sheet), `openDeleteAccount` (schedules the deletion — 7 days, every session revoked — then clears the local session), `mentorSkeleton` / `loadingContent`, **Buddy wiring** (`mentorApi()` — thread endpoints, `act.task/habit/reminder` for the one-tap chips; `mentorThreadId` = the open thread, memory only; `takeMentorStarter()` / `openReflectionCard(n)` prefill the composer from a `buddy_checkin` card — the bell tap, or an unread one < 3 h old when the push opened `/#mentor`; `reflectionLabel()`), `offlineBanner`, `weeklyReviewNudge` (Home only), `handleOnline` (`loadData().then(flushOutbox)` + `flushWaterQueue`)/`handleOffline`, **`render()`**, `installOutsideClickToCloseHeaderPopovers` |
 
+**Command palette hook** (just before `render()`): `openPalette(view)` lazy-imports `palette.js` and hands it `paletteApp()`; one `keydown` listener opens it on Ctrl/Cmd+K (even in a field), `/` and `?` (not in a field, not over a dialog), and forwards `g`+letter as `'go:<key>'` (the letters live in palette.js `GO_KEYS`). The header's search button passes `onSearch`. See CODEMAP `palette.js`.
+
 **`screenFromHash` reads `SCREENS` itself** — there is no id list to keep in step. The `SCREEN_IDS`
 array that used to live here was missing `report`, so refreshing on Progress or opening any link to
 it silently landed on Home. Don't reintroduce a second list.
@@ -89,7 +91,7 @@ it silently landed on Home. Don't reintroduce a second list.
   (a blob up to 512 kB) and `/api/daily-logs?days=60`, neither of which Home draws. `/api/weekly-review`
   was worse: awaited *after* that Promise.all, a whole extra round trip in series.
   Wave 1 is the five calls Home can't paint without (tasks, habits, score, water, reminders); wave 2
-  is the other seven in parallel. `/api/quotes/today` is the odd one out — `loadQuote()` fires it
+  is the other seven in parallel. What wave 2 failed to get is kept as `state.loadFailed` (a Set of the toast's labels: 'money', 'goals', ...) so a screen can show an error in place of its empty state; Money does (`loadFailed` / `onRetryLoad` props). `/api/quotes/today` is the odd one out — `loadQuote()` fires it
   un-awaited *beside* wave 1, because wave 2 doesn't begin until wave 1 has fully landed and the
   quote is the one thing on the loading screen that isn't a grey box. Anything else the placeholder
   starts showing belongs there too, not in wave 2. Safe only because every `state` field has a cache-backed or empty
@@ -228,6 +230,7 @@ it silently landed on Home. Don't reintroduce a second list.
   A failed model call comes back `unavailable: true` ("Couldn't reach the assistant"), distinct
   from an empty parse ("try being more specific"). A **reminder** intent previews as every field
   it carries (`reminderSummary`) and is saved through `addReminder`, so the past-day/time refusals hold.
+  **`runQuickAdd(text, {onLeave, onLogged, onCancel})`** is that parse → preview path on its own (false = nothing read, already toasted); `quickAddBox` and the command palette both call it, so don't grow a second copy.
   **It is the one command box.** `applyIntent` covers every type the server returns — logs (task,
   `task_done` via `matchOpenTask`, habit, `habit_new`, goal, water, food via `logFoodEntry`, sleep,
   mood, expense, income via `addQuickIncome`, note, reminder) and controls (`focus` sets
@@ -350,7 +353,9 @@ it silently landed on Home. Don't reintroduce a second list.
   several call sites do `toastSuccess(...); render();` — which replaces the node mid-entrance. So
   `toastStack` compares `Date.now()` to the toast's `at` and resumes the animation with a negative
   `animation-delay`; past `TOAST_IN_MS` it stamps `is-settled` and the animation is dropped. Keep
-  `TOAST_IN_MS` in step with `gb-toast-in` in `styles/premium.css`.
+  `TOAST_IN_MS` in step with `gb-toast-in` in `styles/app.css` (both skins). A dismissed toast
+  is held `TOAST_OUT_MS` in `leavingToasts` (rendered `.is-leaving`, `gb-toast-out`) before it
+  leaves `state.toasts`; a set, not a class, so a render during the exit keeps it leaving.
 - **Settings' tap targets are real 44px** on tabs (`.gb-segnav-btn`) and segments (`.gb-seg`) inside
   `.gb-settings-body`; Layout's up/down arrows sit side by side there (32px, 12px apart, each with a
   44px `::before`); switches keep their 46x26 look over the shared 46x44 `::before`. The water
@@ -398,18 +403,23 @@ it silently landed on Home. Don't reintroduce a second list.
   Customise) and nobody could guess which held what.
 - **First-run setup is once per account, decided after wave 1.** `loadData()`'s first load calls
   `maybeStartFirstRun()`: no `ui_prefs.setupDone` and no tasks / habits / reminders /
-  `onboardingDone` → `openFirstRunSetup()`. Progress is `ui_prefs.setupStep` (the step on screen,
-  saved on open and on every Next; cleared with `setupDone`): an app closed mid-way resumes at that
-  step (`openFirstRunSetup(resumeAt)`, `SETUP_ORDER`) instead of being marked done silently because
-  its own goal step made habits. Only an account with no data writes it, so one that had data before
-  setup still never sees it. The timezone step is left out when device and account are the same zone
-  (`sameZone`, aliases included). one `openOverlay` sheet (`.gb-setup-modal`, CSS in
-  app.css "First-run setup") with four skippable steps (five on the phone: health after push, `connectHealth`, native only; closing the sheet also sets `ui_prefs.healthAsked` there) — goal (`starterPicker`, the Home starter-pack picker, so one to three chip
-  taps plus "Set it up" leave Home already set up; the button reads "Next" until a chip is on; Stay hydrated's "Drink water" habit is `unless: 'water'` in starter-packs.js, so with Water on the pack sets the water goal instead of a duplicate habit; a sign-out while starter-packs.js loads opens nothing and resets `firstRunOpen`), timezone (`saveDeviceTimezone`), push
-  (`enablePushFlow`), health (native), features (`featureSwitchRow`, the same row as Settings › Layout). An account
-  with data is marked `setupDone` silently. Every way out (Done, Skip, Escape, backdrop) goes
-  through `onClose`, which saves `setupDone` + `tzAsked` and re-arms the timezone offer — which
-  returns early while `setupDone` is unset, so the two never ask the same question twice.
+  `onboardingDone` → `openFirstRunSetup()`: one `openOverlay` sheet (`.gb-setup-modal`) with one
+  decision — "Your plan is ready", the starter-pack picker (`starterPicker(mod, ['balanced'])`)
+  already filled with the Balanced day pack, primary "Start with this plan", ghost "I'll set it up
+  myself". No timezone, push, health or features steps: the zone is the one signup sent and the
+  offer (`offerDeviceTimezone`, worded with `zoneName` / `zoneCity`, never a raw IANA id) asks only
+  when this device disagrees, re-armed on close (`tzAsked` is no longer written here); web push is
+  Home's checklist step "Get reminded on time" (`remindersAsk()`), native health/notifications
+  come from `maybeAskPermissions` on a later launch; features stay on (Settings › Layout).
+  `ui_prefs.setupStep` from an older build is just cleared (one step has no middle to resume).
+  Every way out goes through `onClose`: `setupDone`, `render()` (Home shows nothing behind the
+  sheet: `setupPending`), `syncDeviceTimezone()`. `starterPicker` `apply()` toasts what it added
+  (`starterSummary`: "Added 3 habits, 1 reminder and 1 goal.") and reloads with `achQuiet` on, so
+  a pack's first goal never pops "Dreamer"; `checkAchievements` also holds a badge while a dialog
+  or text field is in use (`formInUse`) and toasts `SETUP_BADGES` instead of the full celebration.
+  Auth: a browser with no `gb.session` lands on sign-up (`authMode`), "Welcome back" only when
+  `state.authReturning`; sign-up has one password field and "Name (optional)" (blank → the first
+  word of the email); the OTP submits itself on the sixth digit (trusted input only).
 - **Panes mount twice:** once in the `tabDefs` array (for the tab bar) and once as a child of
   `.gb-settings-body`. Miss the second and the tab renders empty — that's how the Display tab was
   dead until Aug 2026. `buildSegSlider` only toggles `display`; it never mounts anything.

@@ -209,6 +209,11 @@
   /* Lines */
   --border: #ECE0D6;
   --border-strong: #DFCFC1;
+  /* The edge of a control (text field, unchecked tick): 3.3:1 on surface, 3.0 on
+     surface-2, the 3:1 a control boundary needs. --border-strong (1.5:1) stays for dividers. */
+  --control-border: #9C8B7D;
+  /* The dim behind every overlay: dialogs, the More sheet, the celebration. */
+  --scrim: rgba(32, 25, 21, 0.45);
   /* focus ring: coral-600, 3.3:1 on surface-2 (coral-500 was 2.6-2.8:1, under
      the 3:1 a focus indicator needs). scripts/contrast.test.mjs holds it. */
   --ring: var(--coral-600);
@@ -287,6 +292,8 @@
 
   --border: #382C25;
   --border-strong: #4A3B32;
+  --control-border: #7E6E63;  /* 3.5:1 on surface, 3.2 on surface-2 */
+  --scrim: rgba(8, 6, 5, 0.6);  /* warm-900 at 45% barely dimmed a dark page */
   --ring: var(--coral-400);
 
   --brand: var(--coral-500);

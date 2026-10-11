@@ -34,7 +34,7 @@ async function call(path, method = 'GET', body, token) {
   return { status: res.status, json, text };
 }
 
-function otpFor(email) {
+export function otpFor(email) {
   if (!LOG) throw new Error('GB_BACKEND_LOG is not set');
   const log = readFileSync(LOG, 'utf8');
   // Console mail (no SMTP) prints "To:      <email>" then the body; a configured mailer logs the

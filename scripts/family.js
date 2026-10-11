@@ -42,6 +42,24 @@ const REL_GENDER = {
   grandfather: 'Male',
 };
 
+/* What people call their relatives, as typed into Name, to the relationship it
+   names: "Amma" fills Mother. Lower-cased whole words; first match wins. */
+const NAME_REL = {
+  mother: ['amma', 'mom', 'mum', 'mummy', 'mother', 'maa', 'ammi'],
+  father: ['appa', 'dad', 'daddy', 'papa', 'father', 'abba', 'pappa'],
+  grandmother: ['paati', 'patti', 'ammamma', 'achamma', 'grandma', 'granny', 'nani', 'dadi', 'ammachi'],
+  grandfather: ['thatha', 'tatha', 'appappa', 'grandpa', 'nana', 'dada', 'appachan'],
+  brother: ['anna', 'thambi', 'bro', 'brother', 'bhai', 'bhaiya', 'chetta'],
+  sister: ['akka', 'thangai', 'thangachi', 'sis', 'sister', 'didi', 'chechi'],
+  spouse: ['wife', 'husband', 'spouse', 'hubby', 'wifey'],
+  child: ['son', 'daughter', 'kid', 'baby', 'magan', 'magal', 'kutty', 'beta', 'beti'],
+};
+function relFromName(name) {
+  const words = String(name || '').toLowerCase().split(/[^a-z]+/);
+  for (const rel in NAME_REL) if (NAME_REL[rel].some((w) => words.includes(w))) return rel;
+  return null;
+}
+
 const MEALS = [
   { key: 'breakfast', label: 'Breakfast', icon: 'sunrise' },
   { key: 'lunch', label: 'Lunch', icon: 'utensils' },
@@ -114,6 +132,15 @@ function fromList(list) {
 }
 
 /** "2026-10-11" (a LocalDate) -> "Sun, 11 Oct", read as a local day, not UTC midnight. */
+/* A multi-day plan's day by its date ("Mon 12 Oct"): day 1 is the local day the
+   plan was made, as the planner writes it. "Day N" only when there is no date. */
+function planDayLabel(wk, index) {
+  const made = wk && wk.createdAt ? new Date(wk.createdAt) : null;
+  if (!made || isNaN(made)) return 'Day ' + (index + 1);
+  made.setDate(made.getDate() + index);
+  return fmtDay(made.toLocaleDateString('en-CA')) || 'Day ' + (index + 1);
+}
+
 function fmtDay(iso) {
   const [y, m, d] = String(iso || '')
     .slice(0, 10)
@@ -196,7 +223,7 @@ function ScreenFamily({ api }) {
     error: '',
     family: null, // { familyId, ownerUserId, isOwner, members: [] }
     invites: [], // pending invitations addressed to the current user
-    panel: null, // null | {type:'addChoose'} | {type:'add'} | {type:'edit',member} | {type:'profile',member} | {type:'link'}
+    panel: null, // null | {type:'add'} | {type:'edit',member} | {type:'profile',member} | {type:'link'}
     // Meal planner
     ingredients: [], // [{ name, category, quantity, freshness }]
     selectedMemberIds: null, // null = everyone
@@ -737,60 +764,30 @@ function ScreenFamily({ api }) {
     return Number.isFinite(v) ? v : null;
   }
 
-  // A single entry point for adding someone, so the two paths (create a local
-  // profile vs. invite an existing account) aren't two ambiguous "Add" buttons.
-  function addChooserPanel() {
-    const choice = (icon, title, desc, panel) =>
-      h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-family-add-choice',
-          onclick: () => openPanel(panel),
-        },
-        h(
-          'span',
-          { class: 'gb-family-add-choice-icon' },
-          Icon(icon, { size: 22, color: 'var(--brand)' })
-        ),
-        h(
-          'span',
-          { class: 'gb-family-add-choice-text' },
-          h('span', { class: 'gb-family-add-choice-title' }, title),
-          h('span', { class: 'gb-family-add-choice-desc' }, desc)
-        ),
-        Icon('chevron-right', { size: 18, color: 'var(--fg3)' })
-      );
-    return h(
-      'div',
-      { class: 'gb-family-panel' },
-      panelHeader('Add a family member'),
-      h('p', { class: 'gb-family-panel-sub' }, 'Choose how you’d like to add them.'),
-      h(
-        'div',
-        { class: 'gb-family-add-choices' },
-        choice(
-          'user-plus',
-          'Create a profile',
-          'For a relative you cook for — no account needed.',
-          { type: 'add' }
-        ),
-        choice(
-          'users',
-          'Invite a registered user',
-          'Someone who already uses Growth Buddy. They’ll get an invite to accept.',
-          { type: 'link', member: null }
-        )
-      )
-    );
-  }
-
+  // One form: a profile is what most people add, so it opens on that; the
+  // invite path is one link away. The name fills the relationship while the
+  // select is untouched ("Amma" -> Mother, and her gender with it).
   function addPanel() {
     const c = memberFormControls(null);
-    const save = () => {
+    let relPicked = false;
+    c.relSelect.addEventListener('change', () => (relPicked = true));
+    c.nameInput.addEventListener('input', () => {
+      const rel = !relPicked && relFromName(c.nameInput.value);
+      if (!rel || c.relSelect.value === rel) return;
+      c.relSelect.value = rel;
+      c.genderSelect.value = REL_GENDER[rel] || '';
+    });
+    const save = (again) => {
       const name = c.nameInput.value.trim();
       if (!name) {
         toast.error(null, 'Please enter a name.');
+        c.nameInput.focus();
+        return;
+      }
+      // People search goes by name, never email (UserRepository), so an
+      // address here would only become a profile called "a@b.com".
+      if (name.includes('@')) {
+        toast.error(null, 'To invite someone, use Invite them instead and search their name.');
         c.nameInput.focus();
         return;
       }
@@ -811,7 +808,11 @@ function ScreenFamily({ api }) {
         }),
         (resp) => {
           applyFamily(resp);
-          closePanel();
+          if (!again) return closePanel();
+          toast.success('Added ' + name + '.');
+          openPanel({ type: 'add' }); // a fresh form for the next one
+          const next = root.querySelector('.gb-family-panel input');
+          if (next) next.focus();
         }
       );
     };
@@ -822,7 +823,16 @@ function ScreenFamily({ api }) {
       h(
         'p',
         { class: 'gb-family-panel-sub' },
-        'Create a profile for a relative — no account needed.'
+        'A profile for someone you cook for, no account needed. ',
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-btn gb-btn--ghost gb-btn--sm',
+            onclick: () => openPanel({ type: 'link', member: null }),
+          },
+          'On Growth Buddy already? Invite them'
+        )
       ),
       field('Name', c.nameInput),
       field('Relationship', c.relSelect),
@@ -834,7 +844,12 @@ function ScreenFamily({ api }) {
         field('Height (cm)', c.heightInput),
         field('Weight (kg)', c.weightInput)
       ),
-      h('button', { type: 'button', class: 'gb-btn gb-btn--primary', onclick: save }, 'Add member')
+      h('button', { type: 'button', class: 'gb-btn gb-btn--primary', onclick: () => save(false) }, 'Add member'),
+      h(
+        'button',
+        { type: 'button', class: 'gb-btn gb-btn--ghost', onclick: () => save(true) },
+        'Save and add another'
+      )
     );
   }
 
@@ -1895,7 +1910,7 @@ function ScreenFamily({ api }) {
               {
                 type: 'button',
                 class: 'gb-btn gb-btn--soft gb-btn--sm',
-                onclick: () => openPanel({ type: 'addChoose' }),
+                onclick: () => openPanel({ type: 'add' }),
               },
               Icon('plus', { size: 16 }),
               'Add member'
@@ -1997,7 +2012,7 @@ function ScreenFamily({ api }) {
           type: 'button',
           class: 'gb-btn gb-btn--primary',
           style: { marginTop: '16px', maxWidth: '280px' },
-          onclick: () => openPanel({ type: 'addChoose' }),
+          onclick: () => openPanel({ type: 'add' }),
         },
         Icon('plus', { size: 17, color: '#fff' }),
         'Add your first member'
@@ -2269,7 +2284,7 @@ function ScreenFamily({ api }) {
     return h(
       'div',
       { class: 'gb-card gb-family-weekday' },
-      h('h3', { class: 'gb-family-weekday-label' }, d.label || 'Day ' + (d.day || index + 1)),
+      h('h3', { class: 'gb-family-weekday-label' }, d.label || planDayLabel(wk, index)),
       line('Breakfast', 'breakfast', d.breakfast),
       line('Lunch', 'lunch', d.lunch),
       line('Snack', 'snack', d.snack),
@@ -2308,7 +2323,11 @@ function ScreenFamily({ api }) {
     const lowI = h('input', { type: 'checkbox' });
     const add = () => {
       const name = nameI.value.trim();
-      if (!name) return;
+      if (!name) {
+        toast.error(null, 'Type the item first.');
+        nameI.focus();
+        return;
+      }
       run(
         api.addPantry({
           name,
@@ -2533,7 +2552,11 @@ function ScreenFamily({ api }) {
     });
     const add = () => {
       const name = nameI.value.trim();
-      if (!name) return;
+      if (!name) {
+        toast.error(null, 'Type the item first.');
+        nameI.focus();
+        return;
+      }
       run(api.addShopping({ name, quantity: qtyI.value.trim() || null }), (res) => {
         model.shoppingList = res;
       });
@@ -3204,8 +3227,7 @@ function ScreenFamily({ api }) {
     if (model.panel) {
       const p = model.panel;
       let panelEl;
-      if (p.type === 'addChoose') panelEl = addChooserPanel();
-      else if (p.type === 'add') panelEl = addPanel();
+      if (p.type === 'add') panelEl = addPanel();
       else if (p.type === 'edit') panelEl = editPanel(p.member);
       else if (p.type === 'profile') panelEl = profilePanel(p.member);
       else if (p.type === 'link') panelEl = linkPanel(p.member);
