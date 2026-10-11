@@ -470,7 +470,7 @@ function QuoteCard({ quote }) {
   });
 }
 
-function TodayPlanCard({ water, wellness, onPlanToday }) {
+function TodayPlanCard({ water, wellness, onPlanToday, skip }) {
   const key = todayKey();
   const sleep = wellness && wellness.sleepByDate ? wellness.sleepByDate[key] : null;
   const mood = wellness && wellness.moodByDate ? wellness.moodByDate[key] : null;
@@ -479,18 +479,19 @@ function TodayPlanCard({ water, wellness, onPlanToday }) {
     100,
     Math.round((((water && water.consumedMl) || 0) / waterGoal) * 100)
   );
-  // The brief lists what's still open. Two rules got it here:
+  // The brief lists what's still open. Three rules got it here:
   //   - It doesn't repeat the ring. The score card above measures exactly tasks
   //     and habits and already reads "0/4 tasks · 1/3 habits"; the brief used to
   //     restate that as "4 tasks left · 2 habits left" — the same two facts, in
   //     opposite polarity, one card apart.
   //   - It doesn't congratulate. "Sleep logged" sat directly above a card
   //     showing "7.5h · Good", so the chip said less than the thing beneath it.
+  //   - It doesn't repeat the one-thing card (`skip` is its kind): that card asks it already.
   // Finish everything and the row empties out, which is the point.
   const chips = [];
-  if (water && waterPct < 100) chips.push({ label: waterPct + '% water' });
-  if (!sleep) chips.push({ label: 'Sleep not logged' });
-  if (!mood) chips.push({ label: 'Mood not logged' });
+  if (water && waterPct < 100 && skip !== 'water') chips.push({ label: waterPct + '% water' });
+  if (!sleep && skip !== 'sleep') chips.push({ label: 'Sleep not logged' });
+  if (!mood && skip !== 'mood') chips.push({ label: 'Mood not logged' });
   return Card({
     className: 'gb-coach-card',
     children: [
@@ -2666,7 +2667,7 @@ function ScreenDashboard({
         onDismissInsight,
         onInsightAction,
       }),
-    plan: () => TodayPlanCard({ water: on('water') ? water : null, wellness, onPlanToday }),
+    plan: () => TodayPlanCard({ water: on('water') ? water : null, wellness, onPlanToday, skip: oneKind }),
     // The card above owns its nudge: the check-in row asking the same thing goes.
     wellness: () =>
       WellnessCard({
