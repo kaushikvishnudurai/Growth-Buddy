@@ -452,6 +452,7 @@ function paintRing() {
   T.refs.timeEl.textContent = fmt(T.remainingSec);
   T.refs.modeEl.textContent = T.mode;
   T.refs.cycleEl.textContent = cycleLabel(T.mode, T.cycleDone);
+  if (T.refs.card) T.refs.card.classList.toggle('is-running', T.running);
   T.refs.subEl.textContent = T.running
     ? 'In session — keep going.'
     : T.remainingSec === 0
@@ -651,14 +652,31 @@ function chime() {
   }
 }
 
+/* The timer face: a thin progress arc over a quiet track, with a dial of 60
+   ticks inside it (every fifth longer). Sized by CSS (.gb-focus-ring); `size`
+   is the viewBox. */
 function buildRing(size, stroke) {
   const NS = 'http://www.w3.org/2000/svg';
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
   const svg = document.createElementNS(NS, 'svg');
-  svg.setAttribute('width', size);
-  svg.setAttribute('height', size);
+  svg.setAttribute('viewBox', '0 0 ' + size + ' ' + size);
+  svg.setAttribute('aria-hidden', 'true');
   svg.style.transform = 'rotate(-90deg)';
+  const mid = size / 2;
+  for (let i = 0; i < 60; i++) {
+    const a = (i / 60) * 2 * Math.PI;
+    const major = i % 5 === 0;
+    const r1 = r - stroke - 6;
+    const r0 = r1 - (major ? 9 : 4);
+    const tick = document.createElementNS(NS, 'line');
+    tick.setAttribute('x1', String(mid + r0 * Math.cos(a)));
+    tick.setAttribute('y1', String(mid + r0 * Math.sin(a)));
+    tick.setAttribute('x2', String(mid + r1 * Math.cos(a)));
+    tick.setAttribute('y2', String(mid + r1 * Math.sin(a)));
+    tick.setAttribute('class', 'gb-focus-tick' + (major ? ' is-major' : ''));
+    svg.appendChild(tick);
+  }
   const bg = document.createElementNS(NS, 'circle');
   bg.setAttribute('cx', size / 2);
   bg.setAttribute('cy', size / 2);
@@ -677,7 +695,7 @@ function buildRing(size, stroke) {
   fg.setAttribute('stroke-linecap', 'round');
   fg.setAttribute('stroke-dasharray', c);
   fg.setAttribute('stroke-dashoffset', 0);
-  fg.style.transition = 'stroke-dashoffset 0.4s var(--ease-out, ease)';
+  fg.setAttribute('class', 'gb-focus-arc');
   svg.appendChild(fg);
   return { svg, fg, r };
 }
@@ -743,12 +761,7 @@ function TimerCard() {
   const timeEl = h(
     'span',
     {
-      style: {
-        fontFamily: 'var(--font-display)',
-        fontWeight: 800,
-        fontSize: '2.125rem',
-        color: 'var(--fg1)',
-      },
+      class: 'gb-focus-time',
       // role=timer is implicitly aria-live="off": read on demand, not every second.
       role: 'timer',
       'aria-label': 'Time left',
@@ -756,24 +769,13 @@ function TimerCard() {
     fmt(T.remainingSec)
   );
   const liveEl = h('div', { class: 'gb-sr-only', role: 'status', 'aria-live': 'polite' });
-  const modeEl = h(
-    'span',
-    {
-      style: {
-        fontSize: '0.6875rem',
-        fontWeight: 700,
-        color: 'var(--fg3)',
-        textTransform: 'uppercase',
-        letterSpacing: '.06em',
-      },
-    },
-    T.mode
-  );
+  const modeEl = h('span', { class: 'gb-focus-mode' }, T.mode);
+  const cycleEl = h('span', { class: 'gb-focus-cycle' }, cycleLabel(T.mode, T.cycleDone));
 
-  const ring = buildRing(184, 14);
+  const ring = buildRing(300, 6);
   const ringWrap = h('div', { class: 'gb-focus-ring' });
   ringWrap.appendChild(ring.svg);
-  ringWrap.appendChild(h('div', { class: 'gb-focus-ring-inner' }, timeEl, modeEl));
+  ringWrap.appendChild(h('div', { class: 'gb-focus-ring-inner' }, modeEl, timeEl, cycleEl));
 
   function modeChip(label, mode, mins) {
     const btn = h(
@@ -833,7 +835,6 @@ function TimerCard() {
     'Reset'
   );
 
-  const cycleEl = h('div', { class: 'gb-focus-cycle' }, cycleLabel(T.mode, T.cycleDone));
   const goalEl = h('div', { class: 'gb-focus-goal' });
   Focus.goalEl = goalEl;
   paintGoal();
@@ -850,33 +851,29 @@ function TimerCard() {
     paintedRunning: T.running,
     chips: { ['focus:25']: chipFocus25, ['focus:50']: chipFocus50, ['break:5']: chipBreak5 },
   };
-  paintRing();
-
-  return Card({
-    className: 'gb-focus-card',
+  // One column: the face, what to do, then the setup. While a session runs the
+  // setup (length, "Focusing on…") folds away and the face is all there is;
+  // Pause brings it back. paintRing toggles .is-running.
+  const card = Card({
+    className: 'gb-focus-card' + (T.running ? ' is-running' : ''),
     children: [
       ringWrap,
+      // No "Focus timer" heading: the page is titled Timer and the ring says FOCUS.
+      subEl,
+      h('div', { class: 'gb-timer-actions' }, startBtn, resetBtn),
       h(
         'div',
-        { class: 'gb-focus-controls' },
-        cycleEl,
-        // No "Focus timer" heading: the page is titled Timer and the ring says FOCUS.
-        subEl,
-        FocusPicker(),
-        h(
-          'div',
-          { class: 'gb-segmented', style: { marginTop: '12px' } },
-          chipFocus25,
-          chipFocus50,
-          chipBreak5,
-          chipCustom
-        ),
-        h('div', { class: 'gb-timer-actions' }, startBtn, resetBtn),
-        goalEl,
-        liveEl
+        { class: 'gb-focus-setup' },
+        h('div', { class: 'gb-segmented' }, chipFocus25, chipFocus50, chipBreak5, chipCustom),
+        FocusPicker()
       ),
+      goalEl,
+      liveEl,
     ],
   });
+  T.refs.card = card;
+  paintRing();
+  return card;
 }
 
 /* "Focusing on…": the session can be spent on one of the user's open tasks or

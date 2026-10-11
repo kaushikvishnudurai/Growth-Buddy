@@ -127,13 +127,13 @@ function insightsSection(data, { loading, onDismiss, onAction } = {}) {
   return h('div', { class: 'gb-dash-block' }, SectionTitle({ title: 'Insights' }), body);
 }
 
-function statTile(label, value, sub, color) {
+function statTile(label, value, sub) {
   // A missing number reads as a dash, not "undefined%".
   const shown = value == null || Number.isNaN(value) ? '\u2014' : String(value);
   return h(
     'div',
     { class: 'gb-report-stat' },
-    h('div', { class: 'gb-report-stat-value', style: color ? { color } : null }, shown),
+    h('div', { class: 'gb-report-stat-value' }, shown),
     h('div', { class: 'gb-report-stat-label' }, label),
     sub ? h('div', { class: 'gb-report-stat-sub' }, sub) : null
   );
@@ -202,10 +202,14 @@ function trendChart(values, color, days, fmt, title, opts = {}) {
     if (v != null && !Number.isNaN(v)) present.push({ v, i });
   });
   if (present.length < 2) {
-    return h('div', { class: 'gb-trend-empty' }, 'Not enough data yet — keep logging.');
+    const empty = h('div', { class: 'gb-trend-empty' }, 'Not enough data yet — keep logging.');
+    return opts.sub ? h('div', null, empty, h('div', { class: 'gb-trend-sub' }, opts.sub)) : empty;
   }
-  const max = Math.max(...present.map((p) => p.v));
-  const min = Math.min(...present.map((p) => p.v));
+  // The period before's average (opts.baseline) is drawn as a hairline, so the
+  // line reads against where it was: the scale has to reach it.
+  const base = opts.baseline != null && Number.isFinite(opts.baseline) ? opts.baseline : null;
+  const max = Math.max(...present.map((p) => p.v), base != null ? base : -Infinity);
+  const min = Math.min(...present.map((p) => p.v), base != null ? base : Infinity);
   const span = max - min || 1;
   const n = values.length;
   const x = (i) => PX + (n === 1 ? 0 : (i / (n - 1)) * (W - 2 * PX));
@@ -262,21 +266,69 @@ function trendChart(values, color, days, fmt, title, opts = {}) {
     ' ' +
     (H - PY).toFixed(1) +
     ' Z';
-  svg.appendChild(svgEl('path', { d: areaPts, fill: color, 'fill-opacity': '0.12' }));
+  svg.appendChild(svgEl('path', { d: areaPts, fill: color, 'fill-opacity': '0.1' }));
+  if (base != null) {
+    svg.appendChild(
+      svgEl('line', {
+        x1: 0,
+        x2: W,
+        y1: y(base).toFixed(1),
+        y2: y(base).toFixed(1),
+        class: 'gb-trend-base',
+        'vector-effect': 'non-scaling-stroke',
+      })
+    );
+  }
   // The line itself.
   svg.appendChild(
     svgEl('polyline', {
       points: present.map((p) => x(p.i).toFixed(1) + ',' + y(p.v).toFixed(1)).join(' '),
       fill: 'none',
       stroke: color,
-      'stroke-width': '2.5',
+      'stroke-width': '2',
+      'vector-effect': 'non-scaling-stroke',
       'stroke-linecap': 'round',
       'stroke-linejoin': 'round',
     })
   );
   // Marker on the most recent point.
   const last = present[present.length - 1];
-  svg.appendChild(svgEl('circle', { cx: x(last.i), cy: y(last.v), r: '3.5', fill: color }));
+  svg.appendChild(
+    svgEl('circle', {
+      cx: x(last.i),
+      cy: y(last.v),
+      r: '4',
+      fill: color,
+      stroke: 'var(--surface)',
+      'stroke-width': '2',
+    })
+  );
+  // The latest value, in ink (never the line's colour), at the line's end. It sits
+  // up-left of the dot, or down-left when the line comes down into it, so the
+  // line never runs through the label.
+  const prev = present[present.length - 2];
+  const endLabel = h(
+    'span',
+    {
+      class: 'gb-trend-end' + (prev.v > last.v ? ' is-below' : ''),
+      'aria-hidden': 'true',
+      style: {
+        left: ((x(last.i) / W) * 100).toFixed(1) + '%',
+        top: ((y(last.v) / H) * 100).toFixed(1) + '%',
+      },
+    },
+    fmt(last.v)
+  );
+  // The hairline's key goes under the chart: on it, the label crossed the line.
+  const baseKey =
+    base != null
+      ? h(
+          'span',
+          { class: 'gb-trend-basekey', 'aria-hidden': 'true' },
+          h('i'),
+          (opts.baseName || 'Before') + ' ' + fmt(base)
+        )
+      : null;
 
   // Hover readout: snaps to the nearest logged day, so a gap never reads as 0.
   const guide = svgEl('line', {
@@ -343,9 +395,19 @@ function trendChart(values, color, days, fmt, title, opts = {}) {
           })
         )
       : null;
-  return h('div', { class: 'gb-trend-plot' }, svg, ticks, tip, table);
+  return h(
+    'div',
+    { class: 'gb-trend-plot' },
+    h('div', { class: 'gb-trend-canvas' }, svg, opts.endLabel ? endLabel : null),
+    ticks,
+    opts.sub || baseKey ? h('div', { class: 'gb-trend-foot' }, opts.sub ? h('span', null, opts.sub) : null, baseKey) : null,
+    tip,
+    table
+  );
 }
 
+/* The head says what changed (the signed difference against the period before);
+   without one (1 year, or nothing logged before) it shows the latest value. */
 function trendCard(title, latest, sub, values, color, days, fmt, vs, opts) {
   return Card({
     className: 'gb-trend-card',
@@ -353,12 +415,24 @@ function trendCard(title, latest, sub, values, color, days, fmt, vs, opts) {
       h(
         'div',
         { class: 'gb-trend-head' },
-        h('div', { class: 'gb-trend-title' }, title),
-        h('div', { class: 'gb-trend-latest' }, latest)
+        h('h4', { class: 'gb-trend-title' }, title),
+        vs
+          ? h(
+              'div',
+              { class: 'gb-trend-vs is-' + vs.dir },
+              h('span', { class: 'gb-trend-delta' }, vs.amount),
+              h('span', { class: 'gb-trend-vslabel' }, vs.label)
+            )
+          : h('div', { class: 'gb-trend-latest' }, latest)
       ),
-      trendChart(values, color, days, fmt, title, opts),
-      sub ? h('div', { class: 'gb-trend-sub' }, sub) : null,
-      vs ? h('div', { class: 'gb-trend-vs is-' + vs.dir }, vs.text) : null,
+      trendChart(values, color, days, fmt, title, {
+        ...opts,
+        sub,
+        // The head shows the latest value when it has no change to show.
+        endLabel: !!vs,
+        baseline: vs ? vs.prev : null,
+        baseName: vs ? vs.baseName : null,
+      }),
     ],
   });
 }
@@ -412,10 +486,14 @@ function trendsSection({ on, trends, wellness, range, onRange }) {
     if (!d) return null;
     const amount = fmtDiff(Math.abs(d.diff));
     const label = range === 7 ? 'last week' : 'the ' + range + ' days before';
-    if (!parseFloat(amount)) return { dir: 'flat', text: 'Same as ' + label };
+    const baseName = range === 7 ? 'Last week' : 'Before';
+    if (!parseFloat(amount)) return { dir: 'flat', amount: 'Same', label: 'as ' + label, prev: d.prev, baseName };
     return {
       dir: d.diff > 0 ? 'up' : 'down',
-      text: (d.diff > 0 ? '+' : '\u2212') + amount + ' vs ' + label,
+      amount: (d.diff > 0 ? '+' : '\u2212') + amount,
+      label: 'vs ' + label,
+      prev: d.prev,
+      baseName,
     };
   };
 
@@ -960,7 +1038,7 @@ function pixelGrid(values, today, readout) {
   }
   const avg = summary.logged ? Math.round((summary.sum / summary.logged) * 100) : 0;
   const total = summary.logged
-    ? summary.logged + ' days logged · average ' + avg + '%'
+    ? nDays(summary.logged) + ' logged · average ' + avg + '%'
     : 'Nothing logged in the last year yet';
   readout.textContent = total;
 
@@ -1212,12 +1290,12 @@ function ScreenReport({
       Card({
         className: 'gb-report-grid gb-report-grid--wrap',
         children: [
-          statTile('Score', Number.isFinite(score) ? Math.round(score) + '%' : null, null, 'var(--brand)'),
+          statTile('Score', Number.isFinite(score) ? Math.round(score) + '%' : null),
           statTile('Tasks', tasksDone + '/' + scored.length, 'done'),
           on('habits') ? statTile('Habits', habitsDone + '/' + hb.length, 'done') : null,
-          on('habits') ? statTile('Top streak', topStreak, 'days', 'var(--coral-600)') : null,
-          on('water') ? statTile('Water', waterPct + '%', waterMl + ' of ' + waterGoal + ' ml', 'var(--sky-600)') : null,
-          on('food') ? statTile('Calories', kcal, 'kcal logged', 'var(--sun-700)') : null,
+          on('habits') ? statTile('Top streak', topStreak, 'days') : null,
+          on('water') ? statTile('Water', waterPct + '%', waterMl + ' of ' + waterGoal + ' ml') : null,
+          on('food') ? statTile('Calories', kcal, 'kcal logged') : null,
         ].filter(Boolean),
       })
     ),
