@@ -25,7 +25,7 @@ list (e.g. "(14)" = financial health).
 | Purchase advisor | coach |
 | Goal chips (modal) | goals |
 | Savings goals | goals |
-| Receipt scanner | spending |
+| Receipt scanner (rows are a grid: name / amount / remove, the tag `<select>` under them) + Add expense's `gb-money-scan-cta` | Add expense dialog |
 | Empty state (`emptyHint`) | everywhere |
 | Section head with multiple actions | budgets |
 | Financial health (14) | coach |

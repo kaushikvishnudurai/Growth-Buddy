@@ -104,6 +104,25 @@ const KEYWORDS = {
     'milk',
     'bakery',
     'juice',
+    'blinkit',
+    'zepto',
+    'bigbasket',
+    'instamart',
+    'dmart',
+    'vegetables',
+    'fruits',
+    'bread',
+    'eggs',
+    'rice',
+    'chai',
+    'biryani',
+    'dosa',
+    'idli',
+    'burger',
+    'kfc',
+    'mcdonalds',
+    'dominos',
+    'starbucks',
   ],
   shopping: [
     'shopping',
@@ -137,6 +156,10 @@ const KEYWORDS = {
     'flight',
     'parking',
     'toll',
+    'rapido',
+    'taxi',
+    'irctc',
+    'fastag',
     'transport',
     'commute',
   ],
@@ -155,6 +178,11 @@ const KEYWORDS = {
     'outing',
     'entertain',
     'cinema',
+    'bookmyshow',
+    'youtube',
+    'disney',
+    'playstation',
+    'steam',
   ],
   education: [
     'book',
@@ -600,18 +628,74 @@ function pctChange(cur, prev) {
   return Math.round(((cur - prev) / prev) * 100);
 }
 
-/* 1 — auto-categorize a note (built-in keywords, then custom tag labels). */
-function suggestCategory(text, money) {
-  const t = String(text || '').toLowerCase();
-  if (!t.trim()) return null;
+/* 1 — auto-categorize a note. `predictCategory` is the whole of it, pure, so
+   Quick add can ask the same question; `suggestCategory` is it over a money doc. */
+const STOP = new Set(['the', 'and', 'for', 'with', 'from', 'at', 'of', 'on', 'in', 'my', 'to', 'a', 'an', 'some', 'got']);
+function tokens(text) {
+  return String(text || '')
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((w) => w.length >= 3 && !STOP.has(w) && !/^\d+$/.test(w));
+}
+// Whole words, or a word starting with a 4+ letter keyword ("groceries" / "grocery",
+// "movies" / "movie"): a substring test filed "chocolate" under Transport (ola).
+function wordHit(word, k) {
+  return word === k || (k.length >= 4 && word.startsWith(k));
+}
+
+/**
+ * The category a note means, or null for an empty one.
+ * 1. The user's own history: the newest expense with the same note wins, else
+ *    the one sharing the most words (newest on a tie). A tag they corrected is
+ *    what that expense now carries, so a correction teaches the next guess with
+ *    nothing stored for it. A partial match filed under Others is no signal.
+ * 2. A tag named outright ("groceries" when they have a Groceries tag), then
+ *    the built-in keywords.
+ * 3. 'others'.
+ * `history`: expenses ({note, category, date, createdAt}); `categories`: the
+ * [{key, label}] the user has (mergedCats) — a guess is always one of them.
+ */
+function predictCategory(text, history, categories) {
+  const words = tokens(text);
+  const norm = String(text || '').trim().toLowerCase();
+  if (!norm) return null;
+  const cats = categories && categories.length ? categories : DEFAULT_CATEGORIES;
+  const valid = new Set(cats.map((c) => c.key));
+  const fallback = valid.has('others') ? 'others' : cats[0].key;
+  let best = null;
+  let bestScore = 0;
+  const newer = (a, b) =>
+    !b || (a.date || '') > (b.date || '') || ((a.date || '') === (b.date || '') && (a.createdAt || 0) > (b.createdAt || 0));
+  for (const e of history || []) {
+    if (!e || !valid.has(e.category)) continue;
+    const note = String(e.note || '').trim().toLowerCase();
+    if (!note) continue;
+    let score;
+    if (note === norm) score = Infinity;
+    else if (e.category === 'others') continue;
+    else {
+      const theirs = tokens(note);
+      score = words.filter((w) => theirs.some((t) => wordHit(w, t) || wordHit(t, w))).length;
+    }
+    if (score > bestScore || (score === bestScore && score > 0 && newer(e, best))) {
+      best = e;
+      bestScore = score;
+    }
+  }
+  if (best) return best.category;
+  for (const c of cats) {
+    const label = tokens(c.label);
+    if (label.length && label.every((l) => words.some((w) => wordHit(w, l)))) return c.key;
+  }
   for (const c of DEFAULT_CATEGORIES) {
     const ks = KEYWORDS[c.key];
-    if (ks && ks.some((k) => t.includes(k))) return c.key;
+    if (valid.has(c.key) && ks && words.some((w) => ks.some((k) => wordHit(w, k)))) return c.key;
   }
-  for (const c of (money && money.customCategories) || []) {
-    if (c.label && t.includes(String(c.label).toLowerCase())) return c.key;
-  }
-  return 'others';
+  return fallback;
+}
+
+function suggestCategory(text, money) {
+  return predictCategory(text, money && money.expenses, mergedCats(money));
 }
 
 /* 2 — weekly + monthly insights, plain language. */
@@ -748,6 +832,7 @@ export {
   byCategory,
   pctChange,
   suggestCategory,
+  predictCategory,
   buildInsights,
   budgetStatus,
 };
