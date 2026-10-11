@@ -56,6 +56,10 @@ spring:
           # (users.id etc. are varchar(36)); the default BINARY(16) mapping made
           # every UUID lookup miss and broke ddl-auto updates.
           preferred_uuid_jdbc_type: CHAR
+        # An EAGER collection loaded through a query (reminder skip days) was one
+        # select per owner: 1 + N per reminder list and per scheduler snapshot
+        # refresh (CRB-7). Batched, it is one IN (...) per 100 owners.
+        default_batch_fetch_size: 100
     open-in-view: false
 
   task:
