@@ -3413,6 +3413,13 @@ function suggestGoalDone(taskId, tasksBefore) {
   });
 }
 
+/* A 404 on a task means it was deleted elsewhere: a retry can only 404 again,
+   so the row goes instead of rolling back with "try again" (HOS-8). */
+function taskGoneElsewhere(id) {
+  state.tasks = state.tasks.filter((t) => t.id !== id);
+  pushToast('That task was deleted on another device.', 'info', 4000);
+}
+
 async function toggleTask(id) {
   if (togglesInFlight.has(id)) return;
   togglesInFlight.add(id);
@@ -3462,6 +3469,12 @@ async function toggleTask(id) {
       return;
     }
     if (err.queued) return;
+    if (err.status === 404) {
+      taskGoneElsewhere(id);
+      state.score = before.score;
+      render();
+      return;
+    }
     // Only this row: restoring the whole array undid any other row ticked meanwhile.
     state.tasks = state.tasks.map((t) => (t.id === id ? { ...t, done: !t.done } : t));
     state.score = before.score;
@@ -4041,6 +4054,7 @@ async function updateTask(id, body) {
       api(path, { method: 'PUT', headers: { 'Idempotency-Key': idemKey }, body: JSON.stringify(body) })
     );
   } catch (err) {
+    if (err.status === 404) return taskGoneElsewhere(id); // the dialog closes on it
     if (!err.queued) throw err;
     state.tasks = state.tasks.map((t) => (t.id === id ? mapTask({ ...t, ...body, id }) : t));
     return;
