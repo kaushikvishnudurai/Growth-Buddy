@@ -36,7 +36,9 @@ class ReflectionSchedulerTest {
     private final NotificationService notifications = mock(NotificationService.class);
     private final NotificationRepository rows = mock(NotificationRepository.class);
     private final PushService push = mock(PushService.class);
-    private final ReflectionScheduler job = new ReflectionScheduler(users, notifications, rows, push);
+    private final com.growthbuddy.reminder.ReminderDispatchLogRepository dispatchLog =
+            mock(com.growthbuddy.reminder.ReminderDispatchLogRepository.class);
+    private final ReflectionScheduler job = new ReflectionScheduler(users, notifications, rows, push, dispatchLog);
 
     private static User user(String zone, Object pref) {
         User u = new User();
@@ -135,5 +137,19 @@ class ReflectionSchedulerTest {
         when(rows.findFirstByUserIdAndKindAndCreatedAtAfterOrderByCreatedAtDesc(any(), any(), any()))
                 .thenReturn(Optional.empty());
         assertThat(job.run(now)).isZero();
+    }
+
+    /* CRB-10: a second instance in the same window loses the claim and sends nothing. */
+    @Test
+    void anInstanceThatLosesTheDailyClaimSendsNothing() {
+        User u = user("UTC", "21:00");
+        when(users.findWithReflectionPref()).thenReturn(List.of(u));
+        when(dispatchLog.saveAndFlush(any())).thenThrow(
+                new org.springframework.dao.DataIntegrityViolationException("ux_rem_dispatch_unique"));
+        Instant at = ZonedDateTime.of(LocalDate.of(2026, 10, 10), LocalTime.of(21, 2), ZoneId.of("UTC")).toInstant();
+
+        assertThat(job.run(at)).isZero();
+        verify(notifications, never()).publish(any(), any(), anyString(), anyString(), any());
+        verify(push, never()).sendToUser(any(), anyString(), anyString(), anyString());
     }
 }
