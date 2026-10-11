@@ -12,7 +12,7 @@ class ReceiptParseTest {
     private final ObjectMapper json = new ObjectMapper();
 
     private MoneyService.ReceiptScan parse(String s) throws Exception {
-        return MoneyService.parseReceipt(json.readTree(s));
+        return MoneyService.parseReceipt(json.readTree(s), java.util.Set.of("food", "others"));
     }
 
     @Test
@@ -34,6 +34,20 @@ class ReceiptParseTest {
                 .containsExactly(new BigDecimal("56.00"), new BigDecimal("30.00"), new BigDecimal("12.50"));
         assertThat(r.date()).isEqualTo("2026-10-08");
         assertThat(r.merchant()).isEqualTo("Corner Store");
+    }
+
+    @Test
+    void keepsOnlyCategoriesTheUserHas() throws Exception {
+        var r = parse("""
+                {"items":[
+                  {"name":"Toor dal","amount":120,"category":"food"},
+                  {"name":"Offer","amount":-20},
+                  {"name":"Bucket","amount":90,"category":"household"},
+                  {"name":"Soap","amount":30}
+                ]}""");
+        assertThat(r.items()).extracting(MoneyService.ReceiptItem::category)
+                .containsExactly("food", null, null);
+        assertThat(r.items().get(0).amount()).isEqualTo(new BigDecimal("100.00"));
     }
 
     @Test
@@ -60,13 +74,13 @@ class ReceiptParseTest {
                 .thenThrow(new IllegalStateException("AI gateway 401"));
         var service = new MoneyService(org.mockito.Mockito.mock(MoneyRepository.class), new ObjectMapper(), openai,
                 org.mockito.Mockito.mock(MoneyLedger.class));
-        var r = service.scanReceipt("data:image/jpeg;base64,AAAA");
+        var r = service.scanReceipt("data:image/jpeg;base64,AAAA", java.util.Map.of("others", "Others"));
         assertThat(r.configured()).isTrue();
         assertThat(r.unavailable()).isTrue();
         assertThat(r.items()).isEmpty();
 
         org.mockito.Mockito.when(openai.isConfigured()).thenReturn(false);
-        var none = service.scanReceipt("data:image/jpeg;base64,AAAA");
+        var none = service.scanReceipt("data:image/jpeg;base64,AAAA", java.util.Map.of("others", "Others"));
         assertThat(none.configured()).isFalse();
         assertThat(none.unavailable()).isFalse();
     }

@@ -81,7 +81,7 @@ public class MoneyService {
 
     private static final String RECEIPT_PROMPT = """
             You read a photo of a shop receipt or bill and list what was bought.
-            Return strict JSON only: {"items":[{"name":"Milk 1L","amount":56.00}],"date":"2026-10-08","merchant":"Shop name"}
+            Return strict JSON only: {"items":[{"name":"Milk 1L","amount":56.00,"category":"food"}],"date":"2026-10-08","merchant":"Shop name"}
 
             Rules:
             - One item per purchased line. amount is that line's total price as a number, no currency symbol.
@@ -91,6 +91,10 @@ public class MoneyService {
             - name is short and readable (expand obvious abbreviations), at most 40 characters.
             - date is the bill's date as YYYY-MM-DD, or null when none is printed. merchant is null when unclear.
             - Not a receipt, or nothing legible: {"items":[],"date":null,"merchant":null}.
+            - category is the key of the user's category that fits the item best, judged from the item
+              and the shop (groceries and dishes are food, a cab or fuel is transport). Use "others" only
+              when nothing fits. Tax, fees and tip take the category of the bill's main items.
+            The user's categories, as key = label:
             """;
 
     /**
@@ -99,13 +103,15 @@ public class MoneyService {
      * key, a timeout). Both keep the client's type-them-in form, but they used to
      * share one answer, so a dead key read to the user as "your photo is bad".
      */
-    public ReceiptScan scanReceipt(String imageDataUrl) {
+    public ReceiptScan scanReceipt(String imageDataUrl, java.util.Map<String, String> categories) {
         if (!openai.isConfigured()) {
             return new ReceiptScan(false, List.of(), null, null);
         }
         try {
-            String raw = openai.completeWithImage(RECEIPT_PROMPT, "Read this receipt. Strict JSON only.", imageDataUrl);
-            return parseReceipt(json.readTree(OpenAIClient.jsonOf(raw)));
+            StringBuilder prompt = new StringBuilder(RECEIPT_PROMPT);
+            categories.forEach((k, v) -> prompt.append("- ").append(k).append(" = ").append(v).append('\n'));
+            String raw = openai.completeWithImage(prompt.toString(), "Read this receipt. Strict JSON only.", imageDataUrl);
+            return parseReceipt(json.readTree(OpenAIClient.jsonOf(raw)), categories.keySet());
         } catch (Exception ex) {
             log.warn("Receipt scan failed, falling back to manual entry: {}", ex.getMessage());
             return new ReceiptScan(true, true, List.of(), null, null);
@@ -115,9 +121,10 @@ public class MoneyService {
     /**
      * Trust boundary: the model's JSON becomes expenses, so every line is checked
      * here. Discounts are folded into the line above them, because an expense
-     * can't be negative and dropping one would overstate the bill.
+     * can't be negative and dropping one would overstate the bill. A category the
+     * user doesn't have comes back null, and the client guesses from the name.
      */
-    static ReceiptScan parseReceipt(JsonNode node) {
+    static ReceiptScan parseReceipt(JsonNode node, java.util.Set<String> categories) {
         List<ReceiptItem> items = new java.util.ArrayList<>();
         for (JsonNode it : node.path("items")) {
             if (!it.path("amount").isNumber()) continue;
@@ -125,12 +132,14 @@ public class MoneyService {
             if (amt.signum() < 0 && !items.isEmpty()) {
                 ReceiptItem prev = items.remove(items.size() - 1);
                 java.math.BigDecimal left = prev.amount().add(amt);
-                if (left.signum() > 0) items.add(new ReceiptItem(prev.name(), left));
+                if (left.signum() > 0) items.add(new ReceiptItem(prev.name(), left, prev.category()));
                 continue;
             }
             if (amt.signum() <= 0 || amt.compareTo(MoneyLedger.EXPENSE_MAX) > 0) continue;
             String name = cap(it.path("name").asText(""), 60);
-            items.add(new ReceiptItem(name.isEmpty() ? "Receipt item" : name, amt));
+            String cat = it.path("category").asText("");
+            items.add(new ReceiptItem(name.isEmpty() ? "Receipt item" : name, amt,
+                    categories.contains(cat) ? cat : null));
         }
         String date = null;
         try {
@@ -142,7 +151,7 @@ public class MoneyService {
         return new ReceiptScan(true, items, date, merchant.isEmpty() ? null : merchant);
     }
 
-    public record ReceiptItem(String name, java.math.BigDecimal amount) {}
+    public record ReceiptItem(String name, java.math.BigDecimal amount, String category) {}
 
     public record ReceiptScan(boolean configured, boolean unavailable, List<ReceiptItem> items, String date,
                               String merchant) {

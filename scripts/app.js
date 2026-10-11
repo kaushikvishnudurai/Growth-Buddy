@@ -13213,14 +13213,15 @@ async function saveNavLayout(layout) {
 }
 
 /* Money's receipt reader, for Add expense on the Money screen and on Home.
-   Shrunk the way Notes shrinks a photo: 1280px is enough to read a bill. */
-function requestReceiptScan(file) {
+   Shrunk the way Notes shrinks a photo: 1280px is enough to read a bill.
+   categories: [{key, label}], so the AI tags each line with one the user has. */
+function requestReceiptScan(file, categories) {
   return import('./notes.js')
     .then((m) => m.shrinkPhoto(file))
     .then((imageDataUrl) =>
       api('/api/money/receipt-scan', {
         method: 'POST',
-        body: JSON.stringify({ imageDataUrl }),
+        body: JSON.stringify({ imageDataUrl, categories }),
       })
     );
 }

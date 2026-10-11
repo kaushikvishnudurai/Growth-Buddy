@@ -2412,7 +2412,10 @@ function openReceiptModal(money, save, requestReceiptScan, opts) {
     let res = null;
     let failed = null;
     try {
-      res = await requestReceiptScan(f);
+      res = await requestReceiptScan(
+        f,
+        mergedCats(money).map((c) => ({ key: c.key, label: c.label }))
+      );
     } catch (err) {
       failed = err; // offline, the AI cap (429), or the server refusing the photo
     }
@@ -2434,10 +2437,17 @@ function openReceiptModal(money, save, requestReceiptScan, opts) {
       }
       return;
     }
+    // The AI's tag first; without one, the item's name, then the shop's
+    // ("Toor dal" matches no keyword, but a bill from Swiggy is food).
+    const guess = (it) => {
+      if (mergedCats(money).some((c) => c.key === it.category)) return it.category;
+      const byName = suggestCategory(it.name, money);
+      return byName && byName !== 'others' ? byName : suggestCategory(res.merchant, money) || 'others';
+    };
     const scanned = items.map((it) => ({
       name: it.name,
       amount: Number(it.amount) || 0,
-      category: suggestCategory(it.name, money) || 'others',
+      category: guess(it),
     }));
     // Rows the user already filled in stay; empty ones make way for the scan.
     rows = rows.filter((r) => (Number(r.amount) || 0) > 0).concat(scanned);

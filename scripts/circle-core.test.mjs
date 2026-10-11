@@ -6,6 +6,8 @@ import {
   inviteLink,
   inviteFromHash,
   CHALLENGE_TEMPLATES,
+  parseAgreement,
+  formatAgreement,
 } from './circle-core.js';
 
 const unit = (n) => n + (n === 1 ? ' check-in' : ' check-ins');
@@ -108,3 +110,22 @@ assert.equal(challengeDay('2026-10-11', '2026-10-17', '2026-10-18'), null);
 assert.equal(challengeDay('2026-10-11', '2026-10-17', '2026-10-10'), null);
 assert.deepEqual(challengeDay('2026-10-28', '2026-11-03', '2026-11-01'), { day: 5, total: 7 }, 'across a month');
 console.log('circle-core seat ring: ok');
+
+// The agreement checklist is stored as text; what it must read back the same.
+// An agreement written before the checklist is one open item.
+assert.deepEqual(parseAgreement('30 min of DSA, 5 days a week'), [
+  { done: false, text: '30 min of DSA, 5 days a week' },
+]);
+assert.deepEqual(parseAgreement(null), []);
+assert.deepEqual(parseAgreement('[x] Read\n\n  [ ] Run  \n[X] Ship\n[ ] '), [
+  { done: true, text: 'Read' },
+  { done: false, text: 'Run' },
+  { done: true, text: 'Ship' },
+]);
+const items = [
+  { done: true, text: 'Read' },
+  { done: false, text: 'Write [x] tests' },
+];
+assert.deepEqual(parseAgreement(formatAgreement(items)), items);
+assert.equal(formatAgreement([]), '');
+console.log('circle-core agreement: ok');

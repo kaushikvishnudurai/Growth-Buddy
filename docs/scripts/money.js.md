@@ -177,8 +177,10 @@ the Coach tab) call `shareSummary`.
   opens `openReceiptModal(money, save, scan, {file})` (module level, so Home reaches it), which scans that
   photo at once. There is no separate Scan receipt button on Spending any more. Each receipt row is name,
   amount, remove, and under them a tag `<select>` (`gb-money-receipt-tag`) on the predicted tag; changing
-  it by hand stops renaming from re-guessing (`r.picked`). No AI: the photo stays as a reference and the
-  rows are typed in.
+  it by hand stops renaming from re-guessing (`r.picked`). The scan sends the user's tags
+  (`mergedCats` as `{key, label}`) and the AI tags each line from them (`MoneyService.parseReceipt`
+  keeps only a key the user has); an untagged line falls back to `suggestCategory` on its name, then
+  on the merchant. No AI: the photo stays as a reference and the rows are typed in.
 - **`predictCategory(text, history, categories)`** (money-core.js, pure; `money-category.test.mjs`) is what
   every tag guess is (`suggestCategory(text, money)` = it over `money.expenses` + `mergedCats`): the
   newest expense with the same note, else the one sharing the most words (an Others one only on an exact

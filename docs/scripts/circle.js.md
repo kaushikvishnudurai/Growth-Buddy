@@ -18,7 +18,8 @@ the data and visibly jump, so don't reintroduce per-list refreshers.
 | `askNudge` | Cheer / Nudge form (optional line, 140 chars) → `mentorshipApi.nudge`. The server caps it at 3 a day per sender per link (429), and the form's toast shows that message |
 | `openChat` | the thread sheet for one accepted link: `role=log` + `aria-live=polite`, newest 50 then "Load older" (`?before=` the oldest held), composer (Ctrl/Cmd+Enter sends). Partner lines arrive live via `gb:mentorship-message` (app.js re-dispatches the server's transient `mentorship_message` frame), deduped by id; the listener goes in `openOverlay`'s `onClose`. Cheers/nudges show as centered event lines |
 | `WeekCard` | the mentor's "This week": the mentee's check-ins Monday to today (their zone) vs last week, and top-5 streaks. `shared: false` (mentee's progress sharing off) shows only a one-liner — the server never sends the numbers |
-| `LinkExtras` | under every accepted connection (`gb-conn-item` wraps row + extras): the agreement (either side edits, `PUT {id}/agreement`), Cheer / Nudge / Message, and — mentor side only — This week (refetched on every open) |
+| `AgreementList` | one link's agreement as a checklist: tick, add, remove, each saving the whole list (`PUT {id}/agreement`, last writer wins, a failed save rolls the tick back). Stored as text in the existing 500-char column, one item a line with `[x] ` / `[ ] ` (`parseAgreement` / `formatAgreement` in circle-core.js); a pre-checklist agreement reads as one open item |
+| `LinkExtras(links, …)` | under every connection (`gb-conn-item` wraps row + extras): one `AgreementList` per link, Cheer / Nudge / Message, and, when I mentor them, This week (refetched on every open). On a phone the four tools stack icon over label to share one row |
 | `openSearchModal` | find-someone modal: `paintLoading` / `paintEmpty(msg, onRetry)` / `paintList` / `loadPeople`, plus browse. `paintList` drops `currentUserId` — the single choke point every list passes through, so you can never invite yourself. The typed search stamps each keystroke with `seq`; a server answer for an older query is dropped |
 | `openFormModal` | generic field-list modal; field types text/number/date, `checkbox`, and `select` (`options: [{value, label}]`); optional `presets: [{label, values}]` = one-tap chips that fill fields (submit still sends) |
 | `SeatRing` | the circle drawn as its members: a seat each around a ring (`seatLayout`), the name in the middle in the display face, "3 of 4 in today" in mono. A seat is lit (checked in today, their own today), ash (not yet) or dashed (keeps progress private, `doneToday: null`); `seatOrder` groups them lit → ash → private so the track's fill (lit / all seats, started half a seat early inside the SVG) covers exactly the lit seats. Another member's seat is a button that cheers them; `is-cheered` (a small sun) comes from the server's `cheeredByMe`, so a reload never offers a cheer the once-a-day limit would refuse. Over `MAX_SEATS` the last seat reads "+N". Seats light in turn once (`is-on` after two frames); reduced motion skips it |
@@ -47,9 +48,13 @@ Server-side, `MentorshipService.checkCanInvite` refuses an invite on a side that
 accepted or pending (either sender — the mirror case), and for 7 days after the other person
 declined; declined/cancelled rows drop out of the lists after 7 days (`visible`).
 **Screen order is importance:** Requests for you (nothing when none), Your circles, then Mentorship (`section()`; one quiet line when there are no connections, and "Invites you sent" only when there are some). It used to open on Mentorship's two empty cards with the circle below the fold. `.gb-circle-section` keeps a 112px reserve elsewhere; this screen drops it.
-`paint()` splits Connections into two cards — **You mentor** and **Who mentors you** — by the same
-rule the rows use for the progress window (an offer you sent, or a request sent to you, makes you
-the mentor). Empty groups are skipped; no connections at all still falls back to the single empty card.
+`paint()` groups accepted links by person, then splits them into **Mentor each other**, **You mentor**
+and **Who mentors you**, by the same rule the rows use for the progress window (an offer you sent, or
+a request sent to you, makes you the mentor). A mutual pair is ONE entry (`MutualRow`: progress opens
+from the link where I mentor) with two checklists ("You help X with" / "X helps you with", each with
+its own End) and one toolbar. Its Cheer / Nudge / Message use the link with the smaller id, so both
+partners land on the same thread; messages already on the other link stay there, unshown. Empty
+groups are skipped; no connections at all still falls back to the single empty card.
 
 Styles: `app.css` §"Circle (person rows + status pills)", `.gb-conn-group` + `.gb-check-pill`, §"Search modal",
 the "Circle: Requests for you, the card's tools/feed" block after `.gb-browse-row`, then the kudos /

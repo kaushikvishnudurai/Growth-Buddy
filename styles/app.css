@@ -3324,33 +3324,139 @@ button.gb-seat:disabled {
   gap: 6px;
   padding: 0 16px 10px;
 }
-.gb-conn-agreement {
+.gb-agree {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+.gb-agree + .gb-agree {
+  margin-top: 2px;
+}
+.gb-agree-head {
   display: flex;
   align-items: center;
   gap: 6px;
-  width: 100%;
-  min-height: 32px;
-  padding: 4px 0;
-  border: 0;
-  background: none;
-  color: var(--fg2);
-  font: inherit;
-  font-size: 0.8125rem;
-  text-align: left;
-  cursor: pointer;
+  min-height: 28px;
+  color: var(--fg3);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
-.gb-conn-agreement span {
+.gb-agree-title {
   flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.gb-conn-agreement.is-empty {
+.gb-agree-count {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+.gb-agree-count.is-all {
+  color: var(--success);
+}
+.gb-agree-end {
+  min-height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: none;
   color: var(--fg3);
+  font: inherit;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 700;
+  cursor: pointer;
+}
+.gb-agree-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* 44px rows: the check is 30px to match habits, the row is the tap-safe height. */
+.gb-agree-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+}
+.gb-agree-item .gb-check {
+  width: 26px;
+  height: 26px;
+}
+.gb-agree-text {
+  flex: 1;
+  min-width: 0;
+  color: var(--fg1);
+  font-size: 0.875rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.gb-agree-item.is-done .gb-agree-text {
+  color: var(--fg3);
+  text-decoration: line-through;
+}
+.gb-agree-del {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--fg3);
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .gb-agree-del {
+    opacity: 0;
+  }
+  .gb-agree-item:hover .gb-agree-del,
+  .gb-agree-del:focus-visible {
+    opacity: 1;
+  }
+  .gb-agree-end:hover {
+    color: var(--danger);
+  }
+}
+.gb-agree-add {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 4px;
+}
+.gb-agree-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  font-size: 1rem; /* under 16px, iOS Safari zooms the page on focus */
 }
 .gb-conn-tools {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+/* On a phone the four tools wrapped "This week" onto a line of its own: stack
+   each icon over its label so all of them share one row. */
+@media (max-width: 480px) {
+  .gb-conn-tools {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+  .gb-conn-tools .gb-btn {
+    flex-direction: column;
+    gap: 2px;
+    min-height: 52px;
+    padding: 6px 2px;
+    font-size: 0.75rem;
+  }
 }
 .gb-week-card {
   padding: 10px 12px;
@@ -11748,9 +11854,13 @@ textarea:focus-visible,
 /* ---- colour swatches ---- */
 .gb-note-colors {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   margin-top: 10px;
+  /* Room for the selected ring (4px box-shadow): the sheet clips its overflow,
+     and the first swatch's ring was cut off at the left edge. */
+  padding: 4px;
 }
 .gb-note-swatch {
   display: inline-flex;
@@ -12017,6 +12127,52 @@ textarea:focus-visible,
   margin-top: 14px;
   padding-top: 14px;
   border-top: 1px solid var(--border);
+}
+/* Four equal tiles, icon over label. As wrapping pills they ran to two rows
+   with "Pin to top" left alone on the second. */
+.gb-note-modal .gb-note-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.gb-note-modal .gb-note-actions .gb-btn {
+  flex-direction: column;
+  gap: 4px;
+  min-height: 60px;
+  padding: 8px 4px;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  text-align: center;
+  white-space: normal;
+}
+.gb-note-label-sugg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.gb-note-label-sugg[hidden] {
+  display: none;
+}
+.gb-note-label-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  padding: 4px 12px 4px 8px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--fg2);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .gb-note-label-opt:hover {
+    border-style: solid;
+    color: var(--fg1);
+  }
 }
 /* One footer row instead of three stacked full-width buttons. */
 .gb-note-foot {

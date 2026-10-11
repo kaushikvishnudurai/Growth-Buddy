@@ -6,6 +6,7 @@ import {
   activate,
   Icon,
   Avatar,
+  Check,
   plural,
   refreshIcons,
   confirmDialog,
@@ -23,6 +24,9 @@ import {
   seatOrder,
   initials,
   challengeDay,
+  AGREEMENT_MAX,
+  parseAgreement,
+  formatAgreement,
 } from './circle-core.js';
 
 /* Placeholder rows, so a section has its real height before the data lands.
@@ -730,50 +734,161 @@ function WeekCard(mApi, linkId, partnerName) {
   return el;
 }
 
-/* Under each accepted connection: the pair's agreement (either side edits it),
-   Cheer / Nudge / Message, and — mentor side only — the weekly card. */
-function LinkExtras(req, partnerName, isMentor, mApi, currentUserId) {
-  const agreementBtn = h('button', {
-    type: 'button',
-    class: 'gb-conn-agreement',
-    onclick: () =>
-      openFormModal({
-        title: 'Your agreement',
-        sub: 'What you and ' + partnerName + ' are working on. You both see it.',
-        submitLabel: 'Save',
-        fields: [
-          {
-            key: 'text',
-            label: 'Agreement',
-            placeholder: 'e.g. 30 min of DSA, 5 days a week',
-            value: req.agreement || '',
-            maxlength: 500,
-          },
-        ],
-        onSubmit: async (v, close) => {
-          const res = await mApi.setAgreement(req.id, v.text);
-          req.agreement = res && res.agreement;
-          paintAgreement();
-          close();
-        },
-      }),
+/* One link's agreement as a checklist. Either partner ticks, adds or removes an
+   item; each change saves the whole list, last writer wins, as the text did. The
+   tick paints at once and rolls back if the save fails. */
+function AgreementList(req, mApi, heading, onEnd) {
+  let items = parseAgreement(req.agreement);
+  const el = h('div', { class: 'gb-agree' });
+  const input = h('input', {
+    type: 'text',
+    class: 'gb-input gb-agree-input',
+    maxlength: 120,
+    enterkeyhint: 'done',
+    'aria-label': heading + ': add an item',
   });
-  function paintAgreement() {
-    agreementBtn.classList.toggle('is-empty', !req.agreement);
-    agreementBtn.setAttribute(
-      'aria-label',
-      req.agreement
-        ? 'Agreement: ' + req.agreement + '. Edit'
-        : 'Set your agreement with ' + partnerName
-    );
-    agreementBtn.replaceChildren(
-      Icon('target', { size: 13, sw: 2.4 }),
-      h('span', null, req.agreement || 'Set what you’re working on together'),
-      Icon('pencil', { size: 12, sw: 2.4 })
-    );
+  async function save(next) {
+    const text = formatAgreement(next);
+    if (text.length > AGREEMENT_MAX) {
+      toast.error(null, 'The list is full. Remove a finished item first.');
+      return false;
+    }
+    const before = items;
+    items = next;
+    paint();
+    try {
+      const res = await mApi.setAgreement(req.id, text || null);
+      req.agreement = res && res.agreement;
+      return true;
+    } catch (err) {
+      items = before;
+      paint();
+      toast.error(err, 'Could not save the agreement.');
+      return false;
+    }
+  }
+  const add = async () => {
+    const t = input.value.replace(/\s+/g, ' ').trim();
+    if (!t) return;
+    if (await save(items.concat({ done: false, text: t }))) input.value = '';
+    input.focus();
+  };
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      add();
+    }
+  });
+  function paint() {
+    const done = items.filter((it) => it.done).length;
+    // The example only while the list is empty: after that it's just noise.
+    input.placeholder = items.length ? 'Add a goal' : 'e.g. 30 min of DSA, 5 days a week';
+    // replaceChildren, unlike h(), writes a null child as the text "null".
+    const parts = [
+      h(
+        'div',
+        { class: 'gb-agree-head' },
+        Icon('target', { size: 13, sw: 2.4 }),
+        h('span', { class: 'gb-agree-title' }, heading),
+        items.length
+          ? h(
+              'span',
+              { class: 'gb-agree-count' + (done === items.length ? ' is-all' : '') },
+              done + '/' + items.length
+            )
+          : null,
+        onEnd ? h('button', { type: 'button', class: 'gb-agree-end', onclick: onEnd }, 'End') : null
+      ),
+      items.length
+        ? h(
+            'ul',
+            { class: 'gb-agree-list' },
+            items.map((it, i) =>
+              h(
+                'li',
+                { class: 'gb-agree-item' + (it.done ? ' is-done' : '') },
+                Check({
+                  done: it.done,
+                  label: it.text,
+                  onToggle: () =>
+                    save(items.map((x, j) => (j === i ? { ...x, done: !x.done } : x))),
+                }),
+                h('span', { class: 'gb-agree-text' }, it.text),
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    class: 'gb-agree-del',
+                    'aria-label': 'Remove ' + it.text,
+                    onclick: () => save(items.filter((_, j) => j !== i)),
+                  },
+                  Icon('x', { size: 14, sw: 2.4 })
+                )
+              )
+            )
+          )
+        : null,
+      h(
+        'div',
+        { class: 'gb-agree-add' },
+        input,
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-btn gb-btn--soft gb-btn--compact',
+            'aria-label': 'Add item',
+            onclick: add,
+          },
+          Icon('plus', { size: 14, sw: 2.6 })
+        )
+      ),
+    ];
+    el.replaceChildren(...parts.filter(Boolean));
     refreshIcons();
   }
-  paintAgreement();
+  paint();
+  return el;
+}
+
+/* Under each accepted connection: the agreement checklist, Cheer / Nudge /
+   Message, and, when I mentor them, the weekly card. `links` holds one link, or
+   two when we mentor each other: then each direction keeps its own checklist
+   (what I help with is not what they help with), but the person gets one row
+   and one set of tools instead of everything twice. */
+function LinkExtras(links, partnerName, mApi, currentUserId, onRevoke) {
+  const mutual = links.length > 1;
+  const lists = links.map(({ req, iMentor }) =>
+    AgreementList(
+      req,
+      mApi,
+      !mutual
+        ? 'Your agreement'
+        : iMentor
+          ? 'You help ' + partnerName + ' with'
+          : partnerName + ' helps you with',
+      mutual && onRevoke
+        ? async () => {
+            const ok = await confirmDialog({
+              title: iMentor
+                ? 'Stop mentoring ' + partnerName + '?'
+                : 'Stop being mentored by ' + partnerName + '?',
+              message: 'The other direction stays as it is.',
+              confirmLabel: 'End',
+              cancelLabel: 'Keep',
+              danger: true,
+            });
+            if (ok) onRevoke(req.id);
+          }
+        : null
+    )
+  );
+  // Both partners must open the SAME thread, so a mutual pair talks on the link
+  // with the smaller id, which both sides compute alike.
+  // ponytail: messages already sent on the other link stay on it, unshown here.
+  const req = links.map((l) => l.req).sort((a, b) => String(a.id).localeCompare(String(b.id)))[0];
+  const mentorLink = links.find((l) => l.iMentor);
+  const isMentor = !!mentorLink;
 
   const tool = (icon, label, onclick, extra) =>
     h(
@@ -792,7 +907,7 @@ function LinkExtras(req, partnerName, isMentor, mApi, currentUserId) {
         const open = weekBtn.getAttribute('aria-expanded') !== 'true';
         weekBtn.setAttribute('aria-expanded', String(open));
         // Refetched on every open: it's a live number, and one request per tap.
-        weekSlot.replaceChildren(...(open ? [WeekCard(mApi, req.id, partnerName)] : []));
+        weekSlot.replaceChildren(...(open ? [WeekCard(mApi, mentorLink.req.id, partnerName)] : []));
       },
       { 'aria-expanded': 'false' }
     );
@@ -800,7 +915,7 @@ function LinkExtras(req, partnerName, isMentor, mApi, currentUserId) {
   return h(
     'div',
     { class: 'gb-conn-extra' },
-    agreementBtn,
+    ...lists,
     h(
       'div',
       { class: 'gb-conn-tools' },
@@ -2511,19 +2626,63 @@ function ScreenCircle({
        two are different jobs, so they get different boxes. */
     const iMentor = (item) =>
       item.side === 'outgoing' ? item.req.direction === 'offer' : item.req.direction !== 'offer';
-    const row = (item) => {
-      const r =
-        item.side === 'incoming'
-          ? IncomingRow(item.req, onLoadStatus, onRevoke ? revokeAndRefresh : null)
-          : OutgoingRow(item.req, onLoadStatus, onRevoke ? revokeAndRefresh : null);
+    const baseRow = (item) =>
+      item.side === 'incoming'
+        ? IncomingRow(item.req, onLoadStatus, onRevoke ? revokeAndRefresh : null)
+        : OutgoingRow(item.req, onLoadStatus, onRevoke ? revokeAndRefresh : null);
+    // One entry per person. Mentoring each other is two links, and listing that
+    // person in both boxes with two toolbars read as the same row twice.
+    const people = new Map();
+    accepted.forEach((item) => {
+      const p = people.get(item.partnerId) || { ...item, links: [] };
+      p.links.push({ ...item, iMentor: iMentor(item) });
+      people.set(item.partnerId, p);
+    });
+    const entries = [...people.values()].map((p) => ({ ...p, mutual: p.links.length > 1 }));
+    const row = (p) => {
+      const r = p.mutual ? MutualRow(p) : baseRow(p.links[0]);
       if (!mentorshipApi) return r;
       return h(
         'div',
         { class: 'gb-conn-item' },
         r,
-        LinkExtras(item.req, item.partnerName, iMentor(item), mentorshipApi, currentUserId)
+        LinkExtras(
+          p.links,
+          p.partnerName,
+          mentorshipApi,
+          currentUserId,
+          onRevoke ? revokeAndRefresh : null
+        )
       );
     };
+    // The person's row for a mutual pair: their progress opens from the link
+    // where I'm the mentor, and each direction ends from its own checklist.
+    function MutualRow(p) {
+      const mine = p.links.find((l) => l.iMentor).req;
+      const pill = CheckPill(mine);
+      return h(
+        'div',
+        {
+          class: 'gb-row is-clickable',
+          ...activate(() =>
+            showPartnerStatus(p.partnerId, p.partnerName, onLoadStatus, () => {
+              mine.checkedAt = new Date().toISOString();
+              paintCheckPill(pill, mine);
+              refreshIcons();
+            })
+          ),
+        },
+        Avatar({ name: p.partnerName, bg: 'var(--iris-100)', fg: 'var(--iris-700)' }),
+        h(
+          'div',
+          { style: { flex: 1, minWidth: 0 } },
+          h('div', { class: 'title' }, p.partnerName),
+          h('div', { class: 'sub' }, 'You mentor each other')
+        ),
+        pill,
+        Icon('chevron-right', { size: 16, sw: 2.4, color: 'var(--fg3)' })
+      );
+    }
 
     incomingEl.replaceChildren();
     if (!accepted.length) {
@@ -2536,9 +2695,11 @@ function ScreenCircle({
         )
       );
     } else {
+      const single = entries.filter((p) => !p.mutual);
       [
-        { title: 'You mentor', items: accepted.filter(iMentor) },
-        { title: 'Who mentors you', items: accepted.filter((it) => !iMentor(it)) },
+        { title: 'Mentor each other', items: entries.filter((p) => p.mutual) },
+        { title: 'You mentor', items: single.filter((p) => p.links[0].iMentor) },
+        { title: 'Who mentors you', items: single.filter((p) => !p.links[0].iMentor) },
       ]
         .filter((g) => g.items.length)
         .forEach((g) => {

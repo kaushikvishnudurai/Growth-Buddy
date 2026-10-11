@@ -168,3 +168,20 @@ export function challengeDay(start, end, today) {
   const total = Math.round((d(end) - d(start)) / 86400000) + 1;
   return { day, total };
 }
+
+/* ponytail: the checklist lives in the existing 500-char agreement column, one item a
+   line, "[x] " marking a done one. An agreement written before the checklist reads as
+   one open item. An agreement_items table is the upgrade if pairs outgrow ~10 items. */
+export const AGREEMENT_MAX = 500;
+const DONE_MARK = /^\[(x| )\]\s*/i;
+export function parseAgreement(text) {
+  return String(text || '')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((l) => ({ done: /^\[x\]/i.test(l), text: l.replace(DONE_MARK, '') }))
+    .filter((it) => it.text);
+}
+export function formatAgreement(items) {
+  return items.map((it) => (it.done ? '[x] ' : '[ ] ') + it.text).join('\n');
+}
