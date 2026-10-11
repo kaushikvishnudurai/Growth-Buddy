@@ -436,7 +436,10 @@ const state = {
   // Auth flow: 'signin' | 'signup' | 'verify' | 'forgot' | 'reset' | 'totp' | 'deletion'
   // Restore a pending verify screen across reloads so a refresh doesn't strand
   // the user on sign-in (which then makes them re-signup and burn the code).
-  authMode: loadAuthDraft().mode || 'signin',
+  // A browser that has never held a session gets sign-up first; one that has
+  // (a sign-out, an expired session) gets sign-in.
+  authMode: loadAuthDraft().mode || (loadSession() ? 'signin' : 'signup'),
+  authReturning: !!loadSession(),
   authEmail: loadAuthDraft().email || '',
   authNotice: '',
   // {email, password, cancelDeletion, message} between a right password and the
@@ -1494,15 +1497,29 @@ function checkAchievements() {
   const seen = new Set([...(Array.isArray(stored) ? stored : []), ...achSession.ids]);
   const fresh = all.filter((i) => i.unlocked && !seen.has(i.id));
   if (!fresh.length) return;
+  // Never over a form: not marked seen, so the next render with nothing open
+  // celebrates it.
+  if (!achQuiet && formInUse()) return;
   // Persist the union BEFORE celebrating so a re-render mid-animation can't
   // double-fire the same badge.
   const union = Array.from(new Set([...seen, ...unlockedIds]));
   union.forEach((id) => achSession.ids.add(id));
   saveUiPrefs({ achSeen: union });
-  fresh.forEach((item) => celebrate(item));
+  if (achQuiet) return;
+  // A badge for setting something up lands as a toast: the full-screen
+  // celebration over a goal just made blocked its milestone field.
+  fresh.forEach((item) => (SETUP_BADGES.has(item.id) ? toastSuccess('Achievement unlocked: ' + item.title + '.') : celebrate(item)));
 }
 /* Ids already seen this session, per account. Memory only; ui_prefs is the record. */
 let achSession = { uid: null, ids: new Set() };
+const SETUP_BADGES = new Set(['goal1']);
+/* True while a starter pack is writing: what it unlocks is marked seen, not celebrated. */
+let achQuiet = false;
+function formInUse() {
+  if (document.querySelector('.gb-modal-overlay:not(.is-closing)')) return true;
+  const el = document.activeElement;
+  return !!el && (el.isContentEditable || el.matches('textarea, select, input:not([type=checkbox]):not([type=radio]):not([type=button])'));
+}
 
 /* Card-facing view of a habit's freeze state, shaped like the old local model. */
 function habitFreezeState(habit) {
@@ -2024,6 +2041,20 @@ function deviceZone() {
     return ''; // no Intl zone: nothing to compare
   }
 }
+/* "Asia/Calcutta" reads as code. The city and the zone's own name read as a
+   place: "Calcutta (India Standard Time)". */
+const zoneCity = (tz) => String(tz || '').split('/').pop().replace(/_/g, ' ');
+function zoneName(tz) {
+  const city = zoneCity(tz);
+  try {
+    const part = new Intl.DateTimeFormat(undefined, { timeZone: tz, timeZoneName: 'long' })
+      .formatToParts(new Date())
+      .find((p) => p.type === 'timeZoneName');
+    return part && part.value !== city ? city + ' (' + part.value + ')' : city;
+  } catch (_) {
+    return city;
+  }
+}
 /* The one timezone write, shared by the offer below and first-run setup. */
 async function saveDeviceTimezone(tz) {
   const me = await api('/api/auth/timezone', {
@@ -2031,7 +2062,7 @@ async function saveDeviceTimezone(tz) {
     body: JSON.stringify({ timezone: tz }),
   });
   syncUserSession(me || {});
-  toastSuccess('Timezone set to ' + tz + '.');
+  toastSuccess('Timezone set to ' + zoneName(tz) + '.');
   loadData();
 }
 function offerDeviceTimezone() {
@@ -2044,16 +2075,16 @@ function offerDeviceTimezone() {
   if ((u.uiPrefs && u.uiPrefs.tzAsked) === tz) return;
   saveUiPrefs({ tzAsked: tz });
   openModal({
-    title: 'Switch to ' + tz + '?',
+    title: 'Switch to ' + zoneCity(tz) + ' time?',
     sub:
-      'Your phone is on ' +
-      tz +
+      'This device is on ' +
+      zoneName(tz) +
       ', your account on ' +
-      u.timezone +
+      zoneName(u.timezone) +
       '. Days, streaks and reminder times follow the account.',
     body: h('div', { class: 'gb-note-hint' }, 'You can change it later in Settings, Profile.'),
     primary: 'Switch',
-    dismiss: 'Keep ' + u.timezone,
+    dismiss: 'Keep ' + zoneCity(u.timezone) + ' time',
     onPrimary: () => saveDeviceTimezone(tz),
   });
 }
@@ -2088,9 +2119,8 @@ async function enablePushFlow(okMessage) {
 }
 
 /* ---- First-run setup ----
-   Once per account, after a NEW account's first data load: a goal (the
-   starter-pack picker, starterPicker), timezone, notifications, features —
-   four skippable steps in one sheet. Decided in
+   Once per account, after a NEW account's first data load: one sheet with a
+   ready-made starter plan (openFirstRunSetup, starterPicker). Decided in
    loadData() once wave 1 lands, because "new" is read from real data: an
    account that already has tasks, habits or reminders, or dismissed the Home
    checklist, is marked `ui_prefs.setupDone` silently and never sees it. Any
@@ -2103,12 +2133,6 @@ function maybeStartFirstRun() {
   if (!u || !u.id || firstRunOpen) return;
   const p = u.uiPrefs || {};
   if (p.setupDone) return maybeAskPermissions();
-  // Begun but never finished (the app was closed mid-way): its own goal step
-  // made the habits, so the data check below would end it unseen. Resume.
-  if (p.setupStep) {
-    setTimeout(() => openFirstRunSetup(p.setupStep), 600);
-    return;
-  }
   const hasData =
     (state.tasks || []).length > 0 ||
     (state.habits || []).length > 0 ||
@@ -2161,13 +2185,18 @@ async function maybeAskPermissions() {
 const HEALTH_PITCH =
   'Health data: steps, sleep, heart rate and workouts, so habits tick themselves and last night’s sleep logs itself. Read only; Growth Buddy never writes to it.';
 
-// `resumeAt`: the step key ui_prefs.setupStep saved, when an earlier run of
-// this sheet was left without finishing.
-const SETUP_ORDER = ['goal', 'timezone', 'notify', 'health', 'features'];
-async function openFirstRunSetup(resumeAt) {
+/* One sheet, one decision: a finished plan (the default pack, pre-filled) and
+   "Start with this plan". It used to be up to five steps (a goal picker that
+   opened empty, timezone, push, health, 13 feature switches), then a second
+   checklist on Home. Now: the timezone is the one signup sent, and the offer
+   asks only if this device disagrees, in words (syncDeviceTimezone, re-armed
+   on close); push is asked from Home's checklist once there is a reminder to
+   ring; health on the phone comes from maybeAskPermissions on a later launch;
+   features stay all on and live in Settings › Layout. One step has no middle
+   to resume from, so ui_prefs.setupStep (an older build's) is just cleared. */
+async function openFirstRunSetup() {
   if (firstRunOpen || !state.user || (state.user.uiPrefs || {}).setupDone) return;
   firstRunOpen = true;
-  // The goal step needs starter-packs.js; offline or a failed chunk just drops it.
   const mod = await import('./starter-packs.js').catch(() => null);
   // Signed out (or set up elsewhere) while the chunk loaded: no sheet, and no
   // firstRunOpen stuck true, which would skip the next account's setup in this tab.
@@ -2175,227 +2204,63 @@ async function openFirstRunSetup(resumeAt) {
     firstRunOpen = false;
     return;
   }
-  const tz = deviceZone();
+  if (!mod) {
+    // Offline or a failed chunk: Home's checklist still offers the packs.
+    firstRunOpen = false;
+    saveUiPrefs({ setupDone: true, setupStep: null });
+    render();
+    return;
+  }
+  const picker = starterPicker(mod, ['balanced']);
   const { sheet, close } = openOverlay({
-    label: 'Set up Growth Buddy',
+    label: 'Your starter plan',
     className: 'gb-setup-modal',
     onClose: () => {
       firstRunOpen = false;
-      // Whatever step it was left on, it has been seen: never again.
-      const done = isNative()
-        ? { setupDone: true, setupStep: null, healthAsked: true }
-        : { setupDone: true, setupStep: null };
-      saveUiPrefs(tz ? { ...done, tzAsked: tz } : done);
+      // However it was left, it has been seen: never again, on any device.
+      saveUiPrefs({ setupDone: true, setupStep: null });
+      render(); // Home held its checklist back while the sheet was up
       syncDeviceTimezone();
     },
   });
-
-  // The timezone step only when there is something to decide: the same zone
-  // (aliases like Calcutta/Kolkata included) cost a tap and said nothing.
-  const savedZone = state.user.timezone || '';
-  const zoneDiffers = !!tz && !(savedZone && sameZone(savedZone, tz));
-  const keyed = [
-    ['goal', mod && goalStep],
-    ['timezone', zoneDiffers && timezoneStep],
-    ['notify', notifyStep],
-    ['health', isNative() && healthStep],
-    ['features', featuresStep],
-  ].filter((x) => x[1]);
-  const steps = keyed.map((x) => x[1]);
-  const stepKey = (i) => keyed[i][0];
-  // Resume on the saved step, or the first one after it that is still offered.
-  const from = SETUP_ORDER.indexOf(resumeAt);
-  let at = Math.max(0, from < 0 ? 0 : keyed.findIndex((x) => SETUP_ORDER.indexOf(x[0]) >= from));
-  // Progress lives in ui_prefs, so a closed app comes back here, not to a
-  // silent "done" (the goal step's habits read as data that predates setup).
-  const saveStep = () => saveUiPrefs({ setupStep: stepKey(at) });
-  saveStep();
-  const dots = h(
-    'div',
-    { class: 'gb-setup-dots', 'aria-hidden': 'true' },
-    ...steps.map(() => h('span', { class: 'gb-setup-dot' }))
+  const primaryBtn = h(
+    'button',
+    {
+      type: 'button',
+      class: 'gb-btn gb-btn--primary',
+      style: { width: '100%', marginTop: '14px' },
+      onclick: async () => {
+        primaryBtn.disabled = true;
+        try {
+          await picker.apply();
+          close();
+        } catch (err) {
+          primaryBtn.disabled = false;
+          shakeRefusal(sheet);
+          toastError(err, 'Could not set that up.');
+        }
+      },
+    },
+    'Start with this plan'
   );
-  const stepLabel = h('div', { class: 'gb-setup-count' });
-  const titleEl = h('div', { class: 'gb-modal-title' });
-  const subEl = h('div', { class: 'gb-modal-sub' });
-  const bodyEl = h('div', { class: 'gb-modal-body' });
-  const primaryBtn = h('button', {
-    type: 'button',
-    class: 'gb-btn gb-btn--primary',
-    style: { width: '100%', marginTop: '14px' },
-  });
-  const skipBtn = h('button', { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel' });
-
+  const title = h('div', { class: 'gb-modal-title', tabindex: '-1' }, 'Your plan is ready');
   sheet.append(
     h(
       'div',
       { class: 'gb-modal-head' },
-      h('div', { class: 'gb-setup-top' }, stepLabel, dots),
-      titleEl,
-      subEl
+      title,
+      h(
+        'div',
+        { class: 'gb-modal-sub' },
+        'A balanced day to start. Pick another goal to change it, or switch off anything that doesn’t fit.'
+      )
     ),
-    bodyEl,
+    h('div', { class: 'gb-modal-body' }, picker.body),
     primaryBtn,
-    skipBtn
+    h('button', { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel', onclick: close }, 'I’ll set it up myself')
   );
-
-  function next() {
-    if (at >= steps.length - 1) {
-      toastSuccess('You’re all set.');
-      close();
-      return;
-    }
-    at += 1;
-    saveStep();
-    show();
-  }
-
-  function show() {
-    const s = steps[at]();
-    stepLabel.textContent = 'Step ' + (at + 1) + ' of ' + steps.length;
-    [...dots.children].forEach((d, i) => d.classList.toggle('is-on', i <= at));
-    titleEl.textContent = s.title;
-    subEl.textContent = s.sub;
-    bodyEl.replaceChildren(s.body);
-    primaryBtn.textContent = s.primary;
-    primaryBtn.disabled = false;
-    primaryBtn.onclick = async () => {
-      primaryBtn.disabled = true;
-      try {
-        if (s.onPrimary) await s.onPrimary();
-        next();
-      } catch (err) {
-        primaryBtn.disabled = false;
-        shakeRefusal(sheet);
-        toastError(err, 'Something went wrong.');
-      }
-    };
-    skipBtn.textContent = s.skip;
-    skipBtn.onclick = next;
-    refreshIcons();
-    titleEl.setAttribute('tabindex', '-1');
-    titleEl.focus({ preventScroll: true });
-  }
-
-  function badge(icon) {
-    return h('div', { class: 'gb-setup-badge' }, Icon(icon, { size: 22, sw: 2.2 }));
-  }
-
-  // First, so the one question that matters gets the fresh attention. Habit and
-  // reminder times are local and follow the user, so the timezone step after
-  // it changes nothing they hold. The loadData() inside apply() is a refresh:
-  // it never re-enters maybeStartFirstRun, and firstRunOpen is already true.
-  // ponytail: a new account has no spending, so planStarter offers no budget
-  // (budgetsFrom); offer one once Money has 30 days of spending.
-  function goalStep() {
-    const p = starterPicker(mod);
-    // The button says what it will do: "Next" until a chip is on.
-    p.body.addEventListener('click', () => {
-      if (steps[at] === goalStep) primaryBtn.textContent = p.picked() ? 'Set it up' : 'Next';
-    });
-    return {
-      title: 'What do you want to change?',
-      sub: 'Pick one or more. We set up habits, reminders and a 30-day goal.',
-      body: p.body,
-      primary: 'Next',
-      onPrimary: () => (p.picked() ? p.apply() : null),
-      skip: 'Skip',
-    };
-  }
-
-  // Offered only when the zones differ or the account has none (zoneDiffers).
-  function timezoneStep() {
-    const zoneRow = (label, value) =>
-      h(
-        'div',
-        { class: 'gb-setup-zone' },
-        h('span', { class: 'gb-setup-zone-lbl' }, label),
-        h('span', { class: 'gb-setup-zone-val' }, value || 'Not set')
-      );
-    return {
-      title: 'Your timezone',
-      sub: 'Days, streaks and reminder times follow it.',
-      body: h(
-        'div',
-        {},
-        badge('clock'),
-        zoneRow('This device', tz),
-        zoneRow('Your account', savedZone),
-        h(
-          'div',
-          { class: 'gb-field-hint' },
-          savedZone
-            ? 'They differ. Use this device’s zone unless you want to keep home time.'
-            : 'Your account has no timezone yet.'
-        )
-      ),
-      primary: 'Use ' + tz,
-      onPrimary: () => saveDeviceTimezone(tz),
-      skip: savedZone ? 'Keep ' + savedZone : 'Skip',
-    };
-  }
-
-  function notifyStep() {
-    const supported = pushSupported();
-    const status = h(
-      'div',
-      { class: 'gb-field-hint' },
-      supported ? '' : 'This browser can’t show notifications. The app on your phone can.'
-    );
-    const body = h(
-      'div',
-      {},
-      badge('bell'),
-      h(
-        'p',
-        { class: 'gb-setup-text' },
-        'Reminders, habit nudges and messages from your circle arrive as notifications — even with the app closed.'
-      ),
-      status
-    );
-    if (supported) {
-      pushSubscribed().then((on) => {
-        if (on && steps[at] === notifyStep) {
-          status.textContent = 'Notifications are already on for this device.';
-          primaryBtn.textContent = 'Next';
-          primaryBtn.onclick = next;
-        }
-      });
-    }
-    return {
-      title: 'Stay in the loop',
-      sub: 'You choose what rings in Settings › Alerts.',
-      body,
-      primary: supported ? 'Turn on notifications' : 'Next',
-      // A refusal still moves on: the toast says why, and Settings can retry.
-      onPrimary: supported ? () => enablePushFlow('Notifications on.') : null,
-      skip: 'Not now',
-    };
-  }
-
-  function healthStep() {
-    return {
-      title: 'Connect your health data',
-      sub: /android/i.test(navigator.userAgent) ? 'Through Health Connect.' : 'Through Apple Health.',
-      body: h('div', {}, badge('activity'), h('p', { class: 'gb-setup-text' }, HEALTH_PITCH)),
-      primary: 'Connect',
-      onPrimary: connectHealth,
-      skip: 'Not now',
-    };
-  }
-
-  function featuresStep() {
-    return {
-      title: 'Pick what you’ll use',
-      sub: 'Turn off anything you don’t need. It all comes back in Settings › Layout.',
-      body: h('div', { class: 'gb-setup-features' }, ...FEATURE_DEFS.map(featureSwitchRow)),
-      primary: 'Done',
-      onPrimary: null,
-      skip: 'Skip',
-    };
-  }
-
-  show();
+  refreshIcons();
+  title.focus({ preventScroll: true });
 }
 
 // In-flight dedup for idempotent GETs: if the same GET is already running,
@@ -2598,6 +2463,7 @@ function resetUserState() {
   state.phoneNight = null; // this phone's night, read for the last account
   state.score = 0;
   state.authMode = 'signin';
+  state.authReturning = true;
   state.authEmail = '';
   state.authPending = null;
   // A panel left open kept its mousedown listener alive on the sign-in screen,
@@ -7689,8 +7555,10 @@ function weeklyReviewDue() {
   // "Something to review" means at least one number the review will actually
   // show is non-zero. Don't test activeDays — recordTrendsToday() writes a
   // zero-filled entry on every boot, so that only proves the app was opened.
+  // And on at least 3 of the 7 days: one tick on signup day made "your week"
+  // out of a few minutes. A 3-day streak proves it too (trends are per device).
   const s = weeklyReviewStats();
-  return s.avgScore > 0 || s.topStreak > 0 || s.moodLogs > 0 || s.spend > 0;
+  return s.loggedDays >= 3 || s.topStreak >= 3;
 }
 function weeklyReviewStats() {
   const days = last7Keys();
@@ -7709,7 +7577,10 @@ function weeklyReviewStats() {
   const topStreak = (state.habits || []).reduce((mx, hb) => Math.max(mx, effectiveStreak(hb)), 0);
   const moodByDate = (state.wellness && state.wellness.moodByDate) || {};
   const moodLogs = days.filter((k) => moodByDate[k]).length;
-  return { avgScore, activeDays, spend, topStreak, moodLogs };
+  const spentOn = new Set(((state.money && state.money.expenses) || []).map((e) => e.date));
+  // Days with something the review shows: a score, a mood, an expense.
+  const loggedDays = days.filter((k) => Number(byDate[k] && byDate[k].score) > 0 || moodByDate[k] || spentOn.has(k)).length;
+  return { avgScore, activeDays, spend, topStreak, moodLogs, loggedDays };
 }
 
 function openWeeklyReview() {
@@ -13168,6 +13039,8 @@ function starterRow(it) {
       return { icon: 'wallet', label: 'Monthly budget', detail: it.category.charAt(0).toUpperCase() + it.category.slice(1) + ' · ' + fmtIn(it.amount, homeCur(state.money)) + ' (10% under last 30 days)' };
     case 'water':
       return { icon: 'droplets', label: 'Water goal', detail: it.goalMl + ' ml a day' };
+    case 'note':
+      return { icon: 'wallet', label: 'Monthly budget', detail: 'Suggested from your spending once you have logged some' };
     default:
       return null;
   }
@@ -13175,7 +13048,7 @@ function starterRow(it) {
 
 async function applyStarter(rows) {
   const today = todayKey();
-  let made = 0;
+  const counts = { total: 0 };
   const budgets = {};
   for (const it of rows) {
     try {
@@ -13207,23 +13080,36 @@ async function applyStarter(rows) {
       } else if (it.kind === 'budget') {
         budgets[it.category] = it.amount;
       } else continue;
-      made++;
+      counts[it.kind] = (counts[it.kind] || 0) + 1;
+      counts.total++;
     } catch (_) {
       /* one refusal doesn't stop the rest; the count says what landed */
     }
   }
-  if (Object.keys(budgets).length) {
+  const nBudgets = Object.keys(budgets).length;
+  if (nBudgets) {
     const base = state.money;
     saveMoney({ ...normalizeMoney(base), budgets: { ...base.budgets, ...budgets } }, base);
-    made += Object.keys(budgets).length;
+    counts.budget = nBudgets;
+    counts.total += nBudgets;
   }
-  return made;
+  return counts;
 }
 
-// The chips + live preview, shared by Home's modal and first-run step 1.
-// `mod` is the loaded starter-packs.js. apply() throws to keep the sheet open.
-function starterPicker({ PACKS, planStarter }) {
-  const picked = new Set();
+/* What a starter write added, in words: "Added 3 habits, 1 reminder and 1 goal." */
+const STARTER_NOUNS = { habit: 'habit', reminder: 'reminder', goal: 'goal', budget: 'budget', water: 'water goal' };
+function starterSummary(counts) {
+  const parts = Object.keys(STARTER_NOUNS)
+    .filter((k) => counts[k])
+    .map((k) => plural(counts[k], STARTER_NOUNS[k]));
+  return 'Added ' + (parts.length > 1 ? parts.slice(0, -1).join(', ') + ' and ' + parts.at(-1) : parts[0]) + '.';
+}
+
+// The chips + live preview, shared by Home's modal and the first-run sheet.
+// `mod` is the loaded starter-packs.js; `preselect` fills the preview before any
+// tap, so first run opens on a finished plan. apply() throws to keep the sheet open.
+function starterPicker({ PACKS, planStarter }, preselect) {
+  const picked = new Set(preselect || []);
   let rows = [];
   const chosen = new Map(); // row key -> on
   const keyOf = (r) => r.it.kind + ':' + r.d.detail;
@@ -13244,14 +13130,17 @@ function starterPicker({ PACKS, planStarter }) {
       ...(picked.size && !rows.length
         ? [h('p', { class: 'gb-field-hint' }, 'You already have everything these would add.')]
         : rows.map((r) => {
-            if (!chosen.has(keyOf(r))) chosen.set(keyOf(r), true);
+            // A note row says what isn't added and why; there is nothing to tick.
+            const info = r.it.kind === 'note';
+            if (!info && !chosen.has(keyOf(r))) chosen.set(keyOf(r), true);
             return h(
               'label',
-              { class: 'gb-qa-row' },
+              { class: 'gb-qa-row' + (info ? ' is-unknown' : '') },
               h('input', {
                 type: 'checkbox',
                 class: 'gb-qa-check',
-                checked: chosen.get(keyOf(r)),
+                checked: !info && chosen.get(keyOf(r)),
+                disabled: info,
                 'aria-label': r.d.label + ': ' + r.d.detail,
                 onchange: (e) => chosen.set(keyOf(r), e.target.checked),
               }),
@@ -13269,8 +13158,8 @@ function starterPicker({ PACKS, planStarter }) {
         'button',
         {
           type: 'button',
-          class: 'gb-chip',
-          'aria-pressed': 'false',
+          class: 'gb-chip' + (picked.has(p.id) ? ' is-on' : ''),
+          'aria-pressed': String(picked.has(p.id)),
           onclick: (e) => {
             const on = !picked.has(p.id);
             if (on) picked.add(p.id);
@@ -13285,17 +13174,25 @@ function starterPicker({ PACKS, planStarter }) {
       )
     )
   );
+  paint();
   return {
     body: h('div', null, chips, list),
-    picked: () => picked.size,
     apply: async () => {
-      const go = rows.filter((r) => chosen.get(keyOf(r))).map((r) => r.it);
+      const go = rows.filter((r) => r.it.kind !== 'note' && chosen.get(keyOf(r))).map((r) => r.it);
       if (!go.length) throw new Error(picked.size ? 'Nothing selected — switch at least one on.' : 'Pick a goal first.');
-      const made = await applyStarter(go);
-      if (!made) throw new Error('None of those could be added.');
-      toastSuccess('Added ' + made + (made > 1 ? ' things.' : ' thing.') + ' You’re set up.');
+      const counts = await applyStarter(go);
+      if (!counts.total) throw new Error('None of those could be added.');
+      toastSuccess(starterSummary(counts));
       reSyncDeviceAlarms();
-      await loadData();
+      // The pack wrote the first goal, so "Dreamer" would pop over the plan the
+      // user is about to look at. What a pack unlocks is marked seen, silently.
+      achQuiet = true;
+      try {
+        await Promise.all([loadData(), loadGoals()]);
+        checkAchievements();
+      } finally {
+        achQuiet = false;
+      }
     },
   };
 }
@@ -14109,7 +14006,8 @@ function ScreenHabits() {
           Icon('snowflake', { size: 13, sw: 2.4 }),
           // The earning rule was in the title attribute above, which a phone
           // never shows — so on mobile the only place it existed was invisible.
-          left + ' freeze' + (left === 1 ? '' : 's') + ' left · 1 more each week',
+          // "Freeze" alone was jargon on first sight: say what one does.
+          left + ' streak freeze' + (left === 1 ? '' : 's') + ' · covers a missed day · +1 a week',
           Icon('chevron-right', { size: 13, sw: 2.6 })
         )
       );
@@ -14132,7 +14030,7 @@ function ScreenHabits() {
    Users can turn whole features on/off. A feature is ON unless explicitly set
    to false (opt-out), so existing users default to everything enabled. */
 const FEATURE_DEFS = [
-  { key: 'report', label: 'Report', desc: 'Progress overview, reflection & milestones' },
+  { key: 'report', label: 'Progress', desc: 'Progress overview, reflection & milestones' },
   { key: 'habits', label: 'Habits', desc: 'Daily habits & streaks' },
   { key: 'food', label: 'Food & meals', desc: 'Log meals and calories' },
   { key: 'water', label: 'Water tracking', desc: 'Track daily water intake' },
@@ -14184,9 +14082,10 @@ async function setFeature(key, value) {
   // Read it again now (it repaints Home when it lands).
   insightHistoryAt = 0;
   loadInsightHistory();
+  // The server's score drops what a switched-off feature held; the ring kept the old number.
+  refreshScoreLater();
 }
-/* One feature's on/off row: Settings › Layout and first-run setup both draw
-   this, so the switch and its rollback-on-failure live in one place. */
+/* One feature's on/off row (Settings › Layout), with its rollback-on-failure. */
 function featureSwitchRow(def) {
   const isOn = () => featureOn(def.key);
   const sw = h(
@@ -14289,6 +14188,13 @@ function requestReceiptScan(file, categories) {
     );
 }
 
+/* Home checklist's notifications step: 'ask' until this browser has answered,
+   then 'done'. Web push only; the phone asks from maybeAskPermissions. */
+function remindersAsk() {
+  if (isNative() || !pushSupported()) return null;
+  return Notification.permission === 'default' ? 'ask' : 'done';
+}
+
 const SCREENS = {
   home: {
     headerLabel: () => todayLabel(),
@@ -14328,6 +14234,12 @@ const SCREENS = {
         onAddSleep: openSleepSchedule,
         onAddMood: openMoodCheckin,
         onStarterPack: openStarterPacks,
+        remindersAsk: remindersAsk(),
+        onEnableReminders: async () => {
+          await enablePushFlow('Notifications on. Your reminders will ring.');
+          render();
+        },
+        setupPending: !((state.user && state.user.uiPrefs) || {}).setupDone,
         onConfirmSleep: (u) => saveSleepEntry({ bedtime: u.bedtime, wakeTime: u.wakeTime }),
         onQuickMood: (mood) => saveMoodEntry({ mood }),
         onOnboardDismiss: (opts) => {
@@ -15838,17 +15750,21 @@ function viewSignin() {
     })
   );
 
-  return authShell('Welcome back', 'Your habits, streaks and reminders are where you left them.', [
-    ...field('Email', emailInput, 'email'),
-    ...field('Password', pwField, 'password'),
-    primaryBtn('Sign in', submit),
-    h(
-      'div',
-      { class: 'gb-login-row' },
-      authLink('Forgot password?', () => setAuthMode('forgot', { email: emailInput.value.trim() })),
-      authLink('Create account', () => setAuthMode('signup', { email: emailInput.value.trim() }))
-    ),
-  ]);
+  return authShell(
+    state.authReturning ? 'Welcome back' : 'Sign in',
+    'Your habits, streaks and reminders are where you left them.',
+    [
+      ...field('Email', emailInput, 'email'),
+      ...field('Password', pwField, 'password'),
+      primaryBtn('Sign in', submit),
+      h(
+        'div',
+        { class: 'gb-login-row' },
+        authLink('Forgot password?', () => setAuthMode('forgot', { email: emailInput.value.trim() })),
+        authLink('Create account', () => setAuthMode('signup', { email: emailInput.value.trim() }))
+      ),
+    ]
+  );
 }
 
 /* ---- Sign-up ---- */
@@ -15864,9 +15780,12 @@ function viewSignup() {
   const nameInput = h('input', {
     type: 'text',
     class: 'gb-input gb-login-input',
-    placeholder: 'Your name',
+    placeholder: 'What should we call you?',
+    autocomplete: 'given-name',
     maxlength: 120,
   });
+  // One password field with its reveal eye: a confirm field doubled the typing
+  // to guard against a typo the eye already shows, and reset covers the rest.
   const pwInput = h('input', {
     type: 'password',
     class: 'gb-input gb-login-input',
@@ -15875,18 +15794,13 @@ function viewSignup() {
     autocomplete: 'new-password',
   });
   const pwField = passwordField(pwInput);
-  const pw2Input = h('input', {
-    type: 'password',
-    class: 'gb-input gb-login-input',
-    placeholder: 'Type it again',
-    maxlength: 128,
-    autocomplete: 'new-password',
-  });
-  const pw2Field = passwordField(pw2Input);
   // A hint, not a gate: the server's only rule is 8+ characters. Length and
   // variety are what a guesser pays for, so that is all it counts.
   const pwHint = h('p', { class: 'gb-field-hint', 'aria-live': 'polite' });
   pwInput.addEventListener('input', () => {
+    // The refusal under the field already says it: "Too short" beside "must be
+    // at least 8 characters" was one message twice.
+    if (state.error && state.errorField === 'password') return void (pwHint.textContent = '');
     const v = pwInput.value;
     const kinds = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].filter((r) => r.test(v)).length;
     const score = !v
@@ -15904,12 +15818,15 @@ function viewSignup() {
 
   function submit() {
     const email = emailInput.value.trim();
-    const displayName = nameInput.value.trim();
+    // Name is optional: without one the greeting read "Still up, asha.rao1990…"
+    // (the server's fallback is the whole local part). Its first word stands in
+    // until the user names themselves in Settings.
+    const word = (email.split('@')[0].match(/[a-z]{2,}/i) || [''])[0];
+    const displayName = nameInput.value.trim() || (word && word[0].toUpperCase() + word.slice(1).toLowerCase());
     const password = pwInput.value;
     if (!email) return authFail('Enter your email to create the account.', 'email');
     if (!emailInput.checkValidity()) return authFail('Enter a valid email address.', 'email');
     if (password.length < 8) return authFail('Password must be at least 8 characters.', 'password');
-    if (pw2Input.value !== password) return authFail('The two passwords don’t match.', 'confirm');
     runAuth(async () => {
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
       // Also the way back for an account that never verified: same password →
@@ -15920,7 +15837,7 @@ function viewSignup() {
     }, 'email');
   }
 
-  [emailInput, nameInput, pwInput, pw2Input].forEach((el) =>
+  [emailInput, nameInput, pwInput].forEach((el) =>
     el.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
@@ -15929,13 +15846,15 @@ function viewSignup() {
     })
   );
 
-  // No subtitle: the next screen is the code screen and explains itself there.
-  return authShell('Create your account', '', [
+  // The first screen a new visitor sees, so it says what the app is for.
+  return authShell(
+    'Create your account',
+    'Habits, reminders, money and goals in one place, with a ready-made plan to start you off.',
+    [
       ...field('Email', emailInput, 'email'),
-      ...field('Name', nameInput, 'name'),
       ...field('Password', pwField, 'password'),
       pwHint,
-      ...field('Confirm password', pw2Field, 'confirm'),
+      ...field('Name (optional)', nameInput, 'name'),
       primaryBtn('Create account', submit),
       h(
         'div',
@@ -15955,10 +15874,16 @@ function viewVerify() {
     inputmode: 'numeric',
     pattern: '\\d{6}',
     class: 'gb-input gb-login-input',
-    maxlength: 6,
+    // No maxlength: it cut a pasted "Your code is 123456" to "Your c" before
+    // otpBoxes could pull the digits out. otpBoxes keeps it to six.
     autocomplete: 'one-time-code',
   });
   const otpField = otpBoxes(otpInput, state.loading);
+  // The sixth digit submits. Trusted events only: renderAuth replays the value
+  // with a synthetic input event after a refusal, which must not resubmit it.
+  otpInput.addEventListener('input', (e) => {
+    if (e.isTrusted && !state.loading && otpInput.value.length === 6) submit();
+  });
   function submit() {
     const otp = (otpInput.value || '').replace(/\D/g, '');
     if (otp.length !== 6) return authFail('Enter the 6-digit code (must be exactly 6 digits).', 'otp');

@@ -20,6 +20,8 @@ export const test = base.extend({
     async ({ page, allowed }, use) => {
       const problems = [];
       page.on('console', (m) => {
+        // Chrome 154 on a fresh profile logs an unload policy violation for its own pages; not the app's.
+        if (/Permissions policy violation: unload/.test(m.text())) return;
         if (m.type() === 'error' && !allowed.some((a) => m.text().includes(a))) problems.push('console: ' + m.text());
       });
       page.on('pageerror', (e) => problems.push('pageerror: ' + e.message));
@@ -45,6 +47,10 @@ export { expect };
 
 export async function signIn(page, { email, password }) {
   await page.goto('/');
+  // A browser with no session lands on sign-up first; sign-in is its secondary link.
+  await page.locator('input[type=email]').first().waitFor();
+  const toSignIn = page.getByText('Have an account? Sign in');
+  if (await toSignIn.isVisible()) await toSignIn.click();
   await page.locator('input[type=email]').first().fill(email);
   await page.locator('input[type=password]').first().fill(password);
   await page.locator('input[type=password]').first().press('Enter');
