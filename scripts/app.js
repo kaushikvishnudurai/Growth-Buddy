@@ -12041,7 +12041,8 @@ function habitHistoryPanel(habit) {
     const notes = recentNotes({ days: rows, since, today, cadence, kind });
     let allLabel = clipped ? 'Last 2 years' : 'All time';
     if (quit) allLabel = 'Clean, ' + allLabel.toLowerCase();
-    panel.replaceChildren(
+    // ...filter(Boolean): DOM replaceChildren prints a null child as "null"; h() is the one that skips it.
+    panel.replaceChildren(...[
       h(
         'div',
         { class: 'gb-hh-stats' },
@@ -12085,7 +12086,7 @@ function habitHistoryPanel(habit) {
             )
           )
         : null
-    );
+    ].filter(Boolean));
   }
 
   load();

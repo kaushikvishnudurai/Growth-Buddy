@@ -2069,7 +2069,7 @@ function toneSelect(offLabel) {
     sel.replaceChildren(
       h('option', { value: '' }, 'Default tone'),
       ...opts.map((c) => h('option', { value: c.key }, c.key === 'off' ? offLabel : c.label)),
-      addCustomTone ? h('option', { value: ADD_TONE }, '+ Add your own sound\u2026') : null
+      ...(addCustomTone ? [h('option', { value: ADD_TONE }, '+ Add your own sound\u2026')] : [])
     );
     sel.value = chimeOptionValue(v);
   };

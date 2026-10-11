@@ -14065,6 +14065,10 @@ button.gb-tone-chip:focus-visible {
 .gb-hh-day.is-future {
   background: transparent;
 }
+/* Before the habit started: a faint outline, so a new habit's 12 weeks still read as a grid. */
+.gb-hh-day.is-before {
+  border: 1px dashed var(--border-strong);
+}
 /* Today: ink, not the focus ring's coral, which is the "missed" hue too. */
 .gb-hh-day.is-now {
   box-shadow: 0 0 0 1.5px var(--fg1);
