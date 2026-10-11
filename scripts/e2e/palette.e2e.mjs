@@ -25,8 +25,10 @@ function check(ok, what) {
   if (!ok) problems.push(what);
 }
 
-const browser = await puppeteer.connect({ browserURL: CDP });
-const page = await browser.newPage();
+const browser = await puppeteer.connect({ browserURL: CDP, protocolTimeout: 120000 });
+// Own context: cookies are per host, so another tab on localhost signing out would sign this one out too.
+const ctx = await browser.createBrowserContext();
+const page = await ctx.newPage();
 page.on('console', (m) => m.type() === 'error' && problems.push('console: ' + m.text().slice(0, 200)));
 page.on('pageerror', (e) => problems.push('pageerror: ' + String(e).slice(0, 200)));
 page.on('response', (r) => {
@@ -197,7 +199,7 @@ try {
   problems.push('threw: ' + (err && err.stack ? err.stack.split('\n').slice(0, 3).join(' | ') : err));
 } finally {
   if (prefsBefore) await authed('/api/auth/ui-prefs', { method: 'PUT', body: JSON.stringify({ prefs: prefsBefore }) });
-  await page.close();
+  await ctx.close();
   browser.disconnect();
 }
 
