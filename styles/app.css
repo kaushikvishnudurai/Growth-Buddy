@@ -8141,6 +8141,9 @@ button.gb-food-level {
   margin-left: auto;
   white-space: nowrap;
 }
+.gb-dash-qa .gb-card {
+  padding: 16px;
+}
 .gb-quickadd-hint {
   margin-top: 6px;
   font-size: 0.75rem;

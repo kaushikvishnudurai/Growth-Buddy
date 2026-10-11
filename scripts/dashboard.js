@@ -2570,6 +2570,7 @@ function ScreenDashboard({
   requestReceiptScan,
   onOpenMoney,
   homeLayout,
+  quickAdd,
 }) {
   const on = (k) => !features || features[k] !== false;
 
@@ -2654,14 +2655,21 @@ function ScreenDashboard({
     (food && (food.entries || []).length > 0) ||
     (water && (water.entries || []).length > 0) ||
     (wellness && (any(wellness.moodByDate) || any(wellness.sleepByDate)));
+  // Quick add is always first and is not a widget: one sentence logs anything,
+  // so it can't be hidden or reordered from the Home layout.
+  const qa = quickAdd
+    ? h('div', { class: 'gb-dash-block gb-dash-qa' }, Card({ children: [quickAdd] }))
+    : null;
   if (onboard && !started) {
     return h(
       'div',
       { class: 'gb-rise gb-dash gb-dash--single gb-dash--onboarding' },
+      qa,
       h('div', { class: 'gb-dash-block' }, onboard)
     );
   }
   if (onboard) blocks.unshift(h('div', { class: 'gb-dash-block' }, onboard));
+  if (qa) blocks.unshift(qa);
 
   return h('div', { class: 'gb-rise gb-dash gb-dash--single' }, ...blocks);
 }

@@ -24,6 +24,11 @@ reminders, money entries, food, water, mood or sleep), `ScreenDashboard` returns
 own "nothing yet" state, so a new account used to open on nine empty cards saying the same thing
 three ways. Adding anything — or dismissing the checklist — brings the full Home back.
 
+**The Quick add bar is always first and is not a widget.** The `quickAdd` prop (app.js's
+`homeQuickAdd()`, the same `quickAddBox()` the + sheet uses) is wrapped in a `Card` as
+`.gb-dash-qa` and put above everything, the onboarding-only Home included. It stays out of
+`HOME_WIDGETS` on purpose, so the layout editor can't hide or reorder it. Null prop = no bar.
+
 | Card | Notes |
 |---|---|
 | `OnboardingCard` | first-run checklist; each step marks itself done from real data (mood: any mood ever, not today's), and only the steps still left are listed under an "N of M done" title. Its first step, "Pick a goal, we set it up", is `onStarterPack` (→ `openStarterPacks` in app.js) and is left out when that prop is absent. Dismissal key `gb.onboardDismissed`; the ✕ calls `onOnboardDismiss({ rerender: true })` so a fresh account (checklist = whole Home) re-renders instead of going blank. The all-done path calls it bare on purpose: it runs mid-render (a re-render from there would nest), and an all-done account already has data, so the full Home renders anyway |
