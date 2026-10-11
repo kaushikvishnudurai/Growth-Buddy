@@ -27,7 +27,7 @@
      full-bleed over the gutter so cards don't show through beside it. */
   position: sticky;
   top: 0;
-  z-index: 5;
+  z-index: var(--z-sticky);
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   margin-inline: calc(-1 * var(--gutter));
@@ -1763,7 +1763,7 @@
   vertical-align: middle;
   margin-left: 6px;
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: 0.68rem;
   font-weight: 600;
   background: var(--surface-2);
@@ -1938,7 +1938,7 @@
 }
 .gb-stars-caption {
   font-weight: 800;
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   color: var(--fg2);
   min-height: 1.3em;
 }
@@ -1986,7 +1986,7 @@
     gap: 2px;
     padding: 7px 4px;
     border-radius: var(--radius-lg);
-    font-size: 0.75rem;
+    font-size: var(--text-xs);
   }
 }
 

@@ -6803,7 +6803,7 @@ function customisePanes() {
     { class: 'gb-settings-pane' },
     h(
       'div',
-      { class: 'gb-field-hint', style: { marginBottom: '8px' } },
+      { class: 'gb-field-hint' },
       'Turn parts of Growth Buddy on or off. Changes apply instantly.'
     ),
     ...FEATURE_DEFS.map(featureSwitchRow)
@@ -6893,7 +6893,7 @@ function customisePanes() {
     { class: 'gb-settings-pane' },
     h(
       'div',
-      { class: 'gb-field-hint', style: { marginBottom: '10px' } },
+      { class: 'gb-field-hint' },
       'Pick your Home cards and reorder with the arrows. Saves as you go.'
     ),
     homeListEl
@@ -6989,7 +6989,7 @@ function customisePanes() {
     { class: 'gb-settings-pane' },
     h(
       'div',
-      { class: 'gb-field-hint', style: { marginBottom: '10px' } },
+      { class: 'gb-field-hint' },
       'Pick up to ' +
         NAV_BAR_MAX +
         ' tabs for the bottom bar; the rest go under “More”. Saves as you go.'
@@ -7018,7 +7018,7 @@ function customisePanes() {
     h('div', { class: 'gb-settings-sec-label' }, 'Text size'),
     h(
       'div',
-      { class: 'gb-field-hint', style: { marginBottom: '8px' } },
+      { class: 'gb-field-hint' },
       'Makes everything bigger — words, buttons and rows. Pick whatever is easiest to read.'
     ),
     segmented(
@@ -7036,10 +7036,10 @@ function customisePanes() {
       h('div', { class: 'gb-textsize-sample-title' }, 'Sample'),
       h('div', { class: 'gb-textsize-sample-body' }, 'Drink a glass of water · 8:00 in the morning')
     ),
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '18px' } }, 'Time format'),
+    h('div', { class: 'gb-settings-sec-label' }, 'Time format'),
     h(
       'div',
-      { class: 'gb-field-hint', style: { marginBottom: '8px' } },
+      { class: 'gb-field-hint' },
       'How every time in the app is written — reminders, due times, meal logs.'
     ),
     segmented(
@@ -7054,10 +7054,10 @@ function customisePanes() {
         render();
       }
     ).node,
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '18px' } }, 'Theme'),
+    h('div', { class: 'gb-settings-sec-label' }, 'Theme'),
     h(
       'div',
-      { class: 'gb-field-hint', style: { marginBottom: '8px' } },
+      { class: 'gb-field-hint' },
       'Light is easier to read in daylight. Dark is easier at night.'
     ),
     segmented(
@@ -7070,10 +7070,10 @@ function customisePanes() {
         if (v !== state.theme) toggleTheme();
       }
     ).node,
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '18px' } }, 'Look'),
+    h('div', { class: 'gb-settings-sec-label' }, 'Look'),
     h(
       'div',
-      { class: 'gb-field-hint', style: { marginBottom: '8px' } },
+      { class: 'gb-field-hint' },
       'Premium adds softer shadows, frosted glass and a bit more life to every tap.'
     ),
     segmented(
@@ -7522,11 +7522,11 @@ function securitySection() {
     h('div', { class: 'gb-settings-sec-label' }, 'Signed-in devices'),
     h(
       'div',
-      { class: 'gb-field-hint', style: { marginBottom: '10px' } },
+      { class: 'gb-field-hint' },
       'Sign out any device you no longer use.'
     ),
     sessionsWrap,
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '20px' } }, 'Change password'),
+    h('div', { class: 'gb-settings-sec-label' }, 'Change password'),
     h(
       'div',
       { class: 'gb-form' },
@@ -7732,9 +7732,9 @@ function accountSecuritySections() {
     .catch(() => tfaBox.replaceChildren(h('div', { class: 'gb-empty-sm' }, 'Could not load two-step sign-in.')));
 
   return [
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '20px' } }, 'Email'),
+    h('div', { class: 'gb-settings-sec-label' }, 'Email'),
     emailBox,
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '20px' } }, 'Two-step sign-in'),
+    h('div', { class: 'gb-settings-sec-label' }, 'Two-step sign-in'),
     tfaBox,
   ];
 }
@@ -8183,14 +8183,14 @@ function reminderSettingsPane() {
     h('div', { class: 'gb-settings-sec-label' }, 'When to notify'),
     h(
       'div',
-      { class: 'gb-field-hint', style: { marginBottom: '10px' } },
+      { class: 'gb-field-hint' },
       'How far ahead of its time a reminder rings — in the app, on your phone and on WhatsApp. A reminder can set its own when you add or edit it.'
     ),
     h('div', { class: 'gb-remset-picker' }, leadPicker.node),
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Snooze'),
+    h('div', { class: 'gb-settings-sec-label' }, 'Snooze'),
     h(
       'div',
-      { class: 'gb-field-hint', style: { marginBottom: '10px' } },
+      { class: 'gb-field-hint' },
       'How long Snooze waits before it rings again. It’s on the reminder in the app, on its notification, and on WhatsApp — tap Snooze there, or reply SNOOZE (or “snooze 20”).'
     ),
     h('div', { class: 'gb-remset-picker gb-remset-picker--5' }, snoozePicker.node),
@@ -8202,10 +8202,10 @@ function reminderSettingsPane() {
     ),
     addForm,
     list,
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Other calendars'),
+    h('div', { class: 'gb-settings-sec-label' }, 'Other calendars'),
     h(
       'div',
-      { class: 'gb-field-hint', style: { marginBottom: '10px' } },
+      { class: 'gb-field-hint' },
       'Every reminder as a calendar file, repeats and alerts included, at your local times. A copy: changes here don’t follow it.'
     ),
     h(
@@ -8851,14 +8851,15 @@ function openProfileSettings(initialTab) {
       };
 
       let waEnabled = !!cu.whatsappEnabled;
-      const tThumb = h('span', { class: 'gb-wa-toggle-thumb' });
+      const tThumb = h('span', { class: 'gb-switch-knob' });
       const waToggle = h(
         'button',
         {
           type: 'button',
-          class: 'gb-wa-toggle' + (waEnabled ? ' is-on' : ''),
+          class: 'gb-switch is-wa' + (waEnabled ? ' is-on' : ''),
           role: 'switch',
           'aria-checked': String(waEnabled),
+          'aria-label': 'Enable WhatsApp reminders',
           onclick: async () => {
             // Two PUTs in flight raced, and the later answer could be the older value.
             if (waToggle.disabled) return;
@@ -9822,30 +9823,30 @@ function openProfileSettings(initialTab) {
     h('div', { class: 'gb-settings-sec-label' }, 'Push notifications'),
     h(
       'div',
-      { class: 'gb-field-hint', style: { marginBottom: '12px' } },
+      { class: 'gb-field-hint' },
       'Get reminders and nudges on this device, even when the app is closed.'
     ),
     pushSectionBody,
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Water reminders'),
+    h('div', { class: 'gb-settings-sec-label' }, 'Water reminders'),
     h(
       'div',
-      { class: 'gb-field-hint', style: { marginBottom: '12px' } },
+      { class: 'gb-field-hint' },
       'Steady sips beat one big glass. Needs notifications turned on above.'
     ),
     waterSectionBody,
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Quiet hours'),
+    h('div', { class: 'gb-settings-sec-label' }, 'Quiet hours'),
     h(
       'div',
-      { class: 'gb-field-hint', style: { marginBottom: '12px' } },
+      { class: 'gb-field-hint' },
       'No habit reminders, water nudges or digest in this window, on any device or on WhatsApp. The digest waits until it ends. Reminders you set a time for still ring.'
     ),
     quietSectionBody,
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Buddy'),
+    h('div', { class: 'gb-settings-sec-label' }, 'Buddy'),
     reflectSectionBody,
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Notification sound'),
+    h('div', { class: 'gb-settings-sec-label' }, 'Notification sound'),
     h(
       'div',
-      { class: 'gb-field-hint', style: { marginBottom: '10px' } },
+      { class: 'gb-field-hint' },
       localNotificationsAvailable()
         ? 'What a reminder sounds like, in the app and on your lock screen. Tap one to hear it.'
         : 'What a reminder sounds like inside the app. Tap one to hear it. Notifications that arrive while the app is closed use your phone’s own sound.'
@@ -9864,39 +9865,39 @@ function openProfileSettings(initialTab) {
         // and a Web Push notification rings with the browser's own sound.
         ' Plays in the app only — the lock screen uses built-in tones.'
     ),
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Notify me about'),
+    h('div', { class: 'gb-settings-sec-label' }, 'Notify me about'),
     h(
       'div',
-      { class: 'gb-field-hint', style: { marginBottom: '10px' } },
+      { class: 'gb-field-hint' },
       'Off means no push or phone notification for it. It still shows in the bell.'
     ),
     ...notifyMuteRows(),
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Keep read notifications for'),
+    h('div', { class: 'gb-settings-sec-label' }, 'Keep read notifications for'),
     h(
       'div',
-      { class: 'gb-field-hint', style: { marginBottom: '10px' } },
+      { class: 'gb-field-hint' },
       'Unread ones go after 90 days whatever you pick.'
     ),
     keepReadPicker(),
     h(
       'div',
-      { class: 'gb-settings-sec-label', style: { marginTop: '22px' } },
+      { class: 'gb-settings-sec-label' },
       'WhatsApp reminders'
     ),
     h(
       'div',
-      { class: 'gb-field-hint', style: { marginBottom: '14px' } },
+      { class: 'gb-field-hint' },
       'Verify your number once — timed reminders then arrive on WhatsApp.'
     ),
     waSectionBody,
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Progress digest'),
+    h('div', { class: 'gb-settings-sec-label' }, 'Progress digest'),
     h(
       'div',
-      { class: 'gb-field-hint', style: { marginBottom: '12px' } },
+      { class: 'gb-field-hint' },
       'Get a short recap of your score, tasks and habits to stay on track.'
     ),
     digestSectionBody,
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Working week'),
+    h('div', { class: 'gb-settings-sec-label' }, 'Working week'),
     workWeekBody
   );
 
@@ -9941,7 +9942,7 @@ function openProfileSettings(initialTab) {
       Icon('log-out', { size: 16 }),
       'Sign out'
     ),
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '20px' } }, 'Privacy'),
+    h('div', { class: 'gb-settings-sec-label' }, 'Privacy'),
     shareProgressRow(),
     h(
       'div',
@@ -9950,10 +9951,10 @@ function openProfileSettings(initialTab) {
     ),
     downloadDataButton(),
     ...securitySection(),
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '20px' } }, 'Danger zone'),
+    h('div', { class: 'gb-settings-sec-label' }, 'Danger zone'),
     h(
       'div',
-      { class: 'gb-field-hint', style: { marginBottom: '10px' } },
+      { class: 'gb-field-hint' },
       'Delete your account and all your data. It happens 7 days after you ask, and signing in before then cancels it.'
     ),
     h(
@@ -9966,7 +9967,7 @@ function openProfileSettings(initialTab) {
       Icon('trash-2', { size: 16 }),
       'Delete account'
     ),
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '20px' } }, 'About'),
+    h('div', { class: 'gb-settings-sec-label' }, 'About'),
     // The real build (vite.config.js BUILD), the number support asks for.
     h('div', { class: 'gb-field-hint' }, 'Growth Buddy · build ' + __GB_BUILD__)
   );
@@ -12465,10 +12466,10 @@ function bankFeedSection() {
     });
     const live = (st.consents || []).some((c) => /ACTIVE|APPROVED|PENDING/.test(c.status));
     box.replaceChildren(
-      h('div', { class: 'gb-settings-sec-label', style: { marginTop: '18px' } }, 'Bank feed'),
+      h('div', { class: 'gb-settings-sec-label' }, 'Bank feed'),
       h(
         'div',
-        { class: 'gb-field-hint', style: { marginBottom: '8px' } },
+        { class: 'gb-field-hint' },
         'Approve once through an RBI Account Aggregator and your bank spends and income show up here on their own. Every entry stays editable.'
       ),
       ...rows,

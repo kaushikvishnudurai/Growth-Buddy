@@ -22,7 +22,7 @@
   flex: 1;
   text-align: center;
   font-weight: 700;
-  font-size: 1rem;
+  font-size: var(--text-body);
   color: var(--fg1);
 }
 
@@ -76,7 +76,7 @@
 
 .gb-mini-cal-dow-cell {
   text-align: center;
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   font-weight: 700;
   color: var(--fg3);
   text-transform: uppercase;
@@ -189,7 +189,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--brand-fill);
   color: var(--fg-on-brand);
   font-size: 0.625rem;
@@ -204,7 +204,7 @@
   right: 5px;
   width: 6px;
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--iris-500);
 }
 
@@ -213,7 +213,7 @@
   flex-wrap: wrap;
   gap: 12px;
   padding: 8px 4px;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--fg2);
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
@@ -228,7 +228,7 @@
 .gb-mini-cal-legend-item .dot {
   width: 8px;
   height: 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 
 .gb-mini-cal-legend-item .dot.has-tasks {
@@ -276,7 +276,7 @@
 }
 
 .gb-mini-cal-section-title {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 800;
   color: var(--fg3);
   letter-spacing: 0.05em;
@@ -290,10 +290,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-2);
   color: var(--fg2);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 700;
 }
 
@@ -332,17 +332,17 @@
 
 .gb-mini-cal-item-sub {
   margin-top: 2px;
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   color: var(--fg3);
 }
 
 .gb-mini-cal-pill {
   flex: none;
   padding: 4px 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-3);
   color: var(--fg2);
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   font-weight: 700;
   text-transform: capitalize;
 }
@@ -400,14 +400,14 @@
 
 .gb-mini-cal-total {
   margin-top: -2px;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 700;
   color: var(--fg2);
 }
 
 @media (max-width: 640px) {
   .gb-mini-cal-day {
-    font-size: 0.75rem;
+    font-size: var(--text-xs);
   }
 
   .gb-mini-cal-day .badge {
@@ -419,7 +419,7 @@
 
   .gb-mini-cal-legend {
     gap: 10px;
-    font-size: 0.6875rem;
+    font-size: var(--text-2xs);
   }
 
   .gb-mini-cal-item {
@@ -427,7 +427,7 @@
   }
 
   .gb-mini-cal-item-title {
-    font-size: 0.75rem;
+    font-size: var(--text-xs);
   }
 
   .gb-mini-cal-item-sub,

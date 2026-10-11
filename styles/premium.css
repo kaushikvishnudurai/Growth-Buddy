@@ -231,6 +231,18 @@ html[data-premium='on'] .gb-btn--primary:active {
     inset 0 1px 0 rgba(255, 255, 255, 0.2),
     0 1px 2px rgba(150, 60, 8, 0.3);
 }
+/* The rules above outrank app.css's primary :hover and .gb-btn:disabled, so
+   both are restated here. Hover darkens whatever the gradient is; disabled
+   drops the glow and the press (after :active, same specificity, so it wins). */
+@media (hover: hover) {
+  html[data-premium='on'] .gb-btn--primary:hover:not(:disabled) {
+    filter: brightness(0.93);
+  }
+}
+html[data-premium='on'] .gb-btn--primary:is(:disabled, [disabled]) {
+  box-shadow: none;
+  transform: none;
+}
 html[data-premium='on'] .gb-btn--secondary {
   background: var(--glass-face);
   /* No backdrop blur: these ride inside scrolling cards (see Surfaces). */

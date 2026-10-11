@@ -171,6 +171,30 @@
 }
 
 /* =====================================================================
+   LAYERS + SCRIMS  (theme-independent)
+   Page-level stacking order, lowest first. Values inside one component
+   (-1 / 1 / 2 to order its own children) stay literal. Toasts sit above the
+   celebration so an Undo raised under one can still be pressed.
+   Scrims are dark in both themes: --scrim dims the page under a dialog or
+   sheet, --scrim-strong is the celebration's (it also blurs).
+   ===================================================================== */
+:root {
+  --z-sticky: 5;          /* in-screen sticky bars: money tabs, family nav, notes tools */
+  --z-ptr: 40;            /* pull-to-refresh indicator */
+  --z-header-panel: 50;   /* bell + profile popovers */
+  --z-sheet: 60;          /* More sheet backdrop; the sheet is +1 */
+  --z-modal: 100;
+  --z-loader: 150;        /* food photo loader, over a dialog */
+  --z-celebrate: 200;
+  --z-toast: 300;
+  --z-skip: 2000;         /* skip link */
+  --z-top: 2100;          /* the AI-thinking edge glow, pointer-events: none */
+
+  --scrim: color-mix(in srgb, var(--warm-900) 45%, transparent);
+  --scrim-strong: color-mix(in srgb, var(--warm-950) 50%, transparent);
+}
+
+/* =====================================================================
    LIGHT THEME (default)
    ===================================================================== */
 :root,

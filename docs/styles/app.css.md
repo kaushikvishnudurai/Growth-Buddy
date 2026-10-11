@@ -73,6 +73,14 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
 - Colors come from tokens (`var(--coral-500)`, `var(--leaf-50)`, …) — no raw hex here.
 - Responsive breakpoints are grouped at 4886 / 5226 / 5303, **not** inline per component. Put media
   queries there so the phone-first base stays readable.
+- One switch: `.gb-switch` + `.gb-switch-knob` (`role="switch"`, `aria-checked`). WhatsApp's is the
+  same switch with `.is-wa` (green when on). One compact pill segmented: `.gb-range-toggle` +
+  `.gb-range-opt.is-active` (Report's ranges, Calendar's Day/Week via `.gb-sched-tabs`, which only
+  places it). Don't add a third of either.
+- Settings section rhythm is CSS only: `.gb-settings-sec-label` has `margin-top: var(--space-5)`
+  (0 as a pane's first child) and the hint under a section label gets `--space-3` below it. No
+  inline `marginTop` / `marginBottom` on either in `app.js`.
+- Page-level `z-index` and scrims come from the `--z-*` / `--scrim*` tokens (`tokens.css.md`).
 - Modal markup comes from `openOverlay` in `gb-kit.js` — don't hand-roll it. It is `.gb-modal-overlay > .gb-modal[role=dialog]` because `scripts/a11y.js`
   keys off it for focus trapping. Don't restyle it into a different structure.
 - Every `:hover` rule sits inside `@media (hover: hover)` (nested inside another `@media` where it
