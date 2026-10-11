@@ -5275,7 +5275,9 @@ async function addSuggestedReminder(text, time, tag) {
    dropped by every log. null = not asked yet. */
 let recentFoods = null;
 
-function openAddFood() {
+/* opts.file: a plate photo already taken (the Photo option in Quick add);
+   estimated as soon as the form opens, as if picked with its own button. */
+function openAddFood(opts) {
   let photoDataUrl = '';
   let photoItems = [];
   let photoConfidence = 0;
@@ -5479,8 +5481,7 @@ function openAddFood() {
     });
   }
 
-  async function estimateFromPhoto() {
-    const file = platePhotoInput.files && platePhotoInput.files[0];
+  async function estimateFromPhoto(file = platePhotoInput.files && platePhotoInput.files[0]) {
     if (!file) {
       throw new Error('Please choose a photo first.');
     }
@@ -5562,12 +5563,11 @@ function openAddFood() {
     Icon('camera', { size: 16, sw: 2.2 }),
     'Scan a plate photo instead'
   );
-  platePhotoInput.addEventListener('change', async () => {
-    if (!platePhotoInput.files || !platePhotoInput.files[0]) return;
+  async function estimatePlate(file) {
     // One estimate at a time: a second tap mid-call used to send the photo twice.
     const done = setThinking(photoBtn, 'Looking at your plate');
     try {
-      await estimateFromPhoto();
+      await estimateFromPhoto(file);
     } catch {
       const safeMsg = 'Could not analyze photo. Please enter manually.';
       toastError({ message: safeMsg }, safeMsg);
@@ -5575,6 +5575,9 @@ function openAddFood() {
       done();
       platePhotoInput.value = ''; // picking the same photo again must fire again
     }
+  }
+  platePhotoInput.addEventListener('change', () => {
+    if (platePhotoInput.files && platePhotoInput.files[0]) estimatePlate();
   });
 
   const field = (label, control) =>
@@ -5833,7 +5836,8 @@ function openAddFood() {
     },
   });
 
-  setTimeout(() => foodNameInput.focus(), 60);
+  if (opts && opts.file instanceof Blob) estimatePlate(opts.file);
+  else setTimeout(() => foodNameInput.focus(), 60);
 }
 
 /* A second tap on a row's delete before the first answered sent a second
@@ -10900,6 +10904,36 @@ function segmented(options, initial, onChange) {
   return { node: wrap, get: () => selected };
 }
 
+/* Where the Quick add Photo option hands a photo once its kind is picked
+   (snap.js). Each one is the existing scanner, entered with the photo in hand. */
+const shrinkForSnap = (file) => import('./notes.js').then((m) => m.shrinkPhoto(file));
+const SNAP_ROUTES = {
+  receipt: (file) =>
+    import('./money.js').then((m) =>
+      m.openReceiptModal(state.money, saveMoney, requestReceiptScan, { file })
+    ),
+  plate: (file) => openAddFood({ file }),
+  // The pantry is a family's: with no family the server 400s, and that message
+  // plus a way to the Family tab is the answer.
+  groceries: async (_file, shrunk) => {
+    const toFamily = { label: 'View', run: () => setScreen('family') };
+    try {
+      const res = await api('/api/family/pantry/scan', {
+        method: 'POST',
+        body: JSON.stringify({ imageDataUrl: await shrunk }),
+      });
+      const n = (res && res.added && res.added.length) || 0;
+      const msg = n
+        ? 'Added ' + plural(n, 'item') + ' to your pantry'
+        : (res && res.message) || 'Nothing to add from that photo.';
+      pushToast(msg, n ? 'success' : 'info', 6000, toFamily);
+    } catch (err) {
+      const msg = (err && err.message) || 'Join or create a family to use the pantry.';
+      pushToast(msg, 'error', 6000, toFamily);
+    }
+  },
+};
+
 function openAddSheet() {
   const { sheet, close } = openOverlay({ label: 'Quick add' });
 
@@ -11053,6 +11087,18 @@ function openAddSheet() {
   );
 
   const opts = [
+    {
+      key: 'snap',
+      icon: 'camera',
+      label: 'Photo',
+      sub: 'Receipt, meal or groceries',
+      action: () => {
+        close();
+        import('./snap.js').then((m) =>
+          m.openSnap({ shrink: shrinkForSnap, api, routes: SNAP_ROUTES })
+        );
+      },
+    },
     {
       key: 'task',
       icon: 'list-todo',
