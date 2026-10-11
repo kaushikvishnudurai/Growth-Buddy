@@ -4,6 +4,7 @@ import com.growthbuddy.circle.ChallengeMetrics.Metric;
 import com.growthbuddy.common.ApiException;
 import com.growthbuddy.common.RateLimiter;
 import com.growthbuddy.common.UserZone;
+import com.growthbuddy.common.VisibleText;
 import com.growthbuddy.habit.HabitService;
 import com.growthbuddy.mentorship.ProgressSharing;
 import com.growthbuddy.notification.NotificationKind;
@@ -128,7 +129,7 @@ public class CircleService {
     @Transactional
     public CircleResponse create(UUID userId, CreateCircleRequest req) {
         Circle c = new Circle();
-        c.setName(req.name().trim());
+        c.setName(VisibleText.require(req.name(), "Name"));
         c.setGoal(req.goal());
         c.setCreatedBy(userId);
         if ("private".equalsIgnoreCase(req.visibility())) {
@@ -511,7 +512,7 @@ public class CircleService {
         int days = req.days() != null ? req.days() : 7;
         CircleChallenge ch = new CircleChallenge();
         ch.setCircleId(circleId);
-        ch.setTitle(req.title().trim());
+        ch.setTitle(VisibleText.require(req.title(), "Title"));
         ch.setMetric(metric.name());
         ch.setStartDate(start);
         ch.setEndDate(start.plusDays(days - 1L));

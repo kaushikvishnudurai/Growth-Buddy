@@ -1,6 +1,7 @@
 package com.growthbuddy.habit;
 
 import com.growthbuddy.common.ApiException;
+import com.growthbuddy.common.VisibleText;
 import com.growthbuddy.user.ProgressService;
 import com.growthbuddy.user.UserClock;
 import java.time.Instant;
@@ -686,7 +687,7 @@ public class HabitService {
     public HabitResponse create(UUID userId, CreateHabitRequest req) {
         Habit h = new Habit();
         h.setUserId(userId);
-        h.setName(req.name().trim());
+        h.setName(VisibleText.require(req.name(), "Name"));
         h.setDomain(req.domain() != null ? req.domain() : HabitDomain.habit);
         h.setIcon(checkIcon(req.icon()));
         h.setColor(req.color());
@@ -783,7 +784,7 @@ public class HabitService {
     public HabitResponse update(UUID userId, UUID id, UpdateHabitRequest req) {
         Habit h = require(userId, id);
         if (req.name() != null && !req.name().isBlank()) {
-            h.setName(req.name().trim());
+            h.setName(VisibleText.require(req.name(), "Name"));
         }
         if (req.domain() != null) {
             h.setDomain(req.domain());

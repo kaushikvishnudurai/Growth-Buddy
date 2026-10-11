@@ -119,6 +119,7 @@ the HTML shell — **Report-Only until `CSP_ENFORCE=true`** (`growthbuddy.csp.en
 violation lands in the server log as a `[csp]` line; watch those before enforcing. It assumes
 `script-src 'self'`: no inline `<script>` in `index.html` (the static sign-in shell's gate is
 `public/shell-gate.js` for that reason).
+`VisibleText.require(raw, label)` strips bidi controls (U+202A-202E, U+2066-2069), Unicode-trims, and 400s a name with nothing visible left (Cf / spaces / fillers only): task, habit, goal, circle and challenge titles, reminder text, display name (sign-up falls back to the email default instead). `GlobalExceptionHandler.handleConflict` answers 409 "already saved" **only for a duplicate key** (`isDuplicateKey`: 1062, 23505, `DuplicateKeyException`); any other `DataIntegrityViolationException` (out of range, too long, NOT NULL) is a plain 400.
 `RateLimitInterceptor` = per-IP on auth routes (plus `/api/auth/export`, `/api/client-errors`, `/api/client-vitals`, `/api/csp-report`), `AiRateLimitInterceptor` = 40/hour per user, **POSTs only** (a GET of the saved meal plan or a
 chat clear on the same path costs nothing), on an **allowlist of paths in `WebConfig`** — the four vision endpoints were missing from it for months,
 the most expensive call in the app running uncapped. The allowlist is no longer the only line:

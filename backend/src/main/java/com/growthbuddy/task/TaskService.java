@@ -1,6 +1,7 @@
 package com.growthbuddy.task;
 
 import com.growthbuddy.common.ApiException;
+import com.growthbuddy.common.VisibleText;
 import com.growthbuddy.goal.GoalService;
 import com.growthbuddy.user.ProgressService;
 import java.time.Duration;
@@ -58,7 +59,7 @@ public class TaskService {
     public TaskResponse create(UUID userId, CreateTaskRequest req) {
         Task t = new Task();
         t.setUserId(userId);
-        t.setTitle(req.title().trim());
+        t.setTitle(VisibleText.require(req.title(), "Title"));
         t.setNotes(req.notes());
         t.setPriority(req.priority() != null ? req.priority() : Priority.Medium);
         t.setDueAt(checkDueAt(req.dueAt()));
@@ -70,7 +71,7 @@ public class TaskService {
     public TaskResponse update(UUID userId, UUID id, UpdateTaskRequest req) {
         Task t = require(userId, id);
         if (req.title() != null) {
-            t.setTitle(req.title().trim());
+            t.setTitle(VisibleText.require(req.title(), "Title"));
         }
         if (req.notes() != null) {
             t.setNotes(req.notes());

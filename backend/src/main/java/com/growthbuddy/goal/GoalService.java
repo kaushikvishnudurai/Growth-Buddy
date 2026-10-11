@@ -1,6 +1,7 @@
 package com.growthbuddy.goal;
 
 import com.growthbuddy.common.ApiException;
+import com.growthbuddy.common.VisibleText;
 import com.growthbuddy.task.TaskRepository;
 import com.growthbuddy.user.UserClock;
 import java.nio.charset.StandardCharsets;
@@ -118,7 +119,7 @@ public class GoalService {
         }
         Goal goal = new Goal();
         goal.setUserId(userId);
-        goal.setTitle(req.title().trim());
+        goal.setTitle(VisibleText.require(req.title(), "Title"));
         goal.setDescription(StringUtils.hasText(req.description()) ? req.description().trim() : null);
         goal.setHorizon(req.horizon() != null ? req.horizon() : GoalHorizon.short_term);
         goal.setTargetDate(req.targetDate());
@@ -136,7 +137,7 @@ public class GoalService {
             if (!StringUtils.hasText(req.title())) {
                 throw ApiException.badRequest("title is required");
             }
-            goal.setTitle(req.title().trim());
+            goal.setTitle(VisibleText.require(req.title(), "Title"));
         }
         if (req.description() != null) {
             goal.setDescription(StringUtils.hasText(req.description()) ? req.description().trim() : null);
