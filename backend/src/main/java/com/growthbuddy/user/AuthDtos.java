@@ -139,7 +139,9 @@ record UpdateProfileRequest(
         LocalDate dob,
         @Min(10) @Max(100) Integer ageYears,
         @Min(100) @Max(250) Integer heightCm,
-        @Min(25) @Max(300) Integer weightKg,
+        @jakarta.validation.constraints.DecimalMin("25") @jakarta.validation.constraints.DecimalMax("300")
+        @jakarta.validation.constraints.Digits(integer = 3, fraction = 1, message = "can have one decimal place at most")
+        java.math.BigDecimal weightKg,
         @Size(max = 20) String gender,
         @Size(max = 100) String fitnessGoal,
         @Size(max = 64) String dietPreference,
@@ -175,7 +177,7 @@ record AuthUserResponse(
         LocalDate dob,
         Integer ageYears,
         Integer heightCm,
-        Integer weightKg,
+        java.math.BigDecimal weightKg,
         String dietPreference,
         String aboutMe,
         String allergicTo,

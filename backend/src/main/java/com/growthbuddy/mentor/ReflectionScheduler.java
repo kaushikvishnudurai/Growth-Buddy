@@ -5,6 +5,8 @@ import com.growthbuddy.notification.NotificationKind;
 import com.growthbuddy.notification.NotificationRepository;
 import com.growthbuddy.notification.NotificationService;
 import com.growthbuddy.push.PushService;
+import com.growthbuddy.reminder.ReminderDispatchLog;
+import com.growthbuddy.reminder.ReminderDispatchLogRepository;
 import com.growthbuddy.reminder.ReminderPrefs;
 import com.growthbuddy.user.User;
 import java.time.Duration;
@@ -57,12 +59,15 @@ public class ReflectionScheduler {
     private final NotificationService notifications;
     private final NotificationRepository notificationRows;
     private final PushService push;
+    private final ReminderDispatchLogRepository dispatchLog;
 
     /** Who got today's already, by local day: saves the DB check on the second tick in the window. */
     private final Map<UUID, LocalDate> sentOn = new ConcurrentHashMap<>();
 
     public ReflectionScheduler(ReflectionUsers users, NotificationService notifications,
-                               NotificationRepository notificationRows, PushService push) {
+                               NotificationRepository notificationRows, PushService push,
+                               ReminderDispatchLogRepository dispatchLog) {
+        this.dispatchLog = dispatchLog;
         this.users = users;
         this.notifications = notifications;
         this.notificationRows = notificationRows;
@@ -101,14 +106,36 @@ public class ReflectionScheduler {
             sentOn.put(u.getId(), day);
             return false;
         }
-        notifications.publish(u.getId(), NotificationKind.buddy_checkin, TITLE, STARTER, null);
         sentOn.put(u.getId(), day);
+        if (!claim(u.getId(), day)) return false;
+        notifications.publish(u.getId(), NotificationKind.buddy_checkin, TITLE, STARTER, null);
         try {
             push.sendToUser(u.getId(), TITLE, STARTER, "/#mentor");
         } catch (RuntimeException ex) {
             log.warn("Evening reflection push for {} failed: {}", u.getId(), ex.getMessage());
         }
         return true;
+    }
+
+    /**
+     * The cross-instance once-a-day guard (CRB-10). The map and the bell-row
+     * check above are both read-then-act, so two instances in one window could
+     * both send; ux_rem_dispatch_unique admits one row per (key, day), so exactly
+     * one insert wins. Keyed like SubscriptionDueScheduler's: a stable UUID per user.
+     */
+    private boolean claim(UUID userId, LocalDate day) {
+        ReminderDispatchLog row = new ReminderDispatchLog();
+        row.setReminderId(UUID.nameUUIDFromBytes(
+                ("reflection:" + userId).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        row.setOccurrenceDate(day);
+        row.setChannel("bell");
+        row.setStatus("sent");
+        try {
+            dispatchLog.saveAndFlush(row);
+            return true;
+        } catch (org.springframework.dao.DataIntegrityViolationException taken) {
+            return false;
+        }
     }
 
     /** The user's reflection time, or null when it is off or unreadable. */

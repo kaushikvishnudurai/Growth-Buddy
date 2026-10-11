@@ -34,6 +34,7 @@ class DigestPendingDeletionTest {
         u.setDigestHour(LocalDateTime.now(ZoneId.of("UTC")).getHour());
         u.setDeletionRequestedAt(deletionRequestedAt);
         when(users.findByDigestFrequencyNot("off")).thenReturn(List.of(u));
+        when(users.claimDigest(any(), any())).thenReturn(1);
         return u;
     }
 

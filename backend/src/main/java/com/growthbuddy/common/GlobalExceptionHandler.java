@@ -53,6 +53,11 @@ public class GlobalExceptionHandler {
      */
     static String humanMessage(String field, String code, String defaultMessage) {
         if ("Email".equals(code)) return "Enter a valid email address.";
+        // A bare regex is internal shape and means nothing to the person reading it
+        // (a @Pattern with its own message= keeps that message).
+        if ("Pattern".equals(code) && defaultMessage != null && defaultMessage.startsWith("must match \"")) {
+            return fieldLabel(field) + " is not a value we accept.";
+        }
         String m = defaultMessage == null ? "is not valid" : defaultMessage
                 .replaceFirst("^must be less than or equal to (\\S+)$", "must be $1 or less")
                 .replaceFirst("^must be greater than or equal to (\\S+)$", "must be at least $1")
@@ -123,6 +128,26 @@ public class GlobalExceptionHandler {
             t = t.getCause();
         }
         return t.getMessage();
+    }
+
+    /**
+     * A unique key that a check-then-insert race got past (two taps of the same
+     * button): the row exists, so 409, not 500. Per-path handlers (signup) throw
+     * their own wording first; this is the backstop.
+     */
+    @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
+    public ResponseEntity<ApiError> handleConflict(org.springframework.dao.DataIntegrityViolationException ex) {
+        log.warn("Constraint conflict: {}", rootMessage(ex));
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiError.of(HttpStatus.CONFLICT, "That was already saved. Refresh and try again."));
+    }
+
+    /** Deadlock victim or lock-wait timeout: nothing was written, a retry will do. */
+    @ExceptionHandler(org.springframework.dao.PessimisticLockingFailureException.class)
+    public ResponseEntity<ApiError> handleLockFailure(org.springframework.dao.PessimisticLockingFailureException ex) {
+        log.warn("Lock conflict: {}", rootMessage(ex));
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(ApiError.of(HttpStatus.SERVICE_UNAVAILABLE, "We were busy for a moment. Please try again."));
     }
 
     @ExceptionHandler(Exception.class)

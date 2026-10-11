@@ -403,7 +403,7 @@ public class FamilyService {
             m.setDob(target.getDob());
             m.setGender(target.getGender());
             m.setHeightCm(target.getHeightCm());
-            m.setWeightKg(target.getWeightKg());
+            m.setWeightKg(wholeKg(target.getWeightKg()));
             m.setDietPreference(target.getDietPreference());
             m.setStatus(MemberStatus.invited);
             m.setInviteOnly(true); // created purely for the invite — remove on decline
@@ -2040,7 +2040,7 @@ public class FamilyService {
             self.setDob(u.getDob());
             self.setGender(u.getGender());
             self.setHeightCm(u.getHeightCm());
-            self.setWeightKg(u.getWeightKg());
+            self.setWeightKg(wholeKg(u.getWeightKg()));
             self.setDietPreference(u.getDietPreference());
         }
         members.save(self);
@@ -2333,5 +2333,10 @@ public class FamilyService {
         String local = email.substring(0, at);
         String domain = email.substring(at);
         return local.charAt(0) + "•••" + local.charAt(local.length() - 1) + domain;
+    }
+
+    /** family_members.weight_kg is INT; the account's is DECIMAL(5,1). */
+    private static Integer wholeKg(java.math.BigDecimal kg) {
+        return kg == null ? null : kg.setScale(0, java.math.RoundingMode.HALF_UP).intValue();
     }
 }

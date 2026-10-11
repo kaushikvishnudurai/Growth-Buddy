@@ -82,7 +82,7 @@ public class HabitController {
 
     /** Record a check-in for a given day (defaults to today). */
     @PostMapping("/{id}/checkin")
-    public HabitResponse checkin(@PathVariable UUID id, @RequestBody(required = false) CheckinRequest req) {
+    public HabitResponse checkin(@PathVariable UUID id, @jakarta.validation.Valid @RequestBody(required = false) CheckinRequest req) {
         return service.checkin(CurrentUser.id(), id, req != null ? req : new CheckinRequest(null, null, null, null, null));
     }
 

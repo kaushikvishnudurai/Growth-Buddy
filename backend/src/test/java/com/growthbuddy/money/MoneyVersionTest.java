@@ -35,6 +35,11 @@ class MoneyVersionTest {
     @Mock MoneyRepository repo;
     @Mock MoneyLedger ledger;
 
+    /** A zone whose date differs from the server's right now (UTC+14 and UTC-12 are 26h apart). */
+    private static final java.time.ZoneId ZONE =
+            java.time.LocalDate.now(java.time.ZoneId.of("Etc/GMT-14")).equals(java.time.LocalDate.now())
+                    ? java.time.ZoneId.of("Etc/GMT+12") : java.time.ZoneId.of("Etc/GMT-14");
+
     private final ObjectMapper json = new ObjectMapper();
     private MoneyService service;
     private MoneyState stored;
@@ -54,6 +59,7 @@ class MoneyVersionTest {
         service = new MoneyService(repo, json, null, ledger);
         org.mockito.Mockito.lenient().when(ledger.load(any(), any())).thenReturn(json.createObjectNode());
         org.mockito.Mockito.lenient().when(ledger.accounts(any())).thenReturn(json.createArrayNode());
+        org.mockito.Mockito.lenient().when(ledger.zoneOf(any())).thenReturn(ZONE);
         when(repo.lockById(USER)).thenAnswer(inv -> Optional.ofNullable(reload()));
         // get() peeks at the document unlocked and locks only when it must migrate.
         org.mockito.Mockito.lenient().when(repo.peekData(USER))
@@ -111,5 +117,13 @@ class MoneyVersionTest {
         legacy.putObject("settings").put("accountsSeeded", true);
         assertThat(MoneyService.needsWrite(legacy)).isTrue();
         assertThat(MoneyService.needsWrite(doc("x"))).isFalse();
+    }
+
+    /* CRB-11: the ledger window is dated by the user's day, not the server's. */
+    @Test
+    void theLedgerWindowEndsOnTheUsersToday() {
+        service.save(USER, doc("plain"), null);
+        service.get(USER);
+        org.mockito.Mockito.verify(ledger).load(USER, java.time.LocalDate.now(ZONE));
     }
 }

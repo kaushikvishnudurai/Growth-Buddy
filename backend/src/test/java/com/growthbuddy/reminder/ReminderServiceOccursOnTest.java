@@ -364,4 +364,17 @@ class ReminderServiceOccursOnTest {
                     .as("create on %s", d).isEqualTo(d);
         }
     }
+
+    /* CRB-3: an uncapped range built a 725 MB list in heap from one request. */
+    @Test
+    void occurrencesRefuseASpanOver400Days() {
+        CalendarReminderRepository repo = mock(CalendarReminderRepository.class);
+        ReminderService svc = serviceWith(repo);
+        UUID user = UUID.randomUUID();
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                svc.occurrences(user, LocalDate.of(1, 1, 1), LocalDate.of(9999, 12, 31)))
+                .isInstanceOf(com.growthbuddy.common.ApiException.class);
+        org.mockito.Mockito.verifyNoInteractions(repo);
+        svc.occurrences(user, TODAY, TODAY.plusDays(ReminderService.MAX_OCCURRENCE_SPAN_DAYS));
+    }
 }

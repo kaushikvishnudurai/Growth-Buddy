@@ -166,7 +166,7 @@ class OtpMailCapTest {
         String fresh = "new@example.com";
         hits.put("otpmail:" + fresh, AuthService.OTP_MAIL_PER_HOUR); // e.g. earlier signups that never verified
         assert429(() -> auth.signup(new SignupRequest(fresh, PASSWORD, null, null)));
-        verify(users, never()).save(any());
+        verify(users, never()).saveAndFlush(any());
         assertThat(hits).containsKey("otpmail:" + fresh);
     }
 

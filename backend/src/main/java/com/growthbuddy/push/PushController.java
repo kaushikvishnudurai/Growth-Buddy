@@ -1,7 +1,9 @@
 package com.growthbuddy.push;
 
 import com.growthbuddy.common.CurrentUser;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -28,13 +30,13 @@ public class PushController {
 
     @PostMapping("/subscribe")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void subscribe(@RequestBody SubscribeRequest req) {
+    public void subscribe(@Valid @RequestBody SubscribeRequest req) {
         push.subscribe(CurrentUser.id(), req.endpoint(), req.p256dh(), req.auth());
     }
 
     @PostMapping("/unsubscribe")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void unsubscribe(@RequestBody EndpointRequest req) {
+    public void unsubscribe(@Valid @RequestBody EndpointRequest req) {
         push.unsubscribe(req.endpoint());
     }
 
@@ -49,11 +51,11 @@ public class PushController {
     record PublicKeyResponse(boolean configured, String publicKey) {}
 
     record SubscribeRequest(
-            @NotBlank String endpoint,
-            @NotBlank String p256dh,
-            @NotBlank String auth) {}
+            @NotBlank @Size(max = 2048) String endpoint,
+            @NotBlank @Size(max = 255) String p256dh,
+            @NotBlank @Size(max = 255) String auth) {}
 
-    record EndpointRequest(@NotBlank String endpoint) {}
+    record EndpointRequest(@NotBlank @Size(max = 2048) String endpoint) {}
 
     record TestResponse(int delivered) {}
 }

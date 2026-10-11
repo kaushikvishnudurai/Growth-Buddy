@@ -39,6 +39,24 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     @Query(value = "update users set ui_prefs = :prefs where id = :id", nativeQuery = true)
     int updateUiPrefs(@Param("id") String id, @Param("prefs") String prefsJson);
 
+    /**
+     * The digest claim: stamps today only if no run has yet, so exactly one
+     * instance (or overlapping run) wins the send. One column, not a save of the
+     * run-start snapshot, which reverted XP and settings written meanwhile (CRB-8).
+     */
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.transaction.annotation.Transactional
+    @Query("update User u set u.lastDigestOn = :day where u.id = :id "
+            + "and (u.lastDigestOn is null or u.lastDigestOn <> :day)")
+    int claimDigest(@Param("id") UUID id, @Param("day") java.time.LocalDate day);
+
+    /** A failed send hands the claim back, so the next hourly tick retries. */
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.transaction.annotation.Transactional
+    @Query("update User u set u.lastDigestOn = :previous where u.id = :id and u.lastDigestOn = :day")
+    int releaseDigest(@Param("id") UUID id, @Param("day") java.time.LocalDate day,
+                      @Param("previous") java.time.LocalDate previous);
+
     /** Everyone a bill-due WhatsApp may go to: only a number its owner proved by OTP. */
 
     /**

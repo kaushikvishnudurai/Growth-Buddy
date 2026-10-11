@@ -196,8 +196,7 @@ public class AuthService {
                 issueVerificationOtpLimited(existing);
                 return AuthUserResponse.from(existing);
             }
-            throw new ApiException(org.springframework.http.HttpStatus.CONFLICT,
-                    "An account with this email already exists. Sign in, or reset your password if you've forgotten it.");
+            throw emailTaken();
         }
         requireOtpMailBudget(email);
         User user = new User();
@@ -205,7 +204,14 @@ public class AuthService {
         user.setDisplayName(resolveDisplayName(req.displayName(), email));
         user.setTimezone(resolveTimezone(req.timezone()));
         user.setEmailVerified(false);
-        users.save(user);
+        try {
+            // Flushed here, not at commit: a double-tapped signup races past the
+            // lookup above, and the loser's insert must hit uq_users_email where
+            // it can still become the same 409 (CRB-2), not a 500 at commit.
+            users.saveAndFlush(user);
+        } catch (org.springframework.dao.DataIntegrityViolationException dup) {
+            throw emailTaken();
+        }
 
         PasswordCredential c = new PasswordCredential();
         c.setUserId(user.getId());
@@ -215,6 +221,11 @@ public class AuthService {
 
         issueVerificationOtp(user, "verification");
         return AuthUserResponse.from(user);
+    }
+
+    private static ApiException emailTaken() {
+        return new ApiException(org.springframework.http.HttpStatus.CONFLICT,
+                "An account with this email already exists. Sign in, or reset your password if you've forgotten it.");
     }
 
     /**
@@ -329,16 +340,28 @@ public class AuthService {
         // After commit: a courtesy mail can't fail the request anyway, so there is
         // no reason to hold the caller's transaction (and its connection) open
         // through SMTP — nor to announce a change that then rolls back.
+        afterCommit(send);
+    }
+
+    /**
+     * Runs {@code r} once the caller's transaction commits (now, outside one).
+     * Every code mail goes through here too: sent inside the transaction, SMTP
+     * held the token row's locks and a pooled connection for up to the mail
+     * timeout, and a commit that then failed left a code for an account that
+     * never existed (CRB-1). A failed send still reaches the client as an error;
+     * the row is already saved, so "resend" works.
+     */
+    private static void afterCommit(Runnable r) {
         if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
             org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
                     new org.springframework.transaction.support.TransactionSynchronization() {
                         @Override
                         public void afterCommit() {
-                            send.run();
+                            r.run();
                         }
                     });
         } else {
-            send.run();
+            r.run();
         }
     }
 
@@ -487,6 +510,13 @@ public class AuthService {
             users.save(user);
         }
         sessions.revokeAllForUser(userId);
+        // Every device stops hearing from this account now, not at the purge: a
+        // subscription outlives the session it was made in (CRS-3). PushService
+        // also skips a pending account; this keeps a cancelled-then-reused
+        // browser from being pushed the old account's reminders. A cancel
+        // re-subscribes from the app.
+        em.createNativeQuery("DELETE FROM push_subscriptions WHERE user_id = ?1")
+                .setParameter(1, userId).executeUpdate();
         notifyQuietly(user.getEmail(), "Your Growth Buddy account will be deleted on " + deletionDate(user),
                 greeting(user) + "We received your request to delete your Growth Buddy account. It is "
                         + "signed out everywhere, and it and all of its data will be permanently deleted on "
@@ -702,7 +732,7 @@ public class AuthService {
         t.setNewEmail(newEmail);
         t.setExpiresAt(Instant.now().plus(OTP_TTL_MINUTES, ChronoUnit.MINUTES));
         emailChangeTokens.save(t);
-        mail.sendOtp(newEmail, user.getDisplayName(), otp, "email change");
+        afterCommit(() -> mail.sendOtp(newEmail, user.getDisplayName(), otp, "email change"));
     }
 
     /**
@@ -872,7 +902,7 @@ public class AuthService {
         waOtpTokens.save(t);
 
         if (whatsApp != null && whatsApp.isConfigured()) {
-            whatsApp.sendOtp(normalized, otp);
+            afterCommit(() -> whatsApp.sendOtp(normalized, otp));
         } else if (prod) {
             log.error("WhatsApp not configured — cannot deliver OTP to {}.", normalized);
         } else {
@@ -1100,7 +1130,7 @@ public class AuthService {
         // Prefer the values the user just typed (unsaved form) over stored ones.
         Integer age = pick(form == null ? null : form.ageYears(), user.getAgeYears());
         Integer heightCm = pick(form == null ? null : form.heightCm(), user.getHeightCm());
-        Integer weightKg = pick(form == null ? null : form.weightKg(), user.getWeightKg());
+        java.math.BigDecimal weightKg = pick(form == null ? null : form.weightKg(), user.getWeightKg());
         String fitnessGoal = pick(form == null ? null : form.fitnessGoal(), user.getFitnessGoal());
         String diet = pick(form == null ? null : form.dietPreference(), user.getDietPreference());
         String about = pick(form == null ? null : form.aboutMe(), user.getAboutMe());
@@ -1110,7 +1140,7 @@ public class AuthService {
         Integer waterGoal = pick(form == null ? null : form.dailyWaterGoalMl(), user.getDailyWaterGoalMl());
 
         NutritionSuggestionResponse base =
-                heuristicSuggestion(weightKg, fitnessGoal, diet, allergicTo, foodGoal, waterGoal);
+                heuristicSuggestion(weightKg == null ? null : weightKg.intValue(), fitnessGoal, diet, allergicTo, foodGoal, waterGoal);
         if (!openai.isConfigured()) {
             return base;
         }
@@ -1150,7 +1180,9 @@ public class AuthService {
         t.setUserId(user.getId());
         t.setExpiresAt(Instant.now().plus(OTP_TTL_MINUTES, ChronoUnit.MINUTES));
         verifyTokens.save(t);
-        mail.sendOtp(user.getEmail(), user.getDisplayName(), otp, purpose);
+        String to = user.getEmail();
+        String name = user.getDisplayName();
+        afterCommit(() -> mail.sendOtp(to, name, otp, purpose));
     }
 
     /* Per-account cap on verification emails, on top of the per-IP limit. */

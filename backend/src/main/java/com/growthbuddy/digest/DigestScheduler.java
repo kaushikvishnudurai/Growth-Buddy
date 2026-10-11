@@ -34,7 +34,7 @@ public class DigestScheduler {
 
     // Not @Transactional: this loop sends a blocking SMTP email per due user; a
     // loop-wide transaction would pin one DB connection for the whole run. Each
-    // users.save() is its own short transaction.
+    // claim / release is its own short transaction.
     @Scheduled(cron = "0 0 * * * *")
     public void dispatchDigests() {
         List<User> candidates = users.findByDigestFrequencyNot("off");
@@ -58,18 +58,20 @@ public class DigestScheduler {
             if (weekly && now.getDayOfWeek() != DayOfWeek.MONDAY) {
                 continue;
             }
+            // Claim before the send: the conditional UPDATE lets one run win.
+            LocalDate previous = user.getLastDigestOn();
+            if (users.claimDigest(user.getId(), today) != 1) {
+                continue; // another instance or run already has today's
+            }
             try {
                 digest.sendDigest(user, weekly, today);
             } catch (Exception ex) {
-                // Don't stamp lastDigestOn on a failure: that records a digest as
-                // delivered when it never left the building. Left unstamped, the
-                // next hourly tick that day tries again; lastDigestOn is what keeps
-                // it to one send per local day.
+                // Hand the claim back: a stamp on a failure records a digest as
+                // delivered when it never left the building. Released, the next
+                // hourly tick that day tries again.
+                users.releaseDigest(user.getId(), today, previous);
                 log.warn("Failed to send digest for user {}: {}", user.getId(), ex.getMessage());
-                continue;
             }
-            user.setLastDigestOn(today);
-            users.save(user);
         }
     }
 

@@ -56,6 +56,10 @@ spring:
           # (users.id etc. are varchar(36)); the default BINARY(16) mapping made
           # every UUID lookup miss and broke ddl-auto updates.
           preferred_uuid_jdbc_type: CHAR
+        # An EAGER collection loaded through a query (reminder skip days) was one
+        # select per owner: 1 + N per reminder list and per scheduler snapshot
+        # refresh (CRB-7). Batched, it is one IN (...) per 100 owners.
+        default_batch_fetch_size: 100
     open-in-view: false
 
   task:
@@ -97,6 +101,11 @@ management:
 
 # Cross-origin so the static file:// / localhost frontend can call the API.
 growthbuddy:
+  # true ONLY behind a proxy that appends X-Forwarded-For (Render, Caddy): per-IP
+  # limits, session IPs and HSTS then use its right-most entry (ClientIp). Bound
+  # here so the documented TRUST_PROXY works; before, only the relaxed-binding
+  # name GROWTHBUDDY_TRUST_PROXY did, and .env.example's TRUST_PROXY bound nothing.
+  trust-proxy: ${TRUST_PROXY:false}
   cors:
     # Comma-separated origins; default is local development only.
     # Override via CORS_ALLOWED_ORIGINS in deployment.

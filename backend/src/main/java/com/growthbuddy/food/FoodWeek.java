@@ -217,7 +217,7 @@ public class FoodWeek {
         }
         String g = u.getFitnessGoal() == null ? "" : u.getFitnessGoal().toLowerCase(Locale.ROOT);
         double perKg = g.contains("gain") || g.contains("bulk") || g.contains("muscle") ? 1.6 : 1.2;
-        return (int) Math.round(u.getWeightKg() * perKg);
+        return (int) Math.round(u.getWeightKg().doubleValue() * perKg);
     }
 
     // ponytail: carbs 50% and fat 30% of the calorie goal, fiber a flat 30 g.

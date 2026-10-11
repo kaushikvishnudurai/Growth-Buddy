@@ -29,27 +29,43 @@ interface EmailVerificationTokenRepository extends JpaRepository<EmailVerificati
 
     List<EmailVerificationToken> findByUserIdAndConsumedAtIsNull(UUID userId);
 
-    @Modifying
-    @Query("delete from EmailVerificationToken t where t.userId = :userId")
-    void deleteAllForUser(@Param("userId") UUID userId);
+    List<EmailVerificationToken> findByUserId(UUID userId);
+
+    /**
+     * A plain read, then a delete by primary key. Not {@code delete ... where
+     * user_id = ?}: on MySQL's REPEATABLE READ that statement takes a gap lock on
+     * ix_*_user even when nothing matches (every new signup), two concurrent
+     * signups whose UUIDs share a gap each hold one, and each one's following
+     * INSERT waits on the other's: a deadlock (CRB-1). A plain SELECT locks
+     * nothing; an empty list deletes nothing and locks nothing.
+     */
+    default void deleteAllForUser(UUID userId) {
+        deleteAllInBatch(findByUserId(userId));
+    }
 }
 
 interface PasswordResetTokenRepository extends JpaRepository<PasswordResetToken, String> {
 
     List<PasswordResetToken> findByUserIdAndConsumedAtIsNull(UUID userId);
 
-    @Modifying
-    @Query("delete from PasswordResetToken t where t.userId = :userId")
-    void deleteAllForUser(@Param("userId") UUID userId);
+    List<PasswordResetToken> findByUserId(UUID userId);
+
+    /** See {@link EmailVerificationTokenRepository#deleteAllForUser}. */
+    default void deleteAllForUser(UUID userId) {
+        deleteAllInBatch(findByUserId(userId));
+    }
 }
 
 interface EmailChangeTokenRepository extends JpaRepository<EmailChangeToken, String> {
 
     List<EmailChangeToken> findByUserIdAndConsumedAtIsNull(UUID userId);
 
-    @Modifying
-    @Query("delete from EmailChangeToken t where t.userId = :userId")
-    void deleteAllForUser(@Param("userId") UUID userId);
+    List<EmailChangeToken> findByUserId(UUID userId);
+
+    /** See {@link EmailVerificationTokenRepository#deleteAllForUser}. */
+    default void deleteAllForUser(UUID userId) {
+        deleteAllInBatch(findByUserId(userId));
+    }
 }
 
 interface UserTotpRepository extends JpaRepository<UserTotp, UUID> {
@@ -75,7 +91,10 @@ interface WhatsAppOtpTokenRepository extends JpaRepository<WhatsAppOtpToken, Str
 
     List<WhatsAppOtpToken> findByUserIdAndConsumedAtIsNull(UUID userId);
 
-    @Modifying
-    @Query("delete from WhatsAppOtpToken t where t.userId = :userId")
-    void deleteAllForUser(@Param("userId") UUID userId);
+    List<WhatsAppOtpToken> findByUserId(UUID userId);
+
+    /** See {@link EmailVerificationTokenRepository#deleteAllForUser}. */
+    default void deleteAllForUser(UUID userId) {
+        deleteAllInBatch(findByUserId(userId));
+    }
 }
