@@ -92,6 +92,7 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
   A quit habit's days are `.is-clean` / `.is-slipped`, and its row's tick is `.gb-slip-btn` (44px).
 - Fixed layers on a phone pad for `env(safe-area-inset-*)` (`index.html` has `viewport-fit=cover`,
   so `100dvh` runs under the notch and home indicator): header, nav, modal overlay, toasts, PTR.
+- Home on desktop is a CSS column flow (`.gb-dash--single`, `column-width: 440px`); `.gb-dash-qa` and `.gb-dash-pin` (Quick add, the one-thing card) are `column-span: all` so they read first. The habit strip there is an `auto-fill` grid. A landscape phone tightens Quick add (one row, no hint) and the week-review nudge.
 - The tablet phone-frame (both rules) also needs `min-height: 560px`: a landscape phone stays full-screen.
 - A landscape phone (`orientation: landscape` and `max-height: 500px`, under 1024 wide) turns `.gb-app` into a grid with the nav as a 60px icon rail on the left and the More sheet as a panel beside it; content gets ~85% of the height instead of 71%.
 - The tablet phone-frame widens 440 -> 600px at 560px, the lowest viewport breakpoint any grid
