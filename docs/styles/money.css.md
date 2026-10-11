@@ -43,9 +43,10 @@ list (e.g. "(14)" = financial health).
 | Home widget (mini card) | `MoneyHomeCard` |
 | Star rating (reflection, 12) — `.gb-stars` + its caption; the amber fill is decoration, the caption carries the meaning | reflection modal |
 | Every month (`gb-money-rec-row`, `.is-paused` dims; `gb-money-exp-amt.is-in` green; `gb-money-forecast-in`) | income tab, forecast |
-| Budget rollover (`gb-money-roll` 44px checkbox label in the set-budgets row, which is a grid so every amount box starts at one x (≤380px: Roll over drops to a second row); `gb-money-bcard-carry` "+₹X carried", `.is-less` when negative) | set-budgets modal, budgets |
+| Budget rollover (`gb-money-roll` 44px checkbox label in the set-budgets row, which is a grid so every amount box starts at one x (≤440px, every phone: Roll over drops to a second row; the name wraps at word breaks only, `overflow-wrap: break-word`); `gb-money-bcard-carry` "+₹X carried", `.is-less` when negative) | set-budgets modal, budgets |
 | Other currencies (`gb-money-fx*` rate rows + account selects, `gb-money-exp-orig` under an amount, `gb-money-account-home` under a foreign balance) | customise pane, rows, accounts |
 | Load older (`gb-money-older`, sits with `.gb-money-showall`) | expense list |
+| Slip check (`gb-money-jump-warn`: the 20x question as a warning above Save) and quiet deletes (`.gb-money-sheet .gb-btn--primary ~ .gb-btn--danger`: a dialog's Delete under its Save is red text, not a red block; a confirm's red primary is untouched) | expense dialog, every Money dialog with a delete |
 | Responsive | — |
 
 Threshold colours: `is-near` at ≥80% of a budget, `is-over` above 100% — the JS in
