@@ -3315,11 +3315,14 @@ function ScreenMoney({
     // A tag with no budget starts on what its last 30 days suggest (budgetsFrom,
     // 10% under), marked as such: Save accepts it, typing over it drops the mark.
     const suggested = {};
-    // Capped at the field's max: one outlier month must not make Save refuse the form.
-    budgetsFrom(money, todayKey(), Infinity).forEach((b) => (suggested[b.category] = Math.min(b.amount, 10000000)));
+    // Not Others (as budgetOffer), and capped at the field's max so one outlier
+    // month can't make Save refuse the form.
+    budgetsFrom(money, todayKey(), Infinity)
+      .filter((b) => b.category !== 'others')
+      .forEach((b) => (suggested[b.category] = Math.min(b.amount, 10000000)));
     const inputs = mergedCats(money).map((c) => {
       const mark = suggested[c.key]
-        ? h('span', { class: 'gb-money-budget-suggested' }, 'Suggested from your spending')
+        ? h('span', { class: 'gb-money-budget-suggested' }, 'Suggested')
         : null;
       return {
         c,

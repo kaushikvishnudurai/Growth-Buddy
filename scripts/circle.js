@@ -2381,7 +2381,9 @@ function ChallengesPanel({ api, currentUserId, wins }) {
     }
     if (!card) return;
     const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    requestAnimationFrame(() => card.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' }));
+    // After a closing sheet (Browse, the code form) has handed focus back to its
+    // opener at the top (a11y.js, 180ms + a frame): focusing that scrolled the page back up.
+    setTimeout(() => card.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' }), 300);
   }
 
   function refresh() {

@@ -38,12 +38,17 @@ const today = (() => {
 })();
 
 /* ---- API, for setup and cleanup only ---- */
-async function login(email) {
+async function login(email, retry = true) {
   const r = await fetch(BASE + '/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password: PASSWORD }),
   });
+  // The local auth limiter is shared by every run; it clears within ~20 s.
+  if (r.status === 429 && retry) {
+    await sleep(21000);
+    return login(email, false);
+  }
   if (!r.ok) throw new Error('login ' + email + ': ' + r.status);
   return (await r.json()).token;
 }
@@ -58,6 +63,13 @@ async function call(token, path, opts = {}) {
 }
 const token = await login(EMAIL);
 const moneyDoc = async () => (await call(token, '/api/money')).body;
+/* Budgets as they were just before a step, put back after it. Only that window:
+   the account is shared, and a snapshot from the start of the run would undo a
+   budget another run set since. */
+async function budgetsNow() {
+  const d = await moneyDoc();
+  return { budgets: d.budgets || {}, rollover: d.rollover || {} };
+}
 async function putBudgets(budgets, rollover) {
   const { body, etag } = await call(token, '/api/money');
   const doc = { ...body, budgets, rollover };
@@ -69,14 +81,29 @@ const deleteTx = (ids) =>
 
 const start = await moneyDoc();
 const BUDGETS = start.budgets || {};
-const ROLLOVER = start.rollover || {};
-const NOTE = 'e2e ux food';
-// Only a tag with no budget can be offered one.
-if (Number(BUDGETS.food) > 0) throw new Error('the QA account has a Food budget; this run needs it unset');
+const NOTE = 'e2e ux modules';
+// The offer is for the 5th expense this month in a tag with no budget, so the tag
+// must have none yet: the account is shared, and other runs log Food.
+const month = today.slice(0, 7);
+const TAG = [
+  ['education', 'Education'],
+  ['entertainment', 'Entertainment'],
+  ['transport', 'Transport'],
+  ['shopping', 'Shopping'],
+  ['food', 'Food'],
+].find(([k]) => !(Number(BUDGETS[k]) > 0) && !start.expenses.some((e) => e.category === k && e.date.startsWith(month)));
+if (!TAG) throw new Error('every tag has a budget or spending this month; nothing to offer a budget on');
+const [TAG_KEY, TAG_LABEL] = TAG;
+const mine = (doc) => doc.expenses.filter((e) => e.note === NOTE).map((e) => e.id);
 
 /* ---- the page ---- */
-const browser = await puppeteer.connect({ browserURL: CDP });
-const page = await browser.newPage();
+const browser = await puppeteer.connect({ browserURL: CDP, protocolTimeout: 120000 });
+// Its own context: cookies are per host, so another tab on localhost signing out
+// would otherwise sign this run out too.
+const ctx = await browser.createBrowserContext();
+const page = await ctx.newPage();
+// A shared, windowed Chrome throttles background tabs: timers and focus stall.
+await page.bringToFront();
 const fakes = new Map(); // "METHOD path" -> body to answer with
 await page.setRequestInterception(true);
 page.on('request', (req) => {
@@ -167,7 +194,6 @@ if (await page.$('input[type=password]')) {
   await sleep(1500);
 }
 
-const created = []; // expense ids to delete at the end
 const partnerToken = await login(PARTNER).catch(() => null);
 let circleId = null;
 
@@ -185,13 +211,12 @@ try {
       kind: 'expense',
       id: 'e2eux' + vpName + i + Date.now().toString(36),
       amount: 400,
-      category: 'food',
+      category: TAG_KEY,
       note: NOTE,
       date: today,
       createdAt: Date.now() - i * 1000,
     }));
     await call(token, '/api/money/tx', { method: 'POST', body: JSON.stringify({ upserts: seeded, deletes: [] }) });
-    created.push(...seeded.map((s) => s.id));
     await go('money');
     taps = 0;
     let from = seen.length;
@@ -199,37 +224,49 @@ try {
     await typeInto('.gb-modal input[inputmode=decimal]', '150');
     await typeInto('.gb-modal input[placeholder^="e.g. Lunch"]', NOTE);
     await tap('.gb-modal button', /^\s*Add expense\s*$/);
-    check(taps === 2, `[${vpName}] 5th Food expense logged in 2 taps (got ${taps})`);
+    check(taps === 2, `[${vpName}] 5th ${TAG_LABEL} expense logged in 2 taps (got ${taps})`);
     check(!!(await waitAnswered('POST', /^\/api\/money\/tx$/, from)), `[${vpName}] expense POST /api/money/tx 2xx`);
-    check(await waitVisible('.gb-toast', /Set Food to about/), `[${vpName}] toast offers a Food budget`);
+    check(await waitVisible('.gb-toast', new RegExp('Set ' + TAG_LABEL + ' to about')), `[${vpName}] toast offers a ${TAG_LABEL} budget`);
     await shot('money-budget-offer-' + vpName);
     from = seen.length;
+    let was = await budgetsNow();
     await tap('.gb-toast-action', /Set budget/);
     check(!!(await waitAnswered('PUT', /^\/api\/money$/, from)), `[${vpName}] budget PUT /api/money 2xx`);
     const afterOffer = await moneyDoc();
-    check(Number(afterOffer.budgets.food) > 0, `[${vpName}] Food budget saved (${afterOffer.budgets.food})`);
-    created.push(...afterOffer.expenses.filter((e) => e.note === NOTE && !created.includes(e.id)).map((e) => e.id));
-    await putBudgets(BUDGETS, ROLLOVER);
+    check(Number(afterOffer.budgets[TAG_KEY]) > 0, `[${vpName}] ${TAG_LABEL} budget saved (${afterOffer.budgets[TAG_KEY]})`);
+    await putBudgets(was.budgets, was.rollover);
 
     /* Money F04: Set budgets opens on suggestions from the last 30 days; Save
        alone sets them. */
     await go('money');
     taps = 0;
-    await tap('button', /^\s*Set budgets\s*$/);
-    const food = await page.evaluate(() => {
+    was = await budgetsNow();
+    // The health card's "Set budgets" when none are set, else the budgets card's Edit.
+    await page.waitForSelector('.gb-money-health-head, .gb-sectiontitle', { timeout: 8000 });
+    const opener = await page.evaluateHandle(
+      () =>
+        [...document.querySelectorAll('button')].find((b) => /^\s*Set budgets\s*$/.test(b.textContent)) ||
+        [...document.querySelectorAll('.gb-sectiontitle')]
+          .find((t) => /Monthly budgets/.test(t.textContent))
+          ?.parentElement.querySelector('button')
+    );
+    await opener.asElement().click();
+    taps++;
+    await page.waitForSelector('.gb-money-budget-field', { visible: true, timeout: 8000 });
+    const food = await page.evaluate((label) => {
       const row = [...document.querySelectorAll('.gb-money-budget-field')].find((r) =>
-        /^Food/.test(r.querySelector('.gb-money-budget-field-label')?.textContent || '')
+        (r.querySelector('.gb-money-budget-field-label')?.textContent || '').startsWith(label)
       );
       return row && { value: row.querySelector('input[type=number]').value, marked: !!row.querySelector('.gb-money-budget-suggested') };
-    });
-    check(!!food && Number(food.value) > 0 && food.marked, `[${vpName}] Food prefilled and marked suggested (${food && food.value})`);
+    }, TAG_LABEL);
+    check(!!food && Number(food.value) > 0 && food.marked, `[${vpName}] ${TAG_LABEL} prefilled and marked suggested (${food && food.value})`);
     await shot('money-set-budgets-' + vpName);
     from = seen.length;
     await tap('.gb-modal button', /^\s*Save budgets\s*$/);
     check(taps === 2, `[${vpName}] budgets set in 2 taps, 0 fields (got ${taps})`);
     check(!!(await waitAnswered('PUT', /^\/api\/money$/, from)), `[${vpName}] budgets PUT /api/money 2xx`);
-    check(Number((await moneyDoc()).budgets.food) === Number(food && food.value), `[${vpName}] suggested Food budget saved`);
-    await putBudgets(BUDGETS, ROLLOVER);
+    check(Number((await moneyDoc()).budgets[TAG_KEY]) === Number(food && food.value), `[${vpName}] suggested ${TAG_LABEL} budget saved`);
+    await putBudgets(was.budgets, was.rollover);
 
     /* Money F11: a big buy offers Reflect on the toast; nothing opens by itself. */
     await go('money');
@@ -249,21 +286,24 @@ try {
     check(await waitVisible('.gb-modal', /Quick reflection/), `[${vpName}] Reflect opens the sheet`);
     await page.keyboard.press('Escape');
     await sleep(400);
-    created.push(...(await moneyDoc()).expenses.filter((e) => e.note === NOTE && !created.includes(e.id)).map((e) => e.id));
-    await deleteTx(created.splice(0));
+    await deleteTx(mine(await moneyDoc()));
 
     /* Notes F09: + then Note lands in a focused composer. */
     await go('home');
     taps = 0;
     await tap('button[aria-label="Quick add"]');
     await tap('.gb-modal button', /Jot something down/);
-    const focused = await page.waitForFunction(
-      () => {
-        const c = document.querySelector('.gb-note-composer');
-        return c && c.classList.contains('is-open') && c.contains(document.activeElement);
-      },
-      { timeout: 8000 }
-    ).then(() => true, () => false);
+    // Polled by hand: the screen change can swap the document under a waitForFunction.
+    let focused = false;
+    for (let t = 0; t < 80 && !focused; t++) {
+      focused = await page
+        .evaluate(() => {
+          const c = document.querySelector('.gb-note-composer');
+          return !!c && c.classList.contains('is-open') && c.contains(document.activeElement);
+        })
+        .catch(() => false);
+      if (!focused) await sleep(100);
+    }
     check(focused, `[${vpName}] Notes composer open and focused`);
     check(taps === 2, `[${vpName}] + Note to typing in 2 taps (got ${taps})`);
     await shot('notes-compose-' + vpName);
@@ -294,7 +334,7 @@ try {
        chip still opens its sheet. The thread read is faked to carry the chips. */
     const chat = (await call(token, '/api/mentor/chat')).body;
     const tag = vpName + Date.now().toString(36);
-    fakes.set('GET /api/mentor/chat', {
+    const fakeThread = {
       threadId: chat.threadId,
       messages: [
         { id: 'e2e-u', role: 'user', content: 'Help me start', createdAt: new Date().toISOString(), actions: [] },
@@ -310,7 +350,10 @@ try {
           ],
         },
       ],
-    });
+    };
+    // Both reads: a repaint (an Undo re-renders) reloads the open thread by id.
+    fakes.set('GET /api/mentor/chat', fakeThread);
+    fakes.set('GET /api/mentor/threads/' + chat.threadId + '/messages', fakeThread.messages);
     await go('mentor');
     for (const [label, kind, re] of [
       ['Add as task', 'task', /^\/api\/tasks$/],
@@ -328,7 +371,7 @@ try {
       check(!!(await waitAnswered('DELETE', new RegExp(re.source.slice(0, -1) + '/'), from)), `[${vpName}] ${kind} Undo DELETE 2xx`);
     }
     await tap('.gb-msg-action', /Remind me/);
-    check(await waitVisible('.gb-modal', /E2E chip reminder/), `[${vpName}] reminder chip still opens its sheet`);
+    check(await waitVisible('.gb-modal button', /Add reminder/), `[${vpName}] reminder chip still opens its sheet`);
     await page.keyboard.press('Escape');
     await sleep(300);
     fakes.clear();
@@ -354,7 +397,7 @@ try {
       check(!!(await waitAnswered('POST', /\/join$/, from)), `[${vpName}] join POST 2xx`);
       const sel = '[data-circle-id="' + circleId + '"] .gb-challenge-offer button';
       await page.waitForSelector(sel, { visible: true, timeout: 8000 }).catch(() => null);
-      await sleep(900); // the smooth scroll
+      await sleep(1300); // the sheet's focus hand-back, then the smooth scroll
       const inView = await page.evaluate((id) => {
         const card = document.querySelector('[data-circle-id="' + id + '"]');
         if (!card) return false;
@@ -391,18 +434,28 @@ try {
   fakes.clear();
   await go('money'); // the real document back in this browser's copy
 } finally {
-  await deleteTx(created).catch((e) => failures.push('cleanup expenses: ' + e.message));
-  await putBudgets(BUDGETS, ROLLOVER).catch((e) => failures.push('cleanup budgets: ' + e.message));
+  await moneyDoc()
+    .then((d) => deleteTx(mine(d)))
+    .catch((e) => failures.push('cleanup expenses: ' + e.message));
+  // A step that failed between setting the tag's budget and putting it back.
+  await budgetsNow()
+    .then(({ budgets, rollover }) => {
+      if (!(Number(budgets[TAG_KEY]) > 0)) return;
+      const rest = { ...budgets };
+      delete rest[TAG_KEY];
+      return putBudgets(rest, rollover);
+    })
+    .catch((e) => failures.push('cleanup budgets: ' + e.message));
   if (circleId) {
     await call(token, '/api/circles/' + circleId + '/leave', { method: 'POST' }).catch(() => {});
     if (partnerToken) await call(partnerToken, '/api/circles/' + circleId, { method: 'DELETE' }).catch(() => {});
   }
-  await page.close();
+  await ctx.close();
   browser.disconnect();
 }
 
 const end = await moneyDoc();
-check(JSON.stringify(end.budgets || {}) === JSON.stringify(BUDGETS), 'budgets restored');
+check(!(Number((end.budgets || {})[TAG_KEY]) > 0), 'the ' + TAG_LABEL + ' budget this run set is gone again');
 check(!end.expenses.some((e) => e.note === NOTE), 'test expenses removed');
 
 if (failures.length) {
