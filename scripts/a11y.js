@@ -164,11 +164,13 @@ function watchFields(overlay) {
 
 export function initA11y() {
   // Remember the last focus outside any modal so we can restore it on close.
+  // Not a toast's button either: it opens no dialog, and its locator matched the
+  // next toast's Undo, whose focus then held that delete (app.js holdToasts).
   document.addEventListener(
     'focusin',
     (e) => {
       const t = e.target;
-      if (t && t.closest && !t.closest('.gb-modal-overlay, ' + MODAL)) {
+      if (t && t.closest && !t.closest('.gb-modal-overlay, .gb-toast-stack, ' + MODAL)) {
         lastFocused = t;
         lastFocusKey = focusLocator(t);
       }

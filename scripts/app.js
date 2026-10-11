@@ -130,6 +130,7 @@ import {
   onLocalNotificationAction,
 } from './native.js';
 import { registerToast } from './toast.js';
+import { createUndoQueue } from './undo-queue.js';
 import { initA11y, focusLocator, refocus } from './a11y.js';
 import { initErrorReporting } from './error-report.js';
 import { initVitals, markHomePainted } from './vitals.js';
@@ -481,8 +482,13 @@ function paintToasts() {
   refreshIcons();
 }
 
-function dismissToast(id) {
+/* `quiet`: the toast's own onGone is not run (its Undo was tapped, or its
+   undo window already settled). The close button is not quiet: closing an
+   Undo toast means "done", so its delete goes now. */
+function dismissToast(id, quiet) {
+  const gone = state.toasts.find((t) => t.id === id);
   state.toasts = state.toasts.filter((t) => t.id !== id);
+  if (gone && gone.onGone && !quiet) gone.onGone();
   dropStaleToastTimers();
   paintToasts();
 }
@@ -504,6 +510,7 @@ function armToast(id, ms) {
 function holdToasts() {
   if (toastsHeld) return;
   toastsHeld = true;
+  undoQueue.hold(); // an Undo toast's delete waits with it
   const now = Date.now();
   for (const [id, t] of toastTimers) {
     clearTimeout(t.handle);
@@ -513,6 +520,7 @@ function holdToasts() {
 function releaseToasts() {
   if (!toastsHeld) return;
   toastsHeld = false;
+  undoQueue.release();
   // A little time back after letting go, so it doesn't vanish the instant you look away.
   for (const [id, t] of toastTimers) armToast(id, Math.max(t.left, 1500));
 }
@@ -524,7 +532,10 @@ function dropStaleToastTimers() {
     toastTimers.delete(id);
   }
   // The stack that was being hovered is gone, and with it any mouseleave.
-  if (!state.toasts.length) toastsHeld = false;
+  if (!state.toasts.length) {
+    toastsHeld = false;
+    undoQueue.release();
+  }
 }
 
 /* How long an error stays: never under six seconds, longer the more there is
@@ -561,8 +572,10 @@ function isConnectionToast(t) {
 }
 
 /* `action` ({label, run}) puts one button on the toast — a reminder's Snooze.
-   Tapping it runs it and dismisses the toast. */
-function pushToast(message, kind, durationMs, action) {
+   Tapping it runs it and dismisses the toast. `durationMs: Infinity` arms no
+   timer (an Undo toast: deferDelete's queue closes it). `onGone` runs when the
+   toast goes any other way than its button: closed, or pushed off the stack. */
+function pushToast(message, kind, durationMs, action, onGone) {
   let text = message || 'Something went wrong.';
   // The banner already says the connection is down; repeating "Check your
   // internet" under it said it twice. What's left to say is what happened to
@@ -574,8 +587,12 @@ function pushToast(message, kind, durationMs, action) {
     kind: kind || 'error',
     at: Date.now(), // when it arrived — toastStack resumes its entrance from here
     action: action || null,
+    onGone: onGone || null,
   };
-  state.toasts = [...state.toasts.filter((t) => t.message !== text), toast].slice(-4);
+  // Two "Task deleted." toasts are two Undos: only plain repeats collapse.
+  const before = state.toasts;
+  state.toasts = [...before.filter((t) => t.onGone || t.message !== text), toast].slice(-4);
+  for (const t of before) if (t.onGone && !state.toasts.includes(t)) t.onGone();
   dropStaleToastTimers();
   paintToasts();
   announce(text, toast.kind === 'error');
@@ -585,7 +602,8 @@ function pushToast(message, kind, durationMs, action) {
   // actual accomplishments (toggleTask / toggleHabit).
   if (toast.kind !== 'success' && toast.kind !== 'info') buddyReact('no');
   const asked = typeof durationMs === 'number' ? durationMs : 2800;
-  armToast(toast.id, toast.kind === 'error' ? Math.max(asked, errorToastMs(text)) : asked);
+  if (Number.isFinite(asked))
+    armToast(toast.id, toast.kind === 'error' ? Math.max(asked, errorToastMs(text)) : asked);
   return toast.id;
 }
 
@@ -623,6 +641,78 @@ registerToast({
   // A toast with one button (e.g. "Undo") — the same action slot a reminder's Snooze uses.
   action: (message, label, run) => pushToast(message, 'info', 6000, { label, run }),
 });
+
+/* ---- Deferred deletes (scripts/undo-queue.js) ----
+   Undo instead of "Are you sure?": the item leaves the screen at once, a toast
+   says so with Undo, and the DELETE goes only when the toast's window passes
+   (held, like every toast, while the stack is hovered or focused). Undo puts it
+   back where it was. Page hidden or sign-out sends what is pending first; a
+   send that fails puts the item back and toasts. Each delete is its own toast,
+   so several pending ones are undone separately.
+   `remove` / `restore` change state only, and `remove` must be safe to run
+   again: render() and overlayOutbox() re-run it, so a list reloaded from the
+   server mid-window doesn't bring the item back. `commit` is the real request,
+   through api() and, offline, the outbox: the same paths the old instant
+   delete used. */
+const UNDO_MS = 6000;
+const undoQueue = createUndoQueue({ ms: UNDO_MS, onError: (err, e) => toastError(err, e.errorText) });
+
+function deferDelete({ message, errorText, remove, restore, commit, selector, paint = render }) {
+  const uid = state.user && state.user.id;
+  const mine = () => !!state.user && state.user.id === uid;
+  let toastId = 0;
+  const qid = undoQueue.schedule({
+    errorText,
+    remove,
+    restore: () => {
+      if (!mine()) return; // signed out meanwhile: there is no list to put it in
+      restore();
+      paint();
+      if (selector) landSoon(selector);
+    },
+    commit,
+    settled: () => dismissToast(toastId, true),
+  });
+  toastId = pushToast(
+    message,
+    'info',
+    Infinity,
+    { label: 'Undo', run: () => undoQueue.undo(qid) },
+    () => undoQueue.commit(qid)
+  );
+  // A row with an exit animation plays it; anything else just repaints.
+  if (selector) removeSoon(selector, () => {});
+  else paint();
+}
+
+/* remove / restore for an item of an id-keyed list held at get() / set(). */
+function listSlot(get, set, id) {
+  let item = null;
+  let at = 0;
+  return {
+    remove() {
+      const list = get() || [];
+      const i = list.findIndex((x) => x.id === id);
+      if (i < 0) return;
+      item = list[i];
+      at = i;
+      set(list.filter((x) => x.id !== id));
+    },
+    restore() {
+      const list = get() || [];
+      if (!item || list.some((x) => x.id === id)) return;
+      set([...list.slice(0, at), item, ...list.slice(at)]);
+    },
+  };
+}
+
+// Pending deletes go before the page does. pagehide alone misses a phone
+// that backgrounds the tab and never comes back to it.
+const flushDeletes = () => undoQueue.flush();
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) flushDeletes();
+});
+window.addEventListener('pagehide', flushDeletes);
 
 function score() {
   if (state.score > 0) {
@@ -2438,6 +2528,7 @@ function handleAuthExpired() {
   state.notifOpen = false;
   state.moreOpen = false;
   state.toasts = [];
+  undoQueue.clear(); // the token is dead: those deletes can't be sent, and the lists are gone
   returnToScreen = state.screen; // signing back in returns here, not to Home
   state.screen = 'home';
   if (window.location.hash) history.replaceState(null, '', window.location.pathname);
@@ -3520,22 +3611,32 @@ function pauseTask(task) {
   return patchTaskNow(task.id, { paused: !task.paused }, 'Could not update task.');
 }
 
-async function deleteTask(id) {
+/* Undoable (deferDelete): the row goes now, the DELETE when the toast does. */
+function deleteTask(id) {
+  if (!state.tasks.some((t) => t.id === id)) return;
+  deferDelete({
+    message: 'Task deleted.',
+    errorText: 'Could not delete that task.',
+    selector: '[data-task-id="' + id + '"]',
+    ...listSlot(() => state.tasks, (l) => (state.tasks = l), id),
+    commit: () => sendTaskDelete(id),
+  });
+}
+
+async function sendTaskDelete(id) {
+  // realId at send time: a create that was queued may have landed in the window.
   const path = '/api/tasks/' + encodeURIComponent(realId(id));
   const idemKey = newIdemKey();
   const queue = () => queueWrite({ method: 'DELETE', path, kind: 'task.delete', local: { id }, idemKey });
-  if (isTempId(realId(id))) queue(); // its create is still queued: both are cancelled
+  if (isTempId(realId(id))) await queue(); // its create is still queued: both are cancelled
   else
     try {
-      await api(path, { method: 'DELETE', headers: { 'Idempotency-Key': idemKey } });
+      await api(path, { method: 'DELETE', keepalive: true, headers: { 'Idempotency-Key': idemKey } });
     } catch (err) {
       if (!networkError(err)) throw err;
-      queue();
+      await queue();
     }
-  removeSoon('[data-task-id="' + id + '"]', () => {
-    state.tasks = state.tasks.filter((t) => t.id !== id);
-  });
-  await refreshScore();
+  if (state.user) refreshScoreLater();
 }
 
 async function createHabit(body) {
@@ -4320,18 +4421,50 @@ function loadGoalActions(id) {
 /* The DELETE is the whole answer: drop the goal where it sits rather than
    reload every goal, and take its cached progress with it (that blob used to
    stay in CacheStorage for good). */
-async function deleteGoal(id) {
-  await api('/api/goals/' + encodeURIComponent(id), { method: 'DELETE' });
-  state.goals = (state.goals || []).map((sec) => ({
-    ...sec,
-    goals: (sec.goals || []).filter((g) => g.id !== id),
-  }));
+function deleteGoal(id) {
+  let item = null;
+  let secAt = -1;
+  let at = 0;
+  deferDelete({
+    message: 'Goal deleted.',
+    errorText: 'Could not delete that goal.',
+    remove: () => {
+      (state.goals || []).forEach((sec, si) => {
+        const i = (sec.goals || []).findIndex((g) => g.id === id);
+        if (i < 0) return;
+        item = sec.goals[i];
+        secAt = si;
+        at = i;
+      });
+      if (secAt < 0) return;
+      state.goals = (state.goals || []).map((sec) => ({
+        ...sec,
+        goals: (sec.goals || []).filter((g) => g.id !== id),
+      }));
+    },
+    // Back into the section it left, at its place (a reload may have reshaped them).
+    restore: () => {
+      const sec = (state.goals || [])[secAt];
+      if (!item || !sec || (state.goals || []).some((s) => (s.goals || []).some((g) => g.id === id))) return;
+      const goals = sec.goals || [];
+      state.goals = state.goals.map((s, si) =>
+        si === secAt ? { ...s, goals: [...goals.slice(0, at), item, ...goals.slice(at)] } : s
+      );
+    },
+    commit: () => sendGoalDelete(id),
+  });
+}
+
+async function sendGoalDelete(id) {
+  await api('/api/goals/' + encodeURIComponent(id), { method: 'DELETE', keepalive: true });
+  if (!state.user) return;
   // The server took its tasks off it (they stay, on no goal); mirror that.
   state.tasks = (state.tasks || []).map((t) => (t.goalId === id ? { ...t, goalId: null } : t));
   if (state.goalProgress && state.goalProgress[String(id)]) {
     delete state.goalProgress[String(id)];
     persistGoalProgress();
   }
+  render();
 }
 
 async function addGoalAction(id, body) {
@@ -4368,11 +4501,20 @@ async function deleteGoalAction(goalId, actionId) {
   toastSuccess('Action deleted.');
 }
 
-async function deleteHabit(id) {
-  await api('/api/habits/' + encodeURIComponent(id), { method: 'DELETE' });
-  state.habits = state.habits.filter((h) => h.id !== id);
-  await refreshScore();
-  reSyncDeviceAlarms();
+/* Its history goes with it, which the toast can't say in two words: Undo is
+   the whole of the safety. */
+function deleteHabit(id) {
+  deferDelete({
+    message: 'Habit deleted.',
+    errorText: 'Could not delete that habit.',
+    ...listSlot(() => state.habits, (l) => (state.habits = l), id),
+    commit: async () => {
+      await api('/api/habits/' + encodeURIComponent(id), { method: 'DELETE', keepalive: true });
+      if (!state.user) return;
+      refreshScoreLater();
+      reSyncDeviceAlarms();
+    },
+  });
 }
 
 /* Paint the glass at once, then POST. Each accepted tap is its own entry (two
@@ -4483,6 +4625,7 @@ function overlayOutbox() {
       state.reminders = [...state.reminders, l];
     else if (op.kind === 'reminder.delete') state.reminders = state.reminders.filter((r) => r.id !== l.id);
   }
+  undoQueue.reapply(); // and what is waiting out an Undo toast
 }
 /* Notes the server hasn't got yet, for the Notes screen's list. */
 const queuedNotes = () =>
@@ -5840,25 +5983,67 @@ function openAddFood() {
    DELETE, which 404'd and toasted "Could not delete" over a delete that worked. */
 const entryDeletesInFlight = new Set();
 
-/* Both row deletes ask first: they were one tap on a small x with no way back.
-   ponytail: confirm, not an Undo toast; toasts carry no action yet. */
+/* A day summary's entry taken out, or put back at `at`, with the totals that
+   counted it. `fix(summary, entry, sign)` moves the totals. */
+function summarySlot(get, set, id, fix) {
+  let item = null;
+  let at = 0;
+  return {
+    remove() {
+      const s = get();
+      const list = (s && s.entries) || [];
+      const i = list.findIndex((e) => e.id === id);
+      if (i < 0) return;
+      item = list[i];
+      at = i;
+      set({ ...fix(s, item, -1), entries: list.filter((e) => e.id !== id) });
+    },
+    restore() {
+      const s = get();
+      const list = (s && s.entries) || [];
+      if (!item || !s || list.some((e) => e.id === id)) return;
+      set({ ...fix(s, item, 1), entries: [...list.slice(0, at), item, ...list.slice(at)] });
+    },
+  };
+}
+
+/* Both row deletes are one tap on a small x: undoable (deferDelete), so they
+   need no confirm. */
 function deleteWaterEntry(entryId) {
   // Still in flight from quickAddWater: there is no server id to delete yet.
   if (pendingWater.has(entryId)) return;
-  confirmDelete('Delete this water entry?', async () => {
-    const key = 'water:' + entryId;
-    if (entryDeletesInFlight.has(key)) return;
-    entryDeletesInFlight.add(key);
-    try {
-      const updated = await api('/api/water/entries/' + entryId, {
-        method: 'DELETE',
-      });
-      state.water = withPendingWater(updated);
-      invalidateWeek('water');
-      render();
-    } finally {
-      entryDeletesInFlight.delete(key);
-    }
+  const key = 'water:' + entryId;
+  if (entryDeletesInFlight.has(key)) return;
+  deferDelete({
+    message: 'Water entry deleted.',
+    errorText: 'Could not delete that water entry.',
+    selector: '[data-water-id="' + entryId + '"]',
+    ...summarySlot(
+      () => state.water,
+      (w) => (state.water = w),
+      entryId,
+      (w, e, sign) => {
+        const consumedMl = Math.max(0, (w.consumedMl || 0) + sign * (e.effectiveMl ?? effectiveMl(e.amountMl, e.drinkType)));
+        return {
+          ...w,
+          consumedMl,
+          drankMl: Math.max(0, (w.drankMl || 0) + sign * (e.amountMl || 0)),
+          remainingMl: Math.max(0, (w.goalMl || 0) - consumedMl),
+        };
+      }
+    ),
+    commit: async () => {
+      entryDeletesInFlight.add(key);
+      try {
+        const updated = await api('/api/water/entries/' + entryId, { method: 'DELETE', keepalive: true });
+        if (!state.user) return;
+        state.water = withPendingWater(updated);
+        invalidateWeek('water');
+        render();
+      } finally {
+        entryDeletesInFlight.delete(key);
+      }
+    },
   });
 }
 
@@ -6086,23 +6271,41 @@ function openEditFood(entry) {
   setTimeout(() => name.focus(), 60);
 }
 
+// A day figure the entry carried moves with it; one it lacked stays as it is.
+const shiftBy = (total, part, sign) => (total != null && part != null ? Math.max(0, total + sign * part) : total);
+
 function deleteFoodEntry(entryId) {
-  confirmDelete('Delete this food entry?', async () => {
-    const key = 'food:' + entryId;
-    if (entryDeletesInFlight.has(key)) return;
-    entryDeletesInFlight.add(key);
-    try {
-      const updated = await api('/api/food/entries/' + entryId, {
-        method: 'DELETE',
-      });
-      invalidateWeek('food');
-      removeSoon('[data-food-id="' + entryId + '"]', () => {
-        state.food = updated;
+  const key = 'food:' + entryId;
+  if (entryDeletesInFlight.has(key)) return;
+  deferDelete({
+    message: 'Food entry deleted.',
+    errorText: 'Could not delete that food entry.',
+    selector: '[data-food-id="' + entryId + '"]',
+    ...summarySlot(
+      () => state.food,
+      (f) => (state.food = f),
+      entryId,
+      (f, e, sign) => ({
+        ...f,
+        totalCalories: shiftBy(f.totalCalories || 0, e.kcalEstimated || 0, sign),
+        fiberG: shiftBy(f.fiberG, e.fiberG, sign),
+        sugarG: shiftBy(f.sugarG, e.sugarG, sign),
+        sodiumMg: shiftBy(f.sodiumMg, e.sodiumMg, sign),
+      })
+    ),
+    commit: async () => {
+      entryDeletesInFlight.add(key);
+      try {
+        const updated = await api('/api/food/entries/' + entryId, { method: 'DELETE', keepalive: true });
+        if (!state.user) return;
+        invalidateWeek('food');
+        if (summaryIsForToday(updated, todayKeyNow())) state.food = updated;
         cacheFoodSummary(updated);
-      });
-    } finally {
-      entryDeletesInFlight.delete(key);
-    }
+        render();
+      } finally {
+        entryDeletesInFlight.delete(key);
+      }
+    },
   });
 }
 
@@ -10823,15 +11026,35 @@ async function deleteReminder(scope, id, occKey) {
       render();
     }
   };
-  const previous = state.reminders;
   const whole = (scope || 'all') === 'all';
   // Deleting the whole series is the one case whose outcome we can work out
-  // locally, so the row goes now and the request follows. The occurrence scopes
-  // depend on the server's skip list, so they still wait for the refetch.
+  // locally, so it is undoable: the row goes now and the request follows the
+  // toast. The occurrence scopes depend on the server's skip list, so they
+  // still wait for the refetch.
   if (whole) {
-    state.reminders = previous.filter((r) => r.id !== id);
-    repaint();
+    if (!state.reminders.some((r) => r.id === id)) return;
+    deferDelete({
+      message: 'Reminder deleted.',
+      errorText: 'Could not delete reminder.',
+      paint: repaint,
+      ...listSlot(() => state.reminders, (l) => (state.reminders = l), id),
+      commit: async () => {
+        const path = '/api/reminders/' + encodeURIComponent(realId(id)) + '?scope=all';
+        // Offline (or its create still queued): the DELETE waits in the outbox.
+        const queue = () => queueWrite({ method: 'DELETE', path, kind: 'reminder.delete', local: { id } });
+        if (isTempId(realId(id))) return queue();
+        try {
+          await api(path, { method: 'DELETE', keepalive: true });
+        } catch (err) {
+          if (!networkError(err)) throw err;
+          return queue();
+        }
+        if (state.user) reSyncDeviceAlarms();
+      },
+    });
+    return;
   }
+  const previous = state.reminders;
   try {
     const qs = new URLSearchParams();
     qs.set('scope', scope || 'all');
@@ -10839,23 +11062,11 @@ async function deleteReminder(scope, id, occKey) {
       qs.set('date', occKey);
     }
     const path = '/api/reminders/' + encodeURIComponent(realId(id)) + '?' + qs.toString();
-    // The whole series, offline (or one whose create is still queued): the row
-    // stays gone and the DELETE waits in the outbox.
-    const queue = () => queueWrite({ method: 'DELETE', path, kind: 'reminder.delete', local: { id } });
-    if (whole && isTempId(realId(id))) return queue();
-    try {
-      await api(path, { method: 'DELETE' });
-    } catch (err) {
-      if (!whole || !networkError(err)) throw err;
-      return queue();
-    }
-    if (!whole) {
-      state.reminders = await api('/api/reminders');
-      repaint();
-    }
+    await api(path, { method: 'DELETE' });
+    state.reminders = await api('/api/reminders');
+    repaint();
     toastSuccess('Reminder deleted.');
   } catch (err) {
-    // Put it back: the row is gone from the screen but not from the server.
     state.reminders = previous;
     repaint();
     toastError(err, 'Could not delete reminder.');
@@ -11465,7 +11676,7 @@ function openEditTask(task) {
     onPrimary: () => updateTask(task.id, form.read()),
     danger: {
       label: 'Delete task',
-      onClick: () => confirmDelete('Delete “' + task.title + '”?', () => deleteTask(task.id)),
+      onClick: () => deleteTask(task.id), // undoable: no confirm
     },
   });
   form.focus();
@@ -12131,12 +12342,7 @@ function openHabitForm(habit) {
     danger: habit
       ? {
           label: 'Delete habit',
-          onClick: () =>
-            confirmDelete(
-              'Delete “' + habit.name + '”?',
-              () => deleteHabit(habit.id),
-              'Its streak and check-in history go with it.'
-            ),
+          onClick: () => deleteHabit(habit.id), // undoable: no confirm
         }
       : null,
     onPrimary: async () => {
@@ -12757,7 +12963,7 @@ function toastStack() {
               type: 'button',
               class: 'gb-toast-action',
               onclick: () => {
-                dismissToast(t.id);
+                dismissToast(t.id, true);
                 t.action.run();
               },
             },
@@ -12790,23 +12996,6 @@ function toastStack() {
     },
     nodes
   );
-}
-
-/* The heading names the thing ("Delete “Morning walk”?"), `detail` says what
-   goes with it, and the button is red — it was the same orange as every Save. */
-function confirmDelete(message, onYes, detail) {
-  openModal({
-    // The question IS the heading — "Please confirm" told the user nothing.
-    title: message,
-    sub: detail || null,
-    body: null,
-    primary: 'Delete',
-    destructive: true,
-    onPrimary: async () => {
-      await onYes();
-      toastSuccess('Deleted.');
-    },
-  });
 }
 
 /* ---- Habits screen ---- */
@@ -13914,13 +14103,8 @@ const SCREENS = {
             sections: state.goals,
             onCreateGoal: createGoal,
             onToggleGoal: toggleGoal,
-            // The trash icon deleted on one tap, with no confirm and no error path.
-            onDeleteGoal: (id, goal) =>
-              confirmDelete(
-                goal ? 'Delete “' + goal.title + '”?' : 'Delete this goal?',
-                () => deleteGoal(id),
-                'Its actions and progress are deleted with it. Its tasks stay, on no goal.'
-              ),
+            // Undoable (deferDelete); a failed send puts it back and toasts.
+            onDeleteGoal: (id) => deleteGoal(id),
             // Linked tasks: "Add a task" opens New task on this goal; the open
             // ones listed on the card tick like Home's rows.
             onAddTask: (goal) => openAddTask(goal),
@@ -15096,6 +15280,9 @@ function loginCard() {
 }
 
 function logout() {
+  // Deletes still waiting on an Undo toast go now, while the token is good:
+  // each request leaves synchronously inside flush().
+  undoQueue.flush();
   // Fire-and-forget; the token is invalidated locally either way.
   const token = loadToken();
   if (token) {
@@ -15353,6 +15540,9 @@ function tweenFromLast() {
 }
 
 function render() {
+  // A list reloaded mid-window still holds a delete waiting on its Undo toast.
+  // ponytail: re-filtered on every paint (a few pending items); a per-load hook if that ever shows.
+  undoQueue.reapply();
   const sameScreen = renderedScreen === state.screen;
   // Leaving a screen files its scroll position; coming back to it (back, or its
   // nav tab) restores it instead of starting at the top.

@@ -11,7 +11,6 @@ import {
   refreshIcons,
   openOverlay,
   submitOnEnter,
-  confirmDialog,
   formatTime,
 } from './gb-kit.js';
 import {
@@ -1866,18 +1865,13 @@ function ReminderRow(rem, occKey, onDelete, whatsappEnabled, onEdit, onCancelSno
     );
   }
 
-  async function handleDelete() {
+  function handleDelete() {
     if (rem.repeat && rem.repeat !== 'none') {
       openDeleteDialog(rem, occKey, onDelete);
       return;
     }
-    // A one-off went on a single tap, next to Edit, with no undo.
-    const ok = await confirmDialog({
-      title: 'Delete "' + rem.text + '"?',
-      confirmLabel: 'Delete',
-      danger: true,
-    });
-    if (ok) onDelete('all', rem.id, occKey);
+    // A one-off: one tap, with Undo on the toast (app.js deferDelete).
+    onDelete('all', rem.id, occKey);
   }
 
   const tagPill = h(
