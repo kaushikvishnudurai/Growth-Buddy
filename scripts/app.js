@@ -4626,8 +4626,11 @@ async function createGoal(body) {
   // The POST answers with the goal, so place it (newest first, as /api/goals
   // sorts) instead of holding the dialog open for a full reload.
   const sec = (state.goals || []).find((x) => x.horizon === created.horizon);
-  if (sec) sec.goals = [created, ...(sec.goals || [])];
-  else loadGoals();
+  // goals.js opens gb-kit's modal, which has no render() after it closes.
+  if (sec) {
+    sec.goals = [created, ...(sec.goals || [])];
+    render();
+  } else loadGoals();
   toastSuccess('Goal saved.');
   return created;
 }
