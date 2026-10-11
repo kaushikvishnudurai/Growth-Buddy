@@ -92,12 +92,15 @@ export default defineConfig({
           {
             // Read-through cache for API GETs: prefer the network, fall back to
             // the last cached response when offline so the UI still renders.
+            // No networkTimeoutSeconds: with one, a merely slow answer was
+            // replaced by the cached one, so a refresh after a write repainted
+            // the pre-write state. The cache answers only when the fetch fails.
+            // Keyed by URL only, so every sign-out deletes it (app.js endSession).
             urlPattern: ({ url, request }) =>
               request.method === 'GET' && /\/api\//.test(url.pathname),
             handler: 'NetworkFirst',
             options: {
               cacheName: 'gb-api-get',
-              networkTimeoutSeconds: 5,
               expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 },
               cacheableResponse: { statuses: [0, 200] },
             },

@@ -11,7 +11,7 @@ app.js (`loadGoalProgress` / `updateGoalProgress`), while goals and their action
 | Fn | What |
 |---|---|
 | `fmtDate(value)` | `YYYY-MM-DD` → locale date, "No target date" when empty |
-| `todayKey()` | today in the **account's** zone (`timezone` prop → module `userZone`), the day the server's `UserClock` checks action dates against; the device date only when no zone is set |
+| `todayKey()` | home-order.js `todayKey(userZone)`: today in the **account's** zone (`timezone` prop → module `userZone`), the day the server's `UserClock` checks action dates against; the device date only when no zone is set |
 | `daysUntil(dateKey)` / `sortGoals(goals)` | days to a target; open goals first by nearest target (undated last), completed last by `completedAt` |
 | `openGoalModal({...})` | modal shell (gb-kit `openModal` with this screen's error wording — no render hook, so app.js handlers render themselves) |
 | `confirmInModal({...})` | in-place confirm (no nested modal) |

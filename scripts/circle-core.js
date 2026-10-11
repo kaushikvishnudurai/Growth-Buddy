@@ -4,6 +4,8 @@
    sharing, the one-tap challenge templates, and the invite link.
    ===================================================================== */
 
+import { shiftDayKey } from './home-order.js';
+
 /** One-tap starts for "Start a challenge": each fills the form, Start sends it. */
 export const CHALLENGE_TEMPLATES = [
   { label: '7-day habit sprint', title: '7-day habit sprint', metric: 'habit_checkins', days: 7 },
@@ -59,7 +61,7 @@ export function winLines({ habits = [], goals = [], today = '' } = {}) {
     .sort((a, b) => b.streak - a.streak)
     .slice(0, 2)
     .forEach((x) => out.push('Day ' + x.streak + ' of ' + x.name + ' in a row.'));
-  const weekAgo = today ? shiftDay(today, -7) : '';
+  const weekAgo = today ? shiftDayKey(today, -7) : '';
   goals
     .filter(
       (g) => g && g.completed && (!weekAgo || String(g.completedAt || '').slice(0, 10) >= weekAgo)
@@ -73,11 +75,6 @@ export function winLines({ habits = [], goals = [], today = '' } = {}) {
   return out.slice(0, 4);
 }
 
-function shiftDay(iso, days) {
-  const d = new Date(iso + 'T12:00:00');
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
-}
 
 /** The link that joins a circle in one tap: a private one by its code, a public one by id. */
 export function inviteLink(base, c) {

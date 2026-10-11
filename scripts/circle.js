@@ -1026,8 +1026,9 @@ function openSearchModal({ onBrowse, onSearch, onOffer, onRequest, onView, curre
   }
   loadPeople();
 
-  let lastQ = '',
-    timer = null,
+  // No "same query as last time" short-circuit: type-and-delete back to it
+  // painted the local matches and then skipped the server, dropping its people.
+  let timer = null,
     seq = 0; // bumped on every keystroke; a server answer for an older one is dropped
   queryInput.addEventListener('input', () => {
     const q = queryInput.value.trim().toLowerCase();
@@ -1036,7 +1037,6 @@ function openSearchModal({ onBrowse, onSearch, onOffer, onRequest, onView, curre
     // Empty query → restore the full browse list.
     if (q.length === 0) {
       paintList(allPeople);
-      lastQ = '';
       return;
     }
     // 1-character query → filter locally (avoids a server round-trip on every keystroke).
@@ -1048,8 +1048,6 @@ function openSearchModal({ onBrowse, onSearch, onOffer, onRequest, onView, curre
     if (q.length < 2) return;
     // 2+ chars → also ask the server (catches users not in the recent browse window).
     timer = setTimeout(async () => {
-      if (q === lastQ) return;
-      lastQ = q;
       try {
         const ppl = await onSearch(q);
         if (mine !== seq) return;

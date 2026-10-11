@@ -17,6 +17,7 @@ import {
 } from './gb-kit.js';
 import { toast } from './toast.js';
 import { shrinkPhoto } from './notes.js';
+import { isNative } from './native.js';
 
 const RELATIONSHIPS = [
   'mother',
@@ -997,13 +998,17 @@ function ScreenFamily({ api }) {
       });
     }
 
+    let searchSeq = 0; // an answer for an earlier Enter is dropped, not painted over a later one
     async function doSearch() {
       const q = qInput.value.trim();
       if (!q) return;
+      const mine = ++searchSeq;
       resultsEl.replaceChildren(h('p', { class: 'gb-family-empty-note' }, 'Searching…'));
       try {
-        renderResults(await api.searchUsers(q));
+        const found = await api.searchUsers(q);
+        if (mine === searchSeq) renderResults(found);
       } catch (err) {
+        if (mine !== searchSeq) return;
         resultsEl.replaceChildren(
           h('p', { class: 'gb-msg-error' }, err.message || 'Search failed.')
         );
@@ -2574,12 +2579,16 @@ function ScreenFamily({ api }) {
         Icon('share-2', { size: 15 }),
         'Share'
       ),
-      h(
-        'button',
-        { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--sm', onclick: printShopping },
-        Icon('printer', { size: 15 }),
-        'Print'
-      )
+      // The Android WebView's window.print() is a no-op unless the activity wires
+      // up PrintManager, which MainActivity doesn't: Copy and Share cover it there.
+      isNative()
+        ? null
+        : h(
+            'button',
+            { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--sm', onclick: printShopping },
+            Icon('printer', { size: 15 }),
+            'Print'
+          )
     );
   }
   function shopPrintout(list) {

@@ -1,6 +1,7 @@
 /* =====================================================================
    Growth Buddy — Calendar screen (reminders + tags + recurrence)
    ===================================================================== */
+import { todayKey } from './home-order.js';
 import {
   h,
   Card,
@@ -105,11 +106,6 @@ function keyOf(y, m, d) {
 function parseKey(key) {
   const [y, m, d] = key.split('-').map(Number);
   return { y: y, m: m - 1, d: d };
-}
-
-function todayKey() {
-  const t = new Date();
-  return keyOf(t.getFullYear(), t.getMonth(), t.getDate());
 }
 
 function isFutureKey(key) {
@@ -1956,6 +1952,14 @@ let cachedFormRefs = null;
 let pendingReminderText = '';
 let pendingReminderOpts = null; // { time?: 'HH:MM', repeat?: REPEAT_ORDER key }
 
+/* Sign-out: the kept form holds the last account's half-typed reminder. */
+function clearReminderForm() {
+  cachedForm = null;
+  cachedFormRefs = null;
+  pendingReminderText = '';
+  pendingReminderOpts = null;
+}
+
 /* `opts` (optional) also presets the time and the repeat — Report's
    "Set a bedtime reminder" hands over a daily one at the suggested hour. */
 function prefillCalendarReminder(text, opts) {
@@ -2795,6 +2799,7 @@ function CalendarToolbar({ year, month, reminders, tasks, onPrevMonth, onNextMon
 
 export {
   UsualTimeChip,
+  clearReminderForm,
   isPastSlot,
   freeBusy,
   wholeHours,

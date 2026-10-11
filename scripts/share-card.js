@@ -239,10 +239,21 @@ export async function renderStoryCard(card) {
 export async function shareStoryCard(card, { filename = 'growth-buddy.png', title = 'Growth Buddy' } = {}) {
   const blob = await renderStoryCard(card);
   if (!blob) return 'unsupported';
-  const file = new File([blob], filename, { type: 'image/png' });
+  return saveFile(blob, filename, title);
+}
 
-  // Inside the app the WebView's canShare({files}) is false, so the image is
-  // written to the cache dir and its file:// URI handed to the native sheet.
+/**
+ * Hand a file to the OS: the one ladder every export uses (the story card, Download
+ * my data, the reminders .ics, the Money CSV). Inside the app the WebView's
+ * canShare({files}) is false and an <a download> on a blob: URL does nothing
+ * (MainActivity registers no DownloadListener), so the file is written to the
+ * cache dir and its file:// URI handed to the native sheet. Then the web share
+ * sheet where it takes files, then a plain download.
+ *
+ * @returns {Promise<'shared'|'saved'>} `shared` when a share sheet took it (or was
+ *   dismissed: the platform doesn't say which), `saved` for the download.
+ */
+export async function saveFile(blob, filename, title) {
   if (isNative()) {
     const native = await shareNatively(blob, filename, title);
     if (native) return native;
@@ -250,13 +261,14 @@ export async function shareStoryCard(card, { filename = 'growth-buddy.png', titl
 
   // canShare({files}) is the only honest test — Android WebView and desktop
   // Firefox have navigator.share but reject files.
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+  const file = typeof File === 'function' ? new File([blob], filename, { type: blob.type }) : null;
+  if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
       await navigator.share({ files: [file], title });
       return 'shared';
     } catch (err) {
       // AbortError = the user closed the sheet. Anything else falls through
-      // to the download so they still get the image.
+      // to the download so they still get the file.
       if (err && err.name === 'AbortError') return 'shared';
     }
   }

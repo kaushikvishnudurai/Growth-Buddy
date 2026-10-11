@@ -12,6 +12,7 @@ which also runs `_demo` on DEV boot).
 |---|---|
 | `renderStoryCard(card)` | → PNG blob. `card = {eyebrow, headline, sub, stats: [{label, value}] (≤3), note (≤3 wrapped lines), footer}` |
 | `shareStoryCard(card, {filename, title})` | → `'shared'｜'saved'｜'unsupported'`. Native path first, then `navigator.share({files})`, then a download (`'saved'`). `'unsupported'` = the canvas failed. **A dismissed sheet counts as `'shared'`** (web `AbortError`, native "Share canceled") — the platform doesn't say otherwise |
+| `saveFile(blob, filename, title)` | → `'shared'｜'saved'`. The ladder `shareStoryCard` ends in, for any file: native Filesystem + Share in the app (an `<a download>` on a `blob:` URL is a no-op in the WebView), then `navigator.share({files})`, then a download. Callers toast "downloading" only on `'saved'` |
 | `_demo()` | DEV self-check: wrap/fit never overflow, three stats + three note lines clear the footer, brand row clears Instagram's chrome |
 
 ## Layout
