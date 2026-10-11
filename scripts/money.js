@@ -7,7 +7,7 @@
    ponytail: heuristics, not an LLM. Real OCR / NL understanding would need
    a vision/LLM endpoint — marked at each spot below.
    ===================================================================== */
-import { h, Icon, Card, ProgressRing, refreshIcons, openModal, Thinking, focusSoon } from './gb-kit.js';
+import { h, Icon, Card, ProgressRing, refreshIcons, openModal, Thinking, focusSoon, CrashCard } from './gb-kit.js';
 import { toast } from './toast.js';
 import { shareStoryCard, _demo as _shareCardDemo } from './share-card.js';
 import {
@@ -2828,10 +2828,21 @@ function ScreenMoney({
   accountRequest,
   requestDaySummary,
   requestOlderTx,
+  loadFailed,
+  onRetryLoad,
 }) {
   money = normalizeMoney(money);
   applyCurrency(money);
   const root = h('div', { class: 'gb-money gb-rise' });
+  // The load failed and nothing is cached: the empty doc is not "no data yet",
+  // so say so and offer the retry instead of the first-run screen.
+  const nothingHere = !['expenses', 'income', 'accounts', 'goals', 'subscriptions', 'loans'].some(
+    (k) => money[k].length
+  );
+  if (loadFailed && nothingHere) {
+    root.append(CrashCard(onRetryLoad));
+    return root;
+  }
   // app.js builds the new screen before swapping it in, so the previous root is
   // still in the document on a repaint and detached on a fresh visit.
   if (!(moneyRoot && moneyRoot.isConnected)) {

@@ -87,7 +87,7 @@ it silently landed on Home. Don't reintroduce a second list.
   (a blob up to 512 kB) and `/api/daily-logs?days=60`, neither of which Home draws. `/api/weekly-review`
   was worse: awaited *after* that Promise.all, a whole extra round trip in series.
   Wave 1 is the five calls Home can't paint without (tasks, habits, score, water, reminders); wave 2
-  is the other seven in parallel. `/api/quotes/today` is the odd one out — `loadQuote()` fires it
+  is the other seven in parallel. What wave 2 failed to get is kept as `state.loadFailed` (a Set of the toast's labels: 'money', 'goals', ...) so a screen can show an error in place of its empty state; Money does (`loadFailed` / `onRetryLoad` props). `/api/quotes/today` is the odd one out — `loadQuote()` fires it
   un-awaited *beside* wave 1, because wave 2 doesn't begin until wave 1 has fully landed and the
   quote is the one thing on the loading screen that isn't a grey box. Anything else the placeholder
   starts showing belongs there too, not in wave 2. Safe only because every `state` field has a cache-backed or empty

@@ -15,6 +15,7 @@ Insights are client-side heuristics; the server AI calls are the purchase adviso
 The tapped-day summary (`GET /api/money/day-summary`) is rules-only on purpose: its facts are exact,
 so the AI only reworded them; the budget goes to Food, whose numbers are estimates.
 Tone rule stated at the top of the file: money framed as growth, never guilt.
+**Load failure:** app.js `loadSecondaryData` records what didn't arrive in `state.loadFailed` (a Set of labels) and passes `loadFailed` + `onRetryLoad`; with nothing loaded or cached, `ScreenMoney` shows gb-kit's `CrashCard` (Try again re-runs the load) instead of the first-run empty screen.
 
 ## Module split (money-core.js / money-home.js / money.js)
 

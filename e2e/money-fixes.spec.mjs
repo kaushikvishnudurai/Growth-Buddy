@@ -50,3 +50,24 @@ test('Health, empty account: same order, the header still shows', async ({ page,
   await expect(page.locator('.gb-health-top')).toContainText('Typed in by you');
   expect(await healthOrder(page)).toEqual(ORDER);
 });
+
+test.describe('CNT-2', () => {
+  // The aborted GET is the point of the test.
+  test.use({ allowed: ['/api/money'] });
+  test('a failed Money load says so with Retry, not the first-run screen', async ({ page, account }) => {
+    await postTx(page, account, [
+      { kind: 'expense', id: 'e2e-cnt2', amount: 240, category: 'food', note: 'Team lunch', date: today() },
+    ]);
+    const block = (route) => (route.request().method() === 'GET' ? route.abort('aborted') : route.continue());
+    await page.route('**/api/money', block);
+    await boot(page, account);
+    await go(page, 'money');
+    const main = page.locator('#gb-main');
+    await expect(main.getByText('That didn’t go through')).toBeVisible();
+    await expect(main.getByText(/Let's start small/)).toHaveCount(0);
+    await shot(page, 'CNT-2');
+    await page.unroute('**/api/money', block);
+    await main.getByRole('button', { name: 'Try again' }).click();
+    await expect(main.getByText('₹240').first()).toBeVisible();
+  });
+});
