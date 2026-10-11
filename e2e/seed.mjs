@@ -61,6 +61,8 @@ export async function seedAccount({ seed = true, tag = 'e2e' } = {}) {
   if (!token) throw new Error('verify ' + v.status + ' ' + v.text);
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   await call('/api/auth/timezone', 'PUT', { timezone: tz }, token);
+  // The verify answer predates the PUT; a cookie carrying its UTC zone makes the app offer a switch.
+  user.timezone = tz;
   if (!seed) return { email, password, token, user };
 
   const today = new Date().toLocaleDateString('en-CA');

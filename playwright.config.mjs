@@ -9,7 +9,7 @@ export default defineConfig({
   timeout: 60_000,
   expect: { timeout: 10_000 },
   fullyParallel: true,
-  workers: process.env.GB_E2E_WORKERS ? Number(process.env.GB_E2E_WORKERS) : 4,
+  workers: process.env.GB_E2E_WORKERS ? Number(process.env.GB_E2E_WORKERS) : 2,
   reporter: [['list'], ['html', { open: 'never', outputFolder: 'e2e-report' }]],
   outputDir: 'e2e-results',
   use: { baseURL: base, screenshot: 'on', trace: 'retain-on-failure' },
