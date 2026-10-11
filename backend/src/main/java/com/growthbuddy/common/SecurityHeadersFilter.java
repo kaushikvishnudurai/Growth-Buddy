@@ -33,7 +33,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
  *       <b>Report-Only by default</b> ({@code growthbuddy.csp.enforce=false}): it
  *       has not yet been watched against a production build, and a wrong CSP
  *       blanks the app for everyone. Run a build with it, check the console
- *       for "[Report Only]" violations, then set {@code CSP_ENFORCE=true}.</li>
+ *       for "[Report Only]" violations (each also lands in the server log as a
+ *       {@code [csp]} line, via CspReportController), then set {@code CSP_ENFORCE=true}.</li>
  * </ul>
  *
  * <p>The Capacitor shell loads its HTML from the device, not from here, so the
@@ -55,7 +56,11 @@ public class SecurityHeadersFilter extends OncePerRequestFilter {
             "object-src 'none'",
             "base-uri 'self'",
             "form-action 'self'",
-            "frame-ancestors 'none'");
+            "frame-ancestors 'none'",
+            // Where violations go (CspReportController). report-to wins where the
+            // browser supports it; report-uri covers the rest (Firefox, older Safari).
+            "report-uri /api/csp-report",
+            "report-to csp");
 
     private final boolean trustProxy;
     private final boolean enforceCsp;
@@ -77,6 +82,7 @@ public class SecurityHeadersFilter extends OncePerRequestFilter {
         }
         if (isDocument(request)) {
             response.setHeader(enforceCsp ? "Content-Security-Policy" : "Content-Security-Policy-Report-Only", CSP);
+            response.setHeader("Reporting-Endpoints", "csp=\"/api/csp-report\"");
         }
         chain.doFilter(request, response);
     }
