@@ -51,11 +51,20 @@ function OnboardingCard({
   onAddHabit,
   onAddTask,
   onAddMood,
+  onStarterPack,
   onOnboardDismiss,
 }) {
   if (CacheStorage.getItem(ONBOARD_KEY) === '1') return null;
   const today = todayKey();
   const steps = [
+    // One tap that sets up most of the rest: habits, reminders and targets for a goal.
+    onStarterPack && {
+      done: (habits || []).length > 0,
+      label: 'Pick a goal, we set it up',
+      hint: 'Sleep, money, fitness, food, focus or water',
+      icon: 'target',
+      action: onStarterPack,
+    },
     {
       done: (habits || []).length > 0,
       label: 'Add your first habit',
@@ -77,7 +86,7 @@ function OnboardingCard({
       icon: 'smile-plus',
       action: onAddMood,
     },
-  ];
+  ].filter(Boolean);
   const doneCount = steps.filter((s) => s.done).length;
   if (doneCount === steps.length) {
     CacheStorage.setItem(ONBOARD_KEY, '1'); // all set — don't show again
@@ -2463,6 +2472,7 @@ function ScreenDashboard({
   onPlanToday,
   onAddSleep,
   onAddMood,
+  onStarterPack,
   onOnboardDismiss,
   onAddSuggestedReminder,
   food,
@@ -2534,6 +2544,7 @@ function ScreenDashboard({
     onAddHabit,
     onAddTask,
     onAddMood,
+    onStarterPack,
     onOnboardDismiss,
   });
 

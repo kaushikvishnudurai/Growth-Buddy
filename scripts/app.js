@@ -51,7 +51,8 @@ import {
   restoreKey,
   inFlightKeys,
 } from './app-logic.js';
-import { MEAL_SLOTS, mealSlotAt, effectiveMl, labelFor } from './nutrition.js';
+import { MEAL_SLOTS, mealSlotAt, effectiveMl, labelFor, suggestWaterGoalMl } from './nutrition.js';
+import { PACKS, planStarter } from './starter-packs.js';
 import {
   habitStats,
   heatmapWeeks,
@@ -11784,6 +11785,157 @@ function openQuickAddPreview(rows, note) {
   });
 }
 
+/* ---- Starter packs (Home's "Getting started") ----
+   Pick a goal, see every habit, reminder and target it would add, switch off
+   what doesn't fit, one tap writes the rest. planStarter (starter-packs.js) has
+   already dropped what exists and what a switched-off feature can't hold. */
+function starterRow(it) {
+  const cur = (state.money && state.money.currency) || '₹';
+  switch (it.kind) {
+    case 'habit':
+      return { icon: 'repeat', label: 'Habit', detail: it.name + (it.reminderTime ? ' · ' + formatTime(it.reminderTime) : '') };
+    case 'reminder':
+      return { icon: 'bell', label: 'Reminder', detail: it.text + ' · ' + REPEATS[it.repeat].label + ', ' + formatTime(it.time) };
+    case 'goal':
+      return { icon: 'target', label: 'Goal', detail: it.title };
+    case 'budget':
+      return { icon: 'wallet', label: 'Monthly budget', detail: it.category.charAt(0).toUpperCase() + it.category.slice(1) + ' · ' + cur + it.amount + ' (10% under last 30 days)' };
+    case 'water':
+      return { icon: 'droplets', label: 'Water goal', detail: it.goalMl + ' ml a day' };
+    default:
+      return null;
+  }
+}
+
+async function applyStarter(rows) {
+  const today = todayKeyNow();
+  let made = 0;
+  const budgets = {};
+  for (const it of rows) {
+    try {
+      if (it.kind === 'habit') {
+        await createHabit({
+          name: it.name,
+          domain: it.domain || 'habit',
+          icon: it.icon,
+          cadence: 'daily',
+          metric: it.metric || 'none',
+          kind: it.habitKind || 'build',
+          reminderTime: it.reminderTime || null,
+        });
+      } else if (it.kind === 'reminder') {
+        // Straight to the API: addReminder toasts per row and resets the calendar form.
+        state.reminders.push(
+          await api('/api/reminders', {
+            method: 'POST',
+            body: JSON.stringify({ text: it.text, date: today, time: it.time, tag: it.tag, repeat: it.repeat }),
+          })
+        );
+      } else if (it.kind === 'goal') {
+        await api('/api/goals', {
+          method: 'POST',
+          body: JSON.stringify({ title: it.title, horizon: 'short_term', targetDate: it.targetDate }),
+        });
+      } else if (it.kind === 'water') {
+        await updateWaterGoal(it.goalMl);
+      } else if (it.kind === 'budget') {
+        budgets[it.category] = it.amount;
+      } else continue;
+      made++;
+    } catch (_) {
+      /* one refusal doesn't stop the rest; the count says what landed */
+    }
+  }
+  if (Object.keys(budgets).length) {
+    const base = state.money;
+    saveMoney({ ...normalizeMoney(base), budgets: { ...base.budgets, ...budgets } }, base);
+    made += Object.keys(budgets).length;
+  }
+  return made;
+}
+
+function openStarterPacks() {
+  const picked = new Set();
+  let rows = [];
+  const chosen = new Map(); // row key -> on
+  const keyOf = (r) => r.it.kind + ':' + r.d.detail;
+  const list = h('div', { class: 'gb-qa-preview' });
+  const paint = () => {
+    rows = planStarter([...picked], {
+      habits: state.habits,
+      reminders: state.reminders,
+      goals: (state.goals || []).flatMap((s) => s.goals || []),
+      features: state.user && state.user.features,
+      waterGoalMl: state.water && state.water.goalMl,
+      weightKg: state.user && state.user.weightKg,
+      money: state.money,
+      today: todayKeyNow(),
+      suggestWater: suggestWaterGoalMl,
+    }).map((it) => ({ it, d: starterRow(it) }));
+    list.replaceChildren(
+      ...(picked.size && !rows.length
+        ? [h('p', { class: 'gb-field-hint' }, 'You already have everything these would add.')]
+        : rows.map((r) => {
+            if (!chosen.has(keyOf(r))) chosen.set(keyOf(r), true);
+            return h(
+              'label',
+              { class: 'gb-qa-row' },
+              h('input', {
+                type: 'checkbox',
+                class: 'gb-qa-check',
+                checked: chosen.get(keyOf(r)),
+                'aria-label': r.d.label + ': ' + r.d.detail,
+                onchange: (e) => chosen.set(keyOf(r), e.target.checked),
+              }),
+              h('span', { class: 'gb-qa-icon' }, Icon(r.d.icon, { size: 16, sw: 2.4 })),
+              h('span', { class: 'gb-qa-copy' }, h('strong', null, r.d.label), h('span', null, r.d.detail))
+            );
+          }))
+    );
+  };
+  const chips = h(
+    'div',
+    { class: 'gb-starter-packs' },
+    PACKS.map((p) =>
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-chip',
+          'aria-pressed': 'false',
+          onclick: (e) => {
+            const on = !picked.has(p.id);
+            if (on) picked.add(p.id);
+            else picked.delete(p.id);
+            e.currentTarget.classList.toggle('is-on', on);
+            e.currentTarget.setAttribute('aria-pressed', String(on));
+            paint();
+          },
+        },
+        Icon(p.icon, { size: 16, sw: 2.4 }),
+        p.label
+      )
+    )
+  );
+  openModal({
+    title: 'What do you want to work on?',
+    sub: 'Pick one or more. We set up the habits, reminders and targets; switch off anything that doesn’t fit.',
+    body: h('div', null, chips, list),
+    primary: 'Set it up',
+    errorMessage: 'Could not set that up.',
+    onPrimary: async () => {
+      const go = rows.filter((r) => chosen.get(keyOf(r))).map((r) => r.it);
+      if (!go.length) throw new Error(picked.size ? 'Nothing selected — switch at least one on.' : 'Pick a goal first.');
+      const made = await applyStarter(go);
+      if (!made) throw new Error('None of those could be added.');
+      toastSuccess('Added ' + made + (made > 1 ? ' things.' : ' thing.') + ' You’re set up.');
+      reSyncDeviceAlarms();
+      await loadData();
+      if (state.screen !== 'home') setScreen('home');
+    },
+  });
+}
+
 /** "Just now" / "5 min ago" / "2 h ago" / "3 d ago". */
 function relativeTime(iso) {
   if (!iso) return '';
@@ -12528,6 +12680,7 @@ const SCREENS = {
         onPlanToday: openDailyPlan,
         onAddSleep: openSleepSchedule,
         onAddMood: openMoodCheckin,
+        onStarterPack: openStarterPacks,
         onOnboardDismiss: (opts) => {
           saveUiPrefs({ onboardingDone: true });
           // Only from the ✕ click — the all-done path fires mid-render.

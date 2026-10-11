@@ -11809,7 +11809,8 @@ textarea:focus-visible,
 }
 /* The habit picker. `.gb-chip` had no rule anywhere, so these rendered as the
    browser's grey buttons and the picked habit looked like the others. */
-.gb-freeze-habits .gb-chip {
+.gb-freeze-habits .gb-chip,
+.gb-starter-packs .gb-chip {
   min-height: 36px;
   padding: 7px 14px;
   border: 1px solid var(--border-strong);
@@ -11826,19 +11827,35 @@ textarea:focus-visible,
     color var(--dur-fast) var(--ease-standard);
 }
 @media (hover: hover) {
-  .gb-freeze-habits .gb-chip:hover {
+  .gb-freeze-habits .gb-chip:hover,
+  .gb-starter-packs .gb-chip:hover {
     border-color: var(--brand);
     color: var(--fg1);
   }
 }
-.gb-freeze-habits .gb-chip.is-on {
+.gb-freeze-habits .gb-chip.is-on,
+.gb-starter-packs .gb-chip.is-on {
   background: var(--brand-fill);
   border-color: var(--brand-fill);
   color: var(--fg-on-brand);
 }
-.gb-freeze-habits .gb-chip:focus-visible {
+.gb-freeze-habits .gb-chip:focus-visible,
+.gb-starter-packs .gb-chip:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
+}
+/* Starter packs: the goal picker above the preview list. 44px tall, a full tap target. */
+.gb-starter-packs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0 14px;
+}
+.gb-starter-packs .gb-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
 }
 .gb-freeze-loading {
   padding: 28px 0;
