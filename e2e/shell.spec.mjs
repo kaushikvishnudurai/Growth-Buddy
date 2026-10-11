@@ -257,3 +257,22 @@ test('OFF-6: a screen never loaded, opened offline, says so instead of reloading
   await expect(page.getByText('This screen needs a connection the first time')).toHaveCount(0, { timeout: 15_000 });
   expect(new URL(page.url()).hash).toBe('#goals');
 });
+
+test('OFF-9: renaming a task with no connection queues it, then sends it', async ({ page, account, allowed }) => {
+  allowed.push('/api/tasks/', 'net::ERR_FAILED', 'Failed to load resource');
+  await signInFast(page, account);
+  await page.route('**/api/tasks/*', (route) => (route.request().method() === 'PUT' ? route.abort('failed') : route.fallback()));
+  await page.getByRole('button', { name: 'Edit Book the dentist' }).first().click();
+  const title = page.locator('.gb-modal input[placeholder^="e.g. Finish"]');
+  await title.fill('Book the dentist for Friday');
+  await page.locator('.gb-modal').getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.locator('.gb-toast-msg', { hasText: 'Saved on this phone' })).toBeVisible();
+  await expect(page.locator('.gb-modal-overlay.is-open')).toHaveCount(0);
+  await expect(page.getByText('Book the dentist for Friday').first()).toBeVisible();
+  await shot(page, 'OFF-9');
+  await page.unroute('**/api/tasks/*');
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await expect
+    .poll(async () => (await apiAs(page, account.token, '/api/tasks')).some((t) => t.title === 'Book the dentist for Friday'), { timeout: 10_000 })
+    .toBe(true);
+});

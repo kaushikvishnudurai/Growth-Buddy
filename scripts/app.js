@@ -3911,11 +3911,26 @@ async function createTask(body) {
   refreshScoreLater();
 }
 
+/* An edit queues offline like the create does (it used to be refused while a
+   new task was "saved on this phone"): painted now, sent in order behind it. */
 async function updateTask(id, body) {
-  const updated = await api('/api/tasks/' + encodeURIComponent(id), {
-    method: 'PUT',
-    body: JSON.stringify(body),
-  });
+  const path = '/api/tasks/' + encodeURIComponent(realId(id));
+  const idemKey = newIdemKey();
+  const op = { method: 'PUT', path, body, kind: 'task.update', local: { ...body, id }, idemKey };
+  let updated;
+  try {
+    if (isTempId(realId(id))) {
+      await queueWrite(op);
+      throw Object.assign(new Error('queued'), { queued: true });
+    }
+    updated = await sendAhead(op, () =>
+      api(path, { method: 'PUT', headers: { 'Idempotency-Key': idemKey }, body: JSON.stringify(body) })
+    );
+  } catch (err) {
+    if (!err.queued) throw err;
+    state.tasks = state.tasks.map((t) => (t.id === id ? mapTask({ ...t, ...body, id }) : t));
+    return;
+  }
   state.tasks = state.tasks.map((t) => (t.id === updated.id ? mapTask(updated) : t));
   landSoon('[data-task-id="' + updated.id + '"]');
   refreshScoreLater();
@@ -5081,6 +5096,8 @@ function overlayOutbox() {
   for (const op of outbox.list().filter((x) => !x.live)) {
     const l = op.local || {};
     if (op.kind === 'task.create' && !state.tasks.some((t) => t.id === l.id)) state.tasks = [l, ...state.tasks];
+    else if (op.kind === 'task.update')
+      state.tasks = state.tasks.map((t) => (t.id === l.id ? mapTask({ ...t, ...l }) : t));
     else if (op.kind === 'task.toggle')
       state.tasks = state.tasks.map((t) => (t.id === l.id ? { ...t, done: !t.done } : t));
     else if (op.kind === 'task.delete') state.tasks = state.tasks.filter((t) => t.id !== l.id);
