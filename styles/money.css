@@ -290,7 +290,7 @@
   color: var(--fg2);
 }
 .gb-money-coach-text + .gb-btn {
-  margin-top: 8px;
+  margin-top: var(--space-2);
 }
 
 /* ---- Gamification ---- */
@@ -314,7 +314,7 @@
   font-size: var(--text-sm);
   color: var(--warning-soft-fg);
   background: var(--warning-soft);
-  padding: 4px 10px;
+  padding: var(--space-1) 10px;
   border-radius: var(--radius-pill);
 }
 .gb-money-level-bar {
@@ -353,14 +353,13 @@
   border-radius: var(--radius-lg);
   background: var(--surface-2);
   border: 1px solid var(--border);
-  opacity: 0.55;
+  /* Not earned yet: told by the grey icon and --fg2 label, not opacity (which
+     took the label to 3.6:1). */
   transition:
-    opacity var(--dur-base) var(--ease-standard),
     background-color var(--dur-base) var(--ease-standard),
     border-color var(--dur-base) var(--ease-standard);
 }
 .gb-money-badge.is-earned {
-  opacity: 1;
   background: var(--success-soft);
   border-color: transparent;
 }
@@ -388,6 +387,9 @@
   margin-top: 2px;
   font-weight: 500;
   font-size: var(--text-2xs);
+  color: var(--fg2);
+}
+.gb-money-badge:not(.is-earned) .gb-money-badge-lbl {
   color: var(--fg2);
 }
 .gb-money-badge-prog {
@@ -431,7 +433,7 @@
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
   color: var(--fg3);
-  margin-top: 4px;
+  margin-top: var(--space-1);
 }
 
 /* ---- Forecast ---- */
@@ -488,7 +490,7 @@
   justify-content: center;
   border-radius: var(--radius-lg);
   background: var(--ai-soft);
-  color: var(--iris-600);
+  color: var(--ai-soft-fg);
 }
 .gb-money-personality-type {
   font-family: var(--font-display);
@@ -507,7 +509,7 @@
   padding-left: var(--space-5);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
 }
 .gb-money-personality-tips li {
   font-family: var(--font-body);
@@ -551,7 +553,7 @@
   display: grid;
   grid-template-rows: auto 1fr auto auto;
   justify-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   padding: 6px 0;
   border: 0;
   border-radius: var(--radius-md);
@@ -567,7 +569,7 @@
   }
 }
 .gb-money-bar-col:focus-visible {
-  outline: 2px solid var(--brand);
+  outline: 2px solid var(--ring);
   outline-offset: 1px;
 }
 .gb-money-bar-col.is-selected {
@@ -684,7 +686,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 4px 10px;
+  padding: var(--space-1) 10px;
   border-radius: var(--radius-pill);
   font-family: var(--font-body);
   font-size: var(--text-xs);
@@ -732,7 +734,7 @@
 .gb-money-day-retry {
   border: 0;
   /* A taller hit area for an inline link; the negative margin keeps the line box. */
-  padding: 12px 6px;
+  padding: var(--space-3) 6px;
   margin: -12px -6px;
   background: none;
   font: inherit;
@@ -771,7 +773,7 @@
   }
 }
 .gb-money-account:focus-visible {
-  outline: 2px solid var(--brand);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 .gb-money-account-ic {
@@ -861,7 +863,7 @@
   font-weight: 600;
   font-size: var(--text-sm);
   color: var(--fg1);
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
 }
 .gb-money-cat-amt {
   font-variant-numeric: tabular-nums;
@@ -917,7 +919,14 @@
 }
 
 /* ---- Income / loans: settled row dims, amount struck through ---- */
-.gb-money-exp-row.is-settled {
+/* Settled and paused rows dim by colour, not opacity: 0.6 took the user's own
+   history to 2.7:1. Text drops to --fg3 (4.5:1); only the icon fades. */
+.gb-money-exp-row.is-settled :is(.gb-money-exp-note, .gb-money-exp-amt),
+.gb-money-rec-row.is-paused :is(.gb-money-exp-note, .gb-money-exp-amt) {
+  color: var(--fg3);
+}
+.gb-money-exp-row.is-settled .gb-money-cat-ic,
+.gb-money-rec-row.is-paused .gb-money-cat-ic {
   opacity: 0.6;
 }
 .gb-money-exp-row.is-settled .gb-money-exp-amt {
@@ -1261,7 +1270,7 @@
   color: var(--fg1);
 }
 .gb-money-health-verdict {
-  margin: 4px 0 0;
+  margin: var(--space-1) 0 0;
   font-family: var(--font-body);
   font-size: var(--text-sm);
   line-height: var(--leading-normal);
@@ -1298,7 +1307,7 @@
   background: var(--surface-3);
   border-radius: var(--radius-pill);
   overflow: hidden;
-  margin: 4px 0 2px;
+  margin: var(--space-1) 0 2px;
 }
 .gb-money-health-fill {
   height: 100%;
@@ -1343,7 +1352,7 @@
   }
 }
 .gb-money-health-fix:focus-visible {
-  outline: 2px solid var(--brand);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 
@@ -1630,7 +1639,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 13px;
+  padding: var(--space-2) 13px;
   border-radius: var(--radius-pill);
   border: 1px solid var(--border);
   background: var(--surface);
@@ -1805,7 +1814,7 @@
   background: none;
   border: none;
   /* 26px tall without moving the row: at padding 0 it was an 18px tap target. */
-  padding: 4px 0;
+  padding: var(--space-1) 0;
   margin: -4px 0;
   cursor: pointer;
   color: var(--fg3);
@@ -1878,8 +1887,8 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 2px 0 4px;
+  gap: var(--space-1);
+  padding: 2px 0 var(--space-1);
 }
 .gb-stars {
   position: relative;
@@ -1891,7 +1900,7 @@
 }
 .gb-star {
   /* 28px of glyph + 8px a side = a 44px target without 44px of ink. */
-  padding: 8px;
+  padding: var(--space-2);
   border: 0;
   background: none;
   line-height: 0;
@@ -2001,7 +2010,7 @@
     min-width: 0;
     flex-direction: column;
     gap: 2px;
-    padding: 7px 4px;
+    padding: 7px var(--space-1);
     border-radius: var(--radius-lg);
     font-size: 0.75rem;
   }
@@ -2014,7 +2023,7 @@
   justify-content: center;
   min-height: 44px;
   border: 0;
-  padding: 2px 4px;
+  padding: 2px var(--space-1);
   margin: -2px -4px;
   background: none;
   font: inherit;
@@ -2029,7 +2038,7 @@
   }
 }
 .gb-money-exp-edit:focus-visible {
-  outline: 2px solid var(--brand);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 
@@ -2105,7 +2114,7 @@
   justify-content: space-between;
 }
 .gb-money-swap {
-  padding-block: 4px;
+  padding-block: var(--space-1);
 }
 .gb-money-quick {
   display: flex;
@@ -2114,7 +2123,7 @@
   margin-top: var(--space-2);
 }
 .gb-money-quick-amt {
-  padding: 6px 12px;
+  padding: 6px var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
   background: var(--surface);
@@ -2141,7 +2150,7 @@
   inset: -8px -4px;
 }
 .gb-money-quick-amt:focus-visible {
-  outline: 2px solid var(--brand);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 
@@ -2284,7 +2293,7 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 4px 6px;
+  gap: var(--space-1) 6px;
 }
 .gb-money-tape-legend i {
   display: inline-block;
@@ -2414,9 +2423,6 @@
 }
 
 /* ---- Every month (recurring rules, Income tab) ---- */
-.gb-money-rec-row.is-paused {
-  opacity: 0.6;
-}
 .gb-money-exp-amt.is-in {
   color: var(--leaf-700);
 }
@@ -2444,7 +2450,7 @@
   accent-color: var(--brand);
 }
 .gb-money-bcard-carry {
-  margin-top: 4px;
+  margin-top: var(--space-1);
   font-size: var(--text-xs);
   color: var(--leaf-700);
 }

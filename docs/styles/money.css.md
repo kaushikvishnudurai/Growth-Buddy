@@ -54,5 +54,6 @@ Threshold colours: `is-near` at ≥80% of a budget, `is-over` above 100% — the
 Every `:hover` rule sits inside `@media (hover: hover)`: touch keeps `:hover` after a tap, so bars and
 chips stayed recoloured. Pressed (`:active`) feedback for Money's own buttons is the last block in the
 file (`.gb-btn` / `.gb-icon-btn` get theirs from app.css). Small pills take a 44px tap with an
-`::after` overlay (`.gb-money-health-fix`, `.gb-money-quick-amt`). Loan rows (`.gb-money-loan-row`)
+`::after` overlay (`.gb-money-health-fix`, `.gb-money-quick-amt`). Settled loans and paused recurring rows dim their note and amount to `--fg3` and fade only
+the icon; unearned badges use a `--fg2` label (opacity took all three under 4.5:1). Loan rows (`.gb-money-loan-row`)
 wrap their amount and buttons onto a second line when the name can't keep 9rem.

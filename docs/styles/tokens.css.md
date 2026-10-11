@@ -17,7 +17,9 @@ via `@fontsource` — plus Space Mono for `--font-mono`. Dropping or renaming a 
 - **Color ramps** (`-50` → `-900`, though most stop at `-700`): `coral` (the brand ramp, full 50–900),
   `leaf`, `sun`, `iris`, `sky` (plus `--sky-800`, text on sky fills only), `bloom`.
 - **Semantic color:** `--bg`, `--bg-subtle`, `--fg1` / `--fg2` / `--fg3`, `--border`, `--border-strong`,
-  `--ring` (focus; coral-600 in light, coral-400 in dark), `--nav-bg`.
+  `--control-edge` (the edge of a field, an unchecked check, an off switch: 3:1+ on every canvas;
+  `--border-strong` is 1.4:1 and only separates content), `--ring` (focus; coral-600 in light,
+  coral-400 in dark; a field's focus is a `--ring` border plus a 35% `--ring` halo), `--nav-bg`.
 - **Brand:** `--brand`, `--brand-hover`, `--brand-press`, `--brand-edge`, `--brand-soft`,
   `--brand-soft-fg`, `--fg-on-brand`, `--shadow-brand`, `--brand-ink`, `--brand-fill`,
   `--brand-fill-hover`. **`--brand` (#F97316) is 2.8:1 against white, so it never carries text.**
@@ -52,6 +54,15 @@ via `@fontsource` — plus Space Mono for `--font-mono`. Dropping or renaming a 
   `--surface-3` as a text ground (fg3 is ~4.0-4.2 on it), and the status solids
   (`--warning` 2.4, `--success` 3.5 in light) — they colour icons, so a component using one as
   text should switch to the `-soft-fg` or `--brand-ink`.
+- **Components are tested too** (second half of `contrast.test.mjs`). It reads every rule in
+  `styles/` and fails on (c) a `background` naming a light ramp step (`-50`/`-100`) with no
+  `[data-theme='dark']` twin of the same selector — ramps are not themed, so it stays a pastel
+  tile in dark mode (the reminder toast, the food total, the snoozed chips all did); (d) any rule
+  setting both `color` and `background` under 4.5:1 in a theme it applies to (3:1 when large, or
+  listed in `ICON_ONLY`), dark twins layered on, every gradient stop checked, premium rules merged
+  with their base; (e) the `{ bg: 'var(..)', fg: 'var(..)' }` tone maps in `scripts/`. For a tint
+  in both themes use a `-soft` / `-soft-fg` pair, or `color-mix(in srgb, var(--<semantic>) N%,
+  var(--surface))`. Unresolvable values (glass tokens, url()) are skipped, not guessed.
 - Until the user picks a theme, `loadTheme()` follows `prefers-color-scheme` and `followSystemTheme()` tracks it live; a pick (`gb.theme` / `ui_prefs.theme`) wins from then on.
 - The theme switch flips `data-theme` on the root; `scripts/app.js` `toggleTheme()` / `loadTheme()`
   own that, and the choice persists through `CacheStorage`.
