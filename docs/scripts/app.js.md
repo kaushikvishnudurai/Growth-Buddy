@@ -185,7 +185,7 @@ it silently landed on Home. Don't reintroduce a second list.
   simply aren't in `/api/tasks` any more. A client-side reset on top of that would resurrect
   whatever the sweep hadn't reached yet.
 - **Quick add previews before it writes.** `parseQuickAdd` reads the sentence and writes nothing;
-  (**Starter packs** reuse that preview: `openStarterPacks` = goal chips over a live checkbox list from
+  (**Starter packs** reuse that preview: `openStarterPacks` wraps `starterPicker(mod)` (`{ body, apply, picked }`, also first-run step 1) = goal chips over a live checkbox list from
   `planStarter` (starter-packs.js), `starterRow` words each row, `applyStarter` writes habits through
   `createHabit`, reminders and goals straight to the API (no per-row toast), water through
   `updateWaterGoal`, budgets in one `saveMoney`, then `loadData()`.)
@@ -362,7 +362,8 @@ it silently landed on Home. Don't reintroduce a second list.
 - **First-run setup is once per account, decided after wave 1.** `loadData()`'s first load calls
   `maybeStartFirstRun()`: no `ui_prefs.setupDone` and no tasks / habits / reminders /
   `onboardingDone` → `openFirstRunSetup()`, one `openOverlay` sheet (`.gb-setup-modal`, CSS in
-  app.css "First-run setup") with three skippable steps — timezone (`saveDeviceTimezone`), push
+  app.css "First-run setup") with four skippable steps — goal (`starterPicker`, the Home starter-pack picker, so one to three chip
+  taps plus "Set it up" leave Home already set up; nothing picked just moves on), timezone (`saveDeviceTimezone`), push
   (`enablePushFlow`), features (`featureSwitchRow`, the same row as Settings › Layout). An account
   with data is marked `setupDone` silently. Every way out (Done, Skip, Escape, backdrop) goes
   through `onClose`, which saves `setupDone` + `tzAsked` and re-arms the timezone offer — which

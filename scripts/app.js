@@ -2041,8 +2041,9 @@ async function enablePushFlow(okMessage) {
 }
 
 /* ---- First-run setup ----
-   Once per account, after a NEW account's first data load: timezone,
-   notifications, features — three skippable steps in one sheet. Decided in
+   Once per account, after a NEW account's first data load: a goal (the
+   starter-pack picker, starterPicker), timezone, notifications, features —
+   four skippable steps in one sheet. Decided in
    loadData() once wave 1 lands, because "new" is read from real data: an
    account that already has tasks, habits or reminders, or dismissed the Home
    checklist, is marked `ui_prefs.setupDone` silently and never sees it. Any
@@ -2070,9 +2071,11 @@ function maybeStartFirstRun() {
   setTimeout(openFirstRunSetup, 600);
 }
 
-function openFirstRunSetup() {
+async function openFirstRunSetup() {
   if (firstRunOpen || !state.user || (state.user.uiPrefs || {}).setupDone) return;
   firstRunOpen = true;
+  // The goal step needs starter-packs.js; offline or a failed chunk just drops it.
+  const mod = await import('./starter-packs.js').catch(() => null);
   const tz = deviceZone();
   const { sheet, close } = openOverlay({
     label: 'Set up Growth Buddy',
@@ -2085,7 +2088,7 @@ function openFirstRunSetup() {
     },
   });
 
-  const steps = [timezoneStep, notifyStep, featuresStep];
+  const steps = [mod && goalStep, timezoneStep, notifyStep, featuresStep].filter(Boolean);
   let at = 0;
   const dots = h(
     'div',
@@ -2157,6 +2160,24 @@ function openFirstRunSetup() {
     return h('div', { class: 'gb-setup-badge' }, Icon(icon, { size: 22, sw: 2.2 }));
   }
 
+  // First, so the one question that matters gets the fresh attention. Habit and
+  // reminder times are local and follow the user, so the timezone step after
+  // it changes nothing they hold. The loadData() inside apply() is a refresh:
+  // it never re-enters maybeStartFirstRun, and firstRunOpen is already true.
+  // ponytail: a new account has no spending, so planStarter offers no budget
+  // (budgetsFrom); offer one once Money has 30 days of spending.
+  function goalStep() {
+    const p = starterPicker(mod);
+    return {
+      title: 'What do you want to change?',
+      sub: 'Pick one or more. We set up habits, reminders and a 30-day goal.',
+      body: p.body,
+      primary: 'Set it up',
+      onPrimary: () => (p.picked() ? p.apply() : null),
+      skip: 'Skip',
+    };
+  }
+
   function timezoneStep() {
     const saved = (state.user && state.user.timezone) || '';
     const differs = !!tz && !!saved && !sameZone(saved, tz);
@@ -2210,7 +2231,7 @@ function openFirstRunSetup() {
     );
     if (supported) {
       pushSubscribed().then((on) => {
-        if (on && at === 1) {
+        if (on && steps[at] === notifyStep) {
           status.textContent = 'Notifications are already on for this device.';
           primaryBtn.textContent = 'Next';
           primaryBtn.onclick = next;
@@ -12321,9 +12342,9 @@ async function applyStarter(rows) {
   return made;
 }
 
-// starter-packs.js loads on the tap, like day-plan.js: kept out of the boot chunk.
-async function openStarterPacks() {
-  const { PACKS, planStarter } = await import('./starter-packs.js');
+// The chips + live preview, shared by Home's modal and first-run step 1.
+// `mod` is the loaded starter-packs.js. apply() throws to keep the sheet open.
+function starterPicker({ PACKS, planStarter }) {
   const picked = new Set();
   let rows = [];
   const chosen = new Map(); // row key -> on
@@ -12386,13 +12407,10 @@ async function openStarterPacks() {
       )
     )
   );
-  openModal({
-    title: 'What do you want to work on?',
-    sub: 'Pick one or more. We set up the habits, reminders and targets; switch off anything that doesn’t fit.',
+  return {
     body: h('div', null, chips, list),
-    primary: 'Set it up',
-    errorMessage: 'Could not set that up.',
-    onPrimary: async () => {
+    picked: () => picked.size,
+    apply: async () => {
       const go = rows.filter((r) => chosen.get(keyOf(r))).map((r) => r.it);
       if (!go.length) throw new Error(picked.size ? 'Nothing selected — switch at least one on.' : 'Pick a goal first.');
       const made = await applyStarter(go);
@@ -12400,6 +12418,21 @@ async function openStarterPacks() {
       toastSuccess('Added ' + made + (made > 1 ? ' things.' : ' thing.') + ' You’re set up.');
       reSyncDeviceAlarms();
       await loadData();
+    },
+  };
+}
+
+// starter-packs.js loads on the tap, like day-plan.js: kept out of the boot chunk.
+async function openStarterPacks() {
+  const p = starterPicker(await import('./starter-packs.js'));
+  openModal({
+    title: 'What do you want to work on?',
+    sub: 'Pick one or more. We set up the habits, reminders and targets; switch off anything that doesn’t fit.',
+    body: p.body,
+    primary: 'Set it up',
+    errorMessage: 'Could not set that up.',
+    onPrimary: async () => {
+      await p.apply();
       if (state.screen !== 'home') setScreen('home');
     },
   });
