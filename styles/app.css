@@ -15260,7 +15260,7 @@ button.gb-tone-chip:focus-visible {
    shape, so the spine, heads and marks line up without measuring anything. */
 .gb-ledger {
   --n: 14;
-  --label: 11.5rem;
+  --label: 12.5rem; /* +1rem since names carry their metric's icon */
   --pad: var(--space-4);
   min-width: 0;
   padding: var(--space-4) 0 var(--space-3);
@@ -15390,6 +15390,10 @@ button.gb-tone-chip:focus-visible {
   padding-right: var(--space-3);
 }
 .gb-ledger-name {
+  /* The metric's icon sits before its name. */
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: var(--text-sm);
   font-weight: 600;
   line-height: 1.2;
@@ -15628,7 +15632,7 @@ button.gb-tone-chip:focus-visible {
 @container (max-width: 560px) {
   .gb-ledger-body {
     --n: 7;
-    --label: 8.5rem;
+    --label: 9.5rem;
     --c0: 7;
   }
   .gb-ledger-day:nth-child(-n + 7),
@@ -15827,6 +15831,148 @@ button.gb-tone-chip:focus-visible {
 .gb-habit-link-target .gb-input {
   max-width: 140px;
   font-family: var(--font-mono);
+}
+
+/* Metric icons: one per metric (HEALTH_METRICS.icon), tinted by its group so a
+   column of rows reads Activity / Heart / Body at a glance. */
+.gb-health-ic {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--fg2);
+}
+.gb-health-ic.is-activity {
+  background: var(--success-soft);
+  color: var(--success-soft-fg);
+}
+.gb-health-ic.is-heart {
+  background: var(--social-soft);
+  color: var(--social-soft-fg);
+}
+.gb-health-ic.is-body {
+  background: var(--info-soft);
+  color: var(--info-soft-fg);
+}
+.gb-ledger-ic {
+  width: 24px;
+  height: 24px;
+}
+.gb-ledger-hidden {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  margin-top: var(--space-2);
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--fg3);
+  cursor: pointer;
+}
+.gb-ledger-hidden:hover {
+  color: var(--fg1);
+}
+
+/* Insights: the user against their own recent days; watch items lead. */
+.gb-health-insights {
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding: var(--space-4);
+}
+.gb-health-insights h2 {
+  margin: 0 0 var(--space-3);
+  font-size: 1.05rem;
+}
+.gb-health-insight-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.gb-health-insight {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 44px;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  font: inherit;
+  text-align: left;
+  color: var(--fg1);
+  cursor: pointer;
+}
+.gb-health-insight:hover {
+  border-color: var(--fg3);
+}
+.gb-health-insight-ic {
+  width: 34px;
+  height: 34px;
+}
+.gb-health-insight.is-watch .gb-health-insight-ic {
+  background: var(--warning-soft);
+  color: var(--warning-soft-fg);
+}
+.gb-health-insight.is-good .gb-health-insight-ic {
+  background: var(--success-soft);
+  color: var(--success-soft-fg);
+}
+.gb-health-insight.is-info .gb-health-insight-ic {
+  background: var(--info-soft);
+  color: var(--info-soft-fg);
+}
+.gb-health-insight-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.gb-health-insight-text strong {
+  font-size: var(--text-sm);
+}
+.gb-health-insight-text span {
+  font-size: var(--text-sm);
+  color: var(--fg2);
+  line-height: 1.45;
+}
+.gb-health-insight-text small {
+  font-size: var(--text-xs);
+  color: var(--fg3);
+}
+.gb-health-insight-empty {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--fg2);
+  line-height: 1.5;
+}
+
+/* Customise sheet: Home's layout rows (gb-home-cust-*), grouped. */
+.gb-health-cust {
+  display: grid;
+  gap: var(--space-2);
+}
+.gb-health-cust-group {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg3);
+}
+.gb-health-cust-group:first-child {
+  margin-top: 0;
+}
+.gb-health-cust .gb-home-cust-row {
+  gap: var(--space-3);
 }
 
 /* =====================================================================
