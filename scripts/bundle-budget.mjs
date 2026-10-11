@@ -20,8 +20,10 @@
    back under WITHOUT raising them: terser instead of esbuild's minifier, Home's
    Outlook (outlook.js + insights.js) loaded beside wave 1 instead of in boot,
    activeDates split out of review.js, sockjs-client removed, and the install-only
-   manifest icons left out of the precache. Measured after: boot 496,974 B,
-   precache 1,446,010 B.
+   manifest icons and the standalone privacy.html left out of the precache.
+   Measured after the design merge (build 96): boot 507,307 B (97.6%), precache
+   1,471,982 B (99.9%). The precache has no headroom left: the next lever is the
+   fonts (ten static faces, 164 kB), not this number.
    (Workbox prints "41 entries": the icons are listed twice, once by the glob
    and once by includeAssets/manifest; they are fetched and stored once.)
    Raw bytes, not gzip: deterministic and what the precache actually stores.

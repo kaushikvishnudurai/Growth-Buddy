@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import { fileURLToPath } from 'node:url';
 
 // Backend dev server (Spring Boot). Override with VITE_API_BASE / API_PROXY_TARGET.
 const API_TARGET = process.env.API_PROXY_TARGET || 'http://localhost:8080';
@@ -72,10 +73,14 @@ export default defineConfig({
         // Code-splitting still earns its keep: it keeps first paint from blocking
         // on screens you may never open.
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
-        // Install-time icons: the OS fetches them once when the app is added to
-        // a home screen, and no screen draws them, so they are not shell. ~39 kB.
-        // icon-192 stays: notifications and the share card use it.
-        globIgnores: ['icons/icon-512.png', 'icons/maskable-*.png'],
+        // Not shell, so not precached. Install-time icons: the OS fetches them
+        // once when the app is added to a home screen, and no screen draws them
+        // (~39 kB; icon-192 stays: notifications and the share card use it).
+        // privacy.html: a standalone page for the store listing, linked from
+        // nowhere in the app (~8 kB); the denylist keeps an offline visit to it
+        // from being answered with the app shell.
+        globIgnores: ['icons/icon-512.png', 'icons/maskable-*.png', 'privacy.html'],
+        navigateFallbackDenylist: [/^\/privacy\.html$/],
         navigateFallback: '/index.html',
         // Pull our Web Push 'push' / 'notificationclick' handlers into the
         // generated service worker (keeps Workbox precaching intact).
@@ -115,6 +120,13 @@ export default defineConfig({
     }),
   ],
   define: { __GB_BUILD__: buildNumber() },
+  // The package's "browser" export is its UMD bundle; the ES build tree-shakes
+  // to what connectWebSocket uses (~1 kB smaller in the precache).
+  resolve: {
+    alias: {
+      '@stomp/stompjs': fileURLToPath(new URL('./node_modules/@stomp/stompjs/esm6/index.js', import.meta.url)),
+    },
+  },
   // index.html at the project root is the entry; it pulls in scripts/app.js as a module.
   root: '.',
   // The repo's assets/ holds dev screenshots we don't want copied verbatim;
