@@ -5237,7 +5237,9 @@ button.gb-food-level {
   height: calc(var(--fish-size, 16px) * 0.5);
   border-radius: 10px;
   left: var(--fish-left, 10px);
-  bottom: var(--fish-bottom, 12px);
+  /* The fill is full height and slid down (dashboard.js), so its bottom sits
+     below the glass: lift the fish by the same amount or they swim off-screen. */
+  bottom: calc(var(--fish-bottom, 12px) + var(--water-empty, 0%));
   background: color-mix(in srgb, var(--sun-300) 78%, white 22%);
   box-shadow: inset -2px 0 0 rgba(255, 255, 255, 0.45);
 }

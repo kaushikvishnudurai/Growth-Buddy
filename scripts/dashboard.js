@@ -1124,7 +1124,13 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
             // Full height, slid down by what's missing: a transform runs on the
             // compositor where an animated height re-laid the card every frame,
             // and unlike scaleY it doesn't squash the bubbles and wave inside.
-            { class: 'gb-water-fill', style: { transform: 'translateY(' + (100 - pct) + '%)' } },
+            {
+              class: 'gb-water-fill',
+              style: {
+                transform: 'translateY(' + (100 - pct) + '%)',
+                '--water-empty': 100 - pct + '%',
+              },
+            },
             h('span', { class: 'gb-water-bubble b1' }),
             h('span', { class: 'gb-water-bubble b2' }),
             h('span', { class: 'gb-water-bubble b3' }),
