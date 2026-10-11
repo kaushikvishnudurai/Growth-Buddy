@@ -58,10 +58,10 @@ test('PRF-1: a cheer from another account reaches the bell over a plain WebSocke
   if (info.project.name.startsWith('mobile')) await shot(page, 'PRF-1');
 });
 
-test('PRF-2: the sign-in screen paints from index.html before the app module runs', async ({ page }, info) => {
+test('PRF-2: a first visit paints the sign-up card from index.html before the app module runs', async ({ page }, info) => {
   const release = await holdEntry(page);
   await page.goto('/', { waitUntil: 'commit' });
-  await expect(page.locator('.gb-login-title')).toHaveText('Welcome back');
+  await expect(page.locator('.gb-login-title')).toHaveText('Create your account');
   await expect(page.locator('main')).toHaveCount(1);
   if (info.project.name.startsWith('mobile')) await shot(page, 'PRF-2');
   const look = () =>
@@ -83,7 +83,7 @@ test('PRF-2: the sign-in screen paints from index.html before the app module run
   await expect(page.locator('.gb-login-card.gb-rise, .gb-garden.is-growing')).toHaveCount(0);
   await expect(page.locator('input[type=email]')).toBeEditable();
   await expect(page.locator('main')).toHaveCount(1);
-  // Same words in the same places: the swap moves nothing (index.html is a copy of viewSignin).
+  // Same words in the same places: the swap moves nothing (index.html is a copy of viewSignup).
   expect(await look()).toEqual(shell);
 });
 
@@ -101,6 +101,22 @@ test('PRF-2: a signed-in load never shows the static sign-in shell', async ({ pa
   await expect(page.locator('.gb-login-title')).toBeHidden();
   release();
   await expect(page.locator('#gb-main')).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('[data-gb-shell]')).toHaveCount(0);
+});
+
+test('PRF-2: a returning visitor (session, no token) never sees the sign-up shell before Sign in', async ({ page, account, allowed }) => {
+  // No token: boot's calls answer 401 and the app lands on Sign in, which is the point.
+  allowed.push('/api/', 'status of 401');
+  const release = await holdEntry(page);
+  const u = { ...account.user };
+  delete u.token;
+  const host = new URL(process.env.GB_E2E_BASE || 'http://localhost:5591').hostname;
+  await page.context().addCookies([{ name: 'gb.session', value: encodeURIComponent(JSON.stringify(u)), domain: host, path: '/' }]);
+  await page.goto('/', { waitUntil: 'commit' });
+  await page.waitForTimeout(800);
+  await expect(page.locator('.gb-login-title')).toBeHidden();
+  release();
+  await expect(page.locator('.gb-login-title')).toHaveText('Welcome back');
   await expect(page.locator('[data-gb-shell]')).toHaveCount(0);
 });
 

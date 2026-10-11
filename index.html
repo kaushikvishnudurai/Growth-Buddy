@@ -40,11 +40,13 @@
   <body>
     <div class="gb-page">
       <div id="root">
-        <!-- Static sign-in shell: paints on the HTML + CSS alone, before the boot
-             chunk has loaded. The app's first render() replaces it (authShell
-             then skips its entrance so the swap is invisible). inert: nothing
-             typed here would survive that swap. Keep in step with authShell and
-             viewSignin in scripts/app.js. -->
+        <!-- Static copy of the first-visit view (viewSignup: no session, so
+             state.authMode is 'signup'). It paints on the HTML + CSS alone,
+             before the boot chunk has loaded; the app's first render() replaces
+             it, and authShell skips its entrance for the same title, so the swap
+             is invisible. inert: nothing typed here would survive the swap.
+             public/shell-gate.js hides it for every other kind of load. Keep it
+             in step with authShell and viewSignup in scripts/app.js. -->
         <main class="gb-login-wrap" data-gb-shell inert>
           <div class="gb-login-card">
             <div class="gb-garden"><svg viewBox="0 0 300 96" aria-hidden="true" focusable="false" overflow="visible"><ellipse class="gb-garden-seed" cx="24" cy="92" rx="5" ry="3.5"></ellipse><path class="gb-garden-stem" style="--i:1" pathLength="100" d="M66 96Q63 89 66 82"></path><path class="gb-garden-leaf gb-garden-leaf--r" style="--i:1" d="M66 87q5 -9 11 -6q-5 8 -11 6z"></path><path class="gb-garden-leaf gb-garden-leaf--r" style="--i:1" d="M66 82q5 -9 11 -6q-5 8 -11 6z"></path><path class="gb-garden-stem" style="--i:2" pathLength="100" d="M108 96Q105 83 108 70"></path><path class="gb-garden-leaf gb-garden-leaf--r" style="--i:2" d="M108 79q5 -9 11 -6q-5 8 -11 6z"></path><path class="gb-garden-stem" style="--i:3" pathLength="100" d="M150 96Q147 76 150 56"></path><path class="gb-garden-leaf gb-garden-leaf--r" style="--i:3" d="M150 73q5 -9 11 -6q-5 8 -11 6z"></path><path class="gb-garden-leaf gb-garden-leaf--l" style="--i:3" d="M150 67q-5 -9 -11 -6q5 8 11 6z"></path><path class="gb-garden-stem" style="--i:4" pathLength="100" d="M192 96Q189 70 192 44"></path><path class="gb-garden-leaf gb-garden-leaf--r" style="--i:4" d="M192 67q5 -9 11 -6q-5 8 -11 6z"></path><path class="gb-garden-leaf gb-garden-leaf--l" style="--i:4" d="M192 58q-5 -9 -11 -6q5 8 11 6z"></path><path class="gb-garden-stem" style="--i:5" pathLength="100" d="M234 96Q231 64 234 32"></path><path class="gb-garden-leaf gb-garden-leaf--r" style="--i:5" d="M234 62q5 -9 11 -6q-5 8 -11 6z"></path><path class="gb-garden-leaf gb-garden-leaf--l" style="--i:5" d="M234 54q-5 -9 -11 -6q5 8 11 6z"></path><path class="gb-garden-leaf gb-garden-leaf--r" style="--i:5" d="M234 46q5 -9 11 -6q-5 8 -11 6z"></path><path class="gb-garden-stem" style="--i:6" pathLength="100" d="M276 96Q273 59 276 22"></path><path class="gb-garden-leaf gb-garden-leaf--r" style="--i:6" d="M276 57q5 -9 11 -6q-5 8 -11 6z"></path><path class="gb-garden-leaf gb-garden-leaf--l" style="--i:6" d="M276 48q-5 -9 -11 -6q5 8 11 6z"></path><path class="gb-garden-leaf gb-garden-leaf--r" style="--i:6" d="M276 39q5 -9 11 -6q-5 8 -11 6z"></path><circle class="gb-garden-bud" cx="234" cy="32" r="4"></circle><g class="gb-garden-bloom"><circle cx="276.0" cy="16.5" r="5"></circle><circle cx="281.2" cy="20.3" r="5"></circle><circle cx="279.2" cy="26.4" r="5"></circle><circle cx="272.8" cy="26.4" r="5"></circle><circle cx="270.8" cy="20.3" r="5"></circle><circle class="gb-garden-heart" cx="276" cy="22" r="3.5"></circle></g></svg></div>
@@ -52,20 +54,22 @@
               <span class="gb-icon" aria-hidden="true" style="display: inline-flex; align-items: center; justify-content: center; color: var(--brand);"><svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-lucide="sprout" class="lucide lucide-sprout"><path d="M7 20h10"></path><path d="M10 20c5.5-2.5.8-6.4 3-10"></path><path d="M9.5 9.4c1.1.8 1.8 2.2 2.3 3.7-2 .4-3.5.4-4.8-.3-1.2-.6-2.3-1.9-3-4.2 2.8-.5 4.4 0 5.5.8z"></path><path d="M14.1 6a7 7 0 0 0-1.1 4c1.9-.1 3.3-.6 4.3-1.4 1-1 1.6-2.3 1.7-4.6-2.7.1-4 1-4.9 2z"></path></svg></span>
               <span>Growth Buddy</span>
             </div>
-            <h1 class="gb-login-title">Welcome back</h1>
-            <p class="gb-login-sub">Your habits, streaks and reminders are where you left them.</p>
+            <h1 class="gb-login-title">Create your account</h1>
+            <p class="gb-login-sub">Habits, reminders, money and goals in one place, with a ready-made plan to start you off.</p>
             <form class="gb-login-form">
               <label class="gb-login-label" for="gb-auth-email">Email</label>
               <input type="email" class="gb-input gb-login-input" id="gb-auth-email" placeholder="you@example.com" />
               <label class="gb-login-label" for="gb-auth-password">Password</label>
               <div class="gb-pw">
-                <input type="password" class="gb-input gb-login-input" id="gb-auth-password" placeholder="Your password" />
+                <input type="password" class="gb-input gb-login-input" id="gb-auth-password" placeholder="At least 8 characters" />
                 <span class="gb-pw-toggle" data-hidden="true"><span class="gb-icon" aria-hidden="true" style="display: inline-flex; align-items: center; justify-content: center;"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-lucide="eye" class="lucide lucide-eye"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"></path><circle cx="12" cy="12" r="3"></circle></svg></span></span>
               </div>
-              <button type="button" class="gb-btn gb-btn--primary gb-login-btn">Sign in</button>
+              <p class="gb-field-hint"></p>
+              <label class="gb-login-label" for="gb-auth-name">Name (optional)</label>
+              <input type="text" class="gb-input gb-login-input" id="gb-auth-name" placeholder="What should we call you?" />
+              <button type="button" class="gb-btn gb-btn--primary gb-login-btn">Create account</button>
               <div class="gb-login-row">
-                <span class="gb-login-link">Forgot password?</span>
-                <span class="gb-login-link">Create account</span>
+                <span class="gb-login-link">Have an account? Sign in</span>
               </div>
             </form>
           </div>
