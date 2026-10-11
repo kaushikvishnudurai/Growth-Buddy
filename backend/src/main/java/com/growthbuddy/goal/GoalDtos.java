@@ -77,13 +77,34 @@ record GoalResponse(
          * are in {@code GET /api/tasks} (by their {@code goalId}); these are not,
          * so "Tasks: done/total" adds them to both numbers.
          */
-        long clearedTaskCount) {
+        long clearedTaskCount,
+        /**
+         * Which progress blob this is: send it back as {@code If-Match} on
+         * {@code PUT /progress} and a save on top of a newer blob is a 409
+         * (HOS-2). A hash of the stored text, not updated_at: exact, and a
+         * title edit does not make a milestone save stale.
+         */
+        String progressVersion) {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     GoalResponse withClearedTaskCount(long n) {
         return new GoalResponse(id, title, description, horizon, targetDate, completed, completedAt,
-                createdAt, updatedAt, actionCount, latestActionAt, recentActions, progress, n);
+                createdAt, updatedAt, actionCount, latestActionAt, recentActions, progress, n, progressVersion);
+    }
+
+    /** First 16 hex digits of SHA-256 over the stored blob; "0" for none. */
+    static String progressVersion(String json) {
+        if (json == null) {
+            return "0";
+        }
+        try {
+            byte[] d = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(d, 0, 8);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     /** Parse the stored progress blob; null/blank or malformed -> null. */
@@ -102,7 +123,7 @@ record GoalResponse(
         return new GoalResponse(goal.getId(), goal.getTitle(), goal.getDescription(), goal.getHorizon(),
                 goal.getTargetDate(), goal.isCompleted(), goal.getCompletedAt(),
                 goal.getCreatedAt(), goal.getUpdatedAt(), actionCount, latestActionAt, List.of(),
-                parseProgress(goal.getProgressJson()), 0);
+                parseProgress(goal.getProgressJson()), 0, progressVersion(goal.getProgressJson()));
     }
 
     static GoalResponse from(Goal goal, long actionCount, Instant latestActionAt,
@@ -111,7 +132,7 @@ record GoalResponse(
                 goal.getTargetDate(), goal.isCompleted(), goal.getCompletedAt(),
                 goal.getCreatedAt(), goal.getUpdatedAt(), actionCount, latestActionAt,
                 recentActions != null ? recentActions : List.of(),
-                parseProgress(goal.getProgressJson()), 0);
+                parseProgress(goal.getProgressJson()), 0, progressVersion(goal.getProgressJson()));
     }
 }
 

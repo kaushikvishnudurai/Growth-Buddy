@@ -47,4 +47,22 @@ class TaskDueDateTest {
         assertThat(TaskService.isPush(null, NOW)).isFalse();
         assertThat(TaskService.isPush(NOW, null)).isFalse();
     }
+
+    /**
+     * HOS-1: tasks.due_at is a TIMESTAMP (1970-01-01..2038-01-19 UTC). A date
+     * outside it reached the database and came back as a misleading 409; refuse
+     * it at the boundary with a plain 400 instead.
+     */
+    @Test
+    void aDueDateOutsideTheStorableWindowIsRefused() {
+        for (String bad : new String[] {"1969-12-31T23:00:00Z", "1900-01-01T00:00:00Z",
+                "2038-06-01T00:00:00Z", "2100-12-31T00:00:00Z", "9999-12-31T00:00:00Z"}) {
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> TaskService.checkDueAt(Instant.parse(bad)))
+                    .isInstanceOf(com.growthbuddy.common.ApiException.class)
+                    .hasMessageContaining("2037");
+        }
+        TaskService.checkDueAt(null);
+        TaskService.checkDueAt(Instant.parse("1970-01-02T00:00:00Z"));
+        TaskService.checkDueAt(Instant.parse("2037-12-31T23:59:59Z"));
+    }
 }

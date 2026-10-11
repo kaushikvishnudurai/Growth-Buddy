@@ -94,6 +94,27 @@ class MoneyApplyLedgerTest {
         assertThat(out.get("rejected").get(0).path("reason").asText()).isEqualTo("Pick a day up to today.");
     }
 
+    /**
+     * HOS-7: an expense dated 0001-01-01 (one wrong keystroke in the year) was
+     * saved and counted in the balance, but no list pages below 1900, so it could
+     * never be seen or deleted. Before 1900 is refused per item; 1900 still saves.
+     */
+    @Test
+    void aRowDatedBefore1900IsRefused() throws Exception {
+        var body = json.readTree("""
+                {"upserts":[
+                  {"kind":"expense","id":"typo","amount":77,"date":"0001-01-01"},
+                  {"kind":"income","id":"old","amount":5,"source":"salary","date":"1899-12-31"},
+                  {"kind":"transfer","id":"mv","amount":5,"from":"a","to":"b","date":"1850-06-01"},
+                  {"kind":"expense","id":"floor","amount":1,"date":"1900-01-01"}]}""");
+        ObjectNode out = service.applyLedger(UUID.randomUUID(), body);
+
+        assertThat(saved).extracting(MoneyLedger.Row::id).containsExactly("floor");
+        assertThat(out.get("rejected")).extracting(r -> r.path("id").asText())
+                .containsExactly("typo", "old", "mv");
+        assertThat(out.get("rejected").get(0).path("reason").asText()).isEqualTo("Pick a day in 1900 or later.");
+    }
+
     /** OFF-5: a stale tab's edit of an expense deleted elsewhere is refused, not re-inserted. */
     @Test
     void anEditOfADeletedEntryIsRefusedWithACode() throws Exception {

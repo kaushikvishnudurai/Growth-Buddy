@@ -8,7 +8,7 @@ import java.util.UUID;
 /** Create body. Only {@code title} is required. */
 record CreateTaskRequest(
         @NotBlank @Size(max = 255) String title,
-        String notes,
+        @Size(max = 10000) String notes,
         Priority priority,
         Instant dueAt,
         /** One of the user's own goals, or null for none. */
@@ -18,7 +18,7 @@ record CreateTaskRequest(
 /** Update body. Null fields are left unchanged. */
 record UpdateTaskRequest(
         @Size(max = 255) String title,
-        String notes,
+        @Size(max = 10000) String notes,
         Priority priority,
         Instant dueAt,
         /**
@@ -71,4 +71,8 @@ record TaskHistoryResponse(
                 Priority p = Priority.valueOf(h.getPriority());
                 return new TaskHistoryResponse(h.getId(), h.getChangedAt(), p, h.getDueAt());
         }
+}
+
+/** PATCH /{id}/toggle body: {@code done} sets it; no body flips (old builds). */
+record ToggleTaskRequest(Boolean done) {
 }

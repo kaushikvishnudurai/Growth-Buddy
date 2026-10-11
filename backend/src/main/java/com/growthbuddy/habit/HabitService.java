@@ -1,6 +1,7 @@
 package com.growthbuddy.habit;
 
 import com.growthbuddy.common.ApiException;
+import com.growthbuddy.common.VisibleText;
 import com.growthbuddy.user.ProgressService;
 import com.growthbuddy.user.UserClock;
 import java.time.Instant;
@@ -686,7 +687,7 @@ public class HabitService {
     public HabitResponse create(UUID userId, CreateHabitRequest req) {
         Habit h = new Habit();
         h.setUserId(userId);
-        h.setName(req.name().trim());
+        h.setName(VisibleText.require(req.name(), "Name"));
         h.setDomain(req.domain() != null ? req.domain() : HabitDomain.habit);
         h.setIcon(checkIcon(req.icon()));
         h.setColor(req.color());
@@ -783,7 +784,7 @@ public class HabitService {
     public HabitResponse update(UUID userId, UUID id, UpdateHabitRequest req) {
         Habit h = require(userId, id);
         if (req.name() != null && !req.name().isBlank()) {
-            h.setName(req.name().trim());
+            h.setName(VisibleText.require(req.name(), "Name"));
         }
         if (req.domain() != null) {
             h.setDomain(req.domain());
@@ -926,16 +927,31 @@ public class HabitService {
     /** Toggle today's check-in (used by the dashboard "done today" tap). */
     @Transactional
     public HabitResponse toggleToday(UUID userId, UUID id) {
+        return toggleToday(userId, id, null);
+    }
+
+    /**
+     * {@code done} given: set today to it, and an unchanged one writes nothing
+     * (HOS-6: a stale tab's "done" unticked the habit and could cost a streak).
+     * Null flips, for builds that send no body. For a quit habit done = clean.
+     */
+    @Transactional
+    public HabitResponse toggleToday(UUID userId, UUID id, Boolean done) {
         LocalDate today = clock.today(userId);
         boolean doneNow;
-        if (isQuit(require(userId, id))) {
+        Habit habit = require(userId, id);
+        if (isQuit(habit)) {
             // Clean unless today's row is a slip: a toggle logs a slip, or takes it back.
             HabitCheckin row = checkins.findByHabitIdAndLogDate(id, today).orElse(null);
             doneNow = row == null || !isSlip(row);
         } else {
             doneNow = checkins.existsByHabitIdAndLogDateAndDoneTrue(id, today);
         }
-        return checkin(userId, id, new CheckinRequest(today, !doneNow, null, null, null));
+        boolean target = done != null ? done : !doneNow;
+        if (target == doneNow) {
+            return toResponse(habit, today, userId);
+        }
+        return checkin(userId, id, new CheckinRequest(today, target, null, null, null));
     }
 
     /**

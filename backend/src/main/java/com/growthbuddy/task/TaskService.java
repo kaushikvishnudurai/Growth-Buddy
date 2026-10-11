@@ -1,6 +1,7 @@
 package com.growthbuddy.task;
 
 import com.growthbuddy.common.ApiException;
+import com.growthbuddy.common.VisibleText;
 import com.growthbuddy.goal.GoalService;
 import com.growthbuddy.user.ProgressService;
 import java.time.Duration;
@@ -58,10 +59,10 @@ public class TaskService {
     public TaskResponse create(UUID userId, CreateTaskRequest req) {
         Task t = new Task();
         t.setUserId(userId);
-        t.setTitle(req.title().trim());
+        t.setTitle(VisibleText.require(req.title(), "Title"));
         t.setNotes(req.notes());
         t.setPriority(req.priority() != null ? req.priority() : Priority.Medium);
-        t.setDueAt(req.dueAt());
+        t.setDueAt(checkDueAt(req.dueAt()));
         t.setGoalId(ownGoal(userId, req.goalId()));
         return responseFor(userId, repo.save(t));
     }
@@ -70,7 +71,7 @@ public class TaskService {
     public TaskResponse update(UUID userId, UUID id, UpdateTaskRequest req) {
         Task t = require(userId, id);
         if (req.title() != null) {
-            t.setTitle(req.title().trim());
+            t.setTitle(VisibleText.require(req.title(), "Title"));
         }
         if (req.notes() != null) {
             t.setNotes(req.notes());
@@ -79,7 +80,7 @@ public class TaskService {
             t.setPriority(req.priority());
         }
         Instant oldDue = t.getDueAt();
-        t.setDueAt(resolveDueAt(oldDue, req.dueAt(), req.clearDueAt()));
+        t.setDueAt(resolveDueAt(oldDue, checkDueAt(req.dueAt()), req.clearDueAt()));
         if (isPush(oldDue, t.getDueAt())) {
             t.setPushCount(t.getPushCount() + 1);
         }
@@ -99,8 +100,22 @@ public class TaskService {
 
     @Transactional
     public TaskResponse toggle(UUID userId, UUID id) {
+        return toggle(userId, id, null);
+    }
+
+    /**
+     * {@code done} given: set it, and an unchanged one writes nothing (HOS-6: a
+     * stale tab's "done" used to flip a done task back open). Null flips, for
+     * builds that send no body.
+     */
+    @Transactional
+    public TaskResponse toggle(UUID userId, UUID id, Boolean done) {
         Task t = require(userId, id);
-        setDone(t, !t.isDone());
+        boolean target = done != null ? done : !t.isDone();
+        if (target == t.isDone()) {
+            return responseFor(userId, t);
+        }
+        setDone(t, target);
         return responseFor(userId, repo.save(t));
     }
 
@@ -144,6 +159,22 @@ public class TaskService {
                 progress.awardTaskCompletion(t.getUserId());
             }
         }
+    }
+
+    /**
+     * tasks.due_at is a TIMESTAMP: 1970-01-01..2038-01-19 UTC on MySQL and TiDB.
+     * Outside it the insert fails as a data truncation (HOS-1). ponytail: refuse
+     * at the boundary rather than migrate prod to DATETIME; the column change is
+     * the upgrade path if anyone needs a task due after 2037.
+     */
+    private static final Instant DUE_MIN = Instant.parse("1970-01-02T00:00:00Z");
+    private static final Instant DUE_MAX = Instant.parse("2038-01-01T00:00:00Z");
+
+    static Instant checkDueAt(Instant dueAt) {
+        if (dueAt != null && (dueAt.isBefore(DUE_MIN) || !dueAt.isBefore(DUE_MAX))) {
+            throw ApiException.badRequest("Pick a due date between 1970 and 2037.");
+        }
+        return dueAt;
     }
 
     /**

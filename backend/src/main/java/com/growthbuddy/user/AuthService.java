@@ -6,6 +6,7 @@ import com.growthbuddy.common.ApiException;
 import com.growthbuddy.common.DeliveryCache;
 import com.growthbuddy.common.LoginAttemptGuard;
 import com.growthbuddy.common.RateLimiter;
+import com.growthbuddy.common.VisibleText;
 import com.growthbuddy.mail.MailService;
 import com.growthbuddy.mentor.OpenAIClient;
 import com.growthbuddy.mentor.OpenAIClient.ChatTurn;
@@ -952,7 +953,7 @@ public class AuthService {
                 .orElseThrow(() -> ApiException.notFound("User not found"));
 
         if (req.displayName() != null && !req.displayName().isBlank()) {
-            user.setDisplayName(req.displayName().trim());
+            user.setDisplayName(VisibleText.require(req.displayName(), "Display name"));
         }
         if (req.timezone() != null && !req.timezone().isBlank()) {
             user.setTimezone(requireValidTimezone(req.timezone()));
@@ -1334,7 +1335,11 @@ public class AuthService {
 
     private String resolveDisplayName(String requested, String email) {
         if (requested != null && !requested.isBlank()) {
-            return requested.trim();
+            try {
+                return VisibleText.require(requested, "Display name");
+            } catch (ApiException invisible) {
+                // Sign-up keeps going: an invisible name gets the same default as none.
+            }
         }
         int at = email.indexOf('@');
         return at > 0 ? email.substring(0, at) : "Buddy";

@@ -1,5 +1,7 @@
 package com.growthbuddy.task;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -46,5 +48,30 @@ class TaskXpOnceTest {
         service.update(USER, t.getId(), new UpdateTaskRequest(null, null, null, null, null, true, null, null, null));
 
         verify(progress, times(1)).awardTaskCompletion(USER);
+    }
+
+    /**
+     * HOS-6: a stale tab that still shows the task open taps "done". A flip
+     * undid the other tab's tick; an explicit done=true is idempotent.
+     */
+    @Test
+    void anExplicitDoneSetsRatherThanFlips() {
+        Task t = new Task();
+        t.setId(UUID.randomUUID());
+        t.setUserId(USER);
+        t.setTitle("Plan this week");
+        when(repo.findByIdAndUserIdAndDeletedAtIsNull(t.getId(), USER)).thenReturn(Optional.of(t));
+        when(repo.save(any(Task.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(history.save(any(TaskHistory.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        assertThat(service.toggle(USER, t.getId(), true).done()).isTrue();
+        java.time.Instant doneAt = t.getDoneAt();
+        assertThat(service.toggle(USER, t.getId(), true).done()).isTrue();
+        assertThat(t.getDoneAt()).isEqualTo(doneAt);
+        verify(history, times(1)).save(any(TaskHistory.class));
+        assertThat(service.toggle(USER, t.getId(), false).done()).isFalse();
+        assertThat(service.toggle(USER, t.getId(), false).done()).isFalse();
+        // Absent = flip, for old builds.
+        assertThat(service.toggle(USER, t.getId(), null).done()).isTrue();
     }
 }

@@ -158,3 +158,7 @@ record HabitResponse(
                 h.getHealthLink(), h.getHealthTarget());
     }
 }
+
+/** PATCH /{id}/toggle body: {@code done} sets today; no body flips (old builds). */
+record ToggleHabitRequest(Boolean done) {
+}

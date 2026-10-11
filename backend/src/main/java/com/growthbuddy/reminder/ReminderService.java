@@ -1,6 +1,7 @@
 package com.growthbuddy.reminder;
 
 import com.growthbuddy.common.ApiException;
+import com.growthbuddy.common.VisibleText;
 import com.growthbuddy.common.WorkWeek;
 import com.growthbuddy.user.UserClock;
 import com.growthbuddy.user.UserRepository;
@@ -152,7 +153,7 @@ public class ReminderService {
         }
         CalendarReminder r = new CalendarReminder();
         r.setUserId(userId);
-        r.setText(req.text().trim());
+        r.setText(VisibleText.require(req.text(), "Reminder text"));
         r.setAnchorDate(req.date());
         r.setTime(req.time());
         r.setEndTime(endAfter(req.time(), req.endTime()));
@@ -581,7 +582,7 @@ public class ReminderService {
                 ? r.getTime() != null
                 : req.time() != null && !req.time().equals(r.getTime());
         if (StringUtils.hasText(req.text())) {
-            r.setText(req.text().trim());
+            r.setText(VisibleText.require(req.text(), "Reminder text"));
         }
         // A null time in a PATCH means "unchanged", so taking the time off a
         // reminder needs a word of its own. The end goes with it: an end with
