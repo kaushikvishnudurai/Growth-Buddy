@@ -677,3 +677,12 @@ CREATE TABLE IF NOT EXISTS `health_readings` (
   KEY `ix_health_user_type_day` (`user_id`,`type`,`day`),
   CONSTRAINT `fk_health_readings_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Deleted ledger ids (OFF-5). A new table, so a guarded CREATE; identical to
+-- the CREATE TABLE in tableCreationQueries.sql.
+CREATE TABLE IF NOT EXISTS `money_tx_tombstones` (
+  `user_id` char(36) NOT NULL,
+  `id` varchar(64) NOT NULL,
+  `deleted_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`user_id`, `id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -54,13 +54,15 @@ class QuickAddApplierTest {
 
     @Test
     void ledgerWritesMatchTheAppsShape() {
-        var exp = applier.ledgerWrite(Intent.of("expense").amount(200).note("lunch"), TODAY).path("upserts").get(0);
+        var exp = applier.ledgerWrite(Intent.of("expense").amount(200).note("lunch"), TODAY, "cash-1").path("upserts").get(0);
         assertEquals("expense", exp.path("kind").asText());
         assertEquals("others", exp.path("category").asText());
         assertEquals("2026-10-10", exp.path("date").asText());
-        var inc = applier.ledgerWrite(Intent.of("income").amount(50000).note("October salary"), TODAY).path("upserts").get(0);
+        assertEquals("cash-1", exp.path("accountId").asText(), "FRC-3: on an account, so the balance moves");
+        var inc = applier.ledgerWrite(Intent.of("income").amount(50000).note("October salary"), TODAY, null).path("upserts").get(0);
         assertEquals("salary", inc.path("source").asText());
         assertEquals("October salary", inc.path("label").asText());
+        assertTrue(inc.path("accountId").isMissingNode(), "no accounts yet: the row still saves");
     }
 
     @Test

@@ -866,14 +866,16 @@ public class HabitService {
             c.setXpPaid(false);
         }
         boolean wasDone = c.isDone();
-        // XP once per habit per day, tracked on the row (xp_paid): tick/untick/tick
-        // and tick/untick/protect/tick both pay once. The second used to pay again,
-        // bounded by the token it cost; now that ticking a rest day refunds the
-        // token, only the flag stops that loop.
-        // A quit habit earns nothing here: done = true only takes a slip back (or
-        // carries a note), and its clean days are paid once by creditCleanDays.
-        boolean pays = !wasDone && done && !xpPaid(c) && !isQuit(h);
-        c.setXpPaid(pays || xpPaid(c));
+        // xp_paid = this day's check-in XP is held now. A tick pays when it isn't,
+        // an un-tick hands it back (EXS-9), so a day holds one tick's XP however it
+        // is toggled (tick/untick/protect/tick included) and a mistaken tap leaves
+        // nothing behind. A quit habit earns nothing here: done = true only takes a
+        // slip back (or carries a note), and its clean days are paid once by
+        // creditCleanDays.
+        boolean held = xpPaid(c);
+        boolean pays = !isQuit(h) && !wasDone && done && !held;
+        boolean revokes = !isQuit(h) && wasDone && !done && held;
+        c.setXpPaid(pays || (held && !revokes));
         c.setUserId(userId);
         c.setDone(done);
         if (done && c.isProtectedDay() && !isQuit(h)) {
@@ -903,9 +905,11 @@ public class HabitService {
 
         if (pays) {
             progress.awardHabitCheckin(userId);
+        } else if (revokes) {
+            progress.revokeHabitCheckin(userId);
         }
 
-        recomputeStreak(h, today);
+        recomputeStreak(h, today, !isQuit(h) && wasDone && !done ? date : null);
         return toResponse(h, today, userId);
     }
 
@@ -929,6 +933,16 @@ public class HabitService {
      * from the most recent check-in.
      */
     private void recomputeStreak(Habit habit, LocalDate today) {
+        recomputeStreak(habit, today, null);
+    }
+
+    /**
+     * {@code unticked}: the day just taken back. The longest streak only ever grows,
+     * except here: when the run that day belonged to was the record, the record is
+     * what history now holds (EXS-9), so a mistaken tick doesn't stay "Best streak 1".
+     * A record history can't explain (stored before rows were kept) is left alone.
+     */
+    private void recomputeStreak(Habit habit, LocalDate today, LocalDate unticked) {
         List<HabitCheckin> all = checkins.findByHabitIdOrderByLogDateDesc(habit.getId());
         List<HabitCheckin> done = all.stream().filter(HabitCheckin::isDone).toList();
         Set<LocalDate> doneDates = new HashSet<>();
@@ -962,32 +976,59 @@ public class HabitService {
             return;
         }
 
+        int stored = s.getLongestStreak();
+        if (unticked != null && stored == longestRun(habit, withDay(done, habit, unticked), protectedDates)) {
+            stored = 0; // the record was the run just shortened: history decides it again
+        }
+
         if (done.isEmpty()) {
             s.setCurrentStreak(0);
             s.setLastDoneOn(null);
-            s.setLongestStreak(Math.max(s.getLongestStreak(), 0));
+            s.setLongestStreak(Math.max(stored, 0));
             streaks.save(s);
             return;
         }
 
         int current;
-        int longest;
         if (habit.getCadence() == Cadence.daily) {
             current = currentDailyRun(today, doneDates, protectedDates);
-            longest = longestDailyRun(doneDates, protectedDates);
         } else {
-            int required = habit.getCadence() == Cadence.weekly
-                    ? 1
-                    : Math.max(1, habit.getTargetPerWeek());
-            List<LocalDate> completedWeeks = completedWeekBuckets(done, required);
-            current = currentWeeklyRun(today, completedWeeks);
-            longest = longestWeeklyRun(completedWeeks);
+            current = currentWeeklyRun(today, completedWeekBuckets(done, weeklyRequired(habit)));
         }
 
         s.setCurrentStreak(current);
         s.setLastDoneOn(done.get(0).getLogDate());
-        s.setLongestStreak(Math.max(s.getLongestStreak(), longest));
+        s.setLongestStreak(Math.max(stored, longestRun(habit, done, protectedDates)));
         streaks.save(s);
+    }
+
+    private static int weeklyRequired(Habit habit) {
+        return habit.getCadence() == Cadence.weekly ? 1 : Math.max(1, habit.getTargetPerWeek());
+    }
+
+    /** The longest run the done rows (newest first) make, by the habit's cadence. */
+    private int longestRun(Habit habit, List<HabitCheckin> done, Set<LocalDate> protectedDates) {
+        if (done.isEmpty()) {
+            return 0;
+        }
+        if (habit.getCadence() == Cadence.daily) {
+            Set<LocalDate> dates = new HashSet<>();
+            done.forEach(c -> dates.add(c.getLogDate()));
+            return longestDailyRun(dates, protectedDates);
+        }
+        return longestWeeklyRun(completedWeekBuckets(done, weeklyRequired(habit)));
+    }
+
+    /** {@code done} with {@code day} put back as done, newest first: history before the un-tick. */
+    private static List<HabitCheckin> withDay(List<HabitCheckin> done, Habit habit, LocalDate day) {
+        List<HabitCheckin> out = new java.util.ArrayList<>(done);
+        HabitCheckin c = new HabitCheckin();
+        c.setHabitId(habit.getId());
+        c.setLogDate(day);
+        c.setDone(true);
+        out.add(c);
+        out.sort(java.util.Comparator.comparing(HabitCheckin::getLogDate).reversed());
+        return out;
     }
 
     /** A day keeps the streak alive if it was done or protected (rest/freeze). */

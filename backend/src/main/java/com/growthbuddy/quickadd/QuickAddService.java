@@ -45,7 +45,7 @@ public class QuickAddService {
             You turn a short natural-language message into actions for a personal growth
             app. It is the app's one command box: logging, adding, finishing, opening and
             switching things all come through here. Output STRICT JSON only, no prose:
-            {"intents":[...],"note":"<=90 chars confirmation"}
+            {"intents":[...],"note":"<=90 chars, what will be logged, future tense (\"Will log 250 for lunch\"), no emoji"}
             Each intent has a "type" and ONLY the fields for that type:
               {"type":"task","title":"..."}                 something to do, no time attached
               {"type":"task_done","title":"..."}            they finished an existing task ("done with the report")
@@ -83,7 +83,8 @@ public class QuickAddService {
             at 7 call mom" (repeating). Use it, not "task", whenever a time, a day, or a
             repeat is given. "text" is what to be reminded of, without the time words
             ("call mom", not "remind me tomorrow at 9 to call mom"). Resolve the date from
-            TODAY below ("tomorrow", "next Friday", "on the 21st"); no day given = today.
+            TODAY below ("tomorrow", "next Friday", "on the 21st"); no day given = today,
+            or tomorrow when that time has already passed NOW.
             "in 20 minutes" / "in 2 hours" count from NOW below.
             "time" is 24-hour local ("9 pm" -> "21:00", "half past 6 in the morning" ->
             "06:30"); null when no time was said. "endTime" only for a span ("3 to 4pm").
@@ -221,9 +222,6 @@ public class QuickAddService {
             "food", "summary", "focus", "report", "family", "circle", "mentor", "achievements", "settings");
     private static final Set<String> THEMES = Set.of("dark", "light", "system");
     private static final Pattern ISO_CURRENCY = Pattern.compile("[A-Z]{3}");
-    /** Pictographs, dingbats, flags and the joiners/selectors that glue them; the note is shown as plain copy. */
-    private static final Pattern EMOJI = Pattern.compile(
-            "[\\p{So}\\p{Sk}\\x{1F1E6}-\\x{1F1FF}\\x{FE0F}\\x{200D}\\x{20E3}]");
     /** How far back a "yesterday"/"on Monday" log may land; older is a misread, not a log. */
     private static final int MAX_BACKDATE_DAYS = 31;
     private static final Pattern HHMM = Pattern.compile("([01]?\\d|2[0-3]):([0-5]\\d)(:\\d\\d)?");
@@ -285,10 +283,10 @@ public class QuickAddService {
             JsonNode root = json.readTree(OpenAIClient.jsonOf(raw));
             List<Intent> out = new ArrayList<>();
             for (JsonNode n : root.path("intents")) {
-                Intent it = toIntent(n, today);
+                Intent it = toIntent(n, clean, today, now);
                 if (it != null) out.add(it);
             }
-            String note = noEmoji(root.path("note").asText(""));
+            String note = OpenAIClient.plainText(root.path("note").asText(""));
             return new QuickAddResult(true, false, out, note.isBlank() ? null : cap(note, 120));
         } catch (ApiException ex) {
             if (ex.getStatus() != HttpStatus.TOO_MANY_REQUESTS) throw ex;
@@ -304,17 +302,13 @@ public class QuickAddService {
         }
     }
 
-    static String noEmoji(String s) {
-        return s == null ? "" : EMOJI.matcher(s).replaceAll("").replaceAll("\\s{2,}", " ").strip();
-    }
-
     /** A said past day within {@link #MAX_BACKDATE_DAYS}; anything else (today, future, garbage) is null = today. */
     private static LocalDate pastDay(JsonNode n, LocalDate today) {
         LocalDate d = date(n.path("date").asText(""));
         return d != null && d.isBefore(today) && !d.isBefore(today.minusDays(MAX_BACKDATE_DAYS)) ? d : null;
     }
 
-    private Intent toIntent(JsonNode n, LocalDate today) {
+    private Intent toIntent(JsonNode n, String said, LocalDate today, LocalTime now) {
         String type = n.path("type").asText("");
         switch (type) {
             case "task", "task_done", "goal": {
@@ -341,7 +335,7 @@ public class QuickAddService {
                         .energy(oneOf(n.path("energy").asText(""), "medium", "low", "medium", "high"));
             }
             case "reminder":
-                return reminder(n, today);
+                return reminder(n, said, today, now);
             case "expense", "income": {
                 int amt = clamp(n.path("amount").asInt(0), 0, 100_000_000);
                 String cur = n.path("currency").asText("").trim().toUpperCase(Locale.ROOT);
@@ -395,8 +389,10 @@ public class QuickAddService {
      * unknown repeat drops that field, not the reminder. A date before today (the
      * model misreading "Monday" as last Monday) becomes today — the reminder API
      * refuses a past day, and the preview shows the date before anything is saved.
+     * A date on another weekday than the one {@code said} names is moved onto it
+     * ({@link QuickAddFallback#anchor}).
      */
-    private static Intent reminder(JsonNode n, LocalDate today) {
+    private static Intent reminder(JsonNode n, String said, LocalDate today, LocalTime now) {
         String text = cap(n.path("text").asText(""), 120);
         if (text.isEmpty()) return null;
         LocalDate date = date(n.path("date").asText(""));
@@ -406,6 +402,7 @@ public class QuickAddService {
         if (end != null && !end.isAfter(time)) end = null;
         String repeat = n.path("repeat").asText("none").trim().toLowerCase();
         if (!REPEATS.contains(repeat)) repeat = "none";
+        date = QuickAddFallback.anchor(said, date, repeat, today, time, now);
         LocalDate until = "none".equals(repeat) ? null : date(n.path("until").asText(""));
         if (until != null && until.isBefore(date)) until = null;
         String tag = n.path("tag").asText("personal").trim().toLowerCase();

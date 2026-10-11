@@ -407,6 +407,27 @@ public class OpenAIClient {
         return end > start ? s.substring(start, end + 1) : s;
     }
 
+    private static final java.util.regex.Pattern EMOJI = java.util.regex.Pattern.compile(
+            "[\\p{So}\\p{Sk}\\x{1F1E6}-\\x{1F1FF}\\x{FE0F}\\x{200D}\\x{20E3}]");
+
+    /**
+     * A model's prose for a plain-text slot: Markdown marks and emoji out, words
+     * kept. Prompts already ask for neither; models add them anyway ("**Worth a
+     * short pause.**" printed with its asterisks, EXM-5; a water emoji in the quick
+     * add preview, FRC-13), and every client sets this text as text.
+     */
+    public static String plainText(String s) {
+        if (s == null) {
+            return null;
+        }
+        String t = EMOJI.matcher(s).replaceAll("");
+        t = t.replaceAll("(?m)^\\s{0,3}(?:#{1,6}\\s+|[*-]\\s+(?=\\S))", "")
+                .replaceAll("\\*\\*|__", "")
+                .replaceAll("(?<![\\w*])\\*(?=\\S)([^*\\n]+?)(?<=\\S)\\*(?![\\w*])", "$1")
+                .replaceAll("[ \\t]{2,}", " ");
+        return t.strip();
+    }
+
     public record ChatTurn(String role, String content) {}
 
     /**

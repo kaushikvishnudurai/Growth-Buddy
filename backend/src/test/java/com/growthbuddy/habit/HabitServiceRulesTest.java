@@ -132,18 +132,46 @@ class HabitServiceRulesTest {
 
     /* ---- XP once per habit per day ---- */
 
+    /** EXS-9: a tick pays, an un-tick hands it back, a re-tick pays again: one day, one tick's XP. */
     @Test
-    void firstTickAwardsXpButUntickThenRetickDoesNot() {
+    void xpFollowsTheTickSoTogglingLeavesOneDaysWorth() {
         when(checkins.findByHabitIdAndLogDate(habit.getId(), TODAY)).thenReturn(Optional.empty());
         service.checkin(USER, habit.getId(), new CheckinRequest(TODAY, true, null, null, null));
         verify(progress, times(1)).awardHabitCheckin(USER);
 
-        // The un-tick left the row behind, done = false.
-        HabitCheckin untouched = done(habit, TODAY);
-        untouched.setDone(false);
-        when(checkins.findByHabitIdAndLogDate(habit.getId(), TODAY)).thenReturn(Optional.of(untouched));
+        HabitCheckin row = done(habit, TODAY);
+        when(checkins.findByHabitIdAndLogDate(habit.getId(), TODAY)).thenReturn(Optional.of(row));
+        service.checkin(USER, habit.getId(), new CheckinRequest(TODAY, false, null, null, null));
+        verify(progress, times(1)).revokeHabitCheckin(USER);
+        service.checkin(USER, habit.getId(), new CheckinRequest(TODAY, false, null, null, null));
+        verify(progress, times(1)).revokeHabitCheckin(USER); // already undone: nothing to hand back
+
         service.checkin(USER, habit.getId(), new CheckinRequest(TODAY, true, null, null, null));
-        verify(progress, times(1)).awardHabitCheckin(USER);
+        verify(progress, times(2)).awardHabitCheckin(USER);
+        service.checkin(USER, habit.getId(), new CheckinRequest(TODAY, true, null, null, null));
+        verify(progress, times(2)).awardHabitCheckin(USER); // already done: no second pay
+    }
+
+    /** EXS-9: a new habit ticked then un-ticked reads "Best streak 0", not 1. */
+    @Test
+    void untickingTheRecordRunTakesTheRecordBack() {
+        HabitStreak streak = new HabitStreak();
+        streak.setHabitId(habit.getId());
+        streak.setLongestStreak(3);
+        when(streaks.findById(habit.getId())).thenReturn(Optional.of(streak));
+        // Three days ending today were the record; today is taken back.
+        HabitCheckin today = done(habit, TODAY);
+        when(checkins.findByHabitIdAndLogDate(habit.getId(), TODAY)).thenReturn(Optional.of(today));
+        when(checkins.findByHabitIdOrderByLogDateDesc(habit.getId())).thenAnswer(inv -> List.of(today,
+                done(habit, TODAY.minusDays(1)), done(habit, TODAY.minusDays(2))));
+        service.checkin(USER, habit.getId(), new CheckinRequest(TODAY, false, null, null, null));
+        assertThat(streak.getLongestStreak()).isEqualTo(2);
+
+        // A record history can't explain (kept from before rows were) stays.
+        streak.setLongestStreak(9);
+        today.setDone(true);
+        service.checkin(USER, habit.getId(), new CheckinRequest(TODAY, false, null, null, null));
+        assertThat(streak.getLongestStreak()).isEqualTo(9);
     }
 
     @Test
