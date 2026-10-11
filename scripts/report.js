@@ -415,9 +415,10 @@ function trendsSection({ on, trends, wellness, range, onRange }) {
 
   const cards = [];
 
-  // Score — always available.
+  // Score — always available. Finished days only (`curDays`, today left out): today's
+  // score is still climbing, and as the line's last point it read as a 0% drop.
   {
-    const vals = seriesFrom((d) => (d.score != null ? d.score : null));
+    const vals = seriesFrom((d) => (d.score != null ? d.score : null), curDays);
     const s = summarize(vals);
     cards.push(
       card(
@@ -426,7 +427,7 @@ function trendsSection({ on, trends, wellness, range, onRange }) {
         s.avg != null ? Math.round(s.avg) + '% avg over ' + nDays(s.count) : null,
         vals,
         'var(--brand)',
-        days,
+        curDays,
         (v) => Math.round(v) + '%',
         vsLine(
           (keys) => seriesFrom((d) => (d.score != null ? d.score : null), keys),
@@ -625,8 +626,9 @@ const COMPARE_METRICS = [
   { key: 'focus', label: 'Focus minutes', feature: 'focus', fmt: (v) => Math.round(v) + ' min' },
   { key: 'habits', label: 'Habits done', feature: 'habits', fmt: (v) => Math.round(v) + '%' },
 ];
-let compareX = 'sleepHours';
-let compareY = 'mood';
+let compareX = null;
+let compareY = null;
+let comparePicked = false; // until the user picks, show the strongest pair
 
 function scatterChart(res, mx, my) {
   const W = 320;
@@ -791,6 +793,10 @@ function compareSection({ on, trends, wellness, money, insightHistory }) {
 
   const slot = h('div');
   const paint = () => {
+    if (!comparePicked) {
+      const best = Object.keys(pairs).sort((a, b) => Math.abs(pairs[b].r) - Math.abs(pairs[a].r))[0];
+      [compareX, compareY] = best.split('|');
+    }
     if (!xs.some((m) => m.key === compareX)) compareX = xs[0].key;
     const ys = partners(compareX);
     if (!ys.some((m) => m.key === compareY)) compareY = ys[0].key;
@@ -823,8 +829,8 @@ function compareSection({ on, trends, wellness, money, insightHistory }) {
       h(
         'div',
         { class: 'gb-compare-pick' },
-        select('gb-compare-x', 'Compare', xs, compareX, (v) => (compareX = v)),
-        select('gb-compare-y', 'with', ys, compareY, (v) => (compareY = v))
+        select('gb-compare-x', 'Compare', xs, compareX, (v) => ((comparePicked = true), (compareX = v))),
+        select('gb-compare-y', 'with', ys, compareY, (v) => ((comparePicked = true), (compareY = v)))
       ),
       scatterChart(res, mx, my),
       h(

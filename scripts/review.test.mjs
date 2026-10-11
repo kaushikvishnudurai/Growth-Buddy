@@ -51,6 +51,13 @@ assert.deepEqual(daysEnding('2026-03-30', 2), ['2026-03-29', '2026-03-30']);
   assert.deepEqual(v, { '2026-06-01': 1, '2026-06-02': 0.5 });
 }
 
+// --- pixelValues habits: days before the habit got going are not 0% days ---
+{
+  const habitHistory = { h1: { since: '2026-01-01', days: [{ date: '2026-06-02', done: true }] } };
+  const v = pixelValues('habits', { habitHistory, today: '2026-06-04' });
+  assert.deepEqual(v, { '2026-06-02': 1, '2026-06-03': 0 }, 'starts at the first done day');
+}
+
 // --- personalRecords ---
 {
   const recs = personalRecords({
@@ -166,6 +173,7 @@ assert.equal(monthReview({ today: '2026-06-17' }), null);
     history: { finished: [{ doneAt: '2026-06-02T09:00:00' }, { doneAt: '2026-05-02T09:00:00' }] },
   });
   assert.equal(card.headline, '70%');
+  assert.match(card.sub, /^average daily score over \d+ days?$/, 'says how many days it stands on');
   assert.deepEqual(
     card.stats.map((s) => s.label),
     ['Tasks finished', 'Current streak', 'Water goal hit']

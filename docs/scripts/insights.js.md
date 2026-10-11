@@ -1,7 +1,7 @@
 # scripts/insights.js — Insights engine
 
 Pure pattern finder over the local wellness + trends + money stores, plus history the Report
-screen fetches on open. No AI, no imports. `push.js` imports `drinkRateByHour` from here.
+screen fetches on open. No AI; its one import is `money-core.js` (pure) for `fmtIn`/`homeCur`/`catOf`, so money cards read "₹1,200 on Food", the tag's label in the home currency. `push.js` imports `drinkRateByHour` from here.
 Two callers: `report.js` `insightsSection` (Report screen) and `outlook.js` `topInsight` (Home's Outlook card, `[0]` only; Home never fetches history, it reuses Report's `state.insightHistory` + year via `yearOf` once Report has loaded it, so history-only cards appear on Home only after a Report visit). Both draw the row with `outlook-card.js` `InsightRow`. Checked by
 `node scripts/insights.test.mjs`.
 
@@ -12,7 +12,7 @@ optional; a card whose data is missing just doesn't appear. Each rule is exporte
 drops its cards. `dismissed` ids are filtered **before** the cap, so the next card fills the slot; ids
 of this-week/today cards carry the week's Monday or the day (`sleepDebt:2026-10-05`), so a dismissal
 doesn't silence next month's. `basis` is what the card stands on ("23 days", "12 sessions"); each rule
-sets its own. `insightProgress(wellness)` → `{days, need}` for the empty state.
+sets its own, and `buildInsights` appends ", an early pattern" to any basis whose number is under `MIN_DAYS` (7), on every card alike. `insightProgress(wellness)` → `{days, need}` for the empty state.
 `action` `{label, kind, params}` is the card's next step, as **data only** — app.js `runInsightAction`
 does it (Report draws the button). Kinds: `bedtimeReminder` {time, repeat} (bestBedtime),
 `waterNudge` {hour, from, to} (waterGap), `editTask` {taskId} (pushedTask), `habitReminder`
@@ -21,7 +21,7 @@ hiddenSubscription). A new kind needs a `case` there or its button does nothing.
 
 `history` is `state.insightHistory`, filled by app.js `loadInsightHistory`:
 `{focus: [{durationSec, completedAt}], finished: [{priority, createdAt, doneAt}],
-waterTimes: [instant], scores: [dayBeforeYesterday, yesterday], habits: {id: {since, days}}}`.
+waterTimes: [instant], scores: [dayBeforeYesterday, yesterday] (with tasks/habits parts, for scoreChange), habits: {id: {since, days}}}`.
 A quit ("break a habit") habit is skipped by the habit series: its clean days have no row.
 
 | Piece | What |
@@ -46,7 +46,7 @@ A quit ("break a habit") habit is skipped by the habit series: its clean days ha
 | `taskTiming` / `pushedTask` / `taskWeekday` | created→done days per priority (3+ each); open task with `pushCount` 3+; weekday with the most finishes (10+) |
 | `unusualExpense` / `hiddenSubscription` | an expense this week 3x the category median (5+ before it); same note, amounts within 15%, gaps of 25–35 days, 3+ times, not matching a subscription name |
 | `drinkRateByHour` / `waterGap` | share of logged days with water in each local hour; longest 3h+ run between 09:00 and 21:00 under 20% |
-| `scoreChange` | yesterday vs the day before, 10+ points, names the part (tasks or habits) whose rate moved most |
+| `scoreChange` | yesterday vs the day before, 10+ points, names the part (tasks or habits) that moved most **the score's way** (a rise in habits never explains a fall). 0 of 0 is no data, not 0%; a part due on only one of the two days is measured against the other day's score, and a newly due task with none done reads "a task came due and wasn't done". No part moving that way → no card. Icon `trending-down` on a fall |
 
 **Traps**
 

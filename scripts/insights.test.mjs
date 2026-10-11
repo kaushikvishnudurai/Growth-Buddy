@@ -352,10 +352,17 @@ assert.deepEqual(buildInsights({ wellness: {}, trends: {} }), []);
   for (const d of ['2026-03-05', '2026-04-04', '2026-05-05', '2026-06-04'])
     expenses.push({ amount: 649, category: 'Bills', date: d, note: 'Netflix' });
   const u = unusualExpense({ expenses }, day(21));
-  assert.ok(u && /1,000 on Food \(party\) is 5x your usual 200/.test(u.text), u && u.text);
+  assert.ok(u && /₹1,000 on Food \(party\) is 5x your usual ₹200/.test(u.text), u && u.text);
+  // The home currency's symbol, en-IN grouping, and the tag's label, not its key.
+  const raw = [];
+  for (let i = 0; i < 6; i++) raw.push({ amount: 342, category: 'food', date: day(i) });
+  raw.push({ amount: 1200, category: 'food', date: day(20), note: 'Groceries' });
+  const u2 = unusualExpense({ expenses: raw, settings: { currency: '$' } }, day(21));
+  assert.ok(u2 && /^\$1,200 on Food \(Groceries\) is 4x your usual \$342\.$/.test(u2.text), u2 && u2.text);
+  assert.ok(/earlier Food expenses/.test(u2.basis), u2.basis);
   assert.equal(unusualExpense({ expenses }, day(40)), null, 'only this week');
   const h = hiddenSubscription({ expenses }, '2026-06-20');
-  assert.ok(h && /Netflix/.test(h.text), h && h.text);
+  assert.ok(h && /Netflix.*about ₹649 every month/.test(h.text), h && h.text);
   assert.equal(
     hiddenSubscription({ expenses, subscriptions: [{ name: 'netflix' }] }, '2026-06-20'),
     null
@@ -383,6 +390,30 @@ assert.deepEqual(buildInsights({ wellness: {}, trends: {} }), []);
     c && c.text
   );
   assert.equal(scoreChange([a, { ...a, score: 85 }]), null);
+}
+
+// --- scoreChange: only a part that moved the score's way; 0 of 0 is no data ---
+{
+  // The QA case: habits went UP, a task came due and wasn't done.
+  const a = { score: 67, tasksDone: 0, tasksTotal: 0, habitsDone: 2, habitsTotal: 3 };
+  const b = { score: 50, tasksDone: 0, tasksTotal: 1, habitsDone: 3, habitsTotal: 3 };
+  const c = scoreChange([a, b]);
+  assert.ok(c && /17 points down on the day before: a task came due and wasn't done\./.test(c.text), c && c.text);
+  assert.equal(c.icon, 'trending-down');
+  // Same days, rising: habits explain it; the missing tasks are "none due", not 0%.
+  const r = scoreChange([{ ...b, score: 50 }, { ...a, score: 67 }]);
+  assert.ok(r && /mostly from tasks: none due vs 0 of 1 done/.test(r.text), r && r.text);
+  assert.equal(r.icon, 'trending-up');
+  // Nothing moved the score's way -> no card, not a wrong cause.
+  const flat = { score: 80, tasksDone: 1, tasksTotal: 1, habitsDone: 1, habitsTotal: 1 };
+  assert.equal(scoreChange([flat, { ...flat, score: 60 }]), null);
+}
+
+// --- buildInsights: under 7 samples is labelled an early pattern ---
+{
+  const s = (score, done) => ({ score, tasksDone: done, tasksTotal: 1 });
+  const card = buildInsights({ history: { scores: [s(90, 1), s(40, 0)] } })[0];
+  assert.equal(card.basis, '2 days, an early pattern');
 }
 
 // --- buildInsights: no history at all still works ---
@@ -424,7 +455,7 @@ assert.deepEqual(buildInsights({}), []);
     JSON.stringify(all)
   );
   const water = all.find((c) => c.title === 'When water slips');
-  assert.equal(water.basis, '5 days');
+  assert.equal(water.basis, '5 days, an early pattern', 'under 7 days is labelled');
   const left = buildInsights({ ...args, dismissed: [water.id] });
   assert.ok(!left.some((c) => c.id === water.id));
   assert.equal(left.length, all.length - 1);

@@ -243,4 +243,17 @@ const expenses = [inc('2025-11-02', 450)];
   assert.equal(yearOf(t, {}, {}).trends, t);
 }
 
+// --- yearOf: the /api/score/range year fills days the app was never opened on ---
+{
+  const t = { byDate: { '2026-10-11': { score: 10 } } };
+  const scoreRange = [
+    { date: '2026-01-02', score: 70 },
+    { date: '2026-10-10', score: 20 },
+  ];
+  const y = yearOf(t, {}, { scoreRange, scores: [{ date: '2026-10-10', score: 55 }] });
+  assert.equal(y.trends.byDate['2026-01-02'].score, 70, 'a never-opened day gets its score');
+  assert.equal(y.trends.byDate['2026-10-10'].score, 55, 'the two-day fetch is newer and wins');
+  assert.equal(y.trends.byDate['2026-10-11'].score, 10, "today stays the live store's");
+}
+
 console.log('outlook tests passed');

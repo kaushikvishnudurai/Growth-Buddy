@@ -49,7 +49,7 @@ Owns its thread and messages locally so a keystroke never round-trips global sta
   so the bubble stays, is rich-rendered and cached as Buddy's, and there is **no Retry** — it would
   ask the same question twice. A non-Stop partial adds an error line.
 - **Stop before any word** lands on the failure path: the server deleted the user's message again,
-  so it is offered back with Retry (no `console.error` for a Stop).
+  so it is offered back with Retry (no `console.error` for a Stop). The console line is the shown text (`sendFailText`) + status, not the error's own message: app.js words an AI 503 as "waking up".
 - Offline (`navigator.onLine`) fails fast with `OFFLINE`, for both load and send.
 - a11y: the list is `role=log` + `aria-live=polite`, which is why a send **appends** rather than
   repainting (a repaint re-reads the conversation). Enter sends, Shift+Enter is a newline.
