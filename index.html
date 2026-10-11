@@ -10,18 +10,17 @@
     />
     <title>Growth Buddy</title>
 
-    <!-- sockjs-client (CommonJS) references the Node `global`, which doesn't
-         exist in the browser. The old CDN UMD build shimmed it; the bundled
-         npm version doesn't, so define it before the module entry loads.
-         External (public/) so the CSP needs no 'unsafe-inline' for scripts. -->
-    <script src="/global-shim.js"></script>
-
     <link rel="icon" type="image/svg+xml" href="/logomark.svg" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Growth Buddy" />
+    <!-- The two faces the first paint uses (body text, the sign-in and Home
+         titles). Without these they are found only after the CSS has parsed.
+         Vite resolves and hashes them to the same files tokens.css imports. -->
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="./node_modules/@fontsource/hanken-grotesk/files/hanken-grotesk-latin-400-normal.woff2" />
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="./node_modules/@fontsource/bricolage-grotesque/files/bricolage-grotesque-latin-700-normal.woff2" />
     <link rel="stylesheet" href="styles/tokens.css" />
     <link rel="stylesheet" href="styles/app.css" />
     <link rel="stylesheet" href="styles/mini-calendar.css" />
@@ -29,14 +28,53 @@
     <!-- Premium skin. Scoped to html[data-premium='on'] and loaded last so it
          can override tokens; inert when the toggle is off. -->
     <link rel="stylesheet" href="styles/premium.css" />
+    <!-- Hides the static sign-in shell below for a signed-in or deep-linked load,
+         before first paint. External, not inline, for script-src 'self'. -->
+    <script src="/shell-gate.js"></script>
+    <style>
+      .gb-no-shell [data-gb-shell] {
+        display: none;
+      }
+    </style>
   </head>
   <body>
     <div class="gb-page">
-      <div id="root"></div>
+      <div id="root">
+        <!-- Static sign-in shell: paints on the HTML + CSS alone, before the boot
+             chunk has loaded. The app's first render() replaces it (authShell
+             then skips its entrance so the swap is invisible). inert: nothing
+             typed here would survive that swap. Keep in step with authShell and
+             viewLogin in scripts/app.js. -->
+        <main class="gb-login-wrap" data-gb-shell inert>
+          <div class="gb-login-card">
+            <div class="gb-garden"><svg viewBox="0 0 300 96" aria-hidden="true" focusable="false" overflow="visible"><ellipse class="gb-garden-seed" cx="24" cy="92" rx="5" ry="3.5"></ellipse><path class="gb-garden-stem" style="--i:1" pathLength="100" d="M66 96Q63 89 66 82"></path><path class="gb-garden-leaf gb-garden-leaf--r" style="--i:1" d="M66 87q5 -9 11 -6q-5 8 -11 6z"></path><path class="gb-garden-leaf gb-garden-leaf--r" style="--i:1" d="M66 82q5 -9 11 -6q-5 8 -11 6z"></path><path class="gb-garden-stem" style="--i:2" pathLength="100" d="M108 96Q105 83 108 70"></path><path class="gb-garden-leaf gb-garden-leaf--r" style="--i:2" d="M108 79q5 -9 11 -6q-5 8 -11 6z"></path><path class="gb-garden-stem" style="--i:3" pathLength="100" d="M150 96Q147 76 150 56"></path><path class="gb-garden-leaf gb-garden-leaf--r" style="--i:3" d="M150 73q5 -9 11 -6q-5 8 -11 6z"></path><path class="gb-garden-leaf gb-garden-leaf--l" style="--i:3" d="M150 67q-5 -9 -11 -6q5 8 11 6z"></path><path class="gb-garden-stem" style="--i:4" pathLength="100" d="M192 96Q189 70 192 44"></path><path class="gb-garden-leaf gb-garden-leaf--r" style="--i:4" d="M192 67q5 -9 11 -6q-5 8 -11 6z"></path><path class="gb-garden-leaf gb-garden-leaf--l" style="--i:4" d="M192 58q-5 -9 -11 -6q5 8 11 6z"></path><path class="gb-garden-stem" style="--i:5" pathLength="100" d="M234 96Q231 64 234 32"></path><path class="gb-garden-leaf gb-garden-leaf--r" style="--i:5" d="M234 62q5 -9 11 -6q-5 8 -11 6z"></path><path class="gb-garden-leaf gb-garden-leaf--l" style="--i:5" d="M234 54q-5 -9 -11 -6q5 8 11 6z"></path><path class="gb-garden-leaf gb-garden-leaf--r" style="--i:5" d="M234 46q5 -9 11 -6q-5 8 -11 6z"></path><path class="gb-garden-stem" style="--i:6" pathLength="100" d="M276 96Q273 59 276 22"></path><path class="gb-garden-leaf gb-garden-leaf--r" style="--i:6" d="M276 57q5 -9 11 -6q-5 8 -11 6z"></path><path class="gb-garden-leaf gb-garden-leaf--l" style="--i:6" d="M276 48q-5 -9 -11 -6q5 8 11 6z"></path><path class="gb-garden-leaf gb-garden-leaf--r" style="--i:6" d="M276 39q5 -9 11 -6q-5 8 -11 6z"></path><circle class="gb-garden-bud" cx="234" cy="32" r="4"></circle><g class="gb-garden-bloom"><circle cx="276.0" cy="16.5" r="5"></circle><circle cx="281.2" cy="20.3" r="5"></circle><circle cx="279.2" cy="26.4" r="5"></circle><circle cx="272.8" cy="26.4" r="5"></circle><circle cx="270.8" cy="20.3" r="5"></circle><circle class="gb-garden-heart" cx="276" cy="22" r="3.5"></circle></g></svg></div>
+            <div class="gb-login-brand">
+              <span class="gb-icon" aria-hidden="true" style="display: inline-flex; align-items: center; justify-content: center; color: var(--brand);"><svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-lucide="sprout" class="lucide lucide-sprout"><path d="M7 20h10"></path><path d="M10 20c5.5-2.5.8-6.4 3-10"></path><path d="M9.5 9.4c1.1.8 1.8 2.2 2.3 3.7-2 .4-3.5.4-4.8-.3-1.2-.6-2.3-1.9-3-4.2 2.8-.5 4.4 0 5.5.8z"></path><path d="M14.1 6a7 7 0 0 0-1.1 4c1.9-.1 3.3-.6 4.3-1.4 1-1 1.6-2.3 1.7-4.6-2.7.1-4 1-4.9 2z"></path></svg></span>
+              <span>Growth Buddy</span>
+            </div>
+            <h1 class="gb-login-title">Welcome back</h1>
+            <p class="gb-login-sub">Your habits, streaks and reminders are where you left them.</p>
+            <form class="gb-login-form">
+              <label class="gb-login-label" for="gb-auth-email">Email</label>
+              <input type="email" class="gb-input gb-login-input" id="gb-auth-email" placeholder="you@example.com" />
+              <label class="gb-login-label" for="gb-auth-password">Password</label>
+              <div class="gb-pw">
+                <input type="password" class="gb-input gb-login-input" id="gb-auth-password" placeholder="Your password" />
+                <span class="gb-pw-toggle" data-hidden="true"><span class="gb-icon" aria-hidden="true" style="display: inline-flex; align-items: center; justify-content: center;"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-lucide="eye" class="lucide lucide-eye"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"></path><circle cx="12" cy="12" r="3"></circle></svg></span></span>
+              </div>
+              <button type="button" class="gb-btn gb-btn--primary gb-login-btn">Sign in</button>
+              <div class="gb-login-row">
+                <span class="gb-login-link">Forgot password?</span>
+                <span class="gb-login-link">Create account</span>
+              </div>
+            </form>
+          </div>
+        </main>
+      </div>
     </div>
 
     <!-- Single ES module entry; Vite bundles the import graph and the npm deps
-       (lucide, sockjs-client, @stomp/stompjs) that used to load from CDNs. -->
+       (lucide, @stomp/stompjs) that used to load from CDNs. -->
     <script type="module" src="/scripts/app.js"></script>
   </body>
 </html>

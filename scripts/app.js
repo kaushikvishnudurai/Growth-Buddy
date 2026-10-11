@@ -14734,15 +14734,18 @@ const GARDEN_SVG = (() => {
 })();
 
 function authShell(title, subtitle, children) {
-  const garden = h('div', { class: 'gb-garden' + (gardenGrown ? '' : ' is-growing') });
+  // Replacing index.html's static shell (PRF-2), which is already on screen,
+  // grown and risen: replaying either entrance here would read as a flash.
+  const fromShell = !!document.querySelector('[data-gb-shell]');
+  const garden = h('div', { class: 'gb-garden' + (gardenGrown || fromShell ? '' : ' is-growing') });
   garden.innerHTML = GARDEN_SVG;
   gardenGrown = true;
   return h(
-    'div',
+    'main',
     { class: 'gb-login-wrap' },
     h(
       'div',
-      { class: 'gb-login-card gb-rise' },
+      { class: 'gb-login-card' + (fromShell ? '' : ' gb-rise') },
       garden,
       h(
         'div',
