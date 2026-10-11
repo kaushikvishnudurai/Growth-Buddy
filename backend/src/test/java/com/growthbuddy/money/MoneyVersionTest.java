@@ -95,6 +95,14 @@ class MoneyVersionTest {
         assertThat(service.save(USER, doc("third"), v2).version()).isNotEqualTo(v2);
     }
 
+    /* A brand-new user's first save carries no accountsSeeded; the read after it must not re-version it. */
+    @Test
+    void aFirstDocumentWithoutTheSeedFlagKeepsItsVersionOnTheNextRead() {
+        String v1 = service.save(USER, json.createObjectNode().put("note", "first"), "0").version();
+        assertThat(service.get(USER).version()).isEqualTo(v1);
+        assertThat(service.save(USER, json.createObjectNode().put("note", "second"), v1).version()).isNotEqualTo(v1);
+    }
+
     @Test
     void refusesAWriteBuiltOnACopySomeoneElseReplaced() {
         String mine = service.save(USER, doc("mine"), null).version();
