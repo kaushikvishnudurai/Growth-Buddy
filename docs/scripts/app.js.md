@@ -399,18 +399,23 @@ it silently landed on Home. Don't reintroduce a second list.
   Customise) and nobody could guess which held what.
 - **First-run setup is once per account, decided after wave 1.** `loadData()`'s first load calls
   `maybeStartFirstRun()`: no `ui_prefs.setupDone` and no tasks / habits / reminders /
-  `onboardingDone` → `openFirstRunSetup()`. Progress is `ui_prefs.setupStep` (the step on screen,
-  saved on open and on every Next; cleared with `setupDone`): an app closed mid-way resumes at that
-  step (`openFirstRunSetup(resumeAt)`, `SETUP_ORDER`) instead of being marked done silently because
-  its own goal step made habits. Only an account with no data writes it, so one that had data before
-  setup still never sees it. The timezone step is left out when device and account are the same zone
-  (`sameZone`, aliases included). one `openOverlay` sheet (`.gb-setup-modal`, CSS in
-  app.css "First-run setup") with four skippable steps (five on the phone: health after push, `connectHealth`, native only; closing the sheet also sets `ui_prefs.healthAsked` there) — goal (`starterPicker`, the Home starter-pack picker, so one to three chip
-  taps plus "Set it up" leave Home already set up; the button reads "Next" until a chip is on; Stay hydrated's "Drink water" habit is `unless: 'water'` in starter-packs.js, so with Water on the pack sets the water goal instead of a duplicate habit; a sign-out while starter-packs.js loads opens nothing and resets `firstRunOpen`), timezone (`saveDeviceTimezone`), push
-  (`enablePushFlow`), health (native), features (`featureSwitchRow`, the same row as Settings › Layout). An account
-  with data is marked `setupDone` silently. Every way out (Done, Skip, Escape, backdrop) goes
-  through `onClose`, which saves `setupDone` + `tzAsked` and re-arms the timezone offer — which
-  returns early while `setupDone` is unset, so the two never ask the same question twice.
+  `onboardingDone` → `openFirstRunSetup()`: one `openOverlay` sheet (`.gb-setup-modal`) with one
+  decision — "Your plan is ready", the starter-pack picker (`starterPicker(mod, ['balanced'])`)
+  already filled with the Balanced day pack, primary "Start with this plan", ghost "I'll set it up
+  myself". No timezone, push, health or features steps: the zone is the one signup sent and the
+  offer (`offerDeviceTimezone`, worded with `zoneName` / `zoneCity`, never a raw IANA id) asks only
+  when this device disagrees, re-armed on close (`tzAsked` is no longer written here); web push is
+  Home's checklist step "Get reminded on time" (`remindersAsk()`), native health/notifications
+  come from `maybeAskPermissions` on a later launch; features stay on (Settings › Layout).
+  `ui_prefs.setupStep` from an older build is just cleared (one step has no middle to resume).
+  Every way out goes through `onClose`: `setupDone`, `render()` (Home shows nothing behind the
+  sheet: `setupPending`), `syncDeviceTimezone()`. `starterPicker` `apply()` toasts what it added
+  (`starterSummary`: "Added 3 habits, 1 reminder and 1 goal.") and reloads with `achQuiet` on, so
+  a pack's first goal never pops "Dreamer"; `checkAchievements` also holds a badge while a dialog
+  or text field is in use (`formInUse`) and toasts `SETUP_BADGES` instead of the full celebration.
+  Auth: a browser with no `gb.session` lands on sign-up (`authMode`), "Welcome back" only when
+  `state.authReturning`; sign-up has one password field and "Name (optional)" (blank → the first
+  word of the email); the OTP submits itself on the sixth digit (trusted input only).
 - **Panes mount twice:** once in the `tabDefs` array (for the tab bar) and once as a child of
   `.gb-settings-body`. Miss the second and the tab renders empty — that's how the Display tab was
   dead until Aug 2026. `buildSegSlider` only toggles `display`; it never mounts anything.

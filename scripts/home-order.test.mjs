@@ -32,6 +32,12 @@ test('an empty saved layout is the catalog, all on', () => {
   assert.ok(out.every((x) => x.enabled));
 });
 
+test('default order puts habits before tasks and the calendar (a tick needs no scroll)', () => {
+  const ids = HOME_WIDGETS.map((w) => w.id);
+  assert.ok(ids.indexOf('habits') < ids.indexOf('tasks'));
+  assert.ok(ids.indexOf('habits') < ids.indexOf('calendar'));
+});
+
 test('saved order and switches are kept; unknown and duplicate ids dropped; new widgets appended on', () => {
   const out = resolveHomeLayout([
     { id: 'money', enabled: false },
