@@ -80,8 +80,9 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
   editor shows it on `.gb-editor-wrap:focus-within`. A control's resting edge (field border,
   unchecked `.gb-check` / `.gb-goal-ms-check` / `.gb-rem-check`, off `.gb-switch` / `.gb-wa-toggle`
   track hairline) is `--control-edge`. `.gb-wa-toggle` shares `.gb-switch`'s geometry and timing.
-- `.gb-btn--icon` is the transparent variant everywhere; only `.gb-food-item-row .gb-btn--icon`
-  (photo estimate rows) is the filled 36px chip. Nothing renders under `--text-2xs` (11px).
+- `.gb-btn--icon` is the transparent 44px variant; inside the list rows (`.gb-food-item-row`,
+  `.gb-water-log-row`, `.gb-sound-row`) it is the filled 36px chip. That block used to be bare
+  and overrode the base everywhere. Nothing renders under `--text-2xs` (11px).
 - Responsive breakpoints are grouped at 4886 / 5226 / 5303, **not** inline per component. Put media
   queries there so the phone-first base stays readable.
 - Modal markup comes from `openOverlay` in `gb-kit.js` — don't hand-roll it. It is `.gb-modal-overlay > .gb-modal[role=dialog]` because `scripts/a11y.js`

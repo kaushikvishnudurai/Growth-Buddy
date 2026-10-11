@@ -6903,9 +6903,12 @@ button.gb-food-level {
   min-height: 36px;
   border-radius: var(--radius-md);
 }
-/* The photo-estimate rows' filled remove chip. Scoped: unscoped, it turned
-   every .gb-btn--icon in the app into a filled 36px chip. */
-.gb-food-item-row .gb-btn--icon {
+/* The filled 36px chip the list rows use (photo estimates, the water and food
+   logs, your sounds). Scoped to them: declared bare, it overrode the base
+   transparent variant for every .gb-btn--icon in the app. */
+.gb-food-item-row .gb-btn--icon,
+.gb-water-log-row .gb-btn--icon,
+.gb-sound-row .gb-btn--icon {
   background: var(--surface-3);
   color: var(--fg2);
   border: none;
@@ -6921,7 +6924,9 @@ button.gb-food-level {
   flex-shrink: 0;
 }
 @media (hover: hover) {
-  .gb-food-item-row .gb-btn--icon:hover {
+  .gb-food-item-row .gb-btn--icon:hover,
+  .gb-water-log-row .gb-btn--icon:hover,
+  .gb-sound-row .gb-btn--icon:hover {
     background: color-mix(in srgb, var(--fg1) 8%, var(--surface-3));
     color: var(--fg1);
   }

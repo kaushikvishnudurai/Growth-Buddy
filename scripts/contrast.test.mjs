@@ -268,6 +268,8 @@ const ICON_ONLY = new Set([
   '.gb-toast.is-error .gb-toast-close:hover',
   '.gb-toast.is-success .gb-toast-close:hover',
   '.gb-food-item-row .gb-btn--icon:hover',
+  '.gb-water-log-row .gb-btn--icon:hover',
+  '.gb-sound-row .gb-btn--icon:hover',
   'scripts/gb-kit.js', // DOMAINS: IconChip tiles
 ]);
 /* Pairs the selector-level reading gets wrong, each with its reason. */
