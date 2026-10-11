@@ -38,6 +38,7 @@ function rig(opts = {}) {
       restore: () => list.splice(Math.min(at, list.length), 0, name),
       commit: async () => {
         sent.push(name);
+        if (fail === 404) throw Object.assign(new Error('Not found.'), { status: 404 });
         if (fail) throw new Error('Could not delete.');
       },
       settled: () => settled.push(name),
@@ -160,6 +161,17 @@ function rig(opts = {}) {
   await settle();
   assert.deepEqual(r.sent, []);
   assert.deepEqual(r.list, ['a', 'c']);
+}
+
+// 404: it was already gone (an Undo of its create got there first): done, no ghost row
+{
+  const r = rig();
+  r.del('b', 404);
+  r.clock.tick(6000);
+  await settle();
+  assert.deepEqual(r.sent, ['b']);
+  assert.deepEqual(r.list, ['a', 'c']);
+  assert.deepEqual(r.errors, []);
 }
 
 console.log('undo-queue: ok');

@@ -14,7 +14,10 @@ import {
   restoreKey,
   inFlightKeys,
   overlayQueuedWellness,
+  networkError,
+  offlineError,
 } from './app-logic.js';
+import { sessionEndedError } from './session.js';
 import { timeRangeOk, reminderEditPatch } from './calendar.js';
 import { resolveNavLayout, splitNavBar, NAV_CATALOG, NAV_MAX_PRIMARY } from './gb-kit.js';
 
@@ -354,6 +357,19 @@ await test('FN-02: sleep / mood still queued survive a load of the server logs',
   assert.equal(w.moodByDate['2026-10-11'].mood, 'great', 'newest queued check-in for the day wins');
   assert.deepEqual(server.moodByDate, {}, 'the server copy is not mutated');
   assert.deepEqual(overlayQueuedWellness(server, []).sleepByDate, server.sleepByDate);
+});
+
+await test('an ended session is never queued for a replay', () => {
+  const ended = sessionEndedError();
+  assert.equal(networkError(ended), false);
+  assert.equal(offlineError(ended), false);
+  assert.equal(networkError(ended, false), false, 'not even offline');
+  assert.equal(networkError(new Error('Failed to fetch')), true, 'no response');
+  assert.equal(networkError({ status: 503 }), false, 'a 5xx is an answer');
+  assert.equal(offlineError({ status: 503 }), true, 'but the server is down');
+  assert.equal(offlineError({ status: 400 }), false, 'a refusal');
+  assert.equal(offlineError({ status: 400 }, false), true, 'offline');
+  assert.equal(networkError(null), true);
 });
 
 if (failures) {

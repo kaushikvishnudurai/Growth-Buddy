@@ -29,7 +29,7 @@ import {
   habitDue,
   topStreaks,
   homeGoals,
-  todayKey,
+  todayKey as sharedTodayKey,
 } from './home-order.js';
 import { suggestReminderTime } from './habit-stats.js';
 import { usualSleep } from './nudges.js';
@@ -42,6 +42,15 @@ import {
   suggestWaterGoalMl,
   dayMicros,
 } from './nutrition.js';
+
+/* Today in the ACCOUNT's timezone, as app.js todayKey() and the server see it:
+   the device's day made a one-tap sleep or mood look like it did nothing when
+   the two zones differ. app.js render() sets it on every paint. */
+let accountZone = '';
+export function setAccountZone(zone) {
+  accountZone = zone || '';
+}
+const todayKey = () => sharedTodayKey(accountZone);
 
 const ONBOARD_KEY = 'gb.onboardDismissed';
 

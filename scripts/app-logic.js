@@ -2,6 +2,15 @@
    (scripts/app-logic.test.mjs). Nothing here touches `state`, the DOM, storage
    or the network: app.js passes in what each one needs. */
 
+/* Worth queueing for a replay? `networkError`: no response at all (a 5xx is the
+   server answering). `offlineError`: that, or a server that's down. Never an
+   answer for a session that has ended (session.js sessionEndedError carries no
+   status): queued, it replayed under whoever signed in next, with their token. */
+export const networkError = (err, online = true) =>
+  !(err && err.sessionEnded) && (!online || !err || !err.status);
+export const offlineError = (err, online = true) =>
+  !(err && err.sessionEnded) && (!online || !err || !err.status || err.status >= 500);
+
 /* Water taps not yet on the server, laid over a summary from it. Only the
    summary's own day counts: a glass queued last night is yesterday's.
    `pending`: Map tempId -> { amountMl, loggedAt, drinkType }. */

@@ -35,6 +35,7 @@ import {
   HabitSleepInsightCard,
   RenderMiniCalendarCard,
   QuoteCard,
+  setAccountZone,
 } from './dashboard.js';
 import { habitDue, todayKey as sharedTodayKey, shiftDayKey } from './home-order.js';
 import { withProgressLog, needsProgressLog } from './goal-milestones.js';
@@ -49,6 +50,8 @@ import {
   restoreKey,
   inFlightKeys,
   overlayQueuedWellness,
+  networkError as isNetworkError,
+  offlineError as isOfflineError,
 } from './app-logic.js';
 import { MEAL_SLOTS, mealSlotAt, effectiveMl, labelFor, suggestWaterGoalMl, slotOf } from './nutrition.js';
 import {
@@ -1060,6 +1063,18 @@ function storePendingDoc(p) {
     console.error('Failed to keep unsaved money changes:', err);
   }
 }
+/* For the CSV import, between batches: true once nothing is left unsent. Bound
+   to the session the Money screen was built in, so an import running over a
+   sign-out stops instead of saving the rest into the next account's money. */
+function moneySettledFor(gen) {
+  return () =>
+    moneySaveQueue.then(() => {
+      if (isStaleSession(gen)) return false;
+      const p = loadPendingLedger();
+      return !Object.keys(p.upserts).length && !p.deletes.length;
+    });
+}
+
 /* Drop the ops in `sent` that are still exactly as sent: the server has them. */
 function clearPendingDoc(sent) {
   const now = loadPendingDoc();
@@ -1117,6 +1132,7 @@ function persistMoney() {
     flushLedger()
       .then(putDocIfChanged)
       .catch((err) => {
+      if (err && err.sessionEnded) return; // signed out meanwhile: what is queued stays in that account's cache
       console.error('CRITICAL: saveMoney failed to reach database:', err);
       // No connection (or a server that's down) is not "not saved": the change is
       // in the cache and the ledger queue, and is replayed on the next flush
@@ -1254,7 +1270,13 @@ async function putDocIfChanged() {
     lastDocBody = body;
     clearPendingDoc(sent);
   } catch (err) {
-    if (!err || err.status !== 409) throw err;
+    if (!err || err.status !== 409) {
+      // A refusal won't change on a resend: stop resending (and re-toasting) it.
+      // A retryable status keeps it for the next try.
+      if (err && err.status >= 400 && err.status < 500 && !RETRYABLE.has(err.status))
+        clearPendingDoc(sent);
+      throw err;
+    }
     // Someone else wrote first. Take their copy, lay what we changed over it, and
     // write once more — unconditionally, so a third writer can't spin this. (A
     // union by id here kept their version of any item we had edited, and brought
@@ -1847,19 +1869,21 @@ function recordTrendsToday() {
    401 included: whoever signs in next on this device is not necessarily the
    same person. Except writes the server never got, the only copy there is:
    a money pending queue that still holds some is kept (it replays when this
-   account signs back in), and so is the offline outbox when the session
-   expired rather than being ended on purpose. */
+   account signs back in), and so are the offline outbox and the water queue
+   when the session expired rather than being ended on purpose. */
 function purgeUserCache(reason) {
   const id = state.user && state.user.id;
   if (!id) return;
   const p = loadPendingLedger();
   const keepMoney = reason !== 'deleted' && (Object.keys(p.upserts).length || p.deletes.length);
   const keepOutbox = reason === 'expired' && outbox.size() ? outboxKey() : null;
+  // Glasses logged offline, likewise: the only copy, and they replay on sign-in.
+  const keepWater = reason === 'expired' && loadWaterQueue().length ? waterQueueKey() : null;
   const keep = keepMoney ? pendingKey() : null;
   // Unsent Money document edits stay too (stored only while non-empty), like the ledger queue.
   const keepDoc = reason !== 'deleted' ? docPendingKey() : null;
   const gone = CacheStorage.removeWhere(
-    (k) => k !== keepOutbox && k !== keepDoc && isUserKey(k, id, keep)
+    (k) => k !== keepOutbox && k !== keepWater && k !== keepDoc && isUserKey(k, id, keep)
   );
   if (!keepOutbox) outbox.clear();
   outboxIds.clear();
@@ -4510,10 +4534,9 @@ function restoreWaterQueue() {
     if (!pendingWater.has(x.id))
       pendingWater.set(x.id, { amountMl: x.amountMl, loggedAt: x.loggedAt, drinkType: x.drinkType });
 }
-const localDayOf = (iso) => {
-  const t = new Date(iso);
-  return dateKey(t.getFullYear(), t.getMonth(), t.getDate());
-};
+/* The account's day of a glass, like water.date and todayKey(): the device's
+   day hid a queued glass when the two zones differ, and a second tap logged it twice. */
+const localDayOf = (iso) => sharedTodayKey(state.user && state.user.timezone, new Date(iso));
 
 /* Taps not yet on the server, laid over a summary from it. Only the summary's
    own day: a glass queued last night is yesterday's, not today's. */
@@ -4521,8 +4544,9 @@ function withPendingWater(water) {
   return overlayPendingWater(water, pendingWater, { today: todayKey(), dayOf: localDayOf, effectiveMl });
 }
 
-/* No connection, or a server that's down: worth queueing. A 4xx is a refusal. */
-const offlineError = (err) => !navigator.onLine || !err || !err.status || err.status >= 500;
+/* No connection, or a server that's down: worth queueing. A 4xx is a refusal,
+   and an ended session is nobody's (app-logic.js). */
+const offlineError = (err) => isOfflineError(err, navigator.onLine);
 
 /* ---- Offline outbox (scripts/outbox.js) ----
    Task create / toggle / delete, a plain habit tick, a one-off reminder's
@@ -4549,7 +4573,7 @@ function liveId(id) {
   return r;
 }
 /* No response at all. A 5xx is the server answering; those roll back and toast. */
-const networkError = (err) => !navigator.onLine || !err || !err.status;
+const networkError = (err) => isNetworkError(err, navigator.onLine);
 
 /* Async: the outbox lives in the Cache API, and until CacheStorage has hydrated
    it reads as empty: an enqueue then would overwrite the persisted queue. */
@@ -4751,6 +4775,7 @@ async function quickAddWater(amountMl, dayKey, drinkType) {
     }
     invalidateWeek('water');
   } catch (err) {
+    if (err && err.sessionEnded) return; // signed out meanwhile: state.water is the next account's
     if (offlineError(err)) {
       // Keep the glass on the card and on this phone; 'online' sends it.
       await CacheStorage.ready();
@@ -5080,6 +5105,7 @@ async function postWellness(kind, byDate, entry, body, okMsg, failMsg) {
     await api(path, { method: 'POST', body, headers: { 'Idempotency-Key': idemKey } });
     toastSuccess(okMsg);
   } catch (err) {
+    if (err && err.sessionEnded) return; // signed out meanwhile: state is the next account's
     if (networkError(err) || err.status >= 500) {
       await queueWrite({ method: 'POST', path, body, kind: 'wellness.' + kind, idemKey, local: entry });
       return;
@@ -10421,7 +10447,9 @@ const SCREENS = {
           m.ScreenFamily({
             api: {
               getFamily: () => api('/api/family'),
-              startSolo: () => api('/api/family/solo', { method: 'POST' }),
+              // A retried POST is answered from IdempotencyFilter, not a second family.
+              startSolo: () =>
+                api('/api/family/solo', { method: 'POST', headers: { 'Idempotency-Key': newIdemKey() } }),
               addMember: (body) =>
                 api('/api/family/members', { method: 'POST', body: JSON.stringify(body) }),
               updateMember: (id, body) =>
@@ -10598,11 +10626,7 @@ const SCREENS = {
             requestOlderTx: (before) =>
               api('/api/money/tx?before=' + encodeURIComponent(before) + '&limit=200'),
             // The CSV import waits on this between batches: true once nothing is left unsent.
-            moneySettled: () =>
-              moneySaveQueue.then(() => {
-                const p = loadPendingLedger();
-                return !Object.keys(p.upserts).length && !p.deletes.length;
-              }),
+            moneySettled: moneySettledFor(sessionGen()),
           })
       ),
   },
@@ -11927,6 +11951,7 @@ async function endSession(reason) {
   // Log food's chip rows are this account's foods, not the next one's.
   recentFoods = null;
   favouriteFoods = null;
+  pendingWater.clear(); // unsent glasses are this account's (its queue is in its cache)
   weekGen.bump();
   try {
     sessionStorage.removeItem('gb.authDraft');
@@ -11959,15 +11984,18 @@ const EMPTY_STATE = {
    The offline outbox's queue (sends only: the refetch after it would land on
    nobody), capped so an asleep server can't hold Sign out for long; whatever
    didn't go stays queued and purgeUserCache decides. Undoable deletes still
-   waiting on their Undo toast commit here too (feat/ov-undo). */
+   waiting on their Undo toast commit here too (feat/ov-undo), and the queued
+   glasses of water go, all inside the same 4 s. */
 async function flushPendingWrites() {
-  // Deletes still waiting on an Undo toast go first, while the token is good:
-  // each request leaves synchronously inside flush() (offline, into the outbox).
-  undoQueue.flush();
-  if (!navigator.onLine) return;
-  await CacheStorage.ready();
-  if (!outbox.size()) return;
-  await Promise.race([outbox.flush(api).catch(() => {}), new Promise((r) => setTimeout(r, 4000))]);
+  const sends = (async () => {
+    // Deletes still waiting on an Undo toast go first, while the token is good
+    // (offline, into the outbox), and are answered before the session goes.
+    await undoQueue.flush();
+    if (!navigator.onLine) return;
+    await CacheStorage.ready();
+    await Promise.all([outbox.size() ? outbox.flush(api) : null, flushWaterQueue()]);
+  })().catch(() => {});
+  await Promise.race([sends, new Promise((r) => setTimeout(r, 4000))]);
 }
 
 /* Fire-and-forget; the token is invalidated locally either way. Unsubscribe
@@ -12330,6 +12358,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 function render() {
+  setAccountZone(state.user && state.user.timezone); // dashboard.js's "today" is the account's
   // A list reloaded mid-window still holds a delete waiting on its Undo toast.
   // ponytail: re-filtered on every paint (a few pending items); a per-load hook if that ever shows.
   undoQueue.reapply();

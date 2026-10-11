@@ -49,6 +49,8 @@ export function createUndoQueue({
     try {
       await e.commit();
     } catch (err) {
+      // Already gone (a one-tap Undo of its create beat this delete): done, not a ghost row.
+      if (err && err.status === 404) return;
       e.restore();
       onError(err, e);
     }
