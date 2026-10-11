@@ -5,7 +5,15 @@
    state and repaints its own subtree, so the parent only has to pass an
    `api` object of thin fetch wrappers. See SCREENS.family in app.js.
    ===================================================================== */
-import { h, Icon, CrashCard, confirmDialog, thinkingLabel, trackOverlay } from './gb-kit.js';
+import {
+  h,
+  Icon,
+  CrashCard,
+  confirmDialog,
+  openModal,
+  thinkingLabel,
+  trackOverlay,
+} from './gb-kit.js';
 import { toast } from './toast.js';
 import { shrinkPhoto } from './notes.js';
 
@@ -77,6 +85,20 @@ function toList(str) {
 }
 function fromList(list) {
   return Array.isArray(list) ? list.join(', ') : '';
+}
+
+/** "2026-10-11" (a LocalDate) -> "Sun, 11 Oct", read as a local day, not UTC midnight. */
+function fmtDay(iso) {
+  const [y, m, d] = String(iso || '')
+    .slice(0, 10)
+    .split('-')
+    .map(Number);
+  if (!y || !m || !d) return '';
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  });
 }
 
 function field(labelText, control, hint) {
@@ -352,6 +374,10 @@ function ScreenFamily({ api }) {
 
   function memberCard(m) {
     const isOwner = model.family && model.family.isOwner;
+    // The server lets the owner edit anyone and a member edit themselves
+    // (requireManageOrSelf). The profile button used to show on everyone's card,
+    // so a member could fill in a relative's form and only then be refused.
+    const canEdit = isOwner || m.isSelf;
     const canRemove = isOwner && m.relationship !== 'self' && !m.isOwner;
     const metaBits = [];
     if (m.age != null) metaBits.push(m.age + ' yrs · ' + m.ageCategory);
@@ -367,18 +393,20 @@ function ScreenFamily({ api }) {
     const actions = h(
       'div',
       { class: 'gb-family-card-actions' },
-      h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-iconbtn',
-          'aria-label': 'Edit food profile',
-          title: 'Food profile',
-          onclick: () => openPanel({ type: 'profile', member: m }),
-        },
-        Icon('utensils', { size: 17 })
-      ),
-      isOwner
+      canEdit
+        ? h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-iconbtn',
+              'aria-label': 'Edit food profile',
+              title: 'Food profile',
+              onclick: () => openPanel({ type: 'profile', member: m }),
+            },
+            Icon('utensils', { size: 17 })
+          )
+        : null,
+      canEdit
         ? h(
             'button',
             {
@@ -1125,21 +1153,24 @@ function ScreenFamily({ api }) {
       }
     });
 
+    // Ids of members still here: a removed member's id must not count as a pick.
+    const picked =
+      model.selectedMemberIds === null
+        ? members.map((m) => m.id)
+        : members.filter((m) => model.selectedMemberIds.includes(m.id)).map((m) => m.id);
     const memberSelector = h(
       'div',
-      { class: 'gb-family-chips gb-family-member-select' },
+      { class: 'gb-family-chips gb-family-member-select', role: 'group', 'aria-label': 'Plan for' },
       members.map((m) => {
-        const sel = model.selectedMemberIds === null || model.selectedMemberIds.includes(m.id);
+        const sel = picked.includes(m.id);
         return h(
           'button',
           {
             type: 'button',
             class: 'gb-family-chip gb-family-chip--toggle' + (sel ? ' is-on' : ''),
+            'aria-pressed': String(sel),
             onclick: () => {
-              const ids =
-                model.selectedMemberIds === null
-                  ? members.map((x) => x.id)
-                  : model.selectedMemberIds.slice();
+              const ids = picked.slice();
               const at = ids.indexOf(m.id);
               if (at >= 0) ids.splice(at, 1);
               else ids.push(m.id);
@@ -1156,8 +1187,7 @@ function ScreenFamily({ api }) {
       model.planBusy = true;
       model.planError = '';
       paint();
-      const memberIds =
-        model.selectedMemberIds === null ? members.map((m) => m.id) : model.selectedMemberIds;
+      const memberIds = picked;
       api
         .generateMealPlan({ ingredients: model.ingredients, memberIds })
         .then((res) => {
@@ -1227,7 +1257,12 @@ function ScreenFamily({ api }) {
             'div',
             { class: 'gb-card gb-family-planfor' },
             h('h3', { class: 'gb-family-subhead' }, 'Plan for'),
-            memberSelector
+            memberSelector,
+            // The server reads an empty pick as "everyone", so none picked
+            // planned for the whole family behind a row of unlit chips.
+            picked.length
+              ? null
+              : h('p', { class: 'gb-family-empty-note' }, 'Pick at least one person to plan for.')
           )
         : null,
       h(
@@ -1236,7 +1271,7 @@ function ScreenFamily({ api }) {
           type: 'button',
           class:
             'gb-btn gb-btn--primary gb-family-generate' + (model.planBusy ? ' is-thinking' : ''),
-          disabled: model.planBusy || !members.length,
+          disabled: model.planBusy || !picked.length,
           onclick: generate,
         },
         model.planBusy
@@ -1279,12 +1314,14 @@ function ScreenFamily({ api }) {
         past.map((p) => {
           const dishes = planDishes(p.plan);
           const when = p.createdAt
-            ? new Date(p.createdAt).toLocaleDateString(undefined, {
+            ? new Date(p.createdAt).toLocaleString(undefined, {
                 weekday: 'short',
                 day: 'numeric',
                 month: 'short',
+                hour: 'numeric',
+                minute: '2-digit',
               })
-            : '';
+            : ''; // with the time: two plans on one day read as the same row
           return h(
             'li',
             { class: 'gb-family-history-row' },
@@ -1330,14 +1367,7 @@ function ScreenFamily({ api }) {
         {
           type: 'button',
           class: 'gb-btn gb-btn--soft gb-btn--sm',
-          onclick: () => {
-            const name = window.prompt('Name this menu:', 'Family favourite');
-            if (!name) return;
-            run(api.saveFavourite({ name, planId }), () => {
-              model.favourites = null; // force reload next time
-              toast.success('Saved to your favourites.');
-            });
-          },
+          onclick: () => saveMenu(planId),
         },
         Icon('heart', { size: 15 }),
         'Save menu'
@@ -1372,6 +1402,32 @@ function ScreenFamily({ api }) {
         'Build shopping list'
       )
     );
+  }
+
+  /* Named in the app's own dialog: window.prompt is unthemed browser chrome,
+     captioned with the origin, and a system alert in the Capacitor WebView. */
+  function saveMenu(planId) {
+    const input = h('input', {
+      type: 'text',
+      class: 'gb-input',
+      maxlength: 120,
+      value: 'Family favourite',
+      'aria-label': 'Menu name',
+    });
+    openModal({
+      title: 'Name this menu',
+      body: input,
+      primary: 'Save menu',
+      errorMessage: 'Could not save the menu.',
+      onPrimary: async () => {
+        const name = input.value.trim();
+        if (!name) throw Object.assign(new Error('Give the menu a name.'), { field: input });
+        await api.saveFavourite({ name, planId });
+        toast.success('Saved to your favourites.');
+        loadSection('favourites').then(paintSoon);
+      },
+    });
+    setTimeout(() => input.select(), 60);
   }
 
   /* Same key as the server's shoppingKey: "Sambar " and "sambar" share a recipe. */
@@ -1743,54 +1799,19 @@ function ScreenFamily({ api }) {
 
   // ---- section navigation ----
 
+  /* Every section is prefetched by load(); one that was dropped since (null)
+     reloads through loadSection, so a failure shows its banner. A second set of
+     loaders here used to turn a failed fetch into an empty list. */
+  const SECTION_DATA = {
+    weekly: () => model.weekly,
+    pantry: () => model.pantryItems,
+    shopping: () => model.shoppingList,
+    favourites: () => model.favourites,
+  };
   function switchSection(section) {
     model.section = section;
     paint();
-    if (section === 'weekly' && model.weekly === null) {
-      api
-        .getWeekly()
-        .then((w) => {
-          model.weekly = w || false;
-          paint();
-        })
-        .catch(() => {
-          model.weekly = false;
-          paint();
-        });
-    } else if (section === 'pantry' && model.pantryItems === null) {
-      api
-        .listPantry()
-        .then((x) => {
-          model.pantryItems = x || [];
-          paint();
-        })
-        .catch(() => {
-          model.pantryItems = [];
-          paint();
-        });
-    } else if (section === 'shopping' && model.shoppingList === null) {
-      api
-        .listShopping()
-        .then((x) => {
-          model.shoppingList = x || { items: [], totalEstimatedCost: 0 };
-          paint();
-        })
-        .catch(() => {
-          model.shoppingList = { items: [], totalEstimatedCost: 0 };
-          paint();
-        });
-    } else if (section === 'favourites' && model.favourites === null) {
-      api
-        .listFavourites()
-        .then((x) => {
-          model.favourites = x || [];
-          paint();
-        })
-        .catch(() => {
-          model.favourites = [];
-          paint();
-        });
-    }
+    if (SECTION_DATA[section] && SECTION_DATA[section]() === null) loadSection(section).then(paint);
   }
 
   function sectionBadge(id) {
@@ -2215,7 +2236,7 @@ function ScreenFamily({ api }) {
         it.daysToExpiry <= 0 ? 'Today' : 'In ' + it.daysToExpiry + 'd'
       );
     else if (it.expiryDate)
-      badge = h('span', { class: 'gb-pill gb-pill--muted' }, 'Exp ' + it.expiryDate);
+      badge = h('span', { class: 'gb-pill gb-pill--muted' }, 'Exp ' + fmtDay(it.expiryDate));
     const meta = [it.category, it.quantity].filter(Boolean).join(' · ');
     return h(
       'div',
@@ -2475,7 +2496,7 @@ function ScreenFamily({ api }) {
           it.quantity ? h('div', { class: 'gb-family-card-meta' }, it.quantity) : null
         )
       ),
-      it.estimatedCost != null
+      it.estimatedCost > 0
         ? h('span', { class: 'gb-family-shop-cost' }, '₹' + it.estimatedCost)
         : null,
       h(
@@ -2717,7 +2738,7 @@ function ScreenFamily({ api }) {
     const today = new Date().toLocaleDateString('en-CA');
     const overdue = !c.done && c.dueDate && c.dueDate < today;
     const meta = [
-      c.dueDate ? (c.dueDate === today ? 'Today' : 'Due ' + c.dueDate) : null,
+      c.dueDate ? (c.dueDate === today ? 'Today' : 'Due ' + fmtDay(c.dueDate)) : null,
       c.repeat && c.repeat !== 'none' ? REPEAT_LABEL[c.repeat] : null,
     ].filter(Boolean);
     const reassign = h(
@@ -2845,7 +2866,14 @@ function ScreenFamily({ api }) {
           h(
             'div',
             { class: 'gb-family-card-meta' },
-            'Saved ' + (f.createdAt ? String(f.createdAt).slice(0, 10) : '')
+            'Saved ' +
+              (f.createdAt
+                ? new Date(f.createdAt).toLocaleDateString(undefined, {
+                    day: 'numeric',
+                    month: 'short',
+                    year: 'numeric',
+                  })
+                : '')
           )
         ),
         h(
@@ -2859,6 +2887,22 @@ function ScreenFamily({ api }) {
             },
           },
           open ? 'Hide' : 'View'
+        ),
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-btn gb-btn--soft gb-btn--sm',
+            title: "Make this today's plan",
+            onclick: () =>
+              run(api.useFavourite(f.id), (res) => {
+                model.plan = res;
+                toast.success('On the menu for today.');
+                loadSection('history').then(paintSoon);
+                switchSection('plan');
+              }),
+          },
+          'Use today'
         ),
         h(
           'button',
