@@ -39,9 +39,9 @@ export const test = base.extend({
       });
       page.on('requestfailed', (r) => {
         const err = r.failure() && r.failure().errorText;
-        // Aborts are navigation/cancel noise, not failures.
+        // Aborts are navigation/cancel noise, not failures (Chromium, Firefox and WebKit each word one differently).
         if (allowed.some((a) => r.url().includes(a))) return;
-        if (err && !/ERR_ABORTED|NS_BINDING_ABORTED|cancelled/i.test(err)) problems.push(`failed ${r.method()} ${r.url()} ${err}`);
+        if (err && !/ERR_ABORTED|NS_BINDING_ABORTED|NS_ERROR_ABORT|Blocked by Web Inspector|cancelled/i.test(err)) problems.push(`failed ${r.method()} ${r.url()} ${err}`);
       });
       await use(problems);
       expect(problems, 'console errors / failed requests').toEqual([]);
