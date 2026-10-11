@@ -235,7 +235,9 @@ function ScreenFamily({ api }) {
     if (!plan) return;
     model.plan = plan;
     if (Array.isArray(plan.groceryItems) && !model.ingredients.length) {
-      model.ingredients = plan.groceryItems.map((g) => ({
+      // The expired pantry items went in as "do not use" (see generate); they
+      // come back in the plan's groceries and are not something to cook with.
+      model.ingredients = plan.groceryItems.filter((g) => g.freshness !== 'expired').map((g) => ({
         name: g.name,
         category: g.category || 'Other',
         quantity: g.quantity || '',
@@ -1185,6 +1187,26 @@ function ScreenFamily({ api }) {
     );
   }
 
+  /* Expired pantry items are kept out of the chips (the plan is told not to use
+     them), so say so instead of letting them vanish. */
+  function expiredNote() {
+    // Same pick as generate(): one added back by hand is the user's call.
+    const have = new Set(model.ingredients.map((g) => g.name.toLowerCase()));
+    const names = (model.pantryItems || [])
+      .filter((p) => p.expired && p.name && !have.has(p.name.toLowerCase()))
+      .map((p) => p.name + ' (expired)');
+    return names.length ? h('p', { class: 'gb-family-empty-note' }, 'Not using: ' + names.join(', ')) : null;
+  }
+
+  /* The Generate button the user pressed is rebuilt by every paint, so focus
+     fell to <body> while the plan cooked and again when it arrived. */
+  function focusPlanHead() {
+    const head = root.querySelector('#gb-family-plan-head');
+    // Only when focus has nowhere to be: never pull it out of a field.
+    const lost = !document.activeElement || document.activeElement === document.body;
+    if (head && lost) head.focus({ preventScroll: true });
+  }
+
   function plannerSection() {
     const fam = model.family;
     const members = (fam && fam.members) || [];
@@ -1304,6 +1326,7 @@ function ScreenFamily({ api }) {
       model.planBusy = true;
       model.planError = '';
       paint();
+      focusPlanHead();
       const memberIds = picked;
       // The server adds the whole pantry, expired items included, and takes no
       // avoid list; the quantity is the free text it does print, so say it there.
@@ -1329,6 +1352,7 @@ function ScreenFamily({ api }) {
         .finally(() => {
           model.planBusy = false;
           paint();
+          focusPlanHead();
         });
     };
 
@@ -1374,6 +1398,7 @@ function ScreenFamily({ api }) {
         )
       ),
       ingredientChips(),
+      expiredNote(),
       members.length
         ? h(
             'div',
@@ -1411,7 +1436,7 @@ function ScreenFamily({ api }) {
       h(
         'div',
         { class: 'gb-section-head' },
-        h('h2', null, "Today's meal plan"),
+        h('h2', { id: 'gb-family-plan-head', tabindex: '-1' }, "Today's meal plan"),
         hasPlan && model.plan.createdAt
           ? h('span', { class: 'gb-family-head-meta' }, fmtDay(planDay(model.plan.createdAt)))
           : null
@@ -2428,7 +2453,11 @@ function ScreenFamily({ api }) {
       );
     else if (it.expiryDate)
       badge = h('span', { class: 'gb-pill gb-pill--muted' }, 'Exp ' + fmtDay(it.expiryDate));
-    const meta = [it.category, it.quantity].filter(Boolean).join(' · ');
+    // Each part stays whole: "Vegetable ·" over "500 g" read as two items.
+    const metaParts = [it.category, it.quantity].filter(Boolean);
+    const meta = metaParts.length
+      ? metaParts.flatMap((m, i) => [i ? ' · ' : '', h('span', { class: 'gb-family-meta-part' }, m)])
+      : null;
     return h(
       'div',
       { class: 'gb-card gb-family-pantry-item' },
@@ -2441,7 +2470,7 @@ function ScreenFamily({ api }) {
           it.name,
           it.leftover ? h('span', { class: 'gb-pill gb-pill--soft' }, 'Leftover') : null
         ),
-        meta ? h('div', { class: 'gb-family-card-meta' }, meta) : null
+        meta ? h('div', { class: 'gb-family-card-meta' }, ...meta) : null
       ),
       badge,
       h(

@@ -47,6 +47,8 @@ const T = {
   cycleDone: 0, // sprints finished in this cycle of four (timer-math.js afterSession)
   link: null, // what this session is on: { taskId } | { goalId } | null ("Focusing on…")
   refs: null, // live DOM refs, rebuilt on every (re)mount
+  seq: 0, // bumped by setMode: which session a pending confirm was asked about
+  closeAsk: null, // dismisses that confirm (askAboutSession)
 };
 
 /* The session end, queued with the OS so a phone rings even when the WebView
@@ -473,6 +475,8 @@ function paintRing() {
   // A length can't change under a session: the segments lock, and say why.
   const locked = inSession();
   T.refs.lockHint.hidden = !locked;
+  // Nothing started, nothing to reset.
+  T.refs.resetBtn.disabled = !locked;
   Object.keys(T.refs.chips).forEach(function (k) {
     const on = k === T.mode + ':' + T.durationSec / 60;
     T.refs.chips[k].classList.toggle('is-on', on);
@@ -493,10 +497,27 @@ function subText() {
   if (T.running) return 'In session — keep going.';
   if (T.remainingSec === 0) return 'Session complete! Reset to start a new sprint.';
   if (inSession()) return 'Paused, ' + fmt(T.remainingSec) + ' left';
-  return 'Start a study sprint.';
+  return 'Ready when you are.';
+}
+
+/* A confirm about the session on the clock (Reset, switching length) must not
+   outlive it: a session that ends under it closes it (setMode bumps T.seq and
+   calls T.closeAsk), and an answer that arrives for a session no longer there
+   counts as Cancel. */
+async function askAboutSession(opts) {
+  const seq = T.seq;
+  const answer = confirmDialog(opts);
+  // confirmDialog focuses its own Cancel; clicking it is the dialog's dismiss path.
+  const cancel = document.activeElement;
+  T.closeAsk = cancel && cancel.classList && cancel.classList.contains('gb-modal-cancel') ? () => cancel.click() : null;
+  const ok = await answer;
+  T.closeAsk = null;
+  return ok && seq === T.seq;
 }
 
 function setMode(mode, mins, suggest) {
+  T.seq++;
+  if (T.closeAsk) T.closeAsk();
   T.mode = mode;
   T.durationSec = mins * 60;
   T.remainingSec = T.durationSec;
@@ -519,7 +540,7 @@ function setMode(mode, mins, suggest) {
 async function switchMode(mode, mins) {
   if (T.mode === mode && T.durationSec === mins * 60 && !T.running) return;
   if (inSession()) {
-    const ok = await confirmDialog({
+    const ok = await askAboutSession({
       title: 'End this ' + (T.mode === 'break' ? 'break' : 'session') + '?',
       message: fmt(T.remainingSec) + ' is left on the clock. Switching starts over and this one won’t count.',
       confirmLabel: 'Switch',
@@ -642,7 +663,7 @@ async function reset() {
   // More than a minute in, Reset throws real focus away: ask first.
   const left = T.running ? remainingFrom(T.endsAt, Date.now()) : T.remainingSec;
   if (left > 0 && T.durationSec - left > 60) {
-    const ok = await confirmDialog({
+    const ok = await askAboutSession({
       title: 'Reset this ' + (T.mode === 'break' ? 'break' : 'session') + '?',
       message: Math.floor((T.durationSec - left) / 60) + ' min done so far won’t count.',
       confirmLabel: 'Reset',
@@ -871,6 +892,7 @@ function TimerCard() {
     cycleEl,
     subEl,
     startBtn,
+    resetBtn,
     liveEl,
     lockHint,
     paintedLabel: startLabel(),
@@ -1004,9 +1026,10 @@ function paintGoal() {
       },
       h('div', { class: 'gb-focus-goal-fill', style: { width: pct + '%' } })
     ),
-    pct >= 100
-      ? h('div', { class: 'gb-focus-goal-met' }, Icon('trophy', { size: 14, sw: 2.4 }), 'Daily goal met. Nice work.')
-      : null
+    // Spread, not `cond ? node : null`: el.append prints a null as the text "null".
+    ...(pct >= 100
+      ? [h('div', { class: 'gb-focus-goal-met' }, Icon('trophy', { size: 14, sw: 2.4 }), 'Daily goal met. Nice work.')]
+      : [])
   );
   refreshIcons();
 }
@@ -1267,7 +1290,8 @@ function paintSound() {
         }) || {}
       ).label;
   Object.keys(Sound.refs.tiles).forEach(function (k) {
-    Sound.refs.tiles[k].classList.toggle('is-on', k === Sound.current);
+    // Sound off: no tile is the one playing, so none looks picked.
+    Sound.refs.tiles[k].classList.toggle('is-on', Sound.enabled && k === Sound.current);
   });
   Sound.refs.card.classList.toggle('is-muted', !Sound.enabled);
 }
@@ -1297,7 +1321,7 @@ function SoundCard() {
       'button',
       {
         type: 'button',
-        class: 'gb-sound-tile' + (s.key === Sound.current ? ' is-on' : ''),
+        class: 'gb-sound-tile' + (Sound.enabled && s.key === Sound.current ? ' is-on' : ''),
         title: s.hint,
         onclick: function () {
           setSoundscape(s.key);

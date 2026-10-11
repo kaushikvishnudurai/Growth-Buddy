@@ -3,7 +3,7 @@
    is refused and whether a row claims it will reach WhatsApp, so getting the
    boundary wrong is silently wrong in two places. */
 import assert from 'node:assert/strict';
-import { isPastSlot, freeBusy, wholeHours } from './calendar.js';
+import { isPastSlot, freeBusy, wholeHours, monthCounts } from './calendar.js';
 
 const pad = (n) => String(n).padStart(2, '0');
 const keyOf = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
@@ -112,3 +112,14 @@ const wk = { free: 6285, busy: 150, custom: 0, lunch: 270, sleep: 3375 };
 const hrs = wholeHours(wk);
 assert.equal(Object.values(hrs).reduce((a, b) => a + b, 0), 168, 'tiles sum to 168h');
 console.log('freeBusy: all assertions pass');
+
+// --- monthCounts: one per series, not one per row ---
+{
+  const series = { id: 'a', text: 'Gym', date: '2026-10-01', repeat: 'daily', time: '07:00' };
+  // "Only this day" on the 5th: the series skips it, a one-off of the same title takes its place.
+  const split = { ...series, skipDays: ['2026-10-05'] };
+  const oneOff = { id: 'b', text: 'Gym', date: '2026-10-05', repeat: 'none', time: '08:00' };
+  const other = { id: 'c', text: 'Dentist', date: '2026-10-09', repeat: 'none' };
+  assert.equal(monthCounts(2026, 9, [split, oneOff], []).reminders, 1, 'an edited day is not a second reminder');
+  assert.equal(monthCounts(2026, 9, [split, oneOff, other], []).reminders, 2, 'different titles still count');
+}
