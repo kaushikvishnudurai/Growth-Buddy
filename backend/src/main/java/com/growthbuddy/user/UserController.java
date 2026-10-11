@@ -1,6 +1,7 @@
 package com.growthbuddy.user;
 
 import com.growthbuddy.common.CurrentUser;
+import com.growthbuddy.common.RateLimiter;
 import com.growthbuddy.mentorship.MentorshipService;
 import java.util.List;
 import java.util.UUID;
@@ -20,10 +21,12 @@ public class UserController {
 
     private final UserRepository users;
     private final MentorshipService mentorship;
+    private final RateLimiter limiter;
 
-    public UserController(UserRepository users, MentorshipService mentorship) {
+    public UserController(UserRepository users, MentorshipService mentorship, RateLimiter limiter) {
         this.users = users;
         this.mentorship = mentorship;
+        this.limiter = limiter;
     }
 
     /**
@@ -49,7 +52,7 @@ public class UserController {
     /**
      * Find users by display-name substring (never email; see UserRepository.search). The email field is only populated
      * when the searcher is *already connected* (accepted) with that user —
-     * otherwise we return a masked form like {@code k****k@gmail.com} so the
+     * otherwise a masked form like {@code k•••k} (no domain) so the
      * searcher can disambiguate without leaking every Growth Buddy email.
      */
     @GetMapping("/search")
@@ -58,6 +61,7 @@ public class UserController {
             return List.of();
         }
         UUID me = CurrentUser.id();
+        UserRepository.throttleSearch(limiter, me);
         return users.search(q.trim(), me, PageRequest.of(0, 20)).stream()
                 .map(u -> toPublic(me, u))
                 .toList();
@@ -67,6 +71,7 @@ public class UserController {
     @GetMapping("/browse")
     public List<PublicUser> browse() {
         UUID me = CurrentUser.id();
+        UserRepository.throttleSearch(limiter, me);
         return users.browseExcluding(me, PageRequest.of(0, 30)).stream()
                 .map(u -> toPublic(me, u))
                 .toList();
@@ -75,20 +80,8 @@ public class UserController {
     private PublicUser toPublic(UUID me, User u) {
         var rel = mentorship.relationship(me, u.getId());
         boolean connected = "active".equals(rel.mentorLink()) || "active".equals(rel.menteeLink());
-        String email = connected ? u.getEmail() : maskEmail(u.getEmail());
+        String email = connected ? u.getEmail() : UserRepository.maskEmail(u.getEmail());
         return new PublicUser(u.getId(), u.getDisplayName(), email, u.getLevel(),
                 rel.state(), rel.mentorLink(), rel.menteeLink());
-    }
-
-    /** {@code alice@example.com} → {@code a***e@example.com}. */
-    private static String maskEmail(String email) {
-        if (email == null) return null;
-        int at = email.indexOf('@');
-        if (at <= 1) return "•••" + email.substring(Math.max(at, 0));
-        String local = email.substring(0, at);
-        String domain = email.substring(at);
-        String first = local.substring(0, 1);
-        String last = local.length() > 1 ? local.substring(local.length() - 1) : "";
-        return first + "•••" + last + domain;
     }
 }

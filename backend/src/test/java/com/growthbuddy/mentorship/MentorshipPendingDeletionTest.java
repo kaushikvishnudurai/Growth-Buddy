@@ -23,7 +23,7 @@ class MentorshipPendingDeletionTest {
     private final MentorshipRequestRepository requests = mock(MentorshipRequestRepository.class);
     private final UserRepository users = mock(UserRepository.class);
     private final NotificationService notifications = mock(NotificationService.class);
-    private final MentorshipService service = new MentorshipService(requests, users, notifications);
+    private final MentorshipService service = new MentorshipService(requests, users, notifications, allowAllLimiter());
 
     @Test
     void anAccountScheduledForDeletionCannotBeInvited() {
@@ -38,5 +38,12 @@ class MentorshipPendingDeletionTest {
                 .extracting(e -> ((ApiException) e).getStatus().value()).isEqualTo(404);
         verify(requests, never()).save(any());
         verify(notifications, never()).publish(any(), any(), any(), any(), any());
+    }
+
+    private static com.growthbuddy.common.RateLimiter allowAllLimiter() {
+        var l = org.mockito.Mockito.mock(com.growthbuddy.common.RateLimiter.class);
+        org.mockito.Mockito.lenient().when(l.allow(org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.anyLong())).thenReturn(true);
+        return l;
     }
 }

@@ -1723,7 +1723,7 @@ function ChallengesPanel({ api, currentUserId, wins }) {
     refreshIcons();
   }
 
-  /* The link joins in one tap (inviteFromHash on the far side). The OS share
+  /* The link joins after one confirm (joinFromLink on the far side). The OS share
      sheet where there is one, else the clipboard. Built on the public site
      (api.siteUrl), not location.href: in the phone app that is
      https://localhost, a link that opens nothing on anyone else's phone. */
@@ -1746,12 +1746,22 @@ function ChallengesPanel({ api, currentUserId, wins }) {
     }
   }
 
-  /* Opened from an invite link: join, show the card, and drop the link's
-     query so a reload doesn't try again. Already a member is a quiet no-op. */
+  /* Opened from an invite link: ask first, then join, show the card, and drop
+     the link's query so a reload doesn't try again. Already a member is a quiet
+     no-op. The ask is the point: a crafted link used to add whoever opened it,
+     and the circle then saw their name and daily check-ins. */
   async function joinFromLink() {
     const invite = inviteFromHash(window.location.hash);
     if (!invite) return;
     history.replaceState(null, '', window.location.pathname + window.location.search + '#/circle');
+    const ok = await confirmDialog({
+      title: 'Join this circle?',
+      message:
+        'You opened an invite link. Its members will see your name and whether you checked in each day.',
+      confirmLabel: 'Join circle',
+      cancelLabel: 'Not now',
+    });
+    if (!ok) return;
     try {
       const joined = invite.code ? await api.joinByCode(invite.code) : await api.join(invite.id);
       if (!el.querySelector('[data-circle-id="' + joined.id + '"]')) addCard(joined);

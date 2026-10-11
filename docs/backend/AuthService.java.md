@@ -21,8 +21,8 @@ user-settings writes. Backs `/api/auth` (`AuthController`). Session minting is *
 | `updateWhatsApp(userId, req)` | |
 | `sendWhatsAppOtp` / `verifyWhatsAppOtp` | ownership proof before the number is saved |
 | `updateProfile(userId, req)` | |
-| `updateFeatures(userId, Map<String,Boolean>)` | per-feature on/off toggles |
-| `updateUiPrefs(userId, Map<String,Object>)` | merge, not replace (theme, language, onboarding, seen achievements) |
+| `updateFeatures(userId, Map<String,Boolean>)` | per-feature on/off toggles; merged map capped at `MAX_FEATURE_KEYS` (50) keys and `MAX_PREFS_BYTES` (32 KB), else 400 (`requireBounded`) |
+| `updateUiPrefs(userId, Map<String,Object>)` | merge, not replace (theme, language, onboarding, seen achievements); merged map capped at `MAX_UI_PREF_KEYS` (200) keys and 32 KB serialized, else 400. Every scheduler tick reads this blob for every user, so it must stay small |
 | `updateDigest(userId, req)` | cadence `off`\|`daily`\|`weekly` + send hour |
 | `updateHomeLayout(userId, List<HomeLayoutItem>)` | |
 | `updateNavLayout(userId, List<NavLayoutItem>)` | |
