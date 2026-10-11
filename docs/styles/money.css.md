@@ -53,7 +53,7 @@ bank-feed row) and `.gb-seg:disabled` (every segmented control).
 | Budget rollover (`gb-money-roll` 44px checkbox label in the set-budgets row, `gb-money-bcard-carry` "+₹X carried", `.is-less` when negative) | set-budgets modal, budgets |
 | Other currencies (`gb-money-fx*` rate rows + account selects, `gb-money-exp-orig` under an amount, `gb-money-account-home` under a foreign balance) | customise pane, rows, accounts |
 | Load older (`gb-money-older`, sits with `.gb-money-showall`) | expense list |
-| Responsive | — |
+| Responsive — the review stats on a 540px viewport; the screen padding and icon-over-label tabs on `@container gb-main` (33.75rem, tighter under 20rem), so the tablet frame and Largest text get them; `.gb-money-swatch` takes a 44px tap from an `::after` | — |
 
 Threshold colours: `is-near` at ≥80% of a budget, `is-over` above 100% — the JS in
 `scripts/money.js` (`tabBudgets`) picks these class names, so keep the names in sync.

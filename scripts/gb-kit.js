@@ -739,7 +739,10 @@ function openOverlay({ label, className, role = 'dialog', onClose, onDismiss } =
     if (closed) return;
     closed = true;
     liveOverlays.delete(entry);
-    if (vv) vv.removeEventListener('resize', fitViewport);
+    if (vv) {
+      vv.removeEventListener('resize', fitViewport);
+      vv.removeEventListener('scroll', pinViewport);
+    }
     overlay.classList.remove('is-open');
     overlay.classList.add('is-closing');
     setTimeout(() => overlay.remove(), 180);
@@ -785,14 +788,23 @@ function openOverlay({ label, className, role = 'dialog', onClose, onDismiss } =
   // and this does nothing. Not interactive-widget=resizes-content: that would
   // also lift the bottom nav onto the keyboard on every screen.
   const vv = typeof window !== 'undefined' ? window.visualViewport : null;
-  function fitViewport() {
+  function pinViewport() {
     const covered = vv && window.innerHeight - vv.height > 1;
     overlay.style.top = covered ? vv.offsetTop + 'px' : '';
     overlay.style.height = covered ? vv.height + 'px' : '';
-    const f = document.activeElement;
-    if (covered && f && sheet.contains(f)) f.scrollIntoView({ block: 'nearest' });
+    return covered;
   }
-  if (vv) vv.addEventListener('resize', fitViewport);
+  function fitViewport() {
+    const f = document.activeElement;
+    if (pinViewport() && f && sheet.contains(f)) f.scrollIntoView({ block: 'nearest' });
+  }
+  // scroll too: iOS pans the visual viewport (offsetTop) without a resize when
+  // it scrolls a focused field into view, and the pin went stale. Only the pin
+  // there: scrolling the field into view on every pan would fight the user's drag.
+  if (vv) {
+    vv.addEventListener('resize', fitViewport);
+    vv.addEventListener('scroll', pinViewport);
+  }
   sheet.addEventListener('focusin', (e) => {
     const t = e.target;
     if (!t.matches || !t.matches('input, textarea, select, [contenteditable]')) return;

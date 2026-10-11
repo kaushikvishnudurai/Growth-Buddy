@@ -406,7 +406,8 @@
   color: var(--fg2);
 }
 
-@media (max-width: 640px) {
+/* The content column's width (app.css #gb-main), not the viewport's. */
+@container gb-main (max-width: 40rem) {
   .gb-mini-cal-day {
     font-size: var(--text-xs);
   }

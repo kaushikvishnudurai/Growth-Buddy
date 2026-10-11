@@ -1740,6 +1740,15 @@
 .gb-money-swatch.is-on {
   border-color: var(--fg1);
 }
+/* 32px dots, 44px taps: the hit area runs into the row gap, as the fix pills' does. */
+.gb-money-swatch {
+  position: relative;
+}
+.gb-money-swatch::after {
+  content: '';
+  position: absolute;
+  inset: -9px;
+}
 
 /* ---- Simulator (23) ---- */
 .gb-money-sim-out {
@@ -1903,11 +1912,15 @@
 
 /* ---- Responsive ---- */
 @media (max-width: 540px) {
-  .gb-money {
-    padding: var(--space-3) var(--gutter) var(--space-12);
-  }
   .gb-money-review-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+/* By the content column's width (app.css #gb-main), so the 440px tablet frame
+   gets the phone tabs too, and in rem so larger text does. */
+@container gb-main (max-width: 33.75rem) {
+  .gb-money {
+    padding: var(--space-3) var(--gutter) var(--space-12);
   }
   /* Icon over a visible label: icon-only tabs were names only a screen reader
      heard. Four columns of ~85px fit "Overview" at this size. */
@@ -1919,6 +1932,14 @@
     padding: 7px var(--space-1);
     border-radius: var(--radius-lg);
     font-size: var(--text-xs);
+  }
+}
+/* Under ~20rem (320px at Largest text) "Overview" ran out of its tab. */
+@container gb-main (max-width: 20rem) {
+  .gb-money-tab {
+    padding-inline: 2px;
+    font-size: 0.6875rem;
+    letter-spacing: -0.01em;
   }
 }
 

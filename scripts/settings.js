@@ -370,6 +370,8 @@ function buildSegSlider(slides, initialId) {
           if (cur.pane) cur.pane.style.display = '';
           btn.classList.add('is-active');
           btn.setAttribute('aria-selected', 'true');
+          // The bar scrolls sideways on a narrow phone: bring a half-hidden tab in.
+          btn.scrollIntoView({ block: 'nearest', inline: 'nearest' });
           move(id);
         },
       },
