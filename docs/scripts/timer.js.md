@@ -42,14 +42,15 @@ store before it is posted**, so it counts exactly once. The decision is `restore
 
 ## Around the clock
 
-- A chip tapped mid-session asks first (`switchMode` → `confirmDialog`).
+- **States** (`inSession()` = running, or paused with time both used and left): the button reads Start / Pause / **Resume**, the sub line "Paused, 24:57 left" (`startLabel` / `subText`). While in session the length segments (and Custom) are **disabled**, with "Reset to change the length." under them (`T.refs.lockHint`); `switchMode` still asks first for the preselect path. **Reset asks** (`confirmDialog`) once more than a minute has been done.
+- Colours: the focus ring, the selected sound tile, the volume thumb, the goal bar and the history bars are `--brand` (they were `--iris`, off-brand); a break's ring stays `--leaf-500`.
 - **The cycle**: four sprints, `T.cycleDone` (0..4) counts the finished ones. A finished sprint lines
   up a 5-minute break, the 4th a 15-minute one; a finished break lines up the last sprint length, and
   the long break starts a new cycle (`afterSession` / `cycleLabel` in timer-math.js — "Sprint n of 4"
   over the heading is `T.refs.cycleEl`). `T.suggest` is the sub line; never auto-started. A session
   that finished while the app was gone advances the cycle too. "Sessions today" is the stats card's count.
 - **"Focusing on…"** (`FocusPicker`, a `<select>` of `Focus.targets` = app.js's open tasks and goals):
-  `T.link` = `{taskId}` | `{goalId}` | null, read when the session ends and POSTed with it (a break never
+  paused tasks are filtered out (`t.paused`, which app.js's `focusTargets` has to pass through). `T.link` = `{taskId}` | `{goalId}` | null, read when the session ends and POSTed with it (a break never
   carries one; the server 404s a link that isn't the caller's). A pick that has left the lists stays as
   "The task you picked". A task/goal row's timer button → app.js `startFocusOn(link)` → `focusPreselect`,
   handed once as `props.preselect` (a running sprint is moved over to it, with a toast; an idle break
@@ -57,7 +58,7 @@ store before it is posted**, so it counts exactly once. The decision is `restore
 - **Daily goal** (`paintGoal` into `Focus.goalEl`, under the buttons): `ui_prefs.focusGoalMins`
   (`props.focusGoalMins`, 0 = off, "Set a daily focus goal" link), a `role=progressbar` bar of today's
   minutes and the server's `goalStreak` (shown only once `stats.goalMinutes` matches the local goal).
-  `openGoalSheet` → `setGoal` → `props.onSetFocusGoal` (= `saveUiPrefs`, whose promise it waits on)
+  goal met shows "Daily goal met. Nice work." (`.gb-focus-goal-met`) under the bar. `openGoalSheet` → `setGoal` → `props.onSetFocusGoal` (= `saveUiPrefs`, whose promise it waits on)
   → `Focus.reloadStats`.
 - The end rings the user's alert tone (`Focus.chimeKey` = app.js `notifySound()`, via `playChime`;
   the old 880 Hz beep is the fallback) and, on the web, shows a Notification when one is already
@@ -67,7 +68,7 @@ store before it is posted**, so it counts exactly once. The decision is `restore
   isn't on a control or in a dialog. Enter submits the custom-minutes sheet (`submitOnEnter`).
 - While running the tab title is `"12:34 focus · " + app.js's title`, stripped and re-added each
   tick because app.js retitles on every render (`titleWith` / `stripTitle`).
-- `paintRing` rebuilds the start button (and calls `refreshIcons`) only when `running` changes —
+- `paintRing` rebuilds the start button (and calls `refreshIcons`) only when its label (Start / Pause / Resume) changes —
   it used to run `lucide.createIcons()` over the whole document every tick.
 
 | Fn |
@@ -113,7 +114,7 @@ completed sessions POST to `/api/focus/sessions` (`FocusSession` rows are retent
 (`props.getFocusHistory`), re-fetched after every saved focus session. 30 bars in an inline SVG
 (`barLayout`, scaled to max(busiest day, goal); the goal is a dashed line; today's bar darker; each
 day's full-height hit rect carries a `<title>` tooltip), `aria-hidden`, with a `gb-sr-only` table of
-the same days. Under it, this week's minutes per linked task/goal (`week`; a deleted one is "A removed
+the same days. No minutes in the 30 days → one line of empty state instead of a blank chart. Under it, this week's minutes per linked task/goal (`week`; a deleted one is "A removed
 task"). `History.last` is cleared with `Focus.last` when the owner changes.
 
 Styles: `app.css` §"Focus screen" and §"Focus stats card".

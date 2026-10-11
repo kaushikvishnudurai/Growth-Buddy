@@ -450,34 +450,50 @@ function paintRing() {
     c = 2 * Math.PI * r;
   const off = c * (1 - pct / 100);
   T.refs.ringFg.setAttribute('stroke-dashoffset', String(off));
-  T.refs.ringFg.setAttribute('stroke', T.mode === 'focus' ? 'var(--iris-500)' : 'var(--leaf-500)');
+  T.refs.ringFg.setAttribute('stroke', T.mode === 'focus' ? 'var(--brand)' : 'var(--leaf-500)');
   T.refs.timeEl.textContent = fmt(T.remainingSec);
   T.refs.modeEl.textContent = T.mode;
   T.refs.cycleEl.textContent = cycleLabel(T.mode, T.cycleDone);
-  T.refs.subEl.textContent = T.running
-    ? 'In session — keep going.'
-    : T.remainingSec === 0
-      ? 'Session complete! Reset to start a new sprint.'
-      : 'Start a study sprint.';
+  T.refs.subEl.textContent = subText();
   if (T.suggest && !T.running && T.remainingSec === T.durationSec) T.refs.subEl.textContent = T.suggest;
-  // The button only changes when running does. Rebuilding it every tick meant
+  // The button only changes with its label. Rebuilding it every tick meant
   // a lucide.createIcons() sweep of the whole document once a second.
-  if (T.refs.paintedRunning !== T.running) {
-    T.refs.paintedRunning = T.running;
+  const label = startLabel();
+  if (T.refs.paintedLabel !== label) {
+    T.refs.paintedLabel = label;
     T.refs.startBtn.textContent = '';
     T.refs.startBtn.append(
       T.running ? Icon('pause', { size: 16, sw: 2.4 }) : Icon('play', { size: 16, sw: 2.4 }),
-      document.createTextNode(T.running ? 'Pause' : 'Start')
+      document.createTextNode(label)
     );
     T.refs.startBtn.classList.toggle('gb-btn--primary', !T.running);
     T.refs.startBtn.classList.toggle('gb-btn--secondary', T.running);
     refreshIcons();
   }
+  // A length can't change under a session: the segments lock, and say why.
+  const locked = inSession();
+  T.refs.lockHint.hidden = !locked;
   Object.keys(T.refs.chips).forEach(function (k) {
     const on = k === T.mode + ':' + T.durationSec / 60;
     T.refs.chips[k].classList.toggle('is-on', on);
     T.refs.chips[k].setAttribute('aria-pressed', String(on));
+    T.refs.chips[k].disabled = locked;
   });
+  T.refs.chipCustom.disabled = locked;
+}
+
+/* Started and not over: running, or paused with time both used and left. */
+function inSession() {
+  return T.running || (T.remainingSec > 0 && T.remainingSec < T.durationSec);
+}
+function startLabel() {
+  return T.running ? 'Pause' : inSession() ? 'Resume' : 'Start';
+}
+function subText() {
+  if (T.running) return 'In session — keep going.';
+  if (T.remainingSec === 0) return 'Session complete! Reset to start a new sprint.';
+  if (inSession()) return 'Paused, ' + fmt(T.remainingSec) + ' left';
+  return 'Start a study sprint.';
 }
 
 function setMode(mode, mins, suggest) {
@@ -502,8 +518,7 @@ function setMode(mode, mins, suggest) {
    a word. Ask first when there is something to lose. */
 async function switchMode(mode, mins) {
   if (T.mode === mode && T.durationSec === mins * 60 && !T.running) return;
-  const inProgress = T.running || (T.remainingSec > 0 && T.remainingSec < T.durationSec);
-  if (inProgress) {
+  if (inSession()) {
     const ok = await confirmDialog({
       title: 'End this ' + (T.mode === 'break' ? 'break' : 'session') + '?',
       message: fmt(T.remainingSec) + ' is left on the clock. Switching starts over and this one won’t count.',
@@ -623,7 +638,18 @@ function pause() {
   paintRing();
 }
 
-function reset() {
+async function reset() {
+  // More than a minute in, Reset throws real focus away: ask first.
+  const left = T.running ? remainingFrom(T.endsAt, Date.now()) : T.remainingSec;
+  if (left > 0 && T.durationSec - left > 60) {
+    const ok = await confirmDialog({
+      title: 'Reset this ' + (T.mode === 'break' ? 'break' : 'session') + '?',
+      message: Math.floor((T.durationSec - left) / 60) + ' min done so far won’t count.',
+      confirmLabel: 'Reset',
+      danger: true,
+    });
+    if (!ok) return;
+  }
   if (T.running) pause();
   T.remainingSec = T.durationSec;
   saveSession();
@@ -674,7 +700,7 @@ function buildRing(size, stroke) {
   fg.setAttribute('cy', size / 2);
   fg.setAttribute('r', r);
   fg.setAttribute('fill', 'none');
-  fg.setAttribute('stroke', 'var(--iris-500)');
+  fg.setAttribute('stroke', 'var(--brand)');
   fg.setAttribute('stroke-width', stroke);
   fg.setAttribute('stroke-linecap', 'round');
   fg.setAttribute('stroke-dasharray', c);
@@ -802,14 +828,11 @@ function TimerCard() {
     'Custom…'
   );
 
-  const subEl = h(
+  const subEl = h('div', { class: 'gb-score-sub' }, subText());
+  const lockHint = h(
     'div',
-    { class: 'gb-score-sub' },
-    T.running
-      ? 'In session — keep going.'
-      : T.remainingSec === 0
-        ? 'Session complete! Reset to start a new sprint.'
-        : 'Start a study sprint.'
+    { class: 'gb-focus-lock-hint', id: 'gb-focus-lock-hint', hidden: true },
+    'Reset to change the length.'
   );
   const startBtn = h(
     'button',
@@ -821,7 +844,7 @@ function TimerCard() {
       },
     },
     Icon(T.running ? 'pause' : 'play', { size: 16, sw: 2.4 }),
-    document.createTextNode(T.running ? 'Pause' : 'Start')
+    document.createTextNode(startLabel())
   );
   const resetBtn = h(
     'button',
@@ -849,8 +872,10 @@ function TimerCard() {
     subEl,
     startBtn,
     liveEl,
-    paintedRunning: T.running,
+    lockHint,
+    paintedLabel: startLabel(),
     chips: { ['focus:25']: chipFocus25, ['focus:50']: chipFocus50, ['break:5']: chipBreak5 },
+    chipCustom,
   };
   paintRing();
 
@@ -867,12 +892,13 @@ function TimerCard() {
         FocusPicker(),
         h(
           'div',
-          { class: 'gb-segmented', style: { marginTop: '12px' } },
+          { class: 'gb-segmented', style: { marginTop: '12px' }, 'aria-describedby': 'gb-focus-lock-hint' },
           chipFocus25,
           chipFocus50,
           chipBreak5,
           chipCustom
         ),
+        lockHint,
         h('div', { class: 'gb-timer-actions' }, startBtn, resetBtn),
         goalEl,
         liveEl
@@ -891,7 +917,8 @@ function linkValue(l) {
 
 function FocusPicker() {
   const targets = Focus.targets || { tasks: [], goals: [] };
-  const tasks = targets.tasks || [];
+  // A paused task isn't one to focus on (app.js passes `paused` through).
+  const tasks = (targets.tasks || []).filter((t) => !t.paused);
   const goals = targets.goals || [];
   const current = linkValue(T.link);
   const known = tasks.some((t) => 'task:' + t.id === current) || goals.some((g) => 'goal:' + g.id === current);
@@ -976,7 +1003,10 @@ function paintGoal() {
         'aria-valuetext': today + ' of ' + goal + ' minutes',
       },
       h('div', { class: 'gb-focus-goal-fill', style: { width: pct + '%' } })
-    )
+    ),
+    pct >= 100
+      ? h('div', { class: 'gb-focus-goal-met' }, Icon('trophy', { size: 14, sw: 2.4 }), 'Daily goal met. Nice work.')
+      : null
   );
   refreshIcons();
 }
@@ -1153,6 +1183,10 @@ function paintHistory() {
   const goal = goalMinutes(Focus.goalMins);
   const total = days.reduce((a, d) => a + (d.minutes || 0), 0);
   const active = days.filter((d) => d.minutes > 0).length;
+  if (!total) {
+    el.append(h('div', { class: 'gb-focus-hist-note' }, 'No focus time in the last 30 days yet. Finished sprints show up here.'));
+    return;
+  }
   el.append(
     h(
       'div',

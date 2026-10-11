@@ -2236,8 +2236,8 @@ body:has(.is-thinking, .gb-thinking)::after {
   }
 }
 .gb-sound-tile.is-on {
-  border-color: var(--iris-500);
-  color: var(--iris-500);
+  border-color: var(--brand);
+  color: var(--brand-ink);
   background: var(--surface);
   box-shadow: var(--shadow-xs);
 }
@@ -2292,7 +2292,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: var(--iris-500);
+  background: var(--brand);
   border: 2px solid var(--surface);
   box-shadow: var(--shadow-xs);
 }
@@ -2300,7 +2300,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: var(--iris-500);
+  background: var(--brand);
   border: 2px solid var(--surface);
 }
 .gb-range:focus-visible {
@@ -6010,6 +6010,9 @@ button.gb-food-level {
   align-items: center;
   gap: 10px;
 }
+.gb-cal-toolbar-actions[hidden] {
+  display: none;
+}
 .gb-btn.gb-cal-today {
   width: auto;
   padding: 9px 16px;
@@ -6134,6 +6137,12 @@ button.gb-food-level {
 .gb-cal-day.is-selected .gb-cal-dot {
   background: var(--fg-on-brand);
   box-shadow: 0 0 0 1.5px var(--brand-fill);
+}
+/* A task due: a square, so it never reads as one more tag colour. */
+.gb-cal-dot.is-task,
+.gb-legend-dot.is-task {
+  border-radius: 1.5px;
+  background: var(--fg2);
 }
 
 /* Reminder panel */
@@ -7839,11 +7848,28 @@ button.gb-food-level {
 .gb-focus-goal-fill {
   height: 100%;
   border-radius: inherit;
-  background: var(--iris-500);
+  background: var(--brand);
   transition: width var(--dur-base) var(--ease-out);
 }
 .gb-focus-goal-bar.is-met .gb-focus-goal-fill {
   background: var(--leaf-500);
+}
+.gb-focus-goal-met {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-weight: 700;
+  color: var(--success);
+}
+.gb-focus-lock-hint {
+  margin-top: 6px;
+  font-size: 0.75rem;
+  color: var(--fg3);
+}
+.gb-focus-card .gb-seg:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* History card: 30-day bars (inline SVG; the table beside it is sr-only). */
@@ -7861,10 +7887,10 @@ button.gb-food-level {
   height: 96px;
 }
 .gb-focus-hist-bar {
-  fill: var(--iris-300);
+  fill: var(--coral-300);
 }
 .gb-focus-hist-bar.is-today {
-  fill: var(--iris-600);
+  fill: var(--brand);
 }
 .gb-focus-hist-hit {
   fill: transparent;
@@ -9749,7 +9775,8 @@ select.gb-input {
 }
 .gb-family-card-name {
   display: flex;
-  align-items: center;
+  /* Baseline, not center: the smaller "You" pill sat off the name's line. */
+  align-items: baseline;
   gap: 7px;
   font-weight: 800;
   font-size: 0.96875rem;
@@ -10430,7 +10457,8 @@ select.gb-input {
   width: 22px;
   height: 22px;
   margin: 0;
-  accent-color: var(--brand);
+  /* --brand-fill, not --brand: the white tick needs 4.5:1 (--brand is 2.8). */
+  accent-color: var(--brand-fill);
   cursor: pointer;
 }
 .gb-family-shop-item.is-checked .gb-family-card-name {
@@ -11820,6 +11848,17 @@ textarea:focus-visible,
 .gb-notes-search {
   position: relative;
 }
+/* The native clear button, in the theme's ink rather than the UA's blue/grey. */
+.gb-notes-search input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  background: var(--fg3);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round'%3E%3Cpath d='M18 6 6 18M6 6l12 12'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round'%3E%3Cpath d='M18 6 6 18M6 6l12 12'/%3E%3C/svg%3E") center / contain no-repeat;
+  cursor: pointer;
+}
 .gb-notes-search[hidden] {
   display: none;
 }
@@ -11897,6 +11936,11 @@ textarea:focus-visible,
      second row that pushes the writing area off-screen. */
   overflow-x: auto;
   scrollbar-width: none;
+  /* Half the tools sit past the edge on a phone: the fade says there are more,
+     and the end padding lets the last one scroll clear of it. */
+  padding-right: 28px;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
 }
 .gb-editor-bar::-webkit-scrollbar {
   display: none;
@@ -11927,7 +11971,7 @@ textarea:focus-visible,
 /* 30px suits a mouse; a finger needs 44. The bar scrolls, so it can grow. */
 @media (pointer: coarse) {
   .gb-editor-bar {
-    padding: 2px 4px;
+    padding: 2px 28px 2px 4px;
   }
   .gb-editor-btn {
     width: 44px;
@@ -12490,7 +12534,7 @@ textarea:focus-visible,
 }
 .gb-note-view,
 .gb-note-chip {
-  min-height: 40px;
+  min-height: 44px;
   padding: 6px 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
