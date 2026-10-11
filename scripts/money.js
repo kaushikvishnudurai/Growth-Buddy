@@ -2475,6 +2475,11 @@ function logNoSpendDay(money, save) {
 // The server's caps (MoneyLedger): EXPENSE_MAX for an expense, MAX_AMOUNT for any other row.
 const EXPENSE_MAX = 10000000;
 const AMOUNT_MAX = 1000000000;
+// The ledger is read from 1900 on (MoneyLedger.page), so an earlier day, one slipped
+// keystroke in the year, was saved, counted in the balance and listed nowhere.
+const MIN_DAY = '1900-01-01';
+const EARLY_DAY = 'Pick a day in 1900 or later.'; // the server's own wording
+const tooEarly = (date) => !!date.value && date.value < MIN_DAY;
 
 function openReceiptModal(money, save, requestReceiptScan, opts) {
   money = normalizeMoney(money);
@@ -2586,7 +2591,7 @@ function openReceiptModal(money, save, requestReceiptScan, opts) {
     Icon('plus', { size: 14, sw: 2.6 }),
     'Add item'
   );
-  const date = h('input', { type: 'date', class: 'gb-input', value: todayKey(), max: todayKey() });
+  const date = h('input', { type: 'date', class: 'gb-input', value: todayKey(), min: MIN_DAY, max: todayKey() });
   const status = h('div', { class: 'gb-note-hint', 'aria-live': 'polite' });
   let scanSeq = 0; // a second photo picked mid-scan wins; the first answer is dropped
   async function scanFile(f) {
@@ -2690,6 +2695,7 @@ function openReceiptModal(money, save, requestReceiptScan, opts) {
       // The server refuses an expense past EXPENSE_MAX (MoneyLedger), as the expense form does.
       const big = valid.find((r) => r.amount > EXPENSE_MAX);
       if (big) throw new Error((big.name || 'An item') + ' is over ' + fmt(EXPENSE_MAX) + ', the most one expense can be.');
+      if (tooEarly(date)) throw fieldRefusal(date, EARLY_DAY);
       const accountId = paidFrom.get();
       commit((m) => {
         valid.forEach((r) =>
@@ -2744,6 +2750,7 @@ function openExpenseModal(money, save, prefillDate, existing, scan) {
   const date = h('input', {
     type: 'date',
     class: 'gb-input',
+    min: MIN_DAY,
     max: todayKey(),
     value: (ex && ex.date) || prefillDate || todayKey(),
   });
@@ -2921,6 +2928,7 @@ function openExpenseModal(money, save, prefillDate, existing, scan) {
           : '';
       if (bad) throw fieldRefusal(amount, bad);
       if (!date.value || date.value > todayKey()) throw fieldRefusal(date, 'Pick a day up to today.');
+      if (tooEarly(date)) throw fieldRefusal(date, EARLY_DAY);
       const cat = picker.get();
       const next = clone(money);
       const accountId = paidFrom.get();
@@ -3525,7 +3533,7 @@ function ScreenMoney({
       maxlength: '120',
       placeholder: 'e.g. ATM withdrawal',
     });
-    const date = h('input', { type: 'date', class: 'gb-input', value: todayKey() });
+    const date = h('input', { type: 'date', class: 'gb-input', value: todayKey(), min: MIN_DAY });
     openMoneyModal({
       title: 'Move money',
       sub: 'Withdrawing cash, topping up a wallet, paying off a card. Not counted as spending.',
@@ -3553,6 +3561,7 @@ function ScreenMoney({
           throw new Error('Enter an amount greater than zero.');
         }
         if (from.get() === to.get()) throw new Error('Pick two different accounts.');
+        if (tooEarly(date)) throw fieldRefusal(date, EARLY_DAY);
         commit((m) =>
           m.transfers.unshift({
             id: uid(),
@@ -6208,6 +6217,7 @@ function ScreenMoney({
     const date = h('input', {
       type: 'date',
       class: 'gb-input',
+      min: MIN_DAY,
       max: todayKey(),
       value: ex ? ex.date : due ? due.date : todayKey(),
     });
@@ -6283,6 +6293,7 @@ function ScreenMoney({
         const v = readAmount(amt);
         if (!Number.isFinite(v) || v <= 0) throw fieldRefusal(amt, 'Enter an amount greater than zero.');
         if (!date.value || date.value > todayKey()) throw fieldRefusal(date, 'Pick a day up to today.');
+        if (tooEarly(date)) throw fieldRefusal(date, EARLY_DAY);
         const source = src.get();
         const home = ex ? editedHomeAmount(money, ex, into.get(), v) : toHomeAmount(money, into.get(), v);
         // Past the server's cap it said "Income added." and then failed the sync.
@@ -6344,7 +6355,7 @@ function ScreenMoney({
       maxlength: '60',
       placeholder: lent ? 'Who did you lend to?' : 'Who did you borrow from?',
     });
-    const date = h('input', { type: 'date', class: 'gb-input', value: todayKey() });
+    const date = h('input', { type: 'date', class: 'gb-input', value: todayKey(), min: MIN_DAY });
     const note = h('input', { type: 'text', class: 'gb-input', maxlength: '80', placeholder: 'Optional note' });
     // Optional "Given from" / "Received into": '' = not said. Picked, the loan moves
     // that balance (loanMove): lent comes out of it, borrowed goes into it.
@@ -6382,6 +6393,7 @@ function ScreenMoney({
           party.focus();
           throw new Error(lent ? 'Who did you lend to?' : 'Who did you borrow from?');
         }
+        if (tooEarly(date)) throw fieldRefusal(date, EARLY_DAY);
         commit((m) => {
           (m.loans = m.loans || []).unshift({
             id: uid(),
@@ -6413,7 +6425,7 @@ function ScreenMoney({
       step: '0.01',
       value: String(left),
     });
-    const date = h('input', { type: 'date', class: 'gb-input', value: todayKey() });
+    const date = h('input', { type: 'date', class: 'gb-input', value: todayKey(), min: MIN_DAY });
     // "Repaid into" / "Paid from": defaults to the loan's own account; Skip moves no balance.
     const accts = activeAccounts(money);
     const via = accts.length
@@ -6446,6 +6458,7 @@ function ScreenMoney({
           amt.focus();
           throw new Error('That is more than the ' + fmt(left) + ' left.');
         }
+        if (tooEarly(date)) throw fieldRefusal(date, EARLY_DAY);
         const after = loanLeft(Object.assign({}, l, { repaid: (l.repaid || []).concat({ amount: v }) }));
         const accountId = via ? via.get() : '';
         commit((m) => {
