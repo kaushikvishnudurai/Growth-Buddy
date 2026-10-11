@@ -52,3 +52,19 @@ From its research, section 5, not re-specified here: one notification budget acr
 if-then cue at habit creation, rewarding the comeback, no failure states, bridging the wait for the
 first insight, fresh-start prompts, projection plus a one-tap default, day-1 value from history,
 pausing a module, and honest habit timelines.
+
+## Deferred by the bug hunts
+
+Found while reviewing the merged code and left on purpose (low impact for the code they'd need):
+
+- CSV import: a DD/MM vs MM/DD choice when every date in a file is ambiguous (day-first is the
+  default, for India), and `;` as the delimiter on a two-column European file; Windows-1252 files read
+  as UTF-8 show the replacement character instead of the currency symbol.
+- ICS import: an event in a zone whose daylight-saving date differs from the account's keeps one offset
+  (flag it); a wall time inside a DST gap west of UTC lands an hour early; past one-off events are left
+  out (the server refuses reminders before yesterday).
+- A double tap on the very first Settings / habit-dialog load can open two sheets.
+- Deletes still waiting on Undo when a session expires are dropped (the outbox would keep them).
+- Backdated water across a zone gap of more than 12 hours can file under the next day.
+- Two leftovers from the merge: `outlook.js` and `snap.js` are the next boot-chunk candidates to make
+  lazy (the boot budget was raised for them).
