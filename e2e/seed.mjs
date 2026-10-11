@@ -64,6 +64,10 @@ export async function seedAccount({ seed = true, tag = 'e2e' } = {}) {
   // The verify answer predates the PUT; a cookie carrying its UTC zone makes the app offer a switch.
   user.timezone = tz;
   if (!seed) return { email, password, token, user };
+  // A seeded account is a returning user: past the first-run setup sheet, which would
+  // otherwise open over every screen and block clicks. --empty keeps the first run.
+  const prefs = await call('/api/auth/ui-prefs', 'PUT', { prefs: { ...(user.uiPrefs || {}), setupDone: true } }, token);
+  if (prefs.json && prefs.json.uiPrefs) user.uiPrefs = prefs.json.uiPrefs;
 
   const today = new Date().toLocaleDateString('en-CA');
   const failures = [];
