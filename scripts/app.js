@@ -951,6 +951,10 @@ function saveMoney(next, base) {
   // the server.
   const nextN = normalizeMoney(next);
   const diff = ledgerDiff(base ? normalizeMoney(base) : state.money, nextN);
+  const had = new Set(((state.money && state.money.expenses) || []).map((e) => e.id));
+  // A new expense for today (not a posted monthly repeat) ticks "Log every expense".
+  if (diff.upserts.some((u) => u.kind === 'expense' && u.date === accountTodayKey() && !had.has(u.id) && !String(u.id).startsWith('rec-')))
+    autoTickExpenseHabits();
   state.money = normalizeMoney(
     Object.assign(applyLedgerDiff(state.money, diff), docPart(nextN), {
       accounts: state.money.accounts,
@@ -3902,6 +3906,16 @@ async function autoTickFocusHabits() {
   open
     .filter((hb) => mins >= focusMinutesTarget(hb.name))
     .forEach((hb) => autoTickHabit(hb, hb.metric === 'minutes' ? mins : null, mins + ' focus minutes today'));
+}
+
+/* The Save money pack's "Log every expense" (or any habit named for logging
+   expenses) ticks when an expense for today is saved, from any path: saveMoney. */
+const LOGS_EXPENSES = /\blog\b.*\bexpenses?\b/i;
+function autoTickExpenseHabits() {
+  if (!featureOn('habits')) return;
+  (state.habits || [])
+    .filter((hb) => !hb.doneToday && hb.active !== false && LOGS_EXPENSES.test(hb.name || ''))
+    .forEach((hb) => autoTickHabit(hb, null, 'an expense logged'));
 }
 
 async function refreshScore() {

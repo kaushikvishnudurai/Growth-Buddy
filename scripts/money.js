@@ -956,6 +956,24 @@ function dailyTip(money) {
 }
 
 /* 14 — financial health score (0–100) with component breakdown. */
+/* One-tap budgets from real spending: 10% under each tag's last 30 days, scaled up
+   to a month when the history is shorter, rounded DOWN to 50 (to the nearest, 250 x
+   0.9 = 225 came back as 250). Under 14 days of history there is no month to stand
+   on (one lunch became the month's Food budget, used up on day one): nothing. A tag
+   already past its amount this month is left out too. */
+function suggestBudgets(money) {
+  const today = todayKey();
+  const first = money.expenses.reduce((a, e) => (e && e.date && e.date < a ? e.date : a), today);
+  const days = Math.min(30, diffDays(today, first) + 1);
+  if (days < 14) return [];
+  const last30 = byCategory(inRange(money.expenses, lastNDays(30)[0], today), money);
+  const month = byCategory(inRange(money.expenses, thisMonthPrefix() + '-01', today), money);
+  return mergedCats(money)
+    .filter((c) => last30[c.key] > 0)
+    .map((c) => ({ c, amt: Math.max(50, Math.floor((last30[c.key] * (30 / days) * 0.9) / 50) * 50) }))
+    .filter((x) => x.amt > (month[x.c.key] || 0));
+}
+
 function financialHealth(money) {
   const parts = [];
   const mExp = inRange(money.expenses, thisMonthPrefix() + '-01', todayKey());
@@ -991,7 +1009,7 @@ function financialHealth(money) {
     score: sav,
     max: 20,
     fix: money.goals.length ? null : 'goal',
-    note: recentSave > 0 ? `${fmt(recentSave)} set aside lately` : 'Add to a goal to build this',
+    note: recentSave > 0 ? `${fmt(recentSave)} set aside lately` : 'Put money in a savings goal to build this',
   });
   const from14 = dkey(addDays(new Date(), -13));
   const logged14 = loggedDays(
@@ -1028,7 +1046,7 @@ function financialHealth(money) {
     fix: money.goals.length ? null : 'goal',
     note: money.goals.length
       ? `avg ${Math.round(money.goals.reduce((a, g) => a + goalPlan(g).pct, 0) / money.goals.length)}% to target`
-      : 'Create a goal to score this',
+      : 'Start a savings goal to score this',
   });
   const score = parts.reduce((a, p) => a + p.score, 0);
   const weakest = parts.slice().sort((a, b) => a.score / a.max - b.score / b.max)[0];
@@ -3098,11 +3116,13 @@ function ScreenMoney({
     // Nothing tells us what was in the purse before the app, so ask once:
     // answered = Set balances saved, or any opening balance typed. An expense booked
     // to an account is not an answer (the first one left Cash at -349). A cash or
-    // bank balance below zero asks again; a card's owed amount is fine.
-    const negative = list.find((a) => a.kind !== 'card' && Number(a.balance) < 0);
-    const needsSetup =
-      negative ||
-      (!money.settings.accountsSetUp && list.every((a) => !Number(a.openingBalance)));
+    // bank balance below zero asks again; a card's owed amount is fine. Never told,
+    // a balance below zero is only the spending so far (the first lunch made Cash
+    // -250 and "money came in that isn't logged"): it reads "Not set", no warning.
+    const unset = !money.settings.accountsSetUp && list.every((a) => !Number(a.openingBalance));
+    const hidden = (a) => unset && Number(a.balance) < 0;
+    const negative = !unset && list.find((a) => a.kind !== 'card' && Number(a.balance) < 0);
+    const needsSetup = negative || unset;
     return Card({
       className: 'gb-money-card',
       children: [
@@ -3166,9 +3186,9 @@ function ScreenMoney({
               'button',
               {
                 type: 'button',
-                class: 'gb-money-account' + (Number(a.balance) < 0 ? ' is-negative' : ''),
+                class: 'gb-money-account' + (Number(a.balance) < 0 && !hidden(a) ? ' is-negative' : ''),
                 onclick: () => openEditAccount(a),
-                'aria-label': a.name + ', ' + fmtBalance(money, a) + '. Edit',
+                'aria-label': a.name + ', ' + (hidden(a) ? 'balance not set' : fmtBalance(money, a)) + '. Edit',
               },
               h(
                 'span',
@@ -3187,8 +3207,8 @@ function ScreenMoney({
               h(
                 'span',
                 { class: 'gb-money-account-bal' },
-                fmtBalance(money, a),
-                accCurrency(money, a.id) && fxRate(money, accCurrency(money, a.id))
+                hidden(a) ? 'Not set' : fmtBalance(money, a),
+                !hidden(a) && accCurrency(money, a.id) && fxRate(money, accCurrency(money, a.id))
                   ? h('span', { class: 'gb-money-account-home' }, fmt(a.balance))
                   : null
               )
@@ -3196,14 +3216,14 @@ function ScreenMoney({
           )
         ),
         // A card below zero is what it owes; only cash / bank / wallet below zero is odd.
-        list.some((a) => a.kind !== 'card' && Number(a.balance) < 0)
+        negative
           ? h(
               'p',
               { class: 'gb-money-intro' },
               "A balance below zero usually means some money came in that isn't logged. Tap the account to set what it really holds."
             )
           : null,
-        list.length > 1
+        list.length > 1 && !(unset && total < 0)
           ? h(
               'div',
               { class: 'gb-money-accounts-total' },
@@ -3597,7 +3617,7 @@ function ScreenMoney({
         min: '0',
         step: '1',
         max: '10000000',
-        placeholder: last30[c.key] > 0 ? String(Math.max(50, Math.round((last30[c.key] * 0.9) / 50) * 50)) : '',
+        placeholder: last30[c.key] > 0 ? String(Math.max(50, Math.floor((last30[c.key] * 0.9) / 50) * 50)) : '',
         'aria-label': c.label + ' monthly budget',
         value: money.budgets[c.key] ? String(money.budgets[c.key]) : '',
       }),
@@ -4614,7 +4634,7 @@ function ScreenMoney({
     const statement = hasBudget
       ? [
           line('Budget for ' + monthName, fmt(totalBudget)),
-          line('Spent so far', fmt(-spentMonth)),
+          line('Spent so far', fmt(spentMonth)),
           spentMonth > totalBudget
             ? line('Over budget', fmt(spentMonth - totalBudget), 'is-total is-over')
             : line('Left this month', fmt(totalBudget - spentMonth), 'is-total'),
@@ -4745,7 +4765,7 @@ function ScreenMoney({
       hs.score >= 70 ? 'var(--success)' : hs.score >= 45 ? 'var(--warning)' : 'var(--brand)';
     const FIX = {
       budgets: { label: 'Set budgets', icon: 'target', run: openSetBudgets },
-      goal: { label: 'Create a goal', icon: 'sprout', run: () => openAddGoal(false) },
+      goal: { label: 'Start a savings goal', icon: 'sprout', run: () => openAddGoal(false) },
       log: { label: 'Add expense', icon: 'plus', run: () => openAddExpense() },
     };
     // Two parts can share one fix (no goals zeroes both goal parts): one button each.
@@ -5762,14 +5782,11 @@ function ScreenMoney({
   function budgetsSection() {
     const st = budgetStatus(money);
     const anySet = st.some((s) => s.base > 0);
-    // None set: one short card, with a one-tap set from the last 30 days when there
-    // is spending (10% under each tag, as the dialog's hints), so budgets aren't
-    // only reachable from the health card at the bottom.
+    // None set: one short card, with a one-tap set from the last 30 days once there
+    // are two weeks of spending (suggestBudgets), so budgets aren't only reachable
+    // from the health card at the bottom.
     if (!anySet) {
-      const last30 = byCategory(inRange(money.expenses, lastNDays(30)[0], todayKey()), money);
-      const sugg = mergedCats(money)
-        .filter((c) => last30[c.key] > 0)
-        .map((c) => ({ c, amt: Math.max(50, Math.round((last30[c.key] * 0.9) / 50) * 50) }));
+      const sugg = suggestBudgets(money);
       return [
         Card({
           className: 'gb-money-card',
@@ -7523,4 +7540,5 @@ export const _calc = {
   advise,
   goalPlan,
   achievementTimeline,
+  suggestBudgets,
 };

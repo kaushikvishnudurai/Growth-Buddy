@@ -496,3 +496,17 @@ console.log('money-calc QA round: ok');
   assert.equal(best.date, '2026-10-08');
 }
 console.log('money-calc journey date: ok');
+
+// ---- NEW-1: one-tap budgets need two weeks of history, round down, never start used up ----
+{
+  const { suggestBudgets } = _calc;
+  const amts = (m) => suggestBudgets(m).map((x) => [x.c.key, x.amt]);
+  assert.deepEqual(amts(doc({ expenses: [ex('a', 250, '2026-10-20')] })), [], 'one lunch is not a month');
+  // 30 days of history: 250 x 0.9 = 225, down to 200 (to the nearest it came back as 250).
+  assert.deepEqual(amts(doc({ expenses: [ex('a', 250, '2026-09-21')] })), [['food', 200]]);
+  // 14 days: 700 scaled to 30 days is 1,500, 10% under is 1,350.
+  assert.deepEqual(amts(doc({ expenses: [ex('a', 400, '2026-10-07'), ex('b', 300, '2026-10-12')] })), [['food', 1350]]);
+  // This month already at the amount: not offered (it would read 100% used on the day it is set).
+  assert.deepEqual(amts(doc({ expenses: [ex('a', 100, '2026-09-21'), ex('b', 900, '2026-10-20')] })), []);
+}
+console.log('money-calc budget suggestions: ok');
