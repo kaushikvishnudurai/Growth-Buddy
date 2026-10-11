@@ -104,4 +104,13 @@ class QuickAddFallbackTest {
         assertEquals("weekdays", wd.repeat());
         assertEquals(LocalDate.of(2026, 10, 12), wd.date(), "not on the weekend");
     }
+
+    /** EXS-5: "at 9am" at 14:05 with no day said is tomorrow's 9am, not a time already gone. */
+    @Test
+    void aPassedTimeWithNoDayIsTomorrow() {
+        assertEquals(TODAY.plusDays(1), read("remind me at 9am to call mom").get(0).date());
+        assertEquals(TODAY, read("remind me at 6pm to call mom").get(0).date(), "still ahead today");
+        assertEquals(TODAY, read("remind me today at 9am to call mom").get(0).date(), "today said out loud is kept");
+        assertEquals(TODAY, read("remind me every day at 9am to stretch").get(0).date(), "a series still has tomorrow");
+    }
 }

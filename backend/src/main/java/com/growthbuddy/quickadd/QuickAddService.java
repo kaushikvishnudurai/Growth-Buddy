@@ -74,7 +74,8 @@ public class QuickAddService {
             at 7 call mom" (repeating). Use it, not "task", whenever a time, a day, or a
             repeat is given. "text" is what to be reminded of, without the time words
             ("call mom", not "remind me tomorrow at 9 to call mom"). Resolve the date from
-            TODAY below ("tomorrow", "next Friday", "on the 21st"); no day given = today.
+            TODAY below ("tomorrow", "next Friday", "on the 21st"); no day given = today,
+            or tomorrow when that time has already passed NOW.
             "in 20 minutes" / "in 2 hours" count from NOW below.
             "time" is 24-hour local ("9 pm" -> "21:00", "half past 6 in the morning" ->
             "06:30"); null when no time was said. "endTime" only for a span ("3 to 4pm").

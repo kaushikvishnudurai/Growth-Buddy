@@ -311,11 +311,14 @@ final class QuickAddFallback {
      * anchor's weekday for ever. With exactly one weekday in the text, a date on
      * another weekday (or already gone, or today with the time passed) becomes the
      * next one that day falls on ("next X" never means today). A weekdays series
-     * never starts on a weekend. Anything else is left as read.
+     * never starts on a weekend; a one-off with no day said whose time has gone
+     * today is tomorrow's. Anything else is left as read.
      *
      * <p>ponytail: one weekday per message; "Monday and Friday" or two reminders on
      * two days are trusted as read. English weekday names only.
      */
+    private static final Pattern TODAY_SAID = Pattern.compile("\\b(today|tonight)\\b", F);
+
     static LocalDate anchor(String text, LocalDate date, String repeat, LocalDate today, LocalTime time, LocalTime now) {
         if (date == null) date = today;
         DayOfWeek named = null;
@@ -334,6 +337,12 @@ final class QuickAddFallback {
             if (ok) return date;
             LocalDate first = today.with(TemporalAdjusters.nextOrSame(named));
             return first.equals(today) && (passed || next) ? first.plusWeeks(1) : first;
+        }
+        // "remind me at 9pm" at 23:45: no day was said, so the next 9pm is tomorrow's
+        // (EXS-5). Only a one-off: a series still has tomorrow, and the app refuses only
+        // a single occurrence that has gone. "today" / "tonight" said out loud are kept.
+        if ("none".equals(repeat) && passed && date.equals(today) && !TODAY_SAID.matcher(text == null ? "" : text).find()) {
+            return today.plusDays(1);
         }
         if ("weekdays".equals(repeat)) {
             while (date.getDayOfWeek() == DayOfWeek.SATURDAY || date.getDayOfWeek() == DayOfWeek.SUNDAY) {

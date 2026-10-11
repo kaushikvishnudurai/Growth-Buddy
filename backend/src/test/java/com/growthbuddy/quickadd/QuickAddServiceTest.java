@@ -167,4 +167,12 @@ class QuickAddServiceTest {
         assertEquals(LocalDate.of(2026, 10, 13), said("gym on monday and wednesday", "2026-10-13", null, "none",
                 late).date(), "two weekdays named: trusted as read");
     }
+
+    /** EXS-5 on the model path: 23:12, "at 9pm", the model says today. */
+    @Test
+    void aPassedTimeWithNoDaySaidIsTomorrow() {
+        LocalTime late = LocalTime.of(23, 12);
+        assertEquals(SUNDAY.plusDays(1), said("remind me at 9pm to call mom", "2026-10-11", "21:00", "none", late).date());
+        assertEquals(SUNDAY, said("remind me tonight at 9pm to call mom", "2026-10-11", "21:00", "none", late).date());
+    }
 }
