@@ -55,7 +55,7 @@ test('PRF-1: a cheer from another account reaches the bell over a plain WebSocke
   await call(`/api/circles/${circle.id}/join`, other.token);
   await call(`/api/circles/${circle.id}/members/${account.user.id}/cheer`, other.token);
   await expect(badge).toHaveText(String(before + 1), { timeout: 15_000 });
-  if (info.project.name === 'mobile') await shot(page, 'PRF-1');
+  if (info.project.name.startsWith('mobile')) await shot(page, 'PRF-1');
 });
 
 test('PRF-2: the sign-in screen paints from index.html before the app module runs', async ({ page }, info) => {
@@ -63,7 +63,7 @@ test('PRF-2: the sign-in screen paints from index.html before the app module run
   await page.goto('/', { waitUntil: 'commit' });
   await expect(page.locator('.gb-login-title')).toHaveText('Welcome back');
   await expect(page.locator('main')).toHaveCount(1);
-  if (info.project.name === 'mobile') await shot(page, 'PRF-2');
+  if (info.project.name.startsWith('mobile')) await shot(page, 'PRF-2');
   const look = () =>
     page.evaluate(async () => {
       await document.fonts.ready; // a face swapping in between would move the text, not the swap
@@ -136,5 +136,5 @@ test('PRF-9: Home headings, avatar and mini-calendar names match what they show'
   });
   expect(r.mismatched).toEqual([]);
   expect(r.jumps, 'heading levels ' + r.levels.join(',')).toEqual([]);
-  if (info.project.name === 'mobile') await shot(page, 'PRF-9');
+  if (info.project.name.startsWith('mobile')) await shot(page, 'PRF-9');
 });
