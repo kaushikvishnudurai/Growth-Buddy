@@ -1,5 +1,8 @@
 package com.growthbuddy.quickadd;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.growthbuddy.common.ApiException;
@@ -18,10 +21,13 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
- * Turns a free-text log ("ran 3km, spent 200 on lunch, slept 7h, felt tired")
- * into structured intents the frontend applies to the right trackers. Pure
- * parser — no side effects; the client dispatches each intent to the existing
- * habit / task / water / sleep / mood / money handlers.
+ * The app's one command box: free text ("spent 200 on lunch, slept 7h, had 2
+ * idli, remind me at 9 to call mom, open money, dark mode") into structured
+ * intents for every tracker and control. Pure parser — no side effects; the
+ * client dispatches each intent to the handler its own screen uses, and
+ * {@link QuickAddApplier} does the same server-side for a WhatsApp message.
+ * With no model, or a failed call, {@link QuickAddFallback} reads what plain
+ * patterns can.
  *
  * <p>Returns {@code configured=false} when no LLM is available, so the client
  * can tell the user the feature needs an API key rather than failing silently,
@@ -35,16 +41,30 @@ public class QuickAddService {
     private static final int MAX_TEXT = 400;
 
     private static final String PROMPT = """
-            You convert a short natural-language log into structured actions for a
-            personal growth app. Output STRICT JSON only, no prose:
+            You turn a short natural-language message into actions for a personal growth
+            app. It is the app's one command box: logging, adding, finishing, opening and
+            switching things all come through here. Output STRICT JSON only, no prose:
             {"intents":[...],"note":"<=90 chars friendly confirmation"}
             Each intent has a "type" and ONLY the fields for that type:
-              {"type":"task","title":"..."}
-              {"type":"habit","name":"..."}   name MUST exactly match one of the user's habits listed below; omit if none match
-              {"type":"water","amountMl":<int>}   a glass ~= 250, a bottle ~= 500
+              {"type":"task","title":"..."}                 something to do, no time attached
+              {"type":"task_done","title":"..."}            they finished an existing task ("done with the report")
+              {"type":"habit","name":"..."}                 ticked a habit; name MUST exactly match one listed below
+              {"type":"habit_new","name":"..."}             "start a habit of reading", "new habit: stretch"
+              {"type":"goal","title":"..."}                 "my goal is to run a 10k", "new goal: save for a bike"
+              {"type":"water","amountMl":<int>}             a glass ~= 250, a bottle ~= 500, a litre = 1000
+              {"type":"food","name":"<one dish>","meal":"breakfast|lunch|dinner|snack"|null,"kcal":<int>|null}
+                                                            one intent PER dish eaten ("2 idli and a dosa" = two);
+                                                            keep the quantity in the name; kcal only if they said it
               {"type":"sleep","hours":<number 0-24>,"quality":"poor|ok|good|great"}
               {"type":"mood","mood":"<one or two words>","energy":"low|medium|high"}
               {"type":"expense","amount":<int>,"note":"<short label>"}   money spent, integer, user's currency
+              {"type":"income","amount":<int>,"note":"<short label>"}    money received: salary, refund, gift
+              {"type":"note","text":"..."}                  "note: ...", "jot down ...", an idea to keep
+              {"type":"focus","minutes":<int 1-240>|null}   "start a 25 minute focus", "pomodoro"
+              {"type":"open","screen":"home|money|calendar|notes|goals|habits|food|summary|focus|report|family|circle|mentor|achievements|settings"}
+                                                            "open money", "show my calendar", "take me to notes"
+              {"type":"setting","key":"theme","value":"dark|light|system"}
+              {"type":"setting","key":"waterGoal","value":<ml 500-6000>}
               {"type":"reminder","text":"...","date":"YYYY-MM-DD","time":"HH:MM"|null,
                "endTime":"HH:MM"|null,"repeat":"none|daily|weekdays|weekly|monthly|yearly",
                "until":"YYYY-MM-DD"|null,"tag":"work|personal|health|urgent|other",
@@ -55,6 +75,7 @@ public class QuickAddService {
             repeat is given. "text" is what to be reminded of, without the time words
             ("call mom", not "remind me tomorrow at 9 to call mom"). Resolve the date from
             TODAY below ("tomorrow", "next Friday", "on the 21st"); no day given = today.
+            "in 20 minutes" / "in 2 hours" count from NOW below.
             "time" is 24-hour local ("9 pm" -> "21:00", "half past 6 in the morning" ->
             "06:30"); null when no time was said. "endTime" only for a span ("3 to 4pm").
             "repeat": "every day" daily, "weekdays"/"every working day" weekdays, "every
@@ -64,11 +85,14 @@ public class QuickAddService {
             urgent when they say urgent/important/ASAP, personal otherwise.
             "notifyBefore": minutes of warning they asked for ("10 minutes before" -> 10,
             "an hour early" -> 60, "a day before" -> 1440); null when not said.
+            One message can hold many actions of many types; return all of them.
+            "had a coffee" is food, not water. A habit the user did ("went to the gym"
+            when "Gym" is a habit) is "habit", not "task_done".
             Only include intents clearly present in the text. If nothing maps, return
             {"intents":[],"note":"..."}. Never invent numbers that weren't stated.
             The text may be in ANY language, or a mix of languages (e.g. Tanglish,
-            Hinglish) — understand it regardless. Keep task titles in the user's
-            language; write "note" in the same language the user wrote in.
+            Hinglish) — understand it regardless. Keep titles in the user's language;
+            write "note" in the same language the user wrote in.
             """;
 
     private final OpenAIClient openai;
@@ -79,42 +103,146 @@ public class QuickAddService {
     }
 
     /**
-     * One action. A reminder uses the last group of fields; every other type
-     * leaves them null. ({@code text} is the reminder's own text — {@code title}
-     * stays the task's.)
+     * One action. Only the fields its type uses are set (nulls are left off the
+     * wire); the accessors read like the record this used to be. Built fluently,
+     * because sixteen types sharing one positional constructor was unreadable.
      */
-    public record Intent(
-            String type, String title, String name, Integer amountMl,
-            Double hours, String quality, String mood, String energy,
-            Integer amount, String note,
-            String text, LocalDate date, LocalTime time, LocalTime endTime,
-            String repeat, LocalDate until, String tag, Integer notifyBefore) {
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static final class Intent {
+        @JsonProperty private final String type;
+        @JsonProperty private String title;
+        @JsonProperty private String name;
+        @JsonProperty private Integer amountMl;
+        @JsonProperty private Double hours;
+        @JsonProperty private String quality;
+        @JsonProperty private String mood;
+        @JsonProperty private String energy;
+        @JsonProperty private Integer amount;
+        @JsonProperty private String note;
+        @JsonProperty private String text;
+        @JsonProperty private LocalDate date;
+        @JsonProperty @JsonFormat(pattern = "HH:mm") private LocalTime time;
+        @JsonProperty @JsonFormat(pattern = "HH:mm") private LocalTime endTime;
+        @JsonProperty private String repeat;
+        @JsonProperty private LocalDate until;
+        @JsonProperty private String tag;
+        @JsonProperty private Integer notifyBefore;
+        @JsonProperty private Integer kcal;
+        @JsonProperty private String meal;
+        @JsonProperty private Integer minutes;
+        @JsonProperty private String screen;
+        @JsonProperty private String key;
+        @JsonProperty private String value;
 
-        Intent(String type, String title, String name, Integer amountMl, Double hours, String quality,
-               String mood, String energy, Integer amount, String note) {
-            this(type, title, name, amountMl, hours, quality, mood, energy, amount, note,
-                    null, null, null, null, null, null, null, null);
+        private Intent(String type) {
+            this.type = type;
         }
+
+        public static Intent of(String type) {
+            return new Intent(type);
+        }
+
+        Intent title(String v) { title = v; return this; }
+        Intent name(String v) { name = v; return this; }
+        Intent amountMl(Integer v) { amountMl = v; return this; }
+        Intent hours(Double v) { hours = v; return this; }
+        Intent quality(String v) { quality = v; return this; }
+        Intent mood(String v) { mood = v; return this; }
+        Intent energy(String v) { energy = v; return this; }
+        Intent amount(Integer v) { amount = v; return this; }
+        Intent note(String v) { note = v; return this; }
+        Intent text(String v) { text = v; return this; }
+        Intent kcal(Integer v) { kcal = v; return this; }
+        Intent meal(String v) { meal = v; return this; }
+        Intent minutes(Integer v) { minutes = v; return this; }
+        Intent screen(String v) { screen = v; return this; }
+        Intent kv(String k, String v) { key = k; value = v; return this; }
+
+        Intent when(LocalDate d, LocalTime t, String rep, String tg, Integer lead) {
+            date = d;
+            time = t;
+            repeat = rep;
+            tag = tg;
+            notifyBefore = lead;
+            return this;
+        }
+
+        Intent span(LocalTime end, LocalDate last) {
+            endTime = end;
+            until = last;
+            return this;
+        }
+
+        public String type() { return type; }
+        public String title() { return title; }
+        public String name() { return name; }
+        public Integer amountMl() { return amountMl; }
+        public Double hours() { return hours; }
+        public String quality() { return quality; }
+        public String mood() { return mood; }
+        public String energy() { return energy; }
+        public Integer amount() { return amount; }
+        public String note() { return note; }
+        public String text() { return text; }
+        public LocalDate date() { return date; }
+        public LocalTime time() { return time; }
+        public LocalTime endTime() { return endTime; }
+        public String repeat() { return repeat; }
+        public LocalDate until() { return until; }
+        public String tag() { return tag; }
+        public Integer notifyBefore() { return notifyBefore; }
+        public Integer kcal() { return kcal; }
+        public String meal() { return meal; }
+        public Integer minutes() { return minutes; }
+        public String screen() { return screen; }
+        public String key() { return key; }
+        public String value() { return value; }
     }
 
     private static final Set<String> REPEATS = Set.of("none", "daily", "weekdays", "weekly", "monthly", "yearly");
     private static final Set<String> TAGS = Set.of("work", "personal", "health", "urgent", "other");
+    private static final Set<String> MEALS = Set.of("breakfast", "lunch", "dinner", "snack");
+    private static final Set<String> SCREENS = Set.of("home", "money", "calendar", "notes", "goals", "habits",
+            "food", "summary", "focus", "report", "family", "circle", "mentor", "achievements", "settings");
+    private static final Set<String> THEMES = Set.of("dark", "light", "system");
     private static final Pattern HHMM = Pattern.compile("([01]?\\d|2[0-3]):([0-5]\\d)(:\\d\\d)?");
 
-    public record QuickAddResult(boolean configured, boolean unavailable, List<Intent> intents, String note) {}
+    /**
+     * {@code fallback}: these intents came from the plain patterns, not the model
+     * (no key, or the call failed) — the client says so above the preview.
+     */
+    public record QuickAddResult(boolean configured, boolean unavailable, List<Intent> intents, String note,
+                                 boolean fallback) {
+        QuickAddResult(boolean configured, boolean unavailable, List<Intent> intents, String note) {
+            this(configured, unavailable, intents, note, false);
+        }
+    }
 
     public QuickAddResult parse(String text, List<String> habitNames) {
         return parse(text, habitNames, LocalDate.now());
     }
 
-    /** {@code today} is the user's own date: "tomorrow" means nothing without it. */
     public QuickAddResult parse(String text, List<String> habitNames, LocalDate today) {
+        return parse(text, habitNames, today, LocalTime.now());
+    }
+
+    /**
+     * {@code today} and {@code now} are the user's own: "tomorrow" and "in 20
+     * minutes" mean nothing without them. With no model, or a failed call, the
+     * plain patterns read what they can; only when they find nothing either does
+     * the caller hear "not configured" / "unavailable" with an empty list.
+     */
+    public QuickAddResult parse(String text, List<String> habitNames, LocalDate today, LocalTime now) {
         String clean = cap(text);
-        if (!openai.isConfigured() || clean.isEmpty()) {
+        if (clean.isEmpty()) {
             return new QuickAddResult(openai.isConfigured(), false, List.of(), null);
+        }
+        if (!openai.isConfigured()) {
+            return new QuickAddResult(false, false, QuickAddFallback.parse(clean, habitNames, today, now), null, true);
         }
         String context = PROMPT + "\nTODAY: " + today + " ("
                 + today.getDayOfWeek().getDisplayName(TextStyle.FULL, Locale.ENGLISH) + ")"
+                + "\nNOW: " + now.withSecond(0).withNano(0)
                 + "\nUser's habits: "
                 + (habitNames == null || habitNames.isEmpty() ? "(none)" : String.join(", ", habitNames));
         try {
@@ -131,42 +259,83 @@ public class QuickAddService {
             throw ex; // the AI budget's 429 already says something true; let it through
         } catch (Exception ex) {
             log.warn("Quick-add parse failed: {}", ex.getMessage());
-            return new QuickAddResult(true, true, List.of(), null);
+            return new QuickAddResult(true, true, QuickAddFallback.parse(clean, habitNames, today, now), null, true);
         }
     }
 
     private Intent toIntent(JsonNode n, LocalDate today) {
         String type = n.path("type").asText("");
         switch (type) {
-            case "task":
+            case "task", "task_done", "goal": {
                 String title = cap(n.path("title").asText(""), 200);
-                return title.isEmpty() ? null : new Intent(type, title, null, null, null, null, null, null, null, null);
-            case "habit":
+                return title.isEmpty() ? null : Intent.of(type).title(title);
+            }
+            case "habit", "habit_new": {
                 String name = cap(n.path("name").asText(""), 120);
-                return name.isEmpty() ? null : new Intent(type, null, name, null, null, null, null, null, null, null);
-            case "water":
+                return name.isEmpty() ? null : Intent.of(type).name(name);
+            }
+            case "water": {
                 int ml = clamp(n.path("amountMl").asInt(0), 0, 5000);
-                return ml <= 0 ? null : new Intent(type, null, null, ml, null, null, null, null, null, null);
-            case "sleep":
+                return ml <= 0 ? null : Intent.of(type).amountMl(ml);
+            }
+            case "sleep": {
                 double hrs = n.path("hours").asDouble(0);
                 if (hrs <= 0 || hrs > 24) return null;
-                return new Intent(type, null, null, null, hrs, oneOf(n.path("quality").asText(""), "ok",
-                        "poor", "ok", "good", "great"), null, null, null, null);
-            case "mood":
+                return Intent.of(type).hours(hrs)
+                        .quality(oneOf(n.path("quality").asText(""), "ok", "poor", "ok", "good", "great"));
+            }
+            case "mood": {
                 String mood = cap(n.path("mood").asText(""), 40);
-                return mood.isEmpty() ? null : new Intent(type, null, null, null, null, null, mood,
-                        oneOf(n.path("energy").asText(""), "medium", "low", "medium", "high"), null, null);
+                return mood.isEmpty() ? null : Intent.of(type).mood(mood)
+                        .energy(oneOf(n.path("energy").asText(""), "medium", "low", "medium", "high"));
+            }
             case "reminder":
                 return reminder(n, today);
-            case "expense":
+            case "expense", "income": {
                 int amt = clamp(n.path("amount").asInt(0), 0, 100_000_000);
-                return amt <= 0 ? null : new Intent(type, null, null, null, null, null, null, null, amt,
-                        cap(n.path("note").asText(""), 120));
+                return amt <= 0 ? null : Intent.of(type).amount(amt).note(cap(n.path("note").asText(""), 120));
+            }
+            case "food": {
+                String name = cap(n.path("name").asText(""), 255);
+                if (name.isEmpty()) return null;
+                int kcal = n.path("kcal").asInt(0);
+                String meal = n.path("meal").asText("").trim().toLowerCase(Locale.ROOT);
+                return Intent.of(type).name(name)
+                        .kcal(kcal >= 1 && kcal <= 5000 ? kcal : null)
+                        .meal(MEALS.contains(meal) ? meal : null);
+            }
+            case "note": {
+                String text = cap(n.path("text").asText(""), 2000);
+                return text.isEmpty() ? null : Intent.of(type).text(text);
+            }
+            case "focus": {
+                int min = n.path("minutes").asInt(0);
+                return Intent.of(type).minutes(min >= 1 && min <= 240 ? min : null);
+            }
+            case "open": {
+                String screen = n.path("screen").asText("").trim().toLowerCase(Locale.ROOT);
+                return SCREENS.contains(screen) ? Intent.of(type).screen(screen) : null;
+            }
+            case "setting":
+                return setting(n);
             default:
                 return null;
         }
     }
 
+    /** Only the settings a sentence can safely change, each with its own bounds. */
+    private static Intent setting(JsonNode n) {
+        String key = n.path("key").asText("");
+        String value = n.path("value").asText("").trim().toLowerCase(Locale.ROOT);
+        if ("theme".equals(key) && THEMES.contains(value)) {
+            return Intent.of("setting").kv(key, value);
+        }
+        if ("waterGoal".equals(key)) {
+            int ml = n.path("value").asInt(0);
+            return ml >= 500 && ml <= 6000 ? Intent.of("setting").kv(key, String.valueOf(ml)) : null;
+        }
+        return null;
+    }
 
     /**
      * Everything the model said, checked one field at a time: a bad time or an
@@ -190,8 +359,7 @@ public class QuickAddService {
         if (!TAGS.contains(tag)) tag = "personal";
         Integer lead = n.path("notifyBefore").isNumber() ? n.path("notifyBefore").asInt() : null;
         if (lead != null && (lead < 0 || lead > 1440 || time == null)) lead = null;
-        return new Intent("reminder", null, null, null, null, null, null, null, null, null,
-                text, date, time, end, repeat, until, tag, lead);
+        return Intent.of("reminder").text(text).when(date, time, repeat, tag, lead).span(end, until);
     }
 
     private static LocalDate date(String s) {

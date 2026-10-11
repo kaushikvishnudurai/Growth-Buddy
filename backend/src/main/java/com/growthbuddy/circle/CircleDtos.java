@@ -88,6 +88,25 @@ interface CirclePostReactionRepository extends JpaRepository<CirclePostReaction,
     void deleteAllByCircle(@Param("circleId") UUID circleId);
 }
 
+interface CirclePostCommentRepository extends JpaRepository<CirclePostComment, UUID> {
+    List<CirclePostComment> findByPostIdOrderByCreatedAtAsc(UUID postId, Pageable page);
+
+    long countByPostId(UUID postId);
+
+    /** Reply counts for a page of posts in one grouped query: rows of [postId, count]. */
+    @Query("select c.postId, count(c) from CirclePostComment c where c.postId in :ids group by c.postId")
+    List<Object[]> countByPostIds(@Param("ids") Collection<UUID> ids);
+
+    @Modifying
+    @Query("delete from CirclePostComment c where c.postId = :postId")
+    void deleteAllByPost(@Param("postId") UUID postId);
+
+    @Modifying
+    @Query("delete from CirclePostComment c where c.postId in "
+            + "(select p.id from CirclePost p where p.circleId = :circleId)")
+    void deleteAllByCircle(@Param("circleId") UUID circleId);
+}
+
 /* ---- Payloads ---- */
 
 record CreateCircleRequest(
@@ -128,16 +147,44 @@ record CircleResponse(
     }
 }
 
-record MemberResponse(UUID userId, String name, String role, Instant joinedAt) {
+/**
+ * {@code doneToday}: habit check-ins on the member's own today (their zone), what
+ * lights their seat on the Circle screen; null when they keep progress private
+ * (Settings, Privacy). You always get your own. {@code cheeredByMe}: the caller
+ * has used today's one cheer for this member, so the seat doesn't offer another.
+ */
+record MemberResponse(UUID userId, String name, String role, Instant joinedAt, Long doneToday,
+                      boolean cheeredByMe) {
+    MemberResponse(UUID userId, String name, String role, Instant joinedAt) {
+        this(userId, name, role, joinedAt, null, false);
+    }
 }
 
-/** {@code kudos}: how many members gave one; {@code reacted}: whether the CALLER did. */
+/**
+ * {@code kudos}: how many members gave one; {@code reacted}: whether the CALLER did;
+ * {@code comments}: how many replies it has.
+ */
 record PostResponse(UUID id, UUID circleId, UUID userId, String authorName, String body, Instant createdAt,
-        long kudos, boolean reacted) {
-    static PostResponse from(CirclePost p, String authorName, long kudos, boolean reacted) {
+        long kudos, boolean reacted, long comments) {
+    static PostResponse from(CirclePost p, String authorName, long kudos, boolean reacted, long comments) {
         return new PostResponse(p.getId(), p.getCircleId(), p.getUserId(), authorName,
-                p.getBody(), p.getCreatedAt(), kudos, reacted);
+                p.getBody(), p.getCreatedAt(), kudos, reacted, comments);
     }
+}
+
+/** Replies are a line or two, not a second post. */
+record CreateCommentRequest(@NotBlank @Size(max = 500) String body) {
+}
+
+record CommentResponse(UUID id, UUID postId, UUID userId, String authorName, String body, Instant createdAt) {
+    static CommentResponse from(CirclePostComment c, String authorName) {
+        return new CommentResponse(c.getId(), c.getPostId(), c.getUserId(), authorName, c.getBody(),
+                c.getCreatedAt());
+    }
+}
+
+/** A cheer for a circle member: an optional short line, like a mentorship cheer. */
+record CheerRequest(@Size(max = 140) String text) {
 }
 
 /** The answer to a kudos toggle: the post's new count and the caller's state. */

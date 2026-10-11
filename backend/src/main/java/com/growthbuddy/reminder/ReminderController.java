@@ -127,6 +127,23 @@ public class ReminderController {
      * CurrentUserInterceptor). A bad or expired one gets the same 404 as a
      * deleted reminder, so the endpoint answers nothing about either.
      */
+    /**
+     * The Done button on a reminder's push: checks that occurrence off, the same
+     * as the calendar's tick (and drops its snooze). Signed ticket, no session,
+     * same 404 for anything wrong.
+     */
+    @PostMapping("/done-link")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void doneByLink(@Valid @RequestBody SnoozeLinkRequest req) {
+        SnoozeLinks.Ticket t = snoozes.ticketFor(SnoozeLinks.DONE, req.token()).filter(x -> x.day() != null)
+                .orElseThrow(() -> com.growthbuddy.common.ApiException.notFound("Reminder"));
+        try {
+            service.setDone(t.userId(), t.targetId(), t.day(), true);
+        } catch (com.growthbuddy.common.ApiException ex) {
+            throw com.growthbuddy.common.ApiException.notFound("Reminder");
+        }
+    }
+
     @PostMapping("/snooze-link")
     public java.util.Map<String, java.time.Instant> snoozeByLink(@Valid @RequestBody SnoozeLinkRequest req) {
         return snoozes.snoozeByLink(req.token())

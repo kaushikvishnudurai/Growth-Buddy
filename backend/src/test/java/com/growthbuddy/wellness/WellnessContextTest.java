@@ -44,4 +44,12 @@ class WellnessContextTest {
         String s = WellnessService.summarize(List.of(day("2026-10-10", "<b>ok</b>", null, null)));
         assertThat(s).doesNotContain("<").contains("bokb");
     }
+
+    @Test
+    void sleepHoursCrossMidnightAndIgnoreGarbage() {
+        assertThat(WellnessService.sleepHours("23:30", "07:00")).isEqualTo("7.5");
+        assertThat(WellnessService.sleepHours("01:00", "09:00")).isEqualTo("8.0");
+        assertThat(WellnessService.sleepHours("25:00", "07:00")).isNull();
+        assertThat(WellnessService.sleepHours(null, "07:00")).isNull();
+    }
 }

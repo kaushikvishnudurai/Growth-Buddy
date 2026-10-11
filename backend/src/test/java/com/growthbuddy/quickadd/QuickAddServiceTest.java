@@ -18,15 +18,47 @@ import org.junit.jupiter.api.Test;
 /** An upstream failure is "unavailable", not "nothing in your sentence". */
 class QuickAddServiceTest {
 
+    /** The plain patterns still read the sentence, and say they did. */
     @Test
-    void modelFailureIsReportedAsUnavailable() {
+    void modelFailureIsReportedAsUnavailableAndFallsBack() {
         OpenAIClient openai = mock(OpenAIClient.class);
         when(openai.isConfigured()).thenReturn(true);
         when(openai.complete(anyString(), anyList())).thenThrow(new RuntimeException("timeout"));
         var r = new QuickAddService(openai).parse("drank 500ml", List.of());
         assertTrue(r.configured());
         assertTrue(r.unavailable());
-        assertTrue(r.intents().isEmpty());
+        assertTrue(r.fallback());
+        assertEquals(500, r.intents().get(0).amountMl());
+        assertTrue(new QuickAddService(openai).parse("hmm", List.of()).intents().isEmpty());
+    }
+
+    /** No key at all: still "not configured", but what the patterns read comes back. */
+    @Test
+    void noModelStillReadsPlainSentences() {
+        OpenAIClient openai = mock(OpenAIClient.class);
+        when(openai.isConfigured()).thenReturn(false);
+        var r = new QuickAddService(openai).parse("spent 200 on lunch", List.of());
+        assertFalse(r.configured());
+        assertEquals("expense", r.intents().get(0).type());
+    }
+
+    /** The new types arrive with their own fields, bounded. */
+    @Test
+    void everyControlTypeIsRead() {
+        var r = parse("{\"intents\":[{\"type\":\"food\",\"name\":\"2 idli\",\"meal\":\"Breakfast\",\"kcal\":9999},"
+                + "{\"type\":\"income\",\"amount\":50000,\"note\":\"Salary\"},"
+                + "{\"type\":\"task_done\",\"title\":\"report\"},{\"type\":\"focus\",\"minutes\":25},"
+                + "{\"type\":\"open\",\"screen\":\"money\"},{\"type\":\"open\",\"screen\":\"admin\"},"
+                + "{\"type\":\"setting\",\"key\":\"theme\",\"value\":\"dark\"},"
+                + "{\"type\":\"setting\",\"key\":\"password\",\"value\":\"x\"},"
+                + "{\"type\":\"note\",\"text\":\"idea\"},{\"type\":\"goal\",\"title\":\"Run 10k\"},"
+                + "{\"type\":\"habit_new\",\"name\":\"Stretch\"}]}");
+        var types = r.intents().stream().map(QuickAddService.Intent::type).toList();
+        assertEquals(List.of("food", "income", "task_done", "focus", "open", "setting", "note", "goal", "habit_new"), types);
+        assertEquals("breakfast", r.intents().get(0).meal());
+        assertEquals(null, r.intents().get(0).kcal(), "an impossible kcal is dropped, not the dish");
+        assertEquals("money", r.intents().get(4).screen());
+        assertEquals("dark", r.intents().get(5).value());
     }
 
     @Test

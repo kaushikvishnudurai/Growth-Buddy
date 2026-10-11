@@ -606,7 +606,9 @@ public class ReminderDeliveryScheduler {
                 int n = push.sendToUser(user.getId(), pushTitle, rem.getText(), "/#calendar", Map.of(
                         "tag", "rem-" + rem.getId(),
                         "snooze", snoozeLinks.sign(user.getId(), rem.getId(), day, tick),
-                        "snoozeLabel", "Snooze " + ReminderPrefs.human(snooze)));
+                        "snoozeLabel", "Snooze " + ReminderPrefs.human(snooze),
+                        "done", snoozeLinks.sign(SnoozeLinks.DONE, user.getId(), rem.getId(), day, tick),
+                        "doneLink", "/api/reminders/done-link"));
                 if (n > 0) {
                     channels.append(channels.length() > 0 ? "+push" : "push");
                     sent = true;

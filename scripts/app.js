@@ -51,7 +51,7 @@ import {
   restoreKey,
   inFlightKeys,
 } from './app-logic.js';
-import { MEAL_SLOTS, mealSlotAt, effectiveMl, labelFor } from './nutrition.js';
+import { MEAL_SLOTS, mealSlotAt, effectiveMl, labelFor, suggestWaterGoalMl } from './nutrition.js';
 import {
   habitStats,
   heatmapWeeks,
@@ -73,6 +73,7 @@ import {
   applyLedgerDiff,
   docPart,
   LEDGER_ARRAYS,
+  suggestCategory,
 } from './money-core.js';
 import {
   ScreenCalendar,
@@ -91,6 +92,7 @@ import {
   setCustomToneAdder,
   setVoiceReminder,
   NotifySelect,
+  UsualTimeChip,
   LEAD_OPTIONS,
   leadLabel,
   minutesLabel,
@@ -101,6 +103,7 @@ import {
 import { WORK_WEEKS, getWorkWeek, setWorkWeek, occursOn } from './recurrence.js';
 import { ScreenAchievements, computeAchievements, levelProgress } from './achievements.js';
 import { celebrate } from './celebrate.js';
+import { usualSleep, stepsTarget, focusMinutesTarget } from './nudges.js';
 import {
   enablePush,
   disablePush,
@@ -110,6 +113,7 @@ import {
   syncDeviceAlarms,
   usualDrinkHours,
   WATER_DEFAULTS,
+  WATER_ACTION_ML,
 } from './push.js';
 import { CacheStorage } from './cache-storage.js';
 import { createOutbox, tempId, isTempId, newIdemKey } from './outbox.js';
@@ -122,11 +126,13 @@ import {
   hideNativeSplash,
   readTodaySteps,
   cancelPendingLocalNotifications,
+  onLocalNotificationAction,
 } from './native.js';
 import { registerToast } from './toast.js';
 import { initA11y, focusLocator, refocus } from './a11y.js';
 import { initErrorReporting } from './error-report.js';
 import { initVitals, markHomePainted } from './vitals.js';
+import { winLines } from './circle-core.js';
 import {
   CUSTOM_MAX_BYTES,
   CUSTOM_MAX_COUNT,
@@ -1282,7 +1288,10 @@ function hydrateUiPrefs() {
     if (p.timeFormat !== '12' && p.timeFormat !== '24') {
       saveUiPrefs({ timeFormat: detectTimeFormat() });
     }
+    // The device copy follows the account: set only, it hid the checklist (and the
+    // starter packs on it) from every later account signed in on the same phone.
     if (p.onboardingDone) CacheStorage.setItem('gb.onboardDismissed', '1');
+    else CacheStorage.removeItem('gb.onboardDismissed');
     // achSeen is read straight from ui_prefs (checkAchievements): no local mirror.
   } catch (_) {
     /* silent — cache mirror is best-effort */
@@ -2700,6 +2709,7 @@ async function loadData() {
     flushOutbox();
     reSyncDeviceAlarms();
     loadWaterUsualHours();
+    autoTickStepHabits();
   } catch (err) {
     if (refresh) {
       toastError(err, 'Could not refresh. Showing your last data.');
@@ -2720,6 +2730,9 @@ async function loadData() {
   if (!refresh && state.screen === 'home') markHomePainted();
   // Needs wave 1: "is this a new account?" is read from tasks/habits/reminders.
   if (!refresh) maybeStartFirstRun();
+  // After wave 1, so a button press that cold-started the app (the plugin holds
+  // it until a listener attaches) finds the habit or reminder it names.
+  armNotificationActions();
   loadSecondaryData();
 }
 
@@ -3311,6 +3324,75 @@ async function plainToggleHabit(id) {
   }
 }
 
+/* ---- Habits that tick themselves ----
+   A Steps habit whose name gives a target ("Walk 8k steps", stepsTarget) ticks
+   once the phone's own count reaches it; a focus habit ("Deep work 2h",
+   focusMinutesTarget) once today's focus minutes do. Same dated check-in as a
+   manual tick, with the number, and Undo on the toast. Tried once per habit per
+   day, so an Undo is never re-ticked behind the user's back. */
+const autoTickTried = new Set(); // 'habitId|YYYY-MM-DD'
+async function autoTickHabit(habit, value, why) {
+  const day = accountTodayKey();
+  const key = habit.id + '|' + day;
+  if (autoTickTried.has(key) || habit.doneToday || isQuitHabit(habit) || !habitDue(habit)) return;
+  if (togglesInFlight.has(habit.id)) return;
+  autoTickTried.add(key);
+  togglesInFlight.add(habit.id);
+  let updated;
+  try {
+    updated = await api('/api/habits/' + encodeURIComponent(habit.id) + '/checkin', {
+      method: 'POST',
+      body: JSON.stringify({
+        date: day,
+        done: true,
+        value: habit.metric && habit.metric !== 'none' ? value : null,
+      }),
+    });
+  } catch (_) {
+    return; // nothing changed; the user can still tick it themselves
+  } finally {
+    togglesInFlight.delete(habit.id);
+  }
+  state.habits = state.habits.map((x) => (x.id === updated.id ? updated : x));
+  reconcileStreakFreeze(updated);
+  reSyncDeviceAlarms();
+  refreshScoreLater();
+  render();
+  pushToast(habit.name + ' ticked: ' + why + '.', 'success', 6000, {
+    label: 'Undo',
+    run: () => plainToggleHabit(habit.id),
+  });
+}
+
+/* Steps from the OS health store (native only; null on the web). Run after a
+   load and on coming back to the app — the count grows through the day. */
+async function autoTickStepHabits() {
+  if (!featureOn('habits')) return;
+  const open = (state.habits || []).filter(
+    (hb) => hb.metric === 'steps' && !hb.doneToday && stepsTarget(hb.name) != null
+  );
+  if (!open.length) return;
+  const steps = await readTodaySteps();
+  if (steps == null) return;
+  open
+    .filter((hb) => steps >= stepsTarget(hb.name))
+    .forEach((hb) => autoTickHabit(hb, steps, steps.toLocaleString() + ' steps on your phone'));
+}
+
+/* After a saved focus session: today's focus minutes from the server, so two
+   sessions on two devices add up. */
+async function autoTickFocusHabits() {
+  if (!featureOn('habits')) return;
+  const open = (state.habits || []).filter((hb) => !hb.doneToday && focusMinutesTarget(hb.name) != null);
+  if (!open.length) return;
+  const stats = await api('/api/focus/stats').catch(() => null);
+  const mins = stats && Number(stats.todayMinutes);
+  if (!(mins > 0)) return;
+  open
+    .filter((hb) => mins >= focusMinutesTarget(hb.name))
+    .forEach((hb) => autoTickHabit(hb, hb.metric === 'minutes' ? mins : null, mins + ' focus minutes today'));
+}
+
 async function refreshScore() {
   try {
     const s = await api('/api/score/today');
@@ -3519,10 +3601,24 @@ function addQuickExpense(amount, note) {
     id:
       typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
     amount: Math.round(amount),
-    category: 'others',
+    // The tag Money's own form would start on: this note's past tag, then keywords.
+    category: (note && suggestCategory(note, state.money)) || 'others',
     date: todayKeyNow(),
     note: note || '',
     createdAt: Date.now(),
+  });
+  saveMoney(next);
+}
+function addQuickIncome(amount, label) {
+  const next = normalizeMoney(state.money);
+  const salary = /salary/i.test(label || '');
+  (next.income = next.income || []).unshift({
+    id:
+      typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+    amount: Math.round(amount),
+    source: salary ? 'salary' : 'other',
+    label: label || (salary ? 'Salary' : 'Income'),
+    date: todayKeyNow(),
   });
   saveMoney(next);
 }
@@ -3534,19 +3630,77 @@ async function parseQuickAdd(text) {
     .map((hb) => hb.name)
     .filter(Boolean)
     .slice(0, 100);
-  // The device's own date: it is what "tomorrow" means to the person speaking.
+  // The device's own date and clock: what "tomorrow" and "in 20 minutes" mean
+  // to the person speaking.
+  const d = new Date();
+  const now = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
   const res = await api('/api/quick-add', {
     method: 'POST',
-    body: JSON.stringify({ text, habits, today: todayKeyNow() }),
+    body: JSON.stringify({ text, habits, today: todayKeyNow(), now }),
   });
-  if (!res || res.configured === false) return { configured: false, intents: [] };
-  if (res.unavailable) return { configured: true, unavailable: true, intents: [] };
   // A sentence can't write into a tracker the user switched off.
-  const INTENT_FEATURE = { habit: 'habits', water: 'water', expense: 'money' };
-  const intents = (res.intents || []).filter(
+  const intents = ((res && res.intents) || []).filter(
     (it) => !INTENT_FEATURE[it.type] || featureOn(INTENT_FEATURE[it.type])
   );
+  // No model (or it failed): the server's plain patterns may still have read it.
+  if (!res || res.configured === false) return { configured: false, fallback: true, intents };
+  if (res.unavailable) return { configured: true, unavailable: true, fallback: true, intents };
   return { configured: true, intents, note: res.note };
+}
+
+/* Intent type -> the feature toggle it writes into (QuickAddApplier.FEATURE). */
+const INTENT_FEATURE = {
+  habit: 'habits',
+  habit_new: 'habits',
+  water: 'water',
+  expense: 'money',
+  income: 'money',
+  food: 'food',
+  goal: 'goals',
+  note: 'notes',
+  reminder: 'calendar',
+  focus: 'focus',
+};
+
+/* Controls act on the app rather than log anything, so a sentence made only of
+   them ("open money", "dark mode", "start a focus") runs without a preview. */
+const CONTROL_INTENTS = new Set(['open', 'focus', 'setting']);
+const SCREEN_LABEL = {
+  home: 'Home',
+  money: 'Money',
+  calendar: 'Calendar',
+  notes: 'Notes',
+  goals: 'Goals',
+  habits: 'Habits',
+  food: 'Food',
+  summary: 'Food summary',
+  focus: 'Focus',
+  report: 'Report',
+  family: 'Family',
+  circle: 'Circle',
+  mentor: 'Buddy',
+  achievements: 'Achievements',
+  settings: 'Settings',
+};
+
+/* The open task a "done with …" means: same title, else one inside the other,
+   the closest length winning (TaskService.bestMatch). */
+function matchOpenTask(words) {
+  const w = String(words || '').trim().toLowerCase();
+  if (!w) return null;
+  let best = null;
+  let bestScore = Infinity;
+  (state.tasks || []).forEach((t) => {
+    const title = String(t.title || '').trim().toLowerCase();
+    if (t.done || !title) return;
+    const score =
+      title === w ? 0 : title.includes(w) || w.includes(title) ? 1 + Math.abs(title.length - w.length) : Infinity;
+    if (score < bestScore) {
+      best = t;
+      bestScore = score;
+    }
+  });
+  return best;
 }
 
 /* One intent, in the words the user would use. This is what they are agreeing
@@ -3583,11 +3737,38 @@ function describeIntent(it) {
     case 'reminder':
       return { icon: 'bell', label: 'Reminder', detail: reminderSummary(it) };
     case 'expense':
+    case 'income':
       return {
         icon: 'wallet',
-        label: 'Expense',
+        label: it.type === 'expense' ? 'Expense' : 'Income',
         detail: ((state.money && state.money.currency) || '₹') + it.amount + (it.note ? ' · ' + it.note : ''),
       };
+    case 'task_done': {
+      const t = matchOpenTask(it.title);
+      return t
+        ? { icon: 'check', label: 'Finish task', detail: t.title }
+        : { icon: 'check', label: 'No such open task', detail: it.title, unknown: true };
+    }
+    case 'habit_new':
+      return { icon: 'repeat', label: 'New habit', detail: it.name };
+    case 'goal':
+      return { icon: 'target', label: 'New goal', detail: it.title };
+    case 'food':
+      return {
+        icon: 'utensils',
+        label: 'Food',
+        detail: it.name + (it.meal ? ' · ' + it.meal : '') + (it.kcal ? ' · ' + it.kcal + ' kcal' : ''),
+      };
+    case 'note':
+      return { icon: 'notebook-pen', label: 'Note', detail: it.text };
+    case 'focus':
+      return { icon: 'timer', label: 'Start focus', detail: (it.minutes || 'Usual') + (it.minutes ? ' min' : ' length') };
+    case 'open':
+      return { icon: 'chevron-right', label: 'Open', detail: SCREEN_LABEL[it.screen] || it.screen };
+    case 'setting':
+      return it.key === 'theme'
+        ? { icon: 'moon', label: 'Theme', detail: it.value === 'system' ? 'Follow the phone' : it.value === 'dark' ? 'Dark' : 'Light' }
+        : { icon: 'droplets', label: 'Water goal', detail: it.value + ' ml a day' };
     default:
       return null;
   }
@@ -3730,8 +3911,10 @@ async function captureReminder(btn) {
   try {
     const r = await parseQuickAdd(said);
     const reminder = (r.intents || []).find((x) => x.type === 'reminder') || null;
-    if (!r.configured) {
-      pushToast('Heard you. Reading the time and day needs the assistant, so set those yourself.', 'info', 4200);
+    if (reminder) {
+      // Read, by the model or the plain patterns: the form shows every field for a check.
+    } else if (!r.configured) {
+      pushToast('Heard you. Couldn’t read a time and day from that, so set those yourself.', 'info', 4200);
     } else if (r.unavailable) {
       pushToast('Heard you, but couldn’t reach the assistant — set the time and day yourself.', 'info', 4200);
     }
@@ -3745,52 +3928,146 @@ async function captureReminder(btn) {
   }
 }
 
+/* Every intent through the handler its own screen uses. Controls (open a
+   screen, start the timer, switch the theme) run last, so the logging lands
+   first and the screen the sentence asked for is where the user ends up. */
 async function applyQuickAdd(intents) {
   let applied = 0;
-  for (const it of intents) {
+  const ordered = intents
+    .filter((it) => !CONTROL_INTENTS.has(it.type))
+    .concat(intents.filter((it) => CONTROL_INTENTS.has(it.type)));
+  for (const it of ordered) {
     try {
-      if (it.type === 'task' && it.title) {
-        await createTask({ title: it.title });
-        applied++;
-      } else if (it.type === 'habit' && it.name) {
-        const hb = (state.habits || []).find(
-          (x) => (x.name || '').toLowerCase() === it.name.toLowerCase()
-        );
-        if (hb && !hb.doneToday) await toggleHabit(hb.id);
-        if (hb) applied++;
-      } else if (it.type === 'water' && it.amountMl) {
-        await quickAddWater(it.amountMl);
-        applied++;
-      } else if (it.type === 'sleep' && it.hours) {
-        await saveSleepEntry(sleepPayloadFromHours(it.hours, it.quality));
-        applied++;
-      } else if (it.type === 'mood' && it.mood) {
-        await saveMoodEntry({ mood: it.mood, energy: it.energy || 'medium' });
-        applied++;
-      } else if (it.type === 'expense' && it.amount) {
-        addQuickExpense(it.amount, it.note);
-        applied++;
-      } else if (it.type === 'reminder' && it.text) {
-        // Every field the sentence gave, through the same path as the calendar's
-        // own form — so the past-day and past-time refusals apply here too.
-        const made = await addReminder(
-          it.date || todayKeyNow(),
-          it.text,
-          hhmm(it.time),
-          it.tag || 'personal',
-          it.repeat || 'none',
-          it.until || '',
-          '',
-          hhmm(it.endTime),
-          it.notifyBefore === null || it.notifyBefore === undefined ? null : it.notifyBefore
-        );
-        if (made) applied++;
-      }
+      if (await applyIntent(it)) applied++;
     } catch (_) {
       /* skip a single bad intent; keep applying the rest */
     }
   }
   return applied;
+}
+
+async function applyIntent(it) {
+  switch (it.type) {
+    case 'task':
+      if (!it.title) return false;
+      await createTask({ title: it.title });
+      return true;
+    case 'task_done': {
+      const t = matchOpenTask(it.title);
+      if (!t) return false;
+      await toggleTask(t.id);
+      return true;
+    }
+    case 'habit': {
+      const hb = (state.habits || []).find((x) => (x.name || '').toLowerCase() === String(it.name || '').toLowerCase());
+      if (hb && !hb.doneToday) await toggleHabit(hb.id);
+      return !!hb;
+    }
+    case 'habit_new':
+      if (!it.name) return false;
+      if ((state.habits || []).some((x) => (x.name || '').toLowerCase() === it.name.toLowerCase())) return false;
+      await createHabit({ name: it.name, domain: 'habit', icon: 'repeat', cadence: 'daily', metric: 'none' });
+      return true;
+    case 'goal':
+      if (!it.title) return false;
+      await createGoal({ title: it.title, horizon: 'short_term' });
+      return true;
+    case 'water':
+      if (!it.amountMl) return false;
+      await quickAddWater(it.amountMl);
+      return true;
+    case 'food':
+      if (!it.name) return false;
+      await logFoodEntry({
+        foodName: it.name,
+        mealSlot: it.meal || null,
+        kcal: it.kcal || null,
+        loggedAt: new Date().toISOString(),
+      });
+      return true;
+    case 'sleep':
+      if (!it.hours) return false;
+      await saveSleepEntry(sleepPayloadFromHours(it.hours, it.quality));
+      return true;
+    case 'mood':
+      if (!it.mood) return false;
+      await saveMoodEntry({ mood: it.mood, energy: it.energy || 'medium' });
+      return true;
+    case 'expense':
+      if (!it.amount) return false;
+      addQuickExpense(it.amount, it.note);
+      return true;
+    case 'income':
+      if (!it.amount) return false;
+      addQuickIncome(it.amount, it.note);
+      return true;
+    case 'note':
+      if (!it.text) return false;
+      await api('/api/notes', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': newIdemKey() },
+        body: JSON.stringify({ body: '<p>' + escapeHtml(it.text) + '</p>' }),
+      });
+      return true;
+    case 'reminder': {
+      if (!it.text) return false;
+      // Every field the sentence gave, through the same path as the calendar's
+      // own form — so the past-day and past-time refusals apply here too.
+      const made = await addReminder(
+        it.date || todayKeyNow(),
+        it.text,
+        hhmm(it.time),
+        it.tag || 'personal',
+        it.repeat || 'none',
+        it.until || '',
+        '',
+        hhmm(it.endTime),
+        it.notifyBefore === null || it.notifyBefore === undefined ? null : it.notifyBefore
+      );
+      return !!made;
+    }
+    case 'focus':
+      focusAutoStart = it.minutes || true;
+      if (state.screen === 'focus') render();
+      else setScreen('focus');
+      return true;
+    case 'open':
+      if (it.screen === 'settings') openProfileSettings();
+      else if (SCREENS[it.screen] && screenEnabled(it.screen)) setScreen(it.screen);
+      else return false;
+      return true;
+    case 'setting':
+      if (it.key === 'theme') return setThemeChoice(it.value);
+      if (it.key === 'waterGoal' && Number(it.value) >= 500) {
+        await updateWaterGoal(Number(it.value));
+        return true;
+      }
+      return false;
+    default:
+      return false;
+  }
+}
+
+/* "dark mode" / "light mode" / "follow the phone": the same writes the theme
+   button makes, plus clearing the pick so the system setting decides again. */
+function setThemeChoice(value) {
+  if (value === 'system') {
+    try {
+      CacheStorage.removeItem(THEME_KEY);
+    } catch (_) {}
+    saveUiPrefs({ theme: null });
+    state.theme = systemDark && systemDark.matches ? 'dark' : 'light';
+    applyTheme(state.theme);
+    render();
+    return true;
+  }
+  if (value !== 'dark' && value !== 'light') return false;
+  if (state.theme !== value) toggleTheme();
+  return true;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 }
 
 async function loadGoals() {
@@ -4716,16 +4993,18 @@ function rememberPhotoFood(foodName, estimate, usedPhoto) {
 function openSleepSchedule() {
   const today = todayKeyNow();
   const existing = (state.wellness.sleepByDate || {})[today] || {};
+  // An unlogged night opens on the usual one, so a normal night is one tap on Save.
+  const usual = usualSleep(state.wellness.sleepByDate, today) || { bedtime: '23:00', wakeTime: '07:00' };
   const dateInput = h('input', { type: 'date', class: 'gb-input', value: existing.date || today });
   const bedInput = h('input', {
     type: 'time',
     class: 'gb-input',
-    value: existing.bedtime || '23:00',
+    value: existing.bedtime || usual.bedtime,
   });
   const wakeInput = h('input', {
     type: 'time',
     class: 'gb-input',
-    value: existing.wakeTime || '07:00',
+    value: existing.wakeTime || usual.wakeTime,
   });
   const quality = segmented(
     [
@@ -4830,71 +5109,109 @@ function openMoodCheckin() {
   });
 }
 
-function openDailyPlan() {
+/* Plan my day: a draft the user only has to accept. Today's reminders, bills
+   due, habits not yet done and the three most pressing tasks, each task given a
+   free hour (day-plan.js). Accepting turns the ticked task blocks into today's
+   reminders, so the plan rings; everything else is already in the app. No AI. */
+// day-plan.js loads on the tap: it is only ever needed here, and the boot chunk is over budget.
+async function openDailyPlan() {
+  const { buildDayPlan } = await import('./day-plan.js');
   const today = todayKeyNow();
-  const pendingTasks = state.tasks.filter((t) => !t.done).slice(0, 4);
-  const pendingHabits = state.habits.filter((habit) => !habit.doneToday).slice(0, 4);
-  const waterGoal = state.water && state.water.goalMl ? state.water.goalMl : 2000;
-  const waterDone = state.water && state.water.consumedMl ? state.water.consumedMl : 0;
+  const now = new Date();
+  const plan = buildDayPlan({
+    tasks: state.tasks,
+    habits: featureOn('habits') ? state.habits : [],
+    reminders: state.reminders,
+    subscriptions: featureOn('money') && state.money ? state.money.subscriptions : [],
+    today,
+    nowMin: now.getHours() * 60 + now.getMinutes(),
+  });
+  const ICON = { reminder: 'bell', bill: 'wallet', habit: 'repeat', task: 'list-checks' };
+  const LABEL = { reminder: 'Reminder', bill: 'Bill', habit: 'Habit', task: 'Focus block' };
+  const blocks = []; // { item, box, timeInput }
+  const rows = plan.map((item) => {
+    const copy = h(
+      'span',
+      { class: 'gb-plan-copy' },
+      h('strong', null, item.title),
+      h('span', null, [LABEL[item.kind], item.detail].filter(Boolean).join(' \u00b7 '))
+    );
+    if (item.kind === 'task' && item.block) {
+      const box = h('input', {
+        type: 'checkbox',
+        class: 'gb-qa-check',
+        checked: true,
+        'aria-label': 'Block time for ' + item.title,
+      });
+      const timeInput = h('input', {
+        type: 'time',
+        class: 'gb-input gb-plan-time-input',
+        value: item.time,
+        'aria-label': 'Start time for ' + item.title,
+      });
+      blocks.push({ item, box, timeInput });
+      return h('label', { class: 'gb-plan-row gb-plan-row--pick' }, box, copy, timeInput);
+    }
+    return h(
+      'div',
+      { class: 'gb-plan-row' },
+      h('span', { class: 'gb-plan-time' }, item.time ? formatTime(item.time) : ''),
+      h('span', { class: 'gb-plan-icon' }, Icon(ICON[item.kind], { size: 17, sw: 2.4 })),
+      copy
+    );
+  });
+  // The day's care items stay as one line each: they are a tap elsewhere, not a block.
+  const care = [];
   const sleep = (state.wellness.sleepByDate || {})[today];
   const mood = (state.wellness.moodByDate || {})[today];
-  const rows = [
-    {
-      icon: 'sunrise',
-      title: 'Start steady',
-      text: pendingHabits.length
-        ? 'Do ' + pendingHabits[0].name + ' first.'
-        : 'Pick one small habit and finish it early.',
-    },
-    {
-      icon: 'list-checks',
-      title: 'Focus block',
-      text: pendingTasks.length
-        ? 'Work on ' + pendingTasks[0].title + '.'
-        : 'Add one meaningful task for today.',
-    },
-    {
-      icon: 'droplets',
-      title: 'Hydration',
-      text:
-        waterDone >= waterGoal
-          ? 'Water goal is already covered.'
-          : 'Drink ' + Math.max(250, waterGoal - waterDone) + ' ml through the day.',
-    },
-    {
-      icon: 'moon',
-      title: 'Evening close',
-      text: sleep ? 'Protect your saved sleep routine.' : 'Add sleep schedule before the day ends.',
-    },
-    {
-      icon: 'heart',
-      title: 'Reflection',
-      text: mood ? 'Use your mood note to plan gently.' : 'Do a 20-second mood check-in.',
-    },
-  ];
+  if (featureOn('water') && state.water) {
+    const left = (state.water.goalMl || 2000) - (state.water.consumedMl || 0);
+    if (left > 0) care.push({ icon: 'droplets', text: left + ' ml of water to go' });
+  }
+  if (!sleep) care.push({ icon: 'moon', text: 'Log last night\u2019s sleep' });
+  if (!mood) care.push({ icon: 'heart', text: 'A 20-second mood check-in' });
+  const careRows = care.map((c) =>
+    h(
+      'div',
+      { class: 'gb-plan-row' },
+      h('span', { class: 'gb-plan-time' }),
+      h('span', { class: 'gb-plan-icon' }, Icon(c.icon, { size: 17, sw: 2.4 })),
+      h('span', { class: 'gb-plan-copy' }, h('span', null, c.text))
+    )
+  );
+  const empty = !rows.length && !careRows.length;
   openModal({
     title: 'Today plan',
-    sub: 'A simple plan from your current tasks, habits, water, sleep, and mood.',
+    sub: blocks.length
+      ? 'Drafted from your tasks, reminders, habits and bills. Untick a block you don\u2019t want, or move its time.'
+      : 'Drafted from your tasks, reminders, habits and bills.',
     body: h(
       'div',
       { class: 'gb-plan-list' },
-      rows.map((row) =>
-        h(
-          'div',
-          { class: 'gb-plan-row' },
-          h('span', { class: 'gb-plan-icon' }, Icon(row.icon, { size: 17, sw: 2.4 })),
-          h(
-            'span',
-            { class: 'gb-plan-copy' },
-            h('strong', null, row.title),
-            h('span', null, row.text)
-          )
-        )
-      )
+      empty ? h('p', { class: 'gb-plan-empty' }, 'Nothing is waiting on you today. Add a task to plan around.') : null,
+      rows,
+      careRows
     ),
-    primary: 'Looks good',
-    onPrimary: async () => {},
+    primary: blocks.length ? 'Add to my day' : 'Looks good',
+    errorMessage: 'Could not add the plan.',
+    onPrimary: async () => {
+      const picked = blocks.filter((b) => b.box.checked && b.timeInput.value);
+      let added = 0;
+      for (const b of picked) {
+        // addReminder refuses a time already gone and says so; the rest still land.
+        const made = await addReminder(today, 'Focus: ' + b.item.title, b.timeInput.value, 'personal', 'none', null, '', addMinutesHHMM(b.timeInput.value, 60));
+        if (made) added++;
+      }
+      if (picked.length && !added) throw new Error('None of those blocks could be added.');
+    },
   });
+}
+
+/** "HH:MM" plus minutes, capped at 23:59 (a block can't run into tomorrow). */
+function addMinutesHHMM(hhmmStr, mins) {
+  const [hh, mm] = hhmmStr.split(':').map(Number);
+  const t = Math.min(23 * 60 + 59, hh * 60 + mm + mins);
+  return String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0');
 }
 
 async function addSuggestedReminder(text, time, tag) {
@@ -5227,6 +5544,16 @@ function openAddFood() {
     const mealIdx = { home: 0, hotel: 1 }[r.mealType];
     if (mealIdx != null && mealTypeSeg.get() !== r.mealType) mealTypeSeg.node.children[mealIdx].click();
   };
+  // A dish typed by hand that was logged lately starts on that portion: the
+  // grams only, so the estimator still prices today's plate. Never over a number
+  // already in the box.
+  foodNameInput.addEventListener('change', () => {
+    const name = foodNameInput.value.trim().toLowerCase();
+    const r = name && (recentFoods || []).find((x) => (x.foodName || '').trim().toLowerCase() === name);
+    if (!r || !r.quantityGrams || quantityInput.value !== '') return;
+    if (unitSeg.get() !== 'g') unitSeg.node.children[1].click();
+    quantityInput.value = String(r.quantityGrams);
+  });
   // A favourite: its own portion and kcal, and its macros go with it.
   const fillFavourite = (f) => {
     label = { kind: 'fav', name: f.foodName, fav: f };
@@ -6146,7 +6473,9 @@ function profileDropdown() {
     list of the same thing will drift; this one can't. Safe despite `SCREENS`
     being declared further down: nothing calls this until after boot. */
 function screenFromHash() {
-  const raw = (window.location.hash || '').replace(/^#\/?/, '').toLowerCase();
+  // A screen may carry a query (#/circle?join=CODE, a circle invite link): the
+  // screen reads it, the route is the part before it.
+  const raw = (window.location.hash || '').replace(/^#\/?/, '').split('?')[0].toLowerCase();
   if (Object.prototype.hasOwnProperty.call(SCREENS, raw)) return raw;
   // An unknown address (#/settings: Settings is a dialog, not a screen) shows
   // Home, so the bar says so too instead of keeping the address that isn't there.
@@ -6164,7 +6493,9 @@ function landAfterSignIn() {
     : 'home';
   returnToScreen = '';
   state.screen = target;
-  history.replaceState(null, '', '#/' + target);
+  // An invite link opened while signed out keeps its query through sign-in.
+  const query = screenFromHash() === target ? (window.location.hash.split('?')[1] || '') : '';
+  history.replaceState(null, '', '#/' + target + (query ? '?' + query : ''));
 }
 
 function setScreen(id, opts) {
@@ -6622,7 +6953,8 @@ function customisePanes() {
         lazyScreen(
           () => import('./money.js'),
           (m) => m.MoneyCustomisePane(state.money, saveMoney)
-        )
+        ),
+        bankFeedSection()
       )
     : null;
 
@@ -6803,6 +7135,25 @@ function openWeeklyReview() {
   // A <textarea>'s initial text can't be set via the value attribute — set the
   // property so an existing review's wins prefill when re-opened.
   wins.value = prev.wins || '';
+  // No review yet: draft the wins from the week (review.js), so the user edits
+  // rather than writes. Lands only while the box is still untouched.
+  if (!prev.wins) {
+    let typed = false;
+    wins.addEventListener('input', () => (typed = true), { once: true });
+    Promise.all([import('./review.js'), api('/api/tasks/finished?days=7').catch(() => [])])
+      .then(([review, finished]) => {
+        const draft = review.weeklyWinsDraft({
+          finished,
+          habits: state.habits,
+          trends: state.trends,
+          money: state.money,
+          today: todayKeyNow(),
+          fmtMoney: (n) => cur() + Math.round(n),
+        });
+        if (draft && !typed && !wins.value) wins.value = draft.slice(0, 400);
+      })
+      .catch(() => {});
+  }
   const focus = h('input', {
     type: 'text',
     class: 'gb-input',
@@ -7542,6 +7893,8 @@ function reminderSettingsPane() {
     class: 'gb-input gb-input--time',
     'aria-label': 'Reminder time',
   });
+  const usualTime = UsualTimeChip(timeInput);
+  usualTime.sync(state.reminders);
   const repeatSel = h(
     'select',
     { class: 'gb-input', 'aria-label': 'Repeat' },
@@ -7592,6 +7945,7 @@ function reminderSettingsPane() {
         voiceNote.style.display = 'none';
         textInput.value = '';
         timeInput.value = '';
+        usualTime.sync(state.reminders);
         repeatSel.value = 'none';
         notifySel.setLead(null);
         textInput.focus();
@@ -7665,6 +8019,7 @@ function reminderSettingsPane() {
       h('label', { class: 'gb-remset-field' }, h('span', null, 'Time'), timeInput),
       h('label', { class: 'gb-remset-field gb-remset-field--wide' }, h('span', null, 'Repeat'), repeatSel)
     ),
+    usualTime.node,
     addBtn
   );
 
@@ -9924,10 +10279,12 @@ async function addReminder(key, text, time, tag, repeat, until, sound, endTime, 
 function focusProps() {
   const link = focusPreselect;
   focusPreselect = null; // taken once: the next visit opens on whatever the timer holds
+  const autoStart = focusAutoStart;
+  focusAutoStart = null;
   return {
     // link: { taskId } | { goalId } | null — what the session was spent on.
-    onFocusSession: (mode, durationSec, link) =>
-      api('/api/focus/sessions', {
+    onFocusSession: (mode, durationSec, link) => {
+      const saved = api('/api/focus/sessions', {
         method: 'POST',
         body: JSON.stringify({
           mode,
@@ -9935,7 +10292,11 @@ function focusProps() {
           taskId: (link && link.taskId) || null,
           goalId: (link && link.goalId) || null,
         }),
-      }),
+      });
+      // A finished focus session may be what a "Deep work 2h" habit was waiting for.
+      if (mode === 'focus') saved.then(autoTickFocusHabits, () => {});
+      return saved;
+    },
     getFocusStats: () => api('/api/focus/stats'),
     getFocusHistory: () => api('/api/focus/history?days=30'),
     statsOwner: state.user && state.user.id,
@@ -9949,6 +10310,7 @@ function focusProps() {
         .map((g) => ({ id: g.id, title: g.title })),
     },
     preselect: link,
+    autoStart,
     // Daily focus goal, minutes (0 = off). In ui_prefs, where FocusService reads it for the streak.
     focusGoalMins: (state.user && state.user.uiPrefs && state.user.uiPrefs.focusGoalMins) || 0,
     onSetFocusGoal: (mins) => saveUiPrefs({ focusGoalMins: mins }),
@@ -9957,6 +10319,7 @@ function focusProps() {
 
 /* A task or goal row's "Start focus": open the timer with it picked. */
 let focusPreselect = null;
+let focusAutoStart = null; // minutes, or true for the last length: Quick add's "start a focus"
 function startFocusOn(link) {
   focusPreselect = link;
   if (state.screen === 'focus') render();
@@ -10293,7 +10656,53 @@ function reSyncDeviceAlarms() {
     sound: notifySound(),
     lead: getDefaultLead(),
     quiet: quietHours(),
+    snoozeLabel: 'Snooze ' + minutesLabel(snoozeMinutes()),
   }).catch(() => {});
+}
+
+/* ---- Buttons on the phone's notifications ----
+   Done / Snooze on a reminder, Done on a plain habit, +250 ml on the water
+   nudge (push.js builds the sets and stamps `extra`). A press opens the app
+   and lands here, through the same handlers the in-app taps use, so the toast
+   it shows is the confirmation. A plain tap on the card does what it always
+   did: nothing beyond opening the app. On the web the service worker carries
+   these out itself, with a signed ticket (public/push-handlers.js). */
+let notificationActionsArmed = false;
+function armNotificationActions() {
+  if (notificationActionsArmed) return;
+  notificationActionsArmed = true;
+  onLocalNotificationAction((ev) => {
+    handleNotificationAction(ev).catch((err) => toastError(err, 'Could not do that from the notification.'));
+  });
+}
+
+async function handleNotificationAction(ev) {
+  const act = ev && ev.actionId;
+  const x = (ev && ev.notification && ev.notification.extra) || {};
+  if (!state.user || !act || act === 'tap' || act === 'dismiss') return;
+  if (x.kind === 'water' && act === 'water') {
+    await quickAddWater(WATER_ACTION_ML);
+  } else if (x.kind === 'reminder' && act === 'snooze' && x.id) {
+    await snoozeReminder(x.id, null);
+  } else if (x.kind === 'reminder' && act === 'done' && x.id && x.day) {
+    // No day (a snoozed ring): the press already cleared the card; that is all.
+    await toggleReminderDone(x.id, x.day, true);
+    toastSuccess('Marked done.');
+  } else if (x.kind === 'habit' && act === 'done' && x.id) {
+    const hb = (state.habits || []).find((h) => h.id === x.id);
+    if (!hb) return;
+    if (!x.day || x.day === todayKeyNow()) {
+      if (!hb.doneToday) await plainToggleHabit(hb.id);
+      return;
+    }
+    // Pressed after midnight: tick the day it rang for, as the habit's history does.
+    await api('/api/habits/' + encodeURIComponent(hb.id) + '/checkin', {
+      method: 'POST',
+      body: JSON.stringify({ date: x.day, done: true }),
+    });
+    forgetGoalHabitHistory(hb.id);
+    toastSuccess(hb.name + ' ticked for ' + shortDay(x.day) + '.');
+  }
 }
 
 /* Quiet hours (ui_prefs.quietStart / quietEnd, set in Settings > Alerts), or
@@ -10445,7 +10854,7 @@ function openAddSheet() {
   const qaInput = h('input', {
     type: 'text',
     class: 'gb-input',
-    placeholder: 'e.g. remind me tomorrow at 9 to call mom, spent 200 on lunch, slept 7h',
+    placeholder: 'e.g. spent 200 on lunch, had 2 idli, slept 7h, remind me at 9 to call mom, open money',
     'aria-label': 'Quick log in your own words',
   });
   const qaBtn = h(
@@ -10460,26 +10869,32 @@ function openAddSheet() {
     const done = setThinking(qaBtn, 'Reading');
     try {
       const r = await parseQuickAdd(text);
-      if (!r.configured) {
-        close();
-        pushToast('Quick add needs an AI key configured on the server.', 'error', 3600);
-        return;
-      }
-      if (r.unavailable) {
-        done();
-        qaInput.disabled = false;
-        pushToast("Couldn't reach the assistant, try again.", 'error', 3600);
-        return;
-      }
       const rows = r.intents.map((it) => ({ it, d: describeIntent(it) })).filter((x) => x.d);
       if (!rows.length) {
         done();
         qaInput.disabled = false;
-        pushToast("Couldn't find anything to log there — try being more specific.", 'error', 3600);
+        pushToast(
+          r.unavailable
+            ? "Couldn't reach the assistant, and couldn't read that without it. Try again?"
+            : !r.configured
+              ? 'Couldn’t read that. Try short phrases like “spent 200 on lunch, slept 7h, remind me at 6 to call mom”.'
+              : "Couldn't find anything to log there — try being more specific.",
+          'error',
+          4200
+        );
         return;
       }
       close();
-      openQuickAddPreview(rows, r.note);
+      // Only controls ("open money", "dark mode"): just do it — nothing is written
+      // that a preview would protect.
+      if (rows.every((x) => CONTROL_INTENTS.has(x.it.type) && !x.d.unknown)) {
+        await applyQuickAdd(rows.map((x) => x.it));
+        return;
+      }
+      openQuickAddPreview(
+        rows,
+        r.fallback ? 'Read without the assistant — switch off anything it got wrong.' : r.note
+      );
     } catch (err) {
       done();
       qaInput.disabled = false;
@@ -11784,6 +12199,312 @@ function openQuickAddPreview(rows, note) {
   });
 }
 
+/* ---- Starter packs (Home's "Getting started") ----
+   Pick a goal, see every habit, reminder and target it would add, switch off
+   what doesn't fit, one tap writes the rest. planStarter (starter-packs.js) has
+   already dropped what exists and what a switched-off feature can't hold. */
+function starterRow(it) {
+  const cur = (state.money && state.money.currency) || '₹';
+  switch (it.kind) {
+    case 'habit':
+      return { icon: 'repeat', label: 'Habit', detail: it.name + (it.reminderTime ? ' · ' + formatTime(it.reminderTime) : '') };
+    case 'reminder':
+      return { icon: 'bell', label: 'Reminder', detail: it.text + ' · ' + REPEATS[it.repeat].label + ', ' + formatTime(it.time) };
+    case 'goal':
+      return { icon: 'target', label: 'Goal', detail: it.title };
+    case 'budget':
+      return { icon: 'wallet', label: 'Monthly budget', detail: it.category.charAt(0).toUpperCase() + it.category.slice(1) + ' · ' + cur + it.amount + ' (10% under last 30 days)' };
+    case 'water':
+      return { icon: 'droplets', label: 'Water goal', detail: it.goalMl + ' ml a day' };
+    default:
+      return null;
+  }
+}
+
+async function applyStarter(rows) {
+  const today = todayKeyNow();
+  let made = 0;
+  const budgets = {};
+  for (const it of rows) {
+    try {
+      if (it.kind === 'habit') {
+        await createHabit({
+          name: it.name,
+          domain: it.domain || 'habit',
+          icon: it.icon,
+          cadence: 'daily',
+          metric: it.metric || 'none',
+          kind: it.habitKind || 'build',
+          reminderTime: it.reminderTime || null,
+        });
+      } else if (it.kind === 'reminder') {
+        // Straight to the API: addReminder toasts per row and resets the calendar form.
+        state.reminders.push(
+          await api('/api/reminders', {
+            method: 'POST',
+            body: JSON.stringify({ text: it.text, date: today, time: it.time, tag: it.tag, repeat: it.repeat }),
+          })
+        );
+      } else if (it.kind === 'goal') {
+        await api('/api/goals', {
+          method: 'POST',
+          body: JSON.stringify({ title: it.title, horizon: 'short_term', targetDate: it.targetDate }),
+        });
+      } else if (it.kind === 'water') {
+        await updateWaterGoal(it.goalMl);
+      } else if (it.kind === 'budget') {
+        budgets[it.category] = it.amount;
+      } else continue;
+      made++;
+    } catch (_) {
+      /* one refusal doesn't stop the rest; the count says what landed */
+    }
+  }
+  if (Object.keys(budgets).length) {
+    const base = state.money;
+    saveMoney({ ...normalizeMoney(base), budgets: { ...base.budgets, ...budgets } }, base);
+    made += Object.keys(budgets).length;
+  }
+  return made;
+}
+
+// starter-packs.js loads on the tap, like day-plan.js: kept out of the boot chunk.
+async function openStarterPacks() {
+  const { PACKS, planStarter } = await import('./starter-packs.js');
+  const picked = new Set();
+  let rows = [];
+  const chosen = new Map(); // row key -> on
+  const keyOf = (r) => r.it.kind + ':' + r.d.detail;
+  const list = h('div', { class: 'gb-qa-preview' });
+  const paint = () => {
+    rows = planStarter([...picked], {
+      habits: state.habits,
+      reminders: state.reminders,
+      goals: (state.goals || []).flatMap((s) => s.goals || []),
+      features: state.user && state.user.features,
+      waterGoalMl: state.water && state.water.goalMl,
+      weightKg: state.user && state.user.weightKg,
+      money: state.money,
+      today: todayKeyNow(),
+      suggestWater: suggestWaterGoalMl,
+    }).map((it) => ({ it, d: starterRow(it) }));
+    list.replaceChildren(
+      ...(picked.size && !rows.length
+        ? [h('p', { class: 'gb-field-hint' }, 'You already have everything these would add.')]
+        : rows.map((r) => {
+            if (!chosen.has(keyOf(r))) chosen.set(keyOf(r), true);
+            return h(
+              'label',
+              { class: 'gb-qa-row' },
+              h('input', {
+                type: 'checkbox',
+                class: 'gb-qa-check',
+                checked: chosen.get(keyOf(r)),
+                'aria-label': r.d.label + ': ' + r.d.detail,
+                onchange: (e) => chosen.set(keyOf(r), e.target.checked),
+              }),
+              h('span', { class: 'gb-qa-icon' }, Icon(r.d.icon, { size: 16, sw: 2.4 })),
+              h('span', { class: 'gb-qa-copy' }, h('strong', null, r.d.label), h('span', null, r.d.detail))
+            );
+          }))
+    );
+  };
+  const chips = h(
+    'div',
+    { class: 'gb-starter-packs' },
+    PACKS.map((p) =>
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-chip',
+          'aria-pressed': 'false',
+          onclick: (e) => {
+            const on = !picked.has(p.id);
+            if (on) picked.add(p.id);
+            else picked.delete(p.id);
+            e.currentTarget.classList.toggle('is-on', on);
+            e.currentTarget.setAttribute('aria-pressed', String(on));
+            paint();
+          },
+        },
+        Icon(p.icon, { size: 16, sw: 2.4 }),
+        p.label
+      )
+    )
+  );
+  openModal({
+    title: 'What do you want to work on?',
+    sub: 'Pick one or more. We set up the habits, reminders and targets; switch off anything that doesn’t fit.',
+    body: h('div', null, chips, list),
+    primary: 'Set it up',
+    errorMessage: 'Could not set that up.',
+    onPrimary: async () => {
+      const go = rows.filter((r) => chosen.get(keyOf(r))).map((r) => r.it);
+      if (!go.length) throw new Error(picked.size ? 'Nothing selected — switch at least one on.' : 'Pick a goal first.');
+      const made = await applyStarter(go);
+      if (!made) throw new Error('None of those could be added.');
+      toastSuccess('Added ' + made + (made > 1 ? ' things.' : ' thing.') + ' You’re set up.');
+      reSyncDeviceAlarms();
+      await loadData();
+      if (state.screen !== 'home') setScreen('home');
+    },
+  });
+}
+
+/* ---- Connect your bank (Account Aggregator via Setu; BankFeedService) ----
+   Consent once on the user's AA, then debits and credits arrive in Money as
+   ordinary, editable entries marked "Bank". The whole section stays empty when
+   the server has no Setu credentials. */
+function bankFeedSection() {
+  const box = h('div', { class: 'gb-bank-feed' });
+  const paint = (st) => {
+    if (!st || !st.configured) {
+      box.replaceChildren();
+      return;
+    }
+    const rows = (st.consents || []).map((c) => {
+      const accts = (c.accounts || []).map((a) => '\u2022\u2022' + a.mask).join(', ');
+      const what =
+        c.status === 'PENDING'
+          ? 'Waiting for your approval'
+          : /ACTIVE|APPROVED/.test(c.status)
+            ? (accts || 'Connected') +
+              (c.syncing ? ' \u00b7 Fetching\u2026' : c.lastSyncedAt ? ' \u00b7 Synced ' + relativeTime(c.lastSyncedAt) : '')
+            : 'Ended (' + c.status.toLowerCase() + ')';
+      return h(
+        'div',
+        { class: 'gb-bank-row' },
+        h('span', { class: 'gb-money-cat-ic' }, Icon('landmark', { size: 15, sw: 2.2 })),
+        h(
+          'div',
+          { class: 'gb-bank-copy' },
+          h('strong', null, 'Bank feed'),
+          h('span', null, what),
+          c.error ? h('span', { class: 'gb-field-hint' }, c.error) : null
+        ),
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-btn gb-btn--ghost gb-btn--compact',
+            onclick: () =>
+              openModal({
+                title: 'Disconnect this bank?',
+                sub: 'Nothing more is fetched. Entries already imported stay in Money.',
+                body: null,
+                primary: 'Disconnect',
+                destructive: true,
+                errorMessage: 'Could not disconnect.',
+                onPrimary: async () => {
+                  try {
+                    await api('/api/money/bank/' + encodeURIComponent(c.id), { method: 'DELETE' });
+                    toastSuccess('Bank disconnected.');
+                  } finally {
+                    load();
+                  }
+                },
+              }),
+          },
+          'Disconnect'
+        )
+      );
+    });
+    const live = (st.consents || []).some((c) => /ACTIVE|APPROVED|PENDING/.test(c.status));
+    box.replaceChildren(
+      h('div', { class: 'gb-settings-sec-label', style: { marginTop: '18px' } }, 'Bank feed'),
+      h(
+        'div',
+        { class: 'gb-field-hint', style: { marginBottom: '8px' } },
+        'Approve once through an RBI Account Aggregator and your bank spends and income show up here on their own. Every entry stays editable.'
+      ),
+      ...rows,
+      h(
+        'div',
+        { class: 'gb-bank-actions' },
+        live
+          ? h(
+              'button',
+              {
+                type: 'button',
+                class: 'gb-btn gb-btn--compact',
+                onclick: async (e) => {
+                  const done = setThinking(e.currentTarget, 'Syncing');
+                  try {
+                    const r = await api('/api/money/bank/sync', { method: 'POST' });
+                    if (r.imported > 0) {
+                      const theirs = await api('/api/money', { onResponse: rememberMoneyVersion });
+                      state.money = normalizeMoney(overlayPending(mergeMoney(state.money, theirs)));
+                      cacheMoney();
+                      render();
+                    }
+                    toastSuccess(
+                      r.imported > 0
+                        ? r.imported + ' new from your bank.'
+                        : r.pending > 0
+                          ? 'Your bank is preparing the data. It will show up shortly.'
+                          : 'Up to date.'
+                    );
+                  } catch (err) {
+                    toastError(err, 'Could not sync right now.');
+                  } finally {
+                    done();
+                  }
+                  load();
+                },
+              },
+              'Sync now'
+            )
+          : null,
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-btn gb-btn--primary gb-btn--compact',
+            onclick: () => openConnectBank(load),
+          },
+          live ? 'Add another bank' : 'Connect your bank'
+        )
+      )
+    );
+    refreshIcons();
+  };
+  const load = () => api('/api/money/bank').then(paint).catch(() => paint(null));
+  load();
+  return box;
+}
+
+function openConnectBank(onDone) {
+  const phone = String((state.user && state.user.whatsappNumber) || '').replace(/^\+91/, '');
+  const input = h('input', {
+    type: 'tel',
+    class: 'gb-input',
+    inputmode: 'numeric',
+    autocomplete: 'tel-national',
+    maxlength: '14',
+    value: /^\d{10}$/.test(phone) ? phone : '',
+    placeholder: '10-digit mobile',
+  });
+  openModal({
+    title: 'Connect your bank',
+    sub: 'Your Account Aggregator asks you to pick accounts and approve. Only transactions are shared, read-only, and you can revoke it any time.',
+    body: h('div', null, h('label', { class: 'gb-field-label' }, 'Mobile number registered with your bank'), input),
+    primary: 'Continue',
+    errorMessage: 'Could not start the connection.',
+    onPrimary: async () => {
+      const r = await api('/api/money/bank/connect', {
+        method: 'POST',
+        body: JSON.stringify({ mobile: input.value.trim() }),
+      });
+      const browser = nativePlugin('Browser');
+      if (browser) await browser.open({ url: r.url });
+      else window.open(r.url, '_blank', 'noopener');
+      toastSuccess('Approve on the next screen. Entries start arriving once you do.');
+      onDone();
+    },
+  });
+}
+
 /** "Just now" / "5 min ago" / "2 h ago" / "3 d ago". */
 function relativeTime(iso) {
   if (!iso) return '';
@@ -12491,6 +13212,20 @@ async function saveNavLayout(layout) {
   }
 }
 
+/* Money's receipt reader, for Add expense on the Money screen and on Home.
+   Shrunk the way Notes shrinks a photo: 1280px is enough to read a bill.
+   categories: [{key, label}], so the AI tags each line with one the user has. */
+function requestReceiptScan(file, categories) {
+  return import('./notes.js')
+    .then((m) => m.shrinkPhoto(file))
+    .then((imageDataUrl) =>
+      api('/api/money/receipt-scan', {
+        method: 'POST',
+        body: JSON.stringify({ imageDataUrl, categories }),
+      })
+    );
+}
+
 const SCREENS = {
   home: {
     headerLabel: () => todayLabel(),
@@ -12528,6 +13263,9 @@ const SCREENS = {
         onPlanToday: openDailyPlan,
         onAddSleep: openSleepSchedule,
         onAddMood: openMoodCheckin,
+        onStarterPack: openStarterPacks,
+        onConfirmSleep: (u) => saveSleepEntry({ bedtime: u.bedtime, wakeTime: u.wakeTime, quality: 'okay' }),
+        onQuickMood: (mood) => saveMoodEntry({ mood }),
         onOnboardDismiss: (opts) => {
           saveUiPrefs({ onboardingDone: true });
           // Only from the ✕ click — the all-done path fires mid-render.
@@ -12536,6 +13274,7 @@ const SCREENS = {
         onAddSuggestedReminder: addSuggestedReminder,
         money: state.money,
         onSaveMoney: saveMoney,
+        requestReceiptScan,
         onOpenMoney: () => setScreen('money'),
         homeLayout: (state.user && state.user.homeLayout) || null,
       }),
@@ -12736,6 +13475,13 @@ const SCREENS = {
                 return res;
               }),
             currentUserId: state.user && state.user.id,
+            // "Share a win" chips over a circle's composer, read when a feed opens.
+            wins: () =>
+              winLines({
+                habits: state.habits || [],
+                goals: (state.goals || []).flatMap((sec) => sec.goals || []),
+                today: todayKeyNow(),
+              }),
             // Inside an accepted link ({id} = the request id): cheer/nudge, the
             // thread, the agreement, and the mentor's weekly card.
             mentorshipApi: {
@@ -12813,6 +13559,28 @@ const SCREENS = {
                     '/kudos',
                   { method: 'POST' }
                 ),
+              listComments: (id, postId) =>
+                api('/api/circles/' + encodeURIComponent(id) + '/posts/' + encodeURIComponent(postId) + '/comments'),
+              createComment: (id, postId, body) =>
+                api('/api/circles/' + encodeURIComponent(id) + '/posts/' + encodeURIComponent(postId) + '/comments', {
+                  method: 'POST',
+                  body: JSON.stringify({ body }),
+                }),
+              deleteComment: (id, postId, commentId) =>
+                api(
+                  '/api/circles/' +
+                    encodeURIComponent(id) +
+                    '/posts/' +
+                    encodeURIComponent(postId) +
+                    '/comments/' +
+                    encodeURIComponent(commentId),
+                  { method: 'DELETE' }
+                ),
+              cheer: (id, userId) =>
+                api('/api/circles/' + encodeURIComponent(id) + '/members/' + encodeURIComponent(userId) + '/cheer', {
+                  method: 'POST',
+                  body: JSON.stringify({}),
+                }),
               listChallenges: (id) => api('/api/circles/' + encodeURIComponent(id) + '/challenges'),
               createChallenge: (id, body) =>
                 api('/api/circles/' + encodeURIComponent(id) + '/challenges', {
@@ -12970,16 +13738,7 @@ const SCREENS = {
             onSaveMoney: saveMoney,
             requestAdvice: (payload) =>
               api('/api/money/advice', { method: 'POST', body: JSON.stringify(payload) }),
-            // Shrunk the way Notes shrinks a photo: 1280px is enough to read a bill.
-            requestReceiptScan: (file) =>
-              import('./notes.js')
-                .then((m) => m.shrinkPhoto(file))
-                .then((imageDataUrl) =>
-                  api('/api/money/receipt-scan', {
-                    method: 'POST',
-                    body: JSON.stringify({ imageDataUrl }),
-                  })
-                ),
+            requestReceiptScan,
             accountRequest,
             // Behind the save queue, like accountRequest: asked the moment an expense is
             // added, it read the day without it, and money.js kept that under the new key.
@@ -14744,6 +15503,7 @@ document.addEventListener('visibilitychange', () => {
     refreshNotifications();
     syncDeviceTimezone(); // reopened after a flight
     refreshDayIfStale();
+    autoTickStepHabits(); // walked since the app was last open
   }
 });
 

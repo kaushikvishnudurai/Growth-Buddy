@@ -125,7 +125,10 @@ public class WellnessService {
         List<String> energy = new ArrayList<>();
         List<String> stress = new ArrayList<>();
         List<String> sleep = new ArrayList<>();
+        List<String> hours = new ArrayList<>();
         for (DailyLog d : sorted) {
+            String h = sleepHours(d.getBedtime(), d.getWakeTime());
+            if (h != null) hours.add(h);
             if (d.getMood() != null) {
                 mood.add(word(d.getMood()));
                 energy.add(word(d.getEnergy()));
@@ -135,7 +138,7 @@ public class WellnessService {
                 sleep.add(word(d.getSleepQuality()));
             }
         }
-        if (mood.isEmpty() && sleep.isEmpty()) {
+        if (mood.isEmpty() && sleep.isEmpty() && hours.isEmpty()) {
             return "Check-ins: no mood or sleep logged in the last 7 days.\n";
         }
         StringBuilder sb = new StringBuilder("Check-ins, last 7 days (oldest first):\n");
@@ -147,7 +150,27 @@ public class WellnessService {
         if (!sleep.isEmpty()) {
             sb.append("  - sleep quality: ").append(String.join(", ", sleep)).append('\n');
         }
+        if (!hours.isEmpty()) {
+            sb.append("  - hours slept: ").append(String.join(", ", hours)).append('\n');
+        }
         return sb.toString();
+    }
+
+    /** "23:30" to "07:00" is "7.5"; across midnight or not. Null when either is missing or garbled. */
+    static String sleepHours(String bed, String wake) {
+        Integer b = minutes(bed);
+        Integer w = minutes(wake);
+        if (b == null || w == null) return null;
+        int span = ((w - b) % 1440 + 1440) % 1440;
+        return span == 0 ? null : String.valueOf(Math.round(span / 6.0) / 10.0);
+    }
+
+    private static Integer minutes(String hhmm) {
+        if (hhmm == null || !hhmm.matches("\\d{1,2}:\\d{2}.*")) return null;
+        String[] p = hhmm.split(":");
+        int h = Integer.parseInt(p[0]);
+        int m = Integer.parseInt(p[1].substring(0, 2));
+        return h > 23 || m > 59 ? null : h * 60 + m;
     }
 
     /** A stored check-in word, kept to a short plain token (they are free strings up to 16). */
@@ -159,5 +182,17 @@ public class WellnessService {
 
     private static int nz(Integer v) {
         return v != null ? v : 0;
+    }
+
+    /* ---- Quick add from WhatsApp (QuickAddApplier) ---- */
+
+    @Transactional
+    public void saveSleepTimes(UUID userId, String bedtime, String wakeTime, String quality) {
+        saveSleep(userId, new SleepRequest(null, bedtime, wakeTime, quality, null));
+    }
+
+    @Transactional
+    public void saveMoodWords(UUID userId, String mood, String energy) {
+        saveMood(userId, new MoodRequest(null, mood, energy, null, null));
     }
 }

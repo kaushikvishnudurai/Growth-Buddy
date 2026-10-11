@@ -86,16 +86,23 @@ public class ReminderSnoozeService {
      */
     @Transactional
     public Optional<Instant> snoozeByLink(String token) {
-        return links.verify(token, clock.instant()).flatMap(t -> {
+        return ticketFor(SnoozeLinks.SNOOZE, token).flatMap(t -> trySnooze(t.userId(), t.targetId(), null));
+    }
+
+    /**
+     * A push button's ticket, checked for {@code purpose}: empty when forged or
+     * expired, when the account is gone or scheduled for deletion, or when the day
+     * it rang for has passed where the user lives. Shared by every button the
+     * service worker sends (Snooze, Done on a reminder, Done on a habit).
+     */
+    public Optional<SnoozeLinks.Ticket> ticketFor(String purpose, String token) {
+        return links.verify(purpose, token, clock.instant()).filter(t -> {
             User u = users.findById(t.userId()).orElse(null);
             if (u == null || u.isPendingDeletion()) {
-                return Optional.empty();
+                return false;
             }
-            if (t.day() != null
-                    && t.day().isBefore(LocalDate.ofInstant(clock.instant(), UserZone.of(u.getTimezone())))) {
-                return Optional.empty();
-            }
-            return trySnooze(t.userId(), t.reminderId(), null);
+            return t.day() == null
+                    || !t.day().isBefore(LocalDate.ofInstant(clock.instant(), UserZone.of(u.getTimezone())));
         });
     }
 

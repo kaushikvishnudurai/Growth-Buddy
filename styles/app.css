@@ -2655,7 +2655,60 @@ body:has(.is-thinking, .gb-thinking)::after {
   padding: 14px 16px;
 }
 
-/* ---- Circle challenges + leaderboard ---- */
+/* ---- Circle screen ----
+   Importance order (requests, your circles, mentorship), one gutter on the
+   outer wrapper. Each circle card leads with the seat ring: the circle drawn as
+   its members, lit by who has checked in today. Display face for the circle's
+   name, mono for everything counted. */
+.gb-circle-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  padding: 4px var(--gutter) 28px;
+}
+.gb-circle-screen > :empty {
+  display: none; /* "Requests for you" with none: no slot, no gap */
+}
+.gb-circle-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.gb-circle-block-head .gb-btn {
+  white-space: nowrap;
+}
+/* A 320px phone: Browse keeps its icon, the title keeps one line. */
+@media (max-width: 359px) {
+  .gb-circle-browse-label {
+    display: none;
+  }
+}
+.gb-circle-block-title {
+  white-space: nowrap;
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.0625rem;
+  letter-spacing: -0.01em;
+  color: var(--fg1);
+}
+.gb-circle-screen .gb-circle-section-title {
+  margin: 0 0 12px;
+  font-size: 1.0625rem;
+  letter-spacing: -0.01em;
+}
+.gb-circle-screen .gb-circle-section {
+  min-height: 0; /* the reserve left a blank band under every empty list */
+}
+.gb-mentor-empty {
+  text-align: left;
+  margin: 0;
+  color: var(--fg2);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
 .gb-challenges-actions {
   display: flex;
   justify-content: flex-end;
@@ -2663,32 +2716,292 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 .gb-circle-card {
   padding: 0;
-  margin-bottom: 14px;
+  margin-bottom: 16px;
   overflow: hidden;
+}
+.gb-circle-card:last-child {
+  margin-bottom: 0;
 }
 .gb-circle-card-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--surface-3);
+  padding: 10px 10px 0 16px;
 }
 .gb-circle-name {
   font-weight: 800;
   color: var(--fg1);
   font-size: 0.9375rem;
 }
+.gb-circle-name--plain {
+  margin: 8px 16px 12px;
+  font-family: var(--font-display);
+  font-size: 1.375rem;
+}
 .gb-circle-sub {
-  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
   color: var(--fg3);
   margin-top: 2px;
 }
+
+/* The seat ring. Sized by its own width (container units), so the seats and
+   the name scale together from a 320px phone to the desktop column. */
+.gb-seat-ring-slot {
+  display: flex;
+  justify-content: center;
+  padding: 18px 20px 0; /* room for the "You" label over the top seat */
+}
+.gb-seat-ring {
+  position: relative;
+  width: min(100%, 300px);
+  aspect-ratio: 1;
+  container-type: inline-size;
+}
+.gb-seat-ring.is-loading::before {
+  content: '';
+  position: absolute;
+  inset: 10%;
+  border-radius: 50%;
+  border: 2px solid var(--surface-3);
+}
+.gb-seat-track {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.gb-seat-track-bg,
+.gb-seat-track-fill {
+  fill: none;
+  stroke-width: 1.2;
+}
+.gb-seat-track-bg {
+  stroke: var(--surface-3);
+}
+.gb-seat-track-fill {
+  stroke: var(--brand);
+  stroke-linecap: round;
+  stroke-dasharray: var(--len);
+  stroke-dashoffset: var(--len);
+  transition: stroke-dashoffset 900ms var(--ease-out) 240ms;
+}
+.gb-seat-ring.is-on .gb-seat-track-fill {
+  stroke-dashoffset: var(--off);
+}
+.gb-seat-core {
+  position: absolute;
+  inset: 23%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+}
+.gb-seat-name {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(1.125rem, 8.4cqi, 1.875rem);
+  line-height: 1.02;
+  letter-spacing: -0.03em;
+  color: var(--fg1);
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+.gb-seat-count {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--brand-ink);
+}
+.gb-seat {
+  position: absolute;
+  width: clamp(44px, 16cqi, 54px);
+  height: clamp(44px, 16cqi, 54px);
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--surface-2);
+  color: var(--fg2);
+  box-shadow: inset 0 0 0 1.5px var(--border-strong);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(0.8125rem, 4.4cqi, 1rem);
+  letter-spacing: 0.01em;
+  opacity: 0.45;
+  transform: translate(-50%, -50%) scale(0.86);
+  transition:
+    opacity 320ms var(--ease-out),
+    transform 460ms var(--ease-bounce),
+    background-color 320ms var(--ease-out),
+    color 320ms var(--ease-out),
+    box-shadow 320ms var(--ease-out);
+  /* One seat after another, clockwise from yours. */
+  transition-delay: calc(var(--i) * 80ms);
+}
+button.gb-seat {
+  cursor: pointer;
+}
+.gb-seat-ring.is-on .gb-seat {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+.gb-seat-ring.is-on .gb-seat.is-lit {
+  background: var(--brand-fill);
+  color: var(--fg-on-brand);
+  box-shadow:
+    0 0 0 5px var(--brand-soft),
+    0 8px 18px -8px var(--brand);
+}
+.gb-seat.is-private {
+  background: transparent;
+  box-shadow: none;
+  border: 1.5px dashed var(--border-strong);
+  color: var(--fg3);
+}
+.gb-seat.is-more {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+.gb-seat.is-me::after {
+  content: 'You';
+  position: absolute;
+  bottom: 100%;
+  margin-bottom: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg3);
+}
+/* Cheered today: a small sun on the seat, so the ring remembers the tap. */
+.gb-seat.is-cheered::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--sun-500);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+@media (hover: hover) {
+  button.gb-seat.is-ash:hover {
+    box-shadow:
+      inset 0 0 0 1.5px var(--brand),
+      0 0 0 5px var(--brand-soft);
+    color: var(--brand-ink);
+  }
+}
+button.gb-seat:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+button.gb-seat:disabled {
+  cursor: default;
+}
+@media (prefers-reduced-motion: reduce) {
+  .gb-seat,
+  .gb-seat-track-fill {
+    transition: none;
+  }
+}
+
+/* No circle yet: an empty ring, then the two ways in. */
+.gb-circle-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 22px 20px 20px;
+  text-align: center;
+}
+.gb-seat-ring--empty {
+  width: min(100%, 200px);
+  margin-bottom: 14px;
+  border-radius: 50%;
+}
+.gb-seat-ring--empty::before {
+  content: '';
+  position: absolute;
+  inset: 10%;
+  border-radius: 50%;
+  border: 1.5px dashed var(--border-strong);
+}
+.gb-seat-ring--empty .gb-seat {
+  width: 30px;
+  height: 30px;
+}
+.gb-seat-ring--empty .gb-seat-name {
+  color: var(--fg3);
+  font-size: 1rem;
+}
+.gb-circle-empty-title {
+  margin: 0 0 6px;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.25rem;
+  letter-spacing: -0.02em;
+  color: var(--fg1);
+}
+.gb-circle-empty-copy {
+  max-width: 34ch;
+  margin: 0 0 16px;
+  color: var(--fg2);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+.gb-circle-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* The one thing to do about today, under the ring. */
+.gb-circle-nudge {
+  display: flex;
+  justify-content: center;
+  padding: 14px 16px 18px;
+}
+.gb-circle-nudge-line {
+  margin: 0;
+  color: var(--fg2);
+  font-size: 0.8125rem;
+  text-align: center;
+}
+
+/* Challenges and the board: read, not tapped. */
+.gb-challenge-body {
+  border-top: 1px solid var(--surface-3);
+}
 .gb-challenge {
-  padding: 12px 16px;
+  padding: 14px 16px;
 }
 .gb-challenge + .gb-challenge {
   border-top: 1px solid var(--surface-3);
+}
+.gb-challenge-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 16px;
+}
+.gb-challenge-empty p {
+  margin: 0;
+  color: var(--fg2);
+  font-size: 0.875rem;
+  line-height: 1.45;
 }
 .gb-challenge-head {
   display: flex;
@@ -2697,9 +3010,10 @@ body:has(.is-thinking, .gb-thinking)::after {
   gap: 8px;
 }
 .gb-challenge-title {
-  font-weight: 700;
+  font-family: var(--font-display);
+  font-weight: 800;
   color: var(--fg1);
-  font-size: 0.875rem;
+  font-size: 0.9375rem;
 }
 .gb-challenge-badge {
   font-size: 0.6875rem;
@@ -2710,30 +3024,46 @@ body:has(.is-thinking, .gb-thinking)::after {
   color: var(--fg3);
 }
 .gb-challenge-badge[data-active='true'] {
-  background: var(--leaf-50, var(--surface-3));
-  color: var(--leaf-600, var(--brand));
+  background: var(--success-soft);
+  color: var(--success-soft-fg);
 }
 .gb-challenge-dates {
-  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.02em;
   color: var(--fg3);
-  margin: 2px 0 8px;
+  margin: 3px 0 10px;
+}
+.gb-challenge-standing {
+  margin-bottom: 6px;
+  color: var(--fg1);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.35;
 }
 .gb-lb-row {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 8px;
-  border-radius: 9px;
-  font-size: 0.8125rem;
+  align-items: baseline;
+  gap: 12px;
+  padding: 8px 2px;
+  font-size: 0.875rem;
+}
+.gb-lb-row + .gb-lb-row {
+  border-top: 1px solid var(--surface-3);
 }
 .gb-lb-row.is-me {
-  background: var(--brand-50, var(--surface-2));
   font-weight: 700;
 }
 .gb-lb-rank {
   flex: none;
-  width: 28px;
-  text-align: center;
+  width: 18px;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  color: var(--fg3);
+}
+.gb-lb-row.is-lead .gb-lb-rank {
+  color: var(--brand-ink);
+  font-weight: 700;
 }
 .gb-lb-name {
   flex: 1;
@@ -2745,8 +3075,39 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 .gb-lb-val {
   flex: none;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
   color: var(--fg2);
-  font-variant-numeric: tabular-nums;
+}
+
+/* Wide: the ring beside its challenge, posts across the bottom. */
+@media (min-width: 760px) {
+  .gb-circle-card {
+    display: grid;
+    grid-template-columns: minmax(280px, 340px) 1fr;
+    grid-template-rows: auto auto 1fr auto auto;
+  }
+  .gb-circle-card-head,
+  .gb-circle-card-foot,
+  .gb-circle-posts-slot {
+    grid-column: 1 / -1;
+  }
+  .gb-seat-ring-slot {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .gb-circle-nudge {
+    grid-column: 1;
+    grid-row: 3;
+    align-self: start;
+  }
+  .gb-challenge-body {
+    grid-column: 2;
+    grid-row: 2 / 4;
+    border-top: 0;
+    border-left: 1px solid var(--surface-3);
+    margin: 12px 0;
+  }
 }
 .gb-empty-sm {
   padding: 10px 8px;
@@ -2878,6 +3239,82 @@ body:has(.is-thinking, .gb-thinking)::after {
 .gb-kudos:disabled {
   opacity: 0.6;
 }
+/* Circle: replies under a post, one-tap picks (challenge templates, "Share a
+   win"), the standing line over a board and the leaderboard's cheer button. */
+.gb-circle-post-foot {
+  justify-content: flex-start;
+  gap: 8px;
+}
+.gb-circle-post-foot .gb-circle-post-del {
+  margin-left: auto;
+}
+.gb-circle-replies {
+  margin-top: 8px;
+  padding-left: 12px;
+  border-left: 2px solid var(--surface-3);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.gb-circle-replies-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.gb-circle-reply {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+.gb-circle-reply span {
+  flex: 1;
+  min-width: 0;
+  color: var(--fg2);
+}
+.gb-circle-presets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.gb-circle-presets-label {
+  font-size: 0.75rem;
+  color: var(--fg3);
+}
+.gb-circle-presets .gb-chip {
+  min-height: 44px;
+  padding: 6px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--fg2);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .gb-circle-presets .gb-chip:hover {
+    border-color: var(--brand);
+    color: var(--fg1);
+  }
+}
+.gb-challenge-standing {
+  margin: 4px 0 2px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--fg1);
+}
+.gb-circle-cheer {
+  margin-left: 4px;
+}
+.gb-circle-cheer.is-sent {
+  color: var(--brand);
+  opacity: 0.7;
+}
 .gb-conn-item + .gb-conn-item {
   border-top: 1px solid var(--surface-3);
 }
@@ -2887,33 +3324,139 @@ body:has(.is-thinking, .gb-thinking)::after {
   gap: 6px;
   padding: 0 16px 10px;
 }
-.gb-conn-agreement {
+.gb-agree {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+.gb-agree + .gb-agree {
+  margin-top: 2px;
+}
+.gb-agree-head {
   display: flex;
   align-items: center;
   gap: 6px;
-  width: 100%;
-  min-height: 32px;
-  padding: 4px 0;
-  border: 0;
-  background: none;
-  color: var(--fg2);
-  font: inherit;
-  font-size: 0.8125rem;
-  text-align: left;
-  cursor: pointer;
+  min-height: 28px;
+  color: var(--fg3);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
-.gb-conn-agreement span {
+.gb-agree-title {
   flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.gb-conn-agreement.is-empty {
+.gb-agree-count {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+.gb-agree-count.is-all {
+  color: var(--success);
+}
+.gb-agree-end {
+  min-height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: none;
   color: var(--fg3);
+  font: inherit;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 700;
+  cursor: pointer;
+}
+.gb-agree-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* 44px rows: the check is 30px to match habits, the row is the tap-safe height. */
+.gb-agree-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+}
+.gb-agree-item .gb-check {
+  width: 26px;
+  height: 26px;
+}
+.gb-agree-text {
+  flex: 1;
+  min-width: 0;
+  color: var(--fg1);
+  font-size: 0.875rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.gb-agree-item.is-done .gb-agree-text {
+  color: var(--fg3);
+  text-decoration: line-through;
+}
+.gb-agree-del {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--fg3);
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .gb-agree-del {
+    opacity: 0;
+  }
+  .gb-agree-item:hover .gb-agree-del,
+  .gb-agree-del:focus-visible {
+    opacity: 1;
+  }
+  .gb-agree-end:hover {
+    color: var(--danger);
+  }
+}
+.gb-agree-add {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 4px;
+}
+.gb-agree-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  font-size: 1rem; /* under 16px, iOS Safari zooms the page on focus */
 }
 .gb-conn-tools {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+/* On a phone the four tools wrapped "This week" onto a line of its own: stack
+   each icon over its label so all of them share one row. */
+@media (max-width: 480px) {
+  .gb-conn-tools {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+  .gb-conn-tools .gb-btn {
+    flex-direction: column;
+    gap: 2px;
+    min-height: 52px;
+    padding: 6px 2px;
+    font-size: 0.75rem;
+  }
 }
 .gb-week-card {
   padding: 10px 12px;
@@ -3654,6 +4197,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 .gb-badge-card,
 .gb-suggest-card,
 .gb-timeline-card,
+.gb-home-goals,
 .gb-food-week-card,
 .gb-ach-summary,
 .gb-focus-statscard {
@@ -3752,6 +4296,50 @@ body:has(.is-thinking, .gb-thinking)::after {
   font-weight: 850;
   text-transform: capitalize;
 }
+/* Morning check-in (WellnessQuick): a question and its one-tap answers per
+   row, above the tiles. Wraps on a phone rather than squeezing the buttons. */
+.gb-wellness-quick {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.gb-wellness-quick-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.gb-wellness-quick-ask {
+  color: var(--fg1);
+  font-size: 0.875rem;
+  font-weight: 750;
+}
+.gb-wellness-quick-opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+/* A one-tap nudge inside a Home card (the repeat-expense prompt, money-home.js). */
+.gb-nudge {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-top: 10px;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  color: var(--fg1);
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+.gb-nudge-opts {
+  display: flex;
+  gap: 6px;
+}
 .gb-reflect-list,
 .gb-suggest-list,
 .gb-timeline-list,
@@ -3807,6 +4395,31 @@ body:has(.is-thinking, .gb-thinking)::after {
   color: var(--fg3);
   font-size: 0.75rem;
   line-height: 1.35;
+}
+.gb-plan-time {
+  flex: none;
+  width: 3.75rem;
+  color: var(--fg2);
+  font-size: 0.75rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.gb-plan-row--pick {
+  min-height: 44px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  cursor: pointer;
+}
+.gb-plan-time-input {
+  flex: none;
+  width: 7.5rem;
+}
+.gb-plan-empty {
+  margin: 0;
+  color: var(--fg2);
+  font-size: 0.8125rem;
 }
 .gb-timeline-dot {
   width: 9px;
@@ -11241,9 +11854,13 @@ textarea:focus-visible,
 /* ---- colour swatches ---- */
 .gb-note-colors {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   margin-top: 10px;
+  /* Room for the selected ring (4px box-shadow): the sheet clips its overflow,
+     and the first swatch's ring was cut off at the left edge. */
+  padding: 4px;
 }
 .gb-note-swatch {
   display: inline-flex;
@@ -11510,6 +12127,52 @@ textarea:focus-visible,
   margin-top: 14px;
   padding-top: 14px;
   border-top: 1px solid var(--border);
+}
+/* Four equal tiles, icon over label. As wrapping pills they ran to two rows
+   with "Pin to top" left alone on the second. */
+.gb-note-modal .gb-note-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.gb-note-modal .gb-note-actions .gb-btn {
+  flex-direction: column;
+  gap: 4px;
+  min-height: 60px;
+  padding: 8px 4px;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  text-align: center;
+  white-space: normal;
+}
+.gb-note-label-sugg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.gb-note-label-sugg[hidden] {
+  display: none;
+}
+.gb-note-label-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  padding: 4px 12px 4px 8px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--fg2);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .gb-note-label-opt:hover {
+    border-style: solid;
+    color: var(--fg1);
+  }
 }
 /* One footer row instead of three stacked full-width buttons. */
 .gb-note-foot {
@@ -11809,7 +12472,8 @@ textarea:focus-visible,
 }
 /* The habit picker. `.gb-chip` had no rule anywhere, so these rendered as the
    browser's grey buttons and the picked habit looked like the others. */
-.gb-freeze-habits .gb-chip {
+.gb-freeze-habits .gb-chip,
+.gb-starter-packs .gb-chip {
   min-height: 36px;
   padding: 7px 14px;
   border: 1px solid var(--border-strong);
@@ -11826,19 +12490,35 @@ textarea:focus-visible,
     color var(--dur-fast) var(--ease-standard);
 }
 @media (hover: hover) {
-  .gb-freeze-habits .gb-chip:hover {
+  .gb-freeze-habits .gb-chip:hover,
+  .gb-starter-packs .gb-chip:hover {
     border-color: var(--brand);
     color: var(--fg1);
   }
 }
-.gb-freeze-habits .gb-chip.is-on {
+.gb-freeze-habits .gb-chip.is-on,
+.gb-starter-packs .gb-chip.is-on {
   background: var(--brand-fill);
   border-color: var(--brand-fill);
   color: var(--fg-on-brand);
 }
-.gb-freeze-habits .gb-chip:focus-visible {
+.gb-freeze-habits .gb-chip:focus-visible,
+.gb-starter-packs .gb-chip:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
+}
+/* Starter packs: the goal picker above the preview list. 44px tall, a full tap target. */
+.gb-starter-packs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0 14px;
+}
+.gb-starter-packs .gb-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
 }
 .gb-freeze-loading {
   padding: 28px 0;
@@ -12808,6 +13488,15 @@ button.gb-sound-name:focus-visible {
   display: block;
   margin-top: 6px;
 }
+/* "Usual time: 9:00 AM" under an empty Time field (UsualTimeChip, calendar.js).
+   Padded to the 44px floor; display stays the button's own so [hidden] still hides it. */
+.gb-rem-usual {
+  min-height: 44px;
+  padding: 0 2px;
+  background: none;
+  border: 0;
+  text-align: left;
+}
 
 /* Snooze on a reminder's toast and its bell card. */
 .gb-toast-action {
@@ -13462,4 +14151,38 @@ button.gb-tone-chip:focus-visible {
 .gb-voice-note {
   margin: 6px 0 0;
   color: var(--fg2);
+}
+
+/* Settings -> Money -> Bank feed (bankFeedSection in app.js). */
+.gb-bank-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.gb-bank-copy {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+}
+.gb-bank-copy > span {
+  color: var(--fg3);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+.gb-bank-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.gb-bank-actions .gb-btn,
+.gb-bank-row .gb-btn {
+  min-height: 44px;
 }

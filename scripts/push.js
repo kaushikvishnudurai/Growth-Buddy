@@ -24,6 +24,7 @@ import {
   scheduleLocalNotification,
   scheduleLocalNotifications,
   cancelPendingLocalNotifications,
+  registerNotificationActions,
   TIMER_ALARM_ID,
   SILENT_CHANNEL,
   versionedChannel,
@@ -215,7 +216,15 @@ export function upcomingReminderAlarms(reminders, now, days = HORIZON_DAYS, lead
   for (const rem of reminders || []) {
     const snoozed = rem && rem.snoozedUntil ? new Date(rem.snoozedUntil) : null;
     if (snoozed && snoozed.getTime() > now.getTime()) {
-      out.push({ title: 'Snoozed reminder', body: rem.text, at: snoozed, sound: rem.sound || null });
+      // No day: which occurrence a snooze belongs to isn't known here, so its
+      // Done just clears the card rather than guessing a day to check off.
+      out.push({
+        title: 'Snoozed reminder',
+        body: rem.text,
+        at: snoozed,
+        sound: rem.sound || null,
+        ...reminderButtons(rem, null),
+      });
     }
   }
   for (let i = 0; i < days; i++) {
@@ -248,17 +257,47 @@ export function upcomingReminderAlarms(reminders, now, days = HORIZON_DAYS, lead
         const at2 = atOn(day, hh * 60 + mm - two);
         if (at2.getTime() > now.getTime() && at2.getTime() !== at.getTime()) {
           const body2 = two ? rem.text + ' \u00b7 at ' + String(rem.time).slice(0, 5) : rem.text;
-          out.push({ title: 'Growth Buddy', body: body2, at: at2, sound: rem.sound || null });
+          out.push({ title: 'Growth Buddy', body: body2, at: at2, sound: rem.sound || null, ...reminderButtons(rem, key) });
         }
       }
       if (at.getTime() <= now.getTime()) continue;
       // A reminder can carry its own chime key; null/absent means the user's
       // default, which only `upcomingAlarms` below knows.
       const body = ahead ? rem.text + ' \u00b7 at ' + String(rem.time).slice(0, 5) : rem.text;
-      out.push({ title: 'Growth Buddy', body, at, sound: rem.sound || null });
+      out.push({ title: 'Growth Buddy', body, at, sound: rem.sound || null, ...reminderButtons(rem, key) });
     }
   }
   return out;
+}
+
+/* ---- Notification buttons ----
+   Three sets, registered on the phone by syncDeviceAlarms and named on each
+   notification by `actionTypeId`; `extra` says what a press acts on, and
+   app.js `handleNotificationAction` carries it out. A habit gets Done only when
+   one tap can finish it: a measured habit needs its number and a quit habit
+   has nothing to tick, so those stay plain cards that open the app. */
+export const ACTION_TYPES = { reminder: 'gb-reminder', habit: 'gb-habit', water: 'gb-water' };
+export const WATER_ACTION_ML = 250;
+
+/** The button sets, in the shape LocalNotifications.registerActionTypes takes. Pure. */
+export function notificationActionTypes(snoozeLabel = 'Snooze') {
+  // foreground: iOS runs the app for the press (Android always does).
+  const btn = (id, title) => ({ id, title, foreground: true });
+  return [
+    { id: ACTION_TYPES.reminder, actions: [btn('done', 'Done'), btn('snooze', snoozeLabel)] },
+    { id: ACTION_TYPES.habit, actions: [btn('done', 'Done')] },
+    { id: ACTION_TYPES.water, actions: [btn('water', '+' + WATER_ACTION_ML + ' ml')] },
+  ];
+}
+
+/** `day` is the occurrence the press checks off; null leaves Done a plain dismiss. */
+function reminderButtons(rem, day) {
+  return rem.id ? { actionTypeId: ACTION_TYPES.reminder, extra: { kind: 'reminder', id: rem.id, day } } : {};
+}
+
+/** Whether one tap finishes this habit: not a quit habit, not a measured one. */
+export function habitTickable(habit) {
+  return !!habit && habit.kind !== 'quit' && (!habit.metric || habit.metric === 'none');
 }
 
 /** The second alert's lead, or null: none set, nonsense, or the same as the first. */
@@ -322,7 +361,13 @@ export function upcomingWaterAlarms(prefs, now, days = WATER_HORIZON_DAYS) {
       if (at.getTime() <= now.getTime()) continue;
       // The hour just before this slot is one they usually drink in: no nudge.
       if (usual.has(Math.floor((m - 1) / 60))) continue;
-      out.push({ title: 'Time for water', body: 'A glass now keeps today\u2019s goal in reach.', at });
+      out.push({
+        title: 'Time for water',
+        body: 'A glass now keeps today\u2019s goal in reach.',
+        at,
+        actionTypeId: ACTION_TYPES.water,
+        extra: { kind: 'water' },
+      });
     }
   }
   return out;
@@ -348,7 +393,10 @@ export function upcomingHabitAlarms(habits, now, days = HORIZON_DAYS) {
       const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
       const at = atOn(day, hh * 60 + mm);
       if (at.getTime() <= now.getTime()) continue;
-      out.push({ title: 'Growth Buddy', body: habit.name, at, sound: habit.sound || null });
+      const buttons = habitTickable(habit)
+        ? { actionTypeId: ACTION_TYPES.habit, extra: { kind: 'habit', id: habit.id, day: dayKey(day) } }
+        : {};
+      out.push({ title: 'Growth Buddy', body: habit.name, at, sound: habit.sound || null, ...buttons });
     }
   }
   return out;
@@ -434,6 +482,9 @@ export function upcomingAlarms({ reminders, water, habits, sound, lead, quiet } 
 export async function syncDeviceAlarms(opts) {
   if (!localNotificationsAvailable()) return 0;
   if ((await localNotificationPermission()) !== 'granted') return 0;
+  // Cheap and idempotent; redone per sync because the Snooze label follows
+  // the user's snooze length.
+  await registerNotificationActions(notificationActionTypes(opts && opts.snoozeLabel));
   const queue = upcomingAlarms(opts, new Date());
   // Cancel first: an edited or deleted reminder must not keep its old alarm,
   // and rebuilding the whole set is cheaper to reason about than diffing it.

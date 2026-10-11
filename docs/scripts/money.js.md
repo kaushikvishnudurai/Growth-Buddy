@@ -11,7 +11,7 @@ The screen still sees **one doc** (`GET /api/money`), but it is stored in two pl
 `income`, `transfers` are ledger rows (`money_transactions`, last 400 days loaded) and `accounts` are
 live balances from the server; everything else is the `MoneyState` document. app.js `saveMoney` splits
 a save with `ledgerDiff(before, after)` → `POST /api/money/tx`, and `docPart(m)` → `PUT` only if changed.
-Insights are client-side heuristics; the server AI calls are the purchase advisor (`POST /api/money/advice`) and the receipt reader in `openReceiptScan` (`POST /api/money/receipt-scan` via the `requestReceiptScan` prop, which shrinks the photo with Notes' `shrinkPhoto`); both fall back to no AI, and scanned items are only rows to confirm, never saved by the scan.
+Insights are client-side heuristics; the server AI calls are the purchase advisor (`POST /api/money/advice`) and the receipt reader in `openReceiptModal` (`POST /api/money/receipt-scan` via `requestReceiptScan`, app.js's one helper handed to both ScreenMoney and Home, which shrinks the photo with Notes' `shrinkPhoto`); both fall back to no AI, and scanned items are only rows to confirm, never saved by the scan.
 The tapped-day summary (`GET /api/money/day-summary`) is rules-only on purpose: its facts are exact,
 so the AI only reworded them; the budget goes to Food, whose numbers are estimates.
 Tone rule stated at the top of the file: money framed as growth, never guilt.
@@ -22,7 +22,7 @@ Three files so the ~6k-line screen stays out of the boot chunk (boot 551,884 B -
 
 - **`money-core.js`** (boot, no imports): everything from `CUR` / `cur` / `applyCurrency` through
   `budgetStatus` — categories (`DEFAULT_CATEGORIES`, `PALETTE`, `KEYWORDS`, `mergedCats`, `catOf`,
-  `suggestCategory`), date + currency helpers (`todayKey` … `fmtDateShort`, `toHomeAmount`,
+  `predictCategory` / `suggestCategory`, see below), date + currency helpers (`todayKey` … `fmtDateShort`, `toHomeAmount`,
   `readAmount` / `readWhole`, `uid`, `clone`, `slug`), the document model (`emptyMoney`,
   `normalizeMoney`, tombstones + `removeDocItem`, `mergeMoney`), the ledger split (`LEDGER_ARRAYS`,
   `stable`, `ledgerDiff`, `applyLedgerDiff`, `docPart`) and the two engines Home reads
@@ -30,7 +30,7 @@ Three files so the ~6k-line screen stays out of the boot chunk (boot 551,884 B -
   app.js imports the model from here. `cur` is a live binding: `applyCurrency` in core sets it, money.js
   only reads it (an import can't be assigned).
 - **`money-home.js`** (boot): `MoneyHomeCard`, painted from core only. Its "Add expense" does
-  `import('./money.js')` on tap and calls `openExpenseModal` (toast on failure).
+  `import('./money.js')` on tap and calls `openExpenseModal` with the receipt scanner (toast on failure).
 - **`money.js`** (lazy chunk): imports what it uses from core, re-exports the old public names
   (`emptyMoney` … `mergeMoney`, `TOMBSTONED`, `MoneyHomeCard`) so the tests and older imports still work.
   Loaded by `SCREENS.money` and Settings' Money pane through `lazyScreen`, and on DEV boot by app.js
@@ -42,7 +42,7 @@ Three files so the ~6k-line screen stays out of the boot chunk (boot 551,884 B -
 ## Doc shape (`emptyMoney`)
 
 ```
-expenses[]  {id, amount, category, note, date, createdAt, accountId?, orig?{amount, currency, rate}, reflection?{reason, planned, satisfaction}}   ← ledger
+expenses[]  {id, amount, category, note, date, createdAt, accountId?, orig?{amount, currency, rate}, reflection?{reason, planned, satisfaction}, source?:'bank', bankMask?, mode?}   ← ledger (source 'bank' = imported by BankFeedService, id 'bank-<hash>'; the row shows a "Bank" tag and edits like any other)
 income[]    {id, amount, source:'salary'|'other', label, date, accountId?, orig?}                                       ← ledger
 transfers[] {id, amount, from?, to?, date, note}   (moving money; never spending or income. Both = between your accounts (`isMove`, the only kind in Recent moves). Only `from` = out to someone, only `to` = in from someone: the loans' one-sided moves. Never neither — MoneyLedger.toRow refuses it)     ← ledger
 accounts[]  {id, name, kind:'cash'|'bank'|'card'|'wallet', openingBalance, balance, archived}   (server's, read-only)
@@ -84,7 +84,7 @@ All keys are `YYYY-MM-DD` strings; **all range filtering is string comparison**:
 | daily tip | deterministic by day-of-month |
 | `financialHealth(money)` | 0–100; **an empty account must score 0** (no phantom points) |
 | `searchExpenses(money, q)` | NL-ish query: "how much on food last month" |
-| `logStreak` / `bestStreak` | consecutive logging days |
+| `logStreak` / `bestStreak` | consecutive logging days. A day is logged when it has an expense **or** is in `noSpendDays` (`loggedDays`); the same rule feeds the "log N days" challenge (`distinctLogDaysThisMonth`) and the health score's "Expense logging" part |
 | scenario projection | "cut X% of category for N months" |
 | `recoveryPlan` | reallocate from categories with room when over budget |
 
@@ -166,11 +166,28 @@ the Coach tab) call `shareSummary`.
   Account writes go through the injected `accountRequest`, which app.js queues behind unsent ledger writes.
 - "Paid from" / "Received in" = `accountPicker` over `segmented`; the expense modal defaults to
   `settings.lastAccountId`, bills to the first bank/card account (same rule as the WhatsApp path).
+  Its tag starts on `settings.defaultTag` when that is not `others` (every account's starting value),
+  else the newest expense's tag; typing a note still re-guesses it until a tag is picked.
   The picker lists active accounts plus `initial` when it is archived, so editing an entry never
   silently moves it. An edit is booked by `editedHomeAmount` (money-core.js): an untouched amount keeps
   `amount` + `orig` as stored, a changed one on the same account keeps the row's currency and rate,
   only a move to another account goes through `toHomeAmount`.
-- `openExpenseModal(money, save, prefillDate, existing)` also edits: same id, reflection and createdAt kept;
+- **Adding and scanning are one button.** A new expense's dialog (`openExpenseModal(money, save, prefillDate,
+  existing, scan)`, `scan` = `requestReceiptScan`) leads with "Scan a receipt": a camera pick closes it and
+  opens `openReceiptModal(money, save, scan, {file})` (module level, so Home reaches it), which scans that
+  photo at once. There is no separate Scan receipt button on Spending any more. Each receipt row is name,
+  amount, remove, and under them a tag `<select>` (`gb-money-receipt-tag`) on the predicted tag; changing
+  it by hand stops renaming from re-guessing (`r.picked`). The scan sends the user's tags
+  (`mergedCats` as `{key, label}`) and the AI tags each line from them (`MoneyService.parseReceipt`
+  keeps only a key the user has); an untagged line falls back to `suggestCategory` on its name, then
+  on the merchant. No AI: the photo stays as a reference and the rows are typed in.
+- **`predictCategory(text, history, categories)`** (money-core.js, pure; `money-category.test.mjs`) is what
+  every tag guess is (`suggestCategory(text, money)` = it over `money.expenses` + `mergedCats`): the
+  newest expense with the same note, else the one sharing the most words (an Others one only on an exact
+  note), else a tag named outright by its label, else `KEYWORDS` by whole word (or a 4+ letter prefix:
+  "chocolate" used to be Transport, from "ola"), else 'others'. A user's correction is saved on the
+  expense, so it is the next guess with nothing stored for it. Quick add can call it as is.
+- `openExpenseModal` also edits: same id, reflection and createdAt kept;
   the expense row's text is the edit button (`gb-money-exp-edit`), delete sits in the dialog and the row.
 - `weekBars(expenses, {selected, onPick, noSpendDays})`: amount over each bar, weekday + date under, "No log"
   for an empty day (worked out, not stored), "No spend" for one marked so. An outlier over 3x the next day

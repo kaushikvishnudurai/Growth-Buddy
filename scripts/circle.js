@@ -6,12 +6,28 @@ import {
   activate,
   Icon,
   Avatar,
+  Check,
   plural,
   refreshIcons,
   confirmDialog,
   openOverlay,
 } from './gb-kit.js';
 import { toast } from './toast.js';
+import {
+  CHALLENGE_TEMPLATES,
+  standingLine,
+  inviteLink,
+  inviteFromHash,
+  MAX_SEATS,
+  seatLayout,
+  presence,
+  seatOrder,
+  initials,
+  challengeDay,
+  AGREEMENT_MAX,
+  parseAgreement,
+  formatAgreement,
+} from './circle-core.js';
 
 /* Placeholder rows, so a section has its real height before the data lands.
    Every section on this screen used to start empty: the page rendered as three
@@ -718,50 +734,161 @@ function WeekCard(mApi, linkId, partnerName) {
   return el;
 }
 
-/* Under each accepted connection: the pair's agreement (either side edits it),
-   Cheer / Nudge / Message, and — mentor side only — the weekly card. */
-function LinkExtras(req, partnerName, isMentor, mApi, currentUserId) {
-  const agreementBtn = h('button', {
-    type: 'button',
-    class: 'gb-conn-agreement',
-    onclick: () =>
-      openFormModal({
-        title: 'Your agreement',
-        sub: 'What you and ' + partnerName + ' are working on. You both see it.',
-        submitLabel: 'Save',
-        fields: [
-          {
-            key: 'text',
-            label: 'Agreement',
-            placeholder: 'e.g. 30 min of DSA, 5 days a week',
-            value: req.agreement || '',
-            maxlength: 500,
-          },
-        ],
-        onSubmit: async (v, close) => {
-          const res = await mApi.setAgreement(req.id, v.text);
-          req.agreement = res && res.agreement;
-          paintAgreement();
-          close();
-        },
-      }),
+/* One link's agreement as a checklist. Either partner ticks, adds or removes an
+   item; each change saves the whole list, last writer wins, as the text did. The
+   tick paints at once and rolls back if the save fails. */
+function AgreementList(req, mApi, heading, onEnd) {
+  let items = parseAgreement(req.agreement);
+  const el = h('div', { class: 'gb-agree' });
+  const input = h('input', {
+    type: 'text',
+    class: 'gb-input gb-agree-input',
+    maxlength: 120,
+    enterkeyhint: 'done',
+    'aria-label': heading + ': add an item',
   });
-  function paintAgreement() {
-    agreementBtn.classList.toggle('is-empty', !req.agreement);
-    agreementBtn.setAttribute(
-      'aria-label',
-      req.agreement
-        ? 'Agreement: ' + req.agreement + '. Edit'
-        : 'Set your agreement with ' + partnerName
-    );
-    agreementBtn.replaceChildren(
-      Icon('target', { size: 13, sw: 2.4 }),
-      h('span', null, req.agreement || 'Set what you’re working on together'),
-      Icon('pencil', { size: 12, sw: 2.4 })
-    );
+  async function save(next) {
+    const text = formatAgreement(next);
+    if (text.length > AGREEMENT_MAX) {
+      toast.error(null, 'The list is full. Remove a finished item first.');
+      return false;
+    }
+    const before = items;
+    items = next;
+    paint();
+    try {
+      const res = await mApi.setAgreement(req.id, text || null);
+      req.agreement = res && res.agreement;
+      return true;
+    } catch (err) {
+      items = before;
+      paint();
+      toast.error(err, 'Could not save the agreement.');
+      return false;
+    }
+  }
+  const add = async () => {
+    const t = input.value.replace(/\s+/g, ' ').trim();
+    if (!t) return;
+    if (await save(items.concat({ done: false, text: t }))) input.value = '';
+    input.focus();
+  };
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      add();
+    }
+  });
+  function paint() {
+    const done = items.filter((it) => it.done).length;
+    // The example only while the list is empty: after that it's just noise.
+    input.placeholder = items.length ? 'Add a goal' : 'e.g. 30 min of DSA, 5 days a week';
+    // replaceChildren, unlike h(), writes a null child as the text "null".
+    const parts = [
+      h(
+        'div',
+        { class: 'gb-agree-head' },
+        Icon('target', { size: 13, sw: 2.4 }),
+        h('span', { class: 'gb-agree-title' }, heading),
+        items.length
+          ? h(
+              'span',
+              { class: 'gb-agree-count' + (done === items.length ? ' is-all' : '') },
+              done + '/' + items.length
+            )
+          : null,
+        onEnd ? h('button', { type: 'button', class: 'gb-agree-end', onclick: onEnd }, 'End') : null
+      ),
+      items.length
+        ? h(
+            'ul',
+            { class: 'gb-agree-list' },
+            items.map((it, i) =>
+              h(
+                'li',
+                { class: 'gb-agree-item' + (it.done ? ' is-done' : '') },
+                Check({
+                  done: it.done,
+                  label: it.text,
+                  onToggle: () =>
+                    save(items.map((x, j) => (j === i ? { ...x, done: !x.done } : x))),
+                }),
+                h('span', { class: 'gb-agree-text' }, it.text),
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    class: 'gb-agree-del',
+                    'aria-label': 'Remove ' + it.text,
+                    onclick: () => save(items.filter((_, j) => j !== i)),
+                  },
+                  Icon('x', { size: 14, sw: 2.4 })
+                )
+              )
+            )
+          )
+        : null,
+      h(
+        'div',
+        { class: 'gb-agree-add' },
+        input,
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-btn gb-btn--soft gb-btn--compact',
+            'aria-label': 'Add item',
+            onclick: add,
+          },
+          Icon('plus', { size: 14, sw: 2.6 })
+        )
+      ),
+    ];
+    el.replaceChildren(...parts.filter(Boolean));
     refreshIcons();
   }
-  paintAgreement();
+  paint();
+  return el;
+}
+
+/* Under each accepted connection: the agreement checklist, Cheer / Nudge /
+   Message, and, when I mentor them, the weekly card. `links` holds one link, or
+   two when we mentor each other: then each direction keeps its own checklist
+   (what I help with is not what they help with), but the person gets one row
+   and one set of tools instead of everything twice. */
+function LinkExtras(links, partnerName, mApi, currentUserId, onRevoke) {
+  const mutual = links.length > 1;
+  const lists = links.map(({ req, iMentor }) =>
+    AgreementList(
+      req,
+      mApi,
+      !mutual
+        ? 'Your agreement'
+        : iMentor
+          ? 'You help ' + partnerName + ' with'
+          : partnerName + ' helps you with',
+      mutual && onRevoke
+        ? async () => {
+            const ok = await confirmDialog({
+              title: iMentor
+                ? 'Stop mentoring ' + partnerName + '?'
+                : 'Stop being mentored by ' + partnerName + '?',
+              message: 'The other direction stays as it is.',
+              confirmLabel: 'End',
+              cancelLabel: 'Keep',
+              danger: true,
+            });
+            if (ok) onRevoke(req.id);
+          }
+        : null
+    )
+  );
+  // Both partners must open the SAME thread, so a mutual pair talks on the link
+  // with the smaller id, which both sides compute alike.
+  // ponytail: messages already sent on the other link stay on it, unshown here.
+  const req = links.map((l) => l.req).sort((a, b) => String(a.id).localeCompare(String(b.id)))[0];
+  const mentorLink = links.find((l) => l.iMentor);
+  const isMentor = !!mentorLink;
 
   const tool = (icon, label, onclick, extra) =>
     h(
@@ -780,7 +907,7 @@ function LinkExtras(req, partnerName, isMentor, mApi, currentUserId) {
         const open = weekBtn.getAttribute('aria-expanded') !== 'true';
         weekBtn.setAttribute('aria-expanded', String(open));
         // Refetched on every open: it's a live number, and one request per tap.
-        weekSlot.replaceChildren(...(open ? [WeekCard(mApi, req.id, partnerName)] : []));
+        weekSlot.replaceChildren(...(open ? [WeekCard(mApi, mentorLink.req.id, partnerName)] : []));
       },
       { 'aria-expanded': 'false' }
     );
@@ -788,7 +915,7 @@ function LinkExtras(req, partnerName, isMentor, mApi, currentUserId) {
   return h(
     'div',
     { class: 'gb-conn-extra' },
-    agreementBtn,
+    ...lists,
     h(
       'div',
       { class: 'gb-conn-tools' },
@@ -962,10 +1089,35 @@ function openSearchModal({ onBrowse, onSearch, onOffer, onRequest, onView, curre
 
 /* Minimal styled modal with a list of text/number fields; resolves the entered
    values via onSubmit. Reuses the app's modal CSS (see openNoteModal above). */
-function openFormModal({ title, sub, fields, submitLabel, onSubmit }) {
+function openFormModal({ title, sub, fields, submitLabel, onSubmit, presets }) {
   const { sheet, close } = openOverlay({ label: title });
   const inputs = {};
   const fieldNodes = [];
+  // One-tap presets ({label, values}) fill every field they name; the submit
+  // button still sends, so what goes out is on screen first.
+  if (presets && presets.length) {
+    fieldNodes.push(
+      h(
+        'div',
+        { class: 'gb-circle-presets', role: 'group', 'aria-label': 'Quick picks' },
+        presets.map((p) =>
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-chip',
+              onclick: () => {
+                Object.keys(p.values).forEach((k) => {
+                  if (inputs[k]) inputs[k].value = String(p.values[k]);
+                });
+              },
+            },
+            p.label
+          )
+        )
+      )
+    );
+  }
   fields.forEach((f) => {
     if (f.type === 'checkbox') {
       // A yes/no field: label and box on one line, value read as a boolean.
@@ -1058,12 +1210,116 @@ function openFormModal({ title, sub, fields, submitLabel, onSubmit }) {
  * leaderboard (members ranked by the challenge's metric — habit check-ins, focus
  * minutes or water-goal days — over the window; a future start shows "Upcoming").
  */
-function ChallengesPanel({ api, currentUserId }) {
+/* ---- The seat ring ----
+   The circle drawn as its members: a seat each around a ring, the circle's name
+   in the middle. A seat glows when that member has checked in today (their own
+   today), sits as ash when they haven't, and is blank for someone who keeps
+   progress private. The track fills by the share who are in. Tapping someone
+   else's seat cheers them (once a day per pair, server-side). The seats light in
+   turn once, on first paint; prefers-reduced-motion skips it (app.css). */
+const RING_R = 40; // percent of the ring's box; the SVG track uses the same
+function SeatRing({ circle, members, currentUserId, onCheer, cheered }) {
+  const ordered = seatOrder(members, currentUserId);
+  const overflow = ordered.length > MAX_SEATS ? ordered.length - (MAX_SEATS - 1) : 0;
+  const seated = overflow ? ordered.slice(0, MAX_SEATS - 1) : ordered;
+  const spots = seatLayout(seated.length + (overflow ? 1 : 0), RING_R);
+  const p = presence(members, currentUserId);
+  // Lit seats over all seats (a private seat is a sector too), so the arc ends on a seat boundary.
+  const share = ordered.length ? p.lit / ordered.length : 0;
+
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 100 100');
+  svg.setAttribute('class', 'gb-seat-track');
+  svg.setAttribute('aria-hidden', 'true');
+  // Start half a seat before twelve o'clock, so the fill spans whole seats.
+  // Rotated inside the SVG: rotating the element itself made its box a tilted
+  // square wider than the screen.
+  const g = document.createElementNS(NS, 'g');
+  g.setAttribute('transform', 'rotate(' + (-90 - 180 / Math.max(1, spots.length)) + ' 50 50)');
+  svg.appendChild(g);
+  const C = 2 * Math.PI * RING_R;
+  [
+    ['gb-seat-track-bg', 0],
+    ['gb-seat-track-fill', C * (1 - share)],
+  ].forEach(([cls, off]) => {
+    const ci = document.createElementNS(NS, 'circle');
+    ci.setAttribute('cx', '50');
+    ci.setAttribute('cy', '50');
+    ci.setAttribute('r', String(RING_R));
+    ci.setAttribute('class', cls);
+    ci.style.setProperty('--len', String(C));
+    ci.style.setProperty('--off', String(off));
+    g.appendChild(ci);
+  });
+
+  const seat = (m, i) => {
+    const me = m.userId === currentUserId;
+    const state = m.doneToday == null ? 'private' : m.doneToday > 0 ? 'lit' : 'ash';
+    const said =
+      state === 'private' ? 'keeps progress private' : state === 'lit' ? 'checked in today' : 'not checked in yet';
+    const name = me ? 'You' : m.name;
+    const attrs = {
+      class: 'gb-seat is-' + state + (me ? ' is-me' : '') + (cheered.has(m.userId) ? ' is-cheered' : ''),
+      style: { left: spots[i].x + '%', top: spots[i].y + '%', '--i': String(i) },
+      title: name + ', ' + said,
+    };
+    const label = h('span', { class: 'gb-seat-initials', 'aria-hidden': 'true' }, initials(m.name));
+    if (me || !onCheer) {
+      return h('span', { ...attrs, role: 'img', 'aria-label': name + ', ' + said }, label);
+    }
+    return h(
+      'button',
+      {
+        ...attrs,
+        type: 'button',
+        'aria-label': cheered.has(m.userId) ? 'Cheered ' + m.name + ' today' : 'Cheer ' + m.name + ' on, ' + said,
+        onclick: (e) => onCheer(m, e.currentTarget),
+      },
+      label
+    );
+  };
+
+  const ringEl = h(
+    'div',
+    {
+      class: 'gb-seat-ring',
+      role: 'group',
+      'aria-label': circle.name + ': ' + (p.known ? p.lit + ' of ' + p.known + ' checked in today' : 'members'),
+    },
+    svg,
+    h(
+      'div',
+      { class: 'gb-seat-core' },
+      h('h3', { class: 'gb-seat-name' }, circle.name),
+      h(
+        'div',
+        { class: 'gb-seat-count' },
+        p.known ? p.lit + ' of ' + p.known + ' in today' : plural(members.length, 'member')
+      )
+    ),
+    ...seated.map(seat),
+    overflow
+      ? h(
+          'span',
+          {
+            class: 'gb-seat is-more',
+            style: { left: spots[seated.length].x + '%', top: spots[seated.length].y + '%', '--i': String(seated.length) },
+            role: 'img',
+            'aria-label': overflow + ' more members',
+          },
+          '+' + overflow
+        )
+      : null
+  );
+  // Light the seats once, after first paint, so the sequence is seen.
+  requestAnimationFrame(() => requestAnimationFrame(() => ringEl.classList.add('is-on')));
+  return ringEl;
+}
+
+function ChallengesPanel({ api, currentUserId, wins }) {
   const el = h('div', { class: 'gb-challenges' }, sectionSkeleton(1));
 
-  // Gold, silver, bronze for the top three; the rest keep their number. These
-  // shades clear 3:1 on both light and dark cards (the 500s fade out on white).
-  const MEDAL_COLOR = { 1: 'var(--sun-700)', 2: 'var(--warm-500)', 3: 'var(--coral-600)' };
   // What a challenge counts (ChallengeMetrics.Metric server-side). A challenge
   // from before the column has no metric and counted check-ins.
   const METRICS = {
@@ -1084,6 +1340,36 @@ function ChallengesPanel({ api, currentUserId }) {
     },
   };
   const metricOf = (c) => METRICS[c && c.metric] || METRICS.habit_checkins;
+
+  /* One tap: a bell card for that member. The server allows one per pair per
+     day, and the button says so by going quiet once sent. */
+  function cheerButton(circleId, member) {
+    const btn = h(
+      'button',
+      {
+        type: 'button',
+        class: 'gb-iconbtn gb-circle-cheer',
+        'aria-label': 'Cheer ' + member.name + ' on',
+        title: 'Cheer on',
+        onclick: async () => {
+          if (btn.disabled) return;
+          btn.disabled = true;
+          try {
+            await api.cheer(circleId, member.userId);
+            btn.classList.add('is-sent');
+            btn.setAttribute('aria-label', 'Cheered ' + member.name);
+            toast.success('Cheered ' + member.name + ' on.');
+          } catch (err) {
+            btn.disabled = false;
+            toast.error(err, 'Could not send that cheer.');
+          }
+        },
+      },
+      Icon('sparkles', { size: 14, sw: 2.4 })
+    );
+    return btn;
+  }
+
   function leaderboardRows(entries, c) {
     const metric = metricOf(c);
     if (c && c.startDate > localISO()) {
@@ -1092,23 +1378,28 @@ function ChallengesPanel({ api, currentUserId }) {
     if (!entries || !entries.length) {
       return [h('div', { class: 'gb-empty-sm' }, metric.empty)];
     }
-    return entries
-      .slice(0, 10)
-      .map((m) =>
-        h(
-          'div',
-          { class: 'gb-lb-row' + (m.userId === currentUserId ? ' is-me' : '') },
-          m.rank <= 3
-            ? h(
-                'span',
-                { class: 'gb-lb-rank', 'aria-label': 'Rank ' + m.rank, title: 'Rank ' + m.rank },
-                Icon('medal', { size: 18, sw: 2.2, color: MEDAL_COLOR[m.rank] })
-              )
-            : h('span', { class: 'gb-lb-rank' }, '#' + m.rank),
-          h('span', { class: 'gb-lb-name' }, m.userId === currentUserId ? 'You' : m.name),
-          h('span', { class: 'gb-lb-val' }, metric.unit(m.value))
-        )
-      );
+    // The rank is the board's own number: a tie shares it. Cheering lives on
+    // the seats above, so a row is read, not tapped.
+    return entries.slice(0, 10).map((m) =>
+      h(
+        'div',
+        { class: 'gb-lb-row' + (m.userId === currentUserId ? ' is-me' : '') + (m.rank === 1 ? ' is-lead' : '') },
+        h('span', { class: 'gb-lb-rank', 'aria-label': 'Rank ' + m.rank }, String(m.rank)),
+        h('span', { class: 'gb-lb-name' }, m.userId === currentUserId ? 'You' : m.name),
+        h('span', { class: 'gb-lb-val' }, metric.unit(m.value))
+      )
+    );
+  }
+
+  /* "Habit check-ins · Day 1 of 7 · ends Sat 17 Oct" — where the window is, in words. */
+  function challengeMeta(c, upcoming) {
+    const day = challengeDay(c.startDate, c.endDate, localISO());
+    const when = upcoming
+      ? 'starts ' + shortDay(c.startDate)
+      : day
+        ? 'Day ' + day.day + ' of ' + day.total + ' · ends ' + shortDay(c.endDate)
+        : 'ended ' + shortDay(c.endDate);
+    return metricOf(c).label + ' · ' + when;
   }
 
   function challengeBlock(c) {
@@ -1127,11 +1418,13 @@ function ChallengesPanel({ api, currentUserId }) {
           c.active ? 'Active' : upcoming ? 'Upcoming' : 'Ended'
         )
       ),
-      h(
-        'div',
-        { class: 'gb-challenge-dates' },
-        metricOf(c).label + ' · ' + c.startDate + ' → ' + c.endDate
-      ),
+      h('div', { class: 'gb-challenge-dates' }, challengeMeta(c, upcoming)),
+      (() => {
+        const line = upcoming
+          ? null
+          : standingLine(c.leaderboard, currentUserId, metricOf(c).unit, !c.active);
+        return line ? h('div', { class: 'gb-challenge-standing' }, line) : null;
+      })(),
       h('div', { class: 'gb-lb' }, ...leaderboardRows(c.leaderboard, c)),
       // Members with progress sharing off (Settings → Privacy) are left off the
       // board server-side; say so, or the roster just looks short.
@@ -1152,6 +1445,10 @@ function ChallengesPanel({ api, currentUserId }) {
       title: 'Start a challenge',
       sub: 'Pick what counts. Most over the window wins.',
       submitLabel: 'Start',
+      presets: CHALLENGE_TEMPLATES.map((t) => ({
+        label: t.label,
+        values: { title: t.title, metric: t.metric, days: t.days },
+      })),
       fields: [
         {
           key: 'title',
@@ -1244,11 +1541,13 @@ function ChallengesPanel({ api, currentUserId }) {
       list.replaceChildren();
       rows.forEach((m) => {
         const isMe = m.userId === currentUserId;
+        const cheer = !isMe && api.cheer ? cheerButton(c.id, m) : null;
         const tools =
           c.owner && !isMe
             ? h(
                 'div',
                 { class: 'gb-request-actions' },
+                cheer,
                 h(
                   'button',
                   {
@@ -1316,7 +1615,7 @@ function ChallengesPanel({ api, currentUserId }) {
               h('div', { class: 'gb-circle-name' }, isMe ? 'You' : m.name),
               h('div', { class: 'gb-circle-sub' }, m.role === 'owner' ? 'Owner' : 'Member')
             ),
-            tools
+            tools || cheer
           )
         );
       });
@@ -1407,6 +1706,7 @@ function ChallengesPanel({ api, currentUserId }) {
                 h('strong', null, c.joinCode)
               )
             : null,
+          action('Share invite link', 'share-2', 'gb-btn--soft', () => shareInvite(c)),
           action('Members', 'users', 'gb-btn--soft', () => {
             close();
             openMembers(c, onChanged);
@@ -1421,6 +1721,42 @@ function ChallengesPanel({ api, currentUserId }) {
       )
     );
     refreshIcons();
+  }
+
+  /* The link joins in one tap (inviteFromHash on the far side). The OS share
+     sheet where there is one, else the clipboard. */
+  async function shareInvite(c) {
+    const url = inviteLink(window.location.href, c);
+    const text = 'Join my circle ' + c.name + ' on Growth Buddy';
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: c.name, text, url });
+        return;
+      }
+      await navigator.clipboard.writeText(text + ': ' + url);
+      toast.success('Invite link copied.');
+    } catch (err) {
+      if (err && err.name === 'AbortError') return; // closed the share sheet
+      toast.error(
+        err,
+        'Could not share the link. The code is ' + (c.joinCode || 'not needed: it is public') + '.'
+      );
+    }
+  }
+
+  /* Opened from an invite link: join, show the card, and drop the link's
+     query so a reload doesn't try again. Already a member is a quiet no-op. */
+  async function joinFromLink() {
+    const invite = inviteFromHash(window.location.hash);
+    if (!invite) return;
+    history.replaceState(null, '', window.location.pathname + window.location.search + '#/circle');
+    try {
+      const joined = invite.code ? await api.joinByCode(invite.code) : await api.join(invite.id);
+      if (!el.querySelector('[data-circle-id="' + joined.id + '"]')) addCard(joined);
+      toast.success('You joined ' + joined.name + '.');
+    } catch (err) {
+      toast.error(err, 'That invite link did not work. Ask for a fresh one.');
+    }
   }
 
   function removeCard(cardEl) {
@@ -1457,6 +1793,30 @@ function ChallengesPanel({ api, currentUserId }) {
       placeholder: 'Share an update with the circle…',
       'aria-label': 'Write a post',
     });
+    // Wins worth sharing, from the user's own habits and goals: a tap fills the
+    // box, Post sends it. Nothing is posted without that second tap.
+    const winLinesNow = typeof wins === 'function' ? wins() : [];
+    const winChips = winLinesNow.length
+      ? h(
+          'div',
+          { class: 'gb-circle-presets', role: 'group', 'aria-label': 'Share a win' },
+          h('span', { class: 'gb-circle-presets-label' }, 'Share a win'),
+          winLinesNow.map((line) =>
+            h(
+              'button',
+              {
+                type: 'button',
+                class: 'gb-chip',
+                onclick: () => {
+                  input.value = line;
+                  input.focus();
+                },
+              },
+              line
+            )
+          )
+        )
+      : null;
     const send = h(
       'button',
       {
@@ -1553,6 +1913,25 @@ function ChallengesPanel({ api, currentUserId }) {
             Icon('trash-2', { size: 14, sw: 2.4 })
           )
         : null;
+      const thread = h('div', { class: 'gb-circle-replies', hidden: true });
+      const replyBtn = h(
+        'button',
+        { type: 'button', class: 'gb-kudos', 'aria-expanded': 'false' },
+        Icon('message-circle', { size: 14, sw: 2.4 }),
+        h('span', null, String(p.comments || 0))
+      );
+      replyBtn.setAttribute('aria-label', 'Replies (' + (p.comments || 0) + ')');
+      replyBtn.onclick = () => {
+        const open = replyBtn.getAttribute('aria-expanded') !== 'true';
+        replyBtn.setAttribute('aria-expanded', String(open));
+        thread.hidden = !open;
+        if (open && !thread.firstChild)
+          RepliesThread(p, thread, (n) => {
+            p.comments = n;
+            replyBtn.lastChild.textContent = String(n);
+            replyBtn.setAttribute('aria-label', 'Replies (' + n + ')');
+          });
+      };
       return h(
         'div',
         { class: 'gb-circle-post' },
@@ -1570,8 +1949,103 @@ function ChallengesPanel({ api, currentUserId }) {
           )
         ),
         h('div', { class: 'gb-circle-post-body' }, p.body),
-        h('div', { class: 'gb-circle-post-foot' }, kudosBtn, delBtn)
+        h('div', { class: 'gb-circle-post-foot' }, kudosBtn, replyBtn, delBtn),
+        thread
       );
+    }
+    /* A post's replies, oldest first, with a one-line composer. Fetched when
+       first opened; `onCount` keeps the post's reply count in step. */
+    function RepliesThread(p, box, onCount) {
+      let rows = [];
+      const listEl = h(
+        'div',
+        { class: 'gb-circle-replies-list' },
+        h('div', { class: 'gb-empty-sm' }, 'Loading…')
+      );
+      const field = h('input', {
+        type: 'text',
+        class: 'gb-input',
+        maxlength: '500',
+        placeholder: 'Reply…',
+        'aria-label': 'Write a reply',
+      });
+      const sendBtn = h(
+        'button',
+        { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--compact' },
+        'Reply'
+      );
+      async function sendReply() {
+        const body = field.value.trim();
+        if (!body || sendBtn.disabled) return;
+        sendBtn.disabled = true;
+        try {
+          rows = rows.concat(await api.createComment(c.id, p.id, body));
+          field.value = '';
+          paint();
+        } catch (err) {
+          toast.error(err, 'Could not send that reply.');
+        } finally {
+          sendBtn.disabled = false;
+        }
+      }
+      sendBtn.onclick = sendReply;
+      field.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          sendReply();
+        }
+      });
+      function paint() {
+        onCount(rows.length);
+        listEl.replaceChildren();
+        if (!rows.length) {
+          listEl.appendChild(h('div', { class: 'gb-empty-sm' }, 'No replies yet.'));
+          return;
+        }
+        rows.forEach((r) => {
+          const mine = r.userId === currentUserId;
+          listEl.appendChild(
+            h(
+              'div',
+              { class: 'gb-circle-reply' },
+              h('strong', null, mine ? 'You' : r.authorName || 'Member'),
+              h('span', null, r.body),
+              mine || c.owner
+                ? h(
+                    'button',
+                    {
+                      type: 'button',
+                      class: 'gb-iconbtn gb-circle-post-del',
+                      'aria-label': 'Delete reply',
+                      title: 'Delete',
+                      onclick: async () => {
+                        try {
+                          await api.deleteComment(c.id, p.id, r.id);
+                          rows = rows.filter((x) => x.id !== r.id);
+                          paint();
+                        } catch (err) {
+                          toast.error(err, 'Could not delete that reply.');
+                        }
+                      },
+                    },
+                    Icon('trash-2', { size: 13, sw: 2.4 })
+                  )
+                : null
+            )
+          );
+        });
+        refreshIcons();
+      }
+      api
+        .listComments(c.id, p.id)
+        .then((list) => {
+          rows = list || [];
+          paint();
+        })
+        .catch(() =>
+          listEl.replaceChildren(h('div', { class: 'gb-empty-sm' }, 'Could not load replies.'))
+        );
+      box.append(listEl, h('div', { class: 'gb-circle-composer' }, field, sendBtn));
     }
     function load(before) {
       api
@@ -1601,13 +2075,17 @@ function ChallengesPanel({ api, currentUserId }) {
     return h(
       'div',
       { class: 'gb-circle-posts' },
+      winChips,
       h('div', { class: 'gb-circle-composer' }, input, send),
       list,
       more
     );
   }
 
-  function circleCard(c) {
+  /* One circle: the seat ring (who is in today), one line to act on it, the
+     challenges, then the circle's posts. `openPosts` opens the feed at once
+     (the first circle on the screen); the rest open on demand, one fetch each. */
+  function circleCard(c, { openPosts = false } = {}) {
     const body = h(
       'div',
       { class: 'gb-challenge-body' },
@@ -1618,16 +2096,34 @@ function ChallengesPanel({ api, currentUserId }) {
         .listChallenges(c.id)
         .then((list) => {
           body.replaceChildren();
-          if (!list || !list.length) {
-            body.appendChild(h('div', { class: 'gb-empty-sm' }, 'No challenges yet — start one!'));
+          // The one running now leads; the rest follow, newest first as served.
+          const ordered = (list || []).slice().sort((a, b) => Number(!!b.active) - Number(!!a.active));
+          if (!ordered.length) {
+            body.appendChild(
+              h(
+                'div',
+                { class: 'gb-challenge-empty' },
+                h('p', null, 'No challenge running. Pick one and everyone’s check-ins count from today.'),
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    class: 'gb-btn gb-btn--soft gb-btn--compact',
+                    onclick: () => startChallenge(c.id, loadChallenges),
+                  },
+                  Icon('flag', { size: 14, sw: 2.4 }),
+                  'Start a challenge'
+                )
+              )
+            );
           } else {
-            list.forEach((c2) => body.appendChild(challengeBlock(c2)));
+            ordered.forEach((c2) => body.appendChild(challengeBlock(c2)));
           }
           refreshIcons();
         })
         .catch(() =>
           body.replaceChildren(
-            h('div', { class: 'gb-empty-sm' }, 'Could not load challenges.'),
+            h('div', { class: 'gb-empty-sm' }, 'Couldn’t load challenges.'),
             h(
               'button',
               {
@@ -1642,12 +2138,108 @@ function ChallengesPanel({ api, currentUserId }) {
     }
     loadChallenges();
 
+    // Who is in today: the ring, and the one action it suggests.
+    const cheered = new Set(); // members cheered from this card today
+    let members = [];
+    const ringSlot = h(
+      'div',
+      { class: 'gb-seat-ring-slot' },
+      h('div', { class: 'gb-seat-ring is-loading', 'aria-hidden': 'true' })
+    );
+    const nudgeSlot = h('div', { class: 'gb-circle-nudge' });
+
+    async function cheerOne(m) {
+      await api.cheer(c.id, m.userId);
+      cheered.add(m.userId);
+    }
+    async function onSeat(m, btn) {
+      if (cheered.has(m.userId) || btn.disabled) return;
+      btn.disabled = true;
+      try {
+        await cheerOne(m);
+        toast.success('Cheered ' + m.name + ' on.');
+        paintRing();
+      } catch (err) {
+        btn.disabled = false;
+        toast.error(err, 'Couldn’t send that cheer.');
+      }
+    }
+    function paintNudge() {
+      const p = presence(members, currentUserId);
+      const quiet = p.quiet.filter((m) => !cheered.has(m.userId));
+      nudgeSlot.replaceChildren();
+      if (!p.known) return;
+      if (!quiet.length) {
+        nudgeSlot.appendChild(
+          h(
+            'p',
+            { class: 'gb-circle-nudge-line' },
+            p.lit === p.known
+              ? 'Everyone’s in today.'
+              : p.quiet.length
+                ? 'You’ve cheered everyone still to check in.'
+                : p.meIn
+                  ? 'You’re in. Nobody else has checked in yet.'
+                  : 'You’re the one still to check in today.'
+          )
+        );
+        return;
+      }
+      const btn = h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--primary gb-btn--compact gb-circle-nudge-btn',
+          onclick: async () => {
+            if (btn.disabled) return;
+            btn.disabled = true;
+            let sent = 0;
+            for (const m of quiet) {
+              try {
+                await cheerOne(m);
+                sent++;
+              } catch (_) {
+                /* already cheered today, or the daily cap: the rest still go */
+              }
+            }
+            if (sent) toast.success('Cheered ' + plural(sent, 'person', 'people') + ' on.');
+            else toast.error(null, 'Couldn’t send those cheers. You may have cheered them already today.');
+            paintRing();
+          },
+        },
+        Icon('sparkles', { size: 14, sw: 2.4 }),
+        quiet.length === 1 ? 'Cheer ' + quiet[0].name.split(' ')[0] + ' on' : 'Cheer the ' + quiet.length + ' still to check in'
+      );
+      nudgeSlot.appendChild(btn);
+    }
+    function paintRing() {
+      ringSlot.replaceChildren(
+        SeatRing({ circle: c, members, currentUserId, onCheer: api.cheer ? onSeat : null, cheered })
+      );
+      if (api.cheer) paintNudge();
+      refreshIcons();
+    }
+    function loadMembers() {
+      api
+        .listMembers(c.id)
+        .then((list) => {
+          members = list || [];
+          // Today's one cheer per person, as the server counts it: a reload
+          // must not offer a cheer it would refuse.
+          members.forEach((m) => m.cheeredByMe && cheered.add(m.userId));
+          paintRing();
+        })
+        .catch(() => {
+          ringSlot.replaceChildren(h('h3', { class: 'gb-circle-name gb-circle-name--plain' }, c.name));
+        });
+    }
+    loadMembers();
+
     const subEl = h('div', { class: 'gb-circle-sub' });
     const paintSub = () => {
       subEl.textContent =
         (c.visibility === 'private' ? 'Private · ' : '') +
-        plural(c.memberCount, 'member') +
-        (c.owner ? ' · Owner' : '');
+        plural(c.memberCount, 'member');
     };
     paintSub();
 
@@ -1660,17 +2252,19 @@ function ChallengesPanel({ api, currentUserId }) {
         type: 'button',
         class: 'gb-btn gb-btn--ghost gb-btn--compact',
         'aria-expanded': 'false',
-        onclick: () => {
-          const open = postsBtn.getAttribute('aria-expanded') !== 'true';
-          postsBtn.setAttribute('aria-expanded', String(open));
-          if (open && !feed) feed = PostsFeed(c);
-          postsSlot.replaceChildren(...(open ? [feed] : []));
-          refreshIcons();
-        },
+        onclick: () => togglePosts(),
       },
       Icon('message-circle', { size: 14, sw: 2.4 }),
-      'Posts'
+      h('span', null, 'Show posts')
     );
+    function togglePosts(force) {
+      const open = force !== undefined ? force : postsBtn.getAttribute('aria-expanded') !== 'true';
+      postsBtn.setAttribute('aria-expanded', String(open));
+      postsBtn.lastChild.textContent = open ? 'Hide posts' : 'Show posts';
+      if (open && !feed) feed = PostsFeed(c);
+      postsSlot.replaceChildren(...(open ? [feed] : []));
+      refreshIcons();
+    }
 
     const card = h(
       'div',
@@ -1678,7 +2272,7 @@ function ChallengesPanel({ api, currentUserId }) {
       h(
         'div',
         { class: 'gb-circle-card-head' },
-        h('div', { style: { minWidth: 0 } }, h('div', { class: 'gb-circle-name' }, c.name), subEl),
+        subEl,
         h(
           'div',
           { class: 'gb-circle-card-tools' },
@@ -1686,18 +2280,18 @@ function ChallengesPanel({ api, currentUserId }) {
             'button',
             {
               type: 'button',
-              class: 'gb-btn gb-btn--soft gb-btn--compact',
+              class: 'gb-btn gb-btn--ghost gb-btn--compact',
               onclick: () => startChallenge(c.id, loadChallenges),
             },
             Icon('flag', { size: 14, sw: 2.4 }),
-            'Start challenge'
+            'New challenge'
           ),
           h(
             'button',
             {
               type: 'button',
               class: 'gb-iconbtn',
-              'aria-label': 'Circle options',
+              'aria-label': 'Options for ' + c.name,
               title: 'Options',
               onclick: () => openCircleMenu(c, card, paintSub),
             },
@@ -1705,10 +2299,13 @@ function ChallengesPanel({ api, currentUserId }) {
           )
         )
       ),
+      ringSlot,
+      nudgeSlot,
       body,
       h('div', { class: 'gb-circle-card-foot' }, postsBtn),
       postsSlot
     );
+    if (openPosts) togglePosts(true);
     return card;
   }
 
@@ -1721,25 +2318,57 @@ function ChallengesPanel({ api, currentUserId }) {
   }
 
   function refresh() {
-    api
+    return api
       .listMine()
       .then((mine) => {
         el.replaceChildren();
         if (!mine || !mine.length) {
+          // An empty ring: what a circle will look like once people are in it.
+          const spots = seatLayout(5, RING_R);
           el.appendChild(
             h(
               'div',
-              { class: 'gb-card' },
+              { class: 'gb-card gb-circle-empty' },
               h(
                 'div',
-                { class: 'gb-empty' },
-                Icon('trophy', { size: 26, color: 'var(--fg3)' }),
-                h('p', null, 'Join or create a circle to run habit challenges with friends.')
+                { class: 'gb-seat-ring is-on gb-seat-ring--empty', 'aria-hidden': 'true' },
+                h(
+                  'div',
+                  { class: 'gb-seat-core' },
+                  h('div', { class: 'gb-seat-name' }, 'Your circle')
+                ),
+                ...spots.map((pt, i) =>
+                  h('span', {
+                    class: 'gb-seat ' + (i === 0 ? 'is-lit' : 'is-ash'),
+                    style: { left: pt.x + '%', top: pt.y + '%', '--i': String(i) },
+                  })
+                )
+              ),
+              h('h3', { class: 'gb-circle-empty-title' }, 'Start a circle'),
+              h(
+                'p',
+                { class: 'gb-circle-empty-copy' },
+                'A few friends, one habit. Each seat lights up when that person checks in, and one tap cheers on whoever hasn’t.'
+              ),
+              h(
+                'div',
+                { class: 'gb-circle-empty-actions' },
+                h(
+                  'button',
+                  { type: 'button', class: 'gb-btn gb-btn--primary gb-btn--compact', onclick: newCircle },
+                  Icon('plus', { size: 14, sw: 2.6 }),
+                  'New circle'
+                ),
+                h(
+                  'button',
+                  { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--compact', onclick: openBrowse },
+                  'Find one to join'
+                )
               )
             )
           );
         } else {
-          mine.forEach((c) => el.appendChild(circleCard(c)));
+          mine.forEach((c, i) => el.appendChild(circleCard(c, { openPosts: i === 0 })));
         }
         refreshIcons();
       })
@@ -1768,16 +2397,17 @@ function ChallengesPanel({ api, currentUserId }) {
       });
   }
 
-  refresh();
+  // After the first load, so a joined circle isn't painted over by the list.
+  refresh().then(joinFromLink);
 
   const actions = h(
     'div',
     { class: 'gb-challenges-actions' },
     h(
       'button',
-      { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--compact', onclick: openBrowse },
+      { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--compact', onclick: openBrowse, 'aria-label': 'Browse circles' },
       Icon('search', { size: 14, sw: 2.4 }),
-      'Browse'
+      h('span', { class: 'gb-circle-browse-label' }, 'Browse')
     ),
     h(
       'button',
@@ -1881,6 +2511,7 @@ function ScreenCircle({
   challengesApi,
   mentorshipApi,
   currentUserId,
+  wins,
 }) {
   const outgoingEl = h('div', { class: 'gb-circle-section' }, sectionSkeleton(1));
   // Pending invites TO me. Empty (no heading at all) until there is one.
@@ -1995,38 +2626,80 @@ function ScreenCircle({
        two are different jobs, so they get different boxes. */
     const iMentor = (item) =>
       item.side === 'outgoing' ? item.req.direction === 'offer' : item.req.direction !== 'offer';
-    const row = (item) => {
-      const r =
-        item.side === 'incoming'
-          ? IncomingRow(item.req, onLoadStatus, onRevoke ? revokeAndRefresh : null)
-          : OutgoingRow(item.req, onLoadStatus, onRevoke ? revokeAndRefresh : null);
+    const baseRow = (item) =>
+      item.side === 'incoming'
+        ? IncomingRow(item.req, onLoadStatus, onRevoke ? revokeAndRefresh : null)
+        : OutgoingRow(item.req, onLoadStatus, onRevoke ? revokeAndRefresh : null);
+    // One entry per person. Mentoring each other is two links, and listing that
+    // person in both boxes with two toolbars read as the same row twice.
+    const people = new Map();
+    accepted.forEach((item) => {
+      const p = people.get(item.partnerId) || { ...item, links: [] };
+      p.links.push({ ...item, iMentor: iMentor(item) });
+      people.set(item.partnerId, p);
+    });
+    const entries = [...people.values()].map((p) => ({ ...p, mutual: p.links.length > 1 }));
+    const row = (p) => {
+      const r = p.mutual ? MutualRow(p) : baseRow(p.links[0]);
       if (!mentorshipApi) return r;
       return h(
         'div',
         { class: 'gb-conn-item' },
         r,
-        LinkExtras(item.req, item.partnerName, iMentor(item), mentorshipApi, currentUserId)
+        LinkExtras(
+          p.links,
+          p.partnerName,
+          mentorshipApi,
+          currentUserId,
+          onRevoke ? revokeAndRefresh : null
+        )
       );
     };
+    // The person's row for a mutual pair: their progress opens from the link
+    // where I'm the mentor, and each direction ends from its own checklist.
+    function MutualRow(p) {
+      const mine = p.links.find((l) => l.iMentor).req;
+      const pill = CheckPill(mine);
+      return h(
+        'div',
+        {
+          class: 'gb-row is-clickable',
+          ...activate(() =>
+            showPartnerStatus(p.partnerId, p.partnerName, onLoadStatus, () => {
+              mine.checkedAt = new Date().toISOString();
+              paintCheckPill(pill, mine);
+              refreshIcons();
+            })
+          ),
+        },
+        Avatar({ name: p.partnerName, bg: 'var(--iris-100)', fg: 'var(--iris-700)' }),
+        h(
+          'div',
+          { style: { flex: 1, minWidth: 0 } },
+          h('div', { class: 'title' }, p.partnerName),
+          h('div', { class: 'sub' }, 'You mentor each other')
+        ),
+        pill,
+        Icon('chevron-right', { size: 16, sw: 2.4, color: 'var(--fg3)' })
+      );
+    }
 
     incomingEl.replaceChildren();
     if (!accepted.length) {
+      // One quiet line, not a card: an empty box was the first thing on the screen.
       incomingEl.appendChild(
         h(
-          'div',
-          { class: 'gb-card' },
-          h(
-            'div',
-            { class: 'gb-empty' },
-            Icon('users', { size: 26, color: 'var(--fg3)' }),
-            h('p', null, 'No connections yet. Send an invite to get started.')
-          )
+          'p',
+          { class: 'gb-mentor-empty' },
+          'No mentors or mentees yet. Find someone to learn from, or offer to guide.'
         )
       );
     } else {
+      const single = entries.filter((p) => !p.mutual);
       [
-        { title: 'You mentor', items: accepted.filter(iMentor) },
-        { title: 'Who mentors you', items: accepted.filter((it) => !iMentor(it)) },
+        { title: 'Mentor each other', items: entries.filter((p) => p.mutual) },
+        { title: 'You mentor', items: single.filter((p) => p.links[0].iMentor) },
+        { title: 'Who mentors you', items: single.filter((p) => !p.links[0].iMentor) },
       ]
         .filter((g) => g.items.length)
         .forEach((g) => {
@@ -2066,20 +2739,9 @@ function ScreenCircle({
       (r) => r.status !== 'accepted' && r.status !== 'cancelled'
     );
     outgoingEl.replaceChildren();
-    if (!invites.length) {
-      outgoingEl.appendChild(
-        h(
-          'div',
-          { class: 'gb-card' },
-          h(
-            'div',
-            { class: 'gb-empty' },
-            Icon('mail', { size: 26, color: 'var(--fg3)' }),
-            h('p', null, 'No pending invites right now.')
-          )
-        )
-      );
-    } else {
+    // Sent invites only when there are some: "none pending" says nothing.
+    if (invites.length) {
+      outgoingEl.appendChild(h('h5', { class: 'gb-conn-group-head' }, 'Invites you sent', h('span', null, invites.length)));
       const card = h('div', { class: 'gb-card', style: { padding: '4px 0' } });
       invites.forEach((r) =>
         card.appendChild(OutgoingRow(r, onLoadStatus, onRevoke ? revokeAndRefresh : null))
@@ -2141,130 +2803,32 @@ function ScreenCircle({
 
   const addBtn = h(
     'button',
-    {
-      type: 'button',
-      class: 'gb-btn gb-btn--primary',
-      style: {
-        width: 'auto',
-        flex: 'none',
-        whiteSpace: 'nowrap',
-        padding: '8px 14px',
-        fontSize: '0.8125rem',
-      },
-      onclick: launchSearch,
-    },
-    Icon('plus', { size: 14, sw: 2.6 }),
+    { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--compact', onclick: launchSearch },
+    Icon('search', { size: 14, sw: 2.4 }),
     'Find someone'
   );
 
-  const challenges = challengesApi ? ChallengesPanel({ api: challengesApi, currentUserId }) : null;
+  const challenges = challengesApi
+    ? ChallengesPanel({ api: challengesApi, currentUserId, wins })
+    : null;
   const challengesPanel = challenges && challenges.node;
 
+  /* Order is importance: invites waiting on you, then your circles (who is in
+     today), then mentorship. It opened on Mentorship's two empty cards, with
+     the circle itself below the fold under a "Challenges" heading. */
+  const section = (title, action, ...kids) =>
+    h(
+      'section',
+      { class: 'gb-circle-block' },
+      h('div', { class: 'gb-circle-block-head' }, h('h2', { class: 'gb-circle-block-title' }, title), action || null),
+      ...kids
+    );
   screenEl = h(
     'div',
-    { class: 'gb-rise', style: { padding: '0 0 24px' } },
-    h(
-      'div',
-      {
-        style: {
-          padding: '6px var(--gutter) 10px',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'flex-end',
-          gap: '10px',
-        },
-      },
-      h(
-        'div',
-        null,
-        h(
-          'h3',
-          {
-            style: {
-              fontFamily: 'var(--font-display)',
-              fontWeight: 800,
-              fontSize: '1.125rem',
-              margin: '0 0 4px',
-            },
-          },
-          // Not "Growth Circle": the screen header already says that.
-          'Mentorship'
-        ),
-        h(
-          'p',
-          { style: { color: 'var(--fg3)', fontSize: '0.8125rem', margin: 0 } },
-          'Your mentors, your mentees, and your sent invites.'
-        )
-      ),
-      addBtn
-    ),
-    h('div', { class: 'gb-circle-requests', style: { padding: '0 var(--gutter)' } }, requestsEl),
-    h(
-      'div',
-      { style: { padding: '18px var(--gutter) 6px' } },
-      h(
-        'h4',
-        {
-          style: {
-            fontFamily: 'var(--font-display)',
-            fontWeight: 800,
-            fontSize: '0.9375rem',
-            margin: '0 0 10px',
-          },
-        },
-        'Connections'
-      )
-    ),
-    h('div', { style: { padding: '0 var(--gutter)' } }, incomingEl),
-    h(
-      'div',
-      { style: { padding: '18px var(--gutter) 6px' } },
-      h(
-        'h4',
-        {
-          style: {
-            fontFamily: 'var(--font-display)',
-            fontWeight: 800,
-            fontSize: '0.9375rem',
-            margin: '0 0 10px',
-          },
-        },
-        'Your invites'
-      )
-    ),
-    h('div', { style: { padding: '0 var(--gutter)' } }, outgoingEl),
-    challengesPanel
-      ? h(
-          'div',
-          { style: { padding: '22px var(--gutter) 6px' }, class: 'gb-challenges-head-wrap' },
-          h(
-            'div',
-            {
-              style: {
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: '10px',
-                marginBottom: '10px',
-              },
-            },
-            h(
-              'h4',
-              {
-                style: {
-                  fontFamily: 'var(--font-display)',
-                  fontWeight: 800,
-                  fontSize: '0.9375rem',
-                  margin: 0,
-                },
-              },
-              'Challenges'
-            ),
-            challenges.actions
-          )
-        )
-      : null,
-    challengesPanel ? h('div', { style: { padding: '0 var(--gutter)' } }, challengesPanel) : null
+    { class: 'gb-rise gb-circle-screen' },
+    requestsEl,
+    challengesPanel ? section('Your circles', challenges.actions, challengesPanel) : null,
+    section('Mentorship', addBtn, incomingEl, outgoingEl)
   );
   requestAnimationFrame(() => {
     if (screenEl.isConnected) wasMounted = true;

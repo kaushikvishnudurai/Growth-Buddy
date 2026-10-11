@@ -12,7 +12,7 @@ class ReceiptParseTest {
     private final ObjectMapper json = new ObjectMapper();
 
     private MoneyService.ReceiptScan parse(String s) throws Exception {
-        return MoneyService.parseReceipt(json.readTree(s));
+        return MoneyService.parseReceipt(json.readTree(s), java.util.Set.of("food", "others"));
     }
 
     @Test
@@ -37,6 +37,20 @@ class ReceiptParseTest {
     }
 
     @Test
+    void keepsOnlyCategoriesTheUserHas() throws Exception {
+        var r = parse("""
+                {"items":[
+                  {"name":"Toor dal","amount":120,"category":"food"},
+                  {"name":"Offer","amount":-20},
+                  {"name":"Bucket","amount":90,"category":"household"},
+                  {"name":"Soap","amount":30}
+                ]}""");
+        assertThat(r.items()).extracting(MoneyService.ReceiptItem::category)
+                .containsExactly("food", null, null);
+        assertThat(r.items().get(0).amount()).isEqualTo(new BigDecimal("100.00"));
+    }
+
+    @Test
     void discountLargerThanItsLineRemovesIt() throws Exception {
         var r = parse("{\"items\":[{\"name\":\"Soap\",\"amount\":20},{\"name\":\"Coupon\",\"amount\":-25}]}");
         assertThat(r.items()).isEmpty();
@@ -48,5 +62,26 @@ class ReceiptParseTest {
         assertThat(r.items()).isEmpty();
         assertThat(r.date()).isNull();
         assertThat(r.merchant()).isNull();
+    }
+
+    /** A rejected AI key is "unavailable", not an empty photo: the client says which. */
+    @Test
+    void aFailedAiCallIsUnavailableNotAnEmptyRead() {
+        var openai = org.mockito.Mockito.mock(com.growthbuddy.mentor.OpenAIClient.class);
+        org.mockito.Mockito.when(openai.isConfigured()).thenReturn(true);
+        org.mockito.Mockito.when(openai.completeWithImage(org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
+                .thenThrow(new IllegalStateException("AI gateway 401"));
+        var service = new MoneyService(org.mockito.Mockito.mock(MoneyRepository.class), new ObjectMapper(), openai,
+                org.mockito.Mockito.mock(MoneyLedger.class));
+        var r = service.scanReceipt("data:image/jpeg;base64,AAAA", java.util.Map.of("others", "Others"));
+        assertThat(r.configured()).isTrue();
+        assertThat(r.unavailable()).isTrue();
+        assertThat(r.items()).isEmpty();
+
+        org.mockito.Mockito.when(openai.isConfigured()).thenReturn(false);
+        var none = service.scanReceipt("data:image/jpeg;base64,AAAA", java.util.Map.of("others", "Others"));
+        assertThat(none.configured()).isFalse();
+        assertThat(none.unavailable()).isFalse();
     }
 }

@@ -42,7 +42,7 @@ class HabitReminderDeliverySchedulerTest {
 
     private final HabitReminderDeliveryScheduler scheduler =
             new HabitReminderDeliveryScheduler(habits, checkins, dispatchLog, users, push, notifications,
-                    whatsapp);
+                    whatsapp, new com.growthbuddy.reminder.SnoozeLinks("test-secret"));
 
     /** A habit whose reminder time is "right now" in UTC, so it always falls
      *  inside the scheduler's catch-up window regardless of wall-clock time. */
@@ -200,11 +200,17 @@ class HabitReminderDeliverySchedulerTest {
         when(users.findAllById(any())).thenReturn(List.of(user(userId)));
         when(checkins.existsByHabitIdAndLogDateAndDoneTrue(habit.getId(), today())).thenReturn(false);
         when(push.isConfigured()).thenReturn(true);
-        when(push.sendToUser(userId, NotifyCategory.habits, "Habit reminder", "Workout", "/#habits")).thenReturn(1);
+        when(push.sendToUser(eq(userId), eq(NotifyCategory.habits), eq("Habit reminder"), eq("Workout"),
+                eq("/#habits"), any())).thenReturn(1);
 
         scheduler.dispatchHabitReminders();
 
-        verify(push).sendToUser(userId, NotifyCategory.habits, "Habit reminder", "Workout", "/#habits");
+        // A plain habit's push carries its Done button: a ticket and where to send it.
+        org.mockito.ArgumentCaptor<java.util.Map<String, String>> extra =
+                org.mockito.ArgumentCaptor.forClass(java.util.Map.class);
+        verify(push).sendToUser(eq(userId), eq(NotifyCategory.habits), eq("Habit reminder"), eq("Workout"),
+                eq("/#habits"), extra.capture());
+        assertThat(extra.getValue()).containsEntry("doneLink", "/api/habits/done-link").containsKey("done");
     }
 
     /* The reported bug: WhatsApp on, calendar reminders arrived there, habit

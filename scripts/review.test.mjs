@@ -13,6 +13,7 @@ import {
   correlationWords,
   focusMinutesByDay,
   weekOverWeek,
+  weeklyWinsDraft,
 } from './review.js';
 
 // --- daysEnding walks keys, across a month end and a DST change ---
@@ -286,6 +287,54 @@ assert.match(correlationWords(-0.6).text, /lower/);
   const mon = weekOverWeek(byDate, '2026-06-08', ['waterMl']);
   assert.equal(mon[0].cur, null);
   assert.equal(mon[0].prevDays, 2);
+}
+
+
+// --- weeklyWinsDraft: only real wins, from data already loaded ---
+{
+  const today = '2026-10-11';
+  const trends = { byDate: {} };
+  for (const k of daysEnding('2026-10-04', 7)) trends.byDate[k] = { score: 40 };
+  for (const k of daysEnding(today, 7)) trends.byDate[k] = { score: 60, waterMl: 2000, waterGoalMl: 2000 };
+  const draft = weeklyWinsDraft({
+    today,
+    finished: [
+      { doneAt: '2026-10-10T10:00:00' },
+      { doneAt: '2026-10-06T10:00:00' },
+      { doneAt: '2026-09-20T10:00:00' }, // last month: not this week
+    ],
+    habits: [
+      { name: 'Read', streak: 12 },
+      { name: 'Walk', streak: 2 },
+    ],
+    trends,
+    money: { expenses: [{ date: '2026-10-09', amount: 300 }], noSpendDays: ['2026-10-08', '2026-10-09'] },
+    fmtMoney: (n) => 'Rs' + n,
+  });
+  assert.match(draft, /^Finished 2 tasks\./);
+  assert.match(draft, /Kept Read going for 12 days/);
+  assert.match(draft, /Hit the water goal on 7 of 7 days/);
+  assert.match(draft, /Score up 20 points/);
+  // A day with spending is not a no-spend day, whatever the list says.
+  assert.match(draft, /1 no-spend day\./);
+  assert.ok(draft.length <= 400, 'fits the 400-char field');
+
+  // Lowest spend only when 3+ days had spending and none was spend-free.
+  const spendy = weeklyWinsDraft({
+    today,
+    money: {
+      expenses: [
+        { date: '2026-10-07', amount: 500 },
+        { date: '2026-10-08', amount: 120 },
+        { date: '2026-10-09', amount: 900 },
+      ],
+    },
+    fmtMoney: (n) => 'Rs' + n,
+  });
+  assert.match(spendy, /Lightest spend on .+ \(Rs120\)\.$/);
+
+  // A quiet week drafts nothing, so the placeholder shows.
+  assert.equal(weeklyWinsDraft({ today, habits: [{ name: 'X', streak: 1 }] }), '');
 }
 
 console.log('review.test.mjs: all assertions passed');

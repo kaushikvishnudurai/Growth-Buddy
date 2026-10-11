@@ -196,4 +196,41 @@ public class TaskService {
         return repo.findByIdAndUserIdAndDeletedAtIsNull(id, userId)
                 .orElseThrow(() -> ApiException.notFound("Task"));
     }
+
+    /* ---- Quick add from WhatsApp (QuickAddApplier), where the DTOs can't reach ---- */
+
+    @Transactional
+    public void createTitled(UUID userId, String title) {
+        create(userId, new CreateTaskRequest(title, null, null, null, null));
+    }
+
+    /** Ticks off the open task whose title best matches {@code words}; its title, or null for none. */
+    @Transactional
+    public String completeMatching(UUID userId, String words) {
+        Task best = bestMatch(repo.findByUserIdAndDeletedAtIsNullOrderByCreatedAtAsc(userId).stream()
+                .filter(t -> !t.isDone()).toList(), words);
+        if (best == null) return null;
+        toggle(userId, best.getId());
+        return best.getTitle();
+    }
+
+    /** Same title, else the title inside the words or the words inside the title; the closest length wins. */
+    static Task bestMatch(List<Task> open, String words) {
+        String w = words == null ? "" : words.strip().toLowerCase(java.util.Locale.ROOT);
+        if (w.isEmpty()) return null;
+        Task best = null;
+        int bestScore = Integer.MAX_VALUE;
+        for (Task t : open) {
+            String title = t.getTitle() == null ? "" : t.getTitle().strip().toLowerCase(java.util.Locale.ROOT);
+            if (title.isEmpty()) continue;
+            int score = title.equals(w) ? 0
+                    : title.contains(w) || w.contains(title) ? 1 + Math.abs(title.length() - w.length())
+                    : Integer.MAX_VALUE;
+            if (score < bestScore) {
+                best = t;
+                bestScore = score;
+            }
+        }
+        return best;
+    }
 }
