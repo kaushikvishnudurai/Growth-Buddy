@@ -128,8 +128,7 @@
 .gb-mini-cal-day.is-other-month {
   background: transparent;
   border-color: var(--border);
-  color: var(--fg3);
-  opacity: 0.75;
+  color: var(--fg3); /* no opacity: fg3 is already the 4.5:1 floor */
 }
 
 .gb-mini-cal-day.is-today {

@@ -559,7 +559,7 @@ button.gb-sectiontitle-act {
   background: var(--surface-3);
   box-shadow: 0 2px 0 var(--border-strong);
   color: transparent;
-  border: 1.5px solid var(--border-strong);
+  border: 1.5px solid var(--control-border);
   transition:
     transform var(--dur-fast) var(--ease-bounce),
     background var(--dur-base);
@@ -1824,14 +1824,13 @@ body:has(.is-thinking, .gb-thinking)::after {
   font-family: var(--font-body);
   font-size: 0.90625rem;
   padding: 10px 12px;
-  border: 1.5px solid var(--border-strong);
+  border: 1.5px solid var(--control-border);
   border-radius: var(--radius-lg);
   background: var(--surface-2);
   color: var(--fg1);
 }
 .gb-msg-input:focus {
-  outline: none;
-  border-color: var(--brand);
+  border-color: var(--ring);
   box-shadow: 0 0 0 3px var(--brand-soft);
 }
 .gb-msg-send {
@@ -2247,8 +2246,8 @@ body:has(.is-thinking, .gb-thinking)::after {
   padding: 20px;
   transition: opacity var(--dur-fast);
 }
-.gb-sound-card.is-muted {
-  opacity: 0.74;
+.gb-sound-card.is-muted .gb-icon {
+  opacity: 0.6;
 }
 .gb-sound-head {
   display: flex;
@@ -3331,7 +3330,7 @@ button.gb-seat:disabled {
   margin-left: 4px;
 }
 .gb-circle-cheer.is-sent {
-  color: var(--brand);
+  color: var(--brand-ink);
   opacity: 0.7;
 }
 .gb-conn-item + .gb-conn-item {
@@ -5797,8 +5796,7 @@ button.gb-food-level {
   transform: scale(0.9);
 }
 .gb-cal-day.is-other-month {
-  color: var(--fg3);
-  opacity: 0.72;
+  color: var(--fg3); /* no opacity: fg3 is already the 4.5:1 floor */
 }
 .gb-cal-day.is-today {
   color: var(--brand-ink);
@@ -6282,7 +6280,7 @@ button.gb-food-level {
   font-weight: 500;
   color: var(--fg1);
   background: var(--surface-2);
-  border: 1.5px solid var(--border-strong);
+  border: 1.5px solid var(--control-border);
   border-radius: var(--radius-lg);
   padding: 13px 14px;
   width: 100%;
@@ -6295,8 +6293,9 @@ button.gb-food-level {
   color: var(--fg3);
 }
 .gb-input:focus {
-  outline: none;
-  border-color: var(--brand);
+  /* No outline: none. The global :focus-visible ring is the indicator (a 2.8:1
+     border change alone was too faint); the border follows it. */
+  border-color: var(--ring);
   box-shadow: 0 0 0 3px var(--brand-soft);
 }
 /* A disabled field looked exactly as editable as a live one. */
@@ -6711,7 +6710,7 @@ button.gb-food-level {
 }
 .gb-sched-tab.is-on {
   background: var(--surface);
-  color: var(--brand-fill);
+  color: var(--brand-ink);
   box-shadow: var(--shadow-sm);
 }
 .gb-sched-routine {
@@ -6755,7 +6754,7 @@ button.gb-food-level {
 }
 .gb-sched-stat.is-busy {
   background: var(--brand-soft);
-  color: var(--brand-fill);
+  color: var(--brand-soft-fg);
 }
 .gb-sched-stat.is-lunch {
   background: var(--warning-soft);
@@ -7251,7 +7250,7 @@ button.gb-food-level {
      indicator: with viewport-fit=cover, 100dvh runs underneath both. */
   padding: calc(20px + env(safe-area-inset-top, 0px)) 20px
     calc(20px + env(safe-area-inset-bottom, 0px));
-  background: color-mix(in srgb, var(--warm-900) 45%, transparent);
+  background: var(--scrim);
   opacity: 0;
   transition: opacity var(--dur-fast) ease;
   /* The page behind must not rubber-band or scroll-chain from a sheet. */
@@ -8376,7 +8375,7 @@ button.gb-food-level {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(20, 16, 13, 0.5);
+  background: var(--scrim);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
   animation: gb-cele-fade var(--dur-base) var(--ease-out);
@@ -11214,8 +11213,9 @@ select.gb-input {
   background: var(--surface);
   border: 1px solid var(--border);
 }
-.gb-ach-tile.is-locked {
-  opacity: 0.72;
+/* Locked: the icon and bar fade, the text stays readable (it says what unlocks it). */
+.gb-ach-tile.is-locked :is(.gb-ach-icon, .gb-ach-progress-bar) {
+  opacity: 0.6;
 }
 .gb-ach-tile.is-unlocked {
   border-color: var(--brand-soft);
@@ -11501,7 +11501,7 @@ textarea:focus-visible,
   position: fixed;
   inset: 0;
   z-index: var(--z-sheet-backdrop);
-  background: rgba(20, 16, 13, 0.32);
+  background: var(--scrim);
   animation: gb-more-fade var(--dur-fast) var(--ease-out);
 }
 .gb-more-sheet {
@@ -12248,7 +12248,7 @@ textarea:focus-visible,
   color: var(--fg2);
 }
 .gb-note-card.has-cover .gb-note-pin.is-on {
-  color: var(--brand);
+  color: var(--brand-ink);
 }
 .gb-note-skel {
   padding: 18px;
