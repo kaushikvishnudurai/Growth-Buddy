@@ -15642,6 +15642,7 @@ const scrollByScreen = new Map();
    from the value it showed last render (keyed by screen + selector + position)
    and is then set to the new one, which the transition animates. */
 const TWEENED = [
+  ['.gb-score-card svg circle:last-of-type', 'strokeDashoffset'],
   ['.gb-water-fill', 'transform'],
   ['.gb-goal-ms-fill', 'width'],
   ['.gb-goal-progress-fill', 'width'],

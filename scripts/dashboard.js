@@ -2,6 +2,7 @@
    Growth Buddy — Dashboard (Home) screen
    ===================================================================== */
 import {
+  ProgressRing,
   h,
   Card,
   SectionTitle,
@@ -208,117 +209,90 @@ function StreakChain({ streak, doneToday, owed }) {
   );
 }
 
-/* Today, as beads: one per thing owed today, habits round and tasks square,
-   filled when done. Same arithmetic as the sub-line (and the server's score):
-   paused tasks are out, habits are the ones owed today (habitDue). */
-const BEADS_SHOWN = 36;
-
-function ScoreCard({ score, tasks: allTasks, habits, toggleTask, toggleHabit }) {
+function ScoreCard({ score, tasks: allTasks, habits }) {
+  // Paused tasks are out of the score, so out of its "x/y tasks" line too.
   const tasks = allTasks.filter((t) => !t.paused);
   const doneTasks = tasks.filter((t) => t.done).length;
+  // The habits owed today, as the server's score counts them (HabitService.
+  // countsOn): a weekly habit already done this week, or a paused one, is not
+  // today's miss. "2/3 habits" used to count every habit.
   const dueHabits = habits.filter((hb) => habitDue(hb) || hb.doneToday);
   const doneHabits = dueHabits.filter((hb) => hb.doneToday).length;
   const best = topStreaks(habits);
-  const total = tasks.length + dueHabits.length;
-  const done = doneTasks + doneHabits;
 
-  // Done first in each group, so the filled run reads left to right like progress.
-  const byDone = (key) => (a, b) => Number(!!b[key]) - Number(!!a[key]);
-  const items = [
-    ...dueHabits.slice().sort(byDone('doneToday')).map((hb) => ['habit', hb.doneToday]),
-    ...tasks.slice().sort(byDone('done')).map((t) => ['task', t.done]),
-  ];
-  const more = Math.max(0, items.length - BEADS_SHOWN);
-  const beads = h(
-    'div',
+  const ringNumber = h(
+    'span',
     {
-      class: 'gb-today-beads',
-      role: 'img',
-      'aria-label':
-        done + ' of ' + total + ' done today: ' + doneHabits + ' of ' + dueHabits.length +
-        ' habits, ' + doneTasks + ' of ' + tasks.length + ' tasks',
+      style: {
+        fontFamily: 'var(--font-display)',
+        fontWeight: 800,
+        // The hole is 70px (92 - 2 x 11 stroke). "100%" at the old 1.625rem
+        // filled it edge to edge and a larger text size pushed it into the
+        // ring, so the number shrinks at three digits and is capped in px:
+        // a fixed-size ring can't grow with the text.
+        fontSize: score >= 100 ? 'min(1.25rem, 20px)' : 'min(1.625rem, 26px)',
+        color: 'var(--fg1)',
+        lineHeight: 1,
+      },
     },
-    items
-      .slice(0, BEADS_SHOWN)
-      .map(([kind, on]) => h('i', { class: 'gb-bead gb-bead--' + kind + (on ? ' is-on' : '') })),
-    more ? h('span', { class: 'gb-today-more' }, '+' + more) : null
+    score + '%'
+  );
+  // The unit lives in the number ("17%"), not in the label. "17" over "SCORE"
+  // named a currency nobody could price; the percent sign says it's a share of
+  // something, and the sub-line beside it ("0/4 tasks · 1/3 habits") says of
+  // what. The word stays "score" because Progress calls it that too, in the
+  // summary tile and in the "Daily score" trend — one number, one name.
+  const ringLabel = h(
+    'span',
+    { style: { fontSize: '0.625rem', fontWeight: 700, color: 'var(--fg3)' } },
+    'SCORE'
   );
 
-  // What to do next: an overdue task beats everything, then a habit still owed
-  // today, then the first open task (home-order.js orders both lists).
-  const openTasks = sortTasksForHome(tasks).filter((t) => !t.done);
-  const owed = sortHabitsForHome(dueHabits).filter((hb) => !hb.doneToday);
-  const next =
-    openTasks[0] && openTasks[0].overdue
-      ? { title: openTasks[0].title, kind: 'Overdue', toggle: toggleTask, id: openTasks[0].id }
-      : owed[0]
-        ? { title: owed[0].name, kind: 'Next habit', toggle: toggleHabit, id: owed[0].id }
-        : openTasks[0]
-          ? { title: openTasks[0].title, kind: 'Next task', toggle: toggleTask, id: openTasks[0].id }
-          : null;
+  const ring = ProgressRing({
+    value: score,
+    size: 92,
+    color: 'var(--brand)',
+    children: [ringNumber, ringLabel],
+  });
 
-  const heading = !total
-    ? 'Nothing planned yet'
-    : done === total
-      ? 'All done for today'
-      : score >= 70
-        ? 'You’re on track'
-        : done > 0
-          ? 'Keep it going'
-          : 'Let’s get started';
+  const heading =
+    score >= 70 ? "You're on track" : score > 0 ? 'Keep it going' : 'Let’s get started';
 
-  // Days and weeks are different units, so each gets its own figure; one max
+  // Days and weeks are different units, so each gets its own pill; one max
   // over both called a 6-week streak "6-day".
-  const streaks = [
+  const pills = [];
+  [
     [best.days, '-day', ' day streak'],
     [best.weeks, '-week', ' week streak'],
-  ]
-    .filter(([n]) => n > 0)
-    .map(([n, unit, spoken]) =>
-      h(
-        'span',
-        { class: 'gb-today-streak', 'aria-label': 'Best ' + n + spoken },
-        Icon('flame', { size: 13 }),
-        n + unit
-      )
-    );
+  ].forEach(([n, unit, spoken]) => {
+    if (n > 0) {
+      const pill = Pill({
+        icon: 'flame',
+        label: n + unit,
+        bg: 'var(--coral-50)',
+        fg: 'var(--coral-700)',
+      });
+      pill.setAttribute('aria-label', 'Best ' + n + spoken);
+      pills.push(pill);
+    }
+  });
 
   const subParts = [];
   if (tasks.length) subParts.push(doneTasks + '/' + tasks.length + ' tasks');
   if (dueHabits.length) subParts.push(doneHabits + '/' + dueHabits.length + ' habits');
+  const sub = subParts.length ? subParts.join(' · ') : 'Add a task or habit to begin';
 
   return Card({
-    className: 'gb-today',
+    className: 'gb-score-card',
     children: [
-      h('h2', { class: 'gb-today-title' }, heading),
-      total
-        ? h(
-            'div',
-            { class: 'gb-today-count' },
-            h('span', { class: 'gb-today-n' }, String(done)),
-            h('span', { class: 'gb-today-of' }, '/' + total + ' done')
-          )
-        : h('p', { class: 'gb-today-sub' }, 'Add a task or habit to begin'),
-      total ? beads : null,
-      subParts.length || streaks.length
-        ? h(
-            'div',
-            { class: 'gb-today-meta' },
-            subParts.length ? h('span', null, subParts.join(' · ')) : null,
-            // The server's daily score, the same number Progress trends.
-            total ? h('span', null, 'Score ' + score + '%') : null,
-            ...streaks
-          )
-        : null,
-      next && next.toggle
-        ? h(
-            'div',
-            { class: 'gb-today-next' },
-            h('span', { class: 'gb-today-next-k' }, next.kind),
-            h('span', { class: 'gb-today-next-t' }, next.title),
-            Check({ done: false, onToggle: () => next.toggle(next.id), label: next.title })
-          )
-        : null,
+      ring,
+      h(
+        'div',
+        { style: { flex: 1 } },
+        h('div', { class: 'gb-score-heading' }, heading),
+        h('div', { class: 'gb-score-sub' }, sub),
+        pills.length ? h('div', { class: 'gb-pill-row' }, pills) : null
+      ),
     ],
   });
 }
@@ -2581,7 +2555,7 @@ function ScreenDashboard({
   const renderers = {
     // A turned-off feature drops out of the cards that summarise it, not just its own card.
     score: () =>
-      ScoreCard({ score, tasks, habits: on('habits') ? habits : [], toggleTask, toggleHabit }),
+      ScoreCard({ score, tasks, habits: on('habits') ? habits : [] }),
     plan: () => TodayPlanCard({ water: on('water') ? water : null, wellness, onPlanToday }),
     wellness: () => WellnessCard({ wellness, onAddSleep, onAddMood, onConfirmSleep, onQuickMood }),
     tasks: () => [
