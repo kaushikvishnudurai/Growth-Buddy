@@ -31,7 +31,7 @@ reads the full history.
 | `countDoneBetween(userId, start, end)` | single user |
 | `countDoneBetween(List<UUID>, start, end)` | batched — **use this for leaderboards**, not the single-user version in a loop (Circle challenge ranking depends on it) |
 | `todayCounts(userId)` | `record TodayCounts(int done, int total)`, used by the score |
-| `countsOn(userId, day)` | the same counts for **any** day — check-ins are stored against a log date, so a finished day still answers truthfully. What the digest reads, since it reports a day the midnight sweep has already rolled. Counts only habits **owed** that day (`countDue` / `isDue`): active, created by then, and — for weekly / N-a-week — the week's quota not yet met on an earlier day. A habit done that day always counts, as done. A quit habit counts every day it is active and existed, as done unless that day holds its slip — so `countsOn` reads every row of the week (`findByUserIdAndLogDateBetween`), not just done ones. Soft-deleted habits and their check-ins are out. |
+| `countsOn(userId, day)` | (a break day owes nothing: only done habits count, see below) the same counts for **any** day — check-ins are stored against a log date, so a finished day still answers truthfully. What the digest reads, since it reports a day the midnight sweep has already rolled. Counts only habits **owed** that day (`countDue` / `isDue`): active, created by then, and — for weekly / N-a-week — the week's quota not yet met on an earlier day. A habit done that day always counts, as done. A quit habit counts every day it is active and existed, as done unless that day holds its slip — so `countsOn` reads every row of the week (`findByUserIdAndLogDateBetween`), not just done ones. Soft-deleted habits and their check-ins are out. |
 
 ## Break a habit (`HabitKind.quit`)
 
@@ -55,6 +55,18 @@ only takes a slip back or carries a clean day's note; `toggleToday` logs / undoe
   for the whole unpaid span.
 - Not covered on purpose: Circle's `countDoneBetween` sees only a quit habit's explicit `done` rows,
   Insights skips quit habits (`insights.js`), and the reminder scheduler still nudges one daily.
+
+## Take a break (I-08)
+
+`OnBreak.days(clock.prefsOf(userId), today)` = the break days (`ui_prefs.breakFrom..breakUntil` plus
+`breakPast`) through today, read once per call. `toResponse` and `recomputeStreak` add them to the
+protected set (so `currentDailyRun` / `longestDailyRun` bridge them and `atRisk` stays off), while
+`protectedToday` still means a freeze row; the weekly walk is `currentWeeklyRun(today, weeks,
+restWeeks)` (this week skipped while incomplete, a week a break touched holds without counting). A
+break day owes nothing: `dueToday` is false unless done, and `countDue(..., rest)` counts only the done
+habits (a quit habit's slip on a break day is left out). No token moves, no XP is paid for rest; a
+real tick on a break day pays as usual. Validation of what a client may store is `OnBreak.settle`
+(see CODEMAP). `BreakStreakTest`.
 
 ## Timezone
 
