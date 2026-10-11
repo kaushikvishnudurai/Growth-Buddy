@@ -48,7 +48,7 @@ boot-time reads can never pop a dialog. The mobile manifest keeps READ_* for exa
 | `nightFromSamples(samples, dayKey)` | pure: the night that **ended** on `dayKey` (sleep is keyed on the wake date) → `{bedtime, wakeTime, minutes}`. Stages/sessions merged across gaps ≤ 90 min, awake left out, longest 3 h+ run wins (a nap is never "last night"). `node scripts/health.test.mjs` |
 | `readHealthValue(link)` | today's reading for a habit link in its unit (steps, km, kcal, floors, workout minutes); `sleep` is not here — it comes from the sleep entry |
 | `readLastNight()` | `readSamples('sleep')` from noon yesterday → `nightFromSamples` |
-| `readHealthSummary()` | everything for `health.js`: today's sums (steps, distance m, active kcal, floors), last night, today's heart rate avg/min/max, newest resting HR / HRV / SpO2 / resp rate (14 d), weight / body fat / BP (90 d), height (10 y), workouts (7 d). A field is null when the store has nothing. Health Connect returns only 30 days before the first grant without `READ_HEALTH_DATA_HISTORY` (not requested) |
+| `readHealthForSync(days = 7)` | rows for `POST /api/health/sync`: per local day, sums of steps / distance (km) / active kcal / floors (one aggregate query per type per day, buckets added — UTC cuts), workout minutes (note = the kinds), and the newest reading of each day for resting HR, HRV, SpO2, breathing rate, weight, height, body fat, BP (`value2` = diastolic). Percent types normalised (HealthKit 0-1). The server upserts one phone row per type per day, so re-sending a day overwrites it. Health Connect returns only 30 days before the first grant without `READ_HEALTH_DATA_HISTORY` (not requested) |
 
 ## Channels (Android)
 

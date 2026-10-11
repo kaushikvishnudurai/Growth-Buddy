@@ -137,7 +137,7 @@ public class AuthService {
         "push_subscriptions", "notifications", "custom_sounds", "focus_sessions", "weekly_reviews",
         "money_state", "money_accounts", "money_transactions", "bank_feed_consents",
         "calendar_reminders", "reminder_done", "note_drafts", "note_edit_drafts", "notes", "sessions",
-        "idempotency_keys",
+        "idempotency_keys", "health_readings",
     };
 
     @PersistenceContext
