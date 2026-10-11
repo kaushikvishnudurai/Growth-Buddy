@@ -61,6 +61,17 @@ assert.deepEqual(wins, [
   'Every habit ticked today, all 2.',
 ]);
 assert.deepEqual(winLines({}), []);
+assert.deepEqual(
+  winLines({
+    habits: [
+      { name: 'Gym', cadence: 'weekly', streak: 5, doneToday: false, dueToday: false },
+      { name: 'Read', streak: 3, doneToday: true },
+      { name: 'Walk', streak: 0, doneToday: true },
+    ],
+  }),
+  ['Week 5 of Gym in a row.', 'Day 3 of Read in a row.', 'Every habit ticked today, all 2.'],
+  'a weekly streak counts weeks; a habit not due today does not block the full day'
+);
 
 assert.equal(
   inviteLink('https://x.app/#/circle', { id: 'u1', joinCode: 'K7M2QX9P' }),

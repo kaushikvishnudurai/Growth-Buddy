@@ -58,7 +58,7 @@ challenges[], wishlist[], customCategories[], noSpendDays[]
 settings{reflectThreshold:1000, currency:'₹', defaultTag:'others', lastAccountId?, accountsSetUp?, fx?{'$': 83.2}, accountCurrency?{accountId: '$'|null}}
 ```
 
-**Home currency for an account that never set one** (`currency` missing from the stored doc): `normalizeMoney` fills it from the device (`currencyFor(locale, timeZone)` in money-core.js: the language's region through `REGION_CUR` / `EURO`; an Indian timezone is always ₹, since many Indian phones run en-US; unknown = ₹). A stored currency always wins. It is seeded, not written: it reaches the server with the next document save (ponytail there; until then WhatsApp and the day summary still say ₹). Asserted in `money-merge.test.mjs`.
+**Home currency for an account that never set one** (`currency` missing from the stored doc): `normalizeMoney` fills it from the device (`currencyFor(locale, timeZone)` in money-core.js: the language's explicit region (never `maximize()`, which invents one) through `REGION_CUR` / `EURO`; an Indian timezone is always ₹, since many Indian phones run en-US; unknown = ₹). A stored currency always wins. It is seeded, not written: it reaches the server with the next document save (ponytail there; until then WhatsApp and the day summary still say ₹). Asserted in `money-merge.test.mjs`.
 
 `normalizeMoney` is the trust boundary — every array/object defaulted (**a top-level field it doesn't list is dropped**: a new doc field goes in `emptyMoney` AND `normalizeMoney`), `contribs` backfilled, and a
 `noSpendDays` entry dropped once that day has a real expense (one place, for every path that logs one).

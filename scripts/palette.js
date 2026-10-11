@@ -40,8 +40,10 @@ const iconFor = (item) =>
     : KIND_ICON[item.kind] || 'circle');
 
 /* The notes list, once per page load: Notes keeps its list on its own screen,
-   not in app state. Shown at once on later opens, refreshed behind it. */
+   not in app state. Shown at once on later opens, refreshed behind it. Keyed by
+   props.userId: after a sign-out the next account must not see these titles. */
 let notesCache = null;
+let notesFor = null;
 const noteTitle = (n) =>
   (n.title || String(n.body || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()).slice(0, 80);
 
@@ -115,7 +117,7 @@ export function openPalette(props) {
   const status = h('div', { class: 'gb-palette-status', role: 'status', 'aria-live': 'polite' });
 
   const noteItems = () =>
-    (notesCache || [])
+    (notesFor === props.userId ? notesCache || [] : [])
       .filter((n) => !n.deletedAt && !n.archivedAt)
       .map((n) => ({ key: 'note:' + n.id, kind: 'note', label: noteTitle(n), noteId: n.id }))
       .filter((x) => x.label);
@@ -250,6 +252,7 @@ export function openPalette(props) {
       .listNotes()
       .then((data) => {
         notesCache = Array.isArray(data) ? data : [];
+        notesFor = props.userId;
         if (sheet.isConnected && !busy) {
           const keep = flat[active] && flat[active].item.key;
           paint();

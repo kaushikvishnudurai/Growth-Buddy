@@ -114,7 +114,8 @@ const doc = (over) => normalizeMoney({ expenses: [], income: [], budgets: {}, ..
   assert.ok(normalizeMoney({ settings: {} }).settings.currency, 'never blank');
   assert.equal(currencyFor('en-GB', 'Europe/London'), '£');
   assert.equal(currencyFor('de-DE', 'Europe/Berlin'), '€');
-  assert.equal(currencyFor('en', 'America/New_York'), '$', 'bare language maximises to its region');
+  assert.equal(currencyFor('en', 'America/New_York'), '₹', 'a bare language names no region: the default');
+  assert.equal(currencyFor('ar', 'Asia/Dubai'), '₹', 'not Egypt, which maximize() would guess');
   assert.equal(currencyFor('en-US', 'Asia/Kolkata'), '₹', 'an Indian timezone beats an en-US phone');
   assert.equal(currencyFor('hi-IN', 'Asia/Calcutta'), '₹');
   assert.equal(currencyFor('xx-ZZ', 'Etc/UTC'), '₹', 'unknown region: the old default');

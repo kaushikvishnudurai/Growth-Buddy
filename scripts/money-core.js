@@ -20,7 +20,7 @@ const CUR = '₹';
 let cur = CUR;
 
 /* The home currency for an account that never picked one: the device's region,
-   read from its language (`en-GB` -> GB -> £). An Indian timezone wins over the
+   read from its language (`en-GB` -> GB -> £; a bare `en` has none). An Indian timezone wins over the
    language, since plenty of phones in India run en-US. Anything not listed keeps
    CUR. A currency the user set (Customise) is stored and always wins. */
 const REGION_CUR = { US: '$', CA: '$', AU: '$', NZ: '$', SG: '$', HK: '$', GB: '£', JP: '¥', CN: '¥', KR: '₩', NG: '₦', PH: '₱', AE: 'AED', SA: 'SAR', ZA: 'R', LK: 'Rs', PK: 'Rs', NP: 'Rs', BD: '৳', MY: 'RM', ID: 'Rp', TH: '฿', VN: '₫', BR: 'R$', MX: '$', CH: 'CHF', SE: 'kr', NO: 'kr', DK: 'kr', PL: 'zł', TR: '₺', RU: '₽', IL: '₪', EG: 'E£', KE: 'KSh' };
@@ -29,7 +29,7 @@ export function currencyFor(locale, timeZone) {
   if (/^Asia\/(Kolkata|Calcutta)$/.test(timeZone || '')) return CUR;
   let region = '';
   try {
-    region = new Intl.Locale(locale).maximize().region || '';
+    region = new Intl.Locale(locale).region || ''; // never maximize(): it invents one ('en' -> US, 'ar' -> EG)
   } catch (_) {
     /* no or bad locale: the default */
   }
