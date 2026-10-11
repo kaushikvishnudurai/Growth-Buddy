@@ -36,6 +36,8 @@ public class CurrentUserInterceptor implements AsyncHandlerInterceptor {
             "/api/auth/logout", // idempotent: works without a session too
             "/api/whatsapp/webhook", // Meta calls it; authenticated by its HMAC signature instead
             "/api/reminders/snooze-link", // a push notification's Snooze button; a signed ticket instead (SnoozeLinks)
+            "/api/reminders/done-link", // its Done button; same ticket, its own key
+            "/api/habits/done-link", // a habit reminder's Done button; same ticket, its own key
             "/api/client-errors", // crash reports; the sign-in screen crashes too. Rate-limited + size-capped (ClientErrorController)
             "/api/client-vitals" // RUM beacons (scripts/vitals.js); same rules as client-errors (ClientVitalsController)
     );

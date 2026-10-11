@@ -16,6 +16,9 @@ import {
   upcomingAlarms,
   usualDrinkHours,
   isQuietAt,
+  notificationActionTypes,
+  habitTickable,
+  ACTION_TYPES,
 } from './push.js';
 import {
   SILENT_CHANNEL,
@@ -480,3 +483,54 @@ assert.equal(isStaleChannel(undefined, 2), false);
 }
 
 console.log('push.test.mjs: all assertions passed');
+
+/* ---- notification buttons ----
+   A press acts on `extra`, so a missing or wrong one is a Done that ticks the
+   wrong thing (or nothing), and nothing on screen would show it. */
+{
+  const rem = upcomingReminderAlarms(
+    [{ id: 'r1', text: 'call', date: '2026-09-17', time: '10:00', repeat: 'none' }],
+    NOW
+  )[0];
+  assert.equal(rem.actionTypeId, ACTION_TYPES.reminder);
+  assert.deepEqual(rem.extra, { kind: 'reminder', id: 'r1', day: '2026-09-17' }, 'Done checks off the day it rings for');
+
+  // A snoozed ring can't name its occurrence, so its Done must not guess one.
+  const snoozed = upcomingReminderAlarms(
+    [{ id: 'r2', text: 'nap', date: '2026-09-10', snoozedUntil: new Date(2026, 8, 16, 9, 30).toISOString() }],
+    NOW
+  );
+  assert.equal(snoozed.length, 1);
+  assert.equal(snoozed[0].extra.day, null);
+
+  const water = upcomingWaterAlarms({ on: true, everyMins: 120, from: '10:00', to: '12:00' }, NOW, 1);
+  assert.ok(water.length && water.every((n) => n.actionTypeId === ACTION_TYPES.water && n.extra.kind === 'water'));
+
+  const habits = upcomingHabitAlarms(
+    [
+      { id: 'h1', name: 'Read', reminderTime: '20:00' },
+      { id: 'h2', name: 'Run', reminderTime: '20:00', metric: 'distance' },
+      { id: 'h3', name: 'No sugar', reminderTime: '20:00', kind: 'quit' },
+    ],
+    NOW,
+    1
+  );
+  const by = Object.fromEntries(habits.map((n) => [n.body, n]));
+  assert.deepEqual(by.Read.extra, { kind: 'habit', id: 'h1', day: '2026-09-16' });
+  assert.equal(by.Run.actionTypeId, undefined, 'a measured habit needs its number: no Done');
+  assert.equal(by['No sugar'].actionTypeId, undefined, 'a quit habit has nothing to tick');
+  assert.ok(habitTickable({ metric: 'none' }) && !habitTickable(null));
+
+  // The queue keeps the buttons through id/sound/channel stamping.
+  const q = upcomingAlarms({ reminders: [{ id: 'r1', text: 'call', date: '2026-09-17', time: '10:00' }] }, NOW);
+  assert.equal(q[0].extra.id, 'r1');
+  assert.notEqual(q[0].id, 'r1', 'the notification id stays numeric; the reminder id rides in extra');
+
+  const types = notificationActionTypes('Snooze 10 min');
+  const ids = Object.fromEntries(types.map((t) => [t.id, t.actions.map((a) => a.id)]));
+  assert.deepEqual(ids[ACTION_TYPES.reminder], ['done', 'snooze']);
+  assert.deepEqual(ids[ACTION_TYPES.habit], ['done']);
+  assert.deepEqual(ids[ACTION_TYPES.water], ['water']);
+  assert.equal(types[0].actions[1].title, 'Snooze 10 min');
+}
+console.log('push.test.mjs: notification buttons passed');

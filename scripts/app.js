@@ -110,6 +110,7 @@ import {
   syncDeviceAlarms,
   usualDrinkHours,
   WATER_DEFAULTS,
+  WATER_ACTION_ML,
 } from './push.js';
 import { CacheStorage } from './cache-storage.js';
 import { createOutbox, tempId, isTempId, newIdemKey } from './outbox.js';
@@ -122,6 +123,7 @@ import {
   hideNativeSplash,
   readTodaySteps,
   cancelPendingLocalNotifications,
+  onLocalNotificationAction,
 } from './native.js';
 import { registerToast } from './toast.js';
 import { initA11y, focusLocator, refocus } from './a11y.js';
@@ -2720,6 +2722,9 @@ async function loadData() {
   if (!refresh && state.screen === 'home') markHomePainted();
   // Needs wave 1: "is this a new account?" is read from tasks/habits/reminders.
   if (!refresh) maybeStartFirstRun();
+  // After wave 1, so a button press that cold-started the app (the plugin holds
+  // it until a listener attaches) finds the habit or reminder it names.
+  armNotificationActions();
   loadSecondaryData();
 }
 
@@ -10293,7 +10298,53 @@ function reSyncDeviceAlarms() {
     sound: notifySound(),
     lead: getDefaultLead(),
     quiet: quietHours(),
+    snoozeLabel: 'Snooze ' + minutesLabel(snoozeMinutes()),
   }).catch(() => {});
+}
+
+/* ---- Buttons on the phone's notifications ----
+   Done / Snooze on a reminder, Done on a plain habit, +250 ml on the water
+   nudge (push.js builds the sets and stamps `extra`). A press opens the app
+   and lands here, through the same handlers the in-app taps use, so the toast
+   it shows is the confirmation. A plain tap on the card does what it always
+   did: nothing beyond opening the app. On the web the service worker carries
+   these out itself, with a signed ticket (public/push-handlers.js). */
+let notificationActionsArmed = false;
+function armNotificationActions() {
+  if (notificationActionsArmed) return;
+  notificationActionsArmed = true;
+  onLocalNotificationAction((ev) => {
+    handleNotificationAction(ev).catch((err) => toastError(err, 'Could not do that from the notification.'));
+  });
+}
+
+async function handleNotificationAction(ev) {
+  const act = ev && ev.actionId;
+  const x = (ev && ev.notification && ev.notification.extra) || {};
+  if (!state.user || !act || act === 'tap' || act === 'dismiss') return;
+  if (x.kind === 'water' && act === 'water') {
+    await quickAddWater(WATER_ACTION_ML);
+  } else if (x.kind === 'reminder' && act === 'snooze' && x.id) {
+    await snoozeReminder(x.id, null);
+  } else if (x.kind === 'reminder' && act === 'done' && x.id && x.day) {
+    // No day (a snoozed ring): the press already cleared the card; that is all.
+    await toggleReminderDone(x.id, x.day, true);
+    toastSuccess('Marked done.');
+  } else if (x.kind === 'habit' && act === 'done' && x.id) {
+    const hb = (state.habits || []).find((h) => h.id === x.id);
+    if (!hb) return;
+    if (!x.day || x.day === todayKeyNow()) {
+      if (!hb.doneToday) await plainToggleHabit(hb.id);
+      return;
+    }
+    // Pressed after midnight: tick the day it rang for, as the habit's history does.
+    await api('/api/habits/' + encodeURIComponent(hb.id) + '/checkin', {
+      method: 'POST',
+      body: JSON.stringify({ date: x.day, done: true }),
+    });
+    forgetGoalHabitHistory(hb.id);
+    toastSuccess(hb.name + ' ticked for ' + shortDay(x.day) + '.');
+  }
 }
 
 /* Quiet hours (ui_prefs.quietStart / quietEnd, set in Settings > Alerts), or

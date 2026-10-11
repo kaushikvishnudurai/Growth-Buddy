@@ -155,6 +155,27 @@ class ReminderSnoozeTest {
         assertThat(r.getSnoozedUntil()).isNull();
     }
 
+    /**
+     * Each push button has its own key: a snooze ticket can't tick a habit or
+     * check a reminder off, and a Done ticket can't snooze. ticketFor also drops
+     * a ticket for a day already over where the user lives.
+     */
+    @Test
+    void buttonTicketsAreKeyedPerPurpose() {
+        UUID target = UUID.randomUUID();
+        LocalDate today = LocalDate.of(2026, 10, 10);
+        prefs(new HashMap<>());
+        String habit = links.sign(SnoozeLinks.HABIT_DONE, USER, target, today, NOW);
+        assertThat(links.verify(SnoozeLinks.HABIT_DONE, habit, NOW)).contains(new SnoozeLinks.Ticket(USER, target, today));
+        assertThat(links.verify(habit, NOW)).isEmpty();
+        assertThat(links.verify(SnoozeLinks.DONE, habit, NOW)).isEmpty();
+        String snooze = links.sign(USER, target, today, NOW);
+        assertThat(links.verify(SnoozeLinks.HABIT_DONE, snooze, NOW)).isEmpty();
+        assertThat(service.ticketFor(SnoozeLinks.HABIT_DONE, habit)).isPresent();
+        assertThat(service.ticketFor(SnoozeLinks.HABIT_DONE,
+                links.sign(SnoozeLinks.HABIT_DONE, USER, target, today.minusDays(1), NOW))).isEmpty();
+    }
+
     /** A ticket in the pre-day format, signed with the same key SnoozeLinks derives. */
     private static String signRaw(String body) {
         try {
