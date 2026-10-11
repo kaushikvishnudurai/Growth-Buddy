@@ -105,4 +105,21 @@ class FoodEntryEditTest {
                 new UpdateFoodEntryRequest("Idli", null, null, null, null, null)))
                 .isInstanceOf(ApiException.class);
     }
+
+    /** "Idli (120g)" was the bug: the count was never stored. It is now, and comes back. */
+    @Test
+    void piecesAreStoredReturnedAndClearedByWeighing() {
+        org.mockito.ArgumentCaptor<FoodEntry> saved = org.mockito.ArgumentCaptor.forClass(FoodEntry.class);
+        service.addEntry(USER, new AddFoodEntryRequest("Idli", 120, MealType.home,
+                null, null, null, null, 160, 2));
+        verify(entries).save(saved.capture());
+        assertThat(FoodEntryResponse.from(saved.getValue()).pieces()).isEqualTo(2);
+
+        FoodEntry e = stored();
+        service.updateEntry(USER, e.getId(), new UpdateFoodEntryRequest(null, null, null, null, null, null, null, 3));
+        assertThat(e.getPieces()).isEqualTo(3);
+        assertThat(e.getQuantityGrams()).as("grams follow the count").isEqualTo(3 * FoodWeek.gramsPerPiece("Dosa"));
+        service.updateEntry(USER, e.getId(), new UpdateFoodEntryRequest(null, 250, null, null, null, null));
+        assertThat(e.getPieces()).as("weighed now").isNull();
+    }
 }

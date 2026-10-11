@@ -39,7 +39,7 @@ so it provably matches the running database.
 | tasks · task_completion_history | tasks (`tasks.goal_id` NULL = on no goal; no FK, since `tasks` is created before `goals` — `GoalService.delete` clears it) |
 | habits · habit_checkins · habit_streaks · streak_freeze_wallets | habits (`habit_checkins.xp_paid`: the day's XP is paid; NULL on pre-column rows, read as "paid unless protected") |
 | water_goals · water_entries | water |
-| food_entries · food_favourites · food_photo_logs · food_diet_checks | food (`food_entries.meal_slot` null on pre-slot rows; `sugar_g`/`sodium_mg` only from a barcode label; `food_favourites` is a copy of a starred entry); `water_entries.drink_type` null = water; the last one stores Buddy's diet check per `(user_id, scope)` with the prompt it answered, so a changed day is a miss rather than something to invalidate |
+| food_entries · food_favourites · food_photo_logs · food_diet_checks | food (`food_entries.meal_slot` null on pre-slot rows; `food_entries.pieces` the count it was logged by, null when weighed; `sugar_g`/`sodium_mg` only from a barcode label; `food_favourites` is a copy of a starred entry); `water_entries.drink_type` null = water; the last one stores Buddy's diet check per `(user_id, scope)` with the prompt it answered, so a changed day is a miss rather than something to invalidate |
 | goals · goal_actions | goals |
 | daily_scores · daily_logs | scoring & wellness |
 | quotes | quotes |

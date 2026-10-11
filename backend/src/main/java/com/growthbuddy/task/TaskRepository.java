@@ -57,6 +57,17 @@ public interface TaskRepository extends JpaRepository<Task, UUID> {
     long countCompletedBetween(@Param("userId") UUID userId,
                                @Param("from") Instant from, @Param("to") Instant to);
 
+    /** {@code [taskId, changedAt]} completions in a window: the score range buckets them by local day. */
+    @Query("select h.taskId, h.changedAt from TaskHistory h "
+            + "where h.userId = :userId and h.changedAt >= :from and h.changedAt < :to")
+    List<Object[]> completionsBetween(@Param("userId") UUID userId,
+                                      @Param("from") Instant from, @Param("to") Instant to);
+
+    /** The due instants behind {@link #countOpenDueBefore}, so a range counts every day from one read. */
+    @Query("select t.dueAt from Task t where t.userId = :userId and t.deletedAt is null and t.paused = false "
+            + "and t.done = false and t.dueAt is not null and t.dueAt < :end")
+    List<Instant> openDueBefore(@Param("userId") UUID userId, @Param("end") Instant end);
+
     /** Take every task off a goal that is being deleted. */
     @Modifying(clearAutomatically = true)
     @Query("update Task t set t.goalId = null where t.userId = :userId and t.goalId = :goalId")

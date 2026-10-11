@@ -23,7 +23,7 @@ pantry, shopping). Docs name symbols — `grep -n` them.
 | Method | Notes |
 |---|---|
 | `scanGroceries(req)` | photo → ingredient list |
-| `generateMealPlan(userId, req)` | one day; prompt = members + sent ingredients + **pantry** + learned dishes |
+| `generateMealPlan(userId, req)` | one day; prompt = members + sent ingredients + **pantry** (never an expired row) + learned dishes |
 | `getLatestPlan` / `planHistory` / `reusePlan` | **latest row per family wins**; history = last 8 |
 | `assignCook` / `assignMultiDayCook` | `cooks: {meal: memberId}` on the plan JSON, no column |
 | `generateMultiDay` / `getLatestMultiDay` | weekly / fortnight, optional occasion theme |
@@ -62,6 +62,13 @@ pantry, shopping). Docs name symbols — `grep -n` them.
   against UNTICKED lines + pantry; a candidate matching a ticked line re-opens it.
 - **Pantry expiry:** `toPantryResponse(item, today)` with the user's today; `EXPIRING_DAYS` is both
   the badge window and the restock window.
+- **Expired food is never cooked (food safety):** `pantryNames(familyId, today)` drops rows past
+  `expiryDate` (user-local today), so they are neither "available" to a plan nor "have" for the
+  shopping list. `expiredNames` (those rows + any sent ingredient with freshness `expired` / quantity
+  `EXPIRED...`, see `isExpired(GroceryItem)`) goes in as `appendAvoidLine`, and `dropAvoidedDishes`
+  strips every dish naming one (whole word, case-insensitive, plural allowed, also the name without
+  `FOOD_DESCRIPTORS` like "fresh": "Fresh Curd" catches "Curd Rice") from AI and fallback plans
+  alike, saying so in `suggestions`. Both one-day and multi-day plans.
 - **Preference learning:** `bumpDishes(familyId, dishes, weight)` (accepted / cooked / favourited),
   read back via `learnedDishesNote`.
 - `writeList` / `readList` store `List<String>` as JSON text; `applyProfile` / `readProfile` map the

@@ -292,6 +292,7 @@ CREATE TABLE IF NOT EXISTS food_entries (
   sugar_g         SMALLINT     NULL,
   sodium_mg       INT          NULL,
   meal_slot       VARCHAR(10)  NULL,
+  pieces          SMALLINT     NULL,
   logged_at       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   log_date        DATE         NOT NULL,
   created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,

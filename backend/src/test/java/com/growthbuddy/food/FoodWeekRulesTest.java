@@ -20,7 +20,7 @@ class FoodWeekRulesTest {
         assertEquals("high", r.carbs());
         assertEquals("ok", r.fat());
         assertEquals("low", r.fiber());
-        assertTrue(r.summary().contains("light on protein and fiber"));
+        assertTrue(r.summary().contains("light on protein and fibre"));
         assertTrue(r.summary().contains("heavy on carbs"));
         assertTrue(r.add().size() <= 4);
         // Every gap the summary names keeps a tip, even past the cap.
@@ -201,5 +201,22 @@ class FoodWeekRulesTest {
 
     private static FoodWeekDay day(int count, int protein) {
         return new FoodWeekDay("2026-10-01", protein * 10, count, protein, 0, 0, 0);
+    }
+
+    /**
+     * The QA case: a small, rice-heavy week. Every gram figure is under target,
+     * so every chip read "low" while the headline said "heavy on carbs". Carbs
+     * are 70% of this plate's calories against a 51% target: high, and the
+     * summary the chips sit under says so too.
+     */
+    @Test
+    void aSmallCarbHeavyWeekReadsHighOnCarbsNotLow() {
+        DietCheckResponse r = FoodWeek.rules(new Nutrients(30, 250, 20, 10), TARGET);
+        assertEquals("high", r.carbs());
+        assertEquals("low", r.protein());
+        assertEquals("low", r.fat());
+        assertTrue(r.summary().contains("heavy on carbs"), r.summary());
+        assertTrue(r.summary().contains("fibre") && !r.summary().contains("fiber"), r.summary());
+        assertEquals("More fibre, less Fibre-free FIBRE", FoodWeek.british("More fiber, less Fiber-free FIBER"));
     }
 }

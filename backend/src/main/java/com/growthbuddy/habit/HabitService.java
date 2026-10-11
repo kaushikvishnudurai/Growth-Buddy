@@ -517,6 +517,25 @@ public class HabitService {
     }
 
     /**
+     * {@link #countsOn} for every day in {@code [from, to]}, from two reads instead
+     * of two per day: the habits once, and every check-in from the ISO week
+     * {@code from} falls in through {@code to}. countDue ignores rows outside the
+     * day's own week, so one list serves every day.
+     */
+    @Transactional(readOnly = true)
+    public Map<LocalDate, TodayCounts> countsBetween(UUID userId, LocalDate from, LocalDate to) {
+        Map<LocalDate, TodayCounts> out = new java.util.LinkedHashMap<>();
+        List<Habit> list = habits.findByUserIdAndDeletedAtIsNullOrderByCreatedAtAsc(userId);
+        List<HabitCheckin> rows = list.isEmpty() ? List.of()
+                : checkins.findByUserIdAndLogDateBetween(userId, weekStart(from), to);
+        ZoneId zone = clock.zoneOf(userId);
+        for (LocalDate d = from; !d.isAfter(to); d = d.plusDays(1)) {
+            out.put(d, list.isEmpty() ? new TodayCounts(0, 0) : countDue(list, rows, d, zone));
+        }
+        return out;
+    }
+
+    /**
      * Which habits count on {@code day}, and how many of those were done. A habit
      * counts when it is active (not paused), existed by that day, and is still owed:
      * a daily habit always is; a weekly / N-per-week habit is owed until the week's
