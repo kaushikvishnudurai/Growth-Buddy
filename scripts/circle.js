@@ -1724,9 +1724,11 @@ function ChallengesPanel({ api, currentUserId, wins }) {
   }
 
   /* The link joins in one tap (inviteFromHash on the far side). The OS share
-     sheet where there is one, else the clipboard. */
+     sheet where there is one, else the clipboard. Built on the public site
+     (api.siteUrl), not location.href: in the phone app that is
+     https://localhost, a link that opens nothing on anyone else's phone. */
   async function shareInvite(c) {
-    const url = inviteLink(window.location.href, c);
+    const url = inviteLink(api.siteUrl || window.location.href, c);
     const text = 'Join my circle ' + c.name + ' on Growth Buddy';
     try {
       if (navigator.share) {

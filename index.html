@@ -9,19 +9,56 @@
       content="Growth Buddy — your friendly accountability app for habits, tasks, fitness and growth."
     />
     <title>Growth Buddy</title>
+    <!-- %GB_SITE_URL% is the public site (vite.config.js SITE_URL). -->
+    <link rel="canonical" href="%GB_SITE_URL%/" />
+
+    <!-- Link previews (a Circle invite pasted into WhatsApp, Slack, iMessage).
+         The join code stays in the URL hash, which preview bots never fetch. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Growth Buddy" />
+    <meta property="og:title" content="Growth Buddy" />
+    <meta
+      property="og:description"
+      content="Your friendly accountability app for habits, tasks, fitness and growth."
+    />
+    <meta property="og:url" content="%GB_SITE_URL%/" />
+    <meta property="og:image" content="%GB_SITE_URL%/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Growth Buddy: build habits, finish tasks, grow every day." />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Growth Buddy" />
+    <meta
+      name="twitter:description"
+      content="Your friendly accountability app for habits, tasks, fitness and growth."
+    />
+    <meta name="twitter:image" content="%GB_SITE_URL%/og-image.png" />
 
     <!-- sockjs-client (CommonJS) references the Node `global`, which doesn't
-         exist in the browser. The old CDN UMD build shimmed it; the bundled
-         npm version doesn't, so define it before the module entry loads.
-         External (public/) so the CSP needs no 'unsafe-inline' for scripts. -->
-    <script src="/global-shim.js"></script>
+         exist in the browser, and the phone app's splash needs a backstop armed
+         before app.js can throw (global-shim.js says why). External (public/) so
+         the CSP needs no 'unsafe-inline' for scripts. `defer`: classic deferred
+         scripts and module scripts run in document order, so it still runs
+         before the module entry below, without blocking first paint. -->
+    <script src="/global-shim.js" defer></script>
 
     <link rel="icon" type="image/svg+xml" href="/logomark.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Growth Buddy" />
+    <!-- iOS ignores the manifest's background colour and shows white while a
+         home-screen app boots; these are its launch images, one per portrait
+         screen size (CSS px x DPR). An unlisted size still gets white. -->
+    <link rel="apple-touch-startup-image" media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3)" href="/splash/1290x2796.png" />
+    <link rel="apple-touch-startup-image" media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3)" href="/splash/1179x2556.png" />
+    <link rel="apple-touch-startup-image" media="(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3)" href="/splash/1284x2778.png" />
+    <link rel="apple-touch-startup-image" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3)" href="/splash/1170x2532.png" />
+    <link rel="apple-touch-startup-image" media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3)" href="/splash/1125x2436.png" />
+    <link rel="apple-touch-startup-image" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2)" href="/splash/828x1792.png" />
+    <link rel="apple-touch-startup-image" media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2)" href="/splash/750x1334.png" />
     <link rel="stylesheet" href="styles/tokens.css" />
     <link rel="stylesheet" href="styles/app.css" />
     <link rel="stylesheet" href="styles/mini-calendar.css" />
@@ -32,7 +69,20 @@
   </head>
   <body>
     <div class="gb-page">
-      <div id="root"></div>
+      <!-- What a crawler, a preview bot or a browser with JavaScript off sees.
+           The app replaces it on its first render. -->
+      <div id="root">
+        <main class="gb-static">
+          <h1>Growth Buddy</h1>
+          <p>
+            Your friendly accountability app for habits, tasks, fitness and growth: tick off
+            today's tasks, keep your streaks, log water, food, sleep and money, and grow with
+            friends in a Circle.
+          </p>
+          <noscript><p>Growth Buddy needs JavaScript turned on.</p></noscript>
+          <p><a href="/privacy.html">Privacy policy</a></p>
+        </main>
+      </div>
     </div>
 
     <!-- Single ES module entry; Vite bundles the import graph and the npm deps

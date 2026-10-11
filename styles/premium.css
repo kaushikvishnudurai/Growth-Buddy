@@ -327,6 +327,7 @@ html[data-premium='on'] .gb-stat {
   letter-spacing: -0.032em;
 }
 html[data-premium='on'] .gb-h2,
+html[data-premium='on'] .gb-sectiontitle h2,
 html[data-premium='on'] .gb-sectiontitle h3 {
   letter-spacing: -0.022em;
 }

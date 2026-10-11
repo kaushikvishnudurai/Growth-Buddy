@@ -12,6 +12,20 @@ export function isNative() {
 }
 
 /**
+ * The public web address of the app, no trailing slash: what a link meant for
+ * someone else (a Circle invite, the privacy policy, "download it on the
+ * website") must point at. In a browser that is this page's origin. In the
+ * phone app the page is https://localhost, which is the phone itself, so it is
+ * the API base instead: the backend serves the same SPA, and a native bundle
+ * cannot be built without VITE_API_BASE (app.js resolveApiBase).
+ */
+export function publicSiteUrl() {
+  const base = (import.meta.env && import.meta.env.VITE_API_BASE) || '';
+  if (isNative() && /^https?:\/\//.test(base)) return base.replace(/\/+$/, '');
+  return typeof location !== 'undefined' ? location.origin : '';
+}
+
+/**
  * Reach a native plugin, or null off-device.
  *
  * `Capacitor.Plugins` is only ever filled in by `registerPlugin()`, which lives
@@ -65,11 +79,8 @@ export function deviceLabelHeader() {
 /** Resolve the device label once at boot. Safe to call on the web — no-ops. */
 export async function initNative() {
   if (!isNative() || deviceLabel) return;
-  // Backstop. The splash is held open by hand (launchAutoHide:false), so a throw
-  // anywhere before the render would strand the user on it with no way out.
-  // hide() is idempotent, so the normal path racing this is harmless.
-  const SS = nativePlugin('SplashScreen');
-  if (SS) setTimeout(() => SS.hide().catch(() => {}), 4000);
+  // The splash backstop is not here: this runs at the end of app.js, so a throw
+  // earlier in it never armed one. public/global-shim.js arms it before app.js.
   // Not awaited: housekeeping, never worth holding boot for.
   pruneStaleChannels();
   const Device = nativePlugin('Device');

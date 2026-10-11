@@ -32,7 +32,8 @@ splash control, no device name, "this browser doesn't support push notifications
 | Export | What |
 |---|---|
 | `isNative()` | `Capacitor.isNativePlatform()` |
-| `initNative()` | 4 s splash `hide()` backstop (the splash is held open by hand, `launchAutoHide:false`, so a throw before render would strand the user), `pruneStaleChannels()` (not awaited), device model → `deviceLabel` |
+| `initNative()` | `pruneStaleChannels()` (not awaited), device model → `deviceLabel`. **The splash backstop is not here any more**: this runs at the end of app.js, so a throw earlier (e.g. `resolveApiBase()` on a bundle built without `VITE_API_BASE`) never armed it. `public/global-shim.js` arms it before app.js: hide at 4 s, or at once on an uncaught `error` |
+| `publicSiteUrl()` | the public web address, no trailing slash: `location.origin` in a browser, `VITE_API_BASE` in the app (the page is `https://localhost` there; the backend serves the same SPA). For links meant for someone else: Circle invites (`challengesApi.siteUrl`), the privacy link, save-file.js's "Open website" |
 | `deviceLabelHeader()` | `"Growth Buddy on <model>"` — sent as `X-GB-Device` for the signed-in-devices list (Chrome redacts the Android UA to "K") |
 | `applyNativeStatusBar(theme)` | solid bar (no overlay — the header already reserves the inset) in `--bg`; call on boot **and every theme change**. Capacitor's `DARK` style means a dark bar. **Each call in its own try**: iOS has no `setBackgroundColor` and Android 15+ ignores the first two (edge-to-edge), and one rejection used to skip `setStyle`, leaving the icon colour wrong |
 | `deepLinkHash(url)` | pure: the link's `#/route?query`, null when it names no route |

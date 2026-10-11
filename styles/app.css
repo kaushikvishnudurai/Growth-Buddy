@@ -62,6 +62,39 @@ body {
   justify-content: center;
 }
 
+/* index.html's static #root content: what shows before the app's first render
+   (and all a crawler or a no-JavaScript browser gets). render() replaces it.
+   Fixed, out of flow: in flow it gave #root a size, and the app's first render
+   moving #root registered as a 0.36 layout shift on every boot. */
+.gb-static {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--fg2);
+}
+.gb-static > * {
+  max-width: 28rem;
+  margin-inline: auto;
+}
+.gb-static h1 {
+  margin: 0 0 8px;
+  font-family: var(--font-display);
+  color: var(--brand-ink);
+}
+.gb-static a {
+  color: var(--brand-ink);
+  font-weight: 700;
+}
+
+/* Under the sign-in card: the privacy policy (index.html links it too). */
+.gb-login-legal {
+  margin: 4px 0 0;
+  text-align: center;
+}
+
 /* ---- Page chrome (visible only on desktop / wide viewports) ---- */
 .gb-page {
   width: 100%;
@@ -238,6 +271,7 @@ button.gb-avatar:active {
   justify-content: space-between;
   padding: 6px var(--gutter) 10px;
 }
+.gb-sectiontitle h2,
 .gb-sectiontitle h3 {
   font-family: var(--font-display);
   font-weight: 800;
@@ -2500,6 +2534,7 @@ body:has(.is-thinking, .gb-thinking)::after {
 .gb-report .gb-sectiontitle {
   padding-bottom: 8px;
 }
+.gb-report .gb-sectiontitle h2,
 .gb-report .gb-sectiontitle h3 {
   font-family: var(--font-body);
   font-weight: 700;

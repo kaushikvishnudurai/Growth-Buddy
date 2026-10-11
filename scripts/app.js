@@ -132,7 +132,11 @@ import {
   onLocalNotificationAction,
   onDeepLink,
   deepLinkHash,
+  publicSiteUrl,
 } from './native.js';
+import { offerFile } from './save-file.js';
+import { launchIntent } from './launch-intent.js';
+import { registerSW } from 'virtual:pwa-register';
 import { registerToast } from './toast.js';
 import { initA11y, focusLocator, refocus } from './a11y.js';
 import { initErrorReporting } from './error-report.js';
@@ -185,8 +189,39 @@ if ('serviceWorker' in navigator) {
     }
   } else if (!import.meta.env.DEV) {
     // vite-plugin-pwa emits sw.js only in a build; on the dev server it is the SPA fallback.
-    window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js', { scope: '/' }));
+    initServiceWorker();
   }
+}
+
+/* A new deploy reaches an open tab or an installed app. The worker is
+   registerType 'prompt' (vite.config.js): a new build installs and WAITS, and
+   the page keeps the old build's precache, chunks and all, so nothing skews
+   under it. "Reload" tells the waiting worker to take over and reloads once it
+   has (registerSW's updateSW(true)). The worker is otherwise only re-checked on
+   a navigation, which a hash-routed app never makes, so coming back to the app
+   checks too. Dismissed, it asks again on the next return. */
+function initServiceWorker() {
+  let updateReady = false;
+  const offerUpdate = () =>
+    pushToast('A new version is ready.', 'info', 24 * 60 * 60 * 1000, {
+      label: 'Reload',
+      run: () => updateSW(true),
+    });
+  const updateSW = registerSW({
+    onNeedRefresh() {
+      updateReady = true;
+      offerUpdate();
+    },
+    onRegisteredSW(_url, reg) {
+      if (!reg) return;
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) return;
+        if (updateReady) {
+          if (!state.toasts.some((t) => t.message === 'A new version is ready.')) offerUpdate();
+        } else reg.update().catch(() => {});
+      });
+    },
+  });
 }
 
 // Prefer the build-time env (VITE_API_BASE). In dev, fall back to '' so requests
@@ -2766,6 +2801,8 @@ async function loadData() {
   if (!refresh && state.screen === 'home') markHomePainted();
   // Needs wave 1: "is this a new account?" is read from tasks/habits/reminders.
   if (!refresh) maybeStartFirstRun();
+  // A manifest shortcut or a share: needs wave 1 (water, tasks) on screen.
+  if (!refresh) runLaunchIntent();
   // After wave 1, so a button press that cold-started the app (the plugin holds
   // it until a listener attaches) finds the habit or reminder it names.
   armNotificationActions();
@@ -6568,6 +6605,41 @@ function screenFromHash() {
    screen their session expired on. Memory only, taken once by the next
    sign-in; every sign-in used to land on Home. */
 let returnToScreen = '';
+
+/* A manifest shortcut (?shortcut=water) or a share into the app (?text=…):
+   read once, taken off the address at once so a reload doesn't log a second
+   glass, and run after the first data load (runLaunchIntent). Signed out, it
+   waits for the sign-in's first load. */
+let pendingLaunch = launchIntent(window.location.search);
+if (pendingLaunch) history.replaceState(null, '', window.location.pathname + window.location.hash);
+
+function runLaunchIntent() {
+  const it = pendingLaunch;
+  pendingLaunch = null;
+  if (!it) return;
+  if (it.share) {
+    // The shared words go through Quick add's own preview; nothing is written
+    // until the user ticks and confirms there.
+    openAddSheet({ text: it.share, preview: true });
+    return;
+  }
+  if (it.shortcut === 'water' && featureOn('water')) {
+    const before = ((state.water && state.water.entries) || []).length;
+    quickAddWater(WATER_ACTION_ML).then(() => {
+      // Failures and offline saves have toasted already.
+      const now = ((state.water && state.water.entries) || []).length;
+      if (now > before && navigator.onLine) toastSuccess('Logged ' + WATER_ACTION_ML + ' ml of water.');
+    });
+  } else if (it.shortcut === 'task') {
+    openAddTask();
+  } else if (it.shortcut === 'focus' && screenEnabled('focus')) {
+    focusAutoStart = true;
+    setScreen('focus');
+  } else if (it.shortcut === 'quickadd') {
+    openAddSheet();
+  }
+}
+
 function landAfterSignIn() {
   const target = Object.prototype.hasOwnProperty.call(SCREENS, returnToScreen)
     ? returnToScreen
@@ -7313,9 +7385,9 @@ function openWeeklyReview() {
 
 /* ---- Delete account (destructive, password-confirmed) ---- */
 /* "Download my data": GET /api/auth/export (every table the account owns, minus
-   secrets) handed to the OS as growth-buddy-export.json. Share sheet first where
-   the platform takes files (the Capacitor WebView mostly does not), else a plain
-   download — the same ladder share-card.js uses. */
+   secrets) handed to the OS as growth-buddy-export.json through save-file.js:
+   share sheet where the platform takes files, else a download, and in the app,
+   where neither works yet, a toast that says so and offers the website. */
 async function downloadMyData(btn) {
   const label = btn && btn.lastChild && btn.lastChild.nodeType === 3 ? btn.lastChild : null;
   const was = label ? label.textContent : '';
@@ -7325,22 +7397,9 @@ async function downloadMyData(btn) {
     const data = await api('/api/auth/export');
     const name = 'growth-buddy-export-' + todayKey() + '.json';
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const file = typeof File === 'function' ? new File([blob], name, { type: 'application/json' }) : null;
-    if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
-      try {
-        await navigator.share({ files: [file], title: 'Growth Buddy data' });
-        return;
-      } catch (err) {
-        if (err && err.name === 'AbortError') return;
-      }
+    if ((await offerFile(blob, name, 'Growth Buddy data')) === 'saved') {
+      pushToast('Your data is downloading.', 'success', 3000);
     }
-    const url = URL.createObjectURL(blob);
-    const a = h('a', { href: url, download: name, style: { display: 'none' } });
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 10_000);
-    pushToast('Your data is downloading.', 'success', 3000);
   } catch (err) {
     toastError(err, 'Could not export your data.');
   } finally {
@@ -9998,7 +10057,7 @@ function openProfileSettings(initialTab) {
     ),
     h('div', { class: 'gb-settings-sec-label', style: { marginTop: '20px' } }, 'About'),
     // The real build (vite.config.js BUILD), the number support asks for.
-    h('div', { class: 'gb-field-hint' }, 'Growth Buddy · build ' + __GB_BUILD__)
+    h('div', { class: 'gb-field-hint' }, 'Growth Buddy · build ' + __GB_BUILD__, ' · ', privacyLink())
   );
 
   // ---- Top-level segmented slider nav ----
@@ -10450,8 +10509,7 @@ async function toggleReminderDone(id, key, done) {
 }
 
 /* Every reminder as an .ics file (GET /api/reminders/export.ics), handed to the
-   OS the way "Download my data" is: share sheet where it takes files, else a
-   plain download. */
+   OS the way "Download my data" is (offerFile, save-file.js). */
 async function exportRemindersIcs(btn) {
   if (btn) btn.disabled = true;
   try {
@@ -10465,22 +10523,9 @@ async function exportRemindersIcs(btn) {
     });
     const name = 'growth-buddy-reminders.ics';
     const blob = new Blob([text], { type: 'text/calendar' });
-    const file = typeof File === 'function' ? new File([blob], name, { type: 'text/calendar' }) : null;
-    if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
-      try {
-        await navigator.share({ files: [file], title: 'Growth Buddy reminders' });
-        return;
-      } catch (err) {
-        if (err && err.name === 'AbortError') return;
-      }
+    if ((await offerFile(blob, name, 'Growth Buddy reminders')) === 'saved') {
+      pushToast('Your calendar file is downloading. Open it in Google, Apple or Outlook Calendar.', 'success', 4000);
     }
-    const url = URL.createObjectURL(blob);
-    const a = h('a', { href: url, download: name, style: { display: 'none' } });
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 10_000);
-    pushToast('Your calendar file is downloading. Open it in Google, Apple or Outlook Calendar.', 'success', 4000);
   } catch (err) {
     toastError(err, 'Could not export your reminders.');
   } finally {
@@ -10942,8 +10987,10 @@ function segmented(options, initial, onChange) {
 /* Quick add's one sentence -> preview (or straight through for controls only).
    Shared by the add sheet and the command palette. `beforeShow` closes the
    caller's sheet once there is something to show; false = nothing read (it has
-   already said why), and a thrown error is the caller's to report. */
-async function runQuickAdd(text, beforeShow) {
+   already said why), and a thrown error is the caller's to report.
+   `opts.preview`: always show the preview, even for controls alone (a share
+   into the app: words the user didn't type here, so even "dark mode" waits). */
+async function runQuickAdd(text, beforeShow, opts = {}) {
   const r = await parseQuickAdd(text);
   const rows = r.intents.map((it) => ({ it, d: describeIntent(it) })).filter((x) => x.d);
   if (!rows.length) {
@@ -10961,7 +11008,7 @@ async function runQuickAdd(text, beforeShow) {
   if (beforeShow) beforeShow();
   // Only controls ("open money", "dark mode"): just do it — nothing is written
   // that a preview would protect.
-  if (rows.every((x) => CONTROL_INTENTS.has(x.it.type) && !x.d.unknown)) {
+  if (!opts.preview && rows.every((x) => CONTROL_INTENTS.has(x.it.type) && !x.d.unknown)) {
     await applyQuickAdd(rows.map((x) => x.it));
     return true;
   }
@@ -10972,7 +11019,10 @@ async function runQuickAdd(text, beforeShow) {
   return true;
 }
 
-function openAddSheet() {
+/* prefill.text fills the one-line box; prefill.preview reads it at once and
+   shows Quick add's preview rather than acting (see runQuickAdd's opts). */
+function openAddSheet(prefill) {
+  prefill = prefill || {};
   const { sheet, close } = openOverlay({ label: 'Quick add' });
 
   // Natural-language quick-add: type it once, we sort it into the right trackers.
@@ -10993,7 +11043,7 @@ function openAddSheet() {
     qaInput.disabled = true;
     const done = setThinking(qaBtn, 'Reading');
     try {
-      if (await runQuickAdd(text, close)) return;
+      if (await runQuickAdd(text, close, { preview: prefill.preview })) return;
     } catch (err) {
       toastError(err, 'Quick add failed. Try again?');
     }
@@ -11202,6 +11252,10 @@ function openAddSheet() {
     )
   );
   refreshIcons();
+  if (prefill.text) {
+    qaInput.value = prefill.text;
+    if (prefill.preview) submitQuickAdd();
+  }
 }
 
 /* `<input type="datetime-local">` wants wall-clock local time, not the UTC an
@@ -13608,6 +13662,9 @@ const SCREENS = {
               week: (linkId) => api('/api/mentorship/' + encodeURIComponent(linkId) + '/week'),
             },
             challengesApi: {
+              // Where an invite link points: the public site, never the app's
+              // own https://localhost (native.js publicSiteUrl).
+              siteUrl: publicSiteUrl() + '/',
               listMine: () => api('/api/circles/mine'),
               listAll: () => api('/api/circles'),
               createCircle: (body) =>
@@ -14469,8 +14526,19 @@ function authShell(title, subtitle, children) {
       // expired" here, under the notice that already says so.
       state.error && !state.errorField && !(state.authNotice && state.error === SESSION_EXPIRED)
         ? h('p', { class: 'gb-login-error', role: 'alert' }, state.error)
-        : null
+        : null,
+      h('p', { class: 'gb-login-legal' }, privacyLink())
     )
+  );
+}
+
+/* The hosted policy. Absolute (publicSiteUrl), so in the app it opens in the
+   system browser instead of replacing the app inside its own WebView. */
+function privacyLink() {
+  return h(
+    'a',
+    { class: 'gb-login-link', href: publicSiteUrl() + '/privacy.html', target: '_blank', rel: 'noopener' },
+    'Privacy policy'
   );
 }
 

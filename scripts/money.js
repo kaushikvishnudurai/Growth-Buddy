@@ -10,6 +10,7 @@
 import { h, Icon, Card, ProgressRing, refreshIcons, openModal, Thinking } from './gb-kit.js';
 import { toast } from './toast.js';
 import { shareStoryCard, _demo as _shareCardDemo } from './share-card.js';
+import { offerFile } from './save-file.js';
 import {
   CUR,
   cur,
@@ -2772,13 +2773,10 @@ function downloadLedgerCsv(money) {
   const name = 'growth-buddy-money-' + todayKey() + '.csv';
   // BOM: Excel reads a BOM-less CSV as ANSI and mangles ₹ and names.
   const blob = new Blob(['\uFEFF' + ledgerCsv(money)], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = h('a', { href: url, download: name, style: { display: 'none' } });
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
-  toast.success('Your money CSV is downloading.');
+  // In the app there may be no way to save it; offerFile says so itself.
+  offerFile(blob, name, 'Growth Buddy money', { shareFirst: false }).then((r) => {
+    if (r === 'saved') toast.success('Your money CSV is downloading.');
+  });
 }
 
 function ScreenMoney({

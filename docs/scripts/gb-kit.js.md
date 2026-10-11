@@ -21,7 +21,7 @@ Every screen builds DOM from these. Element-returning factories, no framework, n
 | `IconChip({domain, icon, size, iconSize})` | |
 | `Pill({icon, label, bg, fg, dot, style})` | |
 | `Card({children, style, className, onClick})` | **has no padding of its own** — content insets itself |
-| `SectionTitle({title, action, onAction})` | action is a `<button>` with `onAction`, plain text (a count) without |
+| `SectionTitle({title, action, onAction})` | an **`<h2>`** (a section under the screen's h1; it was an h3 with no h2 above it — Lighthouse heading-order); action is a `<button>` with `onAction`, plain text (a count) without |
 | `ProgressRing({value, size, stroke, color, children})` | SVG ring; children go in the middle |
 | `Check({done, onToggle, color, label})` | habit/task toggle; pass `label` (the item's name) so each one's aria-label is distinct. Paints the tick + pop itself and calls `onToggle` 400ms later (= `gb-pop`), since `onToggle` re-renders and would destroy the button mid-press |
 | `Avatar({...})` | |
