@@ -8,6 +8,7 @@ import { h, Card, SectionTitle, Icon } from './gb-kit.js';
 import { WeeklyReflectionCard, BadgeCard, GoalTimelineCard } from './dashboard.js';
 import { buildInsights, insightProgress } from './insights.js';
 import { InsightRow } from './outlook-card.js';
+import { yearOf } from './outlook.js';
 import {
   localKey,
   pixelValues,
@@ -1049,24 +1050,6 @@ function pixelsSection({ trends, wellness, insightHistory }) {
       children: [slot, h('div', { class: 'gb-pixels-key' }, readout, key)],
     })
   );
-}
-
-/* Boot holds 60 days of daily logs; Report fetches the year (`insightHistory.year`,
-   same shape as /api/daily-logs) after first paint. Use it once it lands. */
-function yearOf(trends, wellness, insightHistory) {
-  const y = insightHistory && insightHistory.year;
-  if (!y) return { trends, wellness };
-  // The live stores win a shared day: they hold today's edits, the year fetch
-  // is whatever the server had when Report opened.
-  const w = wellness || {};
-  return {
-    trends: { byDate: { ...(y.byDate || {}), ...((trends && trends.byDate) || {}) } },
-    wellness: {
-      ...w,
-      sleepByDate: { ...(y.sleepByDate || {}), ...(w.sleepByDate || {}) },
-      moodByDate: { ...(y.moodByDate || {}), ...(w.moodByDate || {}) },
-    },
-  };
 }
 
 /** This month's YYYY-MM, or last month's on the 1st to 3rd (this one is too new to share). */

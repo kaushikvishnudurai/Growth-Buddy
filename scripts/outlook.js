@@ -9,7 +9,7 @@
    local Dates, which is why they are not used here.
    ===================================================================== */
 import { buildInsights } from './insights.js';
-import { inRange, sumAmt, goalSaved, fmt } from './money-core.js';
+import { inRange, sumAmt, goalSaved, fmt, applyCurrency } from './money-core.js';
 
 const DAY_MS = 86400000;
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -22,23 +22,42 @@ const key = (n) => new Date(n * DAY_MS).toISOString().slice(0, 10);
 const monthLabel = (k) => MON[Number(k.slice(5, 7)) - 1] + ' ' + k.slice(0, 4);
 const dayLabel = (k) => MON[Number(k.slice(5, 7)) - 1] + ' ' + Number(k.slice(8, 10));
 
-/** Same ranking as Report: the first card buildInsights returns. */
+/** Boot holds 60 days of daily logs; Report fetches the year (`insightHistory.year`, same
+    shape as /api/daily-logs) after first paint. Use it once it lands; the live stores win a
+    shared day (they hold today's edits). Report's sections use it too. */
+export function yearOf(trends, wellness, insightHistory) {
+  const y = insightHistory && insightHistory.year;
+  if (!y) return { trends, wellness };
+  const w = wellness || {};
+  return {
+    trends: { byDate: { ...(y.byDate || {}), ...((trends && trends.byDate) || {}) } },
+    wellness: {
+      ...w,
+      sleepByDate: { ...(y.sleepByDate || {}), ...(w.sleepByDate || {}) },
+      moodByDate: { ...(y.moodByDate || {}), ...(w.moodByDate || {}) },
+    },
+  };
+}
+
+/** Same ranking as Report: the first card buildInsights returns over the same data. */
 export function topInsight(data) {
-  return buildInsights(data)[0] || null;
+  return buildInsights({ ...data, ...yearOf(data.trends, data.wellness, data.history) })[0] || null;
 }
 
 /** Where 90 days of net saving leads: the nearest dated money goal, else a month 3 out. */
 export function savingsPace(money, now = Date.now()) {
   if (!money) return null;
+  applyCurrency(money); // fmt's symbol is module state; Outlook can paint before the Money card sets it
   const t0 = num(localKey(new Date(now)));
   const from = key(t0 - 89);
   const to = key(t0);
   const inc = inRange(money.income || [], from, to);
   const exp = inRange(money.expenses || [], from, to);
-  const rows = inc.concat(exp);
-  if (rows.length < 5) return null;
-  const first = Math.min(...rows.map((r) => num(r.date)));
-  const span = t0 - first + 1;
+  // Both sides logged: income alone promises phantom savings, expenses alone a phantom stall.
+  if (inc.length + exp.length < 5 || !inc.length || !exp.length) return null;
+  // Days since the ledger began, capped at the 90-day window (an older ledger is a full 90).
+  const all = (money.income || []).concat(money.expenses || []).filter((r) => r.date <= to);
+  const span = Math.min(90, t0 - Math.min(...all.map((r) => num(r.date))) + 1);
   if (!(span >= 30)) return null;
   // ponytail: straight line over 90 days, upgrade to least-squares like insights paceSlope if users call it jumpy
   const rate = (sumAmt(inc) - sumAmt(exp)) / span;
@@ -47,10 +66,13 @@ export function savingsPace(money, now = Date.now()) {
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0];
   if (goal) {
     const left = Number(goal.target) - goalSaved(goal);
-    const byDate = rate > 0 ? key(t0 + Math.ceil(left / rate)) : null;
+    const days = rate > 0 ? Math.ceil(left / rate) : Infinity;
+    const byDate = days <= 3650 ? key(t0 + days) : null;
     const onTime = !!byDate && byDate <= goal.dueDate;
     const text = !byDate
-      ? goal.name + ': no finish date yet, the last 90 days saved nothing net'
+      ? rate > 0
+        ? goal.name + ': over 10 years away at this pace'
+        : goal.name + ': no finish date yet, the last 90 days saved nothing net'
       : 'At this pace: ' +
         goal.name +
         ' reached by ' +
@@ -70,7 +92,7 @@ export function savingsPace(money, now = Date.now()) {
     amount,
     month,
     rate,
-    text: 'At this pace: ' + fmt(amount) + ' saved by ' + monthLabel(month + '-01'),
+    text: 'At this pace: ' + fmt(amount) + ' more saved by the end of ' + monthLabel(month + '-01'),
   };
 }
 

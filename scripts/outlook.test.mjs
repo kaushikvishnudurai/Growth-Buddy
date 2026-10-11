@@ -43,7 +43,39 @@ const expenses = [inc('2025-11-02', 500)];
   assert.equal(s.kind, 'month');
   assert.equal(s.month, '2026-04');
   assert.equal(s.amount, 5000);
-  assert.match(s.text, /^At this pace: .*5,000 saved by Apr 2026$/);
+  assert.match(s.text, /^At this pace: .*5,000 more saved by the end of Apr 2026$/);
+  // fmt's symbol comes from this money doc, not whichever screen painted last
+  const usd = savingsPace({ income, expenses, settings: { currency: '$' } }, NOW);
+  assert.match(usd.text, /\$5,000/);
+  savingsPace({ income, expenses, settings: { currency: '\u20b9' } }, NOW);
+  // a ledger older than the window divides by 90, not by the first row inside it
+  const old = savingsPace(
+    { income: income.slice(1), expenses: expenses.concat(inc('2025-06-01', 0)) },
+    NOW
+  );
+  assert.equal(old.rate, 3500 / 90);
+}
+
+// --- one side of the ledger only: no projection either way ---
+{
+  assert.equal(savingsPace({ income, expenses: [] }, NOW), null);
+  const g = [{ name: 'Trip', target: 500, dueDate: '2026-06-01' }];
+  assert.equal(savingsPace({ income: [], expenses: income, goals: g }, NOW), null);
+}
+
+// --- a pace so slow the date would be centuries out: say so, no date ---
+{
+  const slow = savingsPace(
+    {
+      income,
+      expenses: [inc('2025-11-02', 4400)],
+      goals: [{ name: 'House', target: 10000000, dueDate: '2030-01-01' }],
+    },
+    NOW
+  );
+  assert.equal(slow.byDate, null);
+  assert.equal(slow.onTime, false);
+  assert.match(slow.text, /^House: over 10 years away at this pace$/);
 }
 
 // --- stalled / negative rate: a goal gets no date, no goal means nothing ---
@@ -62,7 +94,10 @@ const expenses = [inc('2025-11-02', 500)];
 // --- under 30 days of ledger, or under 5 rows: null ---
 {
   const recent = ['2026-01-01', '2026-01-05', '2026-01-10', '2026-01-15', '2026-01-19'];
-  assert.equal(savingsPace({ income: recent.map((d) => inc(d, 100)), expenses: [] }, NOW), null);
+  assert.equal(
+    savingsPace({ income: recent.map((d) => inc(d, 100)), expenses: [inc('2026-01-02', 10)] }, NOW),
+    null
+  );
   assert.equal(savingsPace({ income: income.slice(0, 4), expenses: [] }, NOW), null);
   assert.equal(savingsPace(null, NOW), null);
 }
@@ -137,6 +172,14 @@ const expenses = [inc('2025-11-02', 500)];
     false
   );
   assert.equal(topInsight({}), null);
+  // Report's year fetch (history.year) feeds Home too, so both rank the same days
+  const viaYear = topInsight({
+    wellness: {},
+    trends: { byDate: {} },
+    history: { year: { sleepByDate, moodByDate, byDate: {} } },
+    now: NOW,
+  });
+  assert.deepEqual(viaYear, top);
 }
 
 console.log('outlook tests passed');

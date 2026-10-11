@@ -2,7 +2,7 @@
 
 Pure pattern finder over the local wellness + trends + money stores, plus history the Report
 screen fetches on open. No AI, no imports. `push.js` imports `drinkRateByHour` from here.
-Two callers: `report.js` `insightsSection` (Report screen) and `outlook.js` `topInsight` (Home's Outlook card, `[0]` only, no history fetch so history-only cards don't show there). Both draw the row with `outlook-card.js` `InsightRow`. Checked by
+Two callers: `report.js` `insightsSection` (Report screen) and `outlook.js` `topInsight` (Home's Outlook card, `[0]` only; Home never fetches history, it reuses Report's `state.insightHistory` + year via `yearOf` once Report has loaded it, so history-only cards appear on Home only after a Report visit). Both draw the row with `outlook-card.js` `InsightRow`. Checked by
 `node scripts/insights.test.mjs`.
 
 Exports `buildInsights({wellness, trends, money, habits, tasks, goals, goalProgress, history, features, dismissed, now})`

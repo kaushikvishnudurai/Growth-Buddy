@@ -13343,7 +13343,7 @@ const SCREENS = {
         onOpenMoney: () => setScreen('money'),
         homeLayout: (state.user && state.user.homeLayout) || null,
         trends: state.trends,
-        // ponytail: Home skips the history fetch; pass state.insightHistory if Report has loaded it
+        // ponytail: Home never fetches history; it reuses Report's once loaded. Fetch here if Home must match Report on a cold start
         insightHistory: state.insightHistory,
         dismissedInsights: dismissedInsights(),
         onDismissInsight: (id) => {
