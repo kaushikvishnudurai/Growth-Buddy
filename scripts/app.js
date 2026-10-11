@@ -30,7 +30,7 @@ import {
   SHEET_EXIT_MS,
 } from './gb-kit.js';
 import { setLocale, localeFromUser } from './i18n.js';
-import { dateKey, todayKey } from './dates.js';
+import { dateKey, todayKey, parseWhen } from './dates.js';
 import {
   ScreenDashboard,
   ScreenFood,
@@ -122,7 +122,15 @@ import { WORK_WEEKS, getWorkWeek, setWorkWeek, occursOn } from './recurrence.js'
 import { ScreenAchievements, computeAchievements, levelProgress } from './achievements.js';
 import { celebrate } from './celebrate.js';
 import { openSnap } from './snap.js';
-import { lastNightGuess, stepsTarget, focusMinutesTarget, HEALTH_LINKS, suggestHealthLink } from './nudges.js';
+import {
+  lastNightGuess,
+  usualSleep,
+  sleepFromHours,
+  stepsTarget,
+  focusMinutesTarget,
+  HEALTH_LINKS,
+  suggestHealthLink,
+} from './nudges.js';
 import {
   enablePush,
   disablePush,
@@ -581,6 +589,7 @@ function isConnectionToast(t) {
 
 /* `action` ({label, run}) puts one button on the toast — a reminder's Snooze.
    Tapping it runs it and dismisses the toast. */
+let lastError = { id: 0, text: '' }; // the newest error toast, so a caller can tell one was said
 function pushToast(message, kind, durationMs, action, opts) {
   let text = message || 'Something went wrong.';
   // The banner already says the connection is down; repeating "Check your
@@ -596,6 +605,7 @@ function pushToast(message, kind, durationMs, action, opts) {
     icon: (opts && opts.icon) || null, // its own glyph over TOAST_ICON's (notes: 'trash-2')
   };
   state.toasts = [...state.toasts.filter((t) => t.message !== text), toast].slice(-4);
+  if (toast.kind === 'error') lastError = { id: toast.id, text };
   dropStaleToastTimers();
   paintToasts();
   announce(text, toast.kind === 'error');
@@ -3858,11 +3868,13 @@ async function createTask(body) {
     state.tasks = [local, ...state.tasks];
     queueWrite({ method: 'POST', path: '/api/tasks', body, kind: 'task.create', tempId: local.id, local, idemKey });
     landSoon('[data-task-id="' + local.id + '"]');
-    return;
+    return local;
   }
-  state.tasks = [mapTask(created), ...state.tasks];
+  const task = mapTask(created);
+  state.tasks = [task, ...state.tasks];
   landSoon('[data-task-id="' + created.id + '"]');
   refreshScoreLater();
+  return task;
 }
 
 async function updateTask(id, body) {
@@ -3937,6 +3949,7 @@ async function createHabit(body) {
   state.habits = [...state.habits, created];
   refreshScoreLater();
   reSyncDeviceAlarms();
+  return created;
 }
 
 /* ---- Habit order (PUT /api/habits/order) ----
@@ -4003,18 +4016,14 @@ async function updateHabit(id, body) {
    Send the raw text (+ the user's habit names for matching) to the backend
    parser, then apply each returned intent using the same handlers the manual
    UI uses. Returns a summary so the caller can confirm what landed. */
-function sleepPayloadFromHours(hours, quality) {
-  // Synthesize a bedtime/wake around a 07:00 wake so the logged duration is right.
-  const wake = 7 * 60;
-  let bed = (((wake - Math.round(hours * 60)) % 1440) + 1440) % 1440;
-  const fmt = (m) =>
-    String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
-  return {
-    bedtime: fmt(bed),
-    wakeTime: '07:00',
-    quality: quality === 'ok' ? 'okay' : quality || null,
-    note: '',
-  };
+/* "Slept 7h" on top of what that day already holds: the logged wake time
+   (else the usual one) anchors the duration, and a logged night keeps its
+   quality and note (sleepFromHours, nudges.js). It used to invent a 07:00 wake
+   and overwrite the night (FRC-2). */
+function quickSleepPayload(it) {
+  const day = intentDay(it, todayKey());
+  const sleep = state.wellness.sleepByDate || {};
+  return { ...sleepFromHours(it.hours, it.quality, sleep[day], usualSleep(sleep, day)), date: day };
 }
 const newMoneyId = () =>
   typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : String(Date.now());
@@ -4095,7 +4104,7 @@ async function parseQuickAdd(text) {
     const it = {};
     for (const k in raw) it[k] = typeof raw[k] === 'string' ? stripEmoji(raw[k]) : raw[k];
     const feat = INTENT_FEATURE[it.type];
-    if (!feat || featureOn(feat)) intents.push(it);
+    if (!feat || featureOn(feat)) intents.push(settleIntent(it, text));
     else skipped.push(skippedLine(feat, it.type));
   });
   const out = { intents, skipped: [...new Set(skipped)] };
@@ -4108,6 +4117,29 @@ async function parseQuickAdd(text) {
   // res.note is not passed on: the model writes it in the past tense ("Logged
   // ...") above a preview nothing has been logged from yet.
   return { ...out, configured: true };
+}
+
+/* What the sentence said, not what the parser filled in. The server answers a
+   mood's energy as medium when the words name none, which overwrote a logged
+   energy (FRC-2), so medium counts only when the words say it. A one-off
+   reminder at an hour already gone today is tomorrow's (EXS-5: it was refused,
+   with two toasts). A task's "tomorrow 5pm" is its due time, read as the task
+   dialog reads it (parseWhen). */
+// ponytail: QuickAddService could send null for an unstated energy; then the
+// first check goes.
+function settleIntent(it, text) {
+  if (it.type === 'mood' && it.energy === 'medium' && !/\b(medium|normal|average)\b/i.test(text))
+    return { ...it, energy: null };
+  if (it.type === 'reminder' && (it.repeat || 'none') === 'none') {
+    const day = it.date || todayKey();
+    if (day === todayKey() && isPastSlot(day, hhmm(it.time)))
+      return { ...it, date: keyOfDate(new Date(Date.now() + 864e5)) };
+  }
+  if (it.type === 'task' && it.title && !it.dueAt) {
+    const when = parseWhen(it.title);
+    if (when) return { ...it, title: when.rest, dueAt: when.at.toISOString() };
+  }
+  return it;
 }
 
 /* "Money Buddy is off, so the expense was skipped." */
@@ -4189,7 +4221,11 @@ function matchOpenTask(words) {
 function describeIntent(it) {
   switch (it.type) {
     case 'task':
-      return { icon: 'list-checks', label: 'New task', detail: it.title };
+      return {
+        icon: 'list-checks',
+        label: 'New task',
+        detail: it.title + (it.dueAt ? ' \u00b7 due ' + dueLabel(new Date(it.dueAt)) : ''),
+      };
     case 'habit': {
       const known = (state.habits || []).some(
         (x) => (x.name || '').toLowerCase() === String(it.name || '').toLowerCase()
@@ -4203,13 +4239,22 @@ function describeIntent(it) {
     }
     case 'water':
       return { icon: 'droplets', label: 'Water', detail: it.amountMl + ' ml' };
-    case 'sleep':
-      // Quality only when the user gave one: the parser sends null otherwise.
+    case 'sleep': {
+      // The night it will save, and what it replaces when one is logged (FRC-2).
+      // Quality only when the user gave one or the night had one.
+      const p = quickSleepPayload(it);
+      const was = (state.wellness.sleepByDate || {})[p.date];
+      const span = (e) => formatTime(hhmm(e.bedtime)) + ' to ' + formatTime(hhmm(e.wakeTime));
       return {
         icon: 'moon',
         label: 'Sleep',
-        detail: withDay(it.hours + ' h' + (it.quality ? ' · ' + it.quality : ''), it),
+        detail: withDay(
+          it.hours + ' h \u00b7 ' + span(p) + (p.quality ? ' \u00b7 ' + p.quality : '') +
+            (was && was.bedtime && was.wakeTime ? ' \u00b7 replaces ' + span(was) : ''),
+          it
+        ),
       };
+    }
     case 'mood':
       return {
         icon: 'heart',
@@ -4270,6 +4315,11 @@ function describeIntent(it) {
 function withDay(detail, it) {
   const w = dayWord(intentDay(it, todayKey()), todayKey());
   return w ? detail + ' · ' + w : detail;
+}
+
+/** A due instant in words: "Tomorrow, 5:00 PM", "Fri 16 Oct, 6:00 PM". */
+function dueLabel(d) {
+  return shortDay(keyOfDate(d)) + ', ' + formatTime(String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'));
 }
 
 /** "09:00:00" (the API's LocalTime) -> "09:00"; anything else -> "". */
@@ -4429,7 +4479,7 @@ async function captureReminder(btn) {
    screen, start the timer, switch the theme) run last, so the logging lands
    first and the screen the sentence asked for is where the user ends up. */
 async function applyQuickAdd(intents) {
-  const applied = []; // [{ it, ref }]; ref = the Money id an expense/income got
+  const applied = []; // [{ it, ref }]; ref = applyIntent's answer: an undo, or true
   const ordered = intents
     .filter((it) => !CONTROL_INTENTS.has(it.type))
     .concat(intents.filter((it) => CONTROL_INTENTS.has(it.type)));
@@ -4447,6 +4497,44 @@ async function applyQuickAdd(intents) {
     quietSuccess--;
   }
   return applied;
+}
+
+/* The undo for everything applied, or null when a part can't be taken back
+   (a control; a sleep or mood that was the day's first, with no delete for
+   those). Runs newest first, quietly, then says it once. */
+function undoAll(applied) {
+  const undos = applied.filter((a) => !CONTROL_INTENTS.has(a.it.type)).map((a) => a.ref);
+  if (!undos.length || undos.some((u) => typeof u !== 'function')) return null;
+  return async () => {
+    quietSuccess++;
+    try {
+      for (const u of undos.reverse()) await Promise.resolve(u()).catch(() => {});
+    } finally {
+      quietSuccess--;
+    }
+    render();
+    pushToast('Undone.', 'success', 3000);
+  };
+}
+
+/* One toast for what landed: where it went (or, for one thing, what it was)
+   and Undo when every part can be taken back; a lone first sleep or mood of the
+   day offers Edit instead. */
+function announceQuickAdd(applied, line) {
+  const undo = undoAll(applied);
+  const one = applied.length === 1 ? applied[0].it : null;
+  const text = line || loggedToLine(applied);
+  if (undo) pushToast(text, 'success', 6000, { label: 'Undo', run: undo });
+  else if (one && (one.type === 'sleep' || one.type === 'mood'))
+    pushToast(text, 'success', 6000, { label: 'Edit', run: one.type === 'sleep' ? openSleepSchedule : openMoodCheckin });
+  else toastSuccess(text);
+}
+
+/* The id a write added to a day's list: the answer for a water glass or a food
+   entry carries the whole day, not the new row. */
+function addedId(entries, before) {
+  const e = (entries || []).find((x) => x && !before.has(x.id) && !String(x.id).startsWith('pending-'));
+  return e ? e.id : null;
 }
 
 /* Where each logged intent went, for the toast: "Logged to Money and Food." */
@@ -4472,78 +4560,114 @@ function loggedToLine(applied) {
   return 'Logged to ' + list + '.';
 }
 
+/* One intent. False when nothing was written; else how to take it back (an
+   async function), or true when it can't be (a control, a first sleep or mood
+   of the day, an offline glass still queued). */
 async function applyIntent(it) {
   switch (it.type) {
-    case 'task':
+    case 'task': {
       if (!it.title) return false;
-      await createTask({ title: it.title });
-      return true;
+      const t = await createTask({ title: it.title, ...(it.dueAt ? { dueAt: it.dueAt } : {}) });
+      return t ? () => deleteTask(t.id) : true;
+    }
     case 'task_done': {
       const t = matchOpenTask(it.title);
       if (!t) return false;
       await toggleTask(t.id);
-      return true;
+      return () => toggleTask(t.id);
     }
     case 'habit': {
       const hb = (state.habits || []).find((x) => (x.name || '').toLowerCase() === String(it.name || '').toLowerCase());
-      if (hb && !hb.doneToday) await toggleHabit(hb.id);
-      return !!hb;
+      if (!hb) return false;
+      if (hb.doneToday) return () => {}; // already ticked: nothing to take back
+      await toggleHabit(hb.id);
+      return () => toggleHabit(hb.id);
     }
-    case 'habit_new':
+    case 'habit_new': {
       if (!it.name) return false;
       if ((state.habits || []).some((x) => (x.name || '').toLowerCase() === it.name.toLowerCase())) return false;
-      await createHabit({ name: it.name, domain: 'habit', icon: 'repeat', cadence: 'daily', metric: 'none' });
-      return true;
-    case 'goal':
+      const made = await createHabit({ name: it.name, domain: 'habit', icon: 'repeat', cadence: 'daily', metric: 'none' });
+      return made && made.id ? () => deleteHabit(made.id) : true;
+    }
+    case 'goal': {
       if (!it.title) return false;
-      await createGoal({ title: it.title, horizon: 'short_term' });
-      return true;
-    case 'water':
+      const g = await createGoal({ title: it.title, horizon: 'short_term' });
+      return g && g.id ? () => deleteGoal(g.id) : true;
+    }
+    case 'water': {
       if (!it.amountMl) return false;
+      const before = new Set(((state.water && state.water.entries) || []).map((e) => e.id));
       await quickAddWater(it.amountMl);
-      return true;
+      const id = addedId(state.water && state.water.entries, before);
+      if (!id) return true;
+      return async () => {
+        state.water = withPendingWater(await api('/api/water/entries/' + id, { method: 'DELETE' }));
+        invalidateWeek('water');
+      };
+    }
     case 'food': {
       if (!it.name) return false;
       // A named past day ("yesterday") lands at that day's noon.
       const day = intentDay(it, todayKey());
+      const before = new Set(((state.food && state.food.entries) || []).map((e) => e.id));
       await logFoodEntry({
         foodName: it.name,
         mealSlot: it.meal || null,
         kcal: it.kcal || null,
         loggedAt: (day === todayKey() ? new Date() : new Date(day + 'T12:00:00')).toISOString(),
       });
-      return true;
+      const id = day === todayKey() && addedId(state.food && state.food.entries, before);
+      if (!id) return true;
+      return async () => {
+        const updated = await api('/api/food/entries/' + id, { method: 'DELETE' });
+        state.food = updated;
+        cacheFoodSummary(updated);
+        invalidateWeek('food');
+      };
     }
-    case 'sleep':
+    case 'sleep': {
       if (!it.hours) return false;
-      await saveSleepEntry({
-        ...sleepPayloadFromHours(it.hours, it.quality),
-        date: intentDay(it, todayKey()),
-      });
-      return true;
-    case 'mood':
+      const p = quickSleepPayload(it);
+      const was = (state.wellness.sleepByDate || {})[p.date];
+      await saveSleepEntry(p);
+      return was ? () => saveSleepEntry({ ...was, date: p.date }) : true;
+    }
+    case 'mood': {
       if (!it.mood) return false;
+      const was = (state.wellness.moodByDate || {})[todayKey()];
       // Energy only when the sentence said it.
       await saveMoodEntry({ mood: it.mood, energy: it.energy || null });
-      return true;
-    case 'expense':
+      return was ? () => saveMoodEntry({ ...was, date: todayKey() }) : true;
+    }
+    case 'expense': {
       if (!it.amount) return false;
-      return addQuickExpense(it);
-    case 'income':
+      const id = addQuickExpense(it);
+      return () => removeQuickMoney(new Set([id]));
+    }
+    case 'income': {
       if (!it.amount) return false;
-      return addQuickIncome(it);
-    case 'note':
+      const id = addQuickIncome(it);
+      return () => removeQuickMoney(new Set([id]));
+    }
+    case 'note': {
       if (!it.text) return false;
-      await api('/api/notes', {
+      const n = await api('/api/notes', {
         method: 'POST',
         headers: { 'Idempotency-Key': newIdemKey() },
         body: JSON.stringify({ body: '<p>' + escapeHtml(it.text) + '</p>' }),
       });
-      return true;
+      if (!n || !n.id) return true;
+      // Gone for good: a note taken back a second later is not one to keep in the Trash.
+      return async () => {
+        await api('/api/notes/' + encodeURIComponent(n.id), { method: 'DELETE' });
+        await api('/api/notes/' + encodeURIComponent(n.id) + '/forever', { method: 'DELETE' });
+      };
+    }
     case 'reminder': {
       if (!it.text) return false;
       // Every field the sentence gave, through the same path as the calendar's
-      // own form — so the past-day and past-time refusals apply here too.
+      // own form — so the past-day refusal applies here too (an hour already
+      // gone today was moved to tomorrow by settleIntent).
       const made = await addReminder(
         it.date || todayKey(),
         it.text,
@@ -4555,7 +4679,7 @@ async function applyIntent(it) {
         hhmm(it.endTime),
         it.notifyBefore === null || it.notifyBefore === undefined ? null : it.notifyBefore
       );
-      return !!made;
+      return made ? () => deleteReminder('all', made.id) : false;
     }
     case 'focus':
       focusAutoStart = it.minutes || true;
@@ -5554,6 +5678,27 @@ function rememberPhotoFood(foodName, estimate, usedPhoto) {
   });
 }
 
+/* Home's one-tap mood. `night` is the "Slept 23:25 to 06:45?" row showing just
+   above it (WellnessQuick), and the same tap logs that night too: the morning
+   check-in is one tap, not two (FRC-9). The toast's Edit is the sleep dialog,
+   for a night that wasn't that one. */
+async function quickMood(mood, night) {
+  quietSuccess++;
+  try {
+    await saveMoodEntry({ mood });
+    if (night) await saveSleepEntry({ bedtime: night.bedtime, wakeTime: night.wakeTime }, { quiet: true });
+  } finally {
+    quietSuccess--;
+  }
+  if (!night) return toastSuccess('Check-in saved.');
+  pushToast(
+    'Mood saved, and last night ' + formatTime(night.bedtime) + ' to ' + formatTime(night.wakeTime) + ' logged.',
+    'success',
+    6000,
+    { label: 'Edit', run: openSleepSchedule }
+  );
+}
+
 function openSleepSchedule() {
   const today = todayKey();
   const existing = (state.wellness.sleepByDate || {})[today] || {};
@@ -5708,16 +5853,20 @@ function openMoodCheckin() {
    reminders, so the plan rings; everything else is already in the app. No AI. */
 // day-plan.js loads on the tap: it is only ever needed here, and the boot chunk is over budget.
 async function openDailyPlan() {
-  const { buildDayPlan } = await import('./day-plan.js');
-  const today = todayKey();
+  const { buildDayPlan, planTarget } = await import('./day-plan.js');
   const now = new Date();
+  // After 21:00 no block fits today, so the draft is tomorrow's (FRC-8): it used
+  // to list the morning's gone reminders and a "Looks good" that wrote nothing.
+  const target = planTarget(todayKey(), now.getHours() * 60 + now.getMinutes());
+  const today = target.day;
   const plan = buildDayPlan({
     tasks: state.tasks,
-    habits: featureOn('habits') ? state.habits : [],
+    // Tomorrow every habit is still to do.
+    habits: !featureOn('habits') ? [] : target.tomorrow ? state.habits.map((hb) => ({ ...hb, doneToday: false })) : state.habits,
     reminders: state.reminders,
     subscriptions: featureOn('money') && state.money ? state.money.subscriptions : [],
     today,
-    nowMin: now.getHours() * 60 + now.getMinutes(),
+    nowMin: target.nowMin,
   });
   const ICON = { reminder: 'bell', bill: 'wallet', habit: 'repeat', task: 'list-checks' };
   const LABEL = { reminder: 'Reminder', bill: 'Bill', habit: 'Habit', task: 'Focus block' };
@@ -5753,16 +5902,19 @@ async function openDailyPlan() {
       copy
     );
   });
-  // The day's care items stay as one line each: they are a tap elsewhere, not a block.
+  // The day's care items stay as one line each: they are a tap elsewhere, not a
+  // block. Tomorrow's plan has none: they are about today.
   const care = [];
   const sleep = (state.wellness.sleepByDate || {})[today];
   const mood = (state.wellness.moodByDate || {})[today];
-  if (featureOn('water') && state.water) {
-    const left = (state.water.goalMl || 2000) - (state.water.consumedMl || 0);
-    if (left > 0) care.push({ icon: 'droplets', text: left + ' ml of water to go' });
+  if (!target.tomorrow) {
+    if (featureOn('water') && state.water) {
+      const left = (state.water.goalMl || 2000) - (state.water.consumedMl || 0);
+      if (left > 0) care.push({ icon: 'droplets', text: left + ' ml of water to go' });
+    }
+    if (!sleep) care.push({ icon: 'moon', text: 'Log last night\u2019s sleep' });
+    if (!mood) care.push({ icon: 'heart', text: 'A 20-second mood check-in' });
   }
-  if (!sleep) care.push({ icon: 'moon', text: 'Log last night\u2019s sleep' });
-  if (!mood) care.push({ icon: 'heart', text: 'A 20-second mood check-in' });
   const careRows = care.map((c) =>
     h(
       'div',
@@ -5774,18 +5926,25 @@ async function openDailyPlan() {
   );
   const empty = !rows.length && !careRows.length;
   openModal({
-    title: 'Today plan',
-    sub: blocks.length
-      ? 'Drafted from your tasks, reminders, habits and bills. Untick a block you don\u2019t want, or move its time.'
-      : 'Drafted from your tasks, reminders, habits and bills.',
+    title: target.tomorrow ? 'Tomorrow plan' : 'Today plan',
+    sub:
+      (target.tomorrow ? 'Today is nearly done, so this is tomorrow, drafted' : 'Drafted') +
+      ' from your tasks, reminders, habits and bills.' +
+      (blocks.length ? ' Untick a block you don\u2019t want, or move its time.' : ''),
     body: h(
       'div',
       { class: 'gb-plan-list' },
-      empty ? h('p', { class: 'gb-plan-empty' }, 'Nothing is waiting on you today. Add a task to plan around.') : null,
+      empty
+        ? h(
+            'p',
+            { class: 'gb-plan-empty' },
+            'Nothing is waiting on you ' + (target.tomorrow ? 'tomorrow' : 'today') + '. Add a task to plan around.'
+          )
+        : null,
       rows,
       careRows
     ),
-    primary: blocks.length ? 'Add to my day' : 'Looks good',
+    primary: blocks.length ? (target.tomorrow ? 'Add to tomorrow' : 'Add to my day') : 'Looks good',
     errorMessage: 'Could not add the plan.',
     onPrimary: async () => {
       const picked = blocks.filter((b) => b.box.checked && b.timeInput.value);
@@ -11571,6 +11730,27 @@ function quickAddBox({ onLeave, onCancel, text = '' } = {}) {
         );
         return;
       }
+      // One clear thing, read by the model: write it now and say it with an Undo
+      // (FRC-4). A second dialog to confirm every correct read cost a tap and a
+      // screen each time. Several things, a plain-pattern (fallback) read, a row
+      // it couldn't match or one that needs a rate still get the preview.
+      if (rows.length === 1 && !r.fallback && !r.skipped.length && !rows[0].d.unknown && !rows[0].d.unticked && !CONTROL_INTENTS.has(rows[0].it.type)) {
+        done();
+        const saving = setThinking(qaBtn, 'Saving');
+        const errBefore = lastError.id;
+        const applied = await applyQuickAdd([rows[0].it]);
+        saving();
+        qaInput.disabled = false;
+        if (!applied.length) {
+          if (lastError.id === errBefore) pushToast('Couldn’t log that. Try again?', 'error');
+          if (qaInput.isConnected) qaInput.focus();
+          return;
+        }
+        qaInput.value = '';
+        onLeave && onLeave();
+        announceQuickAdd(applied, 'Logged: ' + rows[0].d.label + (rows[0].d.detail ? ' \u00b7 ' + rows[0].d.detail : ''));
+        return;
+      }
       // The Home bar outlives the submit (the sheet closes), so hand it back usable.
       done();
       qaInput.disabled = false;
@@ -11717,6 +11897,9 @@ function homeQuickAdd() {
 
 // `prefill`: the Quick add line coming back from a cancelled preview (onAdd
 // passes a click event, hence the type check).
+/* Quick add's Note row: the Notes screen opens with its composer open, once. */
+let notesOpenComposer = false;
+
 function openAddSheet(prefill) {
   const { sheet, close } = openOverlay({ label: 'Quick add' });
   const qaText = typeof prefill === 'string' ? prefill : '';
@@ -11766,6 +11949,8 @@ function openAddSheet(prefill) {
       sub: 'Jot something down',
       action: () => {
         close();
+        // Straight into the composer, not the list above it (FRC-5).
+        notesOpenComposer = true;
         setScreen('notes');
       },
     },
@@ -11807,11 +11992,13 @@ function openAddSheet(prefill) {
       'div',
       { class: 'gb-modal-head' },
       h('div', { class: 'gb-modal-title' }, 'What would you like to add?'),
-      h('div', { class: 'gb-modal-sub' }, 'Pick one, or type it in your own words.')
+      h('div', { class: 'gb-modal-sub' }, 'Type it in your own words, or pick one.')
     ),
-    // The explicit five come first. Quick add is an AI shortcut that needs a key
-    // configured on the server — leading with it meant the most prominent path
-    // was the one that could fail after you'd already typed a sentence.
+    // The line comes first and has the focus: "buy milk" is type and Enter
+    // (FRC-4); under the rows it was a tap away. Without the AI key the server's
+    // plain patterns still read it, and what they read is previewed.
+    quickAddBox({ onLeave: close, onCancel: openAddSheet, text: qaText }),
+    h('div', { class: 'gb-quickadd-or' }, 'or pick one'),
     h(
       'div',
       { class: 'gb-modal-opts' },
@@ -11831,8 +12018,6 @@ function openAddSheet(prefill) {
         )
       )
     ),
-    h('div', { class: 'gb-quickadd-or' }, 'or describe it in one line'),
-    quickAddBox({ onLeave: close, onCancel: openAddSheet, text: qaText }),
     h(
       'button',
       { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel', onclick: close },
@@ -11840,15 +12025,13 @@ function openAddSheet(prefill) {
     )
   );
   refreshIcons();
-  // Back from a cancelled preview: the caret at the end of the line, ready to fix.
-  if (qaText) {
-    setTimeout(() => {
-      const i = sheet.querySelector('.gb-quickadd-row .gb-input');
-      if (!i) return;
-      i.focus();
-      i.setSelectionRange(i.value.length, i.value.length);
-    }, 60);
-  }
+  // Open on the line; back from a cancelled preview, with the caret at its end.
+  setTimeout(() => {
+    const i = sheet.querySelector('.gb-quickadd-row .gb-input');
+    if (!i) return;
+    i.focus();
+    i.setSelectionRange(i.value.length, i.value.length);
+  }, 60);
 }
 
 /* `<input type="datetime-local">` wants wall-clock local time, not the UTC an
@@ -11912,12 +12095,63 @@ function taskForm(task, presetGoalId) {
       )
     : null;
 
+  // "Call plumber tomorrow 5pm": a new task's title can carry its due time
+  // (parseWhen, dates.js). It fills Due and shows as a chip; the chip puts the
+  // words back as plain title, and a due time picked by hand wins (FRC-11).
+  let when = null;
+  let dismissed = '';
+  let dueByHand = false;
+  const whenRow = h('div', { class: 'gb-when-row', 'aria-live': 'polite', hidden: true });
+  const paintWhen = () => {
+    whenRow.hidden = !when;
+    whenRow.replaceChildren(
+      ...(when
+        ? [
+            h(
+              'button',
+              {
+                type: 'button',
+                class: 'gb-btn gb-btn--soft gb-btn--compact gb-when-chip',
+                'aria-label': 'Due ' + dueLabel(when.at) + '. Remove, keep \u201c' + when.phrase + '\u201d in the title',
+                onclick: () => {
+                  dismissed = when.phrase.toLowerCase();
+                  when = null;
+                  dueInput.value = '';
+                  paintWhen();
+                  titleInput.focus();
+                },
+              },
+              Icon('clock', { size: 14, sw: 2.4 }),
+              'Due ' + dueLabel(when.at),
+              Icon('x', { size: 14, sw: 2.6 })
+            ),
+          ]
+        : [])
+    );
+    refreshIcons();
+  };
+  if (!task) {
+    titleInput.addEventListener('input', () => {
+      if (dueByHand) return;
+      const w = parseWhen(titleInput.value);
+      when = w && w.phrase.toLowerCase() !== dismissed ? w : null;
+      dueInput.value = when ? toDateTimeLocal(when.at.toISOString()) : '';
+      paintWhen();
+    });
+    dueInput.addEventListener('input', () => {
+      dueByHand = true;
+      when = null;
+      paintWhen();
+    });
+  }
+
   return {
     node: h(
       'div',
       { class: 'gb-form' },
       h('div', { class: 'gb-field-label' }, 'Title'),
       titleInput,
+      whenRow,
       h('div', { class: 'gb-field-label' }, 'Priority'),
       priority.node,
       h('div', { class: 'gb-field-label' }, 'Due (optional)'),
@@ -11927,7 +12161,7 @@ function taskForm(task, presetGoalId) {
     ),
     focus: () => focusSoon(titleInput),
     read: () => {
-      const title = titleInput.value.trim();
+      const title = when ? when.rest : titleInput.value.trim();
       if (!title) throw fieldRefusal(titleInput, 'Give the task a title.');
       return {
         title,
@@ -13105,28 +13339,14 @@ function openQuickAddPreview(rows, note, onLogged, onCancel) {
     onPrimary: async () => {
       const picked = rows.filter((_, i) => chosen[i]).map((r) => r.it);
       if (!picked.length) throw new Error('Nothing selected — switch at least one on.');
+      const errBefore = lastError.id;
       const applied = await applyQuickAdd(picked);
-      if (!applied.length) throw new Error('None of those could be logged.');
+      // A handler that refused has said why: the same text again dedupes to one toast.
+      if (!applied.length) throw new Error(lastError.id !== errBefore ? lastError.text : 'None of those could be logged.');
       logged = true;
-      // One toast says where things went. Undo is offered whenever Money got
-      // an entry (the one kind removable in place) and takes back just that
-      // part. ponytail: other kinds have their own delete paths (task, water,
-      // food); wire them here if asked.
-      const moneyIds = new Set(
-        applied.filter((a) => a.it.type === 'expense' || a.it.type === 'income').map((a) => a.ref)
-      );
-      if (moneyIds.size) {
-        const all = moneyIds.size === applied.length;
-        pushToast(loggedToLine(applied), 'success', 6000, {
-          label: all ? 'Undo' : 'Undo Money',
-          run: () => {
-            removeQuickMoney(moneyIds);
-            pushToast(all ? 'Undone.' : 'Undone in Money. The rest stays logged.', 'success', 3000);
-          },
-        });
-      } else {
-        toastSuccess(loggedToLine(applied));
-      }
+      // One toast says where things went, with Undo for all of it when every
+      // part can be taken back (undoAll).
+      announceQuickAdd(applied);
       onLogged && onLogged();
       await loadData();
     },
@@ -14329,7 +14549,7 @@ const SCREENS = {
         onAddMood: openMoodCheckin,
         onStarterPack: openStarterPacks,
         onConfirmSleep: (u) => saveSleepEntry({ bedtime: u.bedtime, wakeTime: u.wakeTime }),
-        onQuickMood: (mood) => saveMoodEntry({ mood }),
+        onQuickMood: quickMood,
         onOnboardDismiss: (opts) => {
           saveUiPrefs({ onboardingDone: true });
           // Only from the ✕ click — the all-done path fires mid-render.
@@ -14913,6 +15133,11 @@ const SCREENS = {
               api('/api/notes/' + encodeURIComponent(id) + '/forever', { method: 'DELETE' }),
             // Keys the offline copy of the list, so one account never sees another's.
             userId: state.user && state.user.id,
+            openComposer: (() => {
+              const once = notesOpenComposer;
+              notesOpenComposer = false;
+              return once;
+            })(),
             onGet: (id) => {
               const queued = isTempId(realId(id)) && queuedNotes().find((n) => n.id === id);
               return queued ? Promise.resolve(queued) : api('/api/notes/' + encodeURIComponent(realId(id)));
