@@ -20,7 +20,8 @@ async function postTx(page, account, upserts) {
 // Header, Last night, Ledger, then the sentence: the first class of each child of .gb-health.
 const healthOrder = (page) =>
   page.locator('.gb-health').evaluate((n) => [...n.children].map((c) => c.classList[0]));
-const ORDER = ['gb-health-top', 'gb-card', 'gb-card', 'gb-health-hero'];
+// main added an Insights card and lets the user reorder or hide the cards between.
+const ORDER = ['gb-health-top', 'gb-card', 'gb-card', 'gb-card', 'gb-health-hero'];
 
 test('Health: the summary sentence closes the screen, after the ledger', async ({ page, account }) => {
   for (const [type, value] of [['weight', 71.5], ['steps', 8200]]) {
@@ -113,7 +114,8 @@ test('EXM-2: Delete in the edit dialog deletes at once, and Undo brings it back'
   await shot(page, 'EXM-2');
   await page.getByRole('button', { name: 'Undo' }).click();
   await expect(page.getByRole('button', { name: /^Edit Lunch, / })).toBeVisible();
-  await expect.poll(async () => (await moneyDoc(page, account)).expenses.some((e) => e.id === 'e2e-lunch')).toBe(true);
+  // Back as a new row (the server keeps a deleted id deleted).
+  await expect.poll(async () => (await moneyDoc(page, account)).expenses.filter((e) => e.note === 'Lunch').length).toBe(1);
 });
 
 test('EXM-7: deleting a bill payment makes the bill due again', async ({ page, account }) => {
@@ -128,7 +130,7 @@ test('EXM-7: deleting a bill payment makes the bill due again', async ({ page, a
   await expect(d).toHaveCount(0);
   await page.getByRole('button', { name: 'Mark as paid' }).first().click();
   await expect(page.getByRole('button', { name: 'Mark as paid' })).toHaveCount(0);
-  const paid = page.locator('.gb-money-exp-row', { hasText: 'Gym' }).getByRole('button', { name: 'Delete expense' });
+  const paid = page.locator('.gb-money-exp-row[data-exp-id^="sub-"]').getByRole('button', { name: /^Delete Gym/ });
   await paid.click();
   await dialog(page).getByRole('button', { name: 'Delete', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Mark as paid' })).toHaveCount(1);
@@ -152,27 +154,26 @@ test('EXM-9: an income entry opens for editing from its row', async ({ page, acc
 });
 
 // Friction targets (docs/audit/friction-capture.md), counted as the user's own inputs.
-test('Flow: income on payday is 1 tap ("Salary arrived?")', async ({ page, account }) => {
-  const day = Math.min(new Date().getDate(), 28);
+test('Flow: income on payday is 1 tap from Home ("Salary arrived?")', async ({ page, account }) => {
+  // The same salary on the 1st of the last two months: this month's is due.
   const monthAgo = (k) => {
     const d = new Date();
     d.setDate(1);
     d.setMonth(d.getMonth() - k);
-    d.setDate(day);
     return d.toLocaleDateString('en-CA');
   };
   await postTx(page, account, [1, 2].map((k) => ({ kind: 'income', id: 'e2e-sal' + k, amount: 50000, source: 'salary', label: 'Salary', date: monthAgo(k) })));
   await boot(page, account);
   let taps = 0;
-  const nudge = page.locator('.gb-nudge[aria-label=Salary]');
+  const nudge = page.locator('.gb-money-mini .gb-nudge[aria-label=Salary]');
   await expect(nudge).toContainText('arrived?');
-  await nudge.getByRole('button', { name: 'Add', exact: true }).click();
+  await nudge.getByRole('button', { name: 'Yes, log it' }).click();
   taps++;
   await expect(nudge).toHaveCount(0);
   await shot(page, 'FRC-16');
   expect(taps).toBe(1);
   await expect
-    .poll(async () => (await moneyDoc(page, account)).income.filter((i) => i.date === today()).map((i) => Number(i.amount)))
+    .poll(async () => (await moneyDoc(page, account)).income.filter((i) => i.date === monthAgo(0)).map((i) => Number(i.amount)))
     .toEqual([50000]);
 });
 
@@ -204,4 +205,59 @@ test('Flow: an expense from Home is 2 taps and 1 field; a usual one is 1 tap', a
   await expect
     .poll(async () => (await moneyDoc(page, account)).expenses.filter((e) => e.date === today()).map((e) => Number(e.amount)).sort())
     .toEqual([120, 250]);
+});
+
+test('EXM-16 / FRS-8: a new subscription is tagged from its name', async ({ page, account }) => {
+  await openMoney(page, account, 'Spending');
+  await page.locator('#gb-main').getByRole('button', { name: 'Add subscription' }).click();
+  const d = dialog(page);
+  const name = d.getByPlaceholder('e.g. Netflix');
+  await expect(name).toBeFocused();
+  const on = () => d.locator('.gb-money-tagchip[aria-checked=true]');
+  await name.fill('Netflix');
+  await expect(on()).toHaveAttribute('data-key', 'entertainment');
+  await name.fill('Electricity');
+  await expect(on()).toHaveAttribute('data-key', 'others');
+  await shot(page, 'EXM-16');
+});
+
+test('EXM-6: Split a bill books your share and the money that left the account', async ({ page, account }) => {
+  await openMoney(page, account, 'Income');
+  await page.locator('#gb-main').getByRole('button', { name: 'Split a bill' }).click();
+  const d = dialog(page);
+  await expect(d.getByPlaceholder('e.g. 2400')).toBeFocused();
+  await d.getByPlaceholder('e.g. 2400').fill('2400');
+  await d.getByPlaceholder('Names, separated by commas').fill('Ravi, Meena');
+  await d.getByPlaceholder('e.g. Dinner').fill('Dinner');
+  await shot(page, 'EXM-6');
+  await d.getByRole('button', { name: 'Save IOUs' }).click();
+  await expect(d).toHaveCount(0);
+  await expect.poll(async () => (await moneyDoc(page, account)).expenses.filter((e) => e.note === 'Dinner').map((e) => Number(e.amount))).toEqual([800]);
+  const doc = await moneyDoc(page, account);
+  const loans = doc.loans.filter((l) => l.note === 'Split: Dinner');
+  expect(loans.map((l) => Number(l.amount))).toEqual([800, 800]);
+  const mine = doc.expenses.find((e) => e.note === 'Dinner');
+  if (mine.accountId) {
+    // Paid from an account: each IOU moves its share out of it.
+    expect(loans.every((l) => l.accountId === mine.accountId)).toBe(true);
+    expect(doc.transfers.filter((t) => String(t.id).startsWith('loan-') && t.from === mine.accountId).length).toBe(2);
+  }
+});
+
+test('EXM-3: the statement counts budgeted tags only, the rest on its own line', async ({ page, account }) => {
+  await postTx(page, account, [
+    { kind: 'expense', id: 'e2e-f', amount: 1200, category: 'food', note: 'Groceries', date: today() },
+    { kind: 'expense', id: 'e2e-n', amount: 649, category: 'entertainment', note: 'Netflix', date: today() },
+  ]);
+  await openMoney(page, account);
+  await page.locator('#gb-main').getByRole('button', { name: 'Set budgets' }).first().click();
+  await dialog(page).getByLabel('Food monthly budget').fill('2000');
+  await dialog(page).getByRole('button', { name: /^Save/ }).click();
+  await expect(dialog(page)).toHaveCount(0);
+  const slip = page.locator('.gb-money-slip');
+  await expect(slip).toContainText('1,200');
+  await expect(slip).toContainText('Left this month');
+  await expect(slip.locator('.gb-money-slip-line', { hasText: 'Left this month' })).toContainText('800');
+  await expect(slip.locator('.gb-money-slip-line', { hasText: 'no budget' })).toContainText('649');
+  await shot(page, 'EXM-3');
 });

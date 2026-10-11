@@ -2867,7 +2867,11 @@ function openExpenseModal(money, save, prefillDate, existing, scan) {
             save(next, money);
             toast.action('Expense deleted.', 'Undo', () => {
               const back = clone(next);
-              back.expenses.unshift(ex);
+              // A new id: the server keeps a deleted id deleted (a stale edit from
+              // another device must not bring it back), so Undo re-adds it as new.
+              // ponytail: a bill payment's `sub-` id is not kept, so the restored row
+              // counts as day-to-day spend in the forecast; keep the id if that matters.
+              back.expenses.unshift({ ...ex, id: uid() });
               back.subscriptions = clone(money.subscriptions);
               save(back, next);
             });
@@ -6193,7 +6197,7 @@ function ScreenMoney({
               save(next, money);
               toast.action('Income deleted.', 'Undo', () => {
                 const back = clone(next);
-                back.income.unshift(ex);
+                back.income.unshift({ ...ex, id: uid() }); // new id: see the expense Undo
                 save(back, next);
               });
             },
