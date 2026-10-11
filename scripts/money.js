@@ -324,7 +324,7 @@ function weeklyReview(money) {
     cur
       .filter((e) => wantCats.includes(e.category))
       .sort((a, b) => (b.amount || 0) - (a.amount || 0))[0] || null;
-  const streak = logStreak(money.expenses);
+  const streak = logStreak(money.expenses, money.noSpendDays);
   const st = budgetStatus(money).filter((s) => s.base > 0);
   const underNow = st.filter((s) => s.pct <= 100);
   const positive =
@@ -530,9 +530,15 @@ function forecast(money) {
   };
 }
 
-/* 10 — gamification. */
-function logStreak(expenses) {
-  const days = new Set(expenses.map((e) => e.date));
+/* 10 — gamification.
+   A day counts as logged when it has an expense OR was marked a no-spend day:
+   "I spent nothing" is a log too. Counting expenses alone broke the streak, and
+   the "log N days" challenge, on exactly the days the user did best. */
+function loggedDays(expenses, noSpendDays) {
+  return new Set((expenses || []).map((e) => e.date).concat(noSpendDays || []));
+}
+function logStreak(expenses, noSpendDays = []) {
+  const days = loggedDays(expenses, noSpendDays);
   if (!days.size) return 0;
   let streak = 0;
   let cursor = new Date();
@@ -544,8 +550,8 @@ function logStreak(expenses) {
   }
   return streak;
 }
-function bestStreak(expenses) {
-  const days = Array.from(new Set(expenses.map((e) => e.date))).sort();
+function bestStreak(expenses, noSpendDays = []) {
+  const days = Array.from(loggedDays(expenses, noSpendDays)).sort();
   let best = 0;
   let run = 0;
   let prev = null;
@@ -565,7 +571,7 @@ function levelInfo(money) {
   };
 }
 function badges(money) {
-  const streak = logStreak(money.expenses);
+  const streak = logStreak(money.expenses, money.noSpendDays);
   const st = budgetStatus(money).filter((s) => s.base > 0);
   const withinBudget = st.length > 0 && st.every((s) => s.pct <= 100);
   const tw = weekStartKey();
@@ -618,8 +624,10 @@ function badges(money) {
 
 /* 11 / 15 — challenge progress (no-spend, daily cap, monthly save/log/reduce). */
 function distinctLogDaysThisMonth(money) {
-  return new Set(inRange(money.expenses, thisMonthPrefix() + '-01', todayKey()).map((e) => e.date))
-    .size;
+  const from = thisMonthPrefix() + '-01';
+  const to = todayKey();
+  const noSpend = (money.noSpendDays || []).filter((d) => d >= from && d <= to);
+  return loggedDays(inRange(money.expenses, from, to), noSpend).size;
 }
 function challengeProgress(money, ch) {
   const today = todayKey();
@@ -910,8 +918,10 @@ function financialHealth(money) {
     fix: money.goals.length ? null : 'goal',
     note: recentSave > 0 ? `${fmt(recentSave)} set aside lately` : 'Add to a goal to build this',
   });
-  const logged14 = new Set(
-    inRange(money.expenses, dkey(addDays(new Date(), -13)), todayKey()).map((e) => e.date)
+  const from14 = dkey(addDays(new Date(), -13));
+  const logged14 = loggedDays(
+    inRange(money.expenses, from14, todayKey()),
+    (money.noSpendDays || []).filter((d) => d >= from14 && d <= todayKey())
   ).size;
   parts.push({
     label: 'Expense logging',
@@ -1153,7 +1163,7 @@ function achievementTimeline(money) {
       title: 'First expense logged',
       desc: 'Your money journey began.',
     });
-  const best = bestStreak(money.expenses);
+  const best = bestStreak(money.expenses, money.noSpendDays);
   if (best >= 3)
     ev.push({
       date: todayKey(),
@@ -3949,7 +3959,7 @@ function ScreenMoney({
   function summaryText() {
     const hsc = financialHealth(money).score;
     const r = weeklyReview(money);
-    return `My Money Buddy week\n• Spent: ${fmt(r.total)}\n• Set aside: ${fmt(r.setAside)}\n• Logging streak: ${logStreak(money.expenses)} days\n• Financial health: ${hsc}/100\n${r.motivation}`;
+    return `My Money Buddy week\n• Spent: ${fmt(r.total)}\n• Set aside: ${fmt(r.setAside)}\n• Logging streak: ${logStreak(money.expenses, money.noSpendDays)} days\n• Financial health: ${hsc}/100\n${r.motivation}`;
   }
 
   function shareSummaryText() {
@@ -3965,7 +3975,7 @@ function ScreenMoney({
 
   async function shareSummary() {
     const r = weeklyReview(money);
-    const streak = logStreak(money.expenses);
+    const streak = logStreak(money.expenses, money.noSpendDays);
     try {
       const result = await shareStoryCard(
         {
@@ -4373,7 +4383,7 @@ function ScreenMoney({
     const st = budgetStatus(money).filter((s) => s.base > 0);
     const over = st.filter((s) => s.pct > 100);
     const near = st.filter((s) => s.pct >= 80 && s.pct <= 100);
-    const streak = logStreak(money.expenses);
+    const streak = logStreak(money.expenses, money.noSpendDays);
     if (!money.expenses.length)
       return "Let's start small. Add your first expense and I'll take it from here.";
     if (over.length)
@@ -4573,7 +4583,7 @@ function ScreenMoney({
 
   function gamificationStrip() {
     const lvl = levelInfo(money);
-    const streak = logStreak(money.expenses);
+    const streak = logStreak(money.expenses, money.noSpendDays);
     return Card({
       className: 'gb-money-card',
       children: [
@@ -6932,4 +6942,6 @@ export const _calc = {
   materialiseRecurring,
   toHomeAmount,
   editedHomeAmount,
+  challengeProgress,
+  financialHealth,
 };

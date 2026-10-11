@@ -84,7 +84,7 @@ All keys are `YYYY-MM-DD` strings; **all range filtering is string comparison**:
 | daily tip | deterministic by day-of-month |
 | `financialHealth(money)` | 0–100; **an empty account must score 0** (no phantom points) |
 | `searchExpenses(money, q)` | NL-ish query: "how much on food last month" |
-| `logStreak` / `bestStreak` | consecutive logging days |
+| `logStreak` / `bestStreak` | consecutive logging days. A day is logged when it has an expense **or** is in `noSpendDays` (`loggedDays`); the same rule feeds the "log N days" challenge (`distinctLogDaysThisMonth`) and the health score's "Expense logging" part |
 | scenario projection | "cut X% of category for N months" |
 | `recoveryPlan` | reallocate from categories with room when over budget |
 
