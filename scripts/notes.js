@@ -13,6 +13,7 @@ import {
   leave,
   focusSoon,
   SHEET_EXIT_MS,
+  tapSettled,
 } from './gb-kit.js';
 import { toast } from './toast.js';
 import { CacheStorage } from './cache-storage.js';
@@ -1934,6 +1935,7 @@ function ScreenNotes({
         // No "Delete this note?": it only goes to the Trash for 30 days, and the
         // toast offers Undo. Asking first and offering Undo after was both.
         onclick: async () => {
+          if (!tapSettled('notes')) return; // a double tap deleted it twice
           try {
             await onDelete(note.id);
             clearTimeout(editTimer); // the server dropped the draft with the note

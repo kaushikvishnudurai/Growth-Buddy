@@ -263,7 +263,8 @@ function ProgressRing({
 }
 
 /* ---- Check (habit / task toggle) ---- */
-function Check({ done = false, onToggle, color, label } = {}) {
+/* `list` names the list the row sits in when a tick re-sorts it (tapSettled). */
+function Check({ done = false, onToggle, color, label, list } = {}) {
   const btn = h(
     'button',
     {
@@ -278,6 +279,7 @@ function Check({ done = false, onToggle, color, label } = {}) {
       // tap's own frame — the press and the pop never got painted, so a tick
       // on a phone looked like a jump cut. Paint here first, hand over after.
       onclick: () => {
+        if (list && !tapSettled(list)) return;
         if (btn.dataset.pending) return; // a second tap mid-pop would un-tick
         const ticking = !btn.classList.contains('is-done');
         btn.classList.toggle('is-done', ticking);
@@ -299,6 +301,31 @@ function Check({ done = false, onToggle, color, label } = {}) {
     Icon('check', { size: 17, sw: 3, color: '#fff' })
   );
   return btn;
+}
+
+/* A tap that deletes or re-sorts a list row slides the next row under the
+   pointer, so a human double tap (about 250 ms) also hit that one: a second
+   reminder deleted, a second task ticked. False while taps on `list` keep
+   coming less than TAP_SETTLE_MS apart: a burst counts as its first tap.
+   Keyed by name, not element, because a tap re-renders the list. */
+const TAP_SETTLE_MS = 400;
+const lastListTap = new Map();
+function tapSettled(list) {
+  const now = Date.now();
+  const prev = lastListTap.get(list);
+  lastListTap.set(list, now);
+  return prev == null || now - prev >= TAP_SETTLE_MS;
+}
+
+/* What a person typed, as it is sent: trimmed, bidi overrides dropped (an
+   unclosed U+202E reversed the text after it), and '' when only invisible
+   format characters are left (three U+200B made a blank title). A ZWJ or ZWNJ
+   inside real text stays: emoji and Indic scripts need them. */
+function visibleText(value) {
+  const s = String(value == null ? '' : value)
+    .replace(/[\u202A-\u202E\u2066-\u2069]/g, '')
+    .trim();
+  return /[^\p{Cf}\p{Z}\s]/u.test(s) ? s : '';
 }
 
 /* ---- Avatar ---- */
@@ -1328,6 +1355,8 @@ export {
   SectionTitle,
   ProgressRing,
   Check,
+  tapSettled,
+  visibleText,
   Avatar,
   BottomNav,
   NAV_CATALOG,

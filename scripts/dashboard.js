@@ -16,6 +16,7 @@ import {
   thinkingLabel,
   Thinking,
   refreshIcons,
+  tapSettled,
 } from './gb-kit.js';
 import { MoneyHomeCard } from './money-home.js';
 import { OutlookCard } from './outlook-card.js';
@@ -30,6 +31,7 @@ import {
   HOME_WIDGETS,
   resolveHomeLayout,
   sortTasksForHome,
+  taskRank,
   sortHabitsForHome,
   habitDue,
   topStreaks,
@@ -373,7 +375,7 @@ function TaskRow(task, toggleTask, onEdit, onPause, onFocus) {
       class: 'gb-row' + (task.done ? ' is-done' : '') + (task.paused ? ' is-paused' : ''),
       'data-task-id': task.id,
     },
-    Check({ done: task.done, onToggle: () => toggleTask(task.id), label: task.title }),
+    Check({ done: task.done, onToggle: () => toggleTask(task.id), label: task.title, list: 'tasks' }),
     h(
       'div',
       { style: { flex: 1, minWidth: 0 } },
@@ -454,10 +456,40 @@ function TaskRow(task, toggleTask, onEdit, onPause, onFocus) {
 const TASKS_SHOWN = 6;
 let tasksExpanded = false;
 
+/* A ticked task jumped to the bottom on the tap's own render, so the next task
+   slid under the second half of a double tap and got ticked too. It keeps the
+   place it had (its rank before the tap) for TICK_SETTLE_MS, then the list
+   re-sorts. One timer: a run of ticks settles together after the last. */
+const TICK_SETTLE_MS = 1000;
+const settlingTasks = new Map(); // id -> rank before the tick
+let settleTimer = 0;
+let liveTasksCard = null; // { card, props } of the latest render, for the re-sort
+
+function settleTasks() {
+  settlingTasks.clear();
+  tapSettled('tasks'); // the re-sort moves rows under the pointer as well
+  const live = liveTasksCard;
+  if (!live || !live.card.isConnected) return;
+  const focused = live.card.contains(document.activeElement)
+    ? document.activeElement.closest('[data-task-id]')
+    : null;
+  const next = TasksCard(live.props);
+  live.card.replaceWith(next);
+  refreshIcons();
+  if (focused) next.querySelector('[data-task-id="' + focused.dataset.taskId + '"] .gb-check')?.focus();
+}
+
 function TasksCard(props) {
-  const { toggleTask, onAdd, onEdit, onPause, onFocus } = props;
+  const { onAdd, onEdit, onPause, onFocus } = props;
+  const toggleTask = (id) => {
+    const t = (props.tasks || []).find((x) => x.id === id);
+    if (t && !settlingTasks.has(id)) settlingTasks.set(id, taskRank(t, new Date()));
+    clearTimeout(settleTimer);
+    settleTimer = setTimeout(settleTasks, TICK_SETTLE_MS);
+    props.toggleTask(id);
+  };
   // Overdue, today, upcoming, no date; paused and done last (home-order.js).
-  const tasks = sortTasksForHome(props.tasks);
+  const tasks = sortTasksForHome(props.tasks, new Date(), settlingTasks);
   if (!tasks.length) {
     return Card({
       children: [
@@ -507,6 +539,7 @@ function TasksCard(props) {
         : null,
     ],
   });
+  liveTasksCard = { card, props };
   return card;
 }
 
@@ -533,7 +566,7 @@ function HabitCard(habit, toggleHabit) {
           )
     ),
     toggleHabit
-      ? Check({ done: !!habit.doneToday, onToggle: () => toggleHabit(habit.id), label: habit.name })
+      ? Check({ done: !!habit.doneToday, onToggle: () => toggleHabit(habit.id), label: habit.name, list: 'habits' })
       : null
   );
 }

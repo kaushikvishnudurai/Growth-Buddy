@@ -30,6 +30,7 @@ import {
   setThinking,
   focusSoon,
   SHEET_EXIT_MS,
+  visibleText,
 } from './gb-kit.js';
 import { setLocale, localeFromUser, fmtDate } from './i18n.js';
 import { BREAK_LENGTHS, breakState, startBreak, endBreak } from './break.js';
@@ -823,6 +824,39 @@ function persistGoalProgress() {
    so only the newest one's failure is worth rolling back — an older one's is
    already superseded by whatever was sent after it. */
 const goalProgressSeq = latestSeq();
+const goalSaves = new Map(); // goal key -> the tail of its save chain
+const goalUnsent = new Set(); // goal keys with an edit no PUT has carried yet
+
+/* Leaving (reload, tab closed) while an edit waits behind a save in flight:
+   send the newest blob now, keepalive, so the chain's wait cannot lose it.
+   No If-Match: it is the newest copy, and the queued save would have won. */
+window.addEventListener('pagehide', () => {
+  goalUnsent.forEach((key) =>
+    api('/api/goals/' + encodeURIComponent(key) + '/progress', {
+      method: 'PUT',
+      keepalive: true,
+      body: JSON.stringify(state.goalProgress[key]),
+    }).catch(() => {})
+  );
+  goalUnsent.clear();
+});
+
+/* One progress PUT (goal-merge.js putProgress: If-Match, and on a 409 this
+   tab's edits put onto the server's copy and sent once more). Lazy: the
+   merge is off the boot chunk, and the import is cached after the first save. */
+async function putGoalProgress(goalId, key) {
+  const goal = (state.goals || []).flatMap((sec) => sec.goals || []).find((g) => String(g.id) === key);
+  const { putProgress } = await import('./goal-merge.js');
+  const read = () => {
+    goalUnsent.delete(key);
+    return state.goalProgress[key];
+  };
+  return putProgress(api, goalId, goal, read, (blob) => {
+    state.goalProgress[key] = blob;
+    persistGoalProgress();
+    render();
+  });
+}
 
 function updateGoalProgress(goalId, patch) {
   if (!state.goalProgress) state.goalProgress = {};
@@ -839,10 +873,12 @@ function updateGoalProgress(goalId, patch) {
   render();
   // Optimistic, but not silent: a failure used to be a console line only, so
   // the tick stayed on screen and was gone after the next reload.
-  api('/api/goals/' + encodeURIComponent(goalId) + '/progress', {
-    method: 'PUT',
-    body: JSON.stringify(state.goalProgress[key]),
-  }).catch((err) => {
+  // Chained per goal: two saves in flight landed out of order and the older
+  // blob won (HOS-3). Each sends what the tab holds when its turn comes.
+  goalUnsent.add(key);
+  const run = (goalSaves.get(key) || Promise.resolve()).then(() => putGoalProgress(goalId, key));
+  goalSaves.set(key, run.catch(() => {}));
+  run.catch((err) => {
     if (!goalProgressSeq.isLatest(key, seq)) return;
     restoreKey(state.goalProgress, key, prev);
     persistGoalProgress();
@@ -2516,15 +2552,17 @@ async function apiFetch(path, options) {
   if (!res.ok) {
     let msg = statusMessage(res.status);
     let code;
+    let body;
     try {
-      const err = await res.json();
-      msg = err.message || msg;
-      code = err.code;
+      body = await res.json();
+      msg = body.message || msg;
+      code = body.code;
     } catch (_) {
       // ignored
     }
     const err = new Error(msg);
     err.status = res.status;
+    err.body = body; // a 409 can carry the current copy (goal progress)
     // ApiError.code, e.g. 'idempotency_in_progress' (a replay racing its first try).
     if (code) err.code = code;
     throw err;
@@ -3390,6 +3428,13 @@ function suggestGoalDone(taskId, tasksBefore) {
   });
 }
 
+/* A 404 on a task means it was deleted elsewhere: a retry can only 404 again,
+   so the row goes instead of rolling back with "try again" (HOS-8). */
+function taskGoneElsewhere(id) {
+  state.tasks = state.tasks.filter((t) => t.id !== id);
+  pushToast('That task was deleted on another device.', 'info', 4000);
+}
+
 async function toggleTask(id) {
   if (togglesInFlight.has(id)) return;
   togglesInFlight.add(id);
@@ -3407,9 +3452,12 @@ async function toggleTask(id) {
   // Offline (or a task whose create is still queued): the tick stays, the PATCH waits in the outbox.
   // One key for the live PATCH and its replay: a flip that landed unanswered must not flip back.
   const idemKey = newIdemKey();
+  // The state the user saw and asked for, not a flip: a stale tab's tap on a task
+  // done elsewhere used to un-do it (HOS-6). A server without the field ignores it.
   const op = {
     method: 'PATCH',
     path: '/api/tasks/' + encodeURIComponent(realId(id)) + '/toggle',
+    body: { done: nowDone },
     kind: 'task.toggle',
     toggleKey: 'task:' + realId(id),
     local: { id },
@@ -3421,7 +3469,7 @@ async function toggleTask(id) {
       return;
     }
     const updated = await sendAhead(op, () =>
-      api(op.path, { method: 'PATCH', headers: { 'Idempotency-Key': idemKey } })
+      api(op.path, { method: 'PATCH', headers: { 'Idempotency-Key': idemKey }, body: JSON.stringify(op.body) })
     );
     const painted = toggleSignature();
     state.tasks = state.tasks.map((t) => (t.id === id || t.id === updated.id ? mapTask(updated) : t));
@@ -3436,6 +3484,12 @@ async function toggleTask(id) {
       return;
     }
     if (err.queued) return;
+    if (err.status === 404) {
+      taskGoneElsewhere(id);
+      state.score = before.score;
+      render();
+      return;
+    }
     // Only this row: restoring the whole array undid any other row ticked meanwhile.
     state.tasks = state.tasks.map((t) => (t.id === id ? { ...t, done: !t.done } : t));
     state.score = before.score;
@@ -3669,7 +3723,7 @@ async function plainToggleHabit(id) {
   };
   try {
     const updated = await sendAhead(op, () =>
-      api('/api/habits/' + encodeURIComponent(id) + '/toggle', { method: 'PATCH' })
+      api('/api/habits/' + encodeURIComponent(id) + '/toggle', { method: 'PATCH', body: JSON.stringify({ done }) })
     );
     const painted = toggleSignature();
     state.habits = state.habits.map((h) => (h.id === updated.id ? updated : h));
@@ -4015,6 +4069,7 @@ async function updateTask(id, body) {
       api(path, { method: 'PUT', headers: { 'Idempotency-Key': idemKey }, body: JSON.stringify(body) })
     );
   } catch (err) {
+    if (err.status === 404) return taskGoneElsewhere(id); // the dialog closes on it
     if (!err.queued) throw err;
     state.tasks = state.tasks.map((t) => (t.id === id ? mapTask({ ...t, ...body, id }) : t));
     return;
@@ -11153,7 +11208,7 @@ function openProfileSettings(initialTab) {
       };
 
       const profilePayload = {
-        displayName: (displayNameInput.value || '').trim() || null,
+        displayName: visibleText(displayNameInput.value) || null,
         timezone: (timezoneInput.value || '').trim() || null,
         dob: dobInput.value || null,
         ageYears: parseDobToAge(dobInput.value, dobInput),
@@ -12465,6 +12520,8 @@ function taskForm(task, presetGoalId, presetDue) {
   const dueInput = h('input', {
     type: 'datetime-local',
     class: 'gb-input',
+    min: '1970-01-02T00:00',
+    max: '2037-12-31T23:59',
     value: task && task.dueAt ? toDateTimeLocal(task.dueAt) : presetDue ? toDateTimeLocal(presetDue.toISOString()) : '',
   });
   const dueDefault = dueInput.value; // what Due goes back to when the title stops naming a time
@@ -12553,8 +12610,11 @@ function taskForm(task, presetGoalId, presetDue) {
     ),
     focus: () => focusSoon(titleInput),
     read: () => {
-      const title = when ? when.rest : titleInput.value.trim();
+      const title = visibleText(when ? when.rest : titleInput.value);
       if (!title) throw fieldRefusal(titleInput, 'Give the task a title.');
+      // The server's TIMESTAMP column holds 1970 to 2038 (HOS-1).
+      if (dueInput.value && (dueInput.value < dueInput.min || dueInput.value > dueInput.max))
+        throw fieldRefusal(dueInput, 'Pick a due date between 1970 and 2037.');
       return {
         title,
         priority: priority.get(),
@@ -13562,7 +13622,7 @@ function openHabitForm(habit) {
         }
       : null,
     onPrimary: async () => {
-      const name = nameInput.value.trim();
+      const name = visibleText(nameInput.value);
       if (!name) throw fieldRefusal(nameInput, 'Give the habit a name.');
       const d = domain.get();
       // Editing keeps the habit's own icon unless a preset or a new category says otherwise.
@@ -17512,8 +17572,13 @@ if (navigator.onLine) flushRevokes(); // a sign-out made offline last time
 /* Coming back to the app after it was backgrounded. The socket may have been
    suspended without ever firing a disconnect, so `onConnect` never runs and the
    bell is quietly stale. Ask the server directly. */
+let hiddenAt = 0;
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && state.user) {
+  if (document.hidden) hiddenAt = Date.now();
+  else if (state.user) {
+    // Away over a minute (a backgrounded phone, another tab): ticks made on another
+    // device were still shown undone, and tapping one again un-did it (HOS-6).
+    if (hiddenAt && Date.now() - hiddenAt > 60_000) refreshOutboxStores(new Set(['task', 'habit']));
     flushQueued(); // back from the background: the connection may be too
     refreshNotifications();
     syncDeviceTimezone(); // reopened after a flight
