@@ -200,3 +200,16 @@ export function trashDaysLeft(deletedAt, now = Date.now()) {
   const gone = time(deletedAt) + TRASH_DAYS * 86400000;
   return Math.max(0, Math.ceil((gone - now) / 86400000));
 }
+
+/* The only hrefs a note may carry, as the cleaned href, or '' for none.
+   javascript: and data: are the two that turn a link into an exploit. A bare
+   "/" is an in-app path, but "//host" and "/\host" are protocol-relative:
+   another site. The test runs on the href as the URL parser will read it — it
+   drops every tab and newline and trims control characters and spaces — so
+   "/<tab>/host" can't pass as a path and then open another origin. */
+const SAFE_HREF = /^(https?:|mailto:|#|\/(?![/\\]))/i;
+export function safeHref(raw) {
+  // eslint-disable-next-line no-control-regex
+  const href = String(raw || '').replace(/[\t\n\r]/g, '').replace(/^[\x00-\x20]+|[\x00-\x20]+$/g, '');
+  return SAFE_HREF.test(href) ? href : '';
+}

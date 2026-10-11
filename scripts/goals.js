@@ -1,7 +1,7 @@
 /* =====================================================================
    Growth Buddy — Goals screen (short / mid / long term goals + actions)
    ===================================================================== */
-import { h, Icon, Pill, openModal, shakeRefusal, focusSoon } from './gb-kit.js';
+import { h, Icon, Pill, openModal, shakeRefusal, focusSoon, fieldRefusal } from './gb-kit.js';
 import {
   moveItem,
   renameMilestone,
@@ -192,8 +192,7 @@ function openEditProgress(goal, progress, onUpdateProgress, linkedCount = 0) {
       const dur = parseInt(durationInput.value);
       const followed = parseInt(followedInput.value);
       if (!Number.isFinite(dur) || dur < 1) {
-        durationInput.focus();
-        throw new Error('Duration must be at least 1 day.');
+        throw fieldRefusal(durationInput, 'Duration must be at least 1 day.');
       }
       if (auto) {
         // Counted from the goal's own start, so linking habits to a goal that
@@ -206,12 +205,10 @@ function openEditProgress(goal, progress, onUpdateProgress, linkedCount = 0) {
         return;
       }
       if (!Number.isFinite(followed) || followed < 0) {
-        followedInput.focus();
-        throw new Error('Days followed cannot be negative.');
+        throw fieldRefusal(followedInput, 'Days followed cannot be negative.');
       }
       if (followed > dur) {
-        followedInput.focus();
-        throw new Error('Days followed cannot exceed duration.');
+        throw fieldRefusal(followedInput, 'Days followed cannot exceed duration.');
       }
       onUpdateProgress(goal.id, { durationDays: dur, daysFollowed: followed, autoDays: false });
     },
@@ -274,61 +271,64 @@ function GoalProgressBar({ goal, progress, onUpdateProgress, linkedCount = 0 }) 
       ),
       leftEl
     ),
-    h(
-      'div',
-      { class: 'gb-goal-progress-actions' },
-      // One day a day. "Log a day" took any number of taps, so a double tap (or
-      // a second visit) counted the same day twice. `lastLoggedOn` lives in the
-      // progress blob with the count; today's log can be taken back.
-      auto
-        ? null
-        : loggedToday
-        ? h(
+    // A finished goal shows where it ended; Reopen brings the controls back.
+    goal.completed
+      ? null
+      : h(
+          'div',
+          { class: 'gb-goal-progress-actions' },
+          // One day a day. "Log a day" took any number of taps, so a double tap (or
+          // a second visit) counted the same day twice. `lastLoggedOn` lives in the
+          // progress blob with the count; today's log can be taken back.
+          auto
+            ? null
+            : loggedToday
+              ? h(
+                  'button',
+                  {
+                    type: 'button',
+                    class: 'gb-goal-day-btn is-logged',
+                    'aria-label': 'Logged today. Undo',
+                    onclick: () =>
+                      onUpdateProgress(goal.id, {
+                        durationDays: dur,
+                        daysFollowed: Math.max(0, followed - 1),
+                        lastLoggedOn: progress.prevLoggedOn || null,
+                        prevLoggedOn: null,
+                      }),
+                  },
+                  Icon('undo-2', { size: 15, sw: 2.4 }),
+                  'Logged today · Undo'
+                )
+              : !isDone
+                ? h(
+                    'button',
+                    {
+                      type: 'button',
+                      class: 'gb-goal-day-btn',
+                      onclick: () =>
+                        onUpdateProgress(goal.id, {
+                          durationDays: dur,
+                          daysFollowed: Math.min(dur, followed + 1),
+                          lastLoggedOn: today,
+                          prevLoggedOn: progress.lastLoggedOn || null,
+                        }),
+                    },
+                    Icon('calendar-check', { size: 15, sw: 2.4 }),
+                    'Log a day'
+                  )
+                : null,
+          h(
             'button',
             {
               type: 'button',
-              class: 'gb-goal-day-btn is-logged',
-              'aria-label': 'Logged today. Undo',
-              onclick: () =>
-                onUpdateProgress(goal.id, {
-                  durationDays: dur,
-                  daysFollowed: Math.max(0, followed - 1),
-                  lastLoggedOn: progress.prevLoggedOn || null,
-                  prevLoggedOn: null,
-                }),
+              class: 'gb-icon-btn',
+              'aria-label': 'Edit day tracker',
+              onclick: () => openEditProgress(goal, progress, onUpdateProgress, linkedCount),
             },
-            Icon('undo-2', { size: 15, sw: 2.4 }),
-            'Logged today · Undo'
+            Icon('pencil', { size: 15, sw: 2.4 })
           )
-        : !isDone
-          ? h(
-              'button',
-              {
-                type: 'button',
-                class: 'gb-goal-day-btn',
-                onclick: () =>
-                  onUpdateProgress(goal.id, {
-                    durationDays: dur,
-                    daysFollowed: Math.min(dur, followed + 1),
-                    lastLoggedOn: today,
-                    prevLoggedOn: progress.lastLoggedOn || null,
-                  }),
-              },
-              Icon('calendar-check', { size: 15, sw: 2.4 }),
-              'Log a day'
-            )
-          : null,
-      h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-icon-btn',
-          'aria-label': 'Edit day tracker',
-          onclick: () => openEditProgress(goal, progress, onUpdateProgress, linkedCount),
-        },
-        Icon('pencil', { size: 15, sw: 2.4 })
-      )
-    )
+        )
   );
 }
 
@@ -358,6 +358,9 @@ const DUE_LABEL = { overdue: 'Overdue', today: 'Due today', soon: 'Due', later: 
 
 function GoalMilestones({ goal, progress, onUpdateProgress }) {
   const { ms, done, total, pct } = milestoneStats(progress);
+  // A finished goal: the trail as it ended, no adding or editing (Reopen).
+  const frozen = !!goal.completed;
+  if (frozen && !total) return null;
   // "Count finished tasks toward progress" on: the bar is milestones and
   // finished linked tasks together (goal-tasks.js combinedGoalProgress).
   const work = progress && progress.work && progress.work.withTasks ? progress.work : null;
@@ -492,7 +495,7 @@ function GoalMilestones({ goal, progress, onUpdateProgress }) {
   }
 
   // The first open milestone is where the path stands now.
-  const nextId = (ms.find((m) => !m.done) || {}).id;
+  const nextId = frozen ? null : (ms.find((m) => !m.done) || {}).id;
 
   function viewRow(x) {
     const index = ms.findIndex((m) => m.id === x.id);
@@ -512,6 +515,7 @@ function GoalMilestones({ goal, progress, onUpdateProgress }) {
           role: 'checkbox',
           'aria-checked': x.done ? 'true' : 'false',
           'aria-label': (x.done ? 'Mark incomplete: ' : 'Mark complete: ') + x.title,
+          disabled: frozen,
           onclick: () => toggle(x.id),
         },
         // An open stop shows its place in the order; the label says the rest.
@@ -533,22 +537,24 @@ function GoalMilestones({ goal, progress, onUpdateProgress }) {
             )
           : null
       ),
-      h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-icon-btn gb-goal-ms-del',
-          'aria-label': 'Edit milestone: ' + x.title,
-          'data-ms-open': keyOf(x),
-          // Opening a row changes nothing stored: swap it in place, no save.
-          onclick: () => {
-            editingMs = keyOf(x);
-            node.replaceWith(editRow(x, index));
-            focusMs('[data-ms-edit="' + keyOf(x) + '"]');
-          },
-        },
-        Icon('pencil', { size: 13, sw: 2.4 })
-      )
+      frozen
+        ? null
+        : h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-icon-btn gb-goal-ms-del',
+              'aria-label': 'Edit milestone: ' + x.title,
+              'data-ms-open': keyOf(x),
+              // Opening a row changes nothing stored: swap it in place, no save.
+              onclick: () => {
+                editingMs = keyOf(x);
+                node.replaceWith(editRow(x, index));
+                focusMs('[data-ms-edit="' + keyOf(x) + '"]');
+              },
+            },
+            Icon('pencil', { size: 13, sw: 2.4 })
+          )
     );
     return node;
   }
@@ -563,7 +569,11 @@ function GoalMilestones({ goal, progress, onUpdateProgress }) {
       { class: 'gb-goal-ms-header' },
       h('span', { class: 'gb-goal-ms-label' }, work ? 'Milestones + tasks' : 'Milestones'),
       work
-        ? h('span', { class: 'gb-goal-ms-pct' }, work.done + '/' + work.total + ' · ' + work.pct + '%')
+        ? h(
+            'span',
+            { class: 'gb-goal-ms-pct' },
+            work.done + '/' + work.total + ' · ' + work.pct + '%'
+          )
         : total
           ? h('span', { class: 'gb-goal-ms-pct' }, done + '/' + total + ' · ' + pct + '%')
           : null
@@ -583,16 +593,23 @@ function GoalMilestones({ goal, progress, onUpdateProgress }) {
     rows.length ? h('div', { class: 'gb-goal-ms-list gb-goal-trail' }, rows) : null,
     // The + sits inside the field: a separate "+ Add" pill beside it squeezed
     // the input to a few characters on a card this narrow.
-    h(
-      'div',
-      { class: 'gb-affix gb-goal-ms-add' },
-      addInput,
-      h(
-        'button',
-        { type: 'button', class: 'gb-goal-ms-addbtn', 'aria-label': 'Add milestone', onclick: add },
-        Icon('plus', { size: 16, sw: 2.6 })
-      )
-    )
+    frozen
+      ? null
+      : h(
+          'div',
+          { class: 'gb-affix gb-goal-ms-add' },
+          addInput,
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-goal-ms-addbtn',
+              'aria-label': 'Add milestone',
+              onclick: add,
+            },
+            Icon('plus', { size: 16, sw: 2.6 })
+          )
+        )
   );
 }
 
@@ -649,7 +666,7 @@ function ActionRow(goal, action, onEditAction, onDeleteAction) {
    finished tasks toward progress" switch (`countTasks` in the progress blob,
    read by goal-tasks.js combinedGoalProgress). */
 function GoalTasks({ goal, progress, tasks, onUpdateProgress, taskOps }) {
-  const ops = taskOps || {};
+  const ops = goal.completed ? { onToggleTask: (taskOps || {}).onToggleTask } : taskOps || {};
   if (!ops.onAddTask && !tasks.total) return null;
   const counting = !!(progress && progress.countTasks);
   const addBtn = ops.onAddTask
@@ -708,12 +725,14 @@ function GoalTasks({ goal, progress, tasks, onUpdateProgress, taskOps }) {
           )
         )
       : null,
-    h(
-      'div',
-      { style: { display: 'flex', gap: '12px', alignItems: 'center', margin: '6px 0' } },
-      h('span', { style: { flex: 1 } }, 'Count finished tasks toward progress'),
-      countSwitch
-    ),
+    goal.completed
+      ? null
+      : h(
+          'div',
+          { style: { display: 'flex', gap: '12px', alignItems: 'center', margin: '6px 0' } },
+          h('span', { style: { flex: 1 } }, 'Count finished tasks toward progress'),
+          countSwitch
+        ),
     addBtn
   );
 }
@@ -869,17 +888,19 @@ function GoalRow(
     h(
       'div',
       { class: 'gb-goal-card-footer' },
-      h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-btn gb-btn--secondary gb-btn--compact',
-          onclick: () => onAddAction(goal),
-        },
-        Icon('notebook-pen', { size: 14, sw: 2.4 }),
-        'Log action'
-      ),
-      !(progress && progress.durationDays)
+      goal.completed
+        ? null
+        : h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-btn gb-btn--secondary gb-btn--compact',
+              onclick: () => onAddAction(goal),
+            },
+            Icon('notebook-pen', { size: 14, sw: 2.4 }),
+            'Log action'
+          ),
+      !goal.completed && !(progress && progress.durationDays)
         ? h(
             'button',
             {
@@ -937,6 +958,8 @@ function ScreenGoals({
   linkedHabits = {},
   onAddTask,
   onToggleTask,
+  loadFailed = false,
+  onRetry,
 }) {
   userZone = timezone || '';
   const createBtn = h(
@@ -1112,8 +1135,7 @@ function ScreenGoals({
       onPrimary: async () => {
         const title = titleInput.value.trim();
         if (!title) {
-          titleInput.focus();
-          throw new Error('Give the goal a name first.');
+          throw fieldRefusal(titleInput, 'Give the goal a name first.');
         }
         if (editing) {
           // PUT: null = unchanged, so a removed date says so with its own flag.
@@ -1136,18 +1158,19 @@ function ScreenGoals({
         }
         const dur = durationInput.value ? Number(durationInput.value) : null;
         if (dur != null && (!Number.isInteger(dur) || dur < 1 || dur > 1000)) {
-          durationInput.focus();
-          throw new Error('Track daily takes a whole number of days, 1 to 1000.');
+          throw fieldRefusal(durationInput, 'Track daily takes a whole number of days, 1 to 1000.');
         }
-        const goal = await onCreateGoal({
+        // Not `goal`: a const of that name here shadows the parameter for the
+        // whole function, and the edit branch above then read it in its TDZ.
+        const created = await onCreateGoal({
           title,
           description: descInput.value.trim() || null,
           horizon,
           targetDate: targetInput.value || null,
         });
         const ids = pickedIds();
-        if (goal && goal.id && (dur != null || ids.length)) {
-          onUpdateGoalProgress(goal.id, {
+        if (created && created.id && (dur != null || ids.length)) {
+          onUpdateGoalProgress(created.id, {
             ...(dur != null ? { durationDays: dur, daysFollowed: 0 } : {}),
             ...(ids.length ? { linkedHabitIds: ids } : {}),
           });
@@ -1189,13 +1212,11 @@ function ScreenGoals({
       onPrimary: async () => {
         const note = noteInput.value.trim();
         if (!note) {
-          noteInput.focus();
-          throw new Error('Action note is required');
+          throw fieldRefusal(noteInput, 'Action note is required');
         }
         // A typed date skips the picker's max; YYYY-MM-DD compares as text.
         if (dateInput.value && dateInput.value > todayKey()) {
-          dateInput.focus();
-          throw new Error("An action can't be dated in the future.");
+          throw fieldRefusal(dateInput, "An action can't be dated in the future.");
         }
         const payload = { note, actionDate: dateInput.value || null };
         if (action) await onUpdateAction(goal.id, action.id, payload);
@@ -1331,7 +1352,34 @@ function ScreenGoals({
         'Set short, mid or long-term goals, then log small daily actions toward them.'
       )
     ),
-    h('div', { class: 'gb-dash-block' }, horizonCards)
+    // The server always sends the three horizons, so none at all after a
+    // failed load means "not loaded", not "no goals": say so, offer the retry.
+    loadFailed && !sections.length
+      ? h(
+          'div',
+          { class: 'gb-card gb-note-state' },
+          h(
+            'div',
+            { class: 'gb-empty' },
+            Icon('circle-alert', { size: 26, color: 'var(--fg3)' }),
+            h('p', null, 'Could not load your goals.'),
+            onRetry
+              ? h(
+                  'button',
+                  {
+                    type: 'button',
+                    class: 'gb-btn gb-btn--secondary gb-btn--compact',
+                    onclick: (e) => {
+                      e.currentTarget.disabled = true;
+                      onRetry();
+                    },
+                  },
+                  'Try again'
+                )
+              : null
+          )
+        )
+      : h('div', { class: 'gb-dash-block' }, horizonCards)
   );
 }
 

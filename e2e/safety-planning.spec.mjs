@@ -256,7 +256,8 @@ async function newNote(page, title, body) {
   await m.getByRole('button', { name: 'Save note' }).click();
   await expect(m.getByRole('heading', { name: title })).toBeVisible();
 }
-const card = (page, title) => main(page).getByRole('button', { name: title }).filter({ has: page.getByRole('heading', { name: title }) });
+// A plain <article> opened through its stretched "Open <title>" button (A11-8).
+const card = (page, title) => main(page).locator('.gb-note-card').filter({ has: page.getByRole('heading', { name: title }) });
 
 test('Notes: create, edit, and the edit survives a reload', async ({ page, account }) => {
   await boot(page, account, 'notes');
@@ -306,7 +307,9 @@ test('Notes: archive, then trash and restore', async ({ page, account }) => {
   // Trash the seeded note from the main list, then restore it.
   await m.getByRole('button', { name: /^Notes/ }).first().click();
   await card(page, 'Ideas for the trip').click();
+  // No confirm: it only goes to the Trash, and the toast offers Undo.
   await page.getByRole('dialog', { name: 'Note' }).getByRole('button', { name: 'Delete note' }).click();
+  await expect(page.locator('.gb-toast').filter({ hasText: 'Note deleted.' }).getByRole('button', { name: 'Undo' })).toBeVisible();
   await expect(m.getByRole('heading', { name: 'Ideas for the trip' })).toHaveCount(0);
   await reload(page, 'notes');
   await expect(m.getByRole('heading', { name: 'Ideas for the trip' })).toHaveCount(0);
@@ -323,18 +326,6 @@ test('Notes: archive, then trash and restore', async ({ page, account }) => {
 
 /* ---------------- Goals ---------------- */
 
-test('Goals: a new goal shows on the screen as soon as it is saved', async ({ page, account }) => {
-  // app bug: createGoal (app.js) puts the POST's goal into state.goals and toasts "Goal saved." but
-  // never calls render(), so the card is missing until the user leaves Goals and comes back (build 95).
-  test.fail();
-  await boot(page, account, 'goals');
-  await main(page).getByRole('button', { name: 'New goal' }).click();
-  const dlg = page.getByRole('dialog', { name: 'New goal' });
-  await dlg.getByRole('textbox', { name: 'Goal' }).fill('Learn to swim');
-  await dlg.getByRole('button', { name: 'Save goal' }).click();
-  await expect(main(page).getByRole('button', { name: 'Edit goal: Learn to swim' })).toBeVisible({ timeout: 5000 });
-});
-
 test('Goals: create, add and tick a milestone, delete', async ({ page, account }) => {
   await boot(page, account, 'goals');
   const m = main(page);
@@ -343,9 +334,6 @@ test('Goals: create, add and tick a milestone, delete', async ({ page, account }
   await dlg.getByRole('textbox', { name: 'Goal' }).fill('Learn to swim');
   await dlg.getByRole('button', { name: 'Save goal' }).click();
   await expect(dlg).toBeHidden();
-  // The new card only shows once Goals repaints (see the test.fail below), so leave and come back.
-  await go(page, 'home');
-  await go(page, 'goals');
   const goal = m.locator('.gb-goal-card').filter({ has: page.getByRole('button', { name: 'Edit goal: Learn to swim' }) }).last();
   await expect(goal).toBeVisible();
 
@@ -358,9 +346,13 @@ test('Goals: create, add and tick a milestone, delete', async ({ page, account }
   await reload(page, 'goals');
   await expect(goal.getByRole('checkbox', { name: /Float for 30 seconds/ })).toBeChecked();
 
+  // Undo instead of a confirm (EXP-5): the DELETE goes when the toast does.
   await goal.getByRole('button', { name: 'Delete goal' }).click();
-  await page.getByRole('dialog', { name: 'Delete “Learn to swim”?' }).getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect(page.locator('.gb-toast').filter({ hasText: 'Goal deleted.' }).getByRole('button', { name: 'Undo' })).toBeVisible();
   await expect(m.getByRole('button', { name: 'Edit goal: Learn to swim' })).toHaveCount(0);
+  await expect
+    .poll(async () => (await api(page, account, '/api/goals')).some((s) => (s.goals || []).some((g) => g.title === 'Learn to swim')), { timeout: 12_000 })
+    .toBe(false);
   await reload(page, 'goals');
   await expect(m.getByText('Learn to swim')).toHaveCount(0);
 });

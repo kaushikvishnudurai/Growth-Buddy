@@ -12943,7 +12943,21 @@ textarea:focus-visible,
 .gb-note-card-body[hidden] {
   display: none;
 }
+/* The card's open action (notes.js NoteCard): an empty button stretched over
+   the card, so the whole card still opens on a tap and its focus ring is the
+   card's. The pin is later in the card and the trash actions are lifted, so
+   both stay above it; the cover (z-index 1) opens through the card's click. */
+.gb-note-open {
+  position: absolute;
+  inset: 0;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: none;
+  cursor: pointer;
+}
 .gb-note-trash-actions {
+  position: relative;
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
@@ -14925,7 +14939,9 @@ button.gb-tone-chip:focus-visible {
   border: 2px solid var(--control-border);
   background: var(--surface);
 }
-.gb-rem-check svg {
+/* The child, not the svg: Icon() wraps the svg in a span, and that span is the
+   grid item; left to auto-place, it dropped into a second row under the circle. */
+.gb-rem-check > * {
   grid-area: 1 / 1;
   position: relative;
 }

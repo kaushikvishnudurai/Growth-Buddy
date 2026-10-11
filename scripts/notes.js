@@ -34,6 +34,7 @@ import {
   offlineCopy,
   readOfflineCopy,
   trashDaysLeft,
+  safeHref,
 } from './notes-core.js';
 
 /* Swatches a note can wear. `null` (no colour) is the default and stays the
@@ -109,12 +110,9 @@ const DROP = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'TEMPLATE'
  * the part that's hard to get right, and DOMParser does it in an inert document
  * where nothing executes.
  */
-/* The only hrefs a note may carry. javascript: and data: are the two that turn
-   a link into an exploit. sanitize() is the boundary that enforces it, and the
-   link dialog tests the same rule so a bad URL is refused while it can still be
-   corrected, rather than silently losing its href on save. A bare "/" is an
-   in-app path, but "//host" and "/\host" are protocol-relative: another site. */
-const SAFE_HREF = /^(https?:|mailto:|#|\/(?![/\\]))/i;
+/* Hrefs go through notes-core `safeHref`: sanitize() is the boundary that
+   enforces it, and the link dialog tests the same rule so a bad URL is refused
+   while it can still be corrected, rather than silently losing its href on save. */
 /* The only images a note may carry: raster data the editor embedded itself.
    A remote src is a tracking pixel that phones home every time the note is
    painted, and data:image/svg+xml is a document, not a picture. */
@@ -154,10 +152,11 @@ function sanitize(html) {
         return;
       }
       if (tag === 'A') {
-        const href = (child.getAttribute('href') || '').trim();
-        if (!SAFE_HREF.test(href)) {
+        const href = safeHref(child.getAttribute('href'));
+        if (!href) {
           child.removeAttribute('href');
         } else {
+          child.setAttribute('href', href);
           child.setAttribute('target', '_blank');
           child.setAttribute('rel', 'noopener noreferrer');
         }
@@ -436,10 +435,10 @@ function richEditor({ html, placeholder, onInput } = {}) {
       primary: 'Add link',
       errorMessage: 'That does not look like a link.',
       onPrimary: () => {
-        const url = input.value.trim();
+        const url = safeHref(input.value);
         // Same rule sanitize() applies on save, so the refusal lands here where
         // it can still be fixed instead of quietly dropping the href later.
-        if (!url || !SAFE_HREF.test(url)) {
+        if (!url) {
           throw new Error('Enter a link starting with https://');
         }
         area.focus();
@@ -1156,6 +1155,16 @@ function revealMatch(area, words) {
 let composerDraft = null; // { title, html, color }
 const DRAFT_SAVE_MS = 800;
 
+/* One visit, one screen. render() calls ScreenNotes again for a theme flip, a
+   socket repaint or a day rollover; rebuilding refetched the list, counts and
+   draft each time and put a new composer under the caret, so typing landed at
+   the start. The node built for this visit is still in the document while
+   render() builds the next tree, so it is handed back as it is: a new visit
+   (the node gone) builds fresh. A repaint well after the last load still
+   refreshes the list, quietly: a note quick-added from the header shows up. */
+let liveScreen = null; // { node, userId, reuse }
+const RELOAD_AFTER_MS = 5000;
+
 function ScreenNotes({
   onList,
   onGet,
@@ -1177,6 +1186,10 @@ function ScreenNotes({
   userId,
   openComposer: openOnMount,
 }) {
+  if (liveScreen && liveScreen.userId === userId && liveScreen.node.isConnected) {
+    liveScreen.reuse();
+    return liveScreen.node;
+  }
   const listEl = h('div', { class: 'gb-note-grid' });
   let notes = [];
   let query = '';
@@ -1316,8 +1329,12 @@ function ScreenNotes({
       'Try again'
     )
   );
+  // Only a list the server sent is a copy worth keeping: a note created offline
+  // before any load painted a "saved copy" of just that one, which then stood
+  // in for every note the account has.
+  let fromServer = false;
   function saveOffline() {
-    if (!userId || offline || view !== 'notes') return;
+    if (!userId || offline || view !== 'notes' || !fromServer) return;
     try {
       CacheStorage.setItem(offlineKey(userId), JSON.stringify(offlineCopy(notes)));
     } catch (_) {
@@ -1470,7 +1487,7 @@ function ScreenNotes({
       const card = cardOf(created.id);
       landed(card);
       // Focus follows the note; the folded composer left it on <body>.
-      if (card) card.focus({ preventScroll: true });
+      focusCard(card);
     } catch (err) {
       toast.error(err, 'Could not save that note.');
     } finally {
@@ -1479,6 +1496,8 @@ function ScreenNotes({
   }
 
   const cardOf = (id) => listEl.querySelector('[data-id="' + id + '"]');
+  // A card is opened (and focused) through its .gb-note-open button.
+  const focusCard = (el) => el && (el.querySelector('.gb-note-open') || el).focus({ preventScroll: true });
   // An effect on a card behind a closing sheet waits out its exit.
   const SHEET_EXIT = SHEET_EXIT_MS + 20;
 
@@ -1503,28 +1522,35 @@ function ScreenNotes({
     const coverSrc = SAFE_IMG.test(note.cover || '')
       ? note.cover
       : photos[0] && photos[0].getAttribute('src');
+    /* A plain article, so a reader reads the note; opening it is a real button
+       stretched over the card (app.css .gb-note-open), named by the title and
+       described by the preview. Pin, Restore and Delete forever are its
+       siblings, not controls nested in a button. A tap on the cover (painted
+       above the stretch) still opens through the card's own click. */
+    const bodyId = 'gb-note-body-' + String(note.id).replace(/[^\w-]/g, '');
+    bodyEl.id = bodyId;
     const card = h('article', {
       class: 'gb-note-card' + (note.pinned ? ' is-pinned' : '') + (count ? ' has-cover' : ''),
       'data-id': note.id,
       // The colour tints the paper and inks the margin rule (app.css .gb-note-card).
       style: c ? { '--note-paper': c.bg, '--note-rule': c.line } : null,
-      tabindex: '0',
-      role: 'button',
-      'aria-label':
-        (note.title || preview.slice(0, 60) || (count ? 'Photo note' : 'Untitled note')) +
-        (count ? ', ' + count + (count === 1 ? ' photo' : ' photos') : ''),
       onclick: (e) => {
-        if (e.target.closest('button')) return; // the pin, Restore, Delete forever
+        if (e.target.closest('button')) return; // the open button, pin, Restore, Delete forever
         activate(note, card);
       },
-      onkeydown: (e) => {
-        if (e.target !== card) return; // Enter on a button inside is that button's
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          activate(note, card);
-        }
-      },
     });
+    card.appendChild(
+      h('button', {
+        type: 'button',
+        class: 'gb-note-open',
+        'aria-label':
+          'Open ' +
+          (note.title || preview.slice(0, 60) || (count ? 'photo note' : 'untitled note')) +
+          (count ? ', ' + count + (count === 1 ? ' photo' : ' photos') : ''),
+        'aria-describedby': preview ? bodyId : null,
+        onclick: () => activate(note, card),
+      })
+    );
     // The Trash has no pin: a deleted note has no place in the order.
     if (view !== 'trash') {
       card.appendChild(
@@ -1624,6 +1650,12 @@ function ScreenNotes({
 
   /* A card's tap: the editor, or (offline, or in the Trash) a read-only view. */
   function activate(note, card) {
+    // One note sheet at a time: a second tap landing as the first opens (or a
+    // tap and the card's own click both arriving) stacked two of the same note.
+    const up = Array.from(document.querySelectorAll('.gb-note-modal')).some(
+      (m) => !m.parentElement.classList.contains('is-closing')
+    );
+    if (up) return;
     if (offline || view === 'trash') readOnly(note);
     else openNote(note, card);
   }
@@ -1920,7 +1952,7 @@ function ScreenNotes({
               paint();
               // The opener is gone: focus the card that took its place, else search.
               const left = Array.from(listEl.querySelectorAll('.gb-note-card:not([hidden])'));
-              (left[Math.min(Math.max(at, 0), left.length - 1)] || searchInput).focus({ preventScroll: true });
+              focusCard(left[Math.min(Math.max(at, 0), left.length - 1)] || searchInput);
             }, SHEET_EXIT);
           } catch (err) {
             toast.error(err, 'Could not delete that note.');
@@ -2129,7 +2161,7 @@ function ScreenNotes({
       refreshCounts();
       landed(cardOf(note.id));
       // Undo came from a toast, after the card's sheet had gone: focus was on <body>.
-      if (cardOf(note.id)) cardOf(note.id).focus({ preventScroll: true });
+      focusCard(cardOf(note.id));
     } catch (err) {
       toast.error(err, 'Could not bring that note back.');
     }
@@ -2146,7 +2178,7 @@ function ScreenNotes({
       refreshCounts();
       landed(cardOf(note.id));
       // Undo came from a toast, after the card's sheet had gone: focus was on <body>.
-      if (cardOf(note.id)) cardOf(note.id).focus({ preventScroll: true });
+      focusCard(cardOf(note.id));
     } catch (err) {
       toast.error(err, 'Could not change that note.');
     }
@@ -2301,8 +2333,10 @@ function ScreenNotes({
   const fetchView = () =>
     view === 'trash' ? onTrash() : view === 'archived' ? onList({ archived: true }) : onList();
 
+  let loadedAt = 0;
   const load = () => {
     const forView = view;
+    loadedAt = Date.now();
     return fetchView()
       .then((data) => {
         if (forView !== view) return; // switched while this was in flight
@@ -2319,6 +2353,7 @@ function ScreenNotes({
           notes = fetched; // the offline copy is replaced whole
         }
         offline = false;
+        if (view === 'notes') fromServer = true;
         sortNotes();
         paint();
         paintViews();
@@ -2329,6 +2364,8 @@ function ScreenNotes({
         // The list this device last saw, read-only, beats an error card.
         if (view === 'notes' && looksOffline(err) && showOffline()) return;
         if (offline) return; // still offline: keep showing the copy
+        // Offline with nothing kept here yet: not a fault, and not "no notes".
+        const unsaved = view === 'notes' && looksOffline(err);
         listEl.replaceChildren(
           h(
             'div',
@@ -2336,8 +2373,14 @@ function ScreenNotes({
             h(
               'div',
               { class: 'gb-empty' },
-              Icon('circle-alert', { size: 26, color: 'var(--fg3)' }),
-              h('p', null, 'Could not load your notes.'),
+              Icon(unsaved ? 'wifi-off' : 'circle-alert', { size: 26, color: 'var(--fg3)' }),
+              h(
+                'p',
+                null,
+                unsaved
+                  ? "You're offline, and your notes haven't been saved to this device yet. They show here once you're back online."
+                  : 'Could not load your notes.'
+              ),
               h(
                 'button',
                 {
@@ -2360,7 +2403,29 @@ function ScreenNotes({
 
   // Search (with sort) is the top bar, sticky while the list scrolls; everything
   // else — banner, composer, views, label chips — sits under it.
-  return h('div', { class: 'gb-notes' }, tools, offlineBanner, composer, viewRow, labelRow, listEl);
+  const node = h('div', { class: 'gb-notes' }, tools, offlineBanner, composer, viewRow, labelRow, listEl);
+  liveScreen = {
+    node,
+    userId,
+    reuse() {
+      // Moving the node out of the old tree drops focus and the selection, and
+      // render() refocuses a contenteditable with its caret at offset 0. Keep
+      // the selection's points (the nodes survive the move) and put it back
+      // once render() is done.
+      const sel = window.getSelection();
+      const r = sel && sel.rangeCount && node.contains(sel.anchorNode) ? sel.getRangeAt(0) : null;
+      const pts = r && [r.startContainer, r.startOffset, r.endContainer, r.endOffset];
+      const had = node.contains(document.activeElement) ? document.activeElement : null;
+      if (had)
+        queueMicrotask(() => {
+          if (!had.isConnected) return;
+          had.focus({ preventScroll: true });
+          if (pts && had.isContentEditable) sel.setBaseAndExtent(...pts);
+        });
+      if (!offline && Date.now() - loadedAt > RELOAD_AFTER_MS) load();
+    },
+  };
+  return node;
 }
 
 /* =====================================================================
@@ -2432,6 +2497,7 @@ if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.DEV
 
 function clearNoteDraft() {
   composerDraft = null;
+  liveScreen = null;
 }
 
 export { ScreenNotes, sanitize, shrinkPhoto, clearNoteDraft };

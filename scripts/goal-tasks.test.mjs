@@ -72,4 +72,15 @@ assert.equal(
 );
 assert.equal(goalFinishedBy('t2', tasks, after, [{ id: 'g1', completed: true }]), null);
 
+
+// EXP-7: the last task ticked, but a milestone or the day tracker is still open.
+assert.equal(goalFinishedBy('t2', tasks, after, goals, { g1: { milestones: ms } }), null);
+assert.equal(goalFinishedBy('t2', tasks, after, goals, { g1: { durationDays: 30, daysFollowed: 3 } }), null);
+assert.equal(
+  goalFinishedBy('t2', tasks, after, goals, {
+    g1: { milestones: [{ id: 'a', done: true }], durationDays: 30, daysFollowed: 30 },
+  }),
+  goals[0]
+);
+
 console.log('goal-tasks: all checks passed');
