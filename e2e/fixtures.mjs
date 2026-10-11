@@ -20,6 +20,9 @@ export const test = base.extend({
     async ({ page, allowed }, use) => {
       const problems = [];
       page.on('console', (m) => {
+        // sockjs-client (the bell's socket) adds an 'unload' listener; this Chrome reports it as a
+        // policy violation on every page. A browser deprecation in a dependency, not an app error.
+        if (m.text().includes('unload is not allowed')) return;
         if (m.type() === 'error' && !allowed.some((a) => m.text().includes(a))) problems.push('console: ' + m.text());
       });
       page.on('pageerror', (e) => problems.push('pageerror: ' + e.message));
