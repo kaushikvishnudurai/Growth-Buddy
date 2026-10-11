@@ -482,7 +482,10 @@ public class MoneyService {
             return null;
         }
         migrate(state);
-        String name = applyPaid(data, subId, month, today);
+        // EXM-7: the month's payment was deleted after it was marked, so paidFor still
+        // names the month with nothing behind it; let this tap book it again.
+        boolean rebook = !ledger.deletedIds(userId, List.of("sub-" + subId + "-" + month)).isEmpty();
+        String name = applyPaid(data, subId, month, today, rebook);
         if (name == null) {
             String unpriced = unpricedName(data, subId);
             return unpriced == null ? null : new Paid(unpriced, false, true);
@@ -520,6 +523,11 @@ public class MoneyService {
 
     /** Idempotent: a second tap on the same message changes nothing. */
     static String applyPaid(ObjectNode data, String subId, String month, LocalDate today) {
+        return applyPaid(data, subId, month, today, false);
+    }
+
+    /** {@code rebook}: the month is marked paid but its payment was deleted; book it again. */
+    static String applyPaid(ObjectNode data, String subId, String month, LocalDate today, boolean rebook) {
         if (!(data.get("subscriptions") instanceof ArrayNode subs)) {
             return null;
         }
@@ -533,7 +541,8 @@ public class MoneyService {
                 // Forward only: tapping last month's message after this month is paid
                 // must not roll paidFor back (and re-open this month's bill).
                 // "YYYY-MM" strings order the same as the months they name.
-                if (month.compareTo(sub.path("paidFor").asText("")) <= 0) {
+                int vs = month.compareTo(sub.path("paidFor").asText(""));
+                if (vs < 0 || (vs == 0 && !rebook)) {
                     return sub.path("name").asText();
                 }
                 sub.put("paidFor", month);

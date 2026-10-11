@@ -411,6 +411,13 @@ public class MoneyLedger {
             jdbc.update("DELETE FROM money_transactions WHERE user_id = ? AND id IN ("
                     + placeholders(chunk.size()) + ")", prepend(userId.toString(), chunk));
         }
+        // A derived id re-created after a delete (settle, undo, settle; a bill paid
+        // again) lives again: its tombstone goes, so it no longer reads as deleted.
+        List<String> revived = upserts.stream().map(Row::id).filter(MoneyLedger::derivedId).toList();
+        for (List<String> chunk : chunks(new ArrayList<>(revived))) {
+            jdbc.update("DELETE FROM money_tx_tombstones WHERE user_id = ? AND id IN ("
+                    + placeholders(chunk.size()) + ")", prepend(userId.toString(), chunk));
+        }
         if (!deletes.isEmpty()) {
             List<Object[]> stones = new ArrayList<>();
             for (String id : deletes) {
