@@ -242,34 +242,43 @@ const cachedWellness = () =>
   const keepBudgets = before.body.budgets || {};
   await goto('money');
   // The screen is a lazy chunk: it must be here before the connection goes.
-  await page.waitForFunction(() => [...document.querySelectorAll('button')].some((b) => /^Set budgets$/.test(b.textContent.trim())), { timeout: 20000 }).catch(() => {});
+  // "Set budgets" (health card) with none set, the Monthly budgets card's "Edit" with some.
+  const budgetsBtn = () =>
+    [...document.querySelectorAll('button')].find((b) => /^Set budgets$/.test(b.textContent.trim())) ||
+    [...document.querySelectorAll('.gb-sectiontitle')].find((t) => /Monthly budgets/.test(t.textContent))?.querySelector('button');
+  await page.waitForFunction(budgetsBtn, { timeout: 20000 }).catch(() => {});
   offline = true;
   await page.setOfflineMode(true);
-  const opened = (await clickText('button', /^Set budgets$/)) || (await clickText('button', /budgets/));
+  const opened = await page.evaluate((src) => {
+    const b = new Function('return (' + src + ')()')();
+    if (b) b.click();
+    return !!b;
+  }, budgetsBtn.toString());
   ok(opened, 'FN-01 budgets dialog opens offline');
   await page.waitForSelector('.gb-money-budget-field input[type=number]', { timeout: 5000 });
-  const key = await page.evaluate(() => {
+  const amount = 4000 + (Date.now() % 997); // fresh each run: a leftover can't pass the checks
+  const key = await page.evaluate((amount) => {
     const f = document.querySelector('.gb-money-budget-field');
     const inp = f.querySelector('input[type=number]');
-    inp.value = '4321';
+    inp.value = String(amount);
     inp.dispatchEvent(new Event('input', { bubbles: true }));
     return f.querySelector('.gb-money-budget-field-label').textContent;
-  });
+  }, amount);
   await clickText('.gb-modal button, .gb-money-modal button, button', /^Save budgets$/);
   await wait(1500);
   posts.length = 0;
   await page.setOfflineMode(false);
-  const put = await until(() => posts.some((p) => p.method === 'PUT' && /\/api\/money$/.test(p.url) && p.body.includes('4321')));
+  const put = await until(() => posts.some((p) => p.method === 'PUT' && /\/api\/money$/.test(p.url) && p.body.includes(String(amount))));
   await wait(1500);
   offline = false;
   ok(put, 'FN-01 the offline budget is PUT once back online');
   const after = await api('/api/money');
   const vals = Object.values(after.body.budgets || {});
-  ok(vals.includes(4321), 'FN-01 the server has the offline budget (' + key + ')');
+  ok(vals.includes(amount), 'FN-01 the server has the offline budget (' + key + ')');
   await page.reload({ waitUntil: 'domcontentloaded' });
   await wait(5000);
   const again = await api('/api/money');
-  ok(Object.values(again.body.budgets || {}).includes(4321), 'FN-01 still there after a reload');
+  ok(Object.values(again.body.budgets || {}).includes(amount), 'FN-01 still there after a reload');
   await shot('fn01-money-after-reload-390');
   // Clean up: the budgets as they were, through the same versioned PUT the app uses.
   const doc = { ...again.body, budgets: keepBudgets };
@@ -294,7 +303,8 @@ const cachedWellness = () =>
 {
   await goto('home');
   // Settings is a dialog: avatar (next to the bell) > Settings > Display.
-  await page.evaluate(() => document.querySelector('[aria-label="Notifications"]').nextElementSibling.click());
+  // The bell's name carries its count ("Notifications, 3 unread").
+  await page.evaluate(() => document.querySelector('.gb-bell').nextElementSibling.click());
   await wait(500);
   await clickText('.gb-profile-pop-item', /^Settings$/);
   await wait(800);
