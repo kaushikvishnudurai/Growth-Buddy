@@ -20,7 +20,7 @@ user-settings writes. Backs `/api/auth` (`AuthController`). Session minting is *
 | `securityStatus` / `beginTotpSetup` / `enableTotp` / `disableTotp` | 2FA via `TotpService` (`Totp` = RFC 6238 math). Setup returns the secret + otpauth URI and is refused once enabled; enable needs the **password** + the first code (guard `totpsetup:<id>`; a bearer token alone must not enroll an attacker's authenticator), signs out every other session (`SessionService.revokeOthers`, keeps the caller's) and returns the 8 recovery codes once; disable needs password + a code |
 | `updateWhatsApp(userId, req)` | |
 | `sendWhatsAppOtp` / `verifyWhatsAppOtp` | ownership proof before the number is saved; verify goes through `LoginAttemptGuard` (key `waverify:<userId>`) |
-| `updateProfile(userId, req)` | |
+| `updateProfile(userId, req)` | `displayName` through `VisibleText.require` (bidi controls stripped; invisible-only is 400, HOS-9) |
 | `updateFeatures(userId, Map<String,Boolean>)` | per-feature on/off toggles |
 | `updateUiPrefs(userId, Map<String,Object>)` | merge, not replace (theme, language, onboarding, seen achievements); a null value deletes a key; over `MAX_UI_PREF_KEYS` / `MAX_UI_PREF_BYTES` is a 400. Written by native `UserRepository.updateUiPrefs`, which skips the `DeliveryCache` listener; it bumps the cache itself only when a `SCHEDULER_PREF_KEYS` key (`reminderLead`, `workWeek`) changed |
 | `updateDigest(userId, req)` | cadence `off`\|`daily`\|`weekly` + send hour |
