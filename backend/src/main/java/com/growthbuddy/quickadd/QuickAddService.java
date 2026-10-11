@@ -44,7 +44,7 @@ public class QuickAddService {
             You turn a short natural-language message into actions for a personal growth
             app. It is the app's one command box: logging, adding, finishing, opening and
             switching things all come through here. Output STRICT JSON only, no prose:
-            {"intents":[...],"note":"<=90 chars friendly confirmation"}
+            {"intents":[...],"note":"<=90 chars, what will be logged, future tense (\"Will log 250 for lunch\"), no emoji"}
             Each intent has a "type" and ONLY the fields for that type:
               {"type":"task","title":"..."}                 something to do, no time attached
               {"type":"task_done","title":"..."}            they finished an existing task ("done with the report")
@@ -253,7 +253,7 @@ public class QuickAddService {
                 Intent it = toIntent(n, clean, today, now);
                 if (it != null) out.add(it);
             }
-            String note = root.path("note").asText("");
+            String note = OpenAIClient.plainText(root.path("note").asText(""));
             return new QuickAddResult(true, false, out, note.isBlank() ? null : cap(note, 120));
         } catch (ApiException ex) {
             throw ex; // the AI budget's 429 already says something true; let it through

@@ -78,7 +78,7 @@ public class MoneyService {
                 + "\nTheir money context: " + cap(context, 800)
                 + "\n\nGive your honest recommendation.";
         try {
-            String advice = openai.complete(ADVISOR_PROMPT, List.of(new ChatTurn("user", user))).trim();
+            String advice = OpenAIClient.plainText(openai.complete(ADVISOR_PROMPT, List.of(new ChatTurn("user", user))));
             return StringUtils.hasText(advice) ? new AdviceResult(true, advice) : new AdviceResult(false, null);
         } catch (RuntimeException ex) {
             log.warn("Money advisor LLM call failed, falling back to heuristic: {}", ex.getMessage());
