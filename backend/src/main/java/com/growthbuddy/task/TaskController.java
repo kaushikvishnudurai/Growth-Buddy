@@ -45,8 +45,8 @@ public class TaskController {
 
     /** Flip the done flag (used by the dashboard checkboxes). */
     @PatchMapping("/{id}/toggle")
-    public TaskResponse toggle(@PathVariable UUID id) {
-        return service.toggle(CurrentUser.id(), id);
+    public TaskResponse toggle(@PathVariable UUID id, @RequestBody(required = false) ToggleTaskRequest req) {
+        return service.toggle(CurrentUser.id(), id, req != null ? req.done() : null);
     }
 
     @GetMapping("/finished")

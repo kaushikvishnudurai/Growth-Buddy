@@ -88,8 +88,9 @@ public class HabitController {
 
     /** Toggle today's completion. */
     @PatchMapping("/{id}/toggle")
-    public HabitResponse toggleToday(@PathVariable UUID id) {
-        return service.toggleToday(CurrentUser.id(), id);
+    public HabitResponse toggleToday(@PathVariable UUID id,
+            @RequestBody(required = false) ToggleHabitRequest req) {
+        return service.toggleToday(CurrentUser.id(), id, req != null ? req.done() : null);
     }
 
     /** Current freeze-token balance (granted weekly). */

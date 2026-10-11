@@ -72,3 +72,7 @@ record TaskHistoryResponse(
                 return new TaskHistoryResponse(h.getId(), h.getChangedAt(), p, h.getDueAt());
         }
 }
+
+/** PATCH /{id}/toggle body: {@code done} sets it; no body flips (old builds). */
+record ToggleTaskRequest(Boolean done) {
+}

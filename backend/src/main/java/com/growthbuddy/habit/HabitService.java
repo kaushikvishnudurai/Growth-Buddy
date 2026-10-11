@@ -926,16 +926,31 @@ public class HabitService {
     /** Toggle today's check-in (used by the dashboard "done today" tap). */
     @Transactional
     public HabitResponse toggleToday(UUID userId, UUID id) {
+        return toggleToday(userId, id, null);
+    }
+
+    /**
+     * {@code done} given: set today to it, and an unchanged one writes nothing
+     * (HOS-6: a stale tab's "done" unticked the habit and could cost a streak).
+     * Null flips, for builds that send no body. For a quit habit done = clean.
+     */
+    @Transactional
+    public HabitResponse toggleToday(UUID userId, UUID id, Boolean done) {
         LocalDate today = clock.today(userId);
         boolean doneNow;
-        if (isQuit(require(userId, id))) {
+        Habit habit = require(userId, id);
+        if (isQuit(habit)) {
             // Clean unless today's row is a slip: a toggle logs a slip, or takes it back.
             HabitCheckin row = checkins.findByHabitIdAndLogDate(id, today).orElse(null);
             doneNow = row == null || !isSlip(row);
         } else {
             doneNow = checkins.existsByHabitIdAndLogDateAndDoneTrue(id, today);
         }
-        return checkin(userId, id, new CheckinRequest(today, !doneNow, null, null, null));
+        boolean target = done != null ? done : !doneNow;
+        if (target == doneNow) {
+            return toResponse(habit, today, userId);
+        }
+        return checkin(userId, id, new CheckinRequest(today, target, null, null, null));
     }
 
     /**

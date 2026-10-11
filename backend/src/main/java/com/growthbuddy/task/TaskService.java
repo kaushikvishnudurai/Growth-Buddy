@@ -99,8 +99,22 @@ public class TaskService {
 
     @Transactional
     public TaskResponse toggle(UUID userId, UUID id) {
+        return toggle(userId, id, null);
+    }
+
+    /**
+     * {@code done} given: set it, and an unchanged one writes nothing (HOS-6: a
+     * stale tab's "done" used to flip a done task back open). Null flips, for
+     * builds that send no body.
+     */
+    @Transactional
+    public TaskResponse toggle(UUID userId, UUID id, Boolean done) {
         Task t = require(userId, id);
-        setDone(t, !t.isDone());
+        boolean target = done != null ? done : !t.isDone();
+        if (target == t.isDone()) {
+            return responseFor(userId, t);
+        }
+        setDone(t, target);
         return responseFor(userId, repo.save(t));
     }
 
