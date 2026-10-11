@@ -13682,14 +13682,28 @@ function notificationDropdown() {
       'div',
       { class: 'gb-notif-head' },
       h('span', null, 'Notifications'),
-      anyUnread || anyRead
-        ? h(
-            'div',
-            { class: 'gb-notif-head-actions' },
-            anyUnread ? headLink('Mark all read', markAllNotificationsRead) : null,
-            anyRead ? headLink('Clear read', clearReadNotifications) : null
-          )
-        : null
+      h(
+        'div',
+        { class: 'gb-notif-head-actions' },
+        anyUnread ? headLink('Mark all read', markAllNotificationsRead) : null,
+        anyRead ? headLink('Clear read', clearReadNotifications) : null,
+        // What reaches this bell is set in Settings, Alerts: three taps away, through the avatar.
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-notif-link',
+            'aria-label': 'Notification settings',
+            title: 'Notification settings',
+            onclick: () => {
+              state.notifOpen = false;
+              repaintOverlays();
+              openProfileSettings('notifications');
+            },
+          },
+          Icon('settings', { size: 16 })
+        )
+      )
     )
   );
   // Nothing at all to filter: the chips only took room above the empty line.

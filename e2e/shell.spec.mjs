@@ -307,3 +307,21 @@ test.describe('away from the account timezone', () => {
     await shot(page, 'EXS-6');
   });
 });
+
+test('FRS-15 + EXS-12: the bell links to its settings, and every filter chip is in view', async ({ page, account }) => {
+  await signInFast(page, account);
+  await page.locator('.gb-bell').click();
+  const chips = page.locator('.gb-notif-chips');
+  if (await chips.count()) {
+    const fits = await chips.evaluate((el) => {
+      const box = el.getBoundingClientRect();
+      return [...el.children].every((c) => c.getBoundingClientRect().right <= box.right + 0.5);
+    });
+    expect(fits).toBe(true);
+  }
+  await shot(page, 'EXS-12');
+  await page.getByRole('button', { name: 'Notification settings' }).click();
+  await expect(page.locator('.gb-modal--settings [role=tab][aria-selected=true]')).toHaveText('Alerts');
+  await expect(page.locator('#gb-notif-slot > *')).toHaveCount(0);
+  await shot(page, 'FRS-15');
+});

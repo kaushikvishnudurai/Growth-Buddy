@@ -1552,16 +1552,14 @@ body:has(.is-thinking, .gb-thinking)::after {
   font-weight: 700;
   cursor: pointer;
 }
+/* Wraps: as a hidden-scrollbar scroller, "System" sat past the panel's edge
+   with nothing to say the row scrolled. */
 .gb-notif-chips {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   padding: 10px 14px;
-  overflow-x: auto;
   border-bottom: 1px solid var(--border);
-  scrollbar-width: none;
-}
-.gb-notif-chips::-webkit-scrollbar {
-  display: none;
 }
 .gb-notif-chip {
   flex: none;
