@@ -99,6 +99,7 @@ import {
   TAGS,
 } from './calendar.js';
 import { WORK_WEEKS, getWorkWeek, setWorkWeek, occursOn } from './recurrence.js';
+import { buildDayPlan } from './day-plan.js';
 import { ScreenAchievements, computeAchievements, levelProgress } from './achievements.js';
 import { celebrate } from './celebrate.js';
 import {
@@ -4830,71 +4831,107 @@ function openMoodCheckin() {
   });
 }
 
+/* Plan my day: a draft the user only has to accept. Today's reminders, bills
+   due, habits not yet done and the three most pressing tasks, each task given a
+   free hour (day-plan.js). Accepting turns the ticked task blocks into today's
+   reminders, so the plan rings; everything else is already in the app. No AI. */
 function openDailyPlan() {
   const today = todayKeyNow();
-  const pendingTasks = state.tasks.filter((t) => !t.done).slice(0, 4);
-  const pendingHabits = state.habits.filter((habit) => !habit.doneToday).slice(0, 4);
-  const waterGoal = state.water && state.water.goalMl ? state.water.goalMl : 2000;
-  const waterDone = state.water && state.water.consumedMl ? state.water.consumedMl : 0;
+  const now = new Date();
+  const plan = buildDayPlan({
+    tasks: state.tasks,
+    habits: featureOn('habits') ? state.habits : [],
+    reminders: state.reminders,
+    subscriptions: featureOn('money') && state.money ? state.money.subscriptions : [],
+    today,
+    nowMin: now.getHours() * 60 + now.getMinutes(),
+  });
+  const ICON = { reminder: 'bell', bill: 'wallet', habit: 'repeat', task: 'list-checks' };
+  const LABEL = { reminder: 'Reminder', bill: 'Bill', habit: 'Habit', task: 'Focus block' };
+  const blocks = []; // { item, box, timeInput }
+  const rows = plan.map((item) => {
+    const copy = h(
+      'span',
+      { class: 'gb-plan-copy' },
+      h('strong', null, item.title),
+      h('span', null, [LABEL[item.kind], item.detail].filter(Boolean).join(' \u00b7 '))
+    );
+    if (item.kind === 'task' && item.block) {
+      const box = h('input', {
+        type: 'checkbox',
+        class: 'gb-qa-check',
+        checked: true,
+        'aria-label': 'Block time for ' + item.title,
+      });
+      const timeInput = h('input', {
+        type: 'time',
+        class: 'gb-input gb-plan-time-input',
+        value: item.time,
+        'aria-label': 'Start time for ' + item.title,
+      });
+      blocks.push({ item, box, timeInput });
+      return h('label', { class: 'gb-plan-row gb-plan-row--pick' }, box, copy, timeInput);
+    }
+    return h(
+      'div',
+      { class: 'gb-plan-row' },
+      h('span', { class: 'gb-plan-time' }, item.time ? formatTime(item.time) : ''),
+      h('span', { class: 'gb-plan-icon' }, Icon(ICON[item.kind], { size: 17, sw: 2.4 })),
+      copy
+    );
+  });
+  // The day's care items stay as one line each: they are a tap elsewhere, not a block.
+  const care = [];
   const sleep = (state.wellness.sleepByDate || {})[today];
   const mood = (state.wellness.moodByDate || {})[today];
-  const rows = [
-    {
-      icon: 'sunrise',
-      title: 'Start steady',
-      text: pendingHabits.length
-        ? 'Do ' + pendingHabits[0].name + ' first.'
-        : 'Pick one small habit and finish it early.',
-    },
-    {
-      icon: 'list-checks',
-      title: 'Focus block',
-      text: pendingTasks.length
-        ? 'Work on ' + pendingTasks[0].title + '.'
-        : 'Add one meaningful task for today.',
-    },
-    {
-      icon: 'droplets',
-      title: 'Hydration',
-      text:
-        waterDone >= waterGoal
-          ? 'Water goal is already covered.'
-          : 'Drink ' + Math.max(250, waterGoal - waterDone) + ' ml through the day.',
-    },
-    {
-      icon: 'moon',
-      title: 'Evening close',
-      text: sleep ? 'Protect your saved sleep routine.' : 'Add sleep schedule before the day ends.',
-    },
-    {
-      icon: 'heart',
-      title: 'Reflection',
-      text: mood ? 'Use your mood note to plan gently.' : 'Do a 20-second mood check-in.',
-    },
-  ];
+  if (featureOn('water') && state.water) {
+    const left = (state.water.goalMl || 2000) - (state.water.consumedMl || 0);
+    if (left > 0) care.push({ icon: 'droplets', text: left + ' ml of water to go' });
+  }
+  if (!sleep) care.push({ icon: 'moon', text: 'Log last night\u2019s sleep' });
+  if (!mood) care.push({ icon: 'heart', text: 'A 20-second mood check-in' });
+  const careRows = care.map((c) =>
+    h(
+      'div',
+      { class: 'gb-plan-row' },
+      h('span', { class: 'gb-plan-time' }),
+      h('span', { class: 'gb-plan-icon' }, Icon(c.icon, { size: 17, sw: 2.4 })),
+      h('span', { class: 'gb-plan-copy' }, h('span', null, c.text))
+    )
+  );
+  const empty = !rows.length && !careRows.length;
   openModal({
     title: 'Today plan',
-    sub: 'A simple plan from your current tasks, habits, water, sleep, and mood.',
+    sub: blocks.length
+      ? 'Drafted from your tasks, reminders, habits and bills. Untick a block you don\u2019t want, or move its time.'
+      : 'Drafted from your tasks, reminders, habits and bills.',
     body: h(
       'div',
       { class: 'gb-plan-list' },
-      rows.map((row) =>
-        h(
-          'div',
-          { class: 'gb-plan-row' },
-          h('span', { class: 'gb-plan-icon' }, Icon(row.icon, { size: 17, sw: 2.4 })),
-          h(
-            'span',
-            { class: 'gb-plan-copy' },
-            h('strong', null, row.title),
-            h('span', null, row.text)
-          )
-        )
-      )
+      empty ? h('p', { class: 'gb-plan-empty' }, 'Nothing is waiting on you today. Add a task to plan around.') : null,
+      rows,
+      careRows
     ),
-    primary: 'Looks good',
-    onPrimary: async () => {},
+    primary: blocks.length ? 'Add to my day' : 'Looks good',
+    errorMessage: 'Could not add the plan.',
+    onPrimary: async () => {
+      const picked = blocks.filter((b) => b.box.checked && b.timeInput.value);
+      let added = 0;
+      for (const b of picked) {
+        // addReminder refuses a time already gone and says so; the rest still land.
+        const made = await addReminder(today, 'Focus: ' + b.item.title, b.timeInput.value, 'personal', 'none', null, '', addMinutesHHMM(b.timeInput.value, 60));
+        if (made) added++;
+      }
+      if (picked.length && !added) throw new Error('None of those blocks could be added.');
+    },
   });
+}
+
+/** "HH:MM" plus minutes, capped at 23:59 (a block can't run into tomorrow). */
+function addMinutesHHMM(hhmmStr, mins) {
+  const [hh, mm] = hhmmStr.split(':').map(Number);
+  const t = Math.min(23 * 60 + 59, hh * 60 + mm + mins);
+  return String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0');
 }
 
 async function addSuggestedReminder(text, time, tag) {
@@ -6803,6 +6840,25 @@ function openWeeklyReview() {
   // A <textarea>'s initial text can't be set via the value attribute — set the
   // property so an existing review's wins prefill when re-opened.
   wins.value = prev.wins || '';
+  // No review yet: draft the wins from the week (review.js), so the user edits
+  // rather than writes. Lands only while the box is still untouched.
+  if (!prev.wins) {
+    let typed = false;
+    wins.addEventListener('input', () => (typed = true), { once: true });
+    Promise.all([import('./review.js'), api('/api/tasks/finished?days=7').catch(() => [])])
+      .then(([review, finished]) => {
+        const draft = review.weeklyWinsDraft({
+          finished,
+          habits: state.habits,
+          trends: state.trends,
+          money: state.money,
+          today: todayKeyNow(),
+          fmtMoney: (n) => cur() + Math.round(n),
+        });
+        if (draft && !typed && !wins.value) wins.value = draft.slice(0, 400);
+      })
+      .catch(() => {});
+  }
   const focus = h('input', {
     type: 'text',
     class: 'gb-input',

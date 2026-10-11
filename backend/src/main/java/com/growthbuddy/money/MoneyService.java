@@ -165,6 +165,64 @@ public class MoneyService {
     }
 
     /**
+     * Buddy's view of money: this month's spend by category against any budget
+     * (top 6), and bills due in the next 7 days that are not marked paid. Category
+     * keys and bill names are the user's; the mentor wraps this in its data block.
+     */
+    @Transactional(readOnly = true)
+    public String contextSummary(UUID userId, LocalDate today) {
+        JsonNode doc = repo.peekData(userId).orElse(null);
+        String cur = doc == null ? "₹" : doc.path("settings").path("currency").asText("₹");
+        java.util.Map<String, java.math.BigDecimal> spend =
+                ledger.spendByCategory(userId, today.withDayOfMonth(1), today);
+        StringBuilder sb = new StringBuilder();
+        if (spend.isEmpty()) {
+            sb.append("Money: no expenses logged this month.\n");
+        } else {
+            java.math.BigDecimal total = spend.values().stream()
+                    .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+            sb.append("Money this month (").append(cur).append("): spent ").append(whole(total)).append('\n');
+            int n = 0;
+            for (var e : spend.entrySet()) {
+                if (n++ == 6) break;
+                int budget = doc == null ? 0 : doc.path("budgets").path(e.getKey()).asInt(0);
+                sb.append("  - ").append(clip(e.getKey(), 30)).append(": ").append(whole(e.getValue()))
+                        .append(budget > 0 ? " of " + budget + " budget" : "").append('\n');
+            }
+        }
+        List<String> due = doc == null ? List.of() : billsDue(doc.path("subscriptions"), today, 7);
+        if (!due.isEmpty()) {
+            sb.append("  - bills due in the next 7 days: ").append(String.join(", ", due)).append('\n');
+        }
+        return sb.toString();
+    }
+
+    /** Unpaid subscriptions falling due in [today, today + days]: "Netflix 199 on 2026-10-15". */
+    static List<String> billsDue(JsonNode subs, LocalDate today, int days) {
+        List<String> out = new java.util.ArrayList<>();
+        if (subs == null || !subs.isArray()) return out;
+        for (int i = 0; i <= days && out.size() < 8; i++) {
+            LocalDate d = today.plusDays(i);
+            String month = java.time.YearMonth.from(d).toString();
+            for (JsonNode s : subs) {
+                int dueDay = Math.min(Math.max(s.path("dueDay").asInt(1), 1), d.lengthOfMonth());
+                if (dueDay != d.getDayOfMonth() || s.path("paidFor").asText("").compareTo(month) >= 0) continue;
+                out.add(clip(s.path("name").asText("Bill"), 30) + " " + s.path("amount").asInt(0) + " on " + d);
+            }
+        }
+        return out;
+    }
+
+    private static String whole(java.math.BigDecimal v) {
+        return v.setScale(0, java.math.RoundingMode.HALF_UP).toPlainString();
+    }
+
+    private static String clip(String s, int max) {
+        String one = s == null ? "" : s.replaceAll("\\s+", " ").trim();
+        return one.length() <= max ? one : one.substring(0, max);
+    }
+
+    /**
      * The document as the client knows it: the stored part, plus the ledger's
      * expenses / income / transfers (last {@link MoneyLedger#WINDOW_DAYS} days) and
      * live account balances, merged back in. The version covers the stored part

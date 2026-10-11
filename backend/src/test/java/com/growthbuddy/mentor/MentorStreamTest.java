@@ -48,7 +48,10 @@ class MentorStreamTest {
     private final WellnessService wellness = mock(WellnessService.class);
     private final UserClock clock = mock(UserClock.class);
     private final MentorService service = new MentorService(threads, messages, openai,
-            mock(TaskRepository.class), habits, scores, wellness, clock);
+            mock(TaskRepository.class), habits, scores, wellness, clock,
+            mock(com.growthbuddy.water.WaterService.class), mock(com.growthbuddy.food.FoodService.class),
+            mock(com.growthbuddy.money.MoneyService.class), mock(com.growthbuddy.goal.GoalService.class),
+            mock(com.growthbuddy.reminder.ReminderService.class));
 
     private final List<String> delivered = new ArrayList<>();
     private final AtomicBoolean gone = new AtomicBoolean();

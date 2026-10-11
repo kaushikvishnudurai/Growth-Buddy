@@ -3808,6 +3808,31 @@ body:has(.is-thinking, .gb-thinking)::after {
   font-size: 0.75rem;
   line-height: 1.35;
 }
+.gb-plan-time {
+  flex: none;
+  width: 3.75rem;
+  color: var(--fg2);
+  font-size: 0.75rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.gb-plan-row--pick {
+  min-height: 44px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  cursor: pointer;
+}
+.gb-plan-time-input {
+  flex: none;
+  width: 7.5rem;
+}
+.gb-plan-empty {
+  margin: 0;
+  color: var(--fg2);
+  font-size: 0.8125rem;
+}
 .gb-timeline-dot {
   width: 9px;
   height: 9px;

@@ -217,6 +217,34 @@ public class FoodService {
                 daySum(row, FoodEntryResponse::sodiumMg));
     }
 
+    /**
+     * Buddy's view: kcal per day for the last 7 days (oldest first, "-" = nothing
+     * logged) and today's foods by name. Names are the user's words; the mentor
+     * puts this inside its data block.
+     */
+    @Transactional(readOnly = true)
+    public String contextSummary(UUID userId) {
+        LocalDate today = clock.today(userId);
+        List<FoodEntry> rows = entries.findByUserIdAndLogDateBetween(userId, today.minusDays(6), today);
+        if (rows.isEmpty()) return "Food: nothing logged in the last 7 days.\n";
+        java.util.Map<LocalDate, Integer> kcal = new java.util.HashMap<>();
+        java.util.LinkedHashSet<String> todays = new java.util.LinkedHashSet<>();
+        for (FoodEntry e : rows) {
+            kcal.merge(e.getLogDate(), e.getKcalEstimated(), Integer::sum);
+            if (today.equals(e.getLogDate()) && e.getFoodName() != null && todays.size() < 8) {
+                String n = e.getFoodName().replaceAll("\\s+", " ").trim();
+                todays.add(n.length() > 40 ? n.substring(0, 40) : n);
+            }
+        }
+        List<String> days = new java.util.ArrayList<>();
+        for (int i = 6; i >= 0; i--) {
+            Integer v = kcal.get(today.minusDays(i));
+            days.add(v == null ? "-" : String.valueOf(v));
+        }
+        return "Food kcal per day, last 7 days oldest first: " + String.join(", ", days) + "\n"
+                + (todays.isEmpty() ? "" : "  - eaten today: " + String.join(", ", todays) + "\n");
+    }
+
     /** The day's sum over the entries that carry the figure; null when none does. */
     static Integer daySum(List<FoodEntryResponse> rows, java.util.function.Function<FoodEntryResponse, Integer> f) {
         Integer sum = null;

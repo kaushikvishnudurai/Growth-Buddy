@@ -176,6 +176,53 @@ export function personalRecords({ habits, trends, focus, money, today, fmtMoney 
 }
 
 /**
+ * The weekly review's "What went well?", drafted so the user edits rather than
+ * writes: tasks finished, the longest live habit streak, water-goal days, the
+ * score against the week before, and no-spend days or the cheapest day. Each
+ * line only when it is a real win. '' when the week has none.
+ * `finished` is `/api/tasks/finished` ({doneAt}); `today` is a date key.
+ */
+export function weeklyWinsDraft({ finished, habits, trends, money, today, fmtMoney } = {}) {
+  const todayKey = today || localKey(new Date());
+  const days = daysEnding(todayKey, 7);
+  const week = new Set(days);
+  const wins = [];
+
+  const done = (finished || []).filter((t) => t && t.doneAt && week.has(localKey(Date.parse(t.doneAt)))).length;
+  if (done > 0) wins.push('Finished ' + done + (done === 1 ? ' task' : ' tasks'));
+
+  const best = (habits || []).reduce((m, x) => ((x.streak || 0) > (m ? m.streak || 0 : 0) ? x : m), null);
+  if (best && best.streak >= 3) wins.push('Kept ' + best.name + ' going for ' + best.streak + ' days');
+
+  const by = (trends && trends.byDate) || {};
+  const met = days.filter((k) => by[k] && by[k].waterGoalMl > 0 && by[k].waterMl >= by[k].waterGoalMl).length;
+  if (met >= 3) wins.push('Hit the water goal on ' + met + ' of 7 days');
+
+  const avg = (keys) => {
+    const xs = keys.map((k) => by[k] && Number(by[k].score)).filter((n) => Number.isFinite(n) && n > 0);
+    return xs.length >= 2 ? mean(xs) : null;
+  };
+  const now = avg(days);
+  const before = avg(daysEnding(days[0], 8).slice(0, 7));
+  if (now !== null && before !== null && now - before >= 5)
+    wins.push('Score up ' + Math.round(now - before) + ' points on the week before');
+
+  const spent = {};
+  for (const e of (money && money.expenses) || []) {
+    if (e && week.has(e.date)) spent[e.date] = (spent[e.date] || 0) + (Number(e.amount) || 0);
+  }
+  const noSpend = ((money && money.noSpendDays) || []).filter((k) => week.has(k) && !spent[k]).length;
+  if (noSpend > 0) wins.push(noSpend + (noSpend === 1 ? ' no-spend day' : ' no-spend days'));
+  else if (Object.keys(spent).length >= 3) {
+    const low = Object.keys(spent).sort((a, b) => spent[a] - spent[b] || (a < b ? -1 : 1))[0];
+    wins.push(
+      'Lightest spend on ' + shortDate(low) + ' (' + (fmtMoney ? fmtMoney(spent[low]) : Math.round(spent[low])) + ')'
+    );
+  }
+  return wins.join('. ') + (wins.length ? '.' : '');
+}
+
+/**
  * Mean of this period against the one before it. null when either side has
  * fewer than 2 logged values (a single day is not a period).
  */
