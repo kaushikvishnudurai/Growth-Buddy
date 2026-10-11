@@ -20,6 +20,7 @@ import {
   readOfflineCopy,
   offlineKey,
   trashDaysLeft,
+  safeHref,
 } from './notes-core.js';
 
 let failures = 0;
@@ -162,6 +163,36 @@ test('trash days left counts down from 30 and stops at 0', () => {
   assert.equal(trashDaysLeft('2026-10-10T00:00:00Z', now), 30);
   assert.equal(trashDaysLeft('2026-09-20T12:00:00Z', now), 11);
   assert.equal(trashDaysLeft('2026-08-01T00:00:00Z', now), 0);
+});
+
+test('safeHref: only links that stay what they look like (SEC-7)', () => {
+  const base = 'https://app.example/';
+  // Whatever passes must resolve to http(s)/mailto, or to this origin.
+  const lands = (h) => {
+    const u = new URL(h, base);
+    return u.origin === 'https://app.example' || /^(https?|mailto):$/.test(u.protocol);
+  };
+  for (const ok of ['https://a.example/x', 'http://a.example', 'mailto:me@a.example', '#top', '/notes', '/notes?q=1', '  /notes  '])
+    assert.ok(safeHref(ok) && lands(safeHref(ok)), ok);
+  const offSite = [
+    '//other.example/x',
+    '/\\other.example/x',
+    '/\t/other.example/x',
+    '/\n/other.example/x',
+    '/\r\n/other.example/x',
+    '/\t\\other.example/x',
+    '\t//other.example/x',
+    '\\\\other.example/x',
+    '\\/other.example/x',
+  ];
+  for (const bad of offSite) {
+    assert.equal(safeHref(bad), '', JSON.stringify(bad));
+    assert.notEqual(new URL(bad, base).origin, 'https://app.example', 'payload really is off-site: ' + JSON.stringify(bad));
+  }
+  for (const bad of ['javascript:alert(1)', ' javascript:alert(1)', 'java\tscript:alert(1)', '\x01javascript:alert(1)', 'data:text/html,x', 'vbscript:x', '', null])
+    assert.equal(safeHref(bad), '', JSON.stringify(bad));
+  // A path with a stray tab is cleaned, not kept as typed.
+  assert.equal(safeHref('/no\ttes'), '/notes');
 });
 
 if (failures) {

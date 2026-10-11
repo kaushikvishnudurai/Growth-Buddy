@@ -34,6 +34,7 @@ import {
   offlineCopy,
   readOfflineCopy,
   trashDaysLeft,
+  safeHref,
 } from './notes-core.js';
 
 /* Swatches a note can wear. `null` (no colour) is the default and stays the
@@ -109,12 +110,9 @@ const DROP = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'TEMPLATE'
  * the part that's hard to get right, and DOMParser does it in an inert document
  * where nothing executes.
  */
-/* The only hrefs a note may carry. javascript: and data: are the two that turn
-   a link into an exploit. sanitize() is the boundary that enforces it, and the
-   link dialog tests the same rule so a bad URL is refused while it can still be
-   corrected, rather than silently losing its href on save. A bare "/" is an
-   in-app path, but "//host" and "/\host" are protocol-relative: another site. */
-const SAFE_HREF = /^(https?:|mailto:|#|\/(?![/\\]))/i;
+/* Hrefs go through notes-core `safeHref`: sanitize() is the boundary that
+   enforces it, and the link dialog tests the same rule so a bad URL is refused
+   while it can still be corrected, rather than silently losing its href on save. */
 /* The only images a note may carry: raster data the editor embedded itself.
    A remote src is a tracking pixel that phones home every time the note is
    painted, and data:image/svg+xml is a document, not a picture. */
@@ -154,10 +152,11 @@ function sanitize(html) {
         return;
       }
       if (tag === 'A') {
-        const href = (child.getAttribute('href') || '').trim();
-        if (!SAFE_HREF.test(href)) {
+        const href = safeHref(child.getAttribute('href'));
+        if (!href) {
           child.removeAttribute('href');
         } else {
+          child.setAttribute('href', href);
           child.setAttribute('target', '_blank');
           child.setAttribute('rel', 'noopener noreferrer');
         }
@@ -436,10 +435,10 @@ function richEditor({ html, placeholder, onInput } = {}) {
       primary: 'Add link',
       errorMessage: 'That does not look like a link.',
       onPrimary: () => {
-        const url = input.value.trim();
+        const url = safeHref(input.value);
         // Same rule sanitize() applies on save, so the refusal lands here where
         // it can still be fixed instead of quietly dropping the href later.
-        if (!url || !SAFE_HREF.test(url)) {
+        if (!url) {
           throw new Error('Enter a link starting with https://');
         }
         area.focus();
