@@ -320,8 +320,9 @@ function followSystemTheme() {
   systemDark.addEventListener('change', () => {
     if (pickedTheme() || (state.user && state.user.uiPrefs && state.user.uiPrefs.theme)) return;
     state.theme = systemDark.matches ? 'dark' : 'light';
+    // The theme is CSS on <html>: nothing to rebuild. A render() here emptied
+    // the sign-in form being typed and closed Family's and Circle's open panels.
     applyTheme(state.theme);
-    render();
   });
 }
 
@@ -8074,7 +8075,7 @@ function keepReadPicker() {
       saveUiPrefs({ notifyKeepReadDays: Number(v) });
       toastSuccess('Read notifications now stay ' + v + ' days.');
     }
-  );
+  ).node;
 }
 
 /* ---- Settings modal (Profile / Alerts / Account) ---- */
