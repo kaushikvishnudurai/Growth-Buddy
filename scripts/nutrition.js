@@ -103,3 +103,31 @@ export function dayMicros(summary) {
     { key: 'sodium', label: 'Sodium', value: s.sodiumMg, unit: 'mg' },
   ].filter((m) => m.value != null);
 }
+
+/* What the barcode scanner says when the camera does not start. Only a
+   NotAllowedError / SecurityError is a refusal, and then the line says where to
+   turn it back on; every other failure gets its own honest reason. It used to
+   call everything but NotAllowedError "could not start", and inside the app a
+   missing CAMERA manifest entry made Android deny without ever asking, so the
+   user read "refused" for a question never put to them. `native`: in the
+   Capacitor app, where the switch is in the phone's settings, not a site's. */
+export function cameraErrorMessage(err, native) {
+  const name = (err && err.name) || '';
+  const msg = String((err && err.message) || '');
+  const tail = ' Type the food in instead.';
+  if (name === 'NotAllowedError' || name === 'SecurityError') {
+    if (native) return 'Camera access is off for Growth Buddy. Turn it on in Settings > Apps > Growth Buddy > Permissions, then try again.';
+    // Chrome's wording when the OS, not the site setting, holds the camera back.
+    if (/system/i.test(msg)) return "Your computer's privacy settings keep the browser from the camera. Allow it there, then try again.";
+    return 'Camera access is blocked for this site. Allow it from the icon at the left of the address bar (Site settings > Camera), then try again.';
+  }
+  if (name === 'NotFoundError' || name === 'DevicesNotFoundError' || name === 'OverconstrainedError')
+    return 'No camera found on this device.' + tail;
+  if (name === 'NotReadableError' || name === 'TrackStartError')
+    return 'The camera is in use by another app. Close it and try again, or type the food in.';
+  if (name === 'AbortError') return 'The camera stopped before it started. Try again, or type the food in.';
+  // new BarcodeDetector() throws a TypeError for formats this device cannot read.
+  if (name === 'TypeError' || name === 'NotSupportedError')
+    return 'This browser cannot read barcodes. Type the code or the food in instead.';
+  return 'The camera could not start here.' + tail;
+}

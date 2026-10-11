@@ -56,7 +56,15 @@ import {
   restoreKey,
   inFlightKeys,
 } from './app-logic.js';
-import { MEAL_SLOTS, mealSlotAt, effectiveMl, labelFor, suggestWaterGoalMl, slotOf } from './nutrition.js';
+import {
+  MEAL_SLOTS,
+  mealSlotAt,
+  effectiveMl,
+  labelFor,
+  suggestWaterGoalMl,
+  slotOf,
+  cameraErrorMessage,
+} from './nutrition.js';
 import {
   habitStats,
   heatmapWeeks,
@@ -5379,10 +5387,9 @@ function openBarcodeScanner(onCode) {
       tick();
     } catch (err) {
       stop();
-      status.textContent =
-        err && err.name === 'NotAllowedError'
-          ? 'Camera permission was refused. Type the food in instead.'
-          : 'The camera could not start here. Type the food in instead.';
+      // getUserMedia above is the ask: the browser (or, in the app, Android
+      // via Capacitor's onPermissionRequest) prompts when nothing is decided yet.
+      status.textContent = cameraErrorMessage(err, isNative());
     }
   })();
 }
