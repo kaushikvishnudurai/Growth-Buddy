@@ -132,11 +132,13 @@ Day-key helpers: `pad`, `keyOf(y,m,d)`, `todayKey` (imported from `dates.js` as 
 
 | Fn | Notes |
 |---|---|
-| `MonthGrid` | the month cells + tag dots. Always 42 cells, so the card never changes height between months. Arrow keys move focus between days (`moveFocus`, focus only; Enter selects) |
+| `DayLine` / `DayRuler` | the screen's signature: a day drawn as a line from midnight to midnight, a tag-coloured mark at each reminder's time (a block spans start to end), a dot at the head for untimed ones. `MonthGrid` draws one per cell; `DayRuler` draws it large in the day head (`.gb-cal-dayhead`) with start-time labels, hours and, today, a now needle. Both `aria-hidden`: the list is the accessible version |
+| `ScopeStrip(scope)` | seven ticks in each option of the scoped delete and edit dialogs, the reached occurrences filled |
+| `MonthGrid` | the month cells + a `DayLine` each. Always 42 cells, so the card never changes height between months. Arrow keys move focus between days (`moveFocus`, focus only; Enter selects) |
 | `TagPicker` | color chips |
 | `RepeatPicker` | segmented recurrence; `RuleExtras` holds its details (see above) |
 | `openDeleteDialog` | **scoped delete** for recurring reminders: this occurrence vs the whole series → app.js `deleteReminder(scope, id, occKey)` |
-| `ReminderRow` | one reminder: done checkbox, text, notes, then meta (time, own lead, second alert, `describeRepeat`). Shows a WhatsApp marker when enabled. "Snoozed till" (`snoozeLabel`, also used by Settings → Reminders) names the day when it isn't today, and is a button that cancels the snooze (`onCancelSnooze` → app.js `cancelReminderSnooze`) |
+| `ReminderRow` | one reminder: done checkbox, its time (mono `.gb-rem-when`, "Any time" when untimed), text, notes, then meta (own lead, second alert, `describeRepeat`). Shows a WhatsApp marker when enabled. "Snoozed till" (`snoozeLabel`, also used by Settings → Reminders) names the day when it isn't today, and is a button that cancels the snooze (`onCancelSnooze` → app.js `cancelReminderSnooze`) |
 | form cache | `resetCalendarForm`, `buildForm` — the add-reminder form persists across repaints on purpose; `ReminderPanel` re-syncs its `UsualTimeChip` from the reminder list each paint |
 | `UsualTimeChip(timeInput, onSet)` (export) | "Usual time: 9:00 AM" under an empty Time field (`usualReminderTime`, nudges.js). A tap, not a prefill: an empty Time means no time of day, and a native time input can't reliably be emptied. Also under Settings → Reminders' add form |
 | `ReminderPanel` | the selected day, as **one node** (`.gb-cal-side`, which app.js swaps whole to repaint) holding two blocks: `.gb-cal-reminders` (date title, reminders, add form, schedule) and `.gb-cal-daylog` (wins, tasks, food). `.gb-cal-side` is `display: contents`, so `.gb-cal` lays the blocks out: on desktop a grid with the month and the day log on the left and reminders spanning the right (the second row is `1fr` so the tall reminders column can't open a gap under the month); on a phone, month → reminders → day log. The food-loading height hold goes on `.gb-cal-daylog` — the panel has no box |

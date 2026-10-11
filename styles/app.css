@@ -5892,31 +5892,72 @@ button.gb-food-level {
   }
 }
 .gb-cal-day.has-rem .num {
-  transform: translateY(-3px);
+  transform: translateY(-4px);
 }
 /* Today's underline sits below the digit, so its number lifts further to keep
-   the same space above the dots as every other day. */
+   the same space above the line as every other day. */
 .gb-cal-day.is-today.has-rem .num {
   transform: translateY(-6px);
 }
-.gb-cal-dots {
-  position: absolute;
-  bottom: 7px;
-  left: 50%;
-  transform: translateX(-50%);
+.gb-cal-day .num {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.875rem;
+  letter-spacing: -0.02em;
+}
+
+/* ---- The day line (calendar.js DayLine): midnight to midnight, a mark where
+   a reminder falls, a block across its span, a dot at the head for "any time".
+   One per month cell; the selected day draws it large (.gb-ruler). ---- */
+.gb-line {
   display: flex;
+  align-items: center;
   gap: 3px;
 }
-.gb-cal-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--brand);
-  box-shadow: 0 0 0 1.5px var(--surface);
+.gb-line-track {
+  position: relative;
+  flex: 1;
+  height: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--border-strong);
 }
-.gb-cal-day.is-selected .gb-cal-dot {
+.gb-line-mark {
+  position: absolute;
+  top: 50%;
+  width: 3px;
+  height: 9px;
+  margin-left: -1.5px;
+  transform: translateY(-50%);
+  border-radius: var(--radius-pill);
+  background: var(--tag-color, var(--brand));
+}
+.gb-line-mark.is-block {
+  height: 5px;
+  min-width: 3px;
+  margin-left: 0;
+}
+.gb-line-any {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--fg2);
+}
+.gb-cal-line {
+  position: absolute;
+  left: 14%;
+  right: 14%;
+  bottom: 8px;
+}
+.gb-cal-day.is-other-month .gb-cal-line {
+  opacity: 0.6;
+}
+.gb-cal-day.is-selected .gb-line-track {
+  background: color-mix(in srgb, var(--fg-on-brand) 45%, transparent);
+}
+.gb-cal-day.is-selected .gb-line-mark,
+.gb-cal-day.is-selected .gb-line-any {
   background: var(--fg-on-brand);
-  box-shadow: 0 0 0 1.5px var(--brand-fill);
 }
 
 /* Reminder panel */
@@ -7096,20 +7137,20 @@ button.gb-food-level {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-/* Tag legend */
+/* How to read the month: one plain sentence, then the tag colours as marks. */
 .gb-cal-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px 16px;
+  gap: 8px 16px;
   /* On a phone the day's heading came next with no gap and read as part of it. */
   padding-bottom: 12px;
 }
 .gb-legend-title {
-  /* Its own row: title plus five tags is a hair too wide for a phone, and the
-     last tag wrapped alone under it. */
   flex-basis: 100%;
+  margin: 0;
   font-size: 0.75rem;
-  font-weight: 700;
+  font-weight: 500;
+  line-height: 1.45;
   color: var(--fg3);
 }
 .gb-legend-item {
@@ -7121,10 +7162,146 @@ button.gb-food-level {
   color: var(--fg2);
 }
 .gb-legend-dot {
+  width: 3px;
+  height: 11px;
+  border-radius: var(--radius-pill);
+  flex: none;
+}
+.gb-cal-monthcount {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--fg3);
+}
+
+/* The selected day's head: its name, then the day line drawn large with the
+   hours under it and, today, a needle at now. */
+.gb-cal-dayhead-top {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+.gb-cal-dayhead-date {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.gb-cal-dayhead-date .wd {
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--brand-ink);
+}
+.gb-cal-dayhead-date .md {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.625rem;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: var(--fg1);
+}
+.gb-cal-dayhead-count {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--fg3);
+  padding-bottom: 3px;
+}
+.gb-ruler {
+  margin-top: 14px;
+}
+.gb-ruler-line .gb-line-track {
+  height: 3px;
+}
+/* Quarter-day ticks under the hours, so a mark can be read against them. */
+.gb-ruler-line .gb-line-track::before {
+  content: '';
+  position: absolute;
+  inset: -4px 0;
+  background: repeating-linear-gradient(
+    to right,
+    var(--border-strong) 0 1px,
+    transparent 1px 25%
+  );
+  border-right: 1px solid var(--border-strong);
+}
+.gb-ruler-line .gb-line-mark {
+  width: 4px;
+  height: 22px;
+  margin-left: -2px;
+}
+.gb-ruler-line .gb-line-mark.is-block {
+  height: 12px;
+  margin-left: 0;
+  opacity: 0.85;
+}
+.gb-ruler-line .gb-line-any {
   width: 9px;
   height: 9px;
+}
+.gb-line-now {
+  position: absolute;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  margin-left: -4.5px;
+  transform: translateY(-50%);
   border-radius: 50%;
-  flex: none;
+  background: var(--surface);
+  box-shadow: 0 0 0 2px var(--brand);
+}
+.gb-ruler-labels {
+  position: relative;
+  height: 16px;
+  margin-bottom: 2px;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--fg2);
+}
+.gb-ruler:has(.gb-line-any) .gb-ruler-labels {
+  margin-left: 12px;
+}
+.gb-ruler-labels span {
+  position: absolute;
+  bottom: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.gb-ruler-labels .is-start {
+  transform: none;
+}
+.gb-ruler-labels .is-end {
+  transform: translateX(-100%);
+}
+/* A track with marks is 22px tall at the marks; the hours sit under that. */
+.gb-ruler-line {
+  min-height: 22px;
+}
+.gb-ruler-hours {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--fg3);
+}
+/* With an any-time dot ahead of it, the track starts 12px in; the hours follow. */
+.gb-ruler:has(.gb-line-any) .gb-ruler-hours {
+  padding-left: 12px;
+}
+
+/* A reminder's time leads its row, in mono, so the list reads as the day in
+   order; untimed ones say so. */
+.gb-rem-when {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--brand-ink);
+  margin-bottom: 2px;
+}
+.gb-rem-row.is-done .gb-rem-when {
+  color: var(--fg3);
 }
 
 /* Repeat-until field */
@@ -7986,6 +8163,26 @@ button.gb-food-level {
 .gb-btn.gb-modal-cancel {
   width: 100%;
   margin-top: 12px;
+}
+/* The scope a reminder edit or delete reaches (calendar.js ScopeStrip). */
+.gb-scope-strip {
+  margin-left: auto;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.gb-scope-strip span {
+  width: 3px;
+  height: 10px;
+  border-radius: var(--radius-pill);
+  background: var(--border-strong);
+}
+.gb-scope-strip .is-this {
+  height: 18px;
+}
+.gb-scope-strip .is-on {
+  background: var(--brand);
 }
 
 .gb-toast-stack {
