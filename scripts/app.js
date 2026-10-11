@@ -13646,6 +13646,8 @@ const SCREENS = {
                 api('/api/family/favourites', { method: 'POST', body: JSON.stringify(body) }),
               deleteFavourite: (id) =>
                 api('/api/family/favourites/' + encodeURIComponent(id), { method: 'DELETE' }),
+              useFavourite: (id) =>
+                api('/api/family/favourites/' + encodeURIComponent(id) + '/use', { method: 'POST' }),
               // Weekly / monthly + occasions
               generateWeekly: (body) =>
                 api('/api/family/meal-plan/multi', { method: 'POST', body: JSON.stringify(body) }),

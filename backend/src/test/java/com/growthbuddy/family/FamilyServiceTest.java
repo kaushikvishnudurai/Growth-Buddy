@@ -537,4 +537,51 @@ class FamilyServiceTest {
         assertThat(saved.getAllValues()).extracting(FamilyShoppingItem::getName).containsExactly("Curd", "Bread");
         assertThat(r.added()).isEqualTo(2);
     }
+
+    /** Ticked = bought last time. Needed again, it re-opens rather than counting as "already on your list". */
+    @Test
+    void aTickedLineNeededAgainComesBackUnticked() {
+        clockAt(LocalDate.of(2026, 10, 10));
+        Family f = family(OWNER);
+        livesIn(OWNER, row(f, OWNER, MemberStatus.mapped, Relationship.self));
+        when(pantry.findByFamilyIdAndDeletedAtIsNullOrderByCreatedAtDesc(f.getId()))
+                .thenReturn(List.of(pantryItem("Milk", true, null)));
+        FamilyShoppingItem bought = new FamilyShoppingItem();
+        bought.setName("Milk");
+        bought.setChecked(true);
+        when(shopping.findByFamilyIdOrderByCheckedAscCreatedAtDesc(f.getId())).thenReturn(List.of(bought));
+
+        ShoppingListResponse r = service.restockFromPantry(OWNER);
+
+        assertThat(bought.isChecked()).isFalse();
+        verify(shopping).save(bought);
+        assertThat(r.added()).isEqualTo(1);
+    }
+
+    /** The badge's window is the user's day and the same one restock adds from. */
+    @Test
+    void expiringSoonIsTheUsersDayAndTheRestockWindow() {
+        LocalDate today = LocalDate.of(2026, 10, 10);
+        assertThat(FamilyService.toPantryResponse(pantryItem("Curd", false, today.plusDays(2)), today).expiringSoon()).isTrue();
+        assertThat(FamilyService.toPantryResponse(pantryItem("Rice", false, today.plusDays(3)), today).expiringSoon()).isFalse();
+        assertThat(FamilyService.toPantryResponse(pantryItem("Bread", false, today.minusDays(1)), today).expired()).isTrue();
+    }
+
+    /** A saved menu becomes today's plan; the other members hear about it. */
+    @Test
+    void aSavedMenuGoesBackOnTheTable() {
+        Family f = family(OWNER);
+        livesIn(OWNER, row(f, OWNER, MemberStatus.mapped, Relationship.self));
+        FamilyFavouriteMenu fav = new FamilyFavouriteMenu();
+        fav.setId(UUID.randomUUID());
+        fav.setFamilyId(f.getId());
+        fav.setPlanJson("{\"lunch\":[\"Sambar\"]}");
+        when(favourites.findById(fav.getId())).thenReturn(Optional.of(fav));
+
+        MealPlanResponse r = service.useFavourite(OWNER, fav.getId());
+
+        assertThat(r.plan().path("lunch").get(0).asText()).isEqualTo("Sambar");
+        verify(plans).save(any(FamilyMealPlan.class));
+        verify(events).changed(any(), eq("plan"));
+    }
 }
