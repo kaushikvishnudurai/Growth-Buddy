@@ -52,6 +52,13 @@ it silently landed on Home. Don't reintroduce a second list.
   without that a bell → avatar → bell sequence left orphaned `mousedown`/`keydown` listeners on
   `document` for the rest of the session. It covers the bottom-nav More sheet as well (Escape
   closes all three); mousedown inside `.gb-nav-wrap` is ignored, since the nav handles its own taps.
+  It also calls `syncPanelBackEntry()`: while any of the three is open they hold **one**
+  gb-kit `trackOverlay` entry (`untrackPanels`), so hardware / browser Back closes the panel
+  (`closeHeaderPanels`) before it leaves the screen or minimises the app.
+- **Deep links**: boot calls native.js `onDeepLink`; the link's hash (`deepLinkHash`) is written to
+  `location.hash` and the `hashchange` handler routes it like a typed URL (signed out →
+  `returnToScreen`). A hash with a query forces `setScreen` on the screen already showing, so
+  `#/circle?join=CODE` still reaches Circle's `joinFromLink` when Circle is open.
 - **Lazy screens: family, circle, timer, goals, report, mentor, notes, money.** The first six exported only their
   `Screen*` to app.js and nothing else imported them — ~151 KB of source a Home visitor never touches.
   `SCREENS[x].render()` must stay synchronous, so `lazyScreen(loader, build)` returns a skeleton now
@@ -330,7 +337,8 @@ it silently landed on Home. Don't reintroduce a second list.
 - **Buttons on the phone's notifications**: `armNotificationActions()` (once, after wave 1 of
   `loadData`, so a press that cold-started the app finds its habit / reminder) listens through
   native.js `onLocalNotificationAction`; `handleNotificationAction` routes a press to the in-app
-  handlers: water → `quickAddWater(WATER_ACTION_ML)`, reminder Snooze → `snoozeReminder`, Done →
+  handlers. A plain **tap** opens push.js `notificationTarget(extra)` — reminder → Calendar on its
+  day (`calGoTo`), habit → Habits, water → Home, focus alarm → the timer. Buttons: water → `quickAddWater(WATER_ACTION_ML)`, reminder Snooze → `snoozeReminder`, Done →
   `toggleReminderDone(id, day, true)` (no day = a snoozed ring: nothing), habit Done →
   `plainToggleHabit` today or a dated `/checkin` for the day it rang. `reSyncDeviceAlarms` passes
   `snoozeLabel`. The web's buttons never reach the page: the service worker POSTs a signed ticket.

@@ -63,6 +63,7 @@ function armEndAlarm() {
       title: T.mode === 'focus' ? 'Focus session done' : 'Break over',
       body: T.mode === 'focus' ? 'Nice work. Take a breather.' : 'Ready for the next one?',
       at: new Date(T.endsAt),
+      extra: { kind: 'focus' }, // a tap opens the timer (push.js notificationTarget)
     },
   ]).catch(function () {});
 }
