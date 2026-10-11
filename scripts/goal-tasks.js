@@ -35,13 +35,20 @@ export function combinedGoalProgress(progress, taskStats) {
 /**
  * The goal a task tick just finished off: its last open linked task done, the
  * goal itself still open. `before` / `after` are the task lists either side of
- * the tick. Null when nothing was finished off.
+ * the tick. `progressById` is goalProgress (id -> blob, days already counted):
+ * an open milestone or an unfilled day tracker means the goal isn't finished,
+ * the same test as the card's "Everything here is done". Null when nothing was
+ * finished off.
  */
-export function goalFinishedBy(taskId, before, after, goals) {
+export function goalFinishedBy(taskId, before, after, goals, progressById) {
   const was = (before || []).find((t) => t && t.id === taskId);
   const now = (after || []).find((t) => t && t.id === taskId);
   if (!was || !now || was.done || !now.done || !now.goalId) return null;
   const goal = (goals || []).find((g) => g && g.id === now.goalId);
   if (!goal || goal.completed) return null;
-  return goalTaskStats(goal, after).open.length === 0 ? goal : null;
+  if (goalTaskStats(goal, after).open.length) return null;
+  const p = (progressById && progressById[String(goal.id)]) || {};
+  if (Array.isArray(p.milestones) && p.milestones.some((m) => m && !m.done)) return null;
+  if (p.durationDays && (p.daysFollowed || 0) < p.durationDays) return null;
+  return goal;
 }

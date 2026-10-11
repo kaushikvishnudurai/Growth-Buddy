@@ -3258,7 +3258,7 @@ const togglesInFlight = inFlightKeys();
    own "Everything here is done" line says it as well. */
 function suggestGoalDone(taskId, tasksBefore) {
   const goals = (state.goals || []).flatMap((sec) => sec.goals || []);
-  const goal = goalFinishedBy(taskId, tasksBefore, state.tasks, goals);
+  const goal = goalFinishedBy(taskId, tasksBefore, state.tasks, goals, effectiveGoalProgress());
   if (!goal) return;
   pushToast('That was the last task for “' + goal.title + '”.', 'info', 6000, {
     label: 'Mark goal done',
