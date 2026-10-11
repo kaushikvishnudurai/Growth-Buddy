@@ -474,7 +474,28 @@ export function upcomingAlarms({ reminders, water, habits, sound, lead, quiet, b
  * Re-arm this device. No-op on the web (the server pushes there) and when the
  * user hasn't granted notifications. Returns how many are queued.
  */
-export async function syncDeviceAlarms(opts) {
+/* Every change to the device's alarm set goes through one chain. A sync awaits
+   permission, cancels, then schedules what it computed at the start: two
+   interleaved (A cancels, B cancels, B schedules, A schedules) left A's older
+   list armed, and logout's cancel landing inside a sync was followed by that
+   sync re-arming the old account's alarms. Exported for push.test.mjs. */
+let alarmChain = Promise.resolve();
+export function serialAlarms(fn) {
+  const run = alarmChain.then(fn);
+  alarmChain = run.catch(() => {});
+  return run;
+}
+
+/** Cancel every alarm on this device (sign-out), in turn with any sync still running. */
+export function cancelAllAlarms() {
+  return serialAlarms(() => cancelPendingLocalNotifications());
+}
+
+export function syncDeviceAlarms(opts) {
+  return serialAlarms(() => syncNow(opts));
+}
+
+async function syncNow(opts) {
   if (!localNotificationsAvailable()) return 0;
   if ((await localNotificationPermission()) !== 'granted') return 0;
   // Cheap and idempotent; redone per sync because the Snooze label follows

@@ -53,7 +53,12 @@ function setCookie(name, value) {
       encodeURIComponent(name) +
       '=' +
       encodeURIComponent(value) +
-      '; path=/; max-age=31536000; SameSite=Lax' +
+      '; path=/; max-age=' +
+      // The token's cookie lasts as long as a server session can (SessionService
+      // SESSION_TTL, 60 days, fixed from sign-in): a year left a dead token in
+      // script-readable storage for ten months. Prefs keep the year.
+      (name === 'gb.token' || name === 'gb.session' ? 60 * 86400 : 31536000) +
+      '; SameSite=Lax' +
       secure;
   } catch (_) {
     /* ignore */

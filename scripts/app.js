@@ -18,6 +18,7 @@ import {
   Card,
   openOverlay,
   closeOverlays,
+  trackOverlay,
   openModal as sharedModal,
   fieldRefusal,
   shakeRefusal,
@@ -79,6 +80,7 @@ import {
   monthStart,
   isSlipRow,
   recentNotes,
+  suggestReminderTime,
 } from './habit-stats.js';
 // The Money document model only; the screen and its Customise pane are lazy
 // (SCREENS.money, moneyPane), so money.js stays out of the boot chunk.
@@ -140,6 +142,7 @@ import {
   pushSupported,
   pushTestLocal,
   syncDeviceAlarms,
+  cancelAllAlarms,
   usualDrinkHours,
   WATER_DEFAULTS,
   WATER_ACTION_ML,
@@ -161,7 +164,6 @@ import {
   readHealthForSync,
   healthAvailable,
   requestHealthAccess,
-  cancelPendingLocalNotifications,
   onLocalNotificationAction,
   saveFile,
 } from './native.js';
@@ -343,8 +345,9 @@ function followSystemTheme() {
   systemDark.addEventListener('change', () => {
     if (pickedTheme() || (state.user && state.user.uiPrefs && state.user.uiPrefs.theme)) return;
     state.theme = systemDark.matches ? 'dark' : 'light';
+    // The theme is CSS on <html>: nothing to rebuild. A render() here emptied
+    // the sign-in form being typed and closed Family's and Circle's open panels.
     applyTheme(state.theme);
-    render();
   });
 }
 
@@ -2104,6 +2107,15 @@ function clearSession() {
   // The Notes list's offline copy (notes-core.js offlineKey) is that account's
   // notes in plain text on this device: it leaves with the session.
   CacheStorage.removeWhere((k) => k.startsWith('gb.notesOffline.')).catch(() => {});
+  // The Workbox NetworkFirst cache holds this account's API GETs (export, notes,
+  // money, health) and would serve them offline to whoever is next. Here, not in
+  // logout(): a 401 (signed out from another device, password changed) ends the
+  // session too, and that is the lost-phone case.
+  try {
+    if (typeof caches !== 'undefined') caches.delete('gb-api-get').catch(() => {});
+  } catch (_) {
+    /* no CacheStorage (insecure context) */
+  }
 }
 
 /* The ONLY way a signed-in user reaches `state` — sign-in, OTP verify, password
@@ -2189,6 +2201,12 @@ function offerDeviceTimezone() {
   // same question itself. maybeStartFirstRun() re-arms this when it says no.
   if (!(u.uiPrefs && u.uiPrefs.setupDone)) return;
   if ((u.uiPrefs && u.uiPrefs.tzAsked) === tz) return;
+  // Never on top of a sheet the user opened: wait until it is closed, and only
+  // then count the question as asked.
+  if (document.querySelector('.gb-modal-overlay.is-open')) {
+    tzOfferTimer = setTimeout(offerDeviceTimezone, 3000);
+    return;
+  }
   saveUiPrefs({ tzAsked: tz });
   openModal({
     title: 'Switch to ' + zoneCity(tz) + ' time?',
@@ -2397,7 +2415,8 @@ async function api(path, options) {
       try {
         return await apiFetch(path, opts);
       } finally {
-        _inflightGets.delete(path);
+        // Not a newer account's GET for the same path (resetUserState clears the map).
+        if (_inflightGets.get(path) === p) _inflightGets.delete(path);
       }
     })();
     _inflightGets.set(path, p);
@@ -2621,6 +2640,19 @@ function resetUserState() {
   state.notifOpen = false;
   state.moreOpen = false;
   popoverCleanup?.();
+  syncPanelHistory();
+  // A dialog open when the session ended (Settings' Sign out, a 401 under any
+  // sheet) stayed over the sign-in screen showing the old account. close(), not
+  // dismiss: the note editor's dismiss saves through api(), which has no token
+  // now (clearSession already dropped its draft).
+  closeOverlays({ discard: true });
+  // A GET still out for this account must not answer the next one's identical GET.
+  _inflightGets.clear();
+  // Unsent glasses live in module memory too: withPendingWater laid the last
+  // account's over the next one's day, and into its daily snapshot.
+  pendingWater.clear();
+  lastWaterTap = { amount: 0, at: 0 };
+  waterRefetch = false;
   state.screen = 'home';
 }
 
@@ -2899,6 +2931,9 @@ async function loadData() {
   // online used to swap the whole screen for the quote, then for the crash card
   // if any one of the five calls failed.
   const userKey = state.user.id || state.user.email;
+  // Signed out (or someone else signed in) while a wave was out: its answers are
+  // the old account's and must not land in state or under a .guest cache key.
+  const gone = () => !state.user || (state.user.id || state.user.email) !== userKey;
   const refresh = loadedFor === userKey && !state.error;
   if (!refresh) {
     // Refreshing on /family used to run quote card -> family skeleton -> family:
@@ -2923,18 +2958,28 @@ async function loadData() {
       api('/api/water'),
       api('/api/reminders'),
     ]);
+    if (gone()) return;
     state.tasks = tasksRaw.map(mapTask);
     state.habits = habits;
     reconcileStreakFreeze();
     state.score = todayScore && typeof todayScore.score === 'number' ? todayScore.score : 0;
-    restoreWaterQueue();
-    state.water = withPendingWater(water);
-    flushWaterQueue();
     state.reminders = reminders;
     // Offline writes the server hasn't seen yet, then send them. Not awaited:
     // first paint doesn't wait on a replay; the flush refetches what it touched.
-    // The queue itself is read only once CacheStorage has hydrated it.
+    // Both queues are read only once CacheStorage has hydrated them: before
+    // that the water queue read as empty and a queued glass vanished from the card.
     await CacheStorage.ready();
+    if (gone()) return;
+    if (revivedFor !== userKey) {
+      // Writes whose page unloaded mid-request (sendAhead) are ordinary queued ones now.
+      revivedFor = userKey;
+      outbox.reviveLive();
+      const wq = loadWaterQueue();
+      if (wq.some((x) => x.live)) storeWaterQueue(wq.map(({ live, ...x }) => x)); // eslint-disable-line no-unused-vars
+    }
+    restoreWaterQueue();
+    state.water = withPendingWater(water);
+    flushWaterQueue();
     overlayOutbox();
     flushOutbox();
     reSyncDeviceAlarms();
@@ -2945,6 +2990,7 @@ async function loadData() {
     autoTickHealthHabits();
     loadPhoneNight();
   } catch (err) {
+    if (gone()) return;
     if (refresh) {
       toastError(err, 'Could not refresh. Showing your last data.');
       return;
@@ -2970,6 +3016,10 @@ async function loadData() {
   loadSecondaryData();
 }
 
+/* What of the account shows on screen, to tell whether a fresh /me changed it. */
+const accountShape = (u) =>
+  JSON.stringify(u ? [u.displayName, u.timezone, u.features, u.navLayout, u.uiPrefs, u.level, u.xpTotal] : null);
+
 /* Screens that own their subtree: they fetch through their own api callbacks
    AND paint their own loading state, so they don't need wave 1 and can't
    survive a render() they didn't ask for. Mentor is deliberately absent — it
@@ -2977,6 +3027,8 @@ async function loadData() {
 const SELF_LOADING_SCREENS = new Set(['family', 'circle']);
 /* The account whose wave 1 has landed: a loadData() for it is a refresh. */
 let loadedFor = null;
+/* The account whose write-ahead leftovers this page has revived (once each). */
+let revivedFor = null;
 
 /* Quote of the day. Own function because it's the one call that starts before
    wave 1 rather than after it. */
@@ -3004,6 +3056,8 @@ async function loadSecondaryData() {
   // and re-rendering would rebuild screens that own their subtree (family,
   // money, mentor, circle) and throw away their local view state.
   const bootScreen = state.screen;
+  if (!state.user) return;
+  const who = state.user.id || state.user.email;
   connectWebSocket();
   // A failed load used to look exactly like having no data: every one of these
   // caught to null, and the only trace was a console line nobody sees. Name what
@@ -3015,7 +3069,10 @@ async function loadSecondaryData() {
     return null;
   };
   try {
-    const [goals, notifications, food, money, dailyLogs, photoHistory, weekly] =
+    // The account itself too: a reload boots from the cached session, so a name,
+    // timezone, feature or preference changed on another device never arrived.
+    const before = accountShape(state.user);
+    const [goals, notifications, food, money, dailyLogs, photoHistory, weekly, me] =
       await Promise.all([
         api('/api/goals').catch(soft('goals')),
         api(notifPageUrl('all')).catch(soft('notifications')),
@@ -3024,7 +3081,12 @@ async function loadSecondaryData() {
         api('/api/daily-logs?days=60').catch(soft('sleep and mood')),
         api('/api/food/photo-history').catch(soft('food photos')),
         api('/api/weekly-review').catch(soft('weekly reviews')),
+        api('/api/auth/me').catch(() => null),
       ]);
+    // Signed out while these were out: see loadData's gone().
+    if (!state.user || (state.user.id || state.user.email) !== who) return;
+    if (me) syncUserSession(me);
+    const accountChanged = !!me && accountShape(state.user) !== before;
     // What didn't arrive, for a screen to say so in place of its empty state (Money:
     // a failed load looked exactly like a first run once the toast went).
     state.loadFailed = new Set(missed);
@@ -3107,6 +3169,7 @@ async function loadSecondaryData() {
     // (every day "No log") until something else happened to redraw it.
     const arrived = { money: !!money, goals: !!goals, food: !!food };
     if (state.screen === bootScreen || arrived[state.screen]) render();
+    else if (accountChanged && !SELF_LOADING_SCREENS.has(state.screen)) render();
     // Home's Outlook ranks insights off the same history Report loads. Once
     // per session (null until it lands; sign-out clears it); it repaints Home.
     if (!state.insightHistory) loadInsightHistory();
@@ -3304,24 +3367,22 @@ async function toggleTask(id) {
   // Offline (or a task whose create is still queued): the tick stays, the PATCH waits in the outbox.
   // One key for the live PATCH and its replay: a flip that landed unanswered must not flip back.
   const idemKey = newIdemKey();
-  const queueToggle = () =>
-    queueWrite({
-      method: 'PATCH',
-      path: '/api/tasks/' + encodeURIComponent(realId(id)) + '/toggle',
-      kind: 'task.toggle',
-      toggleKey: 'task:' + realId(id),
-      local: { id },
-      idemKey,
-    });
+  const op = {
+    method: 'PATCH',
+    path: '/api/tasks/' + encodeURIComponent(realId(id)) + '/toggle',
+    kind: 'task.toggle',
+    toggleKey: 'task:' + realId(id),
+    local: { id },
+    idemKey,
+  };
   try {
     if (isTempId(realId(id))) {
-      queueToggle();
+      queueWrite(op);
       return;
     }
-    const updated = await api('/api/tasks/' + encodeURIComponent(realId(id)) + '/toggle', {
-      method: 'PATCH',
-      headers: { 'Idempotency-Key': idemKey },
-    });
+    const updated = await sendAhead(op, () =>
+      api(op.path, { method: 'PATCH', headers: { 'Idempotency-Key': idemKey } })
+    );
     const painted = toggleSignature();
     state.tasks = state.tasks.map((t) => (t.id === id || t.id === updated.id ? mapTask(updated) : t));
     saved = true;
@@ -3334,10 +3395,7 @@ async function toggleTask(id) {
       render();
       return;
     }
-    if (networkError(err)) {
-      queueToggle();
-      return;
-    }
+    if (err.queued) return;
     // Only this row: restoring the whole array undid any other row ticked meanwhile.
     state.tasks = state.tasks.map((t) => (t.id === id ? { ...t, done: !t.done } : t));
     state.score = before.score;
@@ -3555,10 +3613,24 @@ async function plainToggleHabit(id) {
   state.score = optimisticScore();
   render();
   if (state.habits.some((h) => h.id === id && h.doneToday)) buddyReact('yes');
+  // Queued (write-ahead, and on no response) as a dated check-in, not /toggle:
+  // the server's "today" when this replays may be tomorrow, and a toggle would
+  // tick the wrong day. It also sets, not flips, so replaying one that landed
+  // changes nothing. Two taps on the same day cancel in the outbox (toggleKey).
+  const day = todayKey();
+  const done = state.habits.some((h) => h.id === id && h.doneToday);
+  const op = {
+    method: 'POST',
+    path: '/api/habits/' + encodeURIComponent(id) + '/checkin',
+    body: { date: day, done },
+    kind: 'habit.checkin',
+    toggleKey: 'habit:' + id + ':' + day,
+    local: { id, day, done },
+  };
   try {
-    const updated = await api('/api/habits/' + encodeURIComponent(id) + '/toggle', {
-      method: 'PATCH',
-    });
+    const updated = await sendAhead(op, () =>
+      api('/api/habits/' + encodeURIComponent(id) + '/toggle', { method: 'PATCH' })
+    );
     const painted = toggleSignature();
     state.habits = state.habits.map((h) => (h.id === updated.id ? updated : h));
     saved = true;
@@ -3578,20 +3650,7 @@ async function plainToggleHabit(id) {
       reSyncDeviceAlarms();
       return;
     }
-    if (networkError(err)) {
-      // Queued as a dated check-in, not /toggle: the server's "today" when this
-      // replays may be tomorrow, and a toggle would tick the wrong day. Two taps
-      // on the same day cancel in the outbox (toggleKey).
-      const day = todayKey();
-      const done = state.habits.some((h) => h.id === id && h.doneToday);
-      queueWrite({
-        method: 'POST',
-        path: '/api/habits/' + encodeURIComponent(id) + '/checkin',
-        body: { date: day, done },
-        kind: 'habit.checkin',
-        toggleKey: 'habit:' + id + ':' + day,
-        local: { id, day, done },
-      });
+    if (err.queued) {
       reSyncDeviceAlarms();
       return;
     }
@@ -3860,23 +3919,28 @@ async function refreshCurrentUser() {
   }
 }
 
+/* Returns the task; `queued: true` when it went into the outbox, so the caller's
+   "Task added." doesn't sit on top of "Saved on this phone", saying it twice. */
 async function createTask(body) {
   let created;
   const idemKey = newIdemKey(); // this tap, live or replayed
+  const local = mapTask({ ...body, id: tempId(), done: false, paused: false });
   try {
-    created = await api('/api/tasks', {
-      method: 'POST',
-      headers: { 'Idempotency-Key': idemKey },
-      body: JSON.stringify(body),
-    });
+    created = await sendAhead(
+      { method: 'POST', path: '/api/tasks', body, kind: 'task.create', tempId: local.id, local, idemKey },
+      () =>
+        api('/api/tasks', {
+          method: 'POST',
+          headers: { 'Idempotency-Key': idemKey },
+          body: JSON.stringify(body),
+        })
+    );
   } catch (err) {
-    if (!networkError(err)) throw err;
+    if (!err.queued) throw err;
     // Offline: the row goes in now under a temp id; the POST waits in the outbox.
-    const local = mapTask({ ...body, id: tempId(), done: false, paused: false });
     state.tasks = [local, ...state.tasks];
-    queueWrite({ method: 'POST', path: '/api/tasks', body, kind: 'task.create', tempId: local.id, local, idemKey });
     landSoon('[data-task-id="' + local.id + '"]');
-    return local;
+    return { ...local, queued: true };
   }
   const task = mapTask(created);
   state.tasks = [task, ...state.tasks];
@@ -3885,11 +3949,26 @@ async function createTask(body) {
   return task;
 }
 
+/* An edit queues offline like the create does (it used to be refused while a
+   new task was "saved on this phone"): painted now, sent in order behind it. */
 async function updateTask(id, body) {
-  const updated = await api('/api/tasks/' + encodeURIComponent(id), {
-    method: 'PUT',
-    body: JSON.stringify(body),
-  });
+  const path = '/api/tasks/' + encodeURIComponent(realId(id));
+  const idemKey = newIdemKey();
+  const op = { method: 'PUT', path, body, kind: 'task.update', local: { ...body, id }, idemKey };
+  let updated;
+  try {
+    if (isTempId(realId(id))) {
+      await queueWrite(op);
+      throw Object.assign(new Error('queued'), { queued: true });
+    }
+    updated = await sendAhead(op, () =>
+      api(path, { method: 'PUT', headers: { 'Idempotency-Key': idemKey }, body: JSON.stringify(body) })
+    );
+  } catch (err) {
+    if (!err.queued) throw err;
+    state.tasks = state.tasks.map((t) => (t.id === id ? mapTask({ ...t, ...body, id }) : t));
+    return;
+  }
   state.tasks = state.tasks.map((t) => (t.id === updated.id ? mapTask(updated) : t));
   landSoon('[data-task-id="' + updated.id + '"]');
   refreshScoreLater();
@@ -3932,14 +4011,13 @@ function pauseTask(task) {
 async function deleteTask(id) {
   const path = '/api/tasks/' + encodeURIComponent(realId(id));
   const idemKey = newIdemKey();
-  const queue = () => queueWrite({ method: 'DELETE', path, kind: 'task.delete', local: { id }, idemKey });
-  if (isTempId(realId(id))) queue(); // its create is still queued: both are cancelled
+  const op = { method: 'DELETE', path, kind: 'task.delete', local: { id }, idemKey };
+  if (isTempId(realId(id))) queueWrite(op); // its create is still queued: both are cancelled
   else
     try {
-      await api(path, { method: 'DELETE', headers: { 'Idempotency-Key': idemKey } });
+      await sendAhead(op, () => api(path, { method: 'DELETE', headers: { 'Idempotency-Key': idemKey } }));
     } catch (err) {
-      if (!networkError(err)) throw err;
-      queue();
+      if (!err.queued) throw err;
     }
   removeSoon('[data-task-id="' + id + '"]', () => {
     state.tasks = state.tasks.filter((t) => t.id !== id);
@@ -5165,16 +5243,73 @@ async function queueWrite(op) {
   paintOutboxChip();
   // A temp id touched while online (its create is still queued): send now.
   if (state.online && navigator.onLine) flushOutbox();
+  else armOutboxRetry();
   return r;
+}
+
+/* Write-ahead, Money's pattern (saveMoney queues before it sends). `op` is in
+   the outbox, marked live, before `send()` goes out: a page that unloads
+   mid-request (reload, tab closed, the phone killing the app) replays it at
+   the next boot, where the old way lost a write the UI had already shown as
+   done. It carries the live request's idemKey, so replaying one that landed is
+   answered from the server's cache. Answered: dropped. No response: queued
+   for real (queueWrite, which says so) and rethrown with `err.queued`, so the
+   caller keeps its optimistic paint. */
+async function sendAhead(op, send) {
+  await CacheStorage.ready();
+  const id = 'op-' + (op.idemKey || newIdemKey());
+  outbox.enqueue({ ...op, id, live: true });
+  try {
+    const res = await send();
+    outbox.remove(id);
+    return res;
+  } catch (err) {
+    outbox.remove(id);
+    if (networkError(err)) {
+      await queueWrite(op);
+      err.queued = true;
+    }
+    throw err;
+  }
+}
+
+/* Queued writes used to go only after wave 1 and on 'online'. Wi-Fi with no
+   internet, a captive portal or a server waking up never fires 'online' (the
+   browser thought it was online all along), so they sat until the next launch.
+   Also on a timer while anything waits: 30 s, doubling to 5 min, back to 30 s
+   once the queue empties. visibilitychange flushes too. */
+const OUTBOX_RETRY_MIN = 30_000;
+const OUTBOX_RETRY_MAX = 5 * 60_000;
+let outboxRetryMs = OUTBOX_RETRY_MIN;
+let outboxRetryTimer = 0;
+function armOutboxRetry() {
+  clearTimeout(outboxRetryTimer);
+  outboxRetryTimer = 0;
+  if (!state.user || (!outbox.size() && !loadWaterQueue().some((x) => !x.live))) {
+    outboxRetryMs = OUTBOX_RETRY_MIN;
+    return;
+  }
+  outboxRetryTimer = setTimeout(() => {
+    outboxRetryMs = Math.min(outboxRetryMs * 2, OUTBOX_RETRY_MAX);
+    flushQueued();
+  }, outboxRetryMs);
+}
+function flushQueued() {
+  // flushWaterQueue ends in a render(): only when there is a glass to send.
+  if (loadWaterQueue().some((x) => !x.live)) flushWaterQueue();
+  flushOutbox();
 }
 
 /* Lay what's queued over lists just read from the server, which has not seen
    it yet. Called right after state.tasks / habits / reminders are replaced. */
 function overlayOutbox() {
   const today = todayKey();
-  for (const op of outbox.list()) {
+  // Not a live op: its own request is out, and its answer paints the real row.
+  for (const op of outbox.list().filter((x) => !x.live)) {
     const l = op.local || {};
     if (op.kind === 'task.create' && !state.tasks.some((t) => t.id === l.id)) state.tasks = [l, ...state.tasks];
+    else if (op.kind === 'task.update')
+      state.tasks = state.tasks.map((t) => (t.id === l.id ? mapTask({ ...t, ...l }) : t));
     else if (op.kind === 'task.toggle')
       state.tasks = state.tasks.map((t) => (t.id === l.id ? { ...t, done: !t.done } : t));
     else if (op.kind === 'task.delete') state.tasks = state.tasks.filter((t) => t.id !== l.id);
@@ -5189,12 +5324,15 @@ function overlayOutbox() {
 const queuedNotes = () =>
   outbox
     .list()
-    .filter((op) => op.kind === 'note.create' && op.local)
+    .filter((op) => op.kind === 'note.create' && op.local && !op.live)
     .map((op) => op.local);
 
 async function flushOutbox() {
   await CacheStorage.ready();
-  if (!state.user || !outbox.size()) return paintOutboxChip();
+  if (!state.user || !outbox.size()) {
+    armOutboxRetry();
+    return paintOutboxChip();
+  }
   const out = await outbox.flush(api);
   Object.entries(out.idMap).forEach(([tmp, id]) => outboxIds.set(tmp, id));
   const done = [...out.sent, ...out.dropped, ...out.conflicts];
@@ -5204,6 +5342,7 @@ async function flushOutbox() {
   out.conflicts.forEach((c) => toastError(null, c.message || 'That was changed somewhere else, so your offline change was skipped.'));
   if (done.length) await refreshOutboxStores(new Set(done.map((x) => String(x.op.kind).split('.')[0])));
   paintOutboxChip();
+  armOutboxRetry();
 }
 
 async function refreshOutboxStores(kinds) {
@@ -5257,7 +5396,8 @@ async function flushWaterQueue() {
         headers: { 'Idempotency-Key': x.idemKey || 'water-' + x.id },
         body: JSON.stringify({ amountMl: x.amountMl, loggedAt: x.loggedAt, drinkType: x.drinkType || null }),
       });
-    await replayOldestFirst(loadWaterQueue(), send, {
+    // Not a live glass: its own POST is still out (quickAddWater).
+    await replayOldestFirst(loadWaterQueue().filter((x) => !x.live), send, {
       isOffline: offlineError,
       onSent: (x, updated) => {
         pendingWater.delete(x.id);
@@ -5282,6 +5422,7 @@ async function flushWaterQueue() {
   } finally {
     waterFlushing = false;
     render();
+    armOutboxRetry();
   }
 }
 
@@ -5336,6 +5477,12 @@ async function quickAddWater(amountMl, dayKey, drinkType) {
   };
   render();
   waterInFlight++;
+  // Write-ahead (see sendAhead): on this phone, marked live, before the POST.
+  // A page that unloads mid-request replays it at the next boot.
+  await CacheStorage.ready();
+  const glass = { id: tempId, amountMl, loggedAt, drinkType: drink, idemKey };
+  storeWaterQueue(loadWaterQueue().concat({ ...glass, live: true }));
+  const unqueue = () => storeWaterQueue(loadWaterQueue().filter((y) => y.id !== tempId));
   try {
     const updated = await api('/api/water/entries', {
       method: 'POST',
@@ -5344,6 +5491,7 @@ async function quickAddWater(amountMl, dayKey, drinkType) {
       // fast can't make it "the future". Only a queued replay sends its own.
       body: JSON.stringify({ amountMl: amountMl, drinkType: drink }),
     });
+    unqueue();
     pendingWater.delete(tempId);
     if (seq > waterPaintedSeq) {
       waterPaintedSeq = seq;
@@ -5354,10 +5502,12 @@ async function quickAddWater(amountMl, dayKey, drinkType) {
     }
     invalidateWeek('water');
   } catch (err) {
+    unqueue();
     if (offlineError(err)) {
-      // Keep the glass on the card and on this phone; 'online' sends it.
-      storeWaterQueue(loadWaterQueue().concat({ id: tempId, amountMl, loggedAt, drinkType: drink, idemKey }));
-      pushToast('Saved on this phone — will sync when you’re back online.', 'info');
+      // Keep the glass on the card and on this phone; 'online' or the retry sends it.
+      storeWaterQueue(loadWaterQueue().concat(glass));
+      pushToast(SAVED_ON_PHONE, 'info');
+      armOutboxRetry();
       return;
     }
     pendingWater.delete(tempId);
@@ -7208,8 +7358,7 @@ function mentorApi() {
     // keep the sheet open with the reason.
     act: {
       task: async (title) => {
-        await createTask({ title });
-        toastSuccess('Task added.');
+        if (!(await createTask({ title })).queued) toastSuccess('Task added.');
       },
       habit: async ({ title, time }) => {
         await createHabit({
@@ -7369,7 +7518,8 @@ function profileDropdown() {
         class: 'gb-profile-pop-item is-danger',
         onclick: () => {
           state.profileOpen = false;
-          logout();
+          repaintOverlays();
+          confirmLogout();
         },
       },
       Icon('log-out', { size: 16 }),
@@ -8204,18 +8354,10 @@ function openDeleteAccount() {
       });
       // Scheduled, not gone (AuthService.deleteAccount): every session was revoked
       // and the purge runs in 7 days; signing in before then offers to cancel.
-      // Drop the local session and return to the login screen. The device's own
-      // alarms and the offline API cache are ours to clear (see logout()).
-      cancelPendingLocalNotifications();
-      try {
-        if (typeof caches !== 'undefined') await caches.delete('gb-api-get');
-      } catch (_) {
-        /* no CacheStorage */
-      }
-      clearSession();
-      state.user = null;
+      // The rest is logout's device teardown: push, alarms, the account's caches.
       close();
-      location.reload();
+      logout({ revoked: true });
+      pushToast('Your account will be deleted in 7 days. Sign in before then to keep it.', 'info', 8000);
     } catch (err) {
       confirmBtn.disabled = false;
       confirmBtn.textContent = 'Delete my account';
@@ -10837,7 +10979,7 @@ function openProfileSettings(initialTab) {
       {
         type: 'button',
         class: 'gb-btn gb-btn--ghost gb-account-signout',
-        onclick: () => logout(),
+        onclick: () => confirmLogout(),
       },
       Icon('log-out', { size: 16 }),
       'Sign out'
@@ -11190,18 +11332,27 @@ async function addReminder(key, text, time, tag, repeat, until, sound, endTime, 
     let created;
     let queued = false;
     const idemKey = newIdemKey(); // this tap, live or replayed
-    try {
-      created = await api('/api/reminders', {
+    const post = () =>
+      api('/api/reminders', {
         method: 'POST',
         headers: { 'Idempotency-Key': idemKey },
         body: JSON.stringify(body),
       });
+    // A one-off offline goes in under a temp id and still rings on this phone
+    // (device alarm ids don't come from the reminder's). A series waits for
+    // the server: its skips and splits are the server's to work out.
+    const local = { ...body, id: tempId() };
+    try {
+      created =
+        body.repeat === 'none'
+          ? await sendAhead(
+              { method: 'POST', path: '/api/reminders', body, kind: 'reminder.create', tempId: local.id, local, idemKey },
+              post
+            )
+          : await post();
     } catch (err) {
-      // A one-off offline goes in under a temp id and still rings on this phone
-      // (device alarm ids don't come from the reminder's). A series waits for
-      // the server: its skips and splits are the server's to work out.
-      if (body.repeat !== 'none' || !networkError(err)) throw err;
-      created = { ...body, id: tempId() };
+      if (!err.queued) throw err;
+      created = local;
       queued = true;
     }
     state.reminders.push(created);
@@ -11214,9 +11365,8 @@ async function addReminder(key, text, time, tag, repeat, until, sound, endTime, 
     } else {
       render();
     }
-    if (queued)
-      queueWrite({ method: 'POST', path: '/api/reminders', body, kind: 'reminder.create', tempId: created.id, local: created, idemKey });
-    else toastSuccess('Reminder added.');
+    // Queued: sendAhead has already said it is saved on this phone.
+    if (!queued) toastSuccess('Reminder added.');
     repaintReminderSettings();
     return created;
   } catch (err) {
@@ -11606,6 +11756,7 @@ function runInsightAction(action) {
    toast. Call it wherever any of the four inputs changes; the queue is
    rebuilt whole, so a stale one rings for a reminder already deleted. */
 function reSyncDeviceAlarms() {
+  if (!state.user) return; // signed out: logout's cancelAllAlarms is the last word
   syncDeviceAlarms({
     reminders: state.reminders,
     water: Object.assign(waterReminderPrefs(), { usualHours: state.waterUsualHours }),
@@ -12397,8 +12548,7 @@ function openAddTask(goal) {
     ),
     primary: 'Add task',
     onPrimary: async () => {
-      await createTask(form.read());
-      toastSuccess('Task added.');
+      if (!(await createTask(form.read())).queued) toastSuccess('Task added.');
     },
   });
   form.focus();
@@ -12630,11 +12780,12 @@ const FITNESS_PRESETS = [
    (for a quit one) the kind, then the form is the user's to change. Icons must
    be in HabitService.HABIT_ICONS (HabitIconsTest reads this list). */
 const HABIT_TEMPLATES = [
-  { key: 'water', name: 'Drink water', domain: 'habit', icon: 'droplets' },
-  { key: 'read', name: 'Read 20 min', domain: 'study', icon: 'book-open' },
-  { key: 'walk', name: 'Walk 8k steps', domain: 'fitness', icon: 'footprints', metric: 'steps' },
+  // reminderTime: the starter packs' time for the same habit (starter-packs.js) where there is one.
+  { key: 'water', name: 'Drink water', domain: 'habit', icon: 'droplets', reminderTime: '10:00' },
+  { key: 'read', name: 'Read 20 min', domain: 'study', icon: 'book-open', reminderTime: '21:30' },
+  { key: 'walk', name: 'Walk 8k steps', domain: 'fitness', icon: 'footprints', metric: 'steps', reminderTime: '18:00' },
   { key: 'nosugar', name: 'No sugar', domain: 'habit', icon: 'ban', kind: 'quit' },
-  { key: 'meditate', name: 'Meditate', domain: 'habit', icon: 'leaf', metric: 'minutes' },
+  { key: 'meditate', name: 'Meditate', domain: 'habit', icon: 'leaf', metric: 'minutes', reminderTime: '07:00' },
 ];
 
 const METRIC_LABEL = { none: 'Just a tick', km: 'Distance (km)', steps: 'Steps', minutes: 'Minutes' };
@@ -13088,7 +13239,13 @@ function openHabitForm(habit) {
   const reminderInput = h('input', {
     type: 'time',
     class: 'gb-input',
-    value: habit && habit.reminderTime ? String(habit.reminderTime).slice(0, 5) : '',
+    // A new habit starts at the time this user already likes to be nudged (the
+    // median of their other habits' reminders); none set anywhere, none here.
+    value: habit
+      ? habit.reminderTime
+        ? String(habit.reminderTime).slice(0, 5)
+        : ''
+      : suggestReminderTime(state.habits, ''),
   });
   const toneSel = h(
     'select',
@@ -13267,6 +13424,7 @@ function openHabitForm(habit) {
                 if (di >= 0) domain.node.children[di].click();
                 kindSeg.node.children[t.kind === 'quit' ? 1 : 0].click();
                 metricSel.value = t.metric || 'none';
+                if (t.reminderTime) reminderInput.value = t.reminderTime;
                 // After the category click: syncDomain clears a non-fitness icon.
                 presetIcon = t.icon;
               },
@@ -13966,14 +14124,28 @@ function notificationDropdown() {
       'div',
       { class: 'gb-notif-head' },
       h('span', null, 'Notifications'),
-      anyUnread || anyRead
-        ? h(
-            'div',
-            { class: 'gb-notif-head-actions' },
-            anyUnread ? headLink('Mark all read', markAllNotificationsRead) : null,
-            anyRead ? headLink('Clear read', clearReadNotifications) : null
-          )
-        : null
+      h(
+        'div',
+        { class: 'gb-notif-head-actions' },
+        anyUnread ? headLink('Mark all read', markAllNotificationsRead) : null,
+        anyRead ? headLink('Clear read', clearReadNotifications) : null,
+        // What reaches this bell is set in Settings, Alerts: three taps away, through the avatar.
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-notif-link',
+            'aria-label': 'Notification settings',
+            title: 'Notification settings',
+            onclick: () => {
+              state.notifOpen = false;
+              repaintOverlays();
+              openProfileSettings('notifications');
+            },
+          },
+          Icon('settings', { size: 16 })
+        )
+      )
     )
   );
   // Nothing at all to filter: the chips only took room above the empty line.
@@ -15544,6 +15716,21 @@ function lazyScreen(loader, build) {
       // new index and the new chunk names; the flag makes it once per tab, so
       // a genuinely broken module still lands on the crash card instead of
       // reloading forever.
+      // Offline it is not a stale deploy: the screen was never fetched on this
+      // device, and a reload with no controlling service worker lands on the
+      // browser's own offline page, with the app gone. Say so, and open it
+      // when the connection comes back.
+      if (isStaleChunkError(err) && !navigator.onLine) {
+        if (!placeholder.isConnected) return;
+        const card = CrashCard(() => render(), {
+          title: 'This screen needs a connection the first time',
+          body: 'It hasn’t been opened on this device yet. It opens by itself once you’re back online.',
+        });
+        placeholder.replaceWith(card);
+        refreshIcons();
+        window.addEventListener('online', () => card.isConnected && render(), { once: true });
+        return;
+      }
       if (isStaleChunkError(err) && !sessionStorage.getItem(CHUNK_RELOAD_KEY)) {
         try {
           sessionStorage.setItem(CHUNK_RELOAD_KEY, '1');
@@ -15599,6 +15786,38 @@ function syncHeaderExpanded() {
   const head = document.querySelector('.gb-head');
   head?.querySelector('.gb-bell')?.setAttribute('aria-expanded', String(!!state.notifOpen));
   head?.querySelector('.gb-avatar')?.setAttribute('aria-expanded', String(!!state.profileOpen));
+  syncPanelHistory();
+}
+
+/* The bell, account and More panels in the back stack (gb-kit trackOverlay):
+   Android back and history.back() close an open panel instead of leaving the
+   screen, or at Home minimising the app. One entry for the three, since one
+   replaces another in a tap. Driven from syncHeaderExpanded, which every paint
+   of the flags goes through. */
+let panelUntrack = null;
+function syncPanelHistory() {
+  const open = state.notifOpen || state.profileOpen || state.moreOpen;
+  if (open && !panelUntrack) {
+    panelUntrack = trackOverlay({
+      close: () => {
+        state.notifOpen = state.profileOpen = state.moreOpen = false;
+        if (state.user) repaintOverlays();
+        else syncPanelHistory();
+      },
+    });
+  } else if (!open && panelUntrack) {
+    const untrack = panelUntrack;
+    panelUntrack = null;
+    untrack();
+  }
+}
+
+/* Both header panels into their slots. render() builds the header with them
+   empty; without this a render while one was open (a data load, the poll) left
+   the bell "expanded" over nothing. */
+function fillHeaderSlots() {
+  document.getElementById('gb-notif-slot')?.replaceChildren(...[notificationDropdown()].filter(Boolean));
+  document.getElementById('gb-profile-slot')?.replaceChildren(...[profileDropdown()].filter(Boolean));
 }
 
 function repaintOverlays() {
@@ -15609,8 +15828,7 @@ function repaintOverlays() {
     render();
     return;
   }
-  notif.replaceChildren(...[notificationDropdown()].filter(Boolean));
-  profile.replaceChildren(...[profileDropdown()].filter(Boolean));
+  fillHeaderSlots();
   syncHeaderExpanded();
   const wasInMore = !!document.activeElement?.closest('.gb-more-sheet');
   nav.replaceWith(bottomNav());
@@ -16631,9 +16849,71 @@ function loginCard() {
   }
 }
 
-function logout() {
+/* The Log out / Sign out buttons. Sign-out clears this account's queued
+   offline writes (purgeUserCache), and it used to do that without a word while
+   the chip a tap away said they were waiting to sync. Online, send them first;
+   whatever still can't go is named, and staying signed in is the default. */
+async function confirmLogout() {
+  await CacheStorage.ready();
+  if (navigator.onLine) {
+    await Promise.all([flushOutbox(), flushWaterQueue()]).catch(() => {});
+  }
+  if (!state.user) return;
+  const n = outbox.size() + loadWaterQueue().length;
+  if (!n) return logout();
+  openModal({
+    title: plural(n, 'change') + ' not synced yet',
+    sub:
+      'Signing out now discards ' +
+      (n === 1 ? 'it. Stay signed in and it syncs' : 'them. Stay signed in and they sync') +
+      ' by itself once you’re back online.',
+    body: null,
+    primary: 'Stay signed in',
+    onPrimary: async () => {},
+    danger: { label: 'Sign out anyway', onClick: () => logout() },
+  });
+}
+
+/* Sign-outs whose revoke never reached the server (offline): their tokens,
+   kept apart from any session, sent on the next 'online' and at boot. */
+const REVOKE_KEY = 'gb.revoke.pending';
+function queueRevoke(token) {
+  try {
+    const q = JSON.parse(CacheStorage.getItem(REVOKE_KEY) || '[]');
+    if (!q.includes(token)) CacheStorage.setItem(REVOKE_KEY, JSON.stringify([...q, token].slice(-5)));
+  } catch (_) {
+    /* nothing to keep it in */
+  }
+}
+async function flushRevokes() {
+  await CacheStorage.ready();
+  let q;
+  try {
+    q = JSON.parse(CacheStorage.getItem(REVOKE_KEY) || '[]');
+  } catch (_) {
+    return;
+  }
+  for (const token of q) {
+    try {
+      // Any answer settles it: 2xx revoked it, a 401 means it already was.
+      await fetch(API_BASE + '/api/auth/logout', { method: 'POST', headers: { Authorization: 'Bearer ' + token } });
+    } catch (_) {
+      return; // still offline: the rest wait too
+    }
+    const left = JSON.parse(CacheStorage.getItem(REVOKE_KEY) || '[]').filter((t) => t !== token);
+    if (left.length) CacheStorage.setItem(REVOKE_KEY, JSON.stringify(left));
+    else CacheStorage.removeItem(REVOKE_KEY);
+  }
+}
+
+/* `revoked`: the server already ended the session (account deletion revokes
+   every one), so only this device's half runs: no unsubscribe or logout call to
+   401. The browser's own push subscription still goes, and the server prunes
+   the dead endpoint on its next send (PushService, 404/410). */
+function logout({ revoked = false } = {}) {
   // Fire-and-forget; the token is invalidated locally either way.
-  const token = loadToken();
+  const token = revoked ? null : loadToken();
+  if (revoked) disablePush(async () => {}).catch(() => {});
   if (token) {
     // Unsubscribe this browser's Web Push endpoint BEFORE the token is revoked,
     // or the server keeps pushing this account's reminders to a device that is
@@ -16649,20 +16929,15 @@ function logout() {
     disablePush(withToken)
       .catch(() => {})
       .then(() => withToken('/api/auth/logout', { method: 'POST' }))
-      .catch(() => {
-        /* silent */
-      });
+      // No connection: the token is still live on the server. Keep it (alone,
+      // not as a session) and revoke it on the next 'online' or boot.
+      .catch(() => queueRevoke(token));
   }
   // On-device alarms (native only; a no-op on the web) were scheduled for this
   // account's reminders, water and habits — they must not ring for the next one.
-  cancelPendingLocalNotifications();
-  // The Workbox NetworkFirst cache holds this account's API GET responses and
-  // would serve them, offline, to whoever signs in next on this browser.
-  try {
-    if (typeof caches !== 'undefined') caches.delete('gb-api-get').catch(() => {});
-  } catch (_) {
-    /* no CacheStorage (insecure context) */
-  }
+  // Through push.js's chain, so a sync still running can't re-arm them after.
+  // (The Workbox gb-api-get cache goes in clearSession.)
+  cancelAllAlarms().catch(() => {});
   // A running focus timer would finish later and post under the next account.
   import('./timer.js').then((m) => m.resetFocusSession()).catch(() => {});
   disconnectWebSocket();
@@ -16805,6 +17080,7 @@ function handleOnline() {
     dropStaleToastTimers();
   }
   toastSuccess('Back online — syncing your latest data.');
+  flushRevokes();
   if (state.user) {
     // The outbox goes after wave 1 (loadData flushes it there too; flush is
     // single-flight), so its refetch can't be answered by wave 1's older GET.
@@ -16989,6 +17265,7 @@ function render() {
   );
 
   root.replaceChildren(app);
+  fillHeaderSlots(); // before refreshIcons and refocus: the panels hold icons and may hold focus
   refreshIcons();
   restoreScrollPosition(scrollSnapshot);
   lastScrollSnapshot = scrollSnapshot;
@@ -17121,11 +17398,13 @@ if (CacheStorage.init) {
 }
 initA11y();
 initPullToRefresh();
+if (navigator.onLine) flushRevokes(); // a sign-out made offline last time
 /* Coming back to the app after it was backgrounded. The socket may have been
    suspended without ever firing a disconnect, so `onConnect` never runs and the
    bell is quietly stale. Ask the server directly. */
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden && state.user) {
+    flushQueued(); // back from the background: the connection may be too
     refreshNotifications();
     syncDeviceTimezone(); // reopened after a flight
     refreshDayIfStale();

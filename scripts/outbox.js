@@ -35,6 +35,15 @@
    answer was lost is answered again by the server (IdempotencyFilter), not
    run twice. The one 409 that is NOT a conflict — `code:
    idempotency_in_progress`, the first attempt still running — is "later".
+
+   Write-ahead (`live: true`): an op enqueued BEFORE its own live request, so a
+   page that unloads mid-request still has it. It skips the collapse rules,
+   nothing collapses into it, flush() waits behind it rather than sending it a
+   second time, and size() doesn't count it. The caller then `remove`s it: sent
+   or refused, or (no response) to enqueue it again as an ordinary op, through
+   the collapse rules. `reviveLive()` turns every one left by a page that died
+   into an ordinary op: call it once per account per page load, before the
+   first flush.
    ===================================================================== */
 
 const TEMP_RE = /tmp-[a-z0-9]+(?:-[a-z0-9]+)*/i;
@@ -101,6 +110,8 @@ export function createOutbox(storage, keyFn) {
     store([]);
     idMap.clear();
   }
+  // eslint-disable-next-line no-unused-vars
+  const reviveLive = () => store(list().map(({ live, ...x }) => x));
 
   /** Returns 'queued' | 'cancelled' (nothing left to send) | 'superseded' (queued, older ops dropped). */
   function enqueue(input) {
@@ -116,6 +127,10 @@ export function createOutbox(storage, keyFn) {
     if (input.tempId) op.tempId = input.tempId;
     if (input.toggleKey) op.toggleKey = input.toggleKey;
     if (input.local !== undefined) op.local = input.local;
+    if (input.live) {
+      store(list().concat({ ...op, live: true }));
+      return 'queued';
+    }
     // A temp id whose create has already landed: talk about the real one.
     idMap.forEach((real, tmp) => {
       op.path = swap(op.path, tmp, real);
@@ -124,7 +139,7 @@ export function createOutbox(storage, keyFn) {
     });
     let q = list();
     if (q.some((x) => x.id === op.id)) return 'queued';
-    const idle = (x) => x.id !== sendingId;
+    const idle = (x) => x.id !== sendingId && !x.live;
 
     if (op.toggleKey) {
       const twin = q.find((x) => idle(x) && x.toggleKey === op.toggleKey);
@@ -159,6 +174,11 @@ export function createOutbox(storage, keyFn) {
     for (;;) {
       let op = list()[0];
       if (!op) break;
+      // Its own request is still out: what follows may depend on it, so wait.
+      if (op.live) {
+        out.stopped = true;
+        break;
+      }
       if (!op.idemKey) {
         // Queued before ops carried one: mint it once and keep it, so the next
         // attempt sends the same key.
@@ -231,5 +251,13 @@ export function createOutbox(storage, keyFn) {
     return flushing;
   }
 
-  return { enqueue, list, remove, clear, flush, size: () => list().length };
+  return {
+    enqueue,
+    list,
+    remove,
+    reviveLive,
+    clear,
+    flush,
+    size: () => list().filter((x) => !x.live).length,
+  };
 }
