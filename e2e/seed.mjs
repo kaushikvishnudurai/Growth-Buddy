@@ -10,7 +10,9 @@ const empty = process.argv.includes('--empty');
 
 // The auth routes are rate limited per IP (10 per 5 min). Run the backend with
 // --growthbuddy.trust-proxy=true and every seeded account comes from its own forwarded address.
-const fakeIp = `10.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}`;
+const randomIp = () =>
+  `10.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}`;
+let fakeIp = randomIp();
 
 async function call(path, method = 'GET', body, token) {
   const res = await fetch(API + path, {
@@ -45,6 +47,8 @@ function otpFor(email) {
 }
 
 export async function seedAccount({ seed = true, tag = 'e2e' } = {}) {
+  // One address per account: a whole worker's sign-ups from one address trip the 10-per-5-min limit.
+  fakeIp = randomIp();
   const email = `${tag}.${Date.now()}.${Math.floor(Math.random() * 1e4)}@example.com`;
   const password = 'E2eTest#2026pw';
   const up = await call('/api/auth/signup', 'POST', { email, password, displayName: 'Asha Rao' });

@@ -2,7 +2,7 @@
 // user sees after a reload and what the server holds (GET /api/money with the account's token).
 import { test, expect, signInFast, go } from './fixtures.mjs';
 
-const API = process.env.GB_API || 'http://localhost:8591';
+const API = process.env.GB_API || 'http://localhost:8590';
 const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 // The seeder sets the timezone after verify, so its `user` still says UTC and the app would open
