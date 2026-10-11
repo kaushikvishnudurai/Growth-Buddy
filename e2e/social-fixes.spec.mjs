@@ -158,3 +158,34 @@ test('FRS-12: the weekly review focus shows on Report and becomes a habit in one
   await expect(page.getByRole('button', { name: 'Make it a habit' })).toHaveCount(0);
   expect((await call(account.token, '/api/habits')).map((x) => x.name)).toContain('Sleep by 11');
 });
+
+test('EXF-2: Report does not scroll sideways', async ({ page, account }) => {
+  await signInPinned(page, account);
+  await go(page, 'report');
+  await expect(page.getByText('Trends').first()).toBeVisible();
+  const [sw, cw] = await page.locator('#gb-main').evaluate((m) => [m.scrollWidth, m.clientWidth]);
+  expect(sw).toBeLessThanOrEqual(cw);
+});
+
+test('EXF-6: Members shows a cheer already sent today as sent', async ({ page, account }) => {
+  const other = await seedAccount();
+  const c = await call(account.token, '/api/circles', 'POST', { name: 'Cheers ' + Date.now(), visibility: 'public' });
+  await call(other.token, '/api/circles/' + c.id + '/join', 'POST');
+  await call(account.token, '/api/circles/' + c.id + '/members/' + other.user.id + '/cheer', 'POST');
+  await signInPinned(page, account);
+  await go(page, 'circle');
+  await page.locator('[data-circle-id="' + c.id + '"]').getByRole('button', { name: /^Options for / }).click();
+  await page.getByRole('button', { name: 'Members' }).click();
+  const sheet = page.getByRole('dialog');
+  await expect(sheet.getByRole('button', { name: /^Cheered .+ today$/ })).toBeDisabled();
+  await expect(sheet.getByRole('button', { name: /^Cheer .+ on$/ })).toHaveCount(0);
+});
+
+test('EXF-13: Pantry Add with an empty name says what to do', async ({ page, account }) => {
+  await call(account.token, '/api/family/members', 'POST', { name: 'Amma', relationship: 'mother' });
+  await signInPinned(page, account);
+  await go(page, 'family');
+  await page.getByRole('button', { name: /Pantry/ }).first().click();
+  await page.getByRole('button', { name: 'Add item' }).click();
+  await expect(page.locator('.gb-toast-msg', { hasText: 'Type the item first.' })).toBeVisible();
+});

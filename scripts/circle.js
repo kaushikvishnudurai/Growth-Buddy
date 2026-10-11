@@ -1368,6 +1368,13 @@ function ChallengesPanel({ api, currentUserId, wins, addHabit }) {
       },
       Icon('sparkles', { size: 14, sw: 2.4 })
     );
+    // Today's one cheer already sent (the server's cheeredByMe, as the seats read
+    // it): show it sent, so the row doesn't offer a cheer that would be refused.
+    if (member.cheeredByMe) {
+      btn.disabled = true;
+      btn.classList.add('is-sent');
+      btn.setAttribute('aria-label', 'Cheered ' + member.name + ' today');
+    }
     return btn;
   }
 

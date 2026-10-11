@@ -132,6 +132,15 @@ function fromList(list) {
 }
 
 /** "2026-10-11" (a LocalDate) -> "Sun, 11 Oct", read as a local day, not UTC midnight. */
+/* A multi-day plan's day by its date ("Mon 12 Oct"): day 1 is the local day the
+   plan was made, as the planner writes it. "Day N" only when there is no date. */
+function planDayLabel(wk, index) {
+  const made = wk && wk.createdAt ? new Date(wk.createdAt) : null;
+  if (!made || isNaN(made)) return 'Day ' + (index + 1);
+  made.setDate(made.getDate() + index);
+  return fmtDay(made.toLocaleDateString('en-CA')) || 'Day ' + (index + 1);
+}
+
 function fmtDay(iso) {
   const [y, m, d] = String(iso || '')
     .slice(0, 10)
@@ -2275,7 +2284,7 @@ function ScreenFamily({ api }) {
     return h(
       'div',
       { class: 'gb-card gb-family-weekday' },
-      h('h3', { class: 'gb-family-weekday-label' }, d.label || 'Day ' + (d.day || index + 1)),
+      h('h3', { class: 'gb-family-weekday-label' }, d.label || planDayLabel(wk, index)),
       line('Breakfast', 'breakfast', d.breakfast),
       line('Lunch', 'lunch', d.lunch),
       line('Snack', 'snack', d.snack),
@@ -2314,7 +2323,11 @@ function ScreenFamily({ api }) {
     const lowI = h('input', { type: 'checkbox' });
     const add = () => {
       const name = nameI.value.trim();
-      if (!name) return;
+      if (!name) {
+        toast.error(null, 'Type the item first.');
+        nameI.focus();
+        return;
+      }
       run(
         api.addPantry({
           name,
@@ -2539,7 +2552,11 @@ function ScreenFamily({ api }) {
     });
     const add = () => {
       const name = nameI.value.trim();
-      if (!name) return;
+      if (!name) {
+        toast.error(null, 'Type the item first.');
+        nameI.focus();
+        return;
+      }
       run(api.addShopping({ name, quantity: qtyI.value.trim() || null }), (res) => {
         model.shoppingList = res;
       });

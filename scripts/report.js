@@ -213,10 +213,15 @@ function trendChart(values, color, days, fmt, title, opts = {}) {
     (weekly ? ' in the week of ' : ' on ') +
     dayLabel(days[highs.i]) +
     '.';
+  // In a div: a <table> never shrinks below its rows, so a clipped 1px table
+  // still widened the scroller and Report slid sideways on a phone.
   const table = h(
-    'table',
+    'div',
     { class: 'gb-sr-only' },
-    h('caption', null, summary),
+    h(
+      'table',
+      null,
+      h('caption', null, summary),
     h(
       'tr',
       null,
@@ -224,6 +229,7 @@ function trendChart(values, color, days, fmt, title, opts = {}) {
       h('th', { scope: 'col' }, weekly ? 'Daily average' : 'Value')
     ),
     present.map((p) => h('tr', null, h('td', null, dayLabel(days[p.i])), h('td', null, fmt(p.v))))
+    )
   );
   // Soft area under the line.
   const areaPts =
@@ -791,9 +797,12 @@ function scatterChart(res, mx, my) {
   svg.addEventListener('pointercancel', hide);
   // As trendChart: the picture is for the eye, the days go to a screen reader.
   const table = h(
-    'table',
+    'div',
     { class: 'gb-sr-only' },
-    h('caption', null, mx.label + ' against ' + my.label.toLowerCase() + ', one row per day'),
+    h(
+      'table',
+      null,
+      h('caption', null, mx.label + ' against ' + my.label.toLowerCase() + ', one row per day'),
     h(
       'tr',
       null,
@@ -803,6 +812,7 @@ function scatterChart(res, mx, my) {
     ),
     res.points.map((p) =>
       h('tr', null, h('td', null, dayLabel(p.key)), h('td', null, mx.fmt(p.x)), h('td', null, my.fmt(p.y)))
+      )
     )
   );
   return h('div', { class: 'gb-trend-plot' }, svg, tip, table);
