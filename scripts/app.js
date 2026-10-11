@@ -2839,6 +2839,10 @@ async function loadData() {
   }
   state.loading = false;
   loadedFor = userKey;
+  // Wave 2's requests go out BEFORE the render below, not after it: on a slow
+  // phone the first Home render is a 120 ms task, and nothing was in flight
+  // during it. Only its sends happen now; every handler lands after the render.
+  loadSecondaryData();
   // <- first paint happens here, on five calls instead of twelve. Unless we're
   // still on a self-loading screen, which painted at the top of this function:
   // re-rendering would rebuild its subtree and restart its own fetch.
@@ -2850,7 +2854,6 @@ async function loadData() {
   // After wave 1, so a button press that cold-started the app (the plugin holds
   // it until a listener attaches) finds the habit or reminder it names.
   armNotificationActions();
-  loadSecondaryData();
 }
 
 /* Screens that own their subtree: they fetch through their own api callbacks
