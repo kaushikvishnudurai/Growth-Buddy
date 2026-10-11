@@ -143,6 +143,7 @@ function restoreSession() {
         ? 'Your focus session finished while you were away. It counts.'
         : 'Your break finished while you were away.'
     );
+    offerTaskDone(r.mode);
     // The cycle moves on as if it had ended here: the next step is lined up.
     if (r.mode === 'focus') T.lastFocusMins = Math.round(r.durationSec / 60);
     const next = afterSession(r.mode, T.cycleDone, T.lastFocusMins);
@@ -550,6 +551,7 @@ function finish() {
   const doneMode = T.mode;
   postSession(T.mode, T.durationSec, doneMode === 'focus' ? T.link : null);
   notifyEnd(doneMode);
+  offerTaskDone(doneMode);
   say(doneMode === 'focus' ? 'Focus session complete.' : 'Break over.');
   // The cycle: a finished sprint lines up a short break (the fourth a long
   // one), and a finished break lines the last sprint length back up — ready,
@@ -557,6 +559,16 @@ function finish() {
   const next = afterSession(doneMode, T.cycleDone, T.lastFocusMins);
   T.cycleDone = next.cycleDone;
   setMode(next.mode, next.mins, next.suggest);
+}
+
+/* A sprint spent on a task (a task row's timer button) ends by offering to
+   tick that task: the loop the button opened closes in one tap. Only for a task
+   still open, as the targets list holds it. */
+function offerTaskDone(mode) {
+  const id = mode === 'focus' && T.link && T.link.taskId;
+  const task = id && Focus.onFinishTask && ((Focus.targets && Focus.targets.tasks) || []).find((t) => t.id === id);
+  if (!task) return;
+  toast.action('Mark \u201c' + task.title + '\u201d done?', 'Mark done', () => Focus.onFinishTask(id));
 }
 
 /* The web has no OS alarm (the phone's is queued in armEndAlarm), so a session
@@ -1355,6 +1367,7 @@ const Focus = {
   targets: null, // { tasks: [{id,title}], goals: [{id,title}] } for "Focusing on…"
   goalMins: 0, // daily focus goal, minutes; 0 = off
   onSetGoal: null,
+  onFinishTask: null, // (taskId) => tick it; the end-of-sprint "Mark done" toast
 };
 
 function applyStats(s) {
@@ -1421,6 +1434,7 @@ function bind(props) {
   Focus.targets = (props && props.focusTargets) || null;
   Focus.goalMins = goalMinutes(props && props.focusGoalMins);
   Focus.onSetGoal = props && props.onSetFocusGoal;
+  Focus.onFinishTask = props && props.onFinishTask;
   // Another account signed in on this device must not open on these numbers.
   const owner = props && props.statsOwner;
   if (owner !== Focus.owner) {
@@ -1446,9 +1460,12 @@ function ScreenFocus(props) {
       setMode('focus', T.lastFocusMins || 25);
     saveSession();
   }
-  // Quick add's "start a 25 minute focus": set and run it, unless one is already running.
+  // Quick add's "start a 25 minute focus", or a task row's timer button: set and
+  // run it, unless one is already running. No length asked for and a paused
+  // sprint on the clock: that sprint resumes rather than starting over.
   const go = props && props.autoStart;
-  if (go && !T.running) setMode('focus', typeof go === 'number' ? go : T.lastFocusMins || 25);
+  const resume = go === true && T.mode === 'focus' && T.remainingSec > 0;
+  if (go && !T.running && !resume) setMode('focus', typeof go === 'number' ? go : T.lastFocusMins || 25);
   const screen = h('div', { class: 'gb-rise gb-focus' }, TimerCard(), StatsCard(), HistoryCard(), SoundCard());
   if (go && !T.running) setTimeout(start, 0); // once the ring it paints is on screen
   return screen;

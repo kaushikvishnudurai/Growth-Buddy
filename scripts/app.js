@@ -20,6 +20,7 @@ import {
   trackOverlay,
   openModal as sharedModal,
   fieldRefusal,
+  fieldError,
   shakeRefusal,
   landed,
   leave,
@@ -63,6 +64,7 @@ import {
   monthStart,
   isSlipRow,
   recentNotes,
+  suggestReminderTime,
 } from './habit-stats.js';
 // The Money document model only; the screen and its Customise pane are lazy
 // (SCREENS.money, moneyPane), so money.js stays out of the boot chunk.
@@ -3594,6 +3596,7 @@ async function createHabit(body) {
   state.habits = [...state.habits, created];
   refreshScoreLater();
   reSyncDeviceAlarms();
+  return created;
 }
 
 /* ---- Habit order (PUT /api/habits/order) ----
@@ -4169,7 +4172,8 @@ async function createGoal(body) {
   const sec = (state.goals || []).find((x) => x.horizon === created.horizon);
   if (sec) sec.goals = [created, ...(sec.goals || [])];
   else loadGoals();
-  toastSuccess('Goal saved.');
+  // The next step is known: the goal's first task, linked already (taskForm's presetGoalId).
+  pushToast('Goal saved.', 'success', 6000, { label: 'Add first task', run: () => openAddTask(created) });
   return created;
 }
 
@@ -4766,8 +4770,10 @@ function removeSoon(selector, drop) {
 }
 
 /* Throws on failure. The Log food dialog stays open only when its onPrimary
-   throws; catching here closed it over an entry that never saved. */
-async function logFoodEntry(payload) {
+   throws; catching here closed it over an entry that never saved.
+   opts.undo: a one-tap log (a recent or favourite chip) toasts with Undo, which
+   deletes the entry just made. Returns the new entry when it is today's. */
+async function logFoodEntry(payload, opts) {
   const before = new Set(((state.food && state.food.entries) || []).map((e) => e.id));
   // Typed calories go to /manual, which makes no AI call and so sits outside
   // the AI rate limit: logging from a label used to spend a photo's budget.
@@ -4787,6 +4793,13 @@ async function logFoodEntry(payload) {
   const added = forToday && (updated.entries || []).find((e) => !before.has(e.id));
   if (added) landSoon('[data-food-id="' + added.id + '"]');
   invalidateWeek('food');
+  if (opts && opts.undo && added) {
+    pushToast('Logged ' + (added.foodName || 'food') + '.', 'success', 6000, {
+      label: 'Undo',
+      run: () => undoFoodLog(added.id),
+    });
+    return added;
+  }
   toastSuccess(
     forToday
       ? 'Food logged.'
@@ -4799,6 +4812,22 @@ async function logFoodEntry(payload) {
           }) +
           '.'
   );
+}
+
+/* Undo on a one-tap food log: DELETE the entry just made. The answer is that
+   day's summary, so it lands like any other food write. */
+async function undoFoodLog(id) {
+  try {
+    const updated = await api('/api/food/entries/' + encodeURIComponent(id), { method: 'DELETE' });
+    if (summaryIsForToday(updated, todayKeyNow())) state.food = updated;
+    cacheFoodSummary(updated);
+    recentFoods = null;
+    invalidateWeek('food');
+    render();
+    toastSuccess('Removed.');
+  } catch (err) {
+    toastError(err, 'Could not undo that right now.');
+  }
 }
 
 /* "Copy yesterday's breakfast" on an empty slot of the Food card: POST
@@ -5628,10 +5657,63 @@ function openAddFood() {
   const field = (label, control) =>
     h('label', { class: 'gb-food-field' }, h('span', { class: 'gb-field-label' }, label), control);
 
-  /* One tap fills the form from a recent entry: name, grams and its calories,
-     typed, so saving it re-logs the same plate with no estimate. Filled, not
-     saved, so the day and meal above can still change. */
+  /* A recent or favourite chip logs that plate at once, on the day, meal and
+     slot above, with Undo (logFoodEntry). Press and hold fills the form
+     instead, for a plate that differs today. */
+  let closeLog = null;
+  const quickLog = async (btn, entry) => {
+    btn.disabled = true;
+    // No calories on file: the server estimates, an AI call, so the wait shows.
+    const hideLoader = entry.kcal == null ? showFoodLoader(entry.foodName) : null;
+    try {
+      await logFoodEntry(
+        {
+          pieces: null,
+          mealType: mealTypeSeg.get(),
+          mealSlot: slotSeg.get(),
+          loggedAt: loggedAtFor(dateInput.value),
+          note: null,
+          ...entry,
+        },
+        { undo: true }
+      );
+      if (closeLog) closeLog();
+    } catch (err) {
+      btn.disabled = false;
+      toastError(err, 'Could not log food right now.');
+    } finally {
+      if (hideLoader) hideLoader();
+    }
+  };
+  const HOLD_MS = 500;
+  const chipPress = (onTap, onHold) => {
+    let timer = 0;
+    let held = false;
+    const cancel = () => clearTimeout(timer);
+    return {
+      onpointerdown: () => {
+        held = false;
+        timer = setTimeout(() => {
+          held = true;
+          onHold();
+        }, HOLD_MS);
+      },
+      onpointerup: cancel,
+      onpointerleave: cancel,
+      onpointercancel: cancel,
+      // The phone's own long-press menu would cover the form being filled.
+      oncontextmenu: (e) => e.preventDefault(),
+      onclick: (e) => {
+        if (held) return;
+        onTap(e.currentTarget);
+      },
+    };
+  };
   const recentRow = h('div', { class: 'gb-food-recent', role: 'group', 'aria-label': 'Recent foods' });
+  const chipHint = h('div', { class: 'gb-field-hint', style: { display: 'none' } }, 'Tap a food to log it now. Press and hold to edit it first.');
+  const syncChipHint = () => {
+    chipHint.style.display = favRow.hidden && recentRow.hidden ? 'none' : '';
+  };
   const fillGrams = (name, grams, kcal) => {
     foodNameInput.value = name;
     // segmented() has no setter; a click runs its own onChange (min/max/label).
@@ -5666,13 +5748,31 @@ function openAddFood() {
       ...(list || []).map((f) =>
         h(
           'button',
-          { type: 'button', class: 'gb-food-recent-chip is-fav', onclick: () => fillFavourite(f) },
+          {
+            type: 'button',
+            class: 'gb-food-recent-chip is-fav',
+            title: 'Tap to log, hold to edit first',
+            ...chipPress(
+              (btn) =>
+                quickLog(btn, {
+                  foodName: f.foodName,
+                  quantityGrams: f.quantityGrams,
+                  kcal: f.kcal,
+                  proteinG: f.proteinG,
+                  carbsG: f.carbsG,
+                  fatG: f.fatG,
+                  fiberG: f.fiberG,
+                }),
+              () => fillFavourite(f)
+            ),
+          },
           Icon('star', { size: 12, sw: 2.4 }),
           f.foodName
         )
       )
     );
     favRow.hidden = !(list && list.length);
+    syncChipHint();
   };
   paintFavourites(favouriteFoods);
   if (!favouriteFoods) loadFavouriteFoods().then(paintFavourites);
@@ -5722,12 +5822,27 @@ function openAddFood() {
       ...(list || []).map((r) =>
         h(
           'button',
-          { type: 'button', class: 'gb-food-recent-chip', onclick: () => fillRecent(r) },
+          {
+            type: 'button',
+            class: 'gb-food-recent-chip',
+            title: 'Tap to log, hold to edit first',
+            ...chipPress(
+              (btn) =>
+                quickLog(btn, {
+                  foodName: r.foodName,
+                  quantityGrams: r.quantityGrams,
+                  kcal: r.kcalEstimated,
+                  ...(r.mealType === 'home' || r.mealType === 'hotel' ? { mealType: r.mealType } : {}),
+                }),
+              () => fillRecent(r)
+            ),
+          },
           r.foodName
         )
       )
     );
     recentRow.hidden = !(list && list.length);
+    syncChipHint();
   };
   paintRecent(recentFoods);
   if (!recentFoods)
@@ -5756,6 +5871,7 @@ function openAddFood() {
     field('Food', foodNameInput),
     favRow,
     recentRow,
+    chipHint,
     barcodeBtn,
     photoBtn,
     platePhotoInput,
@@ -5782,7 +5898,7 @@ function openAddFood() {
   );
 
   const loggedItems = new Set();
-  openModal({
+  closeLog = openModal({
     title: 'Log food',
     body,
     primary: 'Add food',
@@ -7996,33 +8112,12 @@ function shortDay(key) {
   return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
-function reminderSettingsPane() {
-  const pane = h('div', { class: 'gb-settings-pane', style: { display: 'none' } });
-
-  // ---- Defaults ----
-  const leadPicker = segmented(
-    LEAD_OPTIONS.map((m) => ({ value: String(m), label: m ? minutesLabel(m) : 'On time' })),
-    String(getDefaultLead()),
-    (v) => {
-      const lead = Number(v);
-      setDefaultLead(lead);
-      saveUiPrefs({ reminderLead: lead });
-      reSyncDeviceAlarms();
-      paintList();
-      toastSuccess(lead ? 'Reminders now ring ' + minutesLabel(lead) + ' early.' : 'Reminders now ring on time.');
-    }
-  );
-  const snoozePicker = segmented(
-    SNOOZE_OPTIONS.map((m) => ({ value: String(m), label: minutesLabel(m) })),
-    String(snoozeMinutes()),
-    (v) => {
-      saveUiPrefs({ snoozeMinutes: Number(v) });
-      repaintOverlays();
-      toastSuccess('Snooze set to ' + minutesLabel(Number(v)) + '.');
-    }
-  );
-
-  // ---- Quick add ----
+/* The compact reminder add (text, notify, day, time, repeat, mic): Settings ›
+   Reminders shows it inline, and + then Reminder opens it as a sheet
+   (openReminderSheet). Enter adds; with no time picked the text is read for
+   one first. onAdded(created) runs after a save; without it the form clears
+   for the next one. */
+function reminderQuickAdd(onAdded) {
   const textInput = h('input', {
     type: 'text',
     class: 'gb-input',
@@ -8078,9 +8173,26 @@ function reminderSettingsPane() {
     }
     addBtn.disabled = true;
     try {
+      // No time picked: the words may carry one ("call mom at 6"). The same
+      // reader as Quick add; offline or unread, it saves as typed.
+      if (!timeInput.value) {
+        // Read as a reminder, not as whatever else the words could be ("buy milk at 6" is a task).
+        const said = /^(remind|set a reminder|reminder)\b/i.test(text) ? text : 'remind me to ' + text;
+        const rem = await parseQuickAdd(said)
+          .then((r) => (r.intents || []).find((x) => x.type === 'reminder' && x.time))
+          .catch(() => null);
+        if (rem) {
+          if (rem.text) textInput.value = rem.text;
+          if (rem.date) dateInput.value = rem.date;
+          timeInput.value = hhmm(rem.time);
+          if (REPEATS[rem.repeat]) repeatSel.value = rem.repeat;
+          if (rem.notifyBefore !== undefined) notifySel.setLead(rem.notifyBefore);
+          if (!spokenTag && TAGS[rem.tag]) spokenTag = rem.tag;
+        }
+      }
       const created = await addReminder(
         dateInput.value,
-        text,
+        textInput.value.trim() || text,
         timeInput.value || '',
         spokenTag || 'personal',
         repeatSel.value,
@@ -8097,7 +8209,8 @@ function reminderSettingsPane() {
         usualTime.sync(state.reminders);
         repeatSel.value = 'none';
         notifySel.setLead(null);
-        textInput.focus();
+        if (onAdded) onAdded(created);
+        else textInput.focus();
       }
     } finally {
       addBtn.disabled = false;
@@ -8171,6 +8284,55 @@ function reminderSettingsPane() {
     usualTime.node,
     addBtn
   );
+  return { node: addForm, focus: () => textInput.focus() };
+}
+
+/* + then Reminder: the quick add above as a sheet over wherever the user is,
+   text focused, so "call mom at 6" then Enter is the whole flow. */
+function openReminderSheet() {
+  const { sheet, close } = openOverlay({ label: 'New reminder' });
+  const form = reminderQuickAdd(close);
+  sheet.append(
+    h(
+      'div',
+      { class: 'gb-modal-head' },
+      h('div', { class: 'gb-modal-title' }, 'New reminder'),
+      h('div', { class: 'gb-modal-sub' }, 'Today unless you pick a day. A time in the words is read for you.')
+    ),
+    form.node,
+    h('button', { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel', onclick: close }, 'Cancel')
+  );
+  refreshIcons();
+  setTimeout(form.focus, 60);
+}
+
+function reminderSettingsPane() {
+  const pane = h('div', { class: 'gb-settings-pane', style: { display: 'none' } });
+
+  // ---- Defaults ----
+  const leadPicker = segmented(
+    LEAD_OPTIONS.map((m) => ({ value: String(m), label: m ? minutesLabel(m) : 'On time' })),
+    String(getDefaultLead()),
+    (v) => {
+      const lead = Number(v);
+      setDefaultLead(lead);
+      saveUiPrefs({ reminderLead: lead });
+      reSyncDeviceAlarms();
+      paintList();
+      toastSuccess(lead ? 'Reminders now ring ' + minutesLabel(lead) + ' early.' : 'Reminders now ring on time.');
+    }
+  );
+  const snoozePicker = segmented(
+    SNOOZE_OPTIONS.map((m) => ({ value: String(m), label: minutesLabel(m) })),
+    String(snoozeMinutes()),
+    (v) => {
+      saveUiPrefs({ snoozeMinutes: Number(v) });
+      repaintOverlays();
+      toastSuccess('Snooze set to ' + minutesLabel(Number(v)) + '.');
+    }
+  );
+
+  const addForm = reminderQuickAdd().node;
 
   // ---- The list ----
   const count = h('span', { class: 'gb-sound-count' });
@@ -10474,14 +10636,21 @@ function focusProps() {
     // Daily focus goal, minutes (0 = off). In ui_prefs, where FocusService reads it for the streak.
     focusGoalMins: (state.user && state.user.uiPrefs && state.user.uiPrefs.focusGoalMins) || 0,
     onSetFocusGoal: (mins) => saveUiPrefs({ focusGoalMins: mins }),
+    // The end-of-sprint "Mark done": never flips back a task ticked meanwhile.
+    onFinishTask: (id) => {
+      if ((state.tasks || []).some((t) => t.id === id && !t.done)) toggleTask(id);
+    },
   };
 }
 
-/* A task or goal row's "Start focus": open the timer with it picked. */
+/* A task or goal row's "Start focus": open the timer with it picked. A task
+   row's timer button means "work on this now", so it also starts the clock
+   (`run`); ScreenFocus never restarts a session already running. */
 let focusPreselect = null;
 let focusAutoStart = null; // minutes, or true for the last length: Quick add's "start a focus"
-function startFocusOn(link) {
+function startFocusOn(link, run) {
   focusPreselect = link;
+  if (run) focusAutoStart = true;
   if (state.screen === 'focus') render();
   else setScreen('focus');
 }
@@ -11238,11 +11407,10 @@ function openAddSheet(prefill) {
       feature: 'calendar',
       icon: 'calendar-plus',
       label: 'Reminder',
-      sub: 'Opens your calendar to pick a day',
+      sub: 'What and when, in one line',
       action: () => {
         close();
-        calToday();
-        setScreen('calendar');
+        openReminderSheet();
       },
     },
     {
@@ -11352,6 +11520,45 @@ function taskForm(task, presetGoalId) {
     class: 'gb-input',
     value: task && task.dueAt ? toDateTimeLocal(task.dueAt) : '',
   });
+  // Today / Tomorrow set the end of that local day; Pick opens the full picker.
+  // No chip is the default, so nothing turns overdue by itself.
+  const endOf = (days) => {
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    d.setHours(23, 59, 0, 0);
+    return toDateTimeLocal(d.toISOString());
+  };
+  const dueChips = [
+    { label: 'Today', days: 0 },
+    { label: 'Tomorrow', days: 1 },
+  ].map((c) => h('button', { type: 'button', class: 'gb-chip', 'aria-pressed': 'false', onclick: () => setDue(endOf(c.days)) }, c.label));
+  const paintDue = () =>
+    dueChips.forEach((b, i) => {
+      const on = dueInput.value === endOf(i);
+      b.classList.toggle('is-on', on);
+      b.setAttribute('aria-pressed', String(on));
+    });
+  const setDue = (v) => {
+    dueInput.value = dueInput.value === v ? '' : v; // a second tap clears it
+    paintDue();
+  };
+  dueInput.addEventListener('input', paintDue);
+  paintDue();
+  const pickBtn = h(
+    'button',
+    {
+      type: 'button',
+      class: 'gb-chip',
+      onclick: () => {
+        try {
+          dueInput.showPicker();
+        } catch (_) {
+          dueInput.focus();
+        }
+      },
+    },
+    'Pick'
+  );
   // Goal (optional): the open goals, plus the one the task is already on even
   // if that goal is done, so editing never silently drops the link.
   const goalNow = (task && task.goalId) || presetGoalId || '';
@@ -11380,11 +11587,13 @@ function taskForm(task, presetGoalId) {
       h('div', { class: 'gb-field-label' }, 'Priority'),
       priority.node,
       h('div', { class: 'gb-field-label' }, 'Due (optional)'),
+      h('div', { class: 'gb-due-chips', role: 'group', 'aria-label': 'Due' }, ...dueChips, pickBtn),
       dueInput,
       goalSel ? h('div', { class: 'gb-field-label' }, 'Goal (optional)') : null,
       goalSel
     ),
     focus: () => setTimeout(() => titleInput.focus(), 60),
+    titleInput,
     read: () => {
       const title = titleInput.value.trim();
       if (!title) throw fieldRefusal(titleInput, 'Give the task a title.');
@@ -11412,12 +11621,46 @@ function taskForm(task, presetGoalId) {
    event from a plain onclick) means none. */
 function openAddTask(goal) {
   const form = taskForm(null, goal && typeof goal.id === 'string' ? goal.id : null);
+  // A run of tasks: "Add another" (or Shift+Enter in the title) saves this one
+  // and clears the title for the next, keeping priority, due and goal.
+  let adding = false;
+  const addAnother = async () => {
+    if (adding) return;
+    adding = true;
+    anotherBtn.disabled = true;
+    try {
+      await createTask(form.read());
+      render();
+      toastSuccess('Task added.');
+      form.titleInput.value = '';
+      form.titleInput.focus();
+    } catch (err) {
+      if (err && err.field) fieldError(err.field, err.message);
+      else toastError(err, 'Could not add the task.');
+    } finally {
+      adding = false;
+      anotherBtn.disabled = false;
+    }
+  };
+  const anotherBtn = h(
+    'button',
+    { type: 'button', class: 'gb-btn gb-btn--secondary gb-btn--compact', style: { marginTop: '10px' }, onclick: addAnother },
+    Icon('plus', { size: 14, sw: 2.4 }),
+    'Add another'
+  );
+  form.titleInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      addAnother();
+    }
+  });
   const close = openModal({
     title: 'New task',
     body: h(
       'div',
       null,
       form.node,
+      anotherBtn,
       h(
         'button',
         {
@@ -12336,13 +12579,28 @@ function openHabitForm(habit) {
         }
         return;
       }
-      await createHabit({
+      const created = await createHabit({
         ...fields,
         kind,
         color: color.get() || null,
         reminderTime: reminderInput.value || null,
         sound: toneSel.value || null,
       });
+      // No reminder picked: offer the time the user's other habits ring at, one
+      // tap. A quit habit has nothing to be reminded to do.
+      if (!reminderInput.value && !quit && created && created.id) {
+        const at = suggestReminderTime(state.habits);
+        pushToast('Remind you at ' + formatTime(at) + '?', 'info', 6000, {
+          label: 'Remind me',
+          run: () =>
+            updateHabit(created.id, { reminderTime: at })
+              .then(() => {
+                render();
+                toastSuccess('Reminder set for ' + formatTime(at) + '.');
+              })
+              .catch((err) => toastError(err, 'Could not set the reminder.')),
+        });
+      }
     },
   });
   // A new habit starts at its name. Editing opens on the history: focusing the
@@ -13457,7 +13715,7 @@ const SCREENS = {
         onAddTask: openAddTask,
         onEditTask: openEditTask,
         onPauseTask: pauseTask,
-        onFocusTask: featureOn('focus') ? (task) => startFocusOn({ taskId: task.id }) : null,
+        onFocusTask: featureOn('focus') ? (task) => startFocusOn({ taskId: task.id }, true) : null,
         onAddHabit: openAddHabit,
         calYear: state.calYear,
         calMonth: state.calMonth,
@@ -13482,6 +13740,7 @@ const SCREENS = {
         onSaveMoney: saveMoney,
         requestReceiptScan,
         onOpenMoney: () => setScreen('money'),
+        onQuickAddWater: featureOn('water') ? quickAddWater : null,
         homeLayout: (state.user && state.user.homeLayout) || null,
       }),
   },

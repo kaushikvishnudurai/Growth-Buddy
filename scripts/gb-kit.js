@@ -1299,6 +1299,7 @@ export {
   Logo,
   confirmDialog,
   fieldRefusal,
+  fieldError,
   openOverlay,
   closeOverlays,
   openModal,

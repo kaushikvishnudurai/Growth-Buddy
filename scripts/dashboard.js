@@ -467,7 +467,7 @@ function QuoteCard({ quote }) {
   });
 }
 
-function TodayPlanCard({ water, wellness, onPlanToday }) {
+function TodayPlanCard({ water, wellness, onPlanToday, onQuickAddWater, onAddSleep, onAddMood }) {
   const key = todayKey();
   const sleep = wellness && wellness.sleepByDate ? wellness.sleepByDate[key] : null;
   const mood = wellness && wellness.moodByDate ? wellness.moodByDate[key] : null;
@@ -484,10 +484,12 @@ function TodayPlanCard({ water, wellness, onPlanToday }) {
   //   - It doesn't congratulate. "Sleep logged" sat directly above a card
   //     showing "7.5h · Good", so the chip said less than the thing beneath it.
   // Finish everything and the row empties out, which is the point.
+  // Each open item is also its fix, one tap: a glass of water, the sleep or the
+  // mood dialog. A chip with no handler stays a plain label.
   const chips = [];
-  if (water && waterPct < 100) chips.push({ label: waterPct + '% water' });
-  if (!sleep) chips.push({ label: 'Sleep not logged' });
-  if (!mood) chips.push({ label: 'Mood not logged' });
+  if (water && waterPct < 100) chips.push({ label: waterPct + '% water', run: onQuickAddWater && (() => onQuickAddWater(250)), aria: 'Log 250 ml of water' });
+  if (!sleep) chips.push({ label: 'Sleep not logged', run: onAddSleep, aria: 'Log last night’s sleep' });
+  if (!mood) chips.push({ label: 'Mood not logged', run: onAddMood, aria: 'Log your mood' });
   return Card({
     className: 'gb-coach-card',
     children: [
@@ -512,7 +514,13 @@ function TodayPlanCard({ water, wellness, onPlanToday }) {
             'div',
             { class: 'gb-coach-chiprow' },
             chips.map((chip) =>
-              h('span', { class: 'gb-coach-chip gb-coach-chip--todo' }, chip.label)
+              chip.run
+                ? h(
+                    'button',
+                    { type: 'button', class: 'gb-coach-chip gb-coach-chip--todo', 'aria-label': chip.aria, onclick: () => chip.run() },
+                    chip.label
+                  )
+                : h('span', { class: 'gb-coach-chip gb-coach-chip--todo' }, chip.label)
             )
           )
         : null,
@@ -2569,6 +2577,7 @@ function ScreenDashboard({
   onSaveMoney,
   requestReceiptScan,
   onOpenMoney,
+  onQuickAddWater,
   homeLayout,
 }) {
   const on = (k) => !features || features[k] !== false;
@@ -2577,7 +2586,7 @@ function ScreenDashboard({
   const renderers = {
     // A turned-off feature drops out of the cards that summarise it, not just its own card.
     score: () => ScoreCard({ score, tasks, habits: on('habits') ? habits : [] }),
-    plan: () => TodayPlanCard({ water: on('water') ? water : null, wellness, onPlanToday }),
+    plan: () => TodayPlanCard({ water: on('water') ? water : null, wellness, onPlanToday, onQuickAddWater, onAddSleep, onAddMood }),
     wellness: () => WellnessCard({ wellness, onAddSleep, onAddMood, onConfirmSleep, onQuickMood }),
     tasks: () => [
       SectionTitle({ title: "Today's tasks", action: '+ Add', onAction: onAddTask }),
