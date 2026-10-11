@@ -4,7 +4,8 @@
    Pure, DOM-free. Each answer is a guess the user confirms with one tap
    (Home's morning check-in, the repeat-expense prompt, a form's usual time,
    a habit that ticks itself); none of them writes anything. A guess needs a
-   pattern to stand on — too little history means null, never a default.
+   pattern to stand on — too little history means null, never a default. The
+   one exception is sleep: one night is enough for "same as last night".
    Checked by `node scripts/nudges.test.mjs`.
    ===================================================================== */
 
@@ -48,14 +49,56 @@ export function usualSleep(sleepByDate, today) {
 }
 
 /**
- * Last night, offered as the usual one: usualSleep's guess, but only while
- * today has no entry and the usual wake time has passed. Home's check-in row
- * and the one-thing card both ask this. {bedtime, wakeTime} | null.
+ * What to offer for last night: the phone's own record (`phoneNight`, from
+ * native.js readLastNight), else the usual night, else the newest logged night
+ * 1 to 3 days old ("same as last night"). {bedtime, wakeTime, quality, source}
+ * with source 'phone' | 'usual' | 'last', or null. quality is the newest
+ * logged one, else 'okay'.
  */
-export function sleepToConfirm(sleepByDate, today, now) {
+export function lastNightGuess(sleepByDate, today, phoneNight) {
+  const t = dayNum(today);
+  const recent = Object.entries(sleepByDate || {})
+    .filter(
+      ([key, e]) =>
+        e && t - dayNum(key) >= 1 && toMin(e.bedtime) != null && toMin(e.wakeTime) != null
+    )
+    .sort(([a], [b]) => (a < b ? 1 : -1))[0];
+  const last = recent && recent[1];
+  const quality = (last && last.quality) || 'okay';
+  // A phone night stamped with another day (read before midnight) is not last night.
+  if (
+    phoneNight &&
+    phoneNight.bedtime &&
+    phoneNight.wakeTime &&
+    (!phoneNight.date || phoneNight.date === today)
+  ) {
+    return { bedtime: phoneNight.bedtime, wakeTime: phoneNight.wakeTime, quality, source: 'phone' };
+  }
+  const usual = usualSleep(sleepByDate, today);
+  if (usual) return { ...usual, quality, source: 'usual' };
+  if (recent && t - dayNum(recent[0]) <= 3) {
+    return {
+      bedtime: toHHMM(toMin(last.bedtime)),
+      wakeTime: toHHMM(toMin(last.wakeTime)),
+      quality,
+      source: 'last',
+    };
+  }
+  return null;
+}
+
+/**
+ * Last night, ready to confirm: lastNightGuess while today has no entry and,
+ * unless the phone recorded it (that night has already ended), only once its
+ * wake time has passed. Home's check-in row and the one-thing card both ask
+ * this, so they can't disagree. Same shape as lastNightGuess, or null.
+ */
+export function sleepToConfirm(sleepByDate, today, now, phoneNight) {
   if (sleepByDate && sleepByDate[today]) return null;
-  const u = usualSleep(sleepByDate, today);
-  return u && now.getHours() * 60 + now.getMinutes() >= toMin(u.wakeTime) ? u : null;
+  const g = lastNightGuess(sleepByDate, today, phoneNight);
+  return g && (g.source === 'phone' || now.getHours() * 60 + now.getMinutes() >= toMin(g.wakeTime))
+    ? g
+    : null;
 }
 
 const noteKey = (e) =>

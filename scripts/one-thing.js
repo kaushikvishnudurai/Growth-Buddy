@@ -18,6 +18,7 @@ export function pickOneThing({
   water,
   wellness,
   money,
+  phoneNight,
   now = new Date(),
   features,
   can = () => true,
@@ -61,13 +62,18 @@ export function pickOneThing({
   }
 
   const sleepByDate = wellness && wellness.sleepByDate;
-  const u = can('sleep') ? sleepToConfirm(sleepByDate, today, now) : null;
+  const u = can('sleep') ? sleepToConfirm(sleepByDate, today, now, phoneNight) : null;
   if (u)
     return {
       kind: 'sleep',
       title: 'Slept ' + u.bedtime + ' to ' + u.wakeTime + '?',
-      why: 'Your usual night, one tap to log it',
-      label: 'Yes, usual night',
+      why:
+        u.source === 'phone'
+          ? 'Your phone logged it, one tap to save'
+          : u.source === 'usual'
+            ? 'Your usual night, one tap to log it'
+            : 'Same as last night, one tap to log it',
+      label: u.source === 'phone' ? 'Save it' : 'Yes',
       arg: u,
     };
 

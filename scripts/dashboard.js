@@ -524,7 +524,7 @@ function TodayPlanCard({ water, wellness, onPlanToday }) {
 /* The one thing today (one-thing.js picks it): pinned above the layout, not a
    widget, so saved layouts never see it. One button, the existing handler; the
    render after it succeeds picks the next thing, or drops the card. */
-function oneThingFor({ tasks, habits, water, wellness, money, features, toggleTask, toggleHabit, onOpenMoney, onConfirmSleep, onQuickAddWater, onAddMood }) {
+function oneThingFor({ tasks, habits, water, wellness, money, phoneNight, features, toggleTask, toggleHabit, onOpenMoney, onConfirmSleep, onQuickAddWater, onAddMood }) {
   const act = {
     streak: toggleHabit,
     overdue: toggleTask,
@@ -533,7 +533,7 @@ function oneThingFor({ tasks, habits, water, wellness, money, features, toggleTa
     water: onQuickAddWater,
     mood: onAddMood && (() => onAddMood()),
   };
-  const one = pickOneThing({ tasks, habits, water, wellness, money, features, can: (k) => !!act[k] });
+  const one = pickOneThing({ tasks, habits, water, wellness, money, phoneNight, features, can: (k) => !!act[k] });
   return one && { ...one, run: () => act[one.kind](one.arg) };
 }
 
@@ -563,14 +563,16 @@ function OneThingCard(one) {
   });
 }
 
-/* The morning check-in, one tap each: last night as the usual night
-   (usualSleep, nudges.js) once the usual wake time has passed, and the mood
-   scale itself. Each row goes the moment its entry exists; Edit is the full
-   sleep dialog for a night that wasn't the usual one. */
-function WellnessQuick({ wellness, sleep, mood, onConfirmSleep, onQuickMood, onAddSleep }) {
+/* The morning check-in, one tap each: last night as the phone recorded it, or
+   the usual night, or the last logged one (sleepToConfirm, nudges.js), and the
+   mood scale itself. Each row goes the moment its entry exists; Edit is the full
+   sleep dialog for a night that wasn't the guessed one. */
+function WellnessQuick({ wellness, sleep, mood, phoneNight, onConfirmSleep, onQuickMood, onAddSleep }) {
   const rows = [];
   const usual =
-    !sleep && onConfirmSleep ? sleepToConfirm(wellness && wellness.sleepByDate, todayKey(), new Date()) : null;
+    !sleep && onConfirmSleep
+      ? sleepToConfirm(wellness && wellness.sleepByDate, todayKey(), new Date(), phoneNight)
+      : null;
   if (usual) {
     rows.push(
       h(
@@ -579,7 +581,9 @@ function WellnessQuick({ wellness, sleep, mood, onConfirmSleep, onQuickMood, onA
         h(
           'span',
           { class: 'gb-wellness-quick-ask' },
-          'Slept ' + sharedFormatTime(usual.bedtime) + ' to ' + sharedFormatTime(usual.wakeTime) + '?'
+          usual.source === 'phone'
+            ? 'Your phone logged ' + sharedFormatTime(usual.bedtime) + ' to ' + sharedFormatTime(usual.wakeTime) + '. Save it?'
+            : 'Slept ' + sharedFormatTime(usual.bedtime) + ' to ' + sharedFormatTime(usual.wakeTime) + '?'
         ),
         h(
           'div',
@@ -623,7 +627,7 @@ function WellnessQuick({ wellness, sleep, mood, onConfirmSleep, onQuickMood, onA
   return rows.length ? h('div', { class: 'gb-wellness-quick' }, rows) : null;
 }
 
-function WellnessCard({ wellness, onAddSleep, onAddMood, onConfirmSleep, onQuickMood }) {
+function WellnessCard({ wellness, phoneNight, onAddSleep, onAddMood, onConfirmSleep, onQuickMood }) {
   const key = todayKey();
   const sleep = wellness && wellness.sleepByDate ? wellness.sleepByDate[key] : null;
   const mood = wellness && wellness.moodByDate ? wellness.moodByDate[key] : null;
@@ -631,7 +635,7 @@ function WellnessCard({ wellness, onAddSleep, onAddMood, onConfirmSleep, onQuick
   return Card({
     className: 'gb-wellness-card',
     children: [
-      WellnessQuick({ wellness, sleep, mood, onConfirmSleep, onQuickMood, onAddSleep }),
+      WellnessQuick({ wellness, sleep, mood, phoneNight, onConfirmSleep, onQuickMood, onAddSleep }),
       h(
         'div',
         { class: 'gb-wellness-grid' },
@@ -2582,6 +2586,7 @@ function ScreenDashboard({
   score,
   water,
   wellness,
+  phoneNight,
   reminders,
   foodSummary,
   dayFoodLoading,
@@ -2622,6 +2627,7 @@ function ScreenDashboard({
     water,
     wellness,
     money,
+    phoneNight,
     features,
     toggleTask,
     toggleHabit,
@@ -2641,6 +2647,7 @@ function ScreenDashboard({
     wellness: () =>
       WellnessCard({
         wellness,
+        phoneNight,
         onAddSleep,
         onAddMood,
         onConfirmSleep: oneKind === 'sleep' ? null : onConfirmSleep,

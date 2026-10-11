@@ -61,7 +61,7 @@ for (;;) {
     assert.match(r.title, /90% of budget/);
     s = { ...s, money: null };
   } else if (r.kind === 'sleep') {
-    assert.deepEqual(r.arg, { bedtime: '23:00', wakeTime: '07:00' });
+    assert.deepEqual(r.arg, { bedtime: '23:00', wakeTime: '07:00', quality: 'okay', source: 'usual' });
     s = {
       ...s,
       wellness: {
@@ -91,6 +91,17 @@ assert.equal(
 // Last night is asked only once the usual wake time (07:00) has passed.
 assert.equal(pickOneThing({ wellness: { sleepByDate: nights }, now: at(6) }), null);
 assert.equal(pickOneThing({ wellness: { sleepByDate: nights }, now: at(8) }).kind, 'sleep');
+// The phone's night needs no wake-time wait (it has already ended) and says where it came from.
+{
+  const phone = pickOneThing({
+    wellness: { sleepByDate: nights },
+    phoneNight: { bedtime: '23:40', wakeTime: '07:10', date: today },
+    now: at(6),
+  });
+  assert.equal(phone.kind, 'sleep');
+  assert.equal(phone.arg.source, 'phone');
+  assert.equal(phone.label, 'Save it');
+}
 // A task that fell due after load (mapTask's overdue flag still false) counts.
 assert.equal(
   pickOneThing({
