@@ -56,7 +56,6 @@ function OnboardingCard({
   onOnboardDismiss,
 }) {
   if (CacheStorage.getItem(ONBOARD_KEY) === '1') return null;
-  const today = todayKey();
   const steps = [
     // One tap that sets up most of the rest: habits, reminders and targets for a goal.
     onStarterPack && {
@@ -81,7 +80,8 @@ function OnboardingCard({
       action: onAddTask,
     },
     {
-      done: !!(wellness && wellness.moodByDate && wellness.moodByDate[today]),
+      // Ever, not today: a today-only check re-opened the checklist every morning.
+      done: !!(wellness && wellness.moodByDate && Object.keys(wellness.moodByDate).length),
       label: 'Log how you feel',
       hint: 'A quick mood check-in',
       icon: 'smile-plus',
@@ -104,7 +104,13 @@ function OnboardingCard({
           'div',
           null,
           h('div', { class: 'gb-onboard-kicker' }, 'Getting started'),
-          h('div', { class: 'gb-onboard-title' }, 'Set up in ' + steps.length + ' quick steps')
+          h(
+            'div',
+            { class: 'gb-onboard-title' },
+            doneCount
+              ? doneCount + ' of ' + steps.length + ' done'
+              : 'Set up in ' + steps.length + ' quick steps'
+          )
         ),
         h(
           'button',
@@ -127,29 +133,31 @@ function OnboardingCard({
       h(
         'div',
         { class: 'gb-onboard-steps' },
-        ...steps.map((s) =>
-          h(
-            'button',
-            {
-              type: 'button',
-              class: 'gb-onboard-step' + (s.done ? ' is-done' : ''),
-              onclick: s.done ? null : s.action,
-              disabled: s.done,
-            },
+        // Only what's left: three ticked rows took half a phone screen to say "done".
+        ...steps
+          .filter((s) => !s.done)
+          .map((s) =>
             h(
-              'span',
-              { class: 'gb-onboard-step-ic' },
-              Icon(s.done ? 'check' : s.icon, { size: 16, sw: 2.4 })
-            ),
-            h(
-              'span',
-              { class: 'gb-onboard-step-tx' },
-              h('span', { class: 'gb-onboard-step-l' }, s.label),
-              h('span', { class: 'gb-onboard-step-h' }, s.hint)
-            ),
-            s.done ? null : Icon('chevron-right', { size: 16, sw: 2.4 })
+              'button',
+              {
+                type: 'button',
+                class: 'gb-onboard-step',
+                onclick: s.action,
+              },
+              h(
+                'span',
+                { class: 'gb-onboard-step-ic' },
+                Icon(s.icon, { size: 16, sw: 2.4 })
+              ),
+              h(
+                'span',
+                { class: 'gb-onboard-step-tx' },
+                h('span', { class: 'gb-onboard-step-l' }, s.label),
+                h('span', { class: 'gb-onboard-step-h' }, s.hint)
+              ),
+              Icon('chevron-right', { size: 16, sw: 2.4 })
+            )
           )
-        )
       ),
     ],
   });
@@ -1098,9 +1106,10 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
           'div',
           null,
           h('div', { class: 'gb-water-title' }, 'Water tracker'),
-          h('div', { class: 'gb-water-meta' }, consumedMl + ' ml / ' + goalMl + ' ml')
-        ),
-        h('div', { class: 'gb-water-chip' }, pct + '%')
+          // No % chip beside it: the glass fills to the same number, and the
+          // big figure says what's left. Three readings of one value was noise.
+          h('div', { class: 'gb-water-meta' }, consumedMl + ' of ' + goalMl + ' ml')
+        )
       ),
 
       h(
@@ -1248,7 +1257,7 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
    one only once it has begun (a snack, any time). */
 const SLOT_STARTS = { breakfast: 4, lunch: 11, dinner: 18, snack: 0 };
 
-function FoodCard({ food, onAddFood, onDeleteFood, onEditFood, onCopySlot }) {
+function FoodCard({ food, onAddFood, onDeleteFood, onEditFood, onCopySlot, copyableSlots }) {
   const total = Math.max(0, (food && food.totalCalories) || 0);
   const entries = (food && food.entries) || [];
   const groups = groupBySlot(entries);
@@ -1289,9 +1298,14 @@ function FoodCard({ food, onAddFood, onDeleteFood, onEditFood, onCopySlot }) {
       )
     );
 
-  // An empty slot that has begun (or the one we're in) offers yesterday's.
+  // An empty slot that has begun (or the one we're in) offers yesterday's,
+  // when yesterday had that meal at all (`copyableSlots`, null until known).
   const copyBtn = (g) =>
-    onCopySlot && isToday && (hourNow >= SLOT_STARTS[g.slot] || g.slot === nowSlot)
+    onCopySlot &&
+    isToday &&
+    copyableSlots &&
+    copyableSlots.has(g.slot) &&
+    (hourNow >= SLOT_STARTS[g.slot] || g.slot === nowSlot)
       ? h(
           'button',
           {
@@ -2658,6 +2672,7 @@ function ScreenFood({
   onDeleteFood,
   onEditFood,
   onCopySlot,
+  copyableSlots,
   weightKg,
 }) {
   const on = (k) => !features || features[k] !== false;
@@ -2672,7 +2687,7 @@ function ScreenFood({
         )
       : null,
     on('food')
-      ? h('div', { class: 'gb-dash-block' }, FoodCard({ food, onAddFood, onDeleteFood, onEditFood, onCopySlot }))
+      ? h('div', { class: 'gb-dash-block' }, FoodCard({ food, onAddFood, onDeleteFood, onEditFood, onCopySlot, copyableSlots }))
       : null,
     on('food') || on('water')
       ? h('div', { class: 'gb-dash-block' }, FoodSummaryLink({ onOpen: onOpenSummary }))

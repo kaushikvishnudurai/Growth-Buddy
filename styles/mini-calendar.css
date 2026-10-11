@@ -236,6 +236,11 @@
 }
 
 .gb-mini-cal-legend-item .dot.has-reminders {
+  /* A bar, as on the day (the inset bottom edge): as a dot it was the
+     Repeating swatch beside it in the same purple. */
+  width: 12px;
+  height: 3px;
+  border-radius: 2px;
   background: var(--iris-500);
 }
 

@@ -862,7 +862,7 @@ function TimerCard() {
         'div',
         { class: 'gb-focus-controls' },
         cycleEl,
-        h('div', { class: 'gb-score-heading' }, 'Focus timer'),
+        // No "Focus timer" heading: the page is titled Timer and the ring says FOCUS.
         subEl,
         FocusPicker(),
         h(

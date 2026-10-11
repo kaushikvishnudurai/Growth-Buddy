@@ -427,12 +427,13 @@ function ScreenFamily({ api }) {
     const canEdit = isOwner || m.isSelf;
     const canRemove = isOwner && m.relationship !== 'self' && !m.isOwner;
     const metaBits = [];
-    if (m.age != null) metaBits.push(m.age + ' yrs · ' + m.ageCategory);
+    // No-break spaces keep a number with its unit ("60 / kg" split across lines).
+    if (m.age != null) metaBits.push(m.age + '\u00a0yrs · ' + m.ageCategory);
     else metaBits.push('Age not set');
     if (m.gender) metaBits.push(m.gender);
     const hw = [
-      m.heightCm ? m.heightCm + ' cm' : null,
-      m.weightKg ? m.weightKg + ' kg' : null,
+      m.heightCm ? m.heightCm + '\u00a0cm' : null,
+      m.weightKg ? m.weightKg + '\u00a0kg' : null,
     ].filter(Boolean);
     if (hw.length) metaBits.push(hw.join(', '));
     if (m.profile && m.profile.dietPreference) metaBits.push(m.profile.dietPreference);

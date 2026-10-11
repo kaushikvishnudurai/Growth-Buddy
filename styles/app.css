@@ -1392,6 +1392,11 @@ body:has(.is-thinking, .gb-thinking)::after {
 }
 
 .gb-login-link {
+  /* Also used on <button>s (Timer's focus goal): drop the UA chrome. */
+  background: none;
+  border: 0;
+  padding: 0;
+  font-family: inherit;
   font-size: 0.8125rem;
   font-weight: 700;
   color: var(--brand-ink);
@@ -2509,6 +2514,17 @@ body:has(.is-thinking, .gb-thinking)::after {
 .gb-report-stat:first-child {
   border-left: none;
 }
+/* Progress's Today card: up to six tiles, three to a row. */
+.gb-report-grid--wrap {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.gb-report-grid--wrap .gb-report-stat:nth-child(3n + 1) {
+  border-left: none;
+}
+.gb-report-grid--wrap .gb-report-stat:nth-child(n + 4) {
+  border-top: 1px solid var(--surface-3);
+}
 .gb-report-stat-value {
   font-family: var(--font-display);
   font-weight: 800;
@@ -2527,38 +2543,6 @@ body:has(.is-thinking, .gb-thinking)::after {
   margin-top: 1px;
   font-size: 0.75rem;
   color: var(--fg3);
-}
-.gb-report-off {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 16px 18px;
-}
-.gb-report-off-text {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-.gb-report-off-ic {
-  display: inline-flex;
-  flex: none;
-  width: 38px;
-  height: 38px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 11px;
-  background: var(--surface-3);
-}
-.gb-report-off-title {
-  font-weight: 700;
-  color: var(--fg1);
-}
-.gb-report-off-sub {
-  font-size: 0.8125rem;
-  color: var(--fg3);
-  margin-top: 2px;
 }
 @media (max-width: 380px) {
   .gb-report-stat {
@@ -4082,6 +4066,11 @@ button.gb-seat:disabled {
   /* A long unbroken name ran under the row's pause/edit/freeze buttons. */
   overflow-wrap: anywhere;
   min-width: 0;
+  /* ...and a long one wrapped to ten lines; the full name is one tap away in Edit. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
 }
 .gb-row.is-paused .title,
 .gb-row.is-paused .sub {
@@ -5156,15 +5145,6 @@ button.gb-food-level {
   font-size: 0.78125rem;
   font-weight: 700;
 }
-.gb-water-chip {
-  background: color-mix(in srgb, var(--sky-500) 82%, white 18%);
-  color: var(--fg-on-brand);
-  border-radius: var(--radius-pill);
-  padding: 6px 10px;
-  font-size: 0.75rem;
-  font-weight: 800;
-  box-shadow: 0 5px 12px rgba(17, 132, 224, 0.28);
-}
 .gb-water-visual {
   display: flex;
   gap: 14px;
@@ -5436,9 +5416,6 @@ button.gb-food-level {
   background: color-mix(in srgb, var(--sky-700) 42%, var(--surface-2) 58%);
   color: #d8ecff;
 }
-[data-theme='dark'] .gb-water-chip {
-  background: linear-gradient(135deg, #58b8ff, #7f7bff);
-}
 [data-theme='dark'] .gb-water-add--custom {
   border-color: color-mix(in srgb, var(--sky-300) 60%, #7db9df 40%);
 }
@@ -5466,9 +5443,6 @@ button.gb-food-level {
   }
   .gb-sound-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .gb-water-actions--custom {
-    grid-template-columns: 1fr;
   }
   :root {
     --gutter: 16px;
@@ -5645,6 +5619,31 @@ button.gb-food-level {
   font-size: 1rem;
   font-weight: 800;
   color: var(--fg1);
+}
+/* The Completed fold: the app's caret instead of the browser's triangle. */
+.gb-goal-done-group > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  font-size: 0.875rem;
+  color: var(--fg2);
+  cursor: pointer;
+  list-style: none;
+}
+.gb-goal-done-group > summary::-webkit-details-marker {
+  display: none;
+}
+.gb-goal-done-group > summary:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+.gb-goal-done-caret {
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.gb-goal-done-group[open] .gb-goal-done-caret {
+  transform: rotate(180deg);
 }
 .gb-goal-section-count {
   min-width: 24px;
@@ -7343,6 +7342,8 @@ button.gb-food-level {
   display: flex;
   flex-wrap: wrap;
   gap: 10px 16px;
+  /* On a phone the day's heading came next with no gap and read as part of it. */
+  padding-bottom: 12px;
 }
 .gb-legend-title {
   /* Its own row: title plus five tags is a hair too wide for a phone, and the
@@ -7960,11 +7961,6 @@ button.gb-food-level {
   cursor: pointer;
   font-family: var(--font-body);
 }
-.gb-onboard-step.is-done {
-  cursor: default;
-  border-color: transparent;
-  background: var(--success-soft);
-}
 .gb-onboard-step-ic {
   flex: none;
   width: 32px;
@@ -7976,10 +7972,6 @@ button.gb-food-level {
   background: var(--brand-soft);
   color: var(--brand-soft-fg);
 }
-.gb-onboard-step.is-done .gb-onboard-step-ic {
-  background: var(--success);
-  color: var(--fg-on-brand);
-}
 .gb-onboard-step-tx {
   flex: 1;
   min-width: 0;
@@ -7990,10 +7982,6 @@ button.gb-food-level {
   font-weight: 700;
   font-size: 0.875rem;
   color: var(--fg1);
-}
-.gb-onboard-step.is-done .gb-onboard-step-l {
-  text-decoration: line-through;
-  color: var(--fg2);
 }
 .gb-onboard-step-h {
   font-size: 0.75rem;
