@@ -38,10 +38,13 @@ const check = (ok, what) => {
 };
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const browser = await puppeteer.connect({ browserURL: CDP, protocolTimeout: 60000 });
+const browser = await puppeteer.connect({ browserURL: CDP, protocolTimeout: 120000 });
 
 async function openPage(name, vp, stub) {
-  const page = await browser.newPage();
+  // Its own context: cookies are per host, not per port, so a tab of another
+  // run on localhost signing out would otherwise sign this one out too.
+  const ctx = await browser.createBrowserContext();
+  const page = await ctx.newPage();
   await page.setViewport(vp);
   await page.bringToFront(); // a background tab in a shared Chrome is throttled
   page.on('console', (m) => {
@@ -51,6 +54,8 @@ async function openPage(name, vp, stub) {
   });
   page.on('pageerror', (e) => failures.push(`[${name}] pageerror: ${String(e).slice(0, 200)}`));
   page.on('response', (r) => {
+    // The local login rate limit; signedIn waits it out and retries once.
+    if (r.status() === 429 && r.url().includes('/api/auth/login')) return;
     if (r.status() >= 400)
       failures.push(
         `[${name}] HTTP ${r.status()} ${r.request().method()} ${r.url().slice(0, 140)}`
@@ -65,11 +70,20 @@ async function signedIn(page, hash = '#/home') {
   if (await page.$('input[type=email]')) {
     await page.type('input[type=email]', EMAIL);
     await page.type('input[type=password]', PASSWORD);
-    await page.evaluate(() =>
-      [...document.querySelectorAll('button')]
-        .find((b) => /sign in/i.test(b.textContent || ''))
-        .click()
-    );
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const login = page.waitForResponse((r) => r.url().includes('/api/auth/login'), {
+        timeout: 30000,
+      });
+      await page.evaluate(() =>
+        [...document.querySelectorAll('button')]
+          .find((b) => /sign in/i.test(b.textContent || ''))
+          .click()
+      );
+      const res = await login;
+      if (res.status() !== 429) break;
+      if (attempt) failures.push('sign-in rate limited twice (HTTP 429)');
+      else await pause(20000);
+    }
     await page.waitForSelector('.gb-head', { timeout: 20000 });
     await page.goto(BASE + '/' + hash, { waitUntil: 'networkidle2' });
   }
@@ -164,7 +178,7 @@ for (const [vpName, vp] of Object.entries(VIEWPORTS)) {
     ),
     `[${vpName}] a query on the current screen repaints it`
   );
-  await page.close();
+  await page.browserContext().close();
 }
 
 // ---- Voice input follows what the platform really has ----
@@ -198,7 +212,7 @@ for (const [label, stub, expected] of cases) {
       });
     await page.keyboard.press('Escape');
     await pause(300);
-    await page.close();
+    await page.browserContext().close();
   }
 }
 
