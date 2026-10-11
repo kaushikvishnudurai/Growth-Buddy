@@ -1125,8 +1125,13 @@ async function putDocIfChanged() {
    as a synchronous mirror for the views that read them. The DB is the source
    of truth so these follow the user across devices; the cache is just the fast
    local read path. ponytail: one JSON blob + mirror, exactly like saveMoney. */
+// Saves made / still out, so a /api/auth/me read that raced one can keep this
+// device's prefs (loadSecondaryData).
+const uiPrefsSaves = { made: 0, out: 0 };
 function saveUiPrefs(patch) {
   if (!state.user || !patch) return;
+  uiPrefsSaves.made++;
+  uiPrefsSaves.out++;
   state.user.uiPrefs = Object.assign({}, state.user.uiPrefs || {}, patch);
   // Mirror into the cached session too. That cache is what the app boots from,
   // and it was only ever refreshed by /api/auth/me — so a pref saved here read
@@ -1138,7 +1143,7 @@ function saveUiPrefs(patch) {
   return api('/api/auth/ui-prefs', {
     method: 'PUT',
     body: JSON.stringify({ prefs: state.user.uiPrefs }),
-  }).catch((err) => {
+  }).finally(() => uiPrefsSaves.out--).catch((err) => {
     console.error('saveUiPrefs failed to reach database:', err);
     // The change shows on this device and would quietly undo itself on the next
     // sign-in. Offline is the banner's to say; a 401 signs out on its own.
@@ -2526,13 +2531,16 @@ async function apiFetch(path, options) {
    CacheStorage under gb.apiGet.<uid>.<path>, and only a fetch that got no
    response at all is answered from it; a server error is still an error.
    purgeUserCache drops the copies with the account (the key holds .<uid>.).
+   Not /api/auth/*: the cached session is the account's offline copy, and kept
+   current by saveUiPrefs; a saved /me was older, and wave 2 (EXS-3) put its
+   prefs back over the session, so an offline start re-saved them and failed.
    ponytail: no eviction; the keys are bounded by the distinct GET paths the app
    builds. Add an LRU like Workbox's maxEntries if dated paths ever pile up. */
 let servedSaved = false;
 function savedGetKey(path, opts) {
   const id = state.user && state.user.id;
   const get = !opts.method || String(opts.method).toUpperCase() === 'GET';
-  if (!isNative() || !id || !get || opts.body || opts.raw || path.startsWith('/api/auth/export')) return null;
+  if (!isNative() || !id || !get || opts.body || opts.raw || path.startsWith('/api/auth/')) return null;
   return 'gb.apiGet.' + id + '.' + path;
 }
 
@@ -3072,6 +3080,8 @@ async function loadSecondaryData() {
     // The account itself too: a reload boots from the cached session, so a name,
     // timezone, feature or preference changed on another device never arrived.
     const before = accountShape(state.user);
+    // A pref save still out when /me reads, or made after, is not in its answer.
+    const prefsMark = uiPrefsSaves.out ? -1 : uiPrefsSaves.made;
     const [goals, notifications, food, money, dailyLogs, photoHistory, weekly, me] =
       await Promise.all([
         api('/api/goals').catch(soft('goals')),
@@ -3085,6 +3095,9 @@ async function loadSecondaryData() {
       ]);
     // Signed out while these were out: see loadData's gone().
     if (!state.user || (state.user.id || state.user.email) !== who) return;
+    // Taking /me's older prefs dropped e.g. the first-load timeFormat from the
+    // cached session, so an offline cold start re-saved it and failed.
+    if (me && prefsMark !== uiPrefsSaves.made) delete me.uiPrefs;
     if (me) syncUserSession(me);
     const accountChanged = !!me && accountShape(state.user) !== before;
     // What didn't arrive, for a screen to say so in place of its empty state (Money:

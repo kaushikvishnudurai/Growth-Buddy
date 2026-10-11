@@ -282,7 +282,12 @@ test('every drink today can be seen and deleted behind Show all (EXM-8)', async 
 });
 
 test('Home water pill logs a glass in one tap, and Undo takes it back (FRC-6)', async ({ page, account }) => {
-  await boot(page, account);
+  // The pill is on the Daily brief, which the full Home carries. While the Getting started
+  // checklist is up, Home shows only the widgets with data plus the checklist (onboard), so
+  // this account is past it.
+  const uiPrefs = { ...(account.user.uiPrefs || {}), onboardingDone: true };
+  await call(page, account, '/api/auth/ui-prefs', { prefs: uiPrefs }, 'PUT');
+  await boot(page, { ...account, user: { ...account.user, uiPrefs } });
   await go(page, 'home');
   const pill = main(page).getByRole('button', { name: /% water\. Add 250 ml$/ });
   await expect(pill).toHaveText(/25% water/);
