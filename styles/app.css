@@ -14719,9 +14719,10 @@ button.gb-tone-chip:focus-visible {
   margin: 0;
 }
 
-/* Header row */
+/* Header row: under the sentence, as its footnote */
 .gb-health-top {
   grid-column: 1 / -1;
+  margin-top: calc(var(--space-2) - var(--space-5));
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -15198,6 +15199,10 @@ button.gb-tone-chip:focus-visible {
   stroke: var(--fg3);
   stroke-width: 1.5;
   stroke-linejoin: round;
+}
+/* Blood pressure: diastolic is the second path, a step quieter than systolic. */
+.gb-ledger-line path + path {
+  stroke-opacity: 0.5;
 }
 .gb-ledger-line.is-narrow,
 .gb-ledger-narrow {
