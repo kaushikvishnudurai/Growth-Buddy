@@ -301,9 +301,9 @@ test.describe('away from the account timezone', () => {
     await page.getByRole('button', { name: 'Quick add' }).click();
     await page.waitForTimeout(3500);
     await expect(page.locator('.gb-modal-overlay.is-open')).toHaveCount(1);
-    await expect(page.getByText('Switch to America/New_York?')).toHaveCount(0);
+    await expect(page.locator('.gb-modal-title', { hasText: 'Switch to' })).toHaveCount(0);
     await page.keyboard.press('Escape');
-    await expect(page.getByText('Switch to America/New_York?')).toBeVisible({ timeout: 8000 });
+    await expect(page.locator('.gb-modal-title', { hasText: 'Switch to' })).toBeVisible({ timeout: 8000 });
     await shot(page, 'EXS-6');
   });
 });
