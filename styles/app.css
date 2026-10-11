@@ -14697,29 +14697,53 @@ button.gb-tone-chip:focus-visible {
 }
 
 /* =====================================================================
-   Health screen (scripts/health.js): today's Apple Health / Health Connect
-   readings in grouped cards. Cards flow two-up once there is room, so no
-   media query. Labels in body type, every number in Space Mono, a missing
-   reading is a muted dash.
+   Health screen (scripts/health.js): source line + "Log a reading", today
+   told as a sentence (display type, every number a mono button), the "Last
+   night" band (the night on an 18:00 -> 12:00 track, 13 earlier nights
+   fading under it), then the ledger: one row per tracked metric, one column
+   per day (14, or 7 when the card is under 560px: a container query), with
+   today lit as a column through every row. Then the history sheet and the
+   log form. Every number in Space Mono; a missing value is a muted dash. The
+   band's grow-in is the screen's only motion. Touch sizes: the
+   `pointer: coarse` block at the end, which must stay last here.
    ===================================================================== */
 .gb-health {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
-  gap: var(--space-3);
-  padding: var(--space-3) var(--gutter) var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  max-width: 1080px;
+  padding: var(--space-4) var(--gutter) var(--space-8);
 }
+.gb-health h2,
+.gb-health h3 {
+  margin: 0;
+}
+
+/* Header row */
 .gb-health-top {
   grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-2);
+  gap: var(--space-3);
 }
-.gb-health-top p {
+.gb-health-src {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 200px;
   margin: 0;
-  color: var(--fg3);
   font-size: var(--text-sm);
+  line-height: var(--leading-snug);
+  color: var(--fg2);
+}
+.gb-health-src strong {
+  color: var(--fg1);
+}
+.gb-health-src strong + span {
+  color: var(--fg3);
 }
 .gb-health-actions {
   display: flex;
@@ -14727,106 +14751,688 @@ button.gb-tone-chip:focus-visible {
   align-items: center;
   gap: var(--space-2);
 }
-.gb-health-notice .gb-health-actions,
-.gb-health-card > .gb-health-actions {
-  margin-top: var(--space-3);
-}
-.gb-health-link {
-  min-height: 44px;
-  padding: 0 var(--space-2);
-  border: 0;
-  background: none;
-  font: inherit;
-  font-size: var(--text-sm);
-  font-weight: 700;
-  color: var(--brand-ink);
-  cursor: pointer;
-}
-.gb-health-card {
+
+/* Last night */
+.gb-health-sleep {
+  grid-column: 1 / -1;
   min-width: 0;
   padding: var(--space-4);
 }
-.gb-health-notice {
-  grid-column: 1 / -1;
-}
-.gb-health-notice p {
-  max-width: 62ch;
-  margin: var(--space-2) 0 0;
-  color: var(--fg2);
-  line-height: var(--leading-normal);
-}
-/* The measure: a ruler under every card head, a tick each 8px and a taller
-   one each 40px. The same graduations mark the water glass on Food and the
-   day's meals there, so the body's numbers read as one instrument. */
-.gb-health-head {
+.gb-health-sleep-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
   gap: var(--space-2);
-  margin-bottom: var(--space-3);
-  padding-bottom: 14px;
-  color: var(--brand);
-  background:
-    repeating-linear-gradient(to right, var(--border-strong) 0 1px, transparent 1px 40px)
-      left bottom / 100% 9px no-repeat,
-    repeating-linear-gradient(to right, var(--border) 0 1px, transparent 1px 8px) left bottom /
-      100% 5px no-repeat;
 }
-.gb-health-head h2 {
-  margin: 0;
+.gb-health-sleep-head h2,
+.gb-health-group h2 {
   font-family: var(--font-display);
   font-weight: 800;
   font-size: 1.0625rem;
   color: var(--fg1);
 }
-.gb-health-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: var(--space-3);
+.gb-health-sleep-figs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-5);
+  margin-top: var(--space-3);
 }
-/* Bed to wake is two times: give it the width of two readings. */
-.gb-health-sleep .gb-health-stat:first-child {
-  grid-column: span 2;
-}
-.gb-health-stat {
+.gb-health-sleep-main {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  min-width: 0;
 }
-.gb-health-label {
+.gb-health-dur {
+  font-family: var(--font-mono);
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--fg1);
+}
+.gb-health-dur.is-empty {
+  font-weight: 400;
+  color: var(--fg3);
+}
+.gb-health-span {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--fg2);
+}
+.gb-health-sstats,
+.gb-health-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  margin: 0;
+}
+.gb-health-sstat dt {
   font-size: var(--text-xs);
   color: var(--fg3);
 }
-.gb-health-val {
+.gb-health-sstat dd {
+  margin: 2px 0 0;
   font-family: var(--font-mono);
-  font-size: 1.375rem;
-  line-height: 1.15;
-  letter-spacing: -0.02em;
+  font-size: var(--text-sm);
   font-weight: 700;
   color: var(--fg1);
-  overflow-wrap: anywhere;
 }
-.gb-health-val small {
-  margin-left: 4px;
-  font-size: var(--text-xs);
-  font-weight: 400;
-  color: var(--fg3);
+.gb-health-band {
+  margin-top: var(--space-4);
 }
-.gb-health-val.is-empty {
-  color: var(--fg3);
-  font-weight: 400;
-}
-.gb-health-asof {
+.gb-health-ticks {
+  position: relative;
+  height: 1.25em;
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
   color: var(--fg3);
 }
-.gb-health-workouts {
+.gb-health-ticks span {
+  position: absolute;
+  left: calc(var(--i) * 100% / 6);
+  transform: translateX(-50%);
+}
+.gb-health-ticks span:first-child {
+  transform: none;
+}
+.gb-health-ticks span:last-child {
+  transform: translateX(-100%);
+}
+/* One gridline every 3 h, under the bars. */
+.gb-health-track,
+.gb-health-nights {
+  background-image: linear-gradient(to right, var(--border) 1px, transparent 1px);
+  background-size: calc(100% / 6) 100%;
+}
+.gb-health-track {
+  position: relative;
+  height: 16px;
+  margin-top: 4px;
+  border-radius: var(--radius-pill);
+  background-color: var(--surface-2);
+}
+.gb-health-track.is-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  font-size: var(--text-xs);
+  color: var(--fg3);
+}
+.gb-health-lastbar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--from);
+  width: var(--len);
+  border-radius: var(--radius-pill);
+  background: var(--brand-fill);
+  transform-origin: left center;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .gb-health-lastbar.is-growing {
+    animation: gb-health-grow 420ms var(--ease-out) both;
+  }
+}
+@keyframes gb-health-grow {
+  from {
+    transform: scaleX(0);
+  }
+}
+.gb-health-nights {
+  display: grid;
+  gap: 3px;
+  margin-top: 6px;
+}
+.gb-health-night {
+  position: relative;
+  height: 4px;
+}
+.gb-health-night i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--from);
+  width: var(--len);
+  border-radius: var(--radius-pill);
+  background: var(--fg2);
+  opacity: calc(0.75 - var(--age) * 0.045);
+}
+
+/* Today, in a sentence: display type, every number a mono button. */
+.gb-health-hero {
+  min-width: 0;
+  max-width: 46rem;
+}
+.gb-health-lead {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(1.5rem, 1.05rem + 1.9vw, 2.25rem);
+  line-height: 1.22;
+  letter-spacing: -0.015em;
+  color: var(--fg1);
+  text-wrap: pretty;
+}
+.gb-health-measures {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-body);
+  line-height: var(--leading-snug);
+  color: var(--fg2);
+}
+.gb-health-fact {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  /* Space Mono's space is a full cell wide: pull "6h 58m" back into one word. */
+  letter-spacing: -0.045em;
+  word-spacing: -0.3em;
+  white-space: nowrap;
+  color: var(--brand-ink);
+  text-decoration: underline;
+  text-decoration-color: var(--brand-soft);
+  text-decoration-thickness: 0.12em;
+  text-underline-offset: 0.18em;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.gb-health-keep {
+  white-space: nowrap;
+}
+.gb-health-measures .gb-health-fact {
+  font-size: 0.96em;
+}
+@media (hover: hover) {
+  .gb-health-fact:hover {
+    text-decoration-color: currentColor;
+  }
+}
+
+/* The ledger: one row per tracked metric, one column per day, today lit as a
+   column through every row. --n is how many days show (14, or 7 when narrow);
+   --label is the name column. The cells and the day heads share one flex row
+   shape, so the spine, heads and marks line up without measuring anything. */
+.gb-ledger {
+  --n: 14;
+  --label: 11.5rem;
+  --pad: var(--space-4);
+  min-width: 0;
+  padding: var(--space-4) 0 var(--space-3);
+  container-type: inline-size;
+}
+.gb-ledger-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
+  padding: 0 var(--pad);
+}
+.gb-ledger h2 {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.0625rem;
+  color: var(--fg1);
+}
+.gb-ledger-hint {
+  font-size: var(--text-xs);
+  color: var(--fg3);
+}
+.gb-ledger-body {
+  --c0: 0; /* first visible column, for the entrance's stagger */
+  position: relative;
+  margin-top: var(--space-2);
+  padding: 0 var(--pad);
+}
+/* Today's column, under everything: right edge of the marks area, one day wide. */
+.gb-ledger-spine {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: var(--pad);
+  width: calc((100% - 2 * var(--pad) - var(--label)) / var(--n));
+  border-radius: var(--radius-md);
+  background: var(--brand-soft);
+  pointer-events: none;
+}
+.gb-ledger-head,
+.gb-ledger-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--label) 1fr;
+  align-items: center;
+}
+.gb-ledger-days,
+.gb-ledger-marks {
+  display: flex;
+  min-width: 0;
+}
+.gb-ledger-day,
+.gb-ledger-cell {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.gb-ledger-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: var(--space-2) 0 var(--space-1);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: 1.1;
+  color: var(--fg3);
+  text-transform: uppercase;
+}
+.gb-ledger-day b {
+  font-weight: 700;
+  color: var(--fg2);
+}
+.gb-ledger-day.is-today,
+.gb-ledger-day.is-today b {
+  color: var(--brand-ink);
+}
+.gb-ledger-day.is-today {
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: -0.02em;
+}
+.gb-ledger-group {
+  position: relative;
+  padding: var(--space-3) 0 var(--space-1);
+  font-family: var(--font-body);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg3);
+}
+.gb-ledger-row {
+  width: 100%;
+  min-height: 52px;
+  padding: var(--space-1) 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+.gb-ledger-group + .gb-ledger-row {
+  border-top-color: transparent;
+}
+@media (hover: hover) {
+  .gb-ledger-row:hover .gb-ledger-name {
+    color: var(--brand-ink);
+  }
+  .gb-ledger-row:hover .gb-ledger-cell:not(.is-today) i,
+  .gb-ledger-row:hover .gb-ledger-cell:not(.is-today) b {
+    background: var(--fg1);
+  }
+}
+.gb-ledger-row:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+.gb-ledger-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding-right: var(--space-3);
+}
+.gb-ledger-name {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--fg1);
+  overflow-wrap: anywhere;
+}
+.gb-ledger-val {
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--fg1);
+  font-variant-numeric: tabular-nums;
+}
+.gb-ledger-val small {
+  margin-left: 0.3em;
+  font-size: var(--text-2xs);
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--fg3);
+}
+.gb-ledger-val em {
+  margin-left: 0.5em;
+  font-size: var(--text-2xs);
+  font-style: normal;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--fg3);
+}
+.gb-ledger-val.is-empty {
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--fg3);
+}
+/* Marks: 32px tall, 4px inset so a dot at the top or bottom isn't clipped. */
+.gb-ledger-marks {
+  position: relative;
+  height: 40px;
+}
+.gb-ledger-cells {
+  position: absolute;
+  inset: 0;
+  display: flex;
+}
+.gb-ledger-cell {
+  position: relative;
+  height: 100%;
+}
+.gb-ledger-cell.is-gap::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 4px;
+  width: 3px;
+  height: 3px;
+  margin-left: -1.5px;
+  border-radius: 50%;
+  background: var(--border-strong);
+}
+.gb-ledger-cell i {
+  position: absolute;
+  left: 50%;
+  bottom: 4px;
+  width: min(10px, 58%);
+  height: calc((100% - 8px) * var(--h));
+  transform: translateX(-50%);
+  border-radius: 2px;
+  background: var(--fg2);
+  opacity: 0.55;
+  transform-origin: bottom center;
+}
+.gb-ledger-cell b {
+  position: absolute;
+  left: 50%;
+  bottom: calc(4px + (100% - 8px) * var(--y));
+  width: 7px;
+  height: 7px;
+  transform: translate(-50%, 50%);
+  border-radius: 50%;
+  background: var(--fg2);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+.gb-ledger-cell b.is-second {
+  width: 6px;
+  height: 6px;
+  background: var(--fg3);
+}
+.gb-ledger-cell.is-today i,
+.gb-ledger-cell.is-today b {
+  background: var(--brand-fill);
+  opacity: 1;
+  box-shadow: 0 0 0 2px var(--brand-soft);
+}
+.gb-ledger-line {
+  position: absolute;
+  inset: 4px 0;
+  width: 100%;
+  height: calc(100% - 8px);
+  overflow: visible;
+}
+.gb-ledger-line path {
+  fill: none;
+  stroke: var(--fg3);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+.gb-ledger-line.is-narrow,
+.gb-ledger-narrow {
+  display: none;
+}
+.gb-ledger-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin: var(--space-3) var(--pad) 0;
+  padding-top: var(--space-3);
+  border-top: 1px dashed var(--border-strong);
+  font-size: var(--text-xs);
+  color: var(--fg3);
+}
+.gb-ledger-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.gb-ledger-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--fg2);
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .gb-ledger-chip:hover {
+    border-color: var(--brand-edge);
+    color: var(--brand-ink);
+  }
+}
+.gb-ledger.is-empty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-5) var(--pad);
+}
+.gb-ledger.is-empty p {
+  margin: 0;
+  max-width: 38rem;
+  color: var(--fg2);
+}
+.gb-ledger.is-loading {
+  padding: var(--space-4);
+}
+/* The entrance, once per page load (health.js `entered`): the sentence rises
+   while its numbers count up (JS), the Today column draws down, then the
+   marks rise column by column, oldest day first, each row a beat behind the
+   one above; lines draw left to right; today's mark lands last with a small
+   settle. The night band's earlier nights slide in under the growing bar.
+   Transform, opacity and stroke only; nothing here under reduced motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .gb-health.is-entering .gb-health-hero {
+    animation: gb-health-rise 420ms var(--ease-out) both;
+  }
+  .gb-health.is-entering .gb-ledger-spine {
+    transform-origin: top center;
+    animation: gb-health-spine 560ms var(--ease-out) 140ms both;
+  }
+  .gb-health.is-entering .gb-ledger-head {
+    animation: gb-health-rise 360ms var(--ease-out) 120ms both;
+  }
+  .gb-health.is-entering .gb-ledger-cell i,
+  .gb-health.is-entering .gb-ledger-cell b {
+    --enter: calc(300ms + (var(--c) - var(--c0)) * 34ms + var(--r) * 26ms);
+  }
+  .gb-health.is-entering .gb-ledger-cell i {
+    animation: gb-health-bar 460ms var(--ease-out) var(--enter) both;
+  }
+  .gb-health.is-entering .gb-ledger-cell b {
+    animation: gb-health-dot 380ms var(--ease-out) calc(var(--enter) + 60ms) both;
+  }
+  .gb-health.is-entering .gb-ledger-cell.is-today i {
+    animation-timing-function: var(--ease-bounce);
+    animation-duration: 560ms;
+  }
+  .gb-health.is-entering .gb-ledger-line path {
+    stroke-dasharray: 1;
+    animation: gb-health-draw 760ms var(--ease-out) calc(320ms + var(--r) * 26ms) both;
+  }
+  .gb-health-band.is-entering .gb-health-night i {
+    animation: gb-health-night 440ms var(--ease-out) calc(360ms + var(--age) * 36ms) both;
+  }
+}
+@keyframes gb-health-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@keyframes gb-health-spine {
+  from {
+    opacity: 0;
+    transform: scaleY(0);
+  }
+}
+@keyframes gb-health-bar {
+  from {
+    transform: translateX(-50%) scaleY(0);
+  }
+}
+@keyframes gb-health-dot {
+  from {
+    transform: translate(-50%, 50%) scale(0);
+  }
+}
+@keyframes gb-health-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes gb-health-night {
+  from {
+    opacity: 0;
+    transform: translateX(-14px);
+  }
+}
+
+/* Narrow: the last 7 days, a slimmer name column. */
+@container (max-width: 560px) {
+  .gb-ledger-body {
+    --n: 7;
+    --label: 8.5rem;
+    --c0: 7;
+  }
+  .gb-ledger-day:nth-child(-n + 7),
+  .gb-ledger-cell:nth-child(-n + 7) {
+    display: none;
+  }
+  .gb-ledger-line.is-wide,
+  .gb-ledger-wide {
+    display: none;
+  }
+  .gb-ledger-line.is-narrow {
+    display: block;
+  }
+  .gb-ledger-narrow {
+    display: inline;
+  }
+}
+
+/* Traces: the tile's 14 days and the sheet's chart share these. */
+.gb-health-trace {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: auto;
+  overflow: visible;
+}
+.gb-health-trace rect {
+  fill: var(--fg3);
+  opacity: 0.6;
+}
+.gb-health-trace rect.is-today {
+  fill: var(--brand-fill);
+  opacity: 1;
+}
+.gb-health-line {
+  fill: none;
+  stroke: var(--fg2);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.gb-health-trace circle {
+  fill: var(--fg2);
+}
+.gb-health-trace circle.is-today {
+  fill: var(--brand-fill);
+}
+.gb-health-avg {
+  stroke: var(--fg3);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+
+/* History sheet */
+.gb-modal.gb-health-sheet {
+  max-width: 460px;
+}
+.gb-health-range {
+  margin-bottom: var(--space-3);
+}
+.gb-health-chart {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 6px;
+}
+.gb-health-yaxis,
+.gb-health-xaxis {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--fg3);
+}
+.gb-health-yaxis {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  text-align: right;
+}
+.gb-health-xaxis {
+  grid-column: 2;
+  display: flex;
+  justify-content: space-between;
+}
+.gb-health-stats {
+  margin-top: var(--space-4);
+}
+.gb-health-sub {
+  margin: var(--space-5) 0 var(--space-2);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.9375rem;
+  color: var(--fg1);
+}
+.gb-health-rows {
   list-style: none;
   margin: 0;
   padding: 0;
 }
-.gb-health-workouts li {
+.gb-health-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -14834,31 +15440,87 @@ button.gb-tone-chip:focus-visible {
   padding: var(--space-2) 0;
   border-top: 1px solid var(--border);
 }
-.gb-health-workouts li:first-child {
+.gb-health-row:first-child {
   border-top: 0;
 }
-.gb-health-wk-name {
+.gb-health-row-main {
   display: flex;
   flex-direction: column;
+  gap: 2px;
   min-width: 0;
 }
-.gb-health-wk-name strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.gb-health-row-val {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--fg1);
 }
-.gb-health-wk-name span,
-.gb-health-none {
-  margin: 0;
+.gb-health-row-when {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--fg3);
+}
+.gb-health-row-note {
+  font-size: var(--text-xs);
+  color: var(--fg2);
+  overflow-wrap: anywhere;
+}
+.gb-health-row-src {
+  flex-shrink: 0;
   font-size: var(--text-xs);
   color: var(--fg3);
 }
-.gb-health-wk-nums {
+.gb-health-row-tools {
   display: flex;
-  gap: var(--space-3);
+  flex-shrink: 0;
+}
+.gb-health-row-tools .gb-btn--icon {
+  min-width: 36px;
+}
+.gb-health-none {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--fg3);
+}
+.gb-health-add {
+  margin-top: var(--space-4);
+}
+
+/* Log form */
+.gb-health-form .gb-field[hidden] {
+  display: none;
+}
+.gb-health-valrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.gb-health-valrow .gb-input {
+  flex: 1 1 0;
+  min-width: 0;
+  font-family: var(--font-mono);
+}
+.gb-health-unit {
   flex-shrink: 0;
   font-family: var(--font-mono);
   font-size: var(--text-sm);
+  color: var(--fg2);
+}
+/* fieldError puts its note right after the input, inside the row: under it. */
+.gb-health-valrow .gb-field-error {
+  order: 1;
+  flex-basis: 100%;
+}
+
+/* Touch sizes: last in the section, so they win over the rules above. */
+@media (pointer: coarse) {
+  .gb-health-row-tools .gb-btn--icon {
+    min-width: 44px;
+  }
+  .gb-ledger-chip {
+    min-height: 44px;
+  }
 }
 
 /* Habit form: the health link's target and its unit on one row. */

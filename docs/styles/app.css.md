@@ -69,7 +69,7 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
 | Notes — composer, editor (photos: develop-in animation, drop zone, picked ring), cards with a photo cover |
 | Notes: the page (inside the Notes views block: margin rule on cards, opener and editor, reading measure, headline title, 660px sheet) |
 | Goals: the trail (after the milestone edit row: numbered stops on one path, Next stop, mono counts, horizon reach line) |
-| Health screen (`.gb-health-*`: auto-fit card grid, mono values, `.is-empty` dash, `.gb-health-asof`) — last in the file |
+| Health screen (`.gb-health-*`: header row, the "Last night" band (`.gb-health-track`, `.gb-health-lastbar.is-growing`, `.gb-health-night` fading by `--age`), tile grids with SVG traces (`.gb-health-trace`), the history sheet (`.gb-health-sheet`, chart axes, rows) and the log form (`.gb-health-valrow`); a `pointer: coarse` block that must stay LAST in the section), then the habit form's `.gb-habit-link-target` — last in the file |
 
 ## Editing rules
 

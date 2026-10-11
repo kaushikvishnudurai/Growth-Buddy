@@ -566,61 +566,107 @@ export async function readLastNight() {
   return nightFromSamples(samples, localKey(new Date()));
 }
 
-/* Everything the Health screen shows, or null off-device. A field is null when
-   the store has nothing for it (no watch, no scale, no access). Body readings
-   are the newest in 90 days: nobody weighs in daily. */
-export async function readHealthSummary() {
+/* ---- Sync to the account ---------------------------------------------------
+   The phone's numbers go to /api/health/sync so the Health screen can show
+   history, and the web can show the phone's days. One row per type per day:
+   daily totals for the sum metrics, the newest reading of each day for the
+   rest. Re-sending a day overwrites it on the server, so a day still in
+   progress is simply sent again later. */
+
+const SYNC_SUMS = { steps: 'steps', distance: 'distance', calories: 'calories', floors: 'flightsClimbed' };
+const SYNC_LATEST = {
+  restingHeartRate: 'restingHeartRate',
+  heartRateVariability: 'heartRateVariability',
+  oxygenSaturation: 'oxygenSaturation',
+  respiratoryRate: 'respiratoryRate',
+  weight: 'weight',
+  height: 'height',
+  bodyFat: 'bodyFat',
+  bloodPressure: 'bloodPressure',
+};
+// HealthKit's percent unit is 0-1, Health Connect's 0-100. No real SpO2 or
+// body-fat reading is at or under 1%, so <= 1 means a fraction.
+const PERCENT = new Set(['oxygenSaturation', 'bodyFat']);
+
+/* Sum of one type over [from, to), or null. Every bucket is added: the store
+   may cut its day buckets on UTC, so one local day can come back as two. */
+async function sumBetween(Health, dataType, from, to) {
+  try {
+    const { samples } = await Health.queryAggregated({
+      dataType,
+      startDate: from.toISOString(),
+      endDate: to.toISOString(),
+      bucket: 'day',
+      aggregation: 'sum',
+    });
+    const total = (samples || []).reduce((n, s) => n + (Number(s.value) || 0), 0);
+    return total > 0 ? total : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/** Readings for /api/health/sync covering the last `days` local days (today included), or null off-device. */
+export async function readHealthForSync(days = 7) {
   if (!(await healthAvailable())) return null;
   const Health = healthPlugin();
-  const since = (days) => new Date(Date.now() - days * 86400000);
-  const latest = async (type, days = 90) => (await readSamples(Health, type, since(days), 1))[0] || null;
-  const [steps, distance, calories, flights, sleep, heart, resting, hrv, spo2, resp, weight, height, fat, bp] =
-    await Promise.all([
-      sumToday(Health, 'steps'),
-      sumToday(Health, 'distance'),
-      sumToday(Health, 'calories'),
-      sumToday(Health, 'flightsClimbed'),
-      readLastNight(),
-      readSamples(Health, 'heartRate', midnightToday(), 500),
-      latest('restingHeartRate', 14),
-      latest('heartRateVariability', 14),
-      latest('oxygenSaturation', 14),
-      latest('respiratoryRate', 14),
-      latest('weight'),
-      latest('height', 3650),
-      latest('bodyFat'),
-      latest('bloodPressure'),
-    ]);
-  const workouts = await Health.queryWorkouts({
-    startDate: since(7).toISOString(),
-    endDate: new Date().toISOString(),
-    limit: 20,
-    ascending: false,
-  })
+  const out = [];
+  const start = midnightToday();
+  start.setDate(start.getDate() - (days - 1));
+  const dayStarts = Array.from({ length: days }, (_, i) => {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    return d;
+  });
+
+  await Promise.all(
+    Object.entries(SYNC_SUMS).flatMap(([type, dataType]) =>
+      dayStarts.map(async (from) => {
+        const to = new Date(from);
+        to.setDate(from.getDate() + 1);
+        const v = await sumBetween(Health, dataType, from, to > new Date() ? new Date() : to);
+        if (v == null) return;
+        out.push({ type, day: localKey(from), value: type === 'distance' ? Math.round(v / 100) / 10 : Math.round(v) });
+      })
+    )
+  );
+
+  // Workouts: total minutes per day; the note names what they were.
+  const workouts = await Health.queryWorkouts({ startDate: start.toISOString(), endDate: new Date().toISOString(), limit: 200 })
     .then((r) => (r && r.workouts) || [])
     .catch(() => []);
-  const bpm = heart.map((s) => Number(s.value)).filter((v) => v > 0);
-  return {
-    steps: steps == null ? null : Math.round(steps),
-    distanceMeters: distance,
-    activeCalories: calories == null ? null : Math.round(calories),
-    floors: flights == null ? null : Math.round(flights),
-    sleep,
-    heartRate: bpm.length
-      ? {
-          avg: Math.round(bpm.reduce((a, b) => a + b, 0) / bpm.length),
-          min: Math.min(...bpm),
-          max: Math.max(...bpm),
-        }
-      : null,
-    restingHeartRate: resting,
-    heartRateVariability: hrv,
-    oxygenSaturation: spo2,
-    respiratoryRate: resp,
-    weight,
-    height,
-    bodyFat: fat,
-    bloodPressure: bp,
-    workouts,
-  };
+  const byDay = {};
+  workouts.forEach((w) => {
+    const day = localKey(new Date(w.startDate));
+    const e = (byDay[day] = byDay[day] || { min: 0, kinds: new Set() });
+    e.min += (Number(w.duration) || 0) / 60; // seconds
+    if (w.workoutType) e.kinds.add(String(w.workoutType).replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase());
+  });
+  Object.entries(byDay).forEach(([day, e]) => {
+    if (e.min >= 1) out.push({ type: 'workout', day, value: Math.round(e.min), note: [...e.kinds].join(', ').slice(0, 280) || null });
+  });
+
+  // The newest reading of each day for everything measured rather than counted.
+  await Promise.all(
+    Object.entries(SYNC_LATEST).map(async ([type, dataType]) => {
+      const samples = await readSamples(Health, dataType, start, 200);
+      const seen = new Set();
+      samples
+        .slice()
+        .sort((a, b) => Date.parse(b.endDate || b.startDate) - Date.parse(a.endDate || a.startDate))
+        .forEach((s) => {
+          const at = new Date(s.endDate || s.startDate);
+          const day = localKey(at);
+          if (seen.has(day)) return;
+          let value = type === 'bloodPressure' ? Number(s.systolic) : Number(s.value);
+          if (!Number.isFinite(value) || value <= 0) return;
+          if (PERCENT.has(type) && value <= 1) value *= 100;
+          seen.add(day);
+          const r = { type, day, value: Math.round(value * 10) / 10, measuredAt: at.toISOString() };
+          if (type === 'bloodPressure') r.value2 = Number(s.diastolic);
+          out.push(r);
+        });
+    })
+  );
+  return out;
 }

@@ -136,7 +136,7 @@ import {
   readTodaySteps,
   readLastNight,
   readHealthValue,
-  readHealthSummary,
+  readHealthForSync,
   healthAvailable,
   requestHealthAccess,
   cancelPendingLocalNotifications,
@@ -2466,6 +2466,8 @@ function resetUserState() {
   state.goals = [];
   state.reminders = [];
   state.wellness = emptyWellness();
+  // Health readings are someone's health data: never shown to the next account.
+  Object.assign(health, { readings: null, loading: false, available: null, syncing: false, syncedAt: null });
   state.goalProgress = {};
   state.weeklyReviews = {};
   // Another account must not see this one's Insights, nor wait out its throttle.
@@ -2821,6 +2823,9 @@ async function loadData() {
     flushOutbox();
     reSyncDeviceAlarms();
     loadWaterUsualHours();
+    // Linked habits count today's readings; without them a typed-in walk is missed.
+    if ((state.habits || []).some((hb) => hb.healthLink && hb.healthLink !== 'sleep')) loadHealthReadings();
+    syncHealthFromPhone(); // ends with autoTickHealthHabits
     autoTickHealthHabits();
   } catch (err) {
     if (refresh) {
@@ -3502,9 +3507,7 @@ async function autoTickHealthHabits() {
   await Promise.all(
     [...new Set(open.map(linkOf))].map(async (link) => {
       values[link] =
-        link === 'sleep'
-          ? sleepHours((state.wellness.sleepByDate || {})[todayKey()])
-          : await readHealthValue(link);
+        link === 'sleep' ? sleepHours((state.wellness.sleepByDate || {})[todayKey()]) : await healthTodayValue(link);
     })
   );
   // A habit that records a number gets the reading when it is the same thing.
@@ -3542,20 +3545,49 @@ async function autoLogSleep() {
   }
 }
 
-/* The Health screen's data. Read on opening it and on Refresh, never cached:
-   it is the phone's own data, and a stale copy would only disagree with it. */
-const health = { loading: false, summary: null, available: null };
-async function loadHealth() {
-  if (health.loading) return;
+/* Health readings: typed in by hand, or synced from the phone's health store
+   (/api/health/*, HealthReadingService). The Health screen draws them; linked
+   habits count today's. Loaded on opening Health, and at boot when a habit
+   links to one, never cached locally: the server's copy is the only one. */
+const health = { readings: null, loading: false, available: null, syncing: false, syncedAt: null };
+const healthDays = 90;
+
+async function loadHealthReadings() {
+  if (health.loading || !state.user) return;
   health.loading = true;
-  if (state.screen === 'health') render();
   try {
-    health.available = await healthAvailable();
-    health.summary = health.available ? await readHealthSummary() : null;
+    health.readings = await api('/api/health/readings?days=' + healthDays);
+    autoTickHealthHabits(); // a walk typed in on another device counts here too
+  } catch (err) {
+    if (health.readings == null) health.readings = [];
+    if (state.screen === 'health') toastError(err, 'Could not load your health readings.');
   } finally {
     health.loading = false;
     if (state.screen === 'health') render();
   }
+}
+
+/* The phone's last 7 days to the account. At most every 15 minutes unless
+   asked; never opens a permission sheet (readHealthForSync only reads). */
+const HEALTH_SYNC_EVERY_MS = 15 * 60000;
+async function syncHealthFromPhone({ force = false } = {}) {
+  if (!isNative() || !state.user || health.syncing) return;
+  if (!force && health.syncedAt && Date.now() - health.syncedAt < HEALTH_SYNC_EVERY_MS) return;
+  health.syncing = true;
+  if (state.screen === 'health') render();
+  try {
+    health.available = await healthAvailable();
+    const rows = health.available ? await readHealthForSync(7) : null;
+    if (rows && rows.length) await api('/api/health/sync', { method: 'POST', body: JSON.stringify({ readings: rows }) });
+    if (rows) health.syncedAt = new Date();
+    if (rows && rows.length) await loadHealthReadings();
+  } catch (err) {
+    if (force) toastError(err, 'Could not sync from your phone.');
+  } finally {
+    health.syncing = false;
+    if (state.screen === 'health') render();
+  }
+  autoTickHealthHabits();
 }
 
 async function connectHealth() {
@@ -3570,8 +3602,42 @@ async function connectHealth() {
     return;
   }
   autoLogSleep();
+  await syncHealthFromPhone({ force: true });
+}
+
+/* Hand-typed readings. Each resolves once the server has it, then repaints;
+   the sheet that called it closes on success and shows the refusal otherwise. */
+async function saveHealthReading(reading) {
+  const saved = await api('/api/health/readings', { method: 'POST', body: JSON.stringify(reading) });
+  health.readings = [saved, ...(health.readings || [])];
+  toastSuccess('Reading saved.');
+  render();
   autoTickHealthHabits();
-  await loadHealth();
+}
+async function updateHealthReading(id, patch) {
+  const saved = await api('/api/health/readings/' + encodeURIComponent(id), { method: 'PUT', body: JSON.stringify(patch) });
+  health.readings = (health.readings || []).map((r) => (r.id === id ? saved : r));
+  toastSuccess('Reading updated.');
+  render();
+  autoTickHealthHabits();
+}
+async function deleteHealthReading(id) {
+  await api('/api/health/readings/' + encodeURIComponent(id), { method: 'DELETE' });
+  health.readings = (health.readings || []).filter((r) => r.id !== id);
+  toastSuccess('Reading deleted.');
+  render();
+}
+
+/* Today's value for a habit's health link: what the phone says now (or its
+   last sync, off the phone) plus everything typed in by hand today. */
+async function healthTodayValue(link) {
+  const day = todayKey();
+  const rows = (health.readings || []).filter((r) => r.type === link && r.day === day);
+  const phoneRow = rows.filter((r) => r.source === 'phone').reduce((n, r) => Math.max(n, Number(r.value || 0)), 0);
+  const typed = rows.filter((r) => r.source !== 'phone').reduce((n, r) => n + Number(r.value || 0), 0);
+  const live = isNative() ? await readHealthValue(link) : null;
+  const total = (live != null ? live : phoneRow) + typed;
+  return total > 0 ? Math.round(total * 10) / 10 : null;
 }
 
 /* After a saved focus session: today's focus minutes from the server, so two
@@ -13629,20 +13695,33 @@ const SCREENS = {
     render: () => ScreenAchievements(achievementProps()),
   },
   health: {
-    headerLabel: () => 'From your phone',
+    headerLabel: () => (isNative() ? 'Your phone and you' : 'Readings you log'),
     headerName: () => 'Health',
     render: () => {
-      if (health.available == null && !health.loading && isNative()) loadHealth();
+      if (health.readings == null && !health.loading) loadHealthReadings();
+      syncHealthFromPhone();
       return lazyScreen(
         () => import('./health.js'),
         (m) =>
           m.ScreenHealth({
             native: isNative(),
-            available: health.available !== false,
-            loading: health.loading || (isNative() && health.available == null),
-            summary: health.summary,
+            today: todayKey(),
+            readings: health.readings,
+            sleepByDate: (state.wellness && state.wellness.sleepByDate) || {},
+            phone: isNative()
+              ? {
+                  available: health.available,
+                  syncing: health.syncing,
+                  syncedAt: health.syncedAt,
+                  store: /android/i.test(navigator.userAgent) ? 'Health Connect' : 'Apple Health',
+                }
+              : null,
+            onSave: saveHealthReading,
+            onUpdate: updateHealthReading,
+            onDelete: deleteHealthReading,
+            onEditSleep: openSleepSchedule,
             onConnect: connectHealth,
-            onRefresh: loadHealth,
+            onSync: () => syncHealthFromPhone({ force: true }),
           })
       );
     },
@@ -15816,7 +15895,8 @@ document.addEventListener('visibilitychange', () => {
     refreshNotifications();
     syncDeviceTimezone(); // reopened after a flight
     refreshDayIfStale();
-    autoTickHealthHabits(); // walked since the app was last open
+    syncHealthFromPhone(); // walked since the app was last open
+    autoTickHealthHabits();
     autoLogSleep(); // woke up and opened the app
   }
 });

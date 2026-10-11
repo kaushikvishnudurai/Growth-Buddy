@@ -645,3 +645,23 @@ CREATE TABLE IF NOT EXISTS `bank_feed_consents` (
 -- floors, minutes). Existing rows: NULL, not linked.
 ALTER TABLE habits ADD COLUMN health_link VARCHAR(16) NULL;
 ALTER TABLE habits ADD COLUMN health_target DOUBLE NULL;
+
+-- Health readings (manual + phone sync). A new table, so a guarded CREATE
+-- rather than an ALTER; identical to the CREATE TABLE in tableCreationQueries.sql.
+CREATE TABLE IF NOT EXISTS `health_readings` (
+  `id` char(36) NOT NULL,
+  `user_id` char(36) NOT NULL,
+  `type` varchar(24) NOT NULL,
+  `value` double NOT NULL,
+  `value2` double DEFAULT NULL,
+  `day` date NOT NULL,
+  `measured_at` timestamp NULL DEFAULT NULL,
+  `source` varchar(8) NOT NULL DEFAULT 'manual',
+  `note` varchar(280) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `ix_health_user_day` (`user_id`,`day`),
+  KEY `ix_health_user_type_day` (`user_id`,`type`,`day`),
+  CONSTRAINT `fk_health_readings_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
