@@ -2868,7 +2868,7 @@ async function loadData() {
     overlayOutbox();
     flushOutbox();
     reSyncDeviceAlarms();
-    loadWaterUsualHours();
+    waterHoursLoad = loadWaterUsualHours();
     // Linked habits count today's readings; without them a typed-in walk is missed.
     if ((state.habits || []).some((hb) => hb.healthLink && hb.healthLink !== 'sleep')) loadHealthReadings();
     syncHealthFromPhone(); // ends with autoTickHealthHabits
@@ -3062,6 +3062,11 @@ async function loadSecondaryData() {
     loadCalendarFoodForDate(state.selectedDate);
     // Needs state.food, so it can only run once wave 2 has landed.
     recordTrendsToday();
+    // Boot's usual-drink-hours answer lands in this paint, not one of its own
+    // (perf.e2e counts boot paints); a slow one still paints when it lands.
+    if (waterHoursLoad) await Promise.race([waterHoursLoad, new Promise((r) => setTimeout(r, 1500))]);
+    waterHoursLoad = null;
+    if (isStaleSession(gen)) return;
     // Data is complete now, so achievement detection can baseline/fire safely.
     state.achReady = true;
 
@@ -8667,10 +8672,11 @@ function repaintCalendarGrid() {
    (`waterUsualHours`, [] = doesn't log water regularly) to nudge water only
    for people who log it. Fetched when either can use it; Home repaints only
    when the answer changed. */
+let waterHoursLoad = null; // boot's request, which wave 2 waits on (loadSecondaryData)
 function loadWaterUsualHours() {
   const nudge = waterReminderPrefs().on;
-  if (!nudge && !featureOn('water')) return;
-  api('/api/water/times?days=14')
+  if (!nudge && !featureOn('water')) return null;
+  return api('/api/water/times?days=14')
     .then((times) => {
       const hours = usualDrinkHours(times);
       const changed = JSON.stringify(hours) !== JSON.stringify(state.waterUsualHours);

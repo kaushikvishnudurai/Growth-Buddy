@@ -357,7 +357,7 @@ it silently landed on Home. Don't reintroduce a second list.
   `state.insightHistory`, then `repaintReport()`s — which the 7/30 toggle uses too: it swaps only
   the Report sections whose markup changed and holds the view on the first unchanged one. `loadWaterUsualHours()` runs after wave 1 when
   the water nudge or the Water feature is on; `state.waterUsualHours` feeds `reSyncDeviceAlarms` (nudge on) and Home's
-  `waterUsualHours` prop (the one-thing card nudges water only for people who log it); Home re-renders only when it changed, and only once wave 2 has landed (`achReady`; before that loadSecondaryData's own repaint shows it). `flushWaterQueue` repaints only when it had glasses to send. Both keep boot at perf.e2e's 6 `#root` paints.
+  `waterUsualHours` prop (the one-thing card nudges water only for people who log it); Home re-renders only when it changed, and only once wave 2 has landed (`achReady`): loadSecondaryData waits up to 1.5 s for boot's request (`waterHoursLoad`) so it lands in wave 2's own repaint. `flushWaterQueue` repaints only when it had glasses to send. Both keep boot at perf.e2e's 6 `#root` paints.
 - **`reSyncDeviceAlarms()` after every change to its four inputs.** In the app, timed reminders,
   the water nudge and habit reminders are on-device alarms (`syncDeviceAlarms` in `push.js`)
   because the server can only deliver to a Web Push subscription the WebView can't register. The
