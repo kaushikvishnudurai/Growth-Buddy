@@ -698,6 +698,7 @@ function WellnessQuick({ usual, askMood, onConfirmSleep, onQuickMood, onAddSleep
           'div',
           { class: 'gb-wellness-quick-opts' },
           // The mood dialog's own scale, so a one-tap answer reads like a full one.
+          // `usual`: the night asked about just above, which the same tap also logs.
           [
             ['low', 'Low'],
             ['okay', 'Okay'],
@@ -706,7 +707,7 @@ function WellnessQuick({ usual, askMood, onConfirmSleep, onQuickMood, onAddSleep
           ].map(([value, label]) =>
             h(
               'button',
-              { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--compact', onclick: () => onQuickMood(value) },
+              { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--compact', onclick: () => onQuickMood(value, usual) },
               label
             )
           )
