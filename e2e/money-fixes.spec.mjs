@@ -2,7 +2,7 @@
 // docs/evidence/money/<ID>.jpg.
 import { test, expect, signInFast, go } from './fixtures.mjs';
 
-const API = process.env.GB_API || 'http://localhost:8591';
+const API = process.env.GB_API || 'http://localhost:8590';
 const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 const today = () => new Date().toLocaleDateString('en-CA');
 const boot = (page, account) => signInFast(page, { ...account, user: { ...account.user, timezone: tz } });

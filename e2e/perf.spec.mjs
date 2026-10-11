@@ -2,7 +2,7 @@
 import { test, expect, signInFast } from './fixtures.mjs';
 import { seedAccount } from './seed.mjs';
 
-const API = process.env.GB_API || 'http://localhost:8591';
+const API = process.env.GB_API || 'http://localhost:8590';
 const shot = (page, id) =>
   page.screenshot({ path: `docs/evidence/perf/${id}.jpg`, type: 'jpeg', quality: 70 });
 // The boot module: /scripts/app.js on the dev server, assets/index-<hash>.js in a build.
