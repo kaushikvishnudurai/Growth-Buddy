@@ -367,6 +367,10 @@ public class MoneyService {
         state.setUserId(userId);
         state.setData(doc);
         MoneyState saved = repo.save(state);
+        // A first document arrives without accountsSeeded (the GET that seeded had
+        // nothing to stamp it on). Stamped on the next GET, that write changed the
+        // version under this writer, and its following save 409'd against itself.
+        seedAccounts(saved);
         return new Versioned(saved.getData(), versionOf(saved));
     }
 
