@@ -172,4 +172,38 @@ class GoalServiceTest {
                 .thenReturn(List.<Object[]>of(new Object[] {g.getId(), 2L}));
         assertThat(service.toggleComplete(USER, g.getId()).clearedTaskCount()).isEqualTo(2);
     }
+
+    /**
+     * HOS-2/HOS-3: two devices (or two PUTs landing out of order) each saved
+     * the whole blob, and the last to arrive erased the other's milestones.
+     * The client now sends the progressVersion it edited; a stale one is a 409
+     * that carries the current goal, and a missing one (old builds) still saves.
+     */
+    @Test
+    void aStaleProgressVersionIs409WithTheCurrentBlob() throws Exception {
+        Goal g = goal();
+        g.setProgressJson("{\"milestones\":[{\"title\":\"Tab one\"}]}");
+        when(goals.lockByIdAndUserId(g.getId(), USER)).thenReturn(Optional.of(g));
+        when(goals.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        String seenByTab2 = GoalResponse.progressVersion(null);
+
+        assertThatThrownBy(() -> service.saveProgress(USER, g.getId(),
+                JSON.readTree("{\"milestones\":[{\"title\":\"Tab two\"}]}"), seenByTab2))
+                .isInstanceOfSatisfying(GoalService.StaleProgress.class, e -> {
+                    assertThat(e.current.progress().toString()).contains("Tab one");
+                    assertThat(e.current.progressVersion()).isEqualTo(GoalResponse.progressVersion(g.getProgressJson()));
+                });
+        assertThat(g.getProgressJson()).contains("Tab one");
+
+        String current = GoalResponse.progressVersion(g.getProgressJson());
+        GoalResponse ok = service.saveProgress(USER, g.getId(),
+                JSON.readTree("{\"milestones\":[{\"title\":\"Tab one\"},{\"title\":\"Tab two\"}]}"),
+                "\"" + current + "\"");
+        assertThat(ok.progress().toString()).contains("Tab two");
+        assertThat(ok.progressVersion()).isNotEqualTo(current);
+
+        // No If-Match: an old build keeps saving as before.
+        service.saveProgress(USER, g.getId(), JSON.readTree("{\"x\":1}"), null);
+        assertThat(g.getProgressJson()).isEqualTo("{\"x\":1}");
+    }
 }

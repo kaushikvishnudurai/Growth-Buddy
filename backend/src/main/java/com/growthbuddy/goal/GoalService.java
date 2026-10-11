@@ -182,11 +182,30 @@ public class GoalService {
      * {@link #MAX_PROGRESS_BYTES}; null clears it.
      */
     @Transactional
-    public GoalResponse saveProgress(UUID userId, UUID goalId, com.fasterxml.jackson.databind.JsonNode progress) {
-        Goal goal = requireGoal(userId, goalId);
+    public GoalResponse saveProgress(UUID userId, UUID goalId, com.fasterxml.jackson.databind.JsonNode progress,
+            String ifMatch) {
+        Goal goal = goals.lockByIdAndUserId(goalId, userId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Goal not found"));
+        // Optimistic concurrency (HOS-2/HOS-3). No header = an old build: saves as before.
+        if (ifMatch != null && !ifMatch.isBlank()) {
+            String base = ifMatch.trim().replaceFirst("^W/", "").replace("\"", "");
+            if (!base.equals(GoalResponse.progressVersion(goal.getProgressJson()))) {
+                throw new StaleProgress(withActions(goal, actions.countByGoalId(goalId)));
+            }
+        }
         goal.setProgressJson(progressJson(progress));
         Goal saved = goals.save(goal);
         return withActions(saved, actions.countByGoalId(goalId));
+    }
+
+    /** A progress save on top of a newer blob; the controller answers 409 with {@link #current}. */
+    static final class StaleProgress extends RuntimeException {
+        final transient GoalResponse current;
+
+        StaleProgress(GoalResponse current) {
+            super("This goal was changed on another device.", null, false, false);
+            this.current = current;
+        }
     }
 
     static String progressJson(com.fasterxml.jackson.databind.JsonNode progress) {

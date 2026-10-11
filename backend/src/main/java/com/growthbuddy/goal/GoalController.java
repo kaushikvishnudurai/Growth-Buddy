@@ -55,9 +55,16 @@ public class GoalController {
 
     /** Persist the goal's progress blob (milestones, day-tracker, …). */
     @PutMapping("/{id}/progress")
-    public GoalResponse saveProgress(@PathVariable UUID id,
+    public org.springframework.http.ResponseEntity<GoalResponse> saveProgress(@PathVariable UUID id,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "If-Match", required = false) String ifMatch,
             @RequestBody(required = false) com.fasterxml.jackson.databind.JsonNode progress) {
-        return service.saveProgress(CurrentUser.id(), id, progress);
+        // 409 carries the current goal (its progress + progressVersion) so the
+        // client can re-apply its edit without another GET.
+        try {
+            return org.springframework.http.ResponseEntity.ok(service.saveProgress(CurrentUser.id(), id, progress, ifMatch));
+        } catch (GoalService.StaleProgress stale) {
+            return org.springframework.http.ResponseEntity.status(HttpStatus.CONFLICT).body(stale.current);
+        }
     }
 
     @GetMapping("/{id}/actions")

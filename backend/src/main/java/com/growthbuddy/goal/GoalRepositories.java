@@ -14,6 +14,15 @@ interface GoalRepository extends JpaRepository<Goal, UUID> {
     Optional<Goal> findByIdAndUserId(UUID id, UUID userId);
 
     boolean existsByIdAndUserId(UUID id, UUID userId);
+
+    /**
+     * The goal, locked until the transaction ends (SELECT ... FOR UPDATE), for a
+     * progress save: two saves carrying the same If-Match would otherwise both
+     * pass the check and one would overwrite the other.
+     */
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select g from Goal g where g.id = :id and g.userId = :userId")
+    Optional<Goal> lockByIdAndUserId(@Param("id") UUID id, @Param("userId") UUID userId);
 }
 
 interface GoalActionRepository extends JpaRepository<GoalAction, UUID> {
