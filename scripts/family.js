@@ -74,7 +74,7 @@ const AGE_PLURAL = {
   Teenager: 'Teenagers',
   Adult: 'Adults',
   'Senior Citizen': 'Seniors',
-  Unknown: 'Unknown',
+  Unknown: 'without a birth date',
 };
 /** Comma-separated string <-> trimmed list. */
 function toList(str) {
@@ -99,6 +99,18 @@ function fmtDay(iso) {
     day: 'numeric',
     month: 'short',
   });
+}
+
+/** Enter in any of `inputs` runs `fn`, as a form's submit would. */
+function onEnter(fn, ...inputs) {
+  inputs.forEach((el) =>
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.isComposing) {
+        e.preventDefault();
+        fn();
+      }
+    })
+  );
 }
 
 function field(labelText, control, hint) {
@@ -381,7 +393,7 @@ function ScreenFamily({ api }) {
     const canRemove = isOwner && m.relationship !== 'self' && !m.isOwner;
     const metaBits = [];
     if (m.age != null) metaBits.push(m.age + ' yrs · ' + m.ageCategory);
-    else metaBits.push(m.ageCategory || 'Age unknown');
+    else metaBits.push('Age not set');
     if (m.gender) metaBits.push(m.gender);
     const hw = [
       m.heightCm ? m.heightCm + ' cm' : null,
@@ -1134,7 +1146,8 @@ function ScreenFamily({ api }) {
     const manualInput = h('input', {
       type: 'text',
       class: 'gb-input',
-      placeholder: 'Add an ingredient (e.g. Drumstick)',
+      'aria-label': 'Add an ingredient',
+      placeholder: 'e.g. Drumstick',
     });
     const addManual = () => {
       const name = manualInput.value.trim();
@@ -1205,58 +1218,52 @@ function ScreenFamily({ api }) {
     };
 
     const hasPlan = !!model.plan;
-    return h(
-      'section',
-      { class: 'gb-family-planner' },
+    // One card for everything a new plan is made from. It sits under the plan
+    // when there is one: the plan is what someone opens Today to read, and it
+    // used to start below the fold, under a form.
+    const builder = h(
+      'div',
+      { class: 'gb-card gb-family-builder' },
+      hasPlan ? h('h3', { class: 'gb-family-builder-title' }, 'Make a new plan') : null,
+      h('h4', { class: 'gb-family-subhead' }, 'Available groceries'),
       h(
         'div',
-        { class: 'gb-section-head' },
-        h('h2', null, "Today's meal plan"),
-        Icon('sparkles', { size: 18, color: 'var(--iris-500)' })
+        { class: 'gb-family-grocery-actions' },
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-btn gb-btn--soft',
+            disabled: model.scanBusy,
+            onclick: () => photoInput.click(),
+          },
+          Icon('camera', { size: 16 }),
+          model.scanBusy ? 'Scanning…' : 'Scan groceries'
+        ),
+        photoInput
       ),
+      model.scanMsg ? h('p', { class: 'gb-family-scan-msg', role: 'status' }, model.scanMsg) : null,
       h(
         'div',
-        { class: 'gb-card gb-family-grocery' },
-        h('h3', { class: 'gb-family-subhead' }, 'Available groceries'),
+        { class: 'gb-family-manual-add' },
+        manualInput,
         h(
-          'div',
-          { class: 'gb-family-grocery-actions' },
-          h(
-            'button',
-            {
-              type: 'button',
-              class: 'gb-btn gb-btn--soft',
-              disabled: model.scanBusy,
-              onclick: () => photoInput.click(),
-            },
-            Icon('camera', { size: 16 }),
-            model.scanBusy ? 'Scanning…' : 'Scan groceries'
-          ),
-          photoInput
-        ),
-        model.scanMsg ? h('p', { class: 'gb-family-scan-msg' }, model.scanMsg) : null,
-        h(
-          'div',
-          { class: 'gb-family-manual-add' },
-          manualInput,
-          h(
-            'button',
-            {
-              type: 'button',
-              class: 'gb-btn gb-btn--soft gb-btn--sm',
-              'aria-label': 'Add ingredient',
-              onclick: addManual,
-            },
-            Icon('plus', { size: 16 })
-          )
-        ),
-        ingredientChips()
+          'button',
+          {
+            type: 'button',
+            class: 'gb-btn gb-btn--soft gb-btn--sm gb-family-add-btn',
+            'aria-label': 'Add ingredient',
+            onclick: addManual,
+          },
+          Icon('plus', { size: 16 })
+        )
       ),
+      ingredientChips(),
       members.length
         ? h(
             'div',
-            { class: 'gb-card gb-family-planfor' },
-            h('h3', { class: 'gb-family-subhead' }, 'Plan for'),
+            { class: 'gb-family-builder-group' },
+            h('h4', { class: 'gb-family-subhead' }, 'Plan for'),
             memberSelector,
             // The server reads an empty pick as "everyone", so none picked
             // planned for the whole family behind a row of unlit chips.
@@ -1278,14 +1285,31 @@ function ScreenFamily({ api }) {
           ? thinkingLabel('Cooking up a plan')
           : [
               Icon('sparkles', { size: 17, color: '#fff' }),
-              hasPlan ? 'Regenerate plan' : 'Generate meal plan',
+              hasPlan ? 'Make a new plan' : 'Make a meal plan',
             ]
       ),
-      model.planError ? h('p', { class: 'gb-msg-error' }, model.planError) : null,
-      hasPlan ? planActions() : null,
-      hasPlan ? planView(model.plan) : null,
+      model.planError ? h('p', { class: 'gb-msg-error', role: 'alert' }, model.planError) : null
+    );
+    return h(
+      'section',
+      { class: 'gb-family-planner' },
+      h(
+        'div',
+        { class: 'gb-section-head' },
+        h('h2', null, "Today's meal plan"),
+        hasPlan && model.plan.createdAt
+          ? h('span', { class: 'gb-family-head-meta' }, fmtDay(planDay(model.plan.createdAt)))
+          : null
+      ),
+      hasPlan ? planView(model.plan, planActions()) : null,
+      builder,
       pastPlans()
     );
+  }
+
+  /* The local day a plan was made on, as YYYY-MM-DD for fmtDay. */
+  function planDay(createdAt) {
+    return new Date(createdAt).toLocaleDateString('en-CA');
   }
 
   /* ---- plan history ----
@@ -1450,7 +1474,6 @@ function ScreenFamily({ api }) {
     return h(
       'label',
       { class: 'gb-family-cook' },
-      Icon('chef-hat', { size: 14, color: 'var(--fg3)' }),
       h(
         'select',
         {
@@ -1488,24 +1511,33 @@ function ScreenFamily({ api }) {
     );
   }
 
-  function mealList(meal, items, opts) {
+  /* One stop on the day rail: the node, the meal, who cooks it, its dishes. */
+  function mealStop(meal, items, opts) {
     const list = Array.isArray(items) ? items.filter(Boolean) : [];
     if (!list.length) return null;
     const live = !!(opts && opts.live);
     return h(
-      'div',
-      { class: 'gb-family-meal' },
+      'li',
+      { class: 'gb-family-stop' },
       h(
-        'div',
-        { class: 'gb-family-meal-head' },
-        Icon(meal.icon, { size: 16, color: 'var(--leaf-600)' }),
-        h('h4', null, meal.label),
-        live ? cookPicker(meal.label, opts.cookId, opts.onCook) : null
+        'span',
+        { class: 'gb-family-stop-node', 'aria-hidden': 'true' },
+        Icon(meal.icon, { size: 16 })
       ),
       h(
-        'ul',
-        { class: 'gb-family-meal-list' },
-        list.map((d) => dishItem(d, live))
+        'div',
+        { class: 'gb-family-stop-body' },
+        h(
+          'div',
+          { class: 'gb-family-meal-head' },
+          h('h3', null, meal.label),
+          live ? cookPicker(meal.label, opts.cookId, opts.onCook) : null
+        ),
+        h(
+          'ul',
+          { class: 'gb-family-meal-list' },
+          list.map((d) => dishItem(d, live))
+        )
       )
     );
   }
@@ -1518,46 +1550,19 @@ function ScreenFamily({ api }) {
     });
   }
 
-  function chipRow(label, values, tone) {
-    const list = Array.isArray(values) ? values.filter(Boolean) : [];
-    if (!list.length) return null;
-    return h(
-      'div',
-      { class: 'gb-family-plan-aside' },
-      h('h4', null, label),
-      h(
-        'div',
-        { class: 'gb-family-chips' },
-        list.map((v) =>
-          h('span', { class: 'gb-family-chip gb-family-chip--' + (tone || 'soft') }, String(v))
-        )
-      )
-    );
-  }
+  const asList = (v) => (Array.isArray(v) ? v.filter(Boolean).map(String) : []);
 
-  function planView(resp) {
+  function planView(resp, actions) {
     const plan = (resp && resp.plan) || {};
     const ns = plan.nutritionSummary || {};
     const isFallback = resp && resp.source === 'fallback';
     // Cooks and recipes only on the live plan, not on a saved favourite's copy.
     const live = !!(resp && resp.planId && model.plan && resp.planId === model.plan.planId);
     const cooks = plan.cooks || {};
-
-    const nutritionCard = h(
-      'div',
-      { class: 'gb-card gb-family-nutrition' },
-      h('h3', { class: 'gb-family-subhead' }, 'Nutrition summary'),
-      h(
-        'div',
-        { class: 'gb-family-nutrition-grid' },
-        nutriStat('Protein', ns.protein_g, 'g'),
-        nutriStat('Fibre', ns.fibre_g, 'g'),
-        nutriStat('Calories', ns.calories_kcal, 'kcal')
-      ),
-      ns.balancedFor
-        ? h('p', { class: 'gb-family-card-meta' }, 'Balanced for: ' + ns.balancedFor)
-        : null
-    );
+    const avoided = asList(plan.allergensAvoided);
+    const tips = asList(plan.suggestions);
+    const buys = asList(plan.purchaseRecommendations);
+    const hasStats = [ns.protein_g, ns.fibre_g, ns.calories_kcal].some((v) => Number(v) > 0);
 
     return h(
       'div',
@@ -1565,37 +1570,81 @@ function ScreenFamily({ api }) {
       isFallback
         ? h(
             'div',
-            { class: 'gb-family-plan-banner' },
+            { class: 'gb-family-plan-banner', role: 'status' },
             Icon('circle-alert', { size: 15 }),
-            h('span', null, 'AI was unavailable — showing a simple template.')
+            h('span', null, 'AI was unavailable, so this is a simple template.')
           )
         : null,
+      // The day in order, breakfast to dinner, on one line: the order is real.
       h(
-        'div',
-        { class: 'gb-card gb-family-meals' },
+        'ol',
+        { class: 'gb-card gb-family-rail', 'aria-label': 'Meals, in order' },
         MEALS.map((m) =>
-          mealList(m, plan[m.key], {
+          mealStop(m, plan[m.key], {
             live,
             cookId: cooks[m.key] || null,
             onCook: (id) => assignCook(m.key, id),
           })
         )
       ),
-      nutritionCard,
-      chipRow('Allergens avoided', plan.allergensAvoided, 'ok'),
-      plan.suggestions && plan.suggestions.length
+      actions || null,
+      hasStats || ns.balancedFor || avoided.length
         ? h(
             'div',
-            { class: 'gb-card gb-family-suggestions' },
-            h('h3', { class: 'gb-family-subhead' }, 'AI suggestions'),
-            h(
-              'ul',
-              { class: 'gb-family-meal-list' },
-              plan.suggestions.map((s) => h('li', null, String(s)))
-            )
+            { class: 'gb-card gb-family-nutrition' },
+            hasStats
+              ? h(
+                  'div',
+                  { class: 'gb-family-nutrition-grid' },
+                  nutriStat('Protein', ns.protein_g, 'g'),
+                  nutriStat('Fibre', ns.fibre_g, 'g'),
+                  nutriStat('Calories', ns.calories_kcal, 'kcal')
+                )
+              : null,
+            ns.balancedFor
+              ? h('p', { class: 'gb-family-balanced' }, 'Balanced for ' + ns.balancedFor)
+              : null,
+            avoided.length
+              ? h(
+                  'ul',
+                  { class: 'gb-family-safe-list', 'aria-label': 'Allergens avoided' },
+                  avoided.map((a) =>
+                    h('li', null, Icon('shield-check', { size: 15, color: 'var(--success)' }), a)
+                  )
+                )
+              : null
           )
         : null,
-      chipRow('Shopping suggestions', plan.purchaseRecommendations, 'soft')
+      // Buddy's notes run to a dozen sentences; folded, they stop burying the
+      // plan's own actions under them.
+      tips.length || buys.length
+        ? h(
+            'details',
+            { class: 'gb-card gb-family-notes' },
+            h(
+              'summary',
+              null,
+              h('span', null, 'Notes from Buddy'),
+              h('span', { class: 'gb-family-count' }, String(tips.length + buys.length)),
+              Icon('chevron-down', { size: 16, className: 'gb-family-notes-caret' })
+            ),
+            tips.length
+              ? h(
+                  'ul',
+                  { class: 'gb-family-note-list' },
+                  tips.map((t) => h('li', null, t))
+                )
+              : null,
+            buys.length ? h('h3', { class: 'gb-family-subhead' }, 'Worth buying') : null,
+            buys.length
+              ? h(
+                  'ul',
+                  { class: 'gb-family-note-list' },
+                  buys.map((t) => h('li', null, t))
+                )
+              : null
+          )
+        : null
     );
   }
 
@@ -1604,7 +1653,13 @@ function ScreenFamily({ api }) {
     return h(
       'div',
       { class: 'gb-family-stat' },
-      h('div', { class: 'gb-family-stat-value' }, has ? value + ' ' + unit : '—'),
+      h(
+        'div',
+        { class: 'gb-family-stat-value' },
+        has
+          ? [String(Math.round(Number(value))), h('span', { class: 'gb-family-stat-unit' }, unit)]
+          : '—'
+      ),
       h('div', { class: 'gb-family-stat-label' }, label)
     );
   }
@@ -1626,7 +1681,13 @@ function ScreenFamily({ api }) {
         h(
           'span',
           { class: 'gb-family-chip gb-family-chip--soft' },
-          counts[c] + ' ' + (counts[c] > 1 ? AGE_PLURAL[c] : c === 'Senior Citizen' ? 'Senior' : c)
+          counts[c] +
+            ' ' +
+            (counts[c] > 1 || c === 'Unknown'
+              ? AGE_PLURAL[c]
+              : c === 'Senior Citizen'
+                ? 'Senior'
+                : c)
         )
       );
     return h(
@@ -1646,7 +1707,8 @@ function ScreenFamily({ api }) {
           h(
             'div',
             { class: 'gb-family-summary-count' },
-            members.length + (members.length === 1 ? ' member' : ' members')
+            h('span', { class: 'gb-family-count-lg' }, String(members.length)),
+            members.length === 1 ? ' member' : ' members'
           ),
           h(
             'div',
@@ -1964,12 +2026,7 @@ function ScreenFamily({ api }) {
     return h(
       'section',
       { class: 'gb-family-planner' },
-      h(
-        'div',
-        { class: 'gb-section-head' },
-        h('h2', null, 'Weekly meal planner'),
-        Icon('calendar-days', { size: 18, color: 'var(--iris-500)' })
-      ),
+      h('div', { class: 'gb-section-head' }, h('h2', null, 'Weekly meal planner')),
       h(
         'div',
         { class: 'gb-card gb-family-grocery' },
@@ -2065,7 +2122,7 @@ function ScreenFamily({ api }) {
     return h(
       'div',
       { class: 'gb-card gb-family-weekday' },
-      h('h4', { class: 'gb-family-weekday-label' }, d.label || 'Day ' + (d.day || index + 1)),
+      h('h3', { class: 'gb-family-weekday-label' }, d.label || 'Day ' + (d.day || index + 1)),
       line('Breakfast', 'breakfast', d.breakfast),
       line('Lunch', 'lunch', d.lunch),
       line('Snack', 'snack', d.snack),
@@ -2080,12 +2137,11 @@ function ScreenFamily({ api }) {
     const nameI = h('input', {
       type: 'text',
       class: 'gb-input',
-      'aria-label': 'Item name',
-      placeholder: 'Item (e.g. Tomatoes)',
+      placeholder: 'e.g. Tomatoes',
     });
     const catI = h(
       'select',
-      { class: 'gb-input', 'aria-label': 'Category' },
+      { class: 'gb-input' },
       ['Vegetable', 'Fruit', 'Grain', 'Pulse', 'Dairy', 'Protein', 'Spice', 'Other'].map((c) =>
         h('option', { value: c, selected: c === 'Vegetable' }, c)
       )
@@ -2093,10 +2149,9 @@ function ScreenFamily({ api }) {
     const qtyI = h('input', {
       type: 'text',
       class: 'gb-input',
-      'aria-label': 'Quantity',
-      placeholder: 'Qty (e.g. 500 g)',
+      placeholder: 'e.g. 500 g',
     });
-    const expI = h('input', { type: 'date', class: 'gb-input', 'aria-label': 'Expiry date' });
+    const expI = h('input', { type: 'date', class: 'gb-input' });
     const leftI = h('input', { type: 'checkbox' });
     const lowI = h('input', { type: 'checkbox' });
     const add = () => {
@@ -2116,6 +2171,8 @@ function ScreenFamily({ api }) {
         }
       );
     };
+
+    onEnter(add, nameI, qtyI);
 
     const scanInput = h('input', {
       type: 'file',
@@ -2149,12 +2206,7 @@ function ScreenFamily({ api }) {
     return h(
       'section',
       { class: 'gb-family-planner' },
-      h(
-        'div',
-        { class: 'gb-section-head' },
-        h('h2', null, 'Pantry'),
-        Icon('sprout', { size: 18, color: 'var(--leaf-600)' })
-      ),
+      h('div', { class: 'gb-section-head' }, h('h2', null, 'Pantry')),
       h(
         'div',
         { class: 'gb-card gb-family-grocery' },
@@ -2174,17 +2226,24 @@ function ScreenFamily({ api }) {
         h(
           'div',
           { class: 'gb-family-pantry-form' },
-          nameI,
-          catI,
-          qtyI,
-          field('Expiry (optional)', expI),
-          h('label', { class: 'gb-family-check' }, leftI, h('span', null, 'This is a leftover')),
-          h('label', { class: 'gb-family-check' }, lowI, h('span', null, 'Running low')),
+          h('div', { class: 'gb-family-form-row' }, field('Item', nameI), field('Quantity', qtyI)),
+          h(
+            'div',
+            { class: 'gb-family-form-row' },
+            field('Category', catI),
+            field('Expires', expI)
+          ),
+          h(
+            'div',
+            { class: 'gb-family-checks' },
+            h('label', { class: 'gb-family-check' }, leftI, h('span', null, 'Leftover')),
+            h('label', { class: 'gb-family-check' }, lowI, h('span', null, 'Running low'))
+          ),
           h(
             'button',
             {
               type: 'button',
-              class: 'gb-btn gb-btn--soft gb-btn--sm',
+              class: 'gb-btn gb-btn--soft gb-family-add-item',
               onclick: add,
             },
             Icon('plus', { size: 16 }),
@@ -2192,7 +2251,7 @@ function ScreenFamily({ api }) {
           )
         )
       ),
-      items.length ? restockButton() : null,
+      items.length ? restockButton('Add low & expiring items to the list') : null,
       items.length
         ? h(
             'div',
@@ -2208,12 +2267,12 @@ function ScreenFamily({ api }) {
   }
 
   /* Low + expiring within 2 days → the shopping list, deduped on the server. */
-  function restockButton() {
+  function restockButton(label) {
     return h(
       'button',
       {
         type: 'button',
-        class: 'gb-btn gb-btn--soft gb-btn--sm gb-family-restock',
+        class: 'gb-btn gb-btn--soft gb-family-restock',
         onclick: () =>
           run(api.shoppingFromPantry(), (res) => {
             model.shoppingList = overlayPending(res);
@@ -2222,7 +2281,7 @@ function ScreenFamily({ api }) {
           }),
       },
       Icon('shopping-bag', { size: 15 }),
-      'Add expiring & low items to list'
+      label
     );
   }
 
@@ -2302,8 +2361,7 @@ function ScreenFamily({ api }) {
     const nameI = h('input', {
       type: 'text',
       class: 'gb-input',
-      'aria-label': 'Item name',
-      placeholder: 'Add to list (e.g. Onions)',
+      placeholder: 'e.g. Onions',
     });
     const qtyI = h('input', {
       type: 'text',
@@ -2318,50 +2376,53 @@ function ScreenFamily({ api }) {
         model.shoppingList = res;
       });
     };
+    onEnter(add, nameI, qtyI);
     return h(
       'section',
       { class: 'gb-family-planner' },
-      h(
-        'div',
-        { class: 'gb-section-head' },
-        h('h2', null, 'Shopping list'),
-        Icon('list-checks', { size: 18, color: 'var(--iris-500)' })
-      ),
+      h('div', { class: 'gb-section-head' }, h('h2', null, 'Shopping list')),
       h(
         'div',
         { class: 'gb-card gb-family-grocery' },
         h(
-          'button',
-          {
-            type: 'button',
-            class: 'gb-btn gb-btn--soft',
-            onclick: () =>
-              run(api.generateShopping({}), (res) => {
-                model.shoppingList = res;
-                delete model.sectionErrors.shopping;
-                // Says "Added 6 items" or why nothing was — it used to come
-                // back unchanged without a word when there was nothing new.
-                if (res && res.message) toast.success(res.message);
-              }),
-          },
-          Icon('sparkles', { size: 16 }),
-          'Build from latest plan'
-        ),
-        restockButton(),
-        h(
           'div',
-          { class: 'gb-family-manual-add' },
-          nameI,
-          qtyI,
+          { class: 'gb-family-shop-builds', role: 'group', 'aria-label': 'Fill the list' },
           h(
             'button',
             {
               type: 'button',
-              class: 'gb-btn gb-btn--soft gb-btn--sm',
-              'aria-label': 'Add to list',
-              onclick: add,
+              class: 'gb-btn gb-btn--soft',
+              onclick: () =>
+                run(api.generateShopping({}), (res) => {
+                  model.shoppingList = res;
+                  delete model.sectionErrors.shopping;
+                  // Says "Added 6 items" or why nothing was — it used to come
+                  // back unchanged without a word when there was nothing new.
+                  if (res && res.message) toast.success(res.message);
+                }),
             },
-            Icon('plus', { size: 16 })
+            Icon('sparkles', { size: 16 }),
+            "From today's plan"
+          ),
+          restockButton('From the pantry')
+        ),
+        field(
+          'Add an item',
+          h(
+            'div',
+            { class: 'gb-family-manual-add' },
+            nameI,
+            qtyI,
+            h(
+              'button',
+              {
+                type: 'button',
+                class: 'gb-btn gb-btn--soft gb-btn--sm gb-family-add-btn',
+                'aria-label': 'Add to list',
+                onclick: add,
+              },
+              Icon('plus', { size: 16 })
+            )
           )
         )
       ),
@@ -2432,9 +2493,15 @@ function ScreenFamily({ api }) {
     setTimeout(done, 1000); // afterprint never fires in some WebViews
   }
   function shopTools(list) {
+    const left = list.items.filter((i) => !i.checked).length;
     return h(
       'div',
       { class: 'gb-family-shop-tools' },
+      h(
+        'span',
+        { class: 'gb-family-shop-left', role: 'status' },
+        left ? left + ' to buy' : 'All bought'
+      ),
       h(
         'button',
         {
@@ -2645,8 +2712,7 @@ function ScreenFamily({ api }) {
       type: 'text',
       class: 'gb-input',
       maxlength: 120,
-      'aria-label': 'Chore',
-      placeholder: 'Add a chore (e.g. Take out the bins)',
+      placeholder: 'e.g. Take out the bins',
       value: draft.title,
       oninput: (e) => (draft.title = e.currentTarget.value),
     });
@@ -2696,16 +2762,11 @@ function ScreenFamily({ api }) {
     return h(
       'section',
       { class: 'gb-family-planner' },
-      h(
-        'div',
-        { class: 'gb-section-head' },
-        h('h2', null, 'Chores'),
-        Icon('list-todo', { size: 18, color: 'var(--iris-500)' })
-      ),
+      h('div', { class: 'gb-section-head' }, h('h2', null, 'Chores')),
       h(
         'div',
         { class: 'gb-card gb-family-grocery' },
-        titleI,
+        field('New chore', titleI),
         h('h3', { class: 'gb-family-subhead' }, 'Assign to'),
         assigneeChips(draft.assigneeMemberId, (id) => {
           draft.assigneeMemberId = id;
@@ -2824,12 +2885,7 @@ function ScreenFamily({ api }) {
     return h(
       'section',
       { class: 'gb-family-planner' },
-      h(
-        'div',
-        { class: 'gb-section-head' },
-        h('h2', null, 'Saved menus'),
-        Icon('heart', { size: 18, color: 'var(--coral-500)' })
-      ),
+      h('div', { class: 'gb-section-head' }, h('h2', null, 'Saved menus')),
       favs.length
         ? h(
             'div',

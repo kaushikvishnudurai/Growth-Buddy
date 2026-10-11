@@ -9603,7 +9603,7 @@ select.gb-input {
 }
 .gb-pill--muted {
   background: var(--surface-3);
-  color: var(--fg3);
+  color: var(--fg2); /* fg3 on surface-3 measured 4.2:1 */
 }
 .gb-pill--soft {
   background: var(--brand-soft);
@@ -9650,6 +9650,7 @@ select.gb-input {
   margin: 4px 0 12px;
 }
 .gb-section-head h2 {
+  margin: 0; /* the browser's 0.83em put 18px above and below every Family heading */
   font-family: var(--font-display);
   font-size: var(--text-h3);
   font-weight: 800;
@@ -9681,7 +9682,7 @@ select.gb-input {
   font-weight: 800;
   font-size: 0.875rem;
   color: var(--fg2);
-  margin-bottom: 10px;
+  margin: 0 0 10px;
 }
 
 /* Member cards */
@@ -9788,6 +9789,9 @@ select.gb-input {
   gap: 10px;
   margin-bottom: 6px;
 }
+.gb-family-panel-head .gb-iconbtn {
+  flex: none; /* a long title squeezed Back to 32px */
+}
 .gb-family-panel-title {
   font-family: var(--font-display);
   font-size: var(--text-h3);
@@ -9847,11 +9851,29 @@ select.gb-input {
   gap: 14px;
 }
 .gb-family-grocery,
-.gb-family-planfor,
+.gb-family-builder,
 .gb-family-nutrition,
-.gb-family-suggestions,
-.gb-family-meals {
+.gb-family-suggestions {
   padding: 16px;
+}
+.gb-family-builder-title {
+  font-family: var(--font-display);
+  font-size: 1.0625rem;
+  font-weight: 800;
+  color: var(--fg1);
+  margin: 0 0 12px;
+}
+.gb-family-builder-group {
+  margin-top: 18px;
+}
+.gb-family-builder .gb-family-generate {
+  margin-top: 18px;
+}
+/* The section head's right side: when the plan was made, in the count face. */
+.gb-family-head-meta {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--fg3);
 }
 .gb-family-grocery-actions {
   margin-bottom: 12px;
@@ -9944,7 +9966,6 @@ select.gb-input {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  margin-top: 4px;
   animation: gb-rise var(--dur-base) var(--ease-out);
 }
 .gb-family-plan-banner {
@@ -9957,25 +9978,63 @@ select.gb-input {
   padding: 10px 12px;
   border-radius: var(--radius-md);
 }
-.gb-family-meals {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 16px;
+/* The day rail — today's meals in the order they're eaten, threaded on one
+   line. The order is the information: it's what the four boxes in a grid
+   didn't say. Nodes and line stay quiet (brand-soft, border-strong); the meal
+   names carry the display face. */
+.gb-family-rail {
+  list-style: none;
+  margin: 0;
+  padding: 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
-@media (min-width: 620px) {
-  .gb-family-meals {
-    grid-template-columns: 1fr 1fr;
-  }
+.gb-family-stop {
+  position: relative;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 12px;
+}
+.gb-family-stop:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 16px;
+  top: 39px; /* the node's foot (5px offset + 34px) */
+  bottom: -25px; /* the next node's head */
+  width: 2px;
+  border-radius: 1px;
+  background: var(--border-strong);
+}
+.gb-family-stop-node {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 5px; /* centred on the 44px meal head beside it */
+  background: var(--brand-soft);
+  color: var(--brand-ink);
+}
+/* On a 900px card a full-width dish row parked its recipe mark 500px from its
+   name. A reading measure keeps the name, the mark and the cook picker together. */
+.gb-family-stop-body {
+  min-width: 0;
+  max-width: 600px;
 }
 .gb-family-meal-head {
   display: flex;
   align-items: center;
-  gap: 7px;
-  margin-bottom: 6px;
+  gap: 8px;
+  min-height: 44px;
 }
-.gb-family-meal-head h4 {
-  font-weight: 800;
-  font-size: 0.875rem;
+.gb-family-meal-head h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1rem;
   color: var(--fg1);
 }
 .gb-family-meal-list {
@@ -9984,23 +10043,28 @@ select.gb-input {
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 0;
 }
 .gb-family-meal-list li {
-  font-size: 0.875rem;
+  font-size: 0.9375rem;
+  line-height: 1.45;
   color: var(--fg2);
+}
+/* The weekly cards' tips still read as a bulleted list. */
+.gb-family-suggestions .gb-family-meal-list li {
+  font-size: 0.875rem;
   padding-left: 14px;
   position: relative;
 }
-.gb-family-meal-list li::before {
+.gb-family-suggestions .gb-family-meal-list li::before {
   content: '';
   position: absolute;
   left: 2px;
-  top: 8px;
+  top: 9px;
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: var(--leaf-500);
+  background: var(--fg3);
 }
 .gb-family-nutrition-grid {
   display: grid;
@@ -10015,21 +10079,117 @@ select.gb-input {
   padding: 12px 6px;
 }
 .gb-family-stat-value {
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: 1.125rem;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 1.25rem;
   color: var(--fg1);
+  font-variant-numeric: tabular-nums;
+}
+.gb-family-stat-unit {
+  margin-left: 3px;
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--fg3);
+}
+.gb-family-balanced {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--fg2);
+  margin-top: 12px;
+}
+.gb-family-nutrition-grid + .gb-family-balanced {
+  margin-top: 4px;
+}
+.gb-family-safe-list {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 14px 0 0;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.gb-family-safe-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: var(--fg2);
+}
+.gb-family-safe-list .gb-icon {
+  flex: none;
+  margin-top: 2px;
+}
+.gb-family-nutrition > :first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+/* Buddy's notes, folded. */
+.gb-family-notes {
+  padding: 0 16px;
+}
+.gb-family-notes summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 52px;
+  font-weight: 800;
+  font-size: 0.9375rem;
+  color: var(--fg1);
+  cursor: pointer;
+  list-style: none;
+}
+.gb-family-notes summary::-webkit-details-marker {
+  display: none;
+}
+.gb-family-notes summary:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+.gb-family-notes-caret {
+  margin-left: auto;
+  color: var(--fg3);
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.gb-family-notes[open] .gb-family-notes-caret {
+  transform: rotate(180deg);
+}
+.gb-family-notes[open] {
+  padding-bottom: 16px;
+}
+.gb-family-note-list {
+  margin: 0 0 12px;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--fg2);
+}
+.gb-family-note-list li::marker {
+  color: var(--fg3);
+}
+.gb-family-count {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+  color: var(--fg2);
+}
+.gb-family-count-lg {
+  font-family: var(--font-mono);
+  font-weight: 700;
 }
 .gb-family-stat-label {
   font-size: 0.75rem;
   color: var(--fg3);
   margin-top: 2px;
-}
-.gb-family-plan-aside h4 {
-  font-weight: 800;
-  font-size: 0.8125rem;
-  color: var(--fg2);
-  margin-bottom: 8px;
 }
 
 /* Pending invitations (consent handshake) */
@@ -10162,10 +10322,24 @@ select.gb-input {
   margin-bottom: 14px;
 }
 .gb-family-plan-actions {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 8px;
-  margin-top: 4px;
+}
+.gb-family-plan-actions .gb-btn {
+  width: 100%;
+  justify-content: center;
+}
+.gb-family-plan-actions .gb-btn:last-child {
+  grid-column: 1 / -1;
+}
+@media (min-width: 620px) {
+  .gb-family-plan-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .gb-family-plan-actions .gb-btn:last-child {
+    grid-column: auto;
+  }
 }
 
 /* Weekly grid */
@@ -10186,7 +10360,7 @@ select.gb-input {
   font-weight: 800;
   font-size: 0.875rem;
   color: var(--fg1);
-  margin-bottom: 8px;
+  margin: 0 0 8px;
 }
 .gb-family-weekday-meal {
   display: flex;
@@ -10289,6 +10463,50 @@ select.gb-input {
 .gb-family-form-row {
   display: flex;
   gap: 12px;
+}
+/* .gb-family-form-row > .gb-field (below) is flex: 1 — a zero basis never wraps.
+   The extra class wins over it regardless of order. */
+.gb-family-pantry-form .gb-family-form-row > .gb-field {
+  margin-bottom: 0;
+  flex: 1 1 140px;
+}
+.gb-family-pantry-form .gb-family-form-row {
+  flex-wrap: wrap;
+}
+/* A native date field needs ~170px or it clips its own calendar button. */
+.gb-family-pantry-form .gb-family-form-row > .gb-field:has(input[type='date']) {
+  flex-basis: 170px;
+}
+.gb-family-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+}
+.gb-family-checks .gb-family-check {
+  margin-bottom: 0;
+}
+.gb-family-add-item {
+  margin-top: 4px;
+}
+.gb-family-shop-builds {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); /* one column on a phone: 140px wrapped "From today's plan" onto three lines */
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.gb-family-shop-builds .gb-btn {
+  width: 100%;
+}
+.gb-family-grocery > .gb-field:last-child {
+  margin-bottom: 0;
+}
+.gb-family-manual-add .gb-input {
+  min-width: 0;
+}
+.gb-family-add-btn {
+  flex: none;
+  width: 48px;
+  justify-content: center;
 }
 .gb-family-form-row > .gb-field {
   flex: 1;
@@ -10403,8 +10621,9 @@ select.gb-input {
   height: 18px;
   padding: 0 5px;
   border-radius: var(--radius-pill);
-  font-size: 0.6875rem;
-  font-weight: 800;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 700;
   background: var(--surface-3);
   color: var(--fg2);
 }
@@ -10413,7 +10632,7 @@ select.gb-input {
   color: var(--fg-on-brand);
 }
 .gb-family-tab-badge.is-danger {
-  background: var(--coral-500);
+  background: var(--danger-fill); /* white on coral-500 was 2.8:1; 6:1 on this */
   color: var(--fg-on-brand);
 }
 
@@ -10514,17 +10733,30 @@ select.gb-input {
   min-width: 0;
 }
 .gb-family-dish {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 6px;
-  min-height: 32px;
-  padding: 0;
+  gap: 10px;
+  width: 100%;
+  min-height: 36px;
+  padding: 4px 0;
   border: 0;
   background: none;
   color: inherit;
   font: inherit;
   text-align: left;
   cursor: pointer;
+}
+.gb-family-dish > span:first-child {
+  flex: 1;
+  min-width: 0;
+}
+.gb-family-dish > .gb-icon {
+  flex: none;
+}
+.gb-family-dish:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
 }
 .gb-family-dish:hover span:first-child,
 .gb-family-dish.has-recipe span:first-child {
@@ -10533,6 +10765,8 @@ select.gb-input {
   text-underline-offset: 3px;
 }
 .gb-family-dish-time {
+  flex: none;
+  font-family: var(--font-mono);
   font-size: var(--text-xs);
   color: var(--fg3);
 }
@@ -10580,12 +10814,21 @@ select.gb-input {
 .gb-family-restock {
   align-self: flex-start;
 }
+.gb-family-shop-builds .gb-family-restock {
+  align-self: stretch;
+}
 
 /* Shopping share / print */
 .gb-family-shop-tools {
   display: flex;
+  align-items: center;
   gap: 8px;
-  justify-content: flex-end;
+}
+.gb-family-shop-left {
+  margin-right: auto;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  color: var(--fg2);
 }
 .gb-family-shop-printout {
   display: none;
@@ -10630,6 +10873,33 @@ select.gb-input {
     width: 4mm;
     height: 4mm;
     border: 0.4mm solid #000;
+  }
+}
+
+/* A finger gets 44px, as elsewhere in the app (.gb-editor-btn, .gb-color-dot).
+   A mouse keeps the denser sizes above. Last in the section on purpose: the
+   rules it raises (.gb-family-dish, .gb-family-low, the cook picker) are at the
+   same specificity, so source order decides. */
+@media (pointer: coarse) {
+  .gb-family .gb-btn--sm,
+  .gb-family-sectiontab,
+  .gb-family-chip--toggle,
+  .gb-family-cook-select,
+  .gb-family-chore-assignee,
+  .gb-family-dish,
+  .gb-family-check {
+    min-height: 44px;
+  }
+  .gb-family .gb-iconbtn {
+    width: 44px;
+    height: 44px;
+  }
+  .gb-family-chip--toggle {
+    min-width: 44px;
+    justify-content: center;
+  }
+  .gb-family-checks {
+    gap: 0 20px;
   }
 }
 
