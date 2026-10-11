@@ -219,6 +219,10 @@ export function initA11y() {
             if (dialog && !dialog.hasAttribute('tabindex')) dialog.setAttribute('tabindex', '-1');
             nameFields(overlay);
             watchFields(overlay);
+            // Already inside (a field tapped, or the modal's own focus, before this
+            // frame): leave it there. Taking it back to the dialog sent what was
+            // being typed nowhere.
+            if (overlay.contains(document.activeElement)) return;
             const target = overlay.querySelector('[autofocus]') || dialog;
             target?.focus?.();
           });
