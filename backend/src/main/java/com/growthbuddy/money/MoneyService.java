@@ -270,7 +270,8 @@ public class MoneyService {
             ledger.seedDefaults(userId);
         }
         ObjectNode out = data instanceof ObjectNode d ? d.deepCopy() : json.createObjectNode();
-        out.setAll(ledger.load(userId, LocalDate.now()));
+        // The user's day, not the server's: the window edge is a date they see (CRB-11).
+        out.setAll(ledger.load(userId, LocalDate.now(ledger.zoneOf(userId))));
         out.set("accounts", ledger.accounts(userId));
         return new Versioned(out, data == null ? "0" : Integer.toHexString(data.hashCode()));
     }
