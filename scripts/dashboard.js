@@ -524,7 +524,7 @@ function TodayPlanCard({ water, wellness, onPlanToday }) {
 /* The one thing today (one-thing.js picks it): pinned above the layout, not a
    widget, so saved layouts never see it. One button, the existing handler; the
    render after it succeeds picks the next thing, or drops the card. */
-function OneThingCard({ tasks, habits, water, wellness, money, features, toggleTask, toggleHabit, onOpenMoney, onConfirmSleep, onQuickAddWater, onAddMood }) {
+function oneThingFor({ tasks, habits, water, wellness, money, features, toggleTask, toggleHabit, onOpenMoney, onConfirmSleep, onQuickAddWater, onAddMood }) {
   const act = {
     streak: toggleHabit,
     overdue: toggleTask,
@@ -534,7 +534,10 @@ function OneThingCard({ tasks, habits, water, wellness, money, features, toggleT
     mood: onAddMood && (() => onAddMood()),
   };
   const one = pickOneThing({ tasks, habits, water, wellness, money, features, can: (k) => !!act[k] });
-  if (!one) return null;
+  return one && { ...one, run: () => act[one.kind](one.arg) };
+}
+
+function OneThingCard(one) {
   const title =
     one.kind === 'sleep'
       ? 'Slept ' + sharedFormatTime(one.arg.bedtime) + ' to ' + sharedFormatTime(one.arg.wakeTime) + '?'
@@ -553,7 +556,7 @@ function OneThingCard({ tasks, habits, water, wellness, money, features, toggleT
       ),
       h(
         'button',
-        { type: 'button', class: 'gb-btn gb-btn--primary gb-btn--compact', onclick: () => act[one.kind](one.arg) },
+        { type: 'button', class: 'gb-btn gb-btn--primary gb-btn--compact', onclick: one.run },
         one.label
       )
     ),
@@ -2612,13 +2615,36 @@ function ScreenDashboard({
   homeLayout,
 }) {
   const on = (k) => !features || features[k] !== false;
+  const one = oneThingFor({
+    tasks,
+    habits,
+    water,
+    wellness,
+    money,
+    features,
+    toggleTask,
+    toggleHabit,
+    onOpenMoney,
+    onConfirmSleep,
+    onQuickAddWater,
+    onAddMood,
+  });
+  const oneKind = one && one.kind;
 
   // One renderer per widget id. Each returns the card node(s) for that widget.
   const renderers = {
     // A turned-off feature drops out of the cards that summarise it, not just its own card.
     score: () => ScoreCard({ score, tasks, habits: on('habits') ? habits : [] }),
     plan: () => TodayPlanCard({ water: on('water') ? water : null, wellness, onPlanToday }),
-    wellness: () => WellnessCard({ wellness, onAddSleep, onAddMood, onConfirmSleep, onQuickMood }),
+    // The card above owns its nudge: the check-in row asking the same thing goes.
+    wellness: () =>
+      WellnessCard({
+        wellness,
+        onAddSleep,
+        onAddMood,
+        onConfirmSleep: oneKind === 'sleep' ? null : onConfirmSleep,
+        onQuickMood: oneKind === 'mood' ? null : onQuickMood,
+      }),
     tasks: () => [
       SectionTitle({ title: "Today's tasks", action: '+ Add', onAction: onAddTask }),
       TasksCard({
@@ -2702,21 +2728,7 @@ function ScreenDashboard({
     );
   }
   if (onboard) blocks.unshift(h('div', { class: 'gb-dash-block' }, onboard));
-  const one = OneThingCard({
-    tasks,
-    habits,
-    water,
-    wellness,
-    money,
-    features,
-    toggleTask,
-    toggleHabit,
-    onOpenMoney,
-    onConfirmSleep,
-    onQuickAddWater,
-    onAddMood,
-  });
-  if (one) blocks.unshift(h('div', { class: 'gb-dash-block' }, one));
+  if (one) blocks.unshift(h('div', { class: 'gb-dash-block' }, OneThingCard(one)));
 
   return h('div', { class: 'gb-rise gb-dash gb-dash--single' }, ...blocks);
 }

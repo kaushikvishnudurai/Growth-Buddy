@@ -76,18 +76,52 @@ for (;;) {
     s = { ...s, wellness: { ...s.wellness, moodByDate: { [today]: { mood: 'good' } } } };
   }
 }
-assert.deepEqual(order, ['streak', 'overdue', 'budget', 'sleep', 'water', 'mood']);
+assert.deepEqual(order, ['streak', 'overdue', 'sleep', 'water', 'mood', 'budget']);
+
+// A freeze-protected day is not at risk.
+assert.equal(
+  pickOneThing({ ...all, habits: [{ ...all.habits[1], protectedToday: true }] }).kind,
+  'overdue'
+);
+// A quit habit's clean streak doesn't break unticked (and its tap logs a slip).
+assert.equal(
+  pickOneThing({ ...all, habits: [{ ...all.habits[1], kind: 'quit' }] }).kind,
+  'overdue'
+);
+// Last night is asked only once the usual wake time (07:00) has passed.
+assert.equal(pickOneThing({ wellness: { sleepByDate: nights }, now: at(6) }), null);
+assert.equal(pickOneThing({ wellness: { sleepByDate: nights }, now: at(8) }).kind, 'sleep');
+// A task that fell due after load (mapTask's overdue flag still false) counts.
+assert.equal(
+  pickOneThing({
+    ...all,
+    habits: [],
+    tasks: [
+      {
+        id: 't3',
+        title: 'Call',
+        overdue: false,
+        dueAt: new Date(at(19).getTime() - 6e4).toISOString(),
+      },
+    ],
+  }).arg,
+  't3'
+);
 
 // Streak only counts in the evening; morning skips to the overdue task.
 assert.equal(pickOneThing({ ...all, now: at(9) }).kind, 'overdue');
 // A kind with no handler, or a feature off, is skipped.
+assert.equal(pickOneThing({ ...all, can: (k) => k !== 'streak' && k !== 'overdue' }).kind, 'sleep');
 assert.equal(
-  pickOneThing({ ...all, can: (k) => k !== 'streak' && k !== 'overdue' }).kind,
-  'budget'
-);
-assert.equal(
-  pickOneThing({ ...all, tasks: [], habits: [], features: { money: false } }).kind,
-  'sleep'
+  pickOneThing({
+    ...all,
+    tasks: [],
+    habits: [],
+    wellness: { moodByDate: { [today]: {} } },
+    water: null,
+    features: { money: false },
+  }),
+  null
 );
 // Water pace: 9:00 is barely past start, no nag; mood waits for noon.
 assert.equal(

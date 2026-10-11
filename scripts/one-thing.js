@@ -6,7 +6,7 @@
    {kind, title, why, label, arg} or null when nothing is owed.
    Checked by `node scripts/one-thing.test.mjs`.
    ===================================================================== */
-import { habitDue, sortTasksForHome, localDayKey } from './home-order.js';
+import { habitDue, sortTasksForHome, taskRank, localDayKey } from './home-order.js';
 import { budgetStatus, normalizeMoney } from './money-core.js';
 import { sleepToConfirm } from './nudges.js';
 
@@ -27,15 +27,19 @@ export function pickOneThing({
   const hour = now.getHours() + now.getMinutes() / 60;
   // ponytail: fixed priority order (a streak about to break beats everything);
   // score by measured impact if users say the card picks the wrong thing.
+  // Budget goes last: its button only opens Money, so nothing clears it, and
+  // ahead of the rest it would hold the card for the rest of the month.
 
   if (on('habits') && can('streak') && hour >= 18) {
     const hb = (habits || [])
       .filter(
         (x) =>
           x.active !== false &&
+          x.kind !== 'quit' && // a clean streak doesn't break unticked; its tap opens the slip dialog
           (x.cadence || 'daily') === 'daily' &&
           habitDue(x) &&
           !x.doneToday &&
+          !x.protectedToday &&
           (Number(x.streak) || 0) >= 2
       )
       .sort((a, b) => b.streak - a.streak)[0];
@@ -50,22 +54,10 @@ export function pickOneThing({
   }
 
   if (can('overdue')) {
-    const t = sortTasksForHome(tasks, now).find((x) => x.overdue && !x.done);
+    const t = sortTasksForHome(tasks, now).find((x) => taskRank(x, now) === 0);
+    // taskRank, not mapTask's `overdue`: that flag is frozen at load, so a task
+    // that fell due while Home sat open was never picked.
     if (t) return { kind: 'overdue', title: t.title, why: 'Overdue', label: 'Done', arg: t.id };
-  }
-
-  if (on('money') && can('budget') && money) {
-    const b = budgetStatus(normalizeMoney(money))
-      .filter((s) => s.budget > 0 && s.pct >= 85)
-      .sort((a, b) => b.pct - a.pct)[0];
-    if (b)
-      return {
-        kind: 'budget',
-        title: b.cat.label + ' is at ' + b.pct + '% of budget',
-        why: 'Check before the next spend',
-        label: 'Open Money',
-        arg: b.cat.key,
-      };
   }
 
   const sleepByDate = wellness && wellness.sleepByDate;
@@ -103,6 +95,20 @@ export function pickOneThing({
       label: 'Log mood',
       arg: null,
     };
+
+  if (on('money') && can('budget') && money) {
+    const b = budgetStatus(normalizeMoney(money))
+      .filter((s) => s.budget > 0 && s.pct >= 85)
+      .sort((a, b) => b.pct - a.pct)[0];
+    if (b)
+      return {
+        kind: 'budget',
+        title: b.cat.label + ' is at ' + b.pct + '% of budget',
+        why: 'Check before the next spend',
+        label: 'Open Money',
+        arg: b.cat.key,
+      };
+  }
 
   return null;
 }
