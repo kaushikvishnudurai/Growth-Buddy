@@ -94,8 +94,31 @@ test.describe('keyboard', () => {
     await shot(page, 'quick-add-preview');
     await preview.getByRole('button', { name: 'Log it' }).click();
     await expect
-      .poll(async () => (await apiGet(request, account.token, '/api/tasks')).map((t) => t.title.toLowerCase()))
-      .toContain('buy oat milk');
+      // The assistant keeps "need to"; the no-AI fallback drops it. Either is the task.
+      .poll(async () => (await apiGet(request, account.token, '/api/tasks')).some((t) => /buy oat milk/i.test(t.title)))
+      .toBe(true);
+  });
+
+  test('a reminder, the theme and a Settings pane, each in one line', async ({ page, account }) => {
+    await signInFast(page, account);
+    await page.keyboard.press('Control+K');
+    await input(page).fill('call mom');
+    await expect(palette(page).getByRole('option').first()).toHaveText(/Call mom.*Repeats/);
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(/#\/calendar$/);
+    await expect(page.locator('#gb-main')).toContainText('Call mom');
+
+    const theme = await page.evaluate(() => document.documentElement.dataset.theme);
+    await page.keyboard.press('Control+K');
+    await input(page).fill(theme === 'dark' ? 'light mode' : 'dark mode');
+    await page.keyboard.press('Enter');
+    await expect(page.locator('html')).not.toHaveAttribute('data-theme', theme);
+
+    await page.keyboard.press('Control+K');
+    await input(page).fill('alerts');
+    await expect(palette(page).getByRole('option').first()).toHaveText('Settings: Alerts');
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('dialog').first()).toContainText('Notify me about');
   });
 
   test('"g c" goes to Calendar and "?" lists the shortcuts', async ({ page, account }) => {
