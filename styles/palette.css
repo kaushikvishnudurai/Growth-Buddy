@@ -1,0 +1,197 @@
+/* Command palette + shortcut sheet (scripts/palette.js imports this, so it
+   loads with the lazy chunk). Tokens only; the overlay, its shadow and its
+   transition are .gb-modal's. */
+
+.gb-modal.gb-palette {
+  max-width: 600px;
+  /* Top-anchored, not centred: the list grows and shrinks as you type, and a
+     centred sheet made the input jump with it. */
+  align-self: flex-start;
+  margin-top: min(12vh, 96px);
+  padding: 0;
+  overflow: hidden;
+}
+
+.gb-palette-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+.gb-palette-glass {
+  display: inline-flex;
+  color: var(--fg3);
+}
+.gb-palette-input.gb-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  padding: var(--space-2) 0;
+  font-size: var(--text-body);
+  box-shadow: none;
+}
+.gb-palette-input.gb-input:focus,
+.gb-palette-input.gb-input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.gb-palette-list {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  min-height: 0;
+  flex: 1;
+  padding: var(--space-2);
+}
+.gb-palette-group + .gb-palette-group {
+  margin-top: var(--space-2);
+}
+.gb-palette-group-label {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--fg3);
+  padding: var(--space-2) var(--space-3) var(--space-1);
+}
+
+.gb-palette-opt {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  color: var(--fg1);
+  cursor: pointer;
+}
+.gb-palette-opt[aria-selected='true'] {
+  background: var(--brand-soft);
+  color: var(--brand-soft-fg);
+}
+.gb-palette-ic {
+  display: inline-flex;
+  flex: none;
+  color: var(--fg2);
+}
+.gb-palette-opt[aria-selected='true'] .gb-palette-ic {
+  color: inherit;
+}
+.gb-palette-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.gb-palette-label mark {
+  background: transparent;
+  color: inherit;
+  font-weight: 800;
+  text-decoration: underline;
+  text-decoration-color: var(--brand);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+.gb-palette-sub {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--fg3);
+}
+.gb-palette-opt[aria-selected='true'] .gb-palette-sub {
+  color: inherit;
+}
+
+.gb-palette-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--border);
+  font-size: var(--text-xs);
+  color: var(--fg3);
+}
+.gb-palette-keys {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  white-space: nowrap;
+}
+
+.gb-palette kbd,
+.gb-shortcuts kbd {
+  display: inline-flex;
+  align-items: center;
+  min-width: 22px;
+  justify-content: center;
+  padding: 1px 6px;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--fg2);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Shortcut sheet */
+.gb-modal.gb-shortcuts {
+  max-width: 440px;
+}
+.gb-shortcut-list {
+  margin: 0;
+}
+.gb-shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+}
+.gb-shortcut-row dd {
+  margin: 0;
+  color: var(--fg2);
+  font-size: var(--text-sm);
+  text-align: right;
+}
+.gb-shortcut-keys {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+}
+.gb-shortcut-then {
+  font-size: var(--text-2xs);
+  color: var(--fg3);
+}
+
+/* A card the palette jumped to (a goal, a circle) rings for a moment. */
+.is-spotlit {
+  box-shadow: 0 0 0 3px var(--ring);
+  transition: box-shadow var(--dur-slow) var(--ease-out);
+}
+
+@media (max-width: 640px) {
+  .gb-modal.gb-palette {
+    margin-top: 0;
+  }
+  /* The keys line is for keyboards; a phone has none. */
+  .gb-palette-keys {
+    display: none;
+  }
+}
+@media (hover: none) {
+  .gb-palette-keys {
+    display: none;
+  }
+}

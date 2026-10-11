@@ -11756,6 +11756,55 @@ const SNAP_ROUTES = {
   },
 };
 
+// Quick add's example sentence: the bar's placeholder and the can't-read-that toast.
+// No money example when Money is off.
+const quickAddExample = () => (featureOn('money') ? 'spent 200 on lunch, slept 7h' : 'slept 7h, call mom at 6');
+
+/* One sentence through Quick add: parse, then the preview (or straight through
+   when it is only controls). Shared by the bar below and the command palette.
+   false = nothing read, and it has already said why; true = onLeave ran and the
+   preview is up (onLogged once it is logged, onCancel if dismissed) or the
+   controls ran. A thrown error is the caller's to report. */
+async function runQuickAdd(text, { onLeave, onLogged, onCancel } = {}) {
+  const example = quickAddExample();
+  const r = await parseQuickAdd(text);
+  const rows = r.intents.map((it) => ({ it, d: describeIntent(it) })).filter((x) => x.d);
+  if (!rows.length) {
+    pushToast(
+      r.skipped.length
+        ? r.skipped.join(' ')
+        : r.unavailable
+          ? "Couldn't reach the assistant, and couldn't read that without it. Try again?"
+          : !r.configured || r.limited
+            ? 'Couldn’t read that. Try short phrases like “' + example + '”.'
+            : 'Couldn’t find anything to log there. Try short phrases like “' + example + '”.',
+      r.skipped.length ? 'info' : 'error',
+      4200
+    );
+    return false;
+  }
+  onLeave && onLeave();
+  // Only controls ("open money", "dark mode"): just do it — nothing is written
+  // that a preview would protect.
+  if (rows.every((x) => CONTROL_INTENTS.has(x.it.type) && !x.d.unknown)) {
+    await applyQuickAdd(rows.map((x) => x.it));
+    onLogged && onLogged();
+    return true;
+  }
+  const sub = [
+    r.limited
+      ? 'Read without AI this time — switch off anything it got wrong.'
+      : r.fallback
+        ? 'Read without the assistant — switch off anything it got wrong.'
+        : '',
+    ...r.skipped,
+  ]
+    .filter(Boolean)
+    .join(' ');
+  openQuickAddPreview(rows, sub, onLogged, onCancel);
+  return true;
+}
+
 // The Quick add bar: one sentence, sorted into the right trackers. Shared by
 // openAddSheet and the top of Home (homeQuickAdd); onLeave runs once a parse
 // found something, before the preview opens. The line is cleared only once it
@@ -11763,9 +11812,8 @@ const SNAP_ROUTES = {
 // closed by onLeave, reopens with it), else focuses this box again.
 function quickAddBox({ onLeave, onCancel, text = '' } = {}) {
   // Natural-language quick-add: type it once, we sort it into the right trackers.
-  // Short enough not to be cut off on a phone; no money example when Money is
-  // off. The placeholder and the can't-read-that toast share it.
-  const example = featureOn('money') ? 'spent 200 on lunch, slept 7h' : 'slept 7h, call mom at 6';
+  // Short enough not to be cut off on a phone.
+  const example = quickAddExample();
   const qaInput = h('input', {
     type: 'text',
     class: 'gb-input',
@@ -11785,56 +11833,28 @@ function quickAddBox({ onLeave, onCancel, text = '' } = {}) {
     if (!text) return;
     qaInput.disabled = true;
     const done = setThinking(qaBtn, 'Reading');
+    // The Home bar outlives the submit (the sheet closes), so hand it back usable.
+    const ready = () => {
+      done();
+      qaInput.disabled = false;
+    };
     try {
-      const r = await parseQuickAdd(text);
-      const rows = r.intents.map((it) => ({ it, d: describeIntent(it) })).filter((x) => x.d);
-      if (!rows.length) {
-        done();
-        qaInput.disabled = false;
-        pushToast(
-          r.skipped.length
-            ? r.skipped.join(' ')
-            : r.unavailable
-              ? "Couldn't reach the assistant, and couldn't read that without it. Try again?"
-              : !r.configured || r.limited
-                ? 'Couldn’t read that. Try short phrases like “' + example + '”.'
-                : 'Couldn’t find anything to log there. Try short phrases like “' + example + '”.',
-          r.skipped.length ? 'info' : 'error',
-          4200
-        );
-        return;
-      }
-      // The Home bar outlives the submit (the sheet closes), so hand it back usable.
-      done();
-      qaInput.disabled = false;
-      onLeave && onLeave();
-      // Only controls ("open money", "dark mode"): just do it — nothing is written
-      // that a preview would protect.
-      const logged = () => {
-        qaInput.value = '';
-      };
-      if (rows.every((x) => CONTROL_INTENTS.has(x.it.type) && !x.d.unknown)) {
-        await applyQuickAdd(rows.map((x) => x.it));
-        logged();
-        return;
-      }
-      const sub = [
-        r.limited
-          ? 'Read without AI this time — switch off anything it got wrong.'
-          : r.fallback
-            ? 'Read without the assistant — switch off anything it got wrong.'
-            : '',
-        ...r.skipped,
-      ]
-        .filter(Boolean)
-        .join(' ');
-      openQuickAddPreview(rows, sub, logged, () => {
-        if (onCancel) onCancel(qaInput.value);
-        else if (qaInput.isConnected) qaInput.focus();
+      const read = await runQuickAdd(text, {
+        onLeave: () => {
+          ready();
+          onLeave && onLeave();
+        },
+        onLogged: () => {
+          qaInput.value = '';
+        },
+        onCancel: () => {
+          if (onCancel) onCancel(qaInput.value);
+          else if (qaInput.isConnected) qaInput.focus();
+        },
       });
+      if (!read) ready();
     } catch (err) {
-      done();
-      qaInput.disabled = false;
+      ready();
       toastError(err, 'Quick add failed. Try again?');
     }
   }
@@ -16620,6 +16640,50 @@ function tweenFromLast() {
   for (const [el, prop, next] of moves) el.style[prop] = next;
 }
 
+/* ---- Command palette + keyboard shortcuts ----
+   Ctrl/Cmd+K anywhere, "/" or "?" outside a text field, "g" then a letter, and
+   the header's search button. Everything but this hook is the lazy palette.js
+   chunk (the go-to letters too: "g c" before it has loaded waits a frame for it).
+   paletteApp() is what it gets: the state already in memory and the openers,
+   featureOn / screenEnabled gates and Quick add path the rest of the app uses. */
+let paletteChunk = null;
+function openPalette(view) {
+  paletteChunk =
+    paletteChunk ||
+    import('./palette.js').catch((err) => {
+      paletteChunk = null; // offline now need not mean offline next time
+      throw err;
+    });
+  paletteChunk
+    .then((m) => m.openPalette(paletteApp(), view))
+    .catch((err) => toastError(err, 'Couldn’t open search. Check your connection?'));
+}
+const paletteApp = () => ({
+  state, api, featureOn, screenEnabled, SCREENS, SCREEN_LABEL, setScreen, applyIntent,
+  openProfileSettings, openAddTask, openEditTask, openAddHabit, openHabitForm, calGoTo, toggleTheme,
+  saveMoney, requestReceiptScan, saveUiPrefs, runQuickAdd,
+});
+let goPressedAt = 0; // "g", waiting for the letter of a go-to
+document.addEventListener('keydown', (e) => {
+  const k = e.key;
+  if (!state.user || e.isComposing || e.defaultPrevented || e.altKey) return;
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (k === 'k' || k === 'K')) {
+    e.preventDefault();
+    return openPalette(); // already open: palette.js refocuses that one
+  }
+  const el = document.activeElement;
+  const go = goPressedAt && Date.now() - goPressedAt < 1500;
+  goPressedAt = 0;
+  if (e.ctrlKey || e.metaKey || (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))))
+    return;
+  if (document.querySelector('[aria-modal="true"]')) return;
+  if (go) openPalette('go:' + k);
+  else if (k === '/' || k === '?') {
+    e.preventDefault();
+    openPalette(k === '?' ? 'help' : null);
+  } else if (k === 'g') goPressedAt = Date.now();
+});
+
 function render() {
   const sameScreen = renderedScreen === state.screen;
   // Leaving a screen files its scroll position; coming back to it (back, or its
@@ -16678,6 +16742,7 @@ function render() {
       name: cfg.headerName(),
       userName: state.user.displayName || 'Buddy',
       onAdd: openAddSheet,
+      onSearch: () => openPalette(),
       onAccount: toggleProfileOpen,
       unreadCount: unreadNotifs(),
       onBell: toggleNotifOpen,
