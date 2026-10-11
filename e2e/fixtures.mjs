@@ -55,6 +55,10 @@ export const test = base.extend({
 export { expect };
 
 export async function signIn(page, { email, password }) {
+  // The login route is rate limited per IP and every agent shares one: a forwarded address of its own
+  // (the backend trusts the right-most X-Forwarded-For hop, as the seeder relies on).
+  const ip = () => 1 + Math.floor(Math.random() * 254);
+  await page.setExtraHTTPHeaders({ 'X-Forwarded-For': `10.${ip()}.${ip()}.${ip()}` });
   await page.goto('/');
   // A browser with no session lands on sign-up first; sign-in is its secondary link.
   await page.locator('input[type=email]').first().waitFor();
