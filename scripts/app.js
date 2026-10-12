@@ -11153,8 +11153,10 @@ function toastStack() {
     'div',
     {
       class: 'gb-toast-stack',
-      onmouseenter: holdToasts,
-      onmouseleave: releaseToasts,
+      // A real hover only: a toast that appears under a finger on a phone must not
+      // hold a deferred delete until the next touch elsewhere.
+      onpointerenter: (e) => e.pointerType === 'mouse' && holdToasts(),
+      onpointerleave: (e) => e.pointerType === 'mouse' && releaseToasts(),
       onfocusin: holdToasts,
       onfocusout: (e) => {
         if (!e.currentTarget.contains(e.relatedTarget)) releaseToasts();
