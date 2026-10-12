@@ -192,6 +192,8 @@ test('EXP-5: deleting a goal offers Undo instead of a confirm', async ({ page, a
   expect((await goals(page, account)).some((g) => g.title === 'Run a 10K')).toBe(true);
   // Without Undo it goes for good.
   await card.getByRole('button', { name: 'Delete goal' }).click();
+  // The toast lands under a phone's last tap, and a hovered stack holds its window.
+  await page.mouse.move(0, 0);
   await expect(edit).toHaveCount(0);
   await expect.poll(async () => (await goals(page, account)).some((g) => g.title === 'Run a 10K'), { timeout: 12_000 }).toBe(false);
 });

@@ -252,6 +252,8 @@ test('EXM-3: the statement counts budgeted tags only, the rest on its own line',
   await openMoney(page, account);
   await page.locator('#gb-main').getByRole('button', { name: 'Set budgets' }).first().click();
   await dialog(page).getByLabel('Food monthly budget').fill('2000');
+  // Main pre-fills a suggested budget for every tag with spending; this one stays unbudgeted.
+  await dialog(page).getByLabel('Entertainment monthly budget').fill('');
   await dialog(page).getByRole('button', { name: /^Save/ }).click();
   await expect(dialog(page)).toHaveCount(0);
   const slip = page.locator('.gb-money-slip');

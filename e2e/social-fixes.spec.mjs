@@ -29,27 +29,25 @@ async function shot(page, id) {
   await page.screenshot({ path: EV + id + '.jpg', type: 'jpeg', quality: 60 });
 }
 
-test('SEC-2 / FRS-11: an invite link asks before joining, and offers the shared goal', async ({ page, account }, info) => {
+test('SEC-2: an invite link asks before joining', async ({ page, account }, info) => {
   const owner = await seedAccount();
   const name = 'Morning Walkers ' + Date.now();
   const c = await call(owner.token, '/api/circles', 'POST', { name, goal: 'Walk 30 minutes', visibility: 'public' });
 
   await signInPinned(page, account);
   await go(page, 'circle?circle=' + c.id);
-  const dialog = page.getByRole('dialog', { name: 'Join ' + name + '?' });
+  // Main's join confirm: the link alone joins no one.
+  const dialog = page.getByRole('alertdialog', { name: 'Join this circle?' });
   await expect(dialog).toBeVisible();
-  await expect(dialog).toContainText('checked in today');
   // Nothing has happened yet: the link alone joins no one.
   expect((await call(account.token, '/api/circles/mine')).some((x) => x.id === c.id)).toBe(false);
   if (info.project.name.startsWith('mobile')) await shot(page, 'SEC-2');
 
-  // FRS-11: the circle's goal comes with it, pre-ticked.
-  await expect(dialog.getByLabel('Add “Walk 30 minutes” to my habits')).toBeChecked();
-  await dialog.getByRole('button', { name: 'Join', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Join circle' }).click();
   await expect(page.locator('[data-circle-id="' + c.id + '"]')).toBeVisible();
   expect((await call(account.token, '/api/circles/mine')).some((x) => x.id === c.id)).toBe(true);
-  await expect(page.locator('.gb-toast-msg', { hasText: 'Added “Walk 30 minutes” to your habits.' })).toBeVisible();
-  expect((await call(account.token, '/api/habits')).map((x) => x.name)).toContain('Walk 30 minutes');
+  // Main's link confirm has no goal checkbox (FRS-11 stays on Browse / code joins).
+  await expect(page.locator('.gb-toast-msg', { hasText: 'You joined ' + name + '.' })).toBeVisible();
 });
 
 test('SEC-2: Cancel on the join sheet leaves the user out', async ({ page, account }) => {
@@ -57,8 +55,8 @@ test('SEC-2: Cancel on the join sheet leaves the user out', async ({ page, accou
   const c = await call(owner.token, '/api/circles', 'POST', { name: 'Quiet ' + Date.now(), visibility: 'public' });
   await signInPinned(page, account);
   await go(page, 'circle?circle=' + c.id);
-  const dialog = page.getByRole('dialog');
-  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  const dialog = page.getByRole('alertdialog', { name: 'Join this circle?' });
+  await dialog.getByRole('button', { name: 'Not now' }).click();
   await expect(dialog).toBeHidden();
   expect((await call(account.token, '/api/circles/mine')).some((x) => x.id === c.id)).toBe(false);
 });
