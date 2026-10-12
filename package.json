@@ -16,7 +16,7 @@
   "dependencies": {
     "@fontsource-variable/hanken-grotesk": "^5.3.0",
     "@fontsource/bricolage-grotesque": "^5.2.10",
-    "@fontsource/space-mono": "^5.2.9",
+    "@fontsource/space-mono": "^5.3.0",
     "@stomp/stompjs": "^7.0.0",
     "lucide": "^0.460.0"
   },
