@@ -2043,6 +2043,9 @@ const hhmmOf = (m) => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String
    free). Placed under its button when it opens.
    ponytail: it stays put if the page scrolls while open; close on scroll if that shows. */
 let menuSeq = 0;
+let dayShown = false; // phone: the timeline list unfolded
+// Below 1024px Home takes the phone order (CSS .gb-dash--day, same breakpoint).
+const phoneLayout = () => !window.matchMedia('(min-width: 1024px)').matches;
 function RowMenu(label, items) {
   const id = 'gb-tl-menu-' + ++menuSeq;
   const pop = h(
@@ -2281,11 +2284,32 @@ function DayTimeline({
     showRuler
       ? h(
           'button',
-          { type: 'button', class: 'gb-tl-ruler', 'aria-label': 'Open today in Calendar, ' + plural(count, 'item'), onclick: onOpenCalendar },
+          {
+            type: 'button',
+            class: 'gb-tl-ruler',
+            'aria-label': (phoneLayout() ? 'Show the day, ' : 'Open today in Calendar, ') + plural(count, 'item'),
+            // Phone: the ruler opens the day in place; wide: Calendar on today.
+            onclick: () => (phoneLayout() ? showDay(true) : onOpenCalendar && onOpenCalendar()),
+          },
           DayRuler(marks, today, true)
         )
-      : null
+      : null,
+    h(
+      'button',
+      { type: 'button', class: 'gb-tl-add gb-tl-toggle', 'aria-expanded': String(dayShown), onclick: () => showDay(!dayShown) },
+      dayShown ? 'Hide the day' : 'Show the day'
+    )
   );
+  // Phone (CSS): the list stays folded behind "Show the day"; Pending above
+  // already lists the to-dos, so a phone doesn't read every item twice.
+  const showDay = (open) => {
+    dayShown = open;
+    card.classList.toggle('is-day-shown', open);
+    const t = card.querySelector('.gb-tl-toggle');
+    t.setAttribute('aria-expanded', String(open));
+    t.textContent = open ? 'Hide the day' : 'Show the day';
+    if (open) card.querySelector('.gb-tl-list--timed')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  };
 
   const group = (title, kids, action) =>
     kids.length || action
@@ -2302,8 +2326,8 @@ function DayTimeline({
     showTasks && onAddTask ? h('button', { type: 'button', class: 'gb-tl-add', onclick: onAddTask }, '+ Task') : null,
     showHabits && onAddHabit ? h('button', { type: 'button', class: 'gb-tl-add', onclick: onAddHabit }, '+ Habit') : null
   );
-  return Card({
-    className: 'gb-tl',
+  const card = Card({
+    className: 'gb-tl' + (dayShown ? ' is-day-shown' : ''),
     children: [
       head,
       h('ul', { class: 'gb-tl-list gb-tl-list--timed' }, rows),
@@ -2318,6 +2342,7 @@ function DayTimeline({
         : null,
     ],
   });
+  return card;
 }
 
 /* Bills due today or overdue this month and not paid (Money's rule in
@@ -2408,16 +2433,23 @@ function TodayCard(props) {
       tick: () => (toggleTask(t.id), undoToast(t.title, () => toggleTask(t.id))),
     })
   );
+  const remItem = (r, when, late) => ({
+    title: r.text,
+    when,
+    late,
+    icon: 'bell',
+    tick: onReminderDone && (() => (onReminderDone(r.id, today, true), undoToast(r.text, () => onReminderDone(r.id, today, false)))),
+  });
+  // Missed: its time has passed today and it isn't checked off.
+  rems
+    .filter((r) => !remDone(r) && r.time && toMin(r.time) < nowMin)
+    .sort((a, b) => a.time.localeCompare(b.time))
+    .forEach((r) => items.push(remItem(r, 'missed ' + sharedFormatTime(r.time), true)));
   rems
     .filter((r) => !remDone(r) && (!r.time || toMin(r.time) >= nowMin))
     .sort((a, b) => String(a.time || '99').localeCompare(String(b.time || '99')))
     .forEach((r) =>
-      items.push({
-        title: r.text,
-        when: r.time ? sharedFormatTime(r.time) : 'today',
-        icon: 'bell',
-        tick: onReminderDone && (() => (onReminderDone(r.id, today, true), undoToast(r.text, () => onReminderDone(r.id, today, false)))),
-      })
+      items.push(remItem(r, r.time ? sharedFormatTime(r.time) : 'today', false))
     );
   if (toggleHabit)
     due
@@ -2561,9 +2593,49 @@ function SuggestCard({ outlookData, onDismissInsight, onInsightAction, plan }) {
   const o = outlookData ? OutlookCard({ outlook: outlookData, onDismissInsight, onInsightAction }) : null;
   const rows = o ? [...o[1].childNodes] : [];
   if (!rows.length && !plan) return null;
+  // Phone (CSS): one row, the insight's title + Plan my day; the rows open under it.
+  const insight = outlookData && outlookData.insight;
+  const lead = insight ? insight.title : rows.length ? 'Your outlook' : 'Turn today into a plan';
+  const panel = rows.length ? h('div', { class: 'gb-suggest-panel', hidden: true }) : null;
+  const compact = h(
+    'div',
+    { class: 'gb-suggest-compact' },
+    h(
+      'div',
+      { class: 'gb-suggest-line' },
+      panel
+        ? h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-suggest-lead',
+              'aria-expanded': 'false',
+              onclick: (e) => {
+                const open = panel.hidden;
+                if (open && !panel.firstChild) {
+                  const again = OutlookCard({ outlook: outlookData, onDismissInsight, onInsightAction });
+                  panel.append(...again[1].childNodes);
+                  refreshIcons();
+                }
+                panel.hidden = !open;
+                e.currentTarget.setAttribute('aria-expanded', String(open));
+              },
+            },
+            Icon(insight ? insight.icon : 'sparkles', { size: 16, color: 'var(--brand)' }),
+            h('span', null, lead),
+            Icon('chevron-down', { size: 16 })
+          )
+        : h('span', { class: 'gb-suggest-ask' }, lead),
+      plan
+        ? h('button', { type: 'button', class: 'gb-btn gb-btn--primary gb-btn--compact', onclick: plan.onPlanToday }, Icon('sparkles', { size: 16, sw: 2.5 }), 'Plan my day')
+        : null
+    ),
+    panel
+  );
   return Card({
     className: 'gb-suggest',
     children: [
+      compact,
       rows.length ? h('div', { class: 'gb-suggest-rows' }, rows) : null,
       plan
         ? h(
@@ -2581,6 +2653,7 @@ function SuggestCard({ outlookData, onDismissInsight, onInsightAction, plan }) {
 /* app.js repaints the mini calendar in place (rerenderHomeMiniCalendarIfActive)
    without a features prop; it keeps the ones ScreenDashboard last rendered with. */
 let homeFeatures = null;
+let miniCalMonth = false; // phone: week strip (false) or the whole month
 
 function MiniCalendarCard({
   features = homeFeatures,
@@ -2675,6 +2748,13 @@ function MiniCalendarCard({
 
   const cells = [];
   const startDay = 1 - firstDow;
+  // The week strip (phone): the row holding the selected day, else today, else the first.
+  const rowOf = (key) => {
+    const [y, m, d] = key.split('-').map(Number);
+    if (y !== calYear || m - 1 !== calMonth) return -1;
+    return Math.floor((d - startDay) / 7) * 7;
+  };
+  const weekStart = Math.max(0, rowOf(selectedDate) >= 0 ? rowOf(selectedDate) : rowOf(today));
   for (let i = 0; i < 42; i++) {
     const dt = new Date(calYear, calMonth, startDay + i);
     const key = dateKey(dt.getFullYear(), dt.getMonth(), dt.getDate());
@@ -2691,6 +2771,7 @@ function MiniCalendarCard({
     const isFree = total === 0 && key >= today;
     const cls =
       'gb-mini-cal-day' +
+      (i >= weekStart && i < weekStart + 7 ? ' is-week' : '') +
       (inMonth ? '' : ' is-other-month') +
       (key === today ? ' is-today' : '') +
       (key === selectedDate ? ' is-selected' : '') +
@@ -2786,8 +2867,8 @@ function MiniCalendarCard({
     );
   }
 
-  return Card({
-    className: 'gb-mini-cal-card',
+  const card = Card({
+    className: 'gb-mini-cal-card' + (miniCalMonth ? ' is-month' : '') + (selectedDate === today ? ' is-on-today' : ''),
     children: [
       h(
         'div',
@@ -2930,8 +3011,25 @@ function MiniCalendarCard({
           : null,
         'No reminders for this day.'
       ),
+      // Phone only (CSS): the week strip opens to the month in place.
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-tl-add gb-mini-cal-toggle',
+          'aria-expanded': String(miniCalMonth),
+          onclick: () => {
+            miniCalMonth = !miniCalMonth;
+            card.classList.toggle('is-month', miniCalMonth);
+            card.querySelector('.gb-mini-cal-toggle').setAttribute('aria-expanded', String(miniCalMonth));
+            card.querySelector('.gb-mini-cal-toggle').textContent = miniCalMonth ? 'Week' : 'Month';
+          },
+        },
+        miniCalMonth ? 'Week' : 'Month'
+      ),
     ],
   });
+  return card;
 }
 
 /* HOME_WIDGETS and resolveHomeLayout live in home-order.js (DOM-free, so they
@@ -3287,7 +3385,7 @@ function ScreenDashboard({
     const content = renderers[item.id] && renderers[item.id]();
     if (!content) return null;
     const kids = Array.isArray(content) ? content : [content];
-    return h('div', { class: 'gb-dash-block' }, ...kids);
+    return h('div', { class: 'gb-dash-block gb-w-' + item.id }, ...kids);
   };
   // A young account (the checklist is still up): what it has comes first, the
   // habits it just made on top so the first tick needs no scrolling, then the

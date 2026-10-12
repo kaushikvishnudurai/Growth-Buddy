@@ -59,7 +59,7 @@ stay out until they have something.
 Styles: `styles/app.css` §"Home: my day, in order" (end of file). The full Home is `.gb-dash--day`
 with three zones, each in layout order: `.gb-day-top` (score strip, then Quick add, the break / one-thing
 pins, the suggestion), `.gb-day-main` (timeline, wellness row), `.gb-day-rest` (calendar, goals,
-reminders, money, family). Phone: one column in that order. ≥1024px: a grid, the timeline left
+reminders, money, family). Below 1024px (phone and tablet) the zones are `display: contents` and blocks take a phone order by `order` (classes `gb-w-<id>`): Today card, pins, the timeline (date hidden, list folded behind "Show the day" / a ruler tap, `dayShown`), Quick add, the suggestion as one row (`.gb-suggest-compact`: insight title toggles the rows, Plan my day), wellness, then the cards; the mini calendar shows the selected week only with a Month toggle (`miniCalMonth`; today's lists hidden in the strip). Pending also lists today's missed reminders ("missed 9:30", after overdue tasks). ≥1024px: a grid, the timeline left
 (1.35fr, spanning both rows), top and rest stacked right. Quick add on Home is a slim pill (mic and
 language inside, no hint) via `.gb-dash .gb-dash-qa` rules. A young account still uses
 `.gb-dash--single` + `balanceHome`.

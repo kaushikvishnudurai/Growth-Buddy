@@ -17594,6 +17594,131 @@ button.gb-tl-title {
   padding-left: 0;
 }
 
+/* Phone and tablet (< 1024px): one column in the phone order. The zones step
+   aside (display: contents) and each block takes its place by `order`. */
+@media (max-width: 1023px) {
+  .gb-dash--day .gb-day-top,
+  .gb-dash--day .gb-day-main,
+  .gb-dash--day .gb-day-rest {
+    display: contents;
+  }
+  .gb-dash--day > * > .gb-w-score {
+    order: 1;
+    margin-top: var(--space-2);
+  }
+  .gb-dash--day > * > .gb-dash-pin {
+    order: 2;
+  }
+  .gb-dash--day > * > .gb-w-habits,
+  .gb-dash--day > * > .gb-w-tasks {
+    order: 3;
+  }
+  .gb-dash--day > * > .gb-dash-qa {
+    order: 4;
+  }
+  .gb-dash--day > * > .gb-w-outlook,
+  .gb-dash--day > * > .gb-w-plan {
+    order: 5;
+  }
+  .gb-dash--day > * > .gb-w-wellness {
+    order: 6;
+  }
+  .gb-dash--day > .gb-day-rest > * {
+    order: 7;
+  }
+  /* The timeline: the date is the app header's; the list folds behind "Show the day". */
+  .gb-tl .gb-cal-dayhead-date {
+    display: none;
+  }
+  .gb-tl .gb-cal-dayhead-top {
+    justify-content: flex-start;
+  }
+  .gb-tl {
+    padding: var(--space-3) var(--space-4) var(--space-1);
+  }
+  .gb-tl-head .gb-ruler {
+    margin-top: 4px;
+  }
+  .gb-tl:not(.is-day-shown) > .gb-tl-list--timed,
+  .gb-tl:not(.is-day-shown) > .gb-tl-group {
+    display: none;
+  }
+  .gb-tl-toggle {
+    padding-left: 0;
+  }
+  /* The suggestion as one row; its rows open under it. */
+  .gb-suggest {
+    padding: var(--space-2) var(--space-3);
+  }
+  .gb-suggest > .gb-suggest-rows,
+  .gb-suggest > .gb-suggest-foot {
+    display: none;
+  }
+  .gb-suggest-panel {
+    padding: var(--space-2) var(--space-1) var(--space-1);
+  }
+  /* The month calendar as a one-week strip; Month opens it in place. Today's
+     own lists are left out of the strip (Pending and the day already say them). */
+  .gb-mini-cal-card:not(.is-month) .gb-mini-cal-day:not(.is-week),
+  .gb-mini-cal-card:not(.is-month) .gb-mini-cal-legend,
+  .gb-mini-cal-card:not(.is-month).is-on-today .gb-mini-cal-day-title,
+  .gb-mini-cal-card:not(.is-month).is-on-today .gb-mini-cal-section,
+  .gb-mini-cal-card:not(.is-month).is-on-today .gb-mini-cal-total {
+    display: none;
+  }
+}
+@media (min-width: 1024px) {
+  .gb-suggest-compact,
+  .gb-tl-toggle,
+  .gb-mini-cal-toggle {
+    display: none;
+  }
+}
+.gb-suggest-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.gb-suggest-lead {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 700;
+  color: var(--fg1);
+  text-align: left;
+  cursor: pointer;
+}
+.gb-suggest-lead > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gb-suggest-lead > svg {
+  flex: none;
+}
+.gb-suggest-lead[aria-expanded='true'] > svg:last-child {
+  transform: rotate(180deg);
+}
+.gb-suggest-line > .gb-btn {
+  flex: none;
+}
+.gb-suggest-line > .gb-suggest-ask {
+  flex: 1;
+  min-width: 0;
+}
+.gb-mini-cal-toggle {
+  display: block;
+  margin: 4px auto 0;
+}
+
 @media (min-width: 1024px) {
   .gb-dash.gb-dash--day {
     display: grid;
