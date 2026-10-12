@@ -1614,7 +1614,8 @@ body:has(.is-thinking, .gb-thinking)::after {
    notificationDropdown). */
 .gb-notif-head-actions {
   display: flex;
-  gap: var(--space-1);
+  /* 8px: the settings icon's centred 44px overlay reaches 6px past it and took the neighbour's edge taps at 4px. */
+  gap: var(--space-2);
   align-items: center;
 }
 .gb-notif-link {
@@ -9717,6 +9718,8 @@ button.gb-tone-chip::before,
   .gb-cal-day,
   .gb-mini-cal-day {
     min-height: 40px;
+    /* With aspect-ratio 1 a 40px height forced 40px width: a 320px week overflowed. */
+    aspect-ratio: auto;
   }
 }
 
@@ -12310,6 +12313,10 @@ textarea:focus-visible,
 .gb-settings-body .gb-segnav-btn,
 .gb-settings-body .gb-seg {
   min-height: 44px;
+}
+/* A tab narrower than its 44px overlay ("Alerts" at Largest, 320px) overflowed by it. */
+.gb-settings-body .gb-segnav-btn {
+  min-width: 44px;
 }
 .gb-settings-body .gb-home-cust-moves {
   flex-direction: row;

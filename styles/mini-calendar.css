@@ -441,3 +441,10 @@
     font-size: var(--text-2xs);
   }
 }
+
+/* app.css's 320px rule loses to the aspect-ratio above (this file links after it): 40px-tall square days overflowed a 320px week. */
+@media (max-width: 360px) {
+  .gb-mini-cal-day {
+    aspect-ratio: auto;
+  }
+}

@@ -6481,13 +6481,13 @@ const FUTURE_FOOD = "You can't log food for a day that hasn't happened yet.";
 /* Log food closes on the tap: the save, and the estimate behind it when no
    kcal was typed, carry on under the screen (they held the dialog ~11 s). A
    failure keeps the entry on a Retry toast rather than losing what was typed. */
-function logFoodLater(payload) {
+function logFoodLater(payload, opts) {
   const wait = payload.kcal == null ? pushToast('Estimating calories for ' + payload.foodName + '.', 'info', 20000) : 0;
-  logFoodEntry(payload)
+  logFoodEntry(payload, opts)
     .catch((err) =>
       pushToast((err && err.message) || 'Could not log ' + payload.foodName + '.', 'error', 10000, {
         label: 'Retry',
-        run: () => logFoodLater(payload),
+        run: () => logFoodLater(payload, opts),
       })
     )
     .finally(() => wait && dismissToast(wait));
@@ -6834,7 +6834,7 @@ function openAddFood(opts) {
       loggedAt: loggedAtFor(dateInput.value),
       note: null,
       ...(f ? { proteinG: f.proteinG, carbsG: f.carbsG, fatG: f.fatG, fiberG: f.fiberG } : {}),
-    });
+    }, { undo: true }); // a one-tap log toasts with Undo (main's chip did)
   };
   const paintChips = () => {
     const q = foodNameInput.value.trim().toLowerCase();
@@ -10051,7 +10051,8 @@ function taskForm(task, presetGoalId, presetDue) {
     });
   const setDue = (v) => {
     dueInput.value = dueInput.value === v ? '' : v; // a second tap clears it
-    paintDue();
+    // Not paintDue(): the title's when-parse resets an untouched due on each keystroke, so a chip tap must count as by hand.
+    dueInput.dispatchEvent(new Event('input'));
   };
   dueInput.addEventListener('input', paintDue);
   paintDue();
