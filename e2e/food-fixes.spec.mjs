@@ -290,10 +290,10 @@ test('Home water chip logs a glass in one tap (FRC-6)', async ({ page, account }
   await boot(page, { ...account, user: { ...account.user, uiPrefs } });
   await go(page, 'home');
   const chip = main(page).getByRole('button', { name: 'Log 250 ml of water' });
-  await expect(chip).toHaveText(/25% water/);
+  await expect(chip).toHaveText(/25%/);
   await chip.click();
   const water = async () => (await call(page, account, '/api/water?date=' + today())).consumedMl;
   await expect.poll(water).toBe(750);
-  await expect(main(page).getByRole('button', { name: 'Log 250 ml of water' })).toHaveText(/38% water/);
+  await expect(main(page).getByRole('button', { name: 'Log 250 ml of water' })).toHaveText(/38%/);
   await shot(page, 'FRC-6');
 });

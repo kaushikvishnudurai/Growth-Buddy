@@ -2,7 +2,7 @@
 // notification steps, the habit list under the finger, toasts on navigation. Each test fails on the
 // code before its fix. No UI sign-ups: a fresh API account (`emptyAccount`) stands in for a new one.
 import { mkdirSync } from 'node:fs';
-import { test, expect, signInFast, go } from './fixtures.mjs';
+import { test, expect, signInFast, go, showDay } from './fixtures.mjs';
 
 const API = process.env.GB_API || 'http://localhost:8590';
 const EV = 'docs/evidence/first-run-paths/';
@@ -148,13 +148,14 @@ test('NEW-8: a refused notification prompt does not tick "Get reminded on time"'
 
 test('NEW-9: a ticked habit keeps its row for a moment', async ({ page, account }, info) => {
   await boot(page, account);
-  const rows = page.locator('.gb-habit-strip .gb-habit-line');
-  await expect(rows.first().locator('.name')).toHaveText('Read 20 pages');
+  await showDay(page);
+  const rows = page.locator('#gb-main .gb-tl-row.is-habit');
+  await expect(rows.first().locator('.gb-tl-title')).toHaveText('Read 20 pages');
   await rows.first().locator('.gb-check').click();
   await expect(rows.first()).toHaveClass(/is-done/);
   // Past the optimistic render and the server's answer (both re-render Home), inside the hold.
   await page.waitForTimeout(2000);
-  await expect(rows.first().locator('.name')).toHaveText('Read 20 pages');
+  await expect(rows.first().locator('.gb-tl-title')).toHaveText('Read 20 pages');
   await expect(rows.first()).toHaveClass(/is-done/);
   await shot(page, 'NEW-9', info);
 });

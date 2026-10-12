@@ -88,3 +88,9 @@ export async function go(page, screen) {
   await page.evaluate((s) => (location.hash = '#' + s), screen);
   await page.waitForTimeout(400);
 }
+
+// Home's day timeline is folded behind "Show the day" below 1024px; unfold it where it is.
+export async function showDay(page) {
+  const t = page.locator('#gb-main .gb-tl-toggle');
+  if ((await t.count()) && (await t.isVisible()) && (await t.getAttribute('aria-expanded')) === 'false') await t.click();
+}

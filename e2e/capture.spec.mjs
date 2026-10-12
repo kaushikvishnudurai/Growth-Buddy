@@ -3,7 +3,7 @@
 // 401s, so every Quick add test passes on both paths: a clear single read by the model saves at once
 // with an Undo toast; the plain-pattern fallback still shows its preview (one tap more). Outcomes
 // are asserted, never the model's wording.
-import { test, expect, signInFast } from './fixtures.mjs';
+import { test, expect, signInFast, showDay } from './fixtures.mjs';
 
 const API = process.env.GB_API || 'http://localhost:8590';
 const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -54,8 +54,8 @@ async function quickAdd(page, text, inspect) {
   return { taps, fallback, res };
 }
 // Tasks' own + Add: Home's order is the user's, and a young account's puts Habits first.
-const addTask = (page) =>
-  page.locator('#gb-main .gb-sectiontitle', { has: page.getByRole('heading', { name: 'Tasks', exact: true }) }).getByRole('button', { name: '+ Add' });
+// Home's "+ Task" sits in the day timeline's Anytime group (folded on phones: unfold first).
+const addTask = (page) => ({ click: async () => (await showDay(page), page.locator('#gb-main .gb-tl-adds').getByRole('button', { name: '+ Task' }).click()) });
 const toast = (page, re) => page.locator('.gb-toast').filter({ hasText: re });
 // The toast after a Quick add: what it was (one model read) or where it went (the preview).
 // Undo of a Quick-added task or reminder goes through main's deferred delete (app.js deferDelete):
