@@ -2438,6 +2438,10 @@ async function openFirstRunSetup(resumeAt) {
         ? { setupDone: true, setupStep: null, healthAsked: true }
         : { setupDone: true, setupStep: null };
       saveUiPrefs(tz ? { ...done, tzAsked: tz } : done);
+      // Home drew an empty shell while setup was pending (setupPending in
+      // dashboard.js); nothing else re-renders on Skip, Escape or the backdrop,
+      // so Home stayed blank until a reload.
+      if (state.user) render();
       syncDeviceTimezone();
       // The goal step may have made timed habits and reminders: they are the
       // first thing worth a notification, and the sheet is gone now.
