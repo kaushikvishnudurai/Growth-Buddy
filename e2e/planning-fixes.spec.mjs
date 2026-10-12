@@ -24,7 +24,7 @@ const api = async (page, account, path) => (await page.request.get(path, auth(ac
 const goals = async (page, account) => (await api(page, account, '/api/goals')).flatMap((s) => s.goals || []);
 const main = (page) => page.locator('#gb-main');
 const shot = (page, id) =>
-  test.info().project.name === 'desktop' &&
+  test.info().project.name.startsWith('desktop') &&
   page.screenshot({ path: `docs/evidence/planning/${id}.jpg`, type: 'jpeg', quality: 70 });
 
 async function boot(page, account, screen) {
@@ -221,7 +221,7 @@ test('EXP-3: the done tick sits inside its circle', async ({ page, account }) =>
     return Math.max(Math.abs(r.x + r.width / 2 - (i.x + i.width / 2)), Math.abs(r.y + r.height / 2 - (i.y + i.height / 2)));
   });
   expect(off).toBeLessThan(2);
-  if (test.info().project.name === 'desktop')
+  if (test.info().project.name.startsWith('desktop'))
     await m.locator('.gb-rem-row').filter({ hasText: 'Water plants' }).screenshot({ path: 'docs/evidence/planning/EXP-3.jpg', type: 'jpeg', quality: 80 });
 });
 
@@ -267,7 +267,7 @@ test('A11-8: a note card is read as a note, opened by its own button, with Pin b
   await expect(card.getByRole('button', { name: 'Pin this note' })).toBeVisible();
   // Keyboard: Tab reaches it, Enter opens the note.
   await open.focus();
-  if (test.info().project.name === 'desktop')
+  if (test.info().project.name.startsWith('desktop'))
     await card.screenshot({ path: 'docs/evidence/planning/A11-8.jpg', type: 'jpeg', quality: 80 });
   await page.keyboard.press('Enter');
   await expect(page.getByRole('dialog', { name: 'Note' })).toBeVisible();

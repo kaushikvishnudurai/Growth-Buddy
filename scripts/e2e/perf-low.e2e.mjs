@@ -114,7 +114,8 @@ try {
     await document.fonts.ready;
     return [...document.fonts].filter((f) => f.status === 'loaded').map((f) => f.family + ' ' + f.weight);
   });
-  check(used.some((f) => /Hanken/.test(f) && / 400$/.test(f)), 'Hanken 400 in use');
+  // The variable face (one file for every weight) reports its range, "400 800".
+  check(used.some((f) => /Hanken/.test(f) && / 400( 800)?$/.test(f)), 'Hanken 400 in use');
   check(used.some((f) => /Bricolage/.test(f) && / 800$/.test(f)), 'Bricolage 800 in use');
   await cdp.send('Network.setCacheDisabled', { cacheDisabled: false });
 

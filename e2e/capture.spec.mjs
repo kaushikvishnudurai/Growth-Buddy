@@ -58,6 +58,11 @@ const addTask = (page) =>
   page.locator('#gb-main .gb-sectiontitle', { has: page.getByRole('heading', { name: 'Tasks', exact: true }) }).getByRole('button', { name: '+ Add' });
 const toast = (page, re) => page.locator('.gb-toast').filter({ hasText: re });
 // The toast after a Quick add: what it was (one model read) or where it went (the preview).
+// Undo of a Quick-added task or reminder goes through main's deferred delete (app.js deferDelete):
+// the row goes at once, the DELETE after its own 6 s window, hence the 12 s polls below.
+// The toast stack holds every Undo window while it is hovered (undo-queue.js hold), and the
+// "Task deleted." toast lands under the pointer that just tapped Undo: step away from it.
+const leaveToasts = (page) => page.mouse.move(1, 1);
 const undoToast = (page) => page.locator('.gb-toast').filter({ has: page.getByRole('button', { name: 'Undo' }) });
 
 test('quick add: "need to buy milk" is a task in 2 taps (3 on the fallback), and Undo removes it', async ({ page, account }) => {
@@ -69,7 +74,8 @@ test('quick add: "need to buy milk" is a task in 2 taps (3 on the fallback), and
   await page.screenshot({ path: SHOTS + 'FRC-4.jpg', quality: 70 });
   await expect.poll(async () => (await get(page, account, '/api/tasks')).filter((t) => /milk/i.test(t.title)).length).toBe(1);
   await t.getByRole('button', { name: 'Undo' }).click();
-  await expect.poll(async () => (await get(page, account, '/api/tasks')).filter((t) => /milk/i.test(t.title)).length).toBe(0);
+  await leaveToasts(page);
+  await expect.poll(async () => (await get(page, account, '/api/tasks')).filter((t) => /milk/i.test(t.title)).length, { timeout: 12_000 }).toBe(0);
 });
 
 test('quick add: a read without the assistant keeps its preview (3 taps), then Undo', async ({ page, account }) => {
@@ -85,7 +91,8 @@ test('quick add: a read without the assistant keeps its preview (3 taps), then U
   await expect(undoToast(page)).toBeVisible();
   await expect.poll(async () => (await get(page, account, '/api/tasks')).filter((t) => /bread/i.test(t.title)).length).toBe(1);
   await undoToast(page).getByRole('button', { name: 'Undo' }).click();
-  await expect.poll(async () => (await get(page, account, '/api/tasks')).filter((t) => /bread/i.test(t.title)).length).toBe(0);
+  await leaveToasts(page);
+  await expect.poll(async () => (await get(page, account, '/api/tasks')).filter((t) => /bread/i.test(t.title)).length, { timeout: 12_000 }).toBe(0);
 });
 
 test('quick add: an expense lands in the account the expense dialog defaults to (FRC-3), Undo takes it out', async ({ page, account }) => {
@@ -103,6 +110,7 @@ test('quick add: an expense lands in the account the expense dialog defaults to 
   const row = m.expenses.find((e) => Number(e.amount) === 250);
   expect(row.accountId).toBe(cash.id); // the dialog's default (fixed on main; kept as a guard)
   await t.getByRole('button', { name: 'Undo' }).click();
+  await leaveToasts(page);
   await expect.poll(async () => (await get(page, account, '/api/money')).expenses.filter((e) => Number(e.amount) === 250).length).toBe(0);
 });
 
@@ -149,7 +157,8 @@ test('quick add: a reminder at an hour already gone becomes tomorrow, one toast,
     .poll(async () => (await get(page, account, '/api/reminders')).filter((r) => /plumber/i.test(r.text)).map((r) => r.date))
     .toEqual([tomorrow()]);
   await t.getByRole('button', { name: 'Undo' }).click();
-  await expect.poll(async () => (await get(page, account, '/api/reminders')).filter((r) => /plumber/i.test(r.text)).length).toBe(0);
+  await leaveToasts(page);
+  await expect.poll(async () => (await get(page, account, '/api/reminders')).filter((r) => /plumber/i.test(r.text)).length, { timeout: 12_000 }).toBe(0);
 });
 
 test('quick add: a weekly reminder is one line (2 taps on a model read)', async ({ page, account }) => {

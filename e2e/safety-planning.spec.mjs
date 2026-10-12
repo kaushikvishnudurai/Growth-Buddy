@@ -137,10 +137,9 @@ test('Tasks: add, edit and delete from Home', async ({ page, account }) => {
 
   await m.getByRole('button', { name: 'Edit Water the balcony plants' }).click();
   await page.getByRole('dialog', { name: 'Edit task' }).getByRole('button', { name: 'Delete task' }).click();
-  await page.getByRole('dialog', { name: 'Delete “Water the balcony plants”?' }).getByRole('button', { name: 'Delete', exact: true }).click();
   await expect(m.getByText('Water the balcony plants')).toHaveCount(0);
   await expect
-    .poll(async () => (await api(page, account, '/api/tasks')).some((t) => t.id === created.id))
+    .poll(async () => (await api(page, account, '/api/tasks')).some((t) => t.id === created.id), { timeout: 12_000 })
     .toBe(false);
   await reload(page);
   await expect(m.getByText('Water the balcony plants')).toHaveCount(0);
@@ -170,10 +169,9 @@ test('Habits: add, rename and delete', async ({ page, account }) => {
 
   await m.getByRole('button', { name: 'Edit habit: Stretch 10 min' }).click();
   await page.getByRole('dialog', { name: 'Edit habit' }).getByRole('button', { name: 'Delete habit' }).click();
-  await page.getByRole('dialog', { name: 'Delete “Stretch 10 min”?' }).getByRole('button', { name: 'Delete', exact: true }).click();
   await expect(m.getByRole('button', { name: 'Edit habit: Stretch 10 min' })).toHaveCount(0);
   await expect
-    .poll(async () => (await api(page, account, '/api/habits')).some((x) => x.id === created.id))
+    .poll(async () => (await api(page, account, '/api/habits')).some((x) => x.id === created.id), { timeout: 12_000 })
     .toBe(false);
 });
 

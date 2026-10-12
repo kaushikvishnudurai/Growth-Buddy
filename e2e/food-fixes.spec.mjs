@@ -273,29 +273,27 @@ test('every drink today can be seen and deleted behind Show all (EXM-8)', async 
   await card.getByRole('button', { name: 'Show all 5' }).or(card.getByRole('button', { name: 'Show latest 3' })).first().scrollIntoViewIfNeeded();
   await shot(page, 'EXM-8');
   // The earliest one, the seeded 500 ml, now has its delete.
+  // Main's Undo toast instead of a confirm: the row goes now, the DELETE after the 6 s window.
   await card.getByRole('button', { name: 'Delete water entry' }).last().click();
-  await dialog(page).filter({ hasText: 'Delete this water entry?' }).getByRole('button', { name: 'Delete', exact: true }).click();
-  await expect.poll(async () => (await call(page, account, '/api/water?date=' + today())).entries.length).toBe(4);
+  await expect.poll(async () => (await call(page, account, '/api/water?date=' + today())).entries.length, { timeout: 12_000 }).toBe(4);
   // Still open after the repaint the delete causes.
   await expect(card.getByRole('button', { name: 'Delete water entry' })).toHaveCount(4);
   expect(await rows.count()).toBeGreaterThan(0);
 });
 
-test('Home water pill logs a glass in one tap, and Undo takes it back (FRC-6)', async ({ page, account }) => {
-  // The pill is on the Daily brief, which the full Home carries. While the Getting started
+test('Home water chip logs a glass in one tap (FRC-6)', async ({ page, account }) => {
+  // The chip is on the Daily brief, which the full Home carries. While the Getting started
   // checklist is up, Home shows only the widgets with data plus the checklist (onboard), so
-  // this account is past it.
+  // this account is past it. Main's TodayPlanCard chip won the merge: no Undo on a glass.
   const uiPrefs = { ...(account.user.uiPrefs || {}), onboardingDone: true };
   await call(page, account, '/api/auth/ui-prefs', { prefs: uiPrefs }, 'PUT');
   await boot(page, { ...account, user: { ...account.user, uiPrefs } });
   await go(page, 'home');
-  const pill = main(page).getByRole('button', { name: /% water\. Add 250 ml$/ });
-  await expect(pill).toHaveText(/25% water/);
-  await pill.click();
+  const chip = main(page).getByRole('button', { name: 'Log 250 ml of water' });
+  await expect(chip).toHaveText(/25% water/);
+  await chip.click();
   const water = async () => (await call(page, account, '/api/water?date=' + today())).consumedMl;
   await expect.poll(water).toBe(750);
-  await expect(main(page).getByRole('button', { name: /% water\. Add 250 ml$/ })).toHaveText(/38% water/);
+  await expect(main(page).getByRole('button', { name: 'Log 250 ml of water' })).toHaveText(/38% water/);
   await shot(page, 'FRC-6');
-  await page.getByRole('button', { name: 'Undo' }).click();
-  await expect.poll(water).toBe(500);
 });

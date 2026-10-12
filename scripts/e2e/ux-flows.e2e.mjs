@@ -206,6 +206,13 @@ const tomorrowKey = () => {
   return t.toISOString().slice(0, 10);
 };
 
+// Habit streaks sits above Tasks on Home now, so "+ Add" is scoped to the Tasks section.
+const markTasks = () =>
+  page.evaluate(() => {
+    const head = [...document.querySelectorAll('.gb-sectiontitle > :is(h2, h3)')].find((x) => /^Tasks$/.test(x.textContent.trim()));
+    head.parentElement.setAttribute('data-e2e', 'tasks');
+  });
+
 async function run(width, height) {
   await page.setViewport({ width, height });
   const tag = `${stamp}-${width}`;
@@ -215,7 +222,8 @@ async function run(width, height) {
   const t1 = `E2E due ${tag}`;
   let n = sent('POST', /^\/api\/tasks$/).length;
   taps = 0;
-  await tap(/^\+ Add$/, '.gb-dash');
+  await markTasks();
+  await tap(/^\+ Add$/, '[data-e2e=tasks]');
   await sheetOpen();
   await tap(/^Today$/, '.gb-due-chips');
   await page.focus('.gb-modal-body input[type=text]');
@@ -238,7 +246,8 @@ async function run(width, height) {
   // F17: three tasks in one sheet. + Add, Add another, Add another, Enter.
   n = sent('POST', /^\/api\/tasks$/).length;
   taps = 0;
-  await tap(/^\+ Add$/, '.gb-dash');
+  await markTasks();
+  await tap(/^\+ Add$/, '[data-e2e=tasks]');
   await sheetOpen();
   for (let i = 1; i <= 3; i++) {
     await page.focus('.gb-modal-body input[type=text]');

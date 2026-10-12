@@ -23,7 +23,7 @@ async function withTheme(page, account, theme) {
 }
 
 async function shot(page, name, info) {
-  if (info.project.name !== 'mobile') return;
+  if (!info.project.name.startsWith('mobile')) return;
   await page.screenshot({ path: path.join(EVIDENCE, `${name}-${SHOT}.jpg`), type: 'jpeg', quality: 60 });
 }
 
@@ -129,7 +129,7 @@ for (const theme of ['light', 'dark']) {
 }
 
 test('tap targets on a 390px phone are at least 44px', async ({ page, account }, info) => {
-  test.skip(info.project.name !== 'mobile', 'phone width only');
+  test.skip(!info.project.name.startsWith('mobile'), 'phone width only');
   await page.setViewportSize({ width: 390, height: 844 });
   await withTheme(page, account, 'light');
   // The hit area includes the ::before/::after overlay: probe the point 21px out from the

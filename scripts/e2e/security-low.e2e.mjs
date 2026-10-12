@@ -137,7 +137,7 @@ try {
     await openPage(view);
     await page.goto(BASE + '/#/home', { waitUntil: 'networkidle2' });
     await wait(1200);
-    await clickButton(/^account$/i);
+    await clickButton(/^(\w+, )?account$/i); // the avatar reads "AR, account"
     await wait(300);
     await clickButton(/^settings$/i);
     await page.waitForSelector('.gb-segnav', { timeout: 8000 });

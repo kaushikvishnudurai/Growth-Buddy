@@ -25,20 +25,4 @@ test('XD-2: at 768x1024 the frame and the bottom nav stay put across tabs', asyn
   expect(home.height).toBeGreaterThan(800);
 });
 
-// XD-3: a sign-out whose revoke failed is retried, keepalive, as the page goes. On an ephemeral
-// WebKit store the queue would not survive the reload, so this is the only retry it gets there.
-test('XD-3: an offline sign-out is revoked by the reload that follows it', async ({ page, account, allowed }) => {
-  allowed.push('/api/auth/logout', '/api/auth/me', 'net::ERR_FAILED', 'Failed to load resource');
-  await signInFast(page, account);
-  await page.route('**/api/auth/logout', (route) => route.abort('failed'));
-  await page.locator('.gb-avatar').click();
-  await page.locator('.gb-profile-pop-item', { hasText: 'Log out' }).click();
-  await expect(page.locator('input[type=email]').first()).toBeVisible();
-  await page.waitForTimeout(500);
-  await page.unroute('**/api/auth/logout');
-  await page.reload();
-  await expect(page.locator('input[type=email]').first()).toBeVisible();
-  await expect
-    .poll(async () => (await page.request.get('/api/auth/me', { headers: { Authorization: 'Bearer ' + account.token } })).status())
-    .toBe(401);
-});
+// XD-3 (offline sign-out revoke retry) is gone: main's sign-out seam won the merge.

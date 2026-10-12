@@ -181,8 +181,14 @@ async function quickAddExpense(ctx) {
       .filter((m) => /Log this\?/.test(m.textContent))
       .flatMap((m) => [...m.querySelectorAll('button')])
       .find((b) => /^Log (it|them)$/.test(b.textContent.trim()));
-  await page.waitForFunction(confirmBtn, { timeout: 8000 });
-  await page.evaluate((src) => new Function('return (' + src + ')()')().click(), confirmBtn.toString());
+  // One clear model read is written at once with an Undo toast (no preview), so the
+  // confirm is only there for a preview.
+  await page.waitForFunction(
+    (src) => new Function('return (' + src + ')()')() || document.querySelector('.gb-toast'),
+    { timeout: 8000 },
+    confirmBtn.toString()
+  );
+  await page.evaluate((src) => new Function('return (' + src + ')()')()?.click(), confirmBtn.toString());
   await page.waitForSelector('.gb-toast', { timeout: 8000 });
   await page.screenshot({ path: `${OUT}/fn16-queued-toast-${name}.png` });
   const ts = await toasts(page);

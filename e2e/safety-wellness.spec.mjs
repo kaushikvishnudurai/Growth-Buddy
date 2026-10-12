@@ -56,10 +56,10 @@ test('food: log a meal with typed kcal, the day total moves, delete it', async (
     .locator('*:has(> .gb-food-row-edit[aria-label^="Edit Masala oats"])')
     .getByRole('button', { name: 'Delete food entry' })
     .click();
-  await dialog(page).filter({ hasText: 'Delete this food entry?' }).getByRole('button', { name: 'Delete', exact: true }).click();
+  // Main's Undo toast instead of a confirm: the row goes now, the DELETE after the 6 s window.
   await expect(main(page).getByRole('button', { name: /^Edit Masala oats/ })).toHaveCount(0);
   await expect(total).toHaveText(/^220\s*kcal$/);
-  await expect.poll(async () => (await food()).totalCalories).toBe(220);
+  await expect.poll(async () => (await food()).totalCalories, { timeout: 12_000 }).toBe(220);
 });
 
 test('water: add a glass, the total moves, removing it undoes that', async ({ page, account }) => {
@@ -68,7 +68,7 @@ test('water: add a glass, the total moves, removing it undoes that', async ({ pa
   const big = main(page).locator('.gb-water-big');
   // Seeded 500 ml.
   await expect(big).toHaveText(/^500\s*ml$/);
-  await main(page).getByRole('button', { name: 'Add 250 millilitres of water' }).click();
+  await main(page).getByRole('button', { name: '+250 ml, add water' }).click();
   await expect(big).toHaveText(/^750\s*ml$/);
 
   const water = () => api(page, account, '/api/water?date=' + today());
@@ -80,9 +80,8 @@ test('water: add a glass, the total moves, removing it undoes that', async ({ pa
   // Undo the glass: the newest entry is listed first.
   await expect(main(page).getByRole('button', { name: 'Delete water entry' })).toHaveCount(2);
   await main(page).getByRole('button', { name: 'Delete water entry' }).first().click();
-  await dialog(page).filter({ hasText: 'Delete this water entry?' }).getByRole('button', { name: 'Delete', exact: true }).click();
   await expect(big).toHaveText(/^500\s*ml$/);
-  await expect.poll(async () => (await water()).consumedMl).toBe(500);
+  await expect.poll(async () => (await water()).consumedMl, { timeout: 12_000 }).toBe(500);
   await reloadTo(page, 'food');
   await expect(big).toHaveText(/^500\s*ml$/);
 });

@@ -1,7 +1,6 @@
-// First-run paths (docs/audit/new-user.md): the parent's way to Family, the plan sheet's copy, the
-// checklist's task and notification steps, the habit list under the finger, toasts on navigation.
-// Each test fails on the code before its fix. No UI sign-ups: a fresh API account (`emptyAccount`)
-// boots into the same first-run sheet a real sign-up lands on.
+// First-run paths (docs/audit/new-user.md): the parent's way to Family, the checklist's task and
+// notification steps, the habit list under the finger, toasts on navigation. Each test fails on the
+// code before its fix. No UI sign-ups: a fresh API account (`emptyAccount`) stands in for a new one.
 import { mkdirSync } from 'node:fs';
 import { test, expect, signInFast, go } from './fixtures.mjs';
 
@@ -47,41 +46,16 @@ const denyNotifications = (page) =>
 
 test.setTimeout(120_000);
 
-test('NEW-6: the plan sheet title, subtitle and Start follow the selection', async ({ page, emptyAccount }, info) => {
-  await boot(page, emptyAccount);
-  const sheet = page.locator('.gb-setup-modal');
-  const title = sheet.locator('.gb-modal-title');
-  const sub = sheet.locator('.gb-modal-sub');
-  const start = sheet.getByRole('button', { name: 'Start with this plan' });
-  await expect(title).toHaveText('Your plan is ready', { timeout: 20_000 });
-  await sheet.getByRole('button', { name: 'Balanced day' }).click();
-  await expect(title).not.toHaveText('Your plan is ready');
-  await expect(sub).not.toContainText(/balanced day/i);
-  await expect(start).toBeDisabled();
-  await shot(page, 'NEW-6', info);
-  await sheet.getByRole('button', { name: 'Save money' }).click();
-  await expect(title).toHaveText('Your plan is ready');
-  await expect(sub).toContainText('Save money');
-  await expect(sub).not.toContainText(/balanced day/i);
-  await expect(start).toBeEnabled();
-});
-
-test('NEW-3/4/10/13: a parent goes from the plan sheet to a member and today\'s meals, and Home links back', async ({ page, emptyAccount }, info) => {
-  await boot(page, emptyAccount);
+test('NEW-3/4/10/13: a parent goes from the Family tab to a member and today\'s meals, and Home links back', async ({ page, emptyAccount }, info) => {
+  // Main's first run has no Family pack: the parent starts from the Family tab.
+  await boot(page, emptyAccount, { setupDone: true });
   let taps = 0;
   const tap = async (loc) => {
     taps++;
     await loc.click();
   };
-  const sheet = page.locator('.gb-setup-modal');
-  await expect(sheet.getByText('Your plan is ready')).toBeVisible({ timeout: 20_000 });
-  // NEW-3: a pack for the parent, and Start leads to Family's Add member form.
-  await tap(sheet.getByRole('button', { name: 'Balanced day' }));
-  await tap(sheet.getByRole('button', { name: 'Family meals' }));
-  await expect(sheet.locator('.gb-qa-row', { hasText: 'Family' })).toBeVisible();
-  await shot(page, 'NEW-3-sheet', info);
-  await tap(sheet.getByRole('button', { name: 'Start with this plan' }));
-  await expect(sheet).toHaveCount(0);
+  await go(page, 'family');
+  await tap(page.getByRole('button', { name: 'Add your first member' }));
   await expect(page.getByRole('heading', { name: 'Add family member' })).toBeVisible({ timeout: 15_000 });
   await shot(page, 'NEW-3', info);
 
@@ -130,8 +104,8 @@ test('NEW-3/4/10/13: a parent goes from the plan sheet to a member and today\'s 
   const fam = await call(emptyAccount.token, '/api/family');
   expect(fam.members.map((m) => m.profile && m.profile.dietPreference)).toEqual(fam.members.map(() => 'Vegetarian'));
   await shot(page, 'NEW-13-plan', info);
-  console.log(`[first-run-paths ${info.project.name}] parent: ${taps} taps from the plan sheet to today's meal plan`);
-  expect(taps).toBeLessThanOrEqual(9);
+  console.log(`[first-run-paths ${info.project.name}] parent: ${taps} taps from the Family tab to today's meal plan`);
+  expect(taps).toBeLessThanOrEqual(7);
 
   // NEW-3: Home now has a way back to the meals.
   await go(page, 'home');

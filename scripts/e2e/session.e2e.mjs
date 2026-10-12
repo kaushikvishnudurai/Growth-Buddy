@@ -103,7 +103,7 @@ for (const [vpName, vp] of VIEWPORTS) {
     await page.waitForFunction(() => !document.querySelector('input[type=password]'), {
       timeout: 30000,
     });
-    await page.waitForFunction(() => document.querySelector('.gb-avatar[aria-label="Account"]'), {
+    await page.waitForFunction(() => document.querySelector('.gb-avatar[aria-label$="account"]'), {
       timeout: 30000,
     });
     await sleep(2500); // wave 2
@@ -163,7 +163,7 @@ for (const [vpName, vp] of VIEWPORTS) {
     () => !!(navigator.serviceWorker && navigator.serviceWorker.controller)
   );
   if (sw) check((await apiCached()).length > 0, 'gb-api-get holds /api responses while signed in');
-  await page.click('.gb-avatar[aria-label="Account"]');
+  await page.click('.gb-avatar[aria-label$="account"]');
   await page.waitForFunction(() =>
     [...document.querySelectorAll('.gb-profile-pop-item')].some((b) =>
       /settings/i.test(b.textContent)
@@ -278,7 +278,7 @@ for (const [vpName, vp] of VIEWPORTS) {
     const home = await page.evaluate(() => ({
       crash: !!document.querySelector('.gb-crash'),
       banner: !!document.querySelector('.gb-offline-banner'),
-      header: !!document.querySelector('.gb-avatar[aria-label="Account"]'),
+      header: !!document.querySelector('.gb-avatar[aria-label$="account"]'),
       signin: !!document.querySelector('input[type=password]'),
       onLine: navigator.onLine,
     }));
@@ -350,7 +350,7 @@ for (const [vpName, vp] of VIEWPORTS) {
   // The sheet waits on its save; close it (the request stays out) to reach Settings.
   await page.keyboard.press('Escape');
   await sleep(600);
-  await page.click('.gb-avatar[aria-label="Account"]');
+  await page.click('.gb-avatar[aria-label$="account"]');
   await sleep(300);
   await clickText('.gb-profile-pop-item', /settings/);
   await page.waitForSelector('.gb-modal-overlay.is-open');
@@ -387,7 +387,7 @@ for (const [vpName, vp] of VIEWPORTS) {
   check(left === 1, 'cleanup: the synced glass found and deleted (' + left + ')');
 
   // Leave signed out, through Settings again: no session of ours left behind.
-  await page.click('.gb-avatar[aria-label="Account"]');
+  await page.click('.gb-avatar[aria-label$="account"]');
   await sleep(300);
   await clickText('.gb-profile-pop-item', /settings/);
   await page.waitForSelector('.gb-modal-overlay.is-open');

@@ -65,9 +65,14 @@ test('HOS-4: a double tap on a reminder delete removes only that reminder', asyn
     }, { once: true })
   );
   await tapsAt(page, del, 2, 200);
-  await page.waitForTimeout(1500);
+  // The row goes at once; the DELETE waits out main's 6 s Undo window (app.js deferDelete).
+  await expect(main(page).getByText('DBL a')).toHaveCount(0);
+  await expect(main(page).getByText('DBL b')).toBeVisible();
+  await expect(main(page).getByText('DBL c')).toBeVisible();
+  await expect
+    .poll(async () => (await get(page, account, '/api/reminders')).map((r) => r.text), { timeout: 15_000 })
+    .not.toContain('DBL a');
   const left = (await get(page, account, '/api/reminders')).map((r) => r.text);
-  expect(left).not.toContain('DBL a');
   expect(left).toEqual(expect.arrayContaining(['DBL b', 'DBL c']));
   await shot(page, 'HOS-4');
 });
@@ -80,12 +85,16 @@ test('HOS-4: Undo brings back every reminder deleted while it shows', async ({ p
   await main(page).getByRole('button', { name: 'Delete reminder: UND a' }).click();
   await page.waitForTimeout(700);
   await main(page).getByRole('button', { name: 'Delete reminder: UND b' }).click();
-  await page.getByRole('button', { name: 'Undo' }).last().click();
-  await expect
-    .poll(async () => (await get(page, account, '/api/reminders')).map((r) => r.text).sort().join())
-    .toContain('UND a,UND b');
+  // Main gives each delete its own toast and its own Undo.
+  const undo = page.getByRole('button', { name: 'Undo' });
+  await expect(undo).toHaveCount(2);
+  // Handles, not nth(): each Undo takes its toast away and the rest re-index.
+  for (const b of await undo.elementHandles()) await b.click();
   await expect(main(page).getByText('UND a')).toBeVisible();
   await expect(main(page).getByText('UND b')).toBeVisible();
+  // Past the window: neither DELETE ever went.
+  await page.waitForTimeout(6500);
+  expect((await get(page, account, '/api/reminders')).map((r) => r.text).sort().join()).toContain('UND a,UND b');
 });
 
 test('HOS-5: two quick taps on a Home task tick only that task', async ({ page, account }) => {

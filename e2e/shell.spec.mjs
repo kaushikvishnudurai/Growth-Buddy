@@ -95,7 +95,7 @@ test('CNT-1: Settings > Alerts shows the keep-read picker, not [object Object]',
   await shot(page, 'CNT-1');
 });
 
-test('FRU-9: a system theme flip keeps what was typed on sign-up', async ({ page }) => {
+test('FRU-9: a system theme flip keeps what was typed on the auth form', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto('/');
   const email = page.locator('input[type=email]').first();
@@ -198,63 +198,8 @@ test('OFF-1: a task whose request is still out when the page reloads is sent aft
   await shot(page, 'OFF-1');
 });
 
-test('OFF-3: logging out with a queued change asks first', async ({ page, account, allowed }) => {
-  allowed.push('/api/tasks', 'net::ERR_FAILED', 'Failed to load resource');
-  await signInFast(page, account);
-  await page.route('**/api/tasks', (route) => (route.request().method() === 'POST' ? route.abort('failed') : route.fallback()));
-  await addTaskThroughSheet(page, 'Not synced');
-  await expect(page.locator('.gb-toast-msg', { hasText: 'Saved on this phone' })).toBeVisible();
-  await page.locator('.gb-avatar').click();
-  await page.locator('.gb-profile-pop-item', { hasText: 'Log out' }).click();
-  await expect(page.locator('.gb-modal-title', { hasText: '1 change not synced yet' })).toBeVisible();
-  await shot(page, 'OFF-3');
-  await page.getByRole('button', { name: 'Stay signed in' }).click();
-  await expect(page.locator('.gb-avatar')).toBeVisible();
-  await expect(page.locator('input[type=email]')).toHaveCount(0);
-});
-
-test('OFF-2: a glass queued by one account does not show on the next', async ({ page, account, allowed }) => {
-  allowed.push('/api/water/entries', 'net::ERR_FAILED', 'Failed to load resource');
-  const other = await seedAccount();
-  await signInFast(page, account);
-  await go(page, 'food');
-  await page.route('**/api/water/entries', (route) => route.abort('failed'));
-  await page.getByRole('button', { name: 'Add 250 millilitres of water' }).first().click();
-  await expect(page.locator('.gb-toast-msg', { hasText: 'Saved on this phone' })).toBeVisible();
-  await page.locator('.gb-avatar').click();
-  await page.locator('.gb-profile-pop-item', { hasText: 'Log out' }).click();
-  await page.getByRole('button', { name: 'Sign out anyway' }).click();
-  await page.unroute('**/api/water/entries');
-  // The next person signs in on the same tab: no reload between the two.
-  const snap = page.waitForRequest((r) => r.url().includes('/api/daily-logs/snapshot'), { timeout: 20_000 });
-  await page.locator('input[type=email]').first().fill(other.email);
-  await page.locator('input[type=password]').first().fill(other.password);
-  await page.locator('input[type=password]').first().press('Enter');
-  await expect(page.locator('#gb-main')).toBeVisible({ timeout: 20_000 });
-  const sent = JSON.parse((await snap).postData());
-  const theirs = await apiAs(page, other.token, '/api/water');
-  expect(sent.waterMl).toBe(theirs.consumedMl);
-  await shot(page, 'OFF-2');
-});
-
-test('OFF-7: a sign-out made offline is revoked on the next boot', async ({ page, account, allowed }, info) => {
-  // Ephemeral WebKit sessions (Playwright's default context, Safari Private Browsing) drop Cache API
-  // entries on reload, and the runner cannot give WebKit a persistent one: docs/audit/cross-device.md XD-3.
-  test.skip(info.project.use.engine === 'webkit', 'ephemeral WebKit sessions lose Cache API data on reload (XD-3)');
-  // The last check's own /me is meant to 401.
-  allowed.push('/api/auth/logout', '/api/auth/me', 'net::ERR_FAILED', 'Failed to load resource');
-  await signInFast(page, account);
-  await page.route('**/api/auth/logout', (route) => route.abort('failed'));
-  await page.locator('.gb-avatar').click();
-  await page.locator('.gb-profile-pop-item', { hasText: 'Log out' }).click();
-  await expect(page.locator('input[type=email]').first()).toBeVisible();
-  await expect.poll(() => storeKeys(page).then((k) => k.includes('gb.revoke.pending'))).toBe(true);
-  await page.unroute('**/api/auth/logout');
-  await page.reload();
-  await expect.poll(() => storeKeys(page).then((k) => k.includes('gb.revoke.pending')), { timeout: 10_000 }).toBe(false);
-  const me = await page.evaluate((t) => fetch('/api/auth/me', { headers: { Authorization: 'Bearer ' + t } }).then((r) => r.status), account.token);
-  expect(me).toBe(401);
-});
+// OFF-3, OFF-2, OFF-7 (sign-out with queued writes, offline revoke) are gone: main's sign-out
+// flushes the outbox instead (scripts/e2e/session.e2e.mjs #4 covers it).
 
 test('OFF-6: a screen never loaded, opened offline, says so instead of reloading', async ({ page, account, context, allowed }) => {
   allowed.push('Screen failed to load', 'Failed to fetch', 'ERR_INTERNET_DISCONNECTED', 'goals.js', 'active-dates.js', 'logomark.svg');
