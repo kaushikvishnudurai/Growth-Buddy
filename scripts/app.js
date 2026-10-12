@@ -124,6 +124,7 @@ import {
 import { setWorkWeek } from './recurrence.js';
 import { computeAchievements, levelProgress } from './achievements.js';
 import { celebrate } from './celebrate.js';
+import { habitMoment, tasksMoment, waterMoment } from './moments.js';
 import { openSnap } from './snap.js';
 import {
   lastNightGuess,
@@ -177,6 +178,10 @@ import {
   healthAvailable,
   requestHealthAccess,
   onLocalNotificationAction,
+  setNativeAuth,
+  clearNativeAuth,
+  takeNativeChanges,
+  onNativeChanges,
   onDeepLink,
   deepLinkHash,
   publicSiteUrl,
@@ -910,6 +915,7 @@ function loadToken() {
 function saveSession(user, token) {
   CacheStorage.setItem(SESSION_KEY, JSON.stringify(user));
   if (token) CacheStorage.setItem(TOKEN_KEY, token);
+  setNativeAuth(token || loadToken(), API_BASE); // notification buttons, app closed
 }
 
 function emptyWellness() {
@@ -2162,6 +2168,7 @@ function purgeUserCache(reason) {
 function clearSession() {
   CacheStorage.removeItem(SESSION_KEY);
   CacheStorage.removeItem(TOKEN_KEY);
+  clearNativeAuth();
   // The sound goes too, and whoever signs in next gets their own looked up
   // rather than inheriting the previous account's. It was keyed per device and
   // never per user, so on a shared device the next person heard the last
@@ -2689,6 +2696,10 @@ async function apiFetchNow(path, options, gen) {
     handleOffline();
     throw new Error(NO_CONNECTION);
   }
+  // Any answer, even an error, means the server is reachable again. Only the
+  // browser's 'online' event used to clear the banner, and after a server that
+  // didn't answer (Render waking, a dropped request) that event never comes.
+  if (!state.online) handleOnline();
   if (isStaleSession(gen)) throw sessionEndedError();
   if (res.status === 401) {
     // Token went stale (revoked, expired, server restarted with empty DB,
@@ -3560,6 +3571,7 @@ async function toggleTask(id) {
     const painted = toggleSignature();
     state.tasks = state.tasks.map((t) => (t.id === id || t.id === updated.id ? mapTask(updated) : t));
     saved = true;
+    if (nowDone) celebrateMoment(tasksMoment(tasksForToday(state.tasks), todayKey()));
     // Both only need the toggle landed, not each other: one round trip, not two.
     const [todayScore] = await Promise.all([api('/api/score/today'), refreshCurrentUser()]);
     state.score = todayScore && typeof todayScore.score === 'number' ? todayScore.score : score();
@@ -3782,6 +3794,15 @@ function openMeasuredCheckin(habit) {
   });
 }
 
+/* moments.js: the popup for a small win, each once a day. Memory only: a reload
+   can show one again, which costs nothing. */
+const shownMoments = new Set();
+function celebrateMoment(m) {
+  if (!m || shownMoments.has(m.key)) return;
+  shownMoments.add(m.key);
+  celebrate(m);
+}
+
 async function plainToggleHabit(id) {
   if (!togglesInFlight.claim(id)) return;
   const before = { score: state.score };
@@ -3824,6 +3845,7 @@ async function plainToggleHabit(id) {
     state.habits = state.habits.map((h) => (h.id === updated.id ? updated : h));
     saved = true;
     reconcileStreakFreeze(updated);
+    celebrateMoment(habitMoment(updated, state.habits, todayKey()));
     // Said only when the count really went back up, not on the hope it did.
     if (wasRest && updated.doneToday && freezeTokensLeft() > tokensBefore) {
       toastSuccess('Done. Freeze returned, ' + freezeTokensLeft() + ' left.');
@@ -3970,12 +3992,12 @@ async function loadHealthReadings() {
   }
 }
 
-/* The phone's last 7 days to the account. At most every 15 minutes unless
-   asked; never opens a permission sheet (readHealthForSync only reads). */
-const HEALTH_SYNC_EVERY_MS = 15 * 60000;
+/* The phone's last 7 days to the account, each time the app opens: boot and
+   resume (visibilitychange), plus the Health screen's Sync button (`force`:
+   says when it fails). Never opens a permission sheet (readHealthForSync only
+   reads); the POST is a per-day upsert, so a repeat costs nothing. */
 async function syncHealthFromPhone({ force = false } = {}) {
   if (!isNative() || !state.user || health.syncing) return;
-  if (!force && health.syncedAt && Date.now() - health.syncedAt < HEALTH_SYNC_EVERY_MS) return;
   health.syncing = true;
   if (state.screen === 'health') render();
   try {
@@ -5750,6 +5772,8 @@ async function quickAddWater(amountMl, dayKey, drinkType) {
     });
     unqueue();
     pendingWater.delete(tempId);
+    const goal = (state.water && state.water.goalMl) || 0;
+    celebrateMoment(waterMoment(w0.consumedMl || 0, (w0.consumedMl || 0) + counts, goal, todayKey()));
     if (seq > waterPaintedSeq) {
       waterPaintedSeq = seq;
       state.water = withPendingWater(updated);
@@ -6489,10 +6513,11 @@ let recentFoods = null;
 const FUTURE_FOOD = "You can't log food for a day that hasn't happened yet.";
 
 /* Log food closes on the tap: the save, and the estimate behind it when no
-   kcal was typed, carry on under the screen (they held the dialog ~11 s). A
-   failure keeps the entry on a Retry toast rather than losing what was typed. */
+   kcal was typed, carry on under the screen (they held the dialog ~11 s). An
+   estimate gets the plate animation (showFoodLoader) while it runs. A failure
+   keeps the entry on a Retry toast rather than losing what was typed. */
 function logFoodLater(payload, opts) {
-  const wait = payload.kcal == null ? pushToast('Estimating calories for ' + payload.foodName + '.', 'info', 20000) : 0;
+  const hide = payload.kcal == null ? showFoodLoader(payload.foodName) : null;
   logFoodEntry(payload, opts)
     .catch((err) =>
       pushToast((err && err.message) || 'Could not log ' + payload.foodName + '.', 'error', 10000, {
@@ -6500,7 +6525,7 @@ function logFoodLater(payload, opts) {
         run: () => logFoodLater(payload, opts),
       })
     )
-    .finally(() => wait && dismissToast(wait));
+    .finally(() => hide && hide());
 }
 
 /* opts.file: a plate photo already taken (the Photo option in Quick add);
@@ -6592,14 +6617,22 @@ function openAddFood(opts) {
   });
 
   function createItemRow(item, index) {
-    const nameInput = h('input', {
-      type: 'text',
-      class: 'gb-input gb-input--inline',
-      value: item.foodName || '',
+    // A textarea that grows to the name (field-sizing in app.css): a scanned
+    // dish is often a long name, and one line cut it to a few words on a phone.
+    const nameInput = h('textarea', {
+      class: 'gb-input gb-input--inline gb-food-item-name',
+      rows: 1,
       placeholder: 'Food name',
       'aria-label': 'Food name',
       maxlength: 100,
-      style: { flex: '1', marginRight: '8px' },
+    });
+    nameInput.value = item.foodName || '';
+    // One line of text: Enter ends the edit instead of starting a new line.
+    nameInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        nameInput.blur();
+      }
     });
 
     const quantityInput = h('input', {
@@ -6646,7 +6679,7 @@ function openAddFood(opts) {
       const newQty = parseInt(quantityInput.value);
       if (Number.isFinite(newQty) && newQty > 0) {
         photoItems[index] = {
-          foodName: nameInput.value.trim() || item.foodName,
+          foodName: nameInput.value.replace(/\s+/g, ' ').trim() || item.foodName,
           quantityGrams: newQty,
           kcalPer100g: item.kcalPer100g,
           kcalEstimated: Math.round((item.kcalPer100g * newQty) / 100),
@@ -9406,6 +9439,8 @@ function armNotificationActions() {
   onLocalNotificationAction((ev) => {
     handleNotificationAction(ev).catch((err) => toastError(err, 'Could not do that from the notification.'));
   });
+  // Android carries the buttons out natively; with the app open, show the result.
+  onNativeChanges(() => takeNativeChanges().then((changed) => changed && state.user && loadData()));
 }
 
 async function handleNotificationAction(ev) {
@@ -11793,7 +11828,6 @@ const SCREENS = {
     headerName: () => 'Health',
     render: () => {
       if (health.readings == null && !health.loading) loadHealthReadings();
-      syncHealthFromPhone();
       return lazyScreen(
         () => import('./health.js'),
         (m) =>
@@ -13719,6 +13753,7 @@ async function endSession(reason) {
   recentFoods = null;
   favouriteFoods = null;
   pendingWater.clear(); // unsent glasses are this account's (its queue is in its cache)
+  shownMoments.clear();
   lastWaterTap = { amount: 0, at: 0 };
   waterRefetch = false;
   // Health readings are someone's health data: never shown to the next account.
@@ -13945,6 +13980,28 @@ function handleOffline() {
   // The banner says it, and stays while it's true. A toast on top said it twice
   // more, and on a phone the stack covered the open dialog's buttons.
   syncOfflineBanner();
+  probeServerSoon();
+}
+
+/* The device has a connection but the server gave no answer: ask again until it
+   does, since no 'online' event will ever come for that. Truly offline waits
+   for that event instead. Any answer is enough (handleOnline does the reload). */
+const SERVER_PROBE_MS = 15000;
+let serverProbe = 0;
+function probeServerSoon() {
+  if (serverProbe) return;
+  serverProbe = setTimeout(async () => {
+    serverProbe = 0;
+    if (state.online) return;
+    if (navigator.onLine === false) return; // the 'online' event takes it from here
+    try {
+      const token = loadToken();
+      await fetch(API_BASE + '/api/auth/me', { headers: token ? { Authorization: 'Bearer ' + token } : {} });
+      handleOnline();
+    } catch (_) {
+      probeServerSoon();
+    }
+  }, SERVER_PROBE_MS);
 }
 
 /* The scroll position the last render() restored; a lazy screen re-applies it. */
@@ -14383,6 +14440,8 @@ document.addEventListener('visibilitychange', () => {
     refreshDayIfStale();
     syncHealthFromPhone(); // walked since the app was last open
     autoTickHealthHabits();
+    // A notification button did something while the app was away: show it.
+    takeNativeChanges().then((changed) => changed && state.user && loadData());
     autoLogSleep(); // woke up and opened the app
     loadPhoneNight(); // the night to offer, when it didn't log itself
   }
@@ -14417,6 +14476,7 @@ applyTextScale(state.textScale);
 if (state.user) {
   // Restore the screen from the URL fragment, so refreshing on /circle stays there.
   state.screen = screenFromHash();
+  setNativeAuth(loadToken(), API_BASE); // a session from before the plugin shipped
   loadData();
 } else {
   // Opened a link (#/money) while signed out: go there once signed in.

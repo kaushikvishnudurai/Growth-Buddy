@@ -348,9 +348,11 @@ export async function scheduleLocalNotifications(items) {
    "Done", "Snooze", "+250 ml" on the card itself. The button sets live on the
    phone under an id (registerActionTypes, idempotent: it overwrites), and each
    notification names its set with `actionTypeId`. A press reaches the page as
-   a `localNotificationActionPerformed` event; Android delivers it by opening
-   the app (the plugin's buttons are activity intents), iOS too since each
-   action is `foreground`. The plugin retains the event until a listener is
+   a `localNotificationActionPerformed` event on iOS, which opens the app since
+   each action is `foreground`. Android carries a press out without opening the
+   app: the mobile repo patches the plugin to send it to NotificationActionReceiver
+   (setNativeAuth below); an APK without that receiver still opens the app and
+   delivers the event here. The plugin retains the event until a listener is
    attached, so a press that cold-starts the app is not lost. */
 
 /** Register the button sets (`[{ id, actions: [{ id, title }] }]`). No-op off-device. */
@@ -383,6 +385,46 @@ export function onLocalNotificationAction(cb) {
     }
   } catch (_) {
     /* no plugin on this build */
+  }
+}
+
+/* Android carries out a notification button itself, app closed
+   (NotificationActionReceiver in the mobile repo): it needs this session's token
+   and the API base, kept natively and wiped on sign-out. An APK without the
+   plugin opens the app for a press, as before; these are then no-ops. */
+export function setNativeAuth(token, base) {
+  const p = nativePlugin('NotificationActions');
+  if (!p || !token || !base) return;
+  p.setAuth({ token, base }).catch(() => {});
+}
+
+export function clearNativeAuth() {
+  const p = nativePlugin('NotificationActions');
+  if (p) p.clearAuth().catch(() => {});
+}
+
+/** `cb()` when a press changes something while this page is running. */
+export function onNativeChanges(cb) {
+  if (!isNative()) return;
+  const cap = window.Capacitor;
+  const registered = cap.Plugins && cap.Plugins.NotificationActions;
+  try {
+    if (registered && typeof registered.addListener === 'function') registered.addListener('changed', cb);
+    else if (typeof cap.nativeCallback === 'function')
+      cap.nativeCallback('NotificationActions', 'addListener', { eventName: 'changed' }, cb);
+  } catch (_) {
+    /* an APK without the plugin */
+  }
+}
+
+/** True once after a press changed something with the app away; then refetch. */
+export async function takeNativeChanges() {
+  const p = nativePlugin('NotificationActions');
+  if (!p) return false;
+  try {
+    return !!(await p.takeChanged()).changed;
+  } catch (_) {
+    return false;
   }
 }
 

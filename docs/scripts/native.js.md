@@ -13,12 +13,17 @@ splash control, no device name, "this browser doesn't support push notifications
 `nativePlugin` returns a registered plugin if any, else a `Proxy` onto the bridge's own
 `Capacitor.nativePromise(plugin, method, opts)`, which reaches the same native class.
 
-- **Promise-style methods only.** The one listener, `onLocalNotificationAction(cb)`, calls
+- **Promise-style methods only.** The listeners, `onLocalNotificationAction(cb)` (and `onNativeChanges(cb)`, the same way), call
   `cap.nativeCallback('LocalNotifications', 'addListener', {eventName}, cb)` itself (what a
   registered plugin's `addListener` does). `registerNotificationActions(types)` writes the button
-  sets; `scheduleLocalNotifications` passes each item's `actionTypeId` + `extra`. A press opens the
-  app (Android buttons are activity intents; iOS actions are `foreground`), and the plugin holds the
-  event until a listener attaches, so a press that cold-starts the app still arrives.
+  sets; `scheduleLocalNotifications` passes each item's `actionTypeId` + `extra`. On iOS a press opens the
+  app (actions are `foreground`), and the plugin holds the event until a listener attaches, so a
+  press that cold-starts the app still arrives. **On Android a press never opens the app**: the
+  mobile repo patches the plugin (`patches/`) to broadcast it to `NotificationActionReceiver`, which
+  makes the same API call natively with the token `setNativeAuth(token, base)` mirrored (from
+  `saveSession` and boot; `clearNativeAuth` in `clearSession`), re-posts a snoozed card at
+  `snoozedUntil`, and sets a flag: `takeNativeChanges()` on resume, or the live `onNativeChanges`
+  event, makes app.js `loadData()`. An APK without the receiver falls back to opening the app.
 - The proxy answers `undefined` for `then`, so an accidental `await` on it can't hang forever.
 - **A plugin the binary wasn't built with returns null.** Both platforms set
   `Capacitor.PluginHeaders` (one `{name, methods}` per native plugin) before the page runs; a name

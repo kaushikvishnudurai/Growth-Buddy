@@ -23,7 +23,7 @@ import {
   focusSoon,
   visibleText,
 } from './gb-kit.js';
-import { BREAK_LENGTHS, breakState } from './break.js';
+import { BREAK_LENGTHS, MAX_BREAK_DAYS, breakState } from './break.js';
 import { HOME_WIDGETS, resolveHomeLayout } from './dashboard.js';
 import {
   snoozeLabel,
@@ -2299,8 +2299,26 @@ function openProfileSettings(initialTab) {
     waterFields
   );
 
-  /* ---- Take a break (I-08): one tap for 3 / 7 / 14 days, one to end it. ---- */
+  /* ---- Take a break (I-08): one tap for 3 / 7 / 14 days or a typed 1-14, one to end it. ---- */
   const breakSectionBody = h('div');
+  const customDays = h('input', {
+    type: 'number',
+    class: 'gb-input',
+    min: '1',
+    max: String(MAX_BREAK_DAYS),
+    placeholder: 'Days',
+    'aria-label': 'Break length in days',
+    style: { width: '84px' },
+  });
+  const startCustomBreak = () => {
+    const n = Number(customDays.value);
+    if (!Number.isInteger(n) || n < 1 || n > MAX_BREAK_DAYS) {
+      toastError(null, 'Enter 1 to ' + MAX_BREAK_DAYS + ' days.');
+      return Promise.resolve();
+    }
+    customDays.value = '';
+    return takeBreak(n, false);
+  };
   const paintBreak = () => {
     const st = breakState(breakPrefs(), todayKey());
     const btn = (label, onclick, primary) =>
@@ -2329,7 +2347,9 @@ function openProfileSettings(initialTab) {
         : h(
             'div',
             { class: 'gb-coach-chiprow', style: { marginTop: 0 } },
-            ...BREAK_LENGTHS.map((n) => btn(n + ' days', () => takeBreak(n, false), false))
+            ...BREAK_LENGTHS.map((n) => btn(n + ' days', () => takeBreak(n, false), false)),
+            customDays,
+            btn('Start', startCustomBreak, false)
           )
     );
   };

@@ -21,6 +21,8 @@ import {
   CrashCard,
 } from './gb-kit.js';
 import { toast } from './toast.js';
+import { celebrate } from './celebrate.js';
+import { noSpendMoment } from './moments.js';
 import { shareStoryCard, _demo as _shareCardDemo } from './share-card.js';
 import { offerFile } from './save-file.js';
 import { budgetsFrom, budgetOffer } from './starter-packs.js';
@@ -2471,7 +2473,7 @@ function logNoSpendDay(money, save) {
   const next = clone(money);
   next.noSpendDays = [...(next.noSpendDays || []), today];
   save(next, money);
-  toast.success('No-spend day logged — that’s money kept.');
+  celebrate(noSpendMoment(next.noSpendDays, today));
 }
 
 /* Scan a receipt: the photo's line items (MoneyService.scanReceipt) as rows to
@@ -4438,7 +4440,7 @@ function ScreenMoney({
                   class: 'gb-btn gb-btn--ghost gb-btn--compact',
                   onclick: () => {
                     commit((m) => (m.noSpendDays = [...new Set(m.noSpendDays.concat(day))]));
-                    toast.success('Marked as a no-spend day.');
+                    celebrate(noSpendMoment(money.noSpendDays.concat(day), day));
                   },
                 },
                 Icon('check', { size: 14, sw: 2.6 }),

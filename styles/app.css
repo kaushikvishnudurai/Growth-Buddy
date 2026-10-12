@@ -17675,7 +17675,7 @@ button.gb-tl-title {
   .gb-dash--day > * > .gb-w-wellness {
     order: 6;
   }
-  .gb-dash--day > .gb-day-rest > * {
+  .gb-dash--day > * > .gb-day-later {
     order: 7;
   }
   /* The timeline: the date is the app header's; the list folds behind "Show the day". */
@@ -17809,5 +17809,41 @@ button.gb-tl-title {
 @media (prefers-reduced-motion: reduce) {
   .gb-strip-bar > span {
     transition: none;
+  }
+}
+
+/* Both cards: Summary sits under the water card instead of alone across the
+   foot, in the space the longer meals list leaves beside it. */
+@media (min-width: 1200px) {
+  .gb-food-screen--both {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: auto 1fr;
+  }
+  .gb-food-screen--both > .gb-dash-block:nth-child(2) {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+  .gb-food-screen--both > .gb-dash-block:last-child {
+    grid-column: 1;
+    grid-row: 2;
+  }
+}
+
+/* Log food: a plate photo's detected items. The name grows to fit; on a phone
+   it takes its own line above grams, kcal and remove (it was ~100px wide). */
+.gb-food-item-name {
+  flex: 1 1 0;
+  min-width: 0;
+  resize: none;
+  field-sizing: content;
+  min-height: 40px;
+  line-height: 1.35;
+}
+@media (max-width: 600px) {
+  .gb-food-item-row {
+    flex-wrap: wrap;
+  }
+  .gb-food-item-name {
+    flex-basis: 100%;
   }
 }

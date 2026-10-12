@@ -3488,13 +3488,40 @@ function ScreenDashboard({
   });
   const stripAt = top.findIndex((b) => b.querySelector('.gb-strip'));
   top.splice(stripAt + 1, 0, qa, ...pins);
-  return h(
+  rest.forEach((b) => b.classList.add('gb-day-later')); // phone order, wherever balanceDay puts it
+  const root = h(
     'div',
     { class: 'gb-rise gb-dash gb-dash--day' },
     h('div', { class: 'gb-day-top' }, top.filter(Boolean)),
     h('div', { class: 'gb-day-main' }, main),
     h('div', { class: 'gb-day-rest' }, rest)
   );
+  requestAnimationFrame(() => balanceDay(root));
+  return root;
+}
+
+/* Desktop: the timeline stood alone on the left while every card stacked on the
+   right, half the page empty beside the calendar. Deal the rest cards, in
+   order, under whichever column is shorter. Phone (zones display: contents, so
+   both offsetLeft 0) is left alone.
+   ponytail: measured once per render, like balanceHome; a resize across 1024px
+   keeps the deal until the next render. */
+function balanceDay(root) {
+  if (!root.isConnected) return;
+  const [top, main, rest] = ['.gb-day-top', '.gb-day-main', '.gb-day-rest'].map((s) => root.querySelector(s));
+  if (main.offsetLeft === top.offsetLeft) return;
+  const items = [...rest.children];
+  const heights = items.map((el) => el.offsetHeight); // all before any move: one layout
+  let left = main.offsetHeight;
+  let right = top.offsetHeight;
+  items.forEach((el, i) => {
+    if (left < right) {
+      main.appendChild(el);
+      left += heights[i] + 16; // .gb-dash-block's margin-bottom on desktop
+    } else {
+      right += heights[i] + 16;
+    }
+  });
 }
 
 /* CSS columns split the widgets in source order, and a block can't break, so a
@@ -3540,7 +3567,10 @@ function ScreenFood({
   const on = (k) => !features || features[k] !== false;
   return h(
     'div',
-    { class: 'gb-rise gb-food-screen', style: { padding: '0 0 24px' } },
+    {
+      class: 'gb-rise gb-food-screen' + (on('water') && on('food') ? ' gb-food-screen--both' : ''),
+      style: { padding: '0 0 24px' },
+    },
     on('water')
       ? h(
           'div',

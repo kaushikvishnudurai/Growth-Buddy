@@ -275,7 +275,8 @@ export const WATER_ACTION_ML = 250;
 
 /** The button sets, in the shape LocalNotifications.registerActionTypes takes. Pure. */
 export function notificationActionTypes(snoozeLabel = 'Snooze') {
-  // foreground: iOS runs the app for the press (Android always does).
+  // foreground: iOS runs the app for the press. Android ignores it: a press goes
+  // to the app's NotificationActionReceiver (mobile repo), in the background.
   const btn = (id, title) => ({ id, title, foreground: true });
   return [
     { id: ACTION_TYPES.reminder, actions: [btn('done', 'Done'), btn('snooze', snoozeLabel)] },
