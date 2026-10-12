@@ -65,7 +65,7 @@ test('PRF-6: wave 2 is already in flight when Home first renders', async ({ page
 
 test('PRF-9: Home headings, avatar and mini-calendar names match what they show', async ({ page, account }, info) => {
   await signInFast(page, account);
-  await expect(page.locator('.gb-mini-cal-day').first()).toBeVisible();
+  await expect(page.locator('.gb-mini-cal-day').locator('visible=true').first()).toBeVisible();
   const r = await page.evaluate(() => {
     const words = (s) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
     const mismatched = [...document.querySelectorAll('.gb-avatar[aria-label], .gb-mini-cal-day')]
