@@ -13737,7 +13737,9 @@ async function flushPendingWrites() {
     // Deletes still waiting on an Undo toast go first, while the token is good
     // (offline, into the outbox), and are answered before the session goes.
     await undoQueue.flush();
-    if (!navigator.onLine) return;
+    // No navigator.onLine gate: it can say offline while the network is back
+    // (it read false here after an offline spell, and the queued glass never
+    // went). A really offline send fails fast and stays queued; the 4 s caps it.
     await CacheStorage.ready();
     await Promise.all([outbox.size() ? outbox.flush(api) : null, flushWaterQueue()]);
   })().catch(() => {});
