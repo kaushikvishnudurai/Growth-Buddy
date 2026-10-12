@@ -17137,7 +17137,7 @@ button.gb-tone-chip:focus-visible {
 .gb-strip-stats {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 18px;
+  gap: 4px 14px;
   margin-top: 8px;
 }
 .gb-strip-stat {
@@ -17516,6 +17516,82 @@ button.gb-tl-title {
   .gb-well-chip:hover {
     border-color: var(--brand);
   }
+}
+
+/* Today card: the score strip over the Pending list (dashboard.js TodayCard). */
+.gb-today {
+  padding: var(--space-4);
+}
+.gb-pending {
+  margin-top: var(--space-3);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+}
+.gb-pending-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.gb-pending-head h3 {
+  margin: 0;
+  font-size: var(--text-2xs);
+  font-weight: 800;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--fg3);
+}
+.gb-pending-head .gb-tl-n {
+  font-size: var(--text-xs);
+  color: var(--fg2);
+}
+.gb-pending-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+}
+.gb-pending-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+}
+.gb-pending-row + .gb-pending-row {
+  border-top: 1px dashed var(--border);
+}
+.gb-pending-title {
+  flex: 1;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  font-size: var(--text-sm);
+  color: var(--fg1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gb-pending-title svg {
+  flex: none;
+  color: var(--fg3);
+}
+.gb-pending-when {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--fg2);
+}
+.gb-pending-when.is-late {
+  color: var(--brand-ink);
+  font-weight: 700;
+}
+.gb-pending-calm {
+  margin: 6px 0 2px;
+  font-size: var(--text-sm);
+  color: var(--fg2);
+}
+.gb-pending-more {
+  padding-left: 0;
 }
 
 @media (min-width: 1024px) {

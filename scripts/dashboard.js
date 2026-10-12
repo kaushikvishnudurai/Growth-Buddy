@@ -11,9 +11,12 @@ import {
   formatTime as sharedFormatTime,
   thinkingLabel,
   Thinking,
+  refreshIcons,
   rovingGroup,
 } from './gb-kit.js';
 import { MoneyHomeCard } from './money-home.js';
+import { normalizeMoney } from './money-core.js';
+import { toast } from './toast.js';
 import { OutlookCard } from './outlook-card.js';
 /* outlook.js drags the whole Insights engine (insights.js) with it, ~20 kB of the
    boot chunk. It loads beside wave 1 instead: app.js loadData awaits
@@ -29,6 +32,7 @@ import {
   sortHabitsForHome,
   habitDue,
   homeGoals,
+  topStreaks,
   todayKey as sharedTodayKey,
   taskWhen,
   localDayKey,
@@ -2316,35 +2320,216 @@ function DayTimeline({
   });
 }
 
-/* Header strip: the day's score as a thin bar, its arithmetic as three mono
-   counts. The greeting and date are the app header's, right above it. */
-function DayStrip({ score, tasks: allTasks, habits, water, showWater }) {
-  const tasks = tasksForToday(allTasks);
+/* Bills due today or overdue this month and not paid (Money's rule in
+   money.js upcomingSubs, narrowed to "now"; paid is forward-only). */
+function billsDue(money, today) {
+  const month = today.slice(0, 7);
+  const dom = +today.slice(8, 10);
+  const dim = new Date(+today.slice(0, 4), +today.slice(5, 7), 0).getDate();
+  return ((money && money.subscriptions) || [])
+    .map((s) => ({ sub: s, day: Math.min(Number(s.dueDay) || 1, dim) }))
+    .filter((x) => x.day <= dom && (x.sub.paidFor || '') < month)
+    .map((x) => ({ ...x, overdue: x.day < dom, month }));
+}
+
+/* Mark a bill paid the way the Money tab's button does: stamp paidFor and book
+   the expense under the id the WhatsApp path uses, so a tap on both logs one. */
+function payBill(money, bill, onSaveMoney) {
+  if (!(Number(bill.sub.amount) > 0)) {
+    toast.error(null, 'Add an amount to ' + bill.sub.name + ' first.');
+    return;
+  }
+  const before = normalizeMoney(money);
+  const next = normalizeMoney(money);
+  const sub = next.subscriptions.find((x) => x.id === bill.sub.id);
+  if (!sub || (sub.paidFor || '') >= bill.month) return;
+  sub.paidFor = bill.month;
+  const acct = sub.accountId || ((next.accounts || []).find((a) => !a.archived && ['bank', 'card'].includes(a.kind)) || {}).id;
+  next.expenses.unshift({
+    id: 'sub-' + sub.id + '-' + bill.month,
+    amount: sub.amount,
+    category: sub.category || 'others',
+    note: sub.name,
+    date: todayKey(),
+    createdAt: Date.now(),
+    ...(acct ? { accountId: acct } : {}),
+  });
+  onSaveMoney(next, money);
+  toast.action(sub.name + ' marked as paid.', 'Undo', () => onSaveMoney(before, next));
+}
+
+const PENDING_SHOWN = 5;
+let pendingExpanded = false;
+
+/* Today, at a glance: the score as one bar with its parts in mono, then what is
+   still open, most urgent first, each a one-tap complete with Undo. Ticking a
+   row re-renders Home, so the bar above moves with it. */
+function TodayCard(props) {
+  const {
+  score,
+  tasks: allTasks,
+  habits,
+  water,
+  reminders,
+  money,
+  showWater,
+  showReminders,
+  showBills,
+  toggleTask,
+  toggleHabit,
+  onReminderDone,
+  onSaveMoney,
+  } = props;
+  const today = todayKey();
+  const now = new Date();
+  const nowMin = zoneParts(now);
+  const tasks = tasksForToday(allTasks, now);
   const doneTasks = tasks.filter((t) => t.done).length;
   const due = habits.filter((hb) => habitDue(hb) || hb.doneToday);
   const doneHabits = due.filter((hb) => hb.doneToday).length;
+  const rems = showReminders ? (reminders || []).filter((r) => occursOn(r, today)) : [];
+  const remDone = (r) => (r.doneDates || []).includes(today);
+  const doneRems = rems.filter(remDone).length;
   const goal = Math.max(1, (water && water.goalMl) || 2000);
   const pct = Math.min(100, Math.round((((water && water.consumedMl) || 0) / goal) * 100));
   const s = Math.max(0, Math.min(100, Number(score) || 0));
-  const heading = s >= 70 ? "You're on track" : s > 0 ? 'Keep it going' : 'Your day starts here';
-  const stat = (label, value) => h('span', { class: 'gb-strip-stat' }, h('span', null, label), h('b', null, value));
-  return h(
-    'section',
-    { class: 'gb-strip', 'aria-label': 'Daily score' },
-    h('div', { class: 'gb-strip-top' }, h('h2', { class: 'gb-strip-title' }, heading), h('span', { class: 'gb-strip-pct' }, s + '%')),
-    h(
-      'div',
-      { class: 'gb-strip-bar', role: 'progressbar', 'aria-label': 'Daily score', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(s) },
-      h('span', { style: { width: s + '%' } })
-    ),
-    h(
-      'div',
-      { class: 'gb-strip-stats' },
-      due.length ? stat('Habits', doneHabits + '/' + due.length) : null,
-      tasks.length ? stat('Tasks', doneTasks + '/' + tasks.length) : null,
-      showWater && water ? stat('Water', pct + '%') : null
-    )
+
+  // Most urgent first: overdue tasks, reminders still ahead, habits not ticked,
+  // tasks due later today, bills due or overdue.
+  const undoToast = (title, undo) => toast.action(title + ' done.', 'Undo', undo);
+  const items = [];
+  const open = tasks.filter((t) => !t.done);
+  const late = open.filter((t) => new Date(t.dueAt) < now).sort((a, b) => String(a.dueAt).localeCompare(String(b.dueAt)));
+  late.forEach((t) =>
+    items.push({
+      title: t.title,
+      when: localDayKey(new Date(t.dueAt)) < today ? 'overdue' : 'overdue · ' + sharedFormatTime(new Date(t.dueAt)),
+      late: true,
+      tick: () => (toggleTask(t.id), undoToast(t.title, () => toggleTask(t.id))),
+    })
   );
+  rems
+    .filter((r) => !remDone(r) && (!r.time || toMin(r.time) >= nowMin))
+    .sort((a, b) => String(a.time || '99').localeCompare(String(b.time || '99')))
+    .forEach((r) =>
+      items.push({
+        title: r.text,
+        when: r.time ? sharedFormatTime(r.time) : 'today',
+        icon: 'bell',
+        tick: onReminderDone && (() => (onReminderDone(r.id, today, true), undoToast(r.text, () => onReminderDone(r.id, today, false)))),
+      })
+    );
+  if (toggleHabit)
+    due
+      .filter((hb) => !hb.doneToday && hb.active !== false)
+      .forEach((hb) =>
+        items.push({
+          title: hb.name,
+          when: hb.reminderTime ? sharedFormatTime(hb.reminderTime) : 'habit',
+          tick: () => (toggleHabit(hb.id), undoToast(hb.name, () => toggleHabit(hb.id))),
+        })
+      );
+  open
+    .filter((t) => !late.includes(t))
+    .sort((a, b) => String(a.dueAt).localeCompare(String(b.dueAt)))
+    .forEach((t) =>
+      items.push({
+        title: t.title,
+        when: sharedFormatTime(new Date(t.dueAt)),
+        tick: () => (toggleTask(t.id), undoToast(t.title, () => toggleTask(t.id))),
+      })
+    );
+  if (showBills && onSaveMoney)
+    billsDue(money, today).forEach((b) =>
+      items.push({
+        title: b.sub.name,
+        when: b.overdue ? 'overdue' : 'due today',
+        late: b.overdue,
+        icon: 'wallet',
+        tick: () => payBill(money, b, onSaveMoney),
+      })
+    );
+
+  const total = tasks.length + due.length + rems.length;
+  const best = topStreaks(habits);
+  const allDone = total > 0 && !items.length;
+  const heading = allDone ? 'All done for today' : s >= 70 ? "You're on track" : s > 0 ? 'Keep it going' : 'Your day starts here';
+  const stat = (label, value) => h('span', { class: 'gb-strip-stat' }, h('span', null, label), h('b', null, value));
+  const shown = pendingExpanded ? items : items.slice(0, PENDING_SHOWN);
+  const more = items.length - shown.length;
+  const card = Card({
+    className: 'gb-today',
+    children: [
+      h(
+        'section',
+        { class: 'gb-strip', 'aria-label': 'Today’s progress' },
+        h(
+          'div',
+          { class: 'gb-strip-top' },
+          h('h2', { class: 'gb-strip-title' }, heading),
+          h('span', { class: 'gb-strip-pct' }, allDone && best.days ? best.days + '-day streak' : s + '%')
+        ),
+        h(
+          'div',
+          { class: 'gb-strip-bar', role: 'progressbar', 'aria-label': 'Daily score', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(s) },
+          h('span', { style: { width: s + '%' } })
+        ),
+        h(
+          'div',
+          { class: 'gb-strip-stats' },
+          due.length ? stat('Habits', doneHabits + '/' + due.length) : null,
+          tasks.length ? stat('Tasks', doneTasks + '/' + tasks.length) : null,
+          rems.length ? stat('Reminders', doneRems + '/' + rems.length) : null,
+          showWater && water ? stat('Water', pct + '%') : null
+        )
+      ),
+      h(
+        'section',
+        { class: 'gb-pending', 'aria-label': 'Still to do today' },
+        h(
+          'div',
+          { class: 'gb-pending-head' },
+          h('h3', null, 'Pending'),
+          items.length ? h('span', { class: 'gb-tl-n' }, String(items.length)) : null
+        ),
+        items.length
+          ? h(
+              'ul',
+              { class: 'gb-pending-list' },
+              shown.map((it) =>
+                h(
+                  'li',
+                  { class: 'gb-pending-row' },
+                  it.tick
+                    ? Check({ onToggle: it.tick, label: it.title, list: 'pending' })
+                    : h('span', { class: 'gb-tl-dot' }, Icon(it.icon || 'circle', { size: 13, sw: 2.6 })),
+                  h('span', { class: 'gb-pending-title' }, it.icon ? Icon(it.icon, { size: 14, sw: 2.4 }) : null, it.title),
+                  h('span', { class: 'gb-pending-when' + (it.late ? ' is-late' : '') }, it.when)
+                )
+              )
+            )
+          : h('p', { class: 'gb-pending-calm' }, total ? 'Nothing left for today.' : 'Nothing due today. Add a task or habit to plan it.'),
+        more
+          ? h(
+              'button',
+              {
+                type: 'button',
+                class: 'gb-tl-add gb-pending-more',
+                onclick: () => {
+                  pendingExpanded = true;
+                  const next = TodayCard(props);
+                  card.replaceWith(next);
+                  refreshIcons();
+                  next.querySelectorAll('.gb-pending-row')[PENDING_SHOWN]?.querySelector('button')?.focus();
+                },
+              },
+              '+' + more + ' more'
+            )
+          : null
+      ),
+    ],
+  });
+  return card;
 }
 
 /* Sleep, mood and a glass of water as one inline row; the one-tap check-in
@@ -2864,6 +3049,7 @@ function ScreenDashboard({
   onOpenGoals,
   onOpenCalendar,
   onAddReminder,
+  onReminderDone,
   score,
   water,
   wellness,
@@ -3038,7 +3224,22 @@ function ScreenDashboard({
   };
   const renderers = {
     // A turned-off feature drops out of the cards that summarise it, not just its own card.
-    score: () => DayStrip({ score, tasks, habits: on('habits') ? habits : [], water, showWater: on('water') }),
+    score: () =>
+      TodayCard({
+        score,
+        tasks,
+        habits: on('habits') ? habits : [],
+        water,
+        reminders,
+        money,
+        showWater: on('water'),
+        showReminders: on('calendar'),
+        showBills: on('money'),
+        toggleTask,
+        toggleHabit: on('habits') ? toggleHabit : null,
+        onReminderDone,
+        onSaveMoney,
+      }),
     outlook: suggest,
     plan: suggest,
     wellness: () =>

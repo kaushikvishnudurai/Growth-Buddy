@@ -11667,6 +11667,12 @@ const SCREENS = {
           setScreen('calendar');
         },
         onAddReminder: openReminderSheet,
+        // Home's Pending list: the Calendar's own toggle, then Home repaints its counts.
+        onReminderDone: (id, key, done) => {
+          const p = toggleReminderDone(id, key, done);
+          render();
+          p.then(() => state.screen === 'home' && render());
+        },
         wellness: state.wellness,
         phoneNight: state.phoneNight,
         foodSummary: state.calendarFoodByDate[state.selectedDate] || null,
