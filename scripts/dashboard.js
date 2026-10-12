@@ -2027,6 +2027,17 @@ function heldHabitOrder(habits) {
    the shape of the day reads before its list. Rows are compact: time, tick,
    title. Edit, pause and focus live in the row's "..." menu. */
 
+/* The timeline keeps a ticked row where it is, so a fast double or triple tap
+   lands on the same check again: an untick within TICK_UNDO_GUARD_MS of the
+   tick is the same tap repeating, not a change of mind (the toast's Undo is). */
+const TICK_UNDO_GUARD_MS = 1000;
+const lastTicked = new Map();
+function settledToggle(key, wasDone, run) {
+  if (wasDone && Date.now() - (lastTicked.get(key) || 0) < TICK_UNDO_GUARD_MS) return undefined;
+  if (!wasDone) lastTicked.set(key, Date.now());
+  return run();
+}
+
 /* The account's clock as minutes since midnight, the line's one unit. */
 function zoneParts(d) {
   try {
@@ -2166,7 +2177,7 @@ function DayTimeline({
         kind: 'task',
         done: t.done,
         paused: t.paused,
-        node: Check({ done: t.done, onToggle: () => toggleTask(t.id), label: t.title, list: 'tasks' }),
+        node: Check({ done: t.done, onToggle: () => settledToggle('t' + t.id, t.done, () => toggleTask(t.id)), label: t.title, list: 'tasks' }),
         title: t.title,
         sub: [
           t.priority && t.priority !== 'Low' ? h('span', { class: 'gb-tl-pri', style: { '--pri': p.dot } }, t.priority) : null,
@@ -2213,10 +2224,11 @@ function DayTimeline({
         node: toggleHabit
           ? Check({
               done: !!hb.doneToday,
-              onToggle: () => {
-                habitHold = { ids: heldHabitOrder(habits).map((x) => x.id), until: Date.now() + HABIT_HOLD_MS };
-                return toggleHabit(hb.id);
-              },
+              onToggle: () =>
+                settledToggle('h' + hb.id, !!hb.doneToday, () => {
+                  habitHold = { ids: heldHabitOrder(habits).map((x) => x.id), until: Date.now() + HABIT_HOLD_MS };
+                  return toggleHabit(hb.id);
+                }),
               label: hb.name,
               list: 'habits',
             })

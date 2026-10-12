@@ -86,10 +86,14 @@ test('HOS-4: Undo brings back every reminder deleted while it shows', async ({ p
   await page.waitForTimeout(700);
   await main(page).getByRole('button', { name: 'Delete reminder: UND b' }).click();
   // Main gives each delete its own toast and its own Undo.
-  const undo = page.getByRole('button', { name: 'Undo' });
+  // A dismissed toast stays a moment while it fades out (.is-leaving): count only live ones.
+  const undo = page.locator('.gb-toast:not(.is-leaving)').getByRole('button', { name: 'Undo' });
   await expect(undo).toHaveCount(2);
   // The stack keeps sliding while toasts leave, so a pointer click never sees it stable: send the click.
-  while (await undo.count()) await undo.first().dispatchEvent('click');
+  for (let i = 0; i < 4 && (await undo.count()); i++) {
+    await undo.first().dispatchEvent('click');
+    await page.waitForTimeout(250);
+  }
   await expect(main(page).getByText('UND a')).toBeVisible();
   await expect(main(page).getByText('UND b')).toBeVisible();
   // Past the window: neither DELETE ever went.
