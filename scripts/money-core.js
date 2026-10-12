@@ -613,10 +613,11 @@ export function applyDocDiff(money, ops) {
         if (i >= 0) list.splice(i, 1);
       } else if (i >= 0) {
         // paidFor / postedFor only move forward: a WhatsApp "Mark as paid" on the
-        // server's copy survives an edit to the same bill made here.
+        // server's copy survives an edit to the same bill made here. An explicit
+        // null (a deleted payment, dropExpense) is an un-pay and goes through.
         const item = Object.assign({}, op.item);
         for (const f of ['paidFor', 'postedFor'])
-          if (list[i] && list[i][f] && list[i][f] > (item[f] || '')) item[f] = list[i][f];
+          if (item[f] !== null && list[i] && list[i][f] && list[i][f] > (item[f] || '')) item[f] = list[i][f];
         list[i] = item;
       } else if (
         !(op.item && op.item.id != null && (out.tombstones || {})[op.key + ':' + op.item.id])

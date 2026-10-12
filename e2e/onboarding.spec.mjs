@@ -47,9 +47,9 @@ test('a returning browser gets "Welcome back"; a zone mismatch is asked in words
   // ("Switch to Asia/Kolkata?", "Keep America/New_York"), not our FRU-11 city wording.
   const offer = page.locator('.gb-modal').filter({ hasText: /Switch to .*(Calcutta|Kolkata).*\?/ });
   await expect(offer).toBeVisible({ timeout: 10_000 });
-  await expect(offer).toContainText('New York');
+  await expect(offer).toContainText('America/New_York');
   if (m) await shot(page, 'FRU-11');
-  await offer.getByRole('button', { name: /^Keep .*New.York/ }).click();
+  await offer.getByRole('button', { name: 'Keep America/New_York' }).click();
   await expect(offer).toHaveCount(0);
 
   // FRU-13: the freeze chip says what a freeze does.

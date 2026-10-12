@@ -2680,6 +2680,8 @@ async function apiFetchNow(path, options, gen) {
   try {
     res = await fetch(API_BASE + path, Object.assign({}, opts, { headers }));
   } catch (_) {
+    // No answer at all, even while navigator.onLine says yes (server unreachable): say so.
+    handleOffline();
     throw new Error(NO_CONNECTION);
   }
   if (isStaleSession(gen)) throw sessionEndedError();
@@ -2692,15 +2694,18 @@ async function apiFetchNow(path, options, gen) {
   if (!res.ok) {
     let msg = statusMessage(res.status);
     let code;
+    let body;
     try {
-      const err = await res.json();
-      msg = err.message || msg;
-      code = err.code;
+      body = await res.json();
+      msg = body.message || msg;
+      code = body.code;
     } catch (_) {
       // ignored
     }
     const err = new Error(msg);
     err.status = res.status;
+    // The answer itself: a goal progress 409 carries the current copy (goal-merge.js merges onto it).
+    err.body = body;
     // ApiError.code, e.g. 'idempotency_in_progress' (a replay racing its first try).
     if (code) err.code = code;
     throw err;
@@ -13321,6 +13326,8 @@ function viewSignup() {
   // variety are what a guesser pays for, so that is all it counts.
   const pwHint = h('p', { class: 'gb-field-hint', 'aria-live': 'polite' });
   pwInput.addEventListener('input', () => {
+    // One message at a time: the field's own error already says it is too short.
+    if (state.error && state.errorField === 'password') return void (pwHint.textContent = '');
     const v = pwInput.value;
     const kinds = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].filter((r) => r.test(v)).length;
     const score = !v
@@ -14067,7 +14074,7 @@ document.addEventListener('keydown', (e) => {
   const k = e.key;
   if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (k === 'k' || k === 'K')) {
     e.preventDefault();
-    const input = document.querySelector('.gb-palette input');
+    const input = document.querySelector('.gb-modal-overlay:not(.is-closing) .gb-palette input');
     if (input) input.focus();
     else openPalette();
     return;

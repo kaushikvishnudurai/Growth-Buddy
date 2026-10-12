@@ -366,11 +366,11 @@ const FITNESS_PRESETS = [
    (for a quit one) the kind, then the form is the user's to change. Icons must
    be in HabitService.HABIT_ICONS (HabitIconsTest reads this list). */
 const HABIT_TEMPLATES = [
-  { key: 'water', name: 'Drink water', domain: 'habit', icon: 'droplets' },
-  { key: 'read', name: 'Read 20 min', domain: 'study', icon: 'book-open' },
-  { key: 'walk', name: 'Walk 8k steps', domain: 'fitness', icon: 'footprints', metric: 'steps' },
+  { key: 'water', name: 'Drink water', domain: 'habit', icon: 'droplets', reminderTime: '10:00' },
+  { key: 'read', name: 'Read 20 min', domain: 'study', icon: 'book-open', reminderTime: '21:30' },
+  { key: 'walk', name: 'Walk 8k steps', domain: 'fitness', icon: 'footprints', metric: 'steps', reminderTime: '18:00' },
   { key: 'nosugar', name: 'No sugar', domain: 'habit', icon: 'ban', kind: 'quit' },
-  { key: 'meditate', name: 'Meditate', domain: 'habit', icon: 'leaf', metric: 'minutes' },
+  { key: 'meditate', name: 'Meditate', domain: 'habit', icon: 'leaf', metric: 'minutes', reminderTime: '07:00' },
 ];
 
 const HEAT_LABEL = {
@@ -960,6 +960,7 @@ function openHabitForm(habit) {
                 if (di >= 0) domain.node.children[di].click();
                 kindSeg.node.children[t.kind === 'quit' ? 1 : 0].click();
                 metricSel.value = t.metric || 'none';
+                if (t.reminderTime) reminderInput.value = t.reminderTime;
                 // After the category click: syncDomain clears a non-fitness icon.
                 presetIcon = t.icon;
               },

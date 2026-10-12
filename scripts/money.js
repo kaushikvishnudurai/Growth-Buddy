@@ -2326,7 +2326,8 @@ function dropExpense(m, id) {
   const bill = /^sub-(.+)-(\d{4}-\d{2})$/.exec(id);
   if (!bill) return;
   for (const sub of m.subscriptions) {
-    if (sub.id === bill[1] && sub.paidFor === bill[2]) delete sub.paidFor;
+    // null, not deleted: an explicit un-pay that applyDocDiff's forward-only rule lets through.
+    if (sub.id === bill[1] && sub.paidFor === bill[2]) sub.paidFor = null;
   }
 }
 
