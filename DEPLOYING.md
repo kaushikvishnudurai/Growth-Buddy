@@ -100,6 +100,27 @@ Environment variables, beyond the ones in `prod.env.example`:
 | `MAILJET_API_KEY` / `MAILJET_SECRET_KEY` | from Mailjet — see above |
 | `CORS_ALLOWED_ORIGINS` | `https://<service-name>.onrender.com` |
 | `PORT` | `8080` |
+| `TRUST_PROXY` | `true` — see below |
+| `TRUST_PROXY_HOPS` | `1` — see below |
+
+**`TRUST_PROXY` is not optional behind any proxy.** Off, the socket peer is the
+client, and behind Render (or Caddy) that is the proxy for everyone: the per-IP
+limits on login, signup and OTP (10 per 5 minutes) become ONE bucket for the
+whole user base, and one script can lock every user out. On, `ClientIp` takes
+the entry `TRUST_PROXY_HOPS` from the **right** of `X-Forwarded-For`: each
+proxy appends the peer it saw, so the rightmost entry is the one our proxy
+wrote and the leftmost is whatever the client sent. One proxy (Caddy, or
+Render's edge) = 1. Check it once after a deploy: set
+`LOGGING_LEVEL_COM_GROWTHBUDDY_COMMON_CLIENTIP=DEBUG`, sign in from a phone on
+mobile data, and the log shows `X-Forwarded-For="…" peer=… -> <ip>`. The
+picked address must be the phone's public IP (compare with any "what is my IP"
+page). If it is a proxy address instead, raise the hop count by one. Then
+remove the DEBUG variable.
+
+**CSP.** The shell's policy is Report-Only and reports to `/api/csp-report`;
+violations land in the log as `[csp]` lines. Watch them for a week of real
+traffic, then set `CSP_ENFORCE=true`. `CSP_CONNECT_SRC` adds origins to
+`connect-src` (only needed if the API or socket ever moves to another host).
 
 **`MAILJET_API_KEY` / `MAILJET_SECRET_KEY` are not optional here.** Render's
 free tier blocks outbound SMTP (25/465/587), so Gmail can only time out and
@@ -209,8 +230,8 @@ VITE_API_BASE=https://api.example.com npm run build
 ```
 
 Spring serves `dist/` when it finds one, with a one-year immutable cache on the
-content-hashed assets and `no-cache` on `sw.js` (a hard-cached service worker
-pins clients to a dead build). With no `dist/` it falls back to the raw source
+content-hashed assets, one day then revalidation on the unhashed `/icons/`, and
+`no-cache` on `sw.js` (a hard-cached service worker pins clients to a dead build). With no `dist/` it falls back to the raw source
 tree with caching off — that fallback is what `./run.sh` uses for local
 development, and it has no service worker or bundling.
 

@@ -259,6 +259,20 @@ public class QuickAddService {
      * plain patterns read what they can; only when they find nothing either does
      * the caller hear "not configured" / "unavailable" with an empty list.
      */
+    /**
+     * The habit list as it goes into the prompt: each name clipped to the 120 a
+     * habit can have, the whole line to 4 KB. Unclipped, the request's names went
+     * in at any length, a token-cost amplifier in the system-prompt position.
+     */
+    static String habitLine(List<String> habitNames) {
+        if (habitNames == null || habitNames.isEmpty()) return "(none)";
+        String line = String.join(", ", habitNames.stream()
+                .filter(n -> n != null && !n.isBlank())
+                .map(n -> n.strip().length() > 120 ? n.strip().substring(0, 120) : n.strip())
+                .toList());
+        return line.isEmpty() ? "(none)" : line.length() > 4096 ? line.substring(0, 4096) : line;
+    }
+
     public QuickAddResult parse(String text, List<String> habitNames, LocalDate today, LocalTime now) {
         return parse(text, habitNames, today, now, null);
     }
@@ -279,7 +293,7 @@ public class QuickAddService {
                 + "\nNOW: " + now.withSecond(0).withNano(0)
                 + "\nUSER'S CURRENCY: " + (currency == null || currency.isBlank() ? "unknown" : cap(currency, 8))
                 + "\nUser's habits: "
-                + (habitNames == null || habitNames.isEmpty() ? "(none)" : String.join(", ", habitNames));
+                + habitLine(habitNames);
         try {
             String raw = openai.complete(context, List.of(new ChatTurn("user", clean)));
             JsonNode root = json.readTree(OpenAIClient.jsonOf(raw));

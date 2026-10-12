@@ -20,7 +20,7 @@ and per-day food. app.js drives month navigation and does
 | `REPEATS` / `REPEAT_ORDER` (70/77) | `none`, `daily`, `weekly`, `monthly`, `yearly` |
 | `MONTHS`, `DOW` (15/29) | display labels |
 
-Day-key helpers: `pad`, `keyOf(y,m,d)`, `todayKey` (imported from `dates.js` as `pad2` / `dateKey` / `todayKey`), `parseKey`, `isFutureKey`, `prettyDate` (i18n.js `fmtDate(key, 'weekdayDate')`, the app's "Sun, 11 Oct"),
+Day-key helpers: `pad`, `keyOf(y,m,d)`, `todayKey` (imported from `dates.js` as `pad2` / `dateKey` / `todayKey`), `parseKey`, `clearReminderForm` (sign-out drops the kept form), `isFutureKey`, `prettyDate` (i18n.js `fmtDate(key, 'weekdayDate')`, the app's "Sun, 11 Oct"),
 `formatTime`, `keyFromInstant`, `prettyTaskTime`.
 
 ## Occurrence logic (the part to read before editing)
@@ -68,6 +68,16 @@ Day-key helpers: `pad`, `keyOf(y,m,d)`, `todayKey` (imported from `dates.js` as 
 - **Export.** Settings → Reminders ends with "Export calendar (.ics)" (app.js `exportRemindersIcs`,
   `GET /api/reminders/export.ics`, read through `apiFetch`'s `raw` option, then share sheet or
   download).
+- **Import.** "Import .ics" sits on the toolbar (`CalendarToolbar`, shown once app.js has called
+  `setCalendarImporter`, like `setReminderSettingsOpener`) and under the export in Settings →
+  Reminders; both open app.js `openIcsImportDialog` → `import-ui.js` `openIcsImport` (lazy).
+  Parsing is `ics-import.js` (times into the account's zone; see CODEMAP). Each picked event is a
+  plain `POST /api/reminders` (not `addReminder`, which toasts and resets the form per call), then
+  `DELETE ?scope=this&date=` per EXDATE; afterwards the list is refetched and the side, grid and
+  toolbar repaint. **Past one-offs are listed, never sent**: the calendar takes no reminder before
+  today, the same rule as the form and `ReminderService.create`; a series that began in the past
+  starts at its next occurrence. Duplicates (same text, time, and an existing reminder that
+  `occursOn` the day) start unticked.
 - `remindersOn` (149), `tasksOn` (162), `completedTasksOn` (179), `goalActionsOn` (185), `dueKey` (155).
 - **"Repeat until" before the start date makes a reminder that can never fire.** `occursOn` returns
   false for every day, so it sits in the list forever advertising an end date in the past. The form
@@ -137,8 +147,8 @@ Day-key helpers: `pad`, `keyOf(y,m,d)`, `todayKey` (imported from `dates.js` as 
 | `MonthGrid` | the month cells + a `DayLine` each, with a square `.gb-cal-dot.is-task` at the line's tail on a day with a task due ("Task due" in the legend). app.js repaints it after every reminder change without `tasks` and without the toolbar, so it keeps the last `tasks` it was given (`lastTasks`) and swaps the toolbar's `.gb-cal-toolbar-actions` itself (`MonthCount`, "N reminders · N tasks this month" in `.gb-cal-monthcount`, one per series via `monthCounts`). Always 42 cells, so the card never changes height between months. Arrow keys move focus between days (`moveFocus`, focus only; Enter selects) |
 | `TagPicker` | color chips |
 | `RepeatPicker` | segmented recurrence; `RuleExtras` holds its details (see above) |
-| `openDeleteDialog` | **scoped delete** for recurring reminders: this occurrence vs the whole series → app.js `deleteReminder(scope, id, occKey)`. On the series' first day (`occKey === rem.date`) "This & all future" and "Only past days" are hidden (the series option does the first, the second deletes nothing); the edit dialog hides its "This & all future" the same way. Rows call it through `deleteWithUndo`: focus goes to the next row's delete button, else the Reminders head, and a whole row deleted (scope `all`, start not past) gets an Undo toast that re-creates it through `onAddReminder` (the add form's call; done ticks and skipped days aren't restored). Whether the delete landed is read from `lastReminders`, the list the panel last painted with |
-| `ReminderRow` | one reminder: done checkbox, its time (mono `.gb-rem-when`, "Any time" when untimed), text, notes, then meta (own lead, second alert, `describeRepeat`). Shows a WhatsApp marker when enabled. "Snoozed till" (`snoozeLabel`, also used by Settings → Reminders) names the day when it isn't today, and is a button that cancels the snooze (`onCancelSnooze` → app.js `cancelReminderSnooze`) |
+| `openDeleteDialog` | **scoped delete** for recurring reminders: this occurrence vs the whole series → app.js `deleteReminder(scope, id, occKey)`. On the series' first day (`occKey === rem.date`) "This & all future" and "Only past days" are hidden (the series option does the first, the second deletes nothing); the edit dialog hides its "This & all future" the same way. Rows call it through `deleteAndRefocus`: focus goes to the next row's delete button, else the Reminders head (`lastReminders`, the list the panel last painted with, says where the row sat). The Undo is app.js's: `deleteReminder('all')` is a `deferDelete`, so there is one toast and it restores the row as it was |
+| `ReminderRow` | one reminder: done checkbox, its time (mono `.gb-rem-when`, "Any time" when untimed), text, notes, then meta (own lead, second alert, `describeRepeat`). Shows a WhatsApp marker when enabled. "Snoozed till" (`snoozeLabel`, also used by Settings → Reminders) names the day when it isn't today, and is a button that cancels the snooze (`onCancelSnooze` → app.js `cancelReminderSnooze`). Delete: a one-off goes on one tap (undoable from app.js's toast); a series opens `openDeleteDialog` |
 | form cache | `resetCalendarForm`, `buildForm` — the add-reminder form persists across repaints on purpose; `ReminderPanel` re-syncs its `UsualTimeChip` from the reminder list each paint |
 | `UsualTimeChip(timeInput, onSet)` (export) | "Usual time: 9:00 AM" under an empty Time field (`usualReminderTime`, nudges.js). A tap, not a prefill: an empty Time means no time of day, and a native time input can't reliably be emptied. Also under Settings → Reminders' add form |
 | `ReminderPanel` | the selected day, as **one node** (`.gb-cal-side`, which app.js swaps whole to repaint) holding two blocks: `.gb-cal-reminders` (date title, reminders, add form, schedule) and `.gb-cal-daylog` (wins, tasks, food). Wins include habits checked in that day (`habitsDoneOn(habits, habitHistory, key)`: today from `doneToday`, other days from `{[id]: {days}}`) — **only once app.js passes `habits` / `habitHistory`**, which it doesn't yet. `.gb-cal-side` is `display: contents`, so `.gb-cal` lays the blocks out: on desktop a grid with the month and the day log on the left and reminders spanning the right (the second row is `1fr` so the tall reminders column can't open a gap under the month); on a phone, month → reminders → day log. The food-loading height hold goes on `.gb-cal-daylog` — the panel has no box |

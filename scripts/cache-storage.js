@@ -4,7 +4,7 @@
    in-memory map so reads stay synchronous (state is read at module load).
 
      • in-memory map  → synchronous source of truth for the session
-     • cookies        → persist small values (token, session, theme, …)
+     • cookies        → persist small values (token, a slim session, theme, …)
                         so they survive a reload and are read synchronously
      • Cache API      → persists everything, incl. values too large for a
                         cookie (e.g. wellness photo history); hydrated into
@@ -42,10 +42,69 @@ function cookieEligible(key) {
   );
 }
 
+/* What a cookie holds is readable by any script on the page and rides on every
+   same-origin request, so it stays as small as first paint allows:
+     - the token and the session cookie live 60 days, the server's session TTL
+       (every boot's /api/auth/me rewrites both, so an active device slides with
+       the server); the first-paint prefs keep a year, being written only when
+       changed;
+     - gb.session's cookie carries only what the first render reads. Email,
+       WhatsApp number, date of birth, body, diet, allergies and the token copy
+       stay in memory and the Cache API, which is never sent anywhere; hydrate()
+       swaps the full copy back in. An allowlist, so a new profile field stays
+       out of the cookie until someone decides it must be in it. */
+const YEAR_S = 31536000;
+const SESSION_S = 60 * 24 * 60 * 60;
+const SESSION_COOKIE_FIELDS = [
+  'id',
+  'displayName',
+  'timezone',
+  'emailVerified',
+  'whatsappEnabled',
+  'whatsappVerified',
+  'dailyFoodGoalKcal',
+  'dailyWaterGoalMl',
+  'level',
+  'xpTotal',
+  'xpIntoLevel',
+  'xpForNextLevel',
+  'xpPerLevel',
+  'features',
+  'digestFrequency',
+  'digestHour',
+  'homeLayout',
+  'navLayout',
+  'uiPrefs',
+];
+
+/** The value a key's cookie holds (null: no cookie). Pure, so it is testable. */
+export function cookieValue(key, val) {
+  if (key !== 'gb.session') return val;
+  try {
+    const u = JSON.parse(val);
+    if (!u || typeof u !== 'object') return null;
+    const slim = {};
+    SESSION_COOKIE_FIELDS.forEach((f) => {
+      if (u[f] !== undefined) slim[f] = u[f];
+    });
+    return JSON.stringify(slim);
+  } catch (_) {
+    return null;
+  }
+}
+
+/** Write `val` to `key`'s cookie, or drop the cookie when it may not hold it. */
+function writeCookie(key, val) {
+  const c = cookieEligible(key) ? cookieValue(key, val) : null;
+  if (c != null && c.length <= COOKIE_MAX) setCookie(key, c);
+  else delCookie(key);
+}
+
 const mem = {};
 
 /* ---- cookie helpers (synchronous) ---- */
 function setCookie(name, value) {
+  const maxAge = name === 'gb.token' || name === 'gb.session' ? SESSION_S : YEAR_S;
   try {
     // Secure flag whenever we're on HTTPS so the token cookie is never sent in cleartext.
     const secure = typeof location !== 'undefined' && location.protocol === 'https:' ? '; Secure' : '';
@@ -53,7 +112,9 @@ function setCookie(name, value) {
       encodeURIComponent(name) +
       '=' +
       encodeURIComponent(value) +
-      '; path=/; max-age=31536000; SameSite=Lax' +
+      '; path=/; max-age=' +
+      maxAge +
+      '; SameSite=Lax' +
       secure;
   } catch (_) {
     /* ignore */
@@ -145,8 +206,11 @@ function cacheReadAll() {
 }
 
 /* ---- synchronous hydration at module load ---- */
-// 1) cookies — gives us token/session/theme immediately on boot.
-Object.assign(mem, readCookies());
+// 1) cookies — gives us token/session/theme immediately on boot. Kept, so
+//    hydrate() can tell a value still as the cookie had it (the slim session)
+//    from one the app has rewritten since.
+const bootCookies = readCookies();
+Object.assign(mem, bootCookies);
 // 2) one-time read of legacy localStorage so existing users keep their data
 //    (migrated into cookies/Cache API and cleared in init()).
 try {
@@ -165,8 +229,7 @@ const CacheStorage = {
     mem[key] = v;
     // Only allowlisted, boot-critical keys go to cookies; the rest are Cache-API-only
     // so they never inflate request headers.
-    if (cookieEligible(key) && v.length <= COOKIE_MAX) setCookie(key, v);
-    else delCookie(key);
+    writeCookie(key, v);
     cachePut(key, v);
   },
   removeItem: (key) => {
@@ -205,7 +268,10 @@ function hydrate() {
   return cacheReadAll().then((all) => {
     let hydrated = false;
     Object.keys(all).forEach((k) => {
-      if (!(k in mem)) {
+      // The session booted from its slim cookie: the full copy replaces it,
+      // unless the app has written a fresher one meanwhile.
+      const slimBoot = k === 'gb.session' && mem[k] === bootCookies[k] && all[k] !== mem[k];
+      if (!(k in mem) || slimBoot) {
         mem[k] = all[k];
         hydrated = true;
       }
@@ -220,7 +286,7 @@ function hydrate() {
       legacy.forEach((k) => {
         const v = mem[k];
         if (v != null) {
-          if (cookieEligible(k) && String(v).length <= COOKIE_MAX) setCookie(k, v);
+          writeCookie(k, String(v));
           cachePut(k, v);
         }
         localStorage.removeItem(k);

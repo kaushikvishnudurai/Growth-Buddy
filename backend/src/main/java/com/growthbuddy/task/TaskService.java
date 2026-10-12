@@ -5,7 +5,9 @@ import com.growthbuddy.goal.GoalService;
 import com.growthbuddy.user.ProgressService;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,7 +44,7 @@ public class TaskService {
         // The stored priority, never a display override: overdue sorts first on the
         // client (taskRank). Writing High here overruled a user who set it back to Low.
         List<Task> tasks = repo.findByUserIdAndDeletedAtIsNullOrderByCreatedAtAsc(userId);
-        return tasks.stream().map(t -> responseFor(userId, t)).toList();
+        return responsesFor(userId, tasks);
     }
 
     @Transactional
@@ -168,9 +170,24 @@ public class TaskService {
     }
 
     private TaskResponse responseFor(UUID userId, Task t) {
-        List<TaskHistory> history = historyRepo.findByUserIdAndTaskIdOrderByChangedAtDesc(userId, t.getId());
-        Instant lastCompletedAt = history.isEmpty() ? null : history.get(0).getChangedAt();
-        return TaskResponse.from(t, history.size(), lastCompletedAt);
+        return responsesFor(userId, List.of(t)).get(0);
+    }
+
+    /** Completion count and last completion for every task, from one grouped history query. */
+    private List<TaskResponse> responsesFor(UUID userId, List<Task> tasks) {
+        if (tasks.isEmpty()) {
+            return List.of();
+        }
+        Map<UUID, Object[]> stats = new HashMap<>();
+        for (Object[] row : historyRepo.summarize(userId, tasks.stream().map(Task::getId).toList())) {
+            stats.put((UUID) row[0], row);
+        }
+        return tasks.stream().map(t -> {
+            Object[] row = stats.get(t.getId());
+            return row == null
+                    ? TaskResponse.from(t, 0, null)
+                    : TaskResponse.from(t, ((Number) row[1]).longValue(), (Instant) row[2]);
+        }).toList();
     }
 
     private Task require(UUID userId, UUID id) {

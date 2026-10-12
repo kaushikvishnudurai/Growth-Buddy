@@ -16,6 +16,7 @@ import {
   thinkingLabel,
   Thinking,
   refreshIcons,
+  rovingGroup,
 } from './gb-kit.js';
 import { MoneyHomeCard } from './money-home.js';
 import { OutlookCard } from './outlook-card.js';
@@ -30,6 +31,7 @@ import {
   habitDue,
   topStreaks,
   homeGoals,
+  todayKey as sharedTodayKey,
   taskWhen,
   localDayKey,
   tasksForToday,
@@ -38,7 +40,7 @@ import { suggestReminderTime } from './habit-stats.js';
 import { waterFish, bubbleRise } from './water-fish.js';
 import { sleepToConfirm } from './nudges.js';
 import { pickOneThing } from './one-thing.js';
-import { dateKey, todayKey } from './dates.js';
+import { dateKey } from './dates.js'; // not todayKey: Home's today is the account's (accountZone below)
 import { fmtDate, fmtNumber } from './i18n.js';
 import {
   groupBySlot,
@@ -48,6 +50,15 @@ import {
   suggestWaterGoalMl,
   dayMicros,
 } from './nutrition.js';
+
+/* Today in the ACCOUNT's timezone, as app.js todayKey() and the server see it:
+   the device's day made a one-tap sleep or mood look like it did nothing when
+   the two zones differ. app.js render() sets it on every paint. */
+let accountZone = '';
+export function setAccountZone(zone) {
+  accountZone = zone || '';
+}
+const todayKey = () => sharedTodayKey(accountZone);
 
 const ONBOARD_KEY = 'gb.onboardDismissed';
 
@@ -115,7 +126,7 @@ function OnboardingCard({
           null,
           h('div', { class: 'gb-onboard-kicker' }, 'Getting started'),
           h(
-            'div',
+            'h2',
             { class: 'gb-onboard-title' },
             doneCount
               ? doneCount + ' of ' + steps.length + ' done'
@@ -174,8 +185,8 @@ function OnboardingCard({
 }
 
 const PRIORITY = {
-  High: { bg: 'var(--coral-50)', fg: 'var(--coral-700)', dot: 'var(--coral-500)' },
-  Medium: { bg: 'var(--sun-50)', fg: 'var(--sun-700)', dot: 'var(--sun-500)' },
+  High: { bg: 'var(--brand-soft)', fg: 'var(--brand-soft-fg)', dot: 'var(--coral-500)' },
+  Medium: { bg: 'var(--warning-soft)', fg: 'var(--warning-soft-fg)', dot: 'var(--sun-500)' },
   Low: { bg: 'var(--surface-3)', fg: 'var(--fg2)', dot: 'var(--warm-400)' },
 };
 
@@ -320,7 +331,7 @@ function ScoreCard({ score, tasks: allTasks, habits, streakAsked }) {
       h(
         'div',
         { style: { flex: 1 } },
-        h('div', { class: 'gb-score-heading' }, heading),
+        h('h2', { class: 'gb-score-heading' }, heading),
         h('div', { class: 'gb-score-sub' }, sub),
         pills.length ? h('div', { class: 'gb-pill-row' }, pills) : null
       ),
@@ -521,7 +532,7 @@ function QuoteCard({ quote }) {
   });
 }
 
-function TodayPlanCard({ water, wellness, onPlanToday, skip }) {
+function TodayPlanCard({ water, wellness, onPlanToday, onQuickAddWater, onAddSleep, onAddMood, skip }) {
   const key = todayKey();
   const sleep = wellness && wellness.sleepByDate ? wellness.sleepByDate[key] : null;
   const mood = wellness && wellness.moodByDate ? wellness.moodByDate[key] : null;
@@ -541,11 +552,14 @@ function TodayPlanCard({ water, wellness, onPlanToday, skip }) {
   //     one-thing card's kind, sleep + mood when the Sleep & mood card is on
   //     Home, mood while the Getting started checklist still lists it.
   // Finish everything and the row empties out, which is the point.
+  // Each open item is also its fix, one tap: a glass of water, the sleep or the
+  // mood dialog. A chip with no handler stays a plain label.
   const chips = [];
   const skipped = (k) => (skip || []).includes(k);
-  if (water && waterPct < 100 && !skipped('water')) chips.push({ label: waterPct + '% water' });
-  if (!sleep && !skipped('sleep')) chips.push({ label: 'Sleep not logged' });
-  if (!mood && !skipped('mood')) chips.push({ label: 'Mood not logged' });
+  if (water && waterPct < 100 && !skipped('water'))
+    chips.push({ label: waterPct + '% water', run: onQuickAddWater && (() => onQuickAddWater(250)), aria: 'Log 250 ml of water' });
+  if (!sleep && !skipped('sleep')) chips.push({ label: 'Sleep not logged', run: onAddSleep, aria: 'Log last night’s sleep' });
+  if (!mood && !skipped('mood')) chips.push({ label: 'Mood not logged', run: onAddMood, aria: 'Log your mood' });
   return Card({
     className: 'gb-coach-card',
     children: [
@@ -556,7 +570,7 @@ function TodayPlanCard({ water, wellness, onPlanToday, skip }) {
           'div',
           null,
           h('div', { class: 'gb-coach-kicker' }, 'Daily brief'),
-          h('div', { class: 'gb-coach-title' }, 'Help me plan today')
+          h('h2', { class: 'gb-coach-title' }, 'Help me plan today')
         ),
         h(
           'button',
@@ -570,7 +584,13 @@ function TodayPlanCard({ water, wellness, onPlanToday, skip }) {
             'div',
             { class: 'gb-coach-chiprow' },
             chips.map((chip) =>
-              h('span', { class: 'gb-coach-chip gb-coach-chip--todo' }, chip.label)
+              chip.run
+                ? h(
+                    'button',
+                    { type: 'button', class: 'gb-coach-chip gb-coach-chip--todo', 'aria-label': chip.aria, onclick: () => chip.run() },
+                    chip.label
+                  )
+                : h('span', { class: 'gb-coach-chip gb-coach-chip--todo' }, chip.label)
             )
           )
         : null,
@@ -601,22 +621,25 @@ function OneThingCard(one) {
       : one.title;
   return Card({
     className: 'gb-coach-card',
-    children: h(
-      'div',
-      { class: 'gb-coach-head' },
+    // An array: Card spreads it, and a bare node threw and blanked Home.
+    children: [
       h(
         'div',
-        null,
-        h('div', { class: 'gb-coach-kicker' }, 'One thing today'),
-        h('div', { class: 'gb-coach-title' }, title),
-        h('div', { class: 'gb-coach-why' }, one.why)
+        { class: 'gb-coach-head' },
+        h(
+          'div',
+          null,
+          h('div', { class: 'gb-coach-kicker' }, 'One thing today'),
+          h('div', { class: 'gb-coach-title' }, title),
+          h('div', { class: 'gb-coach-why' }, one.why)
+        ),
+        h(
+          'button',
+          { type: 'button', class: 'gb-btn gb-btn--primary gb-btn--compact', onclick: one.run },
+          one.label
+        )
       ),
-      h(
-        'button',
-        { type: 'button', class: 'gb-btn gb-btn--primary gb-btn--compact', onclick: one.run },
-        one.label
-      )
-    ),
+    ],
   });
 }
 
@@ -764,7 +787,7 @@ function WeeklyReflectionCard({ tasks, habits, food, goals, wellness }) {
     className: 'gb-reflect-card',
     children: [
       h(
-        'div',
+        'h2',
         { class: 'gb-card-titleline' },
         Icon('calendar-heart', { size: 18, sw: 2.4 }),
         'Weekly reflection'
@@ -794,7 +817,7 @@ function BadgeCard({ tasks, habits, water, goals, wellness }) {
   return Card({
     className: 'gb-badge-card',
     children: [
-      h('div', { class: 'gb-card-titleline' }, Icon('award', { size: 18, sw: 2.4 }), 'Milestones'),
+      h('h2', { class: 'gb-card-titleline' }, Icon('award', { size: 18, sw: 2.4 }), 'Milestones'),
       h(
         'div',
         { class: 'gb-badge-grid' },
@@ -880,7 +903,7 @@ function ReminderSuggestionsCard({ habits, water, wellness, reminders, onAddSugg
     className: 'gb-suggest-card',
     children: [
       h(
-        'div',
+        'h2',
         { class: 'gb-card-titleline' },
         Icon('bell-plus', { size: 18, sw: 2.4 }),
         'Smart reminders'
@@ -934,7 +957,7 @@ function GoalTimelineCard({ goals }) {
     className: 'gb-timeline-card',
     children: [
       h(
-        'div',
+        'h2',
         { class: 'gb-card-titleline' },
         Icon('route', { size: 18, sw: 2.4 }),
         'Goal timeline'
@@ -1166,7 +1189,7 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
           input,
           suggestBtn,
           drinkRow ? h('div', { class: 'gb-field-label' }, 'Drink') : null,
-          drinkRow,
+          drinkRow && rovingGroup(drinkRow),
           dayInput ? h('div', { class: 'gb-field-label' }, 'Day') : null,
           dayInput,
           error
@@ -1272,7 +1295,14 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
       h(
         'div',
         { class: 'gb-water-head' },
-        h('div', { class: 'gb-water-title' }, 'Water tracker')
+        h(
+          'div',
+          null,
+          h('h2', { class: 'gb-water-title' }, 'Water tracker'),
+          // No % chip beside it: the glass fills to the same number, and the
+          // big figure says what's left. Three readings of one value was noise.
+          h('div', { class: 'gb-water-meta' }, consumedMl + ' of ' + goalMl + ' ml')
+        )
       ),
 
       h(
@@ -1329,7 +1359,7 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
           {
             type: 'button',
             class: 'gb-water-add',
-            'aria-label': 'Add 250 millilitres of water',
+            'aria-label': '+250 ml, add water',
             onclick: () => onQuickAddWater && onQuickAddWater(250),
           },
           '+250',
@@ -1340,7 +1370,7 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
           {
             type: 'button',
             class: 'gb-water-add',
-            'aria-label': 'Add 500 millilitres of water',
+            'aria-label': '+500 ml, add water',
             onclick: () => onQuickAddWater && onQuickAddWater(500),
           },
           '+500',
@@ -1353,7 +1383,7 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
             // One style for all three: a gradient on the largest read as a different
             // kind of button.
             class: 'gb-water-add',
-            'aria-label': 'Add 750 millilitres of water',
+            'aria-label': '+750 ml, add water',
             onclick: () => onQuickAddWater && onQuickAddWater(750),
           },
           '+750',
@@ -1391,7 +1421,7 @@ function WaterCard({ water, onQuickAddWater, onUpdateWaterGoal, onDeleteWater, w
             lastThree.map((item) =>
               h(
                 'div',
-                { class: 'gb-water-log-row' },
+                { class: 'gb-water-log-row', 'data-water-id': item.id },
                 h(
                   'div',
                   { class: 'gb-water-log-text' },
@@ -1529,7 +1559,7 @@ function FoodCard({ food, onAddFood, onDeleteFood, onEditFood, onCopySlot, copya
         h(
           'div',
           null,
-          h('div', { class: 'gb-water-title' }, 'Food calories'),
+          h('h2', { class: 'gb-water-title' }, 'Food calories'),
           h('div', { class: 'gb-water-meta' }, 'Track meals with Indian average estimates')
         ),
         h('div', { class: 'gb-food-total' }, fmtNumber(total), h('small', null, 'kcal'))
@@ -1642,7 +1672,7 @@ function FoodSummaryLink({ onOpen }) {
         h(
           'div',
           null,
-          h('div', { class: 'gb-water-title' }, 'Summary'),
+          h('h2', { class: 'gb-water-title' }, 'Summary'),
           h('div', { class: 'gb-water-meta' }, 'Nutrition, water and calories for the last 7 days')
         )
       ),
@@ -2369,14 +2399,27 @@ function MiniCalendarCard({
     if (Number.isNaN(dt.getTime())) return '';
     return dateKey(dt.getFullYear(), dt.getMonth(), dt.getDate());
   }
+  // Bucketed by day once per render: the 42-cell grid used to re-filter every
+  // task (two Date parses each) per cell.
+  const dueByKey = new Map();
+  const doneByKey = new Map();
+  const bucket = (map, key, t) => {
+    if (!key) return;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(t);
+  };
+  for (const t of tasks || []) {
+    bucket(dueByKey, keyFromInstant(t.dueAt), t);
+    if (t.done) bucket(doneByKey, keyFromInstant(t.doneAt), t);
+  }
   function dueTasksOn(key) {
-    return (tasks || [])
-      .filter((t) => keyFromInstant(t.dueAt) === key)
+    return (dueByKey.get(key) || [])
+      .slice()
       .sort((a, b) => String(a.dueAt || '').localeCompare(String(b.dueAt || '')));
   }
   function completedTasksOn(key) {
-    return (tasks || [])
-      .filter((t) => !!t.done && keyFromInstant(t.doneAt) === key)
+    return (doneByKey.get(key) || [])
+      .slice()
       .sort((a, b) => String(a.doneAt || '').localeCompare(String(b.doneAt || '')));
   }
   function remindersOn(key) {
@@ -2673,7 +2716,7 @@ function GoalsCard({ goals, goalProgress, onOpenGoals }) {
   return Card({
     className: 'gb-home-goals',
     children: [
-      h('div', { class: 'gb-card-titleline' }, Icon('target', { size: 18, sw: 2.4 }), 'Goals'),
+      h('h2', { class: 'gb-card-titleline' }, Icon('target', { size: 18, sw: 2.4 }), 'Goals'),
       rows.length
         ? h(
             'div',
@@ -2865,7 +2908,16 @@ function ScreenDashboard({
         onDismissInsight,
         onInsightAction,
       }),
-    plan: () => TodayPlanCard({ water: on('water') ? water : null, wellness, onPlanToday, skip: planSkip }),
+    plan: () =>
+      TodayPlanCard({
+        water: on('water') ? water : null,
+        wellness,
+        onPlanToday,
+        onQuickAddWater,
+        onAddSleep,
+        onAddMood,
+        skip: planSkip,
+      }),
     // The card above owns its nudge: the check-in row asking the same thing goes.
     wellness: () =>
       WellnessCard({
@@ -3079,7 +3131,7 @@ function HabitSleepInsightCard({ habits, wellness }) {
     className: 'gb-habit-sleep-card',
     children: [
       h(
-        'div',
+        'h2',
         { class: 'gb-card-titleline' },
         Icon('activity', { size: 18, sw: 2.4 }),
         'Fitness \xd7 Sleep'

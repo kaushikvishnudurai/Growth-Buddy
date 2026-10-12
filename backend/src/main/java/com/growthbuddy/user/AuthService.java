@@ -117,7 +117,7 @@ public class AuthService {
      * Everything a family owns, child-first. Only ever deleted when a family is
      * being removed outright — see {@link #handOverOrRemoveFamilies}.
      */
-    private static final String[] FAMILY_OWNED_TABLES = {
+    static final String[] FAMILY_OWNED_TABLES = {
         "family_chores", "family_recipes",
         "family_dish_preferences", "family_pantry_items", "family_shopping_items",
         "family_favourite_menus", "family_multi_day_plans", "family_meal_plans",
@@ -244,9 +244,13 @@ public class AuthService {
             // Only someone holding the right password gets here, so saying
             // "unverified" reveals nothing a stranger could use. Answering "Wrong
             // email or password" left the owner looping against signup's 409.
-            // 403 is the frontend's cue to open the code screen.
+            // 403 email_unverified is the frontend's cue to open the code screen;
+            // a bare 403 (a CORS refusal, say) must not send it there, since no
+            // code went out for that one.
             issueVerificationOtpLimited(user);
-            throw ApiException.forbidden("Verify your email to finish signing up. We sent a new code to " + email + ".");
+            throw new ApiException(org.springframework.http.HttpStatus.FORBIDDEN,
+                    "Verify your email to finish signing up. We sent a new code to " + email + ".",
+                    "email_unverified");
         }
         // Both checks come after the password, so neither says anything to a
         // stranger: 401 totp_required / 409 deletion_scheduled each mean "right
@@ -512,19 +516,24 @@ public class AuthService {
     }
 
     /** The hard delete: every user-owned row, then the users row. No checks — callers gate it. */
+    /**
+     * Children keyed by a parent id ({table, fk column, parent table}): the purge
+     * deletes them via the user's parent rows first, and {@code DataExportController}
+     * exports them the same way (except the two that are other members' rows).
+     */
+    static final String[][] CHILD_TABLES = {
+        {"habit_streaks", "habit_id", "habits"},
+        {"habit_reminder_dispatch_log", "habit_id", "habits"},
+        {"mentor_messages", "thread_id", "mentor_threads"},
+        {"calendar_reminder_skips", "reminder_id", "calendar_reminders"},
+        {"reminder_dispatch_log", "reminder_id", "calendar_reminders"},
+        // Other members' kudos on this account's posts (its own kudos: USER_OWNED_TABLES).
+        {"circle_post_reactions", "post_id", "circle_posts"},
+        // Other members' replies under this account's posts (its own: USER_OWNED_TABLES).
+        {"circle_post_comments", "post_id", "circle_posts"},
+    };
+
     private void purgeAccount(UUID userId) {
-        // Children keyed by a parent id → delete via the user's parent rows first.
-        String[][] childDeletes = {
-            {"habit_streaks", "habit_id", "habits"},
-            {"habit_reminder_dispatch_log", "habit_id", "habits"},
-            {"mentor_messages", "thread_id", "mentor_threads"},
-            {"calendar_reminder_skips", "reminder_id", "calendar_reminders"},
-            {"reminder_dispatch_log", "reminder_id", "calendar_reminders"},
-            // Other members' kudos on this account's posts (its own kudos: USER_OWNED_TABLES).
-            {"circle_post_reactions", "post_id", "circle_posts"},
-            // Other members' replies under this account's posts (its own: USER_OWNED_TABLES).
-            {"circle_post_comments", "post_id", "circle_posts"},
-        };
         // Kept as a guard even though every table above now exists: a DELETE against
         // a missing table throws, which marks the whole transaction rollback-only and
         // aborts the purge — so a future rename fails safe instead of half-deleting.
@@ -552,7 +561,7 @@ public class AuthService {
             // This account's own membership of someone ELSE's family.
             em.createNativeQuery("DELETE FROM family_members WHERE linked_user_id = ?1")
                     .setParameter(1, userId).executeUpdate();
-            for (String[] cd : childDeletes) {
+            for (String[] cd : CHILD_TABLES) {
                 if (existing.contains(cd[0]) && existing.contains(cd[2])) {
                     exec("DELETE FROM " + cd[0] + " WHERE " + cd[1]
                             + " IN (SELECT id FROM " + cd[2] + " WHERE user_id = ?1)", userId);
@@ -956,6 +965,38 @@ public class AuthService {
         return AuthUserResponse.from(user);
     }
 
+    /* Caps on the two merged JSON blobs. Unbounded, one account could grow its row
+       toward TiDB's 6 MB entry limit, and every scheduler tick reads ui_prefs for
+       every user, and the blob rides along on every /me and session cache. Real
+       blobs are well under 1 KB (task templates included); the caps are far above. */
+    static final int MAX_UI_PREF_KEYS = 200;
+    static final int MAX_FEATURE_KEYS = 50;
+    static final int MAX_PREFS_BYTES = 64 * 1024;
+    private static final ObjectMapper PREFS_JSON = new ObjectMapper();
+
+    /**
+     * 400 when a merge grows a prefs map past maxKeys or MAX_PREFS_BYTES. Only growth
+     * is refused: an account already over a cap (from before it existed) can still
+     * save anything that leaves it no larger, or it could never save again.
+     */
+    static void requireBounded(java.util.Map<String, ?> before, java.util.Map<String, ?> merged, int maxKeys,
+            String what) {
+        int bytes = prefsBytes(merged, what);
+        int was = before == null ? 0 : prefsBytes(before, what);
+        int wasKeys = before == null ? 0 : before.size();
+        if ((merged.size() > maxKeys && merged.size() > wasKeys) || (bytes > MAX_PREFS_BYTES && bytes > was)) {
+            throw ApiException.badRequest(what + " preferences are too large to save.");
+        }
+    }
+
+    private static int prefsBytes(java.util.Map<String, ?> m, String what) {
+        try {
+            return PREFS_JSON.writeValueAsBytes(m).length;
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw ApiException.badRequest(what + " preferences could not be saved.");
+        }
+    }
+
     /** Merge per-feature on/off toggles into the user's preferences. */
     @Transactional
     public AuthUserResponse updateFeatures(UUID userId, java.util.Map<String, Boolean> features) {
@@ -969,14 +1010,12 @@ public class AuthService {
                 if (k != null && v != null) prefs.put(k, v);
             });
         }
+        requireBounded(user.getFeaturePrefs(), prefs, MAX_FEATURE_KEYS, "Feature");
         user.setFeaturePrefs(prefs);
         users.save(user);
         return AuthUserResponse.from(user);
     }
 
-    /** Past either, a save is refused: the blob rides along on every /me and session cache. */
-    static final int MAX_UI_PREF_KEYS = 200;
-    static final int MAX_UI_PREF_BYTES = 64 * 1024;
     /**
      * The ui_prefs keys the per-minute delivery schedulers decide due-ness from
      * in their cached snapshot (ReminderPrefs.leadFor, WorkWeek.fromPrefs). Quiet
@@ -1003,10 +1042,7 @@ public class AuthService {
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             throw ApiException.badRequest("Preferences must be plain JSON.");
         }
-        if (merged.size() > MAX_UI_PREF_KEYS
-                || blob.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > MAX_UI_PREF_BYTES) {
-            throw ApiException.badRequest("Too many preferences saved. Clear some and try again.");
-        }
+        requireBounded(before, merged, MAX_UI_PREF_KEYS, "UI");
         users.updateUiPrefs(userId.toString(), blob);
         if (SCHEDULER_PREF_KEYS.stream().anyMatch(k -> !java.util.Objects.equals(before.get(k), merged.get(k)))) {
             DeliveryCache.changed();
@@ -1093,7 +1129,9 @@ public class AuthService {
         return age;
     }
 
-    // Not @Transactional: one user read, then an AI call that must not hold a pooled connection.
+    // Not @Transactional: the AI client's budget is an INSERT, which a read-only
+    // connection refuses (MySQL 1792), and a transaction would hold a pooled
+    // connection through the AI call.
     public NutritionSuggestionResponse nutritionSuggestion(UUID userId, UpdateProfileRequest form) {
         User user = users.findById(userId)
                 .orElseThrow(() -> ApiException.notFound("User not found"));

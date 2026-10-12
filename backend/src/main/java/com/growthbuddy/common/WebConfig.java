@@ -6,6 +6,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.CacheControl;
+import org.springframework.http.MediaType;
+import org.springframework.web.servlet.config.annotation.ContentNegotiationConfigurer;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
@@ -80,7 +82,13 @@ public class WebConfig implements WebMvcConfigurer {
                     // every table this account owns, and crash reports need no session.
                     "/api/auth/export",
                     "/api/client-errors",
-                    "/api/client-vitals"
+                    "/api/client-vitals",
+                    "/api/csp-report",
+                    // Anonymous, HMAC-ticketed buttons on a notification: a looser
+                    // flood limit (RateLimitInterceptor.LOOSE).
+                    "/api/reminders/snooze-link",
+                    "/api/reminders/done-link",
+                    "/api/habits/done-link"
                 );
         // Per-user cap on the pricey OpenAI-backed endpoints. EVERY path that can
         // reach OpenAIClient belongs here; the four vision ones (photo-estimate,
@@ -143,25 +151,8 @@ public class WebConfig implements WebMvcConfigurer {
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
         String[] dist = existingRoots("dist/");
         if (dist.length > 0) {
-            // Vite hashes every filename, so a changed file is a different URL and a
-            // stale cache entry is unreachable — immutable is safe and skips revalidation.
-            CacheControl immutable = CacheControl.maxAge(365, TimeUnit.DAYS).cachePublic().immutable();
             log.info("Serving the built frontend from {}", String.join(", ", dist));
-
-            // A "/prefix/**" handler resolves only the part *after* the prefix against
-            // its locations, so each prefixed handler needs the matching subdirectory —
-            // pointing them all at dist/ turns /assets/x.js into a lookup for dist/x.js.
-            registry.addResourceHandler("/assets/**").addResourceLocations(existingRoots("dist/assets/"))
-                    .setCacheControl(immutable).resourceChain(false);
-            registry.addResourceHandler("/icons/**").addResourceLocations(existingRoots("dist/icons/"))
-                    .setCacheControl(immutable).resourceChain(false);
-
-            // Root-level files Vite emits unhashed: the service worker, the manifest,
-            // favicons. The SW must never be cached hard or clients pin a dead build.
-            registry.addResourceHandler("/*.js", "/*.css", "/*.png", "/*.svg", "/*.ico",
-                            "/*.webmanifest", "/*.woff2", "/*.json", "/*.txt")
-                    .addResourceLocations(dist)
-                    .setCacheControl(CacheControl.noCache()).resourceChain(false);
+            serveBuild(registry, dist);
             return;
         }
 
@@ -177,6 +168,53 @@ public class WebConfig implements WebMvcConfigurer {
         registry.addResourceHandler("/assets/**").addResourceLocations(prefixed(roots, "assets/"))
                 .setCacheControl(noStore).resourceChain(false);
         // index.html is served by IndexController (single-file mapping).
+    }
+
+    @Override
+    public void configureContentNegotiation(ContentNegotiationConfigurer configurer) {
+        mediaTypes(configurer);
+    }
+
+    /**
+     * File types the JDK and Spring don't know, which the resource handlers would
+     * otherwise send as application/octet-stream. Package-private for the test.
+     */
+    static void mediaTypes(ContentNegotiationConfigurer configurer) {
+        configurer.mediaType("webmanifest", MediaType.valueOf("application/manifest+json"));
+    }
+
+    /**
+     * The built frontend, from {@code dist} (each a {@code file:} URL ending in /).
+     * Static and package-private so FrontendFilesTest can point it at a temp dir.
+     */
+    static void serveBuild(ResourceHandlerRegistry registry, String[] dist) {
+        // Vite hashes every filename, so a changed file is a different URL and a
+        // stale cache entry is unreachable — immutable is safe and skips revalidation.
+        CacheControl immutable = CacheControl.maxAge(365, TimeUnit.DAYS).cachePublic().immutable();
+
+        // A "/prefix/**" handler resolves only the part *after* the prefix against
+        // its locations, so each prefixed handler needs the matching subdirectory —
+        // pointing them all at dist/ turns /assets/x.js into a lookup for dist/x.js.
+        registry.addResourceHandler("/assets/**").addResourceLocations(prefixed(dist, "assets/"))
+                .setCacheControl(immutable).resourceChain(false);
+        // public/icons/ is copied unhashed, so a regenerated icon keeps its URL: a day,
+        // then a Last-Modified revalidation, instead of the year the hashed assets get.
+        registry.addResourceHandler("/icons/**").addResourceLocations(prefixed(dist, "icons/"))
+                .setCacheControl(CacheControl.maxAge(1, TimeUnit.DAYS).cachePublic().mustRevalidate())
+                .resourceChain(false);
+
+        // Everything else Vite emits unhashed: the service worker, the manifest,
+        // favicons, privacy.html, robots.txt, sitemap.xml, the link-preview image,
+        // the iOS launch images, the install screenshots. A catch-all rather than
+        // a list of extensions: the list had no *.html or *.xml, so the privacy
+        // policy 404'd for every visitor without the service worker (store
+        // reviewers, crawlers, the Health Connect link). Controllers win over
+        // resource handlers, so "/", /index.html and /api/** are untouched; a
+        // path with no file is still a 404. no-cache: the SW must never be cached
+        // hard or clients pin a dead build.
+        registry.addResourceHandler("/**")
+                .addResourceLocations(dist)
+                .setCacheControl(CacheControl.noCache()).resourceChain(false);
     }
 
     /**

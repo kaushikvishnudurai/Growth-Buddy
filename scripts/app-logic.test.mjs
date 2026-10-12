@@ -2,7 +2,7 @@
 // gb-kit.js lean on for races and payloads: water taps landing out of order,
 // the offline water replay, the backdated-summary guard, the week cache's
 // generation, goal-progress rollback, the double-tap guard, the reminder edit
-// PATCH, and the saved bottom-nav layout.
+// PATCH, the saved bottom-nav layout, which first-run steps show, and when to ask for push.
 import assert from 'node:assert/strict';
 import {
   overlayPendingWater,
@@ -13,7 +13,14 @@ import {
   latestSeq,
   restoreKey,
   inFlightKeys,
+  overlayQueuedWellness,
+  networkError,
+  offlineError,
+  sameZone,
+  firstRunSteps,
+  pushAskDue,
 } from './app-logic.js';
+import { sessionEndedError } from './session.js';
 import { timeRangeOk, reminderEditPatch } from './calendar.js';
 import { resolveNavLayout, splitNavBar, NAV_CATALOG, NAV_MAX_PRIMARY } from './gb-kit.js';
 
@@ -333,6 +340,69 @@ await test('a slot freed by a turned-off feature is refilled from "More"', () =>
   assert.equal(off.primary.length, on.primary.length, 'the bar keeps its size');
   assert.equal(off.primary.some((i) => i.id === gated.id), false);
   assert.equal(off.primary[off.primary.length - 1].id, on.overflow[0].id, 'first More item moves up');
+});
+
+await test('FN-02: sleep / mood still queued survive a load of the server logs', () => {
+  const server = {
+    sleepByDate: { '2026-10-09': { date: '2026-10-09', quality: 'good' } },
+    moodByDate: {},
+    photoHistory: [],
+  };
+  const ops = [
+    { kind: 'wellness.sleep', local: { date: '2026-10-11', quality: 'poor' } },
+    { kind: 'task.toggle', local: { id: 't1' } },
+    { kind: 'wellness.mood', local: { date: '2026-10-11', mood: 'low' } },
+    { kind: 'wellness.mood', local: { date: '2026-10-11', mood: 'great' } },
+  ];
+  const w = overlayQueuedWellness(server, ops);
+  assert.equal(w.sleepByDate['2026-10-11'].quality, 'poor', 'queued night shown after the load');
+  assert.equal(w.sleepByDate['2026-10-09'].quality, 'good', "the server's other nights kept");
+  assert.equal(w.moodByDate['2026-10-11'].mood, 'great', 'newest queued check-in for the day wins');
+  assert.deepEqual(server.moodByDate, {}, 'the server copy is not mutated');
+  assert.deepEqual(overlayQueuedWellness(server, []).sleepByDate, server.sleepByDate);
+});
+
+await test('an ended session is never queued for a replay', () => {
+  const ended = sessionEndedError();
+  assert.equal(networkError(ended), false);
+  assert.equal(offlineError(ended), false);
+  assert.equal(networkError(ended, false), false, 'not even offline');
+  assert.equal(networkError(new Error('Failed to fetch')), true, 'no response');
+  assert.equal(networkError({ status: 503 }), false, 'a 5xx is an answer');
+  assert.equal(offlineError({ status: 503 }), true, 'but the server is down');
+  assert.equal(offlineError({ status: 400 }), false, 'a refusal');
+  assert.equal(offlineError({ status: 400 }, false), true, 'offline');
+  assert.equal(networkError(null), true);
+});
+
+await test('first-run leaves the timezone step out when the zones match', () => {
+  assert.deepEqual(firstRunSteps({ hasGoal: true, accountZone: 'Europe/London', deviceZone: 'Europe/London' }), ['goal']);
+  // Chrome's spelling of India against the account's: an alias, not a move.
+  assert.equal(sameZone('Asia/Kolkata', 'Asia/Calcutta') || sameZone('Asia/Calcutta', 'Asia/Kolkata'), true);
+  assert.deepEqual(
+    firstRunSteps({ hasGoal: true, accountZone: 'Asia/Kolkata', deviceZone: new Intl.DateTimeFormat('en', { timeZone: 'Asia/Kolkata' }).resolvedOptions().timeZone }),
+    ['goal']
+  );
+});
+
+await test('first-run keeps the timezone step when the zones differ', () => {
+  assert.deepEqual(firstRunSteps({ hasGoal: true, accountZone: 'UTC', deviceZone: 'Asia/Tokyo' }), ['goal', 'timezone']);
+  assert.deepEqual(firstRunSteps({ hasGoal: false, accountZone: 'UTC', deviceZone: 'Asia/Tokyo' }), ['timezone']);
+  // Nothing to compare: no step, and no goal chunk leaves nothing at all.
+  assert.deepEqual(firstRunSteps({ hasGoal: false, accountZone: 'UTC', deviceZone: '' }), []);
+  assert.deepEqual(firstRunSteps({ hasGoal: true, accountZone: '', deviceZone: 'Asia/Tokyo' }), ['goal']);
+});
+
+await test('push is asked once, at a timed save, only when it can help', () => {
+  const due = { needs: true, setupOpen: false, asked: false, supported: true, subscribed: false, permission: 'default' };
+  assert.equal(pushAskDue(due), true);
+  assert.equal(pushAskDue({ ...due, permission: 'prompt' }), true, 'native not asked yet');
+  assert.equal(pushAskDue({ ...due, needs: false }), false, 'an untimed save');
+  assert.equal(pushAskDue({ ...due, setupOpen: true }), false, 'never inside first-run');
+  assert.equal(pushAskDue({ ...due, asked: true }), false, 'once per account');
+  assert.equal(pushAskDue({ ...due, supported: false }), false, 'no notifications here');
+  assert.equal(pushAskDue({ ...due, subscribed: true }), false, 'already on');
+  assert.equal(pushAskDue({ ...due, permission: 'denied' }), false, 'already refused');
 });
 
 if (failures) {

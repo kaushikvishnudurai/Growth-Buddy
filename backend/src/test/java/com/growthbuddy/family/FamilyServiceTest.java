@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.growthbuddy.common.ApiException;
+import com.growthbuddy.common.RateLimiter;
 import com.growthbuddy.family.FamilyService.ShoppingCandidate;
 import com.growthbuddy.mentor.OpenAIClient;
 import com.growthbuddy.notification.NotificationKind;
@@ -58,8 +59,17 @@ class FamilyServiceTest {
     private final FamilyChoreRepository chores = mock(FamilyChoreRepository.class);
     private final FamilyRecipeRepository recipes = mock(FamilyRecipeRepository.class);
     private final ReminderService reminders = mock(ReminderService.class);
+    private final RateLimiter limiter = allowAll();
     private final FamilyService service = new FamilyService(families, members, plans, users, openai,
-            favourites, multiDay, pantry, shopping, dishPrefs, clock, notifications, events, chores, recipes, reminders);
+            favourites, multiDay, pantry, shopping, dishPrefs, clock, notifications, events, chores, recipes, reminders,
+            limiter);
+
+    private static RateLimiter allowAll() {
+        RateLimiter l = mock(RateLimiter.class);
+        org.mockito.Mockito.lenient().when(l.allow(anyString(), org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.anyLong()))
+                .thenReturn(true);
+        return l;
+    }
 
     private Family family(UUID owner) {
         Family f = new Family();
@@ -351,6 +361,47 @@ class FamilyServiceTest {
 
     /* ---- chores ---- */
 
+    /* ---- "Plan meals for just me" ---- */
+
+    @Test
+    void aSoloCookGetsAHouseholdOfOneCopiedFromProfile() {
+        com.growthbuddy.user.User me = new com.growthbuddy.user.User();
+        me.setId(OWNER);
+        me.setDisplayName("Asha");
+        me.setDietPreference("Vegetarian");
+        me.setHeightCm(160);
+        me.setWeightKg(55);
+        when(users.findById(OWNER)).thenReturn(Optional.of(me));
+
+        service.startSolo(OWNER);
+
+        org.mockito.ArgumentCaptor<Family> fam = org.mockito.ArgumentCaptor.forClass(Family.class);
+        verify(families).save(fam.capture());
+        assertThat(fam.getValue().getOwnerUserId()).isEqualTo(OWNER);
+        org.mockito.ArgumentCaptor<FamilyMember> self = org.mockito.ArgumentCaptor.forClass(FamilyMember.class);
+        verify(members).save(self.capture());
+        assertThat(self.getValue().getRelationship()).isEqualTo(Relationship.self);
+        assertThat(self.getValue().getStatus()).isEqualTo(MemberStatus.mapped);
+        assertThat(self.getValue().getLinkedUserId()).isEqualTo(OWNER);
+        assertThat(self.getValue().getName()).isEqualTo("Asha");
+        assertThat(self.getValue().getDietPreference()).isEqualTo("Vegetarian");
+        assertThat(self.getValue().getHeightCm()).isEqualTo(160);
+    }
+
+    @Test
+    void startingSoloInsideAFamilyChangesNothing() {
+        Family f = family(OWNER);
+        FamilyMember mine = row(f, OWNER, MemberStatus.mapped, Relationship.self);
+        livesIn(OWNER, mine);
+        roster(f, mine);
+
+        FamilyResponse res = service.startSolo(OWNER);
+
+        assertThat(res.familyId()).isEqualTo(f.getId());
+        verify(families, never()).save(any());
+        verify(members, never()).save(any());
+    }
+
     /* ---- an account scheduled for deletion is not invitable ---- */
 
     @Test
@@ -367,6 +418,139 @@ class FamilyServiceTest {
                 .extracting(e -> ((ApiException) e).getStatus()).isEqualTo(HttpStatus.NOT_FOUND);
         verify(members, never()).save(any());
         verify(notifications, never()).publish(eq(INVITEE), any(), any(NotifyCategory.class), any(), any(), any());
+    }
+
+    /* ---- SEC-02: an invite carries no profile until it is accepted ---- */
+
+    private com.growthbuddy.user.User inviteeWithProfile() {
+        com.growthbuddy.user.User u = new com.growthbuddy.user.User();
+        u.setId(INVITEE);
+        u.setDisplayName("Invitee");
+        u.setDob(LocalDate.of(1990, 5, 1));
+        u.setGender("female");
+        u.setHeightCm(165);
+        u.setWeightKg(60);
+        u.setDietPreference("Vegan");
+        when(users.findById(INVITEE)).thenReturn(Optional.of(u));
+        return u;
+    }
+
+    @Test
+    void anInviteCopiesOnlyTheName() {
+        Family f = family(OWNER);
+        livesIn(OWNER, row(f, OWNER, MemberStatus.mapped, Relationship.self));
+        inviteeWithProfile();
+
+        service.linkMember(OWNER, new LinkMemberRequest(INVITEE, null));
+
+        var saved = org.mockito.ArgumentCaptor.forClass(FamilyMember.class);
+        verify(members).save(saved.capture());
+        FamilyMember m = saved.getValue();
+        assertThat(m.getName()).isEqualTo("Invitee");
+        assertThat(m.getStatus()).isEqualTo(MemberStatus.invited);
+        assertThat(m.getDob()).isNull();
+        assertThat(m.getGender()).isNull();
+        assertThat(m.getHeightCm()).isNull();
+        assertThat(m.getWeightKg()).isNull();
+        assertThat(m.getDietPreference()).isNull();
+    }
+
+    @Test
+    void acceptingCopiesTheProfileIn() {
+        Family target = family(OWNER);
+        inviteeWithProfile();
+        FamilyMember invite = row(target, INVITEE, MemberStatus.invited, Relationship.other);
+        invite.setInviteOnly(true);
+        when(members.lockByLinkedUser(INVITEE)).thenReturn(List.of(invite));
+
+        service.acceptInvite(INVITEE, invite.getId());
+
+        assertThat(invite.getStatus()).isEqualTo(MemberStatus.mapped);
+        assertThat(invite.getDob()).isEqualTo(LocalDate.of(1990, 5, 1));
+        assertThat(invite.getHeightCm()).isEqualTo(165);
+        assertThat(invite.getWeightKg()).isEqualTo(60);
+        assertThat(invite.getGender()).isEqualTo("female");
+        assertThat(invite.getDietPreference()).isEqualTo("Vegan");
+    }
+
+    /** A row invited before the fix still holds a copy; the family never sees it. */
+    @Test
+    void anOldInviteRowShowsNoProfile() {
+        Family f = family(OWNER);
+        FamilyMember owner = row(f, OWNER, MemberStatus.mapped, Relationship.self);
+        livesIn(OWNER, owner);
+        FamilyMember legacy = row(f, INVITEE, MemberStatus.invited, Relationship.other);
+        legacy.setInviteOnly(true);
+        legacy.setDob(LocalDate.of(1990, 5, 1));
+        legacy.setHeightCm(165);
+        legacy.setWeightKg(60);
+        legacy.setGender("female");
+        legacy.setDietPreference("Vegan");
+        roster(f, owner, legacy);
+
+        var row = service.getFamily(OWNER).members().stream()
+                .filter(r -> r.id().equals(legacy.getId())).findFirst().orElseThrow();
+        assertThat(row.dob()).isNull();
+        assertThat(row.age()).isNull();
+        assertThat(row.heightCm()).isNull();
+        assertThat(row.weightKg()).isNull();
+        assertThat(row.gender()).isNull();
+        assertThat(row.profile().dietPreference()).isNull();
+        assertThat(row.name()).isEqualTo("Someone");
+    }
+
+    /** ...nor is it planned for: its old profile copy never reaches the AI prompt. */
+    @Test
+    @SuppressWarnings("unchecked")
+    void anOldInviteRowIsNotADinerInEitherPlan() throws Exception {
+        Family f = family(OWNER);
+        FamilyMember owner = row(f, OWNER, MemberStatus.mapped, Relationship.self);
+        owner.setName("Owner Person");
+        livesIn(OWNER, owner);
+        FamilyMember legacy = row(f, INVITEE, MemberStatus.invited, Relationship.other);
+        legacy.setInviteOnly(true);
+        legacy.setName("Legacy Invitee");
+        legacy.setDietPreference("Vegan");
+        roster(f, owner, legacy);
+        when(openai.isConfigured()).thenReturn(true);
+        when(openai.complete(anyString(), any())).thenReturn("{}");
+
+        service.generateMealPlan(OWNER, new MealPlanRequest(List.of(), List.of()));
+        service.generateMultiDay(OWNER, new MultiDayPlanRequest(3, "normal", List.of(), List.of(), false));
+
+        var turns = org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(openai, org.mockito.Mockito.times(2)).complete(anyString(), turns.capture());
+        for (List<?> t : turns.getAllValues()) {
+            String prompt = ((OpenAIClient.ChatTurn) t.get(0)).content();
+            assertThat(prompt).contains("Family members (1)").contains("Owner Person")
+                    .doesNotContain("Legacy Invitee").doesNotContain("Vegan");
+        }
+    }
+
+    /* ---- SEC-12: invites are capped ---- */
+
+    @Test
+    void invitesPastTheDailyCapAreRefused() {
+        Family f = family(OWNER);
+        livesIn(OWNER, row(f, OWNER, MemberStatus.mapped, Relationship.self));
+        inviteeWithProfile();
+        when(limiter.allow(org.mockito.ArgumentMatchers.startsWith("family-invite:"),
+                org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.anyLong())).thenReturn(false);
+
+        assertThatThrownBy(() -> service.linkMember(OWNER, new LinkMemberRequest(INVITEE, null)))
+                .isInstanceOf(ApiException.class)
+                .extracting(e -> ((ApiException) e).getStatus()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+        verify(members, never()).save(any());
+        verify(notifications, never()).publish(eq(INVITEE), any(), any(NotifyCategory.class), any(), any(), any());
+    }
+
+    /* ---- SEC-06: a one-character search finds nobody ---- */
+
+    @Test
+    void aOneCharacterSearchAsksNothing() {
+        assertThat(service.searchUsers(OWNER, "a")).isEmpty();
+        assertThat(service.searchUsers(OWNER, " _ ")).isEmpty();
+        verify(users, never()).searchForFamily(anyString(), any(UUID.class), any());
     }
 
     private void clockAt(LocalDate today) {

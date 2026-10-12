@@ -9,8 +9,8 @@ import {
   refreshIcons,
   openOverlay,
   submitOnEnter,
-  confirmDialog,
   formatTime,
+  rovingGroup,
   focusSoon,
 } from './gb-kit.js';
 import {
@@ -26,7 +26,6 @@ import {
 import { chimeOptionValue, chimeOptions, playChime } from './chime.js';
 import { usualReminderTime } from './nudges.js';
 import { fmtDate } from './i18n.js';
-import { toast } from './toast.js';
 import { pad2 as pad, dateKey as keyOf, todayKey } from './dates.js';
 
 const MONTHS = [
@@ -202,6 +201,11 @@ let defaultLead = 0;
 let openReminderSettings = null;
 function setReminderSettingsOpener(fn) {
   openReminderSettings = fn;
+}
+// "Import .ics" on the toolbar: app.js holds the reminders and the API, so it hands this in.
+let openCalendarImport = null;
+function setCalendarImporter(fn) {
+  openCalendarImport = fn;
 }
 
 function validLead(n) {
@@ -550,7 +554,7 @@ function ScheduleSection(reminders, list, key, onSelectDate, onSaveRoutine) {
       'button',
       {
         type: 'button',
-        class: 'gb-sched-tab' + (scheduleView === v ? ' is-on' : ''),
+        class: 'gb-range-opt' + (scheduleView === v ? ' is-active' : ''),
         'aria-pressed': String(scheduleView === v),
         onclick: (e) => {
           scheduleView = v;
@@ -579,7 +583,7 @@ function ScheduleSection(reminders, list, key, onSelectDate, onSaveRoutine) {
       'div',
       { class: 'gb-day-head gb-sched-headrow' },
       h('span', { class: 'gb-day-head-title' }, 'Schedule'),
-      h('span', { class: 'gb-sched-tabs' }, viewBtn('day', 'Day'), viewBtn('week', 'Week')),
+      h('span', { class: 'gb-range-toggle gb-sched-tabs' }, viewBtn('day', 'Day'), viewBtn('week', 'Week')),
       onSaveRoutine
         ? h(
             'button',
@@ -669,7 +673,7 @@ function DaysPicker(initial, label) {
       )
     )
   );
-  return { node, get: () => picked };
+  return { node: rovingGroup(node), get: () => picked };
 }
 
 /* Set once, shown on every day. Sleep may run past midnight, so bedtime and
@@ -1225,7 +1229,9 @@ function TagPicker(initial) {
       chips[k].setAttribute('aria-checked', String(on));
     }
   }
-  const wrap = h('div', { class: 'gb-tagpick', role: 'radiogroup', 'aria-label': 'Tag' });
+  const wrap = rovingGroup(
+    h('div', { class: 'gb-tagpick', role: 'radiogroup', 'aria-label': 'Tag' })
+  );
   TAG_ORDER.forEach((tag) => {
     const t = TAGS[tag];
     const chip = h(
@@ -1261,11 +1267,13 @@ function RepeatPicker(initial, onChange) {
     }
     if (fireChange && onChange) onChange(rep);
   }
-  const wrap = h('div', {
-    class: 'gb-segmented gb-segmented--repeat',
-    role: 'radiogroup',
-    'aria-label': 'Repeat',
-  });
+  const wrap = rovingGroup(
+    h('div', {
+      class: 'gb-segmented gb-segmented--repeat',
+      role: 'radiogroup',
+      'aria-label': 'Repeat',
+    })
+  );
   REPEAT_ORDER.forEach((rep) => {
     const seg = h(
       'button',
@@ -1981,18 +1989,13 @@ function ReminderRow(rem, occKey, onDelete, whatsappEnabled, onEdit, onCancelSno
     );
   }
 
-  async function handleDelete() {
+  function handleDelete() {
     if (rem.repeat && rem.repeat !== 'none') {
       openDeleteDialog(rem, occKey, onDelete);
       return;
     }
-    // A one-off went on a single tap, next to Edit, with no undo.
-    const ok = await confirmDialog({
-      title: 'Delete "' + rem.text + '"?',
-      confirmLabel: 'Delete',
-      danger: true,
-    });
-    if (ok) onDelete('all', rem.id, occKey);
+    // A one-off: one tap, with Undo on the toast (app.js deferDelete).
+    onDelete('all', rem.id, occKey);
   }
 
   const tagPill = h(
@@ -2077,6 +2080,14 @@ let cachedFormRefs = null;
    built a tick AFTER the prefill lands. */
 let pendingReminderText = '';
 let pendingReminderOpts = null; // { time?: 'HH:MM', repeat?: REPEAT_ORDER key }
+
+/* Sign-out: the kept form holds the last account's half-typed reminder. */
+function clearReminderForm() {
+  cachedForm = null;
+  cachedFormRefs = null;
+  pendingReminderText = '';
+  pendingReminderOpts = null;
+}
 
 /* `opts` (optional) also presets the time and the repeat — Report's
    "Set a bedtime reminder" hands over a daily one at the suggested hour. */
@@ -2466,18 +2477,14 @@ function buildForm() {
 }
 
 /* ---- Reminder list + add form for the selected day ---- */
-/* The reminders the panel last painted with: after a delete, whether the row
-   is still in them says whether it went (app.js restores it on a failure). */
+/* The reminders the panel last painted with: where a deleted row sat. */
 let lastReminders = [];
 
-/* Delete, then an Undo and somewhere for focus to land: the row's own button
-   went with the row and left focus on <body>. Undo re-creates a whole deleted
-   row through the add form's own call. ponytail: only a row whose start is
-   still ahead (the server refuses a past anchor) and only scope `all`; its
-   done ticks and skipped days aren't brought back. Upgrade: a server-side
-   restore. */
-async function deleteWithUndo(onDelete, onAdd, scope, id, occKey) {
-  const rem = lastReminders.find((r) => r.id === id);
+/* Delete, then somewhere for focus to land: the row's own button went with the
+   row and left focus on <body>. The Undo is app.js's (deleteReminder('all') is
+   a deferDelete, whose toast puts the row back as it was); a second one here
+   re-created it as a new reminder and offered two Undos for one delete. */
+async function deleteAndRefocus(onDelete, scope, id, occKey) {
   const rows = () => [...document.querySelectorAll('[data-cal-section="reminders"] .gb-rem-row')];
   // Its place in the day's list (focus is in a dialog by now, not on the row).
   const at = remindersOn(lastReminders, occKey).findIndex((r) => r.id === id);
@@ -2489,35 +2496,6 @@ async function deleteWithUndo(onDelete, onAdd, scope, id, occKey) {
     const target = (next && next.querySelector('.gb-rem-del')) || head;
     if (target) target.focus();
   }, 0);
-  const gone = rem && !lastReminders.some((r) => r.id === id);
-  const repeats = rem && rem.repeat && rem.repeat !== 'none';
-  if (!gone || scope !== 'all' || typeof onAdd !== 'function') return;
-  if (rem.date < todayKey() || (!repeats && isPastSlot(rem.date, rem.time))) return;
-  toast.action('Reminder deleted.', 'Undo', () =>
-    onAdd(
-      rem.date,
-      rem.text,
-      (rem.time || '').slice(0, 5),
-      rem.tag,
-      rem.repeat || 'none',
-      rem.until || '',
-      rem.sound || '',
-      (rem.endTime || '').slice(0, 5),
-      rem.notifyBefore == null ? null : rem.notifyBefore,
-      {
-        notes: rem.notes || null,
-        notifyBefore2: rem.notifyBefore2 == null ? null : rem.notifyBefore2,
-        ...(repeats
-          ? {
-              repeatInterval: rem.repeatInterval || 1,
-              repeatDays: rem.repeatDays || '',
-              repeatNth: rem.repeatNth || 0,
-              repeatCount: rem.repeatCount || 0,
-            }
-          : null),
-      }
-    )
-  );
 }
 
 function ReminderPanel({
@@ -2542,7 +2520,7 @@ function ReminderPanel({
   onSaveRoutine,
 }) {
   lastReminders = reminders || [];
-  const onDelete = (scope, id, occKey) => deleteWithUndo(onDeleteReminder, onAddReminder, scope, id, occKey);
+  const onDelete = (scope, id, occKey) => deleteAndRefocus(onDeleteReminder, scope, id, occKey);
   const list = remindersOn(reminders, selectedDate);
   const dayTasks = tasksOn(tasks, selectedDate);
   const dayCompletedTasks = completedTasksOn(tasks, selectedDate);
@@ -2947,8 +2925,21 @@ function MonthCount(year, month, reminders, tasks) {
   if (c.tasks) parts.push(plural(c.tasks, 'task'));
   return h(
     'div',
-    { class: 'gb-cal-toolbar-actions', hidden: !parts.length },
-    parts.length ? h('span', { class: 'gb-cal-monthcount' }, parts.join(' · ') + ' this month') : null
+    { class: 'gb-cal-toolbar-actions', hidden: !parts.length && !openCalendarImport },
+    parts.length ? h('span', { class: 'gb-cal-monthcount' }, parts.join(' · ') + ' this month') : null,
+    openCalendarImport
+      ? h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-btn gb-btn--ghost gb-btn--compact gb-cal-import',
+            title: 'From Google, Apple or Outlook Calendar',
+            onclick: () => openCalendarImport(),
+          },
+          Icon('upload', { size: 14, sw: 2.4 }),
+          'Import .ics'
+        )
+      : null
   );
 }
 
@@ -2998,6 +2989,7 @@ function CalendarToolbar({ year, month, reminders, tasks, onPrevMonth, onNextMon
 
 export {
   UsualTimeChip,
+  clearReminderForm,
   isPastSlot,
   freeBusy,
   wholeHours,
@@ -3008,6 +3000,7 @@ export {
   setDefaultLead,
   getDefaultLead,
   setReminderSettingsOpener,
+  setCalendarImporter,
   setCustomToneAdder,
   setVoiceReminder,
   notifySelect as NotifySelect,

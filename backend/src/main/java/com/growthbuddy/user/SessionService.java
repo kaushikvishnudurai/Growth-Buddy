@@ -69,7 +69,7 @@ public class SessionService {
 
     private final SessionRepository sessions;
     private final String hmacSecret;
-    private final boolean trustProxy;
+    private final com.growthbuddy.common.ClientIp clientIp;
     private final SecureRandom rng = new SecureRandom();
 
     /** The built-in dev fallback (see application.yml). Must never be used in prod. */
@@ -78,14 +78,14 @@ public class SessionService {
     public SessionService(SessionRepository sessions,
                           @Value("${growthbuddy.session.hmac-secret}") String hmacSecret,
                           @Value("${spring.profiles.active:}") String activeProfiles,
-                          @Value("${growthbuddy.trust-proxy:false}") boolean trustProxy) {
+                          com.growthbuddy.common.ClientIp clientIp) {
         boolean prod = activeProfiles != null && activeProfiles.toLowerCase().contains("prod");
         if (prod) {
             rejectWeakSecret(hmacSecret);
         }
         this.sessions   = sessions;
         this.hmacSecret = hmacSecret;
-        this.trustProxy = trustProxy;
+        this.clientIp = clientIp;
     }
 
     /**
@@ -125,7 +125,7 @@ public class SessionService {
         s.setExpiresAt(Instant.now().plus(SESSION_TTL));
         if (request != null) {
             s.setUserAgent(truncate(request.getHeader("User-Agent"), 4000));
-            s.setIp(com.growthbuddy.common.ClientIp.resolve(request, trustProxy));
+            s.setIp(clientIp.resolve(request));
             // The native shell knows its own model; a browser's UA no longer does
             // (Chrome reduces Android to "Android 10; K"). Trust the client label
             // when it sends one, fall back to parsing the UA when it doesn't.

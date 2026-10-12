@@ -10,13 +10,14 @@ pantry, shopping). Docs name symbols — `grep -n` them.
 | Method | Notes |
 |---|---|
 | `getFamily(userId)` | read-only snapshot |
+| `startSolo(userId)` | "Plan meals for just me": `resolveOrCreateFamily` and nothing else, so the self row is copied from Profile; in a family already = that one, unchanged (`FamilyServiceTest`) |
 | `addMember(userId, req)` | member may be **unmapped** (no account). `checkedDob` refuses a future birth date and, for mother/father/grandparents/spouse, one under `MIN_ADULT_REL_AGE` (12) |
 | `updateMember` / `updateProfile` | owner, or the mapped member themselves (`requireManageOrSelf`) |
 | `removeMember` | owner only; tells a linked member |
 | `transferOwnership` | the only way an owner can then leave |
-| `searchUsers(userId, q)` | name or exact id, masked email |
-| `linkMember(userId, req)` | sends an invite |
-| `listInvites` / `acceptInvite` / `declineInvite` | accept locks the user's rows; a solo owner's household folds in (`foldSoloFamilyInto`) |
+| `searchUsers(userId, q)` | name or exact id, 2+ chars, masked email with no domain (`UserRepository.maskEmail`), per-user throttle shared with Circle's search (`UserRepository.throttleSearch`, called in `FamilyController.search` because this method is read-only and a throttle hit is a write) |
+| `linkMember(userId, req)` | sends an invite. **A new invite row carries only the name**: the target's DOB, gender, height, weight and diet are copied in `acceptInvite`, never before (they used to be visible to the inviter's whole family, and in its meal-plan prompts, with no consent). Capped per owner (`INVITES_PER_DAY`) and per owner + target pair (`INVITES_PER_PAIR_PER_DAY`), 429 past it |
+| `listInvites` / `acceptInvite` / `declineInvite` | accept locks the user's rows, copies the user's profile onto an `inviteOnly` row, then a solo owner's household folds in (`foldSoloFamilyInto`, whose food profile wins). `toMemberResponse` blanks every profile field of an `invited` + `inviteOnly` row, for rows made before the fix |
 | `leaveFamily(userId)` | |
 
 ### Planning
@@ -51,13 +52,16 @@ pantry, shopping). Docs name symbols — `grep -n` them.
   `requireMember`, `requireFamilyMember`, `requireOwner`, `requireManageOrSelf`,
   `requireMemberAccess`, `requirePantry`, `requireChore`. `currentFamily` only follows a **mapped**
   row: an invite grants nothing.
-- `resolveOrCreateFamily` / `currentFamily` — a user gets a family lazily on first add / invite.
+- `resolveOrCreateFamily` / `currentFamily` — a user gets a family lazily on first add / invite, or on `startSolo`.
+- The one-day plan's prompt always carries the whole pantry (`pantryNames`), expired items included; the client only names the in-date ones.
 - **Live sync:** every write calls `changed(fam, actor, section)` → `FamilyEvents` (after commit) →
   the client's `gb:family-changed`. Sections: members, chores, plan, weekly, pantry, shopping,
   favourites, recipes. A write that skips it leaves other members on stale data.
 - **Prompt assembly:** `appendMemberLines` (age band, `memberPhysique`, diet, allergies, avoid,
   favourites, conditions) + `appendAvailableLines` (ingredients + pantry), `learnedDishesNote`,
-  `sanitize` on every user string. Shared by the one-day and multi-day plans.
+  `sanitize` on every user string. Shared by the one-day and multi-day plans, both over `diners(familyId)`:
+  the roster minus unaccepted invite rows (`invited` + `inviteOnly`), whose legacy profile copy must not
+  reach the prompt (`toMemberResponse` masks the same rows).
 - **Shopping:** `addToList` is the one writer for both builders: dedupe via `newShoppingLines`
   against UNTICKED lines + pantry; a candidate matching a ticked line re-opens it.
 - **Pantry expiry:** `toPantryResponse(item, today)` with the user's today; `EXPIRING_DAYS` is both

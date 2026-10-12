@@ -3,7 +3,6 @@ package com.growthbuddy.common;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
@@ -20,12 +19,11 @@ public class AiRateLimitInterceptor implements HandlerInterceptor {
     private static final long WINDOW_MS = 60 * 60_000L; // 40 AI calls per hour
 
     private final RateLimiter limiter;
-    private final boolean trustProxy;
+    private final ClientIp clientIp;
 
-    public AiRateLimitInterceptor(RateLimiter limiter,
-                                  @Value("${growthbuddy.trust-proxy:false}") boolean trustProxy) {
+    public AiRateLimitInterceptor(RateLimiter limiter, ClientIp clientIp) {
         this.limiter = limiter;
-        this.trustProxy = trustProxy;
+        this.clientIp = clientIp;
     }
 
     @Override
@@ -43,7 +41,7 @@ public class AiRateLimitInterceptor implements HandlerInterceptor {
         try {
             who = "u:" + CurrentUser.id();
         } catch (RuntimeException e) {
-            who = "ip:" + ClientIp.resolve(request, trustProxy);
+            who = "ip:" + clientIp.resolve(request);
         }
         if (!limiter.allow("ai:" + who, LIMIT, WINDOW_MS)) {
             response.setStatus(429);

@@ -18,6 +18,12 @@
 
 	encode gzip zstd
 
+	# Setu's bank webhook carries its secret in the query string (Setu signs
+	# nothing and sends no custom header), so its request line must not land in
+	# the access log below.
+	@bankWebhook path /api/money/bank/webhook
+	log_skip @bankWebhook
+
 	log {
 		output stdout
 		format console

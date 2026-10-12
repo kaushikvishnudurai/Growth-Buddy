@@ -19,6 +19,34 @@ const CUR = '₹';
 // the money doc whenever the screen/widget/modals render. ponytail: a single
 // module-level display var beats threading currency through every fmt() call.
 let cur = CUR;
+
+/* The home currency for an account that never picked one: the device's region,
+   read from its language (`en-GB` -> GB -> £; a bare `en` has none). An Indian timezone wins over the
+   language, since plenty of phones in India run en-US. Anything not listed keeps
+   CUR. A currency the user set (Customise) is stored and always wins. */
+const REGION_CUR = { US: '$', CA: '$', AU: '$', NZ: '$', SG: '$', HK: '$', GB: '£', JP: '¥', CN: '¥', KR: '₩', NG: '₦', PH: '₱', AE: 'AED', SA: 'SAR', ZA: 'R', LK: 'Rs', PK: 'Rs', NP: 'Rs', BD: '৳', MY: 'RM', ID: 'Rp', TH: '฿', VN: '₫', BR: 'R$', MX: '$', CH: 'CHF', SE: 'kr', NO: 'kr', DK: 'kr', PL: 'zł', TR: '₺', RU: '₽', IL: '₪', EG: 'E£', KE: 'KSh' };
+const EURO = new Set(['DE', 'FR', 'IT', 'ES', 'NL', 'BE', 'AT', 'IE', 'PT', 'FI', 'GR', 'SK', 'SI', 'LT', 'LV', 'EE', 'LU', 'MT', 'CY', 'HR']);
+export function currencyFor(locale, timeZone) {
+  if (/^Asia\/(Kolkata|Calcutta)$/.test(timeZone || '')) return CUR;
+  let region = '';
+  try {
+    region = new Intl.Locale(locale).region || ''; // never maximize(): it invents one ('en' -> US, 'ar' -> EG)
+  } catch (_) {
+    /* no or bad locale: the default */
+  }
+  return REGION_CUR[region] || (EURO.has(region) ? '€' : CUR);
+}
+let deviceCur = null;
+function deviceCurrency() {
+  if (deviceCur) return deviceCur;
+  try {
+    deviceCur = currencyFor(navigator.language, Intl.DateTimeFormat().resolvedOptions().timeZone);
+  } catch (_) {
+    deviceCur = CUR;
+  }
+  return deviceCur;
+}
+
 function applyCurrency(money) {
   cur = (money && money.settings && money.settings.currency) || CUR;
 }
@@ -421,15 +449,19 @@ export function normalizeMoney(m) {
     // Live balances from the server; read-only here, never saved back.
     accounts: Array.isArray(m.accounts) ? m.accounts : [],
     tombstones: pruneTombstones(m.tombstones),
-    settings: Object.assign({}, e.settings, m.settings || {}),
+    // ponytail: the device's currency is seeded here, not written: it reaches the
+    // server with the next document save (any budget, goal or setting). Until then
+    // the server's own messages (WhatsApp, day summary) still say ₹.
+    settings: Object.assign({}, e.settings, { currency: deviceCurrency() }, m.settings || {}),
     currency: CUR,
   };
 }
 /* ---- Deletes that survive a merge ----
    The document's own lists (loans, goals, subscriptions, challenges, wishlist) are
-   unioned by mergeMoney after a 409, so a delete on one device came back from the
-   other device's copy. A delete now leaves a tombstone ("loans:<id>" -> when),
-   and mergeMoney drops any item either side has a tombstone for. Kept 120 days:
+   merged after a 409, so a delete on one device came back from the other device's
+   copy. A delete now leaves a tombstone ("loans:<id>" -> when): applyDocDiff won't
+   re-add an item the copy has one for, and mergeMoney drops any item either side
+   has one for. Kept 120 days:
    a device offline longer than that can resurrect an item, which is the old
    behaviour, not lost money. (The ledger lists don't need this: their deletes
    are server rows.) */
@@ -512,6 +544,85 @@ export function docPart(m) {
   const out = Object.assign({}, m);
   for (const k of Object.keys(LEDGER_ARRAYS)) delete out[k];
   delete out.accounts;
+  return out;
+}
+
+/* ---- The document part of a save, as ops ----
+   What one save changed in the document, keyed by what it touches: an item of a
+   list (by id, a tag by key, a no-spend day by value), one key of an object
+   (budgets, rollover, settings, tombstones), or a whole scalar. Two saves' ops
+   combine with Object.assign, newest per key wins. Laid onto any copy with
+   applyDocDiff, so a save built from an older snapshot changes only what its own
+   edit changed (it used to replace the live document whole), and an edit the
+   server never accepted is replayed onto the server's copy at the next load or
+   conflict instead of being dropped by it. Pure; pinned in money-doc.test.mjs. */
+function docId(x) {
+  if (x && typeof x === 'object') {
+    if (x.id != null) return 'i' + x.id;
+    if (x.key != null) return 'k' + x.key;
+  }
+  return 'v' + stable(x);
+}
+const isPlain = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+
+export function docDiff(before, after) {
+  const a = docPart(before || {});
+  const b = docPart(after || {});
+  const ops = {};
+  for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
+    const was = a[key];
+    const now = b[key];
+    if (stable(was) === stable(now)) continue;
+    if (Array.isArray(was) && Array.isArray(now)) {
+      const old = new Map(was.map((x) => [docId(x), x]));
+      const kept = new Set();
+      for (const x of now) {
+        const id = docId(x);
+        kept.add(id);
+        if (!old.has(id) || stable(old.get(id)) !== stable(x))
+          ops[key + ':' + id] = { key, id, item: x };
+      }
+      for (const id of old.keys()) if (!kept.has(id)) ops[key + ':' + id] = { key, id, gone: true };
+    } else if (isPlain(was) && isPlain(now)) {
+      for (const k of new Set([...Object.keys(was), ...Object.keys(now)])) {
+        if (stable(was[k]) === stable(now[k])) continue;
+        ops[key + '.' + k] =
+          now[k] === undefined ? { key, sub: k, gone: true } : { key, sub: k, value: now[k] };
+      }
+    } else ops[key] = { key, value: now };
+  }
+  return ops;
+}
+
+export function applyDocDiff(money, ops) {
+  const out = Object.assign({}, money);
+  for (const op of Object.values(ops || {})) {
+    const cur = out[op.key];
+    if (op.id !== undefined) {
+      const list = Array.isArray(cur) ? cur.slice() : [];
+      const i = list.findIndex((x) => docId(x) === op.id);
+      if (op.gone) {
+        if (i >= 0) list.splice(i, 1);
+      } else if (i >= 0) {
+        // paidFor / postedFor only move forward: a WhatsApp "Mark as paid" on the
+        // server's copy survives an edit to the same bill made here.
+        const item = Object.assign({}, op.item);
+        for (const f of ['paidFor', 'postedFor'])
+          if (list[i] && list[i][f] && list[i][f] > (item[f] || '')) item[f] = list[i][f];
+        list[i] = item;
+      } else if (
+        !(op.item && op.item.id != null && (out.tombstones || {})[op.key + ':' + op.item.id])
+      ) {
+        list.push(op.item); // not when the other copy deleted it: the delete wins
+      }
+      out[op.key] = list;
+    } else if (op.sub !== undefined) {
+      const obj = Object.assign({}, isPlain(cur) ? cur : {});
+      if (op.gone) delete obj[op.sub];
+      else obj[op.sub] = op.value;
+      out[op.key] = obj;
+    } else out[op.key] = op.value;
+  }
   return out;
 }
 

@@ -1,0 +1,36 @@
+diff --git a/ios/App/App.xcodeproj/project.pbxproj b/ios/App/App.xcodeproj/project.pbxproj
+index 5687997..49eb0ed 100644
+--- a/ios/App/App.xcodeproj/project.pbxproj
++++ b/ios/App/App.xcodeproj/project.pbxproj
+@@ -295,6 +295,7 @@
+ 			baseConfigurationReference = 958DCC722DB07C7200EA8C5F /* debug.xcconfig */;
+ 			buildSettings = {
+ 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
++				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
+ 				CODE_SIGN_STYLE = Automatic;
+ 				CURRENT_PROJECT_VERSION = 1;
+ 				INFOPLIST_FILE = App/Info.plist;
+@@ -317,6 +318,7 @@
+ 			isa = XCBuildConfiguration;
+ 			buildSettings = {
+ 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
++				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
+ 				CODE_SIGN_STYLE = Automatic;
+ 				CURRENT_PROJECT_VERSION = 1;
+ 				INFOPLIST_FILE = App/Info.plist;
+diff --git a/ios/App/App/App.entitlements b/ios/App/App/App.entitlements
+new file mode 100644
+index 0000000..ede30db
+--- /dev/null
++++ b/ios/App/App/App.entitlements
+@@ -0,0 +1,10 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0">
++<dict>
++	<key>com.apple.developer.associated-domains</key>
++	<array>
++		<string>applinks:growth-buddy-cu63.onrender.com</string>
++	</array>
++</dict>
++</plist>

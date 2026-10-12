@@ -1,0 +1,153 @@
+diff --git a/android/app/src/main/AndroidManifest.xml b/android/app/src/main/AndroidManifest.xml
+index 99f1c80..b89439c 100644
+--- a/android/app/src/main/AndroidManifest.xml
++++ b/android/app/src/main/AndroidManifest.xml
+@@ -1,7 +1,9 @@
+ <?xml version="1.0" encoding="utf-8" ?>
+ <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+     <application
+-        android:allowBackup="true"
++        android:allowBackup="false"
++        android:fullBackupContent="false"
++        android:dataExtractionRules="@xml/data_extraction_rules"
+         android:icon="@mipmap/ic_launcher"
+         android:label="@string/app_name"
+         android:roundIcon="@mipmap/ic_launcher_round"
+@@ -18,6 +20,18 @@
+                 <action android:name="android.intent.action.MAIN" />
+                 <category android:name="android.intent.category.LAUNCHER" />
+             </intent-filter>
++
++            <!-- Links to the web app (a Circle invite, a shared #/money) open here.
++                 The app reads the hash (native.js onDeepLink). autoVerify needs
++                 /.well-known/assetlinks.json on this host; until it is served,
++                 Android 12+ opens these in the browser unless the user turns on
++                 "Open supported links" for Growth Buddy. -->
++            <intent-filter android:autoVerify="true">
++                <action android:name="android.intent.action.VIEW" />
++                <category android:name="android.intent.category.DEFAULT" />
++                <category android:name="android.intent.category.BROWSABLE" />
++                <data android:scheme="https" android:host="growth-buddy-cu63.onrender.com" />
++            </intent-filter>
+         </activity>
+ 
+         <provider
+@@ -33,6 +47,19 @@
+ 
+     <uses-permission android:name="android.permission.INTERNET" />
+ 
++    <!-- Recording a custom sound: for a page's getUserMedia({audio}) Capacitor
++         asks for RECORD_AUDIO AND this, and grants only if both are held. With
++         this one undeclared the request failed without ever prompting. Normal
++         permission, granted at install. -->
++    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
++
++    <!-- The barcode scanner's getUserMedia({video}). Declared, it also makes
++         the photo inputs (food, receipts, notes) prompt once before opening the
++         camera, which Capacitor handles. required=false: no camera is not a
++         reason for Play to hide the app. -->
++    <uses-permission android:name="android.permission.CAMERA" />
++    <uses-feature android:name="android.hardware.camera" android:required="false" />
++
+     <!-- A reminder is an alarm the user set, so it has to land on the minute.
+          Without this, targetSdk 36 means canScheduleExactAlarms() is false by
+          default on Android 14+, the plugin silently falls back to
+diff --git a/android/app/src/main/res/drawable/ic_stat_gb.xml b/android/app/src/main/res/drawable/ic_stat_gb.xml
+new file mode 100644
+index 0000000..9dd9350
+--- /dev/null
++++ b/android/app/src/main/res/drawable/ic_stat_gb.xml
+@@ -0,0 +1,24 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- The notification small icon: the logomark's sprout, one colour. Android
++     draws only its alpha (iconColor in capacitor.config.json tints it), so a
++     full-colour icon here would render as a white blob. Viewport is the
++     logomark's 64-unit box cropped to the sprout. -->
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="24dp"
++    android:height="24dp"
++    android:viewportWidth="44"
++    android:viewportHeight="44">
++    <group android:translateX="-10" android:translateY="-9">
++        <path
++            android:pathData="M32,48V30"
++            android:strokeColor="#FFFFFFFF"
++            android:strokeWidth="5"
++            android:strokeLineCap="round" />
++        <path
++            android:fillColor="#FFFFFFFF"
++            android:pathData="M32,33C24,33 17.5,27 18.5,17.5C28,16.5 34,23 32,33Z" />
++        <path
++            android:fillColor="#FFFFFFFF"
++            android:pathData="M32,30C40,30 46.5,24 45.5,14.5C36,13.5 30,20 32,30Z" />
++    </group>
++</vector>
+diff --git a/android/app/src/main/res/xml/data_extraction_rules.xml b/android/app/src/main/res/xml/data_extraction_rules.xml
+new file mode 100644
+index 0000000..ad61e39
+--- /dev/null
++++ b/android/app/src/main/res/xml/data_extraction_rules.xml
+@@ -0,0 +1,23 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Android 12+: nothing leaves the phone in a cloud backup or a
++     phone-to-phone transfer. The WebView's cookies (gb.token, gb.session)
++     and Cache API live in app data; restored onto another phone they were a
++     live session the signed-in-devices list never saw. Everything the user
++     owns is on the server, so there is nothing here worth backing up.
++     (allowBackup="false" covers Android 11 and below.) -->
++<data-extraction-rules>
++    <cloud-backup>
++        <exclude domain="root" />
++        <exclude domain="file" />
++        <exclude domain="database" />
++        <exclude domain="sharedpref" />
++        <exclude domain="external" />
++    </cloud-backup>
++    <device-transfer>
++        <exclude domain="root" />
++        <exclude domain="file" />
++        <exclude domain="database" />
++        <exclude domain="sharedpref" />
++        <exclude domain="external" />
++    </device-transfer>
++</data-extraction-rules>
+diff --git a/capacitor.config.json b/capacitor.config.json
+index 3f359b1..98a895a 100644
+--- a/capacitor.config.json
++++ b/capacitor.config.json
+@@ -19,6 +19,10 @@
+       "showSpinner": false,
+       "androidScaleType": "CENTER_CROP",
+       "androidSplashResourceName": "splash"
++    },
++    "LocalNotifications": {
++      "smallIcon": "ic_stat_gb",
++      "iconColor": "#F97316"
+     }
+   }
+ }
+diff --git a/ios/App/App/Info.plist b/ios/App/App/Info.plist
+index 60cfb57..359bdee 100644
+--- a/ios/App/App/Info.plist
++++ b/ios/App/App/Info.plist
+@@ -30,7 +30,7 @@
+ 	<string>Main</string>
+ 	<key>UIRequiredDeviceCapabilities</key>
+ 	<array>
+-		<string>armv7</string>
++		<string>arm64</string>
+ 	</array>
+ 	<key>UISupportedInterfaceOrientations</key>
+ 	<array>
+@@ -51,5 +51,11 @@
+ 	<string>Growth Buddy uses the microphone so you can log things by speaking.</string>
+ 	<key>NSSpeechRecognitionUsageDescription</key>
+ 	<string>Growth Buddy turns your speech into text to log tasks, food and more.</string>
++	<key>NSCameraUsageDescription</key>
++	<string>Growth Buddy uses the camera to photograph meals and receipts, add photos to notes and scan barcodes.</string>
++	<key>NSPhotoLibraryUsageDescription</key>
++	<string>Growth Buddy lets you pick a photo of a meal, a receipt or for a note from your library.</string>
++	<key>NSPhotoLibraryAddUsageDescription</key>
++	<string>Growth Buddy saves the progress cards you choose to share to your photos.</string>
+ </dict>
+ </plist>

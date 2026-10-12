@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.growthbuddy.common.ApiException;
+import com.growthbuddy.common.RateLimiter;
 import com.growthbuddy.mentor.OpenAIClient;
 import com.growthbuddy.mentor.OpenAIClient.ChatTurn;
 import com.growthbuddy.notification.NotificationKind;
@@ -30,6 +31,7 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -38,6 +40,11 @@ import org.springframework.util.StringUtils;
 public class FamilyService {
 
     private static final Logger log = LoggerFactory.getLogger(FamilyService.class);
+
+    /* Invite caps (linkMember): per owner, and per owner + target pair. */
+    private static final int INVITES_PER_DAY = 20;
+    private static final int INVITES_PER_PAIR_PER_DAY = 3;
+    private static final long DAY_MS = 24 * 60 * 60_000L;
 
     private static final String GROCERY_PROMPT = """
             You analyze a photo of groceries / ingredients / a grocery receipt and identify every distinct food item.
@@ -103,6 +110,7 @@ public class FamilyService {
     private final FamilyChoreRepository chores;
     private final FamilyRecipeRepository recipes;
     private final ReminderService reminders;
+    private final RateLimiter limiter;
     private final ObjectMapper json = new ObjectMapper();
 
     public FamilyService(
@@ -121,7 +129,8 @@ public class FamilyService {
             FamilyEvents events,
             FamilyChoreRepository chores,
             FamilyRecipeRepository recipes,
-            ReminderService reminders) {
+            ReminderService reminders,
+            RateLimiter limiter) {
         this.families = families;
         this.members = members;
         this.plans = plans;
@@ -138,6 +147,7 @@ public class FamilyService {
         this.chores = chores;
         this.recipes = recipes;
         this.reminders = reminders;
+        this.limiter = limiter;
     }
 
     /* Against the user's own day, not the server's: @PastOrPresent used the
@@ -175,6 +185,16 @@ public class FamilyService {
             return new FamilyResponse(null, null, false, List.of());
         }
         return buildResponse(fam, userId);
+    }
+
+    /**
+     * "Plan meals for just me": the household with only the caller in it, their
+     * row copied from Profile, so a solo cook reaches the planner without adding
+     * anyone. Already in a family: that family, unchanged.
+     */
+    @Transactional
+    public FamilyResponse startSolo(UUID userId) {
+        return buildResponse(resolveOrCreateFamily(userId), userId);
     }
 
     @Transactional
@@ -321,7 +341,8 @@ public class FamilyService {
 
     @Transactional(readOnly = true)
     public List<UserSearchResult> searchUsers(UUID userId, String q) {
-        if (!StringUtils.hasText(q)) {
+        // Two characters, as Circle's search: one matched nearly everyone.
+        if (q == null || q.trim().length() < 2) {
             return List.of();
         }
         Family fam = currentFamily(userId);
@@ -335,7 +356,7 @@ public class FamilyService {
             out.add(new UserSearchResult(
                     u.getId(),
                     u.getDisplayName(),
-                    maskEmail(u.getEmail()),
+                    UserRepository.maskEmail(u.getEmail()),
                     inFamily));
         }
         return out;
@@ -360,6 +381,13 @@ public class FamilyService {
                 .orElseThrow(() -> ApiException.notFound("that account"));
         if (target.getId().equals(userId)) {
             throw ApiException.badRequest("You're already in your own family.");
+        }
+        // Each invite is a bell card and a push to the target. Without a cap,
+        // invite / remove / re-invite was a loop that spammed anyone by id.
+        if (!limiter.allow("family-invite:" + userId, INVITES_PER_DAY, DAY_MS)
+                || !limiter.allow("family-invite:" + userId + ":" + target.getId(), INVITES_PER_PAIR_PER_DAY, DAY_MS)) {
+            throw new ApiException(HttpStatus.TOO_MANY_REQUESTS,
+                    "That's a lot of family invites for one day. Try again tomorrow.");
         }
 
         // Someone can only belong to one family — block if already accepted
@@ -400,11 +428,9 @@ public class FamilyService {
             m.setLinkedUserId(target.getId());
             m.setName(target.getDisplayName());
             m.setRelationship(Relationship.other);
-            m.setDob(target.getDob());
-            m.setGender(target.getGender());
-            m.setHeightCm(target.getHeightCm());
-            m.setWeightKg(target.getWeightKg());
-            m.setDietPreference(target.getDietPreference());
+            // Name only. Their date of birth, body and diet used to be copied here,
+            // so an invite nobody answered still showed them to the inviter's whole
+            // family and put them in its meal-plan prompts. Copied on accept instead.
             m.setStatus(MemberStatus.invited);
             m.setInviteOnly(true); // created purely for the invite — remove on decline
             members.save(m);
@@ -466,6 +492,17 @@ public class FamilyService {
                 .orElseThrow(() -> ApiException.badRequest("That invitation is no longer available."));
         Family target = requireFamily(m.getFamilyId());
         Family current = currentFamily(userId);
+        if (m.isInviteOnly()) {
+            // Consent given: now their own profile joins the household (before the
+            // fold below, whose richer food profile from their old self row wins).
+            users.findById(userId).ifPresent(u -> {
+                m.setDob(u.getDob());
+                m.setGender(u.getGender());
+                m.setHeightCm(u.getHeightCm());
+                m.setWeightKg(u.getWeightKg());
+                m.setDietPreference(u.getDietPreference());
+            });
+        }
         if (current != null) {
             if (current.getId().equals(target.getId()) || !isSoloOwner(userId)) {
                 throw ApiException.badRequest("You're already part of a family. Leave it first to join another.");
@@ -789,7 +826,7 @@ public class FamilyService {
         }
         requireMemberAccess(fam, userId);
 
-        List<FamilyMember> all = members.findByFamilyIdAndDeletedAtIsNullOrderByCreatedAtAsc(fam.getId());
+        List<FamilyMember> all = diners(fam.getId());
         List<FamilyMember> selected = all;
         if (req != null && req.memberIds() != null && !req.memberIds().isEmpty()) {
             List<FamilyMember> filtered = all.stream()
@@ -990,7 +1027,7 @@ public class FamilyService {
         int days = req != null && req.days() != null ? Math.max(1, Math.min(14, req.days())) : 7;
         String occasion = normalizeOccasion(req != null ? req.occasion() : null);
 
-        List<FamilyMember> all = members.findByFamilyIdAndDeletedAtIsNullOrderByCreatedAtAsc(fam.getId());
+        List<FamilyMember> all = diners(fam.getId());
         List<FamilyMember> selected = all;
         if (req != null && req.memberIds() != null && !req.memberIds().isEmpty()) {
             List<FamilyMember> filtered =
@@ -2020,6 +2057,18 @@ public class FamilyService {
         return out;
     }
 
+    /**
+     * Who a plan is cooked for: the roster without unaccepted invites. An invite row
+     * made before linkMember stopped copying the invitee's profile still holds their
+     * DOB, size and diet; it is not a diner until they accept, and the AI prompt must
+     * not see it (toMemberResponse masks the same rows for the family).
+     */
+    private List<FamilyMember> diners(UUID familyId) {
+        return members.findByFamilyIdAndDeletedAtIsNullOrderByCreatedAtAsc(familyId).stream()
+                .filter(m -> !(m.getStatus() == MemberStatus.invited && m.isInviteOnly()))
+                .toList();
+    }
+
     private void appendMemberLines(StringBuilder sb, List<FamilyMember> selected) {
         sb.append("Family members (").append(selected.size()).append("):\n");
         for (FamilyMember m : selected) {
@@ -2161,6 +2210,14 @@ public class FamilyService {
     }
 
     private FamilyMemberResponse toMemberResponse(FamilyMember m, Family fam, UUID userId) {
+        // An invite row made before linkMember stopped copying the invitee's
+        // profile still holds it; nobody sees it until they accept.
+        if (m.getStatus() == MemberStatus.invited && m.isInviteOnly()) {
+            return new FamilyMemberResponse(m.getId(), m.getName(), m.getRelationship(), null, null,
+                    ageCategory(null), null, null, null, m.getStatus(), m.getLinkedUserId(),
+                    false, m.getLinkedUserId() != null && m.getLinkedUserId().equals(userId),
+                    new FoodProfile(List.of(), List.of(), null, List.of(), List.of(), List.of()));
+        }
         Integer age = ageFromDob(m.getDob());
         boolean isOwner = m.getLinkedUserId() != null && m.getLinkedUserId().equals(fam.getOwnerUserId());
         boolean isSelf = m.getLinkedUserId() != null && m.getLinkedUserId().equals(userId);
@@ -2423,19 +2480,5 @@ public class FamilyService {
         }
         String t = s.trim();
         return t.length() > max ? t.substring(0, max) : t;
-    }
-
-    /** Mask an email so it can disambiguate a search hit without leaking the address. */
-    private static String maskEmail(String email) {
-        if (email == null) {
-            return null;
-        }
-        int at = email.indexOf('@');
-        if (at <= 1) {
-            return "•••" + (at >= 0 ? email.substring(at) : "");
-        }
-        String local = email.substring(0, at);
-        String domain = email.substring(at);
-        return local.charAt(0) + "•••" + local.charAt(local.length() - 1) + domain;
     }
 }

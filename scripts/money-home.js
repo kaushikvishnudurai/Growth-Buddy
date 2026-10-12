@@ -81,7 +81,7 @@ function RepeatExpenseNudge(money, onSaveMoney) {
 }
 
 function addExpense(money, onSaveMoney, requestReceiptScan) {
-  import('./money.js')
+  import('./money-screen.js')
     .then((m) => m.openExpenseModal(money, onSaveMoney, null, null, requestReceiptScan))
     .catch((err) => {
       console.error('Money failed to load', err);

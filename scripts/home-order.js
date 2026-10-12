@@ -77,6 +77,37 @@ export function resolveHomeLayout(saved) {
 /* YYYY-MM-DD of a Date in the device's zone. */
 export { localDayKey };
 
+/* "Today" as YYYY-MM-DD: the app's one copy (there were ten). Device date by
+   default. With `zone` (an IANA id), today in that zone: app.js and Goals pass
+   the account's, because that is the day the server's UserClock checks a
+   check-in, rest day or goal action against, and the date on its water/food
+   summaries. Display-only callers (calendar grid, mini calendar, Money, device
+   alarms) keep the device's. An unknown zone id falls back to the device. */
+export function todayKey(zone, now = new Date()) {
+  if (zone) {
+    try {
+      // en-CA formats as YYYY-MM-DD.
+      return new Intl.DateTimeFormat('en-CA', {
+        timeZone: zone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(now);
+    } catch (_) {
+      /* fall through */
+    }
+  }
+  return localDayKey(now);
+}
+
+/* A YYYY-MM-DD key moved by whole days, on local noon and the local getters:
+   toISOString() goes through UTC, which east of UTC+12 is the previous day. */
+export function shiftDayKey(key, days) {
+  const d = new Date(key + 'T12:00:00');
+  d.setDate(d.getDate() + days);
+  return localDayKey(d);
+}
+
 /* Where a task sits on Home: overdue, due today, upcoming, no date, paused,
    done. Lower comes first. */
 export function taskRank(task, now) {

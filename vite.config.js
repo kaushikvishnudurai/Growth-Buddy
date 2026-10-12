@@ -1,5 +1,7 @@
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 // Backend dev server (Spring Boot). Override with VITE_API_BASE / API_PROXY_TARGET.
 const API_TARGET = process.env.API_PROXY_TARGET || 'http://localhost:8080';
@@ -16,26 +18,128 @@ const API_TARGET = process.env.API_PROXY_TARGET || 'http://localhost:8080';
    A literal is readable by any build anywhere, which is the whole requirement.
 
    GB_BUILD=<n> in the environment overrides it for a one-off build. */
-const BUILD = 95;
+const BUILD = 96;
 const buildNumber = () => Number(process.env.GB_BUILD) || BUILD;
+
+/* The public site, for what has to be an absolute URL: canonical, og:url,
+   og:image, the sitemap. The same host the mobile build points VITE_API_BASE at
+   (Growth-Buddy-Mobile package.json) and keep-awake.yml pings — the backend
+   serves the SPA, so it is the site. GB_SITE_URL overrides for another deploy.
+   The app itself never reads this: in a browser the site is location.origin, in
+   the phone app it is the API base (native.js publicSiteUrl). */
+const SITE_URL = (process.env.GB_SITE_URL || 'https://growth-buddy-cu63.onrender.com').replace(
+  /\/+$/,
+  ''
+);
+
+/* %GB_SITE_URL% in index.html and public/privacy.html becomes SITE_URL, and
+   robots.txt + sitemap.xml are written here rather than kept in public/, so the
+   host lives in one place. public/ is copied verbatim, hence the rewrite after
+   the write. (On the dev server privacy.html keeps the placeholder; only a
+   build is ever crawled.) */
+function siteFiles() {
+  let outDir = 'dist';
+  return {
+    name: 'gb-site-files',
+    configResolved(c) {
+      outDir = c.build.outDir;
+    },
+    transformIndexHtml: (html) => html.replaceAll('%GB_SITE_URL%', SITE_URL),
+    generateBundle() {
+      this.emitFile({
+        type: 'asset',
+        fileName: 'robots.txt',
+        source:
+          'User-agent: *\nAllow: /\nAllow: /privacy.html\nDisallow: /api/\nDisallow: /ws/\n\n' +
+          'Sitemap: ' + SITE_URL + '/sitemap.xml\n',
+      });
+      this.emitFile({
+        type: 'asset',
+        fileName: 'sitemap.xml',
+        source:
+          '<?xml version="1.0" encoding="UTF-8"?>\n' +
+          '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
+          ['/', '/privacy.html'].map((p) => '  <url><loc>' + SITE_URL + p + '</loc></url>\n').join('') +
+          '</urlset>\n',
+      });
+    },
+    writeBundle() {
+      const file = join(outDir, 'privacy.html');
+      writeFileSync(file, readFileSync(file, 'utf8').replaceAll('%GB_SITE_URL%', SITE_URL));
+    },
+  };
+}
+
+/* sockjs-client (the notification socket's transport, its own lazy chunk)
+   registers a window 'unload' listener when its module loads. 'unload' is
+   deprecated, Lighthouse flags it, and it keeps the page out of the
+   back/forward cache. All the listener does is close sockjs's own transports on
+   the way out, which the browser does anyway — so it listens on 'pagehide'
+   instead, for a real unload only (not a page going into the bfcache, after
+   which sockjs would refuse every new transport). Throws if an upgrade moves
+   the line, so the fix can't silently fall off. */
+function sockjsNoUnload() {
+  const from = "module.exports.attachEvent('unload', unloadTriggered);";
+  const to =
+    "module.exports.attachEvent('pagehide', function (e) { if (!e.persisted) unloadTriggered(); });";
+  return {
+    name: 'gb-sockjs-no-unload',
+    transform(code, id) {
+      if (!/sockjs-client[\\/]lib[\\/]utils[\\/]event\.js$/.test(id)) return null;
+      if (!code.includes(from)) throw new Error('sockjs-client event.js changed: revisit gb-sockjs-no-unload');
+      return { code: code.replace(from, to), map: null };
+    },
+  };
+}
 
 export default defineConfig({
   plugins: [
+    siteFiles(),
+    sockjsNoUnload(),
     VitePWA({
-      registerType: 'autoUpdate',
-      // Registered by app.js, which skips it in the Capacitor app.
+      // A new build waits until the user says Reload (app.js registerSW →
+      // "A new version is ready"). Never skipWaiting + clientsClaim on its own:
+      // that swaps the precache under a running page — see the workbox comment.
+      registerType: 'prompt',
+      // Registered by app.js (virtual:pwa-register), which skips it in the
+      // Capacitor app.
       injectRegister: false,
       includeAssets: ['icons/apple-touch-icon.png', 'favicon-32.png'],
       manifest: {
+        // Identity of the install. Without it Chrome derives one from start_url,
+        // so a start_url change would make a second app.
+        id: '/',
         name: 'Growth Buddy',
         short_name: 'Growth Buddy',
         description: 'Your friendly accountability app for habits, tasks, fitness and growth.',
         theme_color: '#F97316',
         background_color: '#F97316',
         display: 'standalone',
-        orientation: 'portrait',
+        // The app has a landscape rail and a desktop sidebar; don't lock it.
+        orientation: 'any',
         start_url: '/',
         scope: '/',
+        categories: ['productivity', 'health', 'lifestyle'],
+        // Long-press on the icon. app.js routes ?shortcut= after the first data
+        // load (launch-intent.js), then strips it from the address.
+        shortcuts: [
+          { name: 'Log water', short_name: 'Water', description: 'Log a 250 ml glass', url: '/?shortcut=water', icons: [{ src: 'icons/icon-192.png', sizes: '192x192' }] },
+          { name: 'Add task', short_name: 'Task', description: 'Add a task for today', url: '/?shortcut=task', icons: [{ src: 'icons/icon-192.png', sizes: '192x192' }] },
+          { name: 'Start focus', short_name: 'Focus', description: 'Start a focus session', url: '/?shortcut=focus', icons: [{ src: 'icons/icon-192.png', sizes: '192x192' }] },
+          { name: 'Quick add', short_name: 'Quick add', description: 'Log anything in one line', url: '/?shortcut=quickadd', icons: [{ src: 'icons/icon-192.png', sizes: '192x192' }] },
+        ],
+        // "Share to Growth Buddy" from another app: the text lands in Quick add's
+        // preview, and nothing is written until the user confirms there.
+        share_target: {
+          action: '/',
+          method: 'GET',
+          params: { title: 'title', text: 'text', url: 'url' },
+        },
+        // The richer install dialog. Real screens from a seeded test account.
+        screenshots: [
+          { src: 'screenshots/home-narrow.jpg', sizes: '780x1688', type: 'image/jpeg', form_factor: 'narrow', label: 'Home: today at a glance' },
+          { src: 'screenshots/home-wide.jpg', sizes: '1280x800', type: 'image/jpeg', form_factor: 'wide', label: 'Home on a larger screen' },
+        ],
         icons: [
           { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
           { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
@@ -70,6 +174,9 @@ export default defineConfig({
         // Code-splitting still earns its keep: it keeps first paint from blocking
         // on screens you may never open.
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        // Never needed offline: the link-preview image, the iOS launch images
+        // (iOS reads them at install) and the install dialog's screenshots.
+        globIgnores: ['og-image.png', 'splash/**', 'screenshots/**'],
         navigateFallback: '/index.html',
         // Pull our Web Push 'push' / 'notificationclick' handlers into the
         // generated service worker (keeps Workbox precaching intact).
@@ -92,12 +199,20 @@ export default defineConfig({
           {
             // Read-through cache for API GETs: prefer the network, fall back to
             // the last cached response when offline so the UI still renders.
+            // No networkTimeoutSeconds: with one, a merely slow answer was
+            // replaced by the cached one, so a refresh after a write repainted
+            // the pre-write state. The cache answers only when the fetch fails.
+            // Keyed by URL only, so every sign-out deletes it (app.js endSession).
+            // Not the two downloads: the full data export and the .ics are one-off
+            // files, and the export is every row the account owns — it must not
+            // sit in Cache Storage afterwards.
             urlPattern: ({ url, request }) =>
-              request.method === 'GET' && /\/api\//.test(url.pathname),
+              request.method === 'GET' &&
+              /\/api\//.test(url.pathname) &&
+              !/\/api\/(auth\/export|reminders\/export\.ics)$/.test(url.pathname),
             handler: 'NetworkFirst',
             options: {
               cacheName: 'gb-api-get',
-              networkTimeoutSeconds: 5,
               expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 },
               cacheableResponse: { statuses: [0, 200] },
             },
@@ -145,7 +260,12 @@ export default defineConfig({
         ws: true,
         configure: (proxy) => {
           proxy.on('proxyReq', (proxyReq) => proxyReq.setHeader('origin', API_TARGET));
-          proxy.on('proxyReqWs', (proxyReq) => proxyReq.setHeader('origin', API_TARGET));
+          proxy.on('proxyReqWs', (proxyReq, req, socket) => {
+            proxyReq.setHeader('origin', API_TARGET);
+            // A tab closed mid-handshake leaves this socket to EPIPE / ECONNRESET;
+            // unhandled, that error took the whole dev server down.
+            socket.on('error', () => {});
+          });
         },
       },
     },
@@ -175,7 +295,12 @@ export default defineConfig({
           // SockJS uses both XHR (proxyReq) and a WebSocket upgrade (proxyReqWs).
           // Rewrite Origin on both so the backend's CORS check passes.
           proxy.on('proxyReq', (proxyReq) => proxyReq.setHeader('origin', API_TARGET));
-          proxy.on('proxyReqWs', (proxyReq) => proxyReq.setHeader('origin', API_TARGET));
+          proxy.on('proxyReqWs', (proxyReq, req, socket) => {
+            proxyReq.setHeader('origin', API_TARGET);
+            // A tab closed mid-handshake leaves this socket to EPIPE / ECONNRESET;
+            // unhandled, that error took the whole dev server down.
+            socket.on('error', () => {});
+          });
         },
       },
     },

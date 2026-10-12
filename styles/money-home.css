@@ -1,0 +1,110 @@
+/* =====================================================================
+   Growth Buddy — Money styles that boot needs
+   The rest of Money's CSS (styles/money.css) loads with the screen, through
+   scripts/money-screen.js; this file is what something outside the screen
+   draws: Home's money card, the bank-feed row in Settings (.gb-money-cat-ic)
+   and the disabled segment state every segmented control shares.
+   ===================================================================== */
+
+/* ---- Home widget (mini card) ---- */
+.gb-money-mini {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  /* .gb-card ships without padding; without this the widget sat flush on the card edges. */
+  padding: var(--space-4);
+  background: linear-gradient(135deg, var(--ai-soft), var(--surface) 70%);
+}
+.gb-money-mini-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: none;
+  border: none;
+  /* 26px tall without moving the row: at padding 0 it was an 18px tap target. */
+  padding: var(--space-1) 0;
+  margin: -4px 0;
+  cursor: pointer;
+  color: var(--fg3);
+}
+.gb-money-mini-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-body);
+  font-weight: 800;
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--ai);
+}
+.gb-money-mini-body {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+.gb-money-mini-figure {
+  flex: none;
+  width: 72px;
+  text-align: center;
+}
+.gb-money-mini-spent {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--text-h4);
+  color: var(--fg1);
+  letter-spacing: var(--tracking-tight);
+}
+.gb-money-mini-lbl,
+.gb-money-mini-cap {
+  font-family: var(--font-body);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--fg3);
+}
+.gb-money-mini-ring-val {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--text-sm);
+  letter-spacing: var(--tracking-tight);
+  font-variant-numeric: tabular-nums;
+}
+.gb-money-mini-main {
+  flex: 1;
+  min-width: 0;
+}
+.gb-money-mini-say {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  color: var(--fg1);
+  line-height: var(--leading-normal);
+  margin-top: 2px;
+}
+.gb-money-mini-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+.gb-money-mini-actions .gb-btn {
+  width: auto;
+}
+.gb-money-mini-head:active {
+  opacity: 0.7;
+}
+
+.gb-money-cat-ic {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+}
+
+.gb-seg:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}

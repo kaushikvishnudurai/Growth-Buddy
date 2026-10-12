@@ -39,7 +39,8 @@ Owns its thread and messages locally so a keystroke never round-trips global sta
 | `setTitle` / `refreshTitle` | the thread bar's name; `refreshTitle` re-reads the list after a send into a thread still on a starting title (the server auto-titles it) |
 | `switchTo(id, title)` / `newChat()` | change thread and `load()`. Refused while `busy`; `load()` ignores a reply for a thread no longer open (`asked !== threadId`) |
 | `openThreads()` / `threadRow(t, close, onGone)` | the chats sheet (`openModal`, primary = New chat): pick, inline rename (Enter / Escape / blur, kept from the sheet's own Enter), **two-tap delete** (no stacked confirm); the open chat deleted → the newest. Footer: "Evening reflection: …" → Settings › Alerts |
-| `openActionSheet(chip)` | a chip's confirm sheet, prefilled (title; date + time for a reminder, optional daily reminder for a habit). Save → `api.act.*`; a past date / time is a `fieldRefusal` under the field |
+| `quickAct(chip, btn)` | a task or habit chip: saves at once through `api.act.task` / `api.act.habit` (app.js shows the toast with Undo, which deletes what was made); the chip is disabled and relabelled "Task added" / "Habit added" so a second tap can't add it twice; a failure re-enables it and toasts |
+| `openActionSheet(chip)` | a reminder chip's confirm sheet, prefilled (title, date, time). Save → `api.act.reminder`; a past date / time is a `fieldRefusal` under the field |
 
 ## Invariants
 

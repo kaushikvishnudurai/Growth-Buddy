@@ -2,16 +2,9 @@
    Growth Buddy — UI primitives (vanilla JS)
    Element-returning factories, exported as ES module bindings.
    ===================================================================== */
-import { createIcons } from 'lucide';
+import { createElement } from 'lucide';
 import { icons } from './icons.js';
 import { toast } from './toast.js';
-
-// Preserve the historic `window.lucide.createIcons()` call shape now that we've
-// moved off the CDN UMD build. refreshIcons() (below) and timer.js both use it.
-// We pass only the icon subset (scripts/icons.js) so the bundle stays small.
-if (typeof window !== 'undefined' && !window.lucide) {
-  window.lucide = { createIcons: (opts) => createIcons({ icons, ...(opts || {}) }) };
-}
 
 /* ---- Tiny hyperscript helper ----
      h('div', { class: 'x', onclick: fn }, child1, child2, ...)
@@ -83,6 +76,60 @@ function activate(fn) {
   };
 }
 
+/* ---- Roving focus for a tablist / radiogroup ----
+     rovingGroup(groupEl) -> groupEl. The roles promise one Tab stop and arrow
+     keys; plain buttons gave every option its own Tab stop and ignored arrows.
+     Arrows (Left/Right; Up/Down too in a radiogroup) and Home/End move focus
+     AND select by clicking the item, so each caller's own onclick stays the one
+     place selection happens. The selected item (aria-selected / aria-checked)
+     is the group's Tab stop, kept current by an observer, so a click, a set()
+     or items appended after this call all keep it right. A click that repaints
+     the group is fine when the items carry ids: focus follows the id. */
+function rovingGroup(group) {
+  const items = () =>
+    [...group.querySelectorAll('[role=tab],[role=radio]')].filter((b) => !b.disabled);
+  const isOn = (b) =>
+    b.getAttribute('aria-selected') === 'true' || b.getAttribute('aria-checked') === 'true';
+  const sync = () => {
+    const all = items();
+    const stop = all.find(isOn) || all[0];
+    all.forEach((b) => b.setAttribute('tabindex', b === stop ? '0' : '-1'));
+  };
+  const vertical = group.getAttribute('role') === 'radiogroup';
+  group.addEventListener('keydown', (e) => {
+    const all = items();
+    const i = all.indexOf(e.target);
+    if (i < 0) return;
+    const step = {
+      ArrowRight: 1,
+      ArrowLeft: -1,
+      ...(vertical ? { ArrowDown: 1, ArrowUp: -1 } : {}),
+    }[e.key];
+    const to =
+      e.key === 'Home'
+        ? 0
+        : e.key === 'End'
+          ? all.length - 1
+          : step
+            ? (i + step + all.length) % all.length
+            : -1;
+    if (to < 0) return;
+    e.preventDefault();
+    const next = all[to];
+    const id = next.id;
+    next.click();
+    ((!next.isConnected && id && document.getElementById(id)) || next).focus();
+  });
+  new MutationObserver(sync).observe(group, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    attributeFilter: ['aria-selected', 'aria-checked', 'disabled'],
+  });
+  sync();
+  return group;
+}
+
 /* ---- Pluralize helper ----
      plural(1, 'task') -> '1 task'; plural(3, 'task') -> '3 tasks'.
      Pass an explicit plural for irregular words: plural(2, 'entry', 'entries'). */
@@ -92,24 +139,17 @@ function plural(count, singular, pluralForm) {
 }
 
 /* ---- Lucide icon ----
-     Lucide's CDN script exposes `lucide.createIcons()` which scans the
-     DOM for `<i data-lucide="...">` placeholders and replaces them with
-     inline SVGs. We render the placeholder; whoever mounts the tree
-     should call GB.refreshIcons() (or it's auto-debounced below). */
-let _iconRaf = 0;
-function refreshIcons() {
-  if (_iconRaf) return;
-  _iconRaf = requestAnimationFrame(() => {
-    _iconRaf = 0;
-    if (window.lucide && window.lucide.createIcons) {
-      try {
-        window.lucide.createIcons();
-      } catch (_) {
-        /* noop */
-      }
-    }
-  });
-}
+     Icon() builds the <svg> itself from the subset in scripts/icons.js.
+     It used to drop an <i data-lucide> placeholder and debounce a
+     createIcons() sweep, but lucide copies data-lucide onto the svg it makes,
+     so every sweep matched every icon already on the page and rebuilt them
+     all: one full-document rebuild per render, toast or timer button. */
+// ponytail: kept as a no-op so the ~60 call sites across screens need no edit.
+function refreshIcons() {}
+
+// lucide's own name -> export mapping ('arrow-up-right' -> 'ArrowUpRight').
+const toPascal = (name) =>
+  name.replace(/(\w)(\w*)(_|-|\s*)/g, (_, a, b) => a.toUpperCase() + b.toLowerCase());
 
 function Icon(name, { size = 20, sw = 2, color, style, className } = {}) {
   const wrap = h('span', {
@@ -123,13 +163,27 @@ function Icon(name, { size = 20, sw = 2, color, style, className } = {}) {
       style || null
     ),
   });
-  const i = document.createElement('i');
-  i.setAttribute('data-lucide', name);
-  i.setAttribute('width', String(size));
-  i.setAttribute('height', String(size));
-  i.setAttribute('stroke-width', String(sw));
-  wrap.appendChild(i);
-  refreshIcons();
+  const node = icons[toPascal(name)];
+  if (!node) {
+    // Same outcome as the old sweep: nothing renders. icons.test.mjs catches it.
+    console.warn('Icon: "' + name + '" is not registered in scripts/icons.js');
+    return wrap;
+  }
+  const [tag, attrs, children] = node;
+  wrap.appendChild(
+    createElement([
+      tag,
+      {
+        ...attrs,
+        'data-lucide': name,
+        width: size,
+        height: size,
+        'stroke-width': sw,
+        class: 'lucide lucide-' + name,
+      },
+      children,
+    ])
+  );
   return wrap;
 }
 
@@ -185,11 +239,13 @@ function Card({ children, style, className = '', onClick } = {}) {
 }
 
 /* ---- Section title ---- */
-function SectionTitle({ title, action, onAction } = {}) {
+/* `level` 2: a section of the screen, under its one h1. Pass 3 for a title
+   that sits under another section's h2. Styled by class, so both look alike. */
+function SectionTitle({ title, action, onAction, level = 2 } = {}) {
   return h(
     'div',
     { class: 'gb-sectiontitle' },
-    h('h3', null, title),
+    h('h' + level, null, title),
     // A real <button>: an href-less <a role=button> took focus but ignored Enter
     // and Space. No handler means it is a count ("8 items"), not a control.
     action
@@ -708,7 +764,10 @@ function openOverlay({ label, className, role = 'dialog', onClose, onDismiss } =
     if (closed) return;
     closed = true;
     liveOverlays.delete(entry);
-    if (vv) vv.removeEventListener('resize', fitViewport);
+    if (vv) {
+      vv.removeEventListener('resize', fitViewport);
+      vv.removeEventListener('scroll', pinViewport);
+    }
     overlay.classList.remove('is-open');
     overlay.classList.add('is-closing');
     setTimeout(() => overlay.remove(), SHEET_EXIT_MS);
@@ -754,14 +813,23 @@ function openOverlay({ label, className, role = 'dialog', onClose, onDismiss } =
   // and this does nothing. Not interactive-widget=resizes-content: that would
   // also lift the bottom nav onto the keyboard on every screen.
   const vv = typeof window !== 'undefined' ? window.visualViewport : null;
-  function fitViewport() {
+  function pinViewport() {
     const covered = vv && window.innerHeight - vv.height > 1;
     overlay.style.top = covered ? vv.offsetTop + 'px' : '';
     overlay.style.height = covered ? vv.height + 'px' : '';
-    const f = document.activeElement;
-    if (covered && f && sheet.contains(f)) f.scrollIntoView({ block: 'nearest' });
+    return covered;
   }
-  if (vv) vv.addEventListener('resize', fitViewport);
+  function fitViewport() {
+    const f = document.activeElement;
+    if (pinViewport() && f && sheet.contains(f)) f.scrollIntoView({ block: 'nearest' });
+  }
+  // scroll too: iOS pans the visual viewport (offsetTop) without a resize when
+  // it scrolls a focused field into view, and the pin went stale. Only the pin
+  // there: scrolling the field into view on every pan would fight the user's drag.
+  if (vv) {
+    vv.addEventListener('resize', fitViewport);
+    vv.addEventListener('scroll', pinViewport);
+  }
   sheet.addEventListener('focusin', (e) => {
     const t = e.target;
     if (!t.matches || !t.matches('input, textarea, select, [contenteditable]')) return;
@@ -819,9 +887,12 @@ function trackOverlay({ close }) {
    reminder") that navigates FROM the note editor, which is exactly the case
    this function exists for.
 
-   Snapshot the set first: each close() removes its own entry from it. */
-function closeOverlays() {
-  [...liveOverlays].forEach((entry) => (entry.dismiss ? entry.dismiss() : entry.close()));
+   Snapshot the set first: each close() removes its own entry from it.
+
+   `discard` (sign-out, app.js endSession) closes every sheet without its
+   dismiss: there is no session left for a note to be saved under. */
+function closeOverlays({ discard = false } = {}) {
+  [...liveOverlays].forEach((entry) => (entry.dismiss && !discard ? entry.dismiss() : entry.close()));
 }
 
 /* ---- The standard dialog ----
@@ -1116,7 +1187,7 @@ function Logo({ size = 48, radius = 14, alive = false } = {}) {
 // Theme and the premium skin used to sit here as two more icon buttons. They
 // are preferences, not daily actions — they live in Settings → Display now, so
 // the bar holds only what you reach for while using the app.
-function AppHeader({ label, name, userName, onAccount, unreadCount, onBell, onAdd } = {}) {
+function AppHeader({ label, name, userName, onAccount, unreadCount, onBell, onAdd, onSearch } = {}) {
   const bellChildren = [Icon('bell', { size: 20 })];
   if (unreadCount > 0) {
     bellChildren.push(
@@ -1152,12 +1223,35 @@ function AppHeader({ label, name, userName, onAccount, unreadCount, onBell, onAd
             Icon('plus', { size: 20 })
           )
         : null,
+      // The command palette's door for touch; keyboards also have Ctrl/Cmd K.
+      onSearch
+        ? h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-iconbtn gb-head-search',
+              'aria-label': 'Search and commands',
+              'aria-keyshortcuts': 'Control+K Meta+K',
+              title:
+                'Search and commands (' +
+                (/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent) ? 'Cmd' : 'Ctrl') +
+                ' K)',
+              onclick: onSearch,
+            },
+            Icon('search', { size: 20 })
+          )
+        : null,
       h(
         'button',
         {
           type: 'button',
           class: 'gb-iconbtn gb-bell',
-          'aria-label': 'Notifications',
+          // aria-label replaces the content, so the badge's count must be in it.
+          // paintBellBadge (app.js) keeps the same wording when the count changes.
+          'aria-label':
+            unreadCount > 0
+              ? 'Notifications, ' + (unreadCount > 99 ? '99+' : unreadCount) + ' unread'
+              : 'Notifications',
           onclick: onBell,
         },
         bellChildren
@@ -1276,6 +1370,7 @@ function Thinking(label, steps) {
 }
 
 export {
+  rovingGroup,
   h,
   activate,
   trackOverlay,
@@ -1304,6 +1399,7 @@ export {
   Logo,
   confirmDialog,
   fieldRefusal,
+  fieldError,
   openOverlay,
   SHEET_EXIT_MS,
   focusSoon,

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.growthbuddy.common.ApiException;
 import com.growthbuddy.common.CurrentUser;
+import com.growthbuddy.common.RateLimiter;
 import com.growthbuddy.common.UserZone;
 import com.growthbuddy.quickadd.QuickAddApplier;
 import com.growthbuddy.quickadd.QuickAddService;
@@ -67,6 +68,14 @@ public class WhatsAppWebhookController {
     private final ReminderSnoozeService snoozes;
     private final QuickAddService quickAdd;
     private final QuickAddApplier applier;
+    private final RateLimiter seen;
+
+    /* Meta redelivers a message when the answer is slow (a quick-add runs a model
+       call inline), and the signature proves origin, not freshness: without this
+       a redelivery logged the expense, the food or the reminder twice. Each
+       message id is let through once; the limiter's counters outlive a window
+       by one more, so a repeat is refused for 24 to 48 hours. */
+    private static final long SEEN_MS = 24 * 60 * 60_000L;
 
     /** "snooze", "Snooze 20", "snooze 15 min" — and nothing else, so a chatty reply isn't taken for one. */
     static final Pattern SNOOZE_REPLY =
@@ -77,7 +86,8 @@ public class WhatsAppWebhookController {
             @Value("${growthbuddy.whatsapp.meta.app-secret:}") String appSecret,
             @Value("${growthbuddy.whatsapp.meta.webhook-verify-token:}") String verifyToken,
             ObjectMapper json, UserRepository users, MoneyService money, WhatsAppService whatsapp,
-            ReminderSnoozeService snoozes, QuickAddService quickAdd, QuickAddApplier applier) {
+            ReminderSnoozeService snoozes, QuickAddService quickAdd, QuickAddApplier applier,
+            RateLimiter seen) {
         this.appSecret = appSecret;
         this.verifyToken = verifyToken;
         this.json = json;
@@ -87,6 +97,7 @@ public class WhatsAppWebhookController {
         this.snoozes = snoozes;
         this.quickAdd = quickAdd;
         this.applier = applier;
+        this.seen = seen;
     }
 
     /** Meta's one-time subscription handshake. */
@@ -122,6 +133,10 @@ public class WhatsAppWebhookController {
                 for (JsonNode msg : change.path("value").path("messages")) {
                     // Per message: one failure must not drop the rest of a batched delivery.
                     try {
+                        String msgId = msg.path("id").asText();
+                        if (!msgId.isEmpty() && !seen.allow("wa-msg:" + msgId, 1, SEEN_MS)) {
+                            continue;
+                        }
                         String from = msg.path("from").asText();
                         String payload = buttonPayload(msg);
                         if (payload != null && payload.startsWith("snooze:")) {

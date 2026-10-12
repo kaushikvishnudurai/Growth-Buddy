@@ -8,6 +8,9 @@ import {
   topStreaks,
   homeGoals,
   daysBetween,
+  todayKey,
+  shiftDayKey,
+  localDayKey,
   tasksForToday,
   taskWhen,
 } from './home-order.js';
@@ -127,6 +130,20 @@ test('home goals: open only, nearest target first, undated last, with what is ne
 test('days between crosses a month and a DST change without drifting', () => {
   assert.equal(daysBetween('2026-10-30', '2026-11-02'), 3);
   assert.equal(daysBetween('2026-03-28', '2026-03-30'), 2);
+});
+
+test('todayKey: the zone decides the day; no zone or a junk one is the device date', () => {
+  const now = new Date('2026-03-08T20:30:00Z'); // already the 9th in Auckland, still the 8th in LA
+  assert.equal(todayKey('Pacific/Auckland', now), '2026-03-09');
+  assert.equal(todayKey('America/Los_Angeles', now), '2026-03-08');
+  assert.equal(todayKey('', now), localDayKey(now));
+  assert.equal(todayKey('Not/AZone', now), localDayKey(now));
+});
+
+test('shiftDayKey crosses months and years on local dates', () => {
+  assert.equal(shiftDayKey('2026-03-01', -1), '2026-02-28');
+  assert.equal(shiftDayKey('2026-12-31', 1), '2027-01-01');
+  assert.equal(shiftDayKey('2026-10-11', -7), '2026-10-04');
 });
 
 test('a task row says when, relative to now', () => {

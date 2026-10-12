@@ -66,6 +66,7 @@ function armEndAlarm() {
       title: T.mode === 'focus' ? 'Focus session done' : 'Break over',
       body: T.mode === 'focus' ? 'Nice work. Take a breather.' : 'Ready for the next one?',
       at: new Date(T.endsAt),
+      extra: { kind: 'focus' }, // a tap opens the timer (push.js notificationTarget)
     },
   ]).catch(function () {});
 }
@@ -145,6 +146,7 @@ function restoreSession() {
         ? 'Your focus session finished while you were away. It counts.'
         : 'Your break finished while you were away.'
     );
+    offerTaskDone(r.mode);
     // The cycle moves on as if it had ended here: the next step is lined up.
     if (r.mode === 'focus') T.lastFocusMins = Math.round(r.durationSec / 60);
     const next = afterSession(r.mode, T.cycleDone, T.lastFocusMins);
@@ -171,11 +173,24 @@ function postSession(mode, durationSec, link) {
     .then(function (s) {
       applyStats(s);
       if (mode === 'focus') loadHistory();
+      // Credited once; a pick no longer open (ticked, deleted, swept at midnight)
+      // isn't carried into the next session. The server already saves a session
+      // whose link has gone as unlinked, rather than refusing it.
+      const t = Focus.targets;
+      if (link && T.link && linkValue(T.link) === linkValue(link) && t && !linkOpen(link, t)) {
+        T.link = null;
+        saveSession();
+      }
     })
     .catch(function (err) {
       toast.error(err, 'Could not save that focus session.');
     });
 }
+
+const linkOpen = (l, t) =>
+  l.taskId
+    ? (t.tasks || []).some((x) => String(x.id) === l.taskId)
+    : (t.goals || []).some((x) => String(x.id) === l.goalId);
 
 /* A link as stored or handed in: exactly one of taskId / goalId, else null. */
 function cleanLink(l) {
@@ -584,6 +599,7 @@ function finish() {
   const doneMode = T.mode;
   postSession(T.mode, T.durationSec, doneMode === 'focus' ? T.link : null);
   notifyEnd(doneMode);
+  offerTaskDone(doneMode);
   say(doneMode === 'focus' ? 'Focus session complete.' : 'Break over.');
   // The cycle: a finished sprint lines up a short break (the fourth a long
   // one), and a finished break lines the last sprint length back up — ready,
@@ -591,6 +607,16 @@ function finish() {
   const next = afterSession(doneMode, T.cycleDone, T.lastFocusMins);
   T.cycleDone = next.cycleDone;
   setMode(next.mode, next.mins, next.suggest);
+}
+
+/* A sprint spent on a task (a task row's timer button) ends by offering to
+   tick that task: the loop the button opened closes in one tap. Only for a task
+   still open, as the targets list holds it. */
+function offerTaskDone(mode) {
+  const id = mode === 'focus' && T.link && T.link.taskId;
+  const task = id && Focus.onFinishTask && ((Focus.targets && Focus.targets.tasks) || []).find((t) => t.id === id);
+  if (!task) return;
+  toast.action('Mark \u201c' + task.title + '\u201d done?', 'Mark done', () => Focus.onFinishTask(id));
 }
 
 /* The web has no OS alarm (the phone's is queued in armEndAlarm), so a session
@@ -1157,6 +1183,7 @@ function historyChart(days, goal) {
     hit.setAttribute('width', String(slot));
     hit.setAttribute('height', String(H));
     hit.setAttribute('class', 'gb-focus-hist-hit');
+    hit.dataset.i = String(i);
     const tip = document.createElementNS(NS, 'title');
     tip.textContent = dayLabel(days[i].date) + ': ' + fmtMins(values[i]);
     hit.appendChild(tip);
@@ -1212,14 +1239,30 @@ function paintHistory() {
     el.append(h('div', { class: 'gb-focus-hist-note' }, 'No focus time in the last 30 days yet. Finished sprints show up here.'));
     return;
   }
+  const summary =
+    fmtMins(total) + ' over ' + days.length + ' days · ' + active + (active === 1 ? ' day' : ' days') + ' with focus' +
+    (goal ? ' · ' + days.filter((d) => d.minutes >= goal).length + ' met your goal' : '');
+  const sumEl = h('div', { class: 'gb-focus-hist-sum' }, summary);
+  const chart = historyChart(days, goal);
+  // A tap on a column reads its day out in the summary line (the <title>
+  // tooltip is mouse-only); a second tap on it goes back to the summary.
+  let picked = null;
+  chart.addEventListener('click', function (e) {
+    const hit = e.target.closest('.gb-focus-hist-hit');
+    if (picked) picked.classList.remove('is-picked');
+    if (!hit || hit === picked) {
+      picked = null;
+      sumEl.textContent = summary;
+      return;
+    }
+    picked = hit;
+    hit.classList.add('is-picked');
+    const d = days[Number(hit.dataset.i)];
+    sumEl.textContent = dayLabel(d.date) + ': ' + fmtMins(d.minutes || 0);
+  });
   el.append(
-    h(
-      'div',
-      { class: 'gb-focus-hist-sum' },
-      fmtMins(total) + ' over ' + days.length + ' days · ' + active + (active === 1 ? ' day' : ' days') + ' with focus' +
-        (goal ? ' · ' + days.filter((d) => d.minutes >= goal).length + ' met your goal' : '')
-    ),
-    historyChart(days, goal),
+    sumEl,
+    chart,
     h(
       'div',
       { class: 'gb-focus-hist-axis', 'aria-hidden': 'true' },
@@ -1271,7 +1314,7 @@ function HistoryCard() {
   loadHistory();
   return Card({
     className: 'gb-focus-histcard',
-    children: [h('div', { class: 'gb-score-heading' }, 'Last 30 days'), body],
+    children: [h('h2', { class: 'gb-score-heading' }, 'Last 30 days'), body],
   });
 }
 
@@ -1282,15 +1325,14 @@ function paintSound() {
   if (!Sound.refs) return;
   Sound.refs.toggle.classList.toggle('is-on', Sound.enabled);
   Sound.refs.toggle.setAttribute('aria-checked', Sound.enabled ? 'true' : 'false');
+  const cur =
+    SOUNDSCAPES.find(function (s) {
+      return s.key === Sound.current;
+    }) || {};
+  // The hint was only a title tooltip; picking a tile is how a phone reads it.
   Sound.refs.statusEl.textContent = !Sound.enabled
     ? 'Off — silent focus.'
-    : (Sound.playing ? 'Playing' : 'Ready') +
-      ' · ' +
-      (
-        SOUNDSCAPES.find(function (s) {
-          return s.key === Sound.current;
-        }) || {}
-      ).label;
+    : (Sound.playing ? 'Playing' : 'Ready') + ' · ' + cur.label + ' · ' + cur.hint;
   Object.keys(Sound.refs.tiles).forEach(function (k) {
     // Sound off: no tile is the one playing, so none looks picked.
     Sound.refs.tiles[k].classList.toggle('is-on', Sound.enabled && k === Sound.current);
@@ -1356,7 +1398,7 @@ function SoundCard() {
       h(
         'div',
         { class: 'gb-sound-head' },
-        h('div', null, h('div', { class: 'gb-score-heading' }, 'Focus sound'), statusEl),
+        h('div', null, h('h2', { class: 'gb-score-heading' }, 'Focus sound'), statusEl),
         toggle
       ),
       grid,
@@ -1398,6 +1440,7 @@ const Focus = {
   targets: null, // { tasks: [{id,title}], goals: [{id,title}] } for "Focusing on…"
   goalMins: 0, // daily focus goal, minutes; 0 = off
   onSetGoal: null,
+  onFinishTask: null, // (taskId) => tick it; the end-of-sprint "Mark done" toast
 };
 
 function applyStats(s) {
@@ -1440,7 +1483,7 @@ function StatsCard() {
   return Card({
     className: 'gb-focus-statscard',
     children: [
-      h('div', { class: 'gb-score-heading' }, 'Your focus'),
+      h('h2', { class: 'gb-score-heading' }, 'Your focus'),
       h(
         'div',
         { class: 'gb-focus-stats-grid' },
@@ -1464,6 +1507,7 @@ function bind(props) {
   Focus.targets = (props && props.focusTargets) || null;
   Focus.goalMins = goalMinutes(props && props.focusGoalMins);
   Focus.onSetGoal = props && props.onSetFocusGoal;
+  Focus.onFinishTask = props && props.onFinishTask;
   // Another account signed in on this device must not open on these numbers.
   const owner = props && props.statsOwner;
   if (owner !== Focus.owner) {
@@ -1489,9 +1533,12 @@ function ScreenFocus(props) {
       setMode('focus', T.lastFocusMins || 25);
     saveSession();
   }
-  // Quick add's "start a 25 minute focus": set and run it, unless one is already running.
+  // Quick add's "start a 25 minute focus", or a task row's timer button: set and
+  // run it, unless one is already running. No length asked for and a paused
+  // sprint on the clock: that sprint resumes rather than starting over.
   const go = props && props.autoStart;
-  if (go && !T.running) setMode('focus', typeof go === 'number' ? go : T.lastFocusMins || 25);
+  const resume = go === true && T.mode === 'focus' && T.remainingSec > 0;
+  if (go && !T.running && !resume) setMode('focus', typeof go === 'number' ? go : T.lastFocusMins || 25);
   const screen = h('div', { class: 'gb-rise gb-focus' }, TimerCard(), StatsCard(), HistoryCard(), SoundCard());
   if (go && !T.running) setTimeout(start, 0); // once the ring it paints is on screen
   return screen;

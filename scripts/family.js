@@ -17,6 +17,7 @@ import {
 } from './gb-kit.js';
 import { toast } from './toast.js';
 import { shrinkPhoto } from './notes.js';
+import { isNative } from './native.js';
 
 const RELATIONSHIPS = [
   'mother',
@@ -185,7 +186,7 @@ function field(labelText, control, hint) {
 
 /**
  * ScreenFamily({ api })
- *   api: { getFamily, addMember, updateMember, updateProfile, removeMember,
+ *   api: { getFamily, startSolo, addMember, updateMember, updateProfile, removeMember,
  *          searchUsers, linkMember, scanGrocery, generateMealPlan, getMealPlan }
  */
 function ScreenFamily({ api }) {
@@ -1024,13 +1025,17 @@ function ScreenFamily({ api }) {
       });
     }
 
+    let searchSeq = 0; // an answer for an earlier Enter is dropped, not painted over a later one
     async function doSearch() {
       const q = qInput.value.trim();
       if (!q) return;
+      const mine = ++searchSeq;
       resultsEl.replaceChildren(h('p', { class: 'gb-family-empty-note' }, 'Searching…'));
       try {
-        renderResults(await api.searchUsers(q));
+        const found = await api.searchUsers(q);
+        if (mine === searchSeq) renderResults(found);
       } catch (err) {
+        if (mine !== searchSeq) return;
         resultsEl.replaceChildren(
           h('p', { class: 'gb-msg-error' }, err.message || 'Search failed.')
         );
@@ -1155,10 +1160,18 @@ function ScreenFamily({ api }) {
 
   function ingredientChips() {
     if (!model.ingredients.length) {
+      // The server adds the pantry to every plan (FamilyService.appendAvailableLines),
+      // so with a stocked pantry there is nothing to type: say what it will use.
+      const stock = (model.pantryItems || []).filter((p) => !p.expired).map((p) => p.name);
       return h(
         'p',
         { class: 'gb-family-empty-note' },
-        'No ingredients yet. Scan a photo or add some.'
+        stock.length
+          ? 'Planning from your pantry: ' +
+              stock.slice(0, 6).join(', ') +
+              (stock.length > 6 ? ' and ' + (stock.length - 6) + ' more' : '') +
+              '. Add anything else you have.'
+          : 'No ingredients yet. Scan a photo or add some.'
       );
     }
     return h(
@@ -1265,6 +1278,8 @@ function ScreenFamily({ api }) {
         } finally {
           model.scanBusy = false;
           paint();
+          // paint() rebuilds the tree, and a live region born full is skipped.
+          toast.announce(model.scanMsg);
         }
       },
     });
@@ -1343,6 +1358,11 @@ function ScreenFamily({ api }) {
         .generateMealPlan({ ingredients: model.ingredients.concat(expired), memberIds })
         .then((res) => {
           model.plan = res;
+          toast.announce(
+            res && res.source === 'fallback'
+              ? 'Meal plan ready. AI was unavailable, so this is a simple template.'
+              : 'Meal plan ready.'
+          );
           // The plan it replaced is now history.
           loadSection('history').then(paintSoon);
         })
@@ -1381,7 +1401,7 @@ function ScreenFamily({ api }) {
         ),
         photoInput
       ),
-      model.scanMsg ? h('p', { class: 'gb-family-scan-msg', role: 'status' }, model.scanMsg) : null,
+      model.scanMsg ? h('p', { class: 'gb-family-scan-msg' }, model.scanMsg) : null,
       h(
         'div',
         { class: 'gb-family-manual-add' },
@@ -1710,7 +1730,7 @@ function ScreenFamily({ api }) {
       isFallback
         ? h(
             'div',
-            { class: 'gb-family-plan-banner', role: 'status' },
+            { class: 'gb-family-plan-banner' },
             Icon('circle-alert', { size: 15 }),
             h('span', null, 'AI was unavailable, so this is a simple template.')
           )
@@ -2001,6 +2021,22 @@ function ScreenFamily({ api }) {
         },
         Icon('plus', { size: 17, color: '#fff' }),
         'Add your first member'
+      ),
+      // A household of one, your row copied from Profile: straight to the planner.
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-btn gb-btn--soft',
+          style: { marginTop: '10px', maxWidth: '280px' },
+          onclick: () =>
+            run(api.startSolo(), (fam) => {
+              applyFamily(fam);
+              switchSection('plan');
+            }),
+        },
+        Icon('utensils', { size: 17 }),
+        'Plan meals for just me'
       )
     );
   }
@@ -2356,6 +2392,7 @@ function ScreenFamily({ api }) {
         } finally {
           model.pantryScanBusy = false;
           paint();
+          if (model.pantryScanMsg) toast.announce(model.pantryScanMsg);
         }
       },
     });
@@ -2663,7 +2700,7 @@ function ScreenFamily({ api }) {
       { class: 'gb-family-shop-tools' },
       h(
         'span',
-        { class: 'gb-family-shop-left', role: 'status' },
+        { class: 'gb-family-shop-left' },
         left ? left + ' to buy' : 'All bought'
       ),
       h(
@@ -2676,12 +2713,16 @@ function ScreenFamily({ api }) {
         Icon('share-2', { size: 15 }),
         'Share'
       ),
-      h(
-        'button',
-        { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--sm', onclick: printShopping },
-        Icon('printer', { size: 15 }),
-        'Print'
-      )
+      // The Android WebView's window.print() is a no-op unless the activity wires
+      // up PrintManager, which MainActivity doesn't: Copy and Share cover it there.
+      isNative()
+        ? null
+        : h(
+            'button',
+            { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--sm', onclick: printShopping },
+            Icon('printer', { size: 15 }),
+            'Print'
+          )
     );
   }
   function shopPrintout(list) {
@@ -2765,6 +2806,8 @@ function ScreenFamily({ api }) {
     it.checked = want;
     pendingTicks.set(it.id, want);
     paint();
+    const left = model.shoppingList ? model.shoppingList.items.filter((i) => !i.checked).length : 0;
+    toast.announce(left ? left + ' to buy' : 'All bought');
     api
       .toggleShopping(it.id, want)
       .then((res) => {
@@ -2971,16 +3014,20 @@ function ScreenFamily({ api }) {
       {
         class: 'gb-family-chip gb-family-chore-assignee' + (c.assigneeMemberId ? ' is-set' : ''),
         'aria-label': 'Assign ' + c.title,
-        onchange: (e) =>
+        onchange: (e) => {
+          const sel = e.currentTarget;
           run(
-            api.updateChore(
-              c.id,
-              Object.assign(choreBody(c), { assigneeMemberId: e.currentTarget.value || null })
-            ),
+            api
+              .updateChore(c.id, Object.assign(choreBody(c), { assigneeMemberId: sel.value || null }))
+              .catch((err) => {
+                sel.value = c.assigneeMemberId || ''; // not handed over: show who still has it
+                throw err;
+              }),
             (res) => {
               model.chores = overlayChoreTicks(res || []);
             }
-          ),
+          );
+        },
       },
       h('option', { value: '', selected: !c.assigneeMemberId }, 'Anyone'),
       members.map((m) =>

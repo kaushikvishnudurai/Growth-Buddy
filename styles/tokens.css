@@ -180,10 +180,21 @@
   --z-sheet: 61;          /* More sheet */
   --z-modal: 100;         /* .gb-modal-overlay */
   --z-loader: 150;        /* food photo loader, over a modal */
-  --z-toast: 160;
   --z-celebrate: 200;
+  --z-toast: 300;         /* above the celebration: an Undo raised under one stays pressable */
   --z-skip: 2000;         /* skip link */
   --z-thinking: 2100;     /* body::before/::after AI-wait glow, above everything */
+}
+
+/* =====================================================================
+   SCRIMS  (theme-independent)
+   Dark in both themes: --scrim dims the page under a dialog or sheet,
+   --scrim-strong is the celebration's (it also blurs). The z-index scale is
+   LAYERS, in the block above.
+   ===================================================================== */
+:root {
+  --scrim: color-mix(in srgb, var(--warm-900) 45%, transparent);
+  --scrim-strong: color-mix(in srgb, var(--warm-950) 50%, transparent);
 }
 
 /* =====================================================================
@@ -209,6 +220,10 @@
   /* Lines */
   --border: #ECE0D6;
   --border-strong: #DFCFC1;
+  /* The edge of an interactive control (field, unchecked check, off switch):
+     3:1+ on bg and surface-1/2/3, which a WCAG 1.4.11 boundary needs.
+     --border-strong is 1.4:1 and only separates content. */
+  --control-edge: #958271;
   /* focus ring: coral-600, 3.3:1 on surface-2 (coral-500 was 2.6-2.8:1, under
      the 3:1 a focus indicator needs). scripts/contrast.test.mjs holds it. */
   --ring: var(--coral-600);
@@ -287,6 +302,7 @@
 
   --border: #382C25;
   --border-strong: #4A3B32;
+  --control-edge: #877669;
   --ring: var(--coral-400);
 
   --brand: var(--coral-500);
