@@ -67,7 +67,7 @@ test('an export in the app goes to the share sheet, and a failure says so', asyn
 
   await page.evaluate(() => ((window.__fsFail = true), (window.__calls = [])));
   await download.click();
-  await expect(page.locator('.gb-toast-msg', { hasText: 'Could not save the file on this phone. Try again.' })).toBeVisible();
+  await expect(page.locator('.gb-toast-msg', { hasText: "Saving files isn't available in the app yet." })).toBeVisible();
   await expect(page.getByText('Your data is downloading.')).toHaveCount(0);
   expect((await exportCalls(page)).map((c) => c.plugin)).toEqual(['Filesystem']);
 });

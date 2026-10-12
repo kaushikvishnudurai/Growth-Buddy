@@ -169,6 +169,8 @@ test('Habits: add, rename and delete', async ({ page, account }) => {
 
   await m.getByRole('button', { name: 'Edit habit: Stretch 10 min' }).click();
   await page.getByRole('dialog', { name: 'Edit habit' }).getByRole('button', { name: 'Delete habit' }).click();
+  // The toast lands under a phone's last tap, and a hovered stack holds its window.
+  await page.mouse.move(0, 0);
   await expect(m.getByRole('button', { name: 'Edit habit: Stretch 10 min' })).toHaveCount(0);
   await expect
     .poll(async () => (await api(page, account, '/api/habits')).some((x) => x.id === created.id), { timeout: 12_000 })
@@ -281,7 +283,7 @@ test('Notes: pin moves a note to the top and persists', async ({ page, account }
   const m = main(page);
   await newNote(page, 'Newest note', 'Written last');
   // The newest note is first; pinning the older one lifts it above.
-  const titles = () => m.locator('.gb-notes h3').allTextContents();
+  const titles = () => m.locator('.gb-notes h2').allTextContents();
   await expect.poll(async () => (await titles())[0]).toBe('Newest note');
   await card(page, 'Ideas for the trip').getByRole('button', { name: 'Pin this note' }).click();
   await expect.poll(async () => (await titles())[0]).toBe('Ideas for the trip');
@@ -348,6 +350,8 @@ test('Goals: create, add and tick a milestone, delete', async ({ page, account }
 
   // Undo instead of a confirm (EXP-5): the DELETE goes when the toast does.
   await goal.getByRole('button', { name: 'Delete goal' }).click();
+  // The toast lands under a phone's last tap, and a hovered stack holds its window.
+  await page.mouse.move(0, 0);
   await expect(page.locator('.gb-toast').filter({ hasText: 'Goal deleted.' }).getByRole('button', { name: 'Undo' })).toBeVisible();
   await expect(m.getByRole('button', { name: 'Edit goal: Learn to swim' })).toHaveCount(0);
   await expect

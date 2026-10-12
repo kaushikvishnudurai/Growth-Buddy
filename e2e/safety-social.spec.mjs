@@ -221,8 +221,8 @@ test('notifications: the bell shows an unread card and mark all read clears it',
     .toBeGreaterThan(0);
 
   await boot(page, emptyAccount);
-  // exact: the empty account's first-run card has a "Notifications" step of its own.
-  await page.getByRole('button', { name: 'Notifications', exact: true }).click();
+  // The bell names its unread count; the first-run card has a "Turn on notifications" step of its own.
+  await page.getByRole('button', { name: /^Notifications, \d+ unread$/ }).click();
   const mark = page.getByText('Mark all read', { exact: true });
   await expect(mark).toBeVisible();
   await mark.click();
