@@ -29,7 +29,7 @@ import { chimeOptionValue, chimeOptions, playChime } from './chime.js';
 import { usualReminderTime } from './nudges.js';
 import { fmtDate } from './i18n.js';
 import { pad2 as pad, dateKey as keyOf, localKey, todayKey } from './dates.js';
-import { TAGS, toMin, DayLine, DayRuler, validRoutine, ROUTINE_MAX, DAY_OPTS, validDays, onDay, KIND_LABEL } from './day-line.js';
+import { TAGS, toMin, DayLine, DayRuler, validRoutine, routineBlocks, ROUTINE_MAX, DAY_OPTS, validDays, onDay, KIND_LABEL } from './day-line.js';
 
 const MONTHS = [
   'January',
@@ -2604,7 +2604,20 @@ function ReminderPanel({
             ? h('span', { class: 'gb-cal-dayhead-count' }, plural(totalCount, 'item'))
             : null
         ),
-        DayRuler(list, selectedDate)
+        DayRuler(list, selectedDate, undefined, routineBlocks(routine, selectedDate)),
+        // The routine under the day's marks, as on Home: named once each, blocks aren't items.
+        (() => {
+          const named = routineBlocks(routine, selectedDate).filter((b) => !b.tail);
+          return named.length
+            ? h(
+                'div',
+                { class: 'gb-tl-legend', 'aria-hidden': 'true' },
+                [...new Map(named.map((b) => [b.kind + b.name, b])).values()].map((b) =>
+                  h('span', { class: 'is-' + b.kind }, b.name)
+                )
+              )
+            : null;
+        })()
       ),
     futurePlanningHint,
       h(
