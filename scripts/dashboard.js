@@ -25,7 +25,7 @@ let outlook = null;
 export const loadOutlook = () => import('./outlook.js').then((m) => (outlook = m.outlook));
 import { CacheStorage } from './cache-storage.js';
 import { occursOn } from './recurrence.js';
-import { TAGS, toMin, DayRuler } from './day-line.js';
+import { TAGS, toMin, DayRuler, validRoutine, routineBlocks } from './day-line.js';
 import {
   HOME_WIDGETS,
   resolveHomeLayout,
@@ -2123,6 +2123,8 @@ function DayTimeline({
   onAddHabit,
   onOpenCalendar,
   onAddReminder,
+  routine,
+  onAddRoutine,
 }) {
   const today = todayKey();
   const nowMin = zoneParts(new Date());
@@ -2258,6 +2260,12 @@ function DayTimeline({
       : []
   );
   const count = marks.length;
+  // The routine as bands under the marks; its blocks are not items.
+  const rt = showRuler ? validRoutine(routine) : null;
+  const bands = routineBlocks(rt, today);
+  const named = bands.filter((b) => !b.tail);
+  const span = (b) => b.name + ' ' + sharedFormatTime(b.from) + ' to ' + sharedFormatTime(b.to);
+  const rulerLabel = [plural(count, 'item'), ...named.map(span)].join(', ');
   const head = h(
     'div',
     { class: 'gb-tl-head' },
@@ -2287,17 +2295,33 @@ function DayTimeline({
           {
             type: 'button',
             class: 'gb-tl-ruler',
-            'aria-label': (phoneLayout() ? 'Show the day, ' : 'Open today in Calendar, ') + plural(count, 'item'),
+            'aria-label': (phoneLayout() ? 'Show the day, ' : 'Open today in Calendar, ') + rulerLabel,
             // Phone: the ruler opens the day in place; wide: Calendar on today.
             onclick: () => (phoneLayout() ? showDay(true) : onOpenCalendar && onOpenCalendar()),
           },
-          DayRuler(marks, today, true)
+          DayRuler(marks, today, true, bands)
+        )
+      : null,
+    named.length
+      ? h(
+          'div',
+          { class: 'gb-tl-legend', 'aria-hidden': 'true' },
+          [...new Map(named.map((b) => [b.kind + b.name, b])).values()].map((b) =>
+            h('span', { class: 'is-' + b.kind }, b.name)
+          )
         )
       : null,
     h(
-      'button',
-      { type: 'button', class: 'gb-tl-add gb-tl-toggle', 'aria-expanded': String(dayShown), onclick: () => showDay(!dayShown) },
-      dayShown ? 'Hide the day' : 'Show the day'
+      'div',
+      { class: 'gb-tl-actions' },
+      h(
+        'button',
+        { type: 'button', class: 'gb-tl-add gb-tl-toggle', 'aria-expanded': String(dayShown), onclick: () => showDay(!dayShown) },
+        dayShown ? 'Hide the day' : 'Show the day'
+      ),
+      showRuler && !rt && onAddRoutine
+        ? h('button', { type: 'button', class: 'gb-tl-add gb-tl-routine', onclick: onAddRoutine }, 'Add your routine')
+        : null
     )
   );
   // Phone (CSS): the list stays folded behind "Show the day"; Pending above
@@ -3148,6 +3172,8 @@ function ScreenDashboard({
   onOpenCalendar,
   onAddReminder,
   onReminderDone,
+  routine,
+  onAddRoutine,
   score,
   water,
   wellness,
@@ -3292,6 +3318,8 @@ function ScreenDashboard({
       onAddHabit,
       onOpenCalendar,
       onAddReminder,
+      routine,
+      onAddRoutine,
     });
   };
   const suggest = () => {

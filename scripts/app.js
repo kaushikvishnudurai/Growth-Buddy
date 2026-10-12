@@ -119,6 +119,7 @@ import {
   REPEAT_ORDER,
   TAGS,
   clearReminderForm,
+  openRoutineDialog,
 } from './calendar.js';
 import { setWorkWeek } from './recurrence.js';
 import { computeAchievements, levelProgress } from './achievements.js';
@@ -9457,6 +9458,7 @@ function saveRoutine(routine) {
   setRoutine(routine);
   saveUiPrefs({ routine: routine });
   rerenderCalendarSideIfActive();
+  if (state.screen === 'home') render(); // Home's day ruler draws it too
   toastSuccess(routine ? 'Routine saved.' : 'Routine turned off.');
 }
 
@@ -11667,6 +11669,8 @@ const SCREENS = {
           setScreen('calendar');
         },
         onAddReminder: openReminderSheet,
+        routine: state.user && state.user.uiPrefs && state.user.uiPrefs.routine,
+        onAddRoutine: () => openRoutineDialog(saveRoutine),
         // Home's Pending list: the Calendar's own toggle, then Home repaints its counts.
         onReminderDone: (id, key, done) => {
           const p = toggleReminderDone(id, key, done);

@@ -17594,6 +17594,58 @@ button.gb-tl-title {
   padding-left: 0;
 }
 
+/* The routine on Home's day ruler: soft bands under the marks (Schedule's own
+   bar colours, softened), named once in a legend under the hours. */
+.gb-line-band {
+  position: absolute;
+  top: 50%;
+  height: 14px;
+  transform: translateY(-50%);
+  border-radius: 3px;
+  background: var(--band);
+}
+.gb-line-band.is-sleep,
+.gb-tl-legend .is-sleep {
+  --band: color-mix(in srgb, var(--iris-300) 45%, transparent);
+}
+.gb-line-band.is-lunch,
+.gb-tl-legend .is-lunch {
+  --band: color-mix(in srgb, var(--sun-500) 45%, transparent);
+}
+.gb-line-band.is-custom,
+.gb-tl-legend .is-custom {
+  --band: color-mix(in srgb, var(--sky-600) 45%, transparent);
+}
+.gb-tl-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  margin-top: 6px;
+  font-size: var(--text-xs);
+  color: var(--fg2);
+}
+.gb-tl-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.gb-tl-legend span::before {
+  content: '';
+  width: 12px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--band);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+.gb-tl-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-3);
+}
+.gb-tl-actions .gb-tl-add {
+  padding-left: 0;
+}
+
 /* Phone and tablet (< 1024px): one column in the phone order. The zones step
    aside (display: contents) and each block takes its place by `order`. */
 @media (max-width: 1023px) {

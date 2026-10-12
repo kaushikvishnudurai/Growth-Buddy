@@ -29,7 +29,7 @@ import { chimeOptionValue, chimeOptions, playChime } from './chime.js';
 import { usualReminderTime } from './nudges.js';
 import { fmtDate } from './i18n.js';
 import { pad2 as pad, dateKey as keyOf, localKey, todayKey } from './dates.js';
-import { TAGS, toMin, DayLine, DayRuler } from './day-line.js';
+import { TAGS, toMin, DayLine, DayRuler, validRoutine, ROUTINE_MAX, DAY_OPTS, validDays, onDay, KIND_LABEL } from './day-line.js';
 
 const MONTHS = [
   'January',
@@ -110,50 +110,8 @@ function remindersOn(reminders, key) {
    what is left of the waking day. Without a routine the window is
    08:00-22:00, stretched to fit any block outside it. Module state like the
    working week in recurrence.js, set from app.js at boot and on save. */
-const HHMM_RE = /^([01]\d|2[0-3]):[0-5]\d/;
 let routine = null;
 
-function validRoutine(r) {
-  const ok = (t) => typeof t === 'string' && HHMM_RE.test(t);
-  if (!r || typeof r !== 'object' || !ok(r.bed) || !ok(r.wake)) return null;
-  const bed = r.bed.slice(0, 5);
-  const wake = r.wake.slice(0, 5);
-  if (bed === wake) return null;
-  const lunch = ok(r.lunchFrom) && ok(r.lunchTo) && r.lunchTo.slice(0, 5) > r.lunchFrom.slice(0, 5);
-  // ponytail: a custom block can't cross midnight (sleep is the one that does);
-  // split it in two if someone needs a night shift.
-  const items = (Array.isArray(r.items) ? r.items : [])
-    .filter(
-      (i) =>
-        i &&
-        typeof i.name === 'string' &&
-        i.name.trim() &&
-        ok(i.from) &&
-        ok(i.to) &&
-        i.to.slice(0, 5) > i.from.slice(0, 5)
-    )
-    .slice(0, ROUTINE_MAX)
-    .map((i) => ({
-      name: i.name.trim().slice(0, 40),
-      from: i.from.slice(0, 5),
-      to: i.to.slice(0, 5),
-      days: validDays(i.days),
-    }));
-  return {
-    bed,
-    wake,
-    lunchFrom: lunch ? r.lunchFrom.slice(0, 5) : null,
-    lunchTo: lunch ? r.lunchTo.slice(0, 5) : null,
-    lunchDays: validDays(r.lunchDays),
-    items,
-  };
-}
-
-const ROUTINE_MAX = 8;
-/* Which days a routine block is on: every day, the user's working week, or the
-   days outside it. */
-const DAY_OPTS = ['all', 'work', 'off'];
-const validDays = (d) => (DAY_OPTS.indexOf(d) !== -1 ? d : 'all');
 const dayOptLabel = (d) =>
   d === 'all'
     ? 'Every day'
@@ -294,14 +252,6 @@ function notifySelect() {
 
 const toHHMM = (m) => pad(Math.floor(m / 60)) + ':' + pad(m % 60);
 
-function isWorkDay(key) {
-  const p = parseKey(key);
-  const days = (WORK_WEEKS[getWorkWeek()] || WORK_WEEKS[DEFAULT_WORK_WEEK]).days;
-  return days.indexOf(new Date(p.y, p.m, p.d).getDay()) !== -1;
-}
-
-const onDay = (days, key) => days === 'all' || (days === 'work') === isWorkDay(key);
-
 /* A day as consecutive spans of one kind: 'free' | 'busy' | 'custom' | 'lunch'
    | 'sleep', in that order of precedence where they overlap. Busy is any
    reminder with a start AND an end; overlapping meetings form one busy span carrying every
@@ -371,7 +321,6 @@ function duration(m) {
   return (hrs ? hrs + 'h' : '') + (hrs && rest ? ' ' : '') + (rest || !hrs ? rest + 'm' : '');
 }
 
-const KIND_LABEL = { free: 'Free', busy: 'Busy', custom: 'Routine', lunch: 'Lunch', sleep: 'Sleep' };
 const KINDS = ['free', 'busy', 'custom', 'lunch', 'sleep'];
 
 function totalsOf(segs) {
@@ -2900,6 +2849,7 @@ function CalendarToolbar({ year, month, reminders, tasks, onPrevMonth, onNextMon
 }
 
 export {
+  openRoutineDialog,
   UsualTimeChip,
   clearReminderForm,
   isPastSlot,
