@@ -1,6 +1,6 @@
 // Evidence for the hostile tester's client-side findings (docs/audit/hostile.md, HOS-*): each test
 // fails before its fix.
-import { test as base, expect, signInFast, go } from './fixtures.mjs';
+import { test as base, expect, signInFast, go, showDay } from './fixtures.mjs';
 import { seedAccount } from './seed.mjs';
 
 const test = base.extend({
@@ -99,14 +99,15 @@ test('HOS-4: Undo brings back every reminder deleted while it shows', async ({ p
 
 test('HOS-5: two quick taps on a Home task tick only that task', async ({ page, account }) => {
   await boot(page, account);
-  const box = main(page).getByRole('button', { name: 'Mark as done: Book the dentist' });
+  await showDay(page);
+  const box = main(page).locator('.gb-tl-list').getByRole('button', { name: 'Mark as done: Book the dentist' });
   await expect(box).toBeVisible();
   await tapsAt(page, box, 3, 250);
   await page.waitForTimeout(1800);
   const tasks = Object.fromEntries((await get(page, account, '/api/tasks')).map((t) => [t.title, t.done]));
   expect(tasks).toMatchObject({ 'Book the dentist': true, 'Plan this week': false, 'Renew passport': false });
   // It still moves to the bottom, once it has settled.
-  await expect(main(page).locator('.gb-tasks-list .gb-row').last()).toContainText('Book the dentist');
+  await expect(main(page).locator('.gb-tl-row.is-task.is-done')).toContainText('Book the dentist');
   await shot(page, 'HOS-5');
 });
 
@@ -173,9 +174,10 @@ test('HOS-6: back after a minute away, Home shows ticks made elsewhere; a tick s
     hidden = false;
     document.dispatchEvent(new Event('visibilitychange'));
   });
-  await expect(main(page).getByRole('button', { name: 'Mark as not done: Plan this week' })).toBeVisible();
+  await showDay(page);
+  await expect(main(page).locator('.gb-tl-list').getByRole('button', { name: 'Mark as not done: Plan this week' })).toBeVisible();
   const req = page.waitForRequest((r) => r.method() === 'PATCH' && r.url().includes('/toggle'));
-  await main(page).getByRole('button', { name: 'Mark as done: Renew passport' }).click();
+  await main(page).getByRole('button', { name: 'Mark as done: Renew passport' }).locator('visible=true').first().click();
   expect(JSON.parse((await req).postData() || '{}')).toEqual({ done: true });
   await shot(page, 'HOS-6');
 });
@@ -186,7 +188,8 @@ test.describe('HOS-8', () => {
     await boot(page, account);
     const passport = (await get(page, account, '/api/tasks')).find((t) => t.title === 'Renew passport');
     await send(page, account, 'DELETE', `/api/tasks/${passport.id}`);
-    await main(page).getByRole('button', { name: 'Mark as done: Renew passport' }).click();
+    await showDay(page);
+    await main(page).getByRole('button', { name: 'Mark as done: Renew passport' }).locator('visible=true').first().click();
     await expect(page.locator('#gb-toast-slot').getByText('That task was deleted on another device.')).toBeVisible();
     await expect(main(page).getByText('Renew passport')).toHaveCount(0);
     await shot(page, 'HOS-8');
@@ -217,7 +220,8 @@ test('HOS-9: a task title of only zero-width characters is refused', async ({ pa
   page.on('request', (r) => {
     if (r.method() === 'POST' && /\/api\/tasks$/.test(r.url())) posted = true;
   });
-  await main(page).locator('.gb-sectiontitle', { hasText: /^Tasks/ }).getByRole('button', { name: '+ Add' }).click();
+  await showDay(page);
+  await main(page).locator('.gb-tl-adds').getByRole('button', { name: '+ Task' }).click();
   const dlg = page.getByRole('dialog', { name: 'New task' });
   await dlg.getByRole('textbox').first().fill('\u200b\u200b\u200b');
   await dlg.getByRole('button', { name: 'Add task' }).click();

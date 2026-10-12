@@ -1,5 +1,5 @@
 // The app shell: sign-out teardown, overlays, the back stack, the outbox, theme on auth screens.
-import { test, expect, signInFast, go } from './fixtures.mjs';
+import { test, expect, signInFast, go, showDay } from './fixtures.mjs';
 import { seedAccount } from './seed.mjs';
 
 const EV = 'docs/evidence/shell/';
@@ -217,7 +217,9 @@ test('OFF-9: renaming a task with no connection queues it, then sends it', async
   allowed.push('/api/tasks/', 'net::ERR_FAILED', 'Failed to load resource');
   await signInFast(page, account);
   await page.route('**/api/tasks/*', (route) => (route.request().method() === 'PUT' ? route.abort('failed') : route.fallback()));
-  await page.getByRole('button', { name: 'Edit Book the dentist' }).first().click();
+  await showDay(page);
+  // Home's day timeline: a task's title is its Edit button.
+  await page.locator('#gb-main button.gb-tl-title', { hasText: 'Book the dentist' }).first().click();
   const title = page.locator('.gb-modal input[placeholder^="e.g. Finish"]');
   await title.fill('Book the dentist for Friday');
   await page.locator('.gb-modal').getByRole('button', { name: 'Save changes' }).click();

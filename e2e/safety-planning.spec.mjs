@@ -1,7 +1,7 @@
 // Safety net for the planning flows: Home ticks and score, tasks, habits, Calendar reminders, Notes,
 // Goals. Each test owns a fresh seeded account and checks the outcome after a reload and, where
 // cheap, on the API.
-import { test as base, expect, signInFast, go } from './fixtures.mjs';
+import { test as base, expect, signInFast, go, showDay } from './fixtures.mjs';
 import { seedAccount } from './seed.mjs';
 
 // Concurrent sign-ups can deadlock on email_verification_tokens and 500 (see the safety-net
@@ -75,14 +75,17 @@ const main = (page) => page.locator('#gb-main');
 
 test('Home: ticking a task updates the count and score, unticking restores them', async ({ page, account }) => {
   await boot(page, account);
-  const m = main(page);
-  // "0/1 tasks": the denominator is what is due today, so read it rather than pin it.
+  await showDay(page);
+  // The tick goes through the day timeline (it keeps the done row; Pending drops it).
+  const m = main(page).locator('.gb-tl-list');
+  const strip = main(page).locator('.gb-strip');
+  // "Tasks 0/1": the denominator is what is due today, so read it rather than pin it.
   const tally = async () => {
-    const t = await m.getByText(/\d+\/\d+ tasks/).first().textContent();
-    const [, done, total] = t.match(/(\d+)\/(\d+) tasks/);
+    const t = await strip.locator('.gb-strip-stat', { hasText: 'Tasks' }).locator('b').textContent();
+    const [, done, total] = t.match(/(\d+)\/(\d+)/);
     return { done: Number(done), total: Number(total) };
   };
-  const scoreText = async () => (await m.getByText(/^\d+%$/).first().textContent()).trim();
+  const scoreText = async () => (await strip.locator('.gb-strip-pct').textContent()).trim();
   const start = await tally();
   const before = await scoreText();
   const doneOnServer = async () => (await api(page, account, '/api/tasks')).find((t) => t.title === 'Book the dentist').done;
@@ -91,6 +94,7 @@ test('Home: ticking a task updates the count and score, unticking restores them'
   await expect.poll(scoreText).not.toBe(before);
   await expect.poll(doneOnServer).toBe(true);
   await reload(page);
+  await showDay(page);
   await expect.poll(async () => (await tally()).done).toBe(start.done + 1);
   await m.getByRole('button', { name: 'Mark as not done: Book the dentist' }).click();
   await expect.poll(tally).toEqual(start);
@@ -100,13 +104,16 @@ test('Home: ticking a task updates the count and score, unticking restores them'
 
 test('Home: ticking a habit counts it and survives a reload', async ({ page, account }) => {
   await boot(page, account);
-  const m = main(page);
-  await expect(m.getByText('1/2 habits')).toBeVisible();
+  await showDay(page);
+  const m = main(page).locator('.gb-tl-list');
+  const habits = main(page).locator('.gb-strip-stat', { hasText: 'Habits' }).locator('b');
+  await expect(habits).toHaveText('1/2');
   await m.getByRole('button', { name: 'Mark as done: Read 20 pages' }).click();
   await expect(m.getByRole('button', { name: 'Mark as not done: Read 20 pages' })).toHaveAttribute('aria-pressed', 'true');
-  await expect(m.getByText('2/2 habits')).toBeVisible();
+  await expect(habits).toHaveText('2/2');
   await reload(page);
-  await expect(m.getByText('2/2 habits')).toBeVisible();
+  await showDay(page);
+  await expect(habits).toHaveText('2/2');
   await expect(m.getByRole('button', { name: 'Mark as not done: Read 20 pages' })).toBeVisible();
 });
 
@@ -116,14 +123,14 @@ test('Tasks: add, edit and delete from Home', async ({ page, account }) => {
   await boot(page, account);
   const m = main(page);
   // Scoped to the Tasks title: Home's order is the user's (onboarding puts Habits first for some).
-  await m.locator('.gb-sectiontitle', { has: page.getByRole('heading', { name: 'Tasks', exact: true }) })
-    .getByRole('button', { name: '+ Add' }).click();
+  await showDay(page);
+  await m.locator('.gb-tl-adds').getByRole('button', { name: '+ Task' }).click();
   let dlg = page.getByRole('dialog', { name: 'New task' });
   await dlg.getByRole('textbox', { name: 'Title' }).fill('Water the plants');
   await dlg.getByRole('radio', { name: 'High' }).click();
   await dlg.getByRole('button', { name: 'Add task' }).click();
   await expect(dlg).toBeHidden();
-  await expect(m.getByText('Water the plants')).toBeVisible();
+  await expect(m.getByText('Water the plants').first()).toBeVisible();
   const created = (await api(page, account, '/api/tasks')).find((t) => t.title === 'Water the plants');
   expect(created && created.priority).toBe('High');
 
@@ -133,7 +140,8 @@ test('Tasks: add, edit and delete from Home', async ({ page, account }) => {
   await dlg.getByRole('button', { name: 'Save changes' }).click();
   await expect(dlg).toBeHidden();
   await reload(page);
-  await expect(m.getByText('Water the balcony plants')).toBeVisible();
+  await showDay(page);
+  await expect(m.getByText('Water the balcony plants').first()).toBeVisible();
 
   await m.getByRole('button', { name: 'Edit Water the balcony plants' }).click();
   await page.getByRole('dialog', { name: 'Edit task' }).getByRole('button', { name: 'Delete task' }).click();

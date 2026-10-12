@@ -6,7 +6,7 @@
 // The theme is set with the gb.theme cookie, not prefers-color-scheme emulation: the shared
 // Chrome's colour scheme changes under other sessions, and the app follows it until a pick.
 // GB_SHOT=before only takes the screenshots (for a run against the unchanged code).
-import { test, expect, signInFast, go } from './fixtures.mjs';
+import { test, expect, signInFast, go, showDay } from './fixtures.mjs';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 
@@ -61,8 +61,9 @@ for (const theme of ['light', 'dark']) {
   test.describe(`design system, ${theme}`, () => {
     test('priority, horizon and tag pills read at 4.5:1', async ({ page, account }, info) => {
       await withTheme(page, account, theme);
-      await expect(page.getByText('Book the dentist').first()).toBeVisible();
-      const pills = page.locator('.gb-row .gb-pill').filter({ hasText: /^(High|Medium)$/ });
+      await expect(page.locator('#gb-main .gb-today')).toBeVisible();
+      await showDay(page);
+      const pills = page.locator('.gb-tl-pri').filter({ hasText: /^(High|Medium)$/ });
       await expect(pills.first()).toBeVisible();
       const home = await pills.evaluateAll(contrastOf);
       await pills.first().scrollIntoViewIfNeeded();
