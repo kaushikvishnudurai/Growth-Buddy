@@ -175,7 +175,7 @@ const uid = me.body.id;
 // No navigation in here: a page.goto while offline (even to the same #hash)
 // fires a spurious 'online' event with the emulated network still down.
 async function logSleep(date, quality, note) {
-  ok(await clickText('.gb-wellness-tile', /sleep/), 'sleep tile on Home');
+  ok(await clickText('.gb-well-chip', /sleep/i), 'sleep tile on Home');
   await page.waitForSelector('.gb-modal input[type=date]');
   await page.$eval('.gb-modal input[type=date]', (el, v) => (el.value = v), date);
   await clickText('.gb-modal button', new RegExp('^' + quality + '$'));
@@ -370,7 +370,7 @@ for (const [label, vp] of [
   // QA-11: in the very task that opens a dialog, the overlay already covers the
   // page, so a click in its first frame hits the backdrop, never the page.
   const first = await page.evaluate(() => {
-    const tile = [...document.querySelectorAll('.gb-wellness-tile')][0];
+    const tile = document.querySelector('.gb-well-chip');
     tile.scrollIntoView({ block: 'center' });
     const r = tile.getBoundingClientRect();
     tile.click();
