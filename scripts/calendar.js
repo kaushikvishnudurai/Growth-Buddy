@@ -29,6 +29,7 @@ import { chimeOptionValue, chimeOptions, playChime } from './chime.js';
 import { usualReminderTime } from './nudges.js';
 import { fmtDate } from './i18n.js';
 import { pad2 as pad, dateKey as keyOf, localKey, todayKey } from './dates.js';
+import { TAGS, toMin, DayLine, DayRuler, validRoutine, ROUTINE_MAX, DAY_OPTS, validDays, onDay, KIND_LABEL } from './day-line.js';
 
 const MONTHS = [
   'January',
@@ -46,34 +47,6 @@ const MONTHS = [
 ];
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-/* ---- Color tags ---- */
-const TAGS = {
-  work: { label: 'Work', color: 'var(--sky-500)', soft: 'var(--info-soft)', softFg: 'var(--info-soft-fg)' },
-  personal: {
-    label: 'Personal',
-    color: 'var(--iris-500)',
-    soft: 'var(--ai-soft)',
-    softFg: 'var(--ai-soft-fg)',
-  },
-  health: {
-    label: 'Health',
-    color: 'var(--leaf-500)',
-    soft: 'var(--success-soft)',
-    softFg: 'var(--success-soft-fg)',
-  },
-  urgent: {
-    label: 'Urgent',
-    color: 'var(--coral-500)',
-    soft: 'var(--brand-soft)',
-    softFg: 'var(--brand-soft-fg)',
-  },
-  other: {
-    label: 'Other',
-    color: 'var(--sun-500)',
-    soft: 'var(--warning-soft)',
-    softFg: 'var(--warning-soft-fg)',
-  },
-};
 const TAG_ORDER = ['work', 'personal', 'health', 'urgent', 'other'];
 
 /* ---- Recurrence options ---- */
@@ -137,50 +110,8 @@ function remindersOn(reminders, key) {
    what is left of the waking day. Without a routine the window is
    08:00-22:00, stretched to fit any block outside it. Module state like the
    working week in recurrence.js, set from app.js at boot and on save. */
-const HHMM_RE = /^([01]\d|2[0-3]):[0-5]\d/;
 let routine = null;
 
-function validRoutine(r) {
-  const ok = (t) => typeof t === 'string' && HHMM_RE.test(t);
-  if (!r || typeof r !== 'object' || !ok(r.bed) || !ok(r.wake)) return null;
-  const bed = r.bed.slice(0, 5);
-  const wake = r.wake.slice(0, 5);
-  if (bed === wake) return null;
-  const lunch = ok(r.lunchFrom) && ok(r.lunchTo) && r.lunchTo.slice(0, 5) > r.lunchFrom.slice(0, 5);
-  // ponytail: a custom block can't cross midnight (sleep is the one that does);
-  // split it in two if someone needs a night shift.
-  const items = (Array.isArray(r.items) ? r.items : [])
-    .filter(
-      (i) =>
-        i &&
-        typeof i.name === 'string' &&
-        i.name.trim() &&
-        ok(i.from) &&
-        ok(i.to) &&
-        i.to.slice(0, 5) > i.from.slice(0, 5)
-    )
-    .slice(0, ROUTINE_MAX)
-    .map((i) => ({
-      name: i.name.trim().slice(0, 40),
-      from: i.from.slice(0, 5),
-      to: i.to.slice(0, 5),
-      days: validDays(i.days),
-    }));
-  return {
-    bed,
-    wake,
-    lunchFrom: lunch ? r.lunchFrom.slice(0, 5) : null,
-    lunchTo: lunch ? r.lunchTo.slice(0, 5) : null,
-    lunchDays: validDays(r.lunchDays),
-    items,
-  };
-}
-
-const ROUTINE_MAX = 8;
-/* Which days a routine block is on: every day, the user's working week, or the
-   days outside it. */
-const DAY_OPTS = ['all', 'work', 'off'];
-const validDays = (d) => (DAY_OPTS.indexOf(d) !== -1 ? d : 'all');
 const dayOptLabel = (d) =>
   d === 'all'
     ? 'Every day'
@@ -319,16 +250,7 @@ function notifySelect() {
   return wrap;
 }
 
-const toMin = (hhmm) => +hhmm.slice(0, 2) * 60 + +hhmm.slice(3, 5);
 const toHHMM = (m) => pad(Math.floor(m / 60)) + ':' + pad(m % 60);
-
-function isWorkDay(key) {
-  const p = parseKey(key);
-  const days = (WORK_WEEKS[getWorkWeek()] || WORK_WEEKS[DEFAULT_WORK_WEEK]).days;
-  return days.indexOf(new Date(p.y, p.m, p.d).getDay()) !== -1;
-}
-
-const onDay = (days, key) => days === 'all' || (days === 'work') === isWorkDay(key);
 
 /* A day as consecutive spans of one kind: 'free' | 'busy' | 'custom' | 'lunch'
    | 'sleep', in that order of precedence where they overlap. Busy is any
@@ -399,7 +321,6 @@ function duration(m) {
   return (hrs ? hrs + 'h' : '') + (hrs && rest ? ' ' : '') + (rest || !hrs ? rest + 'm' : '');
 }
 
-const KIND_LABEL = { free: 'Free', busy: 'Busy', custom: 'Routine', lunch: 'Lunch', sleep: 'Sleep' };
 const KINDS = ['free', 'busy', 'custom', 'lunch', 'sleep'];
 
 function totalsOf(segs) {
@@ -1056,82 +977,6 @@ function prettyTaskTime(iso) {
   } catch (_) {
     return 'Due';
   }
-}
-
-/* ---- The day line ----
-   The screen's one drawing: a day is a line from midnight to midnight, and a
-   reminder is a mark where it falls (a block spans its start to its end). The
-   month draws one per cell, the selected day draws it large with the hours.
-   Reminders with no time sit at the head of the line as a dot: "any time". */
-function DayLine(list, className, extra) {
-  const marks = [];
-  let anytime = 0;
-  list.forEach((r) => {
-    if (!r.time) return void anytime++;
-    const a = toMin(r.time);
-    const b = r.endTime ? toMin(r.endTime) : null;
-    marks.push(
-      h('span', {
-        class: 'gb-line-mark' + (b != null && b > a ? ' is-block' : ''),
-        style: {
-          left: (a / 1440) * 100 + '%',
-          width: b != null && b > a ? ((b - a) / 1440) * 100 + '%' : null,
-          '--tag-color': (TAGS[r.tag] || TAGS.other).color,
-        },
-      })
-    );
-  });
-  return h(
-    'span',
-    { class: 'gb-line ' + className, 'aria-hidden': 'true' },
-    anytime ? h('span', { class: 'gb-line-any' }) : null,
-    h('span', { class: 'gb-line-track' }, marks, extra || null)
-  );
-}
-
-/* Hour labels for the large line, short enough to sit under it on a phone:
-   "00 06 12 18 24", or "12a 6a 12p 6p 12a" for a 12-hour clock. */
-function rulerHours() {
-  const h24 = /^13/.test(formatTime('13:00'));
-  return h24 ? ['00', '06', '12', '18', '24'] : ['12a', '6a', '12p', '6p', '12a'];
-}
-
-function DayRuler(list, key) {
-  let now = null;
-  if (key === todayKey()) {
-    const d = new Date();
-    now = h('span', {
-      class: 'gb-line-now',
-      style: { left: ((d.getHours() * 60 + d.getMinutes()) / 1440) * 100 + '%' },
-    });
-  }
-  // Each mark's start time above it; one that would crowd the last shown
-  // (under 2.5 hours on) gives way, the list below still names them all.
-  const labels = [];
-  let last = -Infinity;
-  list.forEach((r) => {
-    if (!r.time || toMin(r.time) - last < 150) return;
-    last = toMin(r.time);
-    const at = (last / 1440) * 100;
-    labels.push(
-      h(
-        'span',
-        { class: at > 88 ? 'is-end' : at < 8 ? 'is-start' : null, style: { left: at + '%' } },
-        formatTime(r.time)
-      )
-    );
-  });
-  return h(
-    'div',
-    { class: 'gb-ruler' },
-    labels.length ? h('div', { class: 'gb-ruler-labels', 'aria-hidden': 'true' }, labels) : null,
-    DayLine(list, 'gb-ruler-line', now),
-    h(
-      'div',
-      { class: 'gb-ruler-hours', 'aria-hidden': 'true' },
-      rulerHours().map((t) => h('span', null, t))
-    )
-  );
 }
 
 /* ---- Month grid ---- */
@@ -3004,6 +2849,7 @@ function CalendarToolbar({ year, month, reminders, tasks, onPrevMonth, onNextMon
 }
 
 export {
+  openRoutineDialog,
   UsualTimeChip,
   clearReminderForm,
   isPastSlot,

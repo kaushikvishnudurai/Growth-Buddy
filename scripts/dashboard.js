@@ -2,12 +2,8 @@
    Growth Buddy — Dashboard (Home) screen
    ===================================================================== */
 import {
-  ProgressRing,
   h,
   Card,
-  SectionTitle,
-  Pill,
-  IconChip,
   Icon,
   Check,
   plural,
@@ -16,10 +12,11 @@ import {
   thinkingLabel,
   Thinking,
   refreshIcons,
-  tapSettled,
   rovingGroup,
 } from './gb-kit.js';
 import { MoneyHomeCard } from './money-home.js';
+import { normalizeMoney } from './money-core.js';
+import { toast } from './toast.js';
 import { OutlookCard } from './outlook-card.js';
 /* outlook.js drags the whole Insights engine (insights.js) with it, ~20 kB of the
    boot chunk. It loads beside wave 1 instead: app.js loadData awaits
@@ -28,15 +25,14 @@ let outlook = null;
 export const loadOutlook = () => import('./outlook.js').then((m) => (outlook = m.outlook));
 import { CacheStorage } from './cache-storage.js';
 import { occursOn } from './recurrence.js';
+import { TAGS, toMin, DayRuler, validRoutine, routineBlocks } from './day-line.js';
 import {
   HOME_WIDGETS,
   resolveHomeLayout,
-  sortTasksForHome,
-  taskRank,
   sortHabitsForHome,
   habitDue,
-  topStreaks,
   homeGoals,
+  topStreaks,
   todayKey as sharedTodayKey,
   taskWhen,
   localDayKey,
@@ -263,325 +259,6 @@ function StreakChain({ streak, doneToday, owed }) {
   );
 }
 
-function ScoreCard({ score, tasks: allTasks, habits, streakAsked }) {
-  // Today's tasks only (tasksForToday, shared with app.js score()): tomorrow's
-  // task and undated ones aren't today's miss, paused ones are out.
-  const tasks = tasksForToday(allTasks);
-  const doneTasks = tasks.filter((t) => t.done).length;
-  // The habits owed today, as the server's score counts them (HabitService.
-  // countsOn): a weekly habit already done this week, or a paused one, is not
-  // today's miss. "2/3 habits" used to count every habit.
-  const dueHabits = habits.filter((hb) => habitDue(hb) || hb.doneToday);
-  const doneHabits = dueHabits.filter((hb) => hb.doneToday).length;
-  const best = topStreaks(habits);
-
-  const ringNumber = h(
-    'span',
-    {
-      style: {
-        fontFamily: 'var(--font-display)',
-        fontWeight: 800,
-        // The hole is 70px (92 - 2 x 11 stroke). "100%" at the old 1.625rem
-        // filled it edge to edge and a larger text size pushed it into the
-        // ring, so the number shrinks at three digits and is capped in px:
-        // a fixed-size ring can't grow with the text.
-        fontSize: score >= 100 ? 'min(1.25rem, 20px)' : 'min(1.625rem, 26px)',
-        color: 'var(--fg1)',
-        lineHeight: 1,
-      },
-    },
-    score + '%'
-  );
-  // The unit lives in the number ("17%"), not in the label. "17" over "SCORE"
-  // named a currency nobody could price; the percent sign says it's a share of
-  // something, and the sub-line beside it ("0/4 tasks · 1/3 habits") says of
-  // what. The word stays "score" because Progress calls it that too, in the
-  // summary tile and in the "Daily score" trend — one number, one name.
-  const ringLabel = h(
-    'span',
-    { style: { fontSize: '0.625rem', fontWeight: 700, color: 'var(--fg3)' } },
-    'SCORE'
-  );
-
-  const ring = ProgressRing({
-    value: score,
-    size: 92,
-    color: 'var(--brand)',
-    children: [ringNumber, ringLabel],
-  });
-
-  // At 0% beside a live streak, "Let's get started" read as if nothing had ever happened.
-  // The one-thing card already says "Keep your 6-day ... streak": then this
-  // line counts what is left instead of saying it again.
-  const left = tasks.length - doneTasks + dueHabits.length - doneHabits;
-  const run = streakAsked
-    ? ''
-    : best.days
-      ? best.days + '-day'
-      : best.weeks
-        ? best.weeks + '-week'
-        : '';
-  const heading =
-    score >= 70
-      ? "You're on track"
-      : score > 0
-        ? 'Keep it going'
-        : run
-          ? 'Keep your ' + run + ' run going'
-          : streakAsked && left > 0
-            ? left + (left === 1 ? ' thing' : ' things') + ' left today'
-            : 'Let’s get started';
-
-  // Days and weeks are different units, so each gets its own pill; one max
-  // over both called a 6-week streak "6-day".
-  const pills = [];
-  [
-    [best.days, '-day', ' day streak'],
-    [best.weeks, '-week', ' week streak'],
-  ].forEach(([n, unit, spoken]) => {
-    if (n > 0) {
-      const pill = Pill({
-        icon: 'flame',
-        label: n + unit,
-        bg: 'var(--brand-soft)',
-        fg: 'var(--brand-soft-fg)',
-      });
-      pill.setAttribute('aria-label', 'Best ' + n + spoken);
-      pills.push(pill);
-    }
-  });
-
-  const subParts = [];
-  if (tasks.length) subParts.push(doneTasks + '/' + tasks.length + ' tasks');
-  if (dueHabits.length) subParts.push(doneHabits + '/' + dueHabits.length + ' habits');
-  const sub = subParts.length
-    ? subParts.join(' · ')
-    : (allTasks || []).some((t) => !t.done && !t.paused)
-      ? 'Nothing due today'
-      : 'Add a task or habit to begin';
-
-  return Card({
-    className: 'gb-score-card',
-    children: [
-      ring,
-      h(
-        'div',
-        { style: { flex: 1 } },
-        h('h2', { class: 'gb-score-heading' }, heading),
-        h('div', { class: 'gb-score-sub' }, sub),
-        pills.length ? h('div', { class: 'gb-pill-row' }, pills) : null
-      ),
-    ],
-  });
-}
-
-function TaskRow(task, toggleTask, onEdit, onPause, onFocus) {
-  const p = PRIORITY[task.priority] || PRIORITY.Low;
-  const when = task.done
-    ? null
-    : taskWhen(task.dueAt, new Date(), sharedFormatTime, (d) => fmtDate(d, 'dayMonth'));
-  return h(
-    'div',
-    {
-      class: 'gb-row' + (task.done ? ' is-done' : '') + (task.paused ? ' is-paused' : ''),
-      'data-task-id': task.id,
-    },
-    Check({ done: task.done, onToggle: () => toggleTask(task.id), label: task.title, list: 'tasks' }),
-    h(
-      'div',
-      { style: { flex: 1, minWidth: 0 } },
-      h('div', { class: 'title' }, task.title),
-      // The pill rides the sub line, not the row: beside the pause and edit
-      // buttons it squeezed a long title onto four lines on a phone.
-      h(
-        'div',
-        { class: 'sub' },
-        // An open task's due line is relative (taskWhen: "2 days overdue",
-        // "Tomorrow 10:00"); a done one keeps mapTask's text. The span is
-        // nowrap so the date-time never breaks mid-value; the pill wraps instead.
-        task.paused
-          ? 'Paused'
-          : h(
-              'span',
-              {
-                class: 'gb-task-when',
-                style: task.overdue ? { color: 'var(--brand-ink)', fontWeight: 600 } : null,
-              },
-              when ? when + (/ · done \d+×$/.exec(task.time) || [''])[0] : task.time
-            ),
-        Pill({
-          label: task.priority,
-          bg: p.bg,
-          fg: p.fg,
-          dot: p.dot,
-          style: { padding: '2px 8px' },
-        })
-      )
-    ),
-    onPause && !task.done
-      ? h(
-          'button',
-          {
-            type: 'button',
-            class: 'gb-icon-btn',
-            'aria-label': (task.paused ? 'Resume ' : 'Pause ') + task.title,
-            'aria-pressed': String(task.paused),
-            onclick: () => onPause(task),
-          },
-          Icon(task.paused ? 'play' : 'pause', { size: 15, sw: 2.4 })
-        )
-      : null,
-    // Opens the Focus timer with this task picked as what the session is on.
-    onFocus && !task.done && !task.paused
-      ? h(
-          'button',
-          {
-            type: 'button',
-            class: 'gb-icon-btn',
-            'aria-label': 'Start focus on ' + task.title,
-            title: 'Start focus',
-            onclick: () => onFocus(task),
-          },
-          Icon('timer', { size: 15, sw: 2.4 })
-        )
-      : null,
-    onEdit
-      ? h(
-          'button',
-          {
-            type: 'button',
-            class: 'gb-icon-btn',
-            'aria-label': 'Edit ' + task.title,
-            onclick: () => onEdit(task),
-          },
-          Icon('pencil', { size: 15, sw: 2.4 })
-        )
-      : null
-  );
-}
-
-/* The Home task list grows with the page. It was a 284px scroll box inside the
-   scrolling page, a scroller in a scroller that trapped the thumb; now it shows
-   the first TASKS_SHOWN and a "Show all" that opens the rest in place. The
-   choice lives here so a re-render after a tick doesn't fold it back. */
-const TASKS_SHOWN = 6;
-let tasksExpanded = false;
-
-/* A ticked task jumped to the bottom on the tap's own render, so the next task
-   slid under the second half of a double tap and got ticked too. It keeps the
-   place it had (its rank before the tap) for TICK_SETTLE_MS, then the list
-   re-sorts. One timer: a run of ticks settles together after the last. */
-const TICK_SETTLE_MS = 1000;
-const settlingTasks = new Map(); // id -> rank before the tick
-let settleTimer = 0;
-let liveTasksCard = null; // { card, props } of the latest render, for the re-sort
-
-function settleTasks() {
-  settlingTasks.clear();
-  tapSettled('tasks'); // the re-sort moves rows under the pointer as well
-  const live = liveTasksCard;
-  if (!live || !live.card.isConnected) return;
-  const focused = live.card.contains(document.activeElement)
-    ? document.activeElement.closest('[data-task-id]')
-    : null;
-  const next = TasksCard(live.props);
-  live.card.replaceWith(next);
-  refreshIcons();
-  if (focused) next.querySelector('[data-task-id="' + focused.dataset.taskId + '"] .gb-check')?.focus();
-}
-
-function TasksCard(props) {
-  const { onAdd, onEdit, onPause, onFocus } = props;
-  const toggleTask = (id) => {
-    const t = (props.tasks || []).find((x) => x.id === id);
-    if (t && !settlingTasks.has(id)) settlingTasks.set(id, taskRank(t, new Date()));
-    clearTimeout(settleTimer);
-    settleTimer = setTimeout(settleTasks, TICK_SETTLE_MS);
-    props.toggleTask(id);
-  };
-  // Overdue, today, upcoming, no date; paused and done last (home-order.js).
-  const tasks = sortTasksForHome(props.tasks, new Date(), settlingTasks);
-  if (!tasks.length) {
-    return Card({
-      children: [
-        h(
-          'div',
-          { class: 'gb-empty' },
-          Icon('list-todo', { size: 26, color: 'var(--brand-soft-fg)' }),
-          h('p', null, 'No tasks yet. Add one to start your day.'),
-          h(
-            'button',
-            { type: 'button', class: 'gb-btn gb-btn--soft', onclick: onAdd },
-            Icon('plus', { size: 16, sw: 2.6 }),
-            'Add your first task'
-          )
-        ),
-      ],
-    });
-  }
-  const hidden = tasksExpanded ? 0 : Math.max(0, tasks.length - TASKS_SHOWN);
-  const card = Card({
-    children: [
-      h(
-        'div',
-        { class: 'gb-tasks-list' },
-        tasks
-          .slice(0, tasks.length - hidden)
-          .map((t) => TaskRow(t, toggleTask, onEdit, onPause, onFocus))
-      ),
-      hidden
-        ? h(
-            'button',
-            {
-              type: 'button',
-              class: 'gb-btn gb-btn--ghost gb-tasks-more',
-              onclick: () => {
-                tasksExpanded = true;
-                const next = TasksCard(props);
-                card.replaceWith(next);
-                refreshIcons();
-                // The button is gone; land on the first row it revealed.
-                const row = next.querySelectorAll('.gb-row')[TASKS_SHOWN];
-                row?.querySelector('button, input, [tabindex]')?.focus();
-              },
-            },
-            'Show all ' + tasks.length + ' tasks'
-          )
-        : null,
-    ],
-  });
-  liveTasksCard = { card, props };
-  return card;
-}
-
-/* One habit on Home: name over its seven-day chain, tick on the right. Weekly
-   and N-a-week habits count weeks, which seven day-links can't show, so they
-   keep the figure alone. */
-function HabitCard(habit, toggleHabit) {
-  const daily = (habit.cadence || 'daily') === 'daily';
-  const n = habit.streak || 0;
-  return h(
-    'div',
-    { class: 'gb-habit-line' + (habit.doneToday ? ' is-done' : '') },
-    IconChip({ domain: habit.domain, icon: habit.icon, size: 36, iconSize: 18 }),
-    h(
-      'div',
-      { class: 'gb-habit-line-main' },
-      h('div', { class: 'name' }, habit.name),
-      daily
-        ? StreakChain({ streak: n, doneToday: habit.doneToday, owed: habitDue(habit) })
-        : h(
-            'span',
-            { class: 'gb-chain', role: 'img', 'aria-label': n + '-week streak' },
-            h('span', { class: 'gb-chain-n', 'aria-hidden': 'true' }, Icon('flame', { size: 12 }), n + '-week')
-          )
-    ),
-    toggleHabit
-      ? Check({ done: !!habit.doneToday, onToggle: () => toggleHabit(habit.id), label: habit.name, list: 'habits' })
-      : null
-  );
-}
-
 function QuoteCard({ quote }) {
   const text = quote && quote.body ? quote.body : 'Do one small thing today.';
   const author = quote && quote.author ? ' - ' + quote.author : '';
@@ -599,70 +276,27 @@ function QuoteCard({ quote }) {
   });
 }
 
-function TodayPlanCard({ water, wellness, onPlanToday, onQuickAddWater, onAddSleep, onAddMood, skip }) {
+/* What's still open, each chip its own fix (a glass of water, the sleep or the
+   mood dialog). It never congratulates and never asks what another card asks
+   (`skip`: the one-thing card's kind; sleep, mood and water while the wellness
+   row is on Home; mood while Getting started lists it). */
+function planChips({ water, wellness, onQuickAddWater, onAddSleep, onAddMood, skip }) {
   const key = todayKey();
   const sleep = wellness && wellness.sleepByDate ? wellness.sleepByDate[key] : null;
   const mood = wellness && wellness.moodByDate ? wellness.moodByDate[key] : null;
   const waterGoal = Math.max(1, (water && water.goalMl) || 2000);
-  const waterPct = Math.min(
-    100,
-    Math.round((((water && water.consumedMl) || 0) / waterGoal) * 100)
-  );
-  // The brief lists what's still open. Three rules got it here:
-  //   - It doesn't repeat the ring. The score card above measures exactly tasks
-  //     and habits and already reads "0/4 tasks · 1/3 habits"; the brief used to
-  //     restate that as "4 tasks left · 2 habits left" — the same two facts, in
-  //     opposite polarity, one card apart.
-  //   - It doesn't congratulate. "Sleep logged" sat directly above a card
-  //     showing "7.5h · Good", so the chip said less than the thing beneath it.
-  //   - It doesn't repeat what another card asks (`skip`, a list of kinds): the
-  //     one-thing card's kind, sleep + mood when the Sleep & mood card is on
-  //     Home, mood while the Getting started checklist still lists it.
-  // Finish everything and the row empties out, which is the point.
-  // Each open item is also its fix, one tap: a glass of water, the sleep or the
-  // mood dialog. A chip with no handler stays a plain label.
+  const waterPct = Math.min(100, Math.round((((water && water.consumedMl) || 0) / waterGoal) * 100));
   const chips = [];
   const skipped = (k) => (skip || []).includes(k);
   if (water && waterPct < 100 && !skipped('water'))
     chips.push({ label: waterPct + '% water', run: onQuickAddWater && (() => onQuickAddWater(250)), aria: 'Log 250 ml of water' });
   if (!sleep && !skipped('sleep')) chips.push({ label: 'Sleep not logged', run: onAddSleep, aria: 'Log last night’s sleep' });
   if (!mood && !skipped('mood')) chips.push({ label: 'Mood not logged', run: onAddMood, aria: 'Log your mood' });
-  return Card({
-    className: 'gb-coach-card',
-    children: [
-      h(
-        'div',
-        { class: 'gb-coach-head' },
-        h(
-          'div',
-          null,
-          h('div', { class: 'gb-coach-kicker' }, 'Daily brief'),
-          h('h2', { class: 'gb-coach-title' }, 'Help me plan today')
-        ),
-        h(
-          'button',
-          { type: 'button', class: 'gb-btn gb-btn--primary gb-btn--compact', onclick: onPlanToday },
-          Icon('sparkles', { size: 16, sw: 2.5 }),
-          'Plan my day'
-        )
-      ),
-      chips.length
-        ? h(
-            'div',
-            { class: 'gb-coach-chiprow' },
-            chips.map((chip) =>
-              chip.run
-                ? h(
-                    'button',
-                    { type: 'button', class: 'gb-coach-chip gb-coach-chip--todo', 'aria-label': chip.aria, onclick: () => chip.run() },
-                    chip.label
-                  )
-                : h('span', { class: 'gb-coach-chip gb-coach-chip--todo' }, chip.label)
-            )
-          )
-        : null,
-    ],
-  });
+  return chips.map((chip) =>
+    chip.run
+      ? h('button', { type: 'button', class: 'gb-coach-chip gb-coach-chip--todo', 'aria-label': chip.aria, onclick: () => chip.run() }, chip.label)
+      : h('span', { class: 'gb-coach-chip gb-coach-chip--todo' }, chip.label)
+  );
 }
 
 /* The one thing today (one-thing.js picks it): pinned above the layout, not a
@@ -772,50 +406,6 @@ function WellnessQuick({ usual, askMood, onConfirmSleep, onQuickMood, onAddSleep
 }
 
 const sentence = (s) => (s ? String(s).charAt(0).toUpperCase() + String(s).slice(1) : '');
-
-/* One ask per thing: a tile still waiting for its entry is hidden while the
-   check-in row above it (or the one-thing card, `asked`) is asking the same
-   thing; a logged tile shows its value. */
-function WellnessCard({ wellness, phoneNight, onAddSleep, onAddMood, onConfirmSleep, onQuickMood, asked }) {
-  const key = todayKey();
-  const sleep = wellness && wellness.sleepByDate ? wellness.sleepByDate[key] : null;
-  const mood = wellness && wellness.moodByDate ? wellness.moodByDate[key] : null;
-  const hours = sleepHours(sleep);
-  const usual =
-    !sleep && onConfirmSleep
-      ? sleepToConfirm(wellness && wellness.sleepByDate, todayKey(), new Date(), phoneNight)
-      : null;
-  const askMood = !mood && !!onQuickMood;
-  const showSleep = !!sleep || !(usual || asked === 'sleep');
-  const showMood = !!mood || !(askMood || asked === 'mood');
-  const quick = WellnessQuick({ usual, askMood, onConfirmSleep, onQuickMood, onAddSleep });
-  const tiles = [
-    showSleep &&
-      h(
-        'button',
-        { type: 'button', class: 'gb-wellness-tile', onclick: onAddSleep },
-        h('span', { class: 'gb-wellness-icon' }, Icon('moon', { size: 18, sw: 2.4 })),
-        h('span', { class: 'gb-wellness-label' }, 'Sleep'),
-        h('strong', null, hours == null ? 'Log sleep' : hours + 'h'),
-        h('small', null, sleep ? sentence(sleep.quality) : 'Hours slept')
-      ),
-    showMood &&
-      h(
-        'button',
-        { type: 'button', class: 'gb-wellness-tile', onclick: onAddMood },
-        h('span', { class: 'gb-wellness-icon' }, Icon('smile-plus', { size: 18, sw: 2.4 })),
-        h('span', { class: 'gb-wellness-label' }, 'Mood'),
-        h('strong', null, mood ? mood.mood : 'Log mood'),
-        // No energy picked, no energy line (a bare mood read "Medium Energy").
-        mood ? (mood.energy ? h('small', null, sentence(mood.energy) + ' energy') : null) : h('small', null, 'How you feel')
-      ),
-  ].filter(Boolean);
-  if (!quick && !tiles.length) return null;
-  return Card({
-    className: 'gb-wellness-card',
-    children: [quick, tiles.length ? h('div', { class: 'gb-wellness-grid' }, tiles) : null],
-  });
-}
 
 function WeeklyReflectionCard({ tasks, habits, food, goals, wellness }) {
   // The last 7 days, today included: a weekly card counts the week.
@@ -2430,37 +2020,656 @@ function heldHabitOrder(habits) {
   return sorted.map((hb, i) => ({ hb, i })).sort((a, b) => at(a.hb) - at(b.hb) || a.i - b.i).map((x) => x.hb);
 }
 
-function HabitStrip({ habits, onAdd, toggleHabit }) {
-  if (!habits.length) {
-    return Card({
-      children: [
-        h(
-          'div',
-          { class: 'gb-empty' },
-          Icon('repeat', { size: 26, color: 'var(--brand-soft-fg)' }),
-          h('p', null, 'No habits yet. Pick one to build a streak.'),
-          h(
-            'button',
-            { type: 'button', class: 'gb-btn gb-btn--soft', onclick: onAdd },
-            Icon('plus', { size: 16, sw: 2.6 }),
-            'Add a habit'
-          )
-        ),
-      ],
+/* ---- Home: my day, in order ----
+   The day as one line: what has a time sits on it in clock order with a Now
+   rule between past and ahead; what has no time ("Anytime today") and what is
+   still to come after today follow. Its head is the Calendar's day ruler, so
+   the shape of the day reads before its list. Rows are compact: time, tick,
+   title. Edit, pause and focus live in the row's "..." menu. */
+
+/* The account's clock as minutes since midnight, the line's one unit. */
+function zoneParts(d) {
+  try {
+    const p = new Intl.DateTimeFormat('en-GB', { timeZone: accountZone || undefined, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(d);
+    const get = (t) => +(p.find((x) => x.type === t) || { value: 0 }).value;
+    return get('hour') * 60 + get('minute');
+  } catch (_) {
+    return d.getHours() * 60 + d.getMinutes();
+  }
+}
+const hhmmOf = (m) => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+
+/* A row's menu as a native popover (light dismiss, Escape and top layer for
+   free). Placed under its button when it opens.
+   ponytail: it stays put if the page scrolls while open; close on scroll if that shows. */
+let menuSeq = 0;
+let dayShown = false; // phone: the timeline list unfolded
+// Below 1024px Home takes the phone order (CSS .gb-dash--day, same breakpoint).
+const phoneLayout = () => !window.matchMedia('(min-width: 1024px)').matches;
+function RowMenu(label, items) {
+  const id = 'gb-tl-menu-' + ++menuSeq;
+  const pop = h(
+    'div',
+    { id, popover: 'auto', class: 'gb-tl-menu', role: 'menu', 'aria-label': label },
+    items.map(([icon, text, run]) =>
+      h(
+        'button',
+        {
+          type: 'button',
+          role: 'menuitem',
+          class: 'gb-tl-menu-item',
+          onclick: () => {
+            pop.hidePopover();
+            run();
+          },
+        },
+        Icon(icon, { size: 16, sw: 2.4 }),
+        text
+      )
+    )
+  );
+  const btn = h(
+    'button',
+    { type: 'button', class: 'gb-icon-btn gb-tl-more', popovertarget: id, 'aria-haspopup': 'menu', 'aria-label': label },
+    Icon('ellipsis', { size: 18, sw: 2.4 })
+  );
+  pop.addEventListener('beforetoggle', (e) => {
+    if (e.newState !== 'open') return;
+    const r = btn.getBoundingClientRect();
+    pop.style.top = r.bottom + 4 + 'px';
+    pop.style.right = Math.max(8, window.innerWidth - r.right) + 'px';
+  });
+  pop.addEventListener('toggle', (e) => {
+    if (e.newState === 'open') pop.querySelector('button')?.focus();
+    else if (pop.contains(document.activeElement) || document.activeElement === document.body) btn.focus();
+  });
+  return [btn, pop];
+}
+
+function tlRow({ time, late, kind, done, paused, node, title, sub, onTitle, menu, dim }) {
+  return h(
+    'li',
+    {
+      class:
+        'gb-tl-row is-' + kind + (done ? ' is-done' : '') + (paused ? ' is-paused' : '') + (dim ? ' is-dim' : ''),
+    },
+    h('span', { class: 'gb-tl-time' + (late ? ' is-late' : '') }, time || ''),
+    h('span', { class: 'gb-tl-node' }, node),
+    h(
+      'div',
+      { class: 'gb-tl-main' },
+      onTitle
+        ? h('button', { type: 'button', class: 'gb-tl-title', onclick: onTitle }, title)
+        : h('div', { class: 'gb-tl-title' }, title),
+      sub ? h('div', { class: 'gb-tl-sub' }, sub) : null
+    ),
+    menu || null
+  );
+}
+
+function DayTimeline({
+  tasks,
+  habits,
+  reminders,
+  showTasks,
+  showHabits,
+  showRuler,
+  toggleTask,
+  toggleHabit,
+  onEditTask,
+  onPauseTask,
+  onFocusTask,
+  onAddTask,
+  onAddHabit,
+  onOpenCalendar,
+  onAddReminder,
+  routine,
+  onAddRoutine,
+}) {
+  const today = todayKey();
+  const nowMin = zoneParts(new Date());
+  const timed = [];
+  const anytime = [];
+  const later = [];
+  const rems = showRuler
+    ? (reminders || []).filter((r) => occursOn(r, today)).sort((a, b) => String(a.time || '99').localeCompare(String(b.time || '99')))
+    : [];
+
+  rems.forEach((r) => {
+    const done = (r.doneDates || []).includes(today);
+    const row = tlRow({
+      time: r.time ? sharedFormatTime(r.time) : '',
+      kind: 'reminder',
+      done,
+      node: h('span', { class: 'gb-tl-dot', style: { '--tag-color': (TAGS[r.tag] || TAGS.other).color } }, Icon('bell', { size: 13, sw: 2.6 })),
+      title: r.text,
+      sub: r.endTime ? 'Until ' + sharedFormatTime(r.endTime) : null,
+      onTitle: onOpenCalendar,
+    });
+    if (r.time) timed.push({ min: toMin(r.time), row });
+    else anytime.push(row);
+  });
+
+  const taskRow = (t, time, late) => {
+    const p = PRIORITY[t.priority] || PRIORITY.Low;
+    const items = [];
+    if (onEditTask) items.push(['pencil', 'Edit', () => onEditTask(t)]);
+    if (onFocusTask && !t.done && !t.paused) items.push(['timer', 'Start focus', () => onFocusTask(t)]);
+    if (onPauseTask && !t.done) items.push([t.paused ? 'play' : 'pause', t.paused ? 'Resume' : 'Pause', () => onPauseTask(t)]);
+    const when = late && t.dueAt ? taskWhen(t.dueAt, new Date(), sharedFormatTime, (d) => fmtDate(d, 'dayMonth')) : null;
+    return h(
+      'div',
+      { style: { display: 'contents' }, 'data-task-id': t.id },
+      tlRow({
+        time,
+        late,
+        kind: 'task',
+        done: t.done,
+        paused: t.paused,
+        node: Check({ done: t.done, onToggle: () => toggleTask(t.id), label: t.title, list: 'tasks' }),
+        title: t.title,
+        sub: [
+          t.priority && t.priority !== 'Low' ? h('span', { class: 'gb-tl-pri', style: { '--pri': p.dot } }, t.priority) : null,
+          t.paused ? 'Paused' : when,
+        ].filter(Boolean),
+        onTitle: onEditTask ? () => onEditTask(t) : null,
+        menu: items.length ? RowMenu('More for ' + t.title, items) : null,
+      })
+    );
+  };
+
+  if (showTasks) {
+    (tasks || []).forEach((t) => {
+      const due = t.dueAt ? new Date(t.dueAt) : null;
+      const dueKey = due && !Number.isNaN(due.getTime()) ? localDayKey(due) : null;
+      const doneToday = t.done && (!t.doneAt || localDayKey(new Date(t.doneAt)) === today);
+      if (t.done && !doneToday) return; // yesterday's wins are Progress's
+      if (t.paused) return void later.push(taskRow(t, '', false));
+      if (!dueKey) return void anytime.push(taskRow(t, '', false));
+      if (dueKey < today) {
+        if (t.done) anytime.push(taskRow(t, '', false));
+        else timed.push({ min: -1, row: taskRow(t, 'Late', true) });
+        return;
+      }
+      if (dueKey > today) {
+        if (!t.done) later.push(taskRow(t, fmtDate(dueKey, 'dayMonth'), false));
+        return;
+      }
+      const m = zoneParts(due);
+      timed.push({ min: m, row: taskRow(t, sharedFormatTime(due), !t.done && m < nowMin) });
     });
   }
-  // All of them: the old slice(0, 4) meant a fifth habit simply didn't exist
-  // on Home. What is still owed comes first.
-  const order = heldHabitOrder(habits);
-  const tick =
-    toggleHabit &&
-    ((id) => {
-      habitHold = { ids: order.map((hb) => hb.id), until: Date.now() + HABIT_HOLD_MS };
-      return toggleHabit(id);
+
+  if (showHabits) {
+    heldHabitOrder(habits || []).forEach((hb) => {
+      const owed = habitDue(hb);
+      const daily = (hb.cadence || 'daily') === 'daily';
+      const n = hb.streak || 0;
+      const row = tlRow({
+        time: hb.reminderTime && owed ? sharedFormatTime(hb.reminderTime) : '',
+        kind: 'habit',
+        done: !!hb.doneToday,
+        dim: !owed && !hb.doneToday,
+        node: toggleHabit
+          ? Check({
+              done: !!hb.doneToday,
+              onToggle: () => {
+                habitHold = { ids: heldHabitOrder(habits).map((x) => x.id), until: Date.now() + HABIT_HOLD_MS };
+                return toggleHabit(hb.id);
+              },
+              label: hb.name,
+              list: 'habits',
+            })
+          : null,
+        title: hb.name,
+        sub: daily
+          ? StreakChain({ streak: n, doneToday: hb.doneToday, owed })
+          : h('span', { class: 'gb-chain' }, h('span', { class: 'gb-chain-n' }, Icon('flame', { size: 12 }), n + '-week')),
+      });
+      if (hb.reminderTime && owed) timed.push({ min: toMin(String(hb.reminderTime)), row });
+      else anytime.push(row);
     });
+  }
+
+  timed.sort((a, b) => a.min - b.min);
+  const rows = [];
+  let nowPlaced = false;
+  const nowRule = () =>
+    h(
+      'li',
+      { class: 'gb-tl-now', 'aria-label': 'Now, ' + sharedFormatTime(hhmmOf(nowMin)) },
+      h('span', { class: 'gb-tl-time' }, 'Now'),
+      h('span', { class: 'gb-tl-now-line', 'aria-hidden': 'true' })
+    );
+  timed.forEach((it) => {
+    if (!nowPlaced && it.min > nowMin) {
+      rows.push(nowRule());
+      nowPlaced = true;
+    }
+    rows.push(it.row);
+  });
+  if (!nowPlaced) rows.push(nowRule());
+
+  // The ruler marks what has a time: reminders and today's timed tasks.
+  const marks = rems.concat(
+    showTasks
+      ? (tasks || [])
+          .filter((t) => !t.paused && t.dueAt && localDayKey(new Date(t.dueAt)) === today)
+          .map((t) => ({ time: hhmmOf(zoneParts(new Date(t.dueAt))), tag: 'urgent' }))
+          .sort((a, b) => a.time.localeCompare(b.time))
+      : []
+  );
+  const count = marks.length;
+  // The routine as bands under the marks; its blocks are not items.
+  const rt = showRuler ? validRoutine(routine) : null;
+  const bands = routineBlocks(rt, today);
+  const named = bands.filter((b) => !b.tail);
+  const span = (b) => b.name + ' ' + sharedFormatTime(b.from) + ' to ' + sharedFormatTime(b.to);
+  const rulerLabel = [plural(count, 'item'), ...named.map(span)].join(', ');
+  const head = h(
+    'div',
+    { class: 'gb-tl-head' },
+    h(
+      'div',
+      { class: 'gb-cal-dayhead-top' },
+      h(
+        'h2',
+        { class: 'gb-cal-dayhead-date' },
+        h('span', { class: 'wd' }, fmtDate(today, 'weekdayLong') || ''),
+        h('span', { class: 'md' }, fmtDate(today, { day: 'numeric', month: 'long' }))
+      ),
+      count
+        ? h('span', { class: 'gb-cal-dayhead-count' }, plural(count, 'item'))
+        : showRuler && onAddReminder
+          ? h(
+              'span',
+              { class: 'gb-tl-empty' },
+              'Nothing scheduled',
+              h('button', { type: 'button', class: 'gb-tl-add', onclick: onAddReminder }, 'Add')
+            )
+          : null
+    ),
+    showRuler
+      ? h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-tl-ruler',
+            'aria-label': (phoneLayout() ? 'Show the day, ' : 'Open today in Calendar, ') + rulerLabel,
+            // Phone: the ruler opens the day in place; wide: Calendar on today.
+            onclick: () => (phoneLayout() ? showDay(true) : onOpenCalendar && onOpenCalendar()),
+          },
+          DayRuler(marks, today, true, bands)
+        )
+      : null,
+    named.length
+      ? h(
+          'div',
+          { class: 'gb-tl-legend', 'aria-hidden': 'true' },
+          [...new Map(named.map((b) => [b.kind + b.name, b])).values()].map((b) =>
+            h('span', { class: 'is-' + b.kind }, b.name)
+          )
+        )
+      : null,
+    h(
+      'div',
+      { class: 'gb-tl-actions' },
+      h(
+        'button',
+        { type: 'button', class: 'gb-tl-add gb-tl-toggle', 'aria-expanded': String(dayShown), onclick: () => showDay(!dayShown) },
+        dayShown ? 'Hide the day' : 'Show the day'
+      ),
+      showRuler && !rt && onAddRoutine
+        ? h('button', { type: 'button', class: 'gb-tl-add gb-tl-routine', onclick: onAddRoutine }, 'Add your routine')
+        : null
+    )
+  );
+  // Phone (CSS): the list stays folded behind "Show the day"; Pending above
+  // already lists the to-dos, so a phone doesn't read every item twice.
+  const showDay = (open) => {
+    dayShown = open;
+    card.classList.toggle('is-day-shown', open);
+    const t = card.querySelector('.gb-tl-toggle');
+    t.setAttribute('aria-expanded', String(open));
+    t.textContent = open ? 'Hide the day' : 'Show the day';
+    if (open) card.querySelector('.gb-tl-list--timed')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  };
+
+  const group = (title, kids, action) =>
+    kids.length || action
+      ? h(
+          'section',
+          { class: 'gb-tl-group' },
+          h('div', { class: 'gb-tl-group-head' }, h('h3', null, title), action || null),
+          kids.length ? h('ul', { class: 'gb-tl-list' }, kids) : null
+        )
+      : null;
+  const addBtns = h(
+    'span',
+    { class: 'gb-tl-adds' },
+    showTasks && onAddTask ? h('button', { type: 'button', class: 'gb-tl-add', onclick: onAddTask }, '+ Task') : null,
+    showHabits && onAddHabit ? h('button', { type: 'button', class: 'gb-tl-add', onclick: onAddHabit }, '+ Habit') : null
+  );
+  const card = Card({
+    className: 'gb-tl' + (dayShown ? ' is-day-shown' : ''),
+    children: [
+      head,
+      h('ul', { class: 'gb-tl-list gb-tl-list--timed' }, rows),
+      group('Anytime today', anytime, addBtns),
+      later.length
+        ? h(
+            'details',
+            { class: 'gb-tl-group gb-tl-later' },
+            h('summary', null, h('span', null, 'Coming up and paused'), h('span', { class: 'gb-tl-n' }, String(later.length))),
+            h('ul', { class: 'gb-tl-list' }, later)
+          )
+        : null,
+    ],
+  });
+  return card;
+}
+
+/* Bills due today or overdue this month and not paid (Money's rule in
+   money.js upcomingSubs, narrowed to "now"; paid is forward-only). */
+function billsDue(money, today) {
+  const month = today.slice(0, 7);
+  const dom = +today.slice(8, 10);
+  const dim = new Date(+today.slice(0, 4), +today.slice(5, 7), 0).getDate();
+  return ((money && money.subscriptions) || [])
+    .map((s) => ({ sub: s, day: Math.min(Number(s.dueDay) || 1, dim) }))
+    .filter((x) => x.day <= dom && (x.sub.paidFor || '') < month)
+    .map((x) => ({ ...x, overdue: x.day < dom, month }));
+}
+
+/* Mark a bill paid the way the Money tab's button does: stamp paidFor and book
+   the expense under the id the WhatsApp path uses, so a tap on both logs one. */
+function payBill(money, bill, onSaveMoney) {
+  if (!(Number(bill.sub.amount) > 0)) {
+    toast.error(null, 'Add an amount to ' + bill.sub.name + ' first.');
+    return;
+  }
+  const before = normalizeMoney(money);
+  const next = normalizeMoney(money);
+  const sub = next.subscriptions.find((x) => x.id === bill.sub.id);
+  if (!sub || (sub.paidFor || '') >= bill.month) return;
+  sub.paidFor = bill.month;
+  const acct = sub.accountId || ((next.accounts || []).find((a) => !a.archived && ['bank', 'card'].includes(a.kind)) || {}).id;
+  next.expenses.unshift({
+    id: 'sub-' + sub.id + '-' + bill.month,
+    amount: sub.amount,
+    category: sub.category || 'others',
+    note: sub.name,
+    date: todayKey(),
+    createdAt: Date.now(),
+    ...(acct ? { accountId: acct } : {}),
+  });
+  onSaveMoney(next, money);
+  toast.action(sub.name + ' marked as paid.', 'Undo', () => onSaveMoney(before, next));
+}
+
+const PENDING_SHOWN = 5;
+let pendingExpanded = false;
+
+/* Today, at a glance: the score as one bar with its parts in mono, then what is
+   still open, most urgent first, each a one-tap complete with Undo. Ticking a
+   row re-renders Home, so the bar above moves with it. */
+function TodayCard(props) {
+  const {
+  score,
+  tasks: allTasks,
+  habits,
+  water,
+  reminders,
+  money,
+  showWater,
+  showReminders,
+  showBills,
+  toggleTask,
+  toggleHabit,
+  onReminderDone,
+  onSaveMoney,
+  } = props;
+  const today = todayKey();
+  const now = new Date();
+  const nowMin = zoneParts(now);
+  const tasks = tasksForToday(allTasks, now);
+  const doneTasks = tasks.filter((t) => t.done).length;
+  const due = habits.filter((hb) => habitDue(hb) || hb.doneToday);
+  const doneHabits = due.filter((hb) => hb.doneToday).length;
+  const rems = showReminders ? (reminders || []).filter((r) => occursOn(r, today)) : [];
+  const remDone = (r) => (r.doneDates || []).includes(today);
+  const doneRems = rems.filter(remDone).length;
+  const goal = Math.max(1, (water && water.goalMl) || 2000);
+  const pct = Math.min(100, Math.round((((water && water.consumedMl) || 0) / goal) * 100));
+  const s = Math.max(0, Math.min(100, Number(score) || 0));
+
+  // Most urgent first: overdue tasks, reminders still ahead, habits not ticked,
+  // tasks due later today, bills due or overdue.
+  const undoToast = (title, undo) => toast.action(title + ' done.', 'Undo', undo);
+  const items = [];
+  const open = tasks.filter((t) => !t.done);
+  const late = open.filter((t) => new Date(t.dueAt) < now).sort((a, b) => String(a.dueAt).localeCompare(String(b.dueAt)));
+  late.forEach((t) =>
+    items.push({
+      title: t.title,
+      when: localDayKey(new Date(t.dueAt)) < today ? 'overdue' : 'overdue · ' + sharedFormatTime(new Date(t.dueAt)),
+      late: true,
+      tick: () => (toggleTask(t.id), undoToast(t.title, () => toggleTask(t.id))),
+    })
+  );
+  const remItem = (r, when, late) => ({
+    title: r.text,
+    when,
+    late,
+    icon: 'bell',
+    tick: onReminderDone && (() => (onReminderDone(r.id, today, true), undoToast(r.text, () => onReminderDone(r.id, today, false)))),
+  });
+  // Missed: its time has passed today and it isn't checked off.
+  rems
+    .filter((r) => !remDone(r) && r.time && toMin(r.time) < nowMin)
+    .sort((a, b) => a.time.localeCompare(b.time))
+    .forEach((r) => items.push(remItem(r, 'missed ' + sharedFormatTime(r.time), true)));
+  rems
+    .filter((r) => !remDone(r) && (!r.time || toMin(r.time) >= nowMin))
+    .sort((a, b) => String(a.time || '99').localeCompare(String(b.time || '99')))
+    .forEach((r) =>
+      items.push(remItem(r, r.time ? sharedFormatTime(r.time) : 'today', false))
+    );
+  if (toggleHabit)
+    due
+      .filter((hb) => !hb.doneToday && hb.active !== false)
+      .forEach((hb) =>
+        items.push({
+          title: hb.name,
+          when: hb.reminderTime ? sharedFormatTime(hb.reminderTime) : 'habit',
+          tick: () => (toggleHabit(hb.id), undoToast(hb.name, () => toggleHabit(hb.id))),
+        })
+      );
+  open
+    .filter((t) => !late.includes(t))
+    .sort((a, b) => String(a.dueAt).localeCompare(String(b.dueAt)))
+    .forEach((t) =>
+      items.push({
+        title: t.title,
+        when: sharedFormatTime(new Date(t.dueAt)),
+        tick: () => (toggleTask(t.id), undoToast(t.title, () => toggleTask(t.id))),
+      })
+    );
+  if (showBills && onSaveMoney)
+    billsDue(money, today).forEach((b) =>
+      items.push({
+        title: b.sub.name,
+        when: b.overdue ? 'overdue' : 'due today',
+        late: b.overdue,
+        icon: 'wallet',
+        tick: () => payBill(money, b, onSaveMoney),
+      })
+    );
+
+  const total = tasks.length + due.length + rems.length;
+  const best = topStreaks(habits);
+  const allDone = total > 0 && !items.length;
+  const heading = allDone ? 'All done for today' : s >= 70 ? "You're on track" : s > 0 ? 'Keep it going' : 'Your day starts here';
+  const stat = (label, value) => h('span', { class: 'gb-strip-stat' }, h('span', null, label), h('b', null, value));
+  const shown = pendingExpanded ? items : items.slice(0, PENDING_SHOWN);
+  const more = items.length - shown.length;
+  const card = Card({
+    className: 'gb-today',
+    children: [
+      h(
+        'section',
+        { class: 'gb-strip', 'aria-label': 'Today’s progress' },
+        h(
+          'div',
+          { class: 'gb-strip-top' },
+          h('h2', { class: 'gb-strip-title' }, heading),
+          h('span', { class: 'gb-strip-pct' }, allDone && best.days ? best.days + '-day streak' : s + '%')
+        ),
+        h(
+          'div',
+          { class: 'gb-strip-bar', role: 'progressbar', 'aria-label': 'Daily score', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(s) },
+          h('span', { style: { width: s + '%' } })
+        ),
+        h(
+          'div',
+          { class: 'gb-strip-stats' },
+          due.length ? stat('Habits', doneHabits + '/' + due.length) : null,
+          tasks.length ? stat('Tasks', doneTasks + '/' + tasks.length) : null,
+          rems.length ? stat('Reminders', doneRems + '/' + rems.length) : null,
+          showWater && water ? stat('Water', pct + '%') : null
+        )
+      ),
+      h(
+        'section',
+        { class: 'gb-pending', 'aria-label': 'Still to do today' },
+        h(
+          'div',
+          { class: 'gb-pending-head' },
+          h('h3', null, 'Pending'),
+          items.length ? h('span', { class: 'gb-tl-n' }, String(items.length)) : null
+        ),
+        items.length
+          ? h(
+              'ul',
+              { class: 'gb-pending-list' },
+              shown.map((it) =>
+                h(
+                  'li',
+                  { class: 'gb-pending-row' },
+                  it.tick
+                    ? Check({ onToggle: it.tick, label: it.title, list: 'pending' })
+                    : h('span', { class: 'gb-tl-dot' }, Icon(it.icon || 'circle', { size: 13, sw: 2.6 })),
+                  h('span', { class: 'gb-pending-title' }, it.icon ? Icon(it.icon, { size: 14, sw: 2.4 }) : null, it.title),
+                  h('span', { class: 'gb-pending-when' + (it.late ? ' is-late' : '') }, it.when)
+                )
+              )
+            )
+          : h('p', { class: 'gb-pending-calm' }, total ? 'Nothing left for today.' : 'Nothing due today. Add a task or habit to plan it.'),
+        more
+          ? h(
+              'button',
+              {
+                type: 'button',
+                class: 'gb-tl-add gb-pending-more',
+                onclick: () => {
+                  pendingExpanded = true;
+                  const next = TodayCard(props);
+                  card.replaceWith(next);
+                  refreshIcons();
+                  next.querySelectorAll('.gb-pending-row')[PENDING_SHOWN]?.querySelector('button')?.focus();
+                },
+              },
+              '+' + more + ' more'
+            )
+          : null
+      ),
+    ],
+  });
+  return card;
+}
+
+/* Sleep, mood and a glass of water as one inline row; the one-tap check-in
+   questions (WellnessQuick) sit above it while they are open. */
+function WellnessRow({ wellness, water, showWater, phoneNight, onAddSleep, onAddMood, onConfirmSleep, onQuickMood, onQuickAddWater, asked }) {
+  const key = todayKey();
+  const sleep = wellness && wellness.sleepByDate ? wellness.sleepByDate[key] : null;
+  const mood = wellness && wellness.moodByDate ? wellness.moodByDate[key] : null;
+  const hours = sleepHours(sleep);
+  const usual = !sleep && onConfirmSleep ? sleepToConfirm(wellness && wellness.sleepByDate, key, new Date(), phoneNight) : null;
+  const askMood = !mood && !!onQuickMood;
+  const quick = WellnessQuick({ usual, askMood, onConfirmSleep, onQuickMood, onAddSleep });
+  const goal = Math.max(1, (water && water.goalMl) || 2000);
+  const pct = Math.min(100, Math.round((((water && water.consumedMl) || 0) / goal) * 100));
+  const chip = (icon, label, value, onclick, aria) =>
+    h('button', { type: 'button', class: 'gb-well-chip', onclick, 'aria-label': aria }, Icon(icon, { size: 16, sw: 2.4 }), h('span', null, label), value ? h('b', null, value) : null);
+  const chips = [
+    (sleep || !(usual || asked === 'sleep')) && chip('moon', 'Sleep', hours == null ? 'Log' : hours + 'h', onAddSleep, hours == null ? 'Log sleep' : 'Sleep ' + hours + ' hours, edit'),
+    (mood || !(askMood || asked === 'mood')) && chip('smile-plus', 'Mood', mood ? sentence(mood.mood) : 'Log', onAddMood, mood ? 'Mood ' + mood.mood + ', edit' : 'Log mood'),
+    showWater && water && onQuickAddWater && asked !== 'water' && chip('droplets', pct + '%', '+250 ml', () => onQuickAddWater(250), 'Log 250 ml of water, ' + pct + '% of goal so far'),
+  ].filter(Boolean);
+  if (!quick && !chips.length) return null;
+  return h('div', { class: 'gb-well' }, quick, chips.length ? h('div', { class: 'gb-well-row' }, chips) : null);
+}
+
+/* Outlook and Plan my day as one suggestion: the strongest pattern, then the
+   button that turns the day into a plan, with what is still open beside it. */
+function SuggestCard({ outlookData, onDismissInsight, onInsightAction, plan }) {
+  const o = outlookData ? OutlookCard({ outlook: outlookData, onDismissInsight, onInsightAction }) : null;
+  const rows = o ? [...o[1].childNodes] : [];
+  if (!rows.length && !plan) return null;
+  // Phone (CSS): one row, the insight's title + Plan my day; the rows open under it.
+  const insight = outlookData && outlookData.insight;
+  const lead = insight ? insight.title : rows.length ? 'Your outlook' : 'Turn today into a plan';
+  const panel = rows.length ? h('div', { class: 'gb-suggest-panel', hidden: true }) : null;
+  const compact = h(
+    'div',
+    { class: 'gb-suggest-compact' },
+    h(
+      'div',
+      { class: 'gb-suggest-line' },
+      panel
+        ? h(
+            'button',
+            {
+              type: 'button',
+              class: 'gb-suggest-lead',
+              'aria-expanded': 'false',
+              onclick: (e) => {
+                const open = panel.hidden;
+                if (open && !panel.firstChild) {
+                  const again = OutlookCard({ outlook: outlookData, onDismissInsight, onInsightAction });
+                  panel.append(...again[1].childNodes);
+                  refreshIcons();
+                }
+                panel.hidden = !open;
+                e.currentTarget.setAttribute('aria-expanded', String(open));
+              },
+            },
+            Icon(insight ? insight.icon : 'sparkles', { size: 16, color: 'var(--brand)' }),
+            h('span', null, lead),
+            Icon('chevron-down', { size: 16 })
+          )
+        : h('span', { class: 'gb-suggest-ask' }, lead),
+      plan
+        ? h('button', { type: 'button', class: 'gb-btn gb-btn--primary gb-btn--compact', onclick: plan.onPlanToday }, Icon('sparkles', { size: 16, sw: 2.5 }), 'Plan my day')
+        : null
+    ),
+    panel
+  );
   return Card({
-    className: 'gb-habit-strip',
-    children: order.map((h2) => HabitCard(h2, tick)),
+    className: 'gb-suggest',
+    children: [
+      compact,
+      rows.length ? h('div', { class: 'gb-suggest-rows' }, rows) : null,
+      plan
+        ? h(
+            'div',
+            { class: 'gb-suggest-foot' },
+            plan.chips.length ? h('div', { class: 'gb-coach-chiprow' }, plan.chips) : h('span', { class: 'gb-suggest-ask' }, 'Turn today into a plan'),
+            h('button', { type: 'button', class: 'gb-btn gb-btn--primary gb-btn--compact', onclick: plan.onPlanToday }, Icon('sparkles', { size: 16, sw: 2.5 }), 'Plan my day')
+          )
+        : null,
+    ],
   });
 }
 
@@ -2468,6 +2677,7 @@ function HabitStrip({ habits, onAdd, toggleHabit }) {
 /* app.js repaints the mini calendar in place (rerenderHomeMiniCalendarIfActive)
    without a features prop; it keeps the ones ScreenDashboard last rendered with. */
 let homeFeatures = null;
+let miniCalMonth = false; // phone: week strip (false) or the whole month
 
 function MiniCalendarCard({
   features = homeFeatures,
@@ -2562,6 +2772,13 @@ function MiniCalendarCard({
 
   const cells = [];
   const startDay = 1 - firstDow;
+  // The week strip (phone): the row holding the selected day, else today, else the first.
+  const rowOf = (key) => {
+    const [y, m, d] = key.split('-').map(Number);
+    if (y !== calYear || m - 1 !== calMonth) return -1;
+    return Math.floor((d - startDay) / 7) * 7;
+  };
+  const weekStart = Math.max(0, rowOf(selectedDate) >= 0 ? rowOf(selectedDate) : rowOf(today));
   for (let i = 0; i < 42; i++) {
     const dt = new Date(calYear, calMonth, startDay + i);
     const key = dateKey(dt.getFullYear(), dt.getMonth(), dt.getDate());
@@ -2578,6 +2795,7 @@ function MiniCalendarCard({
     const isFree = total === 0 && key >= today;
     const cls =
       'gb-mini-cal-day' +
+      (i >= weekStart && i < weekStart + 7 ? ' is-week' : '') +
       (inMonth ? '' : ' is-other-month') +
       (key === today ? ' is-today' : '') +
       (key === selectedDate ? ' is-selected' : '') +
@@ -2673,8 +2891,8 @@ function MiniCalendarCard({
     );
   }
 
-  return Card({
-    className: 'gb-mini-cal-card',
+  const card = Card({
+    className: 'gb-mini-cal-card' + (miniCalMonth ? ' is-month' : '') + (selectedDate === today ? ' is-on-today' : ''),
     children: [
       h(
         'div',
@@ -2817,8 +3035,25 @@ function MiniCalendarCard({
           : null,
         'No reminders for this day.'
       ),
+      // Phone only (CSS): the week strip opens to the month in place.
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'gb-tl-add gb-mini-cal-toggle',
+          'aria-expanded': String(miniCalMonth),
+          onclick: () => {
+            miniCalMonth = !miniCalMonth;
+            card.classList.toggle('is-month', miniCalMonth);
+            card.querySelector('.gb-mini-cal-toggle').setAttribute('aria-expanded', String(miniCalMonth));
+            card.querySelector('.gb-mini-cal-toggle').textContent = miniCalMonth ? 'Week' : 'Month';
+          },
+        },
+        miniCalMonth ? 'Week' : 'Month'
+      ),
     ],
   });
+  return card;
 }
 
 /* HOME_WIDGETS and resolveHomeLayout live in home-order.js (DOM-free, so they
@@ -2934,6 +3169,11 @@ function ScreenDashboard({
   goals,
   goalProgress,
   onOpenGoals,
+  onOpenCalendar,
+  onAddReminder,
+  onReminderDone,
+  routine,
+  onAddRoutine,
   score,
   water,
   wellness,
@@ -3045,64 +3285,103 @@ function ScreenDashboard({
   });
   const oneKind = one && one.kind;
   const planSkip = [oneKind];
-  if (wellnessOnHome) planSkip.push('sleep', 'mood');
+  if (wellnessOnHome) planSkip.push('sleep', 'mood', 'water');
   if (onboardAsksMood) planSkip.push('mood');
 
   // One renderer per widget id. Each returns the card node(s) for that widget.
+  // The timeline carries both habits and tasks, and the suggestion card both
+  // Outlook and Plan my day: the first of each pair in the layout draws it with
+  // whatever of the pair is enabled; the second renders nothing.
+  const enabled = (id) => {
+    const item = layout.find((i) => i.id === id);
+    const def = HOME_WIDGETS.find((w) => w.id === id);
+    return !!item && item.enabled && !(def && def.feature && !on(def.feature));
+  };
+  let timelineDrawn = false;
+  let suggestDrawn = false;
+  const timeline = () => {
+    if (timelineDrawn) return null;
+    timelineDrawn = true;
+    return DayTimeline({
+      tasks,
+      habits,
+      reminders,
+      showTasks: enabled('tasks'),
+      showHabits: enabled('habits'),
+      showRuler: on('calendar'),
+      toggleTask,
+      toggleHabit,
+      onEditTask,
+      onPauseTask,
+      onFocusTask,
+      onAddTask,
+      onAddHabit,
+      onOpenCalendar,
+      onAddReminder,
+      routine,
+      onAddRoutine,
+    });
+  };
+  const suggest = () => {
+    if (suggestDrawn) return null;
+    suggestDrawn = true;
+    const outlookData =
+      enabled('outlook') && outlook
+        ? outlook({
+            trends,
+            wellness,
+            money,
+            habits,
+            tasks,
+            goals: (goals || []).flatMap((s) => s.goals || []),
+            goalProgress,
+            history: insightHistory || undefined,
+            features,
+            dismissed: dismissedInsights,
+          })
+        : null;
+    const plan = enabled('plan')
+      ? {
+          onPlanToday,
+          chips: planChips({ water: on('water') ? water : null, wellness, onQuickAddWater, onAddSleep, onAddMood, skip: planSkip }),
+        }
+      : null;
+    return SuggestCard({ outlookData, onDismissInsight, onInsightAction, plan });
+  };
   const renderers = {
     // A turned-off feature drops out of the cards that summarise it, not just its own card.
-    score: () => ScoreCard({ score, tasks, habits: on('habits') ? habits : [], streakAsked: oneKind === 'streak' }),
-    outlook: () =>
-      outlook &&
-      OutlookCard({
-        outlook: outlook({
-          trends,
-          wellness,
-          money,
-          habits,
-          tasks,
-          goals: (goals || []).flatMap((s) => s.goals || []),
-          goalProgress,
-          history: insightHistory || undefined,
-          features,
-          dismissed: dismissedInsights,
-        }),
-        onDismissInsight,
-        onInsightAction,
+    score: () =>
+      TodayCard({
+        score,
+        tasks,
+        habits: on('habits') ? habits : [],
+        water,
+        reminders,
+        money,
+        showWater: on('water'),
+        showReminders: on('calendar'),
+        showBills: on('money'),
+        toggleTask,
+        toggleHabit: on('habits') ? toggleHabit : null,
+        onReminderDone,
+        onSaveMoney,
       }),
-    plan: () =>
-      TodayPlanCard({
-        water: on('water') ? water : null,
-        wellness,
-        onPlanToday,
-        onQuickAddWater,
-        onAddSleep,
-        onAddMood,
-        skip: planSkip,
-      }),
-    // The card above owns its nudge: the check-in row asking the same thing goes.
+    outlook: suggest,
+    plan: suggest,
     wellness: () =>
-      WellnessCard({
+      WellnessRow({
         wellness,
+        water,
+        showWater: on('water'),
         phoneNight,
         onAddSleep,
         onAddMood,
         onConfirmSleep: oneKind === 'sleep' ? null : onConfirmSleep,
         onQuickMood: oneKind === 'mood' ? null : onQuickMood,
+        onQuickAddWater,
         asked: oneKind,
       }),
-    tasks: () => [
-      // "Tasks", not "Today's tasks": the list carries tomorrow's and undated ones too.
-      SectionTitle({ title: 'Tasks', level: 2, action: '+ Add', onAction: onAddTask }),
-      TasksCard({
-        tasks,
-        toggleTask,
-        onAdd: onAddTask,
-        onEdit: onEditTask,
-        onPause: onPauseTask,
-        onFocus: onFocusTask,
-      }),
-    ],
+    tasks: timeline,
     calendar: () =>
       MiniCalendarCard({
         features,
@@ -3119,10 +3398,7 @@ function ScreenDashboard({
         onNextMonth,
         onRetryFood,
       }),
-    habits: () => [
-      SectionTitle({ title: 'Habit streaks', level: 2, action: '+ Add', onAction: onAddHabit }),
-      HabitStrip({ habits, onAdd: onAddHabit, toggleHabit }),
-    ],
+    habits: timeline,
     goals: () => GoalsCard({ goals, goalProgress, onOpenGoals }),
     reminders: () =>
       ReminderSuggestionsCard({ habits, water, wellness, reminders, onAddSuggestedReminder }),
@@ -3137,7 +3413,7 @@ function ScreenDashboard({
     const content = renderers[item.id] && renderers[item.id]();
     if (!content) return null;
     const kids = Array.isArray(content) ? content : [content];
-    return h('div', { class: 'gb-dash-block' }, ...kids);
+    return h('div', { class: 'gb-dash-block gb-w-' + item.id }, ...kids);
   };
   // A young account (the checklist is still up): what it has comes first, the
   // habits it just made on top so the first tick needs no scrolling, then the
@@ -3161,7 +3437,7 @@ function ScreenDashboard({
   const pick = (id) => (has[id] ? blockFor(layout.find((item) => item.id === id)) : null);
   const blocks = young
     ? [pick('habits'), pick('family'), h('div', { class: 'gb-dash-block' }, onboard), ...['plan', 'goals', 'calendar', 'tasks', 'wellness', 'score', 'money'].map(pick)].filter(Boolean)
-    : layout.map(blockFor).filter(Boolean);
+    : [];
 
   // Quick add is always first and is not a widget: one sentence logs anything,
   // so it can't be hidden or reordered from the Home layout.
@@ -3176,14 +3452,37 @@ function ScreenDashboard({
       h('div', { class: 'gb-dash-block' }, onboard)
     );
   }
-  if (one) blocks.unshift(h('div', { class: 'gb-dash-block gb-dash-pin' }, OneThingCard(one)));
-  // A break (I-08): on one, back from one, or offered at a streak at risk (app.js homeBreakEntry).
-  if (breakEntry) blocks.unshift(h('div', { class: 'gb-dash-block gb-dash-pin' }, breakEntry));
-  if (qa) blocks.unshift(qa);
-
-  const root = h('div', { class: 'gb-rise gb-dash gb-dash--single' }, ...blocks);
-  requestAnimationFrame(() => balanceHome(root));
-  return root;
+  const pins = [
+    breakEntry ? h('div', { class: 'gb-dash-block gb-dash-pin' }, breakEntry) : null,
+    one ? h('div', { class: 'gb-dash-block gb-dash-pin' }, OneThingCard(one)) : null,
+  ];
+  if (young) {
+    blocks.unshift(...pins.filter(Boolean));
+    if (qa) blocks.unshift(qa);
+    const root = h('div', { class: 'gb-rise gb-dash gb-dash--single' }, ...blocks);
+    requestAnimationFrame(() => balanceHome(root));
+    return root;
+  }
+  // My day, in order: the score strip, Quick add and the suggestion on top; the
+  // day's timeline and the wellness row; then the compact cards in layout order.
+  // Desktop puts the timeline on the left and everything else on the right.
+  const zone = { score: 'top', outlook: 'top', plan: 'top', habits: 'main', tasks: 'main', wellness: 'main' };
+  const top = [];
+  const main = [];
+  const rest = [];
+  layout.forEach((item) => {
+    const b = blockFor(item);
+    if (b) (zone[item.id] === 'top' ? top : zone[item.id] === 'main' ? main : rest).push(b);
+  });
+  const stripAt = top.findIndex((b) => b.querySelector('.gb-strip'));
+  top.splice(stripAt + 1, 0, qa, ...pins);
+  return h(
+    'div',
+    { class: 'gb-rise gb-dash gb-dash--day' },
+    h('div', { class: 'gb-day-top' }, top.filter(Boolean)),
+    h('div', { class: 'gb-day-main' }, main),
+    h('div', { class: 'gb-day-rest' }, rest)
+  );
 }
 
 /* CSS columns split the widgets in source order, and a block can't break, so a
