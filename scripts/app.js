@@ -10791,6 +10791,7 @@ function starterPicker({ PACKS, planStarter }, preselect, onChange) {
   paint();
   return {
     body: h('div', null, chips, list),
+    picked: () => picked.size, // the first-run goal step reads it
     apply: async () => {
       const all = rows.filter((r) => r.it.kind !== 'note' && chosen.get(keyOf(r))).map((r) => r.it);
       if (!all.length) throw new Error(picked.size ? 'Nothing selected — switch at least one on.' : 'Pick a goal first.');
@@ -14054,7 +14055,8 @@ function paletteProps() {
     // palette.js shows cached note titles only to the account that cached them.
     userId: state.user && state.user.id,
     openNote: openNoteById,
-    runQuickAdd,
+    // The palette is main's: it always previews, Cancel writes nothing.
+    runQuickAdd: (t, b) => runQuickAdd(t, b, { preview: true }),
     recent: (state.user && state.user.uiPrefs && state.user.uiPrefs.paletteRecent) || [],
     saveRecent: (list) => saveUiPrefs({ paletteRecent: list }),
   };

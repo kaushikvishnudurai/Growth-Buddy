@@ -5860,7 +5860,7 @@ function ScreenMoney({
         Card({
           className: 'gb-money-card',
           children: [
-            h('div', { class: 'gb-sectiontitle' }, h('h3', null, 'Monthly budgets')),
+            h('div', { class: 'gb-sectiontitle' }, h('h2', null, 'Monthly budgets')),
             h(
               'div',
               { class: 'gb-money-intro' },
