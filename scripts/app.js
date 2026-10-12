@@ -11658,6 +11658,15 @@ const SCREENS = {
         goals: state.goals,
         goalProgress: effectiveGoalProgress(),
         onOpenGoals: () => setScreen('goals'),
+        // Home's day ruler opens Calendar on today, whatever month it was left on.
+        onOpenCalendar: () => {
+          const t = new Date();
+          state.calYear = t.getFullYear();
+          state.calMonth = t.getMonth();
+          state.selectedDate = dateKey(t.getFullYear(), t.getMonth(), t.getDate());
+          setScreen('calendar');
+        },
+        onAddReminder: openReminderSheet,
         wellness: state.wellness,
         phoneNight: state.phoneNight,
         foodSummary: state.calendarFoodByDate[state.selectedDate] || null,
