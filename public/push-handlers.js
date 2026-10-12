@@ -18,7 +18,9 @@ self.addEventListener('push', (event) => {
   const options = {
     body: data.body || '',
     icon: '/icons/icon-192.png',
-    badge: '/icons/icon-192.png',
+    // Android paints the badge as an alpha mask: the full-colour icon came out
+    // a solid white square. The seedling alone, on transparent.
+    badge: '/icons/badge-96.png',
     data: {
       url: data.url || '/',
       snooze: data.snooze || null,
@@ -55,7 +57,7 @@ self.addEventListener('notificationclick', (event) => {
       self.registration.showNotification('Couldn\u2019t ' + link.verb + ' \u2014 tap to open', {
         body: event.notification.body || '',
         icon: '/icons/icon-192.png',
-        badge: '/icons/icon-192.png',
+        badge: '/icons/badge-96.png',
         tag: event.notification.tag || undefined,
         data: { url: data.url || '/' },
       });

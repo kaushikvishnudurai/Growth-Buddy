@@ -13,7 +13,7 @@
    @capacitor/share, installed in ../Growth-Buddy-Mobile).
    ===================================================================== */
 
-import { saveFile } from './native.js';
+import { offerFile } from './save-file.js';
 
 const W = 1080;
 const H = 1920;
@@ -236,16 +236,18 @@ export async function renderStoryCard(card) {
 /**
  * Draw the card and offer it to the OS (native.js `saveFile`).
  *
- * @returns {Promise<'shared'|'saved'|'unsupported'>} — `shared` when a share
- *   sheet took it (Instagram lives in there; a dismissed sheet counts too),
- *   `saved` when the browser can only download, `unsupported` when the canvas
- *   itself failed. Rejects with a user-facing message when the app could not
- *   write or share the file.
+ * @returns {Promise<'shared'|'saved'|'unavailable'|'unsupported'>} — `shared` when the share
+ *   sheet took it (Instagram lives in there), `saved` when the browser can
+ *   only download, `unavailable` in the app when it can't be saved (already
+ *   toasted), `unsupported` when the canvas itself failed. Dismissing
+ *   the sheet also resolves `shared`; the platform doesn't tell us otherwise.
  */
 export async function shareStoryCard(card, { filename = 'growth-buddy.png', title = 'Growth Buddy' } = {}) {
   const blob = await renderStoryCard(card);
   if (!blob) return 'unsupported';
-  return saveFile(blob, filename, 'image/png', title);
+  // Share sheet, download, or (in the app, with no way to save) a toast that
+  // says so: save-file.js.
+  return offerFile(blob, filename, title);
 }
 
 /* Dev self-check: the layout maths that would silently produce an overlapping

@@ -1,6 +1,8 @@
 package com.growthbuddy.family;
 
 import com.growthbuddy.common.CurrentUser;
+import com.growthbuddy.common.RateLimiter;
+import com.growthbuddy.user.UserRepository;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
@@ -22,14 +24,21 @@ import org.springframework.web.bind.annotation.RestController;
 public class FamilyController {
 
     private final FamilyService service;
+    private final RateLimiter limiter;
 
-    public FamilyController(FamilyService service) {
+    public FamilyController(FamilyService service, RateLimiter limiter) {
         this.service = service;
+        this.limiter = limiter;
     }
 
     @GetMapping
     public FamilyResponse getFamily() {
         return service.getFamily(CurrentUser.id());
+    }
+
+    @PostMapping("/solo")
+    public FamilyResponse startSolo() {
+        return service.startSolo(CurrentUser.id());
     }
 
     @PostMapping("/members")
@@ -55,6 +64,8 @@ public class FamilyController {
 
     @GetMapping("/search")
     public List<UserSearchResult> search(@RequestParam String q) {
+        // Here, not in searchUsers: that runs read-only, and counting a hit writes.
+        if (q != null && q.trim().length() >= 2) UserRepository.throttleSearch(limiter, CurrentUser.id());
         return service.searchUsers(CurrentUser.id(), q);
     }
 

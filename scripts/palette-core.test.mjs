@@ -1,72 +1,106 @@
-// node scripts/palette-core.test.mjs — the command palette's ranking and highlight.
+// node scripts/palette-core.test.mjs — the command palette's ranking (palette-core.js).
 import assert from 'node:assert/strict';
-import {
-  fold,
-  matchScore,
-  rankItems,
-  groupRanked,
-  emptyResults,
-  pushRecent,
-  highlight,
-  RECENT_MAX,
-} from './palette-core.js';
+import { fold, matchScore, rankItems, groupRanked, emptyResults, pushRecent, RECENT_MAX } from './palette-core.js';
 
-assert.equal(fold('  Café   Run '), 'cafe run');
-assert.equal(fold(null), '');
+let failures = 0;
+function test(name, fn) {
+  try {
+    fn();
+    console.log('ok   ' + name);
+  } catch (err) {
+    failures++;
+    console.log('FAIL ' + name + '\n     ' + err.message);
+  }
+}
 
 const it = (key, kind, label, alt) => ({ key, kind, label, alt });
 
-// Prefix beats word start beats substring; alternates count.
-assert.equal(matchScore(it('a', 'task', 'Money talk'), 'mon'), 3);
-assert.equal(matchScore(it('a', 'task', 'Pay money'), 'mon'), 2);
-assert.equal(matchScore(it('a', 'task', 'Lemonade'), 'mon'), 1);
-assert.equal(matchScore(it('a', 'task', 'Walk'), 'mon'), 0);
-assert.equal(matchScore(it('a', 'screen', 'Report', ['Progress']), 'prog'), 3);
-assert.equal(matchScore(it('a', 'task', 'Buy oat milk'), 'milk buy'), 1, 'every word, any order');
-assert.equal(matchScore(it('a', 'task', 'Buy oat milk'), 'milk tea'), 0);
-assert.equal(matchScore(it('a', 'note', 'Résumé draft'), 'resume'), 3, 'accents fold');
-assert.equal(matchScore(it('a', 'task', 'x'), '   '), 0, 'empty query matches nothing');
+test('fold drops case, diacritics and extra space', () => {
+  assert.equal(fold('  Café   RÉSUMÉ '), 'cafe resume');
+  assert.equal(fold(null), '');
+});
 
-// Ranking: score first, then kind order, then recency, then label.
-const items = [
-  it('task:1', 'task', 'Lemon money'),
-  it('screen:money', 'screen', 'Money'),
-  it('act:exp', 'action', 'New expense', ['money', 'spent']),
-  it('note:1', 'note', 'Money ideas'),
-  it('note:2', 'note', 'Money goals'),
-];
-const ranked = rankItems(items, 'mon').map((x) => x.key);
-assert.deepEqual(ranked, ['act:exp', 'screen:money', 'note:2', 'note:1', 'task:1']);
-// A recent pick wins a tie inside its kind.
-assert.deepEqual(rankItems(items, 'mon', ['note:1']).map((x) => x.key).slice(2, 4), ['note:1', 'note:2']);
+test('prefix > word start > substring > none', () => {
+  const x = it('t:1', 'task', 'Buy oat milk');
+  assert.equal(matchScore(x, 'buy'), 3);
+  assert.equal(matchScore(x, 'oat'), 2);
+  assert.equal(matchScore(x, 'ilk'), 1);
+  assert.equal(matchScore(x, 'bread'), 0);
+  assert.equal(matchScore(x, ''), 0);
+});
 
-// Groups follow the first item of each kind, capped per group.
-const groups = groupRanked(rankItems(items, 'mon'), 1);
-assert.deepEqual(groups.map((g) => g.kind), ['action', 'screen', 'note', 'task']);
-assert.equal(groups[2].items.length, 1);
+test('diacritic- and case-insensitive both ways', () => {
+  assert.equal(matchScore(it('n:1', 'note', 'Crème brûlée recipe'), 'CREME'), 3);
+  assert.equal(matchScore(it('n:2', 'note', 'Creme brulee'), 'brûlée'), 2);
+});
 
-// Empty query: recent (still existing) then actions not already shown.
-const empty = emptyResults(items, ['note:1', 'gone:9']);
-assert.deepEqual(empty.map((g) => g.kind), ['recent', 'action']);
-assert.deepEqual(empty[0].items.map((x) => x.key), ['note:1']);
-assert.deepEqual(emptyResults(items, ['act:exp']).map((g) => g.kind), ['recent'], 'the only action is already in Recent');
-assert.deepEqual(emptyResults([], []), []);
+test('every word of a multi-word query must match, scored as a substring at best', () => {
+  const x = it('t:1', 'task', 'Buy oat milk');
+  assert.equal(matchScore(x, 'milk buy'), 1);
+  assert.equal(matchScore(x, 'milk bread'), 0);
+});
 
-// Recent: newest first, deduped, capped, junk dropped.
-assert.deepEqual(pushRecent(['b', 'a'], 'a'), ['a', 'b']);
-assert.deepEqual(pushRecent(null, 'a'), ['a']);
-assert.deepEqual(pushRecent([1, 'x'], 'a'), ['a', 'x']);
-assert.equal(pushRecent('abcdefghij'.split(''), 'z').length, RECENT_MAX);
+test('alternates count: Report found as "progress"', () => {
+  assert.equal(matchScore(it('s:report', 'screen', 'Report', ['Progress']), 'prog'), 3);
+});
 
-// Highlight: runs that rebuild the label, the hit on the match.
-const hl = (label, q) => highlight(label, q).map((r) => (r.hit ? '[' + r.text + ']' : r.text)).join('');
-assert.equal(hl('Ideas for the trip', 'trip'), 'Ideas for the [trip]');
-assert.equal(hl('Money', 'mon'), '[Mon]ey');
-assert.equal(hl('Lemon money', 'mon'), 'Lemon [mon]ey', 'a word start before an earlier substring');
-assert.equal(hl('Lemonade', 'mon'), 'Le[mon]ade');
-assert.equal(hl('Buy oat milk', 'milk buy'), '[Buy] oat [milk]');
-assert.equal(hl('Café run', 'cafe'), '[Café] run', 'accents fold and map back');
-assert.equal(hl('Walk', 'xyz'), 'Walk');
-assert.equal(hl('Walk', ''), 'Walk');
+test('rank: score first, then kind order, then recency, then label', () => {
+  const items = [
+    it('note:1', 'note', 'Water plants'),
+    it('act:water', 'action', 'Log water 250 ml'),
+    it('task:1', 'task', 'Call about the water bill'),
+    it('habit:1', 'habit', 'Water'),
+    it('habit:2', 'habit', 'Watercolour'),
+  ];
+  const keys = rankItems(items, 'water').map((i) => i.key);
+  // Prefix matches (two habits, the note) beat the word-start action and task;
+  // within a score kind order decides, and the two habits fall to label order.
+  assert.deepEqual(keys, ['habit:1', 'habit:2', 'note:1', 'act:water', 'task:1']);
+});
 
-console.log('palette-core: all checks passed');
+test('rank ties broken by recency (newest pick first)', () => {
+  const items = [it('task:a', 'task', 'Report draft'), it('task:b', 'task', 'Report review')];
+  assert.deepEqual(rankItems(items, 'report').map((i) => i.key), ['task:a', 'task:b']);
+  assert.deepEqual(rankItems(items, 'report', ['task:b']).map((i) => i.key), ['task:b', 'task:a']);
+});
+
+test('groups sit where their best item ranked, capped per group', () => {
+  const ranked = [
+    it('task:1', 'task', 'a'),
+    it('action:1', 'action', 'b'),
+    it('task:2', 'task', 'c'),
+    it('task:3', 'task', 'd'),
+  ];
+  const g = groupRanked(ranked, 2);
+  assert.deepEqual(g.map((x) => x.kind), ['task', 'action']);
+  assert.deepEqual(g[0].items.map((x) => x.key), ['task:1', 'task:2']);
+});
+
+test('empty query: live recent picks, then actions not already shown', () => {
+  const items = [
+    it('act:a', 'action', 'A'),
+    it('act:b', 'action', 'B'),
+    it('task:1', 'task', 'T'),
+  ];
+  const g = emptyResults(items, ['task:1', 'gone:9', 'act:a']);
+  assert.deepEqual(g.map((x) => x.kind), ['recent', 'action']);
+  assert.deepEqual(g[0].items.map((x) => x.key), ['task:1', 'act:a']);
+  assert.deepEqual(g[1].items.map((x) => x.key), ['act:b']);
+  assert.deepEqual(emptyResults(items, []).map((x) => x.kind), ['action']);
+});
+
+test('pushRecent: newest first, deduped, capped', () => {
+  let r = [];
+  for (const k of ['a', 'b', 'c', 'd', 'e', 'f']) r = pushRecent(r, k);
+  assert.equal(r.length, RECENT_MAX);
+  assert.deepEqual(r, ['f', 'e', 'd', 'c', 'b']);
+  assert.deepEqual(pushRecent(r, 'c'), ['c', 'f', 'e', 'd', 'b']);
+  assert.deepEqual(pushRecent(null, 'x'), ['x']);
+  assert.deepEqual(pushRecent(['y', 3, null], 'x'), ['x', 'y']);
+});
+
+if (failures) {
+  console.log('\n' + failures + ' failed');
+  process.exit(1);
+}
+console.log('\nall passed');

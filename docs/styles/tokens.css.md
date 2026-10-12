@@ -4,10 +4,12 @@ Single source of truth for color, type, spacing, radius, shadow, motion. **Nothi
 declare a raw hex.** Fonts: Bricolage Grotesque (display) + Hanken Grotesk (body/UI), self-hosted
 via `@fontsource` — plus Space Mono for `--font-mono`. Hanken is one variable latin file
 (`@fontsource-variable`, its own `@font-face` in tokens.css, `font-weight: 400 800` so a 900 still draws as 800).
+Dropping or renaming a face here: check the `rel=preload` links in `index.html`, which name three of these files.
 
 | Section |
 |---|
 | primitives (color ramps, type scale, spacing, radii, shadows, motion, layers) |
+| **SCRIMS** — a second theme-independent `:root` block |
 | **LIGHT THEME** — `:root, [data-theme="light"]` |
 | **DARK THEME** — `[data-theme="dark"]` (sets `color-scheme: dark`) |
 | **SEMANTIC TYPOGRAPHY ROLES** — only `.gb-stat` now; the unused `.gb-h1`…`.gb-mono` role classes were removed |
@@ -17,10 +19,10 @@ via `@fontsource` — plus Space Mono for `--font-mono`. Hanken is one variable 
 - **Color ramps** (`-50` → `-900`, though most stop at `-700`): `coral` (the brand ramp, full 50–900),
   `leaf`, `sun`, `iris`, `sky` (plus `--sky-800`, text on sky fills only), `bloom`.
 - **Semantic color:** `--bg`, `--bg-subtle`, `--fg1` / `--fg2` / `--fg3`, `--border`, `--border-strong`,
-  `--control-border` (the edge of a text field or an unchecked tick: 3:1 on surface / surface-2;
-  `--border-strong` is 1.5:1 and is for dividers only), `--ring` (focus; coral-600 in light,
-  coral-400 in dark), `--scrim` (the dim behind every overlay: dialogs, the More sheet, the
-  celebration), `--nav-bg`.
+  `--control-edge` (the edge of a field, an unchecked check, an off switch: 3:1+ on every canvas;
+  `--border-strong` is 1.4:1 and only separates content), `--ring` (focus; coral-600 in light,
+  coral-400 in dark; a field's focus is a `--ring` border plus a 35% `--ring` halo), `--nav-bg`.
+  `--scrim` lives in the SCRIMS block; the dark theme overrides it to a stronger 60% dim.
 - **Brand:** `--brand`, `--brand-hover`, `--brand-press`, `--brand-edge`, `--brand-soft`,
   `--brand-soft-fg`, `--fg-on-brand`, `--shadow-brand`, `--brand-ink`, `--brand-fill`,
   `--brand-fill-hover`. **`--brand` (#F97316) is 2.8:1 against white, so it never carries text.**
@@ -43,8 +45,15 @@ via `@fontsource` — plus Space Mono for `--font-mono`. Hanken is one variable 
   panels, which sit above a dimmed page. Three surfaces were already naming it before it existed.
 - **Motion:** `--dur-fast|base|slow`, `--ease-standard|out|bounce`.
 - **Layers:** `--z-sticky` 5 < `--z-ptr` 40 < `--z-popover` 50 (bell/profile) < `--z-sheet-backdrop` 60
-  < `--z-sheet` 61 < `--z-modal` 100 < `--z-loader` 150 < `--z-toast` 160 < `--z-celebrate` 200
-  < `--z-skip` 2000 < `--z-thinking` 2100. A new fixed layer picks a slot here, not a fresh number.
+  < `--z-sheet` 61 < `--z-modal` 100 < `--z-loader` 150 < `--z-celebrate` 200 < `--z-toast` 300
+  < `--z-skip` 2000 < `--z-thinking` 2100 (the AI edge glow). One scale, in the primitives block. A new
+  fixed layer picks a slot here, not a fresh number; only a component ordering its own children
+  (-1 / 1 / 2) stays literal. Toasts sit above the celebration so an Undo raised under one stays pressable.
+- **Scrims:** `--scrim` (dialog overlay, More sheet backdrop) and `--scrim-strong` (the
+  celebration, which also blurs). Dark in both themes, so they live outside the theme blocks.
+- **Use the scale, not the value.** A literal `8|12|16px` radius or a `0.75rem`-style size equal to
+  a token is a bug: premium raises every `--radius-*`, and a type-scale change can't reach a
+  literal. Off-scale sizes (0.8125rem and friends) are still literal; there is no token for them yet.
 
 ## Rules
 
@@ -62,6 +71,15 @@ via `@fontsource` — plus Space Mono for `--font-mono`. Hanken is one variable 
   `--surface-3` as a text ground (fg3 is ~4.0-4.2 on it), and the status solids
   (`--warning` 2.4, `--success` 3.5 in light) — they colour icons, so a component using one as
   text should switch to the `-soft-fg` or `--brand-ink`.
+- **Components are tested too** (second half of `contrast.test.mjs`). It reads every rule in
+  `styles/` and fails on (c) a `background` naming a light ramp step (`-50`/`-100`) with no
+  `[data-theme='dark']` twin of the same selector — ramps are not themed, so it stays a pastel
+  tile in dark mode (the reminder toast, the food total, the snoozed chips all did); (d) any rule
+  setting both `color` and `background` under 4.5:1 in a theme it applies to (3:1 when large, or
+  listed in `ICON_ONLY`), dark twins layered on, every gradient stop checked, premium rules merged
+  with their base; (e) the `{ bg: 'var(..)', fg: 'var(..)' }` tone maps in `scripts/`. For a tint
+  in both themes use a `-soft` / `-soft-fg` pair, or `color-mix(in srgb, var(--<semantic>) N%,
+  var(--surface))`. Unresolvable values (glass tokens, url()) are skipped, not guessed.
 - Until the user picks a theme, `loadTheme()` follows `prefers-color-scheme` and `followSystemTheme()` tracks it live; a pick (`gb.theme` / `ui_prefs.theme`) wins from then on.
 - The theme switch flips `data-theme` on the root; `scripts/app.js` `toggleTheme()` / `loadTheme()`
   own that, and the choice persists through `CacheStorage`.

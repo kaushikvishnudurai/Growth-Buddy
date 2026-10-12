@@ -37,14 +37,14 @@ public class HabitService {
 
     /**
      * Every icon the app can put on a habit: the DOMAIN icons in gb-kit.js, the
-     * FITNESS_PRESETS in app.js, and DataSeeder's. Anything else renders as an
+     * FITNESS_PRESETS in habit-dialogs.js, and DataSeeder's. Anything else renders as an
      * empty tile. ponytail: hand-kept mirror of those three lists; add here when
      * the habit form gains an icon.
      */
     static final Set<String> HABIT_ICONS = Set.of(
             "repeat", "dumbbell", "sparkles", "notebook-pen", "users-round", "trophy",
             "book-open", "briefcase", "footprints", "bike", "brain",
-            // HABIT_TEMPLATES in app.js; "ban" is a quit habit's own icon.
+            // HABIT_TEMPLATES in habit-dialogs.js; "ban" is a quit habit's own icon.
             "droplets", "leaf", "ban");
 
     private final HabitRepository habits;

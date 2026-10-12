@@ -21,6 +21,7 @@ import {
   habitTickable,
   ACTION_TYPES,
   serialAlarms,
+  notificationTarget,
 } from './push.js';
 import {
   SILENT_CHANNEL,
@@ -28,6 +29,8 @@ import {
   idsToCancel,
   versionedChannel,
   isStaleChannel,
+  nativePlugin,
+  deepLinkHash,
 } from './native.js';
 
 // Wednesday, 09:00 local.
@@ -589,3 +592,34 @@ console.log('push.test.mjs: notification buttons passed');
   assert.deepEqual(log, ['sync A', 'sync B', 'cancel']);
 }
 console.log('push.test.mjs: alarm serialization passed');
+/* ---- a tap on the card, a link into the app, a plugin the build lacks ---- */
+{
+  assert.deepEqual(notificationTarget({ kind: 'reminder', id: 'r1', day: '2026-09-17' }), {
+    screen: 'calendar',
+    day: '2026-09-17',
+  });
+  assert.deepEqual(notificationTarget({ kind: 'reminder', id: 'r1', day: null }), { screen: 'calendar', day: null });
+  assert.equal(notificationTarget({ kind: 'habit', id: 'h1' }).screen, 'habits');
+  assert.equal(notificationTarget({ kind: 'water' }).screen, 'home');
+  assert.equal(notificationTarget({ kind: 'focus' }).screen, 'focus');
+  assert.equal(notificationTarget(undefined), null, 'the push test has no extra: just open the app');
+
+  // A measured habit has no Done button but its tap must still know where to go.
+  const [run] = upcomingHabitAlarms([{ id: 'h2', name: 'Run', reminderTime: '20:00', metric: 'km' }], NOW, 1);
+  assert.equal(run.actionTypeId, undefined);
+  assert.equal(run.extra.kind, 'habit');
+
+  assert.equal(deepLinkHash('https://growth-buddy-cu63.onrender.com/#/circle?join=AB12'), '#/circle?join=AB12');
+  assert.equal(deepLinkHash('https://growth-buddy-cu63.onrender.com/'), null, 'no route: just open the app');
+  assert.equal(deepLinkHash('not a url'), null);
+
+  const saved = globalThis.window;
+  const nativePromise = () => Promise.resolve({});
+  globalThis.window = { Capacitor: { nativePromise, PluginHeaders: [{ name: 'App' }] } };
+  assert.ok(nativePlugin('App'), 'a plugin the binary lists gets a proxy');
+  assert.equal(nativePlugin('SpeechRecognition'), null, 'one it does not list is null, so the mic hides');
+  globalThis.window = { Capacitor: { nativePromise } };
+  assert.ok(nativePlugin('SpeechRecognition'), 'no header list at all: assume present, as before');
+  globalThis.window = saved;
+}
+console.log('push.test.mjs: taps, deep links and plugin presence passed');

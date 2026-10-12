@@ -3,6 +3,9 @@ package com.growthbuddy.user;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import com.growthbuddy.common.ApiException;
+import com.growthbuddy.common.RateLimiter;
+import org.springframework.http.HttpStatus;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -76,12 +79,19 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     /* Nor an account scheduled for deletion (User.isPendingDeletion): for its
        7-day grace period it is gone to everyone else, so it is not found, not
        browsable and not invitable. All three discovery queries filter it. */
-    @Query("select u from User u where lower(u.displayName) like lower(concat('%', :q, '%')) "
+    /* q is matched LITERALLY (likeEscape): unescaped, "_" was a wildcard that
+       matched every account. "!" is the escape character rather than "\\",
+       which MySQL also reads as a string-literal escape. */
+    default List<User> search(String q, UUID excludeId, Pageable pageable) {
+        return searchByName(likeEscape(q), excludeId, pageable);
+    }
+
+    @Query("select u from User u where lower(u.displayName) like lower(concat('%', :q, '%')) escape '!' "
             + "and u.id <> :excludeId "
             + "and u.emailVerified = true "
             + "and u.deletionRequestedAt is null "
             + "order by u.displayName")
-    List<User> search(@Param("q") String q, @Param("excludeId") UUID excludeId, Pageable pageable);
+    List<User> searchByName(@Param("q") String q, @Param("excludeId") UUID excludeId, Pageable pageable);
 
     @Query("select u from User u where u.id <> :excludeId and u.emailVerified = true "
             + "and u.deletionRequestedAt is null "
@@ -100,14 +110,42 @@ public interface UserRepository extends JpaRepository<User, UUID> {
             // q is a name fragment, not an id. Name or exact id only, as in search():
             // an email or phone match tells the caller that contact has an account.
         }
-        return searchForFamily(q, idMatch, excludeId, pageable);
+        return searchForFamily(likeEscape(q), idMatch, excludeId, pageable);
     }
 
     @Query("select u from User u where (u.id = :idMatch "
-            + "or lower(u.displayName) like lower(concat('%', :q, '%'))) and u.id <> :excludeId "
+            + "or lower(u.displayName) like lower(concat('%', :q, '%')) escape '!') and u.id <> :excludeId "
             + "and u.emailVerified = true "
             + "and u.deletionRequestedAt is null "
             + "order by u.displayName")
     List<User> searchForFamily(@Param("q") String q, @Param("idMatch") UUID idMatch,
             @Param("excludeId") UUID excludeId, Pageable pageable);
+
+    /** {@code q} with LIKE's wildcards (and the escape character itself) made literal. */
+    static String likeEscape(String q) {
+        return q.replace("!", "!!").replace("%", "!%").replace("_", "!_");
+    }
+
+    /**
+     * {@code alice@example.com} becomes {@code a•••e}: enough to tell two people
+     * with one display name apart, and no domain, which with a short local part
+     * gave most of the address away.
+     */
+    static String maskEmail(String email) {
+        if (email == null) return null;
+        int at = email.indexOf('@');
+        String local = at >= 0 ? email.substring(0, at) : email;
+        if (local.length() <= 1) return "\u2022\u2022\u2022";
+        return local.charAt(0) + "\u2022\u2022\u2022" + local.charAt(local.length() - 1);
+    }
+
+    /** The people searches (Circle's /search and /browse, Family's) share one per-user budget. */
+    int SEARCHES_PER_WINDOW = 60;
+    long SEARCH_WINDOW_MS = 5 * 60_000L;
+
+    static void throttleSearch(RateLimiter limiter, UUID userId) {
+        if (!limiter.allow("user-search:" + userId, SEARCHES_PER_WINDOW, SEARCH_WINDOW_MS)) {
+            throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, "That's a lot of searches. Try again in a few minutes.");
+        }
+    }
 }

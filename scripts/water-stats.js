@@ -1,6 +1,12 @@
-// Its own module so push.js (boot chunk) can use it without pulling insights.js
-// (Report-only, lazy) into the boot chunk with it.
-import { localKey } from './dates.js';
+/* Per-hour water stats, shared by push.js (boot: the reminder's usual hours)
+   and insights.js (Report: the water-gap finding). Its own module because a
+   static import of insights.js from a boot module hoists the whole Insights
+   engine into the boot chunk. Pure, no imports. */
+
+const localKey = (d) => {
+  const p = (n) => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+};
 
 /** Per local hour, the share of logged days with a glass in it. */
 export function drinkRateByHour(times) {

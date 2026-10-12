@@ -82,4 +82,5 @@ assert.equal(
 );
 assert.equal(suggestCategory('Lunch at cafe'), 'food');
 
+
 console.log('money-category.test.mjs: ok');

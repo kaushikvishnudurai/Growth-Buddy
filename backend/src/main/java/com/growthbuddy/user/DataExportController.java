@@ -23,7 +23,8 @@ import org.springframework.web.bind.annotation.RestController;
  * <p>Driven by {@link AuthService#USER_OWNED_TABLES}, the same list account
  * deletion purges (and {@code AccountDeletionCoverageTest} keeps complete), so a
  * new user-owned table reaches the export the moment it reaches deletion. Each
- * table is read generically with {@code WHERE user_id = ?}; the rows go out as
+ * table is read generically with {@code WHERE user_id = ?}, plus
+ * {@link #RELATED_QUERIES} for rows owned through a parent; the rows go out as
  * the database holds them.
  *
  * <p>Secrets stay home: password hashes, session token hashes and every OTP table
@@ -50,6 +51,49 @@ public class DataExportController {
     private static final Set<String> SECRET_COLUMNS = Set.of(
             "p256dh", "auth", "auth_key", "p256dh_key", "password_hash", "token_hash", "code_hash");
 
+    /**
+     * Purged children that are other members' rows, not this account's: kudos and
+     * replies others left under its posts. Its own kudos and replies go out with
+     * USER_OWNED_TABLES.
+     */
+    static final Set<String> NOT_EXPORTED_CHILDREN = Set.of("circle_post_reactions", "circle_post_comments");
+
+    /**
+     * Rows this account owns through a parent or a relationship column, one bound
+     * parameter each: the purge deletes them too, and a portability copy without
+     * every Buddy chat message, mentorship thread or the account's own family
+     * profile was missing the most personal data; an owner's household (families
+     * and AuthService.FAMILY_OWNED_TABLES) goes with it. Built from
+     * {@link AuthService#CHILD_TABLES} so a new child reaches both at once;
+     * {@code AccountDeletionCoverageTest} holds the two lists together.
+     */
+    static final Map<String, String> RELATED_QUERIES = relatedQueries();
+
+    private static Map<String, String> relatedQueries() {
+        Map<String, String> q = new LinkedHashMap<>();
+        for (String[] cd : AuthService.CHILD_TABLES) {
+            if (NOT_EXPORTED_CHILDREN.contains(cd[0])) continue;
+            q.put(cd[0], "SELECT * FROM " + cd[0] + " WHERE " + cd[1]
+                    + " IN (SELECT id FROM " + cd[2] + " WHERE user_id = ?)");
+        }
+        // Both ends of a mentorship own it (and its thread); the family row is the
+        // account's own profile in a family, wherever that family's owner is.
+        q.put("mentorship_requests", "SELECT * FROM mentorship_requests WHERE ? IN (from_user_id, to_user_id)");
+        q.put("mentorship_messages", "SELECT * FROM mentorship_messages WHERE link_id IN"
+                + " (SELECT id FROM mentorship_requests WHERE ? IN (from_user_id, to_user_id))");
+        // An owner's household is theirs too: the families row, the members they
+        // added (no account of their own, linked_user_id NULL) and everything the
+        // family holds. Members of a family someone else owns get their own row only.
+        String owned = " IN (SELECT id FROM families WHERE owner_user_id = ?)";
+        q.put("families", "SELECT * FROM families WHERE owner_user_id = ?");
+        for (String t : AuthService.FAMILY_OWNED_TABLES) {
+            if (!t.equals("family_members")) q.put(t, "SELECT * FROM " + t + " WHERE family_id" + owned);
+        }
+        q.put("family_members", "SELECT * FROM family_members WHERE ? IN (linked_user_id,"
+                + " (SELECT f.owner_user_id FROM families f WHERE f.id = family_members.family_id))");
+        return q;
+    }
+
     private final JdbcTemplate jdbc;
 
     public DataExportController(JdbcTemplate jdbc) {
@@ -70,21 +114,25 @@ public class DataExportController {
         Map<String, Object> tables = new LinkedHashMap<>();
         for (String t : AuthService.USER_OWNED_TABLES) {
             if (SECRET_TABLES.contains(t)) continue;
-            try {
-                tables.put(t, jdbc.queryForList("SELECT * FROM " + t + " WHERE user_id = ?", id)
-                        .stream().map(DataExportController::scrub).toList());
-            } catch (RuntimeException e) {
-                // A table missing from this database (a legacy schema) must not sink
-                // the whole export; say which one rather than pretend it was empty.
-                log.warn("export: skipped {} for {}: {}", t, id, e.getMessage());
-                tables.put(t, Map.of("error", "unavailable"));
-            }
+            put(tables, t, "SELECT * FROM " + t + " WHERE user_id = ?", id);
         }
+        RELATED_QUERIES.forEach((t, sql) -> put(tables, t, sql, id));
         out.put("tables", tables);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"growth-buddy-export.json\"")
                 .header(HttpHeaders.CACHE_CONTROL, "no-store")
                 .body(out);
+    }
+
+    private void put(Map<String, Object> tables, String t, String sql, String id) {
+        try {
+            tables.put(t, jdbc.queryForList(sql, id).stream().map(DataExportController::scrub).toList());
+        } catch (RuntimeException e) {
+            // A table missing from this database (a legacy schema) must not sink
+            // the whole export; say which one rather than pretend it was empty.
+            log.warn("export: skipped {} for {}: {}", t, id, e.getMessage());
+            tables.put(t, Map.of("error", "unavailable"));
+        }
     }
 
     private static Map<String, Object> scrub(Map<String, Object> row) {

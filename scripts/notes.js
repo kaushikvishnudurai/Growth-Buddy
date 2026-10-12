@@ -1185,7 +1185,7 @@ function ScreenNotes({
   onCounts,
   onDeleteForever,
   userId,
-  openComposer: openOnMount,
+  openOnMount = null,
 }) {
   if (liveScreen && liveScreen.userId === userId && liveScreen.node.isConnected) {
     liveScreen.reuse();
@@ -1450,8 +1450,13 @@ function ScreenNotes({
     composer.classList.add('is-open');
     editor.focus();
   }
-  // Quick add's Note row: straight into the composer, once it is on the page.
-  if (openOnMount) setTimeout(openComposer, 60);
+  // 'new' (+ then Note, or the palette's New note): open and focused on arrival,
+  // once the screen is in the page, without waiting for the list. A note id
+  // waits for the list (below).
+  if (openOnMount === 'new') {
+    openOnMount = null;
+    requestAnimationFrame(() => composer.isConnected && openComposer());
+  }
   function closeComposer() {
     composer.classList.remove('is-open');
     dropDraft();
@@ -1589,7 +1594,7 @@ function ScreenNotes({
         )
       );
     }
-    const titleEl = note.title ? h('h3', { class: 'gb-note-card-title' }, note.title) : null;
+    const titleEl = note.title ? h('h2', { class: 'gb-note-card-title' }, note.title) : null;
     const snippetEl = h('p', { class: 'gb-note-card-snippet', hidden: true });
     if (titleEl) card.appendChild(titleEl);
     if (preview) card.appendChild(bodyEl);
@@ -2360,6 +2365,16 @@ function ScreenNotes({
         paint();
         paintViews();
         refreshCounts();
+        // The command palette's pick (a note id, or 'new'), once the list is in.
+        if (openOnMount) {
+          const want = openOnMount;
+          openOnMount = null;
+          if (want === 'new') openComposer();
+          else {
+            const n = notes.find((x) => String(x.id) === String(want));
+            if (n) openNote(n, cardOf(n.id));
+          }
+        }
       })
       .catch((err) => {
         if (forView !== view) return;

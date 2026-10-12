@@ -1,38 +1,70 @@
 package com.growthbuddy.common;
 
 import jakarta.servlet.http.HttpServletRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
 
 /**
- * Resolves the real client IP.
+ * Resolves the real client IP, and whether the request arrived over HTTPS.
  *
- * <p>{@code X-Forwarded-For} is only honored when {@code trustProxy} is true —
- * i.e. the app runs behind a known reverse proxy / load balancer that sets it.
- * Trusting the header unconditionally lets any client spoof a fresh IP per
- * request and slip past per-IP rate limiting, so we default to the socket peer.
+ * <p>Forwarded headers are only honored when {@code growthbuddy.trust-proxy}
+ * ({@code TRUST_PROXY}) is on, i.e. the app runs behind a reverse proxy that
+ * sets them. Off, the socket peer is the client, so a spoofed header changes
+ * nothing.
  *
- * <p>Even then only the RIGHT-most entry counts: a proxy appends the peer it saw
- * to whatever the client sent, so every entry to its left is the client's own
- * claim. The left-most one, used before, let anyone pick a fresh IP per request
- * (CRB-9 / SEC-6).
+ * <p>On, the client is the entry {@code trusted-proxy-hops} ({@code TRUST_PROXY_HOPS},
+ * default 1) from the RIGHT of {@code X-Forwarded-For}. Each proxy APPENDS the
+ * peer it saw, so the left end is whatever the client chose to send; reading it
+ * handed every request a fresh, attacker-picked rate-limit bucket. The rightmost
+ * entry was written by our own proxy. With N proxies in a row (a CDN, then a load
+ * balancer), each appends one, so the client is N from the right.
+ *
+ * <p>To check the hop count on a new host, set
+ * {@code logging.level.com.growthbuddy.common.ClientIp=DEBUG}: every resolve logs
+ * the raw header next to the address it picked.
  */
-public final class ClientIp {
+@Component
+public class ClientIp {
 
-    private ClientIp() {
+    private static final Logger log = LoggerFactory.getLogger(ClientIp.class);
+
+    private final boolean trustProxy;
+    private final int hops;
+
+    public ClientIp(@Value("${growthbuddy.trust-proxy:false}") boolean trustProxy,
+                    @Value("${growthbuddy.trusted-proxy-hops:1}") int hops) {
+        this.trustProxy = trustProxy;
+        this.hops = Math.max(1, hops);
     }
 
-    // ponytail: assumes exactly one trusted hop (Render, Caddy). Behind two
-    // (a CDN in front of Render) this yields the CDN's address; count hops from
-    // the right then.
-    public static String resolve(HttpServletRequest req, boolean trustProxy) {
-        if (trustProxy) {
-            String xf = req.getHeader("X-Forwarded-For");
-            if (xf != null && !xf.isBlank()) {
-                String last = xf.substring(xf.lastIndexOf(',') + 1).trim();
-                if (!last.isEmpty()) {
-                    return last;
-                }
-            }
-        }
-        return req.getRemoteAddr();
+    public String resolve(HttpServletRequest req) {
+        if (!trustProxy) return req.getRemoteAddr();
+        // Every header line, in order: a proxy may append its own line instead of
+        // extending the first, and getHeader() reads only the first (the client's).
+        java.util.Enumeration<String> lines = req.getHeaders("X-Forwarded-For");
+        String xf = lines == null ? null : String.join(",", java.util.Collections.list(lines));
+        String ip = pick(xf, hops);
+        if (log.isDebugEnabled()) log.debug("X-Forwarded-For=\"{}\" peer={} -> {}", xf, req.getRemoteAddr(), ip);
+        return ip != null ? ip : req.getRemoteAddr();
+    }
+
+    /** True when the request reached the edge over HTTPS (directly, or per the trusted proxy). */
+    public boolean isHttps(HttpServletRequest req) {
+        if (req.isSecure()) return true;
+        return trustProxy && "https".equalsIgnoreCase(req.getHeader("X-Forwarded-Proto"));
+    }
+
+    /**
+     * The entry {@code hops} from the right of a comma-separated forwarded list, or
+     * null when there is none. Fewer entries than hops means only our own proxies
+     * wrote it, so the leftmost one is the client. Pure, for the tests.
+     */
+    static String pick(String xff, int hops) {
+        if (xff == null || xff.isBlank()) return null;
+        String[] parts = xff.split(",");
+        String ip = parts[Math.max(0, parts.length - hops)].trim();
+        return ip.isEmpty() ? null : ip;
     }
 }

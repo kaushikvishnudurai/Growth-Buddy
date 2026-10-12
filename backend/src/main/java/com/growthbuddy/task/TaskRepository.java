@@ -98,9 +98,14 @@ interface TaskHistoryRepository extends JpaRepository<TaskHistory, UUID> {
 
     long countByUserIdAndTaskId(UUID userId, UUID taskId);
 
-    /** Per task: {taskId, completion count, last completion}, for the whole list in one read. */
-    @Query("select h.taskId, count(h), max(h.changedAt) from TaskHistory h where h.userId = :userId group by h.taskId")
-    List<Object[]> statsByTask(@Param("userId") UUID userId);
+    /**
+     * {@code [taskId, completionCount, lastCompletedAt]} for each of {@code ids}
+     * that has history: one query for the whole task list instead of one per
+     * task. Covered by {@code ix_task_hist_user_task_time}.
+     */
+    @Query("select h.taskId, count(h), max(h.changedAt) from TaskHistory h "
+            + "where h.userId = :userId and h.taskId in :ids group by h.taskId")
+    List<Object[]> summarize(@Param("userId") UUID userId, @Param("ids") java.util.Collection<UUID> ids);
 
     @Modifying
     @Query("delete from TaskHistory h where h.userId = :userId and h.taskId = :taskId")

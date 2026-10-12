@@ -17,9 +17,9 @@
    on one scale. Exported functions are pure so they can be unit-checked with
    plain `node` (see insights.test.mjs).
    ===================================================================== */
+import { drinkRateByHour } from './water-stats.js';
 import { fmtIn, homeCur, catOf } from './money-core.js'; // pure, no DOM: money's own formatter + tag labels
 import { localKey } from './dates.js';
-import { drinkRateByHour } from './water-hours.js';
 
 // Ordinal value maps for the categorical check-ins.
 const ORD = { low: 1, okay: 2, good: 3, great: 4, medium: 2, high: 3, calm: 1, normal: 2 };
@@ -959,6 +959,8 @@ export function hiddenSubscription(m, today) {
   return null;
 }
 
+export { drinkRateByHour };
+
 /** The longest stretch of waking hours with almost no water. */
 export function waterGap(times) {
   const { days, rate } = drinkRateByHour(times);
@@ -1132,5 +1134,3 @@ export function insightProgress(wellness) {
 function cap(s) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
-
-export { drinkRateByHour };

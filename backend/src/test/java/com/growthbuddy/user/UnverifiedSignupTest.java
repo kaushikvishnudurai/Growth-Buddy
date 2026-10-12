@@ -87,7 +87,11 @@ class UnverifiedSignupTest {
     void unverifiedSignInSendsACodeAndSaysSo() {
         assertThatThrownBy(() -> auth.login(new LoginRequest(EMAIL, PASSWORD), null))
                 .isInstanceOf(ApiException.class)
-                .extracting(e -> ((ApiException) e).getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
+                .satisfies(e -> {
+                    assertThat(((ApiException) e).getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
+                    // FN-14: the client opens the code screen on this code only.
+                    assertThat(((ApiException) e).getCode()).isEqualTo("email_unverified");
+                });
         verify(mail).sendOtp(eq(EMAIL), any(), anyString(), eq("verification"));
         verify(sessions, never()).issue(any(), any());
     }

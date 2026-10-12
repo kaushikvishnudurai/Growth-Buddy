@@ -1,7 +1,7 @@
 /* Quick add's pure pieces: how a spoken expense or income becomes a Money entry
    (currency, date, account), and the words its preview row shows. No DOM, no
    state: app.js passes the Money document in. Tested by quick-add.test.mjs. */
-import { homeCur, fxRate, fmtIn } from './money-core.js';
+import { homeCur, fxRate, fmtIn, accCurrency } from './money-core.js';
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -47,7 +47,9 @@ export function currencySymbol(iso) {
    bank or wallet (openAddIncome); either falls back to the first open account,
    as accountPicker does. null when there are no accounts. */
 export function defaultAccount(money, kind) {
-  const open = ((money && money.accounts) || []).filter((a) => !a.archived);
+  // Home-currency accounts only: the sentence's amount is in the home currency
+  // (a foreign one is converted first, quickMoney), so a $ account would book it wrong.
+  const open = ((money && money.accounts) || []).filter((a) => !a.archived && !accCurrency(money, a.id));
   if (!open.length) return null;
   const last = money.settings && money.settings.lastAccountId;
   if (kind === 'expense' && open.some((a) => a.id === last)) return last;

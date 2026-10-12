@@ -40,7 +40,7 @@ class TaskListTest {
         overdue.setDueAt(Instant.now().minusSeconds(3600));
         Instant last = Instant.parse("2026-10-01T09:00:00Z");
         when(repo.findByUserIdAndDeletedAtIsNullOrderByCreatedAtAsc(USER)).thenReturn(List.of(a, b, overdue));
-        when(history.statsByTask(USER)).thenReturn(List.<Object[]>of(new Object[] {a.getId(), 3L, last}));
+        when(history.summarize(any(), any())).thenReturn(List.<Object[]>of(new Object[] {a.getId(), 3L, last}));
 
         List<TaskResponse> out = service.list(USER);
 

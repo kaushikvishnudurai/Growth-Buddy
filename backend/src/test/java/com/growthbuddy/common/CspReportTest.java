@@ -1,40 +1,34 @@
 package com.growthbuddy.common;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
-/** SEC-3: the Report-Only CSP named no collector, so nobody could ever watch it. */
+/**
+ * SEC-3: the Report-Only CSP named no collector, so nobody could ever watch it.
+ * main's CspReportController won the merge (report-uri only; the report-to batch
+ * shape was ours and was dropped), so this pins what both sides agree on.
+ */
 class CspReportTest {
-
-    private final ObjectMapper json = new ObjectMapper();
 
     @Test
     void thePolicyNamesTheCollectorAndStaysReportOnly() throws Exception {
         MockHttpServletRequest req = new MockHttpServletRequest("GET", "/");
         MockHttpServletResponse res = new MockHttpServletResponse();
-        new SecurityHeadersFilter(false, false).doFilter(req, res, new MockFilterChain());
+        new SecurityHeadersFilter(new ClientIp(false, 1), false, "").doFilter(req, res, new MockFilterChain());
         assertThat(res.getHeader("Content-Security-Policy")).isNull();
-        assertThat(res.getHeader("Content-Security-Policy-Report-Only"))
-                .contains("report-uri /api/csp-report").contains("report-to csp");
-        assertThat(res.getHeader("Reporting-Endpoints")).isEqualTo("csp=\"/api/csp-report\"");
+        assertThat(res.getHeader("Content-Security-Policy-Report-Only")).contains("report-uri /api/csp-report");
     }
 
     @Test
-    void bothReportShapesBecomeOneClippedLineEach() throws Exception {
-        var legacy = CspReportController.summarize(json.readTree("""
-                {"csp-report":{"document-uri":"https://x/","violated-directive":"script-src",
-                 "blocked-uri":"https://evil.example/a.js\\nforged","line-number":3}}"""));
-        assertThat(legacy).singleElement().asString()
-                .contains("directive=script-src").contains("evil.example").doesNotContain("\n");
-
-        var batch = CspReportController.summarize(json.readTree("""
-                [{"type":"csp-violation","body":{"effectiveDirective":"img-src","blockedURL":"data"}},
-                 {"type":"csp-violation","body":"not an object"}]"""));
-        assertThat(batch).singleElement().asString().contains("directive=img-src");
+    void aForgedNewlineInAReportDoesNotThrow() {
+        assertThatCode(() -> new CspReportController().report("""
+                {"csp-report":{"document-uri":"https://x/","effective-directive":"script-src",
+                 "blocked-uri":"https://evil.example/a.js\\nforged","line-number":3}}"""))
+                .doesNotThrowAnyException();
     }
 }

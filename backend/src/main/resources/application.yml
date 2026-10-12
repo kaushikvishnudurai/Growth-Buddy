@@ -5,6 +5,14 @@ server:
   # rejects the request ("Request header is too large"). The frontend also keeps
   # cookies to a small allowlist — this is the belt to that suspenders.
   max-http-request-header-size: 65536
+  # Render serves straight from this Tomcat (no Caddy in front), so nothing else
+  # gzips the boot chunk, the CSS or /api/money's ledger. text/event-stream is
+  # deliberately NOT listed: the mentor's SSE reply must reach the client a
+  # delta at a time, and a gzip stream buffers until it has a block to emit.
+  compression:
+    enabled: true
+    mime-types: application/json,application/javascript,text/javascript,text/css,text/html,text/plain,image/svg+xml,application/manifest+json
+    min-response-size: 1KB
   tomcat:
     threads:
       # Worker threads. Sized for the 512MB instance this actually deploys to,
@@ -101,11 +109,13 @@ management:
 
 # Cross-origin so the static file:// / localhost frontend can call the API.
 growthbuddy:
-  # true ONLY behind a proxy that appends X-Forwarded-For (Render, Caddy): per-IP
-  # limits, session IPs and HSTS then use its right-most entry (ClientIp). Bound
-  # here so the documented TRUST_PROXY works; before, only the relaxed-binding
-  # name GROWTHBUDDY_TRUST_PROXY did, and .env.example's TRUST_PROXY bound nothing.
+  # Behind a reverse proxy (Render, Caddy) every socket peer is the proxy, so per-IP
+  # rate limits were one bucket for all users until this was bound: the code read
+  # this key and nothing mapped TRUST_PROXY onto it. On, the client is read from
+  # X-Forwarded-For, trusted-proxy-hops entries from the RIGHT (ClientIp): each
+  # proxy appends, and the left end is whatever the client sent.
   trust-proxy: ${TRUST_PROXY:false}
+  trusted-proxy-hops: ${TRUST_PROXY_HOPS:1}
   cors:
     # Comma-separated origins; default is local development only.
     # Override via CORS_ALLOWED_ORIGINS in deployment.

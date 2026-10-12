@@ -1,53 +1,85 @@
-# Project map (overhaul 2026-10-11, build 92)
+# Project map
 
-This map is the overhaul's starting index. It does not repeat **CODEMAP.md** (every small module,
-every endpoint, repo traps) or the per-file docs listed in **CLAUDE.md**; it points at them.
+Snapshot of build 88 (`main` @ 367ed2a, 2026-10-11). This file is the one-page overview and the
+feature scorecard. File-by-file detail and the full endpoint list live in
+[CODEMAP.md](../CODEMAP.md); per-module docs are listed in [CLAUDE.md](../CLAUDE.md). Neither is
+repeated here.
 
-## Shape
+## Product
 
-| Layer | What | Where to read |
-|---|---|---|
-| Shell, state, routing, API client, auth, settings | One module-scope `state`, `render()` rebuilds the screen; hash routes (`#home`, `#money`, `#/circle?join=`) parsed by `screenFromHash()`, `hashchange` listener, `setScreen()` | `scripts/app.js` (16k lines) → `docs/scripts/app.js.md` |
-| Screens (registry `SCREENS` in app.js) | home, report, achievements, health, focus, habits, food, summary, calendar, mentor (Buddy chat), circle, family, money, notes, goals (+ settings, auth views) | per-screen docs in `docs/scripts/` |
-| UI kit | `h()` hyperscript, `Card`, `Icon` (Lucide subset in `icons.js`), nav (`NAV_CATALOG`) | `scripts/gb-kit.js` → `docs/scripts/gb-kit.js.md` |
-| Pure logic (tested with plain-assert `*.test.mjs`) | recurrence, outbox, money-core/ledger/merge, insights, review, habit-stats, nudges, day-plan, nutrition, notes-core, timer-math, i18n, health-logic | CODEMAP "Frontend" table |
-| Styles | tokens → app.css (15.8k lines) → module CSS → premium.css skin | `docs/styles/*.md` |
-| Storage | No localStorage: in-memory map + cookie allowlist (`gb.token`, `gb.session`, theme…) + Cache API `gb-store-v2` | `scripts/cache-storage.js` |
-| Offline | Workbox precache (vite-plugin-pwa), NetworkFirst API GETs, outbox replay with Idempotency-Key | `vite.config.js`, `scripts/outbox.js` |
-| Realtime | STOMP over a native WebSocket (`/ws`), notification + family + mentorship frames | app.js `connectWebSocket` |
-| Backend | Spring Boot, package per feature (26 packages), MySQL locally, TiDB in prod (`ddl-auto: none`) | CODEMAP "Backend" + endpoint index |
-| AI | Claude via Cloudflare AI Gateway (OpenAI wire format), every feature has a no-AI fallback | `mentor/OpenAIClient`, CODEMAP |
-| Build | `vite build` → `dist/`; `BUILD` int in `vite.config.js`; bundle budget `scripts/bundle-budget.mjs`; Docker image serves API + `dist/` | `DEPLOYING.md` |
-| App wrapper | Capacitor 8 in `../Growth-Buddy-Mobile`: `npm run sync` builds this repo and copies `dist/` → `www/`; `androidScheme: https` (origin `https://localhost`), CapacitorHttp on (no CORS), plugins: app, browser, device, local-notifications, splash-screen, status-bar; native helpers no-op on web (`scripts/native.js`) | `../Growth-Buddy-Mobile/MOBILE.md` |
-| CI | lint, every `scripts/*.test.mjs`, build + bundle budget, `./mvnw test` (205), npm audit, gitleaks, CodeQL | `.github/workflows/ci.yml` |
+**Growth Buddy**: a personal "life OS" for one person and their family. Habits, tasks, goals,
+reminders, focus timer, food and water, sleep and mood, money, notes, a family meal planner, a
+social accountability circle, mentorship, and an AI companion ("Buddy") that reads all of it.
+Built for an Indian audience first (INR, UPI, Account Aggregator bank feed, WhatsApp delivery).
 
-## Features and completion
+## Stack and how the pieces load
 
-Provisional figures from code signals (tests, docs, `ponytail:` deferrals, `bugs.txt` history).
-The Step 2 audits replace each with a measured figure and evidence in `docs/audit/`.
+| Layer | What |
+|---|---|
+| Web | Vanilla JS ES modules, no framework. `h()` hyperscript in `gb-kit.js`. Vite 5 build, `vite-plugin-pwa` (Workbox precache, NetworkFirst for API GETs). ~70k lines in `scripts/` + `styles/`. |
+| State | One module-scope `state` in `scripts/app.js`; `render()` rebuilds the screen. Money, Family, Circle, Mentor repaint their own subtrees. |
+| Routing | Hash routes (`#home`, `#money`, ...) mapped by `SCREENS` in `app.js`. Lazy screens are dynamic imports. |
+| Storage | `cache-storage.js`: in-memory map + small cookie allowlist + Cache API. Offline writes go through `outbox.js` with idempotency keys. No localStorage. |
+| Backend | Spring Boot 3 + MySQL (TiDB in prod, `ddl-auto: none`). Package per feature. Opaque bearer tokens. |
+| Realtime | STOMP over SockJS (`/ws`) for the bell, family and mentorship events. |
+| AI | Claude via a Cloudflare AI Gateway (OpenAI wire format). Every AI route has a non-AI fallback. |
+| Delivery | In-app bell, Web Push (VAPID), WhatsApp Cloud API, on-device alarms in the app. |
+| App | `../Growth-Buddy-Mobile`: Capacitor 6 wrapper. `npm run sync` there copies this repo's `dist/` into `www/`. Same JS; `native.js` holds the Capacitor-only branches (no service worker in the app). |
+| Hosting | Render (one Docker image serves API + `dist/`), TiDB Serverless. |
 
-| Feature | Provisional % | Evidence today |
-|---|---|---|
-| Auth (signup/OTP, login, 2FA, sessions, delete/cancel) | 90 | Backend tests; **concurrent signups deadlock (L-001)** |
-| Home / dashboard (score ring, widgets, mini calendar, Plan my day) | 85 | home-order + day-plan tests; recent revert of the bead hero |
-| Habits (build/quit, streaks, freezes, health links) | 85 | habit-stats tests, HabitService tests |
-| Tasks | 85 | backend tests, goal-tasks test |
-| Calendar + reminders (recurrence, snooze, .ics) | 85 | recurrence cases shared with Java, DstWindowTest |
-| Money (ledger, budgets, bills, receipts, bank feed) | 80 | 5 money test files; bank feed "unconfirmed against a live sandbox" |
-| Notes (rich text, photos, labels, trash) | 85 | notes-core tests, NoteServiceTest |
-| Goals (milestones, linked tasks/habits, progress log) | 80 | goal-milestones / goal-tasks tests |
-| Report + Insights | 80 | insights + review tests |
-| Focus timer | 85 | timer tests |
-| Food + water | 75 | nutrition tests; AI estimates fall back locally (gateway 401) |
-| Health v2 | 75 | health-logic tests; shipped in build 91 |
-| Family + meal planner | 75 | FamilyService doc; AI-heavy |
-| Growth Circle + mentorship | 75 | circle-core tests, mentorship tests |
-| Buddy (AI chat) + Quick add | 70 | depends on AI gateway; fallback regexes |
-| i18n | 30 | `i18n.js`: two screens converted, no language picker |
-| Mobile app parity | 70 | native.js; iOS not buildable on this machine |
+## Screens
 
-## Local stack used by the overhaul
+home, tasks (Home), habits, goals, calendar/reminders, timer, food, water, sleep/mood (check-ins),
+money, notes, family, circle, mentor (Buddy chat), mentorship, report (+ insights, achievements),
+settings, auth (sign-in, sign-up, OTP, reset, 2FA, deletion grace).
 
-Scratch DB `gb_ov1011`, backend :8591 (mail printed to the log, WhatsApp off, `trust-proxy` on so the
-seeder can vary its forwarded IP), Vite :5591 proxied to it, headless Chrome CDP :9591. See
-`e2e/README.md`.
+## Health at the start of this pass
+
+| Check | Result |
+|---|---|
+| `npm run lint` | clean |
+| `scripts/*.test.mjs` (28 files) | all pass |
+| `npm run build` + `bundle-budget.mjs` | pass; boot chunk 497,595 B (95.7% of budget), precache 96.8% |
+| `./mvnw test` | 675 tests, 0 failures |
+| Open items in `bugs.txt` | QA-02 (partly), QA-04, QA-06 (test-only), QA-09, QA-10 (by design), QA-11 (suspected) |
+
+## Feature scorecard
+
+"Complete" means: works end to end, has empty/error/offline states, and has a check. The evidence
+column says what the estimate rests on. The brief assumed 70-80% everywhere; the code says most
+features are further along than that, and a few have real gaps.
+
+| Feature | % | Evidence | What is actually missing |
+|---|---|---|---|
+| Auth, sessions, 2FA, account deletion | 95 | `AuthService` doc, TOTP RFC vectors, `AccountDeletionCoverageTest` | Nothing functional. |
+| Habits (build + quit, streaks, freezes) | 95 | `HabitService` doc, `habit-stats.test.mjs` | Daily targets live in the habit's name (`nudges.js` ponytail) |
+| Tasks | 95 | `home-order.test.mjs`, midnight sweep | none found |
+| Goals (milestones, linked tasks/habits) | 90 | `goal-*.test.mjs` | none found |
+| Calendar + reminders (recurrence, snooze, done, ICS) | 95 | shared `recurrence.cases.json`, `DstWindowTest` | Time blocks can't cross midnight (ponytail) |
+| Focus timer | 95 | `timer.test.mjs` | none found |
+| Food (photo AI, barcode, manual, week) | 85 | `FoodService` doc, `nutrition.test.mjs` | QA-04: day verdict renders off-screen on phones |
+| Water | 95 | `nutrition.test.mjs` | QA-10 by design |
+| Sleep / mood check-ins | 90 | `nudges.test.mjs` | QA-06 rest day under mismatched zones |
+| Money (ledger, budgets, bills, loans, receipts, bank feed) | 85 | 4 money test files, merge + ledger | Bank feed never run against a live Setu sandbox |
+| Notes (rich text, labels, archive, trash) | 95 | `notes-core.test.mjs`, `NoteServiceTest` | Uses deprecated `execCommand` (ponytail) |
+| Family + meal planner | 85 | `FamilyService` doc, audit round | Dishes not in the nutrition table contribute nothing |
+| Circle + challenges | 90 | `circle-core.test.mjs`, `CircleKudosAndMetricsTest` | none found |
+| Mentorship | 90 | `MentorshipRelationshipTest`, chat tests | none found |
+| Buddy (AI chat, threads, actions) | 85 | `mentor.test.mjs`, `MentorActionsTest` | Local AI gateway token is rejected (401), so only fallbacks are verifiable locally |
+| Quick add (natural language) | 85 | `QuickAddFallback` | Fallback is English regexes |
+| Report, insights, achievements | 90 | `insights/review/achievements` tests | none found |
+| Notifications (bell, push, WhatsApp) | 90 | `push.test.mjs`, retention tests | Nothing publishes the `money` category yet |
+| i18n | 15 | `i18n.js` ponytail | Only `en` ships; most strings not through `t()`; no language picker |
+| PWA / offline | 85 | Workbox config, outbox tests | Manifest `orientation: portrait` while the app now supports landscape (round 12) |
+| SEO | 30 | `index.html` | No Open Graph, no canonical, no robots.txt or sitemap. App behind a login, so only the landing/sign-in page matters |
+| Landscape layout | 60 | QA-09 | Content gets half the screen in landscape |
+
+Two notes on the brief's assumptions:
+
+- **No placeholders found.** `grep -rn "coming soon\|TODO\|FIXME\|lorem" scripts styles` turns up
+  nothing in shipped code. The 80 `ponytail:` markers are deliberate, documented ceilings, not
+  unfinished work.
+- **Another session is building the low-input layer right now** on `feat/life-plan` (Quick add
+  bar on Home, a "one thing today" card, goal-first onboarding, prefills, a camera shortcut,
+  plus `research/low-input-high-output.md`). This pass works on `feat/overhaul` in its own
+  worktree and stays off those surfaces to avoid duplicate work and merge conflicts.

@@ -55,6 +55,6 @@ class UiPrefsTest {
         for (int i = 0; i <= AuthService.MAX_UI_PREF_KEYS; i++) many.put("k" + i, i);
         assertThatThrownBy(() -> auth.updateUiPrefs(user.getId(), many)).isInstanceOf(ApiException.class);
         assertThatThrownBy(() -> auth.updateUiPrefs(user.getId(),
-                Map.of("big", "x".repeat(AuthService.MAX_UI_PREF_BYTES)))).isInstanceOf(ApiException.class);
+                Map.of("big", "x".repeat(AuthService.MAX_PREFS_BYTES)))).isInstanceOf(ApiException.class);
     }
 }

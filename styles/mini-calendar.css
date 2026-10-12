@@ -5,7 +5,7 @@
 .gb-mini-cal-card {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-3);
   /* .gb-card ships without padding; without this the grid sat flush on the card edges. */
   padding: 14px;
 }
@@ -14,15 +14,15 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 0 4px;
+  gap: var(--space-3);
+  padding: 0 var(--space-1);
 }
 
 .gb-mini-cal-month {
   flex: 1;
   text-align: center;
   font-weight: 700;
-  font-size: 1rem;
+  font-size: var(--text-body);
   color: var(--fg1);
 }
 
@@ -68,23 +68,23 @@
 .gb-mini-cal-dow {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 4px;
-  margin-bottom: 4px;
+  gap: var(--space-1);
+  margin-bottom: var(--space-1);
 }
 
 .gb-mini-cal-dow-cell {
   text-align: center;
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   font-weight: 700;
   color: var(--fg3);
   text-transform: uppercase;
-  padding: 4px 0;
+  padding: var(--space-1) 0;
 }
 
 .gb-mini-cal-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .gb-mini-cal-day {
@@ -131,7 +131,9 @@
 .gb-mini-cal-day.is-other-month {
   background: transparent;
   border-color: var(--border);
-  color: var(--fg3); /* no opacity: fg3 is already the 4.5:1 floor */
+  /* --fg3 alone is the dimming (4.5:1); the 0.75 opacity on top took the
+     other month's day numbers to 3.2:1. */
+  color: var(--fg3);
 }
 
 .gb-mini-cal-day.is-today {
@@ -188,7 +190,7 @@
   right: 3px;
   min-width: 16px;
   height: 16px;
-  padding: 0 4px;
+  padding: 0 var(--space-1);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -214,9 +216,9 @@
 .gb-mini-cal-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  padding: 8px 4px;
-  font-size: 0.75rem;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-1);
+  font-size: var(--text-xs);
   color: var(--fg2);
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
@@ -268,7 +270,7 @@
 .gb-mini-cal-section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .gb-mini-cal-section-head {
@@ -279,7 +281,7 @@
 }
 
 .gb-mini-cal-section-title {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 800;
   color: var(--fg3);
   letter-spacing: 0.05em;
@@ -289,14 +291,14 @@
 .gb-mini-cal-section-count {
   min-width: 22px;
   height: 22px;
-  padding: 0 8px;
+  padding: 0 var(--space-2);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-pill);
   background: var(--surface-2);
   color: var(--fg2);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 700;
 }
 
@@ -311,7 +313,7 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
-  padding: 10px 12px;
+  padding: 10px var(--space-3);
   background: var(--surface-2);
   border-radius: var(--radius-sm);
   border-left: 3px solid var(--sky-500);
@@ -335,17 +337,17 @@
 
 .gb-mini-cal-item-sub {
   margin-top: 2px;
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   color: var(--fg3);
 }
 
 .gb-mini-cal-pill {
   flex: none;
-  padding: 4px 8px;
+  padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-pill);
   background: var(--surface-3);
   color: var(--fg2);
-  font-size: 0.6875rem;
+  font-size: var(--text-2xs);
   font-weight: 700;
   text-transform: capitalize;
 }
@@ -361,7 +363,7 @@
 }
 
 .gb-mini-cal-empty {
-  padding: 12px 10px;
+  padding: var(--space-3) 10px;
   text-align: center;
   font-size: 0.8125rem;
   color: var(--fg2);
@@ -380,7 +382,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 /* Smaller, brand-tipped ring for the day panel. Scoped: this file loads after
@@ -399,34 +401,38 @@
 
 .gb-mini-cal-total {
   margin-top: -2px;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 700;
   color: var(--fg2);
 }
 
-@media (max-width: 640px) {
+/* The content column's width (app.css #gb-main), not the viewport's. */
+@container gb-main (max-width: 40rem) {
   .gb-mini-cal-day {
-    font-size: 0.75rem;
+    font-size: var(--text-xs);
   }
 
+  /* 11px is the type floor (--text-2xs); the badge keeps its 14px by giving up
+     padding and line-height, not by shrinking the digits. */
   .gb-mini-cal-day .badge {
     min-width: 14px;
     height: 14px;
-    font-size: 0.5625rem;
-    padding: 0 3px;
+    font-size: var(--text-2xs);
+    line-height: 1;
+    padding: 0 2px;
   }
 
   .gb-mini-cal-legend {
     gap: 10px;
-    font-size: 0.6875rem;
+    font-size: var(--text-2xs);
   }
 
   .gb-mini-cal-item {
-    padding: 8px 10px;
+    padding: var(--space-2) 10px;
   }
 
   .gb-mini-cal-item-title {
-    font-size: 0.75rem;
+    font-size: var(--text-xs);
   }
 
   .gb-mini-cal-item-sub,

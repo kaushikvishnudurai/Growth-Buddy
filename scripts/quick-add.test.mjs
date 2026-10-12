@@ -50,6 +50,21 @@ assert.equal(defaultAccount(money, 'income'), 'bank');
 assert.equal(defaultAccount({ ...money, settings: { lastAccountId: 'old' } }, 'expense'), 'cash', 'archived last account is skipped');
 assert.equal(defaultAccount({ accounts: [{ id: 'w', kind: 'card' }], settings: {} }, 'income'), 'w', 'first open account');
 assert.equal(defaultAccount({ settings: {} }, 'expense'), null);
+// Home-currency accounts only (was money-core quickAccount's rule; one picker now).
+{
+  const accts = [
+    { id: 'card', kind: 'card' },
+    { id: 'cash', kind: 'cash' },
+    { id: 'usd', kind: 'bank' },
+    { id: 'bank', kind: 'bank' },
+    { id: 'old', kind: 'cash', archived: true },
+  ];
+  const m = (settings) => ({ accounts: accts, settings: { currency: '₹', accountCurrency: { usd: '$' }, ...settings } });
+  assert.equal(defaultAccount(m({ lastAccountId: 'card' }), 'expense'), 'card');
+  assert.equal(defaultAccount(m({}), 'expense'), 'cash', 'no last: first cash');
+  assert.equal(defaultAccount(m({ lastAccountId: 'usd' }), 'expense'), 'cash', 'other currency skipped');
+  assert.equal(defaultAccount(m({ lastAccountId: 'card' }), 'income'), 'bank', 'skips the $ bank');
+}
 assert.equal('accountId' in quickMoney({ settings: {} }, { amount: 1 }, 'expense', today), false);
 
 // Dates.

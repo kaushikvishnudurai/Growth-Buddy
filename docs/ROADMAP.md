@@ -1,118 +1,70 @@
-# Roadmap: the ideas not in this build (2026-10-12)
+# Roadmap
 
-Everything from `docs/IDEAS.md` that is not in the top 8, in priority order. Full specs, input counts,
-exists-already notes and Playwright sketches are in IDEAS.md under the same I-number. Score = impact x 2
-- effort - input (input: lower is better).
+Phase 4 of the overhaul: each idea gets a spec (problem, the input it needs, the outcome, the effort),
+ranked by impact over effort. The built ones are in `feat/overhaul`; the rest are below, in order.
+Ideas the parallel `feat/life-plan` branch owns (its `research/low-input-high-output.md` section 5)
+are listed once at the end and not re-specified.
 
-| # | ID | Idea | Score | Why it waits | Blocked on |
+Effort: S = under a day, M = a few days, L = a week or more.
+
+## Built in this pass
+
+| # | Idea | Problem | Input | Outcome | Effort | Branch |
+|---|---|---|---|---|---|---|
+| 1 | Command palette (Ctrl/Cmd+K, `/`, header button) | 15 modules, no global search: finding a task, note or setting meant knowing which screen holds it | a few letters | jumps straight to the item, screen or action; anything else becomes a Quick add sentence | M | `ov-palette` |
+| 2 | Keyboard shortcuts (`n`, `g h/c/m/n/r/s`, `?`) | desktop users had no keyboard path | one key | new task or any main screen without the mouse | S | `ov-palette` |
+| 3 | Undo instead of "Are you sure?" | deletes were either permanent with no warning (tasks) or behind a dialog (habits, goals, water, food, reminders) | none | the delete happens at once and is reversible for 6 s; one shared queue, flushed on sign-out and page hide | M | `ov-undo` |
+| 4 | Money CSV import | switching from another tracker meant retyping history | one file or a paste | bank statements and other apps' exports read (Indian number formats, day-first dates, debit/credit columns), duplicates left out, categories guessed | M | `ov-import` |
+| 5 | Calendar .ics import | same, for calendars | one file | Google/Apple/Outlook events become reminders, repeats and alerts included | M | `ov-import` |
+| 6 | Update-available prompt | a deploy never reached an open or installed app | one tap | "A new version is ready" with Reload | S | `ov-pwa` |
+| 7 | Link previews | a Circle invite pasted in WhatsApp showed a bare URL | none | a branded card (Open Graph + Twitter, 1200x630 image) | S | `ov-pwa` |
+| 8 | Home-screen shortcuts + share target | logging from outside the app took several taps | long-press the icon, or Share to Growth Buddy | Log water / Add task / Start focus / Quick add from the icon; shared text lands in the Quick add preview | S | `ov-pwa` |
+| 9 | One-tap Daily brief chips | "13% water", "Sleep not logged" said what was missing and did nothing | one tap | +250 ml, or the sleep / mood dialog | S | `ov-ux-flows` |
+| 10 | Reminder from + in one sentence | + Reminder jumped to Calendar and asked for everything | one sentence | "remind me at 6 to call mom" saved, time read from the words (7 taps to 3) | M | `ov-ux-flows` |
+| 11 | Focus that starts, and finishes the task | starting focus on a task stopped on a Start button; ending it said nothing about the task | none | the clock starts from the row; at the end, "Mark it done?" | S | `ov-ux-flows` |
+| 12 | Due chips, Add another, habit reminder offer, goal's first task | each was one more picker or one more trip | one tap | Today / Tomorrow chips (6 taps to 3), batch task entry (6 to 4), "Remind you at 19:00?" after a new habit | S | `ov-ux-flows` |
+| 13 | Budgets from your own spending | Set budgets started blank, one field per tag | none | each tag prefilled 10% under the last 30 days; the 5th expense in an unbudgeted tag offers one | S | `ov-ux-modules` |
+| 14 | Currency from the device's region | every account started in rupees | none | the local symbol on first use; a currency the user set always wins | S | `ov-ux-modules` |
+| 15 | Plan meals for just me | a solo cook couldn't reach the meal planner without inventing a family | one tap | a one-person household from the profile, straight to Today's plan | S | `ov-ux-modules` |
+| 16 | One-tap Buddy actions, circle's first challenge | Buddy's suggestions opened a filled form; joining a circle ended at a toast | one tap | saved with Undo; the joined circle offers its first 7-day challenge | S | `ov-ux-modules` |
+| 17 | Shorter sign-up | 9 taps and 5 fields to a set-up Home | email, name, password, code | 4 taps, 4 fields: no confirm password, the code submits itself, no timezone / features / notifications steps; push is asked at the first timed reminder | S | `ov-onboard` (on top of `feat/life-plan`) |
+
+## Next, ranked
+
+| # | Idea | Problem | Input | Outcome | Effort |
 |---|---|---|---|---|---|
-| R-01 | I-09 | Instant onboarding under 30 s | 6 | It is the onboarding fix agent's own list (FRU-1..14, FRS-1..6) | That agent porting `feat/ov-onboard` |
-| R-02 | I-10 | Habit form fills itself from the name | 5 | FRS-6 is a fixer finding; small once onboarding merges | Onboarding fixer |
-| R-03 | I-12 | Day-1 value from the phone's history | 5 | Native only; Playwright cannot verify it | Native agent, a device run |
-| R-04 | I-13 | Bank feed live + one-tap review inbox | 5 | Inert without credentials | **User decision**: Setu production, cost |
-| R-05 | I-16 | Focus in one tap | 4 | Cheap; `feat/ov-ux-flows` F06/F13 already built it | Social fixer (timer.js) |
-| R-06 | I-28 | Offline you can see and trust | 3 | Shell fixer is in the outbox now | Shell fixer |
-| R-07 | I-17 | The weekly review writes itself | 3 | Social fixer owns review.js | Social fixer |
-| R-08 | I-25 | Fresh-start prompts | 3 | Lands in `one-thing.js` after W1 | W1 |
-| R-09 | I-15 | Share target + launcher shortcuts (port) | 3 | Touches `vite.config.js` (perf) and the mobile project | Perf + native agents |
-| R-10 | I-11 | WhatsApp reply to log | 3 | Only reaches users with WhatsApp connected | **User decision**: prod WhatsApp number |
-| R-11 | I-18 | Circles and families start themselves | 3 | Social fixer owns circle.js / family.js | Social fixer |
-| R-12 | I-19 | Goal steps drafted for you | 3 | Small, free-standing; next wave | none |
-| R-13 | I-29 | Projection plus a default | 3 | Builds on `main`'s Outlook card + W7 | W7 |
-| R-14 | I-20 | One notification budget across modules | 3 | Backend across five schedulers | **User decision**: changes default delivery |
-| R-15 | I-21 | Split a bill, settle by UPI | 3 | Needs a share-link decision | **User decision**: public share page |
-| R-16 | I-24 | Hindi and Tamil | 3 | Mostly string moves; translation is the cost | **User decision**: translator / reviewer |
-| R-17 | I-32 | Undo for Money | 2 | Money's ledger diff needs its own hold; after W6 and W7 | W6, W7 |
-| R-18 | I-23 | Android home-screen widgets | 3 | Kotlin AppWidget + a widget token | Native agent |
-| R-19 | I-14 | Import from other apps (port) | 2 | Built on `feat/ov-import`; worth a port after Money and Calendar settle | W7, capture fixer |
-| R-20 | I-26 | Bulk actions | 2 | W4's "Move all to tomorrow" covers the most common case first | W4 |
-| R-21 | I-27 | Routines | 2 | Wait for W1 to show whether one-tap habit rows are enough | W1 |
-| R-22 | I-31 | Notification controls in the bell | 2 | Fix-sized (FRS-15) | Shell fixer |
-| R-23 | I-22 | Two-way Google Calendar sync | 1 | Effort 5, OAuth verification | **User decision**: Google OAuth, privacy |
-| R-24 | I-30 | Honest habit timelines | 1 | Low impact alone | none |
+| 1 | Undo in Money | Money's 12 delete paths still confirm first. It saves through its own ledger diff, pending queue and cross-device merge, so "don't save yet" isn't enough: a merge during the window would bring the row back | none | the same 6 s Undo as everywhere else | M |
+| 2 | Save files inside the app | exports (data, .ics, CSV, story card) can't save in the Capacitor app yet and say so | none | add `@capacitor/filesystem` + `@capacitor/share` to `../Growth-Buddy-Mobile`; `save-file.js` already has the rung waiting for them | S |
+| 3 | Apply the native patch | permissions, camera/photo usage strings (iOS crashes on the first photo without them), deep-link intent filter, notification icon, backup rules | none | `git apply docs/mobile-native-changes.patch` in the mobile repo once its pending work is committed, then `assetlinks.json` / AASA with the release key and Team ID | S |
+| 4 | Languages | only English ships; `t()` covers a handful of strings; no picker | one choice in Settings | move strings to `i18n.js` catalogs screen by screen, then a Settings picker writing `uiPrefs.locale` | L |
+| 5 | Steps and sleep from the phone | the Steps auto-tick waits on a health plugin that isn't installed | one permission | `@capgo/capacitor-health` in the mobile app; the web side already degrades cleanly | M |
+| 6 | Currency saved on first use | the region currency is filled in on load but only reaches the server with the next Money save, so WhatsApp messages still say rupees until then | none | save it once from app.js's money load path | S |
+| 7 | Import past calendar events | the server refuses a reminder dated before yesterday, so an .ics import leaves past one-offs out | none | allow past one-offs for imports only (a flag on POST), or keep leaving them out | S |
+| 8 | Expired pantry items in the meal-plan prompt | the server sends expired items to the model with the rest | none | filter by expiry in `appendAvailableLines` | S |
+| 9 | Settings "Delete all" reminders asks twice | it now leads to an undoable delete, so the second tap is redundant | one tap fewer | drop the two-tap guard | S |
+| 10 | Score ring after a delete | the ring keeps the old value until the deferred DELETE is sent | none | recompute locally when the item leaves the list | S |
+| 11 | Enforce the CSP | Report-Only, now with a report endpoint | none | watch the `[csp]` log for a week, then `CSP_ENFORCE=true` | S |
+| 12 | Android 15 status-bar strip | edge-to-edge ignores the in-app theme for the strip behind the status bar | none | a small native change in MainActivity | S |
 
-## Spec summaries
+## Owned by `feat/life-plan`
 
-**R-01 Instant onboarding (I-09).** Neutral first screen with two equal buttons, one password, the code
-submits itself, no timezone step when zones match, a pre-selected starter pack, push at the first timed
-save, no celebration modal for pack-written items, Home opened on what was created. Landing to first
-habit ticked: 17 taps / ~108 s to 6 taps / ~26 s. Port `feat/ov-onboard` 656c9f2; deferring email
-verification (FRU-5) is a separate security decision.
+From its research, section 5, not re-specified here: one notification budget across modules, an
+if-then cue at habit creation, rewarding the comeback, no failure states, bridging the wait for the
+first insight, fresh-start prompts, projection plus a one-tap default, day-1 value from history,
+pausing a module, and honest habit timelines.
 
-**R-02 Habit form fills itself (I-10).** The name sets category, icon, Build/Break and a reminder time
-from keywords; templates carry the starter packs' times; colour, cadence, auto-tick and tone fold
-under "More options". 6 taps / 8 decisions to 3 taps / 2 decisions. `openHabitForm`,
-`HABIT_TEMPLATES`, a pure `suggestHabit` in `nudges.js`.
+## Deferred by the bug hunts
 
-**R-03 Day-1 value from history (I-12).** On the first native sign-in, backfill 14 days of steps and
-sleep through `POST /api/health/sync`, so Home, the sleep check-in and Insights start with data. 0
-inputs beyond the health permission.
+Found while reviewing the merged code and left on purpose (low impact for the code they'd need):
 
-**R-04 Bank feed live (I-13).** Set Setu credentials, confirm `BankFeedClient` against the sandbox, add
-a "To review" inbox for rows the keyword table defaulted, and remember a merchant's category.
-Typing every expense becomes one consent plus a tap per unknown merchant.
-
-**R-05 Focus in one tap (I-16).** Home Focus action and long-press on + start the last length and sound
-on the first open task; the sprint that ends on a task offers "Mark it done?". 3 taps to 1.
-
-**R-06 Offline you can see (I-28).** "3 changes waiting" chip from the outbox, and a review list for the
-outbox's `conflicts` and `dropped` ops so a refused write is never silent.
-
-**R-07 Weekly review writes itself (I-17).** Lower rungs in `weeklyWinsDraft`, the focus prefilled, the
-focus shown on Home with "Make it a habit", the weekly digest on by default for new accounts, "This week
-so far" from day 3. 4 taps / 2 fields to 2 taps / 0 fields.
-
-**R-08 Fresh-start prompts (I-25).** Mondays, the 1st, the birthday and the first open after a gap get a
-one-thing card offering one goal or pack, framed as a new start.
-
-**R-09 Share target and shortcuts (I-15).** Port `feat/ov-pwa` 3b51874: manifest shortcuts, a share
-target routed through the camera router or Quick add, and the same as Android launcher shortcuts.
-
-**R-10 WhatsApp reply to log (I-11).** The parser already runs on inbound texts; add "Reply DONE" to
-habit reminders, make DONE tick the newest habit message's habit, send a welcome with three examples on
-verify, and show them in Settings.
-
-**R-11 Circles and families start themselves (I-18).** Create a circle, get the share sheet and a running
-7-day sprint; join, get the shared goal as a habit in one tap; family relationship from the name, "Save
-and add another", and the day's meal plan made when the tab opens (AI cost decision; favourites are the
-fallback).
-
-**R-12 Goal steps drafted (I-19).** Pre-ticked milestones from a keyword template table, horizon from the
-date; an AI suggestion later with the table as fallback. 11 taps / 5 fields to 4 taps / 1 field.
-
-**R-13 Projection plus a default (I-29).** The Outlook savings pace gets one button that creates a monthly
-savings goal or recurring transfer at the projected amount.
-
-**R-14 One notification budget (I-20).** A shared cap of 1-2 proactive prompts a day across water, habit
-nudges, digest, bills and circles, skipped when the app was opened, decaying when ignored; user-set
-reminders exempt.
-
-**R-15 Split a bill (I-21).** "Split" on any expense creates lent transfers per person (the loans model
-exists), with `upi://pay` links and an optional share link for people without the app.
-
-**R-16 Hindi and Tamil (I-24).** A language picker writing `uiPrefs.locale` and the core screens'
-strings moved to `t()` with `hi` and `ta` catalogs.
-
-**R-17 Undo for Money (I-32).** Ledger deletes held out of `ledgerDiff` for the undo window, so a remote
-merge mid-window cannot bring the row back; extends W6 to Money's twelve delete paths.
-
-**R-18 Android widgets (I-23).** Today's habits with a tick, +250 ml, Add expense, through a widget-scoped
-token.
-
-**R-19 Import from other apps (I-14).** Port `feat/ov-import` dcdf87a: Money CSV with format detection
-and duplicate unticking, Calendar `.ics` with the RRULE subset, EXDATE and VALARM.
-
-**R-20 Bulk actions (I-26).** Long-press select for tasks and expenses: move, done, re-tag, delete with
-Undo.
-
-**R-21 Routines (I-27).** A bundle row that ticks several habits at once; a recurring automation such as
-"every Sunday make the meal plan".
-
-**R-22 Notification controls in the bell (I-31).** A gear in the bell header and a per-row "Mute
-<kind>". 6 taps to 1-2.
-
-**R-23 Google Calendar sync (I-22).** Read Google events into Calendar and Plan my day; optionally write
-reminders back.
-
-**R-24 Honest habit timelines (I-30).** Habit strength as a curve towards automatic (median 59-66 days),
-small milestone moments instead of modals.
+- CSV import: a DD/MM vs MM/DD choice when every date in a file is ambiguous (day-first is the
+  default, for India), and `;` as the delimiter on a two-column European file; Windows-1252 files read
+  as UTF-8 show the replacement character instead of the currency symbol.
+- ICS import: an event in a zone whose daylight-saving date differs from the account's keeps one offset
+  (flag it); a wall time inside a DST gap west of UTC lands an hour early; past one-off events are left
+  out (the server refuses reminders before yesterday).
+- A double tap on the very first Settings / habit-dialog load can open two sheets.
+- Deletes still waiting on Undo when a session expires are dropped (the outbox would keep them).
+- Backdated water across a zone gap of more than 12 hours can file under the next day.
+- Two leftovers from the merge: `outlook.js` and `snap.js` are the next boot-chunk candidates to make
+  lazy (the boot budget was raised for them).

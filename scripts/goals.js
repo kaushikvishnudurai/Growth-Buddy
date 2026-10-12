@@ -1,7 +1,8 @@
 /* =====================================================================
    Growth Buddy — Goals screen (short / mid / long term goals + actions)
    ===================================================================== */
-import { h, Icon, Pill, openModal, shakeRefusal, focusSoon, fieldRefusal } from './gb-kit.js';
+import { h, Icon, Pill, openModal, shakeRefusal, rovingGroup, focusSoon, fieldRefusal } from './gb-kit.js';
+import { todayKey as sharedTodayKey } from './home-order.js';
 import {
   moveItem,
   renameMilestone,
@@ -43,30 +44,11 @@ function fmtDate(value) {
   }
 }
 
-/* Today as YYYY-MM-DD in the account's timezone, which is what the server's
-   UserClock checks an action date against. The device's own date disagreed
-   with it for anyone whose phone and account zones differ (travel, an account
-   left on UTC): the picker allowed a day the server then refused, or blocked
-   one it would take. Set by ScreenGoals from the user; device date if unset. */
+/* Today in the account's timezone, which is what the server's UserClock checks
+   an action date against (home-order.js todayKey). Set by ScreenGoals from the
+   user; device date if unset. */
 let userZone = '';
-function todayKey() {
-  if (userZone) {
-    try {
-      // en-CA formats as YYYY-MM-DD.
-      return new Intl.DateTimeFormat('en-CA', {
-        timeZone: userZone,
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-      }).format(new Date());
-    } catch (_) {
-      /* unknown zone id: fall through to the device date */
-    }
-  }
-  const d = new Date();
-  const pad = (n) => (n < 10 ? '0' + n : String(n));
-  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
-}
+const todayKey = () => sharedTodayKey(userZone);
 
 /* Whole days from today to a YYYY-MM-DD target (negative = past). */
 function daysUntil(dateKey) {
@@ -779,8 +761,11 @@ function GoalRow(
 
   return h(
     'div',
-    // data-goal-id: the command palette finds the card by it to bring it into view.
-    { class: 'gb-goal-card' + (goal.completed ? ' is-complete' : ''), 'data-goal-id': goal.id },
+    {
+      class: 'gb-goal-card' + (goal.completed ? ' is-complete' : ''),
+      // The command palette finds a goal's card by this to bring it into view.
+      'data-goal-id': goal.id,
+    },
     h(
       'div',
       { class: 'gb-goal-card-header' },
@@ -1099,7 +1084,9 @@ function ScreenGoals({
         'div',
         { class: 'gb-form-field' },
         h('span', { class: 'gb-field-label' }, 'Horizon'),
-        h('div', { class: 'gb-segmented', role: 'radiogroup', 'aria-label': 'Horizon' }, segs),
+        rovingGroup(
+          h('div', { class: 'gb-segmented', role: 'radiogroup', 'aria-label': 'Horizon' }, segs)
+        ),
         hint
       ),
       descInput,

@@ -12,6 +12,20 @@ export function isNative() {
 }
 
 /**
+ * The public web address of the app, no trailing slash: what a link meant for
+ * someone else (a Circle invite, the privacy policy, "download it on the
+ * website") must point at. In a browser that is this page's origin. In the
+ * phone app the page is https://localhost, which is the phone itself, so it is
+ * the API base instead: the backend serves the same SPA, and a native bundle
+ * cannot be built without VITE_API_BASE (app.js resolveApiBase).
+ */
+export function publicSiteUrl() {
+  const base = (import.meta.env && import.meta.env.VITE_API_BASE) || '';
+  if (isNative() && /^https?:\/\//.test(base)) return base.replace(/\/+$/, '');
+  return typeof location !== 'undefined' ? location.origin : '';
+}
+
+/**
  * Reach a native plugin, or null off-device.
  *
  * `Capacitor.Plugins` is only ever filled in by `registerPlugin()`, which lives
@@ -32,6 +46,12 @@ export function nativePlugin(name) {
   const registered = cap.Plugins && cap.Plugins[name];
   if (registered) return registered;
   if (typeof cap.nativePromise !== 'function') return null;
+  // The native side lists every plugin it was built with (both platforms set
+  // PluginHeaders before the page runs). One that isn't listed is not in this
+  // binary — the iOS build has no speech plugin, no build has Health — and a
+  // proxy for it is a button that shows and then always fails.
+  const headers = cap.PluginHeaders;
+  if (Array.isArray(headers) && !headers.some((p) => p && p.name === name)) return null;
   return new Proxy(
     {},
     {
@@ -138,11 +158,8 @@ export function deviceLabelHeader() {
 /** Resolve the device label once at boot. Safe to call on the web — no-ops. */
 export async function initNative() {
   if (!isNative() || deviceLabel) return;
-  // Backstop. The splash is held open by hand (launchAutoHide:false), so a throw
-  // anywhere before the render would strand the user on it with no way out.
-  // hide() is idempotent, so the normal path racing this is harmless.
-  const SS = nativePlugin('SplashScreen');
-  if (SS) setTimeout(() => SS.hide().catch(() => {}), 4000);
+  // The splash backstop is not here: this runs at the end of app.js, so a throw
+  // earlier in it never armed one. public/global-shim.js arms it before app.js.
   // Not awaited: housekeeping, never worth holding boot for.
   pruneStaleChannels();
   const Device = nativePlugin('Device');
@@ -446,17 +463,57 @@ export async function applyNativeStatusBar(theme) {
   const SB = nativePlugin('StatusBar');
   if (!SB) return;
   const dark = theme === 'dark';
-  try {
+  // Each call on its own: one that rejects must not skip the rest. iOS has no
+  // setBackgroundColor, and on Android 15+ (edge-to-edge enforced) the first
+  // two are no-ops or refusals — setStyle, the icon colour, still has to land.
+  const calls = [
     // Solid bar rather than drawing under it: the header already reserves
     // max(env(safe-area-inset-top), 22px), so an overlay would double the gap.
-    await SB.setOverlaysWebView({ overlay: false });
-    await SB.setBackgroundColor({ color: themeColor('--bg', dark ? '#16110E' : '#FFFCFA') });
+    () => SB.setOverlaysWebView({ overlay: false }),
+    () => SB.setBackgroundColor({ color: themeColor('--bg', dark ? '#16110E' : '#FFFCFA') }),
     // Capacitor names these after the background, not the icons: Dark means a
     // dark bar, which gets light icons.
-    await SB.setStyle({ style: dark ? 'DARK' : 'LIGHT' });
-  } catch (_) {
-    /* a themed status bar is never worth breaking boot over */
+    () => SB.setStyle({ style: dark ? 'DARK' : 'LIGHT' }),
+  ];
+  for (const call of calls) {
+    try {
+      await call();
+    } catch (_) {
+      /* a themed status bar is never worth breaking boot over */
+    }
   }
+}
+
+/* ---- Deep links ------------------------------------------------------------
+   An https link to the web app (an invite, a shared #/money) opens the app
+   once the manifest's intent-filter / iOS Associated Domains claim the host.
+   The App plugin hands the URL over two ways: `getLaunchUrl` when the link
+   cold-started the app, the `appUrlOpen` event when it was already running.
+   Either way only the hash matters — the app is the same SPA on a different
+   origin — so the route goes through the same hashchange as a typed URL. */
+
+/** '#/circle?join=AB12' from a full link, or null when it names no route. Pure. */
+export function deepLinkHash(url) {
+  try {
+    const hash = new URL(String(url)).hash;
+    return /^#\/[a-z]/i.test(hash) ? hash : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/** Call `cb(url)` for the link that opened the app and every one after. No-op off-device. */
+export function onDeepLink(cb) {
+  const App = isNative() ? nativePlugin('App') : null;
+  if (!App) return;
+  try {
+    window.Capacitor.addListener('App', 'appUrlOpen', (ev) => ev && ev.url && cb(ev.url));
+  } catch (_) {
+    /* an older bridge without addListener: cold-start links still work below */
+  }
+  App.getLaunchUrl()
+    .then((r) => r && r.url && cb(r.url))
+    .catch(() => {});
 }
 
 /** Drop the splash once the first real frame is on screen. */

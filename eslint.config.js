@@ -36,6 +36,9 @@ export default [
       'no-empty': ['warn', { allowEmptyCatch: true }],
       'no-console': 'off',
       'no-prototype-builtins': 'off',
+      // window.name / status / event are globals, so a lost local of that name
+      // (a merge dropped exportRemindersIcs' `name`) linted clean and read ''.
+      'no-restricted-globals': ['error', 'name', 'status', 'event'],
     },
   },
 ];

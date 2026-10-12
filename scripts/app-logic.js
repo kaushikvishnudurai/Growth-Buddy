@@ -2,6 +2,15 @@
    (scripts/app-logic.test.mjs). Nothing here touches `state`, the DOM, storage
    or the network: app.js passes in what each one needs. */
 
+/* Worth queueing for a replay? `networkError`: no response at all (a 5xx is the
+   server answering). `offlineError`: that, or a server that's down. Never an
+   answer for a session that has ended (session.js sessionEndedError carries no
+   status): queued, it replayed under whoever signed in next, with their token. */
+export const networkError = (err, online = true) =>
+  !(err && err.sessionEnded) && (!online || !err || !err.status);
+export const offlineError = (err, online = true) =>
+  !(err && err.sessionEnded) && (!online || !err || !err.status || err.status >= 500);
+
 /* Water taps not yet on the server, laid over a summary from it. Only the
    summary's own day counts: a glass queued last night is yesterday's.
    `pending`: Map tempId -> { amountMl, loggedAt, drinkType }. */
@@ -98,6 +107,25 @@ export function inFlightKeys() {
   return set;
 }
 
+/* Sleep / mood check-ins still in the offline outbox, laid over the logs just
+   read from the server, which has not seen them. Without this the next load
+   replaced them with the server's copy and they were gone without a word. Ops
+   are oldest first, so the newest check-in for a day wins. */
+export function overlayQueuedWellness(wellness, ops) {
+  const w = {
+    ...wellness,
+    sleepByDate: { ...(wellness && wellness.sleepByDate) },
+    moodByDate: { ...(wellness && wellness.moodByDate) },
+  };
+  for (const op of ops || []) {
+    const l = op && op.local;
+    if (!l || !l.date) continue;
+    if (op.kind === 'wellness.sleep') w.sleepByDate[l.date] = l;
+    else if (op.kind === 'wellness.mood') w.moodByDate[l.date] = l;
+  }
+  return w;
+}
+
 /* Two zone names for the same place: "Asia/Calcutta" and "Asia/Kolkata",
    "Europe/Kiev" and "Europe/Kyiv". Chrome and Firefox map the alias to one
    spelling but WebKit hands back the name it was given, so a string compare
@@ -115,4 +143,22 @@ export function sameZone(stored, device, now = Date.now()) {
   } catch (_) {
     return false; // a name this Intl does not know
   }
+}
+
+/* Which first-run steps a new account sees. The goal picker when its chunk
+   loaded; the timezone step only when the device and the account disagree —
+   signup sends the device zone, so for nearly everyone there is nothing to ask.
+   Push is asked at the first timed save (pushAskDue), features live in
+   Settings › Layout. */
+export function firstRunSteps({ hasGoal, accountZone, deviceZone }) {
+  const differs = !!deviceZone && !!accountZone && !sameZone(accountZone, deviceZone);
+  return [hasGoal && 'goal', differs && 'timezone'].filter(Boolean);
+}
+
+/* Whether saving something timed should ask for notifications now: once per
+   account (`asked` = ui_prefs.pushAsked), never inside first-run, only where
+   the platform can notify, push is off on this device and the user hasn't
+   already refused it (`permission` 'denied'). */
+export function pushAskDue({ needs, setupOpen, asked, supported, subscribed, permission }) {
+  return !!needs && !setupOpen && !asked && !!supported && !subscribed && permission !== 'denied';
 }

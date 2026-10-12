@@ -1,8 +1,10 @@
 /* =====================================================================
    Growth Buddy — Circle, the pure parts (no DOM; checked by
-   circle-core.test.mjs): where you stand in a challenge, the wins worth
-   sharing, the one-tap challenge templates, and the invite link.
+   circle-core.test.mjs): where you stand in a challenge, the one-tap
+   challenge templates, and the invite link. The wins worth sharing are in
+   circle-wins.js, because app.js needs them at boot and this file is Circle's.
    ===================================================================== */
+
 
 /** One-tap starts for "Start a challenge": each fills the form, Start sends it. */
 export const CHALLENGE_TEMPLATES = [
@@ -45,38 +47,6 @@ export function standingLine(entries, me, unit, ended) {
   return (
     "You're #" + mine.rank + ', ' + unit(ahead.value - mine.value) + ' behind ' + ahead.name + '.'
   );
-}
-
-/**
- * Wins worth a post, from what the app already holds: a streak of 3+ days, a
- * goal finished in the last week, a full habit day. Newest-sounding first, at
- * most four, so the composer offers a tap instead of a blank box.
- */
-export function winLines({ habits = [], goals = [], today = '' } = {}) {
-  const out = [];
-  habits
-    .filter((x) => x && x.kind !== 'quit' && x.active !== false && (x.streak || 0) >= 3)
-    .sort((a, b) => b.streak - a.streak)
-    .slice(0, 2)
-    .forEach((x) => out.push('Day ' + x.streak + ' of ' + x.name + ' in a row.'));
-  const weekAgo = today ? shiftDay(today, -7) : '';
-  goals
-    .filter(
-      (g) => g && g.completed && (!weekAgo || String(g.completedAt || '').slice(0, 10) >= weekAgo)
-    )
-    .slice(0, 1)
-    .forEach((g) => out.push('Goal done: ' + g.title + '.'));
-  const daily = habits.filter((x) => x && x.kind !== 'quit' && x.active !== false);
-  if (daily.length >= 2 && daily.every((x) => x.doneToday)) {
-    out.push('Every habit ticked today, all ' + daily.length + '.');
-  }
-  return out.slice(0, 4);
-}
-
-function shiftDay(iso, days) {
-  const d = new Date(iso + 'T12:00:00');
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
 }
 
 /** The link that joins a circle in one tap: a private one by its code, a public one by id. */
@@ -184,4 +154,23 @@ export function parseAgreement(text) {
 }
 export function formatAgreement(items) {
   return items.map((it) => (it.done ? '[x] ' : '[ ] ') + it.text).join('\n');
+}
+
+/* Overlapping whole-list saves (the agreement checklist: every PUT carries the
+   whole list). Only the newest save's outcome may change what is shown: an older
+   one failing is moot, a newer list is already on its way, and rolling back to
+   the list from before it undid a later save that had landed. `fail(n)` /
+   `ok(n)` answer "show the server's last accepted list now?". */
+export function latestSave() {
+  let issued = 0;
+  let failed = 0;
+  return {
+    start: () => ++issued,
+    fail(n) {
+      if (n === issued) failed = n;
+      return n === issued;
+    },
+    // An older save landing after the newest one failed: it is what the server holds.
+    ok: (n) => n !== issued && failed === issued,
+  };
 }

@@ -165,11 +165,13 @@ function watchFields(overlay) {
 
 export function initA11y() {
   // Remember the last focus outside any modal so we can restore it on close.
+  // Not a toast's button either: it opens no dialog, and its locator matched the
+  // next toast's Undo, whose focus then held that delete (app.js holdToasts).
   document.addEventListener(
     'focusin',
     (e) => {
       const t = e.target;
-      if (t && t.closest && !t.closest('.gb-modal-overlay, ' + MODAL)) {
+      if (t && t.closest && !t.closest('.gb-modal-overlay, .gb-toast-stack, ' + MODAL)) {
         lastFocused = t;
         lastFocusKey = focusLocator(t);
       }
@@ -218,6 +220,10 @@ export function initA11y() {
             if (dialog && !dialog.hasAttribute('tabindex')) dialog.setAttribute('tabindex', '-1');
             nameFields(overlay);
             watchFields(overlay);
+            // Already inside (a field tapped, or the modal's own focus, before this
+            // frame): leave it there. Taking it back to the dialog sent what was
+            // being typed nowhere.
+            if (overlay.contains(document.activeElement)) return;
             const target = overlay.querySelector('[autofocus]') || dialog;
             target?.focus?.();
           });

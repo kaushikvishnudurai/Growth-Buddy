@@ -40,8 +40,8 @@ public class CurrentUserInterceptor implements AsyncHandlerInterceptor {
             "/api/reminders/done-link", // its Done button; same ticket, its own key
             "/api/habits/done-link", // a habit reminder's Done button; same ticket, its own key
             "/api/client-errors", // crash reports; the sign-in screen crashes too. Rate-limited + size-capped (ClientErrorController)
-            "/api/client-vitals", // RUM beacons (scripts/vitals.js); same rules as client-errors (ClientVitalsController)
-            "/api/csp-report" // the browser's CSP violation reports; same rules (CspReportController)
+            "/api/csp-report", // CSP violation reports from the browser; same rules as client-errors (CspReportController)
+            "/api/client-vitals" // RUM beacons (scripts/vitals.js); same rules as client-errors (ClientVitalsController)
     );
 
     private final SessionService sessions;

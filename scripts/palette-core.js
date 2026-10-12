@@ -1,24 +1,24 @@
-/* Command palette: ranking and match highlighting, DOM-free (palette.js draws,
-   palette-core.test.mjs checks). An item is { key, kind, label, alt?: [string] };
-   `key` is stable across sessions ('act:new-task', 'task:<id>'), so the recent
-   picks saved in ui_prefs.paletteRecent still find their item after a reload. */
+/* Command palette ranking, DOM-free (palette.js draws it, palette-core.test.mjs
+   checks it). An item is { key, kind, label, alt?: [string] }; `key` is stable
+   across sessions ('act:new-task', 'task:<id>') so recent picks survive a reload. */
 
 // Group order, and the tie-break between equally good matches.
-export const KIND_ORDER = ['action', 'screen', 'task', 'habit', 'goal', 'reminder', 'note', 'expense', 'circle'];
-export const RECENT_MAX = 6;
+export const KIND_ORDER = ['action', 'screen', 'task', 'habit', 'goal', 'reminder', 'note'];
+export const RECENT_MAX = 5;
 
-// One character folded: lower case, accents off ("É" -> "e"). Used per char so a
-// highlight can map folded positions back onto the original label.
-const foldChar = (c) => c.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-
-/** "Café  Run" -> "cafe run": lower case, accents off, runs of space as one. */
+/** Lower-case, diacritics off, runs of space as one: "Café  Run" -> "cafe run". */
 export function fold(s) {
-  return Array.from(String(s || ''), foldChar).join('').replace(/\s+/g, ' ').trim();
+  return String(s || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
-/* 3 the text starts with it, 2 a word does, 1 it is inside, 0 no match. Several
-   words that don't match as one phrase still match when each word does ("milk
-   buy" finds "Buy oat milk"), as a weak (1) match.
+/* 3 prefix, 2 a word starts with it, 1 anywhere inside, 0 no match. A query of
+   several words that doesn't match as one phrase still matches when every word
+   does ("milk buy" finds "Buy oat milk"), scored as its weakest word.
    ponytail: no character-skipping fuzz ("bym" -> "buy milk"); add it if people miss it. */
 function scoreText(text, q) {
   if (!text || !q) return 0;
@@ -27,19 +27,33 @@ function scoreText(text, q) {
   if (text.includes(q)) return 1;
   const words = q.split(' ');
   if (words.length < 2) return 0;
-  return words.every((w) => scoreText(text, w)) ? 1 : 0;
+  let min = 3;
+  for (const w of words) {
+    const s = scoreText(text, w);
+    if (!s) return 0;
+    if (s < min) min = s;
+  }
+  return Math.min(min, 1);
 }
 
-/** Best score of the item's label and its alternates (synonyms) against the query. */
+/** Best score of the item's label and its alternates against the query. */
 export function matchScore(item, query) {
   const q = fold(query);
   if (!q) return 0;
-  return Math.max(scoreText(fold(item.label), q), ...(item.alt || []).map((a) => scoreText(fold(a), q)));
+  let best = scoreText(fold(item.label), q);
+  for (const a of item.alt || []) best = Math.max(best, scoreText(fold(a), q));
+  return best;
 }
 
-const kindRank = (k) => (KIND_ORDER.includes(k) ? KIND_ORDER.indexOf(k) : KIND_ORDER.length);
-// recent is newest first; an item never picked sorts after every picked one.
-const recencyRank = (recent, key) => (recent.includes(key) ? recent.indexOf(key) : Infinity);
+const kindRank = (k) => {
+  const i = KIND_ORDER.indexOf(k);
+  return i === -1 ? KIND_ORDER.length : i;
+};
+// recent = newest first; never picked sorts after every picked one.
+const recencyRank = (recent, key) => {
+  const i = recent.indexOf(key);
+  return i === -1 ? Infinity : i;
+};
 
 /** Matching items, best first: score, then kind order, then recency, then label. */
 export function rankItems(items, query, recent = []) {
@@ -56,65 +70,38 @@ export function rankItems(items, query, recent = []) {
     .map((x) => x.item);
 }
 
-/* Ranked items into groups. A group sits where its best item ranked, so a task
-   matched on its first letter leads an action that only contains the text. Each
-   group keeps at most `perGroup`. */
-export function groupRanked(ranked, perGroup = 5) {
+/* Ranked items into groups: a group sits where its best item ranked, so a task
+   that matched on its first letter leads an action that only contains the text.
+   Each group keeps at most `perGroup`. */
+export function groupRanked(ranked, perGroup = 6) {
+  const groups = [];
   const byKind = new Map();
   for (const item of ranked) {
-    if (!byKind.has(item.kind)) byKind.set(item.kind, { kind: item.kind, items: [] });
-    const g = byKind.get(item.kind);
+    let g = byKind.get(item.kind);
+    if (!g) {
+      g = { kind: item.kind, items: [] };
+      byKind.set(item.kind, g);
+      groups.push(g);
+    }
     if (g.items.length < perGroup) g.items.push(item);
   }
-  return [...byKind.values()];
+  return groups;
 }
 
-/** The empty query: recent picks that still exist, then the first actions not already listed. */
+/** The empty query: recent picks that still exist, then the top actions not already listed. */
 export function emptyResults(items, recent = [], topActions = 6) {
   const byKey = new Map(items.map((i) => [i.key, i]));
   const picks = recent.map((k) => byKey.get(k)).filter(Boolean);
-  const actions = items.filter((i) => i.kind === 'action' && !picks.includes(i)).slice(0, topActions);
-  return [
-    picks.length && { kind: 'recent', items: picks },
-    actions.length && { kind: 'action', items: actions },
-  ].filter(Boolean);
+  const seen = new Set(picks.map((i) => i.key));
+  const actions = items.filter((i) => i.kind === 'action' && !seen.has(i.key)).slice(0, topActions);
+  const groups = [];
+  if (picks.length) groups.push({ kind: 'recent', items: picks });
+  if (actions.length) groups.push({ kind: 'action', items: actions });
+  return groups;
 }
 
 /** A pick moved to the front of the recent list, deduped, capped at RECENT_MAX. */
 export function pushRecent(recent, key) {
-  const prev = Array.isArray(recent) ? recent.filter((k) => typeof k === 'string' && k !== key) : [];
-  return [key, ...prev].slice(0, RECENT_MAX);
-}
-
-/* The label cut into [{ text, hit }] runs for drawing: the query as one phrase
-   where it occurs, else each of its words. Matching is on the folded label, so
-   "cafe" lights "Café"; positions map back through the per-character fold. */
-export function highlight(label, query) {
-  const chars = Array.from(String(label || ''));
-  let folded = '';
-  const at = []; // folded index -> original char index
-  chars.forEach((c, i) => {
-    const f = foldChar(c);
-    folded += f;
-    for (let k = 0; k < f.length; k++) at.push(i);
-  });
-  const q = fold(query);
-  const hit = new Array(chars.length).fill(false);
-  const mark = (needle) => {
-    if (!needle) return false;
-    // Prefer a word start, the way the score does; else the first occurrence.
-    let i = (' ' + folded).indexOf(' ' + needle);
-    if (i === -1) i = folded.indexOf(needle);
-    if (i === -1) return false;
-    for (let k = i; k < i + needle.length; k++) hit[at[k]] = true;
-    return true;
-  };
-  if (!mark(q)) q.split(' ').forEach(mark);
-  const runs = [];
-  chars.forEach((c, i) => {
-    const last = runs[runs.length - 1];
-    if (last && last.hit === hit[i]) last.text += c;
-    else runs.push({ text: c, hit: hit[i] });
-  });
-  return runs;
+  const prev = Array.isArray(recent) ? recent.filter((k) => typeof k === 'string') : [];
+  return [key, ...prev.filter((k) => k !== key)].slice(0, RECENT_MAX);
 }

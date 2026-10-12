@@ -285,7 +285,7 @@
   color: var(--fg2);
 }
 .gb-money-coach-text + .gb-btn {
-  margin-top: 8px;
+  margin-top: var(--space-2);
 }
 
 /* ---- Gamification ---- */
@@ -309,7 +309,7 @@
   font-size: var(--text-sm);
   color: var(--warning-soft-fg);
   background: var(--warning-soft);
-  padding: 4px 10px;
+  padding: var(--space-1) 10px;
   border-radius: var(--radius-pill);
 }
 .gb-money-level-bar {
@@ -348,14 +348,13 @@
   border-radius: var(--radius-lg);
   background: var(--surface-2);
   border: 1px solid var(--border);
-  opacity: 0.55;
+  /* Not earned yet: told by the grey icon and --fg2 label, not opacity (which
+     took the label to 3.6:1). */
   transition:
-    opacity var(--dur-base) var(--ease-standard),
     background-color var(--dur-base) var(--ease-standard),
     border-color var(--dur-base) var(--ease-standard);
 }
 .gb-money-badge.is-earned {
-  opacity: 1;
   background: var(--success-soft);
   border-color: transparent;
 }
@@ -369,11 +368,24 @@
 }
 .gb-money-badge-lbl {
   flex: 1;
+  /* "shopping/entertainment" in a rule is one unbroken word at 390. */
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-family: var(--font-body);
   font-weight: 700;
   font-size: var(--text-xs);
   color: var(--fg1);
   line-height: 1.2;
+}
+.gb-money-badge-lbl small {
+  display: block;
+  margin-top: 2px;
+  font-weight: 500;
+  font-size: var(--text-2xs);
+  color: var(--fg2);
+}
+.gb-money-badge:not(.is-earned) .gb-money-badge-lbl {
+  color: var(--fg2);
 }
 .gb-money-badge-prog {
   flex: none;
@@ -416,7 +428,7 @@
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
   color: var(--fg3);
-  margin-top: 4px;
+  margin-top: var(--space-1);
 }
 
 /* ---- Forecast ---- */
@@ -473,7 +485,7 @@
   justify-content: center;
   border-radius: var(--radius-lg);
   background: var(--ai-soft);
-  color: var(--iris-600);
+  color: var(--ai-soft-fg);
 }
 .gb-money-personality-type {
   font-family: var(--font-display);
@@ -492,7 +504,7 @@
   padding-left: var(--space-5);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
 }
 .gb-money-personality-tips li {
   font-family: var(--font-body);
@@ -541,7 +553,7 @@
   display: grid;
   grid-template-rows: auto 1fr auto auto;
   justify-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   padding: 6px 0;
   border: 0;
   border-radius: var(--radius-md);
@@ -556,7 +568,7 @@
   }
 }
 .gb-money-bar-col:focus-visible {
-  outline: 2px solid var(--brand);
+  outline: 2px solid var(--ring);
   outline-offset: 1px;
 }
 .gb-money-bar-col.is-selected {
@@ -671,7 +683,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 4px 10px;
+  padding: var(--space-1) 10px;
   border-radius: var(--radius-pill);
   font-family: var(--font-body);
   font-size: var(--text-xs);
@@ -719,7 +731,7 @@
 .gb-money-day-retry {
   border: 0;
   /* A taller hit area for an inline link; the negative margin keeps the line box. */
-  padding: 12px 6px;
+  padding: var(--space-3) 6px;
   margin: -12px -6px;
   background: none;
   font-weight: 700;
@@ -821,15 +833,6 @@
   align-items: center;
   gap: var(--space-3);
 }
-.gb-money-cat-ic {
-  flex: none;
-  width: 34px;
-  height: 34px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-md);
-}
 .gb-money-cat-main {
   flex: 1;
   min-width: 0;
@@ -842,7 +845,7 @@
   font-weight: 600;
   font-size: var(--text-sm);
   color: var(--fg1);
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
 }
 .gb-money-cat-amt {
   font-variant-numeric: tabular-nums;
@@ -904,7 +907,14 @@
 }
 
 /* ---- Income / loans: settled row dims, amount struck through ---- */
-.gb-money-exp-row.is-settled {
+/* Settled and paused rows dim by colour, not opacity: 0.6 took the user's own
+   history to 2.7:1. Text drops to --fg3 (4.5:1); only the icon fades. */
+.gb-money-exp-row.is-settled :is(.gb-money-exp-note, .gb-money-exp-amt),
+.gb-money-rec-row.is-paused :is(.gb-money-exp-note, .gb-money-exp-amt) {
+  color: var(--fg3);
+}
+.gb-money-exp-row.is-settled .gb-money-cat-ic,
+.gb-money-rec-row.is-paused .gb-money-cat-ic {
   opacity: 0.6;
 }
 .gb-money-exp-row.is-settled .gb-money-exp-amt {
@@ -1015,6 +1025,13 @@
   font-weight: 600;
   font-size: var(--text-sm);
   color: var(--fg1);
+}
+/* A tag that starts on budgetsFrom's figure, until it is typed over. */
+.gb-money-budget-suggested {
+  display: block;
+  font-weight: 500;
+  font-size: var(--text-xs);
+  color: var(--fg3);
 }
 .gb-money-budget-field .gb-input {
   min-width: 0;
@@ -1272,7 +1289,7 @@
   color: var(--fg1);
 }
 .gb-money-health-verdict {
-  margin: 4px 0 0;
+  margin: var(--space-1) 0 0;
   font-family: var(--font-body);
   font-size: var(--text-sm);
   line-height: var(--leading-normal);
@@ -1309,7 +1326,7 @@
   background: var(--surface-3);
   border-radius: var(--radius-pill);
   overflow: hidden;
-  margin: 4px 0 2px;
+  margin: var(--space-1) 0 2px;
 }
 .gb-money-health-fill {
   height: 100%;
@@ -1637,7 +1654,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 13px;
+  padding: var(--space-2) 13px;
   border-radius: var(--radius-pill);
   border: 1px solid var(--border);
   background: var(--surface);
@@ -1747,6 +1764,15 @@
 .gb-money-swatch.is-on {
   border-color: var(--fg1);
 }
+/* 32px dots, 44px taps: the hit area runs into the row gap, as the fix pills' does. */
+.gb-money-swatch {
+  position: relative;
+}
+.gb-money-swatch::after {
+  content: '';
+  position: absolute;
+  inset: -9px;
+}
 
 /* ---- Simulator (23) ---- */
 .gb-money-sim-out {
@@ -1795,98 +1821,13 @@
   border: 1px solid var(--border);
 }
 
-/* ---- Home widget (mini card) ---- */
-.gb-money-mini {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  /* .gb-card ships without padding; without this the widget sat flush on the card edges. */
-  padding: var(--space-4);
-  background: linear-gradient(135deg, var(--ai-soft), var(--surface) 70%);
-}
-.gb-money-mini-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  background: none;
-  border: none;
-  /* 26px tall without moving the row: at padding 0 it was an 18px tap target. */
-  padding: 4px 0;
-  margin: -4px 0;
-  cursor: pointer;
-  color: var(--fg3);
-}
-.gb-money-mini-eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-family: var(--font-body);
-  font-weight: 800;
-  font-size: var(--text-2xs);
-  letter-spacing: var(--tracking-caps);
-  text-transform: uppercase;
-  color: var(--ai);
-}
-.gb-money-mini-body {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-4);
-}
-.gb-money-mini-figure {
-  flex: none;
-  width: 72px;
-  text-align: center;
-}
-.gb-money-mini-spent {
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: var(--text-h4);
-  color: var(--fg1);
-  letter-spacing: var(--tracking-tight);
-}
-.gb-money-mini-lbl,
-.gb-money-mini-cap {
-  font-family: var(--font-body);
-  font-size: var(--text-2xs);
-  font-weight: 700;
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
-  color: var(--fg3);
-}
-.gb-money-mini-ring-val {
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: var(--text-sm);
-  letter-spacing: var(--tracking-tight);
-  font-variant-numeric: tabular-nums;
-}
-.gb-money-mini-main {
-  flex: 1;
-  min-width: 0;
-}
-.gb-money-mini-say {
-  font-family: var(--font-body);
-  font-size: var(--text-sm);
-  color: var(--fg1);
-  line-height: var(--leading-normal);
-  margin-top: 2px;
-}
-.gb-money-mini-actions {
-  display: flex;
-  gap: var(--space-2);
-}
-.gb-money-mini-actions .gb-btn {
-  width: auto;
-}
-
 /* ---- Star rating (reflection, 12) ---- */
 .gb-stars-wrap {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 2px 0 4px;
+  gap: var(--space-1);
+  padding: 2px 0 var(--space-1);
 }
 .gb-stars {
   position: relative;
@@ -1898,7 +1839,7 @@
 }
 .gb-star {
   /* 28px of glyph + 8px a side = a 44px target without 44px of ink. */
-  padding: 8px;
+  padding: var(--space-2);
   border: 0;
   background: none;
   line-height: 0;
@@ -1962,7 +1903,7 @@
 }
 .gb-stars-caption {
   font-weight: 800;
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   color: var(--fg2);
   min-height: 1.3em;
 }
@@ -1995,17 +1936,29 @@
 
 /* ---- Responsive ---- */
 @media (max-width: 540px) {
-  .gb-money {
-    padding: var(--space-3) var(--gutter) var(--space-12);
-  }
   .gb-money-review-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  /* Four equal columns of ~85px fit "Overview" at this size. No min-width: 0:
-     at a large text size the labels overprinted; now the strip scrolls. */
+}
+/* By the content column's width (app.css #gb-main), so the 440px tablet frame
+   gets the phone layout too, and in rem so larger text does. */
+@container gb-main (max-width: 33.75rem) {
+  .gb-money {
+    padding: var(--space-3) var(--gutter) var(--space-12);
+  }
+  /* Four equal columns of ~85px fit "Overview" at this size. */
   .gb-money-tab {
     flex: 1 1 0;
-    padding-inline: 4px;
+    min-width: 0;
+    padding-inline: var(--space-1);
+  }
+}
+/* Under ~20rem (320px at Largest text) "Overview" ran out of its tab. */
+@container gb-main (max-width: 20rem) {
+  .gb-money-tab {
+    padding-inline: 2px;
+    font-size: 0.6875rem;
+    letter-spacing: -0.01em;
   }
 }
 
@@ -2016,7 +1969,7 @@
   justify-content: center;
   min-height: 44px;
   border: 0;
-  padding: 2px 4px;
+  padding: 2px var(--space-1);
   margin: -2px -4px;
   background: none;
   color: inherit;
@@ -2088,21 +2041,17 @@
   flex-wrap: wrap;
   row-gap: var(--space-2);
 }
-.gb-money-card > .gb-sectiontitle > h3 {
-  flex: 1 1 auto; /* shrinks (wraps) only once it is alone on its line */
+.gb-money-card > .gb-sectiontitle > :is(h2, h3) {
+  flex: 1 1 auto; /* shrinks (wraps) only once it is alone on its line; 0 overflowed at 200% text */
 }
 
-.gb-seg:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
 .gb-money-move-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 .gb-money-swap {
-  padding-block: 4px;
+  padding-block: var(--space-1);
 }
 .gb-money-quick {
   display: flex;
@@ -2111,7 +2060,7 @@
   margin-top: var(--space-2);
 }
 .gb-money-quick-amt {
-  padding: 6px 12px;
+  padding: 6px var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
   background: var(--surface);
@@ -2274,7 +2223,7 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 4px 6px;
+  gap: var(--space-1) 6px;
 }
 .gb-money-tape-legend i {
   display: inline-block;
@@ -2404,9 +2353,6 @@
 }
 
 /* ---- Every month (recurring rules, Income tab) ---- */
-.gb-money-rec-row.is-paused {
-  opacity: 0.6;
-}
 .gb-money-exp-amt.is-in {
   color: var(--leaf-700);
 }
@@ -2434,7 +2380,7 @@
   accent-color: var(--brand);
 }
 .gb-money-bcard-carry {
-  margin-top: 4px;
+  margin-top: var(--space-1);
   font-size: var(--text-xs);
   color: var(--leaf-700);
 }
@@ -2887,7 +2833,6 @@
   transform: scale(0.97);
 }
 /* Full-width rows and inline links dim instead: a scaled row looks like a jump. */
-.gb-money-mini-head:active,
 .gb-money-exp-edit:active,
 .gb-money-day-retry:active {
   opacity: 0.7;

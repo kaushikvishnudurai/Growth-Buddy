@@ -1,103 +1,138 @@
-# Overhaul final report (2026-10-11 to 2026-10-12, builds 92 to 97)
+# Final report
 
-Branch `overhaul/2026-10-11`, worktree `../GB-overhaul-1011`. Every fix branch is merged; the
-integration branch was `ov1011/int-design`. Audits live in `docs/audit/`, evidence in `docs/evidence/`,
-decisions in `docs/DECISIONS.md`, the task ledger in `docs/LEDGER.md`, ideas in `docs/IDEAS.md`, the
-rest of the roadmap in `docs/ROADMAP.md`, research in `docs/RESEARCH.md`.
+The overhaul: audit, research, fixes, new features and verification, on `feat/overhaul` /
+`ov-integration` at **a7af6ab, build 96**. It contains `main` up to build 95 (life-plan, health, roast
+rounds) plus 20 overhaul branches. **Not on `main` yet**: merging and pushing it is a production deploy,
+and needs the go-ahead plus the prod SQL below.
 
-## How it ran
+Supporting docs: [PROJECT_MAP](PROJECT_MAP.md), [AUDIT_REPORT](AUDIT_REPORT.md) and `audit/*.md`,
+[RESEARCH](RESEARCH.md), [ROADMAP](ROADMAP.md).
 
-| Step | Agents | Output |
+## 1. What was found
+
+Ten parallel audits of build 88, then four bug hunts over the merged code.
+
+| | Critical | High | Medium | Low |
+|---|---|---|---|---|
+| Audits (10 areas) | 0 | 36 | 73 | 87 |
+| Bug hunts on the merged code | 33 confirmed (offline/sign-out seams 12, new modules 20 reproduced in node, backend 6, moved code 1; some overlap) |||
+
+The headline problems at the start:
+
+- **Data loss offline**: Money edits, sleep and mood entries and settings changes could be wiped on
+  the next load.
+- **Security**: behind the prod proxy every user shared one rate-limit bucket (one script could lock
+  everyone out of sign-in); a family invite exposed the invitee's DOB, body and diet before they
+  accepted, and the meal-plan prompt still sent it to the AI after the first fix.
+- **App vs web**: a boot error left the phone app on the splash forever; Circle invites from the app
+  pointed at `https://localhost`; iOS crashed on the first photo (no camera usage string).
+- **Updates**: a new deploy never reached an open or installed app.
+- **Sign-out**: two drifted reset lists; the Settings sheet stayed open over the sign-in card with the
+  old account's name in it; found later, a write in flight at sign-out was replayed into the next
+  account.
+- **Contrast**: several dark-mode and premium surfaces at 1.4 to 2.3:1; no visible focus ring on any
+  text field.
+
+## 2. What was fixed
+
+Every High and Medium from the audits, and the Lows that were real, with these exceptions: the native
+Android/iOS config (shipped as a patch, below) and items moved to the roadmap. Each fix branch left an
+e2e script under `scripts/e2e/` that drives the real app at 390 and 1280 px.
+
+| Area | Branches | Highlights |
 |---|---|---|
-| 1 Understand | orchestrator | `PROJECT_MAP.md`, e2e harness (seeder, CDP-attached Playwright, console/network guard) |
-| 2 Baseline | 18 audits (4 explorers, 3 code reviewers, UI, responsive/parity, performance, accessibility, security, 2 friction, market research, offline integrity, first run, content states) | about 230 findings in `docs/audit/` |
-| 3 Safety net | 3 | `e2e/safety-*.spec.mjs` across every module |
-| 4 Build and fix | 16 fix agents + 2 backend rounds + design system + mobile parity | one branch each, merged and re-tested |
-| 5 Wow layer | strategist + 2 builders | 32 scored ideas; command palette and Take a break built |
-| 6 Adversarial | hostile, new-user, cross-browser testers + 9 integration and fix agents | every failure fixed or traced |
+| Functional | `ov-func`, `ov-func-low` | Money doc edits queued and replayed (`docDiff` / `adoptServerMoney`); sleep and mood through the outbox; ui-prefs saved by key; focus sessions survive a deleted task; temp ids handled; an unverified sign-in is told why |
+| Session | `ov-session` + integration | one `endSession(reason)` for sign-out, 401 and deletion; a session counter so late answers land nowhere and are never replayed into the next account; offline cold start in the app paints the last data |
+| Security | `ov-sec`, `ov-sec-low` + integration | right-most proxy hop, every X-Forwarded-For line; invitee data copied only on accept and kept out of the AI prompt; push endpoints restricted to real push services; people search throttled and LIKE-escaped; prefs capped (growth only); CSP report endpoint; route-keyed rate limits; 60-day minimal session cookie; complete data export incl. the owner's household |
+| Performance | `ov-perf`, `ov-perf-low` | icons built directly (no document sweep: 140 rebuilt per tick to 0); one task-history query; Settings and habit dialogs lazy; money.css and premium.css on demand; tick round trips in parallel; batched goal actions; gzip on JSON; fewer forced layouts |
+| UI / design system | `ov-uicss`, `ov-ui-low` | contrast fixed in both themes and premium; `--control-edge` and `--ring` tokens; z-index and scrim tokens; one switch, one pill segmented control; spacing, radius and type literals moved to tokens; `contrast.test.mjs` now reads 2,636 rules so the class can't come back |
+| Responsive | `ov-resp`, `ov-resp-low` | sidebar scrolls on laptop heights; container queries so the tablet frame and text size drive the breakpoints; safe-area insets in landscape; 44 px targets; wide screens centred |
+| Accessibility | `ov-a11y` | page language, bell count in its name, live regions, labelled fields, real heading levels, roving-tabindex tab bars and radio groups, sticky bars never cover focus |
+| App parity | `ov-parity` | Back closes header panels first; notification taps route; deep links; missing plugins detected instead of failing; native config as `docs/mobile-native-changes.patch` |
+| SEO / PWA | `ov-pwa` | update prompt; Open Graph image and tags; robots, sitemap, canonical; manifest id, shortcuts, screenshots, share target; prod serves privacy.html and every root file; splash backstop |
 
-## User requests handled
+## 3. What was built (Phase 4)
 
-- L-002 Food on a phone: the field is first and focused, foods had before are one row, one tap logs
-  one, portions remembered, no AI wait on save.
-- L-003 Health: the summary sentence closes the screen.
+Full specs, impact over effort, are in [ROADMAP](ROADMAP.md). In short, each cuts input:
 
-## What changed, by area (highlights; full lists in the merge commits)
+| Feature | Before | After |
+|---|---|---|
+| Command palette (Ctrl/Cmd+K, `/`) and shortcuts (`n`, `g h/c/m/n/r/s`, `?`) | navigate to the right screen, then find it | a few letters, from anywhere; unmatched text becomes a Quick add sentence |
+| Undo instead of "Are you sure?" | a dialog per delete, or no way back | the delete is instant and reversible for 6 s, everywhere |
+| Money CSV import, Calendar .ics import | retype history from another app | one file: bank formats, Indian grouping, day-first dates, duplicates left out, repeats and alerts kept |
+| Update prompt, link previews, home-screen shortcuts, share target | reinstall to update; bare URLs; several taps to log | one tap Reload; a branded card; long-press the icon to log water or add a task; share text into Quick add |
+| One-tap Daily brief chips, reminder in one sentence, focus that starts and finishes, due chips, "Add another", habit reminder offer | 3 / 7 / 2 / 6 / 6 / 5 taps | 1 / 3 / 1 / 3 / 4 / 3 taps |
+| Budgets from your own spending, currency from the device region, plan meals for just me, one-tap Buddy actions, a circle's first challenge | blank forms and dead ends | prefilled, one tap each |
+| Shorter sign-up and first run | 9 taps, 5 fields | 4 taps, 4 fields |
 
-- **Backend (3 rounds, 778 tests):** signup deadlock and same-email race, reminder range cap, client
-  IP from the right-most hop and `TRUST_PROXY` bound, digest claims its day, request bounds,
-  N+1 queries, CSP report endpoint, future and pre-1900 money refused, ledger tombstones (a stale
-  edit can't resurrect a delete), Quick add weekday and passed-time dates, XP follows the tick,
-  goal progress versioned, explicit done on toggles, storable due-date window, invisible names
-  refused, the first Money save records its account seed.
-- **Shell:** overlays close on sign-out, boot waves guarded across an account switch, write-ahead
-  outbox (a reload mid-request loses nothing), logout flushes or asks, theme change without a full
-  render, panels on the back stack, retry timer, account refresh on reload, cache cleared on 401.
-- **Capture:** one clear Quick add read saves at once with Undo, due time read from a task title,
-  tomorrow's plan after 21:00, one-tap mood logs the night.
-- **Onboarding:** sign-up first, one plan sheet with a ready plan, 17 taps to 5 to the first habit
-  ticked; a Family meals pack (parent: 9 taps to today's meal plan, no guessing).
-- **Money:** challenges judged on their own window, no instant overdue bill, split a bill books your
-  share, statement maths, purchase advisor, Undo instead of confirm, no day-one budget from one lunch.
-- **Planning:** goal edit works again (it always failed), notes caret kept, Undo on deletes, field
-  errors, link filter, note card semantics.
-- **Social:** circle invite links ask before joining, replies no longer vanish, family member in one
-  form, Report no longer scrolls sideways.
-- **Design system:** themed pill tokens (dark mode), one font reset, 3:1 control borders and a focus
-  ring, scrim token, toast motion, desktop alignment, 200% text, 44 px targets.
-- **Performance:** native WebSocket (sockjs gone), static sign-up shell, wave 2 before first render,
-  lazy Outlook, achievements and celebrate, one variable font, terser.
-- **App wrapper:** every export goes to the share sheet (plugins on `ov1011/mobile`), offline cold
-  start shows saved data, microphone permission, right cutout.
-- **Wow features:** command palette (Ctrl/Cmd+K, `/`, `g` shortcuts, search across your items, free
-  text into Quick add) and Take a break (streaks hold for 3/7/14 days, nudges quiet, one tap each way).
-- **Cross-browser fixes:** time zones compared by offset (Safari and iOS no longer get a false "Switch to Kolkata time?"), tablet frame full height, keepalive on prefs and revoke, an offline prefs save resent when back online, color-mix fallbacks for iOS 15-16.1.
-- **Hostile fixes:** taps settle on lists (no double delete or tick), Undo restores the burst, goal
-  saves chained and merged.
-
-## Tests at release 2 (build 97)
+## 4. Verification
 
 | Check | Result |
 |---|---|
-| `./mvnw test` | 778 run, 0 failures |
-| `npm run lint`, every `scripts/*.test.mjs` | clean / pass |
-| Playwright, 22 specs, desktop + mobile Chrome | 331/334 on the last full run; the 3 were fixed and re-run 88/88 (each twice) |
-| Cross-browser (desktop/mobile/tablet Chrome, Firefox, desktop/mobile WebKit) | 390/402 on smoke + safety + shell + native + perf + planning + xbrowser specs; the 6 failures were OFF-6 (a stale allow-list), since fixed; 6 WebKit skips by design (ephemeral sessions) |
-| Bundle budget | boot 98.8%, precache 99.1%, budgets never raised |
+| `npm run lint` | clean (now also bans the `name` / `status` / `event` browser globals that hid a bug) |
+| `scripts/*.test.mjs` | 44 files, all pass (28 at the start) |
+| `./mvnw test` | 759 tests, 0 failures (675 at the start) |
+| Build + `bundle-budget.mjs` | pass: boot 500,663 B (95.2%), precache 1,662,476 B (95.2%) |
+| e2e, `scripts/e2e/*.e2e.mjs` (20 scripts, run one at a time by `run-all.mjs`) | 20/20 on a7af6ab; two consecutive green runs on 86c0940 before the `main` merge |
+| `scripts/ui-audit.mjs` | clean: 11 screens x 2 viewports, 9 dialogs, 2 header panels |
 
-## Lighthouse (production build)
+Lighthouse on the production build, signed-in Home, median of 3:
 
-| Run | Performance | Accessibility | Best practices | SEO |
+| | Performance | Accessibility | Best practices | SEO |
 |---|---|---|---|---|
-| Signed out, mobile / desktop | 92-93 / 100 | 100 / 100 | 100 / 100 | 100 / 100 |
-| Home, mobile / desktop | 81-83 / 99 | 100 / 100 | 100 / 100 | 100 / 100 |
+| Mobile, before (build 88) | 80 | 98 | 82 | 91 |
+| Mobile, after (build 96) | 100 | 100 | 100 | 100 |
+| Desktop, before | 99 | 94 | 81 | 91 |
+| Desktop, after | 100 | 100 | 100 | 100 |
 
-Before: Home Best Practices 81, Accessibility 94, SEO 91.
+**Read the Performance number with care.** The after runs are a warm repeat visit: 46 of 58 requests came
+from the service worker, and the static sign-in text in `#root` paints first. A cold first load in the
+shared test Chrome scored 85 to 100 run to run. The measured gains that don't depend on caching: boot
+chunk 497,595 B to 424 kB at its lowest (500 kB after `main` brought life-plan's Home cards into boot),
+render-blocking CSS 285 kB to 249 kB, a task tick from three serial round trips to two.
 
-## Known limitations and risks
+Screenshots, before and after, are in the session scratchpad under `audit-before/`, `shots/<branch>/`
+and `e2e-run*/` (not committed: `assets/ui-audit/` is git-ignored for the same reason).
 
-- **Home on mobile is below 90 Performance.** The rest is bytes on the critical path (boot chunk
-  about 164 kB gzip, CSS 55 kB); next levers are splitting calendar and settings out of the boot
-  chunk and moving money.css out of the render-blocking sheet.
-- **iOS 15.0-16.1:** decorative tints and gradients that use color-mix() render plain (core colours have fallbacks).
-- **Budgets are tight** (98.8% / 99.1%): the next feature must be lazy or pay for itself.
-- **Not verified on a real device:** share sheet, mic and camera prompts, offline cold start in the
-  APK, right-cutout padding. Needs `npm run sync` and a phone.
-- **Email verification still gates first value** (about 26 s). Letting users in first is a security
-  trade-off left to the owner.
-- **Circle "Find someone" lists every user** (masked email): a product/privacy decision left open.
-- **Prod config:** set `TRUST_PROXY=true` on Render; run the `money_tx_tombstones` CREATE before
-  deploying (every Money delete fails without it).
-- Test environment: one shared machine at load average 30-70; several flakes were load, and the
-  harness now gives each test its own forwarded address and each agent its own browser.
+Not covered: Firefox and WebKit (only Chromium is installed for puppeteer-core here), and real devices
+(see below).
 
-## Next version (from `ROADMAP.md`, top first)
+## 5. Before you ship
 
-1. Live bank feed (Setu credentials, sandbox test).
-2. Reply to a WhatsApp reminder to log ("spent 240 chai", "done gym").
-3. Evening close-out sheet (about 25 taps to 7).
-4. Bill splitting with UPI settle-up.
-5. Two-way Google Calendar sync.
-6. Home-screen widgets.
-7. Indian food quick picks in katori, piece and plate portions.
-8. Hindi and Tamil (needs a reviewer).
+1. **Run the prod SQL first** (TiDB SQL editor, every statement re-runnable). It comes from `main`'s
+   health and QA work; the overhaul added no schema. The block is in `migrations.sql`; the four
+   `ALTER ... ADD COLUMN IF NOT EXISTS`, the `health_readings` table, and the check
+   (`columns_of_4 = 4`, `health_table_of_1 = 1`). Optionally the SEC-02 cleanup that blanks profile
+   copies on old invite rows.
+2. **Render env**: `TRUST_PROXY=true`, `TRUST_PROXY_HOPS=1`. Confirm the hop count once with
+   `LOGGING_LEVEL_COM_GROWTHBUDDY_COMMON_CLIENTIP=DEBUG` from a phone on mobile data (DEPLOYING.md).
+   Without it every user still shares one sign-in rate-limit bucket.
+3. **Merge and push** `ov-integration` into `main` (build 96).
+4. **Mobile**: apply `docs/mobile-native-changes.patch` in `../Growth-Buddy-Mobile` once its pending
+   work is committed (camera and photo usage strings, the iOS crash; mic and camera permissions; deep
+   links; notification icon; backup rules). `npm run sync` there. A debug APK of build 96 against the
+   prod API was built at `android/app/build/outputs/apk/debug/app-debug.apk`.
+
+## 6. Known limitations and risks
+
+- **Real devices were not tested.** Hardware Back, notification taps, deep links, camera and mic
+  prompts, the offline cold start in the Capacitor app and Android 15 edge-to-edge were exercised only
+  through their web-side logic and unit tests.
+- **Deep links need two files only the release owner can make**: `/.well-known/assetlinks.json` (the
+  release key's SHA-256) and the AASA file (Team ID). Templates are in `docs/mobile-native-changes.md`.
+- **One backend query has only run against a mock**: the owner's `family_members` export (a correlated
+  subquery). One real export on MySQL or TiDB would confirm it.
+- **The AI paths were verified through their fallbacks only.** The local AI gateway token is rejected
+  (401), so no live model call was made in this pass.
+- **Exports can't save inside the app yet**: they say so and offer the website, until
+  `@capacitor/filesystem` and `@capacitor/share` are added to the mobile app.
+- **CSP is still Report-Only.** Watch the `[csp]` log for a week before `CSP_ENFORCE=true`.
+- **The suite shares one seeded account** and must run sequentially; two runs at once see each other's
+  rows.
+- **Several builders reported the shared dev backend down mid-run**; the final numbers above come from a
+  backend built from the final commit.
+
+## 7. Next version
+
+The ranked list is [ROADMAP](ROADMAP.md): Undo in Money, saving files inside the app, applying the native
+patch, languages, phone steps and sleep, and the smaller items the bug hunts deferred.

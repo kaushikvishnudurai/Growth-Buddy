@@ -61,11 +61,12 @@ public class GoalService {
             grouped.put(horizon, List.of());
         }
         List<Goal> items = goals.findByUserIdOrderByCreatedAtDesc(userId);
-        // One batched count, then the top 3 per goal; the latest action's time is
-        // the first of those. Was three queries per goal, one of which loaded the
-        // goal's whole action history to read its first row.
+        // One batched count and one batched top-3-per-goal; the latest action's time
+        // is the first of those. Was a top-3 query per goal before that, and three
+        // queries per goal before that.
         Map<UUID, Long> counts = new HashMap<>();
         Map<UUID, Long> cleared = new HashMap<>();
+        Map<UUID, List<GoalAction>> recent = new HashMap<>();
         if (!items.isEmpty()) {
             List<UUID> ids = items.stream().map(Goal::getId).toList();
             for (Object[] row : actions.countByGoalIds(ids)) {
@@ -74,12 +75,16 @@ public class GoalService {
             for (Object[] row : tasks.countClearedByGoalIds(userId, ids)) {
                 cleared.put((UUID) row[0], ((Number) row[1]).longValue());
             }
+            for (GoalAction a : actions.findTop3PerGoal(ids.stream().map(UUID::toString).toList())) {
+                recent.computeIfAbsent(a.getGoalId(), k -> new java.util.ArrayList<>()).add(a);
+            }
         }
         for (GoalHorizon horizon : GoalHorizon.values()) {
             List<GoalResponse> rows = items.stream()
                     .filter(g -> g.getHorizon() == horizon)
                     .map(g -> withActions(g, counts.getOrDefault(g.getId(), 0L),
-                            cleared.getOrDefault(g.getId(), 0L)))
+                            cleared.getOrDefault(g.getId(), 0L),
+                            recent.getOrDefault(g.getId(), List.of())))
                     .toList();
             grouped.put(horizon, rows);
         }
@@ -284,13 +289,12 @@ public class GoalService {
         for (Object[] row : tasks.countClearedByGoalIds(goal.getUserId(), List.of(goal.getId()))) {
             cleared += ((Number) row[1]).longValue();
         }
-        return withActions(goal, actionCount, cleared);
+        return withActions(goal, actionCount, cleared,
+                actions.findTop3ByGoalIdOrderByCreatedAtDesc(goal.getId()));
     }
 
-    private GoalResponse withActions(Goal goal, long actionCount, long clearedTasks) {
-        List<GoalActionResponse> recent = actions.findTop3ByGoalIdOrderByCreatedAtDesc(goal.getId()).stream()
-                .map(GoalActionResponse::from)
-                .toList();
+    private GoalResponse withActions(Goal goal, long actionCount, long clearedTasks, List<GoalAction> top3) {
+        List<GoalActionResponse> recent = top3.stream().map(GoalActionResponse::from).toList();
         Instant latest = recent.isEmpty() ? null : recent.get(0).createdAt();
         return GoalResponse.from(goal, actionCount, latest, recent).withClearedTaskCount(clearedTasks);
     }

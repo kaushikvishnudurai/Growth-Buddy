@@ -37,7 +37,7 @@ public class PushController {
     @PostMapping("/unsubscribe")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void unsubscribe(@Valid @RequestBody EndpointRequest req) {
-        push.unsubscribe(req.endpoint());
+        push.unsubscribe(CurrentUser.id(), req.endpoint());
     }
 
     /** Send the current user a test notification (to confirm setup end-to-end). */

@@ -6,14 +6,11 @@ import {
   activate,
   AppHeader,
   BottomNav,
-  NAV_CATALOG,
-  resolveNavLayout,
   refreshIcons,
   Icon,
   plural,
   IconChip,
   Check,
-  DOMAIN,
   CrashCard,
   Card,
   openOverlay,
@@ -21,6 +18,7 @@ import {
   trackOverlay,
   openModal as sharedModal,
   fieldRefusal,
+  fieldError,
   shakeRefusal,
   landed,
   leave,
@@ -28,13 +26,14 @@ import {
   setTimeFormat,
   detectTimeFormat,
   setThinking,
+  rovingGroup,
   focusSoon,
   SHEET_EXIT_MS,
   visibleText,
 } from './gb-kit.js';
 import { setLocale, localeFromUser, fmtDate } from './i18n.js';
 import { BREAK_LENGTHS, breakState, startBreak, endBreak } from './break.js';
-import { dateKey, todayKey, parseWhen } from './dates.js';
+import { dateKey, parseWhen } from './dates.js'; // todayKey is the account's day, below
 import {
   ScreenDashboard,
   ScreenFood,
@@ -42,13 +41,13 @@ import {
   HabitSleepInsightCard,
   RenderMiniCalendarCard,
   QuoteCard,
-  HOME_WIDGETS,
+  setAccountZone,
   resolveHomeLayout,
   sleepHours,
   StreakChain,
   loadOutlook,
 } from './dashboard.js';
-import { habitDue, tasksForToday, sortHabitsForHome } from './home-order.js';
+import { habitDue, todayKey as sharedTodayKey, shiftDayKey, tasksForToday, sortHabitsForHome } from './home-order.js';
 import { withProgressLog, needsProgressLog } from './goal-milestones.js';
 import { goalTaskStats, combinedGoalProgress, goalFinishedBy } from './goal-tasks.js';
 import {
@@ -60,7 +59,12 @@ import {
   latestSeq,
   restoreKey,
   inFlightKeys,
+  overlayQueuedWellness,
+  networkError as isNetworkError,
+  offlineError as isOfflineError,
   sameZone,
+  firstRunSteps,
+  pushAskDue,
 } from './app-logic.js';
 import {
   MEAL_SLOTS,
@@ -72,27 +76,19 @@ import {
   cameraErrorMessage,
 } from './nutrition.js';
 import {
-  habitStats,
-  heatmapWeeks,
-  canEditDay,
-  pctLabel,
   daysFrom,
-  addDays,
-  isoWeekStart,
   linkedHabitActivity,
   monthStart,
-  isSlipRow,
-  recentNotes,
-  suggestReminderTime,
 } from './habit-stats.js';
 // The Money document model only; the screen and its Customise pane are lazy
 // (SCREENS.money, moneyPane), so money.js stays out of the boot chunk.
 import {
   emptyMoney,
   normalizeMoney,
-  mergeMoney,
   ledgerDiff,
   applyLedgerDiff,
+  docDiff,
+  applyDocDiff,
   docPart,
   LEDGER_ARRAYS,
   suggestCategory,
@@ -107,34 +103,26 @@ import {
   RenderCalendarGrid,
   resetCalendarForm,
   prefillCalendarReminder,
-  snoozeLabel,
-  describeRepeat,
   isPastSlot,
   setRoutine,
   setDefaultLead,
   getDefaultLead,
   setReminderSettingsOpener,
+  setCalendarImporter,
   setCustomToneAdder,
   setVoiceReminder,
   NotifySelect,
   UsualTimeChip,
-  LEAD_OPTIONS,
   leadLabel,
   minutesLabel,
   REPEATS,
   REPEAT_ORDER,
   TAGS,
+  clearReminderForm,
 } from './calendar.js';
-import { WORK_WEEKS, getWorkWeek, setWorkWeek, occursOn } from './recurrence.js';
-import { levelProgress } from './level.js';
-/* The badge engine and the celebration overlay are not first paint: both load on
-   first use (precached, so that is a cache hit, not a network wait). */
-let achMod = null;
-const loadAchievements = () => import('./achievements.js').then((m) => (achMod = m));
-const celebrate = (item) =>
-  import('./celebrate.js')
-    .then((m) => m.celebrate(item))
-    .catch((err) => console.warn('[celebrate] failed to load:', err));
+import { setWorkWeek } from './recurrence.js';
+import { computeAchievements, levelProgress } from './achievements.js';
+import { celebrate } from './celebrate.js';
 import { openSnap } from './snap.js';
 import {
   lastNightGuess,
@@ -143,21 +131,34 @@ import {
   stepsTarget,
   focusMinutesTarget,
   HEALTH_LINKS,
-  suggestHealthLink,
 } from './nudges.js';
 import {
   enablePush,
   disablePush,
   pushSubscribed,
   pushSupported,
-  pushTestLocal,
   syncDeviceAlarms,
   cancelAllAlarms,
   usualDrinkHours,
   WATER_DEFAULTS,
   WATER_ACTION_ML,
+  notificationTarget,
 } from './push.js';
 import { CacheStorage } from './cache-storage.js';
+import {
+  sessionGen,
+  bumpSession,
+  isStaleSession,
+  sessionEndedError,
+  SESSION_ENDED,
+  freshUserState,
+  USER_CACHES,
+  isUserKey,
+  bootKey,
+  bootSnapshot,
+  readBootSnapshot,
+  bootFromSnapshot,
+} from './session.js';
 import { createOutbox, tempId, isTempId, newIdemKey } from './outbox.js';
 import {
   initNative,
@@ -175,9 +176,14 @@ import {
   healthAvailable,
   requestHealthAccess,
   onLocalNotificationAction,
-  saveFile,
+  onDeepLink,
+  deepLinkHash,
+  publicSiteUrl,
 } from './native.js';
+import { launchIntent } from './launch-intent.js';
+import { registerSW } from 'virtual:pwa-register';
 import { registerToast } from './toast.js';
+import { createUndoQueue } from './undo-queue.js';
 import { initA11y, focusLocator, refocus } from './a11y.js';
 import { initErrorReporting } from './error-report.js';
 import { initVitals, markHomePainted } from './vitals.js';
@@ -185,19 +191,15 @@ import {
   CUSTOM_MAX_BYTES,
   CUSTOM_MAX_COUNT,
   CUSTOM_MAX_MS,
-  chimeOptionValue,
   DEFAULT_CHIME,
   canRecordChime,
-  chimeOptions,
   customChimes,
   customKey,
   isKnownChime,
   playChime,
-  previewChime,
   readCustomChime,
   recordCustomChime,
   setCustomChimes,
-  stopChime,
 } from './chime.js';
 
 // Replaced by Vite's `define` at build time — see vite.config.js.
@@ -228,8 +230,39 @@ if ('serviceWorker' in navigator) {
     }
   } else if (!import.meta.env.DEV) {
     // vite-plugin-pwa emits sw.js only in a build; on the dev server it is the SPA fallback.
-    window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js', { scope: '/' }));
+    initServiceWorker();
   }
+}
+
+/* A new deploy reaches an open tab or an installed app. The worker is
+   registerType 'prompt' (vite.config.js): a new build installs and WAITS, and
+   the page keeps the old build's precache, chunks and all, so nothing skews
+   under it. "Reload" tells the waiting worker to take over and reloads once it
+   has (registerSW's updateSW(true)). The worker is otherwise only re-checked on
+   a navigation, which a hash-routed app never makes, so coming back to the app
+   checks too. Dismissed, it asks again on the next return. */
+function initServiceWorker() {
+  let updateReady = false;
+  const offerUpdate = () =>
+    pushToast('A new version is ready.', 'info', 24 * 60 * 60 * 1000, {
+      label: 'Reload',
+      run: () => updateSW(true),
+    });
+  const updateSW = registerSW({
+    onNeedRefresh() {
+      updateReady = true;
+      offerUpdate();
+    },
+    onRegisteredSW(_url, reg) {
+      if (!reg) return;
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) return;
+        if (updateReady) {
+          if (!state.toasts.some((t) => t.message === 'A new version is ready.')) offerUpdate();
+        } else reg.update().catch(() => {});
+      });
+    },
+  });
 }
 
 // Prefer the build-time env (VITE_API_BASE). In dev, fall back to '' so requests
@@ -362,8 +395,13 @@ function followSystemTheme() {
 
 /* ---- Premium skin ----
    One attribute on <html> swaps the whole look; styles/premium.css is scoped
-   to it and loads last. Nothing else in the app branches on this — keep it
-   that way, a skin that needs JS forks is not a skin. */
+   to it. Nothing else in the app branches on this — keep it that way, a skin
+   that needs JS forks is not a skin.
+   The stylesheet loads on demand (it is 21 kB of render-blocking CSS that is
+   inert for everyone with the toggle off), and the attribute only turns 'on'
+   once it has: 'on' with the rules missing would paint the classic look and
+   then jump. At boot, 'loading' hides #root (app.css) until then, so a reload
+   with premium on never shows a classic frame. Precached like every chunk. */
 const PREMIUM_KEY = 'gb.premium';
 function loadPremium() {
   try {
@@ -372,8 +410,33 @@ function loadPremium() {
     return false;
   }
 }
-function applyPremium(on) {
-  document.documentElement.setAttribute('data-premium', on ? 'on' : 'off');
+let premiumCss = null;
+let premiumCssReady = false;
+function loadPremiumCss() {
+  premiumCss =
+    premiumCss ||
+    import('../styles/premium.css').then(
+      () => {
+        premiumCssReady = true;
+      },
+      (err) => {
+        premiumCss = null; // let the next toggle try again
+        throw err;
+      }
+    );
+  return premiumCss;
+}
+function applyPremium(on, hideUntilReady = false) {
+  const el = document.documentElement;
+  if (!on || premiumCssReady) {
+    el.setAttribute('data-premium', on ? 'on' : 'off');
+    return;
+  }
+  if (hideUntilReady) el.setAttribute('data-premium', 'loading');
+  loadPremiumCss().then(
+    () => applyPremium(state.premium),
+    () => el.setAttribute('data-premium', 'off') // offline and never cached: classic, not blank
+  );
 }
 
 /* ---- Text size ----
@@ -395,14 +458,6 @@ function applyTextScale(scale) {
   // 100% means "whatever the browser/OS is set to" — don't pin it to 16px.
   document.documentElement.style.fontSize = key === 'normal' ? '' : TEXT_SCALES[key];
   return key;
-}
-function setTextScale(scale) {
-  state.textScale = applyTextScale(scale);
-  try {
-    CacheStorage.setItem(TEXT_SCALE_KEY, state.textScale);
-  } catch (_) {}
-  saveUiPrefs({ textScale: state.textScale });
-  render();
 }
 /* ---- Daily quote cache ----
    The "quote of the day" is stable per day, so cache the last one and show it
@@ -459,10 +514,7 @@ const state = {
   // Auth flow: 'signin' | 'signup' | 'verify' | 'forgot' | 'reset' | 'totp' | 'deletion'
   // Restore a pending verify screen across reloads so a refresh doesn't strand
   // the user on sign-in (which then makes them re-signup and burn the code).
-  // A browser that has never held a session gets sign-up first; one that has
-  // (a sign-out, an expired session) gets sign-in.
-  authMode: loadAuthDraft().mode || (loadSession() ? 'signin' : 'signup'),
-  authReturning: !!loadSession(),
+  authMode: loadAuthDraft().mode || 'signin',
   authEmail: loadAuthDraft().email || '',
   authNotice: '',
   // {email, password, cancelDeletion, message} between a right password and the
@@ -495,13 +547,14 @@ const state = {
 /* The working week decides which days a "working days" reminder lands on, so it
    has to be right for the FIRST paint — not after /api/auth/me comes back, by
    which time the calendar and Home's dots have already been drawn from the
-   default. The session cache carries uiPrefs and `gb.session` is cookie-backed
-   (read synchronously at module init), so it is available here. hydrateUiPrefs()
+   default. The session cache carries uiPrefs and `gb.session`'s slim cookie keeps
+   them (read synchronously at module init), so it is available here. hydrateUiPrefs()
    sets it again on every refresh; this is the same value, earlier. */
 setWorkWeek(state.user && state.user.uiPrefs && state.user.uiPrefs.workWeek);
 setRoutine(state.user && state.user.uiPrefs && state.user.uiPrefs.routine);
 setDefaultLead(state.user && state.user.uiPrefs && state.user.uiPrefs.reminderLead);
 setReminderSettingsOpener(() => openProfileSettings('reminders'));
+setCalendarImporter(() => openIcsImportDialog());
 setCustomToneAdder(() => openCustomToneDialog());
 setVoiceReminder({ supported: () => voiceSupported(), capture: (btn) => captureReminder(btn) });
 setTimeFormat(state.user && state.user.uiPrefs && state.user.uiPrefs.timeFormat);
@@ -528,12 +581,17 @@ function paintToasts() {
 
 /* A dismissed toast plays its exit (.is-leaving, gb-toast-out in app.css)
    before it leaves state. The set, not a class on the node, so a render()
-   during the exit keeps it leaving. */
+   during the exit keeps it leaving.
+   `quiet`: the toast's own onGone is not run (its Undo was tapped, or its
+   undo window already settled). The close button is not quiet: closing an
+   Undo toast means "done", so its delete goes now. */
 const TOAST_OUT_MS = 160;
 const leavingToasts = new Set();
-function dismissToast(id) {
-  if (leavingToasts.has(id) || !state.toasts.some((t) => t.id === id)) return;
+function dismissToast(id, quiet) {
+  const gone = state.toasts.find((t) => t.id === id);
+  if (leavingToasts.has(id) || !gone) return;
   leavingToasts.add(id);
+  if (gone.onGone && !quiet) gone.onGone();
   paintToasts();
   setTimeout(() => {
     leavingToasts.delete(id);
@@ -573,6 +631,7 @@ function armToast(id, ms) {
 function holdToasts() {
   if (toastsHeld) return;
   toastsHeld = true;
+  undoQueue.hold(); // an Undo toast's delete waits with it
   const now = Date.now();
   for (const [id, t] of toastTimers) {
     clearTimeout(t.handle);
@@ -582,6 +641,7 @@ function holdToasts() {
 function releaseToasts() {
   if (!toastsHeld) return;
   toastsHeld = false;
+  undoQueue.release();
   // A little time back after letting go, so it doesn't vanish the instant you look away.
   for (const [id, t] of toastTimers) armToast(id, Math.max(t.left, 1500));
 }
@@ -593,7 +653,10 @@ function dropStaleToastTimers() {
     toastTimers.delete(id);
   }
   // The stack that was being hovered is gone, and with it any mouseleave.
-  if (!state.toasts.length) toastsHeld = false;
+  if (!state.toasts.length) {
+    toastsHeld = false;
+    undoQueue.release();
+  }
 }
 
 /* How long an error stays: never under six seconds, longer the more there is
@@ -630,10 +693,18 @@ function isConnectionToast(t) {
 }
 
 /* `action` ({label, run}) puts one button on the toast — a reminder's Snooze.
-   Tapping it runs it and dismisses the toast. */
+   Tapping it runs it and dismisses the toast. `durationMs: Infinity` arms no
+   timer (an Undo toast: deferDelete's queue closes it). `opts.onGone` runs when
+   the toast goes any other way than its button: closed, or pushed off the
+   stack. `opts.icon` is its own glyph over TOAST_ICON's (notes: 'trash-2'). */
 let lastError = { id: 0, text: '' }; // the newest error toast, so a caller can tell one was said
 function pushToast(message, kind, durationMs, action, opts) {
+  const onGone = (opts && opts.onGone) || null;
   let text = message || 'Something went wrong.';
+  // A late answer for a session that has ended (session.js) has nobody to tell,
+  // and "session expired" from the requests a 401 cut short is what the sign-in
+  // card's notice already says.
+  if (text === SESSION_ENDED || (text === SESSION_EXPIRED && !state.user)) return 0;
   // The banner already says the connection is down; repeating "Check your
   // internet" under it said it twice. What's left to say is what happened to
   // the thing just tried.
@@ -644,9 +715,13 @@ function pushToast(message, kind, durationMs, action, opts) {
     kind: kind || 'error',
     at: Date.now(), // when it arrived — toastStack resumes its entrance from here
     action: action || null,
-    icon: (opts && opts.icon) || null, // its own glyph over TOAST_ICON's (notes: 'trash-2')
+    onGone,
+    icon: (opts && opts.icon) || null,
   };
-  state.toasts = [...state.toasts.filter((t) => t.message !== text), toast].slice(-4);
+  // Two "Task deleted." toasts are two Undos: only plain repeats collapse.
+  const before = state.toasts;
+  state.toasts = [...before.filter((t) => t.onGone || t.message !== text), toast].slice(-4);
+  for (const t of before) if (t.onGone && !state.toasts.includes(t)) t.onGone();
   if (toast.kind === 'error') lastError = { id: toast.id, text };
   dropStaleToastTimers();
   paintToasts();
@@ -657,7 +732,8 @@ function pushToast(message, kind, durationMs, action, opts) {
   // actual accomplishments (toggleTask / toggleHabit).
   if (toast.kind !== 'success' && toast.kind !== 'info') buddyReact('no');
   const asked = typeof durationMs === 'number' ? durationMs : 2800;
-  armToast(toast.id, toast.kind === 'error' ? Math.max(asked, errorToastMs(text)) : asked);
+  if (Number.isFinite(asked))
+    armToast(toast.id, toast.kind === 'error' ? Math.max(asked, errorToastMs(text)) : asked);
   return toast.id;
 }
 
@@ -702,7 +778,81 @@ registerToast({
   // A toast with one button (e.g. "Undo") — the same action slot a reminder's Snooze uses.
   // `opts.icon` swaps the kind's glyph ('trash-2' on "Note deleted.").
   action: (message, label, run, opts) => pushToast(message, 'info', 6000, { label, run }, opts),
+  // Screen-reader-only status, for async results a repaint would otherwise swallow.
+  announce,
 });
+
+/* ---- Deferred deletes (scripts/undo-queue.js) ----
+   Undo instead of "Are you sure?": the item leaves the screen at once, a toast
+   says so with Undo, and the DELETE goes only when the toast's window passes
+   (held, like every toast, while the stack is hovered or focused). Undo puts it
+   back where it was. Page hidden or sign-out sends what is pending first; a
+   send that fails puts the item back and toasts. Each delete is its own toast,
+   so several pending ones are undone separately.
+   `remove` / `restore` change state only, and `remove` must be safe to run
+   again: render() and overlayOutbox() re-run it, so a list reloaded from the
+   server mid-window doesn't bring the item back. `commit` is the real request,
+   through api() and, offline, the outbox: the same paths the old instant
+   delete used. */
+const UNDO_MS = 6000;
+const undoQueue = createUndoQueue({ ms: UNDO_MS, onError: (err, e) => toastError(err, e.errorText) });
+
+function deferDelete({ message, errorText, remove, restore, commit, selector, afterRemove, paint = render }) {
+  const uid = state.user && state.user.id;
+  const mine = () => !!state.user && state.user.id === uid;
+  let toastId = 0;
+  const qid = undoQueue.schedule({
+    errorText,
+    remove,
+    restore: () => {
+      if (!mine()) return; // signed out meanwhile: there is no list to put it in
+      restore();
+      paint();
+      if (selector) landSoon(selector);
+    },
+    commit,
+    settled: () => dismissToast(toastId, true),
+  });
+  toastId = pushToast(
+    message,
+    'info',
+    Infinity,
+    { label: 'Undo', run: () => undoQueue.undo(qid) },
+    { onGone: () => undoQueue.commit(qid) }
+  );
+  // A row with an exit animation plays it; anything else just repaints.
+  if (selector) removeSoon(selector, afterRemove || (() => {}));
+  else paint();
+}
+
+/* remove / restore for an item of an id-keyed list held at get() / set(). */
+function listSlot(get, set, id) {
+  let item = null;
+  let at = 0;
+  return {
+    remove() {
+      const list = get() || [];
+      const i = list.findIndex((x) => x.id === id);
+      if (i < 0) return;
+      item = list[i];
+      at = i;
+      set(list.filter((x) => x.id !== id));
+    },
+    restore() {
+      const list = get() || [];
+      if (!item || list.some((x) => x.id === id)) return;
+      set([...list.slice(0, at), item, ...list.slice(at)]);
+    },
+  };
+}
+
+// Pending deletes go before the page does. pagehide alone misses a phone
+// that backgrounds the tab and never comes back to it.
+const flushDeletes = () => undoQueue.flush();
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) flushDeletes();
+});
+window.addEventListener('pagehide', flushDeletes);
 
 function score() {
   if (state.score > 0) {
@@ -992,6 +1142,57 @@ function overlayPending(money) {
   return applyLedgerDiff(money, { upserts: Object.values(p.upserts), deletes: p.deletes });
 }
 
+/* The document's twin of the queue above: docDiff ops (money-core.js) the server
+   has not accepted yet. A loan repayment, a goal contribution or a bill marked
+   paid offline used to be replaced by the server's copy at the next load, after
+   "will sync" was promised. Now the server's copy is taken with these laid over
+   it, and re-sent. */
+function docPendingKey() {
+  return moneyStorageKey(state.user) + '.docPending';
+}
+function loadPendingDoc() {
+  try {
+    const p = JSON.parse(CacheStorage.getItem(docPendingKey()) || 'null');
+    if (p && typeof p === 'object' && !Array.isArray(p)) return p;
+  } catch (_) {
+    /* unreadable → nothing pending */
+  }
+  return {};
+}
+function storePendingDoc(p) {
+  try {
+    if (Object.keys(p).length) CacheStorage.setItem(docPendingKey(), JSON.stringify(p));
+    else CacheStorage.removeItem(docPendingKey());
+  } catch (err) {
+    console.error('Failed to keep unsaved money changes:', err);
+  }
+}
+/* For the CSV import, between batches: true once nothing is left unsent. Bound
+   to the session the Money screen was built in, so an import running over a
+   sign-out stops instead of saving the rest into the next account's money. */
+function moneySettledFor(gen) {
+  return () =>
+    moneySaveQueue.then(() => {
+      if (isStaleSession(gen)) return false;
+      const p = loadPendingLedger();
+      return !Object.keys(p.upserts).length && !p.deletes.length;
+    });
+}
+
+/* Drop the ops in `sent` that are still exactly as sent: the server has them. */
+function clearPendingDoc(sent) {
+  const now = loadPendingDoc();
+  for (const [k, op] of Object.entries(sent))
+    if (JSON.stringify(now[k]) === JSON.stringify(op)) delete now[k];
+  storePendingDoc(now);
+}
+/* A copy fresh from the server becomes the live state with everything not yet
+   accepted laid over it: ledger rows, then document ops. */
+function adoptServerMoney(theirs) {
+  state.money = normalizeMoney(applyDocDiff(overlayPending(theirs), loadPendingDoc()));
+  lastDocBody = JSON.stringify(docPart(normalizeMoney(theirs)));
+}
+
 /* What the server last accepted of the document part, so an unchanged document
    (the usual case: most saves are one new expense) is not re-sent at all. */
 let lastDocBody = null;
@@ -1007,17 +1208,23 @@ function saveMoney(next, base) {
   // onto the live state. Balances are always the live ones; they come only from
   // the server.
   const nextN = normalizeMoney(next);
-  const diff = ledgerDiff(base ? normalizeMoney(base) : state.money, nextN);
+  const baseN = base ? normalizeMoney(base) : state.money;
+  const diff = ledgerDiff(baseN, nextN);
+  // The document the same way: only the keys and items this save changed. Laying
+  // the snapshot's whole document over the live one lost a goal that arrived
+  // from the laptop while Home's "Add expense" was open.
+  const ops = docDiff(baseN, nextN);
   const had = new Set(((state.money && state.money.expenses) || []).map((e) => e.id));
   // A new expense for today (not a posted monthly repeat) ticks "Log every expense".
   if (diff.upserts.some((u) => u.kind === 'expense' && u.date === accountTodayKey() && !had.has(u.id) && !String(u.id).startsWith('rec-')))
     autoTickExpenseHabits();
   state.money = normalizeMoney(
-    Object.assign(applyLedgerDiff(state.money, diff), docPart(nextN), {
+    Object.assign(applyDocDiff(applyLedgerDiff(state.money, diff), ops), {
       accounts: state.money.accounts,
     })
   );
   queueLedger(diff);
+  if (Object.keys(ops).length) storePendingDoc(Object.assign(loadPendingDoc(), ops));
   cacheMoney();
   render();
   persistMoney();
@@ -1033,12 +1240,15 @@ function persistMoney() {
     flushLedger()
       .then(putDocIfChanged)
       .catch((err) => {
+      if (err && err.sessionEnded) return; // signed out meanwhile: what is queued stays in that account's cache
       console.error('CRITICAL: saveMoney failed to reach database:', err);
       // No connection (or a server that's down) is not "not saved": the change is
       // in the cache and the ledger queue, and is replayed on the next flush
       // (handleOnline → loadData, or the timer below). Saying "not saved" made
-      // people enter it twice. Only a refusal is worth an error.
-      const queued = !navigator.onLine || !err || !err.status || err.status >= 500;
+      // people enter it twice. Only a refusal is worth an error; what flushLedger
+      // keeps for a retry (RETRYABLE: 401, 408, 409, 429) is queued too.
+      const queued =
+        !navigator.onLine || !err || !err.status || err.status >= 500 || RETRYABLE.has(err.status);
       if (queued) pushToast('Saved on this phone — will sync when you’re back online.', 'info');
       else toastError(err, 'Money changes were not saved. Check your connection and try again.');
     })
@@ -1157,7 +1367,8 @@ function applyAccounts(accounts) {
 
 async function putDocIfChanged() {
   const body = JSON.stringify(docPart(state.money));
-  if (body === lastDocBody) return;
+  const sent = loadPendingDoc();
+  if (body === lastDocBody) return clearPendingDoc(sent); // the server already holds it
   try {
     // No version yet means the boot load failed: a PUT now would be blind and
     // overwrite whatever another device saved. Treat it like a conflict: load,
@@ -1165,18 +1376,29 @@ async function putDocIfChanged() {
     if (!moneyVersion) throw { status: 409 };
     await putMoney(body, moneyVersion);
     lastDocBody = body;
+    clearPendingDoc(sent);
   } catch (err) {
-    if (!err || err.status !== 409) throw err;
-    // Someone else wrote first. Take their copy, fold ours into it, and
-    // write once more — unconditionally, so a third writer can't spin this.
+    if (!err || err.status !== 409) {
+      // A refusal won't change on a resend: stop resending (and re-toasting) it.
+      // A retryable status keeps it for the next try.
+      if (err && err.status >= 400 && err.status < 500 && !RETRYABLE.has(err.status))
+        clearPendingDoc(sent);
+      throw err;
+    }
+    // Someone else wrote first. Take their copy, lay what we changed over it, and
+    // write once more — unconditionally, so a third writer can't spin this. (A
+    // union by id here kept their version of any item we had edited, and brought
+    // back a cleared budget or a deleted tag.)
     const theirs = await api('/api/money', { onResponse: rememberMoneyVersion });
-    state.money = normalizeMoney(overlayPending(mergeMoney(state.money, theirs)));
+    const ops = loadPendingDoc();
+    adoptServerMoney(theirs);
     cacheMoney();
     render();
     toastSuccess('Merged money changes from your other device.');
     const merged = JSON.stringify(docPart(state.money));
     await putMoney(merged, null);
     lastDocBody = merged;
+    clearPendingDoc(ops);
   }
 }
 
@@ -1186,18 +1408,29 @@ async function putDocIfChanged() {
    as a synchronous mirror for the views that read them. The DB is the source
    of truth so these follow the user across devices; the cache is just the fast
    local read path. ponytail: one JSON blob + mirror, exactly like saveMoney. */
-// Saves made / still out, so a /api/auth/me read that raced one can keep this
-// device's prefs (loadSecondaryData).
-const uiPrefsSaves = { made: 0, out: 0, pending: false };
+/* Patches whose PUT hasn't answered yet, laid over any /me that lands first
+   (syncUserSession): refreshCurrentUser runs after every task or habit tick, and
+   an answer read before the PUT committed flipped the pref back here. */
+const uiPrefsInFlight = new Map();
+let uiPrefsSeq = 0;
+
+/* Keys whose save found no connection, per account: resent in one PUT, at their
+   current values, once back online. Not an error, and no toast. */
+let uiPrefsOffline = null;
 window.addEventListener('online', () => {
-  if (uiPrefsSaves.pending) saveUiPrefs({});
+  const off = uiPrefsOffline;
+  uiPrefsOffline = null;
+  const prefs = state.user && state.user.uiPrefs;
+  if (!off || !prefs || state.user.id !== off.uid) return;
+  saveUiPrefs(Object.fromEntries([...off.keys].map((k) => [k, prefs[k]])), { quiet: true });
 });
 
-function saveUiPrefs(patch) {
+/* Sends only `patch`: the server merges key by key (AuthService.updateUiPrefs).
+   Sending the whole blob let a tab open since yesterday write its old copy of
+   every other key over what another device had saved since. `quiet`: a write
+   the app makes on its own (a baseline, a detected default), not worth a toast. */
+function saveUiPrefs(patch, { quiet = false } = {}) {
   if (!state.user || !patch) return;
-  uiPrefsSaves.pending = false;
-  uiPrefsSaves.made++;
-  uiPrefsSaves.out++;
   state.user.uiPrefs = Object.assign({}, state.user.uiPrefs || {}, patch);
   // Mirror into the cached session too. That cache is what the app boots from,
   // and it was only ever refreshed by /api/auth/me — so a pref saved here read
@@ -1207,27 +1440,31 @@ function saveUiPrefs(patch) {
   saveSession(state.user, state.user.token);
   // Returned so a caller that reads the pref back server-side (the focus goal's streak) can wait for it.
   // keepalive: a reload right after a pref change (sign-in, theme) would
-  // otherwise cancel the PUT. The blob is a few hundred bytes, far under 64 KB.
+  // otherwise cancel the PUT. A patch is a few hundred bytes, far under 64 KB.
+  const seq = ++uiPrefsSeq;
+  uiPrefsInFlight.set(seq, patch);
   return api('/api/auth/ui-prefs', {
     method: 'PUT',
     keepalive: true,
-    body: JSON.stringify({ prefs: state.user.uiPrefs }),
-  }).finally(() => uiPrefsSaves.out--).catch((err) => {
-    // The page is going (Firefox rejects the promise before it tears down): keepalive carries the PUT.
-    if (document.visibilityState === 'hidden') return;
-    // No connection: each save sends the whole blob, so one resend once back
-    // online carries every change made meanwhile. Not an error, and no toast.
-    if (err && err.message === NO_CONNECTION) {
-      uiPrefsSaves.pending = true;
-      return;
-    }
-    console.error('saveUiPrefs failed to reach database:', err);
-    // The change shows on this device and would quietly undo itself on the next
-    // sign-in. Offline is the banner's to say; a 401 signs out on its own.
-    if (navigator.onLine && !(err && err.status === 401)) {
-      toastError(null, "Couldn't save that setting. It applies here, but may not on your next sign-in.");
-    }
-  });
+    body: JSON.stringify({ prefs: patch }),
+  })
+    .catch((err) => {
+      // The page is going (Firefox rejects the promise before it tears down): keepalive carries the PUT.
+      if (document.visibilityState === 'hidden') return;
+      if (err && err.message === NO_CONNECTION) {
+        const uid = state.user && state.user.id;
+        if (!uiPrefsOffline || uiPrefsOffline.uid !== uid) uiPrefsOffline = { uid, keys: new Set() };
+        Object.keys(patch).forEach((k) => uiPrefsOffline.keys.add(k));
+        return;
+      }
+      console.error('saveUiPrefs failed to reach database:', err);
+      // The change shows on this device and would quietly undo itself on the next
+      // sign-in. Offline is the banner's to say; a 401 signs out on its own.
+      if (!quiet && navigator.onLine && !(err && err.status === 401)) {
+        toastError(null, "Couldn't save that setting. It applies here, but may not on your next sign-in.");
+      }
+    })
+    .finally(() => uiPrefsInFlight.delete(seq));
 }
 
 /* Which chime a notification makes in the app. Lives in ui_prefs like every
@@ -1250,16 +1487,6 @@ function notifySoundFor(n) {
     if (habit && habit.sound && isKnownChime(habit.sound)) return habit.sound;
   }
   return notifySound();
-}
-
-/* Always '12' or '24'. Read from ui_prefs so it travels with the account rather
-   than living on one device. An account with nothing stored yet — or one still
-   carrying the old 'auto' — answers with this device's format, and
-   hydrateUiPrefs() writes that answer back so the next load reads it from the
-   server like every other preference. */
-function timeFormatPref() {
-  const p = state.user && state.user.uiPrefs;
-  return p && (p.timeFormat === '12' || p.timeFormat === '24') ? p.timeFormat : detectTimeFormat();
 }
 
 function notifySound() {
@@ -1460,7 +1687,7 @@ function hydrateUiPrefs() {
     // to ui_prefs, so from the second load on this is the server's answer and
     // the same on every device the account signs in from.
     if (p.timeFormat !== '12' && p.timeFormat !== '24') {
-      saveUiPrefs({ timeFormat: detectTimeFormat() });
+      saveUiPrefs({ timeFormat: detectTimeFormat() }, { quiet: true });
     }
     // The device copy follows the account: set only, it hid the checklist (and the
     // starter packs on it) from every later account signed in on the same phone.
@@ -1480,10 +1707,30 @@ function hydrateUiPrefs() {
    can still rescue), `protectedToday`, and the current `freezeTokens` balance.
    This layer just reads those fields and calls the protect/unprotect endpoints. */
 
+/* The account's today (home-order.js todayKey): the day the server checks a
+   check-in or rest day against and stamps on its water/food summaries. */
+function todayKey() {
+  return sharedTodayKey(state.user && state.user.timezone);
+}
+
+/* The clock that goes with todayKey(): HH:MM in the account's zone, the one
+   reminders ring in. The device's when the account has none (or an unknown id). */
+function accountNowHHMM() {
+  const zone = state.user && state.user.timezone;
+  try {
+    return new Intl.DateTimeFormat('en-GB', {
+      timeZone: zone || undefined,
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).format(new Date());
+  } catch (_) {
+    return new Date().toTimeString().slice(0, 5);
+  }
+}
+
 function yesterdayKey() {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return dateKey(d.getFullYear(), d.getMonth(), d.getDate());
+  return shiftDayKey(todayKey(), -1);
 }
 
 // At-risk banners the user chose to let reset — session-only, don't nag again.
@@ -1579,16 +1826,9 @@ function achievementProps() {
    then celebrate anything new that crosses its threshold thereafter. */
 function checkAchievements() {
   if (!state.user || !state.achReady) return;
-  // First call loads the engine and runs again; until then nothing can be new.
-  if (!achMod) {
-    loadAchievements()
-      .then(() => checkAchievements())
-      .catch((err) => console.warn('[achievements] failed to load:', err));
-    return;
-  }
   let all;
   try {
-    all = achMod.computeAchievements(achievementProps()).flatMap((g) => g.items);
+    all = computeAchievements(achievementProps()).flatMap((g) => g.items);
   } catch (err) {
     // A bug in a badge rule, not a missing feature: say so, or badges just stop.
     console.warn('[achievements] compute failed:', err);
@@ -1607,7 +1847,7 @@ function checkAchievements() {
   if (!Array.isArray(stored) && !achSession.ids.size) {
     // First run with real data — baseline, don't celebrate the back-catalogue.
     unlockedIds.forEach((id) => achSession.ids.add(id));
-    saveUiPrefs({ achSeen: unlockedIds });
+    saveUiPrefs({ achSeen: unlockedIds }, { quiet: true });
     return;
   }
   const seen = new Set([...(Array.isArray(stored) ? stored : []), ...achSession.ids]);
@@ -1620,7 +1860,7 @@ function checkAchievements() {
   // double-fire the same badge.
   const union = Array.from(new Set([...seen, ...unlockedIds]));
   union.forEach((id) => achSession.ids.add(id));
-  saveUiPrefs({ achSeen: union });
+  saveUiPrefs({ achSeen: union }, { quiet: true });
   if (achQuiet) return;
   // A badge for setting something up lands as a toast: the full-screen
   // celebration over a goal just made blocked its milestone field.
@@ -1795,275 +2035,6 @@ function homeBreakEntry() {
   );
 }
 
-/* ---- The freeze calendar ----
-   Picking the day a freeze covers. protect/unprotect have always accepted any
-   past date; the UI only ever sent today (the rest-day toggle) or yesterday
-   (the at-risk prompt), so a miss from earlier in the week was unreachable.
-
-   Days with no check-in row are simply absent from the history, so "missed" is
-   the absence of a record, not a record saying so — the grid fills the month
-   and marks whatever the server didn't mention. */
-async function openFreezeCalendar() {
-  const habits = (state.habits || []).filter((x) => x.active !== false);
-  if (!habits.length) {
-    toastError(new Error('Add a habit first.'), 'Nothing to freeze yet.');
-    return;
-  }
-
-  let habit = habits[0];
-  let cursor = new Date();
-  cursor = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
-  let byDate = {};
-  // The day the habit started. Days before it are blank, not missed.
-  let since = '';
-
-  const grid = h('div', { class: 'gb-freeze-cal' });
-  const { sheet, close } = openOverlay({ label: 'Freeze a day', className: 'gb-freeze-modal' });
-
-  /* Far enough back to cover the month on screen, not a fixed window. A flat
-     ?days=120 only reached about four months, so paging further back returned
-     nothing and painted a whole month as untouched — indistinguishable from a
-     month genuinely missed. +31 so the first of the month is inside the range
-     rather than exactly on its edge. */
-  function daysBack() {
-    const span = Math.ceil((Date.now() - cursor.getTime()) / 86400000);
-    return Math.max(31, span + 31);
-  }
-
-  async function load() {
-    grid.replaceChildren(h('div', { class: 'gb-freeze-loading' }, 'Loading…'));
-    try {
-      const res = await api(
-        '/api/habits/' + encodeURIComponent(habit.id) + '/history?days=' + daysBack()
-      );
-      byDate = {};
-      since = (res && res.since) || '';
-      ((res && res.days) || []).forEach((r) => {
-        byDate[r.date] = r;
-      });
-    } catch (err) {
-      toastError(err, 'Could not load that habit.');
-      byDate = {};
-    }
-    paint();
-  }
-
-  // One request at a time: a double tap on a missed day sent two /protect
-  // calls before the first answered, and the grid hadn't repainted to say so.
-  let toggling = false;
-  async function toggleDay(key, row) {
-    if (toggling) return;
-    const covered = row && row.protectedDay;
-    if (row && row.done) {
-      toastError(new Error('That day is already done.'), 'Nothing to freeze.');
-      return;
-    }
-    if (!covered && freezeTokensLeft() <= 0) {
-      toastError(new Error('No freezes left this week.'), 'Out of freezes.');
-      return;
-    }
-    // A freeze bridges a run; after a miss there is no run to bridge, and the
-    // token was spent on nothing.
-    const prevRow = byDate[addDays(key, -1)];
-    if (!covered && !(prevRow && (prevRow.done || prevRow.protectedDay))) {
-      pushToast('Nothing to protect: the day before wasn’t done, so there’s no streak to keep.', 'info', 4200);
-      return;
-    }
-    toggling = true;
-    try {
-      const updated = await api(
-        '/api/habits/' + encodeURIComponent(habit.id) + (covered ? '/unprotect' : '/protect'),
-        { method: 'POST', body: JSON.stringify({ date: key }) }
-      );
-      state.habits = state.habits.map((x) => (x.id === updated.id ? updated : x));
-      habit = updated;
-      reconcileStreakFreeze(updated);
-      toastSuccess(covered ? 'Freeze returned to your wallet.' : 'Day covered by a freeze.');
-      render();
-      await load();
-    } catch (err) {
-      toastError(err, covered ? 'Could not undo that.' : 'Could not freeze that day.');
-    } finally {
-      toggling = false;
-    }
-  }
-
-  function paint() {
-    const today = todayKey();
-    const year = cursor.getFullYear();
-    const month = cursor.getMonth();
-    const first = new Date(year, month, 1).getDay();
-    const total = new Date(year, month + 1, 0).getDate();
-    const cells = [];
-    for (let i = 0; i < first; i++) cells.push(h('div', { class: 'gb-mini-cal-day is-empty' }));
-    for (let d = 1; d <= total; d++) {
-      const key =
-        year + '-' + String(month + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
-      const row = byDate[key];
-      const future = key > today;
-      const before = !!since && key < since;
-      // Missed is "behind us and not done", not "has no row": unprotecting a day
-      // leaves the row behind with done=false, and keying off its absence made a
-      // refunded day render as though nothing had ever been missed.
-      const done = !!(row && row.done);
-      const frozen = !!(row && row.protectedDay);
-      const cls =
-        'gb-mini-cal-day gb-freeze-day' +
-        (key === today ? ' is-today' : '') +
-        (future || before ? ' is-future' : '') +
-        (done ? ' is-done' : '') +
-        (frozen ? ' is-frozen' : '') +
-        (!future && !before && !done && !frozen ? ' is-missed' : '');
-      cells.push(
-        h(
-          'button',
-          {
-            type: 'button',
-            class: cls,
-            disabled: future || before || !!(row && row.done),
-            title: future
-              ? 'Not yet'
-              : before
-                ? 'Before this habit existed'
-              : row && row.done
-                ? 'Done'
-                : row && row.protectedDay
-                  ? 'Frozen — tap to get the freeze back'
-                  : 'Tap to cover this day with a freeze',
-            onclick: () => toggleDay(key, row),
-          },
-          h('span', { class: 'num' }, String(d)),
-          row && row.done
-            ? Icon('check', { size: 11, sw: 3 })
-            : row && row.protectedDay
-              ? Icon('snowflake', { size: 11, sw: 2.6 })
-              : null
-        )
-      );
-    }
-
-    const monthLabel = cursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
-    const atCurrentMonth =
-      year === new Date().getFullYear() && month === new Date().getMonth();
-    grid.replaceChildren(
-      h(
-        'div',
-        { class: 'gb-mini-cal-header' },
-        h(
-          'button',
-          {
-            type: 'button',
-            class: 'gb-mini-cal-nav-btn',
-            'aria-label': 'Previous month',
-            onclick: () => {
-              cursor = new Date(year, month - 1, 1);
-              load();
-            },
-          },
-          Icon('chevron-left', { size: 16, sw: 2.6 })
-        ),
-        h('div', { class: 'gb-mini-cal-month' }, monthLabel),
-        h(
-          'button',
-          {
-            type: 'button',
-            class: 'gb-mini-cal-nav-btn',
-            'aria-label': 'Next month',
-            // Nothing to protect ahead of today, so the walk stops here.
-            disabled: atCurrentMonth,
-            onclick: () => {
-              cursor = new Date(year, month + 1, 1);
-              load();
-            },
-          },
-          Icon('chevron-right', { size: 16, sw: 2.6 })
-        )
-      ),
-      h(
-        'div',
-        { class: 'gb-mini-cal-dow' },
-        ['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d) =>
-          h('div', { class: 'gb-mini-cal-dow-cell' }, d)
-        )
-      ),
-      h('div', { class: 'gb-mini-cal-grid' }, ...cells),
-      h(
-        'div',
-        { class: 'gb-mini-cal-legend' },
-        h(
-          'span',
-          { class: 'gb-mini-cal-legend-item' },
-          h('span', { class: 'dot is-done' }),
-          'Done'
-        ),
-        h(
-          'span',
-          { class: 'gb-mini-cal-legend-item' },
-          h('span', { class: 'dot is-frozen' }),
-          'Frozen'
-        ),
-        h(
-          'span',
-          { class: 'gb-mini-cal-legend-item' },
-          h('span', { class: 'dot is-missed' }),
-          'Missed'
-        )
-      )
-    );
-    refreshIcons();
-  }
-
-  const picker = h(
-    'div',
-    { class: 'gb-freeze-habits' },
-    habits.map((x) =>
-      h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-chip' + (x.id === habit.id ? ' is-on' : ''),
-          'aria-pressed': x.id === habit.id ? 'true' : 'false',
-          onclick: (e) => {
-            habit = x;
-            Array.from(picker.children).forEach((el) => {
-              el.classList.remove('is-on');
-              el.setAttribute('aria-pressed', 'false');
-            });
-            e.currentTarget.classList.add('is-on');
-            e.currentTarget.setAttribute('aria-pressed', 'true');
-            load();
-          },
-        },
-        x.name
-      )
-    )
-  );
-
-  // Filtered, not passed straight through: Element.append() turns a null child
-  // into the literal text "null", which is exactly what it printed above the
-  // calendar for anyone with a single habit.
-  sheet.append(
-    ...[
-      h(
-        'div',
-        { class: 'gb-modal-title' },
-        Icon('snowflake', { size: 16, sw: 2.4 }),
-        ' Freeze a day'
-      ),
-      h(
-        'p',
-        { class: 'gb-modal-sub' },
-        'A freeze covers one missed day so the streak holds. Tap a day to spend one, tap it again to get it back.'
-      ),
-      habits.length > 1 ? picker : null,
-      grid,
-      h('button', { type: 'button', class: 'gb-btn gb-btn--ghost', onclick: close }, 'Done'),
-    ].filter(Boolean)
-  );
-  refreshIcons();
-  load();
-}
-
 /* Dismiss the at-risk prompt and let the streak reset (no token spent). */
 function declineStreakBreak(habitId) {
   dismissedRisk.add(String(habitId));
@@ -2161,24 +2132,30 @@ function recordTrendsToday() {
 }
 
 /* Sign-out leaves nothing of this account on the device: money, wellness, goal
-   progress, trends — every key built as gb.<thing>.<userId>[.<more>]. Except a
-   money pending queue that still holds writes: those are expenses the server
-   never got, the only copy there is, and they replay when this account signs
-   back in. Session expiry (handleAuthExpired) keeps everything, since the same
-   person is about to sign back in. */
-function purgeUserCache() {
+   progress, trends, the app's boot snapshot — every key built as
+   gb.<thing>.<userId>[.<more>] (session.js isUserKey). Every way out runs it, a
+   401 included: whoever signs in next on this device is not necessarily the
+   same person. Except writes the server never got, the only copy there is:
+   a money pending queue that still holds some is kept (it replays when this
+   account signs back in), and so are the offline outbox and the water queue
+   when the session expired rather than being ended on purpose. */
+function purgeUserCache(reason) {
   const id = state.user && state.user.id;
   if (!id) return;
   const p = loadPendingLedger();
-  const keep = Object.keys(p.upserts).length || p.deletes.length ? pendingKey() : null;
-  CacheStorage.removeWhere(
-    (k) => k !== keep && (k.endsWith('.' + id) || k.includes('.' + id + '.'))
+  const keepMoney = reason !== 'deleted' && (Object.keys(p.upserts).length || p.deletes.length);
+  const keepOutbox = reason === 'expired' && outbox.size() ? outboxKey() : null;
+  // Glasses logged offline, likewise: the only copy, and they replay on sign-in.
+  const keepWater = reason === 'expired' && loadWaterQueue().length ? waterQueueKey() : null;
+  const keep = keepMoney ? pendingKey() : null;
+  // Unsent Money document edits stay too (stored only while non-empty), like the ledger queue.
+  const keepDoc = reason !== 'deleted' ? docPendingKey() : null;
+  const gone = CacheStorage.removeWhere(
+    (k) => k !== keepOutbox && k !== keepWater && k !== keepDoc && isUserKey(k, id, keep)
   );
-  // The offline outbox (gb.outbox.<uid>) goes too — the pattern above already
-  // matches it; this says so. Unlike the money queue it is not kept: a task tick
-  // replayed into a later session is worth less than a clean sign-out.
-  outbox.clear();
+  if (!keepOutbox) outbox.clear();
   outboxIds.clear();
+  return gone;
 }
 
 function clearSession() {
@@ -2196,15 +2173,6 @@ function clearSession() {
   // The Notes list's offline copy (notes-core.js offlineKey) is that account's
   // notes in plain text on this device: it leaves with the session.
   CacheStorage.removeWhere((k) => k.startsWith('gb.notesOffline.')).catch(() => {});
-  // The Workbox NetworkFirst cache holds this account's API GETs (export, notes,
-  // money, health) and would serve them offline to whoever is next. Here, not in
-  // logout(): a 401 (signed out from another device, password changed) ends the
-  // session too, and that is the lost-phone case.
-  try {
-    if (typeof caches !== 'undefined') caches.delete('gb-api-get').catch(() => {});
-  } catch (_) {
-    /* no CacheStorage (insecure context) */
-  }
 }
 
 /* The ONLY way a signed-in user reaches `state` — sign-in, OTP verify, password
@@ -2216,6 +2184,10 @@ function clearSession() {
    A token on the payload wins over the stored one: at sign-in nothing is stored
    yet, and after a password change the stored one has just been revoked. */
 function syncUserSession(userPatch) {
+  if (userPatch && userPatch.uiPrefs && uiPrefsInFlight.size)
+    userPatch = Object.assign({}, userPatch, {
+      uiPrefs: Object.assign({}, userPatch.uiPrefs, ...uiPrefsInFlight.values()),
+    });
   const token = (userPatch && userPatch.token) || loadToken();
   state.user = Object.assign({}, state.user || {}, userPatch || {});
   if (token) {
@@ -2249,20 +2221,6 @@ function deviceZone() {
     return ''; // no Intl zone: nothing to compare
   }
 }
-/* "Asia/Calcutta" reads as code. The city and the zone's own name read as a
-   place: "Calcutta (India Standard Time)". */
-const zoneCity = (tz) => String(tz || '').split('/').pop().replace(/_/g, ' ');
-function zoneName(tz) {
-  const city = zoneCity(tz);
-  try {
-    const part = new Intl.DateTimeFormat(undefined, { timeZone: tz, timeZoneName: 'long' })
-      .formatToParts(new Date())
-      .find((p) => p.type === 'timeZoneName');
-    return part && part.value !== city ? city + ' (' + part.value + ')' : city;
-  } catch (_) {
-    return city;
-  }
-}
 /* The one timezone write, shared by the offer below and first-run setup. */
 async function saveDeviceTimezone(tz) {
   const me = await api('/api/auth/timezone', {
@@ -2270,7 +2228,7 @@ async function saveDeviceTimezone(tz) {
     body: JSON.stringify({ timezone: tz }),
   });
   syncUserSession(me || {});
-  toastSuccess('Timezone set to ' + zoneName(tz) + '.');
+  toastSuccess('Timezone set to ' + tz + '.');
   loadData();
 }
 function offerDeviceTimezone() {
@@ -2287,24 +2245,24 @@ function offerDeviceTimezone() {
     tzOfferTimer = setTimeout(offerDeviceTimezone, 3000);
     return;
   }
-  saveUiPrefs({ tzAsked: tz });
+  saveUiPrefs({ tzAsked: tz }, { quiet: true });
   openModal({
-    title: 'Switch to ' + zoneCity(tz) + ' time?',
+    title: 'Switch to ' + tz + '?',
     sub:
-      'This device is on ' +
-      zoneName(tz) +
+      'Your phone is on ' +
+      tz +
       ', your account on ' +
-      zoneName(u.timezone) +
+      u.timezone +
       '. Days, streaks and reminder times follow the account.',
     body: h('div', { class: 'gb-note-hint' }, 'You can change it later in Settings, Profile.'),
     primary: 'Switch',
-    dismiss: 'Keep ' + zoneCity(u.timezone) + ' time',
+    dismiss: 'Keep ' + u.timezone,
     onPrimary: () => saveDeviceTimezone(tz),
   });
 }
 
 /* Ask for notification permission and say how it went. Settings › Alerts and
-   first-run setup share it. Resolves true only when push is on. */
+   the first timed save (askPushOnce) share it. Resolves true only when push is on. */
 async function enablePushFlow(okMessage) {
   const native = localNotificationsAvailable();
   const r = await enablePush(api);
@@ -2332,21 +2290,58 @@ async function enablePushFlow(okMessage) {
   return false;
 }
 
+/* The notification ask, at the moment it makes sense: the first time a timed
+   reminder or a habit with a reminder time is saved (and once at the end of
+   first-run when the goal step made timed ones). Once per account
+   (`ui_prefs.pushAsked`, recorded before asking, so a refusal is never
+   re-asked), only when this device can notify and push is off. In the app the
+   permission is the native one (localNotificationPermission), never the
+   WebView's Notification. The rules are pushAskDue in app-logic.js. */
+async function askPushOnce(needs) {
+  if (!needs || !state.user || firstRunOpen || !pushSupported()) return;
+  const native = localNotificationsAvailable();
+  const [subscribed, permission] = await Promise.all([
+    pushSubscribed(),
+    native ? localNotificationPermission() : typeof Notification !== 'undefined' ? Notification.permission : 'denied',
+  ]);
+  // Re-read after the awaits: two quick saves must not both ask.
+  const due = pushAskDue({
+    needs,
+    setupOpen: firstRunOpen,
+    asked: !!(state.user && (state.user.uiPrefs || {}).pushAsked),
+    supported: true,
+    subscribed,
+    permission,
+  });
+  if (!due || !state.user) return;
+  saveUiPrefs({ pushAsked: true });
+  enablePushFlow('Notifications on. Your reminders will ring here.');
+}
+
 /* ---- First-run setup ----
-   Once per account, after a NEW account's first data load: one sheet with a
-   ready-made starter plan (openFirstRunSetup, starterPicker). Decided in
+   Once per account, after a NEW account's first data load: a goal (the
+   starter-pack picker, starterPicker), then the timezone only when the device
+   and the account disagree (firstRunSteps, app-logic.js). Notifications are
+   asked at the first timed save (askPushOnce); features stay in Settings ›
+   Layout, all on. Decided in
    loadData() once wave 1 lands, because "new" is read from real data: an
    account that already has tasks, habits or reminders, or dismissed the Home
    checklist, is marked `ui_prefs.setupDone` silently and never sees it. Any
    way out (Done, Skip on the last step, Escape, the backdrop) sets setupDone,
    so it can't come back on another device either. While it is undecided,
-   offerDeviceTimezone() stands down — the first step asks the same thing. */
+   offerDeviceTimezone() stands down — the timezone step asks the same thing. */
 let firstRunOpen = false;
 function maybeStartFirstRun() {
   const u = state.user;
   if (!u || !u.id || firstRunOpen) return;
   const p = u.uiPrefs || {};
   if (p.setupDone) return maybeAskPermissions();
+  // Begun but never finished (the app was closed mid-way): its own goal step
+  // made the habits, so the data check below would end it unseen. Resume.
+  if (p.setupStep) {
+    setTimeout(() => openFirstRunSetup(p.setupStep), 600);
+    return;
+  }
   const hasData =
     (state.tasks || []).length > 0 ||
     (state.habits || []).length > 0 ||
@@ -2399,18 +2394,13 @@ async function maybeAskPermissions() {
 const HEALTH_PITCH =
   'Health data: steps, sleep, heart rate and workouts, so habits tick themselves and last night’s sleep logs itself. Read only; Growth Buddy never writes to it.';
 
-/* One sheet, one decision: a finished plan (the default pack, pre-filled) and
-   "Start with this plan". It used to be up to five steps (a goal picker that
-   opened empty, timezone, push, health, 13 feature switches), then a second
-   checklist on Home. Now: the timezone is the one signup sent, and the offer
-   asks only if this device disagrees, in words (syncDeviceTimezone, re-armed
-   on close); push is asked from Home's checklist once there is a reminder to
-   ring; health on the phone comes from maybeAskPermissions on a later launch;
-   features stay all on and live in Settings › Layout. One step has no middle
-   to resume from, so ui_prefs.setupStep (an older build's) is just cleared. */
-async function openFirstRunSetup() {
+// `resumeAt`: the step key ui_prefs.setupStep saved, when an earlier run of
+// this sheet was left without finishing.
+const SETUP_ORDER = ['goal', 'timezone', 'notify', 'health', 'features'];
+async function openFirstRunSetup(resumeAt) {
   if (firstRunOpen || !state.user || (state.user.uiPrefs || {}).setupDone) return;
   firstRunOpen = true;
+  // The goal step needs starter-packs.js; offline or a failed chunk just drops it.
   const mod = await import('./starter-packs.js').catch(() => null);
   // Signed out (or set up elsewhere) while the chunk loaded: no sheet, and no
   // firstRunOpen stuck true, which would skip the next account's setup in this tab.
@@ -2418,64 +2408,188 @@ async function openFirstRunSetup() {
     firstRunOpen = false;
     return;
   }
-  if (!mod) {
-    // Offline or a failed chunk: Home's checklist still offers the packs.
+  const tz = deviceZone();
+  // ov-onboard's short list (goal, then the zone only when it differs) plus
+  // main's health step on the phone. Notifications wait for the first timed
+  // save (askPushOnce); features stay in Settings > Layout.
+  const STEP_FNS = { goal: goalStep, timezone: timezoneStep, health: healthStep };
+  const keys = firstRunSteps({
+    hasGoal: !!mod,
+    accountZone: state.user.timezone,
+    deviceZone: tz,
+  });
+  if (isNative()) keys.push('health');
+  const steps = keys.map((k) => STEP_FNS[k]);
+  if (!steps.length) {
+    // No goal chunk (offline) and nothing to ask about the zone: setup is done.
     firstRunOpen = false;
-    saveUiPrefs({ setupDone: true, setupStep: null });
-    render();
+    saveUiPrefs(tz ? { setupDone: true, tzAsked: tz } : { setupDone: true });
+    syncDeviceTimezone();
     return;
   }
   const { sheet, close } = openOverlay({
-    label: 'Your starter plan',
+    label: 'Set up Growth Buddy',
     className: 'gb-setup-modal',
     onClose: () => {
       firstRunOpen = false;
-      // However it was left, it has been seen: never again, on any device.
-      saveUiPrefs({ setupDone: true, setupStep: null });
-      render(); // Home held its checklist back while the sheet was up
+      // Whatever step it was left on, it has been seen: never again.
+      const done = isNative()
+        ? { setupDone: true, setupStep: null, healthAsked: true }
+        : { setupDone: true, setupStep: null };
+      saveUiPrefs(tz ? { ...done, tzAsked: tz } : done);
       syncDeviceTimezone();
+      // The goal step may have made timed habits and reminders: they are the
+      // first thing worth a notification, and the sheet is gone now.
+      askPushOnce(
+        (state.reminders || []).some((r) => r.time) || (state.habits || []).some((x) => x.reminderTime)
+      );
     },
   });
-  const primaryBtn = h(
-    'button',
-    {
-      type: 'button',
-      class: 'gb-btn gb-btn--primary',
-      style: { width: '100%', marginTop: '14px' },
-      onclick: async () => {
-        primaryBtn.disabled = true;
-        try {
-          const r = await picker.apply();
-          close();
-          if (r.family) openFamilyMeals();
-        } catch (err) {
-          primaryBtn.disabled = false;
-          shakeRefusal(sheet);
-          toastError(err, 'Could not set that up.');
-        }
-      },
-    },
-    'Start with this plan'
+
+  const stepKey = (i) => keys[i];
+  // Resume on the saved step, or the first one after it that is still offered
+  // (a run saved on the old notify / features steps lands on what follows them).
+  const from = SETUP_ORDER.indexOf(resumeAt);
+  let at = Math.max(0, from < 0 ? 0 : keys.findIndex((k) => SETUP_ORDER.indexOf(k) >= from));
+  // Progress lives in ui_prefs, so a closed app comes back here, not to a
+  // silent "done" (the goal step's habits read as data that predates setup).
+  const saveStep = () => saveUiPrefs({ setupStep: stepKey(at) });
+  saveStep();
+  let saidDone = false; // the goal step's apply() already toasts "You're set up"
+  const dots = h(
+    'div',
+    { class: 'gb-setup-dots', 'aria-hidden': 'true' },
+    ...steps.map(() => h('span', { class: 'gb-setup-dot' }))
   );
-  const title = h('div', { class: 'gb-modal-title', tabindex: '-1' });
-  const sub = h('div', { class: 'gb-modal-sub' });
-  // The copy and Start follow the picks: with nothing picked it used to say
-  // "Your plan is ready" over an empty list, and Start stayed live.
-  const picker = starterPicker(mod, ['balanced'], ({ labels, count }) => {
-    title.textContent = labels.length ? 'Your plan is ready' : 'Pick a goal';
-    sub.textContent = labels.length
-      ? labels.join(', ') + '. Pick another goal to change it, or switch off anything that doesn’t fit.'
-      : 'Pick one or more and we set up the rest, or set it up yourself.';
-    primaryBtn.disabled = !count;
+  const stepLabel = h('div', { class: 'gb-setup-count' });
+  const titleEl = h('div', { class: 'gb-modal-title' });
+  const subEl = h('div', { class: 'gb-modal-sub' });
+  const bodyEl = h('div', { class: 'gb-modal-body' });
+  const primaryBtn = h('button', {
+    type: 'button',
+    class: 'gb-btn gb-btn--primary',
+    style: { width: '100%', marginTop: '14px' },
   });
+  const skipBtn = h('button', { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel' });
+
   sheet.append(
-    h('div', { class: 'gb-modal-head' }, title, sub),
-    h('div', { class: 'gb-modal-body' }, picker.body),
+    h(
+      'div',
+      { class: 'gb-modal-head' },
+      // One step needs no "Step 1 of 1".
+      steps.length > 1 ? h('div', { class: 'gb-setup-top' }, stepLabel, dots) : null,
+      titleEl,
+      subEl
+    ),
+    bodyEl,
     primaryBtn,
-    h('button', { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel', onclick: close }, 'I’ll set it up myself')
+    skipBtn
   );
-  refreshIcons();
-  title.focus({ preventScroll: true });
+
+  function next() {
+    if (at >= steps.length - 1) {
+      if (!saidDone) toastSuccess('You’re all set.');
+      close();
+      return;
+    }
+    at += 1;
+    saveStep();
+    show();
+  }
+
+  function show() {
+    const s = steps[at]();
+    stepLabel.textContent = 'Step ' + (at + 1) + ' of ' + steps.length;
+    [...dots.children].forEach((d, i) => d.classList.toggle('is-on', i <= at));
+    titleEl.textContent = s.title;
+    subEl.textContent = s.sub;
+    bodyEl.replaceChildren(s.body);
+    primaryBtn.textContent = s.primary;
+    primaryBtn.disabled = false;
+    primaryBtn.onclick = async () => {
+      primaryBtn.disabled = true;
+      try {
+        if (s.onPrimary) await s.onPrimary();
+        next();
+      } catch (err) {
+        primaryBtn.disabled = false;
+        shakeRefusal(sheet);
+        toastError(err, 'Something went wrong.');
+      }
+    };
+    skipBtn.textContent = s.skip;
+    skipBtn.onclick = next;
+    refreshIcons();
+    titleEl.setAttribute('tabindex', '-1');
+    titleEl.focus({ preventScroll: true });
+  }
+
+  function badge(icon) {
+    return h('div', { class: 'gb-setup-badge' }, Icon(icon, { size: 22, sw: 2.2 }));
+  }
+
+  // First, so the one question that matters gets the fresh attention. Habit and
+  // reminder times are local and follow the user, so the timezone step after
+  // it changes nothing they hold. The loadData() inside apply() is a refresh:
+  // it never re-enters maybeStartFirstRun, and firstRunOpen is already true.
+  // ponytail: a new account has no spending, so planStarter offers no budget
+  // (budgetsFrom); offer one once Money has 30 days of spending.
+  function goalStep() {
+    const p = starterPicker(mod);
+    // The button says what it will do: "Next" (or "Done" when nothing follows) until a chip is on.
+    const idle = steps.length > 1 ? 'Next' : 'Done';
+    p.body.addEventListener('click', () => {
+      if (steps[at] === goalStep) primaryBtn.textContent = p.picked() ? 'Set it up' : idle;
+    });
+    return {
+      title: 'What do you want to change?',
+      sub: 'Pick one or more. We set up habits, reminders and a 30-day goal.',
+      body: p.body,
+      primary: idle,
+      onPrimary: () => (p.picked() ? p.apply().then(() => (saidDone = true)) : null),
+      skip: 'Skip',
+    };
+  }
+
+  // Only in the list when the device and the account disagree (firstRunSteps).
+  function timezoneStep() {
+    const saved = (state.user && state.user.timezone) || '';
+    const zoneRow = (label, value) =>
+      h(
+        'div',
+        { class: 'gb-setup-zone' },
+        h('span', { class: 'gb-setup-zone-lbl' }, label),
+        h('span', { class: 'gb-setup-zone-val' }, value || 'Not set')
+      );
+    return {
+      title: 'Your timezone',
+      sub: 'Days, streaks and reminder times follow it.',
+      body: h(
+        'div',
+        {},
+        badge('clock'),
+        zoneRow('This device', tz),
+        zoneRow('Your account', saved),
+        h('div', { class: 'gb-field-hint' }, 'They differ. Use this device’s zone unless you want to keep home time.')
+      ),
+      primary: 'Use ' + tz,
+      onPrimary: () => saveDeviceTimezone(tz),
+      skip: 'Keep ' + saved,
+    };
+  }
+
+  function healthStep() {
+    return {
+      title: 'Connect your health data',
+      sub: /android/i.test(navigator.userAgent) ? 'Through Health Connect.' : 'Through Apple Health.',
+      body: h('div', {}, badge('activity'), h('p', { class: 'gb-setup-text' }, HEALTH_PITCH)),
+      primary: 'Connect',
+      onPrimary: connectHealth,
+      skip: 'Not now',
+    };
+  }
+
+  show();
 }
 
 // In-flight dedup for idempotent GETs: if the same GET is already running,
@@ -2489,15 +2603,17 @@ const SESSION_EXPIRED = 'Your session expired. Please sign in again.';
 async function api(path, options) {
   const opts = options || {};
   const method = (opts.method || 'GET').toUpperCase();
-  if (method === 'GET' && !opts.body) {
+  // Only a plain GET is shared. One with onResponse (the money ETag), raw or its
+  // own headers needs its own response: handed the first caller's promise, its
+  // onResponse never ran and the next PUT sent a stale If-Match.
+  if (method === 'GET' && !opts.body && !opts.onResponse && !opts.raw && !opts.headers) {
     const existing = _inflightGets.get(path);
     if (existing) return existing;
     const p = (async () => {
       try {
         return await apiFetch(path, opts);
       } finally {
-        // Not a newer account's GET for the same path (resetUserState clears the map).
-        if (_inflightGets.get(path) === p) _inflightGets.delete(path);
+        _inflightGets.delete(path);
       }
     })();
     _inflightGets.set(path, p);
@@ -2529,7 +2645,21 @@ function statusMessage(status) {
   return "That didn't work. Please try again.";
 }
 
+/* The session generation (session.js) is noted before the request goes out:
+   an answer that lands after a sign-out rejects with sessionEndedError() and
+   writes nothing, and its 401 doesn't end the NEXT session. */
 async function apiFetch(path, options) {
+  const gen = sessionGen();
+  try {
+    const out = await apiFetchNow(path, options, gen);
+    if (isStaleSession(gen)) throw sessionEndedError();
+    return out;
+  } catch (err) {
+    throw isStaleSession(gen) ? sessionEndedError() : err;
+  }
+}
+
+async function apiFetchNow(path, options, gen) {
   const opts = options || {};
   const headers = Object.assign({ Accept: 'application/json' }, opts.headers || {});
   const token = loadToken();
@@ -2546,24 +2676,13 @@ async function apiFetch(path, options) {
     headers['Content-Type'] = 'application/json';
   }
 
-  const savedKey = savedGetKey(path, opts);
   let res;
   try {
     res = await fetch(API_BASE + path, Object.assign({}, opts, { headers }));
   } catch (_) {
-    const saved = savedKey && (await CacheStorage.ready(), CacheStorage.getItem(savedKey));
-    if (saved) {
-      servedSaved = true;
-      handleOffline(); // the banner: "You're offline — showing your last saved data."
-      return JSON.parse(saved);
-    }
     throw new Error(NO_CONNECTION);
   }
-  if (servedSaved) {
-    // A response again: drop the banner and refetch what was painted from the copy.
-    servedSaved = false;
-    handleOnline();
-  }
+  if (isStaleSession(gen)) throw sessionEndedError();
   if (res.status === 401) {
     // Token went stale (revoked, expired, server restarted with empty DB,
     // etc.) — wipe local state and bounce to the sign-in screen.
@@ -2573,17 +2692,15 @@ async function apiFetch(path, options) {
   if (!res.ok) {
     let msg = statusMessage(res.status);
     let code;
-    let body;
     try {
-      body = await res.json();
-      msg = body.message || msg;
-      code = body.code;
+      const err = await res.json();
+      msg = err.message || msg;
+      code = err.code;
     } catch (_) {
       // ignored
     }
     const err = new Error(msg);
     err.status = res.status;
-    err.body = body; // a 409 can carry the current copy (goal progress)
     // ApiError.code, e.g. 'idempotency_in_progress' (a replay racing its first try).
     if (code) err.code = code;
     throw err;
@@ -2596,33 +2713,7 @@ async function apiFetch(path, options) {
   if (opts.raw || res.status === 204) {
     return null;
   }
-  const body = await res.json();
-  if (savedKey) CacheStorage.setItem(savedKey, JSON.stringify(body));
-  return body;
-}
-
-/* The app's stand-in for the website's Workbox NetworkFirst cache (gb-api-get,
-   vite.config.js). The app removes the service worker (see the boot block), so
-   offline nothing answered its GETs and a cold start without a connection put
-   the crash card on every screen, over data the device already had. Native only:
-   on the web the worker does this. Every good JSON GET is mirrored into
-   CacheStorage under gb.apiGet.<uid>.<path>, and only a fetch that got no
-   response at all is answered from it; a server error is still an error.
-   purgeUserCache drops the copies with the account (the key holds .<uid>.).
-   Not /api/auth/*: the cached session is the account's offline copy, and kept
-   current by saveUiPrefs; a saved /me was older, and wave 2 (EXS-3) put its
-   prefs back over the session, so an offline start re-saved them and failed.
-   ponytail: no eviction; the keys are bounded by the distinct GET paths the app
-   builds. Add an LRU like Workbox's maxEntries if dated paths ever pile up. */
-let servedSaved = false;
-function savedGetKey(path, opts) {
-  const id = state.user && state.user.id;
-  const get = !opts.method || String(opts.method).toUpperCase() === 'GET';
-  // Not /api/notes*: Notes keeps its own read-only offline copy (gb.notesOffline), and a
-  // list answered from here read as online, with edits that could not save.
-  if (!isNative() || !id || !get || opts.body || opts.raw) return null;
-  if (path.startsWith('/api/auth/') || path.startsWith('/api/notes')) return null;
-  return 'gb.apiGet.' + id + '.' + path;
+  return res.json();
 }
 
 /* POST that answers text/event-stream (Buddy's streamed reply). Resolves to the
@@ -2642,6 +2733,7 @@ async function apiStream(path, body, signal) {
   const device = deviceLabelHeader();
   if (device) headers['X-GB-Device'] = device;
   const fallback = (msg) => Object.assign(new Error(msg), { fallback: true });
+  const gen = sessionGen();
   let res;
   try {
     res = await fetch(API_BASE + path, {
@@ -2654,6 +2746,7 @@ async function apiStream(path, body, signal) {
     if (err && err.name === 'AbortError') throw err;
     throw fallback(NO_CONNECTION);
   }
+  if (isStaleSession(gen)) throw sessionEndedError();
   if (res.status === 401) {
     handleAuthExpired();
     throw new Error(SESSION_EXPIRED);
@@ -2674,91 +2767,11 @@ async function apiStream(path, body, signal) {
   return res;
 }
 
-/* Everything in memory that belongs to the signed-in account, back to what a
-   fresh boot has. logout() and handleAuthExpired() used to keep a list each, and
-   they drifted: a logout left the last account's goals, wellness, trends, food
-   and notifications on screen for the next one. One list, used by both. */
-function resetUserState() {
-  state.user = null;
-  state.tasks = [];
-  state.habits = [];
-  state.goals = [];
-  state.reminders = [];
-  state.wellness = emptyWellness();
-  // Health readings are someone's health data: never shown to the next account.
-  Object.assign(health, { readings: null, loading: false, available: null, syncing: false, syncedAt: null });
-  state.goalProgress = {};
-  state.weeklyReviews = {};
-  // Another account must not see this one's Insights, nor wait out its throttle.
-  state.insightHistory = null;
-  state.waterUsualHours = null;
-  state.inFamily = undefined;
-  loadedFor = null; // the next sign-in is a first load, not a refresh
-  insightHistoryAt = 0;
-  insightReq = null; // a fetch still in flight belongs to the old account: drop it
-  state.money = emptyMoney();
-  state.streakFreeze = emptyStreakFreeze();
-  state.freezeTokens = 0;
-  state.trends = emptyTrends();
-  state.water = null;
-  state.food = null;
-  // Log food's chip rows are this account's foods, not the next one's.
-  recentFoods = null;
-  favouriteFoods = null;
-  weekGen.bump();
-  state.foodWeek = null;
-  state.waterWeek = null;
-  state.dietCheck = null;
-  state.weekError = '';
-  state.calendarFoodByDate = {};
-  state.calendarFoodErrorByDate = {};
-  state.calendarFoodLoadingFor = '';
-  setNotifFirstPage([]); // also drops the last account's unread-past-the-page count
-  notifFilter = 'all';
-  state.quote = null;
-  state.phoneNight = null; // this phone's night, read for the last account
-  state.score = 0;
-  state.authMode = 'signin';
-  state.authReturning = true;
-  state.authEmail = '';
-  state.authPending = null;
-  // A panel left open kept its mousedown listener alive on the sign-in screen,
-  // where the first press "closed" it with a full render() that rebuilt the form
-  // under the pointer: no request, both fields blanked.
-  state.profileOpen = false;
-  state.notifOpen = false;
-  state.moreOpen = false;
-  popoverCleanup?.();
-  syncPanelHistory();
-  // A dialog open when the session ended (Settings' Sign out, a 401 under any
-  // sheet) stayed over the sign-in screen showing the old account. close(), not
-  // dismiss: the note editor's dismiss saves through api(), which has no token
-  // now (clearSession already dropped its draft).
-  closeOverlays({ discard: true });
-  // A GET still out for this account must not answer the next one's identical GET.
-  _inflightGets.clear();
-  // Unsent glasses live in module memory too: withPendingWater laid the last
-  // account's over the next one's day, and into its daily snapshot.
-  pendingWater.clear();
-  lastWaterTap = { amount: 0, at: 0 };
-  waterRefetch = false;
-  state.screen = 'home';
-}
-
+/* A 401 from api() or the stream: the token was revoked, expired, or signed
+   out everywhere. Same teardown as Sign out, minus the server calls the dead
+   token can't make. */
 function handleAuthExpired() {
-  disconnectWebSocket();
-  clearSession();
-  returnToScreen = state.screen; // signing back in returns here, not to Home
-  resetUserState();
-  try {
-    sessionStorage.removeItem('gb.authDraft');
-  } catch (_) {
-    /* ignore */
-  }
-  state.authNotice = 'Your session ended. Sign in again.';
-  state.toasts = [];
-  if (window.location.hash) history.replaceState(null, '', window.location.pathname);
-  render();
+  endSession('expired');
 }
 
 function formatTaskTime(task) {
@@ -3020,10 +3033,8 @@ async function loadData() {
   // online used to swap the whole screen for the quote, then for the crash card
   // if any one of the five calls failed.
   const userKey = state.user.id || state.user.email;
-  // Signed out (or someone else signed in) while a wave was out: its answers are
-  // the old account's and must not land in state or under a .guest cache key.
-  const gone = () => !state.user || (state.user.id || state.user.email) !== userKey;
   const refresh = loadedFor === userKey && !state.error;
+  const gen = sessionGen();
   if (!refresh) {
     // Refreshing on /family used to run quote card -> family skeleton -> family:
     // the boot screen was waiting on five calls that screen never reads. Screens
@@ -3050,18 +3061,22 @@ async function loadData() {
       // only leaves that card out.
       loadOutlook().catch(() => null),
     ]);
-    if (gone()) return;
     state.tasks = tasksRaw.map(mapTask);
     state.habits = habits;
     reconcileStreakFreeze();
     state.score = todayScore && typeof todayScore.score === 'number' ? todayScore.score : 0;
+    // The water queue is Cache-API-only: read before hydration it is [], and the
+    // next store would overwrite last session's unsent glasses.
+    await CacheStorage.ready();
+    restoreWaterQueue();
+    state.water = withPendingWater(water);
+    flushWaterQueue();
     state.reminders = reminders;
     // Offline writes the server hasn't seen yet, then send them. Not awaited:
     // first paint doesn't wait on a replay; the flush refetches what it touched.
-    // Both queues are read only once CacheStorage has hydrated them: before
-    // that the water queue read as empty and a queued glass vanished from the card.
+    // The queue itself is read only once CacheStorage has hydrated it.
     await CacheStorage.ready();
-    if (gone()) return;
+    if (isStaleSession(gen)) return; // signed out while the queue hydrated
     if (revivedFor !== userKey) {
       // Writes whose page unloaded mid-request (sendAhead) are ordinary queued ones now.
       revivedFor = userKey;
@@ -3069,24 +3084,23 @@ async function loadData() {
       const wq = loadWaterQueue();
       if (wq.some((x) => x.live)) storeWaterQueue(wq.map(({ live, ...x }) => x)); // eslint-disable-line no-unused-vars
     }
-    restoreWaterQueue();
-    state.water = withPendingWater(water);
-    flushWaterQueue();
+    saveBootSnapshot();
     overlayOutbox();
     flushOutbox();
     reSyncDeviceAlarms();
-    loadWaterUsualHours();
+    waterHoursLoad = loadWaterUsualHours();
     // Linked habits count today's readings; without them a typed-in walk is missed.
     if ((state.habits || []).some((hb) => hb.healthLink && hb.healthLink !== 'sleep')) loadHealthReadings();
     syncHealthFromPhone(); // ends with autoTickHealthHabits
     autoTickHealthHabits();
     loadPhoneNight();
   } catch (err) {
-    if (gone()) return;
+    if (err && err.sessionEnded) return; // that session is gone; this answer is nobody's
     if (refresh) {
       toastError(err, 'Could not refresh. Showing your last data.');
       return;
     }
+    if (bootFromSnapshot(err, isNative()) && (await paintBootSnapshot(userKey))) return;
     state.error = err.message || 'Failed to load data from backend.';
     state.loading = false;
     render();
@@ -3106,6 +3120,8 @@ async function loadData() {
   if (!refresh && state.screen === 'home') markHomePainted();
   // Needs wave 1: "is this a new account?" is read from tasks/habits/reminders.
   if (!refresh) maybeStartFirstRun();
+  // A manifest shortcut or a share: needs wave 1 (water, tasks) on screen.
+  if (!refresh) runLaunchIntent();
   // After wave 1, so a button press that cold-started the app (the plugin holds
   // it until a listener attaches) finds the habit or reminder it names.
   armNotificationActions();
@@ -3114,6 +3130,32 @@ async function loadData() {
 /* What of the account shows on screen, to tell whether a fresh /me changed it. */
 const accountShape = (u) =>
   JSON.stringify(u ? [u.displayName, u.timezone, u.features, u.navLayout, u.uiPrefs, u.level, u.xpTotal] : null);
+
+/* The phone app has no service worker, so with no connection a cold start's
+   wave 1 had nothing to answer it and Home was the crash card. The last good
+   wave 1 (+ goals) is kept per account (session.js bootKey; every sign-out
+   removes it) and painted instead, under the offline banner, or a toast when
+   the device thinks it is online (a server that never answered). It counts as
+   loaded, so coming back online refreshes in place. Web: the worker's
+   gb-api-get already does this, so nothing is stored twice there. */
+function saveBootSnapshot() {
+  if (!isNative() || !state.user || !state.user.id) return;
+  CacheStorage.setItem(bootKey(state.user.id), bootSnapshot(state));
+}
+async function paintBootSnapshot(userKey) {
+  await CacheStorage.ready();
+  const snap =
+    state.user && state.user.id && readBootSnapshot(CacheStorage.getItem(bootKey(state.user.id)));
+  if (!snap) return false;
+  Object.assign(state, snap);
+  overlayOutbox();
+  state.loading = false;
+  loadedFor = userKey;
+  if (!SELF_LOADING_SCREENS.has(state.screen)) render();
+  if (navigator.onLine)
+    pushToast('Couldn’t reach Growth Buddy. Showing your last data.', 'info', 5000);
+  return true;
+}
 
 /* Screens that own their subtree: they fetch through their own api callbacks
    AND paint their own loading state, so they don't need wave 1 and can't
@@ -3151,24 +3193,28 @@ async function loadSecondaryData() {
   // and re-rendering would rebuild screens that own their subtree (family,
   // money, mentor, circle) and throw away their local view state.
   const bootScreen = state.screen;
-  if (!state.user) return;
-  const who = state.user.id || state.user.email;
+  const gen = sessionGen();
   connectWebSocket();
+  // What the outbox holds as the logs are read. loadData's flushOutbox runs
+  // alongside: a queued night it sends after the server read the logs, but
+  // before they are laid over below, would be in neither the answer nor the
+  // queue, and left the phone until the next load.
+  const queuedAtRead = outbox.list();
   // A failed load used to look exactly like having no data: every one of these
   // caught to null, and the only trace was a console line nobody sees. Name what
-  // didn't arrive and offer the retry. Not when offline (the banner says so) and
-  // not on 401 (that path signs the user out by itself).
+  // didn't arrive and offer the retry. Not when offline (the banner says so), not
+  // on 401 (that path signs the user out by itself), and not for an answer to a
+  // session that has already ended.
   const missed = [];
   const soft = (label) => (err) => {
-    if (navigator.onLine && !(err && err.status === 401)) missed.push(label);
+    if (navigator.onLine && !(err && (err.status === 401 || err.sessionEnded))) missed.push(label);
     return null;
   };
   try {
     // The account itself too: a reload boots from the cached session, so a name,
     // timezone, feature or preference changed on another device never arrived.
+    // A pref save still out is laid over its answer (syncUserSession).
     const before = accountShape(state.user);
-    // A pref save still out when /me reads, or made after, is not in its answer.
-    const prefsMark = uiPrefsSaves.out ? -1 : uiPrefsSaves.made;
     const [goals, notifications, food, money, dailyLogs, photoHistory, weekly, me] =
       await Promise.all([
         api('/api/goals').catch(soft('goals')),
@@ -3180,11 +3226,7 @@ async function loadSecondaryData() {
         api('/api/weekly-review').catch(soft('weekly reviews')),
         api('/api/auth/me').catch(() => null),
       ]);
-    // Signed out while these were out: see loadData's gone().
-    if (!state.user || (state.user.id || state.user.email) !== who) return;
-    // Taking /me's older prefs dropped e.g. the first-load timeFormat from the
-    // cached session, so an offline cold start re-saved it and failed.
-    if (me && prefsMark !== uiPrefsSaves.made) delete me.uiPrefs;
+    if (isStaleSession(gen)) return; // signed out meanwhile: none of this is the next account's
     if (me) syncUserSession(me);
     const accountChanged = !!me && accountShape(state.user) !== before;
     // What didn't arrive, for a screen to say so in place of its empty state (Money:
@@ -3200,6 +3242,7 @@ async function loadSecondaryData() {
 
     if (goals) {
       state.goals = goals;
+      saveBootSnapshot();
       // Per-goal progress (milestones, day-tracker) rides on each goal from the
       // backend; rebuild the id-keyed map and mirror it to the local cache.
       const gp = {};
@@ -3220,8 +3263,7 @@ async function loadSecondaryData() {
       cacheFoodSummary(food);
     }
     if (money) {
-      state.money = normalizeMoney(overlayPending(money));
-      lastDocBody = JSON.stringify(docPart(normalizeMoney(money)));
+      adoptServerMoney(money);
       cacheMoney();
       persistMoney(); // replays anything left unsaved by the last session
     }
@@ -3229,11 +3271,16 @@ async function loadSecondaryData() {
     // the local-only photo history, and mirror to cache for offline paint.
     if (dailyLogs) {
       const localWell = loadWellness();
-      state.wellness = {
-        sleepByDate: dailyLogs.sleepByDate || {},
-        moodByDate: dailyLogs.moodByDate || {},
-        photoHistory: photoHistory != null ? photoHistory : localWell.photoHistory || [],
-      };
+      await CacheStorage.ready(); // the outbox reads as empty until it has hydrated
+      if (isStaleSession(gen)) return;
+      state.wellness = overlayQueuedWellness(
+        {
+          sleepByDate: dailyLogs.sleepByDate || {},
+          moodByDate: dailyLogs.moodByDate || {},
+          photoHistory: photoHistory != null ? photoHistory : localWell.photoHistory || [],
+        },
+        [...queuedAtRead, ...outbox.list()]
+      );
       state.trends = { byDate: dailyLogs.byDate || {} };
       persistWellness();
       persistTrends();
@@ -3255,6 +3302,11 @@ async function loadSecondaryData() {
     loadCalendarFoodForDate(state.selectedDate);
     // Needs state.food, so it can only run once wave 2 has landed.
     recordTrendsToday();
+    // Boot's usual-drink-hours answer lands in this paint, not one of its own
+    // (perf.e2e counts boot paints); a slow one still paints when it lands.
+    if (waterHoursLoad) await Promise.race([waterHoursLoad, new Promise((r) => setTimeout(r, 1500))]);
+    waterHoursLoad = null;
+    if (isStaleSession(gen)) return;
     // Data is complete now, so achievement detection can baseline/fire safely.
     state.achReady = true;
 
@@ -3426,8 +3478,8 @@ function toggleSignature() {
   ]);
 }
 
-/* Paint the tick, then tell the server. The round trip is three calls deep
-   (toggle -> score -> /me), so awaiting it left the checkbox looking dead for
+/* Paint the tick, then tell the server. The round trip is two calls deep
+   (toggle, then score + /me together), so awaiting it left the checkbox looking dead for
    most of a second. A failed toggle flips just that row back. */
 /* One toggle per row in flight. A second tap before the first answered sent a
    second PATCH .../toggle; whichever response landed last won, so the row could
@@ -3498,9 +3550,9 @@ async function toggleTask(id) {
     const painted = toggleSignature();
     state.tasks = state.tasks.map((t) => (t.id === id || t.id === updated.id ? mapTask(updated) : t));
     saved = true;
-    const todayScore = await api('/api/score/today');
+    // Both only need the toggle landed, not each other: one round trip, not two.
+    const [todayScore] = await Promise.all([api('/api/score/today'), refreshCurrentUser()]);
     state.score = todayScore && typeof todayScore.score === 'number' ? todayScore.score : score();
-    await refreshCurrentUser();
     if (toggleSignature() !== painted) render();
   } catch (err) {
     if (saved) {
@@ -3524,7 +3576,7 @@ async function toggleTask(id) {
   }
 }
 
-/* Same optimistic paint as toggleTask — same three-call round trip. Streak
+/* Same optimistic paint as toggleTask — same two-step round trip. Streak
    numbers are the server's to decide, so only `doneToday` flips locally. */
 /* Ticking a measured habit asks what it measured. Tapping one that is already
    done reopens the same dialog with today's number in it, so a typo can be
@@ -3745,6 +3797,15 @@ async function plainToggleHabit(id) {
     toggleKey: 'habit:' + id + ':' + day,
     local: { id, day, done },
   };
+  // A check-in for this day still queued (its flush stalled): a live /toggle
+  // would flip the server from its pre-queue state, the opposite of this tap.
+  // Queue it too; the pair cancels.
+  if (outbox.list().some((o) => !o.live && o.toggleKey === op.toggleKey)) {
+    queueWrite(op);
+    reSyncDeviceAlarms();
+    togglesInFlight.delete(id);
+    return;
+  }
   try {
     const updated = await sendAhead(op, () =>
       api('/api/habits/' + encodeURIComponent(id) + '/toggle', { method: 'PATCH', body: JSON.stringify({ done }) })
@@ -3757,9 +3818,9 @@ async function plainToggleHabit(id) {
     if (wasRest && updated.doneToday && freezeTokensLeft() > tokensBefore) {
       toastSuccess('Done. Freeze returned, ' + freezeTokensLeft() + ' left.');
     }
-    const todayScore = await api('/api/score/today');
+    // Both only need the toggle landed, not each other: one round trip, not two.
+    const [todayScore] = await Promise.all([api('/api/score/today'), refreshCurrentUser()]);
     state.score = todayScore && typeof todayScore.score === 'number' ? todayScore.score : score();
-    await refreshCurrentUser();
     if (toggleSignature() !== painted) render();
     reSyncDeviceAlarms();
   } catch (err) {
@@ -4098,7 +4159,7 @@ async function updateTask(id, body) {
     state.tasks = state.tasks.map((t) => (t.id === id ? mapTask({ ...t, ...body, id }) : t));
     return;
   }
-  state.tasks = state.tasks.map((t) => (t.id === updated.id ? mapTask(updated) : t));
+  state.tasks = state.tasks.map((t) => (t.id === updated.id || t.id === id ? mapTask(updated) : t));
   landSoon('[data-task-id="' + updated.id + '"]');
   refreshScoreLater();
 }
@@ -4111,15 +4172,16 @@ async function patchTaskNow(id, patch, errorMessage) {
   if (togglesInFlight.has(key)) return false;
   const prev = state.tasks.find((t) => t.id === id);
   if (!prev) return false;
+  if (isTempId(realId(id))) return toastError(null, STILL_SYNCING), false;
   togglesInFlight.add(key);
   state.tasks = state.tasks.map((t) => (t.id === id ? mapTask({ ...t, ...patch }) : t));
   render();
   try {
-    const updated = await api('/api/tasks/' + encodeURIComponent(id), {
+    const updated = await api('/api/tasks/' + encodeURIComponent(realId(id)), {
       method: 'PUT',
       body: JSON.stringify(patch),
     });
-    state.tasks = state.tasks.map((t) => (t.id === updated.id ? mapTask(updated) : t));
+    state.tasks = state.tasks.map((t) => (t.id === updated.id || t.id === id ? mapTask(updated) : t));
     render();
     refreshScoreLater();
     return true;
@@ -4137,21 +4199,31 @@ function pauseTask(task) {
   return patchTaskNow(task.id, { paused: !task.paused }, 'Could not update task.');
 }
 
-async function deleteTask(id) {
+/* Undoable (deferDelete): the row goes now, the DELETE when the toast does. */
+function deleteTask(id) {
+  if (!state.tasks.some((t) => t.id === id)) return;
+  deferDelete({
+    message: 'Task deleted.',
+    errorText: 'Could not delete that task.',
+    selector: '[data-task-id="' + id + '"]',
+    ...listSlot(() => state.tasks, (l) => (state.tasks = l), id),
+    commit: () => sendTaskDelete(id),
+  });
+}
+
+async function sendTaskDelete(id) {
+  // realId at send time: a create that was queued may have landed in the window.
   const path = '/api/tasks/' + encodeURIComponent(realId(id));
   const idemKey = newIdemKey();
   const op = { method: 'DELETE', path, kind: 'task.delete', local: { id }, idemKey };
-  if (isTempId(realId(id))) queueWrite(op); // its create is still queued: both are cancelled
+  if (isTempId(realId(id))) await queueWrite(op); // its create is still queued: both are cancelled
   else
     try {
-      await sendAhead(op, () => api(path, { method: 'DELETE', headers: { 'Idempotency-Key': idemKey } }));
+      await sendAhead(op, () => api(path, { method: 'DELETE', keepalive: true, headers: { 'Idempotency-Key': idemKey } }));
     } catch (err) {
       if (!err.queued) throw err;
     }
-  removeSoon('[data-task-id="' + id + '"]', () => {
-    state.tasks = state.tasks.filter((t) => t.id !== id);
-  });
-  await refreshScore();
+  if (state.user) refreshScoreLater();
 }
 
 /* A plain daily habit by name, for Circle's shared goal and Report's weekly
@@ -4172,7 +4244,8 @@ async function createHabit(body) {
   state.habits = [...state.habits, created];
   refreshScoreLater();
   reSyncDeviceAlarms();
-  return created;
+  askPushOnce(!!body.reminderTime);
+  return created; // the "Remind you at HH:MM?" offer reads it
 }
 
 /* ---- Habit order (PUT /api/habits/order) ----
@@ -4233,6 +4306,7 @@ async function updateHabit(id, body) {
   });
   state.habits = state.habits.map((x) => (x.id === id ? updated : x));
   reSyncDeviceAlarms();
+  askPushOnce(!!body.reminderTime);
 }
 
 /* ---- Natural-language quick-add ----
@@ -4310,13 +4384,12 @@ async function parseQuickAdd(text) {
     .map((hb) => hb.name)
     .filter(Boolean)
     .slice(0, 100);
-  // The device's own date and clock: what "tomorrow" and "in 20 minutes" mean
-  // to the person speaking.
-  const d = new Date();
-  const now = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  // The account's date and clock, as one pair: what "tomorrow" and "in 20
+  // minutes" mean where its reminders ring. The device clock beside the
+  // account's day read "at 9" against the wrong hour for part of every night.
   const res = await api('/api/quick-add', {
     method: 'POST',
-    body: JSON.stringify({ text, habits, today: todayKey(), now }),
+    body: JSON.stringify({ text, habits, today: todayKey(), now: accountNowHHMM() }),
   });
   // A sentence can't write into a tracker the user switched off, and the
   // preview says which were dropped. Model text loses its emoji here, so what
@@ -4580,12 +4653,30 @@ function reminderSummary(it) {
    Capacitor app's WebView doesn't, so there the native SpeechRecognition plugin
    takes over. One helper, so Quick add, the calendar's reminder form and
    Settings → Reminders all listen the same way. */
+const VOICE_LANGS = [
+  { code: 'en-IN', label: 'English' },
+  { code: 'hi-IN', label: 'हिन्दी' },
+  { code: 'ta-IN', label: 'தமிழ்' },
+  { code: 'te-IN', label: 'తెలుగు' },
+  { code: 'kn-IN', label: 'ಕನ್ನಡ' },
+  { code: 'ml-IN', label: 'മലയാളം' },
+  { code: 'bn-IN', label: 'বাংলা' },
+  { code: 'mr-IN', label: 'मराठी' },
+  { code: 'gu-IN', label: 'ગુજરાતી' },
+  { code: 'pa-IN', label: 'ਪੰਜਾਬੀ' },
+];
+/* The picked language (ui_prefs.qaLang, the account's), else the device's own
+   matched against VOICE_LANGS: Quick add's picker and every other mic read this
+   one answer, so they can't default differently. */
 function speechLang() {
-  return (
-    ((state.user && state.user.uiPrefs) || {}).qaLang ||
-    navigator.language ||
-    'en-IN'
-  );
+  const saved = ((state.user && state.user.uiPrefs) || {}).qaLang;
+  if (saved) return saved;
+  const device = navigator.language || 'en-IN';
+  const base = (c) => c.split('-')[0];
+  const match =
+    VOICE_LANGS.find((l) => l.code === device) ||
+    VOICE_LANGS.find((l) => base(l.code) === base(device));
+  return match ? match.code : device;
 }
 
 function voiceSupported() {
@@ -4815,7 +4906,13 @@ async function applyIntent(it) {
     case 'goal': {
       if (!it.title) return false;
       const g = await createGoal({ title: it.title, horizon: 'short_term' });
-      return g && g.id ? () => deleteGoal(g.id) : true;
+      // At once, not through deleteGoal's own Undo toast: this is the Undo.
+      return g && g.id
+        ? () => {
+            state.goals = (state.goals || []).map((sec) => ({ ...sec, goals: (sec.goals || []).filter((x) => x.id !== g.id) }));
+            return sendGoalDelete(g.id);
+          }
+        : true;
     }
     case 'water': {
       if (!it.amountMl) return false;
@@ -4980,7 +5077,8 @@ async function createGoal(body) {
     sec.goals = [created, ...(sec.goals || [])];
     render();
   } else loadGoals();
-  toastSuccess('Goal saved.');
+  // The next step is known: the goal's first task, linked already (taskForm's presetGoalId).
+  pushToast('Goal saved.', 'success', 6000, { label: 'Add first task', run: () => openAddTask(created) });
   return created;
 }
 
@@ -5179,67 +5277,50 @@ function loadGoalActions(id) {
 /* The DELETE is the whole answer: drop the goal where it sits rather than
    reload every goal, and take its cached progress with it (that blob used to
    stay in CacheStorage for good). */
-async function deleteGoal(id, keepalive) {
-  await api('/api/goals/' + encodeURIComponent(id), { method: 'DELETE', keepalive: !!keepalive });
-  state.goals = (state.goals || []).map((sec) => ({
-    ...sec,
-    goals: (sec.goals || []).filter((g) => g.id !== id),
-  }));
+function deleteGoal(id) {
+  let item = null;
+  let secAt = -1;
+  let at = 0;
+  deferDelete({
+    message: 'Goal deleted.',
+    errorText: 'Could not delete that goal.',
+    remove: () => {
+      (state.goals || []).forEach((sec, si) => {
+        const i = (sec.goals || []).findIndex((g) => g.id === id);
+        if (i < 0) return;
+        item = sec.goals[i];
+        secAt = si;
+        at = i;
+      });
+      if (secAt < 0) return;
+      state.goals = (state.goals || []).map((sec) => ({
+        ...sec,
+        goals: (sec.goals || []).filter((g) => g.id !== id),
+      }));
+    },
+    // Back into the section it left, at its place (a reload may have reshaped them).
+    restore: () => {
+      const sec = (state.goals || [])[secAt];
+      if (!item || !sec || (state.goals || []).some((s) => (s.goals || []).some((g) => g.id === id))) return;
+      const goals = sec.goals || [];
+      state.goals = state.goals.map((s, si) =>
+        si === secAt ? { ...s, goals: [...goals.slice(0, at), item, ...goals.slice(at)] } : s
+      );
+    },
+    commit: () => sendGoalDelete(id),
+  });
+}
+
+async function sendGoalDelete(id) {
+  await api('/api/goals/' + encodeURIComponent(id), { method: 'DELETE', keepalive: true });
+  if (!state.user) return;
   // The server took its tasks off it (they stay, on no goal); mirror that.
   state.tasks = (state.tasks || []).map((t) => (t.goalId === id ? { ...t, goalId: null } : t));
   if (state.goalProgress && state.goalProgress[String(id)]) {
     delete state.goalProgress[String(id)];
     persistGoalProgress();
   }
-}
-
-/* Goals' trash icon: the card goes at once and the DELETE waits out an Undo
-   toast, as a note's delete does (a goal has no server-side restore, so the
-   request is what waits). A tab closed inside the window still sends it,
-   keepalive. ponytail: a sign-out inside the window drops the delete (no
-   token to send it with); the goal is simply still there next time. */
-function deleteGoalWithUndo(id, goal) {
-  const horizon = goal && goal.horizon;
-  const strip = () => {
-    state.goals = (state.goals || []).map((sec) => ({
-      ...sec,
-      goals: (sec.goals || []).filter((g) => g.id !== id),
-    }));
-  };
-  let settled = false;
-  const settle = () => {
-    settled = true;
-    clearTimeout(timer);
-    window.removeEventListener('pagehide', onHide);
-  };
-  const send = (keepalive) => {
-    if (settled) return;
-    settle();
-    if (!loadToken()) return;
-    deleteGoal(id, keepalive)
-      .then(render)
-      .catch((err) => {
-        loadGoals(); // put it back as the server has it
-        toastError(err, 'Could not delete the goal.');
-      });
-  };
-  const onHide = () => send(true);
-  const timer = setTimeout(() => send(false), 6000);
-  window.addEventListener('pagehide', onHide);
-  strip();
   render();
-  pushToast('Goal deleted.', 'info', 6000, {
-    label: 'Undo',
-    run: () => {
-      if (settled || !goal) return;
-      settle();
-      strip(); // never twice
-      state.goals = (state.goals || []).map((sec) =>
-        sec.horizon === horizon ? { ...sec, goals: [goal, ...(sec.goals || [])] } : sec
-      );
-      render();
-    },
-  });
 }
 
 async function addGoalAction(id, body) {
@@ -5276,11 +5357,35 @@ async function deleteGoalAction(goalId, actionId) {
   toastSuccess('Action deleted.');
 }
 
-async function deleteHabit(id) {
-  await api('/api/habits/' + encodeURIComponent(id), { method: 'DELETE' });
-  state.habits = state.habits.filter((h) => h.id !== id);
-  await refreshScore();
+/* Its history goes with it, which the toast can't say in two words: Undo is
+   the whole of the safety. */
+function deleteHabit(id) {
+  deferDelete({
+    message: 'Habit deleted.',
+    errorText: 'Could not delete that habit.',
+    ...listSlot(() => state.habits, (l) => (state.habits = l), id),
+    commit: () => sendHabitDelete(id),
+  });
+}
+
+async function sendHabitDelete(id) {
+  await api('/api/habits/' + encodeURIComponent(id), { method: 'DELETE', keepalive: true });
+  if (!state.user) return;
+  refreshScoreLater();
   reSyncDeviceAlarms();
+}
+
+/* Undo of something just made (a Buddy chip): it goes now, with no second Undo
+   toast for undoing the Undo. A failed send puts it back and says so. */
+function unmake(get, set, id, send) {
+  const slot = listSlot(get, set, id);
+  slot.remove();
+  render();
+  send().catch((err) => {
+    slot.restore();
+    render();
+    toastError(err, 'Could not undo that.');
+  });
 }
 
 /* Paint the glass at once, then POST. Each accepted tap is its own entry (two
@@ -5330,10 +5435,9 @@ function restoreWaterQueue() {
     if (!pendingWater.has(x.id))
       pendingWater.set(x.id, { amountMl: x.amountMl, loggedAt: x.loggedAt, drinkType: x.drinkType });
 }
-const localDayOf = (iso) => {
-  const t = new Date(iso);
-  return dateKey(t.getFullYear(), t.getMonth(), t.getDate());
-};
+/* The account's day of a glass, like water.date and todayKey(): the device's
+   day hid a queued glass when the two zones differ, and a second tap logged it twice. */
+const localDayOf = (iso) => sharedTodayKey(state.user && state.user.timezone, new Date(iso));
 
 /* Taps not yet on the server, laid over a summary from it. Only the summary's
    own day: a glass queued last night is yesterday's, not today's. */
@@ -5341,8 +5445,9 @@ function withPendingWater(water) {
   return overlayPendingWater(water, pendingWater, { today: todayKey(), dayOf: localDayOf, effectiveMl });
 }
 
-/* No connection, or a server that's down: worth queueing. A 4xx is a refusal. */
-const offlineError = (err) => !navigator.onLine || !err || !err.status || err.status >= 500;
+/* No connection, or a server that's down: worth queueing. A 4xx is a refusal,
+   and an ended session is nobody's (app-logic.js). */
+const offlineError = (err) => isOfflineError(err, navigator.onLine);
 
 /* ---- Offline outbox (scripts/outbox.js) ----
    Task create / toggle / delete, a plain habit tick, a one-off reminder's
@@ -5360,8 +5465,16 @@ function outboxKey() {
 const outbox = createOutbox(CacheStorage, outboxKey);
 const outboxIds = new Map();
 const realId = (id) => outboxIds.get(id) || id;
+/* The id to put in a path for an edit, pause, done or snooze. A row made offline
+   whose create hasn't landed has none yet: a `tmp-` id in the path is a 400. */
+const STILL_SYNCING = 'That was made offline and is still syncing. Try again in a moment.';
+function liveId(id) {
+  const r = realId(id);
+  if (isTempId(r)) throw Object.assign(new Error(STILL_SYNCING), { status: 0, local: true });
+  return r;
+}
 /* No response at all. A 5xx is the server answering; those roll back and toast. */
-const networkError = (err) => !navigator.onLine || !err || !err.status;
+const networkError = (err) => isNetworkError(err, navigator.onLine);
 
 /* Async: the outbox lives in the Cache API, and until CacheStorage has hydrated
    it reads as empty: an enqueue then would overwrite the persisted queue. */
@@ -5448,6 +5561,7 @@ function overlayOutbox() {
       state.reminders = [...state.reminders, l];
     else if (op.kind === 'reminder.delete') state.reminders = state.reminders.filter((r) => r.id !== l.id);
   }
+  undoQueue.reapply(); // and what is waiting out an Undo toast
 }
 /* Notes the server hasn't got yet, for the Notes screen's list. */
 const queuedNotes = () =>
@@ -5517,7 +5631,9 @@ let waterFlushing = false;
 async function flushWaterQueue() {
   if (waterFlushing || !state.user) return;
   waterFlushing = true;
+  let sentAny = false; // nothing queued: nothing changed, so no repaint (perf.e2e counts boot paints)
   try {
+    await CacheStorage.ready();
     const send = (x) =>
       api('/api/water/entries', {
         method: 'POST',
@@ -5526,7 +5642,9 @@ async function flushWaterQueue() {
         body: JSON.stringify({ amountMl: x.amountMl, loggedAt: x.loggedAt, drinkType: x.drinkType || null }),
       });
     // Not a live glass: its own POST is still out (quickAddWater).
-    await replayOldestFirst(loadWaterQueue().filter((x) => !x.live), send, {
+    const queued = loadWaterQueue().filter((x) => !x.live);
+    sentAny = queued.length > 0;
+    await replayOldestFirst(queued, send, {
       isOffline: offlineError,
       onSent: (x, updated) => {
         pendingWater.delete(x.id);
@@ -5550,7 +5668,7 @@ async function flushWaterQueue() {
     });
   } finally {
     waterFlushing = false;
-    render();
+    if (sentAny) render();
     armOutboxRetry();
   }
 }
@@ -5631,9 +5749,11 @@ async function quickAddWater(amountMl, dayKey, drinkType) {
     }
     invalidateWeek('water');
   } catch (err) {
+    if (err && err.sessionEnded) return; // signed out meanwhile: state.water is the next account's
     unqueue();
     if (offlineError(err)) {
       // Keep the glass on the card and on this phone; 'online' or the retry sends it.
+      await CacheStorage.ready();
       storeWaterQueue(loadWaterQueue().concat(glass));
       pushToast(SAVED_ON_PHONE, 'info');
       armOutboxRetry();
@@ -5698,8 +5818,10 @@ function removeSoon(selector, drop) {
 }
 
 /* Throws on failure. The Log food dialog stays open only when its onPrimary
-   throws; catching here closed it over an entry that never saved. */
-async function logFoodEntry(payload) {
+   throws; catching here closed it over an entry that never saved.
+   opts.undo: a one-tap log (a recent or favourite chip) toasts with Undo, which
+   deletes the entry just made. Returns the new entry when it is today's. */
+async function logFoodEntry(payload, opts) {
   const before = new Set(((state.food && state.food.entries) || []).map((e) => e.id));
   // Typed calories go to /manual, which makes no AI call and so sits outside
   // the AI rate limit: logging from a label used to spend a photo's budget.
@@ -5719,6 +5841,13 @@ async function logFoodEntry(payload) {
   const added = forToday && (updated.entries || []).find((e) => !before.has(e.id));
   if (added) landSoon('[data-food-id="' + added.id + '"]');
   invalidateWeek('food');
+  if (opts && opts.undo && added) {
+    pushToast('Logged ' + (added.foodName || 'food') + '.', 'success', 6000, {
+      label: 'Undo',
+      run: () => undoFoodLog(added.id),
+    });
+    return added;
+  }
   toastSuccess(
     forToday
       ? 'Food logged.'
@@ -5731,6 +5860,22 @@ async function logFoodEntry(payload) {
           }) +
           '.'
   );
+}
+
+/* Undo on a one-tap food log: DELETE the entry just made. The answer is that
+   day's summary, so it lands like any other food write. */
+async function undoFoodLog(id) {
+  try {
+    const updated = await api('/api/food/entries/' + encodeURIComponent(id), { method: 'DELETE' });
+    if (summaryIsForToday(updated, todayKey())) state.food = updated;
+    cacheFoodSummary(updated);
+    recentFoods = null;
+    invalidateWeek('food');
+    render();
+    toastSuccess('Removed.');
+  } catch (err) {
+    toastError(err, 'Could not undo that right now.');
+  }
 }
 
 /* "Copy yesterday's breakfast" on an empty slot of the Food card: POST
@@ -5917,79 +6062,88 @@ function loggedAtFor(dayKey) {
   return new Date(y, m - 1, d, 12, 0, 0).toISOString();
 }
 
-async function saveSleepEntry(payload, opts) {
-  const key = payload.date || todayKey();
-  // Optimistic local update + cache mirror, then persist to the backend.
+/* Sleep and mood: paint, POST, and on no connection or a 5xx (Render waking)
+   queue the same POST in the outbox — both are upserts by date, so a replay is
+   safe — and loadSecondaryData lays queued ones over the server's logs. They
+   used to say "saved locally" and be wiped by the next load. A refusal (4xx)
+   puts the day back and says so. `quiet`: no success toast (a one-tap chip). */
+async function postWellness(kind, byDate, entry, body, okMsg, failMsg, quiet) {
+  const key = entry.date;
   state.wellness = Object.assign(emptyWellness(), state.wellness || {});
-  // A quick "Yes" names the times only: keep the day's own quality, never
-  // invent one (it used to save "okay"/last night's and Report averaged it).
-  const quality = payload.quality || ((state.wellness.sleepByDate || {})[key] || {}).quality || null;
-  state.wellness.sleepByDate = Object.assign({}, state.wellness.sleepByDate || {}, {
-    [key]: {
-      date: key,
-      bedtime: payload.bedtime || '',
-      wakeTime: payload.wakeTime || '',
-      quality,
-      note: payload.note || '',
-      updatedAt: new Date().toISOString(),
-    },
-  });
+  const prev = (state.wellness[byDate] || {})[key];
+  state.wellness[byDate] = Object.assign({}, state.wellness[byDate] || {}, { [key]: entry });
   persistWellness();
   render();
+  const path = '/api/daily-logs/' + kind;
+  const idemKey = newIdemKey();
   try {
-    await api('/api/daily-logs/sleep', {
-      method: 'POST',
-      body: JSON.stringify({
-        date: key,
-        bedtime: payload.bedtime || null,
-        wakeTime: payload.wakeTime || null,
-        quality,
-        note: payload.note || null,
-      }),
-    });
-    if (!(opts && opts.quiet)) toastSuccess('Sleep saved.');
+    await api(path, { method: 'POST', body, headers: { 'Idempotency-Key': idemKey } });
+    if (!quiet) toastSuccess(okMsg);
   } catch (err) {
-    toastError(err, 'Saved locally, but could not sync sleep.');
+    if (err && err.sessionEnded) return; // signed out meanwhile: state is the next account's
+    if (networkError(err) || err.status >= 500) {
+      await queueWrite({ method: 'POST', path, body, kind: 'wellness.' + kind, idemKey, local: entry });
+      return;
+    }
+    const map = Object.assign({}, state.wellness[byDate]);
+    if (prev) map[key] = prev;
+    else delete map[key];
+    state.wellness = Object.assign({}, state.wellness, { [byDate]: map });
+    persistWellness();
+    render();
+    toastError(err, failMsg);
   }
+}
+
+async function saveSleepEntry(payload, opts) {
+  const key = payload.date || todayKey();
+  // A quick "Yes" names the times only: keep the day's own quality, never
+  // invent one (it used to save "okay"/last night's and Report averaged it).
+  const had = ((state.wellness && state.wellness.sleepByDate) || {})[key] || {};
+  const quality = payload.quality || had.quality || null;
+  const entry = {
+    date: key,
+    bedtime: payload.bedtime || '',
+    wakeTime: payload.wakeTime || '',
+    quality,
+    note: payload.note || '',
+    updatedAt: new Date().toISOString(),
+  };
+  const body = JSON.stringify({
+    date: key,
+    bedtime: payload.bedtime || null,
+    wakeTime: payload.wakeTime || null,
+    quality,
+    note: payload.note || null,
+  });
+  await postWellness('sleep', 'sleepByDate', entry, body, 'Sleep saved.', 'Sleep was not saved.', opts && opts.quiet);
   autoTickHealthHabits(); // a "Sleep well" habit linked to sleep
 }
 
 async function saveMoodEntry(payload) {
   const key = payload.date || todayKey();
-  state.wellness = Object.assign(emptyWellness(), state.wellness || {});
   // A quick mood tap names the mood only: it keeps what the day already had
   // and invents no energy (it used to record "medium" nobody chose).
-  const prev = (state.wellness.moodByDate || {})[key] || {};
+  const prev = ((state.wellness && state.wellness.moodByDate) || {})[key] || {};
   const energy = payload.energy || prev.energy || null;
   const stress = payload.stress || prev.stress || null;
   const note = payload.note !== undefined ? payload.note : prev.note;
-  state.wellness.moodByDate = Object.assign({}, state.wellness.moodByDate || {}, {
-    [key]: {
-      date: key,
-      mood: payload.mood || 'okay',
-      energy,
-      stress,
-      note: note || '',
-      updatedAt: new Date().toISOString(),
-    },
+  const entry = {
+    date: key,
+    mood: payload.mood || 'okay',
+    energy,
+    stress,
+    note: note || '',
+    updatedAt: new Date().toISOString(),
+  };
+  const body = JSON.stringify({
+    date: key,
+    mood: payload.mood || 'okay',
+    energy,
+    stress,
+    note: note || null,
   });
-  persistWellness();
-  render();
-  try {
-    await api('/api/daily-logs/mood', {
-      method: 'POST',
-      body: JSON.stringify({
-        date: key,
-        mood: payload.mood || 'okay',
-        energy,
-        stress,
-        note: note || null,
-      }),
-    });
-    toastSuccess('Check-in saved.');
-  } catch (err) {
-    toastError(err, 'Saved locally, but could not sync mood.');
-  }
+  await postWellness('mood', 'moodByDate', entry, body, 'Check-in saved.', 'Check-in was not saved.');
 }
 
 function rememberPhotoFood(foodName, estimate, usedPhoto) {
@@ -6433,6 +6587,7 @@ function openAddFood(opts) {
       class: 'gb-input gb-input--inline',
       value: item.foodName || '',
       placeholder: 'Food name',
+      'aria-label': 'Food name',
       maxlength: 100,
       style: { flex: '1', marginRight: '8px' },
     });
@@ -6442,6 +6597,7 @@ function openAddFood(opts) {
       class: 'gb-input gb-input--inline',
       value: item.quantityGrams || '',
       placeholder: 'g',
+      'aria-label': 'Grams of ' + (item.foodName || 'this item'),
       min: '10',
       max: '2000',
       style: { width: '70px', marginRight: '8px' },
@@ -6466,14 +6622,14 @@ function openAddFood(opts) {
       {
         type: 'button',
         class: 'gb-btn gb-btn--icon',
-        title: 'Remove item',
+        'aria-label': 'Remove ' + (item.foodName || 'item'),
         onclick: () => {
           photoItems.splice(index, 1);
           renderItemsList();
         },
         style: { padding: '4px 8px', minHeight: '36px' },
       },
-      '✕'
+      Icon('x', { size: 14 })
     );
 
     const updateItem = () => {
@@ -6947,43 +7103,66 @@ function openAddFood(opts) {
    DELETE, which 404'd and toasted "Could not delete" over a delete that worked. */
 const entryDeletesInFlight = new Set();
 
-/* Both row deletes ask first: they were one tap on a small x with no way back.
-   ponytail: confirm, not an Undo toast; toasts carry no action yet. */
+/* A day summary's entry taken out, or put back at `at`, with the totals that
+   counted it. `fix(summary, entry, sign)` moves the totals. */
+function summarySlot(get, set, id, fix) {
+  let item = null;
+  let at = 0;
+  return {
+    remove() {
+      const s = get();
+      const list = (s && s.entries) || [];
+      const i = list.findIndex((e) => e.id === id);
+      if (i < 0) return;
+      item = list[i];
+      at = i;
+      set({ ...fix(s, item, -1), entries: list.filter((e) => e.id !== id) });
+    },
+    restore() {
+      const s = get();
+      const list = (s && s.entries) || [];
+      if (!item || !s || list.some((e) => e.id === id)) return;
+      set({ ...fix(s, item, 1), entries: [...list.slice(0, at), item, ...list.slice(at)] });
+    },
+  };
+}
+
+/* Both row deletes are one tap on a small x: undoable (deferDelete), so they
+   need no confirm. */
 function deleteWaterEntry(entryId) {
   // Still in flight from quickAddWater: there is no server id to delete yet.
   if (pendingWater.has(entryId)) return;
-  confirmDelete('Delete this water entry?', () => removeWaterEntry(entryId));
-}
-async function removeWaterEntry(entryId) {
   const key = 'water:' + entryId;
   if (entryDeletesInFlight.has(key)) return;
-  entryDeletesInFlight.add(key);
-  try {
-    const updated = await api('/api/water/entries/' + entryId, {
-      method: 'DELETE',
-    });
-    state.water = withPendingWater(updated);
-    invalidateWeek('water');
-    render();
-  } finally {
-    entryDeletesInFlight.delete(key);
-  }
-}
-
-/* Home's water pill: one tap is a glass, Undo on the toast. Undo waits for
-   the glass to have a server id; one still queued offline has none, and stays.
-   ponytail: matched as the newest new 250 ml entry, not by its own id. */
-function addGlassFromHome() {
-  const entries = () => (state.water && state.water.entries) || [];
-  const before = new Set(entries().map((e) => e.id));
-  const saved = quickAddWater(250);
-  if (entries().length === before.size) return; // a double tap, already said so
-  pushToast('Logged 250 ml of water.', 'info', 6000, {
-    label: 'Undo',
-    run: async () => {
-      await saved;
-      const mine = entries().filter((e) => !before.has(e.id) && !pendingWater.has(e.id) && e.amountMl === 250);
-      if (mine.length) removeWaterEntry(mine[mine.length - 1].id).catch((err) => toastError(err, 'Could not undo that glass.'));
+  deferDelete({
+    message: 'Water entry deleted.',
+    errorText: 'Could not delete that water entry.',
+    selector: '[data-water-id="' + entryId + '"]',
+    ...summarySlot(
+      () => state.water,
+      (w) => (state.water = w),
+      entryId,
+      (w, e, sign) => {
+        const consumedMl = Math.max(0, (w.consumedMl || 0) + sign * (e.effectiveMl ?? effectiveMl(e.amountMl, e.drinkType)));
+        return {
+          ...w,
+          consumedMl,
+          drankMl: Math.max(0, (w.drankMl || 0) + sign * (e.amountMl || 0)),
+          remainingMl: Math.max(0, (w.goalMl || 0) - consumedMl),
+        };
+      }
+    ),
+    commit: async () => {
+      entryDeletesInFlight.add(key);
+      try {
+        const updated = await api('/api/water/entries/' + entryId, { method: 'DELETE', keepalive: true });
+        if (!state.user) return;
+        state.water = withPendingWater(updated);
+        invalidateWeek('water');
+        render();
+      } finally {
+        entryDeletesInFlight.delete(key);
+      }
     },
   });
 }
@@ -7212,35 +7391,54 @@ function openEditFood(entry) {
   focusSoon(name);
 }
 
+// A day figure the entry carried moves with it; one it lacked stays as it is.
+const shiftBy = (total, part, sign) => (total != null && part != null ? Math.max(0, total + sign * part) : total);
+
 function deleteFoodEntry(entryId) {
-  confirmDelete('Delete this food entry?', async () => {
-    const key = 'food:' + entryId;
-    if (entryDeletesInFlight.has(key)) return;
-    entryDeletesInFlight.add(key);
-    try {
-      const updated = await api('/api/food/entries/' + entryId, {
-        method: 'DELETE',
-      });
-      invalidateWeek('food');
-      // Where focus goes once the row is gone (it fell to <body>): the next
-      // row's edit button, else the previous one's, else Log food.
-      const ids = [...root.querySelectorAll('[data-food-id]')].map((el) => el.dataset.foodId);
-      const at = ids.indexOf(String(entryId));
-      const nextId = at < 0 ? null : ids[at + 1] || ids[at - 1] || null;
-      removeSoon('[data-food-id="' + entryId + '"]', () => {
-        state.food = updated;
+  const key = 'food:' + entryId;
+  if (entryDeletesInFlight.has(key)) return;
+  // Where focus goes once the row is gone (it fell to <body>): the next
+  // row's edit button, else the previous one's, else Log food.
+  const ids = [...root.querySelectorAll('[data-food-id]')].map((el) => el.dataset.foodId);
+  const at = ids.indexOf(String(entryId));
+  const nextId = at < 0 ? null : ids[at + 1] || ids[at - 1] || null;
+  deferDelete({
+    message: 'Food entry deleted.',
+    errorText: 'Could not delete that food entry.',
+    selector: '[data-food-id="' + entryId + '"]',
+    // After the render() that follows the row's exit.
+    afterRemove: () =>
+      queueMicrotask(() => {
+        const target =
+          (nextId && root.querySelector('[data-food-id="' + nextId + '"] .gb-food-row-edit')) ||
+          root.querySelector('.gb-food-add');
+        if (target) target.focus();
+      }),
+    ...summarySlot(
+      () => state.food,
+      (f) => (state.food = f),
+      entryId,
+      (f, e, sign) => ({
+        ...f,
+        totalCalories: shiftBy(f.totalCalories || 0, e.kcalEstimated || 0, sign),
+        fiberG: shiftBy(f.fiberG, e.fiberG, sign),
+        sugarG: shiftBy(f.sugarG, e.sugarG, sign),
+        sodiumMg: shiftBy(f.sodiumMg, e.sodiumMg, sign),
+      })
+    ),
+    commit: async () => {
+      entryDeletesInFlight.add(key);
+      try {
+        const updated = await api('/api/food/entries/' + entryId, { method: 'DELETE', keepalive: true });
+        if (!state.user) return;
+        invalidateWeek('food');
+        if (summaryIsForToday(updated, todayKey())) state.food = updated;
         cacheFoodSummary(updated);
-        // After the render() that follows this drop.
-        queueMicrotask(() => {
-          const target =
-            (nextId && root.querySelector('[data-food-id="' + nextId + '"] .gb-food-row-edit')) ||
-            root.querySelector('.gb-food-add');
-          if (target) target.focus();
-        });
-      });
-    } finally {
-      entryDeletesInFlight.delete(key);
-    }
+        render();
+      } finally {
+        entryDeletesInFlight.delete(key);
+      }
+    },
   });
 }
 
@@ -7342,16 +7540,20 @@ async function loadOlderNotifs() {
 
 /* Read at once, then told to the server; a failure puts it all back. */
 async function markAllNotificationsRead() {
-  const prev = state.notifications;
+  // On failure only these ids go back to unread: a card pushed (or an older page
+  // loaded) while the POST was out must survive the rollback.
+  const wereUnread = new Set(state.notifications.filter((n) => !n.readAt).map((n) => n.id));
   const prevBeyond = notifPaging.beyond;
   const now = new Date().toISOString();
-  state.notifications = prev.map((n) => (n.readAt ? n : { ...n, readAt: now }));
+  state.notifications = state.notifications.map((n) => (n.readAt ? n : { ...n, readAt: now }));
   notifPaging.beyond = 0;
   repaintOverlays();
   try {
     await api('/api/notifications/mark-all-read', { method: 'POST' });
   } catch (err) {
-    state.notifications = prev;
+    state.notifications = state.notifications.map((n) =>
+      wereUnread.has(n.id) && n.readAt === now ? { ...n, readAt: null } : n
+    );
     notifPaging.beyond = prevBeyond;
     repaintOverlays();
     toastError(err, 'Could not mark them read.');
@@ -7360,13 +7562,18 @@ async function markAllNotificationsRead() {
 
 /* Read cards go; unread ones stay. Server-wide for the user, not just the loaded pages. */
 async function clearReadNotifications() {
-  const prev = state.notifications;
-  state.notifications = prev.filter((n) => !n.readAt);
+  // On failure the removed cards are put back, in their place, beside anything
+  // that arrived meanwhile — never a snapshot over it.
+  const removed = state.notifications.filter((n) => n.readAt);
+  state.notifications = state.notifications.filter((n) => !n.readAt);
   repaintOverlays();
   try {
     await api('/api/notifications/read', { method: 'DELETE' });
   } catch (err) {
-    state.notifications = prev;
+    const have = new Set(state.notifications.map((n) => n.id));
+    state.notifications = [...state.notifications, ...removed.filter((n) => !have.has(n.id))].sort(
+      (a, b) => notifTime(b) - notifTime(a)
+    );
     repaintOverlays();
     toastError(err, 'Could not clear read notifications.');
   }
@@ -7485,11 +7692,20 @@ function mentorApi() {
     reflection: { label: reflectionLabel, open: () => openProfileSettings('notifications') },
     // Buddy's one-tap actions, after the user confirmed the sheet. Each throws to
     // keep the sheet open with the reason.
+    // A task or habit chip saves on the tap; the toast's Undo deletes what it made
+    // at once (unmake), found by id against the list before, so createTask/createHabit
+    // stay as they are.
     act: {
       task: async (title) => {
-        if (!(await createTask({ title })).queued) toastSuccess('Task added.');
+        const made = await createTask({ title });
+        if (!made || made.queued) return; // queued: "saved on this phone" was said
+        pushToast('Task added.', 'success', 6000, {
+          label: 'Undo',
+          run: () => unmake(() => state.tasks, (l) => (state.tasks = l), made.id, () => sendTaskDelete(made.id)),
+        });
       },
       habit: async ({ title, time }) => {
+        const had = new Set(state.habits.map((x) => x.id));
         await createHabit({
           name: title,
           domain: 'habit',
@@ -7498,7 +7714,12 @@ function mentorApi() {
           metric: 'none',
           reminderTime: time || null,
         });
-        toastSuccess('Habit added.');
+        const made = state.habits.find((x) => !had.has(x.id));
+        if (!made) return toastSuccess('Habit added.');
+        pushToast('Habit added.', 'success', 6000, {
+          label: 'Undo',
+          run: () => unmake(() => state.habits, (l) => (state.habits = l), made.id, () => sendHabitDelete(made.id)),
+        });
       },
       reminder: async ({ title, date, time, timeInput }) => {
         if (time && isPastSlot(date, time)) {
@@ -7535,6 +7756,30 @@ async function respondMentorshipRequest(requestId, notifId, accept) {
   } catch (err) {
     toastError(err, 'Could not respond to invite.');
   }
+}
+
+/* The bell, avatar and More panels are one entry on the shared back stack
+   (gb-kit trackOverlay): hardware Back or the browser's closes the open one
+   before it leaves the screen, and on Home before it minimises the app.
+   Synced from installOutsideClickToCloseHeaderPopovers, which every path that
+   opens or shuts a panel goes through (setScreen and logout via render()). */
+let untrackPanels = null;
+function syncPanelBackEntry() {
+  const open = state.notifOpen || state.profileOpen || state.moreOpen;
+  if (open && !untrackPanels) untrackPanels = trackOverlay({ close: closeHeaderPanels });
+  else if (!open && untrackPanels) {
+    untrackPanels();
+    untrackPanels = null;
+  }
+}
+function closeHeaderPanels() {
+  const wasOpen = state.notifOpen || state.profileOpen || state.moreOpen;
+  state.notifOpen = false;
+  state.profileOpen = false;
+  state.moreOpen = false;
+  syncPanelBackEntry();
+  // setScreen has already shut them and renders next; only Back needs a repaint.
+  if (wasOpen) repaintOverlays();
 }
 
 function toggleNotifOpen() {
@@ -7648,7 +7893,7 @@ function profileDropdown() {
         onclick: () => {
           state.profileOpen = false;
           repaintOverlays();
-          confirmLogout();
+          logout();
         },
       },
       Icon('log-out', { size: 16 }),
@@ -7678,6 +7923,41 @@ function screenFromHash() {
    screen their session expired on. Memory only, taken once by the next
    sign-in; every sign-in used to land on Home. */
 let returnToScreen = '';
+
+/* A manifest shortcut (?shortcut=water) or a share into the app (?text=…):
+   read once, taken off the address at once so a reload doesn't log a second
+   glass, and run after the first data load (runLaunchIntent). Signed out, it
+   waits for the sign-in's first load. */
+let pendingLaunch = launchIntent(window.location.search);
+if (pendingLaunch) history.replaceState(null, '', window.location.pathname + window.location.hash);
+
+function runLaunchIntent() {
+  const it = pendingLaunch;
+  pendingLaunch = null;
+  if (!it) return;
+  if (it.share) {
+    // The shared words go through Quick add's own preview; nothing is written
+    // until the user ticks and confirms there.
+    openAddSheet({ text: it.share, preview: true });
+    return;
+  }
+  if (it.shortcut === 'water' && featureOn('water')) {
+    const before = ((state.water && state.water.entries) || []).length;
+    quickAddWater(WATER_ACTION_ML).then(() => {
+      // Failures and offline saves have toasted already.
+      const now = ((state.water && state.water.entries) || []).length;
+      if (now > before && navigator.onLine) toastSuccess('Logged ' + WATER_ACTION_ML + ' ml of water.');
+    });
+  } else if (it.shortcut === 'task') {
+    openAddTask();
+  } else if (it.shortcut === 'focus' && screenEnabled('focus')) {
+    focusAutoStart = true;
+    setScreen('focus');
+  } else if (it.shortcut === 'quickadd') {
+    openAddSheet();
+  }
+}
+
 function landAfterSignIn() {
   const target = Object.prototype.hasOwnProperty.call(SCREENS, returnToScreen)
     ? returnToScreen
@@ -7730,7 +8010,9 @@ window.addEventListener('hashchange', () => {
     returnToScreen = screenFromHash();
     return;
   }
-  setScreen(screenFromHash(), { fromHash: true });
+  // A link with a query (#/circle?join=CODE) on the screen already showing:
+  // force the repaint, or the screen that reads the query never sees it.
+  setScreen(screenFromHash(), { fromHash: true, force: window.location.hash.includes('?') });
 });
 
 /**
@@ -7751,500 +8033,6 @@ function toggleTheme() {
   } catch (_) {}
   saveUiPrefs({ theme: state.theme });
   render();
-}
-
-function togglePremium() {
-  const apply = () => {
-    state.premium = !state.premium;
-    applyPremium(state.premium);
-    try {
-      CacheStorage.setItem(PREMIUM_KEY, state.premium ? '1' : '0');
-    } catch (_) {}
-    saveUiPrefs({ premium: state.premium });
-    toastSuccess(state.premium ? 'Premium look on.' : 'Back to the classic look.');
-    render();
-  };
-  // Every surface changes at once, so cut-to-black reads as a glitch. A view
-  // transition cross-fades the old frame into the new one; browsers without it
-  // just get the instant swap. ponytail: no library, no manual snapshotting.
-  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (document.startViewTransition && !reduce) document.startViewTransition(apply);
-  else apply();
-}
-
-async function saveProfileDetails(payload) {
-  const updated = await api('/api/auth/profile', {
-    method: 'PUT',
-    body: JSON.stringify(payload),
-  });
-  syncUserSession(updated);
-  // The tracker reads this same goal; refetch so Home shows it without a reload.
-  const water = await api('/api/water').catch(() => null);
-  if (water) state.water = withPendingWater(water);
-  // Weight, fitness goal and both daily goals all feed the Summary's targets.
-  invalidateWeek();
-  toastSuccess('Changes saved.');
-  render();
-  return updated;
-}
-
-// Country dial codes for the phone-number picker. India first (default).
-const COUNTRY_CODES = [
-  { d: '91', flag: '🇮🇳', name: 'India' },
-  { d: '1', flag: '🇺🇸', name: 'United States' },
-  { d: '1', flag: '🇨🇦', name: 'Canada' },
-  { d: '44', flag: '🇬🇧', name: 'United Kingdom' },
-  { d: '971', flag: '🇦🇪', name: 'UAE' },
-  { d: '65', flag: '🇸🇬', name: 'Singapore' },
-  { d: '61', flag: '🇦🇺', name: 'Australia' },
-  { d: '60', flag: '🇲🇾', name: 'Malaysia' },
-  { d: '49', flag: '🇩🇪', name: 'Germany' },
-  { d: '33', flag: '🇫🇷', name: 'France' },
-  { d: '81', flag: '🇯🇵', name: 'Japan' },
-  { d: '86', flag: '🇨🇳', name: 'China' },
-  { d: '966', flag: '🇸🇦', name: 'Saudi Arabia' },
-  { d: '880', flag: '🇧🇩', name: 'Bangladesh' },
-  { d: '94', flag: '🇱🇰', name: 'Sri Lanka' },
-];
-
-/** Split an E.164 string into (dial, local) by longest-prefix match. */
-function splitDial(number) {
-  const digits = String(number || '').replace(/\D/g, '');
-  if (digits) {
-    const byLen = COUNTRY_CODES.slice().sort((a, b) => b.d.length - a.d.length);
-    const hit = byLen.find((co) => digits.startsWith(co.d) && digits.length > co.d.length);
-    if (hit) {
-      return { dial: hit.d, local: digits.slice(hit.d.length) };
-    }
-  }
-  return { dial: '91', local: digits };
-}
-
-/**
- * Country code and last four digits; the middle masked. Enough to recognise
- * your own number, not enough for someone reading over your shoulder — the
- * settings panel is open on a screen far more often than it is edited.
- */
-function maskPhone(number) {
-  const { dial, local } = splitDial(number);
-  if (local.length <= 4) {
-    return '+' + dial + ' ' + local;
-  }
-  return '+' + dial + ' ' + '\u2022'.repeat(local.length - 4) + local.slice(-4);
-}
-
-/**
- * A country-code dropdown + local-number field. Users pick their country
- * so they can't forget the dial code (which previously produced broken
- * numbers like +6374044117). `getValue()` returns a full E.164 string.
- */
-function CountryPhoneInput(prefill) {
-  const { dial: dial0, local: local0 } = splitDial(prefill);
-  let dial = dial0,
-    local = local0;
-
-  const sel = h('select', { class: 'gb-input gb-phone-cc', 'aria-label': 'Country code' });
-  COUNTRY_CODES.forEach((co) => {
-    const o = h('option', { value: co.d }, co.flag + ' ' + co.name + ' (+' + co.d + ')');
-    // Select the first option matching the parsed dial code.
-    if (co.d === dial && !sel.querySelector('option[selected]')) o.selected = true;
-    sel.appendChild(o);
-  });
-
-  const numIn = h('input', {
-    type: 'tel',
-    class: 'gb-input gb-phone-num',
-    inputmode: 'numeric',
-    placeholder: '98765 43210',
-    maxlength: '15',
-    value: local,
-  });
-
-  const el = h('div', { class: 'gb-phone-input' }, sel, numIn);
-  return {
-    el,
-    focus: () => numIn.focus(),
-    getValue: () => {
-      const localDigits = (numIn.value || '').replace(/\D/g, '').replace(/^0+/, '');
-      return localDigits ? '+' + sel.value + localDigits : '';
-    },
-  };
-}
-
-/* Segmented "slider": a track of segments with a brand thumb that glides to
-   the active one, showing its pane. `slides` = [{ id, label, pane }]. Returns
-   the bar element; panes are toggled by display. */
-function buildSegSlider(slides, initialId) {
-  const btnMap = {};
-  const thumb = h('div', { class: 'gb-segnav-thumb' });
-  thumb.style.width = 'calc((100% - 8px) / ' + slides.length + ')';
-  let current = initialId;
-  /* Tabs are sized by their labels (six equal ones cut "Reminders" to
-     "Reminde" on a phone), so the thumb measures the tab it sits under. Until
-     the bar is laid out there is nothing to measure, and the equal-share guess
-     stands in; the observer below corrects it on first layout and on resize. */
-  const move = (id) => {
-    current = id;
-    const btn = btnMap[id];
-    if (btn && btn.offsetWidth) {
-      thumb.style.width = btn.offsetWidth + 'px';
-      thumb.style.transform = 'translateX(' + (btn.offsetLeft - 4) + 'px)';
-      return;
-    }
-    thumb.style.transform = 'translateX(' + slides.findIndex((t) => t.id === id) * 100 + '%)';
-  };
-  const bar = h('div', { class: 'gb-segnav', role: 'tablist' }, thumb);
-  slides.forEach(({ id, label }) => {
-    const btn = h(
-      'button',
-      {
-        type: 'button',
-        role: 'tab',
-        'aria-selected': id === initialId ? 'true' : 'false',
-        class: 'gb-segnav-btn' + (id === initialId ? ' is-active' : ''),
-        onclick: () => {
-          slides.forEach((t) => {
-            if (t.pane) t.pane.style.display = 'none';
-            btnMap[t.id].classList.remove('is-active');
-            btnMap[t.id].setAttribute('aria-selected', 'false');
-          });
-          const cur = slides.find((t) => t.id === id);
-          if (cur.pane) cur.pane.style.display = '';
-          btn.classList.add('is-active');
-          btn.setAttribute('aria-selected', 'true');
-          move(id);
-        },
-      },
-      label
-    );
-    btnMap[id] = btn;
-    bar.appendChild(btn);
-  });
-  slides.forEach((t) => {
-    if (t.pane) t.pane.style.display = t.id === initialId ? '' : 'none';
-  });
-  move(initialId);
-  if (typeof ResizeObserver === 'function') new ResizeObserver(() => move(current)).observe(bar);
-  return bar;
-}
-
-/* ---- Settings panes that shape the app itself ----
-   These used to be their own "Customise" modal, so the app had two settings
-   doors and no way to guess which held what (dark mode behind one, notification
-   prefs behind the other). Now they're just panes; `openProfileSettings` mounts
-   them as the Display and Layout tabs of the single Settings modal. */
-function customisePanes() {
-  const u = state.user || {};
-
-  // Features tab — on/off toggles, persisted instantly.
-  const featuresPane = h(
-    'div',
-    { class: 'gb-settings-pane' },
-    h(
-      'div',
-      { class: 'gb-field-hint', style: { marginBottom: '8px' } },
-      'Turn parts of Growth Buddy on or off. Changes apply instantly.'
-    ),
-    ...FEATURE_DEFS.map(featureSwitchRow)
-  );
-
-  // Home tab — show/hide + reorder home-screen widgets. Saves automatically.
-  let homeWorking = resolveHomeLayout(u.homeLayout || null);
-  const homeListEl = h('div', { class: 'gb-home-cust-list' });
-  const persistHome = () =>
-    saveHomeLayout(homeWorking.map((x) => ({ id: x.id, enabled: x.enabled })));
-  // The list re-renders on every move, which drops the focused button; put focus back on the
-  // same arrow of the row that moved (or its other arrow once it hits the top or bottom).
-  const refocusMove = (list, row, delta) => {
-    const [up, down] = list.children[row]?.querySelectorAll('.gb-home-cust-move') || [];
-    const want = delta < 0 ? up : down;
-    (want && !want.disabled ? want : delta < 0 ? down : up)?.focus();
-  };
-  const renderHomeList = () => {
-    homeListEl.replaceChildren();
-    homeWorking.forEach((item, idx) => {
-      const def = HOME_WIDGETS.find((w) => w.id === item.id) || { label: item.id, desc: '' };
-      const featureOff = def.feature && !featureOn(def.feature);
-      const sw = h(
-        'button',
-        {
-          type: 'button',
-          role: 'switch',
-          'aria-checked': item.enabled ? 'true' : 'false',
-          'aria-label': def.label,
-          class: 'gb-switch' + (item.enabled ? ' is-on' : ''),
-        },
-        h('span', { class: 'gb-switch-knob' })
-      );
-      sw.onclick = () => {
-        item.enabled = !item.enabled;
-        renderHomeList();
-        persistHome();
-      };
-      const move = (delta, label, icon, disabled) => {
-        const btn = h(
-          'button',
-          { type: 'button', class: 'gb-home-cust-move', 'aria-label': label, disabled },
-          Icon(icon, { size: 16, sw: 2.4 })
-        );
-        if (!disabled) {
-          btn.onclick = () => {
-            const j = idx + delta;
-            const tmp = homeWorking[j];
-            homeWorking[j] = homeWorking[idx];
-            homeWorking[idx] = tmp;
-            renderHomeList();
-            persistHome();
-            refocusMove(homeListEl, j, delta);
-          };
-        }
-        return btn;
-      };
-      homeListEl.appendChild(
-        h(
-          'div',
-          { class: 'gb-home-cust-row' + (item.enabled ? '' : ' is-off') },
-          h(
-            'div',
-            { class: 'gb-home-cust-moves' },
-            move(-1, 'Move ' + def.label + ' up', 'chevron-up', idx === 0),
-            move(1, 'Move ' + def.label + ' down', 'chevron-down', idx === homeWorking.length - 1)
-          ),
-          h(
-            'div',
-            { class: 'gb-home-cust-text' },
-            h('div', { class: 'gb-home-cust-label' }, def.label),
-            h(
-              'div',
-              { class: 'gb-home-cust-desc' },
-              featureOff ? 'Turn on the ' + def.feature + ' feature to show this' : def.desc
-            )
-          ),
-          sw
-        )
-      );
-    });
-    refreshIcons();
-  };
-  renderHomeList();
-  const homePane = h(
-    'div',
-    { class: 'gb-settings-pane' },
-    h(
-      'div',
-      { class: 'gb-field-hint', style: { marginBottom: '10px' } },
-      'Pick your Home cards and reorder with the arrows. Saves as you go.'
-    ),
-    homeListEl
-  );
-
-  // Navigation tab — choose which destinations sit in the bottom bar vs
-  // "More", and reorder them. Saves automatically. Mirrors the Home pane.
-  const NAV_BAR_MAX = 5;
-  let navWorking = resolveNavLayout((u && u.navLayout) || null);
-  const navListEl = h('div', { class: 'gb-home-cust-list' });
-  const persistNav = () => saveNavLayout(navWorking.map((x) => ({ id: x.id, primary: x.primary })));
-  const renderNavList = () => {
-    navListEl.replaceChildren();
-    const barCount = navWorking.filter((x) => x.primary).length;
-    navWorking.forEach((item, idx) => {
-      const def = NAV_CATALOG.find((w) => w.id === item.id) || { label: item.id };
-      const featureOff = def.feature && !featureOn(def.feature);
-      const sw = h(
-        'button',
-        {
-          type: 'button',
-          role: 'switch',
-          'aria-checked': item.primary ? 'true' : 'false',
-          'aria-label': 'Show ' + def.label + ' in the bar',
-          class: 'gb-switch' + (item.primary ? ' is-on' : ''),
-        },
-        h('span', { class: 'gb-switch-knob' })
-      );
-      sw.onclick = () => {
-        if (!item.primary && barCount >= NAV_BAR_MAX) {
-          toastError(
-            { message: 'The bar holds up to ' + NAV_BAR_MAX + '. Move one to More first.' },
-            'Bar is full'
-          );
-          return;
-        }
-        item.primary = !item.primary;
-        renderNavList();
-        persistNav();
-      };
-      const move = (delta, label, icon, disabled) => {
-        const btn = h(
-          'button',
-          { type: 'button', class: 'gb-home-cust-move', 'aria-label': label, disabled },
-          Icon(icon, { size: 16, sw: 2.4 })
-        );
-        if (!disabled) {
-          btn.onclick = () => {
-            const j = idx + delta;
-            const tmp = navWorking[j];
-            navWorking[j] = navWorking[idx];
-            navWorking[idx] = tmp;
-            renderNavList();
-            persistNav();
-            refocusMove(navListEl, j, delta);
-          };
-        }
-        return btn;
-      };
-      navListEl.appendChild(
-        h(
-          'div',
-          { class: 'gb-home-cust-row' + (item.primary ? '' : ' is-off') },
-          h(
-            'div',
-            { class: 'gb-home-cust-moves' },
-            move(-1, 'Move ' + def.label + ' up', 'chevron-up', idx === 0),
-            move(1, 'Move ' + def.label + ' down', 'chevron-down', idx === navWorking.length - 1)
-          ),
-          h(
-            'div',
-            { class: 'gb-home-cust-text' },
-            h('div', { class: 'gb-home-cust-label' }, def.label),
-            h(
-              'div',
-              { class: 'gb-home-cust-desc' },
-              featureOff
-                ? 'Turn on the ' + def.feature + ' feature to show this'
-                : item.primary
-                  ? 'In the bottom bar'
-                  : 'In the More menu'
-            )
-          ),
-          sw
-        )
-      );
-    });
-    refreshIcons();
-  };
-  renderNavList();
-  const navPane = h(
-    'div',
-    { class: 'gb-settings-pane' },
-    h(
-      'div',
-      { class: 'gb-field-hint', style: { marginBottom: '10px' } },
-      'Pick up to ' +
-        NAV_BAR_MAX +
-        ' tabs for the bottom bar; the rest go under “More”. Saves as you go.'
-    ),
-    navListEl
-  );
-
-  // Money tab — tags, currency and prompts. Only when the feature is on.
-  const moneyPane = featureOn('money')
-    ? h(
-        'div',
-        { class: 'gb-settings-pane' },
-        // money.js is a lazy chunk; the pane starts hidden, so it is usually in by the time it shows.
-        lazyScreen(
-          () => import('./money.js'),
-          (m) => m.MoneyCustomisePane(state.money, saveMoney)
-        ),
-        bankFeedSection()
-      )
-    : null;
-
-  // Display tab — text size and theme. Text size scales every rem in the app.
-  const displayPane = h(
-    'div',
-    { class: 'gb-settings-pane' },
-    h('div', { class: 'gb-settings-sec-label' }, 'Text size'),
-    h(
-      'div',
-      { class: 'gb-field-hint', style: { marginBottom: '8px' } },
-      'Makes everything bigger — words, buttons and rows. Pick whatever is easiest to read.'
-    ),
-    segmented(
-      [
-        { value: 'normal', label: 'Normal' },
-        { value: 'large', label: 'Large' },
-        { value: 'larger', label: 'Largest' },
-      ],
-      state.textScale,
-      (v) => setTextScale(v)
-    ).node,
-    h(
-      'div',
-      { class: 'gb-textsize-sample' },
-      h('div', { class: 'gb-textsize-sample-title' }, 'Sample'),
-      h('div', { class: 'gb-textsize-sample-body' }, 'Drink a glass of water · 8:00 in the morning')
-    ),
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '18px' } }, 'Time format'),
-    h(
-      'div',
-      { class: 'gb-field-hint', style: { marginBottom: '8px' } },
-      'How every time in the app is written — reminders, due times, meal logs.'
-    ),
-    segmented(
-      [
-        { value: '12', label: '12-hour' },
-        { value: '24', label: '24-hour' },
-      ],
-      timeFormatPref(),
-      (v) => {
-        setTimeFormat(v);
-        saveUiPrefs({ timeFormat: v });
-        render();
-      }
-    ).node,
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '18px' } }, 'Theme'),
-    h(
-      'div',
-      { class: 'gb-field-hint', style: { marginBottom: '8px' } },
-      'Light is easier to read in daylight. Dark is easier at night. System follows the phone.'
-    ),
-    // Nothing picked = following the phone, and that is shown as a choice so
-    // it can be picked again after trying Light or Dark.
-    segmented(
-      [
-        { value: 'system', label: 'System' },
-        { value: 'light', label: 'Light' },
-        { value: 'dark', label: 'Dark' },
-      ],
-      pickedTheme() || (state.user && state.user.uiPrefs && state.user.uiPrefs.theme) || 'system',
-      (v) => setThemeChoice(v)
-    ).node,
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '18px' } }, 'Look'),
-    h(
-      'div',
-      { class: 'gb-field-hint', style: { marginBottom: '8px' } },
-      'Premium adds softer shadows, frosted glass and a bit more life to every tap.'
-    ),
-    segmented(
-      [
-        { value: 'classic', label: 'Classic' },
-        { value: 'premium', label: 'Premium' },
-      ],
-      state.premium ? 'premium' : 'classic',
-      (v) => {
-        if ((v === 'premium') !== state.premium) togglePremium();
-      }
-    ).node
-  );
-
-  // Features, Home cards and the bottom bar were three separate tabs; they all
-  // answer one question — what's in the app and where does it sit — so they're
-  // one scrollable Layout pane with section headings instead.
-  const layoutPane = h(
-    'div',
-    { class: 'gb-settings-pane', style: { display: 'none' } },
-    h('div', { class: 'gb-settings-sec-label' }, 'Features'),
-    featuresPane,
-    h('div', { class: 'gb-settings-sec-label' }, 'Home cards'),
-    homePane,
-    h('div', { class: 'gb-settings-sec-label' }, 'Bottom bar'),
-    navPane,
-    ...(moneyPane ? [h('div', { class: 'gb-settings-sec-label' }, 'Money'), moneyPane] : [])
-  );
-  displayPane.style.display = 'none';
-
-  return { displayPane, layoutPane };
 }
 
 /* ---- Weekly review ritual ----
@@ -8425,576 +8213,66 @@ function openWeeklyReview() {
   focusSoon(focus);
 }
 
-/* ---- Delete account (destructive, password-confirmed) ---- */
-/* "Download my data": GET /api/auth/export (every table the account owns, minus
-   secrets) handed to the OS as growth-buddy-export.json through native.js
-   saveFile: the share sheet in the app, a plain download on the web. */
-async function downloadMyData(btn) {
-  const label = btn && btn.lastChild && btn.lastChild.nodeType === 3 ? btn.lastChild : null;
-  const was = label ? label.textContent : '';
-  if (btn) btn.disabled = true;
-  if (label) label.textContent = 'Preparing…';
-  try {
-    const data = await api('/api/auth/export');
-    const name = 'growth-buddy-export-' + todayKey() + '.json';
-    if ((await saveFile(JSON.stringify(data, null, 2), name, 'application/json', 'Growth Buddy data')) === 'saved') pushToast('Your data is downloading.', 'success', 3000);
-  } catch (err) {
-    toastError(err, 'Could not export your data.');
-  } finally {
-    if (btn) btn.disabled = false;
-    if (label) label.textContent = was;
-  }
-}
-
-function downloadDataButton(extraClass = '') {
-  const btn = h(
-    'button',
-    { type: 'button', class: ('gb-btn gb-btn--ghost gb-account-signout ' + extraClass).trim() },
-    Icon('file', { size: 16 }),
-    'Download my data'
-  );
-  btn.addEventListener('click', () => downloadMyData(btn));
-  return btn;
-}
-
-function openDeleteAccount() {
-  const { sheet, close } = openOverlay({ label: 'Delete account' });
-  const pw = h('input', {
-    type: 'password',
-    class: 'gb-input',
-    autocomplete: 'current-password',
-    placeholder: 'Your password',
-  });
-  const confirmBtn = h(
-    'button',
-    { type: 'button', class: 'gb-btn gb-btn--danger' },
-    'Delete my account'
-  );
-  confirmBtn.addEventListener('click', async () => {
-    if (!pw.value) {
-      pushToast('Enter your password to confirm.', 'error', 3000);
-      return;
-    }
-    confirmBtn.disabled = true;
-    confirmBtn.textContent = 'Deleting…';
-    try {
-      await api('/api/auth/delete-account', {
-        method: 'POST',
-        body: JSON.stringify({ password: pw.value }),
-      });
-      // Scheduled, not gone (AuthService.deleteAccount): every session was revoked
-      // and the purge runs in 7 days; signing in before then offers to cancel.
-      // The rest is logout's device teardown: push, alarms, the account's caches.
-      close();
-      logout({ revoked: true });
-      pushToast('Your account will be deleted in 7 days. Sign in before then to keep it.', 'info', 8000);
-    } catch (err) {
-      confirmBtn.disabled = false;
-      confirmBtn.textContent = 'Delete my account';
-      toastError(err, 'Could not delete your account.');
-    }
-  });
-  sheet.append(
-    h(
-      'div',
-      { class: 'gb-modal-head' },
-      h('div', { class: 'gb-modal-title' }, 'Delete your account?'),
-      h(
-        'div',
-        { class: 'gb-modal-sub' },
-        'You’ll be signed out on every device now, and in 7 days your habits, tasks, goals, logs ' +
-          'and money data are erased for good. Changed your mind? Sign in before then and choose ' +
-          '“Cancel deletion”. We’ll email you the date.'
-      )
-    ),
-    h(
-      'div',
-      { class: 'gb-form' },
-      // Offered before the destructive button, not after: once it is pressed
-      // there is nothing left to export.
-      h('div', { class: 'gb-field-hint' }, 'Want a copy first? Download everything as a JSON file.'),
-      downloadDataButton(),
-      h('label', { class: 'gb-field-label gb-field-label--sub' }, 'Confirm with your password'),
-      pw,
-      confirmBtn
-    ),
-    h(
-      'button',
-      { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel', onclick: () => close() },
-      'Keep my account'
-    )
-  );
-  refreshIcons();
-  focusSoon(pw);
-}
-
-/* ---- Security modal: active sessions + change password ---- */
-/* ---- Security section ----
-   Signed-in devices + password change. Used to be its own modal reachable from
-   a third "Security" item in the account menu; it's a section of Settings →
-   Account now. Returns the nodes; the caller mounts them. */
-/* A session's address in words where the raw one means nothing to a person:
-   "0:0:0:0:0:0:0:1" is the machine itself, 192.168.x a home network. Real
-   public addresses stay as they are. */
-function ipLabel(ip) {
-  const a = String(ip || '').trim().toLowerCase();
-  if (!a) return 'unknown IP';
-  if (/^(127\.|::1$|0:0:0:0:0:0:0:1$|::ffff:127\.)/.test(a)) return 'This computer';
-  if (/^(::ffff:)?(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.)|^f[cd][0-9a-f]{2}:|^fe80:/.test(a)) return 'Local network';
-  return ip;
-}
-
-function securitySection() {
-  const sessionsWrap = h(
-    'div',
-    { class: 'gb-sec-sessions' },
-    h('div', { class: 'gb-empty-sm' }, 'Loading…')
-  );
-
-  async function loadSessions() {
-    try {
-      const list = await api('/api/auth/sessions');
-      if (!list.length) {
-        sessionsWrap.replaceChildren(h('div', { class: 'gb-empty-sm' }, 'No active sessions.'));
-        return;
-      }
-      sessionsWrap.replaceChildren(
-        ...list.map((s) =>
-          h(
-            'div',
-            { class: 'gb-sec-row' },
-            h(
-              'div',
-              { class: 'gb-sec-row-main' },
-              h('div', { class: 'gb-sec-row-device' }, s.device || 'Unknown device'),
-              h(
-                'div',
-                { class: 'gb-sec-row-meta' },
-                ipLabel(s.ip) + ' · last used ' + relativeTime(s.lastUsedAt)
-              )
-            ),
-            s.current
-              ? h('span', { class: 'gb-sec-badge' }, 'This device')
-              : h(
-                  'button',
-                  {
-                    type: 'button',
-                    class: 'gb-btn gb-btn--ghost gb-btn--compact',
-                    onclick: async (e) => {
-                      const btn = e.currentTarget;
-                      if (btn.disabled) return;
-                      btn.disabled = true;
-                      btn.textContent = 'Signing out…';
-                      try {
-                        await api('/api/auth/sessions/' + encodeURIComponent(s.id), {
-                          method: 'DELETE',
-                        });
-                        toastSuccess('Signed out that device.');
-                        loadSessions();
-                      } catch (err) {
-                        // It stayed disabled after a failure, so a retry meant reopening Settings.
-                        btn.disabled = false;
-                        btn.textContent = 'Sign out';
-                        toastError(err, 'Could not sign out that device.');
-                      }
-                    },
-                  },
-                  'Sign out'
-                )
-          )
-        )
-      );
-    } catch (_) {
-      sessionsWrap.replaceChildren(h('div', { class: 'gb-empty-sm' }, 'Could not load sessions.'));
-    }
-  }
-
-  const curPw = h('input', {
-    type: 'password',
-    class: 'gb-input',
-    autocomplete: 'current-password',
-  });
-  const newPw = h('input', { type: 'password', class: 'gb-input', autocomplete: 'new-password' });
-  const pwBtn = h('button', { type: 'button', class: 'gb-btn gb-btn--primary' }, 'Update password');
-  async function changePassword() {
-    const currentPassword = curPw.value;
-    const newPassword = newPw.value;
-    if (!currentPassword || newPassword.length < 8) {
-      pushToast('Enter your current password and a new one (8+ characters).', 'error', 3600);
-      return;
-    }
-    pwBtn.disabled = true;
-    pwBtn.textContent = 'Updating…';
-    try {
-      const resp = await api('/api/auth/change-password', {
-        method: 'POST',
-        body: JSON.stringify({ currentPassword, newPassword }),
-      });
-      // Password change revoked all sessions and minted a fresh token — store it
-      // so this device stays signed in.
-      syncUserSession(resp);
-      toastSuccess('Password updated. Other devices were signed out.');
-      curPw.value = '';
-      newPw.value = '';
-      pwBtn.disabled = false;
-      pwBtn.textContent = 'Update password';
-      loadSessions();
-    } catch (err) {
-      pwBtn.disabled = false;
-      pwBtn.textContent = 'Update password';
-      toastError(err, 'Could not update password.');
-    }
-  }
-  pwBtn.addEventListener('click', changePassword);
-
-  loadSessions();
-  return [
-    h('div', { class: 'gb-settings-sec-label' }, 'Signed-in devices'),
-    h(
-      'div',
-      { class: 'gb-field-hint', style: { marginBottom: '10px' } },
-      'Sign out any device you no longer use.'
-    ),
-    sessionsWrap,
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '20px' } }, 'Change password'),
-    h(
-      'div',
-      { class: 'gb-form' },
-      h('label', { class: 'gb-field-label gb-field-label--sub' }, 'Current password'),
-      curPw,
-      h('label', { class: 'gb-field-label gb-field-label--sub' }, 'New password (8+ characters)'),
-      newPw,
-      pwBtn
-    ),
-    ...accountSecuritySections(),
-  ];
-}
-
-/* Copy text, toasting the result. The secret and the recovery codes are the
-   two things here that are useless unless they leave the screen intact. */
-function copyText(text, what) {
-  const done = () => toastSuccess(what + ' copied.');
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(text).then(done, () => toastError(null, 'Could not copy — select it and copy by hand.'));
-  } else {
-    toastError(null, 'Could not copy — select it and copy by hand.');
-  }
-}
-
-/* ---- Settings → Account: change email + two-step sign-in ----
-   Both read GET /api/auth/security once: whether 2FA is on, recovery codes
-   left, and an email change still waiting for its code. Each section repaints
-   its own box; nothing here calls render(). */
-function accountSecuritySections() {
-  const emailBox = h('div', { class: 'gb-form' });
-  const tfaBox = h('div', { class: 'gb-form' }, h('div', { class: 'gb-empty-sm' }, 'Loading…'));
-  let status = { twoFactorEnabled: false, recoveryCodesLeft: 0, pendingEmail: null };
-
-  const input = (attrs) => h('input', Object.assign({ class: 'gb-input' }, attrs));
-  const label = (text) => h('label', { class: 'gb-field-label gb-field-label--sub' }, text);
-  const hint = (text) => h('div', { class: 'gb-field-hint' }, text);
-  const busy = async (btn, working, run) => {
-    const was = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = working;
-    try {
-      return await run();
-    } finally {
-      btn.disabled = false;
-      btn.textContent = was;
-    }
-  };
-
-  /* Email: step 1 asks for the new address + password, step 2 for the code
-     that went to it. The old address gets a notice once it moves. */
-  function paintEmail(pending) {
-    if (pending) {
-      const code = input({ type: 'text', inputmode: 'numeric', maxlength: 6, autocomplete: 'one-time-code', placeholder: '6-digit code' });
-      const ok = h('button', { type: 'button', class: 'gb-btn gb-btn--primary' }, 'Confirm new email');
-      ok.addEventListener('click', () =>
-        busy(ok, 'Confirming…', async () => {
-          const digits = code.value.replace(/\D/g, '');
-          if (digits.length !== 6) return pushToast('Enter the 6-digit code from the email.', 'error', 3000);
-          try {
-            const user = await api('/api/auth/email/confirm', { method: 'POST', body: JSON.stringify({ code: digits }) });
-            syncUserSession(user);
-            toastSuccess('Email changed to ' + user.email + '.');
-            paintEmail(null);
-          } catch (err) {
-            toastError(err, 'Could not confirm that code.');
-          }
-        })
-      );
-      emailBox.replaceChildren(
-        hint('We sent a code to ' + pending + '. It works for 15 minutes.'),
-        label('Code'),
-        code,
-        ok,
-        h('button', { type: 'button', class: 'gb-btn gb-btn--ghost', onclick: () => paintEmail(null) }, 'Use a different email')
-      );
-      setTimeout(() => code.focus(), 30);
-      return;
-    }
-    const email = input({ type: 'email', autocomplete: 'email', placeholder: 'new@example.com', maxlength: 254 });
-    const pw = input({ type: 'password', autocomplete: 'current-password', placeholder: 'Your password' });
-    const send = h('button', { type: 'button', class: 'gb-btn gb-btn--primary' }, 'Send code');
-    send.addEventListener('click', () =>
-      busy(send, 'Sending…', async () => {
-        const newEmail = email.value.trim();
-        if (!newEmail || !email.checkValidity()) return pushToast('Enter the new email address.', 'error', 3000);
-        if (!pw.value) return pushToast('Enter your password to confirm.', 'error', 3000);
-        try {
-          await api('/api/auth/email/change', { method: 'POST', body: JSON.stringify({ newEmail, password: pw.value }) });
-          paintEmail(newEmail.toLowerCase());
-        } catch (err) {
-          toastError(err, 'Could not start the email change.');
-        }
-      })
-    );
-    emailBox.replaceChildren(
-      hint('Signed in as ' + ((state.user && state.user.email) || '') + '. We’ll send a code to the new address first.'),
-      label('New email'),
-      email,
-      label('Password'),
-      pw,
-      send
-    );
-  }
-
-  function paintTfaStatus() {
-    if (!status.twoFactorEnabled) {
-      const on = h('button', { type: 'button', class: 'gb-btn gb-btn--primary' }, 'Set up two-step sign-in');
-      on.addEventListener('click', () =>
-        busy(on, 'Starting…', async () => {
-          try {
-            paintTfaSetup(await api('/api/auth/2fa/setup', { method: 'POST' }));
-          } catch (err) {
-            toastError(err, 'Could not start setup.');
-          }
-        })
-      );
-      tfaBox.replaceChildren(
-        hint('Off. Turn it on and signing in also asks for a code from an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password…).'),
-        on
-      );
-      return;
-    }
-    const pw = input({ type: 'password', autocomplete: 'current-password', placeholder: 'Your password' });
-    const code = input({ type: 'text', autocomplete: 'one-time-code', maxlength: 32, placeholder: 'Code from the app, or a recovery code' });
-    const off = h('button', { type: 'button', class: 'gb-btn gb-btn--danger' }, 'Turn off two-step sign-in');
-    off.addEventListener('click', () =>
-      busy(off, 'Turning off…', async () => {
-        if (!pw.value || !code.value.trim()) return pushToast('Enter your password and a code.', 'error', 3000);
-        try {
-          await api('/api/auth/2fa/disable', { method: 'POST', body: JSON.stringify({ password: pw.value, code: code.value.trim() }) });
-          status = Object.assign({}, status, { twoFactorEnabled: false, recoveryCodesLeft: 0 });
-          toastSuccess('Two-step sign-in is off.');
-          paintTfaStatus();
-        } catch (err) {
-          toastError(err, 'Could not turn it off.');
-        }
-      })
-    );
-    tfaBox.replaceChildren(
-      hint('On. ' + status.recoveryCodesLeft + ' of 8 recovery codes left — each works once if you lose your phone.'),
-      label('To turn it off, confirm with your password and a code'),
-      pw,
-      code,
-      off
-    );
-  }
-
-  /* The secret is shown here and nowhere else, ever — once 2FA is on the
-     server refuses to hand it out again. No QR library, so it is text: the key
-     to type into the app, and the otpauth link for apps that take one. */
-  function paintTfaSetup(setup) {
-    const grouped = setup.secret.replace(/(.{4})/g, '$1 ').trim();
-    const code = input({ type: 'text', inputmode: 'numeric', maxlength: 6, autocomplete: 'one-time-code', placeholder: '6-digit code' });
-    const pw = input({ type: 'password', autocomplete: 'current-password', placeholder: 'Your password' });
-    const verify = h('button', { type: 'button', class: 'gb-btn gb-btn--primary' }, 'Turn on');
-    verify.addEventListener('click', () =>
-      busy(verify, 'Checking…', async () => {
-        const digits = code.value.replace(/\D/g, '');
-        if (digits.length !== 6) return pushToast('Enter the 6-digit code the app shows.', 'error', 3000);
-        if (!pw.value) return pushToast('Enter your password to confirm.', 'error', 3000);
-        try {
-          // Turning it on signs out every other device (server side).
-          const out = await api('/api/auth/2fa/verify', { method: 'POST', body: JSON.stringify({ password: pw.value, code: digits }) });
-          status = Object.assign({}, status, { twoFactorEnabled: true, recoveryCodesLeft: out.recoveryCodes.length });
-          paintRecoveryCodes(out.recoveryCodes);
-        } catch (err) {
-          toastError(err, 'That code didn’t work.');
-        }
-      })
-    );
-    tfaBox.replaceChildren(
-      hint('1. In your authenticator app, add an account and choose “Enter a setup key”. Type this key (time-based):'),
-      h('code', { class: 'gb-tfa-secret' }, grouped),
-      h('button', { type: 'button', class: 'gb-btn gb-btn--ghost', onclick: () => copyText(setup.secret, 'Key') }, 'Copy key'),
-      hint('Or, if your app accepts a setup link, use this one:'),
-      h('code', { class: 'gb-tfa-secret gb-tfa-uri' }, setup.otpauthUri),
-      h('button', { type: 'button', class: 'gb-btn gb-btn--ghost', onclick: () => copyText(setup.otpauthUri, 'Link') }, 'Copy link'),
-      label('2. Enter the 6-digit code the app now shows'),
-      code,
-      label('3. Confirm with your password'),
-      pw,
-      verify,
-      h('button', { type: 'button', class: 'gb-btn gb-btn--ghost', onclick: () => paintTfaStatus() }, 'Cancel')
-    );
-  }
-
-  function paintRecoveryCodes(codes) {
-    tfaBox.replaceChildren(
-      hint('Two-step sign-in is on, and other devices were signed out. Save these recovery codes somewhere safe — each one signs you in once if you lose your phone. You won’t see them again.'),
-      h('code', { class: 'gb-tfa-secret gb-tfa-codes' }, codes.join('\n')),
-      h('button', { type: 'button', class: 'gb-btn gb-btn--ghost', onclick: () => copyText(codes.join('\n'), 'Recovery codes') }, 'Copy codes'),
-      h('button', { type: 'button', class: 'gb-btn gb-btn--primary', onclick: () => paintTfaStatus() }, 'I’ve saved them')
-    );
-  }
-
-  paintEmail(null);
-  api('/api/auth/security')
-    .then((s) => {
-      status = s || status;
-      if (status.pendingEmail) paintEmail(status.pendingEmail);
-      paintTfaStatus();
-    })
-    .catch(() => tfaBox.replaceChildren(h('div', { class: 'gb-empty-sm' }, 'Could not load two-step sign-in.')));
-
-  return [
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '20px' } }, 'Change email'),
-    emailBox,
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '20px' } }, 'Two-step sign-in'),
-    tfaBox,
-  ];
-}
-
-/* A mentor can open their mentee's tasks and habit streaks; the mentee sees
-   nothing back. This is the mentee's side of that: switch it off and the
-   endpoint answers 403 instead. Unset means on, so nobody's existing
-   connection quietly goes dark on the day this shipped. */
-function shareProgressRow() {
-  const isOn = () => !(state.user && state.user.uiPrefs && state.user.uiPrefs.shareProgress === false);
-  const sw = h(
-    'button',
-    {
-      type: 'button',
-      role: 'switch',
-      'aria-checked': isOn() ? 'true' : 'false',
-      'aria-label': 'Let my mentor see my progress',
-      class: 'gb-switch' + (isOn() ? ' is-on' : ''),
-    },
-    h('span', { class: 'gb-switch-knob' })
-  );
-  sw.onclick = () => {
-    const next = !isOn();
-    sw.classList.toggle('is-on', next);
-    sw.setAttribute('aria-checked', next ? 'true' : 'false');
-    saveUiPrefs({ shareProgress: next });
-    toastSuccess(next ? 'Your mentor can see your progress.' : 'Your progress is private now.');
-  };
-  return h(
-    'div',
-    { class: 'gb-feature-row' },
-    h(
-      'div',
-      { class: 'gb-feature-row-text' },
-      h('div', { class: 'gb-feature-row-label' }, 'Let my mentor see my progress'),
-      h(
-        'div',
-        { class: 'gb-feature-row-desc' },
-        'Your tasks and habit streaks. People you mentor never see yours.'
-      )
-    ),
-    sw
-  );
-}
-
-/* Settings → Alerts: push per category, and how long read cards stay in the
-   bell. Both live in ui_prefs because the server acts on them with no client
-   around — PushService checks `notifyMute` before a web push
-   (NotificationPrefs.isMuted) and the nightly sweep reads `notifyKeepReadDays`.
-   A muted category still lands in the bell; on the phone, muting Habits also
-   drops the habit alarms from the device queue (reSyncDeviceAlarms). */
-const MUTE_CATEGORIES = [
-  { id: 'people', label: 'People', desc: 'Your circle, mentorship and family.' },
-  { id: 'money', label: 'Money', desc: 'Bills and spending nudges.' },
-  { id: 'habits', label: 'Habits', desc: 'Habit reminders.' },
-];
-const KEEP_READ_DAYS = [7, 30, 90];
-
 function notifyMuted(cat) {
   const m = state.user && state.user.uiPrefs && state.user.uiPrefs.notifyMute;
   return !!(m && m[cat]);
 }
 
-function notifyMuteRows() {
-  return MUTE_CATEGORIES.map((c) => {
-    const isOn = () => !notifyMuted(c.id);
-    const sw = h(
-      'button',
-      {
-        type: 'button',
-        role: 'switch',
-        'aria-checked': isOn() ? 'true' : 'false',
-        'aria-label': 'Notifications about ' + c.label,
-        class: 'gb-switch' + (isOn() ? ' is-on' : ''),
-      },
-      h('span', { class: 'gb-switch-knob' })
-    );
-    sw.onclick = () => {
-      const next = !isOn();
-      sw.classList.toggle('is-on', next);
-      sw.setAttribute('aria-checked', next ? 'true' : 'false');
-      const prev = (state.user && state.user.uiPrefs && state.user.uiPrefs.notifyMute) || {};
-      saveUiPrefs({ notifyMute: Object.assign({}, prev, { [c.id]: !next }) });
-      if (c.id === 'habits') reSyncDeviceAlarms();
-      toastSuccess(
-        next ? c.label + ' notifications are back on.' : c.label + ' muted — still listed in the bell.'
-      );
-    };
-    return h(
-      'div',
-      { class: 'gb-feature-row' },
-      h(
-        'div',
-        { class: 'gb-feature-row-text' },
-        h('div', { class: 'gb-feature-row-label' }, c.label),
-        h('div', { class: 'gb-feature-row-desc' }, c.desc)
-      ),
-      sw
-    );
+/* ---- Habit dialogs ----
+   The form, history panel and freeze calendar live in scripts/habit-dialogs.js,
+   a lazy chunk (precached like every chunk). */
+function habitDialogs() {
+  return import('./habit-dialogs.js').then((m) => {
+    m.bind({
+      state, announce, pushToast, toastError, toastSuccess, todayKey, reconcileStreakFreeze,
+      isQuitHabit, freezeTokensLeft, api, habitNoteInput, refreshScoreLater, createHabit,
+      updateHabit, forgetGoalHabitHistory, deleteHabit, reSyncDeviceAlarms, openModal, segmented,
+      METRIC_LABEL, accountTodayKey, metricSummary, render,
+    });
+    return m;
   });
 }
-
-function keepReadDays() {
-  const v = Number(((state.user && state.user.uiPrefs) || {}).notifyKeepReadDays);
-  return KEEP_READ_DAYS.includes(v) ? v : 30;
+function openHabitForm(habit) {
+  habitDialogs()
+    .then((m) => m.openHabitForm(habit))
+    .catch((err) => reloadIfStaleChunk(err) || toastError(err, 'Could not open the habit form.'));
+}
+function openFreezeCalendar() {
+  habitDialogs()
+    .then((m) => m.openFreezeCalendar())
+    .catch((err) => reloadIfStaleChunk(err) || toastError(err, 'Could not open the freeze calendar.'));
 }
 
-function keepReadPicker() {
-  return segmented(
-    KEEP_READ_DAYS.map((d) => ({ value: String(d), label: d + ' days' })),
-    String(keepReadDays()),
-    (v) => {
-      saveUiPrefs({ notifyKeepReadDays: Number(v) });
-      toastSuccess('Read notifications now stay ' + v + ' days.');
-    }
-  ).node;
+/* ---- Settings ----
+   The sheet and its panes live in scripts/settings.js, a lazy chunk (precached
+   like every chunk): this is all of it the boot chunk carries. */
+let settingsModule = null;
+function openProfileSettings(initialTab) {
+  import('./settings.js')
+    .then((m) => {
+      settingsModule = m;
+      m.openSettings(settingsContext(), initialTab);
+    })
+    .catch((err) => reloadIfStaleChunk(err) || toastError(err, 'Could not open Settings.'));
 }
-
-/* ---- Settings modal (Profile / Alerts / Account) ---- */
-/* ---- Settings → Reminders ----
-   The two defaults every reminder follows unless it picks its own — how far
-   ahead it rings, how long a snooze waits; both in ui_prefs, which the server
-   reads too (ReminderPrefs) — and every reminder in one list, to add to or
-   clear out without paging through the calendar a day at a time. */
-const SNOOZE_OPTIONS = [5, 10, 15, 30, 60];
-let reminderSettingsPaint = null;
+/* What settings.js uses from here, by the same names. */
+function settingsContext() {
+  return {
+    PREMIUM_KEY, loadPremiumCss, applyPremium, TEXT_SCALE_KEY, applyTextScale, state, pushToast,
+    toastError, toastSuccess, loadToken, saveSession, cacheMoney, rememberMoneyVersion,
+    adoptServerMoney, persistMoney, saveMoney, saveUiPrefs, notifySound, readCustomChimes, storeCustomChimes,
+    newSoundId, todayKey, syncUserSession, enablePushFlow, api, withPendingWater, invalidateWeek,
+    pickedTheme, setThemeChoice, notifyMuted, keyOfDate, shortDay, reminderQuickAdd, uploadNewCustomSound,
+    openIcsImportDialog, snoozeMinutes, cancelReminderSnooze, waterReminderPrefs,
+    reSyncDeviceAlarms, deleteReminder, openModal, segmented, relativeTime, FEATURE_DEFS, featureOn,
+    featureSwitchRow, lazyScreen, repaintOverlays, privacyLink, otpBoxes, logout, endSession, render,
+    breakPrefs, breakUntilLabel, takeBreak, endBreakNow,
+  };
+}
 
 /** Repaint the Settings list if it is on screen; a no-op otherwise. */
 function repaintReminderSettings() {
-  if (reminderSettingsPaint) reminderSettingsPaint();
+  if (settingsModule) settingsModule.repaintReminderSettings();
 }
 
 function keyOfDate(d) {
@@ -9007,20 +8285,6 @@ function keyOfDate(d) {
   );
 }
 
-/* The next day a reminder still rings on, today included while its time is
-   ahead (an untimed one counts all day). A year out is far enough: past that
-   it reads "No date ahead", which is what an ended series is. */
-function nextOccurrence(rem) {
-  const now = new Date();
-  for (let i = 0; i < 370; i++) {
-    const key = keyOfDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() + i));
-    if (!occursOn(rem, key)) continue;
-    if (i === 0 && rem.time && isPastSlot(key, rem.time)) continue;
-    return key;
-  }
-  return null;
-}
-
 function shortDay(key) {
   const today = todayKey();
   const d = new Date(key + 'T00:00:00');
@@ -9030,33 +8294,12 @@ function shortDay(key) {
   return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
-function reminderSettingsPane() {
-  const pane = h('div', { class: 'gb-settings-pane', style: { display: 'none' } });
-
-  // ---- Defaults ----
-  const leadPicker = segmented(
-    LEAD_OPTIONS.map((m) => ({ value: String(m), label: m ? minutesLabel(m) : 'On time' })),
-    String(getDefaultLead()),
-    (v) => {
-      const lead = Number(v);
-      setDefaultLead(lead);
-      saveUiPrefs({ reminderLead: lead });
-      reSyncDeviceAlarms();
-      paintList();
-      toastSuccess(lead ? 'Reminders now ring ' + minutesLabel(lead) + ' early.' : 'Reminders now ring on time.');
-    }
-  );
-  const snoozePicker = segmented(
-    SNOOZE_OPTIONS.map((m) => ({ value: String(m), label: minutesLabel(m) })),
-    String(snoozeMinutes()),
-    (v) => {
-      saveUiPrefs({ snoozeMinutes: Number(v) });
-      repaintOverlays();
-      toastSuccess('Snooze set to ' + minutesLabel(Number(v)) + '.');
-    }
-  );
-
-  // ---- Quick add ----
+/* The compact reminder add (text, notify, day, time, repeat, mic): Settings ›
+   Reminders shows it inline, and + then Reminder opens it as a sheet
+   (openReminderSheet). Enter adds; with no time picked the text is read for
+   one first. onAdded(created) runs after a save; without it the form clears
+   for the next one. */
+function reminderQuickAdd(onAdded) {
   const textInput = h('input', {
     type: 'text',
     class: 'gb-input',
@@ -9112,9 +8355,26 @@ function reminderSettingsPane() {
     }
     addBtn.disabled = true;
     try {
+      // No time picked: the words may carry one ("call mom at 6"). The same
+      // reader as Quick add; offline or unread, it saves as typed.
+      if (!timeInput.value) {
+        // Read as a reminder, not as whatever else the words could be ("buy milk at 6" is a task).
+        const said = /^(remind|set a reminder|reminder)\b/i.test(text) ? text : 'remind me to ' + text;
+        const rem = await parseQuickAdd(said)
+          .then((r) => (r.intents || []).find((x) => x.type === 'reminder' && x.time))
+          .catch(() => null);
+        if (rem) {
+          if (rem.text) textInput.value = rem.text;
+          if (rem.date) dateInput.value = rem.date;
+          timeInput.value = hhmm(rem.time);
+          if (REPEATS[rem.repeat]) repeatSel.value = rem.repeat;
+          if (rem.notifyBefore !== undefined) notifySel.setLead(rem.notifyBefore);
+          if (!spokenTag && TAGS[rem.tag]) spokenTag = rem.tag;
+        }
+      }
       const created = await addReminder(
         dateInput.value,
-        text,
+        textInput.value.trim() || text,
         timeInput.value || '',
         spokenTag || 'personal',
         repeatSel.value,
@@ -9131,7 +8391,8 @@ function reminderSettingsPane() {
         usualTime.sync(state.reminders);
         repeatSel.value = 'none';
         notifySel.setLead(null);
-        textInput.focus();
+        if (onAdded) onAdded(created);
+        else textInput.focus();
       }
     } finally {
       addBtn.disabled = false;
@@ -9205,151 +8466,26 @@ function reminderSettingsPane() {
     usualTime.node,
     addBtn
   );
+  return { node: addForm, focus: () => textInput.focus() };
+}
 
-  // ---- The list ----
-  const count = h('span', { class: 'gb-sound-count' });
-  const list = h('div', { class: 'gb-remset-list', role: 'list' });
-  let armed = null;
-  let armTimer = null;
-
-  function row(rem, next) {
-    const tag = TAGS[rem.tag] || TAGS.other;
-    const bits = [];
-    bits.push(next ? shortDay(next) + (rem.time ? ', ' + formatTime(rem.time.slice(0, 5)) : '') : 'No date ahead');
-    if (rem.repeat && rem.repeat !== 'none') bits.push(describeRepeat(rem));
-    if (rem.time) {
-      bits.push(
-        rem.notifyBefore === null || rem.notifyBefore === undefined
-          ? leadLabel(getDefaultLead())
-          : leadLabel(rem.notifyBefore)
-      );
-    }
-    const snoozed = rem.snoozedUntil && new Date(rem.snoozedUntil).getTime() > Date.now();
-    const isArmed = armed === rem.id;
-    const del = h(
-      'button',
-      {
-        type: 'button',
-        class: 'gb-btn gb-btn--icon gb-sound-remove' + (isArmed ? ' is-armed' : ''),
-        'aria-label': isArmed ? 'Tap again to delete ' + rem.text : 'Delete ' + rem.text,
-        onclick: async () => {
-          if (armed !== rem.id) {
-            armed = rem.id;
-            clearTimeout(armTimer);
-            armTimer = setTimeout(() => {
-              armed = null;
-              paintList();
-            }, 3500);
-            paintList();
-            list.querySelector('[data-id="' + rem.id + '"] .gb-sound-remove')?.focus();
-            return;
-          }
-          armed = null;
-          clearTimeout(armTimer);
-          // The whole series: this list shows reminders, not days. One day of a
-          // series is still the calendar's to skip.
-          await deleteReminder('all', rem.id, null);
-        },
-      },
-      Icon('trash-2', { size: 15 }),
-      isArmed ? (rem.repeat && rem.repeat !== 'none' ? 'Delete all' : 'Delete') : null
-    );
-    return h(
-      'div',
-      { class: 'gb-remset-row', role: 'listitem', dataset: { id: rem.id }, style: { '--tag-color': tag.color } },
-      h('span', { class: 'gb-rem-accent' }),
-      h(
-        'div',
-        { class: 'gb-remset-main' },
-        h('div', { class: 'gb-remset-text' }, rem.text),
-        h('div', { class: 'gb-remset-meta' }, bits.join(' · ')),
-        snoozed
-          ? h(
-              'button',
-              {
-                type: 'button',
-                class: 'gb-remset-snoozed',
-                'aria-label': 'Cancel the snooze on ' + rem.text,
-                onclick: () => cancelReminderSnooze(rem.id),
-              },
-              Icon('alarm-clock', { size: 13 }),
-              snoozeLabel(rem.snoozedUntil),
-              Icon('x', { size: 12 })
-            )
-          : null
-      ),
-      del
-    );
-  }
-
-  function paintList() {
-    const all = (state.reminders || []).map((r) => ({ r, next: nextOccurrence(r) }));
-    // Soonest first; the ones with nothing ahead sink to the bottom.
-    all.sort((a, b) => {
-      if (!a.next || !b.next) return a.next ? -1 : b.next ? 1 : 0;
-      if (a.next !== b.next) return a.next < b.next ? -1 : 1;
-      return String(a.r.time || '99').localeCompare(String(b.r.time || '99'));
-    });
-    count.textContent = all.length ? String(all.length) : '';
-    list.replaceChildren(
-      ...(all.length
-        ? all.map((x) => row(x.r, x.next))
-        : [h('div', { class: 'gb-sound-empty' }, 'No reminders yet. Add one above.')])
-    );
-    refreshIcons();
-  }
-  // Only while this pane is in the page: a closed Settings must not keep a
-  // list being rebuilt behind it.
-  reminderSettingsPaint = () => {
-    if (!pane.isConnected) {
-      reminderSettingsPaint = null;
-      return;
-    }
-    paintList();
-  };
-  paintList();
-
-  pane.append(
-    h('div', { class: 'gb-settings-sec-label' }, 'When to notify'),
+/* + then Reminder: the quick add above as a sheet over wherever the user is,
+   text focused, so "call mom at 6" then Enter is the whole flow. */
+function openReminderSheet() {
+  const { sheet, close } = openOverlay({ label: 'New reminder' });
+  const form = reminderQuickAdd(close);
+  sheet.append(
     h(
       'div',
-      { class: 'gb-field-hint', style: { marginBottom: '10px' } },
-      'How far ahead of its time a reminder rings — in the app, on your phone and on WhatsApp. A reminder can set its own when you add or edit it.'
+      { class: 'gb-modal-head' },
+      h('div', { class: 'gb-modal-title' }, 'New reminder'),
+      h('div', { class: 'gb-modal-sub' }, 'Today unless you pick a day. A time in the words is read for you.')
     ),
-    h('div', { class: 'gb-remset-picker' }, leadPicker.node),
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Snooze'),
-    h(
-      'div',
-      { class: 'gb-field-hint', style: { marginBottom: '10px' } },
-      'How long Snooze waits before it rings again. It’s on the reminder in the app, on its notification, and on WhatsApp — tap Snooze there, or reply SNOOZE (or “snooze 20”).'
-    ),
-    h('div', { class: 'gb-remset-picker gb-remset-picker--5' }, snoozePicker.node),
-    h(
-      'div',
-      { class: 'gb-sounds-head', style: { marginTop: '22px' } },
-      h('div', { class: 'gb-settings-sec-label', style: { margin: 0 } }, 'Your reminders'),
-      count
-    ),
-    addForm,
-    list,
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Other calendars'),
-    h(
-      'div',
-      { class: 'gb-field-hint', style: { marginBottom: '10px' } },
-      'Every reminder as a calendar file, repeats and alerts included, at your local times. A copy: changes here don’t follow it.'
-    ),
-    h(
-      'button',
-      {
-        type: 'button',
-        class: 'gb-btn gb-btn--ghost',
-        onclick: (e) => exportRemindersIcs(e.currentTarget),
-      },
-      Icon('calendar-plus', { size: 16 }),
-      'Export calendar (.ics)'
-    )
+    form.node,
+    h('button', { type: 'button', class: 'gb-btn gb-btn--ghost gb-modal-cancel', onclick: close }, 'Cancel')
   );
-  return pane;
+  refreshIcons();
+  setTimeout(form.focus, 60);
 }
 
 /* The account's copy of a sound just kept on this device. 'saved', 'local'
@@ -9612,1681 +8748,6 @@ function openCustomToneDialog() {
   });
 }
 
-function openProfileSettings(initialTab) {
-  const u = state.user || {};
-  const now = new Date();
-
-  // ---- Personal inputs ----
-  const displayNameInput = h('input', {
-    type: 'text',
-    class: 'gb-input',
-    maxlength: '120',
-    placeholder: 'Your display name',
-    value: u.displayName || '',
-  });
-  const fallbackDob = u.dob
-    ? String(u.dob)
-    : u.ageYears
-      ? now.getFullYear() - Number(u.ageYears) + '-01-01'
-      : '';
-  const dobInput = h('input', { type: 'date', class: 'gb-input', value: fallbackDob });
-  const heightInput = h('input', {
-    type: 'number',
-    class: 'gb-input',
-    min: '100',
-    max: '250',
-    placeholder: 'cm',
-    value: u.heightCm || '',
-  });
-  const weightInput = h('input', {
-    type: 'number',
-    class: 'gb-input',
-    min: '25',
-    max: '300',
-    placeholder: 'kg',
-    value: u.weightKg || '',
-  });
-  const GENDERS = ['', 'Male', 'Female', 'Non-binary', 'Prefer not to say'];
-  const genderSel = h('select', { class: 'gb-input' });
-  GENDERS.forEach((g) => {
-    const o = h('option', { value: g }, g || 'Select gender…');
-    if ((u.gender || '') === g) o.selected = true;
-    genderSel.appendChild(o);
-  });
-  const timezoneInput = h('input', {
-    type: 'text',
-    class: 'gb-input',
-    maxlength: '64',
-    placeholder: 'e.g. Asia/Kolkata',
-    value: u.timezone || '',
-  });
-
-  // ---- Diet & Goals inputs ----
-  const fitnessGoalInput = h('input', {
-    type: 'text',
-    class: 'gb-input',
-    maxlength: '100',
-    placeholder: 'e.g. lose weight, build muscle, stay active',
-    value: u.fitnessGoal || '',
-  });
-  const dietInput = h('input', {
-    type: 'text',
-    class: 'gb-input',
-    maxlength: '64',
-    placeholder: 'e.g. vegetarian, eggetarian, high-protein',
-    value: u.dietPreference || '',
-  });
-  const foodGoalInput = h('input', {
-    type: 'number',
-    class: 'gb-input',
-    min: '800',
-    max: '6000',
-    placeholder: 'kcal',
-    value: u.dailyFoodGoalKcal || '',
-  });
-  const waterGoalNow = (state.water && state.water.goalMl) || u.dailyWaterGoalMl;
-  const waterGoalInput = h('input', {
-    type: 'number',
-    class: 'gb-input',
-    min: '1000',
-    max: '7000',
-    placeholder: 'ml',
-    // What the tracker uses, which for an account with a pre-move tracker goal is
-    // not yet this column. Clamped: an old tracker goal could be 250, and an
-    // out-of-range value here would refuse the whole Settings save.
-    value: waterGoalNow ? Math.min(7000, Math.max(1000, waterGoalNow)) : '',
-  });
-  const allergicInput = h('input', {
-    type: 'text',
-    class: 'gb-input',
-    maxlength: '255',
-    placeholder: 'e.g. peanuts, lactose, gluten',
-    value: u.allergicTo || '',
-  });
-  const favDishInput = h('input', {
-    type: 'text',
-    class: 'gb-input',
-    maxlength: '120',
-    placeholder: 'e.g. paneer butter masala',
-    value: u.favouriteDish || '',
-  });
-  const aboutInput = h(
-    'textarea',
-    {
-      class: 'gb-input gb-input--about',
-      maxlength: '500',
-      placeholder: 'Your routine, health priorities, dietary preferences…',
-    },
-    u.aboutMe || ''
-  );
-  // Parse a number input to an integer within [min,max], else null (so the
-  // backend's validation never 400s on a blank / out-of-range field).
-  const numOrNull = (raw, min, max) => {
-    const n = Number(raw);
-    return Number.isFinite(n) && n >= min && n <= max ? Math.round(n) : null;
-  };
-  const ageFromDob = (raw) => {
-    if (!raw) return null;
-    const dob = new Date(raw + 'T00:00:00');
-    if (Number.isNaN(dob.getTime())) return null;
-    let age = now.getFullYear() - dob.getFullYear();
-    const m = now.getMonth() - dob.getMonth();
-    if (m < 0 || (m === 0 && now.getDate() < dob.getDate())) age -= 1;
-    return age >= 10 && age <= 100 ? age : null;
-  };
-  const suggestBtn = h(
-    'button',
-    {
-      type: 'button',
-      class: 'gb-btn gb-btn--secondary gb-profile-suggest-btn',
-      onclick: async () => {
-        const done = setThinking(suggestBtn, 'Working out your targets');
-        try {
-          // Send what's currently on screen so unsaved edits (allergy, about…) are honoured.
-          const s = await getNutritionSuggestion({
-            ageYears: ageFromDob(dobInput.value),
-            heightCm: numOrNull(heightInput.value, 100, 250),
-            weightKg: numOrNull(weightInput.value, 25, 300),
-            fitnessGoal: (fitnessGoalInput.value || '').trim() || null,
-            dietPreference: (dietInput.value || '').trim() || null,
-            aboutMe: (aboutInput.value || '').trim() || null,
-            allergicTo: (allergicInput.value || '').trim() || null,
-            favouriteDish: (favDishInput.value || '').trim() || null,
-            dailyFoodGoalKcal: numOrNull(foodGoalInput.value, 800, 6000),
-            dailyWaterGoalMl: numOrNull(waterGoalInput.value, 1000, 7000),
-          });
-          openModal({
-            title: 'AI Nutrition Suggestion',
-            modalClass: 'gb-modal--settings',
-            body: h(
-              'div',
-              { class: 'gb-profile-suggest' },
-              h(
-                'div',
-                { class: 'gb-profile-suggest-line' },
-                'Water goal: ' + s.recommendedWaterMl + ' ml/day'
-              ),
-              h(
-                'div',
-                { class: 'gb-profile-suggest-line' },
-                'Food goal: ' + s.recommendedFoodGoalKcal + ' kcal/day'
-              ),
-              h('div', { class: 'gb-profile-suggest-line' }, s.guidance || ''),
-              h(
-                'ul',
-                { class: 'gb-profile-suggest-list' },
-                (s.indianFoodSuggestions || []).map((item) => h('li', null, item))
-              )
-            ),
-            primary: 'Use these goals',
-            onPrimary: () => {
-              if (s.recommendedWaterMl) waterGoalInput.value = String(s.recommendedWaterMl);
-              if (s.recommendedFoodGoalKcal)
-                foodGoalInput.value = String(s.recommendedFoodGoalKcal);
-              toastSuccess('Suggested goals applied. Save to keep them.');
-            },
-          });
-        } catch (err) {
-          toastError(
-            new Error(err && err.message ? err.message : 'Could not generate suggestion.'),
-            'Suggestion error'
-          );
-        } finally {
-          done();
-        }
-      },
-    },
-    'Get AI nutrition suggestion'
-  );
-
-  // ---- WhatsApp OTP section (self-contained) ----
-  let waOtpPhone = u.whatsappNumber || '';
-  let waStage = u.whatsappVerified && u.whatsappNumber ? 'verified' : 'idle';
-  const waSectionBody = h('div', { class: 'gb-wa-otp-section' });
-
-  function buildWaSection() {
-    const cu = state.user || {};
-    waSectionBody.replaceChildren();
-
-    if (waStage === 'idle') {
-      const phone = CountryPhoneInput(waOtpPhone || cu.whatsappNumber || '');
-      const sendBtn = h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-btn gb-btn--primary',
-          style: { marginTop: '10px' },
-        },
-        'Send verification code'
-      );
-      sendBtn.onclick = async () => {
-        const raw = phone.getValue();
-        if (!/^\+?[1-9]\d{7,14}$/.test(raw)) {
-          phone.focus();
-          toastError(
-            new Error('Enter a valid phone number for the selected country.'),
-            'Invalid number'
-          );
-          return;
-        }
-        sendBtn.disabled = true;
-        sendBtn.textContent = 'Sending…';
-        try {
-          await api('/api/auth/whatsapp/send-otp', {
-            method: 'POST',
-            body: JSON.stringify({ number: raw }),
-          });
-          waOtpPhone = raw;
-          waStage = 'otp_sent';
-          buildWaSection();
-        } catch (err) {
-          toastError(err, 'Could not send OTP');
-          sendBtn.disabled = false;
-          sendBtn.textContent = 'Send verification code';
-        }
-      };
-      waSectionBody.appendChild(h('div', { class: 'gb-field-label' }, 'WhatsApp number'));
-      waSectionBody.appendChild(
-        h('div', { class: 'gb-field-hint' }, 'Pick your country, then enter the local number')
-      );
-      waSectionBody.appendChild(phone.el);
-      waSectionBody.appendChild(sendBtn);
-    } else if (waStage === 'otp_sent') {
-      const otpIn = h('input', {
-        type: 'text',
-        class: 'gb-input',
-        maxlength: '6',
-        inputmode: 'numeric',
-        autocomplete: 'one-time-code',
-      });
-      const otpField = otpBoxes(otpIn);
-      otpIn.addEventListener('input', () => otpIn.classList.remove('is-invalid'));
-      const verifyBtn = h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-btn gb-btn--primary',
-          style: { flex: '1' },
-        },
-        'Verify'
-      );
-      verifyBtn.onclick = async () => {
-        const otp = (otpIn.value || '').trim();
-        if (!/^\d{6}$/.test(otp)) {
-          otpIn.classList.add('is-invalid');
-          otpIn.focus();
-          shakeRefusal(otpField);
-          toastError(new Error('Enter the 6-digit code from WhatsApp'), 'Invalid code');
-          return;
-        }
-        verifyBtn.disabled = true;
-        verifyBtn.textContent = 'Verifying…';
-        otpField.classList.add('is-busy');
-        try {
-          const updated = await api('/api/auth/whatsapp/verify-otp', {
-            method: 'POST',
-            body: JSON.stringify({ number: waOtpPhone, otp }),
-          });
-          syncUserSession(updated);
-          waStage = 'verified';
-          buildWaSection();
-          toastSuccess('WhatsApp number verified! Reminders are now active.');
-        } catch (err) {
-          otpField.classList.remove('is-busy');
-          otpIn.classList.add('is-invalid');
-          shakeRefusal(otpField);
-          toastError(err, 'Verification failed');
-          verifyBtn.disabled = false;
-          verifyBtn.textContent = 'Verify';
-        }
-      };
-      const resendBtn = h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-btn gb-btn--ghost',
-          style: { flex: '0 0 auto' },
-        },
-        'Resend'
-      );
-      resendBtn.onclick = async () => {
-        resendBtn.disabled = true;
-        resendBtn.textContent = 'Sending…';
-        try {
-          await api('/api/auth/whatsapp/send-otp', {
-            method: 'POST',
-            body: JSON.stringify({ number: waOtpPhone }),
-          });
-          toastSuccess('A new code was sent to ' + waOtpPhone);
-        } catch (err) {
-          toastError(err, 'Could not resend');
-        } finally {
-          resendBtn.disabled = false;
-          resendBtn.textContent = 'Resend';
-        }
-      };
-      const changeBtn = h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-btn gb-btn--ghost gb-wa-change-link',
-        },
-        'Change number'
-      );
-      changeBtn.onclick = () => {
-        waStage = 'idle';
-        buildWaSection();
-      };
-      waSectionBody.appendChild(
-        h(
-          'div',
-          { class: 'gb-wa-otp-sent-chip' },
-          Icon('message-circle', { size: 14, color: 'var(--gb-wa-green)' }),
-          'Code sent to ' + waOtpPhone
-        )
-      );
-      waSectionBody.appendChild(
-        h(
-          'div',
-          { class: 'gb-field-label', style: { marginTop: '14px' } },
-          'Enter the 6-digit code'
-        )
-      );
-      waSectionBody.appendChild(otpField);
-      waSectionBody.appendChild(h('div', { class: 'gb-wa-otp-actions' }, verifyBtn, resendBtn));
-      waSectionBody.appendChild(changeBtn);
-      setTimeout(() => {
-        if (otpIn.isConnected) otpIn.focus();
-      }, 50);
-    } else if (waStage === 'verified') {
-      const verifiedChip = h(
-        'div',
-        { class: 'gb-wa-verified-chip' },
-        Icon('check-circle-2', { size: 14, color: 'var(--gb-wa-green)' }),
-        maskPhone(cu.whatsappNumber),
-        h('span', { class: 'gb-wa-verified-label' }, 'Verified')
-      );
-      const changeBtn = h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-btn gb-btn--ghost gb-wa-change-link',
-          style: { marginLeft: 'auto' },
-        },
-        'Change number'
-      );
-      changeBtn.onclick = () => {
-        waStage = 'idle';
-        buildWaSection();
-      };
-
-      let waEnabled = !!cu.whatsappEnabled;
-      const tThumb = h('span', { class: 'gb-wa-toggle-thumb' });
-      const waToggle = h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-wa-toggle' + (waEnabled ? ' is-on' : ''),
-          role: 'switch',
-          'aria-checked': String(waEnabled),
-          onclick: async () => {
-            // Two PUTs in flight raced, and the later answer could be the older value.
-            if (waToggle.disabled) return;
-            waToggle.disabled = true;
-            waEnabled = !waEnabled;
-            waToggle.classList.toggle('is-on', waEnabled);
-            waToggle.setAttribute('aria-checked', String(waEnabled));
-            try {
-              const updated = await api('/api/auth/whatsapp', {
-                method: 'PUT',
-                body: JSON.stringify({ enabled: waEnabled }),
-              });
-              syncUserSession(updated);
-              toastSuccess(
-                waEnabled ? 'WhatsApp reminders enabled.' : 'WhatsApp reminders paused.'
-              );
-            } catch (err) {
-              waEnabled = !waEnabled;
-              waToggle.classList.toggle('is-on', waEnabled);
-              waToggle.setAttribute('aria-checked', String(waEnabled));
-              toastError(err, 'Could not update WhatsApp settings.');
-            } finally {
-              waToggle.disabled = false;
-            }
-          },
-        },
-        tThumb
-      );
-
-      waSectionBody.appendChild(h('div', { class: 'gb-wa-number-row' }, verifiedChip, changeBtn));
-      waSectionBody.appendChild(
-        h(
-          'div',
-          { class: 'gb-wa-toggle-row' },
-          h(
-            'div',
-            null,
-            h(
-              'div',
-              { class: 'gb-field-label', style: { marginBottom: '2px' } },
-              'Enable WhatsApp reminders'
-            ),
-            h(
-              'div',
-              { class: 'gb-field-hint' },
-              'Timed calendar reminders will be sent to your WhatsApp'
-            )
-          ),
-          waToggle
-        )
-      );
-    }
-
-    refreshIcons();
-  }
-  buildWaSection();
-
-  // ---- Avatar header ----
-  const initials = (u.displayName || u.email || 'B')[0].toUpperCase();
-
-  // ---- Tab panes ----
-  const profilePane = h(
-    'div',
-    { class: 'gb-settings-pane' },
-    h('div', { class: 'gb-settings-sec-label' }, 'Personal'),
-    h('div', { class: 'gb-field-label' }, 'Display name'),
-    displayNameInput,
-    h('div', { class: 'gb-field-label' }, 'Date of birth'),
-    dobInput,
-    h(
-      'div',
-      { class: 'gb-settings-2col' },
-      h('div', null, h('div', { class: 'gb-field-label' }, 'Height (cm)'), heightInput),
-      h('div', null, h('div', { class: 'gb-field-label' }, 'Weight (kg)'), weightInput)
-    ),
-    h('div', { class: 'gb-field-label' }, 'Gender'),
-    genderSel,
-    h('div', { class: 'gb-field-label' }, 'Timezone'),
-    h('div', { class: 'gb-field-hint' }, 'e.g. Asia/Kolkata or America/New_York'),
-    timezoneInput,
-    h('div', { class: 'gb-settings-sec-label' }, 'Diet & Goals'),
-    h('div', { class: 'gb-field-label' }, 'Fitness goal'),
-    fitnessGoalInput,
-    h('div', { class: 'gb-field-label' }, 'Diet preference'),
-    dietInput,
-    h(
-      'div',
-      { class: 'gb-settings-2col' },
-      h(
-        'div',
-        null,
-        h('div', { class: 'gb-field-label' }, 'Daily food goal (kcal)'),
-        foodGoalInput
-      ),
-      h('div', null, h('div', { class: 'gb-field-label' }, 'Daily water goal (ml)'), waterGoalInput)
-    ),
-    h('div', { class: 'gb-field-label' }, 'Allergic to'),
-    allergicInput,
-    h('div', { class: 'gb-field-label' }, 'Favourite dish'),
-    favDishInput,
-    h('div', { class: 'gb-field-label' }, 'About you'),
-    aboutInput,
-    suggestBtn
-  );
-
-  // ---- Progress digest controls ----
-  const digestFreqSel = h(
-    'select',
-    { class: 'gb-input' },
-    ['off', 'daily', 'weekly'].map((f) => {
-      const label = f === 'off' ? 'Off' : f[0].toUpperCase() + f.slice(1);
-      const o = h('option', { value: f }, label);
-      if ((u.digestFrequency || 'off') === f) o.selected = true;
-      return o;
-    })
-  );
-  const digestHourSel = h('select', { class: 'gb-input' });
-  for (let hr = 0; hr < 24; hr++) {
-    // Through the shared formatter, like every other time on screen. This was
-    // the last hand-rolled AM/PM left, and it sat four settings below the
-    // 12/24 switch whose hint promises "how every time in the app is written".
-    const o = h('option', { value: String(hr) }, formatTime(hr + ':00'));
-    if ((u.digestHour != null ? u.digestHour : 8) === hr) o.selected = true;
-    digestHourSel.appendChild(o);
-  }
-  // Saves on change, like the WhatsApp toggle above it and every other control
-  // outside the Profile tab. A Save button here was the one thing in Settings
-  // that made you press something twice, and "Done" doesn't commit it.
-  const saveDigest = async () => {
-    digestFreqSel.disabled = true;
-    digestHourSel.disabled = true;
-    try {
-      await saveDigestPrefs(digestFreqSel.value, parseInt(digestHourSel.value, 10));
-      toastSuccess('Digest preferences saved.');
-    } catch (err) {
-      toastError(err, 'Could not save digest preferences.');
-    } finally {
-      digestFreqSel.disabled = false;
-      digestHourSel.disabled = false;
-    }
-  };
-  digestFreqSel.onchange = saveDigest;
-  digestHourSel.onchange = saveDigest;
-  const digestSectionBody = h(
-    'div',
-    null,
-    h('div', { class: 'gb-field-label' }, 'Frequency'),
-    digestFreqSel,
-    h('div', { class: 'gb-field-label' }, 'Send around'),
-    digestHourSel,
-    h(
-      'div',
-      { class: 'gb-field-hint', style: { marginTop: '6px' } },
-      'Weekly digests arrive Mondays — by email, in-app and push.'
-    )
-  );
-
-  // ---- Working week ----
-  // Decides which days a "Mon-Fri" reminder actually fires on. It was hardcoded
-  // Mon-Fri on both sides, which is simply wrong for Sun-Thu in the Gulf and for
-  // the Mon-Sat offices plenty of people here work. Lives in ui_prefs rather than
-  // its own column because prod runs ddl-auto: none.
-  const workWeekSel = h(
-    'select',
-    { class: 'gb-input', 'aria-label': 'Working week' },
-    Object.keys(WORK_WEEKS).map((key) => {
-      const o = h('option', { value: key }, WORK_WEEKS[key].label);
-      if (getWorkWeek() === key) o.selected = true;
-      return o;
-    })
-  );
-  workWeekSel.onchange = () => {
-    setWorkWeek(workWeekSel.value);
-    saveUiPrefs({ workWeek: workWeekSel.value });
-    toastSuccess('Working week saved.');
-    // Every "Mon-Fri" reminder now lands on different days, so anything already
-    // painted from the old answer is stale.
-    if (state.screen === 'calendar' || state.screen === 'home') render();
-  };
-  const workWeekBody = h(
-    'div',
-    null,
-    workWeekSel,
-    h(
-      'div',
-      { class: 'gb-field-hint', style: { marginTop: '6px' } },
-      'Reminders set to repeat on working days follow this.'
-    )
-  );
-
-  /* ---- Water nudge ----
-     A drumbeat, not a calendar entry: every N minutes between two local times.
-     The settings live in ui_prefs (prod runs ddl-auto: none, and this is a
-     preference, not an entity); the alarms are queued on the device, because
-     the server can only reach a Web Push subscription the app can't register. */
-  const waterPrefs = waterReminderPrefs();
-  const saveWater = (patch) => {
-    Object.assign(waterPrefs, patch);
-    saveUiPrefs({ water: Object.assign({}, waterPrefs) });
-    reSyncDeviceAlarms();
-  };
-  const waterEverySel = h(
-    'select',
-    { class: 'gb-input', 'aria-label': 'Remind me every' },
-    [30, 45, 60, 90, 120, 180, 240].map((mins) => {
-      const label = mins < 60 ? mins + ' minutes' : mins / 60 + (mins === 60 ? ' hour' : ' hours');
-      const o = h('option', { value: String(mins) }, 'Every ' + label);
-      if (Number(waterPrefs.everyMins) === mins) o.selected = true;
-      return o;
-    })
-  );
-  const waterFrom = h('input', { type: 'time', class: 'gb-input', value: waterPrefs.from, 'aria-label': 'Water reminders from' });
-  const waterTo = h('input', { type: 'time', class: 'gb-input', value: waterPrefs.to, 'aria-label': 'Water reminders until' });
-  const waterFields = h(
-    'div',
-    { style: { display: waterPrefs.on ? '' : 'none' } },
-    h('div', { class: 'gb-field-label' }, 'How often'),
-    waterEverySel,
-    h('div', { class: 'gb-field-label' }, 'Between'),
-    h(
-      'div',
-      { class: 'gb-quickadd-row', style: { gap: '8px' } },
-      waterFrom,
-      h('span', { class: 'gb-field-hint', style: { alignSelf: 'center' } }, 'and'),
-      waterTo
-    ),
-    h(
-      'div',
-      { class: 'gb-field-hint', style: { marginTop: '6px' } },
-      'Queued on this device, so they arrive with the app closed. Nothing is sent outside these hours.'
-    )
-  );
-  waterEverySel.onchange = () => saveWater({ everyMins: Number(waterEverySel.value) });
-  // Only save a window that makes sense — a half-typed time in a native picker
-  // fires change events, and `to <= from` would mean no nudges at all with
-  // nothing on screen saying why.
-  const saveWindow = () => {
-    if (!waterFrom.value || !waterTo.value) return;
-    if (waterTo.value <= waterFrom.value) {
-      pushToast('The end time has to be after the start time.', 'error', 3200);
-      waterFrom.value = waterPrefs.from;
-      waterTo.value = waterPrefs.to;
-      return;
-    }
-    saveWater({ from: waterFrom.value, to: waterTo.value });
-  };
-  waterFrom.onchange = saveWindow;
-  waterTo.onchange = saveWindow;
-  const waterSwitch = h(
-    'button',
-    {
-      type: 'button',
-      role: 'switch',
-      'aria-checked': waterPrefs.on ? 'true' : 'false',
-      'aria-label': 'Remind me to drink water',
-      class: 'gb-switch' + (waterPrefs.on ? ' is-on' : ''),
-    },
-    h('span', { class: 'gb-switch-knob' })
-  );
-  waterSwitch.onclick = () => {
-    const next = !waterPrefs.on;
-    waterSwitch.classList.toggle('is-on', next);
-    waterSwitch.setAttribute('aria-checked', next ? 'true' : 'false');
-    waterFields.style.display = next ? '' : 'none';
-    saveWater({ on: next });
-    toastSuccess(next ? 'Water reminders on.' : 'Water reminders off.');
-  };
-  const waterSectionBody = h(
-    'div',
-    null,
-    h(
-      'div',
-      { class: 'gb-feature-row' },
-      h(
-        'div',
-        { class: 'gb-feature-row-text' },
-        h('div', { class: 'gb-feature-row-label' }, 'Remind me to drink water'),
-        h(
-          'div',
-          { class: 'gb-feature-row-desc' },
-          'A nudge through the day, on a rhythm you set.'
-        )
-      ),
-      waterSwitch
-    ),
-    waterFields
-  );
-
-  /* ---- Take a break (I-08): one tap for 3 / 7 / 14 days, one to end it. ---- */
-  const breakSectionBody = h('div');
-  const paintBreak = () => {
-    const st = breakState(breakPrefs(), todayKey());
-    const btn = (label, onclick, primary) =>
-      h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-btn gb-btn--compact ' + (primary ? 'gb-btn--primary' : 'gb-btn--soft'),
-          onclick: () => onclick().then(paintBreak),
-        },
-        label
-      );
-    breakSectionBody.replaceChildren(
-      st && st.on
-        ? h(
-            'div',
-            { class: 'gb-feature-row' },
-            h(
-              'div',
-              { class: 'gb-feature-row-text' },
-              h('div', { class: 'gb-feature-row-label' }, 'On a break until ' + breakUntilLabel(st.until)),
-              h('div', { class: 'gb-feature-row-desc' }, 'Your streaks are held.')
-            ),
-            btn('End now', endBreakNow, false)
-          )
-        : h(
-            'div',
-            { class: 'gb-coach-chiprow', style: { marginTop: 0 } },
-            ...BREAK_LENGTHS.map((n) => btn(n + ' days', () => takeBreak(n, false), false))
-          )
-    );
-  };
-  paintBreak();
-
-  /* ---- Quiet hours ----
-     ui_prefs.quietStart / quietEnd, read by the server (ReminderPrefs.isQuiet:
-     habit reminders, the digest) and by this device's alarm queue (push.js:
-     habit reminders, the water nudge). A window may wrap midnight. */
-  const qp = (u && u.uiPrefs) || {};
-  let quietOn = !!(qp.quietStart && qp.quietEnd && qp.quietStart !== qp.quietEnd);
-  const quietFrom = h('input', {
-    type: 'time',
-    class: 'gb-input',
-    value: qp.quietStart || '22:00',
-    'aria-label': 'Quiet from',
-  });
-  const quietTo = h('input', {
-    type: 'time',
-    class: 'gb-input',
-    value: qp.quietEnd || '07:00',
-    'aria-label': 'Quiet until',
-  });
-  const quietFields = h(
-    'div',
-    { style: { display: quietOn ? '' : 'none' } },
-    h('div', { class: 'gb-field-label' }, 'From'),
-    h(
-      'div',
-      { class: 'gb-quickadd-row', style: { gap: '8px' } },
-      quietFrom,
-      h('span', { class: 'gb-field-hint', style: { alignSelf: 'center' } }, 'until'),
-      quietTo
-    )
-  );
-  const saveQuiet = () => {
-    if (quietOn && (!quietFrom.value || !quietTo.value)) return; // a half-typed time
-    if (quietOn && quietFrom.value === quietTo.value) {
-      pushToast('Pick two different times.', 'error', 3200);
-      return;
-    }
-    saveUiPrefs(
-      quietOn ? { quietStart: quietFrom.value, quietEnd: quietTo.value } : { quietStart: null, quietEnd: null }
-    );
-    reSyncDeviceAlarms();
-  };
-  quietFrom.onchange = saveQuiet;
-  quietTo.onchange = saveQuiet;
-  const quietSwitch = h(
-    'button',
-    {
-      type: 'button',
-      role: 'switch',
-      'aria-checked': quietOn ? 'true' : 'false',
-      'aria-label': 'Quiet hours',
-      class: 'gb-switch' + (quietOn ? ' is-on' : ''),
-    },
-    h('span', { class: 'gb-switch-knob' })
-  );
-  quietSwitch.onclick = () => {
-    quietOn = !quietOn;
-    quietSwitch.classList.toggle('is-on', quietOn);
-    quietSwitch.setAttribute('aria-checked', quietOn ? 'true' : 'false');
-    quietFields.style.display = quietOn ? '' : 'none';
-    saveQuiet();
-    toastSuccess(quietOn ? 'Quiet hours on.' : 'Quiet hours off.');
-  };
-  const quietSectionBody = h(
-    'div',
-    null,
-    h(
-      'div',
-      { class: 'gb-feature-row' },
-      h(
-        'div',
-        { class: 'gb-feature-row-text' },
-        h('div', { class: 'gb-feature-row-label' }, 'Quiet hours'),
-        h('div', { class: 'gb-feature-row-desc' }, 'Hold back nudges overnight, or whenever you set.')
-      ),
-      quietSwitch
-    ),
-    quietFields
-  );
-
-  /* ---- Buddy's evening reflection ----
-     ui_prefs.buddyReflection = "HH:MM" local, absent = off (the default). The
-     server sends it (mentor/ReflectionScheduler: bell card + push, once a day,
-     held by quiet hours); no AI call. Tapping it opens Buddy with the question. */
-  let reflectOn = !!qp.buddyReflection;
-  const reflectAt = h('input', {
-    type: 'time',
-    class: 'gb-input',
-    value: qp.buddyReflection || '21:00',
-    'aria-label': 'Evening reflection time',
-  });
-  const reflectFields = h(
-    'div',
-    { style: { display: reflectOn ? '' : 'none' } },
-    h('div', { class: 'gb-field-label' }, 'At'),
-    reflectAt
-  );
-  const saveReflect = () => {
-    if (reflectOn && !reflectAt.value) return; // a half-typed time
-    saveUiPrefs({ buddyReflection: reflectOn ? reflectAt.value : null });
-  };
-  reflectAt.onchange = saveReflect;
-  const reflectSwitch = h(
-    'button',
-    {
-      type: 'button',
-      role: 'switch',
-      'aria-checked': reflectOn ? 'true' : 'false',
-      'aria-label': 'Evening reflection with Buddy',
-      class: 'gb-switch' + (reflectOn ? ' is-on' : ''),
-    },
-    h('span', { class: 'gb-switch-knob' })
-  );
-  reflectSwitch.onclick = () => {
-    reflectOn = !reflectOn;
-    reflectSwitch.classList.toggle('is-on', reflectOn);
-    reflectSwitch.setAttribute('aria-checked', reflectOn ? 'true' : 'false');
-    reflectFields.style.display = reflectOn ? '' : 'none';
-    saveReflect();
-    toastSuccess(reflectOn ? 'Evening reflection on.' : 'Evening reflection off.');
-  };
-  const reflectSectionBody = h(
-    'div',
-    null,
-    h(
-      'div',
-      { class: 'gb-feature-row' },
-      h(
-        'div',
-        { class: 'gb-feature-row-text' },
-        h('div', { class: 'gb-feature-row-label' }, 'Evening reflection'),
-        h(
-          'div',
-          { class: 'gb-feature-row-desc' },
-          'Once a day, Buddy asks how today went. Tap it to answer in a chat.'
-        )
-      ),
-      reflectSwitch
-    ),
-    reflectFields
-  );
-
-  // ---- Push notifications ----
-  const pushBtn = h(
-    'button',
-    { type: 'button', class: 'gb-btn gb-btn--soft gb-btn--compact' },
-    'Enable push notifications'
-  );
-  const pushTestBtn = h(
-    'button',
-    { type: 'button', class: 'gb-btn gb-btn--ghost gb-btn--compact' },
-    'Send test'
-  );
-  let pushOn = false;
-  // In the app the switch is Android's, not ours: we can ask for permission but
-  // never take it back, so the "off" button points at system settings instead.
-  const native = localNotificationsAvailable();
-  const syncPushUi = () => {
-    pushBtn.textContent = pushOn
-      ? native
-        ? 'Notifications on — manage in system settings'
-        : 'Turn off push notifications'
-      : 'Enable notifications';
-    pushBtn.disabled = pushOn && native;
-    pushTestBtn.style.display = pushOn ? '' : 'none';
-  };
-  syncPushUi();
-  if (pushSupported())
-    pushSubscribed().then((on) => {
-      pushOn = on;
-      syncPushUi();
-    });
-  pushBtn.onclick = async () => {
-    if (!pushSupported()) {
-      pushToast('This browser doesn’t support push notifications.', 'error', 3600);
-      return;
-    }
-    pushBtn.disabled = true;
-    try {
-      if (pushOn) {
-        await disablePush(api);
-        pushOn = false;
-        toastSuccess('Push notifications turned off.');
-      } else {
-        pushOn = await enablePushFlow('Push notifications on. Try “Send test”.');
-      }
-    } finally {
-      syncPushUi();
-    }
-  };
-  pushTestBtn.onclick = async () => {
-    try {
-      if (native) {
-        toastSuccess(
-          (await pushTestLocal(notifySound()))
-            ? 'Test notification sent.'
-            : 'Could not post the notification.'
-        );
-        return;
-      }
-      const r = await api('/api/push/test', { method: 'POST' });
-      toastSuccess(
-        r.delivered > 0
-          ? 'Test sent to ' + r.delivered + ' device' + (r.delivered > 1 ? 's' : '') + '.'
-          : 'No devices registered yet.'
-      );
-    } catch (err) {
-      toastError(err, 'Could not send a test notification.');
-    }
-  };
-  const pushSectionBody = h(
-    'div',
-    { class: 'gb-quickadd-row', style: { flexWrap: 'wrap' } },
-    pushBtn,
-    pushTestBtn
-  );
-
-  // ---- Notification sound ----
-  // The segmented control already wraps past six options (that's why the
-  // recurrence picker uses it), so the chimes need no CSS of their own. The
-  // user's own sounds join it, by name, once they are stored on this device.
-  const soundPicker = h('div', { class: 'gb-sound-picker' });
-  const paintSoundPicker = () => {
-    // A file's name can be long; the segment wraps, but one 40-character pill
-    // would push the row wide. The list below shows the full name.
-    const opts = chimeOptions().map((c) => ({
-      value: c.key,
-      label: c.custom && c.label.length > 12 ? c.label.slice(0, 11).trimEnd() + '…' : c.label,
-    }));
-    // The pre-library 'custom' means the first one: light that up, not nothing.
-    let current = notifySound();
-    if (current === 'custom' && customChimes()[0]) current = customChimes()[0].key;
-    soundPicker.replaceChildren(
-      segmented(opts, current, (v) => {
-        saveUiPrefs({ notifySound: v });
-        // The sound rides on each queued notification, so already-queued ones
-        // would keep the old one until something else rebuilt the queue.
-        reSyncDeviceAlarms();
-        playChime(v); // picking one is the preview — a separate play button is a click nobody needs
-      }).node
-    );
-  };
-  paintSoundPicker();
-
-  // ---- Your own sounds: up to CUSTOM_MAX_COUNT, uploaded or recorded here ----
-  const soundCount = h('span', { class: 'gb-sound-count' });
-  const customSoundList = h('div', { class: 'gb-sound-list', role: 'list' });
-
-  // Remove is two taps — the first arms it for a few seconds — because a
-  // recording, once gone, can't be made again the same way. Inline rather than
-  // a confirm dialog, which would stack a second modal over Settings.
-  // One preview at a time. The row playing shows a Pause button and moving
-  // bars in place of its icon until the sound ends, is stopped, or another
-  // row's Play takes over.
-  let playing = null; // { key, row, btn, name }
-  const showPlaying = (p, on) => {
-    p.row.classList.toggle('is-playing', on);
-    p.btn.classList.toggle('is-on', on);
-    p.btn.setAttribute('aria-pressed', String(on));
-    p.btn.setAttribute('aria-label', (on ? 'Stop ' : 'Play ') + p.name);
-    p.btn.replaceChildren(Icon(on ? 'pause' : 'play', { size: 17 }));
-  };
-  const togglePreview = async (c, row, btn) => {
-    if (playing && playing.key === c.key) {
-      stopChime();
-      return;
-    }
-    const me = { key: c.key, row, btn, name: c.name };
-    playing = me;
-    showPlaying(me, true);
-    await previewChime(c.key); // settles the previous preview first, which resets its row
-    showPlaying(me, false);
-    if (playing === me) playing = null;
-  };
-
-  const soundRow = (c) => {
-    const inUse = notifySound() === c.key;
-    // Stored since renames: a row from before it was kept falls back to the
-    // name the recorder gives.
-    const isRecording = c.source ? c.source === 'recording' : /^Recording \d+$/.test(c.name);
-    let armed = null;
-    const removeBtn = h(
-      'button',
-      {
-        type: 'button',
-        class: 'gb-btn gb-btn--icon gb-sound-remove',
-        'aria-label': 'Remove ' + c.name,
-        onclick: () => {
-          if (armed) {
-            clearTimeout(armed);
-            removeCustomSound(c);
-            return;
-          }
-          removeBtn.classList.add('is-armed');
-          removeBtn.setAttribute('aria-label', 'Tap again to remove ' + c.name);
-          removeBtn.replaceChildren(h('span', null, 'Remove?'));
-          armed = setTimeout(() => {
-            armed = null;
-            removeBtn.classList.remove('is-armed');
-            removeBtn.setAttribute('aria-label', 'Remove ' + c.name);
-            removeBtn.replaceChildren(Icon('trash-2', { size: 17 }));
-          }, 3000);
-        },
-      },
-      Icon('trash-2', { size: 17 })
-    );
-    // Rename in place. The name itself is the control (a pencil beside it says
-    // so) — a third icon button squeezed the name to a few letters on a phone.
-    // Tapping it swaps in a field and moves Play/Remove aside; Enter or leaving
-    // the field saves, Escape puts the old name back.
-    const meta = h(
-      'span',
-      { class: 'gb-sound-meta' },
-      (isRecording ? 'Voice recording' : 'Sound file') + (inUse ? ' · Default' : '')
-    );
-    const nameBtn = h(
-      'button',
-      {
-        type: 'button',
-        class: 'gb-sound-name',
-        'aria-label': 'Rename ' + c.name,
-        onclick: () => startRename(),
-      },
-      h(
-        'span',
-        { class: 'gb-sound-title' },
-        h('span', { class: 'gb-sound-title-text' }, c.name),
-        Icon('pencil', { size: 13, className: 'gb-sound-title-edit' })
-      ),
-      meta
-    );
-    const startRename = () => {
-      const field = h('input', {
-        type: 'text',
-        class: 'gb-input gb-sound-rename',
-        value: c.name,
-        maxlength: '40',
-        'aria-label': 'New name for ' + c.name,
-        enterkeyhint: 'done',
-      });
-      const editor = h('span', { class: 'gb-sound-name' }, field);
-      let done = false;
-      const finish = (save) => {
-        if (done) return;
-        done = true;
-        const next = field.value.replace(/\s+/g, ' ').trim();
-        row.classList.remove('is-renaming');
-        if (save && next && next !== c.name) {
-          renameCustomSound(c, next);
-          return;
-        }
-        editor.replaceWith(nameBtn);
-        nameBtn.focus();
-      };
-      field.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-          // Not up to the sheet: its submitOnEnter (gb-kit) would press Done and
-          // close Settings along with the rename.
-          e.preventDefault();
-          e.stopPropagation();
-          finish(true);
-        } else if (e.key === 'Escape') {
-          // The Settings modal closes on Escape too; this one is only the field's.
-          e.preventDefault();
-          e.stopPropagation();
-          finish(false);
-        }
-      });
-      field.addEventListener('blur', () => finish(true));
-      if (playing && playing.key === c.key) stopChime();
-      nameBtn.replaceWith(editor);
-      row.classList.add('is-renaming');
-      field.focus();
-      field.select();
-    };
-    const playBtn = h(
-      'button',
-      {
-        type: 'button',
-        class: 'gb-btn gb-btn--icon gb-sound-play',
-        'aria-label': 'Play ' + c.name,
-        'aria-pressed': 'false',
-        onclick: () => togglePreview(c, row, playBtn),
-      },
-      Icon('play', { size: 17 })
-    );
-    const row = h(
-      'div',
-      { class: 'gb-sound-row' + (inUse ? ' is-default' : ''), role: 'listitem', 'data-key': c.key },
-      h(
-        'span',
-        { class: 'gb-sound-chip' },
-        // Wrapped: Icon() sets an inline display, which a stylesheet can't hide.
-        h('span', { class: 'gb-sound-chip-icon' }, Icon(isRecording ? 'mic' : 'audio-lines', { size: 17 })),
-        h('span', { class: 'gb-sound-eq', 'aria-hidden': 'true' }, h('i'), h('i'), h('i'))
-      ),
-      nameBtn,
-      playBtn,
-      removeBtn
-    );
-    return row;
-  };
-
-  const paintSounds = () => {
-    // The rows are rebuilt, so a preview's button would be orphaned mid-play.
-    if (playing) stopChime();
-    paintSoundPicker();
-    const list = customChimes();
-    soundCount.textContent = list.length + ' of ' + CUSTOM_MAX_COUNT;
-    customSoundList.replaceChildren(
-      ...(list.length
-        ? list.map(soundRow)
-        : [
-            h(
-              'div',
-              { class: 'gb-sound-empty' },
-              'None yet. Add a short file or record your voice — up to ' +
-                CUSTOM_MAX_COUNT +
-                ', each up to five seconds.'
-            ),
-          ])
-    );
-    syncCustomRow();
-  };
-
-  // A new sound is this device's before anything touches the network: a dead
-  // connection must not cost the user the pick they just made.
-  async function addCustomSound(name, dataUrl, source) {
-    const sound = {
-      id: newSoundId(),
-      name,
-      source,
-      dataUrl,
-      updatedAt: new Date().toISOString(),
-      synced: false,
-    };
-    storeCustomChimes(readCustomChimes().concat(sound));
-    const key = customKey(sound.id);
-    saveUiPrefs({ notifySound: key });
-    reSyncDeviceAlarms();
-    paintSounds();
-    // Hear what was just added — through its row, so the row shows it playing.
-    const newPlay = customSoundList.querySelector('[data-key="' + key + '"] .gb-sound-play');
-    if (newPlay) newPlay.click();
-    else playChime(key);
-    const outcome = await uploadNewCustomSound(sound);
-    if (outcome === 'refused') {
-      paintSounds();
-      return;
-    }
-    if (outcome === 'saved') {
-      toastSuccess('Saved. “' + name + '” is your notification sound now.');
-      return;
-    }
-    // It plays here regardless — so this says what hasn't happened yet
-    // rather than a bare "saved" that quietly means "on one device".
-    pushToast(
-      'Saved on this device. Your others will pick it up next time you’re online.',
-      'info',
-      4600
-    );
-  }
-
-  /* The name changes here first, so the list and every picker show it at once.
-     A sound the server has never had just carries the new name up with its
-     upload. Otherwise a PATCH — and if that fails the old name comes back,
-     because the next sign-in would take the server's name anyway, and a rename
-     that quietly undoes itself later is worse than one that says it didn't take. */
-  async function renameCustomSound(c, name) {
-    const rename = (to) =>
-      storeCustomChimes(
-        readCustomChimes().map((s) => (s.id === c.id ? Object.assign({}, s, { name: to }) : s))
-      );
-    const wasSynced = readCustomChimes().some((s) => s.id === c.id && s.synced);
-    rename(name);
-    paintSounds();
-    // The rows were rebuilt; put focus back where the rename started.
-    const again = customSoundList.querySelector('[data-key="' + c.key + '"] [aria-label^="Rename"]');
-    if (again) again.focus();
-    if (!wasSynced) return;
-    try {
-      await api('/api/notifications/custom-sounds/' + c.id, {
-        method: 'PATCH',
-        body: JSON.stringify({ name }),
-      });
-    } catch (err) {
-      rename(c.name);
-      paintSounds();
-      toastError(err, 'Couldn’t rename it. Check your connection and try again.');
-    }
-  }
-
-  async function removeCustomSound(c) {
-    storeCustomChimes(readCustomChimes().filter((s) => s.id !== c.id));
-    // A reminder or habit tone that named it now finds an unknown key and falls
-    // back to the default on its own; only the default itself needs moving.
-    const cur = notifySound();
-    if (cur === c.key || (cur === 'custom' && !customChimes().length)) {
-      saveUiPrefs({ notifySound: DEFAULT_CHIME });
-    }
-    reSyncDeviceAlarms();
-    paintSounds();
-    try {
-      await api('/api/notifications/custom-sounds/' + c.id, { method: 'DELETE' });
-    } catch (_) {
-      // Gone from this device either way, but the account still has it —
-      // and the next sign-in pulls it back down. Say so rather than let it
-      // reappear looking like a bug.
-      pushToast(
-        'Removed here, but we couldn’t reach the server — it may come back when you next sign in.',
-        'error',
-        4600
-      );
-    }
-  }
-
-  // A plain file input, relabelled. `accept` filters the OS picker; the real
-  // gate (type + size) is readCustomChime, because accept is a hint, not a rule.
-  const soundFile = h('input', {
-    type: 'file',
-    accept: 'audio/*',
-    class: 'gb-sound-file',
-    style: { display: 'none' },
-    onchange: async () => {
-      const file = soundFile.files && soundFile.files[0];
-      soundFile.value = ''; // so picking the same file twice still fires
-      if (!file) return;
-      let dataUrl;
-      try {
-        dataUrl = await readCustomChime(file);
-      } catch (err) {
-        pushToast(err.message || 'Could not use that file.', 'error', 4200);
-        return;
-      }
-      const name =
-        (file.name || '')
-          .replace(/\.[^.]+$/, '')
-          .trim()
-          .slice(0, 40) || 'Your sound';
-      addCustomSound(name, dataUrl, 'file');
-    },
-  });
-  const soundPickBtn = h(
-    'button',
-    {
-      type: 'button',
-      class: 'gb-btn gb-btn--soft gb-btn--compact',
-      onclick: () => soundFile.click(),
-    },
-    Icon('plus', { size: 17 }),
-    h('span', null, 'Add a file')
-  );
-
-  // Record: Start opens a small panel with a live countdown and a bar; Stop
-  // keeps it, Cancel throws it away, and it stops by itself at CUSTOM_MAX_MS —
-  // the five seconds any custom sound is cut to on playback.
-  let recording = null;
-  const recBar = h('span', { class: 'gb-sound-rec-fill' });
-  const recTime = h('span', { class: 'gb-sound-rec-time' }, '0:00');
-  const recPanel = h(
-    'div',
-    { class: 'gb-sound-rec', role: 'status', 'aria-live': 'polite', style: { display: 'none' } },
-    h(
-      'div',
-      { class: 'gb-sound-rec-head' },
-      h('span', { class: 'gb-sound-rec-dot', 'aria-hidden': 'true' }),
-      h('span', { class: 'gb-sound-rec-label' }, 'Recording…'),
-      recTime
-    ),
-    h('div', { class: 'gb-sound-rec-track', 'aria-hidden': 'true' }, recBar),
-    h(
-      'div',
-      { class: 'gb-sound-actions' },
-      h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-btn gb-btn--primary gb-btn--compact',
-          onclick: () => recording && recording.stop(),
-        },
-        'Stop & save'
-      ),
-      h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-btn gb-btn--ghost gb-btn--compact',
-          onclick: () => recording && recording.cancel(),
-        },
-        'Cancel'
-      )
-    )
-  );
-  const soundRecordBtn = h(
-    'button',
-    {
-      type: 'button',
-      class: 'gb-btn gb-btn--soft gb-btn--compact',
-      onclick: async () => {
-        if (recording) return;
-        soundRecordBtn.disabled = true;
-        try {
-          recording = await recordCustomChime();
-        } catch (err) {
-          soundRecordBtn.disabled = false;
-          pushToast(err.message || 'Couldn’t start recording.', 'error', 4600);
-          return;
-        }
-        soundRecordBtn.disabled = false;
-        syncCustomRow();
-        const started = Date.now();
-        const tick = () => {
-          const ms = Math.min(CUSTOM_MAX_MS, Date.now() - started);
-          recTime.textContent = '0:0' + Math.floor(ms / 1000) + ' / 0:0' + CUSTOM_MAX_MS / 1000;
-          recBar.style.width = (ms / CUSTOM_MAX_MS) * 100 + '%';
-          // Settings closed mid-recording: let go of the microphone.
-          if (!recPanel.isConnected && recording) recording.cancel();
-        };
-        tick();
-        const timer = setInterval(tick, 100);
-        let dataUrl = null;
-        try {
-          dataUrl = await recording.done;
-        } catch (err) {
-          pushToast(err.message || 'Couldn’t save that recording.', 'error', 4600);
-        }
-        clearInterval(timer);
-        recording = null;
-        syncCustomRow();
-        if (dataUrl) {
-          const used = new Set(customChimes().map((c) => c.name));
-          let n = 1;
-          while (used.has('Recording ' + n)) n++;
-          addCustomSound('Recording ' + n, dataUrl, 'recording');
-        }
-      },
-    },
-    Icon('mic', { size: 17 }),
-    h('span', null, 'Record voice')
-  );
-  const soundActions = h(
-    'div',
-    { class: 'gb-sound-actions' },
-    soundPickBtn,
-    soundRecordBtn,
-    soundFile
-  );
-  const soundFullHint = h(
-    'div',
-    { class: 'gb-field-hint', style: { display: 'none' } },
-    'That’s ' + CUSTOM_MAX_COUNT + ' of your own — remove one to add another.'
-  );
-  function syncCustomRow() {
-    const full = customChimes().length >= CUSTOM_MAX_COUNT;
-    recPanel.style.display = recording ? '' : 'none';
-    soundActions.style.display = recording || full ? 'none' : '';
-    soundRecordBtn.style.display = canRecordChime() ? '' : 'none';
-    soundFullHint.style.display = full && !recording ? '' : 'none';
-  }
-  const customSoundRow = h(
-    'div',
-    { class: 'gb-sounds' },
-    h('div', { class: 'gb-sounds-head' }, h('span', null, 'Your sounds'), soundCount),
-    customSoundList,
-    soundActions,
-    recPanel,
-    soundFullHint
-  );
-  paintSounds();
-
-  const notifPane = h(
-    'div',
-    { class: 'gb-settings-pane', style: { display: 'none' } },
-    h('div', { class: 'gb-settings-sec-label' }, 'Push notifications'),
-    h(
-      'div',
-      { class: 'gb-field-hint', style: { marginBottom: '12px' } },
-      'Get reminders and nudges on this device, even when the app is closed.'
-    ),
-    pushSectionBody,
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Water reminders'),
-    h(
-      'div',
-      { class: 'gb-field-hint', style: { marginBottom: '12px' } },
-      'Steady sips beat one big glass. Needs notifications turned on above.'
-    ),
-    waterSectionBody,
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Take a break'),
-    h(
-      'div',
-      { class: 'gb-field-hint', style: { marginBottom: '12px' } },
-      'A rough week? Your habit streaks hold without using freezes, and habit reminders, the evening reflection and the digest go quiet. Reminders you set a time for still ring.'
-    ),
-    breakSectionBody,
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Quiet hours'),
-    h(
-      'div',
-      { class: 'gb-field-hint', style: { marginBottom: '12px' } },
-      'No habit reminders, water nudges or digest in this window, on any device or on WhatsApp. The digest waits until it ends. Reminders you set a time for still ring.'
-    ),
-    quietSectionBody,
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Buddy'),
-    reflectSectionBody,
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Notification sound'),
-    h(
-      'div',
-      { class: 'gb-field-hint', style: { marginBottom: '10px' } },
-      localNotificationsAvailable()
-        ? 'What a reminder sounds like, in the app and on your lock screen. Tap one to hear it.'
-        : 'What a reminder sounds like inside the app. Tap one to hear it. Notifications that arrive while the app is closed use your phone’s own sound.'
-    ),
-    soundPicker,
-    customSoundRow,
-    h(
-      'div',
-      { class: 'gb-field-hint', style: { marginTop: '8px' } },
-      'Keep up to ' +
-        CUSTOM_MAX_COUNT +
-        ' of your own — a file under ' +
-        Math.round(CUSTOM_MAX_BYTES / 1024) +
-        ' KB, or your voice recorded here. Each stops after five seconds, follows you to your other devices, and can be picked for a single reminder or habit too.' +
-        // True everywhere: Android can only ring a file that ships with the app,
-        // and a Web Push notification rings with the browser's own sound.
-        ' Plays in the app only — the lock screen uses built-in tones.'
-    ),
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Notify me about'),
-    h(
-      'div',
-      { class: 'gb-field-hint', style: { marginBottom: '10px' } },
-      'Off means no push or phone notification for it. It still shows in the bell.'
-    ),
-    ...notifyMuteRows(),
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Keep read notifications for'),
-    h(
-      'div',
-      { class: 'gb-field-hint', style: { marginBottom: '10px' } },
-      'Unread ones go after 90 days whatever you pick.'
-    ),
-    keepReadPicker(),
-    h(
-      'div',
-      { class: 'gb-settings-sec-label', style: { marginTop: '22px' } },
-      'WhatsApp reminders'
-    ),
-    h(
-      'div',
-      { class: 'gb-field-hint', style: { marginBottom: '14px' } },
-      'Verify your number once — timed reminders then arrive on WhatsApp.'
-    ),
-    waSectionBody,
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Progress digest'),
-    h(
-      'div',
-      { class: 'gb-field-hint', style: { marginBottom: '12px' } },
-      'Get a short recap of your score, tasks and habits to stay on track.'
-    ),
-    digestSectionBody,
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '22px' } }, 'Working week'),
-    workWeekBody
-  );
-
-  // ---- Account pane ----
-  const verifiedChip = h(
-    'span',
-    { class: 'gb-pill', style: { background: 'var(--success-soft)', color: 'var(--success-soft-fg)' } },
-    u.emailVerified ? 'Verified' : 'Unverified'
-  );
-  const accountPane = h(
-    'div',
-    { class: 'gb-settings-pane', style: { display: 'none' } },
-    h('div', { class: 'gb-settings-sec-label' }, 'Account'),
-    h(
-      'div',
-      { class: 'gb-account-row' },
-      h('div', { class: 'gb-field-label' }, 'Email'),
-      h(
-        'div',
-        { class: 'gb-account-value' },
-        h('span', { class: 'gb-account-email' }, u.email || '—'),
-        verifiedChip
-      )
-    ),
-    h(
-      'div',
-      { class: 'gb-account-row' },
-      h('div', { class: 'gb-field-label' }, 'Progress'),
-      h(
-        'div',
-        { class: 'gb-account-value' },
-        'Level ' + (u.level || 1) + ' · ' + (u.xpTotal || 0) + ' XP'
-      )
-    ),
-    h(
-      'button',
-      {
-        type: 'button',
-        class: 'gb-btn gb-btn--ghost gb-account-signout',
-        onclick: () => confirmLogout(),
-      },
-      Icon('log-out', { size: 16 }),
-      'Sign out'
-    ),
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '20px' } }, 'Privacy'),
-    shareProgressRow(),
-    h(
-      'div',
-      { class: 'gb-field-hint', style: { margin: '10px 0' } },
-      'A copy of everything your account holds, as a JSON file.'
-    ),
-    downloadDataButton(),
-    ...securitySection(),
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '20px' } }, 'Danger zone'),
-    h(
-      'div',
-      { class: 'gb-field-hint', style: { marginBottom: '10px' } },
-      'Delete your account and all your data. It happens 7 days after you ask, and signing in before then cancels it.'
-    ),
-    h(
-      'button',
-      {
-        type: 'button',
-        class: 'gb-btn gb-btn--ghost gb-account-signout is-danger',
-        onclick: () => openDeleteAccount(),
-      },
-      Icon('trash-2', { size: 16 }),
-      'Delete account'
-    ),
-    h('div', { class: 'gb-settings-sec-label', style: { marginTop: '20px' } }, 'About'),
-    // The real build (vite.config.js BUILD), the number support asks for.
-    h('div', { class: 'gb-field-hint' }, 'Growth Buddy · build ' + __GB_BUILD__)
-  );
-
-  // ---- Top-level segmented slider nav ----
-  // One door for everything a person can change about the app. Display and
-  // Layout came from the old Customise modal; Security folded into Account.
-  const { displayPane, layoutPane } = customisePanes();
-  const remindersPane = reminderSettingsPane();
-  const tabDefs = [
-    { id: 'profile', label: 'Profile', pane: profilePane },
-    { id: 'display', label: 'Display', pane: displayPane },
-    { id: 'notifications', label: 'Alerts', pane: notifPane },
-    { id: 'reminders', label: 'Reminders', pane: remindersPane },
-    { id: 'layout', label: 'Layout', pane: layoutPane },
-    { id: 'account', label: 'Account', pane: accountPane },
-  ];
-  const activeTab = tabDefs.some((t) => t.id === initialTab) ? initialTab : 'profile';
-  const tabBar = buildSegSlider(tabDefs, activeTab);
-
-  const body = h(
-    'div',
-    { class: 'gb-settings-body' },
-    h(
-      'div',
-      { class: 'gb-settings-profile-header' },
-      h('div', { class: 'gb-settings-avatar-circle' }, initials),
-      h(
-        'div',
-        { class: 'gb-settings-profile-info' },
-        h('div', { class: 'gb-settings-profile-name' }, u.displayName || 'Buddy'),
-        h('div', { class: 'gb-settings-profile-email' }, u.email || ''),
-        h(
-          'span',
-          { class: 'gb-settings-level-badge' },
-          'Level ' + (u.level || 1) + ' · ' + (u.xpTotal || 0) + ' XP'
-        )
-      )
-    ),
-    tabBar,
-    // Panes must be mounted in tab order — buildSegSlider only toggles display.
-    profilePane,
-    displayPane,
-    notifPane,
-    remindersPane,
-    layoutPane,
-    accountPane
-  );
-
-  openModal({
-    // "Done", not "Save changes": every tab but Profile saves the moment you
-    // touch it, so a Save button that only commits the Profile fields would be
-    // lying on the other four. It still saves them — it just doesn't claim to
-    // be the reason anything else stuck.
-    title: 'Settings',
-    sub: null,
-    body,
-    primary: 'Done',
-    modalClass: 'gb-modal--settings',
-    onPrimary: async () => {
-      // Every field Done checks lives on Profile, so a refusal brings that tab
-      // up: from Display, the toast named a field that wasn't on screen. All
-      // the problems are collected and told at once, not one per press.
-      const problems = [];
-      const bad = (msg, ref) => {
-        problems.push({ msg, ref });
-        return null;
-      };
-      const showProfile = (ref) => {
-        if (profilePane.style.display === 'none') tabBar.querySelector('[role="tab"]').click();
-        if (ref) ref.focus();
-      };
-      const parseDobToAge = (raw, ref) => {
-        if (!raw) return null;
-        const dob = new Date(raw + 'T00:00:00');
-        if (Number.isNaN(dob.getTime())) return bad('Date of birth is invalid.', ref);
-        let age = now.getFullYear() - dob.getFullYear();
-        const m = now.getMonth() - dob.getMonth();
-        if (m < 0 || (m === 0 && now.getDate() < dob.getDate())) age -= 1;
-        if (age < 10 || age > 100) return bad('Age must be between 10 and 100.', ref);
-        return age;
-      };
-      const parseRanged = (label, raw, min, max, ref) => {
-        if (!raw) return null;
-        const n = Number(raw);
-        if (!Number.isFinite(n) || n < min || n > max) {
-          return bad(label + ' must be between ' + min + ' and ' + max + '.', ref);
-        }
-        return Math.round(n);
-      };
-
-      const profilePayload = {
-        displayName: visibleText(displayNameInput.value) || null,
-        timezone: (timezoneInput.value || '').trim() || null,
-        dob: dobInput.value || null,
-        ageYears: parseDobToAge(dobInput.value, dobInput),
-        heightCm: parseRanged('Height', heightInput.value, 100, 250, heightInput),
-        weightKg: parseRanged('Weight', weightInput.value, 25, 300, weightInput),
-        gender: genderSel.value || '' || null,
-        fitnessGoal: (fitnessGoalInput.value || '').trim() || null,
-        dietPreference: (dietInput.value || '').trim() || null,
-        allergicTo: (allergicInput.value || '').trim() || null,
-        favouriteDish: (favDishInput.value || '').trim() || null,
-        aboutMe: (aboutInput.value || '').trim() || null,
-        dailyFoodGoalKcal: parseRanged(
-          'Daily food goal',
-          foodGoalInput.value,
-          800,
-          6000,
-          foodGoalInput
-        ),
-        dailyWaterGoalMl: parseRanged(
-          'Daily water goal',
-          waterGoalInput.value,
-          1000,
-          7000,
-          waterGoalInput
-        ),
-      };
-      if (problems.length) {
-        showProfile(problems[0].ref);
-        throw new Error(problems.map((p) => p.msg).join(' '));
-      }
-
-      // openModal already disables Done for the wait; say what it is waiting on.
-      const doneBtn = body.closest('.gb-modal')?.querySelector(':scope > .gb-btn--primary');
-      if (doneBtn) doneBtn.textContent = 'Saving…';
-      try {
-        await saveProfileDetails(profilePayload);
-      } catch (err) {
-        // The server's one check here is the timezone ("Unknown timezone: ...").
-        showProfile(/timezone/i.test((err && err.message) || '') ? timezoneInput : null);
-        throw err;
-      } finally {
-        if (doneBtn) doneBtn.textContent = 'Done';
-      }
-    },
-  });
-}
-
-async function getNutritionSuggestion(form) {
-  return api('/api/auth/nutrition-suggestion', {
-    method: 'POST',
-    body: JSON.stringify(form || {}),
-  });
-}
-
 /* ---- Calendar / reminder handlers ---- */
 function syncSelectedDateToVisibleMonth() {
   const parts = String(state.selectedDate || '')
@@ -11487,6 +8948,7 @@ async function addReminder(key, text, time, tag, repeat, until, sound, endTime, 
     }
     state.reminders.push(created);
     reSyncDeviceAlarms();
+    askPushOnce(!!body.time);
     resetCalendarForm();
     if (state.screen === 'calendar') {
       rerenderCalendarSideIfActive();
@@ -11518,13 +8980,16 @@ function focusProps() {
   return {
     // link: { taskId } | { goalId } | null — what the session was spent on.
     onFocusSession: (mode, durationSec, link) => {
+      // A task made offline: its server id once the create has landed, else no
+      // link at all. A `tmp-` id fails the UUID binding (400) and lost the minutes.
+      const id = (v) => (v && !isTempId(realId(v)) ? realId(v) : null);
       const saved = api('/api/focus/sessions', {
         method: 'POST',
         body: JSON.stringify({
           mode,
           durationSec,
-          taskId: (link && link.taskId) || null,
-          goalId: (link && link.goalId) || null,
+          taskId: id(link && link.taskId),
+          goalId: id(link && link.goalId),
         }),
       });
       // A finished focus session may be what a "Deep work 2h" habit was waiting for.
@@ -11548,14 +9013,21 @@ function focusProps() {
     // Daily focus goal, minutes (0 = off). In ui_prefs, where FocusService reads it for the streak.
     focusGoalMins: (state.user && state.user.uiPrefs && state.user.uiPrefs.focusGoalMins) || 0,
     onSetFocusGoal: (mins) => saveUiPrefs({ focusGoalMins: mins }),
+    // The end-of-sprint "Mark done": never flips back a task ticked meanwhile.
+    onFinishTask: (id) => {
+      if ((state.tasks || []).some((t) => t.id === id && !t.done)) toggleTask(id);
+    },
   };
 }
 
-/* A task or goal row's "Start focus": open the timer with it picked. */
+/* A task or goal row's "Start focus": open the timer with it picked. A task
+   row's timer button means "work on this now", so it also starts the clock
+   (`run`); ScreenFocus never restarts a session already running. */
 let focusPreselect = null;
 let focusAutoStart = null; // minutes, or true for the last length: Quick add's "start a focus"
-function startFocusOn(link) {
+function startFocusOn(link, run) {
   focusPreselect = link;
+  if (run) focusAutoStart = true;
   if (state.screen === 'focus') render();
   else setScreen('focus');
 }
@@ -11578,6 +9050,7 @@ function keepDone(old, saved) {
 async function toggleReminderDone(id, key, done) {
   const rem = (state.reminders || []).find((r) => r.id === id);
   if (!rem) return;
+  if (isTempId(realId(id))) return void toastError(null, STILL_SYNCING);
   const before = { doneDates: rem.doneDates, snoozedUntil: rem.snoozedUntil };
   const dates = (rem.doneDates || []).filter((d) => d !== key);
   rem.doneDates = done ? dates.concat(key) : dates;
@@ -11590,7 +9063,7 @@ async function toggleReminderDone(id, key, done) {
   repaint();
   try {
     await api(
-      '/api/reminders/' + encodeURIComponent(id) + '/done?date=' + encodeURIComponent(key),
+      '/api/reminders/' + encodeURIComponent(realId(id)) + '/done?date=' + encodeURIComponent(key),
       { method: done ? 'POST' : 'DELETE' }
     );
   } catch (err) {
@@ -11600,27 +9073,31 @@ async function toggleReminderDone(id, key, done) {
   }
 }
 
-/* Every reminder as an .ics file (GET /api/reminders/export.ics), handed to the
-   OS the way "Download my data" is: share sheet where it takes files, else a
-   plain download. */
-async function exportRemindersIcs(btn) {
-  if (btn) btn.disabled = true;
-  try {
-    let text = '';
-    await api('/api/reminders/export.ics', {
-      headers: { Accept: 'text/calendar' },
-      raw: true,
-      onResponse: async (res) => {
-        text = await res.text();
-      },
-    });
-    const name = 'growth-buddy-reminders.ics';
-    if ((await saveFile(text, name, 'text/calendar', 'Growth Buddy reminders')) === 'saved') pushToast('Your calendar file is downloading. Open it in Google, Apple or Outlook Calendar.', 'success', 4000);
-  } catch (err) {
-    toastError(err, 'Could not export your reminders.');
-  } finally {
-    if (btn) btn.disabled = false;
-  }
+/* Google / Apple / Outlook events in as reminders (import-ui.js, loaded on tap).
+   Times land in the account's zone, the one the scheduler rings them in. */
+function openIcsImportDialog() {
+  const zone = (state.user && state.user.timezone) || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  import('./import-ui.js')
+    .then((m) =>
+      m.openIcsImport({
+        api,
+        existing: state.reminders,
+        zone,
+        today: accountTodayKey,
+        now: accountNowHHMM,
+        onDone: async () => {
+          state.reminders = await api('/api/reminders');
+          reSyncDeviceAlarms();
+          repaintReminderSettings();
+          if (state.screen === 'calendar') {
+            rerenderCalendarSideIfActive();
+            repaintCalendarGrid();
+            rerenderCalendarToolbarIfActive();
+          } else render();
+        },
+      })
+    )
+    .catch((err) => toastError(err, 'Couldn’t open the importer. Check your connection and try again.'));
 }
 
 function snoozeMinutes() {
@@ -11647,7 +9124,7 @@ function clockOf(iso) {
    marked read — a snoozed reminder is dealt with for now. */
 async function snoozeReminder(id, minutes, notifId) {
   try {
-    const saved = await api('/api/reminders/' + encodeURIComponent(id) + '/snooze', {
+    const saved = await api('/api/reminders/' + encodeURIComponent(liveId(id)) + '/snooze', {
       method: 'POST',
       body: JSON.stringify(minutes ? { minutes } : {}),
     });
@@ -11709,16 +9186,18 @@ function repaintCalendarGrid() {
    (`waterUsualHours`, [] = doesn't log water regularly) to nudge water only
    for people who log it. Fetched when either can use it; Home repaints only
    when the answer changed. */
+let waterHoursLoad = null; // boot's request, which wave 2 waits on (loadSecondaryData)
 function loadWaterUsualHours() {
   const nudge = waterReminderPrefs().on;
-  if (!nudge && !featureOn('water')) return;
-  api('/api/water/times?days=14')
+  if (!nudge && !featureOn('water')) return null;
+  return api('/api/water/times?days=14')
     .then((times) => {
       const hours = usualDrinkHours(times);
       const changed = JSON.stringify(hours) !== JSON.stringify(state.waterUsualHours);
       state.waterUsualHours = hours;
       if (nudge) reSyncDeviceAlarms();
-      if (changed && state.screen === 'home' && !state.loading) render();
+      // Before wave 2 lands (achReady), loadSecondaryData's own repaint shows it.
+      if (changed && state.screen === 'home' && !state.loading && state.achReady) render();
     })
     .catch(() => {});
 }
@@ -11886,6 +9365,7 @@ function runInsightAction(action) {
    toast. Call it wherever any of the four inputs changes; the queue is
    rebuilt whole, so a stale one rings for a reminder already deleted. */
 function reSyncDeviceAlarms() {
+  if (!state.user) return; // signed out: endSession's cancelAllAlarms is the last word
   if (!state.user) return; // signed out: logout's cancelAllAlarms is the last word
   syncDeviceAlarms({
     reminders: state.reminders,
@@ -11905,8 +9385,9 @@ function reSyncDeviceAlarms() {
    Done / Snooze on a reminder, Done on a plain habit, +250 ml on the water
    nudge (push.js builds the sets and stamps `extra`). A press opens the app
    and lands here, through the same handlers the in-app taps use, so the toast
-   it shows is the confirmation. A plain tap on the card does what it always
-   did: nothing beyond opening the app. On the web the service worker carries
+   it shows is the confirmation. A plain tap on the card opens what it is
+   about (push.js notificationTarget): the reminder's day on the calendar,
+   Habits, Home for water, the timer. On the web the service worker carries
    these out itself, with a signed ticket (public/push-handlers.js). */
 let notificationActionsArmed = false;
 function armNotificationActions() {
@@ -11920,7 +9401,15 @@ function armNotificationActions() {
 async function handleNotificationAction(ev) {
   const act = ev && ev.actionId;
   const x = (ev && ev.notification && ev.notification.extra) || {};
-  if (!state.user || !act || act === 'tap' || act === 'dismiss') return;
+  if (!state.user || !act || act === 'dismiss') return;
+  if (act === 'tap') {
+    const to = notificationTarget(x);
+    if (!to) return;
+    setScreen(to.screen);
+    // After the switch: calGoTo repaints the month in place, already on Calendar or not.
+    if (to.day) calGoTo(new Date(to.day + 'T12:00:00'));
+    return;
+  }
   if (x.kind === 'water' && act === 'water') {
     await quickAddWater(WATER_ACTION_ML);
   } else if (x.kind === 'reminder' && act === 'snooze' && x.id) {
@@ -12011,15 +9500,35 @@ async function deleteReminder(scope, id, occKey) {
       render();
     }
   };
-  const previous = state.reminders;
   const whole = (scope || 'all') === 'all';
   // Deleting the whole series is the one case whose outcome we can work out
-  // locally, so the row goes now and the request follows. The occurrence scopes
-  // depend on the server's skip list, so they still wait for the refetch.
+  // locally, so it is undoable: the row goes now and the request follows the
+  // toast. The occurrence scopes depend on the server's skip list, so they
+  // still wait for the refetch.
   if (whole) {
-    state.reminders = previous.filter((r) => r.id !== id);
-    repaint();
+    if (!state.reminders.some((r) => r.id === id)) return;
+    deferDelete({
+      message: 'Reminder deleted.',
+      errorText: 'Could not delete reminder.',
+      paint: repaint,
+      ...listSlot(() => state.reminders, (l) => (state.reminders = l), id),
+      commit: async () => {
+        const path = '/api/reminders/' + encodeURIComponent(realId(id)) + '?scope=all';
+        // Offline (or its create still queued): the DELETE waits in the outbox.
+        const queue = () => queueWrite({ method: 'DELETE', path, kind: 'reminder.delete', local: { id } });
+        if (isTempId(realId(id))) return queue();
+        try {
+          await api(path, { method: 'DELETE', keepalive: true });
+        } catch (err) {
+          if (!networkError(err)) throw err;
+          return queue();
+        }
+        if (state.user) reSyncDeviceAlarms();
+      },
+    });
+    return;
   }
+  const previous = state.reminders;
   try {
     const qs = new URLSearchParams();
     qs.set('scope', scope || 'all');
@@ -12027,23 +9536,11 @@ async function deleteReminder(scope, id, occKey) {
       qs.set('date', occKey);
     }
     const path = '/api/reminders/' + encodeURIComponent(realId(id)) + '?' + qs.toString();
-    // The whole series, offline (or one whose create is still queued): the row
-    // stays gone and the DELETE waits in the outbox.
-    const queue = () => queueWrite({ method: 'DELETE', path, kind: 'reminder.delete', local: { id } });
-    if (whole && isTempId(realId(id))) return queue();
-    try {
-      await api(path, { method: 'DELETE' });
-    } catch (err) {
-      if (!whole || !networkError(err)) throw err;
-      return queue();
-    }
-    if (!whole) {
-      state.reminders = await api('/api/reminders');
-      repaint();
-    }
+    await api(path, { method: 'DELETE' });
+    state.reminders = await api('/api/reminders');
+    repaint();
     toastSuccess('Reminder deleted.');
   } catch (err) {
-    // Put it back: the row is gone from the screen but not from the server.
     state.reminders = previous;
     repaint();
     toastError(err, 'Could not delete reminder.');
@@ -12061,7 +9558,7 @@ function openModal(opts) {
 function segmented(options, initial, onChange) {
   let selected = initial;
   const segs = {};
-  const wrap = h('div', { class: 'gb-segmented', role: 'radiogroup' });
+  const wrap = rovingGroup(h('div', { class: 'gb-segmented', role: 'radiogroup' }));
   options.forEach((opt) => {
     const btn = h(
       'button',
@@ -12086,6 +9583,74 @@ function segmented(options, initial, onChange) {
     wrap.appendChild(btn);
   });
   return { node: wrap, get: () => selected };
+}
+
+/* Quick add's one sentence -> preview (or straight through for controls only).
+   Shared by the Quick add bar (quickAddBox) and the command palette.
+   `beforeShow` runs once there is something to show (the caller's sheet
+   closes); false = nothing read (it has already said why), and a thrown error
+   is the caller's to report. `opts.preview`: always show the preview, even for
+   controls alone (a share into the app: words the user didn't type here, so
+   even "dark mode" waits). `opts.onLogged` / `opts.onCancel`: the preview's
+   outcome. `opts.example`: the phrase the can't-read-that toast suggests. */
+async function runQuickAdd(text, beforeShow, opts = {}) {
+  const example = opts.example || 'spent 200 on lunch, slept 7h';
+  const r = await parseQuickAdd(text);
+  const skipped = r.skipped || [];
+  const rows = r.intents.map((it) => ({ it, d: describeIntent(it) })).filter((x) => x.d);
+  if (!rows.length) {
+    pushToast(
+      skipped.length
+        ? skipped.join(' ')
+        : r.unavailable
+          ? "Couldn't reach the assistant, and couldn't read that without it. Try again?"
+          : !r.configured || r.limited
+            ? 'Couldn’t read that. Try short phrases like “' + example + '”.'
+            : 'Couldn’t find anything to log there. Try short phrases like “' + example + '”.',
+      skipped.length ? 'info' : 'error',
+      4200
+    );
+    return false;
+  }
+  // One clear thing, read by the model: write it now and say it with an Undo.
+  // A second dialog to confirm every correct read cost a tap and a screen each
+  // time. Several things, a plain-pattern (fallback) read, a row it couldn't
+  // match, one that needs a rate, or a share (opts.preview) still get the preview.
+  const one = rows.length === 1 && rows[0];
+  if (!opts.preview && one && !r.fallback && !skipped.length && !one.d.unknown && !one.d.unticked && !CONTROL_INTENTS.has(one.it.type)) {
+    const errBefore = lastError.id;
+    const applied = await applyQuickAdd([one.it]);
+    if (!applied.length) {
+      if (lastError.id === errBefore) pushToast('Couldn’t log that. Try again?', 'error');
+      return false;
+    }
+    if (beforeShow) beforeShow();
+    if (opts.onLogged) opts.onLogged();
+    announceQuickAdd(applied, 'Logged: ' + one.d.label + (one.d.detail ? ' \u00b7 ' + one.d.detail : ''));
+    // As the preview's Log it does: the screen behind shows what was just written.
+    await loadData();
+    return true;
+  }
+  if (beforeShow) beforeShow();
+  // Only controls ("open money", "dark mode"): just do it — nothing is written
+  // that a preview would protect.
+  if (!opts.preview && rows.every((x) => CONTROL_INTENTS.has(x.it.type) && !x.d.unknown)) {
+    await applyQuickAdd(rows.map((x) => x.it));
+    if (opts.onLogged) opts.onLogged();
+    return true;
+  }
+  const sub = [
+    r.limited
+      ? 'Read without AI this time — switch off anything it got wrong.'
+      : r.fallback
+        ? 'Read without the assistant — switch off anything it got wrong.'
+        : '',
+    ...skipped,
+  ]
+    .filter(Boolean)
+    .join(' ');
+  openQuickAddPreview(rows, sub, opts.onLogged, opts.onCancel);
+  return true;
 }
 
 /* Where the Quick add Photo option hands a photo once its kind is picked
@@ -12132,85 +9697,17 @@ const SNAP_ROUTES = {
     }
   },
 };
-
-// Quick add's example sentence: the bar's placeholder and the can't-read-that toast.
-// No money example when Money is off.
-const quickAddExample = () => (featureOn('money') ? 'spent 200 on lunch, slept 7h' : 'slept 7h, call mom at 6');
-
-/* One sentence through Quick add: parse, then the preview (or straight through
-   when it is only controls). Shared by the bar below and the command palette.
-   false = nothing read, and it has already said why; true = onLeave ran and the
-   preview is up (onLogged once it is logged, onCancel if dismissed) or the
-   controls ran, or one clear read was saved at once with an Undo toast. A thrown
-   error is the caller's to report. */
-async function runQuickAdd(text, { onLeave, onLogged, onCancel } = {}) {
-  const example = quickAddExample();
-  const r = await parseQuickAdd(text);
-  const rows = r.intents.map((it) => ({ it, d: describeIntent(it) })).filter((x) => x.d);
-  if (!rows.length) {
-    pushToast(
-      r.skipped.length
-        ? r.skipped.join(' ')
-        : r.unavailable
-          ? "Couldn't reach the assistant, and couldn't read that without it. Try again?"
-          : !r.configured || r.limited
-            ? 'Couldn’t read that. Try short phrases like “' + example + '”.'
-            : 'Couldn’t find anything to log there. Try short phrases like “' + example + '”.',
-      r.skipped.length ? 'info' : 'error',
-      4200
-    );
-    return false;
-  }
-  // One clear thing, read by the model: write it now and say it with an Undo
-  // (FRC-4). A second dialog to confirm every correct read cost a tap and a
-  // screen each time. Several things, a plain-pattern (fallback) read, a row
-  // it couldn't match or one that needs a rate still get the preview.
-  const one = rows.length === 1 && rows[0];
-  if (one && !r.fallback && !r.skipped.length && !one.d.unknown && !one.d.unticked && !CONTROL_INTENTS.has(one.it.type)) {
-    const errBefore = lastError.id;
-    const applied = await applyQuickAdd([one.it]);
-    if (!applied.length) {
-      if (lastError.id === errBefore) pushToast('Couldn’t log that. Try again?', 'error');
-      return false;
-    }
-    onLeave && onLeave();
-    onLogged && onLogged();
-    announceQuickAdd(applied, 'Logged: ' + one.d.label + (one.d.detail ? ' \u00b7 ' + one.d.detail : ''));
-    // As the preview's Log it does: the screen behind shows what was just written.
-    await loadData();
-    return true;
-  }
-  onLeave && onLeave();
-  // Only controls ("open money", "dark mode"): just do it — nothing is written
-  // that a preview would protect.
-  if (rows.every((x) => CONTROL_INTENTS.has(x.it.type) && !x.d.unknown)) {
-    await applyQuickAdd(rows.map((x) => x.it));
-    onLogged && onLogged();
-    return true;
-  }
-  const sub = [
-    r.limited
-      ? 'Read without AI this time — switch off anything it got wrong.'
-      : r.fallback
-        ? 'Read without the assistant — switch off anything it got wrong.'
-        : '',
-    ...r.skipped,
-  ]
-    .filter(Boolean)
-    .join(' ');
-  openQuickAddPreview(rows, sub, onLogged, onCancel);
-  return true;
-}
-
 // The Quick add bar: one sentence, sorted into the right trackers. Shared by
 // openAddSheet and the top of Home (homeQuickAdd); onLeave runs once a parse
 // found something, before the preview opens. The line is cleared only once it
 // is logged. Cancelling the preview hands the text to onCancel (the sheet,
-// closed by onLeave, reopens with it), else focuses this box again.
-function quickAddBox({ onLeave, onCancel, text = '' } = {}) {
+// closed by onLeave, reopens with it), else focuses this box again. `preview`
+// with `text`: read it at once and always show the preview (a share into the app).
+function quickAddBox({ onLeave, onCancel, text = '', preview = false } = {}) {
   // Natural-language quick-add: type it once, we sort it into the right trackers.
-  // Short enough not to be cut off on a phone.
-  const example = quickAddExample();
+  // Short enough not to be cut off on a phone; no money example when Money is
+  // off. The placeholder and the can't-read-that toast share it.
+  const example = featureOn('money') ? 'spent 200 on lunch, slept 7h' : 'slept 7h, call mom at 6';
   const qaInput = h('input', {
     type: 'text',
     class: 'gb-input',
@@ -12230,30 +9727,33 @@ function quickAddBox({ onLeave, onCancel, text = '' } = {}) {
     if (!text) return;
     qaInput.disabled = true;
     const done = setThinking(qaBtn, 'Reading');
-    // The Home bar outlives the submit (the sheet closes), so hand it back usable.
-    const ready = () => {
-      done();
-      qaInput.disabled = false;
-    };
     try {
-      const read = await runQuickAdd(text, {
-        onLeave: () => {
-          ready();
+      const shown = await runQuickAdd(
+        text,
+        () => {
+          // The Home bar outlives the submit (the sheet closes), so hand it back usable.
+          done();
+          qaInput.disabled = false;
           onLeave && onLeave();
         },
-        onLogged: () => {
-          qaInput.value = '';
-        },
-        onCancel: () => {
-          if (onCancel) onCancel(qaInput.value);
-          else if (qaInput.isConnected) qaInput.focus();
-        },
-      });
-      if (!read) ready();
+        {
+          preview,
+          example,
+          onLogged: () => {
+            qaInput.value = ''; // cleared only once it is logged
+          },
+          onCancel: () => {
+            if (onCancel) onCancel(qaInput.value);
+            else if (qaInput.isConnected) qaInput.focus();
+          },
+        }
+      );
+      if (shown) return;
     } catch (err) {
-      ready();
       toastError(err, 'Quick add failed. Try again?');
     }
+    done();
+    qaInput.disabled = false;
   }
   qaBtn.addEventListener('click', submitQuickAdd);
   qaInput.addEventListener('keydown', (e) => {
@@ -12274,25 +9774,8 @@ function quickAddBox({ onLeave, onCancel, text = '' } = {}) {
   let micBtn = null;
   let langBtn = null;
   if (SR || capSR) {
-    const LANGS = [
-      { code: 'en-IN', label: 'English' },
-      { code: 'hi-IN', label: 'हिन्दी' },
-      { code: 'ta-IN', label: 'தமிழ்' },
-      { code: 'te-IN', label: 'తెలుగు' },
-      { code: 'kn-IN', label: 'ಕನ್ನಡ' },
-      { code: 'ml-IN', label: 'മലയാളം' },
-      { code: 'bn-IN', label: 'বাংলা' },
-      { code: 'mr-IN', label: 'मराठी' },
-      { code: 'gu-IN', label: 'ગુજરાતી' },
-      { code: 'pa-IN', label: 'ਪੰਜਾਬੀ' },
-    ];
-    const device = navigator.language || 'en-IN';
-    const sameBase = (a, b) => a.split('-')[0] === b.split('-')[0];
-    let langCode =
-      ((state.user && state.user.uiPrefs) || {}).qaLang ||
-      (LANGS.find((l) => l.code === device) || LANGS.find((l) => sameBase(l.code, device)) || {})
-        .code ||
-      device;
+    const LANGS = VOICE_LANGS.slice(); // the device's own may be added below
+    let langCode = speechLang();
     if (!LANGS.some((l) => l.code === langCode)) {
       // Device speaks something we didn't list — offer it anyway, by name.
       let label = langCode;
@@ -12340,6 +9823,8 @@ function quickAddBox({ onLeave, onCancel, text = '' } = {}) {
     });
   }
 
+  if (preview && text) setTimeout(submitQuickAdd, 0);
+
   return h(
     'div',
     { class: 'gb-quickadd' },
@@ -12365,14 +9850,13 @@ function homeQuickAdd() {
   return (homeQaNode = quickAddBox());
 }
 
-// `prefill`: the Quick add line coming back from a cancelled preview (onAdd
-// passes a click event, hence the type check).
-/* Quick add's Note row: the Notes screen opens with its composer open, once. */
-let notesOpenComposer = false;
-
+// `prefill`: the Quick add line coming back from a cancelled preview (a string;
+// onAdd passes a click event, hence the type check), or `{ text, preview }`, a
+// share into the app, read at once into Quick add's preview (runQuickAdd's opts).
 function openAddSheet(prefill) {
   const { sheet, close } = openOverlay({ label: 'Quick add' });
-  const qaText = typeof prefill === 'string' ? prefill : '';
+  const share = prefill && typeof prefill === 'object' && typeof prefill.text === 'string' ? prefill : null;
+  const qaText = typeof prefill === 'string' ? prefill : share ? share.text : '';
 
   const routes = snapRoutes();
   const opts = [
@@ -12419,8 +9903,7 @@ function openAddSheet(prefill) {
       sub: 'Jot something down',
       action: () => {
         close();
-        // Straight into the composer, not the list above it (FRC-5).
-        notesOpenComposer = true;
+        pendingNoteOpen = 'new'; // Notes opens with the composer open and focused
         setScreen('notes');
       },
     },
@@ -12429,11 +9912,10 @@ function openAddSheet(prefill) {
       feature: 'calendar',
       icon: 'calendar-plus',
       label: 'Reminder',
-      sub: 'Opens your calendar to pick a day',
+      sub: 'What and when, in one line',
       action: () => {
         close();
-        calToday();
-        setScreen('calendar');
+        openReminderSheet();
       },
     },
     {
@@ -12467,7 +9949,7 @@ function openAddSheet(prefill) {
     // The line comes first and has the focus: "buy milk" is type and Enter
     // (FRC-4); under the rows it was a tap away. Without the AI key the server's
     // plain patterns still read it, and what they read is previewed.
-    quickAddBox({ onLeave: close, onCancel: openAddSheet, text: qaText }),
+    quickAddBox({ onLeave: close, onCancel: openAddSheet, text: qaText, preview: !!(share && share.preview) }),
     h('div', { class: 'gb-quickadd-or' }, 'or pick one'),
     h(
       'div',
@@ -12549,6 +10031,45 @@ function taskForm(task, presetGoalId, presetDue) {
     value: task && task.dueAt ? toDateTimeLocal(task.dueAt) : presetDue ? toDateTimeLocal(presetDue.toISOString()) : '',
   });
   const dueDefault = dueInput.value; // what Due goes back to when the title stops naming a time
+  // Today / Tomorrow set the end of that local day; Pick opens the full picker.
+  // No chip is the default, so nothing turns overdue by itself.
+  const endOf = (days) => {
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    d.setHours(23, 59, 0, 0);
+    return toDateTimeLocal(d.toISOString());
+  };
+  const dueChips = [
+    { label: 'Today', days: 0 },
+    { label: 'Tomorrow', days: 1 },
+  ].map((c) => h('button', { type: 'button', class: 'gb-chip', 'aria-pressed': 'false', onclick: () => setDue(endOf(c.days)) }, c.label));
+  const paintDue = () =>
+    dueChips.forEach((b, i) => {
+      const on = dueInput.value === endOf(i);
+      b.classList.toggle('is-on', on);
+      b.setAttribute('aria-pressed', String(on));
+    });
+  const setDue = (v) => {
+    dueInput.value = dueInput.value === v ? '' : v; // a second tap clears it
+    paintDue();
+  };
+  dueInput.addEventListener('input', paintDue);
+  paintDue();
+  const pickBtn = h(
+    'button',
+    {
+      type: 'button',
+      class: 'gb-chip',
+      onclick: () => {
+        try {
+          dueInput.showPicker();
+        } catch (_) {
+          dueInput.focus();
+        }
+      },
+    },
+    'Pick'
+  );
   // Goal (optional): the open goals, plus the one the task is already on even
   // if that goal is done, so editing never silently drops the link.
   const goalNow = (task && task.goalId) || presetGoalId || '';
@@ -12628,11 +10149,13 @@ function taskForm(task, presetGoalId, presetDue) {
       h('div', { class: 'gb-field-label' }, 'Priority'),
       priority.node,
       h('div', { class: 'gb-field-label' }, 'Due (optional)'),
+      h('div', { class: 'gb-due-chips', role: 'group', 'aria-label': 'Due' }, ...dueChips, pickBtn),
       dueInput,
       goalSel ? h('div', { class: 'gb-field-label' }, 'Goal (optional)') : null,
       goalSel
     ),
     focus: () => focusSoon(titleInput),
+    titleInput,
     read: () => {
       const title = visibleText(when ? when.rest : titleInput.value);
       if (!title) throw fieldRefusal(titleInput, 'Give the task a title.');
@@ -12673,12 +10196,46 @@ function openAddTask(goal) {
     else due.setHours(hr, 0, 0, 0);
   }
   const form = taskForm(null, goal && typeof goal.id === 'string' ? goal.id : null, due);
+  // A run of tasks: "Add another" (or Shift+Enter in the title) saves this one
+  // and clears the title for the next, keeping priority, due and goal.
+  let adding = false;
+  const addAnother = async () => {
+    if (adding) return;
+    adding = true;
+    anotherBtn.disabled = true;
+    try {
+      await createTask(form.read());
+      render();
+      toastSuccess('Task added.');
+      form.titleInput.value = '';
+      form.titleInput.focus();
+    } catch (err) {
+      if (err && err.field) fieldError(err.field, err.message);
+      else toastError(err, 'Could not add the task.');
+    } finally {
+      adding = false;
+      anotherBtn.disabled = false;
+    }
+  };
+  const anotherBtn = h(
+    'button',
+    { type: 'button', class: 'gb-btn gb-btn--secondary gb-btn--compact', style: { marginTop: '10px' }, onclick: addAnother },
+    Icon('plus', { size: 14, sw: 2.4 }),
+    'Add another'
+  );
+  form.titleInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      addAnother();
+    }
+  });
   const close = openModal({
     title: 'New task',
     body: h(
       'div',
       null,
       form.node,
+      anotherBtn,
       h(
         'button',
         {
@@ -12877,64 +10434,11 @@ function openEditTask(task) {
     onPrimary: () => updateTask(task.id, form.read()),
     danger: {
       label: 'Delete task',
-      onClick: () => confirmDelete('Delete “' + task.title + '”?', () => deleteTask(task.id)),
+      onClick: () => deleteTask(task.id), // undoable: no confirm
     },
   });
   form.focus();
 }
-
-function colorPicker(initial) {
-  // Friendly palette mapped to token-aware hexes (so dark mode still reads OK).
-  const swatches = [
-    { v: '#F97316', name: 'orange' },
-    { v: '#22C55E', name: 'green' },
-    { v: '#0EA5E9', name: 'sky' },
-    { v: '#6C5CE7', name: 'iris' },
-    { v: '#E11D48', name: 'coral' },
-    { v: '#EAB308', name: 'sun' },
-  ];
-  let selected = initial || '';
-  const wrap = h('div', { class: 'gb-color-pick', role: 'radiogroup', 'aria-label': 'Color' });
-  const dots = {};
-  swatches.forEach((s) => {
-    const dot = h('button', {
-      type: 'button',
-      class: 'gb-color-dot' + (s.v === selected ? ' is-on' : ''),
-      style: { background: s.v },
-      'aria-label': s.name,
-      'aria-checked': String(s.v === selected),
-      onclick: () => {
-        selected = selected === s.v ? '' : s.v;
-        for (const k in dots) dots[k].classList.toggle('is-on', k === selected);
-      },
-    });
-    dots[s.v] = dot;
-    wrap.appendChild(dot);
-  });
-  return { node: wrap, get: () => selected };
-}
-
-/* Fitness habits measure something. Picking one fills the name, the icon and
-   what it records, so the common cases are one tap instead of three fields.
-   'minutes' is the honest unit for a workout nobody measures in distance. */
-const FITNESS_PRESETS = [
-  { key: 'running', label: 'Running', name: 'Running', icon: 'footprints', metric: 'km' },
-  { key: 'cycling', label: 'Cycling', name: 'Cycling', icon: 'bike', metric: 'km' },
-  { key: 'walking', label: 'Walking', name: 'Walking', icon: 'footprints', metric: 'steps' },
-  { key: 'workout', label: 'Workout', name: 'Workout', icon: 'dumbbell', metric: 'minutes' },
-];
-
-/* Starter templates on New habit: one tap fills the name, category, icon and
-   (for a quit one) the kind, then the form is the user's to change. Icons must
-   be in HabitService.HABIT_ICONS (HabitIconsTest reads this list). */
-const HABIT_TEMPLATES = [
-  // reminderTime: the starter packs' time for the same habit (starter-packs.js) where there is one.
-  { key: 'water', name: 'Drink water', domain: 'habit', icon: 'droplets', reminderTime: '10:00' },
-  { key: 'read', name: 'Read 20 min', domain: 'study', icon: 'book-open', reminderTime: '21:30' },
-  { key: 'walk', name: 'Walk 8k steps', domain: 'fitness', icon: 'footprints', metric: 'steps', reminderTime: '18:00' },
-  { key: 'nosugar', name: 'No sugar', domain: 'habit', icon: 'ban', kind: 'quit' },
-  { key: 'meditate', name: 'Meditate', domain: 'habit', icon: 'leaf', metric: 'minutes', reminderTime: '07:00' },
-];
 
 const METRIC_LABEL = { none: 'Just a tick', km: 'Distance (km)', steps: 'Steps', minutes: 'Minutes' };
 const METRIC_UNIT = { km: 'km', steps: 'steps', minutes: 'min' };
@@ -12977,751 +10481,6 @@ function accountTodayKey() {
     }
   }
   return todayKey();
-}
-
-const HEAT_LABEL = {
-  done: 'done',
-  frozen: 'covered by a freeze',
-  missed: 'missed',
-  open: 'not done',
-  today: 'not done yet',
-  before: 'before this habit started',
-  future: 'not yet',
-  // A quit ("break a habit") habit's days.
-  clean: 'clean',
-  slipped: 'slipped',
-};
-
-/* ---- A habit's history (Edit habit's top block) ----
-   12 ISO weeks of done / missed / frozen days from GET /api/habits/{id}/history,
-   plus the numbers habit-stats.js derives from the same rows: completion over
-   30 days and since it started, and the best streak in the cadence's unit.
-   Today and the 7 days before it are buttons: a tap opens that day's popover
-   (dayPopover) — tick / un-tick (a quit habit: log / undo a slip) and the
-   day's note — saved through the ordinary check-in endpoint with its `date`
-   (the server refuses a future day; a day before the habit existed is not
-   offered). Under the legend, the last few days that carry a note. */
-function habitHistoryPanel(habit) {
-  const panel = h(
-    'section',
-    { class: 'gb-hh', 'aria-label': 'History' },
-    h('div', { class: 'gb-hh-loading' }, 'Loading history…')
-  );
-  // Two years: "all time" for nearly everyone; past that the server's `since`
-  // is the window's start and the label says so.
-  const SPAN_DAYS = 730;
-  let rows = [];
-  let since = '';
-  let clipped = false;
-  let busy = false;
-
-  async function load() {
-    try {
-      const res = await api(
-        '/api/habits/' + encodeURIComponent(habit.id) + '/history?days=' + SPAN_DAYS
-      );
-      rows = (res && res.days) || [];
-      since = (res && res.since) || '';
-      clipped = !!since && daysFrom(since, accountTodayKey()) >= SPAN_DAYS;
-      paint();
-    } catch (_) {
-      panel.replaceChildren(
-        h('div', { class: 'gb-hh-loading' }, 'Could not load this habit’s history.')
-      );
-    }
-  }
-
-  // The day whose popover is open (tick or slip + its note), or null.
-  let openDay = null;
-
-  function isDone(row) {
-    // A quit habit's day is "done" (clean) unless its row is a slip.
-    return isQuitHabit(habit) ? !isSlipRow(row) : !!(row && row.done);
-  }
-
-  /* Save one day: its done state (on a quit habit, done = false is the slip)
-     and, when given, its note. Optimistic: painted first, rolled back on a
-     failure. A note alone on a missed day of a build habit is a not-done row
-     with a note — no tick, no XP. */
-  async function saveDay(key, nextDone, note) {
-    if (busy) return;
-    const prev = rows;
-    const row = rows.find((r) => r.date === key);
-    const changed = nextDone !== isDone(row);
-    busy = true;
-    rows = rows
-      .filter((r) => r.date !== key)
-      .concat({
-        date: key,
-        done: nextDone,
-        protectedDay: nextDone || isQuitHabit(habit) ? false : !!(row && row.protectedDay),
-        note: note != null ? note || null : row ? row.note : null,
-      });
-    paint();
-    try {
-      const body = { date: key, done: nextDone };
-      if (note != null) body.note = note;
-      const updated = await api('/api/habits/' + encodeURIComponent(habit.id) + '/checkin', {
-        method: 'POST',
-        body: JSON.stringify(body),
-      });
-      if (updated && updated.id) {
-        state.habits = state.habits.map((x) => (x.id === updated.id ? updated : x));
-        reconcileStreakFreeze(updated);
-        habit = updated;
-      }
-      forgetGoalHabitHistory(habit.id);
-      let what;
-      if (isQuitHabit(habit)) what = nextDone ? 'Slip taken back on ' : 'Slip logged on ';
-      else what = nextDone ? 'Ticked ' : 'Un-ticked ';
-      announce(changed ? what + fmtDayKey(key) + '.' : 'Note saved for ' + fmtDayKey(key) + '.');
-      // Today's tick moves the ring; an earlier day only the streak.
-      if (changed && key === accountTodayKey()) refreshScoreLater();
-      render();
-      reSyncDeviceAlarms();
-    } catch (err) {
-      rows = prev;
-      toastError(err, 'Could not update that day.');
-    } finally {
-      busy = false;
-      paint();
-      // The repaint replaced the button that had focus; put it back on that day.
-      const again = panel.querySelector('[data-hh-day="' + key + '"]');
-      if (again) again.focus();
-    }
-  }
-
-  function fmtDayKey(key) {
-    return new Date(key + 'T12:00:00').toLocaleDateString(undefined, {
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric',
-    });
-  }
-
-  /* The open day's popover: its state, the tick (or slip) button and its note. */
-  function dayPopover(key, dayState) {
-    const quit = isQuitHabit(habit);
-    const row = rows.find((r) => r.date === key);
-    const done = isDone(row);
-    const note = habitNoteInput(row && row.note);
-    let toggleLabel;
-    let toggleIcon;
-    if (quit) {
-      toggleLabel = done ? 'Log a slip' : 'Undo the slip';
-      toggleIcon = done ? 'ban' : 'undo-2';
-    } else {
-      toggleLabel = done ? 'Un-tick' : 'Mark done';
-      toggleIcon = done ? 'undo-2' : 'check';
-    }
-    // What was logged that day ("7,300 steps"). History rows carry `value` /
-    // `durationMin` once the server sends them; today's comes off the habit.
-    const isToday = key === accountTodayKey();
-    const logged =
-      done && !quit
-        ? metricSummary(
-            habit.metric,
-            row && row.value != null ? row.value : isToday ? habit.todayValue : null,
-            row && row.durationMin != null ? row.durationMin : isToday ? habit.todayDurationMin : null
-          )
-        : '';
-    // On a done day the likely act is the note, so Save note leads and
-    // Un-tick steps back; on an open day Mark done is the point.
-    const untick = done && !quit;
-    return h(
-      'div',
-      { class: 'gb-hh-pop', role: 'group', 'aria-label': fmtDayKey(key) },
-      h(
-        'div',
-        { class: 'gb-hh-pop-head' },
-        h('span', null, fmtDayKey(key) + ' · ' + HEAT_LABEL[dayState]),
-        h(
-          'button',
-          {
-            type: 'button',
-            class: 'gb-icon-btn',
-            'aria-label': 'Close this day',
-            onclick: () => {
-              openDay = null;
-              paint();
-              const cell = panel.querySelector('[data-hh-day="' + key + '"]');
-              if (cell) cell.focus();
-            },
-          },
-          Icon('x', { size: 16, sw: 2.4 })
-        )
-      ),
-      logged ? h('div', { class: 'gb-field-hint' }, 'Logged ' + logged) : null,
-      note,
-      h(
-        'div',
-        { class: 'gb-hh-pop-actions' },
-        h(
-          'button',
-          {
-            type: 'button',
-            class: 'gb-btn ' + ((quit && done) || untick ? 'gb-btn--soft' : 'gb-btn--primary'),
-            disabled: busy,
-            onclick: () => saveDay(key, !done, note.value.trim()),
-          },
-          Icon(toggleIcon, { size: 15, sw: 2.4 }),
-          toggleLabel
-        ),
-        h(
-          'button',
-          {
-            type: 'button',
-            class: 'gb-btn ' + (untick ? 'gb-btn--primary' : 'gb-btn--soft'),
-            disabled: busy,
-            onclick: () => saveDay(key, done, note.value.trim()),
-          },
-          'Save note'
-        )
-      )
-    );
-  }
-
-  function paint() {
-    const today = accountTodayKey();
-    const cadence = habit.cadence || 'daily';
-    const kind = isQuitHabit(habit) ? 'quit' : 'build';
-    const quit = kind === 'quit';
-    const stats = habitStats({
-      days: rows,
-      since,
-      today,
-      cadence,
-      targetPerWeek: habit.targetPerWeek,
-      kind,
-    });
-    // The server's longest only grows, and remembers runs older than this window.
-    const best = Math.max(stats.best, Number(habit.longestStreak) || 0);
-    // From the habit's first week, not a fixed 12: a new habit's grid was
-    // mostly "before this habit started" with its real days packed in a corner.
-    // At least 3 weeks, so a habit started this week still reads as a grid.
-    const sinceWeeks = since
-      ? Math.floor(daysFrom(isoWeekStart(since), isoWeekStart(today)) / 7) + 1
-      : 12;
-    const weekCount = Math.min(12, Math.max(3, sinceWeeks));
-    const weeks = heatmapWeeks({ days: rows, since, today, cadence, kind, weeks: weekCount });
-    let openState = null;
-    const grid = h(
-      'div',
-      {
-        class: 'gb-hh-grid',
-        role: 'group',
-        'aria-label': 'Last ' + weekCount + ' weeks',
-        // The CSS assumes 12 columns; fewer get cell-sized ones, not 1fr strips.
-        style: weekCount < 12 ? { gridTemplateColumns: 'repeat(' + weekCount + ', minmax(0, 28px))' } : null,
-      },
-      weeks.map((w) =>
-        h(
-          'div',
-          { class: 'gb-hh-week' },
-          w.cells.map((c) => {
-            const editable = canEditDay(c.date, { today, since });
-            const label = fmtDayKey(c.date) + ': ' + HEAT_LABEL[c.state];
-            const cls = 'gb-hh-day is-' + c.state + (c.date === today ? ' is-now' : '');
-            if (editable && c.date === openDay) openState = c.state;
-            return editable
-              ? h('button', {
-                  type: 'button',
-                  class: cls + ' is-editable',
-                  disabled: busy,
-                  'aria-expanded': String(c.date === openDay),
-                  'data-hh-day': c.date,
-                  'aria-label':
-                    label + '. Tap to ' + (quit ? 'log a slip' : 'tick') + ' or add a note',
-                  title: label,
-                  onclick: () => {
-                    openDay = openDay === c.date ? null : c.date;
-                    paint();
-                    const again = panel.querySelector('[data-hh-day="' + c.date + '"]');
-                    if (again) again.focus();
-                  },
-                })
-              : h('span', { class: cls, role: 'img', 'aria-label': label, title: label });
-          })
-        )
-      )
-    );
-    const unit = stats.unit === 'week' ? 'week' : 'day';
-    const stat = (value, label) =>
-      h(
-        'div',
-        { class: 'gb-hh-stat' },
-        h('span', { class: 'gb-hh-stat-val' }, value),
-        h('span', { class: 'gb-hh-stat-label' }, label)
-      );
-    const legend = quit
-      ? ['clean', 'slipped']
-      : ['done', cadence === 'daily' ? 'missed' : 'open', 'frozen'];
-    const notes = recentNotes({ days: rows, since, today, cadence, kind });
-    let allLabel = clipped ? 'Last 2 years' : 'All time';
-    if (quit) allLabel = 'Clean, ' + allLabel.toLowerCase();
-    // Filtered: replaceChildren prints a null child as the text "null".
-    const parts = [
-      h(
-        'div',
-        { class: 'gb-hh-stats' },
-        stat(pctLabel(stats.rate30), quit ? 'Clean, 30 days' : 'Last 30 days'),
-        stat(pctLabel(stats.rateAll), allLabel),
-        stat(String(best), quit ? 'Best clean run (days)' : 'Best streak (' + unit + 's)')
-      ),
-      grid,
-      openState ? dayPopover(openDay, openState) : null,
-      h(
-        'div',
-        { class: 'gb-hh-legend', 'aria-hidden': 'true' },
-        legend.map((s) =>
-          h(
-            'span',
-            { class: 'gb-hh-legend-item' },
-            h('span', { class: 'gb-hh-day is-' + s }),
-            s === 'open' ? 'Not done' : s === 'frozen' ? 'Freeze' : s[0].toUpperCase() + s.slice(1)
-          )
-        )
-      ),
-      h(
-        'div',
-        { class: 'gb-field-hint' },
-        quit
-          ? 'Tap any of the last 7 days to log or undo a slip, or add a note.'
-          : 'Forgot to tick? Tap any of the last 7 days to tick it, un-tick it or add a note.'
-      ),
-      notes.length
-        ? h(
-            'ul',
-            { class: 'gb-hh-notes', 'aria-label': 'Recent notes' },
-            notes.map((n) =>
-              h(
-                'li',
-                { class: 'gb-hh-note' },
-                h('span', { class: 'gb-hh-day is-' + n.state, 'aria-hidden': 'true' }),
-                h('span', { class: 'gb-hh-note-date' }, fmtDayKey(n.date)),
-                h('span', null, n.note)
-              )
-            )
-          )
-        : null,
-    ];
-    panel.replaceChildren(...parts.filter(Boolean));
-  }
-
-  load();
-  return panel;
-}
-
-function openHabitForm(habit) {
-  const nameInput = h('input', {
-    type: 'text',
-    class: 'gb-input',
-    placeholder: 'e.g. Meditate',
-    maxlength: 120,
-    value: habit ? habit.name : '',
-  });
-  // Assigned once the fields it toggles exist; segmented() takes its handler at
-  // construction, and the preset row is built below.
-  let syncDomain = () => {};
-  const domain = segmented(
-    [
-      { value: 'habit', label: 'General' },
-      { value: 'fitness', label: 'Fitness' },
-      { value: 'study', label: 'Study' },
-      { value: 'journal', label: 'Journal' },
-    ],
-    (habit && habit.domain) || 'habit',
-    (d) => syncDomain(d)
-  );
-  // "N× a week" is the custom cadence: the server always had it (targetPerWeek,
-  // weekly-bucket streaks), but the form offered only Daily and Weekly.
-  const targetInput = h('input', {
-    type: 'number',
-    class: 'gb-input',
-    min: '1',
-    max: '7',
-    step: '1',
-    inputmode: 'numeric',
-    'aria-label': 'Times per week',
-    value: String(habit && habit.cadence === 'custom' ? habit.targetPerWeek || 3 : 3),
-  });
-  const targetField = h(
-    'div',
-    { style: { display: habit && habit.cadence === 'custom' ? '' : 'none' } },
-    h('div', { class: 'gb-field-label' }, 'Times per week'),
-    targetInput
-  );
-  const cadence = segmented(
-    [
-      { value: 'daily', label: 'Daily' },
-      { value: 'weekly', label: 'Weekly' },
-      { value: 'custom', label: 'N× a week' },
-    ],
-    (habit && habit.cadence) || 'daily',
-    (c) => {
-      targetField.style.display = c === 'custom' ? '' : 'none';
-    }
-  );
-  // Pause keeps the habit and its history but takes it out of today's score,
-  // Home's count and its reminders (Habit.active; the scheduler skips inactive).
-  let paused = !!habit && habit.active === false;
-  const pauseSwitch = habit
-    ? h(
-        'button',
-        {
-          type: 'button',
-          role: 'switch',
-          'aria-checked': String(paused),
-          'aria-label': 'Pause this habit',
-          class: 'gb-switch' + (paused ? ' is-on' : ''),
-          onclick: () => {
-            paused = !paused;
-            pauseSwitch.classList.toggle('is-on', paused);
-            pauseSwitch.setAttribute('aria-checked', String(paused));
-          },
-        },
-        h('span', { class: 'gb-switch-knob' })
-      )
-    : null;
-  const color = colorPicker((habit && habit.color) || '');
-  const reminderInput = h('input', {
-    type: 'time',
-    class: 'gb-input',
-    // A new habit starts at the time this user already likes to be nudged (the
-    // median of their other habits' reminders); none set anywhere, none here.
-    value: habit
-      ? habit.reminderTime
-        ? String(habit.reminderTime).slice(0, 5)
-        : ''
-      : suggestReminderTime(state.habits, ''),
-  });
-  const toneSel = h(
-    'select',
-    { class: 'gb-input', 'aria-label': 'Habit reminder tone' },
-    [h('option', { value: '' }, 'Default tone')].concat(
-      chimeOptions().map((c) =>
-        h('option', { value: c.key }, c.key === 'off' ? 'Silent — no alert' : c.label)
-      )
-    )
-  );
-  if (habit) toneSel.value = chimeOptionValue(habit.sound);
-  toneSel.addEventListener('change', () => {
-    if (toneSel.value) playChime(toneSel.value);
-  });
-
-  let presetIcon = null;
-  // A preset names the habit only if you haven't: it used to overwrite what you typed.
-  let presetName = '';
-  const metricSel = h(
-    'select',
-    { class: 'gb-input', 'aria-label': 'What this habit records' },
-    Object.keys(METRIC_LABEL).map((k) => h('option', { value: k }, METRIC_LABEL[k]))
-  );
-  const metricField = h(
-    'div',
-    null,
-    h('div', { class: 'gb-field-label' }, 'Records'),
-    metricSel
-  );
-  const presetRow = h(
-    'div',
-    { class: 'gb-preset-row', style: { display: 'none' } },
-    FITNESS_PRESETS.map((pre) =>
-      h(
-        'button',
-        {
-          type: 'button',
-          class: 'gb-preset',
-          onclick: () => {
-            const typed = nameInput.value.trim();
-            if (!typed || typed === presetName) nameInput.value = presetName = pre.name;
-            metricSel.value = pre.metric;
-            presetIcon = pre.icon;
-            for (const b of presetRow.children) b.classList.remove('is-on');
-            presetRow.querySelector('[data-preset="' + pre.key + '"]').classList.add('is-on');
-          },
-          dataset: { preset: pre.key },
-        },
-        Icon(pre.icon, { size: 16, sw: 2.4 }),
-        pre.label
-      )
-    )
-  );
-  // The presets are fitness-only; what a habit records is any build habit's
-  // (Minutes for Meditate is normal). Switching category keeps the metric: it
-  // used to reset to none off Fitness, so saving an unchanged General habit
-  // that records minutes wiped its metric and last value.
-  syncDomain = (d) => {
-    const fitness = d === 'fitness';
-    presetRow.style.display = fitness ? '' : 'none';
-    metricField.style.display = '';
-    if (!fitness) presetIcon = null;
-  };
-  if (habit) {
-    syncDomain(domain.get());
-    metricSel.value = habit.metric || 'none';
-  }
-
-  // A health reading that ticks the habit by itself (autoTickHealthHabits).
-  // A new habit's name picks one ("Sleep well" -> sleep, 7 h) until the user
-  // chooses; editing keeps what the habit has. Ticking by hand still works.
-  const linkSel = h(
-    'select',
-    { class: 'gb-input', 'aria-label': 'Health reading' },
-    h('option', { value: '' }, 'Off, I tick it myself'),
-    ...Object.entries(HEALTH_LINKS).map(([k, L]) => h('option', { value: k }, L.label))
-  );
-  const linkTarget = h('input', {
-    type: 'number',
-    class: 'gb-input',
-    inputmode: 'decimal',
-    'aria-label': 'Daily target',
-  });
-  const linkUnit = h('span', { class: 'gb-field-hint' });
-  const linkTargetRow = h('div', { class: 'gb-habit-link-target' }, linkTarget, linkUnit);
-  let linkTouched = !!habit;
-  const syncLink = (fromUser) => {
-    const L = HEALTH_LINKS[linkSel.value];
-    linkTargetRow.style.display = L ? '' : 'none';
-    if (!L) return;
-    Object.assign(linkTarget, { min: String(L.step), max: String(L.max), step: String(L.step) });
-    linkUnit.textContent = L.unit + ' a day';
-    if (fromUser || !linkTarget.value) linkTarget.value = String(L.def);
-  };
-  const suggestLink = () => {
-    if (linkTouched) return;
-    const g = suggestHealthLink(nameInput.value);
-    linkSel.value = g ? g.link : '';
-    linkTarget.value = g ? String(g.target) : '';
-    syncLink(false);
-  };
-  linkSel.value = (habit && habit.healthLink) || '';
-  linkTarget.value = habit && habit.healthTarget != null ? String(habit.healthTarget) : '';
-  syncLink(false);
-  linkSel.addEventListener('change', () => {
-    linkTouched = true;
-    syncLink(true);
-  });
-  nameInput.addEventListener('input', suggestLink);
-  const linkField = h(
-    'div',
-    null,
-    h('div', { class: 'gb-field-label' }, 'Tick it from health data'),
-    linkSel,
-    linkTargetRow,
-    h(
-      'div',
-      { class: 'gb-field-hint' },
-      'Ticks itself once today’s reading reaches the target. Steps, distance, calories, floors and workouts come from the phone app; sleep from your sleep log, which the phone fills in.'
-    )
-  );
-
-  // Build (tick it) or break (quit: clean unless a slip is logged). Chosen at
-  // creation only — the server refuses to turn ticks into slips — so editing
-  // shows a line instead. A quit habit is daily and measures nothing.
-  let kind = isQuitHabit(habit) ? 'quit' : 'build';
-  const cadenceBlock = h(
-    'div',
-    null,
-    h('div', { class: 'gb-field-label' }, 'Cadence'),
-    cadence.node,
-    targetField
-  );
-  const syncKind = (k) => {
-    kind = k;
-    const quit = k === 'quit';
-    cadenceBlock.style.display = quit ? 'none' : '';
-    nameInput.placeholder = quit ? 'e.g. No sugar' : 'e.g. Meditate';
-    linkField.style.display = quit ? 'none' : '';
-    if (quit) {
-      presetRow.style.display = 'none';
-      metricField.style.display = 'none';
-      metricSel.value = 'none';
-    } else {
-      syncDomain(domain.get());
-    }
-  };
-  const kindSeg = habit
-    ? null
-    : segmented(
-        [
-          { value: 'build', label: 'Build a habit' },
-          { value: 'quit', label: 'Break a habit' },
-        ],
-        kind,
-        (k) => syncKind(k)
-      );
-  const DOMAIN_ORDER = ['habit', 'fitness', 'study', 'journal'];
-  const templateRow = habit
-    ? null
-    : h(
-        'div',
-        { class: 'gb-preset-row', role: 'group', 'aria-label': 'Start from a template' },
-        HABIT_TEMPLATES.map((t) =>
-          h(
-            'button',
-            {
-              type: 'button',
-              class: 'gb-preset',
-              onclick: () => {
-                nameInput.value = presetName = t.name;
-                nameInput.setAttribute('aria-invalid', 'false');
-                suggestLink();
-                // Category first, then the kind: a quit kind hides what fitness showed.
-                const di = DOMAIN_ORDER.indexOf(t.domain || 'habit');
-                if (di >= 0) domain.node.children[di].click();
-                kindSeg.node.children[t.kind === 'quit' ? 1 : 0].click();
-                metricSel.value = t.metric || 'none';
-                if (t.reminderTime) reminderInput.value = t.reminderTime;
-                // After the category click: syncDomain clears a non-fitness icon.
-                presetIcon = t.icon;
-              },
-            },
-            Icon(t.icon, { size: 16, sw: 2.4 }),
-            t.name
-          )
-        )
-      );
-  // A category tap while breaking a habit must not bring the fitness presets back.
-  const syncDomainOnly = syncDomain;
-  syncDomain = (d) => {
-    syncDomainOnly(d);
-    if (kind === 'quit') syncKind('quit');
-  };
-  if (habit) syncKind(kind);
-
-  const body = h(
-    'div',
-    { class: 'gb-form' },
-    // Editing doubles as the habit's detail view: its history comes first.
-    habit ? habitHistoryPanel(habit) : null,
-    kindSeg ? kindSeg.node : null,
-    templateRow ? h('div', { class: 'gb-field-label' }, 'Start from a template') : null,
-    templateRow,
-    isQuitHabit(habit)
-      ? h(
-          'div',
-          { class: 'gb-field-hint' },
-          'Breaking a habit: every day counts as clean unless you log a slip.'
-        )
-      : null,
-    h('div', { class: 'gb-field-label' }, 'Name'),
-    nameInput,
-    h('div', { class: 'gb-field-label' }, 'Category'),
-    domain.node,
-    presetRow,
-    metricField,
-    linkField,
-    h('div', { class: 'gb-field-label' }, 'Color (optional)'),
-    color.node,
-    cadenceBlock,
-    h('div', { class: 'gb-field-label' }, 'Daily reminder (optional)'),
-    reminderInput,
-    h('div', { class: 'gb-field-label' }, 'Tone'),
-    toneSel,
-    pauseSwitch
-      ? h(
-          'div',
-          { style: { display: 'flex', gap: '12px', alignItems: 'center', marginTop: '12px' } },
-          h('span', { style: { flex: 1 } }, 'Pause — keep it, but don’t count it or remind me'),
-          pauseSwitch
-        )
-      : null
-  );
-
-  nameInput.addEventListener('input', () => nameInput.setAttribute('aria-invalid', 'false'));
-  openModal({
-    title: habit ? 'Edit habit' : 'New habit',
-    body,
-    primary: habit ? 'Save changes' : 'Add habit',
-    danger: habit
-      ? {
-          label: 'Delete habit',
-          onClick: () =>
-            confirmDelete(
-              'Delete “' + habit.name + '”?',
-              () => deleteHabit(habit.id),
-              'Its streak and check-in history go with it.'
-            ),
-        }
-      : null,
-    onPrimary: async () => {
-      const name = visibleText(nameInput.value);
-      if (!name) throw fieldRefusal(nameInput, 'Give the habit a name.');
-      const d = domain.get();
-      // Editing keeps the habit's own icon unless a preset or a new category says otherwise.
-      const quit = kind === 'quit';
-      const icon =
-        presetIcon ||
-        (habit && habit.domain === d && habit.icon) ||
-        (quit ? 'ban' : DOMAIN[d] && DOMAIN[d].icon) ||
-        'repeat';
-      // A quit habit is daily whatever the hidden cadence control says.
-      const cad = quit ? 'daily' : cadence.get();
-      let targetPerWeek;
-      if (cad === 'custom') {
-        targetPerWeek = Number(targetInput.value);
-        if (!Number.isInteger(targetPerWeek) || targetPerWeek < 1 || targetPerWeek > 7) {
-          throw fieldRefusal(targetInput, 'Pick 1 to 7 times a week.');
-        }
-      }
-      const healthLink = quit ? '' : linkSel.value;
-      let healthTarget = null;
-      if (healthLink) {
-        const L = HEALTH_LINKS[healthLink];
-        healthTarget = Number(linkTarget.value);
-        if (!(healthTarget > 0 && healthTarget <= L.max)) {
-          throw fieldRefusal(linkTarget, 'Pick a target up to ' + L.max.toLocaleString() + ' ' + L.unit + '.');
-        }
-      }
-      const fields = {
-        name,
-        domain: d,
-        icon,
-        cadence: cad,
-        metric: quit ? 'none' : metricSel.value,
-        healthTarget,
-        ...(targetPerWeek ? { targetPerWeek } : {}),
-      };
-      if (habit) {
-        // On PUT a null field means "unchanged", so blanks are sent as '' and a
-        // removed reminder as its own flag.
-        await updateHabit(habit.id, {
-          ...fields,
-          healthLink, // '' clears the link (PUT reads null as unchanged)
-          color: color.get() || '',
-          reminderTime: reminderInput.value || null,
-          clearReminder: !reminderInput.value,
-          sound: toneSel.value || '',
-          active: !paused,
-        });
-        // Pausing or a new cadence changes what today's score counts.
-        if (paused !== (habit.active === false) || cad !== (habit.cadence || 'daily')) {
-          refreshScoreLater();
-        }
-        return;
-      }
-      await createHabit({
-        ...fields,
-        kind,
-        healthLink: healthLink || null,
-        color: color.get() || null,
-        reminderTime: reminderInput.value || null,
-        sound: toneSel.value || null,
-      });
-    },
-  });
-  // Delete is a quiet text button: a full red bar between Save and Cancel took
-  // a third of a phone screen for the action least often wanted. It still
-  // asks first (confirmDelete).
-  const del = habit && body.closest('.gb-modal') && body.closest('.gb-modal').querySelector(':scope > .gb-btn--danger');
-  if (del) {
-    del.className = 'gb-btn gb-btn--ghost';
-    Object.assign(del.style, { color: 'var(--danger)', width: 'auto', alignSelf: 'center', marginTop: '4px' });
-  }
-  // A new habit starts at its name. Editing opens on the history: focusing the
-  // name scrolled it away and raised a phone keyboard over it.
-  if (!habit) focusSoon(nameInput);
 }
 
 /* What quick add read, before any of it is written. Every row is on by default
@@ -13769,7 +10528,7 @@ function openQuickAddPreview(rows, note, onLogged, onCancel) {
      Money doc (settings.fx, the same key Customise > Other currencies keeps),
      then re-reads the row converted and ticks it. */
   function rateRow(r, i, detail) {
-    const home = (state.money && state.money.currency) || '₹';
+    const home = homeCur(state.money);
     const sym = r.d.noRate;
     const input = h('input', {
       type: 'number',
@@ -14087,159 +10846,6 @@ async function openStarterPacks() {
   });
 }
 
-/* ---- Connect your bank (Account Aggregator via Setu; BankFeedService) ----
-   Consent once on the user's AA, then debits and credits arrive in Money as
-   ordinary, editable entries marked "Bank". The whole section stays empty when
-   the server has no Setu credentials. */
-function bankFeedSection() {
-  const box = h('div', { class: 'gb-bank-feed' });
-  const paint = (st) => {
-    if (!st || !st.configured) {
-      box.replaceChildren();
-      return;
-    }
-    const rows = (st.consents || []).map((c) => {
-      const accts = (c.accounts || []).map((a) => '\u2022\u2022' + a.mask).join(', ');
-      const what =
-        c.status === 'PENDING'
-          ? 'Waiting for your approval'
-          : /ACTIVE|APPROVED/.test(c.status)
-            ? (accts || 'Connected') +
-              (c.syncing ? ' \u00b7 Fetching\u2026' : c.lastSyncedAt ? ' \u00b7 Synced ' + relativeTime(c.lastSyncedAt) : '')
-            : 'Ended (' + c.status.toLowerCase() + ')';
-      return h(
-        'div',
-        { class: 'gb-bank-row' },
-        h('span', { class: 'gb-money-cat-ic' }, Icon('landmark', { size: 15, sw: 2.2 })),
-        h(
-          'div',
-          { class: 'gb-bank-copy' },
-          h('strong', null, 'Bank feed'),
-          h('span', null, what),
-          c.error ? h('span', { class: 'gb-field-hint' }, c.error) : null
-        ),
-        h(
-          'button',
-          {
-            type: 'button',
-            class: 'gb-btn gb-btn--ghost gb-btn--compact',
-            onclick: () =>
-              openModal({
-                title: 'Disconnect this bank?',
-                sub: 'Nothing more is fetched. Entries already imported stay in Money.',
-                body: null,
-                primary: 'Disconnect',
-                destructive: true,
-                errorMessage: 'Could not disconnect.',
-                onPrimary: async () => {
-                  try {
-                    await api('/api/money/bank/' + encodeURIComponent(c.id), { method: 'DELETE' });
-                    toastSuccess('Bank disconnected.');
-                  } finally {
-                    load();
-                  }
-                },
-              }),
-          },
-          'Disconnect'
-        )
-      );
-    });
-    const live = (st.consents || []).some((c) => /ACTIVE|APPROVED|PENDING/.test(c.status));
-    box.replaceChildren(
-      h('div', { class: 'gb-settings-sec-label', style: { marginTop: '18px' } }, 'Bank feed'),
-      h(
-        'div',
-        { class: 'gb-field-hint', style: { marginBottom: '8px' } },
-        'Approve once through an RBI Account Aggregator and your bank spends and income show up here on their own. Every entry stays editable.'
-      ),
-      ...rows,
-      h(
-        'div',
-        { class: 'gb-bank-actions' },
-        live
-          ? h(
-              'button',
-              {
-                type: 'button',
-                class: 'gb-btn gb-btn--compact',
-                onclick: async (e) => {
-                  const done = setThinking(e.currentTarget, 'Syncing');
-                  try {
-                    const r = await api('/api/money/bank/sync', { method: 'POST' });
-                    if (r.imported > 0) {
-                      const theirs = await api('/api/money', { onResponse: rememberMoneyVersion });
-                      state.money = normalizeMoney(overlayPending(mergeMoney(state.money, theirs)));
-                      cacheMoney();
-                      render();
-                    }
-                    toastSuccess(
-                      r.imported > 0
-                        ? r.imported + ' new from your bank.'
-                        : r.pending > 0
-                          ? 'Your bank is preparing the data. It will show up shortly.'
-                          : 'Up to date.'
-                    );
-                  } catch (err) {
-                    toastError(err, 'Could not sync right now.');
-                  } finally {
-                    done();
-                  }
-                  load();
-                },
-              },
-              'Sync now'
-            )
-          : null,
-        h(
-          'button',
-          {
-            type: 'button',
-            class: 'gb-btn gb-btn--primary gb-btn--compact',
-            onclick: () => openConnectBank(load),
-          },
-          live ? 'Add another bank' : 'Connect your bank'
-        )
-      )
-    );
-    refreshIcons();
-  };
-  const load = () => api('/api/money/bank').then(paint).catch(() => paint(null));
-  load();
-  return box;
-}
-
-function openConnectBank(onDone) {
-  const phone = String((state.user && state.user.whatsappNumber) || '').replace(/^\+91/, '');
-  const input = h('input', {
-    type: 'tel',
-    class: 'gb-input',
-    inputmode: 'numeric',
-    autocomplete: 'tel-national',
-    maxlength: '14',
-    value: /^\d{10}$/.test(phone) ? phone : '',
-    placeholder: '10-digit mobile',
-  });
-  openModal({
-    title: 'Connect your bank',
-    sub: 'Your Account Aggregator asks you to pick accounts and approve. Only transactions are shared, read-only, and you can revoke it any time.',
-    body: h('div', null, h('label', { class: 'gb-field-label' }, 'Mobile number registered with your bank'), input),
-    primary: 'Continue',
-    errorMessage: 'Could not start the connection.',
-    onPrimary: async () => {
-      const r = await api('/api/money/bank/connect', {
-        method: 'POST',
-        body: JSON.stringify({ mobile: input.value.trim() }),
-      });
-      const browser = nativePlugin('Browser');
-      if (browser) await browser.open({ url: r.url });
-      else window.open(r.url, '_blank', 'noopener');
-      toastSuccess('Approve on the next screen. Entries start arriving once you do.');
-      onDone();
-    },
-  });
-}
-
 /** "Just now" / "5 min ago" / "2 h ago" / "3 d ago". */
 function relativeTime(iso) {
   if (!iso) return '';
@@ -14516,7 +11122,7 @@ function toastStack() {
               type: 'button',
               class: 'gb-toast-action',
               onclick: () => {
-                dismissToast(t.id);
+                dismissToast(t.id, true);
                 t.action.run();
               },
             },
@@ -14549,23 +11155,6 @@ function toastStack() {
     },
     nodes
   );
-}
-
-/* The heading names the thing ("Delete “Morning walk”?"), `detail` says what
-   goes with it, and the button is red — it was the same orange as every Save. */
-function confirmDelete(message, onYes, detail) {
-  openModal({
-    // The question IS the heading — "Please confirm" told the user nothing.
-    title: message,
-    sub: detail || null,
-    body: null,
-    primary: 'Delete',
-    destructive: true,
-    onPrimary: async () => {
-      await onYes();
-      toastSuccess('Deleted.');
-    },
-  });
 }
 
 /* ---- Habits screen ---- */
@@ -15018,56 +11607,6 @@ function featureSwitchRow(def) {
   );
 }
 
-/** Persist progress-digest preferences (frequency + send hour) to the account. */
-async function saveDigestPrefs(frequency, hour) {
-  const updated = await api('/api/auth/digest', {
-    method: 'PUT',
-    body: JSON.stringify({ frequency, hour }),
-  });
-  const token = (state.user && state.user.token) || loadToken();
-  state.user = Object.assign({}, state.user, updated, { token });
-  saveSession(state.user, token);
-  render();
-}
-
-/** Persist the ordered home-screen layout (which widgets show, in order). */
-async function saveHomeLayout(layout) {
-  // Optimistic local update so Home + the editor stay in sync immediately.
-  state.user = Object.assign({}, state.user, { homeLayout: layout });
-  saveSession(state.user, loadToken());
-  render();
-  try {
-    const updated = await api('/api/auth/home-layout', {
-      method: 'PUT',
-      body: JSON.stringify({ layout }),
-    });
-    const token = (state.user && state.user.token) || loadToken();
-    state.user = Object.assign({}, state.user, updated, { token });
-    saveSession(state.user, token);
-  } catch (err) {
-    toastError(err, 'Could not save your home layout.');
-  }
-}
-
-/** Persist the ordered bottom-nav layout (bar vs More + order). */
-async function saveNavLayout(layout) {
-  // Optimistic local update so the bar + editor stay in sync immediately.
-  state.user = Object.assign({}, state.user, { navLayout: layout });
-  saveSession(state.user, loadToken());
-  render();
-  try {
-    const updated = await api('/api/auth/nav-layout', {
-      method: 'PUT',
-      body: JSON.stringify({ layout }),
-    });
-    const token = (state.user && state.user.token) || loadToken();
-    state.user = Object.assign({}, state.user, updated, { token });
-    saveSession(state.user, token);
-  } catch (err) {
-    toastError(err, 'Could not save your navigation layout.');
-  }
-}
-
 /* Money's receipt reader, for Add expense on the Money screen and on Home.
    Shrunk the way Notes shrinks a photo: 1280px is enough to read a bill.
    categories: [{key, label}], so the AI tags each line with one the user has. */
@@ -15121,7 +11660,7 @@ const SCREENS = {
         onOpenFamily: openFamilyMeals,
         onEditTask: openEditTask,
         onPauseTask: pauseTask,
-        onFocusTask: featureOn('focus') ? (task) => startFocusOn({ taskId: task.id }) : null,
+        onFocusTask: featureOn('focus') ? (task) => startFocusOn({ taskId: task.id }, true) : null,
         onAddHabit: openAddHabit,
         calYear: state.calYear,
         calMonth: state.calMonth,
@@ -15131,7 +11670,6 @@ const SCREENS = {
         onNextMonth: calNextMonth,
         onRetryFood: retryCalendarFoodDate,
         onPlanToday: openDailyPlan,
-        onAddGlass: addGlassFromHome,
         onAddSleep: openSleepSchedule,
         onAddMood: openMoodCheckin,
         onStarterPack: openStarterPacks,
@@ -15214,7 +11752,7 @@ const SCREENS = {
     headerName: () => 'Achievements',
     render: () =>
       lazyScreen(
-        () => import('./achievements.js'),
+        () => import('./achievements-screen.js'),
         (m) => m.ScreenAchievements(achievementProps())
       ),
   },
@@ -15442,6 +11980,9 @@ const SCREENS = {
               week: (linkId) => api('/api/mentorship/' + encodeURIComponent(linkId) + '/week'),
             },
             challengesApi: {
+              // Where an invite link points: the public site, never the app's
+              // own https://localhost (native.js publicSiteUrl).
+              siteUrl: publicSiteUrl() + '/',
               listMine: () => api('/api/circles/mine'),
               listAll: () => api('/api/circles'),
               createCircle: (body) =>
@@ -15535,7 +12076,9 @@ const SCREENS = {
             open: takeFamilyOpen(),
             api: {
               getFamily: () => api('/api/family').then(noteFamily),
-              // The first member creates the family: Home's Family meals card follows it.
+              // A retried POST is answered from IdempotencyFilter, not a second family.
+              startSolo: () =>
+                api('/api/family/solo', { method: 'POST', headers: { 'Idempotency-Key': newIdemKey() } }),
               addMember: (body) =>
                 api('/api/family/members', { method: 'POST', body: JSON.stringify(body) }).then(noteFamily),
               updateMember: (id, body) =>
@@ -15689,7 +12232,7 @@ const SCREENS = {
     headerName: () => 'Money Buddy',
     render: () =>
       lazyScreen(
-        () => import('./money.js'),
+        () => import('./money-screen.js'),
         (m) =>
           m.ScreenMoney({
             money: state.money,
@@ -15713,6 +12256,8 @@ const SCREENS = {
               api('/api/money/tx?before=' + encodeURIComponent(before) + '&limit=200'),
             loadFailed: !!(state.loadFailed && state.loadFailed.has('money')),
             onRetryLoad: () => loadSecondaryData(),
+            // The CSV import waits on this between batches: true once nothing is left unsent.
+            moneySettled: moneySettledFor(sessionGen()),
           })
       ),
   },
@@ -15738,11 +12283,6 @@ const SCREENS = {
               api('/api/notes/' + encodeURIComponent(id) + '/forever', { method: 'DELETE' }),
             // Keys the offline copy of the list, so one account never sees another's.
             userId: state.user && state.user.id,
-            openComposer: (() => {
-              const once = notesOpenComposer;
-              notesOpenComposer = false;
-              return once;
-            })(),
             onGet: (id) => {
               const queued = isTempId(realId(id)) && queuedNotes().find((n) => n.id === id);
               return queued ? Promise.resolve(queued) : api('/api/notes/' + encodeURIComponent(realId(id)));
@@ -15783,6 +12323,12 @@ const SCREENS = {
             onDeleteEditDraft: (id) =>
               api('/api/notes/' + encodeURIComponent(id) + '/draft', { method: 'DELETE' }),
             onMakeTask: (title) => createTask({ title }),
+            // The palette's pick: a note id to open, or 'new' for the composer. Taken once.
+            openOnMount: (() => {
+              const id = pendingNoteOpen;
+              pendingNoteOpen = null;
+              return id;
+            })(),
             onMakeReminder: (text) => {
               // Hand it to the calendar rather than growing a second reminder
               // form here — the date, repeat and tag pickers all live there.
@@ -15804,8 +12350,8 @@ const SCREENS = {
             sections: state.goals,
             onCreateGoal: createGoal,
             onToggleGoal: toggleGoal,
-            // Undo instead of a confirm (deleteGoalWithUndo); its tasks stay, on no goal.
-            onDeleteGoal: deleteGoalWithUndo,
+            // Undoable (deferDelete); a failed send puts it back and toasts.
+            onDeleteGoal: (id) => deleteGoal(id),
             // Linked tasks: "Add a task" opens New task on this goal; the open
             // ones listed on the card tick like Home's rows.
             onAddTask: (goal) => openAddTask(goal),
@@ -15923,15 +12469,7 @@ function lazyScreen(loader, build) {
         window.addEventListener('online', () => card.isConnected && render(), { once: true });
         return;
       }
-      if (isStaleChunkError(err) && !sessionStorage.getItem(CHUNK_RELOAD_KEY)) {
-        try {
-          sessionStorage.setItem(CHUNK_RELOAD_KEY, '1');
-        } catch (_) {
-          /* private mode: fall through to the crash card */
-        }
-        location.reload();
-        return;
-      }
+      if (reloadIfStaleChunk(err)) return;
       if (!placeholder.isConnected) return;
       placeholder.replaceWith(CrashCard(() => render()));
       refreshIcons();
@@ -15940,6 +12478,19 @@ function lazyScreen(loader, build) {
 }
 
 const CHUNK_RELOAD_KEY = 'gb.chunkReloaded';
+
+/* Every lazy chunk's failure goes through here (lazyScreen, Settings, the habit
+   dialogs): true when it reloaded the page for a stale chunk. */
+function reloadIfStaleChunk(err) {
+  if (!isStaleChunkError(err) || sessionStorage.getItem(CHUNK_RELOAD_KEY)) return false;
+  try {
+    sessionStorage.setItem(CHUNK_RELOAD_KEY, '1');
+  } catch (_) {
+    /* private mode: the caller's own error path */
+  }
+  location.reload();
+  return true;
+}
 
 /* A dynamic import that failed because the file is gone, not because the module
    threw. Browsers word this differently and none of them give it a code, so the
@@ -16043,11 +12594,12 @@ function paintBellBadge() {
   if (!bell) return;
   const n = unreadNotifs();
   const badge = bell.querySelector('.gb-bell-badge');
+  const text = n > 99 ? '99+' : String(n);
+  bell.setAttribute('aria-label', n ? 'Notifications, ' + text + ' unread' : 'Notifications');
   if (!n) {
     if (badge) badge.remove();
     return;
   }
-  const text = n > 99 ? '99+' : String(n);
   if (badge) badge.textContent = text;
   else bell.appendChild(h('span', { class: 'gb-bell-badge' }, text));
 }
@@ -16156,6 +12708,9 @@ function captureScrollPosition() {
 
 function restoreScrollPosition(snapshot) {
   if (!snapshot || snapshot.screen !== state.screen) return;
+  // At the top there is nothing to restore (a fresh .gb-scroll starts there), and
+  // reading scrollHeight would force a layout of the tree just built.
+  if (!snapshot.top && !snapshot.left) return;
   const scroll = document.querySelector('.gb-scroll');
   if (!scroll) return;
   const apply = () => {
@@ -16317,20 +12872,15 @@ const GARDEN_SVG = (() => {
 })();
 
 function authShell(title, subtitle, children) {
-  // A re-render of the card already on screen (index.html's static shell on the
-  // first render, or a typo's renderAuth) is not an entrance: replaying the rise
-  // or the grow there reads as a flash. A different view still rises.
-  const prev = document.querySelector('.gb-login-card .gb-login-title');
-  const same = !!prev && prev.textContent === title;
-  const garden = h('div', { class: 'gb-garden' + (gardenGrown || same ? '' : ' is-growing') });
+  const garden = h('div', { class: 'gb-garden' + (gardenGrown ? '' : ' is-growing') });
   garden.innerHTML = GARDEN_SVG;
   gardenGrown = true;
   return h(
-    'main',
+    'div',
     { class: 'gb-login-wrap' },
     h(
       'div',
-      { class: 'gb-login-card' + (same ? '' : ' gb-rise') },
+      { class: 'gb-login-card gb-rise' },
       garden,
       h(
         'div',
@@ -16355,8 +12905,19 @@ function authShell(title, subtitle, children) {
       // expired" here, under the notice that already says so.
       state.error && !state.errorField && !(state.authNotice && state.error === SESSION_EXPIRED)
         ? h('p', { class: 'gb-login-error', role: 'alert' }, state.error)
-        : null
+        : null,
+      h('p', { class: 'gb-login-legal' }, privacyLink())
     )
+  );
+}
+
+/* The hosted policy. Absolute (publicSiteUrl), so in the app it opens in the
+   system browser instead of replacing the app inside its own WebView. */
+function privacyLink() {
+  return h(
+    'a',
+    { class: 'gb-login-link', href: publicSiteUrl() + '/privacy.html', target: '_blank', rel: 'noopener' },
+    'Privacy policy'
   );
 }
 
@@ -16411,7 +12972,7 @@ function passwordField(input) {
   const toggle = h('button', {
     type: 'button',
     class: 'gb-pw-toggle',
-    tabindex: '-1', // the field, not its decoration, is what Tab should reach
+    // Reachable by Tab: a keyboard user must be able to check what they typed.
     onclick: () => {
       input.type = input.type === 'password' ? 'text' : 'password';
       paint();
@@ -16561,8 +13122,12 @@ function routeSignInStep(err, email, password, cancelDeletion) {
   return true;
 }
 
+/* Every sign-in lands here (password, OTP verify, reset, 2FA, cancel-deletion).
+   It starts from session.js's fresh state, not whatever is in memory: an answer
+   the last session sent before it ended can still have rolled something back
+   into `state` on its way out. */
 async function completeSignIn(user) {
-  state.authPending = null;
+  Object.assign(state, freshUserState(EMPTY_STATE), { loading: state.loading });
   syncUserSession(user);
   state.wellness = loadWellness();
   state.goalProgress = loadGoalProgress();
@@ -16688,7 +13253,9 @@ function viewSignin() {
         user = await authPost('/api/auth/login', { email, password });
       } catch (err) {
         if (routeSignInStep(err, email, password)) return;
-        if (err.status !== 403) throw err;
+        // Only the server's own "unverified" 403: any other 403 (a CORS refusal)
+        // would open the code screen saying a code was sent when none was.
+        if (err.status !== 403 || err.code !== 'email_unverified') throw err;
         // Right password, email never verified: the server just sent a fresh
         // code (AuthService.login), so this is the code screen, not a refusal.
         return setAuthMode('verify', {
@@ -16696,14 +13263,7 @@ function viewSignin() {
           notice: 'Your email isn’t verified yet, so we sent you a fresh code.',
         });
       }
-      syncUserSession(user);
-      state.wellness = loadWellness();
-      state.goalProgress = loadGoalProgress();
-      state.money = loadMoney();
-      state.streakFreeze = loadStreakFreeze();
-      state.trends = loadTrends();
-      landAfterSignIn();
-      await loadData();
+      await completeSignIn(user);
     }, 'password');
   }
 
@@ -16716,21 +13276,17 @@ function viewSignin() {
     })
   );
 
-  return authShell(
-    state.authReturning ? 'Welcome back' : 'Sign in',
-    'Your habits, streaks and reminders are where you left them.',
-    [
-      ...field('Email', emailInput, 'email'),
-      ...field('Password', pwField, 'password'),
-      primaryBtn('Sign in', submit),
-      h(
-        'div',
-        { class: 'gb-login-row' },
-        authLink('Forgot password?', () => setAuthMode('forgot', { email: emailInput.value.trim() })),
-        authLink('Create account', () => setAuthMode('signup', { email: emailInput.value.trim() }))
-      ),
-    ]
-  );
+  return authShell('Welcome back', 'Your habits, streaks and reminders are where you left them.', [
+    ...field('Email', emailInput, 'email'),
+    ...field('Password', pwField, 'password'),
+    primaryBtn('Sign in', submit),
+    h(
+      'div',
+      { class: 'gb-login-row' },
+      authLink('Forgot password?', () => setAuthMode('forgot', { email: emailInput.value.trim() })),
+      authLink('Create account', () => setAuthMode('signup', { email: emailInput.value.trim() }))
+    ),
+  ]);
 }
 
 /* ---- Sign-up ---- */
@@ -16746,12 +13302,10 @@ function viewSignup() {
   const nameInput = h('input', {
     type: 'text',
     class: 'gb-input gb-login-input',
-    placeholder: 'What should we call you?',
-    autocomplete: 'given-name',
+    placeholder: 'Your name',
+    autocomplete: 'name',
     maxlength: 120,
   });
-  // One password field with its reveal eye: a confirm field doubled the typing
-  // to guard against a typo the eye already shows, and reset covers the rest.
   const pwInput = h('input', {
     type: 'password',
     class: 'gb-input gb-login-input',
@@ -16759,14 +13313,13 @@ function viewSignup() {
     maxlength: 128,
     autocomplete: 'new-password',
   });
+  // One password field: its reveal eye catches a typo better than typing it
+  // twice, and a forgotten one still has reset.
   const pwField = passwordField(pwInput);
   // A hint, not a gate: the server's only rule is 8+ characters. Length and
   // variety are what a guesser pays for, so that is all it counts.
   const pwHint = h('p', { class: 'gb-field-hint', 'aria-live': 'polite' });
   pwInput.addEventListener('input', () => {
-    // The refusal under the field already says it: "Too short" beside "must be
-    // at least 8 characters" was one message twice.
-    if (state.error && state.errorField === 'password') return void (pwHint.textContent = '');
     const v = pwInput.value;
     const kinds = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].filter((r) => r.test(v)).length;
     const score = !v
@@ -16784,11 +13337,7 @@ function viewSignup() {
 
   function submit() {
     const email = emailInput.value.trim();
-    // Name is optional: without one the greeting read "Still up, asha.rao1990…"
-    // (the server's fallback is the whole local part). Its first word stands in
-    // until the user names themselves in Settings.
-    const word = (email.split('@')[0].match(/[a-z]{2,}/i) || [''])[0];
-    const displayName = nameInput.value.trim() || (word && word[0].toUpperCase() + word.slice(1).toLowerCase());
+    const displayName = nameInput.value.trim();
     const password = pwInput.value;
     if (!email) return authFail('Enter your email to create the account.', 'email');
     if (!emailInput.checkValidity()) return authFail('Enter a valid email address.', 'email');
@@ -16812,15 +13361,12 @@ function viewSignup() {
     })
   );
 
-  // The first screen a new visitor sees, so it says what the app is for.
-  return authShell(
-    'Create your account',
-    'Habits, reminders, money and goals in one place, with a ready-made plan to start you off.',
-    [
+  // No subtitle: the next screen is the code screen and explains itself there.
+  return authShell('Create your account', '', [
       ...field('Email', emailInput, 'email'),
+      ...field('Name', nameInput, 'name'),
       ...field('Password', pwField, 'password'),
       pwHint,
-      ...field('Name (optional)', nameInput, 'name'),
       primaryBtn('Create account', submit),
       h(
         'div',
@@ -16840,29 +13386,17 @@ function viewVerify() {
     inputmode: 'numeric',
     pattern: '\\d{6}',
     class: 'gb-input gb-login-input',
-    // No maxlength: it cut a pasted "Your code is 123456" to "Your c" before
-    // otpBoxes could pull the digits out. otpBoxes keeps it to six.
+    maxlength: 6,
     autocomplete: 'one-time-code',
   });
   const otpField = otpBoxes(otpInput, state.loading);
-  // The sixth digit submits. Trusted events only: renderAuth replays the value
-  // with a synthetic input event after a refusal, which must not resubmit it.
-  otpInput.addEventListener('input', (e) => {
-    if (e.isTrusted && !state.loading && otpInput.value.length === 6) submit();
-  });
   function submit() {
+    if (state.loading) return; // the auto-submit and a tap on Verify are one request
     const otp = (otpInput.value || '').replace(/\D/g, '');
     if (otp.length !== 6) return authFail('Enter the 6-digit code (must be exactly 6 digits).', 'otp');
     runAuth(async () => {
       const user = await authPost('/api/auth/verify', { email: state.authEmail, otp });
-      syncUserSession(user);
-      state.wellness = loadWellness();
-      state.goalProgress = loadGoalProgress();
-      state.money = loadMoney();
-      state.streakFreeze = loadStreakFreeze();
-      state.trends = loadTrends();
-      landAfterSignIn();
-      await loadData();
+      await completeSignIn(user);
     }, 'otp');
   }
   function resend() {
@@ -16877,6 +13411,13 @@ function viewVerify() {
       e.preventDefault();
       submit();
     }
+  });
+  // The sixth digit (typed, pasted or autofilled) sends it. Only a real input
+  // event: renderAuth replays a synthetic one to repaint the boxes after a
+  // refusal, and answering that would resend a wrong code forever. After an
+  // error the code stays in the field; editing it back to six sends again.
+  otpInput.addEventListener('input', (e) => {
+    if (e.isTrusted && (otpInput.value || '').replace(/\D/g, '').length === 6) submit();
   });
   focusSoon(otpInput);
 
@@ -16982,14 +13523,7 @@ function viewReset() {
         if (routeSignInStep(err, state.authEmail, password)) return;
         throw err;
       }
-      syncUserSession(user);
-      state.wellness = loadWellness();
-      state.goalProgress = loadGoalProgress();
-      state.money = loadMoney();
-      state.streakFreeze = loadStreakFreeze();
-      state.trends = loadTrends();
-      landAfterSignIn();
-      await loadData();
+      await completeSignIn(user);
     }, 'otp');
   }
   [otpInput, pwInput, pw2Input].forEach((el) =>
@@ -17046,31 +13580,6 @@ function loginCard() {
   }
 }
 
-/* The Log out / Sign out buttons. Sign-out clears this account's queued
-   offline writes (purgeUserCache), and it used to do that without a word while
-   the chip a tap away said they were waiting to sync. Online, send them first;
-   whatever still can't go is named, and staying signed in is the default. */
-async function confirmLogout() {
-  await CacheStorage.ready();
-  if (navigator.onLine) {
-    await Promise.all([flushOutbox(), flushWaterQueue()]).catch(() => {});
-  }
-  if (!state.user) return;
-  const n = outbox.size() + loadWaterQueue().length;
-  if (!n) return logout();
-  openModal({
-    title: plural(n, 'change') + ' not synced yet',
-    sub:
-      'Signing out now discards ' +
-      (n === 1 ? 'it. Stay signed in and it syncs' : 'them. Stay signed in and they sync') +
-      ' by itself once you’re back online.',
-    body: null,
-    primary: 'Stay signed in',
-    onPrimary: async () => {},
-    danger: { label: 'Sign out anyway', onClick: () => logout() },
-  });
-}
-
 /* Sign-outs whose revoke never reached the server (offline): their tokens,
    kept apart from any session, sent on the next 'online' and at boot. */
 const REVOKE_KEY = 'gb.revoke.pending';
@@ -17123,50 +13632,139 @@ window.addEventListener('pagehide', () => {
   );
 });
 
-/* `revoked`: the server already ended the session (account deletion revokes
-   every one), so only this device's half runs: no unsubscribe or logout call to
-   401. The browser's own push subscription still goes, and the server prunes
-   the dead endpoint on its next send (PushService, 404/410). */
-function logout({ revoked = false } = {}) {
-  // Fire-and-forget; the token is invalidated locally either way.
-  const token = revoked ? null : loadToken();
-  if (revoked) disablePush(async () => {}).catch(() => {});
-  if (token) {
-    // Unsubscribe this browser's Web Push endpoint BEFORE the token is revoked,
-    // or the server keeps pushing this account's reminders to a device that is
-    // now someone else's. disablePush awaits the service worker before it calls
-    // api(), by which time clearSession() has dropped the stored token — so it
-    // gets a fetch bound to the token captured here, and the logout POST waits
-    // for it (revoking first would 401 the unsubscribe).
-    const withToken = (path, o = {}) =>
-      fetch(API_BASE + path, {
-        ...o,
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-      });
-    disablePush(withToken)
-      .catch(() => {})
-      .then(() => withToken('/api/auth/logout', { method: 'POST' }))
-      // No connection: the token is still live on the server. Keep it (alone,
-      // not as a session) and revoke it on the next 'online' or boot.
-      .catch(() => queueRevoke(token));
-  }
+function logout() {
+  return endSession('logout');
+}
+
+/* ---- The one way out of a session ----
+   Sign out, a 401 and account deletion all end here. They used to keep three
+   hand-written reset lists that had drifted: a 401 left a running focus timer,
+   the device alarms, the money cache and the service worker's gb-api-get cache
+   for whoever signed in next, and Sign out left the goals, water, food and the
+   bell. What a sign-out resets is session.js `freshUserState` (session.test.mjs
+   fails on a state field it doesn't classify), the rest is module memory here.
+   `reason`: 'logout' | 'expired' | 'deleted'. */
+async function endSession(reason) {
+  if (!state.user) return;
+  // Every sheet goes, by close() not dismiss(): the note editor's dismiss saves,
+  // and nothing should save on the way out. Settings' "Sign out" used to leave
+  // the sheet up over the sign-in card, the last account's name and email in it.
+  closeOverlays({ discard: true });
+  popoverCleanup?.();
+  syncPanelHistory();
+  // Pending writes go before the token does. Not on a 401: that token can't send them.
+  if (reason === 'logout') await flushPendingWrites();
+  // A dead token can't send them, and the lists they'd restore into are going.
+  else undoQueue.clear();
+  if (!state.user) return; // a 401 during the flush already ended it
+  const token = loadToken();
+  // From here on an answer to anything already sent lands nowhere (session.js).
+  bumpSession();
+  _inflightGets.clear();
+  if (reason === 'logout' && token) revokeOnServer(token);
   // On-device alarms (native only; a no-op on the web) were scheduled for this
   // account's reminders, water and habits — they must not ring for the next one.
   // Through push.js's chain, so a sync still running can't re-arm them after.
-  // (The Workbox gb-api-get cache goes in clearSession.)
   cancelAllAlarms().catch(() => {});
   // A running focus timer would finish later and post under the next account.
   import('./timer.js').then((m) => m.resetFocusSession()).catch(() => {});
   disconnectWebSocket();
-  purgeUserCache();
+  const purged = Promise.all([purgeUserCache(reason), deleteUserCaches()]).catch(() => {});
   clearSession();
-  resetUserState();
-  state.error = '';
-  state.loading = false;
-  state.authNotice = '';
+  clearReminderForm(); // a half-typed reminder in the calendar's kept form
+  Object.assign(state, freshUserState(EMPTY_STATE));
+  setNotifFirstPage([]); // also drops the last account's unread-past-the-page count
+  notifFilter = 'all';
+  toastTimers.forEach((t) => clearTimeout(t.handle));
+  toastTimers.clear();
+  loadedFor = null; // the next sign-in is a first load, not a refresh
+  // Another account must not see this one's Insights, nor wait out its throttle.
+  insightHistoryAt = 0;
+  insightReq = null;
+  // Log food's chip rows are this account's foods, not the next one's.
+  recentFoods = null;
+  favouriteFoods = null;
+  pendingWater.clear(); // unsent glasses are this account's (its queue is in its cache)
+  lastWaterTap = { amount: 0, at: 0 };
+  waterRefetch = false;
+  // Health readings are someone's health data: never shown to the next account.
+  Object.assign(health, { readings: null, loading: false, available: null, syncing: false, syncedAt: null });
+  weekGen.bump();
+  try {
+    sessionStorage.removeItem('gb.authDraft');
+  } catch (_) {
+    /* ignore */
+  }
+  if (reason === 'deleted') {
+    await purged; // a reload mid-delete would leave the caches behind
+    location.reload();
+    return;
+  }
+  if (reason === 'expired') returnToScreen = state.screen; // signing back in returns here, not to Home
+  state.screen = 'home';
+  state.authMode = 'signin';
+  state.authEmail = '';
+  state.authNotice = reason === 'expired' ? 'Your session ended. Sign in again.' : '';
   // Drop the hash so the URL doesn't say "#/circle" on the sign-in screen.
   if (window.location.hash) history.replaceState(null, '', window.location.pathname);
   render();
+}
+
+const EMPTY_STATE = {
+  wellness: emptyWellness,
+  money: emptyMoney,
+  streakFreeze: emptyStreakFreeze,
+  trends: emptyTrends,
+};
+
+/* Step one of a sign-out: send what is queued while the token still works.
+   The offline outbox's queue (sends only: the refetch after it would land on
+   nobody), capped so an asleep server can't hold Sign out for long; whatever
+   didn't go stays queued and purgeUserCache decides. Undoable deletes still
+   waiting on their Undo toast commit here too (feat/ov-undo), and the queued
+   glasses of water go, all inside the same 4 s. */
+async function flushPendingWrites() {
+  const sends = (async () => {
+    // Deletes still waiting on an Undo toast go first, while the token is good
+    // (offline, into the outbox), and are answered before the session goes.
+    await undoQueue.flush();
+    if (!navigator.onLine) return;
+    await CacheStorage.ready();
+    await Promise.all([outbox.size() ? outbox.flush(api) : null, flushWaterQueue()]);
+  })().catch(() => {});
+  await Promise.race([sends, new Promise((r) => setTimeout(r, 4000))]);
+}
+
+/* Fire-and-forget; the token is invalidated locally either way. Unsubscribe
+   this browser's Web Push endpoint BEFORE the token is revoked, or the server
+   keeps pushing this account's reminders to a device that is now someone
+   else's. disablePush awaits the service worker before it calls api(), by which
+   time clearSession() has dropped the stored token — so it gets a fetch bound
+   to the token captured here, and the logout POST waits for it (revoking first
+   would 401 the unsubscribe). */
+function revokeOnServer(token) {
+  const withToken = (path, o = {}) =>
+    fetch(API_BASE + path, {
+      ...o,
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+    });
+  disablePush(withToken)
+    .catch(() => {})
+    .then(() => withToken('/api/auth/logout', { method: 'POST' }))
+    // No connection: the token is still live on the server. Keep it (alone,
+    // not as a session) and revoke it on the next 'online' or boot.
+    .catch(() => queueRevoke(token));
+}
+
+/* The service worker's runtime caches hold this account's GET responses, keyed
+   by URL only: left behind, they answer the next account's requests offline. */
+function deleteUserCaches() {
+  try {
+    if (typeof caches !== 'undefined') return Promise.all(USER_CACHES.map((c) => caches.delete(c)));
+  } catch (_) {
+    /* no CacheStorage (insecure context) */
+  }
+  return Promise.resolve();
 }
 
 /* ---- Loading splash (shown while data loads, e.g. on reload) ----
@@ -17345,55 +13943,165 @@ function tweenFromLast() {
     });
   }
   if (!moves.length) return;
-  void document.body.offsetWidth; // commit the old values as the start
-  for (const [el, prop, next] of moves) el.style[prop] = next;
+  // The old values paint one frame, then the new ones are set and transition from
+  // them. Was a forced layout (`void offsetWidth`) to commit the start values.
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      for (const [el, prop, next] of moves) el.style[prop] = next;
+    })
+  );
 }
 
 /* ---- Command palette + keyboard shortcuts ----
-   Ctrl/Cmd+K anywhere, "/" or "?" outside a text field, "g" then a letter, and
-   the header's search button. Everything but this hook is the lazy palette.js
-   chunk (the go-to letters too: "g c" before it has loaded waits a frame for it).
-   paletteApp() is what it gets: the state already in memory and the openers,
-   featureOn / screenEnabled gates and Quick add path the rest of the app uses. */
-let paletteChunk = null;
-function openPalette(view) {
-  paletteChunk =
-    paletteChunk ||
+   Ctrl/Cmd+K anywhere, "/" or "?" outside a text field, and the header's search
+   button. The UI (palette.js + palette-core.js) loads on first open; only this
+   listener and paletteProps() ride in the boot chunk. */
+const GO_KEYS = { h: 'home', c: 'calendar', m: 'money', n: 'notes', r: 'report', s: 'settings' };
+let palettePromise = null;
+function openPalette(help) {
+  palettePromise =
+    palettePromise ||
     import('./palette.js').catch((err) => {
-      paletteChunk = null; // offline now need not mean offline next time
+      palettePromise = null; // a failed fetch (offline) may succeed next time
       throw err;
     });
-  paletteChunk
-    .then((m) => m.openPalette(paletteApp(), view))
+  palettePromise
+    .then((m) => (help ? m.openShortcutHelp(GO_KEYS, SCREEN_LABEL) : m.openPalette(paletteProps())))
     .catch((err) => toastError(err, 'Couldn’t open search. Check your connection?'));
 }
-const paletteApp = () => ({
-  state, api, featureOn, screenEnabled, SCREENS, SCREEN_LABEL, setScreen, applyIntent,
-  openProfileSettings, openAddTask, openEditTask, openAddHabit, openHabitForm, calGoTo, toggleTheme,
-  saveMoney, requestReceiptScan, saveUiPrefs, runQuickAdd,
-});
-let goPressedAt = 0; // "g", waiting for the letter of a go-to
+function goToScreen(id) {
+  if (id === 'settings') openProfileSettings();
+  else if (SCREENS[id] && screenEnabled(id)) setScreen(id);
+}
+/* A note the palette picked ('new' = the composer), taken once by the Notes
+   screen's next mount. force: Notes may already be the screen. */
+let pendingNoteOpen = null;
+function openNoteById(id) {
+  pendingNoteOpen = id;
+  setScreen('notes', { force: true });
+}
+/* What the palette searches and does: every item already in state, gated by the
+   same featureOn / screenEnabled the nav and Quick add use. */
+function paletteProps() {
+  const on = featureOn;
+  const act = (key, label, icon, run, alt) => ({ key: 'act:' + key, kind: 'action', label, icon, run, alt });
+  const dark = state.theme === 'dark';
+  const items = [
+    act('new-task', 'New task', 'list-todo', () => openAddTask(), ['add task', 'to-do']),
+    on('habits') && act('new-habit', 'New habit', 'repeat', openAddHabit, ['add habit']),
+    on('calendar') &&
+      act('new-reminder', 'New reminder', 'calendar-plus', () => {
+        calToday();
+        setScreen('calendar');
+      }, ['add reminder', 'remind me']),
+    on('notes') && act('new-note', 'New note', 'notebook-pen', () => openNoteById('new'), ['add note', 'jot']),
+    on('water') && act('water', 'Log water 250 ml', 'droplets', () => quickAddWater(250), ['drink', 'glass']),
+    on('focus') && act('focus', 'Start focus', 'timer', () => applyIntent({ type: 'focus' }), ['pomodoro', 'deep work']),
+    act('plan', 'Plan my day', 'sparkles', openDailyPlan, ['schedule today']),
+    act('theme', dark ? 'Switch to light mode' : 'Switch to dark mode', dark ? 'sun' : 'moon', toggleTheme, [
+      'toggle dark mode',
+      'theme',
+    ]),
+    act('settings', 'Open Settings', 'settings', () => openProfileSettings(), ['preferences', 'account']),
+    ...Object.keys(SCREENS)
+      .filter(screenEnabled)
+      .map((id) => ({
+        key: 'screen:' + id,
+        kind: 'screen',
+        label: SCREEN_LABEL[id] || SCREENS[id].headerName(),
+        alt: id === 'home' ? [] : [SCREENS[id].headerName()],
+        screen: id,
+        run: () => setScreen(id),
+      })),
+    ...(state.tasks || []).map((t) => ({
+      key: 'task:' + t.id,
+      kind: 'task',
+      label: t.title,
+      sub: t.done ? 'Done' : t.dueAt ? t.time : '', // not "No due time" on every row
+      run: () => openEditTask(t),
+    })),
+    ...(on('habits') ? state.habits || [] : []).map((hb) => ({
+      key: 'habit:' + hb.id,
+      kind: 'habit',
+      label: hb.name,
+      run: () => openHabitForm(hb),
+    })),
+    ...(on('goals') ? (state.goals || []).flatMap((sec) => sec.goals || []) : []).map((g) => ({
+      key: 'goal:' + g.id,
+      kind: 'goal',
+      label: g.title,
+      sub: g.completed ? 'Complete' : '',
+      goalId: g.id,
+      run: () => setScreen('goals'),
+    })),
+    ...(on('calendar') ? state.reminders || [] : []).map((r) => ({
+      key: 'reminder:' + r.id,
+      kind: 'reminder',
+      label: r.text,
+      reminder: r,
+    })),
+  ].filter((x) => x && x.label);
+  return {
+    items,
+    // On the reminder's next day (recurrence.js), or its own date: palette.js works out which.
+    openDay: (key) => {
+      const [y, m, d] = key.split('-').map(Number);
+      calGoTo(new Date(y, m - 1, d));
+      setScreen('calendar');
+    },
+    // Notes live on their screen, not in state: the list once, when the palette opens.
+    listNotes: on('notes') ? () => api('/api/notes') : null,
+    // palette.js shows cached note titles only to the account that cached them.
+    userId: state.user && state.user.id,
+    openNote: openNoteById,
+    runQuickAdd,
+    recent: (state.user && state.user.uiPrefs && state.user.uiPrefs.paletteRecent) || [],
+    saveRecent: (list) => saveUiPrefs({ paletteRecent: list }),
+  };
+}
+let goPending = 0; // when "g" was pressed, for the g-then-letter jumps
 document.addEventListener('keydown', (e) => {
+  if (!state.user || e.isComposing) return;
   const k = e.key;
-  if (!state.user || e.isComposing || e.defaultPrevented || e.altKey) return;
-  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (k === 'k' || k === 'K')) {
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (k === 'k' || k === 'K')) {
     e.preventDefault();
-    return openPalette(); // already open: palette.js refocuses that one
-  }
-  const el = document.activeElement;
-  const go = goPressedAt && Date.now() - goPressedAt < 1500;
-  goPressedAt = 0;
-  if (e.ctrlKey || e.metaKey || (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))))
+    const input = document.querySelector('.gb-palette input');
+    if (input) input.focus();
+    else openPalette();
     return;
-  if (document.querySelector('[aria-modal="true"]')) return;
-  if (go) openPalette('go:' + k);
-  else if (k === '/' || k === '?') {
+  }
+  if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
+  const el = document.activeElement;
+  const typing = el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+  if (typing || document.querySelector('[aria-modal="true"]')) {
+    goPending = 0;
+    return;
+  }
+  if (goPending && Date.now() - goPending < 1500) {
+    goPending = 0;
+    if (GO_KEYS[k]) {
+      e.preventDefault();
+      goToScreen(GO_KEYS[k]);
+    }
+    return;
+  }
+  goPending = 0;
+  if (k === '/' || k === '?') {
     e.preventDefault();
-    openPalette(k === '?' ? 'help' : null);
-  } else if (k === 'g') goPressedAt = Date.now();
+    openPalette(k === '?');
+  } else if (k === 'n') {
+    e.preventDefault();
+    openAddTask();
+  } else if (k === 'g') {
+    goPending = Date.now();
+  }
 });
 
 function render() {
+  setAccountZone(state.user && state.user.timezone); // dashboard.js's "today" is the account's
+  // A list reloaded mid-window still holds a delete waiting on its Undo toast.
+  // ponytail: re-filtered on every paint (a few pending items); a per-load hook if that ever shows.
+  undoQueue.reapply();
   const sameScreen = renderedScreen === state.screen;
   // Leaving a screen files its scroll position; coming back to it (back, or its
   // nav tab) restores it instead of starting at the top.
@@ -17517,6 +14225,7 @@ function installOutsideClickToCloseHeaderPopovers() {
     popoverCleanup();
     popoverCleanup = null;
   }
+  syncPanelBackEntry();
   // The More sheet too: it had a backdrop to tap but nothing for Escape.
   if (!state.notifOpen && !state.profileOpen && !state.moreOpen) return;
   function cleanup() {
@@ -17591,6 +14300,11 @@ if (CacheStorage.init) {
           .catch((err) => console.warn('[focus] resume failed:', err));
       }
       if (hydrated && state.user) {
+        // The session cookie is slim (cache-storage.js cookieValue): the profile
+        // fields it leaves out come from the Cache API copy, without overwriting
+        // anything /api/auth/me may already have refreshed.
+        const full = loadSession();
+        if (full) Object.keys(full).forEach((k) => k in state.user || (state.user[k] = full[k]));
         state.wellness = loadWellness();
         state.goalProgress = loadGoalProgress();
         state.money = loadMoney();
@@ -17661,7 +14375,7 @@ function refreshDayIfStale() {
 }
 applyTheme(state.theme);
 followSystemTheme();
-applyPremium(state.premium);
+applyPremium(state.premium, true);
 applyTextScale(state.textScale);
 if (state.user) {
   // Restore the screen from the URL fragment, so refreshing on /circle stays there.
@@ -17672,10 +14386,11 @@ if (state.user) {
   returnToScreen = screenFromHash();
 }
 // Re-push the money blob every 5 minutes in case a save was lost to a dropped
-// connection. Started regardless of state.user — inside the signed-in branch, a
-// user who signed in this session never got it. Wellness rode along here too,
-// PUTting to an endpoint that has never existed. Sleep and mood are saved by
-// their own POSTs at the moment you enter them.
+// connection, or to a 5xx while still online (no 'online' event ever fires for
+// that). Armed whether or not this boot is signed in: it used to be armed only
+// then, so anyone who signed in during the session never got it. Wellness rode
+// along here too, PUTting to an endpoint that has never existed — a failure on
+// a timer, forever. Sleep and mood are saved by their own POSTs.
 setInterval(
   () => {
     if (!state.user || !navigator.onLine) return;
@@ -17686,10 +14401,17 @@ setInterval(
 // Resolve the device model before anything signs in — the label rides along on
 // the request that creates the session.
 initNative();
-render();
+// A link that opened the app (or arrived while it ran): its hash is the route,
+// and the hashchange handler above routes it, signed in or not.
+onDeepLink((url) => {
+  const hash = deepLinkHash(url);
+  if (hash) window.location.hash = hash;
+});
+// Signed in, loadData() above has already painted the loading screen; a second
+// render here rebuilt the same tree before any data had arrived.
+if (!state.user) render();
 // The splash is held open by launchAutoHide:false — nothing else drops it.
 hideNativeSplash();
-window.addEventListener('load', refreshIcons);
 window.addEventListener('online', handleOnline);
 window.addEventListener('offline', handleOffline);
 
@@ -17717,5 +14439,5 @@ if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.DEV
   }
   // money.js is a lazy chunk now; load it on DEV boot so its _demo() (and
   // share-card's, which rides along) still runs without opening Money.
-  import('./money.js').catch(() => {});
+  import('./money.js').catch(() => {}); // not money-screen.js: no CSS, so a dev boot matches a real one
 }

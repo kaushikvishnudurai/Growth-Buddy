@@ -176,6 +176,15 @@ class QuickAddServiceTest {
         assertEquals(SUNDAY, said("remind me tonight at 9pm to call mom", "2026-10-11", "21:00", "none", late).date());
     }
 
+    /** SEC-10: names go into the system prompt clipped, each and in total. */
+    @Test
+    void habitNamesAreClippedOnTheWayIntoThePrompt() {
+        assertEquals("(none)", QuickAddService.habitLine(null));
+        assertEquals("Read, Walk", QuickAddService.habitLine(List.of(" Read ", "Walk", "")));
+        assertEquals(120, QuickAddService.habitLine(List.of("x".repeat(80_000))).length());
+        assertEquals(4096, QuickAddService.habitLine(java.util.Collections.nCopies(100, "y".repeat(120))).length());
+    }
+
     /** A spent AI budget is not a dead box: the plain patterns answer, flagged limited. */
     @Test
     void aSpentBudgetFallsBackFlaggedLimited() {
