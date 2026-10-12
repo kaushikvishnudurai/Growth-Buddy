@@ -173,3 +173,26 @@ test('NEW-15: a toast from one screen does not follow to the next', async ({ pag
   await expect(msg).toHaveCount(0, { timeout: 2000 });
   await shot(page, 'NEW-15', info);
 });
+
+// Home draws an empty shell while the first-run sheet is up (setupPending); every way out of the
+// sheet must bring the checklist back at once. Before the fix only a reload did.
+for (const how of ['Skip', 'Escape']) {
+  test(`first run: leaving the setup sheet by ${how} renders Home's checklist`, async ({ page, emptyAccount }) => {
+    await boot(page, emptyAccount);
+    // A closed sheet fades out under aria-hidden before it leaves the DOM.
+    const sheet = page.locator('.gb-modal-overlay:not([aria-hidden="true"]) .gb-setup-modal');
+    await expect(sheet).toBeVisible({ timeout: 15_000 });
+    if (how === 'Skip') {
+      // The secondary button on every step (Skip, Keep <zone>), until the sheet is gone.
+      await expect(sheet.locator('.gb-modal-cancel')).toHaveText('Skip');
+      while (await sheet.isVisible()) {
+        await sheet.locator('.gb-modal-cancel').click();
+        await page.waitForTimeout(150);
+      }
+    } else {
+      await page.keyboard.press('Escape');
+    }
+    await expect(sheet).toHaveCount(0);
+    await expect(page.locator('.gb-onboard')).toBeVisible({ timeout: 5000 });
+  });
+}
