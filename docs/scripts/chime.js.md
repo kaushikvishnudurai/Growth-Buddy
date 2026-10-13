@@ -40,6 +40,8 @@ Storage (done by app.js, described here): the **choice** in `ui_prefs.notifySoun
 CacheStorage per device (`gb.notifySound.<id>` behind an index at `gb.notifySounds`) and on the
 account (`/api/notifications/custom-sounds`) — never in ui_prefs, which rides on every `/api/auth/me`.
 
-ponytail: a custom upload stays in-app. Android can only ring a file that shipped with the APK;
-`CustomNotificationSoundPlugin` exists in the Capacitor project but is **not registered** (empty
-`BridgeActivity`), so an upload falls back to the phone's sound. Don't write a second plugin.
+On the phone an own sound rings on **its own channel**, `gb-tone-custom-<id8>` (push.js
+`channelForTone`; `customChime(key)` hands over the data URL): the Capacitor project's
+`CustomNotificationSoundPlugin` writes the bytes to `filesDir/gb_sounds/`, serves them through the
+app FileProvider and builds the channel. An APK without it, or a sound it refuses, rings on
+`gb-tone-default` (the phone's sound) instead of being dropped. Don't write a second plugin.

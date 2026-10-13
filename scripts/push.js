@@ -28,10 +28,11 @@ import {
   TIMER_ALARM_ID,
   SILENT_CHANNEL,
   versionedChannel,
+  pruneCustomChannels,
 } from './native.js';
 import { occursOn } from './recurrence.js';
 import { drinkRateByHour } from './water-stats.js';
-import { SOUNDS } from './chime.js';
+import { SOUNDS, customChime, customChimes } from './chime.js';
 import { localKey as dayKey } from './dates.js';
 import { onBreakDay } from './break.js';
 
@@ -413,9 +414,8 @@ export function upcomingHabitAlarms(habits, now, days = HORIZON_DAYS) {
 }
 
 /* Only the synthesised chimes have a rendered file. 'off', an unknown key, and
-   the user's own upload (which lives as a data URL in CacheStorage, not in the
-   bundle, so Android has nothing to point a channel at) all fall through to the
-   phone's own notification sound.
+   the user's own sound (a data URL, no file: its channel carries it instead,
+   see channelForTone) all have none.
 
    The underscore is not cosmetic: gen-chimes.mjs writes these into the
    Capacitor project's res/raw as well as the web bundle, and an Android raw
@@ -428,10 +428,18 @@ function soundFile(key) {
 /* Which channel a tone rings on. Named here rather than left to the plugin,
    which would invent one at an importance that never shows a banner — see the
    long note in native.js. A tone with no rendered file shares one channel that
-   rings with the phone's own sound. */
+   rings with the phone's own sound. The user's own sound gets a channel per
+   sound, named by its id: a channel's sound is frozen, and a re-upload is a new
+   id, so it is a new channel rather than an edit nothing would apply. */
 function channelForTone(key) {
   if (key === 'off') return SILENT_CHANNEL;
+  const own = customChime(key);
+  if (own) return customChannel(own);
   return versionedChannel(SOUNDS[key] ? 'gb-tone-' + key : 'gb-tone-default');
+}
+
+function customChannel(own) {
+  return versionedChannel('gb-tone-custom-' + own.key.slice('custom:'.length).toLowerCase());
 }
 
 /**
@@ -470,9 +478,12 @@ export function upcomingAlarms({ reminders, water, habits, sound, lead, quiet, b
     // Each reminder's own tone if it set one, the user's default otherwise.
     // The water nudge never sets one, so it always follows the default.
     const key = n.sound || sound;
+    const own = customChime(key);
     return Object.assign(n, {
       id,
       sound: soundFile(key),
+      // What native.js needs to build that sound's channel on the phone.
+      customSound: own ? { name: own.name, url: own.url } : undefined,
       // 'Silent' means a silent notification, not no notification. Android
       // takes the sound from the CHANNEL, so a channel built without one keeps
       // the system default — which made the Silent tone ring the phone's own
@@ -518,6 +529,8 @@ async function syncNow(opts) {
   // the user's snooze length.
   await registerNotificationActions(notificationActionTypes(opts && opts.snoozeLabel));
   const queue = upcomingAlarms(opts, new Date());
+  // A deleted sound's channel would sit in the phone's Settings forever.
+  await pruneCustomChannels(customChimes().map((c) => customChannel(c)));
   // Cancel first: an edited or deleted reminder must not keep its old alarm,
   // and rebuilding the whole set is cheaper to reason about than diffing it.
   // Not the focus timer's: a session running while reminders re-sync must

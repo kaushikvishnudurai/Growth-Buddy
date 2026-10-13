@@ -87,7 +87,8 @@ only 4 does. So we create channels ourselves and always pass `channelId`.
 | `isStaleChannel(id, version)` | ours (`gb-` prefix) and of another version |
 | `pruneStaleChannels()` | `listChannels` / `deleteChannel` on stale ones, from `initNative`; never touches non-`gb-` channels |
 | `SILENT_CHANNEL` | `gb-silent`, the one channel with no sound: **importance 2** (shade only). Sound is left off — it's importance 2 that keeps it quiet, a soundless channel would take the system default |
-| `ensureChannel(LN, id, sound)` | `createChannel` once per id per session (a failure is also remembered — it means the platform has no channels, e.g. iOS). Tone channels: importance 4, named "Reminders · <Tone>" |
+| `ensureChannel(LN, id, sound, custom)` | `createChannel` once per id per session (a failure is also remembered — it means the platform has no channels, e.g. iOS). Tone channels: importance 4, named "Reminders · <Tone>". With `custom` ({name, url}, an own sound) it calls `CustomNotificationSound.ensureChannel` instead and **resolves false when that fails**: `scheduleLocalNotifications` then moves the alarm to `gb-tone-default`, since Android silently drops a notification naming a missing channel |
+| `pruneCustomChannels(keep)` | push.js `syncNow`: deletes `gb-tone-custom-*` channels (and their files) for sounds no longer on the account |
 
 ponytail: one version for every channel — a bump re-creates all and resets any user per-channel tweak.
 

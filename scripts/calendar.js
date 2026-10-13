@@ -871,17 +871,10 @@ function TimeRange(timeInput, endInput, clearLabel = 'Remove end time') {
     error.style.display = msg ? '' : 'none';
     endInput.setAttribute('aria-invalid', msg ? 'true' : 'false');
   }
-  /* The native time picker draws the OS's clock (10:50 PM) whatever the app's
-     12/24h setting; `lang` doesn't move Chrome's. So the app's own reading
-     sits under it. */
-  const echo = h('p', { class: 'gb-field-hint', 'aria-hidden': 'true' });
   function sync() {
     if (!timeInput.value) endInput.value = '';
     endInput.disabled = !timeInput.value;
     clearBtn.style.visibility = endInput.value ? 'visible' : 'hidden';
-    echo.textContent = timeInput.value
-      ? formatTime(timeInput.value) + (endInput.value ? ' to ' + formatTime(endInput.value) : '')
-      : '';
     setError('');
   }
   timeInput.addEventListener('input', sync);
@@ -898,7 +891,6 @@ function TimeRange(timeInput, endInput, clearLabel = 'Remove end time') {
       endInput,
       clearBtn
     ),
-    echo,
     error
   );
   return {
@@ -2074,6 +2066,7 @@ function buildForm() {
   const endInput = h('input', {
     type: 'time',
     class: 'gb-input gb-input--time',
+    placeholder: 'End',
     'aria-label': 'End time (optional, makes it a busy block)',
   });
   const range = TimeRange(timeInput, endInput);

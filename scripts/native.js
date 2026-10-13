@@ -246,7 +246,7 @@ async function pruneStaleChannels() {
 /* createChannel is idempotent but not free, and this runs per batch. A failed
    call is marked done too: failure means the platform has no channels, and
    retrying that once per schedule would cost a round trip forever. */
-const channelsReady = new Set();
+const channelsReady = new Map(); // id -> whether it can be posted to
 
 /** 'gb-tone-chime' -> 'Chime', for the row the user sees in Settings. */
 function toneName(id) {
@@ -254,9 +254,29 @@ function toneName(id) {
   return key.charAt(0).toUpperCase() + key.slice(1);
 }
 
-async function ensureChannel(LN, id, sound) {
-  if (!id || channelsReady.has(id)) return;
-  channelsReady.add(id);
+/* Resolves to whether the channel can be posted to. Only the user's own sound
+   can say no: its channel comes from CustomNotificationSoundPlugin, and an APK
+   built before that plugin (or a sound it refuses) has no such channel, and a
+   notification naming a channel that doesn't exist is dropped by Android
+   without a word. The caller moves it to the default channel instead. */
+async function ensureChannel(LN, id, sound, custom) {
+  if (!id) return true;
+  if (channelsReady.has(id)) return channelsReady.get(id);
+  if (custom) {
+    const CS = nativePlugin('CustomNotificationSound');
+    let ok = false;
+    try {
+      if (CS) {
+        await CS.ensureChannel({ id, name: 'Reminders \u00b7 ' + custom.name, dataUrl: custom.url });
+        ok = true;
+      }
+    } catch (_) {
+      /* an older APK, or a sound it could not use */
+    }
+    channelsReady.set(id, ok);
+    return ok;
+  }
+  channelsReady.set(id, true);
   const silent = id === SILENT_CHANNEL;
   try {
     await LN.createChannel({
@@ -274,6 +294,19 @@ async function ensureChannel(LN, id, sound) {
     });
   } catch (_) {
     /* no channels on this platform */
+  }
+}
+
+/** Drop the channels of the user's own sounds that are gone. `keep` is the ids still in use. */
+export async function pruneCustomChannels(keep) {
+  const CS = nativePlugin('CustomNotificationSound');
+  if (!CS) return;
+  try {
+    await CS.prune({ keep });
+    // A sound deleted and then restored must be rebuilt, not trusted to the cache.
+    for (const id of channelsReady.keys()) if (id.startsWith('gb-tone-custom-') && !keep.includes(id)) channelsReady.delete(id);
+  } catch (_) {
+    /* an older APK, or no channels on this platform */
   }
 }
 
@@ -319,7 +352,12 @@ export async function scheduleLocalNotifications(items) {
   if (!LN || !items.length) return false;
   try {
     // Cheap after the first of each id — ensureChannel returns on a Set hit.
-    for (const n of items) await ensureChannel(LN, n.channelId, n.sound);
+    for (const n of items) {
+      if (!(await ensureChannel(LN, n.channelId, n.sound, n.customSound))) {
+        n.channelId = versionedChannel('gb-tone-default');
+        await ensureChannel(LN, n.channelId);
+      }
+    }
     await LN.schedule({
       notifications: items.map((n) => ({
         id: n.id | 0,

@@ -12,13 +12,12 @@
    sound can only be a raw resource, and native.js builds those channels itself
    so they land at an importance that actually shows a banner.
    So: edit SOUNDS, re-run `node scripts/gen-chimes.mjs`.
-   ponytail: the user's OWN uploaded file stays in-app. It lives as a data URL
-   in CacheStorage, and Android can only ring a file that shipped with the app;
-   giving it a channel means writing it out natively. That plugin now exists —
-   CustomNotificationSoundPlugin in the Capacitor project — so do not write a
-   second one. It is not reached yet: nothing registers it (MainActivity is an
-   empty BridgeActivity, and capacitor.plugins.json only lists npm plugins), so
-   an upload still falls back to the phone's own sound.
+   The user's OWN sound (an upload or a recording) lives as a data URL in
+   CacheStorage, not in the bundle, so it has no res/raw file. On Android its
+   channel is built natively instead: CustomNotificationSoundPlugin (Capacitor
+   project) writes the bytes out and points a channel at them, reached through
+   native.js ensureChannel. An APK without that plugin rings the phone's own
+   sound for it, as it always did.
    ===================================================================== */
 
 /* { f: Hz, t: seconds from the start, d: seconds to decay, g: peak gain,
@@ -158,6 +157,11 @@ export function customChimes() {
 function findCustom(key) {
   if (key === 'custom') return customs[0] || null;
   return customs.find((c) => c.key === key) || null;
+}
+
+/** One of the user's own sounds by its key, with its data URL: { key, id, name, url } or null. */
+export function customChime(key) {
+  return isCustomKey(key) ? findCustom(key) : null;
 }
 
 /** Whether a stored tone key still names something playable — a built-in or one of theirs. */
