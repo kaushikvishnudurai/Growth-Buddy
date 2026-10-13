@@ -135,6 +135,10 @@ body {
   color: var(--fg1);
   position: relative;
   overflow: hidden;
+  /* hidden is still a scroll container: scrollIntoView (Buddy's read, a nutrient
+     pill) scrolled the whole shell up, header under the status bar and the nav
+     mid-screen. clip can't be scrolled, so only .gb-scroll moves. */
+  overflow: clip;
 }
 
 /* ---- Scroll region ---- */
@@ -6704,6 +6708,53 @@ button.gb-food-level {
     display: none;
   }
 }
+/* timeField() in gb-kit.js: the app's own 12/24h reading painted over the
+   native input. The wrapper wears the input's classes for layout only, so its
+   box is stripped (span + two classes outweighs the padding rules below). The
+   text lines up with the input's own through --time-pad. */
+span.gb-time.gb-input {
+  position: relative;
+  display: flex;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  min-height: 0;
+  transition: none;
+}
+.gb-time > .gb-input {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  color: transparent;
+}
+.gb-time-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  padding-inline: calc(var(--time-pad, 14px) + 1.5px);
+  color: var(--fg1);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  pointer-events: none;
+}
+.gb-time-text.is-empty {
+  color: var(--fg3);
+}
+.gb-time:has(> .gb-input:disabled) > .gb-time-text {
+  opacity: 0.5;
+}
+/* Typing on a keyboard needs the native segments it's typing into. */
+.gb-time > .gb-input:focus-visible {
+  color: var(--fg1);
+}
+.gb-time > .gb-input:focus-visible + .gb-time-text {
+  visibility: hidden;
+}
 .gb-input--about {
   min-height: 92px;
   max-height: 180px;
@@ -7088,6 +7139,7 @@ button.gb-food-level {
 }
 .gb-rem-range .gb-input--time {
   padding-inline: 10px;
+  --time-pad: 10px;
 }
 .gb-rem-range .gb-input--time:disabled {
   opacity: 0.5;
@@ -14041,6 +14093,7 @@ h2[tabindex='-1']:focus {
 }
 .gb-routine-item .gb-input--time {
   padding-inline: var(--space-2);
+  --time-pad: var(--space-2);
 }
 .gb-routine-item-head > .gb-input {
   flex: 1;
@@ -17719,6 +17772,11 @@ button.gb-tl-title {
     display: none;
   }
 }
+/* Before the laptop hide below: same specificity, so order decides. */
+.gb-mini-cal-toggle {
+  display: block;
+  margin: 4px auto 0;
+}
 @media (min-width: 1024px) {
   .gb-suggest-compact,
   .gb-tl-toggle,
@@ -17765,10 +17823,6 @@ button.gb-tl-title {
 .gb-suggest-line > .gb-suggest-ask {
   flex: 1;
   min-width: 0;
-}
-.gb-mini-cal-toggle {
-  display: block;
-  margin: 4px auto 0;
 }
 
 @media (min-width: 1024px) {

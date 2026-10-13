@@ -9,6 +9,7 @@
    ones you cannot check by tapping around the app. */
 
 import assert from 'node:assert/strict';
+import { setCustomChimes } from './chime.js';
 import { breakState, startBreak, endBreak, onBreakDay } from './break.js';
 import {
   upcomingReminderAlarms,
@@ -307,19 +308,38 @@ assert.deepEqual(upcomingWaterAlarms({ on: true, from: '21:00', to: '09:00' }, N
   assert.equal(q.length, 0, 'an unparseable time is skipped, not queued');
 }
 
-/* The user's own upload and anything unknown have no rendered file, so they
-   fall through to the phone's own sound rather than pointing a channel at
-   nothing — the user picked a real tone, we just can't ship that one. They
-   share one audible channel of ours, which is what makes them banner; only
-   'off' is routed to the silent channel, where nothing rings at all. What they
-   must never be is channel-less, which hands them back to the plugin. */
-for (const key of ['custom', 'nope', undefined]) {
+/* An unknown key, and an own-sound key whose sound isn't on this device, have
+   nothing to ring, so they fall through to the phone's own sound on one audible
+   channel of ours, which is what makes them banner; only 'off' is routed to the
+   silent channel. What they must never be is channel-less, which hands them
+   back to the plugin. */
+for (const key of ['custom', 'custom:deadbeef', 'nope', undefined]) {
   const q = upcomingAlarms(
     { reminders: [{ id: 'a', text: 'x', date: '2026-09-16', time: '18:00' }], sound: key },
     NOW
   );
   assert.equal(q[0].sound, undefined, 'no file for ' + key);
   assert.equal(q[0].channelId, 'gb-tone-default', 'an audible channel of ours for ' + key);
+}
+
+/* The user's own sound rings on a channel of its own, named by its id (a
+   channel's sound is frozen; a re-upload is a new id, so a new channel), and
+   carries the bytes native.js builds that channel from. The bare 'custom' of
+   old ui_prefs means the first sound, so it lands on the same channel. */
+{
+  setCustomChimes([{ id: 'AB12cd34-0000', name: 'Doorbell', dataUrl: 'data:audio/mpeg;base64,AAAA' }]);
+  for (const key of ['custom:AB12cd34', 'custom']) {
+    const q = upcomingAlarms(
+      { reminders: [{ id: 'a', text: 'x', date: '2026-09-16', time: '18:00' }], sound: key },
+      NOW
+    );
+    assert.equal(q[0].channelId, 'gb-tone-custom-ab12cd34', 'its own channel for ' + key);
+    assert.deepEqual(q[0].customSound, { name: 'Doorbell', url: 'data:audio/mpeg;base64,AAAA' });
+    assert.equal(q[0].sound, undefined, 'no res/raw file: the channel carries the sound');
+  }
+  const q = upcomingAlarms({ reminders: [{ id: 'a', text: 'x', date: '2026-09-16', time: '18:00' }], sound: 'bloom' }, NOW);
+  assert.equal(q[0].customSound, undefined, 'a built-in tone needs no bytes');
+  setCustomChimes([]);
 }
 
 /* ---- habits ---- */

@@ -1571,6 +1571,9 @@ function storeCustomChimes(list) {
   if (index.length) CacheStorage.setItem(CUSTOM_CHIMES_KEY, JSON.stringify(index));
   else CacheStorage.removeItem(CUSTOM_CHIMES_KEY);
   setCustomChimes(list);
+  // On a phone each of these sounds is a notification channel: a new one needs
+  // building, a deleted one's channel removing (push.js syncNow does both).
+  reSyncDeviceAlarms();
 }
 
 /* The server takes the client's id, so a retried upload replaces rather than
@@ -3798,9 +3801,10 @@ function openMeasuredCheckin(habit) {
    can show one again, which costs nothing. */
 const shownMoments = new Set();
 function celebrateMoment(m) {
-  if (!m || shownMoments.has(m.key)) return;
+  if (!m || shownMoments.has(m.key)) return false;
   shownMoments.add(m.key);
   celebrate(m);
+  return true;
 }
 
 async function plainToggleHabit(id) {
@@ -5773,7 +5777,9 @@ async function quickAddWater(amountMl, dayKey, drinkType) {
     unqueue();
     pendingWater.delete(tempId);
     const goal = (state.water && state.water.goalMl) || 0;
-    celebrateMoment(waterMoment(w0.consumedMl || 0, (w0.consumedMl || 0) + counts, goal, todayKey()));
+    // The glass that reaches the goal gets the popup; every other one a word of thanks.
+    const goalMet = celebrateMoment(waterMoment(w0.consumedMl || 0, (w0.consumedMl || 0) + counts, goal, todayKey()));
+    if (!goalMet && !drink) toastSuccess('Your body thanks you for the water.');
     if (seq > waterPaintedSeq) {
       waterPaintedSeq = seq;
       state.water = withPendingWater(updated);

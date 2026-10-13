@@ -40,7 +40,40 @@ function h(tag, attrs, ...children) {
     }
   }
   appendChildren(el, children);
+  if (tag === 'input' && el.type === 'time') timeField(el);
   return el;
+}
+
+/* A native time input draws the device's clock (21:58), never the app's 12/24h
+   setting; neither `lang` nor any attribute moves it. So its own text is made
+   transparent and the app's reading is painted over it, and the input still
+   opens the OS picker and holds 'HH:MM'. appendChildren places the wrapper
+   wherever the input is passed; the wrapper carries the input's classes so
+   every layout rule still lands. A keyboard user (:focus-visible) gets the
+   native segments back to type into.
+   ponytail: an input appended outside h() stays bare (native text, still works). */
+function timeField(input) {
+  const text = h('span', { class: 'gb-time-text', 'aria-hidden': 'true' });
+  const wrap = h('span', { class: input.className + ' gb-time' }, input, text);
+  const own = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+  const paint = () => {
+    const v = own.get.call(input);
+    text.textContent = v ? formatTime(v) : input.getAttribute('placeholder') || '';
+    text.classList.toggle('is-empty', !v);
+  };
+  // Code sets .value (a reset, an end cleared) without any event: repaint on that too.
+  Object.defineProperty(input, 'value', {
+    configurable: true,
+    get: () => own.get.call(input),
+    set: (v) => {
+      own.set.call(input, v);
+      paint();
+    },
+  });
+  input.addEventListener('input', paint);
+  input.addEventListener('change', paint);
+  paint();
+  input._gbField = wrap;
 }
 
 function appendChildren(parent, kids) {
@@ -51,7 +84,7 @@ function appendChildren(parent, kids) {
       continue;
     }
     if (c instanceof Node) {
-      parent.appendChild(c);
+      parent.appendChild(c._gbField || c);
       continue;
     }
     parent.appendChild(document.createTextNode(String(c)));
