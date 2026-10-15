@@ -4384,6 +4384,22 @@ button.gb-seat:disabled {
   font-weight: 800;
   color: var(--fg1);
 }
+/* A guessed night's times, tappable: they open the sleep dialog. */
+.gb-sleep-guess {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+.gb-coach-title.gb-sleep-guess {
+  font-family: var(--font-display);
+  font-size: var(--text-h4);
+  font-weight: 800;
+}
 /* The one-thing card's reason line, and its button never squeezed by a long title. */
 .gb-coach-why {
   margin-top: 2px;

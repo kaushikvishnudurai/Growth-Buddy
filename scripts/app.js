@@ -3698,19 +3698,19 @@ function openMeasuredCheckin(habit) {
     // Not done yet: last time's number ("same as last time"), so a usual day is one tap.
     value: String((editing ? habit.todayValue : habit.metric !== 'steps' ? habit.lastValue : null) ?? ''),
   });
-  // The phone already counted them. Fill in only while the box is still empty,
-  // so a number the user started typing is never overwritten.
-  // No phone count (the web, or no permission): last time's number, selected,
-  // so typing replaces it — the box used to sit blank.
+  // The phone already counted them: fill that in, but only until the user
+  // touches the box, so nothing they type (or clear) is overwritten.
+  // Last time's number stays a placeholder: filled in as a value it read as
+  // today's count and got saved as one.
   if (habit.metric === 'steps' && !editing) {
     if (habit.lastValue != null) {
       valueInput.placeholder = 'Last time ' + Math.round(habit.lastValue).toLocaleString();
     }
+    let touched = false;
+    valueInput.addEventListener('input', () => (touched = true), { once: true });
     readTodaySteps().then((n) => {
-      if (valueInput.value !== '') return;
-      const v = n != null ? n : habit.lastValue;
-      if (v == null) return;
-      valueInput.value = String(Math.round(v));
+      if (touched || valueInput.value !== '' || n == null) return;
+      valueInput.value = String(n);
       if (document.activeElement === valueInput) valueInput.select();
       else valueInput.addEventListener('focus', () => valueInput.select(), { once: true });
     });

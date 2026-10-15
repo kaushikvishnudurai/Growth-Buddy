@@ -302,7 +302,7 @@ function planChips({ water, wellness, onQuickAddWater, onAddSleep, onAddMood, sk
 /* The one thing today (one-thing.js picks it): pinned above the layout, not a
    widget, so saved layouts never see it. One button, the existing handler; the
    render after it succeeds picks the next thing, or drops the card. */
-function oneThingFor({ tasks, habits, water, wellness, money, phoneNight, waterUsualHours, features, skipKinds, toggleTask, toggleHabit, onOpenMoney, onConfirmSleep, onQuickAddWater, onAddMood }) {
+function oneThingFor({ tasks, habits, water, wellness, money, phoneNight, waterUsualHours, features, skipKinds, toggleTask, toggleHabit, onOpenMoney, onConfirmSleep, onAddSleep, onQuickAddWater, onAddMood }) {
   const act = {
     streak: toggleHabit,
     overdue: toggleTask,
@@ -312,7 +312,8 @@ function oneThingFor({ tasks, habits, water, wellness, money, phoneNight, waterU
     mood: onAddMood && (() => onAddMood()),
   };
   const one = pickOneThing({ tasks, habits, water, wellness, money, phoneNight, waterUsualHours, features, skipKinds, can: (k) => !!act[k] });
-  return one && { ...one, run: () => act[one.kind](one.arg) };
+  // The sleep guess's times open the sleep dialog: a night that was close but not right.
+  return one && { ...one, run: () => act[one.kind](one.arg), edit: one.kind === 'sleep' ? onAddSleep : null };
 }
 
 function OneThingCard(one) {
@@ -331,7 +332,9 @@ function OneThingCard(one) {
           'div',
           null,
           h('div', { class: 'gb-coach-kicker' }, 'One thing today'),
-          h('div', { class: 'gb-coach-title' }, title),
+          one.edit
+            ? h('button', { type: 'button', class: 'gb-coach-title gb-sleep-guess', onclick: one.edit, 'aria-label': title + ' Edit' }, title)
+            : h('div', { class: 'gb-coach-title' }, title),
           h('div', { class: 'gb-coach-why' }, one.why)
         ),
         h(
@@ -356,8 +359,8 @@ function WellnessQuick({ usual, askMood, onConfirmSleep, onQuickMood, onAddSleep
         'div',
         { class: 'gb-wellness-quick-row' },
         h(
-          'span',
-          { class: 'gb-wellness-quick-ask' },
+          onAddSleep ? 'button' : 'span',
+          onAddSleep ? { type: 'button', class: 'gb-wellness-quick-ask gb-sleep-guess', onclick: onAddSleep } : { class: 'gb-wellness-quick-ask' },
           usual.source === 'phone'
             ? 'Your phone logged ' + sharedFormatTime(usual.bedtime) + ' to ' + sharedFormatTime(usual.wakeTime) + '. Save it?'
             : 'Slept ' + sharedFormatTime(usual.bedtime) + ' to ' + sharedFormatTime(usual.wakeTime) + '?'
@@ -3292,6 +3295,7 @@ function ScreenDashboard({
     toggleHabit,
     onOpenMoney,
     onConfirmSleep,
+    onAddSleep,
     onQuickAddWater,
     onAddMood,
   });
