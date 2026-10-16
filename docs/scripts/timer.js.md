@@ -24,7 +24,7 @@ repaints, never what it says.
 id **`TIMER_ALARM_ID`** = 2, exported from `native.js` — 1 is the push test, and reminder ids
 start far above both because they are derived from the minute they fire in; push.js's
 `syncDeviceAlarms` re-sync keeps it, it used to wipe it), so a phone rings even when the WebView is
-frozen. It carries `extra {kind: 'focus'}`, so a tap on it opens the timer (push.js
+frozen. It rings the user's tone on its channel (push.js `alarmTone()`, so Silent stays silent). It carries `extra {kind: 'focus'}`, so a tap on it opens the timer (push.js
 `notificationTarget`). `pause`, `reset` and `setMode` all `cancelEndAlarm()`. That cancel is
 `cancelLocalNotifications([id])` from `native.js`, **not**
 `cancelPendingLocalNotifications()` — the latter clears the whole queue and would

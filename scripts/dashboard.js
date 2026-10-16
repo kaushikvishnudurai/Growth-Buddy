@@ -37,6 +37,7 @@ import {
   taskWhen,
   localDayKey,
   tasksForToday,
+  zoneMinutes,
 } from './home-order.js';
 import { suggestReminderTime } from './habit-stats.js';
 import { waterFish, bubbleRise } from './water-fish.js';
@@ -61,6 +62,8 @@ export function setAccountZone(zone) {
   accountZone = zone || '';
 }
 const todayKey = () => sharedTodayKey(accountZone);
+// The account's day of an instant, to compare with todayKey(); localDayKey is the device's.
+const accountDayOf = (d) => sharedTodayKey(accountZone, d);
 
 const ONBOARD_KEY = 'gb.onboardDismissed';
 
@@ -241,8 +244,11 @@ function allGoals(sections) {
    the current run. ponytail: drawn from `streak` + `doneToday` alone (Home has
    no per-day history loaded), so a day before the run reads "not in the streak"
    rather than a confirmed miss. Load /api/habits/history if it must say more. */
-function StreakChain({ streak, doneToday, owed }) {
+function StreakChain({ streak, doneToday, owed, best }) {
   const n = Number(streak) || 0;
+  // A reset run with a past one: "0 · best 12", not a bare 0 that reads as no history.
+  const was = !n && Number(best) > 0 ? Number(best) : 0;
+  const said = n + '-day streak' + (was ? ', best ' + was : '');
   const before = doneToday ? n - 1 : n; // days of the run before today
   const links = [];
   for (let k = 6; k >= 0; k--) {
@@ -253,9 +259,9 @@ function StreakChain({ streak, doneToday, owed }) {
   }
   return h(
     'span',
-    { class: 'gb-chain', role: 'img', 'aria-label': n + '-day streak', title: n + '-day streak' },
+    { class: 'gb-chain', role: 'img', 'aria-label': said, title: said },
     h('span', { class: 'gb-chain-links', 'aria-hidden': 'true' }, links),
-    h('span', { class: 'gb-chain-n', 'aria-hidden': 'true' }, Icon('flame', { size: 12 }), String(n))
+    h('span', { class: 'gb-chain-n', 'aria-hidden': 'true' }, Icon('flame', { size: 12 }), String(n) + (was ? ' · best ' + was : ''))
   );
 }
 
@@ -311,7 +317,7 @@ function oneThingFor({ tasks, habits, water, wellness, money, phoneNight, waterU
     water: onQuickAddWater,
     mood: onAddMood && (() => onAddMood()),
   };
-  const one = pickOneThing({ tasks, habits, water, wellness, money, phoneNight, waterUsualHours, features, skipKinds, can: (k) => !!act[k] });
+  const one = pickOneThing({ tasks, habits, water, wellness, money, phoneNight, waterUsualHours, features, skipKinds, can: (k) => !!act[k], today: todayKey(), hour: zoneParts(new Date()) / 60 });
   // The sleep guess's times open the sleep dialog: a night that was close but not right.
   return one && { ...one, run: () => act[one.kind](one.arg), edit: one.kind === 'sleep' ? onAddSleep : null };
 }
@@ -2043,13 +2049,7 @@ function settledToggle(key, wasDone, run) {
 
 /* The account's clock as minutes since midnight, the line's one unit. */
 function zoneParts(d) {
-  try {
-    const p = new Intl.DateTimeFormat('en-GB', { timeZone: accountZone || undefined, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(d);
-    const get = (t) => +(p.find((x) => x.type === t) || { value: 0 }).value;
-    return get('hour') * 60 + get('minute');
-  } catch (_) {
-    return d.getHours() * 60 + d.getMinutes();
-  }
+  return zoneMinutes(accountZone, d);
 }
 const hhmmOf = (m) => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
 
@@ -2195,8 +2195,8 @@ function DayTimeline({
   if (showTasks) {
     (tasks || []).forEach((t) => {
       const due = t.dueAt ? new Date(t.dueAt) : null;
-      const dueKey = due && !Number.isNaN(due.getTime()) ? localDayKey(due) : null;
-      const doneToday = t.done && (!t.doneAt || localDayKey(new Date(t.doneAt)) === today);
+      const dueKey = due && !Number.isNaN(due.getTime()) ? accountDayOf(due) : null;
+      const doneToday = t.done && (!t.doneAt || accountDayOf(new Date(t.doneAt)) === today);
       if (t.done && !doneToday) return; // yesterday's wins are Progress's
       if (t.paused) return void later.push(taskRow(t, '', false));
       if (!dueKey) return void anytime.push(taskRow(t, '', false));
@@ -2269,7 +2269,7 @@ function DayTimeline({
   const marks = rems.concat(
     showTasks
       ? (tasks || [])
-          .filter((t) => !t.paused && t.dueAt && localDayKey(new Date(t.dueAt)) === today)
+          .filter((t) => !t.paused && t.dueAt && accountDayOf(new Date(t.dueAt)) === today)
           .map((t) => ({ time: hhmmOf(zoneParts(new Date(t.dueAt))), tag: 'urgent' }))
           .sort((a, b) => a.time.localeCompare(b.time))
       : []
@@ -2447,7 +2447,7 @@ function TodayCard(props) {
   const today = todayKey();
   const now = new Date();
   const nowMin = zoneParts(now);
-  const tasks = tasksForToday(allTasks, now);
+  const tasks = tasksForToday(allTasks, now, accountZone);
   const doneTasks = tasks.filter((t) => t.done).length;
   const due = habits.filter((hb) => habitDue(hb) || hb.doneToday);
   const doneHabits = due.filter((hb) => hb.doneToday).length;
@@ -2467,7 +2467,7 @@ function TodayCard(props) {
   late.forEach((t) =>
     items.push({
       title: t.title,
-      when: localDayKey(new Date(t.dueAt)) < today ? 'overdue' : 'overdue · ' + sharedFormatTime(new Date(t.dueAt)),
+      when: accountDayOf(new Date(t.dueAt)) < today ? 'overdue' : 'overdue · ' + sharedFormatTime(new Date(t.dueAt)),
       late: true,
       tick: () => (toggleTask(t.id), undoToast(t.title, () => toggleTask(t.id))),
     })
@@ -2574,7 +2574,7 @@ function TodayCard(props) {
                   it.tick
                     ? Check({ onToggle: it.tick, label: it.title, list: 'pending' })
                     : h('span', { class: 'gb-tl-dot' }, Icon(it.icon || 'circle', { size: 13, sw: 2.6 })),
-                  h('span', { class: 'gb-pending-title' }, it.icon ? Icon(it.icon, { size: 14, sw: 2.4 }) : null, it.title),
+                  h('span', { class: 'gb-pending-title', title: it.title }, it.icon ? Icon(it.icon, { size: 14, sw: 2.4 }) : null, h('span', null, it.title)),
                   h('span', { class: 'gb-pending-when' + (it.late ? ' is-late' : '') }, it.when)
                 )
               )
@@ -2661,10 +2661,10 @@ function SuggestCard({ outlookData, onDismissInsight, onInsightAction, plan }) {
               },
             },
             Icon(insight ? insight.icon : 'sparkles', { size: 16, color: 'var(--brand)' }),
-            h('span', null, lead),
+            h('span', { title: lead }, lead),
             Icon('chevron-down', { size: 16 })
           )
-        : h('span', { class: 'gb-suggest-ask' }, lead),
+        : h('span', { class: 'gb-suggest-ask', title: lead }, lead),
       plan
         ? h('button', { type: 'button', class: 'gb-btn gb-btn--primary gb-btn--compact', onclick: plan.onPlanToday }, Icon('sparkles', { size: 16, sw: 2.5 }), 'Plan my day')
         : null

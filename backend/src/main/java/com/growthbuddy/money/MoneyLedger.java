@@ -538,7 +538,7 @@ public class MoneyLedger {
         BigDecimal amt;
         try {
             amt = amount(new BigDecimal(text(rest.remove("amount"))), false);
-        } catch (NumberFormatException | NullPointerException ex) {
+        } catch (NumberFormatException | NullPointerException | ArithmeticException ex) {
             throw ApiException.badRequest("Entry " + id + " has no valid amount.");
         }
         LocalDate day;
@@ -682,6 +682,12 @@ public class MoneyLedger {
     }
 
     private static BigDecimal amount(BigDecimal v, boolean allowZeroOrNegative) {
+        // Shape checked before setScale: "1e99999999" made setScale build a
+        // hundred-million-digit number, and "1e-999999999" threw ArithmeticException.
+        // Scale stays loose: a JS float like 0.30000000000000004 is a real amount.
+        if (v.precision() - v.scale() > 13 || v.scale() > 32) {
+            throw ApiException.badRequest("Amount is out of range.");
+        }
         // Rounded first: 0.001 passed the > 0 check and was stored as 0.00.
         BigDecimal r = v.setScale(2, java.math.RoundingMode.HALF_UP);
         if (r.abs().compareTo(MAX_AMOUNT) > 0 || (!allowZeroOrNegative && r.signum() <= 0)) {

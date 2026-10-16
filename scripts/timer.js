@@ -16,6 +16,7 @@ import {
 } from './native.js';
 import { CacheStorage } from './cache-storage.js';
 import { playChime } from './chime.js';
+import { alarmTone } from './push.js';
 import { pad2 as pad } from './dates.js';
 import {
   remainingFrom,
@@ -61,13 +62,18 @@ const T = {
 
 function armEndAlarm() {
   scheduleLocalNotifications([
-    {
-      id: TIMER_ALARM_ID,
-      title: T.mode === 'focus' ? 'Focus session done' : 'Break over',
-      body: T.mode === 'focus' ? 'Nice work. Take a breather.' : 'Ready for the next one?',
-      at: new Date(T.endsAt),
-      extra: { kind: 'focus' }, // a tap opens the timer (push.js notificationTarget)
-    },
+    Object.assign(
+      {
+        id: TIMER_ALARM_ID,
+        title: T.mode === 'focus' ? 'Focus session done' : 'Break over',
+        body: T.mode === 'focus' ? 'Nice work. Take a breather.' : 'Ready for the next one?',
+        at: new Date(T.endsAt),
+        extra: { kind: 'focus' }, // a tap opens the timer (push.js notificationTarget)
+      },
+      // The user's tone and its channel, like a reminder: without one it rang
+      // the plugin's default channel, loud even on Silent.
+      alarmTone()
+    ),
   ]).catch(function () {});
 }
 

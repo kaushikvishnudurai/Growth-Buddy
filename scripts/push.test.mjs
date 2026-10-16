@@ -23,6 +23,8 @@ import {
   ACTION_TYPES,
   serialAlarms,
   notificationTarget,
+  alarmTone,
+  pushTestLocal,
 } from './push.js';
 import {
   SILENT_CHANNEL,
@@ -32,6 +34,7 @@ import {
   isStaleChannel,
   nativePlugin,
   deepLinkHash,
+  scheduleLocalNotifications,
 } from './native.js';
 
 // Wednesday, 09:00 local.
@@ -333,7 +336,7 @@ for (const key of ['custom', 'custom:deadbeef', 'nope', undefined]) {
       { reminders: [{ id: 'a', text: 'x', date: '2026-09-16', time: '18:00' }], sound: key },
       NOW
     );
-    assert.equal(q[0].channelId, 'gb-tone-custom-ab12cd34', 'its own channel for ' + key);
+    assert.equal(q[0].channelId, 'gb-tone-custom-ab12cd34-r2', 'its own channel for ' + key);
     assert.deepEqual(q[0].customSound, { name: 'Doorbell', url: 'data:audio/mpeg;base64,AAAA' });
     assert.equal(q[0].sound, undefined, 'no res/raw file: the channel carries the sound');
   }
@@ -643,3 +646,52 @@ console.log('push.test.mjs: alarm serialization passed');
   globalThis.window = saved;
 }
 console.log('push.test.mjs: taps, deep links and plugin presence passed');
+
+/* ---- the first alarm on a tone keeps its own channel ----
+   ensureChannel returned undefined the first time it built a non-custom channel,
+   so the first alarm per tone fell back to the default channel: Silent rang loud. */
+{
+  const saved = globalThis.window;
+  const scheduled = [];
+  const LocalNotifications = {
+    createChannel: () => Promise.resolve(),
+    schedule: ({ notifications }) => (scheduled.push(...notifications), Promise.resolve()),
+  };
+  globalThis.window = { Capacitor: { Plugins: { LocalNotifications } } };
+  const tone = alarmTone('off');
+  assert.equal(tone.channelId, SILENT_CHANNEL, 'Silent is the silent channel');
+  assert.equal(alarmTone().channelId, alarmTone(undefined).channelId, 'no sync yet: the default tone');
+  assert.ok(await scheduleLocalNotifications([Object.assign({ id: 7, title: 't', body: 'b' }, tone)]));
+  assert.equal(scheduled[0].channelId, SILENT_CHANNEL, 'first alarm on Silent stays silent');
+  globalThis.window = saved;
+}
+console.log('push.test.mjs: first alarm per tone keeps its channel passed');
+
+/* ---- an own sound's channel is only ever built with its sound ----
+   The Test button passed the custom channel id without the bytes, so native.js
+   built it as a plain channel with the phone's default sound; the channel was
+   then frozen and every real reminder on that sound rang the default. */
+{
+  const saved = globalThis.window;
+  const plain = [];
+  const own = [];
+  const scheduled = [];
+  const LocalNotifications = {
+    createChannel: (c) => (plain.push(c.id), Promise.resolve()),
+    schedule: ({ notifications }) => (scheduled.push(...notifications), Promise.resolve()),
+  };
+  const CustomNotificationSound = { ensureChannel: (c) => (own.push(c), Promise.resolve()) };
+  globalThis.window = { Capacitor: { Plugins: { LocalNotifications, CustomNotificationSound } } };
+  setCustomChimes([{ id: 'cafe0001-0000', name: 'Bell', dataUrl: 'data:audio/webm;base64,AAAA' }]);
+  assert.ok(await pushTestLocal('custom:cafe0001'));
+  assert.equal(scheduled[0].channelId, 'gb-tone-custom-cafe0001-r2', 'the test rings on the own-sound channel');
+  assert.deepEqual(own, [{ id: 'gb-tone-custom-cafe0001-r2', name: 'Reminders \u00b7 Bell', dataUrl: 'data:audio/webm;base64,AAAA' }]);
+  assert.ok(!plain.includes('gb-tone-custom-cafe0001-r2'), 'never a plain channel under the own-sound id');
+  // A custom channel id with no bytes falls back to the default, never builds itself plain.
+  assert.ok(await scheduleLocalNotifications([{ id: 8, title: 't', body: 'b', channelId: 'gb-tone-custom-deadbeef-r2' }]));
+  assert.equal(scheduled[1].channelId, 'gb-tone-default');
+  assert.ok(!plain.includes('gb-tone-custom-deadbeef-r2'));
+  setCustomChimes([]);
+  globalThis.window = saved;
+}
+console.log('push.test.mjs: own-sound channel always built with its sound passed');

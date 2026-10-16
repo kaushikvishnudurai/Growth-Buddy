@@ -94,6 +94,18 @@ class MoneyLedgerMappingTest {
     }
 
     @Test
+    void anAbsurdExponentIsRefusedFastNotComputed() throws Exception {
+        for (String a : new String[] {"1e99999999", "1e-999999999", "1e14", "1e-40"}) {
+            assertThatThrownBy(() -> ledger.toRow("expense",
+                    obj("{\"id\":\"e\",\"amount\":\"" + a + "\",\"date\":\"2026-09-30\"}")))
+                    .as(a).isInstanceOf(ApiException.class);
+        }
+        // A JS float's noise is still an amount.
+        assertThat(ledger.toRow("expense", obj("{\"id\":\"f\",\"amount\":0.30000000000000004,\"date\":\"2026-09-30\"}"))
+                .amount()).isEqualByComparingTo("0.30");
+    }
+
+    @Test
     void theOldDocumentMovesOverAndBadLegacyEntriesAreSkipped() throws Exception {
         ObjectNode doc = obj("""
                 {"expenses":[{"id":"e1","amount":10,"date":"2026-09-01"},{"id":"broken"}],

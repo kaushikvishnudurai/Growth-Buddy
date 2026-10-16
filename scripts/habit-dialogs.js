@@ -81,18 +81,22 @@ async function openFreezeCalendar() {
     return Math.max(31, span + 31);
   }
 
+  let loadSeq = 0; // paging months fast: an older answer must not paint over the month shown
   async function load() {
+    const mySeq = ++loadSeq;
     grid.replaceChildren(h('div', { class: 'gb-freeze-loading' }, 'Loading…'));
     try {
       const res = await api(
         '/api/habits/' + encodeURIComponent(habit.id) + '/history?days=' + daysBack()
       );
+      if (mySeq !== loadSeq) return;
       byDate = {};
       since = (res && res.since) || '';
       ((res && res.days) || []).forEach((r) => {
         byDate[r.date] = r;
       });
     } catch (err) {
+      if (mySeq !== loadSeq) return;
       toastError(err, 'Could not load that habit.');
       byDate = {};
     }

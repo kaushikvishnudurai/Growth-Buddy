@@ -467,7 +467,7 @@ public class ReminderDeliveryScheduler {
             return;
         }
         DeliveryCache.changed();
-        settleSnooze(row.getId(), 1, sendSnooze(user, rem, waEligible, tick));
+        settleSnooze(row.getId(), 1, sendSnooze(user, rem, at, waEligible, tick));
     }
 
     /** Thrown inside the claim to roll its row back: the snooze moved or was cancelled. */
@@ -501,10 +501,15 @@ public class ReminderDeliveryScheduler {
         }
     }
 
-    private Outcome sendSnooze(User user, CalendarReminder rem, boolean waEligible, Instant tick) {
+    /** {@code at}: the snooze instant, or null when unknown. */
+    private Outcome sendSnooze(User user, CalendarReminder rem, Instant at, boolean waEligible, Instant tick) {
         String time = String.valueOf(rem.getTime());
-        // A snooze rings the day it rings: its ticket is good for that local day.
-        LocalDate day = LocalDate.ofInstant(tick, UserZone.of(user.getTimezone()));
+        // Its tickets are for the occurrence it snoozes: a 23:50 reminder snoozed
+        // past midnight is still that day's, not tomorrow's. Tick day when unknown.
+        LocalDate day = at == null ? null : reminderService.snoozeDay(user.getId(), rem, at);
+        if (day == null) {
+            day = LocalDate.ofInstant(tick, UserZone.of(user.getTimezone()));
+        }
         return send(user, rem, day, waEligible, tick, "Snoozed · was due at " + time,
                 rem.getText() + " (snoozed, was " + time + ")", "Snoozed reminder");
     }
@@ -557,7 +562,8 @@ public class ReminderDeliveryScheduler {
             boolean wa = whatsapp.isConfigured() && user.isWhatsappEnabled()
                     && StringUtils.hasText(user.getWhatsappNumber());
             try {
-                settleSnooze(row.getId(), tried + 1, sendSnooze(user, rem, wa, now));
+                // The claim time stands in for the snooze instant: it rang within that minute.
+                settleSnooze(row.getId(), tried + 1, sendSnooze(user, rem, row.getCreatedAt(), wa, now));
             } catch (RuntimeException ex) {
                 log.warn("Resending snooze of reminder {} failed: {}", rem.getId(), ex.getMessage());
             }

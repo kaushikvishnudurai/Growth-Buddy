@@ -9,6 +9,7 @@ import {
   homeGoals,
   daysBetween,
   todayKey,
+  zoneMinutes,
   shiftDayKey,
   localDayKey,
   tasksForToday,
@@ -185,6 +186,24 @@ test("the score counts today's tasks: due by tonight or done today", () => {
     ['overdue', 'tonight', 'doneToday', 'justTicked']
   );
   assert.deepEqual(tasksForToday(null, now), []);
+});
+
+test("zoneMinutes reads the clock in the account's zone", () => {
+  const t = new Date('2026-10-15T02:30:00Z');
+  assert.equal(zoneMinutes('Asia/Kolkata', t), 8 * 60);
+  assert.equal(zoneMinutes('America/Los_Angeles', t), 19 * 60 + 30);
+  assert.equal(zoneMinutes('Not/AZone', t), t.getHours() * 60 + t.getMinutes());
+});
+
+test("tasksForToday reads days in the account's zone when given one", () => {
+  // 22:00 in LA on 16 Oct is 10:30 on 17 Oct in Kolkata.
+  const now = new Date('2026-10-17T05:00:00Z');
+  const tasks = [
+    { id: 'kolkata-17', done: false, dueAt: '2026-10-17T12:30:00Z' }, // 18:00 IST 17th, 05:30 LA 17th
+    { id: 'done-17-ist', done: true, doneAt: '2026-10-17T03:00:00Z' }, // 08:30 IST 17th, 20:00 LA 16th
+  ];
+  assert.deepEqual(tasksForToday(tasks, now, 'Asia/Kolkata').map((t) => t.id), ['kolkata-17', 'done-17-ist']);
+  assert.deepEqual(tasksForToday(tasks, now, 'America/Los_Angeles').map((t) => t.id), ['done-17-ist']);
 });
 
 if (failures) {

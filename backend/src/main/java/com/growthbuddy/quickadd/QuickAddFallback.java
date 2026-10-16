@@ -49,7 +49,7 @@ final class QuickAddFallback {
     private static final Pattern TASK_DONE = Pattern.compile("^(?:i\\s+)?(?:done|finished|completed|did)\\s+(?:with\\s+)?(?:the\\s+|my\\s+)?(.+?)(?:\\s+task)?$", F);
     private static final Pattern ML = Pattern.compile("(\\d+(?:\\.\\d+)?)\\s*(ml|l|litres?|liters?)\\b", F);
     private static final Pattern GLASSES = Pattern.compile(
-            "\\b(\\d+|a|an|one|two|three|four|five|six)\\s+(glass(?:es)?|cups?|bottles?)\\b(?:\\s+of\\s+water)?", F);
+            "\\b(\\d{1,3}|a|an|one|two|three|four|five|six)\\s+(glass(?:es)?|cups?|bottles?)\\b(?:\\s+of\\s+water)?", F);
     private static final Pattern SLEEP = Pattern.compile(
             "\\bslept\\s+(?:for\\s+)?(?:about\\s+|around\\s+)?(\\d+(?:\\.\\d+)?)\\s*(?:h|hr|hrs|hours?)?\\b|\\b(\\d+(?:\\.\\d+)?)\\s*(?:h|hrs?|hours?)\\s+(?:of\\s+)?sleep\\b", F);
     private static final Pattern INCOME = Pattern.compile(

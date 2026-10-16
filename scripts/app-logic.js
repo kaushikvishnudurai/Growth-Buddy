@@ -11,6 +11,13 @@ export const networkError = (err, online = true) =>
 export const offlineError = (err, online = true) =>
   !(err && err.sessionEnded) && (!online || !err || !err.status || err.status >= 500);
 
+/* The toast for a write kept on this phone. Only no response at all is "offline":
+   a 5xx while online said "when you're back online" to someone who was. */
+export const SAVED_ON_PHONE = 'Saved on this phone. It will sync when you are back online.';
+export const SAVED_SERVER_DOWN = 'Saved on this phone. The server had a problem; we will keep retrying.';
+export const savedLocallyMessage = (err, online = true) =>
+  networkError(err, online) ? SAVED_ON_PHONE : SAVED_SERVER_DOWN;
+
 /* Water taps not yet on the server, laid over a summary from it. Only the
    summary's own day counts: a glass queued last night is yesterday's.
    `pending`: Map tempId -> { amountMl, loggedAt, drinkType }. */

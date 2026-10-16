@@ -480,7 +480,7 @@ public class AuthService {
         User user = users.findById(userId).orElseThrow(() -> ApiException.notFound("User not found"));
         PasswordCredential c = creds.findById(userId)
                 .orElseThrow(() -> ApiException.badRequest("This account has no password set."));
-        if (!bcrypt.matches(req.currentPassword(), c.getPasswordHash())) {
+        if (!passwordMatches(user, req.currentPassword(), "login:" + user.getEmail())) {
             throw ApiException.badRequest("Current password is incorrect.");
         }
         c.setPasswordHash(bcrypt.encode(req.newPassword()));
@@ -499,9 +499,11 @@ public class AuthService {
      */
     @Transactional
     public void deleteAccount(UUID userId, String password) {
-        PasswordCredential c = creds.findById(userId)
-                .orElseThrow(() -> ApiException.badRequest("This account has no password set."));
-        if (!bcrypt.matches(password, c.getPasswordHash())) {
+        User user = users.findById(userId).orElseThrow(() -> ApiException.notFound("User not found"));
+        if (creds.findById(userId).isEmpty()) {
+            throw ApiException.badRequest("This account has no password set.");
+        }
+        if (!passwordMatches(user, password, "login:" + user.getEmail())) {
             throw ApiException.badRequest("Password is incorrect.");
         }
         // Not deleted here: scheduled. Every session goes now, so the account is
@@ -509,7 +511,6 @@ public class AuthService {
         // DELETION_GRACE_DAYS have passed, and signing in before then offers to
         // cancel (login → 409 deletion_scheduled). A second request keeps the
         // first date — asking twice must not push the purge further out.
-        User user = users.findById(userId).orElseThrow(() -> ApiException.notFound("User not found"));
         if (user.getDeletionRequestedAt() == null) {
             user.setDeletionRequestedAt(Instant.now());
             users.save(user);
@@ -771,6 +772,8 @@ public class AuthService {
         }
         String oldEmail = user.getEmail();
         emailChangeTokens.deleteAllForUser(userId);
+        // A reset code was mailed to the old inbox; it must not outlive the move.
+        resetTokens.deleteAllForUser(userId);
         user.setEmail(newEmail);
         user.setEmailVerified(true); // the code just proved the inbox
         users.save(user);

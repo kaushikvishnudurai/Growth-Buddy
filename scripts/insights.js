@@ -266,8 +266,8 @@ export function signals({ wellness, trends, money }) {
     energy: series(mood, (e) => ord(e.energy)),
     stress: series(mood, (e) => ord(e.stress)),
     score: series(byDate, (e) => Number(e.score)),
-    water: series(byDate, (e) => Number(e.waterMl)),
-    // 0 means nothing was logged that day, not a fast.
+    // 0 means nothing was logged that day (recordTrendsToday writes 0 on every load).
+    water: series(byDate, (e) => Number(e.waterMl) || null),
     kcal: series(byDate, (e) => Number(e.kcal) || null),
     spend: spendByDate(money),
   };
@@ -310,11 +310,11 @@ function pairInsight(sig, [x, y, lag = 0]) {
   };
 }
 
-/** Split a series into the latest 7 days and everything before them. */
-function thisWeek(s) {
-  const keys = Object.keys(s).filter((k) => Number.isFinite(dayNum(k)));
+/** Split a series into the 7 days ending today and everything before them. The
+    window ends at today, not the last entry: months-old data is not "this week". */
+function thisWeek(s, end) {
+  const keys = Object.keys(s).filter((k) => Number.isFinite(dayNum(k)) && dayNum(k) <= end);
   if (!keys.length) return null;
-  const end = Math.max(...keys.map(dayNum));
   const recent = keys.filter((k) => end - dayNum(k) < 7).map((k) => s[k]);
   const before = keys.filter((k) => end - dayNum(k) >= 7).map((k) => s[k]);
   if (recent.length < 4 || before.length < MIN_DAYS) return null;
@@ -327,8 +327,8 @@ function thisWeek(s) {
 }
 
 /** Sleeping less than usual this week, as total hours owed. */
-function sleepDebt(sig) {
-  const w = thisWeek(sig.sleepHours);
+function sleepDebt(sig, t0) {
+  const w = thisWeek(sig.sleepHours, t0);
   if (!w) return null;
   const gap = w.usual - w.recent;
   if (gap < 0.5) return null;
@@ -352,8 +352,8 @@ function sleepDebt(sig) {
 }
 
 /** Mood this week vs the weeks before it, either direction. */
-function moodShift(sig) {
-  const w = thisWeek(sig.mood);
+function moodShift(sig, t0) {
+  const w = thisWeek(sig.mood, t0);
   if (!w) return null;
   const diff = w.recent - w.usual;
   const effect = Math.abs(diff) / META.mood.range;
@@ -821,14 +821,14 @@ export function taskTiming(finished) {
     .filter((p) => (by[p] || []).length >= 3)
     .map((p) => {
       const d = round1(mean(by[p]));
-      return p + ' ' + d + (d === 1 ? ' day' : ' days');
+      return p + ' priority: ' + (d === 0 ? 'same day' : d + (d === 1 ? ' day' : ' days'));
     });
   if (!parts.length) return null;
   const n = Object.values(by).reduce((a, d) => a + d.length, 0);
   return {
     icon: 'clock',
     title: 'How long tasks take you',
-    text: 'From adding a task to ticking it off: ' + parts.join(', ') + '.',
+    text: 'From adding a task to ticking it off. ' + parts.join('; ') + '.',
     basis: n + ' tasks',
     effect: 0.13,
   };
@@ -1092,8 +1092,8 @@ export function buildInsights({
   const tag = (id, card) => card && Object.assign(card, { id });
   const found = [
     ...TESTS.map((t) => tag('pair:' + t.join(':'), pairInsight(sig, t))),
-    tag('sleepDebt:' + week, sleepDebt(sig)),
-    tag('moodShift:' + week, moodShift(sig)),
+    tag('sleepDebt:' + week, sleepDebt(sig, t0)),
+    tag('moodShift:' + week, moodShift(sig, t0)),
     tag('weekday:mood', weekdayPattern(sig, 'mood', 'min')),
     tag('weekday:stress', weekdayPattern(sig, 'stress', 'max')),
     tag('bestBedtime', bestBedtime(sig)),

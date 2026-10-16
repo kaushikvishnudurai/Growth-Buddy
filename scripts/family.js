@@ -281,7 +281,11 @@ function ScreenFamily({ api, open }) {
      swallowed into an empty list, so a failed shopping fetch read as "List is
      empty" — and building a new list on top of that duplicated the real one. */
   const SECTION_LOADERS = {
-    plan: () => api.getMealPlan().then(applyPlan),
+    plan: () =>
+      api.getMealPlan().then((p) => {
+        model.plan = null; // applyPlan(null) keeps the old one; a left family's plan must not
+        applyPlan(p);
+      }),
     invites: () =>
       api.getInvites().then((r) => {
         model.invites = r || [];
@@ -366,6 +370,9 @@ function ScreenFamily({ api, open }) {
 
   async function load() {
     model.loading = true;
+    // Leaving / joining a family reloads: the old family's groceries go with it.
+    model.ingredients = [];
+    model.pantrySeeded = false;
     model.error = '';
     model.sectionErrors = {};
     paint();
@@ -2397,7 +2404,7 @@ function ScreenFamily({ api, open }) {
     return h(
       'div',
       { class: 'gb-card gb-family-weekday' },
-      h('h3', { class: 'gb-family-weekday-label' }, d.label || planDayLabel(wk, index)),
+      h('h3', { class: 'gb-family-weekday-label' }, planDayLabel(wk, index)),
       line('Breakfast', 'breakfast', d.breakfast),
       line('Lunch', 'lunch', d.lunch),
       line('Snack', 'snack', d.snack),

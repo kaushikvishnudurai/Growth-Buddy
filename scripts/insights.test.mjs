@@ -145,7 +145,8 @@ assert.deepEqual(buildInsights({ wellness: {}, trends: {} }), []);
     sleepByDate[day(i)] = { bedtime: late ? '01:00' : '23:00', wakeTime: '07:00', quality: 'good' };
     moodByDate[day(i)] = { mood: late ? 'low' : 'good', energy: 'medium', stress: 'normal' };
   }
-  const out = buildInsights({ wellness: { sleepByDate, moodByDate }, trends: {} });
+  const now = new Date(2026, 5, 21, 12).getTime(); // local day(20), the last entry
+  const out = buildInsights({ wellness: { sleepByDate, moodByDate }, trends: {}, now });
   const debt = out.find((i) => i.title === 'Sleep debt this week');
   assert.ok(debt, 'expected sleep debt');
   assert.match(debt.text, /6h a night/);
@@ -154,7 +155,21 @@ assert.deepEqual(buildInsights({ wellness: {}, trends: {} }), []);
     out.some((i) => i.title === 'Mood dipping this week'),
     'expected mood dip'
   );
+  // Months later, that old week is not "this week": the window ends today.
+  const later = buildInsights({
+    wellness: { sleepByDate, moodByDate },
+    trends: {},
+    now: new Date(2026, 9, 16, 12).getTime(),
+  });
+  assert.ok(!later.some((i) => /this week/.test(i.title)), 'stale week read as this week');
 }
+
+// --- signals(): 0 ml water is "not logged", like 0 kcal ---
+assert.deepEqual(
+  signals({ trends: { byDate: { '2026-06-01': { waterMl: 0 }, '2026-06-02': { waterMl: 900 } } } })
+    .water,
+  { '2026-06-02': 900 }
+);
 
 // --- weekday pattern: Mondays low ---
 {
@@ -334,7 +349,9 @@ assert.deepEqual(buildInsights({ wellness: {}, trends: {} }), []);
     createdAt: '2026-06-01T10:00:00Z',
     doneAt: '2026-06-02T10:00:00Z',
   });
-  assert.match(taskTiming([one('High'), one('High'), one('High')]).text, /High 1 day\./);
+  assert.match(taskTiming([one('High'), one('High'), one('High')]).text, /High priority: 1 day\./);
+  const same = (p) => ({ priority: p, createdAt: '2026-06-01T10:00:00Z', doneAt: '2026-06-01T11:00:00Z' });
+  assert.match(taskTiming([same('Medium'), same('Medium'), same('Medium')]).text, /Medium priority: same day\./);
   assert.ok(/Tuesdays: 12 of 12/.test(taskWeekday(fin).text));
   assert.equal(pushedTask([{ title: 'x', done: false, pushCount: 2 }]), null);
   assert.ok(

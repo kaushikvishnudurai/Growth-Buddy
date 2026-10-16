@@ -33,6 +33,7 @@ import {
 } from './gb-kit.js';
 import { setLocale, localeFromUser, fmtDate } from './i18n.js';
 import { BREAK_LENGTHS, breakState, startBreak, endBreak } from './break.js';
+import { installCameraGate, cameraAskAgain } from './camera.js';
 import { dateKey, parseWhen } from './dates.js'; // todayKey is the account's day, below
 import {
   ScreenDashboard,
@@ -47,7 +48,7 @@ import {
   StreakChain,
   loadOutlook,
 } from './dashboard.js';
-import { habitDue, todayKey as sharedTodayKey, shiftDayKey, tasksForToday, sortHabitsForHome } from './home-order.js';
+import { habitDue, todayKey as sharedTodayKey, shiftDayKey, tasksForToday, sortHabitsForHome, zoneMinutes } from './home-order.js';
 import { withProgressLog, needsProgressLog } from './goal-milestones.js';
 import { goalTaskStats, combinedGoalProgress, goalFinishedBy } from './goal-tasks.js';
 import {
@@ -65,6 +66,8 @@ import {
   sameZone,
   firstRunSteps,
   pushAskDue,
+  SAVED_ON_PHONE,
+  savedLocallyMessage,
 } from './app-logic.js';
 import {
   MEAL_SLOTS,
@@ -563,6 +566,8 @@ setReminderSettingsOpener(() => openProfileSettings('reminders'));
 setCalendarImporter(() => openIcsImportDialog());
 setCustomToneAdder(() => openCustomToneDialog());
 setVoiceReminder({ supported: () => voiceSupported(), capture: (btn) => captureReminder(btn) });
+// The phone app asks for the camera again on every photo tap (camera.js).
+installCameraGate();
 setTimeFormat(state.user && state.user.uiPrefs && state.user.uiPrefs.timeFormat);
 // i18n.js: dates/numbers format in this locale and <html lang> follows it (index.html
 // ships lang="en"). No locale field on the profile yet → the device's language.
@@ -868,7 +873,7 @@ function score() {
     parts = 0;
   // Today's tasks only: tomorrow's and undated ones are not today's miss.
   // Same rule as Home's score card (home-order.js): due by tonight, overdue, or done today.
-  const tasks = tasksForToday(state.tasks, new Date());
+  const tasks = tasksForToday(state.tasks, new Date(), state.user && state.user.timezone);
   if (tasks.length) {
     sum += tasks.filter((t) => t.done).length / tasks.length;
     parts++;
@@ -1256,7 +1261,7 @@ function persistMoney() {
       // keeps for a retry (RETRYABLE: 401, 408, 409, 429) is queued too.
       const queued =
         !navigator.onLine || !err || !err.status || err.status >= 500 || RETRYABLE.has(err.status);
-      if (queued) pushToast('Saved on this phone — will sync when you’re back online.', 'info');
+      if (queued) pushToast(savedLocallyMessage(err, navigator.onLine), 'info');
       else toastError(err, 'Money changes were not saved. Check your connection and try again.');
     })
   );
@@ -1424,13 +1429,16 @@ let uiPrefsSeq = 0;
 /* Keys whose save found no connection, per account: resent in one PUT, at their
    current values, once back online. Not an error, and no toast. */
 let uiPrefsOffline = null;
-window.addEventListener('online', () => {
+/* Also run by handleOnline: a fetch can fail while navigator.onLine stays true,
+   no 'online' event comes, and the /me that loadData reads reverted the prefs. */
+function replayUiPrefsOffline() {
   const off = uiPrefsOffline;
   uiPrefsOffline = null;
   const prefs = state.user && state.user.uiPrefs;
   if (!off || !prefs || state.user.id !== off.uid) return;
   saveUiPrefs(Object.fromEntries([...off.keys].map((k) => [k, prefs[k]])), { quiet: true });
-});
+}
+window.addEventListener('online', replayUiPrefsOffline);
 
 /* Sends only `patch`: the server merges key by key (AuthService.updateUiPrefs).
    Sending the whole blob let a tab open since yesterday write its old copy of
@@ -1546,6 +1554,9 @@ function loadCustomChime() {
   LEGACY_CHIME_KEYS.forEach((k) => CacheStorage.removeItem(k));
   setCustomChimes(readCustomChimes());
   markCustomChimesLoaded();
+  // A cold-start sync can run before the sounds are read; it queued own-sound
+  // alarms on the default channel until the next re-sync.
+  reSyncDeviceAlarms();
 }
 
 /* This device's copy. Synchronous and can't fail, which is why the picker
@@ -1664,24 +1675,36 @@ async function pullCustomChime() {
 
 /* On login / user refresh, mirror the server's stored UI prefs into the local
    cache keys the views read synchronously, so a fresh device paints the user's
-   real theme/onboarding/etc. instead of defaults. */
-function hydrateUiPrefs() {
-  const p = state.user && state.user.uiPrefs;
+   real theme/onboarding/etc. instead of defaults.
+   `fromServer`: these prefs are the server's answer, so a theme, text size or
+   premium key it lacks means the default (System, normal, off) — not whatever
+   the last account left in this device's cookies. Only then: a patch without
+   uiPrefs leaves state.user's older copy, which may be a slim cookie's. */
+function hydrateUiPrefs(fromServer) {
+  // A new account's row has none yet (null): that answer is all defaults too.
+  const p = (state.user && state.user.uiPrefs) || (fromServer ? {} : null);
   if (!p) return;
   try {
     if (p.theme === 'dark' || p.theme === 'light') {
       state.theme = p.theme;
       CacheStorage.setItem(THEME_KEY, p.theme);
       applyTheme(p.theme);
+    } else if (fromServer && pickedTheme()) {
+      CacheStorage.removeItem(THEME_KEY);
+      state.theme = loadTheme();
+      applyTheme(state.theme);
     }
     if (TEXT_SCALES[p.textScale]) {
       state.textScale = applyTextScale(p.textScale);
       CacheStorage.setItem(TEXT_SCALE_KEY, p.textScale);
+    } else if (fromServer) {
+      state.textScale = applyTextScale('normal');
+      CacheStorage.removeItem(TEXT_SCALE_KEY);
     }
-    if (typeof p.premium === 'boolean') {
-      state.premium = p.premium;
-      CacheStorage.setItem(PREMIUM_KEY, p.premium ? '1' : '0');
-      applyPremium(p.premium);
+    if (typeof p.premium === 'boolean' || fromServer) {
+      state.premium = p.premium === true;
+      CacheStorage.setItem(PREMIUM_KEY, state.premium ? '1' : '0');
+      applyPremium(state.premium);
     }
     // Before this runs, every "Mon-Fri" reminder answers with the default —
     // so it has to happen before the calendar or Home paints their dots.
@@ -2205,7 +2228,7 @@ function syncUserSession(userPatch) {
     state.user.token = token;
   }
   saveSession(state.user, token);
-  hydrateUiPrefs();
+  hydrateUiPrefs(!!userPatch && userPatch.uiPrefs !== undefined);
   // The bytes are too big for ui_prefs, so they come down on their own. Not
   // awaited: nothing on screen waits for a notification sound, and a failure
   // here must never be the thing that stops a sign-in.
@@ -3574,7 +3597,7 @@ async function toggleTask(id) {
     const painted = toggleSignature();
     state.tasks = state.tasks.map((t) => (t.id === id || t.id === updated.id ? mapTask(updated) : t));
     saved = true;
-    if (nowDone) celebrateMoment(tasksMoment(tasksForToday(state.tasks), todayKey()));
+    if (nowDone) celebrateMoment(tasksMoment(tasksForToday(state.tasks, new Date(), state.user && state.user.timezone), todayKey()));
     // Both only need the toggle landed, not each other: one round trip, not two.
     const [todayScore] = await Promise.all([api('/api/score/today'), refreshCurrentUser()]);
     state.score = todayScore && typeof todayScore.score === 'number' ? todayScore.score : score();
@@ -5493,7 +5516,6 @@ const offlineError = (err) => isOfflineError(err, navigator.onLine);
    by flushOutbox() after loadData's wave 1 and on 'online'. Creates wear a
    `tmp-…` id until the POST lands; `outboxIds` maps it to the server's id for
    anything still holding the temp one (a note card, a row mid-refresh). */
-const SAVED_ON_PHONE = 'Saved on this phone — will sync when you’re back online.';
 function outboxKey() {
   const u = state.user || loadSession() || {};
   return 'gb.outbox.' + String(u.id || u.email || 'guest');
@@ -5795,7 +5817,7 @@ async function quickAddWater(amountMl, dayKey, drinkType) {
       // Keep the glass on the card and on this phone; 'online' or the retry sends it.
       await CacheStorage.ready();
       storeWaterQueue(loadWaterQueue().concat(glass));
-      pushToast(SAVED_ON_PHONE, 'info');
+      pushToast(savedLocallyMessage(err, navigator.onLine), 'info');
       armOutboxRetry();
       return;
     }
@@ -6014,7 +6036,7 @@ function openBarcodeScanner(onCode) {
       h('button', { type: 'button', class: 'gb-btn gb-btn--ghost', onclick: close }, 'Cancel')
     )
   );
-  (async () => {
+  const start = async () => {
     try {
       const detector = new window.BarcodeDetector({
         formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e'],
@@ -6048,8 +6070,16 @@ function openBarcodeScanner(onCode) {
       // getUserMedia above is the ask: the browser (or, in the app, Android
       // via Capacitor's onPermissionRequest) prompts when nothing is decided yet.
       status.textContent = cameraErrorMessage(err, isNative());
+      // Refused before: ask again where the platform still lets us, else say
+      // where the switch is; "Try again" / a fresh grant restarts the scan.
+      const refused = err && (err.name === 'NotAllowedError' || err.name === 'SecurityError');
+      if (refused && !done && (await cameraAskAgain()) && !done) {
+        status.textContent = 'Point the camera at the barcode.';
+        start();
+      }
     }
-  })();
+  };
+  start();
 }
 
 /* Full-screen "Estimating calories" while a food save runs: food drops onto a
@@ -6125,6 +6155,8 @@ async function postWellness(kind, byDate, entry, body, okMsg, failMsg, quiet) {
       await queueWrite({ method: 'POST', path, body, kind: 'wellness.' + kind, idemKey, local: entry });
       return;
     }
+    // A newer save (or the server's copy) has replaced this one: nothing of it left to undo.
+    if ((state.wellness[byDate] || {})[key] !== entry) return;
     const map = Object.assign({}, state.wellness[byDate]);
     if (prev) map[key] = prev;
     else delete map[key];
@@ -6397,10 +6429,11 @@ function openMoodCheckin() {
 // day-plan.js loads on the tap: it is only ever needed here, and the boot chunk is over budget.
 async function openDailyPlan() {
   const { buildDayPlan, planTarget } = await import('./day-plan.js');
-  const now = new Date();
+  const zone = state.user && state.user.timezone;
   // After 21:00 no block fits today, so the draft is tomorrow's (FRC-8): it used
   // to list the morning's gone reminders and a "Looks good" that wrote nothing.
-  const target = planTarget(todayKey(), now.getHours() * 60 + now.getMinutes());
+  // The account's day and clock both: the device's hour beside it mixed two zones.
+  const target = planTarget(todayKey(), zoneMinutes(zone));
   const today = target.day;
   const plan = buildDayPlan({
     tasks: state.tasks,
@@ -6410,6 +6443,7 @@ async function openDailyPlan() {
     subscriptions: featureOn('money') && state.money ? state.money.subscriptions : [],
     today,
     nowMin: target.nowMin,
+    zone,
   });
   const ICON = { reminder: 'bell', bill: 'wallet', habit: 'repeat', task: 'list-checks' };
   const LABEL = { reminder: 'Reminder', bill: 'Bill', habit: 'Habit', task: 'Focus block' };
@@ -9415,7 +9449,6 @@ function runInsightAction(action) {
    rebuilt whole, so a stale one rings for a reminder already deleted. */
 function reSyncDeviceAlarms() {
   if (!state.user) return; // signed out: endSession's cancelAllAlarms is the last word
-  if (!state.user) return; // signed out: logout's cancelAllAlarms is the last word
   syncDeviceAlarms({
     reminders: state.reminders,
     water: Object.assign(waterReminderPrefs(), { usualHours: state.waterUsualHours }),
@@ -9757,14 +9790,16 @@ const SNAP_ROUTES = {
 // with `text`: read it at once and always show the preview (a share into the app).
 function quickAddBox({ onLeave, onCancel, text = '', preview = false } = {}) {
   // Natural-language quick-add: type it once, we sort it into the right trackers.
-  // Short enough not to be cut off on a phone; no money example when Money is
-  // off. The placeholder and the can't-read-that toast share it.
-  const example = featureOn('money') ? 'spent 200 on lunch, slept 7h' : 'slept 7h, call mom at 6';
+  // No money example when Money is off. The can't-read-that toast gets the
+  // whole example; the placeholder only its first phrase, which fits a 320px
+  // phone (the full one was cut at "spent 200 on l").
+  const money = featureOn('money');
+  const example = money ? 'spent 200 on lunch, slept 7h' : 'slept 7h, call mom at 6';
   const qaInput = h('input', {
     type: 'text',
     class: 'gb-input',
     value: text,
-    placeholder: 'e.g. ' + example,
+    placeholder: money ? 'e.g. spent 200' : 'e.g. slept 7h',
     'aria-label': 'Quick log in your own words',
     enterkeyhint: 'send',
     autocomplete: 'off',
@@ -11261,7 +11296,7 @@ function ScreenHabits() {
     // A daily habit's streak is its seven-day chain, the same one Home draws.
     if (daily) {
       subChildren.push(
-        StreakChain({ streak, doneToday: habit.doneToday, owed: habitDueToday(habit) })
+        StreakChain({ streak, doneToday: habit.doneToday, owed: habitDueToday(habit), best: habit.longestStreak })
       );
     }
     const measured = metricSummary(habit.metric, habit.todayValue, habit.todayDurationMin);
@@ -11606,15 +11641,18 @@ function screenEnabled(screen) {
   const feat = SCREEN_FEATURE[screen];
   return !feat || featureOn(feat);
 }
-/** Persist a single feature toggle, update local state, and repaint. */
+/** Persist a single feature toggle, update local state, and repaint.
+    Every reply carries all the switches: only the newest toggle's is adopted,
+    or an older one landing late turned a newer switch back. */
+const featureSaves = latestSeq();
 async function setFeature(key, value) {
+  const n = featureSaves.start('features');
   const updated = await api('/api/auth/features', {
     method: 'PUT',
     body: JSON.stringify({ features: { [key]: value } }),
   });
-  const token = (state.user && state.user.token) || loadToken();
-  state.user = Object.assign({}, state.user, updated, { token });
-  saveSession(state.user, token);
+  if (!featureSaves.isLatest('features', n)) return;
+  syncUserSession(updated);
   render();
   // Home's Outlook ranks over the insight history, which was read under the
   // old switches: with Water off it showed no top insight until a reload.
@@ -11791,6 +11829,7 @@ const SCREENS = {
         (m) =>
           m.ScreenReport({
             features: (state.user && state.user.features) || null,
+            zone: state.user && state.user.timezone,
             score: score(),
             tasks: state.tasks,
             habits: state.habits,
@@ -13976,6 +14015,8 @@ function handleOnline() {
   if (state.user) {
     // The outbox goes after wave 1 (loadData flushes it there too; flush is
     // single-flight), so its refetch can't be answered by wave 1's older GET.
+    // Prefs first: in flight, syncUserSession lays them over the /me loadData reads.
+    replayUiPrefsOffline();
     loadData().then(flushOutbox);
     flushWaterQueue();
   }

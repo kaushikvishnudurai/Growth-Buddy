@@ -100,7 +100,8 @@ public class MentorshipController {
             throw new ApiException(org.springframework.http.HttpStatus.FORBIDDEN,
                     "Only a mentor can see their mentee's progress.");
         }
-        User u = users.findById(partnerId).orElseThrow(() -> ApiException.notFound("User"));
+        User u = users.findById(partnerId).filter(p -> !p.isPendingDeletion())
+                .orElseThrow(() -> ApiException.notFound("User"));
         if (!sharesProgress(u)) {
             throw new ApiException(org.springframework.http.HttpStatus.FORBIDDEN,
                     u.getDisplayName() + " has turned off progress sharing.");

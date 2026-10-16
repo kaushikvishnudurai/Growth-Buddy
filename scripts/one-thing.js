@@ -26,11 +26,12 @@ export function pickOneThing({
   features,
   can: canAct = () => true,
   skipKinds = [],
+  // Home passes the account zone's day and hour; the device's are the fallback.
+  today = localDayKey(now),
+  hour = now.getHours() + now.getMinutes() / 60,
 }) {
   const can = (k) => canAct(k) && !skipKinds.includes(k);
   const on = (k) => !features || features[k] !== false;
-  const today = localDayKey(now);
-  const hour = now.getHours() + now.getMinutes() / 60;
   // ponytail: fixed priority order (a streak about to break beats everything);
   // score by measured impact if users say the card picks the wrong thing.
   // Budget goes last: its button only opens Money, so nothing clears it, and

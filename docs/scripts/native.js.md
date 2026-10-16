@@ -22,7 +22,8 @@ splash control, no device name, "this browser doesn't support push notifications
   mobile repo patches the plugin (`patches/`) to broadcast it to `NotificationActionReceiver`, which
   makes the same API call natively with the token `setNativeAuth(token, base)` mirrored (from
   `saveSession` and boot; `clearNativeAuth` in `clearSession`), re-posts a snoozed card at
-  `snoozedUntil`, and sets a flag: `takeNativeChanges()` on resume, or the live `onNativeChanges`
+  `snoozedUntil`, swaps a +250 ml press's card for a quiet thank-you card (`gb-thanks` channel,
+  clears in 10 s), and sets a flag: `takeNativeChanges()` on resume, or the live `onNativeChanges`
   event, makes app.js `loadData()`. An APK without the receiver falls back to opening the app.
 - The proxy answers `undefined` for `then`, so an accidental `await` on it can't hang forever.
 - **A plugin the binary wasn't built with returns null.** Both platforms set
@@ -87,7 +88,7 @@ only 4 does. So we create channels ourselves and always pass `channelId`.
 | `isStaleChannel(id, version)` | ours (`gb-` prefix) and of another version |
 | `pruneStaleChannels()` | `listChannels` / `deleteChannel` on stale ones, from `initNative`; never touches non-`gb-` channels |
 | `SILENT_CHANNEL` | `gb-silent`, the one channel with no sound: **importance 2** (shade only). Sound is left off — it's importance 2 that keeps it quiet, a soundless channel would take the system default |
-| `ensureChannel(LN, id, sound, custom)` | `createChannel` once per id per session (a failure is also remembered — it means the platform has no channels, e.g. iOS). Tone channels: importance 4, named "Reminders · <Tone>". With `custom` ({name, url}, an own sound) it calls `CustomNotificationSound.ensureChannel` instead and **resolves false when that fails**: `scheduleLocalNotifications` then moves the alarm to `gb-tone-default`, since Android silently drops a notification naming a missing channel |
+| `ensureChannel(LN, id, sound, custom)` | `createChannel` once per id per session, resolving true (it returned undefined on a first build, so the first alarm per tone fell to the default channel and Silent rang loud) (a failure is also remembered — it means the platform has no channels, e.g. iOS). Tone channels: importance 4, named "Reminders · <Tone>". With `custom` ({name, url}, an own sound) it calls `CustomNotificationSound.ensureChannel` instead and **resolves false when that fails**: `scheduleLocalNotifications` then moves the alarm to `gb-tone-default`, since Android silently drops a notification naming a missing channel. A `gb-tone-custom-*` id **without** `custom` also resolves false (uncached) and is never built as a plain channel |
 | `pruneCustomChannels(keep)` | push.js `syncNow`: deletes `gb-tone-custom-*` channels (and their files) for sounds no longer on the account |
 
 ponytail: one version for every channel — a bump re-creates all and resets any user per-channel tweak.
@@ -104,3 +105,8 @@ ponytail: one version for every channel — a bump re-creates all and resets any
 | `cancelPendingLocalNotifications({keep})` | the whole pending queue minus `keep`. push.js `syncDeviceAlarms` passes `[TIMER_ALARM_ID]` (a re-sync used to wipe a running session's end alarm); logout passes nothing. Delivered notifications aren't pending, so the shade is never cleared |
 
 ponytail: local only — server-initiated pushes to the app need FCM + `@capacitor/push-notifications`.
+
+**Camera permission** lives in `camera.js`, not here: the mobile repo's `AppPermissions` plugin
+(`requestCamera` -> granted / prompt / blocked, `openSettings`). `installCameraGate()` (app.js boot,
+phone app only) holds every `<input type=file capture>` click, asks again, and on "blocked" offers
+the app's settings page; the barcode scanner calls `cameraAskAgain()` after a NotAllowedError.

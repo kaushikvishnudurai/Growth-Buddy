@@ -141,9 +141,10 @@ export function MoneyHomeCard({ money, onSaveMoney, onOpen, requestReceiptScan }
   applyCurrency(money);
   const st = budgetStatus(money);
   const totalBudget = st.reduce((a, s) => a + s.budget, 0);
-  const spentMonth = st.reduce((a, s) => a + s.spent, 0);
-  const safe = totalBudget - spentMonth;
   const hasBudget = totalBudget > 0;
+  // With budgets, "safe to spend" takes off only the budgeted tags' spending, as tabOverview does.
+  const spentMonth = st.filter((s) => !hasBudget || s.base > 0).reduce((a, s) => a + s.spent, 0);
+  const safe = totalBudget - spentMonth;
   const ringPct = hasBudget
     ? Math.max(0, Math.min(100, Math.round((safe / totalBudget) * 100)))
     : 0;

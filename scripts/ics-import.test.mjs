@@ -370,4 +370,22 @@ assert.equal(readRule('FREQ=WEEKLY;WKST=SU;BYDAY=SU,MO').unsupported, undefined,
 // CATEGORIES with spaces after the commas still pick the tag.
 assert.equal(one('DTSTART:20261020T033000Z', 'CATEGORIES:Meetings, Work').body.tag, 'work');
 
+// Every 2 weeks on Mon + Wed in New York (21:00) is Tue + Thu here; Sun + Tue there is
+// Mon + Wed here, the Sunday crossing into the next Monday-week: a week off, so refused.
+{
+  const ev = (byday, uid) => [
+    'BEGIN:VEVENT',
+    'DTSTART;TZID=America/New_York:20261018T210000',
+    'RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=' + byday,
+    'UID:' + uid,
+    'SUMMARY:' + uid,
+    'END:VEVENT',
+  ];
+  const got = byTitle(run(cal(...ev('SU,TU', 'fortnight'), ...ev('SU', 'single'))));
+  assert.ok(got.fortnight.flags.some((f) => /another day in your time zone/.test(f)), 'fortnightly multi-day shift refused');
+  assert.equal(got.fortnight.body.repeat, 'none');
+  assert.equal(got.single.body.repeat, 'weekly', 'one day shifts whole: still a series');
+  assert.equal(got.single.body.repeatDays, 'MO');
+}
+
 console.log('ics-import: all checks passed');

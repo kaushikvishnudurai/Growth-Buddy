@@ -362,8 +362,11 @@ const undefuse = (s) => String(s == null ? '' : s).trim().replace(/^'(?=[=+\-@])
  * The rows as entries to save: `{line, kind: 'expense'|'income', date, amount (> 0),
  * note, category (as written), account (as written)}`, and the ones that can't be
  * read as `{line, reason}`. `line` is the 1-based line in the file, for the user.
+ * `mixedSign` is true when the kind rests on the sign alone (one amount column, no
+ * type column, both signs): `positiveIs` then says which way a plus goes — 'in' for
+ * a bank statement, 'out' for a card export (purchase positive, payment negative).
  */
-export function readRows(rows, roles, firstLine = 1) {
+export function readRows(rows, roles, firstLine = 1, { positiveIs = 'in' } = {}) {
   const col = (role) => roles.indexOf(role);
   const c = {
     date: col('date'),
@@ -375,7 +378,7 @@ export function readRows(rows, roles, firstLine = 1) {
     type: col('type'),
     account: col('account'),
   };
-  const out = { entries: [], errors: [] };
+  const out = { entries: [], errors: [], mixedSign: false };
   if (c.date < 0) {
     out.errors.push({ line: 0, reason: 'No column is set as the date.' });
     return out;
@@ -388,7 +391,7 @@ export function readRows(rows, roles, firstLine = 1) {
   const styleOf = (i) => (i < 0 ? 'dot' : decimalStyle(rows.slice(0, 500).map((r) => r[i])));
   const style = { amount: styleOf(c.amount), debit: styleOf(c.debit), credit: styleOf(c.credit) };
   // No type column and every amount positive: an expense tracker's export, all spending.
-  // Mixed signs: a statement, where minus is money out.
+  // Mixed signs: a statement, where minus is money out (or a card, where plus is: positiveIs).
   let mixed = false;
   if (c.amount >= 0 && c.type < 0) {
     let pos = false;
@@ -400,6 +403,7 @@ export function readRows(rows, roles, firstLine = 1) {
     }
     mixed = pos && neg;
   }
+  out.mixedSign = mixed;
   rows.forEach((r, idx) => {
     const line = r.line || firstLine + idx;
     const cell = (i) => (i >= 0 && r[i] != null ? String(r[i]).trim() : '');
@@ -435,7 +439,7 @@ export function readRows(rows, roles, firstLine = 1) {
         else if (EXPENSE_WORDS.test(typeText)) kind = 'expense';
         else if (/cr\.?$/i.test(cell(c.amount))) kind = 'income'; // an explicit marker beats the sign guess
         else if (/dr\.?$/i.test(cell(c.amount))) kind = 'expense';
-        else kind = mixed && n > 0 ? 'income' : 'expense';
+        else kind = mixed && (n > 0) === (positiveIs !== 'out') ? 'income' : 'expense';
       }
     }
     if (!kind) {

@@ -213,7 +213,7 @@ public class PushService {
     }
 
     /** Minimal JSON string escaping for the payload. */
-    private static String jsonStr(String s) {
+    static String jsonStr(String s) {
         if (s == null) return "\"\"";
         StringBuilder b = new StringBuilder("\"");
         for (int i = 0; i < s.length(); i++) {
@@ -224,7 +224,8 @@ public class PushService {
                 case '\n' -> b.append("\\n");
                 case '\r' -> b.append("\\r");
                 case '\t' -> b.append("\\t");
-                default -> b.append(c);
+                // Any other control char is invalid raw in JSON: the worker's parse would throw.
+                default -> b.append(c < 0x20 ? String.format("\\u%04x", (int) c) : String.valueOf(c));
             }
         }
         return b.append('"').toString();

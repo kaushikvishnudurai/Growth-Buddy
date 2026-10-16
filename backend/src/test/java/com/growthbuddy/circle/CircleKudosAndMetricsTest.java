@@ -204,7 +204,7 @@ class CircleKudosAndMetricsTest {
     void aFocusChallengeRanksByFocusMinutesInEachMembersZone() {
         setUp(MEMBER);
         roster();
-        when(challenges.findByCircleIdOrderByStartDateDesc(CIRCLE)).thenReturn(List.of(challenge("focus_minutes")));
+        when(challenges.findTop20ByCircleIdOrderByStartDateDesc(CIRCLE)).thenReturn(List.of(challenge("focus_minutes")));
         when(metrics.focusMinutes(anyList(), any(), eq(TODAY.minusDays(2)), eq(TODAY)))
                 .thenReturn(Map.of(MEMBER, 90L, OWNER, 25L));
         ChallengeResponse r = service.listChallenges(OWNER, CIRCLE).get(0);
@@ -219,7 +219,7 @@ class CircleKudosAndMetricsTest {
     void aWaterChallengeRanksByGoalDays() {
         setUp(MEMBER);
         roster();
-        when(challenges.findByCircleIdOrderByStartDateDesc(CIRCLE)).thenReturn(List.of(challenge("water_days")));
+        when(challenges.findTop20ByCircleIdOrderByStartDateDesc(CIRCLE)).thenReturn(List.of(challenge("water_days")));
         when(metrics.waterGoalDays(anyList(), any(), any())).thenReturn(Map.of(OWNER, 3L));
         ChallengeResponse r = service.listChallenges(OWNER, CIRCLE).get(0);
         assertThat(r.metric()).isEqualTo("water_days");
@@ -233,7 +233,7 @@ class CircleKudosAndMetricsTest {
         roster();
         CircleChallenge old = challenge(null);
         old.setMetric(null);
-        when(challenges.findByCircleIdOrderByStartDateDesc(CIRCLE)).thenReturn(List.of(old));
+        when(challenges.findTop20ByCircleIdOrderByStartDateDesc(CIRCLE)).thenReturn(List.of(old));
         when(habits.countDoneBetween(anyList(), any(), any())).thenReturn(Map.of());
         assertThat(service.listChallenges(OWNER, CIRCLE).get(0).metric()).isEqualTo("habit_checkins");
         verify(habits).countDoneBetween(anyList(), any(), any());

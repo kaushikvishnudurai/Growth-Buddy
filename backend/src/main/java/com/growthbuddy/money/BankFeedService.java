@@ -437,8 +437,11 @@ public class BankFeedService {
         if (kind == null) return null;
         BigDecimal amount;
         try {
-            amount = new BigDecimal(t.path("amount").asText("")).abs().setScale(2, java.math.RoundingMode.HALF_UP);
-        } catch (NumberFormatException ex) {
+            BigDecimal raw = new BigDecimal(t.path("amount").asText(""));
+            // Same shape check as MoneyLedger.amount: a huge exponent stalls setScale.
+            if (raw.precision() - raw.scale() > 13 || raw.scale() > 32) return null;
+            amount = raw.abs().setScale(2, java.math.RoundingMode.HALF_UP);
+        } catch (NumberFormatException | ArithmeticException ex) {
             return null;
         }
         if (amount.signum() <= 0) return null;

@@ -1665,7 +1665,9 @@ public class FamilyService {
             case "weekly" -> RepeatFreq.weekly;
             default -> RepeatFreq.none;
         };
-        reminders.create(target, "Chore: " + c.getTitle(), day, time, repeat);
+        String text = "Chore: " + c.getTitle();
+        // reminder text is VARCHAR(255); a full-length chore title plus the prefix overflowed it.
+        reminders.create(target, text.length() > 255 ? text.substring(0, 255) : text, day, time, repeat);
         if (target.equals(userId)) {
             return new ChoreRemindResponse(null);
         }

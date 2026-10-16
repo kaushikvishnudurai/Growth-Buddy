@@ -19,6 +19,8 @@ import {
   sameZone,
   firstRunSteps,
   pushAskDue,
+  SAVED_ON_PHONE,
+  savedLocallyMessage,
 } from './app-logic.js';
 import { sessionEndedError } from './session.js';
 import { timeRangeOk, reminderEditPatch } from './calendar.js';
@@ -383,6 +385,15 @@ await test('an ended session is never queued for a replay', () => {
   assert.equal(offlineError({ status: 400 }), false, 'a refusal');
   assert.equal(offlineError({ status: 400 }, false), true, 'offline');
   assert.equal(networkError(null), true);
+});
+
+await test('a write kept on the phone after a 5xx does not claim the user is offline', () => {
+  assert.equal(savedLocallyMessage({ status: 500 }, true), savedLocallyMessage({ status: 503 }));
+  assert.notEqual(savedLocallyMessage({ status: 500 }, true), SAVED_ON_PHONE);
+  assert.match(savedLocallyMessage({ status: 500 }, true), /server had a problem/);
+  assert.equal(savedLocallyMessage(new Error('Failed to fetch'), true), SAVED_ON_PHONE, 'no response');
+  assert.equal(savedLocallyMessage({ status: 500 }, false), SAVED_ON_PHONE, 'device offline');
+  assert.equal(savedLocallyMessage(undefined, true), SAVED_ON_PHONE);
 });
 
 await test('first-run leaves the timezone step out when the zones match', () => {

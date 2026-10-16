@@ -28,6 +28,7 @@ import { signals } from './insights.js';
 import { shareStoryCard, renderStoryCard } from './share-card.js';
 import { toast } from './toast.js';
 import { pad2 } from './dates.js';
+import { tasksForToday } from './home-order.js';
 
 /** "22 Sep" / "Tue, 22 Sep": one short month style. en-GB's Intl writes "Sept", the
     rest of the app (pixels, Outlook) "Sep". */
@@ -516,9 +517,9 @@ function trendsSection({ on, trends, wellness, range, onRange }) {
       )
     );
   }
-  // Water.
+  // Water. 0 ml is a day with nothing logged (recordTrendsToday writes it on every load).
   if (on('water')) {
-    const vals = seriesFrom((d) => (d.waterMl != null ? d.waterMl : null));
+    const vals = seriesFrom((d) => Number(d.waterMl) || null);
     const s = summarize(vals);
     cards.push(
       card(
@@ -530,7 +531,7 @@ function trendsSection({ on, trends, wellness, range, onRange }) {
         days,
         (v) => Math.round(v) + ' ml',
         vsLine(
-          (keys) => seriesFrom((d) => (d.waterMl != null ? d.waterMl : null), keys),
+          (keys) => seriesFrom((d) => Number(d.waterMl) || null, keys),
           (v) => Math.round(v) + ' ml'
         )
       )
@@ -1299,6 +1300,7 @@ function focusCard(focus, habits, onMakeHabit) {
 
 function ScreenReport({
   features,
+  zone, // the account's: "today" for the Tasks tile, as on Home
   score,
   tasks,
   habits,
@@ -1324,8 +1326,10 @@ function ScreenReport({
   const hb = habits || [];
   const flatGoals = (goals || []).flatMap((s) => s.goals || []);
 
-  // Paused tasks are out of the score, so out of the Tasks tile beside it too.
-  const scored = t.filter((x) => !x.paused);
+  // Today's tasks the way Home's Today card and the score count them (due by
+  // today, overdue included, plus done today; paused out). The whole open list
+  // read as "0/42 done" on a calm morning.
+  const scored = tasksForToday(t, new Date(), zone);
   const tasksDone = scored.filter((x) => x.done).length;
   const habitsDone = hb.filter((x) => x.doneToday).length;
   const topStreak = hb.reduce((m, x) => Math.max(m, x.streak || 0), 0);
@@ -1352,11 +1356,12 @@ function ScreenReport({
         className: 'gb-report-grid gb-report-grid--wrap',
         children: [
           statTile('Score', Number.isFinite(score) ? Math.round(score) + '%' : null),
-          statTile('Tasks', tasksDone + '/' + scored.length, 'done'),
+          statTile('Tasks', scored.length ? tasksDone + '/' + scored.length : null, scored.length ? 'done' : 'none due today'),
           on('habits') ? statTile('Habits', habitsDone + '/' + hb.length, 'done') : null,
           on('habits') ? statTile('Top streak', topStreak, 'days') : null,
           on('water') ? statTile('Water', waterPct + '%', waterMl + ' of ' + waterGoal + ' ml') : null,
-          on('food') ? statTile('Calories', kcal, 'kcal logged') : null,
+          // Nothing logged yet is a dash, not a 0 that reads as a fast.
+          on('food') ? statTile('Calories', kcal || null, kcal ? 'kcal logged' : 'Not logged') : null,
         ].filter(Boolean),
       })
     ),

@@ -518,29 +518,37 @@ public class CircleService {
         ch.setEndDate(start.plusDays(days - 1L));
         ch.setCreatedBy(userId);
         challenges.save(ch);
-        return toChallengeResponse(ch, userId, today);
+        return toChallengeResponse(ch, userId, today, roster(circleId));
     }
 
     @Transactional(readOnly = true)
     public List<ChallengeResponse> listChallenges(UUID userId, UUID circleId) {
         requireMember(userId, circleId);
         LocalDate today = clock.today(userId);
-        return challenges.findByCircleIdOrderByStartDateDesc(circleId).stream()
-                .map(ch -> toChallengeResponse(ch, userId, today))
+        // ponytail: the 20 newest only; page by start date if a circle needs its full history.
+        Map<UUID, User> byId = roster(circleId);
+        return challenges.findTop20ByCircleIdOrderByStartDateDesc(circleId).stream()
+                .map(ch -> toChallengeResponse(ch, userId, today, byId))
                 .toList();
     }
 
-    private ChallengeResponse toChallengeResponse(CircleChallenge ch, UUID viewer, LocalDate today) {
+    /** The circle's members by id, read once for every challenge on the board. */
+    private Map<UUID, User> roster(UUID circleId) {
+        Map<UUID, User> byId = new java.util.LinkedHashMap<>();
+        List<UUID> ids = members.findByCircleId(circleId).stream().map(CircleMember::getUserId).toList();
+        ids.forEach(id -> byId.put(id, null));
+        users.findAllById(ids).forEach(u -> byId.put(u.getId(), u));
+        return byId;
+    }
+
+    private ChallengeResponse toChallengeResponse(CircleChallenge ch, UUID viewer, LocalDate today,
+                                                  Map<UUID, User> byId) {
         boolean active = !today.isBefore(ch.getStartDate()) && !today.isAfter(ch.getEndDate());
         // Count check-ins only up to today so an in-progress challenge is fair.
         LocalDate countTo = today.isBefore(ch.getEndDate()) ? today : ch.getEndDate();
-        List<CircleMember> roster = members.findByCircleId(ch.getCircleId());
-        Map<UUID, User> byId = new HashMap<>();
-        users.findAllById(roster.stream().map(CircleMember::getUserId).toList())
-                .forEach(u -> byId.put(u.getId(), u));
         // Scheduled for deletion: off the board entirely, not even in the
         // "N not sharing" count — to everyone else the account is already gone.
-        List<UUID> ids = roster.stream().map(CircleMember::getUserId)
+        List<UUID> ids = byId.keySet().stream()
                 .filter(id -> byId.get(id) == null || !byId.get(id).isPendingDeletion())
                 .toList();
 

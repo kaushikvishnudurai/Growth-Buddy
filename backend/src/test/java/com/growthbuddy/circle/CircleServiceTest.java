@@ -206,7 +206,7 @@ class CircleServiceTest {
         ch.setTitle("Sprint");
         ch.setStartDate(today.minusDays(2));
         ch.setEndDate(today.plusDays(4));
-        when(challenges.findByCircleIdOrderByStartDateDesc(CIRCLE)).thenReturn(List.of(ch));
+        when(challenges.findTop20ByCircleIdOrderByStartDateDesc(CIRCLE)).thenReturn(List.of(ch));
 
         ChallengeResponse r = service.listChallenges(OWNER, CIRCLE).get(0);
         assertThat(r.leaderboard()).extracting(LeaderboardEntry::name).containsExactly("Open", "Owner");
@@ -257,7 +257,7 @@ class CircleServiceTest {
         ch.setTitle("Sprint");
         ch.setStartDate(today.minusDays(2));
         ch.setEndDate(today.plusDays(4));
-        when(challenges.findByCircleIdOrderByStartDateDesc(CIRCLE)).thenReturn(List.of(ch));
+        when(challenges.findTop20ByCircleIdOrderByStartDateDesc(CIRCLE)).thenReturn(List.of(ch));
 
         ChallengeResponse r = service.listChallenges(OWNER, CIRCLE).get(0);
         assertThat(r.leaderboard()).extracting(LeaderboardEntry::name).containsExactly("Owner");

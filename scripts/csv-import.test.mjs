@@ -268,4 +268,28 @@ assert.deepEqual(
   assert.ok(entries.every((e) => e.dup === 'existing'));
 }
 
+// One amount column, both signs: a bank statement (plus = in) or a card export (plus = out).
+{
+  const card = '01/02/2026,Amazon,1200.00\n05/02/2026,Payment thank you,-1200.00\n';
+  const d = detect(card);
+  const bank = readRows(d.rows, d.roles, d.firstLine);
+  assert.equal(bank.mixedSign, true, 'the sign alone decides, so the preview offers the toggle');
+  assert.deepEqual(bank.entries.map((e) => e.kind), ['income', 'expense'], 'default: plus is money in');
+  const out = readRows(d.rows, d.roles, d.firstLine, { positiveIs: 'out' });
+  assert.deepEqual(out.entries.map((e) => e.kind), ['expense', 'income'], 'card: the purchase is spending, the payment comes in');
+  assert.deepEqual(out.entries.map((e) => e.amount), [1200, 1200]);
+  const allPos = detect('Date,Note,Amount\n2026-10-01,Tea,20\n2026-10-02,Lunch,250\n');
+  const r = readRows(allPos.rows, allPos.roles, allPos.firstLine, { positiveIs: 'out' });
+  assert.equal(r.mixedSign, false, 'all positive: no toggle');
+  assert.ok(r.entries.every((e) => e.kind === 'expense'));
+  const typed = detect('Date,Note,Amount,Type\n2026-10-01,Salary,500,Credit\n2026-10-02,Refund,-20,Debit\n');
+  assert.equal(readRows(typed.rows, typed.roles, typed.firstLine).mixedSign, false, 'a type column decides: no toggle');
+  const marked = detect('Date,Note,Amount\n2026-10-01,Refund,20 Cr\n2026-10-02,Shop,-30\n');
+  assert.equal(
+    readRows(marked.rows, marked.roles, marked.firstLine, { positiveIs: 'out' }).entries[0].kind,
+    'income',
+    'a Cr marker still beats the sign convention'
+  );
+}
+
 console.log('csv-import: all checks passed');

@@ -322,7 +322,8 @@ function toHomeAmount(money, accountId, v) {
    on the same account keeps the row's own currency and rate; only a move to
    another account books it as that account says. */
 function editedHomeAmount(money, ex, accountId, v) {
-  if (v === (ex.orig ? ex.orig.amount : ex.amount)) return { amount: ex.amount, orig: ex.orig };
+  // Amount untouched keeps the stored figures, unless the account (so maybe the currency) moved.
+  if (accountId === ex.accountId && v === (ex.orig ? ex.orig.amount : ex.amount)) return { amount: ex.amount, orig: ex.orig };
   if (ex.orig && accountId === ex.accountId) {
     const { currency, rate } = ex.orig;
     return { amount: Math.round(v * rate * 100) / 100, orig: { amount: v, currency, rate } };

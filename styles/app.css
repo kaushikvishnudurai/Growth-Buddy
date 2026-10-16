@@ -5258,6 +5258,7 @@ button.gb-food-level {
   display: inline-flex;
   align-items: center;
   gap: 3px;
+  white-space: nowrap;
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   font-weight: 700;
@@ -17636,9 +17637,18 @@ button.gb-tl-title {
   font-weight: 600;
   font-size: var(--text-sm);
   color: var(--fg1);
+}
+/* Two lines before the cut (title attr has the rest): one line clipped a long
+   task at about 20 characters on a phone. */
+.gb-pending-title > span,
+.gb-suggest-lead > span {
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 .gb-pending-title svg {
   flex: none;
@@ -17820,12 +17830,6 @@ button.gb-tl-title {
   color: var(--fg1);
   text-align: left;
   cursor: pointer;
-}
-.gb-suggest-lead > span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .gb-suggest-lead > svg {
   flex: none;

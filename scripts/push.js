@@ -144,13 +144,13 @@ export async function pushTestLocal(sound) {
     id: 1,
     title: 'Growth Buddy',
     body: 'Notifications are working. See you at your next reminder.',
-    // Same file a real reminder will use, so the test actually tests the sound.
-    sound: soundFile(sound),
-    // ...and the same channel, so a test on 'Silent' is silent too, and a test
-    // on any other tone banners exactly the way a real reminder will. It used to
-    // ignore the tone entirely, which made the button prove the opposite of
-    // what was happening: it rang while every real alarm was being dropped.
-    channelId: channelForTone(sound),
+    // The same file, channel AND own-sound bytes a real reminder uses, so a
+    // test on 'Silent' is silent and a test on an own sound builds its channel
+    // with that sound. It once passed the channel without the bytes: native.js
+    // then built gb-tone-custom-<id> as a plain channel with the phone's sound,
+    // and since a channel's sound is frozen, every real reminder on that sound
+    // rang the default for good.
+    ...alarmTone(sound),
   });
 }
 
@@ -438,8 +438,36 @@ function channelForTone(key) {
   return versionedChannel(SOUNDS[key] ? 'gb-tone-' + key : 'gb-tone-default');
 }
 
+/* '-r2': build 100's ids (no suffix) may already exist on a phone as a channel
+   with the phone's default sound (the Test button above, see pushTestLocal), and
+   a channel can't be re-sounded — re-creating a deleted id even restores its old
+   settings. So new ids; pruneCustomChannels deletes the old ones. Not '-v<N>':
+   isStaleChannel would read that as another CHANNEL_VERSION and prune it. */
 function customChannel(own) {
-  return versionedChannel('gb-tone-custom-' + own.key.slice('custom:'.length).toLowerCase());
+  return versionedChannel('gb-tone-custom-' + own.key.slice('custom:'.length).toLowerCase() + '-r2');
+}
+
+/* The tone last handed to syncDeviceAlarms: the user's default, for an alarm
+   armed outside the queue (the focus timer's end) that has no app state of its own. */
+let deviceTone;
+
+/** What a local notification needs to ring `key` (default: the user's tone): file, own sound, channel. */
+export function alarmTone(key = deviceTone) {
+  const own = customChime(key);
+  return {
+    sound: soundFile(key),
+    // What native.js needs to build that sound's channel on the phone.
+    customSound: own ? { name: own.name, url: own.url } : undefined,
+    // 'Silent' means a silent notification, not no notification. Android
+    // takes the sound from the CHANNEL, so a channel built without one keeps
+    // the system default — which made the Silent tone ring the phone's own
+    // sound, the loudest possible reading of it. The old answer was to queue
+    // nothing at all, and that cost the user the reminder along with the
+    // sound: it arrived in the in-app bell and on WhatsApp, and never on the
+    // phone. A channel at IMPORTANCE_LOW shows in the shade and never makes
+    // a sound, which is what the picker has always promised.
+    channelId: channelForTone(key),
+  };
 }
 
 /**
@@ -477,23 +505,7 @@ export function upcomingAlarms({ reminders, water, habits, sound, lead, quiet, b
     used.add(id);
     // Each reminder's own tone if it set one, the user's default otherwise.
     // The water nudge never sets one, so it always follows the default.
-    const key = n.sound || sound;
-    const own = customChime(key);
-    return Object.assign(n, {
-      id,
-      sound: soundFile(key),
-      // What native.js needs to build that sound's channel on the phone.
-      customSound: own ? { name: own.name, url: own.url } : undefined,
-      // 'Silent' means a silent notification, not no notification. Android
-      // takes the sound from the CHANNEL, so a channel built without one keeps
-      // the system default — which made the Silent tone ring the phone's own
-      // sound, the loudest possible reading of it. The old answer was to queue
-      // nothing at all, and that cost the user the reminder along with the
-      // sound: it arrived in the in-app bell and on WhatsApp, and never on the
-      // phone. A channel at IMPORTANCE_LOW shows in the shade and never makes
-      // a sound, which is what the picker has always promised.
-      channelId: channelForTone(key),
-    });
+    return Object.assign(n, { id }, alarmTone(n.sound || sound));
   });
 }
 
@@ -525,6 +537,7 @@ export function syncDeviceAlarms(opts) {
 async function syncNow(opts) {
   if (!localNotificationsAvailable()) return 0;
   if ((await localNotificationPermission()) !== 'granted') return 0;
+  deviceTone = opts && opts.sound;
   // Cheap and idempotent; redone per sync because the Snooze label follows
   // the user's snooze length.
   await registerNotificationActions(notificationActionTypes(opts && opts.snoozeLabel));

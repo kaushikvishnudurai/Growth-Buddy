@@ -2145,6 +2145,8 @@ function ChallengesPanel({ api, currentUserId, wins, addHabit }) {
       box.append(listEl, h('div', { class: 'gb-circle-composer' }, field, sendBtn));
     }
     function load(before) {
+      if (more.disabled) return; // a double tap on "Load older" appended the page twice
+      more.disabled = true;
       api
         .listPosts(c.id, before)
         .then((page) => {
@@ -2168,6 +2170,9 @@ function ChallengesPanel({ api, currentUserId, wins, addHabit }) {
               'Try again'
             )
           );
+        })
+        .finally(() => {
+          more.disabled = false;
         });
     }
     load(null);
@@ -2949,7 +2954,9 @@ function ScreenCircle({
       )
     );
   }
+  let refreshSeq = 0; // a slower, older answer must not paint over a newer one
   function refreshAll() {
+    const mySeq = ++refreshSeq;
     let failed = false;
     const fallback = (cached) => () => {
       failed = true;
@@ -2960,6 +2967,7 @@ function ScreenCircle({
       ? onLoadIncoming().catch(fallback(cachedIncoming))
       : Promise.resolve([]);
     return Promise.all([outgoing, incoming]).then(([out, inc]) => {
+      if (mySeq !== refreshSeq) return;
       if (failed && !loaded) return paintLoadError();
       loaded = true;
       cachedOutgoing = out || [];
@@ -2984,8 +2992,23 @@ function ScreenCircle({
       return;
     }
     wasMounted = true;
+    // paint() rebuilds the mentorship section: a half-typed agreement item would
+    // be wiped. Wait until focus leaves it.
+    if (inMentorship(document.activeElement)) {
+      deferredRefresh = true;
+      return;
+    }
     refreshAll();
   }
+  let deferredRefresh = false;
+  const inMentorship = (el) => !!el && (incomingEl.contains(el) || outgoingEl.contains(el));
+  const flushDeferred = (e) => {
+    if (!deferredRefresh || inMentorship(e.relatedTarget)) return;
+    deferredRefresh = false;
+    refreshAll();
+  };
+  incomingEl.addEventListener('focusout', flushDeferred);
+  outgoingEl.addEventListener('focusout', flushDeferred);
   window.addEventListener('gb:circle-changed', onCircleChanged);
 
   function launchSearch() {

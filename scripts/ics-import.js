@@ -356,7 +356,11 @@ export function toReminders(events, opts) {
       // The zone moved the start to another day: weekday rules move with it.
       const v = String(ev.start.value);
       const shift = epochDay(start.date) - epochDay(v.slice(0, 4) + '-' + v.slice(4, 6) + '-' + v.slice(6, 8));
-      if (shift && (rule.nth || rule.monthDay || rule.month)) rule.unsupported = 'lands on another day in your time zone';
+      // Every-N-weeks counts weeks from Monday: shifted days of one week can straddle
+      // Monday and fall a week apart. ponytail: refused whenever it might; a per-day check is the upgrade.
+      const straddles = rule.repeat === 'weekly' && rule.interval > 1 && rule.days && rule.days.length > 1;
+      if (shift && (rule.nth || rule.monthDay || rule.month || straddles))
+        rule.unsupported = 'lands on another day in your time zone';
       if (rule.unsupported) item.flags.push('Repeats in a way the app can’t (' + rule.unsupported + '): only its first date is added.');
       else series(item, body, rule, start, shift, ev, overrides.get(ev.uid) || [], zone, today);
     }

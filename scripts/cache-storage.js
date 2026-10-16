@@ -77,17 +77,31 @@ const SESSION_COOKIE_FIELDS = [
   'uiPrefs',
 ];
 
+/* When the slim session still won't fit (a big uiPrefs or homeLayout), the
+   cookie keeps only what boot needs to open signed in. Dropping it instead put
+   a valid token on the sign-in screen until the Cache API had hydrated. */
+const SESSION_CORE_FIELDS = ['id', 'displayName', 'timezone', 'emailVerified', 'features'];
+
+// setCookie stores the value URI-encoded (~1.6x for JSON), so that is what must fit.
+const fits = (v) => v != null && encodeURIComponent(v).length <= COOKIE_MAX;
+const pick = (u, fields) => {
+  const out = {};
+  fields.forEach((f) => {
+    if (u[f] !== undefined) out[f] = u[f];
+  });
+  return JSON.stringify(out);
+};
+
 /** The value a key's cookie holds (null: no cookie). Pure, so it is testable. */
 export function cookieValue(key, val) {
-  if (key !== 'gb.session') return val;
+  if (key !== 'gb.session') return fits(val) ? val : null;
   try {
     const u = JSON.parse(val);
     if (!u || typeof u !== 'object') return null;
-    const slim = {};
-    SESSION_COOKIE_FIELDS.forEach((f) => {
-      if (u[f] !== undefined) slim[f] = u[f];
-    });
-    return JSON.stringify(slim);
+    const slim = pick(u, SESSION_COOKIE_FIELDS);
+    if (fits(slim)) return slim;
+    const core = pick(u, SESSION_CORE_FIELDS);
+    return fits(core) ? core : null;
   } catch (_) {
     return null;
   }
@@ -96,7 +110,7 @@ export function cookieValue(key, val) {
 /** Write `val` to `key`'s cookie, or drop the cookie when it may not hold it. */
 function writeCookie(key, val) {
   const c = cookieEligible(key) ? cookieValue(key, val) : null;
-  if (c != null && c.length <= COOKIE_MAX) setCookie(key, c);
+  if (c != null) setCookie(key, c);
   else delCookie(key);
 }
 

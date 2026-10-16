@@ -276,6 +276,10 @@ async function ensureChannel(LN, id, sound, custom) {
     channelsReady.set(id, ok);
     return ok;
   }
+  // An own sound's channel with no bytes must not be built as a plain one: it
+  // would exist with the phone's default sound, and the plugin can never fix a
+  // channel that already exists. Not cached, so a call with the bytes still builds it.
+  if (id.startsWith('gb-tone-custom-')) return false;
   channelsReady.set(id, true);
   const silent = id === SILENT_CHANNEL;
   try {
@@ -295,6 +299,7 @@ async function ensureChannel(LN, id, sound, custom) {
   } catch (_) {
     /* no channels on this platform */
   }
+  return true;
 }
 
 /** Drop the channels of the user's own sounds that are gone. `keep` is the ids still in use. */

@@ -210,4 +210,27 @@ class ReminderSnoozeDeliveryTest {
 
         verifyRang(1, r);
     }
+
+    @Test
+    void aSnoozePastMidnightTicksTheDayItWasDueNotTheNext() {
+        LocalDate due = LocalDate.of(2026, 10, 15);
+        Instant claimed = due.plusDays(1).atTime(0, 20).toInstant(ZoneOffset.UTC);
+        CalendarReminder r = snoozed(claimed);
+        r.setAnchorDate(due);
+        r.setTime(java.time.LocalTime.of(23, 50));
+        r.setSnoozedUntil(null);
+        ReminderDispatchLog row = stuck(r, 1, "pending", claimed);
+        when(dispatchLog.findStuckSnoozes(any())).thenReturn(List.of(row));
+        when(dispatchLog.claimResend(row.getId(), 1)).thenReturn(1);
+        when(push.isConfigured()).thenReturn(true);
+        Instant now = claimed.plus(Duration.ofMinutes(3));
+
+        scheduler().resendStuckSnoozes(now);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<java.util.Map<String, String>> extra = ArgumentCaptor.forClass(java.util.Map.class);
+        verify(push).sendToUser(eq(USER), any(), any(), any(), extra.capture());
+        assertThat(new SnoozeLinks("test-secret").verify(SnoozeLinks.DONE, extra.getValue().get("done"), now))
+                .get().extracting(SnoozeLinks.Ticket::day).isEqualTo(due);
+    }
 }

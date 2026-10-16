@@ -33,9 +33,9 @@ A quit ("break a habit") habit is skipped by the habit series: its clean days ha
 | `bedMinutes` | bedtime as minutes **after noon**, so 23:30 and 00:30 sort next to each other |
 | `shift(s, lag)` | re-keys so `out[d]` = value from `d + lag` |
 | `compare(xs, ys)` | median split on `xs`, mean of `ys` per half |
-| `signals(...)` | every series, keyed `YYYY-MM-DD`. `bedShift` = hours from the user's median bedtime, empty unless most nights sit within an hour of it (two equal camps of bedtimes have no usual one). `kcal` 0 = not logged, dropped. |
+| `signals(...)` | every series, keyed `YYYY-MM-DD`. `bedShift` = hours from the user's median bedtime, empty unless most nights sit within an hour of it (two equal camps of bedtimes have no usual one). `kcal` and `water` 0 = not logged, dropped. |
 | `pairInsight` | one `TESTS` row → card |
-| `thisWeek` / `sleepDebt` / `moodShift` | latest 7 days (≥4 logged) vs everything before (≥7) |
+| `thisWeek` / `sleepDebt` / `moodShift` | the 7 days ending **today** (≥4 logged) vs everything before (≥7); `buildInsights` passes today's day number, so months-old data is never "this week" |
 | `weekdayPattern(sig, key, 'min'｜'max')` | needs 14 days total, 2 per weekday |
 | `bestBedtime` | hour buckets of bedtime, needs 10 nights and 3 in the best bucket |
 | `focusHours` | 2-hour window by session START hour with the longest sessions; 10 sessions, 3 inside, +20% |
@@ -43,7 +43,7 @@ A quit ("break a habit") habit is skipped by the habit series: its clean days ha
 | `earlierReminder(time)` | the habit miss card's offer: an hour before the habit's reminder, 09:00 with none, null before 06:00 (no check-in times are stored, so it is a nudge, not a measured hour) |
 | `habitWeekdayMiss` / `missTwice` / `keystoneHabit` | weekday miss rate 25 points over the habit's **other** weekdays in the same span, 14+ days, 3+ of that weekday, 2+ misses; under 4 of it is "an early pattern" (in `basis`) at half the effect; one miss turning into two in half of 4+ cases, shown only while a habit missed yesterday is still undone today; mood on done vs skipped days |
 | `paceSlope(log, frac, today)` / `goalPace` | least-squares slope through the blob's `progressLog` (last 90 days, today's value replacing today's entry; 3+ points over 5+ days), run on from today's progress; a slope ≤ 0 is "has stalled" (target still ahead). Without a usable log, the old straight line from creation (0%). Reported when the finish lands 3+ days past `targetDate`. Progress = milestones, else day tracker |
-| `taskTiming` / `pushedTask` / `taskWeekday` | created→done days per priority (3+ each); open task with `pushCount` 3+; weekday with the most finishes (10+) |
+| `taskTiming` / `pushedTask` / `taskWeekday` | created→done days per priority (3+ each), "High priority: 2.5 days" / "same day"; open task with `pushCount` 3+; weekday with the most finishes (10+) |
 | `unusualExpense` / `hiddenSubscription` | an expense this week 3x the category median (5+ before it); same note, amounts within 15%, gaps of 25–35 days, 3+ times, not matching a subscription name |
 | `drinkRateByHour` (in `water-stats.js`) / `waterGap` | share of logged days with water in each local hour; longest 3h+ run between 09:00 and 21:00 under 20% |
 | `scoreChange` | yesterday vs the day before, 10+ points, names the part (tasks or habits) that moved most **the score's way** (a rise in habits never explains a fall). 0 of 0 is no data, not 0%; a part due on only one of the two days is measured against the other day's score, and a newly due task with none done reads "a task came due and wasn't done". No part moving that way → no card. Icon `trending-down` on a fall |

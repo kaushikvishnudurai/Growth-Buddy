@@ -41,15 +41,19 @@
 }
 .gb-money-mini-body {
   display: flex;
+  flex-wrap: wrap; /* a figure too wide to share the row puts the text under it */
   align-items: flex-start;
   gap: var(--space-4);
 }
+/* As wide as the figure, never under 72px: a fixed 72px broke ₹10,00,00,230 mid-digit. */
 .gb-money-mini-figure {
   flex: none;
-  width: 72px;
+  width: min-content;
+  min-width: 72px;
   text-align: center;
 }
 .gb-money-mini-spent {
+  white-space: nowrap;
   font-family: var(--font-display);
   font-weight: 800;
   font-size: var(--text-h4);
@@ -73,7 +77,7 @@
   font-variant-numeric: tabular-nums;
 }
 .gb-money-mini-main {
-  flex: 1;
+  flex: 1 1 140px;
   min-width: 0;
 }
 .gb-money-mini-say {

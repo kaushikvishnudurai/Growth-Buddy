@@ -242,6 +242,10 @@ public class MentorshipChatService {
         if (r.getStatus() != Status.accepted) {
             throw ApiException.forbidden("This connection isn't active.");
         }
+        // A partner scheduled for deletion is already gone to everyone else.
+        if (users.findById(partnerOf(r, me)).filter(User::isPendingDeletion).isPresent()) {
+            throw ApiException.notFound("Connection");
+        }
         return r;
     }
 

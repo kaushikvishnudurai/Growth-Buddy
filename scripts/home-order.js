@@ -105,6 +105,17 @@ export function todayKey(zone, now = new Date()) {
   return localDayKey(now);
 }
 
+/* Minutes since midnight in `zone` (the device's without one, or for an unknown id). */
+export function zoneMinutes(zone, now = new Date()) {
+  try {
+    const p = new Intl.DateTimeFormat('en-GB', { timeZone: zone || undefined, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(now);
+    const get = (t) => +(p.find((x) => x.type === t) || { value: 0 }).value;
+    return get('hour') * 60 + get('minute');
+  } catch (_) {
+    return now.getHours() * 60 + now.getMinutes();
+  }
+}
+
 /* A YYYY-MM-DD key moved by whole days, on local noon and the local getters:
    toISOString() goes through UTC, which east of UTC+12 is the previous day. */
 export function shiftDayKey(key, days) {
@@ -114,27 +125,29 @@ export function shiftDayKey(key, days) {
 }
 
 /* Where a task sits on Home: overdue, due today, upcoming, no date, paused,
-   done. Lower comes first. */
-export function taskRank(task, now) {
+   done. Lower comes first. `zone`: the account's, so "today" is the day Home
+   shows (the device's without one). */
+export function taskRank(task, now, zone) {
   if (task.done) return 5;
   if (task.paused) return 4;
   if (!task.dueAt) return 3;
   const due = new Date(task.dueAt);
   if (Number.isNaN(due.getTime())) return 3;
   if (task.overdue || due.getTime() < now.getTime()) return 0;
-  return localDayKey(due) === localDayKey(now) ? 1 : 2;
+  return todayKey(zone, due) === todayKey(zone, now) ? 1 : 2;
 }
 
 /* Today's share of the task list, for the score's "x/N tasks": open tasks due
    by the end of today (overdue included) plus tasks done today. An undated open
    task and tomorrow's task are not today's miss; paused ones are out. A done task
    with no `doneAt` was just ticked (the optimistic toggle has none yet): today.
-   Shared with app.js score(), so the ring and its sub-line agree. */
-export function tasksForToday(tasks, now = new Date()) {
-  const today = localDayKey(now);
+   Shared with app.js score(), so the ring and its sub-line agree. Days are
+   read in `zone` (the account's; the device's without one). */
+export function tasksForToday(tasks, now = new Date(), zone) {
+  const today = todayKey(zone, now);
   const dayOf = (iso) => {
     const d = iso ? new Date(iso) : null;
-    return d && !Number.isNaN(d.getTime()) ? localDayKey(d) : null;
+    return d && !Number.isNaN(d.getTime()) ? todayKey(zone, d) : null;
   };
   return (tasks || []).filter((t) => {
     if (t.paused) return false;
@@ -149,9 +162,9 @@ export function tasksForToday(tasks, now = new Date()) {
    → no date, paused and done last; soonest first within a group, and the
    original order on a tie (Array.prototype.sort is stable). `pinned` (id ->
    rank) holds a just-ticked task where it was until it settles (dashboard.js). */
-export function sortTasksForHome(tasks, now = new Date(), pinned) {
+export function sortTasksForHome(tasks, now = new Date(), pinned, zone) {
   return (tasks || [])
-    .map((t) => ({ t, r: pinned && pinned.has(t.id) ? pinned.get(t.id) : taskRank(t, now), at: t.dueAt ? new Date(t.dueAt).getTime() || 0 : 0 }))
+    .map((t) => ({ t, r: pinned && pinned.has(t.id) ? pinned.get(t.id) : taskRank(t, now, zone), at: t.dueAt ? new Date(t.dueAt).getTime() || 0 : 0 }))
     .sort((a, b) => a.r - b.r || (a.r <= 2 ? a.at - b.at : 0))
     .map((x) => x.t);
 }

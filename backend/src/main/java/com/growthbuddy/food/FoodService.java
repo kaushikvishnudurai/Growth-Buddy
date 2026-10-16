@@ -934,9 +934,11 @@ public class FoodService {
 
     /** Quick add from WhatsApp (QuickAddApplier): a dish by name, its calories estimated unless given. */
     @Transactional
-    public void addNamed(UUID userId, String name, String meal, Integer kcal) {
+    public void addNamed(UUID userId, String name, String meal, Integer kcal, LocalDate day) {
         MealSlot slot = meal == null ? null : MealSlot.valueOf(meal);
-        addEntry(userId, new AddFoodEntryRequest(name, null, null, null, null, null, null, kcal, null, slot,
+        // A past day files at its noon, as updateEntry moves one; null is now.
+        Instant at = day == null ? null : day.atTime(12, 0).atZone(clock.zoneOf(userId)).toInstant();
+        addEntry(userId, new AddFoodEntryRequest(name, null, null, null, null, null, at, kcal, null, slot,
                 null, null, null, null, null, null));
     }
 }

@@ -117,7 +117,11 @@ public class ReminderService {
      * ponytail: inferred, not stored; a snooze_day column would make it exact.
      */
     LocalDate snoozeDay(UUID userId, CalendarReminder r) {
-        java.time.Instant at = r.getSnoozedUntil();
+        return snoozeDay(userId, r, r.getSnoozedUntil());
+    }
+
+    /** {@link #snoozeDay} for a snooze instant {@code at} no longer on the row (claimed, or about to be set). */
+    LocalDate snoozeDay(UUID userId, CalendarReminder r, java.time.Instant at) {
         if (at == null || r.getTime() == null) {
             return null;
         }
@@ -281,6 +285,8 @@ public class ReminderService {
         if (occ == null) {
             throw ApiException.badRequest("'date' is required for scoped delete of a recurring reminder");
         }
+        // Read before the cut moves: after it, the snooze would map to another day.
+        LocalDate snoozed = snoozeDay(userId, r);
         switch (s) {
             case "this" -> {
                 r.getSkipDays().add(occ);
@@ -293,6 +299,7 @@ public class ReminderService {
                 // ending the series there left a row that could never fire.
                 if (nothingBefore(r, cut)) {
                     deleteRow(r);
+                    return;
                 } else {
                     r.setUntilDate(cut);
                     repo.save(r);
@@ -303,6 +310,11 @@ public class ReminderService {
                 repo.save(r);
             }
             default -> throw ApiException.badRequest("Unknown scope: " + scope);
+        }
+        // The snoozed occurrence was among those removed: its snooze must not ring.
+        if (snoozed != null && !occursOn(r, snoozed, workWeekOf(userId))) {
+            r.setSnoozedUntil(null);
+            repo.save(r);
         }
     }
 

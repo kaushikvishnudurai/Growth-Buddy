@@ -78,6 +78,23 @@ class ReminderScopedSplitTest {
     }
 
     @Test
+    void deletingTheSnoozedOccurrenceDropsItsSnoozeButAnotherDaysStays() {
+        // Snoozed at 09:00 + 10 min on TODAY+2 (UTC fallback zone: no user repo here).
+        Instant snooze = TODAY.plusDays(2).atTime(9, 10).toInstant(java.time.ZoneOffset.UTC);
+        CalendarReminder r = series(TODAY);
+        r.setSnoozedUntil(snooze);
+        service.delete(USER, r.getId(), "this", TODAY.plusDays(2));
+        assertThat(r.getSnoozedUntil()).isNull();
+
+        CalendarReminder other = series(TODAY);
+        other.setSnoozedUntil(snooze);
+        service.delete(USER, other.getId(), "future", TODAY.plusDays(5));
+        assertThat(other.getSnoozedUntil()).isEqualTo(snooze);
+        service.delete(USER, other.getId(), "future", TODAY.plusDays(1));
+        assertThat(other.getSnoozedUntil()).isNull();
+    }
+
+    @Test
     void editingFutureFromTheFirstOccurrenceReplacesTheRow() {
         CalendarReminder r = series(TODAY);
         ReminderResponse rest = service.update(USER, r.getId(), "future", TODAY, patch(null, LocalTime.of(8, 0)));

@@ -77,7 +77,8 @@ class QuickAddServiceTest {
         OpenAIClient openai = mock(OpenAIClient.class);
         when(openai.isConfigured()).thenReturn(true);
         when(openai.complete(anyString(), anyList())).thenReturn(modelSays);
-        return new QuickAddService(openai).parse("whatever was said", List.of(), TODAY);
+        // A pinned morning clock: past 18:00 a "today 18:00" reminder rolls to tomorrow.
+        return new QuickAddService(openai).parse("whatever was said", List.of(), TODAY, java.time.LocalTime.of(9, 0));
     }
 
     /** "Every Monday at 7 to 7:30 call mom, 10 minutes before, until December" — every field arrives. */

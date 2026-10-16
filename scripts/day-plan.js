@@ -3,6 +3,7 @@
    given a free hour-long focus block. The user switches off what they don't want
    and the blocks become reminders. Pure; checked by day-plan.test.mjs. */
 import { occursOn } from './recurrence.js';
+import { todayKey as dayKeyIn } from './home-order.js';
 
 const DAY_START = 9 * 60;
 const DAY_END = 21 * 60; // last block starts by 21:00
@@ -17,8 +18,8 @@ const toHHMM = (min) =>
   String(Math.floor(min / 60)).padStart(2, '0') + ':' + String(min % 60).padStart(2, '0');
 
 /* Overdue, then due today, then High, then the rest; creation order breaks ties. */
-function taskRank(t, today) {
-  const due = t.dueAt ? localKeyOf(new Date(t.dueAt)) : null;
+function taskRank(t, today, zone) {
+  const due = t.dueAt ? dayKeyIn(zone, new Date(t.dueAt)) : null;
   if (due && due < today) return 0;
   if (due === today) return 1;
   if (t.priority === 'High') return 2;
@@ -69,7 +70,8 @@ export function planTarget(today, nowMin) {
  * @param {Array} o.reminders  calendar reminders (recurrence.js shape, plus text/time/done)
  * @param {Array} o.subscriptions  Money's subscriptions ({name, amount, dueDay, paidFor})
  * @param {string} o.today     'YYYY-MM-DD', the user's day
- * @param {number} o.nowMin    minutes since local midnight
+ * @param {number} o.nowMin    minutes since midnight in the user's zone
+ * @param {string} o.zone      the account's IANA zone, whose day `today` is (device's if absent)
  * @returns {Array<{kind, title, time, id?, detail?, block?}>} timed first, by time
  */
 export function buildDayPlan({
@@ -80,6 +82,7 @@ export function buildDayPlan({
   today,
   nowMin,
   workWeek,
+  zone,
 } = {}) {
   const items = [];
   const busy = [];
@@ -107,7 +110,7 @@ export function buildDayPlan({
   const open = (tasks || [])
     .map((t, i) => ({ t, i }))
     .filter(({ t }) => t && !t.done && !t.paused && t.title)
-    .sort((a, b) => taskRank(a.t, today) - taskRank(b.t, today) || a.i - b.i)
+    .sort((a, b) => taskRank(a.t, today, zone) - taskRank(b.t, today, zone) || a.i - b.i)
     .slice(0, TASK_LIMIT);
   // First free hour from the next half hour (never before 09:00), clear of every
   // timed reminder and of the blocks already handed out.
@@ -131,7 +134,7 @@ export function buildDayPlan({
       title: t.title,
       time: slot === null ? null : toHHMM(slot),
       block: slot !== null,
-      detail: WHY[taskRank(t, today)],
+      detail: WHY[taskRank(t, today, zone)],
     });
   }
   return items.sort((a, b) => {

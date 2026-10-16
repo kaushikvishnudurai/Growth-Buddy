@@ -279,6 +279,9 @@ const ex = (id, amount, date, category = 'food') => ({ id, amount, date, categor
   assert.deepEqual(editedHomeAmount(cleared, usdRow, 'usd', 60), { amount: 4992, orig: { amount: 60, currency: '$', rate: 83.2 } }, 'changed amount, same account: row\'s own rate');
   assert.deepEqual(editedHomeAmount(m, usdRow, 'cash', 70), { amount: 70 }, 'moved to a home account with a new amount: as typed');
   assert.deepEqual(editedHomeAmount(m, { id: 'y', amount: 250, accountId: 'cash' }, 'cash', 300), { amount: 300 });
+  // Same number, different account: the currency moved with it, so it is re-booked.
+  assert.deepEqual(editedHomeAmount(m, usdRow, 'cash', 50), { amount: 50 }, 'untouched $50 moved to a home account: INR 50, not INR 4160');
+  assert.deepEqual(editedHomeAmount(m, { id: 'z', amount: 10, accountId: 'cash' }, 'usd', 10), { amount: 832.5, orig: { amount: 10, currency: '$', rate: 83.25 } }, 'untouched INR 10 moved to the USD account: $10 converted');
 }
 
 

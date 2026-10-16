@@ -21,6 +21,13 @@ import org.junit.jupiter.api.Test;
 class PushEndpointTest {
 
     @Test
+    void aPayloadStringWithControlCharsIsStillValidJson() throws Exception {
+        String raw = "Bell\u0007 \"q\" \\ tab\t end\u001f";
+        String out = PushService.jsonStr(raw);
+        assertThat(new com.fasterxml.jackson.databind.ObjectMapper().readTree(out).asText()).isEqualTo(raw);
+    }
+
+    @Test
     void onlyHttpsPushServicesPass() {
         assertThat(PushService.allowedEndpoint("https://fcm.googleapis.com/fcm/send/abc")).isTrue();
         assertThat(PushService.allowedEndpoint("https://updates.push.services.mozilla.com/wpush/v2/x")).isTrue();

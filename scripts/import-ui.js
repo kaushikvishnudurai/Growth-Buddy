@@ -15,9 +15,9 @@
    stays, and what didn't is named.
    ===================================================================== */
 
-import { h, openOverlay, refreshIcons } from './gb-kit.js';
+import { h, openOverlay, refreshIcons, rovingGroup } from './gb-kit.js';
 import { toast } from './toast.js';
-import { mergedCats, predictCategory, fmt, fmtDateShort, uid } from './money-core.js';
+import { mergedCats, predictCategory, fmt, fmtDateShort, uid, accCurrency } from './money-core.js';
 import { detect, readRows, markDuplicates, ROLES } from './csv-import.js';
 import { parseIcs, toReminders } from './ics-import.js';
 import { describeRepeat } from './calendar.js';
@@ -134,8 +134,11 @@ export function openCsvImport({ money, known, save, settled }) {
     catByText.set(c.label.toLowerCase(), c.key);
   }
   const catLabel = new Map(cats.map((c) => [c.key, c.label]));
+  // Home-currency accounts only: a CSV amount is booked as typed, so a row named
+  // for a $ account would land as that many rupees.
+  // ponytail: foreign-account rows import unassigned; convert via toHomeAmount if that's asked for.
   const accounts = new Map(
-    (money.accounts || []).filter((a) => !a.archived).map((a) => [String(a.name).trim().toLowerCase(), a.id])
+    (money.accounts || []).filter((a) => !a.archived && !accCurrency(money, a.id)).map((a) => [String(a.name).trim().toLowerCase(), a.id])
   );
   const guessMemo = new Map();
   const guess = (raw, note) => {
@@ -150,6 +153,7 @@ export function openCsvImport({ money, known, save, settled }) {
 
   let det = null;
   let read = null;
+  let positiveIs = 'in'; // which way a plus goes when the sign is all there is
   const off = new Set(); // ids the user unticked (or duplicates left unticked)
   const on = new Set(); // duplicates the user ticked
 
@@ -173,6 +177,8 @@ export function openCsvImport({ money, known, save, settled }) {
       }
       off.clear();
       on.clear();
+      // ponytail: name/header guess only; a card file named "export.csv" starts on 'in' and the toggle fixes it.
+      positiveIs = /card|credit/i.test(name || '') || (det.header || []).some((x) => /card/i.test(String(x))) ? 'out' : 'in';
       preview();
     };
     ui.show(
@@ -195,7 +201,7 @@ export function openCsvImport({ money, known, save, settled }) {
   }
 
   function preview() {
-    read = readRows(det.rows, det.roles, det.firstLine);
+    read = readRows(det.rows, det.roles, det.firstLine, { positiveIs });
     markDuplicates(read.entries, known || money);
     const fresh = read.entries.filter((e) => !e.dup);
     const dups = read.entries.filter((e) => e.dup);
@@ -250,6 +256,37 @@ export function openCsvImport({ money, known, save, settled }) {
       })
     );
 
+    // Only when the sign alone decides the kind: a card export reads plus as spending.
+    const signSeg = read.mixedSign
+      ? rovingGroup(
+          h(
+            'div',
+            { class: 'gb-segmented', role: 'radiogroup', 'aria-label': 'Positive amounts are' },
+            [
+              ['in', 'Money in'],
+              ['out', 'Money out'],
+            ].map(([k, label]) =>
+              h(
+                'button',
+                {
+                  type: 'button',
+                  id: 'gb-import-sign-' + k, // the repaint keeps focus on it
+                  class: 'gb-seg' + (k === positiveIs ? ' is-on' : ''),
+                  role: 'radio',
+                  'aria-checked': String(k === positiveIs),
+                  onclick: () => {
+                    if (k === positiveIs) return;
+                    positiveIs = k;
+                    preview();
+                  },
+                },
+                label
+              )
+            )
+          )
+        )
+      : null;
+
     const first = fresh.slice(0, 10).map((e) =>
       tickRow(!off.has(e.id), e.note || (e.kind === 'income' ? 'Income' : 'Expense'), entryLine(e), (v) => {
         if (v) off.delete(e.id);
@@ -277,6 +314,7 @@ export function openCsvImport({ money, known, save, settled }) {
     ui.show(
       summary,
       section('Columns', [h('p', { class: 'gb-field-hint' }, 'Worked out from the file. Change any that look wrong.'), columns]),
+      signSeg ? section('Positive amounts are', [signSeg]) : null,
       fresh.length
         ? section(fresh.length > 10 ? 'First 10 of ' + plural(fresh.length, 'row') : 'Rows', [h('div', { class: 'gb-qa-preview' }, first)])
         : null,

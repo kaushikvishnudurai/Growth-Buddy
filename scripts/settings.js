@@ -39,6 +39,7 @@ import {
 import { WORK_WEEKS, getWorkWeek, setWorkWeek, occursOn } from './recurrence.js';
 import { disablePush, pushSubscribed, pushSupported, pushTestLocal } from './push.js';
 import { CacheStorage } from './cache-storage.js';
+import { latestSeq } from './app-logic.js';
 import { localNotificationsAvailable, nativePlugin } from './native.js';
 import { offerFile } from './save-file.js';
 import {
@@ -3534,15 +3535,19 @@ function openConnectBank(onDone) {
   });
 }
 
+/* Each reply below is the whole user as of that PUT: one landing after a newer
+   tap's reply put the older layout back. Only the newest save's reply is adopted. */
+const accountSaves = latestSeq();
+
 /** Persist progress-digest preferences (frequency + send hour) to the account. */
 async function saveDigestPrefs(frequency, hour) {
+  const n = accountSaves.start('digest');
   const updated = await api('/api/auth/digest', {
     method: 'PUT',
     body: JSON.stringify({ frequency, hour }),
   });
-  const token = (state.user && state.user.token) || loadToken();
-  state.user = Object.assign({}, state.user, updated, { token });
-  saveSession(state.user, token);
+  if (!accountSaves.isLatest('digest', n)) return;
+  syncUserSession(updated);
   render();
 }
 
@@ -3553,13 +3558,12 @@ async function saveHomeLayout(layout) {
   saveSession(state.user, loadToken());
   render();
   try {
+    const n = accountSaves.start('home');
     const updated = await api('/api/auth/home-layout', {
       method: 'PUT',
       body: JSON.stringify({ layout }),
     });
-    const token = (state.user && state.user.token) || loadToken();
-    state.user = Object.assign({}, state.user, updated, { token });
-    saveSession(state.user, token);
+    if (accountSaves.isLatest('home', n)) syncUserSession(updated);
   } catch (err) {
     toastError(err, 'Could not save your home layout.');
   }
@@ -3572,13 +3576,12 @@ async function saveNavLayout(layout) {
   saveSession(state.user, loadToken());
   render();
   try {
+    const n = accountSaves.start('nav');
     const updated = await api('/api/auth/nav-layout', {
       method: 'PUT',
       body: JSON.stringify({ layout }),
     });
-    const token = (state.user && state.user.token) || loadToken();
-    state.user = Object.assign({}, state.user, updated, { token });
-    saveSession(state.user, token);
+    if (accountSaves.isLatest('nav', n)) syncUserSession(updated);
   } catch (err) {
     toastError(err, 'Could not save your navigation layout.');
   }

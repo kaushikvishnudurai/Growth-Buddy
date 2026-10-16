@@ -16,7 +16,7 @@ notifications through `native.js`, and timed reminders / habit reminders / the w
 | `pushSubscribed()` | native: permission granted; web: an existing `pushManager` subscription |
 | `enablePush(api)` | → `'ok'｜'unsupported'｜'unconfigured'｜'denied'｜'error'`. Web: `/api/push/public-key` (no `configured`/`publicKey` → `'unconfigured'`), permission, subscribe, POST `/api/push/subscribe`. Native: the app's own permission sheet ("Growth Buddy", not Chrome) |
 | `disablePush(api)` | web: unsubscribe + `/api/push/unsubscribe`. **Native: no-op** — an app can't revoke its own permission; the caller points at the system toggle |
-| `pushTestLocal(sound)` | native test notification, id **1**, with the **same** `soundFile` and `channelForTone` a real reminder uses. It used to ignore the tone, so it rang while every real Silent alarm was being dropped. Web tests go through `/api/push/test` |
+| `pushTestLocal(sound)` | native test notification, id **1**, with the **same** `alarmTone(sound)` a real reminder uses — file, channel **and own-sound bytes**. It used to ignore the tone (rang while every real Silent alarm was dropped), then passed an own sound's channel without its bytes, which built that channel with the phone's default sound for good. Web tests go through `/api/push/test` |
 
 ## Alarm builders (pure)
 
@@ -30,7 +30,8 @@ reminders off the end), `MAX_QUEUED` 100. ponytail: an app unopened past the hor
 | `usualDrinkHours(times)` | hours with water logged on 60%+ of days (`water-stats.js` `drinkRateByHour`; never import `insights.js` here, it would join the boot chunk), needs 5 days. **Not a stored pref** — app.js adds it as `usualHours` per sync |
 | `upcomingWaterAlarms(prefs, now, days)` | `WATER_DEFAULTS` `{on, everyMins: 120, from, to}` (= `ui_prefs.water`). 30-minute floor; inverted/empty window → silence; a slot right after a usual hour is dropped. Not recurrence |
 | `upcomingHabitAlarms(habits, now, days)` | daily at `reminderTime` regardless of cadence; `doneToday` skips **today only** |
-| `upcomingAlarms({reminders, water, habits, sound, lead, quiet}, now)` | merge, quiet-filter, sort, cap, then stamp `id`, `sound`, `channelId` |
+| `upcomingAlarms({reminders, water, habits, sound, lead, quiet}, now)` | merge, quiet-filter, sort, cap, then stamp `id` + `alarmTone(key)` |
+| `alarmTone(key = deviceTone)` | `{sound, customSound, channelId}` for a tone; with no key, the tone the last `syncDeviceAlarms` was given (the timer's end alarm uses it) |
 | `notificationActionTypes(snoozeLabel)` | the three button sets (`ACTION_TYPES`): `gb-reminder` Done + Snooze, `gb-habit` Done, `gb-water` +`WATER_ACTION_ML` (250) ml. Each alarm builder stamps `actionTypeId` + `extra {kind, id?, day?}`; a reminder's `day` is the occurrence, **null on a snoozed ring** (its occurrence isn't known, so Done only dismisses); a habit gets Done only when `habitTickable` (not quit, not measured) but **always** its `extra`, so a tap still opens Habits. app.js `handleNotificationAction` carries a press out |
 | `notificationTarget(extra)` | pure: where a tap on the card goes — reminder → `{screen:'calendar', day}`, habit → habits, water → home, `focus` (timer.js's end alarm) → focus; else null (just open the app). The app's mirror of the web push's `url` |
 | `syncDeviceAlarms(opts)` | native + granted only. Registers the button sets (`opts.snoozeLabel`), then `cancelPendingLocalNotifications({keep: [TIMER_ALARM_ID]})` then schedule the whole set. Returns count. Called by app.js `reSyncDeviceAlarms` whenever any input changes |

@@ -114,4 +114,9 @@ assert.deepEqual(
   ]
 );
 
+// A task's day is read in the account's zone, the zone `today` is in.
+const lateUtc = [{ id: 'z', title: 'Call', dueAt: '2026-10-15T02:00:00Z' }]; // 19:00 on the 14th in LA
+assert.equal(buildDayPlan({ today: '2026-10-14', nowMin: 600, tasks: lateUtc, zone: 'America/Los_Angeles' })[0].detail, 'due today');
+assert.equal(buildDayPlan({ today: '2026-10-14', nowMin: 600, tasks: lateUtc, zone: 'Asia/Kolkata' })[0].detail, '');
+
 console.log('day-plan: ok');

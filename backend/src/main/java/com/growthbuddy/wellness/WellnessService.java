@@ -188,8 +188,8 @@ public class WellnessService {
     /* ---- Quick add from WhatsApp (QuickAddApplier) ---- */
 
     @Transactional
-    public void saveSleepTimes(UUID userId, String bedtime, String wakeTime, String quality) {
-        saveSleep(userId, new SleepRequest(null, bedtime, wakeTime, quality, null));
+    public void saveSleepTimes(UUID userId, LocalDate date, String bedtime, String wakeTime, String quality) {
+        saveSleep(userId, new SleepRequest(date, bedtime, wakeTime, quality, null));
     }
 
     @Transactional

@@ -32,4 +32,16 @@ CacheStorage.setItem('gb.x', 'b');
 await wait(80);
 assert.deepEqual([...store.values()], ['b'], 'last write wins');
 
+// The cookie is stored URI-encoded: a session whose slim JSON is ~3 KB encodes
+// past 4 KB. It must still leave a cookie boot can sign in from, not none.
+const { cookieValue } = await import('./cache-storage.js');
+const big = { id: 'u1', displayName: 'Ana', timezone: 'Asia/Kolkata', features: { money: false }, uiPrefs: { blob: '{"a":1}'.repeat(300) } };
+assert.ok(JSON.stringify(big).length < 3500, 'raw JSON is under the old raw-length check');
+const c = cookieValue('gb.session', JSON.stringify(big));
+assert.ok(c && encodeURIComponent(c).length <= 3500, 'encoded cookie fits');
+assert.deepEqual(JSON.parse(c), { id: 'u1', displayName: 'Ana', timezone: 'Asia/Kolkata', features: { money: false } });
+const small = { id: 'u2', uiPrefs: { theme: 'dark' } };
+assert.deepEqual(JSON.parse(cookieValue('gb.session', JSON.stringify(small))), small, 'a session that fits keeps uiPrefs');
+assert.equal(cookieValue('gb.apiBase', '"'.repeat(1500)), null, 'any key: the encoded length decides');
+
 console.log('cache-storage: ok');

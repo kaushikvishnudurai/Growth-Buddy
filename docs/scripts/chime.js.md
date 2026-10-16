@@ -40,8 +40,13 @@ Storage (done by app.js, described here): the **choice** in `ui_prefs.notifySoun
 CacheStorage per device (`gb.notifySound.<id>` behind an index at `gb.notifySounds`) and on the
 account (`/api/notifications/custom-sounds`) — never in ui_prefs, which rides on every `/api/auth/me`.
 
-On the phone an own sound rings on **its own channel**, `gb-tone-custom-<id8>` (push.js
+On the phone an own sound rings on **its own channel**, `gb-tone-custom-<id8>-r2` (push.js
 `channelForTone`; `customChime(key)` hands over the data URL): the Capacitor project's
 `CustomNotificationSoundPlugin` writes the bytes to `filesDir/gb_sounds/`, serves them through the
 app FileProvider and builds the channel. An APK without it, or a sound it refuses, rings on
 `gb-tone-default` (the phone's sound) instead of being dropped. Don't write a second plugin.
+The plugin re-grants System UI read access on every launch (a grant dies at reboot; until the app
+is next opened after one, the own sound can't be read). `-r2`: build 100's suffix-less ids may sit
+on phones as default-sound channels built by the Test button, and a channel can't be re-sounded.
+Server pushes never reach the app (no FCM; see push.js.md), and on the **web** an own sound plays
+only from an open tab: a Web Push notification takes the browser/OS sound.

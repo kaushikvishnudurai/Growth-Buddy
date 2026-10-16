@@ -158,4 +158,14 @@ assert.equal(
 // Nothing at all: null.
 assert.equal(pickOneThing({ now: at(10) }), null);
 
+// Home passes the account zone's day and hour: those decide, not the device's.
+const moodOnly = (k) => k === 'mood';
+assert.equal(pickOneThing({ can: moodOnly, now: at(10), hour: 13 }).kind, 'mood', 'account afternoon, device morning');
+assert.equal(pickOneThing({ can: moodOnly, now: at(13), hour: 10 }), null, 'account morning, device afternoon');
+assert.equal(
+  pickOneThing({ can: moodOnly, now: at(13), today: '2030-01-02', wellness: { moodByDate: { '2030-01-02': { mood: 'good' } } } }),
+  null,
+  "the account's day's mood counts as logged"
+);
+
 console.log('one-thing ok');

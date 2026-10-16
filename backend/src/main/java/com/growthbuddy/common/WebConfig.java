@@ -76,6 +76,8 @@ public class WebConfig implements WebMvcConfigurer {
                     "/api/auth/email/confirm",
                     "/api/auth/2fa/verify",
                     "/api/auth/2fa/disable",
+                    "/api/auth/change-password",
+                    "/api/auth/delete-account",
                     // A guessable secret too: a private circle's 8-char code (32^8).
                     "/api/circles/join-code",
                     // Not secrets, but each is costly or anonymous: the export reads

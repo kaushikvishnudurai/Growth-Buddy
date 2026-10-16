@@ -179,9 +179,11 @@ function openEditProgress(goal, progress, onUpdateProgress, linkedCount = 0) {
       if (auto) {
         // Counted from the goal's own start, so linking habits to a goal that
         // is weeks old picks up the weeks already done.
+        // The start's day in the account's zone: slicing the ISO string gave the UTC day.
+        const made = goal.createdAt ? new Date(goal.createdAt) : null;
         const since =
           (progress && progress.autoSince) ||
-          String(goal.createdAt || '').slice(0, 10) ||
+          (made && !isNaN(made) ? sharedTodayKey(userZone, made) : '') ||
           todayKey();
         onUpdateProgress(goal.id, { durationDays: dur, autoDays: true, autoSince: since });
         return;

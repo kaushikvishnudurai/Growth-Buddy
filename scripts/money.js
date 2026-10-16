@@ -1934,12 +1934,13 @@ function tagPicker(money, save, opts) {
           }
           const p = PALETTE[pick];
           const cat = { key, label, icon: 'tag', color: p.color, soft: p.soft, fg: p.fg };
-          money.customCategories = (money.customCategories || []).concat(cat);
+          // Commit first: mutating `money` before the clone left nothing to diff, so the tag never saved.
           commitOn(
             money,
             save,
             (m) => (m.customCategories = (m.customCategories || []).concat(cat))
           );
+          money.customCategories = (money.customCategories || []).concat(cat);
           renderChips();
           applySelect(key);
           if (opts.onPick) opts.onPick(key);
@@ -1997,13 +1998,16 @@ function tagPicker(money, save, opts) {
    inside the app's Customise modal (see app.js). Changes save automatically, so
    there's no explicit save button, matching the modal's other tabs. */
 export function MoneyCustomisePane(money, save) {
-  const commit = (mutator) => commitOn(money, save, mutator);
-  // Keep the local `money` in sync with each commit so successive auto-saves
-  // build on each other instead of cloning a stale doc.
-  const setPref = (patch) => {
-    money.settings = Object.assign({}, money.settings, patch);
-    commit((m) => (m.settings = Object.assign({}, m.settings, patch)));
+  // Clone, mutate the clone, save it against the old doc, then point `money` at the
+  // clone: successive auto-saves build on each other and each one has a real diff
+  // (mutating `money` first left every save diffing to nothing).
+  const commit = (mutator) => {
+    const base = money;
+    money = clone(base);
+    mutator(money);
+    save(money, base);
   };
+  const setPref = (patch) => commit((m) => (m.settings = Object.assign({}, m.settings, patch)));
 
   const list = h('div', { class: 'gb-money-tag-list' });
   const nameInput = h('input', {
@@ -2058,9 +2062,6 @@ export function MoneyCustomisePane(money, save) {
                   'aria-label': 'Remove tag ' + c.label,
                   onclick: () =>
                     confirmDelete('Remove tag', 'Remove the "' + c.label + '" tag?', () => {
-                      money.customCategories = (money.customCategories || []).filter(
-                        (x) => x.key !== c.key
-                      );
                       commit(
                         (m) =>
                           (m.customCategories = (m.customCategories || []).filter(
@@ -2094,7 +2095,6 @@ export function MoneyCustomisePane(money, save) {
         }
         const p = PALETTE[pick];
         const cat = { key, label, icon: 'tag', color: p.color, soft: p.soft, fg: p.fg };
-        money.customCategories = (money.customCategories || []).concat(cat);
         commit((m) => (m.customCategories = (m.customCategories || []).concat(cat)));
         nameInput.value = '';
         renderList();
@@ -4629,7 +4629,7 @@ function ScreenMoney({
     // With budgets, the slip counts only the tags that have one, as the Budgets
     // card does; the rest is its own line. Taking all spending off the budgeted
     // tags' total said 819 left above a card that said 2,300.
-    const budgeted = new Set(st.filter((s) => s.budget > 0).map((s) => s.cat.key));
+    const budgeted = new Set(st.filter((s) => s.base > 0).map((s) => s.cat.key));
     const known = new Set(mergedCats(money).map((c) => c.key));
     const tagOf = (e) => (known.has(e.category) ? e.category : 'others');
     const byDay = {};

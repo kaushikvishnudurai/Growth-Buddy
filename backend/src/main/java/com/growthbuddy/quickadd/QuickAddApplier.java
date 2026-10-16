@@ -115,7 +115,7 @@ public class QuickAddApplier {
             }
             case "sleep" -> {
                 String[] times = sleepTimes(it.hours());
-                wellness.saveSleepTimes(userId, times[0], times[1], "ok".equals(it.quality()) ? "okay" : it.quality());
+                wellness.saveSleepTimes(userId, it.date(), times[0], times[1], "ok".equals(it.quality()) ? "okay" : it.quality());
                 return "Sleep: " + trim(it.hours()) + " h";
             }
             case "mood" -> {
@@ -131,7 +131,7 @@ public class QuickAddApplier {
                         + (it.note() == null || it.note().isBlank() ? "" : " (" + it.note() + ")");
             }
             case "food" -> {
-                food.addNamed(userId, it.name(), it.meal(), it.kcal());
+                food.addNamed(userId, it.name(), it.meal(), it.kcal(), it.date());
                 return "Food: " + it.name();
             }
             case "reminder" -> {
