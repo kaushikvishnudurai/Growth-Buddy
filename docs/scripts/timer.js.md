@@ -32,7 +32,7 @@ take every reminder with it.
 
 ## Surviving a reload
 
-`saveSession()` writes `{owner, mode, durationSec, remainingSec, running, endsAt, cycle, link}` to CacheStorage
+`saveSession()` writes `{owner, mode, durationSec, remainingSec, running, endsAt, id, cycle, link}` to CacheStorage
 (`gb.focusSession`, never localStorage) on start / pause / reset / setMode; an idle clock removes it.
 `restoreSession()` runs on mount and from app.js's boot (`resumeFocusSession(focusProps())`, after
 `CacheStorage.init()`, only when the key exists): another account's session is dropped, a running
@@ -40,6 +40,14 @@ one resumes against its `endsAt`, and one that **ended while the app was gone is
 store before it is posted**, so it counts exactly once. The decision is `restoredSession()` in
 `scripts/timer-math.js` (DOM-free, with `remainingFrom` and the title helpers), checked by
 `node scripts/timer.test.mjs`.
+
+`id` (`T.sessionId`) is minted by `start()` (a resume keeps it; `setMode` and Reset clear it) and is
+the POST's `Idempotency-Key`: two tabs that restore one running session both finish it, and the
+server's IdempotencyFilter keeps one row (the second tab's `idempotency_in_progress` 409 is silent).
+The POST carries `completedAt` = the session's `endsAt`, so one that ended while the app was closed
+counts on its own day (the server accepts it within 14 days). app.js `onFocusSession` sends it
+**write-ahead through the outbox** (`sendAhead`, kind `focus.session`): an offline finish is queued and
+replayed under the same key, where it used to be dropped from the store and lost.
 
 ## Around the clock
 
@@ -112,11 +120,11 @@ store before it is posted**, so it counts exactly once. The decision is `restore
 `applyStats(s)` (also repaints the goal bar), `statTile`, `StatsCard` (`Focus.reloadStats`) — backed by `/api/focus/stats`;
 the newest answer is kept in `Focus.last` (cleared when `statsOwner` changes) so a revisit opens on
 numbers, not dashes; a failed load says so under the tiles with a Try again;
-completed sessions POST to `/api/focus/sessions` (`FocusSession` rows are retention-capped per user).
+completed sessions POST to `/api/focus/sessions` (`FocusSession` rows are retention-capped per user **and mode**: 500 each, so a Pomodoro cycle's breaks don't push focus rows, and the streak, out).
 `FocusService.stats` counts focus sessions only, from the user's local midnight and Monday
 (`UserClock`); with a goal it also reads back `STREAK_LOOKBACK_DAYS` for `goalStreak`.
 `FocusServiceTest` pins the windows, the clamp, the mode, the zone bucketing, link ownership (a gone or
-foreign link is dropped, the session kept) and the streak.
+foreign link is dropped, the session kept), the streak, the `completedAt` clamp and the per-mode prune.
 
 **History** (`HistoryCard`, between stats and sound): `GET /api/focus/history?days=30`
 (`props.getFocusHistory`), re-fetched after every saved focus session. 30 bars in an inline SVG

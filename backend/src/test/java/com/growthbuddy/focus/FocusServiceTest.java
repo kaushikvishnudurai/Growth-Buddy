@@ -85,7 +85,6 @@ class FocusServiceTest {
         when(clock.zoneOf(user)).thenReturn(ZoneOffset.UTC);
         when(repo.findByUserIdAndModeAndCompletedAtAfter(any(), any(), any())).thenReturn(List.of());
         when(repo.countByUserIdAndMode(user, "focus")).thenReturn(3L);
-        when(repo.countByUserId(user)).thenReturn(9L);
 
         FocusService.FocusStats s = new FocusService(repo, clock, mock(UserRepository.class), mock(FocusLinks.class)).stats(user);
 
@@ -111,6 +110,44 @@ class FocusServiceTest {
         assertThat(saved.getValue().getMode()).isEqualTo("focus");
         assertThat(saved.getValue().getDurationSec()).isEqualTo(6 * 3600);
         assertThat(saved.getValue().getUserId()).isEqualTo(user);
+    }
+
+    /** A session sent late (app closed, queued offline) keeps its own end time, within two weeks. */
+    @Test
+    void completedAtIsTheClientsWithinTwoWeeksElseNow() {
+        Instant now = Instant.parse("2026-10-17T12:00:00Z");
+        Instant yesterday = now.minusSeconds(86_400);
+        assertThat(FocusService.completedAt(yesterday, now)).isEqualTo(yesterday);
+        assertThat(FocusService.completedAt(now.plusSeconds(30), now)).isEqualTo(now.plusSeconds(30));
+        assertThat(FocusService.completedAt(null, now)).isEqualTo(now);
+        assertThat(FocusService.completedAt(now.minusSeconds(15 * 86_400), now)).isEqualTo(now);
+        assertThat(FocusService.completedAt(now.plusSeconds(120), now)).isEqualTo(now);
+    }
+
+    /** Breaks have their own cap: a Pomodoro cycle's breaks no longer push focus rows out. */
+    @Test
+    void pruneCountsAndDeletesOnlyTheModeJustSaved() {
+        FocusSessionRepository repo = mock(FocusSessionRepository.class);
+        UserClock clock = mock(UserClock.class);
+        UUID user = UUID.randomUUID();
+        when(clock.zoneOf(user)).thenReturn(ZoneOffset.UTC);
+        when(repo.findByUserIdAndModeAndCompletedAtAfter(any(), any(), any())).thenReturn(List.of());
+        when(repo.countByUserIdAndMode(user, "break")).thenReturn(501L);
+        when(repo.countByUserIdAndMode(user, "focus")).thenReturn(500L);
+        jakarta.persistence.EntityManager em = mock(jakarta.persistence.EntityManager.class);
+        jakarta.persistence.Query q = mock(jakarta.persistence.Query.class);
+        when(em.createNativeQuery(any(String.class))).thenReturn(q);
+        when(q.setParameter(org.mockito.ArgumentMatchers.anyInt(), any())).thenReturn(q);
+        FocusService svc = new FocusService(repo, clock, mock(UserRepository.class), mock(FocusLinks.class));
+        org.springframework.test.util.ReflectionTestUtils.setField(svc, "em", em);
+
+        svc.record(user, "focus", 1500);
+        org.mockito.Mockito.verifyNoInteractions(em);
+
+        svc.record(user, "break", 300);
+        verify(em).createNativeQuery(org.mockito.ArgumentMatchers.contains("mode = ?2"));
+        verify(q).setParameter(2, "break");
+        verify(q).setParameter(3, 1);
     }
 
     private static FocusSession linked(String iso, int sec, UUID task, UUID goal) {

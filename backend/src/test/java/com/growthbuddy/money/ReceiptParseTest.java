@@ -56,6 +56,17 @@ class ReceiptParseTest {
         assertThat(r.items()).isEmpty();
     }
 
+    /** A discount bigger than its line runs on into earlier lines; a leading one comes off the next line. */
+    @Test
+    void aDiscountIsNeverPartlyDropped() throws Exception {
+        var r = parse("""
+                {"items":[{"name":"Pizza","amount":400},{"name":"Coke","amount":60},{"name":"Discount","amount":-100}]}""");
+        assertThat(r.items()).extracting(MoneyService.ReceiptItem::amount).containsExactly(new BigDecimal("360.00"));
+        var lead = parse("""
+                {"items":[{"name":"Discount","amount":-50},{"name":"Tea","amount":100}]}""");
+        assertThat(lead.items()).extracting(MoneyService.ReceiptItem::amount).containsExactly(new BigDecimal("50.00"));
+    }
+
     @Test
     void badDateAndMissingFieldsAreNull() throws Exception {
         var r = parse("{\"items\":[],\"date\":\"8 Oct\",\"merchant\":null}");

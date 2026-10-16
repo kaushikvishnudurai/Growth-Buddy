@@ -17,9 +17,11 @@ const MAX_SEC = 6 * 3600;
 /**
  * What a saved session becomes on load.
  *   { action: 'none' }                       nothing usable (or another account's)
- *   { action: 'finish', mode, durationSec }  it ended while the app was gone: count it once
- *   { action: 'resume', mode, durationSec, endsAt }
- *   { action: 'paused', mode, durationSec, remainingSec }
+ *   { action: 'finish', mode, durationSec, endsAt, id }  it ended while the app was gone: count it once
+ *   { action: 'resume', mode, durationSec, endsAt, id }
+ *   { action: 'paused', mode, durationSec, remainingSec, id }
+ * `id` is the session's (minted at start, an Idempotency-Key shape), null when
+ * missing or junk: two tabs that restore one session post it under one key.
  */
 export function restoredSession(saved, now, owner) {
   if (!saved || typeof saved !== 'object') return { action: 'none' };
@@ -27,16 +29,17 @@ export function restoredSession(saved, now, owner) {
   const mode = saved.mode === 'break' ? 'break' : 'focus';
   const durationSec = Math.round(Number(saved.durationSec));
   if (!(durationSec >= 60 && durationSec <= MAX_SEC)) return { action: 'none' };
+  const id = typeof saved.id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(saved.id) ? saved.id : null;
   if (saved.running) {
     const endsAt = Number(saved.endsAt);
     // An end further off than a whole session is a clock that moved, not a session.
     if (!Number.isFinite(endsAt) || endsAt - now > durationSec * 1000 + 5000) return { action: 'none' };
-    if (endsAt <= now) return { action: 'finish', mode, durationSec };
-    return { action: 'resume', mode, durationSec, endsAt };
+    if (endsAt <= now) return { action: 'finish', mode, durationSec, endsAt, id };
+    return { action: 'resume', mode, durationSec, endsAt, id };
   }
   const remainingSec = Math.round(Number(saved.remainingSec));
   if (!(remainingSec > 0 && remainingSec <= durationSec)) return { action: 'none' };
-  return { action: 'paused', mode, durationSec, remainingSec };
+  return { action: 'paused', mode, durationSec, remainingSec, id };
 }
 
 /* "12:34 focus · " in front of whatever the app titled the page. The app

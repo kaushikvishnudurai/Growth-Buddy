@@ -463,6 +463,13 @@ console.log('money-calc advisor + goal pace: ok');
     null
   );
   assert.equal(salaryPattern(doc({ income: [inc[0], { ...inc[1], amount: 59000 }] })).repeat, null, 'amounts differ');
+  // A salary on the 30th stays the 30th (it used to become 'last', posted on the 31st);
+  // 'last' only when both were month-ends.
+  const on = (d1, d2) => salaryPattern(doc({ income: [{ ...inc[0], date: d1 }, { ...inc[1], date: d2 }] })).repeat.day;
+  assert.equal(on('2026-08-30', '2026-07-30'), 30, 'the 30th of 31-day months is the 30th');
+  assert.equal(on('2026-06-30', '2026-04-30'), 'last', 'the 30th of 30-day months is the last day');
+  assert.equal(on('2026-08-31', '2026-07-31'), 'last');
+  assert.equal(on('2026-07-29', '2026-06-29'), 29);
 
   // salaryDue (clock: 2026-10-20): pattern on the 1st, October's not logged -> due on the 1st.
   const { salaryDue } = _calc;

@@ -52,16 +52,18 @@ class FocusController {
     /** Log a completed session; returns fresh stats. */
     @PostMapping("/sessions")
     public FocusService.FocusStats record(@jakarta.validation.Valid @RequestBody SessionRequest req) {
-        return service.record(CurrentUser.id(), req.mode(), req.durationSec(), req.taskId(), req.goalId());
+        return service.record(CurrentUser.id(), req.mode(), req.durationSec(), req.taskId(), req.goalId(), req.completedAt());
     }
 
-    /** taskId / goalId: optional, what the session was spent on; must be the caller's own. */
-    record SessionRequest(String mode, @NotNull @Min(1) @Max(21600) Integer durationSec, UUID taskId, UUID goalId) {}
+    /** taskId / goalId: optional, what the session was spent on; must be the caller's own.
+     *  completedAt: optional, when it ended (FocusService clamps it). The client's
+     *  Idempotency-Key is the session's id, so a session sent twice (two tabs, a
+     *  replayed offline POST) is one row. */
+    record SessionRequest(String mode, @NotNull @Min(1) @Max(21600) Integer durationSec, UUID taskId, UUID goalId,
+            Instant completedAt) {}
 }
 
 interface FocusSessionRepository extends JpaRepository<FocusSession, UUID> {
-    long countByUserId(UUID userId);
-
     long countByUserIdAndMode(UUID userId, String mode);
 
     List<FocusSession> findByUserIdAndModeAndCompletedAtAfter(UUID userId, String mode, Instant after);

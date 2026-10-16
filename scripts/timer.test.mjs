@@ -34,17 +34,28 @@ assert.deepEqual(restoredSession(run, NOW, 'u1'), {
   mode: 'focus',
   durationSec: 1500,
   endsAt: NOW + 600 * 1000,
+  id: null,
 });
 // An idle, lined-up break (EXF-5) comes back as itself, not as sprint 1.
 assert.deepEqual(
   restoredSession({ owner: 'u1', mode: 'break', durationSec: 300, remainingSec: 300, running: false, cycle: 1 }, NOW, 'u1'),
-  { action: 'paused', mode: 'break', durationSec: 300, remainingSec: 300 }
+  { action: 'paused', mode: 'break', durationSec: 300, remainingSec: 300, id: null }
 );
 assert.deepEqual(restoredSession({ ...run, endsAt: NOW - 1 }, NOW, 'u1'), {
   action: 'finish',
   mode: 'focus',
   durationSec: 1500,
+  endsAt: NOW - 1,
+  id: null,
 });
+// The session's id rides along (two tabs post it under one Idempotency-Key), and
+// a finish carries its own end, so it is dated the day it was done.
+const ended = restoredSession({ ...run, id: 'a1b2-C3_d', endsAt: NOW - 86_400_000 }, NOW, 'u1');
+assert.equal(ended.id, 'a1b2-C3_d');
+assert.equal(ended.endsAt, NOW - 86_400_000);
+assert.equal(restoredSession({ ...run, id: 'a1b2-C3_d' }, NOW, 'u1').id, 'a1b2-C3_d', 'a resume keeps the id');
+assert.equal(restoredSession({ ...run, id: 'bad key!' }, NOW, 'u1').id, null, 'not a header-safe key: none');
+assert.equal(restoredSession({ ...run, id: 42 }, NOW, 'u1').id, null);
 assert.equal(restoredSession(run, NOW, 'u2').action, 'none', "another account's session is dropped");
 assert.equal(restoredSession({ ...run, endsAt: NOW + 99 * 3600 * 1000 }, NOW, 'u1').action, 'none');
 assert.equal(restoredSession({ ...run, durationSec: 0 }, NOW, 'u1').action, 'none');
@@ -53,7 +64,7 @@ assert.equal(restoredSession(null, NOW, 'u1').action, 'none');
 assert.equal(restoredSession('junk', NOW, 'u1').action, 'none');
 assert.deepEqual(
   restoredSession({ owner: 'u1', mode: 'break', durationSec: 300, running: false, remainingSec: 120 }, NOW, 'u1'),
-  { action: 'paused', mode: 'break', durationSec: 300, remainingSec: 120 }
+  { action: 'paused', mode: 'break', durationSec: 300, remainingSec: 120, id: null }
 );
 assert.equal(
   restoredSession({ owner: 'u1', mode: 'focus', durationSec: 300, running: false, remainingSec: 300 * 2 }, NOW, 'u1')

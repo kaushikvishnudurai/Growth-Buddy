@@ -15,6 +15,7 @@ import {
   TIMER_ALARM_ID,
 } from './native.js';
 import { CacheStorage } from './cache-storage.js';
+import { newIdemKey } from './outbox.js';
 import { playChime } from './chime.js';
 import { alarmTone } from './push.js';
 import { pad2 as pad } from './dates.js';
@@ -48,6 +49,9 @@ const T = {
   lastFocusMins: 25, // what a finished break lines back up
   cycleDone: 0, // sprints finished in this cycle of four (timer-math.js afterSession)
   link: null, // what this session is on: { taskId } | { goalId } | null ("Focusing on…")
+  // Minted at start, stored with the session, sent as the POST's Idempotency-Key:
+  // two tabs that restore one session and both finish it save one row.
+  sessionId: null,
   refs: null, // live DOM refs, rebuilt on every (re)mount
   seq: 0, // bumped by setMode: which session a pending confirm was asked about
   closeAsk: null, // dismisses that confirm (askAboutSession)
@@ -108,6 +112,7 @@ function saveSession() {
         remainingSec: T.remainingSec,
         running: T.running,
         endsAt: T.endsAt,
+        id: T.sessionId,
         cycle: T.cycleDone,
         link: T.link,
       })
@@ -146,10 +151,12 @@ function restoreSession() {
   const c = Number(saved.cycle);
   T.cycleDone = c >= 0 && c <= SPRINTS_PER_CYCLE ? Math.floor(c) : 0;
   T.link = cleanLink(saved.link);
+  T.sessionId = r.id;
   if (r.action === 'finish') {
     dropSession();
     T.remainingSec = 0;
-    postSession(r.mode, r.durationSec, r.mode === 'focus' ? T.link : null);
+    // Dated when it ended, not now: it counts on the day it was done.
+    postSession(r.mode, r.durationSec, r.mode === 'focus' ? T.link : null, { id: r.id, completedAt: r.endsAt });
     toast.success(
       r.mode === 'focus'
         ? 'Your focus session finished while you were away. It counts.'
@@ -175,10 +182,16 @@ function restoreSession() {
   paintRing();
 }
 
-/** Persist a finished session and refresh the stats card. Not silent: a dropped POST is a session that never counts. */
-function postSession(mode, durationSec, link) {
+/** Persist a finished session and refresh the stats card. Not silent: a dropped POST is a session that never counts.
+    `meta` = { id, completedAt (ms) }. app.js sends it write-ahead through the outbox, so an offline finish is
+    queued and replayed under the same key. */
+function postSession(mode, durationSec, link, meta) {
   if (!Focus.onSession) return;
-  Promise.resolve(Focus.onSession(mode, durationSec, link || null))
+  const m = {
+    id: (meta && meta.id) || null,
+    completedAt: meta && meta.completedAt ? new Date(meta.completedAt).toISOString() : null,
+  };
+  Promise.resolve(Focus.onSession(mode, durationSec, link || null, m))
     .then(function (s) {
       applyStats(s);
       if (mode === 'focus') loadHistory();
@@ -192,6 +205,8 @@ function postSession(mode, durationSec, link) {
       }
     })
     .catch(function (err) {
+      // Queued offline (the outbox has said so), or another tab is saving this same session.
+      if (err && (err.queued || err.code === 'idempotency_in_progress')) return;
       toast.error(err, 'Could not save that focus session.');
     });
 }
@@ -546,6 +561,7 @@ function setMode(mode, mins, suggest) {
   T.remainingSec = T.durationSec;
   T.running = false;
   T.endsAt = 0;
+  T.sessionId = null;
   T.suggest = suggest || '';
   if (mode === 'focus') T.lastFocusMins = mins;
   cancelEndAlarm();
@@ -593,6 +609,7 @@ function tick() {
 }
 
 function finish() {
+  const meta = { id: T.sessionId, completedAt: T.endsAt };
   T.remainingSec = 0;
   T.running = false;
   T.endsAt = 0;
@@ -606,7 +623,7 @@ function finish() {
   if (Sound.playing) stopSound();
   chime();
   const doneMode = T.mode;
-  postSession(T.mode, T.durationSec, doneMode === 'focus' ? T.link : null);
+  postSession(T.mode, T.durationSec, doneMode === 'focus' ? T.link : null, meta);
   notifyEnd(doneMode);
   offerTaskDone(doneMode);
   say(doneMode === 'focus' ? 'Focus session complete.' : 'Break over.');
@@ -657,6 +674,7 @@ function start() {
   if (T.remainingSec <= 0) T.remainingSec = T.durationSec;
   T.running = true;
   T.suggest = '';
+  if (!T.sessionId) T.sessionId = newIdemKey(); // a resume keeps its session's id
   T.endsAt = Date.now() + T.remainingSec * 1000;
   if (Sound.enabled) playSound();
   T.intervalId = setInterval(tick, 1000);
@@ -707,6 +725,7 @@ async function reset() {
   }
   if (T.running) pause();
   T.remainingSec = T.durationSec;
+  T.sessionId = null; // thrown away: the next start is a new session
   saveSession();
   paintRing();
 }
@@ -1585,6 +1604,7 @@ function resetFocusSession() {
     lastFocusMins: 25,
     cycleDone: 0,
     link: null,
+    sessionId: null,
   });
   dropSession();
 }

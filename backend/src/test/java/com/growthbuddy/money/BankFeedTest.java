@@ -85,6 +85,29 @@ class BankFeedTest {
         assertTrue(rows.get(0).id().startsWith("bank-"), "no txnId still gets a stable id");
     }
 
+    /** A bank row the user deleted is not re-inserted by the next sync (its id is stable). */
+    @Test
+    void aDeletedBankRowIsNotImportedAgain() throws Exception {
+        var rows = BankFeedService.rows(session(SWIGGY + "," + SALARY), IST);
+        String gone = rows.get(0).id();
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        java.util.List<java.util.List<Object[]>> sent = new java.util.ArrayList<>();
+        when(jdbc.batchUpdate(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.<java.util.List<Object[]>>any(),
+                org.mockito.ArgumentMatchers.anyInt(), any())).thenAnswer(inv -> {
+                    sent.add(inv.getArgument(1));
+                    return new int[][] {{1}};
+                });
+        var ledger = new MoneyLedger(jdbc, JSON) {
+            @Override
+            public java.util.Set<String> deletedIds(UUID userId, java.util.Collection<String> ids) {
+                return ids.contains(gone) ? java.util.Set.of(gone) : java.util.Set.of();
+            }
+        };
+        assertEquals(1, ledger.importIgnore(UUID.randomUUID(), rows));
+        assertEquals(1, sent.get(0).size());
+        assertEquals(rows.get(1).id(), sent.get(0).get(0)[1]);
+    }
+
     @Test
     void categoryGuessesAndMerchantNames() {
         assertEquals("entertainment", BankFeedService.category("ACH/NETFLIX COM/123"));

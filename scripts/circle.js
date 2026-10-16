@@ -15,6 +15,7 @@ import {
   visibleText,
 } from './gb-kit.js';
 import { toast } from './toast.js';
+import { todayKey } from './home-order.js';
 import {
   CHALLENGE_TEMPLATES,
   standingLine,
@@ -112,7 +113,8 @@ function PersonRow(person, onOffer, onRequest, onView) {
       h(
         'div',
         { class: 'sub' },
-        (person.email ? person.email + ' \u00b7 ' : '') + 'Level ' + person.level
+        // No level: they keep their progress private (UserController.toPublic).
+        [person.email, person.level == null ? '' : 'Level ' + person.level].filter(Boolean).join(' \u00b7 ')
       )
     ),
     h(
@@ -450,11 +452,11 @@ function RequestRow(req, onRespond) {
 
 /* ---- Inside an accepted link: cheer / nudge, the thread, agreement, this week ---- */
 
-/* The reader's local calendar day as YYYY-MM-DD (what <input type=date> speaks). */
-function localISO(d = new Date()) {
-  const p = (n) => String(n).padStart(2, '0');
-  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
-}
+/* Today as YYYY-MM-DD in the account's zone (ScreenCircle's `timezone`): the
+   day CircleService checks a challenge's start against. The device day sent a
+   traveller keeping home time a "can't start in the past". */
+let userZone = '';
+const localISO = () => todayKey(userZone);
 
 function shortDay(iso) {
   if (!iso) return '';
@@ -2689,7 +2691,9 @@ function ScreenCircle({
   currentUserId,
   wins,
   addHabit,
+  timezone,
 }) {
+  userZone = timezone || '';
   const outgoingEl = h('div', { class: 'gb-circle-section' }, sectionSkeleton(1));
   // Pending invites TO me. Empty (no heading at all) until there is one.
   const requestsEl = h('div', { class: 'gb-circle-section' });

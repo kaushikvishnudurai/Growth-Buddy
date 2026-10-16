@@ -1724,18 +1724,29 @@ function accountPicker(money, initial, onChange, opts) {
    spending, never income; the ledger takes a transfer with just `from` or just `to`):
    - the loan itself, id `loan-<id>`, on its date, when it names an account: lent =
      out of `accountId` (no "to"), borrowed = into it (no "from");
-   - each repayment `loan-<id>-r<i>`, on the day it came back / was paid, through its
+   - each repayment `loan-<id>-r<key>`, on the day it came back / was paid, through its
      own account (`repaid[i].accountId`, else the loan's): lent = back in, borrowed =
      out. A repayment with no account moves nothing;
    - a loan settled before repayments were recorded (no `final` repayment) gets
      `loan-<id>-s` for the rest, through the loan's account on the loan's date, so its
      balance comes out where it always did.
    `gone` (the loan was deleted) removes every move. Rebuilt whole on each call, so
-   calling it twice is the same as once. */
-function loanMove(m, loan, gone) {
+   calling it twice is the same as once. A repayment's suffix is its own `id`
+   (minted in openRepay), so two devices repaying at once write two rows; one from
+   before ids keeps its index, which is what its row was saved under.
+   `was` = the loan before this edit (Undo). Only the last 400 days of the ledger
+   are loaded, so an older loan's moves are not in m.transfers for the filter to
+   drop: deleting or un-settling names every id it may have had in
+   `m.ledgerDeletes`, which ledgerDiff sends as deletes (a missing id is a no-op). */
+function loanMove(m, loan, gone, was) {
   if (!loan) return;
   const id = 'loan-' + loan.id;
+  const rid = (r, i) => id + '-r' + (r && r.id != null ? r.id : i);
   m.transfers = (m.transfers || []).filter((t) => t.id !== id && !String(t.id).startsWith(id + '-'));
+  if (gone || was) {
+    const may = (l) => [id, id + '-s'].concat((Array.isArray(l.repaid) ? l.repaid : []).map(rid));
+    m.ledgerDeletes = (m.ledgerDeletes || []).concat(may(loan), was ? may(was) : []);
+  }
   if (gone) return;
   const lent = loan.direction === 'given';
   const moves = [];
@@ -1749,7 +1760,7 @@ function loanMove(m, loan, gone) {
   const repaid = Array.isArray(loan.repaid) ? loan.repaid : [];
   repaid.forEach((r, i) =>
     move(
-      id + '-r' + i,
+      rid(r, i),
       Math.round((Number(r.amount) || 0) * 100) / 100,
       r.accountId || loan.accountId,
       r.date || loan.date,
@@ -1762,6 +1773,7 @@ function loanMove(m, loan, gone) {
     const rest = Math.max(0, Math.round((Number(loan.amount) || 0) * 100) - back) / 100;
     move(id + '-s', rest, loan.accountId, loan.date, 'Settled with ' + loan.party, true);
   }
+  if (m.ledgerDeletes) m.ledgerDeletes = m.ledgerDeletes.filter((t) => !moves.some((x) => x.id === t));
   m.transfers = moves.concat(m.transfers);
 }
 /* A transfer between two of your accounts, as opposed to a loan's one-sided move. */
@@ -3994,7 +4006,7 @@ function ScreenMoney({
         }
         commit((m) => {
           const g = m.goals.find((x) => x.id === goal.id);
-          if (g) (g.contribs = g.contribs || []).push({ date: todayKey(), amount: v });
+          if (g) (g.contribs = g.contribs || []).push({ id: uid(), date: todayKey(), amount: v }); // id: two equal ones from two devices stay two (applyDocDiff)
         });
         toast.success('Nice — ' + fmt(v) + ' set aside.');
       },
@@ -6530,6 +6542,7 @@ function ScreenMoney({
           // The last part is recorded too (`final`), so its day and account are
           // known; Undo takes it off again.
           x.repaid = (Array.isArray(x.repaid) ? x.repaid : []).concat({
+            id: uid(), // its transfer is loan-<id>-r<this>, unique across devices (loanMove)
             amount: v,
             date: date.value || todayKey(),
             ...(accountId ? { accountId } : {}),
@@ -6887,7 +6900,7 @@ function ScreenMoney({
                 if (!x) return;
                 x.settled = false;
                 x.repaid = (Array.isArray(x.repaid) ? x.repaid : []).filter((r) => !r.final);
-                loanMove(m, x);
+                loanMove(m, x, false, l);
               });
               toast.success('Marked outstanding.');
             },
@@ -7137,7 +7150,7 @@ function ScreenMoney({
       'select',
       { class: 'gb-input', 'aria-label': 'Day of the month' },
       Array.from({ length: 28 }, (_, i) => String(i + 1))
-        .concat('last')
+        .concat(r && Number(r.day) > 28 ? [String(r.day)] : [], 'last') // a salary repeat can be on the 29th/30th
         .map((d) =>
           h('option', { value: d, selected: String(r ? r.day : 1) === d }, d === 'last' ? 'Last day of the month' : d)
         )

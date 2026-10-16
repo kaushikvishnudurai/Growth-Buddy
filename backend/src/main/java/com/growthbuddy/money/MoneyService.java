@@ -129,22 +129,35 @@ public class MoneyService {
 
     /**
      * Trust boundary: the model's JSON becomes expenses, so every line is checked
-     * here. Discounts are folded into the line above them, because an expense
-     * can't be negative and dropping one would overstate the bill. A category the
+     * here. Discounts are folded into the line above them (one bigger than that
+     * line runs on into the lines before; one before any line comes off the next),
+     * because an expense can't be negative and dropping one would overstate the bill. A category the
      * user doesn't have comes back null, and the client guesses from the name.
      */
     static ReceiptScan parseReceipt(JsonNode node, java.util.Set<String> categories) {
         List<ReceiptItem> items = new java.util.ArrayList<>();
+        // A discount bigger than the line above it runs on into the lines before;
+        // one before any item (or what is left of one) comes off the next line.
+        java.math.BigDecimal owed = java.math.BigDecimal.ZERO;
         for (JsonNode it : node.path("items")) {
             if (!it.path("amount").isNumber()) continue;
             java.math.BigDecimal amt = it.path("amount").decimalValue().setScale(2, java.math.RoundingMode.HALF_UP);
-            if (amt.signum() < 0 && !items.isEmpty()) {
-                ReceiptItem prev = items.remove(items.size() - 1);
-                java.math.BigDecimal left = prev.amount().add(amt);
-                if (left.signum() > 0) items.add(new ReceiptItem(prev.name(), left, prev.category()));
+            if (amt.signum() < 0) {
+                owed = owed.add(amt);
+                while (owed.signum() < 0 && !items.isEmpty()) {
+                    ReceiptItem prev = items.remove(items.size() - 1);
+                    owed = prev.amount().add(owed);
+                    if (owed.signum() > 0) {
+                        items.add(new ReceiptItem(prev.name(), owed, prev.category()));
+                        owed = java.math.BigDecimal.ZERO;
+                    }
+                }
                 continue;
             }
-            if (amt.signum() <= 0 || amt.compareTo(MoneyLedger.EXPENSE_MAX) > 0) continue;
+            if (amt.signum() == 0 || amt.compareTo(MoneyLedger.EXPENSE_MAX) > 0) continue;
+            amt = amt.add(owed);
+            owed = amt.min(java.math.BigDecimal.ZERO);
+            if (amt.signum() <= 0) continue;
             String name = cap(it.path("name").asText(""), 60);
             String cat = it.path("category").asText("");
             items.add(new ReceiptItem(name.isEmpty() ? "Receipt item" : name, amt,

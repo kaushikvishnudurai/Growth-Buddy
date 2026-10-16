@@ -473,9 +473,15 @@ public class MoneyLedger {
         return out;
     }
 
-    /** Old document entries moved in once: an id already in the table is left alone. */
+    /**
+     * Old document entries moved in once, and bank-feed rows: an id already in the
+     * table is left alone, and so is one the user deleted (its tombstone), or a bank
+     * row deleted here came back with the next sync under its stable bank-&lt;hash&gt; id.
+     */
     @Transactional
     public int importIgnore(UUID userId, List<Row> rows) {
+        Set<String> gone = rows.isEmpty() ? Set.of() : deletedIds(userId, rows.stream().map(Row::id).toList());
+        rows = rows.stream().filter(r -> !gone.contains(r.id())).toList();
         if (rows.isEmpty()) {
             return 0;
         }

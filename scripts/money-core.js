@@ -458,6 +458,8 @@ export function normalizeMoney(m) {
     // Live balances from the server; read-only here, never saved back.
     accounts: Array.isArray(m.accounts) ? m.accounts : [],
     tombstones: pruneTombstones(m.tombstones),
+    // A save's explicit ledger deletes (loanMove), read by ledgerDiff; never stored (docPart).
+    ...(Array.isArray(m.ledgerDeletes) ? { ledgerDeletes: m.ledgerDeletes } : {}),
     // ponytail: the device's currency is seeded here, not written: it reaches the
     // server with the next document save (any budget, goal or setting). Until then
     // the server's own messages (WhatsApp, day summary) still say ₹.
@@ -527,6 +529,10 @@ export function ledgerDiff(before, after) {
     }
     for (const id of was.keys()) if (!kept.has(id)) deletes.push(id);
   }
+  // Ids a save names as gone that may not be loaded at all (loanMove: an old loan's moves).
+  const live = new Set(((after && after.transfers) || []).map((x) => x && x.id));
+  for (const id of (after && after.ledgerDeletes) || [])
+    if (!live.has(id) && !deletes.includes(id)) deletes.push(id);
   return { upserts, deletes };
 }
 
@@ -553,6 +559,7 @@ export function docPart(m) {
   const out = Object.assign({}, m);
   for (const k of Object.keys(LEDGER_ARRAYS)) delete out[k];
   delete out.accounts;
+  delete out.ledgerDeletes;
   return out;
 }
 
@@ -588,8 +595,8 @@ export function docDiff(before, after) {
       for (const x of now) {
         const id = docId(x);
         kept.add(id);
-        if (!old.has(id) || stable(old.get(id)) !== stable(x))
-          ops[key + ':' + id] = { key, id, item: x };
+        if (!old.has(id)) ops[key + ':' + id] = { key, id, item: x };
+        else if (stable(old.get(id)) !== stable(x)) ops[key + ':' + id] = { key, id, item: x, base: old.get(id) };
       }
       for (const id of old.keys()) if (!kept.has(id)) ops[key + ':' + id] = { key, id, gone: true };
     } else if (isPlain(was) && isPlain(now)) {
@@ -601,6 +608,18 @@ export function docDiff(before, after) {
     } else ops[key] = { key, value: now };
   }
   return ops;
+}
+
+/* Our list, less what they removed since base, plus what they added that we don't
+   have. By value, so laying the same op twice changes nothing; a new contribution
+   or repayment carries an id, so two equal ones from two devices stay two. */
+function union3(base, mine, theirs) {
+  const b = new Set(base.map(stable));
+  const t = new Set(theirs.map(stable));
+  const m = new Set(mine.map(stable));
+  return mine
+    .filter((x) => !b.has(stable(x)) || t.has(stable(x)))
+    .concat(theirs.filter((x) => !b.has(stable(x)) && !m.has(stable(x))));
 }
 
 export function applyDocDiff(money, ops) {
@@ -619,6 +638,12 @@ export function applyDocDiff(money, ops) {
         const item = Object.assign({}, op.item);
         for (const f of ['paidFor', 'postedFor'])
           if (item[f] !== null && list[i] && list[i][f] && list[i][f] > (item[f] || '')) item[f] = list[i][f];
+        // A goal's contributions and a loan's repayments are logs both devices
+        // append to: three-way against the item this edit started from, so the
+        // other copy's new entries (and its removals) survive ours.
+        for (const f of ['contribs', 'repaid'])
+          if (op.base && Array.isArray(item[f]) && list[i] && Array.isArray(list[i][f]))
+            item[f] = union3(Array.isArray(op.base[f]) ? op.base[f] : [], item[f], list[i][f]);
         list[i] = item;
       } else if (
         !(op.item && op.item.id != null && (out.tombstones || {})[op.key + ':' + op.item.id])
@@ -926,8 +951,9 @@ function budgetStatus(money) {
 
 /* Add income's Salary help: `last` = the newest salary (to prefill), `repeat` =
    {amount, day} once two salaries of the same amount landed on the same day of
-   two different months, unless an active salary repeat already exists. A day past
-   the 28th is 'last' (the picker's own rule). Pure. */
+   two different months, unless an active salary repeat already exists. The day is
+   'last' only when both were their month's last day (30 Apr + 30 Jun, 31 Jan + 31
+   Mar); a 29th or 30th otherwise stays that day. Pure. */
 function salaryPattern(money) {
   const sal = (money.income || [])
     .filter((i) => i && i.source === 'salary' && Number(i.amount) > 0)
@@ -940,7 +966,10 @@ function salaryPattern(money) {
       const b = sal[j];
       if (Number(a.amount) === Number(b.amount) && a.date.slice(8) === b.date.slice(8) && a.date.slice(0, 7) !== b.date.slice(0, 7)) {
         const d = Number(a.date.slice(8));
-        repeat = { amount: Number(a.amount), day: d > 28 ? 'last' : d };
+        // 'last' only when both really were month-ends; a 29th or 30th stays itself
+        // (recurDate clamps it in a shorter month).
+        const end = (x) => d === new Date(Number(x.date.slice(0, 4)), Number(x.date.slice(5, 7)), 0).getDate();
+        repeat = { amount: Number(a.amount), day: end(a) && end(b) ? 'last' : d };
       }
     }
   const has = (money.recurring || []).some((r) => r && r.active && r.kind === 'income' && r.category !== 'other');

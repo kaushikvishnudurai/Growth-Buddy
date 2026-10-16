@@ -11,6 +11,7 @@ import {
   normalizeMoney,
   searchExpenses,
   splitShares,
+  _calc,
 } from './money.js';
 
 const doc = (over) => normalizeMoney({ ...over });
@@ -278,6 +279,43 @@ const lunch = { id: 'e1', amount: 250, category: 'food', note: 'Lunch', date: '2
   const m = doc({ loans: sh.map((x, i) => ({ id: 'l' + i, direction: 'given', amount: x.amount })) });
   assert.deepEqual(docPart(m).loans.map((l) => l.amount), [333.34, 333.33]);
   assert.deepEqual(ledgerDiff(doc({}), m).upserts, [], 'a loan is not a ledger row');
+}
+
+// Loan moves. Two devices repaying the same loan used to both write loan-<id>-r1, so
+// one repayment's row replaced the other's; each repayment's own id names its row,
+// and an old id-less one keeps its index (what its row was saved under).
+{
+  const { loanMove } = _calc;
+  const loan = (repaid) => ({ id: 'L', direction: 'given', party: 'A', amount: 900, date: '2025-01-01', accountId: 'b', repaid });
+  const old = { amount: 100, date: '2025-02-01' };
+  const a = { transfers: [] };
+  const b = { transfers: [] };
+  loanMove(a, loan([old, { id: 'pa', amount: 200, date: '2026-10-11' }]));
+  loanMove(b, loan([old, { id: 'pb', amount: 300, date: '2026-10-11' }]));
+  const ids = (m) => m.transfers.map((t) => t.id).sort();
+  assert.deepEqual(ids(a), ['loan-L', 'loan-L-r0', 'loan-L-rpa']);
+  assert.notDeepEqual(ids(a)[2], ids(b)[2], "the two devices' repayment rows differ");
+
+  // Deleting a loan older than the 400 days loaded: none of its rows are in the
+  // document, so the diff had nothing to delete and the balance stayed wrong.
+  const l = loan([old, { id: 'pa', amount: 200, date: '2025-03-01', final: true }]);
+  const before = doc({ loans: [l] });
+  const after = doc({ loans: [] });
+  loanMove(after, l, true);
+  assert.deepEqual(
+    ledgerDiff(before, doc(after)).deletes.sort(),
+    ['loan-L', 'loan-L-r0', 'loan-L-rpa', 'loan-L-s'],
+    'every row the loan may have is deleted, loaded or not'
+  );
+  assert.equal(docPart(doc(after)).ledgerDeletes, undefined, 'never stored in the document');
+
+  // Undo of an old settlement: the final repayment's row goes, the loan's own stays.
+  const settled = { ...l, settled: true };
+  const undo = doc({ loans: [{ ...settled, settled: false, repaid: [old] }] });
+  loanMove(undo, undo.loans[0], false, settled);
+  const d = ledgerDiff(doc({ loans: [settled] }), doc(undo));
+  assert.deepEqual(d.deletes.sort(), ['loan-L-rpa', 'loan-L-s']);
+  assert.deepEqual(d.upserts.map((u) => u.id).sort(), ['loan-L', 'loan-L-r0'], 'rebuilt moves are re-sent, not deleted');
 }
 
 console.log('money-ledger.test.mjs: all assertions passed');

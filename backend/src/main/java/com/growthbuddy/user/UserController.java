@@ -3,6 +3,7 @@ package com.growthbuddy.user;
 import com.growthbuddy.common.CurrentUser;
 import com.growthbuddy.common.RateLimiter;
 import com.growthbuddy.mentorship.MentorshipService;
+import com.growthbuddy.mentorship.ProgressSharing;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.PageRequest;
@@ -43,9 +44,12 @@ public class UserController {
      * uses {@code mentorLink} / {@code menteeLink} instead — each is
      * none/pending/active for that direction on its own, which is what lets the
      * pair mentor each other at the same time.
+     *
+     * <p>{@code level} is null for someone who has turned progress sharing off:
+     * a level is progress, and search reaches people who are no tie at all.
      */
     public record PublicUser(
-            UUID id, String displayName, String email, int level, String relationship,
+            UUID id, String displayName, String email, Integer level, String relationship,
             String mentorLink, String menteeLink) {
     }
 
@@ -77,11 +81,12 @@ public class UserController {
                 .toList();
     }
 
-    private PublicUser toPublic(UUID me, User u) {
+    PublicUser toPublic(UUID me, User u) {
         var rel = mentorship.relationship(me, u.getId());
         boolean connected = "active".equals(rel.mentorLink()) || "active".equals(rel.menteeLink());
         String email = connected ? u.getEmail() : UserRepository.maskEmail(u.getEmail());
-        return new PublicUser(u.getId(), u.getDisplayName(), email, u.getLevel(),
+        Integer level = ProgressSharing.sharesProgress(u) ? u.getLevel() : null;
+        return new PublicUser(u.getId(), u.getDisplayName(), email, level,
                 rel.state(), rel.mentorLink(), rel.menteeLink());
     }
 }

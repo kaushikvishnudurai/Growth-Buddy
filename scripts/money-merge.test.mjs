@@ -7,7 +7,7 @@
    a value someone SET (a budget) is not unioned like a log entry. */
 import assert from 'node:assert/strict';
 import { mergeMoney, normalizeMoney, removeDocItem } from './money.js';
-import { currencyFor } from './money-core.js';
+import { currencyFor, docDiff, applyDocDiff } from './money-core.js';
 
 const doc = (over) => normalizeMoney({ expenses: [], income: [], budgets: {}, ...over });
 
@@ -120,6 +120,34 @@ const doc = (over) => normalizeMoney({ expenses: [], income: [], budgets: {}, ..
   assert.equal(currencyFor('hi-IN', 'Asia/Calcutta'), '₹');
   assert.equal(currencyFor('xx-ZZ', 'Etc/UTC'), '₹', 'unknown region: the old default');
   assert.equal(currencyFor(undefined, undefined), '₹');
+}
+
+// A 409 replay: two devices added to the same goal's contribs and the same loan's
+// repaid. The op used to replace the whole item, so the server's addition was lost.
+{
+  const c = (id, amount) => ({ id, amount, date: '2026-10-11' });
+  const base = doc({
+    goals: [{ id: 'g', name: 'Phone', target: 1000, contribs: [c('c0', 100)] }],
+    loans: [{ id: 'l', direction: 'given', amount: 900, repaid: [{ amount: 100, date: '2026-01-02' }] }],
+  });
+  const mine = doc({
+    goals: [{ id: 'g', name: 'Phone', target: 1000, contribs: [c('c0', 100), c('mine', 500)] }],
+    loans: [{ id: 'l', direction: 'given', amount: 900, repaid: [{ amount: 100, date: '2026-01-02' }, c('rm', 200)] }],
+  });
+  const theirs = doc({
+    goals: [{ id: 'g', name: 'Phone', target: 1000, contribs: [c('c0', 100), c('theirs', 500)] }],
+    loans: [{ id: 'l', direction: 'given', amount: 900, repaid: [{ amount: 100, date: '2026-01-02' }, c('rt', 300)] }],
+  });
+  const ops = docDiff(base, mine);
+  const out = applyDocDiff(theirs, ops);
+  assert.deepEqual(out.goals[0].contribs.map((x) => x.id), ['c0', 'mine', 'theirs'], 'both contributions kept');
+  assert.deepEqual(out.loans[0].repaid.map((x) => x.id || 'old'), ['old', 'rm', 'rt'], 'both repayments kept');
+  assert.deepEqual(applyDocDiff(out, ops), out, 'replaying the op again changes nothing');
+  // Our Undo (a repayment taken off) still takes it off; theirs taken off stays off.
+  const undo = doc({ loans: [{ ...base.loans[0], repaid: [] }] });
+  assert.deepEqual(applyDocDiff(base, docDiff(base, undo)).loans[0].repaid, []);
+  const gone = applyDocDiff(doc({ loans: [{ ...base.loans[0], repaid: [] }] }), docDiff(base, mine));
+  assert.deepEqual(gone.loans[0].repaid.map((x) => x.id), ['rm'], 'their removal is not undone by our add');
 }
 
 console.log('money-merge.test.mjs: all assertions passed');

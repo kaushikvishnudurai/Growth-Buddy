@@ -9083,19 +9083,23 @@ function focusProps() {
   focusAutoStart = null;
   return {
     // link: { taskId } | { goalId } | null — what the session was spent on.
-    onFocusSession: (mode, durationSec, link) => {
+    // meta: { id, completedAt }. The session's id is its Idempotency-Key (two tabs, a
+    // replay: one row); write-ahead through the outbox, so an offline finish is kept.
+    onFocusSession: (mode, durationSec, link, meta) => {
       // A task made offline: its server id once the create has landed, else no
       // link at all. A `tmp-` id fails the UUID binding (400) and lost the minutes.
       const id = (v) => (v && !isTempId(realId(v)) ? realId(v) : null);
-      const saved = api('/api/focus/sessions', {
-        method: 'POST',
-        body: JSON.stringify({
-          mode,
-          durationSec,
-          taskId: id(link && link.taskId),
-          goalId: id(link && link.goalId),
-        }),
-      });
+      const body = {
+        mode,
+        durationSec,
+        taskId: id(link && link.taskId),
+        goalId: id(link && link.goalId),
+        completedAt: (meta && meta.completedAt) || null,
+      };
+      const idemKey = (meta && meta.id) || newIdemKey();
+      const saved = sendAhead({ method: 'POST', path: '/api/focus/sessions', body, kind: 'focus.session', idemKey }, () =>
+        api('/api/focus/sessions', { method: 'POST', headers: { 'Idempotency-Key': idemKey }, body: JSON.stringify(body) })
+      );
       // A finished focus session may be what a "Deep work 2h" habit was waiting for.
       if (mode === 'focus') saved.then(autoTickFocusHabits, () => {});
       return saved;
@@ -12095,6 +12099,7 @@ const SCREENS = {
                 return res;
               }),
             currentUserId: state.user && state.user.id,
+            timezone: (state.user && state.user.timezone) || '',
             // "Share a win" chips over a circle's composer, read when a feed opens.
             addHabit: addHabitNamed,
             wins: () => ({

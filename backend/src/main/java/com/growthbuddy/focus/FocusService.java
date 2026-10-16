@@ -23,17 +23,20 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Records completed focus sessions and reports simple stats. Storage is bounded:
- * we keep at most {@link #MAX_PER_USER} sessions per user and prune the oldest
- * on insert, so the table stays flat no matter how long someone uses the app.
+ * we keep at most {@link #MAX_PER_USER} sessions of each mode per user and prune
+ * the oldest of that mode on insert, so the table stays flat no matter how long
+ * someone uses the app.
  */
 @Service
 public class FocusService {
 
-    /** Hard cap on stored sessions per user — plenty for stats, never unbounded. */
+    /** Hard cap on stored sessions per user and mode — plenty for stats, never
+     *  unbounded. Per mode: counted together, a Pomodoro cycle's breaks pushed
+     *  focus rows out, and the streak and history stopped at about 62 days. */
     private static final int MAX_PER_USER = 500;
 
-    /** How far back a daily-goal streak is looked for. The retention cap reaches
-     *  about this far for a daily user anyway. */
+    /** How far back a daily-goal streak is looked for. The retention cap (focus
+     *  rows only) reaches about this far for a daily user anyway. */
     static final int STREAK_LOOKBACK_DAYS = 400;
 
     /** The daily focus goal's ceiling, in minutes (12 hours). */
@@ -86,6 +89,20 @@ public class FocusService {
      */
     @Transactional
     public FocusStats record(UUID userId, String mode, int durationSec, UUID taskId, UUID goalId) {
+        return record(userId, mode, durationSec, taskId, goalId, null);
+    }
+
+    /** How far back a client may date a session it is only now sending (offline, app closed). */
+    static final Duration MAX_BACKDATE = Duration.ofDays(14);
+
+    /**
+     * completedAt: when the session really ended (the timer's endsAt), so one
+     * that finished while the app was closed, or was queued offline, counts on
+     * its own day, not the day it was sent. Outside [now - 14 days, now + 1 min]
+     * (or absent) it is now: a client clock can't plant rows across the history.
+     */
+    @Transactional
+    public FocusStats record(UUID userId, String mode, int durationSec, UUID taskId, UUID goalId, Instant completedAt) {
         String m = normaliseMode(mode);
         if ("break".equals(m)) {
             taskId = null;
@@ -99,20 +116,29 @@ public class FocusService {
         s.setDurationSec(clampDuration(durationSec));
         s.setTaskId(taskId);
         s.setGoalId(goalId);
+        s.setCompletedAt(completedAt(completedAt, Instant.now()));
         repo.save(s);
-        prune(userId);
+        prune(userId, m);
         return stats(userId);
     }
 
-    /** Keep only the newest MAX_PER_USER rows for the user; delete the rest. */
-    private void prune(UUID userId) {
-        long n = repo.countByUserId(userId);
+    static Instant completedAt(Instant claimed, Instant now) {
+        if (claimed == null || claimed.isBefore(now.minus(MAX_BACKDATE)) || claimed.isAfter(now.plusSeconds(60))) {
+            return now;
+        }
+        return claimed;
+    }
+
+    /** Keep only the newest MAX_PER_USER rows of this mode for the user; delete the rest. */
+    private void prune(UUID userId, String mode) {
+        long n = repo.countByUserIdAndMode(userId, mode);
         if (n <= MAX_PER_USER) return;
         int excess = (int) (n - MAX_PER_USER);
         em.createNativeQuery(
-                "DELETE FROM focus_sessions WHERE user_id = ?1 ORDER BY completed_at ASC LIMIT ?2")
+                "DELETE FROM focus_sessions WHERE user_id = ?1 AND mode = ?2 ORDER BY completed_at ASC LIMIT ?3")
                 .setParameter(1, userId)
-                .setParameter(2, excess)
+                .setParameter(2, mode)
+                .setParameter(3, excess)
                 .executeUpdate();
     }
 
