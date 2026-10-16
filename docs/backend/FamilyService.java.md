@@ -31,7 +31,7 @@ pantry, shopping). Docs name symbols — `grep -n` them.
 | `markPlanCooked(userId, planId)` | once per plan; feeds `bumpDishes` |
 | `saveFavourite` / `listFavourites` / `useFavourite` / `deleteFavourite` | saves a STORED plan (named or latest), never a client body; use = a new plan row |
 | chores: `listChores` / `addChore` / `updateChore` / `toggleChore` / `deleteChore` | `choreDone` reads repeat (daily / weekly) against the user's day |
-| `remindChore(userId, id, time)` | a `CalendarReminder` (via `ReminderService.create(userId, text, date, time, repeat)`) in the **assignee's** calendar when mapped with an account, else the caller's, plus a bell to the assignee; due day or today (tomorrow when the time has gone), repeating as the chore does; `sentTo` names who got it |
+| `remindChore(userId, id, time)` | a `CalendarReminder` (via `ReminderService.create(userId, text, date, time, repeat)`) in the **assignee's** calendar when mapped with an account, else the caller's, plus a bell to the assignee; due day or today (tomorrow when the time has gone), repeating as the chore does; `sentTo` names who got it. Capped at `CHORE_REMINDS_PER_DAY` (3) per user per chore via `RateLimiter` (`chore-remind:`), then 429 |
 | recipes: `listRecipes` / `saveRecipe` / `deleteRecipe` | keyed by `shoppingKey(dish)`; empty save deletes |
 
 ### Pantry & shopping

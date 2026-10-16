@@ -291,22 +291,20 @@ public class HabitService {
     private void creditCleanDays(UUID userId, List<Habit> rows, Map<UUID, List<HabitCheckin>> byHabit,
                                  LocalDate today, ZoneId zone) {
         int days = 0;
-        List<Habit> moved = new ArrayList<>();
+        LocalDate through = today.minusDays(1);
         for (Habit h : rows) {
-            if (!isQuit(h)) {
+            if (!isQuit(h)
+                    || (h.getCleanCreditedThrough() != null && !h.getCleanCreditedThrough().isBefore(through))) {
                 continue;
             }
             Set<LocalDate> slips = slipDates(byHabit.getOrDefault(h.getId(), List.of()));
             int paid = creditableCleanDays(h, slips, today, zone);
-            LocalDate through = today.minusDays(1);
-            if (h.getCleanCreditedThrough() == null || h.getCleanCreditedThrough().isBefore(through)) {
-                h.setCleanCreditedThrough(through);
-                moved.add(h);
+            // The marker moves by a conditional update, and only the read that
+            // moved it pays: two concurrent lists both saw the old marker, and a
+            // plain save let each of them pay the same days.
+            if (habits.moveCleanCredit(h.getId(), through) == 1) {
+                days += paid;
             }
-            days += paid;
-        }
-        if (!moved.isEmpty()) {
-            habits.saveAll(moved);
         }
         if (days > 0) {
             progress.awardHabitCleanDays(userId, days);
@@ -845,6 +843,7 @@ public class HabitService {
     /** Record (or clear) a check-in for a day, then recompute the streak. */
     @Transactional
     public HabitResponse checkin(UUID userId, UUID id, CheckinRequest req) {
+        progress.lockUser(userId); // before any insert: see ProgressService.lockUser
         Habit h = require(userId, id);
         LocalDate today = clock.today(userId);
         LocalDate date = req.date() != null ? req.date() : today;

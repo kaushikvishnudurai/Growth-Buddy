@@ -31,6 +31,7 @@ class UiPrefsTest {
         user.setId(UUID.randomUUID());
         user.setUiPrefs(new HashMap<>(Map.of("theme", "dark", "reminderLead", 10)));
         when(users.findById(user.getId())).thenReturn(Optional.of(user));
+        when(users.findForUpdate(user.getId())).thenReturn(Optional.of(user));
     }
 
     @Test

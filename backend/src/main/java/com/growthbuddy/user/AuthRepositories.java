@@ -16,6 +16,16 @@ interface SessionRepository extends JpaRepository<Session, UUID> {
 
     List<Session> findByUserIdOrderByLastUsedAtDesc(UUID userId);
 
+    /**
+     * One column, and only while the session is live. A save() of the session
+     * read at request start wrote every column back, so a request racing a
+     * revoke could put revoked_at back to NULL and un-revoke a stolen token.
+     */
+    @Modifying
+    @org.springframework.transaction.annotation.Transactional
+    @Query("update Session s set s.lastUsedAt = :now where s.id = :id and s.revokedAt is null")
+    int touchLastUsed(@Param("id") UUID id, @Param("now") java.time.Instant now);
+
     @Modifying
     @Query("update Session s set s.revokedAt = :now where s.userId = :userId and s.revokedAt is null")
     void revokeAllForUser(@Param("userId") UUID userId, @Param("now") java.time.Instant now);

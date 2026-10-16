@@ -42,21 +42,41 @@ public class DigestService {
     /**
      * Send the digest to a single user. {@code weekly} picks the wording/cadence;
      * {@code today} is the user's own current date, so the recap covers the days
-     * before it.
+     * before it. {@code bellAndPush} false sends the email alone: the retry of
+     * a digest whose bell and push already went.
+     *
+     * @throws EmailFailed when the email did not go, after the bell and push have,
+     *         so the scheduler can retry just the email
      */
-    public void sendDigest(User user, boolean weekly, LocalDate today) {
+    public void sendDigest(User user, boolean weekly, LocalDate today, boolean bellAndPush) {
         LocalDate through = today.minusDays(1);
         ScoreService.ScoreResponse s = weekly
                 ? scores.between(user.getId(), through.minusDays(6), through)
                 : scores.on(user.getId(), through);
         String subject = weekly ? "Your weekly Growth Buddy digest" : "Your Growth Buddy daily digest";
 
+        EmailFailed emailFailed = null;
         try {
             mail.sendPlain(user.getEmail(), subject, buildBody(user, s, weekly));
         } catch (Exception ex) {
-            log.warn("Digest email failed for user {}: {}", user.getId(), ex.getMessage());
+            emailFailed = new EmailFailed(ex);
         }
+        if (bellAndPush) {
+            sendBellAndPush(user, weekly, s);
+        }
+        if (emailFailed != null) {
+            throw emailFailed;
+        }
+    }
 
+    /** The email did not go; the bell and push (if asked for) already did. */
+    public static class EmailFailed extends RuntimeException {
+        EmailFailed(Exception cause) {
+            super(cause.getMessage(), cause);
+        }
+    }
+
+    private void sendBellAndPush(User user, boolean weekly, ScoreService.ScoreResponse s) {
         String title = weekly ? "Your week in review" : "Yesterday in review";
         String note = "Score " + s.score() + "% · tasks " + s.tasksDone() + "/" + s.tasksTotal()
                 + " · habits " + s.habitsDone() + "/" + s.habitsTotal();

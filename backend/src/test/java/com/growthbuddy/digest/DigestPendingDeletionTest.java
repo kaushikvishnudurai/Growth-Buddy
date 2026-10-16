@@ -44,7 +44,7 @@ class DigestPendingDeletionTest {
 
         scheduler.dispatchDigests();
 
-        verify(digest, never()).sendDigest(any(), anyBoolean(), any());
+        verify(digest, never()).sendDigest(any(), anyBoolean(), any(), anyBoolean());
         verify(users, never()).save(any());
     }
 
@@ -54,6 +54,6 @@ class DigestPendingDeletionTest {
 
         scheduler.dispatchDigests();
 
-        verify(digest).sendDigest(eq(u), eq(false), any());
+        verify(digest).sendDigest(eq(u), eq(false), any(), eq(true));
     }
 }

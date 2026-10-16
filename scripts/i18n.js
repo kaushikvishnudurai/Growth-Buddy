@@ -172,10 +172,9 @@ function fmtTime(value, { hour12 } = {}) {
   if (value == null || value === '') return '';
   let d;
   const hm = /^(\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?$/.exec(String(value));
-  if (hm) {
-    d = new Date();
-    d.setHours(+hm[1], +hm[2], 0, 0);
-  } else d = toDate(value);
+  // A fixed day with no DST change: today's date shifted 02:30 on spring-forward day.
+  if (hm) d = new Date(2000, 0, 1, +hm[1], +hm[2]);
+  else d = toDate(value);
   if (Number.isNaN(d.getTime())) return '';
   const opts = { hour: 'numeric', minute: '2-digit' };
   if (hour12 === true) opts.hour12 = true;

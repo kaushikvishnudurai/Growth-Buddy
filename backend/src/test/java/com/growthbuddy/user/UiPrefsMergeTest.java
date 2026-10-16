@@ -34,6 +34,7 @@ class UiPrefsMergeTest {
         stored.put("focusGoalMins", 90); // saved by the other device
         user.setUiPrefs(stored);
         when(users.findById(user.getId())).thenReturn(Optional.of(user));
+        when(users.findForUpdate(user.getId())).thenReturn(Optional.of(user));
 
         Map<String, Object> patch = new HashMap<>();
         patch.put("theme", "light");

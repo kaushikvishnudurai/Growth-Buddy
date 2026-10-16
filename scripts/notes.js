@@ -1053,7 +1053,11 @@ function labelEditor(initial, suggestions, onChange) {
     return true;
   }
   function paintChips() {
-    chips.replaceChildren(
+    /* Only the chip spans are swapped: re-inserting the input (replaceChildren)
+       would detach it and drop focus, so the next letters after "work," were lost. */
+    for (const c of [...chips.children]) if (c !== input) c.remove();
+    if (input.parentNode !== chips) chips.append(input);
+    input.before(
       ...labels.map((label) =>
         h(
           'span',
@@ -1075,8 +1079,7 @@ function labelEditor(initial, suggestions, onChange) {
             Icon('x', { size: 12, sw: 2.6 })
           )
         )
-      ),
-      input
+      )
     );
     input.placeholder = labels.length ? 'Add another' : 'Add a label';
     paintSuggestions();
@@ -1476,6 +1479,9 @@ function ScreenNotes({
       return;
     }
     saveBtn.disabled = true;
+    // The body was read above: typing during a slow save would be wiped by closeComposer().
+    titleInput.readOnly = true;
+    editor.area.contentEditable = 'false';
     try {
       const created = await onCreate({
         title: title || null,
@@ -1498,6 +1504,8 @@ function ScreenNotes({
       toast.error(err, 'Could not save that note.');
     } finally {
       saveBtn.disabled = false;
+      titleInput.readOnly = false;
+      editor.area.contentEditable = 'true';
     }
   }
 
@@ -1950,11 +1958,16 @@ function ScreenNotes({
             if (onRestore && toast.action) {
               toast.action('Note deleted.', 'Undo', () => restoreNote(note), { icon: 'trash-2' });
             }
+            // A quick Undo swaps in the restored copy (restoreNote): then this must not hide it.
+            const was = notes.find((n) => n.id === note.id);
+            const undone = () => notes.find((n) => n.id === note.id) !== was;
             // The card is behind the closing sheet: let the sheet go first.
             setTimeout(async () => {
+              if (undone()) return;
               const cards = Array.from(listEl.querySelectorAll('.gb-note-card:not([hidden])'));
               const at = cards.indexOf(cardOf(note.id));
               await leave(cardOf(note.id));
+              if (undone()) return;
               notes = notes.filter((n) => n.id !== note.id);
               paint();
               // The opener is gone: focus the card that took its place, else search.
@@ -2344,6 +2357,8 @@ function ScreenNotes({
   const load = () => {
     const forView = view;
     loadedAt = Date.now();
+    // Only notes that arrive while this is in flight are kept beside the server's list.
+    const known = new Set(notes.map((n) => n.id));
     return fetchView()
       .then((data) => {
         if (forView !== view) return; // switched while this was in flight
@@ -2355,7 +2370,11 @@ function ScreenNotes({
           const ids = new Set(fetched.map((n) => n.id));
           // Not a `tmp-` one, though: an offline note the outbox has since sent
           // is in `data` under its real id, and keeping both showed it twice.
-          notes = fetched.concat(notes.filter((n) => !ids.has(n.id) && !String(n.id).startsWith('tmp-')));
+          // Nor one already here before the request: missing from `data` means it
+          // was deleted or archived on another device, and keeping it kept it forever.
+          notes = fetched.concat(
+            notes.filter((n) => !ids.has(n.id) && !known.has(n.id) && !String(n.id).startsWith('tmp-'))
+          );
         } else {
           notes = fetched; // the offline copy is replaced whole
         }

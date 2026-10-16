@@ -266,7 +266,17 @@ export function parseSse(buf) {
  *            reflection?: { label: () => string, open: () => void } }
  *     threadId: the thread to open (else the newest); starter: text to prefill the input with.
  */
+/* One visit, one screen (as in notes.js). render() calls ScreenMentor again for
+   any repaint; rebuilding reloaded the thread, wiped half-typed text, forgot a
+   chip's "Habit added" (a second tap added it twice) and left a streaming reply
+   writing into the detached old list. While the last node is still in the
+   document it is handed back; a new visit (the node gone) builds fresh. */
+let liveScreen = null; // { node, reuse(threadId, starter) }
+
 function ScreenMentor({ api, threadId: initialThread, starter }) {
+  if (liveScreen && liveScreen.node.isConnected && liveScreen.reuse(initialThread, starter)) {
+    return liveScreen.node;
+  }
   // role=log: a screen reader announces each new bubble as it is appended,
   // without re-reading the whole conversation.
   const listEl = h('div', {
@@ -699,6 +709,8 @@ function ScreenMentor({ api, threadId: initialThread, starter }) {
       const decoder = new TextDecoder();
       let buf = '';
       for (;;) {
+        // The screen was left: stop the reply rather than write into a detached list.
+        if (!listEl.isConnected) ctl.abort();
         const { value, done } = await reader.read();
         if (done) break;
         const parsed = parseSse(buf + decoder.decode(value, { stream: true }));
@@ -918,7 +930,7 @@ function ScreenMentor({ api, threadId: initialThread, starter }) {
 
   load();
 
-  return h(
+  const node = h(
     'div',
     { class: 'gb-mentor gb-rise' },
     threadBar,
@@ -927,6 +939,20 @@ function ScreenMentor({ api, threadId: initialThread, starter }) {
     // The field and its send button are one pill, as in a phone's messages app.
     h('div', { class: 'gb-msg-bar' }, h('div', { class: 'gb-msg-field' }, input, sendBtn, stopBtn))
   );
+  liveScreen = {
+    node,
+    // false: another thread was asked for, so build that one fresh.
+    reuse(askThread, askStarter) {
+      if (askThread && askThread !== threadId) return false;
+      if (askStarter && !input.value) input.value = askStarter;
+      node.classList.remove('gb-rise'); // re-inserting would replay the entrance
+      // Moving the node into the new tree drops focus; put it back once render() is done.
+      const had = node.contains(document.activeElement) ? document.activeElement : null;
+      if (had) queueMicrotask(() => had.isConnected && had.focus({ preventScroll: true }));
+      return true;
+    },
+  };
+  return node;
 }
 
 export { ScreenMentor };

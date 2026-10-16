@@ -47,7 +47,7 @@ class DigestClaimTest {
         User u = dueNow();
         when(users.claimDigest(eq(u.getId()), any())).thenReturn(1);
         scheduler.dispatchDigests();
-        verify(digest).sendDigest(eq(u), eq(false), any());
+        verify(digest).sendDigest(eq(u), eq(false), any(), eq(true));
         verify(users, never()).save(any());
     }
 
@@ -55,7 +55,7 @@ class DigestClaimTest {
     void aLostClaimSendsNothing() {
         dueNow(); // claimDigest answers 0: another instance stamped today first
         scheduler.dispatchDigests();
-        verify(digest, never()).sendDigest(any(), anyBoolean(), any());
+        verify(digest, never()).sendDigest(any(), anyBoolean(), any(), anyBoolean());
     }
 
     /** I-08: no digest on a break day; nothing is claimed, so it resumes after. */
@@ -67,15 +67,31 @@ class DigestClaimTest {
                 "breakFrom", today.toString(), "breakUntil", today.plusDays(2).toString())));
         scheduler.dispatchDigests();
         verify(users, never()).claimDigest(any(), any());
-        verify(digest, never()).sendDigest(any(), anyBoolean(), any());
+        verify(digest, never()).sendDigest(any(), anyBoolean(), any(), anyBoolean());
     }
 
     @Test
     void aFailedSendHandsTheClaimBack() {
         User u = dueNow();
         when(users.claimDigest(eq(u.getId()), any())).thenReturn(1);
-        doThrow(new RuntimeException("smtp down")).when(digest).sendDigest(any(), anyBoolean(), any());
+        doThrow(new RuntimeException("smtp down")).when(digest).sendDigest(any(), anyBoolean(), any(), anyBoolean());
         scheduler.dispatchDigests();
         verify(users).releaseDigest(eq(u.getId()), any(), eq(YESTERDAY));
+    }
+
+    /** A failed email is retried on the next tick, alone: the bell and push already went. */
+    @Test
+    void aFailedEmailRetriesWithoutTheBellAndPush() {
+        User u = dueNow();
+        when(users.claimDigest(eq(u.getId()), any())).thenReturn(1);
+        doThrow(new DigestService.EmailFailed(new RuntimeException("smtp down")))
+                .doNothing()
+                .when(digest).sendDigest(any(), anyBoolean(), any(), anyBoolean());
+        scheduler.dispatchDigests();
+        verify(users).releaseDigest(eq(u.getId()), any(), eq(YESTERDAY));
+        verify(digest).sendDigest(eq(u), eq(false), any(), eq(true));
+
+        scheduler.dispatchDigests();
+        verify(digest).sendDigest(eq(u), eq(false), any(), eq(false));
     }
 }

@@ -20,6 +20,17 @@ public class ProgressService {
         this.users = users;
     }
 
+    /**
+     * Take the user row's write lock first in a tick's transaction. The check-in or
+     * history insert holds a shared lock on users through its foreign key, and the
+     * XP update then wants it exclusive: two ticks at once deadlocked (one 503).
+     * Locking up front queues a user's ticks behind each other instead.
+     */
+    @Transactional
+    public void lockUser(UUID userId) {
+        users.findForUpdate(userId);
+    }
+
     @Transactional
     public void awardTaskCompletion(UUID userId) {
         addXp(userId, TASK_COMPLETE_XP);
@@ -33,12 +44,7 @@ public class ProgressService {
     /** An un-ticked day hands back what its tick paid (EXS-9); never below zero. */
     @Transactional
     public void revokeHabitCheckin(UUID userId) {
-        User user = users.findById(userId)
-                .orElseThrow(() -> ApiException.notFound("User not found"));
-        int nextXp = Math.max(0, Math.max(0, user.getXpTotal()) - HABIT_CHECKIN_XP);
-        user.setXpTotal(nextXp);
-        user.setLevel(levelForXp(nextXp));
-        users.save(user);
+        applyXp(userId, -HABIT_CHECKIN_XP);
     }
 
     /** A "break a habit" habit's clean days, each paid like one check-in (HabitService credits each once). */
@@ -53,13 +59,18 @@ public class ProgressService {
         if (delta <= 0) {
             return;
         }
-        User user = users.findById(userId)
-                .orElseThrow(() -> ApiException.notFound("User not found"));
+        applyXp(userId, delta);
+    }
 
-        int nextXp = Math.max(0, user.getXpTotal()) + delta;
-        user.setXpTotal(nextXp);
-        user.setLevel(levelForXp(nextXp));
-        users.save(user);
+    /**
+     * xp_total and level only, in one statement. A save() of the User read at
+     * transaction start rewrote the whole row: a concurrent award was lost, and a
+     * timezone or ui_prefs change written meanwhile was reverted.
+     */
+    private void applyXp(UUID userId, int delta) {
+        if (users.addXp(userId.toString(), delta, XP_PER_LEVEL) == 0) {
+            throw ApiException.notFound("User not found");
+        }
     }
 
     static int levelForXp(int xp) {

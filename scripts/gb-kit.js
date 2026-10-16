@@ -722,8 +722,8 @@ function formatTime(value, fallback = '') {
   const asText = String(value);
   const hhmm = /^(\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?$/.exec(asText);
   if (hhmm) {
-    date = new Date();
-    date.setHours(Number(hhmm[1]), Number(hhmm[2]), 0, 0);
+    // A fixed day with no DST change: today's date shifted 02:30 on spring-forward day.
+    date = new Date(2000, 0, 1, Number(hhmm[1]), Number(hhmm[2]));
   } else {
     date = value instanceof Date ? value : new Date(value);
   }

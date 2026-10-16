@@ -18,6 +18,16 @@ interface HabitRepository extends JpaRepository<Habit, UUID> {
     Optional<Habit> findByIdAndUserIdAndDeletedAtIsNull(UUID id, UUID userId);
 
     /**
+     * Move a quit habit's clean-day marker to {@code through}, only if it is
+     * behind it. 1 = this caller moved it and owes the days; 0 = someone already
+     * did. Bulk JPQL, so the loaded Habit is left as read (never re-saved whole).
+     */
+    @org.springframework.data.jpa.repository.Modifying
+    @Query("update Habit h set h.cleanCreditedThrough = :through where h.id = :id "
+            + "and (h.cleanCreditedThrough is null or h.cleanCreditedThrough < :through)")
+    int moveCleanCredit(@Param("id") UUID id, @Param("through") LocalDate through);
+
+    /**
      * Active habits with a daily reminder time, for a user reachable on at
      * least one of the given channels. Mirrors
      * {@code CalendarReminderRepository.findDeliverable}. No WhatsApp branch
@@ -66,6 +76,8 @@ interface HabitCheckinRepository extends JpaRepository<HabitCheckin, HabitChecki
     Optional<HabitCheckin> findByHabitIdAndLogDate(UUID habitId, LocalDate logDate);
 
     boolean existsByHabitIdAndLogDateAndDoneTrue(UUID habitId, LocalDate logDate);
+
+    long countByHabitIdAndDoneTrueAndLogDateBetween(UUID habitId, LocalDate start, LocalDate end);
 
     long countByUserIdAndDoneTrueAndLogDateBetween(UUID userId, LocalDate start, LocalDate end);
 

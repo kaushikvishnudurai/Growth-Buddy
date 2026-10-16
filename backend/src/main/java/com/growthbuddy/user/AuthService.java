@@ -1066,7 +1066,7 @@ public class AuthService {
      */
     @Transactional
     public AuthUserResponse updateUiPrefs(UUID userId, java.util.Map<String, Object> prefs) {
-        User user = users.findById(userId)
+        User user = users.findForUpdate(userId)
                 .orElseThrow(() -> ApiException.notFound("User not found"));
         java.util.Map<String, Object> before = user.getUiPrefs() != null ? user.getUiPrefs() : java.util.Map.of();
         // A break (I-08) may not be aimed at the past, and breakPast is the server's.

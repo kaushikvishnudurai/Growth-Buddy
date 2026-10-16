@@ -147,12 +147,14 @@ class HabitQuitTest {
         when(habits.findByUserIdAndDeletedAtIsNullOrderBySortOrderAscCreatedAtAsc(USER)).thenReturn(List.of(quit));
         when(checkins.findByUserIdAndLogDateGreaterThanEqualOrderByLogDateDesc(eq(USER), any()))
                 .thenReturn(List.of(slip(quit, TODAY.minusDays(2))));
+        // The first read moves the marker; a second (same day, or concurrent and
+        // still holding the old marker) finds it already moved.
+        when(habits.moveCleanCredit(quit.getId(), TODAY.minusDays(1))).thenReturn(1, 0);
         service.list(USER);
         // Five finished days (5..1 back), one of them slipped; today is not paid yet.
         verify(progress).awardHabitCleanDays(USER, 4);
-        assertThat(quit.getCleanCreditedThrough()).isEqualTo(TODAY.minusDays(1));
+        verify(habits).moveCleanCredit(quit.getId(), TODAY.minusDays(1));
 
-        // Reading again the same day pays nothing more.
         service.list(USER);
         verify(progress, times(1)).awardHabitCleanDays(eq(USER), anyInt());
     }
@@ -162,9 +164,10 @@ class HabitQuitTest {
         quit.setActive(false);
         assertThat(HabitService.creditableCleanDays(quit, Set.of(), TODAY, UTC)).isZero();
         when(habits.findByUserIdAndDeletedAtIsNullOrderBySortOrderAscCreatedAtAsc(USER)).thenReturn(List.of(quit));
+        when(habits.moveCleanCredit(quit.getId(), TODAY.minusDays(1))).thenReturn(1);
         service.list(USER);
         verify(progress, never()).awardHabitCleanDays(any(), anyInt());
-        assertThat(quit.getCleanCreditedThrough()).isEqualTo(TODAY.minusDays(1));
+        verify(habits).moveCleanCredit(quit.getId(), TODAY.minusDays(1));
     }
 
     @Test

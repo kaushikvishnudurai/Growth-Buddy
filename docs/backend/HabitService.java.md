@@ -50,7 +50,7 @@ only takes a slip back or carries a clean day's note; `toggleToday` logs / undoe
 - **XP, each clean day once**: `checkin` never pays a quit habit. `list` runs `creditCleanDays`:
   `creditableCleanDays` counts the non-slip days after `cleanCreditedThrough` up to **yesterday**
   (today can still be slipped), bounded to the read window, zero while paused; it pays them through
-  `ProgressService.awardHabitCleanDays` and moves the marker to yesterday. A slip logged on a paid day
+  `ProgressService.awardHabitCleanDays` and moves the marker to yesterday with `HabitRepository.moveCleanCredit`, a conditional UPDATE (only while the marker is behind); only the read that moved it pays, so two concurrent lists can't both pay the same days. A slip logged on a paid day
   takes nothing back; un-slipping pays nothing again. ponytail: the pause state at settle time stands
   for the whole unpaid span.
 - Not covered on purpose: Circle's `countDoneBetween` sees only a quit habit's explicit `done` rows,

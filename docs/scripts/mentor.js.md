@@ -26,6 +26,8 @@ replies".
 
 Owns its thread and messages locally so a keystroke never round-trips global state.
 
+**One build per visit** (as notes.js): module `liveScreen` hands back the node while it is still in the document, so an app `render()` keeps the thread, the half-typed input, a chip's "Habit added" and a streaming reply; `reuse(threadId, starter)` refocuses, fills a new starter into an empty input, and declines (fresh build) when another thread is asked for.
+
 | Fn | What |
 |---|---|
 | `syncChipState` | send / Stop / Clear enablement. While `stopCtl` is set the send button is **hidden and Stop shows** |
@@ -33,7 +35,7 @@ Owns its thread and messages locally so a keystroke never round-trips global sta
 | `append(node)` | everything else. Removes the welcome if showing |
 | `load()` | GET. A failure shows **only** the error + Retry (`.gb-mentor-loadfail`), chips hidden — the welcome under an error used to invite a send into a chat that never loaded. `loaded` gates send |
 | `failRow(message, onRetry)` | error + Retry under a failed send |
-| `streamReply(text, typing)` | reads `api.stream(text, signal)` with a `ReadableStream` reader + `parseSse`. `delta {text}` → `renderRich(streamRich(got))` (a half-arrived `**` is held back, not flashed); `done {message, userMessage}` → `renderRich`, resolves; `error {status, message}` → throws with the server's words. Every other break goes through `streamFailure(err, got, row)` (exported, tested): once any word arrived, a close without `done`, a Stop (`AbortError`) or a network `TypeError` mid-read all throw `{partial, row}` (+`stopped` for Stop); the server's `error` event and a break before the first word pass through, and an empty assistant row is removed |
+| `streamReply(text, typing)` | reads `api.stream(text, signal)` with a `ReadableStream` reader + `parseSse`. `delta {text}` → `renderRich(streamRich(got))` (a half-arrived `**` is held back, not flashed); `done {message, userMessage}` → `renderRich`, resolves; `error {status, message}` → throws with the server's words. Every other break goes through `streamFailure(err, got, row)` (exported, tested): once any word arrived, a close without `done`, a Stop (`AbortError`) or a network `TypeError` mid-read all throw `{partial, row}` (+`stopped` for Stop); the server's `error` event and a break before the first word pass through, and an empty assistant row is removed. The read loop aborts once `listEl` is detached (the screen was left) |
 | `send()` | appends user bubble, crisis card if `crisisMatch`, typing bubble. Tries `streamReply` when `api.stream` exists; **only an error carrying `.fallback`** (no response, 404/405, not `text/event-stream` — thrown by app.js `apiStream`) drops to `api.post`; a 429 or Stop does not |
 | `clearAll()` | `confirmDialog` → `api.clear(threadId)` → `renderMessages([])` |
 | `setTitle` / `refreshTitle` | the thread bar's name; `refreshTitle` re-reads the list after a send into a thread still on a starting title (the server auto-titles it) |

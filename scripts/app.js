@@ -3622,7 +3622,8 @@ async function toggleTask(id) {
       return;
     }
     // Only this row: restoring the whole array undid any other row ticked meanwhile.
-    state.tasks = state.tasks.map((t) => (t.id === id ? { ...t, done: !t.done } : t));
+    // Back to the pre-tap value, not a flip: a reload mid-request already reset it.
+    state.tasks = state.tasks.map((t) => (t.id === id ? { ...t, done: !nowDone } : t));
     state.score = before.score;
     render();
     toastError(err, 'Could not toggle task.');
@@ -3899,7 +3900,8 @@ async function plainToggleHabit(id) {
       reSyncDeviceAlarms();
       return;
     }
-    state.habits = state.habits.map((h) => (h.id === id ? { ...h, doneToday: !h.doneToday } : h));
+    // Back to the pre-tap value, not a flip: a reload mid-request already reset it.
+    state.habits = state.habits.map((h) => (h.id === id ? { ...h, doneToday: !done } : h));
     state.score = before.score;
     render();
     toastError(err, 'Could not toggle habit.');
@@ -3945,7 +3947,10 @@ async function autoTickHabit(habit, value, why) {
   render();
   pushToast(habit.name + ' ticked: ' + why + '.', 'success', 6000, {
     label: 'Undo',
-    run: () => plainToggleHabit(habit.id),
+    // Only un-ticks: never re-ticks one the user un-ticked meanwhile.
+    run: () => {
+      if ((state.habits || []).some((x) => x.id === habit.id && x.doneToday)) plainToggleHabit(habit.id);
+    },
   });
 }
 
@@ -5741,7 +5746,7 @@ async function flushWaterQueue() {
 /* `dayKey`: a past day from the custom dialog (backdating). Today, or none,
    is a tap: painted at once, then sent. `drinkType` (custom dialog only; the
    quick buttons are water): tea/coffee/... count for less, nutrition.js HYDRATION. */
-async function quickAddWater(amountMl, dayKey, drinkType) {
+async function quickAddWater(amountMl, dayKey, drinkType, opts) {
   const drink = drinkType && drinkType !== 'water' ? drinkType : null;
   if (dayKey && dayKey !== todayKey()) {
     if (dayKey > todayKey()) {
@@ -5808,7 +5813,13 @@ async function quickAddWater(amountMl, dayKey, drinkType) {
     const goal = (state.water && state.water.goalMl) || 0;
     // The glass that reaches the goal gets the popup; every other one a word of thanks.
     const goalMet = celebrateMoment(waterMoment(w0.consumedMl || 0, (w0.consumedMl || 0) + counts, goal, todayKey()));
-    if (!goalMet && !drink) toastSuccess('Your body thanks you for the water.');
+    if (!goalMet && !drink) {
+      // A tap on Home or Food gets an Undo (Quick add brings its own); deleting goes
+      // through deleteWaterEntry, the same path the Food list's delete uses.
+      const id = opts && opts.undo ? addedId(updated && updated.entries, new Set((w0.entries || []).map((e) => e.id))) : null;
+      if (id && !quietSuccess) pushToast('Your body thanks you for the water.', 'success', 5000, { label: 'Undo', run: () => deleteWaterEntry(id) });
+      else toastSuccess('Your body thanks you for the water.');
+    }
     if (seq > waterPaintedSeq) {
       waterPaintedSeq = seq;
       state.water = withPendingWater(updated);
@@ -9142,8 +9153,11 @@ function keepDone(old, saved) {
    also drops a pending snooze, as the server does. */
 async function toggleReminderDone(id, key, done) {
   const rem = (state.reminders || []).find((r) => r.id === id);
-  if (!rem) return;
+  if (!rem) return false;
   if (isTempId(realId(id))) return void toastError(null, STILL_SYNCING);
+  // A double tap sent POST and DELETE at once, and whichever landed last won.
+  const flight = 'rem:' + id + ':' + key;
+  if (!togglesInFlight.claim(flight)) return false;
   const before = { doneDates: rem.doneDates, snoozedUntil: rem.snoozedUntil };
   const dates = (rem.doneDates || []).filter((d) => d !== key);
   rem.doneDates = done ? dates.concat(key) : dates;
@@ -9159,10 +9173,14 @@ async function toggleReminderDone(id, key, done) {
       '/api/reminders/' + encodeURIComponent(realId(id)) + '/done?date=' + encodeURIComponent(key),
       { method: done ? 'POST' : 'DELETE' }
     );
+    return true;
   } catch (err) {
     Object.assign(rem, before);
     repaint();
     toastError(err, done ? 'Could not mark that done.' : 'Could not undo that.');
+    return false;
+  } finally {
+    togglesInFlight.delete(flight);
   }
 }
 
@@ -9458,6 +9476,9 @@ function runInsightAction(action) {
    toast. Call it wherever any of the four inputs changes; the queue is
    rebuilt whole, so a stale one rings for a reminder already deleted. */
 function reSyncDeviceAlarms() {
+  // A reminder list refetched without render() (edit, scoped delete, import)
+  // still holds one waiting out its Undo toast: off the list, and off the queue.
+  undoQueue.reapply();
   if (!state.user) return; // signed out: endSession's cancelAllAlarms is the last word
   // The queue is rebuilt whole: synced from the empty boot lists it cancelled every
   // reminder and habit alarm, and an offline cold start never re-armed them.
@@ -9513,8 +9534,7 @@ async function handleNotificationAction(ev) {
     await snoozeReminder(x.id, null);
   } else if (x.kind === 'reminder' && act === 'done' && x.id && x.day) {
     // No day (a snoozed ring): the press already cleared the card; that is all.
-    await toggleReminderDone(x.id, x.day, true);
-    toastSuccess('Marked done.');
+    if (await toggleReminderDone(x.id, x.day, true)) toastSuccess('Marked done.');
   } else if (x.kind === 'habit' && act === 'done' && x.id) {
     const hb = (state.habits || []).find((h) => h.id === x.id);
     if (!hb) return;
@@ -9635,13 +9655,19 @@ async function deleteReminder(scope, id, occKey) {
     }
     const path = '/api/reminders/' + encodeURIComponent(realId(id)) + '?' + qs.toString();
     await api(path, { method: 'DELETE' });
-    state.reminders = await api('/api/reminders');
-    repaint();
-    toastSuccess('Reminder deleted.');
   } catch (err) {
     state.reminders = previous;
     repaint();
     toastError(err, 'Could not delete reminder.');
+    return;
+  }
+  // Deleted: a failed refetch is not a failed delete. The full reload retries it.
+  toastSuccess('Reminder deleted.');
+  try {
+    state.reminders = await api('/api/reminders');
+    repaint();
+  } catch (_) {
+    loadData();
   }
 }
 
@@ -11815,7 +11841,7 @@ const SCREENS = {
         onSaveMoney: saveMoney,
         requestReceiptScan,
         onOpenMoney: () => setScreen('money'),
-        onQuickAddWater: featureOn('water') ? quickAddWater : null,
+        onQuickAddWater: featureOn('water') ? (ml, day, drink) => quickAddWater(ml, day, drink, { undo: true }) : null,
         homeLayout: (state.user && state.user.homeLayout) || null,
         quickAdd: homeQuickAdd(),
         breakEntry: homeBreakEntry(),
@@ -11944,7 +11970,7 @@ const SCREENS = {
           state.weekError = '';
           setScreen('summary');
         },
-        onQuickAddWater: quickAddWater,
+        onQuickAddWater: (ml, day, drink) => quickAddWater(ml, day, drink, { undo: true }),
         onUpdateWaterGoal: updateWaterGoal,
         onAddFood: openAddFood,
         onDeleteWater: deleteWaterEntry,

@@ -132,7 +132,8 @@ public class HabitReminderDeliveryScheduler {
             // On a break (I-08) habit reminders stay quiet; read from the fresh user,
             // so a break started a minute ago already holds.
             if (OnBreak.on(user.getUiPrefs(), day)
-                    || checkins.existsByHabitIdAndLogDateAndDoneTrue(habit.getId(), day)) {
+                    || checkins.existsByHabitIdAndLogDateAndDoneTrue(habit.getId(), day)
+                    || weekAlreadyMet(habit, day)) {
                 continue;
             }
 
@@ -145,6 +146,17 @@ public class HabitReminderDeliveryScheduler {
                 log.warn("Habit reminder dispatch {} for {} failed: {}", habit.getId(), user.getId(), ex.getMessage());
             }
         }
+    }
+
+    /** A weekly or N-per-week habit whose week's target is met is no longer owed
+     *  this week (HabitService.isDue), so it pages nobody. Daily never is. */
+    private boolean weekAlreadyMet(Habit habit, LocalDate day) {
+        if (HabitService.isQuit(habit) || HabitService.requiredPerWeek(habit) == Integer.MAX_VALUE) {
+            return false;
+        }
+        long done = checkins.countByHabitIdAndDoneTrueAndLogDateBetween(
+                habit.getId(), HabitService.weekStartOf(day), day);
+        return !HabitService.isDue(habit, (int) done, day, null);
     }
 
     private Map<UUID, User> usersById(List<Habit> list) {

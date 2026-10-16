@@ -166,8 +166,7 @@ public class SessionService {
         // Only write lastUsedAt when it's meaningfully stale — avoids an UPDATE
         // on every single request.
         if (s.getLastUsedAt() == null || s.getLastUsedAt().isBefore(now.minus(LAST_USED_WRITE_INTERVAL))) {
-            s.setLastUsedAt(now);
-            sessions.save(s);
+            sessions.touchLastUsed(s.getId(), now);
         }
         tokenCache.put(hash, new CacheEntry(s.getUserId(), nowMs));
         return Optional.of(s.getUserId());

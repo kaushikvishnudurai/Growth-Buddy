@@ -27,6 +27,14 @@ public class DigestScheduler {
     private final UserRepository users;
     private final DigestService digest;
 
+    /**
+     * User to the day whose digest email is still owed (its bell and push went).
+     * ponytail: in memory, so a restart between a failed email and its retry
+     * sends that day's bell and push once more; a column if that ever matters.
+     */
+    private final java.util.Map<java.util.UUID, LocalDate> emailOwed =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
     public DigestScheduler(UserRepository users, DigestService digest) {
         this.users = users;
         this.digest = digest;
@@ -66,8 +74,16 @@ public class DigestScheduler {
             if (users.claimDigest(user.getId(), today) != 1) {
                 continue; // another instance or run already has today's
             }
+            boolean emailRetry = today.equals(emailOwed.get(user.getId()));
             try {
-                digest.sendDigest(user, weekly, today);
+                digest.sendDigest(user, weekly, today, !emailRetry);
+                emailOwed.remove(user.getId());
+            } catch (DigestService.EmailFailed ex) {
+                // The bell and push went; only the email is owed. Released, the
+                // next tick retries the email alone.
+                emailOwed.put(user.getId(), today);
+                users.releaseDigest(user.getId(), today, previous);
+                log.warn("Digest email failed for user {}: {}", user.getId(), ex.getMessage());
             } catch (Exception ex) {
                 // Hand the claim back: a stamp on a failure records a digest as
                 // delivered when it never left the building. Released, the next

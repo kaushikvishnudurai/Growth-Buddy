@@ -78,6 +78,22 @@ assert.equal(fmtRelativeDays('2026-03-06', '2026-03-08'), '2 days ago');
 assert.equal(fmtTime('19:05', { hour12: true }), '7:05 PM');
 assert.equal(fmtTime('00:30', { hour12: false }), '00:30');
 assert.equal(fmtTime('x'), '');
+// A wall-clock time ignores today's date: on spring-forward day (2026-03-08 in LA)
+// 02:30 does not exist locally, and building it on today shifted it to 3:30.
+{
+  const RealDate = globalThis.Date;
+  globalThis.Date = class extends RealDate {
+    constructor(...a) {
+      super(...(a.length ? a : [2026, 2, 8, 12]));
+    }
+  };
+  try {
+    assert.equal(fmtTime('02:30', { hour12: true }), '2:30 AM');
+    assert.equal(fmtTime('02:30', { hour12: false }), '02:30');
+  } finally {
+    globalThis.Date = RealDate;
+  }
+}
 
 // --- numbers and percents ---
 assert.equal(fmtNumber(1234567.5), '1,234,567.5');

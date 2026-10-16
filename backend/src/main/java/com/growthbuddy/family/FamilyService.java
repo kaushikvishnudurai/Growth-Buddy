@@ -45,6 +45,8 @@ public class FamilyService {
     private static final int INVITES_PER_DAY = 20;
     private static final int INVITES_PER_PAIR_PER_DAY = 3;
     private static final long DAY_MS = 24 * 60 * 60_000L;
+    /** Each remind adds a calendar reminder (and a bell card) for the assignee. */
+    private static final int CHORE_REMINDS_PER_DAY = 3;
 
     private static final String GROCERY_PROMPT = """
             You analyze a photo of groceries / ingredients / a grocery receipt and identify every distinct food item.
@@ -1649,6 +1651,11 @@ public class FamilyService {
         Family fam = requireMyFamily(userId);
         requireMemberAccess(fam, userId);
         FamilyChore c = requireChore(fam, id);
+        // Uncapped, a loop on this endpoint filled another member's calendar.
+        if (!limiter.allow("chore-remind:" + userId + ":" + id, CHORE_REMINDS_PER_DAY, DAY_MS)) {
+            throw new ApiException(HttpStatus.TOO_MANY_REQUESTS,
+                    "That chore already has reminders set today. Try again tomorrow.");
+        }
         Optional<FamilyMember> assignee = c.getAssigneeMemberId() == null ? Optional.empty()
                 : members.findById(c.getAssigneeMemberId())
                         .filter(m -> m.getDeletedAt() == null && m.getStatus() == MemberStatus.mapped

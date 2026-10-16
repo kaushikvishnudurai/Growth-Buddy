@@ -103,6 +103,7 @@ public class TaskService {
      */
     @Transactional
     public TaskResponse toggle(UUID userId, UUID id, Boolean done) {
+        progress.lockUser(userId); // before the history insert: see ProgressService.lockUser
         Task t = require(userId, id);
         boolean target = done != null ? done : !t.isDone();
         if (target == t.isDone()) {

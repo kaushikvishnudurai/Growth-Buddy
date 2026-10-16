@@ -12,6 +12,15 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface UserRepository extends JpaRepository<User, UUID> {
+
+    /**
+     * The row, locked until the transaction ends: ui_prefs is read, merged and
+     * written whole, and two overlapping PUTs (12h, Dark, Large tapped in a row)
+     * each wrote back the other's old value.
+     */
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select u from User u where u.id = :id")
+    Optional<User> findForUpdate(@Param("id") UUID id);
     boolean existsByEmail(String email);
 
     /** Users who opted into a progress digest (frequency other than "off"). */
@@ -41,6 +50,18 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = "update users set ui_prefs = :prefs where id = :id", nativeQuery = true)
     int updateUiPrefs(@Param("id") String id, @Param("prefs") String prefsJson);
+
+    /**
+     * {@code delta} onto xp_total (never below zero) and level to match, as one
+     * statement; same rule as ProgressService.levelForXp. level is assigned first
+     * so it reads the old xp_total on any database (MySQL applies SET left to
+     * right, standard SQL reads old values). Bulk SQL: skips the DeliveryCache
+     * listener, which no scheduler needs for XP.
+     */
+    @org.springframework.data.jpa.repository.Modifying(flushAutomatically = true)
+    @Query(value = "update users set level = 1 + floor(greatest(0, greatest(0, xp_total) + :delta) / :perLevel), "
+            + "xp_total = greatest(0, greatest(0, xp_total) + :delta) where id = :id", nativeQuery = true)
+    int addXp(@Param("id") String id, @Param("delta") int delta, @Param("perLevel") int perLevel);
 
     /**
      * The digest claim: stamps today only if no run has yet, so exactly one

@@ -83,6 +83,40 @@ class HabitReminderDeliverySchedulerTest {
         verify(dispatchLog).save(any());
     }
 
+    /** A 3-per-week habit done three times this week is not owed again until next week. */
+    @Test
+    void skipsANPerWeekHabitWhoseWeekIsMet() {
+        UUID userId = UUID.randomUUID();
+        Habit habit = dueHabit(userId);
+        habit.setCadence(Cadence.custom);
+        habit.setTargetPerWeek(3);
+        when(habits.findDeliverable(true, false)).thenReturn(List.of(habit));
+        when(habits.findAllById(any())).thenReturn(List.of(habit));
+        when(users.findAllById(any())).thenReturn(List.of(user(userId)));
+        when(checkins.countByHabitIdAndDoneTrueAndLogDateBetween(
+                habit.getId(), HabitService.weekStartOf(today()), today())).thenReturn(3L);
+
+        scheduler.dispatchHabitReminders();
+
+        verify(notifications, never()).publish(any(), any(), any(), any(), any());
+        verify(dispatchLog, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void stillRemindsAWeeklyHabitNotYetDoneThisWeek() {
+        UUID userId = UUID.randomUUID();
+        Habit habit = dueHabit(userId);
+        habit.setCadence(Cadence.weekly);
+        when(habits.findDeliverable(true, false)).thenReturn(List.of(habit));
+        when(habits.findAllById(any())).thenReturn(List.of(habit));
+        when(users.findAllById(any())).thenReturn(List.of(user(userId)));
+
+        scheduler.dispatchHabitReminders();
+
+        verify(notifications).publish(eq(userId), eq(NotificationKind.habit_reminder),
+                eq("Workout"), any(), eq(habit.getId()));
+    }
+
     /** I-08: a break quiets habit reminders on every channel, in the user's own day. */
     @Test
     void staysQuietOnABreakDay() {

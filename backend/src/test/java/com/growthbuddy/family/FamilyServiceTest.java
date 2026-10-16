@@ -606,6 +606,25 @@ class FamilyServiceTest {
                 eq(RepeatFreq.weekly));
     }
 
+    /** A remind loop must not fill another member's calendar: past the cap, nothing is created. */
+    @Test
+    void choreRemindsPastTheDailyCapAreRefused() {
+        Family f = family(OWNER);
+        livesIn(OWNER, row(f, OWNER, MemberStatus.mapped, Relationship.self));
+        FamilyChore c = new FamilyChore();
+        c.setId(UUID.randomUUID());
+        c.setFamilyId(f.getId());
+        c.setTitle("Take out the bins");
+        when(chores.findById(c.getId())).thenReturn(Optional.of(c));
+        when(limiter.allow(org.mockito.ArgumentMatchers.startsWith("chore-remind:"),
+                org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.anyLong())).thenReturn(false);
+
+        assertThatThrownBy(() -> service.remindChore(OWNER, c.getId(), LocalTime.of(19, 0)))
+                .isInstanceOf(ApiException.class)
+                .extracting(e -> ((ApiException) e).getStatus()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+        verify(reminders, never()).create(any(), any(), any(), any(), any());
+    }
+
     /** Invited is not mapped: an invitee cannot add to the chores of a family they have not joined. */
     @Test
     void anInviteeCannotAddChores() {
