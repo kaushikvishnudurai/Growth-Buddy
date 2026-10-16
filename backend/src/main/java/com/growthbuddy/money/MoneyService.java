@@ -411,9 +411,18 @@ public class MoneyService {
         List<MoneyLedger.Row> upserts = new java.util.ArrayList<>();
         ObjectNode out = json.createObjectNode();
         ArrayNode rejected = out.putArray("rejected");
-        LocalDate latest = body.path("upserts").isEmpty() ? null
-                : java.time.ZonedDateTime.now(clock.withZone(ledger.zoneOf(userId)))
-                        .plus(com.growthbuddy.water.WaterService.FUTURE_SLACK).toLocalDate();
+        // A Money day is the calendar day the user picked on their phone, which can
+        // run ahead of the account's zone (travelling, or a zone never switched): an
+        // IST phone on a UTC account had every entry dated "today" refused from 00:00
+        // to 05:30 while the form said it was saved. So "the future" is a day that has
+        // not started anywhere yet (UTC+14 is first), or the account's, if later.
+        LocalDate latest = null;
+        if (!body.path("upserts").isEmpty()) {
+            LocalDate account = java.time.ZonedDateTime.now(clock.withZone(ledger.zoneOf(userId)))
+                    .plus(com.growthbuddy.water.WaterService.FUTURE_SLACK).toLocalDate();
+            LocalDate anywhere = LocalDate.now(clock.withZone(java.time.ZoneOffset.ofHours(14)));
+            latest = account.isAfter(anywhere) ? account : anywhere;
+        }
         // OFF-5: an edit from a tab or phone that never saw the delete. Refused by id
         // with a code, so the client can say why and drop its copy.
         List<String> ids = new java.util.ArrayList<>();

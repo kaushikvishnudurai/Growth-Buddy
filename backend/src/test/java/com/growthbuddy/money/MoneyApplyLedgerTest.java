@@ -94,6 +94,21 @@ class MoneyApplyLedgerTest {
         assertThat(out.get("rejected").get(0).path("reason").asText()).isEqualTo("Pick a day up to today.");
     }
 
+    /** A phone ahead of the account's zone: its "today" saves, the day after it does not. */
+    @Test
+    void aPhoneAheadOfTheAccountsZoneCanStillSaveItsToday() throws Exception {
+        // 23:30 on the 16th in Kolkata (the account), already 07:00 on the 17th in Auckland (the phone).
+        service.clock = java.time.Clock.fixed(java.time.Instant.parse("2026-10-16T18:00:00Z"), ZONE);
+        var body = json.readTree("""
+                {"upserts":[
+                  {"kind":"expense","id":"phoneToday","amount":100,"date":"2026-10-17"},
+                  {"kind":"expense","id":"dayAfter","amount":100,"date":"2026-10-18"}]}""");
+        ObjectNode out = service.applyLedger(UUID.randomUUID(), body);
+
+        assertThat(saved).extracting(MoneyLedger.Row::id).containsExactly("phoneToday");
+        assertThat(out.get("rejected")).extracting(r -> r.path("id").asText()).containsExactly("dayAfter");
+    }
+
     /**
      * HOS-7: an expense dated 0001-01-01 (one wrong keystroke in the year) was
      * saved and counted in the balance, but no list pages below 1900, so it could

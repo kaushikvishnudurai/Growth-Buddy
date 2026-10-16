@@ -44,8 +44,8 @@ const iconFor = (item) =>
    props.userId: after a sign-out the next account must not see these titles. */
 let notesCache = null;
 let notesFor = null;
-const noteTitle = (n) =>
-  (n.title || String(n.body || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()).slice(0, 80);
+const notePlain = (n) => String(n.body || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+const noteTitle = (n) => (n.title || notePlain(n)).slice(0, 80);
 
 const pad = (n) => String(n).padStart(2, '0');
 const keyOf = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
@@ -119,7 +119,8 @@ export function openPalette(props) {
   const noteItems = () =>
     (notesFor === props.userId ? notesCache || [] : [])
       .filter((n) => !n.deletedAt && !n.archivedAt)
-      .map((n) => ({ key: 'note:' + n.id, kind: 'note', label: noteTitle(n), noteId: n.id }))
+      // The body matches too ("zebra" in a note titled "Saved QA note" found nothing); capped at 2,000 characters.
+      .map((n) => ({ key: 'note:' + n.id, kind: 'note', label: noteTitle(n), alt: [notePlain(n).slice(0, 2000)], noteId: n.id }))
       .filter((x) => x.label);
 
   function setActive(i) {

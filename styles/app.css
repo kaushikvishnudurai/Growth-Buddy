@@ -393,6 +393,11 @@ button.gb-sectiontitle-act {
   width: 100%;
   min-height: 44px;
 }
+/* `display: inline-flex` above beats the UA's [hidden], so a hidden button still
+   showed (Circle's "Load older" under an empty feed). */
+.gb-btn[hidden] {
+  display: none;
+}
 /* Pressed feedback for the variants that had none (soft, success, danger,
    ghost). Primary and secondary override it below; :disabled resets it. */
 .gb-btn:active {

@@ -2887,7 +2887,7 @@ function ScreenFamily({ api, open }) {
         {
           type: 'button',
           class: 'gb-iconbtn gb-iconbtn--danger',
-          'aria-label': 'Remove',
+          'aria-label': 'Remove ' + it.name,
           onclick: () =>
             run(api.deleteShopping(it.id), (res) => {
               model.shoppingList = res;

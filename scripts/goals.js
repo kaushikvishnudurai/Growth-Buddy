@@ -829,7 +829,8 @@ function GoalRow(
           )
         : h('span', null, 'Flexible target'),
       goal.latestActionAt
-        ? h('span', null, 'Last ' + fmtDate(String(goal.latestActionAt).slice(0, 10)))
+        ? // The instant's day in the account's zone: slice(0, 10) of the UTC stamp was a day behind in IST before 05:30.
+          h('span', null, 'Last ' + fmtDate(sharedTodayKey(userZone, new Date(goal.latestActionAt))))
         : null
     ),
     linked
