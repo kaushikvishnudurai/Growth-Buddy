@@ -178,7 +178,9 @@ export function openCsvImport({ money, known, save, settled }) {
       off.clear();
       on.clear();
       // ponytail: name/header guess only; a card file named "export.csv" starts on 'in' and the toggle fixes it.
-      positiveIs = /card|credit/i.test(name || '') || (det.header || []).some((x) => /card/i.test(String(x))) ? 'out' : 'in';
+      // "credit card" only: a bare "credit" (credit_union_statement.csv, a Debit/Credit header) is a bank's.
+      const cardLike = (x) => /credit[\s_-]?card/i.test(String(x || ''));
+      positiveIs = cardLike(name) || (det.header || []).some(cardLike) ? 'out' : 'in';
       preview();
     };
     ui.show(

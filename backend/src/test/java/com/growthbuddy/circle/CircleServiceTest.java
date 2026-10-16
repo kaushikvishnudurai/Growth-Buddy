@@ -215,6 +215,36 @@ class CircleServiceTest {
     }
 
     @Test
+    void aRunningChallengeStaysOnTheBoardBehindTwentyNewerOnes() {
+        circle("public");
+        LocalDate today = LocalDate.of(2026, 10, 10);
+        when(clock.today(OWNER)).thenReturn(today);
+        when(members.findByCircleId(CIRCLE)).thenReturn(List.of());
+        CircleChallenge longOne = new CircleChallenge();
+        longOne.setId(UUID.randomUUID());
+        longOne.setCircleId(CIRCLE);
+        longOne.setTitle("Month");
+        longOne.setStartDate(today.minusDays(25));
+        longOne.setEndDate(today.plusDays(4));
+        List<CircleChallenge> newer = new java.util.ArrayList<>();
+        for (int i = 0; i < 20; i++) {
+            CircleChallenge ch = new CircleChallenge();
+            ch.setId(UUID.randomUUID());
+            ch.setCircleId(CIRCLE);
+            ch.setTitle("Day " + i);
+            ch.setStartDate(today.minusDays(i));
+            ch.setEndDate(today.minusDays(i));
+            newer.add(ch);
+        }
+        when(challenges.findTop20ByCircleIdOrderByStartDateDesc(CIRCLE)).thenReturn(newer);
+        when(challenges.findByCircleIdAndEndDateGreaterThanEqual(CIRCLE, today)).thenReturn(List.of(longOne, newer.get(0)));
+
+        List<ChallengeResponse> board = service.listChallenges(OWNER, CIRCLE);
+        assertThat(board).hasSize(21);
+        assertThat(board.get(20).title()).isEqualTo("Month");
+    }
+
+    @Test
     void aChallengeStartsOnTheCreatorsLocalDay() {
         circle("public");
         LocalDate theirToday = LocalDate.of(2026, 10, 11);

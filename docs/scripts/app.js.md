@@ -389,7 +389,9 @@ it silently landed on Home. Don't reintroduce a second list.
   the water nudge or the Water feature is on; `state.waterUsualHours` feeds `reSyncDeviceAlarms` (nudge on) and Home's
   `waterUsualHours` prop (the one-thing card nudges water only for people who log it); Home re-renders only when it changed, and only once wave 2 has landed (`achReady`): loadSecondaryData waits up to 1.5 s for boot's request (`waterHoursLoad`) so it lands in wave 2's own repaint. `flushWaterQueue` repaints only when it had glasses to send. Both keep boot at perf.e2e's 6 `#root` paints.
 - **`reSyncDeviceAlarms()` after every change to its four inputs** (and at the end of `loadCustomChime`:
-  a cold-start sync before the own sounds were read queued them on the default channel). In the app, timed reminders,
+  a cold-start sync before the own sounds were read queued them on the default channel). **It does nothing until
+  `alarmInputsLoaded`** (set when wave 1's reminders and habits land, or the boot snapshot paints; cleared on
+  sign-out): the queue is rebuilt whole, and a sync from the empty boot lists cancelled every alarm. In the app, timed reminders,
   the water nudge and habit reminders are on-device alarms (`syncDeviceAlarms` in `push.js`)
   because the server can only deliver to a Web Push subscription the WebView can't register. The
   inputs are `state.reminders`, `ui_prefs.water`, `state.habits` and `ui_prefs.notifySound` — the

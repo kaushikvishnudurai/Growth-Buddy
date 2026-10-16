@@ -23,6 +23,7 @@ interface CircleRepository extends JpaRepository<Circle, UUID> {
 
 interface CircleChallengeRepository extends JpaRepository<CircleChallenge, UUID> {
     List<CircleChallenge> findTop20ByCircleIdOrderByStartDateDesc(UUID circleId);
+    List<CircleChallenge> findByCircleIdAndEndDateGreaterThanEqual(UUID circleId, java.time.LocalDate today);
 
     /** Challenges still running on {@code day} (or later) — the cap counts these. */
     long countByCircleIdAndEndDateGreaterThanEqual(UUID circleId, LocalDate day);

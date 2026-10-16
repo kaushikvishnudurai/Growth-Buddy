@@ -450,9 +450,15 @@ function customChannel(own) {
 /* The tone last handed to syncDeviceAlarms: the user's default, for an alarm
    armed outside the queue (the focus timer's end) that has no app state of its own. */
 let deviceTone;
+/* Before the first sync (a focus session resumed at boot) the app's own reading of
+   the user's tone; without it that alarm rang the default channel, loud on Silent. */
+let toneSource = null;
+export function setToneSource(fn) {
+  toneSource = fn;
+}
 
 /** What a local notification needs to ring `key` (default: the user's tone): file, own sound, channel. */
-export function alarmTone(key = deviceTone) {
+export function alarmTone(key = deviceTone !== undefined ? deviceTone : toneSource ? toneSource() : undefined) {
   const own = customChime(key);
   return {
     sound: soundFile(key),

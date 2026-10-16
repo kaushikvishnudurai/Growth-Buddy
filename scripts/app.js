@@ -148,6 +148,7 @@ import {
   WATER_DEFAULTS,
   WATER_ACTION_ML,
   notificationTarget,
+  setToneSource,
 } from './push.js';
 import { CacheStorage } from './cache-storage.js';
 import {
@@ -568,6 +569,8 @@ setCustomToneAdder(() => openCustomToneDialog());
 setVoiceReminder({ supported: () => voiceSupported(), capture: (btn) => captureReminder(btn) });
 // The phone app asks for the camera again on every photo tap (camera.js).
 installCameraGate();
+// A focus session resumed before the first alarm sync still rings the user's tone.
+setToneSource(() => notifySound());
 setTimeFormat(state.user && state.user.uiPrefs && state.user.uiPrefs.timeFormat);
 // i18n.js: dates/numbers format in this locale and <html lang> follows it (index.html
 // ships lang="en"). No locale field on the profile yet → the device's language.
@@ -3119,6 +3122,7 @@ async function loadData() {
     state.water = withPendingWater(water);
     flushWaterQueue();
     state.reminders = reminders;
+    alarmInputsLoaded = true;
     // Offline writes the server hasn't seen yet, then send them. Not awaited:
     // first paint doesn't wait on a replay; the flush refetches what it touched.
     // The queue itself is read only once CacheStorage has hydrated it.
@@ -3195,6 +3199,7 @@ async function paintBootSnapshot(userKey) {
     state.user && state.user.id && readBootSnapshot(CacheStorage.getItem(bootKey(state.user.id)));
   if (!snap) return false;
   Object.assign(state, snap);
+  alarmInputsLoaded = true;
   overlayOutbox();
   state.loading = false;
   loadedFor = userKey;
@@ -3211,6 +3216,8 @@ async function paintBootSnapshot(userKey) {
 const SELF_LOADING_SCREENS = new Set(['family', 'circle']);
 /* The account whose wave 1 has landed: a loadData() for it is a refresh. */
 let loadedFor = null;
+/* Reminders and habits came from the server or the boot snapshot (reSyncDeviceAlarms). */
+let alarmInputsLoaded = false;
 /* The account whose write-ahead leftovers this page has revived (once each). */
 let revivedFor = null;
 
@@ -6036,6 +6043,7 @@ function openBarcodeScanner(onCode) {
       h('button', { type: 'button', class: 'gb-btn gb-btn--ghost', onclick: close }, 'Cancel')
     )
   );
+  let reasked = false; // one re-ask per scan: a WebView that keeps refusing a granted camera would loop
   const start = async () => {
     try {
       const detector = new window.BarcodeDetector({
@@ -6073,7 +6081,8 @@ function openBarcodeScanner(onCode) {
       // Refused before: ask again where the platform still lets us, else say
       // where the switch is; "Try again" / a fresh grant restarts the scan.
       const refused = err && (err.name === 'NotAllowedError' || err.name === 'SecurityError');
-      if (refused && !done && (await cameraAskAgain()) && !done) {
+      if (refused && !reasked && !done && (await cameraAskAgain()) && !done) {
+        reasked = true;
         status.textContent = 'Point the camera at the barcode.';
         start();
       }
@@ -6156,7 +6165,8 @@ async function postWellness(kind, byDate, entry, body, okMsg, failMsg, quiet) {
       return;
     }
     // A newer save (or the server's copy) has replaced this one: nothing of it left to undo.
-    if ((state.wellness[byDate] || {})[key] !== entry) return;
+    // By value: the cache hydrating mid-request rebuilds this same entry as a new object.
+    if (JSON.stringify((state.wellness[byDate] || {})[key]) !== JSON.stringify(entry)) return;
     const map = Object.assign({}, state.wellness[byDate]);
     if (prev) map[key] = prev;
     else delete map[key];
@@ -9449,6 +9459,9 @@ function runInsightAction(action) {
    rebuilt whole, so a stale one rings for a reminder already deleted. */
 function reSyncDeviceAlarms() {
   if (!state.user) return; // signed out: endSession's cancelAllAlarms is the last word
+  // The queue is rebuilt whole: synced from the empty boot lists it cancelled every
+  // reminder and habit alarm, and an offline cold start never re-armed them.
+  if (!alarmInputsLoaded) return;
   syncDeviceAlarms({
     reminders: state.reminders,
     water: Object.assign(waterReminderPrefs(), { usualHours: state.waterUsualHours }),
@@ -13791,6 +13804,7 @@ async function endSession(reason) {
   toastTimers.forEach((t) => clearTimeout(t.handle));
   toastTimers.clear();
   loadedFor = null; // the next sign-in is a first load, not a refresh
+  alarmInputsLoaded = false;
   // Another account must not see this one's Insights, nor wait out its throttle.
   insightHistoryAt = 0;
   insightReq = null;

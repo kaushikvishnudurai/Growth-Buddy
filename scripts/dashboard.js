@@ -2170,7 +2170,7 @@ function DayTimeline({
     if (onEditTask) items.push(['pencil', 'Edit', () => onEditTask(t)]);
     if (onFocusTask && !t.done && !t.paused) items.push(['timer', 'Start focus', () => onFocusTask(t)]);
     if (onPauseTask && !t.done) items.push([t.paused ? 'play' : 'pause', t.paused ? 'Resume' : 'Pause', () => onPauseTask(t)]);
-    const when = late && t.dueAt ? taskWhen(t.dueAt, new Date(), sharedFormatTime, (d) => fmtDate(d, 'dayMonth')) : null;
+    const when = late && t.dueAt ? taskWhen(t.dueAt, new Date(), sharedFormatTime, (d) => fmtDate(d, 'dayMonth'), accountZone) : null;
     return h(
       'div',
       { style: { display: 'contents' }, 'data-task-id': t.id },

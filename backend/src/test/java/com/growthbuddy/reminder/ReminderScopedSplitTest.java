@@ -114,6 +114,19 @@ class ReminderScopedSplitTest {
     }
 
     @Test
+    void editingFutureKeepsTheDaysAlreadyRemovedAheadOfTheCut() {
+        CalendarReminder r = series(TODAY);
+        r.getSkipDays().add(TODAY.plusDays(1)); // before the cut: stays with the head
+        r.getSkipDays().add(TODAY.plusDays(5)); // after it: the new series must skip it too
+        ReminderResponse rest = service.update(USER, r.getId(), "future", TODAY.plusDays(2), patch("Later", null));
+        org.mockito.ArgumentCaptor<CalendarReminder> saved = org.mockito.ArgumentCaptor.forClass(CalendarReminder.class);
+        verify(repo, org.mockito.Mockito.atLeastOnce()).save(saved.capture());
+        CalendarReminder tail = saved.getAllValues().stream().filter(x -> x != r).findFirst().orElseThrow();
+        assertThat(tail.getSkipDays()).containsExactly(TODAY.plusDays(5));
+        assertThat(rest.text()).isEqualTo("Later");
+    }
+
+    @Test
     void allDayTakesTheTimeAndEndOffAndDropsTheSnooze() {
         CalendarReminder r = series(TODAY);
         r.setEndTime(LocalTime.of(10, 0));

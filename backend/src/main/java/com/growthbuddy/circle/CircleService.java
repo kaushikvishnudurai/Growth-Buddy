@@ -525,9 +525,15 @@ public class CircleService {
     public List<ChallengeResponse> listChallenges(UUID userId, UUID circleId) {
         requireMember(userId, circleId);
         LocalDate today = clock.today(userId);
-        // ponytail: the 20 newest only; page by start date if a circle needs its full history.
+        // Every running challenge (at most MAX_ACTIVE_CHALLENGES), plus the 20 newest:
+        // the newest alone dropped a long one still running under 20 later starts.
+        // ponytail: finished ones past the newest 20 are not listed; page by start date if needed.
         Map<UUID, User> byId = roster(circleId);
-        return challenges.findTop20ByCircleIdOrderByStartDateDesc(circleId).stream()
+        Map<UUID, CircleChallenge> board = new java.util.LinkedHashMap<>();
+        challenges.findByCircleIdAndEndDateGreaterThanEqual(circleId, today).forEach(ch -> board.put(ch.getId(), ch));
+        challenges.findTop20ByCircleIdOrderByStartDateDesc(circleId).forEach(ch -> board.putIfAbsent(ch.getId(), ch));
+        return board.values().stream()
+                .sorted(java.util.Comparator.comparing(CircleChallenge::getStartDate).reversed())
                 .map(ch -> toChallengeResponse(ch, userId, today, byId))
                 .toList();
     }

@@ -3,10 +3,9 @@
    Picking a camera option after "Don't allow" used to do nothing: Android
    stops showing its dialog after the second refusal and the WebView's own
    prompt gives up without a word, and a browser never re-asks a site the
-   user blocked. withCamera(open) asks again whenever the platform still
-   lets it, and otherwise says where the switch is (the phone: a button to
-   the app's settings page; a browser: the address-bar icon), then lets the
-   user try again.
+   user blocked. The phone app asks again whenever Android still lets it
+   (installCameraGate, cameraAskAgain), otherwise offers the app's settings
+   page; a browser gets the address-bar steps and a Try again.
    ===================================================================== */
 import { isNative, nativePlugin } from './native.js';
 import { confirmDialog } from './gb-kit.js';
@@ -20,32 +19,19 @@ let nativeGranted = false;
 // picker dead, so the user is asked to tap once more instead.
 const GESTURE_MS = 4000;
 
-/**
- * The camera state for this tap: 'granted' (go ahead), 'blocked' (only a
- * settings change helps), or 'unknown' (no way to tell: let the platform ask).
- * `stream`: the caller calls getUserMedia itself, which is the browser's ask.
- */
-export async function cameraState({ stream = false } = {}) {
-  if (isNative()) {
-    if (nativeGranted) return 'granted';
-    const perms = nativePlugin('AppPermissions');
-    if (!perms) return 'unknown'; // an older app build: the WebView asks as before
-    try {
-      const { state } = await perms.requestCamera();
-      nativeGranted = state === 'granted';
-      return state === 'granted' ? 'granted' : state === 'blocked' ? 'blocked' : 'denied';
-    } catch (_) {
-      return 'unknown';
-    }
-  }
-  // A browser: a photo <input capture> hands off to the camera app and needs
-  // no site permission; only a live stream (the barcode scanner) does.
-  if (!stream || !navigator.permissions || !navigator.permissions.query) return 'unknown';
+/** The phone's camera state for this tap: 'granted', 'denied' (they just said no),
+ * 'blocked' (only a settings change helps), or 'unknown' (an older app build:
+ * the WebView asks as before). Asks Android again whenever it still shows the dialog. */
+async function cameraState() {
+  if (nativeGranted) return 'granted';
+  const perms = nativePlugin('AppPermissions');
+  if (!perms) return 'unknown';
   try {
-    const s = await navigator.permissions.query({ name: 'camera' });
-    return s.state === 'denied' ? 'blocked' : 'unknown';
+    const { state } = await perms.requestCamera();
+    nativeGranted = state === 'granted';
+    return state === 'granted' ? 'granted' : state === 'blocked' ? 'blocked' : 'denied';
   } catch (_) {
-    return 'unknown'; // Firefox and Safari do not know the 'camera' name
+    return 'unknown';
   }
 }
 
@@ -71,26 +57,21 @@ export async function explainBlockedCamera() {
   });
 }
 
-/**
- * Run `open` (the file picker or the scanner) once the camera may be used,
- * asking again first whenever the platform still allows it.
- * `stream`: `open` starts a getUserMedia stream (no gesture needed after an await).
- */
-export async function withCamera(open, { stream = false } = {}) {
+/* Run `open` (a file picker) once the phone may use the camera, asking again first. */
+async function withCamera(open) {
   const started = Date.now();
-  const state = await cameraState({ stream });
+  const state = await cameraState();
   if (state === 'blocked') {
-    if (await explainBlockedCamera()) return withCamera(open, { stream });
-    return false;
+    await explainBlockedCamera();
+    return;
   }
-  if (state === 'denied') return false; // they just said no to the dialog
-  if (!stream && Date.now() - started > GESTURE_MS) {
+  if (state === 'denied') return; // they just said no to the dialog
+  if (Date.now() - started > GESTURE_MS) {
     // ponytail: the tap's activation ran out while the dialog was up; one more tap opens it.
     toast.success('Camera allowed. Tap once more to take the photo.');
-    return false;
+    return;
   }
   open();
-  return true;
 }
 
 /**

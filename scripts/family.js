@@ -370,9 +370,7 @@ function ScreenFamily({ api, open }) {
 
   async function load() {
     model.loading = true;
-    // Leaving / joining a family reloads: the old family's groceries go with it.
-    model.ingredients = [];
-    model.pantrySeeded = false;
+    const before = model.family && model.family.familyId;
     model.error = '';
     model.sectionErrors = {};
     paint();
@@ -384,6 +382,12 @@ function ScreenFamily({ api, open }) {
         ...Object.keys(SECTION_LOADERS).map(loadSection),
       ]);
       applyFamily(fam);
+      // Only a move to another family (or none) drops the typed groceries: declining
+      // an invite also reloads, and the list lives only here.
+      if ((model.family && model.family.familyId) !== before) {
+        model.ingredients = [];
+        model.pantrySeeded = false;
+      }
     } catch (err) {
       model.error = err.message || 'Could not load your family.';
     } finally {

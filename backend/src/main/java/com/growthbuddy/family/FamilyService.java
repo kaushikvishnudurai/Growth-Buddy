@@ -1666,8 +1666,10 @@ public class FamilyService {
             default -> RepeatFreq.none;
         };
         String text = "Chore: " + c.getTitle();
-        // reminder text is VARCHAR(255); a full-length chore title plus the prefix overflowed it.
-        reminders.create(target, text.length() > 255 ? text.substring(0, 255) : text, day, time, repeat);
+        // reminder text is VARCHAR(255) (characters, not UTF-16 units); a full-length chore
+        // title plus the prefix overflowed it. Cut on a code point so an emoji isn't split.
+        if (text.codePointCount(0, text.length()) > 255) text = text.substring(0, text.offsetByCodePoints(0, 255));
+        reminders.create(target, text, day, time, repeat);
         if (target.equals(userId)) {
             return new ChoreRemindResponse(null);
         }

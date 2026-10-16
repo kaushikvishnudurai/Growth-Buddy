@@ -377,6 +377,10 @@ public class ReminderService {
                 WorkWeek week = workWeekOf(userId);
                 LocalDate snoozed = snoozeDay(userId, r);
                 CalendarReminder rest = splitFrom(userId, r, occ);
+                // Days already removed or edited on their own ("Only this day") stay that
+                // way in the new series: without them a deleted day came back, and an
+                // edited one rang twice (its one-off copy plus the series).
+                r.getSkipDays().stream().filter(d -> !d.isBefore(occ)).forEach(rest.getSkipDays()::add);
                 if (snoozed != null && !snoozed.isBefore(occ)) {
                     rest.setSnoozedUntil(r.getSnoozedUntil());
                     r.setSnoozedUntil(null);
