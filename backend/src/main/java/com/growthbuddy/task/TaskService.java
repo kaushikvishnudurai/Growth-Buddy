@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -60,7 +61,7 @@ public class TaskService {
         return responseFor(userId, repo.save(t));
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED) // TiDB: see ProgressService.lockUser
     public TaskResponse update(UUID userId, UUID id, UpdateTaskRequest req) {
         if (req.done() != null) {
             // Same lock toggle takes: without it a done=true here and a tick at
@@ -96,7 +97,7 @@ public class TaskService {
         return responseFor(userId, repo.save(t));
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED) // TiDB: see ProgressService.lockUser
     public TaskResponse toggle(UUID userId, UUID id) {
         return toggle(userId, id, null);
     }
@@ -106,7 +107,7 @@ public class TaskService {
      * stale tab's "done" used to flip a done task back open). Null flips, for
      * builds that send no body.
      */
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED) // TiDB: see ProgressService.lockUser
     public TaskResponse toggle(UUID userId, UUID id, Boolean done) {
         progress.lockUser(userId); // before the history insert: see ProgressService.lockUser
         Task t = require(userId, id);

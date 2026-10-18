@@ -7883,9 +7883,11 @@ function mentorApi() {
             }
           )
         : api('/api/mentor/chat'),
-    post: (text, id) =>
-      api(T(id) + '/messages', { method: 'POST', body: JSON.stringify({ content: text }) }),
-    stream: (text, signal, id) => apiStream(T(id) + '/messages/stream', { content: text }, signal),
+    // messageId: one per send, the same on its Retry; the server keeps one row for it.
+    post: (text, id, messageId) =>
+      api(T(id) + '/messages', { method: 'POST', body: JSON.stringify({ content: text, messageId }) }),
+    stream: (text, signal, id, messageId) =>
+      apiStream(T(id) + '/messages/stream', { content: text, messageId }, signal),
     clear: (id) => api(T(id) + '/messages', { method: 'DELETE' }),
     threads: {
       list: () => api('/api/mentor/threads'),

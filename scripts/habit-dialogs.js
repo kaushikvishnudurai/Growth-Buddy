@@ -953,6 +953,8 @@ function openHabitForm(habit) {
         kind,
         (k) => syncKind(k)
       );
+  // The one picker with no .gb-field-label before it, so a11y.js can't name it.
+  if (kindSeg) kindSeg.node.setAttribute('aria-label', 'Build or break');
   const DOMAIN_ORDER = ['habit', 'fitness', 'study', 'journal'];
   const templateRow = habit
     ? null

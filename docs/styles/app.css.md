@@ -41,7 +41,7 @@ buttons `gb-btn--primary|secondary|soft|success|compact`.
 | Color picker (habit customize) |
 | List rows |
 | Dashboard blocks — one `.gb-dash-block` list; ≥1024px flows it into two columns (`.gb-dash--single`) |
-| Goals screen |
+| Goals screen (desktop: `.gb-goals` caps at 1180px like the other dashboards, three 300-350px horizon columns; 900 sat exactly on the 260px two-column edge, 940 stacked each card's buttons) |
 | Enhanced goal card UI |
 | Tasks scrollable list |
 | **Calendar screen** (large) |

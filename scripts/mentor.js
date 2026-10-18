@@ -110,7 +110,8 @@ const CRISIS = new RegExp(
   '\\b(' +
     [
       'suicid\\w*',
-      'kms',
+      // "kms" anywhere, except as a distance: "ran 5 kms", "a few kms away"
+      '(?<!(\\d|\\b(few|many|several|some|the|these|those|of|in|per)) ?)kms',
       'unalive\\w*',
       '(kill|hurt|harm|cut)(s|ed|ing|ting)? ?my ?self',
       'self[- ]?harm\\w*',
@@ -716,7 +717,7 @@ function ScreenMentor({ api, threadId: initialThread, starter }) {
      with .fallback when nothing came back that could be read as a stream, so the
      caller can send the plain way instead; with .partial when some words came
      and then the reply stopped (Stop, or the line dropped). */
-  async function streamReply(text, typing, sendThread) {
+  async function streamReply(text, typing, sendThread, messageId) {
     const ctl = new AbortController();
     stopCtl = ctl;
     syncChipState();
@@ -731,7 +732,7 @@ function ScreenMentor({ api, threadId: initialThread, starter }) {
       append(row);
     };
     try {
-      const res = await api.stream(text, ctl.signal, sendThread);
+      const res = await api.stream(text, ctl.signal, sendThread, messageId);
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buf = '';
@@ -772,11 +773,14 @@ function ScreenMentor({ api, threadId: initialThread, starter }) {
     }
   }
 
-  async function send() {
+  /** `retryId`: the failed send's message id, so the server keeps one copy of it. */
+  async function send(retryId) {
     const text = input.value.trim();
     if (!text || busy || !loaded) return;
     // The thread this send belongs to, fixed now: the reply streams into it.
     const sendThread = threadId;
+    // No randomUUID outside a secure context (plain-http LAN dev): no id, as before.
+    const messageId = typeof retryId === 'string' ? retryId : globalThis.crypto?.randomUUID?.();
     busy = true;
     syncChipState();
     const userRow = bubble('user', text);
@@ -792,14 +796,14 @@ function ScreenMentor({ api, threadId: initialThread, starter }) {
       let reply = null;
       if (api.stream) {
         try {
-          reply = await streamReply(text, typing, sendThread);
+          reply = await streamReply(text, typing, sendThread, messageId);
         } catch (err) {
           // Only "couldn't stream at all" goes the old way; a 429 or a Stop doesn't.
           if (!err || !err.fallback) throw err;
         }
       }
       if (!reply) {
-        reply = await api.post(text, sendThread);
+        reply = await api.post(text, sendThread, messageId);
         typing.remove();
         append(bubble('assistant', reply.assistantMessage.content, reply.assistantMessage.actions, onAction));
       }
@@ -828,7 +832,7 @@ function ScreenMentor({ api, threadId: initialThread, starter }) {
           row.remove();
           if (crisis) crisis.remove();
           input.value = text;
-          send();
+          send(messageId);
         });
         append(row);
         // The words shown, not app.js's message on the error ("waking up" for an AI 503).

@@ -151,4 +151,77 @@ class MentorStreamTest {
                 .isInstanceOf(ApiException.class);
         verify(messages, never()).save(any());
     }
+
+    private static MentorMessage row(UUID thread, MessageRole role, String content, java.time.Instant at) {
+        MentorMessage m = new MentorMessage();
+        m.setId(UUID.randomUUID());
+        m.setThreadId(thread);
+        m.setRole(role);
+        m.setContent(content);
+        m.setCreatedAt(at);
+        return m;
+    }
+
+    @Test
+    void aRetryOfASavedSendHandsBackTheSavedReplyWithoutAskingAgain() {
+        java.time.Instant at = java.time.Instant.parse("2026-10-18T10:00:00Z");
+        MentorMessage q = row(THREAD, MessageRole.user, "hi", at);
+        // Same second, listed first: created_at holds whole seconds.
+        MentorMessage a = row(THREAD, MessageRole.assistant, "Hello.", at);
+        when(messages.findById(q.getId())).thenReturn(Optional.of(q));
+        when(messages.findTop200ByThreadIdOrderByCreatedAtDesc(THREAD)).thenReturn(List.of(q, a));
+
+        MentorService.StreamStart start = service.beginStream(USER, THREAD, new PostMessageRequest("hi", q.getId()));
+        ReplyResponse r = service.completeStream(start, delivered::add, gone::get);
+
+        assertThat(r.userMessage().id()).isEqualTo(q.getId());
+        assertThat(r.assistantMessage().id()).isEqualTo(a.getId());
+        verify(messages, never()).save(any(MentorMessage.class));
+        verify(openai, never()).stream(anyString(), any(), anyInt(), any(), any());
+    }
+
+    @Test
+    void aRetryWhoseReplyNeverSavedReusesTheQuestionAndAsksOnce() {
+        MentorMessage q = row(THREAD, MessageRole.user, "hi", java.time.Instant.parse("2026-10-18T10:00:00Z"));
+        when(messages.findById(q.getId())).thenReturn(Optional.of(q));
+        when(messages.findTop200ByThreadIdOrderByCreatedAtDesc(THREAD)).thenReturn(List.of(q));
+        modelSends(null, "Hello.");
+
+        MentorService.StreamStart start = service.beginStream(USER, THREAD, new PostMessageRequest("hi", q.getId()));
+        ReplyResponse r = service.completeStream(start, delivered::add, gone::get);
+
+        assertThat(r.userMessage().id()).isEqualTo(q.getId());
+        assertThat(r.assistantMessage().content()).isEqualTo("Hello.");
+        verify(messages, never()).save(org.mockito.ArgumentMatchers.argThat((MentorMessage m) -> m.getRole() == MessageRole.user));
+    }
+
+    @Test
+    void anIdFromAnotherThreadIsNeverWrittenOver() {
+        MentorMessage theirs = row(UUID.randomUUID(), MessageRole.user, "hi", java.time.Instant.now());
+        when(messages.findById(theirs.getId())).thenReturn(Optional.of(theirs));
+        modelSends(null, "Hello.");
+
+        MentorService.StreamStart start = service.beginStream(USER, THREAD, new PostMessageRequest("hi", theirs.getId()));
+
+        assertThat(start.userMsg()).isNotSameAs(theirs);
+        assertThat(start.userMsg().getId()).isNull(); // a fresh row: its own id at insert
+        assertThat(start.userMsg().getThreadId()).isEqualTo(THREAD);
+    }
+
+    @Test
+    void aFirstSendKeepsTheClientsId() {
+        UUID id = UUID.randomUUID();
+        modelSends(null, "Hello.");
+        MentorService.StreamStart start = service.beginStream(USER, THREAD, new PostMessageRequest("hi", id));
+        assertThat(start.userMsg().getId()).isEqualTo(id);
+    }
+
+    @Test
+    void aLaterQuestionMeansNoSavedReply() {
+        java.time.Instant at = java.time.Instant.parse("2026-10-18T10:00:00Z");
+        MentorMessage q = row(THREAD, MessageRole.user, "hi", at);
+        MentorMessage q2 = row(THREAD, MessageRole.user, "next", at.plusSeconds(5));
+        MentorMessage a2 = row(THREAD, MessageRole.assistant, "Sure.", at.plusSeconds(6));
+        assertThat(MentorService.replyTo(q, List.of(q, q2, a2))).isNull();
+    }
 }

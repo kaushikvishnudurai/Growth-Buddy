@@ -16,6 +16,7 @@ import com.growthbuddy.wellness.WellnessService;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -237,7 +238,11 @@ public class MentorService {
             throw ApiException.badRequest("content is required");
         }
         MentorThread thread = requireThread(userId, threadId);
-        MentorMessage userMsg = save(threadId, MessageRole.user, req.content().trim(), false);
+        UserTurn turn = userMessage(threadId, req);
+        MentorMessage userMsg = turn.message();
+        if (turn.savedReply() != null) {
+            return new ReplyResponse(MessageResponse.from(userMsg), MessageResponse.from(turn.savedReply()));
+        }
         List<MentorMessage> history = recent(threadId);
         autoTitle(thread, history, userMsg.getContent());
         String userContext = buildUserContext(userId);
@@ -448,7 +453,7 @@ public class MentorService {
 
     /** What a streamed send has done on the request thread, handed to the worker. */
     record StreamStart(UUID threadId, MentorMessage userMsg, List<MentorMessage> history,
-                       String userContext) {
+                       String userContext, MentorMessage savedReply) {
     }
 
     /**
@@ -461,10 +466,65 @@ public class MentorService {
             throw ApiException.badRequest("content is required");
         }
         MentorThread thread = requireThread(userId, threadId);
-        MentorMessage userMsg = save(threadId, MessageRole.user, req.content().trim(), false);
+        UserTurn turn = userMessage(threadId, req);
+        MentorMessage userMsg = turn.message();
+        if (turn.savedReply() != null) {
+            return new StreamStart(threadId, userMsg, List.of(), null, turn.savedReply());
+        }
         List<MentorMessage> history = recent(threadId);
         autoTitle(thread, history, userMsg.getContent());
-        return new StreamStart(threadId, userMsg, history, buildUserContext(userId));
+        return new StreamStart(threadId, userMsg, history, buildUserContext(userId), null);
+    }
+
+    /**
+     * This send's user message. A Retry after a dropped stream repeats the first
+     * try's {@code messageId}, and the server may already have saved that try
+     * (it noticed the drop late, or AI is off and the reply never streamed):
+     * the row is reused rather than the question landing in the thread twice.
+     * An id that names another thread's or another user's row is ignored, never
+     * written over.
+     */
+    private UserTurn userMessage(UUID threadId, PostMessageRequest req) {
+        String content = req.content().trim();
+        UUID id = req.messageId();
+        if (id != null) {
+            MentorMessage prior = messages.findById(id).orElse(null);
+            if (prior != null && prior.getThreadId().equals(threadId) && prior.getRole() == MessageRole.user
+                    && prior.getContent().equals(content)) {
+                return new UserTurn(prior, replyTo(prior, recent(threadId)));
+            }
+            if (prior != null) id = null;
+        }
+        MentorMessage m = new MentorMessage();
+        m.setId(id);
+        m.setThreadId(threadId);
+        m.setRole(MessageRole.user);
+        m.setContent(content);
+        return new UserTurn(messages.save(m), null);
+    }
+
+    /** A send's user message, and the reply a first try of it already saved (or null). */
+    private record UserTurn(MentorMessage message, MentorMessage savedReply) {
+    }
+
+    /**
+     * The reply a first try of this send already saved, or null: an assistant
+     * message from its second on, as long as no later question came in after
+     * it. By time, not list order: created_at holds whole seconds, and an
+     * offline reply lands in the same second as its question, so the two can
+     * come back either way round. Handed back as it was, so a Retry costs no
+     * second model call.
+     */
+    static MentorMessage replyTo(MentorMessage userMsg, List<MentorMessage> history) {
+        Instant at = userMsg.getCreatedAt().truncatedTo(ChronoUnit.SECONDS);
+        MentorMessage reply = null;
+        for (MentorMessage m : history) {
+            Instant t = m.getCreatedAt().truncatedTo(ChronoUnit.SECONDS);
+            if (m.getId().equals(userMsg.getId()) || t.isBefore(at)) continue;
+            if (m.getRole() == MessageRole.user && t.isAfter(at)) return null;
+            if (reply == null && m.getRole() == MessageRole.assistant) reply = m;
+        }
+        return reply;
     }
 
     /** The send could not be started (no worker free): take the user's message back out. */
@@ -493,6 +553,9 @@ public class MentorService {
      */
     ReplyResponse completeStream(StreamStart start, java.util.function.Consumer<String> onDelta,
                                  java.util.function.BooleanSupplier cancelled) {
+        if (start.savedReply() != null) {
+            return new ReplyResponse(MessageResponse.from(start.userMsg()), MessageResponse.from(start.savedReply()));
+        }
         if (!openai.isConfigured()) {
             return saveReply(start, offlineReply(start.history()));
         }

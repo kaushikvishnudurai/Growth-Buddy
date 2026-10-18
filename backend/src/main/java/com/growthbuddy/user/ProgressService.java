@@ -25,6 +25,12 @@ public class ProgressService {
      * history insert holds a shared lock on users through its foreign key, and the
      * XP update then wants it exclusive: two ticks at once deadlocked (one 503).
      * Locking up front queues a user's ticks behind each other instead.
+     *
+     * <p>A caller that decides on plain reads after this lock must run at
+     * READ_COMMITTED. On TiDB (prod), REPEATABLE_READ serves a plain read from
+     * the snapshot taken when the transaction began, before it waited here, so
+     * the second of two queued freezes still saw the token the first had spent.
+     * MySQL takes its snapshot at the first plain read and hides this locally.
      */
     @Transactional
     public void lockUser(UUID userId) {

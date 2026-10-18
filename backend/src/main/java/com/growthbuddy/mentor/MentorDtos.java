@@ -43,8 +43,14 @@ record CreateThreadRequest(@Size(max = 200) String title) {
  * {@code content} is MEDIUMTEXT, so nothing overflows — but it is also the
  * prompt, and an unbounded prompt is an unbounded bill. 4000 characters is far
  * more than anyone types at a mentor and still a ceiling.
+ *
+ * <p>{@code messageId}: the client's id for this send, the same on its Retry.
+ * Optional; older builds send none. See {@code MentorService.userMessage}.
  */
-record PostMessageRequest(@Size(max = 4000) String content) {
+record PostMessageRequest(@Size(max = 4000) String content, UUID messageId) {
+    PostMessageRequest(String content) {
+        this(content, null);
+    }
 }
 
 /** Rename a thread. Same bound as {@link CreateThreadRequest}. */

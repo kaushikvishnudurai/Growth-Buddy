@@ -9720,7 +9720,7 @@ button.gb-tone-chip::before,
   }
   /* Goals screen — constrain and center, extra breathing room */
   .gb-goals {
-    max-width: 940px;
+    max-width: 1180px; /* the dashboards' width: three 300-350px columns; 900 sat on the 260px two-column edge */
     margin: 0 auto;
     padding: 28px var(--space-10) var(--space-12);
   }

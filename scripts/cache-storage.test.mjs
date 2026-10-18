@@ -60,6 +60,23 @@ assert.deepEqual(boxB.list().map((x) => x.id), ['op-a', 'op-b'], "tab B kept tab
 boxA.remove('op-a');
 await wait(10);
 assert.deepEqual(boxB.list().map((x) => x.id), ['op-b'], 'a remove reaches the other tab');
+// Both tabs queue inside one message hop: each sends a whole array without the
+// other's op. Both ops must survive in both tabs, and in what was persisted.
+boxA.enqueue({ id: 'op-c', method: 'POST', path: '/api/tasks', body: {} });
+boxB.enqueue({ id: 'op-d', method: 'POST', path: '/api/tasks', body: {} });
+await wait(10);
+assert.deepEqual(boxA.list().map((x) => x.id).sort(), ['op-b', 'op-c', 'op-d'], 'same instant: tab A keeps both');
+assert.deepEqual(boxB.list().map((x) => x.id).sort(), ['op-b', 'op-c', 'op-d'], 'same instant: tab B keeps both');
+// Tab A sends op-b while tab B, not yet told, queues another op: B's copy still
+// holds op-b, and it must not come back in A (it would be sent twice).
+boxA.remove('op-b');
+boxB.enqueue({ id: 'op-e', method: 'POST', path: '/api/tasks', body: {} });
+await wait(10);
+assert.deepEqual(boxA.list().map((x) => x.id).sort(), ['op-c', 'op-d', 'op-e'], 'a sent op stays gone');
+assert.deepEqual(boxB.list().map((x) => x.id).sort(), ['op-c', 'op-d', 'op-e'], 'and the other tab drops it');
+boxA.clear();
+await wait(10);
+assert.deepEqual(boxB.list(), [], 'emptying the queue reaches the other tab');
 CacheStorage.setItem('gb.money.u1.water', '[1]');
 CacheStorage.setItem('gb.money.u1.pending', '{}');
 CacheStorage.setItem('gb.timer', 'tab-a-only');

@@ -19,6 +19,7 @@ import java.time.temporal.TemporalAdjusters;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -73,7 +74,7 @@ public class FocusService {
 
     public record FocusHistory(List<DayMinutes> days, List<LinkTotal> week) {}
 
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED) // TiDB: see ProgressService.lockUser
     public FocusStats record(UUID userId, String mode, int durationSec) {
         return record(userId, mode, durationSec, null, null);
     }
@@ -87,7 +88,7 @@ public class FocusService {
      * answer is the same either way, so an id still can't be probed. A break is
      * never linked: it wasn't spent on anything.
      */
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED) // TiDB: see ProgressService.lockUser
     public FocusStats record(UUID userId, String mode, int durationSec, UUID taskId, UUID goalId) {
         return record(userId, mode, durationSec, taskId, goalId, null);
     }
@@ -101,7 +102,7 @@ public class FocusService {
      * its own day, not the day it was sent. Outside [now - 14 days, now + 1 min]
      * (or absent) it is now: a client clock can't plant rows across the history.
      */
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED) // TiDB: see ProgressService.lockUser
     public FocusStats record(UUID userId, String mode, int durationSec, UUID taskId, UUID goalId, Instant completedAt) {
         String m = normaliseMode(mode);
         if ("break".equals(m)) {

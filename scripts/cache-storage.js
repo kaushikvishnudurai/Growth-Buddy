@@ -241,24 +241,69 @@ try {
    holding a stale copy wrote it back without the op another tab had queued.
    A write to one of them is broadcast, and every other tab takes it into its
    own map (persisting it is the writer's job, already done).
-   ponytail: two tabs writing the same queue inside one message hop can still
-   lose one op; the upgrade is navigator.locks around an async read-change-write
-   of the Cache API copy, which makes the outbox async. */
+   Two tabs writing inside one message hop each sent a whole array without the
+   other's op, and each took the other's in: one op was lost. A queue of {id}
+   items (the outbox, the water queue) is merged instead: the incoming copy,
+   plus this tab's items it doesn't know about, minus what the writer removed
+   (`gone`) and what this tab removed itself (an op it already sent must not
+   come back from a stale copy). A merge that differs from the incoming copy is
+   persisted here, not broadcast, so two tabs never echo.
+   ponytail: Money's pending ledger is an object, not a list of {id}; it stays
+   last-write-wins, and the server's If-Match version catches what that loses. */
 const TAB_SHARED = (k) => typeof k === 'string' && (k.startsWith('gb.outbox.') || /^gb\.money\..+\.(pending|water)$/.test(k));
 const tabs = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('gb-store') : null;
+/** The items of a queue of {id} (absent = empty), or null for any other value. */
+function idItems(raw) {
+  if (raw == null) return [];
+  try {
+    const a = JSON.parse(raw);
+    return Array.isArray(a) && a.every((x) => x && x.id != null) ? a : null;
+  } catch (_) {
+    return null;
+  }
+}
+const removedHere = new Map(); // key -> ids this tab removed from that queue
+/** The merged value, or undefined when the two can't be merged (take incoming). */
+export function mergeQueue(incoming, local, gone, removed) {
+  const inc = idItems(incoming);
+  const mine = idItems(local);
+  if (!inc || !mine) return undefined;
+  const drop = new Set(gone || []);
+  const have = new Set(inc.map((x) => x.id));
+  const out = inc
+    .filter((x) => !removed.has(x.id))
+    .concat(mine.filter((x) => !have.has(x.id) && !drop.has(x.id) && !removed.has(x.id)));
+  return out.length ? JSON.stringify(out) : null;
+}
 if (tabs) {
   if (tabs.unref) tabs.unref(); // node (the tests): don't hold the process open
   tabs.onmessage = (e) => {
-    const { key, val } = e.data || {};
+    const { key, val, gone } = e.data || {};
     if (!TAB_SHARED(key)) return;
-    if (val == null) delete mem[key];
-    else mem[key] = String(val);
+    const merged = mergeQueue(val, mem[key], gone, removedHere.get(key) || new Set());
+    const next = merged === undefined ? val : merged;
+    if (next == null) delete mem[key];
+    else mem[key] = String(next);
+    if (merged === undefined || merged === (val == null ? null : String(val))) return;
+    if (merged == null) cacheDelete(key);
+    else cachePut(key, merged);
   };
 }
-function tellTabs(key, val) {
+function tellTabs(key, val, prev) {
   if (!tabs || !TAB_SHARED(key)) return;
+  const before = idItems(prev);
+  const after = idItems(val);
+  let gone = [];
+  if (before && after) {
+    const kept = new Set(after.map((x) => x.id));
+    gone = before.filter((x) => !kept.has(x.id)).map((x) => x.id);
+    const removed = removedHere.get(key) || new Set();
+    gone.forEach((id) => removed.add(id));
+    after.forEach((x) => removed.delete(x.id)); // queued again (a write-ahead op re-queued)
+    removedHere.set(key, removed);
+  }
   try {
-    tabs.postMessage({ key, val });
+    tabs.postMessage({ key, val, gone });
   } catch (_) {
     /* a closed channel: this tab is going away */
   }
@@ -268,18 +313,20 @@ const CacheStorage = {
   getItem: (key) => (key in mem ? mem[key] : null),
   setItem: (key, val) => {
     const v = String(val);
+    const prev = mem[key];
     mem[key] = v;
     // Only allowlisted, boot-critical keys go to cookies; the rest are Cache-API-only
     // so they never inflate request headers.
     writeCookie(key, v);
     cachePut(key, v);
-    tellTabs(key, v);
+    tellTabs(key, v, prev);
   },
   removeItem: (key) => {
+    const prev = mem[key];
     delete mem[key];
     delCookie(key);
     cacheDelete(key);
-    tellTabs(key, null);
+    tellTabs(key, null, prev);
   },
   clear: () => {
     Object.keys(mem).forEach((k) => delete mem[k]);

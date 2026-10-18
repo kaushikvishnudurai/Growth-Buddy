@@ -17,6 +17,7 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -160,7 +161,7 @@ public class HabitService {
     }
 
     /** Protect a day (rest/freeze): spend a token, mark the day, recompute. */
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED) // TiDB: see ProgressService.lockUser
     public HabitResponse protect(UUID userId, UUID id, LocalDate date) {
         progress.lockUser(userId); // the wallet read-then-spend: two at once spent one token twice
         Habit h = require(userId, id);
@@ -851,7 +852,7 @@ public class HabitService {
     }
 
     /** Record (or clear) a check-in for a day, then recompute the streak. */
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED) // TiDB: see ProgressService.lockUser
     public HabitResponse checkin(UUID userId, UUID id, CheckinRequest req) {
         progress.lockUser(userId); // before any insert: see ProgressService.lockUser
         Habit h = require(userId, id);
