@@ -40,6 +40,17 @@ public class MoneyController {
      * ledger rows: tagged with the version alone, a new expense (ledger changed,
      * document not) kept the same tag, Spring answered the browser's If-None-Match
      * with 304, and every device went on showing its stale copy.
+     *
+     * <p>Browser caching, deliberately left as is: no Cache-Control, so the browser
+     * keeps a copy but treats it as already stale and always revalidates with
+     * If-None-Match. Unchanged = an empty 304 (the document can be 512 kB);
+     * changed on another device = a new tag and the full body. Never stale.
+     * Outside ApiEtagFilter's allowlist on purpose: this tag is the save's If-Match.
+     * The copy sits in the browser's disk cache; logout's Clear-Site-Data empties
+     * it, an expired session does not. The native app keeps no HTTP cache.
+     * ponytail: the hash is a 32-bit hashCode, so a collision at the same version
+     * (about 1 in 4 billion per change) would 304 a stale copy until the next
+     * change; SHA-256 here, and no-store for the disk copy, if either matters.
      */
     @GetMapping
     public ResponseEntity<JsonNode> get() {

@@ -182,6 +182,16 @@ a no-cache **`/**` catch-all** over `dist/`, so privacy.html, robots.txt, sitema
 Jackson has already buffered the body, and nothing else bounds a JSON request (Tomcat's
 `maxPostSize` is form-encoding only, `spring.servlet.multipart.*` is multipart only). It refuses a
 chunked write too (411), since that is the one shape a Content-Length check cannot see.
+`ApiEtagFilter` gives an allowlist of boot reads (tasks, habits, score/today, water, reminders,
+goals, quotes/today) a body-hash ETag + `private, no-cache` + `Vary: Authorization`, so the browser
+revalidates and an unchanged read is an empty 304 (saves bytes, not queries). Allowlist because a 304
+keeps the body on disk: notes, health, Money, Buddy never; logout sends `Clear-Site-Data: "cache"`.
+`DataChangedInterceptor`: after a 2xx write by a signed-in user, a transient `data_changed` frame on
+that user's `/queue/notifications` with the writer's `X-GB-Client` as `origin`, so the user's other
+open devices reload (app.js `syncFromElsewhere`). Folded per user over 500 ms (mixed origins = no
+origin). Not for writes the app makes on its own (note drafts, snapshots, ui-prefs, `/api/health/sync`,
+which runs on every phone reload: announcing it made two phones reload each other forever), nor
+Buddy chat / bell / push. Ticketed notification links (done/snooze) name their user with `forUser`.
 **Replayed writes don't duplicate: `Idempotency-Key`.** `IdempotencyFilter` (wraps the response in a
 `ContentCachingResponseWrapper`) + `IdempotencyInterceptor` (registered **second** in `WebConfig`,
 right after `CurrentUserInterceptor`, because a key is per user and a filter runs before the user is

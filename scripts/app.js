@@ -2722,9 +2722,16 @@ async function apiFetch(path, options) {
   }
 }
 
+/* This page load's id, sent on every request. The server echoes it on the
+   data_changed frame a write triggers (DataChangedInterceptor), so the device that
+   made the change doesn't reload itself. */
+const CLIENT_ID =
+  (crypto.randomUUID && crypto.randomUUID()) || Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
+
 async function apiFetchNow(path, options, gen) {
   const opts = options || {};
-  const headers = Object.assign({ Accept: 'application/json' }, opts.headers || {});
+  const base = { Accept: 'application/json', 'X-GB-Client': CLIENT_ID };
+  const headers = Object.assign(base, opts.headers || {});
   const token = loadToken();
   if (token) {
     headers['Authorization'] = 'Bearer ' + token;
@@ -3097,7 +3104,32 @@ function updateCalendarDaySelection(newKey) {
    field has a cache-backed or empty default (see the `state` initialiser), so
    the first paint shows cached values and corrects itself rather than
    rendering blanks. */
-async function loadData() {
+/* One load at a time. Resume, a data_changed frame, pull to refresh and coming back
+   online can all ask at once; two overlapping runs each replayed the outbox and the
+   water queue and raced their answers into state. A call while one runs is folded
+   into a single rerun after it (its writes may have landed after the first run's
+   reads) and gets that promise. */
+let loadRun = null;
+let loadAgain = false;
+function loadData() {
+  if (loadRun) {
+    loadAgain = true;
+    return loadRun;
+  }
+  loadRun = (async () => {
+    try {
+      do {
+        loadAgain = false;
+        await loadDataOnce();
+      } while (loadAgain && state.user);
+    } finally {
+      loadRun = null;
+    }
+  })();
+  return loadRun;
+}
+
+async function loadDataOnce() {
   if (!state.user) {
     return;
   }
@@ -3473,6 +3505,13 @@ async function connectWebSocket() {
             // Not a notification: "your family's data changed, refetch" (FamilyEvents
             // on the server). No bell card, no toast, no chime — the Family screen
             // listens and refreshes itself if it is open.
+            // Not a notification either: this account wrote something on another
+            // device (DataChangedInterceptor). Reload in place; our own writes are
+            // skipped by origin.
+            if (n.kind === 'data_changed') {
+              if (n.origin !== CLIENT_ID) syncFromElsewhere();
+              return;
+            }
             if (n.kind === 'family_changed') {
               window.dispatchEvent(new CustomEvent('gb:family-changed', { detail: n }));
               return;
@@ -14633,12 +14672,60 @@ if (navigator.onLine) flushRevokes(); // a sign-out made offline last time
    suspended without ever firing a disconnect, so `onConnect` never runs and the
    bell is quietly stale. Ask the server directly. */
 let hiddenAt = 0;
+let changedWhileHidden = false;
+
+/* A dialog is open or a field has focus: a repaint now would eat what is typed. */
+function userIsEditing() {
+  const el = document.activeElement;
+  const typing = el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+  return Boolean(typing || document.querySelector('.gb-modal-overlay'));
+}
+
+/* Another device of this account wrote something (a data_changed frame), or this
+   one is back from a while away. Same in-place reload as pull to refresh, but
+   never under the user's hands: hidden waits for the return, editing waits until
+   it ends. `changedWhileHidden` is cleared only by a reload that actually runs.
+   Frames are folded: a burst is one reload, and reloads are at least SYNC_GAP_MS
+   apart, so two devices can never bounce reloads off each other faster than that. */
+const SYNC_GAP_MS = 5000;
+let syncTimer = 0;
+let lastSyncAt = 0;
+function syncFromElsewhere(wait = 800) {
+  if (syncTimer) return;
+  syncTimer = setTimeout(
+    () => {
+      syncTimer = 0;
+      if (!state.user) return;
+      if (document.hidden) {
+        changedWhileHidden = true;
+        return;
+      }
+      if (state.loading || userIsEditing()) {
+        changedWhileHidden = true; // still owed if the app is hidden before it runs
+        return syncFromElsewhere();
+      }
+      changedWhileHidden = false;
+      lastSyncAt = Date.now();
+      loadData();
+    },
+    Math.max(wait, lastSyncAt + SYNC_GAP_MS - Date.now())
+  );
+}
+
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) hiddenAt = Date.now();
   else if (state.user) {
-    // Away over a minute (a backgrounded phone, another tab): ticks made on another
-    // device were still shown undone, and tapping one again un-did it (HOS-6).
-    if (hiddenAt && Date.now() - hiddenAt > 60_000) refreshOutboxStores(new Set(['task', 'habit']));
+    // Away a while (a backgrounded phone, another tab), or told something changed:
+    // anything added or ticked on another device must show here. Ticks were still
+    // shown undone, and tapping one again un-did it (HOS-6); only tasks and habits
+    // were re-read, so a reminder, glass or expense from the laptop waited for a
+    // pull to refresh. Now it is the pull's own in-place reload (unchanged reads
+    // are empty 304s, ApiEtagFilter), held while the user is editing; tasks and
+    // habits are re-read at once anyway, since that repaint keeps what is typed.
+    if (changedWhileHidden || (hiddenAt && Date.now() - hiddenAt > 15_000)) {
+      if (userIsEditing()) refreshOutboxStores(new Set(['task', 'habit']));
+      syncFromElsewhere(0);
+    }
     flushQueued(); // back from the background: the connection may be too
     refreshNotifications();
     syncDeviceTimezone(); // reopened after a flight

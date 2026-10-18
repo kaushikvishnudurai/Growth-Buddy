@@ -30,7 +30,7 @@ public class QuoteController {
 
     @GetMapping
     public List<QuoteResponse> all() {
-        return repo.findAll().stream().map(QuoteResponse::from).toList();
+        return sorted();
     }
 
     /**

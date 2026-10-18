@@ -24,16 +24,32 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class IndexController {
 
+    /**
+     * The page's bytes, re-read only when the file's modified time changes: a stat
+     * per request instead of a read, and a rebuild (or a dev edit) still shows up
+     * at once. It was read once and kept forever, and a local {@code npm run build}
+     * mid-run served the old page, whose hashed chunks were gone: a blank app.
+     */
+    private record Cached(Path file, java.nio.file.attribute.FileTime modified, byte[] body) {}
+
+    private volatile Cached cached;
+
     @GetMapping(value = { "/", "/index.html" }, produces = MediaType.TEXT_HTML_VALUE)
     public ResponseEntity<byte[]> index() throws Exception {
         Path file = locate();
         if (file == null) {
             return ResponseEntity.status(404).body("<h1>index.html not found</h1>".getBytes());
         }
+        java.nio.file.attribute.FileTime modified = Files.getLastModifiedTime(file);
+        Cached c = cached;
+        if (c == null || !c.file().equals(file) || !c.modified().equals(modified)) {
+            c = new Cached(file, modified, Files.readAllBytes(file));
+            cached = c;
+        }
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore())
                 .contentType(MediaType.TEXT_HTML)
-                .body(Files.readAllBytes(file));
+                .body(c.body());
     }
 
     private Path locate() {

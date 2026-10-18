@@ -47,6 +47,7 @@ public class HabitController {
     public void doneByLink(@Valid @RequestBody DoneLinkRequest req) {
         SnoozeLinks.Ticket t = tickets.ticketFor(SnoozeLinks.HABIT_DONE, req.token()).filter(x -> x.day() != null)
                 .orElseThrow(() -> ApiException.notFound("Habit"));
+        com.growthbuddy.common.DataChangedInterceptor.forUser(t.userId()); // the open app reloads
         try {
             service.checkin(t.userId(), t.targetId(), new CheckinRequest(t.day(), true, null, null, null));
         } catch (ApiException ex) {

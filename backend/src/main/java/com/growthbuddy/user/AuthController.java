@@ -66,7 +66,11 @@ public class AuthController {
     /** Revoke the bearer token in the Authorization header. Idempotent. */
     @PostMapping("/logout")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void logout(@RequestHeader(value = "Authorization", required = false) String authHeader) {
+    public void logout(@RequestHeader(value = "Authorization", required = false) String authHeader,
+                       jakarta.servlet.http.HttpServletResponse response) {
+        // Empties this browser's HTTP cache for the site: the 304-able reads
+        // (ApiEtagFilter) must not outlive the session on a shared computer.
+        response.setHeader("Clear-Site-Data", "\"cache\"");
         if (authHeader != null && authHeader.regionMatches(true, 0, "Bearer ", 0, 7)) {
             sessions.revoke(authHeader.substring(7).trim());
         }

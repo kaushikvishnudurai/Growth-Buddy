@@ -27,17 +27,20 @@ public class WebConfig implements WebMvcConfigurer {
     private final RateLimitInterceptor   rateLimitInterceptor;
     private final AiRateLimitInterceptor aiRateLimitInterceptor;
     private final IdempotencyInterceptor idempotencyInterceptor;
+    private final DataChangedInterceptor dataChangedInterceptor;
     private final String allowedOrigins;
 
     public WebConfig(CurrentUserInterceptor currentUserInterceptor,
                      RateLimitInterceptor rateLimitInterceptor,
                      AiRateLimitInterceptor aiRateLimitInterceptor,
                      IdempotencyInterceptor idempotencyInterceptor,
+                     DataChangedInterceptor dataChangedInterceptor,
                      @Value("${growthbuddy.cors.allowed-origins}") String allowedOrigins) {
         this.currentUserInterceptor = currentUserInterceptor;
         this.rateLimitInterceptor   = rateLimitInterceptor;
         this.aiRateLimitInterceptor = aiRateLimitInterceptor;
         this.idempotencyInterceptor = idempotencyInterceptor;
+        this.dataChangedInterceptor = dataChangedInterceptor;
         this.allowedOrigins         = allowedOrigins;
     }
 
@@ -57,6 +60,8 @@ public class WebConfig implements WebMvcConfigurer {
         // it must answer a replay before the AI limiter below charges for it.
         // (IdempotencyFilter captures the response; it only acts on keyed writes.)
         registry.addInterceptor(idempotencyInterceptor).addPathPatterns("/api/**");
+        // After the user is known; tells the user's other devices a write landed.
+        registry.addInterceptor(dataChangedInterceptor).addPathPatterns("/api/**");
         // Rate-limit sensitive auth endpoints: 10 attempts per IP per 5 minutes.
         registry.addInterceptor(rateLimitInterceptor)
                 .addPathPatterns(
