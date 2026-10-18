@@ -11,6 +11,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 interface HealthReadingRepository extends JpaRepository<HealthReading, UUID> {
     List<HealthReading> findByUserIdAndDayBetween(UUID userId, LocalDate start, LocalDate end);
 
+    /** A locking read: sync decides insert-or-update on it, so it must see the latest rows. */
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
     List<HealthReading> findByUserIdAndSourceAndDayBetween(UUID userId, String source, LocalDate start, LocalDate end);
 
     Optional<HealthReading> findByIdAndUserId(UUID id, UUID userId);

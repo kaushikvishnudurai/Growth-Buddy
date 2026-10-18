@@ -54,6 +54,25 @@ class PushEndpointTest {
         assertThatThrownBy(() -> service.subscribe(UUID.randomUUID(), "http://10.0.0.1/", "k", "a"))
                 .isInstanceOf(ApiException.class);
         verify(repo, never()).save(any());
+        verify(repo, never()).upsert(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    /**
+     * A subscribe is one upsert on the endpoint's unique hash, never read-then-insert
+     * (two at once stored the endpoint twice). The hash is MySQL's SHA2(endpoint, 256),
+     * which the migration backfills existing rows with.
+     */
+    @Test
+    void subscribeUpsertsOnTheEndpointHash() {
+        assertThat(PushSubscription.hashOf("abc"))
+                .isEqualTo("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+        UUID me = UUID.randomUUID();
+        String ep = "https://fcm.googleapis.com/fcm/send/x";
+        service.subscribe(me, ep, "k", "a");
+        verify(repo).upsert(any(), org.mockito.ArgumentMatchers.eq(me.toString()), org.mockito.ArgumentMatchers.eq(ep),
+                org.mockito.ArgumentMatchers.eq(PushSubscription.hashOf(ep)), org.mockito.ArgumentMatchers.eq("k"),
+                org.mockito.ArgumentMatchers.eq("a"), any());
+        verify(repo, never()).save(any());
     }
 
     @Test

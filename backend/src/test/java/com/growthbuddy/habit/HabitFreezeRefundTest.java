@@ -77,6 +77,13 @@ class HabitFreezeRefundTest {
         verify(progress, times(1)).awardHabitCheckin(USER);
     }
 
+    /** Two protects at once both read one token and both spent it: protect queues on the user lock. */
+    @Test
+    void protectTakesTheUserLock() {
+        service.protect(USER, habit.getId(), TODAY);
+        verify(progress).lockUser(USER);
+    }
+
     @Test
     void theRefundNeverPassesTheCap() {
         HabitCheckin c = new HabitCheckin();

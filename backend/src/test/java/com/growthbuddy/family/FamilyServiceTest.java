@@ -625,6 +625,31 @@ class FamilyServiceTest {
         verify(reminders, never()).create(any(), any(), any(), any(), any());
     }
 
+    /** Many chores, one assignee: the per-chore cap alone let a loop over chores flood their calendar. */
+    @Test
+    void choreRemindsArePerAssigneeCappedToo() {
+        clockAt(LocalDate.of(2026, 10, 10));
+        Family f = family(OWNER);
+        FamilyMember owner = row(f, OWNER, MemberStatus.mapped, Relationship.self);
+        FamilyMember partner = row(f, PARTNER, MemberStatus.mapped, Relationship.spouse);
+        livesIn(OWNER, owner);
+        roster(f, owner, partner);
+        FamilyChore c = new FamilyChore();
+        c.setId(UUID.randomUUID());
+        c.setFamilyId(f.getId());
+        c.setTitle("Take out the bins");
+        c.setAssigneeMemberId(partner.getId());
+        when(chores.findById(c.getId())).thenReturn(Optional.of(c));
+        when(limiter.allow(eq("chore-remind-pair:" + OWNER + ":" + PARTNER),
+                eq(FamilyService.CHORE_REMINDS_PER_PAIR_PER_DAY), org.mockito.ArgumentMatchers.anyLong()))
+                .thenReturn(false);
+
+        assertThatThrownBy(() -> service.remindChore(OWNER, c.getId(), LocalTime.of(19, 0)))
+                .isInstanceOf(ApiException.class)
+                .extracting(e -> ((ApiException) e).getStatus()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+        verify(reminders, never()).create(any(), any(), any(), any(), any());
+    }
+
     /** Invited is not mapped: an invitee cannot add to the chores of a family they have not joined. */
     @Test
     void anInviteeCannotAddChores() {

@@ -5,6 +5,7 @@ import com.growthbuddy.notification.NotifyCategory;
 import com.growthbuddy.user.UserRepository;
 import jakarta.annotation.PostConstruct;
 import java.security.Security;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import nl.martijndwars.webpush.Notification;
@@ -113,12 +114,8 @@ public class PushService {
         if (!allowedEndpoint(endpoint)) {
             throw com.growthbuddy.common.ApiException.badRequest("That isn't a push service this app can deliver to.");
         }
-        PushSubscription sub = repo.findByEndpoint(endpoint).orElseGet(PushSubscription::new);
-        sub.setUserId(userId);
-        sub.setEndpoint(endpoint);
-        sub.setP256dh(p256dh);
-        sub.setAuth(auth);
-        repo.save(sub);
+        repo.upsert(UUID.randomUUID().toString(), userId.toString(), endpoint,
+                PushSubscription.hashOf(endpoint), p256dh, auth, Instant.now());
         List<PushSubscription> mine = new java.util.ArrayList<>(repo.findByUserId(userId));
         if (mine.size() > MAX_SUBSCRIPTIONS) {
             mine.sort(java.util.Comparator.comparing(PushSubscription::getCreatedAt,

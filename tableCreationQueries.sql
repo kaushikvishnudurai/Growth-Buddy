@@ -974,9 +974,11 @@ CREATE TABLE IF NOT EXISTS `push_subscriptions` (
   `auth` varchar(255) NOT NULL,
   `created_at` datetime(6) NOT NULL,
   `endpoint` text NOT NULL,
+  `endpoint_hash` char(64) NOT NULL,
   `p256dh` varchar(255) NOT NULL,
   `user_id` char(36) NOT NULL,
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `ux_push_endpoint_hash` (`endpoint_hash`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ;
 

@@ -110,13 +110,19 @@ public class FocusService {
         }
         if (taskId != null && !links.ownsTask(userId, taskId)) taskId = null;
         if (goalId != null && !links.ownsGoal(userId, goalId)) goalId = null;
+        Instant at = completedAt(completedAt, Instant.now());
+        users.findForUpdate(userId); // one user's saves in turn, so two can't both fit the same day
+        int duration = fitToDay(clampDuration(durationSec), secondsOnDay(userId, m, at));
+        if (duration < 0) {
+            throw com.growthbuddy.common.ApiException.badRequest("That day already holds 24 hours of sessions.");
+        }
         FocusSession s = new FocusSession();
         s.setUserId(userId);
         s.setMode(m);
-        s.setDurationSec(clampDuration(durationSec));
+        s.setDurationSec(duration);
         s.setTaskId(taskId);
         s.setGoalId(goalId);
-        s.setCompletedAt(completedAt(completedAt, Instant.now()));
+        s.setCompletedAt(at);
         repo.save(s);
         prune(userId, m);
         return stats(userId);
@@ -145,6 +151,32 @@ public class FocusService {
     /** Anything but "break" is a focus session — the only two the table holds. */
     static String normaliseMode(String mode) {
         return "break".equals(mode) ? "break" : "focus";
+    }
+
+    static final int DAY_SEC = 24 * 3600;
+
+    /**
+     * A session trimmed to what is left of its day (24 hours of this mode), or -1
+     * when nothing is. Each session was capped at six hours but the day was not,
+     * so fifty posts of 21600 s counted 18000 minutes today and topped every
+     * Circle focus challenge.
+     */
+    static int fitToDay(int durationSec, long usedSec) {
+        long room = DAY_SEC - usedSec;
+        if (room <= 0 && durationSec > 0) return -1;
+        return (int) Math.min(durationSec, Math.max(0, room));
+    }
+
+    /** Seconds of {@code mode} already stored on {@code at}'s day, in the user's zone. */
+    private long secondsOnDay(UUID userId, String mode, Instant at) {
+        ZoneId zone = clock.zoneOf(userId);
+        LocalDate day = at.atZone(zone).toLocalDate();
+        Instant start = day.atStartOfDay(zone).toInstant();
+        Instant end = day.plusDays(1).atStartOfDay(zone).toInstant();
+        return repo.findByUserIdAndModeAndCompletedAtAfter(userId, mode, start.minusNanos(1)).stream()
+                .filter(s -> s.getCompletedAt().isBefore(end))
+                .mapToLong(FocusSession::getDurationSec)
+                .sum();
     }
 
     /** At most six hours, never negative. */

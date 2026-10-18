@@ -63,12 +63,13 @@ public class MentorshipService {
         if (currentUserId.equals(otherUserId)) {
             throw ApiException.badRequest("You can't send a mentorship request to yourself.");
         }
+        lockPair(currentUserId, otherUserId);
         // Scheduled for deletion reads as not found, as it does in search.
         User other = users.findById(otherUserId)
                 .filter(u -> !u.isPendingDeletion())
                 .orElseThrow(() -> ApiException.notFound("User"));
 
-        checkCanInvite(requests.findAllBetween(currentUserId, otherUserId),
+        checkCanInvite(requests.lockAllBetween(currentUserId, otherUserId),
                 currentUserId, direction, Instant.now());
         if (!limiter.allow("mentorship-invite:" + currentUserId, INVITES_PER_DAY, DAY_MS)) {
             throw new ApiException(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS,
@@ -138,8 +139,7 @@ public class MentorshipService {
 
     @Transactional
     public RequestDto respond(UUID currentUserId, UUID requestId, boolean accept) {
-        MentorshipRequest r = requests.findById(requestId)
-                .orElseThrow(() -> ApiException.notFound("Request"));
+        MentorshipRequest r = lockRequest(requestId);
         if (!r.getToUserId().equals(currentUserId)) {
             throw ApiException.notFound("Request");
         }
@@ -290,6 +290,29 @@ public class MentorshipService {
         }
     }
 
+    /**
+     * create / respond / revoke each read the pair's rows, decide, then write, so
+     * two at once (withdraw vs accept, an offer vs its mirror request) both decided
+     * on the same old state. They now queue on both users' rows, always taken in
+     * the same order so two of them can't deadlock.
+     */
+    private void lockPair(UUID a, UUID b) {
+        boolean aFirst = a.compareTo(b) < 0;
+        users.findForUpdate(aFirst ? a : b);
+        users.findForUpdate(aFirst ? b : a);
+    }
+
+    /** The request, read fresh under the pair lock. */
+    private MentorshipRequest lockRequest(UUID requestId) {
+        MentorshipRequestRepository.Pair p = requests.findPairById(requestId)
+                .orElseThrow(() -> ApiException.notFound("Request"));
+        lockPair(p.getFromUserId(), p.getToUserId());
+        return requests.lockAllBetween(p.getFromUserId(), p.getToUserId()).stream()
+                .filter(r -> r.getId().equals(requestId))
+                .findFirst()
+                .orElseThrow(() -> ApiException.notFound("Request"));
+    }
+
     /** Would {@code userId} be the MENTOR if this request were accepted? */
     static boolean makesMentor(MentorshipRequest r, UUID userId) {
         boolean isFrom = r.getFromUserId().equals(userId);
@@ -308,8 +331,7 @@ public class MentorshipService {
      */
     @Transactional
     public void revoke(UUID currentUserId, UUID requestId) {
-        MentorshipRequest seed = requests.findById(requestId)
-                .orElseThrow(() -> ApiException.notFound("Request"));
+        MentorshipRequest seed = lockRequest(requestId);
         if (!seed.getFromUserId().equals(currentUserId) && !seed.getToUserId().equals(currentUserId)) {
             throw ApiException.notFound("Request");
         }
@@ -324,7 +346,7 @@ public class MentorshipService {
         Instant now = Instant.now();
         boolean endedLink = false;
         MentorshipRequest lastCancelled = null;
-        for (MentorshipRequest r : requests.findAllBetween(currentUserId, partnerId)) {
+        for (MentorshipRequest r : requests.lockAllBetween(currentUserId, partnerId)) {
             if (r.getStatus() != Status.pending && r.getStatus() != Status.accepted) continue;
             if (makesMentor(r, currentUserId) != revokingMentorSide) continue;
             endedLink |= r.getStatus() == Status.accepted;

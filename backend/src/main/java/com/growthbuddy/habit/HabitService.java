@@ -162,6 +162,7 @@ public class HabitService {
     /** Protect a day (rest/freeze): spend a token, mark the day, recompute. */
     @Transactional
     public HabitResponse protect(UUID userId, UUID id, LocalDate date) {
+        progress.lockUser(userId); // the wallet read-then-spend: two at once spent one token twice
         Habit h = require(userId, id);
         LocalDate today = clock.today(userId);
         LocalDate day = date != null ? date : today;

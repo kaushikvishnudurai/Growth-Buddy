@@ -320,4 +320,31 @@ class FocusServiceTest {
         assertThat(s.todayMinutes()).isEqualTo(25);
         assertThat(s.weekMinutes()).as("the streak's look-back is not this week").isLessThanOrEqualTo(50);
     }
+
+    /** A day holds 24 hours: fifty 6-hour posts used to count 18000 minutes and top every challenge. */
+    @Test
+    void aDayHoldsAtMostTwentyFourHours() {
+        assertThat(FocusService.fitToDay(1500, 0)).isEqualTo(1500);
+        assertThat(FocusService.fitToDay(21_600, 20 * 3600)).isEqualTo(4 * 3600);
+        assertThat(FocusService.fitToDay(1500, 24 * 3600)).isEqualTo(-1);
+        assertThat(FocusService.fitToDay(0, 24 * 3600)).isZero();
+
+        FocusSessionRepository repo = mock(FocusSessionRepository.class);
+        UserClock clock = mock(UserClock.class);
+        UUID user = UUID.randomUUID();
+        when(clock.zoneOf(user)).thenReturn(ZoneOffset.UTC);
+        Instant now = Instant.now();
+        List<FocusSession> today = new java.util.ArrayList<>();
+        for (int i = 0; i < 4; i++) {
+            FocusSession s = new FocusSession();
+            s.setDurationSec(6 * 3600);
+            s.setCompletedAt(now.minusSeconds(i));
+            today.add(s);
+        }
+        when(repo.findByUserIdAndModeAndCompletedAtAfter(any(), any(), any())).thenReturn(today);
+        FocusService svc = new FocusService(repo, clock, mock(UserRepository.class), mock(FocusLinks.class));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> svc.record(user, "focus", 21_600))
+                .isInstanceOf(com.growthbuddy.common.ApiException.class);
+        verify(repo, org.mockito.Mockito.never()).save(any());
+    }
 }

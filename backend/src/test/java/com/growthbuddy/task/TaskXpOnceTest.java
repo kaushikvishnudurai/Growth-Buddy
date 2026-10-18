@@ -50,6 +50,24 @@ class TaskXpOnceTest {
         verify(progress, times(1)).awardTaskCompletion(USER);
     }
 
+    /** update(done) takes toggle's user lock before it reads the task, or the two race the XP. */
+    @Test
+    void updateWithDoneTakesTheUserLockFirst() {
+        Task t = new Task();
+        t.setId(UUID.randomUUID());
+        t.setUserId(USER);
+        t.setTitle("Ship it");
+        when(repo.findByIdAndUserIdAndDeletedAtIsNull(t.getId(), USER)).thenReturn(Optional.of(t));
+        when(repo.save(any(Task.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(history.save(any(TaskHistory.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.update(USER, t.getId(), new UpdateTaskRequest(null, null, null, null, null, true, null, null, null));
+
+        var order = org.mockito.Mockito.inOrder(progress, repo);
+        order.verify(progress).lockUser(USER);
+        order.verify(repo).findByIdAndUserIdAndDeletedAtIsNull(t.getId(), USER);
+    }
+
     /**
      * HOS-6: a stale tab that still shows the task open taps "done". A flip
      * undid the other tab's tick; an explicit done=true is idempotent.

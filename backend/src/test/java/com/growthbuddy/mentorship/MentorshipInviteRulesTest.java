@@ -146,6 +146,46 @@ class MentorshipInviteRulesTest {
         return u;
     }
 
+    /** The row as respond / revoke reach it: pair ids first, then the locking read. */
+    private void stored(MentorshipRequest r) {
+        when(requests.findPairById(r.getId())).thenReturn(Optional.of(new MentorshipRequestRepository.Pair() {
+            public UUID getFromUserId() { return r.getFromUserId(); }
+            public UUID getToUserId() { return r.getToUserId(); }
+        }));
+        when(requests.lockAllBetween(r.getFromUserId(), r.getToUserId())).thenReturn(List.of(r));
+        when(requests.lockAllBetween(r.getToUserId(), r.getFromUserId())).thenReturn(List.of(r));
+    }
+
+    /**
+     * Withdraw vs accept, or an offer vs its mirror request, used to both decide
+     * on the same old rows. Every path now locks both users (lower id first, so
+     * two can't deadlock) and then decides on a locking read, never a plain one.
+     */
+    @Test
+    void respondRevokeAndCreateDecideUnderThePairLock() {
+        user(ME, "Me");
+        user(THEM, "Them");
+        UUID lo = ME.compareTo(THEM) < 0 ? ME : THEM;
+        UUID hi = lo.equals(ME) ? THEM : ME;
+
+        MentorshipRequest r = req(THEM, ME, Direction.offer, Status.pending, null);
+        stored(r);
+        service.respond(ME, r.getId(), true);
+        var order = org.mockito.Mockito.inOrder(users, requests);
+        order.verify(users).findForUpdate(lo);
+        order.verify(users).findForUpdate(hi);
+        order.verify(requests).lockAllBetween(THEM, ME);
+        verify(requests, never()).findById(any());
+
+        service.revoke(ME, r.getId());
+        assertThat(r.getStatus()).isEqualTo(Status.cancelled);
+
+        when(requests.lockAllBetween(ME, THEM)).thenReturn(List.of(req(THEM, ME, Direction.request, Status.pending, null)));
+        assertThatThrownBy(() -> service.create(ME, THEM, Direction.offer, null))
+                .hasMessageContaining("already sent you this invite");
+        verify(requests, never()).findAllBetween(any(), any());
+    }
+
     /** SEC-11: create / revoke / create is capped per sender per day. */
     @Test
     void invitesPastTheDailyCapAreRefused() {
@@ -164,7 +204,7 @@ class MentorshipInviteRulesTest {
     @Test
     void someoneElseCannotAnswerAnInvite() {
         MentorshipRequest r = req(THEM, ME, Direction.offer, Status.pending, null);
-        when(requests.findById(r.getId())).thenReturn(Optional.of(r));
+        stored(r);
         UUID stranger = UUID.randomUUID();
         assertThatThrownBy(() -> service.respond(stranger, r.getId(), true))
                 .isInstanceOf(ApiException.class)
@@ -176,7 +216,7 @@ class MentorshipInviteRulesTest {
     @Test
     void theRecipientCanAccept() {
         MentorshipRequest r = req(THEM, ME, Direction.offer, Status.pending, null);
-        when(requests.findById(r.getId())).thenReturn(Optional.of(r));
+        stored(r);
         user(ME, "Me");
         user(THEM, "Them");
         service.respond(ME, r.getId(), true);
@@ -188,8 +228,7 @@ class MentorshipInviteRulesTest {
     @Test
     void endingAConnectionNotifiesThePartner() {
         MentorshipRequest r = req(ME, THEM, Direction.offer, Status.accepted, NOW);
-        when(requests.findById(r.getId())).thenReturn(Optional.of(r));
-        when(requests.findAllBetween(ME, THEM)).thenReturn(List.of(r));
+        stored(r);
         user(ME, "Vivek");
         service.revoke(ME, r.getId());
         assertThat(r.getStatus()).isEqualTo(Status.cancelled);
@@ -201,8 +240,7 @@ class MentorshipInviteRulesTest {
     @Test
     void withdrawingAPendingInviteSendsNoMessage() {
         MentorshipRequest r = req(ME, THEM, Direction.offer, Status.pending, null);
-        when(requests.findById(r.getId())).thenReturn(Optional.of(r));
-        when(requests.findAllBetween(ME, THEM)).thenReturn(List.of(r));
+        stored(r);
         service.revoke(ME, r.getId());
         assertThat(r.getStatus()).isEqualTo(Status.cancelled);
         verify(notifications).deleteByRelated(r.getId());
@@ -213,7 +251,7 @@ class MentorshipInviteRulesTest {
     @Test
     void aStrangerCannotRevoke() {
         MentorshipRequest r = req(ME, THEM, Direction.offer, Status.accepted, NOW);
-        when(requests.findById(r.getId())).thenReturn(Optional.of(r));
+        stored(r);
         assertThatThrownBy(() -> service.revoke(UUID.randomUUID(), r.getId())).isInstanceOf(ApiException.class);
         assertThat(r.getStatus()).isEqualTo(Status.accepted);
     }
