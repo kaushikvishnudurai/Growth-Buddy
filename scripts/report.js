@@ -10,7 +10,6 @@ import { buildInsights, insightProgress } from './insights.js';
 import { InsightRow } from './outlook-card.js';
 import { yearOf } from './outlook.js';
 import {
-  localKey,
   pixelValues,
   personalRecords,
   periodDelta,
@@ -28,7 +27,7 @@ import { signals } from './insights.js';
 import { shareStoryCard, renderStoryCard } from './share-card.js';
 import { toast } from './toast.js';
 import { pad2 } from './dates.js';
-import { tasksForToday } from './home-order.js';
+import { tasksForToday, habitDue, topStreaks, todayKey, shiftDayKey } from './home-order.js';
 
 /** "22 Sep" / "Tue, 22 Sep": one short month style. en-GB's Intl writes "Sept", the
     rest of the app (pixels, Outlook) "Sep". */
@@ -132,16 +131,10 @@ function svgEl(tag, attrs) {
 const SCALE_NUM = { low: 1, poor: 1, okay: 2, good: 3, great: 4 };
 const SCALE_LABEL = { 1: 'Low', 2: 'Okay', 3: 'Good', 4: 'Great' };
 
-// Array of the last n calendar days (oldest first), ending today.
-function lastNDays(n) {
+// Array of the last n calendar days (oldest first), ending `today` (the account's day).
+function lastNDays(n, today) {
   const out = [];
-  const base = new Date();
-  base.setHours(0, 0, 0, 0);
-  for (let i = n - 1; i >= 0; i--) {
-    const d = new Date(base);
-    d.setDate(base.getDate() - i);
-    out.push(localKey(d));
-  }
+  for (let i = n - 1; i >= 0; i--) out.push(shiftDayKey(today, -i));
   return out;
 }
 
@@ -435,15 +428,15 @@ function rangeToggle(range, onRange) {
   );
 }
 
-function trendsSection({ on, trends, wellness, range, onRange }) {
-  const days = lastNDays(range);
+function trendsSection({ on, trends, wellness, range, onRange, today }) {
+  const days = lastNDays(range, today);
   const byDate = (trends && trends.byDate) || {};
   const moodBy = (wellness && wellness.moodByDate) || {};
   const sleepBy = (wellness && wellness.sleepByDate) || {};
 
   // "vs last week" compares the last `range` FULL days with the `range` before
   // them. Today is left out of both: half logged, it read as a drop every morning.
-  const cmp = lastNDays(range * 2 + 1);
+  const cmp = lastNDays(range * 2 + 1, today);
   const prevDays = cmp.slice(0, range);
   const curDays = cmp.slice(range, range * 2);
   const seriesFrom = (pick, keys = days) => keys.map((k) => (byDate[k] ? pick(byDate[k]) : null));
@@ -625,12 +618,12 @@ const WOW_ROWS = [
   { field: 'proteinG', feature: 'food', label: 'Protein', fmt: (v) => Math.round(v) + ' g' },
 ];
 
-function weekRollupSection({ on, trends }) {
+function weekRollupSection({ on, trends, today }) {
   const defs = WOW_ROWS.filter((d) => on(d.feature));
   if (!defs.length) return null;
   const rows = weekOverWeek(
     (trends && trends.byDate) || {},
-    localKey(new Date()),
+    today,
     defs.map((d) => d.field)
   );
   if (!rows.length) return null;
@@ -820,8 +813,7 @@ function scatterChart(res, mx, my) {
   return h('div', { class: 'gb-trend-plot' }, svg, tip, table);
 }
 
-function compareSection({ on, trends, wellness, money, insightHistory }) {
-  const today = localKey(new Date());
+function compareSection({ on, trends, wellness, money, insightHistory, today }) {
   const cur = (money && money.settings && money.settings.currency) || '';
   const sig = signals({ wellness, trends, money });
   const pos = (s) => {
@@ -1105,8 +1097,7 @@ function pixelGrid(values, today, readout, metric) {
   return grid;
 }
 
-function pixelsSection({ trends, wellness, insightHistory }) {
-  const today = localKey(new Date());
+function pixelsSection({ trends, wellness, insightHistory, today }) {
   const habitHistory = insightHistory && insightHistory.habits;
   const slot = h('div');
   const toggle = h('div', { class: 'gb-range-toggle' });
@@ -1158,14 +1149,14 @@ function pixelsSection({ trends, wellness, insightHistory }) {
 }
 
 /** This month's YYYY-MM, or last month's on the 1st to 3rd (this one is too new to share). */
-function reviewMonth(now = new Date()) {
-  if (now.getDate() > 3) return null;
-  const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  return d.getFullYear() + '-' + pad2(d.getMonth() + 1);
+function reviewMonth(today) {
+  const [y, m, d] = today.split('-').map(Number);
+  if (d > 3) return null;
+  return m === 1 ? y - 1 + '-12' : y + '-' + pad2(m - 1);
 }
 
 /* ---- Personal records + month in review ---------------------------------- */
-function recordsSection({ habits, trends, wellness, money, insightHistory }) {
+function recordsSection({ habits, trends, wellness, money, insightHistory, today }) {
   const cur = (money && money.settings && money.settings.currency) || '';
   // Lakh grouping (1,00,000) is right for rupees only; anything else groups the
   // device's way.
@@ -1175,12 +1166,13 @@ function recordsSection({ habits, trends, wellness, money, insightHistory }) {
     trends,
     money,
     focus: insightHistory && insightHistory.focus,
+    today,
     fmtMoney: (v) => cur + Math.round(v).toLocaleString(loc),
   });
-  const past = reviewMonth();
+  const past = reviewMonth(today);
   const card =
-    (past && monthReview({ trends, wellness, habits, money, history: insightHistory, month: past })) ||
-    monthReview({ trends, wellness, habits, money, history: insightHistory });
+    (past && monthReview({ trends, wellness, habits, money, history: insightHistory, month: past, today })) ||
+    monthReview({ trends, wellness, habits, money, history: insightHistory, today });
   if (!records.length && !card) return null;
   const share = async () => {
     try {
@@ -1314,6 +1306,7 @@ function ScreenReport({
   goalProgress,
   insightHistory,
   insightLoading,
+  breakDays,
   dismissedInsights,
   onDismissInsight,
   onInsightAction,
@@ -1323,6 +1316,8 @@ function ScreenReport({
   onMakeHabit,
 }) {
   const on = (k) => !features || features[k] !== false;
+  // The account's day: every store below is keyed by it, not the device's.
+  const today = todayKey(zone);
   const t = tasks || [];
   const hb = habits || [];
   const flatGoals = (goals || []).flatMap((s) => s.goals || []);
@@ -1332,8 +1327,12 @@ function ScreenReport({
   // read as "0/42 done" on a calm morning.
   const scored = tasksForToday(t, new Date(), zone);
   const tasksDone = scored.filter((x) => x.done).length;
-  const habitsDone = hb.filter((x) => x.doneToday).length;
-  const topStreak = hb.reduce((m, x) => Math.max(m, x.streak || 0), 0);
+  // Habits owed today, as Home and the score count them (a weekly habit already
+  // met this week is not today's miss).
+  const habitsDue = hb.filter((x) => habitDue(x) || x.doneToday);
+  const habitsDone = habitsDue.filter((x) => x.doneToday).length;
+  // Daily habits only: a weekly streak counts weeks (topStreaks).
+  const topStreak = topStreaks(hb).days;
   const waterMl = (water && water.consumedMl) || 0;
   const waterGoal = Math.max(1, (water && water.goalMl) || 2000);
   const waterPct = Math.min(100, Math.round((waterMl / waterGoal) * 100));
@@ -1358,7 +1357,13 @@ function ScreenReport({
         children: [
           statTile('Score', Number.isFinite(score) ? Math.round(score) + '%' : null),
           statTile('Tasks', scored.length ? tasksDone + '/' + scored.length : null, scored.length ? 'done' : 'none due today'),
-          on('habits') ? statTile('Habits', habitsDone + '/' + hb.length, 'done') : null,
+          on('habits')
+            ? statTile(
+                'Habits',
+                habitsDue.length ? habitsDone + '/' + habitsDue.length : null,
+                habitsDue.length ? 'done' : 'none due today'
+              )
+            : null,
           on('habits') ? statTile('Top streak', topStreak, 'days') : null,
           on('water') ? statTile('Water', waterPct + '%', waterMl + ' of ' + waterGoal + ' ml') : null,
           // Nothing logged yet is a dash, not a 0 that reads as a fast.
@@ -1380,6 +1385,8 @@ function ScreenReport({
         history: insightHistory,
         features,
         dismissed: dismissedInsights,
+        zone,
+        breakDays,
       },
       { loading: insightLoading, onDismiss: onDismissInsight, onAction: onInsightAction }
     ),
@@ -1390,19 +1397,20 @@ function ScreenReport({
       ...yearOf(trends, wellness, insightHistory),
       money,
       insightHistory,
+      today,
     }),
 
     // ---- Trends drill-down (weekly / monthly line charts) ----
-    trendsSection({ on, ...yearOf(trends, wellness, insightHistory), range: range || 7, onRange }),
+    trendsSection({ on, ...yearOf(trends, wellness, insightHistory), range: range || 7, onRange, today }),
 
     // ---- Water + food: this week's daily averages against last week's ----
-    weekRollupSection({ on, ...yearOf(trends, wellness, insightHistory) }),
+    weekRollupSection({ on, ...yearOf(trends, wellness, insightHistory), today }),
 
     // ---- Any two daily series against each other (scatter + r) ----
-    compareSection({ on, ...yearOf(trends, wellness, insightHistory), money, insightHistory }),
+    compareSection({ on, ...yearOf(trends, wellness, insightHistory), money, insightHistory, today }),
 
     // ---- A year of days at a glance ----
-    pixelsSection({ ...yearOf(trends, wellness, insightHistory), insightHistory }),
+    pixelsSection({ ...yearOf(trends, wellness, insightHistory), insightHistory, today }),
 
     // ---- Reflection cards (moved here from the home dashboard) ----
     h(

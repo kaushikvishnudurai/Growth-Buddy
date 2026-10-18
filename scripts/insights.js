@@ -20,6 +20,7 @@
 import { drinkRateByHour } from './water-stats.js';
 import { fmtIn, homeCur, catOf } from './money-core.js'; // pure, no DOM: money's own formatter + tag labels
 import { localKey } from './dates.js';
+import { todayKey } from './home-order.js';
 
 // Ordinal value maps for the categorical check-ins.
 const ORD = { low: 1, okay: 2, good: 3, great: 4, medium: 2, high: 3, calm: 1, normal: 2 };
@@ -532,7 +533,7 @@ export function focusHours(sessions) {
  * the habit ever got going is not a pattern, and read as one it made every early
  * weekday a "skip day". A protected (frozen) day is not a miss.
  */
-export function habitDays(habits, history, today) {
+export function habitDays(habits, history, today, rest) {
   const out = [];
   const end = dayNum(today) - 1;
   for (const hab of habits || []) {
@@ -546,6 +547,8 @@ export function habitDays(habits, history, today) {
     const days = [];
     for (let n = dayNum(String(hist.since)); n <= end; n++) {
       const key = dayKey(n);
+      // A break day (break.js breakDays) owed nothing: not a miss, not a tick.
+      if (rest && rest.has(key) && !done.has(key)) continue;
       if (days.length || done.has(key)) days.push({ key, done: done.has(key) });
     }
     if (days.length)
@@ -743,8 +746,7 @@ export function paceSlope(log, frac, today) {
  * than three days logged), the fallback is a straight line from creation (0%)
  * to today's progress.
  */
-export function goalPace(goals, progressById, now) {
-  const today = localKey(new Date(now));
+export function goalPace(goals, progressById, now, today = localKey(new Date(now))) {
   let worst = null;
   for (const g of goals || []) {
     if (!g || g.completed || !g.targetDate || !g.createdAt) continue;
@@ -1078,17 +1080,19 @@ export function buildInsights({
   features,
   dismissed,
   now = Date.now(),
+  zone, // the account's: every store is keyed by its day (the device's without one)
+  breakDays, // Set of break days (break.js): owed nothing, so never a habit miss
 }) {
   const off = (k) => !!features && features[k] === false;
   const m = off('money') ? null : money;
   const sig = signals({ wellness, trends, money: m });
   if (off('water')) sig.water = {};
   if (off('food')) sig.kcal = {};
-  const today = localKey(new Date(now));
+  const today = todayKey(zone, new Date(now));
   const t0 = dayNum(today);
   const week = dayKey(t0 - ((new Date(t0 * DAY_MS).getUTCDay() + 6) % 7)); // its Monday
   const hist = history || {};
-  const hdays = off('habits') ? [] : habitDays(habits, hist.habits, today);
+  const hdays = off('habits') ? [] : habitDays(habits, hist.habits, today, breakDays);
   const tag = (id, card) => card && Object.assign(card, { id });
   const found = [
     ...TESTS.map((t) => tag('pair:' + t.join(':'), pairInsight(sig, t))),
@@ -1101,7 +1105,7 @@ export function buildInsights({
     tag('habitWeekdayMiss', habitWeekdayMiss(hdays)),
     tag('missTwice:' + today, missTwice(hdays)),
     tag('keystone', keystoneHabit(hdays, sig)),
-    off('goals') ? null : tag('goalPace:' + week, goalPace(goals, goalProgress, now)),
+    off('goals') ? null : tag('goalPace:' + week, goalPace(goals, goalProgress, now, today)),
     tag('taskTiming', taskTiming(hist.finished)),
     tag('pushedTask:' + week, pushedTask(tasks)),
     tag('taskWeekday', taskWeekday(hist.finished)),

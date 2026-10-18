@@ -66,6 +66,7 @@ assert.deepEqual(daysEnding('2026-03-30', 2), ['2026-03-29', '2026-03-30']);
     habits: [
       { name: 'Read', longestStreak: 12 },
       { name: 'Run', longestStreak: 30 },
+      { name: 'Swim', cadence: 'weekly', longestStreak: 40 }, // 40 weeks: not a 40-day record
     ],
     focus: [
       { durationSec: 1500, completedAt: '2026-06-10T10:00:00' },
@@ -354,6 +355,7 @@ assert.match(correlationWords(-0.6).text, /lower/);
     habits: [
       { name: 'Read', streak: 12 },
       { name: 'Walk', streak: 2 },
+      { name: 'Swim', cadence: 'custom', targetPerWeek: 3, streak: 20 }, // weeks, never "20 days"
     ],
     trends,
     money: { expenses: [{ date: '2026-10-09', amount: 300 }], noSpendDays: ['2026-10-08', '2026-10-09'] },

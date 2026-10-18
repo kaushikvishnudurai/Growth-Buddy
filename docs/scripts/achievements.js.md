@@ -25,7 +25,9 @@ renumber them, or earned badges relock and old ones re-celebrate.
 Invariants:
 
 - **`seen` keeps a badge unlocked once earned.** It is `ui_prefs.achSeen` (app.js
-  `achievementProps`). The day counts only see the 60 days boot loads, so "Be active 14 days" would
+  `achievementProps`). So nothing unconfirmed may unlock: `achievementProps` reads a goal whose
+  toggle is still in flight (`goalTogglesInFlight`) as it was before the tap, and `topStreak` is
+  daily habits only (`topStreaks().days`; a weekly streak counts weeks). The day counts only see the 60 days boot loads, so "Be active 14 days" would
   relock as old days slid out.
 - **Day counts are sets of dates.** Today's live food/water is added to a history that may already
   hold today; counting instead of set-adding counted it twice (two plates on day 1 unlocked "3 days").

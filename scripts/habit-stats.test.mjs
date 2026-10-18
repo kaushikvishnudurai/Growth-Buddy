@@ -17,6 +17,7 @@ import {
   longestQuitRun,
   recentNotes,
 } from './habit-stats.js';
+import { breakDays } from './break.js';
 
 let failures = 0;
 function test(name, fn) {
@@ -337,6 +338,20 @@ test('recent notes: newest first, blank ones skipped, capped', () => {
     ]
   );
   assert.equal(recentNotes({ days, since: back(9), today: TODAY, limit: 1 }).length, 1);
+});
+
+test('a break day is owed nothing: not missed, not counted, and it holds the run', () => {
+  const rest = breakDays({ breakFrom: back(3), breakUntil: back(2), breakPast: [back(9) + '..' + back(9), 'junk'] });
+  assert.deepEqual([...rest].sort(), [back(9), back(3), back(2)]);
+  // A range longer than the server's 15 days is not a break there either.
+  assert.equal(breakDays({ breakFrom: back(40), breakUntil: back(20) }).size, 0);
+  const days = [back(5), back(4), back(1)].map((date) => ({ date, done: true }));
+  const opts = { days, since: back(5), today: TODAY, cadence: 'daily', rest };
+  assert.equal(dayState(null, back(3), opts), 'rest');
+  assert.equal(dayState(null, back(3), { ...opts, rest: undefined }), 'missed');
+  assert.equal(completionRate({ ...opts, windowDays: Infinity }), 1); // 3 of the 3 owed days
+  assert.equal(bestStreak(opts).best, 3); // back(5)..back(1) bridged by the break
+  assert.equal(bestStreak({ ...opts, rest: undefined }).best, 2);
 });
 
 if (failures) {

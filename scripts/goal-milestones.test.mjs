@@ -126,6 +126,14 @@ test('withProgressLog dates the blob; a blob with nothing to measure is left alo
   const allDone = { ...out, milestones: ms().map((m) => ({ ...m, done: true })) };
   assert.equal(needsProgressLog(allDone, '2026-06-05'), true);
   assert.equal(needsProgressLog(bare, '2026-06-05'), false);
+  // A tracker counted from linked habits logs the days Goals shows, not the stored count.
+  const tracker = { durationDays: 10, daysFollowed: 1 };
+  const shown = { ...tracker, daysFollowed: 5 };
+  const logged = withProgressLog(tracker, '2026-06-05', shown);
+  assert.deepEqual(logged.progressLog, [{ date: '2026-06-05', pct: 50 }]);
+  assert.equal(logged.daysFollowed, 1); // the stored count is left alone
+  assert.equal(needsProgressLog(logged, '2026-06-05', shown), false);
+  assert.equal(needsProgressLog(logged, '2026-06-05'), true); // raw 10% differs: why app.js passes `shown`
 });
 
 if (failures) {

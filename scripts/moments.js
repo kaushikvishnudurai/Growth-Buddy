@@ -17,11 +17,13 @@ export function habitMoment(habit, habits, day) {
   if (!habit || !habit.doneToday) return null;
   const n = Number(habit.streak) || 0;
   if (isStreakMilestone(n)) {
+    // A weekly / N-a-week streak counts weeks (app.js streakUnit), not days.
+    const unit = (habit.cadence || 'daily') === 'daily' ? 'day' : 'week';
     return {
       key: 'streak:' + habit.id + ':' + n,
       kicker: 'Streak milestone',
-      title: n + ' days in a row',
-      desc: habit.name + ', every day for ' + n + ' days.',
+      title: n + ' ' + unit + 's in a row',
+      desc: habit.name + ', every ' + unit + ' for ' + n + ' ' + unit + 's.',
       icon: 'flame',
     };
   }
