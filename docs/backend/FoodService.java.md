@@ -41,7 +41,7 @@ GET after a write.
   `pieces x FoodWeek.gramsPerPiece(name)` (100 g for anything not in its table). `quantityGrams`
   wins when both are sent. The count itself is stored (`food_entries.pieces`) and returned as
   `FoodEntryResponse.pieces`, so the list says "2 pieces", not "Idli (120g)". `updateEntry`: a
-  new `pieces` alone re-derives the grams; new grams alone clear it (weighed now). A counted portion is held to the column's 10..2000, not the 80..700 a
+  new `pieces` alone re-derives the grams (from the entry's own grams per piece when it was counted and the name is unchanged, so a barcode label's piece weight holds; else `gramsPerPiece`); new grams alone clear it (weighed now). A counted portion is held to the column's 10..2000, not the 80..700 a
   guessed plate gets, so one idli can be 40 g.
 - `addEntry` makes **at most one** AI call (`askAi`): grams, kcal/100 g and the four nutrients come
   back together, asked only when a typed gram figure or an OpenFoodFacts hit leaves something

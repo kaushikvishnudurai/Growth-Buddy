@@ -119,6 +119,9 @@ class FoodEntryEditTest {
         service.updateEntry(USER, e.getId(), new UpdateFoodEntryRequest(null, null, null, null, null, null, null, 3));
         assertThat(e.getPieces()).isEqualTo(3);
         assertThat(e.getQuantityGrams()).as("grams follow the count").isEqualTo(3 * FoodWeek.gramsPerPiece("Dosa"));
+        e.setQuantityGrams(30); // 3 pcs off a label: 10 g each
+        service.updateEntry(USER, e.getId(), new UpdateFoodEntryRequest(null, null, null, null, null, null, null, 4));
+        assertThat(e.getQuantityGrams()).as("the entry's own piece weight, not the guess").isEqualTo(40);
         service.updateEntry(USER, e.getId(), new UpdateFoodEntryRequest(null, 250, null, null, null, null));
         assertThat(e.getPieces()).as("weighed now").isNull();
     }

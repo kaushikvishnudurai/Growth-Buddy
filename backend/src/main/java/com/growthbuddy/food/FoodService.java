@@ -434,10 +434,15 @@ public class FoodService {
             foodChanged |= !name.equals(e.getFoodName());
             e.setFoodName(name);
         }
-        // A count with no grams sets the grams from it; grams with no count are weighed now.
+        // A count with no grams sets the grams from it (the entry's own piece weight,
+        // e.g. a barcode label's, while the food is the same; else the generic guess);
+        // grams with no count are weighed now.
+        double perPiece = !foodChanged && e.getPieces() != null && e.getPieces() > 0
+                ? (double) e.getQuantityGrams() / e.getPieces()
+                : FoodWeek.gramsPerPiece(e.getFoodName());
         Integer grams = req.quantityGrams() != null ? req.quantityGrams()
                 : req.pieces() != null && !req.pieces().equals(e.getPieces())
-                        ? Math.max(10, Math.min(2000, req.pieces() * FoodWeek.gramsPerPiece(e.getFoodName())))
+                        ? (int) Math.max(10, Math.min(2000, Math.round(req.pieces() * perPiece)))
                         : null;
         if (req.pieces() != null) {
             e.setPieces(req.pieces());
