@@ -78,13 +78,19 @@ export function rulerHours() {
 }
 
 // `isToday`: Home passes its own (the account's day); Calendar the device's.
-export function DayRuler(list, key, isToday = key === todayKey(), bands = null) {
+// `nowMin`: where the now ring sits; Home passes the account clock's minute so
+// it agrees with its own now line, Calendar leaves it to the device clock.
+export function DayRuler(list, key, isToday = key === todayKey(), bands = null, nowMin = null) {
   let now = null;
   if (isToday) {
-    const d = new Date();
+    let min = nowMin;
+    if (min == null) {
+      const d = new Date();
+      min = d.getHours() * 60 + d.getMinutes();
+    }
     now = h('span', {
       class: 'gb-line-now',
-      style: { left: ((d.getHours() * 60 + d.getMinutes()) / 1440) * 100 + '%' },
+      style: { left: (min / 1440) * 100 + '%' },
     });
   }
   // Each mark's start time above it; one that would crowd the last shown

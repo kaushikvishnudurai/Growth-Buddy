@@ -39,6 +39,16 @@ public class UserClock {
     private static final java.util.Map<UUID, CachedZone> ZONES = new java.util.concurrent.ConcurrentHashMap<>();
     static final long ZONE_TTL_MS = 10 * 60_000L;
 
+    /**
+     * How long after a write to the user nothing caches their zone. A request that
+     * began before the write commits can still read the old zone afterwards — its
+     * session already holds the user, and TiDB reads at the transaction's snapshot —
+     * and caching that would pin the old day for {@link #ZONE_TTL_MS}. Such a read is
+     * served but not kept. ponytail: a request outliving this window can still cache
+     * the old zone, for at most the TTL.
+     */
+    static final long SETTLE_MS = 60_000L;
+
     /** The user's zone; UTC when the user is unknown or has nothing usable stored. */
     public ZoneId zoneOf(UUID userId) {
         if (userId == null) {
@@ -46,13 +56,16 @@ public class UserClock {
         }
         long now = System.currentTimeMillis();
         CachedZone c = ZONES.get(userId);
-        if (c != null && now - c.atMs() < ZONE_TTL_MS) {
+        if (c != null && c.zone() != null && now - c.atMs() < ZONE_TTL_MS) {
             return c.zone();
         }
         ZoneId zone = users.findById(userId)
                 .map(User::getTimezone)
                 .map(UserZone::of)
                 .orElse(UserZone.FALLBACK);
+        if (c != null && c.zone() == null && now - c.atMs() < SETTLE_MS) {
+            return zone; // written moments ago: this read may predate it (SETTLE_MS)
+        }
         if (ZONES.size() > 50_000) {
             ZONES.clear(); // ponytail: crude bound, an LRU if the user count ever nears it
         }
@@ -61,8 +74,9 @@ public class UserClock {
     }
 
     /**
-     * JPA listener on {@link User}: forget its cached zone. Again after commit, because
-     * the listener fires at flush and a read before commit would cache the old zone.
+     * JPA listener on {@link User}: swap its cached zone for a settling marker (a null
+     * zone, see {@link #SETTLE_MS}). Again after commit, so the window runs from when
+     * the new zone is visible.
      */
     public static class Forget {
         @jakarta.persistence.PostPersist
@@ -70,16 +84,22 @@ public class UserClock {
         @jakarta.persistence.PostRemove
         void onChange(User u) {
             UUID id = u.getId();
-            ZONES.remove(id);
+            settle(id);
             if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
                 org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
                         new org.springframework.transaction.support.TransactionSynchronization() {
                             @Override
                             public void afterCommit() {
-                                ZONES.remove(id);
+                                settle(id);
                             }
                         });
             }
+        }
+    }
+
+    private static void settle(UUID id) {
+        if (id != null) {
+            ZONES.put(id, new CachedZone(null, System.currentTimeMillis()));
         }
     }
 

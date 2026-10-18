@@ -448,7 +448,9 @@ it silently landed on Home. Don't reintroduce a second list.
   inputs fresh on every render, so a plain `render()` throws away whatever the user had typed —
   fail on the password and the email vanishes too. `renderAuth` carries the values across by
   position, which is safe because a refusal never changes which view is on screen.
-- **The home greeting is time-aware** (`greetingFor`) and uses `firstName()`. Both are kept short
+- **The home greeting is time-aware** (`greetingFor`) and uses `firstName()`. Its hour and the date
+  above it (`todayLabel`) are the ACCOUNT's clock (`accountNowHHMM`, `todayKey`), like every card
+  below; the device clock read "Monday" over a Sunday timeline when the two zones differed. Both are kept short
   on purpose: `.greet-name` clamps to 2 lines at ~134px, so a long greeting + full name clips.
 - **Toast entrances are age-driven, not identity-driven.** `render()` rebuilds every toast node, and
   several call sites do `toastSuccess(...); render();` — which replaces the node mid-entrance. So

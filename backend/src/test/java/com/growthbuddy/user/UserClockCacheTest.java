@@ -32,4 +32,25 @@ class UserClockCacheTest {
         assertThat(clock.zoneOf(u.getId())).isEqualTo(ZoneId.of("America/New_York"));
         verify(users, times(2)).findById(u.getId());
     }
+
+    @Test
+    void aReadJustAfterAWriteIsServedButNotCached() {
+        UserRepository users = mock(UserRepository.class);
+        UserClock clock = new UserClock(users);
+        User stale = new User();
+        stale.setId(UUID.randomUUID());
+        stale.setTimezone("Asia/Kolkata");
+        // A request that loaded the user before the write committed still sees the old zone.
+        when(users.findById(stale.getId())).thenReturn(Optional.of(stale));
+
+        new UserClock.Forget().onChange(stale);
+        assertThat(clock.zoneOf(stale.getId())).isEqualTo(ZoneId.of("Asia/Kolkata"));
+
+        User fresh = new User();
+        fresh.setId(stale.getId());
+        fresh.setTimezone("America/Los_Angeles");
+        when(users.findById(stale.getId())).thenReturn(Optional.of(fresh));
+        assertThat(clock.zoneOf(stale.getId())).isEqualTo(ZoneId.of("America/Los_Angeles"));
+        verify(users, times(2)).findById(stale.getId());
+    }
 }

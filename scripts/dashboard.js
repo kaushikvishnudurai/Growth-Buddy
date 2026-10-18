@@ -2316,7 +2316,7 @@ function DayTimeline({
             // Phone: the ruler opens the day in place; wide: Calendar on today.
             onclick: () => (phoneLayout() ? showDay(true) : onOpenCalendar && onOpenCalendar()),
           },
-          DayRuler(marks, today, true, bands)
+          DayRuler(marks, today, true, bands, nowMin)
         )
       : null,
     named.length

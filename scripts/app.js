@@ -318,23 +318,17 @@ const WELLNESS_KEY_PREFIX = 'gb.wellness.';
 const GOAL_PROGRESS_KEY_PREFIX = 'gb.goalProgress.';
 const MONEY_KEY_PREFIX = 'gb.money.';
 
-/* ---- Format today's date as "Wednesday, June 3" ---- */
+/* ---- Format today's date as "Wednesday, June 3" ----
+   The account's day, like every card under it: a phone kept on home time
+   abroad read "Monday" over a timeline and streaks still on Sunday. */
 function todayLabel() {
-  try {
-    return new Date().toLocaleDateString(undefined, {
-      weekday: 'long',
-      month: 'long',
-      day: 'numeric',
-    });
-  } catch (_) {
-    return 'Today';
-  }
+  return fmtDate(todayKey(), { weekday: 'long', month: 'long', day: 'numeric' }) || 'Today';
 }
 
 /* ---- Greeting that knows what time it is ----
    "Hey," read identically at 6am and at midnight, which is the one thing a
-   real accountability buddy would never do. This is the client's own clock, so
-   it's the user's actual local time with no timezone plumbing.
+   real accountability buddy would never do. The hour is the account's clock
+   (accountNowHHMM), the same one the date beside it and the reminders use.
 
    The late slot is deliberately not a greeting: past 11pm "Good evening" is
    wrong, and noticing that someone is still awake is the point. It stays warm
@@ -11918,7 +11912,7 @@ function remindersAsk() {
 const SCREENS = {
   home: {
     headerLabel: () => todayLabel(),
-    headerName: () => greetingFor(new Date().getHours()) + ', ' + firstName(),
+    headerName: () => greetingFor(parseInt(accountNowHHMM(), 10)) + ', ' + firstName(),
     render: () =>
       ScreenDashboard({
         features: (state.user && state.user.features) || null,

@@ -8519,7 +8519,7 @@ button.gb-tone-chip::before,
   font-size: var(--text-xs);
   color: var(--fg3);
 }
-.gb-onboard-step > svg {
+.gb-onboard-step > .gb-icon {
   color: var(--fg3);
   flex: none;
 }
@@ -11285,10 +11285,6 @@ select.gb-input {
 }
 .gb-family-card-meta.is-overdue {
   color: var(--danger);
-}
-.gb-family-card-meta svg {
-  vertical-align: -2px;
-  margin-right: 3px;
 }
 
 /* Cook per meal + recipe per dish (Today's plan, weekly cards) */
@@ -17716,8 +17712,8 @@ button.gb-tl-title {
 }
 /* Two lines before the cut (title attr has the rest): one line clipped a long
    task at about 20 characters on a phone. */
-.gb-pending-title > span,
-.gb-suggest-lead > span {
+.gb-pending-title > span:not(.gb-icon),
+.gb-suggest-lead > span:not(.gb-icon) {
   min-width: 0;
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -17726,7 +17722,7 @@ button.gb-tl-title {
   overflow: hidden;
   overflow-wrap: anywhere;
 }
-.gb-pending-title svg {
+.gb-pending-title > .gb-icon {
   flex: none;
   color: var(--fg3);
 }
@@ -17907,10 +17903,10 @@ button.gb-tl-title {
   text-align: left;
   cursor: pointer;
 }
-.gb-suggest-lead > svg {
+.gb-suggest-lead > .gb-icon {
   flex: none;
 }
-.gb-suggest-lead[aria-expanded='true'] > svg:last-child {
+.gb-suggest-lead[aria-expanded='true'] > .gb-icon:last-child {
   transform: rotate(180deg);
 }
 .gb-suggest-line > .gb-btn {

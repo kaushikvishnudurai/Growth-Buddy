@@ -110,8 +110,10 @@ const CRISIS = new RegExp(
   '\\b(' +
     [
       'suicid\\w*',
-      // "kms" anywhere, except as a distance: "ran 5 kms", "a few kms away"
-      '(?<!(\\d|\\b(few|many|several|some|the|these|those|of|in|per)) ?)kms',
+      // "kms" anywhere, except as a distance: "ran 5 kms", "a few kms away".
+      // Only a number or a quantity word excuses it: "thinking of kms" and
+      // "in kms mode" must still show the card (a missed card is the costly way).
+      '(?<!(\\d|\\b(few|many|several|per)) ?)kms',
       'unalive\\w*',
       '(kill|hurt|harm|cut)(s|ed|ing|ting)? ?my ?self',
       'self[- ]?harm\\w*',
