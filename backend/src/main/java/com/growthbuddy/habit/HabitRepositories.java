@@ -47,6 +47,23 @@ interface HabitRepository extends JpaRepository<Habit, UUID> {
                 ))
             """)
     List<Habit> findDeliverable(@Param("inAppOn") boolean inAppOn, @Param("pushOn") boolean pushOn);
+
+    /** {@link #findDeliverable} for a few users: a snapshot's per-user refresh (DeliveryCache). */
+    @Query("""
+            select h from Habit h
+            where h.reminderTime is not null
+              and h.deletedAt is null
+              and h.active = true
+              and h.userId in :userIds
+              and exists (
+                select 1 from User u where u.id = h.userId and (
+                     (:inAppOn = true)
+                  or (:pushOn = true and exists (
+                        select 1 from PushSubscription p where p.userId = u.id))
+                ))
+            """)
+    List<Habit> findDeliverableForUsers(@Param("inAppOn") boolean inAppOn, @Param("pushOn") boolean pushOn,
+                                        @Param("userIds") java.util.Collection<UUID> userIds);
 }
 
 interface HabitCheckinRepository extends JpaRepository<HabitCheckin, HabitCheckin.Key> {

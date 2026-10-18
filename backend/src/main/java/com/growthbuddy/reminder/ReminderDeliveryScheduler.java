@@ -93,12 +93,9 @@ public class ReminderDeliveryScheduler {
 
     private final com.growthbuddy.push.PushService push;
 
-    // Candidate list from the last load; see DeliveryCache. Only the scheduler
-    // thread touches these, and Spring never overlaps two runs of one cron task.
-    private List<CalendarReminder> snapshot = List.of();
-    private Map<UUID, User> snapshotUsers = Map.of();
-    private long snapshotVersion;
-    private Instant snapshotAt;
+    // Candidate list from the last load; see DeliveryCache.
+    private final DeliveryCache.Snapshot<CalendarReminder, User> snapshot =
+            new DeliveryCache.Snapshot<>(CalendarReminder::getUserId);
 
     // Not @Transactional: this loop makes a blocking WhatsApp HTTP call per due
     // reminder; a loop-wide transaction would pin one DB connection for the whole
@@ -113,18 +110,15 @@ public class ReminderDeliveryScheduler {
         // No early exit on WhatsApp/push any more: the bell is a channel too, and
         // it needs no configuration at all. A reminder set on a phone with
         // notifications refused still turns up in the app.
-        if (DeliveryCache.stale(snapshotVersion, snapshotAt, tick)) {
-            long version = DeliveryCache.version();
-            snapshot = reminders.findDeliverable(true, whatsapp.isConfigured(), push.isConfigured());
-            snapshotUsers = usersById(snapshot);
-            snapshotVersion = version;
-            snapshotAt = tick;
-        }
+        boolean waOn = whatsapp.isConfigured();
+        boolean pushOn = push.isConfigured();
+        snapshot.refresh(tick, () -> reminders.findDeliverable(true, waOn, pushOn),
+                ids -> reminders.findDeliverableForUsers(true, waOn, pushOn, ids), this::usersById);
 
         // Most ticks end here without touching the database: nothing is due.
         List<UUID> dueIds = new ArrayList<>();
-        for (CalendarReminder rem : snapshot) {
-            User u = snapshotUsers.get(rem.getUserId());
+        for (CalendarReminder rem : snapshot.items()) {
+            User u = snapshot.users().get(rem.getUserId());
             if (dueDay(rem, u, tick) != null || secondDueDay(rem, u, tick) != null || snoozeDue(rem, tick)) {
                 dueIds.add(rem.getId());
             }
@@ -466,7 +460,7 @@ public class ReminderDeliveryScheduler {
         if (!claimSnooze(row, rem.getId(), at)) {
             return;
         }
-        DeliveryCache.changed();
+        DeliveryCache.changed(rem.getUserId());
         settleSnooze(row.getId(), 1, sendSnooze(user, rem, at, waEligible, tick));
     }
 

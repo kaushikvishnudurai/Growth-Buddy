@@ -46,6 +46,24 @@ public interface CalendarReminderRepository extends JpaRepository<CalendarRemind
                                            @Param("whatsappOn") boolean whatsappOn,
                                            @Param("pushOn") boolean pushOn);
 
+    /** {@link #findDeliverable} for a few users: a snapshot's per-user refresh (DeliveryCache). */
+    @Query("""
+            select r from CalendarReminder r
+            where r.time is not null and r.userId in :userIds
+              and exists (
+                select 1 from User u where u.id = r.userId and (
+                     (:inAppOn = true)
+                  or (:whatsappOn = true and u.whatsappEnabled = true
+                        and u.whatsappNumber is not null and u.whatsappNumber <> '')
+                  or (:pushOn = true and exists (
+                        select 1 from PushSubscription p where p.userId = u.id))
+                ))
+            """)
+    List<CalendarReminder> findDeliverableForUsers(@Param("inAppOn") boolean inAppOn,
+                                                   @Param("whatsappOn") boolean whatsappOn,
+                                                   @Param("pushOn") boolean pushOn,
+                                                   @Param("userIds") java.util.Collection<UUID> userIds);
+
     java.util.Optional<CalendarReminder> findByIdAndUserId(UUID id, UUID userId);
 
     /**

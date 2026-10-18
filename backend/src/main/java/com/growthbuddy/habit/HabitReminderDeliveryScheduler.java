@@ -74,12 +74,8 @@ public class HabitReminderDeliveryScheduler {
         this.whatsapp = whatsapp;
     }
 
-    // Candidate list from the last load; see DeliveryCache. Only the scheduler
-    // thread touches these, and Spring never overlaps two runs of one cron task.
-    private List<Habit> snapshot = List.of();
-    private Map<UUID, User> snapshotUsers = Map.of();
-    private long snapshotVersion;
-    private Instant snapshotAt;
+    // Candidate list from the last load; see DeliveryCache.
+    private final DeliveryCache.Snapshot<Habit, User> snapshot = new DeliveryCache.Snapshot<>(Habit::getUserId);
 
     // Deliberately one query per candidate rather than the batched
     // dispatch-log read ReminderDeliveryScheduler uses: that batching earns
@@ -90,18 +86,14 @@ public class HabitReminderDeliveryScheduler {
     public void dispatchHabitReminders() {
         Instant tick = Instant.now();
 
-        if (DeliveryCache.stale(snapshotVersion, snapshotAt, tick)) {
-            long version = DeliveryCache.version();
-            snapshot = habits.findDeliverable(true, push.isConfigured());
-            snapshotUsers = usersById(snapshot);
-            snapshotVersion = version;
-            snapshotAt = tick;
-        }
+        boolean pushOn = push.isConfigured();
+        snapshot.refresh(tick, () -> habits.findDeliverable(true, pushOn),
+                ids -> habits.findDeliverableForUsers(true, pushOn, ids), this::usersById);
 
         // Most ticks end here without touching the database: nothing is due.
         List<UUID> dueIds = new ArrayList<>();
-        for (Habit habit : snapshot) {
-            if (dueDay(habit, snapshotUsers.get(habit.getUserId()), tick) != null) {
+        for (Habit habit : snapshot.items()) {
+            if (dueDay(habit, snapshot.users().get(habit.getUserId()), tick) != null) {
                 dueIds.add(habit.getId());
             }
         }

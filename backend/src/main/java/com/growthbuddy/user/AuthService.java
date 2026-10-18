@@ -1082,7 +1082,7 @@ public class AuthService {
         requireBounded(before, merged, MAX_UI_PREF_KEYS, "UI");
         users.updateUiPrefs(userId.toString(), blob);
         if (SCHEDULER_PREF_KEYS.stream().anyMatch(k -> !java.util.Objects.equals(before.get(k), merged.get(k)))) {
-            DeliveryCache.changed();
+            DeliveryCache.changed(userId);
         }
         user.setUiPrefs(merged); // detached by the bulk update's clear: never flushed
         return AuthUserResponse.from(user);
