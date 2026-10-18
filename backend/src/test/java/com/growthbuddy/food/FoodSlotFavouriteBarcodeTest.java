@@ -129,6 +129,9 @@ class FoodSlotFavouriteBarcodeTest {
         FoodEntry idli = entry("Idli", MealSlot.breakfast, at(y, 8, 0));
         idli.setEstimateSource("ai-estimate");
         idli.setProteinG(6);
+        idli.setPieces(3);
+        idli.setPieceGrams(40.0);
+        idli.setNote("with chutney");
         // A row from before slots: its 08:30 makes it breakfast too.
         FoodEntry old = entry("Coffee", null, at(y, 8, 30));
         FoodEntry lunch = entry("Rice", MealSlot.lunch, at(y, 13, 0));
@@ -145,6 +148,9 @@ class FoodSlotFavouriteBarcodeTest {
         assertThat(copy.getEstimateSource()).isEqualTo("manual");
         assertThat(copy.getKcalEstimated()).isEqualTo(idli.getKcalEstimated());
         assertThat(copy.getProteinG()).isEqualTo(6);
+        assertThat(copy.getPieces()).as("still \"3 idli\", not grams").isEqualTo(3);
+        assertThat(copy.getPieceGrams()).isEqualTo(40.0);
+        assertThat(copy.getNote()).isEqualTo("with chutney");
         assertThat(copy.getMealSlot()).isEqualTo(MealSlot.breakfast);
         verify(openai, never()).isConfigured();
     }

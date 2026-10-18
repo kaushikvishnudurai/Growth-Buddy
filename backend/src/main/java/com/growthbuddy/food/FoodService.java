@@ -329,7 +329,7 @@ public class FoodService {
                 // A counted portion can be one 40 g idli, under the 80 g a guessed
                 // plate is held to; only the column's own range applies.
                 quantity = input.pieces() != null
-                        ? Math.max(10, Math.min(2000, g.quantityGrams()))
+                        ? FoodWeek.countedGrams(g.quantityGrams())
                         : clampQuantity(g.quantityGrams());
             } else {
                 quantity = defaultQuantity(input);
@@ -367,6 +367,15 @@ public class FoodService {
         e.setEstimateSource(estimate.source());
         e.setNote(StringUtils.hasText(req.note()) ? req.note().trim() : null);
         e.setPieces(req.pieces());
+        if (req.pieces() != null) {
+            // Before the clamp: 30 pieces of 100 g store 2000 g, and a later count
+            // edit has to know a piece was 100, not 66.7.
+            e.setPieceGrams(req.pieceGrams() != null ? req.pieceGrams()
+                    : req.quantityGrams() != null ? (double) quantity / req.pieces()
+                    : ai[0] != null && ai[0].quantityGrams() != null
+                            ? (double) ai[0].quantityGrams() / req.pieces()
+                            : FoodWeek.gramsPerPiece(food));
+        }
         // Label figures (a barcode product, a favourite) only with typed calories:
         // an estimated entry's nutrients come from the same estimate as its kcal.
         if (req.kcal() != null) {
@@ -413,10 +422,10 @@ public class FoodService {
     /**
      * Fix a logged entry: name, grams, calories, meal or day. No AI and no lookup:
      * typed calories are taken as they are ("manual"); new grams without calories
-     * rescale the entry's own kcal/100 g. A changed name or grams clears the four
-     * nutrients so FoodWeek's batch refills them for the new food (its guarded
-     * coalesce UPDATE only fills nulls). Returns the summary of the day the entry
-     * is on afterwards.
+     * rescale the entry's own kcal and all six nutrients by the grams ratio. A
+     * changed name clears the six so FoodWeek's batch refills the four it knows for
+     * the new food (its UPDATE only fills nulls on a row still at the name and
+     * grams it estimated). Returns the summary of the day the entry is on afterwards.
      */
     @Transactional
     public FoodSummaryResponse updateEntry(UUID userId, UUID entryId, UpdateFoodEntryRequest req) {
@@ -431,31 +440,52 @@ public class FoodService {
                 throw ApiException.badRequest("foodName can't be empty");
             }
             String name = req.foodName().trim();
-            foodChanged |= !name.equals(e.getFoodName());
+            // The edit form always sends the name: "dosa" for "Dosa " is the same food,
+            // and must not reset its piece weight or wipe its nutrients.
+            foodChanged |= !name.equalsIgnoreCase(e.getFoodName().trim());
             e.setFoodName(name);
         }
         // A count with no grams sets the grams from it (the entry's own piece weight,
         // e.g. a barcode label's, while the food is the same; else the generic guess);
-        // grams with no count are weighed now.
-        double perPiece = !foodChanged && e.getPieces() != null && e.getPieces() > 0
-                ? (double) e.getQuantityGrams() / e.getPieces()
-                : FoodWeek.gramsPerPiece(e.getFoodName());
+        // grams with a count re-weigh the piece; grams with no count are weighed now.
+        double perPiece = foodChanged ? FoodWeek.gramsPerPiece(e.getFoodName())
+                : e.getPieceGrams() != null ? e.getPieceGrams()
+                : e.getPieces() != null && e.getPieces() > 0
+                        ? (double) e.getQuantityGrams() / e.getPieces() // a row from before piece_grams
+                        : FoodWeek.gramsPerPiece(e.getFoodName());
         Integer grams = req.quantityGrams() != null ? req.quantityGrams()
                 : req.pieces() != null && !req.pieces().equals(e.getPieces())
-                        ? (int) Math.max(10, Math.min(2000, Math.round(req.pieces() * perPiece)))
+                        ? FoodWeek.countedGrams(req.pieces() * perPiece)
                         : null;
         if (req.pieces() != null) {
             e.setPieces(req.pieces());
+            e.setPieceGrams(req.quantityGrams() != null ? (double) req.quantityGrams() / req.pieces() : perPiece);
         } else if (req.quantityGrams() != null && req.quantityGrams() != e.getQuantityGrams()) {
             e.setPieces(null);
+            e.setPieceGrams(null);
+        } else if (foodChanged && e.getPieces() != null) {
+            e.setPieceGrams(perPiece);
         }
         if (grams != null && grams != e.getQuantityGrams()) {
-            foodChanged = true;
+            // By the entry's own ratio: the stored kcal/100 g is floored at 40 (the
+            // column's CHECK), so 2 kcal of green tea at 250 g reads 40/100 g and
+            // doubling it would save 200. Nutrients scale the same way.
+            // (The CHECK holds stored grams to 10..2000; the per-100 g fallback is
+            // for a row that somehow has none.)
+            int old = e.getQuantityGrams();
+            double ratio = old > 0 ? (double) grams / old : 0;
             e.setQuantityGrams(grams);
             if (req.kcal() == null) {
-                e.setKcalEstimated(Math.max(1, Math.min(5000,
-                        (int) Math.round(e.getKcalPer100g() * grams / 100.0))));
+                e.setKcalEstimated(Math.max(1, Math.min(5000, (int) Math.round(old > 0
+                        ? e.getKcalEstimated() * ratio
+                        : e.getKcalPer100g() * grams / 100.0))));
             }
+            e.setProteinG(scaled(e.getProteinG(), ratio, 900));
+            e.setCarbsG(scaled(e.getCarbsG(), ratio, 900));
+            e.setFatG(scaled(e.getFatG(), ratio, 900));
+            e.setFiberG(scaled(e.getFiberG(), ratio, 900));
+            e.setSugarG(scaled(e.getSugarG(), ratio, 900));
+            e.setSodiumMg(scaled(e.getSodiumMg(), ratio, 50000));
         }
         if (req.kcal() != null) {
             e.setKcalEstimated(req.kcal());
@@ -481,12 +511,19 @@ public class FoodService {
             e.setCarbsG(null);
             e.setFatG(null);
             e.setFiberG(null);
+            e.setSugarG(null);
+            e.setSodiumMg(null);
         }
         if (req.note() != null) {
             e.setNote(StringUtils.hasText(req.note()) ? req.note().trim() : null);
         }
         entries.save(e);
         return summary(userId, e.getLogDate());
+    }
+
+    /** A nutrient for the new portion, within the add request's bounds; 0 grams before leaves it for the batch. */
+    private static Integer scaled(Integer v, double ratio, int max) {
+        return v == null || ratio <= 0 ? null : (int) Math.min(max, Math.round(v * ratio));
     }
 
     /** The request's slot, else the one the local hour of the entry falls in. */
@@ -541,6 +578,9 @@ public class FoodService {
             c.setFiberG(e.getFiberG());
             c.setSugarG(e.getSugarG());
             c.setSodiumMg(e.getSodiumMg());
+            c.setPieces(e.getPieces());
+            c.setPieceGrams(e.getPieceGrams());
+            c.setNote(e.getNote());
             c.setMealSlot(slot);
             c.setLoggedAt(at);
             c.setLogDate(target);
@@ -789,7 +829,7 @@ public class FoodService {
 
     private int defaultQuantity(EstimateInput input) {
         if (input.pieces() != null) {
-            return Math.max(10, Math.min(2000, input.pieces() * FoodWeek.gramsPerPiece(input.foodName())));
+            return FoodWeek.countedGrams(input.pieces() * FoodWeek.gramsPerPiece(input.foodName()));
         }
         int base = switch (input.portionSize()) {
             case small -> 140;

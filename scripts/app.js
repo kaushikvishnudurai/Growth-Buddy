@@ -66,6 +66,7 @@ import {
   sameZone,
   firstRunSteps,
   pushAskDue,
+  noonIn,
   SAVED_ON_PHONE,
   savedLocallyMessage,
 } from './app-logic.js';
@@ -5500,17 +5501,19 @@ let waterRefetch = false;
 function waterQueueKey() {
   return moneyStorageKey(state.user) + '.water';
 }
-function loadWaterQueue() {
+/* `key`: an account's queue noted before a request, so an answer that lands
+   after a sign-out still writes to that account's, not the next one's. */
+function loadWaterQueue(key = waterQueueKey()) {
   try {
-    const q = JSON.parse(CacheStorage.getItem(waterQueueKey()) || '[]');
+    const q = JSON.parse(CacheStorage.getItem(key) || '[]');
     return Array.isArray(q) ? q.filter((x) => x && x.id && x.amountMl > 0 && x.loggedAt) : [];
   } catch (_) {
     return [];
   }
 }
-function storeWaterQueue(q) {
+function storeWaterQueue(q, key = waterQueueKey()) {
   try {
-    CacheStorage.setItem(waterQueueKey(), JSON.stringify(q));
+    CacheStorage.setItem(key, JSON.stringify(q));
   } catch (err) {
     console.error('Failed to keep an unsent glass of water:', err);
   }
@@ -5814,7 +5817,8 @@ async function quickAddWater(amountMl, dayKey, drinkType, opts) {
   // A page that unloads mid-request replays it at the next boot.
   await CacheStorage.ready();
   const glass = { id: tempId, amountMl, loggedAt, drinkType: drink, idemKey };
-  storeWaterQueue(loadWaterQueue().concat({ ...glass, live: true }));
+  const queueKey = waterQueueKey();
+  storeWaterQueue(loadWaterQueue(queueKey).concat({ ...glass, live: true }), queueKey);
   const unqueue = () => storeWaterQueue(loadWaterQueue().filter((y) => y.id !== tempId));
   try {
     const updated = await api('/api/water/entries', {
@@ -5845,7 +5849,14 @@ async function quickAddWater(amountMl, dayKey, drinkType, opts) {
     }
     invalidateWeek('water');
   } catch (err) {
-    if (err && err.sessionEnded) return; // signed out meanwhile: state.water is the next account's
+    if (err && err.sessionEnded) {
+      // Signed out meanwhile: state.water is the next account's. The glass goes
+      // back to queued (not live) under its own account's key, so that account's
+      // next flushWaterQueue sends it; left live, it waited for a reload. Its
+      // idemKey makes it one glass if this POST did land.
+      storeWaterQueue(loadWaterQueue(queueKey).map((y) => (y.id === tempId ? glass : y)), queueKey);
+      return;
+    }
     unqueue();
     if (offlineError(err)) {
       // Keep the glass on the card and on this phone; 'online' or the retry sends it.
@@ -6160,12 +6171,12 @@ function showFoodLoader(foodName) {
 
 /* The instant to file an entry under, from a picked day. Today keeps the real
    clock time so the day's list stays in order and shows a sensible one. A past
-   day gets local noon: the server re-derives the date in the user's own zone,
-   and noon is the one hour that lands on the same day whatever that zone is. */
+   day gets its noon in the ACCOUNT's zone (noonIn, app-logic.js): the server
+   re-derives the date there, and the device's noon is another day for a phone
+   12+ hours from the account. */
 function loggedAtFor(dayKey) {
   if (!dayKey || dayKey === todayKey()) return new Date().toISOString();
-  const [y, m, d] = dayKey.split('-').map(Number);
-  return new Date(y, m - 1, d, 12, 0, 0).toISOString();
+  return noonIn(dayKey, state.user && state.user.timezone);
 }
 
 /* Sleep and mood: paint, POST, and on no connection or a 5xx (Render waking)
@@ -7218,6 +7229,8 @@ function openAddFood(opts) {
           foodName: foodName,
           quantityGrams: grams,
           pieces,
+          // The label's own piece weight: `grams` is already rounded and held to 10..2000.
+          pieceGrams: pieces && pieceGrams ? pieceGrams : null,
           mealType: mealType,
           mealSlot: slotSeg.get(),
           kcal: kcalRaw != null ? Math.round(kcalRaw) : null,
@@ -7416,6 +7429,20 @@ function openEditFood(entry) {
     value: String(entry.quantityGrams || ''),
     'aria-label': 'Amount in grams',
   });
+  // An entry logged by the count edits by the count: the grams follow it on the
+  // server, by the entry's own piece weight.
+  const count = entry.pieces
+    ? h('input', {
+        type: 'number',
+        class: 'gb-input',
+        inputmode: 'numeric',
+        min: '1',
+        max: '30',
+        step: '1',
+        value: String(entry.pieces),
+        'aria-label': 'Amount in pieces',
+      })
+    : null;
   const kcal = h('input', {
     type: 'number',
     class: 'gb-input',
@@ -7490,13 +7517,20 @@ function openEditFood(entry) {
       ),
       h('div', { class: 'gb-food-field' }, h('span', { class: 'gb-field-label' }, 'Slot'), slot.node),
       field('Food', name),
+      count && field('Count', h('div', { class: 'gb-affix' }, count, h('span', { class: 'gb-affix-unit' }, 'pcs'))),
       h(
         'div',
         { class: 'gb-food-pair' },
         field('Amount', h('div', { class: 'gb-affix' }, grams, h('span', { class: 'gb-affix-unit' }, 'g'))),
         field('Calories', h('div', { class: 'gb-affix' }, kcal, h('span', { class: 'gb-affix-unit' }, 'kcal')))
       ),
-      h('div', { class: 'gb-field-hint gb-food-hint' }, 'Change the grams alone and the calories follow.'),
+      h(
+        'div',
+        { class: 'gb-field-hint gb-food-hint' },
+        count
+          ? 'Change the count or the grams alone and the calories follow.'
+          : 'Change the grams alone and the calories follow.'
+      ),
       star
     ),
     primary: 'Save',
@@ -7512,6 +7546,11 @@ function openEditFood(entry) {
         grams.focus();
         throw new Error('Amount must be 10 to 2000 grams.');
       }
+      const n = count ? Math.round(Number(count.value)) : null;
+      if (count && (!Number.isFinite(n) || n < 1 || n > 30)) {
+        count.focus();
+        throw new Error('Count must be 1 to 30 pieces.');
+      }
       const k = Math.round(Number(kcal.value));
       if (!Number.isFinite(k) || k < 1 || k > 5000) {
         kcal.focus();
@@ -7523,8 +7562,11 @@ function openEditFood(entry) {
       }
       const body = { foodName, mealType: meal.get(), mealSlot: slot.get(), date: day.value || entry.logDate };
       if (g !== entry.quantityGrams) body.quantityGrams = g;
-      // Unchanged calories with new grams: let the server rescale them.
-      if (k !== entry.kcalEstimated || g === entry.quantityGrams) body.kcal = k;
+      // Sent with new grams too: the count stays and its piece weight is re-weighed.
+      if (count) body.pieces = n;
+      // Unchanged calories with a new amount: let the server rescale them.
+      const amountChanged = g !== entry.quantityGrams || (count && n !== entry.pieces);
+      if (k !== entry.kcalEstimated || !amountChanged) body.kcal = k;
       const updated = await api('/api/food/entries/' + encodeURIComponent(entry.id), {
         method: 'PUT',
         body: JSON.stringify(body),

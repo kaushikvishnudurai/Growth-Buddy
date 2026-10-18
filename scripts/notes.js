@@ -2097,16 +2097,14 @@ function ScreenNotes({
     if (words.length) setTimeout(() => revealMatch(ed.area, words), 90);
 
     // Unsaved edits from a reload or another device, unless typing here began
-    // first. A draft older than the note itself is stale (saved over since).
+    // first. No age test: a title or body save deletes the draft on the server
+    // (NoteService.update), so one that is still there was never saved over.
+    // Comparing it with note.updatedAt dropped it after a pin, archive or colour
+    // change, which bump updatedAt and rightly keep the draft.
     if (onGetEditDraft) {
       onGetEditDraft(note.id)
         .then((d) => {
           if (!d || editTouched) return;
-          if (note.updatedAt && d.updatedAt && new Date(d.updatedAt) < new Date(note.updatedAt)) {
-            editStored = true;
-            dropEdit();
-            return;
-          }
           editStored = true;
           title.value = d.title || '';
           ed.area.innerHTML = sanitize(d.body || '');

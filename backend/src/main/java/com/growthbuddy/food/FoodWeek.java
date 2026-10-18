@@ -324,6 +324,11 @@ public class FoodWeek {
         return 100;
     }
 
+    /** A counted portion's total grams, held to the column's 10..2000. */
+    static int countedGrams(double grams) {
+        return (int) Math.max(10, Math.min(2000, Math.round(grams)));
+    }
+
     static int[] guess(String name, int grams) {
         double[] per100 = UNKNOWN;
         for (Map.Entry<String, double[]> en : PER_100G.entrySet()) {
@@ -385,7 +390,7 @@ public class FoodWeek {
                 if (e.getCarbsG() == null) e.setCarbsG(g[1]);
                 if (e.getFatG() == null) e.setFatG(g[2]);
                 if (e.getFiberG() == null) e.setFiberG(g[3]);
-                entries.setNutrientsIfMissing(e.getId(), g[0], g[1], g[2], g[3]);
+                entries.setNutrientsIfMissing(e.getId(), e.getFoodName(), e.getQuantityGrams(), g[0], g[1], g[2], g[3]);
                 filled++;
             }
         } catch (Exception ex) {

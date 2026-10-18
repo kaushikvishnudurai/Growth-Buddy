@@ -82,6 +82,14 @@ public class FoodEntry {
     @Column(name = "pieces")
     private Integer pieces;
 
+    /**
+     * One piece's grams as logged (label, AI or table); null when weighed or from
+     * before the column. A count edit scales by it, not by quantityGrams / pieces,
+     * which the 10..2000 clamp and rounding bend.
+     */
+    @Column(name = "piece_grams")
+    private Double pieceGrams;
+
     @Column(name = "logged_at", nullable = false)
     private Instant loggedAt;
 

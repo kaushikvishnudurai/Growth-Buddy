@@ -19,6 +19,7 @@ import {
   sameZone,
   firstRunSteps,
   pushAskDue,
+  noonIn,
   SAVED_ON_PHONE,
   savedLocallyMessage,
 } from './app-logic.js';
@@ -424,6 +425,21 @@ await test('push is asked once, at a timed save, only when it can help', () => {
   assert.equal(pushAskDue({ ...due, supported: false }), false, 'no notifications here');
   assert.equal(pushAskDue({ ...due, subscribed: true }), false, 'already on');
   assert.equal(pushAskDue({ ...due, permission: 'denied' }), false, 'already refused');
+});
+
+await test('a backdated entry is filed at noon of that day in the account zone', () => {
+  // A phone in LA, an account in Kolkata: the device's noon on the 3rd is 00:30
+  // on the 4th in Kolkata, so the server filed the meal under the 4th.
+  assert.equal(noonIn('2026-03-03', 'Asia/Kolkata'), '2026-03-03T06:30:00.000Z');
+  assert.equal(noonIn('2026-03-03', 'America/Los_Angeles'), '2026-03-03T20:00:00.000Z');
+  assert.equal(noonIn('2026-07-03', 'America/Los_Angeles'), '2026-07-03T19:00:00.000Z', 'summer time');
+  assert.equal(noonIn('2026-03-03', 'Pacific/Kiritimati'), '2026-03-02T22:00:00.000Z', 'UTC+14');
+  // An unknown id: the device's noon, not a throw.
+  assert.equal(noonIn('2026-03-03', 'Not/AZone'), new Date(2026, 2, 3, 12).toISOString());
+  for (const zone of ['Asia/Kolkata', 'America/Los_Angeles', 'Pacific/Kiritimati', 'Pacific/Pago_Pago']) {
+    const day = new Intl.DateTimeFormat('en-CA', { timeZone: zone }).format(new Date(noonIn('2026-11-01', zone)));
+    assert.equal(day, '2026-11-01', zone);
+  }
 });
 
 if (failures) {

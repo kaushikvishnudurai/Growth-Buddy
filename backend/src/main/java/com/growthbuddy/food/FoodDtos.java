@@ -28,14 +28,16 @@ interface FoodEntryRepository extends JpaRepository<FoodEntry, UUID> {
      * Fills an estimate in place. An UPDATE, not save(): the entity was read
      * before a seconds-long AI call, and merging it back would re-insert an entry
      * the user deleted meanwhile. "is null" keeps a parallel estimate from
-     * overwriting this one.
+     * overwriting this one; the name and grams it was made for skip a row the
+     * user edited during the call (its nutrients would be the old portion's).
      */
     @org.springframework.transaction.annotation.Transactional
     @org.springframework.data.jpa.repository.Modifying
     @Query("update FoodEntry e set e.proteinG = coalesce(e.proteinG, :p), e.carbsG = coalesce(e.carbsG, :c),"
-            + " e.fatG = coalesce(e.fatG, :f), e.fiberG = coalesce(e.fiberG, :fi) where e.id = :id")
-    int setNutrientsIfMissing(@Param("id") UUID id, @Param("p") int p, @Param("c") int c,
-            @Param("f") int f, @Param("fi") int fi);
+            + " e.fatG = coalesce(e.fatG, :f), e.fiberG = coalesce(e.fiberG, :fi)"
+            + " where e.id = :id and e.foodName = :name and e.quantityGrams = :grams")
+    int setNutrientsIfMissing(@Param("id") UUID id, @Param("name") String name, @Param("grams") int grams,
+            @Param("p") int p, @Param("c") int c, @Param("f") int f, @Param("fi") int fi);
 
     @Query("select coalesce(sum(e.kcalEstimated), 0) from FoodEntry e where e.userId = :userId and e.logDate = :logDate")
     int totalCaloriesForDay(@Param("userId") UUID userId, @Param("logDate") LocalDate logDate);
@@ -160,13 +162,28 @@ record AddFoodEntryRequest(
         @Min(0) @Max(900) Integer fatG,
         @Min(0) @Max(900) Integer fiberG,
         @Min(0) @Max(900) Integer sugarG,
-        @Min(0) @Max(50000) Integer sodiumMg) {
+        @Min(0) @Max(50000) Integer sodiumMg,
+        /**
+         * One piece's grams, from a barcode label, with pieces. Kept on the entry
+         * so a count edit scales by it: the quantityGrams sent beside it is
+         * already rounded and held to 10..2000.
+         */
+        @jakarta.validation.constraints.DecimalMin("1") @jakarta.validation.constraints.DecimalMax("2000")
+        Double pieceGrams) {
 
     /** The shape before slots and label nutrients. */
     AddFoodEntryRequest(String foodName, Integer quantityGrams, MealType mealType, PortionSize portionSize,
             RiceBase riceBase, String note, Instant loggedAt, Integer kcal, Integer pieces) {
         this(foodName, quantityGrams, mealType, portionSize, riceBase, note, loggedAt, kcal, pieces,
                 null, null, null, null, null, null, null);
+    }
+
+    /** The shape before a label's piece weight. */
+    AddFoodEntryRequest(String foodName, Integer quantityGrams, MealType mealType, PortionSize portionSize,
+            RiceBase riceBase, String note, Instant loggedAt, Integer kcal, Integer pieces, MealSlot mealSlot,
+            Integer proteinG, Integer carbsG, Integer fatG, Integer fiberG, Integer sugarG, Integer sodiumMg) {
+        this(foodName, quantityGrams, mealType, portionSize, riceBase, note, loggedAt, kcal, pieces, mealSlot,
+                proteinG, carbsG, fatG, fiberG, sugarG, sodiumMg, null);
     }
 }
 
@@ -182,7 +199,11 @@ record UpdateFoodEntryRequest(
         LocalDate date,
         @Size(max = 255) String note,
         MealSlot mealSlot,
-        /** A new count; with no quantityGrams the grams follow it. New grams without it clear the count. */
+        /**
+         * A new count; with no quantityGrams the grams follow it (by the entry's own
+         * piece weight). With quantityGrams, both are kept and the piece weight is
+         * their quotient. New grams without it clear the count.
+         */
         @Min(1) @Max(30) Integer pieces) {
 
     UpdateFoodEntryRequest(String foodName, Integer quantityGrams, Integer kcal, MealType mealType,
