@@ -22,7 +22,7 @@ import org.hibernate.type.SqlTypes;
 // under their own locks (ui_prefs, xp_total, progress_json, status), and a
 // full-row save from a stale copy used to put the old values back.
 @org.hibernate.annotations.DynamicUpdate
-@jakarta.persistence.EntityListeners(com.growthbuddy.common.DeliveryCache.Listener.class)
+@jakarta.persistence.EntityListeners({com.growthbuddy.common.DeliveryCache.Listener.class, UserClock.Forget.class})
 @Table(name = "users")
 @Getter
 @Setter
