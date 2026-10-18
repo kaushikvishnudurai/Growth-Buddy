@@ -62,7 +62,8 @@ CREATE TABLE IF NOT EXISTS users (
   ui_prefs JSON         NULL,
   deletion_requested_at DATETIME(6) NULL,                 -- "delete my account" pressed; purged 7 days later (AccountDeletionJob)
   PRIMARY KEY (id),
-  UNIQUE KEY uq_users_email (email)
+  UNIQUE KEY uq_users_email (email),
+  KEY ix_users_whatsapp (whatsapp_number)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS password_credentials (
@@ -156,6 +157,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   KEY ix_tasks_user_due (user_id, due_at),
   KEY ix_tasks_goal (goal_id),
   KEY ix_tasks_user_done (user_id, done),
+  KEY ix_tasks_user_deleted (user_id, deleted_at, created_at),
+  KEY ix_tasks_done_deleted (done, deleted_at, user_id, done_at),
   CONSTRAINT fk_tasks_user     FOREIGN KEY (user_id)     REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -168,6 +171,7 @@ CREATE TABLE IF NOT EXISTS task_completion_history (
   due_at          TIMESTAMP    NULL,
   PRIMARY KEY (id),
   KEY ix_task_hist_user_task_time (user_id, task_id, changed_at),
+  KEY ix_task_hist_user_time (user_id, changed_at),
   CONSTRAINT fk_task_hist_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   CONSTRAINT fk_task_hist_task FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -486,6 +490,7 @@ CREATE TABLE IF NOT EXISTS circles (
   created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY ix_circles_created_by (created_by),
+  KEY ix_circles_join_code (join_code),
   CONSTRAINT fk_circles_creator FOREIGN KEY (created_by) REFERENCES users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -598,6 +603,8 @@ CREATE TABLE IF NOT EXISTS notifications (
   created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY ix_notifications_user (user_id, read_at, created_at),
+  KEY ix_notifications_user_time (user_id, created_at),
+  KEY ix_notifications_related (related_id),
   CONSTRAINT fk_notifications_user
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -961,7 +968,8 @@ CREATE TABLE IF NOT EXISTS `reminder_dispatch_log` (
   `snooze_of` char(36) DEFAULT NULL,
   `attempts` int NOT NULL DEFAULT 0,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `ux_rem_dispatch_unique` (`reminder_id`,`occurrence_date`)
+  UNIQUE KEY `ux_rem_dispatch_unique` (`reminder_id`,`occurrence_date`),
+  KEY `ix_rem_dispatch_status_time` (`status`,`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ;
 
@@ -990,7 +998,8 @@ CREATE TABLE IF NOT EXISTS `push_subscriptions` (
   `p256dh` varchar(255) NOT NULL,
   `user_id` char(36) NOT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `ux_push_endpoint_hash` (`endpoint_hash`)
+  UNIQUE KEY `ux_push_endpoint_hash` (`endpoint_hash`),
+  KEY `ix_push_user` (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ;
 

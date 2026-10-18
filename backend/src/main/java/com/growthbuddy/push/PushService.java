@@ -135,7 +135,6 @@ public class PushService {
      * a stale endpoint (404/410) is pruned; other failures are logged, not thrown.
      * Returns the number of devices successfully delivered to.
      */
-    @Transactional
     public int sendToUser(UUID userId, String title, String body, String url) {
         return sendToUser(userId, title, body, url, java.util.Map.of());
     }
@@ -146,13 +145,11 @@ public class PushService {
      * and 0 comes back; the bell card was already recorded by the caller's
      * {@code NotificationService.publish}, which never looks at the mute.
      */
-    @Transactional
     public int sendToUser(UUID userId, NotifyCategory category, String title, String body, String url) {
         return sendToUser(userId, category, title, body, url, java.util.Map.of());
     }
 
     /** Mutable category plus the service worker's extra fields (a habit reminder's Done ticket). */
-    @Transactional
     public int sendToUser(UUID userId, NotifyCategory category, String title, String body, String url,
                           java.util.Map<String, String> extra) {
         if (!configured || isMuted(userId, category)) return 0;
@@ -171,7 +168,8 @@ public class PushService {
      * The same, with extra string fields for the service worker — a reminder's
      * {@code tag} and Snooze ticket (see {@code public/push-handlers.js}).
      */
-    @Transactional
+    // Not @Transactional: a connection held across the blocking HTTP sends below starved the
+    // 8-connection pool when 16 reminder senders fired in the same minute. Each delete is its own.
     public int sendToUser(UUID userId, String title, String body, String url, java.util.Map<String, String> extra) {
         if (!configured) return 0;
         List<PushSubscription> subs = repo.findByUserId(userId);

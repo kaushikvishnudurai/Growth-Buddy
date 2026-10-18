@@ -720,3 +720,45 @@ DELETE p FROM push_subscriptions p JOIN push_subscriptions q
    AND (q.created_at > p.created_at OR (q.created_at = p.created_at AND q.id > p.id));
 ALTER TABLE push_subscriptions MODIFY endpoint_hash CHAR(64) NOT NULL;
 ALTER TABLE push_subscriptions ADD UNIQUE KEY ux_push_endpoint_hash (endpoint_hash);
+
+-- Query indexes (2026-10-18): each one backs a lookup that was a full scan —
+-- push sends by user, the per-minute stuck-snooze sweep, the boot task list and
+-- hourly sweep, join by code, the bell's newest-first page, report windows,
+-- WhatsApp webhook by number. Same information_schema guard as ix_tasks_goal
+-- above: safe to re-run on MySQL and TiDB, touches no row.
+SET @gb_ix := (SELECT IF(COUNT(*) = 0, 'ALTER TABLE push_subscriptions ADD INDEX ix_push_user (user_id)', 'SELECT 1')
+               FROM information_schema.statistics
+               WHERE table_schema = DATABASE() AND table_name = 'push_subscriptions' AND index_name = 'ix_push_user');
+PREPARE gb_stmt FROM @gb_ix; EXECUTE gb_stmt; DEALLOCATE PREPARE gb_stmt;
+SET @gb_ix := (SELECT IF(COUNT(*) = 0, 'ALTER TABLE reminder_dispatch_log ADD INDEX ix_rem_dispatch_status_time (status, created_at)', 'SELECT 1')
+               FROM information_schema.statistics
+               WHERE table_schema = DATABASE() AND table_name = 'reminder_dispatch_log' AND index_name = 'ix_rem_dispatch_status_time');
+PREPARE gb_stmt FROM @gb_ix; EXECUTE gb_stmt; DEALLOCATE PREPARE gb_stmt;
+SET @gb_ix := (SELECT IF(COUNT(*) = 0, 'ALTER TABLE tasks ADD INDEX ix_tasks_user_deleted (user_id, deleted_at, created_at)', 'SELECT 1')
+               FROM information_schema.statistics
+               WHERE table_schema = DATABASE() AND table_name = 'tasks' AND index_name = 'ix_tasks_user_deleted');
+PREPARE gb_stmt FROM @gb_ix; EXECUTE gb_stmt; DEALLOCATE PREPARE gb_stmt;
+SET @gb_ix := (SELECT IF(COUNT(*) = 0, 'ALTER TABLE tasks ADD INDEX ix_tasks_done_deleted (done, deleted_at, user_id, done_at)', 'SELECT 1')
+               FROM information_schema.statistics
+               WHERE table_schema = DATABASE() AND table_name = 'tasks' AND index_name = 'ix_tasks_done_deleted');
+PREPARE gb_stmt FROM @gb_ix; EXECUTE gb_stmt; DEALLOCATE PREPARE gb_stmt;
+SET @gb_ix := (SELECT IF(COUNT(*) = 0, 'ALTER TABLE circles ADD INDEX ix_circles_join_code (join_code)', 'SELECT 1')
+               FROM information_schema.statistics
+               WHERE table_schema = DATABASE() AND table_name = 'circles' AND index_name = 'ix_circles_join_code');
+PREPARE gb_stmt FROM @gb_ix; EXECUTE gb_stmt; DEALLOCATE PREPARE gb_stmt;
+SET @gb_ix := (SELECT IF(COUNT(*) = 0, 'ALTER TABLE notifications ADD INDEX ix_notifications_user_time (user_id, created_at)', 'SELECT 1')
+               FROM information_schema.statistics
+               WHERE table_schema = DATABASE() AND table_name = 'notifications' AND index_name = 'ix_notifications_user_time');
+PREPARE gb_stmt FROM @gb_ix; EXECUTE gb_stmt; DEALLOCATE PREPARE gb_stmt;
+SET @gb_ix := (SELECT IF(COUNT(*) = 0, 'ALTER TABLE notifications ADD INDEX ix_notifications_related (related_id)', 'SELECT 1')
+               FROM information_schema.statistics
+               WHERE table_schema = DATABASE() AND table_name = 'notifications' AND index_name = 'ix_notifications_related');
+PREPARE gb_stmt FROM @gb_ix; EXECUTE gb_stmt; DEALLOCATE PREPARE gb_stmt;
+SET @gb_ix := (SELECT IF(COUNT(*) = 0, 'ALTER TABLE task_completion_history ADD INDEX ix_task_hist_user_time (user_id, changed_at)', 'SELECT 1')
+               FROM information_schema.statistics
+               WHERE table_schema = DATABASE() AND table_name = 'task_completion_history' AND index_name = 'ix_task_hist_user_time');
+PREPARE gb_stmt FROM @gb_ix; EXECUTE gb_stmt; DEALLOCATE PREPARE gb_stmt;
+SET @gb_ix := (SELECT IF(COUNT(*) = 0, 'ALTER TABLE users ADD INDEX ix_users_whatsapp (whatsapp_number)', 'SELECT 1')
+               FROM information_schema.statistics
+               WHERE table_schema = DATABASE() AND table_name = 'users' AND index_name = 'ix_users_whatsapp');
+PREPARE gb_stmt FROM @gb_ix; EXECUTE gb_stmt; DEALLOCATE PREPARE gb_stmt;

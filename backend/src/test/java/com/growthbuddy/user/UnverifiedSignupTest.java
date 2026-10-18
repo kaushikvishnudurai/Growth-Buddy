@@ -53,7 +53,7 @@ class UnverifiedSignupTest {
         PasswordCredential c = new PasswordCredential();
         c.setUserId(user.getId());
         c.setPasswordHash(new BCryptPasswordEncoder().encode(PASSWORD));
-        when(users.findByEmailIgnoreCase(EMAIL)).thenReturn(Optional.of(user));
+        when(users.findByEmail(EMAIL)).thenReturn(Optional.of(user));
         when(creds.findById(user.getId())).thenReturn(Optional.of(c));
         when(limiter.allow(anyString(), anyInt(), anyLong())).thenReturn(true);
         when(limiter.peek(anyString(), anyInt(), anyLong())).thenReturn(true);

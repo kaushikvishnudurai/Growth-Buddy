@@ -26,7 +26,11 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     /** Users who opted into a progress digest (frequency other than "off"). */
     List<User> findByDigestFrequencyNot(String frequency);
 
-    Optional<User> findByEmailIgnoreCase(String email);
+    /**
+     * Exact match on uq_users_email; callers pass normalize()d (lowercased) input and the
+     * column is _ci anyway. IgnoreCase generated upper(email)=upper(?), a full scan per login.
+     */
+    Optional<User> findByEmail(String email);
 
     /** Accounts whose deletion grace period has run out (AccountDeletionJob). */
     @Query("select u.id from User u where u.deletionRequestedAt is not null and u.deletionRequestedAt < :cutoff")

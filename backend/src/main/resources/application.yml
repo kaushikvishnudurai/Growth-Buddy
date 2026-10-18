@@ -68,6 +68,14 @@ spring:
         # select per owner: 1 + N per reminder list and per scheduler snapshot
         # refresh (CRB-7). Batched, it is one IN (...) per 100 owners.
         default_batch_fetch_size: 100
+        # Ids are set in @PrePersist, so saves in a loop (health sync, habit reorder)
+        # go out as one JDBC batch instead of a round trip each to remote TiDB.
+        # ponytail: no rewriteBatchedStatements on the URL — it turns MoneyLedger's
+        # INSERT IGNORE counts into -2 (the CSV import would report 0 imported).
+        jdbc:
+          batch_size: 50
+        order_inserts: true
+        order_updates: true
     open-in-view: false
 
   task:

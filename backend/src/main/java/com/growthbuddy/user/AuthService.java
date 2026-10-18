@@ -185,7 +185,7 @@ public class AuthService {
     @Transactional
     public AuthUserResponse signup(SignupRequest req) {
         String email = normalize(req.email());
-        User existing = users.findByEmailIgnoreCase(email).orElse(null);
+        User existing = users.findByEmail(email).orElse(null);
         if (existing != null) {
             // Signed up before and never typed the code: with the SAME password
             // that is the owner back again, so send a fresh code and answer like a
@@ -243,7 +243,7 @@ public class AuthService {
         // row — so an unknown address is throttled exactly like a real one and
         // the lockout can't be used to ask which emails have accounts.
         loginGuard.check("login:" + email);
-        User user = users.findByEmailIgnoreCase(email).orElse(null);
+        User user = users.findByEmail(email).orElse(null);
         PasswordCredential c = user == null ? null : creds.findById(user.getId()).orElse(null);
         if (c == null || !bcrypt.matches(req.password(), c.getPasswordHash())) {
             loginGuard.recordFailure("login:" + email);
@@ -378,7 +378,7 @@ public class AuthService {
         // An OTP is six digits and this endpoint hands back a session, so it is a
         // login by another name — same backoff.
         loginGuard.check("otp:" + email);
-        User user = users.findByEmailIgnoreCase(email).orElse(null);
+        User user = users.findByEmail(email).orElse(null);
         EmailVerificationToken match = user == null ? null : findMatchingToken(
                 verifyTokens.findByUserIdAndConsumedAtIsNull(user.getId()),
                 req.otp(), EmailVerificationToken::getExpiresAt, EmailVerificationToken::getTokenHash);
@@ -396,7 +396,7 @@ public class AuthService {
 
     @Transactional
     public void resendVerification(EmailOnlyRequest req) {
-        users.findByEmailIgnoreCase(normalize(req.email())).ifPresent(u -> {
+        users.findByEmail(normalize(req.email())).ifPresent(u -> {
             // Over either cap: skip silently; a refusal would say the account
             // exists. The address cap is spent only by a mail that goes out.
             if (!u.isEmailVerified() && verificationOtpAllowed(u) && takeOtpMail(u.getEmail())) {
@@ -412,7 +412,7 @@ public class AuthService {
         // Over the address cap: skip silently, as resendVerification does — same
         // answer for an unknown address, and only a real mail spends the budget,
         // so a stranger's requests for an address can't lock its owner out.
-        users.findByEmailIgnoreCase(normalize(req.email())).ifPresent(u -> {
+        users.findByEmail(normalize(req.email())).ifPresent(u -> {
             if (takeOtpMail(u.getEmail())) {
                 issuePasswordResetOtp(u);
             }
@@ -430,7 +430,7 @@ public class AuthService {
         String email = normalize(req.email());
         // Generic error for unknown email or wrong code (no enumeration oracle).
         loginGuard.check("reset:" + email);
-        User user = users.findByEmailIgnoreCase(email).orElse(null);
+        User user = users.findByEmail(email).orElse(null);
         PasswordResetToken match = user == null ? null : findMatchingToken(
                 resetTokens.findByUserIdAndConsumedAtIsNull(user.getId()),
                 req.otp(), PasswordResetToken::getExpiresAt, PasswordResetToken::getTokenHash);
@@ -726,7 +726,7 @@ public class AuthService {
         if (newEmail.equalsIgnoreCase(user.getEmail())) {
             throw ApiException.badRequest("That is already your email.");
         }
-        if (users.findByEmailIgnoreCase(newEmail).isPresent()) {
+        if (users.findByEmail(newEmail).isPresent()) {
             throw new ApiException(org.springframework.http.HttpStatus.CONFLICT,
                     "Another account already uses that email.");
         }
@@ -766,7 +766,7 @@ public class AuthService {
         }
         loginGuard.recordSuccess(key);
         String newEmail = match.getNewEmail();
-        if (users.findByEmailIgnoreCase(newEmail).filter(u -> !u.getId().equals(userId)).isPresent()) {
+        if (users.findByEmail(newEmail).filter(u -> !u.getId().equals(userId)).isPresent()) {
             throw new ApiException(org.springframework.http.HttpStatus.CONFLICT,
                     "Another account started using that email in the meantime.");
         }

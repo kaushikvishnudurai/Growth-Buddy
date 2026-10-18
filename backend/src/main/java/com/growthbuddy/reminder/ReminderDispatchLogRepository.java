@@ -41,8 +41,7 @@ public interface ReminderDispatchLogRepository extends JpaRepository<ReminderDis
     /**
      * Snooze claims still 'pending' since before {@code before}: the instance that
      * claimed them died (or its send failed) before it could mark them. The sweeper's read.
-     * ponytail: a scan on status — the table holds 30 days (DataCleanupJob); index
-     * (status, created_at) if this ever shows up slow.
+     * Served by ix_rem_dispatch_status_time (status, created_at).
      */
     @Query("""
             select l from ReminderDispatchLog l

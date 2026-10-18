@@ -51,7 +51,7 @@ class SignupRaceTest {
         ReflectionTestUtils.setField(auth, "emailChangeTokens", changeTokens);
         when(limiter.allow(anyString(), anyInt(), anyLong())).thenReturn(true);
         when(limiter.peek(anyString(), anyInt(), anyLong())).thenReturn(true);
-        when(users.findByEmailIgnoreCase(anyString())).thenReturn(Optional.empty());
+        when(users.findByEmail(anyString())).thenReturn(Optional.empty());
         TransactionSynchronizationManager.initSynchronization(); // as inside @Transactional
     }
 
