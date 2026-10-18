@@ -11587,7 +11587,7 @@ function ScreenHabits() {
         },
       },
       h(
-        'h3',
+        'h2',
         {
           style: {
             fontFamily: 'var(--font-display)',

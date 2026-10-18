@@ -166,12 +166,14 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--space-3);
   /* The bottom padding is a variable because the header panels hang below it
      and need to clear it. Anchored to .gb-head-actions they get the right edge
      for free, but the actions row ends inside this padding — so the gap below
      is measured, not guessed. Redeclare it anywhere this padding changes. */
   --head-pad-b: 12px;
-  padding: max(env(safe-area-inset-top, 0px), 22px) var(--space-5) var(--head-pad-b);
+  /* --gutter, so the title lines up with the cards under it (16px on a phone). */
+  padding: max(env(safe-area-inset-top, 0px), 22px) var(--gutter) var(--head-pad-b);
   flex: none;
 }
 /* Premium on at boot, its stylesheet (loaded on demand) not in yet: show
@@ -2723,7 +2725,7 @@ body:has(.is-thinking, .gb-thinking)::after {
   line-height: 1.3;
 }
 .gb-insight-text {
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   color: var(--fg2);
   margin-top: 2px;
   line-height: 1.45;
@@ -3707,9 +3709,18 @@ button.gb-seat:disabled {
 }
 .gb-form-check {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
+  min-height: 44px;
   font-size: var(--text-sm);
+  cursor: pointer;
+}
+.gb-form-check > input[type='checkbox'] {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--brand-fill);
 }
 .gb-form-check small {
   display: block;
@@ -4408,7 +4419,7 @@ button.gb-seat:disabled {
 /* The one-thing card's reason line, and its button never squeezed by a long title. */
 .gb-coach-why {
   margin-top: 2px;
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   color: var(--fg2);
 }
 .gb-coach-head > .gb-btn {
@@ -7549,7 +7560,7 @@ span.gb-time.gb-input {
 .gb-legend-title {
   flex-basis: 100%;
   margin: 0;
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   font-weight: 500;
   line-height: 1.45;
   color: var(--fg3);
@@ -7783,7 +7794,10 @@ span.gb-time.gb-input {
   overflow-x: hidden;
   overscroll-behavior: contain;
   min-height: 0;
-  padding-right: 2px;
+  /* The overflow clips the 3px field halo and the 2px+2px focus ring at the
+     edges; 4px of room inside, given back outside, so nothing moves. */
+  padding: 4px;
+  margin: -4px;
 }
 .gb-modal-body::-webkit-scrollbar {
   width: 7px;
@@ -7869,7 +7883,11 @@ span.gb-time.gb-input {
 .gb-btn.gb-notif-snooze,
 .gb-note-label-opt,
 button.gb-tone-chip,
-.gb-agree-del {
+.gb-agree-del,
+.gb-agree-end,
+.gb-sleep-guess,
+.gb-goal-delete-btn,
+.gb-note-opener {
   position: relative;
 }
 .gb-iconbtn::before,
@@ -7907,7 +7925,11 @@ button.gb-tone-chip,
 .gb-btn.gb-notif-snooze::before,
 .gb-note-label-opt::before,
 button.gb-tone-chip::before,
-.gb-agree-del::before {
+.gb-agree-del::before,
+.gb-agree-end::before,
+.gb-sleep-guess::before,
+.gb-goal-delete-btn::before,
+.gb-note-opener::before {
   content: '';
   position: absolute;
   top: 50%;
@@ -9678,6 +9700,16 @@ button.gb-tone-chip::before,
     max-width: 600px;
   }
 }
+/* 768px+ (a portrait tablet): 600 left 84px of dead canvas each side and a
+   380px dialog. The frame takes ~720 and dialogs the desktop 480. */
+@media (min-width: 768px) and (max-width: 1023.98px) and (min-height: 560px) {
+  .gb-app {
+    max-width: 720px;
+  }
+  .gb-modal {
+    max-width: 480px;
+  }
+}
 
 /* ---- Desktop content-screen layout ---- */
 @media (min-width: 1024px) {
@@ -9744,8 +9776,22 @@ button.gb-tone-chip::before,
     column-gap: 28px;
     align-items: start;
     /* The 40px left margin again on the right: a bare 1100px ran the cards flush
-       to the viewport's edge in a 1032px scroller. */
-    max-width: min(1100px, 100% - 80px);
+       to the viewport's edge in a 1032px scroller. 1180: the dashboard cap. */
+    max-width: min(1180px, 100% - 80px);
+  }
+  /* One short sentence per insight ran 900-1040px wide: lay them out in tiles. */
+  .gb-health-insight-list {
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  }
+  .gb-insight-card {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    overflow: hidden;
+  }
+  /* Every tile ruled on top, pulled up 1px so the first line's rule is clipped. */
+  .gb-insight-card > .gb-insight-row {
+    margin-top: -1px;
+    border-top: 1px solid var(--surface-3);
   }
   .gb-food-screen > .gb-dash-block:last-child {
     grid-column: 1 / -1;
@@ -9849,7 +9895,6 @@ button.gb-tone-chip::before,
 
 /* Small hint text under labels */
 .gb-field-hint {
-  font-size: var(--text-2xs);
   color: var(--fg3);
   margin-bottom: 6px;
   margin-top: -4px;
@@ -10192,7 +10237,8 @@ select.gb-input {
   margin-bottom: 14px;
 }
 .gb-field-hint {
-  font-size: var(--text-xs);
+  /* A sentence, so 14px: 12px stays for mono metadata. */
+  font-size: var(--text-sm);
   color: var(--fg3);
 }
 /* Family-only despite the generic name (six uses, all in family.js). The 2px
@@ -10220,15 +10266,15 @@ select.gb-input {
   gap: 26px;
   padding-bottom: var(--space-4);
 }
-/* Every other screen root insets its content by 20px — `.gb-dash-block`,
+/* Every other screen root insets its content by --gutter — `.gb-dash-block`,
    `.gb-goal-section`, `.gb-cal-block`, the achievements grid's parent. Family
    was the one screen running flush to the edge of the scroll column, which is
    why its cards read as cramped next to the same cards on Achievements.
    The sticky tab strip is excluded on purpose: it has to stay full-bleed or
    content scrolls visibly through the 20px gutters beside its backdrop. */
 .gb-family > *:not(.gb-family-sectionnav) {
-  padding-left: var(--space-5);
-  padding-right: var(--space-5);
+  padding-left: var(--gutter);
+  padding-right: var(--gutter);
 }
 .gb-family-subhead {
   font-weight: 800;
@@ -11133,7 +11179,7 @@ select.gb-input {
      border makes the boundary deliberate instead of a colour seam. */
   background: var(--surface);
   border-bottom: 1px solid var(--border);
-  padding: var(--space-1) var(--space-5) 10px;
+  padding: var(--space-1) var(--gutter) 10px;
   margin-bottom: 0;
 }
 /* Must come after the rule above, not up in the 1024px block earlier in this
@@ -11567,6 +11613,7 @@ select.gb-input {
   justify-content: space-between;
   gap: var(--space-3);
   flex-wrap: wrap;
+  margin-bottom: var(--space-2);
 }
 .gb-range-toggle {
   display: inline-flex;
@@ -12567,8 +12614,29 @@ textarea:focus-visible,
   /* Half the tools sit past the edge on a phone: the fade says there are more,
      and the end padding lets the last one scroll clear of it. */
   padding-right: 28px;
-  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
-  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - var(--bar-fade)), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - var(--bar-fade)), transparent);
+}
+/* Scrolled to the end there is nothing more: the fade goes with it. Where
+   scroll timelines don't exist the fade just stays. */
+@property --bar-fade {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 28px;
+}
+@keyframes gb-editor-bar-end {
+  90% {
+    --bar-fade: 28px;
+  }
+  to {
+    --bar-fade: 0px;
+  }
+}
+@supports (animation-timeline: scroll()) {
+  .gb-editor-bar {
+    animation: gb-editor-bar-end linear both;
+    animation-timeline: scroll(self inline);
+  }
 }
 .gb-editor-bar::-webkit-scrollbar {
   display: none;
@@ -15524,7 +15592,7 @@ button.gb-tone-chip:focus-visible {
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
-  max-width: 1080px;
+  max-width: 1180px; /* the dashboard cap, with Calendar's */
   margin-inline: auto; /* centred like every capped screen (wide-screen centre line) */
   padding: var(--space-4) var(--gutter) var(--space-8);
 }
@@ -17732,7 +17800,7 @@ button.gb-tl-title {
 
 /* Phone and tablet (< 1024px): one column in the phone order. The zones step
    aside (display: contents) and each block takes its place by `order`. */
-@media (max-width: 1023px) {
+@media (max-width: 1023.98px) {
   .gb-dash--day .gb-day-top,
   .gb-dash--day .gb-day-main,
   .gb-dash--day .gb-day-rest {
@@ -17883,6 +17951,23 @@ button.gb-tl-title {
   }
   .gb-tl {
     padding: var(--space-5) var(--space-5) var(--space-3);
+  }
+}
+/* 1024-1279: the right column is ~284px, and the mic, language and Log it left
+   the field ~80px ("e.g. spe"). The field takes its own line there. */
+@media (min-width: 1024px) and (max-width: 1279.98px) {
+  .gb-dash .gb-dash-qa .gb-card {
+    border-radius: var(--radius-xl);
+  }
+  .gb-dash .gb-dash-qa .gb-quickadd-row {
+    flex-wrap: wrap;
+  }
+  .gb-dash .gb-dash-qa .gb-quickadd-row input.gb-input {
+    flex: 1 1 100%;
+    min-width: 9rem;
+  }
+  .gb-dash .gb-dash-qa .gb-quickadd-row .gb-btn:not(.gb-mic) {
+    margin-left: auto;
   }
 }
 @media (prefers-reduced-motion: reduce) {

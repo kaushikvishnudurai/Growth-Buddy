@@ -23,7 +23,7 @@ Cells are `aspect-ratio: 1` with `max-height: 56px` (a wide tablet card made the
 
 `.is-today:not(.is-selected)` sits after `.has-tasks` / `.is-free` on purpose: same specificity, and written before them today lost its ring on any day with tasks.
 `.is-other-month` days dim by `--fg3` alone (an extra opacity took them to 3.2:1), and the phone badge keeps its 14px with an 11px (`--text-2xs`) digit by giving up padding, not by shrinking the type.
-`-nav-btn` is drawn at 32px with a `::before` overlay making the tap target 44px, and has a `:disabled` style (dimmed, no hover or press).
+`-nav-btn` is drawn at 32px with a `::before` overlay making the tap target 44px (a `-day` cell's `::before` is the grid pitch, cell + gap, so the ~42px phone cells reach 46 without overlapping), and has a `:disabled` style (dimmed, no hover or press).
 The compact sizes switch on `@container gb-main (max-width: 40rem)` (the content column, see app.css.md), not a viewport query.
 
 A free day (`.is-free`) is an outline with no fill, and the legend's Free swatch a hollow ring to match; day numbers are Space Mono. A month of green cells out-shouted the days that had something on them.
