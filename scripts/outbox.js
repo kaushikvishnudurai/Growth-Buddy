@@ -86,25 +86,29 @@ export function createOutbox(storage, keyFn) {
   let flushing = null;
   const idMap = new Map(); // temp id -> server id, for ops queued while their create was out
 
-  function list() {
+  // `key`: only for remove(id, key), the account an op was queued under.
+  function list(key = keyFn()) {
     try {
-      const raw = storage.getItem(keyFn());
+      const raw = storage.getItem(key);
       const q = raw ? JSON.parse(raw) : [];
       return Array.isArray(q) ? q.filter((x) => x && x.id && x.method && x.path) : [];
     } catch (_) {
       return [];
     }
   }
-  function store(q) {
+  function store(q, key = keyFn()) {
     try {
-      if (q.length) storage.setItem(keyFn(), JSON.stringify(q));
-      else storage.removeItem(keyFn());
+      if (q.length) storage.setItem(key, JSON.stringify(q));
+      else storage.removeItem(key);
     } catch (_) {
       /* the in-memory copy (CacheStorage's map) still has it this session */
     }
   }
-  function remove(id) {
-    store(list().filter((x) => x.id !== id));
+  /* `key`: the one keyFn() gave when the op was queued. A 401 mid-request signs
+     out before the caller's remove runs; by then keyFn() names the guest queue,
+     and the live op left behind in the account's held its whole queue. */
+  function remove(id, key = keyFn()) {
+    store(list(key).filter((x) => x.id !== id), key);
   }
   function clear() {
     store([]);
@@ -259,5 +263,8 @@ export function createOutbox(storage, keyFn) {
     clear,
     flush,
     size: () => list().filter((x) => !x.live).length,
+    /** An ordinary op with this toggleKey waits: a live request now would flip the
+        server from its pre-queue state, so the caller queues its tap too (the pair cancels). */
+    queuedTwin: (toggleKey) => list().some((x) => !x.live && x.toggleKey === toggleKey),
   };
 }

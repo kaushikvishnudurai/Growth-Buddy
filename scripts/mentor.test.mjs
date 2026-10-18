@@ -30,10 +30,46 @@ for (const s of [
   "I'm thinking of ending my life",
   'self-harm again last night',
   'Everyone would be better off dead without me',
+  'i wanna die',
+  "I don't want to live anymore",
+  'I dont want to live anymore',
+  'I don\u2019t want to be alive',
+  'i want to end it',
+  'wanting to die every day',
+  'kms',
+  'honestly i might kms',
+  'I want to kill myself',
+  'thinking about killing myself',
+  'feeling suicidal',
+  'self harm',
+  'I hurt myself again',
+  'I keep cutting myself',
+  'there is no reason to live',
+  'I just want to end it all',
+  'I want to take my own life',
+  'I wish I was dead',
+  'I do not want to exist',
+  'I cant go on like this',
+  'I hope I dont wake up tomorrow',
+  'I have nothing left to live for',
+  'WANNA DIE',
 ]) {
   assert.ok(crisisMatch(s), s);
 }
-for (const s of ['Plan my day', 'this deadline is killing me', 'I died laughing', '', null]) {
+for (const s of [
+  'Plan my day',
+  'this deadline is killing me',
+  'this traffic is killing me',
+  'I died laughing',
+  'I could kill for a pizza',
+  "I'm dying to try it",
+  'I want to live in Pune',
+  "I don't want to live with my parents",
+  'we should end it early today',
+  'skills and kmsl',
+  '',
+  null,
+]) {
   assert.ok(!crisisMatch(s), String(s));
 }
 

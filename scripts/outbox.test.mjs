@@ -358,4 +358,31 @@ for (const status of [500, 503, 401, 408, 429]) {
   assert.equal(ob.list()[0].live, undefined);
 }
 
+// A 401 mid-request signs out before sendAhead's remove: keyFn() now names the
+// guest queue. Removing by the key the op went in under leaves no live op
+// behind to hold the account's queue when it signs back in.
+{
+  const s = memStorage();
+  let user = 'u1';
+  const ob = createOutbox(s, () => 'gb.outbox.' + user);
+  ob.enqueue({ id: 'q1', method: 'POST', path: '/api/tasks', body: { title: 'a' } });
+  const key = 'gb.outbox.' + user;
+  ob.enqueue({ id: 'w1', method: 'PATCH', path: '/api/tasks/1/toggle', live: true });
+  user = 'guest';
+  ob.remove('w1', key);
+  user = 'u1';
+  assert.deepEqual(ob.list().map((x) => x.id), ['q1'], 'the live op is gone from its own account');
+}
+
+// queuedTwin: an ordinary op with the key waits (the caller queues too); a live one does not count.
+{
+  const { ob } = fresh();
+  ob.enqueue({ id: 'w1', method: 'PATCH', path: '/api/tasks/1/toggle', toggleKey: 'task:1', live: true });
+  assert.equal(ob.queuedTwin('task:1'), false, 'its own live request is not a twin');
+  ob.enqueue({ method: 'PATCH', path: '/api/tasks/2/toggle', body: { done: true }, toggleKey: 'task:2' });
+  assert.equal(ob.queuedTwin('task:2'), true);
+  assert.equal(ob.enqueue({ method: 'PATCH', path: '/api/tasks/2/toggle', body: { done: false }, toggleKey: 'task:2' }), 'cancelled', 'the queued untick cancels the queued tick');
+  assert.equal(ob.queuedTwin('task:2'), false);
+}
+
 console.log('outbox: all tests passed');

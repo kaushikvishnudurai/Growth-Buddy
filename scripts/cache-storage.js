@@ -236,6 +236,34 @@ try {
   /* localStorage unavailable — fine, we don't rely on it */
 }
 
+/* Every tab has its own `mem`. The write queues (the outbox, the water queue,
+   Money's pending ledger) are read, changed and written back whole, so a tab
+   holding a stale copy wrote it back without the op another tab had queued.
+   A write to one of them is broadcast, and every other tab takes it into its
+   own map (persisting it is the writer's job, already done).
+   ponytail: two tabs writing the same queue inside one message hop can still
+   lose one op; the upgrade is navigator.locks around an async read-change-write
+   of the Cache API copy, which makes the outbox async. */
+const TAB_SHARED = (k) => typeof k === 'string' && (k.startsWith('gb.outbox.') || /^gb\.money\..+\.(pending|water)$/.test(k));
+const tabs = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('gb-store') : null;
+if (tabs) {
+  if (tabs.unref) tabs.unref(); // node (the tests): don't hold the process open
+  tabs.onmessage = (e) => {
+    const { key, val } = e.data || {};
+    if (!TAB_SHARED(key)) return;
+    if (val == null) delete mem[key];
+    else mem[key] = String(val);
+  };
+}
+function tellTabs(key, val) {
+  if (!tabs || !TAB_SHARED(key)) return;
+  try {
+    tabs.postMessage({ key, val });
+  } catch (_) {
+    /* a closed channel: this tab is going away */
+  }
+}
+
 const CacheStorage = {
   getItem: (key) => (key in mem ? mem[key] : null),
   setItem: (key, val) => {
@@ -245,11 +273,13 @@ const CacheStorage = {
     // so they never inflate request headers.
     writeCookie(key, v);
     cachePut(key, v);
+    tellTabs(key, v);
   },
   removeItem: (key) => {
     delete mem[key];
     delCookie(key);
     cacheDelete(key);
+    tellTabs(key, null);
   },
   clear: () => {
     Object.keys(mem).forEach((k) => delete mem[k]);

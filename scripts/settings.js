@@ -1699,17 +1699,22 @@ function openProfileSettings(initialTab) {
     placeholder: 'kcal',
     value: u.dailyFoodGoalKcal || '',
   });
-  const waterGoalNow = (state.water && state.water.goalMl) || u.dailyWaterGoalMl;
+  // What the tracker uses, which for an account with a pre-move tracker goal is
+  // not yet this column. Clamped: an old tracker goal could be 250, and an
+  // out-of-range value here would refuse the whole Settings save.
+  const waterGoalShown = () => {
+    const g = (state.water && state.water.goalMl) || (state.user || {}).dailyWaterGoalMl;
+    return g ? String(Math.min(7000, Math.max(1000, g))) : '';
+  };
+  const waterGoalAtOpen = waterGoalShown();
+  const timezoneAtOpen = timezoneInput.value;
   const waterGoalInput = h('input', {
     type: 'number',
     class: 'gb-input',
     min: '1000',
     max: '7000',
     placeholder: 'ml',
-    // What the tracker uses, which for an account with a pre-move tracker goal is
-    // not yet this column. Clamped: an old tracker goal could be 250, and an
-    // out-of-range value here would refuse the whole Settings save.
-    value: waterGoalNow ? Math.min(7000, Math.max(1000, waterGoalNow)) : '',
+    value: waterGoalAtOpen,
   });
   const allergicInput = h('input', {
     type: 'text',
@@ -3284,9 +3289,15 @@ function openProfileSettings(initialTab) {
         return Math.round(n);
       };
 
+      // The PUT replaces every field. Two of them change behind an open sheet (the
+      // device's zone sync, the water card's goal): left untouched here, they
+      // send what the account has now, not what it had when the sheet opened.
+      // A null timezone is "keep yours" on the server.
+      const timezoneEdited = timezoneInput.value !== timezoneAtOpen;
+      const waterGoalRaw = waterGoalInput.value === waterGoalAtOpen ? waterGoalShown() : waterGoalInput.value;
       const profilePayload = {
         displayName: visibleText(displayNameInput.value) || null,
-        timezone: (timezoneInput.value || '').trim() || null,
+        timezone: (timezoneEdited && (timezoneInput.value || '').trim()) || null,
         dob: dobInput.value || null,
         ageYears: parseDobToAge(dobInput.value, dobInput),
         heightCm: parseRanged('Height', heightInput.value, 100, 250, heightInput),
@@ -3306,7 +3317,7 @@ function openProfileSettings(initialTab) {
         ),
         dailyWaterGoalMl: parseRanged(
           'Daily water goal',
-          waterGoalInput.value,
+          waterGoalRaw,
           1000,
           7000,
           waterGoalInput
