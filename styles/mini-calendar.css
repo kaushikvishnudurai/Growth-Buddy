@@ -122,6 +122,14 @@
   transform: scale(0.94);
 }
 
+/* ~42px on a phone: the overlay is the grid pitch (cell + the 4px gap), so
+   the whole grid is hit area with no overlap. Inset is from inside the 1.5px border. */
+.gb-mini-cal-day::before {
+  content: '';
+  position: absolute;
+  inset: calc(-1.5px - var(--space-1) / 2);
+}
+
 .gb-mini-cal-day.is-empty {
   background: transparent;
   border-color: transparent;

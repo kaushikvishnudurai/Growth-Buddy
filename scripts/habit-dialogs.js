@@ -715,6 +715,7 @@ function openHabitForm(habit) {
     type: 'text',
     class: 'gb-input',
     placeholder: 'e.g. Meditate',
+    'aria-label': 'Name',
     maxlength: 120,
     value: habit ? habit.name : '',
   });
@@ -745,7 +746,7 @@ function openHabitForm(habit) {
   });
   const targetField = h(
     'div',
-    { style: { display: habit && habit.cadence === 'custom' ? '' : 'none' } },
+    { class: 'gb-form', style: { display: habit && habit.cadence === 'custom' ? '' : 'none' } },
     h('div', { class: 'gb-field-label' }, 'Times per week'),
     targetInput
   );
@@ -785,6 +786,7 @@ function openHabitForm(habit) {
   const reminderInput = h('input', {
     type: 'time',
     class: 'gb-input',
+    'aria-label': 'Daily reminder (optional)',
     value: habit && habit.reminderTime ? String(habit.reminderTime).slice(0, 5) : '',
   });
   const toneSel = h(
@@ -811,7 +813,7 @@ function openHabitForm(habit) {
   );
   const metricField = h(
     'div',
-    null,
+    { class: 'gb-form' },
     h('div', { class: 'gb-field-label' }, 'Records'),
     metricSel
   );
@@ -859,7 +861,7 @@ function openHabitForm(habit) {
   // chooses; editing keeps what the habit has. Ticking by hand still works.
   const linkSel = h(
     'select',
-    { class: 'gb-input', 'aria-label': 'Health reading' },
+    { class: 'gb-input', 'aria-label': 'Tick it from health data' },
     h('option', { value: '' }, 'Off, I tick it myself'),
     ...Object.entries(HEALTH_LINKS).map(([k, L]) => h('option', { value: k }, L.label))
   );
@@ -897,7 +899,7 @@ function openHabitForm(habit) {
   nameInput.addEventListener('input', suggestLink);
   const linkField = h(
     'div',
-    null,
+    { class: 'gb-form' },
     h('div', { class: 'gb-field-label' }, 'Tick it from health data'),
     linkSel,
     linkTargetRow,
@@ -914,7 +916,7 @@ function openHabitForm(habit) {
   let kind = isQuitHabit(habit) ? 'quit' : 'build';
   const cadenceBlock = h(
     'div',
-    null,
+    { class: 'gb-form' },
     h('div', { class: 'gb-field-label' }, 'Cadence'),
     cadence.node,
     targetField

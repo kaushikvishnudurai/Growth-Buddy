@@ -1335,7 +1335,7 @@ function ScreenGoals({
     h(
       'div',
       { class: 'gb-dash-block' },
-      h('div', { class: 'gb-sectiontitle' }, h('h3', null, 'Goal activities'), createBtn),
+      h('div', { class: 'gb-sectiontitle' }, h('h2', null, 'Goal activities'), createBtn),
       h(
         'div',
         { class: 'gb-goal-intro' },

@@ -46,6 +46,7 @@ function insightsSection(data, { loading, onDismiss, onAction } = {}) {
   let body;
   if (insights.length) {
     body = Card({
+      className: 'gb-insight-card',
       children: insights.map((it) => InsightRow(it, { onDismiss, onAction })),
     });
   } else if (loading) {
@@ -390,7 +391,7 @@ function trendCard(title, latest, sub, values, color, days, fmt, vs, opts) {
       h(
         'div',
         { class: 'gb-trend-head' },
-        h('h4', { class: 'gb-trend-title' }, title),
+        h('h3', { class: 'gb-trend-title' }, title),
         vs
           ? h(
               'div',

@@ -448,7 +448,7 @@
 }
 .gb-money-forecast-lbl {
   font-family: var(--font-body);
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   color: var(--fg3);
 }
 .gb-money-forecast-save {
@@ -1343,7 +1343,7 @@
 }
 .gb-money-health-note {
   font-family: var(--font-body);
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   color: var(--fg2);
 }
 .gb-money-health-part.is-empty .gb-money-health-part-val {
