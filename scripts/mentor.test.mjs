@@ -43,6 +43,7 @@ for (const s of [
   'feeling suicidal',
   'self harm',
   'I hurt myself again',
+  'I keep cutting myself',
   'there is no reason to live',
   'I just want to end it all',
   'I want to take my own life',

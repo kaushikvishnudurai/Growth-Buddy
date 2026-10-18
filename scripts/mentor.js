@@ -112,7 +112,7 @@ const CRISIS = new RegExp(
       'suicid\\w*',
       'kms',
       'unalive\\w*',
-      '(kill|hurt|harm|cut)(s|ed|ing)? ?my ?self',
+      '(kill|hurt|harm|cut)(s|ed|ing|ting)? ?my ?self',
       'self[- ]?harm\\w*',
       'take my (own )?life',
       'end(s|ed|ing)? (it all|my (own )?life)',
