@@ -686,3 +686,15 @@ CREATE TABLE IF NOT EXISTS `money_tx_tombstones` (
   `deleted_at` datetime(6) NOT NULL,
   PRIMARY KEY (`user_id`, `id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Circle removals: a removed member could re-join a public circle from Browse.
+-- A new table, so a guarded CREATE; identical to the CREATE TABLE in tableCreationQueries.sql.
+CREATE TABLE IF NOT EXISTS circle_removals (
+  circle_id       CHAR(36) NOT NULL,
+  user_id         CHAR(36) NOT NULL,
+  removed_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (circle_id, user_id),
+  KEY ix_circle_removal_user (user_id),
+  CONSTRAINT fk_circle_removal_circle FOREIGN KEY (circle_id) REFERENCES circles(id) ON DELETE CASCADE,
+  CONSTRAINT fk_circle_removal_user   FOREIGN KEY (user_id)   REFERENCES users(id)   ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

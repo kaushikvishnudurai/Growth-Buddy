@@ -55,7 +55,8 @@ class CircleKudosAndMetricsTest {
             new CircleService(circles, members, posts, challenges, reactions,
                     org.mockito.Mockito.mock(CirclePostCommentRepository.class), users, habits, metrics, clock,
                     org.mockito.Mockito.mock(com.growthbuddy.notification.NotificationService.class),
-                    org.mockito.Mockito.mock(com.growthbuddy.common.RateLimiter.class));
+                    org.mockito.Mockito.mock(com.growthbuddy.common.RateLimiter.class),
+                    org.mockito.Mockito.mock(CircleRemovalRepository.class));
 
     private CirclePost setUp(UUID author) {
         Circle c = new Circle();
@@ -126,10 +127,10 @@ class CircleKudosAndMetricsTest {
     void theFeedCarriesCountsAndWhetherYouReacted() {
         CirclePost p = setUp(MEMBER);
         p.setCreatedAt(Instant.parse("2026-10-10T08:00:00Z"));
-        when(posts.findByCircleIdOrderByCreatedAtDesc(eq(CIRCLE), any())).thenReturn(List.of(p));
+        when(posts.findByCircleIdOrderByCreatedAtDescIdDesc(eq(CIRCLE), any())).thenReturn(List.of(p));
         when(reactions.countByPostIds(List.of(POST))).thenReturn(List.<Object[]>of(new Object[] {POST, 3L}));
         when(reactions.reactedAmong(OTHER, List.of(POST))).thenReturn(List.of(POST));
-        PostResponse r = service.posts(OTHER, CIRCLE, null).get(0);
+        PostResponse r = service.posts(OTHER, CIRCLE, null, null).get(0);
         assertThat(r.kudos()).isEqualTo(3);
         assertThat(r.reacted()).isTrue();
     }

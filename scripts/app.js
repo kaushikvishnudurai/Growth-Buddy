@@ -12201,12 +12201,13 @@ const SCREENS = {
                   method: 'POST',
                   body: JSON.stringify({ userId }),
                 }),
-              listPosts: (id, before) =>
+              listPosts: (id, before, beforeId) =>
                 api(
                   '/api/circles/' +
                     encodeURIComponent(id) +
                     '/posts' +
-                    (before ? '?before=' + encodeURIComponent(before) : '')
+                    (before ? '?before=' + encodeURIComponent(before) : '') +
+                    (before && beforeId ? '&beforeId=' + encodeURIComponent(beforeId) : '')
                 ),
               createPost: (id, body) =>
                 api('/api/circles/' + encodeURIComponent(id) + '/posts', {
@@ -12269,6 +12270,7 @@ const SCREENS = {
           m.ScreenFamily({
             // Once: the Family meals pack's 'add' / 'plan' (openFamilyMeals).
             open: takeFamilyOpen(),
+            timezone: (state.user && state.user.timezone) || '',
             api: {
               getFamily: () => api('/api/family').then(noteFamily),
               // A retried POST is answered from IdempotencyFilter, not a second family.

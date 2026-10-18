@@ -55,11 +55,29 @@ interface CircleMemberRepository extends JpaRepository<CircleMember, CircleMembe
     void deleteAllByCircle(@Param("circleId") UUID circleId);
 }
 
-interface CirclePostRepository extends JpaRepository<CirclePost, UUID> {
-    List<CirclePost> findByCircleIdOrderByCreatedAtDesc(UUID circleId, Pageable page);
+interface CircleRemovalRepository extends JpaRepository<CircleRemoval, CircleMember.Key> {
+    List<CircleRemoval> findByUserId(UUID userId);
 
-    List<CirclePost> findByCircleIdAndCreatedAtBeforeOrderByCreatedAtDesc(
+    boolean existsByCircleIdAndUserId(UUID circleId, UUID userId);
+
+    @Modifying
+    @Query("delete from CircleRemoval r where r.circleId = :circleId")
+    void deleteAllByCircle(@Param("circleId") UUID circleId);
+}
+
+interface CirclePostRepository extends JpaRepository<CirclePost, UUID> {
+    /** Id breaks createdAt ties so the page's last post is a stable cursor. */
+    List<CirclePost> findByCircleIdOrderByCreatedAtDescIdDesc(UUID circleId, Pageable page);
+
+    /** Old clients send no id: strictly-before by time alone. */
+    List<CirclePost> findByCircleIdAndCreatedAtBeforeOrderByCreatedAtDescIdDesc(
             UUID circleId, Instant before, Pageable page);
+
+    /** "Load older" after (before, beforeId): created_at is whole seconds, so same-second posts are common. */
+    @Query("select p from CirclePost p where p.circleId = :circleId and (p.createdAt < :before"
+            + " or (p.createdAt = :before and p.id < :beforeId)) order by p.createdAt desc, p.id desc")
+    List<CirclePost> findOlder(@Param("circleId") UUID circleId, @Param("before") Instant before,
+                               @Param("beforeId") UUID beforeId, Pageable page);
 
     @Modifying
     @Query("delete from CirclePost p where p.circleId = :circleId")

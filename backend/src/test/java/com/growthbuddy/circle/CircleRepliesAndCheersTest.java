@@ -46,7 +46,8 @@ class CircleRepliesAndCheersTest {
     private final RateLimiter limiter = mock(RateLimiter.class);
     private final CircleService service = new CircleService(circles, members, posts,
             mock(CircleChallengeRepository.class), mock(CirclePostReactionRepository.class), comments, users,
-            mock(HabitService.class), mock(ChallengeMetrics.class), mock(UserClock.class), notifications, limiter);
+            mock(HabitService.class), mock(ChallengeMetrics.class), mock(UserClock.class), notifications, limiter,
+            mock(CircleRemovalRepository.class));
 
     @BeforeEach
     void setUp() {

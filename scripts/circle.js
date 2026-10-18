@@ -1865,7 +1865,8 @@ function ChallengesPanel({ api, currentUserId, wins, addHabit }) {
         type: 'button',
         class: 'gb-btn gb-btn--ghost gb-btn--compact',
         hidden: true,
-        onclick: () => load(posts.length ? posts[posts.length - 1].createdAt : null),
+        // The oldest post is the cursor: its time AND id, as same-second posts tie on time.
+        onclick: () => load(posts.length ? posts[posts.length - 1] : null),
       },
       'Load older'
     );
@@ -2154,7 +2155,7 @@ function ChallengesPanel({ api, currentUserId, wins, addHabit }) {
       if (more.disabled) return; // a double tap on "Load older" appended the page twice
       more.disabled = true;
       api
-        .listPosts(c.id, before)
+        .listPosts(c.id, before && before.createdAt, before && before.id)
         .then((page) => {
           page = page || [];
           posts = before ? posts.concat(page) : page;
