@@ -1056,7 +1056,7 @@ public class AuthService {
      * hours, snooze and mutes are read from a fresh user at send time, so they
      * need no reload. A new key a snapshot reads belongs here.
      */
-    static final java.util.Set<String> SCHEDULER_PREF_KEYS = java.util.Set.of("reminderLead", "workWeek");
+    static final java.util.Set<String> SCHEDULER_PREF_KEYS = java.util.Set.of("reminderLead", "workWeek", "buddyReflection");
 
     /**
      * Merge client UI prefs (theme, language, onboarding flag, seen achievements).

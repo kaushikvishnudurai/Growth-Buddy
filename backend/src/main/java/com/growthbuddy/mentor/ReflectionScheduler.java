@@ -1,5 +1,6 @@
 package com.growthbuddy.mentor;
 
+import com.growthbuddy.common.DeliveryCache;
 import com.growthbuddy.common.UserZone;
 import com.growthbuddy.notification.NotificationKind;
 import com.growthbuddy.notification.NotificationRepository;
@@ -79,10 +80,27 @@ public class ReflectionScheduler {
         run(Instant.now());
     }
 
+    /**
+     * Who has a reflection time, kept in memory: a full read scanned and decoded
+     * every user's ui_prefs every 5 minutes. A JPA write to a user, or a
+     * buddyReflection change in updateUiPrefs, re-reads just that user.
+     */
+    private final DeliveryCache.Snapshot<User, User> candidates = new DeliveryCache.Snapshot<>(User::getId);
+
     /** One pass at {@code now}; returns how many were sent. */
     int run(Instant now) {
+        candidates.refresh(now, users::findWithReflectionPref,
+                ids -> users.findWithReflectionPrefIn(ids.stream().map(UUID::toString).toList()),
+                list -> Map.of());
         int sent = 0;
-        for (User u : users.findWithReflectionPref()) {
+        for (User cached : candidates.items()) {
+            if (!isDue(timeOf(cached.getUiPrefs()), now.atZone(UserZone.of(cached.getTimezone())),
+                    sentOn.get(cached.getId()))) {
+                continue;
+            }
+            // The due few are read fresh: quiet hours, a break or a deletion request are current.
+            User u = users.findById(cached.getId()).orElse(null);
+            if (u == null) continue;
             try {
                 if (deliverIfDue(u, now)) sent++;
             } catch (RuntimeException ex) {
@@ -171,4 +189,8 @@ interface ReflectionUsers extends JpaRepository<User, UUID> {
     @Query(value = "SELECT * FROM users WHERE CAST(ui_prefs AS CHAR) LIKE '%buddyReflection%'",
             nativeQuery = true)
     List<User> findWithReflectionPref();
+
+    @Query(value = "SELECT * FROM users WHERE id IN (:ids) AND CAST(ui_prefs AS CHAR) LIKE '%buddyReflection%'",
+            nativeQuery = true)
+    List<User> findWithReflectionPrefIn(@org.springframework.data.repository.query.Param("ids") List<String> ids);
 }

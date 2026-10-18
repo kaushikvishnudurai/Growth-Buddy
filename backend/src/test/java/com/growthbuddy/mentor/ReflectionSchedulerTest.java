@@ -40,6 +40,14 @@ class ReflectionSchedulerTest {
             mock(com.growthbuddy.reminder.ReminderDispatchLogRepository.class);
     private final ReflectionScheduler job = new ReflectionScheduler(users, notifications, rows, push, dispatchLog);
 
+    /** The full candidate read, and the fresh per-user read a due one gets. */
+    private void stub(User... us) {
+        when(users.findWithReflectionPref()).thenReturn(List.of(us));
+        for (User u : us) {
+            when(users.findById(u.getId())).thenReturn(Optional.of(u));
+        }
+    }
+
     private static User user(String zone, Object pref) {
         User u = new User();
         u.setId(UUID.randomUUID());
@@ -93,7 +101,7 @@ class ReflectionSchedulerTest {
         User newYork = user("America/New_York", "21:00");
         User london = user("Europe/London", "16:30");
         User off = user("Asia/Kolkata", "");
-        when(users.findWithReflectionPref()).thenReturn(List.of(kolkata, newYork, london, off));
+        stub(kolkata, newYork, london, off);
         when(rows.findFirstByUserIdAndKindAndCreatedAtAfterOrderByCreatedAtDesc(any(), any(), any()))
                 .thenReturn(Optional.empty());
 
@@ -122,7 +130,7 @@ class ReflectionSchedulerTest {
         User kolkata = user("Asia/Kolkata", "21:00");
         kolkata.getUiPrefs().put("breakFrom", "2026-10-10");
         kolkata.getUiPrefs().put("breakUntil", "2026-10-10");
-        when(users.findWithReflectionPref()).thenReturn(List.of(kolkata));
+        stub(kolkata);
         when(rows.findFirstByUserIdAndKindAndCreatedAtAfterOrderByCreatedAtDesc(any(), any(), any()))
                 .thenReturn(Optional.empty());
         assertThat(job.run(now)).isZero();
@@ -137,7 +145,7 @@ class ReflectionSchedulerTest {
     void oneAlreadySentTodayIsNotSentAgainAfterARestart() {
         Instant now = Instant.parse("2026-10-10T15:30:00Z");
         User kolkata = user("Asia/Kolkata", "21:00");
-        when(users.findWithReflectionPref()).thenReturn(List.of(kolkata));
+        stub(kolkata);
         when(rows.findFirstByUserIdAndKindAndCreatedAtAfterOrderByCreatedAtDesc(
                 eq(kolkata.getId()), eq(NotificationKind.buddy_checkin), any()))
                 .thenReturn(Optional.of(new Notification()));
@@ -152,7 +160,7 @@ class ReflectionSchedulerTest {
         User kolkata = user("Asia/Kolkata", "21:00");
         kolkata.getUiPrefs().put("quietStart", "20:00");
         kolkata.getUiPrefs().put("quietEnd", "07:00");
-        when(users.findWithReflectionPref()).thenReturn(List.of(kolkata));
+        stub(kolkata);
         when(rows.findFirstByUserIdAndKindAndCreatedAtAfterOrderByCreatedAtDesc(any(), any(), any()))
                 .thenReturn(Optional.empty());
         assertThat(job.run(now)).isZero();
@@ -162,7 +170,7 @@ class ReflectionSchedulerTest {
     @Test
     void anInstanceThatLosesTheDailyClaimSendsNothing() {
         User u = user("UTC", "21:00");
-        when(users.findWithReflectionPref()).thenReturn(List.of(u));
+        stub(u);
         when(dispatchLog.saveAndFlush(any())).thenThrow(
                 new org.springframework.dao.DataIntegrityViolationException("ux_rem_dispatch_unique"));
         Instant at = ZonedDateTime.of(LocalDate.of(2026, 10, 10), LocalTime.of(21, 2), ZoneId.of("UTC")).toInstant();
