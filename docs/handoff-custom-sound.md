@@ -16,7 +16,7 @@ Next session: **only this**. Build it, prove it on a real Android phone, nothing
 
 - Web: `/Users/kaush-zstch1550/github/Growth-Buddy`, `main` @ `5c2be73` (build 104), pushed.
 - Mobile: `/Users/kaush-zstch1550/github/Growth-Buddy-Mobile`, `master` @ `f1b702a` (versionCode 11).
-  **No git remote**: commits are local only. `package-lock.json` has an unrelated uncommitted change.
+  Remote: **public** repo https://github.com/kaushikvishnudurai/Growth-Buddy-Mobile (created 2026-10-19); never commit the keystore or `signing.env`. `package-lock.json` has an unrelated uncommitted change.
   Repo-local git identity is set to kaushikvishnudurai@gmail.com.
 - APK: `Growth-Buddy-Mobile/android/app/build/outputs/apk/debug/app-debug.apk`
   (`npm run sync` in the mobile repo, then `cd android && ./gradlew assembleDebug`).
@@ -107,4 +107,4 @@ Add a `push.test.mjs` case for any JS logic changed. Keep `node scripts/push.tes
 
 - No emoji anywhere. Persist to DB, not localStorage. Commit as kaushikvishnudurai@gmail.com.
 - Don't kill other sessions' listeners (`lsof -ti tcp:PORT -sTCP:LISTEN`).
-- Ask before pushing the mobile repo anywhere (it has no remote) and before creating a GitHub repo.
+- The mobile repo is public on GitHub: push `master` there, and keep signing files out of it.
