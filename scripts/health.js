@@ -777,7 +777,8 @@ function Ledger(p) {
         'button',
         { type: 'button', class: 'gb-ledger-hidden', onclick: () => openCustomise(p) },
         Icon('eye-off', { size: 14 }),
-        hidden.length + ' hidden. Customise'
+        h('span', null, hidden.length + (hidden.length === 1 ? ' metric' : ' metrics') + ' hidden'),
+        h('span', { class: 'gb-ledger-hidden-act' }, 'Show or hide')
       )
     : null;
 
@@ -853,7 +854,22 @@ function Insights(p) {
   const list = healthInsights(p.readings, p.sleepByDate, p.today, {
     shown: p.shown,
     fmt: (n) => fmtNumber(n, { maximumFractionDigits: 0 }),
+    clock: (hhmm) => formatTime(hhmm, hhmm),
   });
+  // A sleep insight belongs to no metric's history: a plain row, not a button.
+  const row = (x, ...kids) =>
+    x.metric
+      ? h(
+          'button',
+          {
+            type: 'button',
+            class: 'gb-health-insight is-' + x.tone,
+            onclick: () => openDetail(x.metric, p),
+            'aria-label': x.title + '. ' + x.text + ' Open ' + HEALTH_METRICS[x.metric].label + ' history.',
+          },
+          ...kids
+        )
+      : h('div', { class: 'gb-health-insight is-' + x.tone }, ...kids);
   return Card({
     className: 'gb-health-insights',
     children: [
@@ -866,14 +882,8 @@ function Insights(p) {
               h(
                 'li',
                 null,
-                h(
-                  'button',
-                  {
-                    type: 'button',
-                    class: 'gb-health-insight is-' + x.tone,
-                    onclick: () => openDetail(x.metric, p),
-                    'aria-label': x.title + '. ' + x.text + ' Open ' + HEALTH_METRICS[x.metric].label + ' history.',
-                  },
+                row(
+                  x,
                   h('span', { class: 'gb-health-ic gb-health-insight-ic', 'aria-hidden': 'true' }, Icon(x.icon, { size: 18 })),
                   h(
                     'span',

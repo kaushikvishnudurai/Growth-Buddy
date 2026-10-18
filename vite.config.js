@@ -19,7 +19,7 @@ const API_TARGET = process.env.API_PROXY_TARGET || 'http://localhost:8080';
    A literal is readable by any build anywhere, which is the whole requirement.
 
    GB_BUILD=<n> in the environment overrides it for a one-off build. */
-const BUILD = 112;
+const BUILD = 113;
 const buildNumber = () => Number(process.env.GB_BUILD) || BUILD;
 
 /* The public site, for what has to be an absolute URL: canonical, og:url,

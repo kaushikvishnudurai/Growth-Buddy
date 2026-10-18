@@ -73,7 +73,9 @@ public class HealthReadingService {
         r.setUserId(userId);
         r.setSource(MANUAL);
         fill(r, req.type(), req.value(), req.value2(), day, req.measuredAt(), cleanNote(req.note()));
-        return HealthReadingResponse.of(readings.save(r));
+        HealthReadingResponse out = HealthReadingResponse.of(readings.save(r));
+        profileWeightFollows(userId, r.getType());
+        return out;
     }
 
     @Transactional
@@ -90,12 +92,16 @@ public class HealthReadingService {
                 req.measuredAt() != null ? req.measuredAt() : r.getMeasuredAt(),
                 req.note() != null ? cleanNote(req.note()) : r.getNote());
         r.setUpdatedAt(Instant.now());
-        return HealthReadingResponse.of(readings.save(r));
+        HealthReadingResponse out = HealthReadingResponse.of(readings.save(r));
+        profileWeightFollows(userId, r.getType());
+        return out;
     }
 
     @Transactional
     public void delete(UUID userId, UUID id) {
-        readings.delete(ownManual(userId, id));
+        HealthReading r = ownManual(userId, id);
+        readings.delete(r);
+        profileWeightFollows(userId, r.getType());
     }
 
     /**
@@ -121,6 +127,7 @@ public class HealthReadingService {
         }
         int saved = 0;
         int skipped = 0;
+        boolean syncedWeight = false;
         for (SyncItem it : items) {
             if (it == null || it.day() == null || it.day().isBefore(from) || it.day().isAfter(to)) {
                 skipped++;
@@ -129,6 +136,10 @@ public class HealthReadingService {
             String key = it.type() + "|" + it.day();
             HealthReading r = existing.get(key);
             HealthReading row = r != null ? r : new HealthReading();
+            // Only a new or changed weigh-in moves the profile: the week is re-sent on
+            // every app open, and a weight typed in Settings must outlive that.
+            boolean weightNews = WEIGHT.equals(it.type())
+                    && (r == null || !java.util.Objects.equals(r.getValue(), it.value()));
             try {
                 // Validate into a scratch row first so a bad item can't half-overwrite a good one.
                 fill(new HealthReading(), it.type(), it.value(), it.value2(), it.day(), it.measuredAt(),
@@ -145,11 +156,55 @@ public class HealthReadingService {
             }
             existing.put(key, readings.save(row));
             saved++;
+            syncedWeight |= weightNews;
         }
-        return new SyncResponse(saved, skipped);
+        boolean profileChanged = syncedWeight && profileWeightFollows(userId, WEIGHT);
+        return new SyncResponse(saved, skipped, profileChanged);
     }
 
     /* ---- helpers ---- */
+
+    static final String WEIGHT = "weight";
+    private static final java.math.BigDecimal PROFILE_MIN_KG = java.math.BigDecimal.valueOf(25);
+    private static final java.math.BigDecimal PROFILE_MAX_KG = java.math.BigDecimal.valueOf(300);
+
+    /**
+     * The profile's weight (Settings, and what the nutrition targets read) is the
+     * newest weight reading, typed or from the phone: logging one on Health left the
+     * profile on whatever was typed at sign-up. Rounded to the profile's one decimal;
+     * a reading outside the profile's 25-300 kg leaves it alone. Deleting the newest
+     * falls back to the one before; deleting the last leaves the profile as it was.
+     * Within the newest day the last write wins (a phone row updated in place keeps
+     * its createdAt, so updatedAt counts). True when the profile changed.
+     */
+    private boolean profileWeightFollows(UUID userId, String type) {
+        if (!WEIGHT.equals(type)) {
+            return false;
+        }
+        LocalDate day = readings.findFirstByUserIdAndTypeOrderByDayDesc(userId, WEIGHT)
+                .map(HealthReading::getDay).orElse(null);
+        if (day == null) {
+            return false;
+        }
+        HealthReading r = readings.findByUserIdAndDayBetween(userId, day, day).stream()
+                .filter(x -> WEIGHT.equals(x.getType()))
+                .max(Comparator.comparing((HealthReading x) -> x.getUpdatedAt() != null ? x.getUpdatedAt() : x.getCreatedAt(),
+                        Comparator.nullsFirst(Comparator.naturalOrder())))
+                .orElse(null);
+        if (r == null) {
+            return false;
+        }
+        java.math.BigDecimal kg = java.math.BigDecimal.valueOf(r.getValue()).setScale(1, java.math.RoundingMode.HALF_UP);
+        if (kg.compareTo(PROFILE_MIN_KG) < 0 || kg.compareTo(PROFILE_MAX_KG) > 0) {
+            return false;
+        }
+        com.growthbuddy.user.User u = users.findById(userId).orElse(null);
+        if (u == null || (u.getWeightKg() != null && u.getWeightKg().compareTo(kg) == 0)) {
+            return false;
+        }
+        u.setWeightKg(kg);
+        return true;
+    }
 
     private HealthReading ownManual(UUID userId, UUID id) {
         HealthReading r = readings.findByIdAndUserId(id, userId)

@@ -16495,6 +16495,13 @@ button.gb-tone-chip:focus-visible {
 .gb-ledger-hidden:hover {
   color: var(--fg1);
 }
+/* The tappable part reads as one: a brand link after the plain count. */
+.gb-ledger-hidden-act {
+  margin-left: var(--space-1);
+  color: var(--brand-ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 
 /* Insights: the user against their own recent days; watch items lead. */
 .gb-health-insights {
@@ -16528,7 +16535,10 @@ button.gb-tone-chip:focus-visible {
   color: var(--fg1);
   cursor: pointer;
 }
-.gb-health-insight:hover {
+div.gb-health-insight {
+  cursor: default;
+}
+button.gb-health-insight:hover {
   border-color: var(--fg3);
 }
 .gb-health-insight-ic {

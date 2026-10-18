@@ -253,6 +253,7 @@ export function moveHealthSection(layout, id, delta) {
 
 /* ---- insights ---------------------------------------------------------------- */
 
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const avgOf = (vs) => (vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null);
 const valuesIn = (readings, type, endDay, n, key = 'value') =>
   series(readings, type, endDay, n)
@@ -266,7 +267,7 @@ const valuesIn = (readings, type, endDay, n, key = 'value') =>
  * something; nothing here diagnoses. `shown(type)` false drops a metric the
  * user hid. Watch items first, then the biggest moves; at most `max`.
  */
-export function healthInsights(readings, sleepByDate, today, { shown = () => true, max = 3, fmt = (n) => String(n) } = {}) {
+export function healthInsights(readings, sleepByDate, today, { shown = () => true, max = 5, fmt = (n) => String(n), clock = (hhmm) => hhmm } = {}) {
   const out = [];
   const yday = addDays(today, -1);
 
@@ -283,6 +284,82 @@ export function healthInsights(readings, sleepByDate, today, { shown = () => tru
           title: pct > 0 ? 'Walking more this week' : 'Walking less this week',
           text: fmt(Math.round(a)) + ' steps a day over the last 7 days, ' + Math.abs(pct) + '% ' + (pct > 0 ? 'more' : 'fewer') + ' than the week before (' + fmt(Math.round(b)) + ').',
           basis: now.length + before.length + ' days',
+        });
+      // A level week is news too: it is the habit holding.
+      else
+        out.push({
+          id: 'steps-week', metric: 'steps', icon: 'footprints', tone: 'good', weight: 3,
+          title: 'A steady week on your feet',
+          text: 'About ' + fmt(Math.round(a)) + ' steps a day, level with the week before (' + fmt(Math.round(b)) + ').',
+          basis: now.length + before.length + ' days',
+        });
+    }
+  }
+
+  // Steps by weekday over 4 weeks: the most and least active day, when they differ by 30%+.
+  if (shown('steps')) {
+    const byDow = Array.from({ length: 7 }, () => []);
+    lastDays(yday, 28).forEach((d) => {
+      const st = dayValue(readings, 'steps', d);
+      if (st && st.value) byDow[new Date(d + 'T12:00:00').getDay()].push(st.value);
+    });
+    const avgs = byDow.map((vs, dow) => (vs.length >= 2 ? { dow, avg: avgOf(vs) } : null)).filter(Boolean);
+    if (avgs.length >= 5) {
+      avgs.sort((x, y) => y.avg - x.avg);
+      const top = avgs[0], low = avgs[avgs.length - 1];
+      if (low.avg > 0 && top.avg / low.avg >= 1.3)
+        out.push({
+          id: 'steps-weekday', metric: 'steps', icon: 'calendar', tone: 'info', weight: 8,
+          title: WEEKDAYS[top.dow] + 's are your most active',
+          text: 'About ' + fmt(Math.round(top.avg)) + ' steps on ' + WEEKDAYS[top.dow] + 's against ' + fmt(Math.round(low.avg)) + ' on ' + WEEKDAYS[low.dow] + 's, your quietest day.',
+          basis: avgs.reduce((n, x) => n + byDow[x.dow].length, 0) + ' days',
+        });
+    }
+  }
+
+  // Sleep: the last 7 nights against the 7 hours most adults need, and against the 14 before.
+  // No metric: sleep is its own card, not a ledger row, so these rows open nothing.
+  {
+    const mins = (end, n) => nights(sleepByDate, end, n).map((x) => x.night && x.night.minutes).filter((v) => v);
+    const now = mins(today, 7);
+    if (now.length >= 4) {
+      const a = avgOf(now);
+      const before = mins(addDays(today, -7), 14);
+      const diff = before.length >= 5 ? Math.round(a - avgOf(before)) : 0;
+      const short = now.filter((v) => v < 360).length;
+      const enough = a >= 420;
+      out.push({
+        id: 'sleep-average', metric: null, icon: 'moon', tone: enough ? 'good' : 'watch', weight: enough ? 6 : 50,
+        title: 'Averaging ' + durationLabel(Math.round(a)) + ' of sleep',
+        text:
+          (enough
+            ? 'Within the 7 to 9 hours most adults need.'
+            : 'Under the 7 hours most adults need' + (short ? ', with ' + short + (short === 1 ? ' night' : ' nights') + ' under 6 hours.' : '.')) +
+          (Math.abs(diff) >= 20 ? ' ' + durationLabel(Math.abs(diff)) + (diff > 0 ? ' more' : ' less') + ' a night than the two weeks before.' : ''),
+        basis: now.length + (now.length === 1 ? ' night' : ' nights'),
+      });
+    }
+    // Bedtime: how far it wanders over 2 weeks (standard deviation of the start).
+    const beds = nights(sleepByDate, today, 14).map((x) => x.night && x.night.from).filter((v) => v != null);
+    if (beds.length >= 5) {
+      const m = avgOf(beds);
+      const sd = Math.sqrt(avgOf(beds.map((v) => (v - m) ** 2)));
+      const at = Math.round((m + 18 * 60) % 1440);
+      const hhmm = pad(Math.floor(at / 60)) + ':' + pad(at % 60);
+      const spread = Math.max(5, Math.round(sd / 5) * 5);
+      if (sd >= 60)
+        out.push({
+          id: 'sleep-bedtime', metric: null, icon: 'clock', tone: 'watch', weight: 30,
+          title: 'Bedtime moves around',
+          text: 'Around ' + clock(hhmm) + ' on average, but it shifts by about ' + durationLabel(spread) + ' either way. A steadier bedtime tends to make sleep come easier.',
+          basis: beds.length + ' nights',
+        });
+      else if (sd <= 30)
+        out.push({
+          id: 'sleep-bedtime', metric: null, icon: 'clock', tone: 'good', weight: 4,
+          title: 'A steady bedtime',
+          text: 'You go to bed around ' + clock(hhmm) + ' most nights, within about ' + durationLabel(spread) + '.',
+          basis: beds.length + ' nights',
         });
     }
   }
@@ -330,7 +407,13 @@ export function healthInsights(readings, sleepByDate, today, { shown = () => tru
           text: (change < 0 ? 'Down ' : 'Up ') + Math.abs(change).toFixed(1) + ' kg in ' + Math.round(weeks) + ' weeks, about ' + (Math.abs(change) / weeks).toFixed(1) + ' kg a week.',
           basis: pts.length + ' weigh-ins',
         });
-      }
+      } else if (span >= 14 && Math.max(...pts.map((p) => p.value)) - Math.min(...pts.map((p) => p.value)) <= 1)
+        out.push({
+          id: 'weight-trend', metric: 'weight', icon: 'scale', tone: 'info', weight: 2,
+          title: 'Weight is holding steady',
+          text: 'Within half a kilo over ' + Math.round(span / 7) + ' weeks, at ' + last.value.toFixed(1) + ' kg now.',
+          basis: pts.length + ' weigh-ins',
+        });
     }
   }
 

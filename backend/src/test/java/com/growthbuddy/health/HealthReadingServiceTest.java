@@ -53,6 +53,9 @@ class HealthReadingServiceTest {
                 .filter(r -> r.getUserId().equals(i.getArgument(0)) && r.getSource().equals(i.getArgument(1))
                         && between(r, i.getArgument(2), i.getArgument(3)))
                 .toList());
+        when(repo.findFirstByUserIdAndTypeOrderByDayDesc(any(), anyString())).thenAnswer(i -> rows.stream()
+                .filter(r -> r.getUserId().equals(i.getArgument(0)) && r.getType().equals(i.getArgument(1)))
+                .max(java.util.Comparator.comparing(HealthReading::getDay)));
         service = new HealthReadingService(repo, clock, users);
     }
 
@@ -228,5 +231,40 @@ class HealthReadingServiceTest {
                 .isEqualTo(new SyncResponse(200, 0));
         bad(() -> service.sync(USER, new SyncRequest(Collections.nCopies(201, item("steps", today, 1)))));
         assertThat(service.sync(USER, new SyncRequest(null))).isEqualTo(new SyncResponse(0, 0));
+    }
+
+    @Test
+    void theProfileWeightFollowsTheNewestWeightReading() {
+        com.growthbuddy.user.User me = new com.growthbuddy.user.User();
+        me.setWeightKg(new java.math.BigDecimal("80.0"));
+        when(users.findById(USER)).thenReturn(java.util.Optional.of(me));
+
+        add("weight", 72.36, null, today.minusDays(3));
+        assertThat(me.getWeightKg()).isEqualByComparingTo("72.4"); // the profile keeps one decimal
+        HealthReadingResponse newest = add("weight", 71.0, null, today);
+        assertThat(me.getWeightKg()).isEqualByComparingTo("71.0");
+        add("weight", 74.0, null, today.minusDays(5)); // an older day doesn't move it
+        assertThat(me.getWeightKg()).isEqualByComparingTo("71.0");
+        add("steps", 9000, null, today); // other types never touch it
+        assertThat(me.getWeightKg()).isEqualByComparingTo("71.0");
+
+        service.delete(USER, newest.id()); // back to the one before
+        assertThat(me.getWeightKg()).isEqualByComparingTo("72.4");
+
+        add("weight", 12.0, null, today); // outside the profile's 25-300 kg: left alone
+        assertThat(me.getWeightKg()).isEqualByComparingTo("72.4");
+
+        assertThat(service.sync(USER, new SyncRequest(List.of(item("weight", today.plusDays(1), 70.2)))).profileChanged())
+                .isTrue();
+        assertThat(me.getWeightKg()).isEqualByComparingTo("70.2");
+
+        // A weight typed in Settings outlives the phone re-sending the same weigh-in.
+        me.setWeightKg(new java.math.BigDecimal("68.0"));
+        assertThat(service.sync(USER, new SyncRequest(List.of(item("weight", today.plusDays(1), 70.2)))).profileChanged())
+                .isFalse();
+        assertThat(me.getWeightKg()).isEqualByComparingTo("68.0");
+        // A changed weigh-in moves it again.
+        service.sync(USER, new SyncRequest(List.of(item("weight", today.plusDays(1), 69.9))));
+        assertThat(me.getWeightKg()).isEqualByComparingTo("69.9");
     }
 }

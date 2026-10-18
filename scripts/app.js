@@ -494,6 +494,7 @@ function cacheQuote(quote) {
 // zone, and syncUserSession moves a fresh sign-in there (CAL_BOOT_DAY).
 const _bootUser = loadSession();
 const CAL_BOOT_DAY = sharedTodayKey(_bootUser && _bootUser.timezone);
+let calBootSettled = false;
 const state = {
   theme: loadTheme(),
   premium: loadPremium(),
@@ -711,6 +712,14 @@ function isConnectionToast(t) {
 let lastError = { id: 0, text: '' }; // the newest error toast, so a caller can tell one was said
 function pushToast(message, kind, durationMs, action, opts) {
   const onGone = (opts && opts.onGone) || null;
+  // A green "Something went wrong." was reported after a weight save on the
+  // phone: an empty success fell back to the error words. Only an error gets
+  // that fallback; any other empty toast is a caller's bug, so it shows nothing
+  // and goes to the crash log (error-report.js) with the stack that names it.
+  if (!message && kind === 'success' && !onGone && !action) {
+    Promise.reject(new Error('Empty ' + kind + ' toast'));
+    return 0;
+  }
   let text = message || 'Something went wrong.';
   // A late answer for a session that has ended (session.js) has nobody to tell,
   // and "session expired" from the requests a 401 cut short is what the sign-in
@@ -1757,17 +1766,7 @@ function todayKey() {
 /* The clock that goes with todayKey(): HH:MM in the account's zone, the one
    reminders ring in. The device's when the account has none (or an unknown id). */
 function accountNowHHMM() {
-  const zone = state.user && state.user.timezone;
-  try {
-    return new Intl.DateTimeFormat('en-GB', {
-      timeZone: zone || undefined,
-      hour: '2-digit',
-      minute: '2-digit',
-      hourCycle: 'h23',
-    }).format(new Date());
-  } catch (_) {
-    return new Date().toTimeString().slice(0, 5);
-  }
+  return accountHHMM(); // home-order.js, on the zone render()/syncUserSession set
 }
 
 function yesterdayKey() {
@@ -2245,12 +2244,11 @@ function syncUserSession(userPatch) {
   // Signed in on a phone set to another zone: Calendar, still on the boot day
   // nobody has moved off, goes to the account's today.
   setAccountZone(state.user.timezone); // before the next paint: a zone change repaints Calendar in place
-  const accountDay = sharedTodayKey(state.user.timezone);
-  if (state.selectedDate === CAL_BOOT_DAY && accountDay !== CAL_BOOT_DAY) {
-    // State only, no repaint mid-sync: the next paint shows it.
-    state.calYear = +accountDay.slice(0, 4);
-    state.calMonth = +accountDay.slice(5, 7) - 1;
-    state.selectedDate = accountDay;
+  // Once, at the first sync: later refreshes must not move a day the user picked.
+  if (!calBootSettled) {
+    calBootSettled = true;
+    const accountDay = sharedTodayKey(state.user.timezone);
+    if (state.selectedDate === CAL_BOOT_DAY && accountDay !== CAL_BOOT_DAY) calSetDay(accountDay); // repaint comes with the next paint
   }
   hydrateUiPrefs(!!userPatch && userPatch.uiPrefs !== undefined);
   // The bytes are too big for ui_prefs, so they come down on their own. Not
@@ -4113,7 +4111,8 @@ async function syncHealthFromPhone({ force = false } = {}) {
   try {
     health.available = await healthAvailable();
     const rows = health.available ? await readHealthForSync(7) : null;
-    if (rows && rows.length) await api('/api/health/sync', { method: 'POST', body: JSON.stringify({ readings: rows }) });
+    const res = rows && rows.length ? await api('/api/health/sync', { method: 'POST', body: JSON.stringify({ readings: rows }) }) : null;
+    if (res && res.profileChanged) refreshCurrentUser().then(render); // the profile's weight follows the newest
     if (rows) health.syncedAt = new Date();
     if (rows && rows.length) await loadHealthReadings();
   } catch (err) {
@@ -4148,6 +4147,7 @@ async function saveHealthReading(reading) {
   toastSuccess('Reading saved.');
   render();
   autoTickHealthHabits();
+  if (saved && saved.type === 'weight') refreshCurrentUser().then(render); // the profile's weight follows the newest
 }
 async function updateHealthReading(id, patch) {
   const saved = await api('/api/health/readings/' + encodeURIComponent(id), { method: 'PUT', body: JSON.stringify(patch) });
@@ -4155,12 +4155,15 @@ async function updateHealthReading(id, patch) {
   toastSuccess('Reading updated.');
   render();
   autoTickHealthHabits();
+  if (saved && saved.type === 'weight') refreshCurrentUser().then(render);
 }
 async function deleteHealthReading(id) {
+  const gone = (health.readings || []).find((r) => r.id === id);
   await api('/api/health/readings/' + encodeURIComponent(id), { method: 'DELETE' });
   health.readings = (health.readings || []).filter((r) => r.id !== id);
   toastSuccess('Reading deleted.');
   render();
+  if (gone && gone.type === 'weight') refreshCurrentUser().then(render);
 }
 
 /* Today's value for a habit's health link: what the phone says now (or its
@@ -9082,10 +9085,13 @@ function calToday() {
 
 /* Any day (a YYYY-MM-DD key), not just today — a task's due day. Its own function
    because calToday is handed out as an onclick, which would pass it the event. */
-function calGoTo(key) {
+function calSetDay(key) {
   state.calYear = +key.slice(0, 4);
   state.calMonth = +key.slice(5, 7) - 1;
   state.selectedDate = key;
+}
+function calGoTo(key) {
+  calSetDay(key);
   if (state.screen === 'calendar') {
     // Today CHANGES THE MONTH, so it needs the month-level repaint — the same
     // one the < > arrows use. It used to call repaintCalendarGrid(), which

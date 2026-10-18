@@ -141,7 +141,8 @@ assert.equal(durationLabel(45), '45m');
   assert.match(one.text, /the bottom number is 80 or more/);
   // Watch items lead, and the list is capped.
   assert.equal(all[0].tone, 'watch');
-  assert.equal(healthInsights(rs2, sleep, T).length, 3);
+  assert.equal(healthInsights(rs2, sleep, T).length, 5);
+  assert.equal(healthInsights(rs2, sleep, T, { max: 3 }).length, 3);
   // A hidden metric says nothing.
   assert.ok(!healthInsights(rs2, sleep, T, { max: 10, shown: (t) => t !== 'bloodPressure' }).some((x) => x.metric === 'bloodPressure'));
   // Too little data: nothing.
@@ -157,6 +158,55 @@ assert.equal(durationLabel(45), '45m');
   const ss = healthInsights(rs3, sl3, T, { max: 10 }).find((x) => x.id === 'steps-sleep');
   assert.ok(ss, 'steps-sleep insight');
   assert.match(ss.text, /longer/);
+
+  // Sleep on its own: the week's average against 7 hours and the two weeks before.
+  // A sleep row has no metric (it opens no ledger history).
+  const sl4 = {};
+  for (let n = 0; n < 7; n++) sl4[day(n)] = { bedtime: '00:30', wakeTime: '06:00' }; // 5h 30m
+  for (let n = 7; n < 21; n++) sl4[day(n)] = { bedtime: '23:00', wakeTime: '06:30' }; // 7h 30m
+  const avg = healthInsights([], sl4, T, { max: 10 }).find((x) => x.id === 'sleep-average');
+  assert.equal(avg.metric, null);
+  assert.equal(avg.tone, 'watch');
+  assert.equal(avg.title, 'Averaging 5h 30m of sleep');
+  assert.match(avg.text, /Under the 7 hours.*7 nights under 6 hours\. 2h 00m less a night than the two weeks before\./);
+  const okSleep = {};
+  for (let n = 0; n < 5; n++) okSleep[day(n)] = { bedtime: '22:45', wakeTime: '06:15' };
+  const ok = healthInsights([], okSleep, T, { max: 10 });
+  assert.equal(ok.find((x) => x.id === 'sleep-average').tone, 'good');
+  // Bedtime: steady within half an hour, or wandering by an hour or more.
+  const steady = ok.find((x) => x.id === 'sleep-bedtime');
+  assert.equal(steady.title, 'A steady bedtime');
+  assert.match(steady.text, /around 22:45/);
+  const wander = {};
+  ['21:00', '01:30', '22:00', '02:00', '21:30', '00:30'].forEach((b, n) => (wander[day(n)] = { bedtime: b, wakeTime: '07:00' }));
+  const bed = healthInsights([], wander, T, { max: 10, clock: (t) => '[' + t + ']' }).find((x) => x.id === 'sleep-bedtime');
+  assert.equal(bed.title, 'Bedtime moves around');
+  assert.match(bed.text, /^Around \[\d\d:\d\d\] on average/);
+  // Too few nights: nothing about sleep.
+  assert.ok(!healthInsights([], { [day(0)]: { bedtime: '23:00', wakeTime: '07:00' } }, T, { max: 10 }).some((x) => x.id.startsWith('sleep-')));
+
+  // A level week of steps says so, instead of nothing.
+  const level = [];
+  for (let n = 1; n <= 14; n++) level.push(R('steps', 7000 + (n % 2) * 200, day(n), 'phone'));
+  const lv = healthInsights(level, {}, T, { max: 10 }).find((x) => x.id === 'steps-week');
+  assert.equal(lv.title, 'A steady week on your feet');
+  // Weekdays: Saturdays far above Mondays over 4 weeks.
+  const wk = [];
+  for (let n = 1; n <= 28; n++) {
+    const dow = new Date(day(n) + 'T12:00:00').getDay();
+    wk.push(R('steps', dow === 6 ? 14000 : dow === 1 ? 3000 : 7000, day(n), 'phone'));
+  }
+  const wd = healthInsights(wk, {}, T, { max: 10 }).find((x) => x.id === 'steps-weekday');
+  assert.equal(wd.title, 'Saturdays are your most active');
+  assert.match(wd.text, /14000 steps on Saturdays against 3000 on Mondays/);
+  // Weight that barely moves over 2+ weeks is "holding steady".
+  const wt = [0, 5, 10, 15, 20].map((n) => R('weight', 72 + (n % 2) * 0.2, day(n)));
+  assert.equal(healthInsights(wt, {}, T, { max: 10 }).find((x) => x.id === 'weight-trend').title, 'Weight is holding steady');
+  // A swing in between is not "steady", even when the ends match.
+  const swing = [0, 5, 10, 15, 20].map((n, i) => R('weight', [70.3, 75, 74.5, 72, 70][i], day(n)));
+  assert.ok(!healthInsights(swing, {}, T, { max: 10 }).some((x) => x.id === 'weight-trend'));
+  // Still no emoji anywhere.
+  assert.ok([avg, steady, bed, lv, wd].every((x) => !/\p{Extended_Pictographic}/u.test(x.title + x.text)));
 }
 
 console.log('health-logic: ok');

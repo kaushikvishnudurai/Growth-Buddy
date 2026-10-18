@@ -88,16 +88,26 @@ export { localDayKey };
    check-in, rest day or goal action against, and the date on its water/food
    summaries. Home and Calendar read it through accountToday() below; Money and
    device alarms keep the device's. An unknown zone id falls back to the device. */
+/* One formatter per (kind, zone): Calendar's grid asks for the day of every task in
+   every cell, and building an Intl.DateTimeFormat each time cost thousands a paint. */
+const FMT = new Map();
+function zoneFormat(kind, zone) {
+  const k = kind + '|' + (zone || '');
+  let f = FMT.get(k);
+  if (!f) {
+    f =
+      kind === 'day'
+        ? new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }) // YYYY-MM-DD
+        : new Intl.DateTimeFormat('en-GB', { timeZone: zone || undefined, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+    FMT.set(k, f); // an unknown zone throws above and is never cached
+  }
+  return f;
+}
+
 export function todayKey(zone, now = new Date()) {
   if (zone) {
     try {
-      // en-CA formats as YYYY-MM-DD.
-      return new Intl.DateTimeFormat('en-CA', {
-        timeZone: zone,
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-      }).format(now);
+      return zoneFormat('day', zone).format(now);
     } catch (_) {
       /* fall through */
     }
@@ -108,7 +118,7 @@ export function todayKey(zone, now = new Date()) {
 /* Minutes since midnight in `zone` (the device's without one, or for an unknown id). */
 export function zoneMinutes(zone, now = new Date()) {
   try {
-    const p = new Intl.DateTimeFormat('en-GB', { timeZone: zone || undefined, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(now);
+    const p = zoneFormat('time', zone).formatToParts(now);
     const get = (t) => +(p.find((x) => x.type === t) || { value: 0 }).value;
     return get('hour') * 60 + get('minute');
   } catch (_) {

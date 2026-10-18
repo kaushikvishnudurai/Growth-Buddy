@@ -16,6 +16,9 @@ interface HealthReadingRepository extends JpaRepository<HealthReading, UUID> {
     List<HealthReading> findByUserIdAndSourceAndDayBetween(UUID userId, String source, LocalDate start, LocalDate end);
 
     Optional<HealthReading> findByIdAndUserId(UUID id, UUID userId);
+
+    /** The newest day with a reading of a type: the profile's weight follows that day. */
+    Optional<HealthReading> findFirstByUserIdAndTypeOrderByDayDesc(UUID userId, String type);
 }
 
 /* ---- Requests (day defaults to the user's today) ---- */
@@ -63,5 +66,9 @@ record HealthReadingResponse(
     }
 }
 
-record SyncResponse(int saved, int skipped) {
+/** {@code profileChanged}: the sync moved the profile's weight, so the app re-reads the user. */
+record SyncResponse(int saved, int skipped, boolean profileChanged) {
+    SyncResponse(int saved, int skipped) {
+        this(saved, skipped, false);
+    }
 }
