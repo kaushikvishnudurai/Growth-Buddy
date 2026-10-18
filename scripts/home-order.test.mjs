@@ -10,6 +10,9 @@ import {
   daysBetween,
   todayKey,
   zoneMinutes,
+  setAccountZone,
+  accountToday,
+  accountHHMM,
   shiftDayKey,
   localDayKey,
   tasksForToday,
@@ -193,6 +196,19 @@ test("zoneMinutes reads the clock in the account's zone", () => {
   assert.equal(zoneMinutes('Asia/Kolkata', t), 8 * 60);
   assert.equal(zoneMinutes('America/Los_Angeles', t), 19 * 60 + 30);
   assert.equal(zoneMinutes('Not/AZone', t), t.getHours() * 60 + t.getMinutes());
+});
+
+test("the account clock (Home, Calendar) reads the zone set on it, not the device's", () => {
+  // 04:30 UTC on 19 Oct: still 18 Oct, 21:30 in LA; already 10:00 on 19 Oct in Kolkata.
+  const t = new Date('2026-10-19T04:30:00Z');
+  setAccountZone('America/Los_Angeles');
+  assert.equal(accountToday(t), '2026-10-18');
+  assert.equal(accountHHMM(t), '21:30');
+  setAccountZone('Asia/Kolkata');
+  assert.equal(accountToday(t), '2026-10-19');
+  assert.equal(accountHHMM(t), '10:00');
+  setAccountZone(null); // no account zone yet: the device's, as before
+  assert.equal(accountToday(t), localDayKey(t));
 });
 
 test("tasksForToday reads days in the account's zone when given one", () => {

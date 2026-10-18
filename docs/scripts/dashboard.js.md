@@ -9,8 +9,9 @@ saved layout against `HOME_WIDGETS` so a new widget appears and a removed one va
 without migration. Persisted by `saveHomeLayout` in app.js. Both live in **`scripts/home-order.js`**
 (DOM-free, re-exported here) with Home's ordering rules — `sortTasksForHome`, `sortHabitsForHome`,
 `habitDue`, `topStreaks`, `homeGoals` — checked by `node scripts/home-order.test.mjs`.
-"Today" here is the account's day, not the device's: a module `todayKey()` over `accountZone`,
-which app.js `render()` sets on every paint through `setAccountZone(state.user.timezone)`. A task's
+"Today" here is the account's day, not the device's: a module `todayKey()` over home-order.js
+`accountToday()`, whose zone app.js `render()` sets on every paint through `setAccountZone(state.user.timezone)`
+(Calendar and day-line.js read the same clock). A task's
 day is compared with it as `accountDayOf(d)` (DayTimeline, TodayCard), never `localDayKey`, and
 `pickOneThing` gets `today` and the account-zone `hour` (`zoneParts` → home-order.js `zoneMinutes`).
 

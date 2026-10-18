@@ -4,7 +4,7 @@
    timeline head; its own module so Home doesn't pull in the lazy calendar.js.
    ===================================================================== */
 import { h, formatTime } from './gb-kit.js';
-import { todayKey } from './dates.js';
+import { accountToday, accountMinutes } from './home-order.js';
 import { WORK_WEEKS, DEFAULT_WORK_WEEK, getWorkWeek } from './recurrence.js';
 
 export const toMin = (hhmm) => +hhmm.slice(0, 2) * 60 + +hhmm.slice(3, 5);
@@ -77,17 +77,11 @@ export function rulerHours() {
   return h24 ? ['00', '06', '12', '18', '24'] : ['12a', '6a', '12p', '6p', '12a'];
 }
 
-// `isToday`: Home passes its own (the account's day); Calendar the device's.
-// `nowMin`: where the now ring sits; Home passes the account clock's minute so
-// it agrees with its own now line, Calendar leaves it to the device clock.
-export function DayRuler(list, key, isToday = key === todayKey(), bands = null, nowMin = null) {
+// Today and the now ring are the account's clock (home-order.js), as on Home.
+export function DayRuler(list, key, isToday = key === accountToday(), bands = null) {
   let now = null;
   if (isToday) {
-    let min = nowMin;
-    if (min == null) {
-      const d = new Date();
-      min = d.getHours() * 60 + d.getMinutes();
-    }
+    const min = accountMinutes();
     now = h('span', {
       class: 'gb-line-now',
       style: { left: (min / 1440) * 100 + '%' },

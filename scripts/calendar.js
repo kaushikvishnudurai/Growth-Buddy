@@ -28,7 +28,10 @@ import {
 import { chimeOptionValue, chimeOptions, playChime } from './chime.js';
 import { usualReminderTime } from './nudges.js';
 import { fmtDate } from './i18n.js';
-import { pad2 as pad, dateKey as keyOf, localKey, todayKey } from './dates.js';
+import { pad2 as pad, dateKey as keyOf, localKey } from './dates.js';
+// Today and the clock are the account's, as on Home and on the server: a phone on
+// another zone's time used to put Calendar a day apart from both.
+import { accountToday as todayKey, accountHHMM } from './home-order.js';
 import { TAGS, toMin, DayLine, DayRuler, validRoutine, routineBlocks, ROUTINE_MAX, DAY_OPTS, validDays, onDay, KIND_LABEL } from './day-line.js';
 
 const MONTHS = [
@@ -86,10 +89,7 @@ function isPastSlot(key, time) {
   if (key < today) return true;
   if (key > today) return false;
   if (!time) return false;
-  const now = new Date();
-  const hhmm =
-    String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
-  return time < hhmm;
+  return time < accountHHMM();
 }
 
 /* Label for a date key in the app's own short style, e.g. "Mon, 8 Jun". */
@@ -908,10 +908,7 @@ function TimeRange(timeInput, endInput, clearLabel = 'Remove end time') {
 }
 
 function dueKey(task) {
-  if (!task || !task.dueAt) return '';
-  const dt = new Date(task.dueAt);
-  if (Number.isNaN(dt.getTime())) return '';
-  return keyOf(dt.getFullYear(), dt.getMonth(), dt.getDate());
+  return keyFromInstant(task && task.dueAt);
 }
 
 function tasksOn(tasks, key) {
@@ -924,11 +921,12 @@ function tasksOn(tasks, key) {
     });
 }
 
+/* The account's day an instant falls on (a due time, a completion). */
 function keyFromInstant(value) {
   if (!value) return '';
   const dt = new Date(value);
   if (Number.isNaN(dt.getTime())) return '';
-  return keyOf(dt.getFullYear(), dt.getMonth(), dt.getDate());
+  return todayKey(dt);
 }
 
 function completedTasksOn(tasks, key) {
@@ -964,11 +962,8 @@ function habitsDoneOn(habits, history, key) {
 
 function prettyTaskTime(iso) {
   if (!iso) return 'No due time';
-  try {
-    return formatTime(iso);
-  } catch (_) {
-    return 'Due';
-  }
+  const dt = new Date(iso);
+  return Number.isNaN(dt.getTime()) ? 'Due' : formatTime(accountHHMM(dt), 'Due');
 }
 
 /* ---- Month grid ---- */
@@ -1770,17 +1765,15 @@ function openEditDialog(rem, occKey, onEdit) {
   focusSoon(textInput);
 }
 
-/** "HH:MM" local, from a snooze's instant — what formatTime takes. */
+/** "HH:MM" on the account's clock, from a snooze's instant — what formatTime takes. */
 function snoozeClock(iso) {
-  const d = new Date(iso);
-  return pad(d.getHours()) + ':' + pad(d.getMinutes());
+  return accountHHMM(new Date(iso));
 }
 
 /** "Snoozed till 09:20", with the day when it isn't today — a 23:55 snooze of
     20 minutes rings tomorrow, and a bare "00:15" read as earlier today. */
 function snoozeLabel(iso) {
-  const d = new Date(iso);
-  const key = keyOf(d.getFullYear(), d.getMonth(), d.getDate());
+  const key = todayKey(new Date(iso));
   return (
     'Snoozed till ' + (key === todayKey() ? '' : prettyDate(key) + ', ') + formatTime(snoozeClock(iso))
   );

@@ -86,8 +86,8 @@ export { localDayKey };
    default. With `zone` (an IANA id), today in that zone: app.js and Goals pass
    the account's, because that is the day the server's UserClock checks a
    check-in, rest day or goal action against, and the date on its water/food
-   summaries. Display-only callers (calendar grid, mini calendar, Money, device
-   alarms) keep the device's. An unknown zone id falls back to the device. */
+   summaries. Home and Calendar read it through accountToday() below; Money and
+   device alarms keep the device's. An unknown zone id falls back to the device. */
 export function todayKey(zone, now = new Date()) {
   if (zone) {
     try {
@@ -114,6 +114,25 @@ export function zoneMinutes(zone, now = new Date()) {
   } catch (_) {
     return now.getHours() * 60 + now.getMinutes();
   }
+}
+
+/* The account's clock, for screens that draw days and times (Home, Calendar):
+   app.js render() sets the zone on every paint. The device's day and clock made
+   a phone kept on home time abroad show "Monday" over a Sunday the server, the
+   reminders and the streaks were all still on. */
+let accountZone = '';
+export function setAccountZone(zone) {
+  accountZone = zone || '';
+}
+export const getAccountZone = () => accountZone;
+/** YYYY-MM-DD of `now` (an instant: a due time, a snooze) on the account's clock. */
+export const accountToday = (now = new Date()) => todayKey(accountZone, now);
+/** Minutes since the account's midnight at `now`. */
+export const accountMinutes = (now = new Date()) => zoneMinutes(accountZone, now);
+/** "HH:MM" of `now` on the account's clock, for formatTime and slot compares. */
+export function accountHHMM(now = new Date()) {
+  const m = accountMinutes(now);
+  return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
 }
 
 /* A YYYY-MM-DD key moved by whole days, on local noon and the local getters:

@@ -42,13 +42,12 @@ import {
   HabitSleepInsightCard,
   RenderMiniCalendarCard,
   QuoteCard,
-  setAccountZone,
   resolveHomeLayout,
   sleepHours,
   StreakChain,
   loadOutlook,
 } from './dashboard.js';
-import { habitDue, todayKey as sharedTodayKey, shiftDayKey, tasksForToday, sortHabitsForHome, topStreaks, zoneMinutes } from './home-order.js';
+import { habitDue, todayKey as sharedTodayKey, shiftDayKey, tasksForToday, sortHabitsForHome, topStreaks, zoneMinutes, setAccountZone, accountHHMM, accountToday } from './home-order.js';
 import { withProgressLog, needsProgressLog } from './goal-milestones.js';
 import { goalTaskStats, combinedGoalProgress, goalFinishedBy } from './goal-tasks.js';
 import {
@@ -491,7 +490,10 @@ function cacheQuote(quote) {
   }
 }
 
-const _now = new Date();
+// Calendar opens on the account's today; a restored session already knows the
+// zone, and syncUserSession moves a fresh sign-in there (CAL_BOOT_DAY).
+const _bootUser = loadSession();
+const CAL_BOOT_DAY = sharedTodayKey(_bootUser && _bootUser.timezone);
 const state = {
   theme: loadTheme(),
   premium: loadPremium(),
@@ -500,7 +502,7 @@ const state = {
   loading: false,
   error: '',
   errorField: '', // which auth input the error belongs under ('' = card-level)
-  user: loadSession(),
+  user: _bootUser,
   tasks: [],
   habits: [],
   goals: [],
@@ -526,9 +528,9 @@ const state = {
   // 2FA / cancel-deletion step (routeSignInStep). Memory only, never stored.
   authPending: null,
   // Calendar / reminders
-  calYear: _now.getFullYear(),
-  calMonth: _now.getMonth(),
-  selectedDate: dateKey(_now.getFullYear(), _now.getMonth(), _now.getDate()),
+  calYear: +CAL_BOOT_DAY.slice(0, 4),
+  calMonth: +CAL_BOOT_DAY.slice(5, 7) - 1,
+  selectedDate: CAL_BOOT_DAY,
   // Flat list so recurring reminders can surface on many days.
   // { id, date:'YYYY-MM-DD', time, text, tag, repeat }
   reminders: [],
@@ -2240,6 +2242,16 @@ function syncUserSession(userPatch) {
     state.user.token = token;
   }
   saveSession(state.user, token);
+  // Signed in on a phone set to another zone: Calendar, still on the boot day
+  // nobody has moved off, goes to the account's today.
+  setAccountZone(state.user.timezone); // before the next paint: a zone change repaints Calendar in place
+  const accountDay = sharedTodayKey(state.user.timezone);
+  if (state.selectedDate === CAL_BOOT_DAY && accountDay !== CAL_BOOT_DAY) {
+    // State only, no repaint mid-sync: the next paint shows it.
+    state.calYear = +accountDay.slice(0, 4);
+    state.calMonth = +accountDay.slice(5, 7) - 1;
+    state.selectedDate = accountDay;
+  }
   hydrateUiPrefs(!!userPatch && userPatch.uiPrefs !== undefined);
   // The bytes are too big for ui_prefs, so they come down on their own. Not
   // awaited: nothing on screen waits for a notification sound, and a failure
@@ -9065,15 +9077,15 @@ function calNextMonth() {
 }
 
 function calToday() {
-  calGoTo(new Date());
+  calGoTo(todayKey());
 }
 
-/* Any day, not just today — a task's due day. Its own function because
-   calToday is handed out as an onclick, which would pass it the event. */
-function calGoTo(t) {
-  state.calYear = t.getFullYear();
-  state.calMonth = t.getMonth();
-  state.selectedDate = dateKey(t.getFullYear(), t.getMonth(), t.getDate());
+/* Any day (a YYYY-MM-DD key), not just today — a task's due day. Its own function
+   because calToday is handed out as an onclick, which would pass it the event. */
+function calGoTo(key) {
+  state.calYear = +key.slice(0, 4);
+  state.calMonth = +key.slice(5, 7) - 1;
+  state.selectedDate = key;
   if (state.screen === 'calendar') {
     // Today CHANGES THE MONTH, so it needs the month-level repaint — the same
     // one the < > arrows use. It used to call repaintCalendarGrid(), which
@@ -9669,7 +9681,7 @@ async function handleNotificationAction(ev) {
     if (!to) return;
     setScreen(to.screen);
     // After the switch: calGoTo repaints the month in place, already on Calendar or not.
-    if (to.day) calGoTo(new Date(to.day + 'T12:00:00'));
+    if (to.day) calGoTo(to.day);
     return;
   }
   if (x.kind === 'water' && act === 'water') {
@@ -10670,11 +10682,11 @@ function openTaskTemplates() {
 function remindAboutTask(task) {
   const due = task.dueAt ? new Date(task.dueAt) : null;
   const ahead = due && due > new Date();
-  const hhmm = ahead
-    ? String(due.getHours()).padStart(2, '0') + ':' + String(due.getMinutes()).padStart(2, '0')
-    : null;
+  // A reminder's time is local to the account (it follows the user), so the due
+  // instant is read on that clock, as Calendar files the task.
+  const hhmm = ahead ? accountHHMM(due) : null;
   prefillCalendarReminder(task.title.slice(0, 255), hhmm ? { time: hhmm } : null);
-  calGoTo(ahead ? due : new Date());
+  calGoTo(ahead ? accountToday(due) : todayKey());
   setScreen('calendar');
 }
 
@@ -11929,10 +11941,7 @@ const SCREENS = {
         onOpenGoals: () => setScreen('goals'),
         // Home's day ruler opens Calendar on today, whatever month it was left on.
         onOpenCalendar: () => {
-          const t = new Date();
-          state.calYear = t.getFullYear();
-          state.calMonth = t.getMonth();
-          state.selectedDate = dateKey(t.getFullYear(), t.getMonth(), t.getDate());
+          calGoTo(todayKey());
           setScreen('calendar');
         },
         onAddReminder: openReminderSheet,
@@ -14376,8 +14385,7 @@ function paletteProps() {
     items,
     // On the reminder's next day (recurrence.js), or its own date: palette.js works out which.
     openDay: (key) => {
-      const [y, m, d] = key.split('-').map(Number);
-      calGoTo(new Date(y, m - 1, d));
+      calGoTo(key);
       setScreen('calendar');
     },
     // Notes live on their screen, not in state: the list once, when the palette opens.
@@ -14430,7 +14438,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 function render() {
-  setAccountZone(state.user && state.user.timezone); // dashboard.js's "today" is the account's
+  setAccountZone(state.user && state.user.timezone); // Home's and Calendar's "today" is the account's
   // A list reloaded mid-window still holds a delete waiting on its Undo toast.
   // ponytail: re-filtered on every paint (a few pending items); a per-load hook if that ever shows.
   undoQueue.reapply();

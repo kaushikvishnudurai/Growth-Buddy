@@ -20,7 +20,7 @@ and per-day food. app.js drives month navigation and does
 | `REPEATS` / `REPEAT_ORDER` (70/77) | `none`, `daily`, `weekly`, `monthly`, `yearly` |
 | `MONTHS`, `DOW` (15/29) | display labels |
 
-Day-key helpers: `pad`, `keyOf(y,m,d)`, `todayKey` (imported from `dates.js` as `pad2` / `dateKey` / `todayKey`), `parseKey`, `clearReminderForm` (sign-out drops the kept form), `isFutureKey`, `prettyDate` (i18n.js `fmtDate(key, 'weekdayDate')`, the app's "Sun, 11 Oct"),
+Day-key helpers: `pad`, `keyOf(y,m,d)` (`dates.js` `pad2` / `dateKey`), `todayKey` (home-order.js `accountToday`: **the account's day, not the device's**, like Home and the server; `isPastSlot`, `keyFromInstant` / `dueKey`, `prettyTaskTime` and `snoozeClock` read the same clock through `accountHHMM`), `parseKey`, `clearReminderForm` (sign-out drops the kept form), `isFutureKey`, `prettyDate` (i18n.js `fmtDate(key, 'weekdayDate')`, the app's "Sun, 11 Oct"),
 `formatTime`, `keyFromInstant`, `prettyTaskTime`.
 
 ## Occurrence logic (the part to read before editing)

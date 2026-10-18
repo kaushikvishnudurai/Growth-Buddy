@@ -33,17 +33,18 @@ import {
   habitDue,
   homeGoals,
   topStreaks,
-  todayKey as sharedTodayKey,
   taskWhen,
   localDayKey,
   tasksForToday,
-  zoneMinutes,
+  getAccountZone,
+  accountToday,
+  accountMinutes,
 } from './home-order.js';
 import { suggestReminderTime } from './habit-stats.js';
 import { waterFish, bubbleRise } from './water-fish.js';
 import { sleepToConfirm } from './nudges.js';
 import { pickOneThing } from './one-thing.js';
-import { dateKey } from './dates.js'; // not todayKey: Home's today is the account's (accountZone below)
+import { dateKey } from './dates.js'; // not todayKey: Home's today is the account's (todayKey below)
 import { fmtDate, fmtNumber } from './i18n.js';
 import {
   groupBySlot,
@@ -56,14 +57,10 @@ import {
 
 /* Today in the ACCOUNT's timezone, as app.js todayKey() and the server see it:
    the device's day made a one-tap sleep or mood look like it did nothing when
-   the two zones differ. app.js render() sets it on every paint. */
-let accountZone = '';
-export function setAccountZone(zone) {
-  accountZone = zone || '';
-}
-const todayKey = () => sharedTodayKey(accountZone);
+   the two zones differ. app.js render() sets it (home-order.js setAccountZone). */
+const todayKey = () => accountToday();
 // The account's day of an instant, to compare with todayKey(); localDayKey is the device's.
-const accountDayOf = (d) => sharedTodayKey(accountZone, d);
+const accountDayOf = (d) => accountToday(d);
 
 const ONBOARD_KEY = 'gb.onboardDismissed';
 
@@ -2050,7 +2047,7 @@ function settledToggle(key, wasDone, run) {
 
 /* The account's clock as minutes since midnight, the line's one unit. */
 function zoneParts(d) {
-  return zoneMinutes(accountZone, d);
+  return accountMinutes(d);
 }
 const hhmmOf = (m) => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
 
@@ -2171,7 +2168,7 @@ function DayTimeline({
     if (onEditTask) items.push(['pencil', 'Edit', () => onEditTask(t)]);
     if (onFocusTask && !t.done && !t.paused) items.push(['timer', 'Start focus', () => onFocusTask(t)]);
     if (onPauseTask && !t.done) items.push([t.paused ? 'play' : 'pause', t.paused ? 'Resume' : 'Pause', () => onPauseTask(t)]);
-    const when = late && t.dueAt ? taskWhen(t.dueAt, new Date(), sharedFormatTime, (d) => fmtDate(d, 'dayMonth'), accountZone) : null;
+    const when = late && t.dueAt ? taskWhen(t.dueAt, new Date(), sharedFormatTime, (d) => fmtDate(d, 'dayMonth'), getAccountZone()) : null;
     return h(
       'div',
       { style: { display: 'contents' }, 'data-task-id': t.id },
@@ -2316,7 +2313,7 @@ function DayTimeline({
             // Phone: the ruler opens the day in place; wide: Calendar on today.
             onclick: () => (phoneLayout() ? showDay(true) : onOpenCalendar && onOpenCalendar()),
           },
-          DayRuler(marks, today, true, bands, nowMin)
+          DayRuler(marks, today, true, bands)
         )
       : null,
     named.length
@@ -2449,7 +2446,7 @@ function TodayCard(props) {
   const today = todayKey();
   const now = new Date();
   const nowMin = zoneParts(now);
-  const tasks = tasksForToday(allTasks, now, accountZone);
+  const tasks = tasksForToday(allTasks, now, getAccountZone());
   const doneTasks = tasks.filter((t) => t.done).length;
   const due = habits.filter((hb) => habitDue(hb) || hb.doneToday);
   const doneHabits = due.filter((hb) => hb.doneToday).length;
@@ -3357,7 +3354,7 @@ function ScreenDashboard({
             history: insightHistory || undefined,
             features,
             dismissed: dismissedInsights,
-            zone: accountZone,
+            zone: getAccountZone(),
             breakDays,
           })
         : null;
