@@ -50,7 +50,10 @@ and runs `refreshAll` — deferred while focus is inside the mentorship section 
 half-typed agreement item), then run on its `focusout`; the listener retires itself once the screen has been mounted and is gone.
 Server-side, `MentorshipService.checkCanInvite` refuses an invite on a side that is already
 accepted or pending (either sender — the mirror case), and for 7 days after the other person
-declined; declined/cancelled rows drop out of the lists after 7 days (`visible`).
+declined; declined/cancelled rows drop out of the lists after 7 days (`visible`). `create`,
+`respond` and `revoke` lock both users' rows (`lockPair`, lower id first) and decide on a locking
+read of the pair's requests (`lockAllBetween`), so withdraw vs accept, or an offer vs its mirror
+request, can't both win.
 **Screen order is importance:** Requests for you (nothing when none), Your circles, then Mentorship (`section()`; one quiet line when there are no connections, and "Invites you sent" only when there are some). It used to open on Mentorship's two empty cards with the circle below the fold. `.gb-circle-section` keeps a 112px reserve elsewhere; this screen drops it.
 `paint()` groups accepted links by person, then splits them into **Mentor each other**, **You mentor**
 and **Who mentors you**, by the same rule the rows use for the progress window (an offer you sent, or

@@ -47,6 +47,8 @@ public class FamilyService {
     private static final long DAY_MS = 24 * 60 * 60_000L;
     /** Each remind adds a calendar reminder (and a bell card) for the assignee. */
     private static final int CHORE_REMINDS_PER_DAY = 3;
+    /** And per sender + assignee across all chores: chores are uncapped, so per chore alone was no cap. */
+    static final int CHORE_REMINDS_PER_PAIR_PER_DAY = 10;
 
     private static final String GROCERY_PROMPT = """
             You analyze a photo of groceries / ingredients / a grocery receipt and identify every distinct food item.
@@ -1661,6 +1663,11 @@ public class FamilyService {
                         .filter(m -> m.getDeletedAt() == null && m.getStatus() == MemberStatus.mapped
                                 && m.getLinkedUserId() != null);
         UUID target = assignee.map(FamilyMember::getLinkedUserId).orElse(userId);
+        if (!target.equals(userId) && !limiter.allow("chore-remind-pair:" + userId + ":" + target,
+                CHORE_REMINDS_PER_PAIR_PER_DAY, DAY_MS)) {
+            throw new ApiException(HttpStatus.TOO_MANY_REQUESTS,
+                    "That's a lot of chore reminders for one person today. Try again tomorrow.");
+        }
         ZonedDateTime now = ZonedDateTime.now(clock.zoneOf(target));
         LocalDate day = c.getDueDate() != null && c.getDueDate().isAfter(now.toLocalDate())
                 ? c.getDueDate() : now.toLocalDate();

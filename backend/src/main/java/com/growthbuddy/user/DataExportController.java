@@ -89,7 +89,10 @@ public class DataExportController {
         for (String t : AuthService.FAMILY_OWNED_TABLES) {
             if (!t.equals("family_members")) q.put(t, "SELECT * FROM " + t + " WHERE family_id" + owned);
         }
-        q.put("family_members", "SELECT * FROM family_members WHERE ? IN (linked_user_id,"
+        // Own row, or (no account of its own) the owner's. A member who has an
+        // account, or who left (deleted_at), is not the owner's to export: that
+        // used to hand over departed members' DOB, height, weight and diet.
+        q.put("family_members", "SELECT * FROM family_members WHERE deleted_at IS NULL AND ? = COALESCE(linked_user_id,"
                 + " (SELECT f.owner_user_id FROM families f WHERE f.id = family_members.family_id))");
         return q;
     }

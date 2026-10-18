@@ -102,6 +102,7 @@ FROM (
   UNION ALL SELECT 'food_entries'           AS table_name, 'piece_grams'
   UNION ALL SELECT 'habits'                 AS table_name, 'health_link'
   UNION ALL SELECT 'habits'                 AS table_name, 'health_target'
+  UNION ALL SELECT 'push_subscriptions'     AS table_name, 'endpoint_hash'
 ) AS t
 LEFT JOIN information_schema.COLUMNS c
        ON c.table_schema = DATABASE()
@@ -705,3 +706,17 @@ CREATE TABLE IF NOT EXISTS circle_removals (
   CONSTRAINT fk_circle_removal_circle FOREIGN KEY (circle_id) REFERENCES circles(id) ON DELETE CASCADE,
   CONSTRAINT fk_circle_removal_user   FOREIGN KEY (user_id)   REFERENCES users(id)   ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- One row per push endpoint (PushService.subscribe upserts on this key). Two
+-- subscribes at once used to store the same endpoint twice: every push went
+-- out twice and the lookup by endpoint threw on every later call. endpoint is
+-- TEXT, too long to key, so its SHA-256 is. The DELETE is the one data change
+-- here: of each duplicated endpoint it keeps the newest row, the same browser.
+-- Each step is safe to re-run (the ADDs only hit "already there").
+ALTER TABLE push_subscriptions ADD COLUMN endpoint_hash CHAR(64) NULL;
+UPDATE push_subscriptions SET endpoint_hash = SHA2(endpoint, 256) WHERE endpoint_hash IS NULL;
+DELETE p FROM push_subscriptions p JOIN push_subscriptions q
+    ON q.endpoint_hash = p.endpoint_hash
+   AND (q.created_at > p.created_at OR (q.created_at = p.created_at AND q.id > p.id));
+ALTER TABLE push_subscriptions MODIFY endpoint_hash CHAR(64) NOT NULL;
+ALTER TABLE push_subscriptions ADD UNIQUE KEY ux_push_endpoint_hash (endpoint_hash);

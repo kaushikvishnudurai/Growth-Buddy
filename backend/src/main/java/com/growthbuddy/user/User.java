@@ -18,6 +18,10 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 @Entity
+// Write only the columns this save changed: other paths update single columns
+// under their own locks (ui_prefs, xp_total, progress_json, status), and a
+// full-row save from a stale copy used to put the old values back.
+@org.hibernate.annotations.DynamicUpdate
 @jakarta.persistence.EntityListeners(com.growthbuddy.common.DeliveryCache.Listener.class)
 @Table(name = "users")
 @Getter

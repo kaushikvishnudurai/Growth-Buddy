@@ -28,6 +28,7 @@ class HealthReadingServiceTest {
 
     private final HealthReadingRepository repo = mock(HealthReadingRepository.class);
     private final UserClock clock = mock(UserClock.class);
+    private final com.growthbuddy.user.UserRepository users = mock(com.growthbuddy.user.UserRepository.class);
     private final List<HealthReading> rows = new ArrayList<>();
     private HealthReadingService service;
     private final LocalDate today = LocalDate.of(2026, 10, 11);
@@ -52,7 +53,7 @@ class HealthReadingServiceTest {
                 .filter(r -> r.getUserId().equals(i.getArgument(0)) && r.getSource().equals(i.getArgument(1))
                         && between(r, i.getArgument(2), i.getArgument(3)))
                 .toList());
-        service = new HealthReadingService(repo, clock);
+        service = new HealthReadingService(repo, clock, users);
     }
 
     private static boolean between(HealthReading r, LocalDate a, LocalDate b) {
@@ -160,6 +161,15 @@ class HealthReadingServiceTest {
         notFound(() -> service.delete(OTHER, r.id()));
         notFound(() -> service.delete(USER, UUID.randomUUID()));
         assertThat(rows).hasSize(1);
+    }
+
+    /** Two syncs at once both inserted a day's row: sync queues on the user lock before it reads. */
+    @Test
+    void syncTakesTheUserLockBeforeReading() {
+        service.sync(USER, new SyncRequest(List.of(item("steps", today, 4000))));
+        var order = org.mockito.Mockito.inOrder(users, repo);
+        order.verify(users).findForUpdate(USER);
+        order.verify(repo).findByUserIdAndSourceAndDayBetween(any(), anyString(), any(), any());
     }
 
     @Test

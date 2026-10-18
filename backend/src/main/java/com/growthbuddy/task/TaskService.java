@@ -62,6 +62,11 @@ public class TaskService {
 
     @Transactional
     public TaskResponse update(UUID userId, UUID id, UpdateTaskRequest req) {
+        if (req.done() != null) {
+            // Same lock toggle takes: without it a done=true here and a tick at
+            // once both paid the XP, or deadlocked on the history insert.
+            progress.lockUser(userId);
+        }
         Task t = require(userId, id);
         if (req.title() != null) {
             t.setTitle(VisibleText.require(req.title(), "Title"));

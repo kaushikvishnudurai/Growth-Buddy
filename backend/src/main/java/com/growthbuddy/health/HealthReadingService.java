@@ -2,6 +2,7 @@ package com.growthbuddy.health;
 
 import com.growthbuddy.common.ApiException;
 import com.growthbuddy.user.UserClock;
+import com.growthbuddy.user.UserRepository;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Comparator;
@@ -43,10 +44,12 @@ public class HealthReadingService {
 
     private final HealthReadingRepository readings;
     private final UserClock clock;
+    private final UserRepository users;
 
-    public HealthReadingService(HealthReadingRepository readings, UserClock clock) {
+    public HealthReadingService(HealthReadingRepository readings, UserClock clock, UserRepository users) {
         this.readings = readings;
         this.clock = clock;
+        this.users = users;
     }
 
     @Transactional(readOnly = true)
@@ -105,6 +108,10 @@ public class HealthReadingService {
         if (items.size() > MAX_SYNC) {
             throw ApiException.badRequest("At most " + MAX_SYNC + " readings per sync");
         }
+        // Two syncs at once (app resume + background) both found no row for a day
+        // and both inserted it, so a day's steps counted twice. The user lock
+        // queues them; the locking read below then sees the first one's rows.
+        users.findForUpdate(userId);
         LocalDate today = clock.today(userId);
         LocalDate from = today.minusDays(SYNC_DAYS - 1L);
         LocalDate to = today.plusDays(1); // a phone ahead of the account's timezone

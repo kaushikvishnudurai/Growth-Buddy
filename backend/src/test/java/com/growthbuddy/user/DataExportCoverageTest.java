@@ -70,6 +70,14 @@ class DataExportCoverageTest {
                 .doesNotContainAnyElementsOf(DataExportController.SECRET_TABLES);
     }
 
+    /** Members who left, or who have their own account, stay out of the owner's export. */
+    @Test
+    void familyMembersExportSkipsDepartedAndLinkedMembers() {
+        assertThat(DataExportController.RELATED_QUERIES.get("family_members"))
+                .contains("deleted_at IS NULL")
+                .contains("? = COALESCE(linked_user_id,");
+    }
+
     /** An owner's household goes out with the export: every family-owned table, keyed on the families they own. */
     @Test
     void anOwnersHouseholdIsExported() {

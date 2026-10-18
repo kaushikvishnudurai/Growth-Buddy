@@ -28,6 +28,13 @@ public class PushSubscription {
     @Column(name = "endpoint", nullable = false, columnDefinition = "TEXT")
     private String endpoint;
 
+    /**
+     * SHA-256 hex of {@link #endpoint}, under a unique key: the endpoint is TEXT
+     * (up to 2048 characters) and too long to index itself.
+     */
+    @Column(name = "endpoint_hash", nullable = false, length = 64)
+    private String endpointHash;
+
     @Column(name = "p256dh", nullable = false, length = 255)
     private String p256dh;
 
@@ -38,8 +45,19 @@ public class PushSubscription {
     private Instant createdAt;
 
     @PrePersist
+    @jakarta.persistence.PreUpdate
     void prePersist() {
         if (id == null) id = UUID.randomUUID();
         if (createdAt == null) createdAt = Instant.now();
+        endpointHash = hashOf(endpoint);
+    }
+
+    static String hashOf(String endpoint) {
+        try {
+            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(endpoint.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

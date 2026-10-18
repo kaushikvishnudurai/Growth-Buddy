@@ -49,7 +49,7 @@ so it provably matches the running database.
 | custom_sounds | the user's own notification sounds (≤5 per account): raw bytes in `audio` + `content_type`, `name`, `source` recording/file; `data_url` is the pre-bytes column, converted on first GET |
 | rate_limit_counters · login_attempts | `RateLimiter` / `LoginAttemptGuard` state (and FoodWeek's estimate backoff, key `food-estimate:<userId>`), shared across instances; keys are SHA-256 hashes, no user data |
 | mentorship_messages | the thread inside an accepted mentorship link (`link_id` = `mentorship_requests.id`); `kind` message / cheer / nudge — the daily nudge cap counts these rows |
-| notifications · push_subscriptions | notifications (`kind` ENUM gained `buddy_checkin`: the evening reflection) |
+| notifications · push_subscriptions | notifications (`kind` ENUM gained `buddy_checkin`: the evening reflection); push_subscriptions `endpoint_hash` (SHA-256 of the TEXT endpoint) under `UNIQUE ux_push_endpoint_hash`, which `PushService.subscribe` upserts on |
 | mentorship_requests | mentorship |
 | calendar_reminders · calendar_reminder_skips · reminder_done · reminder_dispatch_log · habit_reminder_dispatch_log | calendar reminders (`reminder_done` = one occurrence checked off, unique `(reminder_id, occurrence_date)`: not delivered, no device alarm); `habit_reminder_dispatch_log` = the habit reminder scheduler's de-dupe; a snooze's `reminder_dispatch_log` row carries `snooze_of` (the reminder; its `reminder_id` is name-derived) and `attempts`, status `pending` → `sent`/`failed` (the scheduler's at-least-once snooze sweeper) |
 | focus_sessions · weekly_reviews | focus & weekly review |
