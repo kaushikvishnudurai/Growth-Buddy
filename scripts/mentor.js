@@ -106,11 +106,38 @@ function renderRich(text) {
    positive costs one card of phone numbers, a miss costs more, so it leans wide.
    The prompt also tells Buddy to point to a crisis line; this does not depend
    on the model, the network, or the AI being configured. */
-const CRISIS =
-  /\b(suicid\w*|kill(ing)? myself|end(ing)? (it all|my life)|take my (own )?life|want(ed)? to die|wish i (was|were) dead|better off dead|no reason to live|self[- ]?harm\w*|hurt(ing)? myself|cut(ting)? myself)\b/i;
+const CRISIS = new RegExp(
+  '\\b(' +
+    [
+      'suicid\\w*',
+      'kms',
+      'unalive\\w*',
+      '(kill|hurt|harm|cut)(s|ed|ing)? ?my ?self',
+      'self[- ]?harm\\w*',
+      'take my (own )?life',
+      'end(s|ed|ing)? (it all|my (own )?life)',
+      // "want to die", "wanna die", "wanting to end it", "thinking about dying"
+      '(want(s|ed|ing)? to|wanna|going to|gonna|ready to|plan(ning)? to|about to|trying to|thinking (of|about)) ' +
+        '(die|dying|be dead|end(ing)? (it|things|everything|my life))',
+      // "I don't want to live anymore", "dont want to be alive" (not "live in Pune")
+      '(dont|do not|no longer|never) (want|wanna)( to)? (live(?! (in|with|at|near|there|here|on|like)\\b)|be alive|exist|be here anymore)',
+      'wish i (was|were) dead',
+      'wish i could die',
+      'rather be dead',
+      'better off dead',
+      'better off without me',
+      '(hope|wish) i (dont|never) wake up',
+      'no (reason|point) (to|in) (live|living|go on|going on)',
+      'nothing (left )?to live for',
+      'cant go on',
+    ].join('|') +
+    ')\\b',
+  'i'
+);
 
 export function crisisMatch(text) {
-  return CRISIS.test(String(text || ''));
+  // Apostrophes dropped first, so "don't" / "dont" / curly quotes read the same.
+  return CRISIS.test(String(text || '').replace(/['\u2018\u2019`]/g, ''));
 }
 
 function crisisCard() {

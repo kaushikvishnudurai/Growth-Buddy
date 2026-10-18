@@ -2640,7 +2640,9 @@ async function openFirstRunSetup(resumeAt) {
 // In-flight dedup for idempotent GETs: if the same GET is already running,
 // hand back the same promise instead of opening a second connection. Cleared
 // the moment it settles, so this collapses concurrent duplicates without ever
-// serving stale data (it is not a cache). Mutations always bypass it.
+// serving stale data (it is not a cache). Mutations always bypass it, and
+// one that settles empties it: a GET asked for after a write must not join one
+// that left before the write and answers with the old state.
 const _inflightGets = new Map();
 
 const SESSION_EXPIRED = 'Your session expired. Please sign in again.';
@@ -2658,13 +2660,18 @@ async function api(path, options) {
       try {
         return await apiFetch(path, opts);
       } finally {
-        _inflightGets.delete(path);
+        if (_inflightGets.get(path) === p) _inflightGets.delete(path);
       }
     })();
     _inflightGets.set(path, p);
     return p;
   }
-  return apiFetch(path, opts);
+  if (method === 'GET') return apiFetch(path, opts);
+  try {
+    return await apiFetch(path, opts);
+  } finally {
+    _inflightGets.clear();
+  }
 }
 
 /* A fetch that never got a response at all. In production the server is not
@@ -2773,10 +2780,12 @@ async function apiFetchNow(path, options, gen) {
 /* POST that answers text/event-stream (Buddy's streamed reply). Resolves to the
    open Response for the caller to read; EventSource can't POST or carry the
    bearer header, hence fetch. Throws an Error with `fallback: true` when the
-   plain endpoint should be used instead — no response at all, an older server
-   (404/405), or a body that isn't an event stream (a proxy's page) — and a
-   normal error, with the server's message, for anything else: a 429 sent again
-   as a plain POST would only be refused twice. */
+   plain endpoint should be used instead — an older server (404/405), or a body
+   that isn't an event stream (a proxy's page) — and a normal error, with the
+   server's message, for anything else: a 429 sent again as a plain POST would
+   only be refused twice. No response at all is a normal error too: the server
+   may have saved the message already (beginStream), and a plain POST behind it
+   posted it a second time. The chat offers Retry instead. */
 async function apiStream(path, body, signal) {
   const headers = {
     Accept: 'text/event-stream, application/json',
@@ -2798,7 +2807,7 @@ async function apiStream(path, body, signal) {
     });
   } catch (err) {
     if (err && err.name === 'AbortError') throw err;
-    throw fallback(NO_CONNECTION);
+    throw new Error(NO_CONNECTION);
   }
   if (isStaleSession(gen)) throw sessionEndedError();
   if (res.status === 401) {
@@ -3598,7 +3607,9 @@ async function toggleTask(id) {
     idemKey,
   };
   try {
-    if (isTempId(realId(id))) {
+    // A temp id has nothing to PATCH yet; a queued tick of this task would replay
+    // after a live untick and undo it.
+    if (isTempId(realId(id)) || outbox.queuedTwin(op.toggleKey)) {
       queueWrite(op);
       return;
     }
@@ -3870,7 +3881,7 @@ async function plainToggleHabit(id) {
   // A check-in for this day still queued (its flush stalled): a live /toggle
   // would flip the server from its pre-queue state, the opposite of this tap.
   // Queue it too; the pair cancels.
-  if (outbox.list().some((o) => !o.live && o.toggleKey === op.toggleKey)) {
+  if (outbox.queuedTwin(op.toggleKey)) {
     queueWrite(op);
     reSyncDeviceAlarms();
     togglesInFlight.delete(id);
@@ -5574,13 +5585,14 @@ async function queueWrite(op) {
 async function sendAhead(op, send) {
   await CacheStorage.ready();
   const id = 'op-' + (op.idemKey || newIdemKey());
+  const key = outboxKey(); // a 401 signs out mid-request: remove from the account it went in under
   outbox.enqueue({ ...op, id, live: true });
   try {
     const res = await send();
-    outbox.remove(id);
+    outbox.remove(id, key);
     return res;
   } catch (err) {
-    outbox.remove(id);
+    outbox.remove(id, key);
     if (networkError(err)) {
       await queueWrite(op);
       err.queued = true;

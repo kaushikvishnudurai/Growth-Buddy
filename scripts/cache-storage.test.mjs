@@ -44,4 +44,31 @@ const small = { id: 'u2', uiPrefs: { theme: 'dark' } };
 assert.deepEqual(JSON.parse(cookieValue('gb.session', JSON.stringify(small))), small, 'a session that fits keeps uiPrefs');
 assert.equal(cookieValue('gb.apiBase', '"'.repeat(1500)), null, 'any key: the encoded length decides');
 
+// Two tabs, two module instances, two in-memory maps. An op queued in one tab
+// used to be written over by the other tab's next whole-array write.
+const { CacheStorage: tabB } = await import('./cache-storage.js?tab=b');
+const { createOutbox } = await import('./outbox.js');
+const key = () => 'gb.outbox.u1';
+const boxA = createOutbox(CacheStorage, key);
+const boxB = createOutbox(tabB, key);
+boxA.enqueue({ id: 'op-a', method: 'POST', path: '/api/tasks', body: {} });
+await wait(10);
+boxB.enqueue({ id: 'op-b', method: 'POST', path: '/api/tasks', body: {} });
+await wait(10);
+assert.deepEqual(boxA.list().map((x) => x.id), ['op-a', 'op-b'], "tab A sees tab B's op");
+assert.deepEqual(boxB.list().map((x) => x.id), ['op-a', 'op-b'], "tab B kept tab A's op");
+boxA.remove('op-a');
+await wait(10);
+assert.deepEqual(boxB.list().map((x) => x.id), ['op-b'], 'a remove reaches the other tab');
+CacheStorage.setItem('gb.money.u1.water', '[1]');
+CacheStorage.setItem('gb.money.u1.pending', '{}');
+CacheStorage.setItem('gb.timer', 'tab-a-only');
+await wait(10);
+assert.equal(tabB.getItem('gb.money.u1.water'), '[1]', 'the water queue is shared');
+assert.equal(tabB.getItem('gb.money.u1.pending'), '{}', "Money's pending ledger is shared");
+assert.equal(tabB.getItem('gb.timer'), null, 'other keys stay per tab');
+CacheStorage.removeItem('gb.money.u1.water');
+await wait(10);
+assert.equal(tabB.getItem('gb.money.u1.water'), null);
+
 console.log('cache-storage: ok');
