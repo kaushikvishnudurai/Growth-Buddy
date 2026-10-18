@@ -85,11 +85,12 @@ public class CircleController {
         return service.transfer(CurrentUser.id(), id, req.userId());
     }
 
-    /** Newest 50; pass {@code before} (the oldest createdAt you hold) for the page before. */
+    /** Newest 50; pass {@code before} + {@code beforeId} (the oldest post you hold) for the page before. */
     @GetMapping("/{id}/posts")
     public List<PostResponse> posts(@PathVariable UUID id,
-            @RequestParam(required = false) Instant before) {
-        return service.posts(CurrentUser.id(), id, before);
+            @RequestParam(required = false) Instant before,
+            @RequestParam(required = false) UUID beforeId) {
+        return service.posts(CurrentUser.id(), id, before, beforeId);
     }
 
     @PostMapping("/{id}/posts")

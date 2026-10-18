@@ -499,6 +499,17 @@ CREATE TABLE IF NOT EXISTS circle_members (
   CONSTRAINT fk_circle_member_user   FOREIGN KEY (user_id)   REFERENCES users(id)   ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Who an owner removed: Browse hides the circle and join refuses them.
+CREATE TABLE IF NOT EXISTS circle_removals (
+  circle_id       CHAR(36) NOT NULL,
+  user_id         CHAR(36) NOT NULL,
+  removed_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (circle_id, user_id),
+  KEY ix_circle_removal_user (user_id),
+  CONSTRAINT fk_circle_removal_circle FOREIGN KEY (circle_id) REFERENCES circles(id) ON DELETE CASCADE,
+  CONSTRAINT fk_circle_removal_user   FOREIGN KEY (user_id)   REFERENCES users(id)   ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS circle_posts (
   id              CHAR(36)    NOT NULL,
   circle_id       CHAR(36)  NOT NULL,

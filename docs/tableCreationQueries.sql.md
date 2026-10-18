@@ -44,7 +44,7 @@ so it provably matches the running database.
 | daily_scores · daily_logs | scoring & wellness |
 | quotes | quotes |
 | mentor_threads · mentor_messages | mentor chat (`mentor_messages.actions_json` = the one-tap actions a reply offered, JSON array, NULL = none) |
-| circles · circle_members · circle_posts · circle_post_reactions · circle_challenges | circles (`circle_post_reactions` = kudos, PK `(post_id, user_id)`: one per member per post, toggled) |
+| circles · circle_members · circle_removals · circle_posts · circle_post_reactions · circle_challenges | circles (`circle_post_reactions` = kudos, PK `(post_id, user_id)`: one per member per post, toggled; `circle_removals` = who an owner removed, PK `(circle_id, user_id)`: hidden from Browse, join refused) |
 | notes · note_drafts · note_edit_drafts | notes (`labels` comma-joined, `archived_at`, `deleted_at` = the Trash); `note_drafts` = the composer's unsaved note, one per user; `note_edit_drafts` = an open edit's autosave, one per note, `labels` included (`''` = all removed, NULL = a pre-labels row) — saving or deleting the note drops it |
 | custom_sounds | the user's own notification sounds (≤5 per account): raw bytes in `audio` + `content_type`, `name`, `source` recording/file; `data_url` is the pre-bytes column, converted on first GET |
 | rate_limit_counters · login_attempts | `RateLimiter` / `LoginAttemptGuard` state (and FoodWeek's estimate backoff, key `food-estimate:<userId>`), shared across instances; keys are SHA-256 hashes, no user data |

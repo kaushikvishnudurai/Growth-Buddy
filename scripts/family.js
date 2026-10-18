@@ -18,6 +18,13 @@ import {
 import { toast } from './toast.js';
 import { shrinkPhoto } from './notes.js';
 import { isNative } from './native.js';
+import { todayKey } from './home-order.js';
+
+/* Today as YYYY-MM-DD in the account's zone (ScreenFamily's `timezone`): the day
+   FamilyService files chores by. The device day called a chore overdue a day early
+   for a traveller keeping home time. */
+let userZone = '';
+const accountToday = () => todayKey(userZone);
 
 const RELATIONSHIPS = [
   'mother',
@@ -171,9 +178,9 @@ function onEnter(fn, ...inputs) {
    one lands on the 28th in a common year: the yearly rule then keeps the 28th. */
 function nextBirthday(dob) {
   const [, m, d] = dob.split('-').map(Number);
-  const now = new Date();
-  const today = now.toLocaleDateString('en-CA');
-  for (const y of [now.getFullYear(), now.getFullYear() + 1]) {
+  const today = accountToday();
+  const year = Number(today.slice(0, 4));
+  for (const y of [year, year + 1]) {
     const day = Math.min(d, new Date(y, m, 0).getDate());
     const key = y + '-' + String(m).padStart(2, '0') + '-' + String(day).padStart(2, '0');
     if (key >= today) return key;
@@ -212,13 +219,15 @@ function field(labelText, control, hint) {
 }
 
 /**
- * ScreenFamily({ api, open })
+ * ScreenFamily({ api, open, timezone })
  *   open: 'add' (Add member form) | 'plan' (Meals today) | null, from Home's
  *         Family meals pack and card; applied once, when the first load lands.
+ *   timezone: the account's; chores' Today / overdue and birthdays use its day.
  *   api: { getFamily, startSolo, addMember, updateMember, updateProfile, removeMember,
  *          searchUsers, linkMember, scanGrocery, generateMealPlan, getMealPlan }
  */
-function ScreenFamily({ api, open }) {
+function ScreenFamily({ api, open, timezone }) {
+  userZone = timezone || '';
   const root = h('div', { class: 'gb-family gb-rise' });
 
   const model = {
@@ -258,8 +267,24 @@ function ScreenFamily({ api, open }) {
 
   // ---- data ----
 
-  function applyFamily(resp) {
+  /* A move to another family, or to none (left, removed, started one), must not
+     keep showing the old family's plan, pantry, chores...: every section is
+     dropped and refetched. load() fetches them alongside the family, so it
+     passes `fresh` and keeps them. */
+  const familyIdOf = (f) => (f && f.familyId) || null;
+  function applyFamily(resp, fresh) {
+    const moved = familyIdOf(resp) !== familyIdOf(model.family);
     model.family = resp || null;
+    if (!moved) return;
+    // Only a move drops the typed groceries: declining an invite also reloads,
+    // and the list lives only here.
+    model.ingredients = [];
+    model.pantrySeeded = false;
+    if (fresh) return;
+    model.plan = model.weekly = model.pantryItems = model.shoppingList = null;
+    model.favourites = model.chores = model.planHistory = model.recipes = null;
+    const keys = Object.keys(SECTION_LOADERS).filter((k) => k !== 'invites');
+    Promise.all(keys.map(loadSection)).then(paintSoon);
   }
 
   function applyPlan(plan) {
@@ -370,7 +395,6 @@ function ScreenFamily({ api, open }) {
 
   async function load() {
     model.loading = true;
-    const before = model.family && model.family.familyId;
     model.error = '';
     model.sectionErrors = {};
     paint();
@@ -381,13 +405,7 @@ function ScreenFamily({ api, open }) {
         api.getFamily(),
         ...Object.keys(SECTION_LOADERS).map(loadSection),
       ]);
-      applyFamily(fam);
-      // Only a move to another family (or none) drops the typed groceries: declining
-      // an invite also reloads, and the list lives only here.
-      if ((model.family && model.family.familyId) !== before) {
-        model.ingredients = [];
-        model.pantrySeeded = false;
-      }
+      applyFamily(fam, true);
     } catch (err) {
       model.error = err.message || 'Could not load your family.';
     } finally {
@@ -650,7 +668,12 @@ function ScreenFamily({ api, open }) {
       danger: true,
     });
     if (!ok) return;
-    run(api.removeMember(m.id), applyFamily);
+    run(api.removeMember(m.id), (fam) => {
+      applyFamily(fam);
+      // Their chores now read as unassigned on the server; the local copy still
+      // named them, and an Undo of a chore delete sent their id back (400).
+      loadSection('chores').then(paintSoon);
+    });
   }
 
   async function transferOwner(m) {
@@ -762,7 +785,7 @@ function ScreenFamily({ api, open }) {
       type: 'date',
       class: 'gb-input',
       // en-CA is YYYY-MM-DD in local time; the server refuses a future date too.
-      max: new Date().toLocaleDateString('en-CA'),
+      max: accountToday(),
       value: (member && member.dob) || '',
     });
     const heightInput = h('input', {
@@ -2989,9 +3012,11 @@ function ScreenFamily({ api, open }) {
   }
 
   function choreBody(c) {
+    const members = (model.family && model.family.members) || [];
     return {
       title: c.title,
-      assigneeMemberId: c.assigneeMemberId || null,
+      // Someone since removed is refused by the server: the chore goes to anyone.
+      assigneeMemberId: members.some((m) => m.id === c.assigneeMemberId) ? c.assigneeMemberId : null,
       dueDate: c.dueDate || null,
       repeat: c.repeat || 'none',
     };
@@ -3114,7 +3139,7 @@ function ScreenFamily({ api, open }) {
 
   function choreRow(c) {
     const members = (model.family && model.family.members) || [];
-    const today = new Date().toLocaleDateString('en-CA');
+    const today = accountToday();
     const overdue = !c.done && c.dueDate && c.dueDate < today;
     const meta = [
       c.dueDate ? (c.dueDate === today ? 'Today' : 'Due ' + fmtDay(c.dueDate)) : null,

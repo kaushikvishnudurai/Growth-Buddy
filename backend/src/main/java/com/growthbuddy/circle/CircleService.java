@@ -62,13 +62,15 @@ public class CircleService {
     private final HabitService habits;
     private final ChallengeMetrics metrics;
     private final UserClock clock;
+    private final CircleRemovalRepository removals;
     private final SecureRandom rng = new SecureRandom();
 
     public CircleService(CircleRepository circles, CircleMemberRepository members,
                          CirclePostRepository posts, CircleChallengeRepository challenges,
                          CirclePostReactionRepository reactions, CirclePostCommentRepository comments,
                          UserRepository users, HabitService habits, ChallengeMetrics metrics,
-                         UserClock clock, NotificationService notifications, RateLimiter limiter) {
+                         UserClock clock, NotificationService notifications, RateLimiter limiter,
+                         CircleRemovalRepository removals) {
         this.circles = circles;
         this.members = members;
         this.posts = posts;
@@ -81,18 +83,22 @@ public class CircleService {
         this.habits = habits;
         this.metrics = metrics;
         this.clock = clock;
+        this.removals = removals;
     }
 
     /**
      * Browse: every PUBLIC circle, plus private ones the caller is already in.
-     * A private circle is unlisted — the only way in is its code.
+     * A private circle is unlisted — the only way in is its code. A circle that
+     * removed the caller is hidden from them.
      */
     @Transactional(readOnly = true)
     public List<CircleResponse> listAll(UUID userId) {
         Set<UUID> mine = new HashSet<>();
         members.findByUserId(userId).forEach(m -> mine.add(m.getCircleId()));
+        Set<UUID> removedFrom = new HashSet<>();
+        removals.findByUserId(userId).forEach(r -> removedFrom.add(r.getCircleId()));
         List<Circle> visible = circles.findAll().stream()
-                .filter(c -> !isPrivate(c) || mine.contains(c.getId()))
+                .filter(c -> mine.contains(c.getId()) || !(isPrivate(c) || removedFrom.contains(c.getId())))
                 .toList();
         Map<UUID, Long> counts = counts(visible.stream().map(Circle::getId).toList());
         return visible.stream()
@@ -169,6 +175,9 @@ public class CircleService {
         Circle c = require(circleId);
         if (isPrivate(c) && !members.existsByCircleIdAndUserId(circleId, userId)) {
             throw ApiException.forbidden("This circle is invite-only. Ask a member for its code.");
+        }
+        if (removals.existsByCircleIdAndUserId(circleId, userId) && !members.existsByCircleIdAndUserId(circleId, userId)) {
+            throw ApiException.forbidden("The owner removed you from this circle.");
         }
         return addMember(c, userId);
     }
@@ -258,6 +267,10 @@ public class CircleService {
         CircleMember m = members.findByCircleIdAndUserId(circleId, targetId)
                 .orElseThrow(() -> ApiException.notFound("that member"));
         members.delete(m);
+        CircleRemoval removal = new CircleRemoval();
+        removal.setCircleId(circleId);
+        removal.setUserId(targetId);
+        removals.save(removal);
         if (isPrivate(c)) {
             c.setJoinCode(freshCode());
             circles.save(c);
@@ -292,19 +305,26 @@ public class CircleService {
         posts.deleteAllByCircle(circleId);
         challenges.deleteAllByCircle(circleId);
         members.deleteAllByCircle(circleId);
+        removals.deleteAllByCircle(circleId);
         circles.delete(c);
     }
 
     /* ---- Posts ---- */
 
-    /** The newest {@link #POSTS_PAGE} posts, or the page before {@code before} for "Load older". */
+    /**
+     * The newest {@link #POSTS_PAGE} posts, or for "Load older" the page after the
+     * cursor ({@code before}, {@code beforeId}) — the oldest post the client holds.
+     * Old clients send only {@code before}.
+     */
     @Transactional(readOnly = true)
-    public List<PostResponse> posts(UUID userId, UUID circleId, Instant before) {
+    public List<PostResponse> posts(UUID userId, UUID circleId, Instant before, UUID beforeId) {
         requireMember(userId, circleId);
         PageRequest page = PageRequest.of(0, POSTS_PAGE);
         List<CirclePost> list = before == null
-                ? posts.findByCircleIdOrderByCreatedAtDesc(circleId, page)
-                : posts.findByCircleIdAndCreatedAtBeforeOrderByCreatedAtDesc(circleId, before, page);
+                ? posts.findByCircleIdOrderByCreatedAtDescIdDesc(circleId, page)
+                : beforeId == null
+                ? posts.findByCircleIdAndCreatedAtBeforeOrderByCreatedAtDescIdDesc(circleId, before, page)
+                : posts.findOlder(circleId, before, beforeId, page);
         Map<UUID, String> names = names(list.stream().map(CirclePost::getUserId).distinct().toList());
         // Two grouped queries for the whole page, not a count per post.
         List<UUID> ids = list.stream().map(CirclePost::getId).toList();

@@ -44,11 +44,12 @@ class CircleServiceTest {
     private final UserClock clock = mock(UserClock.class);
     private final CirclePostReactionRepository reactions = mock(CirclePostReactionRepository.class);
     private final ChallengeMetrics metrics = mock(ChallengeMetrics.class);
+    private final CircleRemovalRepository removals = mock(CircleRemovalRepository.class);
     private final CircleService service =
             new CircleService(circles, members, posts, challenges, reactions,
                     org.mockito.Mockito.mock(CirclePostCommentRepository.class), users, habits, metrics, clock,
                     org.mockito.Mockito.mock(com.growthbuddy.notification.NotificationService.class),
-                    org.mockito.Mockito.mock(com.growthbuddy.common.RateLimiter.class));
+                    org.mockito.Mockito.mock(com.growthbuddy.common.RateLimiter.class), removals);
 
     private Circle circle(String visibility) {
         Circle c = new Circle();
@@ -81,7 +82,7 @@ class CircleServiceTest {
     @Test
     void nonMembersCannotReadOrWriteTheCircle() {
         circle("public");
-        assertForbidden(() -> service.posts(STRANGER, CIRCLE, null));
+        assertForbidden(() -> service.posts(STRANGER, CIRCLE, null, null));
         assertForbidden(() -> service.post(STRANGER, CIRCLE, new CreatePostRequest("hi")));
         assertForbidden(() -> service.listChallenges(STRANGER, CIRCLE));
         assertForbidden(() -> service.createChallenge(STRANGER, CIRCLE, new CreateChallengeRequest("x", 7)));
@@ -101,6 +102,25 @@ class CircleServiceTest {
         circle("public");
         service.leave(MEMBER, CIRCLE);
         verify(members).delete(any(CircleMember.class));
+    }
+
+    @Test
+    void aRemovedMemberCannotRejoinAPublicCircleNorSeeItInBrowse() {
+        Circle c = circle("public");
+        service.removeMember(OWNER, CIRCLE, MEMBER);
+        verify(removals).save(any(CircleRemoval.class));
+
+        CircleRemoval row = new CircleRemoval();
+        row.setCircleId(CIRCLE);
+        row.setUserId(MEMBER);
+        when(members.existsByCircleIdAndUserId(CIRCLE, MEMBER)).thenReturn(false);
+        when(removals.existsByCircleIdAndUserId(CIRCLE, MEMBER)).thenReturn(true);
+        when(removals.findByUserId(MEMBER)).thenReturn(List.of(row));
+        when(circles.findAll()).thenReturn(List.of(c));
+        assertForbidden(() -> service.join(MEMBER, CIRCLE));
+        verify(members, never()).save(any());
+        assertThat(service.listAll(MEMBER)).isEmpty();
+        assertThat(service.listAll(STRANGER)).hasSize(1);
     }
 
     @Test
