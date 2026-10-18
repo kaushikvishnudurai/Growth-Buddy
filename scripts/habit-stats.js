@@ -113,10 +113,11 @@ export function requiredPerWeek(cadence, targetPerWeek) {
  * What one day of a habit was. `missed` only for a daily habit: a weekly or
  * N-a-week habit is not owed on any given day, so a day it wasn't done is
  * `open`, not a failure.
- *   future · before (the habit didn't exist yet) · done · frozen · today (not
- *   done yet, the day isn't over) · missed · open
+ *   future · before (the habit didn't exist yet) · done · frozen · rest (a
+ *   break day, `rest` = break.js breakDays: owed nothing) · today (not done
+ *   yet, the day isn't over) · missed · open
  */
-export function dayState(row, key, { today, since, cadence, kind }) {
+export function dayState(row, key, { today, since, cadence, kind, rest }) {
   if (key > today) return 'future';
   if (since && key < since) return 'before';
   // A quit ("break a habit") day is clean unless its row is a slip: not done
@@ -125,6 +126,7 @@ export function dayState(row, key, { today, since, cadence, kind }) {
   if (kind === 'quit') return isSlipRow(row) ? 'slipped' : 'clean';
   if (row && row.done) return 'done';
   if (row && row.protectedDay) return 'frozen';
+  if (rest && rest.has(key)) return 'rest';
   if (key === today) return 'today';
   return (cadence || 'daily') === 'daily' ? 'missed' : 'open';
 }
@@ -133,7 +135,7 @@ export function dayState(row, key, { today, since, cadence, kind }) {
  * The heatmap's grid: `weeks` ISO weeks ending with the current one, oldest
  * first, each `{ start, cells: [7 × {date, state}] }` Monday to Sunday.
  */
-export function heatmapWeeks({ days, since, today, cadence, kind, weeks = 12 }) {
+export function heatmapWeeks({ days, since, today, cadence, kind, rest, weeks = 12 }) {
   const rows = byDate(days);
   const lastMonday = isoWeekStart(today);
   const out = [];
@@ -142,7 +144,7 @@ export function heatmapWeeks({ days, since, today, cadence, kind, weeks = 12 }) 
     const cells = [];
     for (let i = 0; i < 7; i++) {
       const date = addDays(start, i);
-      cells.push({ date, state: dayState(rows[date], date, { today, since, cadence, kind }) });
+      cells.push({ date, state: dayState(rows[date], date, { today, since, cadence, kind, rest }) });
     }
     out.push({ start, cells });
   }
@@ -153,12 +155,13 @@ export function heatmapWeeks({ days, since, today, cadence, kind, weeks = 12 }) 
  * Share of what was owed that got done, 0..1, over the last `windowDays` days
  * (Infinity = since the habit started). Owed is the cadence's daily share —
  * 1 a day for daily, target/7 for N-a-week, 1/7 for weekly — times the days
- * that count. A frozen day is not owed (that is what the token bought), and
+ * that count. A frozen day is not owed (that is what the token bought), nor is
+ * a break day (`rest`, as the server's OnBreak), and
  * today counts only once it is done: an unticked morning is not a miss yet.
  * Capped at 1, so a habit done more often than asked reads 100%, not 140%.
  * null when no day counts yet (created today, nothing done).
  */
-export function completionRate({ days, since, today, cadence, targetPerWeek, windowDays, kind }) {
+export function completionRate({ days, since, today, cadence, targetPerWeek, windowDays, kind, rest }) {
   const rows = byDate(days);
   // A quit habit: the share of its days that stayed clean, today included (it
   // is clean until a slip says otherwise). Needs `since` — clean days have no row.
@@ -189,7 +192,7 @@ export function completionRate({ days, since, today, cadence, targetPerWeek, win
   for (let key = start; key <= today; key = addDays(key, 1)) {
     const r = rows[key];
     const isDone = !!(r && r.done);
-    if (!isDone && r && r.protectedDay) continue;
+    if (!isDone && ((r && r.protectedDay) || (rest && rest.has(key)))) continue;
     if (key === today && !isDone) continue;
     counted++;
     if (isDone) done++;
@@ -204,14 +207,13 @@ export function completionRate({ days, since, today, cadence, targetPerWeek, win
  * longestDailyRun / longestWeeklyRun over the same rows. `{ best, unit }`,
  * unit 'day' or 'week'.
  */
-export function bestStreak({ days, cadence, targetPerWeek, kind, since, today }) {
+export function bestStreak({ days, cadence, targetPerWeek, kind, since, today, rest }) {
   if (kind === 'quit') return { best: longestQuitRun({ days, since, today }), unit: 'day' };
   const list = (days || []).filter((r) => r && r.date);
   if ((cadence || 'daily') === 'daily') {
-    const active = list
-      .filter((r) => r.done || r.protectedDay)
-      .map((r) => r.date)
-      .sort();
+    // A break day bridges the run like a freeze (HabitService adds them to the protected set).
+    const held = list.filter((r) => r.done || r.protectedDay).map((r) => r.date);
+    const active = [...new Set([...held, ...(rest || [])])].sort();
     const doneSet = new Set(list.filter((r) => r.done).map((r) => r.date));
     let best = 0;
     let run = 0;
@@ -247,8 +249,8 @@ export function bestStreak({ days, cadence, targetPerWeek, kind, since, today })
 }
 
 /** Everything the history panel prints, in one call. */
-export function habitStats({ days, since, today, cadence, targetPerWeek, kind }) {
-  const base = { days, since, today, cadence, targetPerWeek, kind };
+export function habitStats({ days, since, today, cadence, targetPerWeek, kind, rest }) {
+  const base = { days, since, today, cadence, targetPerWeek, kind, rest };
   const streak = bestStreak(base);
   const quit = kind === 'quit';
   return {

@@ -86,16 +86,18 @@ export function appendProgressLog(log, date, pct, max = PROGRESS_LOG_MAX) {
   return out.slice(-max);
 }
 
-/** The blob with today's progress logged; unchanged (same object) when it has nothing to measure. */
-export function withProgressLog(blob, date) {
-  const f = progressFraction(blob);
+/** The blob with today's progress logged; unchanged (same object) when it has nothing to measure.
+    `counted`: the blob as Goals shows it (app.js effectiveGoalProgress — a tracker counted from
+    linked habits has their days, not its stored `daysFollowed`); its fraction is the one logged. */
+export function withProgressLog(blob, date, counted = blob) {
+  const f = progressFraction(counted);
   if (f == null) return blob;
   return { ...blob, progressLog: appendProgressLog(blob.progressLog, date, f * 100) };
 }
 
-/** True when saving the blob today would add or change its log entry. */
-export function needsProgressLog(blob, date) {
-  const f = progressFraction(blob);
+/** True when saving the blob today would add or change its log entry (`counted` as above). */
+export function needsProgressLog(blob, date, counted = blob) {
+  const f = progressFraction(counted);
   if (f == null) return false;
   const log = (blob && blob.progressLog) || [];
   const last = log[log.length - 1];

@@ -163,6 +163,11 @@ public class HabitService {
     @Transactional
     public HabitResponse protect(UUID userId, UUID id, LocalDate date) {
         Habit h = require(userId, id);
+        if (h.getCadence() != Cadence.daily) {
+            // A weekly streak counts weeks that met their quota and never reads a
+            // protected day, so a token spent here would buy nothing.
+            throw ApiException.badRequest("Freezes protect daily habits only");
+        }
         LocalDate today = clock.today(userId);
         LocalDate day = date != null ? date : today;
         if (day.isAfter(today)) {
@@ -793,6 +798,8 @@ public class HabitService {
         if (req.color() != null) {
             h.setColor(req.color().isBlank() ? null : req.color());
         }
+        Cadence oldCadence = h.getCadence();
+        int oldTarget = h.getTargetPerWeek();
         if (req.cadence() != null) {
             h.setCadence(req.cadence());
         }
@@ -828,7 +835,9 @@ public class HabitService {
         if (req.cadence() != null || req.targetPerWeek() != null) {
             // The cached streak is in the old cadence's units (days vs weeks), and
             // the read path trusts it for long runs; rebuild it in the new ones.
-            recomputeStreak(h, today);
+            // A real change also drops the stored best: it was counted in the old units.
+            boolean changed = h.getCadence() != oldCadence || h.getTargetPerWeek() != oldTarget;
+            recomputeStreak(h, today, null, changed);
         }
         return toResponse(h, today, userId);
     }
@@ -958,7 +967,11 @@ public class HabitService {
      * from the most recent check-in.
      */
     private void recomputeStreak(Habit habit, LocalDate today) {
-        recomputeStreak(habit, today, null);
+        recomputeStreak(habit, today, null, false);
+    }
+
+    private void recomputeStreak(Habit habit, LocalDate today, LocalDate unticked) {
+        recomputeStreak(habit, today, unticked, false);
     }
 
     /**
@@ -966,8 +979,10 @@ public class HabitService {
      * except here: when the run that day belonged to was the record, the record is
      * what history now holds (EXS-9), so a mistaken tick doesn't stay "Best streak 1".
      * A record history can't explain (stored before rows were kept) is left alone.
+     * {@code rebuild}: the cadence changed, so the stored record is in other units
+     * and history alone decides it.
      */
-    private void recomputeStreak(Habit habit, LocalDate today, LocalDate unticked) {
+    private void recomputeStreak(Habit habit, LocalDate today, LocalDate unticked, boolean rebuild) {
         List<HabitCheckin> all = checkins.findByHabitIdOrderByLogDateDesc(habit.getId());
         List<HabitCheckin> done = all.stream().filter(HabitCheckin::isDone).toList();
         Set<LocalDate> doneDates = new HashSet<>();
@@ -1004,7 +1019,7 @@ public class HabitService {
             return;
         }
 
-        int stored = s.getLongestStreak();
+        int stored = rebuild ? 0 : s.getLongestStreak();
         if (unticked != null && stored == longestRun(habit, withDay(done, habit, unticked), protectedDates)) {
             stored = 0; // the record was the run just shortened: history decides it again
         }

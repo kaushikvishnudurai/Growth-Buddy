@@ -32,7 +32,7 @@ import {
   visibleText,
 } from './gb-kit.js';
 import { setLocale, localeFromUser, fmtDate } from './i18n.js';
-import { BREAK_LENGTHS, breakState, startBreak, endBreak } from './break.js';
+import { BREAK_LENGTHS, breakState, breakDays, startBreak, endBreak } from './break.js';
 import { installCameraGate, cameraAskAgain } from './camera.js';
 import { dateKey, parseWhen } from './dates.js'; // todayKey is the account's day, below
 import {
@@ -48,7 +48,7 @@ import {
   StreakChain,
   loadOutlook,
 } from './dashboard.js';
-import { habitDue, todayKey as sharedTodayKey, shiftDayKey, tasksForToday, sortHabitsForHome, zoneMinutes } from './home-order.js';
+import { habitDue, todayKey as sharedTodayKey, shiftDayKey, tasksForToday, sortHabitsForHome, topStreaks, zoneMinutes } from './home-order.js';
 import { withProgressLog, needsProgressLog } from './goal-milestones.js';
 import { goalTaskStats, combinedGoalProgress, goalFinishedBy } from './goal-tasks.js';
 import {
@@ -1037,9 +1037,13 @@ function updateGoalProgress(goalId, patch) {
   const seq = goalProgressSeq.start(key);
   // Every save also dates today's percentage (`progressLog`, one per day, last
   // wins): it is the history insights.js `goalPace` fits its finish date to.
+  // The logged percentage is the one Goals shows: a tracker counted from linked
+  // habits logs their days (effectiveGoalProgress), not the stored count.
+  state.goalProgress[key] = Object.assign({}, prev || {}, patch);
   state.goalProgress[key] = withProgressLog(
-    Object.assign({}, prev || {}, patch),
-    accountTodayKey()
+    state.goalProgress[key],
+    accountTodayKey(),
+    effectiveGoalProgress()[key]
   );
   persistGoalProgress();
   render();
@@ -1846,8 +1850,14 @@ function weekProgressLabel(habit) {
 function achievementProps() {
   return {
     user: state.user,
-    topStreak: (state.habits || []).reduce((mx, hb) => Math.max(mx, effectiveStreak(hb)), 0),
-    goals: state.goals,
+    // Days, so daily habits only: "Hold a 5-day streak" was met by 5 weeks too.
+    topStreak: topStreaks(state.habits).days,
+    // A toggle still in flight reads as it was: the optimistic tick rendered
+    // Finisher before the server said yes, and achSeen keeps a badge for good.
+    goals: (state.goals || []).map((sec) => ({
+      ...sec,
+      goals: (sec.goals || []).map((g) => (goalTogglesInFlight.has(g.id) ? { ...g, completed: !g.completed } : g)),
+    })),
     wellness: state.wellness,
     trends: state.trends,
     food: state.food,
@@ -5303,6 +5313,7 @@ async function toggleGoal(id) {
       method: 'PATCH',
     });
     if (updated && updated.id) mapGoal(id, () => updated);
+    goalTogglesInFlight.delete(id); // confirmed: achievementProps counts it from here
     render();
     // Finishing a goal is the biggest thing the app tracks; it went by as a
     // chip changing colour. Reopening is not celebrated.
@@ -5316,6 +5327,7 @@ async function toggleGoal(id) {
     }
   } catch (err) {
     mapGoal(id, (g) => ({ ...g, completed: !g.completed }));
+    goalTogglesInFlight.delete(id); // reverted: the state shown is the server's again
     render();
     toastError(err, 'Could not update that goal.');
   } finally {
@@ -5406,7 +5418,7 @@ async function addGoalAction(id, body) {
   // An action doesn't move the percentage, but it is a day the goal was
   // worked on: date it in the progress log (goalPace) unless today is there.
   const gp = state.goalProgress && state.goalProgress[String(id)];
-  if (gp && needsProgressLog(gp, accountTodayKey())) updateGoalProgress(id, {});
+  if (gp && needsProgressLog(gp, accountTodayKey(), effectiveGoalProgress()[String(id)])) updateGoalProgress(id, {});
   await loadGoals();
   toastSuccess('Action logged.');
 }
@@ -8231,7 +8243,7 @@ function weeklyReviewStats() {
   const spend = ((state.money && state.money.expenses) || [])
     .filter((e) => set7.has(e.date))
     .reduce((a, e) => a + (Number(e.amount) || 0), 0);
-  const topStreak = (state.habits || []).reduce((mx, hb) => Math.max(mx, effectiveStreak(hb)), 0);
+  const topStreak = topStreaks(state.habits).days; // shown as "best streak" in days
   const moodByDate = (state.wellness && state.wellness.moodByDate) || {};
   const moodLogs = days.filter((k) => moodByDate[k]).length;
   const spentOn = new Set(((state.money && state.money.expenses) || []).map((e) => e.date));
@@ -11894,6 +11906,7 @@ const SCREENS = {
         // top insight matches Report's on a cold start.
         insightHistory: state.insightHistory,
         waterUsualHours: state.waterUsualHours,
+        breakDays: breakDays(state.user && state.user.uiPrefs),
         dismissedInsights: dismissedInsights(),
         onDismissInsight: (id) => {
           dismissInsight(id);
@@ -11922,9 +11935,11 @@ const SCREENS = {
             wellness: state.wellness,
             trends: state.trends,
             money: state.money,
-            goalProgress: state.goalProgress,
+            // As Home and Goals show it: habit-counted trackers, linked tasks.
+            goalProgress: effectiveGoalProgress(),
             insightHistory: state.insightHistory,
             insightLoading: !!insightReq && !state.insightHistory,
+            breakDays: breakDays(state.user && state.user.uiPrefs),
             dismissedInsights: dismissedInsights(),
             onDismissInsight: (id) => {
               dismissInsight(id);

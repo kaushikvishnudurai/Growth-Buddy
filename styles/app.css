@@ -14951,6 +14951,9 @@ button.gb-tone-chip:focus-visible {
   background: color-mix(in srgb, var(--info) 22%, var(--surface));
   border-color: var(--sky-500);
 }
+.gb-hh-day.is-rest {
+  border: 1px dashed var(--sky-500);
+}
 .gb-hh-day.is-open,
 .gb-hh-day.is-today {
   border-color: var(--border);

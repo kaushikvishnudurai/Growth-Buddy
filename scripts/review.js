@@ -12,6 +12,10 @@ import { fmtDate } from './i18n.js';
 import { localKey } from './dates.js';
 import { activeDates } from './active-dates.js';
 
+// A weekly / N-a-week habit's streak counts weeks (HabitService.currentWeeklyRun),
+// so the day-labelled bests below read daily habits only.
+const dailyOnly = (habits) => (habits || []).filter((x) => x && (x.cadence || 'daily') === 'daily');
+
 const DAY_MS = 86400000;
 const MOOD = { low: 1, okay: 2, good: 3, great: 4 };
 
@@ -19,8 +23,6 @@ const MOOD = { low: 1, okay: 2, good: 3, great: 4 };
 const dayNum = (key) => Math.floor(Date.parse(key + 'T00:00:00Z') / DAY_MS);
 const dayKey = (n) => new Date(n * DAY_MS).toISOString().slice(0, 10);
 const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
-
-export { localKey }; // report.js and the tests import it from here
 
 /** `n` date keys ending at `endKey`, oldest first. */
 export function daysEnding(endKey, n) {
@@ -119,7 +121,7 @@ export function personalRecords({ habits, trends, focus, money, today, fmtMoney 
   const out = [];
   const todayKey = today || localKey(new Date());
 
-  const best = (habits || []).reduce(
+  const best = dailyOnly(habits).reduce(
     (m, x) => ((x.longestStreak || 0) > (m ? m.longestStreak || 0 : 0) ? x : m),
     null
   );
@@ -212,7 +214,7 @@ export function weeklyWinsDraft({ finished, habits, trends, money, today, fmtMon
   const done = (finished || []).filter((t) => t && t.doneAt && week.has(localKey(Date.parse(t.doneAt)))).length;
   if (done > 0) wins.push('Finished ' + done + (done === 1 ? ' task' : ' tasks'));
 
-  const best = (habits || []).reduce((m, x) => ((x.streak || 0) > (m ? m.streak || 0 : 0) ? x : m), null);
+  const best = dailyOnly(habits).reduce((m, x) => ((x.streak || 0) > (m ? m.streak || 0 : 0) ? x : m), null);
   // A first week has no 3-day streak yet; a check-in is still the week's win.
   if (best && best.streak >= 2) wins.push('Kept ' + best.name + ' going for ' + best.streak + ' days');
   else if (best && best.streak === 1) wins.push('Checked in on ' + best.name);
@@ -294,7 +296,7 @@ export function monthReview({ trends, wellness, habits, history, money, today, m
       .filter((s) => s && s.completedAt && inMonth(localKey(Date.parse(s.completedAt))))
       .reduce((a, s) => a + (s.durationSec || 0), 0) / 60;
   // The streak is today's, not the month's: labelled so, and left off a past month.
-  const streak = past ? 0 : (habits || []).reduce((m, x) => Math.max(m, x.streak || 0), 0);
+  const streak = past ? 0 : dailyOnly(habits).reduce((m, x) => Math.max(m, x.streak || 0), 0);
   const moods = Object.keys((wellness && wellness.moodByDate) || {})
     .filter(inMonth)
     .map((k) => MOOD[wellness.moodByDate[k].mood])

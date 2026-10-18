@@ -31,6 +31,7 @@ import {
 } from './habit-stats.js';
 import { chimeOptionValue, chimeOptions, playChime } from './chime.js';
 import { HEALTH_LINKS, suggestHealthLink } from './nudges.js';
+import { breakDays } from './break.js';
 
 // Bound from app.js before every open (bind()), before any code below runs.
 let state, announce, pushToast, toastError, toastSuccess, todayKey, reconcileStreakFreeze,
@@ -55,9 +56,12 @@ export function bind(ctx) {
    the absence of a record, not a record saying so — the grid fills the month
    and marks whatever the server didn't mention. */
 async function openFreezeCalendar() {
-  const habits = (state.habits || []).filter((x) => x.active !== false);
+  // Only a daily streak reads a protected day (the server refuses the rest):
+  // a weekly one counts weeks that met their quota, a quit habit's day is clean.
+  const habits = (state.habits || []).filter((x) => x.active !== false
+    && (x.cadence || 'daily') === 'daily' && !isQuitHabit(x));
   if (!habits.length) {
-    toastError(new Error('Add a habit first.'), 'Nothing to freeze yet.');
+    toastError(new Error('Add a daily habit first.'), 'Nothing to freeze yet.');
     return;
   }
 
@@ -380,6 +384,7 @@ const HABIT_TEMPLATES = [
 const HEAT_LABEL = {
   done: 'done',
   frozen: 'covered by a freeze',
+  rest: 'on a break',
   missed: 'missed',
   open: 'not done',
   today: 'not done yet',
@@ -584,6 +589,8 @@ function habitHistoryPanel(habit) {
     const cadence = habit.cadence || 'daily';
     const kind = isQuitHabit(habit) ? 'quit' : 'build';
     const quit = kind === 'quit';
+    // Break days owe nothing (OnBreak): not missed, and they hold the run.
+    const rest = quit ? null : breakDays(state.user && state.user.uiPrefs);
     const stats = habitStats({
       days: rows,
       since,
@@ -591,6 +598,7 @@ function habitHistoryPanel(habit) {
       cadence,
       targetPerWeek: habit.targetPerWeek,
       kind,
+      rest,
     });
     // The server's longest only grows, and remembers runs older than this window.
     const best = Math.max(stats.best, Number(habit.longestStreak) || 0);
@@ -601,7 +609,7 @@ function habitHistoryPanel(habit) {
       ? Math.floor(daysFrom(isoWeekStart(since), isoWeekStart(today)) / 7) + 1
       : 12;
     const weekCount = Math.min(12, Math.max(3, sinceWeeks));
-    const weeks = heatmapWeeks({ days: rows, since, today, cadence, kind, weeks: weekCount });
+    const weeks = heatmapWeeks({ days: rows, since, today, cadence, kind, rest, weeks: weekCount });
     let openState = null;
     const grid = h(
       'div',

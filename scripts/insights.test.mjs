@@ -251,6 +251,11 @@ assert.deepEqual(
   const c = habitWeekdayMiss(hd);
   assert.ok(c && /Gym most on Fridays: missed 4 of 4/.test(c.text), c && c.text);
   assert.equal(c.basis, '28 days');
+  // The same Fridays on a break (OnBreak: owed nothing) are no pattern at all.
+  const fridays = new Set([4, 11, 18, 25].map(day));
+  const rested = habitDays([{ id: 'g', name: 'Gym', cadence: 'daily' }], { g: { since: day(0), days } }, today, fridays);
+  assert.equal(rested[0].days.length, 24);
+  assert.equal(habitWeekdayMiss(rested), null);
 
   // 13 misses before it ever got going, then 6 done: the series starts at the first done
   // day, so no weekday is a "skip day" (it was "missed 2 of 2 on Sundays").
@@ -409,6 +414,17 @@ assert.deepEqual(
     c && c.text
   );
   assert.equal(scoreChange([a, { ...a, score: 85 }]), null);
+}
+
+// --- buildInsights' today is the account's day, not the device's ---
+{
+  const a = { score: 90, tasksDone: 4, tasksTotal: 5, habitsDone: 5, habitsTotal: 5 };
+  const b = { score: 60, tasksDone: 4, tasksTotal: 5, habitsDone: 2, habitsTotal: 5 };
+  const now = Date.parse('2026-06-21T20:00:00Z'); // 01:30 on the 22nd in Kolkata, 13:00 on the 21st in LA
+  const idIn = (zone) =>
+    buildInsights({ history: { scores: [a, b] }, now, zone }).find((c) => /^scoreChange:/.test(c.id)).id;
+  assert.equal(idIn('Asia/Kolkata'), 'scoreChange:2026-06-22');
+  assert.equal(idIn('America/Los_Angeles'), 'scoreChange:2026-06-21');
 }
 
 // --- scoreChange: only a part that moved the score's way; 0 of 0 is no data ---

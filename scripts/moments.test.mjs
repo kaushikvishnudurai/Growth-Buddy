@@ -9,6 +9,8 @@ const b = { id: 'b', name: 'Walk', doneToday: true, streak: 2 };
 const paused = { id: 'c', name: 'Gym', doneToday: false, active: false };
 const notDue = { id: 'd', name: 'Swim', doneToday: false, dueToday: false };
 assert.equal(habitMoment(a, [a, b], D).kicker, 'Streak milestone'); // milestone wins
+assert.equal(habitMoment(a, [a, b], D).title, '7 days in a row');
+assert.equal(habitMoment({ ...a, cadence: 'weekly' }, [a, b], D).title, '7 weeks in a row'); // weeks, not days
 assert.equal(habitMoment(b, [a, b, paused, notDue], D).kicker, 'All habits done'); // paused + not due don't count
 assert.equal(habitMoment(b, [b, { ...a, doneToday: false }], D), null); // one still owed
 assert.equal(habitMoment(b, [b], D), null); // a single habit is not "all"

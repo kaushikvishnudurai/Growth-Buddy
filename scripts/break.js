@@ -25,6 +25,24 @@ function range(prefs) {
   return { from, until };
 }
 
+/* Every break day, the current break and the remembered ones (breakPast,
+   "from..until", which only the server writes): what OnBreak.days reads. A
+   day in it owes nothing and holds a streak, so history and insights must not
+   read it as missed. A range over the server's 15 days is skipped, as there. */
+export function breakDays(prefs) {
+  const out = new Set();
+  const past = (prefs && Array.isArray(prefs.breakPast) ? prefs.breakPast : []).map((s) => {
+    const [breakFrom, breakUntil] = String(s).split('..');
+    return { breakFrom, breakUntil };
+  });
+  for (const p of [prefs, ...past]) {
+    const r = range(p);
+    if (!r || addDays(r.from, 15) <= r.until) continue; // longer than OnBreak.MAX_DAYS
+    for (let k = r.from; k <= r.until; k = addDays(k, 1)) out.add(k);
+  }
+  return out;
+}
+
 export function onBreakDay(prefs, key) {
   const r = range(prefs);
   return !!r && key >= r.from && key <= r.until;

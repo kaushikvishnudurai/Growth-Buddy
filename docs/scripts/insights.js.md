@@ -5,7 +5,7 @@ screen fetches on open. No AI; imports only `money-core.js` (pure: `fmtIn`/`home
 Two callers: `report.js` `insightsSection` (Report screen) and `outlook.js` `topInsight` (Home's Outlook card, `[0]` only; Home never fetches history, it reuses Report's `state.insightHistory` + year via `yearOf` once Report has loaded it, so history-only cards appear on Home only after a Report visit). Both draw the row with `outlook-card.js` `InsightRow`. Checked by
 `node scripts/insights.test.mjs`.
 
-Exports `buildInsights({wellness, trends, money, habits, tasks, goals, goalProgress, history, features, dismissed, now})`
+Exports `buildInsights({wellness, trends, money, habits, tasks, goals, goalProgress, history, features, dismissed, now, zone, breakDays})`
 → up to `MAX_INSIGHTS` cards `{id, icon, title, text, basis, effect, action?}`, sorted by `effect`. Every argument is
 optional; a card whose data is missing just doesn't appear. Each rule is exported for the test.
 `features` off (`money`, `water`, `food`, `habits`, `goals`, `focus`) empties that feature's signals and
@@ -39,7 +39,7 @@ A quit ("break a habit") habit is skipped by the habit series: its clean days ha
 | `weekdayPattern(sig, key, 'min'｜'max')` | needs 14 days total, 2 per weekday |
 | `bestBedtime` | hour buckets of bedtime, needs 10 nights and 3 in the best bucket |
 | `focusHours` | 2-hour window by session START hour with the longest sessions; 10 sessions, 3 inside, +20% |
-| `habitDays` | daily habits only, from the **first done day** on or after `since` to yesterday (a run of misses before the habit got going made every early weekday a "skip day"); a frozen day counts as done |
+| `habitDays` | daily habits only, from the **first done day** on or after `since` to yesterday (a run of misses before the habit got going made every early weekday a "skip day"); a frozen day counts as done; a break day (`breakDays`, break.js) not done is left out, owed nothing |
 | `earlierReminder(time)` | the habit miss card's offer: an hour before the habit's reminder, 09:00 with none, null before 06:00 (no check-in times are stored, so it is a nudge, not a measured hour) |
 | `habitWeekdayMiss` / `missTwice` / `keystoneHabit` | weekday miss rate 25 points over the habit's **other** weekdays in the same span, 14+ days, 3+ of that weekday, 2+ misses; under 4 of it is "an early pattern" (in `basis`) at half the effect; one miss turning into two in half of 4+ cases, shown only while a habit missed yesterday is still undone today; mood on done vs skipped days |
 | `paceSlope(log, frac, today)` / `goalPace` | least-squares slope through the blob's `progressLog` (last 90 days, today's value replacing today's entry; 3+ points over 5+ days), run on from today's progress; a slope ≤ 0 is "has stalled" (target still ahead). Without a usable log, the old straight line from creation (0%). Reported when the finish lands 3+ days past `targetDate`. Progress = milestones, else day tracker |
@@ -56,7 +56,8 @@ A quit ("break a habit") habit is skipped by the habit series: its clean days ha
 - Day maths is UTC on the date keys (`dayNum`/`dayKey`), so a lag works across a month end or a DST change.
   The test checks month ends.
 - **Day and hour of an instant are the device's zone** (`localKey`, `getHours`); date keys stay UTC
-  maths. The test runs clean under any `TZ`.
+  maths. Except **today**: `buildInsights` takes it in the account's `zone` (home-order.js `todayKey`;
+  the device's without one), since every store is keyed by the account's day. The test runs clean under any `TZ`.
 - **`effect` of the non-pair cards is set by hand** (e.g. `missTwice` 0.6, `pushedTask` 0.3+) to
   place them among the pair cards; it is not a measured size. Tune there if one crowds the rest out.
 - Task priority is the stored one, and an overdue task is escalated to High on the server, so

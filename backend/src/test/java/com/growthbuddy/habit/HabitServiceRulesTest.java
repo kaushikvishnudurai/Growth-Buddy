@@ -253,6 +253,35 @@ class HabitServiceRulesTest {
         verify(wallets, never()).save(any());
     }
 
+    /** A weekly streak never reads a protected day: the token would buy nothing. */
+    @Test
+    void protectRefusesAWeeklyHabit() {
+        habit.setCadence(Cadence.custom);
+        assertThatThrownBy(() -> service.protect(USER, habit.getId(), TODAY.minusDays(1)))
+                .isInstanceOf(ApiException.class).hasMessageContaining("daily");
+        verify(wallets, never()).save(any());
+        verify(checkins, never()).save(any());
+    }
+
+    /** A best of 20 days is not a best of 20 weeks: a new cadence rebuilds it from history. */
+    @Test
+    void aCadenceChangeDropsTheOldUnitsBest() {
+        HabitStreak streak = new HabitStreak();
+        streak.setHabitId(habit.getId());
+        streak.setLongestStreak(20);
+        when(streaks.findById(habit.getId())).thenReturn(Optional.of(streak));
+        when(checkins.findByHabitIdOrderByLogDateDesc(habit.getId()))
+                .thenReturn(List.of(done(habit, TODAY.minusWeeks(1)), done(habit, TODAY.minusWeeks(2))));
+        UpdateHabitRequest same = new UpdateHabitRequest(null, null, null, null, Cadence.daily, 7,
+                null, null, null, null, null, null, null);
+        service.update(USER, habit.getId(), same);
+        assertThat(streak.getLongestStreak()).isEqualTo(20); // nothing changed: the record stands
+        UpdateHabitRequest weekly = new UpdateHabitRequest(null, null, null, null, Cadence.weekly, 1,
+                null, null, null, null, null, null, null);
+        service.update(USER, habit.getId(), weekly);
+        assertThat(streak.getLongestStreak()).isEqualTo(2);
+    }
+
     @Test
     void walletTopsUpOncePerWeekAndCapsAtTwo() {
         StreakFreezeWallet w = new StreakFreezeWallet();

@@ -469,7 +469,7 @@ function WeeklyReflectionCard({ tasks, habits, food, goals, wellness }) {
 }
 
 function BadgeCard({ tasks, habits, water, goals, wellness }) {
-  const topStreak = (habits || []).reduce((max, habit) => Math.max(max, habit.streak || 0), 0);
+  const topStreak = topStreaks(habits).days; // a weekly streak counts weeks
   const waterGoal = (water && water.goalMl) || 2000;
   const waterHit = ((water && water.consumedMl) || 0) >= waterGoal;
   const actionCount = allGoals(goals).reduce((sum, goal) => sum + (goal.actionCount || 0), 0);
@@ -3179,6 +3179,7 @@ function GoalsCard({ goals, goalProgress, onOpenGoals }) {
 
 function ScreenDashboard({
   features,
+  breakDays, // break.js: days owed nothing, for the top insight
   tasks,
   toggleTask,
   habits,
@@ -3356,6 +3357,8 @@ function ScreenDashboard({
             history: insightHistory || undefined,
             features,
             dismissed: dismissedInsights,
+            zone: accountZone,
+            breakDays,
           })
         : null;
     const plan = enabled('plan')
