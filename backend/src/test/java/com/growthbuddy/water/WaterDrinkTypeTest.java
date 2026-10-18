@@ -80,6 +80,19 @@ class WaterDrinkTypeTest {
     }
 
     @Test
+    void theDayAndTheWeekRoundPerGlassAlike() {
+        // Three 105 ml teas: 94.5 each. Summed per day first, the week read 1 ml
+        // off the day's own summary.
+        List<WaterEntry> teas = List.of(row(105, DrinkType.tea), row(105, DrinkType.tea), row(105, DrinkType.tea));
+        when(entries.findByUserIdAndLogDateOrderByLoggedAtAsc(USER, today)).thenReturn(teas);
+        List<Object[]> rows = teas.stream()
+                .map(e -> new Object[] {today, e.getDrinkType(), e.getAmountMl()}).toList();
+        when(entries.totalsByDay(USER, today, today)).thenReturn(rows);
+        assertThat(service.totalsByDay(USER, today, today).get(today))
+                .isEqualTo(service.summary(USER, today).consumedMl());
+    }
+
+    @Test
     void waterIsStoredAsNullAndOtherDrinksByName() {
         service.addEntry(USER, new AddWaterEntryRequest(250, null, null, DrinkType.water));
         service.addEntry(USER, new AddWaterEntryRequest(250, null, null, DrinkType.tea));

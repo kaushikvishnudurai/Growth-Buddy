@@ -99,6 +99,7 @@ FROM (
   UNION ALL SELECT 'reminder_dispatch_log'  AS table_name, 'attempts'
   UNION ALL SELECT 'habit_checkins'         AS table_name, 'xp_paid'
   UNION ALL SELECT 'food_entries'           AS table_name, 'pieces'
+  UNION ALL SELECT 'food_entries'           AS table_name, 'piece_grams'
   UNION ALL SELECT 'habits'                 AS table_name, 'health_link'
   UNION ALL SELECT 'habits'                 AS table_name, 'health_target'
 ) AS t
@@ -657,6 +658,12 @@ ALTER TABLE food_entries ADD COLUMN pieces SMALLINT NULL;
 -- floors, minutes). Existing rows: NULL, not linked.
 ALTER TABLE habits ADD COLUMN health_link VARCHAR(16) NULL;
 ALTER TABLE habits ADD COLUMN health_target DOUBLE NULL;
+
+-- One piece's grams for an entry logged by the count, as it was logged (a
+-- label's, the AI's, or the table's guess), so a count edit scales by it and
+-- not by quantity_grams / pieces, which the 10..2000 clamp and rounding bend.
+-- NULL: weighed, or from before (an edit then derives it as it used to).
+ALTER TABLE food_entries ADD COLUMN piece_grams DOUBLE NULL;
 
 -- Health readings (manual + phone sync). A new table, so a guarded CREATE
 -- rather than an ALTER; identical to the CREATE TABLE in tableCreationQueries.sql.

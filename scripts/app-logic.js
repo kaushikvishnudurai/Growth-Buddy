@@ -152,6 +152,34 @@ export function sameZone(stored, device, now = Date.now()) {
   }
 }
 
+/* Noon of a YYYY-MM-DD day in `zone` (the account's), as an ISO instant: what a
+   backdated meal or glass is filed under. The server re-derives the day in the
+   ACCOUNT's zone, so the device's noon put a past day's entry on the day before
+   or after for anyone whose phone and account disagree by 12 hours or more.
+   Noon is far from any DST change, so one offset reading is exact. No zone (or
+   an id this Intl does not know): the device's noon. */
+export function noonIn(dayKey, zone) {
+  const [y, m, d] = dayKey.split('-').map(Number);
+  const u = Date.UTC(y, m - 1, d, 12);
+  try {
+    const p = {};
+    const fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: zone || undefined,
+      hourCycle: 'h23',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    for (const x of fmt.formatToParts(new Date(u))) p[x.type] = x.value;
+    const wall = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute);
+    return new Date(u - (wall - u)).toISOString();
+  } catch (_) {
+    return new Date(y, m - 1, d, 12).toISOString();
+  }
+}
+
 /* Which first-run steps a new account sees. The goal picker when its chunk
    loaded; the timezone step only when the device and the account disagree —
    signup sends the device zone, so for nearly everyone there is nothing to ask.

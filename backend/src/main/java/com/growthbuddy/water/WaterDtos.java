@@ -20,12 +20,13 @@ interface WaterEntryRepository extends JpaRepository<WaterEntry, UUID> {
     List<java.time.Instant> loggedTimesSince(@Param("userId") UUID userId, @Param("from") LocalDate from);
 
     /**
-     * [logDate, drinkType, sum(amountMl)] per day and drink that has entries; days
-     * with none are absent. Raw millilitres: WaterService applies the hydration
-     * factor per drink, so the factors live in one place (DrinkType).
+     * [logDate, drinkType, amountMl] per glass in the range. Raw millilitres, not
+     * summed: WaterService applies the hydration factor and rounds per glass, as
+     * summary() does, so a day reads the same ml everywhere (a per-day-and-drink
+     * sum rounded once and disagreed by 1 ml at the goal).
      */
-    @Query("select e.logDate, e.drinkType, sum(e.amountMl) from WaterEntry e where e.userId = :userId"
-            + " and e.logDate between :from and :to group by e.logDate, e.drinkType")
+    @Query("select e.logDate, e.drinkType, e.amountMl from WaterEntry e where e.userId = :userId"
+            + " and e.logDate between :from and :to")
     List<Object[]> totalsByDay(@Param("userId") UUID userId,
                                @Param("from") LocalDate from, @Param("to") LocalDate to);
 }

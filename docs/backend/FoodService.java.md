@@ -9,10 +9,10 @@ Backs `/api/food`: food logging, a food search, and **photo → nutrition estima
 | `search(query)` | OpenFoodFacts lookup behind `GET /search`; nothing in the app calls it (the form's suggestions are `recent`). Not `@Transactional`: no DB, one HTTP call |
 | `recent(userId)` | up to 8 distinct foods (by name, case-insensitive) from the latest 60 entries — `GET /recent`, the "Log food" chips |
 | `addEntry(userId, req)` | returns the refreshed `FoodSummaryResponse`. Also `POST /entries/manual` (kcal required), which is outside the AI rate limit. `mealSlot` absent → `defaultSlot` (the local hour of `loggedAt`, `MealSlot.forHour`: 04–10 breakfast, 11–15 lunch, 18–22 dinner, else snack). Label figures (`proteinG`…`sodiumMg`, from a barcode or a favourite) are stored only alongside a typed kcal |
-| `copySlot(userId, slot, from, to)` | `POST /entries/copy?slot=` ("Copy yesterday's breakfast"): that slot's entries of `from` (default yesterday) again on `to` (default today) as `manual`, figures included. A pre-slot row (null) counts by its logged hour (`slotOf`). Nothing there → 400. No AI |
+| `copySlot(userId, slot, from, to)` | `POST /entries/copy?slot=` ("Copy yesterday's breakfast"): that slot's entries of `from` (default yesterday) again on `to` (default today) as `manual`, figures, count (`pieces`, `piece_grams`) and note included. A pre-slot row (null) counts by its logged hour (`slotOf`). Nothing there → 400. No AI |
 | `favourites` / `addFavourite(userId, entryId)` / `deleteFavourite` | `GET/POST /favourites`, `DELETE /favourites/{id}`: a starred entry's name, grams, kcal and macros copied into `food_favourites` (a copy, not a link). Same name again (case-insensitive) refreshes it; capped at `MAX_FAVOURITES` (24); owner-checked both ways. Each answers the whole list |
 | `barcode(code)` / `barcodeFrom(json, code)` | `GET /barcode/{code}` (6–14 digits): OpenFoodFacts' **product** endpoint, mapped to a per-100 g `BarcodeProduct` (kcal from kJ / 4.184 when needed, clamped 40..900; sodium in mg, from salt / 2.5 when needed; the label's serving and the whole pack (`product_quantity` → `packGrams`) each if 10..2000 g; brand prefixed to the name). 404 when unknown or the lookup fails. No AI, no DB |
-| `updateEntry(userId, id, req)` | `PUT /entries/{id}`: any of name, grams, kcal, meal, slot, day. Typed kcal → `manual`; new grams alone rescale by the entry's kcal/100 g; a changed name or grams nulls the nutrients for FoodWeek to refill; a moved day gets local noon. No AI |
+| `updateEntry(userId, id, req)` | `PUT /entries/{id}`: any of name, grams, kcal, meal, slot, day. Typed kcal → `manual`; new grams alone rescale the kcal and all six nutrients by new/old grams (not by kcal/100 g, which the column's CHECK floors at 40: 2 kcal of tea would have doubled to 200); a changed name (trimmed, case-insensitive: "dosa" for "Dosa" is no change) nulls all six for FoodWeek to refill the four; a moved day gets local noon. No AI |
 | `deleteEntry(userId, entryId)` | also returns the refreshed summary |
 | `summary(userId, date)` | the day's totals — what the Home food card reads. Also `fiberG` / `sugarG` / `sodiumMg` (`daySum`): the sum over the entries that carry the figure, **null when none does** — fibre is estimated (FoodWeek), sugar and sodium only ever come from a scanned label, so the card shows no made-up 0 |
 | `photoHistory(userId)` | the "recent scans" list |
@@ -40,8 +40,14 @@ GET after a write.
 - **`pieces`** ("2 dosa") is turned into grams: the AI's answer (told the count), else
   `pieces x FoodWeek.gramsPerPiece(name)` (100 g for anything not in its table). `quantityGrams`
   wins when both are sent. The count itself is stored (`food_entries.pieces`) and returned as
-  `FoodEntryResponse.pieces`, so the list says "2 pieces", not "Idli (120g)". `updateEntry`: a
-  new `pieces` alone re-derives the grams (from the entry's own grams per piece when it was counted and the name is unchanged, so a barcode label's piece weight holds; else `gramsPerPiece`); new grams alone clear it (weighed now). A counted portion is held to the column's 10..2000, not the 80..700 a
+  `FoodEntryResponse.pieces`, so the list says "2 pieces", not "Idli (120g)". One piece's grams is
+  stored too (`food_entries.piece_grams`, a DOUBLE: the request's `pieceGrams` from a barcode label,
+  else typed grams / count, else the AI's grams / count, else `gramsPerPiece`), taken BEFORE the
+  10..2000 clamp, so 30 x 100 g stored as 2000 g still edits to 10 = 1000 g. `updateEntry`: a
+  new `pieces` alone re-derives the grams from `piece_grams` (a row from before it: grams / pieces;
+  a renamed food: `gramsPerPiece`); `pieces` with grams keeps both and re-weighs the piece; new grams
+  alone clear both (weighed now). The edit dialog shows a Count field for a counted entry and always
+  sends it. A counted portion is held to the column's 10..2000 (`FoodWeek.countedGrams`), not the 80..700 a
   guessed plate gets, so one idli can be 40 g.
 - `addEntry` makes **at most one** AI call (`askAi`): grams, kcal/100 g and the four nutrients come
   back together, asked only when a typed gram figure or an OpenFoodFacts hit leaves something
@@ -54,7 +60,8 @@ DTOs: `FoodDtos`. Frontend: `openAddFood` in `scripts/app.js`, `FoodCard` / `Scr
 **`food/FoodWeek`** (not in this file) backs the Summary screen: `GET /week` (7 days of kcal against
 `users.daily_food_goal_kcal`, plus protein, carbs, fat and fiber: `food_entries.{protein,carbs,fat,fiber}_g`
 are filled for the week's missing rows in one AI batch through a guarded `coalesce` UPDATE, never
-`save()`, which would re-insert an entry deleted mid-call; until then a per-100 g keyword table stands
+`save()`, which would re-insert an entry deleted mid-call; the UPDATE also matches the name and grams
+the estimate was made for, so a row edited during the call keeps its nulls for the next batch; until then a per-100 g keyword table stands
 in, unstored. Targets: protein 1.6 g/kg for a gain goal, else 1.2, else 60 g; carbs 50% and fat 30%
 of the kcal goal; fiber 30 g. The response also carries `averages` (finished days with meals; today
 only when it's all there is), `levels` (low/ok/high, under 80% / over 120%; carbs and fat are also "high" when their share of
@@ -76,8 +83,9 @@ database, so every instance and a restart share them.
 ## Dating and manual calories
 
 - **Entries can be backdated.** `addEntry` files the day from the request's own `loggedAt`, so any
-  past instant works — the "Log food" sheet has a Day picker (capped at today) and sends local noon
-  for a past day, which lands on the right date in any zone. The response is that day's summary, so
+  past instant works — the "Log food" sheet has a Day picker (capped at today) and sends noon in the
+  ACCOUNT's zone for a past day (app-logic.js `noonIn`; the device's noon was another day for a
+  phone 12+ hours from the account). The response is that day's summary, so
   the frontend must not push a backdated one into today's Home card (`logFoodEntry` guards on
   `summary.date`).
 - **`UserClock`, not `LocalDate.now()` or UTC.** `summary()` defaults to the user's day and
