@@ -64,8 +64,12 @@ const T = {
    tab either lives to chime or is gone. TIMER_ALARM_ID is native.js's, so
    push.js's reminder re-sync can leave it queued. */
 
+// Arm and cancel run in order: schedule awaits the tone's channel first, so a
+// quick Pause's cancel landed before it and the paused timer still rang.
+let alarmChain = Promise.resolve();
+
 function armEndAlarm() {
-  scheduleLocalNotifications([
+  const n = [
     Object.assign(
       {
         id: TIMER_ALARM_ID,
@@ -78,11 +82,15 @@ function armEndAlarm() {
       // the plugin's default channel, loud even on Silent.
       alarmTone()
     ),
-  ]).catch(function () {});
+  ];
+  alarmChain = alarmChain.then(() => scheduleLocalNotifications(n)).catch(function () {});
 }
 
 function cancelEndAlarm() {
+  // Now as well as after the chain: a schedule stuck on the native bridge must
+  // not hold the cancel back for the rest of the session.
   cancelLocalNotifications([TIMER_ALARM_ID]).catch(function () {});
+  alarmChain = alarmChain.then(() => cancelLocalNotifications([TIMER_ALARM_ID])).catch(function () {});
 }
 
 /* The session survives a reload or a killed app. It lived only in module

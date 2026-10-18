@@ -1187,6 +1187,9 @@ function RuleExtras() {
   every.addEventListener('input', relabelUnit);
 
   const picked = new Set();
+  // The weekday sync() picked for the user, until they touch a chip: it follows
+  // the anchor, or Weekly on Mon then a tap on Wed saved a Mon-only series dated Wed.
+  let autoDay = null;
   const chips = {};
   const paintDays = () => {
     for (const code of WEEK_ORDER) {
@@ -1205,6 +1208,7 @@ function RuleExtras() {
           class: 'gb-rule-day',
           'aria-pressed': 'false',
           onclick: () => {
+            autoDay = null;
             if (picked.has(code)) picked.delete(code);
             else picked.add(code);
             paintDays();
@@ -1260,8 +1264,11 @@ function RuleExtras() {
     relabelUnit();
     if (repeat === 'monthly') fillMonth();
     // Weekly with nothing picked means the anchor's own weekday; show it so.
+    const anchorDay = DAY_CODES[nthWeekdayOf(anchorKey).dow];
+    if (autoDay && picked.size === 1 && picked.has(autoDay) && autoDay !== anchorDay) picked.clear();
     if (repeat === 'weekly' && !picked.size) {
-      picked.add(DAY_CODES[nthWeekdayOf(anchorKey).dow]);
+      picked.add(anchorDay);
+      autoDay = anchorDay;
       paintDays();
     }
   }
@@ -1276,6 +1283,7 @@ function RuleExtras() {
   function set(rem) {
     every.value = String((rem && rem.repeatInterval) || 1);
     picked.clear();
+    autoDay = null;
     for (const i of parseRepeatDays(rem && rem.repeatDays)) picked.add(DAY_CODES[i]);
     paintDays();
     count.value = rem && rem.repeatCount ? String(rem.repeatCount) : '';
@@ -1672,6 +1680,15 @@ function openEditDialog(rem, occKey, onEdit) {
           return;
         }
         const repeat = scope === 'this' ? null : repeatPicker.get();
+        // A single occurrence moved (day or time) to a slot that has gone today
+        // would save and never ring: the add form's rule. A text fix stays allowed.
+        const lands = movedDay ? dateInput.value : occKey;
+        const retimed = movedDay || timeInput.value !== (rem.time || '').slice(0, 5);
+        if (single && (!repeat || repeat === 'none') && retimed && isPastSlot(lands, timeInput.value)) {
+          dateErr.set('That time has already passed today. Pick a later one.');
+          timeInput.focus();
+          return;
+        }
         // YYYY-MM-DD strings, so < is a date comparison (same as the add form).
         if (repeat && repeat !== 'none' && untilInput.value && untilInput.value < startKey()) {
           untilErr.set('This is before the reminder starts on ' + prettyDate(startKey()) + '.');

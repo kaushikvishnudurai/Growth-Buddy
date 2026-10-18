@@ -69,6 +69,15 @@ assert.deepEqual(
 );
 // Asleep before 18:00 (a nap-day shift worker) still lands on the band.
 assert.equal(nightOnBand({ bedtime: '17:00', wakeTime: '01:00' }).minutes, 480);
+// ...and draws a bar: from the band's top, not wrapped past its end (from 1380 > to 1080).
+assert.deepEqual(
+  (({ from, to }) => ({ from, to }))(nightOnBand({ bedtime: '17:00', wakeTime: '01:00' })),
+  { from: 0, to: 420 }
+);
+assert.deepEqual(
+  (({ from, to }) => ({ from, to }))(nightOnBand({ bedtime: '13:00', wakeTime: '20:00' })),
+  { from: 0, to: 120 }
+);
 // Woke after noon: clipped to the band's end, duration kept.
 const late = nightOnBand({ bedtime: '03:00', wakeTime: '13:00' });
 assert.equal(late.to, 1080);

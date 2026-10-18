@@ -310,11 +310,13 @@ function LastNight(p) {
   const prev = list.slice(0, -1).map((n) => n.night).filter(Boolean);
   const avg = (key, xs) => (xs.length ? mean(xs.map((n) => ({ value: n[key] }))) : null);
   const avgMin = avg('minutes', known);
-  const usual = known.length >= 3 ? { from: avg('from', known), to: avg('to', known) } : null;
+  // A daytime sleep wholly off the band (13:00-16:00) has no bar: kept out of the window.
+  const onBand = known.filter((n) => n.to > n.from);
+  const usual = onBand.length >= 3 ? { from: avg('from', onBand), to: avg('to', onBand) } : null;
   const prevMin = avg('minutes', prev);
 
-  const top = Math.min(120, ...known.map((n) => Math.floor(n.from / 60) * 60));
-  const end = Math.max(960, ...known.map((n) => Math.ceil(n.to / 60) * 60));
+  const top = Math.min(120, ...onBand.map((n) => Math.floor(n.from / 60) * 60));
+  const end = Math.max(960, ...onBand.map((n) => Math.ceil(n.to / 60) * 60));
   const y = (m) => ((Math.min(Math.max(m, top), end) - top) / (end - top)) * 100 + '%';
   const span = (a, b) => ({ top: y(a), height: 'calc(' + y(b) + ' - ' + y(a) + ')' });
 

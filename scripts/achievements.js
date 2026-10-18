@@ -7,6 +7,7 @@
    this half stays in boot for the unlock check and the XP bar.
    ===================================================================== */
 import { activeDates } from './review.js';
+import { todayKey } from './home-order.js';
 
 // The server owns the level curve (ProgressService.XP_PER_LEVEL) and sends each
 // user's progress through it; this is only the fallback for an older cached user.
@@ -57,7 +58,8 @@ function computeAchievements({
   const trendDays = Object.values(byDate);
   // Day counts are sets of dates: adding today's live numbers to a history that
   // may already hold today counted it twice (two plates on day 1 unlocked "3 days").
-  const today = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD, local
+  // The account's day, the one byDate is keyed by (a device in another zone added a second day).
+  const today = todayKey(user && user.timezone);
   const datesWhere = (ok) => new Set(Object.keys(byDate).filter((k) => ok(byDate[k])));
   const waterDates = datesWhere((d) => d.waterGoalMl > 0 && d.waterMl >= d.waterGoalMl);
   const foodDates = datesWhere((d) => (d.kcal || 0) > 0);

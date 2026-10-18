@@ -1052,7 +1052,11 @@ function updateGoalProgress(goalId, patch) {
   goalSaves.set(key, run.catch(() => {}));
   run.catch((err) => {
     if (!goalProgressSeq.isLatest(key, seq)) return;
-    restoreKey(state.goalProgress, key, prev);
+    // Back to the server's copy (putProgress refreshes goal.progress on every
+    // success), not `prev`: that still held an earlier edit whose save also
+    // failed, which then stayed ticked and was gone after a reload.
+    const goal = (state.goals || []).flatMap((sec) => sec.goals || []).find((g) => String(g.id) === key);
+    restoreKey(state.goalProgress, key, goal ? goal.progress : prev);
     persistGoalProgress();
     render();
     toastError(err, 'Could not save that progress.');
@@ -7037,21 +7041,22 @@ function openAddFood(opts) {
     const past = known().find((x) => x.foodName.trim().toLowerCase() === name);
     const pastGrams = past && (past.pieces && pieceGrams ? past.pieces * pieceGrams : past.quantityGrams);
     const startGrams = p.packGrams || pastGrams || p.servingGrams || null;
+    // More pieces than the form counts (a 400 g pack of 10 g biscuits): grams.
     const count =
-      pieceGrams && startGrams
-        ? Math.max(1, Math.min(UNITS.pcs.max, Math.round(startGrams / pieceGrams)))
+      pieceGrams && startGrams && startGrams / pieceGrams <= UNITS.pcs.max
+        ? Math.max(1, Math.round(startGrams / pieceGrams))
         : null;
-    const grams = pieceGrams ? count && count * pieceGrams : startGrams;
+    const grams = count ? count * pieceGrams : startGrams;
     const k = grams ? labelFor(p, grams).kcal : null;
     foodNameInput.value = p.name;
-    if (pieceGrams) {
+    if (count) {
       if (unitSeg.get() !== 'pcs') {
         quietUnit = true;
         unitSeg.node.children[0].click();
         quietUnit = false;
       }
     } else toGrams();
-    quantityInput.value = grams ? String(pieceGrams ? count : grams) : '';
+    quantityInput.value = grams ? String(count || grams) : '';
     kcalInput.value = autoKcal = k != null ? String(k) : '';
     kcalFor = (n, u) =>
       u === 'g' ? labelFor(p, n).kcal : pieceGrams ? labelFor(p, n * pieceGrams).kcal : null;
@@ -9293,8 +9298,9 @@ async function snoozeReminder(id, minutes, notifId) {
 
 async function cancelReminderSnooze(id) {
   try {
-    const saved = await api('/api/reminders/' + encodeURIComponent(id) + '/snooze', { method: 'DELETE' });
-    state.reminders = state.reminders.map((r) => (r.id === id ? keepDone(r, saved) : r));
+    const saved = await api('/api/reminders/' + encodeURIComponent(liveId(id)) + '/snooze', { method: 'DELETE' });
+    // The row may already hold the real id (the outbox refetched) or still the tmp one.
+    state.reminders = state.reminders.map((r) => (r.id === id || r.id === saved.id ? keepDone(r, saved) : r));
     reSyncDeviceAlarms();
     rerenderCalendarSideIfActive();
     repaintReminderSettings();
@@ -9620,12 +9626,13 @@ async function editReminder(scope, id, occKey, patch) {
     const qs = new URLSearchParams();
     qs.set('scope', scope || 'all');
     if (occKey) qs.set('date', occKey);
-    const saved = await api('/api/reminders/' + encodeURIComponent(id) + '?' + qs.toString(), {
+    // liveId: a row made offline may still carry its tmp- id (a 400 in the path).
+    const saved = await api('/api/reminders/' + encodeURIComponent(liveId(id)) + '?' + qs.toString(), {
       method: 'PATCH',
       body: JSON.stringify(patch),
     });
-    if (saved && saved.id === id) {
-      state.reminders = state.reminders.map((r) => (r.id === id ? keepDone(r, saved) : r));
+    if (saved && saved.id === realId(id)) {
+      state.reminders = state.reminders.map((r) => (r.id === id || r.id === saved.id ? keepDone(r, saved) : r));
     } else {
       state.reminders = await api('/api/reminders');
     }

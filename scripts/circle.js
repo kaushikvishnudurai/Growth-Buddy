@@ -1032,9 +1032,13 @@ function openSearchModal({ onBrowse, onSearch, onOffer, onRequest, onView, curre
     (onBrowse ? onBrowse() : Promise.resolve([]))
       .then((list) => {
         allPeople = list || [];
-        paintList(allPeople);
+        // Typed while it loaded: re-run that search over the list, not paint over it.
+        if (queryInput.value.trim()) queryInput.dispatchEvent(new Event('input'));
+        else paintList(allPeople);
       })
-      .catch(() => paintEmpty('Could not load people.', loadPeople));
+      .catch(() => {
+        if (!queryInput.value.trim()) paintEmpty('Could not load people.', loadPeople);
+      });
   }
   loadPeople();
 

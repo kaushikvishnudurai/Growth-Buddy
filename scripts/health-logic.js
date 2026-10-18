@@ -165,12 +165,14 @@ export function nightOnBand(entry) {
   const bed = toMin(entry.bedtime);
   const wake = toMin(entry.wakeTime);
   if (bed == null || wake == null) return null;
-  const from = (bed - 18 * 60 + 1440) % 1440;
-  let to = (wake - 18 * 60 + 1440) % 1440;
-  if (to <= from) to += 1440;
-  const minutes = to - from;
+  const minutes = (wake - bed + 1440) % 1440;
   if (minutes <= 0 || minutes > 20 * 60) return null;
-  return { from, to: Math.min(to, 1080), minutes, bedtime: entry.bedtime, wakeTime: entry.wakeTime, quality: entry.quality || null };
+  // A bedtime from 12:00 to 18:00 sits before the band: negative, then clipped to
+  // its top. Wrapped to 1080+ it drew no bar and dragged the usual window off.
+  let start = (bed - 18 * 60 + 1440) % 1440;
+  if (start >= 1080) start -= 1440;
+  const clip = (v) => Math.max(0, Math.min(v, 1080));
+  return { from: clip(start), to: clip(start + minutes), minutes, bedtime: entry.bedtime, wakeTime: entry.wakeTime, quality: entry.quality || null };
 }
 
 /** The `n` nights ending on `endDay` (keyed on the wake date), oldest first; gaps are null. */

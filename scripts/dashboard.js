@@ -47,7 +47,7 @@ import { dateKey } from './dates.js'; // not todayKey: Home's today is the accou
 import { fmtDate, fmtNumber } from './i18n.js';
 import {
   groupBySlot,
-  mealSlotAt,
+  mealSlotForHour,
   DRINKS,
   effectiveMl,
   suggestWaterGoalMl,
@@ -511,8 +511,8 @@ const minutesOfDay = (hhmm) => {
 
 function ReminderSuggestionsCard({ habits, water, wellness, reminders, onAddSuggestedReminder }) {
   const key = todayKey();
-  const now = new Date();
-  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  // The account's clock: reminder times are account-local (the scheduler's zone).
+  const nowMinutes = zoneParts(new Date());
   const stillToCome = (item) => minutesOfDay(item.time) > nowMinutes;
   const items = [];
   // A habit with its own reminder time is already covered (bell, push and
@@ -1167,8 +1167,9 @@ function FoodCard({ food, onAddFood, onDeleteFood, onEditFood, onCopySlot, copya
   const groups = groupBySlot(entries);
   const micros = dayMicros(food);
   const isToday = !food || !food.date || food.date === todayKey();
-  const hourNow = new Date().getHours();
-  const nowSlot = mealSlotAt(new Date());
+  // The account's hour, like isToday's day above.
+  const hourNow = Math.floor(zoneParts(new Date()) / 60);
+  const nowSlot = mealSlotForHour(hourNow);
 
   const row = (item) =>
     h(
@@ -2210,7 +2211,8 @@ function DayTimeline({
         return;
       }
       const m = zoneParts(due);
-      timed.push({ min: m, row: taskRow(t, sharedFormatTime(due), !t.done && m < nowMin) });
+      // Labelled by the account's clock it is placed by (formatTime of a Date is the device's).
+      timed.push({ min: m, row: taskRow(t, sharedFormatTime(hhmmOf(m)), !t.done && m < nowMin) });
     });
   }
 
@@ -2467,7 +2469,7 @@ function TodayCard(props) {
   late.forEach((t) =>
     items.push({
       title: t.title,
-      when: accountDayOf(new Date(t.dueAt)) < today ? 'overdue' : 'overdue · ' + sharedFormatTime(new Date(t.dueAt)),
+      when: accountDayOf(new Date(t.dueAt)) < today ? 'overdue' : 'overdue · ' + sharedFormatTime(hhmmOf(zoneParts(new Date(t.dueAt)))),
       late: true,
       tick: () => (toggleTask(t.id), undoToast(t.title, () => toggleTask(t.id))),
     })
@@ -2506,7 +2508,7 @@ function TodayCard(props) {
     .forEach((t) =>
       items.push({
         title: t.title,
-        when: sharedFormatTime(new Date(t.dueAt)),
+        when: sharedFormatTime(hhmmOf(zoneParts(new Date(t.dueAt)))),
         tick: () => (toggleTask(t.id), undoToast(t.title, () => toggleTask(t.id))),
       })
     );
@@ -2740,8 +2742,8 @@ function MiniCalendarCard({
   function keyFromInstant(iso) {
     if (!iso) return '';
     const dt = new Date(iso);
-    if (Number.isNaN(dt.getTime())) return '';
-    return dateKey(dt.getFullYear(), dt.getMonth(), dt.getDate());
+    // The account's day, the one the grid marks as today and Home's Today card files by.
+    return Number.isNaN(dt.getTime()) ? '' : accountDayOf(dt);
   }
   // Bucketed by day once per render: the 42-cell grid used to re-filter every
   // task (two Date parses each) per cell.
