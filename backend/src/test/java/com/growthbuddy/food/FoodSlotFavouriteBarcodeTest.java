@@ -223,7 +223,7 @@ class FoodSlotFavouriteBarcodeTest {
     void aProductMapsToPer100gFiguresWithSodiumInMilligrams() throws Exception {
         String body = """
                 {"status":1,"product":{"product_name":"Marie biscuits","brands":"Britannia, Other",
-                 "serving_quantity":"25",
+                 "serving_quantity":"25","product_quantity":120,
                  "nutriments":{"energy-kcal_100g":443,"proteins_100g":7.5,"carbohydrates_100g":76,
                    "fat_100g":12.3,"fiber_100g":"2.1","sugars_100g":22,"sodium_100g":0.36}}}
                 """;
@@ -235,12 +235,13 @@ class FoodSlotFavouriteBarcodeTest {
         assertThat(p.sugarPer100g()).isEqualTo(22.0);
         assertThat(p.sodiumMgPer100g()).isEqualTo(360);
         assertThat(p.servingGrams()).isEqualTo(25);
+        assertThat(p.packGrams()).isEqualTo(120);
     }
 
     @Test
     void kilojoulesAndSaltStandInWhenTheLabelLacksKcalAndSodium() throws Exception {
         String body = """
-                {"status":1,"product":{"product_name":"Oat drink",
+                {"status":1,"product":{"product_name":"Oat drink","product_quantity":5000,
                  "nutriments":{"energy_100g":200,"salt_100g":0.1}}}
                 """;
         BarcodeProduct p = FoodService.barcodeFrom(new ObjectMapper().readTree(body), "123456");
@@ -248,6 +249,7 @@ class FoodSlotFavouriteBarcodeTest {
         assertThat(p.sodiumMgPer100g()).isEqualTo(40);
         assertThat(p.sugarPer100g()).isNull();
         assertThat(p.servingGrams()).isNull();
+        assertThat(p.packGrams()).as("past the form's 2000 g, not a portion").isNull();
     }
 
     @Test

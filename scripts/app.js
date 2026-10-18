@@ -7023,19 +7023,43 @@ function openAddFood(opts) {
   paintChips();
 
   /* Barcode: the product's per-100 g label from OpenFoodFacts (GET
-     /api/food/barcode/{code}, no AI) fills name, grams (its serving, else 100)
+     /api/food/barcode/{code}, no AI) fills name, amount (its serving, else 100 g)
      and kcal; the grams can still change and the kcal follows them until typed. */
   const fillBarcode = (p) => {
-    label = { kind: 'barcode', name: p.name, product: p };
-    const grams = p.servingGrams || 100;
-    const k = labelFor(p, grams).kcal;
+    // A serving under 30 g is one piece ("1 biscuit (10 g)"): start at 1 pc,
+    // not 10 g. ponytail: size heuristic; parse serving_size's words if a
+    // 20 g scoop ever shows up as pieces.
+    const pieceGrams = p.servingGrams && p.servingGrams < 30 ? p.servingGrams : null;
+    label = { kind: 'barcode', name: p.name, product: p, pieceGrams };
+    // The whole pack (a packet is usually eaten in one go), else a portion we
+    // already have (last time's, then the label's serving), else the user says.
+    const name = String(p.name || '').trim().toLowerCase();
+    const past = known().find((x) => x.foodName.trim().toLowerCase() === name);
+    const pastGrams = past && (past.pieces && pieceGrams ? past.pieces * pieceGrams : past.quantityGrams);
+    const startGrams = p.packGrams || pastGrams || p.servingGrams || null;
+    const count =
+      pieceGrams && startGrams
+        ? Math.max(1, Math.min(UNITS.pcs.max, Math.round(startGrams / pieceGrams)))
+        : null;
+    const grams = pieceGrams ? count && count * pieceGrams : startGrams;
+    const k = grams ? labelFor(p, grams).kcal : null;
     foodNameInput.value = p.name;
-    toGrams();
-    quantityInput.value = String(grams);
+    if (pieceGrams) {
+      if (unitSeg.get() !== 'pcs') {
+        quietUnit = true;
+        unitSeg.node.children[0].click();
+        quietUnit = false;
+      }
+    } else toGrams();
+    quantityInput.value = grams ? String(pieceGrams ? count : grams) : '';
     kcalInput.value = autoKcal = k != null ? String(k) : '';
-    kcalFor = (n, u) => (u === 'g' ? labelFor(p, n).kcal : null);
-    filledFor = String(p.name || '').trim().toLowerCase();
+    kcalFor = (n, u) =>
+      u === 'g' ? labelFor(p, n).kcal : pieceGrams ? labelFor(p, n * pieceGrams).kcal : null;
+    filledFor = name;
     paintChips();
+    // Nothing to go on: ask, with the kcal following whatever is typed.
+    if (!grams) quantityInput.focus();
+    return !!grams;
   };
   const barcodeBtn = canScanBarcode()
     ? h(
@@ -7047,8 +7071,8 @@ function openAddFood(opts) {
             openBarcodeScanner(async (code) => {
               const done = setThinking(barcodeBtn, 'Looking it up');
               try {
-                fillBarcode(await api('/api/food/barcode/' + encodeURIComponent(code)));
-                toastSuccess('Found it. Check the amount, then add.');
+                const filled = fillBarcode(await api('/api/food/barcode/' + encodeURIComponent(code)));
+                toastSuccess(filled ? 'Found it. Check the amount, then add.' : 'Found it. How many grams did you have?');
               } catch (err) {
                 toastError(err && err.status === 404 ? null : err, 'That product isn’t in the database. Type it in instead.');
               } finally {
@@ -7143,7 +7167,16 @@ function openAddFood(opts) {
           throw fieldRefusal(quantityInput, 'Amount must be ' + unit.min + ' to ' + unit.max + ' ' + unit.name + '.');
         }
         const pieces = quantityRaw != null && unit === UNITS.pcs ? Math.round(quantityRaw) : null;
-        const grams = quantityRaw != null && unit === UNITS.g ? Math.round(quantityRaw) : null;
+        // A scanned product counted by the piece knows its weight from the label.
+        const pieceGrams = label && label.name === foodName && label.pieceGrams;
+        const grams =
+          quantityRaw == null
+            ? null
+            : unit === UNITS.g
+              ? Math.round(quantityRaw)
+              : pieceGrams
+                ? Math.max(10, Math.min(2000, Math.round(pieces * pieceGrams)))
+                : null;
         const kcalRaw = kcalInput.value ? Number(kcalInput.value) : null;
         // The ceiling is one meal, not one day — a typed 50,000 is a slipped
         // finger. Say so here rather than letting the server answer 400.

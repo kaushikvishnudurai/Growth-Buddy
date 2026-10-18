@@ -606,7 +606,7 @@ public class FoodService {
         try {
             HttpRequest req = HttpRequest.newBuilder()
                     .uri(URI.create("https://world.openfoodfacts.org/api/v2/product/" + code
-                            + ".json?fields=product_name,brands,nutriments,serving_quantity"))
+                            + ".json?fields=product_name,brands,nutriments,serving_quantity,product_quantity"))
                     .timeout(Duration.ofSeconds(10))
                     .header("User-Agent", "GrowthBuddy/1.0 (food log)")
                     .GET()
@@ -662,6 +662,9 @@ public class FoodService {
         Double serving = numberOrNull(p, "serving_quantity");
         Integer servingGrams = serving != null && serving >= 10 && serving <= 2000
                 ? (int) Math.round(serving) : null;
+        // The form's gram range; a 5 kg sack of rice is not one portion.
+        Double pack = numberOrNull(p, "product_quantity");
+        Integer packGrams = pack != null && pack >= 10 && pack <= 2000 ? (int) Math.round(pack) : null;
         return new BarcodeProduct(code, name.length() > 255 ? name.substring(0, 255) : name,
                 kcal != null && kcal > 0 ? clamp((int) Math.round(kcal)) : null,
                 numberOrNull(n, "proteins_100g"),
@@ -670,7 +673,7 @@ public class FoodService {
                 numberOrNull(n, "fiber_100g"),
                 numberOrNull(n, "sugars_100g"),
                 sodiumG != null ? (int) Math.round(sodiumG * 1000) : null,
-                servingGrams);
+                servingGrams, packGrams);
     }
 
     @Transactional

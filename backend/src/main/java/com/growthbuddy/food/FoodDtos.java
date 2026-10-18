@@ -207,11 +207,12 @@ record AddFavouriteRequest(@jakarta.validation.constraints.NotNull UUID entryId)
 
 /**
  * GET /api/food/barcode/{code}: one OpenFoodFacts product, per 100 g. Any figure
- * the label lacks is null; servingGrams is the label's serving when it has one.
+ * the label lacks is null; servingGrams is the label's serving when it has one,
+ * packGrams the whole pack's (ml counted as g, like serving).
  */
 record BarcodeProduct(String code, String name, Integer kcalPer100g, Double proteinPer100g,
         Double carbsPer100g, Double fatPer100g, Double fiberPer100g, Double sugarPer100g,
-        Integer sodiumMgPer100g, Integer servingGrams) {
+        Integer sodiumMgPer100g, Integer servingGrams, Integer packGrams) {
 }
 
 record PhotoFoodEstimateRequest(
