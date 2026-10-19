@@ -61,7 +61,20 @@
     <dependency>
       <groupId>nl.martijndwars</groupId>
       <artifactId>web-push</artifactId>
-      <version>5.1.1</version>
+      <version>5.1.2</version>
+    </dependency>
+    <!-- Since 5.1.2 web-push pulls these at runtime scope only, but its send() returns HttpClient
+         4's HttpResponse (PushService reads the status) and throws jose4j's JoseException, so
+         compiling PushService needs both. httpcore: version from the Spring Boot BOM. jose4j: the
+         version web-push 5.1.2 itself declares; move it with web-push. -->
+    <dependency>
+      <groupId>org.apache.httpcomponents</groupId>
+      <artifactId>httpcore</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.bitbucket.b_c</groupId>
+      <artifactId>jose4j</artifactId>
+      <version>0.7.9</version>
     </dependency>
     <!-- web-push needs BouncyCastle at runtime for EC key handling. -->
     <dependency>
