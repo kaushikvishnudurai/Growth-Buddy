@@ -61,7 +61,7 @@
     <dependency>
       <groupId>nl.martijndwars</groupId>
       <artifactId>web-push</artifactId>
-      <version>5.1.1</version>
+      <version>5.1.2</version>
     </dependency>
     <!-- web-push needs BouncyCastle at runtime for EC key handling. -->
     <dependency>
