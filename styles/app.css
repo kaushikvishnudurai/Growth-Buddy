@@ -3756,6 +3756,9 @@ button.gb-seat:disabled {
   overflow-x: auto;
   scrollbar-width: none;
   flex-wrap: nowrap;
+  /* Fade the right edge so a sideways-scrolling row reads as more, not clipped. */
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
 }
 .gb-msg-chips.is-hidden {
   display: none;
@@ -7059,6 +7062,7 @@ span.gb-time.gb-input {
 }
 .gb-affix > input {
   flex: 1;
+  align-self: stretch; /* the whole box focuses the field, not just its text line */
   min-width: 0;
   width: 100%;
   border: none;
@@ -8315,7 +8319,7 @@ button.gb-tone-chip::before,
   align-items: center;
   gap: var(--space-1);
   font-weight: 700;
-  color: var(--sun-700);
+  color: var(--warning-soft-fg);
 }
 .gb-focus-goal-bar {
   height: 8px;
@@ -13811,6 +13815,7 @@ h2[tabindex='-1']:focus {
   grid-template-columns: 28px repeat(31, minmax(0, 1fr));
   gap: 2px;
   max-width: 640px;
+  margin-inline: auto;
   cursor: pointer;
   border-radius: var(--radius-sm);
 }
@@ -13842,6 +13847,10 @@ h2[tabindex='-1']:focus {
   aspect-ratio: 1;
   border-radius: 2px;
   background: var(--surface-2);
+}
+/* surface-2 on the dark card is ~1.1:1: the empty year all but vanished. */
+[data-theme='dark'] .gb-pixel {
+  background: var(--surface-3);
 }
 .gb-pixel.lv-1 {
   background: color-mix(in srgb, var(--brand) 25%, var(--surface-2));
@@ -13878,7 +13887,8 @@ h2[tabindex='-1']:focus {
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 6px var(--space-3);
-  margin-top: var(--space-3);
+  max-width: 640px;
+  margin: var(--space-3) auto 0;
   font-size: var(--text-xs);
   color: var(--fg3);
 }
@@ -15242,7 +15252,7 @@ button.gb-tone-chip:focus-visible {
   white-space: nowrap;
 }
 .gb-goal-ms-due.is-overdue {
-  color: var(--coral-700);
+  color: var(--brand-ink);
   font-weight: 600;
 }
 .gb-goal-linked {

@@ -71,6 +71,8 @@ Dropping or renaming a face here: check the `rel=preload` links in `index.html`,
   `--surface-3` as a text ground (fg3 is ~4.0-4.2 on it), and the status solids
   (`--warning` 2.4, `--success` 3.5 in light) — they colour icons, so a component using one as
   text should switch to the `-soft-fg` or `--brand-ink`.
+  Raw `-700` text (`--leaf-700`, `--sun-700`, `--coral-700`) is not themed either and the test
+  does not catch it: it stays dark on the dark card. Text uses `-soft-fg` / `--brand-ink`.
 - **Components are tested too** (second half of `contrast.test.mjs`). It reads every rule in
   `styles/` and fails on (c) a `background` naming a light ramp step (`-50`/`-100`) with no
   `[data-theme='dark']` twin of the same selector — ramps are not themed, so it stays a pastel

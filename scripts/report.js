@@ -196,8 +196,9 @@ function trendChart(values, color, days, fmt, title, opts = {}) {
   const highs = present.reduce((a, b) => (b.v > a.v ? b : a));
   const summary =
     (title ? title + ': ' : '') +
-    present.length +
-    (weekly ? ' weeks logged, latest weekly average ' : ' days logged, latest ') +
+    (weekly
+      ? present.length + (present.length === 1 ? ' week' : ' weeks') + ' logged, latest weekly average '
+      : nDays(present.length) + ' logged, latest ') +
     fmt(present[present.length - 1].v) +
     ', lowest ' +
     fmt(lows.v) +

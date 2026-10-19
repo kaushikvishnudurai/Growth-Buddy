@@ -2264,7 +2264,7 @@ function buildForm() {
           'button',
           {
             type: 'button',
-            class: 'gb-btn gb-btn--compact gb-mic gb-rem-mic',
+            class: 'gb-btn gb-btn--secondary gb-btn--compact gb-mic gb-rem-mic',
             'aria-label': 'Say the reminder',
             'aria-pressed': 'false',
             title: 'Say it: “every Monday at 7pm call mom, 10 minutes before”',

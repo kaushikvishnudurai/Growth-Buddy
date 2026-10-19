@@ -2354,12 +2354,12 @@
 
 /* ---- Every month (recurring rules, Income tab) ---- */
 .gb-money-exp-amt.is-in {
-  color: var(--leaf-700);
+  color: var(--success-soft-fg);
 }
 /* The forecast's "expected in" line sits under the projected total. */
 .gb-money-forecast-in {
   margin-top: 2px;
-  color: var(--leaf-700);
+  color: var(--success-soft-fg);
 }
 
 /* ---- Budget rollover ---- */
@@ -2382,7 +2382,7 @@
 .gb-money-bcard-carry {
   margin-top: var(--space-1);
   font-size: var(--text-xs);
-  color: var(--leaf-700);
+  color: var(--success-soft-fg);
 }
 .gb-money-bcard-carry.is-less {
   color: var(--warning-soft-fg);
