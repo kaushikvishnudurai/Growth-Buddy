@@ -2,6 +2,12 @@
 
 Next session: **only this**. Build it, prove it on a real Android phone, nothing else.
 
+## Update (2026-10-19)
+
+Diagnosed on the phone: the own sound **does play** (webm/Opus, via System UI's RingtonePlayer, no
+permission errors). Suspects 1-6 below are ruled out. The remaining problem is that OnePlus delays
+every alarm by up to an hour. Continue in **`handoff-reminder-timing.md`**.
+
 ## Status (2026-10-17)
 
 - User report after installing APK versionCode 11 / web build 104: **custom sound does not ring on the
