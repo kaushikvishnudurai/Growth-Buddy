@@ -2056,13 +2056,15 @@ export function MoneyCustomisePane(money, save) {
     const custom = money.customCategories || [];
     list.replaceChildren(
       ...(custom.length
-        ? custom.map((c) =>
-            h(
+        ? custom.map((c) => {
+            // catOf, not the saved c.soft/c.fg: tags saved before the token move carry light-only tints.
+            const look = catOf(c.key, money);
+            return h(
               'div',
               { class: 'gb-money-tag-row' },
               h(
                 'span',
-                { class: 'gb-money-cat-ic', style: { background: c.soft, color: c.fg } },
+                { class: 'gb-money-cat-ic', style: { background: look.soft, color: look.fg } },
                 Icon(c.icon || 'tag', { size: 14, sw: 2.2 })
               ),
               h('span', { class: 'gb-money-tag-name' }, c.label),
@@ -2085,8 +2087,8 @@ export function MoneyCustomisePane(money, save) {
                 },
                 Icon('trash-2', { size: 15, sw: 2.4 })
               )
-            )
-          )
+            );
+          })
         : [h('div', { class: 'gb-note-hint' }, 'No custom tags yet. Built-in tags always stay.')])
     );
     refreshIcons();
