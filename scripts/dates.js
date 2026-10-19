@@ -23,6 +23,12 @@ export function todayKey() {
   return localKey(new Date());
 }
 
+/** `key` moved by `n` days (negative = earlier). Noon, so a DST day can't slip. */
+export function addDays(key, n) {
+  const [y, m, d] = String(key).split('-').map(Number);
+  return localKey(new Date(y, m - 1, d + n, 12));
+}
+
 /* ---- "Call plumber tomorrow 5pm": the when inside a title ----
    The words a task's title can carry for its due time, read the way Quick add's
    plain patterns read a reminder (QuickAddFallback DAY / AT_TIME / IN_TIME /

@@ -72,7 +72,7 @@ export function DayLine(list, className, extra, bands) {
 
 /* Hour labels for the large line, short enough to sit under it on a phone:
    "00 06 12 18 24", or "12a 6a 12p 6p 12a" for a 12-hour clock. */
-export function rulerHours() {
+function rulerHours() {
   const h24 = /^13/.test(formatTime('13:00'));
   return h24 ? ['00', '06', '12', '18', '24'] : ['12a', '6a', '12p', '6p', '12a'];
 }
@@ -162,7 +162,7 @@ export const ROUTINE_MAX = 8;
    days outside it. */
 export const DAY_OPTS = ['all', 'work', 'off'];
 export const validDays = (d) => (DAY_OPTS.indexOf(d) !== -1 ? d : 'all');
-export function isWorkDay(key) {
+function isWorkDay(key) {
   const [y, m, d] = key.split('-').map(Number);
   const days = (WORK_WEEKS[getWorkWeek()] || WORK_WEEKS[DEFAULT_WORK_WEEK]).days;
   return days.indexOf(new Date(y, m - 1, d).getDay()) !== -1;

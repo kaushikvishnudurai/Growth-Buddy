@@ -66,7 +66,7 @@ export async function offerFile(blob, filename, title, { shareFirst = true } = {
 }
 
 /** The system browser in the app (Capacitor Browser), a new tab on the web. */
-export function openExternal(url) {
+function openExternal(url) {
   const browser = isNative() ? nativePlugin('Browser') : null;
   if (browser) browser.open({ url }).catch(() => window.open(url, '_blank', 'noopener'));
   else window.open(url, '_blank', 'noopener');

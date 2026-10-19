@@ -264,7 +264,7 @@ function idItems(raw) {
 }
 const removedHere = new Map(); // key -> ids this tab removed from that queue
 /** The merged value, or undefined when the two can't be merged (take incoming). */
-export function mergeQueue(incoming, local, gone, removed) {
+function mergeQueue(incoming, local, gone, removed) {
   const inc = idItems(incoming);
   const mine = idItems(local);
   if (!inc || !mine) return undefined;

@@ -56,7 +56,7 @@ export function topInsight(data) {
 
 /** A salary: the latest income's amount (within 10%) seen 2+ times, each 26-35 days apart.
     Returns { amount, last } or null when income is irregular. */
-export function regularIncome(inc) {
+function regularIncome(inc) {
   const rows = inc.slice().sort((a, b) => a.date.localeCompare(b.date));
   if (!rows.length) return null;
   const a = Number(rows[rows.length - 1].amount) || 0;

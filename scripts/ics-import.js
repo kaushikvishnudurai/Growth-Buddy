@@ -121,7 +121,7 @@ function zoneFmt(zone) {
   return fmts.get(zone);
 }
 /** Is `zone` a time zone this runtime knows? (Outlook writes Windows names.) */
-export function knownZone(zone) {
+function knownZone(zone) {
   try {
     zoneFmt(zone);
     return true;

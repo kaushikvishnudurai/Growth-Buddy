@@ -26,10 +26,10 @@ import {
   setTimeFormat,
   detectTimeFormat,
   setThinking,
-  rovingGroup,
   focusSoon,
   SHEET_EXIT_MS,
   visibleText,
+  segmented,
 } from './gb-kit.js';
 import { setLocale, localeFromUser, fmtDate } from './i18n.js';
 import { BREAK_LENGTHS, breakState, breakDays, startBreak, endBreak } from './break.js';
@@ -9842,35 +9842,6 @@ function openModal(opts) {
   return sharedModal({ ...opts, afterPrimary: render });
 }
 
-function segmented(options, initial, onChange) {
-  let selected = initial;
-  const segs = {};
-  const wrap = rovingGroup(h('div', { class: 'gb-segmented', role: 'radiogroup' }));
-  options.forEach((opt) => {
-    const btn = h(
-      'button',
-      {
-        type: 'button',
-        class: 'gb-seg' + (opt.value === selected ? ' is-on' : ''),
-        role: 'radio',
-        'aria-checked': String(opt.value === selected),
-        onclick: () => {
-          selected = opt.value;
-          for (const k in segs) {
-            const on = k === opt.value;
-            segs[k].classList.toggle('is-on', on);
-            segs[k].setAttribute('aria-checked', String(on));
-          }
-          if (onChange) onChange(opt.value);
-        },
-      },
-      opt.label
-    );
-    segs[opt.value] = btn;
-    wrap.appendChild(btn);
-  });
-  return { node: wrap, get: () => selected };
-}
 
 /* Quick add's one sentence -> preview (or straight through for controls only).
    Shared by the Quick add bar (quickAddBox) and the command palette.

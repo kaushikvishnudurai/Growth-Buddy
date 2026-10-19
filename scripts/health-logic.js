@@ -13,6 +13,7 @@
      the phone), never a correction of it.
    - 'latest' metrics (weight, blood pressure, ...) take the newest reading of
      the day, whoever wrote it. */
+import { addDays } from './dates.js';
 
 export const HEALTH_GROUPS = [
   { id: 'activity', label: 'Activity' },
@@ -55,11 +56,7 @@ export const HEALTH_TYPES = Object.keys(HEALTH_METRICS);
 const pad = (n) => String(n).padStart(2, '0');
 export const dayKeyOf = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
 
-/** `day` moved by `n` days (negative = earlier). Noon, so a DST day can't slip. */
-export function addDays(day, n) {
-  const [y, m, d] = String(day).split('-').map(Number);
-  return dayKeyOf(new Date(y, m - 1, d + n, 12));
-}
+export { addDays }; // from dates.js; health.js and the test read it here
 
 /** The `n` days ending on `endDay`, oldest first. */
 export function lastDays(endDay, n) {

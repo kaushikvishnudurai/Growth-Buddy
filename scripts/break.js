@@ -3,16 +3,12 @@
    streaks hold over break days without a freeze token, nothing is owed, and
    habit reminders, the evening reflection and the digest stay quiet. Timed
    reminders still ring. Pure, no DOM, so node tests load it. */
-import { localKey } from './dates.js';
+import { addDays } from './dates.js';
 
 export const BREAK_LENGTHS = [3, 7, 14];
 /* The longest the server takes (OnBreak.MAX_DAYS, less a rescue's yesterday). */
 export const MAX_BREAK_DAYS = 14;
 
-function addDays(key, n) {
-  const [y, m, d] = String(key).split('-').map(Number);
-  return localKey(new Date(y, m - 1, d + n));
-}
 
 const KEY = /^\d{4}-\d{2}-\d{2}$/;
 

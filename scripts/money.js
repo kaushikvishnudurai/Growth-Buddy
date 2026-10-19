@@ -19,6 +19,7 @@ import {
   fieldRefusal,
   focusSoon,
   CrashCard,
+  segmented,
 } from './gb-kit.js';
 import { toast } from './toast.js';
 import { celebrate } from './celebrate.js';
@@ -1831,35 +1832,6 @@ function defaultTagOf(money) {
   return s.defaultTagSet || s.defaultTag !== 'others' ? s.defaultTag || null : null;
 }
 
-function segmented(options, initial, onChange) {
-  let selected = initial;
-  const segs = {};
-  const wrap = rovingGroup(h('div', { class: 'gb-segmented', role: 'radiogroup' }));
-  options.forEach((opt) => {
-    const btn = h(
-      'button',
-      {
-        type: 'button',
-        class: 'gb-seg' + (opt.value === selected ? ' is-on' : ''),
-        role: 'radio',
-        'aria-checked': String(opt.value === selected),
-        onclick: () => {
-          selected = opt.value;
-          for (const k in segs) {
-            const on = k === opt.value;
-            segs[k].classList.toggle('is-on', on);
-            segs[k].setAttribute('aria-checked', String(on));
-          }
-          if (onChange) onChange(opt.value);
-        },
-      },
-      opt.label
-    );
-    segs[opt.value] = btn;
-    wrap.appendChild(btn);
-  });
-  return { node: wrap, get: () => selected };
-}
 
 /* Wrapping tag chip picker — replaces the overflowing segmented control for the
    variable-length (and user-extendable) tag list. allowCreate adds an inline

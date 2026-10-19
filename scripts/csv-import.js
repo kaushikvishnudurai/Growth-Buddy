@@ -251,7 +251,7 @@ function headerRole(name) {
 }
 
 /** Index of the header row among the first lines (bank preamble above it), or -1 for none. */
-export function findHeader(table) {
+function findHeader(table) {
   const limit = Math.min(table.length, 30);
   for (let r = 0; r < limit; r++) {
     const roles = table[r].map(headerRole).filter((x) => x && x !== 'ignore');
@@ -265,7 +265,7 @@ export function findHeader(table) {
 }
 
 /** One role per column. From the header names, then from the values for what is still missing. */
-export function detectColumns(header, rows) {
+function detectColumns(header, rows) {
   // With a header, its width: a longer row is an error in readRows, not an extra column.
   const width = header ? header.length : Math.max(...rows.slice(0, 50).map((r) => r.length));
   const roles = new Array(width).fill('ignore');

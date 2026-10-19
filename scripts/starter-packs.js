@@ -6,6 +6,7 @@
 
    Habit icons must be in HabitService.HABIT_ICONS, or the POST is refused.
    ===================================================================== */
+import { addDays } from './dates.js';
 
 export const PACKS = [
   // The default: what a new account sees ready-made before it has said anything.
@@ -95,12 +96,6 @@ const KIND_FEATURE = { habit: 'habits', reminder: 'calendar', goal: 'goals', bud
 
 const low = (s) => String(s || '').trim().toLowerCase();
 
-function addDays(key, n) {
-  const d = new Date(key + 'T12:00:00');
-  d.setDate(d.getDate() + n);
-  const p = (x) => String(x).padStart(2, '0');
-  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
-}
 
 /* Budgets from what was really spent: the `limit` biggest categories of the last
    30 days (two for a starter pack; Money's Set budgets asks for all), 10% under,

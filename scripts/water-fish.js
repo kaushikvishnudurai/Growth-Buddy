@@ -18,7 +18,7 @@ const WAVE = 6; // the surface's wave band (.gb-water-fill::before)
 const MIN_SWIM = 8;
 
 /* How far the rounded corners pull the walls in at height y above the floor. */
-export function wallInset(y) {
+function wallInset(y) {
   const d = y < GLASS_R ? GLASS_R - y : y > GLASS_H - GLASS_R ? y - (GLASS_H - GLASS_R) : 0;
   return d > 0 ? GLASS_R - Math.sqrt(GLASS_R * GLASS_R - Math.min(d, GLASS_R) ** 2) : 0;
 }

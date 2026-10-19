@@ -43,7 +43,7 @@ export function getWorkWeek() {
   return currentWorkWeek;
 }
 
-function parseKey(key) {
+export function parseKey(key) {
   const [y, m, d] = String(key || '')
     .split('-')
     .map(Number);

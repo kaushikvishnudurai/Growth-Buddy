@@ -36,7 +36,7 @@ async function cameraState() {
 }
 
 /** Tell the user where the camera switch is; true when they asked to try again. */
-export async function explainBlockedCamera() {
+async function explainBlockedCamera() {
   if (isNative()) {
     const go = await confirmDialog({
       title: 'Camera is off for Growth Buddy',

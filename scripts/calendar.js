@@ -24,6 +24,7 @@ import {
   WEEK_ORDER,
   parseRepeatDays,
   nthWeekdayOf,
+  parseKey,
 } from './recurrence.js';
 import { chimeOptionValue, chimeOptions, playChime } from './chime.js';
 import { usualReminderTime } from './nudges.js';
@@ -73,10 +74,6 @@ const REPEATS = {
 const REPEAT_ORDER = ['none', 'daily', 'weekdays', 'weekly', 'monthly', 'yearly'];
 
 
-function parseKey(key) {
-  const [y, m, d] = key.split('-').map(Number);
-  return { y: y, m: m - 1, d: d };
-}
 
 function isFutureKey(key) {
   return key > todayKey();

@@ -1471,8 +1471,40 @@ function Thinking(label, steps) {
   );
 }
 
+/* An exclusive choice as a radiogroup of buttons; get() reads it. */
+function segmented(options, initial, onChange) {
+  let selected = initial;
+  const segs = {};
+  const wrap = rovingGroup(h('div', { class: 'gb-segmented', role: 'radiogroup' }));
+  options.forEach((opt) => {
+    const btn = h(
+      'button',
+      {
+        type: 'button',
+        class: 'gb-seg' + (opt.value === selected ? ' is-on' : ''),
+        role: 'radio',
+        'aria-checked': String(opt.value === selected),
+        onclick: () => {
+          selected = opt.value;
+          for (const k in segs) {
+            const on = k === opt.value;
+            segs[k].classList.toggle('is-on', on);
+            segs[k].setAttribute('aria-checked', String(on));
+          }
+          if (onChange) onChange(opt.value);
+        },
+      },
+      opt.label
+    );
+    segs[opt.value] = btn;
+    wrap.appendChild(btn);
+  });
+  return { node: wrap, get: () => selected };
+}
+
 export {
   rovingGroup,
+  segmented,
   h,
   activate,
   trackOverlay,

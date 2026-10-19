@@ -85,7 +85,7 @@ function RepeatExpenseNudge(money, onSaveMoney) {
 
 /* "Salary 60,000 arrived?" on Home (salaryDue, money-core.js; the Income tab has
    the same card): one tap logs this month's salary on its usual day and account. */
-export function SalaryNudge(money, onSaveMoney) {
+function SalaryNudge(money, onSaveMoney) {
   const today = todayKey();
   const due = salaryDue(money);
   if (!due || skippedNudges.has(today + '|salary')) return null;

@@ -117,7 +117,7 @@ export function customKey(id) {
   return 'custom:' + String(id).slice(0, 8);
 }
 
-export function isCustomKey(key) {
+function isCustomKey(key) {
   return key === 'custom' || /^custom:/.test(key || '');
 }
 
