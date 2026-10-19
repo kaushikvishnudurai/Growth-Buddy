@@ -400,7 +400,7 @@ console.log('money-calc currency: ok');
 
 
 // ---- EXM-11: a half rounds the same way signed or not ----
-applyCurrency(doc({}));
+applyCurrency(doc({ settings: { currency: '₹' } })); // pinned: an unset currency follows the device (CI is en-US -> $)
 assert.equal(fmt(-1200.5), '\u2212₹1,201');
 assert.equal(fmt(1200.5), '₹1,201');
 assert.equal(fmt(-0.4), '₹0', 'no minus on a zero');
