@@ -1,7 +1,39 @@
 # Automatic expense capture: options and plan
 
-Status: **Phase 1, for approval. Nothing here is built yet.** Written 2026-10-21 on branch
-`kaushik/expense-capture`. Policy facts were checked against the official pages linked in each
+Status: **Phase 2 built** on branch `kaushik/expense-capture` (web + backend) and the same branch in
+`../Growth-Buddy-Mobile` (the Android plugin). Phase 1 written 2026-10-21. Approved order: parser + dedup +
+review, the Android notification listener, share-to-app, then the iPhone Shortcut and Android SMS. Email
+skipped for now. Account Aggregator parked.
+
+## What shipped (Phase 2)
+
+| Piece | Where | State |
+|---|---|---|
+| Parser (JS + Java mirror, 35 shared anonymised cases, 9 banks + 3 UPI apps) | `scripts/bank-msg.js`, `money/BankMessageParser.java`, `scripts/bank-msg.cases.json` | tested both sides, fuzzed (20k inputs, worst 1.6 ms) |
+| Dedup + ingest + sources + delete-by-source | `money/CaptureService`, `CaptureDedup`, `CaptureController`; tables `capture_sources`, `capture_refs` | unit tests + an end-to-end run on MySQL; 20 parallel copies of one payment = 1 row |
+| Rows count at once; silent merge on a UPI reference, a repeat message, or the same money from another source within 15 min; a typed entry that day is claimed | server | tested |
+| "To review" only for the unclear ones (`check`, `dup` vs a cash entry, `transfer`), shown as a count | Money Overview + review sheet | tested in a browser (Playwright) at 320 / 390 px, light + dark |
+| Quick add / WhatsApp sentence names a captured row instead of adding a second | `app.js` `addQuickExpense`, `QuickAddApplier` | tested |
+| Payment app alerts (notification listener) | mobile `CaptureNotificationListener` | builds; **needs a phone** |
+| Share a message (Android intent + PWA share target) | mobile `CapturePlugin`, `app.js handleSharedText` | PWA path tested in a browser; Android intent **needs a phone** |
+| iPhone Shortcut | `POST /api/capture/ios/message` + setup sheet | endpoint tested with curl; the Shortcut itself **needs an iPhone** |
+| Bank SMS (backfill 90 days + live) | mobile `CaptureSmsReceiver`, `readSmsInbox` | code in every build, manifest entries commented out for its own release (MOBILE.md) |
+| Consent card per source (Play's prominent disclosure) with the specimen | `capture-ui.js` | tested in a browser |
+
+Cost per user per month: **Rs 0** for every source. No paid API, no per-fetch fee; the iPhone path and the
+review state use the existing server and database.
+
+### The iPhone Shortcut, step by step (what the setup sheet says)
+
+1. Shortcuts > + > add **Get Contents of URL**. URL: `<site>/api/capture/ios/message`. Method POST.
+   Header `X-Capture-Token` = the key from Settings. Request Body JSON, one field `text` = Shortcut Input.
+   Name it "Send to Growth Buddy".
+2. Automation > + > **Message**. Message Contains `debited`. **Run Immediately**. Action: Run Shortcut
+   "Send to Growth Buddy" (input: the message). A second automation for `credited` adds money in.
+3. To hand people a ready-made one: build it once on an iPhone with the key left as an "Ask for input"
+   field, Share > Copy iCloud Link, and set `VITE_CAPTURE_SHORTCUT_URL` to that link; the sheet then
+   shows "Get Send to Growth Buddy" first. Automations themselves can't be shared, so step 2 stays manual.
+ Policy facts were checked against the official pages linked in each
 section on that date. Anything not from an official source is marked *(unofficial)*.
 
 ## The problem in one paragraph

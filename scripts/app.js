@@ -4135,19 +4135,40 @@ async function syncHealthFromPhone({ force = false } = {}) {
    with Money off, or in an APK without the plugin. A shared message that is a
    payment arrives here too, live (onSharedText) or at launch (takeShared). */
 let captureSyncing = false;
+let captureFlagsFor = null; // the user whose source switches the phone was last aligned with
 async function syncCapturesFromPhone() {
+  takeSharedFromPhone(); // first, and whatever Money's state: a share is the user's own act
   if (!state.user || captureSyncing || !featureOn('money') || !capturePlugin()) return;
   captureSyncing = true;
   try {
+    // Once a session: the phone's own switches follow the account's, so a reinstall,
+    // cleared app data or a second phone doesn't sit "on" while nothing is kept.
+    if (captureFlagsFor !== state.user.id) {
+      const st = await api('/api/capture');
+      const on = (k) => !!(st && st.sources && st.sources[k] && st.sources[k].enabled);
+      await capturePlugin().setSources({ notif: on('notif'), sms: on('sms') });
+      captureFlagsFor = state.user.id;
+    }
     const cap = await import('./capture.js');
     const res = await cap.drainPhoneCaptures({ api, money: state.money });
     if (res && res.added) await reloadMoneyFromServer();
-    const shared = await capturePlugin().takeShared();
-    if (shared && shared.text) await handleSharedText(shared.text);
   } catch (err) {
     console.warn('Capture sync skipped:', err && err.message);
   } finally {
     captureSyncing = false;
+  }
+}
+
+/* Text another app shared in (at launch, or live through onSharedText): its own
+   path, so neither Money being off nor a failed capture upload can lose it. */
+async function takeSharedFromPhone() {
+  const plugin = capturePlugin();
+  if (!state.user || !plugin) return;
+  try {
+    const shared = await plugin.takeShared();
+    if (shared && shared.text) await handleSharedText(shared.text);
+  } catch (err) {
+    console.warn('Shared text not read:', err && err.message);
   }
 }
 
@@ -4181,37 +4202,62 @@ async function reloadMoneyFromServer() {
   render();
 }
 
-/* Shared text: a bank or UPI message is captured at once (with Undo); anything
-   else goes to Quick add's preview as before, where nothing is written until
-   the user confirms. */
+/* Shared text: a bank or UPI message is shown as the payment it reports and added
+   on one tap; anything else goes to Quick add's preview as before. Never booked
+   unseen: a share can come from any app's intent or any page's link to the share
+   target, so what it says is a claim until the user confirms it. */
 async function handleSharedText(text) {
-  if (featureOn('money')) {
-    let got = null;
+  let cap = null;
+  let item = null;
+  // Capture reads rupee amounts (the server refuses any other home currency), so
+  // another currency's Money gets the words in Quick add instead of a wrong amount.
+  if (featureOn('money') && homeCur(state.money) === '\u20b9') {
     try {
-      const cap = await import('./capture.js');
-      got = await cap.captureShared({ api, money: state.money, text });
+      cap = await import('./capture.js');
+      item = await cap.readShared(text, state.money);
     } catch (err) {
-      toastError(err, 'Could not add that payment.');
+      if (!reloadIfStaleChunk(err)) toastError(err, 'Could not read that message.');
       return;
     }
-    if (got) {
-      const r = got.result;
+  }
+  if (!item) {
+    openAddSheet({ text, preview: true });
+    return;
+  }
+  const home = homeCur(state.money);
+  const what = fmtIn(item.amount, home) + (item.merchant ? ' at ' + item.merchant : '');
+  const isIn = item.kind === 'credit';
+  openModal({
+    title: isIn ? 'Add this money in?' : 'Add this payment?',
+    sub: 'Read from the message you shared. Only these details are kept.',
+    body: h(
+      'div',
+      { class: 'gb-share-cap' },
+      h('div', { class: 'gb-share-cap-amt' + (isIn ? ' is-in' : '') }, (isIn ? '+' : '') + fmtIn(item.amount, home)),
+      h('div', { class: 'gb-share-cap-who' }, item.merchant || (isIn ? 'Money in' : 'Payment')),
+      h(
+        'div',
+        { class: 'gb-share-cap-meta' },
+        [new Date((item.date || accountTodayKey()) + 'T12:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short' }), item.last4 ? 'account \u2022\u2022' + item.last4 : null].filter(Boolean).join(', ')
+      )
+    ),
+    primary: isIn ? 'Add money in' : 'Add payment',
+    errorMessage: 'Could not add that payment.',
+    onPrimary: async () => {
+      const r = (await cap.captureShared({ api, item })).result;
       const id = r.ids && r.ids[0];
-      const what = fmtIn(got.item.amount, homeCur(state.money)) + (got.item.merchant ? ' at ' + got.item.merchant : '');
       if (r.added) {
         await reloadMoneyFromServer();
         pushToast(
-          (got.item.kind === 'credit' ? 'Added money in: ' : 'Added: ') + what + (r.review ? '. Check it under To review.' : '.'),
+          'Added: ' + what + (r.review ? '. Check it under To review.' : '.'),
           'success',
           6000,
           id ? { label: 'Undo', run: () => removeQuickMoney(new Set([id])) } : undefined
         );
       } else if (r.merged) pushToast('Already in Money: ' + what + '.', 'info');
       else pushToast('That payment was deleted from Money before, so it stays out.', 'info');
-      return;
-    }
-  }
-  openAddSheet({ text, preview: true });
+    },
+  });
 }
 
 async function connectHealth() {
@@ -4569,7 +4615,8 @@ function addQuickExpense(it) {
   const note = capitalise(String(it.note || '').trim());
   // Automatic capture already booked this payment: the sentence names that row
   // instead of adding the money a second time (money-core matchCaptured).
-  const hit = !q.orig && matchCaptured(base, 'expense', q.amount, q.date);
+  // "200 cash auto" is a cash payment, not the card or UPI one capture read.
+  const hit = !q.orig && !/\bcash\b/i.test(note) && matchCaptured(base, 'expense', q.amount, q.date);
   if (hit) {
     const patch = note ? { note, category: quickCategory(base, suggestCategory(note, base)) } : {};
     next.expenses = next.expenses.map((x) => (x.id === hit.id ? claimCaptured(x, note, patch) : x));
@@ -4599,7 +4646,7 @@ function addQuickIncome(it) {
   const label = capitalise(String(it.note || '').trim());
   const salary = /salary/i.test(label);
   const q = quickMoney(base, it, 'income', todayKey());
-  const hit = !q.orig && matchCaptured(base, 'income', q.amount, q.date);
+  const hit = !q.orig && !/\bcash\b/i.test(label) && matchCaptured(base, 'income', q.amount, q.date);
   if (hit) {
     const patch = label ? { label, source: salary ? 'salary' : hit.source } : {};
     next.income = next.income.map((x) => (x.id === hit.id ? claimCaptured(x, label, patch) : x));
@@ -9803,7 +9850,7 @@ function armNotificationActions() {
   // Android carries the buttons out natively; with the app open, show the result.
   onNativeChanges(() => takeNativeChanges().then((changed) => changed && state.user && loadData()));
   // Shared into the app while it was open (Money's capture, else Quick add).
-  onSharedText(() => syncCapturesFromPhone());
+  onSharedText(() => takeSharedFromPhone());
 }
 
 async function handleNotificationAction(ev) {

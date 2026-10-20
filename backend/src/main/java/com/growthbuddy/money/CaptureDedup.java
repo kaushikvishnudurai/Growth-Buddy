@@ -16,8 +16,12 @@ import java.util.Set;
  * competitor's top complaint is the second row that leaves. So the order is:
  *
  * <ol>
- *   <li>the very same message again (a repost, the SMS backfill meeting the live
- *       receiver, a share of an SMS already read): same message hash;</li>
+ *   <li>the very same message again (the SMS backfill meeting the live receiver, a
+ *       retried upload): same message hash within {@link #WINDOW}, or at any distance
+ *       when one side is a share (a shared SMS arrives whenever it is shared). Two
+ *       real payments that read alike hours apart ("₹10 paid to Chai Point") stay
+ *       two; the phone hashes a notification with its own event time, so even two in
+ *       the same minute differ;</li>
  *   <li>the same payment reference (UPI's RRN is in both the bank's SMS and the
  *       app's notification): same ref hash, whatever else differs;</li>
  *   <li>else the same kind and amount from a DIFFERENT origin within
@@ -49,7 +53,9 @@ final class CaptureDedup {
     /** The capture in {@code seen} that is the same payment as {@code in}, or null. */
     static Seen samePayment(Seen in, List<Seen> seen) {
         for (Seen s : seen) {
-            if (in.msgHash() != null && in.msgHash().equals(s.msgHash())) {
+            if (in.msgHash() != null && in.msgHash().equals(s.msgHash())
+                    && ("share".equals(in.origin()) || "share".equals(s.origin())
+                        || Duration.between(s.at(), in.at()).abs().compareTo(WINDOW) <= 0)) {
                 return s;
             }
         }

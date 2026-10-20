@@ -39,6 +39,21 @@ class CaptureDedupTest {
     }
 
     @Test
+    void twoPaymentsThatReadAlikeHoursApartStayTwo() {
+        // "₹10 paid to Chai Point" at 9:00 and at 17:00: one text, two teas.
+        var morning = seen("cap-1", "expense", "10.00", T, null, null, "m1", "com.google.android.apps.nbu.paisa.user");
+        var evening = seen(null, "expense", "10.00", T.plusSeconds(8 * 3600), null, null, "m1", "com.google.android.apps.nbu.paisa.user");
+        assertThat(CaptureDedup.samePayment(evening, List.of(morning))).isNull();
+    }
+
+    @Test
+    void aSharedCopyOfAMessageIsThatMessageWhenEverItIsShared() {
+        var sms = seen("cap-1", "expense", "10.00", T, null, null, "m1", "sms");
+        var shared = seen(null, "expense", "10.00", T.plusSeconds(30 * 3600), null, null, "m1", "share");
+        assertThat(CaptureDedup.samePayment(shared, List.of(sms))).isSameAs(sms);
+    }
+
+    @Test
     void aNotificationWithNoReferenceMatchesTheSmsMinutesApart() {
         var sms = seen("cap-1", "expense", "250.00", T, "1234", "r1", "m1", "sms");
         var gpay = seen(null, "expense", "250.00", T.plusSeconds(14 * 60), null, null, "m2", "com.google.android.apps.nbu.paisa.user");

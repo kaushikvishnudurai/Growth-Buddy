@@ -13,15 +13,22 @@ import { suggestCategory } from './money-core.js';
 import { capturePlugin } from './native.js';
 
 export const SMS_BACKFILL_DAYS = 90;
-const BATCH = 200;
+// 100 a POST: each payment is a few queries under the user's lock, and a 90-day
+// SMS read can be thousands; smaller calls stay well inside any request timeout.
+const BATCH = 100;
 
 /* SHA-256 of the folded text, first 32 hex: the server's "same message again"
    check (a repost, the SMS backfill meeting the live receiver). The same
    formula as CaptureService.ingestText, so a shared copy of a message the
    iPhone Shortcut already sent is one too. Null where Web Crypto is missing. */
-export async function messageHash(text) {
+export async function messageHash(text, eventAt) {
   try {
-    const bytes = new TextEncoder().encode(cleanMessage(text));
+    // A notification is hashed with the app's own event time: two payments whose
+    // notifications read alike ("\u20b910 paid to Chai Point") are two, a repost of one
+    // (same event time) is one. An SMS is its text alone, so the 90-day read and the
+    // live receiver, which date it differently, still meet.
+    const body = cleanMessage(text) + (eventAt ? '|' + eventAt : '');
+    const bytes = new TextEncoder().encode(body);
     const d = await crypto.subtle.digest('SHA-256', bytes);
     return [...new Uint8Array(d)]
       .map((b) => b.toString(16).padStart(2, '0'))
@@ -49,7 +56,7 @@ export async function toItem(raw, money) {
     ref: p.ref,
     date: p.date,
     at: Number(raw.at) || Date.now(),
-    msgHash: await messageHash(raw.text),
+    msgHash: await messageHash(raw.text, raw.via === 'notif' ? raw.at : null),
     confidence: p.confidence,
     channel: p.channel,
     ...(tag && tag !== 'others' ? { category: tag } : {}),
@@ -93,7 +100,9 @@ export async function drainPhoneCaptures({ api, money }) {
     return null;
   }
   const items = await parseAll(raws, money);
-  const res = items.length ? await sendCaptures(api, items) : { added: 0, merged: 0, review: 0, skipped: 0 };
+  const res = items.length
+    ? await sendCaptures(api, items)
+    : { added: 0, merged: 0, review: 0, skipped: 0 };
   // Reached only when every batch was taken; a throw above keeps the queue as it is.
   const ids = raws.map((r) => r && r.id).filter(Boolean);
   if (ids.length) await plugin.ack({ ids });
@@ -111,10 +120,14 @@ export async function backfillSms({ api, money, days = SMS_BACKFILL_DAYS }) {
   return { read: raws.length, ...(await sendCaptures(api, items)) };
 }
 
-/* A message shared into the app (long-press a bank SMS > Share). Null = it is
-   no payment, and the caller hands the words to Quick add as before. */
-export async function captureShared({ api, money, text }) {
-  const item = await toItem({ via: 'share', origin: 'share', text, at: Date.now() }, money);
-  if (!item) return null;
+/* A message shared into the app (long-press a bank SMS > Share), read but not
+   sent: the caller shows it and sends it only on the user's tap, because a
+   share can come from anywhere (any app's intent, any web page's link to the
+   share target) and must never book a payment by itself. Null = no payment. */
+export function readShared(text, money) {
+  return toItem({ via: 'share', origin: 'share', text, at: Date.now() }, money);
+}
+
+export async function captureShared({ api, item }) {
   return { item, result: await sendCaptures(api, [item]) };
 }

@@ -66,6 +66,7 @@ public class CaptureService {
     private static final Pattern HEX = Pattern.compile("[0-9a-f]{16,64}");
     private static final Pattern CATEGORY = Pattern.compile("[a-z0-9_-]{1,40}");
     private static final SecureRandom RANDOM = new SecureRandom();
+    static final Pattern CASH_WORD = Pattern.compile("(?i)\\bcash\\b");
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper json;
@@ -190,15 +191,12 @@ public class CaptureService {
         if (!VIAS.contains(via)) {
             throw ApiException.badRequest("Unknown capture source.");
         }
-        List<String> ids = jdbc.queryForList("""
-                SELECT DISTINCT tx_id FROM capture_refs WHERE user_id = ? AND via = ? AND tx_id LIKE 'cap-%'
+        // The rows this source CREATED (the row's own capture.via), never one another
+        // source created that this one only matched: that payment is the other's.
+        List<String> live = jdbc.queryForList("""
+                SELECT id FROM money_transactions
+                WHERE user_id = ? AND id LIKE 'cap-%' AND JSON_UNQUOTE(JSON_EXTRACT(extra, '$.capture.via')) = ?
                 """, String.class, userId.toString(), via);
-        List<String> live = new ArrayList<>();
-        for (String id : ids) {
-            Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM money_transactions WHERE user_id = ? AND id = ?",
-                    Integer.class, userId.toString(), id);
-            if (n != null && n > 0) live.add(id);
-        }
         ledger.apply(userId, List.of(), live);
         jdbc.update("DELETE FROM capture_refs WHERE user_id = ? AND via = ?", userId.toString(), via);
         return live.size();
@@ -261,7 +259,7 @@ public class CaptureService {
                     throw ApiException.badRequest("Unknown capture source.");
                 }
                 list.add(item(n, via, now));
-            } catch (ApiException ex) {
+            } catch (ApiException | ArithmeticException ex) {
                 list.add(null);
             }
         }
@@ -275,8 +273,14 @@ public class CaptureService {
         }
         BigDecimal amount;
         try {
-            amount = new BigDecimal(n.path("amount").asText()).setScale(2, java.math.RoundingMode.HALF_UP);
-        } catch (NumberFormatException ex) {
+            BigDecimal raw = new BigDecimal(n.path("amount").asText());
+            // Shape before setScale, as MoneyLedger.amount does: "1e99999999" made setScale
+            // build a hundred-million-digit number, "1e-999999999" threw ArithmeticException.
+            if (raw.precision() - raw.scale() > 13 || raw.scale() > 32) {
+                throw ApiException.badRequest("A captured amount is out of range.");
+            }
+            amount = raw.setScale(2, java.math.RoundingMode.HALF_UP);
+        } catch (NumberFormatException | ArithmeticException ex) {
             throw ApiException.badRequest("A captured payment needs an amount.");
         }
         BigDecimal cap = kind.equals("debit") ? MoneyLedger.EXPENSE_MAX : new BigDecimal("1000000000");
@@ -330,6 +334,9 @@ public class CaptureService {
         int skipped = 0;
         Set<String> vias = new HashSet<>();
         List<String> landed = new ArrayList<>();
+        // A backfill sends hundreds of one day's payments under the lock; the typed rows
+        // a capture claimed are read once per day and kept current here.
+        java.util.Map<LocalDate, Set<String>> claimedByDay = new java.util.HashMap<>();
         for (Item it : items) {
             if (it == null) {
                 skipped++;
@@ -360,9 +367,11 @@ public class CaptureService {
                 }
                 continue;
             }
+            Set<String> claimedToday = claimedByDay.computeIfAbsent(day, d -> claimed(userId, d));
             CaptureDedup.Manual typed = CaptureDedup.manualMatch(kind, it.amount(), day, typedOn(userId, day, kind,
-                    it.amount()), claimed(userId, day));
+                    it.amount()), claimedToday);
             if (typed != null && !"cash".equals(typed.accountKind())) {
+                claimedToday.add(typed.id());
                 remember(userId, typed.id(), in, it.via(), now);
                 merged++;
                 landed.add(typed.id());
@@ -370,9 +379,11 @@ public class CaptureService {
             }
             CaptureDedup.Seen twin = CaptureDedup.transferTwin(in, seen);
             String reason = typed != null ? "dup" : "low".equals(it.confidence()) ? "check" : twin != null ? "transfer" : null;
-            String id = "cap-" + (refHash != null ? refHash
-                    : msgHash != null ? msgHash
-                    : salted(userId, "at", kind + "|" + it.amount().toPlainString() + "|" + it.origin() + "|" + it.at().toEpochMilli()));
+            // The kind is in every id: a refund quoting the payment's own UPI reference is a
+            // second row (money in), not the payment's id again, which importIgnore would drop.
+            String id = "cap-" + salted(userId, "id", kind + "|" + (refHash != null ? refHash
+                    : msgHash != null ? msgHash + "|" + it.at().toEpochMilli()
+                    : it.amount().toPlainString() + "|" + it.origin() + "|" + it.at().toEpochMilli()));
             ObjectNode row = row(id, kind, it, day, accounts, reason,
                     typed != null ? typed.id() : twin != null ? twin.txId() : null);
             int n = ledger.importIgnore(userId, List.of(ledger.toRow(kind, row)));
@@ -499,6 +510,11 @@ public class CaptureService {
      */
     @Transactional
     public String claimForTyped(UUID userId, String kind, BigDecimal amount, LocalDate day, String words) {
+        // "200 cash auto" is a cash payment, not the card or UPI one capture read
+        // (manualMatch refuses the same pairing from the other side).
+        if (words != null && CASH_WORD.matcher(words).find()) {
+            return null;
+        }
         List<java.util.Map<String, Object>> rows = jdbc.queryForList("""
                 SELECT id, extra FROM money_transactions
                 WHERE user_id = ? AND occurred_on = ? AND kind = ? AND amount = ?

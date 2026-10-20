@@ -301,6 +301,12 @@ assert.deepEqual(
     money
   );
   assert.deepEqual(lines.map((e) => e.dup), ['existing', null], 'one captured row answers for one line');
+  // The same captured row matched by its own note first does not mark a second line too.
+  const exact = markDuplicates(
+    read('date,amount,note\n2026-10-20,-250,Swiggy\n2026-10-20,-250,UPI/Zomato/629300000001\n', { positiveIs: 'in' }).entries,
+    money
+  );
+  assert.deepEqual(exact.map((e) => e.dup), ['existing', null], 'a captured row matched exactly is used up');
 }
 
 console.log('csv-import: all checks passed');

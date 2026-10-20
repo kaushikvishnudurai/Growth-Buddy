@@ -48,7 +48,7 @@ Three files so the ~6k-line screen stays out of the boot chunk (boot 551,884 B -
 ## Doc shape (`emptyMoney`)
 
 ```
-expenses[]  {id, amount, category, note, date, createdAt, accountId?, orig?{amount, currency, rate}, reflection?{reason, planned, satisfaction}, source?:'bank', bankMask?, mode?}   ← ledger (source 'bank' = imported by BankFeedService, id 'bank-<hash>', and one deleted here is not re-imported: `MoneyLedger.importIgnore` skips tombstoned ids; the row shows a "Bank" tag and edits like any other)
+expenses[]  {id, amount, category, note, date, createdAt, accountId?, orig?{amount, currency, rate}, reflection?{reason, planned, satisfaction}, source?:'bank', bankMask?, mode?, capture?{via, review?, dupOf?, typed?}}   ← ledger (source 'bank' = imported by BankFeedService, id 'bank-<hash>', and one deleted here is not re-imported: `MoneyLedger.importIgnore` skips tombstoned ids; the row shows a "Bank" tag and edits like any other)
 income[]    {id, amount, source:'salary'|'other', label, date, accountId?, orig?}                                       ← ledger
 transfers[] {id, amount, from?, to?, date, note}   (moving money; never spending or income. Both = between your accounts (`isMove`, the only kind in Recent moves). Only `from` = out to someone, only `to` = in from someone: the loans' one-sided moves. Never neither — MoneyLedger.toRow refuses it)     ← ledger
 accounts[]  {id, name, kind:'cash'|'bank'|'card'|'wallet', openingBalance, balance, archived}   (server's, read-only)
@@ -67,6 +67,14 @@ settings{reflectThreshold:1000, currency:'₹', defaultTag:'others', defaultTagS
 
 `normalizeMoney` is the trust boundary — every array/object defaulted (**a top-level field it doesn't list is dropped**: a new doc field goes in `emptyMoney` AND `normalizeMoney`), `contribs` backfilled, and a
 `noSpendDays` entry dropped once that day has a real expense (one place, for every path that logs one).
+
+## Automatic capture (rows with `capture`)
+
+A row automatic capture booked (server `money/CaptureService`, id `cap-…`) carries `capture: {via: 'notif'|'sms'|'share'|'ios', review?, dupOf?, typed?}` in `extra`, plus `bankMask` / `mode` like a bank-feed row, on expenses and income alike. It **counts in every total as it lands**; `review` is set only when the server was genuinely unsure: `'check'` (nothing tied the message to a payment), `'dup'` (`dupOf` = a cash entry typed that day for the same money), `'transfer'` (`dupOf` = the other half of what looks like a move between two of the user's accounts). `typed` = a quick add or WhatsApp sentence already named it (money-core `matchCaptured` skips it).
+
+- `capturedToReview(money)` (money-core) lists them; `captureReviewLine` (Overview, under the slip) shows only when there are any: "N captured payments to check", opening **`openCaptureReview(money, save)`**: one card per row (amount mono, payee in display type, the day / source / account, one plain question) with two named answers from `reviewQuestion`: check = Keep it (with a tag `<select>`) / Not a payment; dup = Same payment (drops this copy) / Two payments; transfer = Between my accounts (drops this row and `dupOf`) / A real payment. A drop has Undo (re-added under new ids, as the expense dialog's delete does). An answered card folds up (`is-done`, 400 ms tap guard so a fast double tap can't answer the card that slides up), the last one leaves "All checked".
+- `captureOffer` (Overview, under the slip): for an account with nothing captured, one invitation, Set up = the `openCaptureSetup` prop (app.js, capture-ui.js `CaptureSection` on a sheet), Not now = `settings.captureOfferHidden` in the document.
+- Expense and income rows show an "Auto" tag (`gb-money-auto-tag`, ringed while `review` is set) beside where the Bank tag goes.
 
 ## Dates
 

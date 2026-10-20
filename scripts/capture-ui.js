@@ -218,7 +218,13 @@ export function CaptureSection(ctx, { heading = true } = {}) {
     }
     const plugin = capturePlugin();
     try {
-      device = plugin ? await plugin.status() : null;
+      // The phone's switches follow the account's: after a reinstall or on a second
+      // phone the native side would otherwise keep nothing while this row says On.
+      device = plugin
+        ? server
+          ? await plugin.setSources({ notif: isOn('notif'), sms: isOn('sms') })
+          : await plugin.status()
+        : null;
     } catch (_) {
       device = null;
     }
